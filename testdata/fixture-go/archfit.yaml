@@ -11,6 +11,8 @@ modules:
     internal:
       - pkg/b/internal/**
 rules:
-  - id: no_internal_access
-    type: public_api_only
+  - id: no_direct_b_dependency
+    type: forbidden_dependency
+    from: pkg/a/**
+    to: pkg/b
     gate: fail

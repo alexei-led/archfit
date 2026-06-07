@@ -52,8 +52,9 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 			packages.NeedSyntax |
 			packages.NeedTypes |
 			packages.NeedModule,
-		Dir:     s.Root,
-		Context: ctx,
+		Dir:        s.Root,
+		Context:    ctx,
+		BuildFlags: e.cfg.BuildFlags,
 	}
 
 	pkgs, err := packages.Load(cfg, "./...")

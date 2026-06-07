@@ -188,6 +188,9 @@ type ExtractConfig struct {
 	Internal   []string // all internal globs across modules
 	Mode       ToolMode // derived from Tools map for the given language/tool
 
+	// Go-specific.
+	BuildFlags []string // extra build flags passed to go/packages (e.g. ["-tags", "extractortest"])
+
 	// TypeScript-specific.
 	TSConfig string // path to tsconfig.json (empty = auto)
 

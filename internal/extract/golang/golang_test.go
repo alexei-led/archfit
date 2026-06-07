@@ -66,7 +66,12 @@ func TestExtract_SimpleImport(t *testing.T) {
 
 func TestExtract_InternalAccess(t *testing.T) {
 	root := testdataRoot(t)
-	ext := goextract.New(config.ExtractConfig{})
+	// violator.go carries //go:build extractortest so it is excluded from normal
+	// go test runs (keeping testdata/golang/pkg/a compilable). The build tag
+	// must be passed here so go/packages includes the file during extraction.
+	ext := goextract.New(config.ExtractConfig{
+		BuildFlags: []string{"-tags", "extractortest"},
+	})
 	s := scope.Scope{Root: root, Mode: scope.ModeFull}
 
 	facts, _, err := ext.Extract(context.Background(), s)

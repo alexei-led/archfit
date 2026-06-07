@@ -1,3 +1,5 @@
+//go:build extractortest
+
 package a
 
 import "example.com/test/pkg/b/internal/impl"

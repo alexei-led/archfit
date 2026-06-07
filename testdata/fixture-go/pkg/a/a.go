@@ -1,5 +1,6 @@
 package a
 
-import "example.com/fixture-go/pkg/b/internal/impl"
+import "example.com/fixture-go/pkg/b"
 
-func UseSecret() string { return impl.Secret() }
+// Dep demonstrates a dependency from module a to module b.
+func Dep() string { return b.Hello() }
