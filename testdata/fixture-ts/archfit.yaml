@@ -1,0 +1,18 @@
+version: 1
+modules:
+  a:
+    paths:
+      - src/a.ts
+  b:
+    paths:
+      - src/b/**
+    public:
+      - src/b/index.ts
+    internal:
+      - src/b/internal/**
+rules:
+  - id: no_internal_access
+    type: forbidden_dependency
+    gate: fail
+    from: src/a.ts
+    to: src/b/internal/**

@@ -453,22 +453,22 @@ The engine declares the port interfaces it consumes (design principle: consumer 
 
 ### Task 18: `cmd/archfit` — CLI wiring (kong) + integration fixture
 
-- [ ] Create per-language fixtures under `testdata/`, each a real project with a deliberate boundary violation:
+- [x] Create per-language fixtures under `testdata/`, each a real project with a deliberate boundary violation:
   - **Go** `testdata/fixture-go/` — real Go module (`go.mod`); `pkg/a/a.go` imports `pkg/b/internal/impl` (violates `public_api_only`); `archfit.yaml` with modules `a`/`b`, a `public_api_only` rule, `gate: fail`
   - **TypeScript** `testdata/fixture-ts/` — `package.json` + `tsconfig.json`; `src/a.ts` imports `src/b/internal/impl.ts`; `archfit.yaml` with the same rule shape
   - **Python** `testdata/fixture-py/` — `pyproject.toml` + a top-level package; `a/x.py` imports `b/_internal/impl.py`; `archfit.yaml` with the same rule shape
   - The **Go** fixture drives the integration + golden tests (no external toolchain in the deterministic CI gate); the TS/Python fixtures drive their extractor integration tests when Node/Python are present (skipped with a coverage note otherwise)
-- [ ] Build the kong CLI struct: a top-level struct whose fields are the command structs `Check`, `Baseline`, `Explain`, `Doctor`, `Init` (each a `*Cmd` type, tagged `cmd:""`) — **no `Scan` in Phase 1** (scan needs markdown + advisory; Phase 2)
-- [ ] `CheckCmd` typed fields: `Base string`, `Full bool`, `Format []string` (tag `enum:"json,console" default:"console"`), plus `Advisory bool` and `Report bool` (parsed but no-op in Phase 1)
-- [ ] `main` builds the composition root **once** and passes it via `kong.Bind(...)`; `ctx := kong.Parse(&cli, ...); err := ctx.Run()`. Construct `config.Load`, `baseline.Load`, `runner := toolrun.New()`, then the **applicable** extractors —
+- [x] Build the kong CLI struct: a top-level struct whose fields are the command structs `Check`, `Baseline`, `Explain`, `Doctor`, `Init` (each a `*Cmd` type, tagged `cmd:""`) — **no `Scan` in Phase 1** (scan needs markdown + advisory; Phase 2)
+- [x] `CheckCmd` typed fields: `Base string`, `Full bool`, `Format []string` (tag `enum:"json,console" default:"console"`), plus `Advisory bool` and `Report bool` (parsed but no-op in Phase 1)
+- [x] `main` builds the composition root **once** and passes it via `kong.Bind(...)`; `ctx := kong.Parse(&cli, ...); err := ctx.Run()`. Construct `config.Load`, `baseline.Load`, `runner := toolrun.New()`, then the **applicable** extractors —
       `golang.New(cfg.ForExtract("go"))`, `ts.New(runner, cfg.ForExtract("typescript"))`, `py.New(runner, cfg.ForExtract("python"))` (each detects/skips itself) — plus `git.*`, `rules.New(cfg.ForRules())`, `metrics.New(cfg)`, `jsonout.New()`, `console.New()`.
-- [ ] `CheckCmd.Run(deps...) error`: run `engine.Run`, render; return a typed error carrying the exit code
-- [ ] `BaselineCmd.Run`: run engine stages 1–7 then `baseline.Save`
-- [ ] `ExplainCmd.Run`: re-run engine in-memory, filter to the single finding by fingerprint prefix (stateless, D7); print `why`/`constraint`/`edge`
-- [ ] `DoctorCmd.Run`: detect the full toolchain via `toolrun` — `go`, `git`, `node`+`dependency-cruiser` (`bunx depcruise --version`), `uv`/`python3.12`+`grimp` — and print an availability + version + install-hint table (the same `Detect` each extractor uses)
-- [ ] `InitCmd.Run`: stub (prints "not yet implemented")
-- [ ] **Exit codes in one place:** `main` maps the result → `os.Exit(0/1/2/3)` after `ctx.Run()` (error→3, verdict→0/1/2). Commands return typed errors; they never call `os.Exit`.
-- [ ] Write integration test: invoke the parsed app against `testdata/fixture/` with violation → exit 1 + JSON finding present; remove the bad import → exit 0
+- [x] `CheckCmd.Run(deps...) error`: run `engine.Run`, render; return a typed error carrying the exit code
+- [x] `BaselineCmd.Run`: run engine stages 1–7 then `baseline.Save`
+- [x] `ExplainCmd.Run`: re-run engine in-memory, filter to the single finding by fingerprint prefix (stateless, D7); print `why`/`constraint`/`edge`
+- [x] `DoctorCmd.Run`: detect the full toolchain via `toolrun` — `go`, `git`, `node`+`dependency-cruiser` (`bunx depcruise --version`), `uv`/`python3.12`+`grimp` — and print an availability + version + install-hint table (the same `Detect` each extractor uses)
+- [x] `InitCmd.Run`: stub (prints "not yet implemented")
+- [x] **Exit codes in one place:** `main` maps the result → `os.Exit(0/1/2/3)` after `ctx.Run()` (error→3, verdict→0/1/2). Commands return typed errors; they never call `os.Exit`.
+- [x] Write integration test: invoke the parsed app against `testdata/fixture/` with violation → exit 1 + JSON finding present; remove the bad import → exit 0
 
 ### Task 19: Double-run golden test (CI gate 2)
 
