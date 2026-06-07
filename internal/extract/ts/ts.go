@@ -49,10 +49,15 @@ func (e *Extractor) Name() string {
 // Extract detects dependency-cruiser, runs it against the project root,
 // parses the JSON output, and returns a graph.Facts + diagnostic.Coverage.
 //
+// If mode is off, Extract returns empty Facts and an "absent" Coverage immediately.
 // If mode is auto and the tool is absent or the project has no package.json,
 // Extract returns empty Facts and an "absent" Coverage record — never an error.
 // If mode is on and the tool is absent, Extract returns an error.
 func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+	if e.cfg.Mode == config.ModeOff {
+		return graph.Facts{}, absentCoverage(""), nil
+	}
+
 	// Applicability: requires package.json in the project root.
 	pkgJSON := filepath.Join(s.Root, "package.json")
 	if _, err := os.Stat(pkgJSON); os.IsNotExist(err) {

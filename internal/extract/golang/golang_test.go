@@ -58,9 +58,9 @@ func TestExtract_SimpleImport(t *testing.T) {
 		t.Error("expected FilesSeen > 0")
 	}
 
-	// pkg/a/a.go imports example.com/test/pkg/b — expect an "imports" edge
-	if !hasEdge(facts.Edges, "pkg/a/a.go", "example.com/test/pkg/b", graph.EdgeKindImports) {
-		t.Errorf("expected imports edge from pkg/a/a.go to example.com/test/pkg/b; edges: %v", facts.Edges)
+	// pkg/a/a.go imports pkg/b — expect an "imports" edge (repo-relative path after module prefix strip)
+	if !hasEdge(facts.Edges, "pkg/a/a.go", "pkg/b", graph.EdgeKindImports) {
+		t.Errorf("expected imports edge from pkg/a/a.go to pkg/b; edges: %v", facts.Edges)
 	}
 }
 
@@ -74,9 +74,9 @@ func TestExtract_InternalAccess(t *testing.T) {
 		t.Fatalf("Extract: %v", err)
 	}
 
-	// pkg/a/violator.go imports example.com/test/pkg/b/internal/impl — uses_internal
-	if !hasEdge(facts.Edges, "pkg/a/violator.go", "example.com/test/pkg/b/internal/impl", graph.EdgeKindUsesInternal) {
-		t.Errorf("expected uses_internal edge from pkg/a/violator.go to example.com/test/pkg/b/internal/impl; edges: %v", facts.Edges)
+	// pkg/a/violator.go imports pkg/b/internal/impl — uses_internal (repo-relative path)
+	if !hasEdge(facts.Edges, "pkg/a/violator.go", "pkg/b/internal/impl", graph.EdgeKindUsesInternal) {
+		t.Errorf("expected uses_internal edge from pkg/a/violator.go to pkg/b/internal/impl; edges: %v", facts.Edges)
 	}
 }
 
@@ -95,7 +95,7 @@ func TestExtract_ExcludedPath(t *testing.T) {
 
 	// No edges should target pkg/b (regular import) or pkg/b/internal/impl.
 	for _, e := range facts.Edges {
-		if containsSuffix(e.To, "example.com/test/pkg/b") || containsSuffix(e.To, "example.com/test/pkg/b/internal/impl") {
+		if containsSuffix(e.To, "pkg/b") || containsSuffix(e.To, "pkg/b/internal/impl") {
 			t.Errorf("expected no edges to pkg/b after exclusion, got: %v", e)
 		}
 	}

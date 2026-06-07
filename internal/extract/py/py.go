@@ -20,11 +20,12 @@ import (
 )
 
 const (
-	toolGrimp    = "grimp"
-	langPython   = "python"
-	statusOK     = "ok"
-	statusAbsent = "absent"
-	runTimeout   = 5 * time.Minute
+	toolGrimp     = "grimp"
+	langPython    = "python"
+	statusOK      = "ok"
+	statusPartial = "partial"
+	statusAbsent  = "absent"
+	runTimeout    = 5 * time.Minute
 )
 
 // Extractor is the Python import extractor using grimp via uv or python3.12.
@@ -48,10 +49,15 @@ func (e *Extractor) Name() string {
 // file, runs it against the project root, parses the JSON output, and returns
 // graph.Facts + diagnostic.Coverage.
 //
+// If mode is off, Extract returns empty Facts and an "absent" Coverage immediately.
 // If mode is auto and no applicable tool or Python project is found,
 // Extract returns empty Facts and an "absent" Coverage — never an error.
 // If mode is on and the tool is absent, Extract returns an error.
 func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+	if e.cfg.Mode == config.ModeOff {
+		return graph.Facts{}, absentCoverage(), nil
+	}
+
 	// Applicability: requires pyproject.toml, setup.py, or cfg.PyPackage directory.
 	if !e.isApplicable(s.Root) {
 		if e.cfg.Mode == config.ModeOn {
@@ -232,13 +238,17 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 	}
 
 	filesSeen := len(seenNodes)
+	covStatus := statusOK
+	if h.Unresolved > 0 {
+		covStatus = statusPartial
+	}
 	cov := diagnostic.Coverage{
 		Tool:            toolGrimp,
 		Version:         version,
 		FilesSeen:       filesSeen,
 		FilesApplicable: filesSeen,
 		Unresolved:      h.Unresolved,
-		Status:          statusOK,
+		Status:          covStatus,
 	}
 	facts := graph.Facts{
 		Nodes:      nodes,

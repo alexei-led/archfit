@@ -97,7 +97,6 @@ func TestGolden_DoubleRun(t *testing.T) {
 			[]engine.Extractor{extractor},
 			rs,
 			ms,
-			nil, // no renderers — determinism only
 			base,
 			now,
 		)

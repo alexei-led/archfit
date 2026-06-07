@@ -154,11 +154,11 @@ func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[strin
 		return coupling.DistanceCrossModuleSameOwner
 	}
 
-	if fromDef.DeployUnit == toDef.DeployUnit && fromDef.DeployUnit != "" {
-		return coupling.DistanceCrossModuleDiffOwner
+	if fromDef.DeployUnit != toDef.DeployUnit && fromDef.DeployUnit != "" && toDef.DeployUnit != "" {
+		return coupling.DistanceCrossDeployUnit
 	}
 
-	return coupling.DistanceCrossDeployUnit
+	return coupling.DistanceCrossModuleDiffOwner
 }
 
 // classifyVolatility derives volatility from the to-module's subdomain.

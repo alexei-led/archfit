@@ -138,23 +138,22 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		Formats:    c.Format,
 	}
 
-	// Pass nil renderers — we render to deps.Stdout below for testability.
-	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStatus(), extractors, rs, ms, nil, base, time.Now())
+	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStatus(), extractors, rs, ms, base, time.Now())
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
 	// Render to deps.Stdout.
-	for _, fmt := range c.Format {
+	for _, format := range c.Format {
 		var renderErr error
-		switch fmt {
+		switch format {
 		case "json":
 			renderErr = jsonout.New().Render(diag, deps.Stdout)
 		case "console":
 			renderErr = console.New().Render(diag, deps.Stdout)
 		}
 		if renderErr != nil {
-			return &exitError{code: 3, msg: fmt}
+			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, renderErr)}
 		}
 	}
 
@@ -203,7 +202,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	rs := rules.New(cfg.ForRules())
 	ms := metrics.New(cfg)
 
-	diag, err := engine.Run(ctx, engine.Mode{Full: c.Full, Base: c.Base}, s, cfg.ForClassify(), cfg.ForStatus(), extractors, rs, ms, nil, existingBase, time.Now())
+	diag, err := engine.Run(ctx, engine.Mode{Full: c.Full, Base: c.Base}, s, cfg.ForClassify(), cfg.ForStatus(), extractors, rs, ms, existingBase, time.Now())
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -272,7 +271,7 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 	rs := rules.New(cfg.ForRules())
 	ms := metrics.New(cfg)
 
-	diag, err := engine.Run(ctx, engine.Mode{Full: true}, s, cfg.ForClassify(), cfg.ForStatus(), extractors, rs, ms, nil, existingBase, time.Now())
+	diag, err := engine.Run(ctx, engine.Mode{Full: true}, s, cfg.ForClassify(), cfg.ForStatus(), extractors, rs, ms, existingBase, time.Now())
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}

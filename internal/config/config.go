@@ -125,16 +125,17 @@ type OutputsConfig struct {
 
 // Config is the parsed and validated content of an archfit.yaml file.
 type Config struct {
-	Version    int                  `yaml:"version"`
-	Modules    map[string]ModuleDef `yaml:"modules"`
-	Layers     []string             `yaml:"layers"`
-	Rules      []RuleDef            `yaml:"rules"`
-	Exclusions []string             `yaml:"exclusions"`
-	Tools      ToolsConfig          `yaml:"tools"`
-	Metrics    MetricsConfig        `yaml:"metrics"`
-	Exceptions []ExceptionDef       `yaml:"exceptions"`
-	MapReview  MapReviewConfig      `yaml:"map_review"`
-	Outputs    OutputsConfig        `yaml:"outputs"`
+	Version       int                  `yaml:"version"`
+	Modules       map[string]ModuleDef `yaml:"modules"`
+	Layers        []string             `yaml:"layers"`
+	Rules         []RuleDef            `yaml:"rules"`
+	Exclusions    []string             `yaml:"exclusions"`
+	Tools         ToolsConfig          `yaml:"tools"`
+	Metrics       MetricsConfig        `yaml:"metrics"`
+	Exceptions    []ExceptionDef       `yaml:"exceptions"`
+	MapReview     MapReviewConfig      `yaml:"map_review"`
+	Outputs       OutputsConfig        `yaml:"outputs"`
+	PythonPackage string               `yaml:"python_package"` // top-level Python package name for grimp
 }
 
 // Load reads and strictly decodes an archfit.yaml file at path.
@@ -291,7 +292,7 @@ func languageToolKey(lang string) string {
 	case "typescript":
 		return "dependency_cruiser"
 	case "python":
-		return "import_linter"
+		return "grimp"
 	case "go":
 		return "go"
 	default:
@@ -321,6 +322,11 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 	}
 	ec.Paths = paths
 	ec.Internal = internal
+
+	// Python-specific fields.
+	if lang == "python" {
+		ec.PyPackage = c.PythonPackage
+	}
 
 	// Derive Mode from the Tools map.
 	toolKey := languageToolKey(lang)

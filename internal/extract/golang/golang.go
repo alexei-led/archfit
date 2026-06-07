@@ -35,15 +35,23 @@ func (e *GoExtractor) Name() string {
 // Extract loads all Go packages under s.Root, emits nodes and edges for every
 // import statement found in the AST, and returns a Coverage record.
 //
-// LoadMode: NeedName | NeedFiles | NeedImports | NeedSyntax | NeedTypes
-// (NeedTypes is required so that pkg.Fset is populated for position resolution).
+// If mode is off, Extract returns empty Facts and an "absent" Coverage immediately.
+// LoadMode: NeedName | NeedFiles | NeedImports | NeedSyntax | NeedTypes | NeedModule
+// (NeedTypes is required so that pkg.Fset is populated for position resolution.
+// NeedModule is required to strip the module path prefix from import paths so that
+// node IDs are repo-relative and match the glob patterns in archfit.yaml.)
 func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+	if e.cfg.Mode == config.ModeOff {
+		return graph.Facts{}, diagnostic.Coverage{Tool: "go/packages", Status: "absent"}, nil
+	}
+
 	cfg := &packages.Config{
 		Mode: packages.NeedName |
 			packages.NeedFiles |
 			packages.NeedImports |
 			packages.NeedSyntax |
-			packages.NeedTypes,
+			packages.NeedTypes |
+			packages.NeedModule,
 		Dir:     s.Root,
 		Context: ctx,
 	}
@@ -51,6 +59,33 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	pkgs, err := packages.Load(cfg, "./...")
 	if err != nil {
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/golang: load packages: %w", err)
+	}
+
+	// Determine the module path prefix from the first loaded package so we can
+	// strip it from import paths and produce repo-relative node IDs.
+	var modPath string
+	for _, pkg := range pkgs {
+		if pkg.Module != nil && pkg.Module.Path != "" {
+			modPath = pkg.Module.Path
+			break
+		}
+	}
+
+	// stripModPath converts a fully-qualified Go import path to a repo-relative
+	// path by removing the module prefix (e.g. "example.com/myapp/pkg/a" →
+	// "pkg/a"). Paths that do not belong to this module (stdlib, external) are
+	// returned unchanged so callers can still apply exclusion rules.
+	stripModPath := func(importPath string) string {
+		if modPath == "" {
+			return importPath
+		}
+		if importPath == modPath {
+			return "."
+		}
+		if strings.HasPrefix(importPath, modPath+"/") {
+			return importPath[len(modPath)+1:]
+		}
+		return importPath
 	}
 
 	var nodes []graph.Node
@@ -74,8 +109,8 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 			unresolved++
 		}
 
-		// Emit package node.
-		pkgPath := pkg.PkgPath
+		// Emit package node with repo-relative path.
+		pkgPath := stripModPath(pkg.PkgPath)
 		if pkgPath != "" {
 			pkgNode := graph.Node{Kind: graph.NodeKindPackage, Path: pkgPath}
 			emitNode(pkgNode)
@@ -103,14 +138,17 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 
 			for _, imp := range f.Imports {
 				pos := pkg.Fset.Position(imp.Pos())
-				importPath := strings.Trim(imp.Path.Value, `"`)
+				rawImportPath := strings.Trim(imp.Path.Value, `"`)
+
+				// Strip module prefix to get a repo-relative path for matching.
+				importPath := stripModPath(rawImportPath)
 
 				// Check exclusions on the import target.
 				if e.isExcluded(importPath) {
 					continue
 				}
 
-				// Determine edge kind.
+				// Determine edge kind based on the repo-relative path.
 				edgeKind := graph.EdgeKindImports
 				if strings.Contains(importPath, "/internal/") || strings.HasSuffix(importPath, "/internal") {
 					edgeKind = graph.EdgeKindUsesInternal

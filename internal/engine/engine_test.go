@@ -136,7 +136,6 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 		[]engine.Extractor{ex},
 		rs,
 		ms,
-		nil, // no renderers in tests
 		base,
 		now,
 	)
@@ -208,7 +207,6 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 		[]engine.Extractor{ex},
 		rs,
 		ms,
-		nil,
 		base,
 		now,
 	)
@@ -256,7 +254,6 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		[]engine.Extractor{ex},
 		rs,
 		ms,
-		nil,
 		base,
 		now,
 	)

@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"os"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/baseline"
@@ -37,8 +36,9 @@ type Mode struct {
 //  5. Compute metrics: build MetricInput, run each metric → MetricResult slice.
 //  6. Assemble Diagnostic: resolve EdgeEvidence {module, path}, join severity,
 //     fill Summary, compute verdict.
-//  7. Run renderers (write to os.Stdout; skipped when renderers is nil/empty).
-//  8. Return (Diagnostic, nil) on success; (Diagnostic, error) on hard error.
+//  7. Return (Diagnostic, nil) on success; (Diagnostic, error) on hard error.
+//
+// Rendering is the caller's responsibility (cmd renders to deps.Stdout).
 func Run(
 	ctx context.Context,
 	mode Mode,
@@ -48,7 +48,6 @@ func Run(
 	extractors []Extractor,
 	rs []rules.Rule,
 	ms []metrics.Metric,
-	renderers []Renderer,
 	base baseline.Baseline,
 	now time.Time,
 ) (diagnostic.Diagnostic, error) {
@@ -184,13 +183,6 @@ func Run(
 			Warnings:       0,
 			ExceptionsUsed: exceptionsUsed,
 		},
-	}
-
-	// --- Stage 7: Render ---
-	for _, r := range renderers {
-		if err := r.Render(d, os.Stdout); err != nil {
-			return d, err
-		}
 	}
 
 	return d, nil

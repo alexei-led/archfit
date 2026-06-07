@@ -39,6 +39,10 @@ type Rule interface {
 //	"forbidden_layer_direction" → ForbiddenLayerDirection
 //
 // Unknown type strings are silently skipped.
+//
+// Note: RuleDef.Gate ("fail"/"warn") is intentionally not consumed here.
+// In Phase 1, all rules produce gate findings (Kind="gate"). The advisory
+// severity channel (gate:warn) is deferred to Phase 2.
 func New(cfg config.RuleConfig) []Rule {
 	rules := make([]Rule, 0, len(cfg.Rules))
 	for _, def := range cfg.Rules {
@@ -132,7 +136,20 @@ func (r *publicAPIOnly) Check(g *graph.Graph, _ Evidence) []finding.Finding {
 		if e.Kind != graph.EdgeKindUsesInternal {
 			continue
 		}
+		fromPath := pathOf(e.From)
 		toPath := pathOf(e.To)
+
+		// Apply From/To scope globs when set; empty glob means match-all.
+		if r.def.From != "" {
+			if matched, _ := doublestar.Match(r.def.From, fromPath); !matched {
+				continue
+			}
+		}
+		if r.def.To != "" {
+			if matched, _ := doublestar.Match(r.def.To, toPath); !matched {
+				continue
+			}
+		}
 
 		f := finding.New(r.def.ID, e, e.Locations)
 		f.Severity = finding.SeverityHigh

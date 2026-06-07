@@ -123,8 +123,9 @@ func isExpired(exc config.ExceptionDef, now time.Time) bool {
 	}
 	expiry, err := time.Parse("2006-01-02", exc.Expires)
 	if err != nil {
-		// Malformed date — treat as never-expired to avoid hiding violations silently.
-		return false
+		// Malformed date — treat as expired so the exception does not silently
+		// suppress findings with an unenforceable expiry.
+		return true
 	}
 	// Expiry is end-of-day: the exception is valid on the expiry date itself,
 	// expired the day after. Add 24 hours so "expires: 2025-01-31" covers all of Jan 31.
