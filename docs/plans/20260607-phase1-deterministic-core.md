@@ -238,12 +238,12 @@ Implements the central contract. Everything else depends on this. Sealed constru
 
 Add this early — it is the structural enforcement for ring 2 (core must not directly import os/os-exec/YAML/adapters).
 
-- [ ] Create `internal/arch_test.go` (package `arch_test`): uses `golang.org/x/tools/go/packages` to load all packages under `internal/`
-- [ ] Assert that packages in the "core ring" (`classify`, `rules`, `metrics`, `status`) do not directly import `os`, `os/exec`, any YAML library, or any adapter package (`toolrun`, `extract/golang`, `history/git`, `output/*`)
-- [ ] Assert that `model/*` packages import nothing outside stdlib
-- [ ] Gate runs as `go test ./internal/ -run TestArchImports`
-- [ ] Add `golang.org/x/tools` dependency
-- [ ] Verify gate is red if a deliberate bad import is added temporarily, then revert
+- [x] Create `internal/arch_test.go` (package `arch_test`): uses `golang.org/x/tools/go/packages` to load all packages under `internal/`
+- [x] Assert that packages in the "core ring" (`classify`, `rules`, `metrics`, `status`) do not directly import `os`, `os/exec`, any YAML library, or any adapter package (`toolrun`, `extract/golang`, `history/git`, `output/*`)
+- [x] Assert that `model/*` packages import nothing outside stdlib
+- [x] Gate runs as `go test ./internal/ -run TestArchImports`
+- [x] Add `golang.org/x/tools` dependency
+- [x] Verify gate is red if a deliberate bad import is added temporarily, then revert
 
 ### Task 6: `config` — Config struct, views, Load
 
