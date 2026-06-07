@@ -346,18 +346,18 @@ so it's testable with a moq mock; satisfies `engine.Extractor`. See the Phase 0 
 Out-of-process adapter; bundles a PEP 723 grimp helper (`go:embed`). Takes a `toolrun.Runner`; satisfies
 `engine.Extractor`. See the Phase 0 grimp/uv section. **grimp directly, not import-linter.**
 
-- [ ] `//go:embed grimp_helper.py` (PEP 723 header, `dependencies = ["grimp"]`); write to a temp file at run time.
-- [ ] Implement `py.New(runner toolrun.Runner, cfg config.ExtractConfig) *PyExtractor`; `Name()` → `"python"`.
-- [ ] **detect** (in `Extract`): prefer `uv --version` (run via `uv run`); else `python3.12` + `import grimp`.
+- [x] `//go:embed grimp_helper.py` (PEP 723 header, `dependencies = ["grimp"]`); write to a temp file at run time.
+- [x] Implement `py.New(runner toolrun.Runner, cfg config.ExtractConfig) *PyExtractor`; `Name()` → `"python"`.
+- [x] **detect** (in `Extract`): prefer `uv --version` (run via `uv run`); else `python3.12` + `import grimp`.
       Applicability marker `pyproject.toml`/`setup.py`/top-level package. Absent under `auto` → no facts, no error, + coverage record.
-- [ ] **run** via `ToolRunner`: `uv run --directory <root> <helper.py> --package <cfg.PyPackage>` (or the `python3.12`
+- [x] **run** via `ToolRunner`: `uv run --directory <root> <helper.py> --package <cfg.PyPackage>` (or the `python3.12`
       fallback), controlled env + timeout + version captured. Helper builds the **internal-only** graph (external
       packages excluded — no third-party deps needed).
-- [ ] **parse** the helper JSON: `{"edges":[{"importer","imported","line"}], "unresolved": N}`.
-- [ ] **normalize** to `graph.Facts`: nodes `module:<dotted.name>`; `imports` edges importer→imported with line;
+- [x] **parse** the helper JSON: `{"edges":[{"importer","imported","line"}], "unresolved": N}`.
+- [x] **normalize** to `graph.Facts`: nodes `module:<dotted.name>`; `imports` edges importer→imported with line;
       `language: "python"`; classify internal access via configured `internal` globs; `unresolved` lowers confidence.
-- [ ] **coverage** record: tool `grimp` (+ uv/python version), modules seen, unresolved count, status.
-- [ ] Tests: a small real Python package fixture under `testdata/`; plus a **moq `toolrun.Runner`** feeding captured
+- [x] **coverage** record: tool `grimp` (+ uv/python version), modules seen, unresolved count, status.
+- [x] Tests: a small real Python package fixture under `testdata/`; plus a **moq `toolrun.Runner`** feeding captured
       helper JSON for the parse/normalize path (no real Python in unit tests).
 
 ### Task 12: `classify` — minimal BC classification (Phase 1 subset)
