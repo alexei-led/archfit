@@ -28,11 +28,12 @@ const (
 
 // Changed returns the sorted list of files that differ between base and head.
 // It runs: git diff --name-only <base>..<head>
-func Changed(ctx context.Context, base, head string, runner toolrun.Runner) (ChangeSet, error) {
+func Changed(ctx context.Context, workDir, base, head string, runner toolrun.Runner) (ChangeSet, error) {
 	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    gitTool,
 		Args:    []string{"diff", "--name-only", base + ".." + head},
 		Timeout: gitTimeout,
+		WorkDir: workDir,
 	})
 	if err != nil {
 		return ChangeSet{}, fmt.Errorf("git diff: %w", err)
@@ -53,11 +54,12 @@ func Changed(ctx context.Context, base, head string, runner toolrun.Runner) (Cha
 
 // HeadRef returns the SHA of HEAD.
 // It runs: git rev-parse HEAD
-func HeadRef(ctx context.Context, runner toolrun.Runner) (string, error) {
+func HeadRef(ctx context.Context, workDir string, runner toolrun.Runner) (string, error) {
 	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    gitTool,
 		Args:    []string{"rev-parse", "HEAD"},
 		Timeout: gitTimeout,
+		WorkDir: workDir,
 	})
 	if err != nil {
 		return "", fmt.Errorf("git rev-parse HEAD: %w", err)
@@ -71,11 +73,12 @@ func HeadRef(ctx context.Context, runner toolrun.Runner) (string, error) {
 
 // RepoRoot returns the absolute path to the repository root.
 // It runs: git rev-parse --show-toplevel
-func RepoRoot(ctx context.Context, runner toolrun.Runner) (string, error) {
+func RepoRoot(ctx context.Context, workDir string, runner toolrun.Runner) (string, error) {
 	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    gitTool,
 		Args:    []string{"rev-parse", "--show-toplevel"},
 		Timeout: gitTimeout,
+		WorkDir: workDir,
 	})
 	if err != nil {
 		return "", fmt.Errorf("git rev-parse --show-toplevel: %w", err)

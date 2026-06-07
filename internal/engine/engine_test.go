@@ -22,6 +22,11 @@ const (
 	pathFileANode         = "file:pkg/a/a.go"
 	pathFileBInternal     = "pkg/b/internal/impl.go"
 	pathFileBInternalNode = "file:pkg/b/internal/impl.go"
+
+	// Glob constants shared with golden_test.go (same package).
+	globModuleA         = "pkg/a/**"
+	globModuleB         = "pkg/b/**"
+	globModuleBInternal = "pkg/b/internal/**"
 )
 
 // cannedConfig builds a ClassifyConfig and RuleConfig for a two-module (a, b)
@@ -30,14 +35,14 @@ const (
 func cannedConfig() (config.ClassifyConfig, []rules.Rule) {
 	modules := map[string]config.ModuleDef{
 		"a": {
-			Paths:    []string{"pkg/a/**"},
-			Public:   []string{"pkg/a/**"},
+			Paths:    []string{globModuleA},
+			Public:   []string{globModuleA},
 			Internal: []string{},
 		},
 		"b": {
-			Paths:    []string{"pkg/b/**"},
+			Paths:    []string{globModuleB},
 			Public:   []string{"pkg/b/api/**"},
-			Internal: []string{"pkg/b/internal/**"},
+			Internal: []string{globModuleBInternal},
 		},
 	}
 

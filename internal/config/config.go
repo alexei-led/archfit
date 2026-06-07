@@ -174,6 +174,7 @@ type ScopeConfig struct {
 	Base       string // git ref to diff against (empty = none)
 	Full       bool   // if true, full-repo mode (no diff)
 	Exclusions []string
+	WorkDir    string // working directory for git commands; empty = process cwd
 }
 
 // ExtractConfig is the view passed to a language extractor.
@@ -196,8 +197,9 @@ type ExtractConfig struct {
 
 // ClassifyConfig is the view passed to the classify stage.
 type ClassifyConfig struct {
-	Modules map[string]ModuleDef
-	Layers  []string
+	Modules   map[string]ModuleDef
+	Layers    []string
+	ModuleMap ModuleMap
 }
 
 // RuleConfig is the view passed to the rules stage.
@@ -334,8 +336,9 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 // ForClassify returns the ClassifyConfig view.
 func (c Config) ForClassify() ClassifyConfig {
 	return ClassifyConfig{
-		Modules: c.Modules,
-		Layers:  c.Layers,
+		Modules:   c.Modules,
+		Layers:    c.Layers,
+		ModuleMap: buildModuleMap(c.Modules),
 	}
 }
 

@@ -41,14 +41,14 @@ func goldenFixtureRoot(t *testing.T) string {
 func goldenConfig() (config.ClassifyConfig, []rules.Rule, []metrics.Metric) {
 	modules := map[string]config.ModuleDef{
 		"a": {
-			Paths:    []string{"pkg/a/**"},
-			Public:   []string{"pkg/a/**"},
+			Paths:    []string{globModuleA},
+			Public:   []string{globModuleA},
 			Internal: []string{},
 		},
 		"b": {
-			Paths:    []string{"pkg/b/**"},
-			Public:   []string{"pkg/b/**"},
-			Internal: []string{"pkg/b/internal/**"},
+			Paths:    []string{globModuleB},
+			Public:   []string{globModuleB},
+			Internal: []string{globModuleBInternal},
 		},
 	}
 
@@ -60,8 +60,8 @@ func goldenConfig() (config.ClassifyConfig, []rules.Rule, []metrics.Metric) {
 				ID:   "no_internal_access",
 				Type: "forbidden_dependency",
 				Gate: "fail",
-				From: "pkg/a/**",
-				To:   "pkg/b/internal/**",
+				From: globModuleA,
+				To:   globModuleBInternal,
 			},
 		},
 	}

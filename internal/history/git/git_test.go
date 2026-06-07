@@ -20,7 +20,7 @@ func TestChanged_Mock(t *testing.T) {
 		},
 	}
 
-	cs, err := gitpkg.Changed(ctx, "main", "HEAD", mock)
+	cs, err := gitpkg.Changed(ctx, "", "main", "HEAD", mock)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestChanged_NonZeroExit(t *testing.T) {
 		},
 	}
 
-	_, err := gitpkg.Changed(ctx, "bad", "ref", mock)
+	_, err := gitpkg.Changed(ctx, "", "bad", "ref", mock)
 	if err == nil {
 		t.Fatal("expected error for non-zero exit, got nil")
 	}
@@ -64,7 +64,7 @@ func TestHeadRef_Mock(t *testing.T) {
 		},
 	}
 
-	got, err := gitpkg.HeadRef(ctx, mock)
+	got, err := gitpkg.HeadRef(ctx, "", mock)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestRepoRoot_Real(t *testing.T) {
 	ctx := context.Background()
 	runner := toolrun.New()
 
-	root, err := gitpkg.RepoRoot(ctx, runner)
+	root, err := gitpkg.RepoRoot(ctx, "", runner)
 	if err != nil {
 		t.Fatalf("RepoRoot: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestHeadRef_Real(t *testing.T) {
 	ctx := context.Background()
 	runner := toolrun.New()
 
-	sha, err := gitpkg.HeadRef(ctx, runner)
+	sha, err := gitpkg.HeadRef(ctx, "", runner)
 	if err != nil {
 		t.Fatalf("HeadRef: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestChanged_Real(t *testing.T) {
 	ctx := context.Background()
 	runner := toolrun.New()
 
-	_, err := gitpkg.Changed(ctx, "HEAD~1", "HEAD", runner)
+	_, err := gitpkg.Changed(ctx, "", "HEAD~1", "HEAD", runner)
 	if err != nil {
 		t.Skip("no parent commit or git error, skipping real Changed test")
 	}

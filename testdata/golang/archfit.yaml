@@ -7,10 +7,12 @@ modules:
     paths:
       - pkg/b/**
     public:
-      - pkg/b/b.go
+      - pkg/b/**
     internal:
       - pkg/b/internal/**
 rules:
   - id: no_internal_access
-    type: public_api_only
+    type: forbidden_dependency
     gate: fail
+    from: pkg/a/**
+    to: pkg/b/internal/**

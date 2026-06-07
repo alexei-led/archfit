@@ -478,17 +478,17 @@ The engine declares the port interfaces it consumes (design principle: consumer 
 
 ### Task 20: Final acceptance verification
 
-- [ ] Run `go build ./...` — no errors
-- [ ] Run `go test ./...` — all pass
-- [ ] Run `go vet ./...` — clean
-- [ ] Run `gofmt -l .` — no files reported
-- [ ] Run `arch_test.go` gate explicitly — green
-- [ ] Run double-run golden test — byte-identical output
-- [ ] Manual smoke: `archfit check` on `testdata/fixture/` with violation → exit 1 + JSON finding; remove violation → exit 0
-- [ ] Verify finding JSON contains: `id`, `kind: "gate"`, `rule_id`, `status: "new"`, `severity`, `confidence`, `edge.from.module`, `edge.from.path`, `edge.to.module`, `edge.to.path`, `matched_by`, `why`, `constraint`
-- [ ] Verify metric JSON contains: `name`, `value`, `display`, `band`, `confidence`, `metric_version`, `mode`, `definition`, `delta`
-- [ ] Verify top-level JSON: `schema_version: "archfit.diagnostic.v1"`, `agent_tasks` serializes as `[]` (not `null`)
-- [ ] Verify console output includes verdict + pointer to detail
+- [x] Run `go build ./...` — no errors
+- [x] Run `go test ./...` — all pass
+- [x] Run `go vet ./...` — clean
+- [x] Run `gofmt -l .` — no files reported
+- [x] Run `arch_test.go` gate explicitly — green
+- [x] Run double-run golden test — byte-identical output
+- [x] Manual smoke: `archfit check` on `testdata/fixture/` with violation → exit 1 + JSON finding; remove violation → exit 0
+- [x] Verify finding JSON contains: `id`, `kind: "gate"`, `rule_id`, `status: "new"`, `severity`, `confidence`, `edge.from.module`, `edge.from.path`, `edge.to.module`, `edge.to.path`, `matched_by`, `why`, `constraint`
+- [x] Verify metric JSON contains: `name`, `value`, `display`, `band`, `confidence`, `metric_version`, `mode`, `definition`, `delta`
+- [x] Verify top-level JSON: `schema_version: "archfit.diagnostic.v1"`, `agent_tasks` serializes as `[]` (not `null`)
+- [x] Verify console output includes verdict + pointer to detail
 
 ---
 

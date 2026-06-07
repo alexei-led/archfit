@@ -46,7 +46,7 @@ type Scope struct {
 // error (exit 3). If cfg.Full is true the result has Mode=full and no Changed
 // files. Otherwise it calls git.HeadRef and git.Changed to populate the delta.
 func Resolve(ctx context.Context, cfg config.ScopeConfig, runner toolrun.Runner) (Scope, error) {
-	root, err := git.RepoRoot(ctx, runner)
+	root, err := git.RepoRoot(ctx, cfg.WorkDir, runner)
 	if err != nil {
 		return Scope{}, fmt.Errorf("scope: resolve repo root: %w", err)
 	}
@@ -58,12 +58,12 @@ func Resolve(ctx context.Context, cfg config.ScopeConfig, runner toolrun.Runner)
 		}, nil
 	}
 
-	head, err := git.HeadRef(ctx, runner)
+	head, err := git.HeadRef(ctx, cfg.WorkDir, runner)
 	if err != nil {
 		return Scope{}, fmt.Errorf("scope: resolve HEAD: %w", err)
 	}
 
-	cs, err := git.Changed(ctx, cfg.Base, head, runner)
+	cs, err := git.Changed(ctx, cfg.WorkDir, cfg.Base, head, runner)
 	if err != nil {
 		return Scope{}, fmt.Errorf("scope: resolve changed files: %w", err)
 	}

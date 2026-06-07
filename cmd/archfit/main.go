@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -112,6 +113,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	}
 
 	sc := cfg.ForScope()
+	sc.WorkDir = filepath.Dir(c.Config)
 	sc.Base = c.Base
 	sc.Full = c.Full
 	s, err := scope.Resolve(ctx, sc, deps.Runner)
@@ -184,6 +186,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	}
 
 	sc := cfg.ForScope()
+	sc.WorkDir = filepath.Dir(c.Config)
 	sc.Base = c.Base
 	sc.Full = c.Full
 	s, err := scope.Resolve(ctx, sc, deps.Runner)
@@ -253,6 +256,7 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 	}
 
 	sc := cfg.ForScope()
+	sc.WorkDir = filepath.Dir(c.Config)
 	sc.Full = true
 	s, err := scope.Resolve(ctx, sc, deps.Runner)
 	if err != nil {
