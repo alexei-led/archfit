@@ -290,12 +290,12 @@ Per design §3 note on single-impl interfaces: `HistoryProvider` is one implemen
 
 ### Task 10: `scope` — Scope type + resolution
 
-- [ ] Define `Scope` struct: `Base string`, `Head string`, `Changed []string` (sorted), `Root string` (repo root absolute path), `Mode ScopeMode` (delta/full)
-- [ ] Implement `scope.Resolve(ctx, cfg ScopeConfig, runner toolrun.Runner) (Scope, error)`:
+- [x] Define `Scope` struct: `Base string`, `Head string`, `Changed []string` (sorted), `Root string` (repo root absolute path), `Mode ScopeMode` (delta/full)
+- [x] Implement `scope.Resolve(ctx, cfg ScopeConfig, runner toolrun.Runner) (Scope, error)`:
   - full mode (`--full`): empty `Changed`, `Mode=full`
   - delta mode (`--base ref`): call `git.Changed(ctx, base, head, runner)`, populate `Changed`
   - detect repo root via `git.RepoRoot(ctx, runner)` (defined in Task 9)
-- [ ] Write tests: full scope has empty Changed; delta scope has sorted files; missing git → hard error
+- [x] Write tests: full scope has empty Changed; delta scope has sorted files; missing git → hard error
 
 ### Task 11: `extract/golang` — native Go extractor
 
