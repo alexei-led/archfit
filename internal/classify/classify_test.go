@@ -1,0 +1,297 @@
+package classify_test
+
+import (
+	"testing"
+
+	"github.com/alexei-led/archfit/internal/classify"
+	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/model/coupling"
+	"github.com/alexei-led/archfit/internal/model/graph"
+)
+
+const (
+	ownerTeamX  = "team-x"
+	ownerTeamY  = "team-y"
+	deployUnitA = "svc-a"
+	deployUnitB = "svc-b"
+)
+
+// makeGraph builds a minimal sealed Graph from a slice of edges.
+func makeGraph(edges []graph.Edge) *graph.Graph {
+	// Collect all unique node IDs referenced by the edges.
+	seen := make(map[string]bool)
+	var nodes []graph.Node
+	for _, e := range edges {
+		for _, id := range []string{e.From, e.To} {
+			if !seen[id] {
+				seen[id] = true
+				// Parse "kind:path" to build the Node.
+				kind, path := graph.NodeKindFile, id
+				for _, k := range []graph.NodeKind{
+					graph.NodeKindFile, graph.NodeKindPackage,
+					graph.NodeKindModule, graph.NodeKindRepo, graph.NodeKindExternal,
+				} {
+					prefix := string(k) + ":"
+					if len(id) > len(prefix) && id[:len(prefix)] == prefix {
+						kind = k
+						path = id[len(prefix):]
+						break
+					}
+				}
+				nodes = append(nodes, graph.Node{Kind: kind, Path: path})
+			}
+		}
+	}
+	return graph.Build([]graph.Facts{{
+		Nodes:    nodes,
+		Edges:    edges,
+		Language: "go",
+	}})
+}
+
+// edgeKey returns the coupling.Index key for an edge.
+func edgeKey(e graph.Edge) string {
+	return e.From + "\x00" + e.To + "\x00" + string(e.Kind)
+}
+
+func TestRun(t *testing.T) {
+	// Shared module config used by most sub-tests.
+	//   module "a": paths=["services/a/**"], public=["services/a/api/**"], internal=["services/a/internal/**"]
+	//               owner="team-x", deploy_unit="svc-a", subdomain="core"
+	//   module "b": paths=["services/b/**"], public=["services/b/api/**"], internal=["services/b/internal/**"]
+	//               owner="team-y", deploy_unit="svc-b", subdomain="supporting"
+	//   module "c": paths=["services/c/**"], public=["services/c/api/**"]
+	//               owner="team-x", deploy_unit="svc-a", subdomain="generic"
+	//   module "d": paths=["services/d/**"], public=["services/d/api/**"]
+	//               owner="team-x", deploy_unit="svc-a", subdomain=""  (unknown)
+	modules := map[string]config.ModuleDef{
+		"a": {
+			Paths:      []string{"services/a/**"},
+			Public:     []string{"services/a/api/**"},
+			Internal:   []string{"services/a/internal/**"},
+			Owner:      ownerTeamX,
+			DeployUnit: deployUnitA,
+			Subdomain:  "core",
+		},
+		"b": {
+			Paths:      []string{"services/b/**"},
+			Public:     []string{"services/b/api/**"},
+			Internal:   []string{"services/b/internal/**"},
+			Owner:      ownerTeamY,
+			DeployUnit: deployUnitB,
+			Subdomain:  "supporting",
+		},
+		"c": {
+			Paths:      []string{"services/c/**"},
+			Public:     []string{"services/c/api/**"},
+			Owner:      ownerTeamX,
+			DeployUnit: deployUnitA,
+			Subdomain:  "generic",
+		},
+		"d": {
+			Paths:      []string{"services/d/**"},
+			Public:     []string{"services/d/api/**"},
+			Owner:      ownerTeamX,
+			DeployUnit: deployUnitA,
+			Subdomain:  "",
+		},
+	}
+
+	cfg := config.ClassifyConfig{Modules: modules}
+
+	// Helper to build a simple imports edge between two file paths.
+	importEdge := func(from, to string) graph.Edge {
+		return graph.Edge{
+			From:       "file:" + from,
+			To:         "file:" + to,
+			Kind:       graph.EdgeKindImports,
+			Language:   "go",
+			Confidence: "high",
+		}
+	}
+
+	tests := []struct {
+		name     string
+		edge     graph.Edge
+		wantStr  coupling.Strength
+		wantDist coupling.Distance
+		wantVol  coupling.Volatility
+		wantExp  coupling.Explicitness
+	}{
+		{
+			name:     "contract edge — target matches public glob",
+			edge:     importEdge("services/a/impl.go", "services/b/api/client.go"),
+			wantStr:  coupling.StrengthContract,
+			wantDist: coupling.DistanceCrossDeployUnit, // different owner, different deploy_unit
+			wantVol:  coupling.VolatilityMedium,        // b.subdomain = "supporting"
+			wantExp:  coupling.ExplicitnessExplicit,
+		},
+		{
+			name:     "intrusive edge — target matches internal glob",
+			edge:     importEdge("services/a/impl.go", "services/b/internal/secret.go"),
+			wantStr:  coupling.StrengthIntrusive,
+			wantDist: coupling.DistanceCrossDeployUnit,
+			wantVol:  coupling.VolatilityMedium,
+			wantExp:  coupling.ExplicitnessImplicit,
+		},
+		{
+			name:     "unknown strength — target matches neither public nor internal",
+			edge:     importEdge("services/a/impl.go", "services/b/util/helper.go"),
+			wantStr:  coupling.StrengthUnknown,
+			wantDist: coupling.DistanceCrossDeployUnit,
+			wantVol:  coupling.VolatilityMedium,
+			wantExp:  coupling.ExplicitnessUnknown,
+		},
+		{
+			name:     "same-module edge — distance same_module",
+			edge:     importEdge("services/a/x.go", "services/a/api/types.go"),
+			wantStr:  coupling.StrengthContract, // a.public matches services/a/api/**
+			wantDist: coupling.DistanceSameModule,
+			wantVol:  coupling.VolatilityHigh, // a.subdomain = "core"
+			wantExp:  coupling.ExplicitnessExplicit,
+		},
+		{
+			name:     "cross-module same-owner — different module, same owner",
+			edge:     importEdge("services/a/impl.go", "services/c/api/client.go"),
+			wantStr:  coupling.StrengthContract,
+			wantDist: coupling.DistanceCrossModuleSameOwner, // both owner=team-x
+			wantVol:  coupling.VolatilityLow,                // c.subdomain = "generic"
+			wantExp:  coupling.ExplicitnessExplicit,
+		},
+		{
+			name:     "cross-module different owner same deploy-unit — a and d",
+			edge:     importEdge("services/a/impl.go", "services/d/api/types.go"),
+			wantStr:  coupling.StrengthContract,
+			wantDist: coupling.DistanceCrossModuleSameOwner, // both owner=team-x
+			wantVol:  coupling.VolatilityUnknown,            // d.subdomain = ""
+			wantExp:  coupling.ExplicitnessExplicit,
+		},
+		{
+			name:     "cross-deploy-unit — different owner, different deploy_unit",
+			edge:     importEdge("services/a/impl.go", "services/b/api/client.go"),
+			wantStr:  coupling.StrengthContract,
+			wantDist: coupling.DistanceCrossDeployUnit,
+			wantVol:  coupling.VolatilityMedium,
+			wantExp:  coupling.ExplicitnessExplicit,
+		},
+		{
+			name:     "unknown subdomain — volatility unknown",
+			edge:     importEdge("services/a/impl.go", "services/d/internal/impl.go"),
+			wantStr:  coupling.StrengthUnknown, // d has no internal globs defined
+			wantDist: coupling.DistanceCrossModuleSameOwner,
+			wantVol:  coupling.VolatilityUnknown,
+			wantExp:  coupling.ExplicitnessUnknown,
+		},
+		{
+			name:     "unresolvable from-path — distance unknown",
+			edge:     importEdge("external/foo.go", "services/b/api/client.go"),
+			wantStr:  coupling.StrengthContract,
+			wantDist: coupling.DistanceUnknown, // external/foo.go matches no module
+			wantVol:  coupling.VolatilityMedium,
+			wantExp:  coupling.ExplicitnessExplicit,
+		},
+		{
+			name:     "unresolvable to-path — strength and volatility unknown",
+			edge:     importEdge("services/a/impl.go", "external/pkg/foo.go"),
+			wantStr:  coupling.StrengthUnknown,
+			wantDist: coupling.DistanceUnknown,
+			wantVol:  coupling.VolatilityUnknown,
+			wantExp:  coupling.ExplicitnessUnknown,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := makeGraph([]graph.Edge{tc.edge})
+			idx := classify.Run(g, cfg)
+
+			key := edgeKey(tc.edge)
+			cl, ok := idx[key]
+			if !ok {
+				t.Fatalf("edge key %q not found in index", key)
+			}
+
+			if cl.Strength != tc.wantStr {
+				t.Errorf("Strength = %q, want %q", cl.Strength, tc.wantStr)
+			}
+			if cl.Distance != tc.wantDist {
+				t.Errorf("Distance = %q, want %q", cl.Distance, tc.wantDist)
+			}
+			if cl.Volatility != tc.wantVol {
+				t.Errorf("Volatility = %q, want %q", cl.Volatility, tc.wantVol)
+			}
+			if cl.Explicitness != tc.wantExp {
+				t.Errorf("Explicitness = %q, want %q", cl.Explicitness, tc.wantExp)
+			}
+		})
+	}
+}
+
+// TestRun_EmptyGraph verifies that Run on an empty graph returns an empty index.
+func TestRun_EmptyGraph(t *testing.T) {
+	g := graph.Build(nil)
+	cfg := config.ClassifyConfig{Modules: map[string]config.ModuleDef{}}
+	idx := classify.Run(g, cfg)
+	if len(idx) != 0 {
+		t.Errorf("expected empty index for empty graph, got %d entries", len(idx))
+	}
+}
+
+// TestRun_IndexKeyMatchesEdge verifies that the index key format is consistent
+// with edge canonical key (from + NUL + to + NUL + kind).
+func TestRun_IndexKeyMatchesEdge(t *testing.T) {
+	modules := map[string]config.ModuleDef{
+		"a": {Paths: []string{"pkg/a/**"}, Public: []string{"pkg/a/api/**"}},
+		"b": {Paths: []string{"pkg/b/**"}, Public: []string{"pkg/b/api/**"}},
+	}
+	cfg := config.ClassifyConfig{Modules: modules}
+
+	e := graph.Edge{
+		From:     "file:pkg/a/main.go",
+		To:       "file:pkg/b/api/client.go",
+		Kind:     graph.EdgeKindImports,
+		Language: "go",
+	}
+	g := makeGraph([]graph.Edge{e})
+	idx := classify.Run(g, cfg)
+
+	want := e.From + "\x00" + e.To + "\x00" + string(e.Kind)
+	if _, ok := idx[want]; !ok {
+		t.Errorf("expected key %q in index; got keys: %v", want, keys(idx))
+	}
+}
+
+// TestRun_ExplicitVolatilityFieldOverridesSubdomain verifies that an explicit
+// Volatility field on a ModuleDef takes precedence over the Subdomain heuristic.
+func TestRun_ExplicitVolatilityFieldOverridesSubdomain(t *testing.T) {
+	modules := map[string]config.ModuleDef{
+		"a": {Paths: []string{"pkg/a/**"}},
+		"b": {Paths: []string{"pkg/b/**"}, Subdomain: "core", Volatility: "low"},
+	}
+	cfg := config.ClassifyConfig{Modules: modules}
+
+	e := graph.Edge{
+		From:     "file:pkg/a/x.go",
+		To:       "file:pkg/b/y.go",
+		Kind:     graph.EdgeKindImports,
+		Language: "go",
+	}
+	g := makeGraph([]graph.Edge{e})
+	idx := classify.Run(g, cfg)
+
+	key := edgeKey(e)
+	cl := idx[key]
+	// Volatility field "low" should override subdomain "core" (which would give high).
+	if cl.Volatility != coupling.VolatilityLow {
+		t.Errorf("Volatility = %q, want %q (explicit field should override subdomain)", cl.Volatility, coupling.VolatilityLow)
+	}
+}
+
+// keys returns all keys of the index as a slice (for error messages).
+func keys(idx coupling.Index) []string {
+	ks := make([]string, 0, len(idx))
+	for k := range idx {
+		ks = append(ks, k)
+	}
+	return ks
+}

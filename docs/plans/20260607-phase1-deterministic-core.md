@@ -364,13 +364,13 @@ Out-of-process adapter; bundles a PEP 723 grimp helper (`go:embed`). Takes a `to
 
 Phase 1 needs enough classification to drive the unbalanced-edge metric: `contract` vs `intrusive` strength (high-confidence), and `distance` from module path + owner + deploy_unit. Full explicitness/connascence/severity tables are Phase 2.
 
-- [ ] Implement `classify.Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index`:
+- [x] Implement `classify.Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index`:
   - for each cross-boundary edge: determine `Strength` (contract if target path matches a configured `public` glob; intrusive if target matches an `internal` glob; model/functional start as `unknown`)
   - determine `Distance` from module ownership (same_module / cross_module_same_owner / cross_module_different_owner / cross_deploy_unit) using `ModuleMap` + `owner` + `deploy_unit` fields
   - determine `Volatility` from `subdomain` (core→high, supporting→low/medium, generic→low, unknown→unknown)
   - `Explicitness`: explicit if strength=contract; implicit if strength=intrusive; unknown otherwise (Phase 2 fills this out)
   - return index: edge canonical key → `Classification`
-- [ ] Write table-driven tests: contract edge has correct strength; intrusive edge; same-module edge distance; cross-deploy-unit distance; unknown subdomain → unknown volatility
+- [x] Write table-driven tests: contract edge has correct strength; intrusive edge; same-module edge distance; cross-deploy-unit distance; unknown subdomain → unknown volatility
 
 ### Task 13: `rules` — Rule interface + built-in Phase 1 rules
 
