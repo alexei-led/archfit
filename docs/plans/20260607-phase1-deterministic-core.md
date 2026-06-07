@@ -416,7 +416,7 @@ Per design §3: `Metric` is an interface (many impls). Config bound at construct
 
 The engine declares the port interfaces it consumes (design principle: consumer defines the smallest interface). Adapter packages return concrete types that satisfy these interfaces; the engine imports only `engine`-declared interfaces, not adapter packages — the arch_test gate enforces this.
 
-- [ ] Declare port interfaces in `internal/engine/ports.go`
+- [x] Declare port interfaces in `internal/engine/ports.go`
 
   ```go
   type Extractor interface {
@@ -430,8 +430,8 @@ The engine declares the port interfaces it consumes (design principle: consumer 
   // Rule and Metric interfaces live in rules/ and metrics/ respectively (many impls defined there).
   ```
 
-- [ ] Define `Mode` struct: `Base string`, `Head string`, `Full bool`, `Advisory bool`, `ReportOnly bool`, `Formats []string`
-- [ ] Implement `engine.Run(ctx, mode Mode, s scope.Scope, classifyCfg config.ClassifyConfig, exceptions config.ExceptionSet, extractors []Extractor, rules []rules.Rule, ms []metrics.Metric, renderers []Renderer, base baseline.Baseline, now time.Time) (diagnostic.Diagnostic, error)`:
+- [x] Define `Mode` struct: `Base string`, `Head string`, `Full bool`, `Advisory bool`, `ReportOnly bool`, `Formats []string`
+- [x] Implement `engine.Run(ctx, mode Mode, s scope.Scope, classifyCfg config.ClassifyConfig, exceptions config.ExceptionSet, extractors []Extractor, rules []rules.Rule, ms []metrics.Metric, renderers []Renderer, base baseline.Baseline, now time.Time) (diagnostic.Diagnostic, error)`:
   1. run the applicable language extractors (sequential for Phase 1), merge their `Facts` **and coverage records**, call `graph.Build`
   2. call `classify.Run(g, classifyCfg)` → `coupling.Index`
   3. run rules → raw findings
@@ -440,9 +440,9 @@ The engine declares the port interfaces it consumes (design principle: consumer 
   6. assemble `Diagnostic`: **resolve each finding's `EdgeEvidence` `{module, path}` from the graph node IDs via `ModuleMap`** (the graph `Edge` carries only `kind:path`); join severity onto findings from `coupling.Index`; set `agent_tasks` to an **empty typed slice** (Phase 1 emits no content); fill `Summary`; compute `computeVerdict(gateFindings, metricResults)`
   7. run renderers
   8. return `(Diagnostic, nil)` on success; `(Diagnostic, error)` for hard errors (exit 3 cases)
-- [ ] Implement `computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult) diagnostic.Verdict` — unexported; gate findings with status `new` **or `expired_exception`** on a `gate: fail` rule → `fail` (exit 1); metric regressions outside threshold → `warn` (exit 2); clean → `pass` (exit 0). A `--report` run downgrades metric regressions to non-blocking (gate rules still fail).
-- [ ] Add `//go:generate moq -out extractor_moq.go . Extractor` in `engine` (boundary mock, Task T3)
-- [ ] Write integration tests: mock the **`Extractor`** boundary (`&ExtractorMock{ExtractFunc: ...}` returning canned `Facts`); use **real** `rules`, `metrics`, and `jsonout` on the canned graph (don't mock pure stages); assert gate finding → verdict=fail (exit 1); clean run → verdict=pass (exit 0)
+- [x] Implement `computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult) diagnostic.Verdict` — unexported; gate findings with status `new` **or `expired_exception`** on a `gate: fail` rule → `fail` (exit 1); metric regressions outside threshold → `warn` (exit 2); clean → `pass` (exit 0). A `--report` run downgrades metric regressions to non-blocking (gate rules still fail).
+- [x] Add `//go:generate moq -out extractor_moq.go . Extractor` in `engine` (boundary mock, Task T3)
+- [x] Write integration tests: mock the **`Extractor`** boundary (`&ExtractorMock{ExtractFunc: ...}` returning canned `Facts`); use **real** `rules`, `metrics`, and `jsonout` on the canned graph (don't mock pure stages); assert gate finding → verdict=fail (exit 1); clean run → verdict=pass (exit 0)
 
 ### Task 17: `output/jsonout` and `output/console` — Renderers
 
