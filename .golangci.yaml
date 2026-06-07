@@ -1,0 +1,41 @@
+version: "2"
+linters:
+  default: standard
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - revive
+    - ineffassign
+    - unused
+    - gocritic
+    - gocyclo
+    - goconst
+    - gosec
+    - prealloc
+    - unconvert
+    - unparam
+    - nolintlint
+    - misspell
+    - whitespace
+    - errorlint
+    - perfsprint
+    - usestdlibvars
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/alexei-led/archfit
+issues:
+  exclude-dirs:
+    - mocks
+    - testdata
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - funlen
+        - dupl
+        - gosec

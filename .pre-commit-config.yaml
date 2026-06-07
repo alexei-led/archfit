@@ -1,0 +1,30 @@
+---
+repos:
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+      - id: go-mod-tidy
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args:
+          - --maxkb=1024
+  - repo: local
+    hooks:
+      - id: sign-commit
+        name: sign-commit
+        language: system
+        entry: |
+          bash -c 'if ! git log --format="%G?" -1 2>/dev/null \
+          | grep -q "^[GU]$"; then \
+          echo "Commit signing required. Run: git config commit.gpgsign true"; \
+          fi'
+        stages:
+          - commit
+        pass_filenames: false

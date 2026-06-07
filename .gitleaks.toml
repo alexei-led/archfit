@@ -1,0 +1,27 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "project allowlist"
+paths = [".gitignore", ".gitleaks.toml"]
+
+[[rules]]
+description = "env files"
+id = "env-files"
+path = '''(?i)(\.env$|\.env\.)'''
+regexes = [""]
+tags = ["file"]
+
+[[rules]]
+description = "credential-named files"
+id = "credential-files"
+path = '''(?i)(credential|credentials|token|secret|password|passwd|auth|api.?key|private.?key)'''
+regexes = [""]
+tags = ["file"]
+
+[[rules]]
+description = "key/cert files"
+id = "key-cert-files"
+path = '''(?i)\.(pem|key|p12|pfx|jks|keystore)$'''
+regexes = [""]
+tags = ["file"]
