@@ -205,13 +205,13 @@ Do not reintroduce without a concrete need:
 
 Implements the central contract. Everything else depends on this. Sealed constructor enforces determinism.
 
-- [ ] Define `Node` struct: `Kind NodeKind` (repo/module/package/file/external), `Path string` (repo-relative). **Node identity is `kind:path`** (e.g. `file:services/a/x.go`, `module:a`) — matches the spec §7 edge endpoints (`"file:..."`) and the design §7 canonical key `type:path`.
-- [ ] Define `Edge` struct: `From, To string` (node IDs, `kind:path`), `Kind EdgeKind` (belongs_to/imports/depends_on/exposes/uses_internal), `Language string`, `Confidence string`, `Locations []Location`. JSON tags per spec §7: `from`, `to`, `kind`, `language`, `confidence`, `locations`.
-- [ ] Define `Location` struct: `File string`, `Line int`
-- [ ] Define `Facts` struct: raw extractor output (nodes + edges + unresolved counts) before sealing
-- [ ] Implement `graph.Build(facts []Facts) *Graph` — the sealed constructor: dedup edges by canonical key `(from, to, kind)`, choose highest-priority source per language, sort nodes by `type:path`, sort edges by `(from, to, kind, firstLocation)`, freeze (no exported mutability)
-- [ ] `Graph` exposes read-only accessors: `Nodes() []Node`, `Edges() []Edge`, `EdgesFrom(path string) []Edge`, `EdgesTo(path string) []Edge`
-- [ ] Write table-driven tests: dedup by canonical key, sort is deterministic, no mutation after build, multi-source priority
+- [x] Define `Node` struct: `Kind NodeKind` (repo/module/package/file/external), `Path string` (repo-relative). **Node identity is `kind:path`** (e.g. `file:services/a/x.go`, `module:a`) — matches the spec §7 edge endpoints (`"file:..."`) and the design §7 canonical key `type:path`.
+- [x] Define `Edge` struct: `From, To string` (node IDs, `kind:path`), `Kind EdgeKind` (belongs_to/imports/depends_on/exposes/uses_internal), `Language string`, `Confidence string`, `Locations []Location`. JSON tags per spec §7: `from`, `to`, `kind`, `language`, `confidence`, `locations`.
+- [x] Define `Location` struct: `File string`, `Line int`
+- [x] Define `Facts` struct: raw extractor output (nodes + edges + unresolved counts) before sealing
+- [x] Implement `graph.Build(facts []Facts) *Graph` — the sealed constructor: dedup edges by canonical key `(from, to, kind)`, choose highest-priority source per language, sort nodes by `type:path`, sort edges by `(from, to, kind, firstLocation)`, freeze (no exported mutability)
+- [x] `Graph` exposes read-only accessors: `Nodes() []Node`, `Edges() []Edge`, `EdgesFrom(path string) []Edge`, `EdgesTo(path string) []Edge`
+- [x] Write table-driven tests: dedup by canonical key, sort is deterministic, no mutation after build, multi-source priority
 
 ### Task 3: `model/finding` and `model/coupling` — sealed
 
