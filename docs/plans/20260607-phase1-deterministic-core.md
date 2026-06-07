@@ -281,12 +281,12 @@ Add this early — it is the structural enforcement for ring 2 (core must not di
 
 Per design §3 note on single-impl interfaces: `HistoryProvider` is one implementation so expose it as plain functions in the `history/git` package. The engine and `scope` import `history/git` directly. Each function takes a `toolrun.Runner` (the interface from Task 8) so tests pass the generated `toolrun` mock.
 
-- [ ] Implement `git.Changed(ctx, base, head string, runner toolrun.Runner) (ChangeSet, error)` — runs `git diff --name-only base..head`, returns sorted file list
-- [ ] Define `ChangeSet` struct: `Files []string`, `Base string`, `Head string`
-- [ ] Implement `git.HeadRef(ctx, runner toolrun.Runner) (string, error)` — runs `git rev-parse HEAD`
-- [ ] Implement `git.RepoRoot(ctx, runner toolrun.Runner) (string, error)` — runs `git rev-parse --show-toplevel`
-- [ ] Implement `git.Churn(ctx, runner toolrun.Runner) (ChurnStats, Coverage, error)` — stub returning empty + coverage record for Phase 1
-- [ ] Write tests: a real temp git repo (`git init` in `$TMPDIR`) for end-to-end; plus the generated `&toolrun.RunnerMock{RunFunc: ...}` for controlled stdout/exit — Changed returns expected files; HeadRef returns a SHA
+- [x] Implement `git.Changed(ctx, base, head string, runner toolrun.Runner) (ChangeSet, error)` — runs `git diff --name-only base..head`, returns sorted file list
+- [x] Define `ChangeSet` struct: `Files []string`, `Base string`, `Head string`
+- [x] Implement `git.HeadRef(ctx, runner toolrun.Runner) (string, error)` — runs `git rev-parse HEAD`
+- [x] Implement `git.RepoRoot(ctx, runner toolrun.Runner) (string, error)` — runs `git rev-parse --show-toplevel`
+- [x] Implement `git.Churn(ctx, runner toolrun.Runner) (ChurnStats, Coverage, error)` — stub returning empty + coverage record for Phase 1
+- [x] Write tests: a real temp git repo (`git init` in `$TMPDIR`) for end-to-end; plus the generated `&toolrun.RunnerMock{RunFunc: ...}` for controlled stdout/exit — Changed returns expected files; HeadRef returns a SHA
 
 ### Task 10: `scope` — Scope type + resolution
 
