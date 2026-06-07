@@ -472,9 +472,9 @@ The engine declares the port interfaces it consumes (design principle: consumer 
 
 ### Task 19: Double-run golden test (CI gate 2)
 
-- [ ] Create `internal/engine/golden_test.go`: run `engine.Run` twice with identical inputs against `testdata/fixture/` → compare JSON body bytes (excluding run metadata envelope); fixture is created in Task 18
-- [ ] Assert byte-identical output on both runs
-- [ ] This is a CI-mandatory test; add it to the Makefile `test` target
+- [x] Create `internal/engine/golden_test.go`: run `engine.Run` twice with identical inputs against `testdata/fixture/` → compare JSON body bytes (excluding run metadata envelope); fixture is created in Task 18
+- [x] Assert byte-identical output on both runs
+- [x] This is a CI-mandatory test; add it to the Makefile `test` target
 
 ### Task 20: Final acceptance verification
 

@@ -1,0 +1,129 @@
+package engine_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"path/filepath"
+	"runtime"
+	"testing"
+	"time"
+
+	"github.com/alexei-led/archfit/internal/baseline"
+	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/engine"
+	goextract "github.com/alexei-led/archfit/internal/extract/golang"
+	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/rules"
+	"github.com/alexei-led/archfit/internal/scope"
+)
+
+// goldenFixtureRoot returns the absolute path to testdata/golang, which contains
+// real .go files that go/packages can load (go/packages shells out to go list).
+func goldenFixtureRoot(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	// file is .../internal/engine/golden_test.go → go up two dirs to repo root
+	root := filepath.Join(filepath.Dir(file), "..", "..", "testdata", "golang")
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		t.Fatalf("abs path: %v", err)
+	}
+	return abs
+}
+
+// goldenConfig builds a ClassifyConfig, rules slice, and metrics slice that
+// match the testdata/golang fixture (two modules a and b, forbidden dependency
+// from a into b's internal package).
+func goldenConfig() (config.ClassifyConfig, []rules.Rule, []metrics.Metric) {
+	modules := map[string]config.ModuleDef{
+		"a": {
+			Paths:    []string{"pkg/a/**"},
+			Public:   []string{"pkg/a/**"},
+			Internal: []string{},
+		},
+		"b": {
+			Paths:    []string{"pkg/b/**"},
+			Public:   []string{"pkg/b/**"},
+			Internal: []string{"pkg/b/internal/**"},
+		},
+	}
+
+	cfg := config.Config{
+		Version: 1,
+		Modules: modules,
+		Rules: []config.RuleDef{
+			{
+				ID:   "no_internal_access",
+				Type: "forbidden_dependency",
+				Gate: "fail",
+				From: "pkg/a/**",
+				To:   "pkg/b/internal/**",
+			},
+		},
+	}
+
+	classifyCfg := cfg.ForClassify()
+	rs := rules.New(cfg.ForRules())
+	ms := metrics.New(cfg)
+	return classifyCfg, rs, ms
+}
+
+// TestGolden_DoubleRun runs engine.Run twice with identical inputs against the
+// testdata/golang fixture and asserts byte-identical JSON-encoded output.
+// This is CI gate 2: determinism of the full pipeline.
+func TestGolden_DoubleRun(t *testing.T) {
+	fixtureRoot := goldenFixtureRoot(t)
+
+	classifyCfg, rs, ms := goldenConfig()
+
+	extractor := goextract.New(config.ExtractConfig{})
+	base := baseline.Baseline{SchemaVersion: baseline.SchemaVersion}
+	// Fixed timestamp — any wall-clock source would break determinism.
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	s := scope.Scope{Root: fixtureRoot, Mode: scope.ModeFull}
+
+	runOnce := func() []byte {
+		t.Helper()
+		diag, err := engine.Run(
+			context.Background(),
+			engine.Mode{Full: true},
+			s,
+			classifyCfg,
+			config.ExceptionSet{},
+			[]engine.Extractor{extractor},
+			rs,
+			ms,
+			nil, // no renderers — determinism only
+			base,
+			now,
+		)
+		if err != nil {
+			t.Fatalf("engine.Run: %v", err)
+		}
+		var buf bytes.Buffer
+		if encErr := json.NewEncoder(&buf).Encode(diag); encErr != nil {
+			t.Fatalf("encode: %v", encErr)
+		}
+		return buf.Bytes()
+	}
+
+	first := runOnce()
+	second := runOnce()
+
+	if !bytes.Equal(first, second) {
+		t.Errorf("double-run outputs differ:\nfirst:  %s\nsecond: %s", first, second)
+	}
+
+	// Sanity check: the output is non-empty valid JSON.
+	if len(first) == 0 {
+		t.Error("output is empty")
+	}
+	var check map[string]any
+	if err := json.Unmarshal(first, &check); err != nil {
+		t.Errorf("output is not valid JSON: %v", err)
+	}
+}
