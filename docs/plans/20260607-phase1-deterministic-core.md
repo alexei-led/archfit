@@ -247,17 +247,17 @@ Add this early — it is the structural enforcement for ring 2 (core must not di
 
 ### Task 6: `config` — Config struct, views, Load
 
-- [ ] Define `Config` struct covering Phase 1 fields: `Version int`, `Modules map[string]ModuleDef`, `Layers []string`, `Rules []RuleDef`, `Exclusions []string`, `Tools ToolsConfig`, `Metrics MetricsConfig`, `Exceptions []ExceptionDef`, `MapReview MapReviewConfig`, `Outputs OutputsConfig`
-- [ ] Define `ModuleDef`: `Paths []string`, `Public []string`, `Internal []string`, `Layer string`, `Subdomain string`, `Volatility string`, `Owner string`, `DeployUnit string`, `ReviewedAt string`, `ReviewedBy string`
-- [ ] Define `RuleDef`: `ID string`, `Type string`, `Gate string`, `From string`, `To string`, `FromLayer string`, `ToLayer string`
-- [ ] Define `ExceptionDef`: `Rule string`, `From string`, `To string`, `Reason string`, `ApprovedBy string`, `Expires string`
-- [ ] Define view types: `ScopeConfig`, `ExtractConfig`, `ClassifyConfig`, `RuleConfig`, `MetricConfig`, `ExceptionSet`, `MapReviewConfig`, `OutputConfig` (each is a narrow projection of `Config`)
-- [ ] **`ExtractConfig` is per-language** (built by `ForExtract(lang)`): common `Src`/`Paths`/`Exclusions`/`Internal` globs + `Mode` (`auto`|`on`|`off`, from the `Tools` map) + language settings — **TS:** `TSConfig` (tsconfig path); **Python:** `PyPackage` (top-level package) + project root; **Go:** none. `Tools` maps tool name → `{enabled: true|false|auto}` (spec §6).
-- [ ] Add `ModuleMap` sub-view with `ModuleFor(path string) (string, bool)` using glob matching (`doublestar/v4`)
-- [ ] Add projection methods on `Config`: `ForScope()`, `ForExtract(lang)`, `ForClassify()`, `ForRules()`, `ForMetric(name)`, `ForStatus()`, `ForOutput()`
-- [ ] Implement `config.Load(ctx, path string) (Config, error)` using `github.com/goccy/go-yaml` with `yaml.NewDecoder(r, yaml.DisallowUnknownField())` (strict: reject unknown keys with `[line:col]` errors); validate required fields; return descriptive errors. **Do NOT use `gopkg.in/yaml.v3` — it is archived (Phase 0).**
-- [ ] Add `github.com/bmatcuk/doublestar/v4` and `github.com/goccy/go-yaml` dependencies
-- [ ] Write table-driven tests: valid config loads; missing required field errors; `ModuleFor` glob matching; view projections contain only expected fields
+- [x] Define `Config` struct covering Phase 1 fields: `Version int`, `Modules map[string]ModuleDef`, `Layers []string`, `Rules []RuleDef`, `Exclusions []string`, `Tools ToolsConfig`, `Metrics MetricsConfig`, `Exceptions []ExceptionDef`, `MapReview MapReviewConfig`, `Outputs OutputsConfig`
+- [x] Define `ModuleDef`: `Paths []string`, `Public []string`, `Internal []string`, `Layer string`, `Subdomain string`, `Volatility string`, `Owner string`, `DeployUnit string`, `ReviewedAt string`, `ReviewedBy string`
+- [x] Define `RuleDef`: `ID string`, `Type string`, `Gate string`, `From string`, `To string`, `FromLayer string`, `ToLayer string`
+- [x] Define `ExceptionDef`: `Rule string`, `From string`, `To string`, `Reason string`, `ApprovedBy string`, `Expires string`
+- [x] Define view types: `ScopeConfig`, `ExtractConfig`, `ClassifyConfig`, `RuleConfig`, `MetricConfig`, `ExceptionSet`, `MapReviewConfig`, `OutputConfig` (each is a narrow projection of `Config`)
+- [x] **`ExtractConfig` is per-language** (built by `ForExtract(lang)`): common `Src`/`Paths`/`Exclusions`/`Internal` globs + `Mode` (`auto`|`on`|`off`, from the `Tools` map) + language settings — **TS:** `TSConfig` (tsconfig path); **Python:** `PyPackage` (top-level package) + project root; **Go:** none. `Tools` maps tool name → `{enabled: true|false|auto}` (spec §6).
+- [x] Add `ModuleMap` sub-view with `ModuleFor(path string) (string, bool)` using glob matching (`doublestar/v4`)
+- [x] Add projection methods on `Config`: `ForScope()`, `ForExtract(lang)`, `ForClassify()`, `ForRules()`, `ForMetric(name)`, `ForStatus()`, `ForOutput()`
+- [x] Implement `config.Load(ctx, path string) (Config, error)` using `github.com/goccy/go-yaml` with `yaml.NewDecoder(r, yaml.DisallowUnknownField())` (strict: reject unknown keys with `[line:col]` errors); validate required fields; return descriptive errors. **Do NOT use `gopkg.in/yaml.v3` — it is archived (Phase 0).**
+- [x] Add `github.com/bmatcuk/doublestar/v4` and `github.com/goccy/go-yaml` dependencies
+- [x] Write table-driven tests: valid config loads; missing required field errors; `ModuleFor` glob matching; view projections contain only expected fields
 
 ### Task 7: `baseline` — Baseline types, Load/Save, status matching
 

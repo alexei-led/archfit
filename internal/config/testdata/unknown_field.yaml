@@ -1,0 +1,6 @@
+version: 1
+modules:
+  mymod:
+    paths:
+      - pkg/**
+    unknown_key: this should be rejected
