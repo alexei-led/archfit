@@ -446,10 +446,10 @@ The engine declares the port interfaces it consumes (design principle: consumer 
 
 ### Task 17: `output/jsonout` and `output/console` — Renderers
 
-- [ ] `jsonout.New()` and `console.New()` return values whose types satisfy `engine.Renderer` (the interface declared in Task 16); no separate `Renderer` interface definition needed here
-- [ ] Implement `jsonout.New()` — marshals `Diagnostic` as JSON with `schema_version: "archfit.diagnostic.v1"`; no wall-clock in the deterministic body
-- [ ] Implement `console.New()` — prints a short summary: verdict line + finding count + exit-code hint + pointer to JSON for full detail
-- [ ] Write tests: JSON output is valid JSON; schema_version field present; console output contains verdict string
+- [x] `jsonout.New()` and `console.New()` return values whose types satisfy `engine.Renderer` (the interface declared in Task 16); no separate `Renderer` interface definition needed here
+- [x] Implement `jsonout.New()` — marshals `Diagnostic` as JSON with `schema_version: "archfit.diagnostic.v1"`; no wall-clock in the deterministic body
+- [x] Implement `console.New()` — prints a short summary: verdict line + finding count + exit-code hint + pointer to JSON for full detail
+- [x] Write tests: JSON output is valid JSON; schema_version field present; console output contains verdict string
 
 ### Task 18: `cmd/archfit` — CLI wiring (kong) + integration fixture
 
