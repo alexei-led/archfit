@@ -402,15 +402,15 @@ Per design §3: `Rule` is an interface (many impls). Config bound at constructio
 
 Per design §3: `Metric` is an interface (many impls). Config bound at construction via `metrics.New`.
 
-- [ ] Define `Metric` interface: `Name() string`, `Version() string`, `Calculate(in MetricInput) MetricResult`. **Names/versions are the spec §10.4 strings** — `Name()` ∈ {`encapsulation`, `unbalanced_edge`, `cycle`, `coverage`}; `Version()` is `<name>.v1` (e.g. `encapsulation.v1`), emitted as the `metric_version` JSON field.
-- [ ] Define `MetricInput` struct: `Graph *graph.Graph`, `Classifications coupling.Index`, `Findings []finding.Finding` (status-tagged), `Baseline MetricSnapshot`
-- [ ] Implement the **band model** (spec §10.1) as a shared helper: value→band (`strong` 9.0–10.0, `serviceable` 7.0–8.9, `mixed` 5.0–6.9, `poor` 3.0–4.9, `critical` 0.0–2.9). **Confidence caps the band**: low confidence cannot report `strong`/`serviceable` — clamp the highest reportable band down.
-- [ ] Implement `EncapsulationMetric` (`encapsulation.v1`): `contract_cross_boundary_edges / all_cross_boundary_edges`; uses `coupling.Index` for strength; emits `value`, `display`, `band`, `confidence`, `mode`, `definition`, `delta` vs baseline
-- [ ] Implement `UnbalancedEdgeMetric` (`unbalanced_edge.v1`): count edges where `strength=intrusive AND distance>=cross_module_different_owner AND volatility=high`; report counts by status (new_high, baseline_high, excepted_high, expired)
-- [ ] Implement `CycleMetric` (`cycle.v1`): detect module-level cycles via DFS on the `Graph`; count new vs baseline. (Cycle gating is this metric's `gate: fail` config — there is no cycle rule.)
-- [ ] Implement `CoverageMetric` (`coverage.v1`): `extracted_files / applicable_files` from `Coverage` records passed in; confidence based on unresolved count
-- [ ] Implement `metrics.New(cfg config.Config) []Metric` using `cfg.ForMetric(name)` per metric
-- [ ] Write table-driven tests per metric: known inputs produce expected values; delta computed correctly; zero-denominator handled (encapsulation = 1.0 if no cross-boundary edges); cycle detection correct; **low confidence caps the band**
+- [x] Define `Metric` interface: `Name() string`, `Version() string`, `Calculate(in MetricInput) MetricResult`. **Names/versions are the spec §10.4 strings** — `Name()` ∈ {`encapsulation`, `unbalanced_edge`, `cycle`, `coverage`}; `Version()` is `<name>.v1` (e.g. `encapsulation.v1`), emitted as the `metric_version` JSON field.
+- [x] Define `MetricInput` struct: `Graph *graph.Graph`, `Classifications coupling.Index`, `Findings []finding.Finding` (status-tagged), `Baseline MetricSnapshot`
+- [x] Implement the **band model** (spec §10.1) as a shared helper: value→band (`strong` 9.0–10.0, `serviceable` 7.0–8.9, `mixed` 5.0–6.9, `poor` 3.0–4.9, `critical` 0.0–2.9). **Confidence caps the band**: low confidence cannot report `strong`/`serviceable` — clamp the highest reportable band down.
+- [x] Implement `EncapsulationMetric` (`encapsulation.v1`): `contract_cross_boundary_edges / all_cross_boundary_edges`; uses `coupling.Index` for strength; emits `value`, `display`, `band`, `confidence`, `mode`, `definition`, `delta` vs baseline
+- [x] Implement `UnbalancedEdgeMetric` (`unbalanced_edge.v1`): count edges where `strength=intrusive AND distance>=cross_module_different_owner AND volatility=high`; report counts by status (new_high, baseline_high, excepted_high, expired)
+- [x] Implement `CycleMetric` (`cycle.v1`): detect module-level cycles via DFS on the `Graph`; count new vs baseline. (Cycle gating is this metric's `gate: fail` config — there is no cycle rule.)
+- [x] Implement `CoverageMetric` (`coverage.v1`): `extracted_files / applicable_files` from `Coverage` records passed in; confidence based on unresolved count
+- [x] Implement `metrics.New(cfg config.Config) []Metric` using `cfg.ForMetric(name)` per metric
+- [x] Write table-driven tests per metric: known inputs produce expected values; delta computed correctly; zero-denominator handled (encapsulation = 1.0 if no cross-boundary edges); cycle detection correct; **low confidence caps the band**
 
 ### Task 16: `engine` — port interfaces + stage orchestrator
 
