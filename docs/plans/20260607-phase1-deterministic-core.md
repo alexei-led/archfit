@@ -225,14 +225,14 @@ Implements the central contract. Everything else depends on this. Sealed constru
 
 ### Task 4: `model/diagnostic` — Diagnostic, MetricResult, Verdict
 
-- [ ] Define `Verdict` type: `pass | fail | warn`
-- [ ] Define `MetricResult` struct with **exact spec §10 JSON tags**: `Name string` (`name`), `Value float64` (`value`), `Display string` (`display`), `Band string` (`band`), `Confidence string` (`confidence`), `Version string` (`metric_version` — e.g. `encapsulation.v1`), `Mode string` (`mode`), `Definition string` (`definition`), `Delta *float64` (`delta,omitempty`)
-- [ ] Define `MetricSnapshot` as `map[string]struct{ Value float64; Version string }`
-- [ ] Define `Summary` struct (spec §12): `GateFindings int` (`gate_findings`), `Warnings int` (`warnings`), `ExceptionsUsed int` (`exceptions_used`)
-- [ ] Define `Coverage` struct: `Tool string`, `Version string`, `FilesSeen int`, `FilesApplicable int`, `Unresolved int`, `Status string`
-- [ ] Define `AgentTask` struct (placeholder shape; **no content emitted in Phase 1**, see Non-Goals) so the field is a typed empty slice, not `[]any`
-- [ ] Define `Diagnostic` struct with **exact spec §12 JSON tags**: `SchemaVersion string` (`schema_version` = `archfit.diagnostic.v1`), `Verdict Verdict` (`verdict`), `Base string` (`base`), `Head string` (`head`), `Metrics []MetricResult` (`metrics`), `Findings []Finding` (`findings`), `AgentTasks []AgentTask` (`agent_tasks` — emitted `[]`), `ToolCoverage []Coverage` (`tool_coverage`), `Summary Summary` (`summary`)
-- [ ] Write tests: zero-value Diagnostic has expected schema version; JSON marshals with the exact spec field names; `agent_tasks` serializes as `[]` not `null`; verdict derivation
+- [x] Define `Verdict` type: `pass | fail | warn`
+- [x] Define `MetricResult` struct with **exact spec §10 JSON tags**: `Name string` (`name`), `Value float64` (`value`), `Display string` (`display`), `Band string` (`band`), `Confidence string` (`confidence`), `Version string` (`metric_version` — e.g. `encapsulation.v1`), `Mode string` (`mode`), `Definition string` (`definition`), `Delta *float64` (`delta,omitempty`)
+- [x] Define `MetricSnapshot` as `map[string]struct{ Value float64; Version string }`
+- [x] Define `Summary` struct (spec §12): `GateFindings int` (`gate_findings`), `Warnings int` (`warnings`), `ExceptionsUsed int` (`exceptions_used`)
+- [x] Define `Coverage` struct: `Tool string`, `Version string`, `FilesSeen int`, `FilesApplicable int`, `Unresolved int`, `Status string`
+- [x] Define `AgentTask` struct (placeholder shape; **no content emitted in Phase 1**, see Non-Goals) so the field is a typed empty slice, not `[]any`
+- [x] Define `Diagnostic` struct with **exact spec §12 JSON tags**: `SchemaVersion string` (`schema_version` = `archfit.diagnostic.v1`), `Verdict Verdict` (`verdict`), `Base string` (`base`), `Head string` (`head`), `Metrics []MetricResult` (`metrics`), `Findings []Finding` (`findings`), `AgentTasks []AgentTask` (`agent_tasks` — emitted `[]`), `ToolCoverage []Coverage` (`tool_coverage`), `Summary Summary` (`summary`)
+- [x] Write tests: zero-value Diagnostic has expected schema version; JSON marshals with the exact spec field names; `agent_tasks` serializes as `[]` not `null`; verdict derivation
 
 ### Task 5: `arch_test.go` — import gate (CI gate 1)
 
