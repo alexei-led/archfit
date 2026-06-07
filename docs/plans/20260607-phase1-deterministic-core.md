@@ -261,11 +261,11 @@ Add this early — it is the structural enforcement for ring 2 (core must not di
 
 ### Task 7: `baseline` — Baseline types, Load/Save, status matching
 
-- [ ] Define `Baseline` struct: `SchemaVersion string` ("archfit.baseline.v1"), `Accepted []AcceptedFinding`, `Metrics MetricSnapshot`
-- [ ] Define `AcceptedFinding` struct: `Fingerprint string`, `RuleID string`
-- [ ] Implement `baseline.Load(ctx, path string) (Baseline, error)`: returns empty `Baseline` (not error) if file absent; returns exit-3-style error on schema version mismatch
-- [ ] Implement `baseline.Save(ctx, path string, b Baseline) error`
-- [ ] Write tests: missing file → empty baseline; schema mismatch → error; round-trip Load/Save; fingerprint lookup
+- [x] Define `Baseline` struct: `SchemaVersion string` ("archfit.baseline.v1"), `Accepted []AcceptedFinding`, `Metrics MetricSnapshot`
+- [x] Define `AcceptedFinding` struct: `Fingerprint string`, `RuleID string`
+- [x] Implement `baseline.Load(ctx, path string) (Baseline, error)`: returns empty `Baseline` (not error) if file absent; returns exit-3-style error on schema version mismatch
+- [x] Implement `baseline.Save(ctx, path string, b Baseline) error`
+- [x] Write tests: missing file → empty baseline; schema mismatch → error; round-trip Load/Save; fingerprint lookup
 
 ### Task 8: `toolrun` — ToolRunner (subprocess choke point)
 
