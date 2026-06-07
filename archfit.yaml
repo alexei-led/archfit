@@ -1,0 +1,243 @@
+version: 1
+
+# Architecture layers — innermost to outermost.
+# forbidden_layer_direction fires when fromRank < toRank (inner imports outer).
+layers:
+  - model      # rank 0: pure value types, stdlib only
+  - support    # rank 1: config, baseline
+  - core       # rank 2: classify, rules, metrics, status
+  - engine     # rank 3: orchestration pipeline
+  - adapter    # rank 4: scope, toolrun, extractors, renderers, git
+  - cmd        # rank 5: composition root
+
+modules:
+  model:
+    paths:
+      - internal/model/**
+    # public = the package paths themselves (not file paths)
+    public:
+      - internal/model/graph
+      - internal/model/finding
+      - internal/model/coupling
+      - internal/model/diagnostic
+    layer: model
+    subdomain: core
+    volatility: low
+
+  config:
+    paths:
+      - internal/config/**
+    public:
+      - internal/config
+    layer: support
+    subdomain: supporting
+    volatility: medium
+
+  baseline:
+    paths:
+      - internal/baseline/**
+    public:
+      - internal/baseline
+    layer: support
+    subdomain: supporting
+    volatility: low
+
+  classify:
+    paths:
+      - internal/classify/**
+    public:
+      - internal/classify
+    layer: core
+    subdomain: core
+    volatility: medium
+
+  rules:
+    paths:
+      - internal/rules/**
+    public:
+      - internal/rules
+    layer: core
+    subdomain: core
+    volatility: medium
+
+  metrics:
+    paths:
+      - internal/metrics/**
+    public:
+      - internal/metrics
+    layer: core
+    subdomain: core
+    volatility: medium
+
+  status:
+    paths:
+      - internal/status/**
+    public:
+      - internal/status
+    layer: core
+    subdomain: core
+    volatility: low
+
+  engine:
+    paths:
+      - internal/engine/**
+    public:
+      - internal/engine
+    layer: engine
+    subdomain: core
+    volatility: medium
+
+  scope:
+    paths:
+      - internal/scope/**
+    public:
+      - internal/scope
+    layer: adapter
+    subdomain: supporting
+    volatility: low
+
+  toolrun:
+    paths:
+      - internal/toolrun/**
+    public:
+      - internal/toolrun
+    layer: adapter
+    subdomain: supporting
+    volatility: low
+
+  extract_go:
+    paths:
+      - internal/extract/golang/**
+    public:
+      - internal/extract/golang
+    layer: adapter
+    subdomain: supporting
+    volatility: medium
+
+  extract_ts:
+    paths:
+      - internal/extract/ts/**
+    public:
+      - internal/extract/ts
+    layer: adapter
+    subdomain: supporting
+    volatility: medium
+
+  extract_py:
+    paths:
+      - internal/extract/py/**
+    public:
+      - internal/extract/py
+    layer: adapter
+    subdomain: supporting
+    volatility: medium
+
+  history_git:
+    paths:
+      - internal/history/git/**
+    public:
+      - internal/history/git
+    layer: adapter
+    subdomain: supporting
+    volatility: low
+
+  output:
+    paths:
+      - internal/output/**
+    public:
+      - internal/output/jsonout
+      - internal/output/console
+    layer: adapter
+    subdomain: supporting
+    volatility: medium
+
+  cmd:
+    paths:
+      - cmd/**
+    public:
+      - cmd/archfit
+    layer: cmd
+    subdomain: supporting
+    volatility: high
+
+rules:
+  # Ring gate 1: core must not directly import the process boundary or extractors
+  - id: core_no_toolrun
+    type: forbidden_dependency
+    from: internal/classify/**
+    to: internal/toolrun
+    gate: fail
+  - id: rules_no_toolrun
+    type: forbidden_dependency
+    from: internal/rules/**
+    to: internal/toolrun
+    gate: fail
+  - id: metrics_no_toolrun
+    type: forbidden_dependency
+    from: internal/metrics/**
+    to: internal/toolrun
+    gate: fail
+  - id: status_no_toolrun
+    type: forbidden_dependency
+    from: internal/status/**
+    to: internal/toolrun
+    gate: fail
+  - id: core_no_extract
+    type: forbidden_dependency
+    from: internal/classify/**
+    to: internal/extract/**
+    gate: fail
+  - id: rules_no_extract
+    type: forbidden_dependency
+    from: internal/rules/**
+    to: internal/extract/**
+    gate: fail
+
+  # Ring gate 2: engine must not import adapters directly (uses ports/interfaces only)
+  - id: engine_no_extract
+    type: forbidden_dependency
+    from: internal/engine/**
+    to: internal/extract/**
+    gate: fail
+  - id: engine_no_toolrun
+    type: forbidden_dependency
+    from: internal/engine/**
+    to: internal/toolrun
+    gate: fail
+  - id: engine_no_history
+    type: forbidden_dependency
+    from: internal/engine/**
+    to: internal/history/**
+    gate: fail
+  - id: engine_no_output
+    type: forbidden_dependency
+    from: internal/engine/**
+    to: internal/output/**
+    gate: fail
+
+  # Ring gate 3: model packages are pure value types
+  - id: model_no_config
+    type: forbidden_dependency
+    from: internal/model/**
+    to: internal/config
+    gate: fail
+  - id: model_no_baseline
+    type: forbidden_dependency
+    from: internal/model/**
+    to: internal/baseline
+    gate: fail
+
+  # Layer direction — engine→scope is a known architectural tension:
+  # engine uses scope.Scope as a value type but scope lives at adapter layer.
+  # Flagged as warn to document this. Phase 2: move Scope to model.
+  - id: layer_inversion
+    type: forbidden_layer_direction
+    gate: warn
+
+tools:
+  go:
+    enabled: "on"
+  typescript:
+    enabled: "off"
+  python:
+    enabled: "off"
