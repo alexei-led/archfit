@@ -301,9 +301,9 @@ Per design §3 note on single-impl interfaces: `HistoryProvider` is one implemen
 
 Uses `golang.org/x/tools/go/packages`. No subprocess — in-process. Implements the `Extractor` interface declared in `engine` (see Task 16 note).
 
-- [ ] Implement `golang.New(cfg config.ExtractConfig) *GoExtractor` — constructor; `*GoExtractor` satisfies `engine.Extractor`
-- [ ] Implement `(*GoExtractor).Name() string` → `"go"`
-- [ ] Implement `(*GoExtractor).Extract(ctx, s scope.Scope) (graph.Facts, graph.Coverage, error)`:
+- [x] Implement `golang.New(cfg config.ExtractConfig) *GoExtractor` — constructor; `*GoExtractor` satisfies `engine.Extractor`
+- [x] Implement `(*GoExtractor).Name() string` → `"go"`
+- [x] Implement `(*GoExtractor).Extract(ctx, s scope.Scope) (graph.Facts, graph.Coverage, error)`:
   - load packages with the **Phase 0 LoadMode** `NeedName | NeedFiles | NeedImports | NeedSyntax | NeedTypes` (NOT `NeedModule`-only — that yields no positions; `Fset` requires `NeedTypes`)
   - read import positions from the **AST** (`pkg.Syntax` → `f.Imports` → `pkg.Fset.Position(imp.Pos())`), never from the `Imports` map
   - for each package: emit `file` nodes, `package` nodes, `module` node (IDs as `kind:path`)
@@ -313,8 +313,8 @@ Uses `golang.org/x/tools/go/packages`. No subprocess — in-process. Implements 
   - attach `language: "go"`, `confidence: "high"`, locations (file+line for import statement)
   - exclude paths matching `cfg.Exclusions`
   - emit `Coverage` record: files seen, packages loaded, unresolved imports
-- [ ] Add `golang.org/x/tools` dependency (already added for arch_test; confirm version ≥ v0.45.0)
-- [ ] Write table-driven tests against a **real `go.mod` module** under `testdata/` (`go/packages` shells out to real `go list` — it cannot be faked; use `Config.Overlay` only for synthetic-file cases):
+- [x] Add `golang.org/x/tools` dependency (already added for arch_test; confirm version ≥ v0.45.0)
+- [x] Write table-driven tests against a **real `go.mod` module** under `testdata/` (`go/packages` shells out to real `go list` — it cannot be faked; use `Config.Overlay` only for synthetic-file cases):
   - simple A imports B → edge present
   - `internal/` access → `uses_internal` edge
   - excluded path → no edge
