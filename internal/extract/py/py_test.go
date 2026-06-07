@@ -35,7 +35,7 @@ func TestExtract_Parse(t *testing.T) {
 
 	cfg := config.ExtractConfig{
 		PyPackage: testPkgName,
-		Internal:  []string{testPkgName + ".b._internal.**"},
+		Internal:  []string{testPkgName + "/b/_internal/**"},
 		Mode:      config.ModeAuto,
 	}
 	e := py.New(mock, cfg)

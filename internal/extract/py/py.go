@@ -260,9 +260,12 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 }
 
 // matchesInternal reports whether the dotted module name matches any internal glob.
+// Config globs use slash paths (e.g. "myapp/b/_internal/**"), so the dotted name
+// is converted to slash form before matching.
 func (e *Extractor) matchesInternal(dotted string) bool {
+	slashPath := strings.ReplaceAll(dotted, ".", "/")
 	for _, pattern := range e.cfg.Internal {
-		if matched, _ := doublestar.Match(pattern, dotted); matched {
+		if matched, _ := doublestar.Match(pattern, slashPath); matched {
 			return true
 		}
 	}

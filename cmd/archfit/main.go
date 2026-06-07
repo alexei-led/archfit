@@ -107,13 +107,14 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	base, err := baseline.Load(ctx, defaultBaselinePath)
+	configDir := filepath.Dir(c.Config)
+	base, err := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
 	sc := cfg.ForScope()
-	sc.WorkDir = filepath.Dir(c.Config)
+	sc.WorkDir = configDir
 	sc.Base = c.Base
 	sc.Full = c.Full
 	s, err := scope.Resolve(ctx, sc, deps.Runner)
@@ -179,13 +180,14 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	existingBase, err := baseline.Load(ctx, defaultBaselinePath)
+	configDir := filepath.Dir(c.Config)
+	existingBase, err := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
 	sc := cfg.ForScope()
-	sc.WorkDir = filepath.Dir(c.Config)
+	sc.WorkDir = configDir
 	sc.Base = c.Base
 	sc.Full = c.Full
 	s, err := scope.Resolve(ctx, sc, deps.Runner)
@@ -223,11 +225,12 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 		}{Value: m.Value, Version: m.Version}
 	}
 
-	if err := baseline.Save(ctx, defaultBaselinePath, newBase); err != nil {
+	bPath := filepath.Join(configDir, defaultBaselinePath)
+	if err := baseline.Save(ctx, bPath, newBase); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	_, _ = fmt.Fprintf(deps.Stdout, "baseline saved: %s\n", defaultBaselinePath)
+	_, _ = fmt.Fprintf(deps.Stdout, "baseline saved: %s\n", bPath)
 	return nil
 }
 
@@ -249,13 +252,14 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	existingBase, err := baseline.Load(ctx, defaultBaselinePath)
+	configDir := filepath.Dir(c.Config)
+	existingBase, err := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
 	sc := cfg.ForScope()
-	sc.WorkDir = filepath.Dir(c.Config)
+	sc.WorkDir = configDir
 	sc.Full = true
 	s, err := scope.Resolve(ctx, sc, deps.Runner)
 	if err != nil {

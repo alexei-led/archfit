@@ -134,10 +134,10 @@ func Run(
 		resolvedFindings = append(resolvedFindings, f)
 	}
 
-	// Gate findings: kind=="gate" (all Phase 1 findings are gate).
+	// Gate findings: kind=="gate" and not already resolved (fixed findings don't block verdict or inflate count).
 	var gateFindings []finding.Finding
 	for _, f := range resolvedFindings {
-		if f.Kind == "gate" {
+		if f.Kind == "gate" && f.Status != finding.StatusFixed {
 			gateFindings = append(gateFindings, f)
 		}
 	}
