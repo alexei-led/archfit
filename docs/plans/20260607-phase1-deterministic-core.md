@@ -391,12 +391,12 @@ Per design §3: `Rule` is an interface (many impls). Config bound at constructio
 
 `status` is a pure function (no interface needed — one impl, takes `now time.Time`).
 
-- [ ] Implement `status.Assign(findings []finding.Finding, base baseline.Baseline, exceptions config.ExceptionSet, now time.Time) []finding.Finding`:
+- [x] Implement `status.Assign(findings []finding.Finding, base baseline.Baseline, exceptions config.ExceptionSet, now time.Time) []finding.Finding`:
   - for each finding: lookup fingerprint in `base.Accepted` → `baseline`
   - check exception rules (glob match on from/to, rule ID match, expiry vs `now`) → `excepted` or `expired_exception`
   - no match → `new`
   - for each accepted fingerprint not in current findings → produce `fixed` finding (optional for Phase 1; emit if not present)
-- [ ] Write table-driven tests: new finding; baseline finding; active exception; expired exception; fixed finding; expiry boundary
+- [x] Write table-driven tests: new finding; baseline finding; active exception; expired exception; fixed finding; expiry boundary
 
 ### Task 15: `metrics` — Metric interface + Phase 1 metrics
 
