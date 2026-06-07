@@ -215,13 +215,13 @@ Implements the central contract. Everything else depends on this. Sealed constru
 
 ### Task 3: `model/finding` and `model/coupling` — sealed
 
-- [ ] Define `Finding` struct (JSON tags per spec §9/§12): `ID string` (`id`), `Kind string` (`kind`: `gate`|`advisory`; **always `gate` in Phase 1**), `RuleID string` (`rule_id`), `Status Status` (`status`: new/baseline/excepted/expired_exception/fixed), `Severity Severity` (`severity`: critical/high/medium/low), `Confidence string` (`confidence`), `Edge EdgeEvidence` (`edge`), `MatchedBy map[string]string` (`matched_by`), `Locations []Location` (`locations`), `Why string` (`why`), `Constraint string` (`constraint`), `Alternatives []string` (`allowed_alternatives,omitempty`)
-- [ ] Define `EdgeEvidence` struct (the **finding** edge, spec §9 — distinct from the graph `Edge`): `From, To Endpoint`, `Kind string`; `Endpoint{ Module string; Path string }`. Resolved at diagnostic assembly via `ModuleMap` (the graph `Edge` carries `kind:path` IDs only; the module label is joined in). Do **not** reuse `graph.Edge` here — it cannot emit `{module, path}`.
-- [ ] **No `RepairTask` struct in Phase 1** — the structured `repair_task` block is spec §16.4 (Phase 4). `Why` + `Constraint` + `Alternatives` are the Phase 1 equivalent.
-- [ ] Implement `finding.New(ruleID string, e graph.Edge, locs []Location) Finding` — computes `ID = hash(rule_id+from+to+kind)` inside the constructor; `Kind` defaults to `gate`; `Status` defaults to `new`; `Severity`/`MatchedBy`/`Edge`-module-labels filled later by the rule and diagnostic assembly
-- [ ] Define `coupling.Classification` struct: `Strength Strength`, `Distance Distance`, `Volatility Volatility`, `Explicitness Explicitness` (minimal for Phase 1; full field set stubbed, only contract/intrusive used initially)
-- [ ] Define `coupling.Index` as `map[string]Classification` keyed by edge canonical key
-- [ ] Write tests: `finding.New` produces stable ID for same inputs, different line numbers produce same ID
+- [x] Define `Finding` struct (JSON tags per spec §9/§12): `ID string` (`id`), `Kind string` (`kind`: `gate`|`advisory`; **always `gate` in Phase 1**), `RuleID string` (`rule_id`), `Status Status` (`status`: new/baseline/excepted/expired_exception/fixed), `Severity Severity` (`severity`: critical/high/medium/low), `Confidence string` (`confidence`), `Edge EdgeEvidence` (`edge`), `MatchedBy map[string]string` (`matched_by`), `Locations []Location` (`locations`), `Why string` (`why`), `Constraint string` (`constraint`), `Alternatives []string` (`allowed_alternatives,omitempty`)
+- [x] Define `EdgeEvidence` struct (the **finding** edge, spec §9 — distinct from the graph `Edge`): `From, To Endpoint`, `Kind string`; `Endpoint{ Module string; Path string }`. Resolved at diagnostic assembly via `ModuleMap` (the graph `Edge` carries `kind:path` IDs only; the module label is joined in). Do **not** reuse `graph.Edge` here — it cannot emit `{module, path}`.
+- [x] **No `RepairTask` struct in Phase 1** — the structured `repair_task` block is spec §16.4 (Phase 4). `Why` + `Constraint` + `Alternatives` are the Phase 1 equivalent.
+- [x] Implement `finding.New(ruleID string, e graph.Edge, locs []Location) Finding` — computes `ID = hash(rule_id+from+to+kind)` inside the constructor; `Kind` defaults to `gate`; `Status` defaults to `new`; `Severity`/`MatchedBy`/`Edge`-module-labels filled later by the rule and diagnostic assembly
+- [x] Define `coupling.Classification` struct: `Strength Strength`, `Distance Distance`, `Volatility Volatility`, `Explicitness Explicitness` (minimal for Phase 1; full field set stubbed, only contract/intrusive used initially)
+- [x] Define `coupling.Index` as `map[string]Classification` keyed by edge canonical key
+- [x] Write tests: `finding.New` produces stable ID for same inputs, different line numbers produce same ID
 
 ### Task 4: `model/diagnostic` — Diagnostic, MetricResult, Verdict
 
