@@ -2,7 +2,7 @@ package metrics
 
 import (
 	"fmt"
-	"strings"
+	"slices"
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
@@ -274,7 +274,7 @@ func (m UnbalancedEdgeMetric) Calculate(in MetricInput) diagnostic.MetricResult 
 		}
 	}
 
-	var newHigh, baselineHigh, exceptedHigh, expiredHigh int
+	var newHigh int
 	crossModuleDiffOwnerRank := distanceRank(coupling.DistanceCrossModuleDiffOwner)
 
 	for _, e := range in.Graph.Edges() {
@@ -300,20 +300,10 @@ func (m UnbalancedEdgeMetric) Calculate(in MetricInput) diagnostic.MetricResult 
 		}
 
 		// Determine status via finding index.
-		fromPath := stripKindPrefix(e.From)
-		toPath := stripKindPrefix(e.To)
-		pp := pathPair{from: fromPath, to: toPath}
+		pp := pathPair{from: graph.NodePath(e.From), to: graph.NodePath(e.To)}
 		st := findingStatus[pp] // zero value "" means no matching finding → treat as new
-
-		switch st {
-		case finding.StatusNew, "":
+		if st == finding.StatusNew || st == "" {
 			newHigh++
-		case finding.StatusBaseline:
-			baselineHigh++
-		case finding.StatusExcepted:
-			exceptedHigh++
-		case finding.StatusExpiredExcept:
-			expiredHigh++
 		}
 	}
 
@@ -329,11 +319,6 @@ func (m UnbalancedEdgeMetric) Calculate(in MetricInput) diagnostic.MetricResult 
 
 	display := fmt.Sprintf("%d new high-risk unbalanced edges", newHigh)
 	delta := computeDelta(value, in.Baseline, m.Name(), m.Version())
-
-	// baselineHigh, exceptedHigh, expiredHigh are recorded for future breakdown output (Phase 2).
-	_ = baselineHigh
-	_ = exceptedHigh
-	_ = expiredHigh
 
 	return diagnostic.MetricResult{
 		Name:       m.Name(),
@@ -362,14 +347,6 @@ func statusPriority(s finding.Status) int {
 	default:
 		return 0
 	}
-}
-
-// stripKindPrefix removes the "kind:" prefix from a node ID.
-func stripKindPrefix(id string) string {
-	if _, after, ok := strings.Cut(id, ":"); ok {
-		return after
-	}
-	return id
 }
 
 // ---------------------------------------------------------------------------
@@ -489,7 +466,7 @@ func countCycles(g *graph.Graph) int {
 	for n := range nodeSet {
 		nodes = append(nodes, n)
 	}
-	sortStrings(nodes)
+	slices.Sort(nodes)
 
 	for _, v := range nodes {
 		if _, visited := indices[v]; !visited {
@@ -498,19 +475,6 @@ func countCycles(g *graph.Graph) int {
 	}
 
 	return sccCount
-}
-
-// sortStrings sorts a string slice in place (insertion sort — fine for small slices).
-func sortStrings(ss []string) {
-	for i := 1; i < len(ss); i++ {
-		key := ss[i]
-		j := i - 1
-		for j >= 0 && ss[j] > key {
-			ss[j+1] = ss[j]
-			j--
-		}
-		ss[j+1] = key
-	}
 }
 
 // ---------------------------------------------------------------------------

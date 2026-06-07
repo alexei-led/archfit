@@ -3,8 +3,6 @@
 package rules
 
 import (
-	"strings"
-
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/config"
@@ -66,15 +64,6 @@ func New(cfg config.RuleConfig) []Rule {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// pathOf strips the "kind:" prefix from a node ID (e.g. "file:pkg/a" → "pkg/a").
-func pathOf(id string) string {
-	_, after, found := strings.Cut(id, ":")
-	if found {
-		return after
-	}
-	return id
-}
-
 // layerRank returns the zero-based index of layer in layers, or -1 if absent.
 func layerRank(layer string, layers []string) int {
 	for i, l := range layers {
@@ -98,8 +87,8 @@ func (r *forbiddenDependency) ID() string { return r.def.ID }
 func (r *forbiddenDependency) Check(g *graph.Graph, _ Evidence) []finding.Finding {
 	var out []finding.Finding
 	for _, e := range g.Edges() {
-		fromPath := pathOf(e.From)
-		toPath := pathOf(e.To)
+		fromPath := graph.NodePath(e.From)
+		toPath := graph.NodePath(e.To)
 
 		fromMatch, _ := doublestar.Match(r.def.From, fromPath)
 		toMatch, _ := doublestar.Match(r.def.To, toPath)
@@ -136,8 +125,8 @@ func (r *publicAPIOnly) Check(g *graph.Graph, _ Evidence) []finding.Finding {
 		if e.Kind != graph.EdgeKindUsesInternal {
 			continue
 		}
-		fromPath := pathOf(e.From)
-		toPath := pathOf(e.To)
+		fromPath := graph.NodePath(e.From)
+		toPath := graph.NodePath(e.To)
 
 		// Apply From/To scope globs when set; empty glob means match-all.
 		if r.def.From != "" {
@@ -179,8 +168,8 @@ func (r *forbiddenLayerDirection) ID() string { return r.def.ID }
 func (r *forbiddenLayerDirection) Check(g *graph.Graph, _ Evidence) []finding.Finding {
 	var out []finding.Finding
 	for _, e := range g.Edges() {
-		fromPath := pathOf(e.From)
-		toPath := pathOf(e.To)
+		fromPath := graph.NodePath(e.From)
+		toPath := graph.NodePath(e.To)
 
 		fromLayer, ok := r.mm.LayerFor(fromPath)
 		if !ok {

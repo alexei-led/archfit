@@ -78,8 +78,8 @@ func New(ruleID string, e graph.Edge, locs []graph.Location) Finding {
 		RuleID: ruleID,
 		Status: StatusNew,
 		Edge: EdgeEvidence{
-			From: Endpoint{Path: stripKindPrefix(e.From)},
-			To:   Endpoint{Path: stripKindPrefix(e.To)},
+			From: Endpoint{Path: graph.NodePath(e.From)},
+			To:   Endpoint{Path: graph.NodePath(e.To)},
 			Kind: string(e.Kind),
 		},
 		Locations: locs,
@@ -91,15 +91,4 @@ func New(ruleID string, e graph.Edge, locs []graph.Location) Finding {
 func fingerprint(ruleID, from, to, kind string) string {
 	h := sha256.Sum256([]byte(ruleID + "\x00" + from + "\x00" + to + "\x00" + kind))
 	return hex.EncodeToString(h[:16])
-}
-
-// stripKindPrefix removes the "kind:" prefix from a node ID (e.g. "file:pkg/a/a.go" → "pkg/a/a.go").
-// If no colon is present the string is returned unchanged.
-func stripKindPrefix(id string) string {
-	for i := 0; i < len(id); i++ {
-		if id[i] == ':' {
-			return id[i+1:]
-		}
-	}
-	return id
 }

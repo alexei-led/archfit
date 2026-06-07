@@ -3,6 +3,7 @@ package graph
 import (
 	"cmp"
 	"slices"
+	"strings"
 )
 
 // NodeKind classifies what a Node represents.
@@ -44,6 +45,17 @@ type Node struct {
 // ID returns the canonical node identity: "<kind>:<path>" (e.g. "file:pkg/a/a.go").
 func (n Node) ID() string {
 	return string(n.Kind) + ":" + n.Path
+}
+
+// NodePath extracts the path component from a node ID of the form "kind:path"
+// (e.g. "file:pkg/a/a.go" → "pkg/a/a.go"). If no colon is present, the ID is
+// returned unchanged.
+func NodePath(id string) string {
+	_, after, ok := strings.Cut(id, ":")
+	if ok {
+		return after
+	}
+	return id
 }
 
 // Edge is a directed dependency between two nodes.
