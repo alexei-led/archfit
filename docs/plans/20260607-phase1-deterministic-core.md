@@ -376,16 +376,16 @@ Phase 1 needs enough classification to drive the unbalanced-edge metric: `contra
 
 Per design §3: `Rule` is an interface (many impls). Config bound at construction.
 
-- [ ] Define `Rule` interface: `ID() string`, `Check(g *graph.Graph, ev Evidence) []finding.Finding`
-- [ ] Define `Evidence` struct: `PatternMatches []PatternMatch` (empty for Phase 1; no ast-grep yet)
-- [ ] **Config `type` strings are snake_case and must match the spec §9 exactly** (Go type names differ): `forbidden_dependency`, `public_api_only`, `forbidden_layer_direction`. `rules.New` maps the config `type` string → the concrete rule type.
-- [ ] Implement `ForbiddenDependency` rule (`type: forbidden_dependency`): from-module glob matches edge source, to-module glob matches edge target → finding
-- [ ] Implement `PublicAPIOnly` rule (`type: public_api_only`): cross-module edge where target is in an `internal` path → finding
-- [ ] Implement `ForbiddenLayerDirection` rule (`type: forbidden_layer_direction`): edge from a lower-priority layer to a higher-priority layer (per config `layers:` order) → finding
-- [ ] **Each rule populates the finding's `MatchedBy`** (e.g. `{"from_module_glob": "...", "to_internal_glob": "..."}`), `Why` (plain-language), and `Constraint` (the rule to preserve) — this is what satisfies the Phase 1 Done-when "an agent can read a gate finding and apply the repair constraints" (spec §16.1).
-- [ ] **No `cycle` rule in Phase 1** — cycle gating comes from the cycle-count _metric_'s `gate: fail` (spec §16.1), not a rule.
-- [ ] Implement `rules.New(cfg config.RuleConfig) []Rule` — returns slice of concrete rules from config
-- [ ] Write table-driven tests per rule type: matching cases produce findings; non-matching don't; edge-key in finding matches the edge; `matched_by`/`why`/`constraint` are populated
+- [x] Define `Rule` interface: `ID() string`, `Check(g *graph.Graph, ev Evidence) []finding.Finding`
+- [x] Define `Evidence` struct: `PatternMatches []PatternMatch` (empty for Phase 1; no ast-grep yet)
+- [x] **Config `type` strings are snake_case and must match the spec §9 exactly** (Go type names differ): `forbidden_dependency`, `public_api_only`, `forbidden_layer_direction`. `rules.New` maps the config `type` string → the concrete rule type.
+- [x] Implement `ForbiddenDependency` rule (`type: forbidden_dependency`): from-module glob matches edge source, to-module glob matches edge target → finding
+- [x] Implement `PublicAPIOnly` rule (`type: public_api_only`): cross-module edge where target is in an `internal` path → finding
+- [x] Implement `ForbiddenLayerDirection` rule (`type: forbidden_layer_direction`): edge from a lower-priority layer to a higher-priority layer (per config `layers:` order) → finding
+- [x] **Each rule populates the finding's `MatchedBy`** (e.g. `{"from_module_glob": "...", "to_internal_glob": "..."}`), `Why` (plain-language), and `Constraint` (the rule to preserve) — this is what satisfies the Phase 1 Done-when "an agent can read a gate finding and apply the repair constraints" (spec §16.1).
+- [x] **No `cycle` rule in Phase 1** — cycle gating comes from the cycle-count _metric_'s `gate: fail` (spec §16.1), not a rule.
+- [x] Implement `rules.New(cfg config.RuleConfig) []Rule` — returns slice of concrete rules from config
+- [x] Write table-driven tests per rule type: matching cases produce findings; non-matching don't; edge-key in finding matches the edge; `matched_by`/`why`/`constraint` are populated
 
 ### Task 14: `status` — baseline diff + exception matching
 

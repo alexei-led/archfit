@@ -171,6 +171,8 @@ func validate(cfg Config) error {
 
 // ScopeConfig is the view passed to the scope resolution stage.
 type ScopeConfig struct {
+	Base       string // git ref to diff against (empty = none)
+	Full       bool   // if true, full-repo mode (no diff)
 	Exclusions []string
 }
 
@@ -200,8 +202,9 @@ type ClassifyConfig struct {
 
 // RuleConfig is the view passed to the rules stage.
 type RuleConfig struct {
-	Rules  []RuleDef
-	Layers []string
+	Rules     []RuleDef
+	Layers    []string
+	ModuleMap ModuleMap
 }
 
 // MetricConfig is the per-metric view returned by ForMetric.
@@ -253,6 +256,20 @@ func (mm ModuleMap) ModuleFor(path string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// LayerFor returns the layer name for the module that owns the given repo-relative
+// path. Returns ("", false) if no module matches or the module has no layer set.
+func (mm ModuleMap) LayerFor(path string) (string, bool) {
+	name, ok := mm.ModuleFor(path)
+	if !ok {
+		return "", false
+	}
+	def := mm.modules[name]
+	if def.Layer == "" {
+		return "", false
+	}
+	return def.Layer, true
 }
 
 // ---------------------------------------------------------------------------
@@ -325,8 +342,9 @@ func (c Config) ForClassify() ClassifyConfig {
 // ForRules returns the RuleConfig view.
 func (c Config) ForRules() RuleConfig {
 	return RuleConfig{
-		Rules:  c.Rules,
-		Layers: c.Layers,
+		Rules:     c.Rules,
+		Layers:    c.Layers,
+		ModuleMap: buildModuleMap(c.Modules),
 	}
 }
 
