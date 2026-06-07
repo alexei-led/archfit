@@ -269,13 +269,13 @@ Add this early — it is the structural enforcement for ring 2 (core must not di
 
 ### Task 8: `toolrun` — ToolRunner (subprocess choke point)
 
-- [ ] Define `ToolInfo` struct: `Name string`, `Path string`, `Version string`
-- [ ] Define `ToolCmd` struct: `Name string`, `Args []string`, `Env []string`, `Timeout time.Duration`
-- [ ] Define `Output` struct: `Stdout []byte`, `Stderr []byte`, `ExitCode int`
-- [ ] Define `Runner` **interface** in `toolrun`: `Detect(ctx, tool string) (ToolInfo, bool)`, `Run(ctx, cmd ToolCmd) (Output, error)` — adapters depend on this interface (the process boundary), so they're testable with a generated mock
-- [ ] Add `//go:generate moq -out runner_moq.go . Runner` (Task T3); the generated `RunnerMock` (func fields) backs `history/git` and `scope` tests
-- [ ] Implement `toolrun.New() *ToolRunner` (concrete struct implementing `Runner`) — the only package touching `os/exec`; the arch_test gate must catch any violation
-- [ ] Write tests using fake binaries in `$TMPDIR`: detect found/not-found, run captures output, env is controlled (locale+TZ pinned), timeout fires
+- [x] Define `ToolInfo` struct: `Name string`, `Path string`, `Version string`
+- [x] Define `ToolCmd` struct: `Name string`, `Args []string`, `Env []string`, `Timeout time.Duration`
+- [x] Define `Output` struct: `Stdout []byte`, `Stderr []byte`, `ExitCode int`
+- [x] Define `Runner` **interface** in `toolrun`: `Detect(ctx, tool string) (ToolInfo, bool)`, `Run(ctx, cmd ToolCmd) (Output, error)` — adapters depend on this interface (the process boundary), so they're testable with a generated mock
+- [x] Add `//go:generate moq -out runner_moq.go . Runner` (Task T3); the generated `RunnerMock` (func fields) backs `history/git` and `scope` tests
+- [x] Implement `toolrun.New() *ToolRunner` (concrete struct implementing `Runner`) — the only package touching `os/exec`; the arch_test gate must catch any violation
+- [x] Write tests using fake binaries in `$TMPDIR`: detect found/not-found, run captures output, env is controlled (locale+TZ pinned), timeout fires
 
 ### Task 9: `history/git` — git history functions
 
