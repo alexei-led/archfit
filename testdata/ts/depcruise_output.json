@@ -1,0 +1,43 @@
+{
+  "modules": [
+    {
+      "source": "src/a.ts",
+      "dependencies": [
+        {
+          "resolved": "src/b/index.ts",
+          "module": "./b",
+          "dependencyTypes": [
+            "es6"
+          ],
+          "dynamic": false,
+          "couldNotResolve": false,
+          "coreModule": false
+        },
+        {
+          "resolved": "src/b/internal/impl.ts",
+          "module": "./b/internal/impl",
+          "dependencyTypes": [
+            "es6"
+          ],
+          "dynamic": false,
+          "couldNotResolve": false,
+          "coreModule": false
+        },
+        {
+          "resolved": "fs",
+          "module": "fs",
+          "dependencyTypes": [
+            "core"
+          ],
+          "dynamic": false,
+          "couldNotResolve": false,
+          "coreModule": true
+        }
+      ]
+    },
+    {
+      "source": "src/b/index.ts",
+      "dependencies": []
+    }
+  ]
+}

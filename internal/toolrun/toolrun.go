@@ -27,6 +27,9 @@ type ToolCmd struct {
 	Args    []string
 	Env     []string
 	Timeout time.Duration
+	// WorkDir sets the working directory for the subprocess.
+	// When empty the current process directory is used.
+	WorkDir string
 }
 
 // Output holds the result of a subprocess invocation.
@@ -89,6 +92,12 @@ func (r *ToolRunner) Run(ctx context.Context, cmd ToolCmd) (Output, error) {
 	}
 
 	c := exec.CommandContext(ctx, info.Path, cmd.Args...) //nolint:gosec // path is resolved via LookPath in Detect; args are caller-controlled by design
+
+	// Set working directory when specified (required for language extractors that
+	// must run from the project root, e.g. dependency-cruiser, grimp).
+	if cmd.WorkDir != "" {
+		c.Dir = cmd.WorkDir
+	}
 
 	// Pin locale and timezone for deterministic output; caller env appended last
 	// so callers can override if needed.

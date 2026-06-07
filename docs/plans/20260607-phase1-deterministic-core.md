@@ -325,19 +325,19 @@ Uses `golang.org/x/tools/go/packages`. No subprocess — in-process. Implements 
 Out-of-process adapter (design §6: detect → run → parse → normalize → coverage). Takes a `toolrun.Runner` (Task 8)
 so it's testable with a moq mock; satisfies `engine.Extractor`. See the Phase 0 dependency-cruiser section.
 
-- [ ] Implement `ts.New(runner toolrun.Runner, cfg config.ExtractConfig) *TSExtractor`; `Name()` → `"typescript"`
-- [ ] **detect** (in `Extract`): `bunx depcruise --version` (prefer `bunx`, fall back to `npx`); applicability marker
+- [x] Implement `ts.New(runner toolrun.Runner, cfg config.ExtractConfig) *TSExtractor`; `Name()` → `"typescript"`
+- [x] **detect** (in `Extract`): `bunx depcruise --version` (prefer `bunx`, fall back to `npx`); applicability marker
       `package.json`. If `mode: auto` and absent/not-applicable → no facts, no error, **+ a coverage record** (never fail).
-- [ ] **run** via `ToolRunner`, repo as cwd, controlled env + timeout + version captured:
+- [x] **run** via `ToolRunner`, repo as cwd, controlled env + timeout + version captured:
       `depcruise <src> --output-type json --ts-config <cfg.TSConfig> --include-only "^<src>" --exclude "^node_modules"`.
-- [ ] **parse** the JSON (per-tool parser, fixture-tested): `modules[].source` + the dependency array (handle both
+- [x] **parse** the JSON (per-tool parser, fixture-tested): `modules[].source` + the dependency array (handle both
       `dependencies[]` and `deps[]`); per edge read `resolved`, `module`, `dependencyTypes`, `dynamic`,
       `couldNotResolve`, `coreModule`.
-- [ ] **normalize** to `graph.Facts`: from = `file:<source>`, to = `file:<resolved>`, `imports` kind; skip `coreModule`;
+- [x] **normalize** to `graph.Facts`: from = `file:<source>`, to = `file:<resolved>`, `imports` kind; skip `coreModule`;
       `couldNotResolve` → lower confidence + count unresolved (keep the edge); `language: "typescript"`; classify TS
       `internal` access via the configured module `internal` globs (TS has no `/internal/` convention).
-- [ ] **coverage** record: tool `dependency-cruiser` + version, files seen, unresolved count, status.
-- [ ] Tests use a **moq `toolrun.Runner`** feeding captured depcruise JSON fixtures (no real Node in unit tests):
+- [x] **coverage** record: tool `dependency-cruiser` + version, files seen, unresolved count, status.
+- [x] Tests use a **moq `toolrun.Runner`** feeding captured depcruise JSON fixtures (no real Node in unit tests):
       A imports B → edge; internal-glob target → `uses_internal`; `couldNotResolve` → unresolved + lower confidence;
       tool absent under `auto` → coverage record, no error.
 
