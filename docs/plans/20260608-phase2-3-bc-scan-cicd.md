@@ -180,13 +180,13 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 - Modify: `internal/engine/engine.go`
 - Modify: `internal/engine/engine_test.go`
 
-- [ ] Add `advisoryFindings []finding.Finding` assembly step: after `classify.Run`, iterate `coupling.Index` for edges with `Severity != ""` (imbalanced/intrusive) → emit findings with `kind: "advisory"` and severity from coupling
-- [ ] Call `staleness.Check(g, cfg.ForStaleness(), now)` → append its advisory findings
-- [ ] Include advisory findings in `Diagnostic.Findings` **only when `mode.Advisory = true`**; they are filtered out otherwise
-- [ ] `computeVerdict` must remain unchanged — advisory findings with `kind: "advisory"` must never trigger fail/warn
-- [ ] `Summary.Warnings` field (currently always 0): populate with count of advisory findings when `mode.Advisory = true`
-- [ ] Update engine integration tests: assert advisory findings do NOT appear when `mode.Advisory = false`; assert they DO appear when `mode.Advisory = true`; assert verdict remains pass with advisory findings present; assert `Summary.Warnings` count matches
-- [ ] Run `go test ./internal/engine/...` and `go test ./internal/engine/ -run TestGolden` — must pass
+- [x] Add `advisoryFindings []finding.Finding` assembly step: after `classify.Run`, iterate `coupling.Index` for edges with `Severity != ""` (imbalanced/intrusive) → emit findings with `kind: "advisory"` and severity from coupling
+- [x] Call `staleness.Check(g, cfg.ForStaleness(), now)` → append its advisory findings
+- [x] Include advisory findings in `Diagnostic.Findings` **only when `mode.Advisory = true`**; they are filtered out otherwise
+- [x] `computeVerdict` must remain unchanged — advisory findings with `kind: "advisory"` must never trigger fail/warn
+- [x] `Summary.Warnings` field (currently always 0): populate with count of advisory findings when `mode.Advisory = true`
+- [x] Update engine integration tests: assert advisory findings do NOT appear when `mode.Advisory = false`; assert they DO appear when `mode.Advisory = true`; assert verdict remains pass with advisory findings present; assert `Summary.Warnings` count matches
+- [x] Run `go test ./internal/engine/...` and `go test ./internal/engine/ -run TestGolden` — must pass
 
 ### Task 7: `output/markdown` — Markdown renderer (Phase 2)
 

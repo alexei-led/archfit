@@ -27,6 +27,9 @@ const (
 	globModuleA         = "pkg/a/**"
 	globModuleB         = "pkg/b/**"
 	globModuleBInternal = "pkg/b/internal/**"
+
+	headRef      = "HEAD"
+	kindAdvisory = "advisory"
 )
 
 // cannedConfig builds a ClassifyConfig and RuleConfig for a two-module (a, b)
@@ -129,9 +132,10 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 
 	d, err := engine.Run(
 		ctx,
-		engine.Mode{Head: "HEAD"},
+		engine.Mode{Head: headRef},
 		scope.Scope{Root: "."},
 		classifyCfg,
+		config.StalenessConfig{},
 		config.ExceptionSet{},
 		[]engine.Extractor{ex},
 		rs,
@@ -200,9 +204,10 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 
 	d, err := engine.Run(
 		ctx,
-		engine.Mode{Head: "HEAD"},
+		engine.Mode{Head: headRef},
 		scope.Scope{Root: "."},
 		classifyCfg,
+		config.StalenessConfig{},
 		config.ExceptionSet{},
 		[]engine.Extractor{ex},
 		rs,
@@ -250,6 +255,7 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		engine.Mode{Base: "main", Head: "feature"},
 		scope.Scope{Root: "."},
 		classifyCfg,
+		config.StalenessConfig{},
 		config.ExceptionSet{},
 		[]engine.Extractor{ex},
 		rs,
@@ -285,5 +291,165 @@ func TestRun_DiagnosticShape(t *testing.T) {
 	// Metrics should contain all Phase 1 metrics.
 	if len(d.Metrics) != 4 {
 		t.Errorf("len(metrics)=%d, want 4", len(d.Metrics))
+	}
+}
+
+// TestRun_Advisory_FilteredWhenDisabled asserts that advisory findings do NOT appear
+// in Findings and Summary.Warnings is 0 when mode.Advisory = false.
+// The violation graph (intrusive edge a→b/internal) will produce a coupling advisory,
+// but it must be suppressed.
+func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
+	ctx := context.Background()
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return violationFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(
+		ctx,
+		engine.Mode{Head: headRef, Advisory: false},
+		scope.Scope{Root: "."},
+		classifyCfg,
+		config.StalenessConfig{},
+		config.ExceptionSet{},
+		[]engine.Extractor{ex},
+		rs,
+		ms,
+		base,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, f := range d.Findings {
+		if f.Kind == kindAdvisory {
+			t.Errorf("advisory finding present when mode.Advisory=false: %+v", f)
+		}
+	}
+	if d.Summary.Warnings != 0 {
+		t.Errorf("summary.warnings=%d, want 0 when advisory disabled", d.Summary.Warnings)
+	}
+}
+
+// TestRun_Advisory_PresentWhenEnabled asserts that advisory findings DO appear
+// when mode.Advisory = true, verdict stays pass with a clean graph, and
+// Summary.Warnings equals the advisory count.
+func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
+	ctx := context.Background()
+	// cleanFacts: imports edge a→b/api (contract, cross-module) → imbalanced (low severity).
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(
+		ctx,
+		engine.Mode{Head: headRef, Advisory: true},
+		scope.Scope{Root: "."},
+		classifyCfg,
+		config.StalenessConfig{},
+		config.ExceptionSet{},
+		[]engine.Extractor{ex},
+		rs,
+		ms,
+		base,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// Verdict must be pass — advisory findings never gate.
+	if d.Verdict != diagnostic.VerdictPass {
+		t.Errorf("verdict=%q, want pass with advisory findings present", d.Verdict)
+	}
+
+	// At least one advisory finding must be present.
+	var advisoryCount int
+	for _, f := range d.Findings {
+		if f.Kind == kindAdvisory {
+			advisoryCount++
+			if f.RuleID == "" {
+				t.Errorf("advisory finding has empty rule_id: %+v", f)
+			}
+		}
+	}
+	if advisoryCount == 0 {
+		t.Errorf("no advisory findings present when mode.Advisory=true; findings=%+v", d.Findings)
+	}
+
+	// Summary.Warnings must match advisory count.
+	if d.Summary.Warnings != advisoryCount {
+		t.Errorf("summary.warnings=%d, want %d (advisory count)", d.Summary.Warnings, advisoryCount)
+	}
+}
+
+// TestRun_Advisory_VerdictUnchanged asserts that advisory findings do NOT change
+// a fail verdict: a gate violation still fails even when advisories are present.
+func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
+	ctx := context.Background()
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return violationFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(
+		ctx,
+		engine.Mode{Head: headRef, Advisory: true},
+		scope.Scope{Root: "."},
+		classifyCfg,
+		config.StalenessConfig{},
+		config.ExceptionSet{},
+		[]engine.Extractor{ex},
+		rs,
+		ms,
+		base,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// Gate violation must still fail.
+	if d.Verdict != diagnostic.VerdictFail {
+		t.Errorf("verdict=%q, want fail (gate violation present)", d.Verdict)
+	}
+
+	// Advisory findings are present in Findings.
+	var advisoryCount int
+	for _, f := range d.Findings {
+		if f.Kind == kindAdvisory {
+			advisoryCount++
+		}
+	}
+	if advisoryCount == 0 {
+		t.Errorf("no advisory findings when mode.Advisory=true")
+	}
+
+	// Summary.Warnings matches advisory count.
+	if d.Summary.Warnings != advisoryCount {
+		t.Errorf("summary.warnings=%d, want %d", d.Summary.Warnings, advisoryCount)
 	}
 }

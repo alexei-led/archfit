@@ -2,17 +2,21 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/internal/staleness"
 	"github.com/alexei-led/archfit/internal/status"
 )
 
@@ -21,7 +25,7 @@ type Mode struct {
 	Base       string   // git ref to diff against (empty = none)
 	Head       string   // git ref of the current HEAD (empty = working tree)
 	Full       bool     // if true, full-repo mode (no diff filter)
-	Advisory   bool     // advisory mode: gate findings are non-blocking
+	Advisory   bool     // if true, include advisory findings (bc/imbalanced_coupling, map/staleness) in Findings and Summary.Warnings
 	ReportOnly bool     // report-only: metric regressions are non-blocking
 	Formats    []string // output formats to render (e.g. ["json", "console"])
 }
@@ -34,9 +38,10 @@ type Mode struct {
 //  3. Apply rules: rule.Check per rule → raw findings (flattened).
 //  4. Assign statuses: status.Assign → lifecycle-tagged findings.
 //  5. Compute metrics: build MetricInput, run each metric → MetricResult slice.
-//  6. Assemble Diagnostic: resolve EdgeEvidence {module, path}, join severity,
-//     fill Summary, compute verdict.
-//  7. Return (Diagnostic, nil) on success; (Diagnostic, error) on hard error.
+//  6. Collect advisory findings: coupling edges with Severity != "" + staleness.Check.
+//  7. Assemble Diagnostic: resolve EdgeEvidence {module, path}, join severity,
+//     fill Summary, compute verdict. Advisory findings included only when mode.Advisory.
+//  8. Return (Diagnostic, nil) on success; (Diagnostic, error) on hard error.
 //
 // Rendering is the caller's responsibility (cmd renders to deps.Stdout).
 func Run(
@@ -44,6 +49,7 @@ func Run(
 	mode Mode,
 	s scope.Scope,
 	classifyCfg config.ClassifyConfig,
+	stalenessCfg config.StalenessConfig,
 	exceptions config.ExceptionSet,
 	extractors []Extractor,
 	rs []rules.Rule,
@@ -89,7 +95,7 @@ func Run(
 		metricResults = append(metricResults, m.Calculate(mi))
 	}
 
-	// --- Stage 6: Assemble Diagnostic ---
+	// --- Stage 7: Assemble Diagnostic ---
 
 	// Build a path-pair → coupling.Classification lookup so we can join
 	// severity and module labels onto findings without re-importing coupling keys.
@@ -134,6 +140,43 @@ func Run(
 		resolvedFindings = append(resolvedFindings, f)
 	}
 
+	// --- Stage 6: Advisory findings ---
+	// Collect coupling advisories by walking edges in graph order (deterministic).
+	// Edges with Severity != "" represent imbalanced or intrusive coupling.
+	var advisoryFindings []finding.Finding
+	for _, e := range g.Edges() {
+		key := e.From + "\x00" + e.To + "\x00" + string(e.Kind)
+		cl, ok := couplingIdx[key]
+		if !ok || cl.Severity == coupling.SeverityNone {
+			continue
+		}
+		fromPath := stripPrefix(e.From)
+		toPath := stripPrefix(e.To)
+		fromModule, _ := mm.ModuleFor(fromPath)
+		toModule, _ := mm.ModuleFor(toPath)
+		af := finding.Finding{
+			ID:       couplingAdvisoryID(fromPath, toPath, string(e.Kind)),
+			Kind:     "advisory",
+			RuleID:   "bc/imbalanced_coupling",
+			Status:   finding.StatusNew,
+			Severity: finding.Severity(cl.Severity),
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Module: fromModule, Path: fromPath},
+				To:   finding.Endpoint{Module: toModule, Path: toPath},
+				Kind: string(e.Kind),
+			},
+			Locations: e.Locations,
+			Why:       "balanced coupling violation: " + string(cl.Severity) + " severity",
+			MatchedBy: map[string]string{
+				"strength": string(cl.Strength),
+				"distance": string(cl.Distance),
+			},
+		}
+		advisoryFindings = append(advisoryFindings, af)
+	}
+	// Append staleness advisories.
+	advisoryFindings = append(advisoryFindings, staleness.Check(g, stalenessCfg, now)...)
+
 	// Gate findings: kind=="gate" and not already resolved (fixed findings don't block verdict or inflate count).
 	var gateFindings []finding.Finding
 	for _, f := range resolvedFindings {
@@ -158,6 +201,14 @@ func Run(
 
 	verdict := computeVerdict(gateFindings, metricResults)
 
+	// Include advisory findings in Findings only when mode.Advisory is set.
+	// Advisory findings never affect the verdict or gate counts.
+	warnings := 0
+	if mode.Advisory {
+		resolvedFindings = append(resolvedFindings, advisoryFindings...)
+		warnings = len(advisoryFindings)
+	}
+
 	// Ensure non-nil slices.
 	if resolvedFindings == nil {
 		resolvedFindings = []finding.Finding{}
@@ -180,7 +231,7 @@ func Run(
 		ToolCoverage:  coverages,
 		Summary: diagnostic.Summary{
 			GateFindings:   gateNew,
-			Warnings:       0,
+			Warnings:       warnings,
 			ExceptionsUsed: exceptionsUsed,
 		},
 	}
@@ -226,4 +277,11 @@ func stripPrefix(id string) string {
 		}
 	}
 	return id
+}
+
+// couplingAdvisoryID returns a stable 32-character hex fingerprint for a coupling advisory
+// finding, derived from (from, to, kind) — same scheme as finding.fingerprint.
+func couplingAdvisoryID(from, to, kind string) string {
+	h := sha256.Sum256([]byte("bc/imbalanced_coupling\x00" + from + "\x00" + to + "\x00" + kind))
+	return hex.EncodeToString(h[:16])
 }

@@ -93,6 +93,7 @@ func TestGolden_DoubleRun(t *testing.T) {
 			engine.Mode{Full: true},
 			s,
 			classifyCfg,
+			config.StalenessConfig{},
 			config.ExceptionSet{},
 			[]engine.Extractor{extractor},
 			rs,
