@@ -4,6 +4,12 @@
 package rules
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/config"
@@ -35,15 +41,14 @@ type Rule interface {
 // New constructs the slice of Rule values declared in cfg.
 // Config type strings (snake_case per spec §9):
 //
-//	"forbidden_dependency"      → ForbiddenDependency
-//	"public_api_only"           → PublicAPIOnly
-//	"forbidden_layer_direction" → ForbiddenLayerDirection
+//	"forbidden_dependency"        → ForbiddenDependency
+//	"public_api_only"             → PublicAPIOnly
+//	"forbidden_layer_direction"   → ForbiddenLayerDirection
+//	"internal_api_access"         → internalAPIAccess
+//	"new_cross_module_dependency" → newCrossModuleDependency
+//	"cycle"                       → cycleRule
 //
 // Unknown type strings are silently skipped.
-//
-// Note: RuleDef.Gate ("fail"/"warn") is intentionally not consumed here.
-// In Phase 1, all rules produce gate findings (Kind="gate"). The advisory
-// severity channel (gate:warn) is deferred to Phase 2.
 func New(cfg config.RuleConfig) []Rule {
 	rules := make([]Rule, 0, len(cfg.Rules))
 	for _, def := range cfg.Rules {
@@ -58,6 +63,12 @@ func New(cfg config.RuleConfig) []Rule {
 				layers: cfg.Layers,
 				mm:     cfg.ModuleMap,
 			})
+		case "internal_api_access":
+			rules = append(rules, &internalAPIAccess{def: def})
+		case "new_cross_module_dependency":
+			rules = append(rules, &newCrossModuleDependency{def: def, mm: cfg.ModuleMap})
+		case "cycle":
+			rules = append(rules, &cycleRule{def: def})
 		}
 	}
 	return rules
@@ -211,4 +222,153 @@ func (r *forbiddenLayerDirection) Check(g *graph.Graph, _ Evidence) []finding.Fi
 		out = append(out, f)
 	}
 	return out
+}
+
+// ---------------------------------------------------------------------------
+// InternalAPIAccess
+// ---------------------------------------------------------------------------
+
+// internalAPIAccess fires on edges with kind == uses_internal, optionally
+// filtered by from/to glob. Supports the same from/to glob semantics as
+// publicAPIOnly but is a distinct rule type so teams can configure them
+// independently with different IDs, severities, and exceptions.
+type internalAPIAccess struct {
+	def config.RuleDef
+}
+
+func (r *internalAPIAccess) ID() string { return r.def.ID }
+
+func (r *internalAPIAccess) Check(g *graph.Graph, _ Evidence) []finding.Finding {
+	var out []finding.Finding
+	for _, e := range g.Edges() {
+		if e.Kind != graph.EdgeKindUsesInternal {
+			continue
+		}
+		fromPath := graph.NodePath(e.From)
+		toPath := graph.NodePath(e.To)
+
+		if r.def.From != "" {
+			if matched, _ := doublestar.Match(r.def.From, fromPath); !matched {
+				continue
+			}
+		}
+		if r.def.To != "" {
+			if matched, _ := doublestar.Match(r.def.To, toPath); !matched {
+				continue
+			}
+		}
+
+		f := finding.New(r.def.ID, e, e.Locations)
+		f.Severity = finding.SeverityHigh
+		f.MatchedBy = map[string]string{
+			"edge_kind": string(e.Kind),
+			"from_path": fromPath,
+			"to_path":   toPath,
+		}
+		f.Why = "Access to internal API path " + toPath + " from " + fromPath
+		f.Constraint = "Only import from the module's public API surface"
+		out = append(out, f)
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// NewCrossModuleDependency
+// ---------------------------------------------------------------------------
+
+// newCrossModuleDependency fires when an edge crosses module boundaries.
+// It uses ModuleMap to determine module ownership of from/to paths.
+//
+// NOTE: The rule is intended to fire only when finding.Status == StatusNew
+// (i.e. the dependency was introduced after the last baseline). However,
+// Evidence.Findings is not yet populated by the engine (Phase 3 gap), so this
+// rule currently fires on all cross-module edges regardless of status.
+// TODO: filter by StatusNew once engine wires Evidence.Findings per edge.
+type newCrossModuleDependency struct {
+	def config.RuleDef
+	mm  config.ModuleMap
+}
+
+func (r *newCrossModuleDependency) ID() string { return r.def.ID }
+
+func (r *newCrossModuleDependency) Check(g *graph.Graph, _ Evidence) []finding.Finding {
+	var out []finding.Finding
+	for _, e := range g.Edges() {
+		fromPath := graph.NodePath(e.From)
+		toPath := graph.NodePath(e.To)
+
+		fromModule, fromOK := r.mm.ModuleFor(fromPath)
+		toModule, toOK := r.mm.ModuleFor(toPath)
+
+		// Skip edges where either endpoint is unowned or both are in the same module.
+		if !fromOK || !toOK || fromModule == toModule {
+			continue
+		}
+
+		f := finding.New(r.def.ID, e, e.Locations)
+		f.Severity = finding.SeverityMedium
+		f.MatchedBy = map[string]string{
+			"from_module": fromModule,
+			"to_module":   toModule,
+		}
+		f.Why = fmt.Sprintf("New cross-module dependency from %q (%s) to %q (%s)", fromPath, fromModule, toPath, toModule)
+		f.Constraint = "Cross-module dependencies must be reviewed and approved"
+		out = append(out, f)
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// CycleRule
+// ---------------------------------------------------------------------------
+
+// cycleRule detects import cycles using Graph.Cycles() (shared Tarjan SCC).
+// It emits one finding per strongly-connected component of size > 1.
+// The finding ID is derived from the sorted SCC members for stability.
+type cycleRule struct {
+	def config.RuleDef
+}
+
+func (r *cycleRule) ID() string { return r.def.ID }
+
+func (r *cycleRule) Check(g *graph.Graph, _ Evidence) []finding.Finding {
+	sccs := g.Cycles()
+	if len(sccs) == 0 {
+		return nil
+	}
+
+	out := make([]finding.Finding, 0, len(sccs))
+	for _, scc := range sccs {
+		id := cycleFingerprintID(r.def.ID, scc)
+		// Use the first two members of the SCC as representative from/to for the edge evidence.
+		fromPath := graph.NodePath(scc[0])
+		toPath := graph.NodePath(scc[1%len(scc)])
+		f := finding.Finding{
+			ID:       id,
+			Kind:     "gate",
+			RuleID:   r.def.ID,
+			Status:   finding.StatusNew,
+			Severity: finding.SeverityHigh,
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Path: fromPath},
+				To:   finding.Endpoint{Path: toPath},
+				Kind: string(graph.EdgeKindImports),
+			},
+			MatchedBy: map[string]string{
+				"cycle_members": strings.Join(scc, ", "),
+				"cycle_size":    strconv.Itoa(len(scc)),
+			},
+			Why:        fmt.Sprintf("Import cycle detected among %d nodes: %s", len(scc), strings.Join(scc, " → ")),
+			Constraint: "Break the cycle by introducing an abstraction or reorganizing packages",
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// cycleFingerprintID computes a stable 32-char hex ID for a cycle finding
+// from the rule ID and the sorted SCC members.
+func cycleFingerprintID(ruleID string, scc []string) string {
+	h := sha256.Sum256([]byte(ruleID + "\x00" + strings.Join(scc, "\x00")))
+	return hex.EncodeToString(h[:16])
 }

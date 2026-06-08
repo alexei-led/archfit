@@ -141,12 +141,12 @@ func Run(
 		if !ok {
 			continue
 		}
-		pp := pathPair{
+		epair := pathPair{
 			from: stripPrefix(e.From),
 			to:   stripPrefix(e.To),
 			kind: string(e.Kind),
 		}
-		pairClass[pp] = classEntry{
+		pairClass[epair] = classEntry{
 			strength: string(cl.Strength),
 			distance: string(cl.Distance),
 		}
@@ -162,8 +162,8 @@ func Run(
 		f.Edge.To.Module = toModule
 
 		// Join severity from coupling classification.
-		pp := pathPair{from: f.Edge.From.Path, to: f.Edge.To.Path, kind: f.Edge.Kind}
-		if ce, ok := pairClass[pp]; ok {
+		epair := pathPair{from: f.Edge.From.Path, to: f.Edge.To.Path, kind: f.Edge.Kind}
+		if ce, ok := pairClass[epair]; ok {
 			f.Severity = severityFor(ce.strength, ce.distance)
 		}
 

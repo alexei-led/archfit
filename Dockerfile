@@ -36,7 +36,7 @@ ARG DEPCRUISER_VERSION
 # Install Node.js via NodeSource (official, supports arm64) + Python 3.12 runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl git gnupg \
-        python3.12 python3.12-distutils libpython3.12 \
+        python3.12 libpython3.12 \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
         | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \

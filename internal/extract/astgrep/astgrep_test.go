@@ -95,7 +95,7 @@ var singlePatternCfg = config.PatternConfig{
 
 func TestFind_ParsesFixtureJSON(t *testing.T) {
 	runner := presentRunner(fixtureBytes(t))
-	a := astgrep.New(runner, singlePatternCfg)
+	a := astgrep.New(runner)
 
 	matches, cov, err := a.Find(context.Background(), testScope, singlePatternCfg)
 	if err != nil {
@@ -140,7 +140,7 @@ func TestFind_ParsesFixtureJSON(t *testing.T) {
 }
 
 func TestFind_AbsentTool_ReturnsEmptyAndAbsentStatus(t *testing.T) {
-	a := astgrep.New(absentRunner(), singlePatternCfg)
+	a := astgrep.New(absentRunner())
 
 	matches, cov, err := a.Find(context.Background(), testScope, singlePatternCfg)
 	if err != nil {
@@ -183,7 +183,7 @@ func TestFind_MultiPattern_MergesResults(t *testing.T) {
 		{ID: patternReflect, Lang: "go", Rule: "reflect.TypeOf($X)"},
 		{ID: patternUnsafe, Lang: "go", Rule: "unsafe.Pointer($X)"},
 	}
-	a := astgrep.New(runner, cfg)
+	a := astgrep.New(runner)
 	matches, cov, err := a.Find(context.Background(), testScope, cfg)
 	if err != nil {
 		t.Fatalf("Find: %v", err)
@@ -214,7 +214,7 @@ func TestFind_Deduplication(t *testing.T) {
 	})
 
 	runner := presentRunner(dupOutput)
-	a := astgrep.New(runner, singlePatternCfg)
+	a := astgrep.New(runner)
 
 	matches, _, err := a.Find(context.Background(), testScope, singlePatternCfg)
 	if err != nil {
@@ -240,7 +240,7 @@ func TestFind_EmptyOutput_ReturnsNoMatches(t *testing.T) {
 			return toolrun.Output{Stdout: nil}, nil
 		},
 	}
-	a := astgrep.New(runner, singlePatternCfg)
+	a := astgrep.New(runner)
 	matches, cov, err := a.Find(context.Background(), testScope, singlePatternCfg)
 	if err != nil {
 		t.Fatalf("Find: %v", err)
@@ -255,7 +255,7 @@ func TestFind_EmptyOutput_ReturnsNoMatches(t *testing.T) {
 
 func TestFind_FilesSeen_CountsDistinctFiles(t *testing.T) {
 	runner := presentRunner(fixtureBytes(t))
-	a := astgrep.New(runner, singlePatternCfg)
+	a := astgrep.New(runner)
 
 	_, cov, err := a.Find(context.Background(), testScope, singlePatternCfg)
 	if err != nil {
@@ -268,7 +268,7 @@ func TestFind_FilesSeen_CountsDistinctFiles(t *testing.T) {
 }
 
 func TestAdapter_Name(t *testing.T) {
-	a := astgrep.New(absentRunner(), nil)
+	a := astgrep.New(absentRunner())
 	if a.Name() != toolAstGrep {
 		t.Errorf("Name() = %q, want %q", a.Name(), toolAstGrep)
 	}

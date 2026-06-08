@@ -145,7 +145,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	}
 
 	patternCfg := cfg.ForPatterns()
-	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner, patternCfg), scip.New(deps.Runner), patternCfg, rs, ms, base, time.Now())
+	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), scip.New(deps.Runner), patternCfg, rs, ms, base, time.Now())
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}

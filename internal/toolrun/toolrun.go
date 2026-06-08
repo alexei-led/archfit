@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"time"
 )
@@ -99,9 +100,11 @@ func (r *ToolRunner) Run(ctx context.Context, cmd ToolCmd) (Output, error) {
 		c.Dir = cmd.WorkDir
 	}
 
-	// Pin locale and timezone for deterministic output; caller env appended last
-	// so callers can override if needed.
-	c.Env = append([]string{"LC_ALL=C", "TZ=UTC"}, cmd.Env...)
+	// Inherit the parent process environment for tools that need PATH, GOPATH,
+	// HOME, etc. Pin locale and timezone on top for deterministic output; caller
+	// env appended last so callers can override if needed.
+	c.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC")
+	c.Env = append(c.Env, cmd.Env...)
 
 	var stdout, stderr bytes.Buffer
 	c.Stdout = &stdout

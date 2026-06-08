@@ -143,8 +143,12 @@ func (r *Renderer) renderFindingsTable(findings []finding.Finding) string {
 	t := newTable(r.isTTY)
 	t.AppendHeader(table.Row{"ID", "Rule", "Severity", "From", "To", "Status"})
 	for _, f := range findings {
+		id := f.ID
+		if len(id) > 8 {
+			id = id[:8]
+		}
 		t.AppendRow(table.Row{
-			f.ID[:8], // short ID (first 8 chars)
+			id, // short ID (first 8 chars)
 			f.RuleID,
 			string(f.Severity),
 			f.Edge.From.Path,

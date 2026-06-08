@@ -23,12 +23,11 @@ const toolName = "ast-grep"
 // Adapter satisfies engine.PatternProvider using the "sg" (ast-grep) binary.
 type Adapter struct {
 	runner toolrun.Runner
-	cfg    config.PatternConfig
 }
 
-// New returns an Adapter configured with the given runner and pattern config.
-func New(runner toolrun.Runner, cfg config.PatternConfig) *Adapter {
-	return &Adapter{runner: runner, cfg: cfg}
+// New returns an Adapter configured with the given runner.
+func New(runner toolrun.Runner) *Adapter {
+	return &Adapter{runner: runner}
 }
 
 // Name returns the tool identifier.

@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -72,8 +73,14 @@ func uncoveredPaths(g *graph.Graph, modules map[string]config.ModuleDef) []findi
 // zero nodes in the graph.
 func deadRules(g *graph.Graph, modules map[string]config.ModuleDef) []finding.Finding {
 	nodes := g.Nodes()
+	names := make([]string, 0, len(modules))
+	for name := range modules {
+		names = append(names, name)
+	}
+	slices.Sort(names)
 	var findings []finding.Finding
-	for modName, def := range modules {
+	for _, modName := range names {
+		def := modules[modName]
 		for _, pattern := range def.Paths {
 			if !patternMatchesAnyNode(pattern, nodes) {
 				f := advisoryFinding(
@@ -91,8 +98,14 @@ func deadRules(g *graph.Graph, modules map[string]config.ModuleDef) []finding.Fi
 // staleReviews returns one advisory finding per module whose reviewed_at is
 // set and is older than threshold relative to now.
 func staleReviews(modules map[string]config.ModuleDef, threshold time.Duration, now time.Time) []finding.Finding {
+	names := make([]string, 0, len(modules))
+	for name := range modules {
+		names = append(names, name)
+	}
+	slices.Sort(names)
 	var findings []finding.Finding
-	for modName, def := range modules {
+	for _, modName := range names {
+		def := modules[modName]
 		if def.ReviewedAt.IsZero() {
 			continue
 		}
