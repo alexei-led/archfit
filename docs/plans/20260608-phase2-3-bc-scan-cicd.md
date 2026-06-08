@@ -295,14 +295,14 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 - Create: `internal/extract/astgrep/astgrep_test.go`
 - Create: `testdata/astgrep/` (JSON fixture files)
 
-- [ ] Implement `astgrep.New(runner toolrun.Runner, cfg config.PatternConfig) *Adapter`; `Name() string` → `"ast-grep"`
-- [ ] **detect**: `runner.Detect(ctx, "sg")`; if absent and `mode == ModeAuto` → return empty matches + coverage `status: "absent"` (never fail)
-- [ ] **run**: for each `PatternDef`, run `runner.Run(ctx, ToolCmd{Name: "sg", Args: ["--lang", lang, "--json", "run", "--pattern", pattern, root]})` with `WorkDir: scope.Root`
-- [ ] **parse**: parse ast-grep JSON output (array of match objects: `{file, rule, range: {start: {line, column}}, text}`) → `[]PatternMatch`
-- [ ] **normalize**: deduplicate by `(file, line, pattern)`; sort by `(file, line)`; emit `Coverage{Tool: "ast-grep", FilesSeen: N, Status: "ok"}`
-- [ ] Create fixture: `testdata/astgrep/sg_output.json` with sample ast-grep JSON output for two matches
-- [ ] Write tests using `RunnerMock`: pattern matches parsed correctly; absent tool (auto mode) → empty matches + absent coverage; multiple patterns run separately and results merged
-- [ ] Run `go test ./internal/extract/astgrep/...` and arch_test — must pass
+- [x] Implement `astgrep.New(runner toolrun.Runner, cfg config.PatternConfig) *Adapter`; `Name() string` → `"ast-grep"`
+- [x] **detect**: `runner.Detect(ctx, "sg")`; if absent and `mode == ModeAuto` → return empty matches + coverage `status: "absent"` (never fail)
+- [x] **run**: for each `PatternDef`, run `runner.Run(ctx, ToolCmd{Name: "sg", Args: ["--lang", lang, "--json", "run", "--pattern", pattern, root]})` with `WorkDir: scope.Root`
+- [x] **parse**: parse ast-grep JSON output (array of match objects: `{file, rule, range: {start: {line, column}}, text}`) → `[]PatternMatch`
+- [x] **normalize**: deduplicate by `(file, line, pattern)`; sort by `(file, line)`; emit `Coverage{Tool: "ast-grep", FilesSeen: N, Status: "ok"}`
+- [x] Create fixture: `testdata/astgrep/sg_output.json` with sample ast-grep JSON output for two matches
+- [x] Write tests using `RunnerMock`: pattern matches parsed correctly; absent tool (auto mode) → empty matches + absent coverage; multiple patterns run separately and results merged
+- [x] Run `go test ./internal/extract/astgrep/...` and arch_test — must pass
 
 ### Task 14: `engine` — wire `PatternProvider` into rule evidence (Phase 3)
 
