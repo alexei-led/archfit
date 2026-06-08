@@ -172,12 +172,15 @@ func Run(
 
 	// --- Stage 6: Advisory findings ---
 	// Collect coupling advisories by walking edges in graph order (deterministic).
-	// Edges with Severity != "" represent imbalanced or intrusive coupling.
+	// Edges with Severity != "" and at or above the configured minimum severity are included.
 	var advisoryFindings []finding.Finding
 	for _, e := range g.Edges() {
 		key := e.From + "\x00" + e.To + "\x00" + string(e.Kind)
 		cl, ok := couplingIdx[key]
 		if !ok || cl.Severity == coupling.SeverityNone {
+			continue
+		}
+		if !severityAtLeast(cl.Severity, classifyCfg.BCAdvisoryMinSeverity) {
 			continue
 		}
 		fromPath := stripPrefix(e.From)
@@ -247,7 +250,7 @@ func Run(
 	warnings := 0
 	if mode.Advisory {
 		resolvedFindings = append(resolvedFindings, advisoryFindings...)
-		warnings = len(advisoryFindings)
+		warnings = countActive(advisoryFindings)
 	}
 
 	// Ensure non-nil slices.
@@ -318,6 +321,27 @@ func stripPrefix(id string) string {
 		}
 	}
 	return id
+}
+
+// countActive returns the number of findings whose status is not fixed.
+func countActive(findings []finding.Finding) int {
+	n := 0
+	for _, f := range findings {
+		if f.Status != finding.StatusFixed {
+			n++
+		}
+	}
+	return n
+}
+
+// severityAtLeast reports whether got meets or exceeds the threshold.
+// Empty threshold means no filter (all severities pass). Order: low < medium < high < critical.
+func severityAtLeast(got coupling.Severity, threshold string) bool {
+	if threshold == "" {
+		return true
+	}
+	rank := map[string]int{"low": 1, "medium": 2, "high": 3, "critical": 4}
+	return rank[string(got)] >= rank[threshold]
 }
 
 // couplingAdvisoryID returns a stable 32-character hex fingerprint for a coupling advisory

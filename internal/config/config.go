@@ -127,17 +127,18 @@ type OutputsConfig struct {
 
 // Config is the parsed and validated content of an archfit.yaml file.
 type Config struct {
-	Version       int                  `yaml:"version"`
-	Modules       map[string]ModuleDef `yaml:"modules"`
-	Layers        []string             `yaml:"layers"`
-	Rules         []RuleDef            `yaml:"rules"`
-	Exclusions    []string             `yaml:"exclusions"`
-	Tools         ToolsConfig          `yaml:"tools"`
-	Metrics       MetricsConfig        `yaml:"metrics"`
-	Exceptions    []ExceptionDef       `yaml:"exceptions"`
-	MapReview     MapReviewConfig      `yaml:"map_review"`
-	Outputs       OutputsConfig        `yaml:"outputs"`
-	PythonPackage string               `yaml:"python_package"` // top-level Python package name for grimp
+	Version               int                  `yaml:"version"`
+	Modules               map[string]ModuleDef `yaml:"modules"`
+	Layers                []string             `yaml:"layers"`
+	Rules                 []RuleDef            `yaml:"rules"`
+	Exclusions            []string             `yaml:"exclusions"`
+	Tools                 ToolsConfig          `yaml:"tools"`
+	Metrics               MetricsConfig        `yaml:"metrics"`
+	Exceptions            []ExceptionDef       `yaml:"exceptions"`
+	MapReview             MapReviewConfig      `yaml:"map_review"`
+	Outputs               OutputsConfig        `yaml:"outputs"`
+	PythonPackage         string               `yaml:"python_package"`           // top-level Python package name for grimp
+	BCAdvisoryMinSeverity string               `yaml:"bc_advisory_min_severity"` // minimum severity to emit BC coupling advisories: low|medium|high|critical (default: low)
 }
 
 // Load reads and strictly decodes an archfit.yaml file at path.
@@ -203,9 +204,10 @@ type ExtractConfig struct {
 
 // ClassifyConfig is the view passed to the classify stage.
 type ClassifyConfig struct {
-	Modules   map[string]ModuleDef
-	Layers    []string
-	ModuleMap ModuleMap
+	Modules               map[string]ModuleDef
+	Layers                []string
+	ModuleMap             ModuleMap
+	BCAdvisoryMinSeverity string // minimum severity to emit BC coupling advisories
 }
 
 // RuleConfig is the view passed to the rules stage.
@@ -347,9 +349,10 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 // ForClassify returns the ClassifyConfig view.
 func (c Config) ForClassify() ClassifyConfig {
 	return ClassifyConfig{
-		Modules:   c.Modules,
-		Layers:    c.Layers,
-		ModuleMap: buildModuleMap(c.Modules),
+		Modules:               c.Modules,
+		Layers:                c.Layers,
+		ModuleMap:             buildModuleMap(c.Modules),
+		BCAdvisoryMinSeverity: c.BCAdvisoryMinSeverity,
 	}
 }
 

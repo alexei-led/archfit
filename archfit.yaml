@@ -1,15 +1,18 @@
 version: 1
-
+# Minimum severity for BC coupling advisories to appear in scan output.
+# low: all cross-module deps (noisy for well-designed codebases)
+# medium: only over-decoupled volatile seams and tight cross-boundary coupling
+# high/critical: only intrusive or functional coupling across large boundaries
+bc_advisory_min_severity: medium
 # Architecture layers — innermost to outermost.
 # forbidden_layer_direction fires when fromRank < toRank (inner imports outer).
 layers:
-  - model      # rank 0: pure value types, stdlib only
-  - support    # rank 1: config, baseline
-  - core       # rank 2: classify, rules, metrics, status
-  - engine     # rank 3: orchestration pipeline
-  - adapter    # rank 4: scope, toolrun, extractors, renderers, git
-  - cmd        # rank 5: composition root
-
+  - model # rank 0: pure value types, stdlib only
+  - support # rank 1: config, baseline
+  - core # rank 2: classify, rules, metrics, status
+  - engine # rank 3: orchestration pipeline
+  - adapter # rank 4: scope, toolrun, extractors, renderers, git
+  - cmd # rank 5: composition root
 modules:
   model:
     paths:
@@ -23,7 +26,6 @@ modules:
     layer: model
     subdomain: core
     volatility: low
-
   config:
     paths:
       - internal/config/**
@@ -32,7 +34,6 @@ modules:
     layer: support
     subdomain: supporting
     volatility: medium
-
   baseline:
     paths:
       - internal/baseline/**
@@ -41,7 +42,6 @@ modules:
     layer: support
     subdomain: supporting
     volatility: low
-
   classify:
     paths:
       - internal/classify/**
@@ -50,7 +50,6 @@ modules:
     layer: core
     subdomain: core
     volatility: medium
-
   rules:
     paths:
       - internal/rules/**
@@ -59,7 +58,6 @@ modules:
     layer: core
     subdomain: core
     volatility: medium
-
   metrics:
     paths:
       - internal/metrics/**
@@ -68,7 +66,6 @@ modules:
     layer: core
     subdomain: core
     volatility: medium
-
   status:
     paths:
       - internal/status/**
@@ -77,7 +74,6 @@ modules:
     layer: core
     subdomain: core
     volatility: low
-
   engine:
     paths:
       - internal/engine/**
@@ -86,7 +82,6 @@ modules:
     layer: engine
     subdomain: core
     volatility: medium
-
   scope:
     paths:
       - internal/scope/**
@@ -95,7 +90,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: low
-
   toolrun:
     paths:
       - internal/toolrun/**
@@ -104,7 +98,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: low
-
   extract_go:
     paths:
       - internal/extract/golang/**
@@ -113,7 +106,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
-
   extract_ts:
     paths:
       - internal/extract/ts/**
@@ -122,7 +114,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
-
   extract_py:
     paths:
       - internal/extract/py/**
@@ -131,7 +122,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
-
   history_git:
     paths:
       - internal/history/git/**
@@ -140,7 +130,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: low
-
   output:
     paths:
       - internal/output/**
@@ -150,7 +139,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
-
   cmd:
     paths:
       - cmd/**
@@ -159,7 +147,6 @@ modules:
     layer: cmd
     subdomain: supporting
     volatility: high
-
 rules:
   # Ring gate 1: core must not directly import the process boundary or extractors
   - id: core_no_toolrun
@@ -192,7 +179,6 @@ rules:
     from: internal/rules/**
     to: internal/extract/**
     gate: fail
-
   # Ring gate 2: engine must not import adapters directly (uses ports/interfaces only)
   - id: engine_no_extract
     type: forbidden_dependency
@@ -214,7 +200,6 @@ rules:
     from: internal/engine/**
     to: internal/output/**
     gate: fail
-
   # Ring gate 3: model packages are pure value types
   - id: model_no_config
     type: forbidden_dependency
@@ -226,14 +211,12 @@ rules:
     from: internal/model/**
     to: internal/baseline
     gate: fail
-
   # Layer direction — engine→scope is a known architectural tension:
   # engine uses scope.Scope as a value type but scope lives at adapter layer.
   # Flagged as warn to document this. Phase 2: move Scope to model.
   - id: layer_inversion
     type: forbidden_layer_direction
     gate: warn
-
 tools:
   go:
     enabled: "on"
