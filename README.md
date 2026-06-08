@@ -4,139 +4,146 @@
 
 Architecture fitness checker for Go, TypeScript, and Python repositories.
 
-## Installation
+`archfit` turns architecture intent into executable checks. It extracts dependency
+facts from a repo, compares them with `.archfit.yaml`, and reports gate findings,
+Balanced Coupling advisories, metrics, and baseline status.
+
+Use it in local development, CI, pre-push hooks, or AI-agent repair loops when you
+want deterministic feedback that code still fits the intended architecture.
+
+## Quick start
+
+Install the CLI:
 
 ```sh
 go install github.com/alexei-led/archfit/cmd/archfit@latest
 ```
 
-## Usage
-
-### check — gate violations
-
-```sh
-archfit check --config .archfit.yaml
-```
-
-Exits 0 (pass), 1 (error), or 2 (gate violations found). Add `--full` to include
-all rule types; add `--advisory` to include BC advisory findings in output.
-
-### scan — full audit report
-
-```sh
-archfit scan --config .archfit.yaml
-```
-
-Equivalent to `check --full --advisory --report --format markdown`. Produces a
-Markdown report with Health Summary, Gate Violations, BC Advisories, Metrics,
-and Map Staleness sections. Exits 0 on pass, 2 on gate violations.
-
-### init — generate starter config
-
-```sh
-# Write to stdout
-archfit init --output - --root .
-
-# Write to .archfit.yaml in current directory
-archfit init --root .
-```
-
-Discovers Go packages (via `go list`), TypeScript (`src/`/`lib/` under `package.json`),
-and Python packages (directories with `__init__.py` under `pyproject.toml`/`setup.py`).
-Emits a starter `.archfit.yaml` with inferred modules, layers, and a `gate: warn` rule.
-Review and promote rules to `gate: fail` once the baseline is established.
-
-### doctor — toolchain check
+Run the first check in a repository:
 
 ```sh
 archfit doctor
+archfit init --root .
+$EDITOR .archfit.yaml
+archfit check --config .archfit.yaml --full
 ```
 
-Prints a table of all required and optional tools with their status and resolved
-paths: `go`, `git`, `node`, `npx`, `bunx`, `uv`, `python3`, `sg` (ast-grep),
-`scip-typescript`, `scip-python`, `scip-go`.
+Create a Markdown audit report:
 
-### baseline — record known findings
+```sh
+archfit scan --config .archfit.yaml > archfit-report.md
+```
+
+If the current findings are accepted technical debt, save a baseline:
 
 ```sh
 archfit baseline --full --config .archfit.yaml
 ```
 
-Snapshots current findings into `.archfit-baseline.json`. Subsequent `check`/`scan`
-runs mark matching findings as `status: baseline` instead of `status: new`.
+After that, new findings are marked as `new`; known findings are marked as
+`baseline` until fixed or re-baselined.
 
-## Toolchain Requirements
+## What it checks
 
-| Tool               | Required | Purpose                                          |
-| ------------------ | -------- | ------------------------------------------------ |
-| Go 1.26+           | yes      | binary + Go analysis (`go list`, `go vet`)       |
-| git                | yes      | change history for `new` finding detection       |
-| Node.js 22+        | optional | TypeScript analysis via dependency-cruiser       |
-| dependency-cruiser | optional | TypeScript/JS dependency graph (`npx depcruise`) |
-| Python 3.12+       | optional | Python analysis via grimp                        |
-| uv                 | optional | Python environment management                    |
-| sg (ast-grep)      | optional | structural pattern evidence (Phase 3)            |
-| scip-typescript    | optional | TypeScript barrel-file symbol resolution         |
-| scip-python        | optional | Python symbol resolution                         |
-| scip-go            | optional | Go symbol resolution                             |
+`archfit` focuses on architecture drift, not general code quality.
 
-The static Go binary covers Go-only analysis with no extra toolchain.
-Use `archfit doctor` to check what is available on your host.
-Use the Docker image for TypeScript or Python analysis without installing the toolchain.
+It can check:
+
+- forbidden dependencies between paths or modules;
+- public API boundaries and internal API access;
+- layer direction rules;
+- import cycles;
+- new cross-module dependencies;
+- coupling advisories based on strength, distance, volatility, and explicitness;
+- metric deltas such as encapsulation, unbalanced edges, cycles, and coverage.
+
+## Configuration
+
+Configuration lives in `.archfit.yaml`.
+
+Generate a starter file:
+
+```sh
+archfit init --root . --output .archfit.yaml
+```
+
+Then review the generated modules, layers, and rules before using it as a gate.
+Start with narrow rules and baseline accepted current findings while calibrating.
+Keep `gate` values aligned with the intended CI policy.
+
+Minimal shape:
+
+```yaml
+version: 1
+layers: [domain, application, adapter]
+modules:
+  domain:
+    paths: [internal/domain/**]
+    public: [internal/domain]
+    layer: domain
+    subdomain: core
+rules:
+  - id: no_adapter_to_domain_internal
+    type: public_api_only
+    gate: fail
+```
+
+See [`docs/guide/`](docs/guide/README.md) for the user guide.
+
+## Commands
+
+- `archfit doctor` — check available local toolchain.
+- `archfit init` — generate a starter `.archfit.yaml`.
+- `archfit check` — run architecture gates and metrics.
+- `archfit scan` — produce a full Markdown audit report.
+- `archfit baseline` — record accepted current findings.
+- `archfit explain <id>` — explain one finding by fingerprint prefix.
+- `archfit install` — install or print commands for optional language tools.
+
+Output formats for `check`: `text`, `json`, `markdown`/`md`.
+
+Exit codes:
+
+- `0` — pass;
+- `1` — fail;
+- `2` — warn;
+- `3` — usage, config, or runtime error.
+
+## Toolchain
+
+Go analysis works from the Go binary and Go package loader. TypeScript and Python
+analysis use optional external tools.
+
+```sh
+archfit doctor
+archfit install --lang py --lang ts --dry-run
+```
+
+Use Docker when you want the bundled toolchain instead of installing language
+analysis tools on the host:
+
+```sh
+docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:latest \
+  check --config /repo/.archfit.yaml --full
+```
+
+## Documentation
+
+- [`docs/guide/`](docs/guide/README.md) — user guide and documentation map.
+- [`docs/spec/arch-fitness-spec-v0.4.md`](docs/spec/arch-fitness-spec-v0.4.md)
+  — product/build spec.
+- [`docs/design/arch-fitness-architecture-v0.2.md`](docs/design/arch-fitness-architecture-v0.2.md)
+  — internal architecture design.
 
 ## Development
 
-### Prerequisites
-
-- Go 1.26+
-- Node.js + npm (for TypeScript analysis)
-- Python 3.12+ or uv (for Python analysis)
-
-### Setup
-
 ```sh
-make setup-tools   # install golangci-lint, goimports, moq
+make setup-tools
 pre-commit install --install-hooks
 pre-commit install -t pre-push
+make test
+make lint
+make build
 ```
 
-### Commands
-
-```sh
-make build         # compile binary
-make test          # run tests with race detector
-make lint          # run golangci-lint
-make fmt           # format code
-make mock          # regenerate mocks
-```
-
-## Docker
-
-The fat Docker image bundles Go binary + Node.js 22 + dependency-cruiser + Python 3.12 + uv + grimp.
-No toolchain required on the host — useful for TypeScript and Python analysis.
-
-```sh
-# Pull from GHCR
-docker pull ghcr.io/alexei-led/archfit:latest
-
-# Run check against a repo mounted at /repo
-docker run --rm -v $(pwd):/repo ghcr.io/alexei-led/archfit:latest \
-    check --config /repo/.archfit.yaml
-
-# Full audit report (Markdown)
-docker run --rm -v $(pwd):/repo ghcr.io/alexei-led/archfit:latest \
-    scan --config /repo/.archfit.yaml
-
-# Verify bundled toolchain
-docker run --rm ghcr.io/alexei-led/archfit:latest doctor
-```
-
-The bare static binary (`go install`) is sufficient for Go-only analysis.
-Use the Docker image when you need TypeScript (dependency-cruiser) or Python (grimp) analysis.
-
-### Build the image locally
-
-```sh
-make docker-build   # linux/amd64 + linux/arm64 (requires docker buildx)
-make docker-run     # smoke test: archfit --help
-```
+The release workflow builds static binaries and a multi-arch Docker image.
