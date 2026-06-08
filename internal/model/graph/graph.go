@@ -61,12 +61,13 @@ func NodePath(id string) string {
 // Edge is a directed dependency between two nodes.
 // From and To are node IDs (NodeKind + ":" + path).
 type Edge struct {
-	From       string     `json:"from"`
-	To         string     `json:"to"`
-	Kind       EdgeKind   `json:"kind"`
-	Language   string     `json:"language"`
-	Confidence string     `json:"confidence"`
-	Locations  []Location `json:"locations"`
+	From             string     `json:"from"`
+	To               string     `json:"to"`
+	Kind             EdgeKind   `json:"kind"`
+	Language         string     `json:"language"`
+	Confidence       string     `json:"confidence"`
+	Locations        []Location `json:"locations"`
+	ExplicitnessHint string     `json:"explicitness_hint,omitempty"`
 }
 
 // canonicalKey uniquely identifies an edge regardless of source.

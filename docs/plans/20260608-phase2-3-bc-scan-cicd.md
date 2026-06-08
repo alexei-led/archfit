@@ -111,11 +111,11 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 - Modify: `internal/model/graph/graph.go`
 - Modify: `internal/model/graph/graph_test.go`
 
-- [ ] Add `ExplicitnessHint string` field to `graph.Edge` struct (JSON tag: `explicitness_hint,omitempty`)
-- [ ] Verify `graph.Build` still deduplicates and sorts correctly with the new field (canonical key unchanged: `from+to+kind`)
-- [ ] Update tests: confirm ExplicitnessHint is preserved through Build, empty string round-trips cleanly
-- [ ] Run `go test ./internal/model/graph/...` — must pass
-- [ ] Run `go test ./internal/ -run TestArchImports` — must stay green
+- [x] Add `ExplicitnessHint string` field to `graph.Edge` struct (JSON tag: `explicitness_hint,omitempty`)
+- [x] Verify `graph.Build` still deduplicates and sorts correctly with the new field (canonical key unchanged: `from+to+kind`)
+- [x] Update tests: confirm ExplicitnessHint is preserved through Build, empty string round-trips cleanly
+- [x] Run `go test ./internal/model/graph/...` — must pass
+- [x] Run `go test ./internal/ -run TestArchImports` — must stay green
 
 ### Task 2: `coupling` — add `Severity` type and balance formula
 
