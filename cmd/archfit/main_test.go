@@ -34,3 +34,15 @@ func TestRun_Doctor(t *testing.T) {
 	t.Logf("doctor exit %d output: %q", code, buf.String())
 	_ = code
 }
+
+func TestRun_Help_ShowsScan(t *testing.T) {
+	var buf bytes.Buffer
+	code := Run([]string{"--help"}, &buf)
+	if code != 0 {
+		t.Fatalf("expected exit 0 for --help, got %d", code)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "scan") {
+		t.Errorf("--help output does not mention 'scan' subcommand; got:\n%s", out)
+	}
+}

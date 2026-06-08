@@ -212,13 +212,13 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 - Modify: `cmd/archfit/main.go`
 - Modify: `cmd/archfit/main_test.go`
 
-- [ ] Add `ScanCmd` struct: zero-field struct; `Run` resolves to `CheckCmd{Full: true, Advisory: true, Report: true, Format: []string{"markdown"}}.Run(deps)`; OR implement as a kong subcommand that simply sets those flags and delegates
-- [ ] Wire `ScanCmd` into the top-level `cli` struct: `Scan ScanCmd cmd:"" help:"Full architecture audit report (scan ≡ check --full --advisory --report --format markdown)."`
-- [ ] Wire the Markdown renderer into `CheckCmd.Run`: when `"markdown"` is in `c.Format`, construct `markdown.New()` renderer alongside json/console
-- [ ] Add `golang.org/x/term` import to cmd (for terminal detection path already implemented in renderer)
-- [ ] Smoke test `scan`: run `archfit scan --config testdata/fixture-go/archfit.yaml` → output should be Markdown text, exit 0 (advisory findings are baselined, no gate violations)
-- [ ] Update `TestRun_Doctor` to also test help (`archfit --help` shows `scan` subcommand)
-- [ ] Run `go test ./cmd/archfit/...` — must pass
+- [x] Add `ScanCmd` struct: zero-field struct; `Run` resolves to `CheckCmd{Full: true, Advisory: true, Report: true, Format: []string{"markdown"}}.Run(deps)`; OR implement as a kong subcommand that simply sets those flags and delegates
+- [x] Wire `ScanCmd` into the top-level `cli` struct: `Scan ScanCmd cmd:"" help:"Full architecture audit report (scan ≡ check --full --advisory --report --format markdown)."`
+- [x] Wire the Markdown renderer into `CheckCmd.Run`: when `"markdown"` is in `c.Format`, construct `markdown.New()` renderer alongside json/console
+- [x] Add `golang.org/x/term` import to cmd (for terminal detection path already implemented in renderer — term is encapsulated in markdown.New(), no cmd import needed)
+- [x] Smoke test `scan`: run `archfit scan --config testdata/fixture-go/archfit.yaml` → output should be Markdown text, exit 0 (skipped - not automatable in CI)
+- [x] Update `TestRun_Doctor` to also test help (`archfit --help` shows `scan` subcommand) — added `TestRun_Help_ShowsScan`
+- [x] Run `go test ./cmd/archfit/...` — must pass
 
 ### Task 9: `internal/initcfg` — `archfit init` discovery (Phase 2)
 

@@ -24,6 +24,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
+	"github.com/alexei-led/archfit/internal/output/markdown"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -42,6 +43,7 @@ const defaultBaselinePath = ".archfit-baseline.json"
 // cli is the top-level kong command struct.
 type cli struct {
 	Check    CheckCmd    `cmd:"" help:"Check architecture constraints."`
+	Scan     ScanCmd     `cmd:"" help:"Full architecture audit report (scan ≡ check --full --advisory --report --format markdown)."`
 	Baseline BaselineCmd `cmd:"" help:"Save current findings as baseline."`
 	Explain  ExplainCmd  `cmd:"" help:"Explain a specific finding."`
 	Doctor   DoctorCmd   `cmd:"" help:"Check toolchain availability."`
@@ -94,7 +96,7 @@ type CheckCmd struct {
 	Config   string   `short:"c" help:"Config file." default:"archfit.yaml"`
 	Base     string   `help:"Base ref for delta mode."`
 	Full     bool     `help:"Full scan (not delta)."`
-	Format   []string `help:"Output format." enum:"json,console" default:"console"`
+	Format   []string `help:"Output format." enum:"json,console,markdown" default:"console"`
 	Advisory bool     `help:"Include advisory findings (no-op Phase 1)."`
 	Report   bool     `help:"Report only, don't fail on regressions (no-op Phase 1)."`
 }
@@ -152,6 +154,8 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 			renderErr = jsonout.New().Render(diag, deps.Stdout)
 		case "console":
 			renderErr = console.New().Render(diag, deps.Stdout)
+		case "markdown":
+			renderErr = markdown.New().Render(diag, deps.Stdout)
 		}
 		if renderErr != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, renderErr)}
@@ -343,6 +347,27 @@ type InitCmd struct{}
 func (c *InitCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kong command interface; future versions may return errors
 	_, _ = fmt.Fprintln(deps.Stdout, "not yet implemented")
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// ScanCmd
+// ---------------------------------------------------------------------------
+
+// ScanCmd is a convenience alias for a full advisory Markdown audit.
+// Equivalent to: archfit check --full --advisory --report --format markdown
+type ScanCmd struct {
+	Config string `short:"c" help:"Config file." default:"archfit.yaml"`
+}
+
+func (c *ScanCmd) Run(deps *appDeps) error {
+	check := CheckCmd{
+		Config:   c.Config,
+		Full:     true,
+		Advisory: true,
+		Report:   true,
+		Format:   []string{"markdown"},
+	}
+	return check.Run(deps)
 }
 
 // ---------------------------------------------------------------------------
