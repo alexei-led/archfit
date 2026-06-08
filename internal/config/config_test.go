@@ -326,6 +326,145 @@ func TestToolMode_UnmarshalYAML(t *testing.T) {
 	}
 }
 
+func TestLoad_Patterns(t *testing.T) {
+	cfg, err := config.Load(context.Background(), "testdata/patterns.yaml")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	// Verify the rule with patterns parsed correctly.
+	if len(cfg.Rules) != 2 {
+		t.Fatalf("len(Rules) = %d, want 2", len(cfg.Rules))
+	}
+	rule := cfg.Rules[0]
+	if rule.ID != "no_unsafe_ptr" {
+		t.Errorf("Rules[0].ID = %q, want no_unsafe_ptr", rule.ID)
+	}
+	if len(rule.Patterns) != 2 {
+		t.Fatalf("Rules[0].Patterns len=%d, want 2", len(rule.Patterns))
+	}
+
+	p0 := rule.Patterns[0]
+	if p0.ID != "unsafe_cast" {
+		t.Errorf("Patterns[0].ID = %q, want unsafe_cast", p0.ID)
+	}
+	if p0.Lang != "go" {
+		t.Errorf("Patterns[0].Lang = %q, want go", p0.Lang)
+	}
+	if p0.Rule != "unsafe.Pointer($X)" {
+		t.Errorf("Patterns[0].Rule = %q, want unsafe.Pointer($X)", p0.Rule)
+	}
+
+	p1 := rule.Patterns[1]
+	if p1.ID != "reflect_unexported" {
+		t.Errorf("Patterns[1].ID = %q, want reflect_unexported", p1.ID)
+	}
+
+	// Rule without patterns should have nil/empty Patterns slice.
+	if len(cfg.Rules[1].Patterns) != 0 {
+		t.Errorf("Rules[1].Patterns len=%d, want 0", len(cfg.Rules[1].Patterns))
+	}
+}
+
+func TestForPatterns(t *testing.T) {
+	tests := []struct {
+		name    string
+		rules   []config.RuleDef
+		wantLen int
+		wantIDs []string
+	}{
+		{
+			name:    "no_rules",
+			rules:   nil,
+			wantLen: 0,
+		},
+		{
+			name: "rules_without_patterns",
+			rules: []config.RuleDef{
+				{ID: "r1", Type: "forbidden_dependency"},
+				{ID: "r2", Type: "public_api_only"},
+			},
+			wantLen: 0,
+		},
+		{
+			name: "one_rule_with_patterns",
+			rules: []config.RuleDef{
+				{
+					ID:   "r1",
+					Type: "forbidden_dependency",
+					Patterns: []config.PatternDef{
+						{ID: "p1", Lang: "go", Rule: "unsafe.Pointer($X)"},
+						{ID: "p2", Lang: "go", Rule: "reflect.ValueOf($X)"},
+					},
+				},
+			},
+			wantLen: 2,
+			wantIDs: []string{"p1", "p2"},
+		},
+		{
+			name: "multiple_rules_with_patterns",
+			rules: []config.RuleDef{
+				{
+					ID: "r1",
+					Patterns: []config.PatternDef{
+						{ID: "p1", Lang: "go", Rule: "foo($X)"},
+					},
+				},
+				{ID: "r2"}, // no patterns
+				{
+					ID: "r3",
+					Patterns: []config.PatternDef{
+						{ID: "p2", Lang: "typescript", Rule: "bar($X)"},
+						{ID: "p3", Lang: "typescript", Rule: "baz($X)"},
+					},
+				},
+			},
+			wantLen: 3,
+			wantIDs: []string{"p1", "p2", "p3"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.Config{
+				Version: 1,
+				Rules:   tc.rules,
+			}
+			got := cfg.ForPatterns()
+			if len(got) != tc.wantLen {
+				t.Errorf("ForPatterns() len=%d, want %d", len(got), tc.wantLen)
+			}
+			for i, wantID := range tc.wantIDs {
+				if i >= len(got) {
+					t.Errorf("ForPatterns()[%d] missing, want ID=%q", i, wantID)
+					continue
+				}
+				if got[i].ID != wantID {
+					t.Errorf("ForPatterns()[%d].ID = %q, want %q", i, got[i].ID, wantID)
+				}
+			}
+		})
+	}
+}
+
+func TestLoad_ExistingConfigUnchanged(t *testing.T) {
+	// Existing configs without patterns: must still load cleanly.
+	cfg, err := config.Load(context.Background(), "testdata/valid.yaml")
+	if err != nil {
+		t.Fatalf("Load valid.yaml: %v", err)
+	}
+	for _, r := range cfg.Rules {
+		if len(r.Patterns) != 0 {
+			t.Errorf("rule %q: Patterns len=%d, want 0 (existing config has no patterns)", r.ID, len(r.Patterns))
+		}
+	}
+	// ForPatterns on a config with no patterns returns empty, not nil.
+	pc := cfg.ForPatterns()
+	if len(pc) != 0 {
+		t.Errorf("ForPatterns() len=%d on no-patterns config, want 0", len(pc))
+	}
+}
+
 // writeFile is a test helper that writes content to path.
 func writeFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o600)

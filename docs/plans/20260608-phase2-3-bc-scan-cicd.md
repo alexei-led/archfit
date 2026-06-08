@@ -280,12 +280,12 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 - Modify: `internal/config/config_test.go`
 - Modify: `internal/rules/rules.go` (add `Patterns` field to `RuleDef`)
 
-- [ ] Add `patterns` field to `RuleDef` YAML schema: `Patterns []PatternDef yaml:"patterns,omitempty"` where `PatternDef{ID, Lang, Rule string}`
-- [ ] Implement `Config.ForPatterns() PatternConfig` projection that collects all `PatternDef` values from all rules
-- [ ] Update `config.Load` to parse the new optional `patterns:` field in rules without breaking existing configs (strict decode still applies to top-level keys)
-- [ ] Update rule tests: assert PatternDef parses correctly; assert existing configs without patterns still load cleanly
-- [ ] Write test YAML fixture with a rule that has `patterns:` block
-- [ ] Run `go test ./internal/config/...` — must pass
+- [x] Add `patterns` field to `RuleDef` YAML schema: `Patterns []PatternDef yaml:"patterns,omitempty"` where `PatternDef{ID, Lang, Rule string}`
+- [x] Implement `Config.ForPatterns() PatternConfig` projection that collects all `PatternDef` values from all rules
+- [x] Update `config.Load` to parse the new optional `patterns:` field in rules without breaking existing configs (strict decode still applies to top-level keys)
+- [x] Update rule tests: assert PatternDef parses correctly; assert existing configs without patterns still load cleanly
+- [x] Write test YAML fixture with a rule that has `patterns:` block
+- [x] Run `go test ./internal/config/...` — must pass
 
 ### Task 13: `extract/astgrep` — ast-grep `PatternProvider` adapter (Phase 3)
 

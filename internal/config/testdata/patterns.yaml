@@ -1,0 +1,24 @@
+version: 1
+modules:
+  core:
+    paths:
+      - internal/core/**
+  adapter:
+    paths:
+      - internal/adapter/**
+rules:
+  - id: no_unsafe_ptr
+    type: forbidden_dependency
+    from: internal/adapter/**
+    to: internal/core/**
+    gate: warn
+    patterns:
+      - id: unsafe_cast
+        lang: go
+        rule: unsafe.Pointer($X)
+      - id: reflect_unexported
+        lang: go
+        rule: reflect.ValueOf($X).FieldByName($Y)
+  - id: layer_check
+    type: forbidden_layer_direction
+    gate: fail

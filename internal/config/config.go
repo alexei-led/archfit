@@ -80,13 +80,14 @@ type ModuleDef struct {
 
 // RuleDef declares a single architecture rule.
 type RuleDef struct {
-	ID        string `yaml:"id"`
-	Type      string `yaml:"type"`
-	Gate      string `yaml:"gate"`
-	From      string `yaml:"from"`
-	To        string `yaml:"to"`
-	FromLayer string `yaml:"from_layer"`
-	ToLayer   string `yaml:"to_layer"`
+	ID        string       `yaml:"id"`
+	Type      string       `yaml:"type"`
+	Gate      string       `yaml:"gate"`
+	From      string       `yaml:"from"`
+	To        string       `yaml:"to"`
+	FromLayer string       `yaml:"from_layer"`
+	ToLayer   string       `yaml:"to_layer"`
+	Patterns  []PatternDef `yaml:"patterns,omitempty"`
 }
 
 // ExceptionDef grants a temporary exception to a rule.
@@ -400,10 +401,13 @@ type PatternDef struct {
 type PatternConfig []PatternDef
 
 // ForPatterns returns the PatternConfig view: all PatternDef values collected
-// from rules that declare patterns. RuleDef gains a Patterns field in Task 12;
-// for now this returns an empty slice.
+// from rules that declare a patterns: block.
 func (c Config) ForPatterns() PatternConfig {
-	return PatternConfig{}
+	var out PatternConfig
+	for _, r := range c.Rules {
+		out = append(out, r.Patterns...)
+	}
+	return out
 }
 
 // StalenessConfig is the view passed to the staleness check stage.
