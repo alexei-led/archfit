@@ -405,12 +405,12 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 
 - Create: `.github/workflows/release.yaml`
 
-- [ ] Write `release.yaml` triggered on semver tag push (`v[0-9]+.[0-9]+.[0-9]+` and `v*-rc.*`)
-- [ ] **build-binaries job** (matrix: 4 targets, `ubuntu-latest`): same cross-compile as CI build job; output `dist/archfit-${GITHUB_REF_NAME}-${OS}-${ARCH}` + `SHA256SUMS`; upload artifacts
-- [ ] **build-docker job** (matrix: `{linux/amd64, ubuntu-latest}` + `{linux/arm64, ubuntu-24.04-arm}`): `docker/login-action@v3` (GHCR), `docker/setup-buildx-action@v3`, `docker/build-push-action@v6` with `push-by-digest=true`; upload digest artifacts
-- [ ] **merge-docker job** (depends on build-docker): download digests, `docker buildx imagetools create` to merge manifest with versioned + `latest` tags
-- [ ] **release job** (depends on build-binaries + merge-docker): download all binary artifacts; generate release notes from `git log`; `gh release create ${GITHUB_REF_NAME} --notes-file RELEASE_NOTES.md dist/*`; detect pre-release from version string (`v*-rc.*` → `--prerelease`)
-- [ ] Validate YAML and confirm `permissions: {contents: write, packages: write}` on required jobs
+- [x] Write `release.yaml` triggered on semver tag push (`v[0-9]+.[0-9]+.[0-9]+` and `v*-rc.*`)
+- [x] **build-binaries job** (matrix: 4 targets, `ubuntu-latest`): same cross-compile as CI build job; output `dist/archfit-${GITHUB_REF_NAME}-${OS}-${ARCH}` + `SHA256SUMS`; upload artifacts
+- [x] **build-docker job** (matrix: `{linux/amd64, ubuntu-latest}` + `{linux/arm64, ubuntu-24.04-arm}`): `docker/login-action@v3` (GHCR), `docker/setup-buildx-action@v3`, `docker/build-push-action@v6` with `push-by-digest=true`; upload digest artifacts
+- [x] **merge-docker job** (depends on build-docker): download digests, `docker buildx imagetools create` to merge manifest with versioned + `latest` tags
+- [x] **release job** (depends on build-binaries + merge-docker): download all binary artifacts; generate release notes from `git log`; `gh release create ${GITHUB_REF_NAME} --notes-file RELEASE_NOTES.md dist/*`; detect pre-release from version string (`v*-rc.*` → `--prerelease`)
+- [x] Validate YAML and confirm `permissions: {contents: write, packages: write}` on required jobs
 
 ### Task 21: Final acceptance verification + documentation
 
