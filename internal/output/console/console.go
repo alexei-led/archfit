@@ -16,9 +16,9 @@ func New() *Renderer {
 	return &Renderer{}
 }
 
-// Format returns "console".
+// Format returns "text".
 func (r *Renderer) Format() string {
-	return "console"
+	return "text"
 }
 
 // Render writes a short summary to w:

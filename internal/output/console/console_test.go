@@ -11,8 +11,8 @@ import (
 
 func TestRenderer_Format(t *testing.T) {
 	r := console.New()
-	if got := r.Format(); got != "console" {
-		t.Errorf("Format() = %q, want %q", got, "console")
+	if got := r.Format(); got != "text" {
+		t.Errorf("Format() = %q, want %q", got, "text")
 	}
 }
 

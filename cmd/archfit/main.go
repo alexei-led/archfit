@@ -41,8 +41,10 @@ var (
 	date    = "unknown"
 )
 
-// defaultBaselinePath is the on-disk path for the baseline file.
-const defaultBaselinePath = ".archfit-baseline.json"
+const (
+	defaultConfigPath   = "archfit.yaml"           // fallback to config.Default() when absent
+	defaultBaselinePath = ".archfit-baseline.json" // on-disk path for the baseline file
+)
 
 // cli is the top-level kong command struct.
 type cli struct {
@@ -97,19 +99,27 @@ type exitCode int
 
 // CheckCmd runs the full archfit analysis pipeline.
 type CheckCmd struct {
-	Config   string   `short:"c" help:"Config file." default:"archfit.yaml"`
-	Base     string   `help:"Base ref for delta mode."`
-	Full     bool     `help:"Full scan (not delta)."`
-	Format   []string `help:"Output format." enum:"json,console,markdown" default:"console"`
-	Advisory bool     `help:"Include advisory findings (no-op Phase 1)."`
-	Report   bool     `help:"Report only, don't fail on regressions (no-op Phase 1)."`
+	Config   string   `short:"c" help:"Path to config file (optional; built-in defaults used if absent)." default:"archfit.yaml"`
+	Base     string   `help:"Git ref to compare against for incremental mode (e.g. main, HEAD~1)."`
+	Full     bool     `help:"Scan all files, not just files changed since --base."`
+	Format   []string `help:"Output format: text (human-readable), json, markdown, md. Repeatable." enum:"json,text,markdown,md" default:"text"`
+	Advisory bool     `help:"Include informational findings (coupling advisories) in output."`
+	Report   bool     `help:"Never exit with a failure code, even when violations are found."`
+	NoConfig bool     `name:"no-config" help:"Skip config file entirely; use built-in defaults. Combine with --lang and --severity to run without any config file."`
+
+	// Overrides — each flag overrides the equivalent setting from the config file.
+	Severity string   `name:"severity" help:"Show only coupling advisories at or above this level: low, medium, high, critical. Default: medium." enum:"low,medium,high,critical," default:""`
+	Lang     []string `name:"lang"     help:"Languages to analyze: go, ts, py. Repeatable: --lang go --lang ts. Sets each to 'on'; unspecified languages follow config or auto-detect."`
 }
 
 func (c *CheckCmd) Run(deps *appDeps) error {
 	ctx := context.Background()
 
-	cfg, err := config.Load(ctx, c.Config)
+	cfg, err := loadConfig(ctx, c.Config, c.NoConfig)
 	if err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+	}
+	if err := applyFlagOverrides(&cfg, c.Severity, c.Lang); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
@@ -157,8 +167,10 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		switch format {
 		case "json":
 			renderErr = jsonout.New().Render(diag, deps.Stdout)
-		case "console":
+		case "text":
 			renderErr = console.New().Render(diag, deps.Stdout)
+		case "md":
+			renderErr = markdown.New().Render(diag, deps.Stdout)
 		case "markdown":
 			renderErr = markdown.New().Render(diag, deps.Stdout)
 		}
@@ -185,7 +197,7 @@ type BaselineCmd struct {
 func (c *BaselineCmd) Run(deps *appDeps) error {
 	ctx := context.Background()
 
-	cfg, err := config.Load(ctx, c.Config)
+	cfg, err := loadConfig(ctx, c.Config, false)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -261,7 +273,7 @@ type ExplainCmd struct {
 func (c *ExplainCmd) Run(deps *appDeps) error {
 	ctx := context.Background()
 
-	cfg, err := config.Load(ctx, c.Config)
+	cfg, err := loadConfig(ctx, c.Config, false)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -392,7 +404,8 @@ func (c *InitCmd) Run(deps *appDeps) error {
 // ---------------------------------------------------------------------------
 
 // ScanCmd is a convenience alias for a full advisory Markdown audit.
-// Equivalent to: archfit check --full --advisory --report --format markdown
+// Always runs: check --full --advisory --report --format markdown.
+// For custom combinations (e.g. without advisory), use the check command directly.
 type ScanCmd struct {
 	Config string `short:"c" help:"Config file." default:"archfit.yaml"`
 }
@@ -411,6 +424,58 @@ func (c *ScanCmd) Run(deps *appDeps) error {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// loadConfig loads the config file at path. When path equals the default
+// "archfit.yaml" and the file is absent, it returns config.Default() so the
+// tool works without a config file. An explicit --config path that is missing
+// always returns an error. noConfig=true skips file loading entirely.
+func loadConfig(ctx context.Context, path string, noConfig bool) (config.Config, error) {
+	if noConfig {
+		return config.Default(), nil
+	}
+	cfg, err := config.Load(ctx, path)
+	if err == nil {
+		return cfg, nil
+	}
+	if path == defaultConfigPath && errors.Is(err, os.ErrNotExist) {
+		return config.Default(), nil
+	}
+	return config.Config{}, err
+}
+
+// canonicalLang maps a --lang key (go, ts, py, or full name) to the config
+// language name. Returns "" for unknown keys.
+func canonicalLang(key string) string {
+	switch key {
+	case "go":
+		return config.LangGo
+	case "ts", config.LangTypeScript:
+		return config.LangTypeScript
+	case "py", config.LangPython:
+		return config.LangPython
+	default:
+		return ""
+	}
+}
+
+// applyFlagOverrides applies non-empty CLI flag values onto cfg, overriding
+// whatever the config file (or Default) provided.
+func applyFlagOverrides(cfg *config.Config, severity string, lang []string) error {
+	if severity != "" {
+		cfg.BCAdvisoryMinSeverity = severity
+	}
+	for _, key := range lang {
+		canonical := canonicalLang(key)
+		if canonical == "" {
+			return fmt.Errorf("--lang: unknown language %q; use go, ts, or py", key)
+		}
+		if cfg.Tools == nil {
+			cfg.Tools = make(map[string]config.ToolConfig)
+		}
+		cfg.Tools[canonical] = config.ToolConfig{Enabled: config.ModeOn}
+	}
+	return nil
+}
 
 // verdictToError maps a diagnostic verdict to an exit error (nil = exit 0).
 func verdictToError(v diagnostic.Verdict) error {

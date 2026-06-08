@@ -25,6 +25,13 @@ const (
 	ModeOff  ToolMode = "off"
 )
 
+// Language tool key constants used in the Tools map and ForExtract.
+const (
+	LangGo         = "go"
+	LangTypeScript = "typescript"
+	LangPython     = "python"
+)
+
 // UnmarshalYAML handles both bool (true→on, false→off) and string ("auto"/"on"/"off") values.
 func (m *ToolMode) UnmarshalYAML(unmarshal func(any) error) error {
 	// Try bool first (YAML parses bare true/false as bool).
@@ -60,8 +67,7 @@ type ToolConfig struct {
 	Enabled ToolMode `yaml:"enabled"`
 }
 
-// ToolsConfig holds settings for all known external tools, keyed by tool name.
-// Tool names match the spec §6 YAML keys: git, dependency_cruiser, import_linter, ast_grep.
+// ToolsConfig holds settings for all known external tools, keyed by language name.
 type ToolsConfig map[string]ToolConfig
 
 // ModuleDef defines a module's path ownership and metadata.
@@ -167,6 +173,21 @@ func validate(cfg Config) error {
 		return fmt.Errorf("version must be > 0 (got %d)", cfg.Version)
 	}
 	return nil
+}
+
+// Default returns a Config suitable for use when no archfit.yaml is present.
+// All tool modes are auto, BC advisory minimum severity is medium, and no
+// modules, layers, or rules are defined — only metric checks run.
+func Default() Config {
+	return Config{
+		Version:               1,
+		BCAdvisoryMinSeverity: "medium",
+		Tools: map[string]ToolConfig{
+			LangGo:         {Enabled: ModeAuto},
+			LangTypeScript: {Enabled: ModeAuto},
+			LangPython:     {Enabled: ModeAuto},
+		},
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -293,20 +314,6 @@ func (c Config) ForScope() ScopeConfig {
 	}
 }
 
-// languageToolKey maps a language name to the Tools map key used in archfit.yaml.
-func languageToolKey(lang string) string {
-	switch lang {
-	case "typescript":
-		return "dependency_cruiser"
-	case "python":
-		return "grimp"
-	case "go":
-		return "go"
-	default:
-		return lang
-	}
-}
-
 // ForExtract returns an ExtractConfig for the given language.
 // Mode is derived from the Tools map (defaults to ModeAuto when absent).
 func (c Config) ForExtract(lang string) ExtractConfig {
@@ -331,13 +338,12 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 	ec.Internal = internal
 
 	// Python-specific fields.
-	if lang == "python" {
+	if lang == LangPython {
 		ec.PyPackage = c.PythonPackage
 	}
 
-	// Derive Mode from the Tools map.
-	toolKey := languageToolKey(lang)
-	if tc, ok := c.Tools[toolKey]; ok {
+	// Derive Mode from the Tools map. The key is the language name itself.
+	if tc, ok := c.Tools[lang]; ok {
 		ec.Mode = tc.Enabled
 	} else {
 		ec.Mode = ModeAuto
