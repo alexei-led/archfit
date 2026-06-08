@@ -50,11 +50,13 @@ const (
 // Classification holds the Balanced Coupling assessment for one graph edge.
 // Phase 1 populates Strength and Distance with high confidence;
 // Volatility and Explicitness are derived from config subdomain/public globs.
+// Severity is set by classify.Run for cross-boundary edges via BalanceResult.
 type Classification struct {
 	Strength     Strength
 	Distance     Distance
 	Volatility   Volatility
 	Explicitness Explicitness
+	Severity     Severity
 }
 
 // Index maps each edge's canonical key (from + "\x00" + to + "\x00" + kind)
@@ -121,8 +123,8 @@ func BalanceResult(c Classification) Severity {
 		return SeverityNone
 	}
 
-	// Imbalanced: severity depends on volatility.
-	if c.Volatility == VolatilityHigh {
+	// Imbalanced: medium or high volatility → medium severity; low/unknown → low.
+	if c.Volatility == VolatilityHigh || c.Volatility == VolatilityMedium {
 		return SeverityMedium
 	}
 	return SeverityLow

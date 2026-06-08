@@ -47,8 +47,9 @@ func edgeKey(e graph.Edge) string {
 // pathFromID extracts the path component from a node ID of the form "kind:path".
 // If there is no ":", the entire ID is returned.
 func pathFromID(id string) string {
-	if i := strings.IndexByte(id, ':'); i >= 0 {
-		return id[i+1:]
+	_, after, ok := strings.Cut(id, ":")
+	if ok {
+		return after
 	}
 	return id
 }
@@ -93,6 +94,10 @@ func matchesAnyGlob(path string, globs []string) bool {
 }
 
 // classify computes a Classification for a single edge.
+//
+// ExplicitnessHint on the edge overrides the config-glob-derived explicitness
+// when non-empty ("explicit" or "implicit"). BalanceResult is then called to
+// derive advisory Severity for cross-boundary edges.
 func classify(e graph.Edge, mi moduleIndex, modules map[string]config.ModuleDef) coupling.Classification {
 	fromPath := pathFromID(e.From)
 	toPath := pathFromID(e.To)
@@ -107,14 +112,30 @@ func classify(e graph.Edge, mi moduleIndex, modules map[string]config.ModuleDef)
 	vol := classifyVolatility(toPath, mi, modules)
 
 	// --- Explicitness ---
+	// ExplicitnessHint from the extractor (AST signal) takes precedence over the
+	// config-glob heuristic when it is set.
 	exp := classifyExplicitness(str)
+	switch e.ExplicitnessHint {
+	case "explicit":
+		exp = coupling.ExplicitnessExplicit
+	case "implicit":
+		exp = coupling.ExplicitnessImplicit
+	}
 
-	return coupling.Classification{
+	cl := coupling.Classification{
 		Strength:     str,
 		Distance:     dist,
 		Volatility:   vol,
 		Explicitness: exp,
 	}
+
+	// --- Severity ---
+	// Only meaningful for cross-boundary edges; same-module edges are balanced by definition.
+	if dist != coupling.DistanceSameModule && dist != coupling.DistanceUnknown {
+		cl.Severity = coupling.BalanceResult(cl)
+	}
+
+	return cl
 }
 
 // classifyStrength determines strength from glob matching against all modules'

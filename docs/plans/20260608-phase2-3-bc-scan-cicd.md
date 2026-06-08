@@ -136,11 +136,11 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 - Modify: `internal/classify/classify.go`
 - Modify: `internal/classify/classify_test.go`
 
-- [ ] Use `ExplicitnessHint` from `graph.Edge` to set `coupling.Classification.Explicitness` when hint is non-empty (override config-glob result)
-- [ ] Call `coupling.BalanceResult(cl)` for every cross-boundary edge to derive advisory severity (stored on Classification or returned alongside it — decide: add `Severity coupling.Severity` to Classification struct, which already has `Explicitness`)
-- [ ] Update `classify.Run` return: `coupling.Index` now carries Severity per edge
-- [ ] Update table-driven tests: verify AST hint overrides glob, verify severity table applied correctly for each balance combination
-- [ ] Run `go test ./internal/classify/...` and `go test ./internal/ -run TestArchImports` — must pass
+- [x] Use `ExplicitnessHint` from `graph.Edge` to set `coupling.Classification.Explicitness` when hint is non-empty (override config-glob result)
+- [x] Call `coupling.BalanceResult(cl)` for every cross-boundary edge to derive advisory severity (stored on Classification or returned alongside it — decide: add `Severity coupling.Severity` to Classification struct, which already has `Explicitness`)
+- [x] Update `classify.Run` return: `coupling.Index` now carries Severity per edge
+- [x] Update table-driven tests: verify AST hint overrides glob, verify severity table applied correctly for each balance combination
+- [x] Run `go test ./internal/classify/...` and `go test ./internal/ -run TestArchImports` — must pass
 
 ### Task 4: `rules` — three new rule types (Phase 2)
 
