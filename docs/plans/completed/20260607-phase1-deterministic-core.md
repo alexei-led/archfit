@@ -564,37 +564,37 @@ Tooling **structure** follows your mature repos (**pumba**, **bq-ch-sync**) — 
 
 ### Task T1: Makefile (copy pumba / bq-ch-sync pattern)
 
-- [ ] `help` is the default target (grep-based self-doc, as in pumba)
-- [ ] `build`: `CGO_ENABLED=0 go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o .bin/archfit ./cmd/archfit`
-- [ ] `test`: `go test -race -coverprofile=coverage.out ./...`; `test-coverage`: HTML view
-- [ ] `lint`: `golangci-lint run -c .golangci.yaml ./...`
-- [ ] `fmt`: `gofmt -s -w .` + `goimports -w -local github.com/alexei-led/archfit .`
-- [ ] `mock`: `go generate ./...` (runs the moq `//go:generate` directives)
-- [ ] `setup-tools`: `go install` golangci-lint (pinned), goimports, moq (pinned)
-- [ ] `docker-build` / `docker-push`: build + push to GHCR (Task T6)
-- [ ] `clean`, `version`, `all: fmt lint test build`
+- [x] `help` is the default target (grep-based self-doc, as in pumba)
+- [x] `build`: `CGO_ENABLED=0 go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o .bin/archfit ./cmd/archfit`
+- [x] `test`: `go test -race -coverprofile=coverage.out ./...`; `test-coverage`: HTML view
+- [x] `lint`: `golangci-lint run -c .golangci.yaml ./...`
+- [x] `fmt`: `gofmt -s -w .` + `goimports -w -local github.com/alexei-led/archfit .`
+- [x] `mock`: `go generate ./...` (runs the moq `//go:generate` directives)
+- [x] `setup-tools`: `go install` golangci-lint (pinned), goimports, moq (pinned)
+- [x] `docker-build` / `docker-push`: build + push to GHCR (Task T6)
+- [x] `clean`, `version`, `all: fmt lint test build`
 
 ### Task T2: golangci-lint v2 config (copy bq-ch-sync `.golangci.yaml`)
 
-- [ ] Use the **v2 schema** (`version: "2"`) — your newest mature repos are on it
-- [ ] `linters.default: standard` + enable list: errcheck, govet, staticcheck, revive, ineffassign, unused, gocritic, gocyclo, goconst, gosec, prealloc, unconvert, unparam, nolintlint, misspell (US), whitespace, errorlint, perfsprint, usestdlibvars (drop `testifylint` — no testify)
-- [ ] `formatters.enable: [gofmt, goimports]` with `goimports.local-prefixes: github.com/alexei-led/archfit`
-- [ ] `exclusions.paths`: `mocks/`, `testdata/`; relax funlen/dupl/gosec on `_test.go`
-- [ ] **No depguard ring rule** — `arch_test.go` owns the rings. (A depguard `deny: logrus` lib-hygiene rule is fine; ring boundaries are not.)
+- [x] Use the **v2 schema** (`version: "2"`) — your newest mature repos are on it
+- [x] `linters.default: standard` + enable list: errcheck, govet, staticcheck, revive, ineffassign, unused, gocritic, gocyclo, goconst, gosec, prealloc, unconvert, unparam, nolintlint, misspell (US), whitespace, errorlint, perfsprint, usestdlibvars (drop `testifylint` — no testify)
+- [x] `formatters.enable: [gofmt, goimports]` with `goimports.local-prefixes: github.com/alexei-led/archfit`
+- [x] `exclusions.paths`: `mocks/`, `testdata/`; relax funlen/dupl/gosec on `_test.go`
+- [x] **No depguard ring rule** — `arch_test.go` owns the rings. (A depguard `deny: logrus` lib-hygiene rule is fine; ring boundaries are not.)
 
 ### Task T3: moq (mock generation)
 
-- [ ] `//go:generate moq -out <iface>_moq.go . <Iface>` on **boundary** interfaces only: `toolrun.Runner`, `engine.Extractor`
-- [ ] `make mock` runs `go generate ./...`; generated `*_moq.go` files are committed and lint-excluded
-- [ ] moq mocks are plain structs with `<Method>Func` fields used directly with stdlib `testing` — no testify dependency
-- [ ] Do NOT generate mocks for `Rule`/`Metric`/`Renderer` (pure — table-tested)
+- [x] `//go:generate moq -out <iface>_moq.go . <Iface>` on **boundary** interfaces only: `toolrun.Runner`, `engine.Extractor`
+- [x] `make mock` runs `go generate ./...`; generated `*_moq.go` files are committed and lint-excluded
+- [x] moq mocks are plain structs with `<Method>Func` fields used directly with stdlib `testing` — no testify dependency
+- [x] Do NOT generate mocks for `Rule`/`Metric`/`Renderer` (pure — table-tested)
 
 ### Task T4: pre-commit + pre-push + gitleaks (copy pumba config + `~/Workspace/architect/.gitleaks.toml`)
 
-- [ ] `.pre-commit-config.yaml` (fast hooks only): `pretty-format-golang` (gofmt), `go-mod-tidy`, **`gitleaks`**, `check-added-large-files`, `sign-commit` (your fleet signs commits)
-- [ ] **pre-push** hook (slow): `make lint test` — heavy checks here, not per-commit
-- [ ] `.gitleaks.toml`: `[extend] useDefault = true` + allowlist (`.gitignore`, `.gitleaks.toml`) + the belt-and-suspenders path rules from `architect/.gitleaks.toml` (env files, credential/token-named files, `*.pem|key|p12`)
-- [ ] Document `pre-commit install --install-hooks` + `pre-commit install -t pre-push` in the README
+- [x] `.pre-commit-config.yaml` (fast hooks only): `pretty-format-golang` (gofmt), `go-mod-tidy`, **`gitleaks`**, `check-added-large-files`, `sign-commit` (your fleet signs commits)
+- [x] **pre-push** hook (slow): `make lint test` — heavy checks here, not per-commit
+- [x] `.gitleaks.toml`: `[extend] useDefault = true` + allowlist (`.gitignore`, `.gitleaks.toml`) + the belt-and-suspenders path rules from `architect/.gitleaks.toml` (env files, credential/token-named files, `*.pem|key|p12`)
+- [x] Document `pre-commit install --install-hooks` + `pre-commit install -t pre-push` in the README
 
 ### Task T5: GitHub Actions CI (copy bq-ch-sync / pumba; after Task 16)
 
