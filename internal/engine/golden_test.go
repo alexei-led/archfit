@@ -98,6 +98,7 @@ func TestGolden_DoubleRun(t *testing.T) {
 			[]engine.Extractor{extractor},
 			engine.NopPatternProvider{},
 			engine.NopSymbolResolver{},
+			config.PatternConfig{},
 			rs,
 			ms,
 			base,

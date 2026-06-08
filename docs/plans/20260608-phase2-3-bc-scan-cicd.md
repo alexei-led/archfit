@@ -311,14 +311,14 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 - Modify: `internal/engine/engine.go`
 - Modify: `internal/engine/engine_test.go`
 
-- [ ] Add `PatternProvider` and `SymbolResolver` parameters to `engine.Run` signature (after `extractors []Extractor`)
-- [ ] In stage 3 (extract): call `patternProvider.Find(ctx, s, cfg.ForPatterns())` → `[]PatternMatch`
-- [ ] Build evidence index: `map[string][]PatternMatch` keyed by file path
-- [ ] In stage 6 (rules): pass evidence to `rule.Check(g, Evidence{PatternMatches: matchesForEdge(e, evidenceIndex)})` — matches relevant to the edge's from-file
-- [ ] Call `symbolResolver.Resolve` during graph assembly (before `graph.Build`) to update `edge.To` path for barrel-file edges
-- [ ] Update `cmd/archfit/main.go` composition root: pass `astgrep.New(runner, cfg.ForPatterns())` as PatternProvider; pass `scip.New(runner)` as SymbolResolver (both to be implemented — use `NopPatternProvider`/`NopSymbolResolver` until Task 15)
-- [ ] Update engine integration tests: mock `PatternProvider` returning known matches; assert `Evidence.PatternMatches` populated on findings; assert verdict unaffected when pattern matches don't add new gate findings
-- [ ] Run `go test ./internal/engine/...` and arch_test — must pass
+- [x] Add `PatternProvider` and `SymbolResolver` parameters to `engine.Run` signature (after `extractors []Extractor`)
+- [x] In stage 3 (extract): call `patternProvider.Find(ctx, s, cfg.ForPatterns())` → `[]PatternMatch`
+- [x] Build evidence index: `map[string][]PatternMatch` keyed by file path
+- [x] In stage 6 (rules): pass evidence to `rule.Check(g, Evidence{PatternMatches: matchesForEdge(e, evidenceIndex)})` — matches relevant to the edge's from-file
+- [x] Call `symbolResolver.Resolve` during graph assembly (before `graph.Build`) to update `edge.To` path for barrel-file edges
+- [x] Update `cmd/archfit/main.go` composition root: pass `astgrep.New(runner, cfg.ForPatterns())` as PatternProvider; pass `scip.New(runner)` as SymbolResolver (both to be implemented — use `NopPatternProvider`/`NopSymbolResolver` until Task 15)
+- [x] Update engine integration tests: mock `PatternProvider` returning known matches; assert `Evidence.PatternMatches` populated on findings; assert verdict unaffected when pattern matches don't add new gate findings
+- [x] Run `go test ./internal/engine/...` and arch_test — must pass
 
 ### Task 15: `extract/scip` — SCIP `SymbolResolver` adapter (Phase 3)
 

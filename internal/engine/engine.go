@@ -33,15 +33,16 @@ type Mode struct {
 // Run executes the full archfit pipeline and returns the assembled Diagnostic.
 //
 // Pipeline stages:
-//  1. Run each extractor sequentially; merge Facts and coverage records; build graph.
-//  2. Classify edges: classify.Run → coupling.Index.
-//  3. Apply rules: rule.Check per rule → raw findings (flattened).
-//  4. Assign statuses: status.Assign → lifecycle-tagged findings.
-//  5. Compute metrics: build MetricInput, run each metric → MetricResult slice.
-//  6. Collect advisory findings: coupling edges with Severity != "" + staleness.Check.
-//  7. Assemble Diagnostic: resolve EdgeEvidence {module, path}, join severity,
+//  1. Run each extractor sequentially; apply symbol resolution to edges; merge Facts; build graph.
+//  2. Run PatternProvider to gather structural matches; build per-file evidence index.
+//  3. Classify edges: classify.Run → coupling.Index.
+//  4. Apply rules: rule.Check(g, Evidence{PatternMatches}) per rule → raw findings (flattened).
+//  5. Assign statuses: status.Assign → lifecycle-tagged findings.
+//  6. Compute metrics: build MetricInput, run each metric → MetricResult slice.
+//  7. Collect advisory findings: coupling edges with Severity != "" + staleness.Check.
+//  8. Assemble Diagnostic: resolve EdgeEvidence {module, path}, join severity,
 //     fill Summary, compute verdict. Advisory findings included only when mode.Advisory.
-//  8. Return (Diagnostic, nil) on success; (Diagnostic, error) on hard error.
+//  9. Return (Diagnostic, nil) on success; (Diagnostic, error) on hard error.
 //
 // Rendering is the caller's responsibility (cmd renders to deps.Stdout).
 func Run(
@@ -54,14 +55,14 @@ func Run(
 	extractors []Extractor,
 	pp PatternProvider,
 	sr SymbolResolver,
+	patternCfg config.PatternConfig,
 	rs []rules.Rule,
 	ms []metrics.Metric,
 	base baseline.Baseline,
 	now time.Time,
 ) (diagnostic.Diagnostic, error) {
-	_ = pp
-	_ = sr
 	// --- Stage 1: Extract ---
+	// Run each extractor; apply symbol resolution to barrel-file edges before merging.
 	var allFacts []graph.Facts
 	var coverages []diagnostic.Coverage
 	for _, ex := range extractors {
@@ -69,21 +70,46 @@ func Run(
 		if err != nil {
 			return diagnostic.New(), err
 		}
+		// Resolve barrel-file import paths to real source file paths before graph assembly.
+		for i, e := range facts.Edges {
+			fromFile := stripPrefix(e.From)
+			toPath := stripPrefix(e.To)
+			realPath, _ := sr.Resolve(ctx, fromFile, toPath)
+			if realPath != toPath {
+				// Preserve the "kind:" prefix and replace only the path component.
+				prefix := e.To[:len(e.To)-len(toPath)]
+				facts.Edges[i].To = prefix + realPath
+			}
+		}
 		allFacts = append(allFacts, facts)
 		coverages = append(coverages, cov)
 	}
 	g := graph.Build(allFacts)
 
-	// --- Stage 2: Classify ---
+	// --- Stage 2: Pattern matching ---
+	// Gather structural matches from the PatternProvider and build a per-file evidence index.
+	// Matches are keyed by file path so rules can filter by the edge's from-file.
+	patternMatches, ppCov, ppErr := pp.Find(ctx, s, patternCfg)
+	if ppErr != nil {
+		return diagnostic.New(), ppErr
+	}
+	coverages = append(coverages, ppCov)
+	// Convert engine.PatternMatch → rules.PatternMatch for the evidence type.
+	rulesMatches := toRulesPatternMatches(patternMatches)
+
+	// --- Stage 3: Classify ---
 	couplingIdx := classify.Run(g, classifyCfg)
 
-	// --- Stage 3: Rules ---
+	// --- Stage 4: Rules ---
+	// Call each rule once with the full evidence set. Rules iterate edges internally;
+	// the Evidence carries all pattern matches so each rule can filter by edge's from-file.
 	var rawFindings []finding.Finding
+	allPatternMatches := rules.Evidence{PatternMatches: rulesMatches}
 	for _, r := range rs {
-		rawFindings = append(rawFindings, r.Check(g, rules.Evidence{})...)
+		rawFindings = append(rawFindings, r.Check(g, allPatternMatches)...)
 	}
 
-	// --- Stage 4: Status ---
+	// --- Stage 5: Status ---
 	taggedFindings := status.Assign(rawFindings, base, exceptions, now)
 
 	// --- Stage 5: Metrics ---
@@ -288,4 +314,22 @@ func stripPrefix(id string) string {
 func couplingAdvisoryID(from, to, kind string) string {
 	h := sha256.Sum256([]byte("bc/imbalanced_coupling\x00" + from + "\x00" + to + "\x00" + kind))
 	return hex.EncodeToString(h[:16])
+}
+
+// toRulesPatternMatches converts engine.PatternMatch values to rules.PatternMatch values.
+// The rules package defines its own PatternMatch type to avoid an import cycle
+// (rules cannot import engine). The conversion maps the common fields.
+func toRulesPatternMatches(ms []PatternMatch) []rules.PatternMatch {
+	if len(ms) == 0 {
+		return nil
+	}
+	out := make([]rules.PatternMatch, len(ms))
+	for i, m := range ms {
+		out[i] = rules.PatternMatch{
+			File:  m.File,
+			Line:  m.Line,
+			Match: m.Text,
+		}
+	}
+	return out
 }

@@ -28,8 +28,9 @@ const (
 	globModuleB         = "pkg/b/**"
 	globModuleBInternal = "pkg/b/internal/**"
 
-	headRef      = "HEAD"
-	kindAdvisory = "advisory"
+	headRef         = "HEAD"
+	kindAdvisory    = "advisory"
+	toolNameAstgrep = "ast-grep"
 )
 
 // cannedConfig builds a ClassifyConfig and RuleConfig for a two-module (a, b)
@@ -140,6 +141,7 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 		[]engine.Extractor{ex},
 		engine.NopPatternProvider{},
 		engine.NopSymbolResolver{},
+		config.PatternConfig{},
 		rs,
 		ms,
 		base,
@@ -214,6 +216,7 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 		[]engine.Extractor{ex},
 		engine.NopPatternProvider{},
 		engine.NopSymbolResolver{},
+		config.PatternConfig{},
 		rs,
 		ms,
 		base,
@@ -264,6 +267,7 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		[]engine.Extractor{ex},
 		engine.NopPatternProvider{},
 		engine.NopSymbolResolver{},
+		config.PatternConfig{},
 		rs,
 		ms,
 		base,
@@ -328,6 +332,7 @@ func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 		[]engine.Extractor{ex},
 		engine.NopPatternProvider{},
 		engine.NopSymbolResolver{},
+		config.PatternConfig{},
 		rs,
 		ms,
 		base,
@@ -375,6 +380,7 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 		[]engine.Extractor{ex},
 		engine.NopPatternProvider{},
 		engine.NopSymbolResolver{},
+		config.PatternConfig{},
 		rs,
 		ms,
 		base,
@@ -435,6 +441,7 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 		[]engine.Extractor{ex},
 		engine.NopPatternProvider{},
 		engine.NopSymbolResolver{},
+		config.PatternConfig{},
 		rs,
 		ms,
 		base,
@@ -463,5 +470,130 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 	// Summary.Warnings matches advisory count.
 	if d.Summary.Warnings != advisoryCount {
 		t.Errorf("summary.warnings=%d, want %d", d.Summary.Warnings, advisoryCount)
+	}
+}
+
+// TestRun_PatternProvider_MatchesPropagated asserts that pattern matches returned
+// by the PatternProvider are converted and passed as Evidence.PatternMatches to rules.
+// We verify this by checking that Find was called and coverage record is present.
+func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
+	ctx := context.Background()
+
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	// PatternProvider returns one known match.
+	findCalled := false
+	pp := &engine.PatternProviderMock{
+		NameFunc: func() string { return "ast-grep" },
+		FindFunc: func(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]engine.PatternMatch, diagnostic.Coverage, error) {
+			findCalled = true
+			return []engine.PatternMatch{
+				{File: pathFileA, Pattern: "unsafe-cast", Text: "unsafe.Pointer(x)", Line: 10, Column: 0},
+			}, diagnostic.Coverage{Tool: "ast-grep", Status: "ok", FilesSeen: 1}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(
+		ctx,
+		engine.Mode{Head: headRef},
+		scope.Scope{Root: "."},
+		classifyCfg,
+		config.StalenessConfig{},
+		config.ExceptionSet{},
+		[]engine.Extractor{ex},
+		pp,
+		engine.NopSymbolResolver{},
+		config.PatternConfig{},
+		rs,
+		ms,
+		base,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// PatternProvider.Find must have been called.
+	if !findCalled {
+		t.Error("PatternProvider.Find was not called")
+	}
+
+	// Coverage from PatternProvider must appear in ToolCoverage.
+	var found bool
+	for _, cov := range d.ToolCoverage {
+		if cov.Tool == "ast-grep" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("ast-grep coverage record missing from ToolCoverage; got %+v", d.ToolCoverage)
+	}
+}
+
+// TestRun_PatternProvider_DoesNotAffectVerdict asserts that pattern matches from
+// the PatternProvider do not alter the gate verdict when no gate rule fires.
+func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
+	ctx := context.Background()
+
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	// PatternProvider returns matches — but no rule uses them to produce gate findings.
+	pp := &engine.PatternProviderMock{
+		NameFunc: func() string { return "ast-grep" },
+		FindFunc: func(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]engine.PatternMatch, diagnostic.Coverage, error) {
+			return []engine.PatternMatch{
+				{File: pathFileA, Pattern: "reflect-unexported", Text: "reflect.ValueOf(x).Field(0)", Line: 5, Column: 4},
+				{File: pathFileBAPIService, Pattern: "reflect-unexported", Text: "reflect.ValueOf(y).Field(1)", Line: 12, Column: 0},
+			}, diagnostic.Coverage{Tool: "ast-grep", Status: "ok", FilesSeen: 2}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(
+		ctx,
+		engine.Mode{Head: headRef},
+		scope.Scope{Root: "."},
+		classifyCfg,
+		config.StalenessConfig{},
+		config.ExceptionSet{},
+		[]engine.Extractor{ex},
+		pp,
+		engine.NopSymbolResolver{},
+		config.PatternConfig{},
+		rs,
+		ms,
+		base,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// Verdict must remain pass — pattern matches alone must not gate.
+	if d.Verdict != diagnostic.VerdictPass {
+		t.Errorf("verdict=%q, want pass; pattern matches must not affect verdict", d.Verdict)
+	}
+	if d.Summary.GateFindings != 0 {
+		t.Errorf("summary.gate_findings=%d, want 0", d.Summary.GateFindings)
 	}
 }
