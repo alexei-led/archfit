@@ -227,14 +227,14 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 - Create: `internal/initcfg/initcfg.go`
 - Create: `internal/initcfg/initcfg_test.go`
 
-- [ ] Create `internal/initcfg` package (adapter layer — uses `toolrun.Runner`)
-- [ ] Implement `Discover(ctx, root string, runner toolrun.Runner) (Config, error)`: runs `go list -json ./...` from root to enumerate packages; groups into candidate modules by first 2 path segments after module root; infers `public` (top-level `.go` files) and `internal` paths
-- [ ] Implement `DiscoverTS(root string) ([]ModuleDef, error)`: reads `src/` or `lib/` subdirs if `package.json` present
-- [ ] Implement `DiscoverPy(root string) ([]ModuleDef, error)`: reads top-level package subdirs if `pyproject.toml` or `setup.py` present
-- [ ] Implement `Render(cfg DiscoveredConfig) string`: returns a YAML string with modules, `rules: [{type: forbidden_dependency, gate: warn}]`, `layers:` derived from discovered structure; adds `# TODO: review and promote to gate: fail` annotation
-- [ ] Wire `InitCmd.Run` in `cmd/archfit/main.go` to use `initcfg.Discover` and write the generated YAML to stdout or `archfit.yaml`
-- [ ] Write tests using `RunnerMock` feeding sample `go list -json` output; assert output YAML contains expected module paths; assert TS/Python discovery reads the correct subdirs
-- [ ] Run `go test ./internal/initcfg/...` and `go test ./cmd/archfit/...` — must pass
+- [x] Create `internal/initcfg` package (adapter layer — uses `toolrun.Runner`)
+- [x] Implement `Discover(ctx, root string, runner toolrun.Runner) (Config, error)`: runs `go list -json ./...` from root to enumerate packages; groups into candidate modules by first 2 path segments after module root; infers `public` (top-level `.go` files) and `internal` paths
+- [x] Implement `DiscoverTS(root string) ([]ModuleDef, error)`: reads `src/` or `lib/` subdirs if `package.json` present
+- [x] Implement `DiscoverPy(root string) ([]ModuleDef, error)`: reads top-level package subdirs if `pyproject.toml` or `setup.py` present
+- [x] Implement `Render(cfg DiscoveredConfig) string`: returns a YAML string with modules, `rules: [{type: forbidden_dependency, gate: warn}]`, `layers:` derived from discovered structure; adds `# TODO: review and promote to gate: fail` annotation
+- [x] Wire `InitCmd.Run` in `cmd/archfit/main.go` to use `initcfg.Discover` and write the generated YAML to stdout or `archfit.yaml`
+- [x] Write tests using `RunnerMock` feeding sample `go list -json` output; assert output YAML contains expected module paths; assert TS/Python discovery reads the correct subdirs
+- [x] Run `go test ./internal/initcfg/...` and `go test ./cmd/archfit/...` — must pass
 
 ### Task 10: Phase 2 acceptance verification
 
