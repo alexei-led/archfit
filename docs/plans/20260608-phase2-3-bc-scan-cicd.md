@@ -262,15 +262,15 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 - Modify: `internal/engine/ports.go`
 - Modify: `internal/engine/extractor_moq.go` (or create new moq files)
 
-- [ ] Add `PatternProvider` interface to `ports.go` (see v0.2 §3.1 for full signature — `Find` returns `[]PatternMatch, diagnostic.Coverage, error`; `PatternMatch` has `File, Pattern, Text, Node string; Line, Column int`)
-- [ ] Add `SymbolResolver` interface to `ports.go` (see v0.2 §3.2 — `Resolve(ctx, fromFile, toPath string) (realPath, confidence string)`)
-- [ ] Add `PatternConfig` view to `internal/config/config.go` and `Config.ForPatterns()` projection (list of `PatternDef{ID, Lang, Rule string}` from rules that have `patterns:` config)
-- [ ] Add `//go:generate moq -out pattern_provider_moq.go . PatternProvider` in `ports.go`
-- [ ] Manually write `pattern_provider_moq.go` (same shape as `extractor_moq.go`)
-- [ ] Add `//go:generate moq -out symbol_resolver_moq.go . SymbolResolver` and write moq manually
-- [ ] Add identity implementations: `NopPatternProvider` (returns empty matches), `NopSymbolResolver` (returns input path unchanged, confidence "high") — used when no Phase 3 tools present
-- [ ] Wire `NopPatternProvider` and `NopSymbolResolver` into `engine.Run` signature — engine takes these via parameters like `Extractor`
-- [ ] Run `go build ./...` and `go test ./internal/engine/...` — must pass with Nop implementations
+- [x] Add `PatternProvider` interface to `ports.go` (see v0.2 §3.1 for full signature — `Find` returns `[]PatternMatch, diagnostic.Coverage, error`; `PatternMatch` has `File, Pattern, Text, Node string; Line, Column int`)
+- [x] Add `SymbolResolver` interface to `ports.go` (see v0.2 §3.2 — `Resolve(ctx, fromFile, toPath string) (realPath, confidence string)`)
+- [x] Add `PatternConfig` view to `internal/config/config.go` and `Config.ForPatterns()` projection (list of `PatternDef{ID, Lang, Rule string}` from rules that have `patterns:` config)
+- [x] Add `//go:generate moq -out pattern_provider_moq.go . PatternProvider` in `ports.go`
+- [x] Manually write `pattern_provider_moq.go` (same shape as `extractor_moq.go`)
+- [x] Add `//go:generate moq -out symbol_resolver_moq.go . SymbolResolver` and write moq manually
+- [x] Add identity implementations: `NopPatternProvider` (returns empty matches), `NopSymbolResolver` (returns input path unchanged, confidence "high") — used when no Phase 3 tools present
+- [x] Wire `NopPatternProvider` and `NopSymbolResolver` into `engine.Run` signature — engine takes these via parameters like `Extractor`
+- [x] Run `go build ./...` and `go test ./internal/engine/...` — must pass with Nop implementations
 
 ### Task 12: `config` — `PatternConfig` and rules with patterns (Phase 3)
 

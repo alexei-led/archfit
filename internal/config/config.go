@@ -389,6 +389,23 @@ func (c Config) ModuleMapView() ModuleMap {
 	return buildModuleMap(c.Modules)
 }
 
+// PatternDef defines a single structural pattern rule for ast-grep.
+type PatternDef struct {
+	ID   string `yaml:"id"`
+	Lang string `yaml:"lang"`
+	Rule string `yaml:"rule"`
+}
+
+// PatternConfig is the list of pattern definitions passed to a PatternProvider.
+type PatternConfig []PatternDef
+
+// ForPatterns returns the PatternConfig view: all PatternDef values collected
+// from rules that declare patterns. RuleDef gains a Patterns field in Task 12;
+// for now this returns an empty slice.
+func (c Config) ForPatterns() PatternConfig {
+	return PatternConfig{}
+}
+
 // StalenessConfig is the view passed to the staleness check stage.
 type StalenessConfig struct {
 	Enabled   bool

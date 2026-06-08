@@ -52,11 +52,15 @@ func Run(
 	stalenessCfg config.StalenessConfig,
 	exceptions config.ExceptionSet,
 	extractors []Extractor,
+	pp PatternProvider,
+	sr SymbolResolver,
 	rs []rules.Rule,
 	ms []metrics.Metric,
 	base baseline.Baseline,
 	now time.Time,
 ) (diagnostic.Diagnostic, error) {
+	_ = pp
+	_ = sr
 	// --- Stage 1: Extract ---
 	var allFacts []graph.Facts
 	var coverages []diagnostic.Coverage

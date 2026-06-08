@@ -96,6 +96,8 @@ func TestGolden_DoubleRun(t *testing.T) {
 			config.StalenessConfig{},
 			config.ExceptionSet{},
 			[]engine.Extractor{extractor},
+			engine.NopPatternProvider{},
+			engine.NopSymbolResolver{},
 			rs,
 			ms,
 			base,
