@@ -1,0 +1,4 @@
+package impl
+
+// Secret is a restricted implementation detail of module b.
+func Secret() string { return "secret" }

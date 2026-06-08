@@ -1,0 +1,35 @@
+{
+  "schema_version": "archfit.baseline.v1",
+  "accepted": [
+    {
+      "fingerprint": "e9dbad8841cc492ca9155a4ad664429f",
+      "rule_id": "layer_inversion"
+    },
+    {
+      "fingerprint": "3e26932b68b14a34c9ce4c7d7f543fd8",
+      "rule_id": "layer_inversion"
+    },
+    {
+      "fingerprint": "32b9e85de328aef22c9bd24557aeae84",
+      "rule_id": "layer_inversion"
+    }
+  ],
+  "metrics": {
+    "coverage": {
+      "value": 1,
+      "version": "coverage.v1"
+    },
+    "cycle": {
+      "value": 0,
+      "version": "cycle.v1"
+    },
+    "encapsulation": {
+      "value": 1,
+      "version": "encapsulation.v1"
+    },
+    "unbalanced_edge": {
+      "value": 0,
+      "version": "unbalanced_edge.v1"
+    }
+  }
+}

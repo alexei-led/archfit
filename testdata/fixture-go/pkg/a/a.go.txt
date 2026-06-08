@@ -1,0 +1,6 @@
+package a
+
+import "example.com/fixture-go/pkg/b/impl"
+
+// UseImpl deliberately imports a restricted package from module b — violation.
+func UseImpl() string { return impl.Secret() }

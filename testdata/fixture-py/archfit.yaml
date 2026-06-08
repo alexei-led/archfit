@@ -1,0 +1,18 @@
+version: 1
+modules:
+  a:
+    paths:
+      - fixture_py/a.py
+  b:
+    paths:
+      - fixture_py/b/**
+    public:
+      - fixture_py/b/__init__.py
+    internal:
+      - fixture_py/b/_internal/**
+rules:
+  - id: no_internal_access
+    type: forbidden_dependency
+    gate: fail
+    from: fixture_py/a.py
+    to: fixture_py/b/_internal/**

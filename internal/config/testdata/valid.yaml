@@ -1,0 +1,74 @@
+version: 1
+modules:
+  checkout:
+    paths:
+      - services/checkout/**
+    layer: application
+    subdomain: supporting
+    volatility: medium
+    owner: team-checkout
+    deploy_unit: web-api
+    reviewed_at: "2026-06-01"
+    reviewed_by: '@architect'
+  pricing:
+    paths:
+      - services/pricing/**
+    public:
+      - services/pricing/contracts/**
+    internal:
+      - services/pricing/internal/**
+    layer: domain
+    subdomain: core
+    volatility: high
+    owner: team-pricing
+    deploy_unit: pricing-service
+    reviewed_at: "2026-06-01"
+    reviewed_by: '@architect'
+layers:
+  - domain
+  - application
+  - infrastructure
+rules:
+  - id: checkout-no-pricing-internals
+    type: public_api_only
+    from: checkout
+    to: pricing
+    gate: fail
+  - id: domain-no-infra
+    type: forbidden_layer_direction
+    from_layer: domain
+    to_layer: infrastructure
+    gate: fail
+exclusions:
+  - '**/generated/**'
+  - '**/*.pb.go'
+tools:
+  git:
+    enabled: true
+  dependency_cruiser:
+    enabled: auto
+  import_linter:
+    enabled: auto
+metrics:
+  encapsulation:
+    enabled: true
+    gate: warn
+    min_delta: 0
+  cycles:
+    enabled: true
+    gate: fail
+    max_new: 0
+map_review:
+  stale_after: 90d
+  gate: warn
+exceptions:
+  - rule: checkout-no-pricing-internals
+    from: services/checkout/legacy/**
+    to: services/pricing/internal/**
+    reason: migration in progress
+    approved_by: '@alexei'
+    expires: "2026-12-01"
+outputs:
+  json: true
+  markdown: false
+  sarif: false
