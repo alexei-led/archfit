@@ -1,0 +1,133 @@
+---
+name: archfit
+description: Use archfit for architecture fitness work. Use when installing archfit, creating or reviewing .archfit.yaml, configuring Go, Python, or TypeScript checks, adding CI usage, interpreting findings, fixing architecture drift, or deciding on baselines and exceptions.
+license: Apache-2.0
+compatibility: Requires access to the repository files. Shell access is recommended for archfit, git, and language tool checks.
+---
+
+# Archfit
+
+Use this skill for `archfit` setup, configuration, review, and finding repair.
+
+This skill is intentionally thin. Canonical behavior lives in the project docs,
+not here.
+
+## Source of truth
+
+Read `references/archfit-docs.md` only when you need links to canonical docs.
+Then read the smallest relevant doc page.
+
+Prefer local docs when working inside the `archfit` repository. Use public links
+when working elsewhere.
+
+If docs and implementation conflict, verify with the local binary or source. Do
+not copy full guide or config reference content into this skill.
+
+## Modes
+
+### Write or fix
+
+Use when the user asks to install, configure, add CI, create a baseline, add an
+exception, or fix findings.
+
+1. Inspect existing files first: `.archfit.yaml`, `.archfit-baseline.json`, CI
+   workflows, and language package files.
+2. Check the local command surface when practical:
+
+   ```sh
+   archfit --help
+   archfit doctor
+   ```
+
+3. If no config exists, generate a draft and review it before editing:
+
+   ```sh
+   archfit init --root . --output .archfit.yaml
+   ```
+
+4. Keep early config narrow: modules, layers, public APIs, and high-value rules.
+5. Prefer code fixes over exceptions. Use expiring exceptions only for intentional
+   temporary drift.
+6. Baseline only accepted existing debt. Do not baseline new findings just to
+   make a check green.
+7. Validate with the closest check:
+
+   ```sh
+   archfit check --config .archfit.yaml --full
+   ```
+
+8. Use JSON for scripts or agent repair loops:
+
+   ```sh
+   archfit check --config .archfit.yaml --full --format json
+   ```
+
+### Review
+
+Use when the user asks to audit config, output, CI readiness, PR drift,
+baselines, exceptions, or language coverage.
+
+1. Inspect local evidence before judging: config, baseline, CI, package files, and
+   supplied `archfit` output.
+2. Compare the config with the repo shape and the relevant canonical docs.
+3. Separate true drift, accepted debt, tool gaps, stale config, and false
+   positives.
+4. Do not recommend baselining as the default fix.
+5. If reviewing CI readiness, check whether tools, adapter modes, and output
+   format are deterministic.
+6. Give a verdict and ordered next actions.
+
+## Finding repair order
+
+For each finding, capture the ID, rule ID, status, from path, to path, `why`, and
+`constraint`. Then prefer fixes in this order:
+
+1. Remove the unnecessary dependency.
+2. Use or add a public API.
+3. Move code to the owning module.
+4. Invert dependency through an interface or port.
+5. Add an expiring exception for intentional temporary drift.
+6. Baseline reviewed existing debt.
+
+Do not add broad exclusions to hide findings.
+
+## Output for reviews
+
+```markdown
+## Archfit Review
+
+Scope: <files, command output, or PR area>
+Verdict: ready | needs changes | blocked
+Confidence: high | medium | low
+Sources: <canonical docs, local files, commands>
+
+### Findings
+
+1. `path` or finding `<id>` — <issue>. Evidence: <fact>. Fix: <action>.
+
+### Working Well
+
+- <good config or workflow to keep>
+
+### Next Actions
+
+1. <highest-impact action>
+2. <next action>
+
+### Verification
+
+- <command run or skipped reason>
+```
+
+Omit empty sections. Say `No confirmed findings.` when nothing actionable is
+found.
+
+## Failure handling
+
+- Missing `archfit`: use install docs and state command verification was skipped.
+- Missing language tools: report coverage risk and expected install path.
+- No architecture intent: ask for intended modules or layers before encoding
+  rules.
+- Noisy generated config: narrow modules and rules before adding exceptions.
+- Conflicting output and config: quote the exact finding or config line and lower
+  confidence until reproduced.

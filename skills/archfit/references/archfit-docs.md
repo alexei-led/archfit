@@ -1,6 +1,7 @@
 # Canonical Archfit Documentation
 
-Use these docs as the source of truth. Do not copy large chunks into skills.
+Use these docs as the source of truth. Do not copy large guide or reference
+content into the skill.
 
 Public links assume the default branch is `main`:
 
