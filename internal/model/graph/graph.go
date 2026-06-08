@@ -262,3 +262,93 @@ func (g *Graph) EdgesTo(id string) []Edge {
 	}
 	return out
 }
+
+// Cycles returns all strongly-connected components of size > 1 found in the
+// dependency edges (imports, depends_on, uses_internal; excluding belongs_to).
+// Each SCC is returned as a sorted slice of node IDs. The outer slice is sorted
+// by the first element of each SCC for determinism.
+//
+// This is the shared detection primitive consumed by both CycleMetric and CycleRule
+// to avoid duplicating Tarjan's algorithm.
+func (g *Graph) Cycles() [][]string {
+	// Build adjacency list from dependency edges only.
+	adj := make(map[string][]string)
+	nodeSet := make(map[string]struct{})
+	for _, e := range g.edges {
+		switch e.Kind {
+		case EdgeKindImports, EdgeKindDependsOn, EdgeKindUsesInternal:
+		default:
+			continue
+		}
+		adj[e.From] = append(adj[e.From], e.To)
+		nodeSet[e.From] = struct{}{}
+		nodeSet[e.To] = struct{}{}
+	}
+
+	// Tarjan's SCC.
+	idx := 0
+	indices := make(map[string]int)
+	lowlink := make(map[string]int)
+	onStack := make(map[string]bool)
+	var stack []string
+	var sccs [][]string
+
+	var strongConnect func(v string)
+	strongConnect = func(v string) {
+		indices[v] = idx
+		lowlink[v] = idx
+		idx++
+		stack = append(stack, v)
+		onStack[v] = true
+
+		for _, w := range adj[v] {
+			if _, visited := indices[w]; !visited {
+				strongConnect(w)
+				if lowlink[w] < lowlink[v] {
+					lowlink[v] = lowlink[w]
+				}
+			} else if onStack[w] {
+				if indices[w] < lowlink[v] {
+					lowlink[v] = indices[w]
+				}
+			}
+		}
+
+		if lowlink[v] == indices[v] {
+			var scc []string
+			for {
+				w := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				onStack[w] = false
+				scc = append(scc, w)
+				if w == v {
+					break
+				}
+			}
+			if len(scc) > 1 {
+				slices.Sort(scc)
+				sccs = append(sccs, scc)
+			}
+		}
+	}
+
+	// Visit every node in sorted order for determinism.
+	nodes := make([]string, 0, len(nodeSet))
+	for n := range nodeSet {
+		nodes = append(nodes, n)
+	}
+	slices.Sort(nodes)
+
+	for _, v := range nodes {
+		if _, visited := indices[v]; !visited {
+			strongConnect(v)
+		}
+	}
+
+	// Sort SCCs by their first element for a stable outer order.
+	slices.SortFunc(sccs, func(a, b []string) int {
+		return cmp.Compare(a[0], b[0])
+	})
+
+	return sccs
+}

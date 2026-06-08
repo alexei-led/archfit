@@ -1,5 +1,6 @@
-// Package rules defines the Rule interface and the built-in Phase 1 rule
-// implementations: ForbiddenDependency, PublicAPIOnly, ForbiddenLayerDirection.
+// Package rules defines the Rule interface and the built-in rule
+// implementations: ForbiddenDependency, PublicAPIOnly, ForbiddenLayerDirection,
+// InternalAPIAccess, NewCrossModuleDependency, CycleRule.
 package rules
 
 import (
@@ -19,8 +20,10 @@ type PatternMatch struct {
 
 // Evidence carries supplemental evidence provided to a rule's Check method.
 // PatternMatches is empty in Phase 1 (no ast-grep yet).
+// Findings carries status-tagged findings for rules that gate on finding status.
 type Evidence struct {
 	PatternMatches []PatternMatch
+	Findings       []finding.Finding
 }
 
 // Rule is the interface implemented by every built-in and user-defined rule.

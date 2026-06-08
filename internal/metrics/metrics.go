@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"fmt"
-	"slices"
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
@@ -397,84 +396,9 @@ func (m CycleMetric) Calculate(in MetricInput) diagnostic.MetricResult {
 }
 
 // countCycles counts strongly-connected components of size > 1 using
-// Tarjan's algorithm applied to dependency edges only (imports, depends_on,
-// uses_internal). belongs_to edges are excluded to avoid structural noise.
+// the shared Tarjan SCC detection in graph.Graph.Cycles.
 func countCycles(g *graph.Graph) int {
-	// Build adjacency list from dependency edges only.
-	adj := make(map[string][]string)
-	nodeSet := make(map[string]struct{})
-	for _, e := range g.Edges() {
-		switch e.Kind {
-		case graph.EdgeKindImports, graph.EdgeKindDependsOn, graph.EdgeKindUsesInternal:
-		default:
-			continue
-		}
-		adj[e.From] = append(adj[e.From], e.To)
-		nodeSet[e.From] = struct{}{}
-		nodeSet[e.To] = struct{}{}
-	}
-
-	// Tarjan's SCC.
-	idx := 0
-	indices := make(map[string]int)
-	lowlink := make(map[string]int)
-	onStack := make(map[string]bool)
-	var stack []string
-	sccCount := 0
-
-	var strongConnect func(v string)
-	strongConnect = func(v string) {
-		indices[v] = idx
-		lowlink[v] = idx
-		idx++
-		stack = append(stack, v)
-		onStack[v] = true
-
-		for _, w := range adj[v] {
-			if _, visited := indices[w]; !visited {
-				strongConnect(w)
-				if lowlink[w] < lowlink[v] {
-					lowlink[v] = lowlink[w]
-				}
-			} else if onStack[w] {
-				if indices[w] < lowlink[v] {
-					lowlink[v] = indices[w]
-				}
-			}
-		}
-
-		if lowlink[v] == indices[v] {
-			// Pop SCC from stack.
-			size := 0
-			for {
-				w := stack[len(stack)-1]
-				stack = stack[:len(stack)-1]
-				onStack[w] = false
-				size++
-				if w == v {
-					break
-				}
-			}
-			if size > 1 {
-				sccCount++
-			}
-		}
-	}
-
-	// Visit every node in sorted order for determinism.
-	nodes := make([]string, 0, len(nodeSet))
-	for n := range nodeSet {
-		nodes = append(nodes, n)
-	}
-	slices.Sort(nodes)
-
-	for _, v := range nodes {
-		if _, visited := indices[v]; !visited {
-			strongConnect(v)
-		}
-	}
-
-	return sccCount
+	return len(g.Cycles())
 }
 
 // ---------------------------------------------------------------------------
