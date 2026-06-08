@@ -1,0 +1,379 @@
+// Package initcfg discovers project structure and renders a starter archfit.yaml.
+// It is an adapter (uses toolrun.Runner for go list) and may import os for
+// filesystem inspection (DiscoverTS, DiscoverPy).
+package initcfg
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/alexei-led/archfit/internal/toolrun"
+)
+
+// ModuleDef is a candidate module discovered from the project structure.
+type ModuleDef struct {
+	// Name is a short human-readable identifier (e.g. "extract", "model").
+	Name string
+	// Paths contains the glob patterns that own this module's files.
+	Paths []string
+	// Public contains globs for exported/public surface files.
+	Public []string
+	// Internal contains globs for package-private files.
+	Internal []string
+	// Layer is the inferred architectural layer (e.g. "adapter", "core", "cmd").
+	Layer string
+}
+
+// DiscoveredConfig holds all discovered modules from Go, TypeScript, and Python.
+type DiscoveredConfig struct {
+	// ModulePath is the Go module path (e.g. "github.com/alexei-led/archfit").
+	ModulePath string
+	// Modules are the discovered candidate modules.
+	Modules []ModuleDef
+	// Layers are the inferred layers in order (outermost to innermost).
+	Layers []string
+}
+
+// Layer name constants used for inference and YAML output.
+const (
+	layerModel   = "model"
+	layerCore    = "core"
+	layerAdapter = "adapter"
+	layerEngine  = "engine"
+	layerCmd     = "cmd"
+)
+
+// adapterExtract is the second-segment name for the extract adapter packages.
+const adapterExtract = "extract"
+
+// goListPkg mirrors the subset of `go list -json` output that we need.
+type goListPkg struct {
+	ImportPath string
+	Dir        string
+	Module     *struct {
+		Path string
+	}
+}
+
+// Discover runs `go list -json ./...` from root via runner and groups packages
+// into candidate modules by first 2 path segments after the module root.
+// Returns DiscoveredConfig or an error if go list fails.
+func Discover(ctx context.Context, root string, runner toolrun.Runner) (DiscoveredConfig, error) {
+	out, err := runner.Run(ctx, toolrun.ToolCmd{
+		Name:    "go",
+		Args:    []string{"list", "-json", "./..."},
+		WorkDir: root,
+	})
+	if err != nil {
+		return DiscoveredConfig{}, fmt.Errorf("initcfg: go list: %w", err)
+	}
+	if out.ExitCode != 0 {
+		return DiscoveredConfig{}, fmt.Errorf("initcfg: go list exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+	}
+
+	var modPath string
+	// segments groups import path segments → set of full paths seen.
+	// Key is "seg1/seg2" (first 2 path segments after module root).
+	segments := make(map[string][]string)
+
+	dec := json.NewDecoder(bytes.NewReader(out.Stdout))
+	for {
+		var pkg goListPkg
+		if err := dec.Decode(&pkg); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return DiscoveredConfig{}, fmt.Errorf("initcfg: parse go list output: %w", err)
+		}
+		if pkg.Module != nil && pkg.Module.Path != "" && modPath == "" {
+			modPath = pkg.Module.Path
+		}
+		rel := stripPrefix(pkg.ImportPath, modPath)
+		if rel == "" {
+			// Root package — record as a top-level module.
+			rel = "."
+		}
+		key := groupKey(rel)
+		segments[key] = append(segments[key], rel)
+	}
+
+	modules := buildGoModules(segments)
+
+	return DiscoveredConfig{
+		ModulePath: modPath,
+		Modules:    modules,
+		Layers:     inferLayers(modules),
+	}, nil
+}
+
+// DiscoverTS reads src/ or lib/ subdirectories if package.json is present at root.
+// Returns discovered module definitions, one per subdirectory.
+func DiscoverTS(root string) ([]ModuleDef, error) {
+	if !fileExists(filepath.Join(root, "package.json")) {
+		return nil, nil
+	}
+	return discoverSubdirs(root, []string{"src", "lib"})
+}
+
+// DiscoverPy reads top-level package subdirectories if pyproject.toml or setup.py
+// is present at root.
+func DiscoverPy(root string) ([]ModuleDef, error) {
+	hasPyProject := fileExists(filepath.Join(root, "pyproject.toml"))
+	hasSetupPy := fileExists(filepath.Join(root, "setup.py"))
+	if !hasPyProject && !hasSetupPy {
+		return nil, nil
+	}
+	// Enumerate all top-level directories that look like Python packages
+	// (contain __init__.py).
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, fmt.Errorf("initcfg: read dir %s: %w", root, err)
+	}
+	var mods []ModuleDef
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if strings.HasPrefix(e.Name(), ".") || strings.HasPrefix(e.Name(), "_") {
+			continue
+		}
+		initFile := filepath.Join(root, e.Name(), "__init__.py")
+		if !fileExists(initFile) {
+			continue
+		}
+		name := e.Name()
+		mods = append(mods, ModuleDef{
+			Name:  name,
+			Paths: []string{name + "/**"},
+			Layer: layerCore,
+		})
+	}
+	return mods, nil
+}
+
+// Render converts a DiscoveredConfig into a YAML string suitable for saving as
+// archfit.yaml. The output includes a TODO comment and uses only known config
+// fields so it round-trips through config.Load.
+func Render(cfg DiscoveredConfig) string {
+	var b strings.Builder
+
+	b.WriteString("# Generated by archfit init — TODO: review and promote gate: warn to gate: fail\n")
+	b.WriteString("version: 1\n\n")
+
+	// layers:
+	if len(cfg.Layers) > 0 {
+		b.WriteString("layers:\n")
+		for _, l := range cfg.Layers {
+			fmt.Fprintf(&b, "  - %s\n", l)
+		}
+		b.WriteString("\n")
+	}
+
+	// modules:
+	if len(cfg.Modules) > 0 {
+		b.WriteString("modules:\n")
+		for _, m := range cfg.Modules {
+			fmt.Fprintf(&b, "  %s:\n", yamlKey(m.Name))
+			b.WriteString("    paths:\n")
+			for _, p := range m.Paths {
+				fmt.Fprintf(&b, "      - %q\n", p)
+			}
+			if len(m.Public) > 0 {
+				b.WriteString("    public:\n")
+				for _, p := range m.Public {
+					fmt.Fprintf(&b, "      - %q\n", p)
+				}
+			}
+			if len(m.Internal) > 0 {
+				b.WriteString("    internal:\n")
+				for _, p := range m.Internal {
+					fmt.Fprintf(&b, "      - %q\n", p)
+				}
+			}
+			if m.Layer != "" {
+				fmt.Fprintf(&b, "    layer: %s\n", m.Layer)
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	// rules:
+	b.WriteString("rules:\n")
+	b.WriteString("  - id: no-forbidden-deps\n")
+	b.WriteString("    type: forbidden_dependency\n")
+	b.WriteString("    gate: warn\n")
+
+	return b.String()
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+// stripPrefix removes the module path prefix from an import path.
+// e.g. "github.com/foo/bar/pkg/a" with modPath "github.com/foo/bar" → "pkg/a".
+func stripPrefix(importPath, modPath string) string {
+	if modPath == "" {
+		return importPath
+	}
+	trimmed := strings.TrimPrefix(importPath, modPath)
+	return strings.TrimPrefix(trimmed, "/")
+}
+
+// groupKey returns the first 2 path segments of a relative package path.
+// e.g. "internal/extract/golang" → "internal/extract"
+// e.g. "cmd/archfit" → "cmd/archfit"
+// e.g. "." → "."
+func groupKey(rel string) string {
+	if rel == "." || rel == "" {
+		return "."
+	}
+	parts := strings.SplitN(rel, "/", 3)
+	if len(parts) >= 2 {
+		return parts[0] + "/" + parts[1]
+	}
+	return parts[0]
+}
+
+// buildGoModules converts the segments map into sorted ModuleDef slice.
+func buildGoModules(segments map[string][]string) []ModuleDef {
+	// Sort keys for determinism.
+	keys := make([]string, 0, len(segments))
+	for k := range segments {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var mods []ModuleDef
+	for _, key := range keys {
+		if key == "." {
+			// Skip the root package as a standalone module entry.
+			continue
+		}
+		name := moduleNameFromKey(key)
+		paths := []string{key + "/..."}
+		layer := inferLayerFromKey(key)
+
+		// Infer public/internal sub-globs when the key contains "internal".
+		var public, internal []string
+		if !strings.Contains(key, "internal") {
+			public = []string{key + "/*.go"}
+		} else {
+			internal = []string{key + "/..."}
+			paths = []string{key + "/..."}
+		}
+
+		mods = append(mods, ModuleDef{
+			Name:     name,
+			Paths:    paths,
+			Public:   public,
+			Internal: internal,
+			Layer:    layer,
+		})
+	}
+	return mods
+}
+
+// moduleNameFromKey produces a short name from a 2-segment path key.
+// "internal/extract" → "extract", "cmd/archfit" → "cmd_archfit"
+func moduleNameFromKey(key string) string {
+	parts := strings.Split(key, "/")
+	if len(parts) == 2 && parts[0] == "internal" {
+		return parts[1]
+	}
+	return strings.Join(parts, "_")
+}
+
+// inferLayerFromKey maps common Go path prefixes to architectural layer names.
+func inferLayerFromKey(key string) string {
+	parts := strings.Split(key, "/")
+	top := parts[0]
+	switch top {
+	case layerCmd:
+		return layerCmd
+	case "internal":
+		second := ""
+		if len(parts) >= 2 {
+			second = parts[1]
+		}
+		switch second {
+		case layerModel:
+			return layerModel
+		case "toolrun", adapterExtract, "output", "history", "initcfg":
+			return layerAdapter
+		case layerEngine:
+			return layerEngine
+		default:
+			return layerCore
+		}
+	default:
+		return layerCore
+	}
+}
+
+// inferLayers derives an ordered, deduplicated layer list from discovered modules.
+// Canonical order: model → core → adapter → engine → cmd.
+func inferLayers(mods []ModuleDef) []string {
+	order := []string{layerModel, layerCore, layerAdapter, layerEngine, layerCmd}
+	seen := make(map[string]bool)
+	for _, m := range mods {
+		if m.Layer != "" {
+			seen[m.Layer] = true
+		}
+	}
+	var layers []string
+	for _, l := range order {
+		if seen[l] {
+			layers = append(layers, l)
+		}
+	}
+	return layers
+}
+
+// discoverSubdirs reads subdirectories within dirNames inside root.
+// Returns one ModuleDef per subdirectory found.
+func discoverSubdirs(root string, dirNames []string) ([]ModuleDef, error) {
+	var mods []ModuleDef
+	for _, dir := range dirNames {
+		full := filepath.Join(root, dir)
+		entries, err := os.ReadDir(full)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("initcfg: read dir %s: %w", full, err)
+		}
+		for _, e := range entries {
+			if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+				continue
+			}
+			name := e.Name()
+			path := dir + "/" + name + "/**"
+			mods = append(mods, ModuleDef{
+				Name:  name,
+				Paths: []string{path},
+				Layer: layerCore,
+			})
+		}
+	}
+	return mods, nil
+}
+
+// fileExists reports whether path exists and is a regular file.
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+// yamlKey sanitizes a module name for use as a YAML mapping key.
+// Replaces characters that would require quoting.
+func yamlKey(name string) string {
+	return strings.ReplaceAll(name, "/", "_")
+}

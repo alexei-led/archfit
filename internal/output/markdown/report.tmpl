@@ -1,0 +1,46 @@
+# archfit Architecture Fitness Report
+
+## Health Summary
+
+| Field | Value |
+|---|---|
+| Verdict | **{{.Verdict}}** |
+| Gate Findings | {{.Summary.GateFindings}} |
+| Warnings | {{.Summary.Warnings}} |
+| Exceptions Used | {{.Summary.ExceptionsUsed}} |
+
+{{if .GateTable}}
+## Critical Gate Violations (top 10)
+
+{{.GateTable}}
+{{end}}
+{{if .AdvisoryTable}}
+## BC Advisories
+
+{{.AdvisoryTable}}
+{{end}}
+{{if .Metrics}}
+## Metrics
+
+{{.MetricsTable}}
+{{end}}
+{{if .StalenessTable}}
+## Map Staleness
+
+{{.StalenessTable}}
+{{end}}
+{{if .ExceptionTable}}
+## Exception Inventory
+
+{{.ExceptionTable}}
+{{end}}
+{{if .AllFindings}}
+## Full Violation List
+
+<details>
+<summary>{{len .AllFindings}} finding(s)</summary>
+
+{{.AllFindingsTable}}
+
+</details>
+{{end}}

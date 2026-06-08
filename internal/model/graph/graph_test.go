@@ -7,20 +7,22 @@ import (
 
 // Test fixture constants — promoted to avoid goconst violations.
 const (
-	pathPkgA    = "pkg/a/a.go"
-	pathPkgB    = "pkg/b/b.go"
-	idFilePkgA  = "file:pkg/a/a.go"
-	idFilePkgB  = "file:pkg/b/b.go"
-	pathAGo     = "a.go"
-	idFileAGo   = "file:a.go"
-	idFileBGo   = "file:b.go"
-	idFileCGo   = "file:c.go"
-	idFileZGo   = "file:z.go"
-	confHigh    = "high"
-	pathMutated = "mutated"
-	idMutated   = "mutated"
-	idModuleA   = "module:a"
-	idModuleB   = "module:b"
+	pathPkgA     = "pkg/a/a.go"
+	pathPkgB     = "pkg/b/b.go"
+	idFilePkgA   = "file:pkg/a/a.go"
+	idFilePkgB   = "file:pkg/b/b.go"
+	pathAGo      = "a.go"
+	idFileAGo    = "file:a.go"
+	idFileBGo    = "file:b.go"
+	idFileCGo    = "file:c.go"
+	idFileZGo    = "file:z.go"
+	confHigh     = "high"
+	pathMutated  = "mutated"
+	idMutated    = "mutated"
+	idModuleA    = "module:a"
+	idModuleB    = "module:b"
+	hintExplicit = "explicit"
+	hintImplicit = "implicit"
 )
 
 // nodeIDs extracts IDs from a node slice for easy comparison.
@@ -345,6 +347,79 @@ func TestGraph_EdgesTo(t *testing.T) {
 		if e.To != idFileBGo {
 			t.Errorf("EdgesTo returned edge with To=%q", e.To)
 		}
+	}
+}
+
+func TestBuild_ExplicitnessHintPreserved(t *testing.T) {
+	facts := []Facts{
+		{
+			Edges: []Edge{
+				{From: idFileAGo, To: idFileBGo, Kind: EdgeKindImports,
+					Language: LangGo, ExplicitnessHint: hintExplicit},
+			},
+			Language: LangGo,
+		},
+	}
+
+	g := Build(facts)
+	edges := g.Edges()
+	if len(edges) != 1 {
+		t.Fatalf("want 1 edge, got %d", len(edges))
+	}
+	if edges[0].ExplicitnessHint != hintExplicit {
+		t.Errorf("ExplicitnessHint = %q, want %q", edges[0].ExplicitnessHint, hintExplicit)
+	}
+}
+
+func TestBuild_ExplicitnessHintEmptyRoundTrips(t *testing.T) {
+	facts := []Facts{
+		{
+			Edges: []Edge{
+				{From: idFileAGo, To: idFileBGo, Kind: EdgeKindImports, Language: LangGo},
+			},
+			Language: LangGo,
+		},
+	}
+
+	g := Build(facts)
+	edges := g.Edges()
+	if len(edges) != 1 {
+		t.Fatalf("want 1 edge, got %d", len(edges))
+	}
+	if edges[0].ExplicitnessHint != "" {
+		t.Errorf("ExplicitnessHint = %q, want empty string", edges[0].ExplicitnessHint)
+	}
+}
+
+func TestBuild_DeduplicatesWithExplicitnessHint(t *testing.T) {
+	// Same canonical key (from, to, kind) — dedup must still work with field present.
+	loc1 := Location{File: pathAGo, Line: 1}
+	loc2 := Location{File: pathAGo, Line: 2}
+	facts := []Facts{
+		{
+			Edges: []Edge{
+				{From: idFileAGo, To: idFileBGo, Kind: EdgeKindImports,
+					Language: LangGo, ExplicitnessHint: hintExplicit, Locations: []Location{loc1}},
+			},
+			Language: LangGo,
+		},
+		{
+			Edges: []Edge{
+				{From: idFileAGo, To: idFileBGo, Kind: EdgeKindImports,
+					Language: LangGo, ExplicitnessHint: hintImplicit, Locations: []Location{loc2}},
+			},
+			Language: LangGo,
+		},
+	}
+
+	g := Build(facts)
+	edges := g.Edges()
+	if len(edges) != 1 {
+		t.Fatalf("want 1 edge after dedup, got %d", len(edges))
+	}
+	// Locations from both edges should be merged.
+	if len(edges[0].Locations) != 2 {
+		t.Errorf("want 2 merged locations, got %d", len(edges[0].Locations))
 	}
 }
 

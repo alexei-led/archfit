@@ -66,10 +66,55 @@ setup-tools: ## install pinned development tools
 	go install golang.org/x/tools/cmd/goimports@latest
 	go install github.com/matryer/moq@$(MOQ_VERSION)
 
+## release: cross-compile for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64 into dist/
+.PHONY: release
+release: ## cross-compile release binaries into dist/ with SHA256SUMS
+	@mkdir -p dist
+	@for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do \
+		os=$$(echo $$platform | cut -d/ -f1); \
+		arch=$$(echo $$platform | cut -d/ -f2); \
+		out=dist/$(BINARY)-$(VERSION)-$$os-$$arch; \
+		echo "building $$out"; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build \
+			-trimpath \
+			-ldflags "-s -w $(LDFLAGS)" \
+			-o $$out \
+			$(CMD); \
+	done
+	@cd dist && \
+		if command -v sha256sum >/dev/null 2>&1; then \
+			sha256sum * > SHA256SUMS; \
+		else \
+			shasum -a 256 * > SHA256SUMS; \
+		fi
+	@echo "release binaries written to dist/"
+
+## docker-build: build multi-arch Docker image (requires docker buildx)
+.PHONY: docker-build
+docker-build: ## build multi-arch Docker image for linux/amd64 and linux/arm64
+	docker buildx build \
+		--platform linux/amd64,linux/arm64 \
+		-t ghcr.io/alexei-led/$(BINARY):$(VERSION) \
+		.
+
+## docker-push: push multi-arch Docker image to GHCR (requires docker login ghcr.io)
+.PHONY: docker-push
+docker-push: ## push multi-arch image to ghcr.io (run: docker login ghcr.io first)
+	docker buildx build \
+		--platform linux/amd64,linux/arm64 \
+		-t ghcr.io/alexei-led/$(BINARY):$(VERSION) \
+		--push \
+		.
+
+## docker-run: smoke-test the published image with --help
+.PHONY: docker-run
+docker-run: ## run archfit --help from the GHCR image (smoke test)
+	docker run --rm ghcr.io/alexei-led/$(BINARY):$(VERSION) --help
+
 ## clean: remove build artefacts
 .PHONY: clean
 clean: ## remove build artefacts
-	rm -rf $(BIN_DIR) coverage.out
+	rm -rf $(BIN_DIR) dist/ coverage.out
 
 ## version: print build version info
 .PHONY: version

@@ -1,0 +1,36 @@
+[
+  {
+    "text": "unsafe.Pointer(&x)",
+    "range": {
+      "start": {
+        "line": 10,
+        "column": 4
+      },
+      "end": {
+        "line": 10,
+        "column": 22
+      }
+    },
+    "file": "internal/foo/foo.go",
+    "rule": {
+      "id": "unsafe-pointer-cast"
+    }
+  },
+  {
+    "text": "unsafe.Pointer(&y)",
+    "range": {
+      "start": {
+        "line": 25,
+        "column": 8
+      },
+      "end": {
+        "line": 25,
+        "column": 26
+      }
+    },
+    "file": "internal/bar/bar.go",
+    "rule": {
+      "id": "unsafe-pointer-cast"
+    }
+  }
+]

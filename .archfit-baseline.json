@@ -10,6 +10,10 @@
       "rule_id": "layer_inversion"
     },
     {
+      "fingerprint": "65a86408599956d629fdf14944f1d703",
+      "rule_id": "layer_inversion"
+    },
+    {
       "fingerprint": "32b9e85de328aef22c9bd24557aeae84",
       "rule_id": "layer_inversion"
     }
@@ -24,7 +28,7 @@
       "version": "cycle.v1"
     },
     "encapsulation": {
-      "value": 1,
+      "value": 0.9863013698630136,
       "version": "encapsulation.v1"
     },
     "unbalanced_edge": {

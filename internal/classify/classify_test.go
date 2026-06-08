@@ -14,6 +14,12 @@ const (
 	ownerTeamY  = "team-y"
 	deployUnitA = "svc-a"
 	deployUnitB = "svc-b"
+
+	// path glob constants reused across multiple test cases.
+	pathsA        = "services/a/**"
+	pathsB        = "services/b/**"
+	publicB       = "services/b/api/**"
+	subdomainCore = "core"
 )
 
 // makeGraph builds a minimal sealed Graph from a slice of edges.
@@ -284,6 +290,160 @@ func TestRun_ExplicitVolatilityFieldOverridesSubdomain(t *testing.T) {
 	// Volatility field "low" should override subdomain "core" (which would give high).
 	if cl.Volatility != coupling.VolatilityLow {
 		t.Errorf("Volatility = %q, want %q (explicit field should override subdomain)", cl.Volatility, coupling.VolatilityLow)
+	}
+}
+
+// TestRun_ExplicitnessHintOverridesGlob verifies that ExplicitnessHint on the
+// edge takes precedence over the config-glob-derived explicitness.
+func TestRun_ExplicitnessHintOverridesGlob(t *testing.T) {
+	// module "a" treats services/a/internal/** as internal → StrengthIntrusive → ExplicitnessImplicit by glob.
+	// An AST signal can flip this to "explicit" via ExplicitnessHint.
+	modules := map[string]config.ModuleDef{
+		"a": {
+			Paths:    []string{pathsA},
+			Internal: []string{"services/a/internal/**"},
+			Owner:    ownerTeamX, DeployUnit: deployUnitA,
+		},
+		"b": {
+			Paths:  []string{pathsB},
+			Public: []string{publicB},
+			Owner:  ownerTeamY, DeployUnit: deployUnitB,
+		},
+	}
+	cfg := config.ClassifyConfig{Modules: modules}
+
+	tests := []struct {
+		name    string
+		hint    string
+		wantExp coupling.Explicitness
+	}{
+		{
+			name:    "hint=explicit overrides intrusive-derived implicit",
+			hint:    "explicit",
+			wantExp: coupling.ExplicitnessExplicit,
+		},
+		{
+			name:    "hint=implicit overrides contract-derived explicit",
+			hint:    "implicit",
+			wantExp: coupling.ExplicitnessImplicit,
+		},
+		{
+			name:    "hint empty — glob result used",
+			hint:    "",
+			wantExp: coupling.ExplicitnessImplicit, // intrusive → implicit
+		},
+	}
+
+	// Base edge: a→b/internal → StrengthIntrusive → ExplicitnessImplicit without hint.
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := graph.Edge{
+				From:             "file:services/a/impl.go",
+				To:               "file:services/a/internal/secret.go",
+				Kind:             graph.EdgeKindImports,
+				Language:         "go",
+				ExplicitnessHint: tc.hint,
+			}
+			g := makeGraph([]graph.Edge{e})
+			idx := classify.Run(g, cfg)
+			key := edgeKey(e)
+			cl, ok := idx[key]
+			if !ok {
+				t.Fatalf("edge key %q not found in index", key)
+			}
+			if cl.Explicitness != tc.wantExp {
+				t.Errorf("Explicitness = %q, want %q", cl.Explicitness, tc.wantExp)
+			}
+		})
+	}
+}
+
+// TestRun_Severity verifies that BalanceResult-derived severity is stored on
+// the Classification for cross-boundary edges.
+func TestRun_Severity(t *testing.T) {
+	// Modules:
+	//   "a": paths=services/a/**, owner=team-x, deploy=svc-a, subdomain=core (high volatility)
+	//   "b": paths=services/b/**, public=services/b/api/**, internal=services/b/internal/**,
+	//        owner=team-y, deploy=svc-b, subdomain=supporting (medium volatility)
+	//   "c": paths=services/c/**, public=services/c/api/**, owner=team-x, deploy=svc-a, subdomain=generic (low vol)
+	modules := map[string]config.ModuleDef{
+		"a": {
+			Paths:      []string{pathsA},
+			Public:     []string{"services/a/api/**"},
+			Owner:      ownerTeamX,
+			DeployUnit: deployUnitA,
+			Subdomain:  subdomainCore,
+		},
+		"b": {
+			Paths:      []string{pathsB},
+			Public:     []string{publicB},
+			Internal:   []string{"services/b/internal/**"},
+			Owner:      ownerTeamY,
+			DeployUnit: deployUnitB,
+			Subdomain:  "supporting",
+		},
+		"c": {
+			Paths:      []string{"services/c/**"},
+			Public:     []string{"services/c/api/**"},
+			Owner:      ownerTeamX,
+			DeployUnit: deployUnitA,
+			Subdomain:  "generic",
+		},
+	}
+	cfg := config.ClassifyConfig{Modules: modules}
+
+	importEdge := func(from, to string) graph.Edge {
+		return graph.Edge{
+			From: "file:" + from, To: "file:" + to,
+			Kind: graph.EdgeKindImports, Language: "go",
+		}
+	}
+
+	tests := []struct {
+		name         string
+		edge         graph.Edge
+		wantSeverity coupling.Severity
+	}{
+		{
+			// contract + cross_deploy_unit + medium vol → strength=low, distance=high → imbalanced → medium vol → medium
+			name:         "imbalanced contract cross-deploy medium-vol → medium",
+			edge:         importEdge("services/a/impl.go", "services/b/api/client.go"),
+			wantSeverity: coupling.SeverityMedium,
+		},
+		{
+			// intrusive + cross_deploy_unit → critical
+			name:         "intrusive cross-deploy → critical",
+			edge:         importEdge("services/a/impl.go", "services/b/internal/secret.go"),
+			wantSeverity: coupling.SeverityCritical,
+		},
+		{
+			// contract + cross_module_same_owner + low vol → strength=low, distance=low → balanced → none
+			name:         "balanced contract cross-module-same-owner low-vol → none",
+			edge:         importEdge("services/a/impl.go", "services/c/api/client.go"),
+			wantSeverity: coupling.SeverityNone,
+		},
+		{
+			// same-module edge: no severity computed
+			name:         "same-module edge — no severity",
+			edge:         importEdge("services/a/impl.go", "services/a/api/types.go"),
+			wantSeverity: coupling.SeverityNone,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := makeGraph([]graph.Edge{tc.edge})
+			idx := classify.Run(g, cfg)
+			key := edgeKey(tc.edge)
+			cl, ok := idx[key]
+			if !ok {
+				t.Fatalf("edge key %q not found in index", key)
+			}
+			if cl.Severity != tc.wantSeverity {
+				t.Errorf("Severity = %q, want %q (str=%q dist=%q vol=%q)",
+					cl.Severity, tc.wantSeverity, cl.Strength, cl.Distance, cl.Volatility)
+			}
+		})
 	}
 }
 

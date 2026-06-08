@@ -17,13 +17,17 @@ import (
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
+	"github.com/alexei-led/archfit/internal/extract/astgrep"
 	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/extract/py"
+	"github.com/alexei-led/archfit/internal/extract/scip"
 	"github.com/alexei-led/archfit/internal/extract/ts"
+	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
+	"github.com/alexei-led/archfit/internal/output/markdown"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -42,6 +46,7 @@ const defaultBaselinePath = ".archfit-baseline.json"
 // cli is the top-level kong command struct.
 type cli struct {
 	Check    CheckCmd    `cmd:"" help:"Check architecture constraints."`
+	Scan     ScanCmd     `cmd:"" help:"Full architecture audit report (scan ≡ check --full --advisory --report --format markdown)."`
 	Baseline BaselineCmd `cmd:"" help:"Save current findings as baseline."`
 	Explain  ExplainCmd  `cmd:"" help:"Explain a specific finding."`
 	Doctor   DoctorCmd   `cmd:"" help:"Check toolchain availability."`
@@ -94,7 +99,7 @@ type CheckCmd struct {
 	Config   string   `short:"c" help:"Config file." default:"archfit.yaml"`
 	Base     string   `help:"Base ref for delta mode."`
 	Full     bool     `help:"Full scan (not delta)."`
-	Format   []string `help:"Output format." enum:"json,console" default:"console"`
+	Format   []string `help:"Output format." enum:"json,console,markdown" default:"console"`
 	Advisory bool     `help:"Include advisory findings (no-op Phase 1)."`
 	Report   bool     `help:"Report only, don't fail on regressions (no-op Phase 1)."`
 }
@@ -139,7 +144,8 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		Formats:    c.Format,
 	}
 
-	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStatus(), extractors, rs, ms, base, time.Now())
+	patternCfg := cfg.ForPatterns()
+	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), scip.New(deps.Runner), patternCfg, rs, ms, base, time.Now())
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -152,6 +158,8 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 			renderErr = jsonout.New().Render(diag, deps.Stdout)
 		case "console":
 			renderErr = console.New().Render(diag, deps.Stdout)
+		case "markdown":
+			renderErr = markdown.New().Render(diag, deps.Stdout)
 		}
 		if renderErr != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, renderErr)}
@@ -204,7 +212,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	rs := rules.New(cfg.ForRules())
 	ms := metrics.New(cfg)
 
-	diag, err := engine.Run(ctx, engine.Mode{Full: c.Full, Base: c.Base}, s, cfg.ForClassify(), cfg.ForStatus(), extractors, rs, ms, existingBase, time.Now())
+	diag, err := engine.Run(ctx, engine.Mode{Full: c.Full, Base: c.Base}, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, engine.NopPatternProvider{}, engine.NopSymbolResolver{}, config.PatternConfig{}, rs, ms, existingBase, time.Now())
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -275,7 +283,7 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 	rs := rules.New(cfg.ForRules())
 	ms := metrics.New(cfg)
 
-	diag, err := engine.Run(ctx, engine.Mode{Full: true}, s, cfg.ForClassify(), cfg.ForStatus(), extractors, rs, ms, existingBase, time.Now())
+	diag, err := engine.Run(ctx, engine.Mode{Full: true}, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, engine.NopPatternProvider{}, engine.NopSymbolResolver{}, config.PatternConfig{}, rs, ms, existingBase, time.Now())
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -317,6 +325,10 @@ func (c *DoctorCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kon
 		{"npx", "npx"},
 		{"uv", "uv"},
 		{"python3", "python3"},
+		{"sg (ast-grep)", "sg"},
+		{"scip-typescript", "scip-typescript"},
+		{"scip-python", "scip-python"},
+		{"scip-go", "scip-go"},
 	}
 
 	_, _ = fmt.Fprintf(deps.Stdout, "%-12s %-8s %s\n", "TOOL", "STATUS", "PATH")
@@ -337,12 +349,57 @@ func (c *DoctorCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kon
 // InitCmd
 // ---------------------------------------------------------------------------
 
-// InitCmd is a stub for initializing archfit.yaml.
-type InitCmd struct{}
+// InitCmd discovers project structure and writes a starter archfit.yaml.
+type InitCmd struct {
+	Root   string `short:"r" help:"Project root directory." default:"."`
+	Output string `short:"o" help:"Output file (use '-' for stdout)." default:"archfit.yaml"`
+}
 
-func (c *InitCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kong command interface; future versions may return errors
-	_, _ = fmt.Fprintln(deps.Stdout, "not yet implemented")
+func (c *InitCmd) Run(deps *appDeps) error {
+	root := c.Root
+	if !filepath.IsAbs(root) {
+		var err error
+		root, err = filepath.Abs(root)
+		if err != nil {
+			return fmt.Errorf("resolving root: %w", err)
+		}
+	}
+	ctx := context.Background()
+	cfg, err := initcfg.Discover(ctx, root, deps.Runner)
+	if err != nil {
+		return fmt.Errorf("discovering project structure: %w", err)
+	}
+	yaml := initcfg.Render(cfg)
+	if c.Output == "-" {
+		_, _ = fmt.Fprint(deps.Stdout, yaml)
+		return nil
+	}
+	if err := os.WriteFile(c.Output, []byte(yaml), 0o600); err != nil {
+		return fmt.Errorf("writing %s: %w", c.Output, err)
+	}
+	_, _ = fmt.Fprintf(deps.Stdout, "wrote %s\n", c.Output)
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// ScanCmd
+// ---------------------------------------------------------------------------
+
+// ScanCmd is a convenience alias for a full advisory Markdown audit.
+// Equivalent to: archfit check --full --advisory --report --format markdown
+type ScanCmd struct {
+	Config string `short:"c" help:"Config file." default:"archfit.yaml"`
+}
+
+func (c *ScanCmd) Run(deps *appDeps) error {
+	check := CheckCmd{
+		Config:   c.Config,
+		Full:     true,
+		Advisory: true,
+		Report:   true,
+		Format:   []string{"markdown"},
+	}
+	return check.Run(deps)
 }
 
 // ---------------------------------------------------------------------------

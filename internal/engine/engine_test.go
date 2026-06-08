@@ -27,6 +27,10 @@ const (
 	globModuleA         = "pkg/a/**"
 	globModuleB         = "pkg/b/**"
 	globModuleBInternal = "pkg/b/internal/**"
+
+	headRef         = "HEAD"
+	kindAdvisory    = "advisory"
+	toolNameAstgrep = "ast-grep"
 )
 
 // cannedConfig builds a ClassifyConfig and RuleConfig for a two-module (a, b)
@@ -129,11 +133,15 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 
 	d, err := engine.Run(
 		ctx,
-		engine.Mode{Head: "HEAD"},
+		engine.Mode{Head: headRef},
 		scope.Scope{Root: "."},
 		classifyCfg,
+		config.StalenessConfig{},
 		config.ExceptionSet{},
 		[]engine.Extractor{ex},
+		engine.NopPatternProvider{},
+		engine.NopSymbolResolver{},
+		config.PatternConfig{},
 		rs,
 		ms,
 		base,
@@ -200,11 +208,15 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 
 	d, err := engine.Run(
 		ctx,
-		engine.Mode{Head: "HEAD"},
+		engine.Mode{Head: headRef},
 		scope.Scope{Root: "."},
 		classifyCfg,
+		config.StalenessConfig{},
 		config.ExceptionSet{},
 		[]engine.Extractor{ex},
+		engine.NopPatternProvider{},
+		engine.NopSymbolResolver{},
+		config.PatternConfig{},
 		rs,
 		ms,
 		base,
@@ -250,8 +262,12 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		engine.Mode{Base: "main", Head: "feature"},
 		scope.Scope{Root: "."},
 		classifyCfg,
+		config.StalenessConfig{},
 		config.ExceptionSet{},
 		[]engine.Extractor{ex},
+		engine.NopPatternProvider{},
+		engine.NopSymbolResolver{},
+		config.PatternConfig{},
 		rs,
 		ms,
 		base,
@@ -285,5 +301,299 @@ func TestRun_DiagnosticShape(t *testing.T) {
 	// Metrics should contain all Phase 1 metrics.
 	if len(d.Metrics) != 4 {
 		t.Errorf("len(metrics)=%d, want 4", len(d.Metrics))
+	}
+}
+
+// TestRun_Advisory_FilteredWhenDisabled asserts that advisory findings do NOT appear
+// in Findings and Summary.Warnings is 0 when mode.Advisory = false.
+// The violation graph (intrusive edge a→b/internal) will produce a coupling advisory,
+// but it must be suppressed.
+func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
+	ctx := context.Background()
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return violationFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(
+		ctx,
+		engine.Mode{Head: headRef, Advisory: false},
+		scope.Scope{Root: "."},
+		classifyCfg,
+		config.StalenessConfig{},
+		config.ExceptionSet{},
+		[]engine.Extractor{ex},
+		engine.NopPatternProvider{},
+		engine.NopSymbolResolver{},
+		config.PatternConfig{},
+		rs,
+		ms,
+		base,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, f := range d.Findings {
+		if f.Kind == kindAdvisory {
+			t.Errorf("advisory finding present when mode.Advisory=false: %+v", f)
+		}
+	}
+	if d.Summary.Warnings != 0 {
+		t.Errorf("summary.warnings=%d, want 0 when advisory disabled", d.Summary.Warnings)
+	}
+}
+
+// TestRun_Advisory_PresentWhenEnabled asserts that advisory findings DO appear
+// when mode.Advisory = true, verdict stays pass with a clean graph, and
+// Summary.Warnings equals the advisory count.
+func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
+	ctx := context.Background()
+	// cleanFacts: imports edge a→b/api (contract, cross-module) → imbalanced (low severity).
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(
+		ctx,
+		engine.Mode{Head: headRef, Advisory: true},
+		scope.Scope{Root: "."},
+		classifyCfg,
+		config.StalenessConfig{},
+		config.ExceptionSet{},
+		[]engine.Extractor{ex},
+		engine.NopPatternProvider{},
+		engine.NopSymbolResolver{},
+		config.PatternConfig{},
+		rs,
+		ms,
+		base,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// Verdict must be pass — advisory findings never gate.
+	if d.Verdict != diagnostic.VerdictPass {
+		t.Errorf("verdict=%q, want pass with advisory findings present", d.Verdict)
+	}
+
+	// At least one advisory finding must be present.
+	var advisoryCount int
+	for _, f := range d.Findings {
+		if f.Kind == kindAdvisory {
+			advisoryCount++
+			if f.RuleID == "" {
+				t.Errorf("advisory finding has empty rule_id: %+v", f)
+			}
+		}
+	}
+	if advisoryCount == 0 {
+		t.Errorf("no advisory findings present when mode.Advisory=true; findings=%+v", d.Findings)
+	}
+
+	// Summary.Warnings must match advisory count.
+	if d.Summary.Warnings != advisoryCount {
+		t.Errorf("summary.warnings=%d, want %d (advisory count)", d.Summary.Warnings, advisoryCount)
+	}
+}
+
+// TestRun_Advisory_VerdictUnchanged asserts that advisory findings do NOT change
+// a fail verdict: a gate violation still fails even when advisories are present.
+func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
+	ctx := context.Background()
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return violationFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(
+		ctx,
+		engine.Mode{Head: headRef, Advisory: true},
+		scope.Scope{Root: "."},
+		classifyCfg,
+		config.StalenessConfig{},
+		config.ExceptionSet{},
+		[]engine.Extractor{ex},
+		engine.NopPatternProvider{},
+		engine.NopSymbolResolver{},
+		config.PatternConfig{},
+		rs,
+		ms,
+		base,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// Gate violation must still fail.
+	if d.Verdict != diagnostic.VerdictFail {
+		t.Errorf("verdict=%q, want fail (gate violation present)", d.Verdict)
+	}
+
+	// Advisory findings are present in Findings.
+	var advisoryCount int
+	for _, f := range d.Findings {
+		if f.Kind == kindAdvisory {
+			advisoryCount++
+		}
+	}
+	if advisoryCount == 0 {
+		t.Errorf("no advisory findings when mode.Advisory=true")
+	}
+
+	// Summary.Warnings matches advisory count.
+	if d.Summary.Warnings != advisoryCount {
+		t.Errorf("summary.warnings=%d, want %d", d.Summary.Warnings, advisoryCount)
+	}
+}
+
+// TestRun_PatternProvider_MatchesPropagated asserts that pattern matches returned
+// by the PatternProvider are converted and passed as Evidence.PatternMatches to rules.
+// We verify this by checking that Find was called and coverage record is present.
+func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
+	ctx := context.Background()
+
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	// PatternProvider returns one known match.
+	findCalled := false
+	pp := &engine.PatternProviderMock{
+		NameFunc: func() string { return toolNameAstgrep },
+		FindFunc: func(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]engine.PatternMatch, diagnostic.Coverage, error) {
+			findCalled = true
+			return []engine.PatternMatch{
+				{File: pathFileA, Pattern: "unsafe-cast", Text: "unsafe.Pointer(x)", Line: 10, Column: 0},
+			}, diagnostic.Coverage{Tool: toolNameAstgrep, Status: "ok", FilesSeen: 1}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(
+		ctx,
+		engine.Mode{Head: headRef},
+		scope.Scope{Root: "."},
+		classifyCfg,
+		config.StalenessConfig{},
+		config.ExceptionSet{},
+		[]engine.Extractor{ex},
+		pp,
+		engine.NopSymbolResolver{},
+		config.PatternConfig{},
+		rs,
+		ms,
+		base,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// PatternProvider.Find must have been called.
+	if !findCalled {
+		t.Error("PatternProvider.Find was not called")
+	}
+
+	// Coverage from PatternProvider must appear in ToolCoverage.
+	var found bool
+	for _, cov := range d.ToolCoverage {
+		if cov.Tool == toolNameAstgrep {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("ast-grep coverage record missing from ToolCoverage; got %+v", d.ToolCoverage)
+	}
+}
+
+// TestRun_PatternProvider_DoesNotAffectVerdict asserts that pattern matches from
+// the PatternProvider do not alter the gate verdict when no gate rule fires.
+func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
+	ctx := context.Background()
+
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	// PatternProvider returns matches — but no rule uses them to produce gate findings.
+	pp := &engine.PatternProviderMock{
+		NameFunc: func() string { return toolNameAstgrep },
+		FindFunc: func(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]engine.PatternMatch, diagnostic.Coverage, error) {
+			return []engine.PatternMatch{
+				{File: pathFileA, Pattern: "reflect-unexported", Text: "reflect.ValueOf(x).Field(0)", Line: 5, Column: 4},
+				{File: pathFileBAPIService, Pattern: "reflect-unexported", Text: "reflect.ValueOf(y).Field(1)", Line: 12, Column: 0},
+			}, diagnostic.Coverage{Tool: toolNameAstgrep, Status: "ok", FilesSeen: 2}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(
+		ctx,
+		engine.Mode{Head: headRef},
+		scope.Scope{Root: "."},
+		classifyCfg,
+		config.StalenessConfig{},
+		config.ExceptionSet{},
+		[]engine.Extractor{ex},
+		pp,
+		engine.NopSymbolResolver{},
+		config.PatternConfig{},
+		rs,
+		ms,
+		base,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// Verdict must remain pass — pattern matches alone must not gate.
+	if d.Verdict != diagnostic.VerdictPass {
+		t.Errorf("verdict=%q, want pass; pattern matches must not affect verdict", d.Verdict)
+	}
+	if d.Summary.GateFindings != 0 {
+		t.Errorf("summary.gate_findings=%d, want 0", d.Summary.GateFindings)
 	}
 }
