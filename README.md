@@ -15,7 +15,7 @@ go install github.com/alexei-led/archfit/cmd/archfit@latest
 ### check — gate violations
 
 ```sh
-archfit check --config archfit.yaml
+archfit check --config .archfit.yaml
 ```
 
 Exits 0 (pass), 1 (error), or 2 (gate violations found). Add `--full` to include
@@ -24,7 +24,7 @@ all rule types; add `--advisory` to include BC advisory findings in output.
 ### scan — full audit report
 
 ```sh
-archfit scan --config archfit.yaml
+archfit scan --config .archfit.yaml
 ```
 
 Equivalent to `check --full --advisory --report --format markdown`. Produces a
@@ -37,13 +37,13 @@ and Map Staleness sections. Exits 0 on pass, 2 on gate violations.
 # Write to stdout
 archfit init --output - --root .
 
-# Write to archfit.yaml in current directory
+# Write to .archfit.yaml in current directory
 archfit init --root .
 ```
 
 Discovers Go packages (via `go list`), TypeScript (`src/`/`lib/` under `package.json`),
 and Python packages (directories with `__init__.py` under `pyproject.toml`/`setup.py`).
-Emits a starter `archfit.yaml` with inferred modules, layers, and a `gate: warn` rule.
+Emits a starter `.archfit.yaml` with inferred modules, layers, and a `gate: warn` rule.
 Review and promote rules to `gate: fail` once the baseline is established.
 
 ### doctor — toolchain check
@@ -59,7 +59,7 @@ paths: `go`, `git`, `node`, `npx`, `bunx`, `uv`, `python3`, `sg` (ast-grep),
 ### baseline — record known findings
 
 ```sh
-archfit baseline --full --config archfit.yaml
+archfit baseline --full --config .archfit.yaml
 ```
 
 Snapshots current findings into `.archfit-baseline.json`. Subsequent `check`/`scan`
@@ -121,11 +121,11 @@ docker pull ghcr.io/alexei-led/archfit:latest
 
 # Run check against a repo mounted at /repo
 docker run --rm -v $(pwd):/repo ghcr.io/alexei-led/archfit:latest \
-    check --config /repo/archfit.yaml
+    check --config /repo/.archfit.yaml
 
 # Full audit report (Markdown)
 docker run --rm -v $(pwd):/repo ghcr.io/alexei-led/archfit:latest \
-    scan --config /repo/archfit.yaml
+    scan --config /repo/.archfit.yaml
 
 # Verify bundled toolchain
 docker run --rm ghcr.io/alexei-led/archfit:latest doctor

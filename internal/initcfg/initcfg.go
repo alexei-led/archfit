@@ -1,4 +1,4 @@
-// Package initcfg discovers project structure and renders a starter archfit.yaml.
+// Package initcfg discovers project structure and renders a starter .archfit.yaml.
 // It is an adapter (uses toolrun.Runner for go list) and may import os for
 // filesystem inspection (DiscoverTS, DiscoverPy).
 package initcfg
@@ -299,7 +299,7 @@ func detectPyPackage(root string) string {
 }
 
 // Render converts a DiscoveredConfig into a YAML string suitable for saving as
-// archfit.yaml. The output includes a TODO comment and uses only known config
+// .archfit.yaml. The output includes a TODO comment and uses only known config
 // fields so it round-trips through config.Load.
 func Render(cfg DiscoveredConfig) string {
 	var b strings.Builder

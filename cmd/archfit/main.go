@@ -42,7 +42,7 @@ var (
 )
 
 const (
-	defaultConfigPath   = "archfit.yaml"           // fallback to config.Default() when absent
+	defaultConfigPath   = ".archfit.yaml"          // fallback to config.Default() when absent
 	defaultBaselinePath = ".archfit-baseline.json" // on-disk path for the baseline file
 )
 
@@ -54,7 +54,7 @@ type cli struct {
 	Explain  ExplainCmd  `cmd:"" help:"Explain a specific finding."`
 	Doctor   DoctorCmd   `cmd:"" help:"Check toolchain availability."`
 	Install  InstallCmd  `cmd:"" help:"Install external tools required for language analysis."`
-	Init     InitCmd     `cmd:"" help:"Initialize archfit.yaml."`
+	Init     InitCmd     `cmd:"" help:"Initialize .archfit.yaml."`
 	Version  versionFlag `short:"v" help:"Print version and exit."`
 }
 
@@ -100,7 +100,7 @@ type exitCode int
 
 // CheckCmd runs the full archfit analysis pipeline.
 type CheckCmd struct {
-	Config   string   `short:"c" help:"Path to config file (optional; built-in defaults used if absent)." default:"archfit.yaml"`
+	Config   string   `short:"c" help:"Path to config file (optional; built-in defaults used if absent)." default:".archfit.yaml"`
 	Base     string   `help:"Git ref to compare against for incremental mode (e.g. main, HEAD~1)."`
 	Full     bool     `help:"Scan all files, not just files changed since --base."`
 	Format   []string `help:"Output format: text (human-readable), json, markdown, md. Repeatable." enum:"json,text,markdown,md" default:"text"`
@@ -189,7 +189,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 
 // BaselineCmd runs the engine and saves findings as the new baseline.
 type BaselineCmd struct {
-	Config   string `short:"c" default:"archfit.yaml"`
+	Config   string `short:"c" default:".archfit.yaml"`
 	Full     bool
 	Advisory bool `help:"Include advisory findings in the baseline."`
 	Base     string
@@ -267,7 +267,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 
 // ExplainCmd re-runs the engine and prints the details of a single finding.
 type ExplainCmd struct {
-	Config      string `short:"c" default:"archfit.yaml"`
+	Config      string `short:"c" default:".archfit.yaml"`
 	Fingerprint string `arg:"" help:"Finding fingerprint prefix."`
 }
 
@@ -371,7 +371,7 @@ func (c *DoctorCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kon
 // InitCmd discovers project structure and writes a starter archfit.yaml.
 type InitCmd struct {
 	Root   string `short:"r" help:"Project root directory." default:"."`
-	Output string `short:"o" help:"Output file (use '-' for stdout)." default:"archfit.yaml"`
+	Output string `short:"o" help:"Output file (use '-' for stdout)." default:".archfit.yaml"`
 }
 
 func (c *InitCmd) Run(deps *appDeps) error {
@@ -408,7 +408,7 @@ func (c *InitCmd) Run(deps *appDeps) error {
 // Always runs: check --full --advisory --report --format markdown.
 // For custom combinations (e.g. without advisory), use the check command directly.
 type ScanCmd struct {
-	Config string `short:"c" help:"Config file." default:"archfit.yaml"`
+	Config string `short:"c" help:"Config file." default:".archfit.yaml"`
 }
 
 func (c *ScanCmd) Run(deps *appDeps) error {
@@ -427,7 +427,7 @@ func (c *ScanCmd) Run(deps *appDeps) error {
 // ---------------------------------------------------------------------------
 
 // loadConfig loads the config file at path. When path equals the default
-// "archfit.yaml" and the file is absent, it returns config.Default() so the
+// ".archfit.yaml" and the file is absent, it returns config.Default() so the
 // tool works without a config file. An explicit --config path that is missing
 // always returns an error. noConfig=true skips file loading entirely.
 func loadConfig(ctx context.Context, path string, noConfig bool) (config.Config, error) {
