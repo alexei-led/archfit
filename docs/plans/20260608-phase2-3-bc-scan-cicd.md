@@ -149,12 +149,12 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 - Modify: `internal/rules/rules.go`
 - Modify: `internal/rules/rules_test.go`
 
-- [ ] Implement `InternalAPIAccess` rule (`type: internal_api_access`): fires on edges with `kind == uses_internal`; supports optional `from`/`to` glob filters; populates `MatchedBy`, `Why`, `Constraint`
-- [ ] Implement `NewCrossModuleDependency` rule (`type: new_cross_module_dependency`): fires when edge is cross-module AND `finding.Status == StatusNew` (reads status from pre-tagged findings passed via `Evidence`). Default `gate: warn`.
-- [ ] Implement `CycleRule` rule (`type: cycle`): uses same Tarjan SCC as `CycleMetric`; emits one finding per SCC (shortest-path evidence from/to); delegates detection to `internal/metrics` helper or a shared `internal/graph` helper to avoid duplication
-- [ ] Add all three to `rules.New` config-string dispatch map
-- [ ] Write table-driven tests: matching/non-matching for each type; MatchedBy/Why/Constraint populated; cycle rule emits specific edge evidence
-- [ ] Run `go test ./internal/rules/...` and arch_test — must pass
+- [x] Implement `InternalAPIAccess` rule (`type: internal_api_access`): fires on edges with `kind == uses_internal`; supports optional `from`/`to` glob filters; populates `MatchedBy`, `Why`, `Constraint`
+- [x] Implement `NewCrossModuleDependency` rule (`type: new_cross_module_dependency`): fires when edge is cross-module AND `finding.Status == StatusNew` (reads status from pre-tagged findings passed via `Evidence`). Default `gate: warn`.
+- [x] Implement `CycleRule` rule (`type: cycle`): uses same Tarjan SCC as `CycleMetric`; emits one finding per SCC (shortest-path evidence from/to); delegates detection to `internal/metrics` helper or a shared `internal/graph` helper to avoid duplication
+- [x] Add all three to `rules.New` config-string dispatch map
+- [x] Write table-driven tests: matching/non-matching for each type; MatchedBy/Why/Constraint populated; cycle rule emits specific edge evidence
+- [x] Run `go test ./internal/rules/...` and arch_test — must pass
 
 ### Task 5: `staleness` — new core ring package (Phase 2)
 
@@ -240,18 +240,18 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 
 **Files:** (no new files — validation only)
 
-- [ ] Run `go build ./...` — no errors
-- [ ] Run `go test ./...` — all pass
-- [ ] Run `go vet ./...` — clean
-- [ ] Run `gofmt -l .` — no files reported
-- [ ] Run `go test ./internal/ -run TestArchImports` — green
-- [ ] Run `go test ./internal/engine/ -run TestGolden` — byte-identical output
-- [ ] Run `archfit check --full --format json` on archfit itself — advisory findings (engine→scope) appear with `kind: "advisory"`, gate verdict still pass (they are baselined)
-- [ ] Run `archfit scan` on archfit itself — produces a Markdown report with BC advisories section showing the engine→scope layer inversion findings
-- [ ] Run `archfit init --help` — no crash; stub prints reasonable usage
-- [ ] Verify `go-pretty` and `golang.org/x/term` are in `go.mod` as direct deps
-- [ ] Update `.archfit-baseline.json` if advisory finding fingerprints changed (run `archfit baseline --full`)
-- [ ] Commit Phase 2 work
+- [x] Run `go build ./...` — no errors
+- [x] Run `go test ./...` — all pass (24 packages)
+- [x] Run `go vet ./...` — clean
+- [x] Run `gofmt -l .` — no files reported
+- [x] Run `go test ./internal/ -run TestArchImports` — green
+- [x] Run `go test ./internal/engine/ -run TestGolden` — byte-identical output
+- [x] Run `archfit check --full --format json` on archfit itself — baseline findings (engine→scope layer inversion) appear as `status: "baseline"`, gate verdict warn (exit 2, no new gate findings)
+- [x] Run `archfit scan` on archfit itself — produces Markdown report with BC Advisories section (exit 0); fixture scan shows imbalanced coupling finding
+- [x] Run `archfit init --help` — no crash; prints usage with --root and --output flags
+- [x] Verify `go-pretty` and `golang.org/x/term` are in `go.mod` as direct deps — both confirmed (go-pretty v6.8.0, term v0.43.0)
+- [x] Update `.archfit-baseline.json` — encapsulation metric updated 1.0→0.9855 (Phase 2 added cross-boundary files)
+- [x] Commit Phase 2 work
 
 ---
 

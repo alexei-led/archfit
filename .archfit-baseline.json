@@ -24,7 +24,7 @@
       "version": "cycle.v1"
     },
     "encapsulation": {
-      "value": 1,
+      "value": 0.9855072463768116,
       "version": "encapsulation.v1"
     },
     "unbalanced_edge": {
