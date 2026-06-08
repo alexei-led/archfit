@@ -163,15 +163,15 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 - Create: `internal/staleness/staleness.go`
 - Create: `internal/staleness/staleness_test.go`
 
-- [ ] Create `internal/staleness` package (same ring as classify/rules/metrics/status — pure, no I/O)
-- [ ] Implement `Check(g *graph.Graph, cfg config.StalenessConfig, now time.Time) []finding.Finding` returning advisory findings:
+- [x] Create `internal/staleness` package (same ring as classify/rules/metrics/status — pure, no I/O)
+- [x] Implement `Check(g *graph.Graph, cfg config.StalenessConfig, now time.Time) []finding.Finding` returning advisory findings:
   - Uncovered path: any package/file node in graph with no matching module `paths:` glob → finding with `rule_id: "map/uncovered_path"`
   - Dead rule: any module `paths:` glob matching zero graph nodes → finding with `rule_id: "map/dead_rule"`
   - Stale review: `reviewed_at` set AND `now - reviewed_at > cfg.Threshold` (default 90d) AND module has new findings → finding with `rule_id: "map/stale_review"`
-- [ ] All findings carry `kind: "advisory"`, never gate
-- [ ] Add `StalenessConfig` view to `internal/config/config.go` and `Config.ForStaleness()` projection
-- [ ] Write table-driven tests: uncovered path detected; dead rule detected; stale timestamp triggers and doesn't trigger; no-op when staleness disabled
-- [ ] Run `go test ./internal/staleness/...` and arch_test — must pass
+- [x] All findings carry `kind: "advisory"`, never gate
+- [x] Add `StalenessConfig` view to `internal/config/config.go` and `Config.ForStaleness()` projection
+- [x] Write table-driven tests: uncovered path detected; dead rule detected; stale timestamp triggers and doesn't trigger; no-op when staleness disabled
+- [x] Run `go test ./internal/staleness/...` and arch_test — must pass
 
 ### Task 6: `engine` — advisory channel + staleness integration (Phase 2)
 

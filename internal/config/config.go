@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/goccy/go-yaml"
@@ -65,16 +66,16 @@ type ToolsConfig map[string]ToolConfig
 
 // ModuleDef defines a module's path ownership and metadata.
 type ModuleDef struct {
-	Paths      []string `yaml:"paths"`
-	Public     []string `yaml:"public"`
-	Internal   []string `yaml:"internal"`
-	Layer      string   `yaml:"layer"`
-	Subdomain  string   `yaml:"subdomain"`
-	Volatility string   `yaml:"volatility"`
-	Owner      string   `yaml:"owner"`
-	DeployUnit string   `yaml:"deploy_unit"`
-	ReviewedAt string   `yaml:"reviewed_at"`
-	ReviewedBy string   `yaml:"reviewed_by"`
+	Paths      []string  `yaml:"paths"`
+	Public     []string  `yaml:"public"`
+	Internal   []string  `yaml:"internal"`
+	Layer      string    `yaml:"layer"`
+	Subdomain  string    `yaml:"subdomain"`
+	Volatility string    `yaml:"volatility"`
+	Owner      string    `yaml:"owner"`
+	DeployUnit string    `yaml:"deploy_unit"`
+	ReviewedAt time.Time `yaml:"reviewed_at,omitempty"`
+	ReviewedBy string    `yaml:"reviewed_by"`
 }
 
 // RuleDef declares a single architecture rule.
@@ -386,6 +387,28 @@ func (c Config) ForOutput() OutputConfig {
 // ModuleMapView returns a ModuleMap built from this Config's Modules.
 func (c Config) ModuleMapView() ModuleMap {
 	return buildModuleMap(c.Modules)
+}
+
+// StalenessConfig is the view passed to the staleness check stage.
+type StalenessConfig struct {
+	Enabled   bool
+	Threshold time.Duration // zero value defaults to 90*24*time.Hour in Check
+	Modules   map[string]ModuleDef
+}
+
+// ForStaleness returns the StalenessConfig view.
+func (c Config) ForStaleness() StalenessConfig {
+	var threshold time.Duration
+	if c.MapReview.StaleAfter != "" {
+		if d, err := time.ParseDuration(c.MapReview.StaleAfter); err == nil {
+			threshold = d
+		}
+	}
+	return StalenessConfig{
+		Enabled:   c.MapReview.StaleAfter != "" || c.MapReview.Gate != "",
+		Threshold: threshold,
+		Modules:   c.Modules,
+	}
 }
 
 // sortedKeys returns a sorted slice of keys from a map[string]ModuleDef.
