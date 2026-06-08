@@ -196,14 +196,14 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 - Create: `internal/output/markdown/markdown_test.go`
 - Create: `internal/output/markdown/report.tmpl` (text/template file)
 
-- [ ] Add `github.com/jedib0t/go-pretty/v6` dependency (`go get github.com/jedib0t/go-pretty/v6@latest`)
-- [ ] Add `golang.org/x/term` dependency for terminal detection (`go get golang.org/x/term`)
-- [ ] Implement `markdown.New()` returning a `*Renderer` satisfying `engine.Renderer`; `Format() string` → `"markdown"`
-- [ ] `Render(d diagnostic.Diagnostic, w io.Writer) error` generates the report using `text/template` for skeleton and `go-pretty/table` for tabular sections
-- [ ] Report sections (v0.2 §2.4): Health Summary → Critical Gate Violations (top 10) → BC Advisories (when advisory findings present) → Metrics → Map Staleness (when staleness advisories present) → Exception Inventory → Full violation list (`<details>` collapse)
-- [ ] Terminal detection: `term.IsTerminal(int(os.Stdout.Fd()))` — if true, use `table.Render()` (colored); if false, use `table.RenderMarkdown()` (GFM). `w io.Writer` always receives the output.
-- [ ] Write tests: Markdown output is valid text; required sections present for various diagnostic shapes; empty findings list produces clean report; advisory section absent when no advisory findings
-- [ ] Run `go test ./internal/output/...` and arch_test — must pass
+- [x] Add `github.com/jedib0t/go-pretty/v6` dependency (`go get github.com/jedib0t/go-pretty/v6@latest`)
+- [x] Add `golang.org/x/term` dependency for terminal detection (`go get golang.org/x/term`)
+- [x] Implement `markdown.New()` returning a `*Renderer` satisfying `engine.Renderer`; `Format() string` → `"markdown"`
+- [x] `Render(d diagnostic.Diagnostic, w io.Writer) error` generates the report using `text/template` for skeleton and `go-pretty/table` for tabular sections
+- [x] Report sections (v0.2 §2.4): Health Summary → Critical Gate Violations (top 10) → BC Advisories (when advisory findings present) → Metrics → Map Staleness (when staleness advisories present) → Exception Inventory → Full violation list (`<details>` collapse)
+- [x] Terminal detection: `term.IsTerminal(int(os.Stdout.Fd()))` — if true, use `table.Render()` (colored); if false, use `table.RenderMarkdown()` (GFM). `w io.Writer` always receives the output.
+- [x] Write tests: Markdown output is valid text; required sections present for various diagnostic shapes; empty findings list produces clean report; advisory section absent when no advisory findings
+- [x] Run `go test ./internal/output/...` and arch_test — must pass
 
 ### Task 8: `cmd/archfit` — scan alias + advisory wiring (Phase 2)
 
