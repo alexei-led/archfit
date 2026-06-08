@@ -70,7 +70,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	tool, version, found := e.detectTool(ctx)
 	if !found {
 		if e.cfg.Mode == config.ModeOn {
-			return graph.Facts{}, diagnostic.Coverage{}, errors.New("extract/py: uv or python3.12 not found; install uv (https://docs.astral.sh/uv/) or Python 3.12")
+			return graph.Facts{}, diagnostic.Coverage{}, errors.New("extract/py: uv or Python 3.12+ not found; install uv (https://docs.astral.sh/uv/) or Python 3.12+")
 		}
 		return graph.Facts{}, absentCoverage(), nil
 	}
@@ -99,9 +99,12 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	// Build the command.
 	var cmd toolrun.ToolCmd
 	if tool == "uv" {
+		// --with grimp injects grimp into the project's venv for this run without
+		// modifying pyproject.toml. --directory uses the project's environment so
+		// the project's own packages (src-layout etc.) are importable.
 		cmd = toolrun.ToolCmd{
 			Name:    "uv",
-			Args:    []string{"run", "--directory", s.Root, tmpName, "--package", pkgName},
+			Args:    []string{"run", "--with", "grimp", "--directory", s.Root, tmpName, "--package", pkgName},
 			WorkDir: s.Root,
 			Timeout: runTimeout,
 		}
@@ -119,6 +122,12 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/py: run helper: %w", err)
 	}
 	if out.ExitCode != 0 {
+		// The helper writes error JSON to stdout; surface that over the raw stderr
+		// (which typically contains uv progress lines, not the real error).
+		var h helperOutput
+		if je := json.Unmarshal(out.Stdout, &h); je == nil && h.Error != "" {
+			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/py: %s", h.Error)
+		}
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/py: helper exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 	}
 
@@ -144,17 +153,30 @@ func (e *Extractor) isApplicable(root string) bool {
 	return false
 }
 
-// detectTool tries uv then python3.12. Returns (name, version, true) on success.
+// detectTool tries uv then Python 3.12+. Returns (name, version, true) on success.
 func (e *Extractor) detectTool(ctx context.Context) (string, string, bool) {
 	if info, ok := e.runner.Detect(ctx, "uv"); ok {
 		ver := e.toolVersion(ctx, info.Name, []string{"--version"})
 		return "uv", ver, true
 	}
-	if info, ok := e.runner.Detect(ctx, "python3.12"); ok {
-		ver := e.toolVersion(ctx, info.Name, []string{"--version"})
-		return "python3.12", ver, true
+	for _, name := range []string{"python3.14", "python3.13", "python3.12", "python3", "python"} {
+		if info, ok := e.runner.Detect(ctx, name); ok {
+			ver := e.toolVersion(ctx, info.Name, []string{"--version"})
+			if python3Plus(ver, 12) {
+				return info.Name, ver, true
+			}
+		}
 	}
 	return "", "", false
+}
+
+// python3Plus reports whether the version string describes Python 3.minor where minor ≥ minMinor.
+func python3Plus(version string, minMinor int) bool {
+	var major, minor int
+	if n, _ := fmt.Sscanf(version, "Python %d.%d", &major, &minor); n < 2 {
+		return false
+	}
+	return major == 3 && minor >= minMinor
 }
 
 // toolVersion runs tool with versionArgs and returns the trimmed stdout.
