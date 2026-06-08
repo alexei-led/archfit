@@ -124,10 +124,10 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 - Modify: `internal/model/coupling/coupling.go`
 - Modify: `internal/model/coupling/coupling_test.go` (create if absent)
 
-- [ ] Add `Severity` type with constants: `"" | "low" | "medium" | "high" | "critical"`
-- [ ] Add `BalanceResult(c Classification) Severity` pure function implementing the Khononov formula (v0.2 §2.1 severity table)
-- [ ] Write table-driven tests covering all 6 severity rows from the table: balanced→none, imbalanced+low→low, imbalanced+high→medium, intrusive+cross-module+low→medium, intrusive+cross-module+high→high, intrusive+cross-deploy→critical
-- [ ] Run `go test ./internal/model/...` — must pass
+- [x] Add `Severity` type with constants: `"" | "low" | "medium" | "high" | "critical"`
+- [x] Add `BalanceResult(c Classification) Severity` pure function implementing the Khononov formula (v0.2 §2.1 severity table)
+- [x] Write table-driven tests covering all 6 severity rows from the table: balanced→none, imbalanced+low→low, imbalanced+high→medium, intrusive+cross-module+low→medium, intrusive+cross-module+high→high, intrusive+cross-deploy→critical
+- [x] Run `go test ./internal/model/...` — must pass
 
 ### Task 3: `classify` — complete BC classification (Phase 2 severity + explicitness)
 
