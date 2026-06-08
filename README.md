@@ -1,5 +1,7 @@
 # archfit
 
+[![CI](https://github.com/alexei-led/archfit/actions/workflows/ci.yaml/badge.svg)](https://github.com/alexei-led/archfit/actions/workflows/ci.yaml)
+
 Architecture fitness checker for Go, TypeScript, and Python repositories.
 
 ## Installation

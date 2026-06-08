@@ -1,0 +1,93 @@
+name: CI
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+permissions:
+  contents: read
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.x
+      - name: govulncheck
+        uses: golang/govulncheck-action@v1.0.4
+        with:
+          go-version-file: go.mod
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Run tests
+        run: go test -race -coverprofile=coverage.out ./...
+      - name: CI gate — arch imports
+        run: go test ./internal/ -run TestArchImports
+      - name: CI gate — golden output
+        run: go test ./internal/engine/ -run TestGolden
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+  build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build binary
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -trimpath \
+            -ldflags="-s -w -X main.version=${GITHUB_REF_NAME:-dev}" \
+            -o dist/archfit-${{ matrix.goos }}-${{ matrix.goarch }} \
+            ./cmd/archfit
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: archfit-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/archfit-${{ matrix.goos }}-${{ matrix.goarch }}
+          retention-days: 7

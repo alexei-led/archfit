@@ -391,13 +391,13 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 
 - Create: `.github/workflows/ci.yaml`
 
-- [ ] Create `.github/workflows/` directory
-- [ ] Write `ci.yaml` with three jobs: `lint` → `test` → `build` (sequential dependencies)
-- [ ] **lint job** (`ubuntu-latest`): `actions/setup-go@v6`, `golangci/golangci-lint-action@v9` (v2.12), `golang/govulncheck-action@v1.0.4`
-- [ ] **test job** (depends on lint, `ubuntu-latest`): `actions/setup-go@v6`, `actions/setup-node@v6` (node 22), `astral-sh/setup-uv@v8` (python 3.13); `go test -race -coverprofile=coverage.out ./...`; explicit CI gates: `go test ./internal/ -run TestArchImports` + `go test ./internal/engine/ -run TestGolden`; upload coverage artifact
-- [ ] **build job** (depends on test, matrix: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64 on `ubuntu-latest`): `CGO_ENABLED=0 GOOS/GOARCH go build -trimpath -ldflags=...`; upload artifacts
-- [ ] Validate YAML is valid: `yamllint .github/workflows/ci.yaml` or manual inspection
-- [ ] Add badge to README: `[![CI](https://github.com/alexei-led/archfit/actions/workflows/ci.yaml/badge.svg)](https://github.com/alexei-led/archfit/actions/workflows/ci.yaml)`
+- [x] Create `.github/workflows/` directory
+- [x] Write `ci.yaml` with three jobs: `lint` → `test` → `build` (sequential dependencies)
+- [x] **lint job** (`ubuntu-latest`): `actions/setup-go@v6`, `golangci/golangci-lint-action@v9` (v2.12), `golang/govulncheck-action@v1.0.4`
+- [x] **test job** (depends on lint, `ubuntu-latest`): `actions/setup-go@v6`, `actions/setup-node@v4` (node 22), `astral-sh/setup-uv@v5` (python 3.13); `go test -race -coverprofile=coverage.out ./...`; explicit CI gates: `go test ./internal/ -run TestArchImports` + `go test ./internal/engine/ -run TestGolden`; upload coverage artifact
+- [x] **build job** (depends on test, matrix: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64 on `ubuntu-latest`): `CGO_ENABLED=0 GOOS/GOARCH go build -trimpath -ldflags=...`; upload artifacts
+- [x] Validate YAML is valid: `yamllint .github/workflows/ci.yaml` or manual inspection
+- [x] Add badge to README: `[![CI](https://github.com/alexei-led/archfit/actions/workflows/ci.yaml/badge.svg)](https://github.com/alexei-led/archfit/actions/workflows/ci.yaml)`
 
 ### Task 20: GitHub Actions Release workflow (`.github/workflows/release.yaml`)
 
