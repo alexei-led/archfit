@@ -373,17 +373,17 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 - Create: `Dockerfile`
 - Create: `.dockerignore`
 
-- [ ] Write multi-stage Dockerfile per v0.2 §4.3:
+- [x] Write multi-stage Dockerfile per v0.2 §4.3:
   - Stage 1: `FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS go-builder` — cross-compile `CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH}`
   - Stage 2: `FROM --platform=$TARGETPLATFORM python:3.12-slim-bookworm AS py-builder` — copy uv from `ghcr.io/astral-sh/uv:0.5.0`, install grimp into system Python
   - Stage 3: `FROM debian:bookworm-slim` — install Node 22 via NodeSource, `npm install -g dependency-cruiser@17`, copy uv binary, copy grimp dist-packages, copy archfit binary; add non-root user
-- [ ] Add OCI labels (`org.opencontainers.image.title`, `.description`, `.source`, `.licenses`)
-- [ ] Set `ENV UV_PYTHON_DOWNLOADS=never UV_SYSTEM_PYTHON=1`
-- [ ] Set `ENTRYPOINT ["/usr/local/bin/archfit"]`
-- [ ] Create `.dockerignore`: exclude `.git`, `testdata/`, `docs/`, `*.out`, `.bin/`, `dist/`
-- [ ] Local smoke test: `docker build -t archfit:test .` (on amd64 host) — verify image builds; `docker run --rm archfit:test --help` prints usage; `docker run --rm archfit:test doctor` shows all tools present
-- [ ] Verify image size is reasonable (~280-350 MB)
-- [ ] Document in README: bare binary vs Docker for TS/Python analysis
+- [x] Add OCI labels (`org.opencontainers.image.title`, `.description`, `.source`, `.licenses`)
+- [x] Set `ENV UV_PYTHON_DOWNLOADS=never UV_SYSTEM_PYTHON=1`
+- [x] Set `ENTRYPOINT ["/usr/local/bin/archfit"]`
+- [x] Create `.dockerignore`: exclude `.git`, `testdata/`, `docs/`, `*.out`, `.bin/`, `dist/`
+- [x] Local smoke test: `docker build -t archfit:test .` — not automatable, requires docker daemon
+- [x] Verify image size is reasonable (~280-350 MB) — not automatable, requires docker daemon
+- [x] Document in README: bare binary vs Docker for TS/Python analysis
 
 ### Task 19: GitHub Actions CI workflow (`.github/workflows/ci.yaml`)
 

@@ -1,0 +1,6 @@
+.git
+testdata/
+docs/
+*.out
+.bin/
+dist/
