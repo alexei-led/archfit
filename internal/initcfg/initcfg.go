@@ -39,6 +39,14 @@ type DiscoveredConfig struct {
 	Modules []ModuleDef
 	// Layers are the inferred layers in order (outermost to innermost).
 	Layers []string
+	// PyPackage is the primary Python top-level package name (e.g. "ccgram").
+	PyPackage string
+	// HasGo is true when a go.mod was found at root.
+	HasGo bool
+	// HasPython is true when Python packages were discovered.
+	HasPython bool
+	// HasTS is true when TypeScript packages were discovered.
+	HasTS bool
 }
 
 // Layer name constants used for inference and YAML output.
@@ -48,6 +56,19 @@ const (
 	layerAdapter = "adapter"
 	layerEngine  = "engine"
 	layerCmd     = "cmd"
+)
+
+// Python source layout constants.
+const (
+	pyInitFile   = "__init__.py"
+	pySrcDir     = "src"
+	pyGlobSuffix = "/**"
+)
+
+// Tool mode YAML values used in Render output.
+const (
+	toolModeOn  = "on"
+	toolModeOff = "off"
 )
 
 // adapterExtract is the second-segment name for the extract adapter packages.
@@ -62,20 +83,59 @@ type goListPkg struct {
 	}
 }
 
-// Discover runs `go list -json ./...` from root via runner and groups packages
-// into candidate modules by first 2 path segments after the module root.
-// Returns DiscoveredConfig or an error if go list fails.
+// Discover detects Go, Python, and TypeScript modules at root.
+// Go discovery is skipped when no go.mod exists. Python and TypeScript
+// discovery run unconditionally (they guard on their own marker files).
 func Discover(ctx context.Context, root string, runner toolrun.Runner) (DiscoveredConfig, error) {
+	var allModules []ModuleDef
+	var modPath string
+	hasGo := fileExists(filepath.Join(root, "go.mod"))
+
+	if hasGo {
+		goMods, goModPath, err := discoverGo(ctx, root, runner)
+		if err != nil {
+			return DiscoveredConfig{}, err
+		}
+		modPath = goModPath
+		allModules = append(allModules, goMods...)
+	}
+
+	pyMods, err := DiscoverPy(root)
+	if err != nil {
+		return DiscoveredConfig{}, err
+	}
+	allModules = append(allModules, pyMods...)
+
+	tsMods, err := DiscoverTS(root)
+	if err != nil {
+		return DiscoveredConfig{}, err
+	}
+	allModules = append(allModules, tsMods...)
+
+	return DiscoveredConfig{
+		ModulePath: modPath,
+		Modules:    allModules,
+		Layers:     inferLayers(allModules),
+		PyPackage:  detectPyPackage(root),
+		HasGo:      hasGo,
+		HasPython:  len(pyMods) > 0,
+		HasTS:      len(tsMods) > 0,
+	}, nil
+}
+
+// discoverGo runs `go list -json ./...` from root and groups packages into
+// candidate modules. Returns modules, module path, and any error.
+func discoverGo(ctx context.Context, root string, runner toolrun.Runner) ([]ModuleDef, string, error) {
 	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    "go",
 		Args:    []string{"list", "-json", "./..."},
 		WorkDir: root,
 	})
 	if err != nil {
-		return DiscoveredConfig{}, fmt.Errorf("initcfg: go list: %w", err)
+		return nil, "", fmt.Errorf("initcfg: go list: %w", err)
 	}
 	if out.ExitCode != 0 {
-		return DiscoveredConfig{}, fmt.Errorf("initcfg: go list exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+		return nil, "", fmt.Errorf("initcfg: go list exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 	}
 
 	var modPath string
@@ -90,7 +150,7 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner) (Discover
 			if err == io.EOF {
 				break
 			}
-			return DiscoveredConfig{}, fmt.Errorf("initcfg: parse go list output: %w", err)
+			return nil, "", fmt.Errorf("initcfg: parse go list output: %w", err)
 		}
 		if pkg.Module != nil && pkg.Module.Path != "" && modPath == "" {
 			modPath = pkg.Module.Path
@@ -104,13 +164,7 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner) (Discover
 		segments[key] = append(segments[key], rel)
 	}
 
-	modules := buildGoModules(segments)
-
-	return DiscoveredConfig{
-		ModulePath: modPath,
-		Modules:    modules,
-		Layers:     inferLayers(modules),
-	}, nil
+	return buildGoModules(segments), modPath, nil
 }
 
 // DiscoverTS reads src/ or lib/ subdirectories if package.json is present at root.
@@ -122,19 +176,70 @@ func DiscoverTS(root string) ([]ModuleDef, error) {
 	return discoverSubdirs(root, []string{"src", "lib"})
 }
 
-// DiscoverPy reads top-level package subdirectories if pyproject.toml or setup.py
-// is present at root.
+// DiscoverPy reads Python packages from root and root/src (src-layout).
+// A Python project is detected by pyproject.toml or setup.py at root.
+// For each top-level package found, sub-packages are returned as individual
+// modules. If a top-level package has no sub-packages it is returned itself.
 func DiscoverPy(root string) ([]ModuleDef, error) {
 	hasPyProject := fileExists(filepath.Join(root, "pyproject.toml"))
 	hasSetupPy := fileExists(filepath.Join(root, "setup.py"))
 	if !hasPyProject && !hasSetupPy {
 		return nil, nil
 	}
-	// Enumerate all top-level directories that look like Python packages
-	// (contain __init__.py).
-	entries, err := os.ReadDir(root)
+
+	type scanTarget struct {
+		dir    string
+		prefix string
+	}
+	targets := []scanTarget{
+		{dir: root, prefix: ""},
+		{dir: filepath.Join(root, pySrcDir), prefix: pySrcDir + "/"},
+	}
+
+	var mods []ModuleDef
+	for _, t := range targets {
+		entries, err := os.ReadDir(t.dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("initcfg: read dir %s: %w", t.dir, err)
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			if strings.HasPrefix(e.Name(), ".") || strings.HasPrefix(e.Name(), "_") {
+				continue
+			}
+			pkgDir := filepath.Join(t.dir, e.Name())
+			if !fileExists(filepath.Join(pkgDir, pyInitFile)) {
+				continue
+			}
+			// Found a top-level Python package — enumerate sub-packages.
+			subMods := discoverPySubpackages(pkgDir, t.prefix+e.Name()+"/")
+			if len(subMods) > 0 {
+				mods = append(mods, subMods...)
+			} else {
+				// No sub-packages: return the top-level package as a single module.
+				mods = append(mods, ModuleDef{
+					Name:  e.Name(),
+					Paths: []string{t.prefix + e.Name() + pyGlobSuffix},
+					Layer: layerCore,
+				})
+			}
+		}
+	}
+	return mods, nil
+}
+
+// discoverPySubpackages scans immediate subdirectories of pkgDir that contain
+// __init__.py and returns one ModuleDef per sub-package.
+// pathPrefix is the path prefix for glob construction, e.g. "src/ccgram/".
+func discoverPySubpackages(pkgDir, pathPrefix string) []ModuleDef {
+	entries, err := os.ReadDir(pkgDir)
 	if err != nil {
-		return nil, fmt.Errorf("initcfg: read dir %s: %w", root, err)
+		return nil
 	}
 	var mods []ModuleDef
 	for _, e := range entries {
@@ -144,18 +249,53 @@ func DiscoverPy(root string) ([]ModuleDef, error) {
 		if strings.HasPrefix(e.Name(), ".") || strings.HasPrefix(e.Name(), "_") {
 			continue
 		}
-		initFile := filepath.Join(root, e.Name(), "__init__.py")
-		if !fileExists(initFile) {
+		if !fileExists(filepath.Join(pkgDir, e.Name(), pyInitFile)) {
 			continue
 		}
-		name := e.Name()
 		mods = append(mods, ModuleDef{
-			Name:  name,
-			Paths: []string{name + "/**"},
-			Layer: layerCore,
+			Name:  e.Name(),
+			Paths: []string{pathPrefix + e.Name() + pyGlobSuffix},
+			Layer: inferPyLayer(e.Name()),
 		})
 	}
-	return mods, nil
+	return mods
+}
+
+// inferPyLayer maps common Python sub-package names to architectural layers.
+func inferPyLayer(name string) string {
+	switch name {
+	case "handlers", "api", "routes", "views", "providers":
+		return layerAdapter
+	case "model", "models", "types", "schema":
+		return layerModel
+	case layerCmd, "cli":
+		return layerCmd
+	default:
+		return layerCore
+	}
+}
+
+// detectPyPackage scans root then root/src for the first directory that
+// contains __init__.py (not starting with '.' or '_'). Returns its name.
+func detectPyPackage(root string) string {
+	for _, dir := range []string{root, filepath.Join(root, pySrcDir)} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			if strings.HasPrefix(e.Name(), ".") || strings.HasPrefix(e.Name(), "_") {
+				continue
+			}
+			if fileExists(filepath.Join(dir, e.Name(), pyInitFile)) {
+				return e.Name()
+			}
+		}
+	}
+	return ""
 }
 
 // Render converts a DiscoveredConfig into a YAML string suitable for saving as
@@ -168,6 +308,39 @@ func Render(cfg DiscoveredConfig) string {
 	b.WriteString("version: 1\n\n")
 	b.WriteString("# Minimum severity for BC coupling advisories: low|medium|high|critical\n")
 	b.WriteString("bc_advisory_min_severity: medium\n\n")
+
+	if cfg.PyPackage != "" {
+		fmt.Fprintf(&b, "python_package: %s\n\n", cfg.PyPackage)
+	}
+
+	// tools: section — always emitted so operators can flip modes without
+	// needing to know the YAML shape.
+	b.WriteString("tools:\n")
+	for _, lang := range []string{"go", "python", "typescript"} {
+		var mode string
+		switch lang {
+		case "go":
+			if cfg.HasGo {
+				mode = toolModeOn
+			} else {
+				mode = toolModeOff
+			}
+		case "python":
+			if cfg.HasPython {
+				mode = toolModeOn
+			} else {
+				mode = toolModeOff
+			}
+		case "typescript":
+			if cfg.HasTS {
+				mode = toolModeOn
+			} else {
+				mode = toolModeOff
+			}
+		}
+		fmt.Fprintf(&b, "  %s:\n    enabled: %q\n", lang, mode)
+	}
+	b.WriteString("\n")
 
 	// layers:
 	if len(cfg.Layers) > 0 {
@@ -357,7 +530,7 @@ func discoverSubdirs(root string, dirNames []string) ([]ModuleDef, error) {
 				continue
 			}
 			name := e.Name()
-			path := dir + "/" + name + "/**"
+			path := dir + "/" + name + pyGlobSuffix
 			mods = append(mods, ModuleDef{
 				Name:  name,
 				Paths: []string{path},

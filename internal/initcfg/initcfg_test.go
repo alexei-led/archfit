@@ -66,9 +66,18 @@ func mockRunner(jsonOutput string) *toolrun.RunnerMock {
 // Discover
 // ---------------------------------------------------------------------------
 
+func writeGoMod(t *testing.T, root string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module github.com/example/myapp\ngo 1.21\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDiscover_GoList_GroupsModules(t *testing.T) {
+	root := t.TempDir()
+	writeGoMod(t, root)
 	runner := mockRunner(sampleGoListJSON)
-	cfg, err := Discover(context.Background(), "/repo", runner)
+	cfg, err := Discover(context.Background(), root, runner)
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -94,8 +103,10 @@ func TestDiscover_GoList_GroupsModules(t *testing.T) {
 }
 
 func TestDiscover_GoList_LayerInference(t *testing.T) {
+	root := t.TempDir()
+	writeGoMod(t, root)
 	runner := mockRunner(sampleGoListJSON)
-	cfg, err := Discover(context.Background(), "/repo", runner)
+	cfg, err := Discover(context.Background(), root, runner)
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -128,8 +139,10 @@ func TestDiscover_GoList_LayerInference(t *testing.T) {
 }
 
 func TestDiscover_GoList_LayerOrder(t *testing.T) {
+	root := t.TempDir()
+	writeGoMod(t, root)
 	runner := mockRunner(sampleGoListJSON)
-	cfg, err := Discover(context.Background(), "/repo", runner)
+	cfg, err := Discover(context.Background(), root, runner)
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -153,6 +166,8 @@ func TestDiscover_GoList_LayerOrder(t *testing.T) {
 }
 
 func TestDiscover_GoListError_ReturnsError(t *testing.T) {
+	root := t.TempDir()
+	writeGoMod(t, root)
 	runner := &toolrun.RunnerMock{
 		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
 			return toolrun.Output{ExitCode: 1, Stderr: []byte("no go files")}, nil
@@ -161,15 +176,17 @@ func TestDiscover_GoListError_ReturnsError(t *testing.T) {
 			return toolrun.ToolInfo{}, false
 		},
 	}
-	_, err := Discover(context.Background(), "/repo", runner)
+	_, err := Discover(context.Background(), root, runner)
 	if err == nil {
 		t.Fatal("expected error for non-zero exit, got nil")
 	}
 }
 
 func TestDiscover_MalformedJSON_ReturnsError(t *testing.T) {
+	root := t.TempDir()
+	writeGoMod(t, root)
 	runner := mockRunner(`{not valid json}`)
-	_, err := Discover(context.Background(), "/repo", runner)
+	_, err := Discover(context.Background(), root, runner)
 	if err == nil {
 		t.Fatal("expected error for malformed JSON, got nil")
 	}
