@@ -20,6 +20,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/astgrep"
 	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/extract/py"
+	"github.com/alexei-led/archfit/internal/extract/scip"
 	"github.com/alexei-led/archfit/internal/extract/ts"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/metrics"
@@ -144,7 +145,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	}
 
 	patternCfg := cfg.ForPatterns()
-	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner, patternCfg), engine.NopSymbolResolver{}, patternCfg, rs, ms, base, time.Now())
+	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner, patternCfg), scip.New(deps.Runner), patternCfg, rs, ms, base, time.Now())
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -324,6 +325,10 @@ func (c *DoctorCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kon
 		{"npx", "npx"},
 		{"uv", "uv"},
 		{"python3", "python3"},
+		{"sg (ast-grep)", "sg"},
+		{"scip-typescript", "scip-typescript"},
+		{"scip-python", "scip-python"},
+		{"scip-go", "scip-go"},
 	}
 
 	_, _ = fmt.Fprintf(deps.Stdout, "%-12s %-8s %s\n", "TOOL", "STATUS", "PATH")

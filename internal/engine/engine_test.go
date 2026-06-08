@@ -489,12 +489,12 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 	// PatternProvider returns one known match.
 	findCalled := false
 	pp := &engine.PatternProviderMock{
-		NameFunc: func() string { return "ast-grep" },
+		NameFunc: func() string { return toolNameAstgrep },
 		FindFunc: func(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]engine.PatternMatch, diagnostic.Coverage, error) {
 			findCalled = true
 			return []engine.PatternMatch{
 				{File: pathFileA, Pattern: "unsafe-cast", Text: "unsafe.Pointer(x)", Line: 10, Column: 0},
-			}, diagnostic.Coverage{Tool: "ast-grep", Status: "ok", FilesSeen: 1}, nil
+			}, diagnostic.Coverage{Tool: toolNameAstgrep, Status: "ok", FilesSeen: 1}, nil
 		},
 	}
 
@@ -531,7 +531,7 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 	// Coverage from PatternProvider must appear in ToolCoverage.
 	var found bool
 	for _, cov := range d.ToolCoverage {
-		if cov.Tool == "ast-grep" {
+		if cov.Tool == toolNameAstgrep {
 			found = true
 			break
 		}
@@ -555,12 +555,12 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 
 	// PatternProvider returns matches — but no rule uses them to produce gate findings.
 	pp := &engine.PatternProviderMock{
-		NameFunc: func() string { return "ast-grep" },
+		NameFunc: func() string { return toolNameAstgrep },
 		FindFunc: func(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]engine.PatternMatch, diagnostic.Coverage, error) {
 			return []engine.PatternMatch{
 				{File: pathFileA, Pattern: "reflect-unexported", Text: "reflect.ValueOf(x).Field(0)", Line: 5, Column: 4},
 				{File: pathFileBAPIService, Pattern: "reflect-unexported", Text: "reflect.ValueOf(y).Field(1)", Line: 12, Column: 0},
-			}, diagnostic.Coverage{Tool: "ast-grep", Status: "ok", FilesSeen: 2}, nil
+			}, diagnostic.Coverage{Tool: toolNameAstgrep, Status: "ok", FilesSeen: 2}, nil
 		},
 	}
 
