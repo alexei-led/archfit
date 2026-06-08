@@ -359,12 +359,12 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 
 - Modify: `Makefile`
 
-- [ ] Add `release` target: cross-compile `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64` into `dist/` with `CGO_ENABLED=0 -trimpath -ldflags "-s -w -X main.version=..."`, then `sha256sum * > SHA256SUMS`
-- [ ] Add `docker-build` target: `docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/alexei-led/archfit:$(VERSION) .`
-- [ ] Add `docker-push` target: push to GHCR (requires `docker login ghcr.io` on host)
-- [ ] Add `docker-run` target: quick smoke `docker run --rm ghcr.io/alexei-led/archfit:$(VERSION) --help`
-- [ ] Verify `make build` still works (existing target, ensure `dist/.bin/` distinction from `dist/` for release binaries)
-- [ ] Verify `make release` produces correct filenames: `dist/archfit-<version>-<os>-<arch>`
+- [x] Add `release` target: cross-compile `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64` into `dist/` with `CGO_ENABLED=0 -trimpath -ldflags "-s -w -X main.version=..."`, then `sha256sum * > SHA256SUMS`
+- [x] Add `docker-build` target: `docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/alexei-led/archfit:$(VERSION) .`
+- [x] Add `docker-push` target: push to GHCR (requires `docker login ghcr.io` on host)
+- [x] Add `docker-run` target: quick smoke `docker run --rm ghcr.io/alexei-led/archfit:$(VERSION) --help` (requires docker daemon)
+- [x] Verify `make build` still works (existing target, ensure `dist/.bin/` distinction from `dist/` for release binaries)
+- [x] Verify `make release` produces correct filenames: `dist/archfit-<version>-<os>-<arch>`
 
 ### Task 18: `Dockerfile` — fat multi-arch image
 
