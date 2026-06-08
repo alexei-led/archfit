@@ -91,14 +91,14 @@ func distanceIsHigh(d Distance) bool {
 // BalanceResult applies the Khononov balance formula to a Classification and returns
 // the advisory Severity for the edge. SeverityNone means the edge is balanced (no finding).
 //
-// Formula: BALANCE = (STRENGTH XOR DISTANCE) OR NOT VOLATILITY
-//   - Intrusive strength is a special case: always surfaced regardless of balance.
-//   - Intrusive + cross_deploy_unit → critical (highest risk).
-//   - Intrusive + cross_module_diff_owner + high volatility → high.
-//   - Intrusive + cross_module_diff_owner + low/unknown volatility → medium.
-//   - Imbalanced (non-intrusive) + high volatility → medium.
-//   - Imbalanced (non-intrusive) + low/unknown volatility → low.
-//   - Balanced → none.
+// Severity table (spec §18):
+//   - Intrusive: always surfaced, severity driven by distance/volatility.
+//   - high strength + high distance + high volatility → critical.
+//   - high strength + high distance + low/unknown volatility → medium.
+//   - low strength + low distance + high volatility → medium (over-decoupled volatile seam).
+//   - high strength + low distance → low (high cohesion, usually acceptable).
+//   - low strength + high distance → low (loose coupling across a large boundary).
+//   - low strength + low distance + low/unknown volatility → none (balanced).
 func BalanceResult(c Classification) Severity {
 	// Intrusive strength: always advisory, severity driven by distance.
 	if c.Strength == StrengthIntrusive {
@@ -111,21 +111,27 @@ func BalanceResult(c Classification) Severity {
 			}
 			return SeverityMedium
 		}
-		// intrusive + same-module or cross-module-same-owner: treat as imbalanced below.
+		// intrusive + same-module or cross-module-same-owner: fall through to formula.
 	}
 
-	// Evaluate balance: high-strength+high-distance or low-strength+low-distance is balanced.
 	sHigh := strengthIsHigh(c.Strength)
 	dHigh := distanceIsHigh(c.Distance)
-	balanced := sHigh == dHigh // XOR false = same side = balanced
 
-	if balanced {
+	if sHigh == dHigh {
+		if sHigh {
+			// high strength + high distance: tight coupling across a large boundary.
+			if c.Volatility == VolatilityHigh {
+				return SeverityCritical
+			}
+			return SeverityMedium
+		}
+		// low strength + low distance: over-decoupled volatile seam.
+		if c.Volatility == VolatilityHigh {
+			return SeverityMedium
+		}
 		return SeverityNone
 	}
 
-	// Imbalanced: medium or high volatility → medium severity; low/unknown → low.
-	if c.Volatility == VolatilityHigh || c.Volatility == VolatilityMedium {
-		return SeverityMedium
-	}
+	// Asymmetric (low+high or high+low): mismatched but not the worst case.
 	return SeverityLow
 }

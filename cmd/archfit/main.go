@@ -25,6 +25,7 @@ import (
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
@@ -175,9 +176,10 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 
 // BaselineCmd runs the engine and saves findings as the new baseline.
 type BaselineCmd struct {
-	Config string `short:"c" default:"archfit.yaml"`
-	Full   bool
-	Base   string
+	Config   string `short:"c" default:"archfit.yaml"`
+	Full     bool
+	Advisory bool `help:"Include advisory findings in the baseline."`
+	Base     string
 }
 
 func (c *BaselineCmd) Run(deps *appDeps) error {
@@ -212,7 +214,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	rs := rules.New(cfg.ForRules())
 	ms := metrics.New(cfg)
 
-	diag, err := engine.Run(ctx, engine.Mode{Full: c.Full, Base: c.Base}, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, engine.NopPatternProvider{}, engine.NopSymbolResolver{}, config.PatternConfig{}, rs, ms, existingBase, time.Now())
+	diag, err := engine.Run(ctx, engine.Mode{Full: c.Full, Advisory: c.Advisory, Base: c.Base}, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, engine.NopPatternProvider{}, engine.NopSymbolResolver{}, config.PatternConfig{}, rs, ms, existingBase, time.Now())
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -220,9 +222,13 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	// Build baseline from current findings.
 	newBase := baseline.Baseline{}
 	for _, f := range diag.Findings {
+		if f.Status == finding.StatusFixed {
+			continue // fixed = no longer detected; don't carry into new baseline
+		}
 		newBase.Accepted = append(newBase.Accepted, baseline.AcceptedFinding{
 			Fingerprint: f.ID,
 			RuleID:      f.RuleID,
+			Kind:        f.Kind,
 		})
 	}
 	newBase.Metrics = make(diagnostic.MetricSnapshot)

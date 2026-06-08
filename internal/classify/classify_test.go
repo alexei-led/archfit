@@ -405,10 +405,10 @@ func TestRun_Severity(t *testing.T) {
 		wantSeverity coupling.Severity
 	}{
 		{
-			// contract + cross_deploy_unit + medium vol → strength=low, distance=high → imbalanced → medium vol → medium
-			name:         "imbalanced contract cross-deploy medium-vol → medium",
+			// contract + cross_deploy_unit + medium vol → low+high → asymmetric → always low
+			name:         "imbalanced contract cross-deploy medium-vol → low",
 			edge:         importEdge("services/a/impl.go", "services/b/api/client.go"),
-			wantSeverity: coupling.SeverityMedium,
+			wantSeverity: coupling.SeverityLow,
 		},
 		{
 			// intrusive + cross_deploy_unit → critical

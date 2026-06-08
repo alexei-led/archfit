@@ -14,15 +14,15 @@ import (
 // baseline and exception set. It also emits a finding per accepted fingerprint
 // that is no longer present in the current run (status=fixed).
 //
+// forKind scopes fixed-finding emission: only baseline entries whose Kind field
+// matches forKind are emitted as fixed. Entries with an empty Kind field are
+// treated as "gate" (backward compatibility with pre-Kind baseline files).
+//
 // Algorithm per finding f:
 //  1. Fingerprint in base.Accepted → StatusBaseline
 //  2. Matches an exception (rule, from glob, to glob) and not expired → StatusExcepted
 //  3. Matches an exception but expiry has passed → StatusExpiredException
 //  4. No match → StatusNew (default)
-//
-// Fixed findings: for every AcceptedFinding in base that has no matching
-// fingerprint in the current finding set, a synthetic Finding is emitted with
-// Status=StatusFixed.
 //
 // now is the reference time for expiry checks; pass time.Now() in production.
 func Assign(
@@ -30,6 +30,7 @@ func Assign(
 	base baseline.Baseline,
 	exceptions config.ExceptionSet,
 	now time.Time,
+	forKind string,
 ) []finding.Finding {
 	// Build a set of current fingerprints for fixed-finding detection.
 	current := make(map[string]struct{}, len(findings))
@@ -45,14 +46,22 @@ func Assign(
 		out[i].Status = assignOne(&out[i], base, exceptions, now)
 	}
 
-	// Emit fixed findings for accepted fingerprints absent from this run.
+	// Emit fixed findings only for baseline entries whose kind matches this pass.
+	// Empty Kind in the baseline means "gate" (backward compat).
 	for _, a := range base.Accepted {
 		if _, present := current[a.Fingerprint]; present {
 			continue
 		}
+		entryKind := a.Kind
+		if entryKind == "" {
+			entryKind = "gate"
+		}
+		if entryKind != forKind {
+			continue
+		}
 		out = append(out, finding.Finding{
 			ID:     a.Fingerprint,
-			Kind:   "gate",
+			Kind:   entryKind,
 			RuleID: a.RuleID,
 			Status: finding.StatusFixed,
 		})

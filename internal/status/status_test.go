@@ -12,10 +12,12 @@ import (
 )
 
 const (
-	testRuleID = "public_api_only"
-	testFrom   = "pkg/a/a.go"
-	testTo     = "pkg/b/internal/impl.go"
-	testFP     = "deadbeefdeadbeefdeadbeefdeadbeef"
+	testRuleID   = "public_api_only"
+	testFrom     = "pkg/a/a.go"
+	testTo       = "pkg/b/internal/impl.go"
+	testFP       = "deadbeefdeadbeefdeadbeefdeadbeef"
+	kindGate     = "gate"
+	kindAdvisory = "advisory"
 )
 
 // makeEdge returns a graph.Edge with the standard test from/to node IDs and uses_internal kind.
@@ -40,6 +42,7 @@ func TestAssign_NewFinding(t *testing.T) {
 		baseline.Baseline{},
 		config.ExceptionSet{},
 		time.Now(),
+		kindGate,
 	)
 
 	if len(result) != 1 {
@@ -56,7 +59,7 @@ func TestAssign_BaselineFinding(t *testing.T) {
 	base := baseline.Baseline{
 		SchemaVersion: baseline.SchemaVersion,
 		Accepted: []baseline.AcceptedFinding{
-			{Fingerprint: f.ID, RuleID: testRuleID},
+			{Fingerprint: f.ID, RuleID: testRuleID, Kind: kindGate},
 		},
 	}
 
@@ -65,6 +68,7 @@ func TestAssign_BaselineFinding(t *testing.T) {
 		base,
 		config.ExceptionSet{},
 		time.Now(),
+		kindGate,
 	)
 
 	if len(result) != 1 {
@@ -96,6 +100,7 @@ func TestAssign_ActiveException(t *testing.T) {
 		baseline.Baseline{},
 		exceptions,
 		time.Now(),
+		kindGate,
 	)
 
 	if len(result) != 1 {
@@ -127,6 +132,7 @@ func TestAssign_ExpiredException(t *testing.T) {
 		baseline.Baseline{},
 		exceptions,
 		time.Now(),
+		kindGate,
 	)
 
 	if len(result) != 1 {
@@ -138,11 +144,11 @@ func TestAssign_ExpiredException(t *testing.T) {
 }
 
 func TestAssign_FixedFinding(t *testing.T) {
-	// Baseline references a fingerprint that is NOT in the current findings.
+	// Baseline references a gate fingerprint that is NOT in the current findings.
 	base := baseline.Baseline{
 		SchemaVersion: baseline.SchemaVersion,
 		Accepted: []baseline.AcceptedFinding{
-			{Fingerprint: testFP, RuleID: testRuleID},
+			{Fingerprint: testFP, RuleID: testRuleID, Kind: kindGate},
 		},
 	}
 
@@ -152,6 +158,7 @@ func TestAssign_FixedFinding(t *testing.T) {
 		base,
 		config.ExceptionSet{},
 		time.Now(),
+		kindGate,
 	)
 
 	if len(result) != 1 {
@@ -165,6 +172,28 @@ func TestAssign_FixedFinding(t *testing.T) {
 	}
 	if result[0].RuleID != testRuleID {
 		t.Errorf("want RuleID %q, got %q", testRuleID, result[0].RuleID)
+	}
+}
+
+func TestAssign_FixedFindingKindFilter(t *testing.T) {
+	// Baseline has both gate and advisory entries; only gate should be emitted as fixed
+	// when forKind==kindGate, and vice versa.
+	base := baseline.Baseline{
+		SchemaVersion: baseline.SchemaVersion,
+		Accepted: []baseline.AcceptedFinding{
+			{Fingerprint: testFP, RuleID: testRuleID, Kind: kindGate},
+			{Fingerprint: "aabbccddaabbccddaabbccddaabbccdd", RuleID: "bc/imbalanced_coupling", Kind: kindAdvisory},
+		},
+	}
+
+	gateResult := status.Assign([]finding.Finding{}, base, config.ExceptionSet{}, time.Now(), kindGate)
+	if len(gateResult) != 1 || gateResult[0].Kind != kindGate {
+		t.Errorf("gate pass: want 1 gate fixed finding, got %v", gateResult)
+	}
+
+	advResult := status.Assign([]finding.Finding{}, base, config.ExceptionSet{}, time.Now(), kindAdvisory)
+	if len(advResult) != 1 || advResult[0].Kind != kindAdvisory {
+		t.Errorf("advisory pass: want 1 advisory fixed finding, got %v", advResult)
 	}
 }
 
@@ -214,6 +243,7 @@ func TestAssign_ExpiryBoundary(t *testing.T) {
 				baseline.Baseline{},
 				exceptions,
 				tc.now,
+				kindGate,
 			)
 			if len(result) != 1 {
 				t.Fatalf("want 1 finding, got %d", len(result))

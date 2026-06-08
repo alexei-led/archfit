@@ -17,9 +17,12 @@ const SchemaVersion = "archfit.baseline.v1"
 
 // AcceptedFinding records a finding that has been accepted into the baseline.
 // Fingerprint is the SHA256 hex ID from finding.New; RuleID is the rule that produced it.
+// Kind distinguishes gate findings from advisory findings; empty means "gate" for
+// backward compatibility with baseline files written before this field was added.
 type AcceptedFinding struct {
 	Fingerprint string `json:"fingerprint"`
 	RuleID      string `json:"rule_id"`
+	Kind        string `json:"kind,omitempty"`
 }
 
 // Baseline is the on-disk baseline file structure.

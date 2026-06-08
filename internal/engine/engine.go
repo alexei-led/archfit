@@ -110,7 +110,7 @@ func Run(
 	}
 
 	// --- Stage 5: Status ---
-	taggedFindings := status.Assign(rawFindings, base, exceptions, now)
+	taggedFindings := status.Assign(rawFindings, base, exceptions, now, "gate")
 
 	// --- Stage 5: Metrics ---
 	mi := metrics.MetricInput{
@@ -206,6 +206,17 @@ func Run(
 	}
 	// Append staleness advisories.
 	advisoryFindings = append(advisoryFindings, staleness.Check(g, stalenessCfg, now)...)
+
+	// Apply baseline and exception status to advisory findings.
+	// status.Assign also emits fixed gate findings; suppress those for the advisory pass
+	// by discarding any synthetic kind=="gate" entries it appends.
+	tagged := status.Assign(advisoryFindings, base, exceptions, now, "advisory")
+	advisoryFindings = advisoryFindings[:0]
+	for _, f := range tagged {
+		if f.Kind == "advisory" {
+			advisoryFindings = append(advisoryFindings, f)
+		}
+	}
 
 	// Gate findings: kind=="gate" and not already resolved (fixed findings don't block verdict or inflate count).
 	var gateFindings []finding.Finding

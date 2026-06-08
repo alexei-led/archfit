@@ -2,7 +2,7 @@ package coupling
 
 import "testing"
 
-// TestBalanceResult covers all 6 rows of the severity specification table.
+// TestBalanceResult covers the severity table from spec §18.
 func TestBalanceResult(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -10,20 +10,30 @@ func TestBalanceResult(t *testing.T) {
 		expected Severity
 	}{
 		{
-			// Row 1: balanced → none.
-			// contract (low-strength) + same_module (low-distance) → balanced.
-			name: "balanced returns none",
+			// low+low+low_vol → none (balanced).
+			// Note: same_module is excluded by the classifier before BalanceResult is called;
+			// cross_module_same_owner is the more realistic low-distance input here.
+			name: "low+low low_vol returns none",
 			c: Classification{
 				Strength:   StrengthContract,
-				Distance:   DistanceSameModule,
-				Volatility: VolatilityHigh,
+				Distance:   DistanceCrossModuleSameOwner,
+				Volatility: VolatilityLow,
 			},
 			expected: SeverityNone,
 		},
 		{
-			// Row 2: imbalanced + low volatility → low.
-			// contract (low-strength) + cross_deploy_unit (high-distance) → imbalanced.
-			name: "imbalanced low volatility returns low",
+			// low+low+high_vol → medium (over-decoupled volatile seam).
+			name: "low+low high_vol returns medium",
+			c: Classification{
+				Strength:   StrengthContract,
+				Distance:   DistanceCrossModuleSameOwner,
+				Volatility: VolatilityHigh,
+			},
+			expected: SeverityMedium,
+		},
+		{
+			// low+high → low regardless of volatility.
+			name: "low+high low_vol returns low",
 			c: Classification{
 				Strength:   StrengthContract,
 				Distance:   DistanceCrossDeployUnit,
@@ -32,19 +42,48 @@ func TestBalanceResult(t *testing.T) {
 			expected: SeverityLow,
 		},
 		{
-			// Row 3: imbalanced + high volatility → medium.
-			// contract (low-strength) + cross_deploy_unit (high-distance) → imbalanced.
-			name: "imbalanced high volatility returns medium",
+			// low+high → low regardless of volatility.
+			name: "low+high high_vol returns low",
 			c: Classification{
 				Strength:   StrengthContract,
 				Distance:   DistanceCrossDeployUnit,
 				Volatility: VolatilityHigh,
 			},
+			expected: SeverityLow,
+		},
+		{
+			// high+high+low_vol → medium.
+			name: "high+high low_vol returns medium",
+			c: Classification{
+				Strength:   StrengthFunctional,
+				Distance:   DistanceCrossDeployUnit,
+				Volatility: VolatilityLow,
+			},
 			expected: SeverityMedium,
 		},
 		{
-			// Row 4: intrusive + cross-module-diff-owner + low volatility → medium.
-			name: "intrusive cross-module low volatility returns medium",
+			// high+high+high_vol → critical.
+			name: "high+high high_vol returns critical",
+			c: Classification{
+				Strength:   StrengthFunctional,
+				Distance:   DistanceCrossDeployUnit,
+				Volatility: VolatilityHigh,
+			},
+			expected: SeverityCritical,
+		},
+		{
+			// high+low → low (high cohesion).
+			name: "high+low returns low",
+			c: Classification{
+				Strength:   StrengthFunctional,
+				Distance:   DistanceCrossModuleSameOwner,
+				Volatility: VolatilityHigh,
+			},
+			expected: SeverityLow,
+		},
+		{
+			// intrusive + cross-module-diff-owner + low volatility → medium.
+			name: "intrusive cross-module low_vol returns medium",
 			c: Classification{
 				Strength:   StrengthIntrusive,
 				Distance:   DistanceCrossModuleDiffOwner,
@@ -53,8 +92,8 @@ func TestBalanceResult(t *testing.T) {
 			expected: SeverityMedium,
 		},
 		{
-			// Row 5: intrusive + cross-module-diff-owner + high volatility → high.
-			name: "intrusive cross-module high volatility returns high",
+			// intrusive + cross-module-diff-owner + high volatility → high.
+			name: "intrusive cross-module high_vol returns high",
 			c: Classification{
 				Strength:   StrengthIntrusive,
 				Distance:   DistanceCrossModuleDiffOwner,
@@ -63,7 +102,7 @@ func TestBalanceResult(t *testing.T) {
 			expected: SeverityHigh,
 		},
 		{
-			// Row 6: intrusive + cross-deploy-unit → critical (volatility irrelevant).
+			// intrusive + cross-deploy-unit → critical (volatility irrelevant).
 			name: "intrusive cross-deploy returns critical",
 			c: Classification{
 				Strength:   StrengthIntrusive,
