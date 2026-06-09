@@ -213,10 +213,10 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 - Create: `internal/fitness/fitness.go`
 - Create: `internal/fitness/fitness_test.go`
 
-- [ ] implement `Detect(root string) Signals` — deterministic scan for: arch test files (e.g. `*import*cycle*`, `*arch*test*`, tests importing archfit/import-linter), import-linter config (`.importlinter`, `setup.cfg [importlinter]`, `pyproject.toml [tool.importlinter]`), arch-linter in CI (`.github/workflows/*` referencing `archfit`/`import-linter`/`deptry`/`dependency-cruiser`)
-- [ ] return a `Signals` struct with booleans + the matched evidence paths (for explainability)
-- [ ] write tests over fixture dirs: all-present, none-present, partial (table-driven)
-- [ ] run tests — must pass before Task 8
+- [x] implement `Detect(root string) Signals` — deterministic scan for: arch test files (e.g. `*import*cycle*`, `*arch*test*`, tests importing archfit/import-linter), import-linter config (`.importlinter`, `setup.cfg [importlinter]`, `pyproject.toml [tool.importlinter]`), arch-linter in CI (`.github/workflows/*` referencing `archfit`/`import-linter`/`deptry`/`dependency-cruiser`)
+- [x] return a `Signals` struct with booleans + the matched evidence paths (for explainability)
+- [x] write tests over fixture dirs: all-present, none-present, partial (table-driven)
+- [x] run tests — must pass before Task 8
 
 ### Task 8: architecture_fitness metric
 
