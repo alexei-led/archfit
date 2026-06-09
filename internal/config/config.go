@@ -484,6 +484,25 @@ func (c Config) ForStaleness() StalenessConfig {
 	}
 }
 
+// FillMissingOwners sets the Owner field on modules that have no configured owner,
+// using the resolved map (module name → owner string) produced by the ownership
+// resolver. Explicit config owner always wins: a module with a non-empty Owner
+// field is never overwritten. Modules absent from resolved, or with an empty
+// resolved value, are left unchanged.
+func (c Config) FillMissingOwners(resolved map[string]string) {
+	for name, owner := range resolved {
+		if owner == "" {
+			continue
+		}
+		def, ok := c.Modules[name]
+		if !ok || def.Owner != "" {
+			continue
+		}
+		def.Owner = owner
+		c.Modules[name] = def
+	}
+}
+
 // sortedKeys returns a sorted slice of keys from a map[string]ModuleDef.
 func sortedKeys(m map[string]ModuleDef) []string {
 	keys := make([]string, 0, len(m))

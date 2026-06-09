@@ -575,6 +575,113 @@ func TestLoad_SelfConfig(t *testing.T) {
 	}
 }
 
+// TestFillMissingOwners verifies that FillMissingOwners merges resolved ownership
+// correctly: config owner wins, resolver fills gaps, absent entries are unchanged.
+func TestFillMissingOwners(t *testing.T) {
+	const (
+		resolvedOwnerA = "@team-alpha"
+		resolvedOwnerB = "@team-beta"
+		configOwnerX   = "@team-x"
+		pathPkgA       = "pkg/a/**"
+		pathPkgB       = "pkg/b/**"
+	)
+
+	tests := []struct {
+		name     string
+		modules  map[string]config.ModuleDef
+		resolved map[string]string
+		want     map[string]string // module name → expected Owner after call
+	}{
+		{
+			name: "fills modules with no owner",
+			modules: map[string]config.ModuleDef{
+				"a": {Paths: []string{pathPkgA}},
+				"b": {Paths: []string{pathPkgB}},
+			},
+			resolved: map[string]string{
+				"a": resolvedOwnerA,
+				"b": resolvedOwnerB,
+			},
+			want: map[string]string{
+				"a": resolvedOwnerA,
+				"b": resolvedOwnerB,
+			},
+		},
+		{
+			name: "config owner wins over resolver",
+			modules: map[string]config.ModuleDef{
+				"a": {Paths: []string{pathPkgA}, Owner: configOwnerX},
+				"b": {Paths: []string{pathPkgB}},
+			},
+			resolved: map[string]string{
+				"a": resolvedOwnerA, // must not overwrite configOwnerX
+				"b": resolvedOwnerB,
+			},
+			want: map[string]string{
+				"a": configOwnerX,   // config wins
+				"b": resolvedOwnerB, // resolver fills gap
+			},
+		},
+		{
+			name: "module absent from resolved stays unchanged",
+			modules: map[string]config.ModuleDef{
+				"a": {Paths: []string{pathPkgA}},
+				"b": {Paths: []string{pathPkgB}},
+			},
+			resolved: map[string]string{
+				"a": resolvedOwnerA,
+				// "b" absent from resolved
+			},
+			want: map[string]string{
+				"a": resolvedOwnerA,
+				"b": "", // unchanged — no owner from either source
+			},
+		},
+		{
+			name: "empty resolved map — no change",
+			modules: map[string]config.ModuleDef{
+				"a": {Paths: []string{pathPkgA}},
+			},
+			resolved: map[string]string{},
+			want: map[string]string{
+				"a": "",
+			},
+		},
+		{
+			name: "empty resolved owner string — no change",
+			modules: map[string]config.ModuleDef{
+				"a": {Paths: []string{pathPkgA}},
+			},
+			resolved: map[string]string{
+				"a": "", // empty string — must not be written
+			},
+			want: map[string]string{
+				"a": "",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.Config{
+				Version: 1,
+				Modules: tc.modules,
+			}
+			cfg.FillMissingOwners(tc.resolved)
+			for mod, wantOwner := range tc.want {
+				def, ok := cfg.Modules[mod]
+				if !ok {
+					t.Errorf("module %q not found after FillMissingOwners", mod)
+					continue
+				}
+				if def.Owner != wantOwner {
+					t.Errorf("module %q: Owner = %q, want %q", mod, def.Owner, wantOwner)
+				}
+			}
+		})
+	}
+}
+
 // writeFile is a test helper that writes content to path.
 func writeFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o600)

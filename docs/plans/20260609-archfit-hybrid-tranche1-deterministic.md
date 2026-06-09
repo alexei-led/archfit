@@ -254,10 +254,10 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 - Modify: `internal/config/config.go` (helper to fill missing `owner` from resolved map; config owner wins)
 - Modify: `internal/classify/classify_test.go`
 
-- [ ] merge resolved ownership into module metadata: explicit config `owner` wins; resolver fills gaps; unset → unchanged (distance stays as today)
-- [ ] confirm `classify` raises distance to `cross_module_different_owner` for differing owners via the existing logic (no new distance level)
-- [ ] write tests: differing resolved owners raise distance; config owner overrides resolver; no ownership → no distance change
-- [ ] run tests — must pass before Task 11
+- [x] merge resolved ownership into module metadata: explicit config `owner` wins; resolver fills gaps; unset → unchanged (distance stays as today)
+- [x] confirm `classify` raises distance to `cross_module_different_owner` for differing owners via the existing logic (no new distance level)
+- [x] write tests: differing resolved owners raise distance; config owner overrides resolver; no ownership → no distance change
+- [x] run tests — must pass before Task 11
 
 ### Task 11: Clone-detection runner
 

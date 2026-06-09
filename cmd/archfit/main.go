@@ -31,6 +31,7 @@ import (
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
+	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -172,6 +173,11 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	// Architecture-fitness enforcement signals (deterministic FS scan; always runs).
 	change.FitnessSignals = fitness.Detect(s.Root)
 
+	// Ownership resolution: fills module owner gaps from CODEOWNERS or git-author
+	// history. Explicit config owner always wins; resolver only fills empty slots.
+	// Absent CODEOWNERS and non-git repos yield an empty map — no fabrication.
+	cfg.FillMissingOwners(ownership.Resolve(ctx, s.Root, cfg.ModuleMapView(), deps.Runner))
+
 	// Cyclomatic complexity via an external multi-language tool (lizard) — opt-in
 	// (tools.complexity.enabled: on) like SCIP, since it shells out and adds cost.
 	if cfg.ComplexityEnabled() {
@@ -256,6 +262,9 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 
 	rs := rules.New(cfg.ForRules())
 	ms := metrics.New(cfg)
+
+	// Apply ownership resolution so baseline distances match check distances.
+	cfg.FillMissingOwners(ownership.Resolve(ctx, s.Root, cfg.ModuleMapView(), deps.Runner))
 
 	diag, err := engine.Run(ctx, engine.Mode{Full: c.Full, Advisory: c.Advisory, Base: c.Base}, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, engine.NopPatternProvider{}, engine.NopSymbolResolver{}, config.PatternConfig{}, rs, ms, existingBase, metrics.ChangeHistory{}, time.Now())
 	if err != nil {
