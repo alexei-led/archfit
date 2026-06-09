@@ -187,12 +187,12 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 - Create: `internal/metrics/risk_hub_test.go`
 - Modify: `internal/metrics/metrics.go` (register `RiskHubMetric{}` in `New()`)
 
-- [ ] implement `symbolImpact(SymbolGraph)` — reverse-reachability over `Refs` (mirror `blastRadius`/`tarjanSCC`; condense SCC so cycles don't inflate), returns per-symbol transitive dependents
-- [ ] implement `RiskHubMetric.Calculate`: rank symbols by `impact × volatility`, where volatility comes **only** from explicit `subdomain`/`volatility` config (unset → `1.0`); aggregate to owning module for display; `band: info`
-- [ ] `naResult` when `SymbolGraph` is empty (no SCIP) — never a false zero
-- [ ] register in `metrics.New()`; ensure renderers tolerate the new metric (Task 14 verifies output)
-- [ ] write tests: known symbol hub ranks top; cyclic refs don't inflate; churn does NOT affect score (distinct from `change_amplification`); n/a when no graph
-- [ ] run tests — must pass before Task 6
+- [x] implement `symbolImpact(SymbolGraph)` — reverse-reachability over `Refs` (mirror `blastRadius`/`tarjanSCC`; condense SCC so cycles don't inflate), returns per-symbol transitive dependents
+- [x] implement `RiskHubMetric.Calculate`: rank symbols by `impact × volatility`, where volatility comes **only** from explicit `subdomain`/`volatility` config (unset → `1.0`); aggregate to owning module for display; `band: info`
+- [x] `naResult` when `SymbolGraph` is empty (no SCIP) — never a false zero
+- [x] register in `metrics.New()`; ensure renderers tolerate the new metric (Task 14 verifies output)
+- [x] write tests: known symbol hub ranks top; cyclic refs don't inflate; churn does NOT affect score (distinct from `change_amplification`); n/a when no graph
+- [x] run tests — must pass before Task 6
 
 ### Task 6: Validate risk_hub across 4 repos (acceptance gate)
 

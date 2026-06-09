@@ -634,7 +634,11 @@ func coverageConfidence(unresolved, total int) string {
 
 // New returns all Phase 1 metrics. Each metric reads its per-metric config
 // via cfg.ForMetric(name) when needed (gate thresholds etc. are consumed by engine).
-func New(_ config.Config) []Metric {
+//
+// Volatility for RiskHubMetric is captured here, before any call to
+// config.ApplyVolatility, so churn-derived values never contaminate the
+// risk_hub signal (that would double-count with change_amplification).
+func New(cfg config.Config) []Metric {
 	return []Metric{
 		EncapsulationMetric{},
 		UnbalancedEdgeMetric{},
@@ -645,5 +649,18 @@ func New(_ config.Config) []Metric {
 		HiddenCouplingMetric{},
 		StructuralWeightMetric{},
 		ComplexityMetric{},
+		newRiskHubMetric(cfg),
 	}
+}
+
+// newRiskHubMetric builds a RiskHubMetric with volatility multipliers derived
+// exclusively from the explicit config (Subdomain/Volatility fields). This must
+// be called before config.ApplyVolatility so that only hand-authored values
+// influence the metric — churn-derived volatility must not reach risk_hub.
+func newRiskHubMetric(cfg config.Config) RiskHubMetric {
+	mv := make(map[string]float64, len(cfg.Modules))
+	for name, def := range cfg.Modules {
+		mv[name] = volatilityBandMultiplier(def.Volatility)
+	}
+	return RiskHubMetric{moduleVolatility: mv}
 }

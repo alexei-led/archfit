@@ -310,8 +310,8 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		t.Errorf("tool_coverage is nil, want typed empty slice")
 	}
 	// Metrics should contain all registered metrics.
-	if len(d.Metrics) != 9 {
-		t.Errorf("len(metrics)=%d, want 9", len(d.Metrics))
+	if len(d.Metrics) != 10 {
+		t.Errorf("len(metrics)=%d, want 10", len(d.Metrics))
 	}
 }
 

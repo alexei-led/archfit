@@ -549,14 +549,14 @@ func TestBandModel_LowConfidenceCap(t *testing.T) {
 
 func TestNew_ReturnsAllMetrics(t *testing.T) {
 	ms := metrics.New(config.Config{})
-	if len(ms) != 9 {
-		t.Errorf("expected 9 metrics got %d", len(ms))
+	if len(ms) != 10 {
+		t.Errorf("expected 10 metrics got %d", len(ms))
 	}
 	names := make(map[string]bool)
 	for _, m := range ms {
 		names[m.Name()] = true
 	}
-	for _, want := range []string{"encapsulation", "unbalanced_edge", "cycle", "coverage", "blast_radius", "change_amplification", "hidden_coupling", "structural_weight", "complexity"} {
+	for _, want := range []string{"encapsulation", "unbalanced_edge", "cycle", "coverage", "blast_radius", "change_amplification", "hidden_coupling", "structural_weight", "complexity", "risk_hub"} {
 		if !names[want] {
 			t.Errorf("missing metric %q", want)
 		}
