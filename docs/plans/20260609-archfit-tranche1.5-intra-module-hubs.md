@@ -166,15 +166,15 @@ exists from in F with from→to in Refs }`, where `subsystem(x)` = `x` with its 
 - Create: `internal/metrics/cohesion_spread_test.go`
 - Modify: `internal/metrics/metrics.go` (register `CohesionSpreadMetric{}` in `New()`)
 
-- [ ] implement `fileSpread(g symbol.Graph) map[string]int` — group `Refs` by
+- [x] implement `fileSpread(g symbol.Graph) map[string]int` — group `Refs` by
       `g.Module[from]`, count distinct `subsystem(g.Module[to])` per source file
-- [ ] implement `CohesionSpreadMetric.Calculate` — rank files by spread (LOC floor filter,
+- [x] implement `CohesionSpreadMetric.Calculate` — rank files by spread (LOC floor filter,
       LOC as secondary sort), `band: info`, top-N display naming file + spread + LOC
-- [ ] `naResult` when `SymbolGraph` is empty (no false zero); register in `metrics.New()`
-- [ ] write tests: a wide-spread large file ranks top; a single-subsystem file ranks low;
+- [x] `naResult` when `SymbolGraph` is empty (no false zero); register in `metrics.New()`
+- [x] write tests: a wide-spread large file ranks top; a single-subsystem file ranks low;
       LOC floor drops a tiny multi-import dispatcher; n/a when no graph
-- [ ] write distinctness test: a file that wins `cohesion_spread` but not `risk_hub`
-- [ ] run tests — must pass before Task 3
+- [x] write distinctness test: a file that wins `cohesion_spread` but not `risk_hub`
+- [x] run tests — must pass before Task 3
 
 ### Task 3: shared_state_hub metric (per-symbol fan-in concentration)
 

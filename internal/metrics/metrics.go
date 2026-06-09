@@ -677,6 +677,7 @@ func New(cfg config.Config) []Metric {
 		newRiskHubMetric(cfg),
 		ArchitectureFitnessMetric{},
 		FunctionalCandidatesMetric{},
+		CohesionSpreadMetric{},
 	}
 }
 
