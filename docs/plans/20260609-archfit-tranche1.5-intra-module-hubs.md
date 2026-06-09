@@ -184,16 +184,16 @@ exists from in F with from→to in Refs }`, where `subsystem(x)` = `x` with its 
 - Create: `internal/metrics/shared_state_hub_test.go`
 - Modify: `internal/metrics/metrics.go` (register `SharedStateHubMetric{}` in `New()`)
 
-- [ ] implement `fileMaxFanIn(g symbol.Graph) (max map[string]int, topSym map[string]string,
+- [x] implement `fileMaxFanIn(g symbol.Graph) (max map[string]int, topSym map[string]string,
 hot map[string]int)` — per file, max single-symbol `FanIn`, the winning symbol, and
       count of symbols with `FanIn >= HOT_THRESHOLD`
-- [ ] implement `SharedStateHubMetric.Calculate` — rank files by max fan-in (then hot count),
+- [x] implement `SharedStateHubMetric.Calculate` — rank files by max fan-in (then hot count),
       `band: info`, top-N display naming file + hottest symbol + fan-in + hot count
-- [ ] `naResult` when `SymbolGraph` is empty; register in `metrics.New()`
-- [ ] write tests: a narrow-surface/deep-fan-in file outranks a wide-surface/shallow file;
+- [x] `naResult` when `SymbolGraph` is empty; register in `metrics.New()`
+- [x] write tests: a narrow-surface/deep-fan-in file outranks a wide-surface/shallow file;
       cyclic/self refs excluded (defining doc already excluded by the reader); n/a when no graph
-- [ ] write distinctness test: a file that wins `shared_state_hub` but not `risk_hub`
-- [ ] run tests — must pass before Task 4
+- [x] write distinctness test: a file that wins `shared_state_hub` but not `risk_hub`
+- [x] run tests — must pass before Task 4
 
 ### Task 4: Render new metrics in all outputs
 

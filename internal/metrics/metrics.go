@@ -678,6 +678,7 @@ func New(cfg config.Config) []Metric {
 		ArchitectureFitnessMetric{},
 		FunctionalCandidatesMetric{},
 		CohesionSpreadMetric{},
+		SharedStateHubMetric{},
 	}
 }
 
