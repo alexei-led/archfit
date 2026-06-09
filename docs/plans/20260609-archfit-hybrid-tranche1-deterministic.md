@@ -266,11 +266,11 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 - Create: `internal/extract/clones/clones.go`
 - Create: `internal/extract/clones/clones_test.go`
 
-- [ ] implement a `toolrun`-based runner: detect/invoke a clone detector per language (jscpd for JS/TS, PMD-CPD for multi/Java/Go/Py where available); behind `tools.clones.enabled`
-- [ ] parse output → `[]Cluster{ Files []string; Lines int }`; absent tool → empty + absent coverage, never error
-- [ ] map clusters to module pairs via `fileToModuleKey`
-- [ ] write tests with `moq` runner returning canned detector output (success, absent tool, malformed)
-- [ ] run tests — must pass before Task 12
+- [x] implement a `toolrun`-based runner: detect/invoke a clone detector per language (jscpd for JS/TS, PMD-CPD for multi/Java/Go/Py where available); behind `tools.clones.enabled`
+- [x] parse output → `[]Cluster{ Files []string; Lines int }`; absent tool → empty + absent coverage, never error
+- [x] map clusters to module pairs via `fileToModuleKey`
+- [x] write tests with `moq` runner returning canned detector output (success, absent tool, malformed)
+- [x] run tests — must pass before Task 12
 
 ### Task 12: functional_candidates metric (report-only)
 
