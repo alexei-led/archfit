@@ -57,6 +57,22 @@ It can check:
 - coupling advisories based on strength, distance, volatility, and explicitness;
 - metric deltas such as encapsulation, unbalanced edges, cycles, and coverage.
 
+Three additional report-only (info-band) metrics surface structural risk without
+gating CI:
+
+- `risk_hub` — cross-module surface-breadth: counts the distinct symbols in a
+  module that are referenced by at least one symbol in a _different_ module.
+  SCIP-based. Surfaces broad-interface hubs that module-level `blast_radius`
+  misses (e.g. a 42-dep store visible only at symbol granularity).
+  Requires `tools.scip.enabled: on`; reports `n/a` otherwise.
+- `architecture_fitness` — detects whether architecture intent is actually
+  enforced: presence of arch tests, import-linter config, or archfit/deptry/
+  dependency-cruiser in CI workflows. Score 0–10, report-only.
+- `functional_candidates` — clone-detection + co-change candidate pairs:
+  module pairs that share duplicated logic, surfacing implicit functional
+  coupling with no import edge. Distinct from `hidden_coupling` (co-change
+  without an edge). Requires `tools.clones.enabled: on`; reports `n/a` otherwise.
+
 ## Configuration
 
 Configuration lives in `.archfit.yaml`.
@@ -118,6 +134,21 @@ analysis use optional external tools.
 archfit doctor
 archfit install --lang py --lang ts --dry-run
 ```
+
+Two additional tools are opt-in and off by default:
+
+- `tools.gitnexus.enabled: on` — enriches `risk_hub` symbol-impact with
+  gitnexus historical graph data. Requires gitnexus on PATH. Never runs
+  automatically (network access, reproducibility).
+- `tools.clones.enabled: on` — runs a clone detector (jscpd for JS/TS,
+  PMD-CPD for Go/Py) to populate `functional_candidates`. Off by default
+  (expensive). Absent tool → metric reports `n/a`.
+
+Tool-coverage sources reported by `archfit check`/`scan`:
+
+- `scip-symbols` — SCIP-based symbol fan-in used by `risk_hub`.
+- `clones` — clone-detection pass used by `functional_candidates`.
+- `gitnexus` — optional symbol-impact enrichment provider.
 
 Use Docker when you want the bundled toolchain instead of installing language
 analysis tools on the host:

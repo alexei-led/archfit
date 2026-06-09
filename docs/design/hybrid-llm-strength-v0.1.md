@@ -1,7 +1,7 @@
 # archfit hybrid design: deterministic meta-linter + selective LLM (v0.1)
 
-Status: direction draft (pending confirmation). Supersedes nothing; extends
-`arch-fitness-architecture-v0.2.md` with the LLM-judgment boundary.
+Status: Tranche 1 implemented (deterministic); Tranche 2 (LLM) spike-gated, not yet built.
+Supersedes nothing; extends `arch-fitness-architecture-v0.2.md` with the LLM-judgment boundary.
 
 ## 1. Goal
 
@@ -245,7 +245,12 @@ Confirmed 2026-06-09:
 
 ### Status
 
-Design is **planning-ready**. Plan Tranche 1 (deterministic: symbol-impact `risk_hub`,
-`architecture_fitness` self-measure, socio-technical distance, functional-coupling
-candidates, optional gitnexus provider) in full detail. Tranche 2 (LLM) is outlined
-and **spike-gated** — detail it only after the classification spike passes.
+Tranche 1 is **implemented**. All five deterministic features are built, tested, and
+merged: `risk_hub` (SCIP-based symbol surface-breadth), `architecture_fitness`
+(enforcement signal detector), socio-technical distance (ownership resolver),
+`functional_candidates` (clone + co-change candidate pipeline), and optional gitnexus
+provider. All new metrics are info-band (report-only); `check` remains LLM-free.
+
+Tranche 2 (LLM: provider interface, `enrich`, `explain` upgrade) is **spike-gated**.
+Run the classification spike (ccgram cross-boundary edges + subdomain classification
+vs. architect review) before detailing or building Tranche 2.

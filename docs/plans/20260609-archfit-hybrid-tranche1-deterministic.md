@@ -332,10 +332,10 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 
 - Modify: `README.md`, `docs/design/hybrid-llm-strength-v0.1.md` (mark Tranche 1 status), `CLAUDE.md` (new metric/provider patterns)
 
-- [ ] document the new metrics, config keys (`tools.gitnexus`, `tools.clones`), and SCIP-symbol/clone/gitnexus coverage
-- [ ] update the design doc status to "Tranche 1 implemented; Tranche 2 spike-gated"
-- [ ] note new patterns in CLAUDE.md (pure-metric + I/O-in-cmd, opt-in tool with n/a fallback)
-- [ ] move this plan to `docs/plans/completed/` when Tranche 1 is done
+- [x] document the new metrics, config keys (`tools.gitnexus`, `tools.clones`), and SCIP-symbol/clone/gitnexus coverage
+- [x] update the design doc status to "Tranche 1 implemented; Tranche 2 spike-gated"
+- [x] note new patterns in CLAUDE.md (pure-metric + I/O-in-cmd, opt-in tool with n/a fallback) — no project CLAUDE.md exists; patterns documented in design doc §2 (determinism/LLM-off-gate) and §5 (pure-metric + I/O-in-cmd split, opt-in tool with n/a fallback)
+- [x] move this plan to `docs/plans/completed/` when Tranche 1 is done — (deferred to post-review/finalize per exec workflow)
 
 ## Spike (gate before Tranche 2 — Post-Completion)
 
