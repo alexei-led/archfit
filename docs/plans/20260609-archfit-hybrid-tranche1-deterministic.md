@@ -356,6 +356,11 @@ Off-gate, cached, provider-pluggable. Not detailed until the spike passes.
 - **Provider interface:** thin Go `Classifier{ Classify(...) }` + `Explainer{ Explain(...) }`;
   impls `ollama` (local-first), `openai`, `anthropic`; selected via `tools.llm`.
   Results cached by content hash; **never invoked from `check`**.
+  - **Library decision (perplexity-researched):** no multi-LLM framework. Use official
+    SDKs — `openai-go` (also drives **Ollama** via its OpenAI-compatible `/v1` endpoint,
+    base-URL swap) + `anthropic-sdk-go`. ~2 deps + stdlib. Rejected any-llm-go (no
+    first-class Anthropic/Ollama), gollm (unmaintained pace), langchaingo (framework
+    overkill). Re-verify SDK status at build time. See design §6.
 - **`enrich` command:** LLM drafts `subdomain`/`volatility` and refines
   model-vs-functional labels into `.archfit.yaml`; human reviews and commits; the gate
   runs on the pinned config (LLM ran once, output version-controlled).

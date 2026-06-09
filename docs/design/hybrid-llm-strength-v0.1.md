@@ -152,6 +152,25 @@ type Explainer interface {
 - Prior art for _what good Khononov LLM judgment looks like_: the installed
   `modularity:review` skill. Reference it; don't reinvent the rubric.
 
+**Library decision (researched via perplexity, 2026):** do **not** adopt a
+multi-LLM framework — implement the thin interface above over **official SDKs**.
+
+- **`openai-go`** (official) covers OpenAI **and Ollama** — Ollama exposes an
+  OpenAI-compatible `/v1` endpoint, so the same client targets both via a base-URL
+  swap. **`anthropic-sdk-go`** (official) covers Claude. Net dependency surface:
+  ~2 SDKs + stdlib. Each provider lives in one file (`openai_provider.go`,
+  `anthropic_provider.go`, `ollama_provider.go` — the last may just set `openai-go`'s
+  base URL, or use plain `net/http` to `localhost:11434`).
+- Rejected: **any-llm-go** (no first-class Anthropic/Ollama in 2026 — you write glue
+  anyway), **gollm** (indie, not maintained at provider pace; JSON-mode lags),
+  **langchaingo** (full agent/chain framework — overkill, heaviest deps; violates the
+  minimal-deps stack decision).
+- All three needs (JSON/structured output, tool use, streaming) are first-class in
+  the official OpenAI + Anthropic SDKs; for Ollama, prompt-enforced JSON + strict
+  unmarshal is robust for the small fixed classification schemas here.
+- Caveat: the 2026 maintenance claims above are partly inferred — re-verify SDK
+  status and import paths when Tranche 2 is built.
+
 ## 7. Decisions (confirmed) + sequence
 
 Confirmed direction:
