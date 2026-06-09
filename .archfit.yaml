@@ -224,3 +224,14 @@ tools:
     enabled: "off"
   python:
     enabled: "off"
+  gitnexus:
+    enabled: "off"
+  clones:
+    enabled: "off"
+metrics:
+  risk_hub:
+    enabled: false
+  architecture_fitness:
+    enabled: false
+  functional_candidates:
+    enabled: false

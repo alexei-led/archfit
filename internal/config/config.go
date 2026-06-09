@@ -55,6 +55,26 @@ func (c Config) ComplexityEnabled() bool {
 	return c.Tools[ToolComplexity].Enabled == ModeOn
 }
 
+// ToolGitnexus is the Tools map key for the optional gitnexus symbol-impact provider.
+const ToolGitnexus = "gitnexus"
+
+// GitnexusEnabled reports whether the gitnexus symbol-impact provider is explicitly
+// enabled (tools.gitnexus.enabled: on). Never auto — gitnexus requires network access
+// and must not run by default. Config-driven (not PATH presence) for reproducibility.
+func (c Config) GitnexusEnabled() bool {
+	return c.Tools[ToolGitnexus].Enabled == ModeOn
+}
+
+// ToolClones is the Tools map key for the optional clone-detection provider.
+const ToolClones = "clones"
+
+// ClonesEnabled reports whether the clone-detection tool is explicitly enabled
+// (tools.clones.enabled: on). Opt-in only — running a clone detector is expensive
+// and must not happen by default. Config-driven for deterministic metrics.
+func (c Config) ClonesEnabled() bool {
+	return c.Tools[ToolClones].Enabled == ModeOn
+}
+
 // UnmarshalYAML handles both bool (true→on, false→off) and string ("auto"/"on"/"off") values.
 func (m *ToolMode) UnmarshalYAML(unmarshal func(any) error) error {
 	// Try bool first (YAML parses bare true/false as bool).

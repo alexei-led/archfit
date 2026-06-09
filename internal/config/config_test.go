@@ -3,6 +3,7 @@ package config_test
 import (
 	"context"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -144,7 +145,7 @@ func TestModuleFor_Deterministic(t *testing.T) {
 
 	const path = "shared/util.go"
 	first, _ := mm.ModuleFor(path)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		got, _ := mm.ModuleFor(path)
 		if got != first {
 			t.Errorf("ModuleFor(%q) is non-deterministic: got %q then %q", path, first, got)
@@ -198,14 +199,7 @@ func TestForExtract(t *testing.T) {
 	t.Run("internal_globs_collected", func(t *testing.T) {
 		ec := cfg.ForExtract("go")
 		// pricing module has internal: ["services/pricing/internal/**"]
-		found := false
-		for _, g := range ec.Internal {
-			if g == "services/pricing/internal/**" {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(ec.Internal, "services/pricing/internal/**") {
 			t.Errorf("ForExtract internal globs missing pricing internal glob; got %v", ec.Internal)
 		}
 	})
@@ -462,6 +456,122 @@ func TestLoad_ExistingConfigUnchanged(t *testing.T) {
 	pc := cfg.ForPatterns()
 	if len(pc) != 0 {
 		t.Errorf("ForPatterns() len=%d on no-patterns config, want 0", len(pc))
+	}
+}
+
+// TestLoad_NewToolsAndMetrics verifies that the new gitnexus/clones tool entries
+// and the three Tranche-1 metric entries parse correctly (checkbox: load with new keys).
+func TestLoad_NewToolsAndMetrics(t *testing.T) {
+	cfg, err := config.Load(context.Background(), "testdata/new_tools_metrics.yaml")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	// tools.gitnexus.enabled: off
+	gitnexus, ok := cfg.Tools[config.ToolGitnexus]
+	if !ok {
+		t.Error("tools.gitnexus not found")
+	} else if gitnexus.Enabled != config.ModeOff {
+		t.Errorf("tools.gitnexus.enabled = %q, want off", gitnexus.Enabled)
+	}
+	if cfg.GitnexusEnabled() {
+		t.Error("GitnexusEnabled() = true, want false when off")
+	}
+
+	// tools.clones.enabled: on
+	clones, ok := cfg.Tools[config.ToolClones]
+	if !ok {
+		t.Error("tools.clones not found")
+	} else if clones.Enabled != config.ModeOn {
+		t.Errorf("tools.clones.enabled = %q, want on", clones.Enabled)
+	}
+	if !cfg.ClonesEnabled() {
+		t.Error("ClonesEnabled() = false, want true when on")
+	}
+
+	// metrics.risk_hub: enabled false
+	rh := cfg.ForMetric("risk_hub")
+	if rh.Enabled {
+		t.Error("ForMetric(risk_hub).Enabled = true, want false")
+	}
+
+	// metrics.architecture_fitness: enabled true, gate warn
+	af := cfg.ForMetric("architecture_fitness")
+	if !af.Enabled {
+		t.Error("ForMetric(architecture_fitness).Enabled = false, want true")
+	}
+	if af.Gate != "warn" {
+		t.Errorf("ForMetric(architecture_fitness).Gate = %q, want warn", af.Gate)
+	}
+
+	// metrics.functional_candidates: enabled false
+	fc := cfg.ForMetric("functional_candidates")
+	if fc.Enabled {
+		t.Error("ForMetric(functional_candidates).Enabled = true, want false")
+	}
+}
+
+// TestNewToolsDefaultOff verifies that absent gitnexus/clones entries default to
+// disabled (zero ToolMode is not ModeOn), matching the opt-in contract.
+func TestNewToolsDefaultOff(t *testing.T) {
+	cfg := config.Config{Version: 1}
+	if cfg.GitnexusEnabled() {
+		t.Error("GitnexusEnabled() = true when absent, want false")
+	}
+	if cfg.ClonesEnabled() {
+		t.Error("ClonesEnabled() = true when absent, want false")
+	}
+}
+
+// TestNewMetricsDefaultZero verifies that absent Tranche-1 metric entries return
+// a zero MetricEntry (Enabled=false, Gate=""), consistent with ForMetric contract.
+func TestNewMetricsDefaultZero(t *testing.T) {
+	cfg := config.Config{Version: 1}
+	for _, name := range []string{"risk_hub", "architecture_fitness", "functional_candidates"} {
+		mc := cfg.ForMetric(name)
+		if mc.Enabled {
+			t.Errorf("ForMetric(%q).Enabled = true on empty config, want false", name)
+		}
+		if mc.Gate != "" {
+			t.Errorf("ForMetric(%q).Gate = %q on empty config, want empty", name, mc.Gate)
+		}
+	}
+}
+
+// TestNewToolInvalidMode verifies that an invalid mode value for a new tool key is rejected.
+func TestNewToolInvalidMode(t *testing.T) {
+	yaml := "version: 1\ntools:\n  gitnexus:\n    enabled: maybe\n"
+	tmp := t.TempDir() + "/cfg.yaml"
+	if err := writeFile(tmp, yaml); err != nil {
+		t.Fatalf("write temp: %v", err)
+	}
+	_, err := config.Load(context.Background(), tmp)
+	if err == nil {
+		t.Error("Load: expected error for invalid gitnexus mode, got nil")
+	}
+}
+
+// TestLoad_SelfConfig verifies that the project's own .archfit.yaml parses cleanly
+// with the new tools.gitnexus, tools.clones, and metrics entries present.
+func TestLoad_SelfConfig(t *testing.T) {
+	// Go tests run with cwd = package dir (internal/config); repo root is two levels up.
+	cfg, err := config.Load(context.Background(), "../../.archfit.yaml")
+	if err != nil {
+		t.Fatalf("Load self-config: %v", err)
+	}
+
+	if cfg.GitnexusEnabled() {
+		t.Error("self-config: GitnexusEnabled() = true, want false (off by default)")
+	}
+	if cfg.ClonesEnabled() {
+		t.Error("self-config: ClonesEnabled() = true, want false (off by default)")
+	}
+
+	for _, name := range []string{"risk_hub", "architecture_fitness", "functional_candidates"} {
+		mc := cfg.ForMetric(name)
+		if mc.Enabled {
+			t.Errorf("self-config: ForMetric(%q).Enabled = true, want false (new metrics default off)", name)
+		}
 	}
 }
 

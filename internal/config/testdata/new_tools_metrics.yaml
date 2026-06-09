@@ -1,0 +1,14 @@
+version: 1
+tools:
+  gitnexus:
+    enabled: "off"
+  clones:
+    enabled: "on"
+metrics:
+  risk_hub:
+    enabled: false
+  architecture_fitness:
+    enabled: true
+    gate: warn
+  functional_candidates:
+    enabled: false

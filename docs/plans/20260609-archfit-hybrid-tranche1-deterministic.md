@@ -130,11 +130,11 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 - Modify: `internal/config/config_test.go`
 - Modify: `.archfit.yaml` (self-config: register new metric entries, default off)
 
-- [ ] add `Gitnexus` and `Clones` tool-mode entries under `tools` (enabled: on|off|auto, default off/auto)
-- [ ] accept `metrics.risk_hub`, `metrics.architecture_fitness`, `metrics.functional_candidates` entries (reuse existing `MetricEntry`)
-- [ ] keep unknown-key tolerance and defaults consistent with existing `tools.scip`/`tools.complexity`
-- [ ] write tests: load config with new keys (success), missing keys default correctly, invalid values rejected
-- [ ] run tests — must pass before Task 2
+- [x] add `Gitnexus` and `Clones` tool-mode entries under `tools` (enabled: on|off|auto, default off/auto)
+- [x] accept `metrics.risk_hub`, `metrics.architecture_fitness`, `metrics.functional_candidates` entries (reuse existing `MetricEntry`)
+- [x] keep unknown-key tolerance and defaults consistent with existing `tools.scip`/`tools.complexity`
+- [x] write tests: load config with new keys (success), missing keys default correctly, invalid values rejected
+- [x] run tests — must pass before Task 2
 
 ### Task 2: Extend SCIP reader to emit symbol fan-in + references
 
