@@ -22,6 +22,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/py"
 	"github.com/alexei-led/archfit/internal/extract/scip"
 	"github.com/alexei-led/archfit/internal/extract/ts"
+	"github.com/alexei-led/archfit/internal/fitness"
 	"github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/metrics"
@@ -167,6 +168,9 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		change.FileChurn, change.CoChange = churn, coChange
 	}
 	change.FileLOC = sourceFileLOC(s.Root)
+
+	// Architecture-fitness enforcement signals (deterministic FS scan; always runs).
+	change.FitnessSignals = fitness.Detect(s.Root)
 
 	// Cyclomatic complexity via an external multi-language tool (lizard) — opt-in
 	// (tools.complexity.enabled: on) like SCIP, since it shells out and adds cost.

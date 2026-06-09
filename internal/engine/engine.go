@@ -127,6 +127,7 @@ func Run(
 		FileLOC:         change.FileLOC,
 		Complexity:      change.Complexity,
 		SymbolGraph:     scipSymbols,
+		FitnessSignals:  change.FitnessSignals,
 	}
 	metricResults := make([]diagnostic.MetricResult, 0, len(ms))
 	for _, m := range ms {

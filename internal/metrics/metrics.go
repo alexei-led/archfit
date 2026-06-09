@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/fitness"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
@@ -54,10 +55,11 @@ type Metric interface {
 // ChangeHistory carries git-derived volatility signals into the engine for the
 // modularity metrics. Both maps are empty when no git history is available.
 type ChangeHistory struct {
-	FileChurn  map[string]int    // file -> recent commit count
-	CoChange   map[[2]string]int // sorted file pair -> commits touching both
-	FileLOC    map[string]int    // source file -> lines of code (tests excluded)
-	Complexity []ComplexityFunc  // per-function cyclomatic complexity (external tool)
+	FileChurn      map[string]int    // file -> recent commit count
+	CoChange       map[[2]string]int // sorted file pair -> commits touching both
+	FileLOC        map[string]int    // source file -> lines of code (tests excluded)
+	Complexity     []ComplexityFunc  // per-function cyclomatic complexity (external tool)
+	FitnessSignals fitness.Signals   // architecture-intent enforcement signals (filesystem scan)
 }
 
 // MetricInput is the complete input set for all metrics.
@@ -84,6 +86,10 @@ type MetricInput struct {
 	// edges from a SCIP index. Empty when SCIP is off or the indexer is absent;
 	// metrics that need it must report n/a when SymbolGraph.Empty() is true.
 	SymbolGraph symbol.Graph
+	// FitnessSignals carries the results of the architecture-intent enforcement scan
+	// (arch tests, import-linter config, arch-linter in CI). Zero-value Signals
+	// (EvidencePaths == nil) means the scan was never run; metrics must report n/a.
+	FitnessSignals fitness.Signals
 }
 
 // ---------------------------------------------------------------------------
@@ -650,6 +656,7 @@ func New(cfg config.Config) []Metric {
 		StructuralWeightMetric{},
 		ComplexityMetric{},
 		newRiskHubMetric(cfg),
+		ArchitectureFitnessMetric{},
 	}
 }
 

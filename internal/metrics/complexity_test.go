@@ -27,7 +27,7 @@ func TestComplexity_FlagsOverThreshold(t *testing.T) {
 
 func TestComplexity_NoDataIsNA(t *testing.T) {
 	res := metrics.ComplexityMetric{}.Calculate(metrics.MetricInput{})
-	if res.Band != "n/a" {
+	if res.Band != bandNAStr {
 		t.Errorf("expected n/a without complexity data, got %q", res.Band)
 	}
 }

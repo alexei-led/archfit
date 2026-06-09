@@ -227,11 +227,11 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 - Modify: `internal/metrics/metrics.go` (`FitnessSignals` field on `MetricInput`; register metric)
 - Modify: `cmd/archfit/main.go` (call `fitness.Detect`, pass into input)
 
-- [ ] add `FitnessSignals` to `MetricInput`; wire `fitness.Detect` in `cmd`
-- [ ] implement `ArchitectureFitnessMetric.Calculate` — score by count/weight of enforcement signals present; `band: info` first (report-only)
-- [ ] include matched evidence paths in the display string
-- [ ] write tests: no-enforcement → low, full-enforcement → high, partial → mid; n/a when scan unavailable
-- [ ] run tests — must pass before Task 9
+- [x] add `FitnessSignals` to `MetricInput`; wire `fitness.Detect` in `cmd`
+- [x] implement `ArchitectureFitnessMetric.Calculate` — score by count/weight of enforcement signals present; `band: info` first (report-only)
+- [x] include matched evidence paths in the display string
+- [x] write tests: no-enforcement → low, full-enforcement → high, partial → mid; n/a when scan unavailable
+- [x] run tests — must pass before Task 9
 
 ### Task 9: Ownership resolver (CODEOWNERS + git-author fallback)
 

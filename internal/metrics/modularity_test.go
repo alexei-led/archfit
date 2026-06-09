@@ -67,7 +67,7 @@ func TestStructuralWeight_GodModuleBySize(t *testing.T) {
 func TestStructuralWeight_NoLOCIsNA(t *testing.T) {
 	g := graph.Build([]graph.Facts{{Language: "go", Nodes: []graph.Node{{Kind: graph.NodeKindPackage, Path: "x"}}}})
 	res := metrics.StructuralWeightMetric{}.Calculate(metrics.MetricInput{Graph: g})
-	if res.Band != "n/a" {
+	if res.Band != bandNAStr {
 		t.Errorf("expected n/a without LOC data, got %q", res.Band)
 	}
 }
