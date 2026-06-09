@@ -337,21 +337,30 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 - [x] note new patterns in CLAUDE.md (pure-metric + I/O-in-cmd, opt-in tool with n/a fallback) — no project CLAUDE.md exists; patterns documented in design doc §2 (determinism/LLM-off-gate) and §5 (pure-metric + I/O-in-cmd split, opt-in tool with n/a fallback)
 - [x] move this plan to `docs/plans/completed/` when Tranche 1 is done — (deferred to post-review/finalize per exec workflow)
 
-## Spike (gate before Tranche 2 — Post-Completion)
+## Spike (gate before Tranche 2) — RAN 2026-06-09, SPLIT verdict
 
-Before any LLM code is written, run a cheap classification spike:
+Pre-registered blind classification (ground-truth frozen first; two blind subagents;
+ccgram-only). Full record: `docs/plans/notes/llm-spike/{ground-truth.md,result.md}`.
+Verdict is per-capability:
 
-- LLM-classify ccgram cross-boundary edges (model-vs-functional refinement) and module
-  subdomains (core/supporting/generic), then diff against the architect review's
-  "Coupling review" section in `docs/architecture-review/2026-05-23-ccgram-full.md`.
-- **Pass:** broad agreement on subdomain class and the unbalanced-relationship list →
-  proceed to detail + build Tranche 2.
-- **Fail:** the LLM tranche is re-thought (prompt, evidence packaging, or whether
-  per-edge LLM labeling is worthwhile) before it is planned in detail.
+- **Coupling model-vs-functional refinement — VALIDATED → build.** The LLM corrected
+  archfit's ~91%-noise deterministic strength (419/461 edges blanket-"functional") where
+  it had cross-module visibility, and found a real intrusive coupling the architect review
+  missed. Off-gate/advisory.
+- **Subdomain/volatility drafting — DESCOPED.** 50% on a 3-way split (≈ chance),
+  framing-invariant, designated Telegram discriminator failed both stages. Inter-judge
+  disagreement → subdomain-derived volatility unreliable regardless of producer. Keep
+  volatility human-authored; do not build LLM subdomain-drafting as designed.
+- **Tranche 1.5 (deterministic) now gates the LLM coupling layer:** emit per-file /
+  intra-module cohesion + shared-state hub signals (the LLM was blind to the intra-`handlers`
+  `polling_state`/`directory_callbacks` hubs that archfit's coarse modules hide).
 
-## Tranche 2 — LLM layer (outline only; build after spike passes)
+Revised LLM scope is the source of truth in design `hybrid-llm-strength-v0.1.md` §7.
 
-Off-gate, cached, provider-pluggable. Not detailed until the spike passes.
+## Tranche 2 — LLM layer (REVISED by spike; build after Tranche 1.5)
+
+Off-gate, cached, provider-pluggable. Scope is now **coupling-refinement + explain only** —
+LLM subdomain/volatility drafting was dropped by the spike (see above; design §7).
 
 - **Provider interface:** thin Go `Classifier{ Classify(...) }` + `Explainer{ Explain(...) }`;
   impls `ollama` (local-first), `openai`, `anthropic`; selected via `tools.llm`.
@@ -361,9 +370,10 @@ Off-gate, cached, provider-pluggable. Not detailed until the spike passes.
     base-URL swap) + `anthropic-sdk-go`. ~2 deps + stdlib. Rejected any-llm-go (no
     first-class Anthropic/Ollama), gollm (unmaintained pace), langchaingo (framework
     overkill). Re-verify SDK status at build time. See design §6.
-- **`enrich` command:** LLM drafts `subdomain`/`volatility` and refines
-  model-vs-functional labels into `.archfit.yaml`; human reviews and commits; the gate
-  runs on the pinned config (LLM ran once, output version-controlled).
+- **`enrich` command (coupling labels only):** LLM drafts model-vs-functional strength
+  refinements for cross-module edges into `.archfit.yaml`; human reviews and commits; the
+  gate runs on the pinned labels (LLM ran once, output version-controlled). Consumes
+  human-authored `subdomain`/`volatility` as context (does NOT draft them — dropped by spike).
 - **`explain` upgrade:** LLM narrative over already-collected evidence + ranked
   `risk_hub` hubs (the "why it hurts / cascading scenario / smallest fix" story).
 
