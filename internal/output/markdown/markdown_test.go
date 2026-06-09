@@ -14,6 +14,18 @@ import (
 const (
 	secGate       = "Gate findings"
 	secAdvisories = "Advisories"
+
+	// New info-metric names.
+	metricRiskHub              = "risk_hub"
+	metricArchFitness          = "architecture_fitness"
+	metricFunctionalCandidates = "functional_candidates"
+
+	// Band / confidence / status literals used in multiple tests.
+	bandInfo       = "info"
+	bandNA         = "n/a"
+	confidenceHigh = "high"
+	confidenceLow  = "low"
+	statusAbsent   = "absent"
 )
 
 func TestRenderer_Format(t *testing.T) {
@@ -225,7 +237,7 @@ func TestRenderer_Render_MetricsSection(t *testing.T) {
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
 	d.Metrics = []diagnostic.MetricResult{
-		{Name: "coupling_ratio", Display: "0.42", Band: "good", Confidence: "high"},
+		{Name: "coupling_ratio", Display: "0.42", Band: "good", Confidence: confidenceHigh},
 	}
 
 	var buf bytes.Buffer
@@ -259,5 +271,121 @@ func TestRenderer_Render_OutputIsValidText(t *testing.T) {
 	}
 	if !strings.Contains(out, "archfit") {
 		t.Errorf("output missing 'archfit' header\nfull output:\n%s", out)
+	}
+}
+
+func TestRenderer_Render_NewInfoMetrics(t *testing.T) {
+	// Confirm risk_hub, architecture_fitness, functional_candidates render their
+	// display string and band in the Metrics section.
+	tests := []struct {
+		name    string
+		metric  diagnostic.MetricResult
+		wantSub []string
+	}{
+		{
+			name: "risk_hub present",
+			metric: diagnostic.MetricResult{
+				Name:       metricRiskHub,
+				Display:    "2 risk hub(s): pkg/store [breadth 3, ×1.00→3.00]",
+				Band:       bandInfo,
+				Confidence: confidenceHigh,
+			},
+			wantSub: []string{metricRiskHub, "2 risk hub(s)", bandInfo},
+		},
+		{
+			name: "architecture_fitness present",
+			metric: diagnostic.MetricResult{
+				Name:       metricArchFitness,
+				Display:    "6.7/10 (2/3 signals)",
+				Band:       bandInfo,
+				Confidence: confidenceHigh,
+			},
+			wantSub: []string{metricArchFitness, "6.7/10", bandInfo},
+		},
+		{
+			name: "functional_candidates present",
+			metric: diagnostic.MetricResult{
+				Name:       metricFunctionalCandidates,
+				Display:    "3 clone-duplicated cross-module pair(s)",
+				Band:       bandInfo,
+				Confidence: confidenceHigh,
+			},
+			wantSub: []string{metricFunctionalCandidates, "3 clone-duplicated", bandInfo},
+		},
+		{
+			name: "risk_hub n/a",
+			metric: diagnostic.MetricResult{
+				Name:       metricRiskHub,
+				Display:    bandNA,
+				Band:       bandNA,
+				Confidence: confidenceLow,
+			},
+			wantSub: []string{metricRiskHub, bandNA},
+		},
+		{
+			name: "architecture_fitness n/a",
+			metric: diagnostic.MetricResult{
+				Name:       metricArchFitness,
+				Display:    bandNA,
+				Band:       bandNA,
+				Confidence: confidenceLow,
+			},
+			wantSub: []string{metricArchFitness, bandNA},
+		},
+		{
+			name: "functional_candidates n/a",
+			metric: diagnostic.MetricResult{
+				Name:       metricFunctionalCandidates,
+				Display:    bandNA,
+				Band:       bandNA,
+				Confidence: confidenceLow,
+			},
+			wantSub: []string{metricFunctionalCandidates, bandNA},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := diagnostic.New()
+			d.Verdict = diagnostic.VerdictPass
+			d.Metrics = []diagnostic.MetricResult{tt.metric}
+
+			r := markdown.New()
+			var buf bytes.Buffer
+			if err := r.Render(d, &buf); err != nil {
+				t.Fatalf("Render() error = %v", err)
+			}
+
+			out := buf.String()
+			for _, want := range tt.wantSub {
+				if !strings.Contains(out, want) {
+					t.Errorf("output missing %q\nfull output:\n%s", want, out)
+				}
+			}
+		})
+	}
+}
+
+func TestRenderer_Render_ToolCoverageNewTools(t *testing.T) {
+	// Confirm scip-symbols, jscpd (clones), and gitnexus coverage rows render.
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.ToolCoverage = []diagnostic.Coverage{
+		{Tool: "scip-symbols", Status: statusAbsent},
+		{Tool: "jscpd", Status: statusAbsent},
+		{Tool: "gitnexus", Status: statusAbsent},
+	}
+
+	r := markdown.New()
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"scip-symbols", "jscpd", "gitnexus"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("coverage section missing %q\nfull output:\n%s", want, out)
+		}
 	}
 }

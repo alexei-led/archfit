@@ -120,7 +120,7 @@ func (NopSymbolResolver) Strengths(_ context.Context, _ scope.Scope) (map[string
 
 // Symbols returns an empty Graph and an absent coverage record.
 func (NopSymbolResolver) Symbols(_ context.Context, _ scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
-	return symbol.Graph{}, diagnostic.Coverage{Tool: "scip", Status: statusAbsent}, nil
+	return symbol.Graph{}, diagnostic.Coverage{Tool: "scip-symbols", Status: statusAbsent}, nil
 }
 
 // Renderer is the port that output adapters satisfy.

@@ -311,11 +311,11 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 - Modify: `internal/output/jsonout/jsonout.go` (usually automatic via struct)
 - Modify: corresponding `_test.go` files
 
-- [ ] confirm `risk_hub`, `architecture_fitness`, `functional_candidates` render with band/confidence/display in console + markdown
-- [ ] ensure top-N truncation + `n/a` rendering match existing info metrics
-- [ ] add `tool_coverage` rows for scip-symbols, clones, gitnexus
-- [ ] write/Update renderer tests for the new metrics (present + n/a)
-- [ ] run tests — must pass before Task 15
+- [x] confirm `risk_hub`, `architecture_fitness`, `functional_candidates` render with band/confidence/display in console + markdown
+- [x] ensure top-N truncation + `n/a` rendering match existing info metrics
+- [x] add `tool_coverage` rows for scip-symbols, clones, gitnexus
+- [x] write/Update renderer tests for the new metrics (present + n/a)
+- [x] run tests — must pass before Task 15
 
 ### Task 15: Verify acceptance criteria
 

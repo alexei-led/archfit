@@ -19,7 +19,7 @@ import (
 // never an error — symbol-graph enrichment is best-effort.
 func (a *Adapter) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
 	empty := symbol.Graph{}
-	absent := diagnostic.Coverage{Tool: toolName, Status: statusAbsent}
+	absent := diagnostic.Coverage{Tool: toolNameSymbols, Status: statusAbsent}
 
 	indexer, pkg, lang, ok := a.detectIndexer(ctx, s.Root)
 	if !ok {
@@ -43,7 +43,7 @@ func (a *Adapter) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, dia
 		return empty, absent, nil
 	}
 
-	partial := diagnostic.Coverage{Tool: toolName, Version: indexer, Status: statusPartial}
+	partial := diagnostic.Coverage{Tool: toolNameSymbols, Version: indexer, Status: statusPartial}
 
 	idxOut, err := a.runner.Run(ctx, toolrun.ToolCmd{
 		Name:    indexer,
@@ -73,7 +73,7 @@ func (a *Adapter) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, dia
 		return empty, partial, nil
 	}
 	return g, diagnostic.Coverage{
-		Tool:            toolName,
+		Tool:            toolNameSymbols,
 		Version:         indexer,
 		FilesSeen:       len(g.Module),
 		FilesApplicable: len(g.Module),

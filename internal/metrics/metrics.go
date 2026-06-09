@@ -66,6 +66,10 @@ type ChangeHistory struct {
 	// gitnexus CLI. Nil/empty when gitnexus is disabled or absent; risk_hub uses it
 	// as an optional multiplicative factor (never alters surface-breadth computation).
 	GitnexusImpact map[string]int
+	// ExtraCoverage carries tool-coverage records for opt-in tools that run in cmd
+	// (clones, gitnexus) rather than through the engine extractor loop. The engine
+	// appends these to the diagnostic ToolCoverage slice after building its own records.
+	ExtraCoverage []diagnostic.Coverage
 }
 
 // MetricInput is the complete input set for all metrics.

@@ -30,8 +30,12 @@ import (
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
-// toolName is the coverage/name identifier for this adapter.
+// toolName is the coverage/name identifier for this adapter (strength rows).
 const toolName = "scip"
+
+// toolNameSymbols is the coverage/name identifier for the symbol-graph row,
+// distinct from "scip" (strength) so the two rows are distinguishable in output.
+const toolNameSymbols = "scip-symbols"
 
 // scipTools are the SCIP indexers checked in preference order.
 var scipTools = []string{indexerTS, indexerPython, indexerGo}

@@ -89,6 +89,10 @@ func Run(
 	}
 	g := graph.Build(allFacts)
 
+	// Append opt-in tool coverage (clones, gitnexus) collected in cmd rather than
+	// through the extractor loop. These have no path into the diagnostic otherwise.
+	coverages = append(coverages, change.ExtraCoverage...)
+
 	// --- Stage 2: Pattern matching ---
 	// Gather structural matches from the PatternProvider and build a per-file evidence index.
 	// Matches are keyed by file path so rules can filter by the edge's from-file.
