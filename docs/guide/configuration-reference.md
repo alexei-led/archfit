@@ -142,6 +142,30 @@ tools:
 
 See [Language support](languages.md) for per-language install details.
 
+### Opt-in analysis tools
+
+Three additional tools are **off by default** and feed the report-only metrics. They
+are opt-in because they are slower and/or need extra binaries:
+
+```yaml
+tools:
+  scip:
+    enabled: on # symbol-level analysis (SCIP indexers + uv); powers risk_hub
+  clones:
+    enabled: on # clone detection (jscpd / PMD-CPD); powers functional_candidates
+  gitnexus:
+    enabled: on # historical change-impact; enriches risk_hub ranking
+```
+
+- `scip` — runs a SCIP indexer (`scip-go`/`scip-python`/`scip-typescript`) plus `uv`
+  to build the symbol graph. Required for `risk_hub`; without it `risk_hub` is `n/a`.
+- `clones` — runs a clone detector to find duplicated logic. Required for
+  `functional_candidates`; without it that metric is `n/a`.
+- `gitnexus` — optional enrichment of `risk_hub` with historical impact. Never auto.
+
+`gitnexus` and `clones` accept only `on`/`off` (not `auto`). When absent or disabled,
+the dependent metric simply reports `n/a` — it never fails the run.
+
 ## `layers`
 
 Layers are ordered from inner to outer.
@@ -270,6 +294,21 @@ Built-in metric names:
 - `cycle` — import cycle count.
 - `coverage` — extracted files over applicable files, with confidence lowered by
   unresolved imports.
+
+Report-only metrics (band `info`; they never gate the verdict):
+
+- `blast_radius` — modules whose transitive reverse-dependency reach is a large
+  share of the codebase.
+- `change_amplification` — blast radius weighted by recent churn.
+- `hidden_coupling` — module pairs that co-change without a static import edge.
+- `structural_weight` — size-skew god-modules (LOC far above the median).
+- `complexity` — functions over a cyclomatic-complexity threshold (needs `lizard`).
+- `risk_hub` — cross-module symbol surface-breadth × explicit config volatility.
+  Requires `tools.scip.enabled: on`; reports `n/a` otherwise.
+- `architecture_fitness` — presence of architecture enforcement signals (arch
+  tests, import-linter config, arch-linter in CI). Score 0–10.
+- `functional_candidates` — module pairs sharing duplicated logic (clone clusters),
+  cross-referenced with co-change. Requires `tools.clones.enabled: on`.
 
 Metric entry fields:
 

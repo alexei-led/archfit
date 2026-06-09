@@ -85,6 +85,22 @@ go version
 
 No extra Go analyzer is installed. The Go adapter uses the Go package loader.
 
+## Optional analysis tools
+
+These power the report-only metrics and are off by default. Install them only when
+you enable the matching `tools.*` key in `.archfit.yaml`.
+
+- **SCIP** (powers `risk_hub`) — install a SCIP indexer for your language
+  (`scip-go`, `scip-python`, or `scip-typescript`) plus [`uv`](https://docs.astral.sh/uv/).
+  Enable with `tools.scip.enabled: on`.
+- **Clone detectors** (power `functional_candidates`) — `npm install -g jscpd` for
+  JS/TS, or install [PMD](https://pmd.github.io/) (includes CPD) for Go/Python.
+  Enable with `tools.clones.enabled: on`.
+- **gitnexus** (enriches `risk_hub`) — install the `gitnexus` binary on `PATH`.
+  Enable with `tools.gitnexus.enabled: on`. Never runs automatically.
+
+When a tool is absent, the dependent metric reports `n/a` — the run never fails.
+
 ## Docker
 
 Use Docker when you want the bundled toolchain instead of installing language
