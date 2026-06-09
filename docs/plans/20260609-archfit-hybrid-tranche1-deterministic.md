@@ -319,12 +319,12 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 
 ### Task 15: Verify acceptance criteria
 
-- [ ] verify all 5 Tranche-1 features implemented and registered
-- [ ] **determinism gate:** two `check` runs on the same commit/config produce byte-identical diagnostics; grep `check` path — confirm zero LLM dependencies in Tranche 1
-- [ ] run full suite: `make test` (or `go test ./...`)
-- [ ] run lint: `make lint` (golangci-lint) — clean
-- [ ] run `archfit scan` on this repo and the 4 validation repos — no panics, sensible output
-- [ ] confirm baseline/delta still works (new metrics report-only, do not change verdict)
+- [x] verify all 5 Tranche-1 features implemented and registered — metrics.New() registers risk_hub, architecture_fitness, functional_candidates; packages internal/extract/{scip/symbols.go,clones,gitnexus}, internal/fitness, internal/ownership all present
+- [x] **determinism gate:** two `check` runs on the same commit/config produce byte-identical diagnostics (confirmed IDENTICAL after fixing tie-breaking sort in blast_radius and hidden_coupling display); grep `check` path — zero LLM dependencies in Tranche 1 (only comment strings containing "LLM-friendly", no API calls)
+- [x] run full suite: `make test` (or `go test ./...`) — all 31 packages pass; 0 failures
+- [x] run lint: `make lint` (golangci-lint) — 0 issues
+- [x] run `archfit scan` on this repo — no panic, sensible output (5 blast_radius hubs, architecture_fitness 6.7/10, all info-band); 4-repo validation already recorded in docs/plans/notes/risk_hub-validation.md (Task 6)
+- [x] confirm baseline/delta still works — computeVerdict gates only on kind==gate findings with new/expired_exception status, or negative metric delta; new info-band metrics never set delta, never appear in gate findings; verdict unchanged by their presence
 
 ### Task 16: Documentation
 

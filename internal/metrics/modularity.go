@@ -226,7 +226,12 @@ func (m BlastRadiusMetric) Calculate(in MetricInput) diagnostic.MetricResult {
 			hubs = append(hubs, hubInfo{module: mod, blast: b, rel: rel})
 		}
 	}
-	sort.Slice(hubs, func(i, j int) bool { return hubs[i].blast > hubs[j].blast })
+	sort.Slice(hubs, func(i, j int) bool {
+		if hubs[i].blast != hubs[j].blast {
+			return hubs[i].blast > hubs[j].blast
+		}
+		return hubs[i].module < hubs[j].module
+	})
 
 	confidence := confidenceHigh
 	if n < modularitySmallN {
@@ -509,7 +514,12 @@ func (m HiddenCouplingMetric) Calculate(in MetricInput) diagnostic.MetricResult 
 	for mod, c := range hiddenPartners {
 		ranked = append(ranked, hp{mod, c})
 	}
-	sort.Slice(ranked, func(i, j int) bool { return ranked[i].count > ranked[j].count })
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].count != ranked[j].count {
+			return ranked[i].count > ranked[j].count
+		}
+		return ranked[i].module < ranked[j].module
+	})
 
 	n := len(mc)
 	confidence := confidenceHigh
