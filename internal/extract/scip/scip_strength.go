@@ -35,6 +35,16 @@ type readerOutput struct {
 		To       string `json:"to"`
 		Strength string `json:"strength"`
 	} `json:"edges"`
+	Symbols []struct {
+		Symbol string `json:"symbol"`
+		Path   string `json:"path"`
+		Module string `json:"module"`
+		FanIn  int    `json:"fan_in"`
+	} `json:"symbols"`
+	SymbolRefs []struct {
+		FromSymbol string `json:"from_symbol"`
+		ToSymbol   string `json:"to_symbol"`
+	} `json:"symbol_refs"`
 	Error string `json:"error,omitempty"`
 }
 

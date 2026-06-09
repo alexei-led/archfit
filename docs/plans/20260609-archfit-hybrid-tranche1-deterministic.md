@@ -157,11 +157,11 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 - Create: `internal/extract/scip/symbols_test.go`
 - Modify: `internal/extract/scip/scip_strength.go` (extend `readerOutput` struct)
 
-- [ ] extend `readerOutput` to unmarshal `symbols` + `symbol_refs`
-- [ ] add `func (a *Adapter) Symbols(ctx, scope.Scope) (SymbolGraph, diagnostic.Coverage, error)` — runs the indexer+reader once, returns a `SymbolGraph{ Module map[string]string; FanIn map[string]int; Refs map[string]map[string]struct{} }`
-- [ ] absent indexer/uv or any failure → empty graph + absent/partial coverage, never an error (match `Strengths` behavior)
-- [ ] write tests with a `moq` `toolrun.Runner` returning canned reader JSON (success, absent tool, malformed output)
-- [ ] run tests — must pass before Task 4
+- [x] extend `readerOutput` to unmarshal `symbols` + `symbol_refs`
+- [x] add `func (a *Adapter) Symbols(ctx, scope.Scope) (SymbolGraph, diagnostic.Coverage, error)` — runs the indexer+reader once, returns a `SymbolGraph{ Module map[string]string; FanIn map[string]int; Refs map[string]map[string]struct{} }`
+- [x] absent indexer/uv or any failure → empty graph + absent/partial coverage, never an error (match `Strengths` behavior)
+- [x] write tests with a `moq` `toolrun.Runner` returning canned reader JSON (success, absent tool, malformed output)
+- [x] run tests — must pass before Task 4
 
 ### Task 4: Wire SymbolGraph through engine into MetricInput
 
