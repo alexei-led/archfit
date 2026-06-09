@@ -14,9 +14,6 @@ import (
 )
 
 const (
-	statusOK      = "ok"
-	statusPartial = "partial"
-	statusAbsent  = "absent"
 	indexTimeout  = 10 * time.Minute
 	readerTimeout = 5 * time.Minute
 	pyInitFile    = "__init__.py"
@@ -54,20 +51,48 @@ type readerOutput struct {
 // any non-fatal failure yields an empty map with an absent/partial coverage record,
 // never an error — strength enrichment is best-effort on top of the import graph.
 func (a *Adapter) Strengths(ctx context.Context, s scope.Scope) (map[string]string, diagnostic.Coverage, error) {
-	absent := diagnostic.Coverage{Tool: toolName, Status: statusAbsent}
-
-	indexer, pkg, lang, ok := a.detectIndexer(ctx, s.Root)
+	ro, partial, ok := a.runSCIPPipeline(ctx, s.Root, toolName)
 	if !ok {
-		return nil, absent, nil
+		return nil, partial, nil
+	}
+	m, perr := parseReaderEdges(ro.raw)
+	if perr != nil {
+		return nil, partial, nil
+	}
+	return m, diagnostic.Coverage{
+		Tool:            toolName,
+		Version:         ro.indexer,
+		FilesSeen:       len(m),
+		FilesApplicable: len(m),
+		Status:          diagnostic.StatusOK,
+	}, nil
+}
+
+// pipelineResult holds the raw reader output and metadata from runSCIPPipeline.
+type pipelineResult struct {
+	raw     []byte
+	indexer string
+}
+
+// runSCIPPipeline runs the detect → index → read pipeline shared by Strengths and
+// Symbols. On any non-fatal failure it returns ok=false and a partial/absent
+// coverage record. The caller is responsible for parsing ro.raw into its own typed
+// result and constructing a final Coverage with the correct tool name.
+func (a *Adapter) runSCIPPipeline(ctx context.Context, root, covTool string) (ro pipelineResult, cov diagnostic.Coverage, ok bool) {
+	absent := diagnostic.Coverage{Tool: covTool, Status: diagnostic.StatusAbsent}
+
+	indexer, pkg, lang, found := a.detectIndexer(ctx, root)
+	if !found {
+		return ro, absent, false
 	}
 	// The reader runs via uv (PEP 723 inline deps: protobuf + grpcio-tools).
 	if _, found := a.runner.Detect(ctx, "uv"); !found {
-		return nil, absent, nil
+		return ro, absent, false
 	}
 
 	tmp, err := os.MkdirTemp("", "archfit-scip-")
 	if err != nil {
-		return nil, absent, nil
+		return ro, absent, false
 	}
 	defer os.RemoveAll(tmp) //nolint:errcheck
 
@@ -76,23 +101,23 @@ func (a *Adapter) Strengths(ctx context.Context, s scope.Scope) (map[string]stri
 	indexPath := filepath.Join(tmp, "index.scip")
 	if os.WriteFile(protoPath, scipProtoSrc, 0o600) != nil ||
 		os.WriteFile(readerPath, scipReaderSrc, 0o600) != nil {
-		return nil, absent, nil
+		return ro, absent, false
 	}
 
-	partial := diagnostic.Coverage{Tool: toolName, Version: indexer, Status: statusPartial}
+	partial := diagnostic.Coverage{Tool: covTool, Version: indexer, Status: diagnostic.StatusPartial}
 
 	// Index the project (the indexer runs in the project root, output to temp).
 	idxOut, err := a.runner.Run(ctx, toolrun.ToolCmd{
 		Name:    indexer,
-		Args:    indexArgs(indexer, pkg, s.Root, indexPath),
-		WorkDir: s.Root,
+		Args:    indexArgs(indexer, pkg, root, indexPath),
+		WorkDir: root,
 		Timeout: indexTimeout,
 	})
 	if err != nil || idxOut.ExitCode != 0 {
-		return nil, partial, nil
+		return ro, partial, false
 	}
 	if _, statErr := os.Stat(indexPath); statErr != nil {
-		return nil, partial, nil
+		return ro, partial, false
 	}
 
 	// Read: uv run scip_reader.py --proto <p> --index <i> --package <pkg> --lang <lang>
@@ -103,20 +128,10 @@ func (a *Adapter) Strengths(ctx context.Context, s scope.Scope) (map[string]stri
 		Timeout: readerTimeout,
 	})
 	if err != nil || rdOut.ExitCode != 0 {
-		return nil, partial, nil
+		return ro, partial, false
 	}
 
-	m, perr := parseReaderEdges(rdOut.Stdout)
-	if perr != nil {
-		return nil, partial, nil
-	}
-	return m, diagnostic.Coverage{
-		Tool:            toolName,
-		Version:         indexer,
-		FilesSeen:       len(m),
-		FilesApplicable: len(m),
-		Status:          statusOK,
-	}, nil
+	return pipelineResult{raw: rdOut.Stdout, indexer: indexer}, partial, true
 }
 
 // parseReaderEdges parses scip_reader.py JSON into a strength map keyed by

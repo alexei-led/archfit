@@ -139,7 +139,8 @@ func codeownersMatch(pattern, repoPath string) bool {
 
 	// Directory patterns: "src/" matches everything under src/.
 	if strings.HasSuffix(p, "/") {
-		return strings.HasPrefix(repoPath, strings.TrimSuffix(p, "/"))
+		dir := strings.TrimSuffix(p, "/")
+		return repoPath == dir || strings.HasPrefix(repoPath, dir+"/")
 	}
 
 	if anchored {

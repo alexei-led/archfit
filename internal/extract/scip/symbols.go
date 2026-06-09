@@ -3,13 +3,10 @@ package scip
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
 // Symbols runs a SCIP indexer over the project, reads the index, and returns
@@ -19,65 +16,20 @@ import (
 // never an error — symbol-graph enrichment is best-effort.
 func (a *Adapter) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
 	empty := symbol.Graph{}
-	absent := diagnostic.Coverage{Tool: toolNameSymbols, Status: statusAbsent}
-
-	indexer, pkg, lang, ok := a.detectIndexer(ctx, s.Root)
+	ro, partial, ok := a.runSCIPPipeline(ctx, s.Root, toolNameSymbols)
 	if !ok {
-		return empty, absent, nil
-	}
-	if _, found := a.runner.Detect(ctx, "uv"); !found {
-		return empty, absent, nil
-	}
-
-	tmp, err := os.MkdirTemp("", "archfit-scip-sym-")
-	if err != nil {
-		return empty, absent, nil
-	}
-	defer os.RemoveAll(tmp) //nolint:errcheck
-
-	protoPath := filepath.Join(tmp, "scip.proto")
-	readerPath := filepath.Join(tmp, "scip_reader.py")
-	indexPath := filepath.Join(tmp, "index.scip")
-	if os.WriteFile(protoPath, scipProtoSrc, 0o600) != nil ||
-		os.WriteFile(readerPath, scipReaderSrc, 0o600) != nil {
-		return empty, absent, nil
-	}
-
-	partial := diagnostic.Coverage{Tool: toolNameSymbols, Version: indexer, Status: statusPartial}
-
-	idxOut, err := a.runner.Run(ctx, toolrun.ToolCmd{
-		Name:    indexer,
-		Args:    indexArgs(indexer, pkg, s.Root, indexPath),
-		WorkDir: s.Root,
-		Timeout: indexTimeout,
-	})
-	if err != nil || idxOut.ExitCode != 0 {
 		return empty, partial, nil
 	}
-	if _, statErr := os.Stat(indexPath); statErr != nil {
-		return empty, partial, nil
-	}
-
-	rdOut, err := a.runner.Run(ctx, toolrun.ToolCmd{
-		Name:    "uv",
-		Args:    []string{"run", readerPath, "--proto", protoPath, "--index", indexPath, "--package", pkg, "--lang", lang},
-		WorkDir: tmp,
-		Timeout: readerTimeout,
-	})
-	if err != nil || rdOut.ExitCode != 0 {
-		return empty, partial, nil
-	}
-
-	g, perr := parseReaderSymbols(rdOut.Stdout)
+	g, perr := parseReaderSymbols(ro.raw)
 	if perr != nil {
 		return empty, partial, nil
 	}
 	return g, diagnostic.Coverage{
 		Tool:            toolNameSymbols,
-		Version:         indexer,
+		Version:         ro.indexer,
 		FilesSeen:       len(g.Module),
 		FilesApplicable: len(g.Module),
-		Status:          statusOK,
+		Status:          diagnostic.StatusOK,
 	}, nil
 }
 

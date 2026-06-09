@@ -279,7 +279,7 @@ func fileContainsSection(path, section string) bool {
 func skipVendorAndHidden(d fs.DirEntry) error {
 	if d != nil && d.IsDir() {
 		name := d.Name()
-		if name == "vendor" || (len(name) > 1 && name[0] == '.') {
+		if name == "vendor" || name == "node_modules" || (len(name) > 1 && name[0] == '.') {
 			return fs.SkipDir
 		}
 	}

@@ -32,12 +32,13 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 	// pathC = "pkg/c/c.go" → module "pkg/c"
 
 	tests := []struct {
-		name      string
-		clusters  []clones.Cluster
-		coChange  map[[2]string]int
-		g         *graph.Graph
-		wantBand  string
-		wantValue float64
+		name        string
+		clusters    []clones.Cluster
+		coChange    map[[2]string]int
+		g           *graph.Graph
+		wantBand    string
+		wantValue   float64
+		wantDisplay string // empty means "don't check"
 	}{
 		{
 			name:      "no clone data → n/a",
@@ -58,9 +59,10 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 			clusters: []clones.Cluster{
 				{Files: []string{pathA, pathB}, Lines: 20},
 			},
-			g:         twoGoNodes(),
-			wantBand:  bandInfo,
-			wantValue: 1,
+			g:           twoGoNodes(),
+			wantBand:    bandInfo,
+			wantValue:   1,
+			wantDisplay: "1 clone-duplicated cross-module pair(s)",
 		},
 		{
 			name: "two clusters same module pair → deduped to one",
@@ -110,9 +112,10 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 			coChange: map[[2]string]int{
 				{pathA, pathB}: 5,
 			},
-			g:         twoGoNodes(),
-			wantBand:  bandInfo,
-			wantValue: 1,
+			g:           twoGoNodes(),
+			wantBand:    bandInfo,
+			wantValue:   1,
+			wantDisplay: "1 clone-duplicated cross-module pair(s) (1 also co-change)",
 		},
 		{
 			name: "co-change on different pair → clone pair unaffected",
@@ -122,9 +125,10 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 			coChange: map[[2]string]int{
 				{pathA, pathC}: 3,
 			},
-			g:         twoGoNodes(),
-			wantBand:  bandInfo,
-			wantValue: 1,
+			g:           twoGoNodes(),
+			wantBand:    bandInfo,
+			wantValue:   1,
+			wantDisplay: "1 clone-duplicated cross-module pair(s)",
 		},
 	}
 
@@ -142,6 +146,9 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 			}
 			if got.Value != tc.wantValue {
 				t.Errorf("value=%v want %v", got.Value, tc.wantValue)
+			}
+			if tc.wantDisplay != "" && got.Display != tc.wantDisplay {
+				t.Errorf("display=%q want %q", got.Display, tc.wantDisplay)
 			}
 			if got.Name != "functional_candidates" {
 				t.Errorf("name=%q want %q", got.Name, "functional_candidates")

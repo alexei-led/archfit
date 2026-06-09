@@ -54,6 +54,13 @@ type Coverage struct {
 // Phase 1 emits an empty typed slice so that agent_tasks serializes as [] not null.
 type AgentTask struct{}
 
+// Coverage status constants used across all extractor adapters.
+const (
+	StatusOK      = "ok"
+	StatusPartial = "partial"
+	StatusAbsent  = "absent"
+)
+
 // SchemaVersion is the fixed schema_version value emitted in every diagnostic.
 const SchemaVersion = "archfit.diagnostic.v1"
 

@@ -556,7 +556,7 @@ func TestNew_ReturnsAllMetrics(t *testing.T) {
 	for _, m := range ms {
 		names[m.Name()] = true
 	}
-	for _, want := range []string{"encapsulation", "unbalanced_edge", "cycle", "coverage", "blast_radius", "change_amplification", "hidden_coupling", "structural_weight", "complexity", "risk_hub"} {
+	for _, want := range []string{"encapsulation", "unbalanced_edge", "cycle", "coverage", "blast_radius", "change_amplification", "hidden_coupling", "structural_weight", "complexity", "risk_hub", "architecture_fitness", "functional_candidates"} {
 		if !names[want] {
 			t.Errorf("missing metric %q", want)
 		}
