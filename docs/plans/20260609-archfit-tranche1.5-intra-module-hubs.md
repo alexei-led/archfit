@@ -216,25 +216,27 @@ hot map[string]int)` — per file, max single-symbol `FanIn`, the winning symbol
 
 - Create: `docs/plans/notes/intra-module-hub-validation.md` (results log)
 
-- [ ] run `archfit scan` (scip on) on ccgram → confirm `directory_callbacks` is a top
+- [x] run `archfit scan` (scip on) on ccgram → confirm `directory_callbacks` is a top
       `cohesion_spread` hub AND `polling_state` is a top `shared_state_hub` hub
-- [ ] run on codegraph, pumba, spotinfo → record top-5 per metric per repo
-- [ ] confirm both metrics are **distinct** from `risk_hub`/`blast_radius`/`structural_weight`
+- [x] run on codegraph, pumba, spotinfo → record top-5 per metric per repo
+- [x] confirm both metrics are **distinct** from `risk_hub`/`blast_radius`/`structural_weight`
       on each repo (different top files, not a reordered duplicate) — note overlaps
-- [ ] **signal-to-noise check (the real bar):** cross-reference each metric's ccgram top-N
+- [x] **signal-to-noise check (the real bar):** cross-reference each metric's ccgram top-N
       against the architect-blessed centralizations (`config`, `utils`, `tmux_manager`,
       `bootstrap`/`app_bootstrap` — intended glue / low-risk generic per review line 572).
       A target surfacing while the list is dominated by blessed hubs is a FAIL (this is the
       trap that killed transitive-`risk_hub`: it surfaced things but was mostly noise)
-- [ ] tune `HOT_THRESHOLD`, `LOC_FLOOR`, and the `subsystem()` granularity if a target hub
+- [x] tune `HOT_THRESHOLD`, `LOC_FLOOR`, and the `subsystem()` granularity if a target hub
       does not surface or the list is dominated by blessed/artifact hubs; re-run; record
       final values
-- [ ] ⚠️ if `directory_callbacks`/`polling_state` cannot surface **without** the list being
-      dominated by blessed centralization, STOP and reassess the signal definition before
-      proceeding
-- [ ] write the results log; **gate passes only if** both targets surface AND the top-N is
-      not dominated by blessed/artifact hubs on ccgram, AND the signals stay sensible (not
-      noise) across the other 3 repos
+- [x] ⚠️ BLOCKER: `directory_callbacks` ranks 6th on cohesion_spread (spread=7, top-5 floor=8);
+      `polling_state` ranks 16th on shared_state_hub (fan-in=8, top-5 floor=28); shared_state_hub
+      top-5 dominated 3/5 by blessed hubs (config/thread_router/tmux_manager); no legitimate
+      threshold change can surface either target — signal definitions need reassessment before
+      proceeding (see docs/plans/notes/intra-module-hub-validation.md)
+- [x] write the results log (docs/plans/notes/intra-module-hub-validation.md); ⚠️ GATE: FAIL —
+      directory_callbacks rank 6 (not top-5); polling_state rank 16 (not top-5); shared_state_hub
+      top-5 dominated 3/5 by blessed hubs; signal definitions need reassessment
 
 ### Task 6: Verify acceptance criteria
 
