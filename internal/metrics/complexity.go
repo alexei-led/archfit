@@ -1,0 +1,91 @@
+package metrics
+
+import (
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
+)
+
+// complexityThreshold is the cyclomatic complexity above which a function is a
+// hotspot (lizard's default warning level). Tunable; the metric is report-only.
+const complexityThreshold = 15
+
+// ComplexityFunc is one function's cyclomatic complexity, as measured by an
+// external multi-language tool (lizard). File is repo-relative.
+type ComplexityFunc struct {
+	File string
+	Name string
+	CCN  int
+	NLOC int
+	Line int
+}
+
+// ComplexityMetric reports the most cyclomatically-complex functions — the
+// intra-module signal that size (structural_weight) cannot see (a single giant
+// branchy function). Language-agnostic: archfit reuses an external complexity tool
+// (lizard) rather than reimplementing per-language parsing. Opt-in; report-only.
+type ComplexityMetric struct{}
+
+// Name returns "complexity".
+func (m ComplexityMetric) Name() string { return "complexity" }
+
+// Version returns "complexity.v1".
+func (m ComplexityMetric) Version() string { return "complexity.v1" }
+
+// Calculate reports functions over the complexity threshold, ranked. n/a when no
+// complexity data is available (the tool is opt-in / not installed).
+func (m ComplexityMetric) Calculate(in MetricInput) diagnostic.MetricResult {
+	def := "functions whose cyclomatic complexity exceeds " +
+		strconv.Itoa(complexityThreshold) + " (external tool: lizard)"
+	if len(in.Complexity) == 0 {
+		return naCount(m.Name(), m.Version(), def)
+	}
+	hot := make([]ComplexityFunc, 0)
+	for _, f := range in.Complexity {
+		if f.CCN > complexityThreshold {
+			hot = append(hot, f)
+		}
+	}
+	sort.Slice(hot, func(i, j int) bool { return hot[i].CCN > hot[j].CCN })
+
+	return diagnostic.MetricResult{
+		Name: m.Name(), Value: float64(len(hot)), Display: complexityDisplay(hot),
+		Band: bandInformational, Confidence: confidenceHigh, Version: m.Version(),
+		Mode: modeCount, Definition: def,
+	}
+}
+
+func complexityDisplay(hot []ComplexityFunc) string {
+	if len(hot) == 0 {
+		return fmt.Sprintf("0 functions over CCN %d", complexityThreshold)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d complex function(s) (CCN>%d): ", len(hot), complexityThreshold)
+	for i, f := range hot {
+		if i == 5 {
+			fmt.Fprintf(&b, "+%d more", len(hot)-5)
+			break
+		}
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		name := f.Name
+		if name == "" {
+			name = "(anon)"
+		}
+		fmt.Fprintf(&b, "%s CCN %d (%s:%d)", name, f.CCN, shortFile(f.File), f.Line)
+	}
+	return b.String()
+}
+
+// shortFile trims a file path to its last two segments for compact display.
+func shortFile(file string) string {
+	parts := strings.Split(file, "/")
+	if len(parts) <= 2 {
+		return file
+	}
+	return ".../" + strings.Join(parts[len(parts)-2:], "/")
+}
