@@ -60,12 +60,12 @@ func TestRiskHub_BroadSurfaceModuleRanksTop(t *testing.T) {
 	g := makeGraph(
 		map[string]string{
 			// stateStore has 4 symbols each referenced by one external module
-			"ss_field_a": "stateStore",
-			"ss_field_b": "stateStore",
-			"ss_field_c": "stateStore",
-			"ss_field_d": "stateStore",
+			"ss_field_a": testModStateStore,
+			"ss_field_b": testModStateStore,
+			"ss_field_c": testModStateStore,
+			"ss_field_d": testModStateStore,
 			// singleHub has 1 symbol referenced by 4 external modules
-			"hub_fn": "singleHub",
+			testSymHubFn: testModSingleHub,
 			// consumers in different modules
 			"ca": "svc/a",
 			"cb": "svc/b",
@@ -79,10 +79,10 @@ func TestRiskHub_BroadSurfaceModuleRanksTop(t *testing.T) {
 			{"cc", "ss_field_c"},
 			{"cd", "ss_field_d"},
 			// singleHub's one symbol referenced by all 4 consumers
-			{"ca", "hub_fn"},
-			{"cb", "hub_fn"},
-			{"cc", "hub_fn"},
-			{"cd", "hub_fn"},
+			{"ca", testSymHubFn},
+			{"cb", testSymHubFn},
+			{"cc", testSymHubFn},
+			{"cd", testSymHubFn},
 		},
 	)
 	m := newRiskHubMetric(makeConfig(nil))
@@ -109,18 +109,18 @@ func TestRiskHub_KnownHubRanksTop(t *testing.T) {
 	// "util" module has a symbol referenced by 1 external module.
 	g := makeGraph(
 		map[string]string{
-			"hub":  "core",
-			"leaf": "util",
-			"A":    "svc/a",
-			"B":    "svc/b",
-			"C":    "svc/c",
-			"D":    "svc/d",
+			testSymHub: "core",
+			"leaf":     "util",
+			"A":        "svc/a",
+			"B":        "svc/b",
+			"C":        "svc/c",
+			"D":        "svc/d",
 		},
 		[][2]string{
-			{"A", "hub"},
-			{"B", "hub"},
-			{"C", "hub"},
-			{"D", "hub"},
+			{"A", testSymHub},
+			{"B", testSymHub},
+			{"C", testSymHub},
+			{"D", testSymHub},
 			{"A", "leaf"}, // leaf has only 1 external referencing module
 		},
 	)
@@ -147,9 +147,9 @@ func TestRiskHub_IntraModuleRefsIgnored(t *testing.T) {
 	// All refs are within "mod" — no cross-module refs → breadth=0 → n/a.
 	g := makeGraph(
 		map[string]string{
-			"X": "mod",
-			"Y": "mod",
-			"Z": "mod",
+			"X": testModMod,
+			"Y": testModMod,
+			"Z": testModMod,
 		},
 		[][2]string{
 			{"X", "Y"},
