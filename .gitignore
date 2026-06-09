@@ -3,3 +3,5 @@ coverage.out
 *.test
 go.work*
 /archfit
+.DS_Store
+__pycache__/
