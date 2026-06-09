@@ -62,6 +62,10 @@ type ChangeHistory struct {
 	Complexity     []ComplexityFunc  // per-function cyclomatic complexity (external tool)
 	FitnessSignals fitness.Signals   // architecture-intent enforcement signals (filesystem scan)
 	CloneClusters  []clones.Cluster  // duplicated code blocks across files (clone detector)
+	// GitnexusImpact maps module path → historical change-impact count from the
+	// gitnexus CLI. Nil/empty when gitnexus is disabled or absent; risk_hub uses it
+	// as an optional multiplicative factor (never alters surface-breadth computation).
+	GitnexusImpact map[string]int
 }
 
 // MetricInput is the complete input set for all metrics.
@@ -96,6 +100,11 @@ type MetricInput struct {
 	// detector (e.g. jscpd). Empty when the tool is disabled or absent; metrics
 	// that need it must report n/a when CloneClusters is nil/empty.
 	CloneClusters []clones.Cluster
+	// GitnexusImpact maps module path → historical change-impact count from the
+	// gitnexus CLI (tools.gitnexus.enabled: on). Nil/empty (the default) leaves
+	// risk_hub behaviour exactly as today (surface-breadth × volatility only).
+	// When non-empty, risk_hub incorporates it as a bounded additional factor.
+	GitnexusImpact map[string]int
 }
 
 // ---------------------------------------------------------------------------

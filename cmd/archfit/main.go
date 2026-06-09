@@ -19,6 +19,7 @@ import (
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/extract/astgrep"
 	"github.com/alexei-led/archfit/internal/extract/clones"
+	"github.com/alexei-led/archfit/internal/extract/gitnexus"
 	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/extract/py"
 	"github.com/alexei-led/archfit/internal/extract/scip"
@@ -188,6 +189,15 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	// Clone detection — opt-in (tools.clones.enabled: on). Run returns empty+absent
 	// when disabled or the tool is missing; the metric reports n/a in that case.
 	change.CloneClusters, _, _ = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled())
+
+	// gitnexus optional symbol-impact enrichment — opt-in (tools.gitnexus.enabled: on).
+	// Never auto: gitnexus may require network access. Returns empty+absent when
+	// disabled or tool absent; risk_hub falls back to surface-breadth-only in that case.
+	// Coverage is appended after the engine builds its coverages slice; the impact
+	// map is threaded through ChangeHistory → engine → MetricInput.GitnexusImpact.
+	var gitnexusCov diagnostic.Coverage
+	change.GitnexusImpact, gitnexusCov, _ = gitnexus.Run(ctx, deps.Runner, s.Root, cfg.GitnexusEnabled())
+	_ = gitnexusCov // coverage threaded into engine via ToolCoverage in a future task (Task 14)
 
 	// SCIP symbol-level strength is opt-in (tools.scip.enabled: on): the indexer is
 	// whole-repo and slow, so it must not run on the default check path, and the

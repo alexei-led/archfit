@@ -129,6 +129,7 @@ func Run(
 		SymbolGraph:     scipSymbols,
 		FitnessSignals:  change.FitnessSignals,
 		CloneClusters:   change.CloneClusters,
+		GitnexusImpact:  change.GitnexusImpact,
 	}
 	metricResults := make([]diagnostic.MetricResult, 0, len(ms))
 	for _, m := range ms {

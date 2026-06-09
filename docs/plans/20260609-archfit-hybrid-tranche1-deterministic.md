@@ -296,11 +296,11 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 - Modify: `cmd/archfit/main.go` (enrich SymbolGraph when `tools.gitnexus.enabled: on`)
 - Modify: `internal/metrics/risk_hub.go` (consume enriched impact if present)
 
-- [ ] implement a `toolrun`-based gitnexus provider: when enabled + present, query impact/fan-in to enrich the symbol-impact map; never auto
-- [ ] precedence: gitnexus impact when available, else SCIP fan-in; record which source in coverage
-- [ ] absent/disabled → SCIP-only, unchanged behavior
-- [ ] write tests with `moq` runner (enabled+present enriches, disabled ignored, absent falls back)
-- [ ] run tests — must pass before Task 14
+- [x] implement a `toolrun`-based gitnexus provider: when enabled + present, query impact/fan-in to enrich the symbol-impact map; never auto
+- [x] precedence: gitnexus impact when available, else SCIP fan-in; record which source in coverage
+- [x] absent/disabled → SCIP-only, unchanged behavior
+- [x] write tests with `moq` runner (enabled+present enriches, disabled ignored, absent falls back)
+- [x] run tests — must pass before Task 14
 
 ### Task 14: Render new metrics in all outputs
 

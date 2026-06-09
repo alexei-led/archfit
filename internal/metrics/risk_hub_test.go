@@ -15,6 +15,12 @@ const (
 	testSymHubFn      = "hub_fn"
 	testSymHub        = "hub"
 	testModMod        = "mod"
+	testModAlpha      = "alpha"
+	testModBeta       = "beta"
+	testSymDepA       = "depA"
+	testSymDepB       = "depB"
+	testSymA          = "symA"
+	testSymB          = "symB"
 )
 
 // makeGraph is a test helper that builds a symbol.Graph from a Module map and
@@ -219,14 +225,14 @@ func TestRiskHub_NAWhenGraphEmpty(t *testing.T) {
 func TestRiskHub_HighVolatilityRanksAboveNeutral(t *testing.T) {
 	g := makeGraph(
 		map[string]string{
-			"symA": "alpha",
-			"symB": "beta",
-			"depA": "consumer",
-			"depB": "consumer2",
+			testSymA:    testModAlpha,
+			testSymB:    testModBeta,
+			testSymDepA: "consumer",
+			testSymDepB: "consumer2",
 		},
 		[][2]string{
-			{"depA", "symA"}, // alpha breadth=1
-			{"depB", "symB"}, // beta breadth=1 (equal breadth)
+			{testSymDepA, testSymA}, // alpha breadth=1
+			{testSymDepB, testSymB}, // beta breadth=1 (equal breadth)
 		},
 	)
 	cfg := makeConfig(map[string]string{
@@ -261,6 +267,68 @@ func TestRiskHub_BandIsInfo(t *testing.T) {
 	result := m.Calculate(MetricInput{SymbolGraph: g})
 	if result.Band != bandInformational {
 		t.Errorf("expected band %q, got %q", bandInformational, result.Band)
+	}
+}
+
+// TestRiskHub_GitnexusImpactRefinesRanking verifies two properties:
+//
+//  1. When GitnexusImpact is non-empty, the module with higher historical impact
+//     ranks above one with identical surface-breadth but lower impact.
+//  2. When GitnexusImpact is nil, the result is byte-identical to today's
+//     surface-breadth × volatility output (the gitnexus path is a no-op).
+func TestRiskHub_GitnexusImpactRefinesRanking(t *testing.T) {
+	// Two modules with equal breadth=1 so only gitnexus factor breaks the tie.
+	g := makeGraph(
+		map[string]string{
+			testSymA:    testModAlpha,
+			testSymB:    testModBeta,
+			testSymDepA: "consumer",
+			testSymDepB: "consumer2",
+		},
+		[][2]string{
+			{testSymDepA, testSymA}, // alpha breadth=1
+			{testSymDepB, testSymB}, // beta  breadth=1 (equal)
+		},
+	)
+	m := newRiskHubMetric(makeConfig(nil))
+
+	// Without gitnexus: both modules have equal score; alpha sorts first (alphabetical tiebreak).
+	withoutGN := m.Calculate(MetricInput{SymbolGraph: g})
+	if withoutGN.Band == bandNA {
+		t.Fatal("expected real result without gitnexus, got n/a")
+	}
+
+	// With gitnexus: beta has much higher impact → should rank above alpha.
+	impact := map[string]int{"beta": 100, "alpha": 1}
+	withGN := m.Calculate(MetricInput{SymbolGraph: g, GitnexusImpact: impact})
+	if withGN.Band == bandNA {
+		t.Fatal("expected real result with gitnexus, got n/a")
+	}
+
+	// Verify ranking is affected: "beta" should appear before "alpha" in display.
+	betaPos := strings.Index(withGN.Display, "beta")
+	alphaPos := strings.Index(withGN.Display, "alpha")
+	if betaPos == -1 || alphaPos == -1 {
+		t.Fatalf("expected both 'beta' and 'alpha' in display, got: %s", withGN.Display)
+	}
+	if betaPos > alphaPos {
+		t.Errorf("expected 'beta' (higher gitnexus impact) before 'alpha', got: %s", withGN.Display)
+	}
+
+	// Verify the gitnexus factor is surfaced in the display string.
+	if !strings.Contains(withGN.Display, "gn×") {
+		t.Errorf("expected gitnexus factor marker 'gn×' in display, got: %s", withGN.Display)
+	}
+
+	// Verify that nil GitnexusImpact produces the same output as an empty map
+	// (both are the no-gitnexus path — behavior must be identical).
+	withEmpty := m.Calculate(MetricInput{SymbolGraph: g, GitnexusImpact: map[string]int{}})
+	if withoutGN.Display != withEmpty.Display {
+		t.Errorf("nil vs empty GitnexusImpact differ:\n  nil:   %s\n  empty: %s",
+			withoutGN.Display, withEmpty.Display)
+	}
+	if withoutGN.Value != withEmpty.Value {
+		t.Errorf("nil vs empty GitnexusImpact Value differ: %v vs %v", withoutGN.Value, withEmpty.Value)
 	}
 }
 

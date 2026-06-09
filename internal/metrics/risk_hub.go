@@ -117,18 +117,52 @@ func (m RiskHubMetric) Version() string { return "risk_hub.v1" }
 
 // riskHubInfo holds per-module aggregated risk for display.
 type riskHubInfo struct {
-	module     string
-	breadth    int     // count of externally-referenced symbols
-	risk       float64 // breadth × volatility multiplier
-	multiplier float64
+	module          string
+	breadth         int     // count of externally-referenced symbols
+	risk            float64 // breadth × volatility multiplier [× gitnexus factor when present]
+	multiplier      float64
+	gitnexusFactor  float64 // 1.0 when gitnexus absent; bounded [1.0, 2.0] when present
+	gitnexusPresent bool    // true when GitnexusImpact was non-empty
+}
+
+// gitnexusImpactFactor converts a raw gitnexus impact count for a module into a
+// bounded multiplicative factor in [1.0, 2.0]. This keeps gitnexus as a refining
+// enrichment rather than allowing it to dominate the surface-breadth ranking.
+//
+// Formula: 1.0 + clamp(impact / maxImpact, 0, 1) where maxImpact is the largest
+// impact value seen across all modules in this run (normalised per-run).
+// A module absent from the impact map receives 1.0 (neutral — no penalty).
+func gitnexusImpactFactor(mod string, impactMap map[string]int, maxImpact int) float64 {
+	if len(impactMap) == 0 || maxImpact <= 0 {
+		return 1.0
+	}
+	v, ok := impactMap[mod]
+	if !ok {
+		return 1.0
+	}
+	normalised := float64(v) / float64(maxImpact) // [0, 1]
+	return 1.0 + normalised                       // [1.0, 2.0]
 }
 
 // Calculate ranks modules by (symbol-surface breadth × volatility_multiplier)
 // and reports the top hubs. Returns n/a when SymbolGraph is empty (SCIP off or
 // indexer absent) — never a false zero.
+//
+// When MetricInput.GitnexusImpact is non-empty (tools.gitnexus.enabled: on and
+// the CLI was present), each module's score is further multiplied by a bounded
+// gitnexus factor in [1.0, 2.0] derived from its historical change-impact count
+// (normalised to the per-run maximum). When GitnexusImpact is nil/empty (the
+// default), this factor is 1.0 for every module and the result is exactly the
+// same as plain surface-breadth × volatility.
 func (m RiskHubMetric) Calculate(in MetricInput) diagnostic.MetricResult {
+	hasGitnexus := len(in.GitnexusImpact) > 0
 	def := "cross-module surface breadth × explicit config volatility: count of a module's " +
 		"symbols referenced from other modules (churn-independent; never gates)"
+	if hasGitnexus {
+		def = "cross-module surface breadth × explicit config volatility × gitnexus historical impact: " +
+			"count of a module's symbols referenced from other modules, refined by historical change impact " +
+			"(churn-independent; never gates)"
+	}
 	if in.SymbolGraph.Empty() {
 		return naCount(m.Name(), m.Version(), def)
 	}
@@ -138,15 +172,26 @@ func (m RiskHubMetric) Calculate(in MetricInput) diagnostic.MetricResult {
 		return naCount(m.Name(), m.Version(), def)
 	}
 
+	// Compute max gitnexus impact for normalisation (zero when gitnexus absent).
+	maxImpact := 0
+	for _, v := range in.GitnexusImpact {
+		if v > maxImpact {
+			maxImpact = v
+		}
+	}
+
 	// Build ranked list of module hubs.
 	hubs := make([]riskHubInfo, 0, len(breadth))
 	for mod, b := range breadth {
 		mult := m.volatilityMultiplier(mod)
+		gf := gitnexusImpactFactor(mod, in.GitnexusImpact, maxImpact)
 		hubs = append(hubs, riskHubInfo{
-			module:     mod,
-			breadth:    b,
-			risk:       float64(b) * mult,
-			multiplier: mult,
+			module:          mod,
+			breadth:         b,
+			risk:            float64(b) * mult * gf,
+			multiplier:      mult,
+			gitnexusFactor:  gf,
+			gitnexusPresent: hasGitnexus,
 		})
 	}
 	sort.Slice(hubs, func(i, j int) bool {
@@ -203,8 +248,13 @@ func riskHubDisplay(hubs []riskHubInfo, totalExternalSymbols int) string {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		fmt.Fprintf(&b, "%s [breadth %d, ×%.2f→%.2f]",
-			shortModule(h.module), h.breadth, h.multiplier, h.risk)
+		if h.gitnexusPresent {
+			fmt.Fprintf(&b, "%s [breadth %d, ×%.2f, gn×%.2f→%.2f]",
+				shortModule(h.module), h.breadth, h.multiplier, h.gitnexusFactor, h.risk)
+		} else {
+			fmt.Fprintf(&b, "%s [breadth %d, ×%.2f→%.2f]",
+				shortModule(h.module), h.breadth, h.multiplier, h.risk)
+		}
 	}
 	return b.String()
 }
