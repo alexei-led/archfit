@@ -240,11 +240,11 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 - Create: `internal/ownership/ownership.go`
 - Create: `internal/ownership/ownership_test.go`
 
-- [ ] parse CODEOWNERS (`.github/CODEOWNERS`, `CODEOWNERS`, `docs/CODEOWNERS`) → glob→owner rules; match files to owners
-- [ ] git-author fallback: dominant author per file from `git log --format` (reuse `internal/history/git` pass if practical) → module owner; used only when no CODEOWNERS
-- [ ] aggregate file owners → module owner (via `fileToModuleKey`); return empty when neither source exists (no fabrication)
-- [ ] write tests: CODEOWNERS precedence, git-author fallback, neither present → empty (use `moq`/fixtures, no real git in unit tests)
-- [ ] run tests — must pass before Task 10
+- [x] parse CODEOWNERS (`.github/CODEOWNERS`, `CODEOWNERS`, `docs/CODEOWNERS`) → glob→owner rules; match files to owners
+- [x] git-author fallback: dominant author per file from `git log --format` (reuse `internal/history/git` pass if practical) → module owner; used only when no CODEOWNERS
+- [x] aggregate file owners → module owner (via `fileToModuleKey`); return empty when neither source exists (no fabrication)
+- [x] write tests: CODEOWNERS precedence, git-author fallback, neither present → empty (use `moq`/fixtures, no real git in unit tests)
+- [x] run tests — must pass before Task 10
 
 ### Task 10: Feed resolved owners into Balanced-Coupling distance
 
