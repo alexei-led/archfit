@@ -111,19 +111,25 @@ impacted symbols, CRITICAL) is something archfit **missed**. Root cause is **gra
 granularity**, not missing LLM: archfit aggregates files into coarse config-modules
 and counts _module-level_ imports, so a symbol-level hub disappears.
 
-- **Deterministic upgrade (no LLM):** rank by `symbol_impact × volatility` (see
-  churn-double-count fix in §7). Surfaces `window_state_store` from SCIP data.
-  **Sizing (corrected after code inspection):** this is NOT a granularity flag.
-  Today `scip_reader.py` walks `doc.occurrences` symbol-by-symbol but **collapses
-  to per-module-edge strength on output** — Go never sees a symbol graph. So step 1 =
-  (a) extend the embedded reader to also emit **per-symbol fan-in / a symbol→symbol
-  reference list** (the occurrence walk and internal-symbol filtering already exist —
-  moderate, not greenfield), (b) new Go to build the symbol-reference graph and run
-  reverse-reachability (the module-level reverse-BFS in `modularity.go` is the
-  reusable _pattern_, not reusable code), (c) rank and wire a new metric. De-risked
-  by existing SCIP parse infra; still real work.
-  **Coverage caveat:** symbol impact needs a SCIP indexer + `uv` present and
-  `tools.scip.enabled: on`. No SCIP → metric is `n/a` (info), never a false zero.
+- **Deterministic upgrade (no LLM) — the `risk_hub` metric:** rank modules by
+  **cross-module surface-breadth × volatility** (explicit-subdomain volatility only;
+  see churn-double-count fix in §7). Surface-breadth = the count of a module's own
+  symbols referenced by at least one symbol from a _different_ module — how wide a
+  module's externally-coupled surface is.
+  **Implementation:** `scip_reader.py` was extended to emit per-symbol fan-in +
+  cross-module symbol refs (the occurrence walk and internal-symbol filtering already
+  existed); Go builds a `symbol.Graph` and the metric counts externally-referenced
+  symbols per module.
+  **Why surface-breadth, not transitive reverse-reachability** (the original Task 5
+  design): validated on 4 repos (see `docs/plans/notes/risk_hub-validation.md`).
+  Transitive reachability (a) just reproduces `blast_radius`, (b) is polluted by
+  artifacts (`__init__` re-exports, barrel symbols, test symbols) because SCIP refs
+  are **doc-scoped** — indexers don't populate `enclosing_range`, and (c) failed the
+  gold standard (didn't surface ccgram `window_state_store`). Surface-breadth is
+  distinct from blast_radius, clean, language-consistent (Go/TS/Py), and ranks
+  `window_state_store` #1 — matching the architect review's #1 critical finding.
+  **Coverage caveat:** needs a SCIP indexer + `uv` + `tools.scip.enabled: on`.
+  No SCIP → metric is `n/a` (info), never a false zero.
 - **LLM (explain only):** "_why_ does this hub hurt, what is the cascading-change
   scenario, what is the smallest fix" — the F3 narrative. Consumes the ranked
   deterministic output; adds no numbers.

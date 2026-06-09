@@ -8,8 +8,14 @@ import (
 	"github.com/alexei-led/archfit/internal/model/symbol"
 )
 
-// symHub is the test symbol name used in hub-ranking tests.
-const symHub = "hub"
+// Test constants for repeated string literals (goconst requirement).
+const (
+	testModStateStore = "stateStore"
+	testModSingleHub  = "singleHub"
+	testSymHubFn      = "hub_fn"
+	testSymHub        = "hub"
+	testModMod        = "mod"
+)
 
 // makeGraph is a test helper that builds a symbol.Graph from a Module map and
 // a flat list of directed reference edges (from, to pairs).
@@ -41,15 +47,69 @@ func makeConfig(moduleVols map[string]string) config.Config {
 	}
 }
 
-// TestRiskHub_KnownHubRanksTop verifies that a symbol with many transitive
-// dependents surfaces as the top-ranked hub.
-func TestRiskHub_KnownHubRanksTop(t *testing.T) {
-	// symHub is referenced by A, B, C, D — high impact (4 dependents).
-	// leaf is referenced only by A — low impact (1 dependent).
-	// symHub does NOT reference leaf, so leaf's impact stays low.
+// TestRiskHub_BroadSurfaceModuleRanksTop verifies that a module with many
+// externally-referenced symbols ranks above one with fewer, even when the
+// latter has a single heavily-referenced symbol (the key divergence from
+// blast_radius). This tests the "broad-surface module outranks single-symbol hub"
+// property that makes risk_hub complementary to blast_radius.
+//
+// stateStore has 4 symbols referenced from other modules (breadth=4).
+// singleHub has 1 symbol referenced from 4 other modules (breadth=1).
+// stateStore should rank higher.
+func TestRiskHub_BroadSurfaceModuleRanksTop(t *testing.T) {
 	g := makeGraph(
 		map[string]string{
-			symHub: "core",
+			// stateStore has 4 symbols each referenced by one external module
+			"ss_field_a": "stateStore",
+			"ss_field_b": "stateStore",
+			"ss_field_c": "stateStore",
+			"ss_field_d": "stateStore",
+			// singleHub has 1 symbol referenced by 4 external modules
+			"hub_fn": "singleHub",
+			// consumers in different modules
+			"ca": "svc/a",
+			"cb": "svc/b",
+			"cc": "svc/c",
+			"cd": "svc/d",
+		},
+		[][2]string{
+			// 4 different symbols of stateStore each referenced by one consumer
+			{"ca", "ss_field_a"},
+			{"cb", "ss_field_b"},
+			{"cc", "ss_field_c"},
+			{"cd", "ss_field_d"},
+			// singleHub's one symbol referenced by all 4 consumers
+			{"ca", "hub_fn"},
+			{"cb", "hub_fn"},
+			{"cc", "hub_fn"},
+			{"cd", "hub_fn"},
+		},
+	)
+	m := newRiskHubMetric(makeConfig(nil))
+	result := m.Calculate(MetricInput{SymbolGraph: g})
+
+	if result.Band == bandNA {
+		t.Fatal("expected a real result, got n/a")
+	}
+	// stateStore (breadth=4) should appear before singleHub (breadth=1).
+	statePos := strings.Index(result.Display, "stateStore")
+	hubPos := strings.Index(result.Display, "singleHub")
+	if statePos == -1 || hubPos == -1 {
+		t.Fatalf("expected both 'stateStore' and 'singleHub' in display, got: %s", result.Display)
+	}
+	if statePos > hubPos {
+		t.Errorf("expected 'stateStore' (breadth 4) before 'singleHub' (breadth 1), got: %s", result.Display)
+	}
+}
+
+// TestRiskHub_KnownHubRanksTop verifies that a module with externally-referenced
+// symbols surfaces as the top-ranked hub.
+func TestRiskHub_KnownHubRanksTop(t *testing.T) {
+	// "core" module has a symbol referenced by 4 external modules.
+	// "util" module has a symbol referenced by 1 external module.
+	g := makeGraph(
+		map[string]string{
+			"hub":  "core",
 			"leaf": "util",
 			"A":    "svc/a",
 			"B":    "svc/b",
@@ -57,11 +117,11 @@ func TestRiskHub_KnownHubRanksTop(t *testing.T) {
 			"D":    "svc/d",
 		},
 		[][2]string{
-			{"A", symHub},
-			{"B", symHub},
-			{"C", symHub},
-			{"D", symHub},
-			{"A", "leaf"}, // leaf has only 1 dependent (A)
+			{"A", "hub"},
+			{"B", "hub"},
+			{"C", "hub"},
+			{"D", "hub"},
+			{"A", "leaf"}, // leaf has only 1 external referencing module
 		},
 	)
 	m := newRiskHubMetric(makeConfig(nil))
@@ -73,7 +133,7 @@ func TestRiskHub_KnownHubRanksTop(t *testing.T) {
 	if !strings.Contains(result.Display, "core") {
 		t.Errorf("expected 'core' (owner of hub) in display, got: %s", result.Display)
 	}
-	// core should appear before util in the display (higher impact).
+	// core should appear before util in the display (higher breadth).
 	corePos := strings.Index(result.Display, "core")
 	utilPos := strings.Index(result.Display, "util")
 	if utilPos != -1 && corePos > utilPos {
@@ -81,53 +141,37 @@ func TestRiskHub_KnownHubRanksTop(t *testing.T) {
 	}
 }
 
-// TestRiskHub_CyclicRefsDoNotInflate verifies that SCC condensation prevents
-// cyclic references from inflating impact counts (test (b) in the plan).
-//
-// If X ↔ Y (mutual refs) and Z → X, then X and Y are in the same SCC.
-// The SCC has 1 transitive dependent (Z). Impact of X = 1 (Z) + 1 (Y in same SCC) - 1 = 1.
-// Without condensation a naive BFS would count Y→X→Y→X... and either loop or
-// inflate. Condensation collapses X+Y to one component; Z's component is the
-// only external reverse-dependent.
-func TestRiskHub_CyclicRefsDoNotInflate(t *testing.T) {
-	// X and Y are mutually dependent (same SCC).
-	// Z depends on X.
+// TestRiskHub_IntraModuleRefsIgnored verifies that references between symbols
+// in the same module do not contribute to surface breadth.
+func TestRiskHub_IntraModuleRefsIgnored(t *testing.T) {
+	// All refs are within "mod" — no cross-module refs → breadth=0 → n/a.
 	g := makeGraph(
 		map[string]string{
 			"X": "mod",
 			"Y": "mod",
-			"Z": "other",
+			"Z": "mod",
 		},
 		[][2]string{
 			{"X", "Y"},
-			{"Y", "X"}, // cycle
+			{"Y", "Z"},
 			{"Z", "X"},
 		},
 	)
-	impact := symbolImpact(g)
+	m := newRiskHubMetric(makeConfig(nil))
+	result := m.Calculate(MetricInput{SymbolGraph: g})
 
-	// X and Y are in the same SCC. Z is the only external dependent.
-	// Expected impact of X: 1 (from Z) + (SCC size 2 - 1) = 2.
-	// Expected impact of Y: same (Z depends via X, same SCC).
-	// What must NOT happen: impact > 2 (inflation from cycling).
-	for sym, imp := range impact {
-		if imp > 3 {
-			t.Errorf("symbol %q impact %d is unexpectedly large (cycle inflation?)", sym, imp)
-		}
-	}
-	// Z has no dependents.
-	if impact["Z"] != 0 {
-		t.Errorf("Z should have 0 impact (no dependents), got %d", impact["Z"])
+	if result.Band != bandNA {
+		t.Errorf("expected n/a when only intra-module refs exist, got band=%q display=%q",
+			result.Band, result.Display)
 	}
 }
 
 // TestRiskHub_ChurnDoesNotAffectScore verifies that two MetricInput values that
-// differ ONLY in FileChurn produce identical risk_hub output (test (c) in plan).
+// differ ONLY in FileChurn produce identical risk_hub output.
 //
 // This test is structural: because risk_hub reads volatility from the
 // pre-captured moduleVolatility map (built in New before ApplyVolatility runs),
-// FileChurn cannot reach the metric at all. The test makes that invariant explicit
-// and regression-proof.
+// FileChurn cannot reach the metric at all.
 func TestRiskHub_ChurnDoesNotAffectScore(t *testing.T) {
 	g := makeGraph(
 		map[string]string{
@@ -156,7 +200,7 @@ func TestRiskHub_ChurnDoesNotAffectScore(t *testing.T) {
 }
 
 // TestRiskHub_NAWhenGraphEmpty verifies that an empty SymbolGraph produces n/a,
-// never a false zero (test (d) in the plan).
+// never a false zero.
 func TestRiskHub_NAWhenGraphEmpty(t *testing.T) {
 	m := newRiskHubMetric(makeConfig(nil))
 	result := m.Calculate(MetricInput{SymbolGraph: symbol.Graph{}})
@@ -171,21 +215,18 @@ func TestRiskHub_NAWhenGraphEmpty(t *testing.T) {
 
 // TestRiskHub_HighVolatilityRanksAboveNeutral verifies that a module with an
 // explicit high-volatility config ranks above a low-volatility module at equal
-// raw impact (test (e) in the plan).
-//
-// "alpha" (high, ×1.0) vs "beta" (low, ×0.33) at impact=1:
-// alpha score = 1.0, beta score = 0.33 → alpha wins.
+// raw breadth.
 func TestRiskHub_HighVolatilityRanksAboveNeutral(t *testing.T) {
 	g := makeGraph(
 		map[string]string{
 			"symA": "alpha",
 			"symB": "beta",
 			"depA": "consumer",
-			"depB": "consumer",
+			"depB": "consumer2",
 		},
 		[][2]string{
-			{"depA", "symA"}, // symA impact = 1
-			{"depB", "symB"}, // symB impact = 1 (equal impact)
+			{"depA", "symA"}, // alpha breadth=1
+			{"depB", "symB"}, // beta breadth=1 (equal breadth)
 		},
 	)
 	cfg := makeConfig(map[string]string{
@@ -198,8 +239,8 @@ func TestRiskHub_HighVolatilityRanksAboveNeutral(t *testing.T) {
 	if result.Band == bandNA {
 		t.Fatal("expected a real result, got n/a")
 	}
-	// "alpha" should appear before "beta" in the display because its score is
-	// higher (1×1.0=1.0 vs 1×0.33=0.33).
+	// "alpha" should appear before "beta" because its score is higher
+	// (1×1.0=1.0 vs 1×0.33=0.33).
 	alphaPos := strings.Index(result.Display, "alpha")
 	betaPos := strings.Index(result.Display, "beta")
 	if alphaPos == -1 || betaPos == -1 {
@@ -223,29 +264,48 @@ func TestRiskHub_BandIsInfo(t *testing.T) {
 	}
 }
 
-// TestSymbolImpact_EmptyGraph verifies that symbolImpact returns nil for an empty graph.
-func TestSymbolImpact_EmptyGraph(t *testing.T) {
-	impact := symbolImpact(symbol.Graph{})
-	if impact != nil {
-		t.Errorf("expected nil for empty graph, got %v", impact)
+// TestModuleSurfaceBreadth_EmptyGraph verifies that moduleSurfaceBreadth returns
+// nil for an empty graph.
+func TestModuleSurfaceBreadth_EmptyGraph(t *testing.T) {
+	breadth := moduleSurfaceBreadth(symbol.Graph{})
+	if breadth != nil {
+		t.Errorf("expected nil for empty graph, got %v", breadth)
 	}
 }
 
-// TestSymbolImpact_LinearChain verifies transitive counting in a linear chain.
-// A → B → C: C has 2 transitive dependents (A and B), B has 1 (A), A has 0.
-func TestSymbolImpact_LinearChain(t *testing.T) {
+// TestModuleSurfaceBreadth_CrossModuleOnly verifies that only cross-module refs
+// contribute to breadth.
+func TestModuleSurfaceBreadth_CrossModuleOnly(t *testing.T) {
+	// X→Y are both in "mod" (intra-module); Z→X is cross-module.
 	g := makeGraph(
-		map[string]string{"A": "m", "B": "m", "C": "m"},
-		[][2]string{{"A", "B"}, {"B", "C"}},
+		map[string]string{
+			"X": "mod",
+			"Y": "mod",
+			"Z": "other",
+		},
+		[][2]string{
+			{"X", "Y"}, // intra-module — should NOT count
+			{"Z", "X"}, // cross-module — X in "mod" gets breadth 1
+		},
 	)
-	impact := symbolImpact(g)
-	if impact["C"] != 2 {
-		t.Errorf("C should have impact 2 (A and B depend on it), got %d", impact["C"])
+	breadth := moduleSurfaceBreadth(g)
+	if breadth["mod"] != 1 {
+		t.Errorf("mod should have breadth 1 (only X is cross-module referenced), got %d", breadth["mod"])
 	}
-	if impact["B"] != 1 {
-		t.Errorf("B should have impact 1 (only A depends on it), got %d", impact["B"])
+	if breadth["other"] != 0 {
+		t.Errorf("other should have breadth 0 (Z is a referencing module, not a target), got %d", breadth["other"])
 	}
-	if impact["A"] != 0 {
-		t.Errorf("A should have impact 0 (nothing depends on it), got %d", impact["A"])
+}
+
+// TestModuleSurfaceBreadth_NoCrossModuleRefs verifies nil result when all refs
+// are intra-module.
+func TestModuleSurfaceBreadth_NoCrossModuleRefs(t *testing.T) {
+	g := makeGraph(
+		map[string]string{"A": "m", "B": "m"},
+		[][2]string{{"A", "B"}},
+	)
+	breadth := moduleSurfaceBreadth(g)
+	if breadth != nil {
+		t.Errorf("expected nil when no cross-module refs, got %v", breadth)
 	}
 }

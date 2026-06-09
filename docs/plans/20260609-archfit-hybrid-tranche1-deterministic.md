@@ -200,11 +200,11 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 
 - Create: `docs/plans/notes/risk_hub-validation.md` (results log)
 
-- [ ] run `archfit scan` (scip on) on ccgram → confirm `window_state_store` surfaces as a top risk_hub (not buried as in `blast_radius`)
-- [ ] run on codegraph, pumba, spotinfo → confirm known hubs surface; record top-5 per repo
-- [ ] compare against the architect reviews where available; note false positives/negatives
-- [ ] ⚠️ if a known hub does NOT surface, adjust ranking (impact normalization / aggregation) and re-run before proceeding
-- [ ] write the results log; mark gate pass/fail
+- [x] run `archfit scan` (scip on) on ccgram → confirm `window_state_store` surfaces as a top risk_hub (not buried as in `blast_radius`)
+- [x] run on codegraph, pumba, spotinfo → confirm known hubs surface; record top-5 per repo
+- [x] compare against the architect reviews where available; note false positives/negatives
+- [x] ⚠️ if a known hub does NOT surface, adjust ranking (impact normalization / aggregation) and re-run before proceeding
+- [x] write the results log; mark gate pass/fail
 
 ### Task 7: Architecture-fitness signal collector
 

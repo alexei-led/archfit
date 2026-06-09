@@ -36,94 +36,66 @@ func volatilityBandMultiplier(band string) float64 {
 	}
 }
 
-// symbolImpact computes, for each symbol in the graph, the count of symbols
-// that transitively depend on it (i.e. transitive reverse-reachability over
-// g.Refs). SCCs are condensed so cycles do not inflate the count — mirroring
-// blastRadius/tarjanSCC from modularity.go.
+// moduleSurfaceBreadth computes, for each module, the count of that module's
+// own symbols that are referenced by at least one symbol from a different
+// module (cross-module external surface breadth).
 //
-// g.Refs[from] = {to, ...} means "from references to", so the reverse edge
-// "to ← from" means "from depends on to". symbolImpact returns, for each "to",
-// how many symbols transitively reach it via those reverse edges.
-func symbolImpact(g symbol.Graph) map[string]int {
+// This is distinct from blast_radius (which measures module-level transitive
+// reverse-reachability) because it counts *how many of the module's own
+// symbols* are externally coupled — not how many modules transitively depend
+// on it. A state store with 73 externally-referenced fields ranks higher than
+// a utility with 1 widely-called function, even if the utility's module-level
+// blast radius is larger. This difference is the unique signal risk_hub adds.
+//
+// g.Refs[from] = {to, ...} means "from references to". For each "to" in
+// module M that has at least one cross-module "from", increment M's breadth
+// count by 1.
+func moduleSurfaceBreadth(g symbol.Graph) map[string]int {
 	if g.Empty() {
 		return nil
 	}
 
-	// Build adjacency from Refs (forward: from → to).
-	// We also need the full symbol universe (all symbols that appear in Module).
-	adj := make(map[string]map[string]struct{}, len(g.Module))
-	for sym := range g.Module {
-		adj[sym] = make(map[string]struct{})
-	}
+	// Build a set of symbols that have at least one cross-module referencing symbol.
+	externallyReferenced := make(map[string]struct{})
 	for from, tos := range g.Refs {
-		if _, known := adj[from]; !known {
-			adj[from] = make(map[string]struct{})
-		}
+		fromMod := g.Module[from]
 		for to := range tos {
 			if from == to {
 				continue
 			}
-			if _, known := adj[to]; !known {
-				adj[to] = make(map[string]struct{})
+			toMod := g.Module[to]
+			if fromMod != "" && toMod != "" && fromMod != toMod {
+				externallyReferenced[to] = struct{}{}
 			}
-			adj[from][to] = struct{}{}
 		}
 	}
 
-	// Condense SCCs so cycles don't inflate impact counts.
-	comp := tarjanSCC(adj) // symbol → component id
-	compSize := make(map[int]int)
-	for _, c := range comp {
-		compSize[c]++
+	if len(externallyReferenced) == 0 {
+		return nil
 	}
 
-	// Build reverse condensed adjacency: for each forward edge from→to
-	// (different SCCs), add crev[comp[to]][comp[from]] so we can do
-	// reverse-reachability from a target component.
-	crev := make(map[int]map[int]struct{})
-	for from, tos := range adj {
-		for to := range tos {
-			cf, ct := comp[from], comp[to]
-			if cf == ct {
-				continue
-			}
-			if crev[ct] == nil {
-				crev[ct] = make(map[int]struct{})
-			}
-			crev[ct][cf] = struct{}{}
+	// Aggregate: count of each module's symbols that are externally referenced.
+	breadth := make(map[string]int, len(g.Module))
+	for sym := range externallyReferenced {
+		mod := g.Module[sym]
+		if mod != "" {
+			breadth[mod]++
 		}
 	}
-
-	impact := make(map[string]int, len(adj))
-	for sym := range adj {
-		// Transitive reverse-reach in the condensed DAG, counting member symbols.
-		start := comp[sym]
-		seen := map[int]struct{}{start: {}}
-		stack := []int{start}
-		members := 0
-		for len(stack) > 0 {
-			c := stack[len(stack)-1]
-			stack = stack[:len(stack)-1]
-			for pc := range crev[c] {
-				if _, ok := seen[pc]; !ok {
-					seen[pc] = struct{}{}
-					members += compSize[pc]
-					stack = append(stack, pc)
-				}
-			}
-		}
-		// Symbols in the same SCC (other than sym itself) also depend on sym.
-		impact[sym] = members + (compSize[start] - 1)
-	}
-	return impact
+	return breadth
 }
 
-// RiskHubMetric surfaces symbol-level risk hubs: symbols whose transitive
-// dependents (impact) are multiplied by the owning module's explicit config
-// volatility. This is intentionally distinct from change_amplification, which
-// uses churn-derived volatility at module granularity. risk_hub uses only
-// hand-authored subdomain/volatility config — never churn — to avoid
-// double-counting the same signal.
+// RiskHubMetric surfaces symbol-level risk hubs: modules whose cross-module
+// external surface breadth (count of their own symbols referenced from other
+// modules) multiplied by the owning module's explicit config volatility
+// identifies the highest-risk hubs.
+//
+// This is intentionally distinct from blast_radius (module-level transitive
+// reachability) and change_amplification (churn-derived volatility at module
+// granularity). risk_hub uses only hand-authored subdomain/volatility config —
+// never churn — to avoid double-counting; and it counts symbol-surface breadth
+// rather than module-level fan-out, so a data store with many externally-used
+// fields ranks higher than a shallow utility with one heavily-called function.
 //
 // Volatility multipliers are captured at construction time (before
 // config.ApplyVolatility can inject churn-derived values), ensuring that
@@ -146,52 +118,34 @@ func (m RiskHubMetric) Version() string { return "risk_hub.v1" }
 // riskHubInfo holds per-module aggregated risk for display.
 type riskHubInfo struct {
 	module     string
-	risk       float64
-	topSymbol  string
-	topImpact  int
+	breadth    int     // count of externally-referenced symbols
+	risk       float64 // breadth × volatility multiplier
 	multiplier float64
 }
 
-// Calculate ranks modules by max(symbol_impact × volatility_multiplier) and
-// reports the top hubs. Returns n/a when SymbolGraph is empty (SCIP off or
+// Calculate ranks modules by (symbol-surface breadth × volatility_multiplier)
+// and reports the top hubs. Returns n/a when SymbolGraph is empty (SCIP off or
 // indexer absent) — never a false zero.
 func (m RiskHubMetric) Calculate(in MetricInput) diagnostic.MetricResult {
-	def := "symbol-level impact hubs: transitive dependents × explicit config volatility " +
-		"(churn-independent; never gates)"
+	def := "cross-module surface breadth × explicit config volatility: count of a module's " +
+		"symbols referenced from other modules (churn-independent; never gates)"
 	if in.SymbolGraph.Empty() {
 		return naCount(m.Name(), m.Version(), def)
 	}
 
-	impact := symbolImpact(in.SymbolGraph)
-	if len(impact) == 0 {
+	breadth := moduleSurfaceBreadth(in.SymbolGraph)
+	if len(breadth) == 0 {
 		return naCount(m.Name(), m.Version(), def)
 	}
 
-	// Aggregate symbols to their owning module: take the max risk score per module.
-	type symRisk struct {
-		sym    string
-		impact int
-		risk   float64
-	}
-	modBest := make(map[string]symRisk)
-	for sym, imp := range impact {
-		owningModule := in.SymbolGraph.Module[sym]
-		multiplier := m.volatilityMultiplier(owningModule)
-		risk := float64(imp) * multiplier
-		if prev, ok := modBest[owningModule]; !ok || risk > prev.risk {
-			modBest[owningModule] = symRisk{sym: sym, impact: imp, risk: risk}
-		}
-	}
-
-	// Sort modules by descending risk score.
-	hubs := make([]riskHubInfo, 0, len(modBest))
-	for mod, best := range modBest {
+	// Build ranked list of module hubs.
+	hubs := make([]riskHubInfo, 0, len(breadth))
+	for mod, b := range breadth {
 		mult := m.volatilityMultiplier(mod)
 		hubs = append(hubs, riskHubInfo{
 			module:     mod,
-			risk:       best.risk,
-			topSymbol:  best.sym,
-			topImpact:  best.impact,
+			breadth:    b,
+			risk:       float64(b) * mult,
 			multiplier: mult,
 		})
 	}
@@ -202,16 +156,21 @@ func (m RiskHubMetric) Calculate(in MetricInput) diagnostic.MetricResult {
 		return hubs[i].module < hubs[j].module
 	})
 
-	// Confidence: high when there are enough symbols; low for tiny graphs.
+	// Confidence: high when there are enough externally-referenced symbols;
+	// low for tiny graphs.
 	confidence := confidenceHigh
-	if len(impact) < modularitySmallN {
+	totalExternalSymbols := 0
+	for _, b := range breadth {
+		totalExternalSymbols += b
+	}
+	if totalExternalSymbols < modularitySmallN {
 		confidence = confidenceLow
 	}
 
 	return diagnostic.MetricResult{
 		Name:       m.Name(),
 		Value:      float64(len(hubs)),
-		Display:    riskHubDisplay(hubs, len(impact)),
+		Display:    riskHubDisplay(hubs, totalExternalSymbols),
 		Band:       bandInformational,
 		Confidence: confidence,
 		Version:    m.Version(),
@@ -230,9 +189,9 @@ func (m RiskHubMetric) volatilityMultiplier(module string) float64 {
 }
 
 // riskHubDisplay renders the top-N hubs compactly for human/LLM output.
-func riskHubDisplay(hubs []riskHubInfo, totalSymbols int) string {
+func riskHubDisplay(hubs []riskHubInfo, totalExternalSymbols int) string {
 	if len(hubs) == 0 {
-		return fmt.Sprintf("0 risk hubs (%d symbols)", totalSymbols)
+		return fmt.Sprintf("0 risk hubs (%d external symbols)", totalExternalSymbols)
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d risk hub(s): ", len(hubs))
@@ -244,26 +203,8 @@ func riskHubDisplay(hubs []riskHubInfo, totalSymbols int) string {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		sym := shortSymbol(h.topSymbol)
-		fmt.Fprintf(&b, "%s [%s, impact %d, ×%.2f→%.2f]",
-			shortModule(h.module), sym, h.topImpact, h.multiplier, h.risk)
+		fmt.Fprintf(&b, "%s [breadth %d, ×%.2f→%.2f]",
+			shortModule(h.module), h.breadth, h.multiplier, h.risk)
 	}
 	return b.String()
-}
-
-// shortSymbol trims a fully-qualified symbol to its last identifier for compact display.
-func shortSymbol(sym string) string {
-	// SCIP symbols look like "go package path/TypeName#MethodName()." or similar;
-	// take the last non-empty segment after splitting on common delimiters.
-	sym = strings.TrimRight(sym, ".")
-	for _, sep := range []string{"#", ".", "/"} {
-		if i := strings.LastIndex(sym, sep); i >= 0 {
-			candidate := sym[i+1:]
-			if candidate != "" {
-				sym = candidate
-				break
-			}
-		}
-	}
-	return sym
 }
