@@ -7,31 +7,18 @@ import (
 	"path/filepath"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
-// SymbolGraph holds per-symbol metadata extracted from a SCIP index.
-//
-//   - Module maps each symbol to its owning module/package path.
-//   - FanIn counts the number of distinct documents that reference each symbol
-//     (excluding the defining document).
-//   - Refs is a symbol-to-symbol adjacency for cross-module reference edges:
-//     Refs[fromSymbol] is the set of symbols that fromSymbol references in a
-//     different module.
-type SymbolGraph struct {
-	Module map[string]string
-	FanIn  map[string]int
-	Refs   map[string]map[string]struct{}
-}
-
 // Symbols runs a SCIP indexer over the project, reads the index, and returns
-// a SymbolGraph with per-symbol module ownership, fan-in, and cross-module
+// a symbol.Graph with per-symbol module ownership, fan-in, and cross-module
 // reference edges. A missing toolchain (no indexer, no uv) or any non-fatal
-// failure yields an empty SymbolGraph with an absent/partial coverage record,
+// failure yields an empty symbol.Graph with an absent/partial coverage record,
 // never an error — symbol-graph enrichment is best-effort.
-func (a *Adapter) Symbols(ctx context.Context, s scope.Scope) (SymbolGraph, diagnostic.Coverage, error) {
-	empty := SymbolGraph{}
+func (a *Adapter) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
+	empty := symbol.Graph{}
 	absent := diagnostic.Coverage{Tool: toolName, Status: statusAbsent}
 
 	indexer, pkg, lang, ok := a.detectIndexer(ctx, s.Root)
@@ -81,28 +68,28 @@ func (a *Adapter) Symbols(ctx context.Context, s scope.Scope) (SymbolGraph, diag
 		return empty, partial, nil
 	}
 
-	graph, perr := parseReaderSymbols(rdOut.Stdout)
+	g, perr := parseReaderSymbols(rdOut.Stdout)
 	if perr != nil {
 		return empty, partial, nil
 	}
-	return graph, diagnostic.Coverage{
+	return g, diagnostic.Coverage{
 		Tool:            toolName,
 		Version:         indexer,
-		FilesSeen:       len(graph.Module),
-		FilesApplicable: len(graph.Module),
+		FilesSeen:       len(g.Module),
+		FilesApplicable: len(g.Module),
 		Status:          statusOK,
 	}, nil
 }
 
-// parseReaderSymbols parses scip_reader.py JSON into a SymbolGraph.
+// parseReaderSymbols parses scip_reader.py JSON into a symbol.Graph.
 // A helper-reported error in the JSON fails the parse.
-func parseReaderSymbols(stdout []byte) (SymbolGraph, error) {
+func parseReaderSymbols(stdout []byte) (symbol.Graph, error) {
 	var ro readerOutput
 	if err := json.Unmarshal(stdout, &ro); err != nil {
-		return SymbolGraph{}, err
+		return symbol.Graph{}, err
 	}
 	if ro.Error != "" {
-		return SymbolGraph{}, errReader(ro.Error)
+		return symbol.Graph{}, errReader(ro.Error)
 	}
 
 	module := make(map[string]string, len(ro.Symbols))
@@ -120,5 +107,5 @@ func parseReaderSymbols(stdout []byte) (SymbolGraph, error) {
 		refs[r.FromSymbol][r.ToSymbol] = struct{}{}
 	}
 
-	return SymbolGraph{Module: module, FanIn: fanIn, Refs: refs}, nil
+	return symbol.Graph{Module: module, FanIn: fanIn, Refs: refs}, nil
 }

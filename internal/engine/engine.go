@@ -73,6 +73,11 @@ func Run(
 	scipStrength, scipCov, _ := sr.Strengths(ctx, s)
 	coverages = append(coverages, scipCov)
 
+	// Symbol graph (SCIP) — per-symbol ownership, fan-in, and cross-module refs.
+	// Empty when SCIP is off/absent; metrics that need it report n/a in that case.
+	scipSymbols, scipSymCov, _ := sr.Symbols(ctx, s)
+	coverages = append(coverages, scipSymCov)
+
 	for _, ex := range extractors {
 		facts, cov, err := ex.Extract(ctx, s)
 		if err != nil {
@@ -121,6 +126,7 @@ func Run(
 		CoChange:        change.CoChange,
 		FileLOC:         change.FileLOC,
 		Complexity:      change.Complexity,
+		SymbolGraph:     scipSymbols,
 	}
 	metricResults := make([]diagnostic.MetricResult, 0, len(ms))
 	for _, m := range ms {

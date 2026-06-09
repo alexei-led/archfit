@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
@@ -30,6 +31,9 @@ type SymbolResolverMock struct {
 	// StrengthsFunc mocks the Strengths method.
 	StrengthsFunc func(ctx context.Context, s scope.Scope) (map[string]string, diagnostic.Coverage, error)
 
+	// SymbolsFunc mocks the Symbols method.
+	SymbolsFunc func(ctx context.Context, s scope.Scope) (symbol.Graph, diagnostic.Coverage, error)
+
 	// calls tracks calls to the methods.
 	calls struct {
 		// Name holds details about calls to the Name method.
@@ -50,10 +54,18 @@ type SymbolResolverMock struct {
 			// S is the s argument value.
 			S scope.Scope
 		}
+		// Symbols holds details about calls to the Symbols method.
+		Symbols []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// S is the s argument value.
+			S scope.Scope
+		}
 	}
 	lockName      sync.RWMutex
 	lockResolve   sync.RWMutex
 	lockStrengths sync.RWMutex
+	lockSymbols   sync.RWMutex
 }
 
 // Name calls NameFunc.
@@ -122,4 +134,49 @@ func (m *SymbolResolverMock) Strengths(ctx context.Context, s scope.Scope) (map[
 	m.calls.Strengths = append(m.calls.Strengths, call)
 	m.lockStrengths.Unlock()
 	return m.StrengthsFunc(ctx, s)
+}
+
+// StrengthsCalls returns all calls that were made to Strengths.
+func (m *SymbolResolverMock) StrengthsCalls() []struct {
+	Ctx context.Context
+	S   scope.Scope
+} {
+	m.lockStrengths.RLock()
+	defer m.lockStrengths.RUnlock()
+	calls := make([]struct {
+		Ctx context.Context
+		S   scope.Scope
+	}, len(m.calls.Strengths))
+	copy(calls, m.calls.Strengths)
+	return calls
+}
+
+// Symbols calls SymbolsFunc.
+func (m *SymbolResolverMock) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
+	if m.SymbolsFunc == nil {
+		panic("SymbolResolverMock.SymbolsFunc is nil but SymbolResolver.Symbols was called")
+	}
+	call := struct {
+		Ctx context.Context
+		S   scope.Scope
+	}{Ctx: ctx, S: s}
+	m.lockSymbols.Lock()
+	m.calls.Symbols = append(m.calls.Symbols, call)
+	m.lockSymbols.Unlock()
+	return m.SymbolsFunc(ctx, s)
+}
+
+// SymbolsCalls returns all calls that were made to Symbols.
+func (m *SymbolResolverMock) SymbolsCalls() []struct {
+	Ctx context.Context
+	S   scope.Scope
+} {
+	m.lockSymbols.RLock()
+	defer m.lockSymbols.RUnlock()
+	calls := make([]struct {
+		Ctx context.Context
+		S   scope.Scope
+	}, len(m.calls.Symbols))
+	copy(calls, m.calls.Symbols)
+	return calls
 }

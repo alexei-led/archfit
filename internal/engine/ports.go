@@ -7,8 +7,12 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/scope"
 )
+
+// statusAbsent is the coverage status returned by no-op ports when the tool is not present.
+const statusAbsent = "absent"
 
 //go:generate moq -out extractor_moq.go . Extractor
 //go:generate moq -out pattern_provider_moq.go . PatternProvider
@@ -71,6 +75,14 @@ type SymbolResolver interface {
 	// are coupling strengths ("contract"/"model"/"functional"/"intrusive"). A missing
 	// tool returns an empty map and status="absent" coverage — never an error.
 	Strengths(ctx context.Context, s scope.Scope) (map[string]string, diagnostic.Coverage, error)
+
+	// Symbols returns per-symbol module ownership, fan-in, and cross-module
+	// reference edges from a SCIP index. A missing tool or any non-fatal failure
+	// returns an empty Graph and absent/partial coverage — never an error.
+	//
+	// TODO(perf): Strengths and Symbols each run the indexer separately. Merge into
+	// a single indexer+reader pass so enabling scip does not double the index time.
+	Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, diagnostic.Coverage, error)
 }
 
 // NopPatternProvider is a no-op PatternProvider used when no Phase 3 tools are
@@ -84,7 +96,7 @@ func (NopPatternProvider) Name() string { return "nop-pattern" }
 
 // Find returns empty matches and an absent coverage record.
 func (NopPatternProvider) Find(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]PatternMatch, diagnostic.Coverage, error) {
-	return nil, diagnostic.Coverage{Tool: "ast-grep", Status: "absent"}, nil
+	return nil, diagnostic.Coverage{Tool: "ast-grep", Status: statusAbsent}, nil
 }
 
 // NopSymbolResolver is a no-op SymbolResolver used when no Phase 3 tools are
@@ -103,7 +115,12 @@ func (NopSymbolResolver) Resolve(_ context.Context, _, toPath string) (string, s
 
 // Strengths returns an empty map and an absent coverage record.
 func (NopSymbolResolver) Strengths(_ context.Context, _ scope.Scope) (map[string]string, diagnostic.Coverage, error) {
-	return nil, diagnostic.Coverage{Tool: "scip", Status: "absent"}, nil
+	return nil, diagnostic.Coverage{Tool: "scip", Status: statusAbsent}, nil
+}
+
+// Symbols returns an empty Graph and an absent coverage record.
+func (NopSymbolResolver) Symbols(_ context.Context, _ scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
+	return symbol.Graph{}, diagnostic.Coverage{Tool: "scip", Status: statusAbsent}, nil
 }
 
 // Renderer is the port that output adapters satisfy.

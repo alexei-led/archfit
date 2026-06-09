@@ -8,6 +8,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/symbol"
 )
 
 // Band name constants (spec §10.1).
@@ -79,6 +80,10 @@ type MetricInput struct {
 	// Complexity is per-function cyclomatic complexity from an external tool
 	// (lizard), for the complexity metric. Empty when the opt-in tool is off/absent.
 	Complexity []ComplexityFunc
+	// SymbolGraph is per-symbol module ownership, fan-in, and cross-module reference
+	// edges from a SCIP index. Empty when SCIP is off or the indexer is absent;
+	// metrics that need it must report n/a when SymbolGraph.Empty() is true.
+	SymbolGraph symbol.Graph
 }
 
 // ---------------------------------------------------------------------------

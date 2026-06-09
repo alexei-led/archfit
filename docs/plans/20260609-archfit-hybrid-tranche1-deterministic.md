@@ -173,11 +173,11 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 - Modify: `cmd/archfit/main.go` (call `scip.Symbols` when `tools.scip.enabled: on`)
 - Modify: `internal/engine/engine_test.go`
 
-- [ ] add `SymbolGraph` field to `MetricInput` (and the engine carrier) with doc comment; empty when SCIP off/absent
-- [ ] wire `cmd` to collect the symbol graph alongside existing strength hints (single indexer run if practical)
-- [ ] thread it through the engine to `Calculate`
-- [ ] write tests: engine forwards a populated SymbolGraph; empty when resolver absent
-- [ ] run tests — must pass before Task 5
+- [x] add `SymbolGraph` field to `MetricInput` (and the engine carrier) with doc comment; empty when SCIP off/absent
+- [x] wire `cmd` to collect the symbol graph alongside existing strength hints (single indexer run if practical)
+- [x] thread it through the engine to `Calculate`
+- [x] write tests: engine forwards a populated SymbolGraph; empty when resolver absent
+- [x] run tests — must pass before Task 5
 
 ### Task 5: Implement risk_hub metric (symbol-level impact × volatility)
 

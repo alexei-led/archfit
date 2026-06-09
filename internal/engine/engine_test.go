@@ -12,6 +12,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 )
@@ -31,6 +32,13 @@ const (
 	headRef         = "HEAD"
 	kindAdvisory    = "advisory"
 	toolNameAstgrep = "ast-grep"
+	toolNameScip    = "scip"
+
+	// confidenceHigh is the string literal used in Facts and symbol graph tests.
+	confidenceHigh = "high"
+
+	// symbolFoo is the test symbol used in SymbolGraph forwarding tests.
+	symbolFoo = "pkg/a.Foo"
 )
 
 // cannedConfig builds a ClassifyConfig and RuleConfig for a two-module (a, b)
@@ -82,7 +90,7 @@ func violationFacts() graph.Facts {
 				To:         pathFileBInternalNode,
 				Kind:       graph.EdgeKindUsesInternal,
 				Language:   "go",
-				Confidence: "high",
+				Confidence: confidenceHigh,
 				Locations:  []graph.Location{{File: pathFileA, Line: 5}},
 			},
 		},
@@ -603,5 +611,134 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 	}
 	if d.Summary.GateFindings != 0 {
 		t.Errorf("summary.gate_findings=%d, want 0", d.Summary.GateFindings)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SymbolGraph forwarding tests
+// ---------------------------------------------------------------------------
+
+// spyMetric is a test-only metrics.Metric that captures the MetricInput it receives.
+type spyMetric struct {
+	captured *metrics.MetricInput
+}
+
+func (s *spyMetric) Name() string    { return "spy" }
+func (s *spyMetric) Version() string { return "spy.v1" }
+func (s *spyMetric) Calculate(in metrics.MetricInput) diagnostic.MetricResult {
+	*s.captured = in
+	return diagnostic.MetricResult{Name: s.Name(), Version: s.Version(), Band: "n/a"}
+}
+
+// TestRun_SymbolGraph_ForwardedToMetricInput verifies that a populated symbol.Graph
+// returned by the SymbolResolver is threaded through to MetricInput.SymbolGraph.
+func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
+	ctx := context.Background()
+
+	wantGraph := symbol.Graph{
+		Module: map[string]string{symbolFoo: "a"},
+		FanIn:  map[string]int{symbolFoo: 3},
+		Refs:   map[string]map[string]struct{}{symbolFoo: {"pkg/b.Bar": {}}},
+	}
+
+	sr := &engine.SymbolResolverMock{
+		NameFunc: func() string { return toolNameScip },
+		ResolveFunc: func(_ context.Context, _, toPath string) (string, string) {
+			return toPath, confidenceHigh
+		},
+		StrengthsFunc: func(_ context.Context, _ scope.Scope) (map[string]string, diagnostic.Coverage, error) {
+			return nil, diagnostic.Coverage{Tool: toolNameScip, Status: "absent"}, nil
+		},
+		SymbolsFunc: func(_ context.Context, _ scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
+			return wantGraph, diagnostic.Coverage{Tool: toolNameScip, Status: "ok", FilesSeen: 1, FilesApplicable: 1}, nil
+		},
+	}
+
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	var captured metrics.MetricInput
+	spy := &spyMetric{captured: &captured}
+
+	classifyCfg, rs := cannedConfig()
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	_, err := engine.Run(
+		ctx,
+		engine.Mode{Head: headRef},
+		scope.Scope{Root: "."},
+		classifyCfg,
+		config.StalenessConfig{},
+		config.ExceptionSet{},
+		[]engine.Extractor{ex},
+		engine.NopPatternProvider{},
+		sr,
+		config.PatternConfig{},
+		rs,
+		[]metrics.Metric{spy},
+		baseline.Baseline{},
+		metrics.ChangeHistory{},
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if captured.SymbolGraph.Empty() {
+		t.Fatal("MetricInput.SymbolGraph is empty, want populated graph")
+	}
+	if got := captured.SymbolGraph.Module["pkg/a.Foo"]; got != "a" {
+		t.Errorf("SymbolGraph.Module[pkg/a.Foo]=%q, want %q", got, "a")
+	}
+	if got := captured.SymbolGraph.FanIn["pkg/a.Foo"]; got != 3 {
+		t.Errorf("SymbolGraph.FanIn[pkg/a.Foo]=%d, want 3", got)
+	}
+}
+
+// TestRun_SymbolGraph_EmptyWhenNopResolver verifies that NopSymbolResolver results
+// in an empty SymbolGraph reaching MetricInput (no SCIP configured).
+func TestRun_SymbolGraph_EmptyWhenNopResolver(t *testing.T) {
+	ctx := context.Background()
+
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	var captured metrics.MetricInput
+	spy := &spyMetric{captured: &captured}
+
+	classifyCfg, rs := cannedConfig()
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	_, err := engine.Run(
+		ctx,
+		engine.Mode{Head: headRef},
+		scope.Scope{Root: "."},
+		classifyCfg,
+		config.StalenessConfig{},
+		config.ExceptionSet{},
+		[]engine.Extractor{ex},
+		engine.NopPatternProvider{},
+		engine.NopSymbolResolver{},
+		config.PatternConfig{},
+		rs,
+		[]metrics.Metric{spy},
+		baseline.Baseline{},
+		metrics.ChangeHistory{},
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if !captured.SymbolGraph.Empty() {
+		t.Errorf("MetricInput.SymbolGraph is non-empty with NopSymbolResolver, want empty")
 	}
 }
