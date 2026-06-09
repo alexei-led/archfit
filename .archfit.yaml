@@ -235,3 +235,7 @@ metrics:
     enabled: false
   functional_candidates:
     enabled: false
+  cohesion_spread:
+    enabled: false
+  shared_state_hub:
+    enabled: false

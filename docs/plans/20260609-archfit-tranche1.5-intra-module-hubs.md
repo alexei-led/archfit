@@ -150,13 +150,13 @@ exists from in F with from→to in Refs }`, where `subsystem(x)` = `x` with its 
 - Modify: `internal/config/config.go` only if a new key is rejected by the loader
 - Modify: `internal/config/config_test.go`
 
-- [ ] add `metrics.cohesion_spread` and `metrics.shared_state_hub` entries (reuse
+- [x] add `metrics.cohesion_spread` and `metrics.shared_state_hub` entries (reuse
       `MetricEntry`; band info), consistent with the existing `risk_hub` entry
-- [ ] confirm the loader accepts the new metric names (unknown-key tolerance already exists;
+- [x] confirm the loader accepts the new metric names (unknown-key tolerance already exists;
       add only if a test shows rejection)
-- [ ] write/extend test: config with the two new metric entries loads; defaults applied when
+- [x] write/extend test: config with the two new metric entries loads; defaults applied when
       absent
-- [ ] run tests — must pass before Task 2
+- [x] run tests — must pass before Task 2
 
 ### Task 2: cohesion_spread metric (outbound fan-out / low cohesion)
 
