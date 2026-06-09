@@ -128,6 +128,7 @@ func Run(
 		Complexity:      change.Complexity,
 		SymbolGraph:     scipSymbols,
 		FitnessSignals:  change.FitnessSignals,
+		CloneClusters:   change.CloneClusters,
 	}
 	metricResults := make([]diagnostic.MetricResult, 0, len(ms))
 	for _, m := range ms {

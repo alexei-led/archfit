@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/extract/clones"
 	"github.com/alexei-led/archfit/internal/fitness"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -60,6 +61,7 @@ type ChangeHistory struct {
 	FileLOC        map[string]int    // source file -> lines of code (tests excluded)
 	Complexity     []ComplexityFunc  // per-function cyclomatic complexity (external tool)
 	FitnessSignals fitness.Signals   // architecture-intent enforcement signals (filesystem scan)
+	CloneClusters  []clones.Cluster  // duplicated code blocks across files (clone detector)
 }
 
 // MetricInput is the complete input set for all metrics.
@@ -90,6 +92,10 @@ type MetricInput struct {
 	// (arch tests, import-linter config, arch-linter in CI). Zero-value Signals
 	// (EvidencePaths == nil) means the scan was never run; metrics must report n/a.
 	FitnessSignals fitness.Signals
+	// CloneClusters holds duplicated-code blocks detected by an external clone
+	// detector (e.g. jscpd). Empty when the tool is disabled or absent; metrics
+	// that need it must report n/a when CloneClusters is nil/empty.
+	CloneClusters []clones.Cluster
 }
 
 // ---------------------------------------------------------------------------
@@ -657,6 +663,7 @@ func New(cfg config.Config) []Metric {
 		ComplexityMetric{},
 		newRiskHubMetric(cfg),
 		ArchitectureFitnessMetric{},
+		FunctionalCandidatesMetric{},
 	}
 }
 

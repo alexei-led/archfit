@@ -281,11 +281,11 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 - Modify: `internal/metrics/metrics.go` (`CloneClusters` field; register metric)
 - Modify: `cmd/archfit/main.go` (wire clones runner output)
 
-- [ ] add `CloneClusters` to `MetricInput`; wire from the clones runner
-- [ ] implement `FunctionalCandidatesMetric.Calculate` — count module pairs that share duplicated logic (clone clusters), cross-referenced with `CoChange`; `band: info`
-- [ ] explicitly distinct from `hidden_coupling` (co-change-without-edge): this is duplication-based; note the distinction in the metric definition string
-- [ ] write tests: clone clusters → candidate pairs; no clones → n/a; dedup pairs
-- [ ] run tests — must pass before Task 13
+- [x] add `CloneClusters` to `MetricInput`; wire from the clones runner
+- [x] implement `FunctionalCandidatesMetric.Calculate` — count module pairs that share duplicated logic (clone clusters), cross-referenced with `CoChange`; `band: info`
+- [x] explicitly distinct from `hidden_coupling` (co-change-without-edge): this is duplication-based; note the distinction in the metric definition string
+- [x] write tests: clone clusters → candidate pairs; no clones → n/a; dedup pairs
+- [x] run tests — must pass before Task 13
 
 ### Task 13: gitnexus optional symbol-impact provider
 

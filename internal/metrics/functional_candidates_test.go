@@ -1,0 +1,158 @@
+package metrics_test
+
+import (
+	"testing"
+
+	"github.com/alexei-led/archfit/internal/extract/clones"
+	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/model/graph"
+)
+
+// bandInfo is the expected band for all functional_candidates results with data.
+const bandInfo = "info"
+
+// twoGoNodes returns a minimal graph with two Go-file nodes and one import edge
+// so dominantLanguage returns "go" and file→module mapping works correctly.
+func twoGoNodes() *graph.Graph {
+	nodes := []graph.Node{
+		{Kind: graph.NodeKindFile, Path: pathA},
+		{Kind: graph.NodeKindFile, Path: pathB},
+	}
+	edges := []graph.Edge{
+		{From: "file:" + pathA, To: "file:" + pathB, Kind: graph.EdgeKindImports, Language: "go"},
+	}
+	return buildGraph(nodes, edges)
+}
+
+func TestFunctionalCandidates_Calculate(t *testing.T) {
+	m := metrics.FunctionalCandidatesMetric{}
+
+	// pathA = "pkg/a/a.go" → module "pkg/a"
+	// pathB = "pkg/b/b.go" → module "pkg/b"
+	// pathC = "pkg/c/c.go" → module "pkg/c"
+
+	tests := []struct {
+		name      string
+		clusters  []clones.Cluster
+		coChange  map[[2]string]int
+		g         *graph.Graph
+		wantBand  string
+		wantValue float64
+	}{
+		{
+			name:      "no clone data → n/a",
+			clusters:  nil,
+			g:         twoGoNodes(),
+			wantBand:  bandNAStr,
+			wantValue: 0,
+		},
+		{
+			name:      "nil graph → n/a",
+			clusters:  []clones.Cluster{{Files: []string{pathA, pathB}, Lines: 10}},
+			g:         nil,
+			wantBand:  bandNAStr,
+			wantValue: 0,
+		},
+		{
+			name: "one cross-module cluster → one pair",
+			clusters: []clones.Cluster{
+				{Files: []string{pathA, pathB}, Lines: 20},
+			},
+			g:         twoGoNodes(),
+			wantBand:  bandInfo,
+			wantValue: 1,
+		},
+		{
+			name: "two clusters same module pair → deduped to one",
+			clusters: []clones.Cluster{
+				{Files: []string{pathA, pathB}, Lines: 10},
+				{Files: []string{pathA, pathB}, Lines: 15},
+			},
+			g:         twoGoNodes(),
+			wantBand:  bandInfo,
+			wantValue: 1,
+		},
+		{
+			name: "two distinct cross-module pairs",
+			clusters: []clones.Cluster{
+				{Files: []string{pathA, pathB}, Lines: 10},
+				{Files: []string{pathA, pathC}, Lines: 8},
+			},
+			g: buildGraph(
+				[]graph.Node{
+					{Kind: graph.NodeKindFile, Path: pathA},
+					{Kind: graph.NodeKindFile, Path: pathB},
+					{Kind: graph.NodeKindFile, Path: pathC},
+				},
+				[]graph.Edge{
+					{From: "file:" + pathA, To: "file:" + pathB, Kind: graph.EdgeKindImports, Language: "go"},
+					{From: "file:" + pathA, To: "file:" + pathC, Kind: graph.EdgeKindImports, Language: "go"},
+				},
+			),
+			wantBand:  bandInfo,
+			wantValue: 2,
+		},
+		{
+			name: "same-module cluster → no cross-module pair → n/a",
+			clusters: []clones.Cluster{
+				// Both files resolve to module "pkg/a"
+				{Files: []string{"pkg/a/a.go", "pkg/a/b.go"}, Lines: 10},
+			},
+			g:         twoGoNodes(),
+			wantBand:  bandNAStr,
+			wantValue: 0,
+		},
+		{
+			name: "cross-module pair also co-changes",
+			clusters: []clones.Cluster{
+				{Files: []string{pathA, pathB}, Lines: 20},
+			},
+			coChange: map[[2]string]int{
+				{pathA, pathB}: 5,
+			},
+			g:         twoGoNodes(),
+			wantBand:  bandInfo,
+			wantValue: 1,
+		},
+		{
+			name: "co-change on different pair → clone pair unaffected",
+			clusters: []clones.Cluster{
+				{Files: []string{pathA, pathB}, Lines: 20},
+			},
+			coChange: map[[2]string]int{
+				{pathA, pathC}: 3,
+			},
+			g:         twoGoNodes(),
+			wantBand:  bandInfo,
+			wantValue: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			in := metrics.MetricInput{
+				Graph:         tc.g,
+				CloneClusters: tc.clusters,
+				CoChange:      tc.coChange,
+			}
+			got := m.Calculate(in)
+
+			if got.Band != tc.wantBand {
+				t.Errorf("band=%q want %q", got.Band, tc.wantBand)
+			}
+			if got.Value != tc.wantValue {
+				t.Errorf("value=%v want %v", got.Value, tc.wantValue)
+			}
+			if got.Name != "functional_candidates" {
+				t.Errorf("name=%q want %q", got.Name, "functional_candidates")
+			}
+			if got.Version != "functional_candidates.v1" {
+				t.Errorf("version=%q want %q", got.Version, "functional_candidates.v1")
+			}
+			// Delta must be nil — report-only metric must never flip the verdict.
+			if got.Delta != nil {
+				t.Errorf("delta want nil got %v", *got.Delta)
+			}
+		})
+	}
+}

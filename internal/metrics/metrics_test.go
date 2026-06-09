@@ -549,8 +549,8 @@ func TestBandModel_LowConfidenceCap(t *testing.T) {
 
 func TestNew_ReturnsAllMetrics(t *testing.T) {
 	ms := metrics.New(config.Config{})
-	if len(ms) != 11 {
-		t.Errorf("expected 11 metrics got %d", len(ms))
+	if len(ms) != 12 {
+		t.Errorf("expected 12 metrics got %d", len(ms))
 	}
 	names := make(map[string]bool)
 	for _, m := range ms {
