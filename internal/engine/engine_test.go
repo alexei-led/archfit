@@ -145,6 +145,7 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 		rs,
 		ms,
 		base,
+		metrics.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -220,6 +221,7 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 		rs,
 		ms,
 		base,
+		metrics.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -271,6 +273,7 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		rs,
 		ms,
 		base,
+		metrics.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -298,9 +301,9 @@ func TestRun_DiagnosticShape(t *testing.T) {
 	if d.ToolCoverage == nil {
 		t.Errorf("tool_coverage is nil, want typed empty slice")
 	}
-	// Metrics should contain all Phase 1 metrics.
-	if len(d.Metrics) != 4 {
-		t.Errorf("len(metrics)=%d, want 4", len(d.Metrics))
+	// Metrics should contain all registered metrics.
+	if len(d.Metrics) != 9 {
+		t.Errorf("len(metrics)=%d, want 9", len(d.Metrics))
 	}
 }
 
@@ -336,6 +339,7 @@ func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 		rs,
 		ms,
 		base,
+		metrics.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -384,6 +388,7 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 		rs,
 		ms,
 		base,
+		metrics.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -445,6 +450,7 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 		rs,
 		ms,
 		base,
+		metrics.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -517,6 +523,7 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 		rs,
 		ms,
 		base,
+		metrics.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -583,6 +590,7 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 		rs,
 		ms,
 		base,
+		metrics.ChangeHistory{},
 		now,
 	)
 	if err != nil {

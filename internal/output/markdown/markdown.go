@@ -1,211 +1,136 @@
-// Package markdown implements the Renderer port for Markdown output.
-// It uses text/template for the report skeleton and go-pretty/v6/table
-// for tabular sections. When stdout is a terminal, tables are rendered with
-// color; otherwise GFM markdown tables are used.
+// Package markdown renders a Diagnostic as clean, LLM-friendly Markdown:
+// `##` sections and `-` lists, no box-drawing tables (which do not align in raw
+// text). Reads well both as raw text and rendered Markdown.
 package markdown
 
 import (
-	_ "embed"
+	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strings"
-	"text/template"
-
-	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/jedib0t/go-pretty/v6/text"
-	"golang.org/x/term"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 )
 
-//go:embed report.tmpl
-var reportTmpl string
-
-// severityRank maps severity strings to an integer rank (higher = more severe).
-var severityRank = map[finding.Severity]int{
-	finding.SeverityCritical: 4,
-	finding.SeverityHigh:     3,
-	finding.SeverityMedium:   2,
-	finding.SeverityLow:      1,
-}
-
 // Renderer formats a Diagnostic as Markdown. Satisfies engine.Renderer.
-type Renderer struct {
-	isTTY bool
-}
+type Renderer struct{}
 
-// New returns a Renderer. Terminal detection uses os.Stdout.
-func New() *Renderer {
-	return &Renderer{
-		isTTY: term.IsTerminal(int(os.Stdout.Fd())),
-	}
-}
+// New returns a Renderer.
+func New() *Renderer { return &Renderer{} }
 
 // Format returns "markdown".
 func (r *Renderer) Format() string { return "markdown" }
 
 // Render writes the Markdown report for d to w.
 func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
-	tmpl, err := template.New("report").Parse(reportTmpl)
-	if err != nil {
-		return err
-	}
+	var b strings.Builder
+	verdict, exitCode := verdictLabel(d.Verdict)
 
-	data := r.buildTemplateData(d)
-	return tmpl.Execute(w, data)
-}
+	b.WriteString("# archfit report\n\n")
+	fmt.Fprintf(&b, "**Verdict:** %s (exit %d)\n", verdict, exitCode)
 
-// templateData holds all pre-rendered strings passed into the template.
-type templateData struct {
-	Verdict string
-	Summary diagnostic.Summary
-	Metrics []diagnostic.MetricResult
+	b.WriteString("\n## Summary\n\n")
+	fmt.Fprintf(&b, "- gate findings: %d\n", d.Summary.GateFindings)
+	fmt.Fprintf(&b, "- warnings: %d\n", d.Summary.Warnings)
+	fmt.Fprintf(&b, "- exceptions used: %d\n", d.Summary.ExceptionsUsed)
 
-	// Pre-rendered table strings (empty string = section omitted).
-	GateTable        string
-	AdvisoryTable    string
-	MetricsTable     string
-	StalenessTable   string
-	ExceptionTable   string
-	AllFindingsTable string
-
-	// Slices used for conditional checks in template.
-	AllFindings []finding.Finding
-}
-
-func (r *Renderer) buildTemplateData(d diagnostic.Diagnostic) templateData {
-	// Partition findings.
-	gate := make([]finding.Finding, 0, len(d.Findings))
-	advisory := make([]finding.Finding, 0, len(d.Findings))
-	staleness := make([]finding.Finding, 0, len(d.Findings))
-	exceptions := make([]finding.Finding, 0, len(d.Findings))
-	all := make([]finding.Finding, 0, len(d.Findings))
-	for _, f := range d.Findings {
-		all = append(all, f)
-		switch {
-		case f.Kind == "advisory" && strings.HasPrefix(f.RuleID, "map/"):
-			staleness = append(staleness, f)
-		case f.Kind == "advisory":
-			advisory = append(advisory, f)
-		case f.Status == finding.StatusExcepted || f.Status == finding.StatusExpiredExcept:
-			exceptions = append(exceptions, f)
-		default:
-			gate = append(gate, f)
-		}
-	}
-
-	// Sort gate findings by severity (desc), stable by ID.
-	sort.SliceStable(gate, func(i, j int) bool {
-		ri, rj := severityRank[gate[i].Severity], severityRank[gate[j].Severity]
-		if ri != rj {
-			return ri > rj
-		}
-		return gate[i].ID < gate[j].ID
-	})
-	top10 := gate
-	if len(top10) > 10 {
-		top10 = top10[:10]
-	}
-
-	td := templateData{
-		Verdict:     string(d.Verdict),
-		Summary:     d.Summary,
-		Metrics:     d.Metrics,
-		AllFindings: all,
-	}
-
-	if len(top10) > 0 {
-		td.GateTable = r.renderFindingsTable(top10)
-	}
-	if len(advisory) > 0 {
-		td.AdvisoryTable = r.renderFindingsTable(advisory)
-	}
 	if len(d.Metrics) > 0 {
-		td.MetricsTable = r.renderMetricsTable(d.Metrics)
-	}
-	if len(staleness) > 0 {
-		td.StalenessTable = r.renderFindingsTable(staleness)
-	}
-	if len(exceptions) > 0 {
-		td.ExceptionTable = r.renderFindingsTable(exceptions)
-	}
-	if len(all) > 0 {
-		td.AllFindingsTable = r.renderFindingsTable(all)
-	}
-
-	return td
-}
-
-// renderFindingsTable builds a table for a slice of findings.
-func (r *Renderer) renderFindingsTable(findings []finding.Finding) string {
-	t := newTable(r.isTTY)
-	t.AppendHeader(table.Row{"ID", "Rule", "Severity", "From", "To", "Status"})
-	for _, f := range findings {
-		id := f.ID
-		if len(id) > 8 {
-			id = id[:8]
+		b.WriteString("\n## Metrics\n\n")
+		for _, m := range d.Metrics {
+			band := m.Band
+			if m.Confidence != "" && m.Confidence != "high" {
+				band = fmt.Sprintf("%s (%s confidence)", band, m.Confidence)
+			}
+			fmt.Fprintf(&b, "- **%s**: %s — %s\n", m.Name, m.Display, band)
 		}
-		t.AppendRow(table.Row{
-			id, // short ID (first 8 chars)
-			f.RuleID,
-			string(f.Severity),
-			f.Edge.From.Path,
-			f.Edge.To.Path,
-			string(f.Status),
-		})
 	}
-	return renderTable(t, r.isTTY)
+
+	gate, advisories := splitFindings(d.Findings)
+	if len(gate) > 0 {
+		fmt.Fprintf(&b, "\n## Gate findings (%d)\n\n", len(gate))
+		for _, f := range gate {
+			writeFinding(&b, f)
+		}
+	}
+	if len(advisories) > 0 {
+		fmt.Fprintf(&b, "\n## Advisories (%d, top by severity)\n\n", len(advisories))
+		for i, f := range advisories {
+			if i == 25 {
+				fmt.Fprintf(&b, "- ... +%d more (use `--format json`)\n", len(advisories)-25)
+				break
+			}
+			writeFinding(&b, f)
+		}
+	}
+
+	if len(d.ToolCoverage) > 0 {
+		b.WriteString("\n## Coverage\n\n")
+		for _, c := range d.ToolCoverage {
+			extra := ""
+			if c.FilesSeen > 0 {
+				extra = fmt.Sprintf(" (%d files)", c.FilesSeen)
+			}
+			fmt.Fprintf(&b, "- %s: %s%s\n", c.Tool, c.Status, extra)
+		}
+	}
+
+	_, err := io.WriteString(w, b.String())
+	return err
 }
 
-// renderMetricsTable builds a table for metric results.
-func (r *Renderer) renderMetricsTable(metrics []diagnostic.MetricResult) string {
-	t := newTable(r.isTTY)
-	t.AppendHeader(table.Row{"Metric", "Value", "Band", "Confidence"})
-	for _, m := range metrics {
-		t.AppendRow(table.Row{m.Name, m.Display, m.Band, m.Confidence})
+// writeFinding prints one finding as a single Markdown list item.
+func writeFinding(b *strings.Builder, f finding.Finding) {
+	edge := ""
+	if f.Edge.From.Path != "" || f.Edge.To.Path != "" {
+		edge = fmt.Sprintf(" — %s → %s", f.Edge.From.Path, f.Edge.To.Path)
 	}
-	return renderTable(t, r.isTTY)
+	why := strings.TrimSpace(f.Why)
+	if len(why) > 140 {
+		why = why[:137] + "..."
+	}
+	if why != "" {
+		why = ": " + why
+	}
+	fmt.Fprintf(b, "- **%s** [%s] %s%s%s\n", f.RuleID, f.Severity, f.Status, edge, why)
 }
 
-// newTable creates a table.Writer with consistent style.
-func newTable(isTTY bool) table.Writer {
-	t := table.NewWriter()
-	if isTTY {
-		t.SetStyle(table.StyleColoredBright)
-	} else {
-		t.SetStyle(table.StyleDefault)
+func splitFindings(fs []finding.Finding) (gate, advisories []finding.Finding) {
+	for _, f := range fs {
+		if f.Kind == "gate" {
+			gate = append(gate, f)
+		} else {
+			advisories = append(advisories, f)
+		}
 	}
-	t.Style().Options.SeparateRows = false
-	t.Style().Options.DrawBorder = !isTTY // borders in terminal; GFM doesn't want them
-	// Suppress color codes in non-TTY mode.
-	if !isTTY {
-		t.SetStyle(table.Style{
-			Name: "markdown",
-			Box:  table.StyleBoxDefault,
-			Color: table.ColorOptions{
-				Header: text.Colors{},
-				Row:    text.Colors{},
-			},
-			Format: table.FormatOptions{
-				Header: text.FormatDefault,
-				Row:    text.FormatDefault,
-			},
-			Options: table.Options{
-				DrawBorder:      false,
-				SeparateColumns: true,
-				SeparateRows:    false,
-			},
-		})
-	}
-	return t
+	sort.SliceStable(advisories, func(i, j int) bool {
+		return severityRank(advisories[i].Severity) > severityRank(advisories[j].Severity)
+	})
+	return gate, advisories
 }
 
-// renderTable produces the final string: colored for TTY, GFM for non-TTY.
-func renderTable(t table.Writer, isTTY bool) string {
-	if isTTY {
-		return t.Render()
+func severityRank(s finding.Severity) int {
+	switch s {
+	case "critical":
+		return 4
+	case "high":
+		return 3
+	case "medium":
+		return 2
+	case "low":
+		return 1
+	default:
+		return 0
 	}
-	return t.RenderMarkdown()
+}
+
+func verdictLabel(v diagnostic.Verdict) (string, int) {
+	switch v {
+	case diagnostic.VerdictFail:
+		return "fail", 1
+	case diagnostic.VerdictWarn:
+		return "warn", 2
+	default:
+		return "pass", 0
+	}
 }

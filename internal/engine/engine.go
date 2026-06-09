@@ -59,28 +59,26 @@ func Run(
 	rs []rules.Rule,
 	ms []metrics.Metric,
 	base baseline.Baseline,
+	change metrics.ChangeHistory,
 	now time.Time,
 ) (diagnostic.Diagnostic, error) {
 	// --- Stage 1: Extract ---
-	// Run each extractor; apply symbol resolution to barrel-file edges before merging.
+	// Run each extractor; apply symbol resolution and SCIP strength to edges before merging.
 	var allFacts []graph.Facts
 	var coverages []diagnostic.Coverage
+
+	// Symbol-level integration strength (SCIP), keyed by "fromPath\x00toPath".
+	// Best-effort: an empty map when no indexer is available leaves edges to the
+	// config-glob and extractor-hint strength classification.
+	scipStrength, scipCov, _ := sr.Strengths(ctx, s)
+	coverages = append(coverages, scipCov)
+
 	for _, ex := range extractors {
 		facts, cov, err := ex.Extract(ctx, s)
 		if err != nil {
 			return diagnostic.New(), err
 		}
-		// Resolve barrel-file import paths to real source file paths before graph assembly.
-		for i, e := range facts.Edges {
-			fromFile := stripPrefix(e.From)
-			toPath := stripPrefix(e.To)
-			realPath, _ := sr.Resolve(ctx, fromFile, toPath)
-			if realPath != toPath {
-				// Preserve the "kind:" prefix and replace only the path component.
-				prefix := e.To[:len(e.To)-len(toPath)]
-				facts.Edges[i].To = prefix + realPath
-			}
-		}
+		enrichEdges(ctx, sr, scipStrength, facts)
 		allFacts = append(allFacts, facts)
 		coverages = append(coverages, cov)
 	}
@@ -119,6 +117,10 @@ func Run(
 		Findings:        taggedFindings,
 		Baseline:        base.Metrics,
 		ToolCoverage:    coverages,
+		FileChurn:       change.FileChurn,
+		CoChange:        change.CoChange,
+		FileLOC:         change.FileLOC,
+		Complexity:      change.Complexity,
 	}
 	metricResults := make([]diagnostic.MetricResult, 0, len(ms))
 	for _, m := range ms {
@@ -311,6 +313,25 @@ func severityFor(strength, distance string) finding.Severity {
 		return finding.SeverityHigh
 	}
 	return finding.SeverityMedium
+}
+
+// enrichEdges applies symbol resolution and SCIP integration strength to an
+// extractor's edges in place (facts.Edges is a slice header, so mutations persist).
+// Resolution rewrites barrel-file targets to real paths; SCIP strength sets a
+// per-edge StrengthHint (config public/internal globs still win in classify).
+func enrichEdges(ctx context.Context, sr SymbolResolver, scipStrength map[string]string, facts graph.Facts) {
+	for i, e := range facts.Edges {
+		fromFile := stripPrefix(e.From)
+		toPath := stripPrefix(e.To)
+		realPath, _ := sr.Resolve(ctx, fromFile, toPath)
+		if realPath != toPath {
+			prefix := e.To[:len(e.To)-len(toPath)]
+			facts.Edges[i].To = prefix + realPath
+		}
+		if st, found := scipStrength[fromFile+"\x00"+toPath]; found {
+			facts.Edges[i].StrengthHint = st
+		}
+	}
 }
 
 // stripPrefix removes the "kind:" prefix from a node ID (e.g. "file:pkg/a" → "pkg/a").

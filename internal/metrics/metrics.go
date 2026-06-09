@@ -17,6 +17,14 @@ const (
 	bandMixed       = "mixed"
 	bandPoor        = "poor"
 	bandCritical    = "critical"
+	// bandNA marks a metric that cannot be scored because the underlying signal
+	// is absent (e.g. encapsulation when no cross-boundary edge has a classified
+	// strength). It is neither good nor bad — it means "no evidence", and must
+	// not be conflated with bandCritical (a measured, bad value).
+	bandNA = "n/a"
+	// bandInformational marks a report-only metric that surfaces facts (hubs,
+	// change-impact) without asserting a 0–10 quality verdict. Never gates.
+	bandInformational = "info"
 )
 
 // Confidence level constants.
@@ -24,6 +32,12 @@ const (
 	confidenceHigh   = "high"
 	confidenceMedium = "medium"
 	confidenceLow    = "low"
+)
+
+// Metric mode constants (the "mode" JSON field, spec §10).
+const (
+	modeRatio = "ratio"
+	modeCount = "count"
 )
 
 // Metric is the interface every Phase 1 metric implements.
@@ -36,6 +50,15 @@ type Metric interface {
 	Calculate(in MetricInput) diagnostic.MetricResult
 }
 
+// ChangeHistory carries git-derived volatility signals into the engine for the
+// modularity metrics. Both maps are empty when no git history is available.
+type ChangeHistory struct {
+	FileChurn  map[string]int    // file -> recent commit count
+	CoChange   map[[2]string]int // sorted file pair -> commits touching both
+	FileLOC    map[string]int    // source file -> lines of code (tests excluded)
+	Complexity []ComplexityFunc  // per-function cyclomatic complexity (external tool)
+}
+
 // MetricInput is the complete input set for all metrics.
 type MetricInput struct {
 	Graph           *graph.Graph
@@ -43,6 +66,19 @@ type MetricInput struct {
 	Findings        []finding.Finding // status-tagged findings from status stage
 	Baseline        diagnostic.MetricSnapshot
 	ToolCoverage    []diagnostic.Coverage // from extractors
+	// FileChurn maps a repo-relative source file to its recent commit count (git
+	// history). Empty when no git history is available; modularity metrics that
+	// depend on volatility then report n/a.
+	FileChurn map[string]int
+	// CoChange maps a sorted file pair to the number of commits that touched both —
+	// the logical-coupling signal for hidden_coupling. Empty when unavailable.
+	CoChange map[[2]string]int
+	// FileLOC maps a source file to its line count (tests excluded), for the
+	// structural_weight (size-skew / god-module) metric. Empty when unavailable.
+	FileLOC map[string]int
+	// Complexity is per-function cyclomatic complexity from an external tool
+	// (lizard), for the complexity metric. Empty when the opt-in tool is off/absent.
+	Complexity []ComplexityFunc
 }
 
 // ---------------------------------------------------------------------------
@@ -172,11 +208,15 @@ func distanceRank(d coupling.Distance) int {
 // EncapsulationMetric (encapsulation.v1)
 // ---------------------------------------------------------------------------
 
-// EncapsulationMetric measures the ratio of contract cross-boundary edges
-// to all cross-boundary edges (spec §10.4).
+// EncapsulationMetric measures, among cross-boundary edges that take a stance on
+// boundary respect, the fraction that go through a contract (spec §10.4).
 //
-//	value = contract_cross_boundary / all_cross_boundary
-//	If denominator == 0, value = 1.0 (perfect encapsulation — no cross-boundary edges).
+//	value = contract / (contract + intrusive) cross-boundary edges
+//	Functional and model coupling are normal public use, not boundary verdicts,
+//	so they are excluded from the denominator (alongside unknown).
+//	No cross-boundary edges at all  → value 1.0 (vacuously encapsulated).
+//	Cross-boundary edges but none contract/intrusive → bandNA (no boundary signal).
+//	Confidence scales with the contract+intrusive fraction of cross-boundary edges.
 type EncapsulationMetric struct{}
 
 // Name returns "encapsulation".
@@ -186,12 +226,25 @@ func (m EncapsulationMetric) Name() string { return "encapsulation" }
 func (m EncapsulationMetric) Version() string { return "encapsulation.v1" }
 
 // Calculate computes the encapsulation ratio from cross-boundary edge classifications.
+//
+// The ratio is contract edges over the edges that take a boundary stance
+// (contract + intrusive). Functional, model, and unknown strengths are excluded:
+// functional/model are normal public coupling and unknown is absence of evidence —
+// none is a boundary violation, so none should drag the ratio toward 0.
+//
+// The metric is indeterminate (bandNA) in two cases: (1) no cross-boundary edge is
+// contract or intrusive (no signal); (2) there are no intrusive edges at all — then
+// the ratio is trivially ~1.0 and cannot distinguish earned encapsulation from the
+// compiler-boundary case (Go/TS, where every cross-package import is forced through
+// an exported API). Reporting 10/10 there is the over-score this avoids; the
+// discriminating modularity signal lives in change-amplification, hidden-coupling,
+// and cycles instead.
 func (m EncapsulationMetric) Calculate(in MetricInput) diagnostic.MetricResult {
 	if in.Graph == nil {
 		return m.result(1.0, confidenceHigh, in.Baseline)
 	}
 
-	var allCross, contractCross int
+	var allCross, classifiedCross, contractCross, intrusiveCross int
 	for _, e := range in.Graph.Edges() {
 		// Only dependency-type edges contribute to encapsulation measurement.
 		if e.Kind != graph.EdgeKindImports &&
@@ -209,19 +262,68 @@ func (m EncapsulationMetric) Calculate(in MetricInput) diagnostic.MetricResult {
 			continue
 		}
 		allCross++
-		if cl.Strength == coupling.StrengthContract {
-			contractCross++
+		if isClassifiedStrength(cl.Strength) {
+			classifiedCross++
+			switch cl.Strength {
+			case coupling.StrengthContract:
+				contractCross++
+			case coupling.StrengthIntrusive:
+				intrusiveCross++
+			}
 		}
 	}
 
-	var value float64
+	// No cross-boundary coupling at all → vacuously encapsulated.
 	if allCross == 0 {
-		value = 1.0
-	} else {
-		value = float64(contractCross) / float64(allCross)
+		return m.result(1.0, confidenceHigh, in.Baseline)
+	}
+	// Coupling exists but no edge strength could be classified → no signal.
+	if classifiedCross == 0 {
+		return m.naResult(in.Baseline)
+	}
+	// No intrusive edge to contrast against → the ratio is trivially ~1.0 and
+	// non-discriminating. This is the compiler-boundary case (Go/TS: every cross-
+	// package import is through an exported API, so "contract" is forced, not
+	// earned). Report n/a rather than a false 10/10; the realistic modularity signal
+	// lives in change-amplification, hidden-coupling, and cycles.
+	if intrusiveCross == 0 {
+		return m.naResult(in.Baseline)
 	}
 
-	return m.result(value, confidenceHigh, in.Baseline)
+	value := float64(contractCross) / float64(classifiedCross)
+	return m.result(value, classificationConfidence(classifiedCross, allCross), in.Baseline)
+}
+
+// isClassifiedStrength reports whether a strength takes a stance on boundary
+// respect, i.e. counts in the encapsulation ratio. Only contract (goes through a
+// published interface) and intrusive (reaches into internals) do: encapsulation
+// measures contract-vs-internal-leak. Functional (calling a public function) and
+// model (using a public data type) are normal public coupling — neither a contract
+// nor a leak — so, like unknown, they are excluded from the denominator rather than
+// counted against the score. Including them would crush the ratio for any codebase
+// that mostly calls public functions (the common case) and produce a false critical.
+func isClassifiedStrength(s coupling.Strength) bool {
+	switch s {
+	case coupling.StrengthContract, coupling.StrengthIntrusive:
+		return true
+	default:
+		return false
+	}
+}
+
+// classificationConfidence derives confidence from how much of the cross-boundary
+// coupling could actually be classified. A score computed from a small classified
+// fraction is downgraded by the band cap so the tool never over-claims a good band
+// on thin evidence (it never inflates a bad band — see applyConfidenceCap).
+func classificationConfidence(classified, all int) string {
+	switch {
+	case classified*5 >= all*4: // ≥ 80% classified
+		return confidenceHigh
+	case classified*2 >= all: // ≥ 50% classified
+		return confidenceMedium
+	default:
+		return confidenceLow
+	}
 }
 
 func (m EncapsulationMetric) result(value float64, confidence string, baseline diagnostic.MetricSnapshot) diagnostic.MetricResult {
@@ -235,9 +337,27 @@ func (m EncapsulationMetric) result(value float64, confidence string, baseline d
 		Band:       band,
 		Confidence: confidence,
 		Version:    m.Version(),
-		Mode:       "ratio",
-		Definition: "contract_cross_boundary / all_cross_boundary",
+		Mode:       modeRatio,
+		Definition: "contract / (contract + intrusive) cross-boundary edges (functional, model, unknown excluded)",
 		Delta:      delta,
+	}
+}
+
+// naResult reports the encapsulation metric as indeterminate: cross-boundary
+// coupling exists but no edge strength could be classified, so there is no honest
+// score. Band is bandNA (not critical), and Delta is nil so the verdict logic does
+// not treat an absent score as a regression.
+func (m EncapsulationMetric) naResult(_ diagnostic.MetricSnapshot) diagnostic.MetricResult {
+	return diagnostic.MetricResult{
+		Name:       m.Name(),
+		Value:      0,
+		Display:    bandNA,
+		Band:       bandNA,
+		Confidence: confidenceLow,
+		Version:    m.Version(),
+		Mode:       modeRatio,
+		Definition: "contract / (contract + intrusive) cross-boundary edges (functional, model, unknown excluded)",
+		Delta:      nil,
 	}
 }
 
@@ -273,7 +393,7 @@ func (m UnbalancedEdgeMetric) Calculate(in MetricInput) diagnostic.MetricResult 
 		}
 	}
 
-	var newHigh int
+	var newHigh, candidates, candidatesKnownVol int
 	crossModuleDiffOwnerRank := distanceRank(coupling.DistanceCrossModuleDiffOwner)
 
 	for _, e := range in.Graph.Edges() {
@@ -294,6 +414,12 @@ func (m UnbalancedEdgeMetric) Calculate(in MetricInput) diagnostic.MetricResult 
 		if distanceRank(cl.Distance) < crossModuleDiffOwnerRank {
 			continue
 		}
+		// This edge is a candidate (intrusive + far). Whether it is *unbalanced*
+		// turns on volatility — track how many candidates we can actually assess.
+		candidates++
+		if cl.Volatility != coupling.VolatilityUnknown {
+			candidatesKnownVol++
+		}
 		if cl.Volatility != coupling.VolatilityHigh {
 			continue
 		}
@@ -304,6 +430,14 @@ func (m UnbalancedEdgeMetric) Calculate(in MetricInput) diagnostic.MetricResult 
 		if st == finding.StatusNew || st == "" {
 			newHigh++
 		}
+	}
+
+	// Candidates exist but none has a known volatility → the high-volatility test
+	// cannot be evaluated, so the count is indeterminate, not a clean zero. Report
+	// n/a rather than a false "strong" (same discipline as encapsulation: absence of
+	// evidence is not evidence of balance). No candidates at all → genuine 0/strong.
+	if candidates > 0 && candidatesKnownVol == 0 {
+		return m.naResult()
 	}
 
 	value := float64(newHigh)
@@ -326,9 +460,26 @@ func (m UnbalancedEdgeMetric) Calculate(in MetricInput) diagnostic.MetricResult 
 		Band:       band,
 		Confidence: confidence,
 		Version:    m.Version(),
-		Mode:       "count",
+		Mode:       modeCount,
 		Definition: "intrusive edges with cross-module ownership and high volatility",
 		Delta:      delta,
+	}
+}
+
+// naResult reports unbalanced_edge as indeterminate: intrusive cross-module
+// candidate edges exist, but none has a known volatility, so whether any is
+// unbalanced cannot be decided. Band is bandNA (not strong), Delta nil.
+func (m UnbalancedEdgeMetric) naResult() diagnostic.MetricResult {
+	return diagnostic.MetricResult{
+		Name:       m.Name(),
+		Value:      0,
+		Display:    bandNA,
+		Band:       bandNA,
+		Confidence: confidenceLow,
+		Version:    m.Version(),
+		Mode:       modeCount,
+		Definition: "intrusive edges with cross-module ownership and high volatility",
+		Delta:      nil,
 	}
 }
 
@@ -389,7 +540,7 @@ func (m CycleMetric) Calculate(in MetricInput) diagnostic.MetricResult {
 		Band:       band,
 		Confidence: confidence,
 		Version:    m.Version(),
-		Mode:       "count",
+		Mode:       modeCount,
 		Definition: "number of import cycles",
 		Delta:      delta,
 	}
@@ -446,7 +597,7 @@ func (m CoverageMetric) Calculate(in MetricInput) diagnostic.MetricResult {
 		Band:       band,
 		Confidence: confidence,
 		Version:    m.Version(),
-		Mode:       "ratio",
+		Mode:       modeRatio,
 		Definition: "extracted_files / applicable_files",
 		Delta:      delta,
 	}
@@ -484,5 +635,10 @@ func New(_ config.Config) []Metric {
 		UnbalancedEdgeMetric{},
 		CycleMetric{},
 		CoverageMetric{},
+		BlastRadiusMetric{},
+		ChangeAmplificationMetric{},
+		HiddenCouplingMetric{},
+		StructuralWeightMetric{},
+		ComplexityMetric{},
 	}
 }

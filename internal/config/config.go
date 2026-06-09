@@ -32,6 +32,29 @@ const (
 	LangPython     = "python"
 )
 
+// ToolScip is the Tools map key for the SCIP symbol-level strength provider.
+const ToolScip = "scip"
+
+// ScipEnabled reports whether the SCIP strength provider is explicitly enabled
+// (tools.scip.enabled: on). It is opt-in only — auto/off/absent all disable it —
+// because running a SCIP indexer is whole-repo and slow, which must not happen on
+// the fast `archfit check` path by default. Keeping the decision in config (not in
+// PATH tool presence) also preserves the same-config→same-metrics guarantee.
+func (c Config) ScipEnabled() bool {
+	return c.Tools[ToolScip].Enabled == ModeOn
+}
+
+// ToolComplexity is the Tools map key for the external cyclomatic-complexity tool.
+const ToolComplexity = "complexity"
+
+// ComplexityEnabled reports whether the external complexity tool (lizard) is
+// explicitly enabled (tools.complexity.enabled: on). Opt-in only — like SCIP it
+// shells out to an external tool and adds cost to the check path, so it stays off
+// unless asked for. Config-driven (not PATH presence) for deterministic metrics.
+func (c Config) ComplexityEnabled() bool {
+	return c.Tools[ToolComplexity].Enabled == ModeOn
+}
+
 // UnmarshalYAML handles both bool (true→on, false→off) and string ("auto"/"on"/"off") values.
 func (m *ToolMode) UnmarshalYAML(unmarshal func(any) error) error {
 	// Try bool first (YAML parses bare true/false as bool).

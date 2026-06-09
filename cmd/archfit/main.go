@@ -22,6 +22,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/py"
 	"github.com/alexei-led/archfit/internal/extract/scip"
 	"github.com/alexei-led/archfit/internal/extract/ts"
+	"github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -156,8 +157,33 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		Formats:    c.Format,
 	}
 
+	// Recent git history (cheap; runs by default): per-file churn drives module
+	// volatility (unbalanced_edge, BC severity) and the modularity metrics
+	// (change_amplification, hidden_coupling). Hand-authored volatility/subdomain
+	// config always wins; a non-git repo leaves these signals empty.
+	change := metrics.ChangeHistory{}
+	if churn, coChange, _, herr := git.History(ctx, s.Root, deps.Runner); herr == nil {
+		cfg.ApplyVolatility(config.DeriveVolatility(cfg.Modules, churn))
+		change.FileChurn, change.CoChange = churn, coChange
+	}
+	change.FileLOC = sourceFileLOC(s.Root)
+
+	// Cyclomatic complexity via an external multi-language tool (lizard) — opt-in
+	// (tools.complexity.enabled: on) like SCIP, since it shells out and adds cost.
+	if cfg.ComplexityEnabled() {
+		change.Complexity = complexityFuncs(ctx, deps.Runner, s.Root)
+	}
+
+	// SCIP symbol-level strength is opt-in (tools.scip.enabled: on): the indexer is
+	// whole-repo and slow, so it must not run on the default check path, and the
+	// decision must live in config (not PATH presence) to keep metrics deterministic.
+	var resolver engine.SymbolResolver = engine.NopSymbolResolver{}
+	if cfg.ScipEnabled() {
+		resolver = scip.New(deps.Runner)
+	}
+
 	patternCfg := cfg.ForPatterns()
-	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), scip.New(deps.Runner), patternCfg, rs, ms, base, time.Now())
+	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), resolver, patternCfg, rs, ms, base, change, time.Now())
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -227,7 +253,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	rs := rules.New(cfg.ForRules())
 	ms := metrics.New(cfg)
 
-	diag, err := engine.Run(ctx, engine.Mode{Full: c.Full, Advisory: c.Advisory, Base: c.Base}, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, engine.NopPatternProvider{}, engine.NopSymbolResolver{}, config.PatternConfig{}, rs, ms, existingBase, time.Now())
+	diag, err := engine.Run(ctx, engine.Mode{Full: c.Full, Advisory: c.Advisory, Base: c.Base}, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, engine.NopPatternProvider{}, engine.NopSymbolResolver{}, config.PatternConfig{}, rs, ms, existingBase, metrics.ChangeHistory{}, time.Now())
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -302,7 +328,7 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 	rs := rules.New(cfg.ForRules())
 	ms := metrics.New(cfg)
 
-	diag, err := engine.Run(ctx, engine.Mode{Full: true}, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, engine.NopPatternProvider{}, engine.NopSymbolResolver{}, config.PatternConfig{}, rs, ms, existingBase, time.Now())
+	diag, err := engine.Run(ctx, engine.Mode{Full: true}, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, engine.NopPatternProvider{}, engine.NopSymbolResolver{}, config.PatternConfig{}, rs, ms, existingBase, metrics.ChangeHistory{}, time.Now())
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}

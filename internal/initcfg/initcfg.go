@@ -222,9 +222,10 @@ func DiscoverPy(root string) ([]ModuleDef, error) {
 				mods = append(mods, subMods...)
 			} else {
 				// No sub-packages: return the top-level package as a single module.
+				mod := pyDottedModule(t.prefix + e.Name())
 				mods = append(mods, ModuleDef{
 					Name:  e.Name(),
-					Paths: []string{t.prefix + e.Name() + pyGlobSuffix},
+					Paths: pyModulePaths(mod),
 					Layer: layerCore,
 				})
 			}
@@ -252,13 +253,28 @@ func discoverPySubpackages(pkgDir, pathPrefix string) []ModuleDef {
 		if !fileExists(filepath.Join(pkgDir, e.Name(), pyInitFile)) {
 			continue
 		}
+		mod := pyDottedModule(pathPrefix + e.Name())
 		mods = append(mods, ModuleDef{
 			Name:  e.Name(),
-			Paths: []string{pathPrefix + e.Name() + pyGlobSuffix},
+			Paths: pyModulePaths(mod),
 			Layer: inferPyLayer(e.Name()),
 		})
 	}
 	return mods
+}
+
+// pyDottedModule converts a slash path (e.g. "src/ccgram/handlers" or
+// "ccgram/handlers") to a dotted Python module path ("ccgram.handlers"). Python
+// graph nodes are dotted module names, so paths: globs must be dotted too.
+func pyDottedModule(slashPath string) string {
+	s := strings.TrimPrefix(slashPath, pySrcDir+"/")
+	return strings.ReplaceAll(strings.Trim(s, "/"), "/", ".")
+}
+
+// pyModulePaths returns the paths globs for a dotted Python module: the package
+// itself and its submodules ("ccgram.handlers" + "ccgram.handlers.*").
+func pyModulePaths(mod string) []string {
+	return []string{mod, mod + ".*"}
 }
 
 // inferPyLayer maps common Python sub-package names to architectural layers.
@@ -433,17 +449,19 @@ func buildGoModules(segments map[string][]string) []ModuleDef {
 			continue
 		}
 		name := moduleNameFromKey(key)
-		paths := []string{key + "/..."}
+		// Doublestar glob (classify/extractor node paths use "/"-separated package
+		// and file paths). "key/**" matches the package node "key" and its files.
+		// NOT the go-list "key/..." form, which doublestar does not match.
+		paths := []string{key + "/**"}
 		layer := inferLayerFromKey(key)
 
-		// Infer public/internal sub-globs when the key contains "internal".
-		var public, internal []string
-		if !strings.Contains(key, "internal") {
-			public = []string{key + "/*.go"}
-		} else {
-			internal = []string{key + "/..."}
-			paths = []string{key + "/..."}
-		}
+		// Public is the importable package path itself (an import targets the package
+		// node "key"). Go cross-package imports go through exported APIs — the compiler
+		// forbids importing unexported symbols — so they are contract coupling, not
+		// intrusive. (Go's `internal/` is module-visibility, NOT BC-intrusive; do not
+		// mark it internal here, or normal shared code reads as a false leak.)
+		public := []string{key}
+		var internal []string
 
 		mods = append(mods, ModuleDef{
 			Name:     name,
@@ -534,7 +552,11 @@ func discoverSubdirs(root string, dirNames []string) ([]ModuleDef, error) {
 			mods = append(mods, ModuleDef{
 				Name:  name,
 				Paths: []string{path},
-				Layer: layerCore,
+				// TS/JS cross-file imports go through module exports (you cannot import
+				// a non-exported binding), so they are contract coupling. Mark the
+				// module's files public; SCIP-typescript can refine this when enabled.
+				Public: []string{path},
+				Layer:  layerCore,
 			})
 		}
 	}

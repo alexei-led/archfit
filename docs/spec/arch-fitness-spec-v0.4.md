@@ -664,7 +664,7 @@ Metric output:
   "confidence": "high",
   "metric_version": "encapsulation.v1",
   "mode": "delta",
-  "definition": "contract_cross_boundary_edges / all_cross_boundary_edges",
+  "definition": "contract / (contract + intrusive) cross-boundary edges (functional, model, unknown excluded)",
   "delta": -0.03
 }
 ```
@@ -933,8 +933,31 @@ Headline metric for v1.
 Definition:
 
 ```text
-encapsulation = contract_cross_boundary_edges / all_cross_boundary_edges
+encapsulation = contract_cross_boundary_edges / (contract + intrusive)_cross_boundary_edges
 ```
+
+The denominator counts only edges that take a stance on boundary respect:
+`contract` (goes through a published interface) and `intrusive` (reaches into
+internals). `functional` (calling a public function) and `model` (using a public
+data type) are normal public coupling — neither a contract nor a leak — and
+`unknown` is absence of evidence; all three are excluded from the denominator
+rather than counted against the score. Counting functional/model would crush the
+ratio for any codebase that mostly calls public functions (the common case) and
+manufacture a false `critical` once symbol-level strength (SCIP) is available.
+
+Degenerate cases:
+
+```text
+no cross-boundary edges at all          → value 1.0 (vacuously encapsulated)
+cross-boundary edges, none classifiable → n/a (indeterminate; band "n/a", not critical)
+```
+
+The second case is common for projects that declare no public/internal API
+surface (e.g. a Python repo without `public:`/`internal:` globs and before
+language-level strength inference applies). Reporting a high-confidence 0/critical
+there is a false alarm; `n/a` is the honest result. Confidence scales with the
+classified fraction of cross-boundary edges, so the band cap prevents over-claiming
+a good band on a thin classified sample.
 
 Why it matters: it is the closest coverage-style metric. It has a clear numerator and denominator. It tells whether cross-boundary coupling goes through explicit contracts instead
 of leaking through internal details.

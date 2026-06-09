@@ -29,24 +29,24 @@ func TestRenderer_Render(t *testing.T) {
 			name:         "pass",
 			verdict:      diagnostic.VerdictPass,
 			gateFindings: 0,
-			wantVerdict:  "[PASS]",
-			wantCount:    "0 gate finding(s)",
+			wantVerdict:  "verdict: PASS",
+			wantCount:    "gate findings: 0",
 			wantExitHint: "exit 0",
 		},
 		{
 			name:         "fail with findings",
 			verdict:      diagnostic.VerdictFail,
 			gateFindings: 3,
-			wantVerdict:  "[FAIL]",
-			wantCount:    "3 gate finding(s)",
+			wantVerdict:  "verdict: FAIL",
+			wantCount:    "gate findings: 3",
 			wantExitHint: "exit 1",
 		},
 		{
 			name:         "warn",
 			verdict:      diagnostic.VerdictWarn,
 			gateFindings: 1,
-			wantVerdict:  "[WARN]",
-			wantCount:    "1 gate finding(s)",
+			wantVerdict:  "verdict: WARN",
+			wantCount:    "gate findings: 1",
 			wantExitHint: "exit 2",
 		},
 	}
@@ -66,7 +66,7 @@ func TestRenderer_Render(t *testing.T) {
 
 			out := buf.String()
 
-			for _, want := range []string{tt.wantVerdict, tt.wantCount, tt.wantExitHint, "--format json"} {
+			for _, want := range []string{tt.wantVerdict, tt.wantExitHint, tt.wantCount} {
 				if !strings.Contains(out, want) {
 					t.Errorf("output missing %q\nfull output:\n%s", want, out)
 				}
