@@ -19,6 +19,8 @@ const (
 	metricRiskHub              = "risk_hub"
 	metricArchFitness          = "architecture_fitness"
 	metricFunctionalCandidates = "functional_candidates"
+	metricCohesionSpread       = "cohesion_spread"
+	metricSharedStateHub       = "shared_state_hub"
 
 	// Band / confidence / status literals used in multiple tests.
 	bandInfo       = "info"
@@ -341,6 +343,46 @@ func TestRenderer_Render_NewInfoMetrics(t *testing.T) {
 				Confidence: confidenceLow,
 			},
 			wantSub: []string{metricFunctionalCandidates, bandNA},
+		},
+		{
+			name: "cohesion_spread present",
+			metric: diagnostic.MetricResult{
+				Name:       metricCohesionSpread,
+				Display:    "2 high-spread file(s): pkg/handlers [spread 5 subsystems, LOC 320]",
+				Band:       bandInfo,
+				Confidence: confidenceHigh,
+			},
+			wantSub: []string{metricCohesionSpread, "spread 5 subsystems", bandInfo},
+		},
+		{
+			name: "cohesion_spread n/a",
+			metric: diagnostic.MetricResult{
+				Name:       metricCohesionSpread,
+				Display:    bandNA,
+				Band:       bandNA,
+				Confidence: confidenceLow,
+			},
+			wantSub: []string{metricCohesionSpread, bandNA},
+		},
+		{
+			name: "shared_state_hub present",
+			metric: diagnostic.MetricResult{
+				Name:       metricSharedStateHub,
+				Display:    "1 shared-state hub(s): pkg/polling [top_symbol fan-in=22, 3 hot]",
+				Band:       bandInfo,
+				Confidence: confidenceHigh,
+			},
+			wantSub: []string{metricSharedStateHub, "fan-in=22", bandInfo},
+		},
+		{
+			name: "shared_state_hub n/a",
+			metric: diagnostic.MetricResult{
+				Name:       metricSharedStateHub,
+				Display:    bandNA,
+				Band:       bandNA,
+				Confidence: confidenceLow,
+			},
+			wantSub: []string{metricSharedStateHub, bandNA},
 		},
 	}
 

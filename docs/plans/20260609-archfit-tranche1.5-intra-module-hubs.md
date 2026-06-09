@@ -204,11 +204,11 @@ hot map[string]int)` — per file, max single-symbol `FanIn`, the winning symbol
 - Modify: `internal/output/jsonout/jsonout.go` (usually automatic via the metric struct)
 - Modify: corresponding `_test.go` files
 
-- [ ] confirm `cohesion_spread` and `shared_state_hub` render with band/confidence/display in
+- [x] confirm `cohesion_spread` and `shared_state_hub` render with band/confidence/display in
       console + markdown + json
-- [ ] ensure top-N truncation and `n/a` rendering match existing info metrics
-- [ ] write/update renderer tests for the two metrics (present + n/a)
-- [ ] run tests — must pass before Task 5
+- [x] ensure top-N truncation and `n/a` rendering match existing info metrics
+- [x] write/update renderer tests for the two metrics (present + n/a)
+- [x] run tests — must pass before Task 5
 
 ### Task 5: Validate across 4 repos (acceptance gate)
 
