@@ -143,11 +143,11 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 - Modify: `internal/extract/scip/scip_reader.py`
 - Modify: `internal/extract/scip/scip_reader_test.py`
 
-- [ ] add a `symbols` array to the reader JSON: per internal definition symbol → `{symbol, path, module, fan_in}` where `fan_in` = count of distinct referencing documents (from the existing `doc.occurrences` walk)
-- [ ] add a `symbol_refs` array: `{from_symbol, to_symbol}` cross-module reference edges (reuse `_is_internal`/`_to_path` already present)
-- [ ] keep the existing `edges` (per-module strength) output unchanged — additive only
-- [ ] write Python tests for the new `symbols`/`symbol_refs` output on a small fixture index (success + empty-index + no-internal-symbols cases)
-- [ ] run reader tests via `uv` — must pass before Task 3
+- [x] add a `symbols` array to the reader JSON: per internal definition symbol → `{symbol, path, module, fan_in}` where `fan_in` = count of distinct referencing documents (from the existing `doc.occurrences` walk)
+- [x] add a `symbol_refs` array: `{from_symbol, to_symbol}` cross-module reference edges (reuse `_is_internal`/`_to_path` already present)
+- [x] keep the existing `edges` (per-module strength) output unchanged — additive only
+- [x] write Python tests for the new `symbols`/`symbol_refs` output on a small fixture index (success + empty-index + no-internal-symbols cases)
+- [x] run reader tests via `uv` — must pass before Task 3
 
 ### Task 3: Parse symbol output into a Go SymbolGraph
 

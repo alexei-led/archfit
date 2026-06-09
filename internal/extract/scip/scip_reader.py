@@ -129,6 +129,95 @@ def _doc_from(relative_path: str, lang: str) -> str | None:
     return relative_path or None  # go/ts: file path
 
 
+_DEFINITION_ROLE = 0x1  # SymbolRole.Definition bit
+
+
+def _compute_symbols(
+    idx: object,
+    root: str,
+    lang: str,
+) -> tuple[list[dict], list[dict]]:
+    """Return (symbols, symbol_refs) for the given index.
+
+    symbols     — one entry per internal definition symbol:
+                  {symbol, path, module, fan_in}
+                  fan_in = count of distinct documents that reference the symbol
+                  (excluding the defining document itself).
+
+    symbol_refs — cross-module symbol→symbol reference edges:
+                  {from_symbol, to_symbol}
+                  from_symbol is an internal definition symbol in the referencing
+                  document; to_symbol is the referenced internal symbol.
+                  Attribution is document-scoped because SCIP indexers do not
+                  populate enclosing_range, so per-call-site attribution is
+                  unavailable.
+
+    Both arrays are sorted for determinism (byte-identical output across runs).
+    """
+    # Pass 1: collect definition occurrences to build
+    #   def_docs[symbol]       = relative_path of the defining document (first seen)
+    #   doc_defs[relative_path] = set of internal definition symbols in that doc
+    def_docs: dict[str, str] = {}
+    doc_defs: dict[str, set[str]] = {}
+    for doc in idx.documents:  # type: ignore[union-attr]
+        defs: set[str] = set()
+        for occ in doc.occurrences:
+            if not (occ.symbol_roles & _DEFINITION_ROLE):
+                continue
+            if not _is_internal(occ.symbol, root):
+                continue
+            defs.add(occ.symbol)
+            if occ.symbol not in def_docs:
+                def_docs[occ.symbol] = doc.relative_path
+        if defs:
+            doc_defs[doc.relative_path] = defs
+
+    # Pass 2: collect reference occurrences for fan-in counts and symbol refs.
+    # fan_in_docs[symbol] = set of distinct documents that reference (not define) it.
+    fan_in_docs: dict[str, set[str]] = {}
+    # sym_refs: cross-module definition→referenced-symbol edges (deduped).
+    sym_refs: set[tuple[str, str]] = set()
+
+    for doc in idx.documents:  # type: ignore[union-attr]
+        frm_defs = doc_defs.get(doc.relative_path, set())
+        for occ in doc.occurrences:
+            if occ.symbol_roles & _DEFINITION_ROLE:
+                continue  # skip definitions in this pass
+            if not _is_internal(occ.symbol, root):
+                continue
+            to_mod = _to_path(occ.symbol, lang)
+            if to_mod is None:
+                continue
+
+            fan_in_docs.setdefault(occ.symbol, set()).add(doc.relative_path)
+
+            # Cross-module edges: from every internal definition in this doc
+            # to the referenced symbol, when their modules differ.
+            for from_sym in frm_defs:
+                from_mod = _to_path(from_sym, lang)
+                if from_mod is not None and from_mod != to_mod:
+                    sym_refs.add((from_sym, occ.symbol))
+
+    # Assemble output arrays (sorted for determinism).
+    symbols_out = [
+        {
+            "symbol": sym,
+            "path": doc_path,
+            "module": _to_path(sym, lang),
+            "fan_in": len(fan_in_docs.get(sym, set())),
+        }
+        for sym, doc_path in sorted(def_docs.items())
+        if _to_path(sym, lang) is not None
+    ]
+
+    symbol_refs_out = [
+        {"from_symbol": fs, "to_symbol": ts}
+        for fs, ts in sorted(sym_refs)
+    ]
+
+    return symbols_out, symbol_refs_out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--proto", required=True)
@@ -170,6 +259,9 @@ def main() -> None:
 
     edges: dict[tuple[str, str], str] = {}
     refs = {k: 0 for k in RANK}
+
+    symbols_out, symbol_refs_out = _compute_symbols(idx, root, lang)
+
     for doc in idx.documents:
         a = _doc_from(doc.relative_path, lang)
         if a is None:
@@ -190,6 +282,8 @@ def main() -> None:
         "edges": [{"from": a, "to": b, "strength": st} for (a, b), st in sorted(edges.items())],
         "contract_symbols": len(contract),
         "ref_strength_dist": refs,
+        "symbols": symbols_out,
+        "symbol_refs": symbol_refs_out,
     }))
 
 

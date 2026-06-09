@@ -60,3 +60,120 @@ if failures:
         print("  -", f)
     sys.exit(1)
 print("ok: all scip_reader table tests passed")
+
+# ---------------------------------------------------------------------------
+# _compute_symbols tests — fake duck-typed index, no protobuf needed.
+# ---------------------------------------------------------------------------
+
+from types import SimpleNamespace  # noqa: E402
+
+
+def _occ(symbol: str, roles: int) -> SimpleNamespace:
+    return SimpleNamespace(symbol=symbol, symbol_roles=roles)
+
+
+def _doc(relative_path: str, occurrences: list) -> SimpleNamespace:
+    return SimpleNamespace(relative_path=relative_path, occurrences=occurrences)
+
+
+def _idx(documents: list) -> SimpleNamespace:
+    return SimpleNamespace(documents=documents)
+
+
+DEF = 0x1  # SymbolRole.Definition
+
+# Symbols used in fixture (Go, root = "spotinfo")
+SYM_CLIENT = "scip-go gomod spotinfo v2.3.1 `spotinfo/internal/spot`/Client#"
+SYM_HANDLE = "scip-go gomod spotinfo v2.3.1 `spotinfo/internal/mcp`/handle()."
+SYM_EXT    = "scip-go gomod some-dep v1.0.0 `some-dep/pkg`/Thing#"    # external
+
+# --- Case 1: populated fixture with cross-module reference ---
+# doc A defines Client; doc B defines handle and references Client.
+fixture_idx = _idx([
+    _doc("internal/spot/client.go", [
+        _occ(SYM_CLIENT, DEF),              # definition of Client
+    ]),
+    _doc("internal/mcp/server.go", [
+        _occ(SYM_HANDLE, DEF),              # definition of handle
+        _occ(SYM_CLIENT, 0),                # reference to Client (cross-module)
+        _occ(SYM_EXT,    0),                # external ref — must be ignored
+    ]),
+])
+
+syms, srefs = r._compute_symbols(fixture_idx, "spotinfo", "go")
+
+# symbols: both internal definitions present with correct fields.
+sym_map = {s["symbol"]: s for s in syms}
+check("symbols: Client present", SYM_CLIENT in sym_map, True)
+check("symbols: handle present", SYM_HANDLE in sym_map, True)
+check("symbols: external absent", SYM_EXT in sym_map, False)
+
+check("symbols: Client path",   sym_map[SYM_CLIENT]["path"],   "internal/spot/client.go")
+check("symbols: Client module", sym_map[SYM_CLIENT]["module"], "internal/spot")
+# Client is referenced from mcp/server.go → fan_in = 1
+check("symbols: Client fan_in", sym_map[SYM_CLIENT]["fan_in"], 1)
+# handle is not referenced → fan_in = 0
+check("symbols: handle fan_in", sym_map[SYM_HANDLE]["fan_in"], 0)
+
+# symbol_refs: handle (mcp) → Client (spot) cross-module edge expected.
+sref_pairs = {(e["from_symbol"], e["to_symbol"]) for e in srefs}
+check("symbol_refs: handle→Client", (SYM_HANDLE, SYM_CLIENT) in sref_pairs, True)
+check("symbol_refs: no external",   any(e["to_symbol"] == SYM_EXT for e in srefs), False)
+
+# sorted determinism: verify both arrays are sorted.
+if syms:
+    check("symbols sorted", syms, sorted(syms, key=lambda s: s["symbol"]))
+if srefs:
+    check("symbol_refs sorted", srefs,
+          sorted(srefs, key=lambda e: (e["from_symbol"], e["to_symbol"])))
+
+# --- Case 2: empty index ---
+empty_syms, empty_srefs = r._compute_symbols(_idx([]), "spotinfo", "go")
+check("empty index: symbols", empty_syms, [])
+check("empty index: symbol_refs", empty_srefs, [])
+
+# --- Case 3: no internal symbols (only external references) ---
+ext_only_idx = _idx([
+    _doc("internal/mcp/server.go", [
+        _occ(SYM_EXT, 0),   # reference to external symbol only
+    ]),
+])
+ext_syms, ext_srefs = r._compute_symbols(ext_only_idx, "spotinfo", "go")
+check("no internal: symbols", ext_syms, [])
+check("no internal: symbol_refs", ext_srefs, [])
+
+# --- Case 4: same-module reference does not produce a symbol_ref edge ---
+SYM_OTHER = "scip-go gomod spotinfo v2.3.1 `spotinfo/internal/spot`/Fetch()."
+same_mod_idx = _idx([
+    _doc("internal/spot/client.go", [
+        _occ(SYM_CLIENT, DEF),
+        _occ(SYM_OTHER,  0),   # ref within same module (spot → spot)
+    ]),
+])
+sm_syms, sm_srefs = r._compute_symbols(same_mod_idx, "spotinfo", "go")
+check("same-module ref: no symbol_refs", sm_srefs, [])
+check("same-module ref: Client fan_in 0", sm_syms[0]["fan_in"] if sm_syms else -1, 0)
+
+# --- Case 5: multi-doc fan_in counts distinct documents ---
+fan_idx = _idx([
+    _doc("internal/spot/client.go", [
+        _occ(SYM_CLIENT, DEF),
+    ]),
+    _doc("internal/mcp/server.go", [
+        _occ(SYM_HANDLE, DEF),
+        _occ(SYM_CLIENT, 0),   # ref from doc B
+    ]),
+    _doc("internal/mcp/proxy.go", [
+        _occ(SYM_CLIENT, 0),   # ref from doc C (same symbol, different doc)
+    ]),
+])
+fan_syms, _ = r._compute_symbols(fan_idx, "spotinfo", "go")
+fan_map = {s["symbol"]: s for s in fan_syms}
+check("fan_in multi-doc", fan_map[SYM_CLIENT]["fan_in"], 2)
+
+if failures:
+    print("FAIL (compute_symbols):")
+    for f in failures:
+        print("  -", f)
+    sys.exit(1)
+print("ok: all _compute_symbols tests passed")
