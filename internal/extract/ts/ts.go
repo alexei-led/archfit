@@ -88,6 +88,12 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	if e.cfg.TSConfig != "" {
 		args = append(args, "--ts-config", e.cfg.TSConfig)
 	}
+	// dependency-cruiser errors out when it cannot find its own config file. archfit
+	// only needs the dependency graph (not depcruise's rules), so fall back to
+	// --no-config (built-in defaults) for projects that ship no depcruise config.
+	if !hasDepcruiseConfig(s.Root) {
+		args = append(args, "--no-config")
+	}
 
 	cmd := toolrun.ToolCmd{
 		Name:    launcher,
@@ -118,6 +124,19 @@ func (e *Extractor) detectLauncher(ctx context.Context) (string, string, bool) {
 		}
 	}
 	return "", "", false
+}
+
+// hasDepcruiseConfig reports whether a dependency-cruiser config file exists at root.
+func hasDepcruiseConfig(root string) bool {
+	for _, name := range []string{
+		".dependency-cruiser.cjs", ".dependency-cruiser.js",
+		".dependency-cruiser.mjs", ".dependency-cruiser.json",
+	} {
+		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // detectVersion runs `<launcher> depcruise --version` and returns the version string.

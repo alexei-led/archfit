@@ -34,7 +34,7 @@ import (
 const toolName = "scip"
 
 // scipTools are the SCIP indexers checked in preference order.
-var scipTools = []string{"scip-typescript", "scip-python", "scip-go"}
+var scipTools = []string{indexerTS, indexerPython, indexerGo}
 
 // Adapter satisfies engine.SymbolResolver using SCIP indexers.
 // It detects available SCIP tools once (via sync.Once) and, when any are

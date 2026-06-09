@@ -6,6 +6,9 @@ package engine
 import (
 	"context"
 	"sync"
+
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/scope"
 )
 
 // SymbolResolverMock is a mock implementation of SymbolResolver for testing.
@@ -24,6 +27,9 @@ type SymbolResolverMock struct {
 	// ResolveFunc mocks the Resolve method.
 	ResolveFunc func(ctx context.Context, fromFile, toPath string) (realPath, confidence string)
 
+	// StrengthsFunc mocks the Strengths method.
+	StrengthsFunc func(ctx context.Context, s scope.Scope) (map[string]string, diagnostic.Coverage, error)
+
 	// calls tracks calls to the methods.
 	calls struct {
 		// Name holds details about calls to the Name method.
@@ -37,9 +43,17 @@ type SymbolResolverMock struct {
 			// ToPath is the toPath argument value.
 			ToPath string
 		}
+		// Strengths holds details about calls to the Strengths method.
+		Strengths []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// S is the s argument value.
+			S scope.Scope
+		}
 	}
-	lockName    sync.RWMutex
-	lockResolve sync.RWMutex
+	lockName      sync.RWMutex
+	lockResolve   sync.RWMutex
+	lockStrengths sync.RWMutex
 }
 
 // Name calls NameFunc.
@@ -93,4 +107,19 @@ func (m *SymbolResolverMock) ResolveCalls() []struct {
 	}, len(m.calls.Resolve))
 	copy(calls, m.calls.Resolve)
 	return calls
+}
+
+// Strengths calls StrengthsFunc.
+func (m *SymbolResolverMock) Strengths(ctx context.Context, s scope.Scope) (map[string]string, diagnostic.Coverage, error) {
+	if m.StrengthsFunc == nil {
+		panic("SymbolResolverMock.StrengthsFunc is nil but SymbolResolver.Strengths was called")
+	}
+	call := struct {
+		Ctx context.Context
+		S   scope.Scope
+	}{Ctx: ctx, S: s}
+	m.lockStrengths.Lock()
+	m.calls.Strengths = append(m.calls.Strengths, call)
+	m.lockStrengths.Unlock()
+	return m.StrengthsFunc(ctx, s)
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
@@ -247,12 +248,23 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 		// Location file: dotted module name converted to path (dots → slashes).
 		locFile := strings.ReplaceAll(he.Importer, ".", "/")
 
+		// Strength hint: importing a PEP 8-private module (an underscore-prefixed
+		// segment) is reaching into another module's internals → intrusive. This
+		// is a fallback signal; config public/internal globs still take precedence
+		// in classify. We never emit a "contract" hint — grimp resolves imports to
+		// the defining submodule, so a public-API signal cannot be established here.
+		strengthHint := ""
+		if isPrivatePythonModule(he.Imported) {
+			strengthHint = string(coupling.StrengthIntrusive)
+		}
+
 		edges = append(edges, graph.Edge{
-			From:       "module:" + he.Importer,
-			To:         "module:" + he.Imported,
-			Kind:       edgeKind,
-			Language:   langPython,
-			Confidence: "high",
+			From:         "module:" + he.Importer,
+			To:           "module:" + he.Imported,
+			Kind:         edgeKind,
+			Language:     langPython,
+			Confidence:   "high",
+			StrengthHint: strengthHint,
 			Locations: []graph.Location{
 				{File: locFile, Line: he.Line},
 			},
@@ -281,13 +293,35 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 	return facts, cov, nil
 }
 
+// isPrivatePythonModule reports whether a dotted module name targets a PEP 8
+// "internal use" module — any path segment with a single leading underscore
+// (e.g. "pkg._internal", "pkg.sub._impl"). Dunder segments (__init__, __main__)
+// are package/runtime machinery, not private internals, so they do not count.
+func isPrivatePythonModule(dotted string) bool {
+	for _, seg := range strings.Split(dotted, ".") {
+		if strings.HasPrefix(seg, "_") && !isDunder(seg) {
+			return true
+		}
+	}
+	return false
+}
+
+// isDunder reports whether a path segment is a __dunder__ name.
+func isDunder(seg string) bool {
+	return len(seg) >= 4 && strings.HasPrefix(seg, "__") && strings.HasSuffix(seg, "__")
+}
+
 // matchesInternal reports whether the dotted module name matches any internal glob.
-// Config globs use slash paths (e.g. "myapp/b/_internal/**"), so the dotted name
-// is converted to slash form before matching.
+//
+// Python internal: globs are written in DOTTED module form (e.g.
+// "myapp.b._internal.*"), the same form used by paths: and by
+// classify.classifyStrength. Earlier this converted the module name to slash form,
+// which silently disagreed with classifyStrength (it matches the dotted path), so a
+// glob could set the uses_internal edge kind without setting strength=intrusive, or
+// vice versa. Matching the dotted form here keeps edge-kind and strength consistent.
 func (e *Extractor) matchesInternal(dotted string) bool {
-	slashPath := strings.ReplaceAll(dotted, ".", "/")
 	for _, pattern := range e.cfg.Internal {
-		if matched, _ := doublestar.Match(pattern, slashPath); matched {
+		if matched, _ := doublestar.Match(pattern, dotted); matched {
 			return true
 		}
 	}

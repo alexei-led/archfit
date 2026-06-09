@@ -447,6 +447,76 @@ func TestRun_Severity(t *testing.T) {
 	}
 }
 
+func TestRun_StrengthHintFallbackAndPrecedence(t *testing.T) {
+	// Module "b" declares services/b/api/** as its public surface but no internal
+	// globs, so a plain import of services/b/impl.go has no config-derived strength.
+	modules := map[string]config.ModuleDef{
+		"a": {Paths: []string{pathsA}, Owner: ownerTeamX, DeployUnit: deployUnitA},
+		"b": {Paths: []string{pathsB}, Public: []string{publicB}, Owner: ownerTeamY, DeployUnit: deployUnitB},
+	}
+	cfg := config.ClassifyConfig{Modules: modules}
+
+	const toBImpl = "file:services/b/impl.go" // no config-derived strength
+
+	tests := []struct {
+		name         string
+		to           string
+		hint         string
+		wantStrength coupling.Strength
+	}{
+		{
+			name:         "hint=intrusive used when config does not decide",
+			to:           toBImpl,
+			hint:         string(coupling.StrengthIntrusive),
+			wantStrength: coupling.StrengthIntrusive,
+		},
+		{
+			name:         "config public glob beats hint",
+			to:           "file:services/b/api/client.go",
+			hint:         string(coupling.StrengthIntrusive),
+			wantStrength: coupling.StrengthContract,
+		},
+		{
+			name:         "contract hint honored (trusted symbol-level source)",
+			to:           toBImpl,
+			hint:         string(coupling.StrengthContract),
+			wantStrength: coupling.StrengthContract,
+		},
+		{
+			name:         "unrecognized hint stays unknown",
+			to:           toBImpl,
+			hint:         "garbage",
+			wantStrength: coupling.StrengthUnknown,
+		},
+		{
+			name:         "no hint stays unknown",
+			to:           toBImpl,
+			hint:         "",
+			wantStrength: coupling.StrengthUnknown,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := graph.Edge{
+				From:         "file:services/a/impl.go",
+				To:           tc.to,
+				Kind:         graph.EdgeKindImports,
+				Language:     "go",
+				StrengthHint: tc.hint,
+			}
+			g := makeGraph([]graph.Edge{e})
+			cl, ok := classify.Run(g, cfg)[edgeKey(e)]
+			if !ok {
+				t.Fatal("edge not found in index")
+			}
+			if cl.Strength != tc.wantStrength {
+				t.Errorf("Strength = %q, want %q", cl.Strength, tc.wantStrength)
+			}
+		})
+	}
+}
+
 // keys returns all keys of the index as a slice (for error messages).
 func keys(idx coupling.Index) []string {
 	ks := make([]string, 0, len(idx))

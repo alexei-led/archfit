@@ -64,6 +64,13 @@ type SymbolResolver interface {
 	// source file path. Returns realPath and a confidence string ("high"/"medium").
 	// When no re-export map is available it returns toPath unchanged with confidence "high".
 	Resolve(ctx context.Context, fromFile, toPath string) (realPath, confidence string)
+
+	// Strengths returns symbol-level Balanced-Coupling integration strength for
+	// cross-module edges, keyed by "<fromModulePath>\x00<toModulePath>" (paths in
+	// the same dotted/slash form as graph node paths, kind prefix stripped). Values
+	// are coupling strengths ("contract"/"model"/"functional"/"intrusive"). A missing
+	// tool returns an empty map and status="absent" coverage — never an error.
+	Strengths(ctx context.Context, s scope.Scope) (map[string]string, diagnostic.Coverage, error)
 }
 
 // NopPatternProvider is a no-op PatternProvider used when no Phase 3 tools are
@@ -92,6 +99,11 @@ func (NopSymbolResolver) Name() string { return "nop-resolver" }
 // Resolve returns toPath unchanged with confidence "high".
 func (NopSymbolResolver) Resolve(_ context.Context, _, toPath string) (string, string) {
 	return toPath, "high"
+}
+
+// Strengths returns an empty map and an absent coverage record.
+func (NopSymbolResolver) Strengths(_ context.Context, _ scope.Scope) (map[string]string, diagnostic.Coverage, error) {
+	return nil, diagnostic.Coverage{Tool: "scip", Status: "absent"}, nil
 }
 
 // Renderer is the port that output adapters satisfy.

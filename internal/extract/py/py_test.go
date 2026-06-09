@@ -35,8 +35,9 @@ func TestExtract_Parse(t *testing.T) {
 
 	cfg := config.ExtractConfig{
 		PyPackage: testPkgName,
-		Internal:  []string{testPkgName + "/b/_internal/**"},
-		Mode:      config.ModeAuto,
+		// Dotted module glob (same form as paths: and classifyStrength), not slash.
+		Internal: []string{testPkgName + ".b._internal.*"},
+		Mode:     config.ModeAuto,
 	}
 	e := py.New(mock, cfg)
 
@@ -52,21 +53,29 @@ func TestExtract_Parse(t *testing.T) {
 
 	// Build a lookup of edges by (from, to).
 	type edgeKey struct{ from, to string }
-	edgeKinds := make(map[edgeKey]graph.EdgeKind)
+	edges := make(map[edgeKey]graph.Edge)
 	for _, edge := range facts.Edges {
-		edgeKinds[edgeKey{edge.From, edge.To}] = edge.Kind
+		edges[edgeKey{edge.From, edge.To}] = edge
 	}
 
-	// Edge myapp.a → myapp.b should be "imports".
+	// Edge myapp.a → myapp.b should be "imports" with no strength hint
+	// (public module name, no config public glob).
 	k1 := edgeKey{"module:myapp.a", "module:myapp.b"}
-	if got := edgeKinds[k1]; got != graph.EdgeKindImports {
+	if got := edges[k1].Kind; got != graph.EdgeKindImports {
 		t.Errorf("edge %v: kind = %q, want %q", k1, got, graph.EdgeKindImports)
 	}
+	if got := edges[k1].StrengthHint; got != "" {
+		t.Errorf("edge %v: StrengthHint = %q, want empty", k1, got)
+	}
 
-	// Edge myapp.a → myapp.b._internal.impl should be "uses_internal".
+	// Edge myapp.a → myapp.b._internal.impl should be "uses_internal" and carry
+	// an "intrusive" strength hint (PEP 8-private segment "_internal").
 	k2 := edgeKey{"module:myapp.a", "module:myapp.b._internal.impl"}
-	if got := edgeKinds[k2]; got != graph.EdgeKindUsesInternal {
+	if got := edges[k2].Kind; got != graph.EdgeKindUsesInternal {
 		t.Errorf("edge %v: kind = %q, want %q", k2, got, graph.EdgeKindUsesInternal)
+	}
+	if got := edges[k2].StrengthHint; got != "intrusive" {
+		t.Errorf("edge %v: StrengthHint = %q, want %q", k2, got, "intrusive")
 	}
 }
 

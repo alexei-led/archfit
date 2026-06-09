@@ -103,7 +103,13 @@ func classify(e graph.Edge, mi moduleIndex, modules map[string]config.ModuleDef)
 	toPath := pathFromID(e.To)
 
 	// --- Strength ---
+	// Config public/internal globs are authoritative. When they do not decide,
+	// fall back to an extractor-supplied language-aware hint (e.g. Python
+	// underscore-private targets → intrusive) before giving up to unknown.
 	str := classifyStrength(toPath, modules)
+	if str == coupling.StrengthUnknown {
+		str = strengthFromHint(e.StrengthHint)
+	}
 
 	// --- Distance ---
 	dist := classifyDistance(fromPath, toPath, mi, modules)
@@ -152,6 +158,24 @@ func classifyStrength(toPath string, modules map[string]config.ModuleDef) coupli
 		}
 	}
 	return coupling.StrengthUnknown
+}
+
+// strengthFromHint maps an extractor's strength hint to a coupling.Strength.
+//
+// Hints come from a trusted symbol-level source: either a SCIP index (which
+// resolves the imported symbol — Protocol/ABC → contract, concrete class → model,
+// function/method → functional, private → intrusive) or the Python underscore
+// heuristic (intrusive only). Both are evidence, not guesses, so all four valid
+// strengths are accepted; an unrecognized hint stays unknown. Config public/internal
+// globs still take precedence (see classify): the hint is a fallback only.
+func strengthFromHint(hint string) coupling.Strength {
+	switch coupling.Strength(hint) {
+	case coupling.StrengthContract, coupling.StrengthModel,
+		coupling.StrengthFunctional, coupling.StrengthIntrusive:
+		return coupling.Strength(hint)
+	default:
+		return coupling.StrengthUnknown
+	}
 }
 
 // classifyDistance determines how far apart from and to modules are in the

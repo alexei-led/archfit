@@ -68,6 +68,11 @@ type Edge struct {
 	Confidence       string     `json:"confidence"`
 	Locations        []Location `json:"locations"`
 	ExplicitnessHint string     `json:"explicitness_hint,omitempty"`
+	// StrengthHint is a language-aware integration-strength signal set by an
+	// extractor (e.g. a Python import of a PEP 8-private module → "intrusive").
+	// classify honors it only as a fallback when config public/internal globs do
+	// not decide, so an architect's explicit declaration always wins.
+	StrengthHint string `json:"strength_hint,omitempty"`
 }
 
 // canonicalKey uniquely identifies an edge regardless of source.
