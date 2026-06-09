@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/extract/clones"
 	"github.com/alexei-led/archfit/internal/fitness"
+	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
@@ -61,7 +61,7 @@ type ChangeHistory struct {
 	FileLOC        map[string]int    // source file -> lines of code (tests excluded)
 	Complexity     []ComplexityFunc  // per-function cyclomatic complexity (external tool)
 	FitnessSignals fitness.Signals   // architecture-intent enforcement signals (filesystem scan)
-	CloneClusters  []clones.Cluster  // duplicated code blocks across files (clone detector)
+	CloneClusters  []clone.Cluster   // duplicated code blocks across files (clone detector)
 	// GitnexusImpact maps module path → historical change-impact count from the
 	// gitnexus CLI. Nil/empty when gitnexus is disabled or absent; risk_hub uses it
 	// as an optional multiplicative factor (never alters surface-breadth computation).
@@ -103,7 +103,7 @@ type MetricInput struct {
 	// CloneClusters holds duplicated-code blocks detected by an external clone
 	// detector (e.g. jscpd). Empty when the tool is disabled or absent; metrics
 	// that need it must report n/a when CloneClusters is nil/empty.
-	CloneClusters []clones.Cluster
+	CloneClusters []clone.Cluster
 	// GitnexusImpact maps module path → historical change-impact count from the
 	// gitnexus CLI (tools.gitnexus.enabled: on). Nil/empty (the default) leaves
 	// risk_hub behaviour exactly as today (surface-breadth × volatility only).

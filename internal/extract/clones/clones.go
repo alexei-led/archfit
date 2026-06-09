@@ -18,9 +18,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -35,63 +35,11 @@ const (
 	flagOutput    = "--output"
 )
 
-// Cluster represents a group of files that share a duplicated code block.
-type Cluster struct {
-	// Files contains the repo-relative (or absolute) paths involved in the clone.
-	Files []string
-	// Lines is the number of duplicated lines in the block.
-	Lines int
-}
-
-// ModulePairs converts a slice of Clusters to canonical cross-module pairs
-// using an injected key function. Same-module pairs are skipped. Each pair is
-// returned in sorted order ([a,b] where a <= b) and the result slice is deduped
-// and sorted for determinism.
-//
-// The key function is typically fileToModuleKey(file, lang) from the metrics
-// package, injected at the call site so this package stays free of that import.
-func ModulePairs(clusters []Cluster, key func(string) string) [][2]string {
-	seen := make(map[[2]string]struct{})
-	for _, c := range clusters {
-		// Collect distinct module keys across all files in this cluster.
-		mods := make(map[string]struct{})
-		for _, f := range c.Files {
-			if k := key(f); k != "" {
-				mods[k] = struct{}{}
-			}
-		}
-		// Emit all cross-module pairs from this cluster.
-		keys := make([]string, 0, len(mods))
-		for k := range mods {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for i := 0; i < len(keys); i++ {
-			for j := i + 1; j < len(keys); j++ {
-				pair := [2]string{keys[i], keys[j]}
-				seen[pair] = struct{}{}
-			}
-		}
-	}
-
-	out := make([][2]string, 0, len(seen))
-	for p := range seen {
-		out = append(out, p)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i][0] != out[j][0] {
-			return out[i][0] < out[j][0]
-		}
-		return out[i][1] < out[j][1]
-	})
-	return out
-}
-
 // Run invokes jscpd over root and returns detected clone clusters.
 // When enabled is false, or the tool is absent, or any non-fatal failure
 // occurs, it returns an empty slice with an absent/partial coverage record
 // and a nil error.
-func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) ([]Cluster, diagnostic.Coverage, error) {
+func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) ([]clone.Cluster, diagnostic.Coverage, error) {
 	absent := diagnostic.Coverage{Tool: toolName, Status: statusAbsent}
 	if !enabled {
 		return nil, absent, nil
@@ -159,17 +107,17 @@ type jscpdFile struct {
 
 // parseJscpdReport parses jscpd JSON report data into Cluster values.
 // Each duplicate entry becomes one Cluster with two files and the line count.
-func parseJscpdReport(data []byte) ([]Cluster, error) {
+func parseJscpdReport(data []byte) ([]clone.Cluster, error) {
 	var report jscpdReport
 	if err := json.Unmarshal(data, &report); err != nil {
 		return nil, err
 	}
-	clusters := make([]Cluster, 0, len(report.Duplicates))
+	clusters := make([]clone.Cluster, 0, len(report.Duplicates))
 	for _, d := range report.Duplicates {
 		if d.FirstFile.Name == "" && d.SecondFile.Name == "" {
 			continue
 		}
-		clusters = append(clusters, Cluster{
+		clusters = append(clusters, clone.Cluster{
 			Files: []string{d.FirstFile.Name, d.SecondFile.Name},
 			Lines: d.Lines,
 		})

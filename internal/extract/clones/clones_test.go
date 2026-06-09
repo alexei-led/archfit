@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -180,7 +181,7 @@ func TestRun_ToolFailure(t *testing.T) {
 }
 
 func TestModulePairs_CrossModule(t *testing.T) {
-	clusters := []Cluster{
+	clusters := []clone.Cluster{
 		{Files: []string{"internal/a/a.go", "internal/b/b.go"}, Lines: 25},
 		{Files: []string{"internal/c/c.go", "internal/d/d.go"}, Lines: 10},
 	}
@@ -193,7 +194,7 @@ func TestModulePairs_CrossModule(t *testing.T) {
 		}
 		return ""
 	}
-	pairs := ModulePairs(clusters, key)
+	pairs := clone.ModulePairs(clusters, key)
 	if len(pairs) != 2 {
 		t.Fatalf("pairs len = %d, want 2", len(pairs))
 	}
@@ -206,7 +207,7 @@ func TestModulePairs_CrossModule(t *testing.T) {
 }
 
 func TestModulePairs_SameModule_Skipped(t *testing.T) {
-	clusters := []Cluster{
+	clusters := []clone.Cluster{
 		{Files: []string{"internal/a/x.go", "internal/a/y.go"}, Lines: 15},
 	}
 	key := func(f string) string {
@@ -217,7 +218,7 @@ func TestModulePairs_SameModule_Skipped(t *testing.T) {
 		}
 		return ""
 	}
-	pairs := ModulePairs(clusters, key)
+	pairs := clone.ModulePairs(clusters, key)
 	if len(pairs) != 0 {
 		t.Errorf("expected 0 pairs for same-module cluster, got %d: %v", len(pairs), pairs)
 	}
@@ -225,7 +226,7 @@ func TestModulePairs_SameModule_Skipped(t *testing.T) {
 
 func TestModulePairs_Dedup(t *testing.T) {
 	// Two clusters both map to the same module pair — should produce one pair.
-	clusters := []Cluster{
+	clusters := []clone.Cluster{
 		{Files: []string{"internal/a/x.go", "internal/b/y.go"}, Lines: 10},
 		{Files: []string{"internal/a/z.go", "internal/b/w.go"}, Lines: 5},
 	}
@@ -237,7 +238,7 @@ func TestModulePairs_Dedup(t *testing.T) {
 		}
 		return ""
 	}
-	pairs := ModulePairs(clusters, key)
+	pairs := clone.ModulePairs(clusters, key)
 	if len(pairs) != 1 {
 		t.Errorf("expected 1 deduplicated pair, got %d: %v", len(pairs), pairs)
 	}
@@ -245,7 +246,7 @@ func TestModulePairs_Dedup(t *testing.T) {
 
 func TestModulePairs_EmptyKey_Skipped(t *testing.T) {
 	// Files that map to empty key should be ignored.
-	clusters := []Cluster{
+	clusters := []clone.Cluster{
 		{Files: []string{"rootfile.go", "internal/b/b.go"}, Lines: 8},
 	}
 	// key returns empty for root files (no slash), non-empty for others
@@ -257,7 +258,7 @@ func TestModulePairs_EmptyKey_Skipped(t *testing.T) {
 		}
 		return ""
 	}
-	pairs := ModulePairs(clusters, key)
+	pairs := clone.ModulePairs(clusters, key)
 	// rootfile.go → empty key (skipped); only b remains; single-mod cluster → no pairs
 	if len(pairs) != 0 {
 		t.Errorf("expected 0 pairs when one file has empty key, got %d", len(pairs))

@@ -3,8 +3,8 @@ package metrics_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/extract/clones"
 	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
@@ -33,7 +33,7 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		clusters    []clones.Cluster
+		clusters    []clone.Cluster
 		coChange    map[[2]string]int
 		g           *graph.Graph
 		wantBand    string
@@ -49,14 +49,14 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 		},
 		{
 			name:      "nil graph → n/a",
-			clusters:  []clones.Cluster{{Files: []string{pathA, pathB}, Lines: 10}},
+			clusters:  []clone.Cluster{{Files: []string{pathA, pathB}, Lines: 10}},
 			g:         nil,
 			wantBand:  bandNAStr,
 			wantValue: 0,
 		},
 		{
 			name: "one cross-module cluster → one pair",
-			clusters: []clones.Cluster{
+			clusters: []clone.Cluster{
 				{Files: []string{pathA, pathB}, Lines: 20},
 			},
 			g:           twoGoNodes(),
@@ -66,7 +66,7 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 		},
 		{
 			name: "two clusters same module pair → deduped to one",
-			clusters: []clones.Cluster{
+			clusters: []clone.Cluster{
 				{Files: []string{pathA, pathB}, Lines: 10},
 				{Files: []string{pathA, pathB}, Lines: 15},
 			},
@@ -76,7 +76,7 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 		},
 		{
 			name: "two distinct cross-module pairs",
-			clusters: []clones.Cluster{
+			clusters: []clone.Cluster{
 				{Files: []string{pathA, pathB}, Lines: 10},
 				{Files: []string{pathA, pathC}, Lines: 8},
 			},
@@ -96,7 +96,7 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 		},
 		{
 			name: "same-module cluster → no cross-module pair → n/a",
-			clusters: []clones.Cluster{
+			clusters: []clone.Cluster{
 				// Both files resolve to module "pkg/a"
 				{Files: []string{"pkg/a/a.go", "pkg/a/b.go"}, Lines: 10},
 			},
@@ -106,7 +106,7 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 		},
 		{
 			name: "cross-module pair also co-changes",
-			clusters: []clones.Cluster{
+			clusters: []clone.Cluster{
 				{Files: []string{pathA, pathB}, Lines: 20},
 			},
 			coChange: map[[2]string]int{
@@ -119,7 +119,7 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 		},
 		{
 			name: "co-change on different pair → clone pair unaffected",
-			clusters: []clones.Cluster{
+			clusters: []clone.Cluster{
 				{Files: []string{pathA, pathB}, Lines: 20},
 			},
 			coChange: map[[2]string]int{

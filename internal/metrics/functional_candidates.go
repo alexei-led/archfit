@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/extract/clones"
+	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 )
 
@@ -40,7 +40,7 @@ func (m FunctionalCandidatesMetric) Calculate(in MetricInput) diagnostic.MetricR
 	lang := dominantLanguage(in.Graph)
 
 	// Map clone clusters to canonical cross-module pairs (deduped + sorted by ModulePairs).
-	pairs := clones.ModulePairs(in.CloneClusters, func(f string) string {
+	pairs := clone.ModulePairs(in.CloneClusters, func(f string) string {
 		return fileToModuleKey(f, lang)
 	})
 
