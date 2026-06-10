@@ -12,7 +12,3 @@ metrics:
     gate: warn
   functional_candidates:
     enabled: false
-  cohesion_spread:
-    enabled: false
-  shared_state_hub:
-    enabled: false

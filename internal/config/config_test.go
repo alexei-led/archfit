@@ -569,45 +569,10 @@ func TestLoad_SelfConfig(t *testing.T) {
 
 	for _, name := range []string{
 		"risk_hub", "architecture_fitness", "functional_candidates",
-		"cohesion_spread", "shared_state_hub",
 	} {
 		mc := cfg.ForMetric(name)
 		if mc.Enabled {
 			t.Errorf("self-config: ForMetric(%q).Enabled = true, want false (new metrics default off)", name)
-		}
-	}
-}
-
-// TestLoad_Tranche15Metrics verifies that cohesion_spread and shared_state_hub
-// entries load correctly from the shared new_tools_metrics fixture.
-func TestLoad_Tranche15Metrics(t *testing.T) {
-	cfg, err := config.Load(context.Background(), "testdata/new_tools_metrics.yaml")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	cs := cfg.ForMetric("cohesion_spread")
-	if cs.Enabled {
-		t.Error("ForMetric(cohesion_spread).Enabled = true, want false")
-	}
-
-	ssh := cfg.ForMetric("shared_state_hub")
-	if ssh.Enabled {
-		t.Error("ForMetric(shared_state_hub).Enabled = true, want false")
-	}
-}
-
-// TestTranche15MetricsDefaultZero verifies that absent cohesion_spread and
-// shared_state_hub entries return a zero MetricEntry (ForMetric contract).
-func TestTranche15MetricsDefaultZero(t *testing.T) {
-	cfg := config.Config{Version: 1}
-	for _, name := range []string{"cohesion_spread", "shared_state_hub"} {
-		mc := cfg.ForMetric(name)
-		if mc.Enabled {
-			t.Errorf("ForMetric(%q).Enabled = true on empty config, want false", name)
-		}
-		if mc.Gate != "" {
-			t.Errorf("ForMetric(%q).Gate = %q on empty config, want empty", name, mc.Gate)
 		}
 	}
 }

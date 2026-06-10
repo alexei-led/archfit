@@ -140,11 +140,11 @@ BlastRadius *BlastInfo }` (BlastRadius nil when gitnexus absent). All counts det
 - Modify: `.archfit.yaml` (remove the two `metrics.*` entries), `internal/config/config_test.go`, `internal/config/testdata/new_tools_metrics.yaml` (drop the added entries/cases)
 - Modify: `internal/output/{console,markdown,jsonout}/*_test.go` (remove the two metrics' render test cases)
 
-- [ ] delete the two metric files + their tests; remove registrations from `metrics.New()`
-- [ ] fix metric-count/name assertions (`metrics_test.go`, `engine_test.go`) to 12
-- [ ] remove the two `.archfit.yaml` entries and the config/renderer test cases that referenced them
-- [ ] run `go build ./...` and `go test ./...` — must be fully green before Task 2
-- [ ] run `make lint` — 0 issues
+- [x] delete the two metric files + their tests; remove registrations from `metrics.New()`
+- [x] fix metric-count/name assertions (`metrics_test.go`, `engine_test.go`) to 12
+- [x] remove the two `.archfit.yaml` entries and the config/renderer test cases that referenced them
+- [x] run `go build ./...` and `go test ./...` — must be fully green before Task 2
+- [x] run `make lint` — 0 issues
 
 ### Task 2: facts.Build assembler (pure, from collected data)
 
