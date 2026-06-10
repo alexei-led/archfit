@@ -153,11 +153,11 @@ BlastRadius *BlastInfo }` (BlastRadius nil when gitnexus absent). All counts det
 - Create: `internal/facts/facts.go`
 - Create: `internal/facts/facts_test.go`
 
-- [ ] define `FileFact` and `Build(g symbol.Graph, fileLOC map[string]int, coChange map[[2]string]int) []FileFact` — compute inbound module fan-in, outbound distinct-destination count, LOC, top co-change partners per file; deterministic total-order sort (by file name) for stable output
-- [ ] empty/absent symbol graph -> empty slice (no panic, no false zero)
-- [ ] keep it neutral: facts only, no risk label/rank field
-- [ ] write tests: a fixture where one file has high inbound fan-in and another high outbound destinations; co-change partners resolved; empty-graph -> empty; determinism (stable order)
-- [ ] run tests — must pass before Task 3
+- [x] define `FileFact` and `Build(g symbol.Graph, fileLOC map[string]int, coChange map[[2]string]int) []FileFact` — compute inbound module fan-in, outbound distinct-destination count, LOC, top co-change partners per file; deterministic total-order sort (by file name) for stable output
+- [x] empty/absent symbol graph -> empty slice (no panic, no false zero)
+- [x] keep it neutral: facts only, no risk label/rank field
+- [x] write tests: a fixture where one file has high inbound fan-in and another high outbound destinations; co-change partners resolved; empty-graph -> empty; determinism (stable order)
+- [x] run tests — must pass before Task 3
 
 ### Task 3: Attach facts to the diagnostic and wire through engine/cmd
 
