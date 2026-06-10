@@ -244,11 +244,36 @@ the two LLM jobs land on opposite sides:
   even with a fan-out-aware prompt, because archfit's coarse config-modules hide them. The
   evidence package needs per-file / intra-module signal first.
 
-### Tranche 1.5 — deterministic (build first; gates the LLM coupling layer)
+### Tranche 1.5 — deterministic structural-facts block (build first; gates the LLM coupling layer)
 
-Emit per-file / intra-module cohesion + shared-state hub signals in the evidence package so
-intra-module hubs (`polling_state`, `directory_callbacks`) surface. Report-only/info, same
-pattern as Tranche 1. Without it the LLM coupling layer is blind to a real hub class.
+Goal: make the intra-module hubs the spike's blind classifier missed (`polling_state`,
+`directory_callbacks`) visible to the Tranche-2 LLM. Plan + evidence:
+`docs/plans/20260610-archfit-tranche1.5-structural-facts.md`,
+`docs/plans/notes/intra-module-hub-validation.md`, and the signal probe notes.
+
+**A first attempt (two ranking metrics — `cohesion_spread`, `shared_state_hub`) FAILED its
+4-repo gate**, and a follow-up signal probe on ccgram settled why and what works:
+
+- **Deterministic code cannot RANK these hubs by risk.** Separating `config` (benign,
+  read-only) from `polling_state` (risky, mutable), or `bootstrap` (wiring) from
+  `directory_callbacks` (grab-bag), needs mutability/intent — the LLM's job, not a metric's.
+- **`polling_state`'s SCIP symbol fan-in is too flat** (`PaneStatusStrategy` peaks at 2;
+  file max 8 — noise floor). What surfaces it: SCIP **module-level inbound fan-in** (23
+  importing modules) shows it is a hub; **GitNexus blast-radius** (13 direct / 41 transitive)
+  carries the depth that is the real danger. No SCIP reader change recovers this.
+- **`directory_callbacks` cannot be measured by SCIP LCOM** (Python SCIP omits
+  `enclosing_range`, so a file's symbols collapse to one cohesion component). What surfaces
+  it: **outbound distinct-destination count × LOC** (46 destinations) — i.e. the original
+  `cohesion_spread` idea without its subsystem-collapse.
+
+**Resulting design (validated by the probe): emit a per-file STRUCTURAL-FACTS block, not
+metrics.** From already-collected data — **no `scip_reader.py` change** — assemble per file:
+inbound module fan-in, outbound distinct-destination count, LOC, co-change partners, and
+GitNexus blast-radius when the optional provider is on. Emitted as neutral evidence (JSON for
+the LLM + compact markdown); **no band, no score, never on `check`.** The two failed ranking
+metrics are removed (`shared_state_hub`) or folded into the facts block (`cohesion_spread`'s
+outbound computation, at raw-destination granularity). **Acceptance is the spike re-run** (the
+blind classifier must now surface both hubs from the enriched evidence), not a metric rank.
 
 ### Tranche 2 — LLM, off-gate (REVISED by the spike; build after Tranche 1.5)
 

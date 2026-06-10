@@ -1,5 +1,11 @@
 # archfit Tranche 1.5 — Intra-module hub signals (deterministic)
 
+> **SUPERSEDED (2026-06-10).** This attempt's two ranking metrics (`cohesion_spread`,
+> `shared_state_hub`) FAILED the 4-repo gate (`docs/plans/notes/intra-module-hub-validation.md`).
+> A follow-up signal probe showed deterministic code cannot RANK these hubs and that no reader
+> change recovers `polling_state` from SCIP symbol fan-in. Replaced by the facts-block design in
+> `docs/plans/20260610-archfit-tranche1.5-structural-facts.md`. Kept for the record.
+
 ## Overview
 
 The validation spike (`docs/plans/notes/llm-spike/result.md`) showed the planned
