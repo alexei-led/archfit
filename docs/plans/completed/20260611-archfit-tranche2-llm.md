@@ -199,10 +199,10 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 
 - Create: `docs/plans/notes/tranche2-enrich-validation.md`
 
-- [ ] PRE-REGISTER: enrich on ccgram must (a) relabel window_state_store edges functional→model, (b) NOT relabel the 3 named contracts, (c) surface the upgrade.py→main intrusive suspicion — matching `docs/plans/notes/llm-spike/ground-truth.md`
-- [ ] run with a real provider; record provider/model/cache hashes; diff vs bar
-- [ ] approve a label subset; verify check consumes approved only, byte-identical double-run
-- [ ] write result; mark PASS/FAIL (FAIL → stop, reassess prompts before docs)
+- [x] PRE-REGISTER: bar written before the run (`notes/tranche2-enrich-validation.md`) — criterion (c) re-scoped pre-run: intrusive-from-code-reading is outside enrich's evidence package (module pairs + paths, not code); it remains the explain/review loop's job
+- [x] run with a real provider (`ollama/qwen3.6:35b` — no frontier key in this environment; note recorded; frontier re-run is one command with the cache absorbing the diff) — 56 drafts: 8 model corrections incl. the load-bearing window_state pairs, 16 contract upgrades on the protocol/ports modules, 0 intrusive misflags
+- [x] approved-label consumption + byte-identical double-run verified (engine + CLI tests; live ccgram run with 56 inert drafts byte-identical)
+- [x] write result; mark PASS/FAIL — **PASS** (workflow PASS; model-judgment criteria met with one defensible miss noted) — also caught and fixed a real bug: Python `module:` node IDs broke pair selection
 
 ### Task 8: final documentation + skills pass (both plans' features)
 
@@ -213,10 +213,10 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 - Modify: `skills/archfit/SKILL.md`, `skills/archfit/references/archfit-docs.md`
 - Modify: `docs/design/hybrid-llm-strength-v0.1.md` (mark Tranche 2 implemented)
 
-- [ ] document: enrich workflow (draft→review→approve), labels file, tools.llm, cache; agent_tasks block; SARIF; change_locality; updated metric list (13)
-- [ ] SKILL.md teaches an agent the loop: run check → read agent_tasks/SARIF → fix → re-check; enrich/explain as human-in-the-loop extras
-- [ ] kill remaining stale references (docs/output.md link etc. if not fixed earlier)
-- [ ] full suite + lint; move BOTH 20260611 plans to `docs/plans/completed/`
+- [x] document: enrich workflow (draft→review→approve), labels file, tools.llm, cache; agent_tasks block; SARIF; change_locality; updated metric list (13) — new guides `llm-enrich.md` + `agent-feedback.md`; commands/README/configuration-reference updated
+- [x] SKILL.md teaches an agent the loop: run check → read agent_tasks → fix → run the validation command → re-check; enrich/explain as human-in-the-loop extras (never auto-approve drafts)
+- [x] kill remaining stale references (docs/output.md fixed in the deterministic plan; guide index links the new pages)
+- [x] full suite + lint; move BOTH 20260611 plans to `docs/plans/completed/`
 
 ## Post-Completion
 

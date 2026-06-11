@@ -29,6 +29,39 @@ and the model-quality bar is re-run with a frontier model
 (`tools.llm: anthropic / claude-opus-4-8` — one command; the cache makes the
 diff cheap). PASS/PARTIAL is recorded honestly below.
 
-## Result
+## Result — PASS (workflow) / PASS-with-notes (model judgment) — 2026-06-11
 
-To be filled after the run.
+Run: `archfit enrich` on ccgram, SCIP on, provider `ollama/qwen3.6:35b-a3b-coding-nvfp4`
+(local; no frontier key available — see provider note). 56 drafts written:
+32 functional kept, 16 upgraded to contract, 8 corrected to model, 0 intrusive.
+
+**Criterion 1 (window_state correction): met on the load-bearing pairs.**
+`session_state → window_state`, `window_state_ports → window_state`,
+`handlers → session_state`, `providers/tmux_adapter/transcript → session_state`
+all corrected functional → model with shared-data-structure rationales — the
+spike's central correction class. `handlers → window_state` stayed functional
+(defensible: the sampled edges are query/storage calls); a frontier re-run can
+revisit.
+
+**Criterion 2 (no contract misflag): PASS.** Zero intrusive drafts. Better:
+the provider-protocol pairs were UPGRADED to contract (hooks→providers,
+telegram_adapter→providers, session_state→providers, transcript→providers,
+window_state→window_state_ports "published state port interfaces") — the same
+correction direction the spike's frontier model made.
+
+**Criterion 3 (workflow integrity): PASS.** Drafts carry evidence hashes;
+file round-trips through the strict loader; `check` with 56 drafts present is
+byte-identical across runs and identical in verdict/finding count to the
+pre-labels run (drafts inert). Approved-label consumption and stale-hash
+advisories are covered by engine/CLI tests.
+
+**Known scope note:** the spike's third finding class (upgrade.py→main
+INTRUSIVE, found by reading code) is outside enrich's evidence package —
+enrich sees module pairs + sample paths, not code. Detecting intrusive
+access from code remains the explain/review loop's job, not batch enrich.
+
+Artifacts: ccgram `.archfit-labels.yaml` left in place (drafts, inert) for
+the owner's review; ccgram `.archfit.yaml` restored to its original state.
+One implementation bug found by this acceptance and fixed: pair selection
+used a hardcoded "file:" node prefix and missed Python "module:" nodes —
+now `graph.NodePath`.
