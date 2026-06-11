@@ -136,6 +136,7 @@ func Run(
 		FitnessSignals:  change.FitnessSignals,
 		CloneClusters:   change.CloneClusters,
 		GitnexusImpact:  change.GitnexusImpact,
+		ChangedFiles:    s.Changed,
 	}
 	metricResults := make([]diagnostic.MetricResult, 0, len(ms))
 	for _, m := range ms {

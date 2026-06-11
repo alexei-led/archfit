@@ -109,6 +109,9 @@ type MetricInput struct {
 	// risk_hub behaviour exactly as today (surface-breadth × volatility only).
 	// When non-empty, risk_hub incorporates it as a bounded additional factor.
 	GitnexusImpact map[string]int
+	// ChangedFiles is the sorted repo-relative diff file set (scope.Scope.Changed)
+	// in delta mode; empty in full mode. change_locality reports n/a without it.
+	ChangedFiles []string
 }
 
 // ---------------------------------------------------------------------------
@@ -664,7 +667,7 @@ func coverageConfidence(unresolved, total int) string {
 // config.ApplyVolatility, so churn-derived values never contaminate the
 // risk_hub signal (that would double-count with change_amplification).
 func New(cfg config.Config) []Metric {
-	return []Metric{
+	all := []Metric{
 		EncapsulationMetric{},
 		UnbalancedEdgeMetric{},
 		CycleMetric{},
@@ -677,7 +680,19 @@ func New(cfg config.Config) []Metric {
 		newRiskHubMetric(cfg),
 		ArchitectureFitnessMetric{},
 		FunctionalCandidatesMetric{},
+		ChangeLocalityMetric{},
 	}
+
+	// Honor explicit `metrics.<name>.enabled: false` config: metrics absent
+	// from the config default to enabled; only an explicit entry can disable.
+	out := make([]Metric, 0, len(all))
+	for _, m := range all {
+		if entry, configured := cfg.Metrics[m.Name()]; configured && !entry.Enabled {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 // newRiskHubMetric builds a RiskHubMetric with volatility multipliers derived

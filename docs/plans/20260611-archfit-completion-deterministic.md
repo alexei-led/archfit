@@ -199,10 +199,11 @@ coverage, not behavior.
 - Create: `internal/metrics/change_locality.go` (+test)
 - Modify: `internal/metrics/metrics_test.go`, `internal/engine/engine_test.go` (metric count 12 → 13), `.archfit.yaml`
 
-- [ ] thread the resolved diff file set into MetricInput (empty in --full)
-- [ ] metric per design §4: new cross-module edges from changed files; warn band on baseline regression; n/a without base/baseline
-- [ ] tests: new edge counted; unchanged file's edge not; --full → n/a; determinism
-- [ ] run tests — green before Task 8
+- [x] thread the resolved diff file set into MetricInput (empty in --full) — `scope.Scope.Changed` already existed; engine wires it directly (no cmd change needed)
+- [x] metric per design §4 — DEVIATION: report-only info band instead of warn-on-regression: change_locality's value is per-diff, so delta vs a previous (different) diff is meaningless; the new_cross_module_dependency RULE is the gate for new edges, the metric quantifies blast surface (cross-module edges from changed files + forward reach)
+- [x] tests: new edge counted; unchanged file's edge not; --full → n/a; determinism; low confidence without classifications
+- [x] run tests — green before Task 8 — live delta run: "33 cross-module edge(s) from 24 changed file(s); forward reach 45 file(s)"
+- [x] + fix discovered en route: `metrics.<name>.enabled: false` config was parsed but IGNORED (all metrics always ran); metrics.New now honors explicit disables (unconfigured metrics default to enabled)
 
 ### Task 8: stale comment + doc hygiene
 
