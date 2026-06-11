@@ -147,9 +147,9 @@ coverage, not behavior.
 
 - Modify: `cmd/archfit/main.go` (+`main_test.go`)
 
-- [ ] `ExplainCmd` resolves evidence via `runPipeline` (same providers/history as check)
-- [ ] test: explain on the violating fixture prints the finding with module labels resolved
-- [ ] run tests — green before Task 4
+- [x] `ExplainCmd` resolves evidence via `runPipeline` (same providers/history as check); output adds resolved modules, locations, allowed alternatives
+- [x] test: explain on the violating fixture prints the finding with module labels resolved
+- [x] run tests — green before Task 4
 
 ### Task 4: gitnexus fix-or-drop (decision gate)
 
@@ -158,10 +158,10 @@ coverage, not behavior.
 - Spike note: `docs/plans/notes/gitnexus-adapter-decision.md`
 - Modify or delete: `internal/extract/gitnexus/*`, config key, `risk_hub` factor, `FileFact.GitnexusImpact`
 
-- [ ] spike: enumerate what the installed gitnexus CLI can actually return repo-wide; write the decision note (pre-register: fix only if ONE stable command yields per-module counts)
-- [ ] implement the decision (rewrite adapter OR remove provider end-to-end)
-- [ ] tests updated to the real contract; no test asserts the fictional `impact --json <root>`
-- [ ] run tests — green before Task 5
+- [x] spike: enumerate what the installed gitnexus CLI can actually return repo-wide; write the decision note (pre-register: fix only if ONE stable command yields per-module counts) — `gitnexus cypher` qualifies; decision: FIX
+- [x] implement the decision — adapter rewritten to the cypher dependants query; contract is now FILE-keyed counts; risk_hub + facts aggregate to modules via symbol-graph paths (MAX over files)
+- [x] tests updated to the real contract; no test asserts the fictional `impact --json <root>`
+- [x] run tests — green before Task 5 — live ccgram validation: coverage ok, 144 facts enriched, polling_state blast-radius 23
 
 ### Task 5: agent_tasks repair blocks
 

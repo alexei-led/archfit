@@ -185,12 +185,17 @@ func TestBuild_GitnexusImpact(t *testing.T) {
 	})
 
 	t.Run("present map enriches covered modules only", func(t *testing.T) {
-		impact := map[string]int{modHub: 41, modSprawl: 13}
+		// File-keyed counts; hub has two files — module impact is the MAX.
+		impact := map[string]int{fileHubPy: 41, fileHubExtra: 7, fileSprawlPy: 13}
 		got := facts.Build(g, nil, nil, impact)
 
 		hub := findFact(t, got, modHub)
 		if hub.GitnexusImpact == nil || *hub.GitnexusImpact != 41 {
-			t.Errorf("hub GitnexusImpact = %v, want 41", hub.GitnexusImpact)
+			t.Errorf("hub GitnexusImpact = %v, want 41 (max over files)", hub.GitnexusImpact)
+		}
+		sprawl := findFact(t, got, modSprawl)
+		if sprawl.GitnexusImpact == nil || *sprawl.GitnexusImpact != 13 {
+			t.Errorf("sprawl GitnexusImpact = %v, want 13", sprawl.GitnexusImpact)
 		}
 		leaf := findFact(t, got, "leaf")
 		if leaf.GitnexusImpact != nil {

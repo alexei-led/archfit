@@ -2,19 +2,20 @@ package gitnexus
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
-// gitnexusSuccessJSON is a canned gitnexus JSON response with two modules.
-const gitnexusSuccessJSON = `[
-	{"module":"internal/store","impact":42},
-	{"module":"internal/util","impact":3}
-]`
+// gitnexusSuccessJSON is a canned `gitnexus cypher` envelope with two files.
+const gitnexusSuccessJSON = `{
+	"markdown": "| file | dependants |\n| --- |\n| src/app/store.py | 42 |\n| src/app/util.py | 3 |",
+	"row_count": 2
+}`
 
-// gitnexusEmptyJSON is a valid but empty response.
-const gitnexusEmptyJSON = `[]`
+// gitnexusEmptyJSON is a valid envelope with no data rows.
+const gitnexusEmptyJSON = `{"markdown": "| file | dependants |\n| --- |", "row_count": 0}`
 
 // makeImpactRunner returns a RunnerMock that detects gitnexus and returns the
 // given JSON on stdout with exit code 0.
@@ -41,7 +42,7 @@ func absentRunner() *toolrun.RunnerMock {
 	}
 }
 
-// failRunner detects gitnexus but Run returns exit code 1.
+// failRunner detects gitnexus but Run returns exit code 1 (e.g. repo not indexed).
 func failRunner() *toolrun.RunnerMock {
 	return &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
@@ -72,7 +73,8 @@ func malformedRunner() *toolrun.RunnerMock {
 }
 
 func TestRun_EnabledPresent(t *testing.T) {
-	impact, cov, err := Run(context.Background(), makeImpactRunner(gitnexusSuccessJSON), t.TempDir(), true)
+	runner := makeImpactRunner(gitnexusSuccessJSON)
+	impact, cov, err := Run(context.Background(), runner, t.TempDir(), true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -82,11 +84,24 @@ func TestRun_EnabledPresent(t *testing.T) {
 	if len(impact) != 2 {
 		t.Fatalf("impact len = %d, want 2", len(impact))
 	}
-	if impact["internal/store"] != 42 {
-		t.Errorf("internal/store impact = %d, want 42", impact["internal/store"])
+	if impact["src/app/store.py"] != 42 {
+		t.Errorf("store.py dependants = %d, want 42", impact["src/app/store.py"])
 	}
-	if impact["internal/util"] != 3 {
-		t.Errorf("internal/util impact = %d, want 3", impact["internal/util"])
+	if impact["src/app/util.py"] != 3 {
+		t.Errorf("util.py dependants = %d, want 3", impact["src/app/util.py"])
+	}
+
+	// The adapter must call the real CLI interface: cypher -r <root> <query>.
+	calls := runner.RunCalls()
+	if len(calls) != 1 {
+		t.Fatalf("Run called %d times, want 1", len(calls))
+	}
+	args := calls[0].Cmd.Args
+	if len(args) < 4 || args[0] != "cypher" || args[1] != "-r" {
+		t.Errorf("args = %v, want cypher -r <root> <query>", args)
+	}
+	if !strings.Contains(args[3], "MATCH") {
+		t.Errorf("query arg does not look like Cypher: %q", args[3])
 	}
 }
 
@@ -155,47 +170,64 @@ func TestRun_EmptyResult(t *testing.T) {
 	}
 }
 
-func TestParseImpact_Success(t *testing.T) {
-	m, err := parseImpact([]byte(gitnexusSuccessJSON))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestParseDependants(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    string
+		want    map[string]int
+		wantErr bool
+	}{
+		{
+			name: "success table",
+			data: gitnexusSuccessJSON,
+			want: map[string]int{"src/app/store.py": 42, "src/app/util.py": 3},
+		},
+		{
+			name: "header and separator skipped",
+			data: `{"markdown": "| file | dependants |\n| --- |\n| a.go | 7 |", "row_count": 1}`,
+			want: map[string]int{"a.go": 7},
+		},
+		{
+			name: "non-numeric count skipped",
+			data: `{"markdown": "| a.go | seven |\n| b.go | 2 |", "row_count": 2}`,
+			want: map[string]int{"b.go": 2},
+		},
+		{
+			name:    "cypher error envelope",
+			data:    `{"error": "Prepare failed: Binder exception"}`,
+			wantErr: true,
+		},
+		{
+			name:    "malformed json",
+			data:    "not json",
+			wantErr: true,
+		},
+		{
+			name: "empty markdown",
+			data: gitnexusEmptyJSON,
+			want: map[string]int{},
+		},
 	}
-	if len(m) != 2 {
-		t.Fatalf("want 2 entries, got %d", len(m))
-	}
-	if m["internal/store"] != 42 {
-		t.Errorf("internal/store = %d, want 42", m["internal/store"])
-	}
-}
-
-func TestParseImpact_Empty(t *testing.T) {
-	m, err := parseImpact([]byte(gitnexusEmptyJSON))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(m) != 0 {
-		t.Errorf("want 0 entries, got %d", len(m))
-	}
-}
-
-func TestParseImpact_Malformed(t *testing.T) {
-	_, err := parseImpact([]byte("not json"))
-	if err == nil {
-		t.Error("expected error for malformed JSON, got nil")
-	}
-}
-
-func TestParseImpact_EmptyModuleSkipped(t *testing.T) {
-	// Records with an empty module key must be silently skipped.
-	data := []byte(`[{"module":"","impact":99},{"module":"internal/real","impact":5}]`)
-	m, err := parseImpact(data)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(m) != 1 {
-		t.Fatalf("want 1 entry (empty module skipped), got %d", len(m))
-	}
-	if m["internal/real"] != 5 {
-		t.Errorf("internal/real = %d, want 5", m["internal/real"])
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m, err := parseDependants([]byte(tc.data))
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(m) != len(tc.want) {
+				t.Fatalf("got %d entries %v, want %d %v", len(m), m, len(tc.want), tc.want)
+			}
+			for k, v := range tc.want {
+				if m[k] != v {
+					t.Errorf("m[%q] = %d, want %d", k, m[k], v)
+				}
+			}
+		})
 	}
 }

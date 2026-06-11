@@ -144,6 +144,26 @@ func gitnexusImpactFactor(mod string, impactMap map[string]int, maxImpact int) f
 	return 1.0 + normalised                       // [1.0, 2.0]
 }
 
+// moduleImpactFromFiles aggregates the file-keyed gitnexus dependant counts to
+// module granularity via the symbol graph's defining-file paths. A module's
+// impact is the MAX of its files' counts (its most-depended-on file) — summing
+// would double-count multi-file modules against single-file ones.
+func moduleImpactFromFiles(g symbol.Graph, fileImpact map[string]int) map[string]int {
+	if len(fileImpact) == 0 {
+		return nil
+	}
+	out := make(map[string]int)
+	for sym, mod := range g.Module {
+		if mod == "" {
+			continue
+		}
+		if v, ok := fileImpact[g.Path[sym]]; ok && v > out[mod] {
+			out[mod] = v
+		}
+	}
+	return out
+}
+
 // Calculate ranks modules by (symbol-surface breadth × volatility_multiplier)
 // and reports the top hubs. Returns n/a when SymbolGraph is empty (SCIP off or
 // indexer absent) — never a false zero.
@@ -172,9 +192,11 @@ func (m RiskHubMetric) Calculate(in MetricInput) diagnostic.MetricResult {
 		return naCount(m.Name(), m.Version(), def)
 	}
 
-	// Compute max gitnexus impact for normalisation (zero when gitnexus absent).
+	// GitnexusImpact is keyed by file path; aggregate to module granularity
+	// through the symbol graph, then normalise to the per-run maximum.
+	moduleImpact := moduleImpactFromFiles(in.SymbolGraph, in.GitnexusImpact)
 	maxImpact := 0
-	for _, v := range in.GitnexusImpact {
+	for _, v := range moduleImpact {
 		if v > maxImpact {
 			maxImpact = v
 		}
@@ -184,7 +206,7 @@ func (m RiskHubMetric) Calculate(in MetricInput) diagnostic.MetricResult {
 	hubs := make([]riskHubInfo, 0, len(breadth))
 	for mod, b := range breadth {
 		mult := m.volatilityMultiplier(mod)
-		gf := gitnexusImpactFactor(mod, in.GitnexusImpact, maxImpact)
+		gf := gitnexusImpactFactor(mod, moduleImpact, maxImpact)
 		hubs = append(hubs, riskHubInfo{
 			module:          mod,
 			breadth:         b,
