@@ -48,6 +48,11 @@ type Adapter struct {
 
 	once      sync.Once
 	toolFound string // empty when no SCIP indexer detected
+
+	// pipeCache memoizes the index+read pipeline per project root so Strengths
+	// and Symbols share one indexer pass per run (see runSCIPPipeline).
+	pipeMu    sync.Mutex
+	pipeCache map[string]pipeCacheEntry
 }
 
 var _ engine.SymbolResolver = (*Adapter)(nil)

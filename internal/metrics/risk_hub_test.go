@@ -290,6 +290,11 @@ func TestRiskHub_GitnexusImpactRefinesRanking(t *testing.T) {
 			{testSymDepB, testSymB}, // beta  breadth=1 (equal)
 		},
 	)
+	// File-keyed impact joins to modules through the defining-file paths.
+	g.Path = map[string]string{
+		testSymA: "src/alpha.py",
+		testSymB: "src/beta.py",
+	}
 	m := newRiskHubMetric(makeConfig(nil))
 
 	// Without gitnexus: both modules have equal score; alpha sorts first (alphabetical tiebreak).
@@ -298,8 +303,8 @@ func TestRiskHub_GitnexusImpactRefinesRanking(t *testing.T) {
 		t.Fatal("expected real result without gitnexus, got n/a")
 	}
 
-	// With gitnexus: beta has much higher impact → should rank above alpha.
-	impact := map[string]int{"beta": 100, "alpha": 1}
+	// With gitnexus: beta's file has much higher impact → beta ranks above alpha.
+	impact := map[string]int{"src/beta.py": 100, "src/alpha.py": 1}
 	withGN := m.Calculate(MetricInput{SymbolGraph: g, GitnexusImpact: impact})
 	if withGN.Band == bandNA {
 		t.Fatal("expected real result with gitnexus, got n/a")

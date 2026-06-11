@@ -50,9 +50,25 @@ type Coverage struct {
 	Status          string `json:"status"`
 }
 
-// AgentTask is a placeholder for the structured repair-task block (spec §13 / Phase 4).
-// Phase 1 emits an empty typed slice so that agent_tasks serializes as [] not null.
-type AgentTask struct{}
+// AgentTask is the structured repair-task block (spec §13): one per ACTIVE gate
+// finding (status new/expired_exception), derived deterministically from the
+// finding + rule configuration — no fabrication. It tells a coding agent what
+// to achieve, within which constraints, where, and how to verify.
+type AgentTask struct {
+	// FindingID joins the task back to its findings[] entry.
+	FindingID string `json:"finding_id"`
+	RuleID    string `json:"rule_id"`
+	// Goal is the repair objective, instantiated from the rule type's template
+	// with the finding's edge endpoints.
+	Goal string `json:"goal"`
+	// Constraints are hard boundaries for the fix: the rule's constraint text,
+	// allowed alternatives, and the target module's public surface.
+	Constraints []string `json:"constraints"`
+	// Files are the repo-relative files involved (edge endpoints + locations).
+	Files []string `json:"files"`
+	// Validation are the exact commands that must pass after the fix.
+	Validation []string `json:"validation"`
+}
 
 // FileFact holds neutral per-module structural facts assembled from collected
 // data (symbol graph, file LOC, co-change history, optional gitnexus impact).

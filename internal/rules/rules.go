@@ -17,7 +17,8 @@ import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
-// PatternMatch is a single ast-grep match (Phase 2+). Empty in Phase 1.
+// PatternMatch is a single ast-grep structural match, provided by the engine's
+// PatternProvider. Empty when ast-grep is absent.
 type PatternMatch struct {
 	File  string
 	Line  int
@@ -25,11 +26,10 @@ type PatternMatch struct {
 }
 
 // Evidence carries supplemental evidence provided to a rule's Check method.
-// PatternMatches is empty in Phase 1 (no ast-grep yet).
-// Findings carries status-tagged findings for rules that gate on finding status.
+// Lifecycle status (new vs baselined) is NOT evidence — it is assigned after
+// rules run, by status.Assign against the baseline.
 type Evidence struct {
 	PatternMatches []PatternMatch
-	Findings       []finding.Finding
 }
 
 // Rule is the interface implemented by every built-in and user-defined rule.
@@ -279,11 +279,14 @@ func (r *internalAPIAccess) Check(g *graph.Graph, _ Evidence) []finding.Finding 
 // newCrossModuleDependency fires when an edge crosses module boundaries.
 // It uses ModuleMap to determine module ownership of from/to paths.
 //
-// NOTE: The rule is intended to fire only when finding.Status == StatusNew
-// (i.e. the dependency was introduced after the last baseline). However,
-// Evidence.Findings is not yet populated by the engine (Phase 3 gap), so this
-// rule currently fires on all cross-module edges regardless of status.
-// TODO: filter by StatusNew once engine wires Evidence.Findings per edge.
+// "New" semantics are deliberately NOT implemented here: the rule emits every
+// cross-module edge, and the status stage (status.Assign) marks edges whose
+// fingerprint is in the baseline as StatusBaseline — only StatusNew /
+// StatusExpiredException findings gate. Filtering inside the rule would break
+// fixed-finding detection (a suppressed finding's fingerprint would vanish
+// from the current set and be falsely reported as fixed). Bootstrap behavior:
+// with no baseline every cross-module edge fires — run `archfit baseline` to
+// accept the current state.
 type newCrossModuleDependency struct {
 	def config.RuleDef
 	mm  config.ModuleMap

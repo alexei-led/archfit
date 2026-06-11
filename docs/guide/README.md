@@ -21,7 +21,7 @@ small references while configuring a repo.
 
 Add these only when the project needs more detail:
 
-- `docs/output.md` — text, JSON, Markdown, and future SARIF contracts.
+- [`commands.md`](commands.md) — output formats: text, JSON, Markdown, SARIF.
 - `docs/baselines-and-exceptions.md` — lifecycle and review workflow.
 - `docs/contributing.md` — local development and release process.
 

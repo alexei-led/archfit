@@ -3,9 +3,10 @@ package coupling
 // Strength classifies how a dependency is expressed at the API boundary.
 type Strength string
 
-// Strength constants (spec §18 / Phase 1 subset).
-// Only contract and intrusive are high-confidence in Phase 1.
-// model and functional are deferred to Phase 2.
+// Strength constants (spec §18).
+// contract and intrusive are decided deterministically (config globs,
+// visibility); model and functional come from SCIP symbol-kind heuristics —
+// the Tranche-2 enrich workflow refines those labels under human review.
 const (
 	StrengthContract   Strength = "contract"
 	StrengthIntrusive  Strength = "intrusive"
@@ -17,7 +18,7 @@ const (
 // Distance measures how far apart two modules are in the ownership hierarchy.
 type Distance string
 
-// Distance constants (Phase 1 subset used by unbalanced-edge metric).
+// Distance constants (spec §18).
 const (
 	DistanceSameModule           Distance = "same_module"
 	DistanceCrossModuleSameOwner Distance = "cross_module_same_owner"
@@ -40,7 +41,8 @@ const (
 // Explicitness classifies whether the coupling is via a declared contract.
 type Explicitness string
 
-// Explicitness constants (Phase 2 fills this out fully).
+// Explicitness constants. Derived from strength (contract→explicit,
+// intrusive→implicit) or an extractor AST hint when present.
 const (
 	ExplicitnessExplicit Explicitness = "explicit"
 	ExplicitnessImplicit Explicitness = "implicit"
@@ -48,7 +50,7 @@ const (
 )
 
 // Classification holds the Balanced Coupling assessment for one graph edge.
-// Phase 1 populates Strength and Distance with high confidence;
+// Strength and Distance are populated with high confidence;
 // Volatility and Explicitness are derived from config subdomain/public globs.
 // Severity is set by classify.Run for cross-boundary edges via BalanceResult.
 type Classification struct {

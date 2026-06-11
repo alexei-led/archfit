@@ -62,7 +62,7 @@ type ChangeHistory struct {
 	Complexity     []ComplexityFunc  // per-function cyclomatic complexity (external tool)
 	FitnessSignals fitness.Signals   // architecture-intent enforcement signals (filesystem scan)
 	CloneClusters  []clone.Cluster   // duplicated code blocks across files (clone detector)
-	// GitnexusImpact maps module path → historical change-impact count from the
+	// GitnexusImpact maps repo-relative file path → distinct dependant-file count from the
 	// gitnexus CLI. Nil/empty when gitnexus is disabled or absent; risk_hub uses it
 	// as an optional multiplicative factor (never alters surface-breadth computation).
 	GitnexusImpact map[string]int
@@ -104,11 +104,14 @@ type MetricInput struct {
 	// detector (e.g. jscpd). Empty when the tool is disabled or absent; metrics
 	// that need it must report n/a when CloneClusters is nil/empty.
 	CloneClusters []clone.Cluster
-	// GitnexusImpact maps module path → historical change-impact count from the
+	// GitnexusImpact maps repo-relative file path → distinct dependant-file count from the
 	// gitnexus CLI (tools.gitnexus.enabled: on). Nil/empty (the default) leaves
 	// risk_hub behaviour exactly as today (surface-breadth × volatility only).
 	// When non-empty, risk_hub incorporates it as a bounded additional factor.
 	GitnexusImpact map[string]int
+	// ChangedFiles is the sorted repo-relative diff file set (scope.Scope.Changed)
+	// in delta mode; empty in full mode. change_locality reports n/a without it.
+	ChangedFiles []string
 }
 
 // ---------------------------------------------------------------------------
@@ -664,7 +667,7 @@ func coverageConfidence(unresolved, total int) string {
 // config.ApplyVolatility, so churn-derived values never contaminate the
 // risk_hub signal (that would double-count with change_amplification).
 func New(cfg config.Config) []Metric {
-	return []Metric{
+	all := []Metric{
 		EncapsulationMetric{},
 		UnbalancedEdgeMetric{},
 		CycleMetric{},
@@ -677,7 +680,19 @@ func New(cfg config.Config) []Metric {
 		newRiskHubMetric(cfg),
 		ArchitectureFitnessMetric{},
 		FunctionalCandidatesMetric{},
+		ChangeLocalityMetric{},
 	}
+
+	// Honor explicit `metrics.<name>.enabled: false` config: metrics absent
+	// from the config default to enabled; only an explicit entry can disable.
+	out := make([]Metric, 0, len(all))
+	for _, m := range all {
+		if entry, configured := cfg.Metrics[m.Name()]; configured && !entry.Enabled {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 // newRiskHubMetric builds a RiskHubMetric with volatility multipliers derived

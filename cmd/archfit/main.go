@@ -14,6 +14,7 @@ import (
 
 	"github.com/alecthomas/kong"
 
+	"github.com/alexei-led/archfit/internal/agenttask"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
@@ -33,6 +34,7 @@ import (
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
+	"github.com/alexei-led/archfit/internal/output/sarif"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
@@ -108,7 +110,7 @@ type CheckCmd struct {
 	Config   string   `short:"c" help:"Path to config file (optional; built-in defaults used if absent)." default:".archfit.yaml"`
 	Base     string   `help:"Git ref to compare against for incremental mode (e.g. main, HEAD~1)."`
 	Full     bool     `help:"Scan all files, not just files changed since --base."`
-	Format   []string `help:"Output format: text (human-readable), json, markdown, md. Repeatable." enum:"json,text,markdown,md" default:"text"`
+	Format   []string `help:"Output format: text (human-readable), json, markdown, md, sarif. Repeatable." enum:"json,text,markdown,md,sarif" default:"text"`
 	Advisory bool     `help:"Include informational findings (coupling advisories) in output."`
 	Report   bool     `help:"Never exit with a failure code, even when violations are found."`
 	NoConfig bool     `name:"no-config" help:"Skip config file entirely; use built-in defaults. Combine with --lang and --severity to run without any config file."`
@@ -143,7 +145,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		Formats:    c.Format,
 	}
 
-	diag, err := runPipeline(ctx, deps, cfg, configDir, mode, base)
+	diag, err := runPipeline(ctx, deps, cfg, c.Config, mode, base)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -158,6 +160,8 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 			renderErr = console.New().Render(diag, deps.Stdout)
 		case "md", "markdown":
 			renderErr = markdown.New().Render(diag, deps.Stdout)
+		case "sarif":
+			renderErr = sarif.New().Render(diag, deps.Stdout)
 		}
 		if renderErr != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, renderErr)}
@@ -173,11 +177,14 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 }
 
 // runPipeline resolves scope, builds extractors/rules/metrics, collects change
-// history and optional tool inputs, and executes the engine. check, scan, and
-// baseline all run through this single path: baseline snapshots must be computed
-// from exactly the same inputs as check verdicts, or every post-baseline check
-// reports phantom metric regressions and unmatched finding fingerprints.
-func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configDir string, mode engine.Mode, base baseline.Baseline) (diagnostic.Diagnostic, error) {
+// history and optional tool inputs, and executes the engine. check, scan,
+// explain, and baseline all run through this single path: baseline snapshots
+// must be computed from exactly the same inputs as check verdicts, or every
+// post-baseline check reports phantom metric regressions and unmatched finding
+// fingerprints. After the engine returns, the agent_tasks repair block is
+// attached from the active gate findings (deterministic; spec §13).
+func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, mode engine.Mode, base baseline.Baseline) (diagnostic.Diagnostic, error) {
+	configDir := filepath.Dir(configPath)
 	sc := cfg.ForScope()
 	sc.WorkDir = configDir
 	sc.Base = mode.Base
@@ -246,7 +253,30 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configDi
 	}
 
 	patternCfg := cfg.ForPatterns()
-	return engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), resolver, patternCfg, rs, ms, base, change, time.Now())
+	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), resolver, patternCfg, rs, ms, base, change, time.Now())
+	if err != nil {
+		return diag, err
+	}
+
+	// Attach the structured repair-task block (spec §13) for active gate
+	// findings. Deterministic: rule-type templates + module public surfaces +
+	// the exact command that re-verifies the gate.
+	ruleTypes := make(map[string]string, len(cfg.Rules))
+	for _, def := range cfg.Rules {
+		ruleTypes[def.ID] = def.Type
+	}
+	modulePublic := make(map[string][]string, len(cfg.Modules))
+	for name, def := range cfg.Modules {
+		if len(def.Public) > 0 {
+			modulePublic[name] = def.Public
+		}
+	}
+	validate := "archfit check -c " + configPath
+	if mode.Full {
+		validate += " --full"
+	}
+	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate})
+	return diag, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +309,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	// pattern provider, and SCIP resolver): snapshot values recorded from
 	// different inputs would surface as phantom deltas on the next check.
 	mode := engine.Mode{Full: c.Full, Advisory: c.Advisory, Base: c.Base}
-	diag, err := runPipeline(ctx, deps, cfg, configDir, mode, existingBase)
+	diag, err := runPipeline(ctx, deps, cfg, c.Config, mode, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -337,24 +367,9 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	sc := cfg.ForScope()
-	sc.WorkDir = configDir
-	sc.Full = true
-	s, err := scope.Resolve(ctx, sc, deps.Runner)
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-
-	extractors := []engine.Extractor{
-		golang.New(cfg.ForExtract("go")),
-		ts.New(deps.Runner, cfg.ForExtract("typescript")),
-		py.New(deps.Runner, cfg.ForExtract("python")),
-	}
-
-	rs := rules.New(cfg.ForRules())
-	ms := metrics.New(cfg)
-
-	diag, err := engine.Run(ctx, engine.Mode{Full: true}, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, engine.NopPatternProvider{}, engine.NopSymbolResolver{}, config.PatternConfig{}, rs, ms, existingBase, metrics.ChangeHistory{}, time.Now())
+	// Same pipeline as check/scan: explain must resolve the finding from the
+	// same evidence (providers, change history) that produced it.
+	diag, err := runPipeline(ctx, deps, cfg, c.Config, engine.Mode{Full: true, Advisory: true}, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -366,8 +381,17 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 			_, _ = fmt.Fprintf(deps.Stdout, "status:     %s\n", f.Status)
 			_, _ = fmt.Fprintf(deps.Stdout, "severity:   %s\n", f.Severity)
 			_, _ = fmt.Fprintf(deps.Stdout, "edge:       %s -> %s (%s)\n", f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind)
+			if f.Edge.From.Module != "" || f.Edge.To.Module != "" {
+				_, _ = fmt.Fprintf(deps.Stdout, "modules:    %s -> %s\n", f.Edge.From.Module, f.Edge.To.Module)
+			}
+			for _, loc := range f.Locations {
+				_, _ = fmt.Fprintf(deps.Stdout, "location:   %s:%d\n", loc.File, loc.Line)
+			}
 			_, _ = fmt.Fprintf(deps.Stdout, "why:        %s\n", f.Why)
 			_, _ = fmt.Fprintf(deps.Stdout, "constraint: %s\n", f.Constraint)
+			for _, alt := range f.Alternatives {
+				_, _ = fmt.Fprintf(deps.Stdout, "allowed:    %s\n", alt)
+			}
 			return nil
 		}
 	}

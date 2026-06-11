@@ -22,8 +22,9 @@ const maxCoChangePartners = 5
 // against the file-keyed fileLOC and coChange maps. When g.Path is absent the
 // file-derived facts stay empty (no heuristic prefix joins, no fabrication).
 //
-// gitnexusImpact (module key → historical change-impact count) enriches
-// matching facts when non-empty; absent modules keep a nil GitnexusImpact.
+// gitnexusImpact (repo-relative file path → distinct dependant-file count)
+// enriches matching facts when non-empty: a module's impact is the MAX over
+// its defining files' counts. Uncovered modules keep a nil GitnexusImpact.
 //
 // Returns an empty slice (never nil) when g is empty — no panic, no false
 // zeros. The result is sorted by Module; all nested lists carry a total order
@@ -132,8 +133,17 @@ func Build(
 		for _, f := range ff.Files {
 			ff.LOC += fileLOC[f]
 		}
-		if v, ok := gitnexusImpact[mod]; ok && len(gitnexusImpact) > 0 {
-			impact := v
+		covered := false
+		impact := 0
+		for _, f := range ff.Files {
+			if v, ok := gitnexusImpact[f]; ok {
+				covered = true
+				if v > impact {
+					impact = v
+				}
+			}
+		}
+		if covered {
 			ff.GitnexusImpact = &impact
 		}
 		out = append(out, ff)

@@ -116,12 +116,19 @@ module map) []diagnostic.AgentTask` — pure, deterministic, sorted by
 
 **Files:**
 
-- Modify: `internal/rules/rules.go` (+test), `internal/engine/engine.go` (+test)
+- Modify: `internal/rules/rules.go` (+test), `internal/engine/engine_test.go`
 
-- [ ] wire baseline-accepted fingerprints into rule evidence at the engine call site
-- [ ] filter candidate edges by fingerprint-in-baseline; delete the TODO note
-- [ ] tests: pre-existing edge (baselined) silent; new edge fires; no baseline = all fire (documented bootstrap behavior)
-- [ ] run tests — green before Task 2
+**Deviation (discovery):** the baseline/status machinery ALREADY provides the
+"new" semantics — `status.Assign` marks baselined fingerprints `StatusBaseline`
+and the verdict counts only new/expired. Filtering inside the rule (the stale
+TODO's suggestion) would BREAK fixed-finding detection (suppressed fingerprints
+would be falsely reported fixed). The gap was a misleading comment + zero test
+coverage, not behavior.
+
+- [x] wire baseline-accepted fingerprints into rule evidence at the engine call site — NOT NEEDED; replaced the stale TODO with documentation of the actual mechanism
+- [x] removed the dead `Evidence.Findings` field (never populated, never read)
+- [x] tests: engine-level regression — no baseline → new finding + fail; baselined fingerprint → StatusBaseline + pass + finding still emitted (fixed-detection invariant)
+- [x] run tests — green before Task 2
 
 ### Task 2: SCIP single-pass per run
 
@@ -129,10 +136,10 @@ module map) []diagnostic.AgentTask` — pure, deterministic, sorted by
 
 - Modify: `internal/extract/scip/scip.go` (+`scip_test.go`/`symbols_test.go`)
 
-- [ ] memoize the index+reader pipeline result per (root, tool-lang) in the Adapter; `Strengths`+`Symbols` share it
-- [ ] test: RunnerMock counts ONE indexer invocation when both methods run
-- [ ] verify `archfit scan` on this repo: scip coverage unchanged, wall time drops
-- [ ] run tests — green before Task 3
+- [x] memoize the index+reader pipeline result per (root, tool-lang) in the Adapter; `Strengths`+`Symbols` share it (coverage Tool rewrapped per caller; Status/Version preserved)
+- [x] test: RunnerMock counts ONE indexer invocation when both methods run
+- [x] verify `archfit scan` on this repo: scip coverage unchanged (ok/ok), wall ~4.5s vs ~8s double-indexed
+- [x] run tests — green before Task 3
 
 ### Task 3: explain runs the real pipeline
 
@@ -140,9 +147,9 @@ module map) []diagnostic.AgentTask` — pure, deterministic, sorted by
 
 - Modify: `cmd/archfit/main.go` (+`main_test.go`)
 
-- [ ] `ExplainCmd` resolves evidence via `runPipeline` (same providers/history as check)
-- [ ] test: explain on the violating fixture prints the finding with module labels resolved
-- [ ] run tests — green before Task 4
+- [x] `ExplainCmd` resolves evidence via `runPipeline` (same providers/history as check); output adds resolved modules, locations, allowed alternatives
+- [x] test: explain on the violating fixture prints the finding with module labels resolved
+- [x] run tests — green before Task 4
 
 ### Task 4: gitnexus fix-or-drop (decision gate)
 
@@ -151,10 +158,10 @@ module map) []diagnostic.AgentTask` — pure, deterministic, sorted by
 - Spike note: `docs/plans/notes/gitnexus-adapter-decision.md`
 - Modify or delete: `internal/extract/gitnexus/*`, config key, `risk_hub` factor, `FileFact.GitnexusImpact`
 
-- [ ] spike: enumerate what the installed gitnexus CLI can actually return repo-wide; write the decision note (pre-register: fix only if ONE stable command yields per-module counts)
-- [ ] implement the decision (rewrite adapter OR remove provider end-to-end)
-- [ ] tests updated to the real contract; no test asserts the fictional `impact --json <root>`
-- [ ] run tests — green before Task 5
+- [x] spike: enumerate what the installed gitnexus CLI can actually return repo-wide; write the decision note (pre-register: fix only if ONE stable command yields per-module counts) — `gitnexus cypher` qualifies; decision: FIX
+- [x] implement the decision — adapter rewritten to the cypher dependants query; contract is now FILE-keyed counts; risk_hub + facts aggregate to modules via symbol-graph paths (MAX over files)
+- [x] tests updated to the real contract; no test asserts the fictional `impact --json <root>`
+- [x] run tests — green before Task 5 — live ccgram validation: coverage ok, 144 facts enriched, polling_state blast-radius 23
 
 ### Task 5: agent_tasks repair blocks
 
@@ -165,11 +172,11 @@ module map) []diagnostic.AgentTask` — pure, deterministic, sorted by
 - Modify: `internal/engine/engine.go` (+test), `internal/output/markdown/markdown.go` (+test), `internal/output/jsonout/jsonout_test.go`
 - Modify: `internal/arch_test.go` (agenttask joins the core ring)
 
-- [ ] replace the placeholder `AgentTask` with the spec §13 shape (finding_id, rule_id, goal, constraints, files, validation) — JSON tags per design doc
-- [ ] `agenttask.Build`: goal template per rule type; constraints from rule def + target module public globs; validation = reproducible check command; sorted, deterministic
-- [ ] engine attaches tasks for active gate findings only (advisories never)
-- [ ] markdown: compact "Agent tasks" section; JSON: full block; tests for both + empty case
-- [ ] run tests — green before Task 6
+- [x] replace the placeholder `AgentTask` with the spec §13 shape (finding_id, rule_id, goal, constraints, files, validation) — JSON tags per design doc
+- [x] `agenttask.Build`: goal template per rule type; constraints from rule def + target module public globs; validation = reproducible check command; sorted, deterministic
+- [x] engine attaches tasks for active gate findings only (advisories never) — attached in `runPipeline` post-engine (cmd owns config-derived templates; engine signature untouched); covered by CLI test
+- [x] markdown: compact "Agent tasks" section; JSON: full block; tests for both + empty case
+- [x] run tests — green before Task 6
 
 ### Task 6: SARIF 2.1.0 renderer
 
@@ -178,11 +185,11 @@ module map) []diagnostic.AgentTask` — pure, deterministic, sorted by
 - Create: `internal/output/sarif/sarif.go` (+test)
 - Modify: `cmd/archfit/main.go` (format enum + case)
 
-- [ ] renderer per design §3 (rules, results, levels, locations, metrics in properties, no timestamps)
-- [ ] `--format sarif` in the enum; render wired in check/scan path
-- [ ] tests: golden shape assertions + double-render byte-identical + empty diagnostic
-- [ ] validate one real output against the SARIF 2.1.0 schema (jv or sarif-tools; record how)
-- [ ] run tests — green before Task 7
+- [x] renderer per design §3 (rules, results, levels, locations, metrics in properties, no timestamps)
+- [x] `--format sarif` in the enum; render wired in check/scan path
+- [x] tests: golden shape assertions + double-render byte-identical + empty diagnostic
+- [x] validate one real output against the SARIF 2.1.0 schema — `uvx check-jsonschema --schemafile https://json.schemastore.org/sarif-2.1.0.json` on the violating-fixture output: "ok -- validation done"
+- [x] run tests — green before Task 7
 
 ### Task 7: change_locality metric
 
@@ -192,10 +199,11 @@ module map) []diagnostic.AgentTask` — pure, deterministic, sorted by
 - Create: `internal/metrics/change_locality.go` (+test)
 - Modify: `internal/metrics/metrics_test.go`, `internal/engine/engine_test.go` (metric count 12 → 13), `.archfit.yaml`
 
-- [ ] thread the resolved diff file set into MetricInput (empty in --full)
-- [ ] metric per design §4: new cross-module edges from changed files; warn band on baseline regression; n/a without base/baseline
-- [ ] tests: new edge counted; unchanged file's edge not; --full → n/a; determinism
-- [ ] run tests — green before Task 8
+- [x] thread the resolved diff file set into MetricInput (empty in --full) — `scope.Scope.Changed` already existed; engine wires it directly (no cmd change needed)
+- [x] metric per design §4 — DEVIATION: report-only info band instead of warn-on-regression: change_locality's value is per-diff, so delta vs a previous (different) diff is meaningless; the new_cross_module_dependency RULE is the gate for new edges, the metric quantifies blast surface (cross-module edges from changed files + forward reach)
+- [x] tests: new edge counted; unchanged file's edge not; --full → n/a; determinism; low confidence without classifications
+- [x] run tests — green before Task 8 — live delta run: "33 cross-module edge(s) from 24 changed file(s); forward reach 45 file(s)"
+- [x] + fix discovered en route: `metrics.<name>.enabled: false` config was parsed but IGNORED (all metrics always ran); metrics.New now honors explicit disables (unconfigured metrics default to enabled)
 
 ### Task 8: stale comment + doc hygiene
 
@@ -203,8 +211,8 @@ module map) []diagnostic.AgentTask` — pure, deterministic, sorted by
 
 - Modify: `internal/metrics/doc.go`, `internal/metrics/metrics.go`, `internal/rules/doc.go`, `internal/model/coupling/coupling.go`, `docs/guide/README.md`
 
-- [ ] drop stale "Phase 1" framing from package docs; fix the dead `docs/output.md` link
-- [ ] run `make lint` + full suite — green before Task 9
+- [x] drop stale "Phase 1" framing from package docs; fix the dead `docs/output.md` link
+- [x] run `make lint` + full suite — green before Task 9
 
 ### Task 9: acceptance sweep (the gate for this plan)
 
@@ -212,11 +220,11 @@ module map) []diagnostic.AgentTask` — pure, deterministic, sorted by
 
 - Create: `docs/plans/notes/completion-deterministic-validation.md`
 
-- [ ] build `.bin/archfit`; run full scan + check on ccgram, pumba, spotinfo, codegraph, archfit — no panics; record per-repo verdicts
-- [ ] double-run byte-identical on at least archfit (scip on) and ccgram
-- [ ] `agent_tasks` populated on a repo with gate findings; SARIF emitted and schema-valid
-- [ ] `go test -count=1 ./...` green; `make lint` 0 issues
-- [ ] move this plan to `docs/plans/completed/`
+- [x] build `.bin/archfit`; run full scan + check on ccgram, pumba, spotinfo, codegraph, archfit — no panics; record per-repo verdicts (`notes/completion-deterministic-validation.md`)
+- [x] double-run byte-identical on ALL FIVE repos (scip on for ccgram + archfit)
+- [x] `agent_tasks` populated on a repo with gate findings (ccgram: 3); SARIF emitted and schema-valid (fixture + ccgram, official 2.1.0 schema)
+- [x] `go test -count=1 ./...` green; `make lint` 0 issues
+- [x] move this plan to `docs/plans/completed/`
 
 ## Post-Completion
 
