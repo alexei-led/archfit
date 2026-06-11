@@ -152,9 +152,9 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 
 - Create: `internal/llm/cache.go` (+test)
 
-- [ ] decorator Provider; key sha256(provider|model|system|user); store under `.archfit-cache/llm/`
-- [ ] hit skips transport; `--no-cache` bypass; corrupt cache entry → refetch, not crash
-- [ ] run tests — green before Task 4
+- [x] decorator Provider; key sha256(name|system|user|max_tokens); store under `.archfit-cache/llm/` (atomic temp+rename; committable for cross-machine replay)
+- [x] hit skips transport (call-count test); corrupt cache entry → refetch, not crash; errors never cached; `--no-cache` = cmd simply doesn't wrap (Task 4)
+- [x] run tests — green before Task 4
 
 ### Task 4: enrich command
 
