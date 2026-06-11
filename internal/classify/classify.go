@@ -31,7 +31,7 @@ func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 	idx := make(coupling.Index)
 
 	for _, e := range g.Edges() {
-		cl := classify(e, mm, c.Modules)
+		cl := classify(e, mm, c)
 		idx[edgeKey(e)] = cl
 	}
 
@@ -98,15 +98,26 @@ func matchesAnyGlob(path string, globs []string) bool {
 // ExplicitnessHint on the edge overrides the config-glob-derived explicitness
 // when non-empty ("explicit" or "implicit"). BalanceResult is then called to
 // derive advisory Severity for cross-boundary edges.
-func classify(e graph.Edge, mi moduleIndex, modules map[string]config.ModuleDef) coupling.Classification {
+func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) coupling.Classification {
+	modules := c.Modules
 	fromPath := pathFromID(e.From)
 	toPath := pathFromID(e.To)
 
 	// --- Strength ---
-	// Config public/internal globs are authoritative. When they do not decide,
-	// fall back to an extractor-supplied language-aware hint (e.g. Python
-	// underscore-private targets → intrusive) before giving up to unknown.
+	// Precedence: config public/internal globs are authoritative; an APPROVED
+	// pinned label for the edge's module pair refines what the globs leave
+	// undecided; the extractor-supplied language-aware hint (e.g. the blanket
+	// "functional" for SCIP call edges) is the last resort before unknown.
 	str := classifyStrength(toPath, mi)
+	if str == coupling.StrengthUnknown && len(c.ApprovedLabels) > 0 {
+		if fromMod, okF := mi.moduleFor(fromPath); okF {
+			if toMod, okT := mi.moduleFor(toPath); okT {
+				if pinned, ok := c.ApprovedLabels[fromMod+"\x00"+toMod]; ok {
+					str = coupling.Strength(pinned)
+				}
+			}
+		}
+	}
 	if str == coupling.StrengthUnknown {
 		str = strengthFromHint(e.StrengthHint)
 	}

@@ -272,6 +272,11 @@ type ClassifyConfig struct {
 	Layers                []string
 	ModuleMap             ModuleMap
 	BCAdvisoryMinSeverity string // minimum severity to emit BC coupling advisories
+	// ApprovedLabels pins integration strength per ordered module pair, keyed
+	// by from+"\x00"+to (labels.Key). Human-approved enrich output, validated
+	// for freshness by the engine before injection. Precedence in classify:
+	// config globs > approved labels > extractor hint.
+	ApprovedLabels map[string]string
 }
 
 // RuleConfig is the view passed to the rules stage.

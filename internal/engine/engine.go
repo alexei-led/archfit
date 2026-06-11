@@ -10,6 +10,7 @@ import (
 	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/facts"
+	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -20,6 +21,9 @@ import (
 	"github.com/alexei-led/archfit/internal/staleness"
 	"github.com/alexei-led/archfit/internal/status"
 )
+
+// kindAdvisory is the finding kind for non-gating advisory findings.
+const kindAdvisory = "advisory"
 
 // Mode controls how the engine run behaves.
 type Mode struct {
@@ -61,6 +65,7 @@ func Run(
 	rs []rules.Rule,
 	ms []metrics.Metric,
 	base baseline.Baseline,
+	lbls []labels.Label,
 	change metrics.ChangeHistory,
 	now time.Time,
 ) (diagnostic.Diagnostic, error) {
@@ -107,6 +112,11 @@ func Run(
 	rulesMatches := toRulesPatternMatches(patternMatches)
 
 	// --- Stage 3: Classify ---
+	// Pinned coupling labels first: approved entries refine strength
+	// classification (precedence: config globs > approved labels > extractor
+	// hint); stale ones surface as labels/stale advisories.
+	staleLabelFindings := applyPinnedLabels(g, &classifyCfg, mode, lbls)
+
 	couplingIdx := classify.Run(g, classifyCfg)
 
 	// --- Stage 4: Rules ---
@@ -207,7 +217,7 @@ func Run(
 		toModule, _ := mm.ModuleFor(toPath)
 		af := finding.Finding{
 			ID:       couplingAdvisoryID(fromPath, toPath, string(e.Kind)),
-			Kind:     "advisory",
+			Kind:     kindAdvisory,
 			RuleID:   "bc/imbalanced_coupling",
 			Status:   finding.StatusNew,
 			Severity: finding.Severity(cl.Severity),
@@ -228,13 +238,16 @@ func Run(
 	// Append staleness advisories.
 	advisoryFindings = append(advisoryFindings, staleness.Check(g, stalenessCfg, now)...)
 
+	// Stale pinned labels were ignored during classification; advise re-enrich.
+	advisoryFindings = append(advisoryFindings, staleLabelFindings...)
+
 	// Apply baseline and exception status to advisory findings.
 	// status.Assign also emits fixed gate findings; suppress those for the advisory pass
 	// by discarding any synthetic kind=="gate" entries it appends.
 	tagged := status.Assign(advisoryFindings, base, exceptions, now, "advisory")
 	advisoryFindings = advisoryFindings[:0]
 	for _, f := range tagged {
-		if f.Kind == "advisory" {
+		if f.Kind == kindAdvisory {
 			advisoryFindings = append(advisoryFindings, f)
 		}
 	}
@@ -393,6 +406,81 @@ func severityAtLeast(got coupling.Severity, threshold string) bool {
 func couplingAdvisoryID(from, to, kind string) string {
 	h := sha256.Sum256([]byte("bc/imbalanced_coupling\x00" + from + "\x00" + to + "\x00" + kind))
 	return hex.EncodeToString(h[:16])
+}
+
+// staleLabelID returns a stable fingerprint for a labels/stale advisory.
+func staleLabelID(from, to string) string {
+	h := sha256.Sum256([]byte("labels/stale\x00" + from + "\x00" + to))
+	return hex.EncodeToString(h[:16])
+}
+
+// applyPinnedLabels validates pinned labels and injects the approved ones into
+// the classify config (precedence: config globs > approved labels > extractor
+// hint). Freshness is checked against the full import graph — on full runs
+// only (a delta graph is partial and would false-stale every label). Returns
+// one labels/stale advisory per ignored stale label. Deterministic — the gate
+// never calls an LLM; labels are reviewed YAML.
+func applyPinnedLabels(g *graph.Graph, classifyCfg *config.ClassifyConfig, mode Mode, lbls []labels.Label) []finding.Finding {
+	var evidence map[string]string
+	if mode.Full || mode.Base == "" {
+		evidence = pairEvidence(g, classifyCfg.ModuleMap, lbls)
+	}
+	approved, stale := labels.Approved(lbls, evidence)
+	classifyCfg.ApprovedLabels = approved
+
+	out := make([]finding.Finding, 0, len(stale))
+	for _, sl := range stale {
+		out = append(out, finding.Finding{
+			ID:       staleLabelID(sl.From, sl.To),
+			Kind:     kindAdvisory,
+			RuleID:   "labels/stale",
+			Status:   finding.StatusNew,
+			Severity: finding.SeverityLow,
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Module: sl.From},
+				To:   finding.Endpoint{Module: sl.To},
+			},
+			Why: "pinned label evidence is stale: the " + sl.From + " -> " + sl.To +
+				" dependency surface changed since approval; label ignored — re-run `archfit enrich` and re-review",
+		})
+	}
+	return out
+}
+
+// pairEvidence computes the current evidence hash per labeled module pair:
+// HashItems over "fromPath\x00toPath\x00kind" for every import-graph edge
+// whose endpoints resolve to that ordered pair. Only pairs that appear in
+// lbls are hashed (labels are few; the graph can be large).
+func pairEvidence(g *graph.Graph, mm config.ModuleMap, lbls []labels.Label) map[string]string {
+	if len(lbls) == 0 {
+		return nil
+	}
+	wanted := make(map[string]struct{}, len(lbls))
+	for _, l := range lbls {
+		wanted[labels.Key(l.From, l.To)] = struct{}{}
+	}
+
+	items := map[string][]string{}
+	for _, e := range g.Edges() {
+		fromPath := stripPrefix(e.From)
+		toPath := stripPrefix(e.To)
+		fromMod, okF := mm.ModuleFor(fromPath)
+		toMod, okT := mm.ModuleFor(toPath)
+		if !okF || !okT || fromMod == toMod {
+			continue
+		}
+		key := labels.Key(fromMod, toMod)
+		if _, ok := wanted[key]; !ok {
+			continue
+		}
+		items[key] = append(items[key], fromPath+"\x00"+toPath+"\x00"+string(e.Kind))
+	}
+
+	evidence := make(map[string]string, len(items))
+	for key, its := range items {
+		evidence[key] = labels.HashItems(its)
+	}
+	return evidence
 }
 
 // toRulesPatternMatches converts engine.PatternMatch values to rules.PatternMatch values.

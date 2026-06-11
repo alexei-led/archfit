@@ -2,12 +2,14 @@ package engine_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
+	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
@@ -40,9 +42,10 @@ const (
 	confidenceHigh = "high"
 
 	// symbolFoo is the test symbol used in SymbolGraph forwarding tests.
-	symbolFoo = "pkg/a.Foo"
-	symbolBar = "pkg/b.Bar"
-	pathFileB = "pkg/b/b.go"
+	symbolFoo     = "pkg/a.Foo"
+	symbolBar     = "pkg/b.Bar"
+	pathFileB     = "pkg/b/b.go"
+	strengthModel = "model"
 )
 
 // cannedConfig builds a ClassifyConfig and RuleConfig for a two-module (a, b)
@@ -157,6 +160,7 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 		rs,
 		ms,
 		base,
+		nil,
 		metrics.ChangeHistory{},
 		now,
 	)
@@ -233,6 +237,7 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 		rs,
 		ms,
 		base,
+		nil,
 		metrics.ChangeHistory{},
 		now,
 	)
@@ -285,6 +290,7 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		rs,
 		ms,
 		base,
+		nil,
 		metrics.ChangeHistory{},
 		now,
 	)
@@ -351,6 +357,7 @@ func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 		rs,
 		ms,
 		base,
+		nil,
 		metrics.ChangeHistory{},
 		now,
 	)
@@ -400,6 +407,7 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 		rs,
 		ms,
 		base,
+		nil,
 		metrics.ChangeHistory{},
 		now,
 	)
@@ -462,6 +470,7 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 		rs,
 		ms,
 		base,
+		nil,
 		metrics.ChangeHistory{},
 		now,
 	)
@@ -535,6 +544,7 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 		rs,
 		ms,
 		base,
+		nil,
 		metrics.ChangeHistory{},
 		now,
 	)
@@ -602,6 +612,7 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 		rs,
 		ms,
 		base,
+		nil,
 		metrics.ChangeHistory{},
 		now,
 	)
@@ -685,6 +696,7 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 		rs,
 		[]metrics.Metric{spy},
 		baseline.Baseline{},
+		nil,
 		metrics.ChangeHistory{},
 		now,
 	)
@@ -735,6 +747,7 @@ func TestRun_SymbolGraph_EmptyWhenNopResolver(t *testing.T) {
 		rs,
 		[]metrics.Metric{spy},
 		baseline.Baseline{},
+		nil,
 		metrics.ChangeHistory{},
 		now,
 	)
@@ -800,6 +813,7 @@ func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
 		rs,
 		nil,
 		baseline.Baseline{},
+		nil,
 		change,
 		now,
 	)
@@ -852,6 +866,7 @@ func TestRun_FileFacts_EmptyWhenNopResolver(t *testing.T) {
 		rs,
 		nil,
 		baseline.Baseline{},
+		nil,
 		metrics.ChangeHistory{},
 		now,
 	)
@@ -900,7 +915,7 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 			ctx, engine.Mode{Head: headRef}, scope.Scope{Root: "."},
 			classifyCfg, config.StalenessConfig{}, config.ExceptionSet{},
 			[]engine.Extractor{ex}, engine.NopPatternProvider{}, engine.NopSymbolResolver{},
-			config.PatternConfig{}, rs, nil, base, metrics.ChangeHistory{}, now,
+			config.PatternConfig{}, rs, nil, base, nil, metrics.ChangeHistory{}, now,
 		)
 		if err != nil {
 			t.Fatalf("Run: %v", err)
@@ -944,4 +959,101 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 	if !found {
 		t.Error("baselined finding missing from output — rule must keep emitting it")
 	}
+}
+
+// TestRun_PinnedLabels verifies the labels integration end-to-end in the
+// engine: an approved fresh label refines edge strength; a stale label is
+// ignored and surfaces as a labels/stale advisory.
+func TestRun_PinnedLabels(t *testing.T) {
+	ctx := context.Background()
+
+	// Modules with paths only — no public/internal globs, so strength is
+	// glob-undecided and the label decides.
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"a": {Paths: []string{globModuleA}},
+			"b": {Paths: []string{globModuleB}},
+		},
+	}
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+	now := time.Date(2026, 6, 11, 0, 0, 0, 0, time.UTC)
+	// The engine hashes "fromPath\x00toPath\x00kind" per edge of the pair.
+	freshHash := labels.HashItems([]string{pathFileA + "\x00" + pathFileBAPIService + "\x00imports"})
+
+	run := func(lbls []labels.Label) (diagnostic.Diagnostic, metrics.MetricInput) {
+		t.Helper()
+		var captured metrics.MetricInput
+		spy := &spyMetric{captured: &captured}
+		d, err := engine.Run(
+			ctx, engine.Mode{Head: headRef, Advisory: true}, scope.Scope{Root: "."},
+			cfg.ForClassify(), config.StalenessConfig{}, config.ExceptionSet{},
+			[]engine.Extractor{ex}, engine.NopPatternProvider{}, engine.NopSymbolResolver{},
+			config.PatternConfig{}, rules.New(cfg.ForRules()), []metrics.Metric{spy},
+			baseline.Baseline{}, lbls, metrics.ChangeHistory{}, now,
+		)
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		return d, captured
+	}
+
+	edgeStrength := func(in metrics.MetricInput) string {
+		for key, cl := range in.Classifications {
+			if strings.Contains(key, pathFileBAPIService) {
+				return string(cl.Strength)
+			}
+		}
+		t.Fatal("edge classification not found")
+		return ""
+	}
+
+	t.Run("approved fresh label refines strength", func(t *testing.T) {
+		d, in := run([]labels.Label{{
+			From: "a", To: "b", Strength: strengthModel,
+			EvidenceHash: freshHash, Status: labels.StatusApproved,
+		}})
+		if got := edgeStrength(in); got != strengthModel {
+			t.Errorf("strength = %q, want model (pinned)", got)
+		}
+		for _, f := range d.Findings {
+			if f.RuleID == "labels/stale" {
+				t.Errorf("unexpected stale advisory for fresh label: %+v", f)
+			}
+		}
+	})
+
+	t.Run("stale label ignored with advisory", func(t *testing.T) {
+		d, in := run([]labels.Label{{
+			From: "a", To: "b", Strength: strengthModel,
+			EvidenceHash: "deadbeef", Status: labels.StatusApproved,
+		}})
+		if got := edgeStrength(in); got == strengthModel {
+			t.Error("stale label must not be applied")
+		}
+		found := false
+		for _, f := range d.Findings {
+			if f.RuleID == "labels/stale" && f.Edge.From.Module == "a" && f.Edge.To.Module == "b" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("labels/stale advisory missing; findings = %+v", d.Findings)
+		}
+	})
+
+	t.Run("draft label inert", func(t *testing.T) {
+		_, in := run([]labels.Label{{
+			From: "a", To: "b", Strength: strengthModel,
+			EvidenceHash: freshHash, Status: labels.StatusDraft,
+		}})
+		if got := edgeStrength(in); got == strengthModel {
+			t.Error("draft label must never be consumed by the gate")
+		}
+	})
 }

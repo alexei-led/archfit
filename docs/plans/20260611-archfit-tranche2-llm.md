@@ -124,12 +124,12 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 - Create: `internal/labels/labels.go` (+test)
 - Modify: `internal/classify/classify.go` (+test), `internal/engine/engine.go` + `cmd/archfit/main.go` (load + thread labels), `internal/arch_test.go`
 
-- [ ] Label model, YAML loader, evidence-hash computation, strict validation
-- [ ] classify precedence: config globs > approved labels > hint; drafts inert
-- [ ] stale evidence hash → label ignored + `labels/stale` advisory
-- [ ] arch ring: labels joins core-ring guards (no os/exec, no adapters)
-- [ ] tests per Testing Strategy; `check` double-run byte-identical with a labels file
-- [ ] run tests — green before Task 2
+- [x] Label model, YAML loader, evidence-hash computation, strict validation — DEVIATION: evidence hashes the IMPORT-GRAPH edges of the module pair (config-module namespace), not symbol refs: labels are keyed by config module names for classify, and symbol-graph keys are a different namespace; the import graph is also available on every run (no SCIP needed). Freshness checked on full runs only (delta graphs are partial and would false-stale).
+- [x] classify precedence: config globs > approved labels > hint; drafts inert (table-driven test incl. directionality)
+- [x] stale evidence hash → label ignored + `labels/stale` advisory (engine emits; engine test)
+- [x] arch ring: labels joins core-ring guards — DEVIATION: labels parses YAML (forbidden in core ring), so it is support-tier like config/baseline; the LLM-free guarantee comes from the Task-2 ring rule (internal/llm forbidden outside cmd), which covers labels too
+- [x] tests per Testing Strategy; `check` double-run byte-identical with a labels file (CLI test; malformed labels file exits 3 loudly)
+- [x] run tests — green before Task 2
 
 ### Task 2: SDK deps + provider interface + adapters
 

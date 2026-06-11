@@ -28,6 +28,7 @@ import (
 	"github.com/alexei-led/archfit/internal/fitness"
 	"github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/initcfg"
+	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
@@ -51,6 +52,7 @@ var (
 const (
 	defaultConfigPath   = ".archfit.yaml"          // fallback to config.Default() when absent
 	defaultBaselinePath = ".archfit-baseline.json" // on-disk path for the baseline file
+	defaultLabelsPath   = ".archfit-labels.yaml"   // pinned coupling labels (enrich output)
 )
 
 // cli is the top-level kong command struct.
@@ -252,6 +254,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	change.GitnexusImpact, gitnexusCov, _ = gitnexus.Run(ctx, deps.Runner, s.Root, cfg.GitnexusEnabled())
 	change.ExtraCoverage = append(change.ExtraCoverage, gitnexusCov)
 
+	// Pinned coupling labels (.archfit-labels.yaml): the human-reviewed output of
+	// `archfit enrich`. Optional; a malformed file fails loudly — a half-read
+	// labels file must never silently alter the gate.
+	lbls, err := labels.Load(filepath.Join(configDir, defaultLabelsPath))
+	if err != nil {
+		return diagnostic.Diagnostic{}, err
+	}
+
 	// SCIP symbol-level strength is opt-in (tools.scip.enabled: on): the indexer is
 	// whole-repo and slow, so it must not run on the default check path, and the
 	// decision must live in config (not PATH presence) to keep metrics deterministic.
@@ -261,7 +271,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 
 	patternCfg := cfg.ForPatterns()
-	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), resolver, patternCfg, rs, ms, base, change, time.Now())
+	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), resolver, patternCfg, rs, ms, base, lbls, change, time.Now())
 	if err != nil {
 		return diag, err
 	}

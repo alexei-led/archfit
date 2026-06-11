@@ -247,8 +247,8 @@ func TestRun_EmptyGraph(t *testing.T) {
 // with edge canonical key (from + NUL + to + NUL + kind).
 func TestRun_IndexKeyMatchesEdge(t *testing.T) {
 	modules := map[string]config.ModuleDef{
-		"a": {Paths: []string{"pkg/a/**"}, Public: []string{"pkg/a/api/**"}},
-		"b": {Paths: []string{"pkg/b/**"}, Public: []string{"pkg/b/api/**"}},
+		"a": {Paths: []string{globPkgA}, Public: []string{"pkg/a/api/**"}},
+		"b": {Paths: []string{globPkgB}, Public: []string{"pkg/b/api/**"}},
 	}
 	cfg := config.ClassifyConfig{Modules: modules}
 
@@ -271,8 +271,8 @@ func TestRun_IndexKeyMatchesEdge(t *testing.T) {
 // Volatility field on a ModuleDef takes precedence over the Subdomain heuristic.
 func TestRun_ExplicitVolatilityFieldOverridesSubdomain(t *testing.T) {
 	modules := map[string]config.ModuleDef{
-		"a": {Paths: []string{"pkg/a/**"}},
-		"b": {Paths: []string{"pkg/b/**"}, Subdomain: "core", Volatility: "low"},
+		"a": {Paths: []string{globPkgA}},
+		"b": {Paths: []string{globPkgB}, Subdomain: "core", Volatility: "low"},
 	}
 	cfg := config.ClassifyConfig{Modules: modules}
 
@@ -524,4 +524,75 @@ func keys(idx coupling.Index) []string {
 		ks = append(ks, k)
 	}
 	return ks
+}
+
+// TestRun_ApprovedLabelPrecedence verifies the strength precedence chain:
+// config globs > approved pinned labels > extractor hint.
+const (
+	globPkgA    = "pkg/a/**"
+	globPkgB    = "pkg/b/**"
+	pinnedModel = "model"
+)
+
+func TestRun_ApprovedLabelPrecedence(t *testing.T) {
+	modules := map[string]config.ModuleDef{
+		"a": {Paths: []string{globPkgA}},
+		"b": {Paths: []string{globPkgB}},
+	}
+	edge := graph.Edge{
+		From:         "file:pkg/a/a.go",
+		To:           "file:pkg/b/b.go",
+		Kind:         graph.EdgeKindImports,
+		StrengthHint: "functional",
+	}
+	g := graph.Build([]graph.Facts{{
+		Language: "go",
+		Nodes: []graph.Node{
+			{Kind: graph.NodeKindFile, Path: "pkg/a/a.go"},
+			{Kind: graph.NodeKindFile, Path: "pkg/b/b.go"},
+		},
+		Edges: []graph.Edge{edge},
+	}})
+	key := edge.From + "\x00" + edge.To + "\x00" + string(edge.Kind)
+
+	t.Run("hint applies without a label", func(t *testing.T) {
+		idx := classify.Run(g, config.ClassifyConfig{Modules: modules})
+		if got := idx[key].Strength; got != coupling.StrengthFunctional {
+			t.Errorf("strength = %q, want functional (hint)", got)
+		}
+	})
+
+	t.Run("approved label beats hint", func(t *testing.T) {
+		idx := classify.Run(g, config.ClassifyConfig{
+			Modules:        modules,
+			ApprovedLabels: map[string]string{"a\x00b": pinnedModel},
+		})
+		if got := idx[key].Strength; got != coupling.StrengthModel {
+			t.Errorf("strength = %q, want model (pinned label)", got)
+		}
+	})
+
+	t.Run("config glob beats label", func(t *testing.T) {
+		withGlobs := map[string]config.ModuleDef{
+			"a": {Paths: []string{globPkgA}},
+			"b": {Paths: []string{globPkgB}, Public: []string{globPkgB}},
+		}
+		idx := classify.Run(g, config.ClassifyConfig{
+			Modules:        withGlobs,
+			ApprovedLabels: map[string]string{"a\x00b": pinnedModel},
+		})
+		if got := idx[key].Strength; got != coupling.StrengthContract {
+			t.Errorf("strength = %q, want contract (glob wins over label)", got)
+		}
+	})
+
+	t.Run("label for a different pair does not apply", func(t *testing.T) {
+		idx := classify.Run(g, config.ClassifyConfig{
+			Modules:        modules,
+			ApprovedLabels: map[string]string{"b\x00a": pinnedModel},
+		})
+		if got := idx[key].Strength; got != coupling.StrengthFunctional {
+			t.Errorf("strength = %q, want functional (label is directional)", got)
+		}
+	})
 }
