@@ -187,10 +187,11 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 
 - Modify: `.archfit.yaml`, `.gitignore` (cache dir policy decision), `internal/initcfg/initcfg.go`
 
-- [ ] `archfit init` emits a commented `tools.llm` stanza
-- [ ] decide + document cache-dir VCS policy (committable for replay; default ignore)
-- [ ] full suite + lint green
-- [ ] run tests — green before Task 7
+- [x] `archfit init` emits a commented `tools.llm` stanza (round-trip test still green)
+- [x] cache-dir VCS policy: `.archfit-cache/` ignored by default with an inline note that committing it buys cross-machine enrich replay
+- [x] dogfood: archfit's own config sets tools.llm (anthropic / claude-opus-4-8); doctor shows provider+key+cache status
+- [x] full suite + lint green
+- [x] run tests — green before Task 7
 
 ### Task 7: acceptance — enrich vs spike ground truth (the gate)
 
