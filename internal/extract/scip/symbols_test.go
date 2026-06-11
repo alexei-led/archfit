@@ -194,3 +194,36 @@ func TestAdapter_Symbols_MalformedOutput(t *testing.T) {
 		t.Error("expected empty graph for malformed output")
 	}
 }
+
+// TestAdapter_SinglePass verifies that Strengths and Symbols share one memoized
+// index+read pipeline per root: the SCIP indexer must run exactly once even
+// when both methods execute (the engine calls both every run).
+func TestAdapter_SinglePass(t *testing.T) {
+	root := makeGoRoot(t)
+	runner := indexCreatingRunner(readerJSONSuccess)
+	a := New(runner)
+
+	if _, _, err := a.Strengths(context.Background(), scope.Scope{Root: root}); err != nil {
+		t.Fatalf("Strengths: %v", err)
+	}
+	g, cov, err := a.Symbols(context.Background(), scope.Scope{Root: root})
+	if err != nil {
+		t.Fatalf("Symbols: %v", err)
+	}
+	if cov.Status != diagnostic.StatusOK || cov.Tool != "scip-symbols" {
+		t.Errorf("Symbols coverage = %+v, want ok/scip-symbols", cov)
+	}
+	if len(g.Module) != 2 {
+		t.Errorf("Module len = %d, want 2 (cached pipeline must yield full output)", len(g.Module))
+	}
+
+	indexerRuns := 0
+	for _, call := range runner.RunCalls() {
+		if call.Cmd.Name == indexerGo {
+			indexerRuns++
+		}
+	}
+	if indexerRuns != 1 {
+		t.Errorf("indexer ran %d times, want 1 (single-pass memoization)", indexerRuns)
+	}
+}

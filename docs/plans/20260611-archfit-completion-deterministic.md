@@ -136,10 +136,10 @@ coverage, not behavior.
 
 - Modify: `internal/extract/scip/scip.go` (+`scip_test.go`/`symbols_test.go`)
 
-- [ ] memoize the index+reader pipeline result per (root, tool-lang) in the Adapter; `Strengths`+`Symbols` share it
-- [ ] test: RunnerMock counts ONE indexer invocation when both methods run
-- [ ] verify `archfit scan` on this repo: scip coverage unchanged, wall time drops
-- [ ] run tests — green before Task 3
+- [x] memoize the index+reader pipeline result per (root, tool-lang) in the Adapter; `Strengths`+`Symbols` share it (coverage Tool rewrapped per caller; Status/Version preserved)
+- [x] test: RunnerMock counts ONE indexer invocation when both methods run
+- [x] verify `archfit scan` on this repo: scip coverage unchanged (ok/ok), wall ~4.5s vs ~8s double-indexed
+- [x] run tests — green before Task 3
 
 ### Task 3: explain runs the real pipeline
 

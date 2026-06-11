@@ -74,12 +74,42 @@ type pipelineResult struct {
 	indexer string
 }
 
+// pipeCacheEntry memoizes one pipeline execution per project root so that
+// Strengths and Symbols share a single index+read pass instead of indexing the
+// repo twice per run. cov.Tool is a template — rewrapped per caller.
+type pipeCacheEntry struct {
+	ro  pipelineResult
+	cov diagnostic.Coverage
+	ok  bool
+}
+
 // runSCIPPipeline runs the detect → index → read pipeline shared by Strengths and
-// Symbols. On any non-fatal failure it returns ok=false and a partial/absent
-// coverage record. The caller is responsible for parsing ro.raw into its own typed
-// result and constructing a final Coverage with the correct tool name.
-func (a *Adapter) runSCIPPipeline(ctx context.Context, root, covTool string) (ro pipelineResult, cov diagnostic.Coverage, ok bool) {
-	absent := diagnostic.Coverage{Tool: covTool, Status: diagnostic.StatusAbsent}
+// Symbols, memoized per root for the Adapter's lifetime (one engine run). On any
+// non-fatal failure it returns ok=false and a partial/absent coverage record. The
+// caller is responsible for parsing ro.raw into its own typed result and
+// constructing a final Coverage with the correct tool name.
+func (a *Adapter) runSCIPPipeline(ctx context.Context, root, covTool string) (pipelineResult, diagnostic.Coverage, bool) {
+	a.pipeMu.Lock()
+	entry, hit := a.pipeCache[root]
+	a.pipeMu.Unlock()
+	if !hit {
+		entry.ro, entry.cov, entry.ok = a.runSCIPPipelineUncached(ctx, root)
+		a.pipeMu.Lock()
+		if a.pipeCache == nil {
+			a.pipeCache = make(map[string]pipeCacheEntry, 1)
+		}
+		a.pipeCache[root] = entry
+		a.pipeMu.Unlock()
+	}
+	cov := entry.cov
+	cov.Tool = covTool
+	return entry.ro, cov, entry.ok
+}
+
+// runSCIPPipelineUncached executes the actual detect → index → read pipeline.
+// The returned Coverage carries Status/Version only; Tool is set by the wrapper.
+func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro pipelineResult, cov diagnostic.Coverage, ok bool) {
+	absent := diagnostic.Coverage{Status: diagnostic.StatusAbsent}
 
 	indexer, pkg, lang, found := a.detectIndexer(ctx, root)
 	if !found {
@@ -104,7 +134,7 @@ func (a *Adapter) runSCIPPipeline(ctx context.Context, root, covTool string) (ro
 		return ro, absent, false
 	}
 
-	partial := diagnostic.Coverage{Tool: covTool, Version: indexer, Status: diagnostic.StatusPartial}
+	partial := diagnostic.Coverage{Version: indexer, Status: diagnostic.StatusPartial}
 
 	// Index the project (the indexer runs in the project root, output to temp).
 	idxOut, err := a.runner.Run(ctx, toolrun.ToolCmd{
