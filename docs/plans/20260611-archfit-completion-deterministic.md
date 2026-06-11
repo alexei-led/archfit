@@ -185,11 +185,11 @@ coverage, not behavior.
 - Create: `internal/output/sarif/sarif.go` (+test)
 - Modify: `cmd/archfit/main.go` (format enum + case)
 
-- [ ] renderer per design §3 (rules, results, levels, locations, metrics in properties, no timestamps)
-- [ ] `--format sarif` in the enum; render wired in check/scan path
-- [ ] tests: golden shape assertions + double-render byte-identical + empty diagnostic
-- [ ] validate one real output against the SARIF 2.1.0 schema (jv or sarif-tools; record how)
-- [ ] run tests — green before Task 7
+- [x] renderer per design §3 (rules, results, levels, locations, metrics in properties, no timestamps)
+- [x] `--format sarif` in the enum; render wired in check/scan path
+- [x] tests: golden shape assertions + double-render byte-identical + empty diagnostic
+- [x] validate one real output against the SARIF 2.1.0 schema — `uvx check-jsonschema --schemafile https://json.schemastore.org/sarif-2.1.0.json` on the violating-fixture output: "ok -- validation done"
+- [x] run tests — green before Task 7
 
 ### Task 7: change_locality metric
 

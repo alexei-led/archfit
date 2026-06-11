@@ -34,6 +34,7 @@ import (
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
+	"github.com/alexei-led/archfit/internal/output/sarif"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
@@ -109,7 +110,7 @@ type CheckCmd struct {
 	Config   string   `short:"c" help:"Path to config file (optional; built-in defaults used if absent)." default:".archfit.yaml"`
 	Base     string   `help:"Git ref to compare against for incremental mode (e.g. main, HEAD~1)."`
 	Full     bool     `help:"Scan all files, not just files changed since --base."`
-	Format   []string `help:"Output format: text (human-readable), json, markdown, md. Repeatable." enum:"json,text,markdown,md" default:"text"`
+	Format   []string `help:"Output format: text (human-readable), json, markdown, md, sarif. Repeatable." enum:"json,text,markdown,md,sarif" default:"text"`
 	Advisory bool     `help:"Include informational findings (coupling advisories) in output."`
 	Report   bool     `help:"Never exit with a failure code, even when violations are found."`
 	NoConfig bool     `name:"no-config" help:"Skip config file entirely; use built-in defaults. Combine with --lang and --severity to run without any config file."`
@@ -159,6 +160,8 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 			renderErr = console.New().Render(diag, deps.Stdout)
 		case "md", "markdown":
 			renderErr = markdown.New().Render(diag, deps.Stdout)
+		case "sarif":
+			renderErr = sarif.New().Render(diag, deps.Stdout)
 		}
 		if renderErr != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, renderErr)}
