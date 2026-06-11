@@ -106,6 +106,17 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 
 ## Implementation Steps
 
+### Task 0: cheap fixes from the three-way review comparison
+
+**Files:** see `docs/plans/notes/three-way-review-comparison.md` §4 (deterministic/cheap list)
+
+- [ ] `classifyStrength` iterates the sorted module index (hardening; silences a recurring reviewer false-alarm)
+- [ ] SCIP `Resolve()` 3-state confidence + partial coverage when indexer present but resolution unimplemented
+- [ ] LOC walk emits a `diagnostic.Coverage` record
+- [ ] `initcfg` round-trip fitness test (Render → config.Load → field assertions)
+- [ ] self-config: enable `tools.complexity`; revisit `baseline` layer classification
+- [ ] run tests — green before Task 1
+
 ### Task 1: labels file — deterministic half (no LLM yet)
 
 **Files:**
