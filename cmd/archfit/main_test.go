@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,13 +60,13 @@ func TestRun_Check_ReportSuppressesFailureExit(t *testing.T) {
 	cfgPath := writeViolatingRepo(t)
 
 	var buf bytes.Buffer
-	code := Run([]string{"check", "-c", cfgPath, "--full"}, &buf)
+	code := Run([]string{cmdCheck, "-c", cfgPath, flagFull}, &buf)
 	if code != 1 {
 		t.Fatalf("check without --report: exit = %d, want 1 (gate violation)\noutput:\n%s", code, buf.String())
 	}
 
 	buf.Reset()
-	code = Run([]string{"check", "-c", cfgPath, "--full", "--report"}, &buf)
+	code = Run([]string{cmdCheck, "-c", cfgPath, flagFull, "--report"}, &buf)
 	if code != 0 {
 		t.Fatalf("check with --report: exit = %d, want 0\noutput:\n%s", code, buf.String())
 	}
@@ -73,6 +74,11 @@ func TestRun_Check_ReportSuppressesFailureExit(t *testing.T) {
 		t.Errorf("--report must still render the fail verdict\noutput:\n%s", buf.String())
 	}
 }
+
+const (
+	flagFull = "--full"
+	cmdCheck = "check"
+)
 
 func TestRun_Version(t *testing.T) {
 	var buf bytes.Buffer
@@ -112,5 +118,35 @@ func TestRun_Help_ShowsScan(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "scan") {
 		t.Errorf("--help output does not mention 'scan' subcommand; got:\n%s", out)
+	}
+}
+
+// TestRun_Explain_ResolvesViaFullPipeline verifies explain finds the gate
+// finding through the same pipeline as check, with module labels resolved.
+func TestRun_Explain_ResolvesViaFullPipeline(t *testing.T) {
+	cfgPath := writeViolatingRepo(t)
+
+	// Get the finding fingerprint from a check run.
+	var buf bytes.Buffer
+	Run([]string{cmdCheck, "-c", cfgPath, flagFull, "--format", "json"}, &buf)
+	var diag struct {
+		Findings []struct {
+			ID string `json:"id"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil || len(diag.Findings) == 0 {
+		t.Fatalf("no findings from check: err=%v output=%s", err, buf.String())
+	}
+
+	buf.Reset()
+	code := Run([]string{"explain", diag.Findings[0].ID[:8], "-c", cfgPath}, &buf)
+	if code != 0 {
+		t.Fatalf("explain exit = %d, want 0\noutput:\n%s", code, buf.String())
+	}
+	out := buf.String()
+	for _, want := range []string{"rule:", "edge:", "modules:    a -> b", "constraint:"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("explain output missing %q\noutput:\n%s", want, out)
+		}
 	}
 }

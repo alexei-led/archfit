@@ -337,24 +337,9 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	sc := cfg.ForScope()
-	sc.WorkDir = configDir
-	sc.Full = true
-	s, err := scope.Resolve(ctx, sc, deps.Runner)
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-
-	extractors := []engine.Extractor{
-		golang.New(cfg.ForExtract("go")),
-		ts.New(deps.Runner, cfg.ForExtract("typescript")),
-		py.New(deps.Runner, cfg.ForExtract("python")),
-	}
-
-	rs := rules.New(cfg.ForRules())
-	ms := metrics.New(cfg)
-
-	diag, err := engine.Run(ctx, engine.Mode{Full: true}, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, engine.NopPatternProvider{}, engine.NopSymbolResolver{}, config.PatternConfig{}, rs, ms, existingBase, metrics.ChangeHistory{}, time.Now())
+	// Same pipeline as check/scan: explain must resolve the finding from the
+	// same evidence (providers, change history) that produced it.
+	diag, err := runPipeline(ctx, deps, cfg, configDir, engine.Mode{Full: true, Advisory: true}, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -366,8 +351,17 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 			_, _ = fmt.Fprintf(deps.Stdout, "status:     %s\n", f.Status)
 			_, _ = fmt.Fprintf(deps.Stdout, "severity:   %s\n", f.Severity)
 			_, _ = fmt.Fprintf(deps.Stdout, "edge:       %s -> %s (%s)\n", f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind)
+			if f.Edge.From.Module != "" || f.Edge.To.Module != "" {
+				_, _ = fmt.Fprintf(deps.Stdout, "modules:    %s -> %s\n", f.Edge.From.Module, f.Edge.To.Module)
+			}
+			for _, loc := range f.Locations {
+				_, _ = fmt.Fprintf(deps.Stdout, "location:   %s:%d\n", loc.File, loc.Line)
+			}
 			_, _ = fmt.Fprintf(deps.Stdout, "why:        %s\n", f.Why)
 			_, _ = fmt.Fprintf(deps.Stdout, "constraint: %s\n", f.Constraint)
+			for _, alt := range f.Alternatives {
+				_, _ = fmt.Fprintf(deps.Stdout, "allowed:    %s\n", alt)
+			}
 			return nil
 		}
 	}
