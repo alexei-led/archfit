@@ -55,6 +55,8 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 			writeFinding(&b, f)
 		}
 	}
+
+	writeAgentTasks(&b, d.AgentTasks)
 	if len(advisories) > 0 {
 		fmt.Fprintf(&b, "\n## Advisories (%d, top by severity)\n\n", len(advisories))
 		for i, f := range advisories {
@@ -79,6 +81,28 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// writeAgentTasks prints the structured repair-task block: one entry per
+// active gate finding, with goal, involved files, constraints, and the exact
+// validation command. Omitted when there are no active gate findings.
+func writeAgentTasks(b *strings.Builder, tasks []diagnostic.AgentTask) {
+	if len(tasks) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n## Agent tasks (%d)\n\n", len(tasks))
+	for _, task := range tasks {
+		fmt.Fprintf(b, "- **%s** [`%s`] %s\n", task.RuleID, task.FindingID[:min(8, len(task.FindingID))], task.Goal)
+		if len(task.Files) > 0 {
+			fmt.Fprintf(b, "  - files: %s\n", strings.Join(task.Files, ", "))
+		}
+		for _, c := range task.Constraints {
+			fmt.Fprintf(b, "  - constraint: %s\n", c)
+		}
+		for _, v := range task.Validation {
+			fmt.Fprintf(b, "  - validate: `%s`\n", v)
+		}
+	}
 }
 
 // fileFactsTopN is the number of modules listed per axis in the structural-facts section.

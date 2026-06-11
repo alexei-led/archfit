@@ -78,6 +78,7 @@ func TestRun_Check_ReportSuppressesFailureExit(t *testing.T) {
 const (
 	flagFull = "--full"
 	cmdCheck = "check"
+	fmtJSON  = "--format=json"
 )
 
 func TestRun_Version(t *testing.T) {
@@ -128,7 +129,7 @@ func TestRun_Explain_ResolvesViaFullPipeline(t *testing.T) {
 
 	// Get the finding fingerprint from a check run.
 	var buf bytes.Buffer
-	Run([]string{cmdCheck, "-c", cfgPath, flagFull, "--format", "json"}, &buf)
+	Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 	var diag struct {
 		Findings []struct {
 			ID string `json:"id"`
@@ -148,5 +149,44 @@ func TestRun_Explain_ResolvesViaFullPipeline(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("explain output missing %q\noutput:\n%s", want, out)
 		}
+	}
+}
+
+// TestRun_Check_AgentTasksPopulated verifies the spec §13 repair block: an
+// active gate finding yields one agent task with goal, files, and a
+// validation command matching the invocation.
+func TestRun_Check_AgentTasksPopulated(t *testing.T) {
+	cfgPath := writeViolatingRepo(t)
+
+	var buf bytes.Buffer
+	Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+
+	var diag struct {
+		AgentTasks []struct {
+			FindingID  string   `json:"finding_id"`
+			RuleID     string   `json:"rule_id"`
+			Goal       string   `json:"goal"`
+			Files      []string `json:"files"`
+			Validation []string `json:"validation"`
+		} `json:"agent_tasks"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(diag.AgentTasks) != 1 {
+		t.Fatalf("agent_tasks = %d, want 1\noutput:\n%s", len(diag.AgentTasks), buf.String())
+	}
+	task := diag.AgentTasks[0]
+	if task.RuleID != "no_internal_access" {
+		t.Errorf("rule_id = %q", task.RuleID)
+	}
+	if !strings.Contains(task.Goal, "pkg/a/a.go") {
+		t.Errorf("goal = %q, want from-path in goal", task.Goal)
+	}
+	if len(task.Files) == 0 {
+		t.Error("files is empty")
+	}
+	if len(task.Validation) != 1 || !strings.Contains(task.Validation[0], "archfit check -c "+cfgPath) {
+		t.Errorf("validation = %v, want exact re-check command", task.Validation)
 	}
 }

@@ -433,3 +433,46 @@ func TestRenderer_Render_ToolCoverageNewTools(t *testing.T) {
 		}
 	}
 }
+
+// TestRenderer_Render_AgentTasks verifies the repair-task section renders
+// goal, files, constraints, and validation; and is absent without tasks.
+func TestRenderer_Render_AgentTasks(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictFail
+	d.AgentTasks = []diagnostic.AgentTask{{
+		FindingID:   "abcdef1234567890",
+		RuleID:      "no_internal_access",
+		Goal:        "Replace the internal-API access from pkg/a/a.go to pkg/b/internal/impl.go with b's public API.",
+		Constraints: []string{"Use only the public API of module b"},
+		Files:       []string{"pkg/a/a.go", "pkg/b/internal/impl.go"},
+		Validation:  []string{"archfit check -c .archfit.yaml --full"},
+	}}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"## Agent tasks (1)",
+		"**no_internal_access** [`abcdef12`]",
+		"files: pkg/a/a.go, pkg/b/internal/impl.go",
+		"constraint: Use only the public API of module b",
+		"validate: `archfit check -c .archfit.yaml --full`",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+
+	empty := diagnostic.New()
+	empty.Verdict = diagnostic.VerdictPass
+	buf.Reset()
+	if err := r.Render(empty, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if strings.Contains(buf.String(), "Agent tasks") {
+		t.Error("Agent tasks section must be absent when there are none")
+	}
+}

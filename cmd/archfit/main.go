@@ -14,6 +14,7 @@ import (
 
 	"github.com/alecthomas/kong"
 
+	"github.com/alexei-led/archfit/internal/agenttask"
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
@@ -143,7 +144,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		Formats:    c.Format,
 	}
 
-	diag, err := runPipeline(ctx, deps, cfg, configDir, mode, base)
+	diag, err := runPipeline(ctx, deps, cfg, c.Config, mode, base)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -173,11 +174,14 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 }
 
 // runPipeline resolves scope, builds extractors/rules/metrics, collects change
-// history and optional tool inputs, and executes the engine. check, scan, and
-// baseline all run through this single path: baseline snapshots must be computed
-// from exactly the same inputs as check verdicts, or every post-baseline check
-// reports phantom metric regressions and unmatched finding fingerprints.
-func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configDir string, mode engine.Mode, base baseline.Baseline) (diagnostic.Diagnostic, error) {
+// history and optional tool inputs, and executes the engine. check, scan,
+// explain, and baseline all run through this single path: baseline snapshots
+// must be computed from exactly the same inputs as check verdicts, or every
+// post-baseline check reports phantom metric regressions and unmatched finding
+// fingerprints. After the engine returns, the agent_tasks repair block is
+// attached from the active gate findings (deterministic; spec §13).
+func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, mode engine.Mode, base baseline.Baseline) (diagnostic.Diagnostic, error) {
+	configDir := filepath.Dir(configPath)
 	sc := cfg.ForScope()
 	sc.WorkDir = configDir
 	sc.Base = mode.Base
@@ -246,7 +250,30 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configDi
 	}
 
 	patternCfg := cfg.ForPatterns()
-	return engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), resolver, patternCfg, rs, ms, base, change, time.Now())
+	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), resolver, patternCfg, rs, ms, base, change, time.Now())
+	if err != nil {
+		return diag, err
+	}
+
+	// Attach the structured repair-task block (spec §13) for active gate
+	// findings. Deterministic: rule-type templates + module public surfaces +
+	// the exact command that re-verifies the gate.
+	ruleTypes := make(map[string]string, len(cfg.Rules))
+	for _, def := range cfg.Rules {
+		ruleTypes[def.ID] = def.Type
+	}
+	modulePublic := make(map[string][]string, len(cfg.Modules))
+	for name, def := range cfg.Modules {
+		if len(def.Public) > 0 {
+			modulePublic[name] = def.Public
+		}
+	}
+	validate := "archfit check -c " + configPath
+	if mode.Full {
+		validate += " --full"
+	}
+	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate})
+	return diag, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +306,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	// pattern provider, and SCIP resolver): snapshot values recorded from
 	// different inputs would surface as phantom deltas on the next check.
 	mode := engine.Mode{Full: c.Full, Advisory: c.Advisory, Base: c.Base}
-	diag, err := runPipeline(ctx, deps, cfg, configDir, mode, existingBase)
+	diag, err := runPipeline(ctx, deps, cfg, c.Config, mode, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -339,7 +366,7 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 
 	// Same pipeline as check/scan: explain must resolve the finding from the
 	// same evidence (providers, change history) that produced it.
-	diag, err := runPipeline(ctx, deps, cfg, configDir, engine.Mode{Full: true, Advisory: true}, existingBase)
+	diag, err := runPipeline(ctx, deps, cfg, c.Config, engine.Mode{Full: true, Advisory: true}, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}

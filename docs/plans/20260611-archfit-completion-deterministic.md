@@ -172,11 +172,11 @@ coverage, not behavior.
 - Modify: `internal/engine/engine.go` (+test), `internal/output/markdown/markdown.go` (+test), `internal/output/jsonout/jsonout_test.go`
 - Modify: `internal/arch_test.go` (agenttask joins the core ring)
 
-- [ ] replace the placeholder `AgentTask` with the spec §13 shape (finding_id, rule_id, goal, constraints, files, validation) — JSON tags per design doc
-- [ ] `agenttask.Build`: goal template per rule type; constraints from rule def + target module public globs; validation = reproducible check command; sorted, deterministic
-- [ ] engine attaches tasks for active gate findings only (advisories never)
-- [ ] markdown: compact "Agent tasks" section; JSON: full block; tests for both + empty case
-- [ ] run tests — green before Task 6
+- [x] replace the placeholder `AgentTask` with the spec §13 shape (finding_id, rule_id, goal, constraints, files, validation) — JSON tags per design doc
+- [x] `agenttask.Build`: goal template per rule type; constraints from rule def + target module public globs; validation = reproducible check command; sorted, deterministic
+- [x] engine attaches tasks for active gate findings only (advisories never) — attached in `runPipeline` post-engine (cmd owns config-derived templates; engine signature untouched); covered by CLI test
+- [x] markdown: compact "Agent tasks" section; JSON: full block; tests for both + empty case
+- [x] run tests — green before Task 6
 
 ### Task 6: SARIF 2.1.0 renderer
 
