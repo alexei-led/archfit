@@ -224,6 +224,8 @@ tools:
     enabled: "off"
   python:
     enabled: "off"
+  scip:
+    enabled: "on"
   gitnexus:
     enabled: "off"
   clones:

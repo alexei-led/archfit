@@ -22,6 +22,8 @@ var coreRingPkgs = []string{
 	modulePrefix + "internal/rules",
 	modulePrefix + "internal/metrics",
 	modulePrefix + "internal/status",
+	modulePrefix + "internal/staleness",
+	modulePrefix + "internal/facts",
 }
 
 // modelPkgs must not import anything outside the standard library (or each
@@ -31,6 +33,8 @@ var modelPkgs = []string{
 	modulePrefix + "internal/model/finding",
 	modulePrefix + "internal/model/coupling",
 	modulePrefix + "internal/model/diagnostic",
+	modulePrefix + "internal/model/symbol",
+	modulePrefix + "internal/model/clone",
 }
 
 // adapterPrefixes are adapter package paths that core ring packages must not

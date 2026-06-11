@@ -402,7 +402,12 @@ func (m ChangeAmplificationMetric) Calculate(in MetricInput) diagnostic.MetricRe
 			hubs = append(hubs, ampHub{module: mod, amp: amp, blast: b, churn: mc[mod]})
 		}
 	}
-	sort.Slice(hubs, func(i, j int) bool { return hubs[i].amp > hubs[j].amp })
+	sort.Slice(hubs, func(i, j int) bool {
+		if hubs[i].amp != hubs[j].amp {
+			return hubs[i].amp > hubs[j].amp
+		}
+		return hubs[i].module < hubs[j].module
+	})
 
 	confidence := confidenceHigh
 	if n < modularitySmallN {

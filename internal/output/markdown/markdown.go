@@ -46,6 +46,8 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 		}
 	}
 
+	writeFileFacts(&b, d.FileFacts)
+
 	gate, advisories := splitFindings(d.Findings)
 	if len(gate) > 0 {
 		fmt.Fprintf(&b, "\n## Gate findings (%d)\n\n", len(gate))
@@ -77,6 +79,51 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// fileFactsTopN is the number of modules listed per axis in the structural-facts section.
+const fileFactsTopN = 5
+
+// writeFileFacts prints the neutral structural-facts block: the top modules by
+// each axis (inbound module fan-in, outbound destinations, LOC). Numbers only —
+// no risk labels or ranking verdicts; the full per-module list is in the JSON
+// output. Omitted entirely when no facts were collected (SCIP off/absent).
+func writeFileFacts(b *strings.Builder, facts []diagnostic.FileFact) {
+	if len(facts) == 0 {
+		return
+	}
+	b.WriteString("\n## Structural facts (neutral evidence)\n\n")
+	fmt.Fprintf(b, "%d modules; top %d per axis (full list in `--format json`):\n\n", len(facts), fileFactsTopN)
+
+	axes := []struct {
+		label string
+		value func(diagnostic.FileFact) int
+	}{
+		{"inbound module fan-in", func(f diagnostic.FileFact) int { return f.InboundModuleFanIn }},
+		{"outbound destinations", func(f diagnostic.FileFact) int { return f.OutboundDestinations }},
+		{"LOC", func(f diagnostic.FileFact) int { return f.LOC }},
+	}
+	for _, axis := range axes {
+		ranked := make([]diagnostic.FileFact, len(facts))
+		copy(ranked, facts)
+		sort.SliceStable(ranked, func(i, j int) bool {
+			if v1, v2 := axis.value(ranked[i]), axis.value(ranked[j]); v1 != v2 {
+				return v1 > v2
+			}
+			return ranked[i].Module < ranked[j].Module
+		})
+		fmt.Fprintf(b, "- %s:", axis.label)
+		for i, f := range ranked {
+			if i == fileFactsTopN || axis.value(f) == 0 {
+				break
+			}
+			if i > 0 {
+				b.WriteString(",")
+			}
+			fmt.Fprintf(b, " %s (%d)", f.Module, axis.value(f))
+		}
+		b.WriteString("\n")
+	}
 }
 
 // writeFinding prints one finding as a single Markdown list item.

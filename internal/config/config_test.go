@@ -567,7 +567,9 @@ func TestLoad_SelfConfig(t *testing.T) {
 		t.Error("self-config: ClonesEnabled() = true, want false (off by default)")
 	}
 
-	for _, name := range []string{"risk_hub", "architecture_fitness", "functional_candidates"} {
+	for _, name := range []string{
+		"risk_hub", "architecture_fitness", "functional_candidates",
+	} {
 		mc := cfg.ForMetric(name)
 		if mc.Enabled {
 			t.Errorf("self-config: ForMetric(%q).Enabled = true, want false (new metrics default off)", name)

@@ -9,6 +9,7 @@ import (
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/facts"
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -39,10 +40,11 @@ type Mode struct {
 //  4. Apply rules: rule.Check(g, Evidence{PatternMatches}) per rule → raw findings (flattened).
 //  5. Assign statuses: status.Assign → lifecycle-tagged findings.
 //  6. Compute metrics: build MetricInput, run each metric → MetricResult slice.
-//  7. Collect advisory findings: coupling edges with Severity != "" + staleness.Check.
-//  8. Assemble Diagnostic: resolve EdgeEvidence {module, path}, join severity,
-//     fill Summary, compute verdict. Advisory findings included only when mode.Advisory.
-//  9. Return (Diagnostic, nil) on success; (Diagnostic, error) on hard error.
+//  7. Resolve evidence: join module labels and severity onto findings.
+//  8. Collect advisory findings: coupling edges with Severity != "" + staleness.Check.
+//  9. Assemble Diagnostic: fill Summary, compute verdict, attach structural facts.
+//     Advisory findings included only when mode.Advisory.
+//     Return (Diagnostic, nil) on success; (Diagnostic, error) on hard error.
 //
 // Rendering is the caller's responsibility (cmd renders to deps.Stdout).
 func Run(
@@ -119,7 +121,7 @@ func Run(
 	// --- Stage 5: Status ---
 	taggedFindings := status.Assign(rawFindings, base, exceptions, now, "gate")
 
-	// --- Stage 5: Metrics ---
+	// --- Stage 6: Metrics ---
 	mi := metrics.MetricInput{
 		Graph:           g,
 		Classifications: couplingIdx,
@@ -140,7 +142,7 @@ func Run(
 		metricResults = append(metricResults, m.Calculate(mi))
 	}
 
-	// --- Stage 7: Assemble Diagnostic ---
+	// --- Stage 7: Resolve evidence — module labels + severity join ---
 
 	// Build a path-pair → coupling.Classification lookup so we can join
 	// severity and module labels onto findings without re-importing coupling keys.
@@ -185,7 +187,7 @@ func Run(
 		resolvedFindings = append(resolvedFindings, f)
 	}
 
-	// --- Stage 6: Advisory findings ---
+	// --- Stage 8: Advisory findings ---
 	// Collect coupling advisories by walking edges in graph order (deterministic).
 	// Edges with Severity != "" and at or above the configured minimum severity are included.
 	var advisoryFindings []finding.Finding
@@ -279,6 +281,11 @@ func Run(
 		coverages = []diagnostic.Coverage{}
 	}
 
+	// Neutral structural-facts block (Tranche 1.5): assembled from the symbol
+	// graph + change history, attached as report-only evidence. Never read by
+	// computeVerdict or any gate logic. Empty when SCIP is off/absent.
+	fileFacts := facts.Build(scipSymbols, change.FileLOC, change.CoChange, change.GitnexusImpact)
+
 	d := diagnostic.Diagnostic{
 		SchemaVersion: diagnostic.SchemaVersion,
 		Verdict:       verdict,
@@ -286,6 +293,7 @@ func Run(
 		Head:          mode.Head,
 		Metrics:       metricResults,
 		Findings:      resolvedFindings,
+		FileFacts:     fileFacts,
 		AgentTasks:    []diagnostic.AgentTask{},
 		ToolCoverage:  coverages,
 		Summary: diagnostic.Summary{
@@ -329,7 +337,8 @@ func severityFor(strength, distance string) finding.Severity {
 }
 
 // enrichEdges applies symbol resolution and SCIP integration strength to an
-// extractor's edges in place (facts.Edges is a slice header, so mutations persist).
+// extractor's edges in place (element writes go through the slice's shared
+// backing array, so they are visible to the caller).
 // Resolution rewrites barrel-file targets to real paths; SCIP strength sets a
 // per-edge StrengthHint (config public/internal globs still win in classify).
 func enrichEdges(ctx context.Context, sr SymbolResolver, scipStrength map[string]string, facts graph.Facts) {

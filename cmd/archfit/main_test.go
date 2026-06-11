@@ -2,9 +2,77 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// writeViolatingRepo creates a minimal Go repo with one gate-failing
+// dependency (pkg/a imports pkg/b/internal) and an archfit config that
+// fails on it. Returns the config path.
+func writeViolatingRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	files := map[string]string{
+		"go.mod": "module example.com/test\n\ngo 1.21\n",
+		"pkg/a/a.go": "package a\n\nimport \"example.com/test/pkg/b/internal/impl\"\n\n" +
+			"func UseSecret() string { return impl.Secret() }\n",
+		"pkg/b/internal/impl/impl.go": "package impl\n\nfunc Secret() string { return \"s\" }\n",
+		".archfit.yaml": `version: 1
+modules:
+  a:
+    paths: ["pkg/a/**"]
+  b:
+    paths: ["pkg/b/**"]
+    internal: ["pkg/b/internal/**"]
+rules:
+  - id: no_internal_access
+    type: forbidden_dependency
+    gate: fail
+    from: pkg/a/**
+    to: pkg/b/internal/**
+`,
+	}
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Scope resolution requires a git repo root.
+	cmd := exec.Command("git", "init", "-q")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("git init failed (git unavailable?): %v\n%s", err, out)
+	}
+	return filepath.Join(dir, ".archfit.yaml")
+}
+
+// TestRun_Check_ReportSuppressesFailureExit verifies the --report contract:
+// the same violating repo exits 1 without --report and 0 with it.
+func TestRun_Check_ReportSuppressesFailureExit(t *testing.T) {
+	cfgPath := writeViolatingRepo(t)
+
+	var buf bytes.Buffer
+	code := Run([]string{"check", "-c", cfgPath, "--full"}, &buf)
+	if code != 1 {
+		t.Fatalf("check without --report: exit = %d, want 1 (gate violation)\noutput:\n%s", code, buf.String())
+	}
+
+	buf.Reset()
+	code = Run([]string{"check", "-c", cfgPath, "--full", "--report"}, &buf)
+	if code != 0 {
+		t.Fatalf("check with --report: exit = %d, want 0\noutput:\n%s", code, buf.String())
+	}
+	if !strings.Contains(strings.ToLower(buf.String()), "fail") {
+		t.Errorf("--report must still render the fail verdict\noutput:\n%s", buf.String())
+	}
+}
 
 func TestRun_Version(t *testing.T) {
 	var buf bytes.Buffer

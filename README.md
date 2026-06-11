@@ -73,6 +73,31 @@ gating CI:
   coupling with no import edge. Distinct from `hidden_coupling` (co-change
   without an edge). Requires `tools.clones.enabled: on`; reports `n/a` otherwise.
 
+### Structural-facts block
+
+With `tools.scip.enabled: on`, every run also emits a neutral per-module
+**structural-facts block** (`file_facts` in JSON; a compact
+"Structural facts" section in Markdown). One entry per symbol-graph module:
+
+```json
+{
+  "module": "ccgram.handlers.polling.polling_state",
+  "files": ["src/ccgram/handlers/polling/polling_state.py"],
+  "inbound_module_fanin": 13,
+  "outbound_destinations": 9,
+  "loc": 1018,
+  "cochange_partners": ["src/.../observe.py", "..."],
+  "gitnexus_impact": 41
+}
+```
+
+The block is evidence, not judgment: no band, no score, no risk labels, and it
+never affects the `check` verdict. It exists so a downstream reviewer (human or
+LLM) can rank intra-module risk — e.g. separate a benign read-only config hub
+from a mutable shared-state hub with the same fan-in — by reading the named
+files. `gitnexus_impact` appears only when the optional gitnexus provider ran;
+the block is empty when SCIP is off.
+
 ## Configuration
 
 Configuration lives in `.archfit.yaml`.

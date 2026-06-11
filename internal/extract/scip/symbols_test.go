@@ -73,6 +73,7 @@ func TestParseReaderSymbols(t *testing.T) {
 		wantErr    bool
 		wantSymbol string
 		wantModule string
+		wantPath   string
 		wantFanIn  int
 		wantRef    string // from_symbol that should have at least one ref
 	}{
@@ -81,6 +82,7 @@ func TestParseReaderSymbols(t *testing.T) {
 			stdout:     readerJSONSuccess,
 			wantSymbol: "go 1.0 example.com/foo internal/a/a.go/A#",
 			wantModule: "internal/a",
+			wantPath:   "internal/a/a.go",
 			wantFanIn:  3,
 			wantRef:    "go 1.0 example.com/foo internal/b/b.go/B#",
 		},
@@ -115,6 +117,9 @@ func TestParseReaderSymbols(t *testing.T) {
 			if tc.wantSymbol != "" {
 				if got := graph.Module[tc.wantSymbol]; got != tc.wantModule {
 					t.Errorf("Module[%q] = %q, want %q", tc.wantSymbol, got, tc.wantModule)
+				}
+				if got := graph.Path[tc.wantSymbol]; got != tc.wantPath {
+					t.Errorf("Path[%q] = %q, want %q", tc.wantSymbol, got, tc.wantPath)
 				}
 				if got := graph.FanIn[tc.wantSymbol]; got != tc.wantFanIn {
 					t.Errorf("FanIn[%q] = %d, want %d", tc.wantSymbol, got, tc.wantFanIn)

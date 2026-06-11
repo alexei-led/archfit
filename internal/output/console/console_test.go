@@ -15,13 +15,12 @@ const (
 	metricRiskHub              = "risk_hub"
 	metricArchFitness          = "architecture_fitness"
 	metricFunctionalCandidates = "functional_candidates"
-
-	bandInfo       = "info"
-	bandNA         = "n/a"
-	confidenceHigh = "high"
-	confidenceLow  = "low"
-	lowConfSuffix  = "low confidence"
-	statusAbsent   = "absent"
+	bandInfo                   = "info"
+	bandNA                     = "n/a"
+	confidenceHigh             = "high"
+	confidenceLow              = "low"
+	lowConfSuffix              = "low confidence"
+	statusAbsent               = "absent"
 )
 
 func TestRenderer_Format(t *testing.T) {

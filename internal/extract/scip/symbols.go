@@ -45,9 +45,11 @@ func parseReaderSymbols(stdout []byte) (symbol.Graph, error) {
 	}
 
 	module := make(map[string]string, len(ro.Symbols))
+	path := make(map[string]string, len(ro.Symbols))
 	fanIn := make(map[string]int, len(ro.Symbols))
 	for _, s := range ro.Symbols {
 		module[s.Symbol] = s.Module
+		path[s.Symbol] = s.Path
 		fanIn[s.Symbol] = s.FanIn
 	}
 
@@ -59,5 +61,5 @@ func parseReaderSymbols(stdout []byte) (symbol.Graph, error) {
 		refs[r.FromSymbol][r.ToSymbol] = struct{}{}
 	}
 
-	return symbol.Graph{Module: module, FanIn: fanIn, Refs: refs}, nil
+	return symbol.Graph{Module: module, Path: path, FanIn: fanIn, Refs: refs}, nil
 }
