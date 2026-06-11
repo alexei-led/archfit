@@ -41,7 +41,8 @@ func TestAdapter_Name(t *testing.T) {
 }
 
 // TestResolve_AbsentTool_IdentityResolver asserts that when no SCIP indexer is
-// found on PATH, Resolve returns toPath unchanged with confidence "medium".
+// found on PATH, Resolve returns toPath unchanged with confidence "low"
+// (identity, no resolution capability).
 func TestResolve_AbsentTool_IdentityResolver(t *testing.T) {
 	a := scip.New(absentRunner())
 	ctx := context.Background()
@@ -60,8 +61,8 @@ func TestResolve_AbsentTool_IdentityResolver(t *testing.T) {
 		if realPath != tc.toPath {
 			t.Errorf("Resolve(%q, %q): realPath = %q, want %q (identity)", tc.fromFile, tc.toPath, realPath, tc.toPath)
 		}
-		if confidence != "medium" {
-			t.Errorf("Resolve(%q, %q): confidence = %q, want %q", tc.fromFile, tc.toPath, confidence, "medium")
+		if confidence != "low" {
+			t.Errorf("Resolve(%q, %q): confidence = %q, want %q", tc.fromFile, tc.toPath, confidence, "low")
 		}
 	}
 }

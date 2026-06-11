@@ -226,6 +226,8 @@ tools:
     enabled: "off"
   scip:
     enabled: "on"
+  complexity:
+    enabled: "on"
   gitnexus:
     enabled: "off"
   clones:

@@ -110,12 +110,12 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 
 **Files:** see `docs/plans/notes/three-way-review-comparison.md` §4 (deterministic/cheap list)
 
-- [ ] `classifyStrength` iterates the sorted module index (hardening; silences a recurring reviewer false-alarm)
-- [ ] SCIP `Resolve()` 3-state confidence + partial coverage when indexer present but resolution unimplemented
-- [ ] LOC walk emits a `diagnostic.Coverage` record
-- [ ] `initcfg` round-trip fitness test (Render → config.Load → field assertions)
-- [ ] self-config: enable `tools.complexity`; revisit `baseline` layer classification
-- [ ] run tests — green before Task 1
+- [x] `classifyStrength` iterates the sorted module index (hardening; silences a recurring reviewer false-alarm)
+- [x] SCIP `Resolve()` 3-state confidence (low = no indexer / medium = indexer present, resolution unimplemented / high reserved)
+- [x] LOC walk emits a `diagnostic.Coverage` record (tool "loc", ok, files seen)
+- [x] `initcfg` round-trip fitness test (Render → config.Load → field assertions incl. starter rules)
+- [x] self-config: `tools.complexity` enabled — immediately surfaces engine.Run CCN 28 + facts.Build CCN 26 (the architect review's F-03, now self-detected). `baseline` layer reclassification DEFERRED to the post-Tranche-2 refactoring (reclassifying before the status→baseline interface inversion would create warnings with no fix available)
+- [x] run tests — green before Task 1
 
 ### Task 1: labels file — deterministic half (no LLM yet)
 

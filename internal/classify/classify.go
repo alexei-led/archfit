@@ -106,7 +106,7 @@ func classify(e graph.Edge, mi moduleIndex, modules map[string]config.ModuleDef)
 	// Config public/internal globs are authoritative. When they do not decide,
 	// fall back to an extractor-supplied language-aware hint (e.g. Python
 	// underscore-private targets → intrusive) before giving up to unknown.
-	str := classifyStrength(toPath, modules)
+	str := classifyStrength(toPath, mi)
 	if str == coupling.StrengthUnknown {
 		str = strengthFromHint(e.StrengthHint)
 	}
@@ -146,14 +146,18 @@ func classify(e graph.Edge, mi moduleIndex, modules map[string]config.ModuleDef)
 
 // classifyStrength determines strength from glob matching against all modules'
 // public and internal glob lists.
-func classifyStrength(toPath string, modules map[string]config.ModuleDef) coupling.Strength {
-	for _, def := range modules {
-		if matchesAnyGlob(toPath, def.Public) {
+//
+// The two-pass structure (ALL public globs before ANY internal glob) makes the
+// result independent of module order; iteration still goes through the sorted
+// index so the code is self-evidently deterministic.
+func classifyStrength(toPath string, mi moduleIndex) coupling.Strength {
+	for _, name := range mi.names {
+		if matchesAnyGlob(toPath, mi.modules[name].Public) {
 			return coupling.StrengthContract
 		}
 	}
-	for _, def := range modules {
-		if matchesAnyGlob(toPath, def.Internal) {
+	for _, name := range mi.names {
+		if matchesAnyGlob(toPath, mi.modules[name].Internal) {
 			return coupling.StrengthIntrusive
 		}
 	}

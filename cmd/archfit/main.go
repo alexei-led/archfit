@@ -215,6 +215,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		change.FileChurn, change.CoChange = churn, coChange
 	}
 	change.FileLOC = sourceFileLOC(s.Root)
+	// The LOC walk was the only collector without a coverage record — every
+	// data source must be visible in tool_coverage so absence is explainable.
+	change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
+		Tool:            "loc",
+		FilesSeen:       len(change.FileLOC),
+		FilesApplicable: len(change.FileLOC),
+		Status:          diagnostic.StatusOK,
+	})
 
 	// Architecture-fitness enforcement signals (deterministic FS scan; always runs).
 	change.FitnessSignals = fitness.Detect(s.Root)
