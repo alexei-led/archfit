@@ -286,7 +286,7 @@ metrics are removed (`shared_state_hub`) or folded into the facts block (`cohesi
 outbound computation, at raw-destination granularity). **Acceptance is the spike re-run** (the
 blind classifier must now surface both hubs from the enriched evidence), not a metric rank.
 
-### Tranche 2 — LLM, off-gate (REVISED by the spike; build after Tranche 1.5)
+### Tranche 2 — LLM, off-gate (REVISED by the spike; UNBLOCKED 2026-06-11 by the Tranche 1.5 gate)
 
 1. **LLM provider interface** — thin `Classify`/`Explain` over official SDKs (§6); cached by
    content hash; never on `check`.
@@ -296,6 +296,48 @@ blind classifier must now surface both hubs from the enriched evidence), not a m
    human-authored subdomain/volatility as **context** to avoid over-flagging intended
    centralization (the spike saw the LLM over-flag generic hubs: `tmux`, bootstrap, `config`).
 3. **`explain` upgrade** — LLM narrative over collected evidence + ranked hubs.
+
+#### Tranche 2 implementation design (locked 2026-06-11)
+
+Plan: `docs/plans/20260611-archfit-tranche2-llm.md`.
+
+- **Package layout:** new `internal/llm` (provider interface + adapters + cache).
+  The interface is one method deep: `Complete(ctx, Request) (Response, error)`
+  where Request carries system+user content and a deterministic temperature=0
+  config. `Classify`/`Explain` are archfit-side functions that BUILD prompts and
+  PARSE responses — not provider methods. Adapters: `anthropic` (anthropic-sdk-go),
+  `openai` (openai-go), `ollama` (openai-go with custom base URL). Verify current
+  SDK versions at build time.
+- **Config:** `tools.llm: {provider: anthropic|openai|ollama, model: <id>,
+base_url: <ollama only>}`. API keys come from standard env vars ONLY
+  (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) — never from `.archfit.yaml`.
+- **Cache:** content-addressed at `.archfit-cache/llm/<sha256(provider|model|prompt)>.json`.
+  Cache hits skip the network entirely. The cache directory is committable: a
+  committed cache makes `enrich` replay byte-identical across machines (same
+  draft from the same evidence). `--no-cache` forces refresh.
+- **Pinned labels:** `enrich` writes `.archfit-labels.yaml` — one entry per
+  cross-module edge the LLM relabeled:
+  `{from_module, to_module, kind, strength, rationale, evidence_hash, status: draft}`.
+  A human reviews and flips `status: approved` (or deletes). `classify.Run` reads
+  the labels file deterministically with precedence
+  **config public/internal globs > approved labels > SCIP/extractor hint > unknown** —
+  draft labels are never consumed by the gate. `evidence_hash` is a content hash
+  of the edge's symbol-reference evidence; on mismatch (the code changed since
+  labeling) the label is ignored and a `labels/stale` advisory is emitted.
+  This keeps `check` LLM-free AND label-fresh.
+- **Structural guarantee (not discipline):** `internal/arch_test.go` forbids
+  `internal/llm` imports from the core ring, `internal/engine`, and
+  `internal/classify` — only `cmd` (enrich/explain) may import it. The
+  LLM-off-gate constraint becomes compiler/CI-enforced, per
+  [[prefer-structural-over-discipline]].
+- **`enrich` scope guard:** only edges whose deterministic strength came from the
+  blanket call-edge heuristic (functional/model, not config-glob, not approved
+  label) are sent for refinement; batched with module subdomain/volatility
+  context. Suspected-intrusive flags from the LLM are emitted as draft labels
+  too (the spike found a real one the architect review missed).
+- **`explain --llm`:** narrative over the finding's full evidence (edge,
+  classification, metrics, structural facts). Plain `explain` stays
+  deterministic and offline.
 
 **DROPPED by the spike:** LLM-drafted subdomain/volatility into `.archfit.yaml` (the original
 `enrich` subdomain purpose). Subdomain/volatility stays a **human-authored** config field;
