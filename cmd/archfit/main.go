@@ -164,6 +164,11 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		}
 	}
 
+	// --report promises "never exit with a failure code": the verdict is still
+	// rendered, but findings and metric regressions do not affect the exit.
+	if c.Report {
+		return nil
+	}
 	return verdictToError(diag.Verdict)
 }
 
