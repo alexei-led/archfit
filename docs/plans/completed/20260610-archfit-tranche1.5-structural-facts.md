@@ -235,11 +235,11 @@ follow-up outside this Tranche; the Task-6 gate must therefore pass on SCIP fact
 
 - Modify: `README.md`, `docs/design/hybrid-llm-strength-v0.1.md` (mark Tranche 1.5 implemented)
 
-- [ ] full suite `go test -count=1 ./...` green; `make lint` 0 issues
-- [ ] determinism: two `check` runs byte-identical; grep `check` path — zero LLM deps; confirm verdict unaffected by the facts block
-- [ ] `archfit scan` on this repo — no panic, facts block renders
-- [ ] document the facts block (JSON shape + markdown section) in README; mark design §7 Tranche 1.5 implemented
-- [ ] move both this plan and the superseded `20260609-...intra-module-hubs.md` to `docs/plans/completed/`
+- [x] full suite `go test -count=1 ./...` green; `make lint` 0 issues
+- [x] determinism: two `check` runs byte-identical; grep `check` path — zero LLM deps; confirm verdict unaffected by the facts block — verified byte-identical both with SCIP off and on; no LLM imports anywhere in `internal`/`cmd`; engine test asserts FileFacts attach without changing the verdict, and `computeVerdict` does not read them
+- [x] `archfit scan` on this repo — no panic, facts block renders — 87 modules with exact Go LOC joins (self-config now enables `tools.scip`)
+- [x] document the facts block (JSON shape + markdown section) in README; mark design §7 Tranche 1.5 implemented
+- [x] move both this plan and the superseded `20260609-...intra-module-hubs.md` to `docs/plans/completed/`
 
 ## Post-Completion
 

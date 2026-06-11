@@ -244,7 +244,18 @@ the two LLM jobs land on opposite sides:
   even with a fan-out-aware prompt, because archfit's coarse config-modules hide them. The
   evidence package needs per-file / intra-module signal first.
 
-### Tranche 1.5 — deterministic structural-facts block (build first; gates the LLM coupling layer)
+### Tranche 1.5 — deterministic structural-facts block (IMPLEMENTED 2026-06-11; gate PASSED)
+
+**Status: implemented and accepted.** The facts block ships as `Diagnostic.FileFacts`
+(`file_facts` in JSON, a neutral "Structural facts" markdown section), assembled by
+`internal/facts.Build` inside `engine.Run` from the symbol graph + change history.
+File-level joins (LOC, co-change) are exact via the new `symbol.Graph.Path`
+(per-symbol defining file, parsed from the reader's existing `path` field — no
+`scip_reader.py` change). The acceptance spike re-run **PASSED**
+(`docs/plans/notes/structural-facts-spike-rerun.md`): a firewalled blind classifier
+ranked `polling_state` #2 (mutable shared-state) and `directory_callbacks` #3
+(low-cohesion grab-bag) of 383 ccgram modules, and cleared the benign high-scorers —
+without gitnexus. **Tranche 2 is unblocked.**
 
 Goal: make the intra-module hubs the spike's blind classifier missed (`polling_state`,
 `directory_callbacks`) visible to the Tranche-2 LLM. Plan + evidence:
