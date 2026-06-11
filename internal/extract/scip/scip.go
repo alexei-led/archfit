@@ -79,11 +79,12 @@ func (a *Adapter) detect(ctx context.Context) {
 
 // Resolve maps toPath to a real source path.
 //
-// When no SCIP indexer is found on PATH, toPath is returned unchanged with
-// confidence "medium" — signalling that barrel-file resolution was not
-// performed. The same applies when an indexer is detected but full .scip
-// protobuf parsing is not yet implemented (pending importable scip Go
-// bindings).
+// Three confidence states so callers can tell the situations apart:
+//   - "low"    — no SCIP indexer on PATH: identity, no resolution capability.
+//   - "medium" — indexer detected but barrel-file resolution is not yet
+//     implemented (pending importable scip Go bindings): identity, documented
+//     limitation.
+//   - "high"   — reserved for actually resolved paths (future).
 //
 // Future: once the scip Go bindings are importable, this method should:
 //  1. Lazily run the detected indexer with WorkDir derived from fromFile.
@@ -91,8 +92,8 @@ func (a *Adapter) detect(ctx context.Context) {
 //  3. Look up toPath in the map; return realPath+"high" when found.
 func (a *Adapter) Resolve(ctx context.Context, _ /* fromFile */, toPath string) (realPath, confidence string) {
 	a.detect(ctx)
-	// Identity resolver: return toPath unchanged.
-	// Confidence is "medium" regardless of tool presence — "high" requires
-	// actual scip index parsing which is not yet implemented.
+	if a.toolFound == "" {
+		return toPath, "low"
+	}
 	return toPath, "medium"
 }

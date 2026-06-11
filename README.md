@@ -57,6 +57,12 @@ It can check:
 - coupling advisories based on strength, distance, volatility, and explicitness;
 - metric deltas such as encapsulation, unbalanced edges, cycles, and coverage.
 
+The 13th metric, `change_locality`, quantifies each change's blast surface in
+delta mode (`--base <ref>`) — the drift signal for agent loops. Active gate
+findings additionally emit structured `agent_tasks` repair blocks (goal,
+constraints, files, validation command) so coding agents can act on failures
+mechanically; see `docs/guide/agent-feedback.md`.
+
 Three additional report-only (info-band) metrics surface structural risk without
 gating CI:
 
@@ -98,6 +104,14 @@ from a mutable shared-state hub with the same fan-in — by reading the named
 files. `gitnexus_impact` appears only when the optional gitnexus provider ran;
 the block is empty when SCIP is off.
 
+### Off-gate LLM enrichment
+
+`archfit enrich` drafts coupling-strength label refinements (model vs
+functional vs contract vs intrusive) for human review; approved labels in
+`.archfit-labels.yaml` are consumed deterministically by `check`, which
+remains LLM-free — enforced structurally by the arch ring test. See
+`docs/guide/llm-enrich.md`.
+
 ## Configuration
 
 Configuration lives in `.archfit.yaml`.
@@ -133,11 +147,12 @@ See [`docs/guide/`](docs/guide/README.md) for the user guide.
 
 ## Commands
 
-- `archfit doctor` — check available local toolchain.
+- `archfit doctor` — check available local toolchain (incl. LLM setup).
 - `archfit init` — generate a starter `.archfit.yaml`.
-- `archfit check` — run architecture gates and metrics.
+- `archfit check` — run architecture gates and metrics (`--format json|markdown|sarif|text`).
 - `archfit scan` — produce a full Markdown audit report.
 - `archfit baseline` — record accepted current findings.
+- `archfit enrich` — draft LLM coupling-label refinements for human review (off-gate).
 - `archfit explain <id>` — explain one finding by fingerprint prefix.
 - `archfit install` — install or print commands for optional language tools.
 

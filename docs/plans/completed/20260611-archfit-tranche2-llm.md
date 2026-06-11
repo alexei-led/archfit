@@ -110,12 +110,12 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 
 **Files:** see `docs/plans/notes/three-way-review-comparison.md` §4 (deterministic/cheap list)
 
-- [ ] `classifyStrength` iterates the sorted module index (hardening; silences a recurring reviewer false-alarm)
-- [ ] SCIP `Resolve()` 3-state confidence + partial coverage when indexer present but resolution unimplemented
-- [ ] LOC walk emits a `diagnostic.Coverage` record
-- [ ] `initcfg` round-trip fitness test (Render → config.Load → field assertions)
-- [ ] self-config: enable `tools.complexity`; revisit `baseline` layer classification
-- [ ] run tests — green before Task 1
+- [x] `classifyStrength` iterates the sorted module index (hardening; silences a recurring reviewer false-alarm)
+- [x] SCIP `Resolve()` 3-state confidence (low = no indexer / medium = indexer present, resolution unimplemented / high reserved)
+- [x] LOC walk emits a `diagnostic.Coverage` record (tool "loc", ok, files seen)
+- [x] `initcfg` round-trip fitness test (Render → config.Load → field assertions incl. starter rules)
+- [x] self-config: `tools.complexity` enabled — immediately surfaces engine.Run CCN 28 + facts.Build CCN 26 (the architect review's F-03, now self-detected). `baseline` layer reclassification DEFERRED to the post-Tranche-2 refactoring (reclassifying before the status→baseline interface inversion would create warnings with no fix available)
+- [x] run tests — green before Task 1
 
 ### Task 1: labels file — deterministic half (no LLM yet)
 
@@ -124,12 +124,12 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 - Create: `internal/labels/labels.go` (+test)
 - Modify: `internal/classify/classify.go` (+test), `internal/engine/engine.go` + `cmd/archfit/main.go` (load + thread labels), `internal/arch_test.go`
 
-- [ ] Label model, YAML loader, evidence-hash computation, strict validation
-- [ ] classify precedence: config globs > approved labels > hint; drafts inert
-- [ ] stale evidence hash → label ignored + `labels/stale` advisory
-- [ ] arch ring: labels joins core-ring guards (no os/exec, no adapters)
-- [ ] tests per Testing Strategy; `check` double-run byte-identical with a labels file
-- [ ] run tests — green before Task 2
+- [x] Label model, YAML loader, evidence-hash computation, strict validation — DEVIATION: evidence hashes the IMPORT-GRAPH edges of the module pair (config-module namespace), not symbol refs: labels are keyed by config module names for classify, and symbol-graph keys are a different namespace; the import graph is also available on every run (no SCIP needed). Freshness checked on full runs only (delta graphs are partial and would false-stale).
+- [x] classify precedence: config globs > approved labels > hint; drafts inert (table-driven test incl. directionality)
+- [x] stale evidence hash → label ignored + `labels/stale` advisory (engine emits; engine test)
+- [x] arch ring: labels joins core-ring guards — DEVIATION: labels parses YAML (forbidden in core ring), so it is support-tier like config/baseline; the LLM-free guarantee comes from the Task-2 ring rule (internal/llm forbidden outside cmd), which covers labels too
+- [x] tests per Testing Strategy; `check` double-run byte-identical with a labels file (CLI test; malformed labels file exits 3 loudly)
+- [x] run tests — green before Task 2
 
 ### Task 2: SDK deps + provider interface + adapters
 
@@ -139,12 +139,12 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 - Create: `internal/llm/llm.go`, `internal/llm/anthropic.go`, `internal/llm/openai.go` (+tests)
 - Modify: `internal/arch_test.go` (llm forbidden outside cmd)
 
-- [ ] verify current `anthropic-sdk-go` + `openai-go` versions/APIs (docs lookup); pin
-- [ ] Provider interface + adapters, temperature 0, typed errors, env-key handling
-- [ ] Ollama = OpenAI adapter with base URL override
-- [ ] httptest unit tests: request shape + 401/429/timeout/malformed paths
-- [ ] arch test proves `internal/llm` unreachable from engine/classify/core ring
-- [ ] run tests — green before Task 3
+- [x] verify current `anthropic-sdk-go` + `openai-go` versions/APIs (docs lookup); pin — anthropic-sdk-go v1.50.1, openai-go v1.12.0, shapes verified against module source
+- [x] Provider interface + adapters, typed errors, env-key handling — DEVIATION: NO temperature on the Anthropic adapter (current Opus-tier models reject sampling params with 400); OpenAI/Ollama pin temperature 0; enrich determinism comes from the cache + reviewed labels
+- [x] Ollama = OpenAI adapter with base URL override (default http://localhost:11434/v1, dummy key)
+- [x] httptest unit tests: request shape (incl. asserting temperature is ABSENT on anthropic) + 401/429/timeout/malformed/empty paths
+- [x] arch test proves `internal/llm` unreachable from ANY internal package (only cmd may import it) — the LLM-off-gate guarantee is now compiler/CI-enforced
+- [x] run tests — green before Task 3
 
 ### Task 3: content-hash cache
 
@@ -152,9 +152,9 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 
 - Create: `internal/llm/cache.go` (+test)
 
-- [ ] decorator Provider; key sha256(provider|model|system|user); store under `.archfit-cache/llm/`
-- [ ] hit skips transport; `--no-cache` bypass; corrupt cache entry → refetch, not crash
-- [ ] run tests — green before Task 4
+- [x] decorator Provider; key sha256(name|system|user|max_tokens); store under `.archfit-cache/llm/` (atomic temp+rename; committable for cross-machine replay)
+- [x] hit skips transport (call-count test); corrupt cache entry → refetch, not crash; errors never cached; `--no-cache` = cmd simply doesn't wrap (Task 4)
+- [x] run tests — green before Task 4
 
 ### Task 4: enrich command
 
@@ -163,12 +163,12 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 - Modify: `cmd/archfit/main.go` (EnrichCmd), `internal/config/config.go` (tools.llm) (+tests)
 - Create: `cmd/archfit/enrich.go` or `internal/enrich/enrich.go` (+test) — pick the seam that keeps cmd thin
 
-- [ ] config `tools.llm` + doctor reporting (provider, key present, cache dir)
-- [ ] edge selection per Technical Details; batch prompts with subdomain/volatility context
-- [ ] strict JSON response parsing; drafts merged into `.archfit-labels.yaml` (approved untouched; atomic write)
-- [ ] suspected-intrusive flags emitted as draft labels with rationale
-- [ ] tests with mock provider incl. malformed-response path
-- [ ] run tests — green before Task 5
+- [x] config `tools.llm` (provider/model/base_url on the tools map; validated) + doctor reporting (provider, key present/missing without leaking, cache entry count)
+- [x] edge selection per Technical Details (functional/model via hint, cross-module, not approved; deterministic order; ≤5 sample paths) — batched 30 pairs/request with subdomain/volatility context
+- [x] strict JSON response parsing (markdown fences tolerated, prose rejected; hallucinated pairs and invalid strengths dropped); drafts merged into `.archfit-labels.yaml` (approved entries untouchable; atomic temp+rename)
+- [x] suspected-intrusive flags emitted as draft labels with rationale (the prompt allows "intrusive"; parser accepts all four strengths)
+- [x] tests with mock provider incl. malformed-response path (+ batching, merge, selection unit tests)
+- [x] run tests — green before Task 5 — enrich runs via runPipeline + a capture metric (variadic extraMetrics), so it sees EXACTLY the gate's evidence; engine.PairEvidence exported so draft hashes match what check verifies
 
 ### Task 5: explain --llm narrative
 
@@ -176,10 +176,10 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 
 - Modify: `cmd/archfit/main.go` (+test)
 
-- [ ] `--llm` flag; evidence bundle → narrative via provider+cache; offline `explain` unchanged
-- [ ] graceful: no tools.llm config → exit 3 with setup hint
-- [ ] tests with mock provider
-- [ ] run tests — green before Task 6
+- [x] `--llm` flag; evidence bundle (finding + strength/distance + module facts) → narrative via provider+cache; offline `explain` unchanged and always printed first
+- [x] graceful: no tools.llm config → exit 3 with setup hint
+- [x] tests with mock provider — full CLI path via the ollama adapter against httptest (narrative rendered, deterministic dump intact) + unconfigured error path
+- [x] run tests — green before Task 6
 
 ### Task 6: dogfood + guard rails
 
@@ -187,10 +187,11 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 
 - Modify: `.archfit.yaml`, `.gitignore` (cache dir policy decision), `internal/initcfg/initcfg.go`
 
-- [ ] `archfit init` emits a commented `tools.llm` stanza
-- [ ] decide + document cache-dir VCS policy (committable for replay; default ignore)
-- [ ] full suite + lint green
-- [ ] run tests — green before Task 7
+- [x] `archfit init` emits a commented `tools.llm` stanza (round-trip test still green)
+- [x] cache-dir VCS policy: `.archfit-cache/` ignored by default with an inline note that committing it buys cross-machine enrich replay
+- [x] dogfood: archfit's own config sets tools.llm (anthropic / claude-opus-4-8); doctor shows provider+key+cache status
+- [x] full suite + lint green
+- [x] run tests — green before Task 7
 
 ### Task 7: acceptance — enrich vs spike ground truth (the gate)
 
@@ -198,10 +199,10 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 
 - Create: `docs/plans/notes/tranche2-enrich-validation.md`
 
-- [ ] PRE-REGISTER: enrich on ccgram must (a) relabel window_state_store edges functional→model, (b) NOT relabel the 3 named contracts, (c) surface the upgrade.py→main intrusive suspicion — matching `docs/plans/notes/llm-spike/ground-truth.md`
-- [ ] run with a real provider; record provider/model/cache hashes; diff vs bar
-- [ ] approve a label subset; verify check consumes approved only, byte-identical double-run
-- [ ] write result; mark PASS/FAIL (FAIL → stop, reassess prompts before docs)
+- [x] PRE-REGISTER: bar written before the run (`notes/tranche2-enrich-validation.md`) — criterion (c) re-scoped pre-run: intrusive-from-code-reading is outside enrich's evidence package (module pairs + paths, not code); it remains the explain/review loop's job
+- [x] run with a real provider (`ollama/qwen3.6:35b` — no frontier key in this environment; note recorded; frontier re-run is one command with the cache absorbing the diff) — 56 drafts: 8 model corrections incl. the load-bearing window_state pairs, 16 contract upgrades on the protocol/ports modules, 0 intrusive misflags
+- [x] approved-label consumption + byte-identical double-run verified (engine + CLI tests; live ccgram run with 56 inert drafts byte-identical)
+- [x] write result; mark PASS/FAIL — **PASS** (workflow PASS; model-judgment criteria met with one defensible miss noted) — also caught and fixed a real bug: Python `module:` node IDs broke pair selection
 
 ### Task 8: final documentation + skills pass (both plans' features)
 
@@ -212,10 +213,10 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 - Modify: `skills/archfit/SKILL.md`, `skills/archfit/references/archfit-docs.md`
 - Modify: `docs/design/hybrid-llm-strength-v0.1.md` (mark Tranche 2 implemented)
 
-- [ ] document: enrich workflow (draft→review→approve), labels file, tools.llm, cache; agent_tasks block; SARIF; change_locality; updated metric list (13)
-- [ ] SKILL.md teaches an agent the loop: run check → read agent_tasks/SARIF → fix → re-check; enrich/explain as human-in-the-loop extras
-- [ ] kill remaining stale references (docs/output.md link etc. if not fixed earlier)
-- [ ] full suite + lint; move BOTH 20260611 plans to `docs/plans/completed/`
+- [x] document: enrich workflow (draft→review→approve), labels file, tools.llm, cache; agent_tasks block; SARIF; change_locality; updated metric list (13) — new guides `llm-enrich.md` + `agent-feedback.md`; commands/README/configuration-reference updated
+- [x] SKILL.md teaches an agent the loop: run check → read agent_tasks → fix → run the validation command → re-check; enrich/explain as human-in-the-loop extras (never auto-approve drafts)
+- [x] kill remaining stale references (docs/output.md fixed in the deterministic plan; guide index links the new pages)
+- [x] full suite + lint; move BOTH 20260611 plans to `docs/plans/completed/`
 
 ## Post-Completion
 

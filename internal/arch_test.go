@@ -103,6 +103,22 @@ func TestArchImports(t *testing.T) {
 		}
 	})
 
+	t.Run("llm_ring_unreachable_from_internal", func(t *testing.T) {
+		// The LLM-off-gate guarantee, enforced structurally: NO internal
+		// package may import internal/llm — only cmd (enrich/explain) may.
+		// This covers the whole check pipeline: engine, classify, labels,
+		// metrics, renderers can never call a model.
+		const llmPkg = modulePrefix + "internal/llm"
+		for pkgPath, pkg := range loaded {
+			if pkgPath == llmPkg {
+				continue
+			}
+			if _, imports := pkg.Imports[llmPkg]; imports {
+				t.Errorf("package %s must not import %s: the check gate is LLM-free; only cmd may use the LLM layer", pkgPath, llmPkg)
+			}
+		}
+	})
+
 	t.Run("model_stdlib_only", func(t *testing.T) {
 		for _, pkgPath := range modelPkgs {
 			pkg, ok := loaded[pkgPath]

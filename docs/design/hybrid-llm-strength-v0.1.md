@@ -286,7 +286,15 @@ metrics are removed (`shared_state_hub`) or folded into the facts block (`cohesi
 outbound computation, at raw-destination granularity). **Acceptance is the spike re-run** (the
 blind classifier must now surface both hubs from the enriched evidence), not a metric rank.
 
-### Tranche 2 — LLM, off-gate (REVISED by the spike; UNBLOCKED 2026-06-11 by the Tranche 1.5 gate)
+### Tranche 2 — LLM, off-gate (IMPLEMENTED 2026-06-11; acceptance PASS)
+
+**Status: implemented and accepted** (`docs/plans/notes/tranche2-enrich-validation.md`).
+Shipped: `internal/llm` provider layer (anthropic/openai/ollama, content-hash
+cache), `internal/labels` pinned-label model with import-graph evidence
+hashing, classify precedence (globs > approved labels > hint), `labels/stale`
+advisories, `archfit enrich` (draft→review→pin), `explain --llm`. The
+LLM-off-gate constraint is structurally enforced: the arch ring test forbids
+any internal package from importing `internal/llm`.
 
 1. **LLM provider interface** — thin `Classify`/`Explain` over official SDKs (§6); cached by
    content hash; never on `check`.

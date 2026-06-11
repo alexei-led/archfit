@@ -226,6 +226,11 @@ tools:
     enabled: "off"
   scip:
     enabled: "on"
+  complexity:
+    enabled: "on"
+  llm:
+    provider: anthropic
+    model: claude-opus-4-8
   gitnexus:
     enabled: "off"
   clones:

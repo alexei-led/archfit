@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -440,5 +441,66 @@ func TestModuleNameFromKey(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("moduleNameFromKey(%q) = %q, want %q", tt.key, got, tt.want)
 		}
+	}
+}
+
+// TestRender_RoundTripsThroughConfigLoad is the fitness guard for the implicit
+// YAML contract between initcfg and config: everything Render writes must
+// survive config.Load unchanged. When config.ModuleDef gains a field that
+// init should generate, this test is where the divergence surfaces.
+func TestRender_RoundTripsThroughConfigLoad(t *testing.T) {
+	rendered := Render(DiscoveredConfig{
+		ModulePath: "example.com/test",
+		HasGo:      true,
+		Layers:     []string{layerModel, layerCore, "adapter", layerCmd},
+		Modules: []ModuleDef{
+			{
+				Name:     layerCore,
+				Paths:    []string{"internal/core/**"},
+				Public:   []string{"internal/core"},
+				Internal: []string{"internal/core/private/**"},
+				Layer:    layerCore,
+			},
+			{
+				Name:  "adapters",
+				Paths: []string{"internal/adapters/**"},
+				Layer: "adapter",
+			},
+		},
+	})
+
+	path := filepath.Join(t.TempDir(), ".archfit.yaml")
+	if err := os.WriteFile(path, []byte(rendered), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(context.Background(), path)
+	if err != nil {
+		t.Fatalf("config.Load rejected init-generated YAML: %v\n---\n%s", err, rendered)
+	}
+
+	if len(cfg.Layers) != 4 || cfg.Layers[0] != layerModel || cfg.Layers[3] != layerCmd {
+		t.Errorf("layers = %v, want [model core adapter cmd]", cfg.Layers)
+	}
+	core, ok := cfg.Modules[layerCore]
+	if !ok {
+		t.Fatalf("module %q missing after round-trip; modules = %v", layerCore, cfg.Modules)
+	}
+	if len(core.Paths) != 1 || core.Paths[0] != "internal/core/**" {
+		t.Errorf("core.Paths = %v", core.Paths)
+	}
+	if len(core.Public) != 1 || core.Public[0] != "internal/core" {
+		t.Errorf("core.Public = %v", core.Public)
+	}
+	if len(core.Internal) != 1 || core.Internal[0] != "internal/core/private/**" {
+		t.Errorf("core.Internal = %v", core.Internal)
+	}
+	if core.Layer != layerCore {
+		t.Errorf("core.Layer = %q, want core", core.Layer)
+	}
+	if _, ok := cfg.Modules["adapters"]; !ok {
+		t.Errorf("module %q missing after round-trip", "adapters")
+	}
+	if len(cfg.Rules) == 0 {
+		t.Error("init-generated config carries no rules — starter rules lost in round-trip")
 	}
 }

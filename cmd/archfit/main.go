@@ -28,6 +28,7 @@ import (
 	"github.com/alexei-led/archfit/internal/fitness"
 	"github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/initcfg"
+	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
@@ -51,11 +52,13 @@ var (
 const (
 	defaultConfigPath   = ".archfit.yaml"          // fallback to config.Default() when absent
 	defaultBaselinePath = ".archfit-baseline.json" // on-disk path for the baseline file
+	defaultLabelsPath   = ".archfit-labels.yaml"   // pinned coupling labels (enrich output)
 )
 
 // cli is the top-level kong command struct.
 type cli struct {
 	Check    CheckCmd    `cmd:"" help:"Check architecture constraints."`
+	Enrich   EnrichCmd   `cmd:"" help:"Draft LLM coupling-label refinements for human review (off-gate)."`
 	Scan     ScanCmd     `cmd:"" help:"Full architecture audit report (scan ≡ check --full --advisory --report --format markdown)."`
 	Baseline BaselineCmd `cmd:"" help:"Save current findings as baseline."`
 	Explain  ExplainCmd  `cmd:"" help:"Explain a specific finding."`
@@ -183,7 +186,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 // post-baseline check reports phantom metric regressions and unmatched finding
 // fingerprints. After the engine returns, the agent_tasks repair block is
 // attached from the active gate findings (deterministic; spec §13).
-func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, mode engine.Mode, base baseline.Baseline) (diagnostic.Diagnostic, error) {
+func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, error) {
 	configDir := filepath.Dir(configPath)
 	sc := cfg.ForScope()
 	sc.WorkDir = configDir
@@ -203,7 +206,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	rs := rules.New(cfg.ForRules())
 	// metrics.New must run BEFORE ApplyVolatility below: risk_hub captures only
 	// hand-authored config volatility, never churn-derived values.
-	ms := metrics.New(cfg)
+	ms := append(metrics.New(cfg), extraMetrics...)
 
 	// Recent git history (cheap; runs by default): per-file churn drives module
 	// volatility (unbalanced_edge, BC severity) and the modularity metrics
@@ -215,6 +218,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		change.FileChurn, change.CoChange = churn, coChange
 	}
 	change.FileLOC = sourceFileLOC(s.Root)
+	// The LOC walk was the only collector without a coverage record — every
+	// data source must be visible in tool_coverage so absence is explainable.
+	change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
+		Tool:            "loc",
+		FilesSeen:       len(change.FileLOC),
+		FilesApplicable: len(change.FileLOC),
+		Status:          diagnostic.StatusOK,
+	})
 
 	// Architecture-fitness enforcement signals (deterministic FS scan; always runs).
 	change.FitnessSignals = fitness.Detect(s.Root)
@@ -244,6 +255,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	change.GitnexusImpact, gitnexusCov, _ = gitnexus.Run(ctx, deps.Runner, s.Root, cfg.GitnexusEnabled())
 	change.ExtraCoverage = append(change.ExtraCoverage, gitnexusCov)
 
+	// Pinned coupling labels (.archfit-labels.yaml): the human-reviewed output of
+	// `archfit enrich`. Optional; a malformed file fails loudly — a half-read
+	// labels file must never silently alter the gate.
+	lbls, err := labels.Load(filepath.Join(configDir, defaultLabelsPath))
+	if err != nil {
+		return diagnostic.Diagnostic{}, err
+	}
+
 	// SCIP symbol-level strength is opt-in (tools.scip.enabled: on): the indexer is
 	// whole-repo and slow, so it must not run on the default check path, and the
 	// decision must live in config (not PATH presence) to keep metrics deterministic.
@@ -253,7 +272,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 
 	patternCfg := cfg.ForPatterns()
-	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), resolver, patternCfg, rs, ms, base, change, time.Now())
+	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), resolver, patternCfg, rs, ms, base, lbls, change, time.Now())
 	if err != nil {
 		return diag, err
 	}
@@ -351,6 +370,8 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 type ExplainCmd struct {
 	Config      string `short:"c" default:".archfit.yaml"`
 	Fingerprint string `arg:"" help:"Finding fingerprint prefix."`
+	LLM         bool   `name:"llm" help:"Append an LLM narrative (off-gate; needs tools.llm configured)."`
+	NoCache     bool   `name:"no-cache" help:"Bypass the LLM response cache."`
 }
 
 func (c *ExplainCmd) Run(deps *appDeps) error {
@@ -391,6 +412,9 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 			_, _ = fmt.Fprintf(deps.Stdout, "constraint: %s\n", f.Constraint)
 			for _, alt := range f.Alternatives {
 				_, _ = fmt.Fprintf(deps.Stdout, "allowed:    %s\n", alt)
+			}
+			if c.LLM {
+				return explainNarrative(ctx, deps, cfg, c.Config, c.NoCache, f, diag)
 			}
 			return nil
 		}
@@ -437,7 +461,35 @@ func (c *DoctorCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kon
 		}
 	}
 
+	// Off-gate LLM setup (enrich / explain --llm): provider config + key + cache.
+	_, _ = fmt.Fprintf(deps.Stdout, "\nLLM (off-gate; enrich/explain only — never used by check):\n")
+	cfg, cfgErr := loadConfig(ctx, defaultConfigPath, false)
+	if llmCfg, ok := cfg.LLM(); cfgErr == nil && ok {
+		_, _ = fmt.Fprintf(deps.Stdout, "  provider: %s  model: %s\n", llmCfg.Provider, llmCfg.Model)
+		switch llmCfg.Provider {
+		case "anthropic":
+			_, _ = fmt.Fprintf(deps.Stdout, "  ANTHROPIC_API_KEY: %s\n", keyStatus(os.Getenv("ANTHROPIC_API_KEY")))
+		case "openai":
+			_, _ = fmt.Fprintf(deps.Stdout, "  OPENAI_API_KEY: %s\n", keyStatus(os.Getenv("OPENAI_API_KEY")))
+		case "ollama":
+			_, _ = fmt.Fprintf(deps.Stdout, "  base_url: %s (no key needed)\n", llmCfg.BaseURL)
+		}
+		if entries, err := filepath.Glob(filepath.Join(".archfit-cache", "llm", "*.json")); err == nil {
+			_, _ = fmt.Fprintf(deps.Stdout, "  cache: %d entries in .archfit-cache/llm\n", len(entries))
+		}
+	} else {
+		_, _ = fmt.Fprintln(deps.Stdout, "  not configured (set tools.llm provider + model to enable enrich)")
+	}
+
 	return nil
+}
+
+// keyStatus renders the presence of an API key without leaking it.
+func keyStatus(v string) string {
+	if v == "" {
+		return "missing"
+	}
+	return "set"
 }
 
 // ---------------------------------------------------------------------------

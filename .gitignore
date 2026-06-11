@@ -5,3 +5,6 @@ go.work*
 /archfit
 .DS_Store
 __pycache__/
+# LLM response cache (enrich/explain). Ignored by default; teams that want
+# byte-identical enrich replay across machines may commit it instead.
+.archfit-cache/

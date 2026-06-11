@@ -356,6 +356,11 @@ func Render(cfg DiscoveredConfig) string {
 		}
 		fmt.Fprintf(&b, "  %s:\n    enabled: %q\n", lang, mode)
 	}
+	b.WriteString("  # Off-gate LLM for `archfit enrich` / `explain --llm` (never used by check).\n")
+	b.WriteString("  # llm:\n")
+	b.WriteString("  #   provider: anthropic   # anthropic | openai | ollama\n")
+	b.WriteString("  #   model: claude-opus-4-8\n")
+	b.WriteString("  #   base_url: \"\"          # ollama only\n")
 	b.WriteString("\n")
 
 	// layers:

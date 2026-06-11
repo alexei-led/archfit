@@ -102,6 +102,7 @@ func TestGolden_DoubleRun(t *testing.T) {
 			rs,
 			ms,
 			base,
+			nil,
 			metrics.ChangeHistory{},
 			now,
 		)

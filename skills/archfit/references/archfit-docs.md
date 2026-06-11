@@ -37,3 +37,6 @@ Local fallback paths when working inside the repository:
 
 When code and docs conflict, inspect the local CLI and source before changing
 behavioral guidance.
+
+- `docs/guide/agent-feedback.md` — AI-agent loop: agent_tasks, SARIF, change_locality.
+- `docs/guide/llm-enrich.md` — off-gate LLM enrichment: enrich, pinned labels, explain --llm.

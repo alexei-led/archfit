@@ -66,7 +66,7 @@ func TestRun_Check_ReportSuppressesFailureExit(t *testing.T) {
 	}
 
 	buf.Reset()
-	code = Run([]string{cmdCheck, "-c", cfgPath, flagFull, "--report"}, &buf)
+	code = Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport}, &buf)
 	if code != 0 {
 		t.Fatalf("check with --report: exit = %d, want 0\noutput:\n%s", code, buf.String())
 	}
@@ -76,9 +76,11 @@ func TestRun_Check_ReportSuppressesFailureExit(t *testing.T) {
 }
 
 const (
-	flagFull = "--full"
-	cmdCheck = "check"
-	fmtJSON  = "--format=json"
+	flagFull   = "--full"
+	cmdCheck   = "check"
+	cmdExplain = "explain"
+	fmtJSON    = "--format=json"
+	flagReport = "--report"
 )
 
 func TestRun_Version(t *testing.T) {
@@ -140,7 +142,7 @@ func TestRun_Explain_ResolvesViaFullPipeline(t *testing.T) {
 	}
 
 	buf.Reset()
-	code := Run([]string{"explain", diag.Findings[0].ID[:8], "-c", cfgPath}, &buf)
+	code := Run([]string{cmdExplain, diag.Findings[0].ID[:8], "-c", cfgPath}, &buf)
 	if code != 0 {
 		t.Fatalf("explain exit = %d, want 0\noutput:\n%s", code, buf.String())
 	}
@@ -188,5 +190,45 @@ func TestRun_Check_AgentTasksPopulated(t *testing.T) {
 	}
 	if len(task.Validation) != 1 || !strings.Contains(task.Validation[0], "archfit check -c "+cfgPath) {
 		t.Errorf("validation = %v, want exact re-check command", task.Validation)
+	}
+}
+
+// TestRun_Check_LabelsFileDeterministic verifies that check with a pinned
+// labels file present produces byte-identical output across runs and that a
+// malformed labels file fails loudly (exit 3) rather than silently altering
+// the gate.
+func TestRun_Check_LabelsFileDeterministic(t *testing.T) {
+	cfgPath := writeViolatingRepo(t)
+	dir := filepath.Dir(cfgPath)
+
+	labelsYAML := `version: 1
+labels:
+  - from: a
+    to: b
+    strength: model
+    rationale: "b types cross the boundary"
+    status: approved
+`
+	if err := os.WriteFile(filepath.Join(dir, ".archfit-labels.yaml"), []byte(labelsYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var run1, run2 bytes.Buffer
+	c1 := Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &run1)
+	c2 := Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &run2)
+	if c1 != 0 || c2 != 0 {
+		t.Fatalf("exits = %d/%d, want 0/0", c1, c2)
+	}
+	if !bytes.Equal(run1.Bytes(), run2.Bytes()) {
+		t.Error("check with labels file is not byte-identical across runs")
+	}
+
+	// Malformed labels file → loud failure.
+	if err := os.WriteFile(filepath.Join(dir, ".archfit-labels.yaml"), []byte("labels:\n  - {from: a, to: b, strength: huge, status: approved}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &buf); code != 3 {
+		t.Errorf("malformed labels file: exit = %d, want 3", code)
 	}
 }

@@ -5,6 +5,7 @@ package config
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -65,6 +66,29 @@ func (c Config) GitnexusEnabled() bool {
 	return c.Tools[ToolGitnexus].Enabled == ModeOn
 }
 
+// ToolLLM is the Tools map key for the off-gate LLM provider used by the
+// enrich and explain commands. NEVER consumed by check — the arch ring test
+// forbids internal packages from importing the LLM layer.
+const ToolLLM = "llm"
+
+// LLMProviders are the accepted tools.llm.provider values.
+var LLMProviders = map[string]struct{}{"anthropic": {}, "openai": {}, "ollama": {}}
+
+// LLMConfig is the resolved off-gate LLM settings.
+type LLMConfig struct {
+	Provider string
+	Model    string
+	BaseURL  string
+}
+
+// LLM returns the tools.llm settings and whether they are usable
+// (provider and model both set).
+func (c Config) LLM() (LLMConfig, bool) {
+	t := c.Tools[ToolLLM]
+	cfg := LLMConfig{Provider: t.Provider, Model: t.Model, BaseURL: t.BaseURL}
+	return cfg, t.Provider != "" && t.Model != ""
+}
+
 // ToolClones is the Tools map key for the optional clone-detection provider.
 const ToolClones = "clones"
 
@@ -106,8 +130,12 @@ func (m *ToolMode) UnmarshalYAML(unmarshal func(any) error) error {
 }
 
 // ToolConfig holds the settings for a single external tool.
+// Provider/Model/BaseURL apply to the "llm" key only (see Config.LLM).
 type ToolConfig struct {
-	Enabled ToolMode `yaml:"enabled"`
+	Enabled  ToolMode `yaml:"enabled"`
+	Provider string   `yaml:"provider,omitempty"`
+	Model    string   `yaml:"model,omitempty"`
+	BaseURL  string   `yaml:"base_url,omitempty"`
 }
 
 // ToolsConfig holds settings for all known external tools, keyed by language name.
@@ -215,6 +243,14 @@ func validate(cfg Config) error {
 	if cfg.Version <= 0 {
 		return fmt.Errorf("version must be > 0 (got %d)", cfg.Version)
 	}
+	if t, ok := cfg.Tools[ToolLLM]; ok && t.Provider != "" {
+		if _, valid := LLMProviders[t.Provider]; !valid {
+			return fmt.Errorf("tools.llm.provider %q is not one of: anthropic, openai, ollama", t.Provider)
+		}
+		if t.Model == "" {
+			return errors.New("tools.llm.model is required when tools.llm.provider is set")
+		}
+	}
 	return nil
 }
 
@@ -272,6 +308,11 @@ type ClassifyConfig struct {
 	Layers                []string
 	ModuleMap             ModuleMap
 	BCAdvisoryMinSeverity string // minimum severity to emit BC coupling advisories
+	// ApprovedLabels pins integration strength per ordered module pair, keyed
+	// by from+"\x00"+to (labels.Key). Human-approved enrich output, validated
+	// for freshness by the engine before injection. Precedence in classify:
+	// config globs > approved labels > extractor hint.
+	ApprovedLabels map[string]string
 }
 
 // RuleConfig is the view passed to the rules stage.
