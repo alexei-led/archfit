@@ -74,10 +74,54 @@ func TestRenderer_Render_EmptyDiagnostic(t *testing.T) {
 	}
 
 	// Optional sections absent when no findings or metrics.
-	for _, absent := range []string{secGate, secAdvisories, "Metrics"} {
+	for _, absent := range []string{secGate, secAdvisories, "Metrics", "Structural facts"} {
 		if strings.Contains(out, absent) {
 			t.Errorf("output should not contain %q in empty diagnostic\nfull output:\n%s", absent, out)
 		}
+	}
+}
+
+// TestRenderer_Render_FileFacts verifies the structural-facts section: top
+// modules per axis, deterministic order, neutral wording (no risk labels).
+func TestRenderer_Render_FileFacts(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.FileFacts = []diagnostic.FileFact{
+		{Module: "tui.polling_state", InboundModuleFanIn: 23, OutboundDestinations: 2, LOC: 310},
+		{Module: "tui.directory_callbacks", InboundModuleFanIn: 1, OutboundDestinations: 46, LOC: 580},
+		{Module: "config", InboundModuleFanIn: 19, OutboundDestinations: 0, LOC: 120},
+		{Module: "leaf", InboundModuleFanIn: 0, OutboundDestinations: 1, LOC: 30},
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "## Structural facts") {
+		t.Fatalf("missing structural facts section\nfull output:\n%s", out)
+	}
+	// Axis lines list modules ranked by value, value in parens.
+	for _, want := range []string{
+		"inbound module fan-in: tui.polling_state (23), config (19), tui.directory_callbacks (1)",
+		"outbound destinations: tui.directory_callbacks (46), tui.polling_state (2), leaf (1)",
+		"LOC: tui.directory_callbacks (580), tui.polling_state (310), config (120), leaf (30)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+	// Neutrality: the section must not label anything as a hub or risk.
+	for _, forbidden := range []string{"hub", "risk", "Hub", "Risk"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("structural facts must stay neutral; found %q\nfull output:\n%s", forbidden, out)
+		}
+	}
+	// Zero-valued modules are not listed on that axis (leaf has 0 inbound).
+	if strings.Contains(out, "leaf (0)") {
+		t.Errorf("zero-valued module should not be listed\nfull output:\n%s", out)
 	}
 }
 

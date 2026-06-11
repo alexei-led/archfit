@@ -5,6 +5,10 @@ package symbol
 // Graph holds per-symbol metadata extracted from a SCIP index.
 //
 //   - Module maps each symbol to its owning module/package path.
+//   - Path maps each symbol to the repo-relative slash-path of its defining
+//     document (e.g. "src/ccgram/tui/polling_state.py"). Unlike Module — which
+//     is a language-shaped key (dotted for Python, package dir for Go) — Path
+//     joins exactly against file-keyed data such as FileLOC and CoChange.
 //   - FanIn counts the number of distinct documents that reference each symbol
 //     (excluding the defining document).
 //   - Refs is a symbol-to-symbol adjacency for cross-module reference edges:
@@ -15,6 +19,7 @@ package symbol
 // absent; metrics that require it must call naResult in that case.
 type Graph struct {
 	Module map[string]string
+	Path   map[string]string
 	FanIn  map[string]int
 	Refs   map[string]map[string]struct{}
 }

@@ -5,64 +5,66 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/facts"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 )
 
 // Repeated fixture strings extracted as constants to satisfy goconst.
 const (
-	symHub1    = "src/hub/Hub1"
-	symHub2    = "src/hub/Hub2"
-	modHub     = "src/hub"
-	fileHubGo  = "src/hub/hub.go"
-	fileCoreGo = "src/core/core.go"
+	symHub1      = "hub.Hub1"
+	symHub2      = "hub.Hub2"
+	symSprawl1   = "sprawl.S1"
+	symLeaf1     = "leaf.L1"
+	modHub       = "hub"
+	modSprawl    = "sprawl"
+	fileHubPy    = "src/hub/state.py"
+	fileHubExtra = "src/hub/extra.py"
+	fileSprawlPy = "src/sprawl/s.py"
+	fileCorePy   = "src/core/core.py"
 )
 
-// fixture helpers — hand-built graphs; no real SCIP.
-
-// threeModuleGraph builds a symbol.Graph with three module keys:
+// threeModuleGraph builds a symbol.Graph with dotted Python-style module keys
+// and slash-path defining files (matching what scip_reader.py emits):
 //
-//	"src/hub"       — referenced by many other modules (high inbound fan-in)
-//	"src/sprawl"    — references many other modules (high outbound destinations)
-//	"src/leaf"      — referenced by one module, references one module
-//
-// Symbol naming convention: "<module>/<name>" — the module field is a slash-path
-// package dir (matching what scip_reader.py emits, e.g. "internal/a").
+//	"hub"    — referenced by many other modules (high inbound fan-in)
+//	"sprawl" — references many other modules (high outbound destinations)
+//	"leaf"   — references one module
 func threeModuleGraph() symbol.Graph {
 	return symbol.Graph{
 		Module: map[string]string{
-			// hub symbols — defined in "src/hub"
-			symHub1: modHub,
-			symHub2: modHub,
-			// sprawl symbols — defined in "src/sprawl"
-			"src/sprawl/S1": "src/sprawl",
-			// leaf symbols — defined in "src/leaf"
-			"src/leaf/L1": "src/leaf",
-			// caller symbols from distinct modules referencing hub
-			"src/alpha/A1":   "src/alpha",
-			"src/beta/B1":    "src/beta",
-			"src/gamma/G1":   "src/gamma",
-			"src/delta/D1":   "src/delta",
-			"src/epsilon/E1": "src/epsilon",
-			// targets that sprawl references
-			"src/t1/T1": "src/t1",
-			"src/t2/T2": "src/t2",
-			"src/t3/T3": "src/t3",
+			symHub1:      modHub,
+			symHub2:      modHub,
+			symSprawl1:   modSprawl,
+			symLeaf1:     "leaf",
+			"alpha.A1":   "alpha",
+			"beta.B1":    "beta",
+			"gamma.G1":   "gamma",
+			"delta.D1":   "delta",
+			"epsilon.E1": "epsilon",
+			"t1.T1":      "t1",
+			"t2.T2":      "t2",
+			"t3.T3":      "t3",
+		},
+		Path: map[string]string{
+			symHub1:    fileHubPy,
+			symHub2:    fileHubExtra,
+			symSprawl1: fileSprawlPy,
+			symLeaf1:   "src/leaf/leaf.py",
 		},
 		Refs: map[string]map[string]struct{}{
-			// Six distinct modules reference src/hub: alpha, beta, gamma, delta, epsilon, leaf → inbound fan-in = 6.
-			"src/alpha/A1":   {symHub1: {}},
-			"src/beta/B1":    {symHub1: {}},
-			"src/gamma/G1":   {symHub2: {}},
-			"src/delta/D1":   {symHub1: {}},
-			"src/epsilon/E1": {symHub2: {}},
+			// Six distinct modules reference hub: alpha..epsilon + leaf → inbound = 6.
+			"alpha.A1":   {symHub1: {}},
+			"beta.B1":    {symHub1: {}},
+			"gamma.G1":   {symHub2: {}},
+			"delta.D1":   {symHub1: {}},
+			"epsilon.E1": {symHub2: {}},
 			// sprawl references three distinct modules → outbound = 3.
-			"src/sprawl/S1": {
-				"src/t1/T1": {},
-				"src/t2/T2": {},
-				"src/t3/T3": {},
+			symSprawl1: {
+				"t1.T1": {},
+				"t2.T2": {},
+				"t3.T3": {},
 			},
-			// leaf references hub → leaf outbound = 1.
-			"src/leaf/L1": {symHub1: {}},
+			symLeaf1: {symHub1: {}},
 		},
 		FanIn: map[string]int{
 			symHub1: 4,
@@ -74,15 +76,12 @@ func threeModuleGraph() symbol.Graph {
 // TestBuild_HighInboundFanIn verifies that a module referenced by many distinct
 // other modules accumulates the correct InboundModuleFanIn count.
 func TestBuild_HighInboundFanIn(t *testing.T) {
-	g := threeModuleGraph()
-	got := facts.Build(g, nil, nil)
+	got := facts.Build(threeModuleGraph(), nil, nil, nil)
 
-	// Five caller modules (alpha, beta, gamma, delta, epsilon) plus src/leaf = 6.
 	hub := findFact(t, got, modHub)
 	if hub.InboundModuleFanIn != 6 {
 		t.Errorf("hub InboundModuleFanIn = %d, want 6", hub.InboundModuleFanIn)
 	}
-	// hub's own symbols reference nothing outbound in this fixture.
 	if hub.OutboundDestinations != 0 {
 		t.Errorf("hub OutboundDestinations = %d, want 0", hub.OutboundDestinations)
 	}
@@ -91,120 +90,119 @@ func TestBuild_HighInboundFanIn(t *testing.T) {
 // TestBuild_HighOutboundDestinations verifies that a module referencing many
 // distinct destination modules accumulates the correct OutboundDestinations count.
 func TestBuild_HighOutboundDestinations(t *testing.T) {
-	g := threeModuleGraph()
-	got := facts.Build(g, nil, nil)
+	got := facts.Build(threeModuleGraph(), nil, nil, nil)
 
-	sprawl := findFact(t, got, "src/sprawl")
+	sprawl := findFact(t, got, modSprawl)
 	if sprawl.OutboundDestinations != 3 {
 		t.Errorf("sprawl OutboundDestinations = %d, want 3", sprawl.OutboundDestinations)
 	}
-	// nobody references sprawl in this fixture.
 	if sprawl.InboundModuleFanIn != 0 {
 		t.Errorf("sprawl InboundModuleFanIn = %d, want 0", sprawl.InboundModuleFanIn)
 	}
 }
 
-// TestBuild_InboundAndOutboundAreIndependent confirms the two axes are computed
-// separately: high inbound does not inflate outbound and vice versa.
-func TestBuild_InboundAndOutboundAreIndependent(t *testing.T) {
+// TestBuild_FilesAndLOC verifies the exact path join: Files come from
+// symbol.Graph.Path, LOC sums fileLOC over exactly those files — dotted module
+// keys never prefix-match against file paths.
+func TestBuild_FilesAndLOC(t *testing.T) {
 	g := threeModuleGraph()
-	got := facts.Build(g, nil, nil)
-
-	hub := findFact(t, got, modHub)
-	sprawl := findFact(t, got, "src/sprawl")
-
-	if hub.OutboundDestinations != 0 || sprawl.InboundModuleFanIn != 0 {
-		t.Errorf("axes leaked: hub.out=%d (want 0), sprawl.in=%d (want 0)",
-			hub.OutboundDestinations, sprawl.InboundModuleFanIn)
-	}
-}
-
-// TestBuild_LOC_Join verifies the prefix-join from module key to fileLOC.
-// Module keys are slash-path package dirs; fileLOC keys are slash-path file paths.
-// This fixture uses mismatched key spaces to confirm the join works correctly and
-// does not bleed across path-component boundaries.
-func TestBuild_LOC_Join(t *testing.T) {
-	g := symbol.Graph{
-		Module: map[string]string{
-			"src/hub/H1": modHub,
-			"src/ab/X1":  "src/ab", // "src/ab" must NOT pick up "src/a/..." entries
-		},
-	}
 	fileLOC := map[string]int{
-		fileHubGo:         200,
-		"src/hub/util.go": 50,
-		"src/ab/main.go":  100,
-		"src/a/other.go":  999, // must NOT be summed into "src/ab"
+		fileHubPy:           200,
+		fileHubExtra:        50,
+		"src/hub/orphan.py": 999, // defines no symbol — not attributed
+		fileSprawlPy:        120,
 	}
-	got := facts.Build(g, fileLOC, nil)
+	got := facts.Build(g, fileLOC, nil, nil)
 
 	hub := findFact(t, got, modHub)
+	wantFiles := []string{fileHubExtra, fileHubPy}
+	if !reflect.DeepEqual(hub.Files, wantFiles) {
+		t.Errorf("hub Files = %v, want %v", hub.Files, wantFiles)
+	}
 	if hub.LOC != 250 {
-		t.Errorf("hub LOC = %d, want 250 (sum of hub.go + util.go)", hub.LOC)
+		t.Errorf("hub LOC = %d, want 250 (state.py + extra.py)", hub.LOC)
 	}
 
-	ab := findFact(t, got, "src/ab")
-	if ab.LOC != 100 {
-		t.Errorf("ab LOC = %d, want 100 (only main.go, not src/a/other.go)", ab.LOC)
+	sprawl := findFact(t, got, modSprawl)
+	if sprawl.LOC != 120 {
+		t.Errorf("sprawl LOC = %d, want 120", sprawl.LOC)
+	}
+
+	// A module with no Path data keeps empty Files and zero LOC — no fabrication.
+	alpha := findFact(t, got, "alpha")
+	if len(alpha.Files) != 0 || alpha.LOC != 0 {
+		t.Errorf("alpha Files=%v LOC=%d, want empty/0 (no path data)", alpha.Files, alpha.LOC)
 	}
 }
 
-// TestBuild_CoChangePartners verifies partner resolution, ordering (count desc,
-// name asc tie-break), and the cap at maxCoChangePartners (5).
+// TestBuild_CoChangePartners verifies partner resolution through the file-path
+// join, ordering (count desc, path asc tie-break), the cap at 5, and the
+// exclusion of own-module files.
 func TestBuild_CoChangePartners(t *testing.T) {
 	g := symbol.Graph{
-		Module: map[string]string{
-			"src/core/C1": "src/core",
+		Module: map[string]string{"core.C1": "core", "core.C2": "core"},
+		Path: map[string]string{
+			"core.C1": fileCorePy,
+			"core.C2": "src/core/util.py",
 		},
 	}
-	// Pairs are sorted (a < b) as the git history builder produces.
-	// fileCoreGo co-changes with several partners at different counts.
 	coChange := map[[2]string]int{
-		{fileCoreGo, "src/other/a.go"}:       10,
-		{fileCoreGo, "src/other/b.go"}:       7,
-		{fileCoreGo, "src/other/c.go"}:       5,
-		{"src/other/d.go", fileCoreGo}:       5, // same count as c — alpha tie-break
-		{fileCoreGo, "src/other/e.go"}:       3,
-		{fileCoreGo, "src/other/f.go"}:       1, // 6th — should be dropped
-		{"src/other/g.go", "src/other/h.go"}: 8, // unrelated — must not appear
+		{fileCorePy, "src/other/a.py"}:       10,
+		{fileCorePy, "src/other/b.py"}:       7,
+		{fileCorePy, "src/other/c.py"}:       5,
+		{"src/other/d.py", fileCorePy}:       5, // same count as c — alpha tie-break
+		{fileCorePy, "src/other/e.py"}:       3,
+		{fileCorePy, "src/other/f.py"}:       1, // 6th — dropped by the cap
+		{fileCorePy, "src/core/util.py"}:     9, // own-module partner — excluded
+		{"src/other/g.py", "src/other/h.py"}: 8, // unrelated — must not appear
 	}
-	got := facts.Build(g, nil, coChange)
+	got := facts.Build(g, nil, coChange, nil)
 
-	core := findFact(t, got, "src/core")
-	if len(core.CoChangePartners) > 5 {
-		t.Errorf("too many partners: %d, want ≤5", len(core.CoChangePartners))
+	core := findFact(t, got, "core")
+	want := []string{
+		"src/other/a.py",
+		"src/other/b.py",
+		"src/other/c.py",
+		"src/other/d.py",
+		"src/other/e.py",
 	}
-	if len(core.CoChangePartners) < 5 {
-		t.Errorf("too few partners: %d, want 5 (6 candidates, cap=5)", len(core.CoChangePartners))
+	if !reflect.DeepEqual(core.CoChangePartners, want) {
+		t.Errorf("partners = %v, want %v", core.CoChangePartners, want)
 	}
+}
 
-	wantFirst := "src/other/a.go" // count 10 — highest
-	if core.CoChangePartners[0] != wantFirst {
-		t.Errorf("partners[0] = %q, want %q", core.CoChangePartners[0], wantFirst)
-	}
+// TestBuild_GitnexusImpact verifies enrichment when the impact map is present
+// and nil GitnexusImpact when absent or uncovered.
+func TestBuild_GitnexusImpact(t *testing.T) {
+	g := threeModuleGraph()
 
-	// c.go and d.go both have count 5; alpha-sort gives c < d.
-	wantThird := "src/other/c.go"
-	wantFourth := "src/other/d.go"
-	if core.CoChangePartners[2] != wantThird {
-		t.Errorf("partners[2] = %q, want %q", core.CoChangePartners[2], wantThird)
-	}
-	if core.CoChangePartners[3] != wantFourth {
-		t.Errorf("partners[3] = %q, want %q", core.CoChangePartners[3], wantFourth)
-	}
-
-	// unrelated pair must not appear
-	for _, p := range core.CoChangePartners {
-		if p == "src/other/g.go" || p == "src/other/h.go" {
-			t.Errorf("unrelated file %q appeared in partners", p)
+	t.Run("absent map leaves all nil", func(t *testing.T) {
+		for _, ff := range facts.Build(g, nil, nil, nil) {
+			if ff.GitnexusImpact != nil {
+				t.Errorf("module %q GitnexusImpact = %d, want nil", ff.Module, *ff.GitnexusImpact)
+			}
 		}
-	}
+	})
+
+	t.Run("present map enriches covered modules only", func(t *testing.T) {
+		impact := map[string]int{modHub: 41, modSprawl: 13}
+		got := facts.Build(g, nil, nil, impact)
+
+		hub := findFact(t, got, modHub)
+		if hub.GitnexusImpact == nil || *hub.GitnexusImpact != 41 {
+			t.Errorf("hub GitnexusImpact = %v, want 41", hub.GitnexusImpact)
+		}
+		leaf := findFact(t, got, "leaf")
+		if leaf.GitnexusImpact != nil {
+			t.Errorf("leaf GitnexusImpact = %d, want nil (not covered)", *leaf.GitnexusImpact)
+		}
+	})
 }
 
 // TestBuild_EmptyGraph confirms an empty symbol graph returns an empty (non-nil)
 // slice without panicking.
 func TestBuild_EmptyGraph(t *testing.T) {
-	got := facts.Build(symbol.Graph{}, nil, nil)
+	got := facts.Build(symbol.Graph{}, nil, nil, nil)
 	if got == nil {
 		t.Fatal("expected non-nil slice for empty graph, got nil")
 	}
@@ -214,67 +212,72 @@ func TestBuild_EmptyGraph(t *testing.T) {
 }
 
 // TestBuild_Determinism confirms that two calls on the same input produce
-// byte-identical slices (stable sorted order).
+// deeply-equal slices in stable sorted order.
 func TestBuild_Determinism(t *testing.T) {
 	g := threeModuleGraph()
 	fileLOC := map[string]int{
-		fileHubGo:          100,
-		"src/sprawl/s.go":  200,
-		"src/leaf/leaf.go": 50,
+		fileHubPy:          100,
+		fileSprawlPy:       200,
+		"src/leaf/leaf.py": 50,
 	}
 	coChange := map[[2]string]int{
-		{fileHubGo, "src/sprawl/s.go"}: 3,
+		{fileHubPy, fileSprawlPy}: 3,
 	}
+	impact := map[string]int{modHub: 7}
 
-	first := facts.Build(g, fileLOC, coChange)
-	second := facts.Build(g, fileLOC, coChange)
+	first := facts.Build(g, fileLOC, coChange, impact)
+	second := facts.Build(g, fileLOC, coChange, impact)
 
 	if !reflect.DeepEqual(first, second) {
 		t.Errorf("two calls produced different results:\nfirst:  %+v\nsecond: %+v", first, second)
 	}
 
-	// Confirm slice is sorted by File.
 	for i := 1; i < len(first); i++ {
-		if first[i].File <= first[i-1].File {
-			t.Errorf("slice not sorted: facts[%d].File=%q <= facts[%d].File=%q",
-				i, first[i].File, i-1, first[i-1].File)
+		if first[i].Module <= first[i-1].Module {
+			t.Errorf("slice not sorted: facts[%d].Module=%q <= facts[%d].Module=%q",
+				i, first[i].Module, i-1, first[i-1].Module)
 		}
 	}
 }
 
-// TestBuild_NeutralNoLabels confirms no risk label, score, or hub annotation
-// exists on the FileFact type (structural check).
+// TestBuild_NeutralNoLabels confirms the facts stay neutral: only the known
+// evidence fields exist on FileFact — no risk label, score, band, or rank.
 func TestBuild_NeutralNoLabels(t *testing.T) {
-	got := facts.Build(threeModuleGraph(), nil, nil)
-	for _, ff := range got {
-		// File and Module are the same key.
-		if ff.File != ff.Module {
-			t.Errorf("File=%q != Module=%q, expected identical keys", ff.File, ff.Module)
+	allowed := map[string]struct{}{
+		"Module": {}, "Files": {}, "InboundModuleFanIn": {},
+		"OutboundDestinations": {}, "LOC": {}, "CoChangePartners": {},
+		"GitnexusImpact": {},
+	}
+	for field := range reflect.TypeFor[diagnostic.FileFact]().Fields() {
+		if _, ok := allowed[field.Name]; !ok {
+			t.Errorf("unexpected FileFact field %q — facts must stay neutral", field.Name)
 		}
-		// CoChangePartners must never be nil (empty slice is fine).
-		if ff.CoChangePartners == nil {
-			t.Errorf("FileFact.CoChangePartners is nil for %q, want empty slice", ff.File)
+	}
+
+	for _, ff := range facts.Build(threeModuleGraph(), nil, nil, nil) {
+		if ff.CoChangePartners == nil || ff.Files == nil {
+			t.Errorf("module %q: nested slices must be empty, not nil", ff.Module)
 		}
 	}
 }
 
-// findFact returns the FileFact with the given file key, or fails the test.
-func findFact(t *testing.T, all []facts.FileFact, file string) facts.FileFact {
+// findFact returns the FileFact with the given module key, or fails the test.
+func findFact(t *testing.T, all []diagnostic.FileFact, module string) diagnostic.FileFact {
 	t.Helper()
 	for _, f := range all {
-		if f.File == file {
+		if f.Module == module {
 			return f
 		}
 	}
-	t.Fatalf("no FileFact found for file=%q; got %v", file, fileNames(all))
-	return facts.FileFact{}
+	t.Fatalf("no FileFact found for module=%q; got %v", module, moduleNames(all))
+	return diagnostic.FileFact{}
 }
 
-// fileNames extracts the File field from each FileFact for error messages.
-func fileNames(fs []facts.FileFact) []string {
+// moduleNames extracts the Module field from each FileFact for error messages.
+func moduleNames(fs []diagnostic.FileFact) []string {
 	names := make([]string, len(fs))
 	for i, f := range fs {
-		names[i] = f.File
+		names[i] = f.Module
 	}
 	return names
 }

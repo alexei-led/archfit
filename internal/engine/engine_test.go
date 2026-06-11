@@ -39,6 +39,8 @@ const (
 
 	// symbolFoo is the test symbol used in SymbolGraph forwarding tests.
 	symbolFoo = "pkg/a.Foo"
+	symbolBar = "pkg/b.Bar"
+	pathFileB = "pkg/b/b.go"
 )
 
 // cannedConfig builds a ClassifyConfig and RuleConfig for a two-module (a, b)
@@ -117,7 +119,7 @@ func cleanFacts() graph.Facts {
 				Kind:       graph.EdgeKindImports,
 				Language:   "go",
 				Confidence: "high",
-				Locations:  []graph.Location{{File: "pkg/a/a.go", Line: 3}},
+				Locations:  []graph.Location{{File: pathFileA, Line: 3}},
 			},
 		},
 	}
@@ -638,7 +640,7 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 	wantGraph := symbol.Graph{
 		Module: map[string]string{symbolFoo: "a"},
 		FanIn:  map[string]int{symbolFoo: 3},
-		Refs:   map[string]map[string]struct{}{symbolFoo: {"pkg/b.Bar": {}}},
+		Refs:   map[string]map[string]struct{}{symbolFoo: {symbolBar: {}}},
 	}
 
 	sr := &engine.SymbolResolverMock{
@@ -740,5 +742,125 @@ func TestRun_SymbolGraph_EmptyWhenNopResolver(t *testing.T) {
 
 	if !captured.SymbolGraph.Empty() {
 		t.Errorf("MetricInput.SymbolGraph is non-empty with NopSymbolResolver, want empty")
+	}
+}
+
+// TestRun_FileFacts_AttachedFromSymbolGraph verifies that the engine assembles
+// the neutral structural-facts block from the symbol graph + change history and
+// attaches it to the diagnostic without affecting the verdict.
+func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
+	ctx := context.Background()
+
+	symGraph := symbol.Graph{
+		Module: map[string]string{symbolFoo: "a", symbolBar: "b"},
+		Path:   map[string]string{symbolFoo: pathFileA, symbolBar: pathFileB},
+		Refs:   map[string]map[string]struct{}{symbolFoo: {symbolBar: {}}},
+	}
+
+	sr := &engine.SymbolResolverMock{
+		NameFunc: func() string { return toolNameScip },
+		ResolveFunc: func(_ context.Context, _, toPath string) (string, string) {
+			return toPath, confidenceHigh
+		},
+		StrengthsFunc: func(_ context.Context, _ scope.Scope) (map[string]string, diagnostic.Coverage, error) {
+			return nil, diagnostic.Coverage{Tool: toolNameScip, Status: "absent"}, nil
+		},
+		SymbolsFunc: func(_ context.Context, _ scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
+			return symGraph, diagnostic.Coverage{Tool: toolNameScip, Status: "ok"}, nil
+		},
+	}
+
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+	change := metrics.ChangeHistory{
+		FileLOC:  map[string]int{pathFileA: 100, pathFileB: 40},
+		CoChange: map[[2]string]int{{pathFileA, pathFileB}: 5},
+	}
+
+	d, err := engine.Run(
+		ctx,
+		engine.Mode{Head: headRef},
+		scope.Scope{Root: "."},
+		classifyCfg,
+		config.StalenessConfig{},
+		config.ExceptionSet{},
+		[]engine.Extractor{ex},
+		engine.NopPatternProvider{},
+		sr,
+		config.PatternConfig{},
+		rs,
+		nil,
+		baseline.Baseline{},
+		change,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(d.FileFacts) != 2 {
+		t.Fatalf("FileFacts count = %d, want 2 (modules a, b)", len(d.FileFacts))
+	}
+	a := d.FileFacts[0]
+	if a.Module != "a" || a.OutboundDestinations != 1 || a.LOC != 100 {
+		t.Errorf("facts[0] = %+v, want module a, outbound 1, LOC 100", a)
+	}
+	b := d.FileFacts[1]
+	if b.Module != "b" || b.InboundModuleFanIn != 1 || b.LOC != 40 {
+		t.Errorf("facts[1] = %+v, want module b, inbound 1, LOC 40", b)
+	}
+	if len(a.CoChangePartners) != 1 || a.CoChangePartners[0] != pathFileB {
+		t.Errorf("facts[0].CoChangePartners = %v, want [pkg/b/b.go]", a.CoChangePartners)
+	}
+}
+
+// TestRun_FileFacts_EmptyWhenNopResolver verifies the facts block is empty
+// (non-nil) when no symbol graph is collected.
+func TestRun_FileFacts_EmptyWhenNopResolver(t *testing.T) {
+	ctx := context.Background()
+
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(
+		ctx,
+		engine.Mode{Head: headRef},
+		scope.Scope{Root: "."},
+		classifyCfg,
+		config.StalenessConfig{},
+		config.ExceptionSet{},
+		[]engine.Extractor{ex},
+		engine.NopPatternProvider{},
+		engine.NopSymbolResolver{},
+		config.PatternConfig{},
+		rs,
+		nil,
+		baseline.Baseline{},
+		metrics.ChangeHistory{},
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if d.FileFacts == nil {
+		t.Fatal("FileFacts is nil, want empty slice")
+	}
+	if len(d.FileFacts) != 0 {
+		t.Errorf("FileFacts count = %d, want 0 with NopSymbolResolver", len(d.FileFacts))
 	}
 }

@@ -159,6 +159,16 @@ BlastRadius *BlastInfo }` (BlastRadius nil when gitnexus absent). All counts det
 - [x] write tests: a fixture where one file has high inbound fan-in and another high outbound destinations; co-change partners resolved; empty-graph -> empty; determinism (stable order)
 - [x] run tests — must pass before Task 3
 
+**Deviation (Task 3 discovery):** the first Build used a heuristic module-key→file-path
+prefix join. That join silently misses for Python (dotted module keys vs slash file
+paths — ccgram, the Task-6 gate repo, would get LOC=0 and no co-change partners) and
+attributed nested-module LOC nondeterministically (first match in map order). Fixed by
+carrying the reader's already-emitted per-symbol `path` field through `symbol.Graph.Path`
+(Go-side parse only — NO `scip_reader.py` change) and joining exactly on defining-file
+paths. `FileFact` moved to `model/diagnostic` (it is part of the output contract; model
+stays import-clean) with JSON tags; the speculative `File`==`Module` dual field became
+`Module` + `Files []string` (real defining-file list, useful to the LLM).
+
 ### Task 3: Attach facts to the diagnostic and wire through engine/cmd
 
 **Files:**
@@ -168,11 +178,11 @@ BlastRadius *BlastInfo }` (BlastRadius nil when gitnexus absent). All counts det
 - Modify: `cmd/archfit/main.go` (call `facts.Build` with the collected SymbolGraph/FileLOC/CoChange and attach)
 - Modify: `internal/engine/engine_test.go`
 
-- [ ] add the facts field to the diagnostic with a doc comment (neutral evidence, never gates)
-- [ ] wire `cmd`/engine to build and attach the facts (mirror how `FitnessSignals`/ownership are produced and threaded); empty when SCIP off
-- [ ] confirm the facts field is NOT consumed by `computeVerdict`/gate logic
-- [ ] write tests: engine attaches populated facts; empty when no symbol graph
-- [ ] run tests — must pass before Task 4
+- [x] add the facts field to the diagnostic with a doc comment (neutral evidence, never gates)
+- [x] wire `cmd`/engine to build and attach the facts (mirror how `FitnessSignals`/ownership are produced and threaded); empty when SCIP off — built inside `engine.Run` (NOT cmd): the symbol graph only exists inside the engine (`sr.Symbols`), so the engine is the only correct call site
+- [x] confirm the facts field is NOT consumed by `computeVerdict`/gate logic
+- [x] write tests: engine attaches populated facts; empty when no symbol graph
+- [x] run tests — must pass before Task 4
 
 ### Task 4: Render the facts block (JSON + markdown)
 
@@ -182,11 +192,11 @@ BlastRadius *BlastInfo }` (BlastRadius nil when gitnexus absent). All counts det
 - Modify: `internal/output/markdown/markdown.go` (+test)
 - Modify: `internal/output/console/console.go` only if needed (keep console minimal)
 
-- [ ] JSON: emit the full `FileFacts` list (for the LLM) — confirm it serializes; add/verify a test
-- [ ] markdown: a compact "Per-file structural facts" section — top-N files by each axis (inbound, outbound, LOC), neutral table, deterministic; n/a/empty rendered cleanly
-- [ ] keep it NEUTRAL — no "hub"/"risk" labeling (Task-6 gate depends on this)
-- [ ] write/update renderer tests (present + empty)
-- [ ] run tests — must pass before Task 5
+- [x] JSON: emit the full `FileFacts` list (for the LLM) — confirm it serializes; add/verify a test
+- [x] markdown: a compact "Per-file structural facts" section — top-N files by each axis (inbound, outbound, LOC), neutral table, deterministic; n/a/empty rendered cleanly (rendered as "Structural facts (neutral evidence)" — `-` lists per package convention, no box tables)
+- [x] keep it NEUTRAL — no "hub"/"risk" labeling (Task-6 gate depends on this) — enforced by a renderer test that greps the output for hub/risk
+- [x] write/update renderer tests (present + empty)
+- [x] run tests — must pass before Task 5
 
 ### Task 5: GitNexus blast-radius enrichment (optional)
 
@@ -196,10 +206,16 @@ BlastRadius *BlastInfo }` (BlastRadius nil when gitnexus absent). All counts det
 - Modify: `cmd/archfit/main.go` (pass gitnexus impact when `tools.gitnexus.enabled: on`)
 - Reuse: `internal/extract/gitnexus`
 
-- [ ] when gitnexus is enabled + present, enrich each `FileFact` with blast-radius (direct + transitive); nil/absent otherwise (no fabrication)
-- [ ] record source/coverage so the LLM knows whether blast-radius was available
-- [ ] write tests with a canned impact map (present enriches; absent -> nil)
-- [ ] run tests — must pass before Task 6
+- [x] when gitnexus is enabled + present, enrich each `FileFact` with blast-radius (direct + transitive); nil/absent otherwise (no fabrication) — implemented as `GitnexusImpact *int` (the collected `GitnexusImpact map[string]int` carries a single impact count per module, not a direct/transitive split; the plan's `BlastInfo` assumed data we do not collect)
+- [x] record source/coverage so the LLM knows whether blast-radius was available — the gitnexus tool-coverage entry (ok/absent/partial) is already in the diagnostic; `gitnexus_impact` is omitted from JSON when nil
+- [x] write tests with a canned impact map (present enriches; absent -> nil)
+- [x] run tests — must pass before Task 6
+
+**WARN (pre-existing, discovered during this task):** `internal/extract/gitnexus` invokes
+`gitnexus impact --json <root>` — an interface the real gitnexus CLI does not have (real
+`impact` takes a _symbol_ target and has no repo-wide JSON dump). In real runs the impact
+map is always empty (coverage `partial`), so this enrichment never fires. Tracked as a
+follow-up outside this Tranche; the Task-6 gate must therefore pass on SCIP facts alone.
 
 ### Task 6: Acceptance — spike RE-RUN (the gate)
 

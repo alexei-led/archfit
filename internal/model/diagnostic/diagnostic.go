@@ -54,6 +54,35 @@ type Coverage struct {
 // Phase 1 emits an empty typed slice so that agent_tasks serializes as [] not null.
 type AgentTask struct{}
 
+// FileFact holds neutral per-module structural facts assembled from collected
+// data (symbol graph, file LOC, co-change history, optional gitnexus impact).
+//
+// The facts block is report-only evidence for the Tranche-2 LLM: it carries no
+// band, no score, no risk label, never sets delta, and never enters the verdict
+// or gate logic. Ranking and judgment are the LLM's job.
+type FileFact struct {
+	// Module is the symbol-graph module key (dotted for Python, package dir for Go).
+	Module string `json:"module"`
+	// Files lists the repo-relative source files that define this module's
+	// symbols, sorted. Empty when the symbol graph carries no path data.
+	Files []string `json:"files"`
+	// InboundModuleFanIn counts distinct OTHER modules whose symbols reference
+	// this module's symbols. Read-only config scores high here too — separating
+	// benign config from mutable shared state is the LLM's job.
+	InboundModuleFanIn int `json:"inbound_module_fanin"`
+	// OutboundDestinations counts distinct destination modules this module's
+	// symbols reference, at raw module granularity (no parent-package collapse).
+	OutboundDestinations int `json:"outbound_destinations"`
+	// LOC is the summed line count of Files (exact join against FileLOC keys).
+	LOC int `json:"loc"`
+	// CoChangePartners lists files outside this module most frequently committed
+	// together with this module's files, count descending, capped.
+	CoChangePartners []string `json:"cochange_partners"`
+	// GitnexusImpact is the historical change-impact count for this module when
+	// gitnexus enrichment ran and covered it; nil otherwise (never fabricated).
+	GitnexusImpact *int `json:"gitnexus_impact,omitempty"`
+}
+
 // Coverage status constants used across all extractor adapters.
 const (
 	StatusOK      = "ok"
@@ -73,9 +102,13 @@ type Diagnostic struct {
 	Head          string            `json:"head"`
 	Metrics       []MetricResult    `json:"metrics"`
 	Findings      []finding.Finding `json:"findings"`
-	AgentTasks    []AgentTask       `json:"agent_tasks"`
-	ToolCoverage  []Coverage        `json:"tool_coverage"`
-	Summary       Summary           `json:"summary"`
+	// FileFacts is the neutral per-module structural-facts block (Tranche 1.5).
+	// Report-only evidence — never consumed by verdict or gate logic. Empty when
+	// no symbol graph was collected (SCIP off/absent).
+	FileFacts    []FileFact  `json:"file_facts"`
+	AgentTasks   []AgentTask `json:"agent_tasks"`
+	ToolCoverage []Coverage  `json:"tool_coverage"`
+	Summary      Summary     `json:"summary"`
 }
 
 // New returns a zero-value Diagnostic with all required fields initialised to their
@@ -85,6 +118,7 @@ func New() Diagnostic {
 		SchemaVersion: SchemaVersion,
 		Metrics:       []MetricResult{},
 		Findings:      []finding.Finding{},
+		FileFacts:     []FileFact{},
 		AgentTasks:    []AgentTask{},
 		ToolCoverage:  []Coverage{},
 	}

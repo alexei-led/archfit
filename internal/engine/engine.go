@@ -9,6 +9,7 @@ import (
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/facts"
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -279,6 +280,11 @@ func Run(
 		coverages = []diagnostic.Coverage{}
 	}
 
+	// Neutral structural-facts block (Tranche 1.5): assembled from the symbol
+	// graph + change history, attached as report-only evidence. Never read by
+	// computeVerdict or any gate logic. Empty when SCIP is off/absent.
+	fileFacts := facts.Build(scipSymbols, change.FileLOC, change.CoChange, change.GitnexusImpact)
+
 	d := diagnostic.Diagnostic{
 		SchemaVersion: diagnostic.SchemaVersion,
 		Verdict:       verdict,
@@ -286,6 +292,7 @@ func Run(
 		Head:          mode.Head,
 		Metrics:       metricResults,
 		Findings:      resolvedFindings,
+		FileFacts:     fileFacts,
 		AgentTasks:    []diagnostic.AgentTask{},
 		ToolCoverage:  coverages,
 		Summary: diagnostic.Summary{
