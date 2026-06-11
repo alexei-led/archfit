@@ -211,8 +211,8 @@ coverage, not behavior.
 
 - Modify: `internal/metrics/doc.go`, `internal/metrics/metrics.go`, `internal/rules/doc.go`, `internal/model/coupling/coupling.go`, `docs/guide/README.md`
 
-- [ ] drop stale "Phase 1" framing from package docs; fix the dead `docs/output.md` link
-- [ ] run `make lint` + full suite — green before Task 9
+- [x] drop stale "Phase 1" framing from package docs; fix the dead `docs/output.md` link
+- [x] run `make lint` + full suite — green before Task 9
 
 ### Task 9: acceptance sweep (the gate for this plan)
 
@@ -220,11 +220,11 @@ coverage, not behavior.
 
 - Create: `docs/plans/notes/completion-deterministic-validation.md`
 
-- [ ] build `.bin/archfit`; run full scan + check on ccgram, pumba, spotinfo, codegraph, archfit — no panics; record per-repo verdicts
-- [ ] double-run byte-identical on at least archfit (scip on) and ccgram
-- [ ] `agent_tasks` populated on a repo with gate findings; SARIF emitted and schema-valid
-- [ ] `go test -count=1 ./...` green; `make lint` 0 issues
-- [ ] move this plan to `docs/plans/completed/`
+- [x] build `.bin/archfit`; run full scan + check on ccgram, pumba, spotinfo, codegraph, archfit — no panics; record per-repo verdicts (`notes/completion-deterministic-validation.md`)
+- [x] double-run byte-identical on ALL FIVE repos (scip on for ccgram + archfit)
+- [x] `agent_tasks` populated on a repo with gate findings (ccgram: 3); SARIF emitted and schema-valid (fixture + ccgram, official 2.1.0 schema)
+- [x] `go test -count=1 ./...` green; `make lint` 0 issues
+- [x] move this plan to `docs/plans/completed/`
 
 ## Post-Completion
 
