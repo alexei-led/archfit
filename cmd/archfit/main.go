@@ -135,13 +135,51 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	sc := cfg.ForScope()
-	sc.WorkDir = configDir
-	sc.Base = c.Base
-	sc.Full = c.Full
-	s, err := scope.Resolve(ctx, sc, deps.Runner)
+	mode := engine.Mode{
+		Base:       c.Base,
+		Full:       c.Full,
+		Advisory:   c.Advisory,
+		ReportOnly: c.Report,
+		Formats:    c.Format,
+	}
+
+	diag, err := runPipeline(ctx, deps, cfg, configDir, mode, base)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+	}
+
+	// Render to deps.Stdout.
+	for _, format := range c.Format {
+		var renderErr error
+		switch format {
+		case "json":
+			renderErr = jsonout.New().Render(diag, deps.Stdout)
+		case "text":
+			renderErr = console.New().Render(diag, deps.Stdout)
+		case "md", "markdown":
+			renderErr = markdown.New().Render(diag, deps.Stdout)
+		}
+		if renderErr != nil {
+			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, renderErr)}
+		}
+	}
+
+	return verdictToError(diag.Verdict)
+}
+
+// runPipeline resolves scope, builds extractors/rules/metrics, collects change
+// history and optional tool inputs, and executes the engine. check, scan, and
+// baseline all run through this single path: baseline snapshots must be computed
+// from exactly the same inputs as check verdicts, or every post-baseline check
+// reports phantom metric regressions and unmatched finding fingerprints.
+func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configDir string, mode engine.Mode, base baseline.Baseline) (diagnostic.Diagnostic, error) {
+	sc := cfg.ForScope()
+	sc.WorkDir = configDir
+	sc.Base = mode.Base
+	sc.Full = mode.Full
+	s, err := scope.Resolve(ctx, sc, deps.Runner)
+	if err != nil {
+		return diagnostic.Diagnostic{}, err
 	}
 
 	extractors := []engine.Extractor{
@@ -151,15 +189,9 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	}
 
 	rs := rules.New(cfg.ForRules())
+	// metrics.New must run BEFORE ApplyVolatility below: risk_hub captures only
+	// hand-authored config volatility, never churn-derived values.
 	ms := metrics.New(cfg)
-
-	mode := engine.Mode{
-		Base:       c.Base,
-		Full:       c.Full,
-		Advisory:   c.Advisory,
-		ReportOnly: c.Report,
-		Formats:    c.Format,
-	}
 
 	// Recent git history (cheap; runs by default): per-file churn drives module
 	// volatility (unbalanced_edge, BC severity) and the modularity metrics
@@ -209,30 +241,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	}
 
 	patternCfg := cfg.ForPatterns()
-	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), resolver, patternCfg, rs, ms, base, change, time.Now())
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-
-	// Render to deps.Stdout.
-	for _, format := range c.Format {
-		var renderErr error
-		switch format {
-		case "json":
-			renderErr = jsonout.New().Render(diag, deps.Stdout)
-		case "text":
-			renderErr = console.New().Render(diag, deps.Stdout)
-		case "md":
-			renderErr = markdown.New().Render(diag, deps.Stdout)
-		case "markdown":
-			renderErr = markdown.New().Render(diag, deps.Stdout)
-		}
-		if renderErr != nil {
-			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, renderErr)}
-		}
-	}
-
-	return verdictToError(diag.Verdict)
+	return engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), resolver, patternCfg, rs, ms, base, change, time.Now())
 }
 
 // ---------------------------------------------------------------------------
@@ -261,28 +270,11 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	sc := cfg.ForScope()
-	sc.WorkDir = configDir
-	sc.Base = c.Base
-	sc.Full = c.Full
-	s, err := scope.Resolve(ctx, sc, deps.Runner)
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-
-	extractors := []engine.Extractor{
-		golang.New(cfg.ForExtract("go")),
-		ts.New(deps.Runner, cfg.ForExtract("typescript")),
-		py.New(deps.Runner, cfg.ForExtract("python")),
-	}
-
-	rs := rules.New(cfg.ForRules())
-	ms := metrics.New(cfg)
-
-	// Apply ownership resolution so baseline distances match check distances.
-	cfg.FillMissingOwners(ownership.Resolve(ctx, s.Root, cfg.ModuleMapView(), deps.Runner))
-
-	diag, err := engine.Run(ctx, engine.Mode{Full: c.Full, Advisory: c.Advisory, Base: c.Base}, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, engine.NopPatternProvider{}, engine.NopSymbolResolver{}, config.PatternConfig{}, rs, ms, existingBase, metrics.ChangeHistory{}, time.Now())
+	// Baseline runs the exact same pipeline as check (same change history,
+	// pattern provider, and SCIP resolver): snapshot values recorded from
+	// different inputs would surface as phantom deltas on the next check.
+	mode := engine.Mode{Full: c.Full, Advisory: c.Advisory, Base: c.Base}
+	diag, err := runPipeline(ctx, deps, cfg, configDir, mode, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
