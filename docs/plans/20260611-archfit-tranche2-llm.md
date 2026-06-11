@@ -139,12 +139,12 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 - Create: `internal/llm/llm.go`, `internal/llm/anthropic.go`, `internal/llm/openai.go` (+tests)
 - Modify: `internal/arch_test.go` (llm forbidden outside cmd)
 
-- [ ] verify current `anthropic-sdk-go` + `openai-go` versions/APIs (docs lookup); pin
-- [ ] Provider interface + adapters, temperature 0, typed errors, env-key handling
-- [ ] Ollama = OpenAI adapter with base URL override
-- [ ] httptest unit tests: request shape + 401/429/timeout/malformed paths
-- [ ] arch test proves `internal/llm` unreachable from engine/classify/core ring
-- [ ] run tests — green before Task 3
+- [x] verify current `anthropic-sdk-go` + `openai-go` versions/APIs (docs lookup); pin — anthropic-sdk-go v1.50.1, openai-go v1.12.0, shapes verified against module source
+- [x] Provider interface + adapters, typed errors, env-key handling — DEVIATION: NO temperature on the Anthropic adapter (current Opus-tier models reject sampling params with 400); OpenAI/Ollama pin temperature 0; enrich determinism comes from the cache + reviewed labels
+- [x] Ollama = OpenAI adapter with base URL override (default http://localhost:11434/v1, dummy key)
+- [x] httptest unit tests: request shape (incl. asserting temperature is ABSENT on anthropic) + 401/429/timeout/malformed/empty paths
+- [x] arch test proves `internal/llm` unreachable from ANY internal package (only cmd may import it) — the LLM-off-gate guarantee is now compiler/CI-enforced
+- [x] run tests — green before Task 3
 
 ### Task 3: content-hash cache
 
