@@ -381,3 +381,25 @@ archfit check --format markdown
 - Keep module names stable; baselines and exceptions refer to rule IDs and
   finding fingerprints.
 - For Python, see [Language support](languages.md#python) before writing globs.
+
+## tools.llm (off-gate)
+
+Used only by `archfit enrich` and `archfit explain --llm`; never by `check`.
+
+```yaml
+tools:
+  llm:
+    provider: anthropic   # anthropic | openai | ollama
+    model: claude-opus-4-8
+    base_url: ""          # ollama only; default http://localhost:11434/v1
+```
+
+API keys come from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` env vars — never
+from config. The LLM response cache lives at `.archfit-cache/llm/`.
+
+## .archfit-labels.yaml
+
+Pinned coupling-strength labels (the reviewed output of `archfit enrich`).
+`check` consumes `status: approved` entries with precedence: config
+public/internal globs > approved labels > extractor hint. See
+[llm-enrich.md](llm-enrich.md).

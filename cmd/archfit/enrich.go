@@ -180,8 +180,8 @@ func selectRefinablePairs(g *graph.Graph, idx coupling.Index, mm config.ModuleMa
 		if cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown || cl.Distance == "" {
 			continue
 		}
-		fromPath := strings.TrimPrefix(e.From, "file:")
-		toPath := strings.TrimPrefix(e.To, "file:")
+		fromPath := graph.NodePath(e.From)
+		toPath := graph.NodePath(e.To)
 		fromMod, okF := mm.ModuleFor(fromPath)
 		toMod, okT := mm.ModuleFor(toPath)
 		if !okF || !okT || fromMod == toMod {

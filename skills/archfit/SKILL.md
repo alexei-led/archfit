@@ -62,6 +62,40 @@ exception, or fix findings.
    archfit check --config .archfit.yaml --full --format json
    ```
 
+### Agent repair loop
+
+Use when fixing findings autonomously. The JSON output carries an
+`agent_tasks[]` block — one entry per ACTIVE gate finding with `goal`,
+`constraints`, `files`, and the exact `validation` command:
+
+1. Run `archfit check --format json`; exit 0 means done.
+2. For each `agent_tasks[]` entry: fix within the stated constraints,
+   touching only the listed files where possible.
+3. Re-run the entry's `validation` command verbatim.
+4. Never "fix" findings with status `baseline` or `excepted` unprompted —
+   they are accepted state, not errors.
+5. For CI annotation surfaces, use `--format sarif` (SARIF 2.1.0).
+6. In delta mode (`--base <ref>`), watch the `change_locality` metric for
+   the change's blast surface.
+
+See `docs/guide/agent-feedback.md` for the full loop contract.
+
+### Enrich (off-gate LLM labels)
+
+Use when the user asks to refine coupling-strength labels or run enrichment.
+Requires `tools.llm` (provider + model) and `tools.scip.enabled: "on"`.
+
+1. `archfit enrich` drafts refinements into `.archfit-labels.yaml`
+   (`status: draft` — inert).
+2. A HUMAN reviews each draft: flip `status: approved` to pin, delete to
+   reject. Never auto-approve drafts.
+3. `check` consumes approved labels only and stays LLM-free; a
+   `labels/stale` advisory means the code changed since approval —
+   re-run enrich and re-review.
+4. `archfit explain <id> --llm` appends an off-gate narrative to one finding.
+
+See `docs/guide/llm-enrich.md`.
+
 ### Review
 
 Use when the user asks to audit config, output, CI readiness, PR drift,

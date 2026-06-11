@@ -22,6 +22,8 @@ small references while configuring a repo.
 Add these only when the project needs more detail:
 
 - [`commands.md`](commands.md) — output formats: text, JSON, Markdown, SARIF.
+- [`agent-feedback.md`](agent-feedback.md) — the AI-agent loop: agent_tasks, SARIF, change_locality.
+- [`llm-enrich.md`](llm-enrich.md) — off-gate LLM enrichment: enrich, pinned labels, explain --llm.
 - `docs/baselines-and-exceptions.md` — lifecycle and review workflow.
 - `docs/contributing.md` — local development and release process.
 

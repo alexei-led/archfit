@@ -11,6 +11,9 @@ archfit check --config .archfit.yaml --format json
 archfit scan --config .archfit.yaml > archfit-report.md
 archfit baseline --full --config .archfit.yaml
 archfit explain <finding-id-prefix> --config .archfit.yaml
+archfit enrich --config .archfit.yaml
+archfit explain <finding-id-prefix> --llm
+archfit check --format sarif > archfit.sarif
 ```
 
 Use `check` for gates. Use `scan` for a human-readable audit report.
@@ -22,10 +25,18 @@ Use `check` for gates. Use `scan` for a human-readable audit report.
 - `archfit check` — run architecture gates and metrics.
 - `archfit scan` — produce a full Markdown audit report.
 - `archfit baseline` — record accepted current findings.
-- `archfit explain <id>` — explain one finding by fingerprint prefix.
+- `archfit explain <id>` — explain one finding by fingerprint prefix
+  (`--llm` appends an off-gate narrative; needs `tools.llm`).
+- `archfit enrich` — draft LLM coupling-label refinements for human review
+  (off-gate; writes `.archfit-labels.yaml` drafts — see
+  [llm-enrich.md](llm-enrich.md)).
 - `archfit install` — install or print commands for optional language tools.
 
-Output formats for `check`: `text`, `json`, `markdown`/`md`.
+Output formats for `check`: `text`, `json`, `markdown`/`md`, `sarif`
+(SARIF 2.1.0 for CI code-scanning annotations).
+
+For wiring archfit into an AI coding agent's loop (`agent_tasks`, SARIF,
+`change_locality`), see [agent-feedback.md](agent-feedback.md).
 
 ## Finding status
 
