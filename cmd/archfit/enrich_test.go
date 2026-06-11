@@ -1,7 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -187,5 +192,72 @@ func TestDraftLabels_BatchesAndParses(t *testing.T) {
 	// Duplicate from-keys collapse is mergeDrafts' job; here we expect raw drafts.
 	if len(got) != 31 {
 		t.Errorf("drafts = %d, want 31", len(got))
+	}
+}
+
+// TestRun_Explain_LLMNarrative drives explain --llm end-to-end against a mock
+// OpenAI-compatible server (the ollama provider path).
+func TestRun_Explain_LLMNarrative(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"c1","object":"chat.completion","model":"m",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"This intrusive edge bypasses the module contract."},"finish_reason":"stop"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	cfgPath := writeViolatingRepo(t)
+	// Append the llm tool config to the fixture.
+	cfgRaw, _ := os.ReadFile(cfgPath) //nolint:gosec // test fixture path from t.TempDir
+	cfgRaw = append(cfgRaw, []byte("tools:\n  llm:\n    provider: ollama\n    model: test-model\n    base_url: "+srv.URL+"\n")...)
+	if err := os.WriteFile(cfgPath, cfgRaw, 0o600); err != nil { //nolint:gosec // test fixture path from t.TempDir
+		t.Fatal(err)
+	}
+
+	// Find the finding fingerprint.
+	var buf bytes.Buffer
+	Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &buf)
+	var diag struct {
+		Findings []struct {
+			ID string `json:"id"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil || len(diag.Findings) == 0 {
+		t.Fatalf("no findings: %v\n%s", err, buf.String())
+	}
+
+	buf.Reset()
+	code := Run([]string{cmdExplain, diag.Findings[0].ID[:8], "-c", cfgPath, "--llm", "--no-cache"}, &buf)
+	if code != 0 {
+		t.Fatalf("explain --llm exit = %d\n%s", code, buf.String())
+	}
+	out := buf.String()
+	if !strings.Contains(out, "narrative (ollama/test-model, off-gate):") {
+		t.Errorf("missing narrative header\n%s", out)
+	}
+	if !strings.Contains(out, "This intrusive edge bypasses the module contract.") {
+		t.Errorf("missing narrative body\n%s", out)
+	}
+	// The deterministic dump must still precede it.
+	if !strings.Contains(out, "rule:") || !strings.Contains(out, "constraint:") {
+		t.Errorf("deterministic explain output missing\n%s", out)
+	}
+}
+
+// TestRun_Explain_LLMUnconfigured verifies the setup hint when tools.llm is absent.
+func TestRun_Explain_LLMUnconfigured(t *testing.T) {
+	cfgPath := writeViolatingRepo(t)
+	var buf bytes.Buffer
+	Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &buf)
+	var diag struct {
+		Findings []struct {
+			ID string `json:"id"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil || len(diag.Findings) == 0 {
+		t.Fatal("no findings")
+	}
+	buf.Reset()
+	if code := Run([]string{cmdExplain, diag.Findings[0].ID[:8], "-c", cfgPath, "--llm"}, &buf); code != 3 {
+		t.Errorf("exit = %d, want 3 with setup hint", code)
 	}
 }

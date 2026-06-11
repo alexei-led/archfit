@@ -176,10 +176,10 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 
 - Modify: `cmd/archfit/main.go` (+test)
 
-- [ ] `--llm` flag; evidence bundle → narrative via provider+cache; offline `explain` unchanged
-- [ ] graceful: no tools.llm config → exit 3 with setup hint
-- [ ] tests with mock provider
-- [ ] run tests — green before Task 6
+- [x] `--llm` flag; evidence bundle (finding + strength/distance + module facts) → narrative via provider+cache; offline `explain` unchanged and always printed first
+- [x] graceful: no tools.llm config → exit 3 with setup hint
+- [x] tests with mock provider — full CLI path via the ollama adapter against httptest (narrative rendered, deterministic dump intact) + unconfigured error path
+- [x] run tests — green before Task 6
 
 ### Task 6: dogfood + guard rails
 

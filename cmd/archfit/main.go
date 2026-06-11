@@ -370,6 +370,8 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 type ExplainCmd struct {
 	Config      string `short:"c" default:".archfit.yaml"`
 	Fingerprint string `arg:"" help:"Finding fingerprint prefix."`
+	LLM         bool   `name:"llm" help:"Append an LLM narrative (off-gate; needs tools.llm configured)."`
+	NoCache     bool   `name:"no-cache" help:"Bypass the LLM response cache."`
 }
 
 func (c *ExplainCmd) Run(deps *appDeps) error {
@@ -410,6 +412,9 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 			_, _ = fmt.Fprintf(deps.Stdout, "constraint: %s\n", f.Constraint)
 			for _, alt := range f.Alternatives {
 				_, _ = fmt.Fprintf(deps.Stdout, "allowed:    %s\n", alt)
+			}
+			if c.LLM {
+				return explainNarrative(ctx, deps, cfg, c.Config, c.NoCache, f, diag)
 			}
 			return nil
 		}

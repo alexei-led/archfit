@@ -78,6 +78,7 @@ func TestRun_Check_ReportSuppressesFailureExit(t *testing.T) {
 const (
 	flagFull   = "--full"
 	cmdCheck   = "check"
+	cmdExplain = "explain"
 	fmtJSON    = "--format=json"
 	flagReport = "--report"
 )
@@ -141,7 +142,7 @@ func TestRun_Explain_ResolvesViaFullPipeline(t *testing.T) {
 	}
 
 	buf.Reset()
-	code := Run([]string{"explain", diag.Findings[0].ID[:8], "-c", cfgPath}, &buf)
+	code := Run([]string{cmdExplain, diag.Findings[0].ID[:8], "-c", cfgPath}, &buf)
 	if code != 0 {
 		t.Fatalf("explain exit = %d, want 0\noutput:\n%s", code, buf.String())
 	}
