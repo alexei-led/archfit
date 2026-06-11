@@ -423,7 +423,11 @@ func staleLabelID(from, to string) string {
 func applyPinnedLabels(g *graph.Graph, classifyCfg *config.ClassifyConfig, mode Mode, lbls []labels.Label) []finding.Finding {
 	var evidence map[string]string
 	if mode.Full || mode.Base == "" {
-		evidence = pairEvidence(g, classifyCfg.ModuleMap, lbls)
+		wanted := make(map[string]struct{}, len(lbls))
+		for _, l := range lbls {
+			wanted[labels.Key(l.From, l.To)] = struct{}{}
+		}
+		evidence = PairEvidence(g, classifyCfg.ModuleMap, wanted)
 	}
 	approved, stale := labels.Approved(lbls, evidence)
 	classifyCfg.ApprovedLabels = approved
@@ -447,17 +451,16 @@ func applyPinnedLabels(g *graph.Graph, classifyCfg *config.ClassifyConfig, mode 
 	return out
 }
 
-// pairEvidence computes the current evidence hash per labeled module pair:
-// HashItems over "fromPath\x00toPath\x00kind" for every import-graph edge
-// whose endpoints resolve to that ordered pair. Only pairs that appear in
-// lbls are hashed (labels are few; the graph can be large).
-func pairEvidence(g *graph.Graph, mm config.ModuleMap, lbls []labels.Label) map[string]string {
-	if len(lbls) == 0 {
+// PairEvidence computes the current evidence hash per module pair (keyed by
+// labels.Key): HashItems over "fromPath\x00toPath\x00kind" for every
+// import-graph edge whose endpoints resolve to that ordered pair. Only pairs
+// in wanted are hashed (pairs of interest are few; the graph can be large).
+//
+// Exported because enrich (cmd) must stamp drafts with EXACTLY the hash the
+// engine will later verify — one computation, two callers.
+func PairEvidence(g *graph.Graph, mm config.ModuleMap, wanted map[string]struct{}) map[string]string {
+	if len(wanted) == 0 {
 		return nil
-	}
-	wanted := make(map[string]struct{}, len(lbls))
-	for _, l := range lbls {
-		wanted[labels.Key(l.From, l.To)] = struct{}{}
 	}
 
 	items := map[string][]string{}

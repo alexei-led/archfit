@@ -58,6 +58,7 @@ const (
 // cli is the top-level kong command struct.
 type cli struct {
 	Check    CheckCmd    `cmd:"" help:"Check architecture constraints."`
+	Enrich   EnrichCmd   `cmd:"" help:"Draft LLM coupling-label refinements for human review (off-gate)."`
 	Scan     ScanCmd     `cmd:"" help:"Full architecture audit report (scan ≡ check --full --advisory --report --format markdown)."`
 	Baseline BaselineCmd `cmd:"" help:"Save current findings as baseline."`
 	Explain  ExplainCmd  `cmd:"" help:"Explain a specific finding."`
@@ -185,7 +186,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 // post-baseline check reports phantom metric regressions and unmatched finding
 // fingerprints. After the engine returns, the agent_tasks repair block is
 // attached from the active gate findings (deterministic; spec §13).
-func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, mode engine.Mode, base baseline.Baseline) (diagnostic.Diagnostic, error) {
+func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, error) {
 	configDir := filepath.Dir(configPath)
 	sc := cfg.ForScope()
 	sc.WorkDir = configDir
@@ -205,7 +206,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	rs := rules.New(cfg.ForRules())
 	// metrics.New must run BEFORE ApplyVolatility below: risk_hub captures only
 	// hand-authored config volatility, never churn-derived values.
-	ms := metrics.New(cfg)
+	ms := append(metrics.New(cfg), extraMetrics...)
 
 	// Recent git history (cheap; runs by default): per-file churn drives module
 	// volatility (unbalanced_edge, BC severity) and the modularity metrics
@@ -455,7 +456,35 @@ func (c *DoctorCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kon
 		}
 	}
 
+	// Off-gate LLM setup (enrich / explain --llm): provider config + key + cache.
+	_, _ = fmt.Fprintf(deps.Stdout, "\nLLM (off-gate; enrich/explain only — never used by check):\n")
+	cfg, cfgErr := loadConfig(ctx, defaultConfigPath, false)
+	if llmCfg, ok := cfg.LLM(); cfgErr == nil && ok {
+		_, _ = fmt.Fprintf(deps.Stdout, "  provider: %s  model: %s\n", llmCfg.Provider, llmCfg.Model)
+		switch llmCfg.Provider {
+		case "anthropic":
+			_, _ = fmt.Fprintf(deps.Stdout, "  ANTHROPIC_API_KEY: %s\n", keyStatus(os.Getenv("ANTHROPIC_API_KEY")))
+		case "openai":
+			_, _ = fmt.Fprintf(deps.Stdout, "  OPENAI_API_KEY: %s\n", keyStatus(os.Getenv("OPENAI_API_KEY")))
+		case "ollama":
+			_, _ = fmt.Fprintf(deps.Stdout, "  base_url: %s (no key needed)\n", llmCfg.BaseURL)
+		}
+		if entries, err := filepath.Glob(filepath.Join(".archfit-cache", "llm", "*.json")); err == nil {
+			_, _ = fmt.Fprintf(deps.Stdout, "  cache: %d entries in .archfit-cache/llm\n", len(entries))
+		}
+	} else {
+		_, _ = fmt.Fprintln(deps.Stdout, "  not configured (set tools.llm provider + model to enable enrich)")
+	}
+
 	return nil
+}
+
+// keyStatus renders the presence of an API key without leaking it.
+func keyStatus(v string) string {
+	if v == "" {
+		return "missing"
+	}
+	return "set"
 }
 
 // ---------------------------------------------------------------------------

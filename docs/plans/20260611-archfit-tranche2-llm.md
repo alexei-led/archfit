@@ -163,12 +163,12 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 - Modify: `cmd/archfit/main.go` (EnrichCmd), `internal/config/config.go` (tools.llm) (+tests)
 - Create: `cmd/archfit/enrich.go` or `internal/enrich/enrich.go` (+test) — pick the seam that keeps cmd thin
 
-- [ ] config `tools.llm` + doctor reporting (provider, key present, cache dir)
-- [ ] edge selection per Technical Details; batch prompts with subdomain/volatility context
-- [ ] strict JSON response parsing; drafts merged into `.archfit-labels.yaml` (approved untouched; atomic write)
-- [ ] suspected-intrusive flags emitted as draft labels with rationale
-- [ ] tests with mock provider incl. malformed-response path
-- [ ] run tests — green before Task 5
+- [x] config `tools.llm` (provider/model/base_url on the tools map; validated) + doctor reporting (provider, key present/missing without leaking, cache entry count)
+- [x] edge selection per Technical Details (functional/model via hint, cross-module, not approved; deterministic order; ≤5 sample paths) — batched 30 pairs/request with subdomain/volatility context
+- [x] strict JSON response parsing (markdown fences tolerated, prose rejected; hallucinated pairs and invalid strengths dropped); drafts merged into `.archfit-labels.yaml` (approved entries untouchable; atomic temp+rename)
+- [x] suspected-intrusive flags emitted as draft labels with rationale (the prompt allows "intrusive"; parser accepts all four strengths)
+- [x] tests with mock provider incl. malformed-response path (+ batching, merge, selection unit tests)
+- [x] run tests — green before Task 5 — enrich runs via runPipeline + a capture metric (variadic extraMetrics), so it sees EXACTLY the gate's evidence; engine.PairEvidence exported so draft hashes match what check verifies
 
 ### Task 5: explain --llm narrative
 

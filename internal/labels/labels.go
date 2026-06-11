@@ -39,6 +39,13 @@ var validStrengths = map[string]struct{}{
 	"contract": {}, "model": {}, "functional": {}, "intrusive": {},
 }
 
+// ValidStrength reports whether s is a Balanced Coupling strength a label may
+// pin (contract, model, functional, intrusive).
+func ValidStrength(s string) bool {
+	_, ok := validStrengths[s]
+	return ok
+}
+
 // Label pins the integration strength for all edges between an ordered module
 // pair. Only Status == approved is consumed by the gate.
 type Label struct {
