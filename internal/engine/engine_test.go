@@ -31,6 +31,8 @@ const (
 
 	headRef         = "HEAD"
 	kindAdvisory    = "advisory"
+	kindGate        = "gate"
+	gateFail        = "fail"
 	toolNameAstgrep = "ast-grep"
 	toolNameScip    = "scip"
 
@@ -67,7 +69,7 @@ func cannedConfig() (config.ClassifyConfig, []rules.Rule) {
 			{
 				ID:   rulePublicAPIOnly,
 				Type: rulePublicAPIOnly,
-				Gate: "fail",
+				Gate: gateFail,
 			},
 		},
 	}
@@ -170,7 +172,7 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 	var gateFinding *finding.Finding
 	for i := range d.Findings {
 		f := &d.Findings[i]
-		if f.RuleID == "public_api_only" && f.Kind == "gate" {
+		if f.RuleID == "public_api_only" && f.Kind == kindGate {
 			gateFinding = f
 			break
 		}
@@ -244,7 +246,7 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 
 	// No new gate findings.
 	for _, f := range d.Findings {
-		if f.Kind == "gate" && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept) {
+		if f.Kind == kindGate && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept) {
 			t.Errorf("unexpected new gate finding: %+v", f)
 		}
 	}
@@ -862,5 +864,84 @@ func TestRun_FileFacts_EmptyWhenNopResolver(t *testing.T) {
 	}
 	if len(d.FileFacts) != 0 {
 		t.Errorf("FileFacts count = %d, want 0 with NopSymbolResolver", len(d.FileFacts))
+	}
+}
+
+// TestRun_NewCrossModuleDependency_BaselineSemantics verifies the "new"
+// semantics of new_cross_module_dependency: every cross-module edge fires at
+// the rule stage, but a baselined fingerprint is assigned StatusBaseline and
+// does not gate; without a baseline the same edge fails the verdict.
+func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
+	ctx := context.Background()
+
+	const crossModRuleID = "review_new_deps"
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"a": {Paths: []string{globModuleA}},
+			"b": {Paths: []string{globModuleB}},
+		},
+		Rules: []config.RuleDef{{ID: crossModRuleID, Type: "new_cross_module_dependency", Gate: gateFail}},
+	}
+	classifyCfg := cfg.ForClassify()
+	rs := rules.New(cfg.ForRules())
+
+	ex := &engine.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+	now := time.Date(2026, 6, 11, 0, 0, 0, 0, time.UTC)
+
+	run := func(base baseline.Baseline) diagnostic.Diagnostic {
+		t.Helper()
+		d, err := engine.Run(
+			ctx, engine.Mode{Head: headRef}, scope.Scope{Root: "."},
+			classifyCfg, config.StalenessConfig{}, config.ExceptionSet{},
+			[]engine.Extractor{ex}, engine.NopPatternProvider{}, engine.NopSymbolResolver{},
+			config.PatternConfig{}, rs, nil, base, metrics.ChangeHistory{}, now,
+		)
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		return d
+	}
+
+	// Without a baseline: the cross-module edge is a new gate finding → fail.
+	noBase := run(baseline.Baseline{})
+	if noBase.Verdict != diagnostic.VerdictFail {
+		t.Fatalf("no baseline: verdict = %q, want fail", noBase.Verdict)
+	}
+	var fp string
+	for _, f := range noBase.Findings {
+		if f.RuleID == crossModRuleID && f.Status == finding.StatusNew {
+			fp = f.ID
+		}
+	}
+	if fp == "" {
+		t.Fatalf("no new %s finding without baseline; findings=%+v", crossModRuleID, noBase.Findings)
+	}
+
+	// With the fingerprint baselined: same edge is StatusBaseline → pass,
+	// and the finding is still present (NOT suppressed — fixed-detection
+	// depends on it remaining in the current set).
+	based := run(baseline.Baseline{Accepted: []baseline.AcceptedFinding{
+		{Fingerprint: fp, RuleID: crossModRuleID, Kind: kindGate},
+	}})
+	if based.Verdict != diagnostic.VerdictPass {
+		t.Errorf("baselined: verdict = %q, want pass", based.Verdict)
+	}
+	found := false
+	for _, f := range based.Findings {
+		if f.ID == fp {
+			found = true
+			if f.Status != finding.StatusBaseline {
+				t.Errorf("baselined finding status = %q, want %q", f.Status, finding.StatusBaseline)
+			}
+		}
+	}
+	if !found {
+		t.Error("baselined finding missing from output — rule must keep emitting it")
 	}
 }

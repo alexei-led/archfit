@@ -116,12 +116,19 @@ module map) []diagnostic.AgentTask` — pure, deterministic, sorted by
 
 **Files:**
 
-- Modify: `internal/rules/rules.go` (+test), `internal/engine/engine.go` (+test)
+- Modify: `internal/rules/rules.go` (+test), `internal/engine/engine_test.go`
 
-- [ ] wire baseline-accepted fingerprints into rule evidence at the engine call site
-- [ ] filter candidate edges by fingerprint-in-baseline; delete the TODO note
-- [ ] tests: pre-existing edge (baselined) silent; new edge fires; no baseline = all fire (documented bootstrap behavior)
-- [ ] run tests — green before Task 2
+**Deviation (discovery):** the baseline/status machinery ALREADY provides the
+"new" semantics — `status.Assign` marks baselined fingerprints `StatusBaseline`
+and the verdict counts only new/expired. Filtering inside the rule (the stale
+TODO's suggestion) would BREAK fixed-finding detection (suppressed fingerprints
+would be falsely reported fixed). The gap was a misleading comment + zero test
+coverage, not behavior.
+
+- [x] wire baseline-accepted fingerprints into rule evidence at the engine call site — NOT NEEDED; replaced the stale TODO with documentation of the actual mechanism
+- [x] removed the dead `Evidence.Findings` field (never populated, never read)
+- [x] tests: engine-level regression — no baseline → new finding + fail; baselined fingerprint → StatusBaseline + pass + finding still emitted (fixed-detection invariant)
+- [x] run tests — green before Task 2
 
 ### Task 2: SCIP single-pass per run
 

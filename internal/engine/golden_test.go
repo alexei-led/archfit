@@ -59,7 +59,7 @@ func goldenConfig() (config.ClassifyConfig, []rules.Rule, []metrics.Metric) {
 			{
 				ID:   "no_internal_access",
 				Type: "forbidden_dependency",
-				Gate: "fail",
+				Gate: gateFail,
 				From: globModuleA,
 				To:   globModuleBInternal,
 			},
