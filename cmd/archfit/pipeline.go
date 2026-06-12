@@ -58,8 +58,8 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 
 	rs := rules.New(cfg.ForRules())
-	// metrics.New must run BEFORE ApplyVolatility below: risk_hub captures only
-	// hand-authored config volatility, never churn-derived values.
+	// risk_hub reads hand-authored volatility only; ApplyVolatility records
+	// churn-derived bands in a separate store, so this call order is free.
 	ms := append(metrics.New(cfg), extraMetrics...)
 
 	// Recent git history (cheap; runs by default): per-file churn drives module

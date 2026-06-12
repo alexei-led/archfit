@@ -175,9 +175,9 @@ func TestRiskHub_IntraModuleRefsIgnored(t *testing.T) {
 // TestRiskHub_ChurnDoesNotAffectScore verifies that two MetricInput values that
 // differ ONLY in FileChurn produce identical risk_hub output.
 //
-// This test is structural: because risk_hub reads volatility from the
-// pre-captured moduleVolatility map (built in New before ApplyVolatility runs),
-// FileChurn cannot reach the metric at all.
+// This test is structural: risk_hub's moduleVolatility map is built from
+// hand-authored ModuleDef.Volatility, which ApplyVolatility never touches,
+// so FileChurn cannot reach the metric at all.
 func TestRiskHub_ChurnDoesNotAffectScore(t *testing.T) {
 	g := makeGraph(
 		map[string]string{
@@ -236,8 +236,8 @@ func TestRiskHub_HighVolatilityRanksAboveNeutral(t *testing.T) {
 		},
 	)
 	cfg := makeConfig(map[string]string{
-		"alpha": "high",
-		"beta":  "low",
+		"alpha": volBandHigh,
+		"beta":  volBandLow,
 	})
 	m := newRiskHubMetric(cfg)
 	result := m.Calculate(MetricInput{SymbolGraph: g})
@@ -380,5 +380,25 @@ func TestModuleSurfaceBreadth_NoCrossModuleRefs(t *testing.T) {
 	breadth := moduleSurfaceBreadth(g)
 	if breadth != nil {
 		t.Errorf("expected nil when no cross-module refs, got %v", breadth)
+	}
+}
+
+// TestRiskHub_OrderIndependentOfApplyVolatility proves the M7 fix: calling
+// config.ApplyVolatility BEFORE metrics.New (the historically "wrong" order,
+// once guarded only by a comment) can no longer leak churn-derived volatility
+// into risk_hub. Derived bands live in a separate store; ModuleDef.Volatility
+// stays hand-authored. The derived band is "low" because its multiplier
+// (0.33) differs from neutral (1.0) — "high" would be indistinguishable.
+func TestRiskHub_OrderIndependentOfApplyVolatility(t *testing.T) {
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		testModAlpha: {Paths: []string{"alpha/**"}}, // no explicit volatility
+	}}
+
+	// Wrong order: churn-derived volatility applied before the metric is built.
+	cfg.ApplyVolatility(map[string]string{testModAlpha: volBandLow})
+
+	m := newRiskHubMetric(cfg)
+	if got := m.moduleVolatility[testModAlpha]; got != 1.0 {
+		t.Errorf("churn-derived volatility leaked into risk_hub: multiplier = %v, want neutral 1.0", got)
 	}
 }

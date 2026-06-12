@@ -9,6 +9,10 @@ import (
 const (
 	volHigh = "high"
 	volLow  = "low"
+
+	modAuto     = "auto"
+	modExplicit = "explicit"
+	modSubdom   = "subdom"
 )
 
 func TestDeriveVolatility_BandsAndAttribution(t *testing.T) {
@@ -45,19 +49,26 @@ func TestDeriveVolatility_NoChurnIsNil(t *testing.T) {
 
 func TestApplyVolatility_RespectsExplicitConfig(t *testing.T) {
 	cfg := config.Config{Modules: map[string]config.ModuleDef{
-		"auto":     {Paths: []string{"a/**"}},
-		"explicit": {Paths: []string{"b/**"}, Volatility: volLow},
-		"subdom":   {Paths: []string{"c/**"}, Subdomain: "core"},
+		modAuto:     {Paths: []string{"a/**"}},
+		modExplicit: {Paths: []string{"b/**"}, Volatility: volLow},
+		modSubdom:   {Paths: []string{"c/**"}, Subdomain: "core"},
 	}}
-	cfg.ApplyVolatility(map[string]string{"auto": volHigh, "explicit": volHigh, "subdom": volHigh})
+	cfg.ApplyVolatility(map[string]string{modAuto: volHigh, modExplicit: volHigh, modSubdom: volHigh})
 
-	if cfg.Modules["auto"].Volatility != volHigh {
-		t.Errorf("auto should get derived volatility, got %q", cfg.Modules["auto"].Volatility)
+	// Modules always stays hand-authored-only: derived values must never
+	// land on the ModuleDef (risk_hub and enrich read it directly).
+	for name, wantPristine := range map[string]string{modAuto: "", modExplicit: volLow, modSubdom: ""} {
+		if got := cfg.Modules[name].Volatility; got != wantPristine {
+			t.Errorf("Modules[%q].Volatility = %q, want pristine %q", name, got, wantPristine)
+		}
 	}
-	if cfg.Modules["explicit"].Volatility != volLow {
-		t.Errorf("explicit volatility must be preserved, got %q", cfg.Modules["explicit"].Volatility)
-	}
-	if cfg.Modules["subdom"].Volatility != "" {
-		t.Errorf("subdomain-declared module must not be overridden, got %q", cfg.Modules["subdom"].Volatility)
+
+	// The classify view sees the effective values: derived fills the gap,
+	// explicit volatility and subdomain-declared modules stay untouched.
+	effective := cfg.ForClassify().Modules
+	for name, want := range map[string]string{modAuto: volHigh, modExplicit: volLow, modSubdom: ""} {
+		if got := effective[name].Volatility; got != want {
+			t.Errorf("ForClassify().Modules[%q].Volatility = %q, want %q", name, got, want)
+		}
 	}
 }

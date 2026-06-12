@@ -166,9 +166,9 @@ delete `cmd/archfit/{sourceloc,complexity}.go`; modify main.go, enrich.go.
 **Files:** modify `internal/config/volatility.go` (+test),
 `internal/config/config.go`, `internal/metrics/metrics.go` (+test), cmd callers.
 
-- [ ] structural fix: `ApplyVolatility` STOPS mutating `ModuleDef.Volatility`; derived values land in a separate store on Config; effective volatility = explicit-else-derived; existing consumers (ForClassify path) read effective — planned DEVIATION from the brief's suggested `metrics.New(cfg, vol)` signature: two-store is stronger (no caller can get it wrong) and keeps `metrics.New(cfg)` stable. `newRiskHubMetric` keeps reading pristine `def.Volatility` — provably explicit-only regardless of call order
-- [ ] wrong-order test: ApplyVolatility before metrics.New → risk_hub unchanged (explicit-only)
-- [ ] tests green + lint 0; commit
+- [x] structural fix: `ApplyVolatility` STOPS mutating `ModuleDef.Volatility`; derived values land in `Config.derivedVolatility`; `ForClassify` exposes the effective view via `effectiveModules()` — DEVIATION from the brief's suggested `metrics.New(cfg, vol)` signature as planned: two-store is stronger (no caller can get it wrong) and keeps `metrics.New(cfg)` stable. Side alignment: enrich's `moduleContext` now genuinely sees hand-authored values only, matching its own doc comment (it previously leaked churn-derived bands into LLM prompts)
+- [x] wrong-order test: `TestRiskHub_OrderIndependentOfApplyVolatility` applies derived "low" (multiplier 0.33 ≠ neutral — "high" would be indistinguishable at 1.0) BEFORE building the metric → multiplier stays neutral
+- [x] tests green + lint 0; self-scan double-run identical, findings identical; commit
 
 ### Task 7: scope decoupling + scope layer reclassification (F-02)
 
