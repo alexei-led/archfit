@@ -154,12 +154,12 @@ CLI determinism tests stay green after every task.
 `internal/extract/loc/` (+test), `internal/extract/complexity/` (+test);
 delete `cmd/archfit/{sourceloc,complexity}.go`; modify main.go, enrich.go.
 
-- [ ] main.go keeps `main`, `Run`, `cli`, `appDeps`, `exitError` (+versionFlag/exitCode); commands split by concern; Scan lives with check.go; no behavior change
-- [ ] `loc.Run(root) (map[string]int, diagnostic.Coverage, error)` — coverage record moves inside (was built in cmd)
-- [ ] `complexity.Run(ctx, runner, root) ([]signal.ComplexityFunc, diagnostic.Coverage, error)` — clones-style coverage with zero file counts (status only) so the coverage metric value does not shift
-- [ ] table-driven tests per Testing Strategy; CLI tests green unchanged
-- [ ] structural_weight self-scan: cmd/archfit below god-module threshold (record the number)
-- [ ] tests green + lint 0; commit
+- [x] main.go keeps `main`, `Run`, `cli`, `appDeps`, `exitError` (+versionFlag/exitCode); commands split by concern (check/baseline/explain/doctor/install/init/pipeline.go); explainNarrative moved enrich.go→explain.go; main.go 768→135 LOC; no behavior change
+- [x] `loc.Run(root) (map[string]int, diagnostic.Coverage, error)` — coverage record moves inside (was built in cmd)
+- [x] `complexity.Run(ctx, runner, root, enabled) ([]signal.ComplexityFunc, diagnostic.Coverage, error)` — clones-style; coverage carries zero file counts so the coverage metric value is unchanged; ExtraCoverage order loc→complexity→clones→gitnexus (the `lizard` record is the only new tool_coverage entry)
+- [x] table-driven tests per Testing Strategy (loc fixture walk; complexity ports + extends complexity_parse_test incl. malformed CSV, disabled, absent); CLI tests green unchanged
+- [x] structural_weight: cmd/archfit 1395→1262 LOC — DEVIATION: it remains a god-module (7x of 176 median); dropping below the 4x threshold would require moving enrich (439 LOC) out of cmd, which the LLM ring forbids (internal/llm is importable from cmd ONLY). Recorded as the honest floor; metric value (2 god-modules) and findings unchanged.
+- [x] tests green + lint 0; double-run identical; findings identical vs pre-task reference; commit
 
 ### Task 6: kill the `metrics.New`/`ApplyVolatility` ordering contract (M7)
 
