@@ -143,10 +143,10 @@ CLI determinism tests stay green after every task.
 **Files:** modify `internal/engine/engine.go`, `internal/engine/engine_test.go`,
 `internal/engine/golden_test.go`, `cmd/archfit/*.go` (runPipeline).
 
-- [ ] Shape: `engine.Run(ctx, RunInput{...})` — ctx stays positional (Go convention), everything else in the struct; stage helpers split out of Run's body so CCN drops (behavior-preserving decomposition)
-- [ ] capture self-scan JSON BEFORE, re-run AFTER → byte-identical (determinism proof)
-- [ ] self-scan complexity: `Run` CCN < 28 (record actual), gocyclo < 30 with headroom
-- [ ] tests green + lint 0; commit
+- [x] Shape: `engine.Run(ctx, RunInput{...})` — ctx stays positional (Go convention), everything else in the struct; stage helpers split out of Run's body (`extract`, `resolveEvidence`, `collectAdvisories`)
+- [x] capture self-scan JSON BEFORE, re-run AFTER — DEVIATION: literal byte-identity is impossible for a self-referential scan (the refactor changes engine.go's own LOC/CCN facts). Verified instead: finding IDs+statuses identical, verdict pass→pass, summary identical; only self-measurement values moved (hidden_coupling 46→45 — caused by the Task 3 COMMIT entering co-change history, not by this refactor). Double-run byte-identical holds.
+- [x] self-scan complexity: `Run` CCN 28→17; new helpers peak at 7; repo max is facts.Build at 26 < 30 gocyclo threshold
+- [x] tests green + lint 0; commit
 
 ### Task 5: split `cmd/archfit/main.go` + collectors into extract (F-05, M6)
 

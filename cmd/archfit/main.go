@@ -274,7 +274,24 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 
 	patternCfg := cfg.ForPatterns()
-	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), resolver, patternCfg, rs, ms, base, base.Metrics, lbls, change, time.Now())
+	diag, err := engine.Run(ctx, engine.RunInput{
+		Mode:        mode,
+		Scope:       s,
+		Classify:    cfg.ForClassify(),
+		Staleness:   cfg.ForStaleness(),
+		Exceptions:  cfg.ForStatus(),
+		Extractors:  extractors,
+		Patterns:    astgrep.New(deps.Runner),
+		Resolver:    resolver,
+		PatternCfg:  patternCfg,
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      lbls,
+		Change:      change,
+		Now:         time.Now(),
+	})
 	if err != nil {
 		return diag, err
 	}

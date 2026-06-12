@@ -149,25 +149,24 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
-	d, err := engine.Run(
-		ctx,
-		engine.Mode{Head: headRef},
-		scope.Scope{Root: "."},
-		classifyCfg,
-		config.StalenessConfig{},
-		config.ExceptionSet{},
-		[]ports.Extractor{ex},
-		ports.NopPatternProvider{},
-		ports.NopSymbolResolver{},
-		config.PatternConfig{},
-		rs,
-		ms,
-		base,
-		base.Metrics,
-		nil,
-		signal.ChangeHistory{},
-		now,
-	)
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Change:      signal.ChangeHistory{},
+		Now:         now,
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -227,25 +226,24 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
-	d, err := engine.Run(
-		ctx,
-		engine.Mode{Head: headRef},
-		scope.Scope{Root: "."},
-		classifyCfg,
-		config.StalenessConfig{},
-		config.ExceptionSet{},
-		[]ports.Extractor{ex},
-		ports.NopPatternProvider{},
-		ports.NopSymbolResolver{},
-		config.PatternConfig{},
-		rs,
-		ms,
-		base,
-		base.Metrics,
-		nil,
-		signal.ChangeHistory{},
-		now,
-	)
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Change:      signal.ChangeHistory{},
+		Now:         now,
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -281,25 +279,24 @@ func TestRun_DiagnosticShape(t *testing.T) {
 	base := baseline.Baseline{}
 	now := time.Now()
 
-	d, err := engine.Run(
-		ctx,
-		engine.Mode{Base: "main", Head: "feature"},
-		scope.Scope{Root: "."},
-		classifyCfg,
-		config.StalenessConfig{},
-		config.ExceptionSet{},
-		[]ports.Extractor{ex},
-		ports.NopPatternProvider{},
-		ports.NopSymbolResolver{},
-		config.PatternConfig{},
-		rs,
-		ms,
-		base,
-		base.Metrics,
-		nil,
-		signal.ChangeHistory{},
-		now,
-	)
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Base: "main", Head: "feature"},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Change:      signal.ChangeHistory{},
+		Now:         now,
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -349,25 +346,24 @@ func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
-	d, err := engine.Run(
-		ctx,
-		engine.Mode{Head: headRef, Advisory: false},
-		scope.Scope{Root: "."},
-		classifyCfg,
-		config.StalenessConfig{},
-		config.ExceptionSet{},
-		[]ports.Extractor{ex},
-		ports.NopPatternProvider{},
-		ports.NopSymbolResolver{},
-		config.PatternConfig{},
-		rs,
-		ms,
-		base,
-		base.Metrics,
-		nil,
-		signal.ChangeHistory{},
-		now,
-	)
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef, Advisory: false},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Change:      signal.ChangeHistory{},
+		Now:         now,
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -400,25 +396,24 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
-	d, err := engine.Run(
-		ctx,
-		engine.Mode{Head: headRef, Advisory: true},
-		scope.Scope{Root: "."},
-		classifyCfg,
-		config.StalenessConfig{},
-		config.ExceptionSet{},
-		[]ports.Extractor{ex},
-		ports.NopPatternProvider{},
-		ports.NopSymbolResolver{},
-		config.PatternConfig{},
-		rs,
-		ms,
-		base,
-		base.Metrics,
-		nil,
-		signal.ChangeHistory{},
-		now,
-	)
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef, Advisory: true},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Change:      signal.ChangeHistory{},
+		Now:         now,
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -464,25 +459,24 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
-	d, err := engine.Run(
-		ctx,
-		engine.Mode{Head: headRef, Advisory: true},
-		scope.Scope{Root: "."},
-		classifyCfg,
-		config.StalenessConfig{},
-		config.ExceptionSet{},
-		[]ports.Extractor{ex},
-		ports.NopPatternProvider{},
-		ports.NopSymbolResolver{},
-		config.PatternConfig{},
-		rs,
-		ms,
-		base,
-		base.Metrics,
-		nil,
-		signal.ChangeHistory{},
-		now,
-	)
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef, Advisory: true},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Change:      signal.ChangeHistory{},
+		Now:         now,
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -539,25 +533,24 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
-	d, err := engine.Run(
-		ctx,
-		engine.Mode{Head: headRef},
-		scope.Scope{Root: "."},
-		classifyCfg,
-		config.StalenessConfig{},
-		config.ExceptionSet{},
-		[]ports.Extractor{ex},
-		pp,
-		ports.NopSymbolResolver{},
-		config.PatternConfig{},
-		rs,
-		ms,
-		base,
-		base.Metrics,
-		nil,
-		signal.ChangeHistory{},
-		now,
-	)
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    pp,
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Change:      signal.ChangeHistory{},
+		Now:         now,
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -608,25 +601,24 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
-	d, err := engine.Run(
-		ctx,
-		engine.Mode{Head: headRef},
-		scope.Scope{Root: "."},
-		classifyCfg,
-		config.StalenessConfig{},
-		config.ExceptionSet{},
-		[]ports.Extractor{ex},
-		pp,
-		ports.NopSymbolResolver{},
-		config.PatternConfig{},
-		rs,
-		ms,
-		base,
-		base.Metrics,
-		nil,
-		signal.ChangeHistory{},
-		now,
-	)
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    pp,
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Change:      signal.ChangeHistory{},
+		Now:         now,
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -693,25 +685,24 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 	classifyCfg, rs := cannedConfig()
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
-	_, err := engine.Run(
-		ctx,
-		engine.Mode{Head: headRef},
-		scope.Scope{Root: "."},
-		classifyCfg,
-		config.StalenessConfig{},
-		config.ExceptionSet{},
-		[]ports.Extractor{ex},
-		ports.NopPatternProvider{},
-		sr,
-		config.PatternConfig{},
-		rs,
-		[]metrics.Metric{spy},
-		baseline.Baseline{},
-		nil,
-		nil,
-		signal.ChangeHistory{},
-		now,
-	)
+	_, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    sr,
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     []metrics.Metric{spy},
+		Accepted:    baseline.Baseline{},
+		BaseMetrics: nil,
+		Labels:      nil,
+		Change:      signal.ChangeHistory{},
+		Now:         now,
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -745,25 +736,24 @@ func TestRun_SymbolGraph_EmptyWhenNopResolver(t *testing.T) {
 	classifyCfg, rs := cannedConfig()
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
-	_, err := engine.Run(
-		ctx,
-		engine.Mode{Head: headRef},
-		scope.Scope{Root: "."},
-		classifyCfg,
-		config.StalenessConfig{},
-		config.ExceptionSet{},
-		[]ports.Extractor{ex},
-		ports.NopPatternProvider{},
-		ports.NopSymbolResolver{},
-		config.PatternConfig{},
-		rs,
-		[]metrics.Metric{spy},
-		baseline.Baseline{},
-		nil,
-		nil,
-		signal.ChangeHistory{},
-		now,
-	)
+	_, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     []metrics.Metric{spy},
+		Accepted:    baseline.Baseline{},
+		BaseMetrics: nil,
+		Labels:      nil,
+		Change:      signal.ChangeHistory{},
+		Now:         now,
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -812,25 +802,24 @@ func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
 		CoChange: map[[2]string]int{{pathFileA, pathFileB}: 5},
 	}
 
-	d, err := engine.Run(
-		ctx,
-		engine.Mode{Head: headRef},
-		scope.Scope{Root: "."},
-		classifyCfg,
-		config.StalenessConfig{},
-		config.ExceptionSet{},
-		[]ports.Extractor{ex},
-		ports.NopPatternProvider{},
-		sr,
-		config.PatternConfig{},
-		rs,
-		nil,
-		baseline.Baseline{},
-		nil,
-		nil,
-		change,
-		now,
-	)
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    sr,
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     nil,
+		Accepted:    baseline.Baseline{},
+		BaseMetrics: nil,
+		Labels:      nil,
+		Change:      change,
+		Now:         now,
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -866,25 +855,24 @@ func TestRun_FileFacts_EmptyWhenNopResolver(t *testing.T) {
 	classifyCfg, rs := cannedConfig()
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
-	d, err := engine.Run(
-		ctx,
-		engine.Mode{Head: headRef},
-		scope.Scope{Root: "."},
-		classifyCfg,
-		config.StalenessConfig{},
-		config.ExceptionSet{},
-		[]ports.Extractor{ex},
-		ports.NopPatternProvider{},
-		ports.NopSymbolResolver{},
-		config.PatternConfig{},
-		rs,
-		nil,
-		baseline.Baseline{},
-		nil,
-		nil,
-		signal.ChangeHistory{},
-		now,
-	)
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     nil,
+		Accepted:    baseline.Baseline{},
+		BaseMetrics: nil,
+		Labels:      nil,
+		Change:      signal.ChangeHistory{},
+		Now:         now,
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -926,12 +914,24 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 
 	run := func(base baseline.Baseline) diagnostic.Diagnostic {
 		t.Helper()
-		d, err := engine.Run(
-			ctx, engine.Mode{Head: headRef}, scope.Scope{Root: "."},
-			classifyCfg, config.StalenessConfig{}, config.ExceptionSet{},
-			[]ports.Extractor{ex}, ports.NopPatternProvider{}, ports.NopSymbolResolver{},
-			config.PatternConfig{}, rs, nil, base, base.Metrics, nil, signal.ChangeHistory{}, now,
-		)
+		d, err := engine.Run(ctx, engine.RunInput{
+			Mode:        engine.Mode{Head: headRef},
+			Scope:       scope.Scope{Root: "."},
+			Classify:    classifyCfg,
+			Staleness:   config.StalenessConfig{},
+			Exceptions:  config.ExceptionSet{},
+			Extractors:  []ports.Extractor{ex},
+			Patterns:    ports.NopPatternProvider{},
+			Resolver:    ports.NopSymbolResolver{},
+			PatternCfg:  config.PatternConfig{},
+			Rules:       rs,
+			Metrics:     nil,
+			Accepted:    base,
+			BaseMetrics: base.Metrics,
+			Labels:      nil,
+			Change:      signal.ChangeHistory{},
+			Now:         now,
+		})
 		if err != nil {
 			t.Fatalf("Run: %v", err)
 		}
@@ -1005,13 +1005,24 @@ func TestRun_PinnedLabels(t *testing.T) {
 		t.Helper()
 		var captured signal.MetricInput
 		spy := &spyMetric{captured: &captured}
-		d, err := engine.Run(
-			ctx, engine.Mode{Head: headRef, Advisory: true}, scope.Scope{Root: "."},
-			cfg.ForClassify(), config.StalenessConfig{}, config.ExceptionSet{},
-			[]ports.Extractor{ex}, ports.NopPatternProvider{}, ports.NopSymbolResolver{},
-			config.PatternConfig{}, rules.New(cfg.ForRules()), []metrics.Metric{spy},
-			baseline.Baseline{}, nil, lbls, signal.ChangeHistory{}, now,
-		)
+		d, err := engine.Run(ctx, engine.RunInput{
+			Mode:        engine.Mode{Head: headRef, Advisory: true},
+			Scope:       scope.Scope{Root: "."},
+			Classify:    cfg.ForClassify(),
+			Staleness:   config.StalenessConfig{},
+			Exceptions:  config.ExceptionSet{},
+			Extractors:  []ports.Extractor{ex},
+			Patterns:    ports.NopPatternProvider{},
+			Resolver:    ports.NopSymbolResolver{},
+			PatternCfg:  config.PatternConfig{},
+			Rules:       rules.New(cfg.ForRules()),
+			Metrics:     []metrics.Metric{spy},
+			Accepted:    baseline.Baseline{},
+			BaseMetrics: nil,
+			Labels:      lbls,
+			Change:      signal.ChangeHistory{},
+			Now:         now,
+		})
 		if err != nil {
 			t.Fatalf("Run: %v", err)
 		}
