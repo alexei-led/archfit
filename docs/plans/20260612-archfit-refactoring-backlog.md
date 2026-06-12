@@ -183,13 +183,13 @@ delete `cmd/archfit/{sourceloc,complexity}.go`; modify main.go, enrich.go.
 
 ### Task 8: frontier-model enrich + approve flow on ccgram
 
-**WARN: blocked on `ANTHROPIC_API_KEY` (not set here) — ask the operator; do
-not skip silently.**
+WARN resolved: operator provided the key via 1Password (`op read`, injected
+per-command, never logged).
 
-- [ ] flip ccgram `tools.llm` → anthropic/claude-opus-4-8; `archfit enrich`; diff drafts vs the local-model run recorded in `notes/tranche2-enrich-validation.md` (56 drafts)
-- [ ] approve 2–3 clearly-correct labels (e.g. `session_state→window_state: model`); run `check`; verify classification changes (BC advisories shift)
-- [ ] byte-identical double run with labels present; touch a file in the pair → `labels/stale` advisory fires on next full run
-- [ ] restore ccgram config afterwards; append results to `notes/tranche2-enrich-validation.md`; commit
+- [x] ccgram `tools.llm` → anthropic/claude-opus-4-8; `archfit enrich` → 56 frontier drafts; diff vs local qwen3.6:35b run: identical pair selection, 11 strength disagreements (frontier more conservative on contract, found 1 intrusive: `window_state_ports→window_state`)
+- [x] approved 3 clearly-correct labels (`session_state→window_state: model`, `handlers→window_state: model`, `miniapp→window_state_ports: contract`); check: exactly those 3 medium BC advisories dropped (58→55), nothing added
+- [x] byte-identical double run with approved labels; stale test — DEVIATION from brief's "touch a file": a content edit cannot trigger staleness (hash covers the pair's import-graph edges by design); added a probe IMPORT instead → `labels/stale` fired for the pair, label ignored, BC advisory returned
+- [x] ccgram config, labels, cache, source restored byte-identical (git status unchanged); results appended to `notes/tranche2-enrich-validation.md`; commit
 
 ### Task 9: validation runbook (gate for the whole plan)
 

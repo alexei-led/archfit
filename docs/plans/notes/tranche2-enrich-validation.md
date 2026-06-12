@@ -65,3 +65,44 @@ the owner's review; ccgram `.archfit.yaml` restored to its original state.
 One implementation bug found by this acceptance and fixed: pair selection
 used a hardcoded "file:" node prefix and missed Python "module:" nodes —
 now `graph.NodePath`.
+
+---
+
+## Frontier re-run (2026-06-12, refactoring-backlog Task 8)
+
+Provider: anthropic / claude-opus-4-8 (the dogfood config), key injected
+per-command from 1Password; binary from `refactor/architecture-backlog`.
+Closes the acceptance note's open item ("frontier re-run is one command").
+
+**Draft comparison (frontier vs the qwen3.6:35b run above).** Identical
+56-pair selection (selection is deterministic). 11/56 strength
+disagreements: frontier 30 functional / 15 contract / 10 model /
+1 intrusive. Notable:
+
+- `handlers→window_state`, `session_state→window_state`,
+  `handlers→transcript`, `providers→transcript`, `app_bootstrap→hooks`
+  upgraded functional→model — the load-bearing window-state corrections
+  match the spike ground truth.
+- frontier DOWNGRADED four of the local run's contract upgrades back to
+  functional (`session_state→providers`, `telegram_adapter→handlers`,
+  `transcript→providers`) — more conservative on protocol claims.
+- **`window_state_ports→window_state`: intrusive** (frontier only) — the
+  ports module reaching back into the implementation; worth an owner review.
+
+**Approve→consume flow.** Approved 3 clearly-correct labels
+(`session_state→window_state: model`, `handlers→window_state: model`,
+`miniapp→window_state_ports: contract`). `check --full --advisory`: exactly
+those 3 medium BC advisories dropped (58→55), nothing added; double run
+byte-identical, 0-byte stderr.
+
+**Stale lifecycle.** Added a probe import (`session_resolver.py` →
+`window_query`, a new edge inside an approved pair): next full run ignored
+the label, emitted ONE `labels/stale` advisory for
+`session_state→window_state`, and the BC advisory for that edge returned.
+Probe removed afterwards. (A content-only edit does NOT trigger staleness
+by design — the evidence hash covers the pair's import-graph edges.)
+
+**Restoration.** ccgram config, labels file (back to the 56 inert local
+drafts), LLM cache, and source restored byte-identical to pre-run state;
+`git status` in ccgram unchanged. The frontier drafts are reproducible with
+one `enrich` run.
