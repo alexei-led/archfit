@@ -75,19 +75,25 @@ Deterministic / cheap (fold into Tranche-2 plan as Task 0 or do alongside):
 - [ ] `initcfg` round-trip fitness test (Render → config.Load → assert fields)
 
 Refactoring backlog on archfit's own architecture (sequence AFTER Tranche 2;
-each is behavior-preserving):
+each is behavior-preserving) — **ALL CLOSED 2026-06-12**, plan
+`docs/plans/completed/20260612-archfit-refactoring-backlog.md`:
 
-- [ ] extract port types (`PatternMatch`, port interfaces) to a neutral package
+- [x] extract port types (`PatternMatch`, port interfaces) to a neutral package
       consumed by engine + adapters; then add engine to `adapterPrefixes` in
-      arch_test
-- [ ] move `MetricInput`/`ChangeHistory` carrier types toward `model/`
-      (un-captures engine from metrics)
-- [ ] `status` takes a baseline-reader interface (ring direction)
-- [ ] `engine.Run` options struct (14 params → 1)
-- [ ] split `cmd/archfit/main.go` by command; move `sourceloc`/`complexity`
-      collectors into `internal/extract/`
-- [ ] `metrics.New` takes resolved volatility values (kills the ordering
-      contract)
+      arch_test — `internal/ports` + `internal/model/pattern`
+- [x] move `MetricInput`/`ChangeHistory` carrier types toward `model/`
+      (un-captures engine from metrics) — `internal/model/signal`
+- [x] `status` takes a baseline-reader interface (ring direction) —
+      `status.AcceptedSet`; baseline reclassified adapter
+- [x] `engine.Run` options struct (14 params → 1) — `RunInput`; Run CCN 28→17
+- [x] split `cmd/archfit/main.go` by command; move `sourceloc`/`complexity`
+      collectors into `internal/extract/` — loc + complexity packages
+- [x] `metrics.New` takes resolved volatility values (kills the ordering
+      contract) — resolved structurally instead: two-store volatility
+      (`Config.derivedVolatility`), `ModuleDef.Volatility` stays pristine
+- [x] (bonus) scope decoupled from git via injected Resolver, reclassified
+      support — all 5 baselined engine→scope inversions resolved; the
+      self-scan baseline is now EMPTY
 
 LLM-layer requirements confirmed for Tranche 2 (no scope change needed):
 enrich/explain must consume the facts block + read code — the missed-findings

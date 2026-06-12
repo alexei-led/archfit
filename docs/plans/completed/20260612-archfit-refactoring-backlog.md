@@ -202,7 +202,7 @@ per-command, never logged).
 - [x] pumba: scip-go on → 424 files/3012 symbols indexed, 38 facts entries; config restored byte-identical (diff clean), baseline artifact removed
 - [x] codegraph: scip-typescript WORKS — 404 files/5902 symbols, 124 facts entries; config restored byte-identical; no coverage gap
 - [x] archfit delta mode: `check --base main~5` → change_locality 82 edges / 116 files / reach 67, info band, non-n/a
-- [ ] full suite green, lint 0, push (diagnose exit-128 remote/auth first: `git remote -v`, `gh auth status`, `ssh -T git@github.com`)
+- [x] full suite green, lint 0, pushed (exit-128 was transient: `ssh -T git@github.com` authenticates OK)
 
 ## Post-Completion
 
