@@ -1,4 +1,8 @@
-package main
+// Package loc counts source-file line counts for the structural_weight metric.
+// It walks the repository root, skips test files, generated/dependency
+// directories, and dot-dirs, and returns a repo-relative slash-normalised map
+// of path → line count together with a diagnostic coverage record.
+package loc
 
 import (
 	"bufio"
@@ -6,7 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 )
+
+const toolName = "loc"
 
 // sourceExts are the file extensions counted for the structural_weight metric.
 var sourceExts = map[string]bool{
@@ -19,11 +27,11 @@ var skipDirs = map[string]bool{
 	".venv": true, "build": true, "testdata": true, "mocks": true,
 }
 
-// sourceFileLOC returns repo-relative source file paths to their line counts,
-// excluding tests and generated/dependency directories. It is best-effort: an
-// unreadable file or root contributes nothing. This feeds the structural_weight
-// (size-skew / god-module) metric.
-func sourceFileLOC(root string) map[string]int {
+// Run walks root and returns a repo-relative path→LOC map plus a coverage
+// record. The walk is best-effort: unreadable files contribute nothing.
+// FilesSeen and FilesApplicable equal the map length; status is always ok
+// because the walk is a pure filesystem operation with no external tool.
+func Run(root string) (map[string]int, diagnostic.Coverage, error) {
 	out := make(map[string]int)
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -48,7 +56,13 @@ func sourceFileLOC(root string) map[string]int {
 		}
 		return nil
 	})
-	return out
+	cov := diagnostic.Coverage{
+		Tool:            toolName,
+		FilesSeen:       len(out),
+		FilesApplicable: len(out),
+		Status:          diagnostic.StatusOK,
+	}
+	return out, cov, nil
 }
 
 // isTestFile reports whether a filename is a test/mock file (excluded from size).

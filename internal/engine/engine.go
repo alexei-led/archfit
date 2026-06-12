@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/facts"
@@ -16,6 +15,9 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/signal"
+	"github.com/alexei-led/archfit/internal/model/symbol"
+	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/staleness"
@@ -35,6 +37,39 @@ type Mode struct {
 	Formats    []string // output formats to render (e.g. ["json", "console"])
 }
 
+// RunInput carries everything a pipeline run needs. Fields mirror the
+// pipeline stages; all are required unless noted.
+type RunInput struct {
+	Mode        Mode
+	Scope       scope.Scope
+	Classify    config.ClassifyConfig
+	Staleness   config.StalenessConfig
+	Exceptions  config.ExceptionSet
+	Extractors  []ports.Extractor
+	Patterns    ports.PatternProvider
+	PatternCfg  config.PatternConfig
+	Resolver    ports.SymbolResolver
+	Rules       []rules.Rule
+	Metrics     []metrics.Metric
+	Accepted    status.AcceptedSet
+	BaseMetrics diagnostic.MetricSnapshot // baseline metric snapshot; nil = no baseline
+	Labels      []labels.Label            // pinned coupling labels; nil = none
+	Change      signal.ChangeHistory
+	Now         time.Time
+}
+
+// extractResult holds the outputs of the extract stage.
+type extractResult struct {
+	g           *graph.Graph
+	coverages   []diagnostic.Coverage
+	scipSymbols symbol.Graph
+}
+
+// evidenceResult holds the outputs of the resolveEvidence stage.
+type evidenceResult struct {
+	resolvedFindings []finding.Finding
+}
+
 // Run executes the full archfit pipeline and returns the assembled Diagnostic.
 //
 // Pipeline stages:
@@ -51,110 +86,186 @@ type Mode struct {
 //     Return (Diagnostic, nil) on success; (Diagnostic, error) on hard error.
 //
 // Rendering is the caller's responsibility (cmd renders to deps.Stdout).
-func Run(
-	ctx context.Context,
-	mode Mode,
-	s scope.Scope,
-	classifyCfg config.ClassifyConfig,
-	stalenessCfg config.StalenessConfig,
-	exceptions config.ExceptionSet,
-	extractors []Extractor,
-	pp PatternProvider,
-	sr SymbolResolver,
-	patternCfg config.PatternConfig,
-	rs []rules.Rule,
-	ms []metrics.Metric,
-	base baseline.Baseline,
-	lbls []labels.Label,
-	change metrics.ChangeHistory,
-	now time.Time,
-) (diagnostic.Diagnostic, error) {
+func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// --- Stage 1: Extract ---
 	// Run each extractor; apply symbol resolution and SCIP strength to edges before merging.
-	var allFacts []graph.Facts
+	ex, err := extract(ctx, in)
+	if err != nil {
+		return diagnostic.New(), err
+	}
+
+	// --- Stage 2: Pattern matching ---
+	// Gather structural matches from the PatternProvider and build a per-file evidence index.
+	// Matches are keyed by file path so rules can filter by the edge's from-file.
+	patternMatches, ppCov, ppErr := in.Patterns.Find(ctx, in.Scope, in.PatternCfg)
+	if ppErr != nil {
+		return diagnostic.New(), ppErr
+	}
+	ex.coverages = append(ex.coverages, ppCov)
+
+	// --- Stage 3: Classify ---
+	// Pinned coupling labels first: approved entries refine strength
+	// classification (precedence: config globs > approved labels > extractor
+	// hint); stale ones surface as labels/stale advisories.
+	classifyCfg := in.Classify
+	staleLabelFindings := applyPinnedLabels(ex.g, &classifyCfg, in.Mode, in.Labels)
+
+	couplingIdx := classify.Run(ex.g, classifyCfg)
+
+	// --- Stage 4: Rules ---
+	// Call each rule once with the full evidence set. Rules iterate edges internally;
+	// the Evidence carries all pattern matches so each rule can filter by edge's from-file.
+	var rawFindings []finding.Finding
+	allPatternMatches := rules.Evidence{PatternMatches: patternMatches}
+	for _, r := range in.Rules {
+		rawFindings = append(rawFindings, r.Check(ex.g, allPatternMatches)...)
+	}
+
+	// --- Stage 5: Status ---
+	taggedFindings := status.Assign(rawFindings, in.Accepted, in.Exceptions, in.Now, "gate")
+
+	// --- Stage 6: Metrics ---
+	mi := signal.MetricInput{
+		Graph:           ex.g,
+		Classifications: couplingIdx,
+		Findings:        taggedFindings,
+		Baseline:        in.BaseMetrics,
+		ToolCoverage:    ex.coverages,
+		FileChurn:       in.Change.FileChurn,
+		CoChange:        in.Change.CoChange,
+		FileLOC:         in.Change.FileLOC,
+		Complexity:      in.Change.Complexity,
+		SymbolGraph:     ex.scipSymbols,
+		FitnessSignals:  in.Change.FitnessSignals,
+		CloneClusters:   in.Change.CloneClusters,
+		GitnexusImpact:  in.Change.GitnexusImpact,
+		ChangedFiles:    in.Scope.Changed,
+	}
+	metricResults := make([]diagnostic.MetricResult, 0, len(in.Metrics))
+	for _, m := range in.Metrics {
+		metricResults = append(metricResults, m.Calculate(mi))
+	}
+
+	// --- Stage 7: Resolve evidence — module labels + severity join ---
+	ev := resolveEvidence(ex.g, couplingIdx, classifyCfg, taggedFindings)
+
+	// --- Stage 8: Advisory findings ---
+	// Collect coupling advisories by walking edges in graph order (deterministic).
+	// Edges with Severity != "" and at or above the configured minimum severity are included.
+	advisoryFindings := collectAdvisories(ex.g, couplingIdx, classifyCfg, staleLabelFindings, in)
+
+	// Gate findings: kind=="gate" and not already resolved (fixed findings don't block verdict or inflate count).
+	var gateFindings []finding.Finding
+	for _, f := range ev.resolvedFindings {
+		if f.Kind == "gate" && f.Status != finding.StatusFixed {
+			gateFindings = append(gateFindings, f)
+		}
+	}
+
+	// Summary counts.
+	var exceptionsUsed int
+	for _, f := range ev.resolvedFindings {
+		if f.Status == finding.StatusExcepted {
+			exceptionsUsed++
+		}
+	}
+	gateNew := 0
+	for _, f := range gateFindings {
+		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept {
+			gateNew++
+		}
+	}
+
+	verdict := computeVerdict(gateFindings, metricResults)
+
+	// --- Stage 9: Assemble Diagnostic ---
+	// Include advisory findings in Findings only when mode.Advisory is set.
+	// Advisory findings never affect the verdict or gate counts.
+	resolvedFindings := ev.resolvedFindings
+	warnings := 0
+	if in.Mode.Advisory {
+		resolvedFindings = append(resolvedFindings, advisoryFindings...)
+		warnings = countActive(advisoryFindings)
+	}
+
+	// Ensure non-nil slices.
+	if resolvedFindings == nil {
+		resolvedFindings = []finding.Finding{}
+	}
+	if metricResults == nil {
+		metricResults = []diagnostic.MetricResult{}
+	}
+	if ex.coverages == nil {
+		ex.coverages = []diagnostic.Coverage{}
+	}
+
+	// Neutral structural-facts block (Tranche 1.5): assembled from the symbol
+	// graph + change history, attached as report-only evidence. Never read by
+	// computeVerdict or any gate logic. Empty when SCIP is off/absent.
+	fileFacts := facts.Build(ex.scipSymbols, in.Change.FileLOC, in.Change.CoChange, in.Change.GitnexusImpact)
+
+	d := diagnostic.Diagnostic{
+		SchemaVersion: diagnostic.SchemaVersion,
+		Verdict:       verdict,
+		Base:          in.Mode.Base,
+		Head:          in.Mode.Head,
+		Metrics:       metricResults,
+		Findings:      resolvedFindings,
+		FileFacts:     fileFacts,
+		AgentTasks:    []diagnostic.AgentTask{},
+		ToolCoverage:  ex.coverages,
+		Summary: diagnostic.Summary{
+			GateFindings:   gateNew,
+			Warnings:       warnings,
+			ExceptionsUsed: exceptionsUsed,
+		},
+	}
+
+	return d, nil
+}
+
+// extract runs stage 1: symbol resolution, extractor loop, graph build.
+// Returns the import graph, all coverage records, and the SCIP symbol graph.
+func extract(ctx context.Context, in RunInput) (extractResult, error) {
 	var coverages []diagnostic.Coverage
 
 	// Symbol-level integration strength (SCIP), keyed by "fromPath\x00toPath".
 	// Best-effort: an empty map when no indexer is available leaves edges to the
 	// config-glob and extractor-hint strength classification.
-	scipStrength, scipCov, _ := sr.Strengths(ctx, s)
+	scipStrength, scipCov, _ := in.Resolver.Strengths(ctx, in.Scope)
 	coverages = append(coverages, scipCov)
 
 	// Symbol graph (SCIP) — per-symbol ownership, fan-in, and cross-module refs.
 	// Empty when SCIP is off/absent; metrics that need it report n/a in that case.
-	scipSymbols, scipSymCov, _ := sr.Symbols(ctx, s)
+	scipSymbols, scipSymCov, _ := in.Resolver.Symbols(ctx, in.Scope)
 	coverages = append(coverages, scipSymCov)
 
-	for _, ex := range extractors {
-		facts, cov, err := ex.Extract(ctx, s)
+	var allFacts []graph.Facts
+	for _, ex := range in.Extractors {
+		f, cov, err := ex.Extract(ctx, in.Scope)
 		if err != nil {
-			return diagnostic.New(), err
+			return extractResult{}, err
 		}
-		enrichEdges(ctx, sr, scipStrength, facts)
-		allFacts = append(allFacts, facts)
+		enrichEdges(ctx, in.Resolver, scipStrength, f)
+		allFacts = append(allFacts, f)
 		coverages = append(coverages, cov)
 	}
 	g := graph.Build(allFacts)
 
 	// Append opt-in tool coverage (clones, gitnexus) collected in cmd rather than
 	// through the extractor loop. These have no path into the diagnostic otherwise.
-	coverages = append(coverages, change.ExtraCoverage...)
+	coverages = append(coverages, in.Change.ExtraCoverage...)
 
-	// --- Stage 2: Pattern matching ---
-	// Gather structural matches from the PatternProvider and build a per-file evidence index.
-	// Matches are keyed by file path so rules can filter by the edge's from-file.
-	patternMatches, ppCov, ppErr := pp.Find(ctx, s, patternCfg)
-	if ppErr != nil {
-		return diagnostic.New(), ppErr
-	}
-	coverages = append(coverages, ppCov)
-	// Convert engine.PatternMatch → rules.PatternMatch for the evidence type.
-	rulesMatches := toRulesPatternMatches(patternMatches)
+	return extractResult{g: g, coverages: coverages, scipSymbols: scipSymbols}, nil
+}
 
-	// --- Stage 3: Classify ---
-	// Pinned coupling labels first: approved entries refine strength
-	// classification (precedence: config globs > approved labels > extractor
-	// hint); stale ones surface as labels/stale advisories.
-	staleLabelFindings := applyPinnedLabels(g, &classifyCfg, mode, lbls)
-
-	couplingIdx := classify.Run(g, classifyCfg)
-
-	// --- Stage 4: Rules ---
-	// Call each rule once with the full evidence set. Rules iterate edges internally;
-	// the Evidence carries all pattern matches so each rule can filter by edge's from-file.
-	var rawFindings []finding.Finding
-	allPatternMatches := rules.Evidence{PatternMatches: rulesMatches}
-	for _, r := range rs {
-		rawFindings = append(rawFindings, r.Check(g, allPatternMatches)...)
-	}
-
-	// --- Stage 5: Status ---
-	taggedFindings := status.Assign(rawFindings, base, exceptions, now, "gate")
-
-	// --- Stage 6: Metrics ---
-	mi := metrics.MetricInput{
-		Graph:           g,
-		Classifications: couplingIdx,
-		Findings:        taggedFindings,
-		Baseline:        base.Metrics,
-		ToolCoverage:    coverages,
-		FileChurn:       change.FileChurn,
-		CoChange:        change.CoChange,
-		FileLOC:         change.FileLOC,
-		Complexity:      change.Complexity,
-		SymbolGraph:     scipSymbols,
-		FitnessSignals:  change.FitnessSignals,
-		CloneClusters:   change.CloneClusters,
-		GitnexusImpact:  change.GitnexusImpact,
-		ChangedFiles:    s.Changed,
-	}
-	metricResults := make([]diagnostic.MetricResult, 0, len(ms))
-	for _, m := range ms {
-		metricResults = append(metricResults, m.Calculate(mi))
-	}
-
-	// --- Stage 7: Resolve evidence — module labels + severity join ---
-
+// resolveEvidence runs stage 7: join module labels and severity onto tagged findings.
+func resolveEvidence(
+	g *graph.Graph,
+	couplingIdx coupling.Index,
+	classifyCfg config.ClassifyConfig,
+	taggedFindings []finding.Finding,
+) evidenceResult {
 	// Build a path-pair → coupling.Classification lookup so we can join
 	// severity and module labels onto findings without re-importing coupling keys.
 	type pathPair struct{ from, to, kind string }
@@ -198,9 +309,15 @@ func Run(
 		resolvedFindings = append(resolvedFindings, f)
 	}
 
-	// --- Stage 8: Advisory findings ---
-	// Collect coupling advisories by walking edges in graph order (deterministic).
-	// Edges with Severity != "" and at or above the configured minimum severity are included.
+	return evidenceResult{resolvedFindings: resolvedFindings}
+}
+
+// collectAdvisories runs stage 8: coupling advisories, staleness advisories,
+// stale label advisories, and the advisory status pass.
+// staleLabelFnds is the slice produced by stage 3 (applyPinnedLabels).
+func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg config.ClassifyConfig, staleLabelFnds []finding.Finding, in RunInput) []finding.Finding {
+	mm := classifyCfg.ModuleMap
+
 	var advisoryFindings []finding.Finding
 	for _, e := range g.Edges() {
 		key := e.From + "\x00" + e.To + "\x00" + string(e.Kind)
@@ -236,88 +353,22 @@ func Run(
 		advisoryFindings = append(advisoryFindings, af)
 	}
 	// Append staleness advisories.
-	advisoryFindings = append(advisoryFindings, staleness.Check(g, stalenessCfg, now)...)
+	advisoryFindings = append(advisoryFindings, staleness.Check(g, in.Staleness, in.Now)...)
 
 	// Stale pinned labels were ignored during classification; advise re-enrich.
-	advisoryFindings = append(advisoryFindings, staleLabelFindings...)
+	advisoryFindings = append(advisoryFindings, staleLabelFnds...)
 
 	// Apply baseline and exception status to advisory findings.
 	// status.Assign also emits fixed gate findings; suppress those for the advisory pass
 	// by discarding any synthetic kind=="gate" entries it appends.
-	tagged := status.Assign(advisoryFindings, base, exceptions, now, "advisory")
+	tagged := status.Assign(advisoryFindings, in.Accepted, in.Exceptions, in.Now, "advisory")
 	advisoryFindings = advisoryFindings[:0]
 	for _, f := range tagged {
 		if f.Kind == kindAdvisory {
 			advisoryFindings = append(advisoryFindings, f)
 		}
 	}
-
-	// Gate findings: kind=="gate" and not already resolved (fixed findings don't block verdict or inflate count).
-	var gateFindings []finding.Finding
-	for _, f := range resolvedFindings {
-		if f.Kind == "gate" && f.Status != finding.StatusFixed {
-			gateFindings = append(gateFindings, f)
-		}
-	}
-
-	// Summary counts.
-	var exceptionsUsed int
-	for _, f := range resolvedFindings {
-		if f.Status == finding.StatusExcepted {
-			exceptionsUsed++
-		}
-	}
-	gateNew := 0
-	for _, f := range gateFindings {
-		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept {
-			gateNew++
-		}
-	}
-
-	verdict := computeVerdict(gateFindings, metricResults)
-
-	// Include advisory findings in Findings only when mode.Advisory is set.
-	// Advisory findings never affect the verdict or gate counts.
-	warnings := 0
-	if mode.Advisory {
-		resolvedFindings = append(resolvedFindings, advisoryFindings...)
-		warnings = countActive(advisoryFindings)
-	}
-
-	// Ensure non-nil slices.
-	if resolvedFindings == nil {
-		resolvedFindings = []finding.Finding{}
-	}
-	if metricResults == nil {
-		metricResults = []diagnostic.MetricResult{}
-	}
-	if coverages == nil {
-		coverages = []diagnostic.Coverage{}
-	}
-
-	// Neutral structural-facts block (Tranche 1.5): assembled from the symbol
-	// graph + change history, attached as report-only evidence. Never read by
-	// computeVerdict or any gate logic. Empty when SCIP is off/absent.
-	fileFacts := facts.Build(scipSymbols, change.FileLOC, change.CoChange, change.GitnexusImpact)
-
-	d := diagnostic.Diagnostic{
-		SchemaVersion: diagnostic.SchemaVersion,
-		Verdict:       verdict,
-		Base:          mode.Base,
-		Head:          mode.Head,
-		Metrics:       metricResults,
-		Findings:      resolvedFindings,
-		FileFacts:     fileFacts,
-		AgentTasks:    []diagnostic.AgentTask{},
-		ToolCoverage:  coverages,
-		Summary: diagnostic.Summary{
-			GateFindings:   gateNew,
-			Warnings:       warnings,
-			ExceptionsUsed: exceptionsUsed,
-		},
-	}
-
-	return d, nil
+	return advisoryFindings
 }
 
 // computeVerdict derives the overall verdict from gate findings and metric results.
@@ -355,7 +406,7 @@ func severityFor(strength, distance string) finding.Severity {
 // backing array, so they are visible to the caller).
 // Resolution rewrites barrel-file targets to real paths; SCIP strength sets a
 // per-edge StrengthHint (config public/internal globs still win in classify).
-func enrichEdges(ctx context.Context, sr SymbolResolver, scipStrength map[string]string, facts graph.Facts) {
+func enrichEdges(ctx context.Context, sr ports.SymbolResolver, scipStrength map[string]string, facts graph.Facts) {
 	for i, e := range facts.Edges {
 		fromFile := stripPrefix(e.From)
 		toPath := stripPrefix(e.To)
@@ -484,22 +535,4 @@ func PairEvidence(g *graph.Graph, mm config.ModuleMap, wanted map[string]struct{
 		evidence[key] = labels.HashItems(its)
 	}
 	return evidence
-}
-
-// toRulesPatternMatches converts engine.PatternMatch values to rules.PatternMatch values.
-// The rules package defines its own PatternMatch type to avoid an import cycle
-// (rules cannot import engine). The conversion maps the common fields.
-func toRulesPatternMatches(ms []PatternMatch) []rules.PatternMatch {
-	if len(ms) == 0 {
-		return nil
-	}
-	out := make([]rules.PatternMatch, len(ms))
-	for i, m := range ms {
-		out[i] = rules.PatternMatch{
-			File:  m.File,
-			Line:  m.Line,
-			Match: m.Text,
-		}
-	}
-	return out
 }

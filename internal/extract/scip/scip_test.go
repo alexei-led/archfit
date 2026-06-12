@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/extract/scip"
+	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -111,4 +111,4 @@ func TestResolve_DetectCalledOnce(t *testing.T) {
 }
 
 // Compile-time interface check.
-var _ engine.SymbolResolver = (*scip.Adapter)(nil)
+var _ ports.SymbolResolver = (*scip.Adapter)(nil)

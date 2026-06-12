@@ -25,16 +25,23 @@ const riskHubTopN = 5
 //	unset  → 1.00 (neutral — no explicit opinion)
 func volatilityBandMultiplier(band string) float64 {
 	switch band {
-	case "high":
+	case volBandHigh:
 		return 1.00
-	case "medium":
+	case volBandMedium:
 		return 0.66
-	case "low":
+	case volBandLow:
 		return 0.33
 	default:
 		return 1.0
 	}
 }
+
+// Volatility band values as authored in config (ModuleDef.Volatility).
+const (
+	volBandHigh   = "high"
+	volBandMedium = "medium"
+	volBandLow    = "low"
+)
 
 // moduleSurfaceBreadth computes, for each module, the count of that module's
 // own symbols that are referenced by at least one symbol from a different

@@ -7,21 +7,17 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
 // complexityThreshold is the cyclomatic complexity above which a function is a
 // hotspot (lizard's default warning level). Tunable; the metric is report-only.
 const complexityThreshold = 15
 
-// ComplexityFunc is one function's cyclomatic complexity, as measured by an
-// external multi-language tool (lizard). File is repo-relative.
-type ComplexityFunc struct {
-	File string
-	Name string
-	CCN  int
-	NLOC int
-	Line int
-}
+// ComplexityFunc is an alias for signal.ComplexityFunc. The type lives in
+// internal/model/signal; this alias keeps the metrics API stable so callers
+// need no import changes.
+type ComplexityFunc = signal.ComplexityFunc
 
 // ComplexityMetric reports the most cyclomatically-complex functions — the
 // intra-module signal that size (structural_weight) cannot see (a single giant

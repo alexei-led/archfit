@@ -5,14 +5,33 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/finding"
 )
 
+// AcceptedEntry is one accepted finding from a prior run: the fingerprint that
+// identifies it, the rule that produced it, and the finding kind (gate or
+// advisory; empty means "gate" for backward compatibility).
+type AcceptedEntry struct {
+	Fingerprint string
+	RuleID      string
+	Kind        string
+}
+
+// AcceptedSet is the read-only view of previously accepted findings that
+// status assignment needs. The persistence layer (internal/baseline)
+// implements it; status never touches storage concerns — the dependency
+// points outward-in.
+type AcceptedSet interface {
+	// HasFingerprint reports whether the fingerprint was accepted.
+	HasFingerprint(fingerprint string) bool
+	// Entries returns all accepted findings, in stored order.
+	Entries() []AcceptedEntry
+}
+
 // Assign labels each finding with its lifecycle status by comparing against the
-// baseline and exception set. It also emits a finding per accepted fingerprint
-// that is no longer present in the current run (status=fixed).
+// accepted set and exception set. It also emits a finding per accepted
+// fingerprint that is no longer present in the current run (status=fixed).
 //
 // forKind scopes fixed-finding emission: only baseline entries whose Kind field
 // matches forKind are emitted as fixed. Entries with an empty Kind field are
@@ -27,7 +46,7 @@ import (
 // now is the reference time for expiry checks; pass time.Now() in production.
 func Assign(
 	findings []finding.Finding,
-	base baseline.Baseline,
+	accepted AcceptedSet,
 	exceptions config.ExceptionSet,
 	now time.Time,
 	forKind string,
@@ -43,12 +62,12 @@ func Assign(
 	copy(out, findings)
 
 	for i := range out {
-		out[i].Status = assignOne(&out[i], base, exceptions, now)
+		out[i].Status = assignOne(&out[i], accepted, exceptions, now)
 	}
 
-	// Emit fixed findings only for baseline entries whose kind matches this pass.
-	// Empty Kind in the baseline means "gate" (backward compat).
-	for _, a := range base.Accepted {
+	// Emit fixed findings only for accepted entries whose kind matches this pass.
+	// Empty Kind in the entry means "gate" (backward compat).
+	for _, a := range accepted.Entries() {
 		if _, present := current[a.Fingerprint]; present {
 			continue
 		}
@@ -73,12 +92,12 @@ func Assign(
 // assignOne returns the status for a single finding.
 func assignOne(
 	f *finding.Finding,
-	base baseline.Baseline,
+	accepted AcceptedSet,
 	exceptions config.ExceptionSet,
 	now time.Time,
 ) finding.Status {
-	// 1. Baseline check.
-	if base.HasFingerprint(f.ID) {
+	// 1. Accepted-set check.
+	if accepted.HasFingerprint(f.ID) {
 		return finding.StatusBaseline
 	}
 

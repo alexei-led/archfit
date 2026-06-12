@@ -14,6 +14,8 @@ import (
 	"github.com/alexei-led/archfit/internal/engine"
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/model/signal"
+	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 )
@@ -90,21 +92,24 @@ func TestGolden_DoubleRun(t *testing.T) {
 		t.Helper()
 		diag, err := engine.Run(
 			context.Background(),
-			engine.Mode{Full: true},
-			s,
-			classifyCfg,
-			config.StalenessConfig{},
-			config.ExceptionSet{},
-			[]engine.Extractor{extractor},
-			engine.NopPatternProvider{},
-			engine.NopSymbolResolver{},
-			config.PatternConfig{},
-			rs,
-			ms,
-			base,
-			nil,
-			metrics.ChangeHistory{},
-			now,
+			engine.RunInput{
+				Mode:        engine.Mode{Full: true},
+				Scope:       s,
+				Classify:    classifyCfg,
+				Staleness:   config.StalenessConfig{},
+				Exceptions:  config.ExceptionSet{},
+				Extractors:  []ports.Extractor{extractor},
+				Patterns:    ports.NopPatternProvider{},
+				Resolver:    ports.NopSymbolResolver{},
+				PatternCfg:  config.PatternConfig{},
+				Rules:       rs,
+				Metrics:     ms,
+				Accepted:    base,
+				BaseMetrics: base.Metrics,
+				Labels:      nil,
+				Change:      signal.ChangeHistory{},
+				Now:         now,
+			},
 		)
 		if err != nil {
 			t.Fatalf("engine.Run: %v", err)

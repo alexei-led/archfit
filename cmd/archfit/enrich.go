@@ -18,11 +18,10 @@ import (
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/llm"
-	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
-	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/signal"
 
 	"github.com/goccy/go-yaml"
 )
@@ -40,11 +39,11 @@ type EnrichCmd struct {
 
 // captureMetric records the MetricInput so enrich can reuse the exact
 // pipeline evidence (graph, classifications) without re-implementing stages.
-type captureMetric struct{ in *metrics.MetricInput }
+type captureMetric struct{ in *signal.MetricInput }
 
 func (m *captureMetric) Name() string    { return "enrich_capture" }
 func (m *captureMetric) Version() string { return "enrich_capture.v0" }
-func (m *captureMetric) Calculate(in metrics.MetricInput) diagnostic.MetricResult {
+func (m *captureMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
 	*m.in = in
 	return diagnostic.MetricResult{Name: m.Name(), Band: "info", Display: "internal capture"}
 }
@@ -80,7 +79,7 @@ func (c *EnrichCmd) Run(deps *appDeps) error {
 	}
 
 	// Run the standard pipeline once, capturing the evidence the metrics saw.
-	var captured metrics.MetricInput
+	var captured signal.MetricInput
 	base, err := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
@@ -379,61 +378,4 @@ func writeLabels(path string, lbls []labels.Label) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
-}
-
-// explainSystemPrompt frames the finding narrative.
-const explainSystemPrompt = `You are an architecture reviewer applying Vlad Khononov's Balanced Coupling model (integration strength x distance x volatility).
-Given one architecture finding with its evidence, explain in under 200 words:
-1. why this coupling/violation matters (which dimension is imbalanced),
-2. the concrete risk if left as-is,
-3. a specific repair sketch consistent with the stated constraint.
-Plain prose, no headings, no lists, no code fences.`
-
-// explainNarrative appends an off-gate LLM narrative for one finding. The
-// deterministic explain output above it is already printed; this only adds
-// judgment on top — failures here never affect any verdict.
-func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, noCache bool, f finding.Finding, diag diagnostic.Diagnostic) error {
-	llmCfg, configured := cfg.LLM()
-	if !configured {
-		return &exitError{code: 3, msg: "error: --llm needs tools.llm configured (provider + model); see docs/guide/llm-enrich.md"}
-	}
-	provider, err := buildProvider(llmCfg)
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (see `archfit doctor`)", err)}
-	}
-	if !noCache {
-		provider = llm.NewCache(provider, filepath.Join(filepath.Dir(configPath), ".archfit-cache", "llm"))
-	}
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "Finding:\n  rule: %s\n  severity: %s\n  status: %s\n  edge: %s -> %s (%s)\n  modules: %s -> %s\n  why: %s\n  constraint: %s\n",
-		f.RuleID, f.Severity, f.Status, f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind,
-		f.Edge.From.Module, f.Edge.To.Module, f.Why, f.Constraint)
-	if strength, ok := f.MatchedBy["strength"]; ok {
-		fmt.Fprintf(&b, "  strength: %s  distance: %s\n", strength, f.MatchedBy["distance"])
-	}
-	for _, mod := range []string{f.Edge.From.Module, f.Edge.To.Module} {
-		fmt.Fprintf(&b, "%s", moduleFactLine(diag, mod))
-	}
-
-	resp, err := provider.Complete(ctx, llm.Request{System: explainSystemPrompt, User: b.String()})
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-	_, _ = fmt.Fprintf(deps.Stdout, "\nnarrative (%s, off-gate):\n%s\n", provider.Name(), strings.TrimSpace(resp.Text))
-	return nil
-}
-
-// moduleFactLine renders the structural facts of one module when present.
-func moduleFactLine(diag diagnostic.Diagnostic, module string) string {
-	if module == "" {
-		return ""
-	}
-	for _, ff := range diag.FileFacts {
-		if ff.Module == module {
-			return fmt.Sprintf("Module %s facts: inbound_fanin=%d outbound=%d loc=%d\n",
-				module, ff.InboundModuleFanIn, ff.OutboundDestinations, ff.LOC)
-		}
-	}
-	return ""
 }

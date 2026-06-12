@@ -1,4 +1,8 @@
-package engine
+// Package ports defines the hexagonal port interfaces that separate the engine
+// orchestrator from its adapters. Both the engine (consumer) and adapters
+// (producers/implementors) import this neutral package — neither imports the
+// other.
+package ports
 
 import (
 	"context"
@@ -7,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/scope"
 )
@@ -20,8 +25,8 @@ const statusAbsent = "absent"
 
 // Extractor is the port that language-specific adapters satisfy.
 // Each adapter runs a single-language extraction pipeline and returns
-// raw facts plus a coverage record. The engine defines this interface
-// (consumer-owns-interface principle); adapters in extract/* implement it.
+// raw facts plus a coverage record. The engine consumes this interface;
+// adapters in extract/* implement it.
 type Extractor interface {
 	// Name returns the language/tool name (e.g. "go", "typescript", "python").
 	Name() string
@@ -32,18 +37,8 @@ type Extractor interface {
 	Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error)
 }
 
-// PatternMatch is a single ast-grep structural match result.
-type PatternMatch struct {
-	File    string // repo-relative file path
-	Pattern string // pattern ID from PatternDef.ID
-	Text    string // matched source text
-	Node    string // syntax node kind (e.g. "call_expression")
-	Line    int    // 1-based line number
-	Column  int    // 0-based column offset
-}
-
 // PatternProvider is the port for structural pattern search (Phase 3: ast-grep).
-// The engine defines this interface; adapters in extract/astgrep implement it.
+// The engine consumes this interface; adapters in extract/astgrep implement it.
 //
 //go:generate moq -out pattern_provider_moq.go . PatternProvider
 type PatternProvider interface {
@@ -53,11 +48,11 @@ type PatternProvider interface {
 	// Find runs all patterns in c against the given scope and returns matches,
 	// a coverage record, and any hard error. A missing tool must not return an
 	// error — it returns empty matches and a coverage record with status="absent".
-	Find(ctx context.Context, s scope.Scope, c config.PatternConfig) ([]PatternMatch, diagnostic.Coverage, error)
+	Find(ctx context.Context, s scope.Scope, c config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error)
 }
 
 // SymbolResolver is the port for barrel-file / re-export resolution (Phase 3: SCIP).
-// The engine defines this interface; adapters in extract/scip implement it.
+// The engine consumes this interface; adapters in extract/scip implement it.
 //
 //go:generate moq -out symbol_resolver_moq.go . SymbolResolver
 type SymbolResolver interface {
@@ -95,7 +90,7 @@ var _ PatternProvider = NopPatternProvider{}
 func (NopPatternProvider) Name() string { return "nop-pattern" }
 
 // Find returns empty matches and an absent coverage record.
-func (NopPatternProvider) Find(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]PatternMatch, diagnostic.Coverage, error) {
+func (NopPatternProvider) Find(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
 	return nil, diagnostic.Coverage{Tool: "ast-grep", Status: statusAbsent}, nil
 }
 

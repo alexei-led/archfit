@@ -1,4 +1,4 @@
-// Package scip implements the engine.SymbolResolver port using SCIP indexers.
+// Package scip implements the ports.SymbolResolver port using SCIP indexers.
 //
 // # SCIP Go bindings availability
 //
@@ -26,7 +26,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/alexei-led/archfit/internal/engine"
+	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -40,7 +40,7 @@ const toolNameSymbols = "scip-symbols"
 // scipTools are the SCIP indexers checked in preference order.
 var scipTools = []string{indexerTS, indexerPython, indexerGo}
 
-// Adapter satisfies engine.SymbolResolver using SCIP indexers.
+// Adapter satisfies ports.SymbolResolver using SCIP indexers.
 // It detects available SCIP tools once (via sync.Once) and, when any are
 // present, is ready to run an indexer on first Resolve call.
 type Adapter struct {
@@ -55,7 +55,7 @@ type Adapter struct {
 	pipeCache map[string]pipeCacheEntry
 }
 
-var _ engine.SymbolResolver = (*Adapter)(nil)
+var _ ports.SymbolResolver = (*Adapter)(nil)
 
 // New returns an Adapter backed by the given runner.
 func New(runner toolrun.Runner) *Adapter {

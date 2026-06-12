@@ -24,6 +24,9 @@ var coreRingPkgs = []string{
 	modulePrefix + "internal/status",
 	modulePrefix + "internal/staleness",
 	modulePrefix + "internal/facts",
+	// scope is a value type + resolution logic over an injected Resolver;
+	// the concrete git/toolrun wiring lives in cmd. Keep it that way.
+	modulePrefix + "internal/scope",
 }
 
 // modelPkgs must not import anything outside the standard library (or each
@@ -35,11 +38,15 @@ var modelPkgs = []string{
 	modulePrefix + "internal/model/diagnostic",
 	modulePrefix + "internal/model/symbol",
 	modulePrefix + "internal/model/clone",
+	modulePrefix + "internal/model/pattern",
+	modulePrefix + "internal/model/signal",
 }
 
-// adapterPrefixes are adapter package paths that core ring packages must not
-// import.
+// adapterPrefixes are packages the core ring must never import — adapters AND
+// the orchestrator. Adapters depend on internal/ports, never the orchestrator.
 var adapterPrefixes = []string{
+	modulePrefix + "internal/engine",
+	modulePrefix + "internal/baseline",
 	modulePrefix + "internal/toolrun",
 	modulePrefix + "internal/extract/",
 	modulePrefix + "internal/history/",
@@ -115,6 +122,35 @@ func TestArchImports(t *testing.T) {
 			}
 			if _, imports := pkg.Imports[llmPkg]; imports {
 				t.Errorf("package %s must not import %s: the check gate is LLM-free; only cmd may use the LLM layer", pkgPath, llmPkg)
+			}
+		}
+	})
+
+	t.Run("adapters_no_engine_import", func(t *testing.T) {
+		// Adapters (toolrun, extract/*, history/*, output/*) must depend on
+		// internal/ports, never on the orchestrator (internal/engine). This
+		// ensures the hexagonal boundary: ports live in a neutral package that
+		// both adapters and the orchestrator can import without creating a cycle.
+		const enginePkg = modulePrefix + "internal/engine"
+		adapterPkgPrefixes := []string{
+			modulePrefix + "internal/toolrun",
+			modulePrefix + "internal/extract/",
+			modulePrefix + "internal/history/",
+			modulePrefix + "internal/output/",
+		}
+		for pkgPath, pkg := range loaded {
+			isAdapter := false
+			for _, prefix := range adapterPkgPrefixes {
+				if strings.HasPrefix(pkgPath, prefix) {
+					isAdapter = true
+					break
+				}
+			}
+			if !isAdapter {
+				continue
+			}
+			if _, imports := pkg.Imports[enginePkg]; imports {
+				t.Errorf("adapter package %s must not import %s: use internal/ports instead", pkgPath, enginePkg)
 			}
 		}
 	})

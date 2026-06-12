@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/fitness"
 	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
 // Evidence-map key constants — must match the category names used by the
@@ -28,11 +28,11 @@ const (
 	bandInfoStr = "info"
 )
 
-// makeSignals builds a fitness.Signals from explicit booleans.
+// makeSignals builds a signal.Signals from explicit booleans.
 // The EvidencePaths map is always non-nil (as Detect always initialises it),
 // representing "scan ran" — even if no signals are present.
-func makeSignals(archTests, importLinter, ciLinter bool) fitness.Signals {
-	ep := fitness.EvidenceMap{
+func makeSignals(archTests, importLinter, ciLinter bool) signal.Signals {
+	ep := signal.EvidenceMap{
 		catArchTestFiles:  nil,
 		catImportLinter:   nil,
 		catArchLinterInCI: nil,
@@ -46,7 +46,7 @@ func makeSignals(archTests, importLinter, ciLinter bool) fitness.Signals {
 	if ciLinter {
 		ep[catArchLinterInCI] = []string{".github/workflows/ci.yml"}
 	}
-	return fitness.Signals{
+	return signal.Signals{
 		ArchTestFiles:      archTests,
 		ImportLinterConfig: importLinter,
 		ArchLinterInCI:     ciLinter,
@@ -59,7 +59,7 @@ func TestArchitectureFitnessMetric_Calculate(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		signals         fitness.Signals
+		signals         signal.Signals
 		wantBand        string
 		wantNA          bool
 		wantValueApprox float64  // expected value (within 0.01)
@@ -67,7 +67,7 @@ func TestArchitectureFitnessMetric_Calculate(t *testing.T) {
 	}{
 		{
 			name:     "n/a when scan never ran (nil EvidencePaths)",
-			signals:  fitness.Signals{}, // zero value: EvidencePaths == nil
+			signals:  signal.Signals{}, // zero value: EvidencePaths == nil
 			wantNA:   true,
 			wantBand: bandNAStr,
 		},
@@ -151,12 +151,12 @@ func TestArchitectureFitnessMetric_Calculate(t *testing.T) {
 func TestArchitectureFitnessMetric_EvidencePathsInDisplay(t *testing.T) {
 	m := metrics.ArchitectureFitnessMetric{}
 
-	ep := fitness.EvidenceMap{
+	ep := signal.EvidenceMap{
 		catArchTestFiles:  []string{"internal/arch_test.go", "internal/layer_test.go"},
 		catImportLinter:   nil,
 		catArchLinterInCI: nil,
 	}
-	sig := fitness.Signals{
+	sig := signal.Signals{
 		ArchTestFiles: true,
 		EvidencePaths: ep,
 	}
@@ -176,12 +176,12 @@ func TestArchitectureFitnessMetric_TruncatesLongEvidenceLists(t *testing.T) {
 	m := metrics.ArchitectureFitnessMetric{}
 
 	paths := []string{"a_test.go", "b_test.go", "c_test.go", "d_test.go", "e_test.go"}
-	ep := fitness.EvidenceMap{
+	ep := signal.EvidenceMap{
 		catArchTestFiles:  paths,
 		catImportLinter:   nil,
 		catArchLinterInCI: nil,
 	}
-	sig := fitness.Signals{ArchTestFiles: true, EvidencePaths: ep}
+	sig := signal.Signals{ArchTestFiles: true, EvidencePaths: ep}
 	result := m.Calculate(metrics.MetricInput{FitnessSignals: sig})
 
 	if !strings.Contains(result.Display, "+2 more") {

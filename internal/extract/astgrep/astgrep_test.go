@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/extract/astgrep"
+	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -275,4 +275,4 @@ func TestAdapter_Name(t *testing.T) {
 }
 
 // Compile-time interface check.
-var _ engine.PatternProvider = (*astgrep.Adapter)(nil)
+var _ ports.PatternProvider = (*astgrep.Adapter)(nil)

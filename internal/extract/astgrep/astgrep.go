@@ -1,4 +1,4 @@
-// Package astgrep implements the engine.PatternProvider port for ast-grep.
+// Package astgrep implements the ports.PatternProvider port for ast-grep.
 // It shells out to the "sg" binary and parses its JSON output.
 // If "sg" is absent and mode is ModeAuto, Find returns empty matches with
 // coverage status "absent" — it never returns an error for a missing tool.
@@ -11,8 +11,9 @@ import (
 	"slices"
 
 	"github.com/alexei-led/archfit/internal/config"
-	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/pattern"
+	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -20,7 +21,7 @@ import (
 // toolName is the coverage/name identifier for this adapter.
 const toolName = "ast-grep"
 
-// Adapter satisfies engine.PatternProvider using the "sg" (ast-grep) binary.
+// Adapter satisfies ports.PatternProvider using the "sg" (ast-grep) binary.
 type Adapter struct {
 	runner toolrun.Runner
 }
@@ -58,14 +59,14 @@ type dedupeKey struct {
 // Find runs all patterns against the given scope and returns deduplicated,
 // sorted matches plus a Coverage record. A missing "sg" binary returns empty
 // matches with status "absent" — never an error.
-func (a *Adapter) Find(ctx context.Context, s scope.Scope, c config.PatternConfig) ([]engine.PatternMatch, diagnostic.Coverage, error) {
+func (a *Adapter) Find(ctx context.Context, s scope.Scope, c config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
 	_, ok := a.runner.Detect(ctx, "sg")
 	if !ok {
 		return nil, diagnostic.Coverage{Tool: toolName, Status: "absent"}, nil
 	}
 
 	seen := make(map[dedupeKey]struct{})
-	var matches []engine.PatternMatch
+	var matches []pattern.Match
 	fileSet := make(map[string]struct{})
 
 	for _, def := range c {
@@ -95,7 +96,7 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c config.PatternConfi
 			}
 			seen[k] = struct{}{}
 			fileSet[m.File] = struct{}{}
-			matches = append(matches, engine.PatternMatch{
+			matches = append(matches, pattern.Match{
 				File:    m.File,
 				Pattern: def.ID,
 				Text:    m.Text,
@@ -107,7 +108,7 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c config.PatternConfi
 	}
 
 	// Sort by (file, line) for deterministic output.
-	slices.SortFunc(matches, func(a, b engine.PatternMatch) int {
+	slices.SortFunc(matches, func(a, b pattern.Match) int {
 		if a.File != b.File {
 			if a.File < b.File {
 				return -1
@@ -124,3 +125,6 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c config.PatternConfi
 	}
 	return matches, cov, nil
 }
+
+// Compile-time interface check.
+var _ ports.PatternProvider = (*Adapter)(nil)

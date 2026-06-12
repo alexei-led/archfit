@@ -2,41 +2,57 @@ package scope_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/scope"
-	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
-func newMockRunner(runFunc func(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error)) *toolrun.RunnerMock {
-	return &toolrun.RunnerMock{
-		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
-			return toolrun.ToolInfo{Name: "git", Path: "/usr/bin/git"}, true
-		},
-		RunFunc: runFunc,
+const fakeRoot = "/fake/root"
+
+// fakeResolver is an in-memory scope.Resolver — scope tests need no git
+// repo and no process runner.
+type fakeResolver struct {
+	root    string
+	head    string
+	changed []string
+	err     error
+}
+
+func (f fakeResolver) RepoRoot(_ context.Context) (string, error) {
+	if f.err != nil {
+		return "", f.err
 	}
+	return f.root, nil
+}
+
+func (f fakeResolver) HeadRef(_ context.Context) (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	return f.head, nil
+}
+
+func (f fakeResolver) Changed(_ context.Context, _, _ string) ([]string, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.changed, nil
 }
 
 func TestResolve_Full(t *testing.T) {
-	mock := newMockRunner(func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
-		for _, a := range cmd.Args {
-			if a == "--show-toplevel" {
-				return toolrun.Output{Stdout: []byte("/fake/root\n")}, nil
-			}
-		}
-		return toolrun.Output{}, nil
-	})
+	r := fakeResolver{root: fakeRoot}
 
-	s, err := scope.Resolve(context.Background(), config.ScopeConfig{Full: true}, mock)
+	s, err := scope.Resolve(context.Background(), config.ScopeConfig{Full: true}, r)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if s.Mode != scope.ModeFull {
 		t.Errorf("mode: got %q, want %q", s.Mode, scope.ModeFull)
 	}
-	if s.Root != "/fake/root" {
-		t.Errorf("root: got %q, want %q", s.Root, "/fake/root")
+	if s.Root != fakeRoot {
+		t.Errorf("root: got %q, want %q", s.Root, fakeRoot)
 	}
 	if len(s.Changed) != 0 {
 		t.Errorf("changed: expected empty, got %v", s.Changed)
@@ -44,29 +60,19 @@ func TestResolve_Full(t *testing.T) {
 }
 
 func TestResolve_Delta(t *testing.T) {
-	mock := newMockRunner(func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
-		for _, a := range cmd.Args {
-			if a == "--show-toplevel" {
-				return toolrun.Output{Stdout: []byte("/fake/root\n")}, nil
-			}
-		}
-		// rev-parse HEAD: last arg is "HEAD"
-		if len(cmd.Args) > 0 && cmd.Args[len(cmd.Args)-1] == "HEAD" {
-			return toolrun.Output{Stdout: []byte("abc123\n")}, nil
-		}
-		// diff --name-only
-		return toolrun.Output{Stdout: []byte("z.go\na.go\n")}, nil
-	})
+	// Changed files arrive unsorted: Resolve must sort them — the
+	// determinism contract does not depend on resolver discipline.
+	r := fakeResolver{root: fakeRoot, head: "abc123", changed: []string{"z.go", "a.go"}}
 
-	s, err := scope.Resolve(context.Background(), config.ScopeConfig{Base: "main"}, mock)
+	s, err := scope.Resolve(context.Background(), config.ScopeConfig{Base: "main"}, r)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if s.Mode != scope.ModeDelta {
 		t.Errorf("mode: got %q, want %q", s.Mode, scope.ModeDelta)
 	}
-	if s.Root != "/fake/root" {
-		t.Errorf("root: got %q, want %q", s.Root, "/fake/root")
+	if s.Root != fakeRoot {
+		t.Errorf("root: got %q, want %q", s.Root, fakeRoot)
 	}
 	if s.Head != "abc123" {
 		t.Errorf("head: got %q, want %q", s.Head, "abc123")
@@ -82,12 +88,10 @@ func TestResolve_Delta(t *testing.T) {
 	}
 }
 
-func TestResolve_MissingGit(t *testing.T) {
-	mock := newMockRunner(func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
-		return toolrun.Output{ExitCode: 128, Stderr: []byte("not a git repo")}, nil
-	})
+func TestResolve_ResolverError(t *testing.T) {
+	r := fakeResolver{err: errors.New("not a git repo")}
 
-	_, err := scope.Resolve(context.Background(), config.ScopeConfig{Full: true}, mock)
+	_, err := scope.Resolve(context.Background(), config.ScopeConfig{Full: true}, r)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

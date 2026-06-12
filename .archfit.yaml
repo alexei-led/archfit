@@ -8,10 +8,10 @@ bc_advisory_min_severity: medium
 # forbidden_layer_direction fires when fromRank < toRank (inner imports outer).
 layers:
   - model # rank 0: pure value types, stdlib only
-  - support # rank 1: config, baseline
+  - support # rank 1: config, scope
   - core # rank 2: classify, rules, metrics, status
   - engine # rank 3: orchestration pipeline
-  - adapter # rank 4: scope, toolrun, extractors, renderers, git
+  - adapter # rank 4: baseline, toolrun, extractors, renderers, git
   - cmd # rank 5: composition root
 modules:
   model:
@@ -39,7 +39,9 @@ modules:
       - internal/baseline/**
     public:
       - internal/baseline
-    layer: support
+    # Persistence (reads/writes the baseline file) — adapter, not support.
+    # status consumes it through the status.AcceptedSet interface.
+    layer: adapter
     subdomain: supporting
     volatility: low
   classify:
@@ -87,7 +89,9 @@ modules:
       - internal/scope/**
     public:
       - internal/scope
-    layer: adapter
+    # Value type + resolution over an injected Resolver; the concrete git
+    # calls live in cmd. Support-tier since the decoupling refactor.
+    layer: support
     subdomain: supporting
     volatility: low
   toolrun:
@@ -211,9 +215,14 @@ rules:
     from: internal/model/**
     to: internal/baseline
     gate: fail
-  # Layer direction — engine→scope is a known architectural tension:
-  # engine uses scope.Scope as a value type but scope lives at adapter layer.
-  # Flagged as warn to document this. Phase 2: move Scope to model.
+  # Hexagonal boundary: adapters must depend on ports, not the orchestrator.
+  - id: extract_no_engine
+    type: forbidden_dependency
+    from: internal/extract/**
+    to: internal/engine/**
+    gate: fail
+  # Layer direction guard. The historical engine→scope inversion was
+  # resolved by decoupling scope from git and reclassifying it as support.
   - id: layer_inversion
     type: forbidden_layer_direction
     gate: warn

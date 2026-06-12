@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/status"
 )
 
 // SchemaVersion is the fixed schema_version value for baseline files.
@@ -42,6 +43,23 @@ func (b Baseline) HasFingerprint(fingerprint string) bool {
 	}
 	return false
 }
+
+// Entries returns the accepted findings as status entries, satisfying
+// status.AcceptedSet. The dependency points outward-in: the persistence
+// layer adapts to the core's interface, never the reverse.
+func (b Baseline) Entries() []status.AcceptedEntry {
+	out := make([]status.AcceptedEntry, 0, len(b.Accepted))
+	for _, a := range b.Accepted {
+		out = append(out, status.AcceptedEntry{
+			Fingerprint: a.Fingerprint,
+			RuleID:      a.RuleID,
+			Kind:        a.Kind,
+		})
+	}
+	return out
+}
+
+var _ status.AcceptedSet = Baseline{}
 
 // Load reads the baseline from path. If the file does not exist, it returns an
 // empty Baseline (not an error). If the file exists but has a mismatched

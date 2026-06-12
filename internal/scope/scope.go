@@ -5,10 +5,9 @@ package scope
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/alexei-led/archfit/internal/config"
-	git "github.com/alexei-led/archfit/internal/history/git"
-	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
 // ScopeMode distinguishes full-repo analysis from delta (diff-based) analysis.
@@ -40,13 +39,27 @@ type Scope struct {
 	Mode ScopeMode
 }
 
+// Resolver supplies the version-control queries scope resolution needs.
+// cmd wires the concrete git implementation; tests use an in-memory fake.
+// scope itself stays free of process and tool dependencies.
+type Resolver interface {
+	// RepoRoot returns the absolute repository root.
+	RepoRoot(ctx context.Context) (string, error)
+	// HeadRef returns the resolved HEAD SHA.
+	HeadRef(ctx context.Context) (string, error)
+	// Changed returns the repo-relative files changed between base and head.
+	Changed(ctx context.Context, base, head string) ([]string, error)
+}
+
 // Resolve determines the Scope for a run.
 //
-// It always resolves the repo root via git; a missing git binary is a hard
-// error (exit 3). If cfg.Full is true the result has Mode=full and no Changed
-// files. Otherwise it calls git.HeadRef and git.Changed to populate the delta.
-func Resolve(ctx context.Context, cfg config.ScopeConfig, runner toolrun.Runner) (Scope, error) {
-	root, err := git.RepoRoot(ctx, cfg.WorkDir, runner)
+// It always resolves the repo root via the Resolver; a failing resolver is a
+// hard error (exit 3). If cfg.Full is true the result has Mode=full and no
+// Changed files. Otherwise HeadRef and Changed populate the delta. Changed
+// files are sorted here so scope's determinism contract does not depend on
+// resolver discipline.
+func Resolve(ctx context.Context, cfg config.ScopeConfig, r Resolver) (Scope, error) {
+	root, err := r.RepoRoot(ctx)
 	if err != nil {
 		return Scope{}, fmt.Errorf("scope: resolve repo root: %w", err)
 	}
@@ -58,20 +71,21 @@ func Resolve(ctx context.Context, cfg config.ScopeConfig, runner toolrun.Runner)
 		}, nil
 	}
 
-	head, err := git.HeadRef(ctx, cfg.WorkDir, runner)
+	head, err := r.HeadRef(ctx)
 	if err != nil {
 		return Scope{}, fmt.Errorf("scope: resolve HEAD: %w", err)
 	}
 
-	cs, err := git.Changed(ctx, cfg.WorkDir, cfg.Base, head, runner)
+	changed, err := r.Changed(ctx, cfg.Base, head)
 	if err != nil {
 		return Scope{}, fmt.Errorf("scope: resolve changed files: %w", err)
 	}
+	sort.Strings(changed)
 
 	return Scope{
 		Base:    cfg.Base,
 		Head:    head,
-		Changed: cs.Files,
+		Changed: changed,
 		Root:    root,
 		Mode:    ModeDelta,
 	}, nil

@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
@@ -19,6 +18,21 @@ const (
 	kindGate     = "gate"
 	kindAdvisory = "advisory"
 )
+
+// fakeAccepted is an in-memory status.AcceptedSet — status tests exercise the
+// interface seam, not the baseline persistence type.
+type fakeAccepted []status.AcceptedEntry
+
+func (f fakeAccepted) HasFingerprint(fp string) bool {
+	for _, e := range f {
+		if e.Fingerprint == fp {
+			return true
+		}
+	}
+	return false
+}
+
+func (f fakeAccepted) Entries() []status.AcceptedEntry { return f }
 
 // makeEdge returns a graph.Edge with the standard test from/to node IDs and uses_internal kind.
 func makeEdge() graph.Edge {
@@ -39,7 +53,7 @@ func TestAssign_NewFinding(t *testing.T) {
 
 	result := status.Assign(
 		[]finding.Finding{f},
-		baseline.Baseline{},
+		fakeAccepted{},
 		config.ExceptionSet{},
 		time.Now(),
 		kindGate,
@@ -56,11 +70,8 @@ func TestAssign_NewFinding(t *testing.T) {
 func TestAssign_BaselineFinding(t *testing.T) {
 	f := makeFindings(makeEdge())
 
-	base := baseline.Baseline{
-		SchemaVersion: baseline.SchemaVersion,
-		Accepted: []baseline.AcceptedFinding{
-			{Fingerprint: f.ID, RuleID: testRuleID, Kind: kindGate},
-		},
+	base := fakeAccepted{
+		{Fingerprint: f.ID, RuleID: testRuleID, Kind: kindGate},
 	}
 
 	result := status.Assign(
@@ -97,7 +108,7 @@ func TestAssign_ActiveException(t *testing.T) {
 
 	result := status.Assign(
 		[]finding.Finding{f},
-		baseline.Baseline{},
+		fakeAccepted{},
 		exceptions,
 		time.Now(),
 		kindGate,
@@ -129,7 +140,7 @@ func TestAssign_ExpiredException(t *testing.T) {
 
 	result := status.Assign(
 		[]finding.Finding{f},
-		baseline.Baseline{},
+		fakeAccepted{},
 		exceptions,
 		time.Now(),
 		kindGate,
@@ -145,11 +156,8 @@ func TestAssign_ExpiredException(t *testing.T) {
 
 func TestAssign_FixedFinding(t *testing.T) {
 	// Baseline references a gate fingerprint that is NOT in the current findings.
-	base := baseline.Baseline{
-		SchemaVersion: baseline.SchemaVersion,
-		Accepted: []baseline.AcceptedFinding{
-			{Fingerprint: testFP, RuleID: testRuleID, Kind: kindGate},
-		},
+	base := fakeAccepted{
+		{Fingerprint: testFP, RuleID: testRuleID, Kind: kindGate},
 	}
 
 	// No current findings.
@@ -178,12 +186,9 @@ func TestAssign_FixedFinding(t *testing.T) {
 func TestAssign_FixedFindingKindFilter(t *testing.T) {
 	// Baseline has both gate and advisory entries; only gate should be emitted as fixed
 	// when forKind==kindGate, and vice versa.
-	base := baseline.Baseline{
-		SchemaVersion: baseline.SchemaVersion,
-		Accepted: []baseline.AcceptedFinding{
-			{Fingerprint: testFP, RuleID: testRuleID, Kind: kindGate},
-			{Fingerprint: "aabbccddaabbccddaabbccddaabbccdd", RuleID: "bc/imbalanced_coupling", Kind: kindAdvisory},
-		},
+	base := fakeAccepted{
+		{Fingerprint: testFP, RuleID: testRuleID, Kind: kindGate},
+		{Fingerprint: "aabbccddaabbccddaabbccddaabbccdd", RuleID: "bc/imbalanced_coupling", Kind: kindAdvisory},
 	}
 
 	gateResult := status.Assign([]finding.Finding{}, base, config.ExceptionSet{}, time.Now(), kindGate)
@@ -240,7 +245,7 @@ func TestAssign_ExpiryBoundary(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			result := status.Assign(
 				[]finding.Finding{f},
-				baseline.Baseline{},
+				fakeAccepted{},
 				exceptions,
 				tc.now,
 				kindGate,

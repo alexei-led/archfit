@@ -15,21 +15,14 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/pattern"
 )
-
-// PatternMatch is a single ast-grep structural match, provided by the engine's
-// PatternProvider. Empty when ast-grep is absent.
-type PatternMatch struct {
-	File  string
-	Line  int
-	Match string
-}
 
 // Evidence carries supplemental evidence provided to a rule's Check method.
 // Lifecycle status (new vs baselined) is NOT evidence — it is assigned after
 // rules run, by status.Assign against the baseline.
 type Evidence struct {
-	PatternMatches []PatternMatch
+	PatternMatches []pattern.Match
 }
 
 // Rule is the interface implemented by every built-in and user-defined rule.
