@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -29,7 +29,7 @@ var lizardExcludes = []string{
 // (archfit is a meta-linter, not a reimplementation): it is found on PATH, else
 // via `uvx lizard`. Best-effort: if neither is available or the run fails, returns
 // nil so the complexity metric reports n/a.
-func complexityFuncs(ctx context.Context, runner toolrun.Runner, root string) []metrics.ComplexityFunc {
+func complexityFuncs(ctx context.Context, runner toolrun.Runner, root string) []signal.ComplexityFunc {
 	name, pre := lizardCommand(ctx, runner)
 	if name == "" {
 		return nil
@@ -58,10 +58,10 @@ func lizardCommand(ctx context.Context, runner toolrun.Runner) (name string, pre
 
 // parseLizardCSV parses lizard --csv output into ComplexityFunc records. Columns:
 // nloc, ccn, token, param, length, location, file, function, long_name, start, end.
-func parseLizardCSV(data []byte, root string) []metrics.ComplexityFunc {
+func parseLizardCSV(data []byte, root string) []signal.ComplexityFunc {
 	r := csv.NewReader(strings.NewReader(string(data)))
 	r.FieldsPerRecord = -1
-	var out []metrics.ComplexityFunc
+	var out []signal.ComplexityFunc
 	for {
 		rec, err := r.Read()
 		if errors.Is(err, io.EOF) {
@@ -80,7 +80,7 @@ func parseLizardCSV(data []byte, root string) []metrics.ComplexityFunc {
 		if rel, rerr := filepath.Rel(root, file); rerr == nil {
 			file = rel
 		}
-		out = append(out, metrics.ComplexityFunc{
+		out = append(out, signal.ComplexityFunc{
 			File: filepath.ToSlash(file), Name: rec[7], CCN: ccn, NLOC: nloc, Line: line,
 		})
 	}

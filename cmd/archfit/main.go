@@ -32,6 +32,7 @@ import (
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
@@ -213,7 +214,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// volatility (unbalanced_edge, BC severity) and the modularity metrics
 	// (change_amplification, hidden_coupling). Hand-authored volatility/subdomain
 	// config always wins; a non-git repo leaves these signals empty.
-	change := metrics.ChangeHistory{}
+	change := signal.ChangeHistory{}
 	if churn, coChange, _, herr := git.History(ctx, s.Root, deps.Runner); herr == nil {
 		cfg.ApplyVolatility(config.DeriveVolatility(cfg.Modules, churn))
 		change.FileChurn, change.CoChange = churn, coChange

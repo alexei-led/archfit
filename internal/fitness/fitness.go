@@ -1,6 +1,6 @@
 // Package fitness detects architecture-intent ENFORCEMENT signals in a repository.
 //
-// Detect performs a deterministic filesystem scan and returns a Signals struct
+// Detect performs a deterministic filesystem scan and returns a signal.Signals struct
 // describing which enforcement mechanisms are present. It reads only the
 // filesystem under root; no network access, no subprocesses.
 package fitness
@@ -11,35 +11,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
-// Signals carries the result of an architecture-fitness scan.
-// Each boolean indicates whether a category of enforcement is present.
-// EvidencePaths records the matched file paths for explainability.
-type Signals struct {
-	// ArchTestFiles is true when test files indicate architecture rule
-	// enforcement (name contains arch/import-cycle patterns, or content
-	// imports a known arch-test library).
-	ArchTestFiles bool
-
-	// ImportLinterConfig is true when an import-linter configuration file
-	// is present (.importlinter, setup.cfg with [importlinter] section, or
-	// pyproject.toml with [tool.importlinter] section).
-	ImportLinterConfig bool
-
-	// ArchLinterInCI is true when a CI workflow file references a known
-	// architecture-linting tool (archfit, import-linter, deptry,
-	// dependency-cruiser, or goda).
-	ArchLinterInCI bool
-
-	// EvidencePaths is the list of matched file paths, grouped by category.
-	EvidencePaths EvidenceMap
-}
-
-// EvidenceMap maps signal category names to the matching file paths.
-type EvidenceMap map[string][]string
-
-// category constants used as keys in EvidenceMap.
+// category constants used as keys in signal.EvidenceMap.
 const (
 	catArchTestFiles  = "arch_test_files"
 	catImportLinter   = "import_linter_config"
@@ -70,12 +46,12 @@ var ciArchTools = []string{
 }
 
 // Detect scans the directory tree rooted at root for architecture-intent
-// enforcement signals and returns a populated Signals struct.
+// enforcement signals and returns a populated signal.Signals struct.
 //
 // Absent or unreadable files are silently skipped. Detect never returns an
 // error; missing signals are represented as false booleans and empty evidence.
-func Detect(root string) Signals {
-	evidence := EvidenceMap{
+func Detect(root string) signal.Signals {
+	evidence := signal.EvidenceMap{
 		catArchTestFiles:  nil,
 		catImportLinter:   nil,
 		catArchLinterInCI: nil,
@@ -85,7 +61,7 @@ func Detect(root string) Signals {
 	detectImportLinterConfig(root, evidence)
 	detectArchLinterInCI(root, evidence)
 
-	return Signals{
+	return signal.Signals{
 		ArchTestFiles:      len(evidence[catArchTestFiles]) > 0,
 		ImportLinterConfig: len(evidence[catImportLinter]) > 0,
 		ArchLinterInCI:     len(evidence[catArchLinterInCI]) > 0,
@@ -95,7 +71,7 @@ func Detect(root string) Signals {
 
 // detectArchTestFiles walks the tree looking for test files whose names suggest
 // architecture rules, or whose content imports a known arch-test library.
-func detectArchTestFiles(root string, evidence EvidenceMap) {
+func detectArchTestFiles(root string, evidence signal.EvidenceMap) {
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return skipVendorAndHidden(d)
@@ -166,7 +142,7 @@ func fileContainsArchTestImport(path string) bool {
 
 // detectImportLinterConfig checks for the three standard import-linter
 // configuration locations.
-func detectImportLinterConfig(root string, evidence EvidenceMap) {
+func detectImportLinterConfig(root string, evidence signal.EvidenceMap) {
 	// 1. Standalone .importlinter file anywhere in the tree.
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -194,7 +170,7 @@ func detectImportLinterConfig(root string, evidence EvidenceMap) {
 
 // detectArchLinterInCI scans .github/workflows/*.yml and *.yaml for references
 // to known architecture-linting tools.
-func detectArchLinterInCI(root string, evidence EvidenceMap) {
+func detectArchLinterInCI(root string, evidence signal.EvidenceMap) {
 	workflowDirs := []string{
 		filepath.Join(root, ".github", "workflows"),
 		filepath.Join(root, ".gitlab-ci.yml"),

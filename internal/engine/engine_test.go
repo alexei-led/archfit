@@ -15,6 +15,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/pattern"
+	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
@@ -163,7 +164,7 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 		ms,
 		base,
 		nil,
-		metrics.ChangeHistory{},
+		signal.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -240,7 +241,7 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 		ms,
 		base,
 		nil,
-		metrics.ChangeHistory{},
+		signal.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -293,7 +294,7 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		ms,
 		base,
 		nil,
-		metrics.ChangeHistory{},
+		signal.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -360,7 +361,7 @@ func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 		ms,
 		base,
 		nil,
-		metrics.ChangeHistory{},
+		signal.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -410,7 +411,7 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 		ms,
 		base,
 		nil,
-		metrics.ChangeHistory{},
+		signal.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -473,7 +474,7 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 		ms,
 		base,
 		nil,
-		metrics.ChangeHistory{},
+		signal.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -547,7 +548,7 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 		ms,
 		base,
 		nil,
-		metrics.ChangeHistory{},
+		signal.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -615,7 +616,7 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 		ms,
 		base,
 		nil,
-		metrics.ChangeHistory{},
+		signal.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -637,12 +638,12 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 
 // spyMetric is a test-only metrics.Metric that captures the MetricInput it receives.
 type spyMetric struct {
-	captured *metrics.MetricInput
+	captured *signal.MetricInput
 }
 
 func (s *spyMetric) Name() string    { return "spy" }
 func (s *spyMetric) Version() string { return "spy.v1" }
-func (s *spyMetric) Calculate(in metrics.MetricInput) diagnostic.MetricResult {
+func (s *spyMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
 	*s.captured = in
 	return diagnostic.MetricResult{Name: s.Name(), Version: s.Version(), Band: "n/a"}
 }
@@ -678,7 +679,7 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 		},
 	}
 
-	var captured metrics.MetricInput
+	var captured signal.MetricInput
 	spy := &spyMetric{captured: &captured}
 
 	classifyCfg, rs := cannedConfig()
@@ -699,7 +700,7 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 		[]metrics.Metric{spy},
 		baseline.Baseline{},
 		nil,
-		metrics.ChangeHistory{},
+		signal.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -729,7 +730,7 @@ func TestRun_SymbolGraph_EmptyWhenNopResolver(t *testing.T) {
 		},
 	}
 
-	var captured metrics.MetricInput
+	var captured signal.MetricInput
 	spy := &spyMetric{captured: &captured}
 
 	classifyCfg, rs := cannedConfig()
@@ -750,7 +751,7 @@ func TestRun_SymbolGraph_EmptyWhenNopResolver(t *testing.T) {
 		[]metrics.Metric{spy},
 		baseline.Baseline{},
 		nil,
-		metrics.ChangeHistory{},
+		signal.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -796,7 +797,7 @@ func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
 
 	classifyCfg, rs := cannedConfig()
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
-	change := metrics.ChangeHistory{
+	change := signal.ChangeHistory{
 		FileLOC:  map[string]int{pathFileA: 100, pathFileB: 40},
 		CoChange: map[[2]string]int{{pathFileA, pathFileB}: 5},
 	}
@@ -869,7 +870,7 @@ func TestRun_FileFacts_EmptyWhenNopResolver(t *testing.T) {
 		nil,
 		baseline.Baseline{},
 		nil,
-		metrics.ChangeHistory{},
+		signal.ChangeHistory{},
 		now,
 	)
 	if err != nil {
@@ -917,7 +918,7 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 			ctx, engine.Mode{Head: headRef}, scope.Scope{Root: "."},
 			classifyCfg, config.StalenessConfig{}, config.ExceptionSet{},
 			[]ports.Extractor{ex}, ports.NopPatternProvider{}, ports.NopSymbolResolver{},
-			config.PatternConfig{}, rs, nil, base, nil, metrics.ChangeHistory{}, now,
+			config.PatternConfig{}, rs, nil, base, nil, signal.ChangeHistory{}, now,
 		)
 		if err != nil {
 			t.Fatalf("Run: %v", err)
@@ -988,16 +989,16 @@ func TestRun_PinnedLabels(t *testing.T) {
 	// The engine hashes "fromPath\x00toPath\x00kind" per edge of the pair.
 	freshHash := labels.HashItems([]string{pathFileA + "\x00" + pathFileBAPIService + "\x00imports"})
 
-	run := func(lbls []labels.Label) (diagnostic.Diagnostic, metrics.MetricInput) {
+	run := func(lbls []labels.Label) (diagnostic.Diagnostic, signal.MetricInput) {
 		t.Helper()
-		var captured metrics.MetricInput
+		var captured signal.MetricInput
 		spy := &spyMetric{captured: &captured}
 		d, err := engine.Run(
 			ctx, engine.Mode{Head: headRef, Advisory: true}, scope.Scope{Root: "."},
 			cfg.ForClassify(), config.StalenessConfig{}, config.ExceptionSet{},
 			[]ports.Extractor{ex}, ports.NopPatternProvider{}, ports.NopSymbolResolver{},
 			config.PatternConfig{}, rules.New(cfg.ForRules()), []metrics.Metric{spy},
-			baseline.Baseline{}, lbls, metrics.ChangeHistory{}, now,
+			baseline.Baseline{}, lbls, signal.ChangeHistory{}, now,
 		)
 		if err != nil {
 			t.Fatalf("Run: %v", err)
@@ -1005,7 +1006,7 @@ func TestRun_PinnedLabels(t *testing.T) {
 		return d, captured
 	}
 
-	edgeStrength := func(in metrics.MetricInput) string {
+	edgeStrength := func(in signal.MetricInput) string {
 		for key, cl := range in.Classifications {
 			if strings.Contains(key, pathFileBAPIService) {
 				return string(cl.Strength)

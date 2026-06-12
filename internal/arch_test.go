@@ -36,6 +36,7 @@ var modelPkgs = []string{
 	modulePrefix + "internal/model/symbol",
 	modulePrefix + "internal/model/clone",
 	modulePrefix + "internal/model/pattern",
+	modulePrefix + "internal/model/signal",
 }
 
 // adapterPrefixes are packages the core ring must never import — adapters AND

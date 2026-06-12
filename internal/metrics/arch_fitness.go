@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/fitness"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
 // architectureFitnessDefinition is the human-readable definition string.
@@ -63,7 +63,7 @@ func (m ArchitectureFitnessMetric) Calculate(in MetricInput) diagnostic.MetricRe
 }
 
 // countSignals returns the number of enforcement signal categories that are present.
-func countSignals(sig fitness.Signals) int {
+func countSignals(sig signal.Signals) int {
 	n := 0
 	if sig.ArchTestFiles {
 		n++
@@ -79,7 +79,7 @@ func countSignals(sig fitness.Signals) int {
 
 // fitnessDisplay builds the human-readable display string.
 // It includes the score, signal count, and matched evidence paths for explainability.
-func fitnessDisplay(score float64, present int, sig fitness.Signals) string {
+func fitnessDisplay(score float64, present int, sig signal.Signals) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%.1f/10 (%d/%d signals)", score, present, archFitnessSignalCount)
 

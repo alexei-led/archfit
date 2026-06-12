@@ -16,6 +16,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
@@ -67,7 +68,7 @@ func Run(
 	ms []metrics.Metric,
 	base baseline.Baseline,
 	lbls []labels.Label,
-	change metrics.ChangeHistory,
+	change signal.ChangeHistory,
 	now time.Time,
 ) (diagnostic.Diagnostic, error) {
 	// --- Stage 1: Extract ---
@@ -131,7 +132,7 @@ func Run(
 	taggedFindings := status.Assign(rawFindings, base, exceptions, now, "gate")
 
 	// --- Stage 6: Metrics ---
-	mi := metrics.MetricInput{
+	mi := signal.MetricInput{
 		Graph:           g,
 		Classifications: couplingIdx,
 		Findings:        taggedFindings,

@@ -106,12 +106,12 @@ CLI determinism tests stay green after every task.
 `internal/extract/astgrep`, `internal/extract/scip`, `cmd/archfit/*.go`,
 `internal/arch_test.go`, `.archfit.yaml`.
 
-- [ ] `internal/model/pattern`: unified `pattern.Match` (File, Pattern, Text, Node, Line, Column); stdlib-only
-- [ ] `internal/ports`: Extractor, PatternProvider, SymbolResolver, Renderer, Nop impls moved from engine; moq mocks moved (package rename; go:generate directives updated); clean move — no aliases left in engine
-- [ ] `rules.Evidence` uses `[]pattern.Match`; `rules.PatternMatch` deleted; `engine.toRulesPatternMatches` deleted
-- [ ] arch test: core-forbidden list += `internal/engine`; new `adapters_no_engine_import` subtest (toolrun, extract/, history/, output/ must not import engine); modelPkgs += `internal/model/pattern`
-- [ ] `.archfit.yaml`: `forbidden_dependency` rule `internal/extract/** → internal/engine/**` (gate: fail)
-- [ ] tests green + lint 0 + self-scan no new gate findings; commit
+- [x] `internal/model/pattern`: unified `pattern.Match` (File, Pattern, Text, Node, Line, Column); stdlib-only
+- [x] `internal/ports`: Extractor, PatternProvider, SymbolResolver, Renderer, Nop impls moved from engine; moq mocks moved (package rename; go:generate directives updated); clean move — no aliases left in engine
+- [x] `rules.Evidence` uses `[]pattern.Match`; `rules.PatternMatch` deleted; `engine.toRulesPatternMatches` deleted
+- [x] arch test: core-forbidden list += `internal/engine`; new `adapters_no_engine_import` subtest (toolrun, extract/, history/, output/ must not import engine); modelPkgs += `internal/model/pattern` — pre-move failure captured (extract/astgrep + extract/scip flagged)
+- [x] `.archfit.yaml`: `forbidden_dependency` rule `internal/extract/** → internal/engine/**` (gate: fail)
+- [x] tests green + lint 0 + self-scan no new gate findings (verdict pass, 0 gate, double-run byte-identical); commit e8561b5 — DEVIATION: reverted ~290 lines of out-of-scope rule tests a subagent added; Task 1 stays a pure move
 
 ### Task 2: un-capture engine from metrics via `internal/model/signal` (M1)
 
