@@ -211,6 +211,12 @@ rules:
     from: internal/model/**
     to: internal/baseline
     gate: fail
+  # Hexagonal boundary: adapters must depend on ports, not the orchestrator.
+  - id: extract_no_engine
+    type: forbidden_dependency
+    from: internal/extract/**
+    to: internal/engine/**
+    gate: fail
   # Layer direction — engine→scope is a known architectural tension:
   # engine uses scope.Scope as a value type but scope lives at adapter layer.
   # Flagged as warn to document this. Phase 2: move Scope to model.

@@ -16,6 +16,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/staleness"
@@ -58,9 +59,9 @@ func Run(
 	classifyCfg config.ClassifyConfig,
 	stalenessCfg config.StalenessConfig,
 	exceptions config.ExceptionSet,
-	extractors []Extractor,
-	pp PatternProvider,
-	sr SymbolResolver,
+	extractors []ports.Extractor,
+	pp ports.PatternProvider,
+	sr ports.SymbolResolver,
 	patternCfg config.PatternConfig,
 	rs []rules.Rule,
 	ms []metrics.Metric,
@@ -108,8 +109,6 @@ func Run(
 		return diagnostic.New(), ppErr
 	}
 	coverages = append(coverages, ppCov)
-	// Convert engine.PatternMatch → rules.PatternMatch for the evidence type.
-	rulesMatches := toRulesPatternMatches(patternMatches)
 
 	// --- Stage 3: Classify ---
 	// Pinned coupling labels first: approved entries refine strength
@@ -123,7 +122,7 @@ func Run(
 	// Call each rule once with the full evidence set. Rules iterate edges internally;
 	// the Evidence carries all pattern matches so each rule can filter by edge's from-file.
 	var rawFindings []finding.Finding
-	allPatternMatches := rules.Evidence{PatternMatches: rulesMatches}
+	allPatternMatches := rules.Evidence{PatternMatches: patternMatches}
 	for _, r := range rs {
 		rawFindings = append(rawFindings, r.Check(g, allPatternMatches)...)
 	}
@@ -355,7 +354,7 @@ func severityFor(strength, distance string) finding.Severity {
 // backing array, so they are visible to the caller).
 // Resolution rewrites barrel-file targets to real paths; SCIP strength sets a
 // per-edge StrengthHint (config public/internal globs still win in classify).
-func enrichEdges(ctx context.Context, sr SymbolResolver, scipStrength map[string]string, facts graph.Facts) {
+func enrichEdges(ctx context.Context, sr ports.SymbolResolver, scipStrength map[string]string, facts graph.Facts) {
 	for i, e := range facts.Edges {
 		fromFile := stripPrefix(e.From)
 		toPath := stripPrefix(e.To)
@@ -484,22 +483,4 @@ func PairEvidence(g *graph.Graph, mm config.ModuleMap, wanted map[string]struct{
 		evidence[key] = labels.HashItems(its)
 	}
 	return evidence
-}
-
-// toRulesPatternMatches converts engine.PatternMatch values to rules.PatternMatch values.
-// The rules package defines its own PatternMatch type to avoid an import cycle
-// (rules cannot import engine). The conversion maps the common fields.
-func toRulesPatternMatches(ms []PatternMatch) []rules.PatternMatch {
-	if len(ms) == 0 {
-		return nil
-	}
-	out := make([]rules.PatternMatch, len(ms))
-	for i, m := range ms {
-		out[i] = rules.PatternMatch{
-			File:  m.File,
-			Line:  m.Line,
-			Match: m.Text,
-		}
-	}
-	return out
 }

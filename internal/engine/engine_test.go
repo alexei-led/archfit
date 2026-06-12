@@ -14,7 +14,9 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/model/symbol"
+	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 )
@@ -134,7 +136,7 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 	ctx := context.Background()
 	facts := violationFacts()
 
-	ex := &engine.ExtractorMock{
+	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return facts, diagnostic.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
@@ -153,9 +155,9 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 		classifyCfg,
 		config.StalenessConfig{},
 		config.ExceptionSet{},
-		[]engine.Extractor{ex},
-		engine.NopPatternProvider{},
-		engine.NopSymbolResolver{},
+		[]ports.Extractor{ex},
+		ports.NopPatternProvider{},
+		ports.NopSymbolResolver{},
 		config.PatternConfig{},
 		rs,
 		ms,
@@ -211,7 +213,7 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 	ctx := context.Background()
 	facts := cleanFacts()
 
-	ex := &engine.ExtractorMock{
+	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return facts, diagnostic.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
@@ -230,9 +232,9 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 		classifyCfg,
 		config.StalenessConfig{},
 		config.ExceptionSet{},
-		[]engine.Extractor{ex},
-		engine.NopPatternProvider{},
-		engine.NopSymbolResolver{},
+		[]ports.Extractor{ex},
+		ports.NopPatternProvider{},
+		ports.NopSymbolResolver{},
 		config.PatternConfig{},
 		rs,
 		ms,
@@ -264,7 +266,7 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 func TestRun_DiagnosticShape(t *testing.T) {
 	ctx := context.Background()
 
-	ex := &engine.ExtractorMock{
+	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return graph.Facts{Language: "go"}, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
@@ -283,9 +285,9 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		classifyCfg,
 		config.StalenessConfig{},
 		config.ExceptionSet{},
-		[]engine.Extractor{ex},
-		engine.NopPatternProvider{},
-		engine.NopSymbolResolver{},
+		[]ports.Extractor{ex},
+		ports.NopPatternProvider{},
+		ports.NopSymbolResolver{},
 		config.PatternConfig{},
 		rs,
 		ms,
@@ -331,7 +333,7 @@ func TestRun_DiagnosticShape(t *testing.T) {
 // but it must be suppressed.
 func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 	ctx := context.Background()
-	ex := &engine.ExtractorMock{
+	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return violationFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
@@ -350,9 +352,9 @@ func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 		classifyCfg,
 		config.StalenessConfig{},
 		config.ExceptionSet{},
-		[]engine.Extractor{ex},
-		engine.NopPatternProvider{},
-		engine.NopSymbolResolver{},
+		[]ports.Extractor{ex},
+		ports.NopPatternProvider{},
+		ports.NopSymbolResolver{},
 		config.PatternConfig{},
 		rs,
 		ms,
@@ -381,7 +383,7 @@ func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 	ctx := context.Background()
 	// cleanFacts: imports edge a→b/api (contract, cross-module) → imbalanced (low severity).
-	ex := &engine.ExtractorMock{
+	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
@@ -400,9 +402,9 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 		classifyCfg,
 		config.StalenessConfig{},
 		config.ExceptionSet{},
-		[]engine.Extractor{ex},
-		engine.NopPatternProvider{},
-		engine.NopSymbolResolver{},
+		[]ports.Extractor{ex},
+		ports.NopPatternProvider{},
+		ports.NopSymbolResolver{},
 		config.PatternConfig{},
 		rs,
 		ms,
@@ -444,7 +446,7 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 // a fail verdict: a gate violation still fails even when advisories are present.
 func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 	ctx := context.Background()
-	ex := &engine.ExtractorMock{
+	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return violationFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
@@ -463,9 +465,9 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 		classifyCfg,
 		config.StalenessConfig{},
 		config.ExceptionSet{},
-		[]engine.Extractor{ex},
-		engine.NopPatternProvider{},
-		engine.NopSymbolResolver{},
+		[]ports.Extractor{ex},
+		ports.NopPatternProvider{},
+		ports.NopSymbolResolver{},
 		config.PatternConfig{},
 		rs,
 		ms,
@@ -506,7 +508,7 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 	ctx := context.Background()
 
-	ex := &engine.ExtractorMock{
+	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
@@ -515,11 +517,11 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 
 	// PatternProvider returns one known match.
 	findCalled := false
-	pp := &engine.PatternProviderMock{
+	pp := &ports.PatternProviderMock{
 		NameFunc: func() string { return toolNameAstgrep },
-		FindFunc: func(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]engine.PatternMatch, diagnostic.Coverage, error) {
+		FindFunc: func(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
 			findCalled = true
-			return []engine.PatternMatch{
+			return []pattern.Match{
 				{File: pathFileA, Pattern: "unsafe-cast", Text: "unsafe.Pointer(x)", Line: 10, Column: 0},
 			}, diagnostic.Coverage{Tool: toolNameAstgrep, Status: "ok", FilesSeen: 1}, nil
 		},
@@ -537,9 +539,9 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 		classifyCfg,
 		config.StalenessConfig{},
 		config.ExceptionSet{},
-		[]engine.Extractor{ex},
+		[]ports.Extractor{ex},
 		pp,
-		engine.NopSymbolResolver{},
+		ports.NopSymbolResolver{},
 		config.PatternConfig{},
 		rs,
 		ms,
@@ -575,7 +577,7 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 	ctx := context.Background()
 
-	ex := &engine.ExtractorMock{
+	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
@@ -583,10 +585,10 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 	}
 
 	// PatternProvider returns matches — but no rule uses them to produce gate findings.
-	pp := &engine.PatternProviderMock{
+	pp := &ports.PatternProviderMock{
 		NameFunc: func() string { return toolNameAstgrep },
-		FindFunc: func(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]engine.PatternMatch, diagnostic.Coverage, error) {
-			return []engine.PatternMatch{
+		FindFunc: func(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
+			return []pattern.Match{
 				{File: pathFileA, Pattern: "reflect-unexported", Text: "reflect.ValueOf(x).Field(0)", Line: 5, Column: 4},
 				{File: pathFileBAPIService, Pattern: "reflect-unexported", Text: "reflect.ValueOf(y).Field(1)", Line: 12, Column: 0},
 			}, diagnostic.Coverage{Tool: toolNameAstgrep, Status: "ok", FilesSeen: 2}, nil
@@ -605,9 +607,9 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 		classifyCfg,
 		config.StalenessConfig{},
 		config.ExceptionSet{},
-		[]engine.Extractor{ex},
+		[]ports.Extractor{ex},
 		pp,
-		engine.NopSymbolResolver{},
+		ports.NopSymbolResolver{},
 		config.PatternConfig{},
 		rs,
 		ms,
@@ -656,7 +658,7 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 		Refs:   map[string]map[string]struct{}{symbolFoo: {symbolBar: {}}},
 	}
 
-	sr := &engine.SymbolResolverMock{
+	sr := &ports.SymbolResolverMock{
 		NameFunc: func() string { return toolNameScip },
 		ResolveFunc: func(_ context.Context, _, toPath string) (string, string) {
 			return toPath, confidenceHigh
@@ -669,7 +671,7 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 		},
 	}
 
-	ex := &engine.ExtractorMock{
+	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
@@ -689,8 +691,8 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 		classifyCfg,
 		config.StalenessConfig{},
 		config.ExceptionSet{},
-		[]engine.Extractor{ex},
-		engine.NopPatternProvider{},
+		[]ports.Extractor{ex},
+		ports.NopPatternProvider{},
 		sr,
 		config.PatternConfig{},
 		rs,
@@ -720,7 +722,7 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 func TestRun_SymbolGraph_EmptyWhenNopResolver(t *testing.T) {
 	ctx := context.Background()
 
-	ex := &engine.ExtractorMock{
+	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
@@ -740,9 +742,9 @@ func TestRun_SymbolGraph_EmptyWhenNopResolver(t *testing.T) {
 		classifyCfg,
 		config.StalenessConfig{},
 		config.ExceptionSet{},
-		[]engine.Extractor{ex},
-		engine.NopPatternProvider{},
-		engine.NopSymbolResolver{},
+		[]ports.Extractor{ex},
+		ports.NopPatternProvider{},
+		ports.NopSymbolResolver{},
 		config.PatternConfig{},
 		rs,
 		[]metrics.Metric{spy},
@@ -772,7 +774,7 @@ func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
 		Refs:   map[string]map[string]struct{}{symbolFoo: {symbolBar: {}}},
 	}
 
-	sr := &engine.SymbolResolverMock{
+	sr := &ports.SymbolResolverMock{
 		NameFunc: func() string { return toolNameScip },
 		ResolveFunc: func(_ context.Context, _, toPath string) (string, string) {
 			return toPath, confidenceHigh
@@ -785,7 +787,7 @@ func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
 		},
 	}
 
-	ex := &engine.ExtractorMock{
+	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
@@ -806,8 +808,8 @@ func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
 		classifyCfg,
 		config.StalenessConfig{},
 		config.ExceptionSet{},
-		[]engine.Extractor{ex},
-		engine.NopPatternProvider{},
+		[]ports.Extractor{ex},
+		ports.NopPatternProvider{},
 		sr,
 		config.PatternConfig{},
 		rs,
@@ -842,7 +844,7 @@ func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
 func TestRun_FileFacts_EmptyWhenNopResolver(t *testing.T) {
 	ctx := context.Background()
 
-	ex := &engine.ExtractorMock{
+	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
@@ -859,9 +861,9 @@ func TestRun_FileFacts_EmptyWhenNopResolver(t *testing.T) {
 		classifyCfg,
 		config.StalenessConfig{},
 		config.ExceptionSet{},
-		[]engine.Extractor{ex},
-		engine.NopPatternProvider{},
-		engine.NopSymbolResolver{},
+		[]ports.Extractor{ex},
+		ports.NopPatternProvider{},
+		ports.NopSymbolResolver{},
 		config.PatternConfig{},
 		rs,
 		nil,
@@ -901,7 +903,7 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 	classifyCfg := cfg.ForClassify()
 	rs := rules.New(cfg.ForRules())
 
-	ex := &engine.ExtractorMock{
+	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
@@ -914,7 +916,7 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 		d, err := engine.Run(
 			ctx, engine.Mode{Head: headRef}, scope.Scope{Root: "."},
 			classifyCfg, config.StalenessConfig{}, config.ExceptionSet{},
-			[]engine.Extractor{ex}, engine.NopPatternProvider{}, engine.NopSymbolResolver{},
+			[]ports.Extractor{ex}, ports.NopPatternProvider{}, ports.NopSymbolResolver{},
 			config.PatternConfig{}, rs, nil, base, nil, metrics.ChangeHistory{}, now,
 		)
 		if err != nil {
@@ -976,7 +978,7 @@ func TestRun_PinnedLabels(t *testing.T) {
 			"b": {Paths: []string{globModuleB}},
 		},
 	}
-	ex := &engine.ExtractorMock{
+	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
@@ -993,7 +995,7 @@ func TestRun_PinnedLabels(t *testing.T) {
 		d, err := engine.Run(
 			ctx, engine.Mode{Head: headRef, Advisory: true}, scope.Scope{Root: "."},
 			cfg.ForClassify(), config.StalenessConfig{}, config.ExceptionSet{},
-			[]engine.Extractor{ex}, engine.NopPatternProvider{}, engine.NopSymbolResolver{},
+			[]ports.Extractor{ex}, ports.NopPatternProvider{}, ports.NopSymbolResolver{},
 			config.PatternConfig{}, rules.New(cfg.ForRules()), []metrics.Metric{spy},
 			baseline.Baseline{}, lbls, metrics.ChangeHistory{}, now,
 		)

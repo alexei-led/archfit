@@ -14,6 +14,7 @@ import (
 	"github.com/alexei-led/archfit/internal/engine"
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 )
@@ -95,9 +96,9 @@ func TestGolden_DoubleRun(t *testing.T) {
 			classifyCfg,
 			config.StalenessConfig{},
 			config.ExceptionSet{},
-			[]engine.Extractor{extractor},
-			engine.NopPatternProvider{},
-			engine.NopSymbolResolver{},
+			[]ports.Extractor{extractor},
+			ports.NopPatternProvider{},
+			ports.NopSymbolResolver{},
 			config.PatternConfig{},
 			rs,
 			ms,

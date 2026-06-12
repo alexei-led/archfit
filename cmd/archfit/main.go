@@ -37,6 +37,7 @@ import (
 	"github.com/alexei-led/archfit/internal/output/markdown"
 	"github.com/alexei-led/archfit/internal/output/sarif"
 	"github.com/alexei-led/archfit/internal/ownership"
+	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -197,7 +198,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		return diagnostic.Diagnostic{}, err
 	}
 
-	extractors := []engine.Extractor{
+	extractors := []ports.Extractor{
 		golang.New(cfg.ForExtract("go")),
 		ts.New(deps.Runner, cfg.ForExtract("typescript")),
 		py.New(deps.Runner, cfg.ForExtract("python")),
@@ -266,7 +267,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// SCIP symbol-level strength is opt-in (tools.scip.enabled: on): the indexer is
 	// whole-repo and slow, so it must not run on the default check path, and the
 	// decision must live in config (not PATH presence) to keep metrics deterministic.
-	var resolver engine.SymbolResolver = engine.NopSymbolResolver{}
+	var resolver ports.SymbolResolver = ports.NopSymbolResolver{}
 	if cfg.ScipEnabled() {
 		resolver = scip.New(deps.Runner)
 	}
