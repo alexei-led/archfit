@@ -195,13 +195,13 @@ not skip silently.**
 
 **Files:** create `docs/plans/notes/refactoring-backlog-validation.md`.
 
-- [ ] build `.bin/archfit` from the final branch
-- [ ] archfit/ccgram/pumba/codegraph × {double-run byte-identical + exit 0 + no stderr panics; SARIF schema-validated via `uvx check-jsonschema` against sarif-2.1.0; baseline→check parity (verdict unchanged, zero phantom deltas)}
-- [ ] archfit: verdict pass; arch tests green; Run CCN reduced (Task 4); cmd structural_weight reduced (Task 5); facts ≈ 90+ modules
-- [ ] ccgram: 383+ facts; 3 gate findings → 3 agent_tasks with correct validation commands; labels-file checks from Task 8
-- [ ] pumba: scip-go temporarily on → facts populate; record count; restore config after (no borrowed-config edits left behind)
-- [ ] codegraph: scip-typescript; if the TS indexer path fails, record a coverage-gap finding, not a silent skip
-- [ ] archfit delta mode: `check --base main~5` → change_locality sane non-n/a value
+- [x] build `.bin/archfit` from the final branch (@7788a53)
+- [x] archfit/ccgram/pumba/codegraph × {double-run byte-identical, exit 0, 0-byte stderr; SARIF schema-valid ×4; baseline→check parity: pass verdict + zero phantom deltas ×4} — see `notes/refactoring-backlog-validation.md`
+- [x] archfit: verdict pass; arch tests green; Run CCN 28→17 (out of top list); cmd/archfit 1395→1287 LOC; facts 105 entries; **baseline EMPTY (zero accepted findings)**
+- [x] ccgram: 383 facts; 3 gate findings → 3 agent_tasks with correct validation commands; labels-file checks deferred to Task 8 (blocked on key)
+- [x] pumba: scip-go on → 424 files/3012 symbols indexed, 38 facts entries; config restored byte-identical (diff clean), baseline artifact removed
+- [x] codegraph: scip-typescript WORKS — 404 files/5902 symbols, 124 facts entries; config restored byte-identical; no coverage gap
+- [x] archfit delta mode: `check --base main~5` → change_locality 82 edges / 116 files / reach 67, info band, non-n/a
 - [ ] full suite green, lint 0, push (diagnose exit-128 remote/auth first: `git remote -v`, `gh auth status`, `ssh -T git@github.com`)
 
 ## Post-Completion
