@@ -163,6 +163,7 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 		rs,
 		ms,
 		base,
+		base.Metrics,
 		nil,
 		signal.ChangeHistory{},
 		now,
@@ -240,6 +241,7 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 		rs,
 		ms,
 		base,
+		base.Metrics,
 		nil,
 		signal.ChangeHistory{},
 		now,
@@ -293,6 +295,7 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		rs,
 		ms,
 		base,
+		base.Metrics,
 		nil,
 		signal.ChangeHistory{},
 		now,
@@ -360,6 +363,7 @@ func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 		rs,
 		ms,
 		base,
+		base.Metrics,
 		nil,
 		signal.ChangeHistory{},
 		now,
@@ -410,6 +414,7 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 		rs,
 		ms,
 		base,
+		base.Metrics,
 		nil,
 		signal.ChangeHistory{},
 		now,
@@ -473,6 +478,7 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 		rs,
 		ms,
 		base,
+		base.Metrics,
 		nil,
 		signal.ChangeHistory{},
 		now,
@@ -547,6 +553,7 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 		rs,
 		ms,
 		base,
+		base.Metrics,
 		nil,
 		signal.ChangeHistory{},
 		now,
@@ -615,6 +622,7 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 		rs,
 		ms,
 		base,
+		base.Metrics,
 		nil,
 		signal.ChangeHistory{},
 		now,
@@ -700,6 +708,7 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 		[]metrics.Metric{spy},
 		baseline.Baseline{},
 		nil,
+		nil,
 		signal.ChangeHistory{},
 		now,
 	)
@@ -750,6 +759,7 @@ func TestRun_SymbolGraph_EmptyWhenNopResolver(t *testing.T) {
 		rs,
 		[]metrics.Metric{spy},
 		baseline.Baseline{},
+		nil,
 		nil,
 		signal.ChangeHistory{},
 		now,
@@ -817,6 +827,7 @@ func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
 		nil,
 		baseline.Baseline{},
 		nil,
+		nil,
 		change,
 		now,
 	)
@@ -870,6 +881,7 @@ func TestRun_FileFacts_EmptyWhenNopResolver(t *testing.T) {
 		nil,
 		baseline.Baseline{},
 		nil,
+		nil,
 		signal.ChangeHistory{},
 		now,
 	)
@@ -918,7 +930,7 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 			ctx, engine.Mode{Head: headRef}, scope.Scope{Root: "."},
 			classifyCfg, config.StalenessConfig{}, config.ExceptionSet{},
 			[]ports.Extractor{ex}, ports.NopPatternProvider{}, ports.NopSymbolResolver{},
-			config.PatternConfig{}, rs, nil, base, nil, signal.ChangeHistory{}, now,
+			config.PatternConfig{}, rs, nil, base, base.Metrics, nil, signal.ChangeHistory{}, now,
 		)
 		if err != nil {
 			t.Fatalf("Run: %v", err)
@@ -998,7 +1010,7 @@ func TestRun_PinnedLabels(t *testing.T) {
 			cfg.ForClassify(), config.StalenessConfig{}, config.ExceptionSet{},
 			[]ports.Extractor{ex}, ports.NopPatternProvider{}, ports.NopSymbolResolver{},
 			config.PatternConfig{}, rules.New(cfg.ForRules()), []metrics.Metric{spy},
-			baseline.Baseline{}, lbls, signal.ChangeHistory{}, now,
+			baseline.Baseline{}, nil, lbls, signal.ChangeHistory{}, now,
 		)
 		if err != nil {
 			t.Fatalf("Run: %v", err)

@@ -8,7 +8,7 @@ bc_advisory_min_severity: medium
 # forbidden_layer_direction fires when fromRank < toRank (inner imports outer).
 layers:
   - model # rank 0: pure value types, stdlib only
-  - support # rank 1: config, baseline
+  - support # rank 1: config
   - core # rank 2: classify, rules, metrics, status
   - engine # rank 3: orchestration pipeline
   - adapter # rank 4: scope, toolrun, extractors, renderers, git
@@ -39,7 +39,9 @@ modules:
       - internal/baseline/**
     public:
       - internal/baseline
-    layer: support
+    # Persistence (reads/writes the baseline file) — adapter, not support.
+    # status consumes it through the status.AcceptedSet interface.
+    layer: adapter
     subdomain: supporting
     volatility: low
   classify:

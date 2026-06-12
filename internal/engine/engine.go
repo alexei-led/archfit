@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/facts"
@@ -66,7 +65,8 @@ func Run(
 	patternCfg config.PatternConfig,
 	rs []rules.Rule,
 	ms []metrics.Metric,
-	base baseline.Baseline,
+	accepted status.AcceptedSet,
+	baseMetrics diagnostic.MetricSnapshot,
 	lbls []labels.Label,
 	change signal.ChangeHistory,
 	now time.Time,
@@ -129,14 +129,14 @@ func Run(
 	}
 
 	// --- Stage 5: Status ---
-	taggedFindings := status.Assign(rawFindings, base, exceptions, now, "gate")
+	taggedFindings := status.Assign(rawFindings, accepted, exceptions, now, "gate")
 
 	// --- Stage 6: Metrics ---
 	mi := signal.MetricInput{
 		Graph:           g,
 		Classifications: couplingIdx,
 		Findings:        taggedFindings,
-		Baseline:        base.Metrics,
+		Baseline:        baseMetrics,
 		ToolCoverage:    coverages,
 		FileChurn:       change.FileChurn,
 		CoChange:        change.CoChange,
@@ -244,7 +244,7 @@ func Run(
 	// Apply baseline and exception status to advisory findings.
 	// status.Assign also emits fixed gate findings; suppress those for the advisory pass
 	// by discarding any synthetic kind=="gate" entries it appends.
-	tagged := status.Assign(advisoryFindings, base, exceptions, now, "advisory")
+	tagged := status.Assign(advisoryFindings, accepted, exceptions, now, "advisory")
 	advisoryFindings = advisoryFindings[:0]
 	for _, f := range tagged {
 		if f.Kind == kindAdvisory {

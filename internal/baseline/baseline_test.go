@@ -9,6 +9,13 @@ import (
 
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/status"
+)
+
+// Shared test fingerprints (goconst).
+const (
+	fpA = "aabbcc"
+	fpB = "ddeeff"
 )
 
 func TestLoad_MissingFile(t *testing.T) {
@@ -157,8 +164,8 @@ func TestSave_EmptySlicesNotNull(t *testing.T) {
 func TestHasFingerprint(t *testing.T) {
 	b := baseline.Baseline{
 		Accepted: []baseline.AcceptedFinding{
-			{Fingerprint: "aabbcc", RuleID: "r1"},
-			{Fingerprint: "ddeeff", RuleID: "r2"},
+			{Fingerprint: fpA, RuleID: "r1"},
+			{Fingerprint: fpB, RuleID: "r2"},
 		},
 	}
 
@@ -166,8 +173,8 @@ func TestHasFingerprint(t *testing.T) {
 		fp   string
 		want bool
 	}{
-		{"aabbcc", true},
-		{"ddeeff", true},
+		{fpA, true},
+		{fpB, true},
 		{"000000", false},
 		{"", false},
 	}
@@ -178,5 +185,28 @@ func TestHasFingerprint(t *testing.T) {
 				t.Errorf("HasFingerprint(%q) = %v, want %v", tc.fp, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestEntries(t *testing.T) {
+	b := baseline.Baseline{
+		Accepted: []baseline.AcceptedFinding{
+			{Fingerprint: fpA, RuleID: "r1", Kind: "gate"},
+			{Fingerprint: fpB, RuleID: "r2", Kind: "advisory"},
+		},
+	}
+
+	got := b.Entries()
+	want := []status.AcceptedEntry{
+		{Fingerprint: fpA, RuleID: "r1", Kind: "gate"},
+		{Fingerprint: fpB, RuleID: "r2", Kind: "advisory"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Entries() = %d entries, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Entries()[%d] = %+v, want %+v", i, got[i], want[i])
+		}
 	}
 }

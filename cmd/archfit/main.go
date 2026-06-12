@@ -274,7 +274,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 
 	patternCfg := cfg.ForPatterns()
-	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), resolver, patternCfg, rs, ms, base, lbls, change, time.Now())
+	diag, err := engine.Run(ctx, mode, s, cfg.ForClassify(), cfg.ForStaleness(), cfg.ForStatus(), extractors, astgrep.New(deps.Runner), resolver, patternCfg, rs, ms, base, base.Metrics, lbls, change, time.Now())
 	if err != nil {
 		return diag, err
 	}

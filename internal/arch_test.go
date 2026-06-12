@@ -43,6 +43,7 @@ var modelPkgs = []string{
 // the orchestrator. Adapters depend on internal/ports, never the orchestrator.
 var adapterPrefixes = []string{
 	modulePrefix + "internal/engine",
+	modulePrefix + "internal/baseline",
 	modulePrefix + "internal/toolrun",
 	modulePrefix + "internal/extract/",
 	modulePrefix + "internal/history/",

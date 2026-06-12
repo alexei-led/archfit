@@ -119,11 +119,11 @@ CLI determinism tests stay green after every task.
 (aliases), `internal/fitness/fitness.go`, `internal/engine/engine.go`,
 `cmd/archfit/*.go`, `internal/arch_test.go`.
 
-- [ ] `signal.MetricInput`, `signal.ChangeHistory`, `signal.ComplexityFunc`, `signal.Signals`+`EvidenceMap` (moved from fitness) — stdlib+model only
-- [ ] `metrics` keeps permanent type aliases (`type MetricInput = signal.MetricInput` etc., the os.FileInfo pattern) so the 13 metric files stay untouched; engine + cmd construct `signal.*` directly — a new MetricInput field then churns only signal + its producer, not metrics
-- [ ] `fitness.Detect` returns `signal.Signals`; arch_fitness metric reads `signal.Signals`
-- [ ] arch test: modelPkgs += `internal/model/signal`
-- [ ] golden test byte-identical; tests green + lint 0; commit
+- [x] `signal.MetricInput`, `signal.ChangeHistory`, `signal.ComplexityFunc`, `signal.Signals`+`EvidenceMap` (moved from fitness) — stdlib+model only
+- [x] `metrics` keeps permanent type aliases (`type MetricInput = signal.MetricInput` etc., the os.FileInfo pattern) so the 13 metric files stay untouched; engine + cmd construct `signal.*` directly — a new MetricInput field then churns only signal + its producer, not metrics
+- [x] `fitness.Detect` returns `signal.Signals`; arch_fitness metric reads `signal.Signals`
+- [x] arch test: modelPkgs += `internal/model/signal`
+- [x] golden test byte-identical; tests green + lint 0; self-scan pass/0 gate, double-run identical; commit 4e3a2d7
 
 ### Task 3: invert status→baseline + reclassify baseline layer (M2)
 
@@ -131,12 +131,12 @@ CLI determinism tests stay green after every task.
 (+test), `internal/engine/engine.go` (+tests), `cmd/archfit/*.go`,
 `internal/arch_test.go`, `.archfit.yaml`.
 
-- [ ] `status.AcceptedEntry` + `status.AcceptedSet{HasFingerprint, Entries}` shaped from Assign's actual usage; `Assign` takes `AcceptedSet`
-- [ ] `baseline.Baseline.Entries()` satisfies the interface (baseline imports status — outward-in, legal)
-- [ ] engine drops the baseline import: Run takes `accepted status.AcceptedSet` + `baseMetrics diagnostic.MetricSnapshot` (prevents a new engine→baseline inversion on reclassify)
-- [ ] status tests use an in-memory fake; engine tests green
-- [ ] `.archfit.yaml`: baseline layer support→adapter; arch test: `adapterPrefixes` += `internal/baseline`; self-scan: no new layer_inversion
-- [ ] tests green + lint 0; commit
+- [x] `status.AcceptedEntry` + `status.AcceptedSet{HasFingerprint, Entries}` shaped from Assign's actual usage; `Assign` takes `AcceptedSet`
+- [x] `baseline.Baseline.Entries()` satisfies the interface (baseline imports status — outward-in, legal)
+- [x] engine drops the baseline import: Run takes `accepted status.AcceptedSet` + `baseMetrics diagnostic.MetricSnapshot` (prevents a new engine→baseline inversion on reclassify)
+- [x] status tests use an in-memory fake (`fakeAccepted`); engine tests green
+- [x] `.archfit.yaml`: baseline layer support→adapter; arch test: `adapterPrefixes` += `internal/baseline`; self-scan: no new layer_inversion (verdict pass, 0 gate; 4 of 5 old engine→scope inversions now report fixed — their from-files moved to ports in Task 1)
+- [x] tests green + lint 0; double-run identical; commit
 
 ### Task 4: `engine.Run` options struct + CCN reduction (F-03)
 
