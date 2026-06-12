@@ -1,47 +1,21 @@
 {
   "schema_version": "archfit.baseline.v1",
-  "accepted": [
-    {
-      "fingerprint": "e9dbad8841cc492ca9155a4ad664429f",
-      "rule_id": "layer_inversion",
-      "kind": "gate"
-    },
-    {
-      "fingerprint": "3e26932b68b14a34c9ce4c7d7f543fd8",
-      "rule_id": "layer_inversion",
-      "kind": "gate"
-    },
-    {
-      "fingerprint": "65a86408599956d629fdf14944f1d703",
-      "rule_id": "layer_inversion",
-      "kind": "gate"
-    },
-    {
-      "fingerprint": "32b9e85de328aef22c9bd24557aeae84",
-      "rule_id": "layer_inversion",
-      "kind": "gate"
-    },
-    {
-      "fingerprint": "bbc4e7f0b02096234fc8f78d427aede4",
-      "rule_id": "layer_inversion",
-      "kind": "gate"
-    }
-  ],
+  "accepted": [],
   "metrics": {
-    "architecture_fitness": {
-      "value": 0,
-      "version": "architecture_fitness.v1"
-    },
     "blast_radius": {
-      "value": 5,
+      "value": 4,
       "version": "blast_radius.v1"
     },
     "change_amplification": {
       "value": 0,
       "version": "change_amplification.v1"
     },
-    "complexity": {
+    "change_locality": {
       "value": 0,
+      "version": "change_locality.v1"
+    },
+    "complexity": {
+      "value": 11,
       "version": "complexity.v1"
     },
     "coverage": {
@@ -56,20 +30,12 @@
       "value": 0,
       "version": "encapsulation.v1"
     },
-    "functional_candidates": {
-      "value": 0,
-      "version": "functional_candidates.v1"
-    },
     "hidden_coupling": {
-      "value": 0,
+      "value": 46,
       "version": "hidden_coupling.v1"
     },
-    "risk_hub": {
-      "value": 0,
-      "version": "risk_hub.v1"
-    },
     "structural_weight": {
-      "value": 0,
+      "value": 2,
       "version": "structural_weight.v1"
     },
     "unbalanced_edge": {

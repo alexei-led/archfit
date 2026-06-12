@@ -31,7 +31,32 @@ import (
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/internal/toolrun"
 )
+
+// gitResolver adapts internal/history/git to scope.Resolver. The concrete
+// git dependency lives here in the composition root — scope itself stays
+// free of process and tool dependencies.
+type gitResolver struct {
+	workDir string
+	runner  toolrun.Runner
+}
+
+func (g gitResolver) RepoRoot(ctx context.Context) (string, error) {
+	return git.RepoRoot(ctx, g.workDir, g.runner)
+}
+
+func (g gitResolver) HeadRef(ctx context.Context) (string, error) {
+	return git.HeadRef(ctx, g.workDir, g.runner)
+}
+
+func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, error) {
+	cs, err := git.Changed(ctx, g.workDir, base, head, g.runner)
+	if err != nil {
+		return nil, err
+	}
+	return cs.Files, nil
+}
 
 // runPipeline resolves scope, builds extractors/rules/metrics, collects change
 // history and optional tool inputs, and executes the engine. check, scan,
@@ -46,7 +71,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	sc.WorkDir = configDir
 	sc.Base = mode.Base
 	sc.Full = mode.Full
-	s, err := scope.Resolve(ctx, sc, deps.Runner)
+	s, err := scope.Resolve(ctx, sc, gitResolver{workDir: configDir, runner: deps.Runner})
 	if err != nil {
 		return diagnostic.Diagnostic{}, err
 	}

@@ -175,10 +175,11 @@ delete `cmd/archfit/{sourceloc,complexity}.go`; modify main.go, enrich.go.
 **Files:** modify `internal/scope/scope.go` (+test), `cmd/archfit/pipeline.go`,
 `.archfit.yaml`.
 
-- [ ] `scope.Resolve` takes an injected resolver (RepoRoot/HeadRef/Changed); concrete git calls move to cmd next to `git.History`; scope drops `history/git` + `toolrun` imports
-- [ ] scope tests use a fake resolver; git-only fixtures removed if any exist only for git; CLI `--base` delta test green
-- [ ] `.archfit.yaml`: scope layer adapter→support (honest once scope is config+value types only); the 5 baselined engine→scope `layer_inversion` findings become fixed; stale "Phase 2: move Scope to model" comment updated; re-baseline to drop the 5 stale entries
-- [ ] self-scan: no new findings; tests green + lint 0; commit
+- [x] `scope.Resolve` takes an injected `scope.Resolver` (RepoRoot/HeadRef/Changed); `gitResolver` adapter lives in cmd/pipeline.go next to `git.History`; scope drops `history/git` + `toolrun` imports; Resolve sorts Changed defensively (determinism must not depend on resolver discipline)
+- [x] scope tests use a fake resolver (no RunnerMock, no git) — no git-only fixtures existed; no CLI `--base` test exists either (brief assumed one) — covered by a live delta run: `check --base HEAD~3` → change_locality 51 edges/23 files, verdict pass
+- [x] `.archfit.yaml`: scope layer adapter→support; all 5 engine→scope `layer_inversion` findings now FIXED; stale "Phase 2: move Scope to model" comment replaced; re-baselined → **accepted list is now EMPTY (zero baselined debt)**, parity verified (check after baseline: pass, 0 findings, 0 deltas)
+- [x] arch test extension (beyond brief): scope joins `coreRingPkgs` so it can never re-acquire os/exec/yaml/adapter imports
+- [x] self-scan: no new findings; tests green + lint 0; double-run identical; commit
 
 ### Task 8: frontier-model enrich + approve flow on ccgram
 

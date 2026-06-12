@@ -24,6 +24,9 @@ var coreRingPkgs = []string{
 	modulePrefix + "internal/status",
 	modulePrefix + "internal/staleness",
 	modulePrefix + "internal/facts",
+	// scope is a value type + resolution logic over an injected Resolver;
+	// the concrete git/toolrun wiring lives in cmd. Keep it that way.
+	modulePrefix + "internal/scope",
 }
 
 // modelPkgs must not import anything outside the standard library (or each
