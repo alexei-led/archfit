@@ -17,6 +17,11 @@ Use it to answer questions like:
 `archfit` is not a formatter, style linter, security scanner, or replacement for
 architecture review. It makes selected architecture rules executable.
 
+It implements Vlad Khononov's Balanced Coupling model. For the theory behind the
+strength / distance / volatility vocabulary it uses, see [Concepts](concepts.md);
+for every signal it computes and how each is scored, see the
+[Metrics reference](metrics.md).
+
 ## What it checks
 
 `archfit` focuses on architecture drift, not general code quality.

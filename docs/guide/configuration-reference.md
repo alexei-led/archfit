@@ -370,7 +370,10 @@ flags:
 archfit check --format text
 archfit check --format json
 archfit check --format markdown
+archfit check --format sarif
 ```
+
+`--format` is repeatable: `--format json --format sarif` writes both to stdout.
 
 `scan` is the Markdown report shortcut.
 
@@ -389,9 +392,9 @@ Used only by `archfit enrich` and `archfit explain --llm`; never by `check`.
 ```yaml
 tools:
   llm:
-    provider: anthropic   # anthropic | openai | ollama
+    provider: anthropic # anthropic | openai | ollama
     model: claude-opus-4-8
-    base_url: ""          # ollama only; default http://localhost:11434/v1
+    base_url: "" # ollama only; default http://localhost:11434/v1
 ```
 
 API keys come from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` env vars — never

@@ -8,6 +8,8 @@ small references while configuring a repo.
 ## Pages
 
 - [Overview](overview.md) — what `archfit` is and when to use it.
+- [Concepts](concepts.md) — Balanced Coupling, modularity, and the theory archfit makes executable.
+- [Metrics reference](metrics.md) — every metric, what it represents, and how it is scored.
 - [Install](install.md) — binary, optional tools, and Docker.
 - [Quick start](quick-start.md) — first run workflow.
 - [Language support](languages.md) — Go, Python, and TypeScript setup.

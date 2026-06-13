@@ -156,7 +156,7 @@ See [`docs/guide/`](docs/guide/README.md) for the user guide.
 - `archfit explain <id>` — explain one finding by fingerprint prefix.
 - `archfit install` — install or print commands for optional language tools.
 
-Output formats for `check`: `text`, `json`, `markdown`/`md`.
+Output formats for `check`: `text`, `json`, `markdown`/`md`, `sarif`.
 
 Exit codes:
 
@@ -201,6 +201,11 @@ docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:latest \
 ## Documentation
 
 - [`docs/guide/`](docs/guide/README.md) — user guide and documentation map.
+- [`docs/guide/concepts.md`](docs/guide/concepts.md) — Balanced Coupling,
+  modularity, and the theory archfit makes executable (with references to
+  Khononov's book and `coupling.dev`).
+- [`docs/guide/metrics.md`](docs/guide/metrics.md) — every metric: what it
+  represents, the justification, and the scoring model.
 - [`docs/spec/arch-fitness-spec-v0.4.md`](docs/spec/arch-fitness-spec-v0.4.md)
   — product/build spec.
 - [`docs/design/arch-fitness-architecture-v0.2.md`](docs/design/arch-fitness-architecture-v0.2.md)

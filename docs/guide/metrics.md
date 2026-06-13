@@ -1,0 +1,320 @@
+# Metrics reference
+
+This page documents every signal `archfit` computes: what it represents, why it
+exists, how it is scored, and whether it can affect the verdict. For the theory
+behind the strength / distance / volatility vocabulary used throughout, read
+[Concepts](concepts.md) first.
+
+`archfit` ships **13 metrics**. They split into two roles:
+
+- **Verdict-affecting** (4): scored 0–10, can `warn` the run when they regress.
+- **Report-only** (9): band `info`; surface facts for humans and agents, never
+  change the verdict.
+
+No metric ever fails the build on its own. Only explicit **gate rules**
+(forbidden dependency, public-API-only, layer direction, cycle-as-fail, expired
+exception) produce a `fail`. Metrics inform; rules gate. This separation is
+deliberate — see [Concepts → How archfit operationalizes the model](concepts.md#how-archfit-operationalizes-the-model).
+
+---
+
+## The verdict
+
+After all metrics run, the run gets one verdict
+(`internal/engine/engine.go`, `computeVerdict`):
+
+```text
+fail  → any gate finding with status "new" or "expired_exception"
+warn  → otherwise, any metric whose delta vs baseline is negative
+pass  → otherwise
+```
+
+Exit codes: `0` pass, `1` gate failed, `2` warnings/regressions (non-blocking by
+default; use `--report` to never exit non-zero on these), `3` tool/config error.
+
+---
+
+## Scoring model
+
+Every scored (non-`info`) metric produces a 0–10 value, a band, and a confidence.
+
+### Bands
+
+| Band          | Score    | Meaning                                                                                   |
+| ------------- | -------- | ----------------------------------------------------------------------------------------- |
+| `strong`      | 9.0–10.0 | Healthy.                                                                                  |
+| `serviceable` | 7.0–8.9  | Acceptable.                                                                               |
+| `mixed`       | 5.0–6.9  | Watch.                                                                                    |
+| `poor`        | 3.0–4.9  | Problem.                                                                                  |
+| `critical`    | 0.0–2.9  | Measured and bad.                                                                         |
+| `n/a`         | —        | No signal to measure. Not good, not bad — _no evidence_. Never conflated with `critical`. |
+| `info`        | —        | Report-only fact; asserts no quality verdict.                                             |
+
+The `n/a` vs `critical` distinction is load-bearing. A repo that declares no
+public/internal API surface has nothing to score for encapsulation; that is
+`n/a`, not a `critical` failure. Reporting a confident bad score on absent
+evidence is a false alarm the tool refuses to raise.
+
+### Confidence caps the band
+
+Confidence (`high` / `medium` / `low`) reflects how much of the needed evidence
+was actually available (coverage, classified fraction, sample size). It can only
+_lower_ the reported band, never raise it
+(`internal/metrics/metrics.go`, `applyConfidenceCap`):
+
+```text
+high   → band may reach "strong"
+medium → band capped at "serviceable"
+low    → band capped at "mixed"
+```
+
+So a metric cannot claim `strong` on thin evidence. This is why low extraction
+coverage quietly pulls every dependent metric's ceiling down instead of letting
+the tool over-claim.
+
+### Deltas
+
+In delta mode (`check --base <ref>`) each scored metric is compared with the
+baseline snapshot. A negative delta (the metric got worse) sets the run to
+`warn`. Report-only metrics carry no delta and never warn.
+
+---
+
+## Verdict-affecting metrics
+
+### `encapsulation` (headline metric)
+
+- **Represents:** of the cross-boundary edges that take a stance on boundary
+  respect, the fraction that go through a declared contract instead of reaching
+  into internals.
+- **Computed:** `contract_cross / (contract_cross + intrusive_cross)`, counting
+  only edges classified `contract` or `intrusive` at a real cross-boundary
+  distance. `functional` and `model` (normal public coupling) and `unknown`
+  (no evidence) are excluded from the denominator, not counted against the score.
+- **Why this denominator:** counting every public function call as a strike would
+  crush the ratio for any normal codebase and manufacture a false `critical` once
+  symbol-level strength lands. The metric asks one question — _when code crosses a
+  boundary, does it use the front door?_ — and ignores edges that are neither a
+  contract nor a leak.
+- **Scored:** `value × 10` → band. No cross-boundary edges → `1.0` (vacuously
+  encapsulated). Cross-boundary edges exist but none is contract/intrusive →
+  `n/a`. Contract-only with zero intrusive on a compiler that forces exported
+  access (Go/TS) → `n/a`, because 100% there is not _earned_. Confidence scales
+  with the classified fraction of cross-boundary edges.
+- **Affects verdict:** `warn` when encapsulation drops vs baseline.
+- **Balanced Coupling:** strength (`contract` vs `intrusive`), filtered by distance.
+
+### `unbalanced_edge`
+
+- **Represents:** count of **new, high-risk** imbalanced edges — the worst corner
+  of the balance rule.
+- **Computed:** an edge qualifies when it is `intrusive` **and** at distance
+  ≥ `cross_module_different_owner` **and** `high` volatility **and** new (not
+  already in the baseline). The reported value is the count of such edges.
+- **Scored:** `0` qualifying edges → `strong`; any → `critical`. If intrusive
+  cross-module candidates exist but none has known volatility → `n/a` (honest
+  indeterminate, not a clean zero).
+- **Affects verdict:** `warn` when the count rises vs baseline. Can be promoted to
+  a hard gate by configuring `gate: fail` on the rule.
+- **Balanced Coupling:** the most direct encoding of the model — all three
+  dimensions at their high settings.
+
+### `cycle`
+
+- **Represents:** number of import cycles among modules/packages.
+- **Computed:** Tarjan strongly-connected components; each SCC of size > 1 is one
+  cycle.
+- **Scored:** `0` → `strong`; any → `critical`. Confidence always `high` (cycles
+  are a fact, not an inference).
+- **Affects verdict:** `warn` on a new cycle vs baseline; the `cycle` rule with
+  `gate: fail` makes new cycles a hard failure.
+- **Balanced Coupling:** none — a graph-topology fact, not a strength/distance call.
+
+### `coverage`
+
+- **Represents:** the fraction of applicable files the extractors actually
+  processed — the trust signal for every other metric.
+- **Computed:** `extracted / applicable` across all tool-coverage records. Zero
+  applicable → `1.0`.
+- **Scored:** `value × 10`. Confidence from the unresolved ratio (≤5% → high,
+  ≤20% → medium, else low).
+- **Affects verdict:** `warn` when coverage drops. More importantly, low coverage
+  caps the band of every metric that depends on the missing evidence.
+- **Balanced Coupling:** none — it modulates confidence system-wide.
+
+---
+
+## Report-only metrics
+
+These always report band `info`. They never set a delta and never change the
+verdict. They exist because the most expensive coupling is often the kind a
+pass/fail gate cannot honestly judge: a stable hub is fine, a god-module might be
+intentional, hidden coupling needs a human to confirm. Reporting beats gating
+here.
+
+### `blast_radius`
+
+- **Represents:** structural change-impact concentration — modules that a large
+  fraction of the codebase transitively depends on.
+- **Computed:** for each first-party module, the count of other modules that
+  transitively reach it (over the cycle-condensed DAG, so cycles don't inflate
+  it); flagged a hub when that share ≥ **0.30** of modules.
+- **Why report-only:** a hub is a fact, not a defect. A widely-used stable utility
+  is good design. The number tells you _where_ a change ripples, not that anything
+  is wrong.
+
+### `change_amplification`
+
+- **Represents:** expected change cost — blast radius weighted by how often the
+  module actually changes (accidental volatility).
+- **Computed:** `(blast_share) × (churn / max_churn)` per module; hub when
+  ≥ **0.15**. Uses git churn, mapped to modules per language.
+- **Why it matters:** blast radius says a change _could_ ripple; this says it
+  _both_ ripples _and_ happens often — the modules where imbalance is paid down
+  repeatedly. This is the one metric built on churn-derived volatility.
+
+### `hidden_coupling`
+
+- **Represents:** module pairs that change together in git history but have **no**
+  static import edge — coupling the dependency graph cannot see (shared implicit
+  contracts, temporal coupling, mediated state).
+- **Computed:** for each unlinked pair, `co_change / min(churn_a, churn_b)`;
+  counted when co-change ≥ **4** and that logical-coupling ratio ≥ **0.50**.
+- **Why report-only:** this is the operational hint for `functional` / `model`
+  coupling that imports miss. It surfaces candidates for human or LLM review, not
+  verdicts.
+
+### `structural_weight`
+
+- **Represents:** size skew — modules far larger than the codebase median
+  (god-module smell).
+- **Computed:** flagged when module LOC ≥ `max(median × 4, 400)`.
+- **Why LOC:** LCOM4 and "vocabulary mixing" were prototyped and dropped — they
+  misranked (data registries scored worst, real god-files scored best). Raw size
+  is the honest proxy. Known blind spot: a god-module split across many small
+  files is not flagged.
+
+### `complexity`
+
+- **Represents:** functions whose cyclomatic complexity exceeds a threshold — the
+  intra-module risk that module-size metrics cannot see.
+- **Computed:** count of functions with CCN > **15**, via the `lizard` tool. Shows
+  the top 5 hotspots with file and line.
+- **Requires:** `tools.complexity.enabled: on` (opt-in; config-driven for
+  determinism, not PATH presence).
+
+### `risk_hub`
+
+- **Represents:** symbol-level risk hubs — modules with the widest externally-used
+  symbol surface, weighted by _declared_ volatility.
+- **Computed:** `breadth × volatility_multiplier`, where breadth is the count of a
+  module's own symbols referenced from other modules' symbols, and the multiplier
+  is `high 1.0 / medium 0.66 / low 0.33 / unset 1.0`. An optional GitNexus factor
+  (1.0–2.0) refines but cannot dominate.
+- **Distinct from `blast_radius`:** blast radius counts _how many modules depend on
+  M_; risk_hub counts _how many of M's own symbols are used externally_. A state
+  store with 73 externally-read fields outranks a utility with one widely-called
+  function.
+- **Distinct from `change_amplification`:** risk_hub uses only hand-authored
+  volatility (captured before churn is applied), so the two never double-count.
+- **Requires:** a SCIP index (`tools.scip.enabled: on`; `scip-go`,
+  `scip-typescript`, `scip-python`).
+
+### `architecture_fitness`
+
+- **Represents:** how much of the architecture intent is _actively enforced_, not
+  just documented.
+- **Computed:** fraction of three enforcement signals present — (1) arch test
+  files, (2) import-linter config, (3) an arch-linter in CI. Display shows
+  `present/3 × 10` with the matched evidence paths.
+- **Scoring note:** the display carries a 0–10 number for legibility, but the band
+  is always `info` — it never gates. `n/a` only when the scan never ran.
+- **Why it matters:** an architecture that is enforced by executable checks resists
+  drift; one that lives only in a wiki rots. This metric measures the enforcement
+  posture itself.
+
+### `functional_candidates`
+
+- **Represents:** cross-module pairs with duplicated logic (copy-paste of business
+  rules) — a proxy for `functional` coupling.
+- **Computed:** count of cross-module pairs sharing ≥1 duplicated code block (clone
+  detector, e.g. `jscpd`), annotated with how many also co-change.
+- **Distinct from `hidden_coupling`:** hidden_coupling is co-change _without_ an
+  import edge; functional_candidates is _duplication_, whether or not the modules
+  import each other. A pair can appear in both.
+- **Requires:** `tools.clones.enabled: on` (opt-in).
+
+### `change_locality`
+
+- **Represents:** per-change drift — how far a change reaches beyond the modules it
+  touches.
+- **Computed:** count of cross-module edges originating from changed files, plus
+  the forward graph reach (distinct files reachable from the changed set). Always
+  `n/a` in full mode (no diff) — never a false zero.
+- **Why it matters:** this is the bridge to agent cost. A change that stays local
+  is cheap to make and to verify; one that reaches across many modules predicts
+  larger token burn and more repair iterations. The `new_cross_module_dependency`
+  _rule_ is the gate equivalent; this metric quantifies the blast surface for the
+  agent loop. See [Agent feedback loop](agent-feedback.md).
+
+---
+
+## Coupling classification reference
+
+Every cross-boundary edge is classified on the four lenses below
+(`internal/model/coupling/coupling.go`). These power the
+`bc/imbalanced_coupling` advisories and feed `encapsulation` and
+`unbalanced_edge`.
+
+| Lens         | Values (ordered)                                                                                              | Derived from                                                       |
+| ------------ | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Strength     | `contract` < `model` < `functional` < `intrusive` (+`unknown`)                                                | public/internal globs, visibility, SCIP symbol kind, pinned labels |
+| Distance     | `same_module` < `cross_module_same_owner` < `cross_module_different_owner` < `cross_deploy_unit` (+`unknown`) | module map, `owner`, `deploy_unit`                                 |
+| Volatility   | `low` < `medium` < `high` (+`unknown`)                                                                        | `volatility:` / `subdomain:`, then git churn fallback              |
+| Explicitness | `explicit`, `implicit` (+`unknown`)                                                                           | strength (contract→explicit, intrusive→implicit) or AST hint       |
+| Severity     | (none) < `low` < `medium` < `high` < `critical`                                                               | the balance rule over the four above                               |
+
+For the full severity table and the reasoning, see
+[Concepts → The balance rule](concepts.md#the-balance-rule).
+
+---
+
+## Tool requirements
+
+Most metrics work from the built-in extractors and `git`. A few need an opt-in
+tool and report `n/a` (with a coverage note) when it is absent — never a false
+failure.
+
+| Metric(s)                                                                                                               | Needs                                       |
+| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| encapsulation, unbalanced_edge, cycle, coverage, blast_radius, structural_weight, architecture_fitness, change_locality | built-in extractors + `git`                 |
+| change_amplification, hidden_coupling                                                                                   | `git` history (churn / co-change)           |
+| risk_hub                                                                                                                | SCIP index (`tools.scip.enabled: on`)       |
+| complexity                                                                                                              | `lizard` (`tools.complexity.enabled: on`)   |
+| functional_candidates                                                                                                   | clone detector (`tools.clones.enabled: on`) |
+| risk_hub (refinement only)                                                                                              | GitNexus (`tools.gitnexus.enabled: on`)     |
+
+The `llm` tool is used only by `archfit enrich` and `archfit explain --llm`. It
+is **never** consumed by `check` — gate verdicts and metric values stay
+deterministic. See [LLM enrichment](llm-enrich.md).
+
+---
+
+## Dropped and rejected metrics
+
+`archfit` deliberately omits some popular metrics. Recording why is part of being
+honest about what the numbers mean.
+
+- **Martin's D (distance from the main sequence).** No single blended
+  architecture score in v1. A composite hides detected edges, declared volatility,
+  inferred distance, missing coverage, and accepted exceptions behind one number.
+  `archfit` reports small metrics that each measure one thing. (SCC condensation
+  in the graph code is a correctness device for reachability, not an
+  implementation of Martin's metric.)
+- **`cohesion_spread` and `shared_state_hub`.** Prototyped, then removed — they did
+  not rank real problems better than the metrics that shipped.
+- **LCOM4 / "vocabulary mixing"** for `structural_weight`. Prototyped and dropped
+  for misranking; raw LOC is the honest proxy (see `structural_weight` above).
+
+See [Concepts](concepts.md) for the model these metrics serve, and
+`docs/spec/arch-fitness-spec-v0.4.md` §10 for the original measurement design.
