@@ -15,15 +15,14 @@ small references while configuring a repo.
 - [Configuration reference](configuration-reference.md) — fields and examples.
 - [Commands](commands.md) — common commands, formats, and exit codes.
 - [CI](ci.md) — basic CI and pull-request usage.
+- [Agent feedback loop](agent-feedback.md) — the AI-agent loop: agent_tasks, SARIF, change_locality.
+- [LLM enrichment](llm-enrich.md) — off-gate LLM enrichment: enrich, pinned labels, explain --llm.
 - [Troubleshooting](troubleshooting.md) — common setup and config issues.
 
 ## Documentation to add later
 
 Add these only when the project needs more detail:
 
-- [`commands.md`](commands.md) — output formats: text, JSON, Markdown, SARIF.
-- [`agent-feedback.md`](agent-feedback.md) — the AI-agent loop: agent_tasks, SARIF, change_locality.
-- [`llm-enrich.md`](llm-enrich.md) — off-gate LLM enrichment: enrich, pinned labels, explain --llm.
 - `docs/baselines-and-exceptions.md` — lifecycle and review workflow.
 - `docs/contributing.md` — local development and release process.
 

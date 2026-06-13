@@ -20,6 +20,10 @@ Public links assume the default branch is `main`:
   <https://github.com/alexei-led/archfit/blob/main/docs/guide/commands.md>
 - CI:
   <https://github.com/alexei-led/archfit/blob/main/docs/guide/ci.md>
+- Agent feedback loop:
+  <https://github.com/alexei-led/archfit/blob/main/docs/guide/agent-feedback.md>
+- LLM enrichment:
+  <https://github.com/alexei-led/archfit/blob/main/docs/guide/llm-enrich.md>
 - Troubleshooting:
   <https://github.com/alexei-led/archfit/blob/main/docs/guide/troubleshooting.md>
 
@@ -33,10 +37,9 @@ Local fallback paths when working inside the repository:
 - `docs/guide/configuration-reference.md`
 - `docs/guide/commands.md`
 - `docs/guide/ci.md`
+- `docs/guide/agent-feedback.md`
+- `docs/guide/llm-enrich.md`
 - `docs/guide/troubleshooting.md`
 
 When code and docs conflict, inspect the local CLI and source before changing
 behavioral guidance.
-
-- `docs/guide/agent-feedback.md` — AI-agent loop: agent_tasks, SARIF, change_locality.
-- `docs/guide/llm-enrich.md` — off-gate LLM enrichment: enrich, pinned labels, explain --llm.
