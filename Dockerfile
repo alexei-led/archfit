@@ -4,6 +4,10 @@ ARG NODE_VERSION=22
 ARG UV_VERSION=0.5.0
 ARG DEPCRUISER_VERSION=17
 
+# ── uv binary stage: FROM expands the global ARG; COPY --from=<image:${VAR}>
+# does not (buildkit rejects variable expansion in --from), so alias it here. ──
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv-bin
+
 # ── Stage 1: Go cross-compile (runs on builder native arch, no QEMU) ─────
 FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS go-builder
 ARG TARGETOS TARGETARCH VERSION COMMIT DATE
@@ -19,7 +23,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 # ── Stage 2: Python builder — install grimp into system Python ───────────
 FROM --platform=$TARGETPLATFORM python:3.12-slim-bookworm AS py-builder
 ARG UV_VERSION
-COPY --from=ghcr.io/astral-sh/uv:${UV_VERSION} /uv /uvx /bin/
+COPY --from=uv-bin /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
@@ -49,7 +53,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy uv binary (multi-arch manifest — Docker resolves correct arch)
-COPY --from=ghcr.io/astral-sh/uv:${UV_VERSION} /uv /uvx /usr/local/bin/
+COPY --from=uv-bin /uv /uvx /usr/local/bin/
 
 # Copy grimp + deps from Python builder (installed into system Python)
 COPY --from=py-builder /usr/local/lib/python3.12/dist-packages /usr/local/lib/python3.12/dist-packages
