@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-ARG DEBIAN_VERSION=bookworm-slim
-ARG NODE_VERSION=22
+ARG ALPINE_VERSION=3.20
+ARG GO_VERSION=1.26
 ARG UV_VERSION=0.5.0
 ARG DEPCRUISER_VERSION=17
 
@@ -8,66 +8,65 @@ ARG DEPCRUISER_VERSION=17
 # does not (buildkit rejects variable expansion in --from), so alias it here. ──
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv-bin
 
-# ── Stage 1: Go cross-compile (runs on builder native arch, no QEMU) ─────
-FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS go-builder
+# ── Stage 1: Go cross-compile (musl, fully static; runs on builder native arch)
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS go-builder
 ARG TARGETOS TARGETARCH VERSION COMMIT DATE
 WORKDIR /src
-COPY go.mod go.sum go.work go.work.sum* ./
+COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+# GOWORK=off: go.work references testdata modules that .dockerignore excludes;
+# the binary builds from the main module only.
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOWORK=off \
     go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
     -o /out/archfit ./cmd/archfit
 
-# ── Stage 2: Python builder — install grimp into system Python ───────────
-FROM --platform=$TARGETPLATFORM python:3.12-slim-bookworm AS py-builder
-ARG UV_VERSION
-COPY --from=uv-bin /uv /uvx /bin/
-ENV UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy \
-    UV_PYTHON_DOWNLOADS=never \
-    UV_SYSTEM_PYTHON=1
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install grimp
-
-# ── Stage 3: Final runtime image ─────────────────────────────────────────
-FROM debian:${DEBIAN_VERSION}
-ARG NODE_VERSION
-ARG UV_VERSION
+# ── Stage 2: Final runtime image (Alpine) ────────────────────────────────────
+FROM alpine:${ALPINE_VERSION}
 ARG DEPCRUISER_VERSION
 
-# Install Node.js via NodeSource (official, supports arm64) + Python 3.12 runtime
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl git gnupg \
-        python3.12 libpython3.12 \
-    && mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
-        | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_VERSION}.x nodistro main" \
-        > /etc/apt/sources.list.d/nodesource.list \
-    && apt-get update && apt-get install -y nodejs \
-    # Install dependency-cruiser globally
-    && npm install -g dependency-cruiser@${DEPCRUISER_VERSION} \
-    && npm cache clean --force \
-    && rm -rf /var/lib/apt/lists/*
+# Runtime tools for all archfit checks:
+#   git           — repo root + history
+#   python3 + uv  — Python import analysis (grimp, installed below)
+#   nodejs + npm  — TS analysis (dependency-cruiser) and ast-grep (sg)
+#   libstdc++     — required by the Node native runtime on musl
+RUN apk add --no-cache ca-certificates git nodejs npm python3 libstdc++
 
-# Copy uv binary (multi-arch manifest — Docker resolves correct arch)
+# uv (static musl binary): archfit runs `uv run --with grimp` for Python import
+# analysis, which resolves grimp at runtime (cached after first use). Pre-baking
+# grimp into the system Python is bypassed by that path and trips PEP 668 on
+# Alpine's externally-managed interpreter, so it is intentionally omitted.
 COPY --from=uv-bin /uv /uvx /usr/local/bin/
-
-# Copy grimp + deps from Python builder (installed into system Python)
-COPY --from=py-builder /usr/local/lib/python3.12/dist-packages /usr/local/lib/python3.12/dist-packages
-
-# Copy archfit binary
-COPY --from=go-builder /out/archfit /usr/local/bin/archfit
-
-# Non-root user
-RUN groupadd -r archfit && useradd -r -g archfit archfit
-USER archfit
-
-# uv should not try to download Python inside the container
 ENV UV_PYTHON_DOWNLOADS=never \
     UV_SYSTEM_PYTHON=1
+
+# dependency-cruiser (TS import analysis) — pure JS, installs cleanly on musl.
+RUN npm install -g dependency-cruiser@${DEPCRUISER_VERSION} \
+    && npm cache clean --force
+
+# ast-grep (the `sg` binary archfit invokes for structural patterns). WIP on
+# Alpine: @ast-grep/cli has no resolvable musl native binary and it is not yet in
+# apk. Best-effort for now; structural pattern checks degrade to "absent" without
+# it. TODO(v0.1.1): wire a musl ast-grep (apk edge or pinned static binary).
+RUN npm install -g @ast-grep/cli 2>/dev/null || echo "ast-grep (musl) install skipped — WIP"
+
+# archfit binary (static).
+COPY --from=go-builder /out/archfit /usr/local/bin/archfit
+
+# Go toolchain: the Go extractor uses go/packages, which shells out to `go list`,
+# so analyzing a Go target needs the SDK at runtime. golang:*-alpine is musl, so
+# the toolchain runs on this Alpine base. GOTOOLCHAIN=local pins to it; GOCACHE/
+# GOPATH point at world-writable /tmp so the non-root user can run `go list`.
+COPY --from=go-builder /usr/local/go /usr/local/go
+ENV PATH="/usr/local/go/bin:${PATH}" \
+    GOTOOLCHAIN=local \
+    GOCACHE=/tmp/.gocache \
+    GOPATH=/tmp/.gopath
+
+# Non-root user.
+RUN addgroup -S archfit && adduser -S -G archfit archfit
+USER archfit
 
 LABEL org.opencontainers.image.title="archfit" \
       org.opencontainers.image.description="Architecture fitness checker for Go, TypeScript, and Python repositories" \
