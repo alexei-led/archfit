@@ -1,5 +1,14 @@
 # Metrics decomposition + per-family typed inputs
 
+> **Status: COMPLETED 2026-06-16.** Merged to `main` (`9559a14`); CI green.
+> Behaviour-preserving (main vs post-refactor analyzer byte-identical on the same
+> source). Two deviations from the plan as written: (1) Task 7's
+> `.archfit.yaml` `metrics.public` edit was skipped — the self-scan showed no
+> intrusive-coupling findings, so it was unnecessary; (2) an extra step ("improve
+> A") extracted the module-graph helpers into `internal/metrics/internal/modgraph`
+> so `modularity` drops under the god-module threshold (no metrics package is a
+> `structural_weight` god-module).
+
 ## Overview
 
 `internal/metrics` is archfit's largest package (~2025 LOC, ~11× the codebase median) and a top
@@ -92,148 +101,148 @@ direction:"upstream"})`; stop and warn on HIGH/CRITICAL. Targets for this work:
 
 ### Task 1: Extract shared `internal/metrics/internal/result` package
 
-- [ ] create `internal/metrics/internal/result` (nested under `internal/` so Go's visibility rule
+- [x] create `internal/metrics/internal/result` (nested under `internal/` so Go's visibility rule
       makes it importable only within the `internal/metrics` subtree — compiler-enforced privacy)
-- [ ] move the band/confidence model from `metrics.go` (`bandScore`, `bandRank`, `bandByRank`,
+- [x] move the band/confidence model from `metrics.go` (`bandScore`, `bandRank`, `bandByRank`,
       `confidenceCapRank`, `applyConfidenceCap`, band-name constants, `computeDelta`) and export
       the cross-family ones
-- [ ] move `naCount`, `shortModule` (from `modularity.go`) and the `modularitySmallN` constant
+- [x] move `naCount`, `shortModule` (from `modularity.go`) and the `modularitySmallN` constant
       here (the latter is read by `risk_hub.go:240`; keeping it in `modularity` would force a
       `risk → modularity` edge)
-- [ ] update in-root references to call `result.*`; confirm it imports only `internal/model/*` +
+- [x] update in-root references to call `result.*`; confirm it imports only `internal/model/*` +
       stdlib (no `os`/`os/exec`/yaml/adapters)
-- [ ] move/author `result` unit tests (band + confidence-cap + delta + naCount)
-- [ ] `go build ./... && go test ./internal/... && go test -count=1 ./internal/engine/ -run TestGolden`
+- [x] move/author `result` unit tests (band + confidence-cap + delta + naCount)
+- [x] `go build ./... && go test ./internal/... && go test -count=1 ./internal/engine/ -run TestGolden`
       — must pass before Task 2
 
 ### Task 2: Extract `internal/metrics/boundary` package
 
-- [ ] move `EncapsulationMetric`, `UnbalancedEdgeMetric`, `CycleMetric`, `CoverageMetric`
+- [x] move `EncapsulationMetric`, `UnbalancedEdgeMetric`, `CycleMetric`, `CoverageMetric`
       (from `metrics.go`) and `ChangeLocalityMetric` (from `change_locality.go`)
-- [ ] move their private helpers: `distanceRank`, `isClassifiedStrength`,
+- [x] move their private helpers: `distanceRank`, `isClassifiedStrength`,
       `classificationConfidence`, `statusPriority`, `forwardReach`
-- [ ] switch these files to import `internal/model/signal` directly (drop the `metrics.` alias)
+- [x] switch these files to import `internal/model/signal` directly (drop the `metrics.` alias)
       and `internal/metrics/internal/result`; update root `New()` to construct `boundary.*`
-- [ ] move the matching cases out of `metrics_test.go`/`change_locality_test.go`
-- [ ] run build + `go test ./...` + `TestArchImports` + `TestGolden` — must pass before Task 3
+- [x] move the matching cases out of `metrics_test.go`/`change_locality_test.go`
+- [x] run build + `go test ./...` + `TestArchImports` + `TestGolden` — must pass before Task 3
 
 ### Task 3: Extract `internal/metrics/modularity` package
 
-- [ ] move `BlastRadiusMetric`, `ChangeAmplificationMetric`, `HiddenCouplingMetric`,
+- [x] move `BlastRadiusMetric`, `ChangeAmplificationMetric`, `HiddenCouplingMetric`,
       `StructuralWeightMetric`, `FunctionalCandidatesMetric`
-- [ ] keep the module-graph/history helpers private here (`moduleKey`, `blastRadius`,
+- [x] keep the module-graph/history helpers private here (`moduleKey`, `blastRadius`,
       `tarjanSCC`, `dominantLanguage`, `fileToModuleKey`, `moduleChurn`, `orderedPair`,
       threshold constants); import `result` for `naCount`/`shortModule`/`modularitySmallN`
-- [ ] update root `New()` to construct `modularity.*`
-- [ ] move `modularity_test.go` and the relevant `functional_candidates_test.go` cases
-- [ ] run build + `go test ./...` + `TestArchImports` + `TestGolden` — must pass before Task 4
+- [x] update root `New()` to construct `modularity.*`
+- [x] move `modularity_test.go` and the relevant `functional_candidates_test.go` cases
+- [x] run build + `go test ./...` + `TestArchImports` + `TestGolden` — must pass before Task 4
 
 ### Task 4: Extract `internal/metrics/risk` package
 
-- [ ] move `RiskHubMetric` + `volatilityBandMultiplier`, `moduleSurfaceBreadth`,
+- [x] move `RiskHubMetric` + `volatilityBandMultiplier`, `moduleSurfaceBreadth`,
       `moduleImpactFromFiles`, `gitnexusImpactFactor`, vol-band constants
-- [ ] move `newRiskHubMetric(cfg)` here as `risk.NewMetric(cfg)`; import `result`
-- [ ] update root `New()` to call `risk.NewMetric(cfg)`; move `risk_hub_test.go`
-- [ ] run build + `go test ./...` + `TestArchImports` + `TestGolden` — must pass before Task 5
+- [x] move `newRiskHubMetric(cfg)` here as `risk.NewMetric(cfg)`; import `result`
+- [x] update root `New()` to call `risk.NewMetric(cfg)`; move `risk_hub_test.go`
+- [x] run build + `go test ./...` + `TestArchImports` + `TestGolden` — must pass before Task 5
 
 ### Task 5: Extract `internal/metrics/intramodule` package
 
-- [ ] move `ComplexityMetric`, `ArchitectureFitnessMetric`, `shortFile`
-- [ ] delete the `ComplexityFunc` alias (`complexity.go:21`) — use `signal.ComplexityFunc`
-- [ ] update root `New()` to construct `intramodule.*`; move `complexity_test.go` + `arch_fitness_test.go`
-- [ ] run build + `go test ./...` + `TestArchImports` + `TestGolden` — must pass before Task 6
+- [x] move `ComplexityMetric`, `ArchitectureFitnessMetric`, `shortFile`
+- [x] delete the `ComplexityFunc` alias (`complexity.go:21`) — use `signal.ComplexityFunc`
+- [x] update root `New()` to construct `intramodule.*`; move `complexity_test.go` + `arch_fitness_test.go`
+- [x] run build + `go test ./...` + `TestArchImports` + `TestGolden` — must pass before Task 6
 
 ### Task 6: Slim root `internal/metrics` + shared test helpers
 
-- [ ] reduce root to: `Metric` interface, `New(cfg)` (preserving the exact metric order from
+- [x] reduce root to: `Metric` interface, `New(cfg)` (preserving the exact metric order from
       `metrics.go:617-631`), `doc.go`; delete the `MetricInput`/`ChangeHistory` aliases
-- [ ] create `internal/metrics/metricstest` exporting `BuildGraph`, `ImportKey`, `ApproxEqual`;
+- [x] create `internal/metrics/metricstest` exporting `BuildGraph`, `ImportKey`, `ApproxEqual`;
       update family `_test.go` files to use it
-- [ ] keep `TestNew_ReturnsAllMetrics` (count=13 + names) with `New()` in root
-- [ ] run build + `go test ./...` + `TestArchImports` + `TestGolden` — must pass before Task 7
+- [x] keep `TestNew_ReturnsAllMetrics` (count=13 + names) with `New()` in root
+- [x] run build + `go test ./...` + `TestArchImports` + `TestGolden` — must pass before Task 7
 
 ### Task 7: Update structural guards for the split
 
-- [ ] in `internal/arch_test.go`, change `core_ring_no_forbidden_imports` to a **prefix scan**
+- [x] in `internal/arch_test.go`, change `core_ring_no_forbidden_imports` to a **prefix scan**
       over all loaded packages matching the core-ring prefixes (incl. `internal/metrics`),
       mirroring `llm_ring_unreachable_from_internal`; keep `core_ring_packages_present` as exact
       paths and add the new sub-packages there
-- [ ] in `.archfit.yaml`, add the family + shared sub-packages
+- [x] in `.archfit.yaml`, add the family + shared sub-packages
       (`boundary`, `modularity`, `risk`, `intramodule`, `internal/result`) to the `metrics`
       module `public:` list
-- [ ] add a negative arch-test case: a metrics sub-package importing an adapter is rejected
-- [ ] run `go test -count=1 ./internal/ -run TestArchImports` + `TestGolden` — must pass before Task 8
+- [x] add a negative arch-test case: a metrics sub-package importing an adapter is rejected
+- [x] run `go test -count=1 ./internal/ -run TestArchImports` + `TestGolden` — must pass before Task 8
 
 ### Task 8: Phase A verification + re-baseline + commit
 
-- [ ] `make fmt && make lint && make test && make build`
-- [ ] `./.bin/archfit check --config .archfit.yaml --full` — verdict `pass`; confirm
+- [x] `make fmt && make lint && make test && make build`
+- [x] `./.bin/archfit check --config .archfit.yaml --full` — verdict `pass`; confirm
       `structural_weight` dropped (metrics no longer a god-module); note any `hidden_coupling` shift
-- [ ] regenerate `.archfit-baseline.json` to absorb new informational values
-- [ ] `detect_changes({scope:"compare", base_ref:"main"})` — only expected symbols/flows changed
-- [ ] commit Phase A on the feature branch
+- [x] regenerate `.archfit-baseline.json` to absorb new informational values
+- [x] `detect_changes({scope:"compare", base_ref:"main"})` — only expected symbols/flows changed
+- [x] commit Phase A on the feature branch
 
 ### Task 9: Add narrow signal types (`internal/model/signal/signal.go`)
 
-- [ ] add `CommonInput{Graph, Classifications, Findings, Baseline, ToolCoverage, ChangedFiles}`
-- [ ] add signal groups: `HistorySignals{FileChurn, CoChange}`, `SymbolSignals{Graph,
-    GitnexusImpact}`, `SizeSignals{FileLOC}`, `ComplexitySignals{Funcs}`,
+- [x] add `CommonInput{Graph, Classifications, Findings, Baseline, ToolCoverage, ChangedFiles}`
+- [x] add signal groups: `HistorySignals{FileChurn, CoChange}`, `SymbolSignals{Graph,
+  GitnexusImpact}`, `SizeSignals{FileLOC}`, `ComplexitySignals{Funcs}`,
       `DuplicationSignals{Clusters}` (Fitness reuses existing `Signals`)
-- [ ] add per-family inputs embedding `CommonInput`: `HistoryInput`, `SymbolInput`, `SizeInput`,
+- [x] add per-family inputs embedding `CommonInput`: `HistoryInput`, `SymbolInput`, `SizeInput`,
       `ComplexityInput`, `FitnessInput`, `DuplicationInput` (the last also carries `History` for
       `functional_candidates`' co-change)
-- [ ] add `CollectedSignals{Common, History, Symbol, Size, Complexity, Fitness, Duplication}`
+- [x] add `CollectedSignals{Common, History, Symbol, Size, Complexity, Fitness, Duplication}`
       with `As*` projector methods returning each per-family input
-- [ ] keep the old flat `MetricInput` for now (additive task); confirm `model_stdlib_only` holds
-- [ ] run `go build ./... && go test -count=1 ./internal/ -run TestArchImports` — pass before Task 10
+- [x] keep the old flat `MetricInput` for now (additive task); confirm `model_stdlib_only` holds
+- [x] run `go build ./... && go test -count=1 ./internal/ -run TestArchImports` — pass before Task 10
 
 ### Task 10: Swap to generic per-family dispatch (consumer side)
 
-- [ ] in root `metrics`: change `Metric` to `{Name; Version; Calculate(signal.CollectedSignals)}`;
+- [x] in root `metrics`: change `Metric` to `{Name; Version; Calculate(signal.CollectedSignals)}`;
       add generic `Calculator[In]`, `wrapped[In]`, `adapt[In]` (see Technical Details)
-- [ ] convert each metric's method to its typed family signature (e.g. `Calculate(signal.HistoryInput)`)
+- [x] convert each metric's method to its typed family signature (e.g. `Calculate(signal.HistoryInput)`)
       reading `in.History.FileChurn`, `in.Symbol.Graph`, `in.Size.FileLOC`, `in.Complexity.Funcs`,
       `in.Duplication.Clusters`, `in.Fitness`, etc. (no math changes)
-- [ ] rewrite `New()` to register via `adapt(metric, signal.CollectedSignals.As<Family>)`,
+- [x] rewrite `New()` to register via `adapt(metric, signal.CollectedSignals.As<Family>)`,
       preserving order (wrong family↔projection pairing must be a compile error)
-- [ ] rewrite engine dispatch (`engine.go:128-147`): build one `signal.CollectedSignals` from the
+- [x] rewrite engine dispatch (`engine.go:128-147`): build one `signal.CollectedSignals` from the
       existing `in.Change.*` + `ex.*` + `in.Scope`, then
       `for _, m := range in.Metrics { append(results, m.Calculate(collected)) }` — no type switch
-- [ ] update `cmd/archfit/enrich.go` `captureMetric` to `Calculator[signal.CommonInput]`;
+- [x] update `cmd/archfit/enrich.go` `captureMetric` to `Calculator[signal.CommonInput]`;
       delete the old flat `MetricInput`
-- [ ] update metric unit + engine spy tests to the new input types; keep the Phase B regression
+- [x] update metric unit + engine spy tests to the new input types; keep the Phase B regression
       checks (SCIP→risk_hub, changed-files→change_locality, fitness nil-vs-empty, clones+co-change)
-- [ ] run `make test` + `TestArchImports` + `go test -count=1 ... TestGolden` (byte-identical)
+- [x] run `make test` + `TestArchImports` + `go test -count=1 ... TestGolden` (byte-identical)
       — must pass before Task 11
 
 ### Task 11: Split the producer carrier (eliminate `ChangeHistory`)
 
-- [ ] add `signal.RunSignals{History, Size, Complexity, Fitness, Duplication, GitnexusImpact,
-    ExtraCoverage}` and replace `engine.RunInput.Change signal.ChangeHistory` with the typed
+- [x] add `signal.RunSignals{History, Size, Complexity, Fitness, Duplication, GitnexusImpact,
+  ExtraCoverage}` and replace `engine.RunInput.Change signal.ChangeHistory` with the typed
       groups; delete `signal.ChangeHistory`
-- [ ] update `cmd/archfit/pipeline.go` to populate the typed groups directly from the producers
+- [x] update `cmd/archfit/pipeline.go` to populate the typed groups directly from the producers
       (git history, loc, complexity, fitness, clones, gitnexus)
-- [ ] update `engine.go` to assemble `CollectedSignals` from the typed `RunInput` groups +
+- [x] update `engine.go` to assemble `CollectedSignals` from the typed `RunInput` groups +
       `ex.g`/`ex.scipSymbols`/`ex.coverages` (no behavior change)
-- [ ] update `golden_test.go:110` and other tests that build `signal.ChangeHistory{}`
-- [ ] run `make test` + `TestArchImports` + `go test -count=1 ... TestGolden` — pass before Task 12
+- [x] update `golden_test.go:110` and other tests that build `signal.ChangeHistory{}`
+- [x] run `make test` + `TestArchImports` + `go test -count=1 ... TestGolden` — pass before Task 12
 
 ### Task 12: Documentation
 
-- [ ] update `internal/metrics/doc.go` and the `internal/model/signal` package comment to describe
+- [x] update `internal/metrics/doc.go` and the `internal/model/signal` package comment to describe
       the per-family input model + typed producer carrier
-- [ ] update any design doc that states "every metric receives the full `MetricInput`"
-- [ ] run `go test ./...` — must pass before Task 13
+- [x] update any design doc that states "every metric receives the full `MetricInput`"
+- [x] run `go test ./...` — must pass before Task 13
 
 ### Task 13: Verify acceptance criteria + Phase B commit
 
-- [ ] acceptance: same 13 metric names in the same order; `TestGolden` byte-identical; **no metric
+- [x] acceptance: same 13 metric names in the same order; `TestGolden` byte-identical; **no metric
       implementation receives all signals** (each takes one family input); `internal/metrics` root
       is no longer the LOC hotspot; **no new gate findings**
-- [ ] `make fmt && make lint && make test && make build`
-- [ ] `./.bin/archfit check --config .archfit.yaml --full` — verdict `pass`; re-baseline if an
+- [x] `make fmt && make lint && make test && make build`
+- [x] `./.bin/archfit check --config .archfit.yaml --full` — verdict `pass`; re-baseline if an
       informational value shifted
-- [ ] `detect_changes({scope:"compare", base_ref:"main"})`; commit Phase B
+- [x] `detect_changes({scope:"compare", base_ref:"main"})`; commit Phase B
 
 ---
 
