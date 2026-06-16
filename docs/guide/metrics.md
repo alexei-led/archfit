@@ -60,7 +60,7 @@ evidence is a false alarm the tool refuses to raise.
 Confidence (`high` / `medium` / `low`) reflects how much of the needed evidence
 was actually available (coverage, classified fraction, sample size). It can only
 _lower_ the reported band, never raise it
-(`internal/metrics/metrics.go`, `applyConfidenceCap`):
+(`internal/metrics/internal/result`, `ApplyConfidenceCap`):
 
 ```text
 high   → band may reach "strong"
@@ -212,7 +212,7 @@ here.
   is `high 1.0 / medium 0.66 / low 0.33 / unset 1.0`. An optional GitNexus factor
   (1.0–2.0) refines but cannot dominate.
 - **Distinct from `blast_radius`:** blast radius counts _how many modules depend on
-  M_; risk_hub counts _how many of M's own symbols are used externally_. A state
+  M_; risk*hub counts \_how many of M's own symbols are used externally*. A state
   store with 73 externally-read fields outranks a utility with one widely-called
   function.
 - **Distinct from `change_amplification`:** risk_hub uses only hand-authored
@@ -239,8 +239,8 @@ here.
   rules) — a proxy for `functional` coupling.
 - **Computed:** count of cross-module pairs sharing ≥1 duplicated code block (clone
   detector, e.g. `jscpd`), annotated with how many also co-change.
-- **Distinct from `hidden_coupling`:** hidden_coupling is co-change _without_ an
-  import edge; functional_candidates is _duplication_, whether or not the modules
+- **Distinct from `hidden_coupling`:** hidden*coupling is co-change \_without* an
+  import edge; functional*candidates is \_duplication*, whether or not the modules
   import each other. A pair can appear in both.
 - **Requires:** `tools.clones.enabled: on` (opt-in).
 
