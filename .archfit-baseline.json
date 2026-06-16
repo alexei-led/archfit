@@ -31,7 +31,7 @@
       "version": "encapsulation.v1"
     },
     "hidden_coupling": {
-      "value": 59,
+      "value": 65,
       "version": "hidden_coupling.v1"
     },
     "structural_weight": {
