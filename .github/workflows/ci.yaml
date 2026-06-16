@@ -21,7 +21,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.x
+          version: v2.12.2
       - name: govulncheck
         uses: golang/govulncheck-action@v1.0.4
         with:
