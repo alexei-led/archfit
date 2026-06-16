@@ -27,3 +27,14 @@ archfit check --config .archfit.yaml --full --format sarif > archfit.sarif
 
 Calibrate locally before adding the check to required CI. Keep early rules narrow
 and baseline accepted current findings before treating the check as a merge gate.
+
+## Pin CI infrastructure
+
+Keep CI reproducible:
+
+- use explicit runner labels such as `ubuntu-24.04`, not `ubuntu-latest`;
+- use `ubuntu-24.04-arm` for native arm64 jobs;
+- pin GitHub Actions to released versions, or preferably full SHAs with a version
+  comment;
+- pin installed tools in CI commands instead of relying on package-manager
+  defaults.

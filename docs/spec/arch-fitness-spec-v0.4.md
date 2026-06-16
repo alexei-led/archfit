@@ -1532,8 +1532,8 @@ Use these references to calibrate concepts, metric formulas, tool adapters, and 
 
 ### Methodology
 
-- Vlad Khononov, **Balancing Coupling in Software Design** — primary methodology source for integration strength, distance, volatility, balance, and rebalancing.
-- Vlad Khononov, **Learning Domain-Driven Design** — reference for subdomains, bounded contexts, integration patterns, and volatility classification.
+- Vlad Khononov, [**Balancing Coupling in Software Design**][bc-book] — primary methodology source for integration strength, distance, volatility, balance, and rebalancing.
+- Vlad Khononov, [**Learning Domain-Driven Design**][lddd-book] — reference for subdomains, bounded contexts, integration patterns, and volatility classification.
 - `https://coupling.dev/posts/core-concepts/` — concept index for complexity, modularity, coupling, and balance.
 - `https://coupling.dev/posts/dimensions-of-coupling/integration-strength/` — strength levels: intrusive, functional, model, contract.
 - `https://coupling.dev/posts/dimensions-of-coupling/distance/` — technical, socio-technical, lifecycle, and runtime distance.
@@ -1569,6 +1569,9 @@ Use these references to calibrate concepts, metric formulas, tool adapters, and 
 
 References should improve one of the product primitives: architecture graph facts, rule enforcement, metrics, confidence, or agent repair diagnostics. Do not add references for
 generic code quality unless they directly support an architecture rule or metric.
+
+[bc-book]: https://www.informit.com/store/balancing-coupling-in-software-design-universal-design-9780137353484
+[lddd-book]: https://www.oreilly.com/library/view/learning-domain-driven-design/9781098100124/
 
 ---
 

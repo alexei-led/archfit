@@ -9,11 +9,11 @@ Coupling** model. It does not invent its own architecture theory. It turns the
 parts of that model that can be read from code, config, and git history into
 checks an agent or CI can run on every change.
 
-- Book: Vlad Khononov, _Balancing Coupling in Software Design_, Addison-Wesley
-  Signature Series, 2024 — the primary source for strength, distance,
-  volatility, balance, and rebalancing.
-- Book: Vlad Khononov, _Learning Domain-Driven Design_, O'Reilly, 2021 — the
-  source for subdomains (core / supporting / generic) and volatility.
+- Book: Vlad Khononov, [_Balancing Coupling in Software Design_][bc-book],
+  Addison-Wesley Signature Series, 2024 — the primary source for strength,
+  distance, volatility, balance, and rebalancing.
+- Book: Vlad Khononov, [_Learning Domain-Driven Design_][lddd-book], O'Reilly,
+  2021 — the source for subdomains (core / supporting / generic) and volatility.
 - Site: <https://coupling.dev> — the companion concept index for the book.
   Specific pages are linked inline below and collected under [References](#references).
 
@@ -225,8 +225,9 @@ within the stated constraint → rerun.
 
 Methodology:
 
-- Vlad Khononov, _Balancing Coupling in Software Design_, Addison-Wesley, 2024.
-- Vlad Khononov, _Learning Domain-Driven Design_, O'Reilly, 2021.
+- Vlad Khononov, [_Balancing Coupling in Software Design_][bc-book],
+  Addison-Wesley, 2024.
+- Vlad Khononov, [_Learning Domain-Driven Design_][lddd-book], O'Reilly, 2021.
 
 Concept pages (companion site to the book):
 
@@ -240,3 +241,6 @@ Concept pages (companion site to the book):
 See the [Metrics reference](metrics.md) for how each of these concepts becomes a
 measured signal, and the build spec (`docs/spec/arch-fitness-spec-v0.4.md`) for
 the full design rationale.
+
+[bc-book]: https://www.informit.com/store/balancing-coupling-in-software-design-universal-design-9780137353484
+[lddd-book]: https://www.oreilly.com/library/view/learning-domain-driven-design/9781098100124/

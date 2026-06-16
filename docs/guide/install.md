@@ -1,9 +1,10 @@
 # Install
 
-Install from source with Go:
+Install from source with Go. Use a release tag, not `@latest`, in scripts and
+repeatable docs:
 
 ```sh
-go install github.com/alexei-led/archfit/cmd/archfit@latest
+go install github.com/alexei-led/archfit/cmd/archfit@v0.1.0
 ```
 
 Check the binary and available analyzers:
@@ -17,10 +18,10 @@ archfit doctor
 - CLI install: Go 1.26+ builds and installs the binary.
 - Git: `git` resolves changed files and refs for diff mode.
 - Go analysis: `go` loads packages with `go/packages`.
-- TypeScript analysis: Node.js, `npx` or `bunx`, and dependency-cruiser extract
-  the TS/JS dependency graph.
-- Python analysis: `uv` or Python 3.12+ with `grimp` extracts the Python import
-  graph.
+- TypeScript analysis: Node.js 24 LTS, `npx` or `bunx`, and dependency-cruiser
+  extract the TS/JS dependency graph.
+- Python analysis: `uv` or Python 3.14 recommended / Python 3.12+ minimum with
+  `grimp` extracts the Python import graph.
 - Structural patterns: `sg` from ast-grep runs configured patterns.
 - Symbol indexers: `scip-typescript`, `scip-python`, and `scip-go` are optional
   and reserved for higher-fidelity symbol resolution.
@@ -46,12 +47,13 @@ For deterministic CI, prefer explicit package-manager setup in your workflow.
 
 ## TypeScript tools
 
-Install Node.js 22+ or Bun, then add dependency-cruiser to the repository:
+Install Node.js 24 LTS or Bun, then add dependency-cruiser to the repository.
+Pin the package version in examples, CI, and lockfiles:
 
 ```sh
-npm install --save-dev dependency-cruiser
+npm install --save-dev dependency-cruiser@17.4.3
 # or
-bun add --dev dependency-cruiser
+bun add --dev dependency-cruiser@17.4.3
 ```
 
 `archfit` runs dependency-cruiser through `bunx depcruise` when `bunx` is found,
@@ -65,14 +67,14 @@ Recommended setup:
 brew install uv
 ```
 
-With `uv`, `archfit` runs the Python extractor with `uv run --with grimp`, so the
-project does not need to add `grimp` as a dependency.
+With `uv`, `archfit` injects `grimp` for the extractor run, so the project does
+not need to add `grimp` as a dependency.
 
-Without `uv`, use Python 3.12+ and install `grimp` in the environment used by the
-repo:
+Without `uv`, use Python 3.14 when available, or Python 3.12+ minimum, and
+install a pinned `grimp` in the environment used by the repo:
 
 ```sh
-python3.12 -m pip install grimp
+python3.14 -m pip install 'grimp==3.13'
 ```
 
 ## Go tools
@@ -93,8 +95,8 @@ you enable the matching `tools.*` key in `.archfit.yaml`.
 - **SCIP** (powers `risk_hub`) — install a SCIP indexer for your language
   (`scip-go`, `scip-python`, or `scip-typescript`) plus [`uv`](https://docs.astral.sh/uv/).
   Enable with `tools.scip.enabled: on`.
-- **Clone detectors** (power `functional_candidates`) — `npm install -g jscpd` for
-  JS/TS, or install [PMD](https://pmd.github.io/) (includes CPD) for Go/Python.
+- **Clone detectors** (power `functional_candidates`) — `npm install -g jscpd@5.0.9`
+  for JS/TS, or install [PMD](https://pmd.github.io/) (includes CPD) for Go/Python.
   Enable with `tools.clones.enabled: on`.
 - **gitnexus** (enriches `risk_hub`) — install the `gitnexus` binary on `PATH`.
   Enable with `tools.gitnexus.enabled: on`. Never runs automatically.
@@ -107,7 +109,7 @@ Use Docker when you want the bundled toolchain instead of installing language
 analysis tools on the host:
 
 ```sh
-docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:latest \
+docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.1.0 \
   check --config /repo/.archfit.yaml --full
 ```
 

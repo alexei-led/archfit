@@ -82,15 +82,15 @@ not individual `.go` files.
 Requirements:
 
 - `package.json` at the repository root;
-- Node.js with `npx`, or Bun with `bunx`;
+- Node.js 24 LTS with `npx`, or Bun with `bunx`;
 - dependency-cruiser available locally or through the package runner.
 
-Install:
+Install a pinned dependency-cruiser version:
 
 ```sh
-npm install --save-dev dependency-cruiser
+npm install --save-dev dependency-cruiser@17.4.3
 # or
-bun add --dev dependency-cruiser
+bun add --dev dependency-cruiser@17.4.3
 ```
 
 How extraction works:
@@ -143,7 +143,8 @@ For TypeScript, module paths and rule filters are repo-relative file path globs.
 Requirements:
 
 - `pyproject.toml`, `setup.py`, or configured `python_package`;
-- `uv`, or Python 3.12+ with `grimp` installed.
+- `uv`, or Python 3.14 recommended / Python 3.12+ minimum with `grimp`
+  installed.
 
 Recommended install:
 
@@ -154,8 +155,8 @@ brew install uv
 How extraction works:
 
 - detects `uv` first;
-- with `uv`, runs the helper with `uv run --with grimp`;
-- without `uv`, runs Python 3.12+ and expects `grimp` to be installed;
+- with `uv`, injects `grimp` for the helper run;
+- without `uv`, runs Python 3.12+ and expects a pinned `grimp` to be installed;
 - emits dotted module-to-module import edges, such as `myapp.service`.
 
 Set `python_package` when the top-level package is not the repository directory

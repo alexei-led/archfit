@@ -1,225 +1,105 @@
 # archfit
 
 [![CI](https://github.com/alexei-led/archfit/actions/workflows/ci.yaml/badge.svg)](https://github.com/alexei-led/archfit/actions/workflows/ci.yaml)
+[![Release](https://github.com/alexei-led/archfit/actions/workflows/release.yaml/badge.svg)](https://github.com/alexei-led/archfit/actions/workflows/release.yaml)
+[![Version](https://img.shields.io/github/v/tag/alexei-led/archfit?label=version&sort=semver)](https://github.com/alexei-led/archfit/tags)
+[![Go Reference](https://pkg.go.dev/badge/github.com/alexei-led/archfit.svg)](https://pkg.go.dev/github.com/alexei-led/archfit)
+[![Go Report Card](https://goreportcard.com/badge/github.com/alexei-led/archfit)](https://goreportcard.com/report/github.com/alexei-led/archfit)
+[![License](https://img.shields.io/github/license/alexei-led/archfit)](LICENSE)
 
 Architecture fitness checker for Go, TypeScript, and Python repositories.
 
-`archfit` turns architecture intent into executable checks. It extracts dependency
-facts from a repo, compares them with `.archfit.yaml`, and reports gate findings,
-Balanced Coupling advisories, metrics, and baseline status.
+`archfit` makes selected architecture rules executable. It reads dependency facts
+from a repository, compares them with `.archfit.yaml`, and reports findings that
+humans, CI, or AI coding agents can act on.
 
-Use it in local development, CI, pre-push hooks, or AI-agent repair loops when you
-want deterministic feedback that code still fits the intended architecture.
+Use it when you want fast feedback on architecture drift: boundary leaks, layer
+violations, import cycles, new cross-module dependencies, or coupling risk.
+
+## What you get
+
+- Deterministic gates for dependencies, public APIs, layers, cycles, and
+  configured thresholds.
+- Architecture metrics for modularity, coupling risk, coverage, change locality,
+  and other drift signals.
+- Baselines so accepted current debt does not hide new findings.
+- SARIF, Markdown, JSON, and text output for local work, CI, and code scanning.
+- Structured `agent_tasks` repair blocks for AI-agent feedback loops.
+- Optional LLM enrichment for coupling-label drafts, kept off the CI gate.
 
 ## Quick start
 
 Install the CLI:
 
 ```sh
-go install github.com/alexei-led/archfit/cmd/archfit@latest
+go install github.com/alexei-led/archfit/cmd/archfit@v0.1.0
 ```
 
-Run the first check in a repository:
-
-```sh
-archfit doctor
-archfit init --root .
-$EDITOR .archfit.yaml
-archfit check --config .archfit.yaml --full
-```
-
-Create a Markdown audit report:
-
-```sh
-archfit scan --config .archfit.yaml > archfit-report.md
-```
-
-If the current findings are accepted technical debt, save a baseline:
-
-```sh
-archfit baseline --full --config .archfit.yaml
-```
-
-After that, new findings are marked as `new`; known findings are marked as
-`baseline` until fixed or re-baselined.
-
-## What it checks
-
-`archfit` focuses on architecture drift, not general code quality.
-
-It can check:
-
-- forbidden dependencies between paths or modules;
-- public API boundaries and internal API access;
-- layer direction rules;
-- import cycles;
-- new cross-module dependencies;
-- coupling advisories based on strength, distance, volatility, and explicitness;
-- metric deltas such as encapsulation, unbalanced edges, cycles, and coverage.
-
-The 13th metric, `change_locality`, quantifies each change's blast surface in
-delta mode (`--base <ref>`) — the drift signal for agent loops. Active gate
-findings additionally emit structured `agent_tasks` repair blocks (goal,
-constraints, files, validation command) so coding agents can act on failures
-mechanically; see `docs/guide/agent-feedback.md`.
-
-Three additional report-only (info-band) metrics surface structural risk without
-gating CI:
-
-- `risk_hub` — cross-module surface-breadth: counts the distinct symbols in a
-  module that are referenced by at least one symbol in a _different_ module.
-  SCIP-based. Surfaces broad-interface hubs that module-level `blast_radius`
-  misses (e.g. a 42-dep store visible only at symbol granularity).
-  Requires `tools.scip.enabled: on`; reports `n/a` otherwise.
-- `architecture_fitness` — detects whether architecture intent is actually
-  enforced: presence of arch tests, import-linter config, or archfit/deptry/
-  dependency-cruiser in CI workflows. Score 0–10, report-only.
-- `functional_candidates` — clone-detection + co-change candidate pairs:
-  module pairs that share duplicated logic, surfacing implicit functional
-  coupling with no import edge. Distinct from `hidden_coupling` (co-change
-  without an edge). Requires `tools.clones.enabled: on`; reports `n/a` otherwise.
-
-### Structural-facts block
-
-With `tools.scip.enabled: on`, every run also emits a neutral per-module
-**structural-facts block** (`file_facts` in JSON; a compact
-"Structural facts" section in Markdown). One entry per symbol-graph module:
-
-```json
-{
-  "module": "ccgram.handlers.polling.polling_state",
-  "files": ["src/ccgram/handlers/polling/polling_state.py"],
-  "inbound_module_fanin": 13,
-  "outbound_destinations": 9,
-  "loc": 1018,
-  "cochange_partners": ["src/.../observe.py", "..."],
-  "gitnexus_impact": 41
-}
-```
-
-The block is evidence, not judgment: no band, no score, no risk labels, and it
-never affects the `check` verdict. It exists so a downstream reviewer (human or
-LLM) can rank intra-module risk — e.g. separate a benign read-only config hub
-from a mutable shared-state hub with the same fan-in — by reading the named
-files. `gitnexus_impact` appears only when the optional gitnexus provider ran;
-the block is empty when SCIP is off.
-
-### Off-gate LLM enrichment
-
-`archfit enrich` drafts coupling-strength label refinements (model vs
-functional vs contract vs intrusive) for human review; approved labels in
-`.archfit-labels.yaml` are consumed deterministically by `check`, which
-remains LLM-free — enforced structurally by the arch ring test. See
-`docs/guide/llm-enrich.md`.
-
-## Configuration
-
-Configuration lives in `.archfit.yaml`.
-
-Generate a starter file:
-
-```sh
-archfit init --root . --output .archfit.yaml
-```
-
-Then review the generated modules, layers, and rules before using it as a gate.
-Start with narrow rules and baseline accepted current findings while calibrating.
-Keep `gate` values aligned with the intended CI policy.
-
-Minimal shape:
-
-```yaml
-version: 1
-layers: [domain, application, adapter]
-modules:
-  domain:
-    paths: [internal/domain/**]
-    public: [internal/domain]
-    layer: domain
-    subdomain: core
-rules:
-  - id: no_adapter_to_domain_internal
-    type: public_api_only
-    gate: fail
-```
-
-See [`docs/guide/`](docs/guide/README.md) for the user guide.
-
-## Commands
-
-- `archfit doctor` — check available local toolchain (incl. LLM setup).
-- `archfit init` — generate a starter `.archfit.yaml`.
-- `archfit check` — run architecture gates and metrics (`--format json|markdown|sarif|text`).
-- `archfit scan` — produce a full Markdown audit report.
-- `archfit baseline` — record accepted current findings.
-- `archfit enrich` — draft LLM coupling-label refinements for human review (off-gate).
-- `archfit explain <id>` — explain one finding by fingerprint prefix.
-- `archfit install` — install or print commands for optional language tools.
-
-Output formats for `check`: `text`, `json`, `markdown`/`md`, `sarif`.
-
-Exit codes:
-
-- `0` — pass;
-- `1` — fail;
-- `2` — warn;
-- `3` — usage, config, or runtime error.
-
-## Toolchain
-
-Go analysis works from the Go binary and Go package loader. TypeScript and Python
-analysis use optional external tools.
-
-```sh
-archfit doctor
-archfit install --lang py --lang ts --dry-run
-```
-
-Two additional tools are opt-in and off by default:
-
-- `tools.gitnexus.enabled: on` — enriches `risk_hub` symbol-impact with
-  gitnexus historical graph data. Requires gitnexus on PATH. Never runs
-  automatically (network access, reproducibility).
-- `tools.clones.enabled: on` — runs a clone detector (jscpd for JS/TS,
-  PMD-CPD for Go/Py) to populate `functional_candidates`. Off by default
-  (expensive). Absent tool → metric reports `n/a`.
-
-Tool-coverage sources reported by `archfit check`/`scan`:
-
-- `scip-symbols` — SCIP-based symbol fan-in used by `risk_hub`.
-- `clones` — clone-detection pass used by `functional_candidates`.
-- `gitnexus` — optional symbol-impact enrichment provider.
-
-Use Docker when you want the bundled toolchain instead of installing language
-analysis tools on the host:
+Or run the Docker image:
 
 ```sh
 docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:latest \
   check --config /repo/.archfit.yaml --full
 ```
 
-## Documentation
-
-- [`docs/guide/`](docs/guide/README.md) — user guide and documentation map.
-- [`docs/guide/concepts.md`](docs/guide/concepts.md) — Balanced Coupling,
-  modularity, and the theory archfit makes executable (with references to
-  Khononov's book and `coupling.dev`).
-- [`docs/guide/metrics.md`](docs/guide/metrics.md) — every metric: what it
-  represents, the justification, and the scoring model.
-- [`docs/spec/arch-fitness-spec-v0.4.md`](docs/spec/arch-fitness-spec-v0.4.md)
-  — product/build spec.
-- [`docs/design/arch-fitness-architecture-v0.2.md`](docs/design/arch-fitness-architecture-v0.2.md)
-  — internal architecture design.
-
-## Development
+Run the first check in a repository:
 
 ```sh
-make setup-tools
-pre-commit install --install-hooks
-pre-commit install -t pre-push
-make test
-make lint
-make build
+archfit doctor
+archfit init --root . --output .archfit.yaml
+$EDITOR .archfit.yaml
+archfit check --config .archfit.yaml --full
 ```
 
-The release workflow builds static binaries and a multi-arch Docker image.
+Accept current findings as a baseline when they represent known debt:
+
+```sh
+archfit baseline --full --config .archfit.yaml
+```
+
+Need Docker, CI, optional analyzers, or language-specific setup? Start with the
+[guide](docs/guide/README.md).
+
+## Core commands
+
+| Command                | Use                                            |
+| ---------------------- | ---------------------------------------------- |
+| `archfit doctor`       | Check local analyzer/tool availability.        |
+| `archfit init`         | Generate a starter `.archfit.yaml`.            |
+| `archfit check`        | Run architecture gates and metrics.            |
+| `archfit scan`         | Produce a full Markdown audit report.          |
+| `archfit baseline`     | Save accepted current findings.                |
+| `archfit enrich`       | Draft off-gate LLM coupling-label refinements. |
+| `archfit explain <id>` | Explain one finding by fingerprint prefix.     |
+| `archfit install`      | Check or install optional language tools.      |
+
+See the [commands guide](docs/guide/commands.md) for formats, exit codes, and
+examples.
+
+## Model
+
+`archfit` operationalizes the parts of Vlad Khononov's Balanced Coupling model
+that can be checked from code, configuration, and git history. It uses the
+model's strength, distance, and volatility vocabulary, plus explicitness, to
+explain why a relationship is balanced or risky.
+
+It does not replace architecture review. It makes repeatable evidence cheap to
+collect and safe to run in CI. For the books, posts, and mapping from theory to
+signals, see [Concepts](docs/guide/concepts.md) and
+[Metrics](docs/guide/metrics.md).
+
+## Documentation
+
+- [Guide](docs/guide/README.md) — documentation map.
+- [Install](docs/guide/install.md) — Go install, Docker, and optional tools.
+- [Quick start](docs/guide/quick-start.md) — first useful run.
+- [Configuration](docs/guide/configuration.md) — `.archfit.yaml` basics.
+- [CI](docs/guide/ci.md) — pull-request and pipeline setup.
+- [Agent feedback](docs/guide/agent-feedback.md) — `agent_tasks`, SARIF, and
+  `change_locality`.
+- [LLM enrichment](docs/guide/llm-enrich.md) — human-reviewed label drafts.
+- [Contributing](CONTRIBUTING.md) — local development and release notes.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).
