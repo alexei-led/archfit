@@ -54,7 +54,7 @@ type RunInput struct {
 	Accepted    status.AcceptedSet
 	BaseMetrics diagnostic.MetricSnapshot // baseline metric snapshot; nil = no baseline
 	Labels      []labels.Label            // pinned coupling labels; nil = none
-	Change      signal.ChangeHistory
+	Signals     signal.RunSignals
 	Now         time.Time
 }
 
@@ -78,7 +78,7 @@ type evidenceResult struct {
 //  3. Classify edges: classify.Run → coupling.Index.
 //  4. Apply rules: rule.Check(g, Evidence{PatternMatches}) per rule → raw findings (flattened).
 //  5. Assign statuses: status.Assign → lifecycle-tagged findings.
-//  6. Compute metrics: build MetricInput, run each metric → MetricResult slice.
+//  6. Compute metrics: build CollectedSignals, run each metric → MetricResult slice.
 //  7. Resolve evidence: join module labels and severity onto findings.
 //  8. Collect advisory findings: coupling edges with Severity != "" + staleness.Check.
 //  9. Assemble Diagnostic: fill Summary, compute verdict, attach structural facts.
@@ -134,12 +134,12 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 			ToolCoverage:    ex.coverages,
 			ChangedFiles:    in.Scope.Changed,
 		},
-		History:     signal.HistorySignals{FileChurn: in.Change.FileChurn, CoChange: in.Change.CoChange},
-		Symbol:      signal.SymbolSignals{Graph: ex.scipSymbols, GitnexusImpact: in.Change.GitnexusImpact},
-		Size:        signal.SizeSignals{FileLOC: in.Change.FileLOC},
-		Complexity:  signal.ComplexitySignals{Funcs: in.Change.Complexity},
-		Fitness:     in.Change.FitnessSignals,
-		Duplication: signal.DuplicationSignals{Clusters: in.Change.CloneClusters},
+		History:     in.Signals.History,
+		Symbol:      signal.SymbolSignals{Graph: ex.scipSymbols, GitnexusImpact: in.Signals.GitnexusImpact},
+		Size:        in.Signals.Size,
+		Complexity:  in.Signals.Complexity,
+		Fitness:     in.Signals.Fitness,
+		Duplication: in.Signals.Duplication,
 	}
 	metricResults := make([]diagnostic.MetricResult, 0, len(in.Metrics))
 	for _, m := range in.Metrics {
@@ -202,7 +202,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Neutral structural-facts block (Tranche 1.5): assembled from the symbol
 	// graph + change history, attached as report-only evidence. Never read by
 	// computeVerdict or any gate logic. Empty when SCIP is off/absent.
-	fileFacts := facts.Build(ex.scipSymbols, in.Change.FileLOC, in.Change.CoChange, in.Change.GitnexusImpact)
+	fileFacts := facts.Build(ex.scipSymbols, in.Signals.Size.FileLOC, in.Signals.History.CoChange, in.Signals.GitnexusImpact)
 
 	d := diagnostic.Diagnostic{
 		SchemaVersion: diagnostic.SchemaVersion,
@@ -254,7 +254,7 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 
 	// Append opt-in tool coverage (clones, gitnexus) collected in cmd rather than
 	// through the extractor loop. These have no path into the diagnostic otherwise.
-	coverages = append(coverages, in.Change.ExtraCoverage...)
+	coverages = append(coverages, in.Signals.ExtraCoverage...)
 
 	return extractResult{g: g, coverages: coverages, scipSymbols: scipSymbols}, nil
 }

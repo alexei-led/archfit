@@ -26,7 +26,7 @@ const archFitnessSignalCount = 3
 // Scoring: each present signal contributes 1/3 to the raw fraction (0–1); the
 // display score scales to 10. Band is always "info" (report-only; never gates).
 // n/a is reported only when FitnessSignals.EvidencePaths is nil, meaning the
-// scan was never run (e.g. zero-value MetricInput from a cmd that skipped it).
+// scan was never run (e.g. zero-value FitnessInput from a cmd that skipped it).
 type ArchitectureFitnessMetric struct{}
 
 // Name returns "architecture_fitness".
@@ -35,7 +35,7 @@ func (m ArchitectureFitnessMetric) Name() string { return "architecture_fitness"
 // Version returns "architecture_fitness.v1".
 func (m ArchitectureFitnessMetric) Version() string { return "architecture_fitness.v1" }
 
-// Calculate scores the enforcement level from the FitnessSignals in MetricInput.
+// Calculate scores the enforcement level from the FitnessSignals in FitnessInput.
 //
 // n/a when EvidencePaths is nil (scan was never run).
 // 0/10 when no signals are present but the scan did run (honest zero).

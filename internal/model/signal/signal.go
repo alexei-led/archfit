@@ -1,10 +1,13 @@
 // Package signal defines the carrier types that flow between signal producers
-// (fitness scanner, git history, complexity tool) and the metrics layer.
+// (fitness scanner, git history, complexity tool) and the metrics layer: the
+// per-family metric inputs (CommonInput, HistoryInput, SymbolInput, SizeInput,
+// ComplexityInput, FitnessInput, DuplicationInput), the CollectedSignals bag the
+// engine assembles and projects per family, and the RunSignals bundle the cmd
+// layer produces.
 //
 // Keeping these types here — rather than in internal/metrics or internal/fitness
 // — means adding a new signal only churns the new producer package and this
-// package. Neither metrics nor engine need to change for a new signal field.
-// The package joins the model ring: stdlib + internal/model/* imports only.
+// package. The package joins the model ring: stdlib + internal/model/* imports only.
 package signal
 
 import (
@@ -52,22 +55,23 @@ type ComplexityFunc struct {
 	Line int
 }
 
-// ChangeHistory carries git-derived volatility signals into the engine for the
-// modularity metrics. Both maps are empty when no git history is available.
-type ChangeHistory struct {
-	FileChurn      map[string]int    // file -> recent commit count
-	CoChange       map[[2]string]int // sorted file pair -> commits touching both
-	FileLOC        map[string]int    // source file -> lines of code (tests excluded)
-	Complexity     []ComplexityFunc  // per-function cyclomatic complexity (external tool)
-	FitnessSignals Signals           // architecture-intent enforcement signals (filesystem scan)
-	CloneClusters  []clone.Cluster   // duplicated code blocks across files (clone detector)
-	// GitnexusImpact maps repo-relative file path → distinct dependant-file count from the
-	// gitnexus CLI. Nil/empty when gitnexus is disabled or absent; risk_hub uses it
-	// as an optional multiplicative factor (never alters surface-breadth computation).
+// RunSignals is the producer-side bundle the cmd layer gathers and hands to the
+// engine: git history, size, complexity, fitness, duplication, gitnexus impact,
+// and opt-in tool coverage. The engine folds it (plus its own extract outputs)
+// into a CollectedSignals for the metrics — no metric ever sees this type. Each
+// group is empty when its source is unavailable.
+type RunSignals struct {
+	History     HistorySignals
+	Size        SizeSignals
+	Complexity  ComplexitySignals
+	Fitness     Signals
+	Duplication DuplicationSignals
+	// GitnexusImpact maps repo-relative file path → distinct dependant-file count
+	// from the gitnexus CLI; the engine folds it into SymbolSignals for risk_hub.
 	GitnexusImpact map[string]int
 	// ExtraCoverage carries tool-coverage records for opt-in tools that run in cmd
-	// (clones, gitnexus) rather than through the engine extractor loop. The engine
-	// appends these to the diagnostic ToolCoverage slice after building its own records.
+	// (loc, complexity, clones, gitnexus) rather than through the engine extractor
+	// loop. The engine appends these to the diagnostic ToolCoverage slice.
 	ExtraCoverage []diagnostic.Coverage
 }
 

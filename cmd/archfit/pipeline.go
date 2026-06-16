@@ -91,20 +91,20 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// volatility (unbalanced_edge, BC severity) and the modularity metrics
 	// (change_amplification, hidden_coupling). Hand-authored volatility/subdomain
 	// config always wins; a non-git repo leaves these signals empty.
-	change := signal.ChangeHistory{}
+	change := signal.RunSignals{}
 	if churn, coChange, _, herr := git.History(ctx, s.Root, deps.Runner); herr == nil {
 		cfg.ApplyVolatility(config.DeriveVolatility(cfg.Modules, churn))
-		change.FileChurn, change.CoChange = churn, coChange
+		change.History.FileChurn, change.History.CoChange = churn, coChange
 	}
 
 	// LOC walk — repo-relative path→line-count map + coverage record.
 	// ExtraCoverage order: loc, complexity, clones, gitnexus.
 	var locCov diagnostic.Coverage
-	change.FileLOC, locCov, _ = loc.Run(s.Root)
+	change.Size.FileLOC, locCov, _ = loc.Run(s.Root)
 	change.ExtraCoverage = append(change.ExtraCoverage, locCov)
 
 	// Architecture-fitness enforcement signals (deterministic FS scan; always runs).
-	change.FitnessSignals = fitness.Detect(s.Root)
+	change.Fitness = fitness.Detect(s.Root)
 
 	// Ownership resolution: fills module owner gaps from CODEOWNERS or git-author
 	// history. Explicit config owner always wins; resolver only fills empty slots.
@@ -115,13 +115,13 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// (tools.complexity.enabled: on) like SCIP, since it shells out and adds cost.
 	// Coverage carries zero file counts; status only — mirrors clones absent/ok pattern.
 	var complexityCov diagnostic.Coverage
-	change.Complexity, complexityCov, _ = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled())
+	change.Complexity.Funcs, complexityCov, _ = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled())
 	change.ExtraCoverage = append(change.ExtraCoverage, complexityCov)
 
 	// Clone detection — opt-in (tools.clones.enabled: on). Run returns empty+absent
 	// when disabled or the tool is missing; the metric reports n/a in that case.
 	var clonesCov diagnostic.Coverage
-	change.CloneClusters, clonesCov, _ = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled())
+	change.Duplication.Clusters, clonesCov, _ = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled())
 	change.ExtraCoverage = append(change.ExtraCoverage, clonesCov)
 
 	// gitnexus optional symbol-impact enrichment — opt-in (tools.gitnexus.enabled: on).
@@ -164,7 +164,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		Accepted:    base,
 		BaseMetrics: base.Metrics,
 		Labels:      lbls,
-		Change:      change,
+		Signals:     change,
 		Now:         time.Now(),
 	})
 	if err != nil {

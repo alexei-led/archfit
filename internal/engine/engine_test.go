@@ -164,7 +164,7 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 		Accepted:    base,
 		BaseMetrics: base.Metrics,
 		Labels:      nil,
-		Change:      signal.ChangeHistory{},
+		Signals:     signal.RunSignals{},
 		Now:         now,
 	})
 	if err != nil {
@@ -241,7 +241,7 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 		Accepted:    base,
 		BaseMetrics: base.Metrics,
 		Labels:      nil,
-		Change:      signal.ChangeHistory{},
+		Signals:     signal.RunSignals{},
 		Now:         now,
 	})
 	if err != nil {
@@ -294,7 +294,7 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		Accepted:    base,
 		BaseMetrics: base.Metrics,
 		Labels:      nil,
-		Change:      signal.ChangeHistory{},
+		Signals:     signal.RunSignals{},
 		Now:         now,
 	})
 	if err != nil {
@@ -361,7 +361,7 @@ func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 		Accepted:    base,
 		BaseMetrics: base.Metrics,
 		Labels:      nil,
-		Change:      signal.ChangeHistory{},
+		Signals:     signal.RunSignals{},
 		Now:         now,
 	})
 	if err != nil {
@@ -411,7 +411,7 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 		Accepted:    base,
 		BaseMetrics: base.Metrics,
 		Labels:      nil,
-		Change:      signal.ChangeHistory{},
+		Signals:     signal.RunSignals{},
 		Now:         now,
 	})
 	if err != nil {
@@ -474,7 +474,7 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 		Accepted:    base,
 		BaseMetrics: base.Metrics,
 		Labels:      nil,
-		Change:      signal.ChangeHistory{},
+		Signals:     signal.RunSignals{},
 		Now:         now,
 	})
 	if err != nil {
@@ -548,7 +548,7 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 		Accepted:    base,
 		BaseMetrics: base.Metrics,
 		Labels:      nil,
-		Change:      signal.ChangeHistory{},
+		Signals:     signal.RunSignals{},
 		Now:         now,
 	})
 	if err != nil {
@@ -616,7 +616,7 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 		Accepted:    base,
 		BaseMetrics: base.Metrics,
 		Labels:      nil,
-		Change:      signal.ChangeHistory{},
+		Signals:     signal.RunSignals{},
 		Now:         now,
 	})
 	if err != nil {
@@ -700,7 +700,7 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 		Accepted:    baseline.Baseline{},
 		BaseMetrics: nil,
 		Labels:      nil,
-		Change:      signal.ChangeHistory{},
+		Signals:     signal.RunSignals{},
 		Now:         now,
 	})
 	if err != nil {
@@ -751,7 +751,7 @@ func TestRun_SymbolGraph_EmptyWhenNopResolver(t *testing.T) {
 		Accepted:    baseline.Baseline{},
 		BaseMetrics: nil,
 		Labels:      nil,
-		Change:      signal.ChangeHistory{},
+		Signals:     signal.RunSignals{},
 		Now:         now,
 	})
 	if err != nil {
@@ -797,9 +797,9 @@ func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
 
 	classifyCfg, rs := cannedConfig()
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
-	change := signal.ChangeHistory{
-		FileLOC:  map[string]int{pathFileA: 100, pathFileB: 40},
-		CoChange: map[[2]string]int{{pathFileA, pathFileB}: 5},
+	change := signal.RunSignals{
+		Size:    signal.SizeSignals{FileLOC: map[string]int{pathFileA: 100, pathFileB: 40}},
+		History: signal.HistorySignals{CoChange: map[[2]string]int{{pathFileA, pathFileB}: 5}},
 	}
 
 	d, err := engine.Run(ctx, engine.RunInput{
@@ -817,7 +817,7 @@ func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
 		Accepted:    baseline.Baseline{},
 		BaseMetrics: nil,
 		Labels:      nil,
-		Change:      change,
+		Signals:     change,
 		Now:         now,
 	})
 	if err != nil {
@@ -870,7 +870,7 @@ func TestRun_FileFacts_EmptyWhenNopResolver(t *testing.T) {
 		Accepted:    baseline.Baseline{},
 		BaseMetrics: nil,
 		Labels:      nil,
-		Change:      signal.ChangeHistory{},
+		Signals:     signal.RunSignals{},
 		Now:         now,
 	})
 	if err != nil {
@@ -929,7 +929,7 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 			Accepted:    base,
 			BaseMetrics: base.Metrics,
 			Labels:      nil,
-			Change:      signal.ChangeHistory{},
+			Signals:     signal.RunSignals{},
 			Now:         now,
 		})
 		if err != nil {
@@ -1020,7 +1020,7 @@ func TestRun_PinnedLabels(t *testing.T) {
 			Accepted:    baseline.Baseline{},
 			BaseMetrics: nil,
 			Labels:      lbls,
-			Change:      signal.ChangeHistory{},
+			Signals:     signal.RunSignals{},
 			Now:         now,
 		})
 		if err != nil {

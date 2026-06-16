@@ -181,7 +181,7 @@ func moduleImpactFromFiles(g symbol.Graph, fileImpact map[string]int) map[string
 // and reports the top hubs. Returns n/a when SymbolGraph is empty (SCIP off or
 // indexer absent) — never a false zero.
 //
-// When MetricInput.GitnexusImpact is non-empty (tools.gitnexus.enabled: on and
+// When the SymbolInput's gitnexus impact is non-empty (tools.gitnexus.enabled: on and
 // the CLI was present), each module's score is further multiplied by a bounded
 // gitnexus factor in [1.0, 2.0] derived from its historical change-impact count
 // (normalised to the per-run maximum). When GitnexusImpact is nil/empty (the

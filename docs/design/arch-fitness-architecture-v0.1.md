@@ -192,18 +192,26 @@ type Rule interface {                 // many impls (registry); RuleConfig bound
     ID() string
     Check(g *Graph, ev Evidence) []Finding    // findings carry an edge key; severity is joined later
 }
-type Metric interface {               // many impls (registry); MetricConfig bound at construction
+type Metric interface {               // uniform dispatch interface the engine iterates
     Name() string
     Version() string
-    Calculate(in MetricInput) MetricResult
+    Calculate(in CollectedSignals) MetricResult
 }
+// Concrete metrics implement a typed Calculator[In] for ONE per-family input and
+// are adapted to Metric in New() via adapt(metric, CollectedSignals.As<Family>);
+// the compiler then forbids a metric from reading a signal outside its family.
+type Calculator[In any] interface { Name() string; Version() string; Calculate(In) MetricResult }
 
-// Shared read artifacts handed to metrics — NOT the whole Config (per-metric config is bound at construction):
-type MetricInput struct {
+// Per-family inputs (the narrow replacement for the former god MetricInput).
+// CommonInput is what every metric can rely on; the rest embed it and add a group
+// (HistoryInput, SymbolInput, SizeInput, ComplexityInput, FitnessInput, DuplicationInput).
+type CommonInput struct {
     Graph           *Graph
     Classifications coupling.Index // edge-keyed lookup of Classification values
-    Findings        []Finding          // already status-tagged by the status stage
-    Baseline        MetricSnapshot     // prior metric values, for deltas
+    Findings        []Finding      // already status-tagged by the status stage
+    Baseline        MetricSnapshot // prior metric values, for deltas
+    ToolCoverage    []Coverage
+    ChangedFiles    []string       // delta-mode scope
 }
 
 // --- Output / state ---
@@ -232,20 +240,20 @@ joined afterward. (`Evidence` carries only `PatternProvider` matches, e.g. ast-g
 Analysed at the in-binary package level. "Distance (real)" is the true cost hidden behind the contract. The
 **Enforced by** column names the _structural_ mechanism that upholds the balance — not discipline.
 
-| Seam             | Consumers                    | Strength          | Distance (real)         | Volatility       | Balanced? | Enforced by                                                                                      |
-| ---------------- | ---------------------------- | ----------------- | ----------------------- | ---------------- | --------- | ------------------------------------------------------------------------------------------------ |
-| Graph model      | nearly all                   | model             | low (in-proc)           | high             | ✅        | immutable value, read-only; additive changes don't break callers, compiler catches breaking ones |
-| Diagnostic model | renderers, baseline, explain | contract          | low                     | medium           | ✅        | versioned struct; single output schema version                                                   |
-| Extractor        | engine                       | contract          | hides high (subprocess) | high (impl)      | ✅        | output-typed contract; distance isolated in `ToolRunner`                                         |
-| PatternProvider  | rules, engine                | contract          | hides high              | medium           | ✅        | output-typed contract                                                                            |
-| HistoryProvider  | scope, classify              | contract          | hides high              | low              | ✅        | output-typed contract                                                                            |
-| ToolRunner       | adapters only                | contract          | _is_ the boundary       | medium           | ✅        | single `os/exec` choke point + import gate                                                       |
-| Classification   | metrics, severity-join       | model             | low                     | high (formulas)  | ✅        | single immutable `Classification` value via `coupling.Index`; not exposed to gate rules          |
-| Rule             | engine                       | contract          | low                     | medium           | ✅        | concrete read-only graph + `Evidence`; `RuleConfig` bound at construction; no classifier dep     |
-| Metric           | engine                       | contract          | low                     | high (versioned) | ✅        | `MetricInput` (shared artifacts only) + per-metric config bound at construction + `Version()`    |
-| Renderer         | engine                       | contract          | low                     | low              | ✅        | pure fn of diagnostic                                                                            |
-| Config views     | each stage                   | contract (narrow) | low                     | medium           | ✅        | per-stage view type (no whole `Config` in signatures)                                            |
-| Baseline I/O     | cmd                          | contract          | hides file I/O          | low              | ✅        | `baseline.Load/Save` funcs; core gets a `Baseline` value, never does the I/O                     |
+| Seam             | Consumers                    | Strength          | Distance (real)         | Volatility       | Balanced? | Enforced by                                                                                               |
+| ---------------- | ---------------------------- | ----------------- | ----------------------- | ---------------- | --------- | --------------------------------------------------------------------------------------------------------- |
+| Graph model      | nearly all                   | model             | low (in-proc)           | high             | ✅        | immutable value, read-only; additive changes don't break callers, compiler catches breaking ones          |
+| Diagnostic model | renderers, baseline, explain | contract          | low                     | medium           | ✅        | versioned struct; single output schema version                                                            |
+| Extractor        | engine                       | contract          | hides high (subprocess) | high (impl)      | ✅        | output-typed contract; distance isolated in `ToolRunner`                                                  |
+| PatternProvider  | rules, engine                | contract          | hides high              | medium           | ✅        | output-typed contract                                                                                     |
+| HistoryProvider  | scope, classify              | contract          | hides high              | low              | ✅        | output-typed contract                                                                                     |
+| ToolRunner       | adapters only                | contract          | _is_ the boundary       | medium           | ✅        | single `os/exec` choke point + import gate                                                                |
+| Classification   | metrics, severity-join       | model             | low                     | high (formulas)  | ✅        | single immutable `Classification` value via `coupling.Index`; not exposed to gate rules                   |
+| Rule             | engine                       | contract          | low                     | medium           | ✅        | concrete read-only graph + `Evidence`; `RuleConfig` bound at construction; no classifier dep              |
+| Metric           | engine                       | contract          | low                     | high (versioned) | ✅        | per-family inputs (`CommonInput` + opt-in groups) + per-metric config bound at construction + `Version()` |
+| Renderer         | engine                       | contract          | low                     | low              | ✅        | pure fn of diagnostic                                                                                     |
+| Config views     | each stage                   | contract (narrow) | low                     | medium           | ✅        | per-stage view type (no whole `Config` in signatures)                                                     |
+| Baseline I/O     | cmd                          | contract          | hides file I/O          | low              | ✅        | `baseline.Load/Save` funcs; core gets a `Baseline` value, never does the I/O                              |
 
 Every seam lands on `STRENGTH XOR DISTANCE` (or low volatility). The two highest-risk seams are graph and
 classification (high fan-in, high volatility). They stay balanced because they are **immutable values at low
@@ -402,7 +410,7 @@ vocabulary, read-only, low distance. Sharing it is fine; it is not the volatile 
 This is **structural**: views are **bound at construction**. The composition root projects each view —
 `rules.New(cfg)`, `metrics.New(cfg)` close over their slice; `classify.Run` takes `cfg.ForClassify()` at the call —
 so `Rule.Check` and `Metric.Calculate` never take a `Config` parameter. A rule physically cannot reach a metric
-field; adding that field leaves `RuleConfig` untouched. (Same reason `MetricInput` carries shared artifacts only —
+field; adding that field leaves `RuleConfig` untouched. (Same reason `CommonInput` carries shared artifacts only —
 never the config.)
 
 Loading lives in the same `config` package (it owns `archfit.yaml` parsing). Core depends on `config` for the
