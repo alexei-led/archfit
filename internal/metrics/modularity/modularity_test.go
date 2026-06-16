@@ -24,7 +24,7 @@ func TestBlastRadius_TransitiveReverseDeps(t *testing.T) {
 	}
 	g := metricstest.BuildGraph([]graph.Node{a, b, c}, edges)
 
-	res := modularity.BlastRadiusMetric{}.Calculate(signal.MetricInput{Graph: g})
+	res := modularity.BlastRadiusMetric{}.Calculate(signal.CommonInput{Graph: g})
 	if res.Name != "blast_radius" {
 		t.Fatalf("name = %q", res.Name)
 	}
@@ -54,7 +54,10 @@ func TestStructuralWeight_GodModuleBySize(t *testing.T) {
 		"internal/mid/a.go":   250,
 	}
 
-	res := modularity.StructuralWeightMetric{}.Calculate(signal.MetricInput{Graph: g, FileLOC: fileLOC})
+	res := modularity.StructuralWeightMetric{}.Calculate(signal.SizeInput{
+		CommonInput: signal.CommonInput{Graph: g},
+		Size:        signal.SizeSignals{FileLOC: fileLOC},
+	})
 	if res.Value != 1 {
 		t.Errorf("expected 1 god-module got %v; display=%q", res.Value, res.Display)
 	}
@@ -68,7 +71,9 @@ func TestStructuralWeight_GodModuleBySize(t *testing.T) {
 
 func TestStructuralWeight_NoLOCIsNA(t *testing.T) {
 	g := metricstest.BuildGraph([]graph.Node{{Kind: graph.NodeKindPackage, Path: "x"}}, nil)
-	res := modularity.StructuralWeightMetric{}.Calculate(signal.MetricInput{Graph: g})
+	res := modularity.StructuralWeightMetric{}.Calculate(signal.SizeInput{
+		CommonInput: signal.CommonInput{Graph: g},
+	})
 	if res.Band != bandNAStr {
 		t.Errorf("expected n/a without LOC data, got %q", res.Band)
 	}

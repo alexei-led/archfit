@@ -30,14 +30,14 @@ type sizeMod struct {
 
 // Calculate aggregates per-file LOC onto modules and flags god-modules. n/a
 // without LOC data or a graph (the latter gives the language for file→module).
-func (m StructuralWeightMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
+func (m StructuralWeightMetric) Calculate(in signal.SizeInput) diagnostic.MetricResult {
 	def := "modules whose size (LOC) is a large multiple of the codebase median (size-skew god-modules)"
-	if in.Graph == nil || len(in.FileLOC) == 0 {
+	if in.Graph == nil || len(in.Size.FileLOC) == 0 {
 		return result.NACount(m.Name(), m.Version(), def)
 	}
 	lang := modgraph.DominantLanguage(in.Graph)
 	modLOC := map[string]int{}
-	for f, n := range in.FileLOC {
+	for f, n := range in.Size.FileLOC {
 		if k := modgraph.FileToModuleKey(f, lang); k != "" {
 			modLOC[k] += n
 		}

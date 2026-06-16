@@ -24,13 +24,13 @@ func (m HiddenCouplingMetric) Name() string { return "hidden_coupling" }
 func (m HiddenCouplingMetric) Version() string { return "hidden_coupling.v1" }
 
 // Calculate counts hidden-coupling module pairs (co-change without a static edge).
-func (m HiddenCouplingMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
+func (m HiddenCouplingMetric) Calculate(in signal.HistoryInput) diagnostic.MetricResult {
 	def := "module pairs that co-change without importing each other (coupling unseen by the graph)"
-	if in.Graph == nil || len(in.CoChange) == 0 {
+	if in.Graph == nil || len(in.History.CoChange) == 0 {
 		return result.NACount(m.Name(), m.Version(), def)
 	}
 	lang := modgraph.DominantLanguage(in.Graph)
-	mc := modgraph.ModuleChurn(in.FileChurn, lang)
+	mc := modgraph.ModuleChurn(in.History.FileChurn, lang)
 
 	// First-party module nodes: restrict co-change to real graph modules so docs
 	// (CHANGELOG.md), config files, and pre-rename historical paths are excluded.
@@ -49,7 +49,7 @@ func (m HiddenCouplingMetric) Calculate(in signal.MetricInput) diagnostic.Metric
 	}
 	// Aggregate file-pair co-change onto module pairs (graph modules only).
 	modPair := make(map[[2]string]int)
-	for fp, c := range in.CoChange {
+	for fp, c := range in.History.CoChange {
 		a, b := modgraph.FileToModuleKey(fp[0], lang), modgraph.FileToModuleKey(fp[1], lang)
 		if a == "" || b == "" || a == b {
 			continue

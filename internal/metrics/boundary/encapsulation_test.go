@@ -35,7 +35,7 @@ func TestEncapsulation_ZeroDenominator(t *testing.T) {
 		nil,
 	)
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.MetricInput{Graph: g})
+	result := m.Calculate(signal.CommonInput{Graph: g})
 	if result.Value != 1.0 {
 		t.Errorf("expected value 1.0 got %v", result.Value)
 	}
@@ -43,7 +43,7 @@ func TestEncapsulation_ZeroDenominator(t *testing.T) {
 
 func TestEncapsulation_NilGraph(t *testing.T) {
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.MetricInput{Graph: nil})
+	result := m.Calculate(signal.CommonInput{Graph: nil})
 	if result.Value != 1.0 {
 		t.Errorf("expected value 1.0 for nil graph, got %v", result.Value)
 	}
@@ -72,7 +72,7 @@ func TestEncapsulation_KnownRatio(t *testing.T) {
 	}
 
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.MetricInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
 
 	if !metricstest.ApproxEqual(result.Value, 0.5) {
 		t.Errorf("expected value 0.5 got %v", result.Value)
@@ -129,7 +129,7 @@ func TestEncapsulation_DeltaComputed(t *testing.T) {
 	}
 
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.MetricInput{
+	result := m.Calculate(signal.CommonInput{
 		Graph:           g,
 		Classifications: idx,
 		Baseline:        baseline,
@@ -172,7 +172,7 @@ func TestEncapsulation_AllUnknownIsNA(t *testing.T) {
 	}
 
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.MetricInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
 
 	if result.Band != bandNAStr {
 		t.Errorf("expected band n/a got %q", result.Band)
@@ -215,7 +215,7 @@ func TestEncapsulation_UnknownExcludedFromDenominator(t *testing.T) {
 	}
 
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.MetricInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
 
 	if !metricstest.ApproxEqual(result.Value, 0.5) {
 		t.Errorf("expected value 0.5 (unknown excluded) got %v", result.Value)
@@ -261,7 +261,7 @@ func TestEncapsulation_FunctionalAndModelExcluded(t *testing.T) {
 	}
 
 	m := boundary.EncapsulationMetric{}
-	result := m.Calculate(signal.MetricInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
 
 	if !metricstest.ApproxEqual(result.Value, 0.5) {
 		t.Errorf("expected value 0.5 (functional/model excluded) got %v", result.Value)
@@ -300,7 +300,7 @@ func TestEncapsulation_LowCoverageCapsGoodBand(t *testing.T) {
 	}
 
 	g := metricstest.BuildGraph(nodes, edges)
-	result := boundary.EncapsulationMetric{}.Calculate(signal.MetricInput{Graph: g, Classifications: idx})
+	result := boundary.EncapsulationMetric{}.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
 
 	if !metricstest.ApproxEqual(result.Value, 0.75) {
 		t.Errorf("expected value 0.75 got %v", result.Value)
@@ -331,7 +331,7 @@ func TestEncapsulation_NoIntrusiveIsNA(t *testing.T) {
 		metricstest.ImportKey(nodeA.ID(), nodeC.ID()): {Strength: coupling.StrengthContract, Distance: cross},
 	}
 
-	result := boundary.EncapsulationMetric{}.Calculate(signal.MetricInput{Graph: g, Classifications: idx})
+	result := boundary.EncapsulationMetric{}.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
 	if result.Band != bandNAStr {
 		t.Errorf("expected band n/a (no intrusive to contrast) got %q", result.Band)
 	}

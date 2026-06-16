@@ -71,44 +71,137 @@ type ChangeHistory struct {
 	ExtraCoverage []diagnostic.Coverage
 }
 
-// MetricInput is the complete input set for all metrics.
-type MetricInput struct {
+// ---------------------------------------------------------------------------
+// Per-family metric inputs (the narrow replacement for the former god input).
+//
+// Each metric consumes only its family's input, enforced by the compiler: the
+// engine assembles a CollectedSignals once and projects it to the per-family
+// input each metric declares. Adding a signal touches one group, not every
+// metric. Zero-value groups (empty maps/slices) preserve the existing
+// "report n/a when the signal is absent" behaviour.
+// ---------------------------------------------------------------------------
+
+// CommonInput is the core set every metric can rely on (always populated by the
+// pipeline). ChangedFiles is delta-scope, not git history, so it lives here.
+type CommonInput struct {
 	Graph           *graph.Graph
 	Classifications coupling.Index
-	Findings        []finding.Finding // status-tagged findings from status stage
+	Findings        []finding.Finding
 	Baseline        diagnostic.MetricSnapshot
-	ToolCoverage    []diagnostic.Coverage // from extractors
-	// FileChurn maps a repo-relative source file to its recent commit count (git
-	// history). Empty when no git history is available; modularity metrics that
-	// depend on volatility then report n/a.
-	FileChurn map[string]int
-	// CoChange maps a sorted file pair to the number of commits that touched both —
-	// the logical-coupling signal for hidden_coupling. Empty when unavailable.
-	CoChange map[[2]string]int
-	// FileLOC maps a source file to its line count (tests excluded), for the
-	// structural_weight (size-skew / god-module) metric. Empty when unavailable.
+	ToolCoverage    []diagnostic.Coverage
+	ChangedFiles    []string
+}
+
+// HistorySignals carries the git-history signals (empty when no history).
+type HistorySignals struct {
+	FileChurn map[string]int    // file -> recent commit count
+	CoChange  map[[2]string]int // sorted file pair -> commits touching both
+}
+
+// SymbolSignals carries the SCIP symbol graph and the optional gitnexus impact
+// enrichment. Empty when SCIP is off.
+type SymbolSignals struct {
+	Graph          symbol.Graph
+	GitnexusImpact map[string]int // file -> distinct dependant-file count (optional)
+}
+
+// SizeSignals carries per-file line counts (tests excluded). Empty when absent.
+type SizeSignals struct {
 	FileLOC map[string]int
-	// Complexity is per-function cyclomatic complexity from an external tool
-	// (lizard), for the complexity metric. Empty when the opt-in tool is off/absent.
-	Complexity []ComplexityFunc
-	// SymbolGraph is per-symbol module ownership, fan-in, and cross-module reference
-	// edges from a SCIP index. Empty when SCIP is off or the indexer is absent;
-	// metrics that need it must report n/a when SymbolGraph.Empty() is true.
-	SymbolGraph symbol.Graph
-	// FitnessSignals carries the results of the architecture-intent enforcement scan
-	// (arch tests, import-linter config, arch-linter in CI). Zero-value Signals
-	// (EvidencePaths == nil) means the scan was never run; metrics must report n/a.
-	FitnessSignals Signals
-	// CloneClusters holds duplicated-code blocks detected by an external clone
-	// detector (e.g. jscpd). Empty when the tool is disabled or absent; metrics
-	// that need it must report n/a when CloneClusters is nil/empty.
-	CloneClusters []clone.Cluster
-	// GitnexusImpact maps repo-relative file path → distinct dependant-file count from the
-	// gitnexus CLI (tools.gitnexus.enabled: on). Nil/empty (the default) leaves
-	// risk_hub behaviour exactly as today (surface-breadth × volatility only).
-	// When non-empty, risk_hub incorporates it as a bounded additional factor.
-	GitnexusImpact map[string]int
-	// ChangedFiles is the sorted repo-relative diff file set (scope.Scope.Changed)
-	// in delta mode; empty in full mode. change_locality reports n/a without it.
-	ChangedFiles []string
+}
+
+// ComplexitySignals carries per-function cyclomatic complexity from the external
+// tool. Empty when the opt-in tool is off/absent.
+type ComplexitySignals struct {
+	Funcs []ComplexityFunc
+}
+
+// DuplicationSignals carries duplicated-code clusters from the external clone
+// detector. Empty when the tool is off/absent.
+type DuplicationSignals struct {
+	Clusters []clone.Cluster
+}
+
+// HistoryInput is CommonInput plus the git-history signals.
+type HistoryInput struct {
+	CommonInput
+	History HistorySignals
+}
+
+// SymbolInput is CommonInput plus the SCIP symbol signals.
+type SymbolInput struct {
+	CommonInput
+	Symbol SymbolSignals
+}
+
+// SizeInput is CommonInput plus the size signals.
+type SizeInput struct {
+	CommonInput
+	Size SizeSignals
+}
+
+// ComplexityInput is CommonInput plus the complexity signals.
+type ComplexityInput struct {
+	CommonInput
+	Complexity ComplexitySignals
+}
+
+// FitnessInput is CommonInput plus the architecture-enforcement scan result.
+type FitnessInput struct {
+	CommonInput
+	Fitness Signals
+}
+
+// DuplicationInput is CommonInput plus the clone clusters; it also carries the
+// history signals because functional_candidates joins clones with co-change.
+type DuplicationInput struct {
+	CommonInput
+	Duplication DuplicationSignals
+	History     HistorySignals
+}
+
+// CollectedSignals is the engine's producer-side bag of everything gathered for
+// a run. It never reaches metric logic directly — the engine projects it to the
+// narrow per-family input each metric declares via the As* methods below.
+type CollectedSignals struct {
+	Common      CommonInput
+	History     HistorySignals
+	Symbol      SymbolSignals
+	Size        SizeSignals
+	Complexity  ComplexitySignals
+	Fitness     Signals
+	Duplication DuplicationSignals
+}
+
+// AsCommon projects to the common input.
+func (s CollectedSignals) AsCommon() CommonInput { return s.Common }
+
+// AsHistory projects to the history-family input.
+func (s CollectedSignals) AsHistory() HistoryInput {
+	return HistoryInput{CommonInput: s.Common, History: s.History}
+}
+
+// AsSymbol projects to the symbol-family input.
+func (s CollectedSignals) AsSymbol() SymbolInput {
+	return SymbolInput{CommonInput: s.Common, Symbol: s.Symbol}
+}
+
+// AsSize projects to the size-family input.
+func (s CollectedSignals) AsSize() SizeInput {
+	return SizeInput{CommonInput: s.Common, Size: s.Size}
+}
+
+// AsComplexity projects to the complexity-family input.
+func (s CollectedSignals) AsComplexity() ComplexityInput {
+	return ComplexityInput{CommonInput: s.Common, Complexity: s.Complexity}
+}
+
+// AsFitness projects to the fitness-family input.
+func (s CollectedSignals) AsFitness() FitnessInput {
+	return FitnessInput{CommonInput: s.Common, Fitness: s.Fitness}
+}
+
+// AsDuplication projects to the duplication-family input.
+func (s CollectedSignals) AsDuplication() DuplicationInput {
+	return DuplicationInput{CommonInput: s.Common, Duplication: s.Duplication, History: s.History}
 }

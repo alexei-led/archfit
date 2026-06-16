@@ -23,7 +23,7 @@ func (m CoverageMetric) Name() string { return "coverage" }
 func (m CoverageMetric) Version() string { return "coverage.v1" }
 
 // Calculate computes the coverage ratio and applies confidence-based band capping.
-func (m CoverageMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
+func (m CoverageMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 	var totalApplicable, totalExtracted, totalUnresolved int
 	for _, c := range in.ToolCoverage {
 		totalApplicable += c.FilesApplicable

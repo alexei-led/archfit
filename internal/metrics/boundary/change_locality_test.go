@@ -54,7 +54,7 @@ func clIndex() coupling.Index {
 
 func TestChangeLocality_CountsCrossModuleEdgesFromChangedFiles(t *testing.T) {
 	m := boundary.ChangeLocalityMetric{}
-	res := m.Calculate(signal.MetricInput{
+	res := m.Calculate(signal.CommonInput{
 		Graph:           clGraph(),
 		Classifications: clIndex(),
 		ChangedFiles:    []string{clFileA},
@@ -80,7 +80,7 @@ func TestChangeLocality_CountsCrossModuleEdgesFromChangedFiles(t *testing.T) {
 
 func TestChangeLocality_NAWithoutDiff(t *testing.T) {
 	m := boundary.ChangeLocalityMetric{}
-	res := m.Calculate(signal.MetricInput{Graph: clGraph(), Classifications: clIndex()})
+	res := m.Calculate(signal.CommonInput{Graph: clGraph(), Classifications: clIndex()})
 	if res.Band != "n/a" {
 		t.Errorf("band = %q, want n/a in full mode (no changed files)", res.Band)
 	}
@@ -88,7 +88,7 @@ func TestChangeLocality_NAWithoutDiff(t *testing.T) {
 
 func TestChangeLocality_LowConfidenceWithoutClassifications(t *testing.T) {
 	m := boundary.ChangeLocalityMetric{}
-	res := m.Calculate(signal.MetricInput{
+	res := m.Calculate(signal.CommonInput{
 		Graph:        clGraph(),
 		ChangedFiles: []string{clFileA},
 	})
@@ -102,7 +102,7 @@ func TestChangeLocality_LowConfidenceWithoutClassifications(t *testing.T) {
 
 func TestChangeLocality_Deterministic(t *testing.T) {
 	m := boundary.ChangeLocalityMetric{}
-	in := signal.MetricInput{
+	in := signal.CommonInput{
 		Graph:           clGraph(),
 		Classifications: clIndex(),
 		ChangedFiles:    []string{clFileA, clFileB},

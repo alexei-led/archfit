@@ -187,8 +187,8 @@ func moduleImpactFromFiles(g symbol.Graph, fileImpact map[string]int) map[string
 // (normalised to the per-run maximum). When GitnexusImpact is nil/empty (the
 // default), this factor is 1.0 for every module and the result is exactly the
 // same as plain surface-breadth × volatility.
-func (m HubMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
-	hasGitnexus := len(in.GitnexusImpact) > 0
+func (m HubMetric) Calculate(in signal.SymbolInput) diagnostic.MetricResult {
+	hasGitnexus := len(in.Symbol.GitnexusImpact) > 0
 	def := "cross-module surface breadth × explicit config volatility: count of a module's " +
 		"symbols referenced from other modules (churn-independent; never gates)"
 	if hasGitnexus {
@@ -196,18 +196,18 @@ func (m HubMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
 			"count of a module's symbols referenced from other modules, refined by historical change impact " +
 			"(churn-independent; never gates)"
 	}
-	if in.SymbolGraph.Empty() {
+	if in.Symbol.Graph.Empty() {
 		return result.NACount(m.Name(), m.Version(), def)
 	}
 
-	breadth := moduleSurfaceBreadth(in.SymbolGraph)
+	breadth := moduleSurfaceBreadth(in.Symbol.Graph)
 	if len(breadth) == 0 {
 		return result.NACount(m.Name(), m.Version(), def)
 	}
 
 	// GitnexusImpact is keyed by file path; aggregate to module granularity
 	// through the symbol graph, then normalise to the per-run maximum.
-	moduleImpact := moduleImpactFromFiles(in.SymbolGraph, in.GitnexusImpact)
+	moduleImpact := moduleImpactFromFiles(in.Symbol.Graph, in.Symbol.GitnexusImpact)
 	maxImpact := 0
 	for _, v := range moduleImpact {
 		if v > maxImpact {

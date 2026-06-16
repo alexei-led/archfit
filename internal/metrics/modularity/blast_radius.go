@@ -33,7 +33,7 @@ type hubInfo struct {
 // Calculate computes per-module blast radius and reports the hubs above the
 // threshold. Indeterminate (n/a) for graphs too small to have meaningful
 // concentration.
-func (m BlastRadiusMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
+func (m BlastRadiusMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 	if in.Graph == nil {
 		return m.naResult()
 	}

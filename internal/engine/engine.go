@@ -125,25 +125,25 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	taggedFindings := status.Assign(rawFindings, in.Accepted, in.Exceptions, in.Now, "gate")
 
 	// --- Stage 6: Metrics ---
-	mi := signal.MetricInput{
-		Graph:           ex.g,
-		Classifications: couplingIdx,
-		Findings:        taggedFindings,
-		Baseline:        in.BaseMetrics,
-		ToolCoverage:    ex.coverages,
-		FileChurn:       in.Change.FileChurn,
-		CoChange:        in.Change.CoChange,
-		FileLOC:         in.Change.FileLOC,
-		Complexity:      in.Change.Complexity,
-		SymbolGraph:     ex.scipSymbols,
-		FitnessSignals:  in.Change.FitnessSignals,
-		CloneClusters:   in.Change.CloneClusters,
-		GitnexusImpact:  in.Change.GitnexusImpact,
-		ChangedFiles:    in.Scope.Changed,
+	collected := signal.CollectedSignals{
+		Common: signal.CommonInput{
+			Graph:           ex.g,
+			Classifications: couplingIdx,
+			Findings:        taggedFindings,
+			Baseline:        in.BaseMetrics,
+			ToolCoverage:    ex.coverages,
+			ChangedFiles:    in.Scope.Changed,
+		},
+		History:     signal.HistorySignals{FileChurn: in.Change.FileChurn, CoChange: in.Change.CoChange},
+		Symbol:      signal.SymbolSignals{Graph: ex.scipSymbols, GitnexusImpact: in.Change.GitnexusImpact},
+		Size:        signal.SizeSignals{FileLOC: in.Change.FileLOC},
+		Complexity:  signal.ComplexitySignals{Funcs: in.Change.Complexity},
+		Fitness:     in.Change.FitnessSignals,
+		Duplication: signal.DuplicationSignals{Clusters: in.Change.CloneClusters},
 	}
 	metricResults := make([]diagnostic.MetricResult, 0, len(in.Metrics))
 	for _, m := range in.Metrics {
-		metricResults = append(metricResults, m.Calculate(mi))
+		metricResults = append(metricResults, m.Calculate(collected))
 	}
 
 	// --- Stage 7: Resolve evidence — module labels + severity join ---

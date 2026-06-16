@@ -111,10 +111,7 @@ func TestArchitectureFitnessMetric_Calculate(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			in := signal.MetricInput{
-				FitnessSignals: tc.signals,
-			}
-			result := m.Calculate(in)
+			result := m.Calculate(signal.FitnessInput{Fitness: tc.signals})
 
 			if result.Band != tc.wantBand {
 				t.Errorf("Band = %q, want %q", result.Band, tc.wantBand)
@@ -161,7 +158,7 @@ func TestArchitectureFitnessMetric_EvidencePathsInDisplay(t *testing.T) {
 		ArchTestFiles: true,
 		EvidencePaths: ep,
 	}
-	result := m.Calculate(signal.MetricInput{FitnessSignals: sig})
+	result := m.Calculate(signal.FitnessInput{Fitness: sig})
 
 	if !strings.Contains(result.Display, "internal/arch_test.go") {
 		t.Errorf("Display %q missing evidence path %q", result.Display, "internal/arch_test.go")
@@ -183,7 +180,7 @@ func TestArchitectureFitnessMetric_TruncatesLongEvidenceLists(t *testing.T) {
 		catArchLinterInCI: nil,
 	}
 	sig := signal.Signals{ArchTestFiles: true, EvidencePaths: ep}
-	result := m.Calculate(signal.MetricInput{FitnessSignals: sig})
+	result := m.Calculate(signal.FitnessInput{Fitness: sig})
 
 	if !strings.Contains(result.Display, "+2 more") {
 		t.Errorf("Display %q should contain '+2 more' for 5 paths (max 3)", result.Display)

@@ -25,6 +25,11 @@ const (
 	testSymB          = "symB"
 )
 
+// symInput wraps a symbol graph in the per-family input the metric consumes.
+func symInput(g symbol.Graph) signal.SymbolInput {
+	return signal.SymbolInput{Symbol: signal.SymbolSignals{Graph: g}}
+}
+
 // makeGraph is a test helper that builds a symbol.Graph from a Module map and
 // a flat list of directed reference edges (from, to pairs).
 func makeGraph(modules map[string]string, edges [][2]string) symbol.Graph {
@@ -94,7 +99,7 @@ func TestRiskHub_BroadSurfaceModuleRanksTop(t *testing.T) {
 		},
 	)
 	m := NewMetric(makeConfig(nil))
-	res := m.Calculate(signal.MetricInput{SymbolGraph: g})
+	res := m.Calculate(symInput(g))
 
 	if res.Band == result.BandNA {
 		t.Fatal("expected a real result, got n/a")
@@ -133,7 +138,7 @@ func TestRiskHub_KnownHubRanksTop(t *testing.T) {
 		},
 	)
 	m := NewMetric(makeConfig(nil))
-	res := m.Calculate(signal.MetricInput{SymbolGraph: g})
+	res := m.Calculate(symInput(g))
 
 	if res.Band == result.BandNA {
 		t.Fatal("expected a real result, got n/a")
@@ -166,7 +171,7 @@ func TestRiskHub_IntraModuleRefsIgnored(t *testing.T) {
 		},
 	)
 	m := NewMetric(makeConfig(nil))
-	res := m.Calculate(signal.MetricInput{SymbolGraph: g})
+	res := m.Calculate(symInput(g))
 
 	if res.Band != result.BandNA {
 		t.Errorf("expected n/a when only intra-module refs exist, got band=%q display=%q",
@@ -174,13 +179,11 @@ func TestRiskHub_IntraModuleRefsIgnored(t *testing.T) {
 	}
 }
 
-// TestRiskHub_ChurnDoesNotAffectScore verifies that two signal.MetricInput values that
-// differ ONLY in FileChurn produce identical risk_hub output.
-//
-// This test is structural: risk_hub's moduleVolatility map is built from
-// hand-authored ModuleDef.Volatility, which ApplyVolatility never touches,
-// so FileChurn cannot reach the metric at all.
-func TestRiskHub_ChurnDoesNotAffectScore(t *testing.T) {
+// TestRiskHub_ChurnIndependentAndDeterministic documents that risk_hub cannot be
+// influenced by churn — SymbolInput carries no history signal, so churn-independence
+// is now a compile-time guarantee, not a runtime one. The test additionally checks
+// the metric is deterministic for a fixed symbol graph.
+func TestRiskHub_ChurnIndependentAndDeterministic(t *testing.T) {
 	g := makeGraph(
 		map[string]string{
 			"sym": "modA",
@@ -190,20 +193,14 @@ func TestRiskHub_ChurnDoesNotAffectScore(t *testing.T) {
 	)
 	m := NewMetric(makeConfig(nil))
 
-	inNoChurn := signal.MetricInput{SymbolGraph: g}
-	inHighChurn := signal.MetricInput{
-		SymbolGraph: g,
-		FileChurn:   map[string]int{"modA/file.go": 9999, "modB/file.go": 9999},
-	}
-
-	r1 := m.Calculate(inNoChurn)
-	r2 := m.Calculate(inHighChurn)
+	r1 := m.Calculate(symInput(g))
+	r2 := m.Calculate(symInput(g))
 
 	if r1.Value != r2.Value {
-		t.Errorf("churn changed Value: no-churn=%v high-churn=%v", r1.Value, r2.Value)
+		t.Errorf("non-deterministic Value: %v vs %v", r1.Value, r2.Value)
 	}
 	if r1.Display != r2.Display {
-		t.Errorf("churn changed Display:\n  no-churn:   %s\n  high-churn: %s", r1.Display, r2.Display)
+		t.Errorf("non-deterministic Display:\n  %s\n  %s", r1.Display, r2.Display)
 	}
 }
 
@@ -211,7 +208,7 @@ func TestRiskHub_ChurnDoesNotAffectScore(t *testing.T) {
 // never a false zero.
 func TestRiskHub_NAWhenGraphEmpty(t *testing.T) {
 	m := NewMetric(makeConfig(nil))
-	res := m.Calculate(signal.MetricInput{SymbolGraph: symbol.Graph{}})
+	res := m.Calculate(symInput(symbol.Graph{}))
 
 	if res.Band != result.BandNA {
 		t.Errorf("expected band %q for empty graph, got %q", result.BandNA, res.Band)
@@ -242,7 +239,7 @@ func TestRiskHub_HighVolatilityRanksAboveNeutral(t *testing.T) {
 		"beta":  volBandLow,
 	})
 	m := NewMetric(cfg)
-	res := m.Calculate(signal.MetricInput{SymbolGraph: g})
+	res := m.Calculate(symInput(g))
 
 	if res.Band == result.BandNA {
 		t.Fatal("expected a real result, got n/a")
@@ -266,7 +263,7 @@ func TestRiskHub_BandIsInfo(t *testing.T) {
 		[][2]string{{"d", "s"}},
 	)
 	m := NewMetric(makeConfig(nil))
-	res := m.Calculate(signal.MetricInput{SymbolGraph: g})
+	res := m.Calculate(symInput(g))
 	if res.Band != result.BandInformational {
 		t.Errorf("expected band %q, got %q", result.BandInformational, res.Band)
 	}
@@ -300,14 +297,14 @@ func TestRiskHub_GitnexusImpactRefinesRanking(t *testing.T) {
 	m := NewMetric(makeConfig(nil))
 
 	// Without gitnexus: both modules have equal score; alpha sorts first (alphabetical tiebreak).
-	withoutGN := m.Calculate(signal.MetricInput{SymbolGraph: g})
+	withoutGN := m.Calculate(symInput(g))
 	if withoutGN.Band == result.BandNA {
 		t.Fatal("expected real result without gitnexus, got n/a")
 	}
 
 	// With gitnexus: beta's file has much higher impact → beta ranks above alpha.
 	impact := map[string]int{"src/beta.py": 100, "src/alpha.py": 1}
-	withGN := m.Calculate(signal.MetricInput{SymbolGraph: g, GitnexusImpact: impact})
+	withGN := m.Calculate(signal.SymbolInput{Symbol: signal.SymbolSignals{Graph: g, GitnexusImpact: impact}})
 	if withGN.Band == result.BandNA {
 		t.Fatal("expected real result with gitnexus, got n/a")
 	}
@@ -329,7 +326,7 @@ func TestRiskHub_GitnexusImpactRefinesRanking(t *testing.T) {
 
 	// Verify that nil GitnexusImpact produces the same output as an empty map
 	// (both are the no-gitnexus path — behavior must be identical).
-	withEmpty := m.Calculate(signal.MetricInput{SymbolGraph: g, GitnexusImpact: map[string]int{}})
+	withEmpty := m.Calculate(signal.SymbolInput{Symbol: signal.SymbolSignals{Graph: g, GitnexusImpact: map[string]int{}}})
 	if withoutGN.Display != withEmpty.Display {
 		t.Errorf("nil vs empty GitnexusImpact differ:\n  nil:   %s\n  empty: %s",
 			withoutGN.Display, withEmpty.Display)

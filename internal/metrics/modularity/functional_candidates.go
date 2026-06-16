@@ -35,15 +35,15 @@ const functionalCandidatesDef = "cross-module pairs with duplicated logic (clone
 
 // Calculate counts cross-module pairs sharing duplicated code blocks, with an
 // optional co-change cross-reference. Reports n/a when no clone data is present.
-func (m FunctionalCandidatesMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
-	if len(in.CloneClusters) == 0 || in.Graph == nil {
+func (m FunctionalCandidatesMetric) Calculate(in signal.DuplicationInput) diagnostic.MetricResult {
+	if len(in.Duplication.Clusters) == 0 || in.Graph == nil {
 		return result.NACount(m.Name(), m.Version(), functionalCandidatesDef)
 	}
 
 	lang := modgraph.DominantLanguage(in.Graph)
 
 	// Map clone clusters to canonical cross-module pairs (deduped + sorted by ModulePairs).
-	pairs := clone.ModulePairs(in.CloneClusters, func(f string) string {
+	pairs := clone.ModulePairs(in.Duplication.Clusters, func(f string) string {
 		return modgraph.FileToModuleKey(f, lang)
 	})
 
@@ -52,8 +52,8 @@ func (m FunctionalCandidatesMetric) Calculate(in signal.MetricInput) diagnostic.
 	}
 
 	// Build module-pair co-change set from CoChange for cross-reference.
-	coChangePairs := make(map[[2]string]struct{}, len(in.CoChange))
-	for fp := range in.CoChange {
+	coChangePairs := make(map[[2]string]struct{}, len(in.History.CoChange))
+	for fp := range in.History.CoChange {
 		a := modgraph.FileToModuleKey(fp[0], lang)
 		b := modgraph.FileToModuleKey(fp[1], lang)
 		if a == "" || b == "" || a == b {

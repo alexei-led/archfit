@@ -1,6 +1,6 @@
 // Package boundary implements the five boundary-health metrics:
 // encapsulation, unbalanced_edge, cycle, coverage, and change_locality.
-// Every metric is a pure function of signal.MetricInput; absent inputs
+// Every metric is a pure function of signal.CommonInput; absent inputs
 // yield n/a, never a false zero.
 package boundary
 
@@ -49,7 +49,7 @@ func (m EncapsulationMetric) Version() string { return "encapsulation.v1" }
 // an exported API). Reporting 10/10 there is the over-score this avoids; the
 // discriminating modularity signal lives in change-amplification, hidden-coupling,
 // and cycles instead.
-func (m EncapsulationMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
+func (m EncapsulationMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 	if in.Graph == nil {
 		return m.encResult(1.0, result.ConfidenceHigh, in.Baseline)
 	}

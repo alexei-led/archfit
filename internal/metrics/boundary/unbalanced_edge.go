@@ -48,7 +48,7 @@ func (m UnbalancedEdgeMetric) Name() string { return "unbalanced_edge" }
 func (m UnbalancedEdgeMetric) Version() string { return "unbalanced_edge.v1" }
 
 // Calculate counts high-risk unbalanced edges and cross-references findings for status.
-func (m UnbalancedEdgeMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
+func (m UnbalancedEdgeMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 	// Build an edge-key → finding status index keyed by (from-path, to-path).
 	// finding.EdgeEvidence carries stripped paths (kind prefix removed);
 	// coupling.Index keys use full node IDs. We strip the kind prefix when

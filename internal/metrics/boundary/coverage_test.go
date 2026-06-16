@@ -12,7 +12,7 @@ import (
 func TestCoverage_Ratio(t *testing.T) {
 	// FilesSeen=8, FilesApplicable=10 → value 0.8
 	m := boundary.CoverageMetric{}
-	result := m.Calculate(signal.MetricInput{
+	result := m.Calculate(signal.CommonInput{
 		ToolCoverage: []diagnostic.Coverage{
 			{FilesSeen: 8, FilesApplicable: 10},
 		},
@@ -25,7 +25,7 @@ func TestCoverage_Ratio(t *testing.T) {
 
 func TestCoverage_ZeroApplicable(t *testing.T) {
 	m := boundary.CoverageMetric{}
-	result := m.Calculate(signal.MetricInput{
+	result := m.Calculate(signal.CommonInput{
 		ToolCoverage: []diagnostic.Coverage{
 			{FilesSeen: 0, FilesApplicable: 0},
 		},
@@ -39,7 +39,7 @@ func TestBandModel_LowConfidenceCap(t *testing.T) {
 	// FilesSeen=10, FilesApplicable=10, Unresolved=9 → ratio=0.9 → low confidence
 	// value = 10/10 = 1.0 → score 10 → band would be "strong" → capped to "mixed"
 	m := boundary.CoverageMetric{}
-	result := m.Calculate(signal.MetricInput{
+	result := m.Calculate(signal.CommonInput{
 		ToolCoverage: []diagnostic.Coverage{
 			{FilesSeen: 10, FilesApplicable: 10, Unresolved: 9},
 		},

@@ -40,13 +40,13 @@ func (m ArchitectureFitnessMetric) Version() string { return "architecture_fitne
 // n/a when EvidencePaths is nil (scan was never run).
 // 0/10 when no signals are present but the scan did run (honest zero).
 // 10/10 when all three signal categories are present.
-func (m ArchitectureFitnessMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
+func (m ArchitectureFitnessMetric) Calculate(in signal.FitnessInput) diagnostic.MetricResult {
 	// nil EvidencePaths = scan never ran → n/a, not a false zero.
-	if in.FitnessSignals.EvidencePaths == nil {
+	if in.Fitness.EvidencePaths == nil {
 		return result.NACount(m.Name(), m.Version(), architectureFitnessDefinition)
 	}
 
-	sig := in.FitnessSignals
+	sig := in.Fitness
 	present := countSignals(sig)
 	value := float64(present) / float64(archFitnessSignalCount)
 	score := value * 10.0

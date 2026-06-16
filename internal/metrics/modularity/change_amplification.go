@@ -31,15 +31,15 @@ type ampHub struct {
 }
 
 // Calculate ranks modules by change amplification. n/a without a graph or churn.
-func (m ChangeAmplificationMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
-	if in.Graph == nil || len(in.FileChurn) == 0 {
+func (m ChangeAmplificationMetric) Calculate(in signal.HistoryInput) diagnostic.MetricResult {
+	if in.Graph == nil || len(in.History.FileChurn) == 0 {
 		return result.NACount(m.Name(), m.Version(), "blast radius weighted by recent churn (expected change cost)")
 	}
 	blast, n := modgraph.BlastRadius(in.Graph)
 	if n < 2 {
 		return result.NACount(m.Name(), m.Version(), "blast radius weighted by recent churn (expected change cost)")
 	}
-	mc := modgraph.ModuleChurn(in.FileChurn, modgraph.DominantLanguage(in.Graph))
+	mc := modgraph.ModuleChurn(in.History.FileChurn, modgraph.DominantLanguage(in.Graph))
 	maxChurn := 0
 	for _, c := range mc {
 		if c > maxChurn {

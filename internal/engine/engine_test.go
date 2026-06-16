@@ -638,12 +638,12 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 
 // spyMetric is a test-only metrics.Metric that captures the MetricInput it receives.
 type spyMetric struct {
-	captured *signal.MetricInput
+	captured *signal.CollectedSignals
 }
 
 func (s *spyMetric) Name() string    { return "spy" }
 func (s *spyMetric) Version() string { return "spy.v1" }
-func (s *spyMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
+func (s *spyMetric) Calculate(in signal.CollectedSignals) diagnostic.MetricResult {
 	*s.captured = in
 	return diagnostic.MetricResult{Name: s.Name(), Version: s.Version(), Band: "n/a"}
 }
@@ -679,7 +679,7 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 		},
 	}
 
-	var captured signal.MetricInput
+	var captured signal.CollectedSignals
 	spy := &spyMetric{captured: &captured}
 
 	classifyCfg, rs := cannedConfig()
@@ -707,13 +707,13 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if captured.SymbolGraph.Empty() {
+	if captured.Symbol.Graph.Empty() {
 		t.Fatal("MetricInput.SymbolGraph is empty, want populated graph")
 	}
-	if got := captured.SymbolGraph.Module["pkg/a.Foo"]; got != "a" {
+	if got := captured.Symbol.Graph.Module["pkg/a.Foo"]; got != "a" {
 		t.Errorf("SymbolGraph.Module[pkg/a.Foo]=%q, want %q", got, "a")
 	}
-	if got := captured.SymbolGraph.FanIn["pkg/a.Foo"]; got != 3 {
+	if got := captured.Symbol.Graph.FanIn["pkg/a.Foo"]; got != 3 {
 		t.Errorf("SymbolGraph.FanIn[pkg/a.Foo]=%d, want 3", got)
 	}
 }
@@ -730,7 +730,7 @@ func TestRun_SymbolGraph_EmptyWhenNopResolver(t *testing.T) {
 		},
 	}
 
-	var captured signal.MetricInput
+	var captured signal.CollectedSignals
 	spy := &spyMetric{captured: &captured}
 
 	classifyCfg, rs := cannedConfig()
@@ -758,7 +758,7 @@ func TestRun_SymbolGraph_EmptyWhenNopResolver(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if !captured.SymbolGraph.Empty() {
+	if !captured.Symbol.Graph.Empty() {
 		t.Errorf("MetricInput.SymbolGraph is non-empty with NopSymbolResolver, want empty")
 	}
 }
@@ -1001,9 +1001,9 @@ func TestRun_PinnedLabels(t *testing.T) {
 	// The engine hashes "fromPath\x00toPath\x00kind" per edge of the pair.
 	freshHash := labels.HashItems([]string{pathFileA + "\x00" + pathFileBAPIService + "\x00imports"})
 
-	run := func(lbls []labels.Label) (diagnostic.Diagnostic, signal.MetricInput) {
+	run := func(lbls []labels.Label) (diagnostic.Diagnostic, signal.CollectedSignals) {
 		t.Helper()
-		var captured signal.MetricInput
+		var captured signal.CollectedSignals
 		spy := &spyMetric{captured: &captured}
 		d, err := engine.Run(ctx, engine.RunInput{
 			Mode:        engine.Mode{Head: headRef, Advisory: true},
@@ -1029,8 +1029,8 @@ func TestRun_PinnedLabels(t *testing.T) {
 		return d, captured
 	}
 
-	edgeStrength := func(in signal.MetricInput) string {
-		for key, cl := range in.Classifications {
+	edgeStrength := func(in signal.CollectedSignals) string {
+		for key, cl := range in.Common.Classifications {
 			if strings.Contains(key, pathFileBAPIService) {
 				return string(cl.Strength)
 			}

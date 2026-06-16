@@ -26,7 +26,7 @@ func TestUnbalancedEdge_Count(t *testing.T) {
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.MetricInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
 
 	if result.Value != 1 {
 		t.Errorf("expected value 1 got %v", result.Value)
@@ -52,7 +52,7 @@ func TestUnbalancedEdge_ZeroCount(t *testing.T) {
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.MetricInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
 
 	if result.Value != 0 {
 		t.Errorf("expected value 0 got %v", result.Value)
@@ -81,7 +81,7 @@ func TestUnbalancedEdge_UnknownVolatilityIsNA(t *testing.T) {
 	}
 
 	m := boundary.UnbalancedEdgeMetric{}
-	result := m.Calculate(signal.MetricInput{Graph: g, Classifications: idx})
+	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
 
 	if result.Band != bandNAStr {
 		t.Errorf("expected band n/a got %q", result.Band)

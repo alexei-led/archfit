@@ -140,10 +140,10 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			in := signal.MetricInput{
-				Graph:         tc.g,
-				CloneClusters: tc.clusters,
-				CoChange:      tc.coChange,
+			in := signal.DuplicationInput{
+				CommonInput: signal.CommonInput{Graph: tc.g},
+				Duplication: signal.DuplicationSignals{Clusters: tc.clusters},
+				History:     signal.HistorySignals{CoChange: tc.coChange},
 			}
 			got := m.Calculate(in)
 

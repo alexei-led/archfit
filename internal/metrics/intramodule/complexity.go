@@ -32,14 +32,14 @@ func (m ComplexityMetric) Version() string { return "complexity.v1" }
 
 // Calculate reports functions over the complexity threshold, ranked. n/a when no
 // complexity data is available (the tool is opt-in / not installed).
-func (m ComplexityMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
+func (m ComplexityMetric) Calculate(in signal.ComplexityInput) diagnostic.MetricResult {
 	def := "functions whose cyclomatic complexity exceeds " +
 		strconv.Itoa(complexityThreshold) + " (external tool: lizard)"
-	if len(in.Complexity) == 0 {
+	if len(in.Complexity.Funcs) == 0 {
 		return result.NACount(m.Name(), m.Version(), def)
 	}
 	hot := make([]signal.ComplexityFunc, 0)
-	for _, f := range in.Complexity {
+	for _, f := range in.Complexity.Funcs {
 		if f.CCN > complexityThreshold {
 			hot = append(hot, f)
 		}

@@ -33,7 +33,7 @@ func (m ChangeLocalityMetric) Version() string { return "change_locality.v1" }
 
 // Calculate counts cross-module edges from changed files and the forward
 // reach (distinct files reachable from the changed set).
-func (m ChangeLocalityMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
+func (m ChangeLocalityMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 	def := "per-change drift: cross-module edges originating in changed files + forward " +
 		"graph reach from changed nodes (delta mode only; report-only, never gates)"
 	if len(in.ChangedFiles) == 0 || in.Graph == nil {

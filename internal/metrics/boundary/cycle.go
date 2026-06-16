@@ -24,7 +24,7 @@ func (m CycleMetric) Name() string { return "cycle" }
 func (m CycleMetric) Version() string { return "cycle.v1" }
 
 // Calculate counts strongly-connected components of size > 1 in the dependency graph.
-func (m CycleMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
+func (m CycleMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 	cycles := 0
 	if in.Graph != nil {
 		cycles = countCycles(in.Graph)

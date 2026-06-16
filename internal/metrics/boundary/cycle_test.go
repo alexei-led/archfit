@@ -21,7 +21,7 @@ func TestCycle_NoCycles(t *testing.T) {
 	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB, nodeC}, edges)
 
 	m := boundary.CycleMetric{}
-	result := m.Calculate(signal.MetricInput{Graph: g})
+	result := m.Calculate(signal.CommonInput{Graph: g})
 
 	if result.Value != 0 {
 		t.Errorf("expected 0 cycles got %v", result.Value)
@@ -42,7 +42,7 @@ func TestCycle_WithCycle(t *testing.T) {
 	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB}, edges)
 
 	m := boundary.CycleMetric{}
-	result := m.Calculate(signal.MetricInput{Graph: g})
+	result := m.Calculate(signal.CommonInput{Graph: g})
 
 	if result.Value <= 0 {
 		t.Errorf("expected cycle count > 0 got %v", result.Value)
