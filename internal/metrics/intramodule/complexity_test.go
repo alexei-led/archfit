@@ -1,19 +1,20 @@
-package metrics_test
+package intramodule_test
 
 import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/metrics/intramodule"
+	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
 func TestComplexity_FlagsOverThreshold(t *testing.T) {
-	in := metrics.MetricInput{Complexity: []metrics.ComplexityFunc{
+	in := signal.MetricInput{Complexity: []signal.ComplexityFunc{
 		{File: "a/parse.py", Name: "parse_entries", CCN: 72, Line: 401},
 		{File: "a/x.py", Name: "small", CCN: 8, Line: 10},
 		{File: "b/y.go", Name: "GetSpotSavings", CCN: 25, Line: 183},
 	}}
-	res := metrics.ComplexityMetric{}.Calculate(in)
+	res := intramodule.ComplexityMetric{}.Calculate(in)
 	if res.Value != 2 { // 72 and 25 are over CCN 15; 8 is not
 		t.Errorf("expected 2 complex funcs got %v; display=%q", res.Value, res.Display)
 	}
@@ -26,7 +27,7 @@ func TestComplexity_FlagsOverThreshold(t *testing.T) {
 }
 
 func TestComplexity_NoDataIsNA(t *testing.T) {
-	res := metrics.ComplexityMetric{}.Calculate(metrics.MetricInput{})
+	res := intramodule.ComplexityMetric{}.Calculate(signal.MetricInput{})
 	if res.Band != bandNAStr {
 		t.Errorf("expected n/a without complexity data, got %q", res.Band)
 	}

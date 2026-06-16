@@ -15,7 +15,7 @@
       "version": "change_locality.v1"
     },
     "complexity": {
-      "value": 11,
+      "value": 12,
       "version": "complexity.v1"
     },
     "coverage": {

@@ -1,12 +1,18 @@
-package metrics
+package boundary
 
 import (
 	"fmt"
 
+	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/signal"
 )
+
+// ---------------------------------------------------------------------------
+// ChangeLocalityMetric (change_locality.v1)
+// ---------------------------------------------------------------------------
 
 // ChangeLocalityMetric is the per-change drift signal (spec §10.4): in delta
 // mode (--base <ref>) it reports how far THIS change reaches beyond its own
@@ -27,11 +33,11 @@ func (m ChangeLocalityMetric) Version() string { return "change_locality.v1" }
 
 // Calculate counts cross-module edges from changed files and the forward
 // reach (distinct files reachable from the changed set).
-func (m ChangeLocalityMetric) Calculate(in MetricInput) diagnostic.MetricResult {
+func (m ChangeLocalityMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
 	def := "per-change drift: cross-module edges originating in changed files + forward " +
 		"graph reach from changed nodes (delta mode only; report-only, never gates)"
 	if len(in.ChangedFiles) == 0 || in.Graph == nil {
-		return naCount(m.Name(), m.Version(), def)
+		return result.NACount(m.Name(), m.Version(), def)
 	}
 
 	changed := make(map[string]struct{}, len(in.ChangedFiles))
@@ -64,9 +70,9 @@ func (m ChangeLocalityMetric) Calculate(in MetricInput) diagnostic.MetricResult 
 
 	reach := forwardReach(adjacency, in.ChangedFiles)
 
-	confidence := confidenceHigh
+	confidence := result.ConfidenceHigh
 	if len(in.Classifications) == 0 {
-		confidence = confidenceLow
+		confidence = result.ConfidenceLow
 	}
 
 	return diagnostic.MetricResult{
@@ -74,10 +80,10 @@ func (m ChangeLocalityMetric) Calculate(in MetricInput) diagnostic.MetricResult 
 		Value: float64(crossEdges),
 		Display: fmt.Sprintf("%d cross-module edge(s) from %d changed file(s); forward reach %d file(s)",
 			crossEdges, len(in.ChangedFiles), reach),
-		Band:       bandInformational,
+		Band:       result.BandInformational,
 		Confidence: confidence,
 		Version:    m.Version(),
-		Mode:       modeCount,
+		Mode:       result.ModeCount,
 		Definition: def,
 	}
 }

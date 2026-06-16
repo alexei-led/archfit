@@ -1,4 +1,7 @@
-package metrics
+// Package intramodule holds the intra-module quality metrics — signals about the
+// internals of a module (function complexity, architecture-enforcement presence)
+// rather than its coupling to other modules.
+package intramodule
 
 import (
 	"fmt"
@@ -6,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
@@ -13,11 +17,6 @@ import (
 // complexityThreshold is the cyclomatic complexity above which a function is a
 // hotspot (lizard's default warning level). Tunable; the metric is report-only.
 const complexityThreshold = 15
-
-// ComplexityFunc is an alias for signal.ComplexityFunc. The type lives in
-// internal/model/signal; this alias keeps the metrics API stable so callers
-// need no import changes.
-type ComplexityFunc = signal.ComplexityFunc
 
 // ComplexityMetric reports the most cyclomatically-complex functions — the
 // intra-module signal that size (structural_weight) cannot see (a single giant
@@ -33,13 +32,13 @@ func (m ComplexityMetric) Version() string { return "complexity.v1" }
 
 // Calculate reports functions over the complexity threshold, ranked. n/a when no
 // complexity data is available (the tool is opt-in / not installed).
-func (m ComplexityMetric) Calculate(in MetricInput) diagnostic.MetricResult {
+func (m ComplexityMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
 	def := "functions whose cyclomatic complexity exceeds " +
 		strconv.Itoa(complexityThreshold) + " (external tool: lizard)"
 	if len(in.Complexity) == 0 {
-		return naCount(m.Name(), m.Version(), def)
+		return result.NACount(m.Name(), m.Version(), def)
 	}
-	hot := make([]ComplexityFunc, 0)
+	hot := make([]signal.ComplexityFunc, 0)
 	for _, f := range in.Complexity {
 		if f.CCN > complexityThreshold {
 			hot = append(hot, f)
@@ -49,12 +48,12 @@ func (m ComplexityMetric) Calculate(in MetricInput) diagnostic.MetricResult {
 
 	return diagnostic.MetricResult{
 		Name: m.Name(), Value: float64(len(hot)), Display: complexityDisplay(hot),
-		Band: bandInformational, Confidence: confidenceHigh, Version: m.Version(),
-		Mode: modeCount, Definition: def,
+		Band: result.BandInformational, Confidence: result.ConfidenceHigh, Version: m.Version(),
+		Mode: result.ModeCount, Definition: def,
 	}
 }
 
-func complexityDisplay(hot []ComplexityFunc) string {
+func complexityDisplay(hot []signal.ComplexityFunc) string {
 	if len(hot) == 0 {
 		return fmt.Sprintf("0 functions over CCN %d", complexityThreshold)
 	}

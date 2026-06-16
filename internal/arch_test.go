@@ -21,12 +21,44 @@ var coreRingPkgs = []string{
 	modulePrefix + "internal/classify",
 	modulePrefix + "internal/rules",
 	modulePrefix + "internal/metrics",
+	// metrics is split into family sub-packages; assert they all load.
+	modulePrefix + "internal/metrics/boundary",
+	modulePrefix + "internal/metrics/modularity",
+	modulePrefix + "internal/metrics/risk",
+	modulePrefix + "internal/metrics/intramodule",
+	modulePrefix + "internal/metrics/internal/result",
 	modulePrefix + "internal/status",
 	modulePrefix + "internal/staleness",
 	modulePrefix + "internal/facts",
 	// scope is a value type + resolution logic over an injected Resolver;
 	// the concrete git/toolrun wiring lives in cmd. Keep it that way.
 	modulePrefix + "internal/scope",
+}
+
+// coreRingPrefixes are path prefixes whose packages — and ALL their
+// sub-packages — must obey the core-ring import rules. internal/metrics is split
+// into family sub-packages (boundary, modularity, risk, intramodule,
+// internal/result, metricstest), so a prefix match keeps every current and
+// future sub-package covered without editing this list.
+var coreRingPrefixes = []string{
+	modulePrefix + "internal/classify",
+	modulePrefix + "internal/rules",
+	modulePrefix + "internal/metrics",
+	modulePrefix + "internal/status",
+	modulePrefix + "internal/staleness",
+	modulePrefix + "internal/facts",
+	modulePrefix + "internal/scope",
+}
+
+// inCoreRing reports whether pkgPath is a core-ring package: an exact prefix
+// match or a sub-package of one (prefix + "/").
+func inCoreRing(pkgPath string) bool {
+	for _, p := range coreRingPrefixes {
+		if pkgPath == p || strings.HasPrefix(pkgPath, p+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // modelPkgs must not import anything outside the standard library (or each
@@ -97,10 +129,11 @@ func TestArchImports(t *testing.T) {
 	})
 
 	t.Run("core_ring_no_forbidden_imports", func(t *testing.T) {
-		for _, pkgPath := range coreRingPkgs {
-			pkg, ok := loaded[pkgPath]
-			if !ok {
-				continue // already reported in presence check
+		// Prefix scan over every loaded package so metrics family sub-packages
+		// (and any future ones) are covered, not just the exact paths above.
+		for pkgPath, pkg := range loaded {
+			if !inCoreRing(pkgPath) {
+				continue
 			}
 			for imp := range pkg.Imports {
 				if isForbiddenForCore(imp) {
@@ -205,4 +238,54 @@ func isStdlib(imp string) bool {
 // which model packages are allowed to import each other.
 func isModelPkg(imp string) bool {
 	return strings.HasPrefix(imp, modulePrefix+"internal/model/")
+}
+
+// TestInCoreRing verifies the prefix matcher covers metrics family sub-packages
+// without over-matching a same-prefix sibling (e.g. "internal/metricsx").
+func TestInCoreRing(t *testing.T) {
+	cases := map[string]bool{
+		modulePrefix + "internal/metrics":                 true,
+		modulePrefix + "internal/metrics/boundary":        true,
+		modulePrefix + "internal/metrics/internal/result": true,
+		modulePrefix + "internal/metrics/metricstest":     true,
+		modulePrefix + "internal/scope":                   true,
+		modulePrefix + "internal/engine":                  false,
+		modulePrefix + "internal/output/markdown":         false,
+		modulePrefix + "internal/metricsx":                false, // must not over-match the prefix
+	}
+	for path, want := range cases {
+		if got := inCoreRing(path); got != want {
+			t.Errorf("inCoreRing(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
+
+// TestIsForbiddenForCore verifies that a core-ring package (including a metrics
+// sub-package) importing an adapter, os/exec, or a YAML library is rejected,
+// while stdlib, model, config, and the shared result package are allowed.
+func TestIsForbiddenForCore(t *testing.T) {
+	forbidden := []string{
+		"os", "os/exec",
+		"github.com/goccy/go-yaml",
+		"gopkg.in/yaml.v3",
+		modulePrefix + "internal/engine",
+		modulePrefix + "internal/output/markdown",
+		modulePrefix + "internal/toolrun",
+	}
+	for _, imp := range forbidden {
+		if !isForbiddenForCore(imp) {
+			t.Errorf("isForbiddenForCore(%q) = false, want true", imp)
+		}
+	}
+	allowed := []string{
+		"fmt", "strings", "sort",
+		modulePrefix + "internal/model/diagnostic",
+		modulePrefix + "internal/metrics/internal/result",
+		modulePrefix + "internal/config",
+	}
+	for _, imp := range allowed {
+		if isForbiddenForCore(imp) {
+			t.Errorf("isForbiddenForCore(%q) = true, want false", imp)
+		}
+	}
 }

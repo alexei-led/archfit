@@ -1,9 +1,10 @@
-package metrics
+package intramodule
 
 import (
 	"fmt"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
@@ -39,10 +40,10 @@ func (m ArchitectureFitnessMetric) Version() string { return "architecture_fitne
 // n/a when EvidencePaths is nil (scan was never run).
 // 0/10 when no signals are present but the scan did run (honest zero).
 // 10/10 when all three signal categories are present.
-func (m ArchitectureFitnessMetric) Calculate(in MetricInput) diagnostic.MetricResult {
+func (m ArchitectureFitnessMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
 	// nil EvidencePaths = scan never ran → n/a, not a false zero.
 	if in.FitnessSignals.EvidencePaths == nil {
-		return naCount(m.Name(), m.Version(), architectureFitnessDefinition)
+		return result.NACount(m.Name(), m.Version(), architectureFitnessDefinition)
 	}
 
 	sig := in.FitnessSignals
@@ -54,10 +55,10 @@ func (m ArchitectureFitnessMetric) Calculate(in MetricInput) diagnostic.MetricRe
 		Name:       m.Name(),
 		Value:      value,
 		Display:    fitnessDisplay(score, present, sig),
-		Band:       bandInformational,
-		Confidence: confidenceHigh,
+		Band:       result.BandInformational,
+		Confidence: result.ConfidenceHigh,
 		Version:    m.Version(),
-		Mode:       modeRatio,
+		Mode:       result.ModeRatio,
 		Definition: architectureFitnessDefinition,
 	}
 }

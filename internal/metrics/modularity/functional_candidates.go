@@ -1,11 +1,13 @@
-package metrics
+package modularity
 
 import (
 	"fmt"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
 // FunctionalCandidatesMetric reports cross-module pairs that share duplicated
@@ -32,9 +34,9 @@ const functionalCandidatesDef = "cross-module pairs with duplicated logic (clone
 
 // Calculate counts cross-module pairs sharing duplicated code blocks, with an
 // optional co-change cross-reference. Reports n/a when no clone data is present.
-func (m FunctionalCandidatesMetric) Calculate(in MetricInput) diagnostic.MetricResult {
+func (m FunctionalCandidatesMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
 	if len(in.CloneClusters) == 0 || in.Graph == nil {
-		return naCount(m.Name(), m.Version(), functionalCandidatesDef)
+		return result.NACount(m.Name(), m.Version(), functionalCandidatesDef)
 	}
 
 	lang := dominantLanguage(in.Graph)
@@ -45,7 +47,7 @@ func (m FunctionalCandidatesMetric) Calculate(in MetricInput) diagnostic.MetricR
 	})
 
 	if len(pairs) == 0 {
-		return naCount(m.Name(), m.Version(), functionalCandidatesDef)
+		return result.NACount(m.Name(), m.Version(), functionalCandidatesDef)
 	}
 
 	// Build module-pair co-change set from CoChange for cross-reference.
@@ -77,10 +79,10 @@ func (m FunctionalCandidatesMetric) Calculate(in MetricInput) diagnostic.MetricR
 		Name:       m.Name(),
 		Value:      float64(len(pairs)),
 		Display:    disp.String(),
-		Band:       bandInformational,
-		Confidence: confidenceHigh,
+		Band:       result.BandInformational,
+		Confidence: result.ConfidenceHigh,
 		Version:    m.Version(),
-		Mode:       modeCount,
+		Mode:       result.ModeCount,
 		Definition: functionalCandidatesDef,
 	}
 }
