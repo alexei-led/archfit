@@ -21,6 +21,10 @@ linters:
     - errorlint
     - perfsprint
     - usestdlibvars
+  exclusions:
+    paths:
+      - mocks
+      - testdata
 formatters:
   enable:
     - gofmt
@@ -29,13 +33,3 @@ formatters:
     goimports:
       local-prefixes:
         - github.com/alexei-led/archfit
-issues:
-  exclude-dirs:
-    - mocks
-    - testdata
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - funlen
-        - dupl
-        - gosec
