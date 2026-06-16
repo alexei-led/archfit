@@ -1,10 +1,10 @@
-package metrics_test
+package intramodule_test
 
 import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/metrics/intramodule"
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
@@ -23,9 +23,10 @@ const (
 	labelCILinter     = "ci_linter"
 )
 
-// Band constants reused from the package-level test file.
+// Band string constants used across intramodule tests.
 const (
 	bandInfoStr = "info"
+	bandNAStr   = "n/a"
 )
 
 // makeSignals builds a signal.Signals from explicit booleans.
@@ -55,7 +56,7 @@ func makeSignals(archTests, importLinter, ciLinter bool) signal.Signals {
 }
 
 func TestArchitectureFitnessMetric_Calculate(t *testing.T) {
-	m := metrics.ArchitectureFitnessMetric{}
+	m := intramodule.ArchitectureFitnessMetric{}
 
 	tests := []struct {
 		name            string
@@ -110,10 +111,7 @@ func TestArchitectureFitnessMetric_Calculate(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			in := metrics.MetricInput{
-				FitnessSignals: tc.signals,
-			}
-			result := m.Calculate(in)
+			result := m.Calculate(signal.FitnessInput{Fitness: tc.signals})
 
 			if result.Band != tc.wantBand {
 				t.Errorf("Band = %q, want %q", result.Band, tc.wantBand)
@@ -149,7 +147,7 @@ func TestArchitectureFitnessMetric_Calculate(t *testing.T) {
 // TestArchitectureFitnessMetric_EvidencePathsInDisplay verifies that matched
 // evidence paths appear in the display string.
 func TestArchitectureFitnessMetric_EvidencePathsInDisplay(t *testing.T) {
-	m := metrics.ArchitectureFitnessMetric{}
+	m := intramodule.ArchitectureFitnessMetric{}
 
 	ep := signal.EvidenceMap{
 		catArchTestFiles:  []string{"internal/arch_test.go", "internal/layer_test.go"},
@@ -160,7 +158,7 @@ func TestArchitectureFitnessMetric_EvidencePathsInDisplay(t *testing.T) {
 		ArchTestFiles: true,
 		EvidencePaths: ep,
 	}
-	result := m.Calculate(metrics.MetricInput{FitnessSignals: sig})
+	result := m.Calculate(signal.FitnessInput{Fitness: sig})
 
 	if !strings.Contains(result.Display, "internal/arch_test.go") {
 		t.Errorf("Display %q missing evidence path %q", result.Display, "internal/arch_test.go")
@@ -173,7 +171,7 @@ func TestArchitectureFitnessMetric_EvidencePathsInDisplay(t *testing.T) {
 // TestArchitectureFitnessMetric_TruncatesLongEvidenceLists verifies that more
 // than 3 evidence paths per category are truncated with a "+N more" suffix.
 func TestArchitectureFitnessMetric_TruncatesLongEvidenceLists(t *testing.T) {
-	m := metrics.ArchitectureFitnessMetric{}
+	m := intramodule.ArchitectureFitnessMetric{}
 
 	paths := []string{"a_test.go", "b_test.go", "c_test.go", "d_test.go", "e_test.go"}
 	ep := signal.EvidenceMap{
@@ -182,7 +180,7 @@ func TestArchitectureFitnessMetric_TruncatesLongEvidenceLists(t *testing.T) {
 		catArchLinterInCI: nil,
 	}
 	sig := signal.Signals{ArchTestFiles: true, EvidencePaths: ep}
-	result := m.Calculate(metrics.MetricInput{FitnessSignals: sig})
+	result := m.Calculate(signal.FitnessInput{Fitness: sig})
 
 	if !strings.Contains(result.Display, "+2 more") {
 		t.Errorf("Display %q should contain '+2 more' for 5 paths (max 3)", result.Display)

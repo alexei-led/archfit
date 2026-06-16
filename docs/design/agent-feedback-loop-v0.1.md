@@ -83,8 +83,8 @@ surface?
   changed-module count and graph reach from changed nodes.
 - **Band:** `warn` on regression vs baseline (delta), per spec; n/a in `--full`
   mode without a base ref (no diff to localize) and when no baseline exists.
-- Deterministic; pure function of MetricInput (needs the diff file set added to
-  MetricInput — engine already has scope).
+- Deterministic; pure function of its CommonInput (the diff file set is
+  CommonInput.ChangedFiles — engine already has scope).
 
 ## 5. Correctness + resilience fixes (gate quality)
 

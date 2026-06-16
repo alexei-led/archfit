@@ -1,11 +1,14 @@
-package metrics
+package modularity
 
 import (
 	"fmt"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/metrics/internal/modgraph"
+	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
 // FunctionalCandidatesMetric reports cross-module pairs that share duplicated
@@ -32,31 +35,31 @@ const functionalCandidatesDef = "cross-module pairs with duplicated logic (clone
 
 // Calculate counts cross-module pairs sharing duplicated code blocks, with an
 // optional co-change cross-reference. Reports n/a when no clone data is present.
-func (m FunctionalCandidatesMetric) Calculate(in MetricInput) diagnostic.MetricResult {
-	if len(in.CloneClusters) == 0 || in.Graph == nil {
-		return naCount(m.Name(), m.Version(), functionalCandidatesDef)
+func (m FunctionalCandidatesMetric) Calculate(in signal.DuplicationInput) diagnostic.MetricResult {
+	if len(in.Duplication.Clusters) == 0 || in.Graph == nil {
+		return result.NACount(m.Name(), m.Version(), functionalCandidatesDef)
 	}
 
-	lang := dominantLanguage(in.Graph)
+	lang := modgraph.DominantLanguage(in.Graph)
 
 	// Map clone clusters to canonical cross-module pairs (deduped + sorted by ModulePairs).
-	pairs := clone.ModulePairs(in.CloneClusters, func(f string) string {
-		return fileToModuleKey(f, lang)
+	pairs := clone.ModulePairs(in.Duplication.Clusters, func(f string) string {
+		return modgraph.FileToModuleKey(f, lang)
 	})
 
 	if len(pairs) == 0 {
-		return naCount(m.Name(), m.Version(), functionalCandidatesDef)
+		return result.NACount(m.Name(), m.Version(), functionalCandidatesDef)
 	}
 
 	// Build module-pair co-change set from CoChange for cross-reference.
-	coChangePairs := make(map[[2]string]struct{}, len(in.CoChange))
-	for fp := range in.CoChange {
-		a := fileToModuleKey(fp[0], lang)
-		b := fileToModuleKey(fp[1], lang)
+	coChangePairs := make(map[[2]string]struct{}, len(in.History.CoChange))
+	for fp := range in.History.CoChange {
+		a := modgraph.FileToModuleKey(fp[0], lang)
+		b := modgraph.FileToModuleKey(fp[1], lang)
 		if a == "" || b == "" || a == b {
 			continue
 		}
-		coChangePairs[orderedPair(a, b)] = struct{}{}
+		coChangePairs[modgraph.OrderedPair(a, b)] = struct{}{}
 	}
 
 	// Count how many clone pairs also co-change.
@@ -77,10 +80,10 @@ func (m FunctionalCandidatesMetric) Calculate(in MetricInput) diagnostic.MetricR
 		Name:       m.Name(),
 		Value:      float64(len(pairs)),
 		Display:    disp.String(),
-		Band:       bandInformational,
-		Confidence: confidenceHigh,
+		Band:       result.BandInformational,
+		Confidence: result.ConfidenceHigh,
 		Version:    m.Version(),
-		Mode:       modeCount,
+		Mode:       result.ModeCount,
 		Definition: functionalCandidatesDef,
 	}
 }

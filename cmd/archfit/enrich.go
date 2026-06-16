@@ -37,14 +37,15 @@ type EnrichCmd struct {
 	NoCache bool   `name:"no-cache" help:"Bypass the LLM response cache."`
 }
 
-// captureMetric records the MetricInput so enrich can reuse the exact
-// pipeline evidence (graph, classifications) without re-implementing stages.
-type captureMetric struct{ in *signal.MetricInput }
+// captureMetric records the common pipeline evidence (graph, classifications) so
+// enrich can reuse it without re-implementing stages. It needs only CommonInput,
+// so it implements the uniform Metric directly and projects to s.Common.
+type captureMetric struct{ in *signal.CommonInput }
 
 func (m *captureMetric) Name() string    { return "enrich_capture" }
 func (m *captureMetric) Version() string { return "enrich_capture.v0" }
-func (m *captureMetric) Calculate(in signal.MetricInput) diagnostic.MetricResult {
-	*m.in = in
+func (m *captureMetric) Calculate(in signal.CollectedSignals) diagnostic.MetricResult {
+	*m.in = in.Common
 	return diagnostic.MetricResult{Name: m.Name(), Band: "info", Display: "internal capture"}
 }
 
@@ -79,7 +80,7 @@ func (c *EnrichCmd) Run(deps *appDeps) error {
 	}
 
 	// Run the standard pipeline once, capturing the evidence the metrics saw.
-	var captured signal.MetricInput
+	var captured signal.CommonInput
 	base, err := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}

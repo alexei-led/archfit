@@ -1,35 +1,41 @@
-package metrics_test
+package modularity_test
 
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/metrics/metricstest"
+	"github.com/alexei-led/archfit/internal/metrics/modularity"
 	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
-// bandInfo is the expected band for all functional_candidates results with data.
-const bandInfo = "info"
+const (
+	fcPathA  = "pkg/a/a.go"
+	fcPathB  = "pkg/b/b.go"
+	fcPathC  = "pkg/c/c.go"
+	bandInfo = "info"
+)
 
 // twoGoNodes returns a minimal graph with two Go-file nodes and one import edge
 // so dominantLanguage returns "go" and file→module mapping works correctly.
 func twoGoNodes() *graph.Graph {
 	nodes := []graph.Node{
-		{Kind: graph.NodeKindFile, Path: pathA},
-		{Kind: graph.NodeKindFile, Path: pathB},
+		{Kind: graph.NodeKindFile, Path: fcPathA},
+		{Kind: graph.NodeKindFile, Path: fcPathB},
 	}
 	edges := []graph.Edge{
-		{From: "file:" + pathA, To: "file:" + pathB, Kind: graph.EdgeKindImports, Language: "go"},
+		{From: "file:" + fcPathA, To: "file:" + fcPathB, Kind: graph.EdgeKindImports, Language: "go"},
 	}
-	return buildGraph(nodes, edges)
+	return metricstest.BuildGraph(nodes, edges)
 }
 
 func TestFunctionalCandidates_Calculate(t *testing.T) {
-	m := metrics.FunctionalCandidatesMetric{}
+	m := modularity.FunctionalCandidatesMetric{}
 
-	// pathA = "pkg/a/a.go" → module "pkg/a"
-	// pathB = "pkg/b/b.go" → module "pkg/b"
-	// pathC = "pkg/c/c.go" → module "pkg/c"
+	// fcPathA = "pkg/a/a.go" → module "pkg/a"
+	// fcPathB = "pkg/b/b.go" → module "pkg/b"
+	// fcPathC = "pkg/c/c.go" → module "pkg/c"
 
 	tests := []struct {
 		name        string
@@ -49,7 +55,7 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 		},
 		{
 			name:      "nil graph → n/a",
-			clusters:  []clone.Cluster{{Files: []string{pathA, pathB}, Lines: 10}},
+			clusters:  []clone.Cluster{{Files: []string{fcPathA, fcPathB}, Lines: 10}},
 			g:         nil,
 			wantBand:  bandNAStr,
 			wantValue: 0,
@@ -57,7 +63,7 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 		{
 			name: "one cross-module cluster → one pair",
 			clusters: []clone.Cluster{
-				{Files: []string{pathA, pathB}, Lines: 20},
+				{Files: []string{fcPathA, fcPathB}, Lines: 20},
 			},
 			g:           twoGoNodes(),
 			wantBand:    bandInfo,
@@ -67,8 +73,8 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 		{
 			name: "two clusters same module pair → deduped to one",
 			clusters: []clone.Cluster{
-				{Files: []string{pathA, pathB}, Lines: 10},
-				{Files: []string{pathA, pathB}, Lines: 15},
+				{Files: []string{fcPathA, fcPathB}, Lines: 10},
+				{Files: []string{fcPathA, fcPathB}, Lines: 15},
 			},
 			g:         twoGoNodes(),
 			wantBand:  bandInfo,
@@ -77,18 +83,18 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 		{
 			name: "two distinct cross-module pairs",
 			clusters: []clone.Cluster{
-				{Files: []string{pathA, pathB}, Lines: 10},
-				{Files: []string{pathA, pathC}, Lines: 8},
+				{Files: []string{fcPathA, fcPathB}, Lines: 10},
+				{Files: []string{fcPathA, fcPathC}, Lines: 8},
 			},
-			g: buildGraph(
+			g: metricstest.BuildGraph(
 				[]graph.Node{
-					{Kind: graph.NodeKindFile, Path: pathA},
-					{Kind: graph.NodeKindFile, Path: pathB},
-					{Kind: graph.NodeKindFile, Path: pathC},
+					{Kind: graph.NodeKindFile, Path: fcPathA},
+					{Kind: graph.NodeKindFile, Path: fcPathB},
+					{Kind: graph.NodeKindFile, Path: fcPathC},
 				},
 				[]graph.Edge{
-					{From: "file:" + pathA, To: "file:" + pathB, Kind: graph.EdgeKindImports, Language: "go"},
-					{From: "file:" + pathA, To: "file:" + pathC, Kind: graph.EdgeKindImports, Language: "go"},
+					{From: "file:" + fcPathA, To: "file:" + fcPathB, Kind: graph.EdgeKindImports, Language: "go"},
+					{From: "file:" + fcPathA, To: "file:" + fcPathC, Kind: graph.EdgeKindImports, Language: "go"},
 				},
 			),
 			wantBand:  bandInfo,
@@ -107,10 +113,10 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 		{
 			name: "cross-module pair also co-changes",
 			clusters: []clone.Cluster{
-				{Files: []string{pathA, pathB}, Lines: 20},
+				{Files: []string{fcPathA, fcPathB}, Lines: 20},
 			},
 			coChange: map[[2]string]int{
-				{pathA, pathB}: 5,
+				{fcPathA, fcPathB}: 5,
 			},
 			g:           twoGoNodes(),
 			wantBand:    bandInfo,
@@ -120,10 +126,10 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 		{
 			name: "co-change on different pair → clone pair unaffected",
 			clusters: []clone.Cluster{
-				{Files: []string{pathA, pathB}, Lines: 20},
+				{Files: []string{fcPathA, fcPathB}, Lines: 20},
 			},
 			coChange: map[[2]string]int{
-				{pathA, pathC}: 3,
+				{fcPathA, fcPathC}: 3,
 			},
 			g:           twoGoNodes(),
 			wantBand:    bandInfo,
@@ -134,10 +140,10 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			in := metrics.MetricInput{
-				Graph:         tc.g,
-				CloneClusters: tc.clusters,
-				CoChange:      tc.coChange,
+			in := signal.DuplicationInput{
+				CommonInput: signal.CommonInput{Graph: tc.g},
+				Duplication: signal.DuplicationSignals{Clusters: tc.clusters},
+				History:     signal.HistorySignals{CoChange: tc.coChange},
 			}
 			got := m.Calculate(in)
 

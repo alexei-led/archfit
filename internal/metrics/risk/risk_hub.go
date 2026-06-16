@@ -1,11 +1,17 @@
-package metrics
+// Package risk implements the risk_hub architecture metric, which surfaces
+// modules whose cross-module symbol-surface breadth and explicit config
+// volatility identify the highest-risk coupling hubs.
+package risk
 
 import (
 	"fmt"
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 )
 
@@ -92,7 +98,7 @@ func moduleSurfaceBreadth(g symbol.Graph) map[string]int {
 	return breadth
 }
 
-// RiskHubMetric surfaces symbol-level risk hubs: modules whose cross-module
+// HubMetric surfaces symbol-level risk hubs: modules whose cross-module
 // external surface breadth (count of their own symbols referenced from other
 // modules) multiplied by the owning module's explicit config volatility
 // identifies the highest-risk hubs.
@@ -109,7 +115,7 @@ func moduleSurfaceBreadth(g symbol.Graph) map[string]int {
 // only explicit config volatility affects the score.
 //
 // The result is report-only (band: info) — it never gates.
-type RiskHubMetric struct {
+type HubMetric struct {
 	// moduleVolatility maps module name → explicit-config volatility multiplier.
 	// Built in New() before ApplyVolatility runs; never updated afterward.
 	// Modules absent from this map get a neutral multiplier of 1.0.
@@ -117,10 +123,10 @@ type RiskHubMetric struct {
 }
 
 // Name returns "risk_hub".
-func (m RiskHubMetric) Name() string { return "risk_hub" }
+func (m HubMetric) Name() string { return "risk_hub" }
 
 // Version returns "risk_hub.v1".
-func (m RiskHubMetric) Version() string { return "risk_hub.v1" }
+func (m HubMetric) Version() string { return "risk_hub.v1" }
 
 // riskHubInfo holds per-module aggregated risk for display.
 type riskHubInfo struct {
@@ -175,14 +181,14 @@ func moduleImpactFromFiles(g symbol.Graph, fileImpact map[string]int) map[string
 // and reports the top hubs. Returns n/a when SymbolGraph is empty (SCIP off or
 // indexer absent) — never a false zero.
 //
-// When MetricInput.GitnexusImpact is non-empty (tools.gitnexus.enabled: on and
+// When the SymbolInput's gitnexus impact is non-empty (tools.gitnexus.enabled: on and
 // the CLI was present), each module's score is further multiplied by a bounded
 // gitnexus factor in [1.0, 2.0] derived from its historical change-impact count
 // (normalised to the per-run maximum). When GitnexusImpact is nil/empty (the
 // default), this factor is 1.0 for every module and the result is exactly the
 // same as plain surface-breadth × volatility.
-func (m RiskHubMetric) Calculate(in MetricInput) diagnostic.MetricResult {
-	hasGitnexus := len(in.GitnexusImpact) > 0
+func (m HubMetric) Calculate(in signal.SymbolInput) diagnostic.MetricResult {
+	hasGitnexus := len(in.Symbol.GitnexusImpact) > 0
 	def := "cross-module surface breadth × explicit config volatility: count of a module's " +
 		"symbols referenced from other modules (churn-independent; never gates)"
 	if hasGitnexus {
@@ -190,18 +196,18 @@ func (m RiskHubMetric) Calculate(in MetricInput) diagnostic.MetricResult {
 			"count of a module's symbols referenced from other modules, refined by historical change impact " +
 			"(churn-independent; never gates)"
 	}
-	if in.SymbolGraph.Empty() {
-		return naCount(m.Name(), m.Version(), def)
+	if in.Symbol.Graph.Empty() {
+		return result.NACount(m.Name(), m.Version(), def)
 	}
 
-	breadth := moduleSurfaceBreadth(in.SymbolGraph)
+	breadth := moduleSurfaceBreadth(in.Symbol.Graph)
 	if len(breadth) == 0 {
-		return naCount(m.Name(), m.Version(), def)
+		return result.NACount(m.Name(), m.Version(), def)
 	}
 
 	// GitnexusImpact is keyed by file path; aggregate to module granularity
 	// through the symbol graph, then normalise to the per-run maximum.
-	moduleImpact := moduleImpactFromFiles(in.SymbolGraph, in.GitnexusImpact)
+	moduleImpact := moduleImpactFromFiles(in.Symbol.Graph, in.Symbol.GitnexusImpact)
 	maxImpact := 0
 	for _, v := range moduleImpact {
 		if v > maxImpact {
@@ -232,30 +238,30 @@ func (m RiskHubMetric) Calculate(in MetricInput) diagnostic.MetricResult {
 
 	// Confidence: high when there are enough externally-referenced symbols;
 	// low for tiny graphs.
-	confidence := confidenceHigh
+	confidence := result.ConfidenceHigh
 	totalExternalSymbols := 0
 	for _, b := range breadth {
 		totalExternalSymbols += b
 	}
-	if totalExternalSymbols < modularitySmallN {
-		confidence = confidenceLow
+	if totalExternalSymbols < result.ModularitySmallN {
+		confidence = result.ConfidenceLow
 	}
 
 	return diagnostic.MetricResult{
 		Name:       m.Name(),
 		Value:      float64(len(hubs)),
 		Display:    riskHubDisplay(hubs, totalExternalSymbols),
-		Band:       bandInformational,
+		Band:       result.BandInformational,
 		Confidence: confidence,
 		Version:    m.Version(),
-		Mode:       modeCount,
+		Mode:       result.ModeCount,
 		Definition: def,
 	}
 }
 
 // volatilityMultiplier returns the pre-captured explicit-config multiplier for
 // a module. Returns 1.0 (neutral) for modules not in the map.
-func (m RiskHubMetric) volatilityMultiplier(module string) float64 {
+func (m HubMetric) volatilityMultiplier(module string) float64 {
 	if v, ok := m.moduleVolatility[module]; ok {
 		return v
 	}
@@ -279,11 +285,23 @@ func riskHubDisplay(hubs []riskHubInfo, totalExternalSymbols int) string {
 		}
 		if h.gitnexusPresent {
 			fmt.Fprintf(&b, "%s [breadth %d, ×%.2f, gn×%.2f→%.2f]",
-				shortModule(h.module), h.breadth, h.multiplier, h.gitnexusFactor, h.risk)
+				result.ShortModule(h.module), h.breadth, h.multiplier, h.gitnexusFactor, h.risk)
 		} else {
 			fmt.Fprintf(&b, "%s [breadth %d, ×%.2f→%.2f]",
-				shortModule(h.module), h.breadth, h.multiplier, h.risk)
+				result.ShortModule(h.module), h.breadth, h.multiplier, h.risk)
 		}
 	}
 	return b.String()
+}
+
+// NewMetric builds a HubMetric with volatility multipliers derived
+// exclusively from the explicit config (Subdomain/Volatility fields). This must
+// be called before config.ApplyVolatility so that only hand-authored values
+// influence the metric — churn-derived volatility must not reach risk_hub.
+func NewMetric(cfg config.Config) HubMetric {
+	mv := make(map[string]float64, len(cfg.Modules))
+	for name, def := range cfg.Modules {
+		mv[name] = volatilityBandMultiplier(def.Volatility)
+	}
+	return HubMetric{moduleVolatility: mv}
 }

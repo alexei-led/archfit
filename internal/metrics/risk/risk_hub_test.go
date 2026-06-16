@@ -1,10 +1,12 @@
-package metrics
+package risk
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/metrics/internal/result"
+	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 )
 
@@ -22,6 +24,11 @@ const (
 	testSymA          = "symA"
 	testSymB          = "symB"
 )
+
+// symInput wraps a symbol graph in the per-family input the metric consumes.
+func symInput(g symbol.Graph) signal.SymbolInput {
+	return signal.SymbolInput{Symbol: signal.SymbolSignals{Graph: g}}
+}
 
 // makeGraph is a test helper that builds a symbol.Graph from a Module map and
 // a flat list of directed reference edges (from, to pairs).
@@ -91,20 +98,20 @@ func TestRiskHub_BroadSurfaceModuleRanksTop(t *testing.T) {
 			{"cd", testSymHubFn},
 		},
 	)
-	m := newRiskHubMetric(makeConfig(nil))
-	result := m.Calculate(MetricInput{SymbolGraph: g})
+	m := NewMetric(makeConfig(nil))
+	res := m.Calculate(symInput(g))
 
-	if result.Band == bandNA {
+	if res.Band == result.BandNA {
 		t.Fatal("expected a real result, got n/a")
 	}
 	// stateStore (breadth=4) should appear before singleHub (breadth=1).
-	statePos := strings.Index(result.Display, "stateStore")
-	hubPos := strings.Index(result.Display, "singleHub")
+	statePos := strings.Index(res.Display, "stateStore")
+	hubPos := strings.Index(res.Display, "singleHub")
 	if statePos == -1 || hubPos == -1 {
-		t.Fatalf("expected both 'stateStore' and 'singleHub' in display, got: %s", result.Display)
+		t.Fatalf("expected both 'stateStore' and 'singleHub' in display, got: %s", res.Display)
 	}
 	if statePos > hubPos {
-		t.Errorf("expected 'stateStore' (breadth 4) before 'singleHub' (breadth 1), got: %s", result.Display)
+		t.Errorf("expected 'stateStore' (breadth 4) before 'singleHub' (breadth 1), got: %s", res.Display)
 	}
 }
 
@@ -130,20 +137,20 @@ func TestRiskHub_KnownHubRanksTop(t *testing.T) {
 			{"A", "leaf"}, // leaf has only 1 external referencing module
 		},
 	)
-	m := newRiskHubMetric(makeConfig(nil))
-	result := m.Calculate(MetricInput{SymbolGraph: g})
+	m := NewMetric(makeConfig(nil))
+	res := m.Calculate(symInput(g))
 
-	if result.Band == bandNA {
+	if res.Band == result.BandNA {
 		t.Fatal("expected a real result, got n/a")
 	}
-	if !strings.Contains(result.Display, "core") {
-		t.Errorf("expected 'core' (owner of hub) in display, got: %s", result.Display)
+	if !strings.Contains(res.Display, "core") {
+		t.Errorf("expected 'core' (owner of hub) in display, got: %s", res.Display)
 	}
 	// core should appear before util in the display (higher breadth).
-	corePos := strings.Index(result.Display, "core")
-	utilPos := strings.Index(result.Display, "util")
+	corePos := strings.Index(res.Display, "core")
+	utilPos := strings.Index(res.Display, "util")
 	if utilPos != -1 && corePos > utilPos {
-		t.Errorf("expected 'core' to appear before 'util' in display, got: %s", result.Display)
+		t.Errorf("expected 'core' to appear before 'util' in display, got: %s", res.Display)
 	}
 }
 
@@ -163,59 +170,55 @@ func TestRiskHub_IntraModuleRefsIgnored(t *testing.T) {
 			{"Z", "X"},
 		},
 	)
-	m := newRiskHubMetric(makeConfig(nil))
-	result := m.Calculate(MetricInput{SymbolGraph: g})
+	m := NewMetric(makeConfig(nil))
+	res := m.Calculate(symInput(g))
 
-	if result.Band != bandNA {
+	if res.Band != result.BandNA {
 		t.Errorf("expected n/a when only intra-module refs exist, got band=%q display=%q",
-			result.Band, result.Display)
+			res.Band, res.Display)
 	}
 }
 
-// TestRiskHub_ChurnDoesNotAffectScore verifies that two MetricInput values that
-// differ ONLY in FileChurn produce identical risk_hub output.
-//
-// This test is structural: risk_hub's moduleVolatility map is built from
-// hand-authored ModuleDef.Volatility, which ApplyVolatility never touches,
-// so FileChurn cannot reach the metric at all.
-func TestRiskHub_ChurnDoesNotAffectScore(t *testing.T) {
+// TestRiskHub_ChurnIndependentViaProjection proves churn cannot reach risk_hub.
+// The engine's CollectedSignals carries git churn in History, but the AsSymbol
+// projection drops it, so risk_hub's SymbolInput never sees it: two CollectedSignals
+// that differ ONLY in History.FileChurn must project to identical risk_hub output.
+// (Churn independence is also a compile-time guarantee — SymbolInput has no History
+// field — but this asserts the projection wiring that enforces it, the replacement
+// for the pre-refactor "FileChurn in MetricInput is ignored" runtime test.)
+func TestRiskHub_ChurnIndependentViaProjection(t *testing.T) {
 	g := makeGraph(
-		map[string]string{
-			"sym": "modA",
-			"dep": "modB",
-		},
+		map[string]string{"sym": "modA", "dep": "modB"},
 		[][2]string{{"dep", "sym"}},
 	)
-	m := newRiskHubMetric(makeConfig(nil))
+	m := NewMetric(makeConfig(nil))
 
-	inNoChurn := MetricInput{SymbolGraph: g}
-	inHighChurn := MetricInput{
-		SymbolGraph: g,
-		FileChurn:   map[string]int{"modA/file.go": 9999, "modB/file.go": 9999},
+	noChurn := signal.CollectedSignals{Symbol: signal.SymbolSignals{Graph: g}}
+	highChurn := signal.CollectedSignals{
+		Symbol:  signal.SymbolSignals{Graph: g},
+		History: signal.HistorySignals{FileChurn: map[string]int{"modA/file.go": 9999, "modB/file.go": 9999}},
 	}
 
-	r1 := m.Calculate(inNoChurn)
-	r2 := m.Calculate(inHighChurn)
+	r1 := m.Calculate(noChurn.AsSymbol())
+	r2 := m.Calculate(highChurn.AsSymbol())
 
-	if r1.Value != r2.Value {
-		t.Errorf("churn changed Value: no-churn=%v high-churn=%v", r1.Value, r2.Value)
-	}
-	if r1.Display != r2.Display {
-		t.Errorf("churn changed Display:\n  no-churn:   %s\n  high-churn: %s", r1.Display, r2.Display)
+	if r1.Value != r2.Value || r1.Display != r2.Display {
+		t.Errorf("churn leaked into risk_hub via projection:\n  no-churn:   %s\n  high-churn: %s",
+			r1.Display, r2.Display)
 	}
 }
 
 // TestRiskHub_NAWhenGraphEmpty verifies that an empty SymbolGraph produces n/a,
 // never a false zero.
 func TestRiskHub_NAWhenGraphEmpty(t *testing.T) {
-	m := newRiskHubMetric(makeConfig(nil))
-	result := m.Calculate(MetricInput{SymbolGraph: symbol.Graph{}})
+	m := NewMetric(makeConfig(nil))
+	res := m.Calculate(symInput(symbol.Graph{}))
 
-	if result.Band != bandNA {
-		t.Errorf("expected band %q for empty graph, got %q", bandNA, result.Band)
+	if res.Band != result.BandNA {
+		t.Errorf("expected band %q for empty graph, got %q", result.BandNA, res.Band)
 	}
-	if result.Display != bandNA {
-		t.Errorf("expected display %q for empty graph, got %q", bandNA, result.Display)
+	if res.Display != result.BandNA {
+		t.Errorf("expected display %q for empty graph, got %q", result.BandNA, res.Display)
 	}
 }
 
@@ -239,21 +242,21 @@ func TestRiskHub_HighVolatilityRanksAboveNeutral(t *testing.T) {
 		"alpha": volBandHigh,
 		"beta":  volBandLow,
 	})
-	m := newRiskHubMetric(cfg)
-	result := m.Calculate(MetricInput{SymbolGraph: g})
+	m := NewMetric(cfg)
+	res := m.Calculate(symInput(g))
 
-	if result.Band == bandNA {
+	if res.Band == result.BandNA {
 		t.Fatal("expected a real result, got n/a")
 	}
 	// "alpha" should appear before "beta" because its score is higher
 	// (1×1.0=1.0 vs 1×0.33=0.33).
-	alphaPos := strings.Index(result.Display, "alpha")
-	betaPos := strings.Index(result.Display, "beta")
+	alphaPos := strings.Index(res.Display, "alpha")
+	betaPos := strings.Index(res.Display, "beta")
 	if alphaPos == -1 || betaPos == -1 {
-		t.Fatalf("expected both 'alpha' and 'beta' in display, got: %s", result.Display)
+		t.Fatalf("expected both 'alpha' and 'beta' in display, got: %s", res.Display)
 	}
 	if alphaPos > betaPos {
-		t.Errorf("expected 'alpha' (high volatility) before 'beta' (low), got: %s", result.Display)
+		t.Errorf("expected 'alpha' (high volatility) before 'beta' (low), got: %s", res.Display)
 	}
 }
 
@@ -263,10 +266,10 @@ func TestRiskHub_BandIsInfo(t *testing.T) {
 		map[string]string{"s": "m", "d": "n"},
 		[][2]string{{"d", "s"}},
 	)
-	m := newRiskHubMetric(makeConfig(nil))
-	result := m.Calculate(MetricInput{SymbolGraph: g})
-	if result.Band != bandInformational {
-		t.Errorf("expected band %q, got %q", bandInformational, result.Band)
+	m := NewMetric(makeConfig(nil))
+	res := m.Calculate(symInput(g))
+	if res.Band != result.BandInformational {
+		t.Errorf("expected band %q, got %q", result.BandInformational, res.Band)
 	}
 }
 
@@ -295,18 +298,18 @@ func TestRiskHub_GitnexusImpactRefinesRanking(t *testing.T) {
 		testSymA: "src/alpha.py",
 		testSymB: "src/beta.py",
 	}
-	m := newRiskHubMetric(makeConfig(nil))
+	m := NewMetric(makeConfig(nil))
 
 	// Without gitnexus: both modules have equal score; alpha sorts first (alphabetical tiebreak).
-	withoutGN := m.Calculate(MetricInput{SymbolGraph: g})
-	if withoutGN.Band == bandNA {
+	withoutGN := m.Calculate(symInput(g))
+	if withoutGN.Band == result.BandNA {
 		t.Fatal("expected real result without gitnexus, got n/a")
 	}
 
 	// With gitnexus: beta's file has much higher impact → beta ranks above alpha.
 	impact := map[string]int{"src/beta.py": 100, "src/alpha.py": 1}
-	withGN := m.Calculate(MetricInput{SymbolGraph: g, GitnexusImpact: impact})
-	if withGN.Band == bandNA {
+	withGN := m.Calculate(signal.SymbolInput{Symbol: signal.SymbolSignals{Graph: g, GitnexusImpact: impact}})
+	if withGN.Band == result.BandNA {
 		t.Fatal("expected real result with gitnexus, got n/a")
 	}
 
@@ -327,7 +330,7 @@ func TestRiskHub_GitnexusImpactRefinesRanking(t *testing.T) {
 
 	// Verify that nil GitnexusImpact produces the same output as an empty map
 	// (both are the no-gitnexus path — behavior must be identical).
-	withEmpty := m.Calculate(MetricInput{SymbolGraph: g, GitnexusImpact: map[string]int{}})
+	withEmpty := m.Calculate(signal.SymbolInput{Symbol: signal.SymbolSignals{Graph: g, GitnexusImpact: map[string]int{}}})
 	if withoutGN.Display != withEmpty.Display {
 		t.Errorf("nil vs empty GitnexusImpact differ:\n  nil:   %s\n  empty: %s",
 			withoutGN.Display, withEmpty.Display)
@@ -397,7 +400,7 @@ func TestRiskHub_OrderIndependentOfApplyVolatility(t *testing.T) {
 	// Wrong order: churn-derived volatility applied before the metric is built.
 	cfg.ApplyVolatility(map[string]string{testModAlpha: volBandLow})
 
-	m := newRiskHubMetric(cfg)
+	m := NewMetric(cfg)
 	if got := m.moduleVolatility[testModAlpha]; got != 1.0 {
 		t.Errorf("churn-derived volatility leaked into risk_hub: multiplier = %v, want neutral 1.0", got)
 	}

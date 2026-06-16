@@ -15,7 +15,7 @@
       "version": "change_locality.v1"
     },
     "complexity": {
-      "value": 11,
+      "value": 12,
       "version": "complexity.v1"
     },
     "coverage": {
@@ -31,11 +31,11 @@
       "version": "encapsulation.v1"
     },
     "hidden_coupling": {
-      "value": 46,
+      "value": 65,
       "version": "hidden_coupling.v1"
     },
     "structural_weight": {
-      "value": 2,
+      "value": 1,
       "version": "structural_weight.v1"
     },
     "unbalanced_edge": {

@@ -1,12 +1,16 @@
-package metrics_test
+package modularity_test
 
 import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/metrics/metricstest"
+	"github.com/alexei-led/archfit/internal/metrics/modularity"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/signal"
 )
+
+const bandNAStr = "n/a"
 
 // Chain A -> B -> C (A imports B, B imports C). Reverse-deps: C has {A,B}=2,
 // B has {A}=1, A has 0.
@@ -18,9 +22,9 @@ func TestBlastRadius_TransitiveReverseDeps(t *testing.T) {
 		{From: a.ID(), To: b.ID(), Kind: graph.EdgeKindImports},
 		{From: b.ID(), To: c.ID(), Kind: graph.EdgeKindImports},
 	}
-	g := graph.Build([]graph.Facts{{Nodes: []graph.Node{a, b, c}, Edges: edges}})
+	g := metricstest.BuildGraph([]graph.Node{a, b, c}, edges)
 
-	res := metrics.BlastRadiusMetric{}.Calculate(metrics.MetricInput{Graph: g})
+	res := modularity.BlastRadiusMetric{}.Calculate(signal.CommonInput{Graph: g})
 	if res.Name != "blast_radius" {
 		t.Fatalf("name = %q", res.Name)
 	}
@@ -40,11 +44,9 @@ func TestStructuralWeight_GodModuleBySize(t *testing.T) {
 	// the multiple is not.
 	a := graph.Node{Kind: graph.NodeKindPackage, Path: "internal/big"}
 	b := graph.Node{Kind: graph.NodeKindPackage, Path: "internal/small"}
-	g := graph.Build([]graph.Facts{{
-		Language: "go",
-		Nodes:    []graph.Node{a, b},
-		Edges:    []graph.Edge{{From: a.ID(), To: b.ID(), Kind: graph.EdgeKindImports, Language: "go"}},
-	}})
+	g := metricstest.BuildGraph([]graph.Node{a, b}, []graph.Edge{
+		{From: a.ID(), To: b.ID(), Kind: graph.EdgeKindImports, Language: "go"},
+	})
 	fileLOC := map[string]int{
 		"internal/big/a.go":   1600, // 1600 LOC -> god (>=4x median 200, >=400 floor)
 		"internal/small/a.go": 200,
@@ -52,7 +54,10 @@ func TestStructuralWeight_GodModuleBySize(t *testing.T) {
 		"internal/mid/a.go":   250,
 	}
 
-	res := metrics.StructuralWeightMetric{}.Calculate(metrics.MetricInput{Graph: g, FileLOC: fileLOC})
+	res := modularity.StructuralWeightMetric{}.Calculate(signal.SizeInput{
+		CommonInput: signal.CommonInput{Graph: g},
+		Size:        signal.SizeSignals{FileLOC: fileLOC},
+	})
 	if res.Value != 1 {
 		t.Errorf("expected 1 god-module got %v; display=%q", res.Value, res.Display)
 	}
@@ -65,8 +70,10 @@ func TestStructuralWeight_GodModuleBySize(t *testing.T) {
 }
 
 func TestStructuralWeight_NoLOCIsNA(t *testing.T) {
-	g := graph.Build([]graph.Facts{{Language: "go", Nodes: []graph.Node{{Kind: graph.NodeKindPackage, Path: "x"}}}})
-	res := metrics.StructuralWeightMetric{}.Calculate(metrics.MetricInput{Graph: g})
+	g := metricstest.BuildGraph([]graph.Node{{Kind: graph.NodeKindPackage, Path: "x"}}, nil)
+	res := modularity.StructuralWeightMetric{}.Calculate(signal.SizeInput{
+		CommonInput: signal.CommonInput{Graph: g},
+	})
 	if res.Band != bandNAStr {
 		t.Errorf("expected n/a without LOC data, got %q", res.Band)
 	}

@@ -1,9 +1,10 @@
-package metrics
+package intramodule
 
 import (
 	"fmt"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
@@ -25,7 +26,7 @@ const archFitnessSignalCount = 3
 // Scoring: each present signal contributes 1/3 to the raw fraction (0–1); the
 // display score scales to 10. Band is always "info" (report-only; never gates).
 // n/a is reported only when FitnessSignals.EvidencePaths is nil, meaning the
-// scan was never run (e.g. zero-value MetricInput from a cmd that skipped it).
+// scan was never run (e.g. zero-value FitnessInput from a cmd that skipped it).
 type ArchitectureFitnessMetric struct{}
 
 // Name returns "architecture_fitness".
@@ -34,18 +35,18 @@ func (m ArchitectureFitnessMetric) Name() string { return "architecture_fitness"
 // Version returns "architecture_fitness.v1".
 func (m ArchitectureFitnessMetric) Version() string { return "architecture_fitness.v1" }
 
-// Calculate scores the enforcement level from the FitnessSignals in MetricInput.
+// Calculate scores the enforcement level from the FitnessSignals in FitnessInput.
 //
 // n/a when EvidencePaths is nil (scan was never run).
 // 0/10 when no signals are present but the scan did run (honest zero).
 // 10/10 when all three signal categories are present.
-func (m ArchitectureFitnessMetric) Calculate(in MetricInput) diagnostic.MetricResult {
+func (m ArchitectureFitnessMetric) Calculate(in signal.FitnessInput) diagnostic.MetricResult {
 	// nil EvidencePaths = scan never ran → n/a, not a false zero.
-	if in.FitnessSignals.EvidencePaths == nil {
-		return naCount(m.Name(), m.Version(), architectureFitnessDefinition)
+	if in.Fitness.EvidencePaths == nil {
+		return result.NACount(m.Name(), m.Version(), architectureFitnessDefinition)
 	}
 
-	sig := in.FitnessSignals
+	sig := in.Fitness
 	present := countSignals(sig)
 	value := float64(present) / float64(archFitnessSignalCount)
 	score := value * 10.0
@@ -54,10 +55,10 @@ func (m ArchitectureFitnessMetric) Calculate(in MetricInput) diagnostic.MetricRe
 		Name:       m.Name(),
 		Value:      value,
 		Display:    fitnessDisplay(score, present, sig),
-		Band:       bandInformational,
-		Confidence: confidenceHigh,
+		Band:       result.BandInformational,
+		Confidence: result.ConfidenceHigh,
 		Version:    m.Version(),
-		Mode:       modeRatio,
+		Mode:       result.ModeRatio,
 		Definition: architectureFitnessDefinition,
 	}
 }

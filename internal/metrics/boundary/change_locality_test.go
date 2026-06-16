@@ -1,11 +1,12 @@
-package metrics_test
+package boundary_test
 
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/metrics/boundary"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
 const (
@@ -52,8 +53,8 @@ func clIndex() coupling.Index {
 }
 
 func TestChangeLocality_CountsCrossModuleEdgesFromChangedFiles(t *testing.T) {
-	m := metrics.ChangeLocalityMetric{}
-	res := m.Calculate(metrics.MetricInput{
+	m := boundary.ChangeLocalityMetric{}
+	res := m.Calculate(signal.CommonInput{
 		Graph:           clGraph(),
 		Classifications: clIndex(),
 		ChangedFiles:    []string{clFileA},
@@ -78,16 +79,16 @@ func TestChangeLocality_CountsCrossModuleEdgesFromChangedFiles(t *testing.T) {
 }
 
 func TestChangeLocality_NAWithoutDiff(t *testing.T) {
-	m := metrics.ChangeLocalityMetric{}
-	res := m.Calculate(metrics.MetricInput{Graph: clGraph(), Classifications: clIndex()})
+	m := boundary.ChangeLocalityMetric{}
+	res := m.Calculate(signal.CommonInput{Graph: clGraph(), Classifications: clIndex()})
 	if res.Band != "n/a" {
 		t.Errorf("band = %q, want n/a in full mode (no changed files)", res.Band)
 	}
 }
 
 func TestChangeLocality_LowConfidenceWithoutClassifications(t *testing.T) {
-	m := metrics.ChangeLocalityMetric{}
-	res := m.Calculate(metrics.MetricInput{
+	m := boundary.ChangeLocalityMetric{}
+	res := m.Calculate(signal.CommonInput{
 		Graph:        clGraph(),
 		ChangedFiles: []string{clFileA},
 	})
@@ -100,8 +101,8 @@ func TestChangeLocality_LowConfidenceWithoutClassifications(t *testing.T) {
 }
 
 func TestChangeLocality_Deterministic(t *testing.T) {
-	m := metrics.ChangeLocalityMetric{}
-	in := metrics.MetricInput{
+	m := boundary.ChangeLocalityMetric{}
+	in := signal.CommonInput{
 		Graph:           clGraph(),
 		Classifications: clIndex(),
 		ChangedFiles:    []string{clFileA, clFileB},

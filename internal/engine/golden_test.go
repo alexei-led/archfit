@@ -107,7 +107,7 @@ func TestGolden_DoubleRun(t *testing.T) {
 				Accepted:    base,
 				BaseMetrics: base.Metrics,
 				Labels:      nil,
-				Change:      signal.ChangeHistory{},
+				Signals:     signal.RunSignals{},
 				Now:         now,
 			},
 		)
