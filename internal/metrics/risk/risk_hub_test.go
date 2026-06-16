@@ -179,28 +179,32 @@ func TestRiskHub_IntraModuleRefsIgnored(t *testing.T) {
 	}
 }
 
-// TestRiskHub_ChurnIndependentAndDeterministic documents that risk_hub cannot be
-// influenced by churn — SymbolInput carries no history signal, so churn-independence
-// is now a compile-time guarantee, not a runtime one. The test additionally checks
-// the metric is deterministic for a fixed symbol graph.
-func TestRiskHub_ChurnIndependentAndDeterministic(t *testing.T) {
+// TestRiskHub_ChurnIndependentViaProjection proves churn cannot reach risk_hub.
+// The engine's CollectedSignals carries git churn in History, but the AsSymbol
+// projection drops it, so risk_hub's SymbolInput never sees it: two CollectedSignals
+// that differ ONLY in History.FileChurn must project to identical risk_hub output.
+// (Churn independence is also a compile-time guarantee — SymbolInput has no History
+// field — but this asserts the projection wiring that enforces it, the replacement
+// for the pre-refactor "FileChurn in MetricInput is ignored" runtime test.)
+func TestRiskHub_ChurnIndependentViaProjection(t *testing.T) {
 	g := makeGraph(
-		map[string]string{
-			"sym": "modA",
-			"dep": "modB",
-		},
+		map[string]string{"sym": "modA", "dep": "modB"},
 		[][2]string{{"dep", "sym"}},
 	)
 	m := NewMetric(makeConfig(nil))
 
-	r1 := m.Calculate(symInput(g))
-	r2 := m.Calculate(symInput(g))
-
-	if r1.Value != r2.Value {
-		t.Errorf("non-deterministic Value: %v vs %v", r1.Value, r2.Value)
+	noChurn := signal.CollectedSignals{Symbol: signal.SymbolSignals{Graph: g}}
+	highChurn := signal.CollectedSignals{
+		Symbol:  signal.SymbolSignals{Graph: g},
+		History: signal.HistorySignals{FileChurn: map[string]int{"modA/file.go": 9999, "modB/file.go": 9999}},
 	}
-	if r1.Display != r2.Display {
-		t.Errorf("non-deterministic Display:\n  %s\n  %s", r1.Display, r2.Display)
+
+	r1 := m.Calculate(noChurn.AsSymbol())
+	r2 := m.Calculate(highChurn.AsSymbol())
+
+	if r1.Value != r2.Value || r1.Display != r2.Display {
+		t.Errorf("churn leaked into risk_hub via projection:\n  no-churn:   %s\n  high-churn: %s",
+			r1.Display, r2.Display)
 	}
 }
 
