@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/metrics/internal/modgraph"
 	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/signal"
@@ -28,28 +29,28 @@ func (m HiddenCouplingMetric) Calculate(in signal.MetricInput) diagnostic.Metric
 	if in.Graph == nil || len(in.CoChange) == 0 {
 		return result.NACount(m.Name(), m.Version(), def)
 	}
-	lang := dominantLanguage(in.Graph)
-	mc := moduleChurn(in.FileChurn, lang)
+	lang := modgraph.DominantLanguage(in.Graph)
+	mc := modgraph.ModuleChurn(in.FileChurn, lang)
 
 	// First-party module nodes: restrict co-change to real graph modules so docs
 	// (CHANGELOG.md), config files, and pre-rename historical paths are excluded.
 	nodeSet := make(map[string]struct{})
 	for _, n := range in.Graph.Nodes() {
-		nodeSet[moduleKey(n.ID())] = struct{}{}
+		nodeSet[modgraph.ModuleKey(n.ID())] = struct{}{}
 	}
 	// Static undirected module edges (importing relationship).
 	edge := make(map[[2]string]struct{})
 	for _, e := range in.Graph.Edges() {
-		a, b := moduleKey(e.From), moduleKey(e.To)
+		a, b := modgraph.ModuleKey(e.From), modgraph.ModuleKey(e.To)
 		if a == b {
 			continue
 		}
-		edge[orderedPair(a, b)] = struct{}{}
+		edge[modgraph.OrderedPair(a, b)] = struct{}{}
 	}
 	// Aggregate file-pair co-change onto module pairs (graph modules only).
 	modPair := make(map[[2]string]int)
 	for fp, c := range in.CoChange {
-		a, b := fileToModuleKey(fp[0], lang), fileToModuleKey(fp[1], lang)
+		a, b := modgraph.FileToModuleKey(fp[0], lang), modgraph.FileToModuleKey(fp[1], lang)
 		if a == "" || b == "" || a == b {
 			continue
 		}
@@ -59,7 +60,7 @@ func (m HiddenCouplingMetric) Calculate(in signal.MetricInput) diagnostic.Metric
 		if _, ok := nodeSet[b]; !ok {
 			continue
 		}
-		modPair[orderedPair(a, b)] += c
+		modPair[modgraph.OrderedPair(a, b)] += c
 	}
 
 	hiddenPartners := map[string]int{}

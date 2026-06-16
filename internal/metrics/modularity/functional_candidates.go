@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/metrics/internal/modgraph"
 	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -39,11 +40,11 @@ func (m FunctionalCandidatesMetric) Calculate(in signal.MetricInput) diagnostic.
 		return result.NACount(m.Name(), m.Version(), functionalCandidatesDef)
 	}
 
-	lang := dominantLanguage(in.Graph)
+	lang := modgraph.DominantLanguage(in.Graph)
 
 	// Map clone clusters to canonical cross-module pairs (deduped + sorted by ModulePairs).
 	pairs := clone.ModulePairs(in.CloneClusters, func(f string) string {
-		return fileToModuleKey(f, lang)
+		return modgraph.FileToModuleKey(f, lang)
 	})
 
 	if len(pairs) == 0 {
@@ -53,12 +54,12 @@ func (m FunctionalCandidatesMetric) Calculate(in signal.MetricInput) diagnostic.
 	// Build module-pair co-change set from CoChange for cross-reference.
 	coChangePairs := make(map[[2]string]struct{}, len(in.CoChange))
 	for fp := range in.CoChange {
-		a := fileToModuleKey(fp[0], lang)
-		b := fileToModuleKey(fp[1], lang)
+		a := modgraph.FileToModuleKey(fp[0], lang)
+		b := modgraph.FileToModuleKey(fp[1], lang)
 		if a == "" || b == "" || a == b {
 			continue
 		}
-		coChangePairs[orderedPair(a, b)] = struct{}{}
+		coChangePairs[modgraph.OrderedPair(a, b)] = struct{}{}
 	}
 
 	// Count how many clone pairs also co-change.

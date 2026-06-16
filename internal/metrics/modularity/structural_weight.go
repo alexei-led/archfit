@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/metrics/internal/modgraph"
 	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/signal"
@@ -34,10 +35,10 @@ func (m StructuralWeightMetric) Calculate(in signal.MetricInput) diagnostic.Metr
 	if in.Graph == nil || len(in.FileLOC) == 0 {
 		return result.NACount(m.Name(), m.Version(), def)
 	}
-	lang := dominantLanguage(in.Graph)
+	lang := modgraph.DominantLanguage(in.Graph)
 	modLOC := map[string]int{}
 	for f, n := range in.FileLOC {
-		if k := fileToModuleKey(f, lang); k != "" {
+		if k := modgraph.FileToModuleKey(f, lang); k != "" {
 			modLOC[k] += n
 		}
 	}

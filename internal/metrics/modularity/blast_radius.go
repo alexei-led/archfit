@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/metrics/internal/modgraph"
 	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/signal"
@@ -36,7 +37,7 @@ func (m BlastRadiusMetric) Calculate(in signal.MetricInput) diagnostic.MetricRes
 	if in.Graph == nil {
 		return m.naResult()
 	}
-	blast, n := blastRadius(in.Graph)
+	blast, n := modgraph.BlastRadius(in.Graph)
 	if n < 2 {
 		return m.naResult()
 	}

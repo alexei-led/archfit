@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/metrics/internal/modgraph"
 	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/signal"
@@ -34,11 +35,11 @@ func (m ChangeAmplificationMetric) Calculate(in signal.MetricInput) diagnostic.M
 	if in.Graph == nil || len(in.FileChurn) == 0 {
 		return result.NACount(m.Name(), m.Version(), "blast radius weighted by recent churn (expected change cost)")
 	}
-	blast, n := blastRadius(in.Graph)
+	blast, n := modgraph.BlastRadius(in.Graph)
 	if n < 2 {
 		return result.NACount(m.Name(), m.Version(), "blast radius weighted by recent churn (expected change cost)")
 	}
-	mc := moduleChurn(in.FileChurn, dominantLanguage(in.Graph))
+	mc := modgraph.ModuleChurn(in.FileChurn, modgraph.DominantLanguage(in.Graph))
 	maxChurn := 0
 	for _, c := range mc {
 		if c > maxChurn {
