@@ -1,6 +1,11 @@
+# VCS metadata
 .git
-testdata/
-docs/
-*.out
+
+# Build artifacts
 .bin/
 dist/
+*.out
+
+# Not needed for image build
+docs/
+testdata/
