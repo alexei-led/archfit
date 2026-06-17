@@ -310,8 +310,8 @@ HasVolatility/HasLayer` — never overwrite an existing field). Never emit both 
 
 ### Task 14: Verify acceptance criteria (whole plan)
 
-- [ ] every Overview requirement and the full mode matrix implemented
-- [ ] `make all` passes; ring + golden green; coverage ≥ standard; no new lint findings
+- [x] every Overview requirement and the full mode matrix implemented
+- [x] `make all` passes; ring + golden green; coverage ≥ standard; no new lint findings
 
 ### Task 15: Update documentation
 
