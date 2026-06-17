@@ -205,31 +205,31 @@ notice of what it wrote and always uses the strict write protocol (Technical Det
 
 ### Task 7: comment-preserving source patcher with a strict contract
 
-- [ ] add `internal/initcfg/yamledit.go`: `func ApplyEdits(src []byte, edits []Edit) ([]byte, error)`; parse with
+- [x] add `internal/initcfg/yamledit.go`: `func ApplyEdits(src []byte, edits []Edit) ([]byte, error)`; parse with
       goccy (`parser.ParseComments`) to locate+validate and to read the top-level `layers:` set; mutate via line
       splices on the original bytes
-- [ ] `Edit` variants (closed set): `AddModule(ModuleDef, *ModuleAnnotation)` (renders via `writeModuleStanza`
+- [x] `Edit` variants (closed set): `AddModule(ModuleDef, *ModuleAnnotation)` (renders via `writeModuleStanza`
       with the parsed `layers:` as `allowedLayers`), `SetModuleFields(module string, fields map[ModuleField]string)`
       with `ModuleField` enum {Subdomain, Volatility, Layer} — inserts one coalesced block of the absent fields
       in **canonical order (subdomain, volatility, layer)** for stable diffs/tests, YAML-quoting values, and
       **skips a Layer value not in the parsed `layers:`**;
       `UpdateModulePaths(module string, paths []string)`; `CommentModule(module, note string)`
-- [ ] `UpdateModulePaths`: replace the `paths:` line range if present; if the module exists but has no `paths:`,
+- [x] `UpdateModulePaths`: replace the `paths:` line range if present; if the module exists but has no `paths:`,
       insert a block-style `paths:` as the first stanza key; reject inline flow-style `paths: [...]`
-- [ ] `CommentModule` runs `note` through `sanitizeComment` (no CR/LF/control chars) and prefixes the module's
+- [x] `CommentModule` runs `note` through `sanitizeComment` (no CR/LF/control chars) and prefixes the module's
       source range (incl. head comment) with a marker (Technical Details);
       no-op if the marker already exists. `AddModule` is a no-op if a live `module:` key already exists
-- [ ] contract: compute all line ranges first; reject overlapping/conflicting edits; apply bottom-up; a missing
+- [x] contract: compute all line ranges first; reject overlapping/conflicting edits; apply bottom-up; a missing
       target module (Set/UpdatePaths/Comment) is an error; create a block-style `modules:` at the defined
       location when absent; reject flow-style `modules: {}`
-- [ ] preserve everything not targeted: comments (incl. head comments), key order, `rules`, `exceptions`, formatting
-- [ ] import neither `internal/llm` nor `internal/config`; operate on raw bytes + plain inputs
-- [ ] write tests: add module (comments/rules intact; into a no-`modules:` config; insertion-location cases:
+- [x] preserve everything not targeted: comments (incl. head comments), key order, `rules`, `exceptions`, formatting
+- [x] import neither `internal/llm` nor `internal/config`; operate on raw bytes + plain inputs
+- [x] write tests: add module (comments/rules intact; into a no-`modules:` config; insertion-location cases:
       layers-present / tools-present / rules-only / append-EOF); `SetModuleFields` coalesces multiple absent
       fields into one block (no overlap error); Layer-out-of-set skipped; `UpdateModulePaths` into a stanza with
       no `paths:`; flow-style rejection; comment incl. head comment; re-apply CommentModule/AddModule → no-op;
       bottom-up ordering; round-trips through `config.Load`
-- [ ] run `go test ./internal/initcfg/...` and `go test ./internal/ -run TestArchImports` — must pass before next task
+- [x] run `go test ./internal/initcfg/...` and `go test ./internal/ -run TestArchImports` — must pass before next task
 
 ## Topic 3 — `archfit update`
 

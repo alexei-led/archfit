@@ -21,6 +21,9 @@ const (
 	testCorePath     = "internal/core/**"
 	testTSCore       = "core"
 	testExampleMod   = "example.com/test"
+	testClassifyPath = "internal/classify/**"
+	testGeneric      = "generic"
+	testNonexistent  = "nonexistent"
 )
 
 // sampleGoListJSON is concatenated go list -json output for a small module.

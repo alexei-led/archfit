@@ -27,12 +27,12 @@ func annotationBaseCfg() DiscoveredConfig {
 		Modules: []ModuleDef{
 			{
 				Name:   testClassify,
-				Paths:  []string{"internal/classify/**"},
+				Paths:  []string{testClassifyPath},
 				Public: []string{"internal/classify"},
 				Layer:  layerCore,
 			},
 			{
-				Name:  "extract",
+				Name:  adapterExtract,
 				Paths: []string{"internal/extract/**"},
 				Layer: layerAdapter,
 			},

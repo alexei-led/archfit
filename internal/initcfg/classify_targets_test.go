@@ -33,7 +33,7 @@ func TestBuildClassifyTargets_GoSubdirOnly(t *testing.T) {
 	mkDir(t, filepath.Join(root, "internal", "classify"))
 
 	mods := []ModuleDef{
-		{Name: "classify", Paths: []string{"internal/classify/**"}},
+		{Name: testClassify, Paths: []string{testClassifyPath}},
 	}
 
 	targets := BuildClassifyTargets(root, mods)
@@ -42,8 +42,8 @@ func TestBuildClassifyTargets_GoSubdirOnly(t *testing.T) {
 		t.Fatalf("want 1 target, got %d", len(targets))
 	}
 	ct := targets[0]
-	if ct.Name != "classify" {
-		t.Errorf("Name = %q, want %q", ct.Name, "classify")
+	if ct.Name != testClassify {
+		t.Errorf("Name = %q, want %q", ct.Name, testClassify)
 	}
 	if len(ct.Files) != 0 {
 		t.Errorf("Files = %v, want empty (directory has no files)", ct.Files)
