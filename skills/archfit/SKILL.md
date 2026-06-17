@@ -1,6 +1,6 @@
 ---
 name: archfit
-description: Use archfit for architecture fitness work. Use when installing archfit, creating or reviewing .archfit.yaml, configuring Go, Python, or TypeScript checks, adding CI usage, interpreting findings, fixing architecture drift, or deciding on baselines and exceptions.
+description: Use archfit for architecture fitness work. Use when installing archfit, creating or reviewing .archfit.yaml, configuring Go, Python, or TypeScript checks, adding CI usage, interpreting findings, fixing architecture drift, or deciding on baselines and exceptions. Not for generic software-architecture advice or deciding whether to adopt archfit.
 license: Apache-2.0
 compatibility: Requires access to the repository files. Shell access is recommended for archfit, git, and language tool checks.
 metadata:
@@ -16,170 +16,84 @@ metadata:
 
 # Archfit
 
-Use this skill for `archfit` setup, configuration, review, and finding repair.
+Thin skill for `archfit` setup, configuration, review, and finding repair.
+Detailed behavior lives in `references/`, loaded on demand.
 
-This skill is intentionally thin. Canonical behavior lives in the project docs,
-not here.
+**Do not use** for generic software-architecture advice unrelated to `archfit`,
+or to decide whether to adopt `archfit` — those are web research questions.
 
-**Do not use when** the question is about generic software-architecture advice
-unrelated to the `archfit` tool, or when deciding whether to adopt `archfit` in
-the first place — those are web research questions, not archfit skill questions.
+## References
 
-## Source of truth
+Read the one the task needs:
 
-Read `references/archfit-docs.md` only when you need links to canonical docs.
-Then read the smallest relevant doc page.
+- `references/commands.md` — commands, flags, output formats, finding statuses,
+  exit codes.
+- `references/llm-modes.md` — `init`/`update --llm` plan→apply, `enrich`,
+  `explain --llm`.
+- `references/agent-loop.md` — autonomous repair contract (`agent_tasks`, SARIF,
+  `change_locality`).
 
-Prefer local docs when working inside the `archfit` repository. Use public links
-when working elsewhere. When working **outside** the archfit source repository,
-use the public links in `references/archfit-docs.md` exclusively; do not assume
-local paths exist.
+`archfit --help` confirms flags. When a reference and the binary disagree, verify
+against the binary and say so. Full guide:
+<https://github.com/alexei-led/archfit/blob/main/docs/guide/README.md>.
 
-If docs and implementation conflict, verify with the local binary or source. Do
-not copy full guide or config reference content into this skill.
+## Write or fix
 
-## Modes
+Install, configure, add CI, baseline, add an exception, or fix findings.
 
-### Write or fix
+1. Inspect first: `.archfit.yaml`, `.archfit-baseline.json`, CI workflows,
+   language package files.
+2. Check the surface: `archfit --help`, `archfit doctor`.
+3. No config? Generate and review before editing:
+   `archfit init --root . --output .archfit.yaml`.
+4. Keep early config narrow: modules, layers, public APIs, high-value rules.
+5. Prefer code fixes over exceptions; use expiring exceptions only for
+   intentional temporary drift.
+6. Baseline only accepted existing debt — never to make a new finding green.
+7. Validate: `archfit check --config .archfit.yaml --full` (add `--format json`
+   for agent loops).
 
-Use when the user asks to install, configure, add CI, create a baseline, add an
-exception, or fix findings.
+`init`/`update --llm` use a plan→apply safety model: detail and guardrails are in
+`references/llm-modes.md`. Never write LLM classifications (`--apply`) or approve
+`enrich` drafts without reviewing them first.
 
-1. Inspect existing files first: `.archfit.yaml`, `.archfit-baseline.json`, CI
-   workflows, and language package files.
-2. Check the local command surface when practical:
+## Agent repair loop
 
-   ```sh
-   archfit --help
-   archfit doctor
-   ```
+Fixing findings autonomously: run `archfit check --format json`; exit 0 means
+done. Each `agent_tasks[]` entry has `goal`, `constraints`, `files`, and a
+`validation` command — fix within the constraints, touch only the listed files,
+then re-run `validation` verbatim. Never "fix" `baseline` or `excepted` findings
+unprompted. Full contract: `references/agent-loop.md`.
 
-3. If no config exists, generate a draft and review it before editing:
+## Review
 
-   ```sh
-   archfit init --root . --output .archfit.yaml
-   ```
+Audit config, output, CI readiness, PR drift, baselines, exceptions, or coverage.
 
-4. Keep early config narrow: modules, layers, public APIs, and high-value rules.
-5. Prefer code fixes over exceptions. Use expiring exceptions only for intentional
-   temporary drift.
-6. Baseline only accepted existing debt. Do not baseline new findings just to
-   make a check green.
-7. Validate with the closest check:
-
-   ```sh
-   archfit check --config .archfit.yaml --full
-   ```
-
-8. Use JSON for scripts or agent repair loops:
-
-   ```sh
-   archfit check --config .archfit.yaml --full --format json
-   ```
-
-### Init and update LLM modes
-
-`archfit init` and `archfit update` support optional LLM classification and a
-two-step plan→apply safety model. Default modes are advisory (inert or
-report-only); `--apply` is the only path that writes LLM judgment into
-gate-feeding fields.
-
-**Mode matrix:**
-
-| Command                | Effect                                                            |
-| ---------------------- | ----------------------------------------------------------------- |
-| `init`                 | structural scaffold (unchanged)                                   |
-| `init --llm`           | + commented-inert subdomain/volatility/layer suggestions          |
-| `init --llm --apply`   | + subdomain/volatility/layer written live (name stays a comment)  |
-| `update`               | drift report, writes nothing                                      |
-| `update --apply`       | structural drift written live (add/path/comment-removed modules)  |
-| `update --llm`         | drift report including LLM classification of unclassified modules |
-| `update --llm --apply` | structural + LLM classification written live                      |
-
-`--apply` without `--llm` is valid only for `update`; `init --apply` requires
-`--llm`. Coupling rules always stay with `enrich` — `init`/`update` handle
-classification only (`subdomain`, `volatility`, `layer`).
-
-**Guardrails:**
-
-- A live `layer` is written only when it already appears in the config's
-  `layers:` list; an out-of-set suggestion is rendered as a comment instead.
-- Module keys are never auto-renamed; a name suggestion is always a comment.
-- `update --apply` replaces module paths with discovered paths and writes a
-  timestamped backup before overwriting.
-- Existing fields (`subdomain`, `volatility`, `layer`) are never overwritten;
-  `SetModuleFields` is skipped for any field already present.
-- Plan mode (`update` without `--apply`) leaves `.archfit.yaml` untouched.
-- `--apply` completes the full LLM pass before any file write, validates the
-  result with `config.Load`, and uses an atomic temp+rename.
-
-See `docs/guide/commands.md` for flag reference and `docs/guide/llm-enrich.md`
-for the `enrich` workflow that governs coupling rules.
-
-### Agent repair loop
-
-Use when fixing findings autonomously. The JSON output carries an
-`agent_tasks[]` block — one entry per ACTIVE gate finding with `goal`,
-`constraints`, `files`, and the exact `validation` command:
-
-1. Run `archfit check --format json`; exit 0 means done.
-2. For each `agent_tasks[]` entry: fix within the stated constraints,
-   touching only the listed files where possible.
-3. Re-run the entry's `validation` command verbatim.
-4. Never "fix" findings with status `baseline` or `excepted` unprompted —
-   they are accepted state, not errors.
-5. For CI annotation surfaces, use `--format sarif` (SARIF 2.1.0).
-6. In delta mode (`--base <ref>`), watch the `change_locality` metric for
-   the change's blast surface.
-
-See `docs/guide/agent-feedback.md` for the full loop contract.
-
-### Enrich (off-gate LLM labels)
-
-Use when the user asks to refine coupling-strength labels or run enrichment.
-Requires `tools.llm` (provider + model) and `tools.scip.enabled: "on"`.
-
-1. `archfit enrich` drafts refinements into `.archfit-labels.yaml`
-   (`status: draft` — inert).
-2. A HUMAN reviews each draft: flip `status: approved` to pin, delete to
-   reject. Never auto-approve drafts.
-3. `check` consumes approved labels only and stays LLM-free; a
-   `labels/stale` advisory means the code changed since approval —
-   re-run enrich and re-review.
-4. `archfit explain <id> --llm` appends an off-gate narrative to one finding.
-
-See `docs/guide/llm-enrich.md`.
-
-### Review
-
-Use when the user asks to audit config, output, CI readiness, PR drift,
-baselines, exceptions, or language coverage.
-
-1. Inspect local evidence before judging: config, baseline, CI, package files, and
-   supplied `archfit` output.
-2. Compare the config with the repo shape and the relevant canonical docs.
+1. Inspect local evidence before judging: config, baseline, CI, package files,
+   supplied output.
+2. Compare config against the repo shape and the references.
 3. Separate true drift, accepted debt, tool gaps, stale config, and false
    positives.
-4. Do not recommend baselining as the default fix.
-5. If reviewing CI readiness, check whether tools, adapter modes, and output
-   format are deterministic.
+4. Don't recommend baselining as the default fix.
+5. For CI readiness, check that tools, adapter modes, and output format are
+   deterministic.
 6. Give a verdict and ordered next actions.
 
 ## Finding repair order
 
-For each finding, capture the ID, rule ID, status, from path, to path, `why`, and
-`constraint`. Then prefer fixes in this order:
+Capture each finding's ID, rule ID, status, from/to path, `why`, and
+`constraint`. Then prefer, in order:
 
 1. Remove the unnecessary dependency.
 2. Use or add a public API.
 3. Move code to the owning module.
-4. Invert dependency through an interface or port.
+4. Invert the dependency through an interface or port.
 5. Add an expiring exception for intentional temporary drift.
 6. Baseline reviewed existing debt.
 
-Do not add broad exclusions to hide findings.
+Never add broad exclusions to hide findings.
 
-## Output for reviews
+## Review output
 
 ```markdown
 ## Archfit Review
@@ -187,7 +101,7 @@ Do not add broad exclusions to hide findings.
 Scope: <files, command output, or PR area>
 Verdict: ready | needs changes | blocked
 Confidence: high | medium | low
-Sources: <canonical docs, local files, commands>
+Sources: <references, local files, commands>
 
 ### Findings
 
@@ -207,15 +121,15 @@ Sources: <canonical docs, local files, commands>
 - <command run or skipped reason>
 ```
 
-Omit empty sections. Say `No confirmed findings.` when nothing actionable is
-found.
+Omit empty sections. Say `No confirmed findings.` when nothing is actionable.
 
 ## Failure handling
 
-- Missing `archfit`: use install docs and state command verification was skipped.
-- Missing language tools: report coverage risk and expected install path.
-- No architecture intent: ask for intended modules or layers before encoding
-  rules.
+- `archfit` unavailable: use install docs; state command verification was skipped.
+- Missing language tools: report coverage risk and the expected install path.
+- No architecture intent: ask for intended modules or layers before encoding rules.
 - Noisy generated config: narrow modules and rules before adding exceptions.
 - Conflicting output and config: quote the exact finding or config line and lower
   confidence until reproduced.
+- `--apply` fails or `config.Load` rejects the result: the original file is intact;
+  report the error and stay in plan mode.
