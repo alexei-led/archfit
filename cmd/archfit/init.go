@@ -29,7 +29,7 @@ func (c *InitCmd) Run(deps *appDeps) error {
 	if err != nil {
 		return fmt.Errorf("discovering project structure: %w", err)
 	}
-	yaml := initcfg.Render(cfg)
+	yaml := initcfg.Render(cfg, nil, false)
 	if c.Output == "-" {
 		_, _ = fmt.Fprint(deps.Stdout, yaml)
 		return nil

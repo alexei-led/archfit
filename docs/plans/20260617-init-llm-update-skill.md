@@ -130,16 +130,16 @@ notice of what it wrote and always uses the strict write protocol (Technical Det
 
 ### Task 2: stanza text helper + ModuleAnnotation + dual-mode Render
 
-- [ ] extract `writeModuleStanza(b *strings.Builder, indent, name string, m ModuleDef, allowedLayers []string, ann *ModuleAnnotation, apply bool)`
+- [x] extract `writeModuleStanza(b *strings.Builder, indent, name string, m ModuleDef, allowedLayers []string, ann *ModuleAnnotation, apply bool)`
       from `Render` — `allowedLayers` is the authority for layer validity; quote any scalar that needs it
-- [ ] add `sanitizeComment(s string) string` (shared) and run **every** dynamic string rendered into a comment
+- [x] add `sanitizeComment(s string) string` (shared) and run **every** dynamic string rendered into a comment
       (SuggestedName, out-of-set layer value, any note) through it: strip/replace CR/LF and other control chars,
       trim, cap length — a single newline must never let an LLM value escape its comment into live YAML
-- [ ] add `ModuleAnnotation struct{ Subdomain, Volatility, Layer, SuggestedName string }` — `Layer` holds the
+- [x] add `ModuleAnnotation struct{ Subdomain, Volatility, Layer, SuggestedName string }` — `Layer` holds the
       raw LLM suggestion; validity is decided in the helper, not the classifier
-- [ ] change `Render(cfg DiscoveredConfig)` → `Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) string`
+- [x] change `Render(cfg DiscoveredConfig)` → `Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) string`
       (passing `cfg.Layers` as `allowedLayers`); `ann == nil` → byte-identical to today
-- [ ] layer rule (both modes): the resolved live layer is `ann.Layer` if it is in `allowedLayers`, else
+- [x] layer rule (both modes): the resolved live layer is `ann.Layer` if it is in `allowedLayers`, else
       `m.Layer`; write it live **only if that resolved value is in `allowedLayers`**, otherwise render it as a
       comment. (For `init`, `cfg.Layers` is derived to include every module's heuristic `m.Layer`, so the gate
       is a no-op there and `Render(cfg, nil, false)` stays byte-identical; the gate only changes `update`
@@ -147,12 +147,12 @@ notice of what it wrote and always uses the strict write protocol (Technical Det
       `# subdomain:`/`# volatility:` and a layer-suggestion comment (note `(not in layers:)` when out of set) +
       a `# llm: consider renaming` comment when SuggestedName differs. `apply == true`: write live
       `subdomain:`/`volatility:` and the gated layer; never rename the key
-- [ ] update the caller in `cmd/archfit/init.go` to pass `(cfg, nil, false)`
-- [ ] write golden tests: `nil` (unchanged), `apply=false` (round-trips), `apply=true` (round-trips),
+- [x] update the caller in `cmd/archfit/init.go` to pass `(cfg, nil, false)`
+- [x] write golden tests: `nil` (unchanged), `apply=false` (round-trips), `apply=true` (round-trips),
       out-of-set layer → comment in both modes (never live), heuristic `m.Layer` absent from `allowedLayers`
       → commented not live; and an injection test: `SuggestedName = "x\"\n  volatility: high"` stays fully
       inert (sanitized, no live YAML), output still round-trips through `config.Load`
-- [ ] run `go test ./internal/initcfg/...` and `go test ./internal/ -run TestArchImports` — must pass before next task
+- [x] run `go test ./internal/initcfg/...` and `go test ./internal/ -run TestArchImports` — must pass before next task
 
 ### Task 3: BuildClassifyTargets (multi-language, explicit degrade)
 
