@@ -712,3 +712,53 @@ func TestApplyEdits_MultipleEdits_NoConflict(t *testing.T) {
 
 	mustRoundTrip(t, out)
 }
+
+// ---------------------------------------------------------------------------
+// Test: two AddModuleEdits into config with NO modules: block → single header
+// ---------------------------------------------------------------------------
+
+func TestApplyEdits_AddModules_TwoIntoEmpty_SingleHeader(t *testing.T) {
+	edits := []Edit{
+		AddModuleEdit{Def: ModuleDef{Name: testBeta, Paths: []string{"internal/" + testBeta + "/**"}, Layer: layerCore}},
+		AddModuleEdit{Def: ModuleDef{Name: testAlpha, Paths: []string{"internal/" + testAlpha + "/**"}, Layer: layerCore}},
+	}
+	out := mustApply(t, noModulesWithLayers, edits...)
+
+	// Exactly ONE modules: header.
+	if cnt := strings.Count(out, "modules:"); cnt != 1 {
+		t.Errorf("want exactly 1 'modules:' header, got %d\n--- out ---\n%s", cnt, out)
+	}
+
+	// Both modules present.
+	assertContains(t, out, testAlpha+":")
+	assertContains(t, out, testBeta+":")
+	assertContains(t, out, `"internal/`+testAlpha+`/**"`)
+	assertContains(t, out, `"internal/`+testBeta+`/**"`)
+
+	// Alphabetical order: alpha before beta.
+	alphaIdx := strings.Index(out, testAlpha+":")
+	betaIdx := strings.Index(out, testBeta+":")
+	if alphaIdx >= betaIdx {
+		t.Errorf("alpha: (%d) should appear before beta: (%d)", alphaIdx, betaIdx)
+	}
+
+	// Round-trip must succeed (no duplicate mapping keys).
+	mustRoundTrip(t, out)
+}
+
+// TestApplyEdits_AddModule_SingleIntoEmpty verifies the single-module case still works.
+func TestApplyEdits_AddModule_SingleIntoEmpty_StillWorks(t *testing.T) {
+	const soloName = "solo"
+	ed := AddModuleEdit{
+		Def: ModuleDef{Name: soloName, Paths: []string{"internal/" + soloName + "/**"}, Layer: layerCore},
+	}
+	out := mustApply(t, noModulesWithLayers, ed)
+
+	if cnt := strings.Count(out, "modules:"); cnt != 1 {
+		t.Errorf("want exactly 1 'modules:' header, got %d\n--- out ---\n%s", cnt, out)
+	}
+	assertContains(t, out, soloName+":")
+	assertContains(t, out, `"internal/`+soloName+`/**"`)
+
+	mustRoundTrip(t, out)
+}

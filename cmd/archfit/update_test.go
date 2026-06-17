@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -592,3 +593,77 @@ func TestUpdateCmd_ChangedSinceReadAborts(t *testing.T) {
 		t.Errorf("error should mention 'changed since read'; got: %v", err)
 	}
 }
+
+// TestUpdateCmd_LLM_WarnPartialClassify verifies that when the LLM omits a
+// module from its response, a warning is printed naming the unclassified module,
+// and other modules are still written in --apply mode.
+func TestUpdateCmd_LLM_WarnPartialClassify(t *testing.T) {
+	dir := minimalRoot(t)
+	// Config has no modules; discovery will find two (both will be Added).
+	cfgPath := writeConfig(t, dir, minimalConfigNoModules)
+
+	const modPath = "example.com/test"
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			// Emit two packages: alpha and beta.
+			a := fmt.Sprintf(`{"ImportPath":%q,"Dir":"/ignored","Module":{"Path":%q}}`, modPath+"/internal/alpha", modPath)
+			b := fmt.Sprintf(`{"ImportPath":%q,"Dir":"/ignored","Module":{"Path":%q}}`, modPath+"/internal/beta", modPath)
+			return toolrun.Output{Stdout: []byte(a + "\n" + b)}, nil
+		},
+	}
+
+	// fakeOmitProvider classifies "alpha" only; "beta" is intentionally omitted.
+	cmd := &UpdateCmd{
+		Config:           cfgPath,
+		Root:             dir,
+		LLM:              true,
+		Apply:            true,
+		LLMProvider:      providerAnthropic,
+		LLMModel:         defaultLLMModel,
+		providerOverride: &fakeOmitProvider{classifyName: "alpha"},
+	}
+	out, err := runUpdateCmd(t, cmd, runner)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// A warning must name the omitted module.
+	if !strings.Contains(out, "warning:") {
+		t.Errorf("expected partial-classification warning; got:\n%s", out)
+	}
+	if !strings.Contains(out, "beta") {
+		t.Errorf("warning should name 'beta'; got:\n%s", out)
+	}
+}
+
+// fakeOmitProvider classifies only the module named classifyName; all others are omitted.
+type fakeOmitProvider struct {
+	classifyName string
+}
+
+func (p *fakeOmitProvider) Name() string { return "test/omit" }
+func (p *fakeOmitProvider) Complete(_ context.Context, req llm.Request) (llm.Response, error) {
+	var entries []string
+	for _, line := range strings.Split(req.User, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "- module: ") {
+			name := strings.TrimSpace(strings.TrimPrefix(line, "- module: "))
+			if name == p.classifyName {
+				entries = append(entries, fmt.Sprintf(
+					`{"module":%q,"subdomain":"core","volatility":"low","layer":"core","name":"","rationale":"test"}`,
+					name,
+				))
+			}
+			// Other modules intentionally omitted to trigger the partial-classify warning.
+		}
+	}
+	if len(entries) == 0 {
+		return llm.Response{Text: "[]"}, nil
+	}
+	return llm.Response{Text: "[" + strings.Join(entries, ",") + "]"}, nil
+}
+
+var _ llm.Provider = (*fakeOmitProvider)(nil)

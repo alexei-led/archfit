@@ -215,7 +215,9 @@ func TestRender_OutOfSetLayer_NeverLive(t *testing.T) {
 
 // TestRender_HeuristicLayerAbsentFromAllowedLayers verifies that when m.Layer
 // is not in allowedLayers (e.g. update AddModule where config layers differ),
-// the layer is rendered as a comment and never live — even with ann==nil.
+// the layer is NOT written live — even with ann==nil.
+// When m.Layer IS in allowedLayers, the nil path writes it verbatim (byte-identical
+// guarantee for init, where cfg.Layers always contains every m.Layer).
 //
 // This guards the update AddModule path where the target config's layers: list
 // may not include a freshly-discovered layer.
@@ -234,24 +236,32 @@ func TestRender_HeuristicLayerAbsentFromAllowedLayers(t *testing.T) {
 		},
 	}
 
-	// Directly exercise writeModuleStanza with allowedLayers that omit "engine".
+	// --- nil annotation, m.Layer NOT in allowedLayers ---
+	// writeModuleStanza must NOT write a live layer: line.
 	var b strings.Builder
 	writeModuleStanza(&b, "  ", layerEngine, cfg.Modules[0], cfg.Layers, nil, false)
 	out := b.String()
 
-	// With ann==nil and m.Layer not in allowedLayers, the nil branch writes
-	// m.Layer verbatim (original behavior). The gate only applies when ann!=nil.
-	// This documents the existing nil behavior: it is byte-identical to before.
-	//
-	// NOTE: The gate for nil annotations preserves backward compat — the caller
-	// (Render) passes cfg.Layers which by construction includes every m.Layer
-	// for init output. This test exercises writeModuleStanza directly with a
-	// mismatched allowedLayers to confirm the nil path is truly byte-identical.
-	if !strings.Contains(out, "layer: "+layerEngine) {
-		t.Errorf("nil annotation: m.Layer should always be written verbatim (byte-identical path), got:\n%s", out)
+	if strings.Contains(out, "\n  layer: "+layerEngine+"\n") {
+		t.Errorf("nil annotation with out-of-set m.Layer must not write live layer, got:\n%s", out)
 	}
 
-	// Now exercise with a non-nil annotation whose layer is also out-of-set.
+	// --- nil annotation, m.Layer IN allowedLayers ---
+	// This is the real init guarantee: cfg.Layers ⊇ every m.Layer, so the layer
+	// is always written verbatim (byte-identical to the pre-annotation code path).
+	modInSet := ModuleDef{
+		Name:  layerCore,
+		Paths: []string{"internal/classify/**"},
+		Layer: layerCore, // IS in cfg.Layers
+	}
+	var b3 strings.Builder
+	writeModuleStanza(&b3, "  ", layerCore, modInSet, cfg.Layers, nil, false)
+	out3 := b3.String()
+	if !strings.Contains(out3, "layer: "+layerCore) {
+		t.Errorf("nil annotation with in-set m.Layer must write layer verbatim; got:\n%s", out3)
+	}
+
+	// --- non-nil annotation, ann.Layer also out-of-set ---
 	ann := &ModuleAnnotation{
 		Subdomain:  "supporting",
 		Volatility: "medium",
@@ -407,5 +417,48 @@ func TestSanitizeComment(t *testing.T) {
 				t.Errorf("sanitizeComment(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestYamlScalar_SpecialCharLayerRoundTrip
+// ---------------------------------------------------------------------------
+
+// TestYamlScalar_SpecialCharLayerRoundTrip verifies that a layer value containing
+// special YAML characters (e.g. "foo # bar") is quoted on write and round-trips
+// through config.Load with the original value intact (not truncated to "foo").
+func TestYamlScalar_SpecialCharLayerRoundTrip(t *testing.T) {
+	const specialLayer = "foo # bar"
+
+	// Build a cfg that has specialLayer in its Layers list so it passes the gate.
+	cfg := DiscoveredConfig{
+		ModulePath: testExampleMod,
+		HasGo:      true,
+		Layers:     []string{specialLayer, layerCore},
+		Modules: []ModuleDef{
+			{
+				Name:  "mymod",
+				Paths: []string{"internal/mymod/**"},
+				Layer: specialLayer,
+			},
+		},
+	}
+	out := Render(cfg, nil, false)
+
+	// The full value must appear somewhere in the output.
+	if !strings.Contains(out, specialLayer) {
+		t.Errorf("layer %q not found in output:\n%s", specialLayer, out)
+	}
+	// Must be quoted — bare form would be "layer: foo # bar" which YAML
+	// treats as a comment, truncating the value to "foo".
+	if strings.Contains(out, "layer: "+specialLayer) {
+		t.Errorf("layer with '#' must be quoted, not bare:\n%s", out)
+	}
+
+	// Round-trip: config.Load must recover the full value (not truncated to "foo").
+	loaded := roundTrip(t, out)
+	mod := loaded.Modules["mymod"]
+	if mod.Layer != specialLayer {
+		t.Errorf("round-trip layer = %q, want %q", mod.Layer, specialLayer)
 	}
 }

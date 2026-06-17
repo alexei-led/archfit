@@ -396,16 +396,19 @@ func writeModuleStanza(b *strings.Builder, indent, name string, m ModuleDef, all
 	}
 
 	if ann == nil {
-		// Nil annotation: byte-identical to original output.
-		if m.Layer != "" {
-			fmt.Fprintf(b, "%s  layer: %s\n", indent, m.Layer)
+		// Nil annotation: write m.Layer only when it is in allowedLayers.
+		// For init output cfg.Layers ⊇ every m.Layer, so this is a no-op there.
+		// For update AddModule with a mismatched layers: list it prevents a silently
+		// out-of-set layer from being written live.
+		if m.Layer != "" && allowed[m.Layer] {
+			fmt.Fprintf(b, "%s  layer: %s\n", indent, yamlScalar(m.Layer))
 		}
 		return
 	}
 
 	// Write live layer only if resolved layer is in allowedLayers.
 	if resolvedLayer != "" && allowed[resolvedLayer] {
-		fmt.Fprintf(b, "%s  layer: %s\n", indent, resolvedLayer)
+		fmt.Fprintf(b, "%s  layer: %s\n", indent, yamlScalar(resolvedLayer))
 	}
 
 	if apply {

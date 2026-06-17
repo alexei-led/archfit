@@ -59,6 +59,10 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	if err != nil {
 		return err
 	}
+	if c.LLM && ann != nil {
+		warnTargets := initcfg.BuildClassifyTargets(root, classifyTargetsForUpdate(cfg, report, addedNames))
+		warnPartialClassify(deps.Stdout, warnTargets, ann)
+	}
 
 	hasEdits := hasActionableEdits(report, ann, existingByName, addedNames, cfg.Layers)
 

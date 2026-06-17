@@ -97,25 +97,26 @@ func resolveFiles(root string, paths []string) []string {
 //
 // Strategy:
 //  1. Filesystem-glob path (contains "/"): strip trailing "/**", join under root.
-//  2. Python dotted path (contains ".", no "/"): replace dots with slashes,
-//     join under root — only if the resulting directory exists.
+//  2. Python dotted path (contains ".", no "/") or bare single-segment package
+//     name (no "/" and no "."): convert dots to slashes and try the candidate
+//     directory under both <root> and <root>/src, returning the first that
+//     exists and is a directory. Degrades to (_, false) when neither exists.
 func resolveDir(root, path string) (string, bool) {
 	if strings.Contains(path, "/") {
 		// Filesystem glob: strip trailing "/**" if present.
 		dir := strings.TrimSuffix(path, "/**")
 		return filepath.Join(root, filepath.FromSlash(dir)), true
 	}
-	if strings.Contains(path, ".") {
-		// Python dotted path: convert to slash path and check existence.
-		slashPath := strings.ReplaceAll(path, ".", string(filepath.Separator))
-		dir := filepath.Join(root, slashPath)
+
+	// Dotted Python path or bare single-segment package name.
+	// Convert dots to slashes to get a candidate subdirectory.
+	candidate := strings.ReplaceAll(path, ".", string(filepath.Separator))
+	for _, base := range []string{root, filepath.Join(root, pySrcDir)} {
+		dir := filepath.Join(base, candidate)
 		info, err := os.Stat(dir)
-		if err != nil || !info.IsDir() {
-			return "", false
+		if err == nil && info.IsDir() {
+			return dir, true
 		}
-		return dir, true
 	}
-	// Plain single-segment path with no "/" and no ".": not a glob or dotted name
-	// we can cheaply resolve. Skip.
 	return "", false
 }

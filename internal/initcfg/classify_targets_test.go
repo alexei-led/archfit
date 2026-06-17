@@ -213,6 +213,77 @@ func TestBuildClassifyTargets_PathsPassedThrough(t *testing.T) {
 	}
 }
 
+// testPkg is a package name repeated across the src-layout resolver tests.
+const testPkg = "mypkg"
+
+// TestResolveDir_SrcLayoutDottedPath verifies that a Python src-layout dotted
+// path (e.g. "mypkg.handlers") is resolved under <root>/src when the directory
+// does not exist directly under root.
+func TestResolveDir_SrcLayoutDottedPath(t *testing.T) {
+	root := t.TempDir()
+	// Place the package under src/ (src-layout).
+	dir := filepath.Join(root, "src", testPkg, "handlers")
+	mkFile(t, filepath.Join(dir, "base.py"))
+	// __init__.py starts with '_' so resolveFiles skips it — not added here.
+
+	mods := []ModuleDef{
+		{Name: "handlers", Paths: []string{"mypkg.handlers", "mypkg.handlers.*"}},
+	}
+	targets := BuildClassifyTargets(root, mods)
+	ct := targets[0]
+	if !equalSlice(ct.Files, []string{"base.py"}) {
+		t.Errorf("Files = %v, want [base.py] (src-layout dotted path)", ct.Files)
+	}
+}
+
+// TestResolveDir_SrcLayoutSingleSegment verifies that a bare single-segment
+// package name is resolved under <root>/src when it does not exist under root.
+func TestResolveDir_SrcLayoutSingleSegment(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "src", testPkg)
+	mkFile(t, filepath.Join(dir, "main.py"))
+
+	mods := []ModuleDef{
+		{Name: testPkg, Paths: []string{testPkg}},
+	}
+	targets := BuildClassifyTargets(root, mods)
+	ct := targets[0]
+	if !equalSlice(ct.Files, []string{"main.py"}) {
+		t.Errorf("Files = %v, want [main.py] (src-layout single-segment)", ct.Files)
+	}
+}
+
+// TestResolveDir_SingleSegmentTopLevel verifies that a bare single-segment
+// package name under root (flat layout) is resolved.
+func TestResolveDir_SingleSegmentTopLevel(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, testPkg)
+	mkFile(t, filepath.Join(dir, "core.py"))
+
+	mods := []ModuleDef{
+		{Name: testPkg, Paths: []string{testPkg}},
+	}
+	targets := BuildClassifyTargets(root, mods)
+	ct := targets[0]
+	if !equalSlice(ct.Files, []string{"core.py"}) {
+		t.Errorf("Files = %v, want [core.py] (top-level single-segment)", ct.Files)
+	}
+}
+
+// TestResolveDir_NonexistentSingleSegment verifies that a bare single-segment
+// name that exists under neither root nor root/src degrades to empty Files.
+func TestResolveDir_NonexistentSingleSegment(t *testing.T) {
+	root := t.TempDir()
+	mods := []ModuleDef{
+		{Name: "ghost", Paths: []string{"ghost"}},
+	}
+	targets := BuildClassifyTargets(root, mods)
+	ct := targets[0]
+	if len(ct.Files) != 0 {
+		t.Errorf("Files = %v, want empty (nonexistent path)", ct.Files)
+	}
+}
+
 // equalSlice reports whether two string slices are equal element by element.
 func equalSlice(a, b []string) bool {
 	if len(a) != len(b) {

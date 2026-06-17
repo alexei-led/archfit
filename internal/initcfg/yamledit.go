@@ -125,6 +125,28 @@ func ApplyEdits(src []byte, edits []Edit) ([]byte, error) {
 
 	var splices []splice
 
+	// When there is no existing modules: block, all AddModuleEdits must share a
+	// single "modules:\n" header. Collect them first, coalesce into one splice,
+	// then process the remaining edits normally.
+	if pf.modulesKeyLine == 0 {
+		var addEdits []AddModuleEdit
+		var rest []Edit
+		for _, e := range edits {
+			if ae, ok := e.(AddModuleEdit); ok {
+				addEdits = append(addEdits, ae)
+			} else {
+				rest = append(rest, e)
+			}
+		}
+		if len(addEdits) > 0 {
+			sp := resolveAddModulesNoSection(addEdits, pf)
+			if sp != nil {
+				splices = append(splices, *sp)
+			}
+		}
+		edits = rest
+	}
+
 	for _, e := range edits {
 		var sp *splice
 		switch ed := e.(type) {
@@ -387,6 +409,41 @@ func (pf *parsedFile) findModule(name string) *parsedModule {
 // Edit resolvers
 // ---------------------------------------------------------------------------
 
+// resolveAddModulesNoSection coalesces multiple AddModuleEdits when there is no
+// existing modules: block into a single splice with one "modules:\n" header.
+// Stanzas are emitted in alphabetical order for deterministic output.
+// Modules that already exist in pf are silently skipped (NO-OP semantics).
+func resolveAddModulesNoSection(eds []AddModuleEdit, pf parsedFile) *splice {
+	// Sort by module name for deterministic output.
+	sorted := make([]AddModuleEdit, len(eds))
+	copy(sorted, eds)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Def.Name < sorted[j].Def.Name
+	})
+
+	var b strings.Builder
+	b.WriteString("\nmodules:\n")
+	wrote := 0
+	for _, ed := range sorted {
+		if pf.findModule(ed.Def.Name) != nil {
+			continue // already exists — skip
+		}
+		writeModuleStanza(&b, "  ", ed.Def.Name, ed.Def, pf.allowedLayers, ed.Ann, true)
+		wrote++
+	}
+	if wrote == 0 {
+		return nil
+	}
+
+	insertBefore := insertionPoint(pf)
+	return &splice{
+		startLine:   insertBefore,
+		endLine:     insertBefore,
+		replacement: []byte(b.String()),
+		editDesc:    "AddModules+modules-section",
+	}
+}
+
 func resolveAddModule(ed AddModuleEdit, pf parsedFile) *splice {
 	// NO-OP if module already exists live.
 	if pf.findModule(ed.Def.Name) != nil {
@@ -643,4 +700,37 @@ func quoteDouble(v string) string {
 	escaped = strings.ReplaceAll(escaped, "\r", `\r`)
 	escaped = strings.ReplaceAll(escaped, "\t", `\t`)
 	return `"` + escaped + `"`
+}
+
+// yamlScalar returns s unquoted when it matches the safe plain-scalar pattern
+// (starts with a letter or digit, contains only [A-Za-z0-9_.-]). This covers
+// all normal layer/subdomain/volatility names (core, adapter, engine, low, …)
+// and guarantees they are byte-identical before and after a config round-trip.
+// All other values are passed through yamlScalarQuote for safe double-quoting.
+func yamlScalar(s string) string {
+	if safePlainScalar(s) {
+		return s
+	}
+	return yamlScalarQuote(s)
+}
+
+// safePlainScalar reports whether s can be written as a bare YAML scalar
+// without any quoting: non-empty, starts with [A-Za-z0-9], contains only
+// [A-Za-z0-9_.-].
+func safePlainScalar(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		if i == 0 {
+			if (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+				return false
+			}
+		} else {
+			if (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' && r != '.' && r != '-' {
+				return false
+			}
+		}
+	}
+	return true
 }

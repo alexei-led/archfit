@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/config"
@@ -75,6 +77,7 @@ func (c *InitCmd) Run(deps *appDeps) error {
 		if err != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("error: classify failed: %v", err)}
 		}
+		warnPartialClassify(deps.Stdout, targets, ann)
 	}
 
 	rendered := initcfg.Render(cfg, ann, c.Apply)
@@ -211,4 +214,24 @@ func parseClassifyResponse(text string, batch []initcfg.ClassifyTarget, dst map[
 		}
 	}
 	return nil
+}
+
+// warnPartialClassify prints a warning to w listing targets that were not
+// returned with a complete annotation (missing from ann, or missing
+// subdomain/volatility). Called after classifyModules in both InitCmd and
+// UpdateCmd so the user knows which modules were left unclassified.
+func warnPartialClassify(w io.Writer, targets []initcfg.ClassifyTarget, ann map[string]initcfg.ModuleAnnotation) {
+	var missing []string
+	for _, t := range targets {
+		a, ok := ann[t.Name]
+		if !ok || a.Subdomain == "" || a.Volatility == "" {
+			missing = append(missing, t.Name)
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	sort.Strings(missing)
+	_, _ = fmt.Fprintf(w, "warning: LLM did not classify %d module(s): %s — they were left unclassified\n",
+		len(missing), strings.Join(missing, ", "))
 }
