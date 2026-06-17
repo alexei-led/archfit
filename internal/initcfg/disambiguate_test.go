@@ -154,8 +154,8 @@ func TestDiscover_NoCollision_RenderByteIdentical(t *testing.T) {
 		t.Fatalf("Discover second run: %v", err)
 	}
 
-	out1 := Render(cfg1)
-	out2 := Render(cfg2)
+	out1 := Render(cfg1, nil, false)
+	out2 := Render(cfg2, nil, false)
 	if out1 != out2 {
 		t.Errorf("Render output not byte-identical across two Discover runs\n--- run1 ---\n%s\n--- run2 ---\n%s", out1, out2)
 	}

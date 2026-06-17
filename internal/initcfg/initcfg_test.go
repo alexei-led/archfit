@@ -20,6 +20,7 @@ const (
 	testDirPerm      = 0o750
 	testCorePath     = "internal/core/**"
 	testTSCore       = "core"
+	testExampleMod   = "example.com/test"
 )
 
 // sampleGoListJSON is concatenated go list -json output for a small module.
@@ -95,7 +96,7 @@ func TestDiscover_GoList_GroupsModules(t *testing.T) {
 		layerModel:     true,
 		adapterExtract: true,
 		layerEngine:    true,
-		"classify":     true,
+		testClassify:   true,
 	}
 	for _, m := range cfg.Modules {
 		delete(wantNames, m.Name)
@@ -127,7 +128,7 @@ func TestDiscover_GoList_LayerInference(t *testing.T) {
 		{layerModel, layerModel},
 		{adapterExtract, layerAdapter},
 		{layerEngine, layerEngine},
-		{"classify", layerCore},
+		{testClassify, layerCore},
 	}
 	for _, tt := range tests {
 		got, ok := layerByName[tt.name]
@@ -350,7 +351,7 @@ func TestRender_ContainsRequiredSections(t *testing.T) {
 		},
 		Layers: []string{layerModel, layerEngine},
 	}
-	out := Render(cfg)
+	out := Render(cfg, nil, false)
 
 	checks := []struct {
 		desc string
@@ -377,7 +378,7 @@ func TestRender_ContainsRequiredSections(t *testing.T) {
 
 func TestRender_NoModules_StillValid(t *testing.T) {
 	cfg := DiscoveredConfig{ModulePath: "github.com/example/empty"}
-	out := Render(cfg)
+	out := Render(cfg, nil, false)
 	if !strings.Contains(out, "version: 1") {
 		t.Errorf("expected version: 1 in output, got:\n%s", out)
 	}
@@ -452,7 +453,7 @@ func TestModuleNameFromKey(t *testing.T) {
 // init should generate, this test is where the divergence surfaces.
 func TestRender_RoundTripsThroughConfigLoad(t *testing.T) {
 	rendered := Render(DiscoveredConfig{
-		ModulePath: "example.com/test",
+		ModulePath: testExampleMod,
 		HasGo:      true,
 		Layers:     []string{layerModel, layerCore, "adapter", layerCmd},
 		Modules: []ModuleDef{
@@ -469,7 +470,7 @@ func TestRender_RoundTripsThroughConfigLoad(t *testing.T) {
 				Layer: "adapter",
 			},
 		},
-	})
+	}, nil, false)
 
 	path := filepath.Join(t.TempDir(), ".archfit.yaml")
 	if err := os.WriteFile(path, []byte(rendered), 0o600); err != nil {
