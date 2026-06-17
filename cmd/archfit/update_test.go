@@ -96,11 +96,6 @@ rules:
     type: forbidden_dependency
     gate: warn
 `
-
-	// layerCore is the "core" layer string used in layer assertions. It equals
-	// subdomainCore in value but represents a layer, not a subdomain.
-	// Reuse subdomainCore to satisfy goconst (same string "core").
-	layerCoreStr = subdomainCore
 )
 
 // TestUpdateCmd_PlanMode_FileUnchanged verifies plan mode (no --apply) leaves the
@@ -210,7 +205,7 @@ rules:
 		Apply:            true,
 		LLMProvider:      providerAnthropic,
 		LLMModel:         defaultLLMModel,
-		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: layerCoreStr},
+		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: layerCore},
 	}
 	_, err := runUpdateCmd(t, cmd, runner)
 	if err != nil {
@@ -251,7 +246,7 @@ func TestUpdateCmd_LLMApply_NoSetFieldsForAddedModule(t *testing.T) {
 		Apply:            true,
 		LLMProvider:      providerAnthropic,
 		LLMModel:         defaultLLMModel,
-		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: layerCoreStr},
+		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: layerCore},
 	}
 	_, err := runUpdateCmd(t, cmd, runner)
 	if err != nil {
@@ -304,7 +299,7 @@ rules:
 		Apply:            true,
 		LLMProvider:      providerAnthropic,
 		LLMModel:         defaultLLMModel,
-		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: layerCoreStr},
+		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: layerCore},
 	}
 	_, err := runUpdateCmd(t, cmd, runner)
 	if err != nil {
@@ -523,7 +518,7 @@ rules:
 		Apply:            false,
 		LLMProvider:      providerAnthropic,
 		LLMModel:         defaultLLMModel,
-		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: layerCoreStr},
+		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: layerCore},
 	}
 	out, err := runUpdateCmd(t, cmd, runner)
 	if err != nil {

@@ -61,19 +61,10 @@ func (c *InitCmd) Run(deps *appDeps) error {
 		llmCfg.Provider = c.LLMProvider
 		llmCfg.Model = c.LLMModel
 
-		var p llm.Provider
-		if c.providerOverride != nil {
-			p = c.providerOverride
-		} else {
-			var buildErr error
-			p, buildErr = buildProvider(llmCfg)
-			if buildErr != nil {
-				return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", buildErr)}
-			}
-			if !c.NoCache {
-				cacheDir := filepath.Join(root, ".archfit-cache", "llm")
-				p = llm.NewCache(p, cacheDir)
-			}
+		cacheDir := filepath.Join(root, ".archfit-cache", "llm")
+		p, buildErr := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
+		if buildErr != nil {
+			return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", buildErr)}
 		}
 
 		targets := initcfg.BuildClassifyTargets(root, cfg.Modules)
@@ -83,9 +74,9 @@ func (c *InitCmd) Run(deps *appDeps) error {
 		}
 	}
 
-	yaml := initcfg.Render(cfg, ann, c.Apply)
+	rendered := initcfg.Render(cfg, ann, c.Apply)
 	if c.Output == "-" {
-		_, _ = fmt.Fprint(deps.Stdout, yaml)
+		_, _ = fmt.Fprint(deps.Stdout, rendered)
 		return nil
 	}
 
@@ -93,7 +84,7 @@ func (c *InitCmd) Run(deps *appDeps) error {
 	if data, readErr := os.ReadFile(c.Output); readErr == nil {
 		original = data
 	}
-	return safeWriteConfig(ctx, deps, c.Output, []byte(yaml), original)
+	return safeWriteConfig(ctx, deps, c.Output, []byte(rendered), original)
 }
 
 // initClassifySystemPrompt instructs the LLM to act as a domain modeler and

@@ -134,10 +134,6 @@ func (c *UpdateCmd) maybeClassify(
 
 // buildLLMProvider constructs the LLM provider, honouring the test seam and cache flag.
 func (c *UpdateCmd) buildLLMProvider(cfg config.Config) (llm.Provider, error) {
-	if c.providerOverride != nil {
-		return c.providerOverride, nil
-	}
-
 	var llmCfg config.LLMConfig
 	if lc, ok := cfg.LLM(); ok {
 		llmCfg = lc
@@ -145,13 +141,10 @@ func (c *UpdateCmd) buildLLMProvider(cfg config.Config) (llm.Provider, error) {
 	llmCfg.Provider = c.LLMProvider
 	llmCfg.Model = c.LLMModel
 
-	p, err := buildProvider(llmCfg)
+	cacheDir := filepath.Join(filepath.Dir(c.Config), ".archfit-cache", "llm")
+	p, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
 	if err != nil {
 		return nil, &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
-	}
-	if !c.NoCache {
-		cacheDir := filepath.Join(filepath.Dir(c.Config), ".archfit-cache", "llm")
-		p = llm.NewCache(p, cacheDir)
 	}
 	return p, nil
 }
@@ -171,7 +164,7 @@ func classifyTargetsForUpdate(
 		}
 		if def, ok := cfg.Modules[name]; ok {
 			targets = append(targets, initcfg.ModuleDef{Name: name, Paths: def.Paths})
-		}
+		} // name came from DiffModules over cfg.Modules, so absent is purely defensive
 	}
 	return targets
 }

@@ -20,6 +20,11 @@ const (
 	subdomainGeneric    = "generic"
 )
 
+// Layer name constants used in tests.
+const (
+	layerCore = "core"
+)
+
 // Volatility enum values used in classify validation and tests.
 const (
 	volatilityLow    = "low"

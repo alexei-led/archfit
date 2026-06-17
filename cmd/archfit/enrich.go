@@ -141,6 +141,23 @@ func buildProvider(c config.LLMConfig) (llm.Provider, error) {
 	}
 }
 
+// buildCachedProvider constructs a provider and, unless noCache is true, wraps
+// it in a disk-backed response cache rooted at cacheDir. The override seam
+// (used in tests) bypasses both provider construction and caching.
+func buildCachedProvider(override llm.Provider, cfg config.LLMConfig, cacheDir string, noCache bool) (llm.Provider, error) {
+	if override != nil {
+		return override, nil
+	}
+	p, err := buildProvider(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if !noCache {
+		p = llm.NewCache(p, cacheDir)
+	}
+	return p, nil
+}
+
 // refinablePair is one candidate module pair with its evidence summary.
 type refinablePair struct {
 	From, To    string

@@ -559,9 +559,14 @@ func resolveCommentModule(ed CommentModuleEdit, pf parsedFile, src []byte, lines
 		hi = len(lines)
 	}
 	for _, line := range lines[lo:hi] {
-		b.WriteString("# ")
-		b.Write(bytes.TrimLeft(line, " \t"))
-		b.WriteByte('\n')
+		trimmed := bytes.TrimLeft(line, " \t")
+		if len(trimmed) == 0 {
+			b.WriteString("#\n")
+		} else {
+			b.WriteString("# ")
+			b.Write(trimmed)
+			b.WriteByte('\n')
+		}
 	}
 
 	return &splice{
