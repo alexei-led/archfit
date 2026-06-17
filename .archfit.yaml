@@ -23,6 +23,10 @@ modules:
       - internal/model/finding
       - internal/model/coupling
       - internal/model/diagnostic
+      - internal/model/clone
+      - internal/model/pattern
+      - internal/model/signal
+      - internal/model/symbol
     layer: model
     subdomain: core
     volatility: low
@@ -94,6 +98,58 @@ modules:
     layer: support
     subdomain: supporting
     volatility: low
+  ports:
+    paths:
+      - internal/ports/**
+    public:
+      - internal/ports
+    # Neutral port contracts imported by engine and adapters.
+    layer: support
+    subdomain: supporting
+    volatility: medium
+  labels:
+    paths:
+      - internal/labels/**
+    public:
+      - internal/labels
+    # Reviewed coupling-label artifact. Support-tier like config until the
+    # value type and YAML loader split.
+    layer: support
+    subdomain: supporting
+    volatility: medium
+  arch_tests:
+    paths:
+      - internal
+    public:
+      - internal
+    # Root internal package contains repository-level architecture tests.
+    layer: core
+    subdomain: supporting
+    volatility: low
+  agenttask:
+    paths:
+      - internal/agenttask/**
+    public:
+      - internal/agenttask
+    layer: support
+    subdomain: supporting
+    volatility: low
+  facts:
+    paths:
+      - internal/facts/**
+    public:
+      - internal/facts
+    layer: core
+    subdomain: supporting
+    volatility: medium
+  staleness:
+    paths:
+      - internal/staleness/**
+    public:
+      - internal/staleness
+    layer: core
+    subdomain: supporting
+    volatility: low
   toolrun:
     paths:
       - internal/toolrun/**
@@ -126,6 +182,54 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
+  extract_astgrep:
+    paths:
+      - internal/extract/astgrep/**
+    public:
+      - internal/extract/astgrep
+    layer: adapter
+    subdomain: supporting
+    volatility: medium
+  extract_clones:
+    paths:
+      - internal/extract/clones/**
+    public:
+      - internal/extract/clones
+    layer: adapter
+    subdomain: supporting
+    volatility: low
+  extract_complexity:
+    paths:
+      - internal/extract/complexity/**
+    public:
+      - internal/extract/complexity
+    layer: adapter
+    subdomain: supporting
+    volatility: low
+  extract_gitnexus:
+    paths:
+      - internal/extract/gitnexus/**
+    public:
+      - internal/extract/gitnexus
+    layer: adapter
+    subdomain: supporting
+    volatility: low
+  extract_loc:
+    paths:
+      - internal/extract/loc/**
+    public:
+      - internal/extract/loc
+    layer: adapter
+    subdomain: supporting
+    volatility: low
+  extract_scip:
+    paths:
+      - internal/extract/scip/**
+    public:
+      - internal/extract/scip
+    layer: adapter
+    subdomain: supporting
+    volatility: medium
   history_git:
     paths:
       - internal/history/git/**
@@ -140,9 +244,44 @@ modules:
     public:
       - internal/output/jsonout
       - internal/output/console
+      - internal/output/markdown
+      - internal/output/sarif
     layer: adapter
     subdomain: supporting
     volatility: medium
+  initcfg:
+    paths:
+      - internal/initcfg/**
+    public:
+      - internal/initcfg
+    layer: adapter
+    subdomain: supporting
+    volatility: medium
+  fitness:
+    paths:
+      - internal/fitness/**
+    public:
+      - internal/fitness
+    layer: adapter
+    subdomain: supporting
+    volatility: low
+  ownership:
+    paths:
+      - internal/ownership/**
+    public:
+      - internal/ownership
+    layer: adapter
+    subdomain: supporting
+    volatility: low
+  llm:
+    paths:
+      - internal/llm/**
+    public:
+      - internal/llm
+    # Off-gate provider adapters; check path is guarded by TestArchImports.
+    layer: adapter
+    subdomain: generic
+    volatility: low
   cmd:
     paths:
       - cmd/**
@@ -226,6 +365,9 @@ rules:
   - id: layer_inversion
     type: forbidden_layer_direction
     gate: warn
+map_review:
+  stale_after: 2160h # 90 days
+  gate: warn
 tools:
   go:
     enabled: "on"
