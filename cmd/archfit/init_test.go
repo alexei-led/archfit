@@ -182,11 +182,19 @@ func TestInitCmd_LLMApply_LiveFields(t *testing.T) {
 	if readErr != nil {
 		t.Fatalf("file not written: %v", readErr)
 	}
-	if !strings.Contains(string(data), "subdomain:") {
+	// Assert live (uncommented) fields are present. "\n    subdomain: " (4-space indent,
+	// inside a module block) must appear; the commented form would be "\n    # subdomain:".
+	if !strings.Contains(string(data), "\n    subdomain: ") {
 		t.Errorf("apply mode output missing live 'subdomain:' field; content: %q", string(data))
 	}
-	if !strings.Contains(string(data), "volatility:") {
+	if strings.Contains(string(data), "\n    # subdomain:") {
+		t.Errorf("apply mode output has commented 'subdomain:' where live field expected; content: %q", string(data))
+	}
+	if !strings.Contains(string(data), "\n    volatility: ") {
 		t.Errorf("apply mode output missing live 'volatility:' field; content: %q", string(data))
+	}
+	if strings.Contains(string(data), "\n    # volatility:") {
+		t.Errorf("apply mode output has commented 'volatility:' where live field expected; content: %q", string(data))
 	}
 }
 

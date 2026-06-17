@@ -39,7 +39,10 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: loading config: %v", err)}
 	}
 
-	originalBytes, _ := os.ReadFile(c.Config)
+	originalBytes, err := os.ReadFile(c.Config)
+	if err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: reading config file: %v", err)}
+	}
 
 	existing := configToExisting(cfg.Modules)
 	existingByName := indexExisting(existing)
