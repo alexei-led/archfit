@@ -27,22 +27,36 @@ func minimalRoot(t *testing.T) string {
 }
 
 // runInitCmd runs InitCmd.Run with the given field values and returns stdout output and error.
+// The runner returns empty go list output (zero packages discovered).
 func runInitCmd(t *testing.T, cmd *InitCmd) (string, error) {
+	t.Helper()
+	return runInitCmdWithRunner(t, cmd, func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+		// Empty stdout — go list -json streaming decoder treats this as zero packages.
+		return toolrun.Output{}, nil
+	})
+}
+
+// runInitCmdWithRunner runs InitCmd.Run with a custom RunFunc for the runner mock.
+func runInitCmdWithRunner(t *testing.T, cmd *InitCmd, runFn func(context.Context, toolrun.ToolCmd) (toolrun.Output, error)) (string, error) {
 	t.Helper()
 	var buf bytes.Buffer
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
 			return toolrun.ToolInfo{}, false
 		},
-		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
-			// Return empty stdout — go list -json uses a streaming decoder,
-			// so empty output means zero packages (no array wrapper needed).
-			return toolrun.Output{}, nil
-		},
+		RunFunc: runFn,
 	}
 	deps := &appDeps{Runner: runner, Stdout: &buf}
 	err := cmd.Run(deps)
 	return buf.String(), err
+}
+
+// goListJSON returns a single go list -json entry for the given module path and import path.
+func goListJSON(modPath, importPath string) []byte {
+	return fmt.Appendf(nil,
+		`{"ImportPath":%q,"Dir":".","Module":{"Path":%q}}`,
+		importPath, modPath,
+	)
 }
 
 func TestInitCmd_ApplyWithoutLLM_IsError(t *testing.T) {
@@ -112,6 +126,7 @@ func TestInitCmd_LLM_CommentedSuggestions(t *testing.T) {
 	}
 	outPath := filepath.Join(root, ".archfit.yaml")
 
+	const modPath = "example.com/test"
 	cmd := &InitCmd{
 		Root:             root,
 		Output:           outPath,
@@ -121,7 +136,9 @@ func TestInitCmd_LLM_CommentedSuggestions(t *testing.T) {
 		LLMModel:         defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: testLayerDomain},
 	}
-	_, err := runInitCmd(t, cmd)
+	_, err := runInitCmdWithRunner(t, cmd, func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+		return toolrun.Output{Stdout: goListJSON(modPath, modPath+"/internal/mymod")}, nil
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -130,8 +147,11 @@ func TestInitCmd_LLM_CommentedSuggestions(t *testing.T) {
 		t.Fatalf("file not written: %v", readErr)
 	}
 	// In plan mode (apply=false), LLM suggestions must be commented out.
-	if !strings.Contains(string(data), "#") {
-		t.Errorf("plan mode output missing comments; content: %q", string(data))
+	if !strings.Contains(string(data), "# subdomain:") {
+		t.Errorf("plan mode output missing '# subdomain:' annotation; content: %q", string(data))
+	}
+	if !strings.Contains(string(data), "# volatility:") {
+		t.Errorf("plan mode output missing '# volatility:' annotation; content: %q", string(data))
 	}
 }
 
@@ -142,6 +162,7 @@ func TestInitCmd_LLMApply_LiveFields(t *testing.T) {
 	}
 	outPath := filepath.Join(root, ".archfit.yaml")
 
+	const modPath = "example.com/test"
 	cmd := &InitCmd{
 		Root:             root,
 		Output:           outPath,
@@ -151,7 +172,9 @@ func TestInitCmd_LLMApply_LiveFields(t *testing.T) {
 		LLMModel:         defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: testLayerDomain},
 	}
-	_, err := runInitCmd(t, cmd)
+	_, err := runInitCmdWithRunner(t, cmd, func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+		return toolrun.Output{Stdout: goListJSON(modPath, modPath+"/internal/mymod")}, nil
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,8 +182,11 @@ func TestInitCmd_LLMApply_LiveFields(t *testing.T) {
 	if readErr != nil {
 		t.Fatalf("file not written: %v", readErr)
 	}
-	if !strings.Contains(string(data), "version:") {
-		t.Errorf("apply mode output missing 'version:'; content: %q", string(data))
+	if !strings.Contains(string(data), "subdomain:") {
+		t.Errorf("apply mode output missing live 'subdomain:' field; content: %q", string(data))
+	}
+	if !strings.Contains(string(data), "volatility:") {
+		t.Errorf("apply mode output missing live 'volatility:' field; content: %q", string(data))
 	}
 }
 

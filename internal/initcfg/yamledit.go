@@ -152,8 +152,12 @@ func ApplyEdits(src []byte, edits []Edit) ([]byte, error) {
 	}
 
 	// Sort bottom-up (descending start line) so replacements don't shift offsets.
-	sort.Slice(splices, func(i, j int) bool {
-		return splices[i].startLine > splices[j].startLine
+	sort.SliceStable(splices, func(i, j int) bool {
+		if splices[i].startLine != splices[j].startLine {
+			return splices[i].startLine > splices[j].startLine
+		}
+		// Tie-break: ascending editDesc for deterministic ordering of same-line inserts.
+		return splices[i].editDesc < splices[j].editDesc
 	})
 
 	for _, sp := range splices {
@@ -630,5 +634,8 @@ func yamlScalarQuote(v string) string {
 func quoteDouble(v string) string {
 	escaped := strings.ReplaceAll(v, `\`, `\\`)
 	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	escaped = strings.ReplaceAll(escaped, "\n", `\n`)
+	escaped = strings.ReplaceAll(escaped, "\r", `\r`)
+	escaped = strings.ReplaceAll(escaped, "\t", `\t`)
 	return `"` + escaped + `"`
 }

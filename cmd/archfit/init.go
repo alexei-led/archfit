@@ -71,7 +71,7 @@ func (c *InitCmd) Run(deps *appDeps) error {
 				return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", buildErr)}
 			}
 			if !c.NoCache {
-				cacheDir := filepath.Join(filepath.Dir(c.Output), ".archfit-cache", "llm")
+				cacheDir := filepath.Join(root, ".archfit-cache", "llm")
 				p = llm.NewCache(p, cacheDir)
 			}
 		}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -27,7 +28,12 @@ func safeWriteConfig(ctx context.Context, deps *appDeps, path string, edited, or
 		return fmt.Errorf("safeWriteConfig: create temp: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName) //nolint:errcheck
+	committed := false
+	defer func() {
+		if !committed {
+			os.Remove(tmpName) //nolint:errcheck,gosec
+		}
+	}()
 
 	if _, err := tmp.Write(edited); err != nil {
 		_ = tmp.Close()
@@ -45,7 +51,7 @@ func safeWriteConfig(ctx context.Context, deps *appDeps, path string, edited, or
 	// Concurrency guard.
 	if original != nil {
 		cur, readErr := os.ReadFile(path) //#nosec G304
-		if readErr != nil || !bytesEqual(cur, original) {
+		if readErr != nil || !bytes.Equal(cur, original) {
 			return fmt.Errorf("safeWriteConfig: %s changed since read — aborting to avoid overwrite", path)
 		}
 	} else {
@@ -71,21 +77,9 @@ func safeWriteConfig(ctx context.Context, deps *appDeps, path string, edited, or
 	if err := os.Rename(tmpName, path); err != nil {
 		return fmt.Errorf("safeWriteConfig: rename failed: %w", err)
 	}
+	committed = true
 	_, _ = fmt.Fprintf(deps.Stdout, "wrote %s\n", path)
 	return nil
-}
-
-// bytesEqual reports whether a and b have identical content.
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // copyFile copies src to dst, creating dst with mode 0o600.

@@ -89,9 +89,6 @@ func resolveFiles(root string, paths []string) []string {
 		files = append(files, name)
 	}
 	sort.Strings(files)
-	if len(files) > maxClassifyFiles {
-		files = files[:maxClassifyFiles]
-	}
 	return files
 }
 

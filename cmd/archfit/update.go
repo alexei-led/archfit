@@ -209,13 +209,7 @@ func hasActionableEdits(
 
 // fieldFillSurvives reports whether at least one absent field has a valid annotation value.
 func fieldFillSurvives(e initcfg.ExistingModule, a initcfg.ModuleAnnotation, layers []string) bool {
-	if !e.HasSubdomain && a.Subdomain != "" {
-		return true
-	}
-	if !e.HasVolatility && a.Volatility != "" {
-		return true
-	}
-	return !e.HasLayer && a.Layer != "" && layerInSet(a.Layer, layers)
+	return len(absentFields(e, a, layers)) > 0
 }
 
 // buildUpdateEdits constructs the ordered Edit slice for an apply pass.
