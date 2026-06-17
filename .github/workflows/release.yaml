@@ -145,9 +145,12 @@ jobs:
       - name: Generate release notes
         run: |
           TAG="${{ github.ref_name }}"
-          # Prefer the annotated tag message (curated notes); fall back to the
-          # commit log since the previous tag when the tag has no message.
-          git tag -l --format='%(contents)' "${TAG}" > RELEASE_NOTES.md
+          # actions/checkout writes the triggering tag as a lightweight ref,
+          # dropping the annotation, so re-fetch the annotated tag object. Its
+          # message is the curated release notes; %(contents) is empty for a
+          # lightweight tag, which triggers the commit-log fallback below.
+          git fetch --force origin "refs/tags/${TAG}:refs/tags/${TAG}" || true
+          git for-each-ref "refs/tags/${TAG}" --format='%(contents)' > RELEASE_NOTES.md
           if [ ! -s RELEASE_NOTES.md ]; then
             PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | head -1)
             if [ -n "${PREV_TAG}" ]; then
