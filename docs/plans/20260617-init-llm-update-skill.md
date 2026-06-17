@@ -302,11 +302,11 @@ HasVolatility/HasLayer` — never overwrite an existing field). Never emit both 
 
 ### Task 13: document new command modes in the skill + references
 
-- [ ] document the mode matrix + plan→apply safety model; note guardrails (live `layer` only if in `layers`;
+- [x] document the mode matrix + plan→apply safety model; note guardrails (live `layer` only if in `layers`;
       keys never auto-renamed; `--apply` replaces paths with discovered + backup; existing fields never overwritten;
       plan mode leaves the config untouched)
-- [ ] ensure `references/archfit-docs.md` links are present/current; add `llm-enrich.md` if missing
-- [ ] confirm the body stays consistent and < 500 lines
+- [x] ensure `references/archfit-docs.md` links are present/current; add `llm-enrich.md` if missing
+- [x] confirm the body stays consistent and < 500 lines
 
 ### Task 14: Verify acceptance criteria (whole plan)
 

@@ -77,6 +77,45 @@ exception, or fix findings.
    archfit check --config .archfit.yaml --full --format json
    ```
 
+### Init and update LLM modes
+
+`archfit init` and `archfit update` support optional LLM classification and a
+two-step plan→apply safety model. Default modes are advisory (inert or
+report-only); `--apply` is the only path that writes LLM judgment into
+gate-feeding fields.
+
+**Mode matrix:**
+
+| Command                | Effect                                                            |
+| ---------------------- | ----------------------------------------------------------------- |
+| `init`                 | structural scaffold (unchanged)                                   |
+| `init --llm`           | + commented-inert subdomain/volatility/layer suggestions          |
+| `init --llm --apply`   | + subdomain/volatility/layer written live (name stays a comment)  |
+| `update`               | drift report, writes nothing                                      |
+| `update --apply`       | structural drift written live (add/path/comment-removed modules)  |
+| `update --llm`         | drift report including LLM classification of unclassified modules |
+| `update --llm --apply` | structural + LLM classification written live                      |
+
+`--apply` without `--llm` is valid only for `update`; `init --apply` requires
+`--llm`. Coupling rules always stay with `enrich` — `init`/`update` handle
+classification only (`subdomain`, `volatility`, `layer`).
+
+**Guardrails:**
+
+- A live `layer` is written only when it already appears in the config's
+  `layers:` list; an out-of-set suggestion is rendered as a comment instead.
+- Module keys are never auto-renamed; a name suggestion is always a comment.
+- `update --apply` replaces module paths with discovered paths and writes a
+  timestamped backup before overwriting.
+- Existing fields (`subdomain`, `volatility`, `layer`) are never overwritten;
+  `SetModuleFields` is skipped for any field already present.
+- Plan mode (`update` without `--apply`) leaves `.archfit.yaml` untouched.
+- `--apply` completes the full LLM pass before any file write, validates the
+  result with `config.Load`, and uses an atomic temp+rename.
+
+See `docs/guide/commands.md` for flag reference and `docs/guide/llm-enrich.md`
+for the `enrich` workflow that governs coupling rules.
+
 ### Agent repair loop
 
 Use when fixing findings autonomously. The JSON output carries an
