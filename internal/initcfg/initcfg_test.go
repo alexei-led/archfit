@@ -18,6 +18,8 @@ const (
 	testModPath      = "github.com/foo/bar"
 	testModPathChild = "github.com/foo/bar/pkg/a"
 	testDirPerm      = 0o750
+	testCorePath     = "internal/core/**"
+	testTSCore       = "core"
 )
 
 // sampleGoListJSON is concatenated go list -json output for a small module.
@@ -230,7 +232,7 @@ func TestDiscoverTS_WithSrcSubdirs(t *testing.T) {
 	for _, m := range mods {
 		names[m.Name] = true
 	}
-	for _, want := range []string{"core", "api"} {
+	for _, want := range []string{testTSCore, "api"} {
 		if !names[want] {
 			t.Errorf("expected module %q, got modules: %v", want, mods)
 		}
@@ -456,7 +458,7 @@ func TestRender_RoundTripsThroughConfigLoad(t *testing.T) {
 		Modules: []ModuleDef{
 			{
 				Name:     layerCore,
-				Paths:    []string{"internal/core/**"},
+				Paths:    []string{testCorePath},
 				Public:   []string{"internal/core"},
 				Internal: []string{"internal/core/private/**"},
 				Layer:    layerCore,

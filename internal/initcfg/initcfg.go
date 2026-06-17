@@ -86,6 +86,20 @@ type goListPkg struct {
 // Discover detects Go, Python, and TypeScript modules at root.
 // Go discovery is skipped when no go.mod exists. Python and TypeScript
 // discovery run unconditionally (they guard on their own marker files).
+//
+// Name uniqueness is guaranteed by a two-pass disambiguation applied after
+// all language discoverers have run:
+//
+//  1. First pass — only colliders are touched. For each module name shared by
+//     more than one module, every module with that name is renamed to a slug
+//     derived from its first Paths glob: strip a trailing "/**", then replace
+//     every "/" and "." with "_". Modules whose names are already unique are
+//     left completely unchanged.
+//
+//  2. Second pass — if any slug still collides with another entry (slug or an
+//     original name that was never touched), a deterministic numeric suffix is
+//     appended ("_2", "_3", …). Suffixes are assigned in ascending order over
+//     the slice position so the result is stable across runs.
 func Discover(ctx context.Context, root string, runner toolrun.Runner) (DiscoveredConfig, error) {
 	var allModules []ModuleDef
 	var modPath string
@@ -111,6 +125,8 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner) (Discover
 		return DiscoveredConfig{}, err
 	}
 	allModules = append(allModules, tsMods...)
+
+	allModules = disambiguateNames(allModules)
 
 	return DiscoveredConfig{
 		ModulePath: modPath,
@@ -412,6 +428,62 @@ func Render(cfg DiscoveredConfig) string {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+// disambiguateNames ensures every ModuleDef in mods has a unique Name.
+// Non-colliding names are returned unchanged.
+// See Discover for the full two-pass algorithm.
+func disambiguateNames(mods []ModuleDef) []ModuleDef {
+	if len(mods) == 0 {
+		return mods
+	}
+
+	// Count occurrences of each name.
+	count := make(map[string]int, len(mods))
+	for _, m := range mods {
+		count[m.Name]++
+	}
+
+	// First pass: replace every colliding name with its path slug.
+	for i, m := range mods {
+		if count[m.Name] > 1 {
+			mods[i].Name = pathSlug(m.Paths)
+		}
+	}
+
+	// Second pass: resolve any remaining collisions (slug vs slug, or slug vs
+	// an original name that was not changed) with a numeric suffix.
+	seen := make(map[string]bool, len(mods))
+	for i, m := range mods {
+		name := m.Name
+		if !seen[name] {
+			seen[name] = true
+			continue
+		}
+		// Find the next free suffix _2, _3, …
+		for n := 2; ; n++ {
+			candidate := fmt.Sprintf("%s_%d", name, n)
+			if !seen[candidate] {
+				mods[i].Name = candidate //nolint:gosec // i is a valid range index
+				seen[candidate] = true
+				break
+			}
+		}
+	}
+
+	return mods
+}
+
+// pathSlug derives a short, filesystem-safe name from the first element of
+// paths: strips a trailing "/**", then replaces "/" and "." with "_".
+func pathSlug(paths []string) string {
+	if len(paths) == 0 {
+		return "unknown"
+	}
+	s := strings.TrimSuffix(paths[0], "/**")
+	s = strings.ReplaceAll(s, "/", "_")
+	s = strings.ReplaceAll(s, ".", "_")
+	return s
+}
 
 // stripPrefix removes the module path prefix from an import path.
 // e.g. "github.com/foo/bar/pkg/a" with modPath "github.com/foo/bar" → "pkg/a".

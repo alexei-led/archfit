@@ -119,14 +119,14 @@ notice of what it wrote and always uses the strict write protocol (Technical Det
 
 ### Task 1: unique module names in discovery (two-pass)
 
-- [ ] in `Discover`, detect names shared by more than one module; disambiguate colliders with a slug of the
+- [x] in `Discover`, detect names shared by more than one module; disambiguate colliders with a slug of the
       first path glob (strip trailing `/**`; replace `/` and `.` with `_`)
-- [ ] **second pass**: re-check the full name set; if any slug now collides with another module (slug or
+- [x] **second pass**: re-check the full name set; if any slug now collides with another module (slug or
       original), append a deterministic numeric suffix (`_2`, `_3`, …) by sorted order until unique
-- [ ] non-colliding names are unchanged; document the exact scheme in a `Discover` doc comment
-- [ ] write tests: no-collision fixture → names + `Render` byte-identical to today; Go+Python same base name
+- [x] non-colliding names are unchanged; document the exact scheme in a `Discover` doc comment
+- [x] write tests: no-collision fixture → names + `Render` byte-identical to today; Go+Python same base name
       → distinct deterministic slugs; slug-equals-existing-module-name → numeric-suffix fallback; stable ordering
-- [ ] run `go test ./internal/initcfg/...` and `go test ./internal/engine/ -run TestGolden` — must pass before next task
+- [x] run `go test ./internal/initcfg/...` and `go test ./internal/engine/ -run TestGolden` — must pass before next task
 
 ### Task 2: stanza text helper + ModuleAnnotation + dual-mode Render
 
