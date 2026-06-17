@@ -50,11 +50,14 @@ func (c *InitCmd) Run(deps *appDeps) error {
 	var ann map[string]initcfg.ModuleAnnotation
 	if c.LLM {
 		// Best-effort read of an existing config — tolerate failure.
-		existingCfg, cfgErr := config.Load(ctx, c.Output)
+		// Skip when writing to stdout: "-" is not a file path.
 		var llmCfg config.LLMConfig
-		if cfgErr == nil {
-			if lc, ok := existingCfg.LLM(); ok {
-				llmCfg = lc
+		if c.Output != "-" {
+			existingCfg, cfgErr := config.Load(ctx, c.Output)
+			if cfgErr == nil {
+				if lc, ok := existingCfg.LLM(); ok {
+					llmCfg = lc
+				}
 			}
 		}
 		// Flag values always override config values.
