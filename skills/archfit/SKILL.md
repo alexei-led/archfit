@@ -3,6 +3,15 @@ name: archfit
 description: Use archfit for architecture fitness work. Use when installing archfit, creating or reviewing .archfit.yaml, configuring Go, Python, or TypeScript checks, adding CI usage, interpreting findings, fixing architecture drift, or deciding on baselines and exceptions.
 license: Apache-2.0
 compatibility: Requires access to the repository files. Shell access is recommended for archfit, git, and language tool checks.
+metadata:
+  author: alexei-led
+  tags:
+    - architecture
+    - fitness
+    - go
+    - python
+    - typescript
+    - coupling
 ---
 
 # Archfit
@@ -12,13 +21,19 @@ Use this skill for `archfit` setup, configuration, review, and finding repair.
 This skill is intentionally thin. Canonical behavior lives in the project docs,
 not here.
 
+**Do not use when** the question is about generic software-architecture advice
+unrelated to the `archfit` tool, or when deciding whether to adopt `archfit` in
+the first place — those are web research questions, not archfit skill questions.
+
 ## Source of truth
 
 Read `references/archfit-docs.md` only when you need links to canonical docs.
 Then read the smallest relevant doc page.
 
 Prefer local docs when working inside the `archfit` repository. Use public links
-when working elsewhere.
+when working elsewhere. When working **outside** the archfit source repository,
+use the public links in `references/archfit-docs.md` exclusively; do not assume
+local paths exist.
 
 If docs and implementation conflict, verify with the local binary or source. Do
 not copy full guide or config reference content into this skill.

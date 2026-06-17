@@ -293,12 +293,12 @@ HasVolatility/HasLayer` — never overwrite an existing field). Never emit both 
 
 ### Task 12: SKILL.md compliance edits
 
-- [ ] add a `metadata:` frontmatter block (`author`, `tags`); **omit `version`**
-- [ ] add a "Do not use when" paragraph (generic architecture advice unrelated to the tool; adoption → web research)
-- [ ] add a portability line: outside the archfit source repo, use the public links in
+- [x] add a `metadata:` frontmatter block (`author`, `tags`); **omit `version`**
+- [x] add a "Do not use when" paragraph (generic architecture advice unrelated to the tool; adoption → web research)
+- [x] add a portability line: outside the archfit source repo, use the public links in
       `references/archfit-docs.md` exclusively; do not assume local paths exist
-- [ ] verify required frontmatter (`name` == directory, `description`); body < 500 lines
-- [ ] run `skills-ref validate ./skills/archfit` if available, else a manual frontmatter check
+- [x] verify required frontmatter (`name` == directory, `description`); body < 500 lines
+- [x] run `skills-ref validate ./skills/archfit` if available, else a manual frontmatter check
 
 ### Task 13: document new command modes in the skill + references
 
