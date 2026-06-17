@@ -163,8 +163,9 @@ tools:
   `functional_candidates`; without it that metric is `n/a`.
 - `gitnexus` — optional enrichment of `risk_hub` with historical impact. Never auto.
 
-`gitnexus` and `clones` accept only `on`/`off` (not `auto`). When absent or disabled,
-the dependent metric simply reports `n/a` — it never fails the run.
+`scip`, `clones`, and `gitnexus` are opt-in: each enables only with `on`.
+`auto`, `off`, or absent all disable it, and the dependent metric then reports
+`n/a` without ever failing the run.
 
 ## `layers`
 
@@ -309,6 +310,8 @@ Report-only metrics (band `info`; they never gate the verdict):
   tests, import-linter config, arch-linter in CI). Score 0–10.
 - `functional_candidates` — module pairs sharing duplicated logic (clone clusters),
   cross-referenced with co-change. Requires `tools.clones.enabled: on`.
+- `change_locality` — per-change drift: how far a change reaches beyond its own
+  modules (delta mode only; `n/a` in full mode).
 
 Metric entry fields:
 
