@@ -235,18 +235,18 @@ notice of what it wrote and always uses the strict write protocol (Technical Det
 
 ### Task 8: module-diff logic (pure, dependency-free, normalized)
 
-- [ ] add to `internal/initcfg/update.go`:
+- [x] add to `internal/initcfg/update.go`:
       `type ExistingModule struct{ Name string; Paths []string; HasSubdomain, HasVolatility, HasLayer bool }`,
       `type PathDelta struct{ Name string; ConfigPaths, DiscoveredPaths []string }`,
       `type UpdateReport struct{ Added []ModuleDef; Removed []ExistingModule; PathDrift []PathDelta; Unclassified []string; StructuralInSync bool }`
-- [ ] `func DiffModules(existing []ExistingModule, fresh []ModuleDef) UpdateReport` — compare paths as normalized
+- [x] `func DiffModules(existing []ExistingModule, fresh []ModuleDef) UpdateReport` — compare paths as normalized
       sets (trim empties, dedupe, sort); preserve discovered order for output; `StructuralInSync` when no
       add/remove/drift; `Unclassified` = non-removed existing modules missing **any** of subdomain/volatility/layer
       (uses `HasSubdomain`/`HasVolatility`/`HasLayer`), so a module with subdomain+volatility but no layer is a candidate
-- [ ] no `config` import
-- [ ] write table-driven tests incl. path-reorder → no drift; removed-and-unclassified (removed excluded);
+- [x] no `config` import
+- [x] write table-driven tests incl. path-reorder → no drift; removed-and-unclassified (removed excluded);
       subdomain+volatility present but no layer → still in `Unclassified`
-- [ ] run `go test ./internal/initcfg/...` — must pass before next task
+- [x] run `go test ./internal/initcfg/...` — must pass before next task
 
 ### Task 9: report rendering (default plan mode)
 

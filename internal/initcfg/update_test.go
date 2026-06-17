@@ -1,0 +1,187 @@
+package initcfg
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestDiffModules(t *testing.T) {
+	mod := func(name string, paths ...string) ModuleDef {
+		return ModuleDef{Name: name, Paths: paths}
+	}
+	ex := func(name string, sub, vol, layer bool, paths ...string) ExistingModule {
+		return ExistingModule{
+			Name:          name,
+			Paths:         paths,
+			HasSubdomain:  sub,
+			HasVolatility: vol,
+			HasLayer:      layer,
+		}
+	}
+
+	tests := []struct {
+		name     string
+		existing []ExistingModule
+		fresh    []ModuleDef
+		want     UpdateReport
+	}{
+		{
+			name:     "added only",
+			existing: nil,
+			fresh:    []ModuleDef{mod("gw", "gw/**"), mod("core", "core/**")},
+			want: UpdateReport{
+				Added:            []ModuleDef{mod("core", "core/**"), mod("gw", "gw/**")},
+				StructuralInSync: false,
+			},
+		},
+		{
+			name:     "removed only",
+			existing: []ExistingModule{ex("gw", true, true, true, "gw/**"), ex("core", true, true, true, "core/**")},
+			fresh:    nil,
+			want: UpdateReport{
+				Removed:          []ExistingModule{ex("core", true, true, true, "core/**"), ex("gw", true, true, true, "gw/**")},
+				StructuralInSync: false,
+			},
+		},
+		{
+			name:     "path drift only",
+			existing: []ExistingModule{ex("svc", true, true, true, "old/**")},
+			fresh:    []ModuleDef{mod("svc", "new/**")},
+			want: UpdateReport{
+				PathDrift: []PathDelta{
+					{Name: "svc", ConfigPaths: []string{"old/**"}, DiscoveredPaths: []string{"new/**"}},
+				},
+				StructuralInSync: false,
+			},
+		},
+		{
+			name:     "path reorder is NOT drift",
+			existing: []ExistingModule{ex("svc", true, true, true, "b/**", "a/**")},
+			fresh:    []ModuleDef{mod("svc", "a/**", "b/**")},
+			want: UpdateReport{
+				StructuralInSync: true,
+			},
+		},
+		{
+			name:     "fully in sync",
+			existing: []ExistingModule{ex("svc", true, true, true, "svc/**")},
+			fresh:    []ModuleDef{mod("svc", "svc/**")},
+			want: UpdateReport{
+				StructuralInSync: true,
+			},
+		},
+		{
+			name: "mixed: add + remove + drift + unclassified",
+			existing: []ExistingModule{
+				ex("gw", true, true, true, "gw/**"),
+				ex("core", false, true, true, "core/**"), // missing subdomain → unclassified
+				ex("old", true, true, true, "old/**"),    // removed
+			},
+			fresh: []ModuleDef{
+				mod("gw", "gw/v2/**"),  // drift
+				mod("core", "core/**"), // unchanged paths, but unclassified
+				mod("new", "new/**"),   // added
+			},
+			want: UpdateReport{
+				Added:   []ModuleDef{mod("new", "new/**")},
+				Removed: []ExistingModule{ex("old", true, true, true, "old/**")},
+				PathDrift: []PathDelta{
+					{Name: "gw", ConfigPaths: []string{"gw/**"}, DiscoveredPaths: []string{"gw/v2/**"}},
+				},
+				Unclassified:     []string{"core"},
+				StructuralInSync: false,
+			},
+		},
+		{
+			name: "removed-and-unclassified: removed module excluded from Unclassified",
+			existing: []ExistingModule{
+				ex("gone", false, false, false, "gone/**"), // removed AND missing all fields
+			},
+			fresh: nil,
+			want: UpdateReport{
+				Removed:          []ExistingModule{ex("gone", false, false, false, "gone/**")},
+				StructuralInSync: false,
+				// Unclassified must be nil/empty — "gone" is removed
+			},
+		},
+		{
+			name: "subdomain+volatility present but no layer → still Unclassified",
+			existing: []ExistingModule{
+				ex("svc", true, true, false, "svc/**"), // HasLayer=false
+			},
+			fresh: []ModuleDef{mod("svc", "svc/**")},
+			want: UpdateReport{
+				Unclassified:     []string{"svc"},
+				StructuralInSync: true,
+			},
+		},
+		{
+			name: "path drift preserves original ordering in output",
+			existing: []ExistingModule{
+				ex("m", true, true, true, "z/**", "a/**"),
+			},
+			fresh: []ModuleDef{
+				// different set — triggers drift; discovered order is c, b
+				mod("m", "c/**", "b/**"),
+			},
+			want: UpdateReport{
+				PathDrift: []PathDelta{
+					{
+						Name:            "m",
+						ConfigPaths:     []string{"z/**", "a/**"}, // original config order preserved
+						DiscoveredPaths: []string{"c/**", "b/**"}, // original discovered order preserved
+					},
+				},
+				StructuralInSync: false,
+			},
+		},
+		{
+			name: "dedupe and empty-string trim in normalization",
+			existing: []ExistingModule{
+				ex("m", true, true, true, "a/**", "", "a/**"),
+			},
+			fresh: []ModuleDef{mod("m", "a/**")},
+			want: UpdateReport{
+				StructuralInSync: true,
+			},
+		},
+		{
+			name:     "added output sorted by name",
+			existing: nil,
+			fresh: []ModuleDef{
+				mod("z", "z/**"),
+				mod("b", "b/**"),
+				mod("m", "m/**"),
+			},
+			want: UpdateReport{
+				Added: []ModuleDef{
+					mod("b", "b/**"),
+					mod("m", "m/**"),
+					mod("z", "z/**"),
+				},
+				StructuralInSync: false,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := DiffModules(tc.existing, tc.fresh)
+			if !reflect.DeepEqual(got.Added, tc.want.Added) {
+				t.Errorf("Added:\n  got  %#v\n  want %#v", got.Added, tc.want.Added)
+			}
+			if !reflect.DeepEqual(got.Removed, tc.want.Removed) {
+				t.Errorf("Removed:\n  got  %#v\n  want %#v", got.Removed, tc.want.Removed)
+			}
+			if !reflect.DeepEqual(got.PathDrift, tc.want.PathDrift) {
+				t.Errorf("PathDrift:\n  got  %#v\n  want %#v", got.PathDrift, tc.want.PathDrift)
+			}
+			if !reflect.DeepEqual(got.Unclassified, tc.want.Unclassified) {
+				t.Errorf("Unclassified:\n  got  %#v\n  want %#v", got.Unclassified, tc.want.Unclassified)
+			}
+			if got.StructuralInSync != tc.want.StructuralInSync {
+				t.Errorf("StructuralInSync: got %v, want %v", got.StructuralInSync, tc.want.StructuralInSync)
+			}
+		})
+	}
+}
