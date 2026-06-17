@@ -197,9 +197,9 @@ notice of what it wrote and always uses the strict write protocol (Technical Det
 
 ### Task 6: verify Topic 1 acceptance
 
-- [ ] all four init modes per the matrix; no key rename; out-of-set layer never live; names unique; `-o -` streams
-- [ ] ring gate green (`initcfg` imports neither `internal/llm` nor `internal/config`); golden gate green
-- [ ] `make all` passes; coverage ≥ project standard
+- [x] all four init modes per the matrix; no key rename; out-of-set layer never live; names unique; `-o -` streams
+- [x] ring gate green (`initcfg` imports neither `internal/llm` nor `internal/config`); golden gate green
+- [x] `make all` passes; coverage ≥ project standard
 
 ## Topic 2 — AST-located source patcher (foundation for `update --apply`)
 
