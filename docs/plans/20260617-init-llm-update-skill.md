@@ -166,17 +166,17 @@ notice of what it wrote and always uses the strict write protocol (Technical Det
 
 ### Task 4: reusable LLM classifier in cmd (off-gate, batched, strict-JSON)
 
-- [ ] add `initClassifySystemPrompt` in `cmd/archfit/init.go`: domain-modeler role; `subdomain` =
+- [x] add `initClassifySystemPrompt` in `cmd/archfit/init.go`: domain-modeler role; `subdomain` =
       core|supporting|generic, `volatility` = low|medium|high, `layer` chosen from a provided allowed set;
       response is a JSON **array** whose entries each include a `module` field — no prose/fences
-- [ ] add `classifyBatchSize = 25` + a user-prompt builder (target name, paths, files, allowed layers)
-- [ ] add `classifyModules(ctx, p llm.Provider, targets []initcfg.ClassifyTarget, layers []string) (map[string]initcfg.ModuleAnnotation, error)`:
+- [x] add `classifyBatchSize = 25` + a user-prompt builder (target name, paths, files, allowed layers)
+- [x] add `classifyModules(ctx, p llm.Provider, targets []initcfg.ClassifyTarget, layers []string) (map[string]initcfg.ModuleAnnotation, error)`:
       batch; parse strictly (tolerate fences, skip entries with unknown `module` / invalid subdomain|volatility
       enum, malformed body is a hard error). **Carry** the raw `layer` into `ann.Layer` even if out of set —
       the stanza helper / patcher decide validity
-- [ ] write tests with a fake `llm.Provider`: valid, unknown-module skipped, invalid-enum skipped, out-of-set
+- [x] write tests with a fake `llm.Provider`: valid, unknown-module skipped, invalid-enum skipped, out-of-set
       layer carried, malformed-body errors, batch boundary (26 → 2 batches)
-- [ ] run `go test ./cmd/archfit/...` and `go test ./internal/ -run TestArchImports` — must pass before next task
+- [x] run `go test ./cmd/archfit/...` and `go test ./internal/ -run TestArchImports` — must pass before next task
 
 ### Task 5: wire init flags + shared safeWriteConfig (preserve `-o -`)
 
