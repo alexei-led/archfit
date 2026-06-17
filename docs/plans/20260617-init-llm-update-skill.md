@@ -156,13 +156,13 @@ notice of what it wrote and always uses the strict write protocol (Technical Det
 
 ### Task 3: BuildClassifyTargets (multi-language, explicit degrade)
 
-- [ ] add `ClassifyTarget struct{ Name string; Paths, Files []string }` and
+- [x] add `ClassifyTarget struct{ Name string; Paths, Files []string }` and
       `func BuildClassifyTargets(root string, mods []ModuleDef) []ClassifyTarget`
-- [ ] resolve up to 20 first-level file basenames for filesystem-glob paths (Go/TS); for Python dotted paths
+- [x] resolve up to 20 first-level file basenames for filesystem-glob paths (Go/TS); for Python dotted paths
       resolve the package dir under `root` when cheaply findable, else leave `Files` empty
-- [ ] write tests: Go subdir-only package (empty Files, no crash); TS glob with files; Python dotted; cap at 20;
+- [x] write tests: Go subdir-only package (empty Files, no crash); TS glob with files; Python dotted; cap at 20;
       deterministic order
-- [ ] run `go test ./internal/initcfg/...` — must pass before next task
+- [x] run `go test ./internal/initcfg/...` — must pass before next task
 
 ### Task 4: reusable LLM classifier in cmd (off-gate, batched, strict-JSON)
 
