@@ -365,7 +365,7 @@ func sanitizeComment(s string) string {
 // indent is the leading whitespace (e.g. "  ").
 // allowedLayers is the sole authority for whether a layer value is written live.
 // When ann is nil the output is byte-identical to the original Render inline code.
-func writeModuleStanza(b *strings.Builder, indent, name string, m ModuleDef, allowedLayers []string, ann *ModuleAnnotation, apply bool) {
+func writeModuleStanza(b *strings.Builder, indent, name string, m ModuleDef, allowedLayers []string, ann *ModuleAnnotation, apply bool) { //nolint:unparam // indent is intentional API; callers may pass different values
 	allowed := make(map[string]bool, len(allowedLayers))
 	for _, l := range allowedLayers {
 		allowed[l] = true
