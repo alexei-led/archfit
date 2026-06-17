@@ -180,20 +180,20 @@ notice of what it wrote and always uses the strict write protocol (Technical Det
 
 ### Task 5: wire init flags + shared safeWriteConfig (preserve `-o -`)
 
-- [ ] add flags: `LLM bool`, `Apply bool`, `LLMProvider string` (default `anthropic`),
+- [x] add flags: `LLM bool`, `Apply bool`, `LLMProvider string` (default `anthropic`),
       `LLMModel string` (default `claude-opus-4-8`), `NoCache bool`; reject `--apply` without `--llm`
-- [ ] add shared `safeWriteConfig(ctx, deps, path string, edited, original []byte) error` in `cmd/archfit`
+- [x] add shared `safeWriteConfig(ctx, deps, path string, edited, original []byte) error` in `cmd/archfit`
       (strict protocol, Technical Details); `original == nil` means the target must not exist — abort if it
       appeared since read; notices to `deps.Stdout`
-- [ ] **preserve stdout mode**: when `Output == "-"`, print rendered YAML to `deps.Stdout` and return — no
+- [x] **preserve stdout mode**: when `Output == "-"`, print rendered YAML to `deps.Stdout` and return — no
       `safeWriteConfig`, no backup (LLM cache may still write unless `--no-cache`)
-- [ ] when `--llm`: best-effort read of an existing `.archfit.yaml` `tools.llm` (tolerate an invalid config —
+- [x] when `--llm`: best-effort read of an existing `.archfit.yaml` `tools.llm` (tolerate an invalid config —
       fall back to flags); `buildProvider` + `llm.NewCache` unless `--no-cache`
-- [ ] build targets via `BuildClassifyTargets`; `classifyModules` to completion; `Render(cfg, ann, c.Apply)`;
+- [x] build targets via `BuildClassifyTargets`; `classifyModules` to completion; `Render(cfg, ann, c.Apply)`;
       for a file path, write via `safeWriteConfig`
-- [ ] write tests: no-`--llm` unchanged (golden); `init --llm` → commented; `init --llm --apply` → live;
+- [x] write tests: no-`--llm` unchanged (golden); `init --llm` → commented; `init --llm --apply` → live;
       `init --apply` alone → error; `init -o -` → stdout, no file/backup; invalid existing config → runs from flags
-- [ ] run `make test` and `make lint` — must pass before next task
+- [x] run `make test` and `make lint` — must pass before next task
 
 ### Task 6: verify Topic 1 acceptance
 

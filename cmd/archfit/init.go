@@ -8,17 +8,31 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
 )
 
 // InitCmd discovers project structure and writes a starter archfit.yaml.
 type InitCmd struct {
-	Root   string `short:"r" help:"Project root directory." default:"."`
-	Output string `short:"o" help:"Output file (use '-' for stdout)." default:".archfit.yaml"`
+	Root        string `short:"r" help:"Project root directory." default:"."`
+	Output      string `short:"o" help:"Output file (use '-' for stdout)." default:".archfit.yaml"`
+	LLM         bool   `name:"llm"          help:"Run LLM classification pass (off-gate; requires tools.llm or --llm-provider)."`
+	Apply       bool   `name:"apply"        help:"Write LLM classifications live into the config (requires --llm)."`
+	LLMProvider string `name:"llm-provider" help:"LLM provider override (anthropic|openai|ollama)."  default:"anthropic"`
+	LLMModel    string `name:"llm-model"    help:"LLM model override."                                default:"claude-opus-4-8"`
+	NoCache     bool   `name:"no-cache"     help:"Bypass the LLM response cache."`
+
+	// providerOverride is a test seam — set directly on the struct to inject a fake provider.
+	// It is never a CLI flag (no kong tag).
+	providerOverride llm.Provider
 }
 
 func (c *InitCmd) Run(deps *appDeps) error {
+	if c.Apply && !c.LLM {
+		return &exitError{code: 3, msg: "error: --apply requires --llm"}
+	}
+
 	root := c.Root
 	if !filepath.IsAbs(root) {
 		var err error
@@ -32,16 +46,54 @@ func (c *InitCmd) Run(deps *appDeps) error {
 	if err != nil {
 		return fmt.Errorf("discovering project structure: %w", err)
 	}
-	yaml := initcfg.Render(cfg, nil, false)
+
+	var ann map[string]initcfg.ModuleAnnotation
+	if c.LLM {
+		// Best-effort read of an existing config — tolerate failure.
+		existingCfg, cfgErr := config.Load(ctx, c.Output)
+		var llmCfg config.LLMConfig
+		if cfgErr == nil {
+			if lc, ok := existingCfg.LLM(); ok {
+				llmCfg = lc
+			}
+		}
+		// Flag values always override config values.
+		llmCfg.Provider = c.LLMProvider
+		llmCfg.Model = c.LLMModel
+
+		var p llm.Provider
+		if c.providerOverride != nil {
+			p = c.providerOverride
+		} else {
+			var buildErr error
+			p, buildErr = buildProvider(llmCfg)
+			if buildErr != nil {
+				return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", buildErr)}
+			}
+			if !c.NoCache {
+				cacheDir := filepath.Join(filepath.Dir(c.Output), ".archfit-cache", "llm")
+				p = llm.NewCache(p, cacheDir)
+			}
+		}
+
+		targets := initcfg.BuildClassifyTargets(root, cfg.Modules)
+		ann, err = classifyModules(ctx, p, targets, cfg.Layers)
+		if err != nil {
+			return &exitError{code: 3, msg: fmt.Sprintf("error: classify failed: %v", err)}
+		}
+	}
+
+	yaml := initcfg.Render(cfg, ann, c.Apply)
 	if c.Output == "-" {
 		_, _ = fmt.Fprint(deps.Stdout, yaml)
 		return nil
 	}
-	if err := os.WriteFile(c.Output, []byte(yaml), 0o600); err != nil {
-		return fmt.Errorf("writing %s: %w", c.Output, err)
+
+	var original []byte
+	if data, readErr := os.ReadFile(c.Output); readErr == nil {
+		original = data
 	}
-	_, _ = fmt.Fprintf(deps.Stdout, "wrote %s\n", c.Output)
-	return nil
+	return safeWriteConfig(ctx, deps, c.Output, []byte(yaml), original)
 }
 
 // initClassifySystemPrompt instructs the LLM to act as a domain modeler and
@@ -94,8 +146,8 @@ type classifyResponse struct {
 
 // validSubdomains and validVolatilities are the allowed enum values.
 var (
-	validSubdomains   = map[string]bool{"core": true, "supporting": true, "generic": true}
-	validVolatilities = map[string]bool{"low": true, "medium": true, "high": true}
+	validSubdomains   = map[string]bool{subdomainCore: true, subdomainSupporting: true, subdomainGeneric: true}
+	validVolatilities = map[string]bool{volatilityLow: true, volatilityMedium: true, volatilityHigh: true}
 )
 
 // classifyModules sends targets to the LLM in batches of classifyBatchSize and

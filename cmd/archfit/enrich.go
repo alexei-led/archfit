@@ -130,11 +130,11 @@ func (c *EnrichCmd) Run(deps *appDeps) error {
 // buildProvider constructs the configured LLM provider.
 func buildProvider(c config.LLMConfig) (llm.Provider, error) {
 	switch c.Provider {
-	case "anthropic":
+	case providerAnthropic:
 		return llm.NewAnthropic(c.Model)
-	case "openai":
+	case providerOpenAI:
 		return llm.NewOpenAI(c.Model)
-	case "ollama":
+	case providerOllama:
 		return llm.NewOllama(c.BaseURL, c.Model), nil
 	default: // unreachable: config validation rejects unknown providers
 		return nil, fmt.Errorf("unknown llm provider %q", c.Provider)

@@ -71,10 +71,10 @@ func TestClassifyModules_ValidResponse(t *testing.T) {
 			t.Errorf("missing annotation for %q", t2.Name)
 			continue
 		}
-		if ann.Subdomain != "core" {
+		if ann.Subdomain != subdomainCore {
 			t.Errorf("%s: subdomain = %q, want core", t2.Name, ann.Subdomain)
 		}
-		if ann.Volatility != "low" {
+		if ann.Volatility != volatilityLow {
 			t.Errorf("%s: volatility = %q, want low", t2.Name, ann.Volatility)
 		}
 		if ann.Layer != testLayerDomain {
