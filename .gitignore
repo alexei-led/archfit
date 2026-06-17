@@ -8,3 +8,6 @@ __pycache__/
 # LLM response cache (enrich/explain). Ignored by default; teams that want
 # byte-identical enrich replay across machines may commit it instead.
 .archfit-cache/
+
+# Local codegraph database and runtime files.
+.codegraph/
