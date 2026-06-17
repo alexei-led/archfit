@@ -36,6 +36,7 @@ type cli struct {
 	Doctor   DoctorCmd   `cmd:"" help:"Check toolchain availability."`
 	Install  InstallCmd  `cmd:"" help:"Install external tools required for language analysis."`
 	Init     InitCmd     `cmd:"" help:"Initialize .archfit.yaml."`
+	Update   UpdateCmd   `cmd:"" help:"Sync .archfit.yaml with current project structure."`
 	Version  versionFlag `short:"v" help:"Print version and exit."`
 }
 

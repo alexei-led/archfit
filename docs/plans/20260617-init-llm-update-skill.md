@@ -261,27 +261,27 @@ notice of what it wrote and always uses the strict write protocol (Technical Det
 
 ### Task 10: UpdateCmd wiring (plan default + `--apply` + `--llm`)
 
-- [ ] add `cmd/archfit/update.go`: `UpdateCmd{ Config; Root; LLM, Apply, NoCache bool; LLMProvider, LLMModel string }`;
+- [x] add `cmd/archfit/update.go`: `UpdateCmd{ Config; Root; LLM, Apply, NoCache bool; LLMProvider, LLMModel string }`;
       register in `cmd/archfit/main.go`; when `--root` is unset, default discovery root to the directory of `--config`
-- [ ] `Run`: `loadConfig` existing → `[]initcfg.ExistingModule` (incl. `HasLayer`); `Discover`; `DiffModules`
-- [ ] `--llm`: `BuildClassifyTargets` from `Added` (fresh) **and** `Unclassified` existing modules; `classifyModules`;
+- [x] `Run`: `loadConfig` existing → `[]initcfg.ExistingModule` (incl. `HasLayer`); `Discover`; `DiffModules`
+- [x] `--llm`: `BuildClassifyTargets` from `Added` (fresh) **and** `Unclassified` existing modules; `classifyModules`;
       pass `ann` + the config's `layers` to the report
-- [ ] compute `HasActionableEdits` = structural edits (add/path/remove) **or** at least one field-fill that
+- [x] compute `HasActionableEdits` = structural edits (add/path/remove) **or** at least one field-fill that
       survives filtering — a field-fill counts only when the field is absent on an existing (not newly added)
       module, the annotation value is non-empty, and (for layer) the value is in `layers`. An LLM reply with
       only an out-of-set layer for an existing module yields no actionable edit. Default (no `--apply`) prints
       the report, leaves `.archfit.yaml` untouched (LLM cache may write unless `--no-cache`)
-- [ ] `--apply`: if `!HasActionableEdits`, print the in-sync line and write nothing; else build edits —
+- [x] `--apply`: if `!HasActionableEdits`, print the in-sync line and write nothing; else build edits —
       `AddModule(def, ann)` for added (classification in the stanza), `UpdateModulePaths` for drift, `CommentModule`
       for removed, and `SetModuleFields` for existing modules only for **absent** fields (use `HasSubdomain/
 HasVolatility/HasLayer` — never overwrite an existing field). Never emit both `AddModule` and `SetModuleFields`
       for the same module. `ApplyEdits` → `safeWriteConfig`; notice incl. that paths were replaced
-- [ ] write tests vs a divergent fixture: plan mode byte-unchanged; `--apply` adds/updates/comments, preserves
+- [x] write tests vs a divergent fixture: plan mode byte-unchanged; `--apply` adds/updates/comments, preserves
       rules+comments; `--llm --apply` on a structurally in-sync config writes only absent fields and no
       `SetModuleFields` for newly added modules; existing layer never overwritten; an existing module needing
       only a layer gets it filled when valid; an LLM reply of only an out-of-set layer writes nothing;
       backup created; changed-since-read aborts
-- [ ] run `make test` and `make lint` — must pass before next task
+- [x] run `make test` and `make lint` — must pass before next task
 
 ### Task 11: verify Topic 3 acceptance
 
