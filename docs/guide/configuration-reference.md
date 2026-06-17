@@ -387,7 +387,8 @@ archfit check --format sarif
 
 ## tools.llm (off-gate)
 
-Used only by `archfit enrich` and `archfit explain --llm`; never by `check`.
+Used by `archfit init --llm`, `archfit update --llm`, `archfit enrich`, and
+`archfit explain --llm`; never by `check`.
 
 ```yaml
 tools:

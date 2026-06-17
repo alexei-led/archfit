@@ -315,9 +315,9 @@ HasVolatility/HasLayer` — never overwrite an existing field). Never emit both 
 
 ### Task 15: Update documentation
 
-- [ ] update `docs/guide` (init / config-reference) for `--llm`, `--apply`, `update`
-- [ ] update `README.md` command list if it enumerates commands
-- [ ] ensure kong `--help` strings on the new flags are clear (esp. the `--apply` safety note)
+- [x] update `docs/guide` (init / config-reference) for `--llm`, `--apply`, `update`
+- [x] update `README.md` command list if it enumerates commands
+- [x] ensure kong `--help` strings on the new flags are clear (esp. the `--apply` safety note)
 
 ## Technical Details
 

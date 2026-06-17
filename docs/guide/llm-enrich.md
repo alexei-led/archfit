@@ -74,7 +74,12 @@ is fully offline.
 
 ## Scope guard
 
-Enrich refines coupling strength labels only. Subdomain and volatility remain
-human-authored config — the validation spike showed capable judges disagree at
-chance level on subdomain splits, so no tool (or human draft-launderer) should
-generate them.
+Enrich refines coupling strength labels only.
+
+`archfit init --llm` and `archfit update --llm` can suggest `subdomain`,
+`volatility`, and `layer` for discovered modules, but with explicit opt-in
+semantics: without `--apply`, suggestions are emitted as YAML comments that
+require human review before they become live fields. With `--apply`,
+classifications are written directly — treat them as a starting point and review
+before running gates. Existing field values are never overwritten.
+`check` is unaffected by these flags; it only reads the final config.

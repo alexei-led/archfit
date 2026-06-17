@@ -68,6 +68,7 @@ Need Docker, CI, optional analyzers, or language-specific setup? Start with the
 | ---------------------- | ---------------------------------------------- |
 | `archfit doctor`       | Check local analyzer/tool availability.        |
 | `archfit init`         | Generate a starter `.archfit.yaml`.            |
+| `archfit update`       | Sync `.archfit.yaml` with current structure.   |
 | `archfit check`        | Run architecture gates and metrics.            |
 | `archfit scan`         | Produce a full Markdown audit report.          |
 | `archfit baseline`     | Save accepted current findings.                |
