@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.11"
 # dependencies = ["grimp>=3"]
 # ///
 """grimp_helper.py — emit the internal import graph as JSON.

@@ -1,0 +1,3 @@
+ignore:
+  # Pinning exact debian package versions is impractical (varies by mirror/release).
+  - DL3008
