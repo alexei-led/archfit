@@ -82,7 +82,7 @@ not individual `.go` files.
 Requirements:
 
 - `package.json` at the repository root;
-- Node.js 22 LTS with `npx`, or Bun with `bunx`;
+- Node.js 24 LTS with `npx`, or Bun with `bunx`;
 - dependency-cruiser available locally or through the package runner.
 
 Install a pinned dependency-cruiser version:
@@ -143,7 +143,8 @@ For TypeScript, module paths and rule filters are repo-relative file path globs.
 Requirements:
 
 - `pyproject.toml`, `setup.py`, or configured `python_package`;
-- `uv`, or Python 3.11+ with `grimp` installed.
+- `uv`, or Python 3.14 recommended / Python 3.12+ minimum with `grimp`
+  installed.
 
 Recommended install:
 

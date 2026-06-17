@@ -27,7 +27,7 @@ FROM debian:bookworm-slim
 ARG DEPCRUISER_VERSION
 ARG ASTGREP_VERSION
 
-# Install runtime tools + Node 22 (NodeSource) in one layer.
+# Install runtime tools + Node 24 (NodeSource) in one layer.
 # curl and gnupg are only needed to add the NodeSource repo; purge them after.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gnupg \
     python3 \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get purge -y --auto-remove curl gnupg \
     && rm -rf /var/lib/apt/lists/*

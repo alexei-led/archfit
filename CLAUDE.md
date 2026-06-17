@@ -46,7 +46,7 @@ release tool) collides on the tag and fails the job.
 ## Runtime image
 
 `Dockerfile` is `debian:bookworm-slim` (glibc; musl broke ast-grep) — one image with
-Go SDK, git, Node 22, dependency-cruiser, ast-grep (`sg`), uv, python3; non-root.
+Go SDK, git, Node 24, dependency-cruiser, ast-grep (`sg`), uv, python3; non-root.
 `archfit doctor` checks tools; `sg` must resolve to ast-grep, not util-linux. Build
 amd64 in CI, not local emulation.
 
