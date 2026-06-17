@@ -250,14 +250,14 @@ notice of what it wrote and always uses the strict write protocol (Technical Det
 
 ### Task 9: report rendering (default plan mode)
 
-- [ ] `func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowedLayers []string) string`:
+- [x] `func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowedLayers []string) string`:
       added (paste-ready stanzas via `writeModuleStanza` with `allowedLayers`, incl. annotation), removed
       (`verify or remove`), path-drift, unclassified (with classification when `ann` has it, else suggest `--llm`);
       a "structurally in sync" line when `StructuralInSync`
-- [ ] path-drift section states explicitly that `--apply` replaces module paths with discovered paths (backup written)
-- [ ] write tests: report per case, with/without `ann`; out-of-set layer rendered as comment; added-stanza
+- [x] path-drift section states explicitly that `--apply` replaces module paths with discovered paths (backup written)
+- [x] write tests: report per case, with/without `ann`; out-of-set layer rendered as comment; added-stanza
       round-trips via `config.Load`
-- [ ] run `go test ./internal/initcfg/...` — must pass before next task
+- [x] run `go test ./internal/initcfg/...` — must pass before next task
 
 ### Task 10: UpdateCmd wiring (plan default + `--apply` + `--llm`)
 
