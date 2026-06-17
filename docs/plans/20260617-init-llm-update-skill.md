@@ -285,9 +285,9 @@ HasVolatility/HasLayer` — never overwrite an existing field). Never emit both 
 
 ### Task 11: verify Topic 3 acceptance
 
-- [ ] all four update modes per the matrix; plan mode never writes `.archfit.yaml`; `--apply` preserves untargeted
+- [x] all four update modes per the matrix; plan mode never writes `.archfit.yaml`; `--apply` preserves untargeted
       content and is idempotent on re-run; existing fields never overwritten; round-trips via `config.Load`
-- [ ] `make all` passes; ring + golden gates green
+- [x] `make all` passes; ring + golden gates green
 
 ## Topic 4 — portable skill (agentskills.io)
 

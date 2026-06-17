@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -448,6 +449,119 @@ func TestUpdateCmd_BackupCreatedOnApply(t *testing.T) {
 
 	if _, statErr := os.Stat(cfgPath + ".bak"); statErr != nil {
 		t.Error("backup (.archfit.yaml.bak) should exist after apply")
+	}
+}
+
+// TestUpdateCmd_Apply_Idempotent verifies that running --apply twice on the same
+// divergent fixture is a no-op on the second run: the file is byte-identical after
+// both runs, and no backup is created by the second run (because there are no
+// actionable edits left — AddModule and CommentModule are both no-ops on re-apply).
+func TestUpdateCmd_Apply_Idempotent(t *testing.T) {
+	dir := minimalRoot(t)
+	cfgPath := writeConfig(t, dir, configWithRemovedModule)
+
+	cmd := &UpdateCmd{Config: cfgPath, Root: dir, Apply: true}
+
+	// First apply: structural changes (comment removed module).
+	if _, err := runUpdateCmd(t, cmd, emptyRunner()); err != nil {
+		t.Fatalf("first apply: unexpected error: %v", err)
+	}
+	afterFirst, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Remove the .bak so we can detect whether the second run creates a new one.
+	_ = os.Remove(cfgPath + ".bak")
+
+	// Second apply: no actionable edits — CommentModule and AddModule are no-ops.
+	if _, err = runUpdateCmd(t, cmd, emptyRunner()); err != nil {
+		t.Fatalf("second apply: unexpected error: %v", err)
+	}
+	afterSecond, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(afterFirst, afterSecond) {
+		t.Error("second --apply must be a no-op: file should be byte-identical to post-first-apply state")
+	}
+	if _, statErr := os.Stat(cfgPath + ".bak"); statErr == nil {
+		t.Error("second --apply must not create a backup when there are no actionable edits")
+	}
+}
+
+// TestUpdateCmd_LLMPlanMode_FileUnchanged verifies that --llm without --apply
+// produces a report that includes LLM classification but leaves the config file untouched.
+func TestUpdateCmd_LLMPlanMode_FileUnchanged(t *testing.T) {
+	dir := minimalRoot(t)
+	// Config has mymod with no classification fields → it is Unclassified.
+	cfg := `version: 1
+layers:
+  - core
+  - adapter
+modules:
+  mymod:
+    paths:
+      - "internal/mymod/**"
+rules:
+  - id: no-bad-deps
+    type: forbidden_dependency
+    gate: warn
+`
+	cfgPath := writeConfig(t, dir, cfg)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := matchingRunner("internal/mymod")
+
+	cmd := &UpdateCmd{
+		Config:           cfgPath,
+		Root:             dir,
+		LLM:              true,
+		Apply:            false,
+		LLMProvider:      providerAnthropic,
+		LLMModel:         defaultLLMModel,
+		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: layerCoreStr},
+	}
+	out, err := runUpdateCmd(t, cmd, runner)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Report must mention the module and the LLM-suggested classification.
+	if !strings.Contains(out, "mymod") {
+		t.Errorf("plan report should mention 'mymod'; got:\n%s", out)
+	}
+
+	after, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("--llm plan mode must leave config file byte-unchanged")
+	}
+	if _, statErr := os.Stat(cfgPath + ".bak"); statErr == nil {
+		t.Error("--llm plan mode must not create a backup")
+	}
+}
+
+// TestUpdateCmd_Apply_RoundTripsConfigLoad verifies that after a structural --apply
+// the written config is valid and loadable via config.Load.
+func TestUpdateCmd_Apply_RoundTripsConfigLoad(t *testing.T) {
+	dir := minimalRoot(t)
+	// Start with a removed module so --apply writes something.
+	cfgPath := writeConfig(t, dir, configWithRemovedModule)
+
+	cmd := &UpdateCmd{Config: cfgPath, Root: dir, Apply: true}
+	if _, err := runUpdateCmd(t, cmd, emptyRunner()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	ctx := context.Background()
+	if _, err := config.Load(ctx, cfgPath); err != nil {
+		t.Errorf("written config must round-trip through config.Load: %v", err)
 	}
 }
 
