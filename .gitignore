@@ -1,13 +1,20 @@
-.bin/
-coverage.out
-*.test
-go.work*
-/archfit
+# macOS
 .DS_Store
+
+# Build outputs
+.bin/
+/archfit
+
+# Go test and workspace artifacts
+*.test
+coverage.out
+go.work*
+
+# Python caches
 __pycache__/
-# LLM response cache (enrich/explain). Ignored by default; teams that want
-# byte-identical enrich replay across machines may commit it instead.
+
+# Archfit local runtime/cache
 .archfit-cache/
 
-# Local codegraph database and runtime files.
+# Local codegraph database and runtime files
 .codegraph/
