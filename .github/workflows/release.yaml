@@ -144,11 +144,17 @@ jobs:
         run: cd dist && sha256sum archfit-* > SHA256SUMS
       - name: Generate release notes
         run: |
-          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${{ github.ref_name }}$" | head -1)
-          if [ -n "${PREV_TAG}" ]; then
-            git log --oneline "${PREV_TAG}..HEAD" > RELEASE_NOTES.md
-          else
-            git log --oneline > RELEASE_NOTES.md
+          TAG="${{ github.ref_name }}"
+          # Prefer the annotated tag message (curated notes); fall back to the
+          # commit log since the previous tag when the tag has no message.
+          git tag -l --format='%(contents)' "${TAG}" > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | head -1)
+            if [ -n "${PREV_TAG}" ]; then
+              git log --oneline "${PREV_TAG}..HEAD" > RELEASE_NOTES.md
+            else
+              git log --oneline > RELEASE_NOTES.md
+            fi
           fi
       - name: Detect pre-release
         id: prerelease
