@@ -15,6 +15,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/astgrep"
 	"github.com/alexei-led/archfit/internal/extract/clones"
 	"github.com/alexei-led/archfit/internal/extract/complexity"
+	"github.com/alexei-led/archfit/internal/extract/deployunit"
 	"github.com/alexei-led/archfit/internal/extract/gitnexus"
 	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/extract/loc"
@@ -110,6 +111,11 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// history. Explicit config owner always wins; resolver only fills empty slots.
 	// Absent CODEOWNERS and non-git repos yield an empty map — no fabrication.
 	cfg.FillMissingOwners(ownership.Resolve(ctx, s.Root, cfg.ModuleMapView(), deps.Runner))
+
+	// Deploy-unit detection: fills module deploy_unit gaps from static repo
+	// analysis (Go main pkgs, Dockerfiles, k8s manifests, package.json workspaces,
+	// pyproject.toml). Config-authored deploy_unit always wins.
+	cfg.FillMissingDeployUnits(deployunit.Detect(ctx, s.Root, cfg.ModuleMapView(), deps.Runner))
 
 	// Cyclomatic complexity via an external multi-language tool (lizard) — opt-in
 	// (tools.complexity.enabled: on) like SCIP, since it shells out and adds cost.

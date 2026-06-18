@@ -562,6 +562,25 @@ func (c Config) FillMissingOwners(resolved map[string]string) {
 	}
 }
 
+// FillMissingDeployUnits sets the DeployUnit field on modules that have no
+// configured deploy unit, using the resolved map (module name → unit string)
+// produced by the deploy-unit detector. Config-authored DeployUnit always wins:
+// a module with a non-empty DeployUnit field is never overwritten. Modules absent
+// from resolved, or with an empty resolved value, are left unchanged.
+func (c Config) FillMissingDeployUnits(resolved map[string]string) {
+	for name, unit := range resolved {
+		if unit == "" {
+			continue
+		}
+		def, ok := c.Modules[name]
+		if !ok || def.DeployUnit != "" {
+			continue
+		}
+		def.DeployUnit = unit
+		c.Modules[name] = def
+	}
+}
+
 // sortedKeys returns a sorted slice of keys from a map[string]ModuleDef.
 func sortedKeys(m map[string]ModuleDef) []string {
 	keys := make([]string, 0, len(m))

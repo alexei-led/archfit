@@ -201,14 +201,14 @@ low distance".
 
 Gap 2 (design §4.2): `cross_deploy_unit` is unreachable today.
 
-- [ ] Add `internal/extract/deployunit/` (adapter via `toolrun.Runner`): Go `main` pkgs
+- [x] Add `internal/extract/deployunit/` (adapter via `toolrun.Runner`): Go `main` pkgs
       (`go list`), TS `package.json` workspaces, Python `pyproject.toml`, `Dockerfile`,
       k8s `Deployment`/`StatefulSet`. Record `deploy_unit_confidence: inferred|config`.
-- [ ] Add `FillMissingDeployUnits` in `internal/config/config.go` mirroring
+- [x] Add `FillMissingDeployUnits` in `internal/config/config.go` mirroring
       `FillMissingOwners`; wire it in `cmd/archfit/pipeline.go` (config always wins).
-- [ ] Extend `internal/arch_test.go` to forbid `os`/`exec` in any new core-ring code.
-- [ ] Write per-language detector tests with fixtures; confirm `archfit doctor` still green.
-- [ ] Run project tests — must pass before next task.
+- [x] Extend `internal/arch_test.go` to forbid `os`/`exec` in any new core-ring code. (deployunit is an extractor adapter using toolrun.Runner — no direct os/exec, verified; no new core-ring code; TestArchImports green)
+- [x] Write per-language detector tests with fixtures; confirm `archfit doctor` still green.
+- [x] Run project tests — must pass before next task.
 
 ### Task 8: Calibration harness + golden refresh
 
