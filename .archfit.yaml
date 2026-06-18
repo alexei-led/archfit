@@ -14,7 +14,7 @@ layers:
   - adapter # rank 4: baseline, toolrun, extractors, renderers, git
   - cmd # rank 5: composition root
 modules:
-  model:
+  internal/model:
     paths:
       - internal/model/**
     # public = the package paths themselves (not file paths)
@@ -30,7 +30,7 @@ modules:
     layer: model
     subdomain: core
     volatility: low
-  config:
+  internal/config:
     paths:
       - internal/config/**
     public:
@@ -38,7 +38,7 @@ modules:
     layer: support
     subdomain: supporting
     volatility: medium
-  baseline:
+  internal/baseline:
     paths:
       - internal/baseline/**
     public:
@@ -48,7 +48,7 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: low
-  classify:
+  internal/classify:
     paths:
       - internal/classify/**
     public:
@@ -56,7 +56,7 @@ modules:
     layer: core
     subdomain: core
     volatility: medium
-  rules:
+  internal/rules:
     paths:
       - internal/rules/**
     public:
@@ -64,7 +64,7 @@ modules:
     layer: core
     subdomain: core
     volatility: medium
-  metrics:
+  internal/metrics:
     paths:
       - internal/metrics/**
     public:
@@ -72,7 +72,7 @@ modules:
     layer: core
     subdomain: core
     volatility: medium
-  status:
+  internal/status:
     paths:
       - internal/status/**
     public:
@@ -80,7 +80,7 @@ modules:
     layer: core
     subdomain: core
     volatility: low
-  engine:
+  internal/engine:
     paths:
       - internal/engine/**
     public:
@@ -88,7 +88,7 @@ modules:
     layer: engine
     subdomain: core
     volatility: medium
-  scope:
+  internal/scope:
     paths:
       - internal/scope/**
     public:
@@ -98,7 +98,7 @@ modules:
     layer: support
     subdomain: supporting
     volatility: low
-  ports:
+  internal/ports:
     paths:
       - internal/ports/**
     public:
@@ -107,7 +107,7 @@ modules:
     layer: support
     subdomain: supporting
     volatility: medium
-  labels:
+  internal/labels:
     paths:
       - internal/labels/**
     public:
@@ -128,7 +128,7 @@ modules:
   # subdomain: supporting
   # volatility: low
 
-  agenttask:
+  internal/agenttask:
     paths:
       - internal/agenttask/**
     public:
@@ -136,7 +136,7 @@ modules:
     layer: support
     subdomain: supporting
     volatility: low
-  facts:
+  internal/facts:
     paths:
       - internal/facts/**
     public:
@@ -144,7 +144,7 @@ modules:
     layer: core
     subdomain: supporting
     volatility: medium
-  staleness:
+  internal/staleness:
     paths:
       - internal/staleness/**
     public:
@@ -152,7 +152,7 @@ modules:
     layer: core
     subdomain: supporting
     volatility: low
-  toolrun:
+  internal/toolrun:
     paths:
       - internal/toolrun/**
     public:
@@ -258,7 +258,7 @@ modules:
   # layer: adapter
   # subdomain: supporting
   # volatility: low
-  output:
+  internal/output:
     paths:
       - internal/output/**
     public:
@@ -269,7 +269,7 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
-  initcfg:
+  internal/initcfg:
     paths:
       - internal/initcfg/**
     public:
@@ -277,7 +277,7 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
-  fitness:
+  internal/fitness:
     paths:
       - internal/fitness/**
     public:
@@ -285,7 +285,7 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: low
-  ownership:
+  internal/ownership:
     paths:
       - internal/ownership/**
     public:
@@ -293,7 +293,7 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: low
-  llm:
+  internal/llm:
     paths:
       - internal/llm/**
     public:
@@ -320,7 +320,7 @@ modules:
     layer: support
     subdomain: generic
     volatility: low
-  history:
+  internal/history:
     paths:
       - internal/history/**
     public:
@@ -328,7 +328,7 @@ modules:
     layer: support
     subdomain: supporting
     volatility: medium
-  extract:
+  internal/extract:
     paths:
       - internal/extract/**
     public:
@@ -336,7 +336,7 @@ modules:
     layer: engine
     subdomain: core
     volatility: high
-  cmd_archfit:
+  cmd/archfit:
     paths:
       - cmd/archfit/**
     public:
