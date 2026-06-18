@@ -11,6 +11,7 @@ const (
 	modInternalMetricsBoundary = "internal/metrics/boundary"
 	modCmdArchfit              = "cmd/archfit"
 	distOwnerTeamX             = "team-x"
+	distOwnerTeamY             = "team-y"
 	distDeployUnitA            = "svc-a"
 )
 
@@ -71,8 +72,8 @@ func TestOwnershipDistance(t *testing.T) {
 	}{
 		{name: "both empty — no signal", fromOwner: "", toOwner: "", want: coupling.DistanceSameModule},
 		{name: "same owner", fromOwner: distOwnerTeamX, toOwner: distOwnerTeamX, want: coupling.DistanceCrossModuleSameOwner},
-		{name: "different owners", fromOwner: distOwnerTeamX, toOwner: "team-y", want: coupling.DistanceCrossModuleDiffOwner},
-		{name: "from empty to non-empty", fromOwner: "", toOwner: "team-y", want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "different owners", fromOwner: distOwnerTeamX, toOwner: distOwnerTeamY, want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "from empty to non-empty", fromOwner: "", toOwner: distOwnerTeamY, want: coupling.DistanceCrossModuleDiffOwner},
 		{name: "from non-empty to empty", fromOwner: distOwnerTeamX, toOwner: "", want: coupling.DistanceCrossModuleDiffOwner},
 	}
 
@@ -105,6 +106,66 @@ func TestDeployDistance(t *testing.T) {
 			got := deployDistance(tc.fromUnit, tc.toUnit)
 			if got != tc.want {
 				t.Errorf("deployDistance(%q, %q) = %q, want %q", tc.fromUnit, tc.toUnit, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsDegenerateOwnerMap(t *testing.T) {
+	tests := []struct {
+		name   string
+		owners map[string]string
+		want   bool
+	}{
+		// Empty map (no configured owners) — degenerate: nothing to suppress.
+		{
+			name:   "empty map",
+			owners: map[string]string{},
+			want:   true,
+		},
+		// All modules have no owner — degenerate.
+		{
+			name:   "all empty owners",
+			owners: map[string]string{"a": "", "b": "", "c": ""},
+			want:   true,
+		},
+		// Single distinct owner shared by every module — degenerate (git-author fallback).
+		{
+			name:   "single owner for all modules",
+			owners: map[string]string{"a": distOwnerTeamX, "b": distOwnerTeamX, "c": distOwnerTeamX},
+			want:   true,
+		},
+		// Mix of empty and a single non-empty owner — degenerate.
+		{
+			name:   "some empty some same owner",
+			owners: map[string]string{"a": distOwnerTeamX, "b": "", "c": distOwnerTeamX},
+			want:   true,
+		},
+		// Two distinct non-empty owners — real multi-team repo, not degenerate.
+		{
+			name:   "two distinct owners",
+			owners: map[string]string{"a": distOwnerTeamX, "b": distOwnerTeamY},
+			want:   false,
+		},
+		// Three distinct owners — real multi-team repo.
+		{
+			name:   "three distinct owners",
+			owners: map[string]string{"a": distOwnerTeamX, "b": distOwnerTeamY, "c": "team-z"},
+			want:   false,
+		},
+		// Two owners plus an empty entry — still multi-owner.
+		{
+			name:   "two owners plus empty",
+			owners: map[string]string{"a": distOwnerTeamX, "b": distOwnerTeamY, "c": ""},
+			want:   false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isDegenerateOwnerMap(tc.owners)
+			if got != tc.want {
+				t.Errorf("isDegenerateOwnerMap(%v) = %v, want %v", tc.owners, got, tc.want)
 			}
 		})
 	}

@@ -189,13 +189,13 @@ Gap 1 (design §4.2): the always-available distance signal archfit lacks.
 Gap 1 (design §4.2): a single git-author owner must not read as "same owner everywhere =
 low distance".
 
-- [ ] When the owner resolver yields one owner for the whole repo, suppress ownership's
+- [x] When the owner resolver yields one owner for the whole repo, suppress ownership's
       distance contribution (let code-structure dominate); leave multi-owner CODEOWNERS
       behavior intact. Change in `internal/ownership/ownership.go` and/or its consumer in
       `cmd/archfit/pipeline.go`.
-- [ ] Write tests both ways: degenerate single-owner suppressed; a multi-team CODEOWNERS
+- [x] Write tests both ways: degenerate single-owner suppressed; a multi-team CODEOWNERS
       fixture still yields owner distance.
-- [ ] Run project tests — must pass before next task.
+- [x] Run project tests — must pass before next task.
 
 ### Task 7: Deploy-unit detector
 

@@ -222,6 +222,12 @@ func strengthFromHint(hint string) coupling.Strength {
 //
 //	distance = max(code_structure, ownership, deploy)
 //
+// Ownership is suppressed when the owner map is degenerate (single git-author
+// fallback assigns the same owner to every module). In that case, ownership
+// contributes DistanceSameModule (no signal) and code-structure distance dominates.
+// A real multi-team CODEOWNERS repo returns false from isDegenerateOwnerMap and
+// ownership contributes normally.
+//
 // runtime_adjust (+1 level for async bridges) is a Phase-4 addition (Task 12).
 func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[string]config.ModuleDef) coupling.Distance {
 	fromMod, fromOK := mi.moduleFor(fromPath)
@@ -238,9 +244,23 @@ func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[strin
 	fromDef := modules[fromMod]
 	toDef := modules[toMod]
 
+	// Build the module→owner map for degeneracy check. Only the Owner fields
+	// are needed; this is a small map (one entry per configured module).
+	owners := make(map[string]string, len(modules))
+	for name, def := range modules {
+		owners[name] = def.Owner
+	}
+
+	// Suppress ownership when degenerate (single git-author fallback).
+	// Pass empty strings so ownershipDistance returns DistanceSameModule (no contribution).
+	fromOwner, toOwner := fromDef.Owner, toDef.Owner
+	if isDegenerateOwnerMap(owners) {
+		fromOwner, toOwner = "", ""
+	}
+
 	return maxDistance(
 		codeStructureDistance(fromMod, toMod),
-		ownershipDistance(fromDef.Owner, toDef.Owner),
+		ownershipDistance(fromOwner, toOwner),
 		deployDistance(fromDef.DeployUnit, toDef.DeployUnit),
 	)
 }

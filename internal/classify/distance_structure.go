@@ -56,7 +56,9 @@ func codeStructureDistance(fromMod, toMod string) coupling.Distance {
 // to code-structure distance in ownerless repos.
 // Returns DistanceCrossModuleSameOwner when owners match.
 // Returns DistanceCrossModuleDiffOwner when owners differ.
-// Note: degenerate single-owner suppression is Task 6; this sees raw owner values.
+//
+// Call isDegenerateOwnerMap before invoking this to suppress ownership when the
+// entire repo has a single owner (git-author fallback degenerate case).
 func ownershipDistance(fromOwner, toOwner string) coupling.Distance {
 	if fromOwner == "" && toOwner == "" {
 		return coupling.DistanceSameModule
@@ -65,6 +67,38 @@ func ownershipDistance(fromOwner, toOwner string) coupling.Distance {
 		return coupling.DistanceCrossModuleSameOwner
 	}
 	return coupling.DistanceCrossModuleDiffOwner
+}
+
+// isDegenerateOwnerMap reports whether the ownership map is degenerate — i.e.
+// all modules that have a non-empty owner share exactly one distinct owner value.
+// A degenerate map arises from the git-author fallback in a single/few-author
+// repo: every module gets the same dominant author, making every cross-module
+// edge appear as "same owner → low distance", which suppresses the code-structure
+// signal that would otherwise distinguish near from far modules.
+//
+// When true, the caller should pass empty strings to ownershipDistance so that
+// the ownership contribution is neutral (DistanceSameModule = no contribution)
+// and code-structure distance dominates.
+//
+// A real multi-team CODEOWNERS repo will typically have two or more distinct
+// owners and returns false.
+func isDegenerateOwnerMap(owners map[string]string) bool {
+	var seen string
+	for _, o := range owners {
+		if o == "" {
+			continue
+		}
+		if seen == "" {
+			seen = o
+			continue
+		}
+		if o != seen {
+			return false
+		}
+	}
+	// Zero owned modules → no ownership signal at all; treat as degenerate so
+	// ownership contributes nothing (same as all-empty).
+	return true
 }
 
 // deployDistance returns the distance contribution from deploy-unit membership.
