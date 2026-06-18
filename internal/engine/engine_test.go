@@ -54,17 +54,21 @@ const (
 // cannedConfig builds a ClassifyConfig and RuleConfig for a two-module (a, b)
 // architecture where pkg/a/** belongs to module "a" and pkg/b/** to module "b".
 // Module b has a public path (pkg/b/api/**) and an internal path (pkg/b/internal/**).
+// Different owners ensure the composite distance signal reaches cross_module_diff_owner
+// for advisory test cases that require a non-trivial distance.
 func cannedConfig() (config.ClassifyConfig, []rules.Rule) {
 	modules := map[string]config.ModuleDef{
 		"a": {
 			Paths:    []string{globModuleA},
 			Public:   []string{globModuleA},
 			Internal: []string{},
+			Owner:    "team-a",
 		},
 		"b": {
 			Paths:    []string{globModuleB},
 			Public:   []string{"pkg/b/api/**"},
 			Internal: []string{globModuleBInternal},
+			Owner:    "team-b",
 		},
 	}
 
