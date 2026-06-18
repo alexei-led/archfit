@@ -19,6 +19,7 @@ import (
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/labels"
+	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -95,7 +96,7 @@ func (c *EnrichCmd) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	}
 
 	labelsPath := filepath.Join(configDir, defaultLabelsPath)
-	existing, err := labels.Load(labelsPath)
+	existing, err := labelsio.Load(labelsPath)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}

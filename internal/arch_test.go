@@ -83,6 +83,7 @@ var adapterPrefixes = []string{
 	modulePrefix + "internal/extract/",
 	modulePrefix + "internal/history/",
 	modulePrefix + "internal/output/",
+	modulePrefix + "internal/labels/labelsio", // labels file I/O adapter (os + YAML)
 }
 
 // TestArchImports verifies the import ring rules for core and model packages.
@@ -184,6 +185,22 @@ func TestArchImports(t *testing.T) {
 			}
 			if _, imports := pkg.Imports[enginePkg]; imports {
 				t.Errorf("adapter package %s must not import %s: use internal/ports instead", pkgPath, enginePkg)
+			}
+		}
+	})
+
+	t.Run("labelsio_unreachable_from_internal", func(t *testing.T) {
+		// The labels I/O adapter (os + YAML) must be reachable only from cmd. No
+		// internal package — the engine, the core ring, anything — may import it:
+		// the engine consumes the PURE internal/labels helpers and receives loaded
+		// labels from cmd. Keeps the gate's import closure free of label-file I/O.
+		const labelsioPkg = modulePrefix + "internal/labels/labelsio"
+		for pkgPath, pkg := range loaded {
+			if pkgPath == labelsioPkg {
+				continue
+			}
+			if _, imports := pkg.Imports[labelsioPkg]; imports {
+				t.Errorf("package %s must not import %s: only cmd may load label files; internal code uses the pure internal/labels", pkgPath, labelsioPkg)
 			}
 		}
 	})

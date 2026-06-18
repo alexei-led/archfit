@@ -397,6 +397,11 @@ rules:
     from: internal/engine/**
     to: internal/output/**
     gate: fail
+  - id: engine_no_labelsio
+    type: forbidden_dependency
+    from: internal/engine/**
+    to: internal/labels/labelsio/**
+    gate: fail
   # Ring gate 3: model packages are pure value types
   - id: model_no_config
     type: forbidden_dependency

@@ -26,7 +26,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/ts"
 	"github.com/alexei-led/archfit/internal/fitness"
 	"github.com/alexei-led/archfit/internal/history/git"
-	"github.com/alexei-led/archfit/internal/labels"
+	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/signal"
@@ -145,7 +145,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// Pinned coupling labels (.archfit-labels.yaml): the human-reviewed output of
 	// `archfit enrich`. Optional; a malformed file fails loudly — a half-read
 	// labels file must never silently alter the gate.
-	lbls, err := labels.Load(filepath.Join(configDir, defaultLabelsPath))
+	lbls, err := labelsio.Load(filepath.Join(configDir, defaultLabelsPath))
 	if err != nil {
 		return diagnostic.Diagnostic{}, err
 	}
