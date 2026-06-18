@@ -180,6 +180,30 @@ func TestDetect_TSWorkspaces(t *testing.T) {
 	}
 }
 
+// TestDetect_TSWorkspacesObjectForm verifies the Yarn object form
+// `workspaces: {"packages": [...]}` is detected, and that its presence does not
+// abort root bin/main detection (regression: the object form used to fail the
+// whole json.Unmarshal, skipping even the root unit).
+func TestDetect_TSWorkspacesObjectForm(t *testing.T) {
+	root := t.TempDir()
+
+	rootPkg := `{"name":"monorepo","bin":"dist/cli.js","workspaces":{"packages":["packages/api"]}}`
+	mustWrite(t, filepath.Join(root, "package.json"), rootPkg)
+
+	dir := filepath.Join(root, "packages/api")
+	mustMkdir(t, dir)
+	mustWrite(t, filepath.Join(dir, "package.json"), `{"name":"`+unitAPIService+`"}`)
+
+	result := deployunit.Detect(context.Background(), root, emptyModuleMap(), emptyRunner())
+
+	if unit, ok := result["packages/api"]; !ok || unit != unitAPIService {
+		t.Errorf("workspace object form: unit at packages/api = %q (ok=%v), want %q", unit, ok, unitAPIService)
+	}
+	if unit, ok := result["."]; !ok || unit != "monorepo" {
+		t.Errorf("root bin detection aborted by object-form workspaces: unit at '.' = %q (ok=%v), want monorepo", unit, ok)
+	}
+}
+
 // TestDetect_TSBinMain verifies detection from root package.json with bin or main.
 func TestDetect_TSBinMain(t *testing.T) {
 	root := t.TempDir()

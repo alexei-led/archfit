@@ -127,10 +127,32 @@ func (d *detector) detectGoMain(ctx context.Context, result map[string]string) {
 // ---------------------------------------------------------------------------
 
 type packageJSON struct {
-	Name       string   `json:"name"`
-	Main       string   `json:"main"`
-	Bin        any      `json:"bin"` // string or object
-	Workspaces []string `json:"workspaces"`
+	Name       string          `json:"name"`
+	Main       string          `json:"main"`
+	Bin        any             `json:"bin"`        // string or object
+	Workspaces json.RawMessage `json:"workspaces"` // []string or {"packages": []string}
+}
+
+// workspacePatterns extracts the glob patterns from a package.json "workspaces"
+// field, accepting both common shapes: the array form `["a/*","b"]` (npm/Yarn
+// classic) and the object form `{"packages": ["a/*"]}` (Yarn workspaces config).
+// Returns nil for an absent or unrecognized shape — never errors, so a stray
+// shape cannot abort root bin/main detection.
+func workspacePatterns(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var arr []string
+	if err := json.Unmarshal(raw, &arr); err == nil {
+		return arr
+	}
+	var obj struct {
+		Packages []string `json:"packages"`
+	}
+	if err := json.Unmarshal(raw, &obj); err == nil {
+		return obj.Packages
+	}
+	return nil
 }
 
 func (d *detector) detectTSWorkspaces(result map[string]string) {
@@ -153,7 +175,7 @@ func (d *detector) detectTSWorkspaces(result map[string]string) {
 	}
 
 	// Each workspace path is a potential deploy unit.
-	for _, ws := range pkg.Workspaces {
+	for _, ws := range workspacePatterns(pkg.Workspaces) {
 		// Workspaces may be globs; resolve them.
 		matches, err := filepath.Glob(filepath.Join(d.root, ws))
 		if err != nil {

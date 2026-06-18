@@ -358,10 +358,37 @@ func splitFindings(fs []finding.Finding) (gate, advisories []finding.Finding) {
 			advisories = append(advisories, f)
 		}
 	}
-	sort.SliceStable(advisories, func(i, j int) bool {
-		return severityRank(advisories[i].Severity) > severityRank(advisories[j].Severity)
-	})
+	// Both lists get a total deterministic order so output never depends on the
+	// incoming slice order (which originates from map iteration upstream).
+	sort.SliceStable(gate, func(i, j int) bool { return findingLess(gate[i], gate[j]) })
+	sort.SliceStable(advisories, func(i, j int) bool { return findingLess(advisories[i], advisories[j]) })
 	return gate, advisories
+}
+
+// findingLess orders findings deterministically: severity descending, then a
+// stable tie-break chain (rule id, status, from path, to path, edge kind, id).
+// id is a unique fingerprint, so the order is total — equal-severity findings
+// no longer depend on input order.
+func findingLess(a, b finding.Finding) bool {
+	if ra, rb := severityRank(a.Severity), severityRank(b.Severity); ra != rb {
+		return ra > rb
+	}
+	if a.RuleID != b.RuleID {
+		return a.RuleID < b.RuleID
+	}
+	if a.Status != b.Status {
+		return a.Status < b.Status
+	}
+	if a.Edge.From.Path != b.Edge.From.Path {
+		return a.Edge.From.Path < b.Edge.From.Path
+	}
+	if a.Edge.To.Path != b.Edge.To.Path {
+		return a.Edge.To.Path < b.Edge.To.Path
+	}
+	if a.Edge.Kind != b.Edge.Kind {
+		return a.Edge.Kind < b.Edge.Kind
+	}
+	return a.ID < b.ID
 }
 
 func severityRank(s finding.Severity) int {
