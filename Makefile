@@ -111,6 +111,11 @@ docker-push: ## push multi-arch image to ghcr.io (run: docker login ghcr.io firs
 docker-run: ## run archfit --help from the GHCR image (smoke test)
 	docker run --rm ghcr.io/alexei-led/$(BINARY):$(VERSION) --help
 
+## calibrate: compare AdditiveScorer vs MultiplicativeScorer on archfit (informational dev tool)
+.PHONY: calibrate
+calibrate: build ## compare scorers on archfit; emits calibration-report.json (informational only)
+	@bash scripts/calibrate.sh .
+
 ## clean: remove build artefacts
 .PHONY: clean
 clean: ## remove build artefacts

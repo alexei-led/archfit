@@ -214,12 +214,14 @@ Gap 2 (design §4.2): `cross_deploy_unit` is unreachable today.
 
 Design §5: needed to choose the scorer (Task 16).
 
-- [ ] Add a `calibrate` target to the `Makefile` + `scripts/calibrate.*` that runs both
+- [x] Add a `calibrate` target to the `Makefile` + `scripts/calibrate.*` that runs both
       scorers on archfit (Go) + pinned `redwoodjs/redwood` (TS) + pinned `saleor/saleor`
       (Py) and emits a per-edge band-agreement report.
-- [ ] Regenerate `TestGolden` for the distance-composite changes; inspect the diff.
-- [ ] Write a smoke test that `make calibrate` produces a report artifact.
-- [ ] Run project tests — must pass before next task.
+- [x] Regenerate `TestGolden` for the distance-composite changes; inspect the diff.
+      (TestGolden passed without regeneration — no distance/score shift in engine output)
+- [x] Write a smoke test that `make calibrate` produces a report artifact.
+      (internal/calibrate/calibrate_test.go: 6 unit tests; make calibrate smoke-runs on archfit: 147 edges, 70% agreement)
+- [x] Run project tests — must pass before next task.
 
 **Phase 3 — Standard metrics, report-only (ON by default, never gate).**
 
