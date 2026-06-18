@@ -419,3 +419,42 @@ func TestFillMissingDeployUnits(t *testing.T) {
 		t.Errorf("cli.DeployUnit = %q, want %q", got, "detected-cli")
 	}
 }
+
+// TestKeyByModule_RemapsPathToModule verifies Detect's path-keyed output is
+// remapped to module-name keys (what FillMissingDeployUnits expects), so a
+// module whose map key differs from its repo path still gets its deploy unit
+// filled. Regression: previously Detect's path keys were passed straight to
+// FillMissingDeployUnits, which dropped every unit unless module key == path.
+func TestKeyByModule_RemapsPathToModule(t *testing.T) {
+	const (
+		mod       = "svc"           // module key, deliberately != repo path
+		modPath   = "services/core" // detected deploy-unit directory
+		unmatched = "vendor/x"      // path no module owns
+	)
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			mod: {Paths: []string{modPath + "/**"}},
+		},
+	}
+	detected := map[string]string{
+		modPath:   unitAPIService, // path key → module mod
+		unmatched: "ghost",        // no module owns it → dropped
+	}
+
+	got := deployunit.KeyByModule(detected, cfg.ModuleMapView())
+
+	if len(got) != 1 {
+		t.Fatalf("len(got) = %d, want 1 (unmatched path dropped); got=%v", len(got), got)
+	}
+	if got[mod] != unitAPIService {
+		t.Errorf("got[%q] = %q, want %q", mod, got[mod], unitAPIService)
+	}
+
+	// End-to-end: module key differs from the detected path, yet the unit fills —
+	// the exact case the old path-keyed wiring dropped.
+	cfg.FillMissingDeployUnits(got)
+	if du := cfg.Modules[mod].DeployUnit; du != unitAPIService {
+		t.Errorf("%s.DeployUnit = %q, want %q (remap+fill end-to-end)", mod, du, unitAPIService)
+	}
+}

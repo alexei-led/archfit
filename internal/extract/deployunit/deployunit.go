@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,6 +35,39 @@ const (
 func Detect(ctx context.Context, root string, mm config.ModuleMap, runner toolrun.Runner) map[string]string {
 	r := &detector{root: root, mm: mm, runner: runner}
 	return r.detect(ctx)
+}
+
+// KeyByModule converts the path-keyed map returned by Detect (repo-relative
+// path → deploy-unit name) into a module-name-keyed map suitable for
+// config.FillMissingDeployUnits, which looks units up by module name (matching
+// config.Config.Modules keys). Without this translation the two cannot be wired
+// directly: auto-detected units are silently dropped unless a module's map key
+// happens to equal the detected path.
+//
+// Each detected path is resolved to its owning module via mm.ModuleFor. Paths
+// with no matching module are dropped (no module to attach the unit to). When
+// several detected paths resolve to the same module, the alphabetically-first
+// path wins (deterministic). A deploy-unit directory containing several modules
+// fills only the module ModuleFor selects for that path; filling every nested
+// module is a separate enhancement (deploy-unit membership), not done here.
+func KeyByModule(detected map[string]string, mm config.ModuleMap) map[string]string {
+	out := make(map[string]string, len(detected))
+	paths := make([]string, 0, len(detected))
+	for p := range detected {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	for _, p := range paths {
+		mod, ok := mm.ModuleFor(p)
+		if !ok {
+			continue
+		}
+		if _, exists := out[mod]; exists {
+			continue // first detected path wins (deterministic)
+		}
+		out[mod] = detected[p]
+	}
+	return out
 }
 
 type detector struct {

@@ -114,8 +114,12 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 
 	// Deploy-unit detection: fills module deploy_unit gaps from static repo
 	// analysis (Go main pkgs, Dockerfiles, k8s manifests, package.json workspaces,
-	// pyproject.toml). Config-authored deploy_unit always wins.
-	cfg.FillMissingDeployUnits(deployunit.Detect(ctx, s.Root, cfg.ModuleMapView(), deps.Runner))
+	// pyproject.toml). Detect keys results by repo-relative path; KeyByModule
+	// remaps those to module names, which is what FillMissingDeployUnits expects
+	// (without it, auto-detected units are dropped unless a module's map key
+	// equals the path). Config-authored deploy_unit always wins.
+	duModules := cfg.ModuleMapView()
+	cfg.FillMissingDeployUnits(deployunit.KeyByModule(deployunit.Detect(ctx, s.Root, duModules, deps.Runner), duModules))
 
 	// Cyclomatic complexity via an external multi-language tool (lizard) — opt-in
 	// (tools.complexity.enabled: on) like SCIP, since it shells out and adds cost.
