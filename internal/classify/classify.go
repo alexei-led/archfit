@@ -166,6 +166,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) coupling.Cl
 		Volatility:          vol,
 		Explicitness:        exp,
 		ContractRecommended: contractRecommended,
+		AsyncBridge:         e.AsyncBridge,
 	}
 
 	// --- Severity ---

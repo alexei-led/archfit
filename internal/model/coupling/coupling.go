@@ -65,6 +65,10 @@ type Classification struct {
 	Severity            Severity
 	ContractRecommended bool      // generic-subdomain target reached via non-contract strength
 	Score               EdgeScore // numeric score; zero when not scored
+	// AsyncBridge marks this edge as crossing an async integration boundary.
+	// When set, the scorer applies a +1 distance level adjustment.
+	// Report-only in v1 — never changes the gate verdict.
+	AsyncBridge bool
 }
 
 // Index maps each edge's canonical key (from + "\x00" + to + "\x00" + kind)

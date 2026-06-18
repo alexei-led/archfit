@@ -13,6 +13,11 @@ type AdditiveScorer struct{}
 func (AdditiveScorer) Score(c Classification) EdgeScore {
 	sv := strengthOrdinal[c.Strength]
 	dv := distanceOrdinal[c.Distance]
+	// AsyncBridge: +1 distance level (report-only; never changes gate verdict).
+	// Cap at the cross_deploy_unit ordinal (5) — distance cannot exceed the maximum level.
+	if c.AsyncBridge && dv < 5 {
+		dv++
+	}
 	vd := volatilityDiscount[c.Volatility]
 
 	raw := clamp(sv+dv-vd, 0, 10)

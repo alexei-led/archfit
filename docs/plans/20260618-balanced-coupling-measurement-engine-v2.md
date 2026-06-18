@@ -261,14 +261,14 @@ Design §6: sharpen `hidden_coupling` with CodeScene's exact formula.
 
 Design §4.2 (runtime_adjust).
 
-- [ ] Add `internal/extract/runtime/` (ast-grep patterns per language) + an off-gate
+- [x] Add `internal/extract/runtime/` (ast-grep patterns per language) + an off-gate
       `library → integration-kind` YAML table; set an `AsyncBridge` annotation on
       `graph.Edge`; scorer adds +1 distance level when set (report-only).
-- [ ] Record `confidence: low` when no async signal is found ("absence of evidence ≠
+- [x] Record `confidence: low` when no async signal is found ("absence of evidence ≠
       synchronous"); never gate.
-- [ ] Extend `internal/arch_test.go` to forbid `os`/`exec` in any new core-ring code.
-- [ ] Write per-language detector tests with fixtures.
-- [ ] Run project tests — must pass before next task.
+- [x] Extend `internal/arch_test.go` to forbid `os`/`exec` in any new core-ring code.
+- [x] Write per-language detector tests with fixtures.
+- [x] Run project tests — must pass before next task.
 
 ### Task 13: Connascence CoT/CoA tags
 
