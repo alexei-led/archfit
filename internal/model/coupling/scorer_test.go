@@ -262,12 +262,11 @@ func TestAdditiveScorer_CheapestMove(t *testing.T) {
 			},
 			wantEmpty: true,
 		},
-		// Critical: intrusive+cross_deploy+high_vol → reduce_strength drops most.
-		// intrusive→functional: raw=5+5-0=10(critical); vs reduce_distance cross_deploy→diff_owner: 8+3-0=11→10(critical); so strength ties.
-		// Actually intrusive→functional: 5+5=10-0=10→critical. Hmm, doesn't drop.
-		// Let's test functional+cross_deploy+high_vol: raw=10(critical).
-		// reduce_strength(functional→unknown): 3+5-0=8(high) → drop 1
-		// reduce_distance(cross_deploy→diff_owner): 5+3-0=8(high) → drop 1 (tie, prefer strength)
+		// functional+cross_deploy+high_vol → raw=5+5-0=10 (critical).
+		// reduce_strength (functional→unknown): 3+5-0=8 (high) → drops one band.
+		// reduce_distance (cross_deploy→diff_owner): 5+3-0=8 (high) → also one band; tie → prefer strength.
+		// (intrusive+cross_deploy doesn't change band via reduce_strength in the additive
+		//  model, so functional is the clearer reduce_strength demonstration.)
 		{
 			name: "functional+cross_deploy+high_vol → reduce_strength",
 			c: Classification{
@@ -342,32 +341,6 @@ func TestMultiplicativeScorer_IntrusiveFloor(t *testing.T) {
 	}
 }
 
-// TestLegacyShim_ReproducesBalanceResult verifies the shim produces the same band
-// as BalanceResult for all tested combinations.
-func TestLegacyShim_ReproducesBalanceResult(t *testing.T) {
-	shim := LegacyShim{}
-	cases := []Classification{
-		{Strength: StrengthContract, Distance: DistanceCrossModuleSameOwner, Volatility: VolatilityLow},
-		{Strength: StrengthContract, Distance: DistanceCrossModuleSameOwner, Volatility: VolatilityHigh},
-		{Strength: StrengthFunctional, Distance: DistanceCrossDeployUnit, Volatility: VolatilityHigh},
-		{Strength: StrengthFunctional, Distance: DistanceCrossDeployUnit, Volatility: VolatilityLow},
-		{Strength: StrengthIntrusive, Distance: DistanceCrossModuleDiffOwner, Volatility: VolatilityHigh},
-		{Strength: StrengthIntrusive, Distance: DistanceCrossDeployUnit, Volatility: VolatilityHigh},
-		{Strength: StrengthContract, Distance: DistanceCrossDeployUnit, Volatility: VolatilityHigh},
-		{Strength: StrengthFunctional, Distance: DistanceCrossModuleSameOwner, Volatility: VolatilityHigh},
-	}
-	for _, c := range cases {
-		got := shim.Score(c)
-		want := BalanceResult(c)
-		if got.Band != want {
-			t.Errorf("LegacyShim band=%q but BalanceResult=%q for %+v", got.Band, want, c)
-		}
-		if got.Reason != "legacy" {
-			t.Errorf("reason = %q, want %q", got.Reason, "legacy")
-		}
-	}
-}
-
 // TestAsyncBridgeDistanceBump verifies that setting AsyncBridge=true raises the
 // score relative to the same Classification with AsyncBridge=false, for both
 // AdditiveScorer and MultiplicativeScorer. The bump models lifecycle decoupling
@@ -432,7 +405,9 @@ func TestDefaultScorer(t *testing.T) {
 		Distance:   DistanceCrossDeployUnit,
 		Volatility: VolatilityHigh,
 	})
-	if got.Band == "" && got.Value == 0 && got.Reason == "" {
-		t.Error("DefaultScorer produced zero EdgeScore")
+	// DefaultScorer is locked to MultiplicativeScorer (Task 16) — assert the type,
+	// so a revert to a different default is caught.
+	if got.Reason != reasonMultiplicative {
+		t.Errorf("DefaultScorer should be the locked MultiplicativeScorer; Reason = %q, want %q", got.Reason, reasonMultiplicative)
 	}
 }

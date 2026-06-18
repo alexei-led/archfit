@@ -114,39 +114,6 @@ func ScoreBand(score int) Severity {
 	}
 }
 
-// LegacyShim is a Scorer that wraps BalanceResult to reproduce the post-Task-1
-// severity bands, keeping golden output stable until calibration (Task 16).
-// Value is set to the mid-point of each band so downstream consumers can
-// treat it as a coarse integer; Reason is "legacy"; CheapestMove is empty.
-type LegacyShim struct{}
-
-// bandMidpoint maps a Severity band to the mid-point integer score in that band.
-// none→0, low→3, medium→5, high→7, critical→9.
-var bandMidpoint = map[Severity]int{
-	SeverityNone:     0,
-	SeverityLow:      3,
-	SeverityMedium:   5,
-	SeverityHigh:     7,
-	SeverityCritical: 9,
-}
-
-// Score implements Scorer using the legacy BalanceResult formula.
-func (LegacyShim) Score(c Classification) EdgeScore {
-	sev := BalanceResult(c)
-	val := bandMidpoint[sev]
-	return EdgeScore{
-		Value:  val,
-		Band:   sev,
-		Reason: "legacy",
-		Breakdown: ScoreBreakdown{
-			StrengthVal: strengthOrdinal[c.Strength],
-			DistanceVal: distanceOrdinal[c.Distance],
-			VolDiscount: volatilityDiscount[c.Volatility],
-		},
-		CheapestMove: "",
-	}
-}
-
 // DefaultScorer returns the scorer used by classify.Run when the config
 // does not specify one. Locked to MultiplicativeScorer per Task 16 calibration
 // decision (2026-06-18): 150 edges on archfit, 105 agree, rate=0.70 vs AdditiveScorer.

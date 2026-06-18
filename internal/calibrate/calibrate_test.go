@@ -44,8 +44,8 @@ func syntheticIndex() coupling.Index {
 func TestCompare_SyntheticIndex(t *testing.T) {
 	idx := syntheticIndex()
 	r := calibrate.Compare(".", idx, coupling.AdditiveScorer{}, coupling.MultiplicativeScorer{})
-	if r.Edges == nil {
-		t.Fatal("Edges must not be nil")
+	if len(r.Edges) == 0 {
+		t.Fatal("Compare returned no scored edges for a non-empty index")
 	}
 }
 
