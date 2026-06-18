@@ -2,12 +2,14 @@
 
 # Deferred BC-v2 fixes — implementation design
 
-Date: 2026-06-18. Status: READY TO EXECUTE (fresh session). Two defects from the
+Date: 2026-06-18. Status: **DONE** — both fixes implemented on branch
+`docs/bc-measurement-v2`. Fix A (flat-name distance precedence): commit `febed17`.
+Fix B (engine→labels split): commit `f2719fc`. The optional step B6 (`PairEvidence`
+move) was intentionally left out to keep scope tight. Two defects from the
 self-analysis vs expert-review comparison (`docs/bc-v2-self-vs-expert-comparison.md`)
 were deferred because they are high-blast and shouldn't be rushed. This is the
-concrete, implementable design for each (advisor + Perplexity grounded), so they can
-be picked up cold. The other 6 defects are already fixed on branch
-`docs/bc-measurement-v2`.
+concrete, implementable design for each (advisor + Perplexity grounded). The other 6
+defects were already fixed on the same branch.
 
 ---
 
