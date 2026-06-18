@@ -33,7 +33,7 @@ func distanceRank(d coupling.Distance) int {
 }
 
 // ---------------------------------------------------------------------------
-// UnbalancedEdgeMetric (unbalanced_edge.v1)
+// UnbalancedEdgeMetric (unbalanced_edge.v2)
 // ---------------------------------------------------------------------------
 
 // UnbalancedEdgeMetric counts edges where strength=intrusive AND
@@ -44,8 +44,8 @@ type UnbalancedEdgeMetric struct{}
 // Name returns "unbalanced_edge".
 func (m UnbalancedEdgeMetric) Name() string { return "unbalanced_edge" }
 
-// Version returns "unbalanced_edge.v1".
-func (m UnbalancedEdgeMetric) Version() string { return "unbalanced_edge.v1" }
+// Version returns "unbalanced_edge.v2".
+func (m UnbalancedEdgeMetric) Version() string { return "unbalanced_edge.v2" }
 
 // Calculate counts high-risk unbalanced edges and cross-references findings for status.
 func (m UnbalancedEdgeMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {

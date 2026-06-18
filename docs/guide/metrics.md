@@ -106,6 +106,11 @@ baseline snapshot. A negative delta (the metric got worse) sets the run to
 
 ### `unbalanced_edge`
 
+> **Breaking change (v0.3.0):** `metric_version` bumped to `unbalanced_edge.v2` — the
+> distance composite (code-structure + deploy-unit + degenerate-owner suppression) and
+> the removal of git-churn from gate volatility changed the metric's input semantics.
+> Re-run `archfit baseline` if you have a pinned baseline from v0.2.x or earlier.
+
 - **Represents:** count of **new, high-risk** imbalanced edges — the worst corner
   of the balance rule.
 - **Computed:** an edge qualifies when it is `intrusive` **and** at distance
@@ -245,6 +250,11 @@ here.
 - **Requires:** `tools.clones.enabled: on` (opt-in).
 
 ### `change_locality`
+
+> **Breaking change (v0.3.0):** `metric_version` bumped to `change_locality.v2` — the
+> distance composite (code-structure + deploy-unit + degenerate-owner suppression) and
+> the removal of git-churn from gate volatility changed the metric's input semantics.
+> Re-run `archfit baseline` if you have a pinned baseline from v0.2.x or earlier.
 
 - **Represents:** per-change drift — how far a change reaches beyond the modules it
   touches.

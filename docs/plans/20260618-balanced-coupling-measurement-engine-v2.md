@@ -352,14 +352,14 @@ Design §5.
 
 Design §11 risk 1 + versioning decision.
 
-- [ ] Bump affected `metric_version` strings to `*.v2`; regenerate golden and reset
+- [x] Bump affected `metric_version` strings to `*.v2`; regenerate golden and reset
       baselines deliberately.
-- [ ] Update `docs/guide`, `CLAUDE.md` (commands/metrics), and the self-analysis report
+- [x] Update `docs/guide`, `CLAUDE.md` (commands/metrics), and the self-analysis report
       `archfit-analysis.md`.
-- [ ] Write a v0.3.0 release note: breaking change in SCORING (continuous scorer replaces
+- [x] Write a v0.3.0 release note: breaking change in SCORING (continuous scorer replaces
       `BalanceResult`; old `*.v1` baselines invalid — re-run `archfit baseline`); explicitly
       NOT a change in verdict/gate behavior.
-- [ ] Run project tests — must pass before next task.
+- [x] Run project tests — must pass before next task.
 
 ### Task 18: Verify acceptance criteria
 

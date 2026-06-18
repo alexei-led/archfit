@@ -6,6 +6,10 @@
 - **Config:** `.archfit.yaml` (committed; `gitnexus` + `risk_hub` enabled), gitnexus index refreshed (3,917 nodes / 11,787 edges)
 - **Verdict:** **PASS** — 0 gate findings, 0 warnings, 0 exceptions used.
 
+> **Note (2026-06-18):** This report was generated with the pre-v2 engine. The v2 engine
+> (MultiplicativeScorer, composite distance, churn-free gate volatility) is now active.
+> Re-run `archfit scan` after Task 20 for the updated self-analysis.
+
 ## Scorecard
 
 Bands: `strong` = healthy hard gate · `info` = report-only hotspot (never fails CI) ·
