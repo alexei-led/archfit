@@ -215,8 +215,14 @@ func strengthFromHint(hint string) coupling.Strength {
 	}
 }
 
-// classifyDistance determines how far apart from and to modules are in the
-// ownership hierarchy.
+// classifyDistance computes the composite distance for a cross-module edge.
+//
+// The composite takes the max of three independent signals, so distance carries
+// a meaningful value even in a single-owner repo (code structure is the baseline):
+//
+//	distance = max(code_structure, ownership, deploy)
+//
+// runtime_adjust (+1 level for async bridges) is a Phase-4 addition (Task 12).
 func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[string]config.ModuleDef) coupling.Distance {
 	fromMod, fromOK := mi.moduleFor(fromPath)
 	toMod, toOK := mi.moduleFor(toPath)
@@ -232,15 +238,11 @@ func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[strin
 	fromDef := modules[fromMod]
 	toDef := modules[toMod]
 
-	if fromDef.Owner == toDef.Owner && fromDef.Owner != "" {
-		return coupling.DistanceCrossModuleSameOwner
-	}
-
-	if fromDef.DeployUnit != toDef.DeployUnit && fromDef.DeployUnit != "" && toDef.DeployUnit != "" {
-		return coupling.DistanceCrossDeployUnit
-	}
-
-	return coupling.DistanceCrossModuleDiffOwner
+	return maxDistance(
+		codeStructureDistance(fromMod, toMod),
+		ownershipDistance(fromDef.Owner, toDef.Owner),
+		deployDistance(fromDef.DeployUnit, toDef.DeployUnit),
+	)
 }
 
 // classifyVolatility derives domain volatility for the to-module using three

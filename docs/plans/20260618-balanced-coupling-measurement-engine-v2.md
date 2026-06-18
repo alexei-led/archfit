@@ -176,13 +176,13 @@ testable continuous scorer; default keeps current bands until calibration (Task 
 
 Gap 1 (design §4.2): the always-available distance signal archfit lacks.
 
-- [ ] Add `internal/classify/distance_structure.go`: deterministic tree-distance from two
+- [x] Add `internal/classify/distance_structure.go`: deterministic tree-distance from two
       module paths (siblings near; fewer shared path segments → farther; normalized by
       tree depth).
-- [ ] Fold it into the `max(...)` distance composite in `classify.go`.
-- [ ] Write tests: siblings read closer than distant trees (e.g. `metrics/boundary` ↔
+- [x] Fold it into the `max(...)` distance composite in `classify.go`.
+- [x] Write tests: siblings read closer than distant trees (e.g. `metrics/boundary` ↔
       `metrics/modularity` closer than `cmd/archfit` ↔ `extract/py`).
-- [ ] Run project tests — must pass before next task.
+- [x] Run project tests — must pass before next task.
 
 ### Task 6: Degenerate-owner suppression
 
