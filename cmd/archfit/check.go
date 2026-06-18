@@ -53,7 +53,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		Formats:    c.Format,
 	}
 
-	diag, err := runPipeline(ctx, deps, cfg, c.Config, mode, base)
+	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.NoConfig, mode, base)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}

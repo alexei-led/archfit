@@ -367,6 +367,13 @@ func buildModuleMap(modules map[string]ModuleDef) ModuleMap {
 	return ModuleMap{names: names, modules: modules}
 }
 
+// Has reports whether a module with exactly this name (map key) is configured.
+// Distinct from ModuleFor, which matches a repo-relative path against path globs.
+func (mm ModuleMap) Has(name string) bool {
+	_, ok := mm.modules[name]
+	return ok
+}
+
 // ModuleFor returns the first module name whose path globs match the given
 // repo-relative path (forward-slash separated). When multiple modules match,
 // the alphabetically-first module name wins (deterministic tiebreak).

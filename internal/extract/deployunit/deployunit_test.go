@@ -458,3 +458,25 @@ func TestKeyByModule_RemapsPathToModule(t *testing.T) {
 		t.Errorf("%s.DeployUnit = %q, want %q (remap+fill end-to-end)", mod, du, unitAPIService)
 	}
 }
+
+// TestKeyByModule_ExactKeyFallback verifies a detected path that is itself a
+// module key still fills when the module's glob matches only children (so
+// ModuleFor misses) — preserving the old path-keyed behavior, never a regression.
+func TestKeyByModule_ExactKeyFallback(t *testing.T) {
+	const key = "cmd/tool" // module key equals the detected path
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			key: {Paths: []string{"cmd/tool/*.go"}}, // matches children, not the bare dir
+		},
+	}
+	// Precondition: ModuleFor must NOT match the bare dir, else this proves nothing.
+	if _, ok := cfg.ModuleMapView().ModuleFor(key); ok {
+		t.Fatalf("precondition failed: ModuleFor(%q) matched; glob no longer child-only", key)
+	}
+
+	got := deployunit.KeyByModule(map[string]string{key: unitCLI}, cfg.ModuleMapView())
+	if got[key] != unitCLI {
+		t.Errorf("got[%q] = %q, want %q (exact-key fallback)", key, got[key], unitCLI)
+	}
+}

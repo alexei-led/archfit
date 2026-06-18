@@ -68,7 +68,7 @@ func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, 
 // post-baseline check reports phantom metric regressions and unmatched finding
 // fingerprints. After the engine returns, the agent_tasks repair block is
 // attached from the active gate findings (deterministic; spec §13).
-func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, error) {
+func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, noConfig bool, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, error) {
 	configDir := filepath.Dir(configPath)
 	sc := cfg.ForScope()
 	sc.WorkDir = configDir
@@ -158,9 +158,8 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		resolver = scip.New(deps.Runner)
 	}
 
-	// Compute sha256 of the raw config file bytes for reproducibility.
-	// Empty when the file cannot be read (--no-config or built-in default).
-	configHash := computeConfigHash(configPath)
+	// Config hash for reproducibility — empty when --no-config ignored the file.
+	configHash := effectiveConfigHash(configPath, noConfig)
 
 	patternCfg := cfg.ForPatterns()
 	diag, err := engine.Run(ctx, engine.RunInput{
@@ -257,6 +256,18 @@ func applyFlagOverrides(cfg *config.Config, severity string, lang []string) erro
 		cfg.Tools[canonical] = config.ToolConfig{Enabled: config.ModeOn}
 	}
 	return nil
+}
+
+// effectiveConfigHash returns the config hash that governed this run: the
+// sha256 of the on-disk config file, or "" when --no-config ignored that file
+// (built-in defaults were used). Hashing an ignored file would make the reported
+// hash misleading and non-reproducible — it would change when a file the run
+// never read changes.
+func effectiveConfigHash(path string, noConfig bool) string {
+	if noConfig {
+		return ""
+	}
+	return computeConfigHash(path)
 }
 
 // computeConfigHash returns the sha256 hex digest of the raw config file bytes
