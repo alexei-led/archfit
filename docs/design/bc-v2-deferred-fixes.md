@@ -61,8 +61,11 @@ _default_ as a peer of _explicit_ config. Explicit config must take **precedence
    if deploy == coupling.DistanceCrossDeployUnit {
        return deploy // a deploy boundary is absolute
    }
-   // Explicit hand-authored ownership is authoritative (even if all-same).
-   if explicitOwners[fromMod] && explicitOwners[toMod] {
+   // Explicit hand-authored ownership on EITHER endpoint is authoritative — the
+   // user told us something, so don't drop it to the code-structure fallback.
+   // One-sided: ownershipDistance compares the explicit owner against the other's
+   // owner (explicit or resolver-filled) as usual.
+   if explicitOwners[fromMod] || explicitOwners[toMod] {
        return maxDistance(ownershipDistance(fromDef.Owner, toDef.Owner), deploy)
    }
    // Real resolver ownership signal (>=2 distinct owners) is authoritative too.
@@ -90,6 +93,10 @@ implementing, add a test-friendly seam — pick one:
 - a small exported constructor/setter `config.WithExplicitOwners(...)` used by tests, or
 - have `ForClassify` treat any module whose `Owner != ""` as explicit **when
   `explicitOwners` is nil** (i.e. no resolver ran), which is exactly the test case.
+
+**Prefer option 1** (`WithExplicitOwners`) — safer API contract, no silent
+inference that could misclassify a resolver-filled config reaching classify via a
+path that skipped `explicitOwners` init.
 
 Then update: `classify_test.go` (the "cross-module same-owner" fixture should pass via
 the explicit-owner branch; flat-name degenerate fixtures now expect `DiffOwner`) and
