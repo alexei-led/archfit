@@ -204,10 +204,59 @@ func (m AbstractnessMetric) Name() string { return "abstractness" }
 // Version returns "abstractness.v1".
 func (m AbstractnessMetric) Version() string { return "abstractness.v1" }
 
-const abstractnessDef = "per-module abstractness A=contract_inbound/(contract+concrete_inbound): " +
-	"fraction of inbound edges that are contract-strength; beyond Balanced Coupling, report-only"
+const abstractnessDef = "per-module abstractness A=abstract_inbound/(abstract+concrete_inbound): " +
+	"fraction of inbound dependency edges targeting an interface/protocol (SCIP strength hint), " +
+	"NOT the glob-classified strength; beyond Balanced Coupling, report-only"
 
-// Calculate computes per-module abstractness from the coupling classification index.
+// computeAbstractnessMap returns per-module abstractness A = abstract_inbound /
+// (abstract+concrete_inbound). An inbound edge is "abstract" when it targets an
+// interface/protocol (contract strength) and "concrete" when it targets a
+// struct/class (model/functional/intrusive).
+//
+// It reads each edge's raw SCIP StrengthHint, NOT the classified
+// Classification.Strength. Config public/internal globs override the final
+// strength — marking every exported API "contract" — which saturates A toward 1.0
+// for every module (the proxy then measures call-shape, not type abstraction). The
+// raw hint preserves the interface-vs-struct distinction. When an edge has no hint
+// (SCIP disabled), it falls back to the classified strength. Modules with no
+// classifiable inbound dependency edge are absent from the result (A undefined).
+func computeAbstractnessMap(firstParty map[string]struct{}, in signal.CommonInput) map[string]float64 {
+	abstractIn := make(map[string]int, len(firstParty))
+	concreteIn := make(map[string]int, len(firstParty))
+	for _, e := range in.Graph.Edges() {
+		switch e.Kind {
+		case graph.EdgeKindImports, graph.EdgeKindDependsOn, graph.EdgeKindUsesInternal:
+		default:
+			continue
+		}
+		to := modgraph.ModuleKey(e.To)
+		if _, ok := firstParty[to]; !ok {
+			continue
+		}
+		strength := e.StrengthHint
+		if strength == "" {
+			if cl, ok := in.Classifications[e.From+"\x00"+e.To+"\x00"+string(e.Kind)]; ok {
+				strength = string(cl.Strength)
+			}
+		}
+		switch coupling.Strength(strength) {
+		case coupling.StrengthContract:
+			abstractIn[to]++
+		case coupling.StrengthModel, coupling.StrengthFunctional, coupling.StrengthIntrusive:
+			concreteIn[to]++
+		}
+	}
+	out := make(map[string]float64, len(firstParty))
+	for mod := range firstParty {
+		a, c := abstractIn[mod], concreteIn[mod]
+		if total := a + c; total > 0 {
+			out[mod] = float64(a) / float64(total)
+		}
+	}
+	return out
+}
+
+// Calculate computes per-module abstractness from the edge strength hints.
 func (m AbstractnessMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 	if in.Graph == nil {
 		return m.naResult()
@@ -218,46 +267,14 @@ func (m AbstractnessMetric) Calculate(in signal.CommonInput) diagnostic.MetricRe
 	for _, n := range in.Graph.Nodes() {
 		firstParty[modgraph.ModuleKey(n.ID())] = struct{}{}
 	}
-	n := len(firstParty)
-
-	// Per-module inbound edge counts by strength class.
-	contractIn := make(map[string]int, n)
-	concreteIn := make(map[string]int, n)
-
-	// The coupling.Index key is "from\x00to\x00kind" where from/to are raw node
-	// IDs of the form "kind:path" (e.g. "module:pkg.b"). Apply ModuleKey to
-	// collapse them to the same module unit used by firstParty.
-	for key, c := range in.Classifications {
-		parts := strings.SplitN(key, "\x00", 3)
-		if len(parts) != 3 {
-			continue
-		}
-		to := modgraph.ModuleKey(parts[1])
-		if _, ok := firstParty[to]; !ok {
-			continue
-		}
-		switch c.Strength {
-		case coupling.StrengthContract:
-			contractIn[to]++
-		case coupling.StrengthModel, coupling.StrengthFunctional, coupling.StrengthIntrusive:
-			concreteIn[to]++
-		}
-	}
-
-	// Compute abstractness per module.
+	// Abstractness per module from the raw SCIP strength hint (see
+	// computeAbstractnessMap for why the hint, not the glob-classified strength).
 	type entry struct {
 		module string
 		a      float64
 	}
 	var abstract []entry
-	for mod := range firstParty {
-		ct := contractIn[mod]
-		cc := concreteIn[mod]
-		total := ct + cc
-		if total == 0 {
-			continue // A=0 (unknown → concrete default); skip display unless flagged
-		}
-		a := float64(ct) / float64(total)
+	for mod, a := range computeAbstractnessMap(firstParty, in) {
 		if a > 0.5 {
 			abstract = append(abstract, entry{mod, a})
 		}
@@ -339,32 +356,11 @@ func (m MartinDistanceMetric) Calculate(in signal.CommonInput) diagnostic.Metric
 		return m.naResult()
 	}
 
-	// Rebuild firstParty and abstractness inline (avoids coupling to the metric types).
 	firstParty := make(map[string]struct{}, len(inst))
 	for mod := range inst {
 		firstParty[mod] = struct{}{}
 	}
-
-	contractIn := make(map[string]int, len(firstParty))
-	concreteIn := make(map[string]int, len(firstParty))
-	for key, c := range in.Classifications {
-		parts := strings.SplitN(key, "\x00", 3)
-		if len(parts) != 3 {
-			continue
-		}
-		// Classification keys store raw node IDs ("kind:path"); apply ModuleKey
-		// to match the firstParty set which is keyed by collapsed module paths.
-		to := modgraph.ModuleKey(parts[1])
-		if _, ok := firstParty[to]; !ok {
-			continue
-		}
-		switch c.Strength {
-		case coupling.StrengthContract:
-			contractIn[to]++
-		case coupling.StrengthModel, coupling.StrengthFunctional, coupling.StrengthIntrusive:
-			concreteIn[to]++
-		}
-	}
+	abMap := computeAbstractnessMap(firstParty, in) // shared with AbstractnessMetric
 
 	type entry struct {
 		module string
@@ -374,13 +370,7 @@ func (m MartinDistanceMetric) Calculate(in signal.CommonInput) diagnostic.Metric
 	}
 	var flagged []entry
 	for mod := range firstParty {
-		ct := contractIn[mod]
-		cc := concreteIn[mod]
-		total := ct + cc
-		var a float64
-		if total > 0 {
-			a = float64(ct) / float64(total)
-		}
+		a := abMap[mod] // 0 when the module has no classifiable inbound edge
 		i := inst[mod]
 		dms := math.Abs(a + i - 1)
 		if dms > 0.5 {
