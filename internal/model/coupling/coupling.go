@@ -93,13 +93,13 @@ func distanceIsHigh(d Distance) bool {
 // BalanceResult applies the Khononov balance formula to a Classification and returns
 // the advisory Severity for the edge. SeverityNone means the edge is balanced (no finding).
 //
-// Severity table (spec §18):
+// Severity table (Balanced Coupling model, Khononov):
 //   - Intrusive: always surfaced, severity driven by distance/volatility.
 //   - high strength + high distance + high volatility → critical.
 //   - high strength + high distance + low/unknown volatility → medium.
 //   - low strength + low distance + high volatility → medium (over-decoupled volatile seam).
-//   - high strength + low distance → low (high cohesion, usually acceptable).
-//   - low strength + high distance → low (loose coupling across a large boundary).
+//   - high strength + low distance → none (cohesive — XOR modular quadrant).
+//   - low strength + high distance → none (loose — XOR modular quadrant).
 //   - low strength + low distance + low/unknown volatility → none (balanced).
 func BalanceResult(c Classification) Severity {
 	// Intrusive strength: always advisory, severity driven by distance.
@@ -134,6 +134,9 @@ func BalanceResult(c Classification) Severity {
 		return SeverityNone
 	}
 
-	// Asymmetric (low+high or high+low): mismatched but not the worst case.
-	return SeverityLow
+	// Asymmetric (XOR modular quadrants):
+	//   high strength + low distance → cohesive (co-located tight coupling, acceptable).
+	//   low strength + high distance → loose (contract across a large boundary, acceptable).
+	// Both are BC-modular: no finding.
+	return SeverityNone
 }

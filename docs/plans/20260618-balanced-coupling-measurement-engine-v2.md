@@ -103,16 +103,16 @@ the gate, zero churn) vs implementation volatility (git churn → report-only me
 Gap 5 (design §3#5, §5): `coupling.go:137-138` returns `SeverityLow` for the two
 Balanced-Coupling-modular quadrants, which should be `SeverityNone`.
 
-- [ ] In `internal/model/coupling/coupling.go` `BalanceResult`, return `SeverityNone` for
+- [x] In `internal/model/coupling/coupling.go` `BalanceResult`, return `SeverityNone` for
       the asymmetric (high-strength+low-distance cohesive; low-strength+high-distance
       loose) cases; keep the over-decoupled-volatile-seam (low+low+high-volatility) at
       `SeverityMedium`; leave the intrusive-escalation paths unchanged.
-- [ ] Grep `internal/rules` for consumers that relied on the old `SeverityLow` for XOR
-      edges and adjust if any exist.
-- [ ] Write a four-quadrant table test in `coupling_test.go` (none/none/medium-if-volatile/
-      critical-if-volatile).
-- [ ] Regenerate `TestGolden` if the severity change shifts output; inspect the diff.
-- [ ] Run project tests (incl. `TestArchImports`) — must pass before next task.
+- [x] Grep `internal/rules` for consumers that relied on the old `SeverityLow` for XOR
+      edges and adjust if any exist. (rules uses `finding.SeverityLow`, not `coupling.SeverityLow` — no change needed)
+- [x] Write a four-quadrant table test in `coupling_test.go` (none/none/medium-if-volatile/
+      critical-if-volatile). Updated with full XOR quadrant coverage + intrusive cases.
+- [x] Regenerate `TestGolden` if the severity change shifts output; inspect the diff. (no change — archfit's own edges don't hit XOR case)
+- [x] Run project tests (incl. `TestArchImports`) — must pass before next task.
 
 ### Task 2: Remove git churn from gate volatility
 
