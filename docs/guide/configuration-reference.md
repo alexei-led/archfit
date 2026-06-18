@@ -215,10 +215,22 @@ Balanced Coupling classification uses this metadata:
 
 - target `public` match -> `contract` strength;
 - target `internal` match -> `intrusive` strength;
-- same module -> same-module distance;
-- same owner -> cross-module same-owner distance;
-- different deploy units -> cross-deploy-unit distance;
 - `volatility` or `subdomain` -> target volatility.
+
+Distance is resolved by a precedence chain (first match wins), not a flat blend,
+so explicit configuration is never overridden by the structural fallback:
+
+1. same module -> same-module distance;
+2. different `deploy_unit` on the two modules -> `cross_deploy_unit` (a deploy
+   boundary is absolute);
+3. a hand-authored `owner` on either module -> ownership decides: same owner ->
+   cross-module same-owner; different (or one unknown) -> cross-module
+   different-owner;
+4. a resolved multi-owner signal (CODEOWNERS / git authors, two or more distinct
+   owners) -> ownership decides as above;
+5. otherwise -> code structure: sibling or parent-child packages (shared subtree)
+   -> cross-module same-owner; different subtrees, or two unrelated flat
+   (single-segment) names -> cross-module different-owner.
 
 ## `rules`
 
