@@ -123,7 +123,8 @@ func distanceIsHigh(d Distance) bool {
 // Severity table (Balanced Coupling model, Khononov):
 //   - Intrusive: always surfaced, severity driven by distance/volatility.
 //   - high strength + high distance + high volatility → critical.
-//   - high strength + high distance + low/unknown volatility → medium.
+//   - high strength + high distance + medium/unknown volatility → medium.
+//   - high strength + high distance + low volatility → low (BC: stable target neutralizes).
 //   - low strength + low distance + high volatility → medium (over-decoupled volatile seam).
 //   - high strength + low distance → none (cohesive — XOR modular quadrant).
 //   - low strength + high distance → none (loose — XOR modular quadrant).
@@ -149,10 +150,17 @@ func BalanceResult(c Classification) Severity {
 	if sHigh == dHigh {
 		if sHigh {
 			// high strength + high distance: tight coupling across a large boundary.
-			if c.Volatility == VolatilityHigh {
+			// Volatility modulates per BC: a low-volatility (stable) target neutralizes
+			// the imbalance — the cascade rarely fires — so it drops to an advisory low;
+			// high volatility amplifies it to critical.
+			switch c.Volatility {
+			case VolatilityHigh:
 				return SeverityCritical
+			case VolatilityLow:
+				return SeverityLow
+			default: // medium, unknown — conservative
+				return SeverityMedium
 			}
-			return SeverityMedium
 		}
 		// low strength + low distance: over-decoupled volatile seam.
 		if c.Volatility == VolatilityHigh {

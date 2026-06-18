@@ -82,14 +82,15 @@ func TestBalanceResult(t *testing.T) {
 
 		// --- Symmetric unbalanced quadrant (high strength + high distance) ---
 		{
-			// high+high+low_vol → medium.
-			name: "high+high low_vol returns medium",
+			// high+high+low_vol → low (BC: a stable/low-volatility target neutralizes
+			// the imbalance; the cascade rarely fires).
+			name: "high+high low_vol returns low (neutralized)",
 			c: Classification{
 				Strength:   StrengthFunctional,
 				Distance:   DistanceCrossDeployUnit,
 				Volatility: VolatilityLow,
 			},
-			expected: SeverityMedium,
+			expected: SeverityLow,
 		},
 		{
 			// high+high+high_vol → critical.
