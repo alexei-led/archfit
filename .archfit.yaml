@@ -117,15 +117,17 @@ modules:
     layer: support
     subdomain: supporting
     volatility: medium
-  arch_tests:
-    paths:
-      - internal
-    public:
-      - internal
-    # Root internal package contains repository-level architecture tests.
-    layer: core
-    subdomain: supporting
-    volatility: low
+  # archfit: removed module "arch_tests" — verify before deleting (not found in discovery)
+  # arch_tests:
+  # paths:
+  # - internal
+  # public:
+  # - internal
+  # # Root internal package contains repository-level architecture tests.
+  # layer: core
+  # subdomain: supporting
+  # volatility: low
+
   agenttask:
     paths:
       - internal/agenttask/**
@@ -158,86 +160,104 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: low
-  extract_go:
-    paths:
-      - internal/extract/golang/**
-    public:
-      - internal/extract/golang
-    layer: adapter
-    subdomain: supporting
-    volatility: medium
-  extract_ts:
-    paths:
-      - internal/extract/ts/**
-    public:
-      - internal/extract/ts
-    layer: adapter
-    subdomain: supporting
-    volatility: medium
-  extract_py:
-    paths:
-      - internal/extract/py/**
-    public:
-      - internal/extract/py
-    layer: adapter
-    subdomain: supporting
-    volatility: medium
-  extract_astgrep:
-    paths:
-      - internal/extract/astgrep/**
-    public:
-      - internal/extract/astgrep
-    layer: adapter
-    subdomain: supporting
-    volatility: medium
-  extract_clones:
-    paths:
-      - internal/extract/clones/**
-    public:
-      - internal/extract/clones
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-  extract_complexity:
-    paths:
-      - internal/extract/complexity/**
-    public:
-      - internal/extract/complexity
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-  extract_gitnexus:
-    paths:
-      - internal/extract/gitnexus/**
-    public:
-      - internal/extract/gitnexus
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-  extract_loc:
-    paths:
-      - internal/extract/loc/**
-    public:
-      - internal/extract/loc
-    layer: adapter
-    subdomain: supporting
-    volatility: low
-  extract_scip:
-    paths:
-      - internal/extract/scip/**
-    public:
-      - internal/extract/scip
-    layer: adapter
-    subdomain: supporting
-    volatility: medium
-  history_git:
-    paths:
-      - internal/history/git/**
-    public:
-      - internal/history/git
-    layer: adapter
-    subdomain: supporting
-    volatility: low
+  # archfit: removed module "extract_go" — verify before deleting (not found in discovery)
+  # extract_go:
+  # paths:
+  # - internal/extract/golang/**
+  # public:
+  # - internal/extract/golang
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: medium
+  # archfit: removed module "extract_ts" — verify before deleting (not found in discovery)
+  # extract_ts:
+  # paths:
+  # - internal/extract/ts/**
+  # public:
+  # - internal/extract/ts
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: medium
+
+  # archfit: removed module "extract_py" — verify before deleting (not found in discovery)
+  # extract_py:
+  # paths:
+  # - internal/extract/py/**
+  # public:
+  # - internal/extract/py
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: medium
+
+  # archfit: removed module "extract_astgrep" — verify before deleting (not found in discovery)
+  # extract_astgrep:
+  # paths:
+  # - internal/extract/astgrep/**
+  # public:
+  # - internal/extract/astgrep
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: medium
+
+  # archfit: removed module "extract_clones" — verify before deleting (not found in discovery)
+  # extract_clones:
+  # paths:
+  # - internal/extract/clones/**
+  # public:
+  # - internal/extract/clones
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: low
+
+  # archfit: removed module "extract_complexity" — verify before deleting (not found in discovery)
+  # extract_complexity:
+  # paths:
+  # - internal/extract/complexity/**
+  # public:
+  # - internal/extract/complexity
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: low
+
+  # archfit: removed module "extract_gitnexus" — verify before deleting (not found in discovery)
+  # extract_gitnexus:
+  # paths:
+  # - internal/extract/gitnexus/**
+  # public:
+  # - internal/extract/gitnexus
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: low
+
+  # archfit: removed module "extract_loc" — verify before deleting (not found in discovery)
+  # extract_loc:
+  # paths:
+  # - internal/extract/loc/**
+  # public:
+  # - internal/extract/loc
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: low
+
+  # archfit: removed module "extract_scip" — verify before deleting (not found in discovery)
+  # extract_scip:
+  # paths:
+  # - internal/extract/scip/**
+  # public:
+  # - internal/extract/scip
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: medium
+
+  # archfit: removed module "history_git" — verify before deleting (not found in discovery)
+  # history_git:
+  # paths:
+  # - internal/history/git/**
+  # public:
+  # - internal/history/git
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: low
   output:
     paths:
       - internal/output/**
@@ -282,14 +302,48 @@ modules:
     layer: adapter
     subdomain: generic
     volatility: low
-  cmd:
+  # archfit: removed module "cmd" — verify before deleting (not found in discovery)
+  # cmd:
+  # paths:
+  # - cmd/**
+  # public:
+  # - cmd/archfit
+  # layer: cmd
+  # subdomain: supporting
+  # volatility: high
+
+  internal:
     paths:
-      - cmd/**
+      - internal/**
+    public:
+      - internal
+    layer: support
+    subdomain: generic
+    volatility: low
+  history:
+    paths:
+      - internal/history/**
+    public:
+      - internal/history
+    layer: support
+    subdomain: supporting
+    volatility: medium
+  extract:
+    paths:
+      - internal/extract/**
+    public:
+      - internal/extract
+    layer: engine
+    subdomain: core
+    volatility: high
+  cmd_archfit:
+    paths:
+      - cmd/archfit/**
     public:
       - cmd/archfit
     layer: cmd
-    subdomain: supporting
-    volatility: high
+    subdomain: generic
+    volatility: medium
 rules:
   # Ring gate 1: core must not directly import the process boundary or extractors
   - id: core_no_toolrun
@@ -383,12 +437,12 @@ tools:
     provider: anthropic
     model: claude-opus-4-8
   gitnexus:
-    enabled: "off"
+    enabled: "on"
   clones:
     enabled: "off"
 metrics:
   risk_hub:
-    enabled: false
+    enabled: true
   architecture_fitness:
     enabled: false
   functional_candidates:

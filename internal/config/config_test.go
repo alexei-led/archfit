@@ -551,29 +551,23 @@ func TestNewToolInvalidMode(t *testing.T) {
 	}
 }
 
-// TestLoad_SelfConfig verifies that the project's own .archfit.yaml parses cleanly
-// with the new tools.gitnexus, tools.clones, and metrics entries present.
+// TestLoad_SelfConfig verifies that the project's own .archfit.yaml — the realistic
+// config we run locally and in CI — loads cleanly and is well-formed. It deliberately
+// does NOT pin opt-in toggles (gitnexus, risk_hub, …): those are operational choices,
+// not invariants, and pinning them broke this test on every legitimate config change.
+// Toggle-accessor behavior is covered against synthetic configs by TestForMetric,
+// TestNewToolsDefaultOff, and the testdata fixture tests above.
 func TestLoad_SelfConfig(t *testing.T) {
 	// Go tests run with cwd = package dir (internal/config); repo root is two levels up.
 	cfg, err := config.Load(context.Background(), "../../.archfit.yaml")
 	if err != nil {
 		t.Fatalf("Load self-config: %v", err)
 	}
-
-	if cfg.GitnexusEnabled() {
-		t.Error("self-config: GitnexusEnabled() = true, want false (off by default)")
+	if len(cfg.Modules) == 0 {
+		t.Error("self-config: no modules parsed")
 	}
-	if cfg.ClonesEnabled() {
-		t.Error("self-config: ClonesEnabled() = true, want false (off by default)")
-	}
-
-	for _, name := range []string{
-		"risk_hub", "architecture_fitness", "functional_candidates",
-	} {
-		mc := cfg.ForMetric(name)
-		if mc.Enabled {
-			t.Errorf("self-config: ForMetric(%q).Enabled = true, want false (new metrics default off)", name)
-		}
+	if len(cfg.Layers) == 0 {
+		t.Error("self-config: no layers parsed")
 	}
 }
 
