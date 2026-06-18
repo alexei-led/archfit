@@ -241,10 +241,10 @@ Design §6.
 
 Design §6.
 
-- [ ] Add `internal/metrics/modularity/propagation.go`: `PC = reachable_pairs/(N^2-N)`
+- [x] Add `internal/metrics/modularity/propagation.go`: `PC = reachable_pairs/(N^2-N)`
       via transitive closure; report system-level and per-module.
-- [ ] Write tests on a small known graph (hand-computed PC).
-- [ ] Run project tests — must pass before next task.
+- [x] Write tests on a small known graph (hand-computed PC).
+- [x] Run project tests — must pass before next task.
 
 ### Task 11: Change-coupling formula
 

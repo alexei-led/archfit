@@ -75,6 +75,8 @@ func New(cfg config.Config) []Metric {
 		adapt(modularity.InstabilityMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(modularity.AbstractnessMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(modularity.MartinDistanceMetric{}, signal.CollectedSignals.AsCommon),
+		// Beyond Balanced Coupling — Propagation Cost (report-only, never gate).
+		adapt(modularity.PropagationCostMetric{}, signal.CollectedSignals.AsCommon),
 	}
 
 	// Honor explicit `metrics.<name>.enabled: false` config: metrics absent

@@ -18,14 +18,14 @@ const (
 
 func TestNew_ReturnsAllMetrics(t *testing.T) {
 	ms := metrics.New(config.Config{})
-	if len(ms) != 16 {
-		t.Errorf("expected 16 metrics got %d", len(ms))
+	if len(ms) != 17 {
+		t.Errorf("expected 17 metrics got %d", len(ms))
 	}
 	names := make(map[string]bool)
 	for _, m := range ms {
 		names[m.Name()] = true
 	}
-	for _, want := range []string{"encapsulation", "unbalanced_edge", "cycle", "coverage", "blast_radius", "change_amplification", "hidden_coupling", "structural_weight", "complexity", metricRiskHub, "architecture_fitness", "functional_candidates", metricChangeLocality, "instability", "abstractness", "martin_distance"} {
+	for _, want := range []string{"encapsulation", "unbalanced_edge", "cycle", "coverage", "blast_radius", "change_amplification", "hidden_coupling", "structural_weight", "complexity", metricRiskHub, "architecture_fitness", "functional_candidates", metricChangeLocality, "instability", "abstractness", "martin_distance", "propagation_cost"} {
 		if !names[want] {
 			t.Errorf("missing metric %q", want)
 		}
@@ -41,8 +41,8 @@ func TestNew_ExplicitDisableHonored(t *testing.T) {
 		"cycle":              {Enabled: true},
 	}}
 	ms := metrics.New(cfg)
-	if len(ms) != 14 {
-		t.Fatalf("expected 14 metrics (16 - 2 disabled), got %d", len(ms))
+	if len(ms) != 15 {
+		t.Fatalf("expected 15 metrics (17 - 2 disabled), got %d", len(ms))
 	}
 	for _, m := range ms {
 		if m.Name() == metricRiskHub || m.Name() == metricChangeLocality {
