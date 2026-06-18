@@ -326,7 +326,7 @@ func TestApplyEdits_SetModuleFields_CoalesceMultiple(t *testing.T) {
 		Module: testClassify,
 		Fields: map[ModuleField]string{
 			FieldSubdomain:  layerCore,
-			FieldVolatility: "low",
+			FieldVolatility: testAnnVolatility,
 			FieldLayer:      layerCore, // already present — should be skipped
 		},
 	}

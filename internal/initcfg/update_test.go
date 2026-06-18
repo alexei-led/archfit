@@ -88,7 +88,7 @@ func TestDiffModules(t *testing.T) {
 				PathDrift: []PathDelta{
 					{Name: "gw", ConfigPaths: []string{"gw/**"}, DiscoveredPaths: []string{"gw/v2/**"}},
 				},
-				Unclassified:     []string{"core"},
+				Unclassified:     []string{layerCore},
 				StructuralInSync: false,
 			},
 		},

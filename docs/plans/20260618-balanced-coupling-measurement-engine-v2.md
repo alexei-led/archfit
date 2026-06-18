@@ -289,11 +289,16 @@ Design §4.1 (report-only, not scored).
 
 Design §7 (LLM off-gate only).
 
-- [ ] Extend `cmd/archfit/enrich.go` + `internal/initcfg` to draft a subdomain per module
+- [x] Extend `cmd/archfit/enrich.go` + `internal/initcfg` to draft a subdomain per module
       (LLM) and pin it to config with `reviewed_at`/`reviewed_by`; wire existing staleness.
-- [ ] Confirm `internal/arch_test.go` still proves `check` imports no LLM SDK.
-- [ ] Write tests for the pin-writer and the gate-purity assertion.
-- [ ] Run project tests — must pass before next task.
+      (`--subdomains` draft workflow + `--pin` workflow; `internal/initcfg/subdomains.go` +
+      `subdomains_draft.go`; `SetModuleFieldsEdit` extended with `FieldReviewedAt`/`FieldReviewedBy`)
+- [x] Confirm `internal/arch_test.go` still proves `check` imports no LLM SDK.
+      (`llm_ring_unreachable_from_internal` subtest PASS — `initcfg` never imports `internal/llm`)
+- [x] Write tests for the pin-writer and the gate-purity assertion.
+      (`internal/initcfg/subdomains_test.go`: 8 tests; `cmd/archfit/enrich_subdomains_test.go`: 6 tests)
+- [x] Run project tests — must pass before next task.
+      (`make test` race green; `make lint` 0 issues; `TestArchImports` PASS; `TestGolden` PASS)
 
 **Phase 5 — Report restructure + lock the scorer + version bump.**
 

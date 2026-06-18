@@ -12,10 +12,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
+	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/coupling"
@@ -32,9 +34,18 @@ const enrichBatchSize = 30
 // EnrichCmd drafts model-vs-functional strength refinements for cross-module
 // edges. Drafts land in .archfit-labels.yaml with status: draft; a human
 // reviews, flips approved entries, and the deterministic gate consumes them.
+//
+// With --subdomains: drafts subdomain (core/supporting/generic) per module via
+// LLM into .archfit-subdomains.yaml; --pin applies approved entries into .archfit.yaml.
 type EnrichCmd struct {
-	Config  string `short:"c" default:".archfit.yaml"`
-	NoCache bool   `name:"no-cache" help:"Bypass the LLM response cache."`
+	Config     string `short:"c" default:".archfit.yaml"`
+	Subdomains bool   `name:"subdomains" help:"Draft subdomain (core/supporting/generic) per module via LLM, then pin approved values into .archfit.yaml."`
+	Pin        bool   `name:"pin"        help:"With --subdomains: read approved entries from the draft file and write them into .archfit.yaml."`
+	ReviewedBy string `name:"reviewed-by" help:"Human reviewer identity stamped on pinned entries." default:""`
+	NoCache    bool   `name:"no-cache" help:"Bypass the LLM response cache."`
+
+	// providerOverride is a test seam — set directly on the struct to inject a fake provider.
+	providerOverride llm.Provider
 }
 
 // captureMetric records the common pipeline evidence (graph, classifications) so
@@ -52,6 +63,18 @@ func (m *captureMetric) Calculate(in signal.CollectedSignals) diagnostic.MetricR
 func (c *EnrichCmd) Run(deps *appDeps) error {
 	ctx := context.Background()
 
+	// Route to the appropriate workflow.
+	if c.Subdomains && c.Pin {
+		return c.runSubdomainPin(ctx, deps)
+	}
+	if c.Subdomains {
+		return c.runSubdomainDraft(ctx, deps)
+	}
+	return c.runLabelEnrich(ctx, deps)
+}
+
+// runLabelEnrich is the original coupling-strength label draft workflow.
+func (c *EnrichCmd) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	cfg, err := loadConfig(ctx, c.Config, false)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
@@ -65,12 +88,10 @@ func (c *EnrichCmd) Run(deps *appDeps) error {
 	}
 
 	configDir := filepath.Dir(c.Config)
-	provider, err := buildProvider(llmCfg)
+	cacheDir := filepath.Join(configDir, ".archfit-cache", "llm")
+	provider, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
-	}
-	if !c.NoCache {
-		provider = llm.NewCache(provider, filepath.Join(configDir, ".archfit-cache", "llm"))
 	}
 
 	labelsPath := filepath.Join(configDir, defaultLabelsPath)
@@ -124,6 +145,155 @@ func (c *EnrichCmd) Run(deps *appDeps) error {
 	}
 	_, _ = fmt.Fprintf(deps.Stdout, "enrich: %d draft label(s) written to %s (%d approved entries kept)\n", len(drafts), labelsPath, approvedKept)
 	_, _ = fmt.Fprintln(deps.Stdout, "review each draft, set status: approved to pin it, delete to reject — the gate consumes approved labels only")
+	return nil
+}
+
+// runSubdomainDraft calls the LLM to classify unclassified modules and writes
+// draft entries into .archfit-subdomains.yaml for human review.
+func (c *EnrichCmd) runSubdomainDraft(ctx context.Context, deps *appDeps) error {
+	cfg, err := loadConfig(ctx, c.Config, false)
+	if err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+	}
+	llmCfg, configured := cfg.LLM()
+	if !configured {
+		return &exitError{code: 3, msg: "error: enrich --subdomains needs tools.llm configured (provider + model); see docs/guide/llm-enrich.md"}
+	}
+
+	configDir := filepath.Dir(c.Config)
+	cacheDir := filepath.Join(configDir, ".archfit-cache", "llm")
+	provider, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
+	if err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
+	}
+
+	// Collect modules without a subdomain set yet.
+	var toClassify []initcfg.ModuleDef
+	for name, mod := range cfg.Modules {
+		if mod.Subdomain != "" {
+			continue
+		}
+		toClassify = append(toClassify, initcfg.ModuleDef{
+			Name:  name,
+			Paths: mod.Paths,
+		})
+	}
+	// Sort for determinism.
+	sort.Slice(toClassify, func(i, j int) bool { return toClassify[i].Name < toClassify[j].Name })
+
+	if len(toClassify) == 0 {
+		_, _ = fmt.Fprintln(deps.Stdout, "enrich --subdomains: all modules already have subdomain set — nothing to draft")
+		return nil
+	}
+
+	root := configDir
+	targets := initcfg.BuildClassifyTargets(root, toClassify)
+	ann, err := classifyModules(ctx, provider, targets, cfg.Layers)
+	if err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: classify failed: %v", err)}
+	}
+	warnPartialClassify(deps.Stdout, targets, ann)
+
+	// Convert annotations to draft entries.
+	var newDrafts []initcfg.SubdomainDraft
+	for _, t := range targets {
+		a, ok := ann[t.Name]
+		if !ok || a.Subdomain == "" {
+			continue
+		}
+		newDrafts = append(newDrafts, initcfg.SubdomainDraft{
+			Module:     t.Name,
+			Subdomain:  a.Subdomain,
+			Volatility: a.Volatility,
+			Rationale:  "", // classifyModules doesn't surface rationale separately
+			Status:     initcfg.SubdomainStatusDraft,
+		})
+	}
+
+	subdomainsPath := filepath.Join(configDir, defaultSubdomainsPath)
+	existing, err := initcfg.LoadSubdomainDrafts(subdomainsPath)
+	if err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+	}
+	merged := initcfg.MergeSubdomainDrafts(existing, newDrafts)
+	if err := initcfg.WriteSubdomainDrafts(subdomainsPath, merged); err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+	}
+
+	_, _ = fmt.Fprintf(deps.Stdout,
+		"enrich: %d draft subdomain(s) written to %s — review, set status: approved, then run enrich --subdomains --pin\n",
+		len(newDrafts), subdomainsPath)
+	return nil
+}
+
+// runSubdomainPin reads approved entries from .archfit-subdomains.yaml and
+// applies them into .archfit.yaml.
+func (c *EnrichCmd) runSubdomainPin(ctx context.Context, deps *appDeps) error {
+	configDir := filepath.Dir(c.Config)
+	subdomainsPath := filepath.Join(configDir, defaultSubdomainsPath)
+
+	draftFile, err := initcfg.LoadSubdomainDrafts(subdomainsPath)
+	if err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+	}
+
+	var approved []initcfg.SubdomainDraft
+	for _, d := range draftFile.Drafts {
+		if d.Status == initcfg.SubdomainStatusApproved {
+			approved = append(approved, d)
+		}
+	}
+	if len(approved) == 0 {
+		_, _ = fmt.Fprintln(deps.Stdout, "no approved subdomain drafts found — set status: approved in "+subdomainsPath+" and re-run")
+		return nil
+	}
+
+	src, err := os.ReadFile(c.Config) //#nosec G304
+	if err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: reading config: %v", err)}
+	}
+
+	cfg, err := loadConfig(ctx, c.Config, false)
+	if err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+	}
+
+	// Build current subdomain map.
+	currentSubdomains := make(map[string]string, len(cfg.Modules))
+	for name, mod := range cfg.Modules {
+		currentSubdomains[name] = mod.Subdomain
+	}
+
+	// Build pins from approved drafts.
+	reviewedBy := c.ReviewedBy
+	if reviewedBy == "" {
+		reviewedBy = "enrich --subdomains"
+	}
+	reviewedAt := time.Now().UTC()
+	pins := make([]initcfg.SubdomainPin, 0, len(approved))
+	for _, d := range approved {
+		pins = append(pins, initcfg.SubdomainPin{
+			Module:     d.Module,
+			Subdomain:  d.Subdomain,
+			Volatility: d.Volatility,
+			ReviewedAt: reviewedAt,
+			ReviewedBy: reviewedBy,
+		})
+	}
+
+	edited, patched, err := initcfg.PinSubdomains(src, currentSubdomains, pins)
+	if err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: pin subdomains: %v", err)}
+	}
+	if patched == 0 {
+		_, _ = fmt.Fprintln(deps.Stdout, "no changes — all approved modules already have subdomain set")
+		return nil
+	}
+
+	if err := safeWriteConfig(ctx, deps, c.Config, edited, src); err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+	}
+	_, _ = fmt.Fprintf(deps.Stdout, "pinned %d subdomain(s) into %s (reviewed_by: %s)\n", patched, c.Config, reviewedBy)
 	return nil
 }
 
