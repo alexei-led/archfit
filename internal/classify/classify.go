@@ -134,7 +134,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) coupling.Cl
 	}
 
 	// --- Distance ---
-	dist := classifyDistance(fromPath, toPath, mi, modules)
+	dist := classifyDistance(fromPath, toPath, mi, modules, c.ExplicitOwners)
 
 	// --- Volatility ---
 	vol := classifyVolatility(toPath, mi, modules)
@@ -253,21 +253,26 @@ func strengthFromHint(hint string) coupling.Strength {
 	}
 }
 
-// classifyDistance computes the composite distance for a cross-module edge.
+// classifyDistance computes the composite distance for a cross-module edge using
+// a precedence chain rather than a flat max, so that explicit config is never
+// overridden by the structural fallback:
 //
-// The composite takes the max of three independent signals, so distance carries
-// a meaningful value even in a single-owner repo (code structure is the baseline):
+//  1. A differing deploy unit is an absolute boundary → cross_deploy_unit.
+//  2. Hand-authored ownership on EITHER endpoint is authoritative → ownership
+//     decides (vs deploy). The user told us something; don't drop it to the
+//     code-structure default. (One-sided is fine: ownershipDistance compares the
+//     explicit owner against the other endpoint's owner as usual.)
+//  3. A real resolver ownership signal (≥2 distinct owners, not the single
+//     git-author degenerate case) is authoritative too → ownership decides.
+//  4. Otherwise (degenerate or no ownership) fall back to code structure.
 //
-//	distance = max(code_structure, ownership, deploy)
-//
-// Ownership is suppressed when the owner map is degenerate (single git-author
-// fallback assigns the same owner to every module). In that case, ownership
-// contributes DistanceSameModule (no signal) and code-structure distance dominates.
-// A real multi-team CODEOWNERS repo returns false from isDegenerateOwnerMap and
-// ownership contributes normally.
+// This precedence is why a flat-named explicit `owner: same-team` config no
+// longer collapses to the code-structure default: explicit ownership is handled
+// in step 2, before codeStructureDistance (which treats two flat single-segment
+// names as different subtrees) can apply.
 //
 // runtime_adjust (+1 level for async bridges) is a Phase-4 addition (Task 12).
-func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[string]config.ModuleDef) coupling.Distance {
+func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[string]config.ModuleDef, explicitOwners map[string]bool) coupling.Distance {
 	fromMod, fromOK := mi.moduleFor(fromPath)
 	toMod, toOK := mi.moduleFor(toPath)
 
@@ -282,25 +287,29 @@ func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[strin
 	fromDef := modules[fromMod]
 	toDef := modules[toMod]
 
-	// Build the module→owner map for degeneracy check. Only the Owner fields
-	// are needed; this is a small map (one entry per configured module).
+	deploy := deployDistance(fromDef.DeployUnit, toDef.DeployUnit)
+	if deploy == coupling.DistanceCrossDeployUnit {
+		return deploy // a deploy boundary is absolute
+	}
+
+	// Step 2: explicit hand-authored ownership on either endpoint is authoritative.
+	if explicitOwners[fromMod] || explicitOwners[toMod] {
+		return maxDistance(ownershipDistance(fromDef.Owner, toDef.Owner), deploy)
+	}
+
+	// Step 3: a real resolver ownership signal (≥2 distinct owners) is authoritative.
+	// The module→owner map is only built here (not on every edge) — explicit-owner
+	// edges short-circuit above.
 	owners := make(map[string]string, len(modules))
 	for name, def := range modules {
 		owners[name] = def.Owner
 	}
-
-	// Suppress ownership when degenerate (single git-author fallback).
-	// Pass empty strings so ownershipDistance returns DistanceSameModule (no contribution).
-	fromOwner, toOwner := fromDef.Owner, toDef.Owner
-	if isDegenerateOwnerMap(owners) {
-		fromOwner, toOwner = "", ""
+	if !isDegenerateOwnerMap(owners) {
+		return maxDistance(ownershipDistance(fromDef.Owner, toDef.Owner), deploy)
 	}
 
-	return maxDistance(
-		codeStructureDistance(fromMod, toMod),
-		ownershipDistance(fromOwner, toOwner),
-		deployDistance(fromDef.DeployUnit, toDef.DeployUnit),
-	)
+	// Step 4: git-author degenerate or no ownership → code structure.
+	return maxDistance(codeStructureDistance(fromMod, toMod), deploy)
 }
 
 // classifyVolatility derives domain volatility for the to-module using three

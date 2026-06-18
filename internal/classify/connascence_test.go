@@ -60,7 +60,7 @@ func TestConnascenceTagging(t *testing.T) {
 			},
 			cfg:          twoModuleConfig(nil, nil),
 			wantConn:     coupling.ConnascenceType,
-			wantDistance: coupling.DistanceCrossModuleSameOwner,
+			wantDistance: coupling.DistanceCrossModuleDiffOwner,
 		},
 		{
 			name: "CoT: StrengthHint=contract cross-module",
@@ -72,7 +72,7 @@ func TestConnascenceTagging(t *testing.T) {
 			},
 			cfg:          twoModuleConfig(nil, nil),
 			wantConn:     coupling.ConnascenceType,
-			wantDistance: coupling.DistanceCrossModuleSameOwner,
+			wantDistance: coupling.DistanceCrossModuleDiffOwner,
 		},
 		{
 			name: "CoT: strength=contract from config public glob",
@@ -84,7 +84,7 @@ func TestConnascenceTagging(t *testing.T) {
 			// services/b/api/** is a public (contract) glob
 			cfg:          twoModuleConfig([]string{"services/b/api/**"}, nil),
 			wantConn:     coupling.ConnascenceType,
-			wantDistance: coupling.DistanceCrossModuleSameOwner,
+			wantDistance: coupling.DistanceCrossModuleDiffOwner,
 		},
 		{
 			name: "CoA: clone pair crosses module boundary",
@@ -96,7 +96,7 @@ func TestConnascenceTagging(t *testing.T) {
 			},
 			cfg:          twoModuleConfig(nil, clonePairSet("modA", "modB")),
 			wantConn:     coupling.ConnascenceAlgorithm,
-			wantDistance: coupling.DistanceCrossModuleSameOwner,
+			wantDistance: coupling.DistanceCrossModuleDiffOwner,
 		},
 		{
 			name: "CoA beats CoT when both signals present",
@@ -109,7 +109,7 @@ func TestConnascenceTagging(t *testing.T) {
 			// Also has clone pair → CoA should win
 			cfg:          twoModuleConfig(nil, clonePairSet("modA", "modB")),
 			wantConn:     coupling.ConnascenceAlgorithm,
-			wantDistance: coupling.DistanceCrossModuleSameOwner,
+			wantDistance: coupling.DistanceCrossModuleDiffOwner,
 		},
 		{
 			name: "no connascence on same-module edge",
@@ -133,7 +133,7 @@ func TestConnascenceTagging(t *testing.T) {
 			},
 			cfg:          twoModuleConfig(nil, nil),
 			wantConn:     coupling.ConnascenceNone,
-			wantDistance: coupling.DistanceCrossModuleSameOwner,
+			wantDistance: coupling.DistanceCrossModuleDiffOwner,
 		},
 		{
 			name: "no connascence: intrusive hint, no clone pair",
@@ -145,7 +145,7 @@ func TestConnascenceTagging(t *testing.T) {
 			},
 			cfg:          twoModuleConfig(nil, nil),
 			wantConn:     coupling.ConnascenceNone,
-			wantDistance: coupling.DistanceCrossModuleSameOwner,
+			wantDistance: coupling.DistanceCrossModuleDiffOwner,
 		},
 		{
 			name: "no connascence: unknown hint, no clone pair",
@@ -156,7 +156,7 @@ func TestConnascenceTagging(t *testing.T) {
 			},
 			cfg:          twoModuleConfig(nil, nil),
 			wantConn:     coupling.ConnascenceNone,
-			wantDistance: coupling.DistanceCrossModuleSameOwner,
+			wantDistance: coupling.DistanceCrossModuleDiffOwner,
 		},
 	}
 

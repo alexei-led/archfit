@@ -20,8 +20,10 @@ import (
 //   - Modules in different subtrees (fewer shared segments) →
 //     DistanceCrossModuleDiffOwner.
 //
-// Single-segment module names (flat namespaces) always return SameOwner because
-// depth=1 and shared=0 satisfies shared >= depth-1 (0 >= 0).
+// Two flat single-segment names (e.g. "core" vs "api") share no tree structure,
+// so they are treated as different subtrees → DiffOwner. This is safe because
+// classifyDistance resolves explicit same-owner config BEFORE reaching here, so
+// an owned flat module is not mis-distanced by this fallback.
 // Returns DistanceUnknown when either name is empty.
 func codeStructureDistance(fromMod, toMod string) coupling.Distance {
 	if fromMod == "" || toMod == "" {
@@ -30,6 +32,10 @@ func codeStructureDistance(fromMod, toMod string) coupling.Distance {
 
 	fromParts := strings.Split(fromMod, "/")
 	toParts := strings.Split(toMod, "/")
+
+	if len(fromParts) == 1 && len(toParts) == 1 {
+		return coupling.DistanceCrossModuleDiffOwner
+	}
 
 	shared := 0
 	for i := 0; i < len(fromParts) && i < len(toParts); i++ {

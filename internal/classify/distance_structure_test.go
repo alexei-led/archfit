@@ -3,6 +3,7 @@ package classify
 import (
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 )
 
@@ -13,6 +14,9 @@ const (
 	distOwnerTeamX             = "team-x"
 	distOwnerTeamY             = "team-y"
 	distDeployUnitA            = "svc-a"
+	distDeployUnitB            = "svc-b"
+	distModCore                = "core"
+	distModAPI                 = "api"
 )
 
 func TestCodeStructureDistance(t *testing.T) {
@@ -27,9 +31,10 @@ func TestCodeStructureDistance(t *testing.T) {
 		{name: "empty to", from: modInternalFoo, to: "", want: coupling.DistanceUnknown},
 		{name: "both empty", from: "", to: "", want: coupling.DistanceUnknown},
 
-		// Single-segment module names (flat namespace): depth=1, shared=0, 0>=0 → SameOwner.
-		{name: "flat a vs b", from: "a", to: "b", want: coupling.DistanceCrossModuleSameOwner},
-		{name: "flat alpha vs beta", from: "alpha", to: "beta", want: coupling.DistanceCrossModuleSameOwner},
+		// Two flat single-segment names share no tree structure → DiffOwner.
+		// (Explicit same-owner config is resolved upstream in classifyDistance.)
+		{name: "flat a vs b", from: "a", to: "b", want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "flat alpha vs beta", from: "alpha", to: "beta", want: coupling.DistanceCrossModuleDiffOwner},
 
 		// Siblings (same parent, different last segment).
 		{name: "sibling metrics packages", from: modInternalMetricsBoundary, to: "internal/metrics/modularity", want: coupling.DistanceCrossModuleSameOwner},
@@ -58,6 +63,69 @@ func TestCodeStructureDistance(t *testing.T) {
 			got := codeStructureDistance(tc.from, tc.to)
 			if got != tc.want {
 				t.Errorf("codeStructureDistance(%q, %q) = %q, want %q", tc.from, tc.to, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestClassifyDistance_Precedence exercises the precedence chain: deploy boundary
+// is absolute; explicit ownership beats the code-structure fallback (so flat
+// names with an explicit same owner stay SameOwner instead of collapsing to the
+// flat-name DiffOwner default); and ownerless flat names fall through to
+// code structure (DiffOwner).
+func TestClassifyDistance_Precedence(t *testing.T) {
+	fromPath, toPath := distModCore+"/x.go", distModAPI+"/y.go"
+	mods := func(fromOwner, toOwner, fromUnit, toUnit string) map[string]config.ModuleDef {
+		return map[string]config.ModuleDef{
+			distModCore: {Paths: []string{distModCore + "/**"}, Owner: fromOwner, DeployUnit: fromUnit},
+			distModAPI:  {Paths: []string{distModAPI + "/**"}, Owner: toOwner, DeployUnit: toUnit},
+		}
+	}
+	both := map[string]bool{distModCore: true, distModAPI: true}
+
+	tests := []struct {
+		name     string
+		modules  map[string]config.ModuleDef
+		explicit map[string]bool
+		want     coupling.Distance
+	}{
+		{
+			name:    "ownerless flat names → code structure (DiffOwner)",
+			modules: mods("", "", "", ""),
+			want:    coupling.DistanceCrossModuleDiffOwner,
+		},
+		{
+			name:     "explicit same owner overrides flat-name default → SameOwner",
+			modules:  mods(distOwnerTeamX, distOwnerTeamX, "", ""),
+			explicit: both,
+			want:     coupling.DistanceCrossModuleSameOwner,
+		},
+		{
+			name:     "explicit different owners → DiffOwner",
+			modules:  mods(distOwnerTeamX, distOwnerTeamY, "", ""),
+			explicit: both,
+			want:     coupling.DistanceCrossModuleDiffOwner,
+		},
+		{
+			name:     "one-sided explicit owner, same → SameOwner",
+			modules:  mods(distOwnerTeamX, distOwnerTeamX, "", ""),
+			explicit: map[string]bool{distModCore: true},
+			want:     coupling.DistanceCrossModuleSameOwner,
+		},
+		{
+			name:     "differing deploy units are absolute → CrossDeployUnit",
+			modules:  mods(distOwnerTeamX, distOwnerTeamX, distDeployUnitA, distDeployUnitB),
+			explicit: both,
+			want:     coupling.DistanceCrossDeployUnit,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mi := buildModuleIndex(tc.modules)
+			got := classifyDistance(fromPath, toPath, mi, tc.modules, tc.explicit)
+			if got != tc.want {
+				t.Errorf("classifyDistance = %q, want %q", got, tc.want)
 			}
 		})
 	}

@@ -3,6 +3,7 @@ package config_test
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -216,6 +217,54 @@ func TestForClassify(t *testing.T) {
 	}
 	if len(cc.Layers) != len(cfg.Layers) {
 		t.Errorf("ForClassify().Layers len=%d, want %d", len(cc.Layers), len(cfg.Layers))
+	}
+}
+
+// TestWithExplicitOwners verifies the test seam: a Config literal (bypassing Load)
+// carries no explicit owners until marked, and WithExplicitOwners threads through
+// ForClassify so classify can treat marked ownership as authoritative.
+func TestWithExplicitOwners(t *testing.T) {
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"a": {Owner: "x"},
+			"b": {Owner: "x"},
+		},
+	}
+	if eo := cfg.ForClassify().ExplicitOwners; len(eo) != 0 {
+		t.Errorf("unmarked literal ExplicitOwners = %v, want empty", eo)
+	}
+	got := cfg.WithExplicitOwners("a").ForClassify().ExplicitOwners
+	if !got["a"] {
+		t.Error(`ExplicitOwners["a"] = false, want true`)
+	}
+	if got["b"] {
+		t.Error(`ExplicitOwners["b"] = true, want false (not marked)`)
+	}
+}
+
+// TestLoad_PopulatesExplicitOwners verifies the production path: Load records a
+// module as having an explicit owner iff its YAML `owner:` is non-empty, BEFORE
+// any resolver fill.
+func TestLoad_PopulatesExplicitOwners(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".archfit.yaml")
+	yaml := "version: 1\n" +
+		"modules:\n" +
+		"  owned:\n    paths: [\"owned/**\"]\n    owner: team-x\n" +
+		"  bare:\n    paths: [\"bare/**\"]\n"
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := config.Load(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	eo := cfg.ForClassify().ExplicitOwners
+	if !eo["owned"] {
+		t.Error(`ExplicitOwners["owned"] = false, want true (has YAML owner)`)
+	}
+	if eo["bare"] {
+		t.Error(`ExplicitOwners["bare"] = true, want false (no owner)`)
 	}
 }
 
