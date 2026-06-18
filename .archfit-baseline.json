@@ -12,7 +12,7 @@
     },
     "change_locality": {
       "value": 0,
-      "version": "change_locality.v1"
+      "version": "change_locality.v2"
     },
     "complexity": {
       "value": 12,
@@ -40,7 +40,7 @@
     },
     "unbalanced_edge": {
       "value": 0,
-      "version": "unbalanced_edge.v1"
+      "version": "unbalanced_edge.v2"
     }
   }
 }

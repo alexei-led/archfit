@@ -1,8 +1,10 @@
-// Package labels loads and validates pinned coupling-strength labels —
+// Package labels holds the pure logic for pinned coupling-strength labels —
 // the human-reviewed output of `archfit enrich`. The gate (check) consumes
 // APPROVED labels deterministically; DRAFT labels are inert. The package is
-// deliberately LLM-free: it reads plain YAML, so the verdict never depends on
-// a model call (the arch ring test forbids internal/llm here).
+// deliberately LLM-free AND I/O-free: reading the labels file from disk lives in
+// the internal/labels/labelsio adapter, so the os + YAML dependency never rides
+// into the engine's import closure. The engine imports only this pure package
+// (the arch ring test forbids internal/llm and internal/labels/labelsio here).
 //
 // A label refines the integration strength of all edges between one ordered
 // module pair (model-vs-functional is the usual refinement; the deterministic
@@ -20,12 +22,7 @@ package labels
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
-	"fmt"
-	"os"
 	"sort"
-
-	"github.com/goccy/go-yaml"
 )
 
 // Status values for a label.
@@ -66,36 +63,6 @@ type File struct {
 // Key returns the lookup key for an ordered module pair.
 func Key(fromModule, toModule string) string {
 	return fromModule + "\x00" + toModule
-}
-
-// Load reads and strictly validates a labels file. A missing file is not an
-// error — it returns (nil, nil): labels are optional. Any malformed entry is
-// an error: a half-read labels file must never silently alter the gate.
-func Load(path string) ([]Label, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // path is the caller's config-relative labels file
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	var f File
-	if err := yaml.Unmarshal(data, &f); err != nil {
-		return nil, fmt.Errorf("labels: parse %s: %w", path, err)
-	}
-	for i, l := range f.Labels {
-		if l.From == "" || l.To == "" {
-			return nil, fmt.Errorf("labels: entry %d: from and to are required", i)
-		}
-		if _, ok := validStrengths[l.Strength]; !ok {
-			return nil, fmt.Errorf("labels: entry %d (%s -> %s): invalid strength %q", i, l.From, l.To, l.Strength)
-		}
-		if l.Status != StatusDraft && l.Status != StatusApproved {
-			return nil, fmt.Errorf("labels: entry %d (%s -> %s): invalid status %q (draft|approved)", i, l.From, l.To, l.Status)
-		}
-	}
-	return f.Labels, nil
 }
 
 // HashItems returns the canonical evidence hash for a set of evidence items

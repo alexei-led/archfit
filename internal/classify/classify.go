@@ -26,12 +26,23 @@ import (
 //     (core→high, supporting→medium, generic→low, ""/"unknown"→unknown).
 //   - Explicitness: explicit when strength=contract; implicit when strength=intrusive;
 //     unknown otherwise.
+//   - Score: continuous EdgeScore from the configured Scorer (default: MultiplicativeScorer, locked Task 16).
+//     Applied to cross-boundary edges only (same-module and unknown-distance are zero).
 func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 	mm := buildModuleIndex(c.Modules)
 	idx := make(coupling.Index)
+	scorer := c.Scorer
+	if scorer == nil {
+		scorer = coupling.DefaultScorer()
+	}
 
 	for _, e := range g.Edges() {
 		cl := classify(e, mm, c)
+		// Attach a continuous score for cross-boundary edges that have a severity.
+		// Same-module and unknown-distance edges are not scored (zero EdgeScore).
+		if cl.Distance != coupling.DistanceSameModule && cl.Distance != coupling.DistanceUnknown {
+			cl.Score = scorer.Score(cl)
+		}
 		idx[edgeKey(e)] = cl
 	}
 
@@ -123,7 +134,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) coupling.Cl
 	}
 
 	// --- Distance ---
-	dist := classifyDistance(fromPath, toPath, mi, modules)
+	dist := classifyDistance(fromPath, toPath, mi, modules, c.ExplicitOwners)
 
 	// --- Volatility ---
 	vol := classifyVolatility(toPath, mi, modules)
@@ -139,20 +150,69 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) coupling.Cl
 		exp = coupling.ExplicitnessImplicit
 	}
 
+	// --- Contract-recommended advisory ---
+	// When a generic-subdomain target is reached via non-contract strength (model,
+	// functional, intrusive, or unknown), BC's anti-corruption-layer guidance applies:
+	// introduce a contract (interface/adapter) so the caller is decoupled from the
+	// provider's implementation volatility. This flag is carried on the Classification
+	// so the engine can emit a dedicated advisory finding.
+	contractRecommended := str != coupling.StrengthContract &&
+		dist != coupling.DistanceSameModule &&
+		isGenericSubdomain(toPath, mi, modules)
+
 	cl := coupling.Classification{
-		Strength:     str,
-		Distance:     dist,
-		Volatility:   vol,
-		Explicitness: exp,
+		Strength:            str,
+		Distance:            dist,
+		Volatility:          vol,
+		Explicitness:        exp,
+		ContractRecommended: contractRecommended,
+		AsyncBridge:         e.AsyncBridge,
 	}
 
-	// --- Severity ---
-	// Only meaningful for cross-boundary edges; same-module edges are balanced by definition.
+	// --- Severity + Connascence ---
+	// Both are only meaningful for cross-boundary edges.
 	if dist != coupling.DistanceSameModule && dist != coupling.DistanceUnknown {
 		cl.Severity = coupling.BalanceResult(cl)
+		// Connascence is report-only descriptive vocabulary — never scored, never gates.
+		if fromMod, okF := mi.moduleFor(fromPath); okF {
+			if toMod, okT := mi.moduleFor(toPath); okT {
+				cl.Connascence = classifyConnascence(e, str, fromMod, toMod, c)
+			}
+		}
 	}
 
 	return cl
+}
+
+// classifyConnascence derives the connascence degree for a cross-module edge.
+// CoA takes precedence: a clone pair crossing a module boundary is a stronger
+// signal than type-level coupling. CoT is assigned when the edge carries a
+// SCIP-sourced model or contract strength hint (struct/interface/field use).
+// Report-only — never fed into the scorer or gate.
+func classifyConnascence(e graph.Edge, str coupling.Strength, fromMod, toMod string, c config.ClassifyConfig) coupling.Connascence {
+	// CoA: clone pair crossing this module boundary.
+	if len(c.CrossModuleClonePairs) > 0 {
+		if _, ok := c.CrossModuleClonePairs[connascencePairKey(fromMod, toMod)]; ok {
+			return coupling.ConnascenceAlgorithm
+		}
+	}
+	// CoT: cross-module struct/interface/field use — signalled by a SCIP hint
+	// resolving to model or contract strength, or a direct model/contract label.
+	if e.StrengthHint == string(coupling.StrengthModel) ||
+		e.StrengthHint == string(coupling.StrengthContract) ||
+		str == coupling.StrengthModel ||
+		str == coupling.StrengthContract {
+		return coupling.ConnascenceType
+	}
+	return coupling.ConnascenceNone
+}
+
+// connascencePairKey returns the canonical sorted key for a module pair.
+func connascencePairKey(a, b string) string {
+	if a > b {
+		a, b = b, a
+	}
+	return a + "\x00" + b
 }
 
 // classifyStrength determines strength from glob matching against all modules'
@@ -193,9 +253,26 @@ func strengthFromHint(hint string) coupling.Strength {
 	}
 }
 
-// classifyDistance determines how far apart from and to modules are in the
-// ownership hierarchy.
-func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[string]config.ModuleDef) coupling.Distance {
+// classifyDistance computes the composite distance for a cross-module edge using
+// a precedence chain rather than a flat max, so that explicit config is never
+// overridden by the structural fallback:
+//
+//  1. A differing deploy unit is an absolute boundary → cross_deploy_unit.
+//  2. Hand-authored ownership on EITHER endpoint is authoritative → ownership
+//     decides (vs deploy). The user told us something; don't drop it to the
+//     code-structure default. (One-sided is fine: ownershipDistance compares the
+//     explicit owner against the other endpoint's owner as usual.)
+//  3. A real resolver ownership signal (≥2 distinct owners, not the single
+//     git-author degenerate case) is authoritative too → ownership decides.
+//  4. Otherwise (degenerate or no ownership) fall back to code structure.
+//
+// This precedence is why a flat-named explicit `owner: same-team` config no
+// longer collapses to the code-structure default: explicit ownership is handled
+// in step 2, before codeStructureDistance (which treats two flat single-segment
+// names as different subtrees) can apply.
+//
+// runtime_adjust (+1 level for async bridges) is a Phase-4 addition (Task 12).
+func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[string]config.ModuleDef, explicitOwners map[string]bool) coupling.Distance {
 	fromMod, fromOK := mi.moduleFor(fromPath)
 	toMod, toOK := mi.moduleFor(toPath)
 
@@ -210,18 +287,41 @@ func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[strin
 	fromDef := modules[fromMod]
 	toDef := modules[toMod]
 
-	if fromDef.Owner == toDef.Owner && fromDef.Owner != "" {
-		return coupling.DistanceCrossModuleSameOwner
+	deploy := deployDistance(fromDef.DeployUnit, toDef.DeployUnit)
+	if deploy == coupling.DistanceCrossDeployUnit {
+		return deploy // a deploy boundary is absolute
 	}
 
-	if fromDef.DeployUnit != toDef.DeployUnit && fromDef.DeployUnit != "" && toDef.DeployUnit != "" {
-		return coupling.DistanceCrossDeployUnit
+	// Step 2: explicit hand-authored ownership on either endpoint is authoritative.
+	if explicitOwners[fromMod] || explicitOwners[toMod] {
+		return maxDistance(ownershipDistance(fromDef.Owner, toDef.Owner), deploy)
 	}
 
-	return coupling.DistanceCrossModuleDiffOwner
+	// Step 3: a real resolver ownership signal (≥2 distinct owners) is authoritative.
+	// The module→owner map is only built here (not on every edge) — explicit-owner
+	// edges short-circuit above.
+	owners := make(map[string]string, len(modules))
+	for name, def := range modules {
+		owners[name] = def.Owner
+	}
+	if !isDegenerateOwnerMap(owners) {
+		return maxDistance(ownershipDistance(fromDef.Owner, toDef.Owner), deploy)
+	}
+
+	// Step 4: git-author degenerate or no ownership → code structure.
+	return maxDistance(codeStructureDistance(fromMod, toMod), deploy)
 }
 
-// classifyVolatility derives volatility from the to-module's subdomain.
+// classifyVolatility derives domain volatility for the to-module using three
+// sources in priority order:
+//
+//  1. Explicit `volatility` field on the module definition (hand-authored).
+//  2. Subdomain heuristic: core→high, supporting→medium, generic→low.
+//  3. Path-pattern heuristic (domainVolatilityFromPath) — deterministic,
+//     never guesses core/high, falls back to unknown.
+//
+// No churn or git history is consulted here. Implementation volatility (git
+// churn) feeds only report-only metrics (change_amplification, hidden_coupling).
 func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config.ModuleDef) coupling.Volatility {
 	toMod, ok := mi.moduleFor(toPath)
 	if !ok {
@@ -229,7 +329,7 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 	}
 	def := modules[toMod]
 
-	// Use explicit Volatility field if set.
+	// Priority 1: explicit Volatility field.
 	switch strings.ToLower(def.Volatility) {
 	case "high":
 		return coupling.VolatilityHigh
@@ -239,7 +339,7 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 		return coupling.VolatilityLow
 	}
 
-	// Fall back to subdomain heuristic.
+	// Priority 2: subdomain heuristic.
 	switch strings.ToLower(def.Subdomain) {
 	case "core":
 		return coupling.VolatilityHigh
@@ -247,9 +347,37 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 		return coupling.VolatilityMedium
 	case "generic":
 		return coupling.VolatilityLow
-	default:
-		return coupling.VolatilityUnknown
 	}
+
+	// Priority 3: path-pattern heuristic (never guesses core/high).
+	if v := domainVolatilityFromPath(toPath); v != coupling.VolatilityUnknown {
+		return v
+	}
+
+	return coupling.VolatilityUnknown
+}
+
+// isGenericSubdomain reports whether the to-module is classified as a generic
+// subdomain. Returns true when the module definition's Subdomain is "generic",
+// or when the subdomain is absent but the path-pattern heuristic resolves to
+// VolatilityLow (generic-indicator paths such as vendor/, lib/, util/).
+//
+// This is used to trigger the contract-recommended advisory when a generic
+// target is reached via non-contract strength (BC's anti-corruption-layer guidance).
+func isGenericSubdomain(toPath string, mi moduleIndex, modules map[string]config.ModuleDef) bool {
+	toMod, ok := mi.moduleFor(toPath)
+	if !ok {
+		return false
+	}
+	def := modules[toMod]
+	if strings.ToLower(def.Subdomain) == "generic" {
+		return true
+	}
+	// Treat heuristic-generic paths the same way when no explicit subdomain is set.
+	if def.Subdomain == "" && domainVolatilityFromPath(toPath) == coupling.VolatilityLow {
+		return true
+	}
+	return false
 }
 
 // classifyExplicitness derives explicitness from strength.

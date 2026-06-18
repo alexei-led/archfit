@@ -82,17 +82,23 @@ different teams < different deploy units).
 
 `archfit` levels, nearest to farthest:
 
-| Level                          | Derived from                                      |
-| ------------------------------ | ------------------------------------------------- |
-| `same_module`                  | Both endpoints map to the same module.            |
-| `cross_module_same_owner`      | Different modules, same `owner` field.            |
-| `cross_module_different_owner` | Different modules, different (or unset) owners.   |
-| `cross_deploy_unit`            | Both endpoints set `deploy_unit` and they differ. |
+| Level                          | Derived from                                                         |
+| ------------------------------ | -------------------------------------------------------------------- |
+| `same_module`                  | Both endpoints map to the same module.                               |
+| `cross_module_same_owner`      | Same `owner`, or sibling/parent-child packages when no owner is set. |
+| `cross_module_different_owner` | Different `owner`, or unrelated/flat packages by code structure.     |
+| `cross_deploy_unit`            | Both endpoints set `deploy_unit` and they differ.                    |
 
 `owner` and `deploy_unit` are config fields precisely because they change
 distance: the same import can be cheap (same team, same service) or expensive
 (two teams, two deploy units). `archfit` treats
 `cross_module_different_owner` and `cross_deploy_unit` as **high** distance.
+
+Distance is resolved by a precedence chain — a deploy boundary is absolute, then
+an explicit `owner` decides, then a resolved multi-owner signal, and finally code
+structure (package-tree position) as the always-available fallback. Explicit
+config is never overridden by the structural fallback. See the
+[configuration reference](configuration-reference.md) for the exact order.
 
 ### 3. Volatility — how likely it is to change at all
 

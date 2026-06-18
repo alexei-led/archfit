@@ -2,17 +2,18 @@ package coupling
 
 import "testing"
 
-// TestBalanceResult covers the severity table from spec §18.
+// TestBalanceResult covers the severity table from the Balanced Coupling model (Khononov).
 func TestBalanceResult(t *testing.T) {
 	tests := []struct {
 		name     string
 		c        Classification
 		expected Severity
 	}{
+		// --- Symmetric balanced quadrant (low strength + low distance) ---
 		{
 			// low+low+low_vol → none (balanced).
-			// Note: same_module is excluded by the classifier before BalanceResult is called;
-			// cross_module_same_owner is the more realistic low-distance input here.
+			// cross_module_same_owner is the realistic low-distance input
+			// (same_module edges are excluded by the classifier before BalanceResult).
 			name: "low+low low_vol returns none",
 			c: Classification{
 				Strength:   StrengthContract,
@@ -31,35 +32,65 @@ func TestBalanceResult(t *testing.T) {
 			},
 			expected: SeverityMedium,
 		},
+
+		// --- XOR modular quadrants (Balanced Coupling §3): SeverityNone ---
 		{
-			// low+high → low regardless of volatility.
-			name: "low+high low_vol returns low",
+			// low strength + high distance → loose coupling across a large boundary.
+			// BC-modular: no finding regardless of volatility.
+			name: "low+high low_vol returns none (XOR loose quadrant)",
 			c: Classification{
 				Strength:   StrengthContract,
 				Distance:   DistanceCrossDeployUnit,
 				Volatility: VolatilityLow,
 			},
-			expected: SeverityLow,
+			expected: SeverityNone,
 		},
 		{
-			// low+high → low regardless of volatility.
-			name: "low+high high_vol returns low",
+			// low strength + high distance, volatile: still BC-modular, no finding.
+			name: "low+high high_vol returns none (XOR loose quadrant)",
 			c: Classification{
 				Strength:   StrengthContract,
 				Distance:   DistanceCrossDeployUnit,
 				Volatility: VolatilityHigh,
 			},
-			expected: SeverityLow,
+			expected: SeverityNone,
 		},
 		{
-			// high+high+low_vol → medium.
-			name: "high+high low_vol returns medium",
+			// high strength + low distance → cohesive (co-located tight coupling).
+			// BC-modular: no finding regardless of volatility.
+			name: "high+low returns none (XOR cohesive quadrant)",
+			c: Classification{
+				Strength:   StrengthFunctional,
+				Distance:   DistanceCrossModuleSameOwner,
+				Volatility: VolatilityHigh,
+			},
+			expected: SeverityNone,
+		},
+		{
+			// functional strength + same-module-same-owner is a co-located case:
+			// strengthIsHigh=true, distanceIsHigh=false → XOR cohesive quadrant → none.
+			// (same_module edges are excluded by the classifier in practice, but the
+			// formula must be correct for cross_module_same_owner too.)
+			name: "functional+same_owner low_vol returns none (XOR cohesive quadrant)",
+			c: Classification{
+				Strength:   StrengthFunctional,
+				Distance:   DistanceCrossModuleSameOwner,
+				Volatility: VolatilityLow,
+			},
+			expected: SeverityNone,
+		},
+
+		// --- Symmetric unbalanced quadrant (high strength + high distance) ---
+		{
+			// high+high+low_vol → low (BC: a stable/low-volatility target neutralizes
+			// the imbalance; the cascade rarely fires).
+			name: "high+high low_vol returns low (neutralized)",
 			c: Classification{
 				Strength:   StrengthFunctional,
 				Distance:   DistanceCrossDeployUnit,
 				Volatility: VolatilityLow,
 			},
-			expected: SeverityMedium,
+			expected: SeverityLow,
 		},
 		{
 			// high+high+high_vol → critical.
@@ -71,16 +102,8 @@ func TestBalanceResult(t *testing.T) {
 			},
 			expected: SeverityCritical,
 		},
-		{
-			// high+low → low (high cohesion).
-			name: "high+low returns low",
-			c: Classification{
-				Strength:   StrengthFunctional,
-				Distance:   DistanceCrossModuleSameOwner,
-				Volatility: VolatilityHigh,
-			},
-			expected: SeverityLow,
-		},
+
+		// --- Intrusive escalation paths ---
 		{
 			// intrusive + cross-module-diff-owner + low volatility → medium.
 			name: "intrusive cross-module low_vol returns medium",
@@ -110,6 +133,16 @@ func TestBalanceResult(t *testing.T) {
 				Volatility: VolatilityHigh,
 			},
 			expected: SeverityCritical,
+		},
+		{
+			// intrusive + same-owner falls through to the formula: high+low → XOR none.
+			name: "intrusive same-owner falls through to XOR none",
+			c: Classification{
+				Strength:   StrengthIntrusive,
+				Distance:   DistanceCrossModuleSameOwner,
+				Volatility: VolatilityHigh,
+			},
+			expected: SeverityNone,
 		},
 	}
 

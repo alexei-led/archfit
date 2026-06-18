@@ -16,10 +16,12 @@ const (
 	deployUnitB = "svc-b"
 
 	// path glob constants reused across multiple test cases.
-	pathsA        = "services/a/**"
-	pathsB        = "services/b/**"
-	publicB       = "services/b/api/**"
-	subdomainCore = "core"
+	pathsA              = "services/a/**"
+	pathsB              = "services/b/**"
+	publicB             = "services/b/api/**"
+	subdomainCore       = "core"
+	subdomainSupporting = "supporting"
+	subdomainGeneric    = "generic"
 )
 
 // makeGraph builds a minimal sealed Graph from a slice of edges.
@@ -77,7 +79,7 @@ func TestRun(t *testing.T) {
 			Internal:   []string{"services/a/internal/**"},
 			Owner:      ownerTeamX,
 			DeployUnit: deployUnitA,
-			Subdomain:  "core",
+			Subdomain:  subdomainCore,
 		},
 		"b": {
 			Paths:      []string{"services/b/**"},
@@ -85,14 +87,14 @@ func TestRun(t *testing.T) {
 			Internal:   []string{"services/b/internal/**"},
 			Owner:      ownerTeamY,
 			DeployUnit: deployUnitB,
-			Subdomain:  "supporting",
+			Subdomain:  subdomainSupporting,
 		},
 		"c": {
 			Paths:      []string{"services/c/**"},
 			Public:     []string{"services/c/api/**"},
 			Owner:      ownerTeamX,
 			DeployUnit: deployUnitA,
-			Subdomain:  "generic",
+			Subdomain:  subdomainGeneric,
 		},
 		"d": {
 			Paths:      []string{"services/d/**"},
@@ -405,10 +407,10 @@ func TestRun_Severity(t *testing.T) {
 		wantSeverity coupling.Severity
 	}{
 		{
-			// contract + cross_deploy_unit + medium vol → low+high → asymmetric → always low
-			name:         "imbalanced contract cross-deploy medium-vol → low",
+			// contract + cross_deploy_unit → low+high → XOR modular quadrant → none (BC-correct).
+			name:         "contract cross-deploy medium-vol → none (XOR loose quadrant)",
 			edge:         importEdge("services/a/impl.go", "services/b/api/client.go"),
-			wantSeverity: coupling.SeverityLow,
+			wantSeverity: coupling.SeverityNone,
 		},
 		{
 			// intrusive + cross_deploy_unit → critical
@@ -543,7 +545,7 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 		From:         "file:pkg/a/a.go",
 		To:           "file:pkg/b/b.go",
 		Kind:         graph.EdgeKindImports,
-		StrengthHint: "functional",
+		StrengthHint: hintFunctional,
 	}
 	g := graph.Build([]graph.Facts{{
 		Language: "go",
@@ -595,4 +597,206 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 			t.Errorf("strength = %q, want functional (label is directional)", got)
 		}
 	})
+}
+
+// TestRun_ContractRecommended verifies the generic-subdomain contract advisory:
+// ContractRecommended is set when the to-module is a generic subdomain and the
+// strength is non-contract; it is NOT set when strength is contract, the edge is
+// same-module, or the to-module is not a generic subdomain.
+func TestRun_ContractRecommended(t *testing.T) {
+	modules := map[string]config.ModuleDef{
+		"core": {
+			Paths:      []string{"services/core/**"},
+			Public:     []string{"services/core/api/**"},
+			Owner:      ownerTeamX,
+			DeployUnit: deployUnitA,
+			Subdomain:  subdomainCore,
+		},
+		"generic": {
+			Paths:      []string{"services/generic/**"},
+			Public:     []string{"services/generic/api/**"},
+			Owner:      ownerTeamY,
+			DeployUnit: deployUnitB,
+			Subdomain:  subdomainGeneric,
+		},
+		"supporting": {
+			Paths:      []string{"services/supporting/**"},
+			Public:     []string{"services/supporting/api/**"},
+			Owner:      ownerTeamY,
+			DeployUnit: deployUnitB,
+			Subdomain:  subdomainSupporting,
+		},
+		// Module with no explicit subdomain but a heuristic-generic path.
+		"util": {
+			Paths:      []string{"util/**"},
+			Owner:      ownerTeamX,
+			DeployUnit: deployUnitA,
+		},
+	}
+	cfg := config.ClassifyConfig{Modules: modules}
+
+	edge := func(from, to, hint string) graph.Edge {
+		return graph.Edge{
+			From:         "file:" + from,
+			To:           "file:" + to,
+			Kind:         graph.EdgeKindImports,
+			Language:     "go",
+			StrengthHint: hint,
+		}
+	}
+
+	tests := []struct {
+		name               string
+		e                  graph.Edge
+		wantContractRecomm bool
+	}{
+		{
+			// Non-contract strength → generic subdomain: advisory fires.
+			name:               "functional to generic → contract recommended",
+			e:                  edge("services/core/impl.go", "services/generic/impl.go", "functional"),
+			wantContractRecomm: true,
+		},
+		{
+			// Unknown strength → generic subdomain: advisory fires.
+			name:               "unknown strength to generic → contract recommended",
+			e:                  edge("services/core/impl.go", "services/generic/impl.go", ""),
+			wantContractRecomm: true,
+		},
+		{
+			// Contract strength → generic subdomain: no advisory (already contracted).
+			name:               "contract to generic api → no advisory",
+			e:                  edge("services/core/impl.go", "services/generic/api/client.go", ""),
+			wantContractRecomm: false,
+		},
+		{
+			// Non-contract to non-generic (supporting): advisory does not fire.
+			name:               "functional to supporting → no advisory",
+			e:                  edge("services/core/impl.go", "services/supporting/impl.go", "functional"),
+			wantContractRecomm: false,
+		},
+		{
+			// Heuristic-generic path (util/) with no explicit subdomain: advisory fires.
+			name:               "functional to heuristic-generic util/ → contract recommended",
+			e:                  edge("services/core/impl.go", "util/parser.go", "functional"),
+			wantContractRecomm: true,
+		},
+		{
+			// Contract to heuristic-generic: no advisory.
+			name:               "contract to heuristic-generic util/ api → no advisory",
+			e:                  edge("services/core/impl.go", "util/parser.go", "contract"),
+			wantContractRecomm: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := makeGraph([]graph.Edge{tc.e})
+			idx := classify.Run(g, cfg)
+			key := edgeKey(tc.e)
+			cl, ok := idx[key]
+			if !ok {
+				t.Fatalf("edge key %q not found in index", key)
+			}
+			if cl.ContractRecommended != tc.wantContractRecomm {
+				t.Errorf("ContractRecommended = %v, want %v (str=%q dist=%q vol=%q)",
+					cl.ContractRecommended, tc.wantContractRecomm,
+					cl.Strength, cl.Distance, cl.Volatility)
+			}
+		})
+	}
+}
+
+// TestRun_DegenerateOwnerSuppression verifies degenerate-owner suppression (design §4.2):
+//   - When ALL modules share a single owner (git-author fallback degenerate case),
+//     ownership distance contributes nothing and code-structure distance dominates.
+//   - When modules have DISTINCT owners (real CODEOWNERS repo), ownership distance
+//     applies normally and the max() composite picks it up.
+func TestRun_DegenerateOwnerSuppression(t *testing.T) {
+	importEdge := func(from, to string) graph.Edge {
+		return graph.Edge{
+			From: "file:" + from, To: "file:" + to,
+			Kind: graph.EdgeKindImports, Language: "go",
+		}
+	}
+
+	t.Run("degenerate: single owner everywhere — code-structure dominates", func(t *testing.T) {
+		// All modules have the same owner. isDegenerateOwnerMap returns true,
+		// so ownership contributes DistanceSameModule (no signal).
+		//
+		// Module names use path structure so codeStructureDistance works correctly:
+		//   "pkg/a" and "pkg/b" are siblings → structural = SameOwner.
+		//   "pkg/a" and "services/x" are distant trees → structural = DiffOwner.
+		modules := map[string]config.ModuleDef{
+			"pkg/a":      {Paths: []string{globPkgA}, Owner: ownerTeamX},
+			"pkg/b":      {Paths: []string{globPkgB}, Owner: ownerTeamX},
+			"services/x": {Paths: []string{"services/x/**"}, Owner: ownerTeamX},
+		}
+		cfg := config.ClassifyConfig{Modules: modules}
+
+		// Siblings (pkg/a ↔ pkg/b): structural = SameOwner; ownership suppressed → composite = SameOwner.
+		e1 := importEdge("pkg/a/x.go", "pkg/b/y.go")
+		cl1 := classify.Run(makeGraph([]graph.Edge{e1}), cfg)[edgeKey(e1)]
+		if cl1.Distance != coupling.DistanceCrossModuleSameOwner {
+			t.Errorf("siblings with degenerate owner: Distance = %q, want %q (code-structure should dominate)",
+				cl1.Distance, coupling.DistanceCrossModuleSameOwner)
+		}
+
+		// Distant subtrees (pkg/a ↔ services/x): structural = DiffOwner; ownership suppressed → composite = DiffOwner.
+		e2 := importEdge("pkg/a/x.go", "services/x/y.go")
+		cl2 := classify.Run(makeGraph([]graph.Edge{e2}), cfg)[edgeKey(e2)]
+		if cl2.Distance != coupling.DistanceCrossModuleDiffOwner {
+			t.Errorf("distant subtrees with degenerate owner: Distance = %q, want %q (code-structure should dominate)",
+				cl2.Distance, coupling.DistanceCrossModuleDiffOwner)
+		}
+	})
+
+	t.Run("multi-owner: distinct owners — ownership distance applies", func(t *testing.T) {
+		// Two modules with DISTINCT owners (not degenerate). isDegenerateOwnerMap returns false.
+		// For sibling modules: code-structure = SameOwner, ownership = DiffOwner.
+		// max(SameOwner, DiffOwner) = DiffOwner — ownership lifts the result.
+		modules := map[string]config.ModuleDef{
+			"pkg/a": {Paths: []string{globPkgA}, Owner: ownerTeamX},
+			"pkg/b": {Paths: []string{globPkgB}, Owner: ownerTeamY},
+		}
+		cfg := config.ClassifyConfig{Modules: modules}
+
+		e := importEdge("pkg/a/x.go", "pkg/b/y.go")
+		cl := classify.Run(makeGraph([]graph.Edge{e}), cfg)[edgeKey(e)]
+		if cl.Distance != coupling.DistanceCrossModuleDiffOwner {
+			t.Errorf("siblings with distinct owners: Distance = %q, want %q (ownership should lift result)",
+				cl.Distance, coupling.DistanceCrossModuleDiffOwner)
+		}
+	})
+}
+
+// TestRun_VolatilityUnknownWithoutConfig verifies classify.Run produces
+// VolatilityUnknown for a module with no explicit volatility or subdomain. The
+// gate never derives volatility from git churn — there is no churn path into
+// classification at all.
+func TestRun_VolatilityUnknownWithoutConfig(t *testing.T) {
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"a": {Paths: []string{"pkg/a/**"}, Owner: ownerTeamX},
+			"b": {Paths: []string{"pkg/b/**"}, Owner: ownerTeamY}, // no volatility, no subdomain
+		},
+	}
+	classifyCfg := cfg.ForClassify()
+	if got := classifyCfg.Modules["b"].Volatility; got != "" {
+		t.Fatalf("precondition: ForClassify().Modules[b].Volatility = %q, want \"\"", got)
+	}
+
+	e := graph.Edge{
+		From:     "file:pkg/a/x.go",
+		To:       "file:pkg/b/y.go",
+		Kind:     graph.EdgeKindImports,
+		Language: "go",
+	}
+	g := makeGraph([]graph.Edge{e})
+	idx := classify.Run(g, classifyCfg)
+	cl := idx[edgeKey(e)]
+
+	if cl.Volatility != coupling.VolatilityUnknown {
+		t.Errorf("Volatility = %q, want unknown", cl.Volatility)
+	}
 }

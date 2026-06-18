@@ -11,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit/internal/facts"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
@@ -56,6 +57,10 @@ type RunInput struct {
 	Labels      []labels.Label            // pinned coupling labels; nil = none
 	Signals     signal.RunSignals
 	Now         time.Time
+	// ConfigHash is the sha256 hex digest of the raw .archfit.yaml bytes,
+	// computed by the caller before parsing. Empty when no config file was loaded.
+	// Attached to the Diagnostic for reproducibility: same config + same repo → same hash.
+	ConfigHash string
 }
 
 // extractResult holds the outputs of the extract stage.
@@ -109,6 +114,10 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// hint); stale ones surface as labels/stale advisories.
 	classifyCfg := in.Classify
 	staleLabelFindings := applyPinnedLabels(ex.g, &classifyCfg, in.Mode, in.Labels)
+	// Thread clone pairs for CoA (connascence of algorithm) tagging — report-only.
+	if len(in.Signals.Duplication.Clusters) > 0 {
+		classifyCfg.CrossModuleClonePairs = buildClonePairSet(in.Signals.Duplication.Clusters, classifyCfg.ModuleMap)
+	}
 
 	couplingIdx := classify.Run(ex.g, classifyCfg)
 
@@ -209,6 +218,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		Verdict:       verdict,
 		Base:          in.Mode.Base,
 		Head:          in.Mode.Head,
+		ConfigHash:    in.ConfigHash,
 		Metrics:       metricResults,
 		Findings:      resolvedFindings,
 		FileFacts:     fileFacts,
@@ -332,8 +342,21 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 		toPath := stripPrefix(e.To)
 		fromModule, _ := mm.ModuleFor(fromPath)
 		toModule, _ := mm.ModuleFor(toPath)
+		id := couplingAdvisoryID(fromPath, toPath, string(e.Kind))
+		matched := map[string]string{
+			"strength":   string(cl.Strength),
+			"distance":   string(cl.Distance),
+			"volatility": string(cl.Volatility),
+		}
+		// Attach continuous score fields when a scorer produced them.
+		if cl.Score.Reason != "" {
+			matched["score"] = cl.Score.Reason
+		}
+		if cl.Score.CheapestMove != "" {
+			matched["cheapest_move"] = cl.Score.CheapestMove
+		}
 		af := finding.Finding{
-			ID:       couplingAdvisoryID(fromPath, toPath, string(e.Kind)),
+			ID:       id,
 			Kind:     kindAdvisory,
 			RuleID:   "bc/imbalanced_coupling",
 			Status:   finding.StatusNew,
@@ -344,11 +367,8 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 				Kind: string(e.Kind),
 			},
 			Locations: e.Locations,
-			Why:       "balanced coupling violation: " + string(cl.Severity) + " severity",
-			MatchedBy: map[string]string{
-				"strength": string(cl.Strength),
-				"distance": string(cl.Distance),
-			},
+			Why:       bcAdvisoryWhy(cl),
+			MatchedBy: matched,
 		}
 		advisoryFindings = append(advisoryFindings, af)
 	}
@@ -452,6 +472,16 @@ func severityAtLeast(got coupling.Severity, threshold string) bool {
 	return rank[string(got)] >= rank[threshold]
 }
 
+// bcAdvisoryWhy builds a concise BC-vocabulary why string for a coupling advisory.
+// It uses strength, distance, and volatility to produce a human-readable explanation
+// following Balanced Coupling vocabulary (integration strength, distance, volatility).
+func bcAdvisoryWhy(cl coupling.Classification) string {
+	return "balanced coupling: " + string(cl.Strength) + " integration strength" +
+		" × " + string(cl.Distance) + " distance" +
+		" × " + string(cl.Volatility) + " volatility" +
+		" → " + string(cl.Severity) + " severity"
+}
+
 // couplingAdvisoryID returns a stable 32-character hex fingerprint for a coupling advisory
 // finding, derived from (from, to, kind) — same scheme as finding.fingerprint.
 func couplingAdvisoryID(from, to, kind string) string {
@@ -535,4 +565,23 @@ func PairEvidence(g *graph.Graph, mm config.ModuleMap, wanted map[string]struct{
 		evidence[key] = labels.HashItems(its)
 	}
 	return evidence
+}
+
+// buildClonePairSet converts clone clusters to a canonical module-pair key set
+// for CoA (connascence of algorithm) tagging in classify.
+// Keys are "[a]\x00[b]" with a≤b (canonical sorted pair, from clone.ModulePairs).
+func buildClonePairSet(clusters []clone.Cluster, mm config.ModuleMap) map[string]struct{} {
+	pairs := clone.ModulePairs(clusters, func(f string) string {
+		mod, ok := mm.ModuleFor(f)
+		if !ok {
+			return ""
+		}
+		return mod
+	})
+	set := make(map[string]struct{}, len(pairs))
+	for _, p := range pairs {
+		// clone.ModulePairs already returns sorted pairs [a,b] with a≤b.
+		set[p[0]+"\x00"+p[1]] = struct{}{}
+	}
+	return set
 }

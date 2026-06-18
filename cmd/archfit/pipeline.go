@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +17,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/astgrep"
 	"github.com/alexei-led/archfit/internal/extract/clones"
 	"github.com/alexei-led/archfit/internal/extract/complexity"
+	"github.com/alexei-led/archfit/internal/extract/deployunit"
 	"github.com/alexei-led/archfit/internal/extract/gitnexus"
 	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/extract/loc"
@@ -23,7 +26,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/ts"
 	"github.com/alexei-led/archfit/internal/fitness"
 	"github.com/alexei-led/archfit/internal/history/git"
-	"github.com/alexei-led/archfit/internal/labels"
+	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/signal"
@@ -65,7 +68,7 @@ func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, 
 // post-baseline check reports phantom metric regressions and unmatched finding
 // fingerprints. After the engine returns, the agent_tasks repair block is
 // attached from the active gate findings (deterministic; spec §13).
-func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, error) {
+func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, noConfig bool, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, error) {
 	configDir := filepath.Dir(configPath)
 	sc := cfg.ForScope()
 	sc.WorkDir = configDir
@@ -83,8 +86,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 
 	rs := rules.New(cfg.ForRules())
-	// risk_hub reads hand-authored volatility only; ApplyVolatility records
-	// churn-derived bands in a separate store, so this call order is free.
+	// risk_hub reads hand-authored volatility only (never git churn).
 	ms := append(metrics.New(cfg), extraMetrics...)
 
 	// Recent git history (cheap; runs by default): per-file churn drives module
@@ -93,7 +95,6 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// config always wins; a non-git repo leaves these signals empty.
 	change := signal.RunSignals{}
 	if churn, coChange, _, herr := git.History(ctx, s.Root, deps.Runner); herr == nil {
-		cfg.ApplyVolatility(config.DeriveVolatility(cfg.Modules, churn))
 		change.History.FileChurn, change.History.CoChange = churn, coChange
 	}
 
@@ -110,6 +111,15 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// history. Explicit config owner always wins; resolver only fills empty slots.
 	// Absent CODEOWNERS and non-git repos yield an empty map — no fabrication.
 	cfg.FillMissingOwners(ownership.Resolve(ctx, s.Root, cfg.ModuleMapView(), deps.Runner))
+
+	// Deploy-unit detection: fills module deploy_unit gaps from static repo
+	// analysis (Go main pkgs, Dockerfiles, k8s manifests, package.json workspaces,
+	// pyproject.toml). Detect keys results by repo-relative path; KeyByModule
+	// remaps those to module names, which is what FillMissingDeployUnits expects
+	// (without it, auto-detected units are dropped unless a module's map key
+	// equals the path). Config-authored deploy_unit always wins.
+	duModules := cfg.ModuleMapView()
+	cfg.FillMissingDeployUnits(deployunit.KeyByModule(deployunit.Detect(ctx, s.Root, duModules, deps.Runner), duModules))
 
 	// Cyclomatic complexity via an external multi-language tool (lizard) — opt-in
 	// (tools.complexity.enabled: on) like SCIP, since it shells out and adds cost.
@@ -135,7 +145,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// Pinned coupling labels (.archfit-labels.yaml): the human-reviewed output of
 	// `archfit enrich`. Optional; a malformed file fails loudly — a half-read
 	// labels file must never silently alter the gate.
-	lbls, err := labels.Load(filepath.Join(configDir, defaultLabelsPath))
+	lbls, err := labelsio.Load(filepath.Join(configDir, defaultLabelsPath))
 	if err != nil {
 		return diagnostic.Diagnostic{}, err
 	}
@@ -147,6 +157,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	if cfg.ScipEnabled() {
 		resolver = scip.New(deps.Runner)
 	}
+
+	// Config hash for reproducibility — empty when --no-config ignored the file.
+	configHash := effectiveConfigHash(configPath, noConfig)
 
 	patternCfg := cfg.ForPatterns()
 	diag, err := engine.Run(ctx, engine.RunInput{
@@ -166,6 +179,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		Labels:      lbls,
 		Signals:     change,
 		Now:         time.Now(),
+		ConfigHash:  configHash,
 	})
 	if err != nil {
 		return diag, err
@@ -242,6 +256,30 @@ func applyFlagOverrides(cfg *config.Config, severity string, lang []string) erro
 		cfg.Tools[canonical] = config.ToolConfig{Enabled: config.ModeOn}
 	}
 	return nil
+}
+
+// effectiveConfigHash returns the config hash that governed this run: the
+// sha256 of the on-disk config file, or "" when --no-config ignored that file
+// (built-in defaults were used). Hashing an ignored file would make the reported
+// hash misleading and non-reproducible — it would change when a file the run
+// never read changes.
+func effectiveConfigHash(path string, noConfig bool) string {
+	if noConfig {
+		return ""
+	}
+	return computeConfigHash(path)
+}
+
+// computeConfigHash returns the sha256 hex digest of the raw config file bytes
+// at path. Returns "" when the file cannot be read (absent, --no-config, etc.)
+// so callers never fail on a missing config; they just get no hash.
+func computeConfigHash(path string) string {
+	b, err := os.ReadFile(path) //#nosec G304 -- path comes from the --config CLI flag, not arbitrary user input
+	if err != nil {
+		return ""
+	}
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
 }
 
 // verdictToError maps a diagnostic verdict to an exit error (nil = exit 0).

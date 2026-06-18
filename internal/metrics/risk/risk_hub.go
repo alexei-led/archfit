@@ -21,9 +21,8 @@ const riskHubTopN = 5
 // volatilityBandMultiplier maps an explicit config volatility band to a risk
 // multiplier. Only bands authored in the config file are recognised; anything
 // else (including the empty string for unset modules) returns 1.0 (neutral).
-// This is intentionally separate from config.DeriveVolatility — risk_hub must
-// NEVER use churn-derived volatility, which would double-count the same signal
-// as change_amplification.
+// risk_hub must NEVER use git-churn-derived volatility, which would double-count
+// the same signal as change_amplification.
 //
 //	high   → 1.00 (most volatile)
 //	medium → 0.66
@@ -110,14 +109,13 @@ func moduleSurfaceBreadth(g symbol.Graph) map[string]int {
 // rather than module-level fan-out, so a data store with many externally-used
 // fields ranks higher than a shallow utility with one heavily-called function.
 //
-// Volatility multipliers are captured at construction time (before
-// config.ApplyVolatility can inject churn-derived values), ensuring that
-// only explicit config volatility affects the score.
+// Volatility multipliers come exclusively from explicit config
+// (Subdomain/Volatility); risk_hub never derives volatility from git churn.
 //
 // The result is report-only (band: info) — it never gates.
 type HubMetric struct {
 	// moduleVolatility maps module name → explicit-config volatility multiplier.
-	// Built in New() before ApplyVolatility runs; never updated afterward.
+	// Built in New() from explicit config only; never derived from git churn.
 	// Modules absent from this map get a neutral multiplier of 1.0.
 	moduleVolatility map[string]float64
 }
@@ -295,9 +293,8 @@ func riskHubDisplay(hubs []riskHubInfo, totalExternalSymbols int) string {
 }
 
 // NewMetric builds a HubMetric with volatility multipliers derived
-// exclusively from the explicit config (Subdomain/Volatility fields). This must
-// be called before config.ApplyVolatility so that only hand-authored values
-// influence the metric — churn-derived volatility must not reach risk_hub.
+// exclusively from the explicit config (Subdomain/Volatility fields).
+// Git-churn-derived volatility must not reach risk_hub.
 func NewMetric(cfg config.Config) HubMetric {
 	mv := make(map[string]float64, len(cfg.Modules))
 	for name, def := range cfg.Modules {

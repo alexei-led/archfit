@@ -49,16 +49,43 @@ const (
 	ExplicitnessUnknown  Explicitness = "unknown"
 )
 
+// Connascence is the degree of connascence detected on a cross-module edge.
+// Report-only vocabulary — never scored, never gates.
+type Connascence string
+
+// Connascence degree constants. ConnascenceNone means no connascence detected.
+const (
+	ConnascenceNone      Connascence = ""
+	ConnascenceType      Connascence = "type"      // CoT: struct/interface/field use
+	ConnascenceAlgorithm Connascence = "algorithm" // CoA: clone pair crosses module boundary
+)
+
 // Classification holds the Balanced Coupling assessment for one graph edge.
 // Strength and Distance are populated with high confidence;
 // Volatility and Explicitness are derived from config subdomain/public globs.
 // Severity is set by classify.Run for cross-boundary edges via BalanceResult.
+// ContractRecommended is set when the target is a generic subdomain reached via
+// non-contract strength — BC's anti-corruption-layer advisory signal.
+// Score holds the continuous numeric risk score when a Scorer has been applied;
+// zero-value when no scorer is configured (e.g. same-module or unknown-distance edges).
 type Classification struct {
-	Strength     Strength
-	Distance     Distance
-	Volatility   Volatility
-	Explicitness Explicitness
-	Severity     Severity
+	Strength            Strength
+	Distance            Distance
+	Volatility          Volatility
+	Explicitness        Explicitness
+	Severity            Severity
+	ContractRecommended bool      // generic-subdomain target reached via non-contract strength
+	Score               EdgeScore // numeric score; zero when not scored
+	// AsyncBridge marks this edge as crossing an async integration boundary.
+	// When set, the scorer applies a +1 distance level adjustment.
+	// Report-only in v1 — never changes the gate verdict.
+	AsyncBridge bool
+	// Connascence is the detected connascence degree for this edge.
+	// CoT (type) when the edge is a cross-module struct/interface/field use,
+	// derivable from model/contract strength with a SCIP hint.
+	// CoA (algorithm) when a clone pair crosses this module boundary.
+	// Report-only — not fed into the scorer or any gate decision.
+	Connascence Connascence `json:"connascence,omitempty"`
 }
 
 // Index maps each edge's canonical key (from + "\x00" + to + "\x00" + kind)
@@ -93,13 +120,14 @@ func distanceIsHigh(d Distance) bool {
 // BalanceResult applies the Khononov balance formula to a Classification and returns
 // the advisory Severity for the edge. SeverityNone means the edge is balanced (no finding).
 //
-// Severity table (spec §18):
+// Severity table (Balanced Coupling model, Khononov):
 //   - Intrusive: always surfaced, severity driven by distance/volatility.
 //   - high strength + high distance + high volatility → critical.
-//   - high strength + high distance + low/unknown volatility → medium.
+//   - high strength + high distance + medium/unknown volatility → medium.
+//   - high strength + high distance + low volatility → low (BC: stable target neutralizes).
 //   - low strength + low distance + high volatility → medium (over-decoupled volatile seam).
-//   - high strength + low distance → low (high cohesion, usually acceptable).
-//   - low strength + high distance → low (loose coupling across a large boundary).
+//   - high strength + low distance → none (cohesive — XOR modular quadrant).
+//   - low strength + high distance → none (loose — XOR modular quadrant).
 //   - low strength + low distance + low/unknown volatility → none (balanced).
 func BalanceResult(c Classification) Severity {
 	// Intrusive strength: always advisory, severity driven by distance.
@@ -122,10 +150,17 @@ func BalanceResult(c Classification) Severity {
 	if sHigh == dHigh {
 		if sHigh {
 			// high strength + high distance: tight coupling across a large boundary.
-			if c.Volatility == VolatilityHigh {
+			// Volatility modulates per BC: a low-volatility (stable) target neutralizes
+			// the imbalance — the cascade rarely fires — so it drops to an advisory low;
+			// high volatility amplifies it to critical.
+			switch c.Volatility {
+			case VolatilityHigh:
 				return SeverityCritical
+			case VolatilityLow:
+				return SeverityLow
+			default: // medium, unknown — conservative
+				return SeverityMedium
 			}
-			return SeverityMedium
 		}
 		// low strength + low distance: over-decoupled volatile seam.
 		if c.Volatility == VolatilityHigh {
@@ -134,6 +169,9 @@ func BalanceResult(c Classification) Severity {
 		return SeverityNone
 	}
 
-	// Asymmetric (low+high or high+low): mismatched but not the worst case.
-	return SeverityLow
+	// Asymmetric (XOR modular quadrants):
+	//   high strength + low distance → cohesive (co-located tight coupling, acceptable).
+	//   low strength + high distance → loose (contract across a large boundary, acceptable).
+	// Both are BC-modular: no finding.
+	return SeverityNone
 }

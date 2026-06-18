@@ -54,17 +54,21 @@ const (
 // cannedConfig builds a ClassifyConfig and RuleConfig for a two-module (a, b)
 // architecture where pkg/a/** belongs to module "a" and pkg/b/** to module "b".
 // Module b has a public path (pkg/b/api/**) and an internal path (pkg/b/internal/**).
+// Different owners ensure the composite distance signal reaches cross_module_diff_owner
+// for advisory test cases that require a non-trivial distance.
 func cannedConfig() (config.ClassifyConfig, []rules.Rule) {
 	modules := map[string]config.ModuleDef{
 		"a": {
 			Paths:    []string{globModuleA},
 			Public:   []string{globModuleA},
 			Internal: []string{},
+			Owner:    "team-a",
 		},
 		"b": {
 			Paths:    []string{globModuleB},
 			Public:   []string{"pkg/b/api/**"},
 			Internal: []string{globModuleBInternal},
+			Owner:    "team-b",
 		},
 	}
 
@@ -113,6 +117,8 @@ const (
 )
 
 // cleanFacts returns Facts with a normal import edge that does not violate any rule.
+// The edge is pkg/a → pkg/b/api (contract strength, cross_module_diff_owner distance)
+// which is the XOR loose quadrant under the Balanced Coupling model — no advisory.
 func cleanFacts() graph.Facts {
 	return graph.Facts{
 		Language: "go",
@@ -128,6 +134,31 @@ func cleanFacts() graph.Facts {
 				Language:   "go",
 				Confidence: "high",
 				Locations:  []graph.Location{{File: pathFileA, Line: 3}},
+			},
+		},
+	}
+}
+
+// advisoryFacts returns Facts with an imbalanced import edge that produces a BC advisory
+// under the Balanced Coupling model: functional strength (high) + cross_module_diff_owner
+// distance (high) = symmetric unbalanced → SeverityMedium (high+high, any volatility).
+// The StrengthHint "functional" drives the strength since the target has no public/internal glob.
+func advisoryFacts() graph.Facts {
+	return graph.Facts{
+		Language: "go",
+		Nodes: []graph.Node{
+			{Kind: graph.NodeKindFile, Path: pathFileA},
+			{Kind: graph.NodeKindFile, Path: pathFileBInternal},
+		},
+		Edges: []graph.Edge{
+			{
+				From:         pathFileANode,
+				To:           pathFileBInternalNode,
+				Kind:         graph.EdgeKindImports,
+				Language:     "go",
+				Confidence:   confidenceHigh,
+				StrengthHint: "functional",
+				Locations:    []graph.Location{{File: pathFileA, Line: 7}},
 			},
 		},
 	}
@@ -323,8 +354,8 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		t.Errorf("tool_coverage is nil, want typed empty slice")
 	}
 	// Metrics should contain all registered metrics.
-	if len(d.Metrics) != 13 {
-		t.Errorf("len(metrics)=%d, want 13", len(d.Metrics))
+	if len(d.Metrics) != 18 {
+		t.Errorf("len(metrics)=%d, want 18", len(d.Metrics))
 	}
 }
 
@@ -383,11 +414,12 @@ func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 // Summary.Warnings equals the advisory count.
 func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 	ctx := context.Background()
-	// cleanFacts: imports edge a→b/api (contract, cross-module) → imbalanced (low severity).
+	// advisoryFacts: functional imports edge a→b/internal → high strength + high distance
+	// (cross_module_diff_owner, no owners set in cannedConfig) → SeverityMedium advisory.
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+			return advisoryFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
 		},
 	}
 

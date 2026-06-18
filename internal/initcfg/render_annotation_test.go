@@ -263,7 +263,7 @@ func TestRender_HeuristicLayerAbsentFromAllowedLayers(t *testing.T) {
 
 	// --- non-nil annotation, ann.Layer also out-of-set ---
 	ann := &ModuleAnnotation{
-		Subdomain:  "supporting",
+		Subdomain:  testSupporting,
 		Volatility: "medium",
 		Layer:      layerEngine, // still not in allowedLayers
 	}

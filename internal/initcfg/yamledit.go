@@ -26,6 +26,8 @@ const (
 	FieldSubdomain  ModuleField = iota // subdomain: ...
 	FieldVolatility                    // volatility: ...
 	FieldLayer                         // layer: ...
+	FieldReviewedAt                    // reviewed_at: 2026-06-18T...
+	FieldReviewedBy                    // reviewed_by: ...
 )
 
 // AddModuleEdit inserts a new module stanza. NO-OP if the module key already exists live.
@@ -504,8 +506,8 @@ func resolveSetModuleFields(ed SetModuleFieldsEdit, pf parsedFile) (*splice, err
 	type fieldLine struct{ key, value string }
 	var toInsert []fieldLine
 
-	// Canonical order: subdomain → volatility → layer.
-	for _, mf := range []ModuleField{FieldSubdomain, FieldVolatility, FieldLayer} {
+	// Canonical order: subdomain → volatility → layer → reviewed_at → reviewed_by.
+	for _, mf := range []ModuleField{FieldSubdomain, FieldVolatility, FieldLayer, FieldReviewedAt, FieldReviewedBy} {
 		val, ok := ed.Fields[mf]
 		if !ok || val == "" {
 			continue
@@ -551,6 +553,10 @@ func moduleFieldKey(mf ModuleField) string {
 		return "volatility"
 	case FieldLayer:
 		return "layer"
+	case FieldReviewedAt:
+		return "reviewed_at"
+	case FieldReviewedBy:
+		return "reviewed_by"
 	default:
 		return ""
 	}

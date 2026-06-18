@@ -11,7 +11,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// ChangeLocalityMetric (change_locality.v1)
+// ChangeLocalityMetric (change_locality.v2)
 // ---------------------------------------------------------------------------
 
 // ChangeLocalityMetric is the per-change drift signal (spec §10.4): in delta
@@ -28,8 +28,8 @@ type ChangeLocalityMetric struct{}
 // Name returns "change_locality".
 func (m ChangeLocalityMetric) Name() string { return "change_locality" }
 
-// Version returns "change_locality.v1".
-func (m ChangeLocalityMetric) Version() string { return "change_locality.v1" }
+// Version returns "change_locality.v2".
+func (m ChangeLocalityMetric) Version() string { return "change_locality.v2" }
 
 // Calculate counts cross-module edges from changed files and the forward
 // reach (distinct files reachable from the changed set).

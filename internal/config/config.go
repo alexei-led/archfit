@@ -13,6 +13,8 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/goccy/go-yaml"
+
+	"github.com/alexei-led/archfit/internal/model/coupling"
 )
 
 // ToolMode represents the enabled state of an external tool.
@@ -217,14 +219,11 @@ type Config struct {
 	PythonPackage         string               `yaml:"python_package"`           // top-level Python package name for grimp
 	BCAdvisoryMinSeverity string               `yaml:"bc_advisory_min_severity"` // minimum severity to emit BC coupling advisories: low|medium|high|critical (default: low)
 
-	// derivedVolatility holds churn-derived volatility bands recorded by
-	// ApplyVolatility. It is a separate store on purpose: Modules always
-	// carries hand-authored values only, so consumers that must never see
-	// derived volatility (risk_hub, enrich prompt context) read Modules
-	// directly, while classification reads the effective view. This makes
-	// the metrics.New / ApplyVolatility call order irrelevant by
-	// construction — derived values cannot overwrite config.
-	derivedVolatility map[string]string
+	// explicitOwners records which modules had a hand-authored `owner:` in YAML,
+	// populated by Load before any resolver fill. Distinguishes a user's explicit
+	// ownership (authoritative for distance) from a resolver-filled owner (e.g. the
+	// git-author degenerate fallback). Not a YAML field; the decoder ignores it.
+	explicitOwners map[string]bool
 }
 
 // Load reads and strictly decodes an archfit.yaml file at path.
@@ -244,7 +243,36 @@ func Load(_ context.Context, path string) (Config, error) {
 	if err := validate(cfg); err != nil {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}
+
+	// Record hand-authored owners BEFORE any resolver fill (FillMissingOwners runs
+	// later in the pipeline). Anything here is explicit; an Owner set later without
+	// an entry here is resolver-filled.
+	cfg.explicitOwners = make(map[string]bool)
+	for name, def := range cfg.Modules {
+		if def.Owner != "" {
+			cfg.explicitOwners[name] = true
+		}
+	}
 	return cfg, nil
+}
+
+// WithExplicitOwners marks the named modules as having hand-authored owners and
+// returns the updated config. Test seam: tests build Config literals directly,
+// bypassing Load (which populates the explicit-owner set), so they use this to
+// exercise the explicit-owner precedence branch in classify.
+//
+// It mirrors Load's invariant exactly: a module is marked only if it actually
+// carries a non-empty Owner. Marking an ownerless module would route
+// classifyDistance into ownershipDistance("", other), which is a footgun this
+// guard removes by construction — explicitOwners[m] always implies Owner != "".
+func (c Config) WithExplicitOwners(modules ...string) Config {
+	c.explicitOwners = make(map[string]bool, len(modules))
+	for _, m := range modules {
+		if c.Modules[m].Owner != "" {
+			c.explicitOwners[m] = true
+		}
+	}
+	return c
 }
 
 // validate checks required config fields.
@@ -322,6 +350,20 @@ type ClassifyConfig struct {
 	// for freshness by the engine before injection. Precedence in classify:
 	// config globs > approved labels > extractor hint.
 	ApprovedLabels map[string]string
+	// Scorer is the coupling scorer applied to each cross-boundary edge.
+	// When nil, classify.Run uses coupling.DefaultScorer() (MultiplicativeScorer, locked Task 16).
+	Scorer coupling.Scorer
+	// CrossModuleClonePairs is the set of canonical module-pair keys
+	// ("[a]\x00[b]" with a≤b) that share duplicated code blocks, derived
+	// from the clone-detection signal. Used to tag CoA (connascence of
+	// algorithm) on cross-module edges. Empty when clone detection is
+	// disabled or produced no results.
+	CrossModuleClonePairs map[string]struct{}
+	// ExplicitOwners marks modules whose `owner:` was hand-authored in YAML.
+	// classifyDistance treats explicit ownership as authoritative, so an explicit
+	// `owner: same-team` is not overridden by the code-structure fallback even in
+	// a single-author (degenerate) repo.
+	ExplicitOwners map[string]bool
 }
 
 // RuleConfig is the view passed to the rules stage.
@@ -363,6 +405,13 @@ func buildModuleMap(modules map[string]ModuleDef) ModuleMap {
 	}
 	sort.Strings(names)
 	return ModuleMap{names: names, modules: modules}
+}
+
+// Has reports whether a module with exactly this name (map key) is configured.
+// Distinct from ModuleFor, which matches a repo-relative path against path globs.
+func (mm ModuleMap) Has(name string) bool {
+	_, ok := mm.modules[name]
+	return ok
 }
 
 // ModuleFor returns the first module name whose path globs match the given
@@ -445,16 +494,17 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 	return ec
 }
 
-// ForClassify returns the ClassifyConfig view. Classification sees the
-// effective module definitions: hand-authored volatility plus churn-derived
-// bands for modules without one (recorded by ApplyVolatility).
+// ForClassify returns the ClassifyConfig view. Classification sees only
+// hand-authored module definitions — explicit volatility and subdomain fields
+// only. Git-churn-derived volatility is intentionally excluded: Balanced Coupling
+// forbids commit-history volatility on the gate path.
 func (c Config) ForClassify() ClassifyConfig {
-	modules := c.effectiveModules()
 	return ClassifyConfig{
-		Modules:               modules,
+		Modules:               c.Modules,
 		Layers:                c.Layers,
-		ModuleMap:             buildModuleMap(modules),
+		ModuleMap:             buildModuleMap(c.Modules),
 		BCAdvisoryMinSeverity: c.BCAdvisoryMinSeverity,
+		ExplicitOwners:        c.explicitOwners,
 	}
 }
 
@@ -552,6 +602,25 @@ func (c Config) FillMissingOwners(resolved map[string]string) {
 			continue
 		}
 		def.Owner = owner
+		c.Modules[name] = def
+	}
+}
+
+// FillMissingDeployUnits sets the DeployUnit field on modules that have no
+// configured deploy unit, using the resolved map (module name → unit string)
+// produced by the deploy-unit detector. Config-authored DeployUnit always wins:
+// a module with a non-empty DeployUnit field is never overwritten. Modules absent
+// from resolved, or with an empty resolved value, are left unchanged.
+func (c Config) FillMissingDeployUnits(resolved map[string]string) {
+	for name, unit := range resolved {
+		if unit == "" {
+			continue
+		}
+		def, ok := c.Modules[name]
+		if !ok || def.DeployUnit != "" {
+			continue
+		}
+		def.DeployUnit = unit
 		c.Modules[name] = def
 	}
 }

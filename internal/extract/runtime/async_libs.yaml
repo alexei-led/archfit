@@ -1,0 +1,22 @@
+# library → integration-kind table (off-gate; report-only in v1).
+# Keys are import path prefixes (longest-match wins per language).
+# integration_kind: message_queue | event_bus | async_task
+go:
+  github.com/IBM/sarama: message_queue
+  github.com/Shopify/sarama: message_queue
+  github.com/segmentio/kafka-go: message_queue
+  github.com/nats-io/nats.go: event_bus
+  github.com/streadway/amqp: message_queue
+  github.com/rabbitmq/amqp091-go: message_queue
+  cloud.google.com/go/pubsub: event_bus
+typescript:
+  kafkajs: message_queue
+  amqplib: message_queue
+  '@google-cloud/pubsub': event_bus
+  bullmq: async_task
+python:
+  pika: message_queue
+  confluent_kafka: message_queue
+  boto3: message_queue
+  celery: async_task
+  dramatiq: async_task

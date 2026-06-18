@@ -1,6 +1,8 @@
-// Package markdown renders a Diagnostic as clean, LLM-friendly Markdown:
-// `##` sections and `-` lists, no box-drawing tables (which do not align in raw
-// text). Reads well both as raw text and rendered Markdown.
+// Package markdown renders a Diagnostic as Balanced-Coupling-aligned Markdown:
+// lint-message advisory format, BC vocabulary throughout, clearly-labeled
+// "Supporting structural metrics (beyond Balanced Coupling)" and
+// "Distance confidence" sections. Reads well both as raw text and rendered
+// Markdown; parseable by AI agents without NLP.
 package markdown
 
 import (
@@ -13,7 +15,30 @@ import (
 	"github.com/alexei-led/archfit/internal/model/finding"
 )
 
-// Renderer formats a Diagnostic as Markdown. Satisfies engine.Renderer.
+// confidenceHigh is the confidence value that needs no qualification in output.
+const confidenceHigh = "high"
+
+// beyondBCMetrics is the set of metric names that belong in the
+// "Supporting structural metrics (beyond Balanced Coupling)" section.
+// These are report-only and never gate. Everything else appears in the
+// primary Metrics section (coupling_balance, encapsulation, etc.).
+var beyondBCMetrics = map[string]bool{
+	"cycle":                true,
+	"blast_radius":         true,
+	"propagation_cost":     true,
+	"instability":          true,
+	"abstractness":         true,
+	"martin_distance":      true,
+	"change_coupling":      true,
+	"change_amplification": true,
+	"hidden_coupling":      true,
+	"structural_weight":    true,
+	"complexity":           true,
+	"risk_hub":             true,
+	"coverage":             true,
+}
+
+// Renderer formats a Diagnostic as BC-aligned Markdown. Satisfies engine.Renderer.
 type Renderer struct{}
 
 // New returns a Renderer.
@@ -22,24 +47,44 @@ func New() *Renderer { return &Renderer{} }
 // Format returns "markdown".
 func (r *Renderer) Format() string { return "markdown" }
 
-// Render writes the Markdown report for d to w.
+// Render writes the BC-aligned Markdown report for d to w.
+// Sections follow design §8:
+//  1. Verdict + config_hash + tool/coverage
+//  2. Gate violations (rules)
+//  3. Balanced Coupling advisories — lint-message format
+//  4. Supporting structural metrics (beyond Balanced Coupling)
+//  5. Distance confidence
+//  6. Agent tasks
 func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 	var b strings.Builder
 	verdict, exitCode := verdictLabel(d.Verdict)
 
 	b.WriteString("# archfit report\n\n")
 	fmt.Fprintf(&b, "**Verdict:** %s (exit %d)\n", verdict, exitCode)
+	if d.ConfigHash != "" {
+		fmt.Fprintf(&b, "**Config hash:** `%s`\n", d.ConfigHash)
+	}
 
 	b.WriteString("\n## Summary\n\n")
 	fmt.Fprintf(&b, "- gate findings: %d\n", d.Summary.GateFindings)
 	fmt.Fprintf(&b, "- warnings: %d\n", d.Summary.Warnings)
 	fmt.Fprintf(&b, "- exceptions used: %d\n", d.Summary.ExceptionsUsed)
 
-	if len(d.Metrics) > 0 {
+	// Split metrics: BC-primary vs beyond-BC.
+	var primaryMetrics, beyondMetrics []diagnostic.MetricResult
+	for _, m := range d.Metrics {
+		if beyondBCMetrics[m.Name] {
+			beyondMetrics = append(beyondMetrics, m)
+		} else {
+			primaryMetrics = append(primaryMetrics, m)
+		}
+	}
+
+	if len(primaryMetrics) > 0 {
 		b.WriteString("\n## Metrics\n\n")
-		for _, m := range d.Metrics {
+		for _, m := range primaryMetrics {
 			band := m.Band
-			if m.Confidence != "" && m.Confidence != "high" {
+			if m.Confidence != "" && m.Confidence != confidenceHigh {
 				band = fmt.Sprintf("%s (%s confidence)", band, m.Confidence)
 			}
 			fmt.Fprintf(&b, "- **%s**: %s — %s\n", m.Name, m.Display, band)
@@ -52,21 +97,21 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 	if len(gate) > 0 {
 		fmt.Fprintf(&b, "\n## Gate findings (%d)\n\n", len(gate))
 		for _, f := range gate {
-			writeFinding(&b, f)
+			writeGateFinding(&b, f)
 		}
 	}
 
 	writeAgentTasks(&b, d.AgentTasks)
+
 	if len(advisories) > 0 {
-		fmt.Fprintf(&b, "\n## Advisories (%d, top by severity)\n\n", len(advisories))
-		for i, f := range advisories {
-			if i == 25 {
-				fmt.Fprintf(&b, "- ... +%d more (use `--format json`)\n", len(advisories)-25)
-				break
-			}
-			writeFinding(&b, f)
-		}
+		writeBCAdvisories(&b, advisories)
 	}
+
+	if len(beyondMetrics) > 0 {
+		writeBeyondBCMetrics(&b, beyondMetrics)
+	}
+
+	writeDistanceConfidence(&b, d)
 
 	if len(d.ToolCoverage) > 0 {
 		b.WriteString("\n## Coverage\n\n")
@@ -81,6 +126,145 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// writeBCAdvisories renders coupling advisories in BC lint-message format.
+// BC advisories (bc/imbalanced_coupling) get the structured lint-message block.
+// All other advisories (staleness, map/*, labels/*) render as plain list items.
+func writeBCAdvisories(b *strings.Builder, advisories []finding.Finding) {
+	var bcFindings, otherFindings []finding.Finding
+	for _, f := range advisories {
+		if f.RuleID == "bc/imbalanced_coupling" {
+			bcFindings = append(bcFindings, f)
+		} else {
+			otherFindings = append(otherFindings, f)
+		}
+	}
+
+	if len(bcFindings) > 0 {
+		fmt.Fprintf(b, "\n## Balanced Coupling advisories (%d)\n\n", len(bcFindings))
+		b.WriteString("Integration strength × distance × volatility lint messages.\n")
+		b.WriteString("Severity: `none` · `low` · `medium` · `high` · `critical`.\n\n")
+		for i, f := range bcFindings {
+			if i == 25 {
+				fmt.Fprintf(b, "- ... +%d more (use `--format json`)\n", len(bcFindings)-25)
+				break
+			}
+			writeBCLintMessage(b, f)
+		}
+	}
+
+	if len(otherFindings) > 0 {
+		fmt.Fprintf(b, "\n## Advisories (%d)\n\n", len(otherFindings))
+		for i, f := range otherFindings {
+			if i == 25 {
+				fmt.Fprintf(b, "- ... +%d more (use `--format json`)\n", len(otherFindings)-25)
+				break
+			}
+			writeGateFinding(b, f)
+		}
+	}
+}
+
+// writeBCLintMessage renders one bc/imbalanced_coupling finding as a BC lint message:
+//
+//	ARCHFIT[BC-UNBALANCED <SEV>] from -> to  [<id8>]
+//	  integration strength: <s>   distance: <d>   volatility: <v>
+//	  score: <reason>
+//	  why: <why>
+//	  cheapest move: <move>
+func writeBCLintMessage(b *strings.Builder, f finding.Finding) {
+	from := f.Edge.From.Path
+	to := f.Edge.To.Path
+	if from == "" {
+		from = f.Edge.From.Module
+	}
+	if to == "" {
+		to = f.Edge.To.Module
+	}
+
+	sev := strings.ToUpper(string(f.Severity))
+	idShort := f.ID
+	if len(idShort) > 8 {
+		idShort = idShort[:8]
+	}
+	fmt.Fprintf(b, "```\nARCHFIT[BC-UNBALANCED %s] %s -> %s  [%s]\n", sev, from, to, idShort)
+
+	// Strength / distance / volatility from MatchedBy.
+	strength := f.MatchedBy["strength"]
+	distance := f.MatchedBy["distance"]
+	volatility := f.MatchedBy["volatility"]
+	score := f.MatchedBy["score"]
+	cheapestMove := f.MatchedBy["cheapest_move"]
+	why := strings.TrimSpace(f.Why)
+
+	if strength != "" || distance != "" || volatility != "" {
+		fmt.Fprintf(b, "  integration strength: %-12s  distance: %-30s  volatility: %s\n",
+			orUnknown(strength), orUnknown(distance), orUnknown(volatility))
+	}
+	if score != "" {
+		fmt.Fprintf(b, "  score: %s\n", score)
+	}
+	if why != "" {
+		if len(why) > 200 {
+			why = why[:197] + "..."
+		}
+		fmt.Fprintf(b, "  why: %s\n", why)
+	}
+	if cheapestMove != "" {
+		fmt.Fprintf(b, "  cheapest move: %s\n", cheapestMove)
+	}
+	b.WriteString("```\n\n")
+}
+
+// writeBeyondBCMetrics renders the "Supporting structural metrics (beyond Balanced
+// Coupling)" section. These are report-only and never gate.
+func writeBeyondBCMetrics(b *strings.Builder, metrics []diagnostic.MetricResult) {
+	b.WriteString("\n## Supporting structural metrics (beyond Balanced Coupling)\n\n")
+	b.WriteString("Report-only. These metrics support Balanced Coupling reasoning but never gate.\n\n")
+	for _, m := range metrics {
+		band := m.Band
+		if m.Confidence != "" && m.Confidence != confidenceHigh {
+			band = fmt.Sprintf("%s (%s confidence)", band, m.Confidence)
+		}
+		fmt.Fprintf(b, "- **%s**: %s — %s\n", m.Name, m.Display, band)
+	}
+}
+
+// writeDistanceConfidence renders the "Distance confidence" section summarising
+// how the distance dimension was resolved for this run.
+// code_structure is always-on; ownership and deploy_unit come from tool coverage.
+// Unresolved modules are counted from extractor coverage records.
+func writeDistanceConfidence(b *strings.Builder, d diagnostic.Diagnostic) {
+	// Collect distance-signal sources from tool coverage entries.
+	ownerSrc := ""
+	deployUnitSrc := ""
+	unresolved := 0
+	for _, cov := range d.ToolCoverage {
+		switch cov.Tool {
+		case "ownership":
+			ownerSrc = cov.Status
+		case "deploy-unit":
+			deployUnitSrc = cov.Status
+		}
+		unresolved += cov.Unresolved
+	}
+
+	b.WriteString("\n## Distance confidence\n\n")
+	b.WriteString("- `code_structure`: always on (deterministic tree-distance baseline)\n")
+	if ownerSrc != "" {
+		fmt.Fprintf(b, "- `owner_source`: %s\n", ownerSrc)
+	} else {
+		b.WriteString("- `owner_source`: not reported (CODEOWNERS or git-author fallback)\n")
+	}
+	if deployUnitSrc != "" {
+		fmt.Fprintf(b, "- `deploy_unit_source`: %s\n", deployUnitSrc)
+	} else {
+		b.WriteString("- `deploy_unit_source`: not reported (auto-detect or config-authored)\n")
+	}
+	if unresolved > 0 {
+		fmt.Fprintf(b, "- unresolved modules: %d (edges to unknown modules use conservative distance)\n", unresolved)
+	}
 }
 
 // writeAgentTasks prints the structured repair-task block: one entry per
@@ -150,8 +334,8 @@ func writeFileFacts(b *strings.Builder, facts []diagnostic.FileFact) {
 	}
 }
 
-// writeFinding prints one finding as a single Markdown list item.
-func writeFinding(b *strings.Builder, f finding.Finding) {
+// writeGateFinding prints one gate or non-BC advisory finding as a Markdown list item.
+func writeGateFinding(b *strings.Builder, f finding.Finding) {
 	edge := ""
 	if f.Edge.From.Path != "" || f.Edge.To.Path != "" {
 		edge = fmt.Sprintf(" — %s → %s", f.Edge.From.Path, f.Edge.To.Path)
@@ -174,10 +358,37 @@ func splitFindings(fs []finding.Finding) (gate, advisories []finding.Finding) {
 			advisories = append(advisories, f)
 		}
 	}
-	sort.SliceStable(advisories, func(i, j int) bool {
-		return severityRank(advisories[i].Severity) > severityRank(advisories[j].Severity)
-	})
+	// Both lists get a total deterministic order so output never depends on the
+	// incoming slice order (which originates from map iteration upstream).
+	sort.SliceStable(gate, func(i, j int) bool { return findingLess(gate[i], gate[j]) })
+	sort.SliceStable(advisories, func(i, j int) bool { return findingLess(advisories[i], advisories[j]) })
 	return gate, advisories
+}
+
+// findingLess orders findings deterministically: severity descending, then a
+// stable tie-break chain (rule id, status, from path, to path, edge kind, id).
+// id is a unique fingerprint, so the order is total — equal-severity findings
+// no longer depend on input order.
+func findingLess(a, b finding.Finding) bool {
+	if ra, rb := severityRank(a.Severity), severityRank(b.Severity); ra != rb {
+		return ra > rb
+	}
+	if a.RuleID != b.RuleID {
+		return a.RuleID < b.RuleID
+	}
+	if a.Status != b.Status {
+		return a.Status < b.Status
+	}
+	if a.Edge.From.Path != b.Edge.From.Path {
+		return a.Edge.From.Path < b.Edge.From.Path
+	}
+	if a.Edge.To.Path != b.Edge.To.Path {
+		return a.Edge.To.Path < b.Edge.To.Path
+	}
+	if a.Edge.Kind != b.Edge.Kind {
+		return a.Edge.Kind < b.Edge.Kind
+	}
+	return a.ID < b.ID
 }
 
 func severityRank(s finding.Severity) int {
@@ -204,4 +415,12 @@ func verdictLabel(v diagnostic.Verdict) (string, int) {
 	default:
 		return "pass", 0
 	}
+}
+
+// orUnknown returns s if non-empty, else "unknown".
+func orUnknown(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	return s
 }
