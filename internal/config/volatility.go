@@ -70,9 +70,8 @@ func DeriveVolatility(modules map[string]ModuleDef, churn map[string]int) map[st
 // ApplyVolatility records the churn-derived volatility band for modules that
 // do not declare an explicit volatility or subdomain signal, so hand-authored
 // config always wins. Derived values go into a separate store — c.Modules is
-// never mutated — so the classify view sees them (effectiveModules) while
-// consumers of hand-authored volatility (risk_hub, enrich context) cannot,
-// regardless of when this is called.
+// never mutated — so consumers of hand-authored volatility (risk_hub, enrich
+// context, and the gate) see only explicit config, regardless of call order.
 func (c *Config) ApplyVolatility(vol map[string]string) {
 	for name, v := range vol {
 		def, ok := c.Modules[name]
@@ -84,24 +83,6 @@ func (c *Config) ApplyVolatility(vol map[string]string) {
 		}
 		c.derivedVolatility[name] = v
 	}
-}
-
-// effectiveModules returns the module definitions with churn-derived
-// volatility filled in where no explicit volatility/subdomain exists.
-// It returns a copy when derived values are present; c.Modules itself
-// always stays hand-authored-only.
-func (c Config) effectiveModules() map[string]ModuleDef {
-	if len(c.derivedVolatility) == 0 {
-		return c.Modules
-	}
-	out := make(map[string]ModuleDef, len(c.Modules))
-	for name, def := range c.Modules {
-		if v, ok := c.derivedVolatility[name]; ok {
-			def.Volatility = v
-		}
-		out[name] = def
-	}
-	return out
 }
 
 // ownerModule returns the first module (in the given sorted order) whose paths glob

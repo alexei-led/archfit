@@ -119,16 +119,24 @@ Balanced-Coupling-modular quadrants, which should be `SeverityNone`.
 Gap 3 (design §3#3, §4.3): `classify.go:224-253` consumes churn-derived volatility via
 `effectiveModules()`; Balanced Coupling forbids commit-history volatility on the gate.
 
-- [ ] Split the config views in `internal/config/config.go`: a classify view with NO
+- [x] Split the config views in `internal/config/config.go`: a classify view with NO
       churn vs a metrics/churn view carrying implementation volatility.
-- [ ] In `internal/classify/classify.go`, make `classifyVolatility` read explicit
+      (`ForClassify()` now uses `c.Modules` directly; `effectiveModules()` removed as no
+      longer needed — the separate `derivedVolatility` store is kept for future report-only
+      metric consumers)
+- [x] In `internal/classify/classify.go`, make `classifyVolatility` read explicit
       `volatility` → `subdomain` → `VolatilityUnknown` only (no churn).
-- [ ] In `internal/config/volatility.go`, keep `DeriveVolatility`/`ApplyVolatility` but
+      (`classifyVolatility` was already correct; the bug was in `ForClassify()` passing
+      churn-merged modules — fixed by using `c.Modules` directly)
+- [x] In `internal/config/volatility.go`, keep `DeriveVolatility`/`ApplyVolatility` but
       route churn only to report-only metric inputs (`risk_hub`, `change_amplification`);
       keep `c.Modules` hand-authored-only.
-- [ ] Write tests: gate volatility ignores churn; `risk_hub`/`change_amplification`
+- [x] Write tests: gate volatility ignores churn; `risk_hub`/`change_amplification`
       outputs unchanged on archfit (churn path intact for report-only).
-- [ ] Run project tests — must pass before next task.
+      (`TestForClassify_ChurnExcludedFromGate`, `TestApplyVolatility_ChurnPathIntact`,
+      `TestRun_ChurnVolatilityIgnoredOnGate` added; existing
+      `TestApplyVolatility_RespectsExplicitConfig` updated to assert new behavior)
+- [x] Run project tests — must pass before next task.
 
 ### Task 3: Domain-volatility heuristic + generic-subdomain advisory
 

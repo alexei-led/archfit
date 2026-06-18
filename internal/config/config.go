@@ -445,15 +445,16 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 	return ec
 }
 
-// ForClassify returns the ClassifyConfig view. Classification sees the
-// effective module definitions: hand-authored volatility plus churn-derived
-// bands for modules without one (recorded by ApplyVolatility).
+// ForClassify returns the ClassifyConfig view. Classification sees only
+// hand-authored module definitions — explicit volatility and subdomain fields
+// only. Churn-derived volatility (recorded by ApplyVolatility) is intentionally
+// excluded: Balanced Coupling forbids commit-history volatility on the gate path.
+// Churn is stored in the separate derivedVolatility map for future report-only metrics.
 func (c Config) ForClassify() ClassifyConfig {
-	modules := c.effectiveModules()
 	return ClassifyConfig{
-		Modules:               modules,
+		Modules:               c.Modules,
 		Layers:                c.Layers,
-		ModuleMap:             buildModuleMap(modules),
+		ModuleMap:             buildModuleMap(c.Modules),
 		BCAdvisoryMinSeverity: c.BCAdvisoryMinSeverity,
 	}
 }
