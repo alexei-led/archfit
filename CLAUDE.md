@@ -54,4 +54,6 @@ amd64 in CI, not local emulation.
 
 `cmd/archfit` (kong CLI) · `internal/` decision core + adapters · `docs/design`
 (decisions) · `docs/guide` (user docs) · `docs/plans`. Optional GitNexus index in
-`.gitnexus/` / `.codegraph/`; refresh with `node .gitnexus/run.cjs analyze`.
+`.gitnexus/` / `.codegraph/`; refresh with `node .gitnexus/run.cjs analyze
+--index-only` (`--index-only` skips gitnexus rewriting CLAUDE.md/AGENTS.md and
+installing `.claude/skills/gitnexus/`; archfit only reads the index).
