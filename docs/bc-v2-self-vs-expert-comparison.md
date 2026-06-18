@@ -121,6 +121,51 @@ high_vol)` scorer guard — correctness of the new engine. (defects #3, #5)
    `engine → config` I/O), so archfit's _own config_ catches F-COUP-1 next run —
    turning an expert finding into an automated gate.
 
+## 7. Fix status (2026-06-18)
+
+The three highest-value defects were fixed and verified this session; the rest are
+a prioritized backlog (they need design judgment or refactoring, not patches, and
+were deferred rather than rushed).
+
+**Fixed & committed (verified: self-scan went 13 → 0 warnings, suite + lint green):**
+
+- ✅ **defect #1 — `change_coupling` CC>100%** (`c8dfb5b`): module-level `C_AB`
+  was the _sum_ of file-pair co-changes (over-counts one commit into many file
+  pairs). Now uses the _max_ file-pair co-change as a bounded module proxy, clamped
+  to 1.0, with the approximation + upgrade-trigger documented.
+- ✅ **defect #5 — scorer same-module bug** (`c8dfb5b`): both scorers now return 0
+  for `same_module` edges (not cross-boundary coupling), fixing the latent
+  `(contract, same_module, high_vol)=critical` and `(intrusive, same_module)` cases.
+- ✅ **§3 — composition-root false positives** (`3f7a2a4`): `BalanceResult` now
+  neutralizes `high-strength + high-distance + low-volatility` to advisory `low`
+  per BC (a stable target rarely fires the cascade). This removed all 13 false
+  `cmd→internal` medium advisories; verdict unchanged (still pass).
+
+**Backlog (deferred, with evidence):**
+
+- ⏳ **defect #3 — `codeStructureDistance` flat-name collapse**: a one-line guard
+  (`depth==1 → DiffOwner`) interacts badly with the degenerate-owner suppression
+  (explicit same-owner is treated as degenerate → suppressed → code-structure wins
+  via `max()`), so it over-rides explicit ownership. Needs a **composite-precedence
+  redesign** (explicit `owner`/`deploy_unit` should take precedence over the
+  code-structure default), not a patch. `distance_structure.go:26-52`,
+  `classify.go` composite + `isDegenerateOwnerMap`.
+- ⏳ **defect #2 — abstractness proxy saturates** (`A=1.0` for 30/52 modules): the
+  `contract_inbound/(contract+concrete)` proxy is non-discriminating because Go
+  exports default to contract strength. Needs a **better abstractness signal**
+  (real abstract/concrete type counts from SCIP, or a different proxy).
+  `martin.go:207-259`.
+- ⏳ **defect #4 — `derivedVolatility` dead store**: written every run, no reader
+  (confirmed). A **remove-vs-wire design call** — it was deliberately created as an
+  "implementation-volatility" store for future report-only metrics. Either delete
+  the chain (`pipeline.go:99`, `config/volatility.go` `DeriveVolatility`/
+  `ApplyVolatility`, the field) per YAGNI, or wire it into a consumer.
+- ⏳ **defect #6 — Martin/Abstractness DRY**: extract a shared
+  `computeAbstractness` (`martin.go:217-245` vs `343-367`).
+- ⏳ **F-COUP-1 → automated gate**: add a `forbidden_dependency` rule for
+  `engine → labels` (and consider `engine → config` I/O) to archfit's own config,
+  turning an expert finding into an automated gate next run.
+
 This comparison report is the deliverable for the "run archfit + expert review +
 compare" exercise. The underlying data: `/tmp/v2-self-report.md` (full scan),
 `/tmp/v2-self-full.json`, and the expert review in the session transcript.
