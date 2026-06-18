@@ -141,30 +141,45 @@ were deferred rather than rushed).
   per BC (a stable target rarely fires the cascade). This removed all 13 false
   `cmd→internal` medium advisories; verdict unchanged (still pass).
 
-**Backlog (deferred, with evidence):**
+**Also fixed (second round, advisor + Perplexity grounded):**
 
-- ⏳ **defect #3 — `codeStructureDistance` flat-name collapse**: a one-line guard
-  (`depth==1 → DiffOwner`) interacts badly with the degenerate-owner suppression
-  (explicit same-owner is treated as degenerate → suppressed → code-structure wins
-  via `max()`), so it over-rides explicit ownership. Needs a **composite-precedence
-  redesign** (explicit `owner`/`deploy_unit` should take precedence over the
-  code-structure default), not a patch. `distance_structure.go:26-52`,
-  `classify.go` composite + `isDegenerateOwnerMap`.
-- ⏳ **defect #2 — abstractness proxy saturates** (`A=1.0` for 30/52 modules): the
-  `contract_inbound/(contract+concrete)` proxy is non-discriminating because Go
-  exports default to contract strength. Needs a **better abstractness signal**
-  (real abstract/concrete type counts from SCIP, or a different proxy).
-  `martin.go:207-259`.
-- ⏳ **defect #4 — `derivedVolatility` dead store**: written every run, no reader
-  (confirmed). A **remove-vs-wire design call** — it was deliberately created as an
-  "implementation-volatility" store for future report-only metrics. Either delete
-  the chain (`pipeline.go:99`, `config/volatility.go` `DeriveVolatility`/
-  `ApplyVolatility`, the field) per YAGNI, or wire it into a consumer.
-- ⏳ **defect #6 — Martin/Abstractness DRY**: extract a shared
-  `computeAbstractness` (`martin.go:217-245` vs `343-367`).
-- ⏳ **F-COUP-1 → automated gate**: add a `forbidden_dependency` rule for
-  `engine → labels` (and consider `engine → config` I/O) to archfit's own config,
-  turning an expert finding into an automated gate next run.
+- ✅ **defect #2 — abstractness saturation** (`1874018`): switched the metric from
+  the glob-classified strength (which marks every exported Go API "contract") to
+  the raw SCIP `StrengthHint` (interface/protocol→contract, struct→model), with a
+  fallback to the classified strength when no hint. archfit's A went from a
+  saturated 1.0-for-30-modules to a discriminating 0.00 (it is a concrete-heavy Go
+  codebase — the honest answer), and `martin_distance` now correctly flags
+  concrete+stable "zone of pain" modules. `martin.go computeAbstractnessMap`.
+- ✅ **defect #6 — Martin/Abstractness DRY** (`1874018`): both metrics now share
+  the single `computeAbstractnessMap` helper.
+- ✅ **defect #4 — `derivedVolatility` dead store** (`41825b9`): removed per YAGNI
+  — 320 lines of the churn-banding chain (`DeriveVolatility`/`ApplyVolatility`/the
+  field/the pipeline call) deleted, plus stale comments. Confirmed no reader;
+  `change_amplification`/`risk_hub` use their own inputs. Two now-moot tests
+  rewritten to assert the still-true invariants without the removed machinery.
+
+**Still open — designs ready for a fresh focused session (both are high-blast):**
+
+- ⏳ **defect #3 — flat-name distance (composite-precedence redesign)**: the correct
+  fix (advisor + Perplexity): explicit config-declared `owner`/`deploy_unit` must
+  take **precedence** over the code-structure default (not lose to it via `max()`),
+  and `codeStructureDistance` should return `DiffOwner` for flat single-segment
+  names. This requires tracking which owners are **hand-authored vs git-author
+  resolver-filled** (an `explicitOwners` set populated in `config.Load`), threaded
+  through `ClassifyConfig` into `classifyDistance` as a precedence chain
+  (deploy boundary → explicit ownership → resolver multi-owner → code-structure
+  fallback). Deferred because it touches the **gate's distance signal** and the
+  test fixtures construct `Config` directly (bypassing `Load`), so the
+  `explicitOwners` plumbing needs a test-friendly seam. `distance_structure.go`,
+  `classify.go classifyDistance`, `config.go Load/ForClassify/ClassifyConfig`.
+- ⏳ **engine→labels boundary**: split `internal/labels` into pure (`Key`,
+  `Approved`, `HashItems`, types — no os/yaml) + `internal/labels/labelsio`
+  (`Load`); point `cmd` at `labelsio`; add a `forbidden_dependency` rule
+  (`engine → labelsio`) to `.archfit.yaml` and a boundary assertion to
+  `internal/arch_test.go`. Attempted this session; reverted after the package split
+  surfaced a `go.mod` (`gopkg.in/yaml.v2` "implicitly required") complication that
+  needs a `go mod tidy` pass best done fresh. Clean and mechanical, just not worth
+  rushing at the tail of a long session.
 
 This comparison report is the deliverable for the "run archfit + expert review +
 compare" exercise. The underlying data: `/tmp/v2-self-report.md` (full scan),
