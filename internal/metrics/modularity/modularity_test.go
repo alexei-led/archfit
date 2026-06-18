@@ -33,7 +33,7 @@ func TestBlastRadius_TransitiveReverseDeps(t *testing.T) {
 		t.Errorf("expected 2 hubs (C,B) got %v; display=%q", res.Value, res.Display)
 	}
 	// small N -> low confidence (not a quality verdict), never gating.
-	if res.Confidence != "low" {
+	if res.Confidence != confidenceLow {
 		t.Errorf("expected low confidence for small N, got %q", res.Confidence)
 	}
 }

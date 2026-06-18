@@ -178,7 +178,7 @@ func TestPropagationCostMetric_SingleNode(t *testing.T) {
 func TestPropagationCostMetric_NeverGates(t *testing.T) {
 	_, _, _, g := chainABC()
 	res := modularity.PropagationCostMetric{}.Calculate(signal.CommonInput{Graph: g})
-	if res.Band == "low" || res.Band == "medium" || res.Band == "high" || res.Band == "critical" {
+	if res.Band == confidenceLow || res.Band == "medium" || res.Band == "high" || res.Band == "critical" {
 		t.Errorf("band=%q: propagation_cost must never be a gate band", res.Band)
 	}
 }

@@ -250,10 +250,10 @@ Design §6.
 
 Design §6: sharpen `hidden_coupling` with CodeScene's exact formula.
 
-- [ ] Add/extend `internal/metrics/modularity/change_coupling.go`:
+- [x] Add/extend `internal/metrics/modularity/change_coupling.go`:
       `CC(A,B) = C_AB / min(C_A, C_B)`, flag `≥ 65%`; source git/gitnexus.
-- [ ] Write tests for the formula and the threshold flag.
-- [ ] Run project tests — must pass before next task.
+- [x] Write tests for the formula and the threshold flag.
+- [x] Run project tests — must pass before next task.
 
 **Phase 4 — Speculative signals, report-only (never gate in v1).**
 
