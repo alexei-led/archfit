@@ -1,32 +1,5 @@
 # Release notes
 
-## Unreleased — Balanced Coupling measurement fixes
-
-Correctness and robustness fixes on top of v0.3.0. No gate-verdict changes;
-output stays byte-for-byte deterministic.
-
-- **Distance precedence chain.** Distance is resolved by precedence (deploy
-  boundary > explicit `owner` > resolved multi-owner signal > code structure)
-  instead of a flat max, so an explicit `owner:` is no longer overridden by the
-  structural fallback. Two unrelated flat (single-segment) module names now read
-  as `cross_module_different_owner` instead of collapsing to same-owner.
-- **Deploy-unit detection robustness.** `package.json` `workspaces` accepts both
-  the array form and the `{ "packages": [...] }` object form; detected units are
-  remapped to their owning module before filling, so auto-detection works for
-  configs whose module keys differ from repo paths.
-- **`--no-config` reproducibility.** With `--no-config`, the reported
-  `config_hash` is now empty — the ignored on-disk file is no longer hashed, so
-  the hash always reflects the config that actually governed the run.
-- **Deterministic finding order.** Gate and advisory findings are sorted by a
-  total order (severity, rule id, status, endpoints, kind, id), independent of
-  upstream map-iteration order.
-- **Scorer / metric corrections.** Same-module edges score 0 with no spurious
-  band; `change_coupling` is clamped to ≤100%; `abstractness` no longer
-  saturates; low-volatility composition roots no longer raise false BC warnings.
-- **Internal boundary.** Label-file I/O moved to `internal/labels/labelsio`; the
-  engine's import closure is now free of label-loading I/O (enforced by an arch
-  test and the `engine_no_labelsio` gate rule).
-
 ## v0.3.0 — Balanced Coupling engine v2 (BREAKING in SCORING)
 
 ### Breaking changes
@@ -89,6 +62,33 @@ archfit baseline --update
   strength/distance/volatility line, score, why, cheapest-move; `config_hash` for
   reproducibility; "beyond Balanced Coupling" metrics section; distance-confidence
   section.
+
+### Fixes
+
+Correctness and robustness fixes folded into this release. No gate-verdict
+changes; output stays byte-for-byte deterministic.
+
+- **Distance precedence chain.** Distance is resolved by precedence (deploy
+  boundary > explicit `owner` > resolved multi-owner signal > code structure)
+  instead of a flat max, so an explicit `owner:` is no longer overridden by the
+  structural fallback. Two unrelated flat (single-segment) module names now read
+  as `cross_module_different_owner` instead of collapsing to same-owner.
+- **Deploy-unit detection robustness.** `package.json` `workspaces` accepts both
+  the array form and the `{ "packages": [...] }` object form; detected units are
+  remapped to their owning module before filling, so auto-detection works for
+  configs whose module keys differ from repo paths.
+- **`--no-config` reproducibility.** With `--no-config`, the reported
+  `config_hash` is now empty — the ignored on-disk file is no longer hashed, so
+  the hash always reflects the config that actually governed the run.
+- **Deterministic finding order.** Gate and advisory findings are sorted by a
+  total order (severity, rule id, status, endpoints, kind, id), independent of
+  upstream map-iteration order.
+- **Scorer / metric corrections.** Same-module edges score 0 with no spurious
+  band; `change_coupling` is clamped to ≤100%; `abstractness` no longer
+  saturates; low-volatility composition roots no longer raise false BC warnings.
+- **Internal boundary.** Label-file I/O moved to `internal/labels/labelsio`; the
+  engine's import closure is now free of label-loading I/O (enforced by an arch
+  test and the `engine_no_labelsio` gate rule).
 
 ### Calibration
 
