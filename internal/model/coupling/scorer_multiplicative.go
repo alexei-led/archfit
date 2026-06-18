@@ -20,14 +20,14 @@ import "math"
 // +unstable-dep, +change-coupling≥65%); currently zero.
 type MultiplicativeScorer struct{}
 
-// volatilityNorm maps Volatility to its [0,1] weight for the BC-pure formula.
-// Low volatility suppresses the coupling risk (stable target), high amplifies it.
-var volatilityNorm = map[Volatility]float64{
-	VolatilityLow:     0.2,
-	VolatilityMedium:  0.6,
-	VolatilityHigh:    1.0,
-	VolatilityUnknown: 0.5,
-}
+// Frozen normalisation constants — Balanced Coupling (Khononov) §4.1 / BC-pure formula.
+// Changing any of these values is a BREAKING metric change; bump *.v2 instead.
+const (
+	volatilityNormLow     = 0.2
+	volatilityNormMedium  = 0.6
+	volatilityNormHigh    = 1.0
+	volatilityNormUnknown = 0.5
+)
 
 // maxStrengthOrdinal is the normalisation denominator for strength (intrusive=8).
 const maxStrengthOrdinal = 8.0
@@ -37,6 +37,16 @@ const maxDistanceOrdinal = 5.0
 
 // intrusiveFloor is the minimum score for any intrusive-strength edge (band low).
 const intrusiveFloor = 3
+
+// volatilityNorm maps Volatility to its [0,1] weight for the BC-pure formula
+// (values frozen — see consts above).
+// Low volatility suppresses the coupling risk (stable target), high amplifies it.
+var volatilityNorm = map[Volatility]float64{
+	VolatilityLow:     volatilityNormLow,
+	VolatilityMedium:  volatilityNormMedium,
+	VolatilityHigh:    volatilityNormHigh,
+	VolatilityUnknown: volatilityNormUnknown,
+}
 
 // Score computes the multiplicative BC score for c.
 func (MultiplicativeScorer) Score(c Classification) EdgeScore {

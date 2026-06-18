@@ -325,7 +325,7 @@ type ClassifyConfig struct {
 	// config globs > approved labels > extractor hint.
 	ApprovedLabels map[string]string
 	// Scorer is the coupling scorer applied to each cross-boundary edge.
-	// When nil, classify.Run uses coupling.DefaultScorer() (LegacyShim).
+	// When nil, classify.Run uses coupling.DefaultScorer() (MultiplicativeScorer, locked Task 16).
 	Scorer coupling.Scorer
 	// CrossModuleClonePairs is the set of canonical module-pair keys
 	// ("[a]\x00[b]" with a≤b) that share duplicated code blocks, derived

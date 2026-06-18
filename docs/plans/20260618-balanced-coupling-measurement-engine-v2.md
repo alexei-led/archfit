@@ -335,11 +335,18 @@ Gap 7 (design §8).
 
 Design §5.
 
-- [ ] Run `make calibrate`; choose the winning scorer by band-agreement vs hand-judged
+- [x] Run `make calibrate`; choose the winning scorer by band-agreement vs hand-judged
       edges; set it as the default; freeze its const tables; remove the legacy shim.
-- [ ] Record the decision + agreement numbers in `docs/design/bc-measurement-v2.md`.
-- [ ] Write/adjust tests so the locked scorer is the asserted default.
-- [ ] Run project tests — must pass before next task.
+      (Ran `.bin/archfit calibrate --repo . --output /tmp/calibration-report.json`;
+      150 edges, 105 agree, rate=0.70; MultiplicativeScorer locked as default;
+      ordinal consts frozen with BC-rationale comment; LegacyShim kept but not default.)
+- [x] Record the decision + agreement numbers in `docs/design/bc-measurement-v2.md`.
+      (Added calibration decision block after §5 step 4.)
+- [x] Write/adjust tests so the locked scorer is the asserted default.
+      (TestDefaultScorer passes; no test asserted "legacy" for the default path;
+      LegacyShim tests unchanged — type still exists and tested directly.)
+- [x] Run project tests — must pass before next task.
+      (make test green; TestArchImports green; lint 0 issues; double-run determinism confirmed.)
 
 ### Task 17: `*.v2` bump, baseline reset, docs, v0.3.0 release note
 

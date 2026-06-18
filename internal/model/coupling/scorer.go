@@ -31,47 +31,70 @@ type ScoreBreakdown struct {
 }
 
 // ---------------------------------------------------------------------------
-// Frozen ordinal tables (BC measurement engine v2 spec §4.1).
-// These are the canonical, non-negotiable mappings. Changing them is a
-// breaking change to the metric — bump the scorer version instead.
+// Frozen ordinal constants — Balanced Coupling (Khononov) §4.1.
+// Changing any of these values is a BREAKING metric change; bump *.v2 instead.
 // ---------------------------------------------------------------------------
 
-// strengthOrdinal maps Strength to its risk ordinal.
+const (
+	strengthOrdinalContract   = 0
+	strengthOrdinalModel      = 2
+	strengthOrdinalUnknown    = 3
+	strengthOrdinalFunctional = 5
+	strengthOrdinalIntrusive  = 8
+)
+
+const (
+	distanceOrdinalSameModule           = 0
+	distanceOrdinalCrossModuleSameOwner = 1
+	distanceOrdinalUnknown              = 2
+	distanceOrdinalCrossModuleDiffOwner = 3
+	distanceOrdinalCrossDeployUnit      = 5
+)
+
+const (
+	volatilityDiscountLow     = 2
+	volatilityDiscountMedium  = 1
+	volatilityDiscountHigh    = 0
+	volatilityDiscountUnknown = 0
+)
+
+// strengthOrdinal maps Strength to its risk ordinal (values frozen — see consts above).
 // contract=0: declared interface, lowest coupling risk.
 // model=2: concrete type import, low risk.
 // unknown=3: unresolved; default to moderate risk.
 // functional=5: implementation-level call.
 // intrusive=8: internal/private access, highest coupling intensity.
 var strengthOrdinal = map[Strength]int{
-	StrengthContract:   0,
-	StrengthModel:      2,
-	StrengthUnknown:    3,
-	StrengthFunctional: 5,
-	StrengthIntrusive:  8,
+	StrengthContract:   strengthOrdinalContract,
+	StrengthModel:      strengthOrdinalModel,
+	StrengthUnknown:    strengthOrdinalUnknown,
+	StrengthFunctional: strengthOrdinalFunctional,
+	StrengthIntrusive:  strengthOrdinalIntrusive,
 }
 
-// distanceOrdinal maps Distance to its risk ordinal.
+// distanceOrdinal maps Distance to its risk ordinal (values frozen — see consts above).
 // same_module=0: co-located, no boundary crossed.
 // cross_module_same_owner=1: nearby boundary, shared accountability.
 // unknown=2: unresolved; default to cross-module risk.
 // cross_module_diff_owner=3: separate accountability boundaries.
 // cross_deploy_unit=5: highest deployment boundary.
 var distanceOrdinal = map[Distance]int{
-	DistanceSameModule:           0,
-	DistanceCrossModuleSameOwner: 1,
-	DistanceUnknown:              2,
-	DistanceCrossModuleDiffOwner: 3,
-	DistanceCrossDeployUnit:      5,
+	DistanceSameModule:           distanceOrdinalSameModule,
+	DistanceCrossModuleSameOwner: distanceOrdinalCrossModuleSameOwner,
+	DistanceUnknown:              distanceOrdinalUnknown,
+	DistanceCrossModuleDiffOwner: distanceOrdinalCrossModuleDiffOwner,
+	DistanceCrossDeployUnit:      distanceOrdinalCrossDeployUnit,
 }
 
-// volatilityDiscount maps Volatility to a discount subtracted from the raw score.
+// volatilityDiscount maps Volatility to a discount subtracted from the raw score
+// (values frozen — see consts above).
 // Low volatility = higher discount (stable target reduces coupling risk).
 // Unknown = no discount (conservative; treat as potentially volatile).
 var volatilityDiscount = map[Volatility]int{
-	VolatilityLow:     2,
-	VolatilityMedium:  1,
-	VolatilityHigh:    0,
-	VolatilityUnknown: 0,
+	VolatilityLow:     volatilityDiscountLow,
+	VolatilityMedium:  volatilityDiscountMedium,
+	VolatilityHigh:    volatilityDiscountHigh,
+	VolatilityUnknown: volatilityDiscountUnknown,
 }
 
 // ScoreBand maps a numeric score in [0, 10] to a Severity band.
@@ -125,10 +148,10 @@ func (LegacyShim) Score(c Classification) EdgeScore {
 }
 
 // DefaultScorer returns the scorer used by classify.Run when the config
-// does not specify one. Returns LegacyShim to preserve golden-output stability
-// until calibration (Task 16) selects the production scorer.
+// does not specify one. Locked to MultiplicativeScorer per Task 16 calibration
+// decision (2026-06-18): 150 edges on archfit, 105 agree, rate=0.70 vs AdditiveScorer.
 func DefaultScorer() Scorer {
-	return LegacyShim{}
+	return MultiplicativeScorer{}
 }
 
 // clamp returns v clamped to [lo, hi].

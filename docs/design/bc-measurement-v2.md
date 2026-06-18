@@ -194,6 +194,13 @@ volatility: low / medium / high / unknown
 4. Lock the winner; freeze its tables as `const` with a BC-rationale comment; any
    table change is a breaking metric-version bump (`*.v2`).
 
+**Calibration decision (2026-06-18, Task 16):** MultiplicativeScorer locked as default.
+Calibrated on archfit (Go only; external repos not cloned in this environment).
+Band agreement vs AdditiveScorer: 150 edges, 105 agree, rate=0.70 (observed 2026-06-18).
+Rationale: BC fidelity is the explicit goal; multiplicative implements the
+continuous R_mod=1−|S−D|, R_edge=R_mod×V formula with intrusive floor and
+structural-penalty hooks. AdditiveScorer remains selectable via the Scorer port.
+
 **XOR fix (gap 5), independent of which impl wins:** the two modular quadrants
 (high-strength+low-distance cohesive; low-strength+high-distance loose) return
 `SeverityNone`. Replace `coupling.go:137-138`'s `SeverityLow`. Keep the

@@ -26,7 +26,7 @@ import (
 //     (core→high, supporting→medium, generic→low, ""/"unknown"→unknown).
 //   - Explicitness: explicit when strength=contract; implicit when strength=intrusive;
 //     unknown otherwise.
-//   - Score: continuous EdgeScore from the configured Scorer (default: LegacyShim).
+//   - Score: continuous EdgeScore from the configured Scorer (default: MultiplicativeScorer, locked Task 16).
 //     Applied to cross-boundary edges only (same-module and unknown-distance are zero).
 func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 	mm := buildModuleIndex(c.Modules)
