@@ -57,6 +57,10 @@ type RunInput struct {
 	Labels      []labels.Label            // pinned coupling labels; nil = none
 	Signals     signal.RunSignals
 	Now         time.Time
+	// ConfigHash is the sha256 hex digest of the raw .archfit.yaml bytes,
+	// computed by the caller before parsing. Empty when no config file was loaded.
+	// Attached to the Diagnostic for reproducibility: same config + same repo → same hash.
+	ConfigHash string
 }
 
 // extractResult holds the outputs of the extract stage.
@@ -214,6 +218,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		Verdict:       verdict,
 		Base:          in.Mode.Base,
 		Head:          in.Mode.Head,
+		ConfigHash:    in.ConfigHash,
 		Metrics:       metricResults,
 		Findings:      resolvedFindings,
 		FileFacts:     fileFacts,
@@ -337,8 +342,21 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 		toPath := stripPrefix(e.To)
 		fromModule, _ := mm.ModuleFor(fromPath)
 		toModule, _ := mm.ModuleFor(toPath)
+		id := couplingAdvisoryID(fromPath, toPath, string(e.Kind))
+		matched := map[string]string{
+			"strength":   string(cl.Strength),
+			"distance":   string(cl.Distance),
+			"volatility": string(cl.Volatility),
+		}
+		// Attach continuous score fields when a scorer produced them.
+		if cl.Score.Reason != "" {
+			matched["score"] = cl.Score.Reason
+		}
+		if cl.Score.CheapestMove != "" {
+			matched["cheapest_move"] = cl.Score.CheapestMove
+		}
 		af := finding.Finding{
-			ID:       couplingAdvisoryID(fromPath, toPath, string(e.Kind)),
+			ID:       id,
 			Kind:     kindAdvisory,
 			RuleID:   "bc/imbalanced_coupling",
 			Status:   finding.StatusNew,
@@ -349,11 +367,8 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 				Kind: string(e.Kind),
 			},
 			Locations: e.Locations,
-			Why:       "balanced coupling violation: " + string(cl.Severity) + " severity",
-			MatchedBy: map[string]string{
-				"strength": string(cl.Strength),
-				"distance": string(cl.Distance),
-			},
+			Why:       bcAdvisoryWhy(cl),
+			MatchedBy: matched,
 		}
 		advisoryFindings = append(advisoryFindings, af)
 	}
@@ -455,6 +470,16 @@ func severityAtLeast(got coupling.Severity, threshold string) bool {
 	}
 	rank := map[string]int{"low": 1, "medium": 2, "high": 3, "critical": 4}
 	return rank[string(got)] >= rank[threshold]
+}
+
+// bcAdvisoryWhy builds a concise BC-vocabulary why string for a coupling advisory.
+// It uses strength, distance, and volatility to produce a human-readable explanation
+// following Balanced Coupling vocabulary (integration strength, distance, volatility).
+func bcAdvisoryWhy(cl coupling.Classification) string {
+	return "balanced coupling: " + string(cl.Strength) + " integration strength" +
+		" × " + string(cl.Distance) + " distance" +
+		" × " + string(cl.Volatility) + " volatility" +
+		" → " + string(cl.Severity) + " severity"
 }
 
 // couplingAdvisoryID returns a stable 32-character hex fingerprint for a coupling advisory

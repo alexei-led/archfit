@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -154,6 +156,10 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		resolver = scip.New(deps.Runner)
 	}
 
+	// Compute sha256 of the raw config file bytes for reproducibility.
+	// Empty when the file cannot be read (--no-config or built-in default).
+	configHash := computeConfigHash(configPath)
+
 	patternCfg := cfg.ForPatterns()
 	diag, err := engine.Run(ctx, engine.RunInput{
 		Mode:        mode,
@@ -172,6 +178,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		Labels:      lbls,
 		Signals:     change,
 		Now:         time.Now(),
+		ConfigHash:  configHash,
 	})
 	if err != nil {
 		return diag, err
@@ -248,6 +255,18 @@ func applyFlagOverrides(cfg *config.Config, severity string, lang []string) erro
 		cfg.Tools[canonical] = config.ToolConfig{Enabled: config.ModeOn}
 	}
 	return nil
+}
+
+// computeConfigHash returns the sha256 hex digest of the raw config file bytes
+// at path. Returns "" when the file cannot be read (absent, --no-config, etc.)
+// so callers never fail on a missing config; they just get no hash.
+func computeConfigHash(path string) string {
+	b, err := os.ReadFile(path) //#nosec G304 -- path comes from the --config CLI flag, not arbitrary user input
+	if err != nil {
+		return ""
+	}
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
 }
 
 // verdictToError maps a diagnostic verdict to an exit error (nil = exit 0).

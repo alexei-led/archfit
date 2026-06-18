@@ -112,12 +112,16 @@ const SchemaVersion = "archfit.diagnostic.v1"
 // Diagnostic is the top-level output contract for archfit check (spec §12).
 // JSON tags match spec §12 field names exactly.
 type Diagnostic struct {
-	SchemaVersion string            `json:"schema_version"`
-	Verdict       Verdict           `json:"verdict"`
-	Base          string            `json:"base"`
-	Head          string            `json:"head"`
-	Metrics       []MetricResult    `json:"metrics"`
-	Findings      []finding.Finding `json:"findings"`
+	SchemaVersion string  `json:"schema_version"`
+	Verdict       Verdict `json:"verdict"`
+	Base          string  `json:"base"`
+	Head          string  `json:"head"`
+	// ConfigHash is the sha256 hex digest of the loaded .archfit.yaml bytes.
+	// Empty when no config file was loaded (--no-config or default built-in).
+	// Reproducibility: same config + same repo state → same ConfigHash.
+	ConfigHash string            `json:"config_hash,omitempty"`
+	Metrics    []MetricResult    `json:"metrics"`
+	Findings   []finding.Finding `json:"findings"`
 	// FileFacts is the neutral per-module structural-facts block (Tranche 1.5).
 	// Report-only evidence — never consumed by verdict or gate logic. Empty when
 	// no symbol graph was collected (SCIP off/absent).

@@ -12,13 +12,17 @@ import (
 )
 
 const (
-	secGate       = "Gate findings"
-	secAdvisories = "Advisories"
+	secGate         = "Gate findings"
+	secAdvisories   = "Advisories"
+	secBCAdvisories = "Balanced Coupling advisories"
+	secBeyondBC     = "Supporting structural metrics (beyond Balanced Coupling)"
+	secDistanceConf = "Distance confidence"
 
 	// New info-metric names.
 	metricRiskHub              = "risk_hub"
 	metricArchFitness          = "architecture_fitness"
 	metricFunctionalCandidates = "functional_candidates"
+	metricCycle                = "cycle"
 
 	// Band / confidence / status literals used in multiple tests.
 	bandInfo       = "info"
@@ -142,7 +146,7 @@ func TestRenderer_Render_GateFindings(t *testing.T) {
 
 	out := buf.String()
 
-	for _, want := range []string{secGate, "forbidden_dep", "cycle", secGate} {
+	for _, want := range []string{secGate, "forbidden_dep", metricCycle, secGate} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)
 		}
@@ -171,13 +175,18 @@ func TestRenderer_Render_AdvisoryFindings(t *testing.T) {
 
 	out := buf.String()
 
-	if !strings.Contains(out, secAdvisories) {
-		t.Errorf("output missing BC Advisories section\nfull output:\n%s", out)
+	// BC coupling advisories now render in the "Balanced Coupling advisories" section
+	// with the BC lint-message format (ARCHFIT[BC-UNBALANCED ...]).
+	if !strings.Contains(out, secBCAdvisories) {
+		t.Errorf("output missing %q section\nfull output:\n%s", secBCAdvisories, out)
+	}
+	if !strings.Contains(out, "ARCHFIT[BC-UNBALANCED") {
+		t.Errorf("output missing BC lint-message prefix ARCHFIT[BC-UNBALANCED]\nfull output:\n%s", out)
 	}
 
 	// No gate violations section — no gate findings.
 	if strings.Contains(out, secGate) {
-		t.Errorf("output should not contain Critical Gate Violations section\nfull output:\n%s", out)
+		t.Errorf("output should not contain Gate findings section\nfull output:\n%s", out)
 	}
 }
 
@@ -474,5 +483,176 @@ func TestRenderer_Render_AgentTasks(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "Agent tasks") {
 		t.Error("Agent tasks section must be absent when there are none")
+	}
+}
+
+// TestRenderer_Render_BCLintMessage verifies that bc/imbalanced_coupling advisories
+// render as ARCHFIT[BC-UNBALANCED <SEV>] lint messages with strength/distance/
+// volatility, score breakdown, why, and cheapest-move fields from MatchedBy.
+func TestRenderer_Render_BCLintMessage(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.Summary.Warnings = 1
+
+	f := makeAdvisoryFinding("bc/imbalanced_coupling")
+	f.Severity = finding.SeverityHigh
+	f.Edge.From.Path = "internal/payments/processor.go"
+	f.Edge.To.Path = "internal/users/repo.go"
+	f.Why = "implementation-level coupling across a deploy boundary to a volatile core module"
+	f.MatchedBy = map[string]string{
+		"strength":      "intrusive",
+		"distance":      "cross_deploy_unit",
+		"volatility":    "high",
+		"score":         "intrusive(+8) cross_deploy(+5) vol_high(-0) = 13->10",
+		"cheapest_move": "lower strength intrusive->contract (-5)",
+	}
+	d.Findings = []finding.Finding{f}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"ARCHFIT[BC-UNBALANCED HIGH]",
+		"internal/payments/processor.go -> internal/users/repo.go",
+		"integration strength: intrusive",
+		"distance: cross_deploy_unit",
+		"volatility: high",
+		"score: intrusive(+8) cross_deploy(+5) vol_high(-0) = 13->10",
+		"why: implementation-level coupling across a deploy boundary",
+		"cheapest move: lower strength intrusive->contract (-5)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("BC lint message missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+// TestRenderer_Render_ConfigHash verifies that config_hash appears in the report
+// when set on the diagnostic, and is absent when empty.
+func TestRenderer_Render_ConfigHash(t *testing.T) {
+	r := markdown.New()
+
+	t.Run("present when set", func(t *testing.T) {
+		d := diagnostic.New()
+		d.Verdict = diagnostic.VerdictPass
+		d.ConfigHash = "abc123def456"
+
+		var buf bytes.Buffer
+		if err := r.Render(d, &buf); err != nil {
+			t.Fatalf("Render() error = %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "Config hash") {
+			t.Errorf("output missing Config hash when set\nfull output:\n%s", out)
+		}
+		if !strings.Contains(out, "abc123def456") {
+			t.Errorf("output missing hash value\nfull output:\n%s", out)
+		}
+	})
+
+	t.Run("absent when empty", func(t *testing.T) {
+		d := diagnostic.New()
+		d.Verdict = diagnostic.VerdictPass
+		d.ConfigHash = ""
+
+		var buf bytes.Buffer
+		if err := r.Render(d, &buf); err != nil {
+			t.Fatalf("Render() error = %v", err)
+		}
+		if strings.Contains(buf.String(), "Config hash") {
+			t.Error("Config hash must be absent when empty")
+		}
+	})
+}
+
+// TestRenderer_Render_BeyondBCMetrics verifies that beyond-BC metrics appear in
+// the dedicated "Supporting structural metrics" section and NOT in primary Metrics.
+func TestRenderer_Render_BeyondBCMetrics(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.Metrics = []diagnostic.MetricResult{
+		{Name: "encapsulation", Display: "0.85", Band: "good", Confidence: confidenceHigh},
+		{Name: "cycle", Display: "0", Band: "none", Confidence: confidenceHigh},
+		{Name: "blast_radius", Display: "0.12", Band: "low", Confidence: confidenceHigh},
+		{Name: "risk_hub", Display: bandNA, Band: bandNA, Confidence: confidenceLow},
+		{Name: "complexity", Display: bandNA, Band: bandNA, Confidence: confidenceLow},
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	// BC-primary metric in ## Metrics section.
+	if !strings.Contains(out, "## Metrics") {
+		t.Errorf("output missing primary Metrics section\nfull output:\n%s", out)
+	}
+	if !strings.Contains(out, "encapsulation") {
+		t.Errorf("encapsulation missing from output\nfull output:\n%s", out)
+	}
+
+	// Beyond-BC metrics in dedicated section.
+	if !strings.Contains(out, secBeyondBC) {
+		t.Errorf("output missing %q section\nfull output:\n%s", secBeyondBC, out)
+	}
+	for _, name := range []string{"cycle", "blast_radius", "risk_hub", "complexity"} {
+		if !strings.Contains(out, name) {
+			t.Errorf("beyond-BC metric %q missing from output\nfull output:\n%s", name, out)
+		}
+	}
+}
+
+// TestRenderer_Render_DistanceConfidence verifies the "Distance confidence" section
+// is always present and reflects tool coverage sources.
+func TestRenderer_Render_DistanceConfidence(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	// The distance confidence section is always emitted.
+	if !strings.Contains(out, secDistanceConf) {
+		t.Errorf("output missing %q section\nfull output:\n%s", secDistanceConf, out)
+	}
+	// code_structure is always-on.
+	if !strings.Contains(out, "code_structure") {
+		t.Errorf("output missing code_structure entry\nfull output:\n%s", out)
+	}
+	// owner_source and deploy_unit_source noted as not reported when absent.
+	if !strings.Contains(out, "owner_source") {
+		t.Errorf("output missing owner_source entry\nfull output:\n%s", out)
+	}
+	if !strings.Contains(out, "deploy_unit_source") {
+		t.Errorf("output missing deploy_unit_source entry\nfull output:\n%s", out)
+	}
+}
+
+// TestRenderer_Render_EmptyDiagnosticHasDistanceConfidence verifies the distance
+// confidence section is present even on a minimal empty diagnostic.
+func TestRenderer_Render_EmptyDiagnosticHasDistanceConfidence(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	// Distance confidence always present — it documents what signals were used.
+	if !strings.Contains(out, secDistanceConf) {
+		t.Errorf("distance confidence section missing in empty diagnostic\nfull output:\n%s", out)
 	}
 }

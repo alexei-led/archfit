@@ -306,13 +306,30 @@ Design §7 (LLM off-gate only).
 
 Gap 7 (design §8).
 
-- [ ] Restructure the `internal/engine` markdown/JSON writers into lint-message format
+- [x] Restructure the `internal/engine` markdown/JSON writers into lint-message format
       (`ARCHFIT[id sev] from→to`, strength/distance/volatility line, score breakdown, why,
       cheapest-move), add `config_hash`, a "beyond Balanced Coupling" metrics section, and
       a distance-confidence section.
-- [ ] Regenerate `TestGolden`; inspect the diff.
-- [ ] Write tests for the lint-message format and `config_hash` stability.
-- [ ] Run project tests — must pass before next task.
+      (markdown renderer fully restructured: BC lint-message `ARCHFIT[BC-UNBALANCED <SEV>]`
+      format; `config_hash` in `Diagnostic` + `RunInput`; "Balanced Coupling advisories" section
+      with strength/distance/volatility + score + why + cheapest-move; "Supporting structural
+      metrics (beyond Balanced Coupling)" section for cycle/blast_radius/propagation_cost/
+      instability/abstractness/martin_distance/change_coupling/change_amplification/hidden_coupling/
+      structural_weight/complexity/risk_hub/coverage; "Distance confidence" section always emitted;
+      `bcAdvisoryWhy` uses BC vocabulary; advisory `MatchedBy` now includes volatility, score,
+      cheapest_move; `computeConfigHash` in pipeline.go threads sha256 of .archfit.yaml)
+- [x] Regenerate `TestGolden`; inspect the diff.
+      (TestGolden_DoubleRun passes: JSON schema change is backward-compatible via `omitempty`;
+      no score/verdict change; byte-identical double-run confirmed)
+- [x] Write tests for the lint-message format and `config_hash` stability.
+      (TestRenderer_Render_BCLintMessage: verifies ARCHFIT[BC-UNBALANCED HIGH], strength/distance/
+      volatility, score, why, cheapest-move; TestRenderer_Render_ConfigHash: present/absent cases;
+      TestRenderer_Render_BeyondBCMetrics: beyond-BC section vs primary metrics split;
+      TestRenderer_Render_DistanceConfidence: always-present section; TestRenderer_Render_AdvisoryFindings
+      updated to new secBCAdvisories constant)
+- [x] Run project tests — must pass before next task.
+      (`make test` race green; `make lint` 0 issues; `TestArchImports` PASS; `TestGolden` PASS;
+      determinism: `archfit check` twice → byte-identical output)
 
 ### Task 16: Run calibration, lock the scorer
 
