@@ -71,6 +71,10 @@ func New(cfg config.Config) []Metric {
 		adapt(intramodule.ArchitectureFitnessMetric{}, signal.CollectedSignals.AsFitness),
 		adapt(modularity.FunctionalCandidatesMetric{}, signal.CollectedSignals.AsDuplication),
 		adapt(boundary.ChangeLocalityMetric{}, signal.CollectedSignals.AsCommon),
+		// Beyond Balanced Coupling — Martin metrics (report-only, never gate).
+		adapt(modularity.InstabilityMetric{}, signal.CollectedSignals.AsCommon),
+		adapt(modularity.AbstractnessMetric{}, signal.CollectedSignals.AsCommon),
+		adapt(modularity.MartinDistanceMetric{}, signal.CollectedSignals.AsCommon),
 	}
 
 	// Honor explicit `metrics.<name>.enabled: false` config: metrics absent

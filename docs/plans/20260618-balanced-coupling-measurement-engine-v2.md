@@ -229,13 +229,13 @@ Design §5: needed to choose the scorer (Task 16).
 
 Design §6.
 
-- [ ] Add `internal/metrics/modularity/martin.go`: `I = Ce/(Ca+Ce)`,
+- [x] Add `internal/metrics/modularity/martin.go`: `I = Ce/(Ca+Ce)`,
       `A = abstract/(abstract+concrete)`, `Dms = abs(A+I-1)` from the existing dependency
       graph + SCIP exports; expose an unstable-dependency (`I(to) > I(from)`) penalty hook
       for the multiplicative scorer.
-- [ ] Label these "beyond Balanced Coupling" in output; never gate.
-- [ ] Write tests incl. the shared-DTO trap note (high-Ca low-I is not auto-"good").
-- [ ] Run project tests — must pass before next task.
+- [x] Label these "beyond Balanced Coupling" in output; never gate.
+- [x] Write tests incl. the shared-DTO trap note (high-Ca low-I is not auto-"good").
+- [x] Run project tests — must pass before next task.
 
 ### Task 10: Propagation cost
 
