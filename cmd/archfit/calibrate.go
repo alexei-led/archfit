@@ -12,7 +12,6 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
-	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
@@ -90,9 +89,6 @@ func calibrateRepo(ctx context.Context, _ *appDeps, absPath string) (calibrate.R
 
 	ex := golang.New(extractCfg)
 	sc := scope.Scope{Root: absPath}
-
-	// Use NopSymbolResolver — no subprocess symbol resolution needed here.
-	_ = ports.NopSymbolResolver{}
 
 	facts, _, err := ex.Extract(ctx, sc)
 	if err != nil {

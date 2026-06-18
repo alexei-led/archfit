@@ -41,8 +41,9 @@ func (m ChangeCouplingMetric) Name() string { return "change_coupling" }
 // Version returns "change_coupling.v1".
 func (m ChangeCouplingMetric) Version() string { return "change_coupling.v1" }
 
-const changeCouplingDef = "change-coupled module pairs CC(A,B)=C_AB/min(C_A,C_B)≥65%: " +
-	"modules that co-change in ≥65%% of commits touching either; CodeScene formula; " +
+const changeCouplingDef = "change-coupled module pairs (CC≥65%%): " +
+	"CC≈max-file-pair-co-change/min(module commits), an approximation of CodeScene's " +
+	"C_AB/min(C_A,C_B) clamped to 100%% (true module C_AB needs commit→module data); " +
 	"beyond Balanced Coupling, report-only"
 
 // Calculate counts module pairs with CC ≥ 65%.
