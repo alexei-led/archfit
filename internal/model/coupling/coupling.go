@@ -53,12 +53,15 @@ const (
 // Strength and Distance are populated with high confidence;
 // Volatility and Explicitness are derived from config subdomain/public globs.
 // Severity is set by classify.Run for cross-boundary edges via BalanceResult.
+// ContractRecommended is set when the target is a generic subdomain reached via
+// non-contract strength — BC's anti-corruption-layer advisory signal.
 type Classification struct {
-	Strength     Strength
-	Distance     Distance
-	Volatility   Volatility
-	Explicitness Explicitness
-	Severity     Severity
+	Strength            Strength
+	Distance            Distance
+	Volatility          Volatility
+	Explicitness        Explicitness
+	Severity            Severity
+	ContractRecommended bool // generic-subdomain target reached via non-contract strength
 }
 
 // Index maps each edge's canonical key (from + "\x00" + to + "\x00" + kind)

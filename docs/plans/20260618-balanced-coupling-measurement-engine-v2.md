@@ -143,15 +143,15 @@ Gap 3 (design §3#3, §4.3): `classify.go:224-253` consumes churn-derived volati
 Gap 3/6 (design §4.3): replace the removed churn fallback with a deterministic domain
 default, and add the generic-subdomain contract advisory (closes coverage gap).
 
-- [ ] Add `internal/classify/volatility_heuristic.go`: path-pattern table — generic
+- [x] Add `internal/classify/volatility_heuristic.go`: path-pattern table — generic
       (`vendor/`,`lib/`,`util/`,`pkg/common/`) → low; supporting
       (`infra/`,`platform/`,`storage/`,`db/`) → medium; else `unknown` (never guess
       core/high). Wire as source priority 3, after explicit config, before `unknown`.
-- [ ] Emit a "contract recommended" advisory when a generic-subdomain target is reached
+- [x] Emit a "contract recommended" advisory when a generic-subdomain target is reached
       via non-contract strength (design §4.3 — the anti-corruption-layer guidance).
-- [ ] Write tests for the heuristic table (incl. the `unknown` default) and the
+- [x] Write tests for the heuristic table (incl. the `unknown` default) and the
       generic-subdomain advisory trigger.
-- [ ] Run project tests — must pass before next task.
+- [x] Run project tests — must pass before next task.
 
 ### Task 4: Scorer port + additive and multiplicative impls
 

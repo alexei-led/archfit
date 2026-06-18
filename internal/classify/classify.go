@@ -139,11 +139,22 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) coupling.Cl
 		exp = coupling.ExplicitnessImplicit
 	}
 
+	// --- Contract-recommended advisory ---
+	// When a generic-subdomain target is reached via non-contract strength (model,
+	// functional, intrusive, or unknown), BC's anti-corruption-layer guidance applies:
+	// introduce a contract (interface/adapter) so the caller is decoupled from the
+	// provider's implementation volatility. This flag is carried on the Classification
+	// so the engine can emit a dedicated advisory finding.
+	contractRecommended := str != coupling.StrengthContract &&
+		dist != coupling.DistanceSameModule &&
+		isGenericSubdomain(toPath, mi, modules)
+
 	cl := coupling.Classification{
-		Strength:     str,
-		Distance:     dist,
-		Volatility:   vol,
-		Explicitness: exp,
+		Strength:            str,
+		Distance:            dist,
+		Volatility:          vol,
+		Explicitness:        exp,
+		ContractRecommended: contractRecommended,
 	}
 
 	// --- Severity ---
@@ -221,7 +232,16 @@ func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[strin
 	return coupling.DistanceCrossModuleDiffOwner
 }
 
-// classifyVolatility derives volatility from the to-module's subdomain.
+// classifyVolatility derives domain volatility for the to-module using three
+// sources in priority order:
+//
+//  1. Explicit `volatility` field on the module definition (hand-authored).
+//  2. Subdomain heuristic: core→high, supporting→medium, generic→low.
+//  3. Path-pattern heuristic (domainVolatilityFromPath) — deterministic,
+//     never guesses core/high, falls back to unknown.
+//
+// No churn or git history is consulted here. Implementation volatility (churn)
+// feeds only report-only metrics via the separate derivedVolatility store.
 func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config.ModuleDef) coupling.Volatility {
 	toMod, ok := mi.moduleFor(toPath)
 	if !ok {
@@ -229,7 +249,7 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 	}
 	def := modules[toMod]
 
-	// Use explicit Volatility field if set.
+	// Priority 1: explicit Volatility field.
 	switch strings.ToLower(def.Volatility) {
 	case "high":
 		return coupling.VolatilityHigh
@@ -239,7 +259,7 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 		return coupling.VolatilityLow
 	}
 
-	// Fall back to subdomain heuristic.
+	// Priority 2: subdomain heuristic.
 	switch strings.ToLower(def.Subdomain) {
 	case "core":
 		return coupling.VolatilityHigh
@@ -247,9 +267,37 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 		return coupling.VolatilityMedium
 	case "generic":
 		return coupling.VolatilityLow
-	default:
-		return coupling.VolatilityUnknown
 	}
+
+	// Priority 3: path-pattern heuristic (never guesses core/high).
+	if v := domainVolatilityFromPath(toPath); v != coupling.VolatilityUnknown {
+		return v
+	}
+
+	return coupling.VolatilityUnknown
+}
+
+// isGenericSubdomain reports whether the to-module is classified as a generic
+// subdomain. Returns true when the module definition's Subdomain is "generic",
+// or when the subdomain is absent but the path-pattern heuristic resolves to
+// VolatilityLow (generic-indicator paths such as vendor/, lib/, util/).
+//
+// This is used to trigger the contract-recommended advisory when a generic
+// target is reached via non-contract strength (BC's anti-corruption-layer guidance).
+func isGenericSubdomain(toPath string, mi moduleIndex, modules map[string]config.ModuleDef) bool {
+	toMod, ok := mi.moduleFor(toPath)
+	if !ok {
+		return false
+	}
+	def := modules[toMod]
+	if strings.ToLower(def.Subdomain) == "generic" {
+		return true
+	}
+	// Treat heuristic-generic paths the same way when no explicit subdomain is set.
+	if def.Subdomain == "" && domainVolatilityFromPath(toPath) == coupling.VolatilityLow {
+		return true
+	}
+	return false
 }
 
 // classifyExplicitness derives explicitness from strength.

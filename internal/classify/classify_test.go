@@ -16,10 +16,12 @@ const (
 	deployUnitB = "svc-b"
 
 	// path glob constants reused across multiple test cases.
-	pathsA        = "services/a/**"
-	pathsB        = "services/b/**"
-	publicB       = "services/b/api/**"
-	subdomainCore = "core"
+	pathsA              = "services/a/**"
+	pathsB              = "services/b/**"
+	publicB             = "services/b/api/**"
+	subdomainCore       = "core"
+	subdomainSupporting = "supporting"
+	subdomainGeneric    = "generic"
 )
 
 // makeGraph builds a minimal sealed Graph from a slice of edges.
@@ -77,7 +79,7 @@ func TestRun(t *testing.T) {
 			Internal:   []string{"services/a/internal/**"},
 			Owner:      ownerTeamX,
 			DeployUnit: deployUnitA,
-			Subdomain:  "core",
+			Subdomain:  subdomainCore,
 		},
 		"b": {
 			Paths:      []string{"services/b/**"},
@@ -85,14 +87,14 @@ func TestRun(t *testing.T) {
 			Internal:   []string{"services/b/internal/**"},
 			Owner:      ownerTeamY,
 			DeployUnit: deployUnitB,
-			Subdomain:  "supporting",
+			Subdomain:  subdomainSupporting,
 		},
 		"c": {
 			Paths:      []string{"services/c/**"},
 			Public:     []string{"services/c/api/**"},
 			Owner:      ownerTeamX,
 			DeployUnit: deployUnitA,
-			Subdomain:  "generic",
+			Subdomain:  subdomainGeneric,
 		},
 		"d": {
 			Paths:      []string{"services/d/**"},
@@ -595,6 +597,113 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 			t.Errorf("strength = %q, want functional (label is directional)", got)
 		}
 	})
+}
+
+// TestRun_ContractRecommended verifies the generic-subdomain contract advisory:
+// ContractRecommended is set when the to-module is a generic subdomain and the
+// strength is non-contract; it is NOT set when strength is contract, the edge is
+// same-module, or the to-module is not a generic subdomain.
+func TestRun_ContractRecommended(t *testing.T) {
+	modules := map[string]config.ModuleDef{
+		"core": {
+			Paths:      []string{"services/core/**"},
+			Public:     []string{"services/core/api/**"},
+			Owner:      ownerTeamX,
+			DeployUnit: deployUnitA,
+			Subdomain:  subdomainCore,
+		},
+		"generic": {
+			Paths:      []string{"services/generic/**"},
+			Public:     []string{"services/generic/api/**"},
+			Owner:      ownerTeamY,
+			DeployUnit: deployUnitB,
+			Subdomain:  subdomainGeneric,
+		},
+		"supporting": {
+			Paths:      []string{"services/supporting/**"},
+			Public:     []string{"services/supporting/api/**"},
+			Owner:      ownerTeamY,
+			DeployUnit: deployUnitB,
+			Subdomain:  subdomainSupporting,
+		},
+		// Module with no explicit subdomain but a heuristic-generic path.
+		"util": {
+			Paths:      []string{"util/**"},
+			Owner:      ownerTeamX,
+			DeployUnit: deployUnitA,
+		},
+	}
+	cfg := config.ClassifyConfig{Modules: modules}
+
+	edge := func(from, to, hint string) graph.Edge {
+		return graph.Edge{
+			From:         "file:" + from,
+			To:           "file:" + to,
+			Kind:         graph.EdgeKindImports,
+			Language:     "go",
+			StrengthHint: hint,
+		}
+	}
+
+	tests := []struct {
+		name               string
+		e                  graph.Edge
+		wantContractRecomm bool
+	}{
+		{
+			// Non-contract strength → generic subdomain: advisory fires.
+			name:               "functional to generic → contract recommended",
+			e:                  edge("services/core/impl.go", "services/generic/impl.go", "functional"),
+			wantContractRecomm: true,
+		},
+		{
+			// Unknown strength → generic subdomain: advisory fires.
+			name:               "unknown strength to generic → contract recommended",
+			e:                  edge("services/core/impl.go", "services/generic/impl.go", ""),
+			wantContractRecomm: true,
+		},
+		{
+			// Contract strength → generic subdomain: no advisory (already contracted).
+			name:               "contract to generic api → no advisory",
+			e:                  edge("services/core/impl.go", "services/generic/api/client.go", ""),
+			wantContractRecomm: false,
+		},
+		{
+			// Non-contract to non-generic (supporting): advisory does not fire.
+			name:               "functional to supporting → no advisory",
+			e:                  edge("services/core/impl.go", "services/supporting/impl.go", "functional"),
+			wantContractRecomm: false,
+		},
+		{
+			// Heuristic-generic path (util/) with no explicit subdomain: advisory fires.
+			name:               "functional to heuristic-generic util/ → contract recommended",
+			e:                  edge("services/core/impl.go", "util/parser.go", "functional"),
+			wantContractRecomm: true,
+		},
+		{
+			// Contract to heuristic-generic: no advisory.
+			name:               "contract to heuristic-generic util/ api → no advisory",
+			e:                  edge("services/core/impl.go", "util/parser.go", "contract"),
+			wantContractRecomm: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := makeGraph([]graph.Edge{tc.e})
+			idx := classify.Run(g, cfg)
+			key := edgeKey(tc.e)
+			cl, ok := idx[key]
+			if !ok {
+				t.Fatalf("edge key %q not found in index", key)
+			}
+			if cl.ContractRecommended != tc.wantContractRecomm {
+				t.Errorf("ContractRecommended = %v, want %v (str=%q dist=%q vol=%q)",
+					cl.ContractRecommended, tc.wantContractRecomm,
+					cl.Strength, cl.Distance, cl.Volatility)
+			}
+		})
+	}
 }
 
 // TestRun_ChurnVolatilityIgnoredOnGate verifies that classify.Run produces
