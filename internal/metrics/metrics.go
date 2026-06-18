@@ -53,9 +53,9 @@ func adapt[In any](c Calculator[In], project func(signal.CollectedSignals) In) M
 // them, which golden output depends on. Each metric is adapted from its typed
 // Calculator to the uniform Metric via its family projection.
 //
-// Volatility for the risk_hub metric is captured here (risk.NewMetric), before
-// any call to config.ApplyVolatility, so churn-derived values never contaminate
-// the signal (that would double-count with change_amplification).
+// Volatility for the risk_hub metric is captured here (risk.NewMetric) from
+// explicit config only; git-churn volatility is never computed, so it cannot
+// contaminate the signal (that would double-count with change_amplification).
 func New(cfg config.Config) []Metric {
 	all := []Metric{
 		adapt(boundary.EncapsulationMetric{}, signal.CollectedSignals.AsCommon),

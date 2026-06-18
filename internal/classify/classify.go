@@ -311,8 +311,8 @@ func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[strin
 //  3. Path-pattern heuristic (domainVolatilityFromPath) — deterministic,
 //     never guesses core/high, falls back to unknown.
 //
-// No churn or git history is consulted here. Implementation volatility (churn)
-// feeds only report-only metrics via the separate derivedVolatility store.
+// No churn or git history is consulted here. Implementation volatility (git
+// churn) feeds only report-only metrics (change_amplification, hidden_coupling).
 func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config.ModuleDef) coupling.Volatility {
 	toMod, ok := mi.moduleFor(toPath)
 	if !ok {

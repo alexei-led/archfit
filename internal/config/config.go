@@ -218,15 +218,6 @@ type Config struct {
 	Outputs               OutputsConfig        `yaml:"outputs"`
 	PythonPackage         string               `yaml:"python_package"`           // top-level Python package name for grimp
 	BCAdvisoryMinSeverity string               `yaml:"bc_advisory_min_severity"` // minimum severity to emit BC coupling advisories: low|medium|high|critical (default: low)
-
-	// derivedVolatility holds churn-derived volatility bands recorded by
-	// ApplyVolatility. It is a separate store on purpose: Modules always
-	// carries hand-authored values only, so consumers that must never see
-	// derived volatility (risk_hub, enrich prompt context) read Modules
-	// directly, while classification reads the effective view. This makes
-	// the metrics.New / ApplyVolatility call order irrelevant by
-	// construction — derived values cannot overwrite config.
-	derivedVolatility map[string]string
 }
 
 // Load reads and strictly decodes an archfit.yaml file at path.
@@ -458,9 +449,8 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 
 // ForClassify returns the ClassifyConfig view. Classification sees only
 // hand-authored module definitions — explicit volatility and subdomain fields
-// only. Churn-derived volatility (recorded by ApplyVolatility) is intentionally
-// excluded: Balanced Coupling forbids commit-history volatility on the gate path.
-// Churn is stored in the separate derivedVolatility map for future report-only metrics.
+// only. Git-churn-derived volatility is intentionally excluded: Balanced Coupling
+// forbids commit-history volatility on the gate path.
 func (c Config) ForClassify() ClassifyConfig {
 	return ClassifyConfig{
 		Modules:               c.Modules,

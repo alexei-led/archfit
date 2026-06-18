@@ -386,22 +386,17 @@ func TestModuleSurfaceBreadth_NoCrossModuleRefs(t *testing.T) {
 	}
 }
 
-// TestRiskHub_OrderIndependentOfApplyVolatility proves the M7 fix: calling
-// config.ApplyVolatility BEFORE metrics.New (the historically "wrong" order,
-// once guarded only by a comment) can no longer leak churn-derived volatility
-// into risk_hub. Derived bands live in a separate store; ModuleDef.Volatility
-// stays hand-authored. The derived band is "low" because its multiplier
-// (0.33) differs from neutral (1.0) — "high" would be indistinguishable.
-func TestRiskHub_OrderIndependentOfApplyVolatility(t *testing.T) {
+// TestRiskHub_NeutralVolatilityWithoutConfig verifies risk_hub uses a neutral
+// (1.0) volatility multiplier for a module with no explicit volatility. risk_hub
+// reads hand-authored ModuleDef.Volatility only and never derives volatility from
+// git churn.
+func TestRiskHub_NeutralVolatilityWithoutConfig(t *testing.T) {
 	cfg := config.Config{Modules: map[string]config.ModuleDef{
 		testModAlpha: {Paths: []string{"alpha/**"}}, // no explicit volatility
 	}}
 
-	// Wrong order: churn-derived volatility applied before the metric is built.
-	cfg.ApplyVolatility(map[string]string{testModAlpha: volBandLow})
-
 	m := NewMetric(cfg)
 	if got := m.moduleVolatility[testModAlpha]; got != 1.0 {
-		t.Errorf("churn-derived volatility leaked into risk_hub: multiplier = %v, want neutral 1.0", got)
+		t.Errorf("risk_hub volatility multiplier = %v, want neutral 1.0 (no churn derivation)", got)
 	}
 }

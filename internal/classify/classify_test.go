@@ -769,11 +769,11 @@ func TestRun_DegenerateOwnerSuppression(t *testing.T) {
 	})
 }
 
-// TestRun_ChurnVolatilityIgnoredOnGate verifies that classify.Run produces
-// VolatilityUnknown for a module with no explicit volatility or subdomain,
-// even when the ClassifyConfig was built from a Config that had ApplyVolatility
-// called with churn data. ForClassify() must strip churn before passing to Run.
-func TestRun_ChurnVolatilityIgnoredOnGate(t *testing.T) {
+// TestRun_VolatilityUnknownWithoutConfig verifies classify.Run produces
+// VolatilityUnknown for a module with no explicit volatility or subdomain. The
+// gate never derives volatility from git churn — there is no churn path into
+// classification at all.
+func TestRun_VolatilityUnknownWithoutConfig(t *testing.T) {
 	cfg := config.Config{
 		Version: 1,
 		Modules: map[string]config.ModuleDef{
@@ -781,13 +781,9 @@ func TestRun_ChurnVolatilityIgnoredOnGate(t *testing.T) {
 			"b": {Paths: []string{"pkg/b/**"}, Owner: ownerTeamY}, // no volatility, no subdomain
 		},
 	}
-	// Apply churn-derived high volatility to module "b".
-	cfg.ApplyVolatility(map[string]string{"b": "high"})
-
-	// ForClassify must exclude churn.
 	classifyCfg := cfg.ForClassify()
 	if got := classifyCfg.Modules["b"].Volatility; got != "" {
-		t.Fatalf("precondition: ForClassify().Modules[b].Volatility = %q, want \"\" (churn excluded)", got)
+		t.Fatalf("precondition: ForClassify().Modules[b].Volatility = %q, want \"\"", got)
 	}
 
 	e := graph.Edge{
@@ -801,6 +797,6 @@ func TestRun_ChurnVolatilityIgnoredOnGate(t *testing.T) {
 	cl := idx[edgeKey(e)]
 
 	if cl.Volatility != coupling.VolatilityUnknown {
-		t.Errorf("Volatility = %q, want unknown (churn must not reach gate)", cl.Volatility)
+		t.Errorf("Volatility = %q, want unknown", cl.Volatility)
 	}
 }

@@ -86,8 +86,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 
 	rs := rules.New(cfg.ForRules())
-	// risk_hub reads hand-authored volatility only; ApplyVolatility records
-	// churn-derived bands in a separate store, so this call order is free.
+	// risk_hub reads hand-authored volatility only (never git churn).
 	ms := append(metrics.New(cfg), extraMetrics...)
 
 	// Recent git history (cheap; runs by default): per-file churn drives module
@@ -96,7 +95,6 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// config always wins; a non-git repo leaves these signals empty.
 	change := signal.RunSignals{}
 	if churn, coChange, _, herr := git.History(ctx, s.Root, deps.Runner); herr == nil {
-		cfg.ApplyVolatility(config.DeriveVolatility(cfg.Modules, churn))
 		change.History.FileChurn, change.History.CoChange = churn, coChange
 	}
 
