@@ -63,6 +63,15 @@ func (m ChangeCouplingMetric) Calculate(in signal.HistoryInput) diagnostic.Metri
 	}
 
 	// Aggregate file-pair co-change onto module pairs (graph modules only).
+	//
+	// Module-level C_AB (commits touching both modules) cannot be reconstructed
+	// exactly from file-pair co-change counts: summing them over-counts a single
+	// commit that touches many files of each module (it inflates one commit into
+	// up to |A|×|B| file-pair hits, yielding CC>100%). We approximate C_AB by the
+	// MAX single file-pair co-change between the two modules — a bounded lower
+	// estimate of how often the modules co-change — and clamp the ratio to 1.0.
+	// Upgrade trigger: when the history extractor emits commit→module co-occurrence,
+	// replace this with the exact commit count.
 	modPair := make(map[[2]string]int)
 	for fp, c := range in.History.CoChange {
 		a := modgraph.FileToModuleKey(fp[0], lang)
@@ -76,7 +85,10 @@ func (m ChangeCouplingMetric) Calculate(in signal.HistoryInput) diagnostic.Metri
 		if _, ok := nodeSet[b]; !ok {
 			continue
 		}
-		modPair[modgraph.OrderedPair(a, b)] += c
+		key := modgraph.OrderedPair(a, b)
+		if c > modPair[key] {
+			modPair[key] = c
+		}
 	}
 
 	type pair struct {
@@ -93,6 +105,9 @@ func (m ChangeCouplingMetric) Calculate(in signal.HistoryInput) diagnostic.Metri
 			continue
 		}
 		cc := float64(nab) / float64(minChurn)
+		if cc > 1.0 { // CC is a ratio; the max-file-pair proxy can still exceed minChurn
+			cc = 1.0
+		}
 		if cc >= changeCouplingThreshold {
 			flagged = append(flagged, pair{mp[0], mp[1], cc})
 		}

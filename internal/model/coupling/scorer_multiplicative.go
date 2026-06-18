@@ -48,8 +48,18 @@ var volatilityNorm = map[Volatility]float64{
 	VolatilityUnknown: volatilityNormUnknown,
 }
 
+// reasonMultiplicative labels EdgeScores produced by the multiplicative scorer.
+const reasonMultiplicative = "multiplicative"
+
 // Score computes the multiplicative BC score for c.
 func (MultiplicativeScorer) Score(c Classification) EdgeScore {
+	// Same-module edges are not cross-boundary coupling and carry no BC risk.
+	// classify.Run already filters them, but guard the scorer so it is correct in
+	// isolation: without this, (low-strength, same_module, high_vol) would score
+	// critical via rMod = 1 - |0 - 0| = 1.0.
+	if c.Distance == DistanceSameModule {
+		return EdgeScore{Value: 0, Band: ScoreBand(0), Reason: reasonMultiplicative}
+	}
 	sv := strengthOrdinal[c.Strength]
 	dv := distanceOrdinal[c.Distance]
 	// AsyncBridge: +1 distance level (report-only; never changes gate verdict).
@@ -81,7 +91,7 @@ func (MultiplicativeScorer) Score(c Classification) EdgeScore {
 	return EdgeScore{
 		Value:  raw,
 		Band:   band,
-		Reason: "multiplicative",
+		Reason: reasonMultiplicative,
 		Breakdown: ScoreBreakdown{
 			StrengthVal: sv,
 			DistanceVal: dv,

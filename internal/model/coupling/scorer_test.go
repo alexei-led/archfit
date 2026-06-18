@@ -323,6 +323,14 @@ func TestMultiplicativeScorer_IntrusiveFloor(t *testing.T) {
 		for _, v := range vols {
 			c := Classification{Strength: StrengthIntrusive, Distance: d, Volatility: v}
 			got := s.Score(c)
+			// Same-module edges are not cross-boundary coupling → guarded to 0;
+			// the intrusive floor applies only to cross-boundary edges.
+			if d == DistanceSameModule {
+				if got.Value != 0 {
+					t.Errorf("same-module should score 0: d=%s v=%s value=%d", d, v, got.Value)
+				}
+				continue
+			}
 			if got.Value < intrusiveFloor {
 				t.Errorf("intrusive floor violated: d=%s v=%s value=%d < %d",
 					d, v, got.Value, intrusiveFloor)

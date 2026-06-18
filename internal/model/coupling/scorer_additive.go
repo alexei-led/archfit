@@ -9,8 +9,16 @@ package coupling
 // over volatility change.
 type AdditiveScorer struct{}
 
+// reasonAdditive labels EdgeScores produced by the additive scorer.
+const reasonAdditive = "additive"
+
 // Score computes the additive BC score for c.
 func (AdditiveScorer) Score(c Classification) EdgeScore {
+	// Same-module edges are not cross-boundary coupling and carry no BC risk
+	// (classify.Run filters them; guard the scorer so it is correct in isolation).
+	if c.Distance == DistanceSameModule {
+		return EdgeScore{Value: 0, Band: ScoreBand(0), Reason: reasonAdditive}
+	}
 	sv := strengthOrdinal[c.Strength]
 	dv := distanceOrdinal[c.Distance]
 	// AsyncBridge: +1 distance level (report-only; never changes gate verdict).
@@ -26,7 +34,7 @@ func (AdditiveScorer) Score(c Classification) EdgeScore {
 	return EdgeScore{
 		Value:  raw,
 		Band:   band,
-		Reason: "additive",
+		Reason: reasonAdditive,
 		Breakdown: ScoreBreakdown{
 			StrengthVal: sv,
 			DistanceVal: dv,
