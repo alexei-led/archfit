@@ -1,6 +1,14 @@
 # macOS
 .DS_Store
 
+# Local secrets / env
+.env
+.env.*
+!.env.example
+
+# Backup files
+*.bak
+
 # Build outputs
 .bin/
 /archfit
