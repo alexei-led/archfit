@@ -260,10 +260,17 @@ func Load(_ context.Context, path string) (Config, error) {
 // returns the updated config. Test seam: tests build Config literals directly,
 // bypassing Load (which populates the explicit-owner set), so they use this to
 // exercise the explicit-owner precedence branch in classify.
+//
+// It mirrors Load's invariant exactly: a module is marked only if it actually
+// carries a non-empty Owner. Marking an ownerless module would route
+// classifyDistance into ownershipDistance("", other), which is a footgun this
+// guard removes by construction — explicitOwners[m] always implies Owner != "".
 func (c Config) WithExplicitOwners(modules ...string) Config {
 	c.explicitOwners = make(map[string]bool, len(modules))
 	for _, m := range modules {
-		c.explicitOwners[m] = true
+		if c.Modules[m].Owner != "" {
+			c.explicitOwners[m] = true
+		}
 	}
 	return c
 }

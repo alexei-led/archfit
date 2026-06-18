@@ -113,6 +113,15 @@ func TestClassifyDistance_Precedence(t *testing.T) {
 			want:     coupling.DistanceCrossModuleSameOwner,
 		},
 		{
+			// Explicit owner on one side, the other ownerless: ownershipDistance
+			// compares "team-x" vs "" → DiffOwner (a known owner differs from an
+			// unknown one). Locks in this branch of the precedence chain.
+			name:     "one-sided explicit owner, other ownerless → DiffOwner",
+			modules:  mods(distOwnerTeamX, "", "", ""),
+			explicit: map[string]bool{distModCore: true},
+			want:     coupling.DistanceCrossModuleDiffOwner,
+		},
+		{
 			name:     "differing deploy units are absolute → CrossDeployUnit",
 			modules:  mods(distOwnerTeamX, distOwnerTeamX, distDeployUnitA, distDeployUnitB),
 			explicit: both,
