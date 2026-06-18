@@ -169,13 +169,50 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) coupling.Cl
 		AsyncBridge:         e.AsyncBridge,
 	}
 
-	// --- Severity ---
-	// Only meaningful for cross-boundary edges; same-module edges are balanced by definition.
+	// --- Severity + Connascence ---
+	// Both are only meaningful for cross-boundary edges.
 	if dist != coupling.DistanceSameModule && dist != coupling.DistanceUnknown {
 		cl.Severity = coupling.BalanceResult(cl)
+		// Connascence is report-only descriptive vocabulary — never scored, never gates.
+		if fromMod, okF := mi.moduleFor(fromPath); okF {
+			if toMod, okT := mi.moduleFor(toPath); okT {
+				cl.Connascence = classifyConnascence(e, str, fromMod, toMod, c)
+			}
+		}
 	}
 
 	return cl
+}
+
+// classifyConnascence derives the connascence degree for a cross-module edge.
+// CoA takes precedence: a clone pair crossing a module boundary is a stronger
+// signal than type-level coupling. CoT is assigned when the edge carries a
+// SCIP-sourced model or contract strength hint (struct/interface/field use).
+// Report-only — never fed into the scorer or gate.
+func classifyConnascence(e graph.Edge, str coupling.Strength, fromMod, toMod string, c config.ClassifyConfig) coupling.Connascence {
+	// CoA: clone pair crossing this module boundary.
+	if len(c.CrossModuleClonePairs) > 0 {
+		if _, ok := c.CrossModuleClonePairs[connascencePairKey(fromMod, toMod)]; ok {
+			return coupling.ConnascenceAlgorithm
+		}
+	}
+	// CoT: cross-module struct/interface/field use — signalled by a SCIP hint
+	// resolving to model or contract strength, or a direct model/contract label.
+	if e.StrengthHint == string(coupling.StrengthModel) ||
+		e.StrengthHint == string(coupling.StrengthContract) ||
+		str == coupling.StrengthModel ||
+		str == coupling.StrengthContract {
+		return coupling.ConnascenceType
+	}
+	return coupling.ConnascenceNone
+}
+
+// connascencePairKey returns the canonical sorted key for a module pair.
+func connascencePairKey(a, b string) string {
+	if a > b {
+		a, b = b, a
+	}
+	return a + "\x00" + b
 }
 
 // classifyStrength determines strength from glob matching against all modules'

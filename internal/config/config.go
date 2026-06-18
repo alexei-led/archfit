@@ -327,6 +327,12 @@ type ClassifyConfig struct {
 	// Scorer is the coupling scorer applied to each cross-boundary edge.
 	// When nil, classify.Run uses coupling.DefaultScorer() (LegacyShim).
 	Scorer coupling.Scorer
+	// CrossModuleClonePairs is the set of canonical module-pair keys
+	// ("[a]\x00[b]" with a≤b) that share duplicated code blocks, derived
+	// from the clone-detection signal. Used to tag CoA (connascence of
+	// algorithm) on cross-module edges. Empty when clone detection is
+	// disabled or produced no results.
+	CrossModuleClonePairs map[string]struct{}
 }
 
 // RuleConfig is the view passed to the rules stage.

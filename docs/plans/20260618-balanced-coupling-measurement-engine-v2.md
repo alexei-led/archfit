@@ -274,10 +274,16 @@ Design §4.2 (runtime_adjust).
 
 Design §4.1 (report-only, not scored).
 
-- [ ] In `internal/classify`, tag edges `connascence: type` (SCIP struct/interface use)
+- [x] In `internal/classify`, tag edges `connascence: type` (SCIP struct/interface use)
       and `connascence: algorithm` (clone pair crossing a module boundary).
-- [ ] Write tests for both tag derivations.
-- [ ] Run project tests — must pass before next task.
+      (`Connascence` field added to `coupling.Classification` (omitempty); `classifyConnascence`
+      helper in `classify.go`; `CrossModuleClonePairs` threaded via `ClassifyConfig`;
+      `buildClonePairSet` wired in `engine.go` from `in.Signals.Duplication.Clusters`)
+- [x] Write tests for both tag derivations.
+      (`connascence_test.go`: 9 table cases in `TestConnascenceTagging` + `TestConnascenceReportOnly`
+      proving severity/score unchanged by connascence tag)
+- [x] Run project tests — must pass before next task.
+      (`make test` race green; `make lint` 0 issues; `TestArchImports` pass; `TestGolden` pass — no golden diff)
 
 ### Task 14: `enrich --subdomains` (LLM draft → review → pin)
 

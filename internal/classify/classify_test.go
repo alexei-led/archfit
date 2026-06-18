@@ -545,7 +545,7 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 		From:         "file:pkg/a/a.go",
 		To:           "file:pkg/b/b.go",
 		Kind:         graph.EdgeKindImports,
-		StrengthHint: "functional",
+		StrengthHint: hintFunctional,
 	}
 	g := graph.Build([]graph.Facts{{
 		Language: "go",

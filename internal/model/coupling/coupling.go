@@ -49,6 +49,17 @@ const (
 	ExplicitnessUnknown  Explicitness = "unknown"
 )
 
+// Connascence is the degree of connascence detected on a cross-module edge.
+// Report-only vocabulary — never scored, never gates.
+type Connascence string
+
+// Connascence degree constants. ConnascenceNone means no connascence detected.
+const (
+	ConnascenceNone      Connascence = ""
+	ConnascenceType      Connascence = "type"      // CoT: struct/interface/field use
+	ConnascenceAlgorithm Connascence = "algorithm" // CoA: clone pair crosses module boundary
+)
+
 // Classification holds the Balanced Coupling assessment for one graph edge.
 // Strength and Distance are populated with high confidence;
 // Volatility and Explicitness are derived from config subdomain/public globs.
@@ -69,6 +80,12 @@ type Classification struct {
 	// When set, the scorer applies a +1 distance level adjustment.
 	// Report-only in v1 — never changes the gate verdict.
 	AsyncBridge bool
+	// Connascence is the detected connascence degree for this edge.
+	// CoT (type) when the edge is a cross-module struct/interface/field use,
+	// derivable from model/contract strength with a SCIP hint.
+	// CoA (algorithm) when a clone pair crosses this module boundary.
+	// Report-only — not fed into the scorer or any gate decision.
+	Connascence Connascence `json:"connascence,omitempty"`
 }
 
 // Index maps each edge's canonical key (from + "\x00" + to + "\x00" + kind)

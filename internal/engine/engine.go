@@ -11,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit/internal/facts"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
@@ -109,6 +110,10 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// hint); stale ones surface as labels/stale advisories.
 	classifyCfg := in.Classify
 	staleLabelFindings := applyPinnedLabels(ex.g, &classifyCfg, in.Mode, in.Labels)
+	// Thread clone pairs for CoA (connascence of algorithm) tagging — report-only.
+	if len(in.Signals.Duplication.Clusters) > 0 {
+		classifyCfg.CrossModuleClonePairs = buildClonePairSet(in.Signals.Duplication.Clusters, classifyCfg.ModuleMap)
+	}
 
 	couplingIdx := classify.Run(ex.g, classifyCfg)
 
@@ -535,4 +540,23 @@ func PairEvidence(g *graph.Graph, mm config.ModuleMap, wanted map[string]struct{
 		evidence[key] = labels.HashItems(its)
 	}
 	return evidence
+}
+
+// buildClonePairSet converts clone clusters to a canonical module-pair key set
+// for CoA (connascence of algorithm) tagging in classify.
+// Keys are "[a]\x00[b]" with a≤b (canonical sorted pair, from clone.ModulePairs).
+func buildClonePairSet(clusters []clone.Cluster, mm config.ModuleMap) map[string]struct{} {
+	pairs := clone.ModulePairs(clusters, func(f string) string {
+		mod, ok := mm.ModuleFor(f)
+		if !ok {
+			return ""
+		}
+		return mod
+	})
+	set := make(map[string]struct{}, len(pairs))
+	for _, p := range pairs {
+		// clone.ModulePairs already returns sorted pairs [a,b] with a≤b.
+		set[p[0]+"\x00"+p[1]] = struct{}{}
+	}
+	return set
 }
