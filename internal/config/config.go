@@ -13,6 +13,8 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/goccy/go-yaml"
+
+	"github.com/alexei-led/archfit/internal/model/coupling"
 )
 
 // ToolMode represents the enabled state of an external tool.
@@ -322,6 +324,9 @@ type ClassifyConfig struct {
 	// for freshness by the engine before injection. Precedence in classify:
 	// config globs > approved labels > extractor hint.
 	ApprovedLabels map[string]string
+	// Scorer is the coupling scorer applied to each cross-boundary edge.
+	// When nil, classify.Run uses coupling.DefaultScorer() (LegacyShim).
+	Scorer coupling.Scorer
 }
 
 // RuleConfig is the view passed to the rules stage.

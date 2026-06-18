@@ -158,17 +158,17 @@ default, and add the generic-subdomain contract advisory (closes coverage gap).
 Gap 4 (design §3#4, §5): collapse-to-2-bits is the core scoring defect. Add a swappable,
 testable continuous scorer; default keeps current bands until calibration (Task 16).
 
-- [ ] Add `internal/model/coupling/scorer.go`: `Scorer` interface and `EdgeScore`
+- [x] Add `internal/model/coupling/scorer.go`: `Scorer` interface and `EdgeScore`
       (`Value int`, `Band Severity`, `Reason string`, `Breakdown`, `CheapestMove string`)
       with the frozen ordinal→number const tables (Technical Details) and BC-rationale
       comments.
-- [ ] Add `scorer_additive.go` and `scorer_multiplicative.go` (integer math;
+- [x] Add `scorer_additive.go` and `scorer_multiplicative.go` (integer math;
       multiplicative carries the intrusive floor + structural-penalty hooks).
-- [ ] In `internal/classify/classify.go`, attach the score via the configured scorer;
+- [x] In `internal/classify/classify.go`, attach the score via the configured scorer;
       default to a shim reproducing the post-Task-1 bands so output stays stable.
-- [ ] Write table-driven tests over the strength×distance×volatility cube: XOR=none,
+- [x] Write table-driven tests over the strength×distance×volatility cube: XOR=none,
       intrusive floor, clamp [0,10], deterministic `cheapest_move`.
-- [ ] Run project tests (incl. `TestArchImports`, `TestGolden`) — must pass before next task.
+- [x] Run project tests (incl. `TestArchImports`, `TestGolden`) — must pass before next task.
 
 **Phase 2 — Distance signal.**
 

@@ -26,12 +26,23 @@ import (
 //     (core→high, supporting→medium, generic→low, ""/"unknown"→unknown).
 //   - Explicitness: explicit when strength=contract; implicit when strength=intrusive;
 //     unknown otherwise.
+//   - Score: continuous EdgeScore from the configured Scorer (default: LegacyShim).
+//     Applied to cross-boundary edges only (same-module and unknown-distance are zero).
 func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 	mm := buildModuleIndex(c.Modules)
 	idx := make(coupling.Index)
+	scorer := c.Scorer
+	if scorer == nil {
+		scorer = coupling.DefaultScorer()
+	}
 
 	for _, e := range g.Edges() {
 		cl := classify(e, mm, c)
+		// Attach a continuous score for cross-boundary edges that have a severity.
+		// Same-module and unknown-distance edges are not scored (zero EdgeScore).
+		if cl.Distance != coupling.DistanceSameModule && cl.Distance != coupling.DistanceUnknown {
+			cl.Score = scorer.Score(cl)
+		}
 		idx[edgeKey(e)] = cl
 	}
 

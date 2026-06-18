@@ -55,13 +55,16 @@ const (
 // Severity is set by classify.Run for cross-boundary edges via BalanceResult.
 // ContractRecommended is set when the target is a generic subdomain reached via
 // non-contract strength — BC's anti-corruption-layer advisory signal.
+// Score holds the continuous numeric risk score when a Scorer has been applied;
+// zero-value when no scorer is configured (e.g. same-module or unknown-distance edges).
 type Classification struct {
 	Strength            Strength
 	Distance            Distance
 	Volatility          Volatility
 	Explicitness        Explicitness
 	Severity            Severity
-	ContractRecommended bool // generic-subdomain target reached via non-contract strength
+	ContractRecommended bool      // generic-subdomain target reached via non-contract strength
+	Score               EdgeScore // numeric score; zero when not scored
 }
 
 // Index maps each edge's canonical key (from + "\x00" + to + "\x00" + kind)
