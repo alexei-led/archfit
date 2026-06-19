@@ -300,9 +300,9 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 22: Update documentation + final comparison deliverable
 
-- [ ] write `docs/v0.x-tool-vs-expert-gap-closure.md`: before/after blind-zone count per language, what is now deterministic, what remains LLM-only, what remains out-of-scope by design
-- [ ] update guide/metrics + commands docs for new `score`/`review` commands and per-language behavior
-- [ ] run `make test`
+- [x] write `docs/v0.x-tool-vs-expert-gap-closure.md`: before/after blind-zone count per language, what is now deterministic, what remains LLM-only, what remains out-of-scope by design — created; per-language baseline→after blind-zone table (Go 2→0, Python 5→1, TS 5→2), "what is now deterministic" list, "what remains LLM-only (`archfit review`)" (the three systematic divergences), "out of scope by design", and the determinism/acceptance summary; cites the Phase-1/Phase-2/Task-21 notes
+- [x] update guide/metrics + commands docs for new `score`/`review` commands and per-language behavior — `commands.md`: added `archfit score` and `archfit review` to the command list, summary, and dedicated sections; `scorecard` added to `check` formats. `metrics.md`: corrected count 13→19 (report-only 9→15), documented the six previously-undocumented metrics (`cohesion_lcom` + beyond-BC `instability`/`abstractness`/`martin_distance`/`propagation_cost`/`change_coupling`), added "Scorecard dimensions" and "Per-language behavior" sections, reconciled the stale "Dropped and rejected" Martin's-D/cohesion notes, and extended the tool-requirements table
+- [x] run `make test` — passes (race, full suite, no FAIL/panic); `make lint` 0 issues; markdownlint hook clean on all edited docs
 
 ## Technical Details
 

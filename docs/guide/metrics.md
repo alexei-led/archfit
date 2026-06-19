@@ -5,11 +5,16 @@ exists, how it is scored, and whether it can affect the verdict. For the theory
 behind the strength / distance / volatility vocabulary used throughout, read
 [Concepts](concepts.md) first.
 
-`archfit` ships **13 metrics**. They split into two roles:
+`archfit` ships **19 metrics**. They split into two roles:
 
 - **Verdict-affecting** (4): scored 0–10, can `warn` the run when they regress.
-- **Report-only** (9): band `info`; surface facts for humans and agents, never
+- **Report-only** (15): band `info`; surface facts for humans and agents, never
   change the verdict.
+
+A metric absent from the config is enabled by default; only an explicit
+`metrics.<name>.enabled: false` disables it. The
+[scorecard](#scorecard-dimensions) synthesizes these metrics (plus gates) into
+the architect's seven banded dimensions.
 
 No metric ever fails the build on its own. Only explicit **gate rules**
 (forbidden dependency, public-API-only, layer direction, cycle-as-fail, expired
@@ -267,6 +272,52 @@ here.
   _rule_ is the gate equivalent; this metric quantifies the blast surface for the
   agent loop. See [Agent feedback loop](agent-feedback.md).
 
+### `cohesion_lcom`
+
+- **Represents:** lack-of-cohesion within a module — whether its definition
+  symbols form one connected unit or split into several unrelated clusters
+  (LCOM4 / connected-components proxy).
+- **Computed:** over the SCIP symbol graph, per measurable module, the undirected
+  graph of definition symbols connected by same-module references; counts
+  connected components (1 = cohesive, >1 = fragmented).
+- **Caveat (load-bearing):** SCIP indexers do not populate `enclosing_range`, so
+  reference attribution is document-scoped. The proxy trusts only cross-document
+  structure and measures only modules spanning ≥2 documents (and ≥4 symbols).
+  For `scip-python` / `scip-typescript` a "module" is keyed per source file, so
+  almost every module is single-document → **`n/a`, never a false verdict**. Go
+  packages span multiple files and are measurable.
+- **Status:** report-only, and **disabled in archfit's own config**. It failed
+  its eval (blind for single-file Python/TS modules — exactly where the LOC-skew
+  proxy already diverged from expert judgment); kept because the Go-package
+  fragmentation signal is honest where it applies. See
+  [`gap-closure-task20-cohesion-eval.md`](../plans/notes/gap-closure-task20-cohesion-eval.md).
+
+### Beyond Balanced Coupling (supporting / non-BC)
+
+These are standard structural metrics that complement, but are not part of, the
+Balanced Coupling model. They are clearly labelled non-BC, always report-only,
+and never re-use BC vocabulary. They exclude external / unresolved nodes (node
+builtins, uninstalled packages) so they never flag third-party names.
+
+- **`instability`** — per-module Martin instability `I = Ce / (Ca + Ce)`: the
+  fraction of a module's couplings that are outgoing. High `I` = depends on many,
+  depended on by few.
+- **`abstractness`** — per-module Martin abstractness
+  `A = abstract_inbound / (abstract + concrete_inbound)`: the fraction of inbound
+  edges targeting an interface/protocol (SCIP strength hint).
+- **`martin_distance`** — distance from the main sequence `Dms = |A + I − 1|`;
+  `> 0.5` is the "zone of pain" (too concrete + stable) or "uselessness" (too
+  abstract + unstable). When confidence is low (proxy-derived without SCIP type
+  kinds) it is footnoted, not headlined, in the human report — full values stay
+  in JSON.
+- **`propagation_cost`** — `PC = reachable_pairs / (n·(n−1))`: the fraction of
+  ordered module pairs `(i, j)` where `j` is transitively reachable from `i`;
+  reported system-wide and per-module.
+- **`change_coupling`** — CodeScene's temporal-coupling formula: module pairs that
+  co-change in ≥ **65%** of commits touching either (min support applies),
+  whether or not they share a static import edge. Complements `hidden_coupling`
+  (which filters out importing pairs).
+
 ---
 
 ## Coupling classification reference
@@ -289,22 +340,78 @@ For the full severity table and the reasoning, see
 
 ---
 
+## Scorecard dimensions
+
+`archfit score` (and `archfit check --format scorecard`) synthesizes the metrics
+above plus the gate findings into the **seven-dimension architect rubric**. The
+synthesis is a pure, deterministic decision over the already-computed evidence —
+no tools, no I/O, no LLM. Each dimension carries a 0–100 value, a band, a
+confidence, and evidence refs; the overall is the mean of the six non-meta
+dimensions.
+
+| Dimension                 | Derived from                                                                                                                            |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `boundary_integrity`      | gate-violation count over classified cross-boundary edges (low confidence when none classified)                                         |
+| `coupling_balance`        | strictly the BC advisory rollups — strength × distance × volatility maintenance-effort distribution + worst-case (high/high/high) count |
+| `dependency_graph_health` | cycles, blast-radius hubs, instability/abstractness shape                                                                               |
+| `cohesion_modularity`     | god-modules, hidden coupling, duplication — **high-strength + low-distance cohesion is never penalised**                                |
+| `change_locality`         | the `change_locality` metric (delta mode); `n/a` in full mode                                                                           |
+| `architecture_fitness`    | the `architecture_fitness` enforcement metric                                                                                           |
+| `analysis_confidence`     | meta dimension — how much evidence backed the review (coverage, classified fraction, semantic tools present)                            |
+
+Band thresholds match the rubric: critical 0–20, poor 21–40, mixed 41–60,
+serviceable 61–80, strong 81–100. Band-matches-value, evidence-per-score, and
+low-confidence caps are enforced and covered by a stored golden. The scorecard is
+**off-gate** — it never changes the `check` verdict.
+
+## Per-language behavior
+
+The deterministic gates and core metrics work for Go, TypeScript/JavaScript, and
+Python from the built-in extractors plus `git`. Coverage and the optional metrics
+differ by language; when a tool is missing the dependent metric reports `n/a`
+**with the reason and enable step** — never a false failure.
+
+| Signal                              | Go            | TypeScript / JS                          | Python                                                   |
+| ----------------------------------- | ------------- | ---------------------------------------- | -------------------------------------------------------- |
+| Dependency graph + gates            | `go/packages` | dependency-cruiser                       | `grimp` (dotted modules)                                 |
+| Node-ID scheme                      | `file:`       | `file:`                                  | `module:` (incl. `src/` layout)                          |
+| `complexity` (lizard)               | yes           | yes                                      | yes                                                      |
+| `risk_hub` / `cohesion_lcom` (SCIP) | `scip-go`     | `scip-typescript` (needs `node_modules`) | `scip-python` (per-file modules → cohesion mostly `n/a`) |
+| type-only vs runtime edges          | n/a           | tagged (→ Contract strength)             | n/a                                                      |
+| Dynamic / lazy import signal        | n/a           | `require()` / dynamic `import()`         | in-function / `importlib` / `__import__`                 |
+
+Key behaviors fixed in the v0.x gap-closure program (see
+[the gap-closure result](../v0.x-tool-vs-expert-gap-closure.md)):
+
+- `change_locality` matches changed files across all node-ID schemes — no more
+  Python false-0.
+- Beyond-BC graph metrics exclude external/unresolved nodes — TS martin no longer
+  flags node builtins (`fs`, `crypto`, `commander`).
+- BC advisories are grouped into scored rollups; the dynamic-import signal points
+  at cycles the static graph cannot see (the lazy-import class common in Python
+  and TS).
+
+For the install matrix and per-language tool setup, see
+[Language support → optional analyzers](languages.md#optional-analyzers-per-language).
+
 ## Tool requirements
 
 Most metrics work from the built-in extractors and `git`. A few need an opt-in
 tool and report `n/a` (with a coverage note) when it is absent — never a false
 failure.
 
-| Metric(s)                                                                                                               | Needs                                       |
-| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| encapsulation, unbalanced_edge, cycle, coverage, blast_radius, structural_weight, architecture_fitness, change_locality | built-in extractors + `git`                 |
-| change_amplification, hidden_coupling                                                                                   | `git` history (churn / co-change)           |
-| risk_hub                                                                                                                | SCIP index (`tools.scip.enabled: on`)       |
-| complexity                                                                                                              | `lizard` (`tools.complexity.enabled: on`)   |
-| functional_candidates                                                                                                   | clone detector (`tools.clones.enabled: on`) |
-| risk_hub (refinement only)                                                                                              | GitNexus (`tools.gitnexus.enabled: on`)     |
+| Metric(s)                                                                                                               | Needs                                           |
+| ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| encapsulation, unbalanced_edge, cycle, coverage, blast_radius, structural_weight, architecture_fitness, change_locality | built-in extractors + `git`                     |
+| change_amplification, hidden_coupling, change_coupling                                                                  | `git` history (churn / co-change)               |
+| instability, abstractness, martin_distance, propagation_cost                                                            | built-in extractors (SCIP refines abstractness) |
+| risk_hub, cohesion_lcom                                                                                                 | SCIP index (`tools.scip.enabled: on`)           |
+| complexity                                                                                                              | `lizard` (`tools.complexity.enabled: on`)       |
+| functional_candidates                                                                                                   | clone detector (`tools.clones.enabled: on`)     |
+| risk_hub (refinement only)                                                                                              | GitNexus (`tools.gitnexus.enabled: on`)         |
 
-The `llm` tool is used only by `archfit enrich` and `archfit explain --llm`. It
+The `llm` tool is used only by `archfit enrich`, `archfit explain --llm`, and
+`archfit review`. It
 is **never** consumed by `check` — gate verdicts and metric values stay
 deterministic. See [LLM enrichment](llm-enrich.md).
 
@@ -315,14 +422,17 @@ deterministic. See [LLM enrichment](llm-enrich.md).
 `archfit` deliberately omits some popular metrics. Recording why is part of being
 honest about what the numbers mean.
 
-- **Martin's D (distance from the main sequence).** No single blended
-  architecture score in v1. A composite hides detected edges, declared volatility,
-  inferred distance, missing coverage, and accepted exceptions behind one number.
-  `archfit` reports small metrics that each measure one thing. (SCC condensation
-  in the graph code is a correctness device for reachability, not an
-  implementation of Martin's metric.)
+- **No single blended architecture score.** Martin's I/A/D are now reported as
+  separate report-only metrics (`instability`, `abstractness`, `martin_distance`),
+  but `archfit` never blends them — or any metrics — into one verdict number. A
+  composite hides detected edges, declared volatility, inferred distance, missing
+  coverage, and accepted exceptions behind one figure. The
+  [scorecard](#scorecard-dimensions) bands each dimension separately for exactly
+  this reason.
 - **`cohesion_spread` and `shared_state_hub`.** Prototyped, then removed — they did
-  not rank real problems better than the metrics that shipped.
+  not rank real problems better than the metrics that shipped. The later
+  `cohesion_lcom` (connected-components LCOM4 proxy) also failed its eval but is
+  retained report-only and disabled by default; see its entry above.
 - **LCOM4 / "vocabulary mixing"** for `structural_weight`. Prototyped and dropped
   for misranking; raw LOC is the honest proxy (see `structural_weight` above).
 

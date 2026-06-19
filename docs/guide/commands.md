@@ -11,6 +11,10 @@ archfit update --config .archfit.yaml --apply
 archfit check --config .archfit.yaml --full
 archfit check --config .archfit.yaml --base main
 archfit check --config .archfit.yaml --format json
+archfit check --config .archfit.yaml --format scorecard
+archfit score --config .archfit.yaml
+archfit score --config .archfit.yaml --base main
+archfit review --config .archfit.yaml
 archfit scan --config .archfit.yaml > archfit-report.md
 archfit baseline --full --config .archfit.yaml
 archfit explain <finding-id-prefix> --config .archfit.yaml
@@ -27,6 +31,9 @@ Use `check` for gates. Use `scan` for a human-readable audit report.
 - `archfit init` — generate a starter `.archfit.yaml`.
 - `archfit update` — sync `.archfit.yaml` with the current project structure.
 - `archfit check` — run architecture gates and metrics.
+- `archfit score` — emit the banded 7-dimension scorecard (off-gate; see below).
+- `archfit review` — off-gate LLM holistic narrative over the deterministic
+  evidence (needs `tools.llm`; see below).
 - `archfit scan` — produce a full Markdown audit report.
 - `archfit baseline` — record accepted current findings.
 - `archfit explain <id>` — explain one finding by fingerprint prefix
@@ -37,7 +44,8 @@ Use `check` for gates. Use `scan` for a human-readable audit report.
 - `archfit install` — install or print commands for optional language tools.
 
 Output formats for `check`: `text`, `json`, `markdown`/`md`, `sarif`
-(SARIF 2.1.0 for CI code-scanning annotations).
+(SARIF 2.1.0 for CI code-scanning annotations), `scorecard` (the banded
+7-dimension synthesis — same output as `archfit score`).
 
 For wiring archfit into an AI coding agent's loop (`agent_tasks`, SARIF,
 `change_locality`), see [agent-feedback.md](agent-feedback.md).
@@ -61,6 +69,71 @@ Findings have a lifecycle status:
 
 Balanced Coupling advisories are informational by default. Use them to prioritize
 architecture review and refactoring, not as automatic pass/fail rules.
+
+## archfit score
+
+`archfit score` emits the banded **7-dimension scorecard** aligned to the
+architect rubric: `boundary_integrity`, `coupling_balance`,
+`dependency_graph_health`, `cohesion_modularity`, `change_locality`,
+`architecture_fitness`, and the meta dimension `analysis_confidence`. Each
+dimension carries a 0–100 value, a band (critical / poor / mixed / serviceable /
+strong), a confidence, and evidence refs; the overall is the mean of the six
+non-meta dimensions.
+
+```sh
+# whole-repo scorecard
+archfit score --config .archfit.yaml
+
+# with a base ref: enables the change_locality dimension (delta mode)
+archfit score --config .archfit.yaml --base main
+```
+
+`score` is a convenience wrapper over `check`: always advisory (so
+`coupling_balance` sees the Balanced-Coupling edges), always report-only (a
+scorecard informs, it never gates), and renders the `scorecard` format. The same
+output is available as `archfit check --format scorecard`. Output is
+deterministic — byte-identical across a double-run. The scorecard is **off-gate**:
+it never changes the `check` verdict or exit code.
+
+Flags:
+
+- `--config` / `-c` — config file path (default: `.archfit.yaml`).
+- `--base` — git ref to compare against; enables the `change_locality` dimension.
+
+## archfit review
+
+`archfit review` runs the full deterministic pipeline, synthesizes the scorecard,
+and feeds **both** to the LLM for a holistic narrative. It is **off-gate**: the
+narrative is advisory only and never affects `check` (enforced by the LLM-off-gate
+invariant in `internal/arch_test.go`).
+
+```sh
+archfit review --config .archfit.yaml
+archfit review --config .archfit.yaml --no-cache
+```
+
+The model is constrained by a Balanced-Coupling-grounded system prompt and a
+strict JSON schema. It may only:
+
+- narrate, prioritize, and contextualize findings **already present** in the
+  evidence;
+- classify volatility / subdomain for modules that appear in the evidence;
+- propose dimension bands for dimensions named in the evidence.
+
+A post-verify pass drops any module, metric, or dimension the model cites that is
+not in the deterministic evidence (dropped counts logged to stderr). The model
+**cannot** invent gate violations or module names.
+
+Requirements:
+
+- `tools.llm` configured (provider + model) and the provider's API key set.
+  Without it, `review` exits `3` with an actionable message and touches nothing.
+  See [LLM enrichment](llm-enrich.md) and `archfit doctor`.
+
+Flags:
+
+- `--config` / `-c` — config file path (default: `.archfit.yaml`).
+- `--no-cache` — bypass the LLM response cache at `.archfit-cache/llm/`.
 
 ## archfit init --llm
 
