@@ -15,7 +15,8 @@ const (
 	fileAB = "internal/b/b.go"
 )
 
-// jscpdSuccessJSON is a canned jscpd JSON report with two duplicate entries.
+// jscpdSuccessJSON is a canned jscpd JSON report with two duplicate entries over
+// a 12-file scan (statistics.total.sources).
 const jscpdSuccessJSON = `{
 	"duplicates": [
 		{
@@ -28,7 +29,8 @@ const jscpdSuccessJSON = `{
 			"secondFile": {"name": "internal/d/d.go"},
 			"lines": 10
 		}
-	]
+	],
+	"statistics": {"total": {"sources": 12}}
 }`
 
 // jscpdEmptyJSON is a valid report with no duplicates.
@@ -115,6 +117,9 @@ func TestRun_Success(t *testing.T) {
 	}
 	if cov.Status != statusOK {
 		t.Errorf("coverage status = %q, want %q", cov.Status, statusOK)
+	}
+	if cov.FilesSeen != 12 || cov.FilesApplicable != 12 {
+		t.Errorf("coverage files = %d/%d, want 12/12 (scanned files, not clone pairs)", cov.FilesSeen, cov.FilesApplicable)
 	}
 	if len(clusters) != 2 {
 		t.Fatalf("clusters len = %d, want 2", len(clusters))
@@ -279,7 +284,7 @@ func TestModulePairs_EmptyKey_Skipped(t *testing.T) {
 }
 
 func TestParseJscpdReport_Success(t *testing.T) {
-	clusters, err := parseJscpdReport([]byte(jscpdSuccessJSON))
+	clusters, filesScanned, err := parseJscpdReport([]byte(jscpdSuccessJSON))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -289,20 +294,27 @@ func TestParseJscpdReport_Success(t *testing.T) {
 	if clusters[0].Lines != 25 {
 		t.Errorf("clusters[0].Lines = %d, want 25", clusters[0].Lines)
 	}
+	// FilesSeen tracks files scanned, not clone pairs: 12 sources, 2 pairs.
+	if filesScanned != 12 {
+		t.Errorf("filesScanned = %d, want 12 (statistics.total.sources, not clone count)", filesScanned)
+	}
 }
 
 func TestParseJscpdReport_Empty(t *testing.T) {
-	clusters, err := parseJscpdReport([]byte(jscpdEmptyJSON))
+	clusters, filesScanned, err := parseJscpdReport([]byte(jscpdEmptyJSON))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(clusters) != 0 {
 		t.Errorf("want 0 clusters, got %d", len(clusters))
 	}
+	if filesScanned != 0 {
+		t.Errorf("filesScanned = %d, want 0 (no statistics block)", filesScanned)
+	}
 }
 
 func TestParseJscpdReport_Malformed(t *testing.T) {
-	_, err := parseJscpdReport([]byte("not json"))
+	_, _, err := parseJscpdReport([]byte("not json"))
 	if err == nil {
 		t.Error("expected error for malformed JSON, got nil")
 	}

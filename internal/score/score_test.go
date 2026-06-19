@@ -231,6 +231,25 @@ func TestCouplingBalance(t *testing.T) {
 			t.Errorf("pervasive worst-case but value %d not capped to poor (≤40)", got.Value)
 		}
 	})
+
+	t.Run("excepted and baseline edges do not count", func(t *testing.T) {
+		withStatus := func(f finding.Finding, s finding.Status) finding.Finding {
+			f.Status = s
+			return f
+		}
+		worst := func(from, to string) finding.Finding {
+			return bcAdv(from, to, "intrusive", "cross_deploy_unit", "high", 10, "critical", "critical", 10)
+		}
+		// Two worst-case edges, both operator-suppressed (excepted / baseline). They
+		// must not penalise the dimension — same view the gate verdict takes.
+		got := cb(
+			withStatus(worst("a", "b"), finding.StatusExcepted),
+			withStatus(worst("c", "d"), finding.StatusBaseline),
+		)
+		if got.Value < 81 {
+			t.Errorf("suppressed edges value = %d, want strong (≥81); excepted/baseline must not count", got.Value)
+		}
+	})
 }
 
 // TestBoundaryIntegrity_GateViolations asserts active gate findings subtract from

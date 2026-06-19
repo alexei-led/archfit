@@ -80,24 +80,33 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) 
 		return nil, partial, nil
 	}
 
-	clusters, perr := parseJscpdReport(data)
+	clusters, filesScanned, perr := parseJscpdReport(data)
 	if perr != nil {
 		return nil, partial, nil
 	}
 
+	// FilesSeen/FilesApplicable are the source files jscpd scanned (its
+	// statistics.total.sources), not the clone-pair count — a repo with 200
+	// files and 4 clone pairs covered 200 files, not 4.
 	cov := diagnostic.Coverage{
 		Tool:            toolName,
-		FilesSeen:       len(clusters),
-		FilesApplicable: len(clusters),
+		FilesSeen:       filesScanned,
+		FilesApplicable: filesScanned,
 		Status:          statusOK,
 	}
 	return clusters, cov, nil
 }
 
 // jscpdReport mirrors the JSON structure emitted by jscpd --reporters json.
-// jscpd writes a "duplicates" array where each entry is a pairwise match.
+// jscpd writes a "duplicates" array where each entry is a pairwise match, plus a
+// "statistics" block whose total.sources is the number of files scanned.
 type jscpdReport struct {
 	Duplicates []jscpdDuplicate `json:"duplicates"`
+	Statistics struct {
+		Total struct {
+			Sources int `json:"sources"`
+		} `json:"total"`
+	} `json:"statistics"`
 }
 
 type jscpdDuplicate struct {
@@ -110,12 +119,13 @@ type jscpdFile struct {
 	Name string `json:"name"`
 }
 
-// parseJscpdReport parses jscpd JSON report data into Cluster values.
-// Each duplicate entry becomes one Cluster with two files and the line count.
-func parseJscpdReport(data []byte) ([]clone.Cluster, error) {
+// parseJscpdReport parses jscpd JSON report data into Cluster values and the
+// number of source files jscpd scanned (statistics.total.sources). Each duplicate
+// entry becomes one Cluster with two files and the line count.
+func parseJscpdReport(data []byte) ([]clone.Cluster, int, error) {
 	var report jscpdReport
 	if err := json.Unmarshal(data, &report); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	clusters := make([]clone.Cluster, 0, len(report.Duplicates))
 	for _, d := range report.Duplicates {
@@ -127,5 +137,5 @@ func parseJscpdReport(data []byte) ([]clone.Cluster, error) {
 			Lines: d.Lines,
 		})
 	}
-	return clusters, nil
+	return clusters, report.Statistics.Total.Sources, nil
 }

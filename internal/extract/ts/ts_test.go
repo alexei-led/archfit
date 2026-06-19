@@ -170,6 +170,11 @@ func TestExtract_ExternalNodes(t *testing.T) {
 	if cov.Unresolved != 1 {
 		t.Errorf("cov.Unresolved = %d, want 1 (commander counted once)", cov.Unresolved)
 	}
+	// FilesSeen counts first-party source files only: src/cli.ts and
+	// src/commands/index.ts — not the unresolved (commander) or core (fs) entries.
+	if cov.FilesSeen != 2 {
+		t.Errorf("cov.FilesSeen = %d, want 2 (first-party files only, excludes core/unresolved)", cov.FilesSeen)
+	}
 	if facts.Unresolved != 1 {
 		t.Errorf("facts.Unresolved = %d, want 1 (commander counted once)", facts.Unresolved)
 	}

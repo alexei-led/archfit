@@ -239,6 +239,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 	var edges []graph.Edge
 	seenNodes := make(map[string]struct{})
 	unresolved := 0
+	filesSeen := 0 // first-party source files only (excludes core/unresolved module entries)
 
 	emitNode := func(n graph.Node) {
 		id := n.ID()
@@ -270,6 +271,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 
 		fromID := "file:" + mod.Source
 		emitNode(graph.Node{Kind: graph.NodeKindFile, Path: mod.Source})
+		filesSeen++
 
 		// Merge dependencies and deps (alternate key).
 		deps := mod.Dependencies
@@ -324,7 +326,6 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 		}
 	}
 
-	filesSeen := len(dc.Modules)
 	status := statusOK
 	if unresolved > 0 {
 		status = statusPartial

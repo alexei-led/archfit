@@ -471,11 +471,18 @@ func (e bcEdge) worstCase() bool {
 
 // bcEdges extracts the active Balanced-Coupling advisory edges from the findings,
 // parsing the strength/distance/volatility/score fields the engine stamped into
-// MatchedBy. Fixed (resolved) advisories are skipped.
+// MatchedBy. Only active advisories (status new or expired_exception) count —
+// the same filter activeGateFindings and the gate verdict use. Baseline-accepted
+// and excepted edges are operator-suppressed debt; counting them would deflate
+// coupling_balance for a repo that has triaged its coupling, diverging from the
+// gate's own view. Fixed (resolved) advisories are skipped too.
 func bcEdges(fs []finding.Finding) []bcEdge {
 	var out []bcEdge
 	for _, f := range fs {
-		if f.RuleID != "bc/imbalanced_coupling" || f.Status == finding.StatusFixed {
+		if f.RuleID != "bc/imbalanced_coupling" {
+			continue
+		}
+		if f.Status != finding.StatusNew && f.Status != finding.StatusExpiredExcept {
 			continue
 		}
 		e := bcEdge{
