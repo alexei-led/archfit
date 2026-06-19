@@ -2,6 +2,8 @@ package boundary
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/coupling"
@@ -45,6 +47,12 @@ func (m ChangeLocalityMetric) Calculate(in signal.CommonInput) diagnostic.Metric
 		changed[f] = struct{}{}
 	}
 
+	// Map changed files to graph node IDs across every extractor's node-ID
+	// scheme (Go/TS "file:", Python "module:") so cross-edge and reach counts
+	// work for all languages. Matching the raw "file:"+path form here produced a
+	// false zero for Python, whose IDs are dotted "module:" names.
+	changedNodes := changedNodeIDs(in.Graph, changed)
+
 	// Cross-module edges from changed files, judged by the classification's
 	// distance dimension (same_module and unknown do not count).
 	crossEdges := 0
@@ -52,8 +60,7 @@ func (m ChangeLocalityMetric) Calculate(in signal.CommonInput) diagnostic.Metric
 	for _, e := range in.Graph.Edges() {
 		adjacency[e.From] = append(adjacency[e.From], e.To)
 
-		fromPath := graph.NodePath(e.From)
-		if _, isChanged := changed[fromPath]; !isChanged {
+		if _, isChanged := changedNodes[e.From]; !isChanged {
 			continue
 		}
 		cl, ok := in.Classifications[e.From+"\x00"+e.To+"\x00"+string(e.Kind)]
@@ -68,7 +75,7 @@ func (m ChangeLocalityMetric) Calculate(in signal.CommonInput) diagnostic.Metric
 		crossEdges++
 	}
 
-	reach := forwardReach(adjacency, in.ChangedFiles)
+	reach := forwardReach(adjacency, changedNodes)
 
 	confidence := result.ConfidenceHigh
 	if len(in.Classifications) == 0 {
@@ -88,16 +95,65 @@ func (m ChangeLocalityMetric) Calculate(in signal.CommonInput) diagnostic.Metric
 	}
 }
 
-// forwardReach BFS-walks the adjacency from every changed file node and
-// returns the count of distinct reached nodes outside the changed set.
-func forwardReach(adjacency map[string][]string, changedFiles []string) int {
-	start := make([]string, 0, len(changedFiles))
-	visited := make(map[string]struct{}, len(changedFiles))
-	for _, f := range changedFiles {
-		id := "file:" + f
+// changedNodeIDs returns the set of dependency-graph node IDs whose source file
+// is in the changed set. It bridges every extractor's node-ID scheme to the
+// repo-relative file paths git reports:
+//   - file nodes (Go, TypeScript): the node path IS the file path.
+//   - module nodes (Python): the dotted module path maps to file candidates
+//     "<a/b/c>.py", "<a/b/c>.pyi", and "<a/b/c>/__init__.py".
+//
+// Go package nodes and repo/external nodes do not map to a single changed source
+// file and are skipped — Go changes enter through their file nodes.
+//
+// Ceiling: the module→file mapping assumes the package root is the repo root; a
+// src-layout project (src/pkg/...) whose module path drops the "src/" prefix
+// will not match. Acceptable for a report-only signal; revisit if src-layout
+// Python becomes a primary target.
+func changedNodeIDs(g *graph.Graph, changed map[string]struct{}) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, n := range g.Nodes() {
+		for _, cand := range nodeFileCandidates(n) {
+			if _, ok := changed[cand]; ok {
+				out[n.ID()] = struct{}{}
+				break
+			}
+		}
+	}
+	return out
+}
+
+// nodeFileCandidates returns the repo-relative source-file path(s) a node could
+// have been built from, per its kind. Returns nil for nodes that do not map to a
+// single changed source file (Go package, repo, external).
+func nodeFileCandidates(n graph.Node) []string {
+	switch n.Kind {
+	case graph.NodeKindFile:
+		return []string{n.Path}
+	case graph.NodeKindModule:
+		// Python: dotted module → slash path; the file is "<path>.py", a typed
+		// stub "<path>.pyi", or a package's "<path>/__init__.py".
+		slashed := strings.ReplaceAll(n.Path, ".", "/")
+		return []string{slashed + ".py", slashed + ".pyi", slashed + "/__init__.py"}
+	default:
+		return nil
+	}
+}
+
+// forwardReach BFS-walks the adjacency from every changed node and returns the
+// count of distinct reached nodes outside the changed set. Start node IDs are
+// the graph nodes that map to changed files (see changedNodeIDs), so the walk
+// works regardless of the extractor's node-ID scheme.
+func forwardReach(adjacency map[string][]string, changedNodes map[string]struct{}) int {
+	start := make([]string, 0, len(changedNodes))
+	visited := make(map[string]struct{}, len(changedNodes))
+	for id := range changedNodes {
 		start = append(start, id)
 		visited[id] = struct{}{}
 	}
+	// Sort the seed set so the BFS queue is built in a deterministic order
+	// (the reach count is order-independent; this guards against any future
+	// order-sensitive change).
+	slices.Sort(start)
 
 	reach := 0
 	queue := start

@@ -143,11 +143,11 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 1: Fix change_locality node-ID mismatch (Python false-zero)
 
-- [ ] in `internal/metrics/boundary/change_locality.go:85-130`, build BFS start keys + crossEdge keys by matching `graph.NodePath(n.ID())` to changed file paths instead of hardcoding `"file:"+f`
-- [ ] handle all node-ID schemes (Go `file:`, Python `module:`, TS `file:`) via the graph's own path mapping
-- [ ] add fixtures with `module:`-prefixed (Python) and `file:`-prefixed (Go/TS) graphs; assert non-zero reach + crossEdges when changed files participate in edges
-- [ ] add an error/edge case: changed file with no edges → genuine 0, distinguished from unmatched
-- [ ] run `make test` — must pass before next task
+- [x] in `internal/metrics/boundary/change_locality.go:85-130`, build BFS start keys + crossEdge keys by matching `graph.NodePath(n.ID())` to changed file paths instead of hardcoding `"file:"+f`
+- [x] handle all node-ID schemes (Go `file:`, Python `module:`, TS `file:`) via the graph's own path mapping
+- [x] add fixtures with `module:`-prefixed (Python) and `file:`-prefixed (Go/TS) graphs; assert non-zero reach + crossEdges when changed files participate in edges
+- [x] add an error/edge case: changed file with no edges → genuine 0, distinguished from unmatched
+- [x] run `make test` — must pass before next task
 
 ### Task 2: Emit the numeric BC score (currently computed then discarded)
 
