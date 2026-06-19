@@ -39,6 +39,7 @@ type cli struct {
 	Install   InstallCmd   `cmd:"" help:"Install external tools required for language analysis."`
 	Init      InitCmd      `cmd:"" help:"Initialize .archfit.yaml."`
 	Update    UpdateCmd    `cmd:"" help:"Sync .archfit.yaml with current project structure."`
+	Review    ReviewCmd    `cmd:"" help:"Holistic off-gate LLM narrative review of all collected evidence (off-gate; needs tools.llm configured)."`
 	Calibrate CalibrateCmd `cmd:"" help:"Compare scorers over real repos and emit an agreement report (dev tool; never affects the gate)."`
 	Version   versionFlag  `short:"v" help:"Print version and exit."`
 }

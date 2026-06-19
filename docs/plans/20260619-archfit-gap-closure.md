@@ -259,11 +259,11 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 17: Holistic off-gate `archfit review --llm`
 
-- [ ] add `cmd/archfit/review.go`: feed the full `diagnostic.Diagnostic` bundle to the LLM with schema-constrained output; LLM may only narrate dimensions, classify volatility/subdomain, dedupe/prioritize **existing** findings, and propose the banded scorecard — never invent gate violations
-- [ ] ground the system prompt in Vlad's Balanced Coupling model (integration strength ladder, socio-technical distance, volatility↔subdomain, balance rule, cohesion = good coupling, cascading changes, distributed monolith) so narratives reason and speak in his terms — extend the existing Khononov-grounded `explain` prompt
-- [ ] post-verify every module/metric the LLM cites exists in the evidence; drop unsupported claims; never affects `check` (uphold LLM-off-gate invariant in `internal/arch_test.go`)
-- [ ] write tests with a deterministic fake `llm.Provider` (canned response) asserting schema validation + entity post-check + that `check` is unaffected
-- [ ] run `make test` + `make lint` — must pass before next task
+- [x] add `cmd/archfit/review.go`: feed the full `diagnostic.Diagnostic` bundle to the LLM with schema-constrained output; LLM may only narrate dimensions, classify volatility/subdomain, dedupe/prioritize **existing** findings, and propose the banded scorecard — never invent gate violations
+- [x] ground the system prompt in Vlad's Balanced Coupling model (integration strength ladder, socio-technical distance, volatility↔subdomain, balance rule, cohesion = good coupling, cascading changes, distributed monolith) so narratives reason and speak in his terms — extend the existing Khononov-grounded `explain` prompt
+- [x] post-verify every module/metric the LLM cites exists in the evidence; drop unsupported claims; never affects `check` (uphold LLM-off-gate invariant in `internal/arch_test.go`)
+- [x] write tests with a deterministic fake `llm.Provider` (canned response) asserting schema validation + entity post-check + that `check` is unaffected; 5 tests: schema validation, entity post-check (invalid module dropped), invalid JSON (exit 3), no LLM config (exit 3), isolated postVerify unit test
+- [x] run `make test` + `make lint` — passes (race, full suite); `make lint` 0 issues; core-ring import (`TestArchImports`, llm_ring_unreachable_from_internal) + golden gates green
 
 ### Task 18: Tooling, README, docs (Marvin review) + self-config
 
