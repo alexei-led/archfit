@@ -727,6 +727,90 @@ func TestFillMissingOwners(t *testing.T) {
 	}
 }
 
+// TestLoad_ValidateEnums checks that bad bc_advisory_min_severity and gate values
+// are rejected at load with a descriptive error, not silently accepted (which would
+// disable the check the field was meant to configure), while valid values load clean.
+func TestLoad_ValidateEnums(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr string // substring the error must mention; "" = expect success
+	}{
+		{
+			name:    "valid bc severity",
+			yaml:    "version: 1\nbc_advisory_min_severity: critical\n",
+			wantErr: "",
+		},
+		{
+			name:    "empty bc severity is allowed",
+			yaml:    "version: 1\n",
+			wantErr: "",
+		},
+		{
+			name:    "invalid bc severity",
+			yaml:    "version: 1\nbc_advisory_min_severity: severe\n",
+			wantErr: "bc_advisory_min_severity",
+		},
+		{
+			name:    "valid rule gates",
+			yaml:    "version: 1\nrules:\n  - id: r1\n    type: cycle\n    gate: fail\n  - id: r2\n    type: cycle\n    gate: warn\n",
+			wantErr: "",
+		},
+		{
+			name:    "empty rule gate is allowed",
+			yaml:    "version: 1\nrules:\n  - id: r1\n    type: cycle\n",
+			wantErr: "",
+		},
+		{
+			name:    "invalid rule gate names the rule id",
+			yaml:    "version: 1\nrules:\n  - id: nocycle\n    type: cycle\n    gate: block\n",
+			wantErr: "rules[nocycle]",
+		},
+		{
+			name:    "invalid rule gate without id falls back to index",
+			yaml:    "version: 1\nrules:\n  - type: cycle\n    gate: block\n",
+			wantErr: "rules[#0]",
+		},
+		{
+			name:    "invalid metric gate names the metric",
+			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    gate: nope\n",
+			wantErr: "metrics.cycle",
+		},
+		{
+			name:    "invalid map_review gate",
+			yaml:    "version: 1\nmap_review:\n  gate: maybe\n",
+			wantErr: "map_review",
+		},
+		{
+			name:    "off is a valid gate",
+			yaml:    "version: 1\nmap_review:\n  gate: off\n",
+			wantErr: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmp := filepath.Join(t.TempDir(), "cfg.yaml")
+			if err := writeFile(tmp, tc.yaml); err != nil {
+				t.Fatalf("write temp: %v", err)
+			}
+			_, err := config.Load(context.Background(), tmp)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Load: unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("Load: expected error mentioning %q, got nil", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error %q does not mention %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
 // writeFile is a test helper that writes content to path.
 func writeFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o600)

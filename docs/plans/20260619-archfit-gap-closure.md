@@ -191,9 +191,9 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 7: Validate config enums at load
 
-- [ ] in `internal/config/config.go:279` validate `bc_advisory_min_severity` ∈ {low,medium,high,critical} and rule `gate` values; return descriptive errors
-- [ ] write tests for valid + invalid values (invalid → error, not silent pass-all)
-- [ ] run `make test` — must pass before next task
+- [x] in `internal/config/config.go:279` validate `bc_advisory_min_severity` ∈ {low,medium,high,critical} and rule `gate` values; return descriptive errors — `validate` now rejects bad `bc_advisory_min_severity` and any non-empty gate that is not `off|warn|fail` (rule, metric, and `map_review` gates share the vocab); errors name the offending path (`rules[<id>].gate`, `metrics.<name>.gate`, `map_review.gate`); empty = use-default still allowed; metric iteration sorted for deterministic first-offender
+- [x] write tests for valid + invalid values (invalid → error, not silent pass-all) — `TestLoad_ValidateEnums` table covers valid/empty/invalid bc severity + rule/metric/map_review gates, id-vs-index labelling, and `gate: off` decoding as a string
+- [x] run `make test` — passes (race, full suite); `make lint` 0 issues; core-ring import + golden gates green
 
 ### Task 8: TypeScript edge fidelity (type-only vs runtime)
 

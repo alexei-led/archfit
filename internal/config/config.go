@@ -275,7 +275,16 @@ func (c Config) WithExplicitOwners(modules ...string) Config {
 	return c
 }
 
-// validate checks required config fields.
+// bcSeverities are the accepted bc_advisory_min_severity values (low→critical).
+var bcSeverities = map[string]struct{}{"low": {}, "medium": {}, "high": {}, "critical": {}}
+
+// gateValues are the accepted gate policy markers (spec §rules: off | warn | fail),
+// shared by rule, metric, and map_review gates. Empty means "use the default".
+var gateValues = map[string]struct{}{"off": {}, "warn": {}, "fail": {}}
+
+// validate checks required config fields. An invalid enum is a hard error rather
+// than a silent skip: a typo in bc_advisory_min_severity or a gate must not
+// quietly disable the check it was meant to configure.
 func validate(cfg Config) error {
 	if cfg.Version <= 0 {
 		return fmt.Errorf("version must be > 0 (got %d)", cfg.Version)
@@ -288,7 +297,49 @@ func validate(cfg Config) error {
 			return errors.New("tools.llm.model is required when tools.llm.provider is set")
 		}
 	}
+	if s := cfg.BCAdvisoryMinSeverity; s != "" {
+		if _, ok := bcSeverities[s]; !ok {
+			return fmt.Errorf("bc_advisory_min_severity %q is not one of: low, medium, high, critical", s)
+		}
+	}
+	for i, r := range cfg.Rules {
+		id := r.ID
+		if id == "" {
+			id = fmt.Sprintf("#%d", i)
+		}
+		if err := validateGate(fmt.Sprintf("rules[%s]", id), r.Gate); err != nil {
+			return err
+		}
+	}
+	for _, name := range sortedMetricKeys(cfg.Metrics) {
+		if err := validateGate("metrics."+name, cfg.Metrics[name].Gate); err != nil {
+			return err
+		}
+	}
+	return validateGate("map_review", cfg.MapReview.Gate)
+}
+
+// validateGate rejects a non-empty gate that is not one of off|warn|fail.
+// field is the dotted config path used in the error (e.g. "rules[cycle]").
+func validateGate(field, gate string) error {
+	if gate == "" {
+		return nil
+	}
+	if _, ok := gateValues[gate]; !ok {
+		return fmt.Errorf("%s.gate %q is not one of: off, warn, fail", field, gate)
+	}
 	return nil
+}
+
+// sortedMetricKeys returns metric names in sorted order so validation reports a
+// deterministic first offender when multiple metrics carry an invalid gate.
+func sortedMetricKeys(m MetricsConfig) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // Default returns a Config suitable for use when no archfit.yaml is present.
