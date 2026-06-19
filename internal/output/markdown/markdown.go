@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -142,12 +143,17 @@ func writeBCAdvisories(b *strings.Builder, advisories []finding.Finding) {
 	}
 
 	if len(bcFindings) > 0 {
-		fmt.Fprintf(b, "\n## Balanced Coupling advisories (%d)\n\n", len(bcFindings))
+		edges := 0
+		for _, f := range bcFindings {
+			edges += rollupCount(f)
+		}
+		fmt.Fprintf(b, "\n## Balanced Coupling advisories (%d rollups, %d edges)\n\n", len(bcFindings), edges)
+		b.WriteString("Same-shape edges between a module pair are grouped into one rollup.\n")
 		b.WriteString("Integration strength × distance × volatility lint messages.\n")
 		b.WriteString("Severity: `none` · `low` · `medium` · `high` · `critical`.\n\n")
 		for i, f := range bcFindings {
 			if i == 25 {
-				fmt.Fprintf(b, "- ... +%d more (use `--format json`)\n", len(bcFindings)-25)
+				fmt.Fprintf(b, "- ... +%d more rollups (use `--format json`)\n", len(bcFindings)-25)
 				break
 			}
 			writeBCLintMessage(b, f)
@@ -220,7 +226,24 @@ func writeBCLintMessage(b *strings.Builder, f finding.Finding) {
 	if cheapestMove != "" {
 		fmt.Fprintf(b, "  cheapest move: %s\n", cheapestMove)
 	}
+	if n := rollupCount(f); n > 1 {
+		members := f.MatchedBy["group_members"]
+		if members != "" {
+			fmt.Fprintf(b, "  rollup: %d same-shape edges (e.g. %s)\n", n, members)
+		} else {
+			fmt.Fprintf(b, "  rollup: %d same-shape edges\n", n)
+		}
+	}
 	b.WriteString("```\n\n")
+}
+
+// rollupCount returns the number of edges a BC advisory represents: the value of
+// MatchedBy["group_count"] when the advisory is a rollup, else 1.
+func rollupCount(f finding.Finding) int {
+	if n, err := strconv.Atoi(f.MatchedBy["group_count"]); err == nil && n > 0 {
+		return n
+	}
+	return 1
 }
 
 // writeBeyondBCMetrics renders the "Supporting structural metrics (beyond Balanced

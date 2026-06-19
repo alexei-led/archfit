@@ -1,7 +1,9 @@
 package engine_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"strconv"
 	"strings"
 	"testing"
@@ -549,6 +551,123 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 	wantBand := string(coupling.ScoreBand(value))
 	if got := adv.MatchedBy["score_band"]; got != wantBand {
 		t.Errorf("MatchedBy[score_band]=%q, want %q (band for value %d)", got, wantBand, value)
+	}
+}
+
+// bcFloodFacts returns Facts with n distinct same-shape edges, all from module a
+// (pkg/a) into module b's internals (pkg/b/internal) with functional strength — the
+// flood pattern that Task 5 collapses into a single rollup advisory.
+func bcFloodFacts(n int) graph.Facts {
+	f := graph.Facts{Language: "go"}
+	for i := 0; i < n; i++ {
+		from := "pkg/a/a" + strconv.Itoa(i) + ".go"
+		to := "pkg/b/internal/impl" + strconv.Itoa(i) + ".go"
+		f.Nodes = append(f.Nodes,
+			graph.Node{Kind: graph.NodeKindFile, Path: from},
+			graph.Node{Kind: graph.NodeKindFile, Path: to},
+		)
+		f.Edges = append(f.Edges, graph.Edge{
+			From:         "file:" + from,
+			To:           "file:" + to,
+			Kind:         graph.EdgeKindImports,
+			Language:     "go",
+			Confidence:   confidenceHigh,
+			StrengthHint: "functional",
+			Locations:    []graph.Location{{File: from, Line: 7}},
+		})
+	}
+	return f
+}
+
+// TestRun_Advisory_GroupedRollups asserts that N same-shape BC advisory edges between
+// the same module pair collapse into ONE rollup advisory carrying group_count=N and
+// sorted representative member IDs, with all member locations merged and the result
+// deterministic across runs (Task 5).
+func TestRun_Advisory_GroupedRollups(t *testing.T) {
+	ctx := context.Background()
+	const edges = 5
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return bcFloodFacts(edges), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	run := func() diagnostic.Diagnostic {
+		t.Helper()
+		d, err := engine.Run(ctx, engine.RunInput{
+			Mode:        engine.Mode{Head: headRef, Advisory: true},
+			Scope:       scope.Scope{Root: "."},
+			Classify:    classifyCfg,
+			Staleness:   config.StalenessConfig{},
+			Exceptions:  config.ExceptionSet{},
+			Extractors:  []ports.Extractor{ex},
+			Patterns:    ports.NopPatternProvider{},
+			Resolver:    ports.NopSymbolResolver{},
+			PatternCfg:  config.PatternConfig{},
+			Rules:       rs,
+			Metrics:     ms,
+			Accepted:    base,
+			BaseMetrics: base.Metrics,
+			Labels:      nil,
+			Signals:     signal.RunSignals{},
+			Now:         now,
+		})
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		return d
+	}
+
+	d := run()
+
+	var bc []finding.Finding
+	for _, f := range d.Findings {
+		if f.RuleID == "bc/imbalanced_coupling" {
+			bc = append(bc, f)
+		}
+	}
+	if len(bc) != 1 {
+		t.Fatalf("want 1 grouped BC advisory for %d same-shape edges, got %d: %+v", edges, len(bc), bc)
+	}
+	rollup := bc[0]
+
+	if got := rollup.MatchedBy["group_count"]; got != strconv.Itoa(edges) {
+		t.Errorf("group_count=%q, want %d", got, edges)
+	}
+	members := strings.Split(rollup.MatchedBy["group_members"], ",")
+	if len(members) != edges { // edges < bcAdvisoryRollupCap, so all are listed
+		t.Fatalf("group_members has %d ids, want %d: %v", len(members), edges, members)
+	}
+	for i := 1; i < len(members); i++ {
+		if members[i-1] >= members[i] {
+			t.Errorf("group_members not sorted ascending (non-deterministic): %v", members)
+		}
+	}
+	// Every member's file:line evidence is preserved on the rollup.
+	if len(rollup.Locations) != edges {
+		t.Errorf("rollup locations=%d, want %d (one per merged edge)", len(rollup.Locations), edges)
+	}
+	// Warnings count the rollup, consistent with the single advisory in Findings.
+	if d.Summary.Warnings != 1 {
+		t.Errorf("warnings=%d, want 1 (one rollup)", d.Summary.Warnings)
+	}
+
+	// Determinism: a second run encodes byte-identically.
+	first, err := json.Marshal(d)
+	if err != nil {
+		t.Fatalf("marshal first: %v", err)
+	}
+	second, err := json.Marshal(run())
+	if err != nil {
+		t.Fatalf("marshal second: %v", err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Errorf("grouped advisory output not deterministic across runs")
 	}
 }
 

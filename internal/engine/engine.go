@@ -4,7 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"maps"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/classify"
@@ -392,7 +395,127 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 			advisoryFindings = append(advisoryFindings, f)
 		}
 	}
-	return advisoryFindings
+	// Collapse the BC-advisory flood: edges sharing the same coupling shape between
+	// the same module pair roll up into one advisory with a count + representative IDs.
+	return groupBCAdvisories(advisoryFindings)
+}
+
+// bcAdvisoryRollupCap bounds the number of per-edge member IDs stored on a grouped
+// advisory's MatchedBy["group_members"]. group_count carries the true total; this cap
+// keeps a 400-edge flood from bloating the output with one ID per edge.
+const bcAdvisoryRollupCap = 8
+
+// groupBCAdvisories collapses bc/imbalanced_coupling advisories that share the same
+// shape — (fromModule, toModule, strength, distance, volatility, status) — into one
+// rollup finding carrying a count and representative member IDs. Non-BC advisories
+// (staleness, labels/stale) pass through unchanged. Ordering is deterministic: rollups
+// are emitted in sorted key order, then the untouched non-BC advisories in input order.
+//
+// Status is part of the key so a baseline-suppressed or excepted edge is never folded
+// into a "new" rollup's count. Cohesion (high strength + low distance) never reaches
+// this pass — coupling.BalanceResult returns SeverityNone for it — so a rollup, like an
+// individual advisory, never flags cohesion ("the good coupling") as a problem.
+func groupBCAdvisories(advisories []finding.Finding) []finding.Finding {
+	type groupKey struct {
+		fromModule, toModule           string
+		strength, distance, volatility string
+		status                         finding.Status
+	}
+	groups := make(map[groupKey][]finding.Finding)
+	keys := make([]groupKey, 0)
+	var passthrough []finding.Finding
+
+	for _, f := range advisories {
+		if f.RuleID != "bc/imbalanced_coupling" {
+			passthrough = append(passthrough, f)
+			continue
+		}
+		k := groupKey{
+			fromModule: f.Edge.From.Module,
+			toModule:   f.Edge.To.Module,
+			strength:   f.MatchedBy["strength"],
+			distance:   f.MatchedBy["distance"],
+			volatility: f.MatchedBy["volatility"],
+			status:     f.Status,
+		}
+		if _, ok := groups[k]; !ok {
+			keys = append(keys, k)
+		}
+		groups[k] = append(groups[k], f)
+	}
+
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := keys[i], keys[j]
+		switch {
+		case a.fromModule != b.fromModule:
+			return a.fromModule < b.fromModule
+		case a.toModule != b.toModule:
+			return a.toModule < b.toModule
+		case a.strength != b.strength:
+			return a.strength < b.strength
+		case a.distance != b.distance:
+			return a.distance < b.distance
+		case a.volatility != b.volatility:
+			return a.volatility < b.volatility
+		default:
+			return a.status < b.status
+		}
+	})
+
+	out := make([]finding.Finding, 0, len(keys)+len(passthrough))
+	for _, k := range keys {
+		out = append(out, rollupFinding(groups[k]))
+	}
+	out = append(out, passthrough...)
+	return out
+}
+
+// rollupFinding builds one grouped advisory from same-shape members. The member with
+// the smallest ID is the representative (its edge, why, severity, and score all apply
+// to every member, since they share the group key); group_count and up to
+// bcAdvisoryRollupCap sorted member IDs are added to a cloned MatchedBy, and all member
+// locations are merged so no file:line evidence is lost.
+func rollupFinding(members []finding.Finding) finding.Finding {
+	sort.Slice(members, func(i, j int) bool { return members[i].ID < members[j].ID })
+	rep := members[0]
+
+	matched := make(map[string]string, len(rep.MatchedBy)+2)
+	maps.Copy(matched, rep.MatchedBy)
+	matched["group_count"] = strconv.Itoa(len(members))
+	ids := make([]string, 0, bcAdvisoryRollupCap)
+	for i, m := range members {
+		if i == bcAdvisoryRollupCap {
+			break
+		}
+		ids = append(ids, m.ID)
+	}
+	matched["group_members"] = strings.Join(ids, ",")
+
+	rep.MatchedBy = matched
+	rep.Locations = mergeLocations(members)
+	return rep
+}
+
+// mergeLocations returns the deduplicated, sorted union of all members' locations.
+func mergeLocations(members []finding.Finding) []graph.Location {
+	seen := make(map[graph.Location]struct{})
+	var locs []graph.Location
+	for _, m := range members {
+		for _, l := range m.Locations {
+			if _, ok := seen[l]; ok {
+				continue
+			}
+			seen[l] = struct{}{}
+			locs = append(locs, l)
+		}
+	}
+	sort.Slice(locs, func(i, j int) bool {
+		if locs[i].File != locs[j].File {
+			return locs[i].File < locs[j].File
+		}
+		return locs[i].Line < locs[j].Line
+	})
+	return locs
 }
 
 // computeVerdict derives the overall verdict from gate findings and metric results.
@@ -478,12 +601,30 @@ func severityAtLeast(got coupling.Severity, threshold string) bool {
 
 // bcAdvisoryWhy builds a concise BC-vocabulary why string for a coupling advisory.
 // It uses strength, distance, and volatility to produce a human-readable explanation
-// following Balanced Coupling vocabulary (integration strength, distance, volatility).
+// following Balanced Coupling vocabulary (integration strength, distance, volatility),
+// and names the resulting risk in Vlad Khononov's terms.
 func bcAdvisoryWhy(cl coupling.Classification) string {
 	return "balanced coupling: " + string(cl.Strength) + " integration strength" +
 		" × " + string(cl.Distance) + " distance" +
 		" × " + string(cl.Volatility) + " volatility" +
-		" → " + string(cl.Severity) + " severity"
+		" → " + string(cl.Severity) + " severity (" + bcRiskClause(cl.Severity) + ")"
+}
+
+// bcRiskClause names the Balanced Coupling risk for an advisory severity in Vlad
+// Khononov's vocabulary. The worst case (critical = high strength + high distance +
+// high volatility) is cascading changes across a knowledge boundary — a distributed-
+// monolith risk; lesser bands are elevated maintenance effort. Cohesion (high strength
+// + low distance) never reaches here — coupling.BalanceResult returns SeverityNone for
+// it — so it is never framed as a problem.
+func bcRiskClause(sev coupling.Severity) string {
+	switch sev {
+	case coupling.SeverityCritical:
+		return "cascading changes across a knowledge boundary → distributed-monolith risk"
+	case coupling.SeverityHigh:
+		return "tight coupling across a volatile boundary → likely cascading changes"
+	default:
+		return "unbalanced coupling → elevated maintenance effort"
+	}
 }
 
 // couplingAdvisoryID returns a stable 32-character hex fingerprint for a coupling advisory

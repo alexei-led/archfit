@@ -173,11 +173,11 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 5: Dedup/aggregate BC advisories into grouped rollups
 
-- [ ] in `internal/engine/engine.go:328-360`, group advisories by `(fromModule,toModule,strength,distance,volatility)` with a stable count + representative IDs (deterministic ordering)
-- [ ] update markdown + JSON renderers to show grouped rollups with counts, not one line per edge; phrase each rollup in Vlad's vocabulary (e.g. "functional integration across a different-owner boundary in a volatile area → cascading-changes / distributed-monolith risk"), and never flag cohesion (high strength + low distance) as a problem
-- [ ] write tests: N identical-shape edges → 1 grouped advisory with count N; ordering deterministic
-- [ ] regenerate golden deliberately
-- [ ] run `make test` + `make lint` — must pass before next task
+- [x] in `internal/engine/engine.go:328-360`, group advisories by `(fromModule,toModule,strength,distance,volatility)` with a stable count + representative IDs (deterministic ordering) — new `groupBCAdvisories`/`rollupFinding` run at the end of `collectAdvisories` (after status assignment, so baseline/excepted edges are not folded into "new" rollups); status is part of the key; rollups emitted in sorted key order; `group_count` + up to `bcAdvisoryRollupCap`=8 sorted member IDs in `MatchedBy`; all member `Locations` merged (deduped, sorted) so no file:line evidence is lost
+- [x] update markdown + JSON renderers to show grouped rollups with counts, not one line per edge; phrase each rollup in Vlad's vocabulary, and never flag cohesion (high strength + low distance) as a problem — markdown header now `(N rollups, M edges)` + per-rollup `rollup: N same-shape edges (e.g. <ids>)` line; `bcAdvisoryWhy` now names the risk in Vlad's terms via `bcRiskClause` (critical → "cascading changes across a knowledge boundary → distributed-monolith risk"); cohesion never reaches the advisory pass (`coupling.BalanceResult` returns SeverityNone for high-strength+low-distance); JSON flows grouped findings through the generic Diagnostic marshal — `group_count`/`group_members` ride in `MatchedBy`
+- [x] write tests: N identical-shape edges → 1 grouped advisory with count N; ordering deterministic — `TestRun_Advisory_GroupedRollups` (5 same-shape edges → 1 rollup, sorted members, merged locations, byte-identical double-run); markdown `TestRenderer_Render_BCRollup` + `TestRenderer_Render_BCNoRollupLineWhenSingle`
+- [x] regenerate golden deliberately — no stored golden fixture; `TestGolden_DoubleRun` is a determinism double-run and stays green (grouping output is deterministic)
+- [x] run `make test` + `make lint` — must pass before next task (full suite passes, `make lint` 0 issues, core-ring import invariant green)
 
 ### Task 6: Phase-1 validation run (correctness + determinism gate)
 

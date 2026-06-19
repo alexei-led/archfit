@@ -30,6 +30,11 @@ const (
 	confidenceHigh = "high"
 	confidenceLow  = "low"
 	statusAbsent   = "absent"
+
+	// MatchedBy keys reused across BC advisory tests.
+	mbStrength   = "strength"
+	mbDistance   = "distance"
+	mbVolatility = "volatility"
 )
 
 func TestRenderer_Format(t *testing.T) {
@@ -501,9 +506,9 @@ func TestRenderer_Render_BCLintMessage(t *testing.T) {
 	f.Edge.To.Path = "internal/users/repo.go"
 	f.Why = "implementation-level coupling across a deploy boundary to a volatile core module"
 	f.MatchedBy = map[string]string{
-		"strength":      "intrusive",
-		"distance":      "cross_deploy_unit",
-		"volatility":    "high",
+		mbStrength:      "intrusive",
+		mbDistance:      "cross_deploy_unit",
+		mbVolatility:    "high",
 		"score":         "intrusive(+8) cross_deploy(+5) vol_high(-0) = 13->10",
 		"cheapest_move": "lower strength intrusive->contract (-5)",
 	}
@@ -545,9 +550,9 @@ func TestRenderer_Render_BCLintMessage_NumericScore(t *testing.T) {
 	f.Edge.From.Path = "internal/payments/processor.go"
 	f.Edge.To.Path = "internal/users/repo.go"
 	f.MatchedBy = map[string]string{
-		"strength":    "intrusive",
-		"distance":    "cross_deploy_unit",
-		"volatility":  "high",
+		mbStrength:    "intrusive",
+		mbDistance:    "cross_deploy_unit",
+		mbVolatility:  "high",
 		"score":       "multiplicative",
 		"score_value": "10",
 		"score_band":  "critical",
@@ -562,6 +567,76 @@ func TestRenderer_Render_BCLintMessage_NumericScore(t *testing.T) {
 
 	if !strings.Contains(out, "score: 10/10 (critical) [multiplicative]") {
 		t.Errorf("BC lint message missing numeric score line\nfull output:\n%s", out)
+	}
+}
+
+// TestRenderer_Render_BCRollup verifies that a grouped BC advisory (group_count > 1)
+// renders the rollup edge count and the section header reports rollups vs edges.
+func TestRenderer_Render_BCRollup(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.Summary.Warnings = 1
+
+	f := makeAdvisoryFinding("bc/imbalanced_coupling")
+	f.Severity = finding.SeverityMedium
+	f.Edge.From.Module = "a"
+	f.Edge.To.Module = "b"
+	f.MatchedBy = map[string]string{
+		mbStrength:      "functional",
+		mbDistance:      "cross_module_diff_owner",
+		mbVolatility:    "unknown",
+		"group_count":   "42",
+		"group_members": "id1,id2,id3",
+	}
+	d.Findings = []finding.Finding{f}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"## Balanced Coupling advisories (1 rollups, 42 edges)",
+		"rollup: 42 same-shape edges (e.g. id1,id2,id3)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rollup output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+// TestRenderer_Render_BCNoRollupLineWhenSingle verifies a non-grouped advisory
+// (group_count absent or 1) renders no rollup line.
+func TestRenderer_Render_BCNoRollupLineWhenSingle(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+
+	f := makeAdvisoryFinding("bc/imbalanced_coupling")
+	f.Severity = finding.SeverityMedium
+	f.Edge.From.Path = "pkg/a/a.go"
+	f.Edge.To.Path = "pkg/b/internal/impl.go"
+	f.MatchedBy = map[string]string{
+		mbStrength:    "functional",
+		mbDistance:    "cross_module_diff_owner",
+		mbVolatility:  "unknown",
+		"group_count": "1",
+	}
+	d.Findings = []finding.Finding{f}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	if strings.Contains(out, "rollup:") {
+		t.Errorf("single-edge advisory must not render a rollup line\nfull output:\n%s", out)
+	}
+	if !strings.Contains(out, "## Balanced Coupling advisories (1 rollups, 1 edges)") {
+		t.Errorf("header missing expected rollup/edge counts\nfull output:\n%s", out)
 	}
 }
 
