@@ -18,6 +18,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/clones"
 	"github.com/alexei-led/archfit/internal/extract/complexity"
 	"github.com/alexei-led/archfit/internal/extract/deployunit"
+	"github.com/alexei-led/archfit/internal/extract/dynimports"
 	"github.com/alexei-led/archfit/internal/extract/gitnexus"
 	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/extract/loc"
@@ -106,6 +107,11 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 
 	// Architecture-fitness enforcement signals (deterministic FS scan; always runs).
 	change.Fitness = fitness.Detect(s.Root)
+
+	// Dynamic/lazy import detection (deterministic FS scan; always runs): Python
+	// non-top-level imports + importlib/__import__, TS require()/dynamic import().
+	// Report-only — surfaced as evidence, never modifies the graph, metrics, or gate.
+	change.DynamicImports.Sites = dynimports.Detect(s.Root)
 
 	// Ownership resolution: fills module owner gaps from CODEOWNERS or git-author
 	// history. Explicit config owner always wins; resolver only fills empty slots.

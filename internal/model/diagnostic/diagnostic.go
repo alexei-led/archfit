@@ -99,6 +99,32 @@ type FileFact struct {
 	GitnexusImpact *int `json:"gitnexus_impact,omitempty"`
 }
 
+// DynamicImport is the report-only dynamic/lazy-import risk signal for one module
+// (Task 9). Dynamic/lazy imports — Python non-top-level (in-function) imports,
+// importlib.import_module / __import__, and TS require() / dynamic import() — are
+// invisible to the static dependency graph, so they hide cycles and undercount
+// coupling. This block is evidence only: it carries no band, no score, never
+// enters the verdict or any gate, and never modifies the dependency graph or any
+// metric. Ranking and judgment are the off-gate LLM's job.
+type DynamicImport struct {
+	// Module is the module-map key that owns the sites, or the file's directory
+	// when the module map does not cover them.
+	Module string `json:"module"`
+	// Count is the total dynamic/lazy import sites found in this module.
+	Count int `json:"count"`
+	// Sites is a deterministic, capped sample of the underlying sites.
+	Sites []DynamicImportSite `json:"sites"`
+}
+
+// DynamicImportSite is one dynamic/lazy import occurrence at a file location.
+// Kind is one of: lazy_import, importlib, require, dynamic_import.
+type DynamicImportSite struct {
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+	Kind     string `json:"kind"`
+	Language string `json:"language"`
+}
+
 // Coverage status constants used across all extractor adapters.
 const (
 	StatusOK      = "ok"
@@ -125,21 +151,26 @@ type Diagnostic struct {
 	// FileFacts is the neutral per-module structural-facts block (Tranche 1.5).
 	// Report-only evidence — never consumed by verdict or gate logic. Empty when
 	// no symbol graph was collected (SCIP off/absent).
-	FileFacts    []FileFact  `json:"file_facts"`
-	AgentTasks   []AgentTask `json:"agent_tasks"`
-	ToolCoverage []Coverage  `json:"tool_coverage"`
-	Summary      Summary     `json:"summary"`
+	FileFacts []FileFact `json:"file_facts"`
+	// DynamicImports is the report-only dynamic/lazy-import risk block (Task 9).
+	// Evidence only — never consumed by verdict or gate logic, never alters the
+	// dependency graph or any metric. Empty when no dynamic imports were found.
+	DynamicImports []DynamicImport `json:"dynamic_imports"`
+	AgentTasks     []AgentTask     `json:"agent_tasks"`
+	ToolCoverage   []Coverage      `json:"tool_coverage"`
+	Summary        Summary         `json:"summary"`
 }
 
 // New returns a zero-value Diagnostic with all required fields initialised to their
 // empty (non-null) forms: schema_version set, slices allocated as empty (not nil).
 func New() Diagnostic {
 	return Diagnostic{
-		SchemaVersion: SchemaVersion,
-		Metrics:       []MetricResult{},
-		Findings:      []finding.Finding{},
-		FileFacts:     []FileFact{},
-		AgentTasks:    []AgentTask{},
-		ToolCoverage:  []Coverage{},
+		SchemaVersion:  SchemaVersion,
+		Metrics:        []MetricResult{},
+		Findings:       []finding.Finding{},
+		FileFacts:      []FileFact{},
+		DynamicImports: []DynamicImport{},
+		AgentTasks:     []AgentTask{},
+		ToolCoverage:   []Coverage{},
 	}
 }

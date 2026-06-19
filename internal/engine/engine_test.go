@@ -1311,3 +1311,135 @@ func TestRun_PinnedLabels(t *testing.T) {
 		}
 	})
 }
+
+// langPyTest / kindLazy are factored out so the dynamic-import test stays under
+// goconst's repeated-literal threshold.
+const (
+	langPyTest = "python"
+	kindLazy   = "lazy_import"
+	pathPyA    = "pkg/a/x.py"
+)
+
+// dynImportRun executes the engine over cleanFacts with the given dynamic-import
+// sites and returns the assembled Diagnostic. The graph is identical regardless
+// of the sites — the sites only feed the report-only DynamicImports block.
+func dynImportRun(t *testing.T, sites []diagnostic.DynamicImportSite) diagnostic.Diagnostic {
+	t.Helper()
+	classifyCfg, rs := cannedConfig() // pkg/a/** -> "a", pkg/b/** -> "b"
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+	base := baseline.Baseline{}
+	in := engine.RunInput{
+		Mode: engine.Mode{Head: headRef}, Scope: scope.Scope{Root: "."},
+		Classify: classifyCfg, Staleness: config.StalenessConfig{}, Exceptions: config.ExceptionSet{},
+		Extractors: []ports.Extractor{ex}, Patterns: ports.NopPatternProvider{}, Resolver: ports.NopSymbolResolver{},
+		PatternCfg: config.PatternConfig{}, Rules: rs, Metrics: metrics.New(config.Config{Version: 1}),
+		Accepted: base, BaseMetrics: base.Metrics,
+		Signals: signal.RunSignals{DynamicImports: signal.DynamicImportSignals{Sites: sites}},
+		Now:     time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC),
+	}
+	d, err := engine.Run(context.Background(), in)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return d
+}
+
+// TestRun_DynamicImports_GroupedPerModule asserts the report-only dynamic-import
+// sites are rolled up per module (module-map key, or file directory when unmapped),
+// counted in full, and sampled with the cap applied — deterministically.
+func TestRun_DynamicImports_GroupedPerModule(t *testing.T) {
+	var sites []diagnostic.DynamicImportSite
+	for i := 1; i <= 7; i++ { // 7 sites in module "a" -> count 7, sample capped at 5
+		sites = append(sites, diagnostic.DynamicImportSite{File: pathPyA, Line: i, Kind: kindLazy, Language: langPyTest})
+	}
+	sites = append(sites,
+		diagnostic.DynamicImportSite{File: "pkg/b/y.ts", Line: 2, Kind: "require", Language: "typescript"},
+		diagnostic.DynamicImportSite{File: "scripts/tool.py", Line: 9, Kind: "importlib", Language: langPyTest},
+	)
+
+	d := dynImportRun(t, sites)
+
+	// Modules sorted by name: "a", "b", "scripts" (last is the unmapped dir fallback).
+	want := []struct {
+		module string
+		count  int
+		sample int
+	}{
+		{"a", 7, 5},
+		{"b", 1, 1},
+		{"scripts", 1, 1},
+	}
+	if len(d.DynamicImports) != len(want) {
+		t.Fatalf("dynamic_imports groups = %d, want %d (%+v)", len(d.DynamicImports), len(want), d.DynamicImports)
+	}
+	for i, w := range want {
+		got := d.DynamicImports[i]
+		if got.Module != w.module {
+			t.Errorf("group[%d].Module = %q, want %q", i, got.Module, w.module)
+		}
+		if got.Count != w.count {
+			t.Errorf("group[%d].Count = %d, want %d", i, got.Count, w.count)
+		}
+		if len(got.Sites) != w.sample {
+			t.Errorf("group[%d] sample sites = %d, want %d", i, len(got.Sites), w.sample)
+		}
+	}
+}
+
+// TestRun_DynamicImports_StaticGraphUnchanged proves the dynamic-import signal is
+// purely additive: a run with sites and a run without them produce a byte-identical
+// diagnostic once the DynamicImports block is removed. Nothing graph-, metric-, or
+// verdict-derived may change.
+func TestRun_DynamicImports_StaticGraphUnchanged(t *testing.T) {
+	withSites := dynImportRun(t, []diagnostic.DynamicImportSite{
+		{File: pathPyA, Line: 4, Kind: kindLazy, Language: langPyTest},
+	})
+	withoutSites := dynImportRun(t, nil)
+
+	if len(withSites.DynamicImports) == 0 {
+		t.Fatal("expected dynamic imports to be populated in the with-sites run")
+	}
+	if len(withoutSites.DynamicImports) != 0 {
+		t.Errorf("expected empty dynamic imports in the no-sites run, got %+v", withoutSites.DynamicImports)
+	}
+
+	withSites.DynamicImports = nil
+	withoutSites.DynamicImports = nil
+	a, err := json.Marshal(withSites)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	b, err := json.Marshal(withoutSites)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !bytes.Equal(a, b) {
+		t.Errorf("dynamic-import signal altered the rest of the diagnostic:\n with: %s\n without: %s", a, b)
+	}
+}
+
+// TestRun_DynamicImports_Deterministic asserts a double run with identical sites
+// yields byte-identical diagnostics (no map-order leakage in the rollup).
+func TestRun_DynamicImports_Deterministic(t *testing.T) {
+	sites := []diagnostic.DynamicImportSite{
+		{File: "pkg/b/y.ts", Line: 1, Kind: "dynamic_import", Language: "typescript"},
+		{File: pathPyA, Line: 2, Kind: kindLazy, Language: langPyTest},
+		{File: "scripts/z.py", Line: 3, Kind: "importlib", Language: langPyTest},
+	}
+	first, err := json.Marshal(dynImportRun(t, sites).DynamicImports)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	second, err := json.Marshal(dynImportRun(t, sites).DynamicImports)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Errorf("non-deterministic dynamic_imports:\n first:  %s\n second: %s", first, second)
+	}
+}

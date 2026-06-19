@@ -217,17 +217,24 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// computeVerdict or any gate logic. Empty when SCIP is off/absent.
 	fileFacts := facts.Build(ex.scipSymbols, in.Signals.Size.FileLOC, in.Signals.History.CoChange, in.Signals.GitnexusImpact)
 
+	// Dynamic/lazy-import risk (Task 9): report-only evidence rolled up per module.
+	// Dynamic imports are invisible to the static graph, so they hide cycles and
+	// undercount coupling. Never read by computeVerdict or any gate, and never
+	// alters ex.g or any metric — the sites are scanned in cmd, not from the graph.
+	dynamicImports := buildDynamicImports(in.Signals.DynamicImports.Sites, classifyCfg.ModuleMap)
+
 	d := diagnostic.Diagnostic{
-		SchemaVersion: diagnostic.SchemaVersion,
-		Verdict:       verdict,
-		Base:          in.Mode.Base,
-		Head:          in.Mode.Head,
-		ConfigHash:    in.ConfigHash,
-		Metrics:       metricResults,
-		Findings:      resolvedFindings,
-		FileFacts:     fileFacts,
-		AgentTasks:    []diagnostic.AgentTask{},
-		ToolCoverage:  ex.coverages,
+		SchemaVersion:  diagnostic.SchemaVersion,
+		Verdict:        verdict,
+		Base:           in.Mode.Base,
+		Head:           in.Mode.Head,
+		ConfigHash:     in.ConfigHash,
+		Metrics:        metricResults,
+		Findings:       resolvedFindings,
+		FileFacts:      fileFacts,
+		DynamicImports: dynamicImports,
+		AgentTasks:     []diagnostic.AgentTask{},
+		ToolCoverage:   ex.coverages,
 		Summary: diagnostic.Summary{
 			GateFindings:   gateNew,
 			Warnings:       warnings,
@@ -576,6 +583,58 @@ func stripPrefix(id string) string {
 		}
 	}
 	return id
+}
+
+// dynamicImportSiteCap bounds the number of sample sites stored per module in a
+// DynamicImport rollup. Count carries the true total; the cap keeps a module with
+// hundreds of lazy imports from bloating the output.
+const dynamicImportSiteCap = 5
+
+// buildDynamicImports groups report-only dynamic/lazy import sites per module
+// (module-map key, or the file's directory when unmapped) into DynamicImport
+// rollups. Output is deterministic: modules sorted by name, sites already sorted
+// by the detector, the per-module sample capped at dynamicImportSiteCap. Returns
+// an empty (non-nil) slice when no sites were found. Never touches the graph,
+// metrics, or the verdict — this is evidence only.
+func buildDynamicImports(sites []diagnostic.DynamicImportSite, mm config.ModuleMap) []diagnostic.DynamicImport {
+	byModule := make(map[string][]diagnostic.DynamicImportSite)
+	for _, s := range sites {
+		mod, ok := mm.ModuleFor(s.File)
+		if !ok || mod == "" {
+			mod = pathDir(s.File)
+		}
+		byModule[mod] = append(byModule[mod], s)
+	}
+	mods := make([]string, 0, len(byModule))
+	for m := range byModule {
+		mods = append(mods, m)
+	}
+	sort.Strings(mods)
+
+	out := make([]diagnostic.DynamicImport, 0, len(mods))
+	for _, m := range mods {
+		ms := byModule[m]
+		sample := ms
+		if len(sample) > dynamicImportSiteCap {
+			sample = sample[:dynamicImportSiteCap]
+		}
+		out = append(out, diagnostic.DynamicImport{
+			Module: m,
+			Count:  len(ms),
+			Sites:  sample,
+		})
+	}
+	return out
+}
+
+// pathDir returns the directory portion of a repo-relative slash path, or "."
+// when the path has no directory. Used as the dynamic-import module key when the
+// module map does not cover a file.
+func pathDir(p string) string {
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		return p[:i]
+	}
+	return "."
 }
 
 // countActive returns the number of findings whose status is not fixed.

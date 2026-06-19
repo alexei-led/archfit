@@ -94,6 +94,8 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 	writeFileFacts(&b, d.FileFacts)
 
+	writeDynamicImports(&b, d.DynamicImports)
+
 	gate, advisories := splitFindings(d.Findings)
 	if len(gate) > 0 {
 		fmt.Fprintf(&b, "\n## Gate findings (%d)\n\n", len(gate))
@@ -361,6 +363,59 @@ func writeFileFacts(b *strings.Builder, facts []diagnostic.FileFact) {
 		}
 		b.WriteString("\n")
 	}
+}
+
+// dynamicImportTopN is the number of modules listed in the dynamic-imports section.
+const dynamicImportTopN = 10
+
+// dynamicImportSampleN is the number of sample sites shown per module.
+const dynamicImportSampleN = 3
+
+// writeDynamicImports prints the report-only dynamic/lazy-import risk block:
+// modules with non-top-level imports (Python) or require()/dynamic import() (TS),
+// which are invisible to the static dependency graph and can hide cycles or
+// undercount coupling. Counts + sample sites only — no risk verdict; the full
+// list is in `--format json`. Omitted when none were found.
+func writeDynamicImports(b *strings.Builder, dyn []diagnostic.DynamicImport) {
+	if len(dyn) == 0 {
+		return
+	}
+	total := 0
+	for _, d := range dyn {
+		total += d.Count
+	}
+	b.WriteString("\n## Dynamic / lazy imports (hidden-coupling risk)\n\n")
+	b.WriteString("Report-only. Dynamic/lazy imports are invisible to the static dependency\n")
+	b.WriteString("graph, so they can hide cycles and undercount coupling.\n\n")
+	fmt.Fprintf(b, "%d sites across %d modules (full list in `--format json`):\n\n", total, len(dyn))
+
+	ranked := make([]diagnostic.DynamicImport, len(dyn))
+	copy(ranked, dyn)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].Count != ranked[j].Count {
+			return ranked[i].Count > ranked[j].Count
+		}
+		return ranked[i].Module < ranked[j].Module
+	})
+	for i, d := range ranked {
+		if i == dynamicImportTopN {
+			fmt.Fprintf(b, "- ... +%d more modules (use `--format json`)\n", len(ranked)-dynamicImportTopN)
+			break
+		}
+		fmt.Fprintf(b, "- **%s**: %d (e.g. %s)\n", d.Module, d.Count, sampleSites(d.Sites))
+	}
+}
+
+// sampleSites renders up to dynamicImportSampleN sites as "file:line[kind]".
+func sampleSites(sites []diagnostic.DynamicImportSite) string {
+	parts := make([]string, 0, dynamicImportSampleN)
+	for i, s := range sites {
+		if i == dynamicImportSampleN {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s:%d[%s]", s.File, s.Line, s.Kind))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // writeGateFinding prints one gate or non-BC advisory finding as a Markdown list item.

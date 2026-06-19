@@ -204,11 +204,11 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 9: Dynamic/lazy import detection + flag-as-risk (detect only, no graph edges)
 
-- [ ] add `internal/extract/dynimports/` (mirror `internal/extract/runtime`): ast-grep pass for Python in-function `import`/`importlib`/`__import__` and TS `require()`/dynamic `import()`
-- [ ] emit a report-only `hidden_cycle_risk` / `dynamic_coupling` signal (count per module + sample sites); do **not** modify the dependency graph or existing metrics
-- [ ] surface it in markdown/JSON and feed it to the review bundle (Task 17)
-- [ ] write tests: Python lazy-import fixture and TS require() fixture produce the signal; static graph unchanged
-- [ ] run `make test` — must pass before next task
+- [x] add `internal/extract/dynimports/` (mirror `internal/extract/runtime`): detects Python non-top-level (in-function) `import`/`from`, `importlib.import_module`/`__import__`, and TS `require()`/dynamic `import()` — deterministic structural FS scan (no `sg` dependency, so byte-stable across environments; ceiling documented in package doc). Python in-function detection uses a def-indentation stack so class-body and module-top-level imports are not flagged
+- [x] emit a report-only signal (count per module + sample sites) → `diagnostic.DynamicImport`/`DynamicImportSite`; carried via `signal.RunSignals.DynamicImports`, rolled up per module in the engine (`buildDynamicImports`, module-map key or file dir fallback, sorted, sample capped at 5). Does **not** modify the dependency graph or any metric — proven by `TestRun_DynamicImports_StaticGraphUnchanged` (with-sites vs no-sites diagnostics byte-identical once the block is removed)
+- [x] surface it in markdown (`## Dynamic / lazy imports (hidden-coupling risk)`, report-only framing, top-10 modules + sample sites) and JSON (`dynamic_imports` field, automatic via struct tag); the field rides on the full `diagnostic.Diagnostic` bundle the review command (Task 17) consumes
+- [x] write tests: Python lazy-import + importlib fixtures and TS require()/dynamic-import fixtures produce the signal (top-level/static imports NOT flagged); static graph unchanged; per-module grouping + cap + determinism (engine); markdown render + absent-when-empty
+- [x] run `make test` — passes (race, full suite); `make lint` 0 issues; core-ring import + golden gates green. Smoke-tested on ccgram: 788 dynamic-import sites / 38 modules (the hidden-cycle driver from the baseline), JSON double-run byte-identical
 
 ### Task 10: Volatility + BC scorer fidelity to Vlad's balance rule
 

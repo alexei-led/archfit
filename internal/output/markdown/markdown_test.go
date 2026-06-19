@@ -134,6 +134,62 @@ func TestRenderer_Render_FileFacts(t *testing.T) {
 	}
 }
 
+func TestRenderer_Render_DynamicImports(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.DynamicImports = []diagnostic.DynamicImport{
+		{Module: "app.plugins", Count: 12, Sites: []diagnostic.DynamicImportSite{
+			{File: "app/plugins/loader.py", Line: 5, Kind: "lazy_import", Language: "python"},
+			{File: "app/plugins/loader.py", Line: 9, Kind: "importlib", Language: "python"},
+		}},
+		{Module: "web", Count: 1, Sites: []diagnostic.DynamicImportSite{
+			{File: "web/boot.ts", Line: 3, Kind: "require", Language: "typescript"},
+		}},
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "## Dynamic / lazy imports") {
+		t.Fatalf("missing dynamic imports section\nfull output:\n%s", out)
+	}
+	// Header reports total sites across modules.
+	if !strings.Contains(out, "13 sites across 2 modules") {
+		t.Errorf("missing total/module count\nfull output:\n%s", out)
+	}
+	// Modules ranked by count, with a sample site shown.
+	for _, want := range []string{
+		"**app.plugins**: 12 (e.g. app/plugins/loader.py:5[lazy_import]",
+		"**web**: 1 (e.g. web/boot.ts:3[require])",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+	// Report-only framing: must not present these as gate violations.
+	if strings.Contains(out, "BC-UNBALANCED") {
+		t.Errorf("dynamic imports must not render as BC advisories\nfull output:\n%s", out)
+	}
+}
+
+func TestRenderer_Render_DynamicImportsAbsentWhenEmpty(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if strings.Contains(buf.String(), "Dynamic / lazy imports") {
+		t.Errorf("dynamic imports section should be omitted when empty\nfull output:\n%s", buf.String())
+	}
+}
+
 func TestRenderer_Render_GateFindings(t *testing.T) {
 	r := markdown.New()
 	d := diagnostic.New()

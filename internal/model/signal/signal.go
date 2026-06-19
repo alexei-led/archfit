@@ -73,6 +73,18 @@ type RunSignals struct {
 	// (loc, complexity, clones, gitnexus) rather than through the engine extractor
 	// loop. The engine appends these to the diagnostic ToolCoverage slice.
 	ExtraCoverage []diagnostic.Coverage
+	// DynamicImports carries the report-only dynamic/lazy-import sites detected by
+	// the dynimports adapter. Like ExtraCoverage, the engine reads it straight into
+	// the diagnostic (rolled up per module) — no metric ever sees it, and it never
+	// touches the dependency graph or the verdict.
+	DynamicImports DynamicImportSignals
+}
+
+// DynamicImportSignals carries the dynamic/lazy-import sites detected by the
+// dynimports adapter. Empty when none were found. Report-only — never reaches a
+// metric or the dependency graph.
+type DynamicImportSignals struct {
+	Sites []diagnostic.DynamicImportSite
 }
 
 // ---------------------------------------------------------------------------
