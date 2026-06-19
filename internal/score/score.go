@@ -275,7 +275,9 @@ func dependencyGraphHealth(mi metricIndex, base Confidence) Dimension {
 	}
 	if pc, ok := mi.measured("propagation_cost"); ok {
 		dim.Evidence = append(dim.Evidence, fmt.Sprintf("propagation cost: %.2f", pc.Value))
-		value -= int(math.Round(pc.Value * 25))
+		// propagation_cost is a [0,1] density; cap the penalty at 25 like the
+		// sibling penalties so a stray out-of-range value can't dominate.
+		value -= capInt(int(math.Round(pc.Value*25)), 25)
 	}
 
 	if !measured {

@@ -37,9 +37,13 @@ func (c *ReviewCmd) Run(deps *appDeps) error {
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
+	// Config-quality lint → stderr, same as check/score: review narrates over the
+	// same evidence, so under-specified modules degrade what it can say.
+	printConfigLint(os.Stderr, cfg.Lint())
+
 	llmCfg, configured := cfg.LLM()
 	if !configured {
-		return &exitError{code: 3, msg: "error: review --llm needs tools.llm configured (provider + model); see docs/guide/llm-enrich.md"}
+		return &exitError{code: 3, msg: "error: archfit review needs tools.llm configured (provider + model); see docs/guide/llm-enrich.md"}
 	}
 
 	configDir := filepath.Dir(c.Config)
@@ -227,8 +231,8 @@ func postVerify(rev reviewResponse, diag diagnostic.Diagnostic) reviewResponse {
 			}
 		}
 		if len(r.Modules) > 0 && len(validMods) == 0 {
-			// All modules were invalid — drop the whole risk entry.
-			dropped++
+			// All modules were invalid — drop the whole risk entry. Its modules
+			// were already counted as dropped above; don't double-count the risk.
 			continue
 		}
 		sort.Strings(validMods)

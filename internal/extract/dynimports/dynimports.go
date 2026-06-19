@@ -128,7 +128,8 @@ func scanPython(root, path string) []diagnostic.DynamicImportSite {
 
 // scanTS flags require(...) and dynamic import(...) calls. Static `import ... from`
 // / `export` statements never match (both regexes require a `(` after the
-// keyword). Obvious comment lines are skipped to cut false positives.
+// keyword). Comment lines — including multi-line `/* ... */` blocks — are skipped
+// so a commented-out require()/import() does not inflate the count.
 func scanTS(root, path string) []diagnostic.DynamicImportSite {
 	data, err := os.ReadFile(path) //nolint:gosec // path from Walk under repo root
 	if err != nil {
@@ -136,10 +137,25 @@ func scanTS(root, path string) []diagnostic.DynamicImportSite {
 	}
 	rel := relPath(root, path)
 	var sites []diagnostic.DynamicImportSite
+	inBlock := false
 	for i, raw := range strings.Split(string(data), "\n") {
 		trimmed := strings.TrimSpace(raw)
-		if trimmed == "" || strings.HasPrefix(trimmed, "//") ||
-			strings.HasPrefix(trimmed, "*") || strings.HasPrefix(trimmed, "/*") {
+		if inBlock {
+			// Still inside a /* ... */ block: it ends on the line with the */.
+			if strings.Contains(trimmed, "*/") {
+				inBlock = false
+			}
+			continue
+		}
+		if trimmed == "" || strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "*") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "/*") {
+			// A block comment opens here; skip its body unless it also closes on
+			// this same line (single-line /* ... */).
+			if !strings.Contains(trimmed[len("/*"):], "*/") {
+				inBlock = true
+			}
 			continue
 		}
 		if tsRequire.MatchString(trimmed) {

@@ -21,9 +21,6 @@ import "math"
 //
 // Intrusive floor: intrusive strength always scores at least 3 (band low),
 // regardless of V — reconciles BC's "intrusive always fragile" with the gate.
-//
-// Structural-penalty hooks are reserved for future task integration (+cycle,
-// +unstable-dep, +change-coupling≥65%); currently zero.
 type MultiplicativeScorer struct{}
 
 // Frozen normalisation constants — Balanced Coupling (Khononov) §4.1 / BC-pure formula.
@@ -85,9 +82,6 @@ func (MultiplicativeScorer) Score(c Classification) EdgeScore {
 	rEdge := rMod * vNorm
 	raw := int(math.Round(10.0 * rEdge))
 	raw = clamp(raw, 0, 10)
-
-	// Structural penalties (placeholder hooks; zero until Tasks 9-11 wire them in).
-	// raw += structuralPenalty(c)
 
 	// Intrusive floor: intrusive strength always triggers at least band low.
 	if c.Strength == StrengthIntrusive && raw < intrusiveFloor {

@@ -120,9 +120,15 @@ func TestRun_UnknownFlag_NotSilent(t *testing.T) {
 func TestRun_Doctor(t *testing.T) {
 	var buf bytes.Buffer
 	code := Run([]string{"doctor"}, &buf)
-	// Just verify it doesn't panic/crash (exit code may vary based on available tools)
-	t.Logf("doctor exit %d output: %q", code, buf.String())
-	_ = code
+	// Exit code varies with which tools are installed, but doctor always renders
+	// a report and never crashes (a panic would surface as a non-0/1 code via the
+	// recover in Run, or a t-level failure).
+	if code != 0 && code != 1 {
+		t.Errorf("doctor exit = %d, want 0 (all present) or 1 (some missing)", code)
+	}
+	if strings.TrimSpace(buf.String()) == "" {
+		t.Errorf("doctor produced no output; want a tool report")
+	}
 }
 
 func TestRun_Help_ShowsScan(t *testing.T) {

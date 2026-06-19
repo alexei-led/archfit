@@ -22,8 +22,11 @@ func writeFile(t *testing.T, root, rel, content string) {
 	}
 }
 
-// langPy is the python language tag, factored out to satisfy goconst.
-const langPy = "python"
+// langPy / langTS are the language tags, factored out to satisfy goconst.
+const (
+	langPy = "python"
+	langTS = "typescript"
+)
 
 func TestDetect_Python(t *testing.T) {
 	const pyFile = "pkg/mod.py"
@@ -73,11 +76,34 @@ async function load() {
 	sites := dynimports.Detect(root)
 
 	want := []diagnostic.DynamicImportSite{
-		{File: "src/a.ts", Line: 3, Kind: "require", Language: "typescript"},
-		{File: "src/a.ts", Line: 5, Kind: "dynamic_import", Language: "typescript"},
+		{File: "src/a.ts", Line: 3, Kind: "require", Language: langTS},
+		{File: "src/a.ts", Line: 5, Kind: "dynamic_import", Language: langTS},
 	}
 	if !reflect.DeepEqual(sites, want) {
 		t.Errorf("ts sites mismatch:\n got = %#v\nwant = %#v", sites, want)
+	}
+}
+
+func TestDetect_TypeScriptBlockComment(t *testing.T) {
+	root := t.TempDir()
+	// A require() inside a multi-line /* ... */ block must NOT be flagged; the
+	// real require() after the block must be. A single-line /* ... */ is skipped too.
+	writeFile(t, root, "src/b.ts", `/*
+ legacy loader, kept for reference:
+ const old = require("./old");
+ await import("./old-lazy");
+*/
+/* const inline = require("./inline"); */
+const m = require("./real");
+`)
+
+	sites := dynimports.Detect(root)
+
+	want := []diagnostic.DynamicImportSite{
+		{File: "src/b.ts", Line: 7, Kind: "require", Language: langTS},
+	}
+	if !reflect.DeepEqual(sites, want) {
+		t.Errorf("block-comment sites mismatch:\n got = %#v\nwant = %#v", sites, want)
 	}
 }
 
