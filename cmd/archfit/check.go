@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
@@ -14,6 +15,7 @@ import (
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
 	"github.com/alexei-led/archfit/internal/output/sarif"
+	"github.com/alexei-led/archfit/internal/output/scorecard"
 )
 
 // CheckCmd runs the full archfit analysis pipeline.
@@ -21,7 +23,7 @@ type CheckCmd struct {
 	Config   string   `short:"c" help:"Path to config file (optional; built-in defaults used if absent)." default:".archfit.yaml"`
 	Base     string   `help:"Git ref to compare against for incremental mode (e.g. main, HEAD~1)."`
 	Full     bool     `help:"Scan all files, not just files changed since --base."`
-	Format   []string `help:"Output format: text (human-readable), json, markdown, md, sarif. Repeatable." enum:"json,text,markdown,md,sarif" default:"text"`
+	Format   []string `help:"Output format: text (human-readable), json, markdown, md, sarif, scorecard. Repeatable." enum:"json,text,markdown,md,sarif,scorecard" default:"text"`
 	Advisory bool     `help:"Include informational findings (coupling advisories) in output."`
 	Report   bool     `help:"Never exit with a failure code, even when violations are found."`
 	NoConfig bool     `name:"no-config" help:"Skip config file entirely; use built-in defaults. Combine with --lang and --severity to run without any config file."`
@@ -51,10 +53,19 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
+	// The scorecard's coupling_balance dimension reads the Balanced-Coupling
+	// advisory edges; force advisory on when that format is requested so the BC
+	// edges reach the synthesis (advisory is additive — other formats are
+	// unaffected except for the extra advisory findings they already opt into).
+	advisory := c.Advisory
+	if slices.Contains(c.Format, "scorecard") {
+		advisory = true
+	}
+
 	mode := engine.Mode{
 		Base:       c.Base,
 		Full:       c.Full,
-		Advisory:   c.Advisory,
+		Advisory:   advisory,
 		ReportOnly: c.Report,
 		Formats:    c.Format,
 	}
@@ -75,6 +86,8 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 			renderErr = markdown.New().Render(diag, deps.Stdout)
 		case "sarif":
 			renderErr = sarif.New().Render(diag, deps.Stdout)
+		case "scorecard":
+			renderErr = scorecard.New().Render(diag, deps.Stdout)
 		}
 		if renderErr != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, renderErr)}

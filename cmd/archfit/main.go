@@ -32,6 +32,7 @@ type cli struct {
 	Check     CheckCmd     `cmd:"" help:"Check architecture constraints."`
 	Enrich    EnrichCmd    `cmd:"" help:"Draft LLM coupling-label refinements for human review (off-gate)."`
 	Scan      ScanCmd      `cmd:"" help:"Full architecture audit report (scan ≡ check --full --advisory --report --format markdown)."`
+	Score     ScoreCmd     `cmd:"" help:"Seven-dimension banded scorecard (score ≡ check --advisory --report --format scorecard)."`
 	Baseline  BaselineCmd  `cmd:"" help:"Save current findings as baseline."`
 	Explain   ExplainCmd   `cmd:"" help:"Explain a specific finding."`
 	Doctor    DoctorCmd    `cmd:"" help:"Check toolchain availability."`

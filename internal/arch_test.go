@@ -30,6 +30,9 @@ var coreRingPkgs = []string{
 	modulePrefix + "internal/status",
 	modulePrefix + "internal/staleness",
 	modulePrefix + "internal/facts",
+	// score synthesises the banded scorecard from an already-computed
+	// Diagnostic — a pure decision over collected facts, no tools or I/O.
+	modulePrefix + "internal/score",
 	// scope is a value type + resolution logic over an injected Resolver;
 	// the concrete git/toolrun wiring lives in cmd. Keep it that way.
 	modulePrefix + "internal/scope",
@@ -47,6 +50,7 @@ var coreRingPrefixes = []string{
 	modulePrefix + "internal/status",
 	modulePrefix + "internal/staleness",
 	modulePrefix + "internal/facts",
+	modulePrefix + "internal/score",
 	modulePrefix + "internal/scope",
 }
 
