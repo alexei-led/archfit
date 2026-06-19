@@ -56,6 +56,19 @@ func TestCodeStructureDistance(t *testing.T) {
 		// Plan examples: siblings closer than distant trees.
 		{name: "plan: metrics siblings are closer", from: "metrics/boundary", to: "metrics/modularity", want: coupling.DistanceCrossModuleSameOwner},
 		{name: "plan: cmd vs extract is farther", from: modCmdArchfit, to: "extract/py", want: coupling.DistanceCrossModuleDiffOwner},
+
+		// Dotted Python module names: split on "." so dotted siblings are not all
+		// collapsed to single segments (the bug that drove the BC advisory flood).
+		{name: "py dotted siblings", from: "pkg.foo", to: "pkg.bar", want: coupling.DistanceCrossModuleSameOwner},
+		{name: "py dotted deep siblings", from: "pkg.metrics.boundary", to: "pkg.metrics.modularity", want: coupling.DistanceCrossModuleSameOwner},
+		{name: "py dotted parent-child", from: "pkg.metrics", to: "pkg.metrics.boundary", want: coupling.DistanceCrossModuleSameOwner},
+		{name: "py dotted distant trees", from: "pkg.api.routes", to: "pkg.store.db", want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "py dotted distant deep trees", from: "a.b.c.d", to: "a.x.y.z", want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "py flat single names unchanged", from: "core", to: "api", want: coupling.DistanceCrossModuleDiffOwner},
+
+		// Slash paths with a dotted filename keep their slash-split shape (slash
+		// wins over dot): two files in one dir stay siblings, not split on ".ts".
+		{name: "ts dotted filenames stay siblings", from: "src/utils.ts", to: "src/helpers.ts", want: coupling.DistanceCrossModuleSameOwner},
 	}
 
 	for _, tc := range tests {

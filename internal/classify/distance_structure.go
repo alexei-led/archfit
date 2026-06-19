@@ -9,8 +9,17 @@ import (
 )
 
 // codeStructureDistance returns the structural distance between two module names
-// based on their position in the package/directory tree. Module names are
-// slash-separated path strings (e.g. "internal/metrics/boundary").
+// based on their position in the package/directory tree. This is the code-proximity
+// dimension of Vlad Khononov's socio-technical distance — "how many boundaries a
+// change must cross" in the source tree, before ownership/deploy signals refine it
+// in classifyDistance.
+//
+// Module names are hierarchical: slash-separated for Go/TS path modules
+// (e.g. "internal/metrics/boundary") and dot-separated for Python modules
+// (e.g. "pkg.metrics.boundary"). moduleSegments splits each name on whichever
+// separator it uses, so dotted siblings are compared structurally instead of
+// collapsing to single segments (which forced every Python edge to DiffOwner and
+// drove the advisory flood).
 //
 // Distance mapping (capped at cross_module_diff_owner — cross_deploy_unit is
 // reserved for the deploy-unit signal in deployDistance):
@@ -30,8 +39,8 @@ func codeStructureDistance(fromMod, toMod string) coupling.Distance {
 		return coupling.DistanceUnknown
 	}
 
-	fromParts := strings.Split(fromMod, "/")
-	toParts := strings.Split(toMod, "/")
+	fromParts := moduleSegments(fromMod)
+	toParts := moduleSegments(toMod)
 
 	if len(fromParts) == 1 && len(toParts) == 1 {
 		return coupling.DistanceCrossModuleDiffOwner
@@ -55,6 +64,19 @@ func codeStructureDistance(fromMod, toMod string) coupling.Distance {
 		return coupling.DistanceCrossModuleSameOwner
 	}
 	return coupling.DistanceCrossModuleDiffOwner
+}
+
+// moduleSegments splits a hierarchical module name into its path segments. Go/TS
+// modules are slash-separated ("internal/metrics/boundary"); Python modules are
+// dot-separated ("pkg.metrics.boundary"). A name is split on whichever separator
+// it contains: slash wins when present (so slash paths with dotted filenames such
+// as "src/utils.ts" keep their pre-existing two-segment shape), otherwise the
+// name is treated as dotted. A flat name with neither separator is one segment.
+func moduleSegments(mod string) []string {
+	if strings.Contains(mod, "/") {
+		return strings.Split(mod, "/")
+	}
+	return strings.Split(mod, ".")
 }
 
 // ownershipDistance returns the distance contribution from module ownership.

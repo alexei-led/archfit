@@ -166,10 +166,10 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 4: Distance for dotted/flat module names
 
-- [ ] in `internal/classify/distance_structure.go:28-45`, treat dotted names (`a.b.c`) structurally (split on `.` as well as `/`) so dotted siblings are not all collapsed to `DiffOwner`
-- [ ] preserve the v0.3.0 explicit-owner precedence chain (`classify.go:275-312`); keep the chain framed as Vlad's **socio-technical distance** (code proximity → ownership/team → deploy/lifecycle), not bare tree distance
-- [ ] write table tests: dotted siblings → SameOwner; distant dotted trees → DiffOwner; flat single names unchanged
-- [ ] run `make test` — must pass before next task
+- [x] in `internal/classify/distance_structure.go:28-45`, treat dotted names (`a.b.c`) structurally (split on `.` as well as `/`) so dotted siblings are not all collapsed to `DiffOwner` — new `moduleSegments` splits on `/` when present, else `.` (slash wins, so dotted filenames like `src/utils.ts` keep their slash shape)
+- [x] preserve the v0.3.0 explicit-owner precedence chain (`classify.go:275-312`); keep the chain framed as Vlad's **socio-technical distance** (code proximity → ownership/team → deploy/lifecycle), not bare tree distance — change is confined to the step-4 code-structure fallback; doc comment now frames it as the code-proximity dimension of Vlad's socio-technical distance
+- [x] write table tests: dotted siblings → SameOwner; distant dotted trees → DiffOwner; flat single names unchanged
+- [x] run `make test` — must pass before next task (passes; `make lint` 0 issues)
 
 ### Task 5: Dedup/aggregate BC advisories into grouped rollups
 
