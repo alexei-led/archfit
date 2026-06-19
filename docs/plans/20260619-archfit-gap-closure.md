@@ -253,9 +253,9 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 16: Gate noisy low-confidence metric displays
 
-- [ ] in the markdown renderer, footnote (not headline) abstractness/martin when confidence is low; keep full data in JSON
-- [ ] write tests asserting low-confidence metrics are demoted in human output but retained in JSON
-- [ ] run `make test` — must pass before next task
+- [x] in the markdown renderer, footnote (not headline) abstractness/martin when confidence is low; keep full data in JSON — new `lowConfidenceFootnote` set (`abstractness`, `martin_distance`) in `writeBeyondBCMetrics`: a proxy metric with `confidence == low` is partitioned out of the headline bullet list into a `writeLowConfidenceFootnote` blockquote (`> Low-confidence proxies (footnote — full values in --format json)`) flagging it as not authoritative (proxy-derived without SCIP type kinds). Other beyond-BC metrics — and high-confidence proxies — keep the headline bullet. Markdown-only change; the Diagnostic struct is untouched, so the JSON renderer (`jsonout`) still marshals every metric in full. Partition preserves the already-deterministic input order
+- [x] write tests asserting low-confidence metrics are demoted in human output but retained in JSON — `TestRenderer_Render_LowConfidenceFootnote` (low-conf abstractness+martin_distance → not headline bullets, present in footnote with `(low confidence)`; blast_radius at low confidence stays a headline bullet; JSON renderer still contains both proxy names + `"confidence":"low"`), `TestRenderer_Render_ProxyHeadlineWhenHighConfidence` (high-confidence proxy stays headline, no footnote emitted)
+- [x] run `make test` — passes (race, full suite); `make lint` 0 issues; core-ring import (`TestArchImports`) + golden (`TestGolden`) gates green
 
 ### Task 17: Holistic off-gate `archfit review --llm`
 

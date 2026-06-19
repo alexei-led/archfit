@@ -8,6 +8,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
 )
 
@@ -23,10 +24,14 @@ const (
 	metricArchFitness          = "architecture_fitness"
 	metricFunctionalCandidates = "functional_candidates"
 	metricCycle                = "cycle"
+	metricBlastRadius          = "blast_radius"
+	metricAbstractness         = "abstractness"
+	metricMartinDistance       = "martin_distance"
 
 	// Band / confidence / status literals used in multiple tests.
 	bandInfo       = "info"
 	bandNA         = "n/a"
+	bandGood       = "good"
 	confidenceHigh = "high"
 	confidenceLow  = "low"
 	statusAbsent   = "absent"
@@ -351,7 +356,7 @@ func TestRenderer_Render_MetricsSection(t *testing.T) {
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
 	d.Metrics = []diagnostic.MetricResult{
-		{Name: "coupling_ratio", Display: "0.42", Band: "good", Confidence: confidenceHigh},
+		{Name: "coupling_ratio", Display: "0.42", Band: bandGood, Confidence: confidenceHigh},
 	}
 
 	var buf bytes.Buffer
@@ -750,9 +755,9 @@ func TestRenderer_Render_BeyondBCMetrics(t *testing.T) {
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
 	d.Metrics = []diagnostic.MetricResult{
-		{Name: "encapsulation", Display: "0.85", Band: "good", Confidence: confidenceHigh},
+		{Name: "encapsulation", Display: "0.85", Band: bandGood, Confidence: confidenceHigh},
 		{Name: "cycle", Display: "0", Band: "none", Confidence: confidenceHigh},
-		{Name: "blast_radius", Display: "0.12", Band: "low", Confidence: confidenceHigh},
+		{Name: metricBlastRadius, Display: "0.12", Band: "low", Confidence: confidenceHigh},
 		{Name: "risk_hub", Display: bandNA, Band: bandNA, Confidence: confidenceLow},
 		{Name: "complexity", Display: bandNA, Band: bandNA, Confidence: confidenceLow},
 	}
@@ -775,10 +780,90 @@ func TestRenderer_Render_BeyondBCMetrics(t *testing.T) {
 	if !strings.Contains(out, secBeyondBC) {
 		t.Errorf("output missing %q section\nfull output:\n%s", secBeyondBC, out)
 	}
-	for _, name := range []string{"cycle", "blast_radius", "risk_hub", "complexity"} {
+	for _, name := range []string{"cycle", metricBlastRadius, "risk_hub", "complexity"} {
 		if !strings.Contains(out, name) {
 			t.Errorf("beyond-BC metric %q missing from output\nfull output:\n%s", name, out)
 		}
+	}
+}
+
+// TestRenderer_Render_LowConfidenceFootnote verifies that proxy metrics
+// (abstractness, martin_distance) are demoted from the headline beyond-BC list to
+// a footnote when their confidence is low — while still being present in the
+// markdown footnote and retained in full by the JSON renderer.
+func TestRenderer_Render_LowConfidenceFootnote(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.Metrics = []diagnostic.MetricResult{
+		// Demoted: proxy metrics with low confidence.
+		{Name: metricAbstractness, Display: "0.62", Band: "warn", Confidence: confidenceLow},
+		{Name: metricMartinDistance, Display: "0.55", Band: "warn", Confidence: confidenceLow},
+		// Not demoted: a beyond-BC metric not in the footnote set, even at low confidence.
+		{Name: metricBlastRadius, Display: "0.12", Band: "low", Confidence: confidenceLow},
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	// Proxy metrics must NOT appear as headline bullets ("- **name**: ...").
+	for _, name := range []string{metricAbstractness, metricMartinDistance} {
+		if strings.Contains(out, "- **"+name+"**") {
+			t.Errorf("%q should be footnoted, not a headline bullet\nfull output:\n%s", name, out)
+		}
+	}
+	// They must appear in the footnote block, flagged low confidence.
+	for _, want := range []string{
+		"Low-confidence proxies (footnote",
+		"> - abstractness: 0.62 — warn (low confidence)",
+		"> - martin_distance: 0.55 — warn (low confidence)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("footnote missing %q\nfull output:\n%s", want, out)
+		}
+	}
+	// A beyond-BC metric outside the footnote set stays a headline bullet.
+	if !strings.Contains(out, "- **blast_radius**") {
+		t.Errorf("blast_radius should remain a headline bullet\nfull output:\n%s", out)
+	}
+
+	// JSON renderer retains every metric in full, including the demoted proxies.
+	var jbuf bytes.Buffer
+	if err := jsonout.New().Render(d, &jbuf); err != nil {
+		t.Fatalf("json Render() error = %v", err)
+	}
+	jout := jbuf.String()
+	for _, want := range []string{`"name":"abstractness"`, `"name":"martin_distance"`, `"confidence":"low"`} {
+		if !strings.Contains(jout, want) {
+			t.Errorf("JSON output missing %q\nfull output:\n%s", want, jout)
+		}
+	}
+}
+
+// TestRenderer_Render_ProxyHeadlineWhenHighConfidence verifies a proxy metric is
+// NOT footnoted when its confidence is high — only low-confidence proxies demote.
+func TestRenderer_Render_ProxyHeadlineWhenHighConfidence(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.Metrics = []diagnostic.MetricResult{
+		{Name: metricAbstractness, Display: "0.30", Band: bandGood, Confidence: confidenceHigh},
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "- **abstractness**: 0.30 — good") {
+		t.Errorf("high-confidence proxy should stay a headline bullet\nfull output:\n%s", out)
+	}
+	if strings.Contains(out, "Low-confidence proxies (footnote") {
+		t.Errorf("no footnote expected when all proxies are high confidence\nfull output:\n%s", out)
 	}
 }
 

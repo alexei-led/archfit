@@ -19,6 +19,18 @@ import (
 // confidenceHigh is the confidence value that needs no qualification in output.
 const confidenceHigh = "high"
 
+// confidenceLow is the confidence value that demotes a proxy metric to a footnote.
+const confidenceLow = "low"
+
+// lowConfidenceFootnote lists beyond-BC metrics that are proxy-derived (no SCIP
+// type kinds) and, when their confidence is low, are demoted from the headline
+// list to a footnote so they do not read as authoritative. Full values always
+// remain in `--format json`; only the human headline is decluttered.
+var lowConfidenceFootnote = map[string]bool{
+	"abstractness":    true,
+	"martin_distance": true,
+}
+
 // beyondBCMetrics is the set of metric names that belong in the
 // "Supporting structural metrics (beyond Balanced Coupling)" section.
 // These are report-only and never gate. Everything else appears in the
@@ -257,12 +269,38 @@ func rollupCount(f finding.Finding) int {
 func writeBeyondBCMetrics(b *strings.Builder, metrics []diagnostic.MetricResult) {
 	b.WriteString("\n## Supporting structural metrics (beyond Balanced Coupling)\n\n")
 	b.WriteString("Report-only. These metrics support Balanced Coupling reasoning but never gate.\n\n")
+
+	// Proxy metrics (abstractness/martin_distance) with low confidence are demoted
+	// to a footnote so the headline list is not read as authoritative; full values
+	// stay in JSON. Input order is already deterministic, so each partition keeps it.
+	var footnoted []diagnostic.MetricResult
 	for _, m := range metrics {
+		if lowConfidenceFootnote[m.Name] && m.Confidence == confidenceLow {
+			footnoted = append(footnoted, m)
+			continue
+		}
 		band := m.Band
 		if m.Confidence != "" && m.Confidence != confidenceHigh {
 			band = fmt.Sprintf("%s (%s confidence)", band, m.Confidence)
 		}
 		fmt.Fprintf(b, "- **%s**: %s — %s\n", m.Name, m.Display, band)
+	}
+
+	writeLowConfidenceFootnote(b, footnoted)
+}
+
+// writeLowConfidenceFootnote renders proxy-derived, low-confidence beyond-BC metrics
+// as a footnote rather than a headline bullet: they stay visible (and fully in JSON)
+// but are flagged as not authoritative so a reader does not treat a proxy as a
+// headline finding. No-op when nothing was demoted.
+func writeLowConfidenceFootnote(b *strings.Builder, metrics []diagnostic.MetricResult) {
+	if len(metrics) == 0 {
+		return
+	}
+	b.WriteString("\n> Low-confidence proxies (footnote — full values in `--format json`).\n")
+	b.WriteString("> Derived without SCIP type kinds; do not read as authoritative.\n")
+	for _, m := range metrics {
+		fmt.Fprintf(b, "> - %s: %s — %s (low confidence)\n", m.Name, m.Display, m.Band)
 	}
 }
 
