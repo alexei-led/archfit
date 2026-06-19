@@ -84,10 +84,11 @@ func additiveCheapestMove(c Classification, currentBand Severity) string {
 	}
 
 	// Try increasing volatility discount (i.e. lower volatility = more stable).
+	// An undeclared target is surfaced as "declare_volatility" instead.
 	if next, ok := lowerVolatility(c.Volatility); ok {
 		mod := c
 		mod.Volatility = next
-		tryMove("lower_volatility", mod)
+		tryMove(volatilityMoveLabel(c.Volatility), mod)
 	}
 
 	return best.label
@@ -126,13 +127,16 @@ func lowerDistance(d Distance) (Distance, bool) {
 }
 
 // lowerVolatility returns the next-lower Volatility (higher discount = more stable target).
+// Undeclared and Unknown both map to Low: declaring (or resolving) a stable target
+// is the change that drops the score — the move's label distinguishes the two
+// (see volatilityMoveLabel), the modelled target does not.
 func lowerVolatility(v Volatility) (Volatility, bool) {
 	switch v {
 	case VolatilityHigh:
 		return VolatilityMedium, true
 	case VolatilityMedium:
 		return VolatilityLow, true
-	case VolatilityUnknown:
+	case VolatilityUndeclared, VolatilityUnknown:
 		return VolatilityLow, true
 	default:
 		return v, false

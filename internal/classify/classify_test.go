@@ -171,7 +171,7 @@ func TestRun(t *testing.T) {
 			edge:     importEdge("services/a/impl.go", "services/d/api/types.go"),
 			wantStr:  coupling.StrengthContract,
 			wantDist: coupling.DistanceCrossModuleSameOwner, // both owner=team-x
-			wantVol:  coupling.VolatilityUnknown,            // d.subdomain = ""
+			wantVol:  coupling.VolatilityUndeclared,         // d resolves but d.subdomain = ""
 			wantExp:  coupling.ExplicitnessExplicit,
 		},
 		{
@@ -183,11 +183,11 @@ func TestRun(t *testing.T) {
 			wantExp:  coupling.ExplicitnessExplicit,
 		},
 		{
-			name:     "unknown subdomain — volatility unknown",
+			name:     "undeclared subdomain — module resolves but no subdomain/volatility",
 			edge:     importEdge("services/a/impl.go", "services/d/internal/impl.go"),
 			wantStr:  coupling.StrengthUnknown, // d has no internal globs defined
 			wantDist: coupling.DistanceCrossModuleSameOwner,
-			wantVol:  coupling.VolatilityUnknown,
+			wantVol:  coupling.VolatilityUndeclared, // d resolves; no subdomain/volatility/path match
 			wantExp:  coupling.ExplicitnessUnknown,
 		},
 		{
@@ -769,11 +769,12 @@ func TestRun_DegenerateOwnerSuppression(t *testing.T) {
 	})
 }
 
-// TestRun_VolatilityUnknownWithoutConfig verifies classify.Run produces
-// VolatilityUnknown for a module with no explicit volatility or subdomain. The
-// gate never derives volatility from git churn — there is no churn path into
-// classification at all.
-func TestRun_VolatilityUnknownWithoutConfig(t *testing.T) {
+// TestRun_VolatilityUndeclaredWithoutConfig verifies classify.Run produces
+// VolatilityUndeclared (not Unknown) for a resolved module with no explicit
+// volatility or subdomain: the module is known, only its volatility is a config
+// gap. The gate never derives volatility from git churn — there is no churn path
+// into classification at all.
+func TestRun_VolatilityUndeclaredWithoutConfig(t *testing.T) {
 	cfg := config.Config{
 		Version: 1,
 		Modules: map[string]config.ModuleDef{
@@ -789,6 +790,33 @@ func TestRun_VolatilityUnknownWithoutConfig(t *testing.T) {
 	e := graph.Edge{
 		From:     "file:pkg/a/x.go",
 		To:       "file:pkg/b/y.go",
+		Kind:     graph.EdgeKindImports,
+		Language: "go",
+	}
+	g := makeGraph([]graph.Edge{e})
+	idx := classify.Run(g, classifyCfg)
+	cl := idx[edgeKey(e)]
+
+	if cl.Volatility != coupling.VolatilityUndeclared {
+		t.Errorf("Volatility = %q, want undeclared", cl.Volatility)
+	}
+}
+
+// TestRun_VolatilityUnknownWhenModuleUnresolved verifies that an edge whose
+// to-path matches no configured module yields VolatilityUnknown — genuinely
+// indeterminate, distinct from the undeclared config-gap case above.
+func TestRun_VolatilityUnknownWhenModuleUnresolved(t *testing.T) {
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"a": {Paths: []string{"pkg/a/**"}, Owner: ownerTeamX},
+		},
+	}
+	classifyCfg := cfg.ForClassify()
+
+	e := graph.Edge{
+		From:     "file:pkg/a/main.go",
+		To:       "file:external/pkg/foo.go", // matches no module
 		Kind:     graph.EdgeKindImports,
 		Language: "go",
 	}

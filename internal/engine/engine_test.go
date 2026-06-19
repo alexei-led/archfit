@@ -552,6 +552,12 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 	if got := adv.MatchedBy["score_band"]; got != wantBand {
 		t.Errorf("MatchedBy[score_band]=%q, want %q (band for value %d)", got, wantBand, value)
 	}
+
+	// score_version pins the BC score formula version so a deliberate ordinal/
+	// formula change is observable in output.
+	if got := adv.MatchedBy["score_version"]; got != coupling.ScoreVersion {
+		t.Errorf("MatchedBy[score_version]=%q, want %q", got, coupling.ScoreVersion)
+	}
 }
 
 // bcFloodFacts returns Facts with n distinct same-shape edges, all from module a

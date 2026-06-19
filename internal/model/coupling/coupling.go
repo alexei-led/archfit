@@ -28,15 +28,37 @@ const (
 )
 
 // Volatility classifies how likely a module's API is to change.
+// Per Khononov, volatility is derived from the DDD subdomain (core→high,
+// supporting→medium, generic→low) with an explicit per-module override.
 type Volatility string
 
 // Volatility constants derived from subdomain classification.
+//
+// Undeclared and Unknown are distinct on purpose:
+//   - Undeclared: the target module IS known, but the config omits both a
+//     volatility and a subdomain (and no path heuristic matched). This is a
+//     config gap the user can close — the advice is "declare subdomain/
+//     volatility", not "lower volatility".
+//   - Unknown: the target could not even be resolved to a module (no config
+//     module owns it), so volatility is genuinely indeterminate.
+//
+// Both are scored conservatively (treated as potentially volatile); they differ
+// only in the guidance surfaced to the user.
 const (
-	VolatilityHigh    Volatility = "high"
-	VolatilityMedium  Volatility = "medium"
-	VolatilityLow     Volatility = "low"
-	VolatilityUnknown Volatility = "unknown"
+	VolatilityHigh       Volatility = "high"
+	VolatilityMedium     Volatility = "medium"
+	VolatilityLow        Volatility = "low"
+	VolatilityUndeclared Volatility = "undeclared"
+	VolatilityUnknown    Volatility = "unknown"
 )
+
+// VolatilityResolved reports whether v is a concrete level the tool can act on
+// (high/medium/low), as opposed to undeclared (config gap) or unknown
+// (unresolvable). Callers that need "do we actually have a volatility?" should
+// use this rather than comparing against VolatilityUnknown alone.
+func VolatilityResolved(v Volatility) bool {
+	return v == VolatilityHigh || v == VolatilityMedium || v == VolatilityLow
+}
 
 // Explicitness classifies whether the coupling is via a declared contract.
 type Explicitness string
@@ -123,7 +145,7 @@ func distanceIsHigh(d Distance) bool {
 // Severity table (Balanced Coupling model, Khononov):
 //   - Intrusive: always surfaced, severity driven by distance/volatility.
 //   - high strength + high distance + high volatility → critical.
-//   - high strength + high distance + medium/unknown volatility → medium.
+//   - high strength + high distance + medium/undeclared/unknown volatility → medium.
 //   - high strength + high distance + low volatility → low (BC: stable target neutralizes).
 //   - low strength + low distance + high volatility → medium (over-decoupled volatile seam).
 //   - high strength + low distance → none (cohesive — XOR modular quadrant).

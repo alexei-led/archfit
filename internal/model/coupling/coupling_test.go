@@ -102,6 +102,28 @@ func TestBalanceResult(t *testing.T) {
 			},
 			expected: SeverityCritical,
 		},
+		{
+			// high+high+undeclared → medium: an undeclared (config-gap) volatility is
+			// treated conservatively, exactly like unknown — neither neutralizes nor
+			// escalates. Distinguished from VolatilityUnknown only in the guidance.
+			name: "high+high undeclared returns medium (conservative, like unknown)",
+			c: Classification{
+				Strength:   StrengthFunctional,
+				Distance:   DistanceCrossDeployUnit,
+				Volatility: VolatilityUndeclared,
+			},
+			expected: SeverityMedium,
+		},
+		{
+			// low+low+undeclared → none, same as low+low+unknown.
+			name: "low+low undeclared returns none",
+			c: Classification{
+				Strength:   StrengthContract,
+				Distance:   DistanceCrossModuleSameOwner,
+				Volatility: VolatilityUndeclared,
+			},
+			expected: SeverityNone,
+		},
 
 		// --- Intrusive escalation paths ---
 		{

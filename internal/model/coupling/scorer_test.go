@@ -393,6 +393,71 @@ func TestAsyncBridgeDistanceBump(t *testing.T) {
 	})
 }
 
+// TestVolatilityMoveLabel verifies the cheapest-move label distinguishes a
+// config gap (undeclared → "declare_volatility") from a declarable level
+// (→ "lower_volatility"). Both scorers route their volatility move through this
+// helper, so the label replacement (Task 10) holds for either.
+func TestVolatilityMoveLabel(t *testing.T) {
+	if got := volatilityMoveLabel(VolatilityUndeclared); got != moveDeclareVolatility {
+		t.Errorf("undeclared → %q, want %q", got, moveDeclareVolatility)
+	}
+	for _, v := range []Volatility{VolatilityHigh, VolatilityMedium, VolatilityLow, VolatilityUnknown} {
+		if got := volatilityMoveLabel(v); got != moveLowerVolatility {
+			t.Errorf("%s → %q, want %q", v, got, moveLowerVolatility)
+		}
+	}
+}
+
+// TestVolatilityUndeclaredScoresLikeUnknown asserts that an undeclared volatility
+// is scored identically to unknown by both scorers: undeclared changes the
+// guidance, never the number. This keeps already-classified output byte-stable.
+func TestVolatilityUndeclaredScoresLikeUnknown(t *testing.T) {
+	combos := []struct {
+		s Strength
+		d Distance
+	}{
+		{StrengthFunctional, DistanceCrossModuleDiffOwner},
+		{StrengthIntrusive, DistanceCrossDeployUnit},
+		{StrengthContract, DistanceCrossDeployUnit},
+		{StrengthModel, DistanceCrossModuleSameOwner},
+		{StrengthUnknown, DistanceUnknown},
+	}
+	for _, scorer := range []Scorer{AdditiveScorer{}, MultiplicativeScorer{}} {
+		for _, cc := range combos {
+			undeclared := scorer.Score(Classification{Strength: cc.s, Distance: cc.d, Volatility: VolatilityUndeclared})
+			unknown := scorer.Score(Classification{Strength: cc.s, Distance: cc.d, Volatility: VolatilityUnknown})
+			if undeclared.Value != unknown.Value || undeclared.Band != unknown.Band {
+				t.Errorf("%T %s/%s: undeclared=(%d,%s) unknown=(%d,%s) — must match",
+					scorer, cc.s, cc.d, undeclared.Value, undeclared.Band, unknown.Value, unknown.Band)
+			}
+		}
+	}
+}
+
+// TestMultiplicativeScorer_CheapestMove_DeclareVsLower verifies the cheapest-move
+// label flips with declaredness on the same structural edge: when volatility is
+// the band-dropping move, an undeclared target reads "declare_volatility" and a
+// declared (medium) target reads "lower_volatility".
+func TestMultiplicativeScorer_CheapestMove_DeclareVsLower(t *testing.T) {
+	s := MultiplicativeScorer{}
+	// functional(0.625) + cross_module_diff_owner(0.6): R_mod≈0.975, so declaring/
+	// lowering volatility to low (norm 0.2) drops two bands — the strict winner over
+	// the single-band strength/distance reductions.
+	base := Classification{Strength: StrengthFunctional, Distance: DistanceCrossModuleDiffOwner}
+
+	undeclared := base
+	undeclared.Volatility = VolatilityUndeclared
+	if got := s.Score(undeclared).CheapestMove; got != moveDeclareVolatility {
+		t.Errorf("undeclared edge cheapest move = %q, want %q", got, moveDeclareVolatility)
+	}
+
+	declared := base
+	declared.Volatility = VolatilityMedium
+	if got := s.Score(declared).CheapestMove; got != moveLowerVolatility {
+		t.Errorf("declared (medium) edge cheapest move = %q, want %q", got, moveLowerVolatility)
+	}
+}
+
 // TestDefaultScorer returns LegacyShim (not nil).
 func TestDefaultScorer(t *testing.T) {
 	s := DefaultScorer()

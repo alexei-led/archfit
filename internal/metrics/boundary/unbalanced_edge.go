@@ -87,8 +87,10 @@ func (m UnbalancedEdgeMetric) Calculate(in signal.CommonInput) diagnostic.Metric
 		}
 		// This edge is a candidate (intrusive + far). Whether it is *unbalanced*
 		// turns on volatility — track how many candidates we can actually assess.
+		// Both unknown (unresolvable) and undeclared (config gap) count as
+		// unassessable here.
 		candidates++
-		if cl.Volatility != coupling.VolatilityUnknown {
+		if coupling.VolatilityResolved(cl.Volatility) {
 			candidatesKnownVol++
 		}
 		if cl.Volatility != coupling.VolatilityHigh {

@@ -2,7 +2,13 @@ package coupling
 
 import "math"
 
-// MultiplicativeScorer implements the BC-pure (Khononov) continuous scoring formula.
+// MultiplicativeScorer implements archfit's numeric BC score: a deterministic
+// implementation of Vlad Khononov's qualitative maintenance-effort heuristic
+// (Effort ∝ Strength × Distance × Volatility), NOT a literal equation he
+// publishes — see ScoreDefinition. It encodes the balance rule: low volatility
+// neutralises (V_norm down-weights), and cohesion (high strength + low distance)
+// scores low because the continuous-XOR R_mod term is small when one dimension
+// is high and the other low.
 //
 // Formula:
 //
@@ -23,10 +29,11 @@ type MultiplicativeScorer struct{}
 // Frozen normalisation constants — Balanced Coupling (Khononov) §4.1 / BC-pure formula.
 // Changing any of these values is a BREAKING metric change; bump *.v2 instead.
 const (
-	volatilityNormLow     = 0.2
-	volatilityNormMedium  = 0.6
-	volatilityNormHigh    = 1.0
-	volatilityNormUnknown = 0.5
+	volatilityNormLow        = 0.2
+	volatilityNormMedium     = 0.6
+	volatilityNormHigh       = 1.0
+	volatilityNormUndeclared = 0.5
+	volatilityNormUnknown    = 0.5
 )
 
 // maxStrengthOrdinal is the normalisation denominator for strength (intrusive=8).
@@ -42,10 +49,11 @@ const intrusiveFloor = 3
 // (values frozen — see consts above).
 // Low volatility suppresses the coupling risk (stable target), high amplifies it.
 var volatilityNorm = map[Volatility]float64{
-	VolatilityLow:     volatilityNormLow,
-	VolatilityMedium:  volatilityNormMedium,
-	VolatilityHigh:    volatilityNormHigh,
-	VolatilityUnknown: volatilityNormUnknown,
+	VolatilityLow:        volatilityNormLow,
+	VolatilityMedium:     volatilityNormMedium,
+	VolatilityHigh:       volatilityNormHigh,
+	VolatilityUndeclared: volatilityNormUndeclared,
+	VolatilityUnknown:    volatilityNormUnknown,
 }
 
 // reasonMultiplicative labels EdgeScores produced by the multiplicative scorer.
@@ -134,7 +142,7 @@ func multiplicativeCheapestMove(c Classification, currentBand Severity) string {
 	if next, ok := lowerVolatility(c.Volatility); ok {
 		mod := c
 		mod.Volatility = next
-		tryMove("lower_volatility", mod)
+		tryMove(volatilityMoveLabel(c.Volatility), mod)
 	}
 
 	return bestLabel

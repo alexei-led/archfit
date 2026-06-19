@@ -365,6 +365,7 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 			matched["score"] = cl.Score.Reason
 			matched["score_value"] = strconv.Itoa(cl.Score.Value)
 			matched["score_band"] = string(cl.Score.Band)
+			matched["score_version"] = coupling.ScoreVersion
 		}
 		if cl.Score.CheapestMove != "" {
 			matched["cheapest_move"] = cl.Score.CheapestMove

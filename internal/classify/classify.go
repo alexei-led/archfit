@@ -313,12 +313,20 @@ func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[strin
 }
 
 // classifyVolatility derives domain volatility for the to-module using three
-// sources in priority order:
+// sources in priority order, per Khononov's volatility-from-subdomain mapping
+// (core→high, supporting→medium, generic→low) with an explicit per-module
+// override:
 //
-//  1. Explicit `volatility` field on the module definition (hand-authored).
+//  1. Explicit `volatility` field on the module definition (hand-authored override).
 //  2. Subdomain heuristic: core→high, supporting→medium, generic→low.
 //  3. Path-pattern heuristic (domainVolatilityFromPath) — deterministic,
-//     never guesses core/high, falls back to unknown.
+//     never guesses core/high.
+//
+// Resolution outcomes are deliberately three-valued:
+//   - to-module unresolved → VolatilityUnknown (genuinely indeterminate).
+//   - to-module resolved but no volatility/subdomain/path match → VolatilityUndeclared
+//     (a config gap the user can close; the scorer advises "declare", not "lower").
+//   - otherwise → high/medium/low.
 //
 // No churn or git history is consulted here. Implementation volatility (git
 // churn) feeds only report-only metrics (change_amplification, hidden_coupling).
@@ -354,7 +362,8 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 		return v
 	}
 
-	return coupling.VolatilityUnknown
+	// Module is known, but nothing declares its volatility — a closable config gap.
+	return coupling.VolatilityUndeclared
 }
 
 // isGenericSubdomain reports whether the to-module is classified as a generic
