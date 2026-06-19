@@ -133,6 +133,44 @@ func TestAbstractnessMetric_FromClassifications(t *testing.T) {
 	}
 }
 
+// TestMartin_ExternalNodesExcluded mirrors the codegraph blind spot: the TS
+// extractor emits an unresolved npm dependency ("commander") as an external node.
+// Such a node has I=0 and A=0, which would land it in martin_distance's "zone of
+// pain" if treated as first-party. It must be excluded from every first-party
+// coupling metric (instability, abstractness, martin_distance).
+func TestMartin_ExternalNodesExcluded(t *testing.T) {
+	const externalDep = "commander"
+
+	a := graph.Node{Kind: graph.NodeKindFile, Path: "src/a.ts"}
+	b := graph.Node{Kind: graph.NodeKindFile, Path: "src/b.ts"}
+	ext := graph.Node{Kind: graph.NodeKindExternal, Path: externalDep}
+	g := metricstest.BuildGraph([]graph.Node{a, b, ext}, []graph.Edge{
+		{From: a.ID(), To: b.ID(), Kind: graph.EdgeKindImports},
+		// A would-be-abstract contract edge into the external dep: it must still
+		// be ignored because the target is not first-party.
+		{From: a.ID(), To: ext.ID(), Kind: graph.EdgeKindImports, StrengthHint: string(coupling.StrengthContract)},
+	})
+
+	// The external dep must never appear as an instability key.
+	if _, ok := modularity.ComputeInstability(g)[externalDep]; ok {
+		t.Errorf("external dep %q leaked into the instability map", externalDep)
+	}
+
+	in := signal.CommonInput{Graph: g}
+	for _, m := range []struct {
+		name string
+		res  string
+	}{
+		{"instability", modularity.InstabilityMetric{}.Calculate(in).Display},
+		{"abstractness", modularity.AbstractnessMetric{}.Calculate(in).Display},
+		{"martin_distance", modularity.MartinDistanceMetric{}.Calculate(in).Display},
+	} {
+		if strings.Contains(m.res, externalDep) {
+			t.Errorf("%s display must not mention external dep %q; got %q", m.name, externalDep, m.res)
+		}
+	}
+}
+
 // TestUnstableDependency verifies the Designite-smell check.
 func TestUnstableDependency(t *testing.T) {
 	inst := map[string]float64{

@@ -1,0 +1,43 @@
+{
+  "modules": [
+    {
+      "source": "src/cli.ts",
+      "dependencies": [
+        {
+          "resolved": "src/commands/index.ts",
+          "module": "./commands",
+          "dependencyTypes": [
+            "es6"
+          ],
+          "dynamic": false,
+          "couldNotResolve": false,
+          "coreModule": false
+        },
+        {
+          "resolved": "commander",
+          "module": "commander",
+          "dependencyTypes": [
+            "npm-no-pkg"
+          ],
+          "dynamic": false,
+          "couldNotResolve": true,
+          "coreModule": false
+        },
+        {
+          "resolved": "fs",
+          "module": "fs",
+          "dependencyTypes": [
+            "core"
+          ],
+          "dynamic": false,
+          "couldNotResolve": false,
+          "coreModule": true
+        }
+      ]
+    },
+    {
+      "source": "src/commands/index.ts",
+      "dependencies": []
+    }
+  ]
+}

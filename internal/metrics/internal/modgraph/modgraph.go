@@ -10,6 +10,22 @@ import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
+// FirstPartyModules returns the set of module keys for the nodes archfit actually
+// parsed, excluding external nodes (NodeKindExternal: unresolved npm packages,
+// uninstalled third-party deps, node builtins an extractor could not tag as core).
+// External dependencies must never be treated as owned modules, or coupling
+// metrics (instability/abstractness/martin, blast radius) flag them as first-party.
+func FirstPartyModules(g *graph.Graph) map[string]struct{} {
+	fp := make(map[string]struct{})
+	for _, n := range g.Nodes() {
+		if n.Kind == graph.NodeKindExternal {
+			continue
+		}
+		fp[ModuleKey(n.ID())] = struct{}{}
+	}
+	return fp
+}
+
 // ModuleKey collapses a graph node id ("kind:path") to its package/module unit so
 // blast radius is computed at the granularity the metric reports: Go file nodes
 // collapse to their package directory; module/package/TS-file nodes pass through.
@@ -93,13 +109,12 @@ func OrderedPair(a, b string) [2]string {
 // inflate the count (Martin's metrics and blast radius assume a DAG). Returns the
 // per-module blast and the count of first-party modules.
 func BlastRadius(g *graph.Graph) (map[string]int, int) {
-	// First-party = the nodes archfit actually parsed (g.Nodes()). External
-	// dependencies appear only as edge targets, never as nodes, so this excludes
+	// First-party = the nodes archfit actually parsed (g.Nodes()), minus external
+	// nodes. Most external dependencies appear only as edge targets, never as
+	// nodes; the TS extractor additionally emits unresolved targets as explicit
+	// NodeKindExternal nodes, which FirstPartyModules filters out. This excludes
 	// stdlib/third-party packages without dropping pure-leaf internal modules.
-	firstParty := make(map[string]struct{})
-	for _, n := range g.Nodes() {
-		firstParty[ModuleKey(n.ID())] = struct{}{}
-	}
+	firstParty := FirstPartyModules(g)
 	// Collapsed module adjacency over first-party modules only.
 	adj := make(map[string]map[string]struct{})
 	for m := range firstParty {

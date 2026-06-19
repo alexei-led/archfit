@@ -159,10 +159,10 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 3: Exclude external/unresolved nodes from first-party metrics
 
-- [ ] in `internal/extract/ts/ts.go:205-225`, do not emit unresolved/`CouldNotResolve` non-core targets as first-party `file:` nodes (or mark them external)
-- [ ] in `internal/metrics/modularity/martin.go:20-65,354-362`, exclude external/unresolved modules from the `firstParty` set used by instability/abstractness/martin
-- [ ] write tests asserting node builtins / unresolved npm names (`fs`, `commander`) never appear in martin_distance / instability output
-- [ ] run `make test` — must pass before next task
+- [x] in `internal/extract/ts/ts.go:205-225`, do not emit unresolved/`CouldNotResolve` non-core targets as first-party `file:` nodes (or mark them external) — now emitted as `NodeKindExternal` nodes; edge kept (never `uses_internal`)
+- [x] in `internal/metrics/modularity/martin.go:20-65,354-362`, exclude external/unresolved modules from the `firstParty` set used by instability/abstractness/martin — via new shared `modgraph.FirstPartyModules` (also used by `BlastRadius`)
+- [x] write tests asserting node builtins / unresolved npm names (`fs`, `commander`) never appear in martin_distance / instability output — `TestExtract_ExternalNodes` (ts) + `TestMartin_ExternalNodesExcluded` (martin)
+- [x] run `make test` — must pass before next task
 
 ### Task 4: Distance for dotted/flat module names
 

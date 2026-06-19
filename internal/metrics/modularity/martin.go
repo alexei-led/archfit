@@ -19,10 +19,7 @@ import (
 // ca[m] = number of distinct first-party modules that import m.
 // ce[m] = number of distinct first-party modules that m imports.
 func computeAfferentEfferent(g *graph.Graph) (ca, ce map[string]int, firstParty map[string]struct{}) {
-	firstParty = make(map[string]struct{})
-	for _, n := range g.Nodes() {
-		firstParty[modgraph.ModuleKey(n.ID())] = struct{}{}
-	}
+	firstParty = modgraph.FirstPartyModules(g)
 	ca = make(map[string]int, len(firstParty))
 	ce = make(map[string]int, len(firstParty))
 	for m := range firstParty {
@@ -262,11 +259,8 @@ func (m AbstractnessMetric) Calculate(in signal.CommonInput) diagnostic.MetricRe
 		return m.naResult()
 	}
 
-	// Build the first-party set from the graph.
-	firstParty := make(map[string]struct{})
-	for _, n := range in.Graph.Nodes() {
-		firstParty[modgraph.ModuleKey(n.ID())] = struct{}{}
-	}
+	// Build the first-party set from the graph (external nodes excluded).
+	firstParty := modgraph.FirstPartyModules(in.Graph)
 	// Abstractness per module from the raw SCIP strength hint (see
 	// computeAbstractnessMap for why the hint, not the glob-classified strength).
 	type entry struct {

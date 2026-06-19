@@ -131,13 +131,80 @@ func TestExtract_CouldNotResolve(t *testing.T) {
 		t.Errorf("facts.Unresolved = %d, want 1", facts.Unresolved)
 	}
 
-	// The unresolved edge must still be emitted with low confidence.
+	// The unresolved edge must still be emitted with low confidence, pointing at
+	// an external node (not a first-party file).
 	if len(facts.Edges) == 0 {
 		t.Fatal("expected at least one edge for couldNotResolve case")
 	}
 	edge := facts.Edges[0]
 	if edge.Confidence != "low" {
 		t.Errorf("edge.Confidence = %q, want %q", edge.Confidence, "low")
+	}
+	if edge.To != "external:src/missing.ts" {
+		t.Errorf("edge.To = %q, want %q (unresolved target marked external)", edge.To, "external:src/missing.ts")
+	}
+}
+
+// TestExtract_ExternalNodes mirrors the codegraph case: a CLI importing the
+// uninstalled npm package "commander" (couldNotResolve) and the node builtin
+// "fs" (coreModule), with no node_modules. The unresolved package must become an
+// external node — never a first-party file: node that pollutes martin metrics —
+// and the core module must be dropped entirely.
+func TestExtract_ExternalNodes(t *testing.T) {
+	data := loadFixture(t, "depcruise_external.json")
+	runner := mockRunner(data)
+
+	cfg := config.ExtractConfig{Mode: config.ModeAuto}
+	extractor := ts.New(runner, cfg)
+
+	facts, _, err := extractor.Extract(context.Background(), scope.Scope{Root: fixtureDir})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	hasNode := func(id string) bool {
+		for _, n := range facts.Nodes {
+			if n.ID() == id {
+				return true
+			}
+		}
+		return false
+	}
+
+	// commander is unresolved → external node, NOT a first-party file: node.
+	if hasNode("file:commander") {
+		t.Error("unresolved npm package must not appear as a first-party file: node")
+	}
+	if !hasNode("external:commander") {
+		t.Error("expected external:commander node for the unresolved npm package")
+	}
+	// fs is a core module → dropped entirely (no node, no edge).
+	if hasNode("file:fs") || hasNode("external:fs") {
+		t.Error("core module fs must not appear as a node")
+	}
+	// First-party files keep their file: nodes.
+	if !hasNode("file:src/cli.ts") || !hasNode("file:src/commands/index.ts") {
+		t.Error("first-party source files must keep file: nodes")
+	}
+
+	// The edge to commander is kept (fan-out stays complete) and points external.
+	var found bool
+	for _, e := range facts.Edges {
+		if e.To == "external:commander" {
+			found = true
+			if e.From != "file:src/cli.ts" {
+				t.Errorf("commander edge From = %q, want file:src/cli.ts", e.From)
+			}
+			if e.Confidence != "low" {
+				t.Errorf("commander edge Confidence = %q, want low", e.Confidence)
+			}
+		}
+		if e.To == "file:fs" || e.To == "external:fs" {
+			t.Errorf("core module fs must not produce an edge: %+v", e)
+		}
+	}
+	if !found {
+		t.Error("expected edge to external:commander")
 	}
 }
 

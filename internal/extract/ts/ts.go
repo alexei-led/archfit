@@ -219,12 +219,23 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 			if toPath == "" {
 				toPath = dep.Module
 			}
-			toID := "file:" + toPath
-			emitNode(graph.Node{Kind: graph.NodeKindFile, Path: toPath})
 
-			// Determine edge kind.
+			// An unresolved target is not a first-party source file: it is an
+			// uninstalled npm package, a path depcruise could not resolve, or a
+			// node builtin it failed to tag as core (common when node_modules is
+			// absent). Emit it as an external node so first-party metrics
+			// (martin instability/abstractness, blast radius) exclude it, while
+			// keeping the edge so dependency/fan-out counts stay complete.
+			nodeKind := graph.NodeKindFile
+			if dep.CouldNotResolve {
+				nodeKind = graph.NodeKindExternal
+			}
+			toID := string(nodeKind) + ":" + toPath
+			emitNode(graph.Node{Kind: nodeKind, Path: toPath})
+
+			// Determine edge kind. External targets are never internal.
 			edgeKind := graph.EdgeKindImports
-			if e.matchesInternal(toPath) {
+			if nodeKind == graph.NodeKindFile && e.matchesInternal(toPath) {
 				edgeKind = graph.EdgeKindUsesInternal
 			}
 
