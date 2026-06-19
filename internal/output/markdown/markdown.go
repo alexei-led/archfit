@@ -170,7 +170,7 @@ func writeBCAdvisories(b *strings.Builder, advisories []finding.Finding) {
 //
 //	ARCHFIT[BC-UNBALANCED <SEV>] from -> to  [<id8>]
 //	  integration strength: <s>   distance: <d>   volatility: <v>
-//	  score: <reason>
+//	  score: <value>/10 (<band>) [<scorer>]
 //	  why: <why>
 //	  cheapest move: <move>
 func writeBCLintMessage(b *strings.Builder, f finding.Finding) {
@@ -194,7 +194,9 @@ func writeBCLintMessage(b *strings.Builder, f finding.Finding) {
 	strength := f.MatchedBy["strength"]
 	distance := f.MatchedBy["distance"]
 	volatility := f.MatchedBy["volatility"]
-	score := f.MatchedBy["score"]
+	scorer := f.MatchedBy["score"] // scorer name (e.g. "multiplicative")
+	scoreValue := f.MatchedBy["score_value"]
+	scoreBand := f.MatchedBy["score_band"]
 	cheapestMove := f.MatchedBy["cheapest_move"]
 	why := strings.TrimSpace(f.Why)
 
@@ -202,8 +204,12 @@ func writeBCLintMessage(b *strings.Builder, f finding.Finding) {
 		fmt.Fprintf(b, "  integration strength: %-12s  distance: %-30s  volatility: %s\n",
 			orUnknown(strength), orUnknown(distance), orUnknown(volatility))
 	}
-	if score != "" {
-		fmt.Fprintf(b, "  score: %s\n", score)
+	switch {
+	case scoreValue != "":
+		// Numeric maintenance-effort score: <value>/10 (<band>) [<scorer>].
+		fmt.Fprintf(b, "  score: %s/10 (%s) [%s]\n", scoreValue, orUnknown(scoreBand), orUnknown(scorer))
+	case scorer != "":
+		fmt.Fprintf(b, "  score: %s\n", scorer)
 	}
 	if why != "" {
 		if len(why) > 200 {

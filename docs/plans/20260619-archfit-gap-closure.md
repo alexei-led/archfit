@@ -151,11 +151,11 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 2: Emit the numeric BC score (currently computed then discarded)
 
-- [ ] in `internal/engine/engine.go:345-356` add `score_value` and `score_band` to advisory `MatchedBy` (keep `score`=scorer name)
-- [ ] in `internal/output/markdown/markdown.go:200-210` render `score: <value>/10 (<band>) [<scorer>]`; add the fields to JSON via existing struct
-- [ ] write tests asserting value+band reach markdown and JSON outputs
-- [ ] regenerate golden deliberately; inspect diff
-- [ ] run `make test` + `make lint` — must pass before next task
+- [x] in `internal/engine/engine.go:345-356` add `score_value` and `score_band` to advisory `MatchedBy` (keep `score`=scorer name)
+- [x] in `internal/output/markdown/markdown.go:200-210` render `score: <value>/10 (<band>) [<scorer>]`; add the fields to JSON via existing struct
+- [x] write tests asserting value+band reach markdown and JSON outputs
+- [x] regenerate golden deliberately; inspect diff (no stored golden fixture — `TestGolden_DoubleRun` is a determinism double-run; new fields are deterministic, test stays green)
+- [x] run `make test` + `make lint` — must pass before next task
 
 ### Task 3: Exclude external/unresolved nodes from first-party metrics
 

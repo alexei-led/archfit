@@ -531,6 +531,40 @@ func TestRenderer_Render_BCLintMessage(t *testing.T) {
 	}
 }
 
+// TestRenderer_Render_BCLintMessage_NumericScore verifies that when an advisory
+// carries the numeric score fields (score_value + score_band), the renderer prints
+// "score: <value>/10 (<band>) [<scorer>]" rather than just the scorer name.
+func TestRenderer_Render_BCLintMessage_NumericScore(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.Summary.Warnings = 1
+
+	f := makeAdvisoryFinding("bc/imbalanced_coupling")
+	f.Severity = finding.SeverityHigh
+	f.Edge.From.Path = "internal/payments/processor.go"
+	f.Edge.To.Path = "internal/users/repo.go"
+	f.MatchedBy = map[string]string{
+		"strength":    "intrusive",
+		"distance":    "cross_deploy_unit",
+		"volatility":  "high",
+		"score":       "multiplicative",
+		"score_value": "10",
+		"score_band":  "critical",
+	}
+	d.Findings = []finding.Finding{f}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "score: 10/10 (critical) [multiplicative]") {
+		t.Errorf("BC lint message missing numeric score line\nfull output:\n%s", out)
+	}
+}
+
 // TestRenderer_Render_ConfigHash verifies that config_hash appears in the report
 // when set on the diagnostic, and is absent when empty.
 func TestRenderer_Render_ConfigHash(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"strconv"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/classify"
@@ -349,8 +350,11 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 			"volatility": string(cl.Volatility),
 		}
 		// Attach continuous score fields when a scorer produced them.
+		// score = scorer name; score_value = integer 0-10; score_band = severity band.
 		if cl.Score.Reason != "" {
 			matched["score"] = cl.Score.Reason
+			matched["score_value"] = strconv.Itoa(cl.Score.Value)
+			matched["score_band"] = string(cl.Score.Band)
 		}
 		if cl.Score.CheapestMove != "" {
 			matched["cheapest_move"] = cl.Score.CheapestMove

@@ -6,8 +6,43 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 )
+
+// TestJSONRenderer_AdvisoryScoreFields asserts the numeric BC score fields
+// (score_value + score_band) on an advisory's matched_by survive JSON encoding.
+func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.Findings = []finding.Finding{{
+		ID:     "adv1",
+		Kind:   "advisory",
+		RuleID: "bc/imbalanced_coupling",
+		MatchedBy: map[string]string{
+			"score":       "multiplicative",
+			"score_value": "7",
+			"score_band":  "high",
+		},
+	}}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var got diagnostic.Diagnostic
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("cannot unmarshal: %v", err)
+	}
+	mb := got.Findings[0].MatchedBy
+	if mb["score_value"] != "7" {
+		t.Errorf("matched_by.score_value = %q, want %q", mb["score_value"], "7")
+	}
+	if mb["score_band"] != "high" {
+		t.Errorf("matched_by.score_band = %q, want %q", mb["score_band"], "high")
+	}
+}
 
 func TestJSONRenderer_Format(t *testing.T) {
 	r := jsonout.New()

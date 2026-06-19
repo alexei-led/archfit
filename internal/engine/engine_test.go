@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
@@ -472,6 +474,81 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 	// Summary.Warnings must match advisory count.
 	if d.Summary.Warnings != advisoryCount {
 		t.Errorf("summary.warnings=%d, want %d (advisory count)", d.Summary.Warnings, advisoryCount)
+	}
+}
+
+// TestRun_Advisory_NumericScoreFields asserts that the numeric BC score (value +
+// band) is attached to advisory findings' MatchedBy, not just the scorer name.
+// Regression for the "score computed then discarded" gap (Task 2).
+func TestRun_Advisory_NumericScoreFields(t *testing.T) {
+	ctx := context.Background()
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return advisoryFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef, Advisory: true},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Signals:     signal.RunSignals{},
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var adv *finding.Finding
+	for i := range d.Findings {
+		if d.Findings[i].RuleID == "bc/imbalanced_coupling" {
+			adv = &d.Findings[i]
+			break
+		}
+	}
+	if adv == nil {
+		t.Fatalf("no bc/imbalanced_coupling advisory present; findings=%+v", d.Findings)
+	}
+
+	// score = scorer name (default is the multiplicative scorer).
+	if got := adv.MatchedBy["score"]; got != "multiplicative" {
+		t.Errorf("MatchedBy[score]=%q, want scorer name %q", got, "multiplicative")
+	}
+
+	// score_value must parse to an int in [0,10].
+	rawValue, ok := adv.MatchedBy["score_value"]
+	if !ok {
+		t.Fatalf("MatchedBy missing score_value; got %+v", adv.MatchedBy)
+	}
+	value, err := strconv.Atoi(rawValue)
+	if err != nil {
+		t.Fatalf("score_value %q not an integer: %v", rawValue, err)
+	}
+	if value < 0 || value > 10 {
+		t.Errorf("score_value=%d out of range [0,10]", value)
+	}
+
+	// score_band must equal the band derived from the value (consistency).
+	wantBand := string(coupling.ScoreBand(value))
+	if got := adv.MatchedBy["score_band"]; got != wantBand {
+		t.Errorf("MatchedBy[score_band]=%q, want %q (band for value %d)", got, wantBand, value)
 	}
 }
 
