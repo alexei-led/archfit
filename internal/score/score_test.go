@@ -272,6 +272,46 @@ func TestChangeLocality_Unmeasured(t *testing.T) {
 	}
 }
 
+// TestDependencyGraphHealth_PartialMetrics asserts that when only the secondary
+// dependency metrics (instability, propagation_cost) ran — cycle and blast_radius
+// disabled — the dimension still counts as measured: it keeps the base confidence
+// and never claims "no dependency-graph metrics available".
+func TestDependencyGraphHealth_PartialMetrics(t *testing.T) {
+	mi := indexMetrics([]diagnostic.MetricResult{
+		metric("instability", 2, "info", "high"),
+		metric("propagation_cost", 0.10, "info", "high"),
+	})
+	dim := dependencyGraphHealth(mi, ConfidenceHigh)
+
+	if dim.Confidence != ConfidenceHigh {
+		t.Errorf("confidence = %q, want high (metrics were measured)", dim.Confidence)
+	}
+	for _, ev := range dim.Evidence {
+		if strings.Contains(ev, "no dependency-graph metrics available") {
+			t.Errorf("measured dimension wrongly reports absent metrics: %v", dim.Evidence)
+		}
+	}
+	if dim.Value == 100 {
+		t.Errorf("value = 100, want penalized by instability/propagation_cost")
+	}
+}
+
+// TestCoverageConfidence_RespectsMetricConfidence asserts the scorecard baseline
+// confidence is capped by the coverage metric's own confidence: a perfect
+// extraction ratio (value 1.0) built on many unresolved imports (confidence low)
+// must not yield a high baseline.
+func TestCoverageConfidence_RespectsMetricConfidence(t *testing.T) {
+	lowMI := indexMetrics([]diagnostic.MetricResult{metric("coverage", 1.0, "strong", "low")})
+	if got := coverageConfidence(diagnostic.Diagnostic{}, lowMI); got != ConfidenceLow {
+		t.Errorf("value 1.0 / metric-confidence low → baseline %q, want low", got)
+	}
+
+	highMI := indexMetrics([]diagnostic.MetricResult{metric("coverage", 1.0, "strong", "high")})
+	if got := coverageConfidence(diagnostic.Diagnostic{}, highMI); got != ConfidenceHigh {
+		t.Errorf("value 1.0 / metric-confidence high → baseline %q, want high", got)
+	}
+}
+
 // TestAnalysisConfidence_SemanticToolsAbsent asserts missing semantic tools lower
 // the meta confidence score versus a fully-covered run.
 func TestAnalysisConfidence_SemanticToolsAbsent(t *testing.T) {

@@ -303,6 +303,30 @@ func TestForMetric(t *testing.T) {
 	})
 }
 
+func TestForStaleness_GateOffDisables(t *testing.T) {
+	const gateOff, gateWarn, gateFail = "off", "warn", "fail"
+	tests := []struct {
+		name        string
+		mapReview   config.MapReviewConfig
+		wantEnabled bool
+	}{
+		{"gate off disables", config.MapReviewConfig{Gate: gateOff}, false},
+		{"gate off overrides stale_after", config.MapReviewConfig{Gate: gateOff, StaleAfter: "720h"}, false},
+		{"gate warn enables", config.MapReviewConfig{Gate: gateWarn}, true},
+		{"gate fail enables", config.MapReviewConfig{Gate: gateFail}, true},
+		{"stale_after enables", config.MapReviewConfig{StaleAfter: "720h"}, true},
+		{"nothing set stays disabled", config.MapReviewConfig{}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.Config{MapReview: tc.mapReview}
+			if got := cfg.ForStaleness().Enabled; got != tc.wantEnabled {
+				t.Errorf("ForStaleness().Enabled = %v, want %v", got, tc.wantEnabled)
+			}
+		})
+	}
+}
+
 func TestForStatus(t *testing.T) {
 	cfg, err := config.Load(context.Background(), "testdata/valid.yaml")
 	if err != nil {

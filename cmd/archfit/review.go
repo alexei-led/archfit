@@ -187,6 +187,16 @@ var validDimNames = map[string]struct{}{
 	score.DimAnalysisConfidence:    {},
 }
 
+// validBands is the scorecard band vocabulary the review must use (scorecard.yaml).
+// validSubdomains (the DDD subdomain vocabulary) is shared with init.go.
+var validBands = map[string]struct{}{
+	string(score.BandCritical):    {},
+	string(score.BandPoor):        {},
+	string(score.BandMixed):       {},
+	string(score.BandServiceable): {},
+	string(score.BandStrong):      {},
+}
+
 // postVerify drops LLM claims that cite entities not present in the evidence.
 // Dropped item counts are logged to stderr (silent when zero).
 func postVerify(rev reviewResponse, diag diagnostic.Diagnostic) reviewResponse {
@@ -205,13 +215,29 @@ func postVerify(rev reviewResponse, diag diagnostic.Diagnostic) reviewResponse {
 			validModules[f.Edge.To.Module] = struct{}{}
 		}
 	}
+	// Dynamic/lazy-import modules are valid evidence the review may cite even when
+	// they carry no static finding or file fact.
+	for _, di := range diag.DynamicImports {
+		if di.Module != "" {
+			validModules[di.Module] = struct{}{}
+		}
+	}
 
 	dropped := 0
 
-	// Filter dimensions to known names.
+	// Drop an overall band outside the rubric vocabulary so a fabricated label
+	// ("excellent") is never presented as a real band.
+	if _, ok := validBands[rev.OverallBand]; !ok {
+		rev.OverallBand = ""
+		dropped++
+	}
+
+	// Filter dimensions to known names AND valid bands.
 	filteredDims := rev.Dimensions[:0]
 	for _, d := range rev.Dimensions {
-		if _, ok := validDimNames[d.Name]; ok {
+		_, knownName := validDimNames[d.Name]
+		_, knownBand := validBands[d.Band]
+		if knownName && knownBand {
 			filteredDims = append(filteredDims, d)
 		} else {
 			dropped++
@@ -241,10 +267,11 @@ func postVerify(rev reviewResponse, diag diagnostic.Diagnostic) reviewResponse {
 	}
 	rev.TopRisks = filteredRisks
 
-	// Filter subdomain_suggestions to known modules.
+	// Filter subdomain_suggestions to known modules AND valid subdomains.
 	filteredSug := rev.SubdomainSuggestions[:0]
 	for _, s := range rev.SubdomainSuggestions {
-		if _, ok := validModules[s.Module]; ok {
+		_, knownMod := validModules[s.Module]
+		if knownMod && validSubdomains[s.SuggestedSubdomain] {
 			filteredSug = append(filteredSug, s)
 		} else {
 			dropped++
@@ -262,7 +289,11 @@ func postVerify(rev reviewResponse, diag diagnostic.Diagnostic) reviewResponse {
 func printReview(deps *appDeps, providerName string, rev reviewResponse) {
 	w := deps.Stdout
 	_, _ = fmt.Fprintf(w, "## Architecture Review (off-gate LLM narrative, %s)\n\n", providerName)
-	_, _ = fmt.Fprintf(w, "**Overall: %s**\n", rev.OverallBand)
+	overall := rev.OverallBand
+	if overall == "" {
+		overall = "unrated"
+	}
+	_, _ = fmt.Fprintf(w, "**Overall: %s**\n", overall)
 
 	if len(rev.Dimensions) > 0 {
 		_, _ = fmt.Fprintf(w, "\n### Dimensions\n\n")
@@ -344,6 +375,16 @@ func buildReviewPrompt(diag diagnostic.Diagnostic, sc score.Scorecard) string {
 			continue
 		}
 		fmt.Fprintf(&b, "- %s: value=%.2f band=%s display=%s\n", m.Name, m.Value, m.Band, m.Display)
+	}
+
+	// Dynamic / lazy imports (report-only): invisible to the static dependency
+	// graph, so they hide cycles and undercount coupling. Surfaced here so the
+	// review can narrate the lazy-import hidden-coupling risk the metrics miss.
+	if len(diag.DynamicImports) > 0 {
+		fmt.Fprintf(&b, "\n## Dynamic / lazy imports (hidden-coupling risk, report-only)\n")
+		for _, di := range diag.DynamicImports {
+			fmt.Fprintf(&b, "- %s: %d site(s)\n", di.Module, di.Count)
+		}
 	}
 
 	return b.String()

@@ -269,11 +269,13 @@ func dependencyGraphHealth(mi metricIndex, base Confidence) Dimension {
 		value -= capInt(n*4, 20)
 	}
 	if inst, ok := mi.measured("instability"); ok {
+		measured = true
 		n := int(inst.Value)
 		dim.Evidence = append(dim.Evidence, fmt.Sprintf("unstable modules (I>0.7): %d", n))
 		value -= capInt(n*2, 15)
 	}
 	if pc, ok := mi.measured("propagation_cost"); ok {
+		measured = true
 		dim.Evidence = append(dim.Evidence, fmt.Sprintf("propagation cost: %.2f", pc.Value))
 		// propagation_cost is a [0,1] density; cap the penalty at 25 like the
 		// sibling penalties so a stray out-of-range value can't dominate.
@@ -517,14 +519,20 @@ func coverageConfidence(_ diagnostic.Diagnostic, mi metricIndex) Confidence {
 	if !ok {
 		return ConfidenceMedium
 	}
+	var byValue Confidence
 	switch {
 	case cov.Value >= 0.8:
-		return ConfidenceHigh
+		byValue = ConfidenceHigh
 	case cov.Value >= 0.5:
-		return ConfidenceMedium
+		byValue = ConfidenceMedium
 	default:
-		return ConfidenceLow
+		byValue = ConfidenceLow
 	}
+	// The coverage metric also carries its own confidence, derived from the
+	// unresolved-import ratio: extraction can be 100% (value 1.0) while many
+	// edges stayed unresolved (confidence low). Take the lower of the two so
+	// unresolved imports cap the scorecard baseline rather than slipping through.
+	return minConf(byValue, metricConf(cov.Confidence))
 }
 
 // toolStatuses maps ToolCoverage.Tool → status for the meta dimension.

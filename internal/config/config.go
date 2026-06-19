@@ -704,8 +704,13 @@ func (c Config) ForStaleness() StalenessConfig {
 			threshold = d
 		}
 	}
+	// gate: off explicitly disables map review, matching gate semantics
+	// everywhere else (off = disabled). Any other configured signal —
+	// stale_after, or a warn/fail gate — enables the advisory pass.
+	gate := c.MapReview.Gate
+	enabled := gate != string(ModeOff) && (c.MapReview.StaleAfter != "" || gate != "")
 	return StalenessConfig{
-		Enabled:   c.MapReview.StaleAfter != "" || c.MapReview.Gate != "",
+		Enabled:   enabled,
 		Threshold: threshold,
 		Modules:   c.Modules,
 	}

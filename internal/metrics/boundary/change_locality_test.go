@@ -232,6 +232,22 @@ func TestChangeLocality_NoBasenameOverMatch(t *testing.T) {
 	}
 }
 
+// TestChangeLocality_TestMirrorNoOverMatch guards the source-root stripping
+// against test mirrors: only "src/" is an authoritative root, so a changed
+// "tests/app/handlers.py" must NOT be attributed to module "app.handlers".
+// Stripping any leading segment would over-match and inflate the count.
+func TestChangeLocality_TestMirrorNoOverMatch(t *testing.T) {
+	m := boundary.ChangeLocalityMetric{}
+	res := m.Calculate(signal.CommonInput{
+		Graph:           pyGraph(),
+		Classifications: pyIndex(),
+		ChangedFiles:    []string{"tests/app/handlers.py"},
+	})
+	if res.Value != 0 {
+		t.Errorf("value = %v, want 0 (tests/app/handlers.py must not match module:app.handlers)", res.Value)
+	}
+}
+
 // TestChangeLocality_TSFileNodeIDs confirms the file-path scheme (Go/TS) still
 // resolves after the rework.
 func TestChangeLocality_TSFileNodeIDs(t *testing.T) {

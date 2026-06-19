@@ -327,13 +327,13 @@ Every cross-boundary edge is classified on the four lenses below
 `bc/imbalanced_coupling` advisories and feed `encapsulation` and
 `unbalanced_edge`.
 
-| Lens         | Values (ordered)                                                                                              | Derived from                                                       |
-| ------------ | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Strength     | `contract` < `model` < `functional` < `intrusive` (+`unknown`)                                                | public/internal globs, visibility, SCIP symbol kind, pinned labels |
-| Distance     | `same_module` < `cross_module_same_owner` < `cross_module_different_owner` < `cross_deploy_unit` (+`unknown`) | module map, `owner`, `deploy_unit`                                 |
-| Volatility   | `low` < `medium` < `high` (+`unknown`)                                                                        | `volatility:` / `subdomain:`, then git churn fallback              |
-| Explicitness | `explicit`, `implicit` (+`unknown`)                                                                           | strength (contract→explicit, intrusive→implicit) or AST hint       |
-| Severity     | (none) < `low` < `medium` < `high` < `critical`                                                               | the balance rule over the four above                               |
+| Lens         | Values (ordered)                                                                                              | Derived from                                                                                                     |
+| ------------ | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Strength     | `contract` < `model` < `functional` < `intrusive` (+`unknown`)                                                | public/internal globs, visibility, SCIP symbol kind, pinned labels                                               |
+| Distance     | `same_module` < `cross_module_same_owner` < `cross_module_different_owner` < `cross_deploy_unit` (+`unknown`) | module map, `owner`, `deploy_unit`                                                                               |
+| Volatility   | `low` < `medium` < `high` (+`undeclared`, `unknown`)                                                          | explicit `volatility:`, then `subdomain:`, then a deterministic path heuristic; else `undeclared` (no git churn) |
+| Explicitness | `explicit`, `implicit` (+`unknown`)                                                                           | strength (contract→explicit, intrusive→implicit) or AST hint                                                     |
+| Severity     | (none) < `low` < `medium` < `high` < `critical`                                                               | the balance rule over the four above                                                                             |
 
 For the full severity table and the reasoning, see
 [Concepts → The balance rule](concepts.md#the-balance-rule).

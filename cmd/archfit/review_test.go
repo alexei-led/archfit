@@ -11,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/score"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -18,6 +19,7 @@ const (
 	reviewProviderName  = "test/fixed"
 	reviewDimBoundary   = "boundary_integrity"
 	reviewModReal       = "real_module"
+	reviewModLazy       = "lazy_mod"
 	reviewNarrativeKeep = "keep"
 )
 
@@ -191,6 +193,58 @@ func TestReviewCmd_Run_NoLLMConfig(t *testing.T) {
 	}
 	if !strings.Contains(ee.msg, "tools.llm") {
 		t.Errorf("want tools.llm hint in message, got: %s", ee.msg)
+	}
+}
+
+// TestPostVerify_RejectsInvalidEnums asserts band/subdomain values outside the
+// rubric vocabulary are dropped (overall blanked), while a dynamic-import module
+// is accepted as valid evidence the review may cite.
+func TestPostVerify_RejectsInvalidEnums(t *testing.T) {
+	diag := diagnostic.Diagnostic{
+		FileFacts:      []diagnostic.FileFact{{Module: reviewModReal}},
+		DynamicImports: []diagnostic.DynamicImport{{Module: reviewModLazy, Count: 3}},
+	}
+	rev := reviewResponse{
+		OverallBand: "excellent", // outside rubric vocabulary → blanked
+		Dimensions: []reviewDimension{
+			{Name: reviewDimBoundary, Band: string(score.BandMixed), Narrative: "ok"},
+			{Name: reviewDimBoundary, Band: "excellent", Narrative: "bad band → dropped"},
+		},
+		TopRisks: []reviewRisk{
+			{Title: "lazy", Modules: []string{reviewModLazy}, Narrative: "lazy-import risk", BalancingMove: "x"},
+		},
+		SubdomainSuggestions: []reviewSubdomainSuggest{
+			{Module: reviewModReal, SuggestedSubdomain: subdomainCore, Rationale: "ok"},
+			{Module: reviewModReal, SuggestedSubdomain: "platform", Rationale: "bad subdomain → dropped"},
+		},
+	}
+
+	result := postVerify(rev, diag)
+
+	if result.OverallBand != "" {
+		t.Errorf("overall_band = %q, want blanked", result.OverallBand)
+	}
+	if len(result.Dimensions) != 1 || result.Dimensions[0].Band != string(score.BandMixed) {
+		t.Errorf("dimensions = %+v, want only the valid-band entry", result.Dimensions)
+	}
+	if len(result.TopRisks) != 1 || len(result.TopRisks[0].Modules) != 1 {
+		t.Errorf("dynamic-import module should be accepted: %+v", result.TopRisks)
+	}
+	if len(result.SubdomainSuggestions) != 1 || result.SubdomainSuggestions[0].SuggestedSubdomain != subdomainCore {
+		t.Errorf("subdomain suggestions = %+v, want only valid-subdomain entry", result.SubdomainSuggestions)
+	}
+}
+
+// TestBuildReviewPrompt_IncludesDynamicImports asserts the report-only
+// dynamic/lazy-import block is fed to the LLM so it can narrate the hidden
+// coupling the static metrics miss.
+func TestBuildReviewPrompt_IncludesDynamicImports(t *testing.T) {
+	diag := diagnostic.Diagnostic{
+		DynamicImports: []diagnostic.DynamicImport{{Module: reviewModLazy, Count: 7}},
+	}
+	prompt := buildReviewPrompt(diag, score.Scorecard{})
+	if !strings.Contains(prompt, "Dynamic / lazy imports") || !strings.Contains(prompt, reviewModLazy) {
+		t.Errorf("prompt missing dynamic-import section:\n%s", prompt)
 	}
 }
 
