@@ -136,8 +136,8 @@ def _compute_symbols(
     idx: object,
     root: str,
     lang: str,
-) -> tuple[list[dict], list[dict]]:
-    """Return (symbols, symbol_refs) for the given index.
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Return (symbols, symbol_refs, intra_refs) for the given index.
 
     symbols     — one entry per internal definition symbol:
                   {symbol, path, module, fan_in}
@@ -148,11 +148,19 @@ def _compute_symbols(
                   {from_symbol, to_symbol}
                   from_symbol is an internal definition symbol in the referencing
                   document; to_symbol is the referenced internal symbol.
-                  Attribution is document-scoped because SCIP indexers do not
-                  populate enclosing_range, so per-call-site attribution is
-                  unavailable.
 
-    Both arrays are sorted for determinism (byte-identical output across runs).
+    intra_refs  — same-module symbol→symbol reference edges (from_symbol and
+                  to_symbol share a module), self-edges excluded. These feed the
+                  report-only cohesion (LCOM edge-density) proxy.
+
+    Attribution is document-scoped because SCIP indexers do not populate
+    enclosing_range, so per-call-site attribution is unavailable: within one
+    document every definition is treated as the source of every reference in
+    that document. Same-document intra-module edges are therefore over-connected;
+    only cross-document intra-module structure (multi-document modules) carries a
+    trustworthy cohesion signal — see internal/metrics/modularity/cohesion.go.
+
+    All arrays are sorted for determinism (byte-identical output across runs).
     """
     # Pass 1: collect definition occurrences to build
     #   def_docs[symbol]       = relative_path of the defining document (first seen)
@@ -177,6 +185,8 @@ def _compute_symbols(
     fan_in_docs: dict[str, set[str]] = {}
     # sym_refs: cross-module definition→referenced-symbol edges (deduped).
     sym_refs: set[tuple[str, str]] = set()
+    # intra_refs: same-module definition→referenced-symbol edges (deduped, no self-edge).
+    intra_refs: set[tuple[str, str]] = set()
 
     for doc in idx.documents:  # type: ignore[union-attr]
         frm_defs = doc_defs.get(doc.relative_path, set())
@@ -191,12 +201,17 @@ def _compute_symbols(
 
             fan_in_docs.setdefault(occ.symbol, set()).add(doc.relative_path)
 
-            # Cross-module edges: from every internal definition in this doc
-            # to the referenced symbol, when their modules differ.
+            # Per-document edges: from every internal definition in this doc to
+            # the referenced symbol. Split by module: differing modules → cross
+            # (sym_refs), same module → intra (intra_refs, self-edge excluded).
             for from_sym in frm_defs:
                 from_mod = _to_path(from_sym, lang)
-                if from_mod is not None and from_mod != to_mod:
+                if from_mod is None:
+                    continue
+                if from_mod != to_mod:
                     sym_refs.add((from_sym, occ.symbol))
+                elif from_sym != occ.symbol:
+                    intra_refs.add((from_sym, occ.symbol))
 
     # Assemble output arrays (sorted for determinism).
     symbols_out = [
@@ -215,7 +230,12 @@ def _compute_symbols(
         for fs, ts in sorted(sym_refs)
     ]
 
-    return symbols_out, symbol_refs_out
+    intra_refs_out = [
+        {"from_symbol": fs, "to_symbol": ts}
+        for fs, ts in sorted(intra_refs)
+    ]
+
+    return symbols_out, symbol_refs_out, intra_refs_out
 
 
 def main() -> None:
@@ -260,7 +280,7 @@ def main() -> None:
     edges: dict[tuple[str, str], str] = {}
     refs = {k: 0 for k in RANK}
 
-    symbols_out, symbol_refs_out = _compute_symbols(idx, root, lang)
+    symbols_out, symbol_refs_out, intra_refs_out = _compute_symbols(idx, root, lang)
 
     for doc in idx.documents:
         a = _doc_from(doc.relative_path, lang)
@@ -284,6 +304,7 @@ def main() -> None:
         "ref_strength_dist": refs,
         "symbols": symbols_out,
         "symbol_refs": symbol_refs_out,
+        "intra_refs": intra_refs_out,
     }))
 
 

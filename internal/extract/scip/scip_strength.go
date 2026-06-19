@@ -50,6 +50,10 @@ type readerOutput struct {
 		FromSymbol string `json:"from_symbol"`
 		ToSymbol   string `json:"to_symbol"`
 	} `json:"symbol_refs"`
+	IntraRefs []struct {
+		FromSymbol string `json:"from_symbol"`
+		ToSymbol   string `json:"to_symbol"`
+	} `json:"intra_refs"`
 	Error string `json:"error,omitempty"`
 }
 

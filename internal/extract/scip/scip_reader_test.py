@@ -100,7 +100,7 @@ fixture_idx = _idx([
     ]),
 ])
 
-syms, srefs = r._compute_symbols(fixture_idx, "spotinfo", "go")
+syms, srefs, _ = r._compute_symbols(fixture_idx, "spotinfo", "go")
 
 # symbols: both internal definitions present with correct fields.
 sym_map = {s["symbol"]: s for s in syms}
@@ -128,9 +128,10 @@ if srefs:
           sorted(srefs, key=lambda e: (e["from_symbol"], e["to_symbol"])))
 
 # --- Case 2: empty index ---
-empty_syms, empty_srefs = r._compute_symbols(_idx([]), "spotinfo", "go")
+empty_syms, empty_srefs, empty_irefs = r._compute_symbols(_idx([]), "spotinfo", "go")
 check("empty index: symbols", empty_syms, [])
 check("empty index: symbol_refs", empty_srefs, [])
+check("empty index: intra_refs", empty_irefs, [])
 
 # --- Case 3: no internal symbols (only external references) ---
 ext_only_idx = _idx([
@@ -138,9 +139,10 @@ ext_only_idx = _idx([
         _occ(SYM_EXT, 0),   # reference to external symbol only
     ]),
 ])
-ext_syms, ext_srefs = r._compute_symbols(ext_only_idx, "spotinfo", "go")
+ext_syms, ext_srefs, ext_irefs = r._compute_symbols(ext_only_idx, "spotinfo", "go")
 check("no internal: symbols", ext_syms, [])
 check("no internal: symbol_refs", ext_srefs, [])
+check("no internal: intra_refs", ext_irefs, [])
 
 # --- Case 4: same-module reference does not produce a symbol_ref edge ---
 SYM_OTHER = "scip-go gomod spotinfo v2.3.1 `spotinfo/internal/spot`/Fetch()."
@@ -150,9 +152,12 @@ same_mod_idx = _idx([
         _occ(SYM_OTHER,  0),   # ref within same module (spot → spot)
     ]),
 ])
-sm_syms, sm_srefs = r._compute_symbols(same_mod_idx, "spotinfo", "go")
+sm_syms, sm_srefs, sm_irefs = r._compute_symbols(same_mod_idx, "spotinfo", "go")
 check("same-module ref: no symbol_refs", sm_srefs, [])
 check("same-module ref: Client fan_in 0", sm_syms[0]["fan_in"] if sm_syms else -1, 0)
+# intra_refs: Client (def) → Fetch (ref), both in internal/spot, is an intra edge.
+sm_ipairs = {(e["from_symbol"], e["to_symbol"]) for e in sm_irefs}
+check("same-module ref: Client→Fetch intra", (SYM_CLIENT, SYM_OTHER) in sm_ipairs, True)
 
 # --- Case 5: multi-doc fan_in counts distinct documents ---
 fan_idx = _idx([
@@ -167,7 +172,7 @@ fan_idx = _idx([
         _occ(SYM_CLIENT, 0),   # ref from doc C (same symbol, different doc)
     ]),
 ])
-fan_syms, _ = r._compute_symbols(fan_idx, "spotinfo", "go")
+fan_syms, _, _ = r._compute_symbols(fan_idx, "spotinfo", "go")
 fan_map = {s["symbol"]: s for s in fan_syms}
 check("fan_in multi-doc", fan_map[SYM_CLIENT]["fan_in"], 2)
 

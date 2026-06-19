@@ -457,3 +457,11 @@ metrics:
   # candidates. Enabling the metric makes that coverage gap visible in the report.
   functional_candidates:
     enabled: true
+  # cohesion_lcom (Task 20): report-only LCOM edge-density proxy over the SCIP
+  # symbol graph. Disabled here because it failed its eval — document-scoped
+  # SCIP attribution (no enclosing_range) leaves it blind for single-file
+  # Python/TS modules and unable to credit internal sub-package cohesion. Kept
+  # registered and report-only for repos that want the Go-package signal.
+  # See docs/plans/notes/gap-closure-task20-cohesion-eval.md.
+  cohesion_lcom:
+    enabled: false

@@ -21,11 +21,18 @@ const readerJSONSuccess = `{
 	],
 	"symbol_refs": [
 		{"from_symbol": "go 1.0 example.com/foo internal/b/b.go/B#", "to_symbol": "go 1.0 example.com/foo internal/a/a.go/A#"}
+	],
+	"intra_refs": [
+		{"from_symbol": "go 1.0 example.com/foo internal/a/a.go/A#", "to_symbol": "go 1.0 example.com/foo internal/a/a2.go/A2#"}
 	]
 }`
 
 // readerJSONEmpty is a valid output with no symbols or refs.
 const readerJSONEmpty = `{"edges": [], "symbols": [], "symbol_refs": []}`
+
+// symAFixture is symbol A from readerJSONSuccess (definition, cross-module ref
+// target, and intra-module ref source).
+const symAFixture = "go 1.0 example.com/foo internal/a/a.go/A#"
 
 // makeGoRoot creates a temporary directory with a go.mod so detectIndexer picks
 // up scip-go as the indexer.
@@ -76,15 +83,17 @@ func TestParseReaderSymbols(t *testing.T) {
 		wantPath   string
 		wantFanIn  int
 		wantRef    string // from_symbol that should have at least one ref
+		wantIntra  string // from_symbol that should have at least one intra-module ref
 	}{
 		{
 			name:       "success: symbols and refs populated",
 			stdout:     readerJSONSuccess,
-			wantSymbol: "go 1.0 example.com/foo internal/a/a.go/A#",
+			wantSymbol: symAFixture,
 			wantModule: "internal/a",
 			wantPath:   "internal/a/a.go",
 			wantFanIn:  3,
 			wantRef:    "go 1.0 example.com/foo internal/b/b.go/B#",
+			wantIntra:  symAFixture,
 		},
 		{
 			name:   "empty arrays yield empty graph",
@@ -128,6 +137,11 @@ func TestParseReaderSymbols(t *testing.T) {
 			if tc.wantRef != "" {
 				if len(graph.Refs[tc.wantRef]) == 0 {
 					t.Errorf("Refs[%q] is empty, want at least one entry", tc.wantRef)
+				}
+			}
+			if tc.wantIntra != "" {
+				if len(graph.IntraRefs[tc.wantIntra]) == 0 {
+					t.Errorf("IntraRefs[%q] is empty, want at least one entry", tc.wantIntra)
 				}
 			}
 		})

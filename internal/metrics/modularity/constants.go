@@ -1,6 +1,6 @@
 // Package modularity implements the modularity metrics (blast_radius,
-// change_amplification, hidden_coupling, structural_weight) and the
-// functional_candidates metric. All are report-only (band "info"). The shared
+// change_amplification, hidden_coupling, structural_weight, cohesion_lcom) and
+// the functional_candidates metric. All are report-only (band "info"). The shared
 // module-graph/history helpers live in internal/metrics/internal/modgraph.
 package modularity
 

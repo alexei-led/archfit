@@ -64,6 +64,11 @@ func New(cfg config.Config) []Metric {
 		adapt(boundary.CoverageMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(modularity.BlastRadiusMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(modularity.ChangeAmplificationMetric{}, signal.CollectedSignals.AsHistory),
+		// cohesion_lcom: report-only LCOM edge-density proxy over the SCIP symbol
+		// graph. Kept report-only and disabled in archfit's own .archfit.yaml — it
+		// failed its eval (document-scoped attribution leaves it blind for
+		// single-file Python/TS modules). See gap-closure-task20-cohesion-eval.md.
+		adapt(modularity.CohesionMetric{}, signal.CollectedSignals.AsSymbol),
 		adapt(modularity.HiddenCouplingMetric{}, signal.CollectedSignals.AsHistory),
 		adapt(modularity.StructuralWeightMetric{}, signal.CollectedSignals.AsSize),
 		adapt(intramodule.ComplexityMetric{}, signal.CollectedSignals.AsComplexity),

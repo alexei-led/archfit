@@ -61,5 +61,13 @@ func parseReaderSymbols(stdout []byte) (symbol.Graph, error) {
 		refs[r.FromSymbol][r.ToSymbol] = struct{}{}
 	}
 
-	return symbol.Graph{Module: module, Path: path, FanIn: fanIn, Refs: refs}, nil
+	intra := make(map[string]map[string]struct{}, len(ro.IntraRefs))
+	for _, r := range ro.IntraRefs {
+		if intra[r.FromSymbol] == nil {
+			intra[r.FromSymbol] = make(map[string]struct{})
+		}
+		intra[r.FromSymbol][r.ToSymbol] = struct{}{}
+	}
+
+	return symbol.Graph{Module: module, Path: path, FanIn: fanIn, Refs: refs, IntraRefs: intra}, nil
 }
