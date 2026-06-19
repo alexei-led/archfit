@@ -239,9 +239,9 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 14: Config-quality lint
 
-- [ ] in `internal/config`, warn when modules omit `subdomain`/`volatility`/`owner` (explains degraded distance/volatility + advisory floods)
-- [ ] write tests for the warning on under-specified configs
-- [ ] run `make test` — must pass before next task
+- [x] in `internal/config`, warn when modules omit `subdomain`/`volatility`/`owner` (explains degraded distance/volatility + advisory floods) — new `Config.Lint() []LintWarning` flags each configured module (with ≥1 path) that omits `owner` (distance falls back to code structure → BC advisory floods) or omits **both** `subdomain` and `volatility` (volatility undeclared → coupling advice can't recommend lowering volatility; either field resolves it via core→high/supporting→medium/generic→low). Deterministic sorted-by-module order, fixed token order (owner before subdomain/volatility); advisory only, never gates. Surfaced on **stderr** (`printConfigLint` in `check.go`, matching the `calibrate.go` precedent) so the stdout JSON/markdown contract stays byte-identical for the determinism double-run
+- [x] write tests for the warning on under-specified configs — `TestLint` table (fully-specified→none; missing owner; missing subdomain+volatility; missing all; subdomain-alone and volatility-alone each resolve volatility; pathless module skipped), `TestLint_DeterministicModuleOrder` (sorted order + stable across 20 calls, no map-order leakage), `TestLintWarning_String`
+- [x] run `make test` — passes (race, full suite); `make lint` 0 issues; core-ring import (`TestArchImports`) + golden (`TestGolden`) gates green. Smoke-tested: under-specified `billing` flagged on stderr, fully-specified `pricing` clean, JSON stdout double-run byte-identical
 
 ### Task 15: Per-dimension banded scorecard (`archfit score` / `--format scorecard`)
 

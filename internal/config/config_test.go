@@ -819,6 +819,120 @@ func TestLoad_ValidateEnums(t *testing.T) {
 	}
 }
 
+// Config-quality lint test constants (kept out of literals for goconst).
+const (
+	lintPath  = "a/**"
+	lintOwner = "owner"
+	lintVol   = "subdomain/volatility"
+	lintTeam  = "team-a"
+)
+
+func TestLint(t *testing.T) {
+	tests := []struct {
+		name string
+		mod  config.ModuleDef
+		want []string // expected Missing tokens; nil = no warning for this module
+	}{
+		{
+			name: "fully specified",
+			mod:  config.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Subdomain: "core", Volatility: "high"},
+			want: nil,
+		},
+		{
+			name: "missing owner only",
+			mod:  config.ModuleDef{Paths: []string{lintPath}, Subdomain: "core"},
+			want: []string{lintOwner},
+		},
+		{
+			name: "missing subdomain and volatility only",
+			mod:  config.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam},
+			want: []string{lintVol},
+		},
+		{
+			name: "missing all three",
+			mod:  config.ModuleDef{Paths: []string{lintPath}},
+			want: []string{lintOwner, lintVol},
+		},
+		{
+			name: "subdomain alone resolves volatility",
+			mod:  config.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Subdomain: "generic"},
+			want: nil,
+		},
+		{
+			name: "volatility alone resolves volatility",
+			mod:  config.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Volatility: "low"},
+			want: nil,
+		},
+		{
+			name: "pathless module is not linted",
+			mod:  config.ModuleDef{Owner: ""}, // no paths → classifies nothing
+			want: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.Config{Modules: map[string]config.ModuleDef{"m": tc.mod}}
+			got := cfg.Lint()
+			if tc.want == nil {
+				if len(got) != 0 {
+					t.Fatalf("Lint() = %v, want no warnings", got)
+				}
+				return
+			}
+			if len(got) != 1 {
+				t.Fatalf("Lint() = %v, want exactly one warning", got)
+			}
+			if got[0].Module != "m" {
+				t.Errorf("module = %q, want %q", got[0].Module, "m")
+			}
+			if !slices.Equal(got[0].Missing, tc.want) {
+				t.Errorf("Missing = %v, want %v (order is fixed)", got[0].Missing, tc.want)
+			}
+		})
+	}
+}
+
+func TestLint_DeterministicModuleOrder(t *testing.T) {
+	// Map iteration is random; Lint must return modules in sorted name order.
+	bare := config.ModuleDef{Paths: []string{"x/**"}}
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		"mod-z": bare,
+		"mod-a": bare,
+		"mod-m": bare,
+		"ok":    {Paths: []string{"o/**"}, Owner: "t", Volatility: "low"}, // no warning
+	}}
+
+	first := cfg.Lint()
+	gotModules := make([]string, len(first))
+	for i, w := range first {
+		gotModules[i] = w.Module
+	}
+	wantModules := []string{"mod-a", "mod-m", "mod-z"}
+	if !slices.Equal(gotModules, wantModules) {
+		t.Fatalf("module order = %v, want %v", gotModules, wantModules)
+	}
+
+	// Stable across repeated calls (no map-order leakage).
+	for range 20 {
+		again := cfg.Lint()
+		for i := range again {
+			if again[i].Module != first[i].Module || !slices.Equal(again[i].Missing, first[i].Missing) {
+				t.Fatalf("Lint() not deterministic: %v vs %v", again, first)
+			}
+		}
+	}
+}
+
+func TestLintWarning_String(t *testing.T) {
+	w := config.LintWarning{Module: "billing", Missing: []string{lintOwner, lintVol}}
+	got := w.String()
+	want := `module "billing" omits owner, subdomain/volatility`
+	if got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+}
+
 // writeFile is a test helper that writes content to path.
 func writeFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o600)

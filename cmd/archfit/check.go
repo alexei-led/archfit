@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/alexei-led/archfit/internal/baseline"
+	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
@@ -38,6 +41,9 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	if err := applyFlagOverrides(&cfg, c.Severity, c.Lang); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
+	// Config-quality lint → stderr (advisory; never gates, never pollutes the
+	// stdout JSON/markdown contract that the determinism double-run diffs).
+	printConfigLint(os.Stderr, cfg.Lint())
 
 	configDir := filepath.Dir(c.Config)
 	base, err := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
@@ -81,6 +87,21 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		return nil
 	}
 	return verdictToError(diag.Verdict)
+}
+
+// printConfigLint writes config-quality warnings to w (stderr). It is silent
+// when there are none. The header explains why under-specified modules matter,
+// then one line per module names the omitted fields. Deterministic; advisory.
+func printConfigLint(w io.Writer, warnings []config.LintWarning) {
+	if len(warnings) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "config-quality: %d module(s) under-specified — "+
+		"degrades distance/volatility classification (can cause BC advisory floods):\n",
+		len(warnings))
+	for _, warn := range warnings {
+		_, _ = fmt.Fprintf(w, "  - %s\n", warn.String())
+	}
 }
 
 // ScanCmd is a convenience alias for a full advisory Markdown audit.

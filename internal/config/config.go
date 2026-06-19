@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -349,6 +350,64 @@ func sortedMetricKeys(m MetricsConfig) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// Config-quality lint field tokens, reported in ConfigWarning.Missing.
+const (
+	// lintFieldOwner marks a module with no `owner:`. Distance then falls back to
+	// code structure, so cross-module edges that share a single (or git-author
+	// degenerate) owner collapse to the same distance — the cause of near-identical
+	// BC advisory floods.
+	lintFieldOwner = "owner"
+	// lintFieldVolatility marks a module with neither `subdomain:` nor `volatility:`.
+	// Volatility is then undeclared, so coupling advice cannot recommend lowering
+	// volatility; declaring either closes the gap (core→high, supporting→medium,
+	// generic→low).
+	lintFieldVolatility = "subdomain/volatility"
+)
+
+// LintWarning is one config-quality lint finding: a configured module that
+// omits a field archfit relies on for accurate Balanced-Coupling classification.
+// Missing is non-empty and in fixed order (owner before subdomain/volatility).
+// Advisory only — Lint never affects the verdict.
+type LintWarning struct {
+	Module  string
+	Missing []string
+}
+
+// String renders the warning as one deterministic line.
+func (w LintWarning) String() string {
+	return fmt.Sprintf("module %q omits %s", w.Module, strings.Join(w.Missing, ", "))
+}
+
+// Lint reports configured modules that omit fields archfit uses to classify
+// Balanced-Coupling distance (owner) and volatility (subdomain/volatility).
+// Under-specified modules degrade those classifications and explain symptoms a
+// user often blames on the tool: missing owners collapse distance and flood BC
+// advisories; missing subdomain+volatility leave volatility undeclared.
+//
+// Only modules with at least one path are linted — a pathless entry classifies
+// nothing. Results are returned in deterministic module order; the Missing slice
+// within each is in fixed order. Lint is advisory and never gates.
+func (c Config) Lint() []LintWarning {
+	var out []LintWarning
+	for _, name := range sortedKeys(c.Modules) {
+		def := c.Modules[name]
+		if len(def.Paths) == 0 {
+			continue
+		}
+		var missing []string
+		if def.Owner == "" {
+			missing = append(missing, lintFieldOwner)
+		}
+		if def.Subdomain == "" && def.Volatility == "" {
+			missing = append(missing, lintFieldVolatility)
+		}
+		if len(missing) > 0 {
+			out = append(out, LintWarning{Module: name, Missing: missing})
+		}
+	}
+	return out
 }
 
 // Default returns a Config suitable for use when no archfit.yaml is present.
