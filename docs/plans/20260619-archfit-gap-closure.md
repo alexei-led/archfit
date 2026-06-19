@@ -275,11 +275,11 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 19: Phase-2 validation — architect skill vs improved archfit (all three repos)
 
-- [ ] `make build`; re-run improved archfit (full + delta) on archfit(Go), ccgram(Python), codegraph(TS); capture markdown + JSON + `--format scorecard`
-- [ ] re-run the independent architect-skill review on each repo (read-only, blind to archfit output)
-- [ ] write `docs/plans/notes/gap-closure-phase2-comparison.md`: per-repo table of archfit banded dimensions vs expert bands; list blind zones now closed (deterministic) vs surfaced by `review --llm` vs still out-of-scope
-- [ ] assert blind-zone reduction vs the baseline matrix in this plan; assert scorecard bands align with expert bands
-- [ ] assert determinism (byte-identical double-run per repo); run `make test`+`make lint` — must pass before next task
+- [x] `make build`; re-run improved archfit (full + delta) on archfit(Go), ccgram(Python), codegraph(TS); capture markdown + JSON + `--format scorecard` — built `v0.3.0-20-gb271736`; captured full+delta JSON, full markdown, and `score` scorecard per repo (delta bases Go `HEAD~5`, ccgram `HEAD~30`/193 `.py`, codegraph `HEAD~30`/80 `.ts`); scorecards: Go 68/100 serviceable (pass), ccgram 47/100 mixed (fail, 3 cycles + 58 BC rollups), codegraph 54/100 mixed (pass, 2 report-only cycles)
+- [x] re-run the independent architect-skill review on each repo (read-only, blind to archfit output) — one `architecture:architect` agent per repo, blind to archfit output, scoring the same `scorecard.yaml` rubric_version 1 (7 dims, 0-100 bands): Go 80/100 serviceable (pass), ccgram 69/100 serviceable (pass-with-risk), codegraph 43/100 mixed (fail)
+- [x] write `docs/plans/notes/gap-closure-phase2-comparison.md`: per-repo table of archfit banded dimensions vs expert bands; list blind zones now closed (deterministic) vs surfaced by `review --llm` vs still out-of-scope — written; per-repo per-dimension archfit-vs-expert tables, the baseline blind-spot matrix → after-Phase-2 state (closed/surfaced/partial), and the three named systematic divergences
+- [x] assert blind-zone reduction vs the baseline matrix in this plan; assert scorecard bands align with expert bands — blind-zone reduction confirmed: ccgram change_locality false-0 → 340 edges; codegraph martin node-builtins gone; 421 advisories → 58 scored rollups; lazy-import class surfaced (ccgram 788 sites/38 mods, the architect independently found 6 cycles/4 lazy-broken). Band alignment: overall same band 2/3 repos (Go serviceable, codegraph mixed), ccgram adjacent; per-dimension 8 same / 7 adjacent / 6 two-apart, the 3 two-band gaps are explainable, documented patterns (cohesion LOC-skew proxy, gate-centric boundary, config-as-truth coupling), not regressions
+- [x] assert determinism (byte-identical double-run per repo); run `make test`+`make lint` — must pass before next task — all 9 double-runs (full/delta/scorecard × 3) byte-identical; `config_hash` stable and full==delta per repo; `make test` (race, full suite) + `make lint` (0 issues) green; `TestArchImports`/`TestGolden`/LLM-off-gate invariants hold
 
 ### Phase 3 — Deeper (P2, eval-gated)
 
