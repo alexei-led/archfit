@@ -1,0 +1,78 @@
+# archfit starter: Go monolith (single deployable, layered packages)
+#
+# A flat config produces noise: distance falls back to code structure and BC
+# advisories flood. This template is fully specified — every module declares an
+# owner and a subdomain/volatility — so distance and volatility classify cleanly.
+# Replace the module paths and owners with your own, then run:
+#   archfit check  --config .archfit.yaml --full
+#   archfit score  --config .archfit.yaml --full
+version: 1
+bc_advisory_min_severity: medium
+tools:
+  go:
+    enabled: "on"
+  typescript:
+    enabled: "off"
+  python:
+    enabled: "off"
+# Inner -> outer. forbidden_layer_direction flags any inner->outer dependency.
+layers:
+  - domain
+  - application
+  - adapter
+  - cmd
+modules:
+  domain:
+    paths:
+      - internal/domain/**
+    public:
+      - internal/domain
+    internal:
+      - internal/domain/internal/**
+    layer: domain
+    subdomain: core # core -> high volatility
+    owner: team-core
+  application:
+    paths:
+      - internal/app/**
+    public:
+      - internal/app
+    layer: application
+    subdomain: core
+    owner: team-core
+  adapter:
+    paths:
+      - internal/adapter/**
+    public:
+      - internal/adapter
+    layer: adapter
+    subdomain: supporting # supporting -> medium volatility
+    owner: team-platform
+  cmd:
+    paths:
+      - cmd/**
+    layer: cmd
+    subdomain: generic # generic -> low volatility
+    owner: team-platform
+rules:
+  # Domain stays pure: no dependency on the outer adapter layer.
+  - id: domain_no_adapter
+    type: forbidden_dependency
+    from: internal/domain/**
+    to: internal/adapter/**
+    gate: fail
+  # Respect the layer order declared above.
+  - id: layer_direction
+    type: forbidden_layer_direction
+    gate: fail
+  # No importing another module's internal package.
+  - id: public_api_only
+    type: public_api_only
+    gate: fail
+  # Cycles are reported and gated.
+  - id: no_cycles
+    type: cycle
+    gate: fail
+metrics:
+  architecture_fitness:
+    enabled: true

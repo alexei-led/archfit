@@ -1,0 +1,71 @@
+# archfit starter: TypeScript monorepo (workspace packages, file globs)
+#
+# TypeScript dependency nodes are repo-relative file paths, so module paths and
+# rule from/to use file-path globs. Each workspace package is a module; cross-
+# package imports must go through the package entry point (public), not deep
+# internal files. Install dependency-cruiser and, for semantic strength
+# (risk_hub via scip), run `npm ci` so node_modules exists.
+#   archfit check --config .archfit.yaml --full
+version: 1
+bc_advisory_min_severity: medium
+tools:
+  go:
+    enabled: "off"
+  typescript:
+    enabled: "on"
+  python:
+    enabled: "off"
+layers:
+  - core
+  - feature
+  - app
+modules:
+  core:
+    paths:
+      - packages/core/src/**
+    public:
+      - packages/core/src/index.ts
+    internal:
+      - packages/core/src/internal/**
+    layer: core
+    subdomain: core
+    owner: team-core
+  ui:
+    paths:
+      - packages/ui/src/**
+    public:
+      - packages/ui/src/index.ts
+    layer: feature
+    subdomain: supporting
+    owner: team-web
+  app:
+    paths:
+      - apps/web/src/**
+    public:
+      - apps/web/src/index.ts
+    layer: app
+    subdomain: generic
+    owner: team-web
+rules:
+  # Core must not depend on UI or app packages.
+  - id: core_no_ui
+    type: forbidden_dependency
+    from: packages/core/src/**
+    to: packages/ui/src/**
+    gate: fail
+  - id: layer_direction
+    type: forbidden_layer_direction
+    gate: fail
+  # No reaching into another package's internal files.
+  - id: public_api_only
+    type: public_api_only
+    gate: fail
+  - id: no_cycles
+    type: cycle
+    gate: fail
+exclusions:
+  - '**/dist/**'
+  - '**/*.d.ts'
+metrics:
+  architecture_fitness:
+    enabled: true

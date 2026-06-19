@@ -4,7 +4,7 @@ Install from source with Go. Use a release tag, not `@latest`, in scripts and
 repeatable docs:
 
 ```sh
-go install github.com/alexei-led/archfit/cmd/archfit@v0.1.0
+go install github.com/alexei-led/archfit/cmd/archfit@v0.3.0
 ```
 
 Check the binary and available analyzers:
@@ -99,7 +99,11 @@ you enable the matching `tools.*` key in `.archfit.yaml`.
   for JS/TS, or install [PMD](https://pmd.github.io/) (includes CPD) for Go/Python.
   Enable with `tools.clones.enabled: on`.
 - **gitnexus** (enriches `risk_hub`) — install the `gitnexus` binary on `PATH`.
-  Enable with `tools.gitnexus.enabled: on`. Never runs automatically.
+  Enable with `tools.gitnexus.enabled: on`, or leave it unset/`auto` to use a
+  present `.gitnexus`/`.codegraph` index automatically.
+- **lizard** (powers `complexity`) — `pip install lizard` or
+  `uv tool install lizard`. Supports Go, Python, TypeScript, and TSX. No config
+  flag; `complexity` is `n/a` when `lizard` is not on `PATH`.
 
 When a tool is absent, the dependent metric reports `n/a` — the run never fails.
 
@@ -109,7 +113,7 @@ Use Docker when you want the bundled toolchain instead of installing language
 analysis tools on the host:
 
 ```sh
-docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.1.0 \
+docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.3.0 \
   check --config /repo/.archfit.yaml --full
 ```
 

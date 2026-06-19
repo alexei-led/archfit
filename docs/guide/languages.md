@@ -216,6 +216,41 @@ Python notes:
 - imports of underscore-prefixed modules, such as `myapp._internal`, are treated
   as intrusive coupling signals.
 
+## Optional analyzers per language
+
+The deterministic gates need only the language adapter above. The report-only
+metrics need extra tools, and several are language-specific. When a tool is
+missing the dependent metric reports `n/a` **with the reason and enable step** —
+the run never fails — but the metric stays blind until you install it.
+
+| Tool                | Powers                  | Go  | TS/JS | Python | Setup                                              |
+| ------------------- | ----------------------- | --- | ----- | ------ | -------------------------------------------------- |
+| `lizard`            | `complexity`            | yes | yes   | yes    | `pip install lizard` (or `uv tool install lizard`) |
+| SCIP indexer + `uv` | `risk_hub`              | yes | yes   | yes    | `tools.scip.enabled: on`; see notes below          |
+| clone detector      | `functional_candidates` | yes | yes   | yes    | `tools.clones.enabled: on`; jscpd (JS/TS) or PMD   |
+| `gitnexus`          | enriches `risk_hub`     | yes | yes   | yes    | `tools.gitnexus.enabled: on` (or auto-detect)      |
+
+Notes that bite most often:
+
+- **Complexity needs `lizard`.** Without it on `PATH`, `complexity` is `n/a` for
+  every language. lizard supports Go, Python, TypeScript, and TSX. Install it,
+  then re-run; no config flag is required.
+- **SCIP for TypeScript needs `node_modules`.** `scip-typescript` resolves
+  imports through installed dependencies, so run `npm ci` (or `bun install`)
+  before the run. If `node_modules` is absent, archfit reports `risk_hub` as
+  `n/a` with exactly that reason instead of silently skipping it.
+- **Clone detection is opt-in.** `tools.clones.enabled: on` plus a detector
+  (`npm install -g jscpd@5.0.9` for JS/TS, or PMD/CPD for Go/Python) turns
+  `functional_candidates` on. Off or absent → `n/a`.
+- **gitnexus auto-detects a present index.** With `tools.gitnexus.enabled`
+  unset/`auto`, a present `.gitnexus/` or `.codegraph` index is used
+  automatically; `on` always queries; `off` opts out but still reports that an
+  index is present so you can flip the flag. Refresh the index with
+  `node .gitnexus/run.cjs analyze --index-only`. archfit only reads it.
+
+See [Install → optional analysis tools](install.md#optional-analysis-tools) for
+the full install matrix.
+
 ## Mixed repositories
 
 For a repo with more than one language, keep each language's paths in distinct

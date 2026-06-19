@@ -1,0 +1,69 @@
+# archfit starter: Python package (src/ layout, dotted module names)
+#
+# Python dependency nodes are dotted module names (myapp.domain.service), so
+# module paths, public/internal globs, and rule from/to use DOTTED globs. Add
+# slash-style internal globs too when you want _internal packages flagged as
+# internal-access edges. Set python_package when the top-level package name does
+# not match the repo directory or uses a src/ layout.
+#   archfit check --config .archfit.yaml --full
+version: 1
+bc_advisory_min_severity: medium
+python_package: myapp
+tools:
+  go:
+    enabled: "off"
+  typescript:
+    enabled: "off"
+  python:
+    enabled: "on"
+layers:
+  - domain
+  - application
+  - adapter
+modules:
+  domain:
+    paths:
+      - myapp.domain**
+    public:
+      - myapp.domain.api**
+    internal:
+      - myapp.domain._internal**
+      - myapp/domain/_internal/** # slash form: marks internal-access edges
+    layer: domain
+    subdomain: core
+    owner: team-core
+  application:
+    paths:
+      - myapp.app**
+    public:
+      - myapp.app**
+    layer: application
+    subdomain: core
+    owner: team-core
+  web:
+    paths:
+      - myapp.web**
+    public:
+      - myapp.web**
+    layer: adapter
+    subdomain: supporting
+    owner: team-platform
+rules:
+  - id: domain_no_web
+    type: forbidden_dependency
+    from: myapp.domain**
+    to: myapp.web**
+    gate: fail
+  - id: layer_direction
+    type: forbidden_layer_direction
+    gate: fail
+  # Imports of underscore-prefixed modules are intrusive-coupling signals.
+  - id: no_private_imports
+    type: internal_api_access
+    gate: fail
+  - id: no_cycles
+    type: cycle
+    gate: fail
+metrics:
+  architecture_fitness:
+    enabled: true

@@ -267,11 +267,11 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 18: Tooling, README, docs (Marvin review) + self-config
 
-- [ ] README: lead with AI-agent before/after; positioning table vs dependency-cruiser/import-linter/ArchUnit; cut concept overload
-- [ ] add self-dogfooding doc (signals vs violations) and per-language setup docs (scip needs node_modules; enable clones/gitnexus; install lizard)
-- [ ] add starter `.archfit.yaml` templates (Go monolith, Python package, TS monorepo, DDD, microservices) to fix the "flat config → noise" trap; fix archfit's own config to surface its newest metrics (`architecture_fitness`/`functional_candidates`)
-- [ ] sync install/CI snippets to current release
-- [ ] run `make test` (docs-only changes still must not break tests/golden)
+- [x] README: lead with AI-agent before/after; positioning table vs dependency-cruiser/import-linter/ArchUnit; cut concept overload — rewrote `README.md` to open with a "Why archfit" before/after (agent loop without vs. with archfit), added a "How it compares" table (archfit vs dependency-cruiser/import-linter/ArchUnit across languages, agent/CI output, coupling model, LLM narration), trimmed the prose "Model" section, and added `score`/`review` to the commands table
+- [x] add self-dogfooding doc (signals vs violations) and per-language setup docs (scip needs node_modules; enable clones/gitnexus; install lizard) — new `docs/guide/dogfooding.md` (violations gate / signals inform table + what archfit enforces vs only reports on itself) wired into `docs/guide/README.md`; `docs/guide/languages.md` gained an "Optional analyzers per language" section (lizard for complexity all-langs, scip-typescript needs `node_modules`, opt-in clones, gitnexus auto-detect) and `install.md` gained a lizard entry + gitnexus auto-detect note
+- [x] add starter `.archfit.yaml` templates (Go monolith, Python package, TS monorepo, DDD, microservices) to fix the "flat config → noise" trap; fix archfit's own config to surface its newest metrics (`architecture_fitness`/`functional_candidates`) — five fully-specified templates under `examples/` (every module declares owner + subdomain so distance/volatility classify cleanly and `Config.Lint()` stays quiet) + `examples/README.md`; new `TestLoad_ExampleTemplates` loads/validates each and asserts zero lint warnings; self-`.archfit.yaml` now enables both metrics (architecture_fitness yields a real 6.7/10, functional_candidates honestly n/a until clones installed) — self-check still exit-0, double-run byte-identical
+- [x] sync install/CI snippets to current release — bumped `README.md` go-install + Docker tag and `docs/guide/install.md` go-install + Docker tag from v0.1.0 to v0.3.0 (latest release tag); ci.md/quick-start.md carry no version pins
+- [x] run `make test` (docs-only changes still must not break tests/golden) — passes (race, full suite); `make lint` 0 issues; core-ring import (`TestArchImports`) + golden (`TestGolden`) gates green; self-check exit-0, JSON double-run byte-identical
 
 ### Task 19: Phase-2 validation — architect skill vs improved archfit (all three repos)
 

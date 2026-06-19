@@ -448,7 +448,12 @@ tools:
 metrics:
   risk_hub:
     enabled: true
+  # archfit enforces its own architecture (internal/arch_test.go + CI), so this
+  # surfaces a real architecture_fitness signal — dogfooding the metric.
   architecture_fitness:
-    enabled: false
+    enabled: true
+  # Surfaced on; reports n/a with an actionable coverage reason until a clone
+  # detector (tools.clones) is installed, then yields functional-extraction
+  # candidates. Enabling the metric makes that coverage gap visible in the report.
   functional_candidates:
-    enabled: false
+    enabled: true

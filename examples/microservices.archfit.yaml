@@ -1,0 +1,78 @@
+# archfit starter: microservices (deploy_unit boundaries)
+#
+# deploy_unit is the strongest distance signal: two modules in different deploy
+# units are at cross-deploy-unit distance (a deploy boundary is absolute). High
+# distance + a stable contract = loose coupling (good). High distance + intrusive
+# coupling (sharing internals/DB across services) = distributed-monolith risk —
+# exactly what archfit flags first. Declaring deploy_unit + owner per service is
+# what makes that distinction reliable.
+#   archfit check --config .archfit.yaml --full
+#   archfit score --config .archfit.yaml --full
+version: 1
+bc_advisory_min_severity: medium
+tools:
+  go:
+    enabled: "on"
+  typescript:
+    enabled: "off"
+  python:
+    enabled: "off"
+layers:
+  - domain
+  - transport
+modules:
+  orders_svc:
+    paths:
+      - services/orders/**
+    public:
+      - services/orders/api/**
+    internal: # the service's published contract
+      - services/orders/internal/**
+    layer: domain
+    subdomain: core
+    owner: team-orders
+    deploy_unit: orders
+  payments_svc:
+    paths:
+      - services/payments/**
+    public:
+      - services/payments/api/**
+    internal:
+      - services/payments/internal/**
+    layer: domain
+    subdomain: core
+    owner: team-payments
+    deploy_unit: payments
+  # Shared, stable contract types (DTOs/events). Low volatility, generic, shared
+  # lifecycle by design — contract coupling across services is fine here.
+  shared_contracts:
+    paths:
+      - pkg/contracts/**
+    public:
+      - pkg/contracts/**
+    layer: transport
+    subdomain: generic
+    owner: team-platform
+    deploy_unit: shared
+rules:
+  # No service reaching into another service's internals (intrusive cross-deploy
+  # coupling -> distributed monolith). Cross-service calls go through the API.
+  - id: orders_no_payments_internal
+    type: forbidden_dependency
+    from: services/orders/**
+    to: services/payments/internal/**
+    gate: fail
+  - id: payments_no_orders_internal
+    type: forbidden_dependency
+    from: services/payments/**
+    to: services/orders/internal/**
+    gate: fail
+  - id: public_api_only
+    type: public_api_only
+    gate: fail
+  - id: no_cycles
+    type: cycle
+    gate: fail
+metrics:
+  architecture_fitness:
+    enabled: true

@@ -1,0 +1,83 @@
+# archfit starter: DDD bounded contexts (subdomain-driven volatility)
+#
+# In Balanced Coupling terms, the subdomain sets volatility: Core -> high,
+# Supporting -> medium, Generic -> low. Declaring subdomains is what lets archfit
+# tell cohesion (good) from distributed-monolith risk. Each bounded context is a
+# module; contexts integrate through a published contract (public surface), never
+# through each other's internals (which would be intrusive coupling across a
+# context boundary -> a flag).
+#   archfit check --config .archfit.yaml --full
+#   archfit score --config .archfit.yaml --full
+version: 1
+bc_advisory_min_severity: medium
+tools:
+  go:
+    enabled: "on"
+  typescript:
+    enabled: "off"
+  python:
+    enabled: "off"
+layers:
+  - domain
+  - application
+  - infrastructure
+modules:
+  # Core subdomain: the competitive advantage, changes often (high volatility).
+  pricing:
+    paths:
+      - internal/pricing/**
+    public:
+      - internal/pricing/contract
+    internal:
+      - internal/pricing/internal/**
+    layer: domain
+    subdomain: core
+    owner: team-pricing
+  ordering:
+    paths:
+      - internal/ordering/**
+    public:
+      - internal/ordering/contract
+    internal:
+      - internal/ordering/internal/**
+    layer: domain
+    subdomain: core
+    owner: team-ordering
+  # Supporting subdomain: necessary, less differentiating (medium volatility).
+  catalog:
+    paths:
+      - internal/catalog/**
+    public:
+      - internal/catalog/contract
+    layer: domain
+    subdomain: supporting
+    owner: team-catalog
+  # Generic subdomain: solved problem, stable (low volatility neutralizes risk).
+  notifications:
+    paths:
+      - internal/notifications/**
+    public:
+      - internal/notifications/contract
+    layer: infrastructure
+    subdomain: generic
+    owner: team-platform
+rules:
+  # Cross-context: only through the published contract, never the internals.
+  - id: contexts_via_contract
+    type: public_api_only
+    gate: fail
+  # Pricing must not reach into ordering internals (intrusive cross-context).
+  - id: pricing_no_ordering_internal
+    type: forbidden_dependency
+    from: internal/pricing/**
+    to: internal/ordering/internal/**
+    gate: fail
+  - id: layer_direction
+    type: forbidden_layer_direction
+    gate: fail
+  - id: no_cycles
+    type: cycle
+    gate: fail
+metrics:
+  architecture_fitness:
+    enabled: true

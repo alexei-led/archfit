@@ -17,6 +17,8 @@ small references while configuring a repo.
 - [Language support](languages.md) — Go, Python, and TypeScript setup.
 - [Configuration basics](configuration.md) — `.archfit.yaml` shape.
 - [Configuration reference](configuration-reference.md) — fields and examples.
+- [Dogfooding](dogfooding.md) — how archfit runs on itself; signals vs.
+  violations.
 - [Commands](commands.md) — common commands, formats, and exit codes.
 - [CI](ci.md) — basic CI and pull-request usage.
 - [Agent feedback loop](agent-feedback.md) — the AI-agent loop: `agent_tasks`,
