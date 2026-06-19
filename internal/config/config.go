@@ -62,10 +62,19 @@ func (c Config) ComplexityEnabled() bool {
 const ToolGitnexus = "gitnexus"
 
 // GitnexusEnabled reports whether the gitnexus symbol-impact provider is explicitly
-// enabled (tools.gitnexus.enabled: on). Never auto — gitnexus requires network access
-// and must not run by default. Config-driven (not PATH presence) for reproducibility.
+// enabled (tools.gitnexus.enabled: on) — always attempt to use it. Unset/auto does
+// NOT force it on; instead a present .gitnexus/.codegraph index auto-enables the
+// provider (see the gitnexus extractor). Config-driven for reproducibility.
 func (c Config) GitnexusEnabled() bool {
 	return c.Tools[ToolGitnexus].Enabled == ModeOn
+}
+
+// GitnexusExplicitlyDisabled reports whether gitnexus is explicitly turned off
+// (tools.gitnexus.enabled: off). This is distinct from unset/auto: an explicit
+// opt-out is respected — a present index is reported but not auto-used — whereas
+// unset/auto lets a present .gitnexus/.codegraph index auto-enable the provider.
+func (c Config) GitnexusExplicitlyDisabled() bool {
+	return c.Tools[ToolGitnexus].Enabled == ModeOff
 }
 
 // ToolLLM is the Tools map key for the off-gate LLM provider used by the

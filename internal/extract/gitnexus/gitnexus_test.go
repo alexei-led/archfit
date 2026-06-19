@@ -74,9 +74,20 @@ func malformedRunner() *toolrun.RunnerMock {
 	}
 }
 
+// indexedRoot returns a temp dir containing a .gitnexus index directory so
+// hasIndex(root) is true (the "index present on disk" condition).
+func indexedRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".gitnexus"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 func TestRun_EnabledPresent(t *testing.T) {
 	runner := makeImpactRunner(gitnexusSuccessJSON)
-	impact, cov, err := Run(context.Background(), runner, t.TempDir(), true)
+	impact, cov, err := Run(context.Background(), runner, t.TempDir(), true, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -107,53 +118,103 @@ func TestRun_EnabledPresent(t *testing.T) {
 	}
 }
 
-func TestRun_Disabled(t *testing.T) {
-	impact, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), false)
+// TestRun_AutoDetectUsesPresentIndex is the core of the auto-detect fix: with
+// gitnexus neither forced on nor explicitly off, a present .gitnexus index is
+// queried automatically (the prior blind spot silently ignored it). The OK
+// coverage carries the auto-detect reason so the run is self-documenting.
+func TestRun_AutoDetectUsesPresentIndex(t *testing.T) {
+	runner := makeImpactRunner(gitnexusSuccessJSON)
+	impact, cov, err := Run(context.Background(), runner, indexedRoot(t), false, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cov.Status != statusOK {
+		t.Fatalf("status = %q, want %q (present index must be auto-used)", cov.Status, statusOK)
+	}
+	if len(impact) != 2 {
+		t.Fatalf("impact len = %d, want 2 (index not actually queried)", len(impact))
+	}
+	if cov.Reason != reasonAutoDetected {
+		t.Errorf("reason = %q, want %q", cov.Reason, reasonAutoDetected)
+	}
+	if n := len(runner.RunCalls()); n != 1 {
+		t.Errorf("CLI Run called %d times, want 1 (auto-detect must query the index)", n)
+	}
+}
+
+// TestRun_AutoDetectNoIndex: auto-detect mode with no index on disk → absent,
+// with the actionable "build an index" reason (not silent).
+func TestRun_AutoDetectNoIndex(t *testing.T) {
+	_, cov, err := Run(context.Background(), makeImpactRunner(gitnexusSuccessJSON), t.TempDir(), false, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cov.Status != statusAbsent {
-		t.Errorf("coverage status = %q, want %q", cov.Status, statusAbsent)
+		t.Errorf("status = %q, want %q", cov.Status, statusAbsent)
 	}
-	if len(impact) != 0 {
-		t.Errorf("expected empty impact map for disabled tool, got %d entries", len(impact))
+	if cov.Reason != reasonOptInNoIndex {
+		t.Errorf("reason = %q, want %q", cov.Reason, reasonOptInNoIndex)
 	}
 }
 
-// TestRun_DisabledReasons asserts the opt-in-off path distinguishes a present
-// index ("flip the flag") from no index ("build it first"), and that a missing
-// CLI and an unindexed repo each carry their own actionable reason.
+// TestRun_AutoDetectIndexPresentCLIAbsent: an index we cannot read because the
+// CLI is missing reports the install step, not a generic "not installed".
+func TestRun_AutoDetectIndexPresentCLIAbsent(t *testing.T) {
+	_, cov, _ := Run(context.Background(), absentRunner(), indexedRoot(t), false, false)
+	if cov.Status != statusAbsent {
+		t.Errorf("status = %q, want %q", cov.Status, statusAbsent)
+	}
+	if cov.Reason != reasonHasIndexNoCLI {
+		t.Errorf("reason = %q, want %q", cov.Reason, reasonHasIndexNoCLI)
+	}
+}
+
+// TestRun_DisabledReasons asserts the explicit-off path distinguishes a present
+// index ("flip the flag") from no index, and that the forced-on path's missing
+// CLI and unindexed repo each carry their own actionable reason.
 func TestRun_DisabledReasons(t *testing.T) {
-	t.Run("disabled with index present", func(t *testing.T) {
-		root := t.TempDir()
-		if err := os.MkdirAll(filepath.Join(root, ".gitnexus"), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		_, cov, _ := Run(context.Background(), absentRunner(), root, false)
+	t.Run("explicitly off with index present (warning path)", func(t *testing.T) {
+		// Even with a queryable CLI, an explicit off is respected — the present
+		// index is reported, never auto-used.
+		runner := makeImpactRunner(gitnexusSuccessJSON)
+		impact, cov, _ := Run(context.Background(), runner, indexedRoot(t), false, true)
 		if cov.Status != statusAbsent {
 			t.Errorf("status = %q, want %q", cov.Status, statusAbsent)
 		}
 		if cov.Reason != reasonDisabledHasIndex {
 			t.Errorf("reason = %q, want %q", cov.Reason, reasonDisabledHasIndex)
 		}
+		if len(impact) != 0 {
+			t.Errorf("explicit off must not query the index, got %d entries", len(impact))
+		}
+		if n := len(runner.RunCalls()); n != 0 {
+			t.Errorf("CLI Run called %d times, want 0 (explicit off must not query)", n)
+		}
 	})
 
-	t.Run("disabled with no index", func(t *testing.T) {
-		_, cov, _ := Run(context.Background(), absentRunner(), t.TempDir(), false)
+	t.Run("explicitly off with no index", func(t *testing.T) {
+		_, cov, _ := Run(context.Background(), absentRunner(), t.TempDir(), false, true)
 		if cov.Reason != reasonDisabledNoIndex {
 			t.Errorf("reason = %q, want %q", cov.Reason, reasonDisabledNoIndex)
 		}
 	})
 
-	t.Run("enabled but CLI absent", func(t *testing.T) {
-		_, cov, _ := Run(context.Background(), absentRunner(), t.TempDir(), true)
+	t.Run("on but CLI absent", func(t *testing.T) {
+		_, cov, _ := Run(context.Background(), absentRunner(), t.TempDir(), true, false)
 		if cov.Reason != reasonNotInstalled {
 			t.Errorf("reason = %q, want %q", cov.Reason, reasonNotInstalled)
 		}
 	})
 
-	t.Run("enabled, repo not indexed (run fails)", func(t *testing.T) {
-		_, cov, _ := Run(context.Background(), failRunner(), t.TempDir(), true)
+	t.Run("on with index present but CLI absent", func(t *testing.T) {
+		_, cov, _ := Run(context.Background(), absentRunner(), indexedRoot(t), true, false)
+		if cov.Reason != reasonHasIndexNoCLI {
+			t.Errorf("reason = %q, want %q", cov.Reason, reasonHasIndexNoCLI)
+		}
+	})
+
+	t.Run("on, repo not indexed (run fails)", func(t *testing.T) {
+		_, cov, _ := Run(context.Background(), failRunner(), t.TempDir(), true, false)
 		if cov.Status != statusPartial {
 			t.Errorf("status = %q, want %q", cov.Status, statusPartial)
 		}
@@ -164,7 +225,7 @@ func TestRun_DisabledReasons(t *testing.T) {
 }
 
 func TestRun_AbsentTool(t *testing.T) {
-	impact, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true)
+	impact, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -177,7 +238,7 @@ func TestRun_AbsentTool(t *testing.T) {
 }
 
 func TestRun_ToolFailure(t *testing.T) {
-	impact, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true)
+	impact, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -190,7 +251,7 @@ func TestRun_ToolFailure(t *testing.T) {
 }
 
 func TestRun_MalformedOutput(t *testing.T) {
-	impact, cov, err := Run(context.Background(), malformedRunner(), t.TempDir(), true)
+	impact, cov, err := Run(context.Background(), malformedRunner(), t.TempDir(), true, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -203,7 +264,7 @@ func TestRun_MalformedOutput(t *testing.T) {
 }
 
 func TestRun_EmptyResult(t *testing.T) {
-	impact, cov, err := Run(context.Background(), makeImpactRunner(gitnexusEmptyJSON), t.TempDir(), true)
+	impact, cov, err := Run(context.Background(), makeImpactRunner(gitnexusEmptyJSON), t.TempDir(), true, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -213,6 +274,35 @@ func TestRun_EmptyResult(t *testing.T) {
 	if len(impact) != 0 {
 		t.Errorf("expected empty impact map for empty result, got %d entries", len(impact))
 	}
+}
+
+// TestHasIndex covers both recognised index directories and the absent case.
+func TestHasIndex(t *testing.T) {
+	for _, dir := range indexDirs {
+		t.Run("detects "+dir, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, dir), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			if !hasIndex(root) {
+				t.Errorf("hasIndex(%s) = false, want true", dir)
+			}
+		})
+	}
+	t.Run("absent", func(t *testing.T) {
+		if hasIndex(t.TempDir()) {
+			t.Error("hasIndex on empty dir = true, want false")
+		}
+	})
+	t.Run("file not dir is not an index", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, ".gitnexus"), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if hasIndex(root) {
+			t.Error("a .gitnexus file (not dir) must not count as an index")
+		}
+	})
 }
 
 func TestParseDependants(t *testing.T) {

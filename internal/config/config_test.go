@@ -526,6 +526,9 @@ func TestLoad_NewToolsAndMetrics(t *testing.T) {
 	if cfg.GitnexusEnabled() {
 		t.Error("GitnexusEnabled() = true, want false when off")
 	}
+	if !cfg.GitnexusExplicitlyDisabled() {
+		t.Error("GitnexusExplicitlyDisabled() = false, want true when explicitly off")
+	}
 
 	// tools.clones.enabled: on
 	clones, ok := cfg.Tools[config.ToolClones]
@@ -566,6 +569,11 @@ func TestNewToolsDefaultOff(t *testing.T) {
 	cfg := config.Config{Version: 1}
 	if cfg.GitnexusEnabled() {
 		t.Error("GitnexusEnabled() = true when absent, want false")
+	}
+	// Absent is NOT an explicit opt-out — it is auto-detect mode (a present
+	// index will be used), distinct from `enabled: off`.
+	if cfg.GitnexusExplicitlyDisabled() {
+		t.Error("GitnexusExplicitlyDisabled() = true when absent, want false (auto-detect)")
 	}
 	if cfg.ClonesEnabled() {
 		t.Error("ClonesEnabled() = true when absent, want false")

@@ -140,12 +140,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	change.Duplication.Clusters, clonesCov, _ = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled())
 	change.ExtraCoverage = append(change.ExtraCoverage, clonesCov)
 
-	// gitnexus optional symbol-impact enrichment — opt-in (tools.gitnexus.enabled: on).
-	// Never auto: gitnexus may require network access. Returns empty+absent when
-	// disabled or tool absent; risk_hub falls back to surface-breadth-only in that case.
+	// gitnexus optional symbol-impact enrichment. tools.gitnexus.enabled is
+	// three-state: on always attempts, off respects the opt-out (but reports a
+	// present index), and auto/unset auto-detects — a present .gitnexus/.codegraph
+	// index is used automatically. Returns empty+absent when not used or the CLI is
+	// absent; risk_hub falls back to surface-breadth-only in that case.
 	// Coverage is appended to ExtraCoverage so the engine includes it in the diagnostic.
 	var gitnexusCov diagnostic.Coverage
-	change.GitnexusImpact, gitnexusCov, _ = gitnexus.Run(ctx, deps.Runner, s.Root, cfg.GitnexusEnabled())
+	change.GitnexusImpact, gitnexusCov, _ = gitnexus.Run(ctx, deps.Runner, s.Root, cfg.GitnexusEnabled(), cfg.GitnexusExplicitlyDisabled())
 	change.ExtraCoverage = append(change.ExtraCoverage, gitnexusCov)
 
 	// Pinned coupling labels (.archfit-labels.yaml): the human-reviewed output of

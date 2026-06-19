@@ -227,9 +227,9 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 12: gitnexus auto-detect present index
 
-- [ ] detect `.gitnexus/` / `.codegraph` index in target repo; use it when present (or warn it is present but disabled) instead of silent opt-in-off; refresh via `node .gitnexus/run.cjs analyze --index-only` (never regenerates CLAUDE.md/skills)
-- [ ] write tests for detection + the "present but disabled" warning path
-- [ ] run `make test` — must pass before next task
+- [x] detect `.gitnexus/` / `.codegraph` index in target repo; use it when present (or warn it is present but disabled) instead of silent opt-in-off; refresh via `node .gitnexus/run.cjs analyze --index-only` (never regenerates CLAUDE.md/skills) — `tools.gitnexus.enabled` is now **three-state**: `on` always queries; `off` (explicit) respects the opt-out but still reports a present index (`reasonDisabledHasIndex` — the actionable "flip the flag" case); **auto/unset** auto-detects — a present `.gitnexus`/`.codegraph` index is queried automatically (`gitnexus.Run(…, forceOn, explicitlyDisabled)`; new `config.GitnexusExplicitlyDisabled`). OK coverage on the auto-detected path carries `reasonAutoDetected` (self-documenting + names the `--index-only` refresh command); archfit only reads the index, never regenerates it. CLI-missing-but-index-present → `reasonHasIndexNoCLI` (install-the-CLI, not silent). archfit's own self-config keeps gitnexus `on`, so self-scan/golden output is unchanged
+- [x] write tests for detection + the "present but disabled" warning path — `TestRun_AutoDetectUsesPresentIndex` (present index queried without opt-in; CLI actually called once), `TestRun_AutoDetectNoIndex`, `TestRun_AutoDetectIndexPresentCLIAbsent`, `TestRun_DisabledReasons` (explicit-off-with-index warning path asserts the index is reported but NOT queried), `TestHasIndex` (both dirs + file-not-dir negative); config `GitnexusExplicitlyDisabled` asserted off-vs-absent
+- [x] run `make test` — passes (race, full suite); `make lint` 0 issues; core-ring import (`TestArchImports`) + golden (`TestGolden`) gates green. Smoke-tested via `check --no-config` on the archfit repo: auto-detected the present index (90 files), JSON double-run byte-identical
 
 ### Task 13: Enable complexity (lizard) for Python and TypeScript
 

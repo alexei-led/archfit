@@ -1,8 +1,20 @@
-// Package gitnexus provides an optional, opt-in dependant-count provider
-// backed by the gitnexus CLI's knowledge graph. It is gated by
-// tools.gitnexus.enabled (never auto) because gitnexus requires its own index
-// (`gitnexus analyze`) and is always an enrichment, never required for
+// Package gitnexus provides an optional dependant-count provider backed by the
+// gitnexus CLI's knowledge graph. It is always an enrichment, never required for
 // correctness.
+//
+// Tool selection is three-state on tools.gitnexus.enabled:
+//
+//   - on            → always attempt to query the index.
+//   - off (explicit)→ never query; if a .gitnexus/.codegraph index is present,
+//     report it as present-but-disabled (the actionable case — flip the flag)
+//     rather than ignoring it silently.
+//   - auto / unset  → auto-detect: query iff a .gitnexus/.codegraph index is
+//     present on disk. This fixes the prior blind spot where an opt-in default
+//     silently ignored an index that was sitting right there.
+//
+// Refresh archfit's own index with `node .gitnexus/run.cjs analyze --index-only`
+// (the --index-only flag keeps gitnexus from rewriting CLAUDE.md / installing
+// skills); archfit only reads the index, it never regenerates it.
 //
 // Real CLI contract (verified 2026-06-11 against gitnexus's Cypher interface):
 //
@@ -14,7 +26,7 @@
 // (CALLS/ACCESSES/IMPORTS/EXTENDS) — a repo-wide dependant-count map in one
 // deterministic query.
 //
-// When enabled and the CLI + index are present, Run returns
+// When used and the CLI + index are present, Run returns
 // map[string]int (repo-relative file path → distinct dependant-file count).
 // When disabled, absent, or the repo is not indexed, it returns an empty map
 // with absent/partial coverage — never an error.
@@ -42,10 +54,13 @@ const (
 
 	// Absent/partial-coverage reasons: why historical-impact enrichment is n/a
 	// and the enable step. Static strings so a double-run stays byte-stable.
-	reasonDisabledHasIndex = "a gitnexus index is present but disabled — set `tools.gitnexus.enabled: true` to use it"
-	reasonDisabledNoIndex  = "gitnexus is opt-in — set `tools.gitnexus.enabled: true` and run `gitnexus analyze` to build the index"
+	reasonDisabledHasIndex = "a gitnexus index is present but disabled — set `tools.gitnexus.enabled: on` (or remove the `off` override) to use it"
+	reasonDisabledNoIndex  = "gitnexus is disabled (`tools.gitnexus.enabled: off`)"
+	reasonOptInNoIndex     = "gitnexus is auto-detected — run `gitnexus analyze` (or `node .gitnexus/run.cjs analyze --index-only`) to build an index; it is used automatically once present"
 	reasonNotInstalled     = "gitnexus CLI not found — install it and run `gitnexus analyze`"
 	reasonNotIndexed       = "gitnexus index missing, stale, or unreadable — run `gitnexus analyze` in the repo"
+	reasonHasIndexNoCLI    = "a gitnexus index is present but the gitnexus CLI is not installed — install it to use the index"
+	reasonAutoDetected     = "gitnexus index auto-detected (.gitnexus/.codegraph present); refresh with `node .gitnexus/run.cjs analyze --index-only`"
 )
 
 // indexDirs are the on-disk index directories archfit recognises as "gitnexus
@@ -71,16 +86,32 @@ type cypherEnvelope struct {
 // Run queries the gitnexus knowledge graph for root and returns a repo-relative
 // file path → distinct dependant-file count map.
 //
-// Returns empty + absent when enabled is false or the tool is not in PATH.
-// Returns empty + partial on any execution or parse failure (including a repo
-// that has no gitnexus index yet — run `gitnexus analyze` to create one).
+// Selection is three-state (see the package doc): forceOn always attempts;
+// explicitlyDisabled never does (but reports a present index); otherwise the
+// provider auto-detects — it attempts iff a .gitnexus/.codegraph index is on
+// disk. Returns empty + absent when not used or the CLI is missing, empty +
+// partial on any execution or parse failure (including an unindexed repo).
 // Never returns a non-nil error — all failures degrade gracefully.
-func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) (map[string]int, diagnostic.Coverage, error) {
-	if !enabled {
-		return nil, diagnostic.Coverage{Tool: toolName, Status: statusAbsent, Reason: disabledReason(root)}, nil
+func Run(ctx context.Context, runner toolrun.Runner, root string, forceOn, explicitlyDisabled bool) (map[string]int, diagnostic.Coverage, error) {
+	indexPresent := hasIndex(root)
+
+	switch {
+	case explicitlyDisabled:
+		// Respect an explicit opt-out, but never silently: a present index is the
+		// actionable case (flip the flag) so name it.
+		return nil, diagnostic.Coverage{Tool: toolName, Status: statusAbsent, Reason: disabledReason(indexPresent)}, nil
+	case !forceOn && !indexPresent:
+		// Auto-detect mode with nothing on disk to detect.
+		return nil, diagnostic.Coverage{Tool: toolName, Status: statusAbsent, Reason: reasonOptInNoIndex}, nil
 	}
+	// forceOn, or auto-detect with a present index → attempt to use it.
 
 	if _, found := runner.Detect(ctx, toolName); !found {
+		// A present index we cannot read (CLI missing) is more actionable as a
+		// "install the CLI" message than a generic "not installed".
+		if indexPresent {
+			return nil, diagnostic.Coverage{Tool: toolName, Status: statusAbsent, Reason: reasonHasIndexNoCLI}, nil
+		}
 		return nil, diagnostic.Coverage{Tool: toolName, Status: statusAbsent, Reason: reasonNotInstalled}, nil
 	}
 
@@ -101,12 +132,18 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) 
 		return nil, partial, nil
 	}
 
-	return impact, diagnostic.Coverage{
+	cov := diagnostic.Coverage{
 		Tool:            toolName,
 		FilesSeen:       len(impact),
 		FilesApplicable: len(impact),
 		Status:          statusOK,
-	}, nil
+	}
+	if !forceOn {
+		// Used via auto-detection (no explicit opt-in): make the run
+		// self-documenting and point at the refresh command.
+		cov.Reason = reasonAutoDetected
+	}
+	return impact, cov, nil
 }
 
 // parseDependants parses the cypher JSON envelope and its two-column markdown
@@ -137,11 +174,11 @@ func parseDependants(data []byte) (map[string]int, error) {
 	return m, nil
 }
 
-// disabledReason distinguishes "index present but opt-in off" (the actionable
-// case — flip the flag) from "no index yet" (build it first), so a present-but-
-// disabled index is never reported as silently absent.
-func disabledReason(root string) string {
-	if hasIndex(root) {
+// disabledReason distinguishes "index present but explicitly off" (the actionable
+// case — flip the flag) from "off and no index", so a present-but-disabled index
+// is never reported as silently absent.
+func disabledReason(indexPresent bool) string {
+	if indexPresent {
 		return reasonDisabledHasIndex
 	}
 	return reasonDisabledNoIndex
