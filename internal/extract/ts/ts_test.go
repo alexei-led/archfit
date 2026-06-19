@@ -147,9 +147,12 @@ func TestExtract_CouldNotResolve(t *testing.T) {
 
 // TestExtract_ExternalNodes mirrors the codegraph case: a CLI importing the
 // uninstalled npm package "commander" (couldNotResolve) and the node builtin
-// "fs" (coreModule), with no node_modules. The unresolved package must become an
-// external node — never a first-party file: node that pollutes martin metrics —
-// and the core module must be dropped entirely.
+// "fs" (coreModule), with no node_modules. dependency-cruiser lists both as
+// their own module.source entries (not just as dependencies), so the fixture
+// includes those source entries. The unresolved package must become an external
+// node — never a first-party file: node that pollutes martin metrics — and the
+// core module must be dropped entirely, whether it appears as a dependency or as
+// a source.
 func TestExtract_ExternalNodes(t *testing.T) {
 	data := loadFixture(t, "depcruise_external.json")
 	runner := mockRunner(data)
@@ -185,6 +188,11 @@ func TestExtract_ExternalNodes(t *testing.T) {
 	// First-party files keep their file: nodes.
 	if !hasNode("file:src/cli.ts") || !hasNode("file:src/commands/index.ts") {
 		t.Error("first-party source files must keep file: nodes")
+	}
+	// Exactly the two first-party files plus external:commander — the builtin/
+	// unresolved source entries must not add any first-party module nodes.
+	if len(facts.Nodes) != 3 {
+		t.Errorf("node count = %d, want 3 (2 first-party files + external:commander); nodes=%v", len(facts.Nodes), facts.Nodes)
 	}
 
 	// The edge to commander is kept (fan-out stays complete) and points external.

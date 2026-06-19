@@ -105,17 +105,38 @@ func (m ChangeLocalityMetric) Calculate(in signal.CommonInput) diagnostic.Metric
 // Go package nodes and repo/external nodes do not map to a single changed source
 // file and are skipped — Go changes enter through their file nodes.
 //
-// Ceiling: the module→file mapping assumes the package root is the repo root; a
-// src-layout project (src/pkg/...) whose module path drops the "src/" prefix
-// will not match. Acceptable for a report-only signal; revisit if src-layout
-// Python becomes a primary target.
+// src-layout: a Python module's dotted name drops its source-root prefix
+// ("ccgram.bootstrap" → "ccgram/bootstrap.py") and will not equal the
+// repo-relative changed path ("src/ccgram/bootstrap.py"). We additionally match
+// each changed file with its single leading source-root segment stripped
+// ("src/ccgram/bootstrap.py" → "ccgram/bootstrap.py"), kept only while it stays
+// multi-segment so a stripped path can never collapse to a bare basename and
+// over-match an unrelated top-level module.
+//
+// Ceiling: only a single-level source root is stripped; a two-level root
+// (packages/x/src/...) still will not match. Acceptable for a report-only
+// signal. The stripped alias applies to module nodes only — file nodes (Go, TS)
+// already carry the full repo-relative path and match exactly.
 func changedNodeIDs(g *graph.Graph, changed map[string]struct{}) map[string]struct{} {
+	rootStripped := make(map[string]struct{})
+	for f := range changed {
+		if _, rest, found := strings.Cut(f, "/"); found && strings.Contains(rest, "/") {
+			rootStripped[rest] = struct{}{}
+		}
+	}
+
 	out := make(map[string]struct{})
 	for _, n := range g.Nodes() {
 		for _, cand := range nodeFileCandidates(n) {
 			if _, ok := changed[cand]; ok {
 				out[n.ID()] = struct{}{}
 				break
+			}
+			if n.Kind == graph.NodeKindModule {
+				if _, ok := rootStripped[cand]; ok {
+					out[n.ID()] = struct{}{}
+					break
+				}
 			}
 		}
 	}

@@ -38,6 +38,18 @@
     {
       "source": "src/commands/index.ts",
       "dependencies": []
+    },
+    {
+      "source": "commander",
+      "couldNotResolve": true,
+      "coreModule": false,
+      "dependencies": []
+    },
+    {
+      "source": "fs",
+      "couldNotResolve": false,
+      "coreModule": true,
+      "dependencies": []
     }
   ]
 }

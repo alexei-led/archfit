@@ -195,6 +195,43 @@ func TestChangeLocality_PythonPackageInit(t *testing.T) {
 	}
 }
 
+// TestChangeLocality_PythonSrcLayout is the ccgram regression: a src-layout
+// project reports changed files as "src/app/handlers.py", but grimp's module
+// node drops the source root ("module:app.handlers"). Stripping the single
+// leading source-root segment must bridge the two so the metric is not a false
+// zero on real src-layout repos.
+func TestChangeLocality_PythonSrcLayout(t *testing.T) {
+	m := boundary.ChangeLocalityMetric{}
+	res := m.Calculate(signal.CommonInput{
+		Graph:           pyGraph(),
+		Classifications: pyIndex(),
+		ChangedFiles:    []string{"src/app/handlers.py"},
+	})
+	if res.Value != 1 {
+		t.Errorf("value = %v, want 1 (src/app/handlers.py → module:app.handlers)", res.Value)
+	}
+	want := "1 cross-module edge(s) from 1 changed file(s); forward reach 2 file(s)"
+	if res.Display != want {
+		t.Errorf("display = %q, want %q", res.Display, want)
+	}
+}
+
+// TestChangeLocality_NoBasenameOverMatch guards the source-root stripping: a file
+// that shares only the basename of a module ("lib/handlers.py" vs module
+// "app.handlers") must NOT be attributed to that module. Stripping never
+// collapses a path to a bare basename, so this stays a genuine 0.
+func TestChangeLocality_NoBasenameOverMatch(t *testing.T) {
+	m := boundary.ChangeLocalityMetric{}
+	res := m.Calculate(signal.CommonInput{
+		Graph:           pyGraph(),
+		Classifications: pyIndex(),
+		ChangedFiles:    []string{"lib/handlers.py"},
+	})
+	if res.Value != 0 {
+		t.Errorf("value = %v, want 0 (lib/handlers.py must not match module:app.handlers)", res.Value)
+	}
+}
+
 // TestChangeLocality_TSFileNodeIDs confirms the file-path scheme (Go/TS) still
 // resolves after the rework.
 func TestChangeLocality_TSFileNodeIDs(t *testing.T) {

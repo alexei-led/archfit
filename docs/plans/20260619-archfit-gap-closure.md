@@ -181,11 +181,11 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 6: Phase-1 validation run (correctness + determinism gate)
 
-- [ ] `make build`; run full+delta on all three repos (Go self, `~/workspace/ccgram`, `~/workspace/codegraph`)
-- [ ] assert: ccgram delta `change_locality` ≠ false 0; martin lists no node builtins; advisories rendered as rollups; BC score value/band visible
-- [ ] assert determinism: byte-identical double-run per repo + stable `config_hash`
-- [ ] record results into `docs/plans/notes/gap-closure-phase1.md` (no checkbox files outside plan)
-- [ ] run `make test` — must pass before next task
+- [x] `make build`; run full+delta on all three repos (Go self, `~/Workspace/ccgram`, `~/Workspace/codegraph`) — delta bases Go `HEAD~5`, ccgram `HEAD~30` (221 changed files), codegraph `HEAD~30`
+- [x] assert: ccgram delta `change_locality` ≠ false 0 (now **340** cross-module edges); martin lists no node builtins (codegraph + Go clean); advisories rendered as rollups (ccgram 421 edges → 58 rollups); BC score value/band visible (58 rollups carry `score_value`+`score_band`, markdown `score: 5/10 (medium)`). **Two residual bugs exposed and fixed** — src-layout false-0 in `change_locality.go` (Task-1 ceiling) and node-builtin source-entry leak in `ts.go` (Task-3 incomplete); both with regression tests
+- [x] assert determinism: all six JSON double-runs byte-identical; `config_hash` stable per repo and identical full==delta
+- [x] record results into `docs/plans/notes/gap-closure-phase1.md` (no checkbox files outside plan)
+- [x] run `make test` — passes (race, full suite); `make lint` 0 issues; core-ring import + golden gates green
 
 ### Phase 2 — Reliability, meaning, and the architect bridge (P1)
 

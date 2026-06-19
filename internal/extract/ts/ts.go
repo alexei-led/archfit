@@ -165,6 +165,12 @@ type dcModule struct {
 	Source       string  `json:"source"`
 	Dependencies []dcDep `json:"dependencies"`
 	Deps         []dcDep `json:"deps"` // alternate key name used by some builds
+	// Module-level resolution flags. dependency-cruiser lists every resolved
+	// target as its own module entry, so node builtins (coreModule) and
+	// uninstalled npm packages (couldNotResolve) appear here as sources — not
+	// just as dependencies. They must not become first-party file nodes.
+	CouldNotResolve bool `json:"couldNotResolve"`
+	CoreModule      bool `json:"coreModule"`
 }
 
 type dcDep struct {
@@ -201,6 +207,22 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 	}
 
 	for _, mod := range dc.Modules {
+		// A node builtin (fs, path, crypto, …) is never a first-party source
+		// file: skip its module entry entirely so it cannot leak into
+		// instability/abstractness/martin as a zone-of-pain module. Its inbound
+		// edges are already dropped on the dependency side (dep.CoreModule).
+		if mod.CoreModule {
+			continue
+		}
+		// An uninstalled npm package (no node_modules) is reported as an
+		// unresolvable source entry. Record it as external (not first-party) so
+		// metrics exclude it, but keep the node so edges TO it stay consistent.
+		if mod.CouldNotResolve {
+			emitNode(graph.Node{Kind: graph.NodeKindExternal, Path: mod.Source})
+			unresolved++
+			continue
+		}
+
 		fromID := "file:" + mod.Source
 		emitNode(graph.Node{Kind: graph.NodeKindFile, Path: mod.Source})
 
