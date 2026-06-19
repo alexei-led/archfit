@@ -48,6 +48,11 @@ type Coverage struct {
 	FilesApplicable int    `json:"files_applicable"`
 	Unresolved      int    `json:"unresolved"`
 	Status          string `json:"status"`
+	// Reason explains why a headline metric is absent or partial — a missing
+	// tool, an opt-in-off setting, or an uninstalled dependency — and how to
+	// enable it (the actionable next step). Empty when status is ok. A static,
+	// deterministic string so a double-run stays byte-identical.
+	Reason string `json:"reason,omitempty"`
 }
 
 // AgentTask is the structured repair-task block (spec §13): one per ACTIVE gate

@@ -123,7 +123,11 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 			if c.FilesSeen > 0 {
 				extra = fmt.Sprintf(" (%d files)", c.FilesSeen)
 			}
-			fmt.Fprintf(&b, "- %s: %s%s\n", c.Tool, c.Status, extra)
+			reason := ""
+			if c.Reason != "" {
+				reason = " — " + c.Reason
+			}
+			fmt.Fprintf(&b, "- %s: %s%s%s\n", c.Tool, c.Status, extra, reason)
 		}
 	}
 

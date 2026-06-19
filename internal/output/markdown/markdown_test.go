@@ -481,11 +481,12 @@ func TestRenderer_Render_NewInfoMetrics(t *testing.T) {
 }
 
 func TestRenderer_Render_ToolCoverageNewTools(t *testing.T) {
-	// Confirm scip-symbols, jscpd (clones), and gitnexus coverage rows render.
+	// Confirm scip-symbols, jscpd (clones), and gitnexus coverage rows render,
+	// and that an absent tool's reason + enable step renders alongside its status.
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
 	d.ToolCoverage = []diagnostic.Coverage{
-		{Tool: "scip-symbols", Status: statusAbsent},
+		{Tool: "scip-symbols", Status: statusAbsent, Reason: "install JS/TS dependencies (e.g. `npm install`) for semantic strength"},
 		{Tool: "jscpd", Status: statusAbsent},
 		{Tool: "gitnexus", Status: statusAbsent},
 	}
@@ -501,6 +502,14 @@ func TestRenderer_Render_ToolCoverageNewTools(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("coverage section missing %q\nfull output:\n%s", want, out)
 		}
+	}
+	// The reason renders inline with the tool's coverage row.
+	if !strings.Contains(out, "scip-symbols: absent — install JS/TS dependencies") {
+		t.Errorf("coverage row missing inline reason\nfull output:\n%s", out)
+	}
+	// A reasonless row keeps the plain "<tool>: <status>" form (no dangling dash).
+	if !strings.Contains(out, "jscpd: absent\n") {
+		t.Errorf("reasonless coverage row should render plainly\nfull output:\n%s", out)
 	}
 }
 

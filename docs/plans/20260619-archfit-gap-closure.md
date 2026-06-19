@@ -220,10 +220,10 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 11: scip-typescript bootstrap + coverage transparency
 
-- [ ] in `internal/extract/scip/scip_strength.go`, detect missing `node_modules` for TS and emit an explicit coverage reason ("install deps for semantic strength") rather than silent absent
-- [ ] generalize: when a headline metric is n/a due to a missing/opt-in tool, the report states the reason + enable step
-- [ ] write tests for the coverage-reason messaging (TS no-node_modules; lizard absent; gitnexus present-but-disabled)
-- [ ] run `make test` — must pass before next task
+- [x] in `internal/extract/scip/scip_strength.go`, detect missing `node_modules` for TS and emit an explicit coverage reason ("install deps for semantic strength") rather than silent absent — new `diagnostic.Coverage.Reason` field (`json:"reason,omitempty"`, static/deterministic); scip absent paths now set `reasonScipNoIndexer`, `reasonScipNoUv`, and `reasonTSNoNodeModules`. Two TS-no-deps routes covered: indexer+uv present but `node_modules` missing short-circuits before indexing (the codegraph baseline), and the no-indexer path picks the node_modules reason for any TS project (`scipAbsentReason`)
+- [x] generalize: when a headline metric is n/a due to a missing/opt-in tool, the report states the reason + enable step — same `Reason` field carried by lizard (`complexity.go`: opt-in-off vs not-installed vs run-failed), gitnexus (`gitnexus.go`: **present-but-disabled** `.gitnexus`/`.codegraph` index detection vs no-index vs not-installed vs not-indexed), and jscpd (`clones.go`). Markdown coverage section renders `- <tool>: <status>[ (N files)] — <reason>` (reasonless rows stay plain, no dangling dash)
+- [x] write tests for the coverage-reason messaging (TS no-node_modules; lizard absent; gitnexus present-but-disabled) — `TestStrengths_AbsentReason` (3 TS/non-TS cases), complexity `TestRun_AbsentReasons` + `TestRun_DisabledVsAbsent` (distinct reasons), gitnexus `TestRun_DisabledReasons` (index-present vs no-index vs CLI-absent vs not-indexed), clones `TestRun_AbsentReasons`, markdown `TestRenderer_Render_ToolCoverageNewTools` (inline reason renders; reasonless row plain)
+- [x] run `make test` — passes (race, full suite); `make lint` 0 issues; core-ring import (`TestArchImports`) + golden (`TestGolden`) gates green
 
 ### Task 12: gitnexus auto-detect present index
 

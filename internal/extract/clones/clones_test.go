@@ -154,6 +154,19 @@ func TestRun_Disabled(t *testing.T) {
 	}
 }
 
+// TestRun_AbsentReasons asserts opt-in-off and not-installed give distinct,
+// actionable coverage reasons so the report explains why clone detection is n/a.
+func TestRun_AbsentReasons(t *testing.T) {
+	_, covDisabled, _ := Run(context.Background(), absentRunner(), t.TempDir(), false)
+	if covDisabled.Reason != reasonDisabled {
+		t.Errorf("disabled reason = %q, want %q", covDisabled.Reason, reasonDisabled)
+	}
+	_, covAbsent, _ := Run(context.Background(), absentRunner(), t.TempDir(), true)
+	if covAbsent.Reason != reasonNotInstalled {
+		t.Errorf("absent-tool reason = %q, want %q", covAbsent.Reason, reasonNotInstalled)
+	}
+}
+
 func TestRun_MalformedOutput(t *testing.T) {
 	clusters, cov, err := Run(context.Background(), malformedRunner(), t.TempDir(), true)
 	if err != nil {

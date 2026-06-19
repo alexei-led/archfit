@@ -2,6 +2,8 @@ package gitnexus
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -116,6 +118,49 @@ func TestRun_Disabled(t *testing.T) {
 	if len(impact) != 0 {
 		t.Errorf("expected empty impact map for disabled tool, got %d entries", len(impact))
 	}
+}
+
+// TestRun_DisabledReasons asserts the opt-in-off path distinguishes a present
+// index ("flip the flag") from no index ("build it first"), and that a missing
+// CLI and an unindexed repo each carry their own actionable reason.
+func TestRun_DisabledReasons(t *testing.T) {
+	t.Run("disabled with index present", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, ".gitnexus"), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		_, cov, _ := Run(context.Background(), absentRunner(), root, false)
+		if cov.Status != statusAbsent {
+			t.Errorf("status = %q, want %q", cov.Status, statusAbsent)
+		}
+		if cov.Reason != reasonDisabledHasIndex {
+			t.Errorf("reason = %q, want %q", cov.Reason, reasonDisabledHasIndex)
+		}
+	})
+
+	t.Run("disabled with no index", func(t *testing.T) {
+		_, cov, _ := Run(context.Background(), absentRunner(), t.TempDir(), false)
+		if cov.Reason != reasonDisabledNoIndex {
+			t.Errorf("reason = %q, want %q", cov.Reason, reasonDisabledNoIndex)
+		}
+	})
+
+	t.Run("enabled but CLI absent", func(t *testing.T) {
+		_, cov, _ := Run(context.Background(), absentRunner(), t.TempDir(), true)
+		if cov.Reason != reasonNotInstalled {
+			t.Errorf("reason = %q, want %q", cov.Reason, reasonNotInstalled)
+		}
+	})
+
+	t.Run("enabled, repo not indexed (run fails)", func(t *testing.T) {
+		_, cov, _ := Run(context.Background(), failRunner(), t.TempDir(), true)
+		if cov.Status != statusPartial {
+			t.Errorf("status = %q, want %q", cov.Status, statusPartial)
+		}
+		if cov.Reason != reasonNotIndexed {
+			t.Errorf("reason = %q, want %q", cov.Reason, reasonNotIndexed)
+		}
+	})
 }
 
 func TestRun_AbsentTool(t *testing.T) {

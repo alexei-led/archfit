@@ -23,6 +23,14 @@ const (
 	indexerGo     = "scip-go"
 	indexerTS     = "scip-typescript"
 	flagOutput    = "--output"
+
+	nodeModulesDir = "node_modules"
+
+	// Absent-coverage reasons: why semantic strength is unavailable and the
+	// actionable enable step. Static strings so a double-run stays byte-stable.
+	reasonScipNoIndexer   = "no SCIP indexer found — install scip-go, scip-typescript, or scip-python for semantic integration strength"
+	reasonScipNoUv        = "uv not found — install uv (https://astral.sh/uv) so archfit can read the SCIP index"
+	reasonTSNoNodeModules = "install JS/TS dependencies (e.g. `npm install`) for semantic strength — scip-typescript needs node_modules to resolve cross-package imports"
 )
 
 // readerOutput mirrors the JSON emitted by scip_reader.py.
@@ -113,10 +121,19 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 
 	indexer, pkg, lang, found := a.detectIndexer(ctx, root)
 	if !found {
+		absent.Reason = scipAbsentReason(root)
 		return ro, absent, false
 	}
 	// The reader runs via uv (PEP 723 inline deps: protobuf + grpcio-tools).
 	if _, found := a.runner.Detect(ctx, "uv"); !found {
+		absent.Reason = reasonScipNoUv
+		return ro, absent, false
+	}
+	// scip-typescript resolves imports through node_modules; without installed
+	// deps it indexes nothing useful, so surface the fix instead of silently
+	// returning empty (the codegraph baseline: indexer present, deps absent).
+	if lang == "typescript" && !dirExists(filepath.Join(root, nodeModulesDir)) {
+		absent.Reason = reasonTSNoNodeModules
 		return ro, absent, false
 	}
 
@@ -283,4 +300,20 @@ func detectPyPackage(root string) string {
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+// dirExists reports whether path exists and is a directory.
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// scipAbsentReason picks the most actionable reason when no SCIP indexer was
+// detected. A TS project with no installed deps is the dominant, most common
+// blocker (the codegraph baseline); otherwise a generic install-an-indexer hint.
+func scipAbsentReason(root string) string {
+	if fileExists(filepath.Join(root, "package.json")) && !dirExists(filepath.Join(root, nodeModulesDir)) {
+		return reasonTSNoNodeModules
+	}
+	return reasonScipNoIndexer
 }

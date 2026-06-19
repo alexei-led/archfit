@@ -30,6 +30,11 @@ const (
 	statusOK      = "ok"
 	statusAbsent  = "absent"
 	lizardTimeout = 2 * time.Minute
+
+	// Absent-coverage reasons: why complexity is n/a and the enable step.
+	reasonDisabled     = "complexity is opt-in — set `tools.complexity.enabled: true` in .archfit.yaml"
+	reasonNotInstalled = "lizard not found — install it (`pip install lizard`, or have `uvx` available) to enable complexity"
+	reasonRunFailed    = "lizard run failed — check the install and rerun"
 )
 
 // lizardExcludes keep tests, mocks, vendored, and generated trees out of the
@@ -45,14 +50,13 @@ var lizardExcludes = []string{
 // Coverage carries zero file counts (FilesSeen/FilesApplicable/Unresolved all 0)
 // so the coverage metric value does not shift between runs with/without the tool.
 func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
-	absent := diagnostic.Coverage{Tool: toolName, Status: statusAbsent}
 	if !enabled {
-		return nil, absent, nil
+		return nil, absentCov(reasonDisabled), nil
 	}
 
 	name, pre := lizardCommand(ctx, runner)
 	if name == "" {
-		return nil, absent, nil
+		return nil, absentCov(reasonNotInstalled), nil
 	}
 
 	args := append(append([]string{}, pre...), root, "--csv")
@@ -61,12 +65,18 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) 
 	}
 	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: name, Args: args, WorkDir: root, Timeout: lizardTimeout})
 	if err != nil || out.ExitCode != 0 {
-		return nil, absent, nil
+		return nil, absentCov(reasonRunFailed), nil
 	}
 
 	funcs := parseLizardCSV(out.Stdout, root)
 	cov := diagnostic.Coverage{Tool: toolName, Status: statusOK}
 	return funcs, cov, nil
+}
+
+// absentCov builds an absent coverage record with zero file counts and the
+// given reason (why complexity is n/a + how to enable it).
+func absentCov(reason string) diagnostic.Coverage {
+	return diagnostic.Coverage{Tool: toolName, Status: statusAbsent, Reason: reason}
 }
 
 // lizardCommand resolves how to invoke lizard: the binary directly, or via uvx.

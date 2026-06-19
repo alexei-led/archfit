@@ -23,6 +23,8 @@ package gitnexus
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -37,7 +39,18 @@ const (
 	statusPartial   = "partial"
 	statusAbsent    = "absent"
 	gitnexusTimeout = 5 * time.Minute
+
+	// Absent/partial-coverage reasons: why historical-impact enrichment is n/a
+	// and the enable step. Static strings so a double-run stays byte-stable.
+	reasonDisabledHasIndex = "a gitnexus index is present but disabled — set `tools.gitnexus.enabled: true` to use it"
+	reasonDisabledNoIndex  = "gitnexus is opt-in — set `tools.gitnexus.enabled: true` and run `gitnexus analyze` to build the index"
+	reasonNotInstalled     = "gitnexus CLI not found — install it and run `gitnexus analyze`"
+	reasonNotIndexed       = "gitnexus index missing, stale, or unreadable — run `gitnexus analyze` in the repo"
 )
+
+// indexDirs are the on-disk index directories archfit recognises as "gitnexus
+// present" when the tool is opt-in disabled.
+var indexDirs = []string{".gitnexus", ".codegraph"}
 
 // dependantsQuery counts, per file, the distinct other files that reference
 // its defined symbols. Ordered for deterministic output.
@@ -63,16 +76,15 @@ type cypherEnvelope struct {
 // that has no gitnexus index yet — run `gitnexus analyze` to create one).
 // Never returns a non-nil error — all failures degrade gracefully.
 func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) (map[string]int, diagnostic.Coverage, error) {
-	absent := diagnostic.Coverage{Tool: toolName, Status: statusAbsent}
 	if !enabled {
-		return nil, absent, nil
+		return nil, diagnostic.Coverage{Tool: toolName, Status: statusAbsent, Reason: disabledReason(root)}, nil
 	}
 
 	if _, found := runner.Detect(ctx, toolName); !found {
-		return nil, absent, nil
+		return nil, diagnostic.Coverage{Tool: toolName, Status: statusAbsent, Reason: reasonNotInstalled}, nil
 	}
 
-	partial := diagnostic.Coverage{Tool: toolName, Status: statusPartial}
+	partial := diagnostic.Coverage{Tool: toolName, Status: statusPartial, Reason: reasonNotIndexed}
 
 	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    toolName,
@@ -123,6 +135,26 @@ func parseDependants(data []byte) (map[string]int, error) {
 		m[file] = count
 	}
 	return m, nil
+}
+
+// disabledReason distinguishes "index present but opt-in off" (the actionable
+// case — flip the flag) from "no index yet" (build it first), so a present-but-
+// disabled index is never reported as silently absent.
+func disabledReason(root string) string {
+	if hasIndex(root) {
+		return reasonDisabledHasIndex
+	}
+	return reasonDisabledNoIndex
+}
+
+// hasIndex reports whether a gitnexus/codegraph index directory exists at root.
+func hasIndex(root string) bool {
+	for _, dir := range indexDirs {
+		if info, err := os.Stat(filepath.Join(root, dir)); err == nil && info.IsDir() {
+			return true
+		}
+	}
+	return false
 }
 
 // errCypher carries the gitnexus-reported query error.

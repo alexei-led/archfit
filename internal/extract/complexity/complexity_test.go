@@ -215,7 +215,8 @@ func TestRun_CoverageToolName(t *testing.T) {
 }
 
 // TestRun_DisabledVsAbsent verifies disabled and absent-tool produce
-// identical coverage shape (status absent, zero file counts).
+// identical coverage shape (status absent, zero file counts) but distinct,
+// actionable reasons so the report explains why complexity is n/a.
 func TestRun_DisabledVsAbsent(t *testing.T) {
 	root := t.TempDir()
 	_, covDisabled, _ := Run(context.Background(), absentRunner(), root, false)
@@ -228,5 +229,35 @@ func TestRun_DisabledVsAbsent(t *testing.T) {
 		if cov.FilesSeen != 0 || cov.FilesApplicable != 0 || cov.Unresolved != 0 {
 			t.Errorf("non-zero file counts: %+v", cov)
 		}
+	}
+	if covDisabled.Reason == covAbsent.Reason {
+		t.Errorf("disabled and absent should give different reasons, both = %q", covDisabled.Reason)
+	}
+}
+
+// TestRun_AbsentReasons asserts each absent/partial path carries its distinct,
+// actionable reason (opt-in off, not installed, run failed).
+func TestRun_AbsentReasons(t *testing.T) {
+	root := t.TempDir()
+	cases := []struct {
+		name       string
+		runner     toolrun.Runner
+		enabled    bool
+		wantReason string
+	}{
+		{"opt-in off", absentRunner(), false, reasonDisabled},
+		{"not installed", absentRunner(), true, reasonNotInstalled},
+		{"run failed", failRunner(), true, reasonRunFailed},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, cov, err := Run(context.Background(), tc.runner, root, tc.enabled)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cov.Reason != tc.wantReason {
+				t.Errorf("Reason = %q, want %q", cov.Reason, tc.wantReason)
+			}
+		})
 	}
 }
