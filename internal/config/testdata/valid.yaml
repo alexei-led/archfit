@@ -59,7 +59,7 @@ metrics:
     gate: fail
     max_new: 0
 map_review:
-  stale_after: 90d
+  stale_after: 2160h # 90 days (Go duration syntax)
   gate: warn
 exceptions:
   - rule: checkout-no-pricing-internals

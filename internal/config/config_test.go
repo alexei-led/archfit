@@ -794,6 +794,16 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			yaml:    "version: 1\nmap_review:\n  gate: off\n",
 			wantErr: "",
 		},
+		{
+			name:    "invalid stale_after duration",
+			yaml:    "version: 1\nmap_review:\n  stale_after: \"180 days\"\n",
+			wantErr: "map_review.stale_after",
+		},
+		{
+			name:    "valid stale_after duration",
+			yaml:    "version: 1\nmap_review:\n  stale_after: 720h\n",
+			wantErr: "",
+		},
 	}
 
 	for _, tc := range tests {

@@ -160,9 +160,18 @@ func TestExtract_ExternalNodes(t *testing.T) {
 	cfg := config.ExtractConfig{Mode: config.ModeAuto}
 	extractor := ts.New(runner, cfg)
 
-	facts, _, err := extractor.Extract(context.Background(), scope.Scope{Root: fixtureDir})
+	facts, cov, err := extractor.Extract(context.Background(), scope.Scope{Root: fixtureDir})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
+	}
+
+	// commander appears both as a module entry and as a dependency edge; it must
+	// be counted once, not twice (no double-count of the same unresolved package).
+	if cov.Unresolved != 1 {
+		t.Errorf("cov.Unresolved = %d, want 1 (commander counted once)", cov.Unresolved)
+	}
+	if facts.Unresolved != 1 {
+		t.Errorf("facts.Unresolved = %d, want 1 (commander counted once)", facts.Unresolved)
 	}
 
 	hasNode := func(id string) bool {

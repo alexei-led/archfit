@@ -259,9 +259,12 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 		// An uninstalled npm package (no node_modules) is reported as an
 		// unresolvable source entry. Record it as external (not first-party) so
 		// metrics exclude it, but keep the node so edges TO it stay consistent.
+		// Do NOT count it here: depcruise also lists the package as an unresolved
+		// dependency of every file that imports it, and those edges below are the
+		// authoritative unresolved count. Counting the module entry too would
+		// double-count the same package.
 		if mod.CouldNotResolve {
 			emitNode(graph.Node{Kind: graph.NodeKindExternal, Path: mod.Source})
-			unresolved++
 			continue
 		}
 

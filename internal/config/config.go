@@ -326,6 +326,11 @@ func validate(cfg Config) error {
 			return err
 		}
 	}
+	if s := cfg.MapReview.StaleAfter; s != "" {
+		if _, err := time.ParseDuration(s); err != nil {
+			return fmt.Errorf("map_review.stale_after %q is not a valid Go duration (e.g. 720h, 30m): %w", s, err)
+		}
+	}
 	return validateGate("map_review", cfg.MapReview.Gate)
 }
 
