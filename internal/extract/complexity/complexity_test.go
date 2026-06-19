@@ -2,11 +2,16 @@ package complexity
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
+
+// lizardPath is a stand-in resolved path returned by the test runners' Detect.
+const lizardPath = "/usr/bin/lizard"
 
 // ---------------------------------------------------------------------------
 // parseLizardCSV — ported from cmd/archfit/complexity_parse_test.go
@@ -105,7 +110,7 @@ func lizardRunner(csvOutput string) *toolrun.RunnerMock {
 	return &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
 			if tool == toolName {
-				return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/lizard"}, true
+				return toolrun.ToolInfo{Name: tool, Path: lizardPath}, true
 			}
 			return toolrun.ToolInfo{}, false
 		},
@@ -129,7 +134,7 @@ func failRunner() *toolrun.RunnerMock {
 	return &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
 			if tool == toolName {
-				return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/lizard"}, true
+				return toolrun.ToolInfo{Name: tool, Path: lizardPath}, true
 			}
 			return toolrun.ToolInfo{}, false
 		},
@@ -232,6 +237,123 @@ func TestRun_DisabledVsAbsent(t *testing.T) {
 	}
 	if covDisabled.Reason == covAbsent.Reason {
 		t.Errorf("disabled and absent should give different reasons, both = %q", covDisabled.Reason)
+	}
+}
+
+// capturingRunner detects lizard, records the args of the last Run call, and
+// returns the canned output. Used to assert how lizard is invoked.
+func capturingRunner(out toolrun.Output, gotArgs *[]string) *toolrun.RunnerMock {
+	return &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == toolName {
+				return toolrun.ToolInfo{Name: tool, Path: lizardPath}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			*gotArgs = cmd.Args
+			return out, nil
+		},
+	}
+}
+
+// TestRun_LanguageFlags asserts lizard is invoked with an explicit -l flag for
+// every language archfit supports, so Python and TS are analysed regardless of
+// lizard's default (version-dependent) language set.
+func TestRun_LanguageFlags(t *testing.T) {
+	var args []string
+	_, _, err := Run(context.Background(), capturingRunner(toolrun.Output{ExitCode: 0}, &args), t.TempDir(), true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := map[string]bool{"go": false, "python": false, "javascript": false, "typescript": false, "tsx": false}
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-l" {
+			if _, ok := want[args[i+1]]; ok {
+				want[args[i+1]] = true
+			}
+		}
+	}
+	for lang, seen := range want {
+		if !seen {
+			t.Errorf("lizard not scoped to language %q; args = %v", lang, args)
+		}
+	}
+}
+
+// TestRun_PythonAndTypeScriptExtraction asserts the extractor yields per-function
+// records for Python (.py), TypeScript (.ts), and TSX (.tsx) sources — the
+// languages that previously reported complexity n/a.
+func TestRun_PythonAndTypeScriptExtraction(t *testing.T) {
+	root := t.TempDir()
+	row := func(ccn int, rel string) string {
+		abs := filepath.Join(root, rel)
+		return fmt.Sprintf("20,%d,200,3,40,fn@1-40@%s,%s,fn,fn(),1,40\n", ccn, abs, abs)
+	}
+	csv := row(8, "svc/api.py") + row(6, "web/app.ts") + row(4, "web/view.tsx")
+	funcs, cov, err := Run(context.Background(), lizardRunner(csv), root, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cov.Status != statusOK {
+		t.Fatalf("Status = %q, want %q", cov.Status, statusOK)
+	}
+	byFile := map[string]int{}
+	for _, f := range funcs {
+		byFile[f.File] = f.CCN
+	}
+	for file, wantCCN := range map[string]int{"svc/api.py": 8, "web/app.ts": 6, "web/view.tsx": 4} {
+		if got, ok := byFile[file]; !ok {
+			t.Errorf("missing complexity record for %q; got %v", file, byFile)
+		} else if got != wantCCN {
+			t.Errorf("%s CCN = %d, want %d", file, got, wantCCN)
+		}
+	}
+}
+
+// TestRun_NonZeroExitWithOutput is the regression for the n/a-when-installed bug:
+// lizard returns its warning count as the exit code, so a non-zero exit that
+// still produced parseable CSV is a successful analysis (it found hot functions),
+// not a failure. The records must be kept and coverage reported ok.
+func TestRun_NonZeroExitWithOutput(t *testing.T) {
+	root := t.TempDir()
+	csv := "30,22,300,4,60,hot@1-60@/root/svc/big.py,/root/svc/big.py,hot,hot(a),1,60\n"
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == toolName {
+				return toolrun.ToolInfo{Name: tool, Path: lizardPath}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			// Exit 1 = one threshold warning, but CSV is still emitted.
+			return toolrun.Output{ExitCode: 1, Stdout: []byte(csv)}, nil
+		},
+	}
+	funcs, cov, err := Run(context.Background(), runner, root, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cov.Status != statusOK {
+		t.Errorf("Status = %q, want %q (non-zero exit with output is success)", cov.Status, statusOK)
+	}
+	if len(funcs) != 1 || funcs[0].CCN != 22 {
+		t.Errorf("expected the hot function to survive non-zero exit, got %+v", funcs)
+	}
+}
+
+// TestRun_NonZeroExitNoOutput asserts a non-zero exit with no parseable records
+// is still a genuine failure (distinguished from the warning-count case above).
+func TestRun_NonZeroExitNoOutput(t *testing.T) {
+	funcs, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cov.Status != statusAbsent || cov.Reason != reasonRunFailed {
+		t.Errorf("Status=%q Reason=%q, want absent/%q", cov.Status, cov.Reason, reasonRunFailed)
+	}
+	if len(funcs) != 0 {
+		t.Errorf("expected no funcs on genuine failure, got %d", len(funcs))
 	}
 }
 

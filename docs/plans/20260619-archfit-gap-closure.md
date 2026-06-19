@@ -233,9 +233,9 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 13: Enable complexity (lizard) for Python and TypeScript
 
-- [ ] fix `internal/extract/complexity/` invocation/detection so lizard runs for Python and TS (it supports both); complexity no longer n/a when lizard is installed
-- [ ] write tests / coverage assertions for Python + TS complexity extraction
-- [ ] run `make test` — must pass before next task
+- [x] fix `internal/extract/complexity/` invocation/detection so lizard runs for Python and TS (it supports both); complexity no longer n/a when lizard is installed — two root causes fixed in `complexity.go`: (1) **language detection** now passes explicit `-l go -l python -l javascript -l typescript -l tsx` flags (new `lizardLanguages`) so detection no longer depends on lizard's default language set, which has drifted across versions (typescript/tsx were not auto-detected in older lizard); (2) **exit-code handling** — lizard returns its warning count as the process exit code, so a non-zero exit with parseable CSV is a successful analysis that merely found hot functions; the extractor now keeps those records (`out.ExitCode != 0 && len(funcs) == 0` ⇒ fail) instead of discarding the whole signal for any repo with a CCN>threshold function. Smoke-tested: ccgram(Python) complexity 27 (parse_entries CCN 72), codegraph(TS) complexity 55 (extractDrupalRoutes CCN 58) — both previously n/a; double-runs byte-identical
+- [x] write tests / coverage assertions for Python + TS complexity extraction — `TestRun_LanguageFlags` (every supported `-l` flag present), `TestRun_PythonAndTypeScriptExtraction` (.py/.ts/.tsx rows → records), `TestRun_NonZeroExitWithOutput` (hot-function exit-1 survives), `TestRun_NonZeroExitNoOutput` (genuine failure still reasonRunFailed)
+- [x] run `make test` — passes (race, full suite); `make lint` 0 issues; core-ring import (`TestArchImports`) + golden (`TestGolden`) gates green
 
 ### Task 14: Config-quality lint
 

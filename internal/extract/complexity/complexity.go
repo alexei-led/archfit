@@ -44,6 +44,15 @@ var lizardExcludes = []string{
 	"*/node_modules/*", "*/mocks/*", "*/vendor/*", "*/dist/*", "*.d.ts",
 }
 
+// lizardLanguages pins the languages lizard analyses to the set archfit
+// supports (Go, Python, TS/JS). Passing explicit -l flags makes detection
+// deterministic and version-independent: lizard's default "all languages it
+// knows" set has drifted across releases (typescript/tsx were not auto-detected
+// in older lizard), so without this lizard could silently skip Python or TS
+// files and report complexity n/a even when the tool is installed. Names are
+// lizard's own language identifiers.
+var lizardLanguages = []string{"go", "python", "javascript", "typescript", "tsx"}
+
 // Run invokes lizard over root and returns per-function complexity records.
 // When enabled is false or the tool is absent, it returns an empty slice with
 // an absent coverage record and a nil error, mirroring the clones.Run contract.
@@ -60,15 +69,27 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) 
 	}
 
 	args := append(append([]string{}, pre...), root, "--csv")
+	for _, l := range lizardLanguages {
+		args = append(args, "-l", l)
+	}
 	for _, x := range lizardExcludes {
 		args = append(args, "-x", x)
 	}
 	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: name, Args: args, WorkDir: root, Timeout: lizardTimeout})
-	if err != nil || out.ExitCode != 0 {
+	if err != nil {
 		return nil, absentCov(reasonRunFailed), nil
 	}
 
 	funcs := parseLizardCSV(out.Stdout, root)
+	// lizard returns its warning count as the process exit code, so a non-zero
+	// exit with parseable output is a successful analysis that merely found hot
+	// functions — not a failure. Discarding it would zero the whole complexity
+	// signal for any repo with a CCN>threshold function. Only treat the run as
+	// failed when it produced no records at all.
+	if out.ExitCode != 0 && len(funcs) == 0 {
+		return nil, absentCov(reasonRunFailed), nil
+	}
+
 	cov := diagnostic.Coverage{Tool: toolName, Status: statusOK}
 	return funcs, cov, nil
 }
