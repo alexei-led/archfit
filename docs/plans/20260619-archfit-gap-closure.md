@@ -197,10 +197,10 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 8: TypeScript edge fidelity (type-only vs runtime)
 
-- [ ] parse dependency-cruiser `dependencyTypes` in `internal/extract/ts/ts.go`; tag `type-only` and `dynamic` edges
-- [ ] map `type-only` edges toward **Contract** integration strength (weakest), and value/runtime imports toward Functional/Model, per Vlad's strength ladder (Intrusive→Functional→Model→Contract)
-- [ ] write tests with dep-cruiser JSON fixtures covering type-only, dynamic, value imports
-- [ ] run `make test` — must pass before next task
+- [x] parse dependency-cruiser `dependencyTypes` in `internal/extract/ts/ts.go`; tag `type-only` and `dynamic` edges — `dcDep.isTypeOnly()` detects `type-only`/`pre-compilation-only` via the `dependencyTypes` array **or** the `preCompilationOnly` boolean (robust across dep-cruiser versions); a dynamic `import()` (`dynamic:true`/`dynamic-import`) is a runtime edge, not type-only
+- [x] map `type-only` edges toward **Contract** integration strength (weakest), and value/runtime imports toward Functional/Model, per Vlad's strength ladder (Intrusive→Functional→Model→Contract) — `dcDep.strengthHint()` sets `StrengthHint=contract` for type-only edges and `StrengthHint=functional` for value/runtime/dynamic edges (connascence-of-name; archfit cannot distinguish Model from the import alone — SCIP refines later, config globs still win in classify; hint is a fallback)
+- [x] write tests with dep-cruiser JSON fixtures covering type-only, dynamic, value imports — `testdata/ts/depcruise_edgetypes.json` + `TestExtract_EdgeTypes` (table: type-only→contract, value→functional, dynamic→functional)
+- [x] run `make test` — passes (race, full suite); `make lint` 0 issues; core-ring import + golden gates green
 
 ### Task 9: Dynamic/lazy import detection + flag-as-risk (detect only, no graph edges)
 

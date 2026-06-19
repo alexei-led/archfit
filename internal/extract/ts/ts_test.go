@@ -216,6 +216,50 @@ func TestExtract_ExternalNodes(t *testing.T) {
 	}
 }
 
+// TestExtract_EdgeTypes asserts dependency-cruiser dependencyTypes drive the
+// Balanced Coupling integration-strength hint: a type-only (`import type`) edge
+// shares only the type shape and vanishes at runtime → Contract (weakest); a
+// value/runtime import and a dynamic `import()` both bind to exported
+// names/signatures → Functional.
+func TestExtract_EdgeTypes(t *testing.T) {
+	data := loadFixture(t, "depcruise_edgetypes.json")
+	runner := mockRunner(data)
+
+	extractor := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
+
+	facts, _, err := extractor.Extract(context.Background(), scope.Scope{Root: fixtureDir})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	hintFor := func(to string) string {
+		for _, e := range facts.Edges {
+			if e.From == "file:src/a.ts" && e.To == to {
+				return e.StrengthHint
+			}
+		}
+		t.Fatalf("edge file:src/a.ts → %s not found", to)
+		return ""
+	}
+
+	cases := []struct {
+		name string
+		to   string
+		want string
+	}{
+		{"type-only import → contract", "file:src/types.ts", "contract"},
+		{"value import → functional", "file:src/b/index.ts", "functional"},
+		{"dynamic import → functional", "file:src/lazy.ts", "functional"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hintFor(tc.to); got != tc.want {
+				t.Errorf("StrengthHint(%s) = %q, want %q", tc.to, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestExtract_ToolAbsentAuto(t *testing.T) {
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {

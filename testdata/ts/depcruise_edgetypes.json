@@ -1,0 +1,55 @@
+{
+  "modules": [
+    {
+      "source": "src/a.ts",
+      "dependencies": [
+        {
+          "resolved": "src/types.ts",
+          "module": "./types",
+          "dependencyTypes": [
+            "local",
+            "type-only"
+          ],
+          "dynamic": false,
+          "preCompilationOnly": true,
+          "couldNotResolve": false,
+          "coreModule": false
+        },
+        {
+          "resolved": "src/b/index.ts",
+          "module": "./b",
+          "dependencyTypes": [
+            "local",
+            "es6"
+          ],
+          "dynamic": false,
+          "couldNotResolve": false,
+          "coreModule": false
+        },
+        {
+          "resolved": "src/lazy.ts",
+          "module": "./lazy",
+          "dependencyTypes": [
+            "local",
+            "dynamic-import"
+          ],
+          "dynamic": true,
+          "couldNotResolve": false,
+          "coreModule": false
+        }
+      ]
+    },
+    {
+      "source": "src/types.ts",
+      "dependencies": []
+    },
+    {
+      "source": "src/b/index.ts",
+      "dependencies": []
+    },
+    {
+      "source": "src/lazy.ts",
+      "dependencies": []
+    }
+  ]
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
@@ -180,6 +181,47 @@ type dcDep struct {
 	Dynamic         bool     `json:"dynamic"`
 	CouldNotResolve bool     `json:"couldNotResolve"`
 	CoreModule      bool     `json:"coreModule"`
+	// PreCompilationOnly is dependency-cruiser's flag for an import that does not
+	// survive to runtime — i.e. an `import type {…}`. It is the boolean twin of
+	// the "type-only" dependencyTypes entry; either marks a type-only edge.
+	PreCompilationOnly bool `json:"preCompilationOnly"`
+}
+
+// dependency-cruiser dependencyTypes entries archfit reasons about.
+const (
+	depTypeTypeOnly          = "type-only"
+	depTypePreCompilationOny = "pre-compilation-only"
+)
+
+// isTypeOnly reports whether a dependency exists only before compilation —
+// a TypeScript `import type {…}` that is erased from the emitted JS. Detected
+// via the boolean flag or either type-only dependencyTypes entry, for
+// robustness across dependency-cruiser versions.
+func (d dcDep) isTypeOnly() bool {
+	if d.PreCompilationOnly {
+		return true
+	}
+	for _, t := range d.DependencyTypes {
+		if t == depTypeTypeOnly || t == depTypePreCompilationOny {
+			return true
+		}
+	}
+	return false
+}
+
+// strengthHint maps a dependency to a Balanced Coupling integration-strength
+// hint (Vlad Khononov's ladder, weakest→strongest: Contract→Model→Functional→
+// Intrusive). A type-only edge shares only the type shape and vanishes at
+// runtime → Contract (weakest). A value/runtime edge — including a dynamic
+// `import()` — binds to the target's exported names and signatures → Functional
+// (connascence of name). archfit cannot tell Model from Functional from the
+// import alone; SCIP symbol resolution refines that later in the pipeline, and
+// config public/internal globs still win in classify. The hint is a fallback.
+func (d dcDep) strengthHint() string {
+	if d.isTypeOnly() {
+		return string(coupling.StrengthContract)
+	}
+	return string(coupling.StrengthFunctional)
 }
 
 // ---------------------------------------------------------------------------
@@ -269,11 +311,12 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 			}
 
 			edges = append(edges, graph.Edge{
-				From:       fromID,
-				To:         toID,
-				Kind:       edgeKind,
-				Language:   langTS,
-				Confidence: confidence,
+				From:         fromID,
+				To:           toID,
+				Kind:         edgeKind,
+				Language:     langTS,
+				Confidence:   confidence,
+				StrengthHint: dep.strengthHint(),
 			})
 		}
 	}
