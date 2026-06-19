@@ -104,6 +104,19 @@ func TestRun_NoArgs(t *testing.T) {
 	}
 }
 
+// TestRun_UnknownFlag_NotSilent verifies a bad flag exits 3 with a printed
+// error, not a silent exit (manual parser.Parse does not print on its own).
+func TestRun_UnknownFlag_NotSilent(t *testing.T) {
+	var buf bytes.Buffer
+	code := Run([]string{cmdCheck, "--definitely-not-a-flag"}, &buf)
+	if code != 3 {
+		t.Fatalf("unknown flag: exit = %d, want 3", code)
+	}
+	if strings.TrimSpace(buf.String()) == "" {
+		t.Errorf("unknown flag produced no output; want a printed error")
+	}
+}
+
 func TestRun_Doctor(t *testing.T) {
 	var buf bytes.Buffer
 	code := Run([]string{"doctor"}, &buf)

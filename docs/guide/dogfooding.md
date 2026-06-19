@@ -64,7 +64,7 @@ own newest capabilities:
   one step to make it real.
 
 None of these can fail the build. They show up in `archfit scan`,
-`archfit score`, and the JSON bundle that `archfit review --llm` narrates.
+`archfit score`, and the JSON bundle that `archfit review` narrates.
 
 ## See it yourself
 

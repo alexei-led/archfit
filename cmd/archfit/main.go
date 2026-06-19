@@ -114,7 +114,9 @@ func Run(args []string, stdout io.Writer) (exitStatus int) {
 
 	kctx, err := parser.Parse(args)
 	if err != nil {
-		// kong has already written the error + usage.
+		// Manual parser.Parse (unlike the kong.Parse helper) does not print the
+		// error itself, so surface it — otherwise a bad flag exits 3 silently.
+		_, _ = fmt.Fprintf(stdout, "archfit: %v\n", err)
 		return 3
 	}
 

@@ -292,11 +292,11 @@ archfit's implementation of Vlad's qualitative model.
 
 ### Task 21: Verify acceptance criteria (final gap-closure gate)
 
-- [ ] verify every Phase-1/2 correctness assertion still holds on all three repos
-- [ ] verify determinism end-to-end (double-run identical; golden stable; config_hash stable)
-- [ ] run full `make all` (fmt → lint → test → build); core-ring + golden + LLM-off-gate invariants green
-- [ ] confirm `review --llm` output post-verifies clean (no hallucinated entities) with a real key, or skip-with-note if key absent
-- [ ] verify test coverage meets project standard
+- [x] verify every Phase-1/2 correctness assertion still holds on all three repos — 17/17 PASS via `/tmp/verify_task21.sh`: ccgram delta `change_locality`=**340** (not false-0), codegraph martin lists no node builtins, ccgram **58** BC rollups each carrying `group_count`+`score_value`+`score_band`. Recorded in `docs/plans/notes/gap-closure-task21-acceptance.md`
+- [x] verify determinism end-to-end (double-run identical; golden stable; config_hash stable) — all **9** JSON/scorecard double-runs (full/delta/scorecard × 3 repos) byte-identical; `config_hash` stable and full==delta per repo; `TestGolden` green, `metric_version`s unchanged
+- [x] run full `make all` (fmt → lint → test → build); core-ring + golden + LLM-off-gate invariants green — `make lint` 0 issues; `make test` `-race` 56 packages ok, 0 FAIL/panic; build OK; `TestArchImports` (core ring) + `llm_ring_unreachable_from_internal` (LLM-off-gate) + `TestGolden` green
+- [x] confirm `review --llm` output post-verifies clean (no hallucinated entities) with a real key, or skip-with-note if key absent — **key absent → skip-with-note**: `archfit review` exits 3 with an actionable "ANTHROPIC_API_KEY is not set" message and never touches `check`; post-verify entity-drop covered deterministically by `TestReviewCmd_Run_EntityPostCheck`. Gate surfaced + fixed two defects: silent kong parse errors (`main.go`; `archfit review --llm` was a silent exit-3 unknown-flag — now `archfit: unknown flag --llm`; regression test `TestRun_UnknownFlag_NotSilent`) and a README/dogfooding doc mismatch (`review --llm` → `archfit review`, since `review` has no `--llm` flag — the whole command is the LLM review)
+- [x] verify test coverage meets project standard — total 77.6%; decision/core + adapter packages 80–100% (diagnostic 100%, coupling 97.8%, score 89.8%, jsonout/scorecard 100%); sub-standard packages are data/interface-only (`model/clone`, `model/signal`, `model/symbol`, `ports`, `metrics/internal/modgraph`, test helpers) — matches the repo's cover-behavior-not-structs pattern
 
 ### Task 22: Update documentation + final comparison deliverable
 

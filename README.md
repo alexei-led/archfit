@@ -51,7 +51,7 @@ byte-identical output for unchanged input, no LLM on the gate path.
 - **Honest coverage** — when a tool is missing the dependent metric reports `n/a`
   with the enable step; runs never fail because an optional analyzer is absent.
 - **Baselines** so accepted current debt does not hide new findings.
-- **Off-gate LLM narration** (`archfit review --llm`, `archfit enrich`) that may
+- **Off-gate LLM narration** (`archfit review`, `archfit enrich`) that may
   only narrate and prioritize collected evidence — never invent gate violations.
 
 ## How it compares
