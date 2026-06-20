@@ -31,3 +31,10 @@ const (
 	volatilityMedium = "medium"
 	volatilityHigh   = "high"
 )
+
+// Optional-analyzer tool names shared by doctor and the coverage-gap table.
+const (
+	toolLizard   = "lizard"
+	toolJscpd    = "jscpd"
+	toolGitnexus = "gitnexus"
+)

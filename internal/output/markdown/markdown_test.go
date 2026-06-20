@@ -35,6 +35,8 @@ const (
 	confidenceHigh = "high"
 	confidenceLow  = "low"
 	statusAbsent   = "absent"
+	gateWarn       = "warn"
+	metricComplex  = "complexity"
 
 	// MatchedBy keys reused across BC advisory tests.
 	mbStrength   = "strength"
@@ -192,6 +194,92 @@ func TestRenderer_Render_DynamicImportsAbsentWhenEmpty(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "Dynamic / lazy imports") {
 		t.Errorf("dynamic imports section should be omitted when empty\nfull output:\n%s", buf.String())
+	}
+}
+
+func TestRenderer_Render_CoverageGaps(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.CoverageGaps = []diagnostic.CoverageGap{
+		{Tool: "go/packages", InstallCmd: "https://go.dev/dl", AffectedMetrics: []string{"coverage", "coupling_balance"}, Gate: gateWarn},
+		{Tool: "lizard", InstallCmd: "pip install lizard", AffectedMetrics: []string{metricComplex}, Gate: gateWarn},
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "## Coverage gaps (2)") {
+		t.Fatalf("missing coverage gaps section\nfull output:\n%s", out)
+	}
+	for _, want := range []string{
+		"**go/packages** [gate: warn] — affects coverage, coupling_balance",
+		"install: `https://go.dev/dl`",
+		"**lizard** [gate: warn] — affects complexity",
+		"install: `pip install lizard`",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestRenderer_Render_CoverageGapsAbsentWhenEmpty(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if strings.Contains(buf.String(), "Coverage gaps") {
+		t.Errorf("coverage gaps section should be omitted when empty\nfull output:\n%s", buf.String())
+	}
+}
+
+func TestRenderer_Render_ConfigWarnings(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.ConfigWarnings = []string{
+		`module "internal/a" omits owner`,
+		"lizard: tool crashed mid-parse",
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "## Config warnings (2)") {
+		t.Fatalf("missing config warnings section\nfull output:\n%s", out)
+	}
+	for _, want := range []string{
+		`module "internal/a" omits owner`,
+		"lizard: tool crashed mid-parse",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestRenderer_Render_ConfigWarningsAbsentWhenEmpty(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if strings.Contains(buf.String(), "Config warnings") {
+		t.Errorf("config warnings section should be omitted when empty\nfull output:\n%s", buf.String())
 	}
 }
 

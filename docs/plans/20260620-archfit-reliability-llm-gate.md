@@ -151,18 +151,20 @@ Locked design decisions (approved):
 
 ### Task 3: Surface coverage gaps + config warnings (warn-loud default)
 
-- [ ] `internal/model/diagnostic/diagnostic.go`: add `CoverageGap{Tool, InstallCmd,
+- [x] `internal/model/diagnostic/diagnostic.go`: add `CoverageGap{Tool, InstallCmd,
 AffectedMetrics []string, Gate string}` and fields `CoverageGaps []CoverageGap` +
       `ConfigWarnings []string` on `Diagnostic` (both `json:",omitempty"`, stdlib only)
-- [ ] `cmd/archfit/pipeline.go`: add a static `toolAffectedMetrics` table (tool → metrics + install cmd); after the engine returns, build `CoverageGaps` from `ToolCoverage`
+- [x] `cmd/archfit/pipeline.go`: add a static `toolAffectedMetrics` table (tool → metrics + install cmd); after the engine returns, build `CoverageGaps` from `ToolCoverage`
       entries with `Status=="absent"`; fill `ConfigWarnings` from `cfg.Lint()`; replace the
       `_`-discarded loc/complexity/clones/gitnexus errors with `ConfigWarnings` entries +
-      stderr lines
-- [ ] `internal/output/markdown/*`: add a `## Coverage gaps` section before findings
-- [ ] `internal/output/scorecard/*`: add a `## Required tools missing` section after dimensions
-- [ ] write output tests asserting both sections render when gaps/warnings present and are
+      stderr lines (extractors degrade gracefully — never error today — so `noteToolErr`
+      surfaces the exceptional case; the absent-coverage records drive `CoverageGaps`)
+- [x] `internal/output/markdown/*`: add a `## Coverage gaps` section before findings
+      (plus `## Config warnings` so the lint warnings reach md/json, closing defect #6)
+- [x] `internal/output/scorecard/*`: add a `## Required tools missing` section after dimensions
+- [x] write output tests asserting both sections render when gaps/warnings present and are
       omitted when empty; write a `diagnostic` JSON round-trip test for the new fields
-- [ ] `go test ./internal/model/diagnostic/... ./internal/output/...` +
+- [x] `go test ./internal/model/diagnostic/... ./internal/output/...` +
       `go test ./internal/engine/ -run TestGolden` (double-run determinism; omitempty keeps
       clean fixtures unchanged) + `make lint` — must pass before Task 3b
 

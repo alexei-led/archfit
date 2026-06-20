@@ -51,6 +51,24 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 		}
 	}
 
+	writeRequiredToolsMissing(&b, d.CoverageGaps)
+
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// writeRequiredToolsMissing appends the coverage-gap block to the scorecard so a
+// reader sees why dimensions are n/a rather than mistaking absent evidence for a
+// strong result. One line per missing analyzer with the dimensions it unlocks
+// and an install hint. Omitted when no tool is missing.
+func writeRequiredToolsMissing(b *strings.Builder, gaps []diagnostic.CoverageGap) {
+	if len(gaps) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n## Required tools missing (%d)\n\n", len(gaps))
+	b.WriteString("These analyzers did not run; the metrics they feed are n/a, not strong.\n\n")
+	for _, g := range gaps {
+		fmt.Fprintf(b, "- **%s** [gate: %s] — affects %s; install: `%s`\n",
+			g.Tool, g.Gate, strings.Join(g.AffectedMetrics, ", "), g.InstallCmd)
+	}
 }

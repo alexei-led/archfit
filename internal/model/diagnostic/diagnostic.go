@@ -130,6 +130,26 @@ type DynamicImportSite struct {
 	Language string `json:"language"`
 }
 
+// CoverageGap is a machine-readable record of one analyzer that did not run,
+// the metrics its absence leaves unmeasured, and the command to install it.
+// Populated in cmd/ from the absent ToolCoverage entries plus a static
+// tool→metrics map — the core ring never sees tool names beyond coverage facts.
+// It is the warn-loud counterpart to a Coverage{Status:"absent"} entry: it
+// turns "this tool is missing" into "here is what you lose and how to fix it".
+type CoverageGap struct {
+	// Tool is the absent analyzer's coverage name (e.g. "go/packages", "lizard").
+	Tool string `json:"tool"`
+	// InstallCmd is a one-line install hint for the tool.
+	InstallCmd string `json:"install_cmd"`
+	// AffectedMetrics names the metrics that drop to n/a (or lose confidence)
+	// because this tool did not run. Deterministic, fixed order.
+	AffectedMetrics []string `json:"affected_metrics"`
+	// Gate is the effective gate posture for this gap: "off", "warn", or "fail".
+	// Defaults to warn (warn-loud); a "fail" gate is what an opt-in hard gate
+	// (tools.<x>.gate: fail / --require-tools) sets to block CI on the gap.
+	Gate string `json:"gate"`
+}
+
 // Coverage status constants used across all extractor adapters.
 const (
 	StatusOK      = "ok"
@@ -163,7 +183,15 @@ type Diagnostic struct {
 	DynamicImports []DynamicImport `json:"dynamic_imports"`
 	AgentTasks     []AgentTask     `json:"agent_tasks"`
 	ToolCoverage   []Coverage      `json:"tool_coverage"`
-	Summary        Summary         `json:"summary"`
+	// CoverageGaps lists analyzers that did not run, the metrics their absence
+	// leaves unmeasured, and how to install them (warn-loud coverage reporting).
+	// Omitted when every required tool ran. Populated in cmd/, never the core ring.
+	CoverageGaps []CoverageGap `json:"coverage_gaps,omitempty"`
+	// ConfigWarnings carries advisory config-quality messages (under-specified
+	// modules, swallowed optional-tool errors) so they reach md/json/CI instead
+	// of being stderr-only. Omitted when empty. Advisory — never gates.
+	ConfigWarnings []string `json:"config_warnings,omitempty"`
+	Summary        Summary  `json:"summary"`
 }
 
 // New returns a zero-value Diagnostic with all required fields initialised to their

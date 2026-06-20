@@ -108,6 +108,10 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 	writeDynamicImports(&b, d.DynamicImports)
 
+	writeCoverageGaps(&b, d.CoverageGaps)
+
+	writeConfigWarnings(&b, d.ConfigWarnings)
+
 	gate, advisories := splitFindings(d.Findings)
 	if len(gate) > 0 {
 		fmt.Fprintf(&b, "\n## Gate findings (%d)\n\n", len(gate))
@@ -445,6 +449,37 @@ func writeDynamicImports(b *strings.Builder, dyn []diagnostic.DynamicImport) {
 			break
 		}
 		fmt.Fprintf(b, "- **%s**: %d (e.g. %s)\n", d.Module, d.Count, sampleSites(d.Sites))
+	}
+}
+
+// writeCoverageGaps renders the warn-loud "Coverage gaps" section: one line per
+// analyzer that did not run, the metrics its absence leaves unmeasured, and how
+// to install it. This is what turns archfit's silent degradation into a visible,
+// actionable list — a missing tool is reported, never scored as good architecture.
+// Omitted when no gap was recorded.
+func writeCoverageGaps(b *strings.Builder, gaps []diagnostic.CoverageGap) {
+	if len(gaps) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n## Coverage gaps (%d)\n\n", len(gaps))
+	b.WriteString("Analyzers that did not run. Their metrics are reported as n/a (never green) — install to measure them.\n\n")
+	for _, g := range gaps {
+		fmt.Fprintf(b, "- **%s** [gate: %s] — affects %s\n", g.Tool, g.Gate, strings.Join(g.AffectedMetrics, ", "))
+		fmt.Fprintf(b, "  - install: `%s`\n", g.InstallCmd)
+	}
+}
+
+// writeConfigWarnings renders advisory config-quality warnings (under-specified
+// modules, swallowed optional-tool errors) so they reach the report and CI
+// instead of being stderr-only. Advisory — never gates. Omitted when empty.
+func writeConfigWarnings(b *strings.Builder, warnings []string) {
+	if len(warnings) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n## Config warnings (%d)\n\n", len(warnings))
+	b.WriteString("Advisory — never gates. Under-specified modules degrade distance/volatility classification.\n\n")
+	for _, w := range warnings {
+		fmt.Fprintf(b, "- %s\n", w)
 	}
 }
 

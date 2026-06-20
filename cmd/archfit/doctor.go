@@ -31,9 +31,9 @@ func (c *DoctorCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kon
 		{"scip-python", "scip-python", "npm install -g @sourcegraph/scip-python"},
 		{"scip-go", "scip-go", "go install github.com/sourcegraph/scip-go/cmd/scip-go@latest"},
 		// Semantic depth tools — their absence lowers analysis_confidence.
-		{"lizard", "lizard", "uv tool install lizard / pip install lizard"},
-		{"jscpd", "jscpd", "npm install -g jscpd"},
-		{"gitnexus", "gitnexus", "see docs/guide — git-history change-coupling index"},
+		{toolLizard, toolLizard, "uv tool install lizard / pip install lizard"},
+		{toolJscpd, toolJscpd, "npm install -g jscpd"},
+		{toolGitnexus, toolGitnexus, "see docs/guide — git-history change-coupling index"},
 	}
 
 	_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", "TOOL", "STATUS", "PATH / INSTALL")

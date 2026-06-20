@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/agenttask"
@@ -90,6 +91,22 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// risk_hub reads hand-authored volatility only (never git churn).
 	ms := append(metrics.New(cfg), extraMetrics...)
 
+	// toolWarnings collects the exceptional, non-nil errors from the optional
+	// extractors below. They normally degrade gracefully — encoding absence in
+	// their Coverage record (surfaced as a CoverageGap), not an error — so this
+	// only fires when a tool ran and failed unexpectedly. noteToolErr records the
+	// message for the structured ConfigWarnings block and echoes it to stderr so
+	// the failure is never silently discarded (the old `_` behaviour).
+	var toolWarnings []string
+	noteToolErr := func(tool string, err error) {
+		if err == nil {
+			return
+		}
+		msg := tool + ": " + err.Error()
+		toolWarnings = append(toolWarnings, msg)
+		_, _ = fmt.Fprintln(os.Stderr, "warning: "+msg)
+	}
+
 	// Recent git history (cheap; runs by default): per-file churn drives module
 	// volatility (unbalanced_edge, BC severity) and the modularity metrics
 	// (change_amplification, hidden_coupling). Hand-authored volatility/subdomain
@@ -102,7 +119,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// LOC walk — repo-relative path→line-count map + coverage record.
 	// ExtraCoverage order: loc, complexity, clones, gitnexus.
 	var locCov diagnostic.Coverage
-	change.Size.FileLOC, locCov, _ = loc.Run(s.Root)
+	var toolErr error
+	change.Size.FileLOC, locCov, toolErr = loc.Run(s.Root)
+	noteToolErr("loc", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, locCov)
 
 	// Architecture-fitness enforcement signals (deterministic FS scan; always runs).
@@ -131,13 +150,15 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// (tools.complexity.enabled: on) like SCIP, since it shells out and adds cost.
 	// Coverage carries zero file counts; status only — mirrors clones absent/ok pattern.
 	var complexityCov diagnostic.Coverage
-	change.Complexity.Funcs, complexityCov, _ = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled())
+	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled())
+	noteToolErr("lizard", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, complexityCov)
 
 	// Clone detection — opt-in (tools.clones.enabled: on). Run returns empty+absent
 	// when disabled or the tool is missing; the metric reports n/a in that case.
 	var clonesCov diagnostic.Coverage
-	change.Duplication.Clusters, clonesCov, _ = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled())
+	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled())
+	noteToolErr("jscpd", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, clonesCov)
 
 	// gitnexus optional symbol-impact enrichment. tools.gitnexus.enabled is
@@ -147,7 +168,8 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// absent; risk_hub falls back to surface-breadth-only in that case.
 	// Coverage is appended to ExtraCoverage so the engine includes it in the diagnostic.
 	var gitnexusCov diagnostic.Coverage
-	change.GitnexusImpact, gitnexusCov, _ = gitnexus.Run(ctx, deps.Runner, s.Root, cfg.GitnexusEnabled(), cfg.GitnexusExplicitlyDisabled())
+	change.GitnexusImpact, gitnexusCov, toolErr = gitnexus.Run(ctx, deps.Runner, s.Root, cfg.GitnexusEnabled(), cfg.GitnexusExplicitlyDisabled())
+	noteToolErr("gitnexus", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, gitnexusCov)
 
 	// Pinned coupling labels (.archfit-labels.yaml): the human-reviewed output of
@@ -211,7 +233,81 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		validate += " --full"
 	}
 	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate})
+
+	// Warn-loud coverage reporting: turn the absent tool-coverage records into a
+	// machine-readable CoverageGaps block (tool → unlocked metrics → install cmd)
+	// and surface config-quality lint plus any swallowed optional-tool errors in
+	// ConfigWarnings so they reach md/json/CI instead of being stderr-only.
+	diag.CoverageGaps = buildCoverageGaps(diag.ToolCoverage)
+	diag.ConfigWarnings = buildConfigWarnings(cfg, toolWarnings)
 	return diag, nil
+}
+
+// gateWarn is the default coverage-gap posture: a missing tool degrades metrics
+// to n/a (never green) and is reported, but does not fail the build. An opt-in
+// hard gate (tools.<x>.gate: fail / --require-tools) raises this to "fail".
+const gateWarn = "warn"
+
+// primaryGraphMetrics are the metrics the dependency-graph extractors
+// (go/packages, dependency-cruiser, grimp) unlock; absent any of them, all of
+// these drop to n/a. Shared (read-only) across those three table entries.
+var primaryGraphMetrics = []string{"coverage", "coupling_balance", "encapsulation", "cycle", "blast_radius"}
+
+// toolAffectedMetrics maps an absent analyzer's coverage name to its one-line
+// install hint and the metrics its absence leaves unmeasured. Only tools listed
+// here produce a CoverageGap — an absent coverage entry with no actionable
+// install path is not a gap a user can close. Static and deterministic.
+var toolAffectedMetrics = map[string]struct {
+	install string
+	metrics []string
+}{
+	"go/packages":        {"https://go.dev/dl (bundled with the Go toolchain)", primaryGraphMetrics},
+	"dependency-cruiser": {"npm install -g dependency-cruiser", primaryGraphMetrics},
+	"grimp":              {"uv tool install grimp / pip install grimp", primaryGraphMetrics},
+	toolLizard:           {"uv tool install lizard / pip install lizard", []string{"complexity"}},
+	toolJscpd:            {"npm install -g jscpd", []string{"functional_candidates"}},
+	toolGitnexus:         {"see docs/guide — git-history change-coupling index", []string{"risk_hub"}},
+}
+
+// buildCoverageGaps derives the CoverageGaps block from the absent tool-coverage
+// records. Gaps are sorted by tool name so a double-run stays byte-identical
+// regardless of upstream coverage order. Returns nil when no known tool is
+// absent (omitempty keeps the field out of clean output).
+func buildCoverageGaps(cov []diagnostic.Coverage) []diagnostic.CoverageGap {
+	var gaps []diagnostic.CoverageGap
+	for _, c := range cov {
+		if c.Status != diagnostic.StatusAbsent {
+			continue
+		}
+		info, ok := toolAffectedMetrics[c.Tool]
+		if !ok {
+			continue
+		}
+		gaps = append(gaps, diagnostic.CoverageGap{
+			Tool:            c.Tool,
+			InstallCmd:      info.install,
+			AffectedMetrics: info.metrics,
+			Gate:            gateWarn,
+		})
+	}
+	sort.Slice(gaps, func(i, j int) bool { return gaps[i].Tool < gaps[j].Tool })
+	return gaps
+}
+
+// buildConfigWarnings assembles the advisory ConfigWarnings block: under-specified
+// modules from cfg.Lint() (deterministic order) followed by any swallowed
+// optional-tool errors. Returns nil when both are empty.
+func buildConfigWarnings(cfg config.Config, toolWarnings []string) []string {
+	lint := cfg.Lint()
+	out := make([]string, 0, len(lint)+len(toolWarnings))
+	for _, w := range lint {
+		out = append(out, w.String())
+	}
+	out = append(out, toolWarnings...)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // loadConfig loads the config file at path. When path equals the default
