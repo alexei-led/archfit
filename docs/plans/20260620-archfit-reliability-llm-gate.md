@@ -358,15 +358,34 @@ AffectedMetrics []string, Gate string}` and fields `CoverageGaps []CoverageGap` 
 
 ### Task 9: Self-config, deliberate golden regen, full gate green
 
-- [ ] update archfit's own `.archfit.yaml` for the new gate posture if warranted
-      (promote high-confidence rules to `fail`); keep dogfooding green or honestly failing
-- [ ] fill `owner` (+ `subdomain`/`volatility` where missing) on archfit's own modules —
-      the OpenAI self-run shows all 24 `internal/*` packages omit `owner`, so the self-dogfood
-      currently floods config-quality warnings and leaves `encapsulation` n/a; use Task 7's
-      `enrich --owner/--volatility` so the self-scan exercises the fixed measurable path
-- [ ] regenerate the golden fixtures deliberately and inspect the full diff
-- [ ] `make all` (fmt → lint → test → build) green; `go test ./internal/ -run TestArchImports`
-- [ ] `make test` + `make lint` — must pass before Task 10
+- [x] update archfit's own `.archfit.yaml` for the new gate posture if warranted
+      (promote high-confidence rules to `fail`); keep dogfooding green or honestly failing —
+      promoted `layer_inversion` (forbidden_layer_direction) `warn`→`fail` (the ring
+      forbidden_dependency rules were already `fail`; `map_review` stale_after stays `warn` —
+      it's a staleness reminder, not a structural correctness gate). Self-scan stays green
+      (verdict PASS, exit 0, 0 findings); the layer-direction gate is now enforced
+- [x] fill `owner` (+ `subdomain`/`volatility` where missing) on archfit's own modules —
+      added `owner: alexei-led` to all 24 modules, clearing the 24 config-quality warnings.
+      `subdomain`/`volatility` were already present on every module. **Authored directly**
+      (what `enrich --pin` writes) rather than via the LLM path — solo-maintained repo, no
+      CODEOWNERS, and the ralphex loop has no API key; one owner is the truthful value for a
+      single-maintainer project. **Correction to the plan's stated rationale:** owner does
+      _not_ gate `encapsulation` measurability — encapsulation is n/a here because Go's
+      compiler enforces `internal/` boundaries so no cross-boundary edge is `intrusive`
+      (`internal/metrics/boundary/encapsulation.go` n/a guard, owner-independent). That n/a is
+      honest; `boundary_integrity` already reads "encapsulation unmeasured / low confidence"
+      (Task 5 calibration). Uniform owner relaxes cross-module distance to `same_owner`
+      (truthful for a solo repo); `unbalanced_edge` stays 0/strong and `coupling_balance`
+      is unchanged (0 BC-classified edges before _and_ after — the `medium` advisory floor
+      already filtered everything, owner-independent)
+- [x] regenerate the golden fixtures deliberately and inspect the full diff — **no stored
+      golden fixtures exist**: `internal/engine/golden_test.go` is a double-run determinism
+      check over an in-memory `testdata/golang` fixture, independent of `.archfit.yaml`. Output
+      schema unchanged, so nothing to regenerate; `TestGolden` passes and the self-scan JSON is
+      byte-identical across a double-run
+- [x] `make all` (fmt → lint → test → build) green; `go test ./internal/ -run TestArchImports` —
+      both pass (no Go changed; config-only)
+- [x] `make test` + `make lint` — must pass before Task 10 (green via `make all`)
 
 ### Task 10: Five-repo config authoring + full/delta verification runs
 
