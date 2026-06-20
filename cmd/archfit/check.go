@@ -21,6 +21,7 @@ import (
 // CheckCmd runs the full archfit analysis pipeline.
 type CheckCmd struct {
 	Config   string   `short:"c" help:"Path to config file (optional; built-in defaults used if absent)." default:".archfit.yaml"`
+	Root     string   `help:"Repository root to analyze (default: directory of --config). Decouples the scanned repo from where the config lives, e.g. an external CI config outside the repo." type:"path"`
 	Base     string   `help:"Git ref to compare against for incremental mode (e.g. main, HEAD~1)."`
 	Full     bool     `help:"Scan all files, not just files changed since --base."`
 	Format   []string `help:"Output format: text (human-readable), json, markdown, md, sarif, scorecard. Repeatable." enum:"json,text,markdown,md,sarif,scorecard" default:"text"`
@@ -72,7 +73,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		Formats:    c.Format,
 	}
 
-	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.NoConfig, mode, base)
+	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, c.NoConfig, mode, base)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -136,12 +137,14 @@ func printConfigLint(w io.Writer, warnings []config.LintWarning) {
 // For custom combinations (e.g. without advisory), use the check command directly.
 type ScanCmd struct {
 	Config       string `short:"c" help:"Config file." default:".archfit.yaml"`
+	Root         string `help:"Repository root to analyze (default: directory of --config)." type:"path"`
 	RequireTools bool   `name:"require-tools" help:"Exit non-zero when any required analyzer tool is missing (opt-in hard gate)."`
 }
 
 func (c *ScanCmd) Run(deps *appDeps) error {
 	check := CheckCmd{
 		Config:       c.Config,
+		Root:         c.Root,
 		Full:         true,
 		Advisory:     true,
 		Report:       true,

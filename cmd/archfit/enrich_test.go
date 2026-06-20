@@ -40,7 +40,7 @@ func enrichFixture() (*graph.Graph, coupling.Index, config.ModuleMap) {
 		{From: "file:pkg/c/c.go", To: "file:pkg/b/b.go", Kind: graph.EdgeKindImports, Language: "go"},
 	}
 	nodes := []graph.Node{
-		{Kind: graph.NodeKindFile, Path: "pkg/a/a.go"},
+		{Kind: graph.NodeKindFile, Path: filePkgAA},
 		{Kind: graph.NodeKindFile, Path: "pkg/a/a2.go"},
 		{Kind: graph.NodeKindFile, Path: "pkg/b/b.go"},
 		{Kind: graph.NodeKindFile, Path: "pkg/b/b2.go"},

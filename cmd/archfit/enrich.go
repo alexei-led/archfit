@@ -107,7 +107,7 @@ func (c *EnrichCmd) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	if _, err := runPipeline(ctx, deps, cfg, c.Config, false, engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
+	if _, err := runPipeline(ctx, deps, cfg, c.Config, "", false, engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 

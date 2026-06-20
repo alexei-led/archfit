@@ -294,14 +294,19 @@ AffectedMetrics []string, Gate string}` and fields `CoverageGaps []CoverageGap` 
 > so external CI harnesses must plant a temporary config inside the analyzed repo. Decouple
 > the two.
 
-- [ ] add a `--root` flag (default: cwd, or the directory of `--config` for backward compat
-      when `--root` is omitted) to check/scan/score/scorecard; resolve the scan root from
-      `--root` and the config from `--config` independently
-- [ ] thread the resolved root into `scope.Root` instead of deriving it from the config path;
-      keep the no-`--root` behaviour identical to today (no breakage)
-- [ ] write a cmd test: `--root <repo>` + `--config <elsewhere>/.archfit.yaml` scans the repo
+- [x] add a `--root` flag (default: cwd, or the directory of `--config` for backward compat
+      when `--root` is omitted) to check/scan/score (scorecard is a format, not a command);
+      resolve the scan root from `--root` and the config from `--config` independently —
+      `runPipeline` now anchors scope/git resolution at `scanDir` (explicit `--root` else
+      `configDir`), keeping baseline/labels/config-hash config-adjacent
+- [x] thread the resolved root into `scope.Root` instead of deriving it from the config path;
+      keep the no-`--root` behaviour identical to today (no breakage) — empty `--root` falls back
+      to `configDir`, so every other `runPipeline` caller (baseline/enrich/explain/review) is unchanged
+- [x] write a cmd test: `--root <repo>` + `--config <elsewhere>/.archfit.yaml` scans the repo
       using the external config; omitting `--root` keeps current behaviour
-- [ ] `go test ./cmd/archfit/...` + `go test ./internal/ -run TestArchImports` + `make lint`
+      (`TestRun_Check_RootDecoupledFromConfig`: external config + `--root` finds the violation;
+      omitting `--root` anchors at the non-git config dir → exit 3, the unchanged default)
+- [x] `go test ./cmd/archfit/...` + `go test ./internal/ -run TestArchImports` + `make lint`
       — must pass before Task 7
 
 ### Task 7: LLM self-driving — enrich owners/volatility, autopilot, .env

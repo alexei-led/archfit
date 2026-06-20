@@ -71,18 +71,27 @@ func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, 
 // post-baseline check reports phantom metric regressions and unmatched finding
 // fingerprints. After the engine returns, the agent_tasks repair block is
 // attached from the active gate findings (deterministic; spec §13).
-func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, noConfig bool, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, error) {
+func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, noConfig bool, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, error) {
 	configDir := filepath.Dir(configPath)
+	// scanDir anchors scope/git resolution. An explicit --root decouples the
+	// analyzed repo from where the config lives (external-CI use case); when it is
+	// empty the config directory is the root, identical to the historical
+	// behaviour. Baseline, labels, and the config hash stay config-adjacent
+	// regardless — they are part of the config bundle, not the scanned tree.
+	scanDir := root
+	if scanDir == "" {
+		scanDir = configDir
+	}
 	// Merge the built-in artifact/cache excludes into the config exclusions
 	// (additive — see scope.MergeExclusions) before projecting any view, so every
 	// extractor inherits them. Keeps archfit from measuring its own tool outputs
 	// (.gitnexus, reports, .archfit-cache) or vendored/dependency trees.
 	cfg.Exclusions = scope.MergeExclusions(cfg.Exclusions)
 	sc := cfg.ForScope()
-	sc.WorkDir = configDir
+	sc.WorkDir = scanDir
 	sc.Base = mode.Base
 	sc.Full = mode.Full
-	s, err := scope.Resolve(ctx, sc, gitResolver{workDir: configDir, runner: deps.Runner})
+	s, err := scope.Resolve(ctx, sc, gitResolver{workDir: scanDir, runner: deps.Runner})
 	if err != nil {
 		return diagnostic.Diagnostic{}, err
 	}

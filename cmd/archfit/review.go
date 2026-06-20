@@ -86,7 +86,7 @@ func (c *ReviewCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	diag, err := runPipeline(ctx, deps, cfg, c.Config, false, engine.Mode{Full: true, Advisory: true}, existingBase)
+	diag, err := runPipeline(ctx, deps, cfg, c.Config, "", false, engine.Mode{Full: true, Advisory: true}, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
