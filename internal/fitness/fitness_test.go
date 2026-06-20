@@ -301,6 +301,39 @@ func TestDetect_VendorDirIgnored(t *testing.T) {
 	}
 }
 
+func TestDetect_ModuleCacheAndTestdataIgnored(t *testing.T) {
+	root := t.TempDir()
+	// Go module cache under <root>/pkg/mod: a third-party arch-named test file
+	// (golang.org/x/tools archive_test.go — "archive" matches "arch") must not be
+	// counted as a first-party architecture test.
+	writeFile(t, root, "pkg/mod/golang.org/x/tools@v0.1.0/archive_test.go",
+		"package archive\nimport \"testing\"\nfunc TestArch(t *testing.T) {}\n")
+	// testdata fixtures hold synthetic test files that are not real arch tests.
+	writeFile(t, root, "internal/foo/testdata/arch_test.go",
+		"package foo\n")
+
+	got := fitness.Detect(root)
+
+	if got.ArchTestFiles {
+		t.Errorf("ArchTestFiles: module-cache/testdata files must be ignored, got evidence=%v",
+			got.EvidencePaths["arch_test_files"])
+	}
+}
+
+func TestDetect_PkgDirNotModCache(t *testing.T) {
+	root := t.TempDir()
+	// A real pkg/ source dir (not the module cache) must still be scanned: only
+	// the exact <root>/pkg/mod subtree is skipped, not every "pkg" directory.
+	writeFile(t, root, "pkg/core/arch_test.go", "package core\n")
+
+	got := fitness.Detect(root)
+
+	if !got.ArchTestFiles {
+		t.Errorf("ArchTestFiles: pkg/core/arch_test.go should be detected, got evidence=%v",
+			got.EvidencePaths["arch_test_files"])
+	}
+}
+
 func TestDetect_MultipleWorkflowFiles(t *testing.T) {
 	root := t.TempDir()
 	// Two workflow files: one with arch tool, one without.

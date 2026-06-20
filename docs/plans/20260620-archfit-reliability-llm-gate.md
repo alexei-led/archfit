@@ -221,18 +221,19 @@ AffectedMetrics []string, Gate string}` and fields `CoverageGaps []CoverageGap` 
 > genuinely have no enforcement signals), not a false positive — the n/a calibration below
 > only changes the "scan didn't run" case, never the "ran, found 0/3" case.
 
-- [ ] `internal/fitness/fitness.go` `detectArchTestFiles`: skip `<root>/pkg/mod/**` (Go
+- [x] `internal/fitness/fitness.go` `detectArchTestFiles`: skip `<root>/pkg/mod/**` (Go
       module cache) and `**/testdata/**`; keep existing vendor/node_modules/hidden skips
-- [ ] `internal/score/score.go` `architectureFitness`: when the metric is n/a, return
+- [x] `internal/score/score.go` `architectureFitness`: when the metric is n/a, return
       {value 40, confidence low} (poor — "scan didn't run") instead of {10, critical};
       keep critical only when the metric ran and found 0/3
-- [ ] `internal/score/score.go` `boundaryIntegrity`: when encapsulation is n/a, add an
+- [x] `internal/score/score.go` `boundaryIntegrity`: when encapsulation is n/a, add an
       explicit evidence note (don't fabricate the value)
-- [ ] write `fitness_test.go` case: a `pkg/mod/.../archive_test.go` and a `testdata/x_test.go`
+- [x] write `fitness_test.go` case: a `pkg/mod/.../archive_test.go` and a `testdata/x_test.go`
       present are **not** counted; write `score_test.go` for the n/a fitness calibration
-- [ ] `go test ./internal/fitness/... ./internal/score/...` +
-      `go test ./internal/engine/ -run TestGolden` (regenerate golden deliberately, inspect
-      the architecture_fitness diff) + `make lint` — must pass before Task 5b
+- [x] `go test ./internal/fitness/... ./internal/score/...` +
+      `go test ./internal/engine/ -run TestGolden` (golden is a double-run determinism check,
+      not a stored fixture; score/fitness are downstream of the engine Diagnostic so no regen
+      needed) + `make lint` — must pass before Task 5b
 
 ### Task 5b: Role-aware module annotation
 

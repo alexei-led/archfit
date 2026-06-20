@@ -74,7 +74,10 @@ func Detect(root string) signal.Signals {
 func detectArchTestFiles(root string, evidence signal.EvidenceMap) {
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
-			return skipVendorAndHidden(d)
+			if skip := skipVendorAndHidden(d); skip != nil {
+				return skip
+			}
+			return skipModuleCacheAndTestdata(root, path, d)
 		}
 		name := d.Name()
 		if !isTestFile(name) {
@@ -258,6 +261,23 @@ func skipVendorAndHidden(d fs.DirEntry) error {
 		if name == "vendor" || name == "node_modules" || (len(name) > 1 && name[0] == '.') {
 			return fs.SkipDir
 		}
+	}
+	return nil
+}
+
+// skipModuleCacheAndTestdata returns fs.SkipDir for the Go module cache
+// (<root>/pkg/mod) and any testdata directory. Both hold third-party or fixture
+// _test.go files (e.g. golang.org/x/tools archive_test.go) that must not be
+// counted as first-party architecture tests.
+func skipModuleCacheAndTestdata(root, path string, d fs.DirEntry) error {
+	if d == nil || !d.IsDir() {
+		return nil
+	}
+	if d.Name() == "testdata" {
+		return fs.SkipDir
+	}
+	if rel, err := filepath.Rel(root, path); err == nil && rel == filepath.Join("pkg", "mod") {
+		return fs.SkipDir
 	}
 	return nil
 }

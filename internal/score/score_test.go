@@ -314,6 +314,60 @@ func TestBoundaryIntegrity_GateViolations(t *testing.T) {
 	}
 }
 
+// TestBoundaryIntegrity_EncapsulationNA asserts that when encapsulation cannot be
+// measured the dimension does not fabricate a perfect baseline: it starts neutral
+// with low confidence and cites the unmeasured baseline explicitly.
+func TestBoundaryIntegrity_EncapsulationNA(t *testing.T) {
+	mi := indexMetrics(nil) // no encapsulation metric → n/a
+	dim := finalize(boundaryIntegrity(mi, nil, ConfidenceHigh))
+
+	if dim.Value == 100 {
+		t.Errorf("value = 100, encapsulation n/a must not fabricate a perfect score")
+	}
+	if dim.Value != 50 {
+		t.Errorf("value = %d, want 50 (neutral unmeasured baseline)", dim.Value)
+	}
+	if dim.Confidence != ConfidenceLow {
+		t.Errorf("confidence = %q, want low", dim.Confidence)
+	}
+	found := false
+	for _, e := range dim.Evidence {
+		if strings.Contains(e, "encapsulation: n/a") && strings.Contains(e, "unmeasured") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected explicit unmeasured-baseline note in evidence: %v", dim.Evidence)
+	}
+}
+
+// TestArchitectureFitness_NA asserts that when the fitness scan never ran (metric
+// n/a) the dimension reads as poor ("scan didn't run", value 40, low confidence),
+// not a fabricated critical 10; while a real 0/3 scan stays critical.
+func TestArchitectureFitness_NA(t *testing.T) {
+	t.Run("metric n/a → poor 40 low", func(t *testing.T) {
+		mi := indexMetrics([]diagnostic.MetricResult{metric("architecture_fitness", 0, "n/a", "low")})
+		dim := finalize(architectureFitness(mi, ConfidenceHigh))
+		if dim.Value != 40 {
+			t.Errorf("value = %d, want 40", dim.Value)
+		}
+		if dim.Band != BandPoor {
+			t.Errorf("band = %q, want poor", dim.Band)
+		}
+		if dim.Confidence != ConfidenceLow {
+			t.Errorf("confidence = %q, want low", dim.Confidence)
+		}
+	})
+
+	t.Run("ran, found 0/3 → critical", func(t *testing.T) {
+		mi := indexMetrics([]diagnostic.MetricResult{metric("architecture_fitness", 0, "info", "high")})
+		dim := finalize(architectureFitness(mi, ConfidenceHigh))
+		if dim.Band != BandCritical {
+			t.Errorf("band = %q, want critical (scan ran, 0/3 signals)", dim.Band)
+		}
+	})
+}
+
 // TestChangeLocality_Unmeasured asserts that with no delta base and no git history
 // the dimension is neutral with low confidence rather than a false perfect score.
 func TestChangeLocality_Unmeasured(t *testing.T) {

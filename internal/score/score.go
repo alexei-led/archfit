@@ -168,13 +168,20 @@ func finalizeMeta(dim Dimension) Dimension {
 // that crossed a boundary) is a measured breach and subtracts a fixed penalty.
 func boundaryIntegrity(mi metricIndex, gate []finding.Finding, base Confidence) Dimension {
 	dim := Dimension{Name: DimBoundaryIntegrity, Confidence: base}
-	value := 100
+	var value int
+	encMeasured := false
 	if enc, ok := mi.measured("encapsulation"); ok {
+		encMeasured = true
 		value = pct(enc.Value)
 		dim.Evidence = append(dim.Evidence, fmt.Sprintf("encapsulation %.2f (%s)", enc.Value, enc.Band))
 		dim.Confidence = minConf(base, metricConf(enc.Confidence))
 	} else {
-		dim.Evidence = append(dim.Evidence, "encapsulation: n/a (no classified cross-boundary edges)")
+		// Encapsulation could not be measured (no classified cross-boundary edges —
+		// e.g. modules omit owner). Don't fabricate a perfect baseline; start neutral
+		// and rely on gate findings for the only measured boundary signal.
+		value = 50
+		dim.Evidence = append(dim.Evidence,
+			"encapsulation: n/a (no classified cross-boundary edges) — boundary baseline unmeasured")
 		dim.Confidence = ConfidenceLow
 	}
 
@@ -185,7 +192,11 @@ func boundaryIntegrity(mi metricIndex, gate []finding.Finding, base Confidence) 
 		dim.Summary = "boundary violations present: forbidden dependencies cross intended boundaries"
 	} else {
 		dim.Evidence = append(dim.Evidence, "0 active gate violations")
-		dim.Summary = "no gate-level boundary violations; intended boundaries hold"
+		if encMeasured {
+			dim.Summary = "no gate-level boundary violations; intended boundaries hold"
+		} else {
+			dim.Summary = "no gate-level boundary violations; encapsulation unmeasured, so boundary integrity is unconfirmed"
+		}
 	}
 	dim.Value = value
 	return dim
@@ -393,10 +404,14 @@ func architectureFitness(mi metricIndex, base Confidence) Dimension {
 		dim.Summary = "architecture intent enforced by executable fitness checks"
 		return dim
 	}
-	dim.Value = 10
+	// Metric n/a means the fitness scan never ran (no enforcement evidence was
+	// gathered), not that intent is unenforced. Report poor ("scan didn't run"),
+	// not a fabricated critical — critical is reserved for a scan that ran and
+	// found 0/3 signals (handled by the measured branch above, value pct(0)=0).
+	dim.Value = 40
 	dim.Confidence = ConfidenceLow
-	dim.Evidence = append(dim.Evidence, "architecture_fitness: n/a")
-	dim.Summary = "architecture intent not enforced by checks (no fitness signals detected)"
+	dim.Evidence = append(dim.Evidence, "architecture_fitness: n/a (enforcement scan did not run)")
+	dim.Summary = "architecture-fitness scan did not run; enforcement of intent is unknown"
 	return dim
 }
 
