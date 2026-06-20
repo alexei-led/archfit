@@ -1,4 +1,0 @@
-config-quality: 3 module(s) under-specified — degrades distance/volatility classification (can cause BC advisory floods):
-  - module "cmd_spotinfo" omits owner, subdomain/volatility
-  - module "mcp" omits owner, subdomain/volatility
-  - module "spot" omits owner, subdomain/volatility

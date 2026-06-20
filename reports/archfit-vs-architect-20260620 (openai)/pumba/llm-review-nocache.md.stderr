@@ -1,8 +1,0 @@
-config-quality: 6 module(s) under-specified — degrades distance/volatility classification (can cause BC advisory floods):
-  - module "cmd" omits owner, subdomain/volatility
-  - module "mocks" omits owner, subdomain/volatility
-  - module "pkg_chaos" omits owner, subdomain/volatility
-  - module "pkg_container" omits owner, subdomain/volatility
-  - module "pkg_runtime" omits owner, subdomain/volatility
-  - module "pkg_util" omits owner, subdomain/volatility
-review: post-verification dropped 1 unsupported claim(s)

@@ -1,1 +1,0 @@
-archfit: unknown flag --full
