@@ -398,12 +398,12 @@ AffectedMetrics []string, Gate string}` and fields `CoverageGaps []CoverageGap` 
       working-tree edits for human review (per Post-Completion); archfit's own config unchanged
       from Task 9
 - [x] per-repo specifics: ccgram `python_package: ccgram` (already set) + `no-import-cycles:
-    fail` → **FAILs on 3 cycles** (exactly as predicted); codegraph added `no-import-cycles:
-    fail` (FAILs on its 2 real cycles) and `node_modules` already present for SCIP;
+  fail` → **FAILs on 3 cycles** (exactly as predicted); codegraph added `no-import-cycles:
+  fail` (FAILs on its 2 real cycles) and `node_modules` already present for SCIP;
       pumba/spotinfo now declare owner+volatility (+ `role: composition_root` on `cmd`,
       `role: generated` on pumba `mocks`) — 0 config-quality warnings remain
 - [x] ran `archfit doctor`, `check --full`, `check --base <default-branch>` (delta), `score
-    --full`, and `scan` per repo; captured stdout+json into
+  --full`, and `scan` per repo; captured stdout+json into
       `reports/archfit-vs-architect-20260620-postfix/<repo>/` (written **inside** archfit/reports
       which is a built-in exclude [3b], **outside** the four external repos). Double-run
       `same_hash=true` confirmed for archfit/codegraph/ccgram
@@ -421,10 +421,29 @@ AffectedMetrics []string, Gate string}` and fields `CoverageGaps []CoverageGap` 
 
 ### Task 11: Verify acceptance criteria
 
-- [ ] verify every Overview outcome is implemented (no false-green path remains; gaps in
-      md+json+stderr; opt-in hard gate; owners/volatility authoring; autopilot; review no overflow)
-- [ ] `make all` green; `go test ./internal/ -run 'TestArchImports'`; golden double-run byte-identical
-- [ ] confirm test coverage holds to the repo standard for changed packages
+- [x] verify every Overview outcome is implemented (no false-green path remains; gaps in
+      md+json+stderr; opt-in hard gate; owners/volatility authoring; autopilot; review no overflow) —
+      **all confirmed live + via recorded reports + code/CLI inspection.** No false-green: on a
+      non-Go git repo `coverage` reads `n/a/low`, the 7 scorecard dimensions read mixed/low or
+      critical (boundary_integrity 50/low, coupling_balance 50/low, dep_graph 60/low, cohesion
+      60/low, change_locality 60/low, fitness 0/critical, analysis_confidence 0/critical/high) —
+      **zero strong dimension on thin evidence**; the metric-level "0 cycles" stays vacuously-strong
+      but is correctly capped at the dimension layer. Gaps reach all three channels: stderr
+      (`config-quality: N module(s) under-specified`), JSON (`coverage_gaps` array + `config_warnings`),
+      markdown (`## Coverage gaps (6)` + `## Config warnings (N)`). Opt-in hard gate: `--require-tools`
+      → exit 1, default → exit 0. Owners/volatility: `enrich --owner/--volatility/--pin` present;
+      `autopilot` present (writes a review file, refuses `--output .archfit.yaml`). `review` no
+      overflow: Task 6 recorded exit 0 on all five repos. `doctor`/`score --full`/`scorecard --full`
+      all accept their flags
+- [x] `make all` green; `go test ./internal/ -run 'TestArchImports'`; golden double-run byte-identical —
+      `make all` (fmt → lint → test → build) exit 0; `TestArchImports` ok; `TestGolden` (the in-memory
+      double-run determinism check) ok
+- [x] confirm test coverage holds to the repo standard for changed packages — decision-core packages
+      that received the fixes all hold high: classify 97.2%, score 91.9%, scope 92.9%, output/markdown
+      90.9%, model/diagnostic 100%, output/scorecard 100%, output/jsonout 100%, fitness 87.2%, boundary
+      89.2%, status 88.4%, initcfg 89.6%, config 84.6%; cmd/archfit 71.9% (CLI/adapter layer — LLM
+      provider plumbing, autopilot, `.env`, and `main` wiring are system boundaries, consistent with the
+      repo's adapter pattern: history/git 35%, toolrun 51%, rules 50%)
 
 ## Deferred / follow-on (not in this plan)
 
