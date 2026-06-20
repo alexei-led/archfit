@@ -18,6 +18,7 @@ import (
 const (
 	reviewProviderName  = "test/fixed"
 	reviewDimBoundary   = "boundary_integrity"
+	reviewBandMixed     = "mixed"
 	reviewModReal       = "real_module"
 	reviewModLazy       = "lazy_mod"
 	reviewNarrativeKeep = "keep"
@@ -53,12 +54,14 @@ const validReviewJSON = `{
 
 // fixedProvider returns one canned response regardless of request content.
 type fixedProvider struct {
-	text string
-	name string
+	text        string
+	name        string
+	lastRequest llm.Request
 }
 
 func (p *fixedProvider) Name() string { return p.name }
-func (p *fixedProvider) Complete(_ context.Context, _ llm.Request) (llm.Response, error) {
+func (p *fixedProvider) Complete(_ context.Context, req llm.Request) (llm.Response, error) {
+	p.lastRequest = req
 	return llm.Response{Text: p.text}, nil
 }
 
@@ -172,6 +175,41 @@ func TestReviewCmd_Run_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestParseReviewResponse_ToleratesFencesAndProse(t *testing.T) {
+	wrapped := "model preface\n```json\n" + validReviewJSON + "\n```\n"
+	rev, err := parseReviewResponse(wrapped)
+	if err != nil {
+		t.Fatalf("parseReviewResponse returned error: %v", err)
+	}
+	if rev.OverallBand != reviewBandMixed || len(rev.Dimensions) != 1 {
+		t.Fatalf("unexpected review response: %+v", rev)
+	}
+}
+
+func TestParseReviewResponse_TruncatedJSONHint(t *testing.T) {
+	_, err := parseReviewResponse(`{"overall_band":"` + reviewBandMixed + `","dimensions":[`)
+	if err == nil {
+		t.Fatal("want error for truncated JSON")
+	}
+	if !strings.Contains(err.Error(), "appears truncated") {
+		t.Fatalf("want truncation hint, got: %v", err)
+	}
+}
+
+func TestReviewCmd_Run_UsesReviewTokenBudget(t *testing.T) {
+	cfgPath := writeViolatingRepo(t)
+	appendLLMConfig(t, cfgPath)
+
+	provider := &fixedProvider{text: validReviewJSON, name: reviewProviderName}
+	_, err := runReviewCmd(t, cfgPath, provider)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if provider.lastRequest.MaxTokens != reviewMaxTokens {
+		t.Fatalf("MaxTokens = %d, want %d", provider.lastRequest.MaxTokens, reviewMaxTokens)
+	}
+}
+
 // TestReviewCmd_Run_NoLLMConfig asserts exit code 3 with a tools.llm hint
 // when the config has no LLM provider configured.
 func TestReviewCmd_Run_NoLLMConfig(t *testing.T) {
@@ -264,10 +302,10 @@ func TestPostVerify_DropsUnknownEntities(t *testing.T) {
 	}
 
 	rev := reviewResponse{
-		OverallBand: "mixed",
+		OverallBand: reviewBandMixed,
 		Dimensions: []reviewDimension{
 			{Name: reviewDimBoundary, Band: "poor", Narrative: "ok"},
-			{Name: "fake_dimension", Band: "mixed", Narrative: "should be dropped"},
+			{Name: "fake_dimension", Band: reviewBandMixed, Narrative: "should be dropped"},
 		},
 		TopRisks: []reviewRisk{
 			// All modules invalid → whole entry dropped.

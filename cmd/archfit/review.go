@@ -16,7 +16,17 @@ import (
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/score"
+)
+
+const (
+	reviewMaxTokens       = 8192
+	reviewMaxFindings     = 80
+	reviewMaxFindingTypes = 12
+	reviewMaxModuleFacts  = 80
+	reviewMaxMetrics      = 40
+	reviewMaxDynamicFacts = 50
 )
 
 // ReviewCmd runs the full pipeline, synthesises a Scorecard, and feeds both to
@@ -69,25 +79,55 @@ func (c *ReviewCmd) Run(deps *appDeps) error {
 	resp, err := provider.Complete(ctx, llm.Request{
 		System:    reviewSystemPrompt,
 		User:      userPrompt,
-		MaxTokens: 2048,
+		MaxTokens: reviewMaxTokens,
 	})
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	var rev reviewResponse
-	text := strings.TrimSpace(resp.Text)
-	// Tolerate accidental markdown fencing.
-	text = strings.TrimPrefix(text, "```json")
-	text = strings.TrimPrefix(text, "```")
-	text = strings.TrimSuffix(text, "```")
-	if err := json.Unmarshal([]byte(strings.TrimSpace(text)), &rev); err != nil {
+	rev, err := parseReviewResponse(resp.Text)
+	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: review: model response is not the required JSON: %v", err)}
 	}
 
 	rev = postVerify(rev, diag)
 	printReview(deps, provider.Name(), rev)
 	return nil
+}
+
+func parseReviewResponse(text string) (reviewResponse, error) {
+	payload := reviewJSONPayload(text)
+	var rev reviewResponse
+	if err := json.Unmarshal([]byte(payload), &rev); err != nil {
+		if strings.Contains(err.Error(), "unexpected end") {
+			return reviewResponse{}, fmt.Errorf("%w (response appears truncated; retry with a larger response budget or smaller evidence prompt)", err)
+		}
+		return reviewResponse{}, err
+	}
+	return rev, nil
+}
+
+func reviewJSONPayload(text string) string {
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "```") {
+		if nl := strings.IndexByte(text, '\n'); nl >= 0 {
+			text = text[nl+1:]
+		} else {
+			text = strings.TrimPrefix(text, "```")
+		}
+		text = strings.TrimSpace(text)
+		text = strings.TrimSuffix(text, "```")
+		text = strings.TrimSpace(text)
+	}
+	if strings.HasPrefix(text, "{") {
+		return text
+	}
+	start := strings.IndexByte(text, '{')
+	end := strings.LastIndexByte(text, '}')
+	if start >= 0 && end > start {
+		return strings.TrimSpace(text[start : end+1])
+	}
+	return text
 }
 
 // reviewSystemPrompt grounds the LLM in Balanced Coupling vocabulary and
@@ -113,6 +153,8 @@ You MUST:
 - Only narrate, prioritize, and contextualise findings already present in the evidence supplied.
 - Only classify volatility/subdomain for modules that appear in the evidence.
 - Only propose dimension bands for dimensions named in the evidence.
+- Return at most 7 dimensions, at most 3 top_risks, and at most 5 subdomain_suggestions.
+- Keep every narrative under 450 characters.
 
 You MUST NOT:
 - Invent new gate violations or module names not present in the supplied evidence.
@@ -329,6 +371,100 @@ func printReview(deps *appDeps, providerName string, rev reviewResponse) {
 	_, _ = fmt.Fprintln(w, "and never affect the `check` gate._")
 }
 
+func writeFindingGroups(b *strings.Builder, findings []finding.Finding) {
+	if len(findings) == 0 {
+		return
+	}
+	groups := make(map[string]int)
+	for _, f := range findings {
+		key := fmt.Sprintf("kind=%s rule=%s severity=%s status=%s", f.Kind, f.RuleID, f.Severity, f.Status)
+		groups[key]++
+	}
+	keys := make([]string, 0, len(groups))
+	for k := range groups {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	fmt.Fprintf(b, "\n### Finding groups (top %d of %d)\n", minInt(reviewMaxFindingTypes, len(keys)), len(keys))
+	for i, k := range keys {
+		if i >= reviewMaxFindingTypes {
+			fmt.Fprintf(b, "- ... %d more group(s) omitted\n", len(keys)-i)
+			break
+		}
+		fmt.Fprintf(b, "- count=%d %s\n", groups[k], k)
+	}
+}
+
+func writeFindingExamples(b *strings.Builder, findings []finding.Finding) {
+	if len(findings) == 0 {
+		return
+	}
+	ordered := append([]finding.Finding(nil), findings...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return reviewFindingSortKey(ordered[i]) < reviewFindingSortKey(ordered[j])
+	})
+	fmt.Fprintf(b, "\n### Finding examples (top %d of %d)\n", minInt(reviewMaxFindings, len(ordered)), len(ordered))
+	for i, f := range ordered {
+		if i >= reviewMaxFindings {
+			fmt.Fprintf(b, "- ... %d more finding(s) omitted\n", len(ordered)-i)
+			break
+		}
+		fmt.Fprintf(b, "- [%s] rule=%s severity=%s status=%s from=%s to=%s\n",
+			f.Kind, f.RuleID, f.Severity, f.Status, f.Edge.From.Module, f.Edge.To.Module)
+	}
+}
+
+func reviewFindingSortKey(f finding.Finding) string {
+	kindRank := "1"
+	if f.Kind == "gate" {
+		kindRank = "0"
+	}
+	severityRank := 9 - reviewSeverityRank(f.Severity)
+	return fmt.Sprintf("%s:%d:%s:%s:%s:%s", kindRank, severityRank, f.RuleID, f.Edge.From.Module, f.Edge.To.Module, f.ID)
+}
+
+func reviewSeverityRank(s finding.Severity) int {
+	switch s {
+	case finding.SeverityCritical:
+		return 4
+	case finding.SeverityHigh:
+		return 3
+	case finding.SeverityMedium:
+		return 2
+	case finding.SeverityLow:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func rankedReviewFileFacts(facts []diagnostic.FileFact, limit int) []diagnostic.FileFact {
+	ordered := append([]diagnostic.FileFact(nil), facts...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		a := reviewFileFactWeight(ordered[i])
+		b := reviewFileFactWeight(ordered[j])
+		if a != b {
+			return a > b
+		}
+		return ordered[i].Module < ordered[j].Module
+	})
+	if len(ordered) > limit {
+		return ordered[:limit]
+	}
+	return ordered
+}
+
+func reviewFileFactWeight(ff diagnostic.FileFact) int {
+	return ff.InboundModuleFanIn*10_000 + ff.OutboundDestinations*1_000 + ff.LOC
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // buildReviewPrompt serialises the Diagnostic and Scorecard as the user turn.
 func buildReviewPrompt(diag diagnostic.Diagnostic, sc score.Scorecard) string {
 	var b strings.Builder
@@ -343,7 +479,8 @@ func buildReviewPrompt(diag diagnostic.Diagnostic, sc score.Scorecard) string {
 		}
 	}
 
-	// Gate findings.
+	// Gate findings. Summarise all findings and cap examples so large repos do not
+	// push the model into long, truncated JSON responses.
 	var gateFindings, advisories int
 	for _, f := range diag.Findings {
 		if f.Kind == "gate" {
@@ -353,36 +490,43 @@ func buildReviewPrompt(diag diagnostic.Diagnostic, sc score.Scorecard) string {
 		}
 	}
 	fmt.Fprintf(&b, "\n## Findings summary: %d gate violations, %d advisories\n", gateFindings, advisories)
-	for _, f := range diag.Findings {
-		fmt.Fprintf(&b, "- [%s] rule=%s severity=%s status=%s from=%s to=%s\n",
-			f.Kind, f.RuleID, f.Severity, f.Status,
-			f.Edge.From.Module, f.Edge.To.Module)
-	}
+	writeFindingGroups(&b, diag.Findings)
+	writeFindingExamples(&b, diag.Findings)
 
 	// Module facts.
 	if len(diag.FileFacts) > 0 {
-		fmt.Fprintf(&b, "\n## Module facts\n")
-		for _, ff := range diag.FileFacts {
+		facts := rankedReviewFileFacts(diag.FileFacts, reviewMaxModuleFacts)
+		fmt.Fprintf(&b, "\n## Module facts (top %d of %d by fan-in/out/LOC)\n", len(facts), len(diag.FileFacts))
+		for _, ff := range facts {
 			fmt.Fprintf(&b, "- %s: inbound_fanin=%d outbound=%d loc=%d\n",
 				ff.Module, ff.InboundModuleFanIn, ff.OutboundDestinations, ff.LOC)
 		}
 	}
 
 	// Metrics.
-	fmt.Fprintf(&b, "\n## Metrics\n")
+	fmt.Fprintf(&b, "\n## Metrics (capped)\n")
+	writtenMetrics := 0
 	for _, m := range diag.Metrics {
 		if m.Band == "info" || m.Band == "" {
 			continue
 		}
+		if writtenMetrics >= reviewMaxMetrics {
+			break
+		}
 		fmt.Fprintf(&b, "- %s: value=%.2f band=%s display=%s\n", m.Name, m.Value, m.Band, m.Display)
+		writtenMetrics++
 	}
 
 	// Dynamic / lazy imports (report-only): invisible to the static dependency
 	// graph, so they hide cycles and undercount coupling. Surfaced here so the
 	// review can narrate the lazy-import hidden-coupling risk the metrics miss.
 	if len(diag.DynamicImports) > 0 {
-		fmt.Fprintf(&b, "\n## Dynamic / lazy imports (hidden-coupling risk, report-only)\n")
-		for _, di := range diag.DynamicImports {
+		fmt.Fprintf(&b, "\n## Dynamic / lazy imports (hidden-coupling risk, report-only; capped)\n")
+		for i, di := range diag.DynamicImports {
+			if i >= reviewMaxDynamicFacts {
+				fmt.Fprintf(&b, "- ... %d more module(s) omitted\n", len(diag.DynamicImports)-i)
+				break
+			}
 			fmt.Fprintf(&b, "- %s: %d site(s)\n", di.Module, di.Count)
 		}
 	}
