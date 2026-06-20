@@ -66,6 +66,18 @@ func (m *captureMetric) Calculate(in signal.CollectedSignals) diagnostic.MetricR
 func (c *EnrichCmd) Run(deps *appDeps) error {
 	ctx := context.Background()
 
+	// The three draft modes each write their own review file; combining them
+	// previously ran only one and silently dropped the rest. Reject it.
+	modes := 0
+	for _, on := range []bool{c.Subdomains, c.Owner, c.Volatility} {
+		if on {
+			modes++
+		}
+	}
+	if modes > 1 {
+		return &exitError{code: 3, msg: "error: --subdomains, --owner, and --volatility are mutually exclusive; run one at a time"}
+	}
+
 	// Route to the appropriate workflow.
 	if c.Subdomains && c.Pin {
 		return c.runSubdomainPin(ctx, deps)

@@ -127,19 +127,20 @@ language-specific setup? Start with the [guide](docs/guide/README.md).
 
 ## Core commands
 
-| Command                | Use                                            |
-| ---------------------- | ---------------------------------------------- |
-| `archfit doctor`       | Check local analyzer/tool availability.        |
-| `archfit init`         | Generate a starter `.archfit.yaml`.            |
-| `archfit update`       | Sync `.archfit.yaml` with current structure.   |
-| `archfit check`        | Run architecture gates and metrics.            |
-| `archfit score`        | Emit the banded 7-dimension scorecard.         |
-| `archfit scan`         | Produce a full Markdown audit report.          |
-| `archfit baseline`     | Save accepted current findings.                |
-| `archfit review`       | Off-gate LLM narrative review of the evidence. |
-| `archfit enrich`       | Draft off-gate LLM coupling-label refinements. |
-| `archfit explain <id>` | Explain one finding by fingerprint prefix.     |
-| `archfit install`      | Check or install optional language tools.      |
+| Command                | Use                                                 |
+| ---------------------- | --------------------------------------------------- |
+| `archfit doctor`       | Check local analyzer/tool availability.             |
+| `archfit init`         | Generate a starter `.archfit.yaml`.                 |
+| `archfit update`       | Sync `.archfit.yaml` with current structure.        |
+| `archfit check`        | Run architecture gates and metrics.                 |
+| `archfit score`        | Emit the banded 7-dimension scorecard.              |
+| `archfit scan`         | Produce a full Markdown audit report.               |
+| `archfit baseline`     | Save accepted current findings.                     |
+| `archfit review`       | Off-gate LLM narrative review of the evidence.      |
+| `archfit enrich`       | Draft off-gate LLM coupling-label refinements.      |
+| `archfit autopilot`    | Draft a full `.archfit.yaml` via LLM (review-only). |
+| `archfit explain <id>` | Explain one finding by fingerprint prefix.          |
+| `archfit install`      | Check or install optional language tools.           |
 
 See the [commands guide](docs/guide/commands.md) for formats, exit codes, and
 examples.

@@ -90,6 +90,14 @@ func TestAutopilot_WritesDraftAppliesNothing(t *testing.T) {
 	if !strings.Contains(draft, "# owner:") {
 		t.Errorf("draft missing commented owner suggestion:\n%s", draft)
 	}
+	// Plan mode: LLM suggestions must stay commented — no uncommented live
+	// subdomain/owner field may leak into the draft (the core safety guarantee).
+	for _, line := range strings.Split(draft, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "subdomain:") || strings.HasPrefix(trimmed, "owner:") {
+			t.Errorf("plan-mode draft leaked a live field %q:\n%s", trimmed, draft)
+		}
+	}
 
 	// Applies nothing: the live config must not have been created.
 	if _, statErr := os.Stat(livePath); statErr == nil {
