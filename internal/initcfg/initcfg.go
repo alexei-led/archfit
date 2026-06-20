@@ -336,7 +336,9 @@ func detectPyPackage(root string) string {
 type ModuleAnnotation struct {
 	Subdomain     string
 	Volatility    string
+	Owner         string
 	Layer         string
+	Role          string
 	SuggestedName string
 }
 
@@ -419,6 +421,12 @@ func writeModuleStanza(b *strings.Builder, indent, name string, m ModuleDef, all
 		if ann.Volatility != "" {
 			fmt.Fprintf(b, "%s  volatility: %s\n", indent, ann.Volatility)
 		}
+		if ann.Owner != "" {
+			fmt.Fprintf(b, "%s  owner: %s\n", indent, yamlScalar(ann.Owner))
+		}
+		if ann.Role != "" {
+			fmt.Fprintf(b, "%s  role: %s\n", indent, ann.Role)
+		}
 		// Emit layer suggestion comment if ann.Layer was out of set.
 		if ann.Layer != "" && !allowed[ann.Layer] {
 			fmt.Fprintf(b, "%s  # llm layer: %s  # not in layers: — review\n", indent, sanitizeComment(ann.Layer))
@@ -430,6 +438,12 @@ func writeModuleStanza(b *strings.Builder, indent, name string, m ModuleDef, all
 		}
 		if ann.Volatility != "" {
 			fmt.Fprintf(b, "%s  # volatility: %s  # llm-suggested — review and uncomment\n", indent, sanitizeComment(ann.Volatility))
+		}
+		if ann.Owner != "" {
+			fmt.Fprintf(b, "%s  # owner: %s  # llm-suggested — review and uncomment\n", indent, sanitizeComment(ann.Owner))
+		}
+		if ann.Role != "" {
+			fmt.Fprintf(b, "%s  # role: %s  # llm-suggested — review and uncomment\n", indent, sanitizeComment(ann.Role))
 		}
 		// Layer suggestion comment.
 		if ann.Layer != "" {

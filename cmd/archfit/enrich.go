@@ -40,8 +40,11 @@ const enrichBatchSize = 30
 // LLM into .archfit-subdomains.yaml; --pin applies approved entries into .archfit.yaml.
 type EnrichCmd struct {
 	Config     string `short:"c" default:".archfit.yaml"`
+	Root       string `help:"Repository root to analyze (default: directory of --config). Decouples the scanned repo from where the config lives." type:"path"`
 	Subdomains bool   `name:"subdomains" help:"Draft subdomain (core/supporting/generic) per module via LLM, then pin approved values into .archfit.yaml."`
-	Pin        bool   `name:"pin"        help:"With --subdomains: read approved entries from the draft file and write them into .archfit.yaml."`
+	Owner      bool   `name:"owner"      help:"Draft module owner per module via LLM (uses CODEOWNERS context) into .archfit-owners.yaml, then pin approved values into .archfit.yaml."`
+	Volatility bool   `name:"volatility" help:"Draft module volatility (low/medium/high) per module via LLM into .archfit-volatility.yaml, then pin approved values into .archfit.yaml."`
+	Pin        bool   `name:"pin"        help:"With --subdomains/--owner/--volatility: read approved entries from the draft file and write them into .archfit.yaml."`
 	ReviewedBy string `name:"reviewed-by" help:"Human reviewer identity stamped on pinned entries." default:""`
 	NoCache    bool   `name:"no-cache" help:"Bypass the LLM response cache."`
 
@@ -64,12 +67,34 @@ func (m *captureMetric) Calculate(in signal.CollectedSignals) diagnostic.MetricR
 func (c *EnrichCmd) Run(deps *appDeps) error {
 	ctx := context.Background()
 
+	// The three draft modes each write their own review file; combining them
+	// previously ran only one and silently dropped the rest. Reject it.
+	modes := 0
+	for _, on := range []bool{c.Subdomains, c.Owner, c.Volatility} {
+		if on {
+			modes++
+		}
+	}
+	if modes > 1 {
+		return &exitError{code: 3, msg: "error: --subdomains, --owner, and --volatility are mutually exclusive; run one at a time"}
+	}
+
 	// Route to the appropriate workflow.
 	if c.Subdomains && c.Pin {
 		return c.runSubdomainPin(ctx, deps)
 	}
 	if c.Subdomains {
 		return c.runSubdomainDraft(ctx, deps)
+	}
+	if c.Owner || c.Volatility {
+		spec := ownerSpec
+		if c.Volatility {
+			spec = volatilitySpec
+		}
+		if c.Pin {
+			return c.runValuePin(ctx, deps, spec)
+		}
+		return c.runValueDraft(ctx, deps, spec)
 	}
 	return c.runLabelEnrich(ctx, deps)
 }
@@ -89,7 +114,7 @@ func (c *EnrichCmd) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	}
 
 	configDir := filepath.Dir(c.Config)
-	cacheDir := filepath.Join(configDir, ".archfit-cache", "llm")
+	cacheDir := llmCacheDir(configDir)
 	provider, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
@@ -107,7 +132,7 @@ func (c *EnrichCmd) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	if _, err := runPipeline(ctx, deps, cfg, c.Config, false, engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
+	if _, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
@@ -162,7 +187,7 @@ func (c *EnrichCmd) runSubdomainDraft(ctx context.Context, deps *appDeps) error 
 	}
 
 	configDir := filepath.Dir(c.Config)
-	cacheDir := filepath.Join(configDir, ".archfit-cache", "llm")
+	cacheDir := llmCacheDir(configDir)
 	provider, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
@@ -187,7 +212,10 @@ func (c *EnrichCmd) runSubdomainDraft(ctx context.Context, deps *appDeps) error 
 		return nil
 	}
 
-	root := configDir
+	root := c.Root
+	if root == "" {
+		root = configDir
+	}
 	targets := initcfg.BuildClassifyTargets(root, toClassify)
 	ann, err := classifyModules(ctx, provider, targets, cfg.Layers)
 	if err != nil {
@@ -327,6 +355,13 @@ func buildCachedProvider(override llm.Provider, cfg config.LLMConfig, cacheDir s
 		p = llm.NewCache(p, cacheDir)
 	}
 	return p, nil
+}
+
+// llmCacheDir returns the on-disk LLM response cache directory under baseDir.
+// One definition of the ".archfit-cache/llm" layout shared by every LLM command
+// (enrich, review, explain, autopilot, init, update) and reported by doctor.
+func llmCacheDir(baseDir string) string {
+	return filepath.Join(baseDir, ".archfit-cache", "llm")
 }
 
 // refinablePair is one candidate module pair with its evidence summary.

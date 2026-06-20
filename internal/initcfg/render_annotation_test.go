@@ -166,6 +166,39 @@ func TestRender_ApplyMode_LiveAnnotation(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// TestRender_Role
+// ---------------------------------------------------------------------------
+
+// TestRender_Role verifies a suggested module role is rendered live in apply
+// mode (and round-trips into config.Modules[].Role) and as a review comment in
+// plan mode — the draft plumbing the Task-7 enrich/autopilot drafters populate.
+func TestRender_Role(t *testing.T) {
+	const role = "composition_root"
+	cfg := annotationBaseCfg()
+	ann := map[string]ModuleAnnotation{
+		testClassify: {Role: role},
+	}
+
+	// Plan mode: commented (inert), so the round-trip leaves Role unset.
+	plan := Render(cfg, ann, false)
+	if !strings.Contains(plan, "# role: "+role) {
+		t.Errorf("plan mode missing commented role:\n%s", plan)
+	}
+	if got := roundTrip(t, plan).Modules[testClassify].Role; got != "" {
+		t.Errorf("plan mode role round-tripped live = %q, want empty (comment is inert)", got)
+	}
+
+	// Apply mode: live field, not commented, and survives config.Load.
+	apply := Render(cfg, ann, true)
+	if strings.Contains(apply, "# role: "+role) {
+		t.Errorf("apply mode must not have commented role:\n%s", apply)
+	}
+	if got := roundTrip(t, apply).Modules[testClassify].Role; got != config.RoleCompositionRoot {
+		t.Errorf("apply mode round-trip role = %q, want %q", got, config.RoleCompositionRoot)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // TestRender_OutOfSetLayer_NeverLive
 // ---------------------------------------------------------------------------
 

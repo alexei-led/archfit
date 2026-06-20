@@ -35,9 +35,9 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   `exec.Command` in core code — fake the `Runner` in tests.
 - Parse config once into typed views; pass a package its view, not the whole config.
 - LLM SDKs (`anthropic-sdk-go`, `openai-go`) are off-gate: only `enrich`,
-  `explain`, and `review` touch them, never `check`. Enforced structurally —
-  `arch_test.go` forbids any `internal/*` package from importing `internal/llm`,
-  so the LLM commands live in `cmd`.
+  `autopilot`, `explain`, and `review` touch them, never `check`. Enforced
+  structurally — `arch_test.go` forbids any `internal/*` package from importing
+  `internal/llm`, so the LLM commands live in `cmd`.
 
 ## Release (tag-triggered — never release manually)
 

@@ -7,6 +7,9 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 )
 
+// gateWarn is the default coverage-gap gate value reused across these tests.
+const gateWarn = "warn"
+
 func TestNew_ZeroValue(t *testing.T) {
 	d := diagnostic.New()
 	if d.SchemaVersion != diagnostic.SchemaVersion {
@@ -95,7 +98,7 @@ func TestVerdict_Constants(t *testing.T) {
 	}{
 		{diagnostic.VerdictPass, "pass"},
 		{diagnostic.VerdictFail, "fail"},
-		{diagnostic.VerdictWarn, "warn"},
+		{diagnostic.VerdictWarn, gateWarn},
 	}
 	for _, tt := range tests {
 		if string(tt.v) != tt.want {
@@ -213,6 +216,80 @@ func TestCoverage_JSONFieldNames(t *testing.T) {
 		if _, ok := m[f]; !ok {
 			t.Errorf("Coverage JSON field %q missing", f)
 		}
+	}
+}
+
+func TestCoverageGap_JSONFieldNames(t *testing.T) {
+	g := diagnostic.CoverageGap{
+		Tool:            "go/packages",
+		InstallCmd:      "https://go.dev/dl",
+		AffectedMetrics: []string{"coverage", "coupling_balance"},
+		Gate:            gateWarn,
+	}
+
+	data, err := json.Marshal(g)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	for _, f := range []string{"tool", "install_cmd", "affected_metrics", "gate"} {
+		if _, ok := m[f]; !ok {
+			t.Errorf("CoverageGap JSON field %q missing", f)
+		}
+	}
+}
+
+func TestDiagnostic_CoverageGapsRoundTrip(t *testing.T) {
+	d := diagnostic.New()
+	d.CoverageGaps = []diagnostic.CoverageGap{
+		{Tool: "lizard", InstallCmd: "pip install lizard", AffectedMetrics: []string{"complexity"}, Gate: gateWarn},
+	}
+	d.ConfigWarnings = []string{`module "internal/a" omits owner`}
+
+	data, err := json.Marshal(d)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var got diagnostic.Diagnostic
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	if len(got.CoverageGaps) != 1 || got.CoverageGaps[0].Tool != "lizard" {
+		t.Errorf("CoverageGaps round-trip = %+v", got.CoverageGaps)
+	}
+	if got.CoverageGaps[0].AffectedMetrics[0] != "complexity" {
+		t.Errorf("AffectedMetrics round-trip = %v", got.CoverageGaps[0].AffectedMetrics)
+	}
+	if len(got.ConfigWarnings) != 1 || got.ConfigWarnings[0] != `module "internal/a" omits owner` {
+		t.Errorf("ConfigWarnings round-trip = %v", got.ConfigWarnings)
+	}
+}
+
+func TestDiagnostic_CoverageGapsOmitEmpty(t *testing.T) {
+	d := diagnostic.New() // no gaps, no warnings
+
+	data, err := json.Marshal(d)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	if _, ok := m["coverage_gaps"]; ok {
+		t.Error("coverage_gaps must be omitted when empty")
+	}
+	if _, ok := m["config_warnings"]; ok {
+		t.Error("config_warnings must be omitted when empty")
 	}
 }
 

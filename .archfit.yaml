@@ -15,6 +15,7 @@ layers:
   - cmd # rank 5: composition root
 modules:
   internal/model:
+    owner: alexei-led
     paths:
       - internal/model/**
     # public = the package paths themselves (not file paths)
@@ -31,6 +32,7 @@ modules:
     subdomain: core
     volatility: low
   internal/config:
+    owner: alexei-led
     paths:
       - internal/config/**
     public:
@@ -39,6 +41,7 @@ modules:
     subdomain: supporting
     volatility: medium
   internal/baseline:
+    owner: alexei-led
     paths:
       - internal/baseline/**
     public:
@@ -49,6 +52,7 @@ modules:
     subdomain: supporting
     volatility: low
   internal/classify:
+    owner: alexei-led
     paths:
       - internal/classify/**
     public:
@@ -57,6 +61,7 @@ modules:
     subdomain: core
     volatility: medium
   internal/rules:
+    owner: alexei-led
     paths:
       - internal/rules/**
     public:
@@ -65,6 +70,7 @@ modules:
     subdomain: core
     volatility: medium
   internal/metrics:
+    owner: alexei-led
     paths:
       - internal/metrics/**
     public:
@@ -73,6 +79,7 @@ modules:
     subdomain: core
     volatility: medium
   internal/status:
+    owner: alexei-led
     paths:
       - internal/status/**
     public:
@@ -81,6 +88,7 @@ modules:
     subdomain: core
     volatility: low
   internal/engine:
+    owner: alexei-led
     paths:
       - internal/engine/**
     public:
@@ -89,6 +97,7 @@ modules:
     subdomain: core
     volatility: medium
   internal/scope:
+    owner: alexei-led
     paths:
       - internal/scope/**
     public:
@@ -99,6 +108,7 @@ modules:
     subdomain: supporting
     volatility: low
   internal/ports:
+    owner: alexei-led
     paths:
       - internal/ports/**
     public:
@@ -108,6 +118,7 @@ modules:
     subdomain: supporting
     volatility: medium
   internal/labels:
+    owner: alexei-led
     paths:
       - internal/labels/**
     public:
@@ -129,6 +140,7 @@ modules:
   # volatility: low
 
   internal/agenttask:
+    owner: alexei-led
     paths:
       - internal/agenttask/**
     public:
@@ -137,6 +149,7 @@ modules:
     subdomain: supporting
     volatility: low
   internal/facts:
+    owner: alexei-led
     paths:
       - internal/facts/**
     public:
@@ -145,6 +158,7 @@ modules:
     subdomain: supporting
     volatility: medium
   internal/staleness:
+    owner: alexei-led
     paths:
       - internal/staleness/**
     public:
@@ -153,6 +167,7 @@ modules:
     subdomain: supporting
     volatility: low
   internal/toolrun:
+    owner: alexei-led
     paths:
       - internal/toolrun/**
     public:
@@ -259,6 +274,7 @@ modules:
   # subdomain: supporting
   # volatility: low
   internal/output:
+    owner: alexei-led
     paths:
       - internal/output/**
     public:
@@ -270,6 +286,7 @@ modules:
     subdomain: supporting
     volatility: medium
   internal/initcfg:
+    owner: alexei-led
     paths:
       - internal/initcfg/**
     public:
@@ -278,6 +295,7 @@ modules:
     subdomain: supporting
     volatility: medium
   internal/fitness:
+    owner: alexei-led
     paths:
       - internal/fitness/**
     public:
@@ -286,6 +304,7 @@ modules:
     subdomain: supporting
     volatility: low
   internal/ownership:
+    owner: alexei-led
     paths:
       - internal/ownership/**
     public:
@@ -294,6 +313,7 @@ modules:
     subdomain: supporting
     volatility: low
   internal/llm:
+    owner: alexei-led
     paths:
       - internal/llm/**
     public:
@@ -313,6 +333,7 @@ modules:
   # volatility: high
 
   internal:
+    owner: alexei-led
     paths:
       - internal/**
     public:
@@ -321,6 +342,7 @@ modules:
     subdomain: generic
     volatility: low
   internal/history:
+    owner: alexei-led
     paths:
       - internal/history/**
     public:
@@ -329,6 +351,7 @@ modules:
     subdomain: supporting
     volatility: medium
   internal/extract:
+    owner: alexei-led
     paths:
       - internal/extract/**
     public:
@@ -337,6 +360,7 @@ modules:
     subdomain: core
     volatility: high
   cmd/archfit:
+    owner: alexei-led
     paths:
       - cmd/archfit/**
     public:
@@ -423,7 +447,7 @@ rules:
   # resolved by decoupling scope from git and reclassifying it as support.
   - id: layer_inversion
     type: forbidden_layer_direction
-    gate: warn
+    gate: fail
 map_review:
   stale_after: 2160h # 90 days
   gate: warn

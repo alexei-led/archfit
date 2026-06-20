@@ -141,6 +141,80 @@ func TestRenderer_Format(t *testing.T) {
 	}
 }
 
+// TestRenderer_RequiredToolsMissing asserts the coverage-gap block renders after
+// the dimensions so absent evidence is never mistaken for a strong result.
+func TestRenderer_RequiredToolsMissing(t *testing.T) {
+	d := goldenDiagnostic()
+	d.CoverageGaps = []diagnostic.CoverageGap{
+		{Tool: "go/packages", InstallCmd: "https://go.dev/dl", AffectedMetrics: []string{"coverage", "coupling_balance"}, Gate: "warn"},
+	}
+
+	var buf bytes.Buffer
+	if err := New().Render(d, &buf); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "## Required tools missing (1)") {
+		t.Fatalf("missing required-tools section\nfull output:\n%s", out)
+	}
+	if !strings.Contains(out, "**go/packages** [gate: warn] — affects coverage, coupling_balance; install: `https://go.dev/dl`") {
+		t.Errorf("required-tools line not rendered as expected\nfull output:\n%s", out)
+	}
+}
+
+// TestRenderer_Delta asserts the compact delta-count block renders for a delta
+// run and is omitted when there is no delta.
+func TestRenderer_Delta(t *testing.T) {
+	d := goldenDiagnostic()
+	d.Delta = &diagnostic.DeltaReport{
+		New:             []string{"n1", "n2"},
+		SeverityChanged: []string{"s1"},
+		TouchedByDelta:  []string{"t1"},
+		Resolved:        []string{"r1"},
+	}
+
+	var buf bytes.Buffer
+	if err := New().Render(d, &buf); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"## Delta",
+		"- new: 2",
+		"- severity changed: 1",
+		"- touched by this change: 1",
+		"- pre-existing: 0",
+		"- resolved: 1",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("delta block missing %q\nfull output:\n%s", want, out)
+		}
+	}
+
+	// Absent when no delta.
+	var plain bytes.Buffer
+	if err := New().Render(goldenDiagnostic(), &plain); err != nil {
+		t.Fatalf("Render plain: %v", err)
+	}
+	if strings.Contains(plain.String(), "## Delta") {
+		t.Errorf("non-delta scorecard should not contain a Delta block\nfull output:\n%s", plain.String())
+	}
+}
+
+// TestRenderer_RequiredToolsMissingAbsentWhenEmpty asserts the section is omitted
+// when every required tool ran (no coverage gap).
+func TestRenderer_RequiredToolsMissingAbsentWhenEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	if err := New().Render(goldenDiagnostic(), &buf); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if strings.Contains(buf.String(), "Required tools missing") {
+		t.Errorf("required-tools section should be omitted when no gap\nfull output:\n%s", buf.String())
+	}
+}
+
 // TestRenderer_EmptyDiagnostic asserts the renderer never panics on a near-empty
 // Diagnostic and still emits all seven dimension headers.
 func TestRenderer_EmptyDiagnostic(t *testing.T) {

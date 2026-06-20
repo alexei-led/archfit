@@ -135,6 +135,15 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) coupling.Cl
 
 	// --- Distance ---
 	dist := classifyDistance(fromPath, toPath, mi, modules, c.ExplicitOwners)
+	// Role-aware downgrade: a composition root (or a generated/test module) reaches
+	// into the modules it wires by design — that fan-out is cohesion, not high-
+	// distance coupling — so its outbound edges must never be scored as unbalanced.
+	// Cap the source's outbound distance below the high-distance threshold; this
+	// single point flows to Severity (BalanceResult below), the continuous Score,
+	// and every distance-reading metric (unbalanced_edge, encapsulation, …).
+	if fromMod, ok := mi.moduleFor(fromPath); ok && cohesiveRole(modules[fromMod].Role) {
+		dist = capDistanceForRole(dist)
+	}
 
 	// --- Volatility ---
 	vol := classifyVolatility(toPath, mi, modules)

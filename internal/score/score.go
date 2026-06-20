@@ -107,7 +107,7 @@ func Synthesize(d diagnostic.Diagnostic) Scorecard {
 
 	dims := []Dimension{
 		boundaryIntegrity(mi, gate, base),
-		couplingBalance(edges),
+		couplingBalance(edges, base),
 		dependencyGraphHealth(mi, base),
 		cohesionModularity(mi, base),
 		changeLocality(mi, base),
@@ -168,13 +168,20 @@ func finalizeMeta(dim Dimension) Dimension {
 // that crossed a boundary) is a measured breach and subtracts a fixed penalty.
 func boundaryIntegrity(mi metricIndex, gate []finding.Finding, base Confidence) Dimension {
 	dim := Dimension{Name: DimBoundaryIntegrity, Confidence: base}
-	value := 100
+	var value int
+	encMeasured := false
 	if enc, ok := mi.measured("encapsulation"); ok {
+		encMeasured = true
 		value = pct(enc.Value)
 		dim.Evidence = append(dim.Evidence, fmt.Sprintf("encapsulation %.2f (%s)", enc.Value, enc.Band))
 		dim.Confidence = minConf(base, metricConf(enc.Confidence))
 	} else {
-		dim.Evidence = append(dim.Evidence, "encapsulation: n/a (no classified cross-boundary edges)")
+		// Encapsulation could not be measured (no classified cross-boundary edges —
+		// e.g. modules omit owner). Don't fabricate a perfect baseline; start neutral
+		// and rely on gate findings for the only measured boundary signal.
+		value = 50
+		dim.Evidence = append(dim.Evidence,
+			"encapsulation: n/a (no classified cross-boundary edges) — boundary baseline unmeasured")
 		dim.Confidence = ConfidenceLow
 	}
 
@@ -185,7 +192,11 @@ func boundaryIntegrity(mi metricIndex, gate []finding.Finding, base Confidence) 
 		dim.Summary = "boundary violations present: forbidden dependencies cross intended boundaries"
 	} else {
 		dim.Evidence = append(dim.Evidence, "0 active gate violations")
-		dim.Summary = "no gate-level boundary violations; intended boundaries hold"
+		if encMeasured {
+			dim.Summary = "no gate-level boundary violations; intended boundaries hold"
+		} else {
+			dim.Summary = "no gate-level boundary violations; encapsulation unmeasured, so boundary integrity is unconfirmed"
+		}
 	}
 	dim.Value = value
 	return dim
@@ -200,12 +211,23 @@ func boundaryIntegrity(mi metricIndex, gate []finding.Finding, base Confidence) 
 // mixed; pervasive (≥5% of edges) → no better than poor. Cohesion (high strength
 // + low distance) never appears here — the classifier scores it as balanced — so
 // it is never counted against this dimension.
-func couplingBalance(edges []bcEdge) Dimension {
+func couplingBalance(edges []bcEdge, base Confidence) Dimension {
 	dim := Dimension{Name: DimCouplingBalance}
 	if len(edges) == 0 {
+		// No classified edges. With low baseline coverage this is "extraction
+		// found nothing", not "coupling is great" — report neutral/low, never a
+		// false-green 90. Only when coverage is at least medium can zero advisories
+		// be read as genuinely no unbalanced coupling.
+		if base == ConfidenceLow {
+			dim.Value = 50
+			dim.Confidence = ConfidenceLow
+			dim.Evidence = []string{"no edges classified; extraction coverage insufficient (0 classified edges)"}
+			dim.Summary = "coupling unmeasured: no classified edges and insufficient extraction coverage"
+			return dim
+		}
 		dim.Value = 90
 		dim.Confidence = ConfidenceMedium
-		dim.Evidence = []string{"no unbalanced-coupling advisories over classified edges"}
+		dim.Evidence = []string{"no unbalanced coupling among 0 classified edges"}
 		dim.Summary = "no unbalanced coupling detected (strength × distance × volatility balanced, or cohesive)"
 		return dim
 	}
@@ -382,26 +404,48 @@ func architectureFitness(mi metricIndex, base Confidence) Dimension {
 		dim.Summary = "architecture intent enforced by executable fitness checks"
 		return dim
 	}
-	dim.Value = 10
+	// Metric n/a means the fitness scan never ran (no enforcement evidence was
+	// gathered), not that intent is unenforced. Report poor ("scan didn't run"),
+	// not a fabricated critical — critical is reserved for a scan that ran and
+	// found 0/3 signals (handled by the measured branch above, value pct(0)=0).
+	dim.Value = 40
 	dim.Confidence = ConfidenceLow
-	dim.Evidence = append(dim.Evidence, "architecture_fitness: n/a")
-	dim.Summary = "architecture intent not enforced by checks (no fitness signals detected)"
+	dim.Evidence = append(dim.Evidence, "architecture_fitness: n/a (enforcement scan did not run)")
+	dim.Summary = "architecture-fitness scan did not run; enforcement of intent is unknown"
 	return dim
 }
 
 // analysisConfidence is the meta dimension: how trustworthy this review is given
-// tool coverage. File-extraction coverage sets the baseline; each absent semantic
-// tool (scip, gitnexus, lizard/complexity, jscpd/clones) lowers confidence in the
-// depth of the analysis.
+// tool coverage. When extraction ran, file-extraction coverage sets the baseline.
+// When the coverage metric is n/a (no extractor contributed — the repo was not
+// analysed), the baseline starts neutral at 60 and each absent primary extractor
+// (go/packages, dependency-cruiser, grimp) subtracts a fixed penalty so an
+// all-absent repo lands ~0/critical rather than reading pct(0)=0, which hides
+// which extractors are missing. Each absent semantic tool (scip, gitnexus,
+// lizard/complexity, jscpd/clones) then lowers confidence in the depth of the
+// analysis on top.
 func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex) Dimension {
 	dim := Dimension{Name: DimAnalysisConfidence, Confidence: ConfidenceHigh}
+	statuses := toolStatuses(d)
 	value := 60
-	if cov, ok := mi.get("coverage"); ok {
+
+	if cov, ok := mi.measured("coverage"); ok {
+		// Extraction ran and produced a real ratio: it sets the baseline.
 		value = pct(cov.Value)
 		dim.Evidence = append(dim.Evidence, fmt.Sprintf("file extraction coverage %.2f", cov.Value))
+	} else {
+		// Coverage n/a or absent: no extractor analysed the repo. Penalise each
+		// missing primary extractor so an all-absent repo collapses to critical.
+		dim.Evidence = append(dim.Evidence, "file extraction coverage: n/a (no extractor contributed)")
+		primaryAbsent := 0
+		for _, tool := range primaryExtractors {
+			if statuses[tool] != diagnostic.StatusOK {
+				primaryAbsent++
+			}
+		}
+		value -= capInt(primaryAbsent*15, 45)
 	}
 
-	statuses := toolStatuses(d)
 	absent := 0
 	for _, tool := range semanticTools {
 		st := statuses[tool]
@@ -416,6 +460,12 @@ func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex) Dimension {
 	dim.Summary = "review trustworthiness given tool coverage and evidence depth"
 	return dim
 }
+
+// primaryExtractors are the per-language file extractors that produce the coverage
+// facts. Their absence (when coverage is n/a) means the repo was not analysed at
+// all and drives the meta confidence toward critical. Checked by exact
+// ToolCoverage.Tool name.
+var primaryExtractors = []string{"go/packages", "dependency-cruiser", "grimp"}
 
 // semanticTools are the optional deep-analysis tools whose absence lowers the
 // meta confidence. Checked by exact ToolCoverage.Tool name.

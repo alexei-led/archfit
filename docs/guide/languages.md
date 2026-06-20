@@ -223,18 +223,18 @@ metrics need extra tools, and several are language-specific. When a tool is
 missing the dependent metric reports `n/a` **with the reason and enable step** —
 the run never fails — but the metric stays blind until you install it.
 
-| Tool                | Powers                  | Go  | TS/JS | Python | Setup                                              |
-| ------------------- | ----------------------- | --- | ----- | ------ | -------------------------------------------------- |
-| `lizard`            | `complexity`            | yes | yes   | yes    | `pip install lizard` (or `uv tool install lizard`) |
-| SCIP indexer + `uv` | `risk_hub`              | yes | yes   | yes    | `tools.scip.enabled: on`; see notes below          |
-| clone detector      | `functional_candidates` | yes | yes   | yes    | `tools.clones.enabled: on`; jscpd (JS/TS) or PMD   |
-| `gitnexus`          | enriches `risk_hub`     | yes | yes   | yes    | `tools.gitnexus.enabled: on` (or auto-detect)      |
+| Tool                | Powers                  | Go  | TS/JS | Python | Setup                                                                              |
+| ------------------- | ----------------------- | --- | ----- | ------ | ---------------------------------------------------------------------------------- |
+| `lizard`            | `complexity`            | yes | yes   | yes    | `tools.complexity.enabled: on`; `pip install lizard` (or `uv tool install lizard`) |
+| SCIP indexer + `uv` | `risk_hub`              | yes | yes   | yes    | `tools.scip.enabled: on`; see notes below                                          |
+| clone detector      | `functional_candidates` | yes | yes   | yes    | `tools.clones.enabled: on`; jscpd (JS/TS) or PMD                                   |
+| `gitnexus`          | enriches `risk_hub`     | yes | yes   | yes    | `tools.gitnexus.enabled: on` (or auto-detect)                                      |
 
 Notes that bite most often:
 
-- **Complexity needs `lizard`.** Without it on `PATH`, `complexity` is `n/a` for
-  every language. lizard supports Go, Python, TypeScript, and TSX. Install it,
-  then re-run; no config flag is required.
+- **Complexity needs `lizard` and `tools.complexity.enabled: on`.** Without both,
+  `complexity` is `n/a` for every language. lizard supports Go, Python, TypeScript,
+  and TSX. Install it and set the config flag, then re-run.
 - **SCIP for TypeScript needs `node_modules`.** `scip-typescript` resolves
   imports through installed dependencies, so run `npm ci` (or `bun install`)
   before the run. If `node_modules` is absent, archfit reports `risk_hub` as

@@ -27,11 +27,11 @@ or to decide whether to adopt `archfit` — those are web research questions.
 Read the one the task needs:
 
 - `references/commands.md` — commands, flags, output formats, finding statuses,
-  exit codes.
-- `references/llm-modes.md` — `init`/`update --llm` plan→apply, `enrich`,
-  `explain --llm`.
+  exit codes, coverage gaps, and the `--require-tools` hard gate.
+- `references/llm-modes.md` — `init`/`update --llm` plan→apply, `enrich`
+  (labels, `--owner`, `--volatility`), `autopilot`, `.env`, `explain --llm`.
 - `references/agent-loop.md` — autonomous repair contract (`agent_tasks`, SARIF,
-  `change_locality`).
+  `change_locality`), and how coverage gaps read in the loop.
 
 `archfit --help` confirms flags. When a reference and the binary disagree, verify
 against the binary and say so. Full guide:
@@ -53,9 +53,11 @@ Install, configure, add CI, baseline, add an exception, or fix findings.
 7. Validate: `archfit check --config .archfit.yaml --full` (add `--format json`
    for agent loops).
 
-`init`/`update --llm` use a plan→apply safety model: detail and guardrails are in
-`references/llm-modes.md`. Never write LLM classifications (`--apply`) or approve
-`enrich` drafts without reviewing them first.
+`init`/`update --llm`, `enrich` (labels / `--owner` / `--volatility`), and
+`autopilot` are all off-gate and draft-first: detail and guardrails are in
+`references/llm-modes.md`. Never write LLM classifications (`--apply`/`--pin`) or
+approve drafts without reviewing them first. `autopilot` only ever writes a review
+file — it refuses to touch `.archfit.yaml`.
 
 ## Agent repair loop
 
@@ -64,6 +66,25 @@ done. Each `agent_tasks[]` entry has `goal`, `constraints`, `files`, and a
 `validation` command — fix within the constraints, touch only the listed files,
 then re-run `validation` verbatim. Never "fix" `baseline` or `excepted` findings
 unprompted. Full contract: `references/agent-loop.md`.
+
+## Coverage gaps and gate promotion
+
+archfit never scores absence of evidence as healthy. A metric reading `n/a`, or a
+`## Coverage gaps` / `## Required tools missing` section (`coverage_gaps[]` +
+`config_warnings[]` in JSON), means an analyzer did not run — not a passing gate.
+Read the gap's `affected_metrics` and `install_cmd`; close it by installing the
+tool (`archfit doctor` lists them) or filling the config, not by ignoring it.
+
+- Default is warn-loud (exit 0). To make CI block on a missing tool, promote with
+  `--require-tools` or per-tool `tools.<x>.gate: fail` (exits 1 — a policy
+  decision, distinct from exit 3 errors).
+- Promote rules to `gate: fail` only when high-confidence (cycles,
+  forbidden-dependency, layer-direction); keep noisy ones at `warn`.
+- Under-specified-module warnings usually clear once modules declare `owner` /
+  `subdomain` / `volatility`. Draft them with `enrich --owner`/`--volatility` or
+  `autopilot`, **review**, then pin — never auto-apply. Filling them also makes
+  `encapsulation` measurable. A wiring/`cmd` package flagged for fan-out wants a
+  `role:` (e.g. `composition_root`), not an exception.
 
 ## Review
 

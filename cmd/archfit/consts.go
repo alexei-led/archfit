@@ -7,11 +7,9 @@ const (
 	providerOllama    = "ollama"
 )
 
-// defaultLLMProvider and defaultLLMModel are the CLI flag defaults.
-const (
-	defaultLLMProvider = providerAnthropic
-	defaultLLMModel    = "claude-opus-4-8"
-)
+// defaultLLMModel is the CLI flag default model (provider defaults are kong
+// string tags on each command).
+const defaultLLMModel = "claude-opus-4-8"
 
 // Subdomain enum values used in classify validation and tests.
 const (
@@ -30,4 +28,20 @@ const (
 	volatilityLow    = "low"
 	volatilityMedium = "medium"
 	volatilityHigh   = "high"
+)
+
+// Optional-analyzer tool names shared by doctor and the coverage-gap table.
+const (
+	toolLizard   = "lizard"
+	toolJscpd    = "jscpd"
+	toolGitnexus = "gitnexus"
+)
+
+// Primary dependency-graph analyzer coverage names (as they appear in
+// ToolCoverage). Their absence drops the structural metrics to n/a; shared by the
+// coverage-gap table and its config-key map.
+const (
+	toolGoPackages = "go/packages"
+	toolDepCruiser = "dependency-cruiser"
+	toolGrimp      = "grimp"
 )

@@ -1,6 +1,8 @@
 package status
 
 import (
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -10,12 +12,14 @@ import (
 )
 
 // AcceptedEntry is one accepted finding from a prior run: the fingerprint that
-// identifies it, the rule that produced it, and the finding kind (gate or
-// advisory; empty means "gate" for backward compatibility).
+// identifies it, the rule that produced it, the finding kind (gate or advisory;
+// empty means "gate" for backward compatibility), and the severity recorded when
+// it was accepted (empty for baselines written before severity was tracked).
 type AcceptedEntry struct {
 	Fingerprint string
 	RuleID      string
 	Kind        string
+	Severity    string
 }
 
 // AcceptedSet is the read-only view of previously accepted findings that
@@ -158,4 +162,90 @@ func isExpired(exc config.ExceptionDef, now time.Time) bool {
 	// Expiry is end-of-day: the exception is valid on the expiry date itself,
 	// expired the day after. Add 24 hours so "expires: 2025-01-31" covers all of Jan 31.
 	return now.After(expiry.Add(24 * time.Hour))
+}
+
+// DeltaResult groups finding IDs by delta bucket. Buckets are mutually exclusive
+// (precedence: resolved > new > severity_changed > touched_by_delta > existing)
+// and each slice is sorted for deterministic output.
+type DeltaResult struct {
+	New             []string
+	Existing        []string
+	Resolved        []string
+	SeverityChanged []string
+	TouchedByDelta  []string
+}
+
+// Empty reports whether no finding landed in any bucket.
+func (r DeltaResult) Empty() bool {
+	return len(r.New)+len(r.Existing)+len(r.Resolved)+len(r.SeverityChanged)+len(r.TouchedByDelta) == 0
+}
+
+// DeltaBuckets categorizes findings for a delta run relative to the baseline and
+// the changed-file set. It reuses the lifecycle status already on each finding
+// and the accepted set's recorded severity — no re-classification. Each finding
+// lands in exactly one bucket:
+//
+//   - Resolved: status fixed (a baseline finding no longer detected).
+//   - New: status new (introduced by this change).
+//   - SeverityChanged: a baseline finding whose severity differs from the
+//     severity stored in the baseline (skipped when the baseline predates
+//     severity tracking, i.e. the recorded severity is empty).
+//   - TouchedByDelta: a remaining pre-existing finding whose edge endpoints sit
+//     on a file in the changed set.
+//   - Existing: any remaining pre-existing finding (untouched by this change).
+//
+// changed is the sorted list of repo-relative files in the delta scope.
+func DeltaBuckets(findings []finding.Finding, accepted AcceptedSet, changed []string) DeltaResult {
+	sevByFP := make(map[string]string)
+	for _, e := range accepted.Entries() {
+		sevByFP[e.Fingerprint] = e.Severity
+	}
+
+	var r DeltaResult
+	for i := range findings {
+		f := &findings[i]
+		switch f.Status {
+		case finding.StatusFixed:
+			r.Resolved = append(r.Resolved, f.ID)
+		case finding.StatusNew:
+			r.New = append(r.New, f.ID)
+		default:
+			if sev, ok := sevByFP[f.ID]; ok && sev != "" && sev != string(f.Severity) {
+				r.SeverityChanged = append(r.SeverityChanged, f.ID)
+			} else if touchesChanged(f, changed) {
+				r.TouchedByDelta = append(r.TouchedByDelta, f.ID)
+			} else {
+				r.Existing = append(r.Existing, f.ID)
+			}
+		}
+	}
+
+	for _, s := range [][]string{r.New, r.Existing, r.Resolved, r.SeverityChanged, r.TouchedByDelta} {
+		sort.Strings(s)
+	}
+	return r
+}
+
+// touchesChanged reports whether either endpoint of f's edge sits on a file in
+// changed. It matches across path granularities: a finding path can be a package
+// directory while changed lists files, so a prefix relation in either direction
+// counts as a touch.
+func touchesChanged(f *finding.Finding, changed []string) bool {
+	for _, p := range []string{f.Edge.From.Path, f.Edge.To.Path} {
+		if p == "" {
+			continue
+		}
+		for _, c := range changed {
+			if pathRelated(p, c) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// pathRelated reports whether a and b name the same file, or one is a directory
+// prefix of the other (e.g. package "internal/foo" vs file "internal/foo/bar.go").
+func pathRelated(a, b string) bool {
+	return a == b || strings.HasPrefix(b, a+"/") || strings.HasPrefix(a, b+"/")
 }

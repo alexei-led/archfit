@@ -252,6 +252,42 @@ func TestCouplingBalance(t *testing.T) {
 	})
 }
 
+// TestCouplingBalance_EmptyEdgesBase asserts the empty-edges branch reads the
+// baseline coverage confidence: low coverage → neutral 50/low (no false-green),
+// medium-or-better coverage → the established 90/medium "no unbalanced coupling".
+func TestCouplingBalance_EmptyEdgesBase(t *testing.T) {
+	t.Run("empty edges + low base → 50/low", func(t *testing.T) {
+		got := couplingBalance(nil, ConfidenceLow)
+		if got.Value != 50 {
+			t.Errorf("value = %d, want 50", got.Value)
+		}
+		if got.Confidence != ConfidenceLow {
+			t.Errorf("confidence = %q, want low", got.Confidence)
+		}
+	})
+
+	t.Run("empty edges + medium base → 90/medium", func(t *testing.T) {
+		got := couplingBalance(nil, ConfidenceMedium)
+		if got.Value != 90 {
+			t.Errorf("value = %d, want 90", got.Value)
+		}
+		if got.Confidence != ConfidenceMedium {
+			t.Errorf("confidence = %q, want medium", got.Confidence)
+		}
+	})
+
+	t.Run("low base propagates through Synthesize", func(t *testing.T) {
+		// A coverage metric with value 0.2 drives the baseline confidence to low,
+		// so an un-analysed repo with no BC edges must not present a strong 90.
+		d := diagnostic.New()
+		d.Metrics = []diagnostic.MetricResult{metric("coverage", 0.2, "poor", "low")}
+		cb := dimByName(t, Synthesize(d), DimCouplingBalance)
+		if cb.Value > 60 {
+			t.Errorf("low-coverage no-edge coupling_balance = %d, want ≤60 (not false-green)", cb.Value)
+		}
+	})
+}
+
 // TestBoundaryIntegrity_GateViolations asserts active gate findings subtract from
 // boundary integrity and are cited as evidence.
 func TestBoundaryIntegrity_GateViolations(t *testing.T) {
@@ -276,6 +312,60 @@ func TestBoundaryIntegrity_GateViolations(t *testing.T) {
 	if !found {
 		t.Errorf("gate violations not cited in evidence: %v", dirtyDim.Evidence)
 	}
+}
+
+// TestBoundaryIntegrity_EncapsulationNA asserts that when encapsulation cannot be
+// measured the dimension does not fabricate a perfect baseline: it starts neutral
+// with low confidence and cites the unmeasured baseline explicitly.
+func TestBoundaryIntegrity_EncapsulationNA(t *testing.T) {
+	mi := indexMetrics(nil) // no encapsulation metric → n/a
+	dim := finalize(boundaryIntegrity(mi, nil, ConfidenceHigh))
+
+	if dim.Value == 100 {
+		t.Errorf("value = 100, encapsulation n/a must not fabricate a perfect score")
+	}
+	if dim.Value != 50 {
+		t.Errorf("value = %d, want 50 (neutral unmeasured baseline)", dim.Value)
+	}
+	if dim.Confidence != ConfidenceLow {
+		t.Errorf("confidence = %q, want low", dim.Confidence)
+	}
+	found := false
+	for _, e := range dim.Evidence {
+		if strings.Contains(e, "encapsulation: n/a") && strings.Contains(e, "unmeasured") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected explicit unmeasured-baseline note in evidence: %v", dim.Evidence)
+	}
+}
+
+// TestArchitectureFitness_NA asserts that when the fitness scan never ran (metric
+// n/a) the dimension reads as poor ("scan didn't run", value 40, low confidence),
+// not a fabricated critical 10; while a real 0/3 scan stays critical.
+func TestArchitectureFitness_NA(t *testing.T) {
+	t.Run("metric n/a → poor 40 low", func(t *testing.T) {
+		mi := indexMetrics([]diagnostic.MetricResult{metric("architecture_fitness", 0, "n/a", "low")})
+		dim := finalize(architectureFitness(mi, ConfidenceHigh))
+		if dim.Value != 40 {
+			t.Errorf("value = %d, want 40", dim.Value)
+		}
+		if dim.Band != BandPoor {
+			t.Errorf("band = %q, want poor", dim.Band)
+		}
+		if dim.Confidence != ConfidenceLow {
+			t.Errorf("confidence = %q, want low", dim.Confidence)
+		}
+	})
+
+	t.Run("ran, found 0/3 → critical", func(t *testing.T) {
+		mi := indexMetrics([]diagnostic.MetricResult{metric("architecture_fitness", 0, "info", "high")})
+		dim := finalize(architectureFitness(mi, ConfidenceHigh))
+		if dim.Band != BandCritical {
+			t.Errorf("band = %q, want critical (scan ran, 0/3 signals)", dim.Band)
+		}
+	})
 }
 
 // TestChangeLocality_Unmeasured asserts that with no delta base and no git history
@@ -347,5 +437,72 @@ func TestAnalysisConfidence_SemanticToolsAbsent(t *testing.T) {
 	}
 	if !bareMeta.Meta {
 		t.Errorf("analysis_confidence should be marked meta")
+	}
+}
+
+// TestAnalysisConfidence asserts the meta dimension is honest about coverage: an
+// unanalysed repo (coverage n/a, no primary extractor) collapses to critical
+// instead of reading pct(0)=0, and a fully-extracted run with the semantic tools
+// absent only degrades gradually.
+func TestAnalysisConfidence(t *testing.T) {
+	cases := []struct {
+		name     string
+		metrics  []diagnostic.MetricResult
+		coverage []diagnostic.Coverage
+		wantBand Band
+		maxValue int // value must be ≤ this (0 = no upper bound)
+		minValue int // value must be ≥ this
+	}{
+		{
+			name:     "coverage n/a + all primary absent → critical",
+			metrics:  []diagnostic.MetricResult{metric("coverage", 0, "n/a", "low")},
+			coverage: nil, // go/packages, dependency-cruiser, grimp all absent
+			wantBand: BandCritical,
+			maxValue: 20,
+		},
+		{
+			name:    "coverage n/a but one primary + semantic present → graded, not critical",
+			metrics: []diagnostic.MetricResult{metric("coverage", 0, "n/a", "low")},
+			// 2/3 primary absent (−30), semantic tools present so they don't compound
+			coverage: []diagnostic.Coverage{
+				okCov("go/packages"),
+				okCov("scip"), okCov("gitnexus"), okCov("lizard"), okCov("jscpd"),
+			},
+			minValue: 21,
+			maxValue: 60,
+		},
+		{
+			name:    "coverage ok + all semantic absent → graded drop, not critical",
+			metrics: []diagnostic.MetricResult{metric("coverage", 0.95, "strong", "high")},
+			// primary present, semantic (scip/gitnexus/lizard/jscpd) all absent
+			coverage: []diagnostic.Coverage{okCov("go/packages")},
+			wantBand: BandServiceable,
+			minValue: 61,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := diagnostic.New()
+			d.Metrics = tc.metrics
+			d.ToolCoverage = tc.coverage
+			meta := dimByName(t, Synthesize(d), DimAnalysisConfidence)
+
+			if !meta.Meta {
+				t.Errorf("analysis_confidence should be marked meta")
+			}
+			if tc.wantBand != "" && meta.Band != tc.wantBand {
+				t.Errorf("band = %q (value %d), want %q", meta.Band, meta.Value, tc.wantBand)
+			}
+			if tc.maxValue > 0 && meta.Value > tc.maxValue {
+				t.Errorf("value = %d, want ≤ %d", meta.Value, tc.maxValue)
+			}
+			if tc.minValue > 0 && meta.Value < tc.minValue {
+				t.Errorf("value = %d, want ≥ %d", meta.Value, tc.minValue)
+			}
+			if got := bandFor(meta.Value); meta.Band != got {
+				t.Errorf("band %q does not match value %d (want %q)", meta.Band, meta.Value, got)
+			}
+		})
 	}
 }

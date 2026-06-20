@@ -130,6 +130,47 @@ type DynamicImportSite struct {
 	Language string `json:"language"`
 }
 
+// CoverageGap is a machine-readable record of one analyzer that did not run,
+// the metrics its absence leaves unmeasured, and the command to install it.
+// Populated in cmd/ from the absent ToolCoverage entries plus a static
+// tool→metrics map — the core ring never sees tool names beyond coverage facts.
+// It is the warn-loud counterpart to a Coverage{Status:"absent"} entry: it
+// turns "this tool is missing" into "here is what you lose and how to fix it".
+type CoverageGap struct {
+	// Tool is the absent analyzer's coverage name (e.g. "go/packages", "lizard").
+	Tool string `json:"tool"`
+	// InstallCmd is a one-line install hint for the tool.
+	InstallCmd string `json:"install_cmd"`
+	// AffectedMetrics names the metrics that drop to n/a (or lose confidence)
+	// because this tool did not run. Deterministic, fixed order.
+	AffectedMetrics []string `json:"affected_metrics"`
+	// Gate is the effective gate posture for this gap: "off", "warn", or "fail".
+	// Defaults to warn (warn-loud); a "fail" gate is what an opt-in hard gate
+	// (tools.<x>.gate: fail / --require-tools) sets to block CI on the gap.
+	Gate string `json:"gate"`
+}
+
+// DeltaReport groups a delta run's findings by how they relate to the baseline
+// and the changed-file set, so a reviewer can separate what this change
+// introduced, resolved, or merely touched from pre-existing issues — instead of
+// a delta run reading like a full-repo dump. Each slice holds finding IDs that
+// join back to findings[]; buckets are mutually exclusive. Populated in delta
+// mode only; the whole block is omitted otherwise (pointer + omitempty).
+type DeltaReport struct {
+	// New holds findings absent from the baseline (introduced by this change).
+	New []string `json:"new,omitempty"`
+	// Existing holds baseline findings still present and not on a changed file.
+	Existing []string `json:"existing,omitempty"`
+	// Resolved holds baseline findings no longer detected (status fixed).
+	Resolved []string `json:"resolved,omitempty"`
+	// SeverityChanged holds baseline findings whose severity differs from the
+	// severity recorded in the baseline.
+	SeverityChanged []string `json:"severity_changed,omitempty"`
+	// TouchedByDelta holds pre-existing findings on a file this change touched —
+	// debt a reviewer is well-placed to clear while already in the file.
+	TouchedByDelta []string `json:"touched_by_delta,omitempty"`
+}
+
 // Coverage status constants used across all extractor adapters.
 const (
 	StatusOK      = "ok"
@@ -138,6 +179,9 @@ const (
 )
 
 // SchemaVersion is the fixed schema_version value emitted in every diagnostic.
+// The schema is additive within a major version: new optional fields (e.g. the
+// delta block) are introduced without a version bump, so JSON consumers must
+// ignore unknown fields — do not decode a v1 payload with DisallowUnknownFields.
 const SchemaVersion = "archfit.diagnostic.v1"
 
 // Diagnostic is the top-level output contract for archfit check (spec §12).
@@ -163,7 +207,19 @@ type Diagnostic struct {
 	DynamicImports []DynamicImport `json:"dynamic_imports"`
 	AgentTasks     []AgentTask     `json:"agent_tasks"`
 	ToolCoverage   []Coverage      `json:"tool_coverage"`
-	Summary        Summary         `json:"summary"`
+	// CoverageGaps lists analyzers that did not run, the metrics their absence
+	// leaves unmeasured, and how to install them (warn-loud coverage reporting).
+	// Omitted when every required tool ran. Populated in cmd/, never the core ring.
+	CoverageGaps []CoverageGap `json:"coverage_gaps,omitempty"`
+	// ConfigWarnings carries advisory config-quality messages (under-specified
+	// modules, swallowed optional-tool errors) so they reach md/json/CI instead
+	// of being stderr-only. Omitted when empty. Advisory — never gates.
+	ConfigWarnings []string `json:"config_warnings,omitempty"`
+	// Delta groups findings by lifecycle bucket (new/existing/resolved/
+	// severity_changed/touched_by_delta) for a delta run. Nil (omitted) outside
+	// delta mode and when the run produced no findings to bucket.
+	Delta   *DeltaReport `json:"delta,omitempty"`
+	Summary Summary      `json:"summary"`
 }
 
 // New returns a zero-value Diagnostic with all required fields initialised to their

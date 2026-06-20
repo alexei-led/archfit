@@ -29,3 +29,6 @@ calibration-report.json
 
 # Local codegraph database and runtime files
 .codegraph/
+
+# Generated comparison-study output (regenerable; not part of the repo)
+reports/

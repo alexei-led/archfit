@@ -7,14 +7,17 @@ package main
 // change_locality dimension is measured; otherwise it scans the whole repo.
 type ScoreCmd struct {
 	Config string `short:"c" help:"Config file." default:".archfit.yaml"`
+	Root   string `help:"Repository root to analyze (default: directory of --config)." type:"path"`
 	Base   string `help:"Git ref to compare against, enabling the change-locality dimension (e.g. main, HEAD~1)."`
+	Full   bool   `help:"Scan all files, not just files changed since --base (implied when --base is absent)."`
 }
 
 func (c *ScoreCmd) Run(deps *appDeps) error {
 	check := CheckCmd{
 		Config:   c.Config,
+		Root:     c.Root,
 		Base:     c.Base,
-		Full:     c.Base == "",
+		Full:     c.Full || c.Base == "",
 		Advisory: true,
 		Report:   true,
 		Format:   []string{"scorecard"},

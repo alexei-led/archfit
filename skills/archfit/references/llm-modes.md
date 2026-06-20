@@ -17,17 +17,22 @@ tools:
 ```
 
 API keys come from env only — `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` — never
-from config. `archfit doctor` shows provider, key presence, and cache status.
-Responses are cached at `.archfit-cache/llm/`; `--no-cache` forces fresh calls.
+from config. archfit also best-effort loads a local `.env` (cwd) at startup,
+setting a key only when it is currently unset (real env / CI secrets win); keep
+`.env` out of git. `archfit doctor` shows provider, key presence, and cache
+status. Responses are cached at `.archfit-cache/llm/`; `--no-cache` forces fresh
+calls.
 
 LLM flags (`init` and `update`): `--llm`, `--llm-provider`, `--llm-model`,
 `--no-cache`.
 
 ## init / update classification (subdomain, volatility, layer)
 
-`init --llm` and `update --llm` suggest `subdomain`, `volatility`, and `layer`
-for discovered modules, plus a module-name improvement. They never touch coupling
-strength — that is `enrich`.
+`init --llm` and `update --llm` suggest `subdomain`, `volatility`, `layer`, and
+`role` for discovered modules, plus a module-name improvement. They never touch
+coupling strength — that is `enrich`. (`role` declares a module's architectural
+role — `composition_root`, `adapter`, `core`, `shared_model`, `generated`, `test`
+— so a wiring/`cmd` package's fan-out reads as cohesion, not unbalanced coupling.)
 
 Mode behavior:
 
@@ -89,6 +94,26 @@ Labels file (`.archfit-labels.yaml`) notes:
   label is ignored until re-reviewed. Hand-authored labels may omit the hash.
 - A malformed labels file fails `check` loudly (exit 3) — it never silently
   alters the gate.
+
+## enrich --owner / --volatility (draft → review → pin)
+
+`enrich --owner` and `enrich --volatility` draft the `owner` and `volatility`
+module fields the structural metrics depend on. `--owner` reads `CODEOWNERS` plus
+module paths into `.archfit-owners.yaml`; `--volatility` infers low/medium/high
+into `.archfit-volatility.yaml`. `--pin` writes only `status: approved` entries
+into `modules.<name>` and never overwrites a live field. Filling these makes
+`encapsulation` measurable, so `boundary_integrity` and `coupling_balance` leave
+`n/a`. Never auto-pin without review.
+
+## autopilot — full config draft (review-only)
+
+`archfit autopilot` drafts an entire `.archfit.yaml` in one shot (structure,
+subdomain/volatility/layer/role, and a per-module owner), rendered in plan mode —
+every field commented. It writes a review file (`.archfit-autopilot.yaml`) and
+**refuses** to write `.archfit.yaml` directly (exit 3). Flags: `--root`/`-r`,
+`--config`/`-c`, `--output`/`-o` (`-` for stdout), `--llm-provider`,
+`--llm-model`, `--no-cache`. Review the draft, then move approved fields into the
+live config — autopilot applies nothing.
 
 ## explain --llm
 

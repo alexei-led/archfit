@@ -24,6 +24,11 @@ type AcceptedFinding struct {
 	Fingerprint string `json:"fingerprint"`
 	RuleID      string `json:"rule_id"`
 	Kind        string `json:"kind,omitempty"`
+	// Severity is the finding's severity at acceptance time. Recorded so a delta
+	// run can flag findings whose severity later changed. Omitted (empty) in
+	// baselines written before severity tracking — treated as "unknown", never a
+	// severity change.
+	Severity string `json:"severity,omitempty"`
 }
 
 // Baseline is the on-disk baseline file structure.
@@ -54,6 +59,7 @@ func (b Baseline) Entries() []status.AcceptedEntry {
 			Fingerprint: a.Fingerprint,
 			RuleID:      a.RuleID,
 			Kind:        a.Kind,
+			Severity:    a.Severity,
 		})
 	}
 	return out

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/agenttask"
@@ -69,13 +71,27 @@ func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, 
 // post-baseline check reports phantom metric regressions and unmatched finding
 // fingerprints. After the engine returns, the agent_tasks repair block is
 // attached from the active gate findings (deterministic; spec §13).
-func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, noConfig bool, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, error) {
+func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, noConfig bool, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, error) {
 	configDir := filepath.Dir(configPath)
+	// scanDir anchors scope/git resolution. An explicit --root decouples the
+	// analyzed repo from where the config lives (external-CI use case); when it is
+	// empty the config directory is the root, identical to the historical
+	// behaviour. Baseline, labels, and the config hash stay config-adjacent
+	// regardless — they are part of the config bundle, not the scanned tree.
+	scanDir := root
+	if scanDir == "" {
+		scanDir = configDir
+	}
+	// Merge the built-in artifact/cache excludes into the config exclusions
+	// (additive — see scope.MergeExclusions) before projecting any view, so every
+	// extractor inherits them. Keeps archfit from measuring its own tool outputs
+	// (.gitnexus, reports, .archfit-cache) or vendored/dependency trees.
+	cfg.Exclusions = scope.MergeExclusions(cfg.Exclusions)
 	sc := cfg.ForScope()
-	sc.WorkDir = configDir
+	sc.WorkDir = scanDir
 	sc.Base = mode.Base
 	sc.Full = mode.Full
-	s, err := scope.Resolve(ctx, sc, gitResolver{workDir: configDir, runner: deps.Runner})
+	s, err := scope.Resolve(ctx, sc, gitResolver{workDir: scanDir, runner: deps.Runner})
 	if err != nil {
 		return diagnostic.Diagnostic{}, err
 	}
@@ -90,6 +106,34 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// risk_hub reads hand-authored volatility only (never git churn).
 	ms := append(metrics.New(cfg), extraMetrics...)
 
+	// toolWarnings collects the exceptional, non-nil errors from the optional
+	// extractors below. They normally degrade gracefully — encoding absence in
+	// their Coverage record (surfaced as a CoverageGap), not an error — so this
+	// only fires when a tool ran and failed unexpectedly. noteToolErr records the
+	// message for the structured ConfigWarnings block and echoes it to stderr so
+	// the failure is never silently discarded (the old `_` behaviour).
+	var toolWarnings []string
+	noteToolErr := func(tool string, err error) {
+		if err == nil {
+			return
+		}
+		msg := tool + ": " + err.Error()
+		toolWarnings = append(toolWarnings, msg)
+		_, _ = fmt.Fprintln(os.Stderr, "warning: "+msg)
+	}
+
+	// Output-path hygiene: when the config/output directory sits strictly inside
+	// the analyzed root, archfit writes cache/baseline/report artifacts into the
+	// scanned tree — a source of non-deterministic repeat scans (OpenAI Sec 7.4).
+	// Built-in excludes neutralise the known artifacts, but the directory itself
+	// (and any user-redirected report) is still a hazard, so we surface it.
+	if absConfigDir, aerr := filepath.Abs(configDir); aerr == nil {
+		if w := outputInsideRootWarning(s.Root, absConfigDir); w != "" {
+			toolWarnings = append(toolWarnings, w)
+			_, _ = fmt.Fprintln(os.Stderr, "warning: "+w)
+		}
+	}
+
 	// Recent git history (cheap; runs by default): per-file churn drives module
 	// volatility (unbalanced_edge, BC severity) and the modularity metrics
 	// (change_amplification, hidden_coupling). Hand-authored volatility/subdomain
@@ -102,7 +146,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// LOC walk — repo-relative path→line-count map + coverage record.
 	// ExtraCoverage order: loc, complexity, clones, gitnexus.
 	var locCov diagnostic.Coverage
-	change.Size.FileLOC, locCov, _ = loc.Run(s.Root)
+	var toolErr error
+	change.Size.FileLOC, locCov, toolErr = loc.Run(s.Root)
+	noteToolErr("loc", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, locCov)
 
 	// Architecture-fitness enforcement signals (deterministic FS scan; always runs).
@@ -131,13 +177,15 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// (tools.complexity.enabled: on) like SCIP, since it shells out and adds cost.
 	// Coverage carries zero file counts; status only — mirrors clones absent/ok pattern.
 	var complexityCov diagnostic.Coverage
-	change.Complexity.Funcs, complexityCov, _ = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled())
+	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled())
+	noteToolErr("lizard", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, complexityCov)
 
 	// Clone detection — opt-in (tools.clones.enabled: on). Run returns empty+absent
 	// when disabled or the tool is missing; the metric reports n/a in that case.
 	var clonesCov diagnostic.Coverage
-	change.Duplication.Clusters, clonesCov, _ = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled())
+	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled())
+	noteToolErr("jscpd", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, clonesCov)
 
 	// gitnexus optional symbol-impact enrichment. tools.gitnexus.enabled is
@@ -147,7 +195,8 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// absent; risk_hub falls back to surface-breadth-only in that case.
 	// Coverage is appended to ExtraCoverage so the engine includes it in the diagnostic.
 	var gitnexusCov diagnostic.Coverage
-	change.GitnexusImpact, gitnexusCov, _ = gitnexus.Run(ctx, deps.Runner, s.Root, cfg.GitnexusEnabled(), cfg.GitnexusExplicitlyDisabled())
+	change.GitnexusImpact, gitnexusCov, toolErr = gitnexus.Run(ctx, deps.Runner, s.Root, cfg.GitnexusEnabled(), cfg.GitnexusExplicitlyDisabled())
+	noteToolErr("gitnexus", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, gitnexusCov)
 
 	// Pinned coupling labels (.archfit-labels.yaml): the human-reviewed output of
@@ -211,7 +260,152 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		validate += " --full"
 	}
 	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate})
+
+	// Warn-loud coverage reporting: turn the absent tool-coverage records into a
+	// machine-readable CoverageGaps block (tool → unlocked metrics → install cmd)
+	// and surface config-quality lint plus any swallowed optional-tool errors in
+	// ConfigWarnings so they reach md/json/CI instead of being stderr-only.
+	diag.CoverageGaps = buildCoverageGaps(diag.ToolCoverage, cfg)
+	diag.ConfigWarnings = buildConfigWarnings(cfg, toolWarnings)
 	return diag, nil
+}
+
+// gateWarn / gateFail are the coverage-gap gate strings stamped on each gap.
+// warn (default) degrades a missing tool's metrics to n/a (never green) and reports
+// it, but does not fail the build; fail is the opt-in hard gate (tools.<x>.gate: fail
+// / --require-tools). Sourced from config.GateMode so the two never drift.
+const (
+	gateWarn = string(config.GateWarn)
+	gateFail = string(config.GateFail)
+)
+
+// coverageToolConfigKey maps a coverage tool name (as it appears in ToolCoverage,
+// e.g. "go/packages") to the config Tools map key whose gate: governs it (e.g.
+// "go"). Lets a user write tools.go.gate: fail to gate on the go/packages analyzer
+// without knowing the internal coverage name. Tools absent here fall back to warn.
+var coverageToolConfigKey = map[string]string{
+	toolGoPackages: config.LangGo,
+	toolDepCruiser: config.LangTypeScript,
+	toolGrimp:      config.LangPython,
+	toolLizard:     config.ToolComplexity,
+	toolJscpd:      config.ToolClones,
+	toolGitnexus:   config.ToolGitnexus,
+}
+
+// primaryGraphMetrics are the metrics the dependency-graph extractors
+// (go/packages, dependency-cruiser, grimp) unlock; absent any of them, all of
+// these drop to n/a. Shared (read-only) across those three table entries.
+var primaryGraphMetrics = []string{"coverage", "coupling_balance", "encapsulation", "cycle", "blast_radius"}
+
+// toolAffectedMetrics maps an absent analyzer's coverage name to its one-line
+// install hint and the metrics its absence leaves unmeasured. Only tools listed
+// here produce a CoverageGap — an absent coverage entry with no actionable
+// install path is not a gap a user can close. Static and deterministic.
+var toolAffectedMetrics = map[string]struct {
+	install string
+	metrics []string
+}{
+	toolGoPackages: {"https://go.dev/dl (bundled with the Go toolchain)", primaryGraphMetrics},
+	toolDepCruiser: {"npm install -g dependency-cruiser", primaryGraphMetrics},
+	toolGrimp:      {"uv tool install grimp / pip install grimp", primaryGraphMetrics},
+	toolLizard:     {"uv tool install lizard / pip install lizard", []string{"complexity"}},
+	toolJscpd:      {"npm install -g jscpd", []string{"functional_candidates"}},
+	toolGitnexus:   {"see docs/guide — git-history change-coupling index", []string{"risk_hub"}},
+}
+
+// buildCoverageGaps derives the CoverageGaps block from the absent tool-coverage
+// records. Each gap's Gate is the configured posture for that tool (tools.<x>.gate,
+// default warn) — the --require-tools override is applied later by applyToolGate so
+// the non-check callers of runPipeline are unaffected. Gaps are sorted by tool name
+// so a double-run stays byte-identical regardless of upstream coverage order.
+// Returns nil when no known tool is absent (omitempty keeps clean output unchanged).
+func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config) []diagnostic.CoverageGap {
+	var gaps []diagnostic.CoverageGap
+	for _, c := range cov {
+		if c.Status != diagnostic.StatusAbsent {
+			continue
+		}
+		info, ok := toolAffectedMetrics[c.Tool]
+		if !ok {
+			continue
+		}
+		gaps = append(gaps, diagnostic.CoverageGap{
+			Tool:            c.Tool,
+			InstallCmd:      info.install,
+			AffectedMetrics: info.metrics,
+			Gate:            configToolGate(cfg, c.Tool),
+		})
+	}
+	sort.Slice(gaps, func(i, j int) bool { return gaps[i].Tool < gaps[j].Tool })
+	return gaps
+}
+
+// configToolGate resolves the configured gate for the analyzer behind a coverage
+// tool name, defaulting to warn. An unmapped tool or an empty gate: yields warn.
+func configToolGate(cfg config.Config, tool string) string {
+	key, ok := coverageToolConfigKey[tool]
+	if !ok {
+		return gateWarn
+	}
+	if g := cfg.Tools[key].Gate; g != "" {
+		return string(g)
+	}
+	return gateWarn
+}
+
+// applyToolGate finalises the hard-gate decision for a check/scan run: --require-tools
+// raises every coverage gap to fail, and any gap that gates fail stamps the verdict
+// fail so the rendered output reflects the policy failure. Returns true when the run
+// must exit 1. The policy decision lives here in cmd/ (the layering invariant) — the
+// core ring never sees tool names or gate config. Idempotent and render-order safe:
+// callers invoke it before rendering so the output shows the effective gate.
+func applyToolGate(diag *diagnostic.Diagnostic, requireTools bool) bool {
+	failed := false
+	for i := range diag.CoverageGaps {
+		if requireTools {
+			diag.CoverageGaps[i].Gate = gateFail
+		}
+		if diag.CoverageGaps[i].Gate == gateFail {
+			failed = true
+		}
+	}
+	if failed {
+		diag.Verdict = diagnostic.VerdictFail
+	}
+	return failed
+}
+
+// buildConfigWarnings assembles the advisory ConfigWarnings block: under-specified
+// modules from cfg.Lint() (deterministic order) followed by any swallowed
+// optional-tool errors. Returns nil when both are empty.
+func buildConfigWarnings(cfg config.Config, toolWarnings []string) []string {
+	lint := cfg.Lint()
+	out := make([]string, 0, len(lint)+len(toolWarnings))
+	for _, w := range lint {
+		out = append(out, w.String())
+	}
+	out = append(out, toolWarnings...)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// outputInsideRootWarning reports whether dir (an absolute config/output
+// directory) resolves strictly inside the absolute analyzed root. Returns a
+// warning string in that case, "" when dir is the root itself or lies outside
+// it. Path-only — no filesystem access — so it stays deterministic and testable.
+func outputInsideRootWarning(root, dir string) string {
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return ""
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+		return ""
+	}
+	return "output written inside analyzed root (" + rel + ") — exclude it or " +
+		"use a path outside --root to keep scans deterministic"
 }
 
 // loadConfig loads the config file at path. When path equals the default

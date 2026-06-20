@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -40,7 +42,7 @@ func enrichFixture() (*graph.Graph, coupling.Index, config.ModuleMap) {
 		{From: "file:pkg/c/c.go", To: "file:pkg/b/b.go", Kind: graph.EdgeKindImports, Language: "go"},
 	}
 	nodes := []graph.Node{
-		{Kind: graph.NodeKindFile, Path: "pkg/a/a.go"},
+		{Kind: graph.NodeKindFile, Path: filePkgAA},
 		{Kind: graph.NodeKindFile, Path: "pkg/a/a2.go"},
 		{Kind: graph.NodeKindFile, Path: "pkg/b/b.go"},
 		{Kind: graph.NodeKindFile, Path: "pkg/b/b2.go"},
@@ -151,6 +153,26 @@ func TestMergeDrafts(t *testing.T) {
 	}
 }
 
+// TestEnrich_DraftModesMutuallyExclusive verifies that combining draft modes is
+// rejected before any work runs, instead of silently running just one.
+func TestEnrich_DraftModesMutuallyExclusive(t *testing.T) {
+	combos := []EnrichCmd{
+		{Owner: true, Volatility: true},
+		{Subdomains: true, Owner: true},
+		{Subdomains: true, Volatility: true},
+		{Subdomains: true, Owner: true, Volatility: true},
+	}
+	for _, c := range combos {
+		var buf bytes.Buffer
+		err := c.Run(&appDeps{Stdout: &buf})
+		var ee *exitError
+		if !errors.As(err, &ee) || ee.code != 3 {
+			t.Errorf("Owner=%v Subdomains=%v Volatility=%v: want exitError code 3, got %v",
+				c.Owner, c.Subdomains, c.Volatility, err)
+		}
+	}
+}
+
 // scriptedProvider returns canned responses per call.
 type scriptedProvider struct {
 	responses []string
@@ -159,6 +181,9 @@ type scriptedProvider struct {
 
 func (p *scriptedProvider) Name() string { return "test/scripted" }
 func (p *scriptedProvider) Complete(_ context.Context, _ llm.Request) (llm.Response, error) {
+	if p.calls >= len(p.responses) {
+		return llm.Response{}, fmt.Errorf("scriptedProvider: no canned response for call %d (have %d)", p.calls, len(p.responses))
+	}
 	r := p.responses[p.calls]
 	p.calls++
 	return llm.Response{Text: r}, nil

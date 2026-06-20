@@ -3,6 +3,7 @@ package scope_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
@@ -95,4 +96,64 @@ func TestResolve_ResolverError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
+}
+
+func TestMergeExclusions(t *testing.T) {
+	const vendorGlob = "**/vendor/**"
+
+	t.Run("defaults applied when no config exclusions", func(t *testing.T) {
+		got := scope.MergeExclusions(nil)
+		for _, want := range scope.DefaultExclusions {
+			if !slices.Contains(got, want) {
+				t.Errorf("default %q missing from merged set %v", want, got)
+			}
+		}
+	})
+
+	t.Run("config exclusions merged, not replaced", func(t *testing.T) {
+		got := scope.MergeExclusions([]string{"my/custom/**"})
+		if !slices.Contains(got, "my/custom/**") {
+			t.Errorf("config exclusion dropped: %v", got)
+		}
+		if !slices.Contains(got, "**/.gitnexus/**") || !slices.Contains(got, "**/reports/**") {
+			t.Errorf("defaults must still be present alongside config: %v", got)
+		}
+	})
+
+	t.Run("bare-name negation re-includes a default", func(t *testing.T) {
+		got := scope.MergeExclusions([]string{"!reports"})
+		if slices.Contains(got, "**/reports/**") {
+			t.Errorf("!reports should remove the reports default: %v", got)
+		}
+		if !slices.Contains(got, "**/.gitnexus/**") {
+			t.Errorf("unrelated defaults must survive a negation: %v", got)
+		}
+	})
+
+	t.Run("exact-glob and file negation re-include", func(t *testing.T) {
+		got := scope.MergeExclusions([]string{"!**/.gitnexus/**", "!.archfit-baseline.json"})
+		if slices.Contains(got, "**/.gitnexus/**") {
+			t.Errorf("exact-glob negation should remove the default: %v", got)
+		}
+		if slices.Contains(got, "**/.archfit-baseline.json") {
+			t.Errorf("file negation should remove the default: %v", got)
+		}
+	})
+
+	t.Run("deterministic, sorted, de-duplicated", func(t *testing.T) {
+		// A config entry duplicating a default must not appear twice; order is stable.
+		got := scope.MergeExclusions([]string{vendorGlob, vendorGlob})
+		count := 0
+		for _, p := range got {
+			if p == vendorGlob {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("duplicate vendor entry not de-duplicated: %v", got)
+		}
+		if !slices.IsSorted(got) {
+			t.Errorf("merged exclusions must be sorted for double-run stability: %v", got)
+		}
+	})
 }

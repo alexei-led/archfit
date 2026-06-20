@@ -29,8 +29,10 @@ tools:
 ```
 
 API keys come from the standard env vars only — `ANTHROPIC_API_KEY` /
-`OPENAI_API_KEY` — never from config. `archfit doctor` shows provider, key
-presence, and cache status.
+`OPENAI_API_KEY` — never from config. archfit also best-effort loads a local
+`.env` (cwd) at startup, setting a key only when it is currently unset — real env
+vars and CI secrets always win. Keep `.env` out of git (gitignored by default).
+`archfit doctor` shows provider, key presence, and cache status.
 
 ## The labels file (.archfit-labels.yaml)
 
@@ -65,6 +67,45 @@ Enrich itself is replayable through the content-addressed response cache at
 byte-identical enrich replay across machines). `--no-cache` forces fresh
 calls.
 
+## enrich --owner / --volatility (draft → review → pin)
+
+Beyond coupling labels, `enrich` drafts two module metadata fields that the
+structural metrics depend on. Filling them is the through-line that makes distance
+classification work: `encapsulation` becomes measurable, and `boundary_integrity`
+and `coupling_balance` stop being `n/a`.
+
+```sh
+archfit enrich --owner         # drafts owner per module → .archfit-owners.yaml
+archfit enrich --volatility    # drafts volatility (low/medium/high) → .archfit-volatility.yaml
+$EDITOR .archfit-owners.yaml   # review: set status: approved on the keepers
+archfit enrich --owner --pin   # writes approved entries into modules.<name>
+```
+
+- `--owner` reads `CODEOWNERS` (when present) plus the module's paths/files to
+  suggest a responsible owner; the draft lands in `.archfit-owners.yaml`.
+- `--volatility` infers `low` / `medium` / `high` from module structure into
+  `.archfit-volatility.yaml`.
+- `--pin` writes only `status: approved` entries into `modules.<name>` and
+  **never overwrites a live field** — drafts for already-set fields are skipped.
+- These never touch coupling strength (that is the default `enrich`) and never
+  affect `check`.
+
+## autopilot — full config draft (review-only)
+
+`archfit autopilot` drafts an entire `.archfit.yaml` in one shot: it discovers
+structure, classifies every module (subdomain, volatility, layer, and `role`),
+drafts an owner per module, and renders the whole config in plan mode — every
+field commented.
+
+```sh
+archfit autopilot --root . --output .archfit-autopilot.yaml
+archfit autopilot --root . -o -        # stream to stdout
+```
+
+It **never** writes `.archfit.yaml` (refuses `--output .archfit.yaml`, exit 3).
+Review the draft, then move approved fields into the live config. Same provider,
+cache, and key handling as the other LLM commands.
+
 ## explain --llm
 
 `archfit explain <fingerprint> --llm` appends a Balanced Coupling narrative
@@ -74,12 +115,13 @@ is fully offline.
 
 ## Scope guard
 
-Enrich refines coupling strength labels only.
+Every LLM feature is off-gate and draft-first.
 
-`archfit init --llm` and `archfit update --llm` can suggest `subdomain`,
-`volatility`, and `layer` for discovered modules, but with explicit opt-in
-semantics: without `--apply`, suggestions are emitted as YAML comments that
-require human review before they become live fields. With `--apply`,
-classifications are written directly — treat them as a starting point and review
-before running gates. Existing field values are never overwritten.
-`check` is unaffected by these flags; it only reads the final config.
+`archfit init --llm`, `archfit update --llm`, and `archfit autopilot` suggest
+`subdomain`, `volatility`, `layer`, and `role` for discovered modules; `enrich`
+drafts coupling labels plus `--owner`/`--volatility`. None of them gate. Without
+`--apply`/`--pin` the suggestions are commented or held in a draft file and
+require human review before they become live fields. With `--apply`/`--pin`,
+approved values are written directly — treat them as a starting point and review
+before running gates. Existing field values are never overwritten. `check` is
+unaffected by these flags; it only reads the final config.

@@ -15,30 +15,35 @@ func (c *DoctorCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kon
 	ctx := context.Background()
 
 	tools := []struct {
-		name string
-		cmd  string
+		name    string
+		cmd     string
+		install string // one-line hint shown when the tool is missing
 	}{
-		{"go", "go"},
-		{"git", "git"},
-		{"node", "node"},
-		{"bunx", "bunx"},
-		{"npx", "npx"},
-		{"uv", "uv"},
-		{"python3", "python3"},
-		{"sg (ast-grep)", "sg"},
-		{"scip-typescript", "scip-typescript"},
-		{"scip-python", "scip-python"},
-		{"scip-go", "scip-go"},
+		{"go", "go", "https://go.dev/dl"},
+		{"git", "git", "https://git-scm.com/downloads"},
+		{"node", "node", "https://nodejs.org"},
+		{"bunx", "bunx", "https://bun.sh"},
+		{"npx", "npx", "ships with node"},
+		{"uv", "uv", "https://docs.astral.sh/uv/getting-started/installation"},
+		{"python3", "python3", "https://www.python.org/downloads"},
+		{"sg (ast-grep)", "sg", "cargo install ast-grep / brew install ast-grep"},
+		{"scip-typescript", "scip-typescript", "npm install -g @sourcegraph/scip-typescript"},
+		{"scip-python", "scip-python", "npm install -g @sourcegraph/scip-python"},
+		{"scip-go", "scip-go", "go install github.com/sourcegraph/scip-go/cmd/scip-go@latest"},
+		// Semantic depth tools — their absence lowers analysis_confidence.
+		{toolLizard, toolLizard, "uv tool install lizard / pip install lizard"},
+		{toolJscpd, toolJscpd, "npm install -g jscpd"},
+		{toolGitnexus, toolGitnexus, "see docs/guide — git-history change-coupling index"},
 	}
 
-	_, _ = fmt.Fprintf(deps.Stdout, "%-12s %-8s %s\n", "TOOL", "STATUS", "PATH")
-	_, _ = fmt.Fprintf(deps.Stdout, "%s\n", strings.Repeat("-", 50))
+	_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", "TOOL", "STATUS", "PATH / INSTALL")
+	_, _ = fmt.Fprintf(deps.Stdout, "%s\n", strings.Repeat("-", 60))
 
 	for _, t := range tools {
 		if info, ok := deps.Runner.Detect(ctx, t.cmd); ok {
-			_, _ = fmt.Fprintf(deps.Stdout, "%-12s %-8s %s\n", t.name, "ok", info.Path)
+			_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", t.name, "ok", info.Path)
 		} else {
-			_, _ = fmt.Fprintf(deps.Stdout, "%-12s %-8s %s\n", t.name, "missing", "not found")
+			_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", t.name, "missing", t.install)
 		}
 	}
 
@@ -55,7 +60,7 @@ func (c *DoctorCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kon
 		case "ollama":
 			_, _ = fmt.Fprintf(deps.Stdout, "  base_url: %s (no key needed)\n", llmCfg.BaseURL)
 		}
-		if entries, err := filepath.Glob(filepath.Join(".archfit-cache", "llm", "*.json")); err == nil {
+		if entries, err := filepath.Glob(filepath.Join(llmCacheDir(""), "*.json")); err == nil {
 			_, _ = fmt.Fprintf(deps.Stdout, "  cache: %d entries in .archfit-cache/llm\n", len(entries))
 		}
 	} else {

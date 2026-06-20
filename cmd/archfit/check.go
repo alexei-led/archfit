@@ -21,12 +21,15 @@ import (
 // CheckCmd runs the full archfit analysis pipeline.
 type CheckCmd struct {
 	Config   string   `short:"c" help:"Path to config file (optional; built-in defaults used if absent)." default:".archfit.yaml"`
+	Root     string   `help:"Repository root to analyze (default: directory of --config). Decouples the scanned repo from where the config lives, e.g. an external CI config outside the repo." type:"path"`
 	Base     string   `help:"Git ref to compare against for incremental mode (e.g. main, HEAD~1)."`
 	Full     bool     `help:"Scan all files, not just files changed since --base."`
 	Format   []string `help:"Output format: text (human-readable), json, markdown, md, sarif, scorecard. Repeatable." enum:"json,text,markdown,md,sarif,scorecard" default:"text"`
 	Advisory bool     `help:"Include informational findings (coupling advisories) in output."`
 	Report   bool     `help:"Never exit with a failure code, even when violations are found."`
 	NoConfig bool     `name:"no-config" help:"Skip config file entirely; use built-in defaults. Combine with --lang and --severity to run without any config file."`
+
+	RequireTools bool `name:"require-tools" help:"Exit non-zero when any required analyzer tool is missing (opt-in hard gate); equivalent to tools.<x>.gate: fail for every tool."`
 
 	// Overrides — each flag overrides the equivalent setting from the config file.
 	Severity string   `name:"severity" help:"Show only coupling advisories at or above this level: low, medium, high, critical. Default: medium." enum:"low,medium,high,critical," default:""`
@@ -70,10 +73,17 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		Formats:    c.Format,
 	}
 
-	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.NoConfig, mode, base)
+	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, c.NoConfig, mode, base)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
+
+	// Resolve the opt-in hard gate before rendering so the output shows the
+	// effective gate per coverage gap. A tripped gate is a policy failure (exit 1),
+	// distinct from a tool/config error (exit 3), and is NOT suppressed by --report:
+	// --report waives architecture findings, but a tool the user explicitly required
+	// (--require-tools / tools.<x>.gate: fail) is a deliberate CI block.
+	hardGate := applyToolGate(&diag, c.RequireTools)
 
 	for _, format := range c.Format {
 		var renderErr error
@@ -92,6 +102,11 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		if renderErr != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, renderErr)}
 		}
+	}
+
+	// A tripped hard tool-gate exits 1 regardless of --report (see applyToolGate).
+	if hardGate {
+		return &exitError{code: 1}
 	}
 
 	// --report promises "never exit with a failure code": the verdict is still
@@ -121,16 +136,20 @@ func printConfigLint(w io.Writer, warnings []config.LintWarning) {
 // Always runs: check --full --advisory --report --format markdown.
 // For custom combinations (e.g. without advisory), use the check command directly.
 type ScanCmd struct {
-	Config string `short:"c" help:"Config file." default:".archfit.yaml"`
+	Config       string `short:"c" help:"Config file." default:".archfit.yaml"`
+	Root         string `help:"Repository root to analyze (default: directory of --config)." type:"path"`
+	RequireTools bool   `name:"require-tools" help:"Exit non-zero when any required analyzer tool is missing (opt-in hard gate)."`
 }
 
 func (c *ScanCmd) Run(deps *appDeps) error {
 	check := CheckCmd{
-		Config:   c.Config,
-		Full:     true,
-		Advisory: true,
-		Report:   true,
-		Format:   []string{"markdown"},
+		Config:       c.Config,
+		Root:         c.Root,
+		Full:         true,
+		Advisory:     true,
+		Report:       true,
+		Format:       []string{"markdown"},
+		RequireTools: c.RequireTools,
 	}
 	return check.Run(deps)
 }

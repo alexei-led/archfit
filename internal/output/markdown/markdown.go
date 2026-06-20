@@ -83,6 +83,8 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 	fmt.Fprintf(&b, "- warnings: %d\n", d.Summary.Warnings)
 	fmt.Fprintf(&b, "- exceptions used: %d\n", d.Summary.ExceptionsUsed)
 
+	writeDelta(&b, d)
+
 	// Split metrics: BC-primary vs beyond-BC.
 	var primaryMetrics, beyondMetrics []diagnostic.MetricResult
 	for _, m := range d.Metrics {
@@ -107,6 +109,10 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 	writeFileFacts(&b, d.FileFacts)
 
 	writeDynamicImports(&b, d.DynamicImports)
+
+	writeCoverageGaps(&b, d.CoverageGaps)
+
+	writeConfigWarnings(&b, d.ConfigWarnings)
 
 	gate, advisories := splitFindings(d.Findings)
 	if len(gate) > 0 {
@@ -445,6 +451,97 @@ func writeDynamicImports(b *strings.Builder, dyn []diagnostic.DynamicImport) {
 			break
 		}
 		fmt.Fprintf(b, "- **%s**: %d (e.g. %s)\n", d.Module, d.Count, sampleSites(d.Sites))
+	}
+}
+
+// writeCoverageGaps renders the warn-loud "Coverage gaps" section: one line per
+// analyzer that did not run, the metrics its absence leaves unmeasured, and how
+// to install it. This is what turns archfit's silent degradation into a visible,
+// actionable list — a missing tool is reported, never scored as good architecture.
+// Omitted when no gap was recorded.
+func writeCoverageGaps(b *strings.Builder, gaps []diagnostic.CoverageGap) {
+	if len(gaps) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n## Coverage gaps (%d)\n\n", len(gaps))
+	b.WriteString("Analyzers that did not run. Their metrics are reported as n/a (never green) — install to measure them.\n\n")
+	for _, g := range gaps {
+		fmt.Fprintf(b, "- **%s** [gate: %s] — affects %s\n", g.Tool, g.Gate, strings.Join(g.AffectedMetrics, ", "))
+		fmt.Fprintf(b, "  - install: `%s`\n", g.InstallCmd)
+	}
+}
+
+// writeDelta renders the delta-bucket section for a delta run: findings grouped
+// by how they relate to the baseline (new / severity changed / touched by this
+// change / pre-existing / resolved), so a reviewer can tell what the change
+// introduced from what was already there. Omitted outside delta mode (d.Delta
+// nil). Each bucket holds finding IDs that join back to d.Findings.
+func writeDelta(b *strings.Builder, d diagnostic.Diagnostic) {
+	if d.Delta == nil {
+		return
+	}
+	byID := make(map[string]finding.Finding, len(d.Findings))
+	for _, f := range d.Findings {
+		byID[f.ID] = f
+	}
+
+	b.WriteString("\n## Delta\n\n")
+	b.WriteString("Findings grouped against the baseline so this change's impact is legible.\n")
+
+	sections := []struct {
+		title string
+		ids   []string
+	}{
+		{"New", d.Delta.New},
+		{"Severity changed", d.Delta.SeverityChanged},
+		{"Touched by this change", d.Delta.TouchedByDelta},
+		{"Pre-existing", d.Delta.Existing},
+		{"Resolved", d.Delta.Resolved},
+	}
+	for _, s := range sections {
+		if len(s.ids) == 0 {
+			continue
+		}
+		fmt.Fprintf(b, "\n### %s (%d)\n\n", s.title, len(s.ids))
+		fs := make([]finding.Finding, 0, len(s.ids))
+		for _, id := range s.ids {
+			if f, ok := byID[id]; ok {
+				fs = append(fs, f)
+			}
+		}
+		sort.SliceStable(fs, func(i, j int) bool { return findingLess(fs[i], fs[j]) })
+		for _, f := range fs {
+			writeDeltaFinding(b, f)
+		}
+	}
+}
+
+// writeDeltaFinding renders one finding as a compact delta-bucket line. The
+// bucket already conveys lifecycle status, so the status is omitted here; the
+// severity and edge are shown when present (fixed findings carry neither).
+func writeDeltaFinding(b *strings.Builder, f finding.Finding) {
+	sev := ""
+	if f.Severity != "" {
+		sev = fmt.Sprintf(" [%s]", f.Severity)
+	}
+	edge := ""
+	if f.Edge.From.Path != "" || f.Edge.To.Path != "" {
+		edge = fmt.Sprintf(" — %s → %s", f.Edge.From.Path, f.Edge.To.Path)
+	}
+	fmt.Fprintf(b, "- **%s**%s%s\n", f.RuleID, sev, edge)
+}
+
+// writeConfigWarnings renders advisory config-quality warnings (under-specified
+// modules, swallowed optional-tool errors) so they reach the report and CI
+// instead of being stderr-only. Advisory — never gates. Omitted when empty.
+func writeConfigWarnings(b *strings.Builder, warnings []string) {
+	if len(warnings) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n## Config warnings (%d)\n\n", len(warnings))
+	b.WriteString("Advisory — never gates. Under-specified modules degrade distance/volatility classification.\n\n")
+	for _, w := range warnings {
+		fmt.Fprintf(b, "- %s\n", w)
 	}
 }
 

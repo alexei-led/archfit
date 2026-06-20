@@ -25,6 +25,7 @@ type ModuleField int
 const (
 	FieldSubdomain  ModuleField = iota // subdomain: ...
 	FieldVolatility                    // volatility: ...
+	FieldOwner                         // owner: ...
 	FieldLayer                         // layer: ...
 	FieldReviewedAt                    // reviewed_at: 2026-06-18T...
 	FieldReviewedBy                    // reviewed_by: ...
@@ -506,8 +507,8 @@ func resolveSetModuleFields(ed SetModuleFieldsEdit, pf parsedFile) (*splice, err
 	type fieldLine struct{ key, value string }
 	var toInsert []fieldLine
 
-	// Canonical order: subdomain → volatility → layer → reviewed_at → reviewed_by.
-	for _, mf := range []ModuleField{FieldSubdomain, FieldVolatility, FieldLayer, FieldReviewedAt, FieldReviewedBy} {
+	// Canonical order: subdomain → volatility → owner → layer → reviewed_at → reviewed_by.
+	for _, mf := range []ModuleField{FieldSubdomain, FieldVolatility, FieldOwner, FieldLayer, FieldReviewedAt, FieldReviewedBy} {
 		val, ok := ed.Fields[mf]
 		if !ok || val == "" {
 			continue
@@ -551,6 +552,8 @@ func moduleFieldKey(mf ModuleField) string {
 		return "subdomain"
 	case FieldVolatility:
 		return "volatility"
+	case FieldOwner:
+		return "owner"
 	case FieldLayer:
 		return "layer"
 	case FieldReviewedAt:

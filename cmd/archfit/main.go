@@ -25,6 +25,9 @@ const (
 	defaultBaselinePath   = ".archfit-baseline.json"   // on-disk path for the baseline file
 	defaultLabelsPath     = ".archfit-labels.yaml"     // pinned coupling labels (enrich output)
 	defaultSubdomainsPath = ".archfit-subdomains.yaml" // subdomain draft/pin file (enrich --subdomains)
+	defaultOwnersPath     = ".archfit-owners.yaml"     // owner draft/pin file (enrich --owner)
+	defaultVolatilityPath = ".archfit-volatility.yaml" // volatility draft/pin file (enrich --volatility)
+	defaultAutopilotPath  = ".archfit-autopilot.yaml"  // full-config draft (autopilot, review-only)
 )
 
 // cli is the top-level kong command struct.
@@ -38,6 +41,7 @@ type cli struct {
 	Doctor    DoctorCmd    `cmd:"" help:"Check toolchain availability."`
 	Install   InstallCmd   `cmd:"" help:"Install external tools required for language analysis."`
 	Init      InitCmd      `cmd:"" help:"Initialize .archfit.yaml."`
+	Autopilot AutopilotCmd `cmd:"" help:"Draft a full .archfit.yaml for review via LLM (off-gate; never applied — writes a review file)."`
 	Update    UpdateCmd    `cmd:"" help:"Sync .archfit.yaml with current project structure."`
 	Review    ReviewCmd    `cmd:"" help:"Holistic off-gate LLM narrative review of all collected evidence (off-gate; needs tools.llm configured)."`
 	Calibrate CalibrateCmd `cmd:"" help:"Compare scorers over real repos and emit an agreement report (dev tool; never affects the gate)."`
@@ -138,5 +142,8 @@ func Run(args []string, stdout io.Writer) (exitStatus int) {
 }
 
 func main() {
+	// Best-effort .env autoload at startup so the LLM commands pick up a key from
+	// a local .env without polluting the shell. Real env / CI secrets always win.
+	loadDotEnv(".env")
 	os.Exit(Run(os.Args[1:], os.Stdout))
 }

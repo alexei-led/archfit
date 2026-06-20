@@ -28,24 +28,53 @@ const (
 	confLow   = "low"
 )
 
-func TestEncapsulation_ZeroDenominator(t *testing.T) {
-	// Graph with no cross-boundary edges → value must be 1.0, no panic.
+func TestEncapsulation_VacuouslyEncapsulated(t *testing.T) {
+	// Dependency edges exist but none cross a module boundary (all same-module):
+	// nothing can leak → value 1.0, no panic. This is a genuine analysed result,
+	// distinct from an empty graph (which must read n/a).
+	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
+	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
+	edge := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
+	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB}, []graph.Edge{edge})
+	idx := coupling.Index{
+		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): coupling.Classification{
+			Strength: coupling.StrengthContract,
+			Distance: coupling.DistanceSameModule,
+		},
+	}
+	m := boundary.EncapsulationMetric{}
+	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+	if result.Value != 1.0 {
+		t.Errorf("expected value 1.0 got %v", result.Value)
+	}
+}
+
+func TestEncapsulation_EmptyGraphIsNA(t *testing.T) {
+	// A graph with nodes but no dependency edges is absence of evidence, not an
+	// encapsulated codebase — report n/a, never a false-green 1.0.
 	g := metricstest.BuildGraph(
 		[]graph.Node{{Kind: graph.NodeKindFile, Path: pathA}},
 		nil,
 	)
 	m := boundary.EncapsulationMetric{}
 	result := m.Calculate(signal.CommonInput{Graph: g})
-	if result.Value != 1.0 {
-		t.Errorf("expected value 1.0 got %v", result.Value)
+	if result.Band != bandNAStr {
+		t.Errorf("expected band %q for empty graph, got %q", bandNAStr, result.Band)
+	}
+	if result.Value == 1.0 {
+		t.Errorf("empty graph must not yield value 1.0 (false-green)")
 	}
 }
 
 func TestEncapsulation_NilGraph(t *testing.T) {
+	// A nil graph is absent evidence — n/a, not a false-green 1.0.
 	m := boundary.EncapsulationMetric{}
 	result := m.Calculate(signal.CommonInput{Graph: nil})
-	if result.Value != 1.0 {
-		t.Errorf("expected value 1.0 for nil graph, got %v", result.Value)
+	if result.Band != bandNAStr {
+		t.Errorf("expected band %q for nil graph, got %q", bandNAStr, result.Band)
+	}
+	if result.Value == 1.0 {
+		t.Errorf("nil graph must not yield value 1.0 (false-green)")
 	}
 }
 

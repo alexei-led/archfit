@@ -141,10 +141,29 @@ func (m *ToolMode) UnmarshalYAML(unmarshal func(any) error) error {
 	return nil
 }
 
+// GateMode is the coverage-gate posture for one tool: how its absence affects the
+// exit code. It is distinct from ToolMode (which controls whether a tool runs).
+//   - off  — report the coverage gap but never fail.
+//   - warn — (default, empty) report the gap, exit 0 (warn-loud).
+//   - fail — a missing tool fails the build (opt-in hard gate).
+//
+// Empty means "use the default (warn)". The exit decision lives in cmd/; the core
+// ring never reads it. See also --require-tools, which raises every gap to fail.
+type GateMode string
+
+// GateMode constants for the tools.<x>.gate field. Values match the rule/metric
+// gate vocabulary (off|warn|fail) so the whole config speaks one gate language.
+const (
+	GateOff  GateMode = "off"
+	GateWarn GateMode = "warn"
+	GateFail GateMode = "fail"
+)
+
 // ToolConfig holds the settings for a single external tool.
 // Provider/Model/BaseURL apply to the "llm" key only (see Config.LLM).
 type ToolConfig struct {
 	Enabled  ToolMode `yaml:"enabled"`
+	Gate     GateMode `yaml:"gate,omitempty"`
 	Provider string   `yaml:"provider,omitempty"`
 	Model    string   `yaml:"model,omitempty"`
 	BaseURL  string   `yaml:"base_url,omitempty"`
@@ -153,18 +172,43 @@ type ToolConfig struct {
 // ToolsConfig holds settings for all known external tools, keyed by language name.
 type ToolsConfig map[string]ToolConfig
 
+// ModuleRole declares a module's architectural role. It refines Balanced-Coupling
+// distance: a composition root (or generated/test module) fans out to the modules
+// it wires by design, so that fan-out is cohesion — not high-distance coupling —
+// and must not be scored as unbalanced. Optional; empty means "no role declared"
+// (classified as today). See classify for the distance rule.
+type ModuleRole string
+
+// ModuleRole constants. cohesiveRole (in classify) treats composition_root,
+// generated, and test as wiring/derived sources whose outbound fan-out is cohesion.
+const (
+	RoleCompositionRoot ModuleRole = "composition_root"
+	RoleAdapter         ModuleRole = "adapter"
+	RoleCore            ModuleRole = "core"
+	RoleSharedModel     ModuleRole = "shared_model"
+	RoleGenerated       ModuleRole = "generated"
+	RoleTest            ModuleRole = "test"
+)
+
+// moduleRoles is the accepted set of ModuleDef.role values; empty is allowed.
+var moduleRoles = map[ModuleRole]struct{}{
+	RoleCompositionRoot: {}, RoleAdapter: {}, RoleCore: {},
+	RoleSharedModel: {}, RoleGenerated: {}, RoleTest: {},
+}
+
 // ModuleDef defines a module's path ownership and metadata.
 type ModuleDef struct {
-	Paths      []string  `yaml:"paths"`
-	Public     []string  `yaml:"public"`
-	Internal   []string  `yaml:"internal"`
-	Layer      string    `yaml:"layer"`
-	Subdomain  string    `yaml:"subdomain"`
-	Volatility string    `yaml:"volatility"`
-	Owner      string    `yaml:"owner"`
-	DeployUnit string    `yaml:"deploy_unit"`
-	ReviewedAt time.Time `yaml:"reviewed_at,omitempty"`
-	ReviewedBy string    `yaml:"reviewed_by"`
+	Paths      []string   `yaml:"paths"`
+	Public     []string   `yaml:"public"`
+	Internal   []string   `yaml:"internal"`
+	Layer      string     `yaml:"layer"`
+	Subdomain  string     `yaml:"subdomain"`
+	Volatility string     `yaml:"volatility"`
+	Owner      string     `yaml:"owner"`
+	DeployUnit string     `yaml:"deploy_unit"`
+	Role       ModuleRole `yaml:"role,omitempty"`
+	ReviewedAt time.Time  `yaml:"reviewed_at,omitempty"`
+	ReviewedBy string     `yaml:"reviewed_by"`
 }
 
 // RuleDef declares a single architecture rule.
@@ -312,6 +356,13 @@ func validate(cfg Config) error {
 			return fmt.Errorf("bc_advisory_min_severity %q is not one of: low, medium, high, critical", s)
 		}
 	}
+	for _, name := range sortedKeys(cfg.Modules) {
+		if r := cfg.Modules[name].Role; r != "" {
+			if _, ok := moduleRoles[r]; !ok {
+				return fmt.Errorf("modules.%s.role %q is not one of: composition_root, adapter, core, shared_model, generated, test", name, r)
+			}
+		}
+	}
 	for i, r := range cfg.Rules {
 		id := r.ID
 		if id == "" {
@@ -323,6 +374,11 @@ func validate(cfg Config) error {
 	}
 	for _, name := range sortedMetricKeys(cfg.Metrics) {
 		if err := validateGate("metrics."+name, cfg.Metrics[name].Gate); err != nil {
+			return err
+		}
+	}
+	for _, name := range sortedToolKeys(cfg.Tools) {
+		if err := validateGate("tools."+name, string(cfg.Tools[name].Gate)); err != nil {
 			return err
 		}
 	}
@@ -349,6 +405,17 @@ func validateGate(field, gate string) error {
 // sortedMetricKeys returns metric names in sorted order so validation reports a
 // deterministic first offender when multiple metrics carry an invalid gate.
 func sortedMetricKeys(m MetricsConfig) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// sortedToolKeys returns tool names in sorted order so gate validation reports a
+// deterministic first offender when multiple tools carry an invalid gate.
+func sortedToolKeys(m ToolsConfig) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

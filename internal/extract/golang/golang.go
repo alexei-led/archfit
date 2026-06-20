@@ -177,7 +177,15 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	}
 
 	status := "ok"
-	if unresolved > 0 {
+	switch {
+	case filesSeen == 0:
+		// No Go source files under the scan root: go/packages is not applicable
+		// here (e.g. a non-Go repo). Report absent so the coverage metric reads
+		// n/a rather than a false-green 100% over an empty file set. A non-Go dir
+		// makes packages.Load return a synthetic error package (unresolved>0),
+		// which must not be mistaken for partial coverage.
+		status = "absent"
+	case unresolved > 0:
 		status = "partial"
 	}
 

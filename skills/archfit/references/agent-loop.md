@@ -67,10 +67,24 @@ surface: cross-module edges originating in changed files plus the forward graph
 reach. Report-only — the `new_cross_module_dependency` rule is the gate; the
 metric is the trend an agent or reviewer watches.
 
+## Coverage gaps — missing evidence is loud, not green
+
+A metric reading `n/a` (and a `coverage_gaps[]` entry in JSON) means an analyzer
+did not run — archfit refuses to score absence as health, it does not fail.
+Each gap carries `tool`, `install_cmd`, `affected_metrics`, and `gate`; the
+`config_warnings[]` array carries under-specified-module advisories. An agent
+treats a gap as "install this tool / fill this config", not as a passing gate.
+Coverage gaps do **not** produce `agent_tasks` and do not fail `check` unless the
+run opted in with `--require-tools` (or `tools.<x>.gate: fail`), which exits `1`.
+
 ## What an agent sees
 
 - Gate findings — boundary violations (forbidden deps, internal access, layer
   inversions, cycles, unreviewed new cross-module deps).
 - BC advisories — Balanced Coupling imbalances (strength × distance × volatility).
-- Metrics (13) — boundary health, modularity, structural risk, and drift.
+- Metrics (13) — boundary health, modularity, structural risk, and drift;
+  honestly `n/a` when the evidence is missing.
+- Coverage gaps + config warnings — missing tools and under-specified modules.
+- Delta buckets (`--base`) — findings grouped New / Severity changed / Touched by
+  this change / Pre-existing / Resolved.
 - Structural facts — neutral per-module evidence (fan-in/out, LOC, co-change).

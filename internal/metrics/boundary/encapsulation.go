@@ -50,11 +50,14 @@ func (m EncapsulationMetric) Version() string { return "encapsulation.v1" }
 // discriminating modularity signal lives in change-amplification, hidden-coupling,
 // and cycles instead.
 func (m EncapsulationMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
+	// A nil graph is absent evidence, not an encapsulated codebase — report n/a,
+	// never a false-green 1.0 (matches this package's "absent inputs yield n/a"
+	// contract).
 	if in.Graph == nil {
-		return m.encResult(1.0, result.ConfidenceHigh, in.Baseline)
+		return m.naResult(in.Baseline)
 	}
 
-	var allCross, classifiedCross, contractCross, intrusiveCross int
+	var depEdges, allCross, classifiedCross, contractCross, intrusiveCross int
 	for _, e := range in.Graph.Edges() {
 		// Only dependency-type edges contribute to encapsulation measurement.
 		if e.Kind != graph.EdgeKindImports &&
@@ -62,6 +65,7 @@ func (m EncapsulationMetric) Calculate(in signal.CommonInput) diagnostic.MetricR
 			e.Kind != graph.EdgeKindUsesInternal {
 			continue
 		}
+		depEdges++
 		key := e.From + "\x00" + e.To + "\x00" + string(e.Kind)
 		cl, ok := in.Classifications[key]
 		if !ok {
@@ -83,7 +87,16 @@ func (m EncapsulationMetric) Calculate(in signal.CommonInput) diagnostic.MetricR
 		}
 	}
 
-	// No cross-boundary coupling at all → vacuously encapsulated.
+	// depEdges == 0: the extractor ran but produced a graph with no dependency
+	// edges — distinct from the nil-graph case above, where no extractor ran at
+	// all. Happens for a non-Go repo, an unanalysed root, or a module with no
+	// imports. Report n/a rather than a vacuous 1.0 — an empty graph is absence of
+	// evidence, not earned encapsulation.
+	if depEdges == 0 {
+		return m.naResult(in.Baseline)
+	}
+	// Dependency edges exist but none cross a module boundary → vacuously
+	// encapsulated (a genuine, analysed result, distinct from the empty graph).
 	if allCross == 0 {
 		return m.encResult(1.0, result.ConfidenceHigh, in.Baseline)
 	}
