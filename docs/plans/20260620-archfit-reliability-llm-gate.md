@@ -270,18 +270,22 @@ AffectedMetrics []string, Gate string}` and fields `CoverageGaps []CoverageGap` 
 > after-fix rerun confirms `archfit review` now exits 0 on all five repos (ccgram included).
 > The remaining items below are the _only_ open work in this task.
 
-- [ ] `cmd/archfit/score.go`: add `Full bool` to `ScoreCmd`, forward to the wrapped
+- [x] `cmd/archfit/score.go`: add `Full bool` to `ScoreCmd`, forward to the wrapped
       `CheckCmd` (`Full: c.Full || c.Base == ""`); confirm the `scorecard` path accepts it.
-      **Still broken** — `ScoreCmd` has no `Full` field, so `score --full` fails kong parse
-      (Claude reproduced rc=3; the OpenAI harness sidestepped it via `check --full`)
-- [ ] `cmd/archfit/review.go`: persist the raw LLM response to a debug file (e.g.
-      `.archfit-cache/llm/last-review.txt`) before parsing, so truncation/parse failures are
-      diagnosable (OpenAI Sec 8 hardening item)
-- [ ] (optional, if the SDK exposes it cleanly) constrain the review output with the
-      provider-native JSON-schema / structured-output mode instead of post-hoc parsing only
-- [ ] write `cmd/archfit` tests: `score --full` parses (rc 0); a synthetic large diagnostic
+      Fixed — `score --full` now parses (rc 0) instead of the kong rc=3
+- [x] `cmd/archfit/review.go`: persist the raw LLM response to a debug file
+      (`.archfit-cache/llm/last-review.txt`) before parsing, so truncation/parse failures are
+      diagnosable (best-effort write; parse-error message now points at the dump)
+- [x] (optional, if the SDK exposes it cleanly) constrain the review output with the
+      provider-native JSON-schema / structured-output mode instead of post-hoc parsing only —
+      **skipped deliberately**: the `llm.Provider` interface is one-method-deep by design (no
+      `Request` schema field), so native structured-output would force a `Request`/both-provider/
+      cache-key expansion the ring design avoids; the post-hoc parse (first-`{`→last-`}` extract +
+      truncation hint + `postVerify` + the new raw dump) already makes `review` exit 0 on all five repos
+- [x] write `cmd/archfit` tests: `score --full` parses (rc 0); a synthetic large diagnostic
       keeps `buildReviewPrompt` within the caps; truncated-JSON repair recovers a valid payload
-- [ ] build + `./.bin/archfit score --full -c .archfit.yaml` returns rc 0;
+      (+ a raw-response-persisted test)
+- [x] build + `./.bin/archfit score --full -c .archfit.yaml` returns rc 0;
       `make test` + `make lint` — must pass before Task 6b
 
 ### Task 6b: --root flag separate from --config

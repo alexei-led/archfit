@@ -27,7 +27,25 @@ const (
 	reviewMaxModuleFacts  = 80
 	reviewMaxMetrics      = 40
 	reviewMaxDynamicFacts = 50
+
+	// rawReviewFile is the debug dump of the last raw LLM review response,
+	// written under the cache dir before parsing so truncation/parse failures
+	// are diagnosable after the fact.
+	rawReviewFile = "last-review.txt"
+
+	// findingKindGate is the finding.Kind for gate violations (vs advisories).
+	findingKindGate = "gate"
 )
+
+// persistRawReview writes the raw LLM response to <cacheDir>/last-review.txt
+// before parsing. Best-effort: a write failure (or unwritable cache dir) must
+// never fail the review, so errors are intentionally swallowed.
+func persistRawReview(cacheDir, text string) {
+	if err := os.MkdirAll(cacheDir, 0o750); err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(cacheDir, rawReviewFile), []byte(text), 0o600)
+}
 
 // ReviewCmd runs the full pipeline, synthesises a Scorecard, and feeds both to
 // the LLM for a holistic narrative review. The LLM output is advisory only and
@@ -85,9 +103,14 @@ func (c *ReviewCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
+	// Persist the raw response before parsing so truncation/parse failures are
+	// diagnosable after the fact. Best-effort: never fail the review on a debug
+	// write error — the parse below is what matters.
+	persistRawReview(cacheDir, resp.Text)
+
 	rev, err := parseReviewResponse(resp.Text)
 	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: review: model response is not the required JSON: %v", err)}
+		return &exitError{code: 3, msg: fmt.Sprintf("error: review: model response is not the required JSON: %v (raw response saved to %s)", err, filepath.Join(cacheDir, rawReviewFile))}
 	}
 
 	rev = postVerify(rev, diag)
@@ -416,7 +439,7 @@ func writeFindingExamples(b *strings.Builder, findings []finding.Finding) {
 
 func reviewFindingSortKey(f finding.Finding) string {
 	kindRank := "1"
-	if f.Kind == "gate" {
+	if f.Kind == findingKindGate {
 		kindRank = "0"
 	}
 	severityRank := 9 - reviewSeverityRank(f.Severity)
@@ -483,7 +506,7 @@ func buildReviewPrompt(diag diagnostic.Diagnostic, sc score.Scorecard) string {
 	// push the model into long, truncated JSON responses.
 	var gateFindings, advisories int
 	for _, f := range diag.Findings {
-		if f.Kind == "gate" {
+		if f.Kind == findingKindGate {
 			gateFindings++
 		} else {
 			advisories++

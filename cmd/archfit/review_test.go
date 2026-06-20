@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -193,6 +195,120 @@ func TestParseReviewResponse_TruncatedJSONHint(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "appears truncated") {
 		t.Fatalf("want truncation hint, got: %v", err)
+	}
+}
+
+// TestParseReviewResponse_RecoversFromTrailingProse asserts the first-{ to
+// last-} extraction recovers a valid payload when the model wraps a complete
+// JSON object in prose and then gets cut off mid-sentence after the close brace.
+func TestParseReviewResponse_RecoversFromTrailingProse(t *testing.T) {
+	wrapped := "Here is the architecture review you requested:\n\n" +
+		validReviewJSON +
+		"\n\nNote: this analysis was based on the supplied evidence and may be inc"
+	rev, err := parseReviewResponse(wrapped)
+	if err != nil {
+		t.Fatalf("parseReviewResponse returned error: %v", err)
+	}
+	if rev.OverallBand != reviewBandMixed || len(rev.Dimensions) != 1 {
+		t.Fatalf("unexpected recovered review response: %+v", rev)
+	}
+}
+
+// TestBuildReviewPrompt_RespectsCaps feeds a deliberately oversized diagnostic
+// and asserts every capped section stays within its budget — the regression
+// guard for the ccgram token-overflow the review caps were added to prevent.
+func TestBuildReviewPrompt_RespectsCaps(t *testing.T) {
+	const (
+		findingsN = 200
+		factsN    = 200
+		metricsN  = 100
+		dynamicN  = 100
+	)
+	diag := diagnostic.Diagnostic{}
+	for i := 0; i < findingsN; i++ {
+		diag.Findings = append(diag.Findings, finding.Finding{
+			ID:       fmt.Sprintf("id%d", i),
+			Kind:     findingKindGate,
+			RuleID:   fmt.Sprintf("rule%d", i),
+			Severity: finding.SeverityHigh,
+			Status:   finding.StatusNew,
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Module: fmt.Sprintf("from%d", i)},
+				To:   finding.Endpoint{Module: fmt.Sprintf("to%d", i)},
+			},
+		})
+	}
+	for i := 0; i < factsN; i++ {
+		diag.FileFacts = append(diag.FileFacts, diagnostic.FileFact{
+			Module:               fmt.Sprintf("mod%d", i),
+			InboundModuleFanIn:   i,
+			OutboundDestinations: i,
+			LOC:                  i,
+		})
+	}
+	for i := 0; i < metricsN; i++ {
+		diag.Metrics = append(diag.Metrics, diagnostic.MetricResult{
+			Name:    fmt.Sprintf("metric%d", i),
+			Value:   float64(i),
+			Band:    "poor",
+			Display: fmt.Sprintf("%d/10", i),
+		})
+	}
+	for i := 0; i < dynamicN; i++ {
+		diag.DynamicImports = append(diag.DynamicImports, diagnostic.DynamicImport{
+			Module: fmt.Sprintf("lazy%d", i),
+			Count:  i + 1,
+		})
+	}
+
+	prompt := buildReviewPrompt(diag, score.Scorecard{})
+
+	// Each section uses a unique line marker, so a strings.Count is an exact
+	// per-section line tally that must not exceed its cap.
+	caps := []struct {
+		label  string
+		marker string
+		limit  int
+	}{
+		{"finding examples", "- [gate] rule=", reviewMaxFindings},
+		{"module facts", "inbound_fanin=", reviewMaxModuleFacts},
+		{"metrics", " display=", reviewMaxMetrics},
+		{"dynamic imports", "site(s)", reviewMaxDynamicFacts},
+	}
+	for _, c := range caps {
+		if got := strings.Count(prompt, c.marker); got > c.limit {
+			t.Errorf("%s rendered %d lines, exceeds cap %d", c.label, got, c.limit)
+		}
+	}
+
+	// Truncation must actually have engaged for findings and dynamic imports
+	// (both render an explicit "N more ... omitted" line when over the cap).
+	if !strings.Contains(prompt, "more finding(s) omitted") {
+		t.Errorf("oversized findings did not emit an omission marker:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "more module(s) omitted") {
+		t.Errorf("oversized dynamic imports did not emit an omission marker:\n%s", prompt)
+	}
+}
+
+// TestReviewCmd_PersistsRawResponse verifies the raw LLM response is dumped to
+// the cache dir before parsing, so truncation/parse failures stay diagnosable.
+func TestReviewCmd_PersistsRawResponse(t *testing.T) {
+	cfgPath := writeViolatingRepo(t)
+	appendLLMConfig(t, cfgPath)
+
+	_, err := runReviewCmd(t, cfgPath, &fixedProvider{text: validReviewJSON, name: reviewProviderName})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	rawPath := filepath.Join(filepath.Dir(cfgPath), ".archfit-cache", "llm", rawReviewFile)
+	got, err := os.ReadFile(rawPath) //nolint:gosec // test reads a known temp path
+	if err != nil {
+		t.Fatalf("raw review not persisted: %v", err)
+	}
+	if string(got) != validReviewJSON {
+		t.Errorf("persisted raw response mismatch:\n%s", got)
 	}
 }
 
