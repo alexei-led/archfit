@@ -51,6 +51,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 			Fingerprint: f.ID,
 			RuleID:      f.RuleID,
 			Kind:        f.Kind,
+			Severity:    string(f.Severity),
 		})
 	}
 	newBase.Metrics = make(diagnostic.MetricSnapshot)

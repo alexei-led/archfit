@@ -90,9 +90,52 @@ func TestRenderer_Render_EmptyDiagnostic(t *testing.T) {
 	}
 
 	// Optional sections absent when no findings or metrics.
-	for _, absent := range []string{secGate, secAdvisories, "Metrics", "Structural facts"} {
+	for _, absent := range []string{secGate, secAdvisories, "Metrics", "Structural facts", "## Delta"} {
 		if strings.Contains(out, absent) {
 			t.Errorf("output should not contain %q in empty diagnostic\nfull output:\n%s", absent, out)
+		}
+	}
+}
+
+func TestRenderer_Render_Delta(t *testing.T) {
+	newF := finding.Finding{
+		ID: "n1", RuleID: "public_api_only", Kind: "gate",
+		Status: finding.StatusNew, Severity: finding.SeverityHigh,
+		Edge: finding.EdgeEvidence{From: finding.Endpoint{Path: "pkg/a"}, To: finding.Endpoint{Path: "pkg/b"}},
+	}
+	resolvedF := finding.Finding{
+		ID: "r1", RuleID: "no_cycles", Kind: "gate", Status: finding.StatusFixed,
+	}
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictWarn
+	d.Findings = []finding.Finding{newF, resolvedF}
+	d.Delta = &diagnostic.DeltaReport{
+		New:      []string{newF.ID},
+		Resolved: []string{resolvedF.ID},
+	}
+
+	var buf bytes.Buffer
+	if err := markdown.New().Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"## Delta",
+		"### New (1)",
+		"### Resolved (1)",
+		"public_api_only",
+		"pkg/a → pkg/b",
+		"no_cycles",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("delta output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+	// Empty buckets render no subsection.
+	for _, absent := range []string{"### Severity changed", "### Pre-existing", "### Touched by this change"} {
+		if strings.Contains(out, absent) {
+			t.Errorf("delta output should not contain empty bucket %q\nfull output:\n%s", absent, out)
 		}
 	}
 }

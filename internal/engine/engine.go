@@ -223,6 +223,11 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// alters ex.g or any metric — the sites are scanned in cmd, not from the graph.
 	dynamicImports := buildDynamicImports(in.Signals.DynamicImports.Sites, classifyCfg.ModuleMap)
 
+	// Delta bucketing (Task 3c): in delta mode, group findings by how they relate
+	// to the baseline and the changed-file set so the report does not read like a
+	// full-repo dump. Report-only; never enters the verdict. Nil outside delta mode.
+	delta := deltaReport(in.Scope.Mode, resolvedFindings, in.Accepted, in.Scope.Changed)
+
 	d := diagnostic.Diagnostic{
 		SchemaVersion:  diagnostic.SchemaVersion,
 		Verdict:        verdict,
@@ -235,6 +240,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		DynamicImports: dynamicImports,
 		AgentTasks:     []diagnostic.AgentTask{},
 		ToolCoverage:   ex.coverages,
+		Delta:          delta,
 		Summary: diagnostic.Summary{
 			GateFindings:   gateNew,
 			Warnings:       warnings,
@@ -278,6 +284,26 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 	coverages = append(coverages, in.Signals.ExtraCoverage...)
 
 	return extractResult{g: g, coverages: coverages, scipSymbols: scipSymbols}, nil
+}
+
+// deltaReport builds the delta-bucket block for a run. It returns nil outside
+// delta mode and when no finding lands in any bucket, so the field is omitted
+// from non-delta output (and the golden full-mode fixtures stay byte-identical).
+func deltaReport(mode scope.ScopeMode, findings []finding.Finding, accepted status.AcceptedSet, changed []string) *diagnostic.DeltaReport {
+	if mode != scope.ModeDelta {
+		return nil
+	}
+	r := status.DeltaBuckets(findings, accepted, changed)
+	if r.Empty() {
+		return nil
+	}
+	return &diagnostic.DeltaReport{
+		New:             r.New,
+		Existing:        r.Existing,
+		Resolved:        r.Resolved,
+		SeverityChanged: r.SeverityChanged,
+		TouchedByDelta:  r.TouchedByDelta,
+	}
 }
 
 // resolveEvidence runs stage 7: join module labels and severity onto tagged findings.

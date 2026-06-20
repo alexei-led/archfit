@@ -190,13 +190,13 @@ AffectedMetrics []string, Gate string}` and fields `CoverageGaps []CoverageGap` 
 
 > From OpenAI Sec 8 item 4 — "current delta can look like full-current output for some repos."
 
-- [ ] group delta-mode findings into `new` / `existing` / `resolved` / `severity_changed` /
+- [x] group delta-mode findings into `new` / `existing` / `resolved` / `severity_changed` /
       `touched_by_delta` buckets, reusing the lifecycle tags `internal/status` already assigns
       (add `severity_changed` detection there if absent — pure, in-ring)
-- [ ] render the buckets in `internal/output/{markdown,scorecard}` and add the grouping to the
+- [x] render the buckets in `internal/output/{markdown,scorecard}` and add the grouping to the
       JSON delta payload (additive, omitempty)
-- [ ] write `status` + output tests covering each bucket and an all-empty delta
-- [ ] `go test ./internal/status/... ./internal/output/...` +
+- [x] write `status` + output tests covering each bucket and an all-empty delta
+- [x] `go test ./internal/status/... ./internal/output/...` +
       `go test ./internal/engine/ -run TestGolden` + `make lint` — must pass before Task 4
 
 ### Task 4: Opt-in hard gate for missing required tools

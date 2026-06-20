@@ -51,10 +51,36 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 		}
 	}
 
+	writeDelta(&b, d.Delta)
+
 	writeRequiredToolsMissing(&b, d.CoverageGaps)
 
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// writeDelta appends a compact delta-bucket count summary for a delta run, so a
+// scorecard reader sees how many findings this change introduced, resolved, or
+// merely touched versus pre-existing debt. Counts only — the per-finding lists
+// live in the markdown/json output. Omitted outside delta mode (delta nil).
+func writeDelta(b *strings.Builder, delta *diagnostic.DeltaReport) {
+	if delta == nil {
+		return
+	}
+	b.WriteString("\n## Delta\n\n")
+	rows := []struct {
+		label string
+		ids   []string
+	}{
+		{"new", delta.New},
+		{"severity changed", delta.SeverityChanged},
+		{"touched by this change", delta.TouchedByDelta},
+		{"pre-existing", delta.Existing},
+		{"resolved", delta.Resolved},
+	}
+	for _, r := range rows {
+		fmt.Fprintf(b, "- %s: %d\n", r.label, len(r.ids))
+	}
 }
 
 // writeRequiredToolsMissing appends the coverage-gap block to the scorecard so a

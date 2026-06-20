@@ -44,6 +44,59 @@ func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
 	}
 }
 
+// TestJSONRenderer_Delta verifies the delta block round-trips with snake_case
+// bucket keys, omits empty buckets, and is omitted entirely when nil.
+func TestJSONRenderer_Delta(t *testing.T) {
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictWarn
+	d.Delta = &diagnostic.DeltaReport{
+		New:      []string{"n1"},
+		Resolved: []string{"r1"},
+	}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var raw struct {
+		Delta map[string]any `json:"delta"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if raw.Delta == nil {
+		t.Fatal("delta block missing from JSON output")
+	}
+	if _, ok := raw.Delta["new"]; !ok {
+		t.Error("delta.new missing")
+	}
+	if _, ok := raw.Delta["resolved"]; !ok {
+		t.Error("delta.resolved missing")
+	}
+	if _, ok := raw.Delta["existing"]; ok {
+		t.Error("delta.existing should be omitted when empty")
+	}
+
+	var got diagnostic.Diagnostic
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("cannot unmarshal back into Diagnostic: %v", err)
+	}
+	if got.Delta == nil || len(got.Delta.New) != 1 || got.Delta.New[0] != "n1" {
+		t.Errorf("round-trip delta = %+v, want New=[n1]", got.Delta)
+	}
+
+	// Omitted entirely when nil.
+	plain := diagnostic.New()
+	var pbuf bytes.Buffer
+	if err := jsonout.New().Render(plain, &pbuf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if bytes.Contains(pbuf.Bytes(), []byte("\"delta\"")) {
+		t.Errorf("delta should be omitted when nil\noutput: %s", pbuf.String())
+	}
+}
+
 func TestJSONRenderer_Format(t *testing.T) {
 	r := jsonout.New()
 	if got := r.Format(); got != "json" {

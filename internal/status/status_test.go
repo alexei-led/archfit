@@ -1,6 +1,7 @@
 package status_test
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -258,4 +259,129 @@ func TestAssign_ExpiryBoundary(t *testing.T) {
 			}
 		})
 	}
+}
+
+// mkDeltaFinding builds a finding with explicit lifecycle/severity/edge fields
+// for delta-bucket tests (bypassing finding.New, which derives the ID).
+func mkDeltaFinding(id string, st finding.Status, sev finding.Severity, from, to string) finding.Finding {
+	return finding.Finding{
+		ID:       id,
+		RuleID:   testRuleID,
+		Kind:     kindGate,
+		Status:   st,
+		Severity: sev,
+		Edge: finding.EdgeEvidence{
+			From: finding.Endpoint{Path: from},
+			To:   finding.Endpoint{Path: to},
+		},
+	}
+}
+
+func TestDeltaBuckets(t *testing.T) {
+	changed := []string{"internal/foo/bar.go"}
+
+	// Each finding exercises one bucket; severities recorded in the accepted set
+	// drive the severity_changed detection.
+	newF := mkDeltaFinding("11111111111111111111111111111111", finding.StatusNew, finding.SeverityHigh, "internal/foo", "internal/bar")
+	existingF := mkDeltaFinding("22222222222222222222222222222222", finding.StatusBaseline, finding.SeverityMedium, "internal/x", "internal/y")
+	resolvedF := mkDeltaFinding("33333333333333333333333333333333", finding.StatusFixed, "", "", "")
+	sevChangedF := mkDeltaFinding("44444444444444444444444444444444", finding.StatusBaseline, finding.SeverityHigh, "internal/z", "internal/w")
+	touchedF := mkDeltaFinding("55555555555555555555555555555555", finding.StatusBaseline, finding.SeverityLow, "internal/foo", "internal/bar")
+
+	accepted := fakeAccepted{
+		{Fingerprint: existingF.ID, RuleID: testRuleID, Kind: kindGate, Severity: string(finding.SeverityMedium)},
+		{Fingerprint: resolvedF.ID, RuleID: testRuleID, Kind: kindGate, Severity: string(finding.SeverityHigh)},
+		{Fingerprint: sevChangedF.ID, RuleID: testRuleID, Kind: kindGate, Severity: string(finding.SeverityLow)}, // was low, now high
+		{Fingerprint: touchedF.ID, RuleID: testRuleID, Kind: kindGate, Severity: string(finding.SeverityLow)},
+	}
+
+	r := status.DeltaBuckets(
+		[]finding.Finding{existingF, newF, touchedF, sevChangedF, resolvedF}, // unordered input
+		accepted,
+		changed,
+	)
+
+	wantBucket := map[string][]string{
+		"new":              {newF.ID},
+		"existing":         {existingF.ID},
+		"resolved":         {resolvedF.ID},
+		"severity_changed": {sevChangedF.ID},
+		"touched_by_delta": {touchedF.ID},
+	}
+	got := map[string][]string{
+		"new":              r.New,
+		"existing":         r.Existing,
+		"resolved":         r.Resolved,
+		"severity_changed": r.SeverityChanged,
+		"touched_by_delta": r.TouchedByDelta,
+	}
+	for bucket, want := range wantBucket {
+		if !slicesEqual(got[bucket], want) {
+			t.Errorf("bucket %s: got %v, want %v", bucket, got[bucket], want)
+		}
+	}
+	if r.Empty() {
+		t.Error("Empty() = true, want false")
+	}
+}
+
+func TestDeltaBuckets_Precedence(t *testing.T) {
+	changed := []string{"internal/foo/bar.go"}
+
+	// A new finding on a changed file goes to New (not touched_by_delta).
+	newOnChanged := mkDeltaFinding("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", finding.StatusNew, finding.SeverityHigh, "internal/foo", "")
+	// A fixed finding that is also accepted goes to Resolved (not severity_changed).
+	fixedAccepted := mkDeltaFinding("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", finding.StatusFixed, "", "", "")
+
+	accepted := fakeAccepted{
+		{Fingerprint: fixedAccepted.ID, RuleID: testRuleID, Kind: kindGate, Severity: string(finding.SeverityLow)},
+	}
+
+	r := status.DeltaBuckets([]finding.Finding{newOnChanged, fixedAccepted}, accepted, changed)
+
+	if !slicesEqual(r.New, []string{newOnChanged.ID}) {
+		t.Errorf("New: got %v, want [%s]", r.New, newOnChanged.ID)
+	}
+	if !slicesEqual(r.Resolved, []string{fixedAccepted.ID}) {
+		t.Errorf("Resolved: got %v, want [%s]", r.Resolved, fixedAccepted.ID)
+	}
+	if len(r.TouchedByDelta) != 0 || len(r.SeverityChanged) != 0 {
+		t.Errorf("precedence leak: touched=%v severity_changed=%v", r.TouchedByDelta, r.SeverityChanged)
+	}
+}
+
+func TestDeltaBuckets_UnknownSeverityIsNotChanged(t *testing.T) {
+	// A baseline written before severity tracking records an empty severity; the
+	// finding must not be flagged severity_changed.
+	f := mkDeltaFinding("cccccccccccccccccccccccccccccccc", finding.StatusBaseline, finding.SeverityHigh, "internal/x", "internal/y")
+	accepted := fakeAccepted{{Fingerprint: f.ID, RuleID: testRuleID, Kind: kindGate, Severity: ""}}
+
+	r := status.DeltaBuckets([]finding.Finding{f}, accepted, nil)
+	if len(r.SeverityChanged) != 0 {
+		t.Errorf("SeverityChanged: got %v, want empty", r.SeverityChanged)
+	}
+	if !slicesEqual(r.Existing, []string{f.ID}) {
+		t.Errorf("Existing: got %v, want [%s]", r.Existing, f.ID)
+	}
+}
+
+func TestDeltaBuckets_Empty(t *testing.T) {
+	r := status.DeltaBuckets(nil, fakeAccepted{}, nil)
+	if !r.Empty() {
+		t.Errorf("Empty() = false, want true for no findings: %+v", r)
+	}
+}
+
+func TestDeltaBuckets_Sorted(t *testing.T) {
+	// Two new findings in reverse-ID order must come back sorted by ID.
+	hi := mkDeltaFinding("ffffffffffffffffffffffffffffffff", finding.StatusNew, finding.SeverityLow, "", "")
+	lo := mkDeltaFinding("00000000000000000000000000000000", finding.StatusNew, finding.SeverityLow, "", "")
+	r := status.DeltaBuckets([]finding.Finding{hi, lo}, fakeAccepted{}, nil)
+	if !slicesEqual(r.New, []string{lo.ID, hi.ID}) {
+		t.Errorf("New not sorted: got %v", r.New)
+	}
+}
+
+func slicesEqual(a, b []string) bool {
+	return slices.Equal(a, b)
 }
