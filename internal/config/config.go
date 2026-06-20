@@ -172,18 +172,43 @@ type ToolConfig struct {
 // ToolsConfig holds settings for all known external tools, keyed by language name.
 type ToolsConfig map[string]ToolConfig
 
+// ModuleRole declares a module's architectural role. It refines Balanced-Coupling
+// distance: a composition root (or generated/test module) fans out to the modules
+// it wires by design, so that fan-out is cohesion — not high-distance coupling —
+// and must not be scored as unbalanced. Optional; empty means "no role declared"
+// (classified as today). See classify for the distance rule.
+type ModuleRole string
+
+// ModuleRole constants. cohesiveRole (in classify) treats composition_root,
+// generated, and test as wiring/derived sources whose outbound fan-out is cohesion.
+const (
+	RoleCompositionRoot ModuleRole = "composition_root"
+	RoleAdapter         ModuleRole = "adapter"
+	RoleCore            ModuleRole = "core"
+	RoleSharedModel     ModuleRole = "shared_model"
+	RoleGenerated       ModuleRole = "generated"
+	RoleTest            ModuleRole = "test"
+)
+
+// moduleRoles is the accepted set of ModuleDef.role values; empty is allowed.
+var moduleRoles = map[ModuleRole]struct{}{
+	RoleCompositionRoot: {}, RoleAdapter: {}, RoleCore: {},
+	RoleSharedModel: {}, RoleGenerated: {}, RoleTest: {},
+}
+
 // ModuleDef defines a module's path ownership and metadata.
 type ModuleDef struct {
-	Paths      []string  `yaml:"paths"`
-	Public     []string  `yaml:"public"`
-	Internal   []string  `yaml:"internal"`
-	Layer      string    `yaml:"layer"`
-	Subdomain  string    `yaml:"subdomain"`
-	Volatility string    `yaml:"volatility"`
-	Owner      string    `yaml:"owner"`
-	DeployUnit string    `yaml:"deploy_unit"`
-	ReviewedAt time.Time `yaml:"reviewed_at,omitempty"`
-	ReviewedBy string    `yaml:"reviewed_by"`
+	Paths      []string   `yaml:"paths"`
+	Public     []string   `yaml:"public"`
+	Internal   []string   `yaml:"internal"`
+	Layer      string     `yaml:"layer"`
+	Subdomain  string     `yaml:"subdomain"`
+	Volatility string     `yaml:"volatility"`
+	Owner      string     `yaml:"owner"`
+	DeployUnit string     `yaml:"deploy_unit"`
+	Role       ModuleRole `yaml:"role,omitempty"`
+	ReviewedAt time.Time  `yaml:"reviewed_at,omitempty"`
+	ReviewedBy string     `yaml:"reviewed_by"`
 }
 
 // RuleDef declares a single architecture rule.
@@ -329,6 +354,13 @@ func validate(cfg Config) error {
 	if s := cfg.BCAdvisoryMinSeverity; s != "" {
 		if _, ok := bcSeverities[s]; !ok {
 			return fmt.Errorf("bc_advisory_min_severity %q is not one of: low, medium, high, critical", s)
+		}
+	}
+	for _, name := range sortedKeys(cfg.Modules) {
+		if r := cfg.Modules[name].Role; r != "" {
+			if _, ok := moduleRoles[r]; !ok {
+				return fmt.Errorf("modules.%s.role %q is not one of: composition_root, adapter, core, shared_model, generated, test", name, r)
+			}
 		}
 	}
 	for i, r := range cfg.Rules {

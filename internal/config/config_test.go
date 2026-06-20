@@ -843,6 +843,21 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			yaml:    "version: 1\nmap_review:\n  stale_after: 720h\n",
 			wantErr: "",
 		},
+		{
+			name:    "valid module role",
+			yaml:    "version: 1\nmodules:\n  cmd:\n    paths: [\"cmd/**\"]\n    role: composition_root\n",
+			wantErr: "",
+		},
+		{
+			name:    "empty module role is allowed",
+			yaml:    "version: 1\nmodules:\n  cmd:\n    paths: [\"cmd/**\"]\n",
+			wantErr: "",
+		},
+		{
+			name:    "invalid module role names the module",
+			yaml:    "version: 1\nmodules:\n  cmd:\n    paths: [\"cmd/**\"]\n    role: wiring\n",
+			wantErr: "modules.cmd.role",
+		},
 	}
 
 	for _, tc := range tests {

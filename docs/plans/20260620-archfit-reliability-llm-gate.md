@@ -242,18 +242,21 @@ AffectedMetrics []string, Gate string}` and fields `CoverageGaps []CoverageGap` 
 > producing false-positive BC advisories. A declared role lets distance classification treat
 > wiring/generated/test modules correctly.
 
-- [ ] `internal/config/config.go`: add a `Role` field to `ModuleDef`
+- [x] `internal/config/config.go`: add a `Role` field to `ModuleDef`
       (`composition_root|adapter|core|shared_model|generated|test`, optional, validated enum);
-      surface it on the classify config view
-- [ ] `internal/classify` / distance scoring: when the source module is `composition_root`
+      surface it on the classify config view (Role rides on `ClassifyConfig.Modules`)
+- [x] `internal/classify` / distance scoring: when the source module is `composition_root`
       (or `generated`/`test`), do not score its outbound edges as high-distance/unbalanced —
-      suppress or downgrade the BC advisory; document the rule. Keep it pure (role arrives via
-      the config view, not I/O)
-- [ ] `enrich`/`autopilot` (Task 7): include a suggested `role` per module in drafts so the
-      LLM-authored config sets composition roots automatically
-- [ ] write classify/metrics tests: a `composition_root` module's fan-out is not flagged;
-      a `core`→`core` unbalanced edge still is
-- [ ] `go test ./internal/config/... ./internal/classify/... ./internal/metrics/...` +
+      `capDistanceForRole` downgrades diff-owner/cross-deploy to cross_module_same_owner so the
+      BC advisory severity, continuous Score, and every distance-reading metric all read cohesion.
+      Pure (role arrives via the config view, not I/O)
+- [x] `enrich`/`autopilot` (Task 7): draft plumbing in place — `ModuleAnnotation.Role` renders
+      live (apply) / as a review comment (plan) in `writeModuleStanza`; the LLM that populates a
+      suggested role per module is wired in Task 7 alongside owner/volatility drafts
+- [x] write classify/metrics tests: a `composition_root` module's fan-out is not flagged;
+      a `core`→`core` unbalanced edge still is (role_test.go: suppress vs still-flagged table +
+      inbound-edge guard; config role enum validation; initcfg role render round-trip)
+- [x] `go test ./internal/config/... ./internal/classify/... ./internal/metrics/...` +
       `go test ./internal/ -run TestArchImports` + `make lint` — must pass before Task 6
 
 ### Task 6: CLI score --full + review robustness

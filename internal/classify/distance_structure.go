@@ -5,6 +5,7 @@ package classify
 import (
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 )
 
@@ -127,6 +128,34 @@ func isDegenerateOwnerMap(owners map[string]string) bool {
 	// Zero owned modules → no ownership signal at all; treat as degenerate so
 	// ownership contributes nothing (same as all-empty).
 	return true
+}
+
+// cohesiveRole reports whether a module's declared role makes its outbound
+// fan-out cohesion rather than coupling. A composition root assembles the
+// modules it wires; generated and test sources reach across boundaries by their
+// nature. Their outbound edges must not be scored as high-distance/unbalanced.
+// adapter/core/shared_model are ordinary sources — their edges are classified
+// normally so a real core→core imbalance still surfaces.
+func cohesiveRole(r config.ModuleRole) bool {
+	switch r {
+	case config.RoleCompositionRoot, config.RoleGenerated, config.RoleTest:
+		return true
+	default:
+		return false
+	}
+}
+
+// capDistanceForRole downgrades a high-distance value to cohesion for an edge
+// whose source has a cohesiveRole. cross_module_different_owner and
+// cross_deploy_unit collapse to cross_module_same_owner (cohesive wiring);
+// same_module/same_owner/unknown are left untouched (already not high-distance).
+func capDistanceForRole(d coupling.Distance) coupling.Distance {
+	switch d {
+	case coupling.DistanceCrossModuleDiffOwner, coupling.DistanceCrossDeployUnit:
+		return coupling.DistanceCrossModuleSameOwner
+	default:
+		return d
+	}
 }
 
 // deployDistance returns the distance contribution from deploy-unit membership.
