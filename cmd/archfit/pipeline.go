@@ -256,15 +256,32 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// machine-readable CoverageGaps block (tool → unlocked metrics → install cmd)
 	// and surface config-quality lint plus any swallowed optional-tool errors in
 	// ConfigWarnings so they reach md/json/CI instead of being stderr-only.
-	diag.CoverageGaps = buildCoverageGaps(diag.ToolCoverage)
+	diag.CoverageGaps = buildCoverageGaps(diag.ToolCoverage, cfg)
 	diag.ConfigWarnings = buildConfigWarnings(cfg, toolWarnings)
 	return diag, nil
 }
 
-// gateWarn is the default coverage-gap posture: a missing tool degrades metrics
-// to n/a (never green) and is reported, but does not fail the build. An opt-in
-// hard gate (tools.<x>.gate: fail / --require-tools) raises this to "fail".
-const gateWarn = "warn"
+// gateWarn / gateFail are the coverage-gap gate strings stamped on each gap.
+// warn (default) degrades a missing tool's metrics to n/a (never green) and reports
+// it, but does not fail the build; fail is the opt-in hard gate (tools.<x>.gate: fail
+// / --require-tools). Sourced from config.GateMode so the two never drift.
+const (
+	gateWarn = string(config.GateWarn)
+	gateFail = string(config.GateFail)
+)
+
+// coverageToolConfigKey maps a coverage tool name (as it appears in ToolCoverage,
+// e.g. "go/packages") to the config Tools map key whose gate: governs it (e.g.
+// "go"). Lets a user write tools.go.gate: fail to gate on the go/packages analyzer
+// without knowing the internal coverage name. Tools absent here fall back to warn.
+var coverageToolConfigKey = map[string]string{
+	toolGoPackages: config.LangGo,
+	toolDepCruiser: config.LangTypeScript,
+	toolGrimp:      config.LangPython,
+	toolLizard:     config.ToolComplexity,
+	toolJscpd:      config.ToolClones,
+	toolGitnexus:   config.ToolGitnexus,
+}
 
 // primaryGraphMetrics are the metrics the dependency-graph extractors
 // (go/packages, dependency-cruiser, grimp) unlock; absent any of them, all of
@@ -279,19 +296,21 @@ var toolAffectedMetrics = map[string]struct {
 	install string
 	metrics []string
 }{
-	"go/packages":        {"https://go.dev/dl (bundled with the Go toolchain)", primaryGraphMetrics},
-	"dependency-cruiser": {"npm install -g dependency-cruiser", primaryGraphMetrics},
-	"grimp":              {"uv tool install grimp / pip install grimp", primaryGraphMetrics},
-	toolLizard:           {"uv tool install lizard / pip install lizard", []string{"complexity"}},
-	toolJscpd:            {"npm install -g jscpd", []string{"functional_candidates"}},
-	toolGitnexus:         {"see docs/guide — git-history change-coupling index", []string{"risk_hub"}},
+	toolGoPackages: {"https://go.dev/dl (bundled with the Go toolchain)", primaryGraphMetrics},
+	toolDepCruiser: {"npm install -g dependency-cruiser", primaryGraphMetrics},
+	toolGrimp:      {"uv tool install grimp / pip install grimp", primaryGraphMetrics},
+	toolLizard:     {"uv tool install lizard / pip install lizard", []string{"complexity"}},
+	toolJscpd:      {"npm install -g jscpd", []string{"functional_candidates"}},
+	toolGitnexus:   {"see docs/guide — git-history change-coupling index", []string{"risk_hub"}},
 }
 
 // buildCoverageGaps derives the CoverageGaps block from the absent tool-coverage
-// records. Gaps are sorted by tool name so a double-run stays byte-identical
-// regardless of upstream coverage order. Returns nil when no known tool is
-// absent (omitempty keeps the field out of clean output).
-func buildCoverageGaps(cov []diagnostic.Coverage) []diagnostic.CoverageGap {
+// records. Each gap's Gate is the configured posture for that tool (tools.<x>.gate,
+// default warn) — the --require-tools override is applied later by applyToolGate so
+// the non-check callers of runPipeline are unaffected. Gaps are sorted by tool name
+// so a double-run stays byte-identical regardless of upstream coverage order.
+// Returns nil when no known tool is absent (omitempty keeps clean output unchanged).
+func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config) []diagnostic.CoverageGap {
 	var gaps []diagnostic.CoverageGap
 	for _, c := range cov {
 		if c.Status != diagnostic.StatusAbsent {
@@ -305,11 +324,46 @@ func buildCoverageGaps(cov []diagnostic.Coverage) []diagnostic.CoverageGap {
 			Tool:            c.Tool,
 			InstallCmd:      info.install,
 			AffectedMetrics: info.metrics,
-			Gate:            gateWarn,
+			Gate:            configToolGate(cfg, c.Tool),
 		})
 	}
 	sort.Slice(gaps, func(i, j int) bool { return gaps[i].Tool < gaps[j].Tool })
 	return gaps
+}
+
+// configToolGate resolves the configured gate for the analyzer behind a coverage
+// tool name, defaulting to warn. An unmapped tool or an empty gate: yields warn.
+func configToolGate(cfg config.Config, tool string) string {
+	key, ok := coverageToolConfigKey[tool]
+	if !ok {
+		return gateWarn
+	}
+	if g := cfg.Tools[key].Gate; g != "" {
+		return string(g)
+	}
+	return gateWarn
+}
+
+// applyToolGate finalises the hard-gate decision for a check/scan run: --require-tools
+// raises every coverage gap to fail, and any gap that gates fail stamps the verdict
+// fail so the rendered output reflects the policy failure. Returns true when the run
+// must exit 1. The policy decision lives here in cmd/ (the layering invariant) — the
+// core ring never sees tool names or gate config. Idempotent and render-order safe:
+// callers invoke it before rendering so the output shows the effective gate.
+func applyToolGate(diag *diagnostic.Diagnostic, requireTools bool) bool {
+	failed := false
+	for i := range diag.CoverageGaps {
+		if requireTools {
+			diag.CoverageGaps[i].Gate = gateFail
+		}
+		if diag.CoverageGaps[i].Gate == gateFail {
+			failed = true
+		}
+	}
+	if failed {
+		diag.Verdict = diagnostic.VerdictFail
+	}
+	return failed
 }
 
 // buildConfigWarnings assembles the advisory ConfigWarnings block: under-specified

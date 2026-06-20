@@ -141,10 +141,29 @@ func (m *ToolMode) UnmarshalYAML(unmarshal func(any) error) error {
 	return nil
 }
 
+// GateMode is the coverage-gate posture for one tool: how its absence affects the
+// exit code. It is distinct from ToolMode (which controls whether a tool runs).
+//   - off  — report the coverage gap but never fail.
+//   - warn — (default, empty) report the gap, exit 0 (warn-loud).
+//   - fail — a missing tool fails the build (opt-in hard gate).
+//
+// Empty means "use the default (warn)". The exit decision lives in cmd/; the core
+// ring never reads it. See also --require-tools, which raises every gap to fail.
+type GateMode string
+
+// GateMode constants for the tools.<x>.gate field. Values match the rule/metric
+// gate vocabulary (off|warn|fail) so the whole config speaks one gate language.
+const (
+	GateOff  GateMode = "off"
+	GateWarn GateMode = "warn"
+	GateFail GateMode = "fail"
+)
+
 // ToolConfig holds the settings for a single external tool.
 // Provider/Model/BaseURL apply to the "llm" key only (see Config.LLM).
 type ToolConfig struct {
 	Enabled  ToolMode `yaml:"enabled"`
+	Gate     GateMode `yaml:"gate,omitempty"`
 	Provider string   `yaml:"provider,omitempty"`
 	Model    string   `yaml:"model,omitempty"`
 	BaseURL  string   `yaml:"base_url,omitempty"`
@@ -326,6 +345,11 @@ func validate(cfg Config) error {
 			return err
 		}
 	}
+	for _, name := range sortedToolKeys(cfg.Tools) {
+		if err := validateGate("tools."+name, string(cfg.Tools[name].Gate)); err != nil {
+			return err
+		}
+	}
 	if s := cfg.MapReview.StaleAfter; s != "" {
 		if _, err := time.ParseDuration(s); err != nil {
 			return fmt.Errorf("map_review.stale_after %q is not a valid Go duration (e.g. 720h, 30m): %w", s, err)
@@ -349,6 +373,17 @@ func validateGate(field, gate string) error {
 // sortedMetricKeys returns metric names in sorted order so validation reports a
 // deterministic first offender when multiple metrics carry an invalid gate.
 func sortedMetricKeys(m MetricsConfig) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// sortedToolKeys returns tool names in sorted order so gate validation reports a
+// deterministic first offender when multiple tools carry an invalid gate.
+func sortedToolKeys(m ToolsConfig) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

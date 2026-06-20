@@ -38,3 +38,12 @@ const (
 	toolJscpd    = "jscpd"
 	toolGitnexus = "gitnexus"
 )
+
+// Primary dependency-graph analyzer coverage names (as they appear in
+// ToolCoverage). Their absence drops the structural metrics to n/a; shared by the
+// coverage-gap table and its config-key map.
+const (
+	toolGoPackages = "go/packages"
+	toolDepCruiser = "dependency-cruiser"
+	toolGrimp      = "grimp"
+)

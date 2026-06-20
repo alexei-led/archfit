@@ -28,6 +28,8 @@ type CheckCmd struct {
 	Report   bool     `help:"Never exit with a failure code, even when violations are found."`
 	NoConfig bool     `name:"no-config" help:"Skip config file entirely; use built-in defaults. Combine with --lang and --severity to run without any config file."`
 
+	RequireTools bool `name:"require-tools" help:"Exit non-zero when any required analyzer tool is missing (opt-in hard gate); equivalent to tools.<x>.gate: fail for every tool."`
+
 	// Overrides — each flag overrides the equivalent setting from the config file.
 	Severity string   `name:"severity" help:"Show only coupling advisories at or above this level: low, medium, high, critical. Default: medium." enum:"low,medium,high,critical," default:""`
 	Lang     []string `name:"lang"     help:"Languages to analyze: go, ts, py. Repeatable: --lang go --lang ts. Sets each to 'on'; unspecified languages follow config or auto-detect."`
@@ -75,6 +77,13 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
+	// Resolve the opt-in hard gate before rendering so the output shows the
+	// effective gate per coverage gap. A tripped gate is a policy failure (exit 1),
+	// distinct from a tool/config error (exit 3), and is NOT suppressed by --report:
+	// --report waives architecture findings, but a tool the user explicitly required
+	// (--require-tools / tools.<x>.gate: fail) is a deliberate CI block.
+	hardGate := applyToolGate(&diag, c.RequireTools)
+
 	for _, format := range c.Format {
 		var renderErr error
 		switch format {
@@ -92,6 +101,11 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		if renderErr != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("render %s: %v", format, renderErr)}
 		}
+	}
+
+	// A tripped hard tool-gate exits 1 regardless of --report (see applyToolGate).
+	if hardGate {
+		return &exitError{code: 1}
 	}
 
 	// --report promises "never exit with a failure code": the verdict is still
@@ -121,16 +135,18 @@ func printConfigLint(w io.Writer, warnings []config.LintWarning) {
 // Always runs: check --full --advisory --report --format markdown.
 // For custom combinations (e.g. without advisory), use the check command directly.
 type ScanCmd struct {
-	Config string `short:"c" help:"Config file." default:".archfit.yaml"`
+	Config       string `short:"c" help:"Config file." default:".archfit.yaml"`
+	RequireTools bool   `name:"require-tools" help:"Exit non-zero when any required analyzer tool is missing (opt-in hard gate)."`
 }
 
 func (c *ScanCmd) Run(deps *appDeps) error {
 	check := CheckCmd{
-		Config:   c.Config,
-		Full:     true,
-		Advisory: true,
-		Report:   true,
-		Format:   []string{"markdown"},
+		Config:       c.Config,
+		Full:         true,
+		Advisory:     true,
+		Report:       true,
+		Format:       []string{"markdown"},
+		RequireTools: c.RequireTools,
 	}
 	return check.Run(deps)
 }

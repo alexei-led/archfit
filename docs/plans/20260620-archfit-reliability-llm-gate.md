@@ -201,15 +201,15 @@ AffectedMetrics []string, Gate string}` and fields `CoverageGaps []CoverageGap` 
 
 ### Task 4: Opt-in hard gate for missing required tools
 
-- [ ] `internal/config/config.go`: add `GateMode` (`off`/`warn`/`fail`, default warn) and a
+- [x] `internal/config/config.go`: add `GateMode` (`off`/`warn`/`fail`, default warn) and a
       `Gate GateMode` field on `ToolConfig`; validate the enum
-- [ ] `cmd/archfit/check.go`: add `--require-tools` flag to check/scan
-- [ ] `cmd/archfit/pipeline.go`: compute each gap's effective gate (config `gate:` or
+- [x] `cmd/archfit/check.go`: add `--require-tools` flag to check/scan
+- [x] `cmd/archfit/pipeline.go`: compute each gap's effective gate (config `gate:` or
       `--require-tools`); if any is `fail`, return `exitError{code:1}` (policy violation —
       **not** the code-3 tool-error) and stamp the verdict `fail`
-- [ ] write `config_test.go` for `GateMode` parse/validate; write a pipeline/cmd test: a
+- [x] write `config_test.go` for `GateMode` parse/validate; write a pipeline/cmd test: a
       non-Go dir with `tools.go.gate: fail` exits 1, default exits 0 with a gap entry
-- [ ] `go test ./internal/config/... ./cmd/archfit/...` +
+- [x] `go test ./internal/config/... ./cmd/archfit/...` +
       `go test ./internal/ -run TestArchImports` + `make lint` — must pass before Task 5
 
 ### Task 5: Scoring reliability fixes

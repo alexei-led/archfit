@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 )
 
 // writeViolatingRepo creates a minimal Go repo with one gate-failing
@@ -82,6 +84,123 @@ const (
 	fmtJSON    = "--format=json"
 	flagReport = "--report"
 )
+
+// writeNonGoRepo creates a git repo with no analyzable source (README only) and
+// the given archfit config body, returning the config path. The optional analyzers
+// (dependency-cruiser, grimp, lizard, jscpd, gitnexus) are absent on such a tree,
+// so every run yields a stable, non-empty CoverageGaps block — the input the
+// opt-in hard tool-gate acts on.
+func writeNonGoRepo(t *testing.T, cfgBody string) string {
+	t.Helper()
+	dir := t.TempDir()
+	files := map[string]string{
+		"README.md":     "# fixture\n",
+		".archfit.yaml": cfgBody,
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command("git", "init", "-q")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("git init failed (git unavailable?): %v\n%s", err, out)
+	}
+	return filepath.Join(dir, ".archfit.yaml")
+}
+
+// TestRun_Check_RequireToolsHardGate verifies the opt-in hard tool-gate (Task 4):
+// missing analyzers are warn-loud by default (exit 0 with a gaps block), but
+// --require-tools and tools.<x>.gate: fail turn a missing tool into an exit-1
+// policy failure — distinct from the exit-3 tool/config error.
+func TestRun_Check_RequireToolsHardGate(t *testing.T) {
+	type gapsDiag struct {
+		Verdict      string `json:"verdict"`
+		CoverageGaps []struct {
+			Tool string `json:"tool"`
+			Gate string `json:"gate"`
+		} `json:"coverage_gaps"`
+	}
+
+	t.Run("default is warn-loud: exit 0 with a gaps block", func(t *testing.T) {
+		cfgPath := writeNonGoRepo(t, "version: 1\n")
+		var buf bytes.Buffer
+		code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+		if code != 0 {
+			t.Fatalf("default check: exit = %d, want 0\noutput:\n%s", code, buf.String())
+		}
+		var d gapsDiag
+		if err := json.Unmarshal(buf.Bytes(), &d); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if len(d.CoverageGaps) == 0 {
+			t.Fatalf("want a non-empty coverage_gaps block on a tool-less repo\noutput:\n%s", buf.String())
+		}
+		for _, g := range d.CoverageGaps {
+			if g.Gate != gateWarn {
+				t.Errorf("default gap %q gate = %q, want warn", g.Tool, g.Gate)
+			}
+		}
+	})
+
+	t.Run("--require-tools fails: every gap becomes a fail gate, exit 1", func(t *testing.T) {
+		cfgPath := writeNonGoRepo(t, "version: 1\n")
+		var buf bytes.Buffer
+		code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, "--require-tools", fmtJSON}, &buf)
+		if code != 1 {
+			t.Fatalf("check --require-tools: exit = %d, want 1\noutput:\n%s", code, buf.String())
+		}
+		var d gapsDiag
+		if err := json.Unmarshal(buf.Bytes(), &d); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if d.Verdict != string(diagnostic.VerdictFail) {
+			t.Errorf("verdict = %q, want fail", d.Verdict)
+		}
+		for _, g := range d.CoverageGaps {
+			if g.Gate != gateFail {
+				t.Errorf("gap %q gate = %q, want fail under --require-tools", g.Tool, g.Gate)
+			}
+		}
+	})
+
+	t.Run("per-tool gate: tools.go.gate fail on an absent analyzer exits 1", func(t *testing.T) {
+		// go is disabled so go/packages reports absent (a gap) deterministically,
+		// regardless of whether a Go toolchain happens to half-load a non-Go tree.
+		cfg := "version: 1\ntools:\n  go:\n    enabled: off\n    gate: fail\n"
+		cfgPath := writeNonGoRepo(t, cfg)
+		var buf bytes.Buffer
+		code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+		if code != 1 {
+			t.Fatalf("tools.go.gate: fail → exit = %d, want 1\noutput:\n%s", code, buf.String())
+		}
+		var d gapsDiag
+		if err := json.Unmarshal(buf.Bytes(), &d); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		var goGate string
+		for _, g := range d.CoverageGaps {
+			if g.Tool == toolGoPackages {
+				goGate = g.Gate
+			} else if g.Gate != gateWarn {
+				t.Errorf("non-go gap %q gate = %q, want warn (per-tool gate is scoped)", g.Tool, g.Gate)
+			}
+		}
+		if goGate != gateFail {
+			t.Errorf("go/packages gate = %q, want fail", goGate)
+		}
+	})
+
+	t.Run("--require-tools is not suppressed by --report", func(t *testing.T) {
+		cfgPath := writeNonGoRepo(t, "version: 1\n")
+		var buf bytes.Buffer
+		code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, "--require-tools"}, &buf)
+		if code != 1 {
+			t.Fatalf("check --report --require-tools: exit = %d, want 1 (hard gate beats --report)\noutput:\n%s", code, buf.String())
+		}
+	})
+}
 
 func TestRun_Version(t *testing.T) {
 	var buf bytes.Buffer

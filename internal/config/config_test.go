@@ -814,6 +814,21 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			wantErr: "map_review",
 		},
 		{
+			name:    "valid tool gate",
+			yaml:    "version: 1\ntools:\n  go:\n    enabled: auto\n    gate: fail\n",
+			wantErr: "",
+		},
+		{
+			name:    "empty tool gate is allowed",
+			yaml:    "version: 1\ntools:\n  go:\n    enabled: auto\n",
+			wantErr: "",
+		},
+		{
+			name:    "invalid tool gate names the tool",
+			yaml:    "version: 1\ntools:\n  go:\n    enabled: auto\n    gate: block\n",
+			wantErr: "tools.go",
+		},
+		{
 			name:    "off is a valid gate",
 			yaml:    "version: 1\nmap_review:\n  gate: off\n",
 			wantErr: "",
@@ -850,6 +865,32 @@ func TestLoad_ValidateEnums(t *testing.T) {
 				t.Errorf("error %q does not mention %q", err.Error(), tc.wantErr)
 			}
 		})
+	}
+}
+
+// TestLoad_ToolGate verifies the tools.<x>.gate field parses into the typed
+// GateMode and that an omitted gate is the empty value (callers default it to warn).
+func TestLoad_ToolGate(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "cfg.yaml")
+	yaml := "version: 1\n" +
+		"tools:\n" +
+		"  go:\n" +
+		"    enabled: auto\n" +
+		"    gate: fail\n" +
+		"  typescript:\n" +
+		"    enabled: auto\n"
+	if err := writeFile(tmp, yaml); err != nil {
+		t.Fatalf("write temp: %v", err)
+	}
+	cfg, err := config.Load(context.Background(), tmp)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.Tools["go"].Gate; got != config.GateFail {
+		t.Errorf("tools.go.gate = %q, want %q", got, config.GateFail)
+	}
+	if got := cfg.Tools["typescript"].Gate; got != "" {
+		t.Errorf("tools.typescript.gate = %q, want \"\" (unset)", got)
 	}
 }
 
