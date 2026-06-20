@@ -1,0 +1,467 @@
+version: 1
+# Minimum severity for BC coupling advisories to appear in scan output.
+# low: all cross-module deps (noisy for well-designed codebases)
+# medium: only over-decoupled volatile seams and tight cross-boundary coupling
+# high/critical: only intrusive or functional coupling across large boundaries
+bc_advisory_min_severity: medium
+# Architecture layers — innermost to outermost.
+# forbidden_layer_direction fires when fromRank < toRank (inner imports outer).
+layers:
+  - model # rank 0: pure value types, stdlib only
+  - support # rank 1: config, scope
+  - core # rank 2: classify, rules, metrics, status
+  - engine # rank 3: orchestration pipeline
+  - adapter # rank 4: baseline, toolrun, extractors, renderers, git
+  - cmd # rank 5: composition root
+modules:
+  internal/model:
+    paths:
+      - internal/model/**
+    # public = the package paths themselves (not file paths)
+    public:
+      - internal/model/graph
+      - internal/model/finding
+      - internal/model/coupling
+      - internal/model/diagnostic
+      - internal/model/clone
+      - internal/model/pattern
+      - internal/model/signal
+      - internal/model/symbol
+    layer: model
+    subdomain: core
+    volatility: low
+  internal/config:
+    paths:
+      - internal/config/**
+    public:
+      - internal/config
+    layer: support
+    subdomain: supporting
+    volatility: medium
+  internal/baseline:
+    paths:
+      - internal/baseline/**
+    public:
+      - internal/baseline
+    # Persistence (reads/writes the baseline file) — adapter, not support.
+    # status consumes it through the status.AcceptedSet interface.
+    layer: adapter
+    subdomain: supporting
+    volatility: low
+  internal/classify:
+    paths:
+      - internal/classify/**
+    public:
+      - internal/classify
+    layer: core
+    subdomain: core
+    volatility: medium
+  internal/rules:
+    paths:
+      - internal/rules/**
+    public:
+      - internal/rules
+    layer: core
+    subdomain: core
+    volatility: medium
+  internal/metrics:
+    paths:
+      - internal/metrics/**
+    public:
+      - internal/metrics
+    layer: core
+    subdomain: core
+    volatility: medium
+  internal/status:
+    paths:
+      - internal/status/**
+    public:
+      - internal/status
+    layer: core
+    subdomain: core
+    volatility: low
+  internal/engine:
+    paths:
+      - internal/engine/**
+    public:
+      - internal/engine
+    layer: engine
+    subdomain: core
+    volatility: medium
+  internal/scope:
+    paths:
+      - internal/scope/**
+    public:
+      - internal/scope
+    # Value type + resolution over an injected Resolver; the concrete git
+    # calls live in cmd. Support-tier since the decoupling refactor.
+    layer: support
+    subdomain: supporting
+    volatility: low
+  internal/ports:
+    paths:
+      - internal/ports/**
+    public:
+      - internal/ports
+    # Neutral port contracts imported by engine and adapters.
+    layer: support
+    subdomain: supporting
+    volatility: medium
+  internal/labels:
+    paths:
+      - internal/labels/**
+    public:
+      - internal/labels
+    # Reviewed coupling-label artifact. Support-tier like config until the
+    # value type and YAML loader split.
+    layer: support
+    subdomain: supporting
+    volatility: medium
+  # archfit: removed module "arch_tests" — verify before deleting (not found in discovery)
+  # arch_tests:
+  # paths:
+  # - internal
+  # public:
+  # - internal
+  # # Root internal package contains repository-level architecture tests.
+  # layer: core
+  # subdomain: supporting
+  # volatility: low
+
+  internal/agenttask:
+    paths:
+      - internal/agenttask/**
+    public:
+      - internal/agenttask
+    layer: support
+    subdomain: supporting
+    volatility: low
+  internal/facts:
+    paths:
+      - internal/facts/**
+    public:
+      - internal/facts
+    layer: core
+    subdomain: supporting
+    volatility: medium
+  internal/staleness:
+    paths:
+      - internal/staleness/**
+    public:
+      - internal/staleness
+    layer: core
+    subdomain: supporting
+    volatility: low
+  internal/toolrun:
+    paths:
+      - internal/toolrun/**
+    public:
+      - internal/toolrun
+    layer: adapter
+    subdomain: supporting
+    volatility: low
+  # archfit: removed module "extract_go" — verify before deleting (not found in discovery)
+  # extract_go:
+  # paths:
+  # - internal/extract/golang/**
+  # public:
+  # - internal/extract/golang
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: medium
+  # archfit: removed module "extract_ts" — verify before deleting (not found in discovery)
+  # extract_ts:
+  # paths:
+  # - internal/extract/ts/**
+  # public:
+  # - internal/extract/ts
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: medium
+
+  # archfit: removed module "extract_py" — verify before deleting (not found in discovery)
+  # extract_py:
+  # paths:
+  # - internal/extract/py/**
+  # public:
+  # - internal/extract/py
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: medium
+
+  # archfit: removed module "extract_astgrep" — verify before deleting (not found in discovery)
+  # extract_astgrep:
+  # paths:
+  # - internal/extract/astgrep/**
+  # public:
+  # - internal/extract/astgrep
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: medium
+
+  # archfit: removed module "extract_clones" — verify before deleting (not found in discovery)
+  # extract_clones:
+  # paths:
+  # - internal/extract/clones/**
+  # public:
+  # - internal/extract/clones
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: low
+
+  # archfit: removed module "extract_complexity" — verify before deleting (not found in discovery)
+  # extract_complexity:
+  # paths:
+  # - internal/extract/complexity/**
+  # public:
+  # - internal/extract/complexity
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: low
+
+  # archfit: removed module "extract_gitnexus" — verify before deleting (not found in discovery)
+  # extract_gitnexus:
+  # paths:
+  # - internal/extract/gitnexus/**
+  # public:
+  # - internal/extract/gitnexus
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: low
+
+  # archfit: removed module "extract_loc" — verify before deleting (not found in discovery)
+  # extract_loc:
+  # paths:
+  # - internal/extract/loc/**
+  # public:
+  # - internal/extract/loc
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: low
+
+  # archfit: removed module "extract_scip" — verify before deleting (not found in discovery)
+  # extract_scip:
+  # paths:
+  # - internal/extract/scip/**
+  # public:
+  # - internal/extract/scip
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: medium
+
+  # archfit: removed module "history_git" — verify before deleting (not found in discovery)
+  # history_git:
+  # paths:
+  # - internal/history/git/**
+  # public:
+  # - internal/history/git
+  # layer: adapter
+  # subdomain: supporting
+  # volatility: low
+  internal/output:
+    paths:
+      - internal/output/**
+    public:
+      - internal/output/jsonout
+      - internal/output/console
+      - internal/output/markdown
+      - internal/output/sarif
+    layer: adapter
+    subdomain: supporting
+    volatility: medium
+  internal/initcfg:
+    paths:
+      - internal/initcfg/**
+    public:
+      - internal/initcfg
+    layer: adapter
+    subdomain: supporting
+    volatility: medium
+  internal/fitness:
+    paths:
+      - internal/fitness/**
+    public:
+      - internal/fitness
+    layer: adapter
+    subdomain: supporting
+    volatility: low
+  internal/ownership:
+    paths:
+      - internal/ownership/**
+    public:
+      - internal/ownership
+    layer: adapter
+    subdomain: supporting
+    volatility: low
+  internal/llm:
+    paths:
+      - internal/llm/**
+    public:
+      - internal/llm
+    # Off-gate provider adapters; check path is guarded by TestArchImports.
+    layer: adapter
+    subdomain: generic
+    volatility: low
+  # archfit: removed module "cmd" — verify before deleting (not found in discovery)
+  # cmd:
+  # paths:
+  # - cmd/**
+  # public:
+  # - cmd/archfit
+  # layer: cmd
+  # subdomain: supporting
+  # volatility: high
+
+  internal:
+    paths:
+      - internal/**
+    public:
+      - internal
+    layer: support
+    subdomain: generic
+    volatility: low
+  internal/history:
+    paths:
+      - internal/history/**
+    public:
+      - internal/history
+    layer: support
+    subdomain: supporting
+    volatility: medium
+  internal/extract:
+    paths:
+      - internal/extract/**
+    public:
+      - internal/extract
+    layer: engine
+    subdomain: core
+    volatility: high
+  cmd/archfit:
+    paths:
+      - cmd/archfit/**
+    public:
+      - cmd/archfit
+    layer: cmd
+    subdomain: generic
+    volatility: medium
+rules:
+  # Ring gate 1: core must not directly import the process boundary or extractors
+  - id: core_no_toolrun
+    type: forbidden_dependency
+    from: internal/classify/**
+    to: internal/toolrun
+    gate: fail
+  - id: rules_no_toolrun
+    type: forbidden_dependency
+    from: internal/rules/**
+    to: internal/toolrun
+    gate: fail
+  - id: metrics_no_toolrun
+    type: forbidden_dependency
+    from: internal/metrics/**
+    to: internal/toolrun
+    gate: fail
+  - id: status_no_toolrun
+    type: forbidden_dependency
+    from: internal/status/**
+    to: internal/toolrun
+    gate: fail
+  - id: core_no_extract
+    type: forbidden_dependency
+    from: internal/classify/**
+    to: internal/extract/**
+    gate: fail
+  - id: rules_no_extract
+    type: forbidden_dependency
+    from: internal/rules/**
+    to: internal/extract/**
+    gate: fail
+  # Ring gate 2: engine must not import adapters directly (uses ports/interfaces only)
+  - id: engine_no_extract
+    type: forbidden_dependency
+    from: internal/engine/**
+    to: internal/extract/**
+    gate: fail
+  - id: engine_no_toolrun
+    type: forbidden_dependency
+    from: internal/engine/**
+    to: internal/toolrun
+    gate: fail
+  - id: engine_no_history
+    type: forbidden_dependency
+    from: internal/engine/**
+    to: internal/history/**
+    gate: fail
+  - id: engine_no_output
+    type: forbidden_dependency
+    from: internal/engine/**
+    to: internal/output/**
+    gate: fail
+  - id: engine_no_labelsio
+    type: forbidden_dependency
+    from: internal/engine/**
+    to: internal/labels/labelsio/**
+    gate: fail
+  # Ring gate 3: model packages are pure value types
+  - id: model_no_config
+    type: forbidden_dependency
+    from: internal/model/**
+    to: internal/config
+    gate: fail
+  - id: model_no_baseline
+    type: forbidden_dependency
+    from: internal/model/**
+    to: internal/baseline
+    gate: fail
+  # Hexagonal boundary: adapters must depend on ports, not the orchestrator.
+  - id: extract_no_engine
+    type: forbidden_dependency
+    from: internal/extract/**
+    to: internal/engine/**
+    gate: fail
+  # Layer direction guard. The historical engine→scope inversion was
+  # resolved by decoupling scope from git and reclassifying it as support.
+  - id: layer_inversion
+    type: forbidden_layer_direction
+    gate: warn
+map_review:
+  stale_after: 2160h # 90 days
+  gate: warn
+tools:
+  go:
+    enabled: "on"
+  python:
+    enabled: "off"
+  typescript:
+    enabled: "off"
+  scip:
+    enabled: "on"
+  complexity:
+    enabled: "on"
+  clones:
+    enabled: "on"
+  gitnexus:
+    enabled: "on"
+  llm:
+    provider: anthropic
+    model: claude-opus-4-8
+metrics:
+  risk_hub:
+    enabled: true
+  # archfit enforces its own architecture (internal/arch_test.go + CI), so this
+  # surfaces a real architecture_fitness signal — dogfooding the metric.
+  architecture_fitness:
+    enabled: true
+  # Surfaced on; reports n/a with an actionable coverage reason until a clone
+  # detector (tools.clones) is installed, then yields functional-extraction
+  # candidates. Enabling the metric makes that coverage gap visible in the report.
+  functional_candidates:
+    enabled: true
+  # cohesion_lcom (Task 20): report-only LCOM edge-density proxy over the SCIP
+  # symbol graph. Disabled here because it failed its eval — document-scoped
+  # SCIP attribution (no enclosing_range) leaves it blind for single-file
+  # Python/TS modules and unable to credit internal sub-package cohesion. Kept
+  # registered and report-only for repos that want the Go-package signal.
+  # See docs/plans/notes/gap-closure-task20-cohesion-eval.md.
+  cohesion_lcom:
+    enabled: false

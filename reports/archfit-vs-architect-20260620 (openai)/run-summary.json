@@ -1,0 +1,197 @@
+[
+  {
+    "repo": "pumba",
+    "head": "69b78e6",
+    "dirty": 5,
+    "base": "1.1.6",
+    "config": ".archfit.full.yaml",
+    "runs": {
+      "doctor.txt": {
+        "rc": 0,
+        "bytes": 919,
+        "stderr_tail": ""
+      },
+      "full.json": {
+        "rc": 0,
+        "bytes": 24608,
+        "stderr_tail": "config-quality: 6 module(s) under-specified \u2014 degrades distance/volatility classification (can cause BC advisory floods):\n  - module \"cmd\" omits owner, subdomain/volatility\n  - module \"mocks\" omits owner, subdomain/volatility\n  - module \"pkg_chaos\" omits owner, subdomain/volatility\n  - module \"pkg_c"
+      },
+      "scorecard.md": {
+        "rc": 3,
+        "bytes": 29,
+        "stderr_tail": ""
+      },
+      "scan.md": {
+        "rc": 0,
+        "bytes": 5067,
+        "stderr_tail": "config-quality: 6 module(s) under-specified \u2014 degrades distance/volatility classification (can cause BC advisory floods):\n  - module \"cmd\" omits owner, subdomain/volatility\n  - module \"mocks\" omits owner, subdomain/volatility\n  - module \"pkg_chaos\" omits owner, subdomain/volatility\n  - module \"pkg_c"
+      },
+      "delta.json": {
+        "rc": 0,
+        "bytes": 24682,
+        "stderr_tail": "config-quality: 6 module(s) under-specified \u2014 degrades distance/volatility classification (can cause BC advisory floods):\n  - module \"cmd\" omits owner, subdomain/volatility\n  - module \"mocks\" omits owner, subdomain/volatility\n  - module \"pkg_chaos\" omits owner, subdomain/volatility\n  - module \"pkg_c"
+      },
+      "delta-scorecard.md": {
+        "rc": 0,
+        "bytes": 1814,
+        "stderr_tail": "config-quality: 6 module(s) under-specified \u2014 degrades distance/volatility classification (can cause BC advisory floods):\n  - module \"cmd\" omits owner, subdomain/volatility\n  - module \"mocks\" omits owner, subdomain/volatility\n  - module \"pkg_chaos\" omits owner, subdomain/volatility\n  - module \"pkg_c"
+      }
+    }
+  },
+  {
+    "repo": "ccgram",
+    "head": "a6b9ba7",
+    "dirty": 6,
+    "base": "v3.5.1",
+    "config": ".archfit.full.yaml",
+    "runs": {
+      "doctor.txt": {
+        "rc": 0,
+        "bytes": 919,
+        "stderr_tail": ""
+      },
+      "full.json": {
+        "rc": 0,
+        "bytes": 215012,
+        "stderr_tail": "er, subdomain/volatility\n  - module \"session_state\" omits owner, subdomain/volatility\n  - module \"telegram_adapter\" omits owner, subdomain/volatility\n  - module \"tmux_adapter\" omits owner, subdomain/volatility\n  - module \"transcript\" omits owner, subdomain/volatility\n  - module \"tts\" omits owner, su"
+      },
+      "scorecard.md": {
+        "rc": 3,
+        "bytes": 29,
+        "stderr_tail": ""
+      },
+      "scan.md": {
+        "rc": 0,
+        "bytes": 26255,
+        "stderr_tail": "er, subdomain/volatility\n  - module \"session_state\" omits owner, subdomain/volatility\n  - module \"telegram_adapter\" omits owner, subdomain/volatility\n  - module \"tmux_adapter\" omits owner, subdomain/volatility\n  - module \"transcript\" omits owner, subdomain/volatility\n  - module \"tts\" omits owner, su"
+      },
+      "delta.json": {
+        "rc": 0,
+        "bytes": 215071,
+        "stderr_tail": "er, subdomain/volatility\n  - module \"session_state\" omits owner, subdomain/volatility\n  - module \"telegram_adapter\" omits owner, subdomain/volatility\n  - module \"tmux_adapter\" omits owner, subdomain/volatility\n  - module \"transcript\" omits owner, subdomain/volatility\n  - module \"tts\" omits owner, su"
+      },
+      "delta-scorecard.md": {
+        "rc": 0,
+        "bytes": 2050,
+        "stderr_tail": "er, subdomain/volatility\n  - module \"session_state\" omits owner, subdomain/volatility\n  - module \"telegram_adapter\" omits owner, subdomain/volatility\n  - module \"tmux_adapter\" omits owner, subdomain/volatility\n  - module \"transcript\" omits owner, subdomain/volatility\n  - module \"tts\" omits owner, su"
+      }
+    }
+  },
+  {
+    "repo": "codegraph",
+    "head": "0e2789a",
+    "dirty": 6,
+    "base": "v0.9.8",
+    "config": ".archfit.full.yaml",
+    "runs": {
+      "doctor.txt": {
+        "rc": 0,
+        "bytes": 919,
+        "stderr_tail": ""
+      },
+      "full.json": {
+        "rc": 0,
+        "bytes": 50543,
+        "stderr_tail": "/volatility\n  - module \"extraction\" omits owner, subdomain/volatility\n  - module \"graph\" omits owner, subdomain/volatility\n  - module \"installer\" omits owner, subdomain/volatility\n  - module \"mcp\" omits owner, subdomain/volatility\n  - module \"resolution\" omits owner, subdomain/volatility\n  - module "
+      },
+      "scorecard.md": {
+        "rc": 3,
+        "bytes": 29,
+        "stderr_tail": ""
+      },
+      "scan.md": {
+        "rc": 0,
+        "bytes": 5846,
+        "stderr_tail": "/volatility\n  - module \"extraction\" omits owner, subdomain/volatility\n  - module \"graph\" omits owner, subdomain/volatility\n  - module \"installer\" omits owner, subdomain/volatility\n  - module \"mcp\" omits owner, subdomain/volatility\n  - module \"resolution\" omits owner, subdomain/volatility\n  - module "
+      },
+      "delta.json": {
+        "rc": 0,
+        "bytes": 50623,
+        "stderr_tail": "/volatility\n  - module \"extraction\" omits owner, subdomain/volatility\n  - module \"graph\" omits owner, subdomain/volatility\n  - module \"installer\" omits owner, subdomain/volatility\n  - module \"mcp\" omits owner, subdomain/volatility\n  - module \"resolution\" omits owner, subdomain/volatility\n  - module "
+      },
+      "delta-scorecard.md": {
+        "rc": 0,
+        "bytes": 1809,
+        "stderr_tail": "/volatility\n  - module \"extraction\" omits owner, subdomain/volatility\n  - module \"graph\" omits owner, subdomain/volatility\n  - module \"installer\" omits owner, subdomain/volatility\n  - module \"mcp\" omits owner, subdomain/volatility\n  - module \"resolution\" omits owner, subdomain/volatility\n  - module "
+      }
+    }
+  },
+  {
+    "repo": "archfit",
+    "head": "8243a08",
+    "dirty": 2,
+    "base": "v0.4.0",
+    "config": ".archfit.full.yaml",
+    "runs": {
+      "doctor.txt": {
+        "rc": 0,
+        "bytes": 964,
+        "stderr_tail": ""
+      },
+      "full.json": {
+        "rc": 0,
+        "bytes": 54785,
+        "stderr_tail": "owner\n  - module \"internal/labels\" omits owner\n  - module \"internal/llm\" omits owner\n  - module \"internal/metrics\" omits owner\n  - module \"internal/model\" omits owner\n  - module \"internal/output\" omits owner\n  - module \"internal/ownership\" omits owner\n  - module \"internal/ports\" omits owner\n  - modu"
+      },
+      "scorecard.md": {
+        "rc": 3,
+        "bytes": 29,
+        "stderr_tail": ""
+      },
+      "scan.md": {
+        "rc": 0,
+        "bytes": 4499,
+        "stderr_tail": "owner\n  - module \"internal/labels\" omits owner\n  - module \"internal/llm\" omits owner\n  - module \"internal/metrics\" omits owner\n  - module \"internal/model\" omits owner\n  - module \"internal/output\" omits owner\n  - module \"internal/ownership\" omits owner\n  - module \"internal/ports\" omits owner\n  - modu"
+      },
+      "delta.json": {
+        "rc": 0,
+        "bytes": 54860,
+        "stderr_tail": "owner\n  - module \"internal/labels\" omits owner\n  - module \"internal/llm\" omits owner\n  - module \"internal/metrics\" omits owner\n  - module \"internal/model\" omits owner\n  - module \"internal/output\" omits owner\n  - module \"internal/ownership\" omits owner\n  - module \"internal/ports\" omits owner\n  - modu"
+      },
+      "delta-scorecard.md": {
+        "rc": 0,
+        "bytes": 1967,
+        "stderr_tail": "owner\n  - module \"internal/labels\" omits owner\n  - module \"internal/llm\" omits owner\n  - module \"internal/metrics\" omits owner\n  - module \"internal/model\" omits owner\n  - module \"internal/output\" omits owner\n  - module \"internal/ownership\" omits owner\n  - module \"internal/ports\" omits owner\n  - modu"
+      }
+    }
+  },
+  {
+    "repo": "spotinfo",
+    "head": "ed8d6d0",
+    "dirty": 4,
+    "base": "v2.3.0",
+    "config": ".archfit.full.yaml",
+    "runs": {
+      "doctor.txt": {
+        "rc": 0,
+        "bytes": 919,
+        "stderr_tail": ""
+      },
+      "full.json": {
+        "rc": 0,
+        "bytes": 9721,
+        "stderr_tail": "config-quality: 3 module(s) under-specified \u2014 degrades distance/volatility classification (can cause BC advisory floods):\n  - module \"cmd_spotinfo\" omits owner, subdomain/volatility\n  - module \"mcp\" omits owner, subdomain/volatility\n  - module \"spot\" omits owner, subdomain/volatility"
+      },
+      "scorecard.md": {
+        "rc": 3,
+        "bytes": 29,
+        "stderr_tail": ""
+      },
+      "scan.md": {
+        "rc": 0,
+        "bytes": 3107,
+        "stderr_tail": "config-quality: 3 module(s) under-specified \u2014 degrades distance/volatility classification (can cause BC advisory floods):\n  - module \"cmd_spotinfo\" omits owner, subdomain/volatility\n  - module \"mcp\" omits owner, subdomain/volatility\n  - module \"spot\" omits owner, subdomain/volatility"
+      },
+      "delta.json": {
+        "rc": 0,
+        "bytes": 9797,
+        "stderr_tail": "config-quality: 3 module(s) under-specified \u2014 degrades distance/volatility classification (can cause BC advisory floods):\n  - module \"cmd_spotinfo\" omits owner, subdomain/volatility\n  - module \"mcp\" omits owner, subdomain/volatility\n  - module \"spot\" omits owner, subdomain/volatility"
+      },
+      "delta-scorecard.md": {
+        "rc": 0,
+        "bytes": 1764,
+        "stderr_tail": "config-quality: 3 module(s) under-specified \u2014 degrades distance/volatility classification (can cause BC advisory floods):\n  - module \"cmd_spotinfo\" omits owner, subdomain/volatility\n  - module \"mcp\" omits owner, subdomain/volatility\n  - module \"spot\" omits owner, subdomain/volatility"
+      }
+    }
+  }
+]

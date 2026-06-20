@@ -1,0 +1,47 @@
+[
+  {
+    "repo": "pumba",
+    "rc": 0,
+    "same_hash": true,
+    "original_sha256": "cd243d2ed35e6ddaf8af53271d491aa44a5e5bec88ffff8db9c0d6ddefbaf6f5",
+    "repeat_sha256": "cd243d2ed35e6ddaf8af53271d491aa44a5e5bec88ffff8db9c0d6ddefbaf6f5",
+    "bytes1": 24656,
+    "bytes2": 24656
+  },
+  {
+    "repo": "ccgram",
+    "rc": 0,
+    "same_hash": true,
+    "original_sha256": "efd04ddd12f2679240c9eedd6f2c35c3ca286e64c10badbded9c03d4086fdb68",
+    "repeat_sha256": "efd04ddd12f2679240c9eedd6f2c35c3ca286e64c10badbded9c03d4086fdb68",
+    "bytes1": 215537,
+    "bytes2": 215537
+  },
+  {
+    "repo": "codegraph",
+    "rc": 0,
+    "same_hash": true,
+    "original_sha256": "4de1f2eed16e6a8f82dfdc80563119268da3e5b0ced38d008df8a1598c2727fb",
+    "repeat_sha256": "4de1f2eed16e6a8f82dfdc80563119268da3e5b0ced38d008df8a1598c2727fb",
+    "bytes1": 50586,
+    "bytes2": 50586
+  },
+  {
+    "repo": "archfit",
+    "rc": 0,
+    "same_hash": false,
+    "original_sha256": "40d7e63c7944c000d1a8eeb94f64686db5d2ce6709b3a789dd1c632c24f9852f",
+    "repeat_sha256": "d1c3e168aef5ede2d4b536f2bb94aa201c1ccb79c2b346b0b5a31b64ef5a9b1b",
+    "bytes1": 54820,
+    "bytes2": 54820
+  },
+  {
+    "repo": "spotinfo",
+    "rc": 0,
+    "same_hash": true,
+    "original_sha256": "d9e7c3bf70e57cb5b10ed599012c94c1a14172f65661e1d9b048212c1f180a74",
+    "repeat_sha256": "d9e7c3bf70e57cb5b10ed599012c94c1a14172f65661e1d9b048212c1f180a74",
+    "bytes1": 9750,
+    "bytes2": 9750
+  }
+]

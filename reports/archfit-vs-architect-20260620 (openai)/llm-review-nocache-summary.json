@@ -1,0 +1,23 @@
+[
+  {
+    "repo": "ccgram",
+    "rc": 3,
+    "seconds": 51.7,
+    "stdout_bytes": 85,
+    "stderr_tail": "er, subdomain/volatility\n  - module \"session_state\" omits owner, subdomain/volatility\n  - module \"telegram_adapter\" omits owner, subdomain/volatility\n  - module \"tmux_adapter\" omits owner, subdomain/volatility\n  - module \"transcript\" omits owner, subdomain/volatility\n  - module \"tts\" omits owner, subdomain/volatility\n  - module \"whisper\" omits owner, subdomain/volatility\n  - module \"window_state\" omits owner, subdomain/volatility\n  - module \"window_state_ports\" omits owner, subdomain/volatility\n"
+  },
+  {
+    "repo": "codegraph",
+    "rc": 3,
+    "seconds": 35.5,
+    "stdout_bytes": 85,
+    "stderr_tail": "/volatility\n  - module \"extraction\" omits owner, subdomain/volatility\n  - module \"graph\" omits owner, subdomain/volatility\n  - module \"installer\" omits owner, subdomain/volatility\n  - module \"mcp\" omits owner, subdomain/volatility\n  - module \"resolution\" omits owner, subdomain/volatility\n  - module \"search\" omits owner, subdomain/volatility\n  - module \"sync\" omits owner, subdomain/volatility\n  - module \"ui\" omits owner, subdomain/volatility\n  - module \"upgrade\" omits owner, subdomain/volatility\n"
+  },
+  {
+    "repo": "pumba",
+    "rc": 0,
+    "seconds": 30.3,
+    "stdout_bytes": 4429,
+    "stderr_tail": "6 module(s) under-specified \u2014 degrades distance/volatility classification (can cause BC advisory floods):\n  - module \"cmd\" omits owner, subdomain/volatility\n  - module \"mocks\" omits owner, subdomain/volatility\n  - module \"pkg_chaos\" omits owner, subdomain/volatility\n  - module \"pkg_container\" omits owner, subdomain/volatility\n  - module \"pkg_runtime\" omits owner, subdomain/volatility\n  - module \"pkg_util\" omits owner, subdomain/volatility\nreview: post-verification dropped 1 unsupported claim(s)\n"
+  }
+]

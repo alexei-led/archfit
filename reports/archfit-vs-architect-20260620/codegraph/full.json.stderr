@@ -1,0 +1,13 @@
+config-quality: 12 module(s) under-specified — degrades distance/volatility classification (can cause BC advisory floods):
+  - module "bin" omits owner, subdomain/volatility
+  - module "context" omits owner, subdomain/volatility
+  - module "db" omits owner, subdomain/volatility
+  - module "extraction" omits owner, subdomain/volatility
+  - module "graph" omits owner, subdomain/volatility
+  - module "installer" omits owner, subdomain/volatility
+  - module "mcp" omits owner, subdomain/volatility
+  - module "resolution" omits owner, subdomain/volatility
+  - module "search" omits owner, subdomain/volatility
+  - module "sync" omits owner, subdomain/volatility
+  - module "ui" omits owner, subdomain/volatility
+  - module "upgrade" omits owner, subdomain/volatility

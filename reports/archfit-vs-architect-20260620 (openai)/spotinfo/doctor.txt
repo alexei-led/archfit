@@ -1,0 +1,16 @@
+TOOL         STATUS   PATH
+--------------------------------------------------
+go           ok       /opt/homebrew/bin/go
+git          ok       /opt/homebrew/bin/git
+node         ok       /Users/alexei/.local/state/fnm_multishells/34195_1781943782729/bin/node
+bunx         ok       /opt/homebrew/bin/bunx
+npx          ok       /Users/alexei/.local/state/fnm_multishells/34195_1781943782729/bin/npx
+uv           ok       /opt/homebrew/bin/uv
+python3      ok       /opt/homebrew/bin/python3
+sg (ast-grep) ok       /opt/homebrew/bin/sg
+scip-typescript ok       /Users/alexei/.local/state/fnm_multishells/34195_1781943782729/bin/scip-typescript
+scip-python  ok       /Users/alexei/.local/state/fnm_multishells/34195_1781943782729/bin/scip-python
+scip-go      ok       /Users/alexei/go/bin/scip-go
+
+LLM (off-gate; enrich/explain only — never used by check):
+  not configured (set tools.llm provider + model to enable enrich)
