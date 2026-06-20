@@ -145,11 +145,17 @@ baseline snapshot. A negative delta (the metric got worse) sets the run to
 - **Represents:** the fraction of applicable files the extractors actually
   processed — the trust signal for every other metric.
 - **Computed:** `extracted / applicable` across all tool-coverage records. Zero
-  applicable → `1.0`.
+  applicable (extractors ran, nothing matched) → `1.0`. **No extractor ran at
+  all** (no coverage record) → `n/a`, not `1.0` — absence of evidence is never
+  scored as full coverage. This is the load-bearing fix that stops an unanalysed
+  repo from scoring `strong`.
 - **Scored:** `value × 10`. Confidence from the unresolved ratio (≤5% → high,
   ≤20% → medium, else low).
 - **Affects verdict:** `warn` when coverage drops. More importantly, low coverage
-  caps the band of every metric that depends on the missing evidence.
+  caps the band of every metric that depends on the missing evidence. When
+  coverage is `n/a`, `analysis_confidence` starts at 60 and loses 15 per absent
+  primary extractor (go/packages, dependency-cruiser, grimp), so an all-absent
+  repo lands ≈ 0/critical rather than reporting confident health.
 - **Balanced Coupling:** none — it modulates confidence system-wide.
 
 ---
@@ -236,9 +242,15 @@ here.
   just documented.
 - **Computed:** fraction of three enforcement signals present — (1) arch test
   files, (2) import-linter config, (3) an arch-linter in CI. Display shows
-  `present/3 × 10` with the matched evidence paths.
+  `present/3 × 10` with the matched evidence paths. Detection skips
+  `<root>/pkg/mod/**` (the Go module cache) and `**/testdata/**`, so a vendored
+  module-cache `_test.go` is never miscounted as an architecture test.
 - **Scoring note:** the display carries a 0–10 number for legibility, but the band
-  is always `info` — it never gates. `n/a` only when the scan never ran.
+  is always `info` — it never gates. As a **scorecard dimension** it distinguishes
+  "scan didn't run" from "ran and found nothing": `n/a` → poor (≈40/low), not
+  critical; `critical` is reserved for a real 0/3 on a repo that was analysed. A
+  genuine 0/3 (no enforcement signals) on a small healthy repo is correct, not a
+  false positive.
 - **Why it matters:** an architecture that is enforced by executable checks resists
   drift; one that lives only in a wiki rots. This metric measures the enforcement
   posture itself.
@@ -349,20 +361,26 @@ no tools, no I/O, no LLM. Each dimension carries a 0–100 value, a band, a
 confidence, and evidence refs; the overall is the mean of the six non-meta
 dimensions.
 
-| Dimension                 | Derived from                                                                                                                            |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `boundary_integrity`      | gate-violation count over classified cross-boundary edges (low confidence when none classified)                                         |
-| `coupling_balance`        | strictly the BC advisory rollups — strength × distance × volatility maintenance-effort distribution + worst-case (high/high/high) count |
-| `dependency_graph_health` | cycles, blast-radius hubs, instability/abstractness shape                                                                               |
-| `cohesion_modularity`     | god-modules, hidden coupling, duplication — **high-strength + low-distance cohesion is never penalised**                                |
-| `change_locality`         | the `change_locality` metric (delta mode); `n/a` in full mode                                                                           |
-| `architecture_fitness`    | the `architecture_fitness` enforcement metric                                                                                           |
-| `analysis_confidence`     | meta dimension — how much evidence backed the review (coverage, classified fraction, semantic tools present)                            |
+| Dimension                 | Derived from                                                                                                                                                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `boundary_integrity`      | gate-violation count over classified cross-boundary edges (low confidence when none classified; an explicit note when `encapsulation` is `n/a` rather than a fabricated value)                                                                    |
+| `coupling_balance`        | strictly the BC advisory rollups — strength × distance × volatility maintenance-effort distribution + worst-case (high/high/high) count. Empty edges with low coverage → 50/low (not a blanket 90); the evidence states the classified-edge count |
+| `dependency_graph_health` | cycles, blast-radius hubs, instability/abstractness shape                                                                                                                                                                                         |
+| `cohesion_modularity`     | god-modules, hidden coupling, duplication — **high-strength + low-distance cohesion is never penalised**                                                                                                                                          |
+| `change_locality`         | the `change_locality` metric (delta mode); `n/a` in full mode                                                                                                                                                                                     |
+| `architecture_fitness`    | the `architecture_fitness` enforcement metric (`n/a` → poor, not critical)                                                                                                                                                                        |
+| `analysis_confidence`     | meta dimension — how much evidence backed the review (coverage, classified fraction, semantic tools present); drops to critical when the primary extractors are absent                                                                            |
 
 Band thresholds match the rubric: critical 0–20, poor 21–40, mixed 41–60,
 serviceable 61–80, strong 81–100. Band-matches-value, evidence-per-score, and
 low-confidence caps are enforced and covered by a stored golden. The scorecard is
 **off-gate** — it never changes the `check` verdict.
+
+**Fail-loud, not false-green.** None of these dimensions report `strong` from
+absence of evidence. A repo no extractor analysed scores `n/a`/critical with a
+coverage gap, not a confident pass — see
+[commands.md](commands.md#coverage-gaps-and-required-tools) and the
+[coverage-gate design doc](../design/coverage-gate-and-autopilot-v0.1.md).
 
 ## Per-language behavior
 

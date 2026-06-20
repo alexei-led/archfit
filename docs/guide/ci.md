@@ -28,6 +28,37 @@ archfit check --config .archfit.yaml --full --format sarif > archfit.sarif
 Calibrate locally before adding the check to required CI. Keep early rules narrow
 and baseline accepted current findings before treating the check as a merge gate.
 
+## Fail on missing analyzers (coverage gate)
+
+By default a missing analyzer is **warn-loud, exit 0**: the dependent metrics drop
+to `n/a` (never scored as healthy) and a coverage gap is surfaced in every format.
+A CI job that must guarantee full coverage can opt in to blocking:
+
+```sh
+# fail the build if any required analyzer tool is missing
+archfit check --config .archfit.yaml --full --require-tools
+```
+
+`--require-tools` raises every coverage gap to `fail` and exits `1` (a policy
+violation, distinct from exit `3` tool errors). For per-tool control, set
+`tools.<x>.gate: fail` in config instead — see
+[configuration-reference.md](configuration-reference.md#toolsxgate-coverage-gate).
+Install the missing tools (`archfit doctor` lists them) to close the gap rather
+than disabling the gate.
+
+## Scan a repo from an external config
+
+When the policy config lives outside the analyzed repo (a central CI config), use
+`--root` to point archfit at the repo without planting the config inside it:
+
+```sh
+archfit check --root "$GITHUB_WORKSPACE" --config /ci/policies/.archfit.yaml --full
+```
+
+Write any report artifacts **outside** the analyzed root — archfit warns when an
+output path resolves inside it, and the built-in excludes skip `reports/`,
+`.archfit-cache/`, and similar artifact directories to keep scans deterministic.
+
 ## Pin CI infrastructure
 
 Keep CI reproducible:

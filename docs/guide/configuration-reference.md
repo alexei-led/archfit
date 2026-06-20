@@ -167,6 +167,30 @@ tools:
 `auto`, `off`, or absent all disable it, and the dependent metric then reports
 `n/a` without ever failing the run.
 
+### `tools.<x>.gate` (coverage gate)
+
+When an analyzer does not run, its metrics drop to `n/a` and a coverage gap is
+reported (see [commands](commands.md#coverage-gaps-and-required-tools)). By default
+this is **warn-loud** — surfaced, but exit 0. Set a per-tool `gate` to make CI
+block on the missing tool:
+
+```yaml
+tools:
+  go:
+    enabled: on
+    gate: fail # block CI when the go/packages analyzer is missing
+  python:
+    enabled: auto
+    gate: warn # default: surface the gap, do not fail
+```
+
+`gate` accepts `off`, `warn` (default), or `fail`. A `fail` gate exits `1` (a
+policy violation, distinct from exit `3` tool errors). The tool key governs the
+analyzer behind it: `go` → go/packages, `typescript` → dependency-cruiser,
+`python` → grimp, `complexity` → lizard, `clones` → jscpd, `gitnexus` → gitnexus.
+The `--require-tools` flag on `check`/`scan` is the run-level shortcut — it raises
+**every** gap to `fail` without editing config.
+
 ## `layers`
 
 Layers are ordered from inner to outer.
@@ -208,6 +232,9 @@ Fields:
 - `volatility` — optional explicit override: `high`, `medium`, or `low`.
 - `owner` — team or person responsible for the module.
 - `deploy_unit` — deployable/runtime unit used for distance classification.
+- `role` — optional architectural role:
+  `composition_root`, `adapter`, `core`, `shared_model`, `generated`, or `test`.
+  See [module roles](#module-role) below.
 - `reviewed_at` — date of last architecture-map review.
 - `reviewed_by` — reviewer identity.
 
@@ -231,6 +258,37 @@ so explicit configuration is never overridden by the structural fallback:
 5. otherwise -> code structure: sibling or parent-child packages (shared subtree)
    -> cross-module same-owner; different subtrees, or two unrelated flat
    (single-segment) names -> cross-module different-owner.
+
+### Module role
+
+`role` refines Balanced-Coupling distance classification for modules that are
+_supposed_ to fan out. In a one-binary CLI, the `cmd` package wires every adapter
+together — that is composition-root cohesion, not high-distance coupling. Without
+a role, archfit scores those outbound edges as unbalanced and emits
+false-positive advisories.
+
+```yaml
+modules:
+  cli:
+    paths: [cmd/archfit/**]
+    role: composition_root
+```
+
+Accepted values:
+
+- `composition_root` — wiring/entrypoint that legitimately depends on many
+  modules (e.g. `cmd`, `main`).
+- `generated` — generated code (its fan-out is mechanical, not designed).
+- `test` — test-support code.
+- `adapter`, `core`, `shared_model` — descriptive; reserved for future
+  refinement.
+
+For a `composition_root`, `generated`, or `test` source module, archfit downgrades
+its outbound cross-deploy / different-owner edges to cross-module-same-owner, so
+the advisory severity, the continuous score, and every distance-reading metric
+read cohesion. A `core -> core` unbalanced edge is **still** flagged, and inbound
+edges to a wiring module are unaffected. `init --llm` and `autopilot` suggest a
+role per module; review before pinning.
 
 ## `rules`
 
@@ -392,6 +450,38 @@ archfit check --format sarif
 
 `scan` is the Markdown report shortcut.
 
+## `exclusions` and built-in defaults
+
+`exclusions` is a list of repo-relative globs skipped during extraction:
+
+```yaml
+exclusions:
+  - "**/generated/**"
+  - "**/*.pb.go"
+```
+
+archfit also ships a built-in default exclusion set — tool-artifact, cache, and
+dependency directories it never analyses, because measuring them yields
+non-deterministic or irrelevant facts (a vendored tree's complexity, a generated
+index, or a report written back into the scanned repo):
+
+```text
+.archfit-cache/  .archfit-baseline.json  .gitnexus/  .codegraph/  reports/
+.venv/  node_modules/  vendor/  dist/  build/
+```
+
+The built-ins are **merged with** your config `exclusions`, not replaced. To
+re-include one of them, prefix it with `!`:
+
+```yaml
+exclusions:
+  - "!reports" # analyse reports/ despite the default
+```
+
+archfit also warns (a config warning + stderr line) when an output/report path
+resolves **inside** the analyzed root — write reports outside `--root`, or exclude
+their directory, to keep scans deterministic.
+
 ## Glob tips
 
 - Use repo-relative paths.
@@ -402,8 +492,8 @@ archfit check --format sarif
 
 ## tools.llm (off-gate)
 
-Used by `archfit init --llm`, `archfit update --llm`, `archfit enrich`, and
-`archfit explain --llm`; never by `check`.
+Used by `archfit init --llm`, `archfit update --llm`, `archfit enrich`,
+`archfit autopilot`, and `archfit explain --llm`; never by `check`.
 
 ```yaml
 tools:
@@ -413,12 +503,25 @@ tools:
     base_url: "" # ollama only; default http://localhost:11434/v1
 ```
 
-API keys come from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` env vars — never
-from config. The LLM response cache lives at `.archfit-cache/llm/`.
+API keys come from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` env vars — never from
+config. archfit also best-effort loads a local `.env` (cwd) at startup, but only
+sets a key that is currently **unset** — real environment variables and CI secrets
+always win. Keep `.env` out of version control (it is gitignored by default). The
+LLM response cache lives at `.archfit-cache/llm/`.
 
-## .archfit-labels.yaml
+## Draft and pin files
 
-Pinned coupling-strength labels (the reviewed output of `archfit enrich`).
-`check` consumes `status: approved` entries with precedence: config
-public/internal globs > approved labels > extractor hint. See
+The LLM authoring commands write proposals to review files, never to
+`.archfit.yaml` directly:
+
+- `.archfit-labels.yaml` — pinned coupling-strength labels (`archfit enrich`).
+  `check` consumes `status: approved` entries with precedence: config
+  public/internal globs > approved labels > extractor hint.
+- `.archfit-owners.yaml` — owner drafts (`archfit enrich --owner`).
+- `.archfit-volatility.yaml` — volatility drafts (`archfit enrich --volatility`).
+- `.archfit-subdomains.yaml` — subdomain drafts (`archfit enrich --subdomains`).
+- `.archfit-autopilot.yaml` — a full commented config draft (`archfit autopilot`).
+
+Review each, then `enrich --<field> --pin` (or move the field manually) to write
+approved values into `modules.<name>`. Pinning never overwrites a live field. See
 [llm-enrich.md](llm-enrich.md).

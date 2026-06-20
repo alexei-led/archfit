@@ -340,18 +340,21 @@ AffectedMetrics []string, Gate string}` and fields `CoverageGaps []CoverageGap` 
 
 ### Task 8: Docs + shipped skill
 
-- [ ] new `docs/design/coverage-gate-and-autopilot-v0.1.md`: fail-loud mechanism, the
+- [x] new `docs/design/coverage-gate-and-autopilot-v0.1.md`: fail-loud mechanism, the
       coverage-gap model, `GateMode` semantics, role-aware modules (Task 5b), default excludes
       (Task 3b), delta bucketing (Task 3c), and autopilot review-only safety
-- [ ] update `docs/guide/{commands,configuration-reference,llm-enrich,ci,metrics,troubleshooting}.md`
+- [x] update `docs/guide/{commands,configuration-reference,llm-enrich,ci,metrics,troubleshooting}.md`
       for `--require-tools`, `tools.<x>.gate`, coverage-gaps output, `enrich --owner/--volatility`,
       `autopilot`, `.env`, `--root` (Task 6b), module `role:` (Task 5b), built-in excludes
       (Task 3b), and delta buckets (Task 3c)
-- [ ] update `skills/archfit/SKILL.md` + `references/*` so the **shipped skill works
+- [x] update `skills/archfit/SKILL.md` + `references/*` so the **shipped skill works
       standalone** (without the architect skill): coverage-gap interpretation, gate-promotion
       guidance, autopilot draft→review flow
-- [ ] verify markdown lint clean, SKILL line counts within limits, cross-refs resolve
-- [ ] `make lint` (+ docs link/markdown checks if defined) — must pass before Task 9
+- [x] verify markdown lint clean, SKILL line counts within limits, cross-refs resolve
+      (markdownlint hook green on all edits; MD013 not enforced by project — HEAD already has
+      52 such; SKILL 156 lines, refs ≤122; same-file `#module-role` + cross-file anchors resolve)
+- [x] `make lint` (+ docs link/markdown checks if defined) — must pass before Task 9
+      (golangci-lint: 0 issues — no Go changed; markdownlint hook clean)
 
 ### Task 9: Self-config, deliberate golden regen, full gate green
 

@@ -10,15 +10,20 @@ archfit update --config .archfit.yaml
 archfit update --config .archfit.yaml --apply
 archfit check --config .archfit.yaml --full
 archfit check --config .archfit.yaml --base main
+archfit check --config .archfit.yaml --full --require-tools
+archfit check --root ../repo --config .archfit.yaml --full
 archfit check --config .archfit.yaml --format json
 archfit check --config .archfit.yaml --format scorecard
-archfit score --config .archfit.yaml
+archfit score --config .archfit.yaml --full
 archfit score --config .archfit.yaml --base main
 archfit review --config .archfit.yaml
 archfit scan --config .archfit.yaml > archfit-report.md
 archfit baseline --full --config .archfit.yaml
 archfit explain <finding-id-prefix> --config .archfit.yaml
 archfit enrich --config .archfit.yaml
+archfit enrich --owner --config .archfit.yaml
+archfit enrich --volatility --config .archfit.yaml
+archfit autopilot --root . --output .archfit-autopilot.yaml
 archfit explain <finding-id-prefix> --llm
 archfit check --format sarif > archfit.sarif
 ```
@@ -39,8 +44,12 @@ Use `check` for gates. Use `scan` for a human-readable audit report.
 - `archfit explain <id>` — explain one finding by fingerprint prefix
   (`--llm` appends an off-gate narrative; needs `tools.llm`).
 - `archfit enrich` — draft LLM coupling-label refinements for human review
-  (off-gate; writes `.archfit-labels.yaml` drafts — see
-  [llm-enrich.md](llm-enrich.md)).
+  (off-gate; writes `.archfit-labels.yaml` drafts). `--owner` / `--volatility`
+  draft those module fields; `--pin` writes approved entries into the config. See
+  [llm-enrich.md](llm-enrich.md).
+- `archfit autopilot` — one-shot LLM drafter for a full `.archfit.yaml` (off-gate,
+  review-only; never applies — writes `.archfit-autopilot.yaml`). See
+  [llm-enrich.md](llm-enrich.md).
 - `archfit install` — install or print commands for optional language tools.
 
 Output formats for `check`: `text`, `json`, `markdown`/`md`, `sarif`
@@ -63,12 +72,64 @@ Findings have a lifecycle status:
 ## Exit codes
 
 - `0` — pass;
-- `1` — fail;
+- `1` — fail (active gate finding, **or** a missing required tool under
+  `--require-tools` / `tools.<x>.gate: fail` — a policy violation);
 - `2` — warn;
 - `3` — usage, config, or runtime error.
 
+Exit `1` (policy) is deliberately distinct from exit `3` (tool/config error): a
+missing required tool is a _gate_ decision you opted into, not a crash.
+
 Balanced Coupling advisories are informational by default. Use them to prioritize
 architecture review and refactoring, not as automatic pass/fail rules.
+
+## Coverage gaps and required tools
+
+When an analyzer does not run, archfit does **not** silently score the repo as
+healthy. The dependent metrics drop to `n/a` (no evidence — never `strong`), and
+a machine-readable **coverage gap** lists the tool, the metrics its absence
+leaves unmeasured, and a one-line install hint. Gaps appear in every format:
+
+- markdown / `scan` — a `## Coverage gaps (N)` section before findings;
+- `scorecard` / `score` — a `## Required tools missing (N)` section;
+- `--format json` — a `coverage_gaps[]` array (`tool`, `install_cmd`,
+  `affected_metrics`, `gate`) plus `config_warnings[]`;
+- stderr — one warn-loud line per gap.
+
+Default posture is **warn-loud, exit 0**. To make CI block on a missing tool, opt
+in with `--require-tools` (raises every gap to `fail` for that run) or
+`tools.<x>.gate: fail` per tool (see
+[configuration-reference.md](configuration-reference.md#toolsxgate-coverage-gate)).
+
+Config-quality warnings (e.g. "N modules under-specified") now reach md/json too,
+as a `## Config warnings` section and the `config_warnings[]` JSON field — they
+are no longer stderr-only.
+
+## --root: scan a repo from an external config
+
+`--root` (on `check`, `scan`, `score`) decouples the scanned repository from where
+the config lives. By default the scan root is the directory of `--config`; pass
+`--root` to point an external CI config at a repo it does not live inside:
+
+```sh
+archfit check --root ./service --config ./policies/.archfit.yaml --full
+```
+
+Omitting `--root` keeps the previous behaviour (config directory = scan root), so
+nothing breaks. The baseline, labels, and config-hash stay config-adjacent.
+
+## Delta buckets
+
+A delta run (`--base <ref>`) groups findings into mutually exclusive buckets so a
+reviewer reads what changed apart from what was already there (a `## Delta`
+section; additive `omitempty` JSON):
+
+- **New** — introduced by this change;
+- **Severity changed** — a baseline finding whose severity differs from the
+  baseline record;
+- **Touched by this change** — a pre-existing finding on a changed file;
+- **Pre-existing** — untouched pre-existing findings;
+- **Resolved** — a baseline finding no longer detected.
 
 ## archfit score
 
@@ -98,7 +159,10 @@ it never changes the `check` verdict or exit code.
 Flags:
 
 - `--config` / `-c` — config file path (default: `.archfit.yaml`).
+- `--root` — repository root to analyze (default: directory of `--config`).
 - `--base` — git ref to compare against; enables the `change_locality` dimension.
+- `--full` — scan all files, not just files changed since `--base` (implied when
+  `--base` is absent).
 
 ## archfit review
 
@@ -149,6 +213,33 @@ Flags:
 
 - `--config` / `-c` — config file path (default: `.archfit.yaml`).
 - `--no-cache` — bypass the LLM response cache at `.archfit-cache/llm/`.
+
+## archfit autopilot
+
+`archfit autopilot` is a one-shot LLM drafter for a whole `.archfit.yaml`. It
+discovers project structure, classifies every module (subdomain, volatility,
+layer, and `role`), drafts an owner per module from CODEOWNERS context, and
+renders the entire config in **plan mode** — every suggestion is a commented YAML
+line, nothing is applied.
+
+```sh
+archfit autopilot --root . --output .archfit-autopilot.yaml
+archfit autopilot --root . -o -      # stream the draft to stdout
+```
+
+It is **off-gate and review-only**: the draft lands in a separate file
+(`.archfit-autopilot.yaml` by default) and autopilot **refuses** to write
+`.archfit.yaml` directly (exit 3). Review the draft, then move approved fields
+into the live config deliberately. Needs `tools.llm` configured (provider +
+model) and the provider's API key — see [LLM enrichment](llm-enrich.md).
+
+Flags:
+
+- `--root` / `-r` — project root (default: `.`).
+- `--config` / `-c` — existing config to read `tools.llm` from (default:
+  `.archfit.yaml`).
+- `--output` / `-o` — draft output file; `-` for stdout. Never `.archfit.yaml`.
+- `--llm-provider`, `--llm-model`, `--no-cache` — same as `init --llm`.
 
 ## archfit init --llm
 
