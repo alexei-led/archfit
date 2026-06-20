@@ -399,7 +399,7 @@ differ by language; when a tool is missing the dependent metric reports `n/a`
 | Dynamic / lazy import signal        | n/a           | `require()` / dynamic `import()`         | in-function / `importlib` / `__import__`                 |
 
 Key behaviors fixed in the v0.x gap-closure program (see
-[the gap-closure result](../v0.x-tool-vs-expert-gap-closure.md)):
+[the gap-closure result](../notes/v0.x-tool-vs-expert-gap-closure.md)):
 
 - `change_locality` matches changed files across all node-ID schemes — no more
   Python false-0.
@@ -428,10 +428,10 @@ failure.
 | functional_candidates                                                                                                   | clone detector (`tools.clones.enabled: on`)     |
 | risk_hub (refinement only)                                                                                              | GitNexus (`tools.gitnexus.enabled: on`)         |
 
-The `llm` tool is used only by `archfit enrich`, `archfit explain --llm`, and
-`archfit review`. It
-is **never** consumed by `check` — gate verdicts and metric values stay
-deterministic. See [LLM enrichment](llm-enrich.md).
+The `llm` tool is used only by `archfit enrich`, `archfit explain --llm`,
+`archfit review`, `archfit autopilot`, `archfit init --llm`, and
+`archfit update --llm`. It is **never** consumed by `check` — gate verdicts and
+metric values stay deterministic. See [LLM enrichment](llm-enrich.md).
 
 ---
 

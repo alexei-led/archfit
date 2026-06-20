@@ -107,7 +107,7 @@ are no longer stderr-only.
 
 ## --root: scan a repo from an external config
 
-`--root` (on `check`, `scan`, `score`) decouples the scanned repository from where
+`--root` (on `check`, `scan`, `score`, and `enrich`) decouples the scanned repository from where
 the config lives. By default the scan root is the directory of `--config`; pass
 `--root` to point an external CI config at a repo it does not live inside:
 

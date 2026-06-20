@@ -102,8 +102,8 @@ you enable the matching `tools.*` key in `.archfit.yaml`.
   Enable with `tools.gitnexus.enabled: on`, or leave it unset/`auto` to use a
   present `.gitnexus`/`.codegraph` index automatically.
 - **lizard** (powers `complexity`) — `pip install lizard` or
-  `uv tool install lizard`. Supports Go, Python, TypeScript, and TSX. No config
-  flag; `complexity` is `n/a` when `lizard` is not on `PATH`.
+  `uv tool install lizard`. Supports Go, Python, TypeScript, and TSX. Enable
+  with `tools.complexity.enabled: on`; `complexity` is `n/a` when not enabled.
 
 When a tool is absent, the dependent metric reports `n/a` — the run never fails.
 
@@ -117,5 +117,7 @@ docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.4.0 \
   check --config /repo/.archfit.yaml --full
 ```
 
-The image includes the `archfit` binary, Node.js, dependency-cruiser, Python,
-`uv`, and `grimp`.
+The image bundles the `archfit` binary plus the full analysis toolchain: the Go
+SDK (Go targets need it at runtime), Node.js 24 with dependency-cruiser and
+ast-grep (`sg`), and `uv` with Python 3 (`grimp` is resolved at runtime via
+`uv run --with grimp`).

@@ -493,7 +493,7 @@ their directory, to keep scans deterministic.
 ## tools.llm (off-gate)
 
 Used by `archfit init --llm`, `archfit update --llm`, `archfit enrich`,
-`archfit autopilot`, and `archfit explain --llm`; never by `check`.
+`archfit autopilot`, `archfit review`, and `archfit explain --llm`; never by `check`.
 
 ```yaml
 tools:
