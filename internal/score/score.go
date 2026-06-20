@@ -107,7 +107,7 @@ func Synthesize(d diagnostic.Diagnostic) Scorecard {
 
 	dims := []Dimension{
 		boundaryIntegrity(mi, gate, base),
-		couplingBalance(edges),
+		couplingBalance(edges, base),
 		dependencyGraphHealth(mi, base),
 		cohesionModularity(mi, base),
 		changeLocality(mi, base),
@@ -200,12 +200,23 @@ func boundaryIntegrity(mi metricIndex, gate []finding.Finding, base Confidence) 
 // mixed; pervasive (≥5% of edges) → no better than poor. Cohesion (high strength
 // + low distance) never appears here — the classifier scores it as balanced — so
 // it is never counted against this dimension.
-func couplingBalance(edges []bcEdge) Dimension {
+func couplingBalance(edges []bcEdge, base Confidence) Dimension {
 	dim := Dimension{Name: DimCouplingBalance}
 	if len(edges) == 0 {
+		// No classified edges. With low baseline coverage this is "extraction
+		// found nothing", not "coupling is great" — report neutral/low, never a
+		// false-green 90. Only when coverage is at least medium can zero advisories
+		// be read as genuinely no unbalanced coupling.
+		if base == ConfidenceLow {
+			dim.Value = 50
+			dim.Confidence = ConfidenceLow
+			dim.Evidence = []string{"no edges classified; extraction coverage insufficient (0 classified edges)"}
+			dim.Summary = "coupling unmeasured: no classified edges and insufficient extraction coverage"
+			return dim
+		}
 		dim.Value = 90
 		dim.Confidence = ConfidenceMedium
-		dim.Evidence = []string{"no unbalanced-coupling advisories over classified edges"}
+		dim.Evidence = []string{"no unbalanced coupling among 0 classified edges"}
 		dim.Summary = "no unbalanced coupling detected (strength × distance × volatility balanced, or cohesive)"
 		return dim
 	}

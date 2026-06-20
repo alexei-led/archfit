@@ -117,11 +117,11 @@ Locked design decisions (approved):
 
 ### Task 1: Kill the false-green coverage core
 
-- [ ] `internal/metrics/boundary/coverage.go` `CoverageMetric.Calculate`: when
+- [x] `internal/metrics/boundary/coverage.go` `CoverageMetric.Calculate`: when
       `len(in.ToolCoverage)==0` (no extractor contributed any coverage record) return
       `result.NACount(...)` (band `n/a`, confidence low) — keep `value=1.0` **only** when
       entries exist but `totalApplicable==0` (extractors ran, nothing applicable)
-- [ ] `internal/score/score.go`: change `couplingBalance(edges)` →
+- [x] `internal/score/score.go`: change `couplingBalance(edges)` →
       `couplingBalance(edges, base Confidence)`; thread `base` from `Synthesize`; on empty
       edges with `base==ConfidenceLow` return {value 50, confidence low, summary "no edges
       classified; extraction coverage insufficient"}; keep existing behaviour when base ≥ medium.
@@ -129,11 +129,11 @@ Locked design decisions (approved):
       (OpenAI reproduced `coupling_balance: 90` on codegraph _with all tools and a real import
       cycle_ — a 90 with zero BC-advisory edges must read as "no unbalanced coupling among N
       edges", not a blanket "great")
-- [ ] write/adjust `coverage_test.go`: `TestCoverage_NoExtractors` (empty slice → n/a) and
+- [x] write/adjust `coverage_test.go`: `TestCoverage_NoExtractors` (empty slice → n/a) and
       keep `TestCoverage_ZeroApplicable` (entry present, zero applicable → 1.0)
-- [ ] write `score_test.go` cases: empty edges + low base → 50/low; empty edges + medium
+- [x] write `score_test.go` cases: empty edges + low base → 50/low; empty edges + medium
       base → unchanged 90/medium
-- [ ] `make test` (`./internal/metrics/boundary/... ./internal/score/...`) +
+- [x] `make test` (`./internal/metrics/boundary/... ./internal/score/...`) +
       `go test ./internal/ -run TestArchImports` + `make lint` — must pass before Task 2
 
 ### Task 2: Honest analysis_confidence + complete doctor

@@ -252,6 +252,42 @@ func TestCouplingBalance(t *testing.T) {
 	})
 }
 
+// TestCouplingBalance_EmptyEdgesBase asserts the empty-edges branch reads the
+// baseline coverage confidence: low coverage → neutral 50/low (no false-green),
+// medium-or-better coverage → the established 90/medium "no unbalanced coupling".
+func TestCouplingBalance_EmptyEdgesBase(t *testing.T) {
+	t.Run("empty edges + low base → 50/low", func(t *testing.T) {
+		got := couplingBalance(nil, ConfidenceLow)
+		if got.Value != 50 {
+			t.Errorf("value = %d, want 50", got.Value)
+		}
+		if got.Confidence != ConfidenceLow {
+			t.Errorf("confidence = %q, want low", got.Confidence)
+		}
+	})
+
+	t.Run("empty edges + medium base → 90/medium", func(t *testing.T) {
+		got := couplingBalance(nil, ConfidenceMedium)
+		if got.Value != 90 {
+			t.Errorf("value = %d, want 90", got.Value)
+		}
+		if got.Confidence != ConfidenceMedium {
+			t.Errorf("confidence = %q, want medium", got.Confidence)
+		}
+	})
+
+	t.Run("low base propagates through Synthesize", func(t *testing.T) {
+		// A coverage metric with value 0.2 drives the baseline confidence to low,
+		// so an un-analysed repo with no BC edges must not present a strong 90.
+		d := diagnostic.New()
+		d.Metrics = []diagnostic.MetricResult{metric("coverage", 0.2, "poor", "low")}
+		cb := dimByName(t, Synthesize(d), DimCouplingBalance)
+		if cb.Value > 60 {
+			t.Errorf("low-coverage no-edge coupling_balance = %d, want ≤60 (not false-green)", cb.Value)
+		}
+	})
+}
+
 // TestBoundaryIntegrity_GateViolations asserts active gate findings subtract from
 // boundary integrity and are cited as evidence.
 func TestBoundaryIntegrity_GateViolations(t *testing.T) {

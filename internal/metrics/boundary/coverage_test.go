@@ -23,7 +23,25 @@ func TestCoverage_Ratio(t *testing.T) {
 	}
 }
 
+func TestCoverage_NoExtractors(t *testing.T) {
+	// No tool contributed any coverage record: the repo was not analysed. The
+	// metric must report n/a (low confidence), never a false-green 100%.
+	m := boundary.CoverageMetric{}
+	result := m.Calculate(signal.CommonInput{})
+	if result.Band != bandNAStr {
+		t.Errorf("expected band %q for no extractors, got %q", bandNAStr, result.Band)
+	}
+	if result.Confidence != confLow {
+		t.Errorf("expected confidence low for no extractors, got %q", result.Confidence)
+	}
+	if result.Value == 1.0 {
+		t.Errorf("no extractors must not yield value 1.0 (false-green)")
+	}
+}
+
 func TestCoverage_ZeroApplicable(t *testing.T) {
+	// Extractors ran but nothing was applicable (entry present, zero applicable):
+	// full coverage of an empty universe is 1.0 — distinct from no extractors.
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
 		ToolCoverage: []diagnostic.Coverage{

@@ -24,6 +24,13 @@ func (m CoverageMetric) Version() string { return "coverage.v1" }
 
 // Calculate computes the coverage ratio and applies confidence-based band capping.
 func (m CoverageMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
+	// No extractor contributed any coverage record: the repo was not analysed at
+	// all. Report n/a (low confidence) rather than a false-green 100% — absence of
+	// evidence is not evidence of full coverage.
+	if len(in.ToolCoverage) == 0 {
+		return result.NACount(m.Name(), m.Version(), "extracted_files / applicable_files")
+	}
+
 	var totalApplicable, totalExtracted, totalUnresolved int
 	for _, c := range in.ToolCoverage {
 		totalApplicable += c.FilesApplicable
@@ -33,6 +40,8 @@ func (m CoverageMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult
 
 	var value float64
 	if totalApplicable == 0 {
+		// Extractors ran but nothing was applicable (e.g. an empty package set):
+		// full coverage of an empty universe is 1.0.
 		value = 1.0
 	} else {
 		value = float64(totalExtracted) / float64(totalApplicable)
