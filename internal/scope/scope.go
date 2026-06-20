@@ -6,9 +6,62 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/alexei-led/archfit/internal/config"
 )
+
+// DefaultExclusions are tool-artifact, cache, and dependency directories archfit
+// never analyses: measuring them yields non-deterministic or irrelevant facts —
+// a vendored tree's complexity, a generated index, or a report written back into
+// the scanned repo (the OpenAI study's self-scan "instability"). They are MERGED
+// with — never replace — the config `exclusions` (see MergeExclusions). Kept here
+// in the core ring as pure data so scope stays free of I/O. Globs use doublestar
+// `**/<name>/**` form so they match the directory at the repo root and at any
+// nested depth without over-matching siblings (e.g. `reports.go`).
+var DefaultExclusions = []string{
+	"**/.archfit-cache/**",
+	"**/.archfit-baseline.json",
+	"**/.gitnexus/**",
+	"**/.codegraph/**",
+	"**/reports/**",
+	"**/.venv/**",
+	"**/node_modules/**",
+	"**/vendor/**",
+	"**/dist/**",
+	"**/build/**",
+}
+
+// MergeExclusions returns the effective exclusion globs: DefaultExclusions
+// supplemented by the configured ones, de-duplicated and sorted so a double-run
+// stays byte-identical regardless of config order. A configured entry prefixed
+// with "!" re-includes a default — it removes the matching default from the
+// result and is itself dropped, so extractors never see the negation marker.
+// "!reports", "!.archfit-baseline.json", and the exact "!**/reports/**" all
+// remove their default. Pure: no filesystem access.
+func MergeExclusions(configured []string) []string {
+	set := make(map[string]struct{}, len(DefaultExclusions)+len(configured))
+	for _, d := range DefaultExclusions {
+		set[d] = struct{}{}
+	}
+	for _, c := range configured {
+		if neg, ok := strings.CutPrefix(c, "!"); ok {
+			// Re-include: drop the default whether the user named the bare
+			// artifact (reports), the file (.archfit-baseline.json), or the exact glob.
+			delete(set, neg)
+			delete(set, "**/"+neg+"/**")
+			delete(set, "**/"+neg)
+			continue
+		}
+		set[c] = struct{}{}
+	}
+	out := make([]string, 0, len(set))
+	for p := range set {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // ScopeMode distinguishes full-repo analysis from delta (diff-based) analysis.
 // The name is intentionally ScopeMode (not Mode) to match the design contract

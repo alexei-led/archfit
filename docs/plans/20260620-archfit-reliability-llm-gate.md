@@ -174,16 +174,16 @@ AffectedMetrics []string, Gate string}` and fields `CoverageGaps []CoverageGap` 
 > inside the analyzed repo, and `.gitnexus/run.cjs` showed up as a complexity hotspot —
 > archfit shouldn't measure its own tool artifacts.
 
-- [ ] add a built-in default exclusion set (merged with, not replacing, config
+- [x] add a built-in default exclusion set (merged with, not replacing, config
       `exclusions`): `.archfit-cache/`, `.archfit-baseline.json`, `.gitnexus/`, `.codegraph/`,
       `reports/`, `.venv/`, `node_modules/`, `vendor/`, dist/build/generated outputs. Keep it
       in the core ring as a const list consumed by `internal/scope` (no I/O) so it stays pure
-- [ ] `cmd/archfit/pipeline.go`: when an output/report path resolves **inside** the analyzed
+- [x] `cmd/archfit/pipeline.go`: when an output/report path resolves **inside** the analyzed
       root, emit a `ConfigWarnings` entry + stderr line ("output written inside analyzed root —
       exclude it or use a path outside `--root` to keep scans deterministic")
-- [ ] write a `scope` test (defaults exclude `.gitnexus`/`reports` unless re-included) and a
+- [x] write a `scope` test (defaults exclude `.gitnexus`/`reports` unless re-included) and a
       cmd test for the inside-root warning
-- [ ] `go test ./internal/scope/... ./cmd/archfit/...` +
+- [x] `go test ./internal/scope/... ./cmd/archfit/...` +
       `go test ./internal/engine/ -run TestGolden` + `make lint` — must pass before Task 3c
 
 ### Task 3c: Delta output bucketing

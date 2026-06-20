@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/agenttask"
@@ -72,6 +73,11 @@ func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, 
 // attached from the active gate findings (deterministic; spec §13).
 func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, noConfig bool, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, error) {
 	configDir := filepath.Dir(configPath)
+	// Merge the built-in artifact/cache excludes into the config exclusions
+	// (additive — see scope.MergeExclusions) before projecting any view, so every
+	// extractor inherits them. Keeps archfit from measuring its own tool outputs
+	// (.gitnexus, reports, .archfit-cache) or vendored/dependency trees.
+	cfg.Exclusions = scope.MergeExclusions(cfg.Exclusions)
 	sc := cfg.ForScope()
 	sc.WorkDir = configDir
 	sc.Base = mode.Base
@@ -105,6 +111,18 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		msg := tool + ": " + err.Error()
 		toolWarnings = append(toolWarnings, msg)
 		_, _ = fmt.Fprintln(os.Stderr, "warning: "+msg)
+	}
+
+	// Output-path hygiene: when the config/output directory sits strictly inside
+	// the analyzed root, archfit writes cache/baseline/report artifacts into the
+	// scanned tree — a source of non-deterministic repeat scans (OpenAI Sec 7.4).
+	// Built-in excludes neutralise the known artifacts, but the directory itself
+	// (and any user-redirected report) is still a hazard, so we surface it.
+	if absConfigDir, aerr := filepath.Abs(configDir); aerr == nil {
+		if w := outputInsideRootWarning(s.Root, absConfigDir); w != "" {
+			toolWarnings = append(toolWarnings, w)
+			_, _ = fmt.Fprintln(os.Stderr, "warning: "+w)
+		}
 	}
 
 	// Recent git history (cheap; runs by default): per-file churn drives module
@@ -308,6 +326,23 @@ func buildConfigWarnings(cfg config.Config, toolWarnings []string) []string {
 		return nil
 	}
 	return out
+}
+
+// outputInsideRootWarning reports whether dir (an absolute config/output
+// directory) resolves strictly inside the absolute analyzed root. Returns a
+// warning string in that case, "" when dir is the root itself or lies outside
+// it. Path-only — no filesystem access — so it stays deterministic and testable.
+func outputInsideRootWarning(root, dir string) string {
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return ""
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+		return ""
+	}
+	return "output written inside analyzed root (" + rel + ") — exclude it or " +
+		"use a path outside --root to keep scans deterministic"
 }
 
 // loadConfig loads the config file at path. When path equals the default

@@ -40,3 +40,29 @@ func TestEffectiveConfigHash(t *testing.T) {
 		t.Errorf("effectiveConfigHash after mutating ignored file = %q, want \"\"", got)
 	}
 }
+
+// TestOutputInsideRootWarning verifies the path hygiene check: a config/output
+// directory strictly inside the analyzed root warns; the root itself or any path
+// outside it does not.
+func TestOutputInsideRootWarning(t *testing.T) {
+	root := filepath.FromSlash("/repo")
+	cases := []struct {
+		name    string
+		dir     string
+		wantMsg bool
+	}{
+		{"root itself is fine", filepath.FromSlash("/repo"), false},
+		{"subdir inside root warns", filepath.FromSlash("/repo/reports"), true},
+		{"nested subdir warns", filepath.FromSlash("/repo/a/b"), true},
+		{"sibling outside root is fine", filepath.FromSlash("/other"), false},
+		{"parent of root is fine", filepath.FromSlash("/"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := outputInsideRootWarning(root, tc.dir)
+			if (got != "") != tc.wantMsg {
+				t.Errorf("outputInsideRootWarning(%q, %q) = %q, wantMsg=%v", root, tc.dir, got, tc.wantMsg)
+			}
+		})
+	}
+}
