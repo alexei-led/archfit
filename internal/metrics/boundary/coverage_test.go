@@ -40,16 +40,55 @@ func TestCoverage_NoExtractors(t *testing.T) {
 }
 
 func TestCoverage_ZeroApplicable(t *testing.T) {
-	// Extractors ran but nothing was applicable (entry present, zero applicable):
-	// full coverage of an empty universe is 1.0 — distinct from no extractors.
+	// A record present but with zero applicable files is no evidence of coverage:
+	// "100% of an empty file set" is the false-green this gate prevents. It must
+	// read n/a, not 1.0 (corrects the earlier zero-applicable→1.0 behaviour; the
+	// negative-case acceptance run surfaced it as a residual false-green).
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
 		ToolCoverage: []diagnostic.Coverage{
-			{FilesSeen: 0, FilesApplicable: 0},
+			{FilesSeen: 0, FilesApplicable: 0, Status: diagnostic.StatusOK},
 		},
 	})
-	if result.Value != 1.0 {
-		t.Errorf("expected value 1.0 for zero applicable, got %v", result.Value)
+	if result.Band != bandNAStr {
+		t.Errorf("expected band %q for zero applicable, got %q", bandNAStr, result.Band)
+	}
+	if result.Value == 1.0 {
+		t.Errorf("zero applicable must not yield value 1.0 (false-green)")
+	}
+}
+
+func TestCoverage_AllAbsent(t *testing.T) {
+	// Every structural extractor reported absent (e.g. go/packages on a non-Go
+	// repo): records exist but none contributed. The metric must report n/a, not
+	// a false-green 100% over an empty file set.
+	m := boundary.CoverageMetric{}
+	result := m.Calculate(signal.CommonInput{
+		ToolCoverage: []diagnostic.Coverage{
+			{Tool: "go/packages", Status: diagnostic.StatusAbsent},
+			{Tool: "dependency-cruiser", Status: diagnostic.StatusAbsent},
+		},
+	})
+	if result.Band != bandNAStr {
+		t.Errorf("expected band %q for all-absent, got %q", bandNAStr, result.Band)
+	}
+	if result.Value == 1.0 {
+		t.Errorf("all-absent must not yield value 1.0 (false-green)")
+	}
+}
+
+func TestCoverage_AbsentRecordSkipped(t *testing.T) {
+	// An absent record alongside a real one must not dilute the ratio: only the
+	// contributing extractor (8/10) counts.
+	m := boundary.CoverageMetric{}
+	result := m.Calculate(signal.CommonInput{
+		ToolCoverage: []diagnostic.Coverage{
+			{Tool: "go/packages", FilesSeen: 8, FilesApplicable: 10, Status: diagnostic.StatusOK},
+			{Tool: "grimp", Status: diagnostic.StatusAbsent},
+		},
+	})
+	if !metricstest.ApproxEqual(result.Value, 0.8) {
+		t.Errorf("expected value 0.8 (absent record skipped) got %v", result.Value)
 	}
 }
 

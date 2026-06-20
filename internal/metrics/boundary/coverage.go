@@ -24,28 +24,29 @@ func (m CoverageMetric) Version() string { return "coverage.v1" }
 
 // Calculate computes the coverage ratio and applies confidence-based band capping.
 func (m CoverageMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
-	// No extractor contributed any coverage record: the repo was not analysed at
-	// all. Report n/a (low confidence) rather than a false-green 100% — absence of
-	// evidence is not evidence of full coverage.
-	if len(in.ToolCoverage) == 0 {
-		return result.NACount(m.Name(), m.Version(), "extracted_files / applicable_files")
-	}
-
 	var totalApplicable, totalExtracted, totalUnresolved int
 	for _, c := range in.ToolCoverage {
+		// An "absent" record means the extractor did not run or found nothing of
+		// its language (e.g. go/packages on a non-Go repo). It is not evidence of
+		// coverage, so it must not count toward the totals.
+		if c.Status == diagnostic.StatusAbsent {
+			continue
+		}
 		totalApplicable += c.FilesApplicable
 		totalExtracted += c.FilesSeen
 		totalUnresolved += c.Unresolved
 	}
 
-	var value float64
+	// No applicable files among any contributing extractor: the repo was not
+	// analysed at all (no records, every structural extractor absent, or only
+	// auxiliary tools like loc/ast-grep that report ok over zero source files).
+	// Report n/a (low confidence) — "100% of an empty file set" is the false-green
+	// this gate exists to prevent, not evidence of full coverage.
 	if totalApplicable == 0 {
-		// Extractors ran but nothing was applicable (e.g. an empty package set):
-		// full coverage of an empty universe is 1.0.
-		value = 1.0
-	} else {
-		value = float64(totalExtracted) / float64(totalApplicable)
+		return result.NACount(m.Name(), m.Version(), "extracted_files / applicable_files")
 	}
+
+	value := float64(totalExtracted) / float64(totalApplicable)
 
 	// Confidence: based on unresolved ratio vs files seen.
 	confidence := coverageConfidence(totalUnresolved, totalExtracted)

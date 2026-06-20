@@ -1,0 +1,2 @@
+auto mode exit=0
+--require-tools exit=1

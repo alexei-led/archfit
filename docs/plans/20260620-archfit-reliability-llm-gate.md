@@ -389,25 +389,35 @@ AffectedMetrics []string, Gate string}` and fields `CoverageGaps []CoverageGap` 
 
 ### Task 10: Five-repo config authoring + full/delta verification runs
 
-- [ ] for each of `~/workspace/{archfit,spotinfo,pumba,ccgram,codegraph}`: author/refresh a
-      proper `.archfit.yaml` informed by project design + module layout + git history — use
-      `autopilot` / `enrich --owner --subdomains --volatility` to draft, then human-review
-      (see Post-Completion), and promote cycle/forbidden-dep/layer-direction rules to `fail`
-- [ ] per-repo specifics: ccgram set `python_package` + expect FAIL on 3 cycles; codegraph
-      add `no-import-cycles` rule + install `node_modules` for SCIP; pumba/spotinfo declare
-      owners+volatility on under-specified modules
-- [ ] run `archfit doctor`, `check --full`, `check --base <default-branch>` (delta), `score`,
-      and `scan` per repo; capture stdout+json into
-      `reports/archfit-vs-architect-20260620-postfix/<repo>/` — write reports **outside** each
-      analyzed repo (the OpenAI run showed the earlier self-scan "instability" was reports
-      written _inside_ the repo being scanned; output-path-inside-root is also flagged by
-      [3b]). The OpenAI all-tools rerun reports `same_hash=true` on all five repos, so a clean
-      output path is the only determinism prerequisite
-- [ ] write a short comparison (old vs new scorecards) asserting: no strong-on-thin-evidence,
-      coverage-gaps surfaced for genuinely-missing tools, ccgram fails on cycles, exit codes meaningful
-- [ ] run the negative case: fixed binary on a non-Go dir in `auto` mode → structural
-      dimensions n/a (not strong), coverage-gaps lists go/packages + install hint, exit 0;
-      with `--require-tools` → exit 1
+- [x] for each of `~/workspace/{archfit,spotinfo,pumba,ccgram,codegraph}`: author/refresh a
+      proper `.archfit.yaml` informed by project design + module layout + git history, and
+      promote cycle/forbidden-dep/layer-direction rules to `fail`. **Authored directly** (not
+      via the LLM `autopilot`/`enrich` path — the ralphex loop runs unattended; per the Task 9
+      precedent, owner=`alexei-led` is the truthful value for these solo-maintained repos and
+      volatility was assigned from 18-month git churn). External-repo configs left as
+      working-tree edits for human review (per Post-Completion); archfit's own config unchanged
+      from Task 9
+- [x] per-repo specifics: ccgram `python_package: ccgram` (already set) + `no-import-cycles:
+    fail` → **FAILs on 3 cycles** (exactly as predicted); codegraph added `no-import-cycles:
+    fail` (FAILs on its 2 real cycles) and `node_modules` already present for SCIP;
+      pumba/spotinfo now declare owner+volatility (+ `role: composition_root` on `cmd`,
+      `role: generated` on pumba `mocks`) — 0 config-quality warnings remain
+- [x] ran `archfit doctor`, `check --full`, `check --base <default-branch>` (delta), `score
+    --full`, and `scan` per repo; captured stdout+json into
+      `reports/archfit-vs-architect-20260620-postfix/<repo>/` (written **inside** archfit/reports
+      which is a built-in exclude [3b], **outside** the four external repos). Double-run
+      `same_hash=true` confirmed for archfit/codegraph/ccgram
+- [x] wrote `reports/archfit-vs-architect-20260620-postfix/COMPARISON.md` — verifies all four
+      assertions: no strong-on-thin-evidence (boundary_integrity 50/low everywhere, never
+      strong), coverage-gaps surfaced for every genuinely-absent tool, ccgram+codegraph fail on
+      cycles (exit 1), exit codes meaningful (pass 0 / policy-fail 1 / tool-error 3)
+- [x] ran the negative case (`negative-case/`): non-Go git dir, `auto` mode → coverage **n/a**,
+      encapsulation **n/a**, no strong dimension (overall 48 mixed), coverage-gaps lists
+      **go/packages** + install hint, exit **0**; `--require-tools` → exit **1**.
+      ➕ The acceptance run surfaced two residual false-greens (coverage zero-applicable→100%,
+      encapsulation empty/nil-graph→10/10) that survived Tasks 1–9; both **fixed here** with
+      tests (`coverage.go`, `encapsulation.go`, `golang.go` extractor reports `absent` on zero
+      Go files). Real repos (applicable>0) unaffected → golden + self-scan byte-identical
 
 ### Task 11: Verify acceptance criteria
 

@@ -2,6 +2,7 @@ package golang_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -42,6 +43,29 @@ func hasEdge(edges []graph.Edge, fromSuffix, toSuffix string, kind graph.EdgeKin
 
 func containsSuffix(s, suffix string) bool {
 	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix
+}
+
+func TestExtract_NonGoDir_Absent(t *testing.T) {
+	// A directory with no Go source files: go/packages finds nothing. The
+	// extractor must report Status "absent" (not "partial"/"ok") so the coverage
+	// metric reads n/a instead of a false-green 100% over an empty file set.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# docs only\n"), 0o600); err != nil {
+		t.Fatalf("write README: %v", err)
+	}
+	ext := goextract.New(config.ExtractConfig{})
+	s := scope.Scope{Root: dir, Mode: scope.ModeFull}
+
+	_, cov, err := ext.Extract(context.Background(), s)
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if cov.Status != "absent" {
+		t.Errorf("non-Go dir: cov.Status = %q, want %q", cov.Status, "absent")
+	}
+	if cov.FilesSeen != 0 {
+		t.Errorf("non-Go dir: FilesSeen = %d, want 0", cov.FilesSeen)
+	}
 }
 
 func TestExtract_SimpleImport(t *testing.T) {

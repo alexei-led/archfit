@@ -1,0 +1,46 @@
+===== archfit (base=main) =====
+doctor rc=0 (regenerated; doctor takes no -c flag)
+check --full md rc=0
+check --full json rc=0
+score --full rc=0
+scan rc=0
+delta md rc=0
+delta json rc=0
+
+===== spotinfo (base=master) =====
+doctor rc=0 (regenerated; doctor takes no -c flag)
+check --full md rc=0
+check --full json rc=0
+score --full rc=0
+scan rc=0
+delta md rc=0
+delta json rc=0
+
+===== pumba (base=master) =====
+doctor rc=0 (regenerated; doctor takes no -c flag)
+check --full md rc=0
+check --full json rc=0
+score --full rc=0
+scan rc=0
+delta md rc=0
+delta json rc=0
+
+===== ccgram (base=main) =====
+doctor rc=0 (regenerated; doctor takes no -c flag)
+check --full md rc=1
+check --full json rc=1
+score --full rc=0
+scan rc=0
+delta md rc=1
+delta json rc=1
+
+===== codegraph (base=main) =====
+doctor rc=0 (regenerated; doctor takes no -c flag)
+check --full md rc=1
+check --full json rc=1
+score --full rc=0
+scan rc=0
+delta md rc=1
+delta json rc=1
+
+SWEEP DONE
