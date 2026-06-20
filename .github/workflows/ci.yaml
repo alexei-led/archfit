@@ -13,7 +13,12 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # persist-credentials:false: govulncheck-action runs a nested checkout;
+      # a persisted auth extraheader here collides with it (duplicate
+      # Authorization header -> HTTP 400). This job never pushes.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -31,15 +36,15 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v8.2.0 # no bare v8 major tag published
         with:
           python-version: "3.13"
           enable-cache: false
@@ -50,7 +55,7 @@ jobs:
       - name: CI gate — golden output
         run: go test ./internal/engine/ -run TestGolden
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.out
@@ -71,7 +76,7 @@ jobs:
           - goos: darwin
             goarch: arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -87,7 +92,7 @@ jobs:
             -o dist/archfit-${{ matrix.goos }}-${{ matrix.goarch }} \
             ./cmd/archfit
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: archfit-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/archfit-${{ matrix.goos }}-${{ matrix.goarch }}
