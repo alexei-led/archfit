@@ -150,13 +150,13 @@ verdict across a polyglot repo, scored and shaped for an agent loop.
 Install the CLI (use a release tag, not `@latest`, in repeatable docs):
 
 ```sh
-go install github.com/alexei-led/archfit/cmd/archfit@v0.4.0
+go install github.com/alexei-led/archfit/cmd/archfit@v0.5.0
 ```
 
 Or run the Docker image with the bundled toolchain:
 
 ```sh
-docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.4.0 \
+docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.5.0 \
   check --config /repo/.archfit.yaml --full
 ```
 
