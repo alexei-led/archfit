@@ -38,6 +38,25 @@ agent_tasks repair block → agent fixes the import → check is clean → PR op
 `agent_tasks` blocks an agent can act on directly. Gates are deterministic:
 byte-identical output for unchanged input, no LLM on the gate path.
 
+Every gate violation ships an `agent_tasks` entry — a structured repair order,
+not a log line the agent has to parse intent out of:
+
+```json
+{
+  "rule_id": "no_internal_access",
+  "goal": "Replace the internal-API access from pkg/a/a.go to pkg/b/internal/impl.go with b's public API.",
+  "constraints": [
+    "Use only the public API of module b",
+    "public surface of \"b\": [pkg/b/api/**]"
+  ],
+  "files": ["pkg/a/a.go", "pkg/b/internal/impl.go"],
+  "validation": ["archfit check -c .archfit.yaml --full"]
+}
+```
+
+The goal, the constraints it must stay inside, the exact files, and the command
+that proves the fix — everything an agent needs to close the loop unattended.
+
 ## What you get
 
 - **Deterministic gates** for forbidden dependencies, public-API boundaries,
@@ -76,13 +95,13 @@ loop.
 Install the CLI (use a release tag, not `@latest`, in repeatable docs):
 
 ```sh
-go install github.com/alexei-led/archfit/cmd/archfit@v0.3.0
+go install github.com/alexei-led/archfit/cmd/archfit@v0.4.0
 ```
 
 Or run the Docker image with the bundled toolchain:
 
 ```sh
-docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.3.0 \
+docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.4.0 \
   check --config /repo/.archfit.yaml --full
 ```
 

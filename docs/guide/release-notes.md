@@ -95,3 +95,66 @@ changes; output stays byte-for-byte deterministic.
 MultiplicativeScorer was selected over AdditiveScorer by running `make calibrate`
 on archfit (Go) + redwoodjs/redwood (TS) + saleor/saleor (Py): 150 edges scored,
 105 band-agreement with hand-judged reference, 70% agreement rate.
+
+---
+
+## v0.3.1 — Gap-closure correctness fixes
+
+Correctness fixes with no breaking changes to gate verdicts, exit codes, or
+metric names.
+
+### Correctness fixes
+
+- **`review` post-verify: band vocabulary enforcement.** The post-verify pass now
+  validates `overall_band` and each dimension's `band` against the five-value
+  rubric (`critical / poor / mixed / serviceable / strong`). A fabricated label
+  (e.g. "excellent") is blanked on `overall_band` and causes the dimension entry
+  to be dropped. Previously only module and dimension names were validated.
+
+- **`review` post-verify: subdomain vocabulary enforcement.** `subdomain_suggestions`
+  entries are now dropped when `suggested_subdomain` is not in the fixed DDD set
+  (`core`, `supporting`, `generic`). Previously any string was accepted.
+
+- **`review` post-verify: dynamic-import modules accepted as valid evidence.**
+  Modules appearing only as dynamic/lazy imports (no static finding or file fact)
+  were incorrectly rejected by the post-verify module filter. They are now
+  accepted, so the LLM can cite lazy-import coupling risks without the reference
+  being dropped.
+
+- **`review` prompt: dynamic/lazy imports surfaced.** Dynamic imports detected
+  by the TypeScript and Python extractors are now included in the review prompt
+  as a hidden-coupling risk section. The static dependency graph is blind to
+  these edges; surfacing them lets the narrative flag hidden coupling the
+  metrics miss.
+
+- **`coupling_balance` score: only active findings counted.** `bcEdges` (the
+  coupling scorer's input) now filters to `new` and `expired_exception` findings
+  only, matching the filter the gate verdict and `activeGateFindings` use.
+  Baseline-accepted and excepted edges are operator-suppressed debt; counting them
+  deflated `coupling_balance` for repos that had triaged their coupling.
+
+- **`dependency_graph_health` score: `instability` and `propagation_cost` mark
+  the dimension as measured.** Both metrics were applied as penalties but did not
+  set the `measured` flag, so the dimension could be scored as `n/a` even when
+  evidence was present.
+
+- **Coverage confidence propagation to scorecard.** `coverageConfidence` now takes
+  the lower of the coverage-value confidence and the metric's own confidence
+  (derived from the unresolved-import ratio). A run with 100% file coverage but
+  many unresolved imports no longer receives `high` confidence on the scorecard.
+
+- **`change_locality` src-strip: canonical root only.** The path alias that strips
+  a leading source-root segment for Python src-layout repos now only strips `src/`
+  (the conventional source root), not any leading directory. Stripping any first
+  segment would attribute changes in `tests/app/handlers.py` to the source module
+  `app.handlers`, inflating the metric.
+
+- **Clone coverage: files-scanned, not clone-pair count.** `FilesSeen` and
+  `FilesApplicable` in the jscpd extractor now report `statistics.total.sources`
+  (the number of source files jscpd scanned), not the number of clone pairs found.
+  A repo with 200 files and 4 clone pairs previously reported coverage of 4.
+
+- **`map_review` gate: `gate: off` disables staleness review.** Setting
+  `map_review.gate: off` now correctly disables the staleness advisory pass,
+  consistent with `gate: off` semantics everywhere else in the config. Previously
+  `off` was treated as a non-empty gate string and enabled the pass.

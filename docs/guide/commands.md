@@ -120,9 +120,24 @@ strict JSON schema. It may only:
 - classify volatility / subdomain for modules that appear in the evidence;
 - propose dimension bands for dimensions named in the evidence.
 
-A post-verify pass drops any module, metric, or dimension the model cites that is
-not in the deterministic evidence (dropped counts logged to stderr). The model
-**cannot** invent gate violations or module names.
+A post-verify pass enforces the rubric vocabulary and drops fabricated values
+(dropped counts logged to stderr):
+
+- **Overall band** — blanked (shown as "unrated") if outside the five-band rubric
+  (`critical` / `poor` / `mixed` / `serviceable` / `strong`).
+- **Dimension entries** — dropped if the dimension name is unknown **or** the band
+  is outside the rubric vocabulary.
+- **Subdomain suggestions** — dropped if the suggested subdomain is not in the
+  fixed DDD subdomain set (`core`, `supporting`, `generic`).
+- **Module/risk references** — dropped if the module name does not appear in the
+  deterministic evidence. Dynamic/lazy-import modules are valid evidence even when
+  they carry no static finding.
+
+The model **cannot** invent gate violations, module names, or band labels.
+
+Dynamic/lazy imports (detected by TypeScript and Python extractors as
+`dynamic_imports`) are included in the review prompt as a hidden-coupling risk
+section so the narrative can flag coupling the static dependency graph misses.
 
 Requirements:
 
