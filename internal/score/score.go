@@ -401,18 +401,36 @@ func architectureFitness(mi metricIndex, base Confidence) Dimension {
 }
 
 // analysisConfidence is the meta dimension: how trustworthy this review is given
-// tool coverage. File-extraction coverage sets the baseline; each absent semantic
-// tool (scip, gitnexus, lizard/complexity, jscpd/clones) lowers confidence in the
-// depth of the analysis.
+// tool coverage. When extraction ran, file-extraction coverage sets the baseline.
+// When the coverage metric is n/a (no extractor contributed — the repo was not
+// analysed), the baseline starts neutral at 60 and each absent primary extractor
+// (go/packages, dependency-cruiser, grimp) subtracts a fixed penalty so an
+// all-absent repo lands ~0/critical rather than reading pct(0)=0, which hides
+// which extractors are missing. Each absent semantic tool (scip, gitnexus,
+// lizard/complexity, jscpd/clones) then lowers confidence in the depth of the
+// analysis on top.
 func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex) Dimension {
 	dim := Dimension{Name: DimAnalysisConfidence, Confidence: ConfidenceHigh}
+	statuses := toolStatuses(d)
 	value := 60
-	if cov, ok := mi.get("coverage"); ok {
+
+	if cov, ok := mi.measured("coverage"); ok {
+		// Extraction ran and produced a real ratio: it sets the baseline.
 		value = pct(cov.Value)
 		dim.Evidence = append(dim.Evidence, fmt.Sprintf("file extraction coverage %.2f", cov.Value))
+	} else {
+		// Coverage n/a or absent: no extractor analysed the repo. Penalise each
+		// missing primary extractor so an all-absent repo collapses to critical.
+		dim.Evidence = append(dim.Evidence, "file extraction coverage: n/a (no extractor contributed)")
+		primaryAbsent := 0
+		for _, tool := range primaryExtractors {
+			if statuses[tool] != diagnostic.StatusOK {
+				primaryAbsent++
+			}
+		}
+		value -= capInt(primaryAbsent*15, 45)
 	}
 
-	statuses := toolStatuses(d)
 	absent := 0
 	for _, tool := range semanticTools {
 		st := statuses[tool]
@@ -427,6 +445,12 @@ func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex) Dimension {
 	dim.Summary = "review trustworthiness given tool coverage and evidence depth"
 	return dim
 }
+
+// primaryExtractors are the per-language file extractors that produce the coverage
+// facts. Their absence (when coverage is n/a) means the repo was not analysed at
+// all and drives the meta confidence toward critical. Checked by exact
+// ToolCoverage.Tool name.
+var primaryExtractors = []string{"go/packages", "dependency-cruiser", "grimp"}
 
 // semanticTools are the optional deep-analysis tools whose absence lowers the
 // meta confidence. Checked by exact ToolCoverage.Tool name.

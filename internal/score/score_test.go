@@ -385,3 +385,70 @@ func TestAnalysisConfidence_SemanticToolsAbsent(t *testing.T) {
 		t.Errorf("analysis_confidence should be marked meta")
 	}
 }
+
+// TestAnalysisConfidence asserts the meta dimension is honest about coverage: an
+// unanalysed repo (coverage n/a, no primary extractor) collapses to critical
+// instead of reading pct(0)=0, and a fully-extracted run with the semantic tools
+// absent only degrades gradually.
+func TestAnalysisConfidence(t *testing.T) {
+	cases := []struct {
+		name     string
+		metrics  []diagnostic.MetricResult
+		coverage []diagnostic.Coverage
+		wantBand Band
+		maxValue int // value must be ≤ this (0 = no upper bound)
+		minValue int // value must be ≥ this
+	}{
+		{
+			name:     "coverage n/a + all primary absent → critical",
+			metrics:  []diagnostic.MetricResult{metric("coverage", 0, "n/a", "low")},
+			coverage: nil, // go/packages, dependency-cruiser, grimp all absent
+			wantBand: BandCritical,
+			maxValue: 20,
+		},
+		{
+			name:    "coverage n/a but one primary + semantic present → graded, not critical",
+			metrics: []diagnostic.MetricResult{metric("coverage", 0, "n/a", "low")},
+			// 2/3 primary absent (−30), semantic tools present so they don't compound
+			coverage: []diagnostic.Coverage{
+				okCov("go/packages"),
+				okCov("scip"), okCov("gitnexus"), okCov("lizard"), okCov("jscpd"),
+			},
+			minValue: 21,
+			maxValue: 60,
+		},
+		{
+			name:    "coverage ok + all semantic absent → graded drop, not critical",
+			metrics: []diagnostic.MetricResult{metric("coverage", 0.95, "strong", "high")},
+			// primary present, semantic (scip/gitnexus/lizard/jscpd) all absent
+			coverage: []diagnostic.Coverage{okCov("go/packages")},
+			wantBand: BandServiceable,
+			minValue: 61,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := diagnostic.New()
+			d.Metrics = tc.metrics
+			d.ToolCoverage = tc.coverage
+			meta := dimByName(t, Synthesize(d), DimAnalysisConfidence)
+
+			if !meta.Meta {
+				t.Errorf("analysis_confidence should be marked meta")
+			}
+			if tc.wantBand != "" && meta.Band != tc.wantBand {
+				t.Errorf("band = %q (value %d), want %q", meta.Band, meta.Value, tc.wantBand)
+			}
+			if tc.maxValue > 0 && meta.Value > tc.maxValue {
+				t.Errorf("value = %d, want ≤ %d", meta.Value, tc.maxValue)
+			}
+			if tc.minValue > 0 && meta.Value < tc.minValue {
+				t.Errorf("value = %d, want ≥ %d", meta.Value, tc.minValue)
+			}
+			if got := bandFor(meta.Value); meta.Band != got {
+				t.Errorf("band %q does not match value %d (want %q)", meta.Band, meta.Value, got)
+			}
+		})
+	}
+}

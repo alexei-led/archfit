@@ -138,16 +138,16 @@ Locked design decisions (approved):
 
 ### Task 2: Honest analysis_confidence + complete doctor
 
-- [ ] `internal/score/score.go` `analysisConfidence`: when the `coverage` metric band is
+- [x] `internal/score/score.go` `analysisConfidence`: when the `coverage` metric band is
       `n/a`, start at 60 (not `pct(0)=0`) and penalize each absent **primary** extractor
       (go/packages, dependency-cruiser, grimp) −15 (cap 45) on top of existing semantic-tool
       penalties, so an all-absent repo lands ≈ 0/critical
-- [ ] `cmd/archfit/doctor.go`: add `lizard`, `jscpd`, `gitnexus` rows to the tool table
+- [x] `cmd/archfit/doctor.go`: add `lizard`, `jscpd`, `gitnexus` rows to the tool table
       with detection + a one-line install hint each
-- [ ] write `score_test.go` `TestAnalysisConfidence` cases: coverage n/a + all primary
+- [x] write `score_test.go` `TestAnalysisConfidence` cases: coverage n/a + all primary
       absent → critical; coverage ok + semantic absent → graded drop
-- [ ] build + run `./.bin/archfit doctor` and confirm the three new rows render
-- [ ] `make test` + `make lint` — must pass before Task 3
+- [x] build + run `./.bin/archfit doctor` and confirm the three new rows render
+- [x] `make test` + `make lint` — must pass before Task 3
 
 ### Task 3: Surface coverage gaps + config warnings (warn-loud default)
 
