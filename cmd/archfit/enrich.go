@@ -40,6 +40,7 @@ const enrichBatchSize = 30
 // LLM into .archfit-subdomains.yaml; --pin applies approved entries into .archfit.yaml.
 type EnrichCmd struct {
 	Config     string `short:"c" default:".archfit.yaml"`
+	Root       string `help:"Repository root to analyze (default: directory of --config). Decouples the scanned repo from where the config lives." type:"path"`
 	Subdomains bool   `name:"subdomains" help:"Draft subdomain (core/supporting/generic) per module via LLM, then pin approved values into .archfit.yaml."`
 	Owner      bool   `name:"owner"      help:"Draft module owner per module via LLM (uses CODEOWNERS context) into .archfit-owners.yaml, then pin approved values into .archfit.yaml."`
 	Volatility bool   `name:"volatility" help:"Draft module volatility (low/medium/high) per module via LLM into .archfit-volatility.yaml, then pin approved values into .archfit.yaml."`
@@ -113,7 +114,7 @@ func (c *EnrichCmd) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	}
 
 	configDir := filepath.Dir(c.Config)
-	cacheDir := filepath.Join(configDir, ".archfit-cache", "llm")
+	cacheDir := llmCacheDir(configDir)
 	provider, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
@@ -131,7 +132,7 @@ func (c *EnrichCmd) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	if _, err := runPipeline(ctx, deps, cfg, c.Config, "", false, engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
+	if _, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
@@ -186,7 +187,7 @@ func (c *EnrichCmd) runSubdomainDraft(ctx context.Context, deps *appDeps) error 
 	}
 
 	configDir := filepath.Dir(c.Config)
-	cacheDir := filepath.Join(configDir, ".archfit-cache", "llm")
+	cacheDir := llmCacheDir(configDir)
 	provider, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
@@ -211,7 +212,10 @@ func (c *EnrichCmd) runSubdomainDraft(ctx context.Context, deps *appDeps) error 
 		return nil
 	}
 
-	root := configDir
+	root := c.Root
+	if root == "" {
+		root = configDir
+	}
 	targets := initcfg.BuildClassifyTargets(root, toClassify)
 	ann, err := classifyModules(ctx, provider, targets, cfg.Layers)
 	if err != nil {
@@ -351,6 +355,13 @@ func buildCachedProvider(override llm.Provider, cfg config.LLMConfig, cacheDir s
 		p = llm.NewCache(p, cacheDir)
 	}
 	return p, nil
+}
+
+// llmCacheDir returns the on-disk LLM response cache directory under baseDir.
+// One definition of the ".archfit-cache/llm" layout shared by every LLM command
+// (enrich, review, explain, autopilot, init, update) and reported by doctor.
+func llmCacheDir(baseDir string) string {
+	return filepath.Join(baseDir, ".archfit-cache", "llm")
 }
 
 // refinablePair is one candidate module pair with its evidence summary.

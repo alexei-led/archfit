@@ -7,11 +7,9 @@ const (
 	providerOllama    = "ollama"
 )
 
-// defaultLLMProvider and defaultLLMModel are the CLI flag defaults.
-const (
-	defaultLLMProvider = providerAnthropic
-	defaultLLMModel    = "claude-opus-4-8"
-)
+// defaultLLMModel is the CLI flag default model (provider defaults are kong
+// string tags on each command).
+const defaultLLMModel = "claude-opus-4-8"
 
 // Subdomain enum values used in classify validation and tests.
 const (

@@ -87,9 +87,11 @@ func (m EncapsulationMetric) Calculate(in signal.CommonInput) diagnostic.MetricR
 		}
 	}
 
-	// No dependency edges at all: nothing was extracted (e.g. a non-Go repo or an
-	// unanalysed root). Report n/a rather than a vacuous 1.0 — an empty graph is
-	// absence of evidence, not earned encapsulation.
+	// depEdges == 0: the extractor ran but produced a graph with no dependency
+	// edges — distinct from the nil-graph case above, where no extractor ran at
+	// all. Happens for a non-Go repo, an unanalysed root, or a module with no
+	// imports. Report n/a rather than a vacuous 1.0 — an empty graph is absence of
+	// evidence, not earned encapsulation.
 	if depEdges == 0 {
 		return m.naResult(in.Baseline)
 	}

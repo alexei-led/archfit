@@ -145,7 +145,7 @@ func (c *UpdateCmd) buildLLMProvider(cfg config.Config) (llm.Provider, error) {
 	llmCfg.Provider = c.LLMProvider
 	llmCfg.Model = c.LLMModel
 
-	cacheDir := filepath.Join(filepath.Dir(c.Config), ".archfit-cache", "llm")
+	cacheDir := llmCacheDir(filepath.Dir(c.Config))
 	p, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
 	if err != nil {
 		return nil, &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}

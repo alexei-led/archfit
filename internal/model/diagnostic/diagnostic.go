@@ -179,6 +179,9 @@ const (
 )
 
 // SchemaVersion is the fixed schema_version value emitted in every diagnostic.
+// The schema is additive within a major version: new optional fields (e.g. the
+// delta block) are introduced without a version bump, so JSON consumers must
+// ignore unknown fields — do not decode a v1 payload with DisallowUnknownFields.
 const SchemaVersion = "archfit.diagnostic.v1"
 
 // Diagnostic is the top-level output contract for archfit check (spec §12).

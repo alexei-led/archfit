@@ -33,8 +33,8 @@ func loadDotEnv(path string) {
 		if key == "" {
 			continue
 		}
-		if os.Getenv(key) != "" {
-			continue // real env / CI secret wins
+		if _, set := os.LookupEnv(key); set {
+			continue // real env / CI secret wins (even when set to "")
 		}
 		_ = os.Setenv(key, unquoteEnvValue(strings.TrimSpace(val)))
 	}

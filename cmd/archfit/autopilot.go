@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/initcfg"
@@ -34,7 +35,7 @@ type AutopilotCmd struct {
 
 func (c *AutopilotCmd) Run(deps *appDeps) error {
 	// Safety: autopilot drafts for review and must never overwrite the live config.
-	if c.Output != "-" && filepath.Base(c.Output) == defaultConfigPath {
+	if c.Output != "-" && strings.EqualFold(filepath.Base(c.Output), defaultConfigPath) {
 		return &exitError{code: 3, msg: "error: autopilot never writes .archfit.yaml directly — point --output at a review file and apply after review"}
 	}
 
@@ -63,7 +64,7 @@ func (c *AutopilotCmd) Run(deps *appDeps) error {
 	llmCfg.Provider = c.LLMProvider
 	llmCfg.Model = c.LLMModel
 
-	cacheDir := filepath.Join(root, ".archfit-cache", "llm")
+	cacheDir := llmCacheDir(root)
 	p, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}

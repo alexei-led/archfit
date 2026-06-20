@@ -92,7 +92,7 @@ func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, con
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (see `archfit doctor`)", err)}
 	}
 	if !noCache {
-		provider = llm.NewCache(provider, filepath.Join(filepath.Dir(configPath), ".archfit-cache", "llm"))
+		provider = llm.NewCache(provider, llmCacheDir(filepath.Dir(configPath)))
 	}
 
 	var b strings.Builder

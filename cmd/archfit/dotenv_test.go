@@ -47,6 +47,26 @@ func TestLoadDotEnv(t *testing.T) {
 	}
 }
 
+// TestLoadDotEnv_EmptyEnvVarWins verifies the LookupEnv fix: a key explicitly
+// set to "" in the environment must be treated as "present" and never overwritten
+// by the file value. The old os.Getenv(key) != "" check incorrectly treated ""
+// as unset and would have clobbered it.
+func TestLoadDotEnv_EmptyEnvVarWins(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	if err := os.WriteFile(path, []byte("ARCHFIT_TEST_EMPTY=from_file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Explicitly set to empty string — must win over the file value.
+	t.Setenv("ARCHFIT_TEST_EMPTY", "")
+
+	loadDotEnv(path)
+
+	if got, ok := os.LookupEnv("ARCHFIT_TEST_EMPTY"); !ok || got != "" {
+		t.Errorf("ARCHFIT_TEST_EMPTY = (%q, %v), want (\"\", true) — empty env var must not be overwritten", got, ok)
+	}
+}
+
 func TestLoadDotEnv_MissingFileIsNoop(t *testing.T) {
 	// Must not panic or error on an absent file.
 	loadDotEnv(filepath.Join(t.TempDir(), "does-not-exist.env"))

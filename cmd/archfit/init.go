@@ -66,7 +66,7 @@ func (c *InitCmd) Run(deps *appDeps) error {
 		llmCfg.Provider = c.LLMProvider
 		llmCfg.Model = c.LLMModel
 
-		cacheDir := filepath.Join(root, ".archfit-cache", "llm")
+		cacheDir := llmCacheDir(root)
 		p, buildErr := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
 		if buildErr != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", buildErr)}

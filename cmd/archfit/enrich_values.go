@@ -82,7 +82,7 @@ func (c *EnrichCmd) runValueDraft(ctx context.Context, deps *appDeps, spec value
 	}
 
 	configDir := filepath.Dir(c.Config)
-	cacheDir := filepath.Join(configDir, ".archfit-cache", "llm")
+	cacheDir := llmCacheDir(configDir)
 	provider, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
@@ -102,10 +102,14 @@ func (c *EnrichCmd) runValueDraft(ctx context.Context, deps *appDeps, spec value
 		return nil
 	}
 
-	targets := initcfg.BuildClassifyTargets(configDir, toFill)
+	scanRoot := c.Root
+	if scanRoot == "" {
+		scanRoot = configDir
+	}
+	targets := initcfg.BuildClassifyTargets(scanRoot, toFill)
 	codeowners := ""
 	if spec.withCodeowners {
-		codeowners = readCodeowners(configDir)
+		codeowners = readCodeowners(scanRoot)
 	}
 	drafts, err := draftModuleValues(ctx, provider, spec, targets, codeowners)
 	if err != nil {
