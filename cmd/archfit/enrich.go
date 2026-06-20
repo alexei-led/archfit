@@ -41,7 +41,9 @@ const enrichBatchSize = 30
 type EnrichCmd struct {
 	Config     string `short:"c" default:".archfit.yaml"`
 	Subdomains bool   `name:"subdomains" help:"Draft subdomain (core/supporting/generic) per module via LLM, then pin approved values into .archfit.yaml."`
-	Pin        bool   `name:"pin"        help:"With --subdomains: read approved entries from the draft file and write them into .archfit.yaml."`
+	Owner      bool   `name:"owner"      help:"Draft module owner per module via LLM (uses CODEOWNERS context) into .archfit-owners.yaml, then pin approved values into .archfit.yaml."`
+	Volatility bool   `name:"volatility" help:"Draft module volatility (low/medium/high) per module via LLM into .archfit-volatility.yaml, then pin approved values into .archfit.yaml."`
+	Pin        bool   `name:"pin"        help:"With --subdomains/--owner/--volatility: read approved entries from the draft file and write them into .archfit.yaml."`
 	ReviewedBy string `name:"reviewed-by" help:"Human reviewer identity stamped on pinned entries." default:""`
 	NoCache    bool   `name:"no-cache" help:"Bypass the LLM response cache."`
 
@@ -70,6 +72,16 @@ func (c *EnrichCmd) Run(deps *appDeps) error {
 	}
 	if c.Subdomains {
 		return c.runSubdomainDraft(ctx, deps)
+	}
+	if c.Owner || c.Volatility {
+		spec := ownerSpec
+		if c.Volatility {
+			spec = volatilitySpec
+		}
+		if c.Pin {
+			return c.runValuePin(ctx, deps, spec)
+		}
+		return c.runValueDraft(ctx, deps, spec)
 	}
 	return c.runLabelEnrich(ctx, deps)
 }

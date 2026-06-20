@@ -106,11 +106,12 @@ For each module, determine:
 - subdomain: one of "core" (central business capability), "supporting" (enables core, not differentiating), or "generic" (commodity/utility, replaceable)
 - volatility: one of "low" (stable interfaces, rarely changes), "medium" (changes occasionally), or "high" (frequently evolving)
 - layer: choose from the allowed layer set provided in the user prompt; pick the closest semantic match
+- role (optional): one of "composition_root" (wiring/main that fans out to everything), "adapter" (I/O boundary), "core" (domain logic), "shared_model" (cross-cutting types), "generated", or "test" — omit when none fits
 - name: a concise suggested module name (optional improvement; keep original if good)
 - rationale: one sentence explaining the classification
 
 Respond with a JSON ARRAY only — no prose, no markdown fences, no code blocks. Each entry must include a "module" field matching the provided module name exactly:
-[{"module":"<name>","subdomain":"core|supporting|generic","volatility":"low|medium|high","layer":"<from allowed set>","name":"<suggested>","rationale":"<one sentence>"}]`
+[{"module":"<name>","subdomain":"core|supporting|generic","volatility":"low|medium|high","layer":"<from allowed set>","role":"<optional role or empty>","name":"<suggested>","rationale":"<one sentence>"}]`
 
 // classifyBatchSize bounds how many modules go into one LLM classify request.
 const classifyBatchSize = 25
@@ -137,14 +138,19 @@ type classifyResponse struct {
 	Subdomain  string `json:"subdomain"`
 	Volatility string `json:"volatility"`
 	Layer      string `json:"layer"`
+	Role       string `json:"role"`
 	Name       string `json:"name"`
 	Rationale  string `json:"rationale"`
 }
 
-// validSubdomains and validVolatilities are the allowed enum values.
+// validSubdomains, validVolatilities, and validRoles are the allowed enum values.
 var (
 	validSubdomains   = map[string]bool{subdomainCore: true, subdomainSupporting: true, subdomainGeneric: true}
 	validVolatilities = map[string]bool{volatilityLow: true, volatilityMedium: true, volatilityHigh: true}
+	validRoles        = map[string]bool{
+		string(config.RoleCompositionRoot): true, string(config.RoleAdapter): true, string(config.RoleCore): true,
+		string(config.RoleSharedModel): true, string(config.RoleGenerated): true, string(config.RoleTest): true,
+	}
 )
 
 // classifyModules sends targets to the LLM in batches of classifyBatchSize and
@@ -205,11 +211,17 @@ func parseClassifyResponse(text string, batch []initcfg.ClassifyTarget, dst map[
 		if !validVolatilities[e.Volatility] {
 			continue // invalid volatility enum — skip
 		}
-		// Layer is carried raw even if out of the allowed set.
+		// Layer is carried raw even if out of the allowed set. Role is optional —
+		// keep it only when it is a valid enum value, drop anything else.
+		role := ""
+		if validRoles[e.Role] {
+			role = e.Role
+		}
 		dst[e.Module] = initcfg.ModuleAnnotation{
 			Subdomain:     e.Subdomain,
 			Volatility:    e.Volatility,
 			Layer:         e.Layer,
+			Role:          role,
 			SuggestedName: e.Name,
 		}
 	}

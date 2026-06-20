@@ -311,19 +311,30 @@ AffectedMetrics []string, Gate string}` and fields `CoverageGaps []CoverageGap` 
 
 ### Task 7: LLM self-driving — enrich owners/volatility, autopilot, .env
 
-- [ ] `internal/initcfg/*`: add `OwnerDraft`/`VolatilityDraft` structs + load/save mirroring
-      the existing subdomain draft+pin pattern (additive YAML merge into `.archfit.yaml`)
-- [ ] `cmd/archfit/enrich.go`: add `--owner` and `--volatility` modes — draft via LLM from
+- [x] `internal/initcfg/*`: add `OwnerDraft`/`VolatilityDraft` structs + load/save mirroring
+      the existing subdomain draft+pin pattern (additive YAML merge into `.archfit.yaml`) —
+      owner and volatility are structurally identical single-scalar drafts, so one generic
+      `ValueDraft`/`ValueDraftFile` (with a `Field` discriminator) + `Load/Write/MergeValueDrafts`
+      (`value_draft.go`) and `PinModuleValues` (`value_pin.go`, new `FieldOwner` in yamledit)
+      serve both — less duplication than two near-identical files
+- [x] `cmd/archfit/enrich.go`: add `--owner` and `--volatility` modes — draft via LLM from
       CODEOWNERS + git churn into `.archfit-owners.yaml` / `.archfit-volatility.yaml`; `--pin`
-      writes approved entries into `modules.<name>` (never removes existing fields)
-- [ ] `cmd/archfit/autopilot.go` (new) + wire into the kong CLI: one-shot scan → LLM-draft a
+      writes approved entries into `modules.<name>` (never removes existing fields). Implemented in
+      `enrich_values.go` via a shared `valueSpec`; owner reads CODEOWNERS (`readCodeowners`); both
+      infer from module paths/files (git-churn evidence deferred — LLM infers volatility from
+      structure, same as `init --llm`); pin reuses `safeWriteConfig` and never overwrites a live field
+- [x] `cmd/archfit/autopilot.go` (new) + wire into the kong CLI: one-shot scan → LLM-draft a
       full `.archfit.yaml` (modules, layers, owners, volatility, gates) to a review file;
-      **never** auto-apply; reuse the pipeline capture + provider plumbing
-- [ ] `cmd/archfit/main.go`: optional `.env` autoload at startup — set a key only when
+      **never** auto-apply; reuse the pipeline capture + provider plumbing — reuses init's
+      Discover+classify (now drafts `role` too) plus the owner-draft pass, renders in plan mode
+      (every field commented), writes to `.archfit-autopilot.yaml`, and refuses `--output .archfit.yaml`
+- [x] `cmd/archfit/main.go`: optional `.env` autoload at startup — set a key only when
       `os.Getenv(key)==""` (real env / CI secrets always win); add `.env` to `.gitignore`
-- [ ] write `internal/initcfg` tests for owner/volatility draft+pin; write a cmd test that
-      `autopilot` writes a draft and applies nothing
-- [ ] `go test ./internal/initcfg/... ./cmd/archfit/...` +
+      (`dotenv.go`: `loadDotEnv` called from `main()`; `.env` already gitignored)
+- [x] write `internal/initcfg` tests for owner/volatility draft+pin; write a cmd test that
+      `autopilot` writes a draft and applies nothing (`value_test.go`, `enrich_values_test.go`,
+      `autopilot_test.go`, `dotenv_test.go`)
+- [x] `go test ./internal/initcfg/... ./cmd/archfit/...` +
       `go test ./internal/ -run TestArchImports` (llm stays cmd-only) + `make lint`;
       `./.bin/archfit enrich --help` and `./.bin/archfit autopilot --help` render — before Task 8
 
