@@ -217,14 +217,14 @@ Language:"rust", Confidence:"high", Locations:[{File:"Cargo.toml"}]}`; skip dev-
 
 ### Task 9: Config — Rust language key, view fields, and `ForExtract` branch
 
-- [ ] `internal/config/tools.go`: add `LangRust = "rust"`; add to `Default()` tools map (`ModeAuto`)
-- [ ] `internal/config/types.go`: add `ExtractConfig` fields `CargoManifest string`,
+- [x] `internal/config/tools.go`: add `LangRust = "rust"`; add to `Default()` tools map (`ModeAuto`)
+- [x] `internal/config/types.go`: add `ExtractConfig` fields `CargoManifest string`,
       `CargoFeatures []string`, `IncludeDevDeps bool`; add top-level YAML fields
       `rust_manifest`/`rust_features`/`rust_include_dev_deps` to `Config`
-- [ ] `internal/config/views.go` `ForExtract`: add a `lang == LangRust` branch mapping the
+- [x] `internal/config/views.go` `ForExtract`: add a `lang == LangRust` branch mapping the
       new fields into the view (mirror the existing `LangPython` PyPackage branch)
-- [ ] write/extend config tests: `ForExtract("rust")` populates the Rust fields; default mode
-- [ ] run `go test ./internal/config/ -v` + `make test` + `make lint` before Task 10
+- [x] write/extend config tests: `ForExtract("rust")` populates the Rust fields; default mode
+- [x] run `go test ./internal/config/ -v` + `make test` + `make lint` before Task 10
 
 ### Task 10: Register Rust in registry + doctor + initcfg
 

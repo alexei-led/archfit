@@ -27,6 +27,9 @@ type Config struct {
 	MapReview             MapReviewConfig      `yaml:"map_review"`
 	Outputs               OutputsConfig        `yaml:"outputs"`
 	PythonPackage         string               `yaml:"python_package"`           // top-level Python package name for grimp
+	RustManifest          string               `yaml:"rust_manifest"`            // path to Cargo.toml (empty = auto, root manifest)
+	RustFeatures          []string             `yaml:"rust_features"`            // cargo features to activate for metadata
+	RustIncludeDevDeps    bool                 `yaml:"rust_include_dev_deps"`    // include dev-dependencies as crate edges
 	BCAdvisoryMinSeverity string               `yaml:"bc_advisory_min_severity"` // minimum severity to emit BC coupling advisories: low|medium|high|critical (default: low)
 
 	// explicitOwners records which modules had a hand-authored `owner:` in YAML,
@@ -191,6 +194,7 @@ func Default() Config {
 			LangGo:         {Enabled: ModeAuto},
 			LangTypeScript: {Enabled: ModeAuto},
 			LangPython:     {Enabled: ModeAuto},
+			LangRust:       {Enabled: ModeAuto},
 		},
 	}
 }

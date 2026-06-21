@@ -18,6 +18,7 @@ const (
 	LangGo         = "go"
 	LangTypeScript = "typescript"
 	LangPython     = "python"
+	LangRust       = "rust"
 )
 
 // ToolScip is the Tools map key for the SCIP symbol-level strength provider.

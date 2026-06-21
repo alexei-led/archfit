@@ -204,6 +204,84 @@ func TestForExtract(t *testing.T) {
 			t.Errorf("ForExtract internal globs missing pricing internal glob; got %v", ec.Internal)
 		}
 	})
+
+	t.Run("rust_mode_default_auto", func(t *testing.T) {
+		// rust tool not in testdata/valid.yaml → defaults to auto
+		ec := cfg.ForExtract("rust")
+		if ec.Mode != config.ModeAuto {
+			t.Errorf("ForExtract(rust).Mode = %q, want auto", ec.Mode)
+		}
+	})
+
+	t.Run("rust_fields_populated", func(t *testing.T) {
+		rc := config.Config{
+			Version:            1,
+			RustManifest:       rustManifestPath,
+			RustFeatures:       rustFeatures,
+			RustIncludeDevDeps: true,
+		}
+		ec := rc.ForExtract("rust")
+		if ec.CargoManifest != rustManifestPath {
+			t.Errorf("CargoManifest = %q, want %q", ec.CargoManifest, rustManifestPath)
+		}
+		if !slices.Equal(ec.CargoFeatures, rustFeatures) {
+			t.Errorf("CargoFeatures = %v, want %v", ec.CargoFeatures, rustFeatures)
+		}
+		if !ec.IncludeDevDeps {
+			t.Error("IncludeDevDeps = false, want true")
+		}
+	})
+
+	t.Run("rust_fields_absent_for_non_rust", func(t *testing.T) {
+		// A non-rust language must not pick up the Cargo fields.
+		rc := config.Config{Version: 1, RustManifest: "Cargo.toml", RustIncludeDevDeps: true}
+		ec := rc.ForExtract("go")
+		if ec.CargoManifest != "" || ec.CargoFeatures != nil || ec.IncludeDevDeps {
+			t.Errorf("non-rust lang leaked rust fields: %+v", ec)
+		}
+	})
+}
+
+func TestDefaultIncludesRust(t *testing.T) {
+	cfg := config.Default()
+	rust, ok := cfg.Tools[config.LangRust]
+	if !ok {
+		t.Fatal("Default().Tools missing rust entry")
+	}
+	if rust.Enabled != config.ModeAuto {
+		t.Errorf("Default rust mode = %q, want auto", rust.Enabled)
+	}
+}
+
+// Test fixtures for the Rust ForExtract / Load round-trip, factored out to keep
+// goconst quiet about repeated literals across subtests.
+const rustManifestPath = "crates/core/Cargo.toml"
+
+var rustFeatures = []string{"serde", "tokio"}
+
+func TestLoadRustFields(t *testing.T) {
+	yaml := "version: 1\n" +
+		"rust_manifest: " + rustManifestPath + "\n" +
+		"rust_features: [serde, tokio]\n" +
+		"rust_include_dev_deps: true\n"
+	path := filepath.Join(t.TempDir(), "rust.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg, err := config.Load(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	ec := cfg.ForExtract("rust")
+	if ec.CargoManifest != rustManifestPath {
+		t.Errorf("CargoManifest = %q, want %q", ec.CargoManifest, rustManifestPath)
+	}
+	if !slices.Equal(ec.CargoFeatures, rustFeatures) {
+		t.Errorf("CargoFeatures = %v, want %v", ec.CargoFeatures, rustFeatures)
+	}
+	if !ec.IncludeDevDeps {
+		t.Error("IncludeDevDeps = false, want true")
+	}
 }
 
 func TestForClassify(t *testing.T) {

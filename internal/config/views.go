@@ -103,6 +103,13 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 		ec.PyPackage = c.PythonPackage
 	}
 
+	// Rust-specific fields.
+	if lang == LangRust {
+		ec.CargoManifest = c.RustManifest
+		ec.CargoFeatures = c.RustFeatures
+		ec.IncludeDevDeps = c.RustIncludeDevDeps
+	}
+
 	// Derive Mode from the Tools map. The key is the language name itself.
 	if tc, ok := c.Tools[lang]; ok {
 		ec.Mode = tc.Enabled
