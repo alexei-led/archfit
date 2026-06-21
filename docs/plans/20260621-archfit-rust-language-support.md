@@ -120,15 +120,15 @@ Templates to copy: `internal/extract/ts/ts.go` (subprocess + JSON), `internal/ex
 
 ### Task 2: Split `internal/engine/engine.go` (inert, same package)
 
-- [ ] move into new same-package files: `advisories.go` (`collectAdvisories`,
+- [x] move into new same-package files: `advisories.go` (`collectAdvisories`,
       `groupBCAdvisories`, `rollupFinding`, `mergeLocations`, `severityFor`,
       `bcAdvisoryWhy/RiskClause`, `couplingAdvisoryID`, `staleLabelID`), `labels.go`
       (`applyPinnedLabels`, exported `PairEvidence`, `buildClonePairSet`), `assemble.go`
       (`buildDynamicImports`, `deltaReport`, `countActive`, `stripPrefix`, `pathDir`)
-- [ ] keep `engine.go` = `Run`/`RunInput`/`Mode`/`extract`/`resolveEvidence`/`enrichEdges`
-- [ ] `go build ./...` — confirm `cmd/archfit/enrich.go` still resolves `engine.PairEvidence`
-- [ ] run `go test ./internal/engine/ -run TestGolden` — **byte-identical**
-- [ ] run `make test` + `make lint` — must pass before Task 3
+- [x] keep `engine.go` = `Run`/`RunInput`/`Mode`/`extract`/`resolveEvidence`/`enrichEdges`
+- [x] `go build ./...` — confirm `cmd/archfit/enrich.go` still resolves `engine.PairEvidence`
+- [x] run `go test ./internal/engine/ -run TestGolden` — **byte-identical**
+- [x] run `make test` + `make lint` — must pass before Task 3
 
 ### Task 3: Split `internal/initcfg/initcfg.go` (inert, same package)
 
