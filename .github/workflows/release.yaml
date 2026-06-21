@@ -175,11 +175,37 @@ jobs:
             --notes-file RELEASE_NOTES.md \
             ${{ steps.prerelease.outputs.flag }} \
             dist/*
-      - name: Update Homebrew formula
-        if: ${{ !contains(github.ref_name, '-rc.') }}
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.TAP_GITHUB_TOKEN }}
-          repository: alexei-led/homebrew-tap
-          event-type: update-formula
-          client-payload: '{"formula": "archfit", "version": "${{ github.ref_name }}", "repo": "alexei-led/archfit"}'
+  update-homebrew:
+    name: Update Homebrew formula
+    runs-on: ubuntu-latest
+    # Isolated from the release job: the GitHub release, binaries, and image are
+    # already published by the time this runs. Skipped for pre-releases.
+    needs: release
+    if: ${{ !contains(github.ref_name, '-rc.') }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Fetch SHA256SUMS from release
+        run: |
+          curl -sL -f \
+            "https://github.com/alexei-led/archfit/releases/download/${{ github.ref_name }}/SHA256SUMS" \
+            -o SHA256SUMS
+      - name: Generate formula
+        run: |
+          ruby scripts/update_homebrew_formula.rb "${GITHUB_REF_NAME#v}" SHA256SUMS > archfit.rb
+          cat archfit.rb
+      - name: Push to homebrew-tap
+        env:
+          GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          git clone \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/alexei-led/homebrew-tap.git" \
+            tap
+          cp archfit.rb tap/Formula/archfit.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/archfit.rb
+          git commit -m "archfit ${GITHUB_REF_NAME#v}"
+          git push
