@@ -12,6 +12,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -55,6 +56,8 @@ type Runner interface {
 	// Error is returned only for exec-level failures (binary missing, I/O error).
 	Run(ctx context.Context, cmd ToolCmd) (Output, error)
 }
+
+const gitCommand = "git"
 
 // ToolRunner is the concrete Runner implementation.
 // It is the only type in the codebase that may use os/exec.
@@ -101,10 +104,18 @@ func (r *ToolRunner) Run(ctx context.Context, cmd ToolCmd) (Output, error) {
 	}
 
 	// Inherit the parent process environment for tools that need PATH, GOPATH,
-	// HOME, etc. Pin locale and timezone on top for deterministic output; caller
-	// env appended last so callers can override if needed.
-	c.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC")
-	c.Env = append(c.Env, cmd.Env...)
+	// HOME, etc. Git commands that target a specific WorkDir must not inherit
+	// hook-provided repo locators (GIT_DIR, GIT_WORK_TREE, …), otherwise a push
+	// hook can make git treat an unrelated temp dir as the current repo.
+	env := os.Environ()
+	if cmd.Name == gitCommand && cmd.WorkDir != "" {
+		env = scrubGitRepoEnv(env)
+	}
+	// Pin locale and timezone on top for deterministic output; caller env
+	// appended last so callers can override if needed.
+	env = append(env, "LC_ALL=C", "TZ=UTC")
+	env = append(env, cmd.Env...)
+	c.Env = env
 
 	var stdout, stderr bytes.Buffer
 	c.Stdout = &stdout
@@ -133,4 +144,26 @@ func (r *ToolRunner) Run(ctx context.Context, cmd ToolCmd) (Output, error) {
 	}
 
 	return out, nil
+}
+
+func scrubGitRepoEnv(env []string) []string {
+	blocked := map[string]bool{
+		"GIT_DIR":                          true,
+		"GIT_WORK_TREE":                    true,
+		"GIT_COMMON_DIR":                   true,
+		"GIT_PREFIX":                       true,
+		"GIT_INDEX_FILE":                   true,
+		"GIT_OBJECT_DIRECTORY":             true,
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
+	}
+
+	filtered := make([]string, 0, len(env))
+	for _, entry := range env {
+		name, _, found := strings.Cut(entry, "=")
+		if found && blocked[name] {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }
