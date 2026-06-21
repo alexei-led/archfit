@@ -161,6 +161,12 @@ the architect converge on the verdict and core issues. archfit even caught **mod
 cycles the architect missed** (yazi 26, herdr 5) — the human review only checked
 crate/top-level granularity. SCIP coverage was deep (yazi seen=12929, herdr seen=2375).
 
+Status (commit 30ac2c7, branch rebased onto main): **Cal-1, Cal-2, Cal-3, Cal-5 done**
+(+ real cargo-modules/coverage bugs fixed: ModeOff zero-coverage, `--bin` target-name,
+partial-coverage confidence cap). **Cal-4 and Cal-6 remain** — Cal-4 is a real feature
+(file→module LOC plumbing under the filesystem-free core ring); Cal-6 is meta-only and
+was reverted once for test friction, so it is deferred as low-value/low-risk-to-defer.
+
 The following calibration items remain (evidence: the two-repo run). None is a broken
 tool; they are scoring/labelling refinements.
 
