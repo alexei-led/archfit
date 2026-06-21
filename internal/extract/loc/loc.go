@@ -19,12 +19,14 @@ const toolName = "loc"
 // sourceExts are the file extensions counted for the structural_weight metric.
 var sourceExts = map[string]bool{
 	".go": true, ".py": true, ".ts": true, ".tsx": true, ".js": true, ".jsx": true,
+	".rs": true,
 }
 
-// skipDirs are directory names never walked for source LOC.
+// skipDirs are directory names never walked for source LOC. "target" is Cargo's
+// build-output directory (the Rust analogue of node_modules/dist).
 var skipDirs = map[string]bool{
 	"node_modules": true, "dist": true, "vendor": true, "venv": true,
-	".venv": true, "build": true, "testdata": true, "mocks": true,
+	".venv": true, "build": true, "testdata": true, "mocks": true, "target": true,
 }
 
 // Run walks root and returns a repo-relative path→LOC map plus a coverage

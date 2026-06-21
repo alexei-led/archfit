@@ -148,21 +148,35 @@ func pythonModuleFileCandidates(modulePath string) []string {
 	return []string{slashed + ".py", slashed + ".pyi", slashed + "/__init__.py"}
 }
 
-// rustFileToModuleKey maps a Rust source file to its crate via the cargo
-// workspace directory convention (crates/<name>/…). Precise crate boundaries
-// need member paths the filesystem-free core ring lacks, so files outside
-// crates/ map to "" — a documented ceiling; change-coupling is a secondary
-// metric and crate-level granularity is the accepted tradeoff.
+// rustCrateSubdirs are the conventional top-level directories inside a Cargo
+// crate. Their presence as the second path segment marks the first segment as a
+// crate directory in a root-level workspace layout (<crate>/src/…).
+var rustCrateSubdirs = map[string]bool{"src": true, "tests": true, "benches": true, "examples": true}
+
+// rustFileToModuleKey maps a Rust source file to its crate. It handles the two
+// dominant Cargo workspace layouts: members nested under crates/ (crates/<name>/…)
+// and members at the workspace root (<name>/src/…), the latter identified by a
+// conventional crate subdir as the second segment. Precise crate boundaries need
+// the cargo member-path map the filesystem-free core ring lacks, so the root crate's
+// own files (e.g. "src/main.rs") and unrecognised layouts map to "", and the
+// directory name is assumed to equal the crate name — documented ceilings; crate-level
+// granularity is the accepted tradeoff for the secondary size/change-coupling metrics.
 func rustFileToModuleKey(file string) string {
 	if !strings.HasSuffix(file, ".rs") {
 		return ""
 	}
-	rest, ok := strings.CutPrefix(file, "crates/")
-	if !ok {
-		return ""
+	// crates/<name>/… layout.
+	if rest, ok := strings.CutPrefix(file, "crates/"); ok {
+		if name, _, found := strings.Cut(rest, "/"); found {
+			return name
+		}
+		return strings.TrimSuffix(rest, ".rs")
 	}
-	if name, _, found := strings.Cut(rest, "/"); found {
-		return name
+	// Root-level workspace member: <crate>/{src,tests,benches,examples}/…
+	if dir, rest, found := strings.Cut(file, "/"); found {
+		if sub, _, ok := strings.Cut(rest, "/"); ok && rustCrateSubdirs[sub] {
+			return dir
+		}
 	}
-	return strings.TrimSuffix(rest, ".rs")
+	return ""
 }

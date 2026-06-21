@@ -75,7 +75,10 @@ func TestNodeConventionFileToModuleKey(t *testing.T) {
 		{"python non-py file", LangPython, "pkg/mod.pyi", ""},
 		{"ts passthrough", LangTypeScript, "src/a.ts", "src/a.ts"},
 		{"rust workspace crate", LangRust, "crates/grep/src/lib.rs", "grep"},
-		{"rust outside crates", LangRust, "src/main.rs", ""},
+		{"rust root-level member", LangRust, "yazi-fs/src/cha/type.rs", "yazi-fs"},
+		{"rust root-level member tests", LangRust, "yazi-core/tests/it.rs", "yazi-core"},
+		{"rust root crate src", LangRust, "src/main.rs", ""},
+		{"rust root crate nested src", LangRust, "src/cmd/run.rs", ""},
 		{"rust non-rs file", LangRust, "crates/grep/Cargo.toml", ""},
 		{"unknown passthrough", langRuby, "lib/foo.rb", "lib/foo.rb"},
 	}

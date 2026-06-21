@@ -45,13 +45,13 @@ var lizardExcludes = []string{
 }
 
 // lizardLanguages pins the languages lizard analyses to the set archfit
-// supports (Go, Python, TS/JS). Passing explicit -l flags makes detection
+// supports (Go, Python, TS/JS, Rust). Passing explicit -l flags makes detection
 // deterministic and version-independent: lizard's default "all languages it
 // knows" set has drifted across releases (typescript/tsx were not auto-detected
 // in older lizard), so without this lizard could silently skip Python or TS
 // files and report complexity n/a even when the tool is installed. Names are
 // lizard's own language identifiers.
-var lizardLanguages = []string{"go", "python", "javascript", "typescript", "tsx"}
+var lizardLanguages = []string{"go", "python", "javascript", "typescript", "tsx", "rust"}
 
 // Run invokes lizard over root and returns per-function complexity records.
 // When enabled is false or the tool is absent, it returns an empty slice with
