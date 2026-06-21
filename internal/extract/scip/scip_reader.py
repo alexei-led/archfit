@@ -89,7 +89,7 @@ def _to_path(symbol: str, lang: str) -> str | None:
     if lang == "go":
         prefix = pkg + "/"                                  # strip gomod module prefix
         return c[len(prefix):] if c.startswith(prefix) else (None if c == pkg else c)
-    return c                                                # ts: file path as-is
+    return c                                                # ts/rust: file path as-is
 
 
 def _is_internal(symbol: str, root: str) -> bool:
@@ -127,7 +127,7 @@ def _doc_from(relative_path: str, lang: str) -> str | None:
         if p.startswith("src."):  # src-layout: match grimp's package-relative module
             p = p[4:]
         return None if p in ("", "__init__") else p
-    return relative_path or None  # go/ts: file path
+    return relative_path or None  # go/ts/rust: file path
 
 
 _DEFINITION_ROLE = 0x1  # SymbolRole.Definition bit

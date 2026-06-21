@@ -61,8 +61,10 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		return graph.Facts{}, absentCoverage(""), nil
 	}
 
-	// Applicability: requires Cargo.toml in the project root.
-	if _, err := os.Stat(filepath.Join(s.Root, manifestFile)); os.IsNotExist(err) {
+	// Applicability: requires a readable Cargo.toml in the project root. Any stat
+	// error (absent, unreadable) means not-applicable, matching the py extractor's
+	// presence test — don't fall through to cargo on a non-ENOENT error.
+	if _, err := os.Stat(filepath.Join(s.Root, manifestFile)); err != nil {
 		if e.cfg.Mode == config.ModeOn {
 			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/rust: %s not found at %s", manifestFile, s.Root)
 		}

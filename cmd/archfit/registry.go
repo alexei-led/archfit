@@ -46,9 +46,6 @@ type LanguageDescriptor struct {
 	InstallHint string
 	// DoctorTools are the language-specific binaries `archfit doctor` probes.
 	DoctorTools []doctorTool
-	// SCIPIndexer is the scip indexer binary that provides symbol-level strength
-	// for this language (empty when none). Wired by extract/scip.
-	SCIPIndexer string
 }
 
 // languageRegistry is the single ordered source of truth for supported
@@ -66,7 +63,6 @@ var languageRegistry = []LanguageDescriptor{
 			{"go", "go", "https://go.dev/dl"},
 			{scipGo, scipGo, "go install github.com/sourcegraph/scip-go/cmd/scip-go@latest"},
 		},
-		SCIPIndexer: scipGo,
 	},
 	{
 		ID:             config.LangTypeScript,
@@ -81,7 +77,6 @@ var languageRegistry = []LanguageDescriptor{
 			{"npx", "npx", "ships with node"},
 			{scipTypeScript, scipTypeScript, "npm install -g @sourcegraph/scip-typescript"},
 		},
-		SCIPIndexer: scipTypeScript,
 	},
 	{
 		ID:             config.LangPython,
@@ -94,7 +89,6 @@ var languageRegistry = []LanguageDescriptor{
 			{"python3", "python3", "https://www.python.org/downloads"},
 			{scipPython, scipPython, "npm install -g @sourcegraph/scip-python"},
 		},
-		SCIPIndexer: scipPython,
 	},
 	{
 		ID:             config.LangRust,
@@ -107,7 +101,6 @@ var languageRegistry = []LanguageDescriptor{
 			{toolCargo, toolCargo, "https://rustup.rs"},
 			{scipRust, scipRust, "rustup component add rust-analyzer"},
 		},
-		SCIPIndexer: scipRust,
 	},
 }
 

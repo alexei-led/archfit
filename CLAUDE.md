@@ -50,6 +50,8 @@ release tool) collides on the tag and fails the job.
 
 `Dockerfile` is `debian:bookworm-slim` (glibc; musl broke ast-grep) — one image with
 Go SDK, git, Node 24, dependency-cruiser, ast-grep (`sg`), uv, python3; non-root.
+The Rust toolchain (`cargo`, `rust-analyzer`) is **not** bundled — Rust analysis
+reports `n/a` (never fails) in the image; run on a host with cargo or extend it.
 `archfit doctor` checks tools; `sg` must resolve to ast-grep, not util-linux. Build
 amd64 in CI, not local emulation.
 

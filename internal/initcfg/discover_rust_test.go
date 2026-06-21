@@ -115,14 +115,17 @@ func TestDiscoverRust_MalformedJSON_ReturnsError(t *testing.T) {
 	}
 }
 
-// TestRender_RustToolMode asserts the tools.rust stanza reflects HasRust.
+// TestRender_RustToolMode asserts the tools.rust stanza reflects HasRust. The
+// assertions bind the rust stanza to its mode (rust: → enabled: "<mode>") so a
+// regression that flips the mode is caught — other languages emit "off" too, so
+// a bare `enabled: "off"` check would pass even with the rust stanza wrong.
 func TestRender_RustToolMode(t *testing.T) {
 	on := Render(DiscoveredConfig{HasRust: true}, nil, false)
-	if !strings.Contains(on, "rust:") || !strings.Contains(on, "enabled: \"on\"") {
+	if !strings.Contains(on, "rust:\n    enabled: \"on\"") {
 		t.Errorf("HasRust=true should emit tools.rust enabled on; got:\n%s", on)
 	}
 	off := Render(DiscoveredConfig{HasRust: false}, nil, false)
-	if !strings.Contains(off, "rust:") {
-		t.Errorf("tools.rust stanza should always be emitted; got:\n%s", off)
+	if !strings.Contains(off, "rust:\n    enabled: \"off\"") {
+		t.Errorf("HasRust=false should emit tools.rust enabled off; got:\n%s", off)
 	}
 }

@@ -419,9 +419,10 @@ func architectureFitness(mi metricIndex, base Confidence) Dimension {
 // tool coverage. When extraction ran, file-extraction coverage sets the baseline.
 // When the coverage metric is n/a (no extractor contributed — the repo was not
 // analysed), the baseline starts neutral at 60 and each absent primary extractor
-// (go/packages, dependency-cruiser, grimp) subtracts a fixed penalty so an
-// all-absent repo lands ~0/critical rather than reading pct(0)=0, which hides
-// which extractors are missing. Each absent semantic tool (scip, gitnexus,
+// (the injected PrimaryExtractorTools — go/packages, dependency-cruiser, grimp,
+// cargo — or defaultPrimaryExtractors when none is injected) subtracts a fixed
+// penalty so an all-absent repo lands ~0/critical rather than reading pct(0)=0,
+// which hides which extractors are missing. Each absent semantic tool (scip, gitnexus,
 // lizard/complexity, jscpd/clones) then lowers confidence in the depth of the
 // analysis on top.
 func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex) Dimension {

@@ -47,8 +47,8 @@ const (
 	toolCargo      = "cargo"
 )
 
-// SCIP indexer binary names shared by the language registry (DoctorTools +
-// SCIPIndexer) and the doctor command.
+// SCIP indexer binary names shared by the language registry (DoctorTools) and
+// the doctor command.
 const (
 	scipGo         = "scip-go"
 	scipTypeScript = "scip-typescript"
