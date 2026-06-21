@@ -132,12 +132,12 @@ Templates to copy: `internal/extract/ts/ts.go` (subprocess + JSON), `internal/ex
 
 ### Task 3: Split `internal/initcfg/initcfg.go` (inert, same package)
 
-- [ ] move per-language detection into `discover_go.go`/`discover_ts.go`/`discover_py.go`
+- [x] move per-language detection into `discover_go.go`/`discover_ts.go`/`discover_py.go`
       and shared helpers into `helpers.go`; keep `Discover()` + `Render()` in `initcfg.go`;
       leave `yamledit.go` untouched
-- [ ] no signature changes — pure relocation
-- [ ] run `go build ./... && go test ./internal/initcfg/ -v` — green
-- [ ] run `make test` + `make lint` — must pass before Task 4
+- [x] no signature changes — pure relocation
+- [x] run `go build ./... && go test ./internal/initcfg/ -v` — green
+- [x] run `make test` + `make lint` — must pass before Task 4
 
 ### Task 4: Add `NodeConvention` registry to `internal/model/graph` (model ring)
 
