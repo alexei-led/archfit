@@ -272,24 +272,18 @@ func (a *Adapter) cargoWorkspaceMembers(ctx context.Context, root string) []stri
 		Packages []struct {
 			Name string `json:"name"`
 		} `json:"packages"`
-		WorkspaceMembers []string `json:"workspace_members"`
 	}
 	if err := json.Unmarshal(out.Stdout, &meta); err != nil {
 		return nil
 	}
-	// workspace_members lists package IDs like "name version (path+file:///...)".
-	// Build a set of member IDs so we can filter packages to only workspace members.
-	memberSet := make(map[string]struct{}, len(meta.WorkspaceMembers))
-	for _, id := range meta.WorkspaceMembers {
-		// ID format: "<name> <version> (<source>)" — take the first space-delimited token.
-		name, _, _ := strings.Cut(id, " ")
-		memberSet[name] = struct{}{}
-	}
+	// With --no-deps, `packages` already contains ONLY workspace members (external
+	// dependencies are excluded), so every package name is a member. This avoids
+	// parsing the workspace_members package-IDs, whose format changed in cargo 1.96
+	// to "path+file:///…/<name>#<version>" (no spaces) — the old space-split parser
+	// produced an empty set there, which silently disabled SCIP on every workspace.
 	names := make([]string, 0, len(meta.Packages))
 	for _, p := range meta.Packages {
-		if _, ok := memberSet[p.Name]; ok {
-			names = append(names, p.Name)
-		}
+		names = append(names, p.Name)
 	}
 	return names
 }

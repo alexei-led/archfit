@@ -111,7 +111,10 @@ func (p cargoPackage) hasLibTarget() bool {
 // runCargoModulesForCrate runs cargo-modules for a single crate and parses the DOT
 // output into graph nodes and edges. Returns ok=false on any failure.
 func (e *Extractor) runCargoModulesForCrate(ctx context.Context, crateName, crateDir string, isLib bool) ([]graph.Node, []graph.Edge, bool) {
-	args := []string{"modules", "dependencies", "--no-externs"}
+	// --package is required in a workspace: run from a member dir without it and
+	// cargo-modules errors "Multiple packages present in workspace, please explicitly
+	// select one via --package". Harmless for a single-crate project.
+	args := []string{"modules", "dependencies", "--no-externs", "--package", crateName}
 	if isLib {
 		args = append(args, "--lib")
 	} else {
