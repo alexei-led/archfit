@@ -17,24 +17,21 @@ Already shipped this effort:
 - [done] T5 docs (1501379). T3 init topo-layers + read-only fix (5f73359, b6fb70b).
 - [done] T1 module graph (1fc0faa) + parseDOT uses-edge aggregation so it is a real
   dependency graph, not an ownership tree (dbe3a36).
-- [partial] T2 SCIP: rust-analyzer scip now RUNS and maps modules correctly and
+- [done] T2 SCIP: rust-analyzer scip RUNS and maps modules correctly and
   attaches StrengthHint to module edges (commit 5cb95ef + dbe3a36 fixed two
   showstoppers: the reader required a `crate/` prefix that rust-analyzer does not emit
   for top-level modules, and `rust-analyzer scip` was invoked with no positional path
-  so it wrote no index). **LAST MILE (open):** coupling_balance/encapsulation still
-  read n/a because auto-discovered module nodes are not in the config module map, so
-  classifyDistance returns unknown and the strength-bearing edges are not counted as
-  classified BC edges. Next step below.
+  so it wrote no index).
+- [done] Last mile (fcfd812): `classify.AugmentModulesFromGraph` registers
+  auto-discovered `<crate>::<mod>` nodes as modules (gated on `::` so Go/TS/Python are
+  untouched); Rust NodeConvention separator `/`→`::` so siblings classify same-owner.
+  Verified on herdr: coupling_balance n/a→50/mixed/high-confidence with 2 advisories;
+  cohesion_lcom n/a→measured; scip seen=2375. encapsulation stays n/a by design (Rust
+  privacy ⇒ no intrusive cross-module edges; it scores only contract/intrusive).
 
-Open last-mile task — register module-graph nodes as modules:
-
-- The module graph emits `<crate>::<mod>` nodes, but cfg.Modules / the moduleIndex
-  only holds config-declared (crate-level) modules, so `mi.moduleFor("crate::mod")`
-  fails and classifyDistance → unknown. Register each module-graph node as a module
-  (synthesise a ModuleDef with a path glob; default subdomain/volatility, owner
-  inherited from the crate) so distance classification runs and the attached SCIP
-  strength is consumed by coupling_balance/encapsulation. Verify on the 2-module
-  fixture in /tmp/scip-fixture: coupling_balance leaves "no classified edges".
+Optional polish (not blocking): per-module owner/subdomain/volatility for synthesised
+module nodes (today they inherit defaults) would sharpen distance/volatility; layer
+coalescing for init (T3) to fewer than the raw topo-depth count.
 
 Guiding evidence:
 

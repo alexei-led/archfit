@@ -63,13 +63,16 @@ e.g. a single crate) at `mixed` — it never scores `strong` on a one-node graph
 `internal/score`, `degenerateGraph`). Opt-in `tools.cargo-modules.enabled` adds an
 **intra-crate module graph** (`<crate>::<mod>` nodes + aggregated `uses` edges), so
 single-crate projects get real cycle/blast-radius/cohesion signal. Opt-in
-`tools.scip.enabled` runs rust-analyzer SCIP, which now produces a correct
-`<crate>::<mod>` strength map and attaches `StrengthHint` to those module edges.
-**Last mile (not yet done):** `coupling_balance`/`encapsulation` still read `n/a` for
-Rust because auto-discovered module nodes aren't in the config module map, so
-`classifyDistance` can't classify the edge as cross-boundary. Registering module
-nodes as modules (with distance/volatility) is the remaining step — see
-`docs/plans/rust-depth-and-calibration.md`.
+`tools.scip.enabled` runs rust-analyzer SCIP, which produces a correct
+`<crate>::<mod>` strength map and attaches `StrengthHint` to those module edges. The
+engine then registers auto-discovered module nodes as modules
+(`classify.AugmentModulesFromGraph`, gated on the `::` separator so Go/TS/Python are
+untouched) so distance/volatility classify and the strength is consumed — verified on
+herdr: `coupling_balance` and `cohesion_lcom` measure (were n/a). `encapsulation`
+stays `n/a` for typical Rust by design: it scores only contract/intrusive edges, and
+Rust's module privacy makes cross-module _intrusive_ edges rare. With all three on
+(`tools.rust` + `tools.cargo-modules` + `tools.scip`) a single-crate Rust project gets
+full module-level coupling analysis. See `docs/plans/rust-depth-and-calibration.md`.
 
 ## Layout
 
