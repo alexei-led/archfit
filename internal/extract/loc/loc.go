@@ -82,11 +82,11 @@ func isTestFile(name string) bool {
 
 // countLines returns the number of lines in a file, or 0 on error.
 func countLines(path string) int {
-	f, err := os.Open(path) //nolint:gosec // path comes from a directory walk of the project
+	f, err := os.Open(path) // #nosec G304 -- path comes from a directory walk of the project
 	if err != nil {
 		return 0
 	}
-	defer f.Close() //nolint:errcheck
+	defer func() { _ = f.Close() }()
 	n := 0
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)

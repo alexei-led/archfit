@@ -148,7 +148,7 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 	if err != nil {
 		return ro, absent, false
 	}
-	defer os.RemoveAll(tmp) //nolint:errcheck
+	defer func() { _ = os.RemoveAll(tmp) }()
 
 	protoPath := filepath.Join(tmp, "scip.proto")
 	readerPath := filepath.Join(tmp, "scip_reader.py")
@@ -308,7 +308,7 @@ func indexArgs(indexer, pkg, root, out string) []string {
 
 // goModulePath reads the module path from go.mod ("module github.com/x/y" → that path).
 func goModulePath(root string) string {
-	data, err := os.ReadFile(filepath.Join(root, "go.mod")) //nolint:gosec
+	data, err := os.ReadFile(filepath.Join(root, "go.mod")) // #nosec G304 -- root is the repository root already chosen by discovery
 	if err != nil {
 		return ""
 	}
@@ -348,7 +348,7 @@ func cargoPackageName(root string) string {
 
 // npmPackageName reads the "name" field from package.json.
 func npmPackageName(root string) string {
-	data, err := os.ReadFile(filepath.Join(root, "package.json")) //nolint:gosec
+	data, err := os.ReadFile(filepath.Join(root, "package.json")) // #nosec G304 -- root is the repository root already chosen by discovery
 	if err != nil {
 		return ""
 	}
