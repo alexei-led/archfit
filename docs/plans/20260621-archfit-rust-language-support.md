@@ -228,16 +228,16 @@ Language:"rust", Confidence:"high", Locations:[{File:"Cargo.toml"}]}`; skip dev-
 
 ### Task 10: Register Rust in registry + doctor + initcfg
 
-- [ ] `cmd/archfit/registry.go`: append the Rust `LanguageDescriptor` (`ID:"rust"`,
+- [x] `cmd/archfit/registry.go`: append the Rust `LanguageDescriptor` (`ID:"rust"`,
       `Aliases:["rs"]`, `ProjectMarkers:["Cargo.toml"]`, `NewExtractor: rust.New`,
       `PrimaryTool:"cargo"`, `InstallHint:"https://rustup.rs"`, `SCIPIndexer:"rust-analyzer"`,
       doctor tools `{"cargo",...}`+`{"rust-analyzer",...}`); add `rust` to install kong `enum`
-- [ ] `internal/initcfg/discover_rust.go`: `DiscoverRust(root)` → crate modules from
+- [x] `internal/initcfg/discover_rust.go`: `DiscoverRust(root)` → crate modules from
       `cargo metadata` member manifest dirs; add `HasRust` to `DiscoverResult`, call in
       `Discover()`, emit `tools.rust` in `Render()`
-- [ ] write tests: `languageByAlias("rs")`→rust, `buildExtractors` includes rust, `DiscoverRust`
+- [x] write tests: `languageByAlias("rs")`→rust, `buildExtractors` includes rust, `DiscoverRust`
       on a fixture; confirm `TestBuiltinConventionsCoverage` + `TestLangAliasesInInstallEnum` pass
-- [ ] run `go test ./internal/ -run TestArchImports` + `TestGolden` (zero-diff) + `make test` + `make lint`
+- [x] run `go test ./internal/ -run TestArchImports` + `TestGolden` (zero-diff) + `make test` + `make lint`
 
 ### Task 11: Wire `rust-analyzer scip` strength (opt-in, gated)
 

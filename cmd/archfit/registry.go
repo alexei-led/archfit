@@ -6,6 +6,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/extract/py"
+	"github.com/alexei-led/archfit/internal/extract/rust"
 	"github.com/alexei-led/archfit/internal/extract/ts"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -51,9 +52,9 @@ type LanguageDescriptor struct {
 }
 
 // languageRegistry is the single ordered source of truth for supported
-// languages. Extractor build order (go → ts → py) is load-bearing: the graph
-// merge dedups by NodeConvention priority but ties resolve by insertion order,
-// and the engine golden test pins it. Append new languages; never reorder.
+// languages. Extractor build order (go → ts → py → rust) is load-bearing: the
+// graph merge dedups by NodeConvention priority but ties resolve by insertion
+// order, and the engine golden test pins it. Append new languages; never reorder.
 var languageRegistry = []LanguageDescriptor{
 	{
 		ID:             config.LangGo,
@@ -94,6 +95,19 @@ var languageRegistry = []LanguageDescriptor{
 			{scipPython, scipPython, "npm install -g @sourcegraph/scip-python"},
 		},
 		SCIPIndexer: scipPython,
+	},
+	{
+		ID:             config.LangRust,
+		Aliases:        []string{"rs"},
+		ProjectMarkers: []string{markerCargoToml},
+		NewExtractor:   func(r toolrun.Runner, cfg config.ExtractConfig) ports.Extractor { return rust.New(r, cfg) },
+		PrimaryTool:    toolCargo,
+		InstallHint:    "https://rustup.rs (rustup installs cargo)",
+		DoctorTools: []doctorTool{
+			{toolCargo, toolCargo, "https://rustup.rs"},
+			{scipRust, scipRust, "rustup component add rust-analyzer"},
+		},
+		SCIPIndexer: scipRust,
 	},
 }
 

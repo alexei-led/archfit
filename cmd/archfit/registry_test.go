@@ -57,7 +57,7 @@ func installEnumTag(t *testing.T) []string {
 // reports the canonical language name.
 func TestBuildExtractorsOrder(t *testing.T) {
 	exs := buildExtractors(&toolrun.RunnerMock{}, config.Default())
-	want := []string{config.LangGo, config.LangTypeScript, config.LangPython}
+	want := []string{config.LangGo, config.LangTypeScript, config.LangPython, config.LangRust}
 	if len(exs) != len(want) {
 		t.Fatalf("buildExtractors returned %d extractors, want %d", len(exs), len(want))
 	}
@@ -76,6 +76,8 @@ func TestLanguageByAlias(t *testing.T) {
 		"ts":         config.LangTypeScript,
 		"python":     config.LangPython,
 		"py":         config.LangPython,
+		"rust":       config.LangRust,
+		"rs":         config.LangRust,
 		"":           "",
 		"ruby":       "",
 	}
@@ -90,7 +92,7 @@ func TestLanguageByAlias(t *testing.T) {
 // into the scorecard, in registry order.
 func TestPrimaryExtractorTools(t *testing.T) {
 	got := primaryExtractorTools()
-	want := []string{toolGoPackages, toolDepCruiser, toolGrimp}
+	want := []string{toolGoPackages, toolDepCruiser, toolGrimp, toolCargo}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("primaryExtractorTools() = %v, want %v", got, want)
 	}

@@ -42,6 +42,8 @@ type DiscoveredConfig struct {
 	HasPython bool
 	// HasTS is true when TypeScript packages were discovered.
 	HasTS bool
+	// HasRust is true when a Cargo.toml was found at root.
+	HasRust bool
 }
 
 // Tool mode YAML values used in Render output.
@@ -93,6 +95,19 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner) (Discover
 	}
 	allModules = append(allModules, tsMods...)
 
+	// Rust discovery is gated on a root Cargo.toml (the project marker). A missing
+	// cargo yields no crate modules but still flips HasRust on, so Render emits
+	// tools.rust ready for when cargo is installed; a present-but-failing cargo
+	// (broken manifest, parse error) surfaces the error like go list does.
+	hasRust := fileExists(filepath.Join(root, markerCargoToml))
+	if hasRust {
+		rustMods, rerr := DiscoverRust(ctx, root, runner)
+		if rerr != nil {
+			return DiscoveredConfig{}, rerr
+		}
+		allModules = append(allModules, rustMods...)
+	}
+
 	allModules = disambiguateNames(allModules)
 
 	return DiscoveredConfig{
@@ -103,6 +118,7 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner) (Discover
 		HasGo:      hasGo,
 		HasPython:  len(pyMods) > 0,
 		HasTS:      len(tsMods) > 0,
+		HasRust:    hasRust,
 	}, nil
 }
 
@@ -258,27 +274,21 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	// tools: section — always emitted so operators can flip modes without
 	// needing to know the YAML shape.
 	b.WriteString("tools:\n")
-	for _, lang := range []string{"go", "python", "typescript"} {
-		var mode string
+	for _, lang := range []string{"go", "python", "typescript", "rust"} {
+		var present bool
 		switch lang {
 		case "go":
-			if cfg.HasGo {
-				mode = toolModeOn
-			} else {
-				mode = toolModeOff
-			}
+			present = cfg.HasGo
 		case "python":
-			if cfg.HasPython {
-				mode = toolModeOn
-			} else {
-				mode = toolModeOff
-			}
+			present = cfg.HasPython
 		case "typescript":
-			if cfg.HasTS {
-				mode = toolModeOn
-			} else {
-				mode = toolModeOff
-			}
+			present = cfg.HasTS
+		case "rust":
+			present = cfg.HasRust
+		}
+		mode := toolModeOff
+		if present {
+			mode = toolModeOn
 		}
 		fmt.Fprintf(&b, "  %s:\n    enabled: %q\n", lang, mode)
 	}

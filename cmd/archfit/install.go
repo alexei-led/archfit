@@ -14,7 +14,7 @@ const installSubcmd = "install"
 
 // InstallCmd installs external tools required for language analysis.
 type InstallCmd struct {
-	Lang   []string `name:"lang" help:"Languages to install tools for: py, ts, go. Repeatable. Default: py." enum:"go,ts,py" default:"py"`
+	Lang   []string `name:"lang" help:"Languages to install tools for: py, ts, go, rust. Repeatable. Default: py." enum:"go,ts,py,rust" default:"py"`
 	DryRun bool     `name:"dry-run" short:"n" help:"Print install commands without running them."`
 }
 
@@ -28,6 +28,8 @@ func (c *InstallCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies ko
 			c.installTS(ctx, deps)
 		case config.LangGo:
 			c.installGo(ctx, deps)
+		case config.LangRust:
+			c.installRust(ctx, deps)
 		}
 	}
 	return nil
@@ -52,6 +54,15 @@ func (c *InstallCmd) installGo(ctx context.Context, deps *appDeps) {
 		_, _ = fmt.Fprintf(deps.Stdout, "  %-16s ok\n", "go")
 	} else {
 		_, _ = fmt.Fprintf(deps.Stdout, "  go: missing — install from https://go.dev/dl/\n")
+	}
+}
+
+func (c *InstallCmd) installRust(ctx context.Context, deps *appDeps) {
+	_, _ = fmt.Fprintln(deps.Stdout, "rust tools:")
+	if _, ok := deps.Runner.Detect(ctx, "cargo"); ok {
+		_, _ = fmt.Fprintf(deps.Stdout, "  %-16s ok\n", "cargo")
+	} else {
+		_, _ = fmt.Fprintf(deps.Stdout, "  cargo: missing — install Rust from https://rustup.rs/\n")
 	}
 }
 
