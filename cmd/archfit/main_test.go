@@ -12,6 +12,35 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 )
 
+func gitInitFixtureRepo(t *testing.T, dir string) {
+	t.Helper()
+	cmd := exec.Command("git", "init", "-q")
+	cmd.Dir = dir
+	cmd.Env = scrubGitFixtureEnv(os.Environ())
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("git init failed (git unavailable?): %v\n%s", err, out)
+	}
+}
+
+func scrubGitFixtureEnv(env []string) []string {
+	blocked := map[string]bool{
+		"GIT_DIR":        true,
+		"GIT_WORK_TREE":  true,
+		"GIT_COMMON_DIR": true,
+		"GIT_PREFIX":     true,
+	}
+
+	filtered := make([]string, 0, len(env))
+	for _, entry := range env {
+		name, _, found := strings.Cut(entry, "=")
+		if found && blocked[name] {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
+}
+
 // writeViolatingRepo creates a minimal Go repo with one gate-failing
 // dependency (pkg/a imports pkg/b/internal) and an archfit config that
 // fails on it. Returns the config path.
@@ -48,11 +77,7 @@ rules:
 		}
 	}
 	// Scope resolution requires a git repo root.
-	cmd := exec.Command("git", "init", "-q")
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Skipf("git init failed (git unavailable?): %v\n%s", err, out)
-	}
+	gitInitFixtureRepo(t, dir)
 	return filepath.Join(dir, ".archfit.yaml")
 }
 
@@ -103,11 +128,7 @@ func writeNonGoRepo(t *testing.T, cfgBody string) string {
 			t.Fatal(err)
 		}
 	}
-	cmd := exec.Command("git", "init", "-q")
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Skipf("git init failed (git unavailable?): %v\n%s", err, out)
-	}
+	gitInitFixtureRepo(t, dir)
 	return filepath.Join(dir, ".archfit.yaml")
 }
 
@@ -226,11 +247,7 @@ func writeRepoWithExternalConfig(t *testing.T) (repoDir, cfgPath string) {
 			t.Fatal(err)
 		}
 	}
-	cmd := exec.Command("git", "init", "-q")
-	cmd.Dir = repoDir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Skipf("git init failed (git unavailable?): %v\n%s", err, out)
-	}
+	gitInitFixtureRepo(t, repoDir)
 
 	// Config in its own directory, outside the repo. Module path globs are
 	// repo-relative, so they resolve against the --root scan tree, not here.

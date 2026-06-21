@@ -165,7 +165,7 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 					moduleAnn = &a
 				}
 			}
-			writeModuleStanza(&b, "  ", m.Name, m, allowedLayers, moduleAnn, true)
+			writeModuleStanza(&b, m.Name, m, allowedLayers, moduleAnn, true)
 		}
 	}
 

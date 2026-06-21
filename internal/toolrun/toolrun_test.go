@@ -2,6 +2,8 @@ package toolrun
 
 import (
 	"context"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -87,5 +89,50 @@ func TestRun_Timeout(t *testing.T) {
 	})
 	if err == nil {
 		t.Errorf("Run returned nil error, want non-nil (timeout should cause context cancellation); out=%+v", out)
+	}
+}
+
+func TestRun_GitWorkDirIgnoresHookRepoEnv(t *testing.T) {
+	r := New()
+	repoRootOut, err := exec.Command(gitCommand, "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		t.Fatalf("git rev-parse --show-toplevel: %v", err)
+	}
+	gitDirOut, err := exec.Command(gitCommand, "rev-parse", "--git-dir").Output()
+	if err != nil {
+		t.Fatalf("git rev-parse --git-dir: %v", err)
+	}
+	t.Setenv("GIT_WORK_TREE", strings.TrimSpace(string(repoRootOut)))
+	t.Setenv("GIT_DIR", strings.TrimSpace(string(gitDirOut)))
+
+	out, err := r.Run(context.Background(), ToolCmd{
+		Name:    gitCommand,
+		Args:    []string{"rev-parse", "--show-toplevel"},
+		WorkDir: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if out.ExitCode == 0 {
+		t.Fatalf("ExitCode = 0, want non-zero when WorkDir is not a git repo; stdout=%q stderr=%q", out.Stdout, out.Stderr)
+	}
+	if !strings.Contains(strings.ToLower(string(out.Stderr)), "not a git repository") {
+		t.Fatalf("stderr = %q, want not-a-git-repository message", out.Stderr)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	out, err = r.Run(context.Background(), ToolCmd{
+		Name:    gitCommand,
+		Args:    []string{"rev-parse", "--show-toplevel"},
+		WorkDir: cwd,
+	})
+	if err != nil {
+		t.Fatalf("Run(repo): %v", err)
+	}
+	if out.ExitCode != 0 {
+		t.Fatalf("ExitCode(repo) = %d, want 0; stderr=%q", out.ExitCode, out.Stderr)
 	}
 }

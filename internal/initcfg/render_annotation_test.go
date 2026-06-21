@@ -272,7 +272,7 @@ func TestRender_HeuristicLayerAbsentFromAllowedLayers(t *testing.T) {
 	// --- nil annotation, m.Layer NOT in allowedLayers ---
 	// writeModuleStanza must NOT write a live layer: line.
 	var b strings.Builder
-	writeModuleStanza(&b, "  ", layerEngine, cfg.Modules[0], cfg.Layers, nil, false)
+	writeModuleStanza(&b, layerEngine, cfg.Modules[0], cfg.Layers, nil, false)
 	out := b.String()
 
 	if strings.Contains(out, "\n  layer: "+layerEngine+"\n") {
@@ -288,7 +288,7 @@ func TestRender_HeuristicLayerAbsentFromAllowedLayers(t *testing.T) {
 		Layer: layerCore, // IS in cfg.Layers
 	}
 	var b3 strings.Builder
-	writeModuleStanza(&b3, "  ", layerCore, modInSet, cfg.Layers, nil, false)
+	writeModuleStanza(&b3, layerCore, modInSet, cfg.Layers, nil, false)
 	out3 := b3.String()
 	if !strings.Contains(out3, "layer: "+layerCore) {
 		t.Errorf("nil annotation with in-set m.Layer must write layer verbatim; got:\n%s", out3)
@@ -301,7 +301,7 @@ func TestRender_HeuristicLayerAbsentFromAllowedLayers(t *testing.T) {
 		Layer:      layerEngine, // still not in allowedLayers
 	}
 	var b2 strings.Builder
-	writeModuleStanza(&b2, "  ", layerEngine, cfg.Modules[0], cfg.Layers, ann, false)
+	writeModuleStanza(&b2, layerEngine, cfg.Modules[0], cfg.Layers, ann, false)
 	out2 := b2.String()
 
 	// The resolved layer falls back to m.Layer (engine) which is also not in
