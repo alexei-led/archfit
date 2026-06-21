@@ -8,13 +8,15 @@ small references while configuring a repo.
 ## Pages
 
 - [Overview](overview.md) — what `archfit` is and when to use it.
+- [Why architecture fitness matters](why-architecture-fitness.md) — architecture
+  erosion, AI-agent risk, and why this is more than dependency lint.
 - [Concepts](concepts.md) — Balanced Coupling, modularity, and the theory
   archfit makes executable.
 - [Metrics reference](metrics.md) — every metric, what it represents, and how it
   is scored.
 - [Install](install.md) — binary, optional tools, and Docker.
 - [Quick start](quick-start.md) — first run workflow.
-- [Language support](languages.md) — Go, Python, and TypeScript setup.
+- [Language support](languages.md) — supported languages and setup.
 - [Configuration basics](configuration.md) — `.archfit.yaml` shape.
 - [Configuration reference](configuration-reference.md) — fields and examples.
 - [Dogfooding](dogfooding.md) — how archfit runs on itself; signals vs.

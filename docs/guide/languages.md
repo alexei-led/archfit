@@ -1,5 +1,6 @@
 # Language support
 
+This page is the canonical list of currently supported language adapters.
 `archfit` can analyze Go, TypeScript/JavaScript, and Python in the same run.
 Enable languages in `.archfit.yaml` with `tools.<language>.enabled`.
 

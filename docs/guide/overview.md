@@ -2,9 +2,11 @@
 
 `archfit` is a local CLI for architecture fitness checks.
 
-It reads code structure from Go, TypeScript, and Python repositories, compares the
-observed dependency graph with architecture intent from `.archfit.yaml`, and emits
-findings that humans or AI agents can repair.
+It is built for teams that want a watchdog for architecture drift, especially
+when AI coding agents are changing code quickly. It reads code structure from
+supported language analyzers, compares the observed dependency graph with
+architecture intent from `.archfit.yaml`, and emits findings that humans or AI
+agents can repair.
 
 Use it to answer questions like:
 
@@ -15,10 +17,14 @@ Use it to answer questions like:
 - Did coupling risk or architecture metric health get worse?
 
 `archfit` is not a formatter, style linter, security scanner, or replacement for
-architecture review. It makes selected architecture rules executable.
+architecture review. It makes selected architecture rules executable and gives AI
+agents constructive, measurable repair feedback before local shortcuts become
+system design.
 
-It implements Vlad Khononov's Balanced Coupling model. For the theory behind the
-strength / distance / volatility vocabulary it uses, see [Concepts](concepts.md);
+It implements Vlad Khononov's Balanced Coupling model. For why architecture
+fitness matters in AI-assisted development, see
+[Why architecture fitness matters](why-architecture-fitness.md). For the theory
+behind the strength / distance / volatility vocabulary, see [Concepts](concepts.md);
 for every signal it computes and how each is scored, see the
 [Metrics reference](metrics.md).
 

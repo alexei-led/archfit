@@ -384,10 +384,11 @@ coverage gap, not a confident pass — see
 
 ## Per-language behavior
 
-The deterministic gates and core metrics work for Go, TypeScript/JavaScript, and
-Python from the built-in extractors plus `git`. Coverage and the optional metrics
-differ by language; when a tool is missing the dependent metric reports `n/a`
-**with the reason and enable step** — never a false failure.
+The deterministic gates and core metrics work from the built-in extractors plus
+`git`. Supported languages and setup live in [Language support](languages.md).
+Coverage and the optional metrics differ by language; when a tool is missing the
+dependent metric reports `n/a` **with the reason and enable step** — never a
+false failure.
 
 | Signal                              | Go            | TypeScript / JS                          | Python                                                   |
 | ----------------------------------- | ------------- | ---------------------------------------- | -------------------------------------------------------- |

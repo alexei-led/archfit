@@ -62,5 +62,5 @@ Start with explicit, high-value rules. Avoid encoding every preference on day on
 
 Next:
 
-- [Language support](languages.md) for Go, Python, and TypeScript examples.
+- [Language support](languages.md) for supported-language examples.
 - [Configuration reference](configuration-reference.md) for field details.
