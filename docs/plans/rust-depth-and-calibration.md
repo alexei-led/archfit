@@ -11,7 +11,30 @@ Already shipped this effort:
 - [done] LOC counts `.rs` + skips `target/`; lizard analyses `rust`; `rustFileToModuleKey`
   handles root-level workspace layouts (commit bd74ef6).
 - [done] P0a: scorecard caps degenerate-graph and zero-edge dimensions at mixed —
-  no more false-green that rises as archfit sees less (commit 74aaa99).
+  no more false-green that rises as archfit sees less (commit b42e1d1, +ba25172 to
+  keep the module graph from reintroducing the false-green).
+- [done] P2: analysis_confidence degenerate cap + disabled-language tool noise (b42e1d1).
+- [done] T5 docs (1501379). T3 init topo-layers + read-only fix (5f73359, b6fb70b).
+- [done] T1 module graph (1fc0faa) + parseDOT uses-edge aggregation so it is a real
+  dependency graph, not an ownership tree (dbe3a36).
+- [partial] T2 SCIP: rust-analyzer scip now RUNS and maps modules correctly and
+  attaches StrengthHint to module edges (commit 5cb95ef + dbe3a36 fixed two
+  showstoppers: the reader required a `crate/` prefix that rust-analyzer does not emit
+  for top-level modules, and `rust-analyzer scip` was invoked with no positional path
+  so it wrote no index). **LAST MILE (open):** coupling_balance/encapsulation still
+  read n/a because auto-discovered module nodes are not in the config module map, so
+  classifyDistance returns unknown and the strength-bearing edges are not counted as
+  classified BC edges. Next step below.
+
+Open last-mile task — register module-graph nodes as modules:
+
+- The module graph emits `<crate>::<mod>` nodes, but cfg.Modules / the moduleIndex
+  only holds config-declared (crate-level) modules, so `mi.moduleFor("crate::mod")`
+  fails and classifyDistance → unknown. Register each module-graph node as a module
+  (synthesise a ModuleDef with a path glob; default subdomain/volatility, owner
+  inherited from the crate) so distance classification runs and the attached SCIP
+  strength is consumed by coupling_balance/encapsulation. Verify on the 2-module
+  fixture in /tmp/scip-fixture: coupling_balance leaves "no classified edges".
 
 Guiding evidence:
 

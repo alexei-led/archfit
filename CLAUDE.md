@@ -57,13 +57,19 @@ amd64 in CI, not local emulation.
 
 ## Rust analysis granularity
 
-Rust facts are **crate-level**: `cargo metadata` makes one graph node per workspace
-member, so a single-crate project is one node and its `src/` module tree is invisible
-(crate-graph metrics go n/a). The scorecard caps such degenerate graphs at `mixed`
-(it never scores `strong` on a one-node graph — see `internal/score`). Module-level
-depth (intra-crate nodes/edges) and rust-analyzer SCIP strength are the planned
-upgrade path: `docs/plans/rust-depth-and-calibration.md`. rust-analyzer SCIP does
-not yet attach (its descriptors are module paths, not file paths — same plan).
+Rust crate facts are **crate-level**: `cargo metadata` makes one graph node per
+workspace member. The scorecard caps a **degenerate graph** (<2 connected modules,
+e.g. a single crate) at `mixed` — it never scores `strong` on a one-node graph (see
+`internal/score`, `degenerateGraph`). Opt-in `tools.cargo-modules.enabled` adds an
+**intra-crate module graph** (`<crate>::<mod>` nodes + aggregated `uses` edges), so
+single-crate projects get real cycle/blast-radius/cohesion signal. Opt-in
+`tools.scip.enabled` runs rust-analyzer SCIP, which now produces a correct
+`<crate>::<mod>` strength map and attaches `StrengthHint` to those module edges.
+**Last mile (not yet done):** `coupling_balance`/`encapsulation` still read `n/a` for
+Rust because auto-discovered module nodes aren't in the config module map, so
+`classifyDistance` can't classify the edge as cross-boundary. Registering module
+nodes as modules (with distance/volatility) is the remaining step — see
+`docs/plans/rust-depth-and-calibration.md`.
 
 ## Layout
 
