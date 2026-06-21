@@ -374,6 +374,13 @@ func cohesionModularity(mi metricIndex, base Confidence) Dimension {
 	if !measured {
 		dim.Confidence = ConfidenceLow
 		dim.Evidence = append(dim.Evidence, "no cohesion metrics available (size/history/clone tools absent)")
+	} else if _, swMeasured := mi.measured("structural_weight"); !swMeasured {
+		// God-module size is the dominant cohesion signal. Without it (e.g. a Rust
+		// module graph whose per-module LOC is not yet mapped), "no clones / no hidden
+		// coupling" cannot justify a strong band — cap confidence so finalize() holds
+		// the value to mixed rather than presenting an unearned strong.
+		dim.Confidence = ConfidenceLow
+		dim.Evidence = append(dim.Evidence, "god-module size unmeasured (structural_weight n/a) — cohesion unconfirmed")
 	}
 	dim.Value = value
 	dim.Summary = "cohesion: god modules, hidden coupling, and duplication (cohesion = high strength + low distance is healthy, not penalised)"

@@ -24,7 +24,8 @@ import (
 //	value = contract / (contract + intrusive) cross-boundary edges
 //	Functional and model coupling are normal public use, not boundary verdicts,
 //	so they are excluded from the denominator (alongside unknown).
-//	No cross-boundary edges at all  → value 1.0 (vacuously encapsulated).
+//	No cross-boundary edges at all  → result.BandNA (no boundary signal: independent
+//	  modules, or — commonly — edge distance never classified).
 //	Cross-boundary edges but none contract/intrusive → result.BandNA (no boundary signal).
 //	Confidence scales with the contract+intrusive fraction of cross-boundary edges.
 type EncapsulationMetric struct{}
@@ -95,10 +96,15 @@ func (m EncapsulationMetric) Calculate(in signal.CommonInput) diagnostic.MetricR
 	if depEdges == 0 {
 		return m.naResult(in.Baseline)
 	}
-	// Dependency edges exist but none cross a module boundary → vacuously
-	// encapsulated (a genuine, analysed result, distinct from the empty graph).
+	// Dependency edges exist but none cross a module boundary. This is not earned
+	// encapsulation — it is absence of a boundary signal: either the modules are
+	// genuinely independent, or (the common case) edge distance was never classified
+	// (no SCIP/owner config), so every edge fell back to same-module. Reporting a
+	// vacuous 1.0 here is the false-green that lets an unclassified module graph
+	// (e.g. a Rust crate's module nodes with no owner/strength data) read as perfectly
+	// encapsulated. Report n/a instead — the boundary baseline is unmeasured.
 	if allCross == 0 {
-		return m.encResult(1.0, result.ConfidenceHigh, in.Baseline)
+		return m.naResult(in.Baseline)
 	}
 	// Coupling exists but no edge strength could be classified → no signal.
 	if classifiedCross == 0 {
