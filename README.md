@@ -9,21 +9,38 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/alexei-led/archfit)](https://goreportcard.com/report/github.com/alexei-led/archfit)
 [![License](https://img.shields.io/github/license/alexei-led/archfit)](LICENSE)
 
-**Deterministic architecture-fitness for AI agents and CI.**
+**Architecture-fitness checks for AI agents and CI.**
 
-archfit reads dependency facts from a Go, TypeScript, or Python repo, checks them
-against `.archfit.yaml`, and emits machine-readable gate violations, structured
-repair tasks, and a banded scorecard. Architecture drift becomes a fact your
-agent and pipeline can act on — not something a reviewer catches days later.
+`archfit` checks whether the code still follows the architecture you intended.
+It reads code-structure facts from language analyzers, then evaluates them
+against `.archfit.yaml`: boundaries, layers, public APIs, cycles, and
+[Balanced Coupling](docs/guide/concepts.md).
+
+Balanced Coupling is a way to judge whether a dependency is healthy or risky. It
+looks at three things: how strong the dependency is, how far apart the coupled
+parts are, and how often they change.
+
+The output is built for automation: deterministic gate violations, structured
+repair tasks for agents, and a banded architecture scorecard. Architecture drift
+becomes something your agent and CI can act on before it turns into review pain.
 
 ## Why
 
-An AI agent editing your repo cannot see your architecture. It sees files — so it
-imports the domain layer into the HTTP adapter, breaks a module boundary, or
-grows a cycle, and the diff still looks fine. With no architecture signal in the
-loop, the leak ships and someone catches it later (or never does).
+AI agents are good at local edits. They are not good at carrying the whole system
+design in context.
 
-archfit puts that signal in the loop and closes it with repairable feedback:
+That gap matters. An agent can make a change that passes tests while it quietly:
+
+- imports across a forbidden boundary;
+- bypasses a module's public API;
+- adds a shortcut between layers;
+- grows a dependency cycle.
+
+Each single change can look harmless. Over time, those shortcuts become the real
+architecture. Coupling grows, bugs cascade across distant modules, and every
+future fix needs more human context, more agent tokens, and more retries.
+
+`archfit` puts an architecture-fitness signal in that loop:
 
 ```mermaid
 flowchart LR
@@ -37,8 +54,8 @@ flowchart LR
     class C gate;
 ```
 
-Every gate violation ships an `agent_tasks` entry — a structured repair order,
-not a log line the agent has to parse intent out of:
+When a gate fails, `archfit` emits an `agent_tasks` entry. It is a repair order,
+not a vague log line:
 
 ```json
 {
@@ -53,14 +70,16 @@ not a log line the agent has to parse intent out of:
 }
 ```
 
-The goal, the constraints it must stay inside, the exact files, and the command
-that proves the fix — everything an agent needs to close the loop unattended.
+The task includes the goal, the constraints, the files to inspect, and the
+command that proves the fix.
 
 ## How it works
 
-Language facts come from external tools run out of process. A deterministic core
-decides over those facts. The LLM layer sits off to the side and is never on the
-gate path.
+`archfit` separates facts, gates, and narration.
+
+Language adapters collect code-structure facts. A deterministic core evaluates
+those facts against your config. Optional LLM features can explain and prioritize
+the evidence, but they never decide whether the gate passes.
 
 ```mermaid
 flowchart TB
@@ -86,9 +105,9 @@ flowchart TB
     style core fill:#e7f5ff,stroke:#1971c2,color:#000;
 ```
 
-Gates are byte-identical for unchanged input — safe to run in CI and to diff
-across commits. When an optional analyzer is missing, the dependent metric reports
-`n/a` with the enable step; the run never fails because a tool is absent.
+For unchanged input, gate output is byte-identical. That makes it safe for CI and
+for comparing commits. If an optional analyzer is missing, the dependent metric
+reports `n/a` with the enable step instead of pretending everything is fine.
 
 ## What you get
 
@@ -108,9 +127,12 @@ across commits. When an optional analyzer is missing, the dependent metric repor
 
 ## Methodology — Balanced Coupling
 
-archfit operationalizes the checkable parts of Vlad Khononov's Balanced Coupling
-model. It scores every cross-boundary relationship on three axes and explains why
-it is cohesion (the good kind of coupling) or a cascading-change risk:
+Coupling is not automatically bad. Some parts should move together. The problem
+is coupling that is too strong, too distant, or too volatile for the design.
+
+`archfit` operationalizes the checkable parts of Vlad Khononov's Balanced
+Coupling model. It scores cross-boundary relationships on three axes and explains
+whether the relationship looks cohesive or risky:
 
 ```mermaid
 flowchart LR
@@ -131,19 +153,22 @@ collect and safe to run in CI. For the mapping from theory to signals, see
 
 ## How it compares
 
-archfit is not a replacement for language-specific boundary linters — it is the
-multi-language, agent-facing layer above them.
+Language-specific boundary linters are still useful. `archfit` sits one level
+above them.
 
-| Tool               | Languages          | Output for agents/CI                 | Coupling model            | LLM narration |
-| ------------------ | ------------------ | ------------------------------------ | ------------------------- | ------------- |
-| **archfit**        | Go, TS/JS, Python  | SARIF + JSON + `agent_tasks` + score | Balanced Coupling (S/D/V) | off-gate      |
-| dependency-cruiser | TS/JS              | JSON/HTML, rule violations           | rule-based                | no            |
-| import-linter      | Python             | text, contract pass/fail             | layered contracts         | no            |
-| ArchUnit           | Java/JVM (.NET/TS) | test assertions in the build         | rule-based                | no            |
+Those tools supply facts. `archfit` turns the facts into a measured verdict about
+intended architecture, Balanced-Coupling risk, score movement, and repair tasks.
 
-Use a single-language linter when you live in one language and want fine-grained,
-in-build assertions. Use archfit when you want one config and one machine-readable
-verdict across a polyglot repo, scored and shaped for an agent loop.
+| Tool               | Languages                                | Output for agents/CI                 | Coupling model            | LLM narration |
+| ------------------ | ---------------------------------------- | ------------------------------------ | ------------------------- | ------------- |
+| **archfit**        | See [languages](docs/guide/languages.md) | SARIF + JSON + `agent_tasks` + score | Balanced Coupling (S/D/V) | off-gate      |
+| dependency-cruiser | TS/JS                                    | JSON/HTML, rule violations           | rule-based                | no            |
+| import-linter      | Python                                   | text, contract pass/fail             | layered contracts         | no            |
+| ArchUnit           | Java/JVM (.NET/TS)                       | test assertions in the build         | rule-based                | no            |
+
+Use a single-language linter when you want fine-grained in-build assertions for
+one ecosystem. Use `archfit` when you want one architecture config, one
+machine-readable verdict, and feedback shaped for an AI-agent repair loop.
 
 ## Quick start
 
@@ -205,11 +230,13 @@ outside the analyzed tree (external CI).
 
 - [Guide](docs/guide/README.md) — documentation map.
 - [Overview](docs/guide/overview.md) — what archfit is and when to use it.
+- [Why architecture fitness matters](docs/guide/why-architecture-fitness.md) —
+  architecture erosion, AI-agent risk, and why this is more than dependency lint.
 - [Concepts](docs/guide/concepts.md) — Balanced Coupling, made executable.
 - [Metrics](docs/guide/metrics.md) — every metric and how it is scored.
 - [Install](docs/guide/install.md) — Go install, Docker, and optional tools.
 - [Quick start](docs/guide/quick-start.md) — first useful run.
-- [Language support](docs/guide/languages.md) — Go, TS, and Python setup.
+- [Language support](docs/guide/languages.md) — supported languages and setup.
 - [Configuration](docs/guide/configuration.md) — `.archfit.yaml` basics.
 - [CI](docs/guide/ci.md) — pull-request and pipeline setup.
 - [Agent feedback](docs/guide/agent-feedback.md) — `agent_tasks`, SARIF, and
