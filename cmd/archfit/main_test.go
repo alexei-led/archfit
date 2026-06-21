@@ -330,10 +330,12 @@ func TestRun_Version(t *testing.T) {
 
 func TestRun_NoArgs(t *testing.T) {
 	var buf bytes.Buffer
-	code := Run([]string{"--help"}, &buf)
-	// kong exits 0 on --help
+	code := Run(nil, &buf)
 	if code != 0 {
-		t.Fatalf("expected exit 0 for --help, got %d (output: %q)", code, buf.String())
+		t.Fatalf("expected exit 0 for no args, got %d (output: %q)", code, buf.String())
+	}
+	if !strings.Contains(buf.String(), "First run:") {
+		t.Fatalf("no-args help missing quick-start guidance; output:\n%s", buf.String())
 	}
 }
 
@@ -366,13 +368,32 @@ func TestRun_Doctor(t *testing.T) {
 
 func TestRun_Help_ShowsScan(t *testing.T) {
 	var buf bytes.Buffer
-	code := Run([]string{"--help"}, &buf)
+	code := Run([]string{flagHelp}, &buf)
 	if code != 0 {
 		t.Fatalf("expected exit 0 for --help, got %d", code)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "scan") {
-		t.Errorf("--help output does not mention 'scan' subcommand; got:\n%s", out)
+	for _, want := range []string{"Core feedback loop", "scan", docsURL, ciDocsURL} {
+		if !strings.Contains(out, want) {
+			t.Errorf("--help output missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
+func TestRun_CheckHelp_ShowsAgentLoop(t *testing.T) {
+	var buf bytes.Buffer
+	code := Run([]string{cmdCheck, flagHelp}, &buf)
+	if code != 0 {
+		t.Fatalf("expected exit 0 for check --help, got %d", code)
+	}
+	out := buf.String()
+	for _, want := range []string{"merge gate", "agent_tasks[]", "--format sarif", agentDocsURL} {
+		if !strings.Contains(out, want) {
+			t.Errorf("check --help output missing %q; got:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Languages to analyze") {
+		t.Errorf("check --help should not lead with a hard-coded language list; got:\n%s", out)
 	}
 }
 

@@ -220,7 +220,7 @@ language-specific setup? Start with the [guide](docs/guide/README.md).
 | `archfit enrich`       | Draft off-gate LLM coupling-label refinements.      |
 | `archfit autopilot`    | Draft a full `.archfit.yaml` via LLM (review-only). |
 | `archfit explain <id>` | Explain one finding by fingerprint prefix.          |
-| `archfit install`      | Check or install optional language tools.           |
+| `archfit install`      | Check or install optional analyzer tools.           |
 
 See the [commands guide](docs/guide/commands.md) for flags, formats, and exit
 codes. Point `--root` at the repo and `--config` elsewhere to run archfit from

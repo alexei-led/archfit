@@ -8,7 +8,7 @@ Common fixes:
 - Use `--format json` when an AI agent or script needs structured output.
 - Narrow module paths if generated config is noisy.
 - Prefer an expiring exception over deleting a rule for intentional findings.
-- Check that optional language tools are installed before enabling them.
+- Check that optional analyzer tools are installed before enabling them.
 - Re-run `archfit baseline --full` only after reviewing accepted findings.
 
 ## Metrics show `n/a` / a "Coverage gaps" section

@@ -1,10 +1,12 @@
-## archfit — Architecture fitness checker
+## archfit — architecture drift feedback for CI and AI agents
 ## Usage: make [target]
 
-BINARY    := archfit
-CMD       := ./cmd/archfit
-BIN_DIR   := .bin
-MODULE    := github.com/alexei-led/archfit
+BINARY         := archfit
+CMD            := ./cmd/archfit
+BIN_DIR        := .bin
+MODULE         := github.com/alexei-led/archfit
+ARCHFIT_CONFIG := .archfit.yaml
+ARCHFIT_REPORT := reports/archfit-report.md
 
 VERSION   := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT    := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
@@ -23,9 +25,9 @@ help: ## show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-## all: fmt lint test build
+## all: fmt lint test archfit
 .PHONY: all
-all: fmt lint test build ## fmt + lint + test + build
+all: fmt lint test archfit ## fmt + lint + test + architecture drift gate
 
 ## build: compile the archfit binary
 .PHONY: build
@@ -42,6 +44,18 @@ test: ## run all tests with race detector and coverage
 .PHONY: test-coverage
 test-coverage: test ## open HTML coverage report
 	go tool cover -html=coverage.out
+
+## archfit: run architecture drift gate on this repo
+.PHONY: archfit
+archfit: build ## run archfit check --full against this repo's architecture policy
+	$(BIN_DIR)/$(BINARY) check --config $(ARCHFIT_CONFIG) --full
+
+## archfit-report: write a Markdown architecture audit report
+.PHONY: archfit-report
+archfit-report: build ## write reports/archfit-report.md for human review
+	@mkdir -p $(dir $(ARCHFIT_REPORT))
+	$(BIN_DIR)/$(BINARY) scan --config $(ARCHFIT_CONFIG) > $(ARCHFIT_REPORT)
+	@echo "archfit report written to $(ARCHFIT_REPORT)"
 
 ## lint: run golangci-lint
 .PHONY: lint

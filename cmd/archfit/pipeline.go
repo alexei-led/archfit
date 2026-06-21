@@ -479,7 +479,7 @@ func applyFlagOverrides(cfg *config.Config, severity string, lang []string) erro
 	for _, key := range lang {
 		canonical := languageByAlias(key)
 		if canonical == "" {
-			return fmt.Errorf("--lang: unknown language %q; use go, ts, py, or rust", key)
+			return fmt.Errorf("--lang: unknown analyzer %q; see %s", key, languagesDocsURL)
 		}
 		if cfg.Tools == nil {
 			cfg.Tools = make(map[string]config.ToolConfig)

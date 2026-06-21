@@ -21,6 +21,7 @@ var (
 )
 
 const (
+	flagHelp              = "--help"
 	defaultConfigPath     = ".archfit.yaml"            // fallback to config.Default() when absent
 	defaultBaselinePath   = ".archfit-baseline.json"   // on-disk path for the baseline file
 	defaultLabelsPath     = ".archfit-labels.yaml"     // pinned coupling labels (enrich output)
@@ -30,22 +31,94 @@ const (
 	defaultAutopilotPath  = ".archfit-autopilot.yaml"  // full-config draft (autopilot, review-only)
 )
 
+const (
+	docsURL          = "https://github.com/alexei-led/archfit/tree/main/docs/guide"
+	ciDocsURL        = "https://github.com/alexei-led/archfit/blob/main/docs/guide/ci.md"
+	agentDocsURL     = "https://github.com/alexei-led/archfit/blob/main/docs/guide/agent-feedback.md"
+	languagesDocsURL = "https://github.com/alexei-led/archfit/blob/main/docs/guide/languages.md"
+)
+
+const (
+	commandGroupCore        = "core"
+	commandGroupReports     = "reports"
+	commandGroupSetup       = "setup"
+	commandGroupLLM         = "llm"
+	commandGroupMaintenance = "maintenance"
+)
+
 // cli is the top-level kong command struct.
 type cli struct {
-	Check     CheckCmd     `cmd:"" help:"Check architecture constraints."`
-	Enrich    EnrichCmd    `cmd:"" help:"Draft LLM coupling-label refinements for human review (off-gate)."`
-	Scan      ScanCmd      `cmd:"" help:"Full architecture audit report (scan ≡ check --full --advisory --report --format markdown)."`
-	Score     ScoreCmd     `cmd:"" help:"Seven-dimension banded scorecard (score ≡ check --advisory --report --format scorecard)."`
-	Baseline  BaselineCmd  `cmd:"" help:"Save current findings as baseline."`
-	Explain   ExplainCmd   `cmd:"" help:"Explain a specific finding."`
-	Doctor    DoctorCmd    `cmd:"" help:"Check toolchain availability."`
-	Install   InstallCmd   `cmd:"" help:"Install external tools required for language analysis."`
-	Init      InitCmd      `cmd:"" help:"Initialize .archfit.yaml."`
-	Autopilot AutopilotCmd `cmd:"" help:"Draft a full .archfit.yaml for review via LLM (off-gate; never applied — writes a review file)."`
-	Update    UpdateCmd    `cmd:"" help:"Sync .archfit.yaml with current project structure."`
-	Review    ReviewCmd    `cmd:"" help:"Holistic off-gate LLM narrative review of all collected evidence (off-gate; needs tools.llm configured)."`
-	Calibrate CalibrateCmd `cmd:"" help:"Compare scorers over real repos and emit an agreement report (dev tool; never affects the gate)."`
+	Doctor   DoctorCmd   `cmd:"" group:"core" help:"Check analyzer/tool availability."`
+	Init     InitCmd     `cmd:"" group:"core" help:"Create a starter architecture config."`
+	Check    CheckCmd    `cmd:"" group:"core" help:"Run the architecture drift gate."`
+	Baseline BaselineCmd `cmd:"" group:"core" help:"Accept current findings as the baseline."`
+
+	Score   ScoreCmd   `cmd:"" group:"reports" help:"Print the banded architecture scorecard."`
+	Scan    ScanCmd    `cmd:"" group:"reports" help:"Write a full Markdown architecture audit report."`
+	Explain ExplainCmd `cmd:"" group:"reports" help:"Explain one finding by fingerprint prefix."`
+
+	Install InstallCmd `cmd:"" group:"setup" help:"Install optional analyzer tools."`
+	Update  UpdateCmd  `cmd:"" group:"setup" help:"Sync .archfit.yaml with current project structure."`
+
+	Review    ReviewCmd    `cmd:"" group:"llm" help:"Off-gate LLM narrative review of collected evidence."`
+	Enrich    EnrichCmd    `cmd:"" group:"llm" help:"Draft human-reviewed LLM coupling labels and metadata."`
+	Autopilot AutopilotCmd `cmd:"" group:"llm" help:"Draft a full review-only config via LLM."`
+
+	Calibrate CalibrateCmd `cmd:"" group:"maintenance" help:"Compare scorers over real repos (dev tool; off-gate)."`
 	Version   versionFlag  `short:"v" help:"Print version and exit."`
+}
+
+func (cli) Help() string {
+	return `archfit keeps code changes aligned with the architecture you intended. It turns dependency facts into deterministic gates, scorecards, SARIF, and agent repair tasks so CI can catch architecture drift before review.
+
+First run:
+  archfit doctor
+  archfit init --root .
+  archfit check --config .archfit.yaml --full
+  archfit baseline --config .archfit.yaml --full
+
+CI / agent loop:
+  archfit check --config .archfit.yaml --base origin/main --format json
+  # on exit 1, read agent_tasks[] and rerun the validation command
+  archfit scan --config .archfit.yaml > archfit-report.md
+
+Docs:
+  ` + docsURL + `
+  CI: ` + ciDocsURL + `
+  Agent feedback: ` + agentDocsURL + `
+  Analyzer setup: ` + languagesDocsURL + `
+
+Optional LLM commands are review-only. They never decide whether the gate passes.`
+}
+
+func commandGroups() []kong.Group {
+	return []kong.Group{
+		{
+			Key:         commandGroupCore,
+			Title:       "Core feedback loop",
+			Description: "Run these locally, in CI, and in AI-agent validation steps.",
+		},
+		{
+			Key:         commandGroupReports,
+			Title:       "Reports and explanations",
+			Description: "Use these to inspect evidence without changing the gate verdict.",
+		},
+		{
+			Key:         commandGroupSetup,
+			Title:       "Setup and config maintenance",
+			Description: "Create configs and keep analyzer coverage honest as the repo changes.",
+		},
+		{
+			Key:         commandGroupLLM,
+			Title:       "Off-gate LLM helpers",
+			Description: "Draft reviews and labels for humans. The deterministic gate ignores LLM judgment.",
+		},
+		{
+			Key:         commandGroupMaintenance,
+			Title:       "Maintainer tools",
+			Description: "Project development helpers; not part of normal CI policy.",
+		},
+	}
 }
 
 // versionFlag prints the version and exits cleanly.
@@ -90,6 +163,10 @@ type exitCode int
 
 // Run parses args, runs the selected command, and returns the process exit code.
 func Run(args []string, stdout io.Writer) (exitStatus int) {
+	if len(args) == 0 {
+		args = []string{flagHelp}
+	}
+
 	// Capture controlled exits (--version, --help) via panic+recover.
 	defer func() {
 		if r := recover(); r != nil {
@@ -106,7 +183,9 @@ func Run(args []string, stdout io.Writer) (exitStatus int) {
 	var c cli
 	parser, err := kong.New(&c,
 		kong.Name("archfit"),
-		kong.Description("Architecture fitness checker for Go, TypeScript, Python, and Rust."),
+		kong.Description("Architecture drift feedback for CI and AI agents."),
+		kong.ExplicitGroups(commandGroups()),
+		kong.ConfigureHelp(kong.HelpOptions{FlagsLast: true, WrapUpperBound: 100}),
 		kong.Writers(stdout, stdout),
 		kong.Exit(func(code int) { panic(exitCode(code)) }),
 		kong.Bind(deps),

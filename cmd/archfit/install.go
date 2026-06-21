@@ -12,10 +12,14 @@ import (
 
 const installSubcmd = "install"
 
-// InstallCmd installs external tools required for language analysis.
+// InstallCmd installs external tools required for code analysis.
 type InstallCmd struct {
-	Lang   []string `name:"lang" help:"Languages to install tools for: py, ts, go, rust. Repeatable. Default: py." enum:"go,ts,py,rust" default:"py"`
+	Lang   []string `name:"lang" help:"Analyzer toolchain to check/install. Repeatable. Default: py. See analyzer setup docs for valid names." enum:"go,ts,py,rust" default:"py"`
 	DryRun bool     `name:"dry-run" short:"n" help:"Print install commands without running them."`
+}
+
+func (*InstallCmd) Help() string {
+	return "Checks local analyzer tools and installs the ones archfit can install automatically. For complete setup notes, see " + languagesDocsURL + "."
 }
 
 func (c *InstallCmd) Run(deps *appDeps) error {
