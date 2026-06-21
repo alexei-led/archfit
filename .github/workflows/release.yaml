@@ -175,3 +175,11 @@ jobs:
             --notes-file RELEASE_NOTES.md \
             ${{ steps.prerelease.outputs.flag }} \
             dist/*
+      - name: Update Homebrew formula
+        if: ${{ !contains(github.ref_name, '-rc.') }}
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          repository: alexei-led/homebrew-tap
+          event-type: update-formula
+          client-payload: '{"formula": "archfit", "version": "${{ github.ref_name }}", "repo": "alexei-led/archfit"}'
