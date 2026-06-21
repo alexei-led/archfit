@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -177,8 +178,58 @@ func TestDetectIndexer_Rust(t *testing.T) {
 	if pkg != "demo-crate" {
 		t.Errorf("pkg = %q, want demo-crate", pkg)
 	}
-	if lang != "rust" {
+	if lang != langRust {
 		t.Errorf("lang = %q, want rust", lang)
+	}
+}
+
+// TestDetectIndexer_VirtualWorkspace asserts that a Cargo virtual workspace
+// (no [package] in root Cargo.toml) still triggers rust-analyzer when cargo
+// metadata enumerates members — pkg is the comma-joined crate names.
+func TestDetectIndexer_VirtualWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	manifest := "[workspace]\nmembers = [\"crate-a\", \"crate-b\"]\n"
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Canned cargo metadata JSON with two workspace members.
+	metaJSON := `{"packages":[{"name":"crate-a"},{"name":"crate-b"}],"workspace_members":["crate-a 0.1.0 (path+file:///tmp/a)","crate-b 0.1.0 (path+file:///tmp/b)"]}`
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == indexerRust || tool == toolCargo {
+				return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/" + tool}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if cmd.Name == "cargo" {
+				return toolrun.Output{Stdout: []byte(metaJSON), ExitCode: 0}, nil
+			}
+			return toolrun.Output{}, nil
+		},
+	}
+	indexer, pkg, lang, ok := New(runner).detectIndexer(context.Background(), dir)
+	if !ok {
+		t.Fatal("detectIndexer: ok = false, want true for virtual workspace")
+	}
+	if indexer != indexerRust {
+		t.Errorf("indexer = %q, want %q", indexer, indexerRust)
+	}
+	if lang != langRust {
+		t.Errorf("lang = %q, want %q", lang, langRust)
+	}
+	// pkg must contain both crate names (comma-joined).
+	for _, name := range []string{"crate-a", "crate-b"} {
+		found := false
+		for _, p := range strings.Split(pkg, ",") {
+			if strings.TrimSpace(p) == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("pkg %q does not contain %q", pkg, name)
+		}
 	}
 }
 

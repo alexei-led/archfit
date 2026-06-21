@@ -24,6 +24,8 @@ const (
 	indexerTS     = "scip-typescript"
 	indexerRust   = "rust-analyzer"
 	flagOutput    = "--output"
+	langRust      = "rust"
+	toolCargo     = "cargo"
 
 	nodeModulesDir = "node_modules"
 
@@ -238,11 +240,58 @@ func (a *Adapter) detectIndexer(ctx context.Context, root string) (indexer, pkg,
 	if fileExists(filepath.Join(root, "Cargo.toml")) {
 		if _, found := a.runner.Detect(ctx, indexerRust); found {
 			if n := cargoPackageName(root); n != "" {
-				return indexerRust, n, "rust", true
+				// Single-package crate: pass the name directly.
+				return indexerRust, n, langRust, true
+			}
+			// Virtual workspace ([workspace] with no [package]): enumerate members
+			// via cargo metadata and pass them comma-joined so the reader can build
+			// the _is_internal membership set.
+			if members := a.cargoWorkspaceMembers(ctx, root); len(members) > 0 {
+				return indexerRust, strings.Join(members, ","), langRust, true
 			}
 		}
 	}
 	return "", "", "", false
+}
+
+// cargoWorkspaceMembers runs `cargo metadata --no-deps --format-version 1` in root
+// and returns the names of all workspace member packages. Returns nil on any failure.
+// Used for virtual workspaces (no [package] in root Cargo.toml) so detectIndexer
+// can build a comma-separated package list for the SCIP reader.
+func (a *Adapter) cargoWorkspaceMembers(ctx context.Context, root string) []string {
+	out, err := a.runner.Run(ctx, toolrun.ToolCmd{
+		Name:    toolCargo,
+		Args:    []string{"metadata", "--no-deps", "--format-version", "1"},
+		WorkDir: root,
+		Timeout: 60 * time.Second,
+	})
+	if err != nil || out.ExitCode != 0 {
+		return nil
+	}
+	var meta struct {
+		Packages []struct {
+			Name string `json:"name"`
+		} `json:"packages"`
+		WorkspaceMembers []string `json:"workspace_members"`
+	}
+	if err := json.Unmarshal(out.Stdout, &meta); err != nil {
+		return nil
+	}
+	// workspace_members lists package IDs like "name version (path+file:///...)".
+	// Build a set of member IDs so we can filter packages to only workspace members.
+	memberSet := make(map[string]struct{}, len(meta.WorkspaceMembers))
+	for _, id := range meta.WorkspaceMembers {
+		// ID format: "<name> <version> (<source>)" — take the first space-delimited token.
+		name, _, _ := strings.Cut(id, " ")
+		memberSet[name] = struct{}{}
+	}
+	names := make([]string, 0, len(meta.Packages))
+	for _, p := range meta.Packages {
+		if _, ok := memberSet[p.Name]; ok {
+			names = append(names, p.Name)
+		}
+	}
+	return names
 }
 
 // indexArgs returns the per-indexer command arguments to write an index to out.
