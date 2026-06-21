@@ -45,3 +45,15 @@ const (
 	toolDepCruiser = "dependency-cruiser"
 	toolGrimp      = "grimp"
 )
+
+// SCIP indexer binary names shared by the language registry (DoctorTools +
+// SCIPIndexer) and the doctor command.
+const (
+	scipGo         = "scip-go"
+	scipTypeScript = "scip-typescript"
+	scipPython     = "scip-python"
+)
+
+// markerGoMod is the Go project-marker filename used by the language registry
+// and the test fixtures.
+const markerGoMod = "go.mod"

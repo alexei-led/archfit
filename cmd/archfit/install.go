@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -20,12 +21,12 @@ type InstallCmd struct {
 func (c *InstallCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kong command interface; future versions may return errors
 	ctx := context.Background()
 	for _, lang := range c.Lang {
-		switch lang {
-		case "py":
+		switch languageByAlias(lang) {
+		case config.LangPython:
 			c.installPy(ctx, deps)
-		case "ts":
+		case config.LangTypeScript:
 			c.installTS(ctx, deps)
-		case "go":
+		case config.LangGo:
 			c.installGo(ctx, deps)
 		}
 	}

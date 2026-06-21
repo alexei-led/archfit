@@ -181,18 +181,19 @@ moduleFileCandidatesFn, fileToModuleKeyFn}` + methods `ModuleSegments`,
 
 ### Task 7: Add `cmd/archfit/registry.go` language registry; rewire pipeline/doctor/install
 
-- [ ] new `cmd/archfit/registry.go`: `LanguageDescriptor{ID, Aliases, ProjectMarkers,
+- [x] new `cmd/archfit/registry.go`: `LanguageDescriptor{ID, Aliases, ProjectMarkers,
 NewExtractor(toolrun.Runner, config.ExtractConfig) ports.Extractor, PrimaryTool,
 InstallHint, DoctorTools, SCIPIndexer}` + ordered `languageRegistry` (go/ts/py) +
       `buildExtractors`, `languageByAlias`, `primaryExtractorTools`
-- [ ] `pipeline.go`: slice → `buildExtractors(deps.Runner, cfg)`; build `coverageToolConfigKey` + `toolAffectedMetrics` by ranging the registry (lizard/jscpd/gitnexus stay literal);
+- [x] `pipeline.go`: slice → `buildExtractors(deps.Runner, cfg)`; build `coverageToolConfigKey` + `toolAffectedMetrics` by ranging the registry (lizard/jscpd/gitnexus stay literal);
       `RunInput.PrimaryExtractorTools = primaryExtractorTools()`; `canonicalLang` → `languageByAlias`
-- [ ] `doctor.go`: append `lang.DoctorTools` from registry (shared git/sg/uv stay literal);
+- [x] `doctor.go`: append `lang.DoctorTools` from registry (shared git/sg/uv stay literal);
       `install.go`: `Run()` dispatches via `languageByAlias` (keep kong `enum` tag string)
-- [ ] add `TestBuiltinConventionsCoverage` (every canonical lang id has a convention) and
-      `TestLangAliasesInInstallEnum` (registry aliases ⊆ kong enum) to `internal/arch_test.go`
-- [ ] **preserve extractor order** go→ts→py (golden depends on graph-merge order)
-- [ ] run `go test ./internal/engine/ -run TestGolden` + `TestArchImports` — green;
+- [x] add `TestBuiltinConventionsCoverage` (every canonical lang id has a convention) and
+      `TestLangAliasesInInstallEnum` (install enum ⊆ registry-resolvable) — placed in
+      `cmd/archfit/registry_test.go` (internal/ cannot import cmd, where the registry lives)
+- [x] **preserve extractor order** go→ts→py (golden depends on graph-merge order)
+- [x] run `go test ./internal/engine/ -run TestGolden` + `TestArchImports` — green;
       `archfit doctor` lists the same tools; `make test` + `make lint` before Task 8
 
 ### Task 8: Add `internal/extract/rust` extractor (`cargo metadata`)
