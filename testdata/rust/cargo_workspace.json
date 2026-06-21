@@ -1,0 +1,68 @@
+{
+  "packages": [
+    {
+      "id": "path+file:///repo#ripgrep@13.0.0",
+      "name": "ripgrep",
+      "manifest_path": "/repo/Cargo.toml",
+      "source": null,
+      "dependencies": [
+        {
+          "name": "grep",
+          "source": null,
+          "kind": null
+        },
+        {
+          "name": "ignore",
+          "source": null,
+          "kind": null
+        },
+        {
+          "name": "serde",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "kind": null
+        },
+        {
+          "name": "tempfile",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "kind": "dev"
+        }
+      ]
+    },
+    {
+      "id": "path+file:///repo/crates/grep#grep@0.2.0",
+      "name": "grep",
+      "manifest_path": "/repo/crates/grep/Cargo.toml",
+      "source": null,
+      "dependencies": [
+        {
+          "name": "ignore",
+          "source": null,
+          "kind": null
+        },
+        {
+          "name": "regex",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "kind": null
+        },
+        {
+          "name": "cc",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "kind": "build"
+        }
+      ]
+    },
+    {
+      "id": "path+file:///repo/crates/ignore#ignore@0.4.0",
+      "name": "ignore",
+      "manifest_path": "/repo/crates/ignore/Cargo.toml",
+      "source": null,
+      "dependencies": []
+    }
+  ],
+  "workspace_members": [
+    "path+file:///repo#ripgrep@13.0.0",
+    "path+file:///repo/crates/grep#grep@0.2.0",
+    "path+file:///repo/crates/ignore#ignore@0.4.0"
+  ],
+  "workspace_root": "/repo"
+}

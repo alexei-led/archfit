@@ -62,6 +62,11 @@ type ExtractConfig struct {
 	// Python-specific.
 	PyPackage   string // top-level package name
 	ProjectRoot string // project root for uv --directory
+
+	// Rust-specific.
+	CargoManifest  string   // path to Cargo.toml (empty = auto, root manifest)
+	CargoFeatures  []string // cargo features to activate (empty = default)
+	IncludeDevDeps bool     // include dev-dependencies as edges
 }
 
 // ClassifyConfig is the view passed to the classify stage.

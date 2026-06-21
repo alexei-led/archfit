@@ -1,0 +1,7 @@
+[workspace]
+members = ["crates/grep", "crates/ignore"]
+
+[package]
+name = "ripgrep"
+version = "13.0.0"
+edition = "2021"

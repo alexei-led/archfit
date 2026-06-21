@@ -198,20 +198,22 @@ InstallHint, DoctorTools, SCIPIndexer}` + ordered `languageRegistry` (go/ts/py) 
 
 ### Task 8: Add `internal/extract/rust` extractor (`cargo metadata`)
 
-- [ ] new package `internal/extract/rust/{doc.go,rust.go,rust_test.go}` modeled on `ts.go`:
+- [x] new package `internal/extract/rust/{doc.go,rust.go,rust_test.go}` modeled on `ts.go`:
       `New(runner, cfg)`, `Name() "rust"`, `Extract`; applicability = `Cargo.toml` at `s.Root`
-- [ ] command `cargo metadata --format-version 1 --no-deps` (+`--features`, +`--manifest-path`
+- [x] command `cargo metadata --format-version 1 --no-deps` (+`--features`, +`--manifest-path`
       when set), `WorkDir s.Root`; version via `cargo --version`
-- [ ] `parseAndNormalize`: emit `package:<crate>` (`NodeKindPackage`) per workspace member,
+- [x] `parseAndNormalize`: emit `package:<crate>` (`NodeKindPackage`) per workspace member,
       `external:<crate>` (`NodeKindExternal`) for registry deps; `Edge{Kind:EdgeKindDependsOn,
 Language:"rust", Confidence:"high", Locations:[{File:"Cargo.toml"}]}`; skip dev-deps unless
       `IncludeDevDeps`; `Coverage{Tool:"cargo", FilesSeen=FilesApplicable=len(members), Status:"ok"}`
-- [ ] mode behavior copied from `ts.go`: Off / Auto-without-marker / Auto-without-`cargo` →
+      (ExtractConfig fields `CargoManifest`/`CargoFeatures`/`IncludeDevDeps` added here as a
+      compile prerequisite; Task 9 wires their YAML + `ForExtract` source)
+- [x] mode behavior copied from `ts.go`: Off / Auto-without-marker / Auto-without-`cargo` →
       empty Facts + absent coverage, no error; On-without-marker / On-without-binary /
       non-zero exit → error
-- [ ] write table tests with a fake `toolrun.Runner`: multi-crate workspace fixture JSON,
+- [x] write table tests with a fake `toolrun.Runner`: multi-crate workspace fixture JSON,
       single-crate fixture (`FilesSeen=1`, no edges, no error), absent-cargo, mode matrix
-- [ ] run `go test ./internal/extract/rust/ -v` + `make test` + `make lint` before Task 9
+- [x] run `go test ./internal/extract/rust/ -v` + `make test` + `make lint` before Task 9
 
 ### Task 9: Config — Rust language key, view fields, and `ForExtract` branch
 
