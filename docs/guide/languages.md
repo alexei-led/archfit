@@ -1,7 +1,7 @@
 # Language support
 
 This page is the canonical list of currently supported language adapters.
-`archfit` can analyze Go, TypeScript/JavaScript, and Python in the same run.
+`archfit` can analyze Go, TypeScript/JavaScript, Python, and Rust in the same run.
 Enable languages in `.archfit.yaml` with `tools.<language>.enabled`.
 
 ```yaml
@@ -11,6 +11,8 @@ tools:
   typescript:
     enabled: auto
   python:
+    enabled: auto
+  rust:
     enabled: auto
 ```
 
@@ -217,6 +219,74 @@ Python notes:
 - imports of underscore-prefixed modules, such as `myapp._internal`, are treated
   as intrusive coupling signals.
 
+## Rust
+
+Requirements:
+
+- `cargo` on `PATH`;
+- `Cargo.toml` at the repository root.
+
+Recommended install:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+cargo --version
+```
+
+How extraction works:
+
+- runs `cargo metadata --format-version 1 --no-deps` in the project root;
+- emits one `package:<crate>` node per workspace member;
+- emits an `external:<crate>` node for each registry dependency;
+- emits `depends_on` edges located at `Cargo.toml`;
+- skips dev-dependencies unless `rust_include_dev_deps: true`.
+
+Granularity is **crate-level**, not file- or module-level. Each workspace member
+is one node; intra-crate module edges are out of scope. A single-crate repo
+therefore yields exactly one `package:` node and no intra-workspace edges. For
+finer resolution, enable the optional `rust-analyzer scip` strength pass (see
+below) — it is the upgrade path.
+
+Optional config:
+
+- `rust_manifest` — path to a non-root `Cargo.toml` (empty = auto, root manifest);
+- `rust_features` — cargo features to activate for the metadata run;
+- `rust_include_dev_deps` — include dev-dependencies as crate edges.
+
+Example config (multi-crate workspace):
+
+```yaml
+tools:
+  go:
+    enabled: off
+  typescript:
+    enabled: off
+  python:
+    enabled: off
+  rust:
+    enabled: on
+
+layers: [core, cli]
+modules:
+  core:
+    paths: [grep-*]
+    layer: core
+    subdomain: core
+  cli:
+    paths: [ripgrep]
+    layer: cli
+    subdomain: supporting
+rules:
+  - id: core_no_cli
+    type: forbidden_dependency
+    from: grep-*
+    to: ripgrep
+    gate: fail
+```
+
+For Rust, module paths and rule filters are crate-name globs (the crate name from
+`Cargo.toml`, such as `grep-cli`), not file paths.
+
 ## Optional analyzers per language
 
 The deterministic gates need only the language adapter above. The report-only
@@ -224,12 +294,12 @@ metrics need extra tools, and several are language-specific. When a tool is
 missing the dependent metric reports `n/a` **with the reason and enable step** —
 the run never fails — but the metric stays blind until you install it.
 
-| Tool                | Powers                  | Go  | TS/JS | Python | Setup                                                                              |
-| ------------------- | ----------------------- | --- | ----- | ------ | ---------------------------------------------------------------------------------- |
-| `lizard`            | `complexity`            | yes | yes   | yes    | `tools.complexity.enabled: on`; `pip install lizard` (or `uv tool install lizard`) |
-| SCIP indexer + `uv` | `risk_hub`              | yes | yes   | yes    | `tools.scip.enabled: on`; see notes below                                          |
-| clone detector      | `functional_candidates` | yes | yes   | yes    | `tools.clones.enabled: on`; jscpd (JS/TS) or PMD                                   |
-| `gitnexus`          | enriches `risk_hub`     | yes | yes   | yes    | `tools.gitnexus.enabled: on` (or auto-detect)                                      |
+| Tool                | Powers                  | Go  | TS/JS | Python | Rust | Setup                                                                              |
+| ------------------- | ----------------------- | --- | ----- | ------ | ---- | ---------------------------------------------------------------------------------- |
+| `lizard`            | `complexity`            | yes | yes   | yes    | yes  | `tools.complexity.enabled: on`; `pip install lizard` (or `uv tool install lizard`) |
+| SCIP indexer + `uv` | `risk_hub`              | yes | yes   | yes    | yes  | `tools.scip.enabled: on`; see notes below                                          |
+| clone detector      | `functional_candidates` | yes | yes   | yes    | yes  | `tools.clones.enabled: on`; jscpd (JS/TS) or PMD                                   |
+| `gitnexus`          | enriches `risk_hub`     | yes | yes   | yes    | yes  | `tools.gitnexus.enabled: on` (or auto-detect)                                      |
 
 Notes that bite most often:
 
@@ -240,6 +310,11 @@ Notes that bite most often:
   imports through installed dependencies, so run `npm ci` (or `bun install`)
   before the run. If `node_modules` is absent, archfit reports `risk_hub` as
   `n/a` with exactly that reason instead of silently skipping it.
+- **SCIP for Rust uses `rust-analyzer`.** With `tools.scip.enabled: on` and
+  `rust-analyzer` on `PATH`, archfit runs `rust-analyzer scip` to add symbol-level
+  strength on top of the crate-level `cargo metadata` graph. When the binary is
+  absent the pass no-ops cleanly — no error, `risk_hub` stays `n/a` with the
+  reason.
 - **Clone detection is opt-in.** `tools.clones.enabled: on` plus a detector
   (`npm install -g jscpd@5.0.9` for JS/TS, or PMD/CPD for Go/Python) turns
   `functional_candidates` on. Off or absent → `n/a`.

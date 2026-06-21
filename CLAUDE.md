@@ -3,7 +3,7 @@
 Architecture-fitness CLI (Go). Reads dependency facts from a target repo, checks
 them against `.archfit.yaml`, emits gate violations + metrics for CI and AI agents.
 Language facts come from external tools run out-of-process: `go list`,
-dependency-cruiser, ast-grep, grimp.
+dependency-cruiser, ast-grep, grimp, `cargo metadata`.
 
 ## Commands (Makefile)
 
@@ -31,7 +31,7 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   the banded scorecard from an already-computed `Diagnostic`.
 - `internal/model/*` imports stdlib only.
 - Every subprocess call goes through `toolrun.Runner` (interface in `internal/ports`);
-  extractors in `internal/extract/{go,ts,py}` are out-of-process adapters. No
+  extractors in `internal/extract/{go,ts,py,rust}` are out-of-process adapters. No
   `exec.Command` in core code — fake the `Runner` in tests.
 - Parse config once into typed views; pass a package its view, not the whole config.
 - LLM SDKs (`anthropic-sdk-go`, `openai-go`) are off-gate: only `enrich`,

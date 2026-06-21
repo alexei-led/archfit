@@ -10,7 +10,7 @@
 //
 // # Resolution behaviour
 //
-//   - If none of scip-typescript, scip-python, or scip-go are present on PATH,
+//   - If none of scip-typescript, scip-python, scip-go, or rust-analyzer are present on PATH,
 //     Resolve returns toPath unchanged with confidence "medium" (identity
 //     resolver — safe for gate evaluation but signals missing toolchain).
 //   - If a SCIP indexer is detected, Resolve still returns toPath unchanged
@@ -38,7 +38,7 @@ const toolName = "scip"
 const toolNameSymbols = "scip-symbols"
 
 // scipTools are the SCIP indexers checked in preference order.
-var scipTools = []string{indexerTS, indexerPython, indexerGo}
+var scipTools = []string{indexerTS, indexerPython, indexerGo, indexerRust}
 
 // Adapter satisfies ports.SymbolResolver using SCIP indexers.
 // It detects available SCIP tools once (via sync.Once) and, when any are

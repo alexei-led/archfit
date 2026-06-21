@@ -253,12 +253,12 @@ Language:"rust", Confidence:"high", Locations:[{File:"Cargo.toml"}]}`; skip dev-
 
 ### Task 12: Docs — Rust language guide + extractor doc
 
-- [ ] `docs/guide/languages.md`: add a Rust section (requires `cargo`; optional `rust-analyzer`
+- [x] `docs/guide/languages.md`: add a Rust section (requires `cargo`; optional `rust-analyzer`
       for strength; crate-granularity + its ceiling)
-- [ ] `internal/extract/rust/doc.go`: state the accepted tradeoff — crate-level graph;
+- [x] `internal/extract/rust/doc.go`: state the accepted tradeoff — crate-level graph;
       single-crate repos yield one node; intra-crate module edges out of scope (SCIP = upgrade path)
-- [ ] update root `README.md`/CLAUDE.md language list if Rust belongs there
-- [ ] run `make lint` (markdown/links if checked) + `make test` before Task 13
+- [x] update root `README.md`/CLAUDE.md language list if Rust belongs there
+- [x] run `make lint` (markdown/links if checked) + `make test` before Task 13
 
 ### Task 13: Verify acceptance criteria + end-to-end Rust runs
 
