@@ -158,3 +158,98 @@ metric names.
   `map_review.gate: off` now correctly disables the staleness advisory pass,
   consistent with `gate: off` semantics everywhere else in the config. Previously
   `off` was treated as a non-empty gate string and enabled the pass.
+
+---
+
+## v0.4.0 — Gap-closure release
+
+Closes the tool-vs-expert gap with new commands, metrics, and config UX. No
+breaking changes to gate verdicts, exit codes, or metric names.
+
+- **`score`:** per-dimension banded scorecard (`archfit score`).
+- **`review`:** off-gate LLM architecture review of the collected evidence.
+- **Cohesion metric** added to the modularity dimension.
+- **TypeScript dynamic-imports extractor:** report-only hidden-coupling signal the
+  static graph misses.
+- **Config-quality lint** for under-specified modules (missing owner/subdomain/etc.).
+- **gitnexus auto-detection** of a present `.gitnexus/` / `.codegraph` index.
+- **Starter example configs:** go-monolith, microservices, ddd, python-package,
+  ts-monorepo.
+- _Fixes:_ measurement and scoring correctness fixes folded in from multiple review
+  passes.
+
+---
+
+## v0.4.1 — Documentation
+
+Documentation-only release: AI-agent-oriented README rewrite, v0.4.0 references,
+and gap-closure notes. No code changes.
+
+---
+
+## v0.5.0 — Reliability hardening + off-gate LLM self-driving
+
+The `check` gate is now trustworthy in CI and agent loops: no false greens, honest
+coverage, and an LLM layer that drafts config without ever touching the gate.
+
+- **Honest `n/a`:** `coverage` and `encapsulation` report `n/a` (not a false `1.0`)
+  when no extractor ran or the graph is empty; `analysis_confidence` caps every
+  dependent metric's band.
+- **Loud coverage gaps:** coverage gaps and config warnings surface in stderr, JSON,
+  and Markdown; opt-in hard gate for missing tools (`--require-tools` /
+  `tools.<x>.gate: fail`).
+- **Delta bucketing:** findings grouped as new / existing / resolved /
+  severity_changed / touched.
+- **`--root`** decouples the scan root from `--config` for external CI (check / scan
+  / score / enrich).
+- **`autopilot`** drafts a full `.archfit.yaml` in review-only mode (never overwrites).
+- **`enrich --owner` / `--volatility`** drafts; `.env` autoload for LLM keys.
+- _Fixes:_ dotenv no longer overwrites an explicitly-empty env var (a CI opt-out is
+  preserved).
+
+---
+
+## v0.5.1 — Homebrew release plumbing
+
+- Dispatch Homebrew tap updates after stable releases; skip prerelease tags.
+- Restore clean local lint/test gates; ignore an inherited hook git env during
+  repository detection.
+
+---
+
+## v0.5.2 — Homebrew formula generation
+
+- Generate the Homebrew formula locally and push it directly to the tap (a Ruby
+  script fetches `SHA256SUMS` from the published release), removing the dependency on
+  the tap's auto-update workflow.
+
+---
+
+## v0.6.0 — Rust language support
+
+archfit now analyzes Rust alongside Go, TypeScript, and Python — the same gates,
+Balanced-Coupling advisories, and scorecard apply.
+
+- **Rust crate analysis** via `cargo metadata`: one graph node per workspace member,
+  `external:` dependency nodes, and `depends_on` edges. Enable with
+  `tools.rust.enabled: auto` (needs `cargo` on `PATH`).
+- **Opt-in intra-crate module graph** (`tools.cargo-modules.enabled`, the
+  `<crate>::<mod>` graph) and **rust-analyzer SCIP integration strength**
+  (`tools.scip.enabled`), so single-crate repos get real cycle, blast-radius,
+  cohesion, and god-file signal instead of a single crate-level node.
+- **Module-level size & history metrics:** per-file LOC and git churn now resolve to
+  `<crate>::<mod>` keys, so `structural_weight`, `change_coupling`,
+  `change_amplification`, `hidden_coupling`, and `functional_candidates` measure at
+  module granularity. `lizard` complexity is extended to `.rs`.
+- _Fix — honest scorecard on sparse graphs:_ a degenerate (<2-node) graph never scores
+  `strong`, and `analysis_confidence` reflects the share of measured structural
+  dimensions rather than reading high on tool coverage alone.
+- _Fix — polyglot cycles:_ a Go/TypeScript import cycle is no longer softened when Rust
+  edges dominate the graph by count; Rust module cycles band below crate cycles
+  (cargo permits module cycles, forbids crate cycles).
+- _Fix — partial coverage honesty:_ a partial `cargo-modules` run caps the affected
+  dimensions' confidence and names the crates that failed, instead of presenting a
+  confident verdict.
+- _Upgrade note:_ the Docker image does not bundle the Rust toolchain — Rust analysis
+  reports `n/a` (never fails) there; run on a host with `cargo`, or extend the image.
+  Optional depth: `cargo install cargo-modules` and `rustup component add rust-analyzer`.
