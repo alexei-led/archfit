@@ -303,8 +303,10 @@ func indexArgs(indexer, pkg, root, out string) []string {
 	case indexerTS:
 		return []string{"index", flagOutput, out}
 	case indexerRust:
-		// rust-analyzer runs in the project root (WorkDir) and indexes the cwd.
-		return []string{"scip", flagOutput, out}
+		// rust-analyzer scip REQUIRES the project path as a positional arg; with only
+		// --output it exits 0 in milliseconds and writes nothing. WorkDir is the root,
+		// so pass ".". (Omitting it was why Rust SCIP silently produced no index.)
+		return []string{"scip", ".", flagOutput, out}
 	default: // scip-python
 		return []string{"index", "--project-name", pkg, "--cwd", root, flagOutput, out, "--quiet"}
 	}

@@ -28,6 +28,7 @@ const libCrateDOT = `digraph {
     "mylib" -> "mylib::core" [label="owns", color="#000000"]; // "owns" edge
     "mylib" -> "mylib::util" [label="owns", color="#000000"]; // "owns" edge
     "mylib::util" -> "mylib::core" [label="uses", color="#7f7f7f"]; // "uses" edge
+    "mylib::util::helper" -> "mylib::core::SomeStruct" [label="uses", color="#7f7f7f"]; // item-level "uses" edge
 }
 `
 
@@ -134,16 +135,26 @@ func TestModuleGraph_LibCrate(t *testing.T) {
 		t.Error("struct node should be filtered out, but was present")
 	}
 
-	// Expect edges: owns (belongs_to) and uses (depends_on).
+	// Edges are module->module dependencies aggregated from "uses" edges. "owns"
+	// (hierarchy) edges are NOT graph edges. The module-level uses (util->core) and
+	// the item-level uses (util::helper->core::SomeStruct) both aggregate to the same
+	// module edge and dedup to exactly one depends_on; no belongs_to.
 	edgeKinds := make(map[graph.EdgeKind]int)
+	var depEdges []string
 	for _, ed := range facts.Edges {
 		edgeKinds[ed.Kind]++
+		if ed.Kind == graph.EdgeKindDependsOn {
+			depEdges = append(depEdges, ed.From+" -> "+ed.To)
+		}
 	}
-	if edgeKinds[graph.EdgeKindBelongsTo] == 0 {
-		t.Error("expected at least one belongs_to (owns) edge")
+	if edgeKinds[graph.EdgeKindBelongsTo] != 0 {
+		t.Errorf("owns/hierarchy must not be emitted as graph edges; got %d belongs_to", edgeKinds[graph.EdgeKindBelongsTo])
 	}
-	if edgeKinds[graph.EdgeKindDependsOn] == 0 {
-		t.Error("expected at least one depends_on (uses) edge")
+	if got := edgeKinds[graph.EdgeKindDependsOn]; got != 1 {
+		t.Errorf("expected exactly one aggregated depends_on edge, got %d: %v", got, depEdges)
+	}
+	if len(depEdges) != 1 || depEdges[0] != "package:mylib::util -> package:mylib::core" {
+		t.Errorf("expected aggregated edge package:mylib::util -> package:mylib::core, got %v", depEdges)
 	}
 
 	// Cargo-modules coverage must be reported.

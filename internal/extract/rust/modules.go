@@ -143,14 +143,21 @@ func (e *Extractor) runCargoModulesForCrate(ctx context.Context, crateName, crat
 // graph node Path with NodeKindPackage, making it consistent with crate-level nodes
 // from parseAndNormalize. The "::" separator matches cargo-modules' own convention.
 func parseDOT(data []byte) ([]graph.Node, []graph.Edge) {
-	// Two-pass parse: collect module-level node paths first, then emit only
-	// edges where both endpoints are module-level nodes. cargo-modules emits
-	// edges between struct/fn/type nodes too; including those would reference
-	// paths absent from the node list, causing nil-map panics in modgraph.
+	// cargo-modules emits a node per module AND per item (struct/fn/type), with
+	// "owns" edges for the module hierarchy and "uses" edges for references. The
+	// dependency signal we want is module->module coupling, but "uses" edges are
+	// emitted between items (e.g. demo::a::make -> demo::b::Thing). So: collect the
+	// module node set, then aggregate every "uses" edge to the ENCLOSING MODULE of
+	// each endpoint (longest module-node prefix), dropping self-edges and duplicates.
+	// "owns" edges are hierarchy, not dependencies — they only establish module
+	// membership and are never emitted as graph edges. Keeping only module endpoints
+	// (the earlier behaviour) dropped every uses edge, leaving an ownership tree with
+	// no coupling for the metrics or SCIP strength to measure.
 	moduleNodes := make(map[string]struct{})
 	var lines []string
 
 	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		lines = append(lines, line)
@@ -166,27 +173,50 @@ func parseDOT(data []byte) ([]graph.Node, []graph.Edge) {
 		nodes = append(nodes, graph.Node{Kind: graph.NodeKindPackage, Path: path})
 	}
 
+	seen := make(map[string]struct{})
 	var edges []graph.Edge
 	for _, line := range lines {
-		// Edge line: "a" -> "b" [label="owns"|"uses", ...]
-		// Only emit edges where both endpoints are module-level nodes.
-		if from, to, kind, ok := extractDOTEdge(line); ok {
-			if _, okFrom := moduleNodes[from]; !okFrom {
-				continue // from is a struct/fn/type — skip
-			}
-			if _, okTo := moduleNodes[to]; !okTo {
-				continue // to is a struct/fn/type — skip
-			}
-			edges = append(edges, graph.Edge{
-				From:       string(graph.NodeKindPackage) + ":" + from,
-				To:         string(graph.NodeKindPackage) + ":" + to,
-				Kind:       kind,
-				Language:   langRust,
-				Confidence: "medium", // structural; no type-resolution
-			})
+		from, to, kind, ok := extractDOTEdge(line)
+		if !ok || kind != graph.EdgeKindDependsOn { // only "uses" edges are dependencies
+			continue
 		}
+		fromMod, ok1 := moduleOf(from, moduleNodes)
+		toMod, ok2 := moduleOf(to, moduleNodes)
+		if !ok1 || !ok2 || fromMod == toMod {
+			continue // unresolved endpoint or an intra-module reference
+		}
+		key := fromMod + "\x00" + toMod
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		edges = append(edges, graph.Edge{
+			From:       string(graph.NodeKindPackage) + ":" + fromMod,
+			To:         string(graph.NodeKindPackage) + ":" + toMod,
+			Kind:       graph.EdgeKindDependsOn,
+			Language:   langRust,
+			Confidence: "medium", // structural; no type-resolution
+		})
 	}
 	return nodes, edges
+}
+
+// moduleOf returns the enclosing module of a cargo-modules node path: the longest
+// "::"-delimited prefix that is itself a module node. An item node like
+// "demo::a::make" maps to module "demo::a"; a module node maps to itself. Returns
+// ok=false when no prefix is a known module (e.g. an external crate item).
+func moduleOf(path string, modules map[string]struct{}) (string, bool) {
+	for p := path; p != ""; {
+		if _, ok := modules[p]; ok {
+			return p, true
+		}
+		i := strings.LastIndex(p, "::")
+		if i < 0 {
+			return "", false
+		}
+		p = p[:i]
+	}
+	return "", false
 }
 
 // isModuleNodeLine reports whether the DOT line is a module-level node declaration

@@ -258,10 +258,11 @@ func TestCargoPackageName(t *testing.T) {
 	}
 }
 
-// TestIndexArgs_Rust pins the rust-analyzer command shape (scip --output <out>).
+// TestIndexArgs_Rust pins the rust-analyzer command shape: scip needs the project
+// path positional ("." — WorkDir is the root) or it exits 0 and writes nothing.
 func TestIndexArgs_Rust(t *testing.T) {
 	got := indexArgs(indexerRust, "demo", "/repo", "/tmp/index.scip")
-	want := []string{"scip", flagOutput, "/tmp/index.scip"}
+	want := []string{"scip", ".", flagOutput, "/tmp/index.scip"}
 	if len(got) != len(want) {
 		t.Fatalf("args = %v, want %v", got, want)
 	}

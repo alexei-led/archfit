@@ -102,19 +102,24 @@ def _rust_module_key(symbol: str) -> str | None:
     if f is None:
         return None
     crate, descriptors = f[2], f[4]
-    # Strip the crate-root "crate/" prefix (always present in rust-analyzer symbols).
-    if not descriptors.startswith("crate/") and descriptors != "crate/":
-        # Could be a proc-macro or binary root like "main()." — not a module.
-        if descriptors.rstrip().endswith(("().", "#", ":")):
-            return None
-        # Fallback: emit crate-level key so we still get crate-granularity strength.
+    # rust-analyzer descriptor scheme (observed): the crate ROOT module is "crate/";
+    # everything else is named DIRECTLY with no "crate/" prefix — a top-level module
+    # "a" is "a/", its type "a/Thing#", a crate-root fn "main().". So strip a leading
+    # "crate/" when present (nested modules), but otherwise treat the leading namespace
+    # segments as the module path. (The earlier code REQUIRED a "crate/" prefix, so
+    # every top-level module collapsed to the crate node and all cross-module
+    # references were misread as intra-module → zero edges.)
+    rest = descriptors
+    if rest.startswith("crate/"):
+        rest = rest[len("crate/"):]
+    elif rest in ("crate", "crate/"):
         return crate
-    rest = descriptors[len("crate/"):]
-    # Collect the leading namespace (mod) segments only; stop at first item descriptor.
-    # Examples:
-    #   "api/Server#"   → ["api"]
-    #   "api/inner/Fn#" → ["api", "inner"]
-    #   ""              → []   (crate root)
+    # Collect the leading namespace (mod) segments only; stop at the first item
+    # descriptor (type "#", term "().", "."; meta ":").
+    #   "a/"            → ["a"]            → <crate>::a
+    #   "b/Thing#x."    → ["b"]            → <crate>::b
+    #   "api/inner/Fn#" → ["api","inner"]  → <crate>::api::inner
+    #   "main()." / ""  → []               → <crate>  (crate-root item)
     mod_segs: list[str] = []
     for tok in rest.split("/"):
         if tok == "" or tok.endswith(("#", "().", ":", ".")):
