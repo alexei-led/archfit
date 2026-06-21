@@ -18,7 +18,8 @@ func TestNodeConventionModuleSegments(t *testing.T) {
 		{"go slash path", LangGo, "internal/metrics/boundary", []string{"internal", "metrics", "boundary"}},
 		{"ts slash path", LangTypeScript, "src/utils", []string{"src", "utils"}},
 		{"python dotted", LangPython, "pkg.metrics.boundary", []string{"pkg", "metrics", "boundary"}},
-		{"rust crate dir", LangRust, "crates/grep-cli", []string{"crates", "grep-cli"}},
+		{"rust module path", LangRust, "demo::api::server", []string{"demo", "api", "server"}},
+		{"rust flat crate", LangRust, "lone-crate", []string{"lone-crate"}},
 		{"flat single segment", LangGo, "core", []string{"core"}},
 		{"unknown lang slash default", langRuby, "a/b/c", []string{"a", "b", "c"}},
 	}

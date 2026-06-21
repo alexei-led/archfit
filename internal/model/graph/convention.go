@@ -109,8 +109,11 @@ var BuiltinConventions = ConventionRegistry{
 		fileToModuleKeyFn:      pythonFileToModuleKey,
 	},
 	LangRust: {
-		Language:          LangRust,
-		ModuleSegmentSep:  "/",
+		Language: LangRust,
+		// Module NODE paths are crate-relative Rust paths ("crate::mod::sub"); the
+		// segment separator is "::" so code-structure distance sees siblings as
+		// same-owner. (File paths are mapped separately by fileToModuleKeyFn.)
+		ModuleSegmentSep:  "::",
 		FileExtensions:    []string{".rs"},
 		Priority:          3,
 		fileToModuleKeyFn: rustFileToModuleKey,

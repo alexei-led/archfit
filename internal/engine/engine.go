@@ -117,6 +117,12 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		classifyCfg.CrossModuleClonePairs = buildClonePairSet(in.Signals.Duplication.Clusters, classifyCfg.ModuleMap)
 	}
 
+	// Register auto-discovered module-graph nodes (Rust "<crate>::<mod>") as modules so
+	// classify can resolve their distance/volatility; otherwise their edges are
+	// distance-unknown and coupling_balance/encapsulation never see them. No-op for
+	// Go/TS/Python (their nodes are already configured; the "::" gate excludes them).
+	classifyCfg.Modules = classify.AugmentModulesFromGraph(ex.g, classifyCfg.Modules)
+
 	couplingIdx := classify.Run(ex.g, classifyCfg)
 
 	// --- Stage 4: Rules ---

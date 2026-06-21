@@ -3,6 +3,7 @@
 package classify
 
 import (
+	"maps"
 	"sort"
 	"strings"
 
@@ -92,6 +93,43 @@ func (mi moduleIndex) moduleFor(path string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// AugmentModulesFromGraph returns a Modules map extended with a synthetic module
+// for every first-party module-graph node not already covered by a configured
+// module's path globs. Rust intra-crate module nodes ("<crate>::<mod>", produced by
+// the cargo-modules extractor) are otherwise unknown to moduleFor, so their edges
+// classify as distance-unknown and never count toward coupling_balance or
+// encapsulation. The gate is the "::" separator, which only the Rust module-graph
+// convention uses (Go/TS use "/", Python "."), so Go/TS/Python graphs and their
+// configured modules are untouched. Existing config modules keep precedence — a
+// synthetic module is only added when nothing already covers the node. The input
+// map is not mutated; a copy is returned only if something is added.
+func AugmentModulesFromGraph(g *graph.Graph, modules map[string]config.ModuleDef) map[string]config.ModuleDef {
+	if g == nil {
+		return modules
+	}
+	mi := buildModuleIndex(modules)
+	out := modules
+	cloned := false
+	for _, n := range g.Nodes() {
+		path := n.Path
+		if n.Kind == graph.NodeKindExternal || !strings.Contains(path, "::") {
+			continue // external dep, or not a Rust module-graph node
+		}
+		if _, ok := mi.moduleFor(path); ok {
+			continue // already covered by a configured module
+		}
+		if !cloned {
+			out = make(map[string]config.ModuleDef, len(modules)+8)
+			maps.Copy(out, modules)
+			cloned = true
+		}
+		if _, exists := out[path]; !exists {
+			out[path] = config.ModuleDef{Paths: []string{path}}
+		}
+	}
+	return out
 }
 
 // matchesAnyGlob reports whether path matches any of the given glob patterns.
