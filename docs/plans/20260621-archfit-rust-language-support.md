@@ -262,15 +262,20 @@ Language:"rust", Confidence:"high", Locations:[{File:"Cargo.toml"}]}`; skip dev-
 
 ### Task 13: Verify acceptance criteria + end-to-end Rust runs
 
-- [ ] run full `make all` (fmt → lint → test → build); `go test ./internal/engine/ -run TestGolden`
+- [x] run full `make all` (fmt → lint → test → build); `go test ./internal/engine/ -run TestGolden`
       byte-identical; `go test ./internal/ -run TestArchImports` green; coverage ≥ repo standard
-- [ ] e2e ripgrep: clone `github.com/BurntSushi/ripgrep`, `.bin/archfit init` then
+      — all green; golden byte-identical; TestArchImports green; rust extractor 87.8% / scip 87.1% coverage
+- [x] ⚠️ e2e ripgrep: clone `github.com/BurntSushi/ripgrep`, `.bin/archfit init` then
       `.bin/archfit check --root <ripgrep>` → assert `package:` nodes for `ripgrep`+`crates/grep-*`+`ignore`,
       crate-to-crate `depends_on` edges, `external:` deps, coverage `cargo` ok
-- [ ] e2e single-crate: clone `github.com/casey/just`, `.bin/archfit check --root <just>` →
+      — BLOCKED: `cargo` absent in runner; moved to Post-Completion (run locally)
+- [x] ⚠️ e2e single-crate: clone `github.com/casey/just`, `.bin/archfit check --root <just>` →
       exactly one `package:just` node, no intra-workspace edges, `FilesSeen=1`, **exit 0 / no error**
-- [ ] `.bin/archfit doctor` lists `cargo`+`rust-analyzer`; non-zero exit only when a required tool missing
-- [ ] _(if cargo absent in the runner, mark these e2e items blocked ⚠️ and move them to Post-Completion)_
+      — BLOCKED: `cargo` absent in runner; moved to Post-Completion (run locally)
+- [x] `.bin/archfit doctor` lists `cargo`+`rust-analyzer`; non-zero exit only when a required tool missing
+      — verified: doctor lists both (reported `missing`); exits 0 since they are optional language tools
+- [x] _(if cargo absent in the runner, mark these e2e items blocked ⚠️ and move them to Post-Completion)_
+      — applied: cargo absent → ripgrep + just e2e marked blocked above, covered by Post-Completion
 
 ## Technical Details
 
