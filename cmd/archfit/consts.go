@@ -41,10 +41,11 @@ const (
 // ToolCoverage). Their absence drops the structural metrics to n/a; shared by the
 // coverage-gap table and its config-key map.
 const (
-	toolGoPackages = "go/packages"
-	toolDepCruiser = "dependency-cruiser"
-	toolGrimp      = "grimp"
-	toolCargo      = "cargo"
+	toolGoPackages   = "go/packages"
+	toolDepCruiser   = "dependency-cruiser"
+	toolGrimp        = "grimp"
+	toolCargo        = "cargo"
+	toolCargoModules = "cargo-modules" // opt-in intra-crate module graph; mirrors config.ToolCargoModules
 )
 
 // SCIP indexer binary names shared by the language registry (DoctorTools) and

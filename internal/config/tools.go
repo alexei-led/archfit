@@ -24,6 +24,18 @@ const (
 // ToolScip is the Tools map key for the SCIP symbol-level strength provider.
 const ToolScip = "scip"
 
+// ToolCargoModules is the Tools map key for the cargo-modules intra-crate module
+// graph provider. Off by default — it compiles the crate (minutes); opt-in via
+// tools.cargo-modules.enabled: on.
+const ToolCargoModules = "cargo-modules"
+
+// CargoModulesEnabled reports whether the cargo-modules module-graph provider is
+// explicitly enabled (tools.cargo-modules.enabled: on). Opt-in only — it requires
+// a full crate compile. Auto/off/absent all disable it.
+func (c Config) CargoModulesEnabled() bool {
+	return c.Tools[ToolCargoModules].Enabled == ModeOn
+}
+
 // ScipEnabled reports whether the SCIP strength provider is explicitly enabled
 // (tools.scip.enabled: on). It is opt-in only — auto/off/absent all disable it —
 // because running a SCIP indexer is whole-repo and slow, which must not happen on

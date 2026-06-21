@@ -108,6 +108,7 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 		ec.CargoManifest = c.RustManifest
 		ec.CargoFeatures = c.RustFeatures
 		ec.IncludeDevDeps = c.RustIncludeDevDeps
+		ec.ModuleGraph = c.CargoModulesEnabled()
 	}
 
 	// Derive Mode from the Tools map. The key is the language name itself.

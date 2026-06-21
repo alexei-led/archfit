@@ -35,8 +35,9 @@ const (
 // Extractor is the Rust dependency extractor using `cargo metadata`.
 // It satisfies the ports.Extractor interface structurally.
 type Extractor struct {
-	runner toolrun.Runner
-	cfg    config.ExtractConfig
+	runner             toolrun.Runner
+	cfg                config.ExtractConfig
+	lastModuleGraphCov diagnostic.Coverage // cargo-modules coverage from most recent Extract call
 }
 
 // New returns an Extractor configured with the given runner and config.
@@ -114,11 +115,36 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/rust: cargo metadata exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 	}
 
-	facts, cov, err := e.parseAndNormalize(out.Stdout, version)
+	facts, members, cov, err := e.parseAndNormalize(out.Stdout, version)
 	if err != nil {
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/rust: parse output: %w", err)
 	}
+
+	// Opt-in intra-crate module graph via cargo-modules (tools.cargo-modules.enabled: on).
+	// When enabled, module-level nodes and edges are merged into facts alongside the
+	// crate-level nodes from parseAndNormalize, giving metrics (cycle, blast_radius,
+	// cohesion) module granularity and preventing the degenerate-graph guard from
+	// tripping on single-crate repos. The module-graph coverage row is stored in
+	// lastModuleGraphCov so the pipeline can append it to ExtraCoverage (same pattern
+	// as complexity/clones/gitnexus, which also surface coverage outside Extract).
+	if e.cfg.ModuleGraph {
+		modNodes, modEdges, modCov := e.runModuleGraph(ctx, members)
+		facts.Nodes = append(facts.Nodes, modNodes...)
+		facts.Edges = append(facts.Edges, modEdges...)
+		e.lastModuleGraphCov = modCov
+	} else {
+		e.lastModuleGraphCov = diagnostic.Coverage{Tool: toolCargoModules, Status: statusAbsent}
+	}
+
 	return facts, cov, nil
+}
+
+// LastModuleGraphCoverage returns the cargo-modules coverage record from the most
+// recent Extract call. The pipeline appends this to change.ExtraCoverage so it
+// appears in the diagnostic's ToolCoverage block alongside the cargo row.
+// Returns absent coverage when ModuleGraph is disabled or Extract has not been called.
+func (e *Extractor) LastModuleGraphCoverage() diagnostic.Coverage {
+	return e.lastModuleGraphCov
 }
 
 // detectVersion runs `cargo --version` and returns the trimmed version string.
@@ -151,6 +177,12 @@ type cargoPackage struct {
 	ManifestPath string            `json:"manifest_path"`
 	Source       *string           `json:"source"`
 	Dependencies []cargoDependency `json:"dependencies"`
+	Targets      []cargoTarget     `json:"targets"`
+}
+
+type cargoTarget struct {
+	Name string   `json:"name"`
+	Kind []string `json:"kind"`
 }
 
 type cargoDependency struct {
@@ -187,10 +219,12 @@ func (d cargoDependency) included(includeDev bool) bool {
 // node. A dependency whose crate name matches a member resolves to a package:
 // node (intra-workspace edge); any other dependency becomes an external: node.
 // Every kept dependency yields a depends_on edge located at Cargo.toml.
-func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts, diagnostic.Coverage, error) {
+// The resolved members slice is returned so ModuleGraph can reuse it without
+// re-running cargo metadata.
+func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts, []cargoPackage, diagnostic.Coverage, error) {
 	var meta cargoMetadata
 	if err := json.Unmarshal(data, &meta); err != nil {
-		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("unmarshal: %w", err)
+		return graph.Facts{}, nil, diagnostic.Coverage{}, fmt.Errorf("unmarshal: %w", err)
 	}
 
 	// First-party set: packages whose ID is listed in workspace_members. With
@@ -274,7 +308,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 		Edges:    edges,
 		Language: langRust,
 	}
-	return facts, cov, nil
+	return facts, members, cov, nil
 }
 
 // absentCoverage returns a Coverage record indicating cargo was not found.

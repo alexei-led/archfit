@@ -257,6 +257,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate})
 
+	// cargo-modules module-graph coverage: opt-in (tools.cargo-modules.enabled: on).
+	// The Rust extractor runs cargo-modules during its Extract call (inside engine.Run
+	// above) and caches the coverage record. Append it here so it appears in
+	// ToolCoverage and the CoverageGap block — mirrors the gitnexus/complexity pattern.
+	if rustEx := rustExtractor(extractors); rustEx != nil {
+		diag.ToolCoverage = append(diag.ToolCoverage, rustEx.LastModuleGraphCoverage())
+	}
+
 	// Warn-loud coverage reporting: turn the absent tool-coverage records into a
 	// machine-readable CoverageGaps block (tool → unlocked metrics → install cmd)
 	// and surface config-quality lint plus any swallowed optional-tool errors in
@@ -285,9 +293,10 @@ var coverageToolConfigKey = buildCoverageToolConfigKey()
 
 func buildCoverageToolConfigKey() map[string]string {
 	m := map[string]string{
-		toolLizard:   config.ToolComplexity,
-		toolJscpd:    config.ToolClones,
-		toolGitnexus: config.ToolGitnexus,
+		toolLizard:       config.ToolComplexity,
+		toolJscpd:        config.ToolClones,
+		toolGitnexus:     config.ToolGitnexus,
+		toolCargoModules: config.ToolCargoModules,
 	}
 	for _, lang := range languageRegistry {
 		m[lang.PrimaryTool] = lang.ID
@@ -316,9 +325,10 @@ var toolAffectedMetrics = buildToolAffectedMetrics()
 
 func buildToolAffectedMetrics() map[string]affectedMetrics {
 	m := map[string]affectedMetrics{
-		toolLizard:   {"uv tool install lizard / pip install lizard", []string{"complexity"}},
-		toolJscpd:    {"npm install -g jscpd", []string{"functional_candidates"}},
-		toolGitnexus: {"see docs/guide — git-history change-coupling index", []string{"risk_hub"}},
+		toolLizard:       {"uv tool install lizard / pip install lizard", []string{"complexity"}},
+		toolJscpd:        {"npm install -g jscpd", []string{"functional_candidates"}},
+		toolGitnexus:     {"see docs/guide — git-history change-coupling index", []string{"risk_hub"}},
+		toolCargoModules: {"cargo install cargo-modules (tools.cargo-modules.enabled: on)", []string{"cycle", "blast_radius", "cohesion", "encapsulation"}},
 	}
 	for _, lang := range languageRegistry {
 		m[lang.PrimaryTool] = affectedMetrics{lang.InstallHint, primaryGraphMetrics}

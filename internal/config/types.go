@@ -67,6 +67,7 @@ type ExtractConfig struct {
 	CargoManifest  string   // path to Cargo.toml (empty = auto, root manifest)
 	CargoFeatures  []string // cargo features to activate (empty = default)
 	IncludeDevDeps bool     // include dev-dependencies as edges
+	ModuleGraph    bool     // run cargo-modules to build intra-crate module graph (opt-in)
 }
 
 // ClassifyConfig is the view passed to the classify stage.

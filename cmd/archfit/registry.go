@@ -100,6 +100,7 @@ var languageRegistry = []LanguageDescriptor{
 		DoctorTools: []doctorTool{
 			{toolCargo, toolCargo, "https://rustup.rs"},
 			{scipRust, scipRust, "rustup component add rust-analyzer"},
+			{toolCargoModules, toolCargoModules, "cargo install cargo-modules (opt-in: tools.cargo-modules.enabled: on)"},
 		},
 	},
 }
@@ -124,6 +125,18 @@ func languageByAlias(key string) string {
 		}
 	}
 	return ""
+}
+
+// rustExtractor returns the *rust.Extractor from the extractor slice, or nil if
+// the Rust extractor is not present. Used by the pipeline to collect the opt-in
+// cargo-modules module-graph coverage record after engine.Run.
+func rustExtractor(exs []ports.Extractor) *rust.Extractor {
+	for _, ex := range exs {
+		if re, ok := ex.(*rust.Extractor); ok {
+			return re
+		}
+	}
+	return nil
 }
 
 // primaryExtractorTools returns the dependency-graph analyzer coverage names in
