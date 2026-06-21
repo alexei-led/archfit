@@ -58,6 +58,11 @@ func (e *Extractor) Name() string {
 // returns empty Facts and an "absent" Coverage record — never an error.
 // If mode is on and the marker or binary is missing, Extract returns an error.
 func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+	// Default the module-graph coverage to a valid absent record so EVERY early
+	// return (disabled, not-applicable, cargo errors) leaves the pipeline a
+	// well-formed row instead of a zero-value Coverage{} (empty Tool/Status). The
+	// cfg.ModuleGraph branch below overwrites it when the graph actually runs.
+	e.lastModuleGraphCov = diagnostic.Coverage{Tool: toolCargoModules, Status: statusAbsent}
 	if e.cfg.Mode == config.ModeOff {
 		return graph.Facts{}, absentCoverage(""), nil
 	}

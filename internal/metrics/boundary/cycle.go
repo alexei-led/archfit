@@ -33,9 +33,16 @@ func (m CycleMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 	value := float64(cycles)
 	confidence := result.ConfidenceHigh
 	var band string
-	if cycles == 0 {
+	switch {
+	case cycles == 0:
 		band = result.BandStrong
-	} else {
+	case rustDominant(in.Graph):
+		// cargo forbids crate cycles, so every cycle in a Rust graph is module-level —
+		// which the language permits and which is commonly just mutual type references
+		// (cargo-modules `uses` edges). Treat as a real but mild signal (poor), not the
+		// boundary-defeating critical defect a crate/package cycle is.
+		band = result.BandPoor
+	default:
 		band = result.BandCritical
 	}
 	band = result.ApplyConfidenceCap(band, confidence)
@@ -60,4 +67,24 @@ func (m CycleMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 // the shared Tarjan SCC detection in graph.Graph.Cycles.
 func countCycles(g *graph.Graph) int {
 	return len(g.Cycles())
+}
+
+// rustDominant reports whether Rust is the most common edge language — the signal
+// that the dependency graph is the Rust module graph (cargo metadata + cargo-modules),
+// where cycles are module-level and language-permitted rather than crate cycles.
+func rustDominant(g *graph.Graph) bool {
+	if g == nil {
+		return false
+	}
+	counts := map[string]int{}
+	for _, e := range g.Edges() {
+		counts[e.Language]++
+	}
+	best, bestN := "", 0
+	for lang, n := range counts {
+		if n > bestN {
+			best, bestN = lang, n
+		}
+	}
+	return best == graph.LangRust
 }

@@ -117,6 +117,21 @@ func Synthesize(d diagnostic.Diagnostic) Scorecard {
 		dims[i] = finalize(dims[i])
 	}
 
+	// A partial Rust module graph (some crates' cargo-modules failed) means the
+	// structural dimensions were computed over an incomplete graph — and the surviving
+	// nodes can defeat the degenerate-graph guard. Don't present those dims at high
+	// confidence; cap to medium so partial coverage cannot read as a confident verdict.
+	if cargoModulesPartial(d) {
+		for i := range dims {
+			n := dims[i].Name
+			if (n == DimDependencyGraphHealth || n == DimCohesionModularity) && dims[i].Confidence == ConfidenceHigh {
+				dims[i].Confidence = ConfidenceMedium
+				dims[i].Evidence = append(dims[i].Evidence,
+					"module graph partial (some crates failed cargo-modules) — confidence capped to medium")
+			}
+		}
+	}
+
 	meta := finalizeMeta(analysisConfidence(d, mi))
 
 	overall := meanValue(dims)
@@ -302,7 +317,13 @@ func dependencyGraphHealth(mi metricIndex, base Confidence) Dimension {
 		n := int(cyc.Value)
 		dim.Evidence = append(dim.Evidence, fmt.Sprintf("import cycles: %d", n))
 		if n > 0 {
-			value -= capInt(30+(n-1)*5, 60)
+			pen := capInt(30+(n-1)*5, 60) // crate/package cycles defeat boundaries
+			if cyc.Band != "critical" {
+				// Softened cycles (Rust module-level: language-permitted, often just
+				// mutual type references) — a real but mild signal, not a boundary defeat.
+				pen = capInt(n*3, 20)
+			}
+			value -= pen
 		}
 	}
 	if br, ok := mi.measured("blast_radius"); ok {
@@ -330,7 +351,10 @@ func dependencyGraphHealth(mi metricIndex, base Confidence) Dimension {
 		dim.Evidence = append(dim.Evidence, "no dependency-graph metrics available")
 	}
 	dim.Value = value
-	dim.Summary = "dependency graph health: cycles, hubs, instability, and propagation cost"
+	// Clarify scope: this is the shape of the INTERNAL dependency graph (cycles, hubs,
+	// instability, propagation among first-party modules) — not external dependency
+	// hygiene (versions, unused/vulnerable deps), which archfit does not score here.
+	dim.Summary = "internal dependency-graph shape: cycles, blast-radius hubs, instability, and propagation cost (not external dependency hygiene)"
 	return dim
 }
 
@@ -558,6 +582,18 @@ func (mi metricIndex) measured(name string) (diagnostic.MetricResult, bool) {
 		return diagnostic.MetricResult{}, false
 	}
 	return m, true
+}
+
+// cargoModulesPartial reports whether the Rust module-graph tool ran but only
+// covered some crates (status "partial") — the structural dimensions are then built
+// over an incomplete graph.
+func cargoModulesPartial(d diagnostic.Diagnostic) bool {
+	for _, c := range d.ToolCoverage {
+		if c.Tool == "cargo-modules" {
+			return c.Status == diagnostic.StatusPartial
+		}
+	}
+	return false
 }
 
 // degenerateGraph reports whether the dependency graph is too small to assess

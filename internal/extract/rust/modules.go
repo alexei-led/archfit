@@ -62,12 +62,12 @@ func (e *Extractor) runModuleGraph(ctx context.Context, members []cargoPackage) 
 		}
 	}
 
-	failedCrates := 0
+	var failed []string
 	for _, m := range members {
 		crateDir := filepath.Dir(m.ManifestPath)
-		nodes, edges, ok := e.runCargoModulesForCrate(ctx, m.Name, crateDir, m.hasLibTarget())
+		nodes, edges, ok := e.runCargoModulesForCrate(ctx, m, crateDir)
 		if !ok {
-			failedCrates++
+			failed = append(failed, m.Name)
 			continue
 		}
 		for _, n := range nodes {
@@ -80,19 +80,37 @@ func (e *Extractor) runModuleGraph(ctx context.Context, members []cargoPackage) 
 
 	status := statusOK
 	switch {
-	case failedCrates > 0 && len(allNodes) == 0:
+	case len(failed) > 0 && len(allNodes) == 0:
 		status = statusAbsent
-	case failedCrates > 0:
+	case len(failed) > 0:
 		status = statusPartial
 	}
 
 	cov := diagnostic.Coverage{
 		Tool:            toolCargoModules,
 		FilesSeen:       len(members),
-		FilesApplicable: len(members) - failedCrates,
+		FilesApplicable: len(members) - len(failed),
 		Status:          status,
 	}
+	if len(failed) > 0 {
+		// Name the crates so partial coverage is visible, not silent (a failed crate
+		// is usually a proc-macro/codegen crate or a bin-target-name mismatch).
+		cov.Reason = "cargo-modules produced no graph for: " + strings.Join(failed, ", ")
+	}
 	return allNodes, allEdges, cov
+}
+
+// binTargetName returns this package's first binary target name (which may differ
+// from the package name), or "" when it has no bin target.
+func (p cargoPackage) binTargetName() string {
+	for _, t := range p.Targets {
+		for _, k := range t.Kind {
+			if k == "bin" {
+				return t.Name
+			}
+		}
+	}
+	return ""
 }
 
 // hasLibTarget reports whether this package declares a lib target, used to select
@@ -110,15 +128,23 @@ func (p cargoPackage) hasLibTarget() bool {
 
 // runCargoModulesForCrate runs cargo-modules for a single crate and parses the DOT
 // output into graph nodes and edges. Returns ok=false on any failure.
-func (e *Extractor) runCargoModulesForCrate(ctx context.Context, crateName, crateDir string, isLib bool) ([]graph.Node, []graph.Edge, bool) {
+func (e *Extractor) runCargoModulesForCrate(ctx context.Context, m cargoPackage, crateDir string) ([]graph.Node, []graph.Edge, bool) {
 	// --package is required in a workspace: run from a member dir without it and
 	// cargo-modules errors "Multiple packages present in workspace, please explicitly
 	// select one via --package". Harmless for a single-crate project.
-	args := []string{"modules", "dependencies", "--no-externs", "--package", crateName}
-	if isLib {
+	args := []string{"modules", "dependencies", "--no-externs", "--package", m.Name}
+	switch {
+	case m.hasLibTarget():
 		args = append(args, "--lib")
-	} else {
-		args = append(args, "--bin", crateName)
+	default:
+		// --bin needs the BINARY TARGET name, which often differs from the package
+		// name (e.g. package yazi-fm → bin `yazi`, yazi-cli → `ya`). Using the package
+		// name made cargo-modules fail for every such crate.
+		bin := m.binTargetName()
+		if bin == "" {
+			return nil, nil, false // neither lib nor bin target — nothing to graph
+		}
+		args = append(args, "--bin", bin)
 	}
 
 	out, err := e.runner.Run(ctx, toolrun.ToolCmd{
