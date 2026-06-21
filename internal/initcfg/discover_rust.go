@@ -17,31 +17,25 @@ const (
 	toolCargo       = "cargo"
 )
 
-// cargoMeta mirrors the subset of `cargo metadata --format-version 1` output we
-// need: workspace members (the first-party crate set), the packages list that
-// resolves member IDs to crate names, and the optional resolve graph for edges.
+// cargoMeta mirrors the subset of `cargo metadata --format-version 1 --no-deps`
+// output we need: workspace members (the first-party crate set) and the packages
+// list. With --no-deps each member still carries its declared dependencies array,
+// which we use to build inter-crate edges without touching the full resolve graph
+// (and without risking a Cargo.lock write).
 type cargoMeta struct {
-	Packages         []cargoPkg    `json:"packages"`
-	WorkspaceMembers []string      `json:"workspace_members"`
-	Resolve          *cargoResolve `json:"resolve"`
+	Packages         []cargoPkg `json:"packages"`
+	WorkspaceMembers []string   `json:"workspace_members"`
 }
 
 type cargoPkg struct {
-	ID   string `json:"id"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	Dependencies []cargoDep `json:"dependencies"`
+}
+
+// cargoDep is one declared dependency from a crate's Cargo.toml.
+type cargoDep struct {
 	Name string `json:"name"`
-}
-
-// cargoResolve holds the dependency-resolution graph from `cargo metadata`.
-type cargoResolve struct {
-	Nodes []cargoResolveNode `json:"nodes"`
-}
-
-// cargoResolveNode is one package node in the resolve graph.
-type cargoResolveNode struct {
-	ID   string `json:"id"`
-	Deps []struct {
-		Pkg string `json:"pkg"`
-	} `json:"deps"`
 }
 
 // DiscoverRust enumerates first-party crates from `cargo metadata` and returns
@@ -58,9 +52,13 @@ func DiscoverRust(ctx context.Context, root string, runner toolrun.Runner) ([]Mo
 		return nil, nil, nil
 	}
 
+	// --no-deps limits the package set to first-party workspace members; each
+	// member still lists its declared dependencies array, which we use to build
+	// inter-crate edges without touching the full resolve graph (and without
+	// risking a Cargo.lock write in the target repo).
 	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    toolCargo,
-		Args:    []string{"metadata", "--format-version", "1"},
+		Args:    []string{"metadata", "--format-version", "1", "--no-deps"},
 		WorkDir: root,
 	})
 	if err != nil {
@@ -88,13 +86,8 @@ func buildRustModules(meta cargoMeta) ([]ModuleDef, []ModuleEdge) {
 		memberIDs[id] = struct{}{}
 	}
 
-	// idToName maps package ID → crate name for all packages (members + deps).
-	idToName := make(map[string]string, len(meta.Packages))
 	memberNames := make(map[string]struct{}, len(meta.WorkspaceMembers))
 	for _, p := range meta.Packages {
-		if p.Name != "" {
-			idToName[p.ID] = p.Name
-		}
 		if _, ok := memberIDs[p.ID]; ok && p.Name != "" {
 			memberNames[p.Name] = struct{}{}
 		}
@@ -106,42 +99,40 @@ func buildRustModules(meta cargoMeta) ([]ModuleDef, []ModuleEdge) {
 	}
 	sort.Strings(sorted)
 
-	// Derive inter-crate edges from the resolve graph when present.
-	// Only emit edges between workspace members (first-party crates).
+	// Derive inter-crate edges from each member's declared dependencies array.
+	// With --no-deps cargo still populates dependencies[], so we can build
+	// first-party edges without the resolve graph (and without Cargo.lock writes).
+	// Matches the approach in internal/extract/rust/rust.go parseAndNormalize.
+	seen := make(map[string]struct{})
 	var edges []ModuleEdge
-	if meta.Resolve != nil {
-		seen := make(map[string]struct{})
-		for _, node := range meta.Resolve.Nodes {
-			if _, isMember := memberIDs[node.ID]; !isMember {
-				continue
-			}
-			fromName := idToName[node.ID]
-			if fromName == "" {
-				continue
-			}
-			for _, dep := range node.Deps {
-				toName := idToName[dep.Pkg]
-				if toName == "" || toName == fromName {
-					continue
-				}
-				if _, toIsMember := memberNames[toName]; !toIsMember {
-					continue // skip external dependencies
-				}
-				key := fromName + "\x00" + toName
-				if _, dup := seen[key]; dup {
-					continue
-				}
-				seen[key] = struct{}{}
-				edges = append(edges, ModuleEdge{From: fromName, To: toName})
-			}
+	for _, p := range meta.Packages {
+		if _, isMember := memberIDs[p.ID]; !isMember {
+			continue
 		}
-		sort.Slice(edges, func(i, j int) bool {
-			if edges[i].From != edges[j].From {
-				return edges[i].From < edges[j].From
+		if p.Name == "" {
+			continue
+		}
+		for _, dep := range p.Dependencies {
+			if _, toIsMember := memberNames[dep.Name]; !toIsMember {
+				continue // skip external dependencies
 			}
-			return edges[i].To < edges[j].To
-		})
+			if dep.Name == p.Name {
+				continue
+			}
+			key := p.Name + "\x00" + dep.Name
+			if _, dup := seen[key]; dup {
+				continue
+			}
+			seen[key] = struct{}{}
+			edges = append(edges, ModuleEdge{From: p.Name, To: dep.Name})
+		}
 	}
+	sort.Slice(edges, func(i, j int) bool {
+		if edges[i].From != edges[j].From {
+			return edges[i].From < edges[j].From
+		}
+		return edges[i].To < edges[j].To
+	})
 
 	// Assign topo-level layers when we have a dependency graph.
 	// Without edges, fall back to the flat "core" layer so Render emits the
