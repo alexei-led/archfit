@@ -22,13 +22,14 @@ const (
 	indexerPython = "scip-python"
 	indexerGo     = "scip-go"
 	indexerTS     = "scip-typescript"
+	indexerRust   = "rust-analyzer"
 	flagOutput    = "--output"
 
 	nodeModulesDir = "node_modules"
 
 	// Absent-coverage reasons: why semantic strength is unavailable and the
 	// actionable enable step. Static strings so a double-run stays byte-stable.
-	reasonScipNoIndexer   = "no SCIP indexer found — install scip-go, scip-typescript, or scip-python for semantic integration strength"
+	reasonScipNoIndexer   = "no SCIP indexer found — install scip-go, scip-typescript, scip-python, or rust-analyzer for semantic integration strength"
 	reasonScipNoUv        = "uv not found — install uv (https://astral.sh/uv) so archfit can read the SCIP index"
 	reasonTSNoNodeModules = "install JS/TS dependencies (e.g. `npm install`) for semantic strength — scip-typescript needs node_modules to resolve cross-package imports"
 )
@@ -234,6 +235,13 @@ func (a *Adapter) detectIndexer(ctx context.Context, root string) (indexer, pkg,
 			}
 		}
 	}
+	if fileExists(filepath.Join(root, "Cargo.toml")) {
+		if _, found := a.runner.Detect(ctx, indexerRust); found {
+			if n := cargoPackageName(root); n != "" {
+				return indexerRust, n, "rust", true
+			}
+		}
+	}
 	return "", "", "", false
 }
 
@@ -245,6 +253,9 @@ func indexArgs(indexer, pkg, root, out string) []string {
 		return []string{flagOutput, out}
 	case indexerTS:
 		return []string{"index", flagOutput, out}
+	case indexerRust:
+		// rust-analyzer runs in the project root (WorkDir) and indexes the cwd.
+		return []string{"scip", flagOutput, out}
 	default: // scip-python
 		return []string{"index", "--project-name", pkg, "--cwd", root, flagOutput, out, "--quiet"}
 	}
@@ -260,6 +271,31 @@ func goModulePath(root string) string {
 		line = strings.TrimSpace(line)
 		if rest, found := strings.CutPrefix(line, "module "); found {
 			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
+}
+
+// cargoPackageName reads the package name from Cargo.toml's [package] table
+// (name = "x" → "x"). A virtual-workspace manifest (no [package]) yields "",
+// which makes detectIndexer skip rust-analyzer — strength stays graph-only.
+func cargoPackageName(root string) string {
+	data, err := os.ReadFile(filepath.Join(root, "Cargo.toml")) //nolint:gosec
+	if err != nil {
+		return ""
+	}
+	inPackage := false
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") {
+			inPackage = line == "[package]"
+			continue
+		}
+		if !inPackage {
+			continue
+		}
+		if key, val, found := strings.Cut(line, "="); found && strings.TrimSpace(key) == "name" {
+			return strings.Trim(strings.TrimSpace(val), `"'`)
 		}
 	}
 	return ""

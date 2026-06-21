@@ -5,12 +5,13 @@
 """scip_reader.py — read a SCIP index and emit per-edge integration strength as JSON.
 
 SCIP (https://scip-code.org/) is a language-agnostic code-intelligence format, so
-one reader serves scip-python, scip-go, and scip-typescript. It maps each
-cross-module symbol reference to a Balanced-Coupling integration strength and emits
-edges whose from/to paths match archfit's graph node paths for that language:
+one reader serves scip-python, scip-go, scip-typescript, and rust-analyzer. It maps
+each cross-module symbol reference to a Balanced-Coupling integration strength and
+emits edges whose from/to paths match archfit's graph node paths for that language:
   - python : module -> module   (dotted, e.g. "ccgram.handlers")
   - go     : file   -> package  (e.g. "internal/x/y.go" -> "internal/z", gomod-stripped)
   - ts     : file   -> file     (e.g. "src/a.ts" -> "src/b.ts")
+  - rust   : file   -> file     (relative path as-is, like ts)
 
 Strength (BC, strongest->weakest): intrusive > functional > model > contract.
   private (underscore) -> intrusive; Protocol/ABC/interface -> contract;
@@ -18,7 +19,7 @@ Strength (BC, strongest->weakest): intrusive > functional > model > contract.
 Edge strength = strongest among its cross-module references.
 
 Usage: uv run scip_reader.py --proto scip.proto --index index.scip
-                             --package <root> --lang <python|go|typescript>
+                             --package <root> --lang <python|go|typescript|rust>
 """
 from __future__ import annotations
 
@@ -243,7 +244,7 @@ def main() -> None:
     ap.add_argument("--proto", required=True)
     ap.add_argument("--index", required=True)
     ap.add_argument("--package", required=True)
-    ap.add_argument("--lang", required=True, choices=["python", "go", "typescript"])
+    ap.add_argument("--lang", required=True, choices=["python", "go", "typescript", "rust"])
     args = ap.parse_args()
     lang, root = args.lang, args.package
 

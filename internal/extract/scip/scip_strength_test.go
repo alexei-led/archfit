@@ -62,6 +62,17 @@ func TestStrengths_AbsentReason(t *testing.T) {
 			},
 			wantReason: reasonScipNoIndexer,
 		},
+		{
+			name: "Rust project, rust-analyzer absent",
+			setup: func(t *testing.T) (string, toolrun.Runner) {
+				dir := t.TempDir()
+				if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return dir, &toolrun.RunnerMock{DetectFunc: noTools}
+			},
+			wantReason: reasonScipNoIndexer,
+		},
 	}
 
 	for _, tc := range tests {
@@ -137,6 +148,76 @@ func TestParseReaderEdges(t *testing.T) {
 				t.Errorf("m[%q] = %q, want %q", tc.wantKey, m[tc.wantKey], tc.wantVal)
 			}
 		})
+	}
+}
+
+// TestDetectIndexer_Rust asserts a Cargo project with rust-analyzer installed
+// resolves to the rust-analyzer indexer, the crate name, and lang "rust".
+func TestDetectIndexer_Rust(t *testing.T) {
+	dir := t.TempDir()
+	manifest := "[package]\nname = \"demo-crate\"\nversion = \"0.1.0\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == indexerRust {
+				return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/" + tool}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+	}
+	indexer, pkg, lang, ok := New(runner).detectIndexer(context.Background(), dir)
+	if !ok {
+		t.Fatal("detectIndexer: ok = false, want true")
+	}
+	if indexer != indexerRust {
+		t.Errorf("indexer = %q, want %q", indexer, indexerRust)
+	}
+	if pkg != "demo-crate" {
+		t.Errorf("pkg = %q, want demo-crate", pkg)
+	}
+	if lang != "rust" {
+		t.Errorf("lang = %q, want rust", lang)
+	}
+}
+
+func TestCargoPackageName(t *testing.T) {
+	tests := []struct {
+		name     string
+		manifest string
+		want     string
+	}{
+		{"package table", "[package]\nname = \"ripgrep\"\nversion = \"14.0.0\"\n", "ripgrep"},
+		{"name after other keys", "[package]\nedition = \"2021\"\nname = \"just\"\n", "just"},
+		{"single quotes", "[package]\nname = 'crate'\n", "crate"},
+		{"virtual workspace, no package", "[workspace]\nmembers = [\"crates/*\"]\n", ""},
+		{"name key only under dependencies ignored", "[dependencies]\nname = \"1.0\"\n", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte(tc.manifest), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if got := cargoPackageName(dir); got != tc.want {
+				t.Errorf("cargoPackageName = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestIndexArgs_Rust pins the rust-analyzer command shape (scip --output <out>).
+func TestIndexArgs_Rust(t *testing.T) {
+	got := indexArgs(indexerRust, "demo", "/repo", "/tmp/index.scip")
+	want := []string{"scip", flagOutput, "/tmp/index.scip"}
+	if len(got) != len(want) {
+		t.Fatalf("args = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("args[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 

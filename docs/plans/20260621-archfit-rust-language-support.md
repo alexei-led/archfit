@@ -241,14 +241,15 @@ Language:"rust", Confidence:"high", Locations:[{File:"Cargo.toml"}]}`; skip dev-
 
 ### Task 11: Wire `rust-analyzer scip` strength (opt-in, gated)
 
-- [ ] `internal/extract/scip/scip_strength.go`: `const indexerRust = "rust-analyzer"`; Rust arm
+- [x] `internal/extract/scip/scip_strength.go`: `const indexerRust = "rust-analyzer"`; Rust arm
       in `detectIndexer` (`Cargo.toml` → `rust-analyzer`, project name via a small
       `cargoPackageName(root)` TOML-name scan mirroring the `go.mod` parse)
-- [ ] `indexArgs` case → `["scip","--output",out]`; extend `reasonScipNoIndexer` to mention `rust-analyzer`
-- [ ] graceful no-op when binary absent (same as scip-go/scip-typescript/scip-python)
-- [ ] write tests: `detectIndexer` picks `rust-analyzer` on a Cargo fixture; absent-binary path
+- [x] `indexArgs` case → `["scip","--output",out]`; extend `reasonScipNoIndexer` to mention `rust-analyzer`
+      (also added `rust` to scip_reader.py `--lang` choices so the read step works when the binary is present)
+- [x] graceful no-op when binary absent (same as scip-go/scip-typescript/scip-python)
+- [x] write tests: `detectIndexer` picks `rust-analyzer` on a Cargo fixture; absent-binary path
       returns empty strengths + absent coverage (no error)
-- [ ] run `go test ./internal/extract/scip/ -v` + `TestArchImports` + `make test` + `make lint`
+- [x] run `go test ./internal/extract/scip/ -v` + `TestArchImports` + `make test` + `make lint`
 
 ### Task 12: Docs — Rust language guide + extractor doc
 
