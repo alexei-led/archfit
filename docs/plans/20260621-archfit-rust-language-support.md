@@ -108,15 +108,15 @@ Templates to copy: `internal/extract/ts/ts.go` (subprocess + JSON), `internal/ex
 
 ### Task 1: Split `internal/config/config.go` (inert, same package)
 
-- [ ] move types/consts into new same-package files: `tools.go` (`ToolConfig`/`ToolsConfig`/
+- [x] move types/consts into new same-package files: `tools.go` (`ToolConfig`/`ToolsConfig`/
       `ToolMode`/`GateMode`, `LangGo/LangTypeScript/LangPython`, `ToolScip/...`, `LLMConfig`),
       `modules.go` (`ModuleDef`/`RuleDef`/`ExceptionDef`/`ModuleRole`/`ModuleMap`),
       `views.go` (all `For*()` methods + `Lint`), `types.go` (`MetricsConfig`/`OutputsConfig`/
       `PatternDef`/`ExtractConfig`/...); keep `config.go` = `Config`/`Load`/`Default`/`validate`
-- [ ] no signature changes, no sub-packages (avoids circular imports) — pure relocation
-- [ ] run `go build ./... && go test ./internal/config/ -v` — green
-- [ ] run `go test ./internal/ -run TestArchImports` — ring unchanged
-- [ ] run `make test` + `make lint` — must pass before Task 2
+- [x] no signature changes, no sub-packages (avoids circular imports) — pure relocation
+- [x] run `go build ./... && go test ./internal/config/ -v` — green
+- [x] run `go test ./internal/ -run TestArchImports` — ring unchanged
+- [x] run `make test` + `make lint` — must pass before Task 2
 
 ### Task 2: Split `internal/engine/engine.go` (inert, same package)
 
