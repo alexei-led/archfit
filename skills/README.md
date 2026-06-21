@@ -2,17 +2,21 @@
 
 Portable Agent Skill for using `archfit` from coding agents.
 
-The skill follows the Agent Skills directory format:
+The maintained source lives in this directory:
 
 ```text
 skills/archfit/
 ├── SKILL.md
 └── references/
-    └── archfit-docs.md
+    ├── agent-loop.md
+    ├── commands.md
+    ├── languages.md
+    └── llm-modes.md
 ```
 
-`SKILL.md` contains only routing and workflow instructions. Canonical docs stay
-in `README.md` and `docs/guide/`; `references/archfit-docs.md` links to them.
+`SKILL.md` stays thin: routing, workflow, and review rules. Canonical product
+docs stay in `README.md` and `docs/guide/`; `references/` carries the portable
+subset this skill needs.
 
 ## Use
 

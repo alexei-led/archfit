@@ -1,5 +1,30 @@
 # Release notes
 
+## v0.6.1 — Skill docs: archfit routing, language guidance, and CLI accuracy
+
+Documentation-only patch release for the built-in `archfit` agent skill and its
+portable references.
+
+- **Language-aware skill guidance:** the skill now explicitly covers Go,
+  TypeScript/JavaScript, Python, and Rust, with a new `references/languages.md`
+  for per-language tool setup, path semantics, and common coverage gaps.
+- **Clearer routing:** the skill now says when to stay in `archfit`, when to use
+  deeper architecture review, and when to hand off to a language-specific coding
+  skill.
+- **Safer defaults:** guidance now prefers read-only commands first, temp/stdout
+  report paths during review, and explicit treatment of `.archfit-*` drafts,
+  SARIF, Markdown reports, and `.archfit-cache/` as generated artifacts.
+- **CLI reference refresh:** portable command docs now match the current binary,
+  including `score`, `review`, `enrich --subdomains`, Rust-aware tool coverage,
+  and current flag semantics.
+- **Review grounding:** the skill now requires exact evidence anchors
+  (`path:line`, JSON field, or quoted output) and clearer confidence downgrades
+  when command execution or analyzer coverage is missing.
+- **Install snippets synced:** README and install-guide examples now point at the
+  current release tag.
+
+No gate, scoring, or runtime behavior changed.
+
 ## v0.3.0 — Balanced Coupling engine v2 (BREAKING in SCORING)
 
 ### Breaking changes
