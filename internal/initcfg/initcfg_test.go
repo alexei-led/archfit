@@ -15,10 +15,12 @@ import (
 const (
 	testModuleName   = "utils"
 	testCmdArchfit   = "cmd/archfit"
+	testCmdMyapp     = "cmd_myapp"
 	testModPath      = "github.com/foo/bar"
 	testModPathChild = "github.com/foo/bar/pkg/a"
 	testDirPerm      = 0o750
 	testCorePath     = "internal/core/**"
+	testModelPath    = "internal/model/**"
 	testTSCore       = "core"
 	testExampleMod   = "example.com/test"
 	testClassifyPath = "internal/classify/**"
@@ -95,7 +97,7 @@ func TestDiscover_GoList_GroupsModules(t *testing.T) {
 
 	// Expect modules grouped by 2-segment key.
 	wantNames := map[string]bool{
-		"cmd_myapp":    true,
+		testCmdMyapp:   true,
 		layerModel:     true,
 		adapterExtract: true,
 		layerEngine:    true,
@@ -127,7 +129,7 @@ func TestDiscover_GoList_LayerInference(t *testing.T) {
 		name      string
 		wantLayer string
 	}{
-		{"cmd_myapp", layerCmd},
+		{testCmdMyapp, layerCmd},
 		{layerModel, layerModel},
 		{adapterExtract, layerAdapter},
 		{layerEngine, layerEngine},
@@ -387,6 +389,112 @@ func TestRender_NoModules_StillValid(t *testing.T) {
 	}
 	if !strings.Contains(out, "rules:") {
 		t.Errorf("expected rules: section in output, got:\n%s", out)
+	}
+}
+
+func TestRender_LayeredRules_FromEdges(t *testing.T) {
+	// Fixture: model←core (natural: core imports model) plus a back-edge
+	// model→core (model imports core — a layer inversion).
+	cfg := DiscoveredConfig{
+		ModulePath: testExampleMod,
+		Modules: []ModuleDef{
+			{Name: layerModel, Paths: []string{testModelPath}, Layer: layerModel},
+			{Name: layerCore, Paths: []string{testCorePath}, Layer: layerCore},
+		},
+		Layers: []string{layerModel, layerCore},
+		// core imports model (natural), model imports core (back-edge / inversion).
+		Edges: []ModuleEdge{
+			{From: layerCore, To: layerModel},
+			{From: layerModel, To: layerCore},
+		},
+	}
+	out := Render(cfg, nil, false)
+
+	// Must have >1 layer.
+	if !strings.Contains(out, "- "+layerModel) || !strings.Contains(out, "- "+layerCore) {
+		t.Fatalf("expected both layers in output:\n%s", out)
+	}
+
+	// Must contain at least one forbidden_dependency rule with from_layer/to_layer.
+	if !strings.Contains(out, "type: forbidden_dependency") {
+		t.Errorf("no forbidden_dependency rule in output:\n%s", out)
+	}
+	if !strings.Contains(out, "from_layer:") {
+		t.Errorf("no from_layer in rules (expected layer-aware rule):\n%s", out)
+	}
+	if !strings.Contains(out, "to_layer:") {
+		t.Errorf("no to_layer in rules (expected layer-aware rule):\n%s", out)
+	}
+	if !strings.Contains(out, "gate: warn") {
+		t.Errorf("gate: warn missing in output:\n%s", out)
+	}
+
+	// The rule must flag the back-edge direction: model→core inversion means
+	// from_layer: model, to_layer: core.
+	if !strings.Contains(out, "from_layer: "+layerModel) {
+		t.Errorf("expected rule flagging %s importing %s:\n%s", layerModel, layerCore, out)
+	}
+	if !strings.Contains(out, "to_layer: "+layerCore) {
+		t.Errorf("expected rule flagging imports into %s:\n%s", layerCore, out)
+	}
+}
+
+func TestRender_LayeredRules_RoundTripsConfigLoad(t *testing.T) {
+	cfg := DiscoveredConfig{
+		ModulePath: testExampleMod,
+		HasGo:      true,
+		Layers:     []string{layerModel, layerCore, layerAdapter, layerCmd},
+		Modules: []ModuleDef{
+			{Name: layerModel, Paths: []string{testModelPath}, Layer: layerModel},
+			{Name: layerCore, Paths: []string{testCorePath}, Layer: layerCore},
+			{Name: layerAdapter, Paths: []string{"internal/adapter/**"}, Layer: layerAdapter},
+			{Name: testCmdMyapp, Paths: []string{"cmd/myapp/**"}, Layer: layerCmd},
+		},
+		// Natural: core→model, adapter→core, cmd→adapter.
+		Edges: []ModuleEdge{
+			{From: layerCore, To: layerModel},
+			{From: layerAdapter, To: layerCore},
+			{From: "cmd_myapp", To: layerAdapter},
+		},
+	}
+	rendered := Render(cfg, nil, false)
+
+	path := filepath.Join(t.TempDir(), ".archfit.yaml")
+	if err := os.WriteFile(path, []byte(rendered), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(context.Background(), path)
+	if err != nil {
+		t.Fatalf("config.Load rejected layered init YAML: %v\n---\n%s", err, rendered)
+	}
+	if len(loaded.Rules) == 0 {
+		t.Error("no rules after round-trip")
+	}
+	for _, r := range loaded.Rules {
+		if r.Type != "forbidden_dependency" {
+			t.Errorf("unexpected rule type %q", r.Type)
+		}
+		if r.FromLayer == "" || r.ToLayer == "" {
+			t.Errorf("rule %q missing from_layer/to_layer", r.ID)
+		}
+	}
+}
+
+func TestRender_NoEdges_FallbackComment(t *testing.T) {
+	// No edges → generic placeholder + comment about no gates.
+	cfg := DiscoveredConfig{
+		ModulePath: testExampleMod,
+		Modules: []ModuleDef{
+			{Name: layerCore, Paths: []string{"internal/core/**"}, Layer: layerCore},
+		},
+		Layers: []string{layerCore},
+	}
+	out := Render(cfg, nil, false)
+	if !strings.Contains(out, "only metrics") {
+		t.Errorf("expected fallback comment about no gates when no edges:\n%s", out)
+	}
+	if !strings.Contains(out, "type: forbidden_dependency") {
+		t.Errorf("expected generic forbidden_dependency rule:\n%s", out)
 	}
 }
 

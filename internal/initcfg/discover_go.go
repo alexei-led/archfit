@@ -19,30 +19,34 @@ const adapterExtract = "extract"
 type goListPkg struct {
 	ImportPath string
 	Dir        string
+	Imports    []string
 	Module     *struct {
 		Path string
 	}
 }
 
 // discoverGo runs `go list -json ./...` from root and groups packages into
-// candidate modules. Returns modules, module path, and any error.
-func discoverGo(ctx context.Context, root string, runner toolrun.Runner) ([]ModuleDef, string, error) {
+// candidate modules. Returns modules, inter-module edges, module path, and any error.
+func discoverGo(ctx context.Context, root string, runner toolrun.Runner) ([]ModuleDef, []ModuleEdge, string, error) {
 	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    "go",
 		Args:    []string{"list", "-json", "./..."},
 		WorkDir: root,
 	})
 	if err != nil {
-		return nil, "", fmt.Errorf("initcfg: go list: %w", err)
+		return nil, nil, "", fmt.Errorf("initcfg: go list: %w", err)
 	}
 	if out.ExitCode != 0 {
-		return nil, "", fmt.Errorf("initcfg: go list exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+		return nil, nil, "", fmt.Errorf("initcfg: go list exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 	}
 
 	var modPath string
 	// segments groups import path segments → set of full paths seen.
 	// Key is "seg1/seg2" (first 2 path segments after module root).
 	segments := make(map[string][]string)
+	// pkgImports maps each package relative path to its imported relative paths
+	// (within the same module). Used to derive module-level edges.
+	pkgImports := make(map[string][]string)
 
 	dec := json.NewDecoder(bytes.NewReader(out.Stdout))
 	for {
@@ -51,7 +55,7 @@ func discoverGo(ctx context.Context, root string, runner toolrun.Runner) ([]Modu
 			if err == io.EOF {
 				break
 			}
-			return nil, "", fmt.Errorf("initcfg: parse go list output: %w", err)
+			return nil, nil, "", fmt.Errorf("initcfg: parse go list output: %w", err)
 		}
 		if pkg.Module != nil && pkg.Module.Path != "" && modPath == "" {
 			modPath = pkg.Module.Path
@@ -63,9 +67,66 @@ func discoverGo(ctx context.Context, root string, runner toolrun.Runner) ([]Modu
 		}
 		key := groupKey(rel)
 		segments[key] = append(segments[key], rel)
+		// Collect intra-module imports for edge derivation.
+		var intraImports []string
+		for _, imp := range pkg.Imports {
+			impRel := stripPrefix(imp, modPath)
+			if impRel != imp { // only if the prefix was stripped (i.e. same module)
+				intraImports = append(intraImports, impRel)
+			}
+		}
+		if len(intraImports) > 0 {
+			pkgImports[rel] = intraImports
+		}
 	}
 
-	return buildGoModules(segments), modPath, nil
+	mods := buildGoModules(segments)
+	edges := buildGoEdges(segments, pkgImports)
+	return mods, edges, modPath, nil
+}
+
+// buildGoEdges derives module-level dependency edges from the package-level
+// import graph. An edge (fromMod → toMod) is emitted when a package in fromMod
+// imports a package in toMod and the two modules are distinct.
+// The result is sorted and deduplicated for determinism.
+func buildGoEdges(segments map[string][]string, pkgImports map[string][]string) []ModuleEdge {
+	// Build a map from package relative path → module key.
+	pkgToKey := make(map[string]string, len(pkgImports))
+	for key, pkgs := range segments {
+		for _, p := range pkgs {
+			pkgToKey[p] = key
+		}
+	}
+
+	seen := make(map[string]struct{})
+	var edges []ModuleEdge
+	for fromPkg, imports := range pkgImports {
+		fromKey := pkgToKey[fromPkg]
+		if fromKey == "" || fromKey == "." {
+			continue
+		}
+		fromMod := moduleNameFromKey(fromKey)
+		for _, toPkg := range imports {
+			toKey := pkgToKey[toPkg]
+			if toKey == "" || toKey == "." || toKey == fromKey {
+				continue
+			}
+			toMod := moduleNameFromKey(toKey)
+			edgeKey := fromMod + "\x00" + toMod
+			if _, dup := seen[edgeKey]; dup {
+				continue
+			}
+			seen[edgeKey] = struct{}{}
+			edges = append(edges, ModuleEdge{From: fromMod, To: toMod})
+		}
+	}
+	sort.Slice(edges, func(i, j int) bool {
+		if edges[i].From != edges[j].From {
+			return edges[i].From < edges[j].From
+		}
+		return edges[i].To < edges[j].To
+	})
+	return edges
 }
 
 // stripPrefix removes the module path prefix from an import path.

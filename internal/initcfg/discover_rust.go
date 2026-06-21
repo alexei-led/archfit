@@ -18,16 +18,30 @@ const (
 )
 
 // cargoMeta mirrors the subset of `cargo metadata --format-version 1` output we
-// need: workspace members (the first-party crate set) and the packages list that
-// resolves member IDs to crate names.
+// need: workspace members (the first-party crate set), the packages list that
+// resolves member IDs to crate names, and the optional resolve graph for edges.
 type cargoMeta struct {
-	Packages         []cargoPkg `json:"packages"`
-	WorkspaceMembers []string   `json:"workspace_members"`
+	Packages         []cargoPkg    `json:"packages"`
+	WorkspaceMembers []string      `json:"workspace_members"`
+	Resolve          *cargoResolve `json:"resolve"`
 }
 
 type cargoPkg struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+// cargoResolve holds the dependency-resolution graph from `cargo metadata`.
+type cargoResolve struct {
+	Nodes []cargoResolveNode `json:"nodes"`
+}
+
+// cargoResolveNode is one package node in the resolve graph.
+type cargoResolveNode struct {
+	ID   string `json:"id"`
+	Deps []struct {
+		Pkg string `json:"pkg"`
+	} `json:"deps"`
 }
 
 // DiscoverRust enumerates first-party crates from `cargo metadata` and returns
@@ -36,62 +50,116 @@ type cargoPkg struct {
 // change-locality file mapping also keys on the crate name, so a crate-name glob
 // matches both the dependency node and the file-derived module key.
 //
-// Returns (nil, nil) when cargo is absent (a Cargo.toml can exist without a
+// Returns (nil, nil, nil) when cargo is absent (a Cargo.toml can exist without a
 // toolchain installed); a present-but-failing cargo or unparseable output is a
 // real error, mirroring discoverGo's loud-on-failure behaviour.
-func DiscoverRust(ctx context.Context, root string, runner toolrun.Runner) ([]ModuleDef, error) {
+func DiscoverRust(ctx context.Context, root string, runner toolrun.Runner) ([]ModuleDef, []ModuleEdge, error) {
 	if _, ok := runner.Detect(ctx, toolCargo); !ok {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    toolCargo,
-		Args:    []string{"metadata", "--format-version", "1", "--no-deps"},
+		Args:    []string{"metadata", "--format-version", "1"},
 		WorkDir: root,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("initcfg: cargo metadata: %w", err)
+		return nil, nil, fmt.Errorf("initcfg: cargo metadata: %w", err)
 	}
 	if out.ExitCode != 0 {
-		return nil, fmt.Errorf("initcfg: cargo metadata exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+		return nil, nil, fmt.Errorf("initcfg: cargo metadata exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 	}
 
 	var meta cargoMeta
 	if err := json.Unmarshal(out.Stdout, &meta); err != nil {
-		return nil, fmt.Errorf("initcfg: parse cargo metadata: %w", err)
+		return nil, nil, fmt.Errorf("initcfg: parse cargo metadata: %w", err)
 	}
 
-	return buildRustModules(meta), nil
+	mods, edges := buildRustModules(meta)
+	return mods, edges, nil
 }
 
 // buildRustModules resolves the workspace-member IDs to crate names and emits a
-// sorted, deduplicated ModuleDef per first-party crate.
-func buildRustModules(meta cargoMeta) []ModuleDef {
+// sorted, deduplicated ModuleDef per first-party crate, plus inter-crate edges
+// from the resolve graph (when present).
+func buildRustModules(meta cargoMeta) ([]ModuleDef, []ModuleEdge) {
 	memberIDs := make(map[string]struct{}, len(meta.WorkspaceMembers))
 	for _, id := range meta.WorkspaceMembers {
 		memberIDs[id] = struct{}{}
 	}
 
-	names := make(map[string]struct{}, len(meta.Packages))
+	// idToName maps package ID → crate name for all packages (members + deps).
+	idToName := make(map[string]string, len(meta.Packages))
+	memberNames := make(map[string]struct{}, len(meta.WorkspaceMembers))
 	for _, p := range meta.Packages {
+		if p.Name != "" {
+			idToName[p.ID] = p.Name
+		}
 		if _, ok := memberIDs[p.ID]; ok && p.Name != "" {
-			names[p.Name] = struct{}{}
+			memberNames[p.Name] = struct{}{}
 		}
 	}
 
-	sorted := make([]string, 0, len(names))
-	for n := range names {
+	sorted := make([]string, 0, len(memberNames))
+	for n := range memberNames {
 		sorted = append(sorted, n)
 	}
 	sort.Strings(sorted)
 
+	// Derive inter-crate edges from the resolve graph when present.
+	// Only emit edges between workspace members (first-party crates).
+	var edges []ModuleEdge
+	if meta.Resolve != nil {
+		seen := make(map[string]struct{})
+		for _, node := range meta.Resolve.Nodes {
+			if _, isMember := memberIDs[node.ID]; !isMember {
+				continue
+			}
+			fromName := idToName[node.ID]
+			if fromName == "" {
+				continue
+			}
+			for _, dep := range node.Deps {
+				toName := idToName[dep.Pkg]
+				if toName == "" || toName == fromName {
+					continue
+				}
+				if _, toIsMember := memberNames[toName]; !toIsMember {
+					continue // skip external dependencies
+				}
+				key := fromName + "\x00" + toName
+				if _, dup := seen[key]; dup {
+					continue
+				}
+				seen[key] = struct{}{}
+				edges = append(edges, ModuleEdge{From: fromName, To: toName})
+			}
+		}
+		sort.Slice(edges, func(i, j int) bool {
+			if edges[i].From != edges[j].From {
+				return edges[i].From < edges[j].From
+			}
+			return edges[i].To < edges[j].To
+		})
+	}
+
+	// Assign topo-level layers when we have a dependency graph.
+	// Without edges, fall back to the flat "core" layer so Render emits the
+	// prominent comment that only metrics (no gates) are produced.
+	layerAssign := topoLayerAssign(sorted, edges)
+
 	mods := make([]ModuleDef, 0, len(sorted))
 	for _, name := range sorted {
+		layer := layerCore
+		if l, ok := layerAssign[name]; ok {
+			layer = l
+		}
 		mods = append(mods, ModuleDef{
 			Name:  name,
 			Paths: []string{name},
-			Layer: layerCore,
+			Layer: layer,
 		})
 	}
-	return mods
+
+	return mods, edges
 }

@@ -26,6 +26,13 @@ type ModuleDef struct {
 	Layer string
 }
 
+// ModuleEdge is a directed dependency edge between two discovered modules.
+// From depends on (imports) To.
+type ModuleEdge struct {
+	From string // module Name of the dependent
+	To   string // module Name of the dependency
+}
+
 // DiscoveredConfig holds all discovered modules from Go, TypeScript, and Python.
 type DiscoveredConfig struct {
 	// ModulePath is the Go module path (e.g. "github.com/alexei-led/archfit").
@@ -34,6 +41,10 @@ type DiscoveredConfig struct {
 	Modules []ModuleDef
 	// Layers are the inferred layers in order (outermost to innermost).
 	Layers []string
+	// Edges are the directed module-level dependency edges, populated when a
+	// dependency graph was available at discovery time (go list Imports, cargo
+	// metadata resolve). Empty when no graph data was available.
+	Edges []ModuleEdge
 	// PyPackage is the primary Python top-level package name (e.g. "ccgram").
 	PyPackage string
 	// HasGo is true when a go.mod was found at root.
@@ -71,16 +82,18 @@ const (
 //     the slice position so the result is stable across runs.
 func Discover(ctx context.Context, root string, runner toolrun.Runner) (DiscoveredConfig, error) {
 	var allModules []ModuleDef
+	var allEdges []ModuleEdge
 	var modPath string
 	hasGo := fileExists(filepath.Join(root, "go.mod"))
 
 	if hasGo {
-		goMods, goModPath, err := discoverGo(ctx, root, runner)
+		goMods, goEdges, goModPath, err := discoverGo(ctx, root, runner)
 		if err != nil {
 			return DiscoveredConfig{}, err
 		}
 		modPath = goModPath
 		allModules = append(allModules, goMods...)
+		allEdges = append(allEdges, goEdges...)
 	}
 
 	pyMods, err := DiscoverPy(root)
@@ -101,11 +114,12 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner) (Discover
 	// (broken manifest, parse error) surfaces the error like go list does.
 	hasRust := fileExists(filepath.Join(root, markerCargoToml))
 	if hasRust {
-		rustMods, rerr := DiscoverRust(ctx, root, runner)
+		rustMods, rustEdges, rerr := DiscoverRust(ctx, root, runner)
 		if rerr != nil {
 			return DiscoveredConfig{}, rerr
 		}
 		allModules = append(allModules, rustMods...)
+		allEdges = append(allEdges, rustEdges...)
 	}
 
 	allModules = disambiguateNames(allModules)
@@ -114,6 +128,7 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner) (Discover
 		ModulePath: modPath,
 		Modules:    allModules,
 		Layers:     inferLayers(allModules),
+		Edges:      allEdges,
 		PyPackage:  detectPyPackage(root),
 		HasGo:      hasGo,
 		HasPython:  len(pyMods) > 0,
@@ -325,11 +340,95 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 
 	// rules:
 	b.WriteString("rules:\n")
-	b.WriteString("  - id: no-forbidden-deps\n")
-	b.WriteString("    type: forbidden_dependency\n")
-	b.WriteString("    gate: warn\n")
+	layerRules := inferLayerRules(cfg)
+	if len(layerRules) > 0 {
+		for _, r := range layerRules {
+			fmt.Fprintf(&b, "  - id: %s\n", r.id)
+			b.WriteString("    type: forbidden_dependency\n")
+			fmt.Fprintf(&b, "    gate: warn\n")
+			fmt.Fprintf(&b, "    from_layer: %s\n", r.fromLayer)
+			fmt.Fprintf(&b, "    to_layer: %s\n", r.toLayer)
+		}
+	} else {
+		// No dependency graph was available: emit a generic placeholder and note
+		// that without layer rules only metrics (no gates) are produced.
+		b.WriteString("  # NOTE: dependency graph not available at init time — only metrics\n")
+		b.WriteString("  # (no gates) will be produced until you add from_layer/to_layer rules.\n")
+		b.WriteString("  - id: no-forbidden-deps\n")
+		b.WriteString("    type: forbidden_dependency\n")
+		b.WriteString("    gate: warn\n")
+	}
 
 	return b.String()
+}
+
+// layerRule is an inferred forbidden_dependency rule between two layers.
+type layerRule struct {
+	id        string
+	fromLayer string // the higher-tier (dependent) layer
+	toLayer   string // the lower-tier (dependency) layer — back-edges go this direction
+}
+
+// inferLayerRules derives forbidden_dependency rules from cfg.Layers.
+//
+// One rule is emitted per consecutive layer pair (layers[i], layers[i+1]):
+// "no module in layers[i] may import a module in layers[i+1]". This flags
+// back-edges (lower-tier importing a higher-tier) with a minimal, non-explosive
+// rule set — O(n) in the number of layers rather than O(n²) in cross-tier pairs.
+//
+// cfg.Edges is used only to confirm that at least one cross-layer edge exists;
+// if no edges are present the function returns nil so Render falls back to the
+// generic placeholder with a comment.
+func inferLayerRules(cfg DiscoveredConfig) []layerRule {
+	if len(cfg.Edges) == 0 || len(cfg.Layers) < 2 {
+		return nil
+	}
+
+	// layerIndex maps layer name → position in cfg.Layers.
+	layerIndex := make(map[string]int, len(cfg.Layers))
+	for i, l := range cfg.Layers {
+		layerIndex[l] = i
+	}
+
+	// moduleLayer maps module name → layer name.
+	moduleLayer := make(map[string]string, len(cfg.Modules))
+	for _, m := range cfg.Modules {
+		if m.Layer != "" {
+			moduleLayer[m.Name] = m.Layer
+		}
+	}
+
+	// Confirm at least one cross-layer edge exists; without that the layers are
+	// all isolated and rules would have nothing to fire on.
+	hasEdge := false
+	for _, e := range cfg.Edges {
+		fl := moduleLayer[e.From]
+		tl := moduleLayer[e.To]
+		if fl != "" && tl != "" && fl != tl {
+			hasEdge = true
+			break
+		}
+	}
+	if !hasEdge {
+		return nil
+	}
+
+	// Emit one rule per consecutive layer pair: forbid layers[i] → layers[i+1].
+	// layers[0] is the innermost (foundation); layers[N-1] is the outermost.
+	// A back-edge is a lower-tier module importing a higher-tier one, i.e.
+	// layers[i] imports layers[i+1], so the rule "from_layer: layers[i],
+	// to_layer: layers[i+1]" flags exactly that direction.
+	rules := make([]layerRule, 0, len(cfg.Layers)-1)
+	for i := 0; i < len(cfg.Layers)-1; i++ {
+		lo := cfg.Layers[i]
+		hi := cfg.Layers[i+1]
+		rules = append(rules, layerRule{
+			id:        "no-" + lo + "-imports-" + hi,
+			fromLayer: lo,
+			toLayer:   hi,
+		})
+	}
+	return rules
 }
 
 // yamlKey sanitizes a module name for use as a YAML mapping key.

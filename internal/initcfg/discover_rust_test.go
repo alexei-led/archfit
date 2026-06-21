@@ -42,7 +42,7 @@ const singleCrateMetadata = `{
 }`
 
 func TestDiscoverRust_Workspace_OneModulePerMember(t *testing.T) {
-	mods, err := DiscoverRust(context.Background(), t.TempDir(), rustRunner(workspaceMetadata))
+	mods, _, err := DiscoverRust(context.Background(), t.TempDir(), rustRunner(workspaceMetadata))
 	if err != nil {
 		t.Fatalf("DiscoverRust: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestDiscoverRust_Workspace_OneModulePerMember(t *testing.T) {
 }
 
 func TestDiscoverRust_SingleCrate(t *testing.T) {
-	mods, err := DiscoverRust(context.Background(), t.TempDir(), rustRunner(singleCrateMetadata))
+	mods, _, err := DiscoverRust(context.Background(), t.TempDir(), rustRunner(singleCrateMetadata))
 	if err != nil {
 		t.Fatalf("DiscoverRust: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestDiscoverRust_CargoAbsent_ReturnsNil(t *testing.T) {
 			return toolrun.Output{}, nil
 		},
 	}
-	mods, err := DiscoverRust(context.Background(), t.TempDir(), runner)
+	mods, _, err := DiscoverRust(context.Background(), t.TempDir(), runner)
 	if err != nil {
 		t.Fatalf("DiscoverRust: %v", err)
 	}
@@ -104,13 +104,13 @@ func TestDiscoverRust_MetadataError_ReturnsError(t *testing.T) {
 			return toolrun.Output{ExitCode: 101, Stderr: []byte("error: failed to parse manifest")}, nil
 		},
 	}
-	if _, err := DiscoverRust(context.Background(), t.TempDir(), runner); err == nil {
+	if _, _, err := DiscoverRust(context.Background(), t.TempDir(), runner); err == nil {
 		t.Fatal("expected error for non-zero cargo exit, got nil")
 	}
 }
 
 func TestDiscoverRust_MalformedJSON_ReturnsError(t *testing.T) {
-	if _, err := DiscoverRust(context.Background(), t.TempDir(), rustRunner("{not json")); err == nil {
+	if _, _, err := DiscoverRust(context.Background(), t.TempDir(), rustRunner("{not json")); err == nil {
 		t.Fatal("expected error for malformed cargo metadata, got nil")
 	}
 }
