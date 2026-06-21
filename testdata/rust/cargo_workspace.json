@@ -22,6 +22,12 @@
           "kind": null
         },
         {
+          "name": "pcre2",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "kind": null,
+          "optional": true
+        },
+        {
           "name": "tempfile",
           "source": "registry+https://github.com/rust-lang/crates.io-index",
           "kind": "dev"

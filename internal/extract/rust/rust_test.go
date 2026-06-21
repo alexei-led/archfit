@@ -102,9 +102,12 @@ func TestExtract_Workspace(t *testing.T) {
 	// Nodes: members as package:, registry deps as external:. tempfile is a
 	// dev-dep and must NOT appear (IncludeDevDeps defaults to false).
 	nodes := nodeSet(facts)
+	// pcre2 is an optional (feature-gated) dependency. It is emitted because
+	// extraction reads manifest-declared deps, not the feature-resolved graph
+	// (cargo metadata --no-deps) — see doc.go. This pins that declared contract.
 	wantPresent := []string{
 		nodeRip, nodeGrep, nodeIgnore,
-		"external:serde", "external:regex", "external:cc",
+		"external:serde", "external:regex", "external:cc", "external:pcre2",
 	}
 	for _, id := range wantPresent {
 		if _, ok := nodes[id]; !ok {
@@ -120,6 +123,7 @@ func TestExtract_Workspace(t *testing.T) {
 		{nodeRip, nodeGrep},
 		{nodeRip, nodeIgnore},
 		{nodeRip, "external:serde"},
+		{nodeRip, "external:pcre2"},
 		{nodeGrep, nodeIgnore},
 		{nodeGrep, "external:regex"},
 		{nodeGrep, "external:cc"},
@@ -211,6 +215,36 @@ func TestExtract_FeaturesAndManifest(t *testing.T) {
 	args := lastMetadataArgs(runner)
 	assertArgPair(t, args, "--features", "foo,bar")
 	assertArgPair(t, args, "--manifest-path", "sub/Cargo.toml")
+}
+
+func TestExtract_ManifestMarkerNoRoot(t *testing.T) {
+	// rust_manifest points at a sub-crate manifest while the project root has NO
+	// Cargo.toml. The configured manifest must serve as the applicability marker
+	// so the extractor still runs (regression: rust_manifest was projected into
+	// the cargo args but ignored by the root-Cargo.toml presence check).
+	root := t.TempDir()
+	sub := filepath.Join(root, "crates", "core")
+	if err := os.MkdirAll(sub, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "Cargo.toml"), []byte("[package]\nname = \"core\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := mockRunner(loadFixture(t, "cargo_single.json"))
+	cfg := config.ExtractConfig{Mode: config.ModeAuto, CargoManifest: "crates/core/Cargo.toml"}
+	if _, _, err := rust.New(runner, cfg).Extract(context.Background(), scope.Scope{Root: root}); err != nil {
+		t.Fatalf("Extract: expected applicable via rust_manifest, got %v", err)
+	}
+	if lastMetadataArgs(runner) == nil {
+		t.Error("expected cargo metadata to run when rust_manifest marks an existing sub-manifest")
+	}
+
+	// On mode with a configured manifest that does not exist → error, not silent absent.
+	missing := config.ExtractConfig{Mode: config.ModeOn, CargoManifest: "crates/missing/Cargo.toml"}
+	if _, _, err := rust.New(runner, missing).Extract(context.Background(), scope.Scope{Root: root}); err == nil {
+		t.Error("expected error in on mode when configured rust_manifest is absent")
+	}
 }
 
 func TestExtract_ModeOff(t *testing.T) {

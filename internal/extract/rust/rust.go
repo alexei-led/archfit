@@ -61,12 +61,21 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		return graph.Facts{}, absentCoverage(""), nil
 	}
 
-	// Applicability: requires a readable Cargo.toml in the project root. Any stat
-	// error (absent, unreadable) means not-applicable, matching the py extractor's
-	// presence test — don't fall through to cargo on a non-ENOENT error.
-	if _, err := os.Stat(filepath.Join(s.Root, manifestFile)); err != nil {
+	// Applicability marker: a configured rust_manifest (resolved against s.Root
+	// exactly like cargo's --manifest-path) when set, else the root Cargo.toml.
+	// This lets a sub-crate manifest drive analysis without a root manifest. Any
+	// stat error (absent, unreadable) means not-applicable, matching the py
+	// extractor's presence test — don't fall through to cargo on a non-ENOENT error.
+	marker := filepath.Join(s.Root, manifestFile)
+	if e.cfg.CargoManifest != "" {
+		marker = e.cfg.CargoManifest
+		if !filepath.IsAbs(marker) {
+			marker = filepath.Join(s.Root, marker)
+		}
+	}
+	if _, err := os.Stat(marker); err != nil {
 		if e.cfg.Mode == config.ModeOn {
-			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/rust: %s not found at %s", manifestFile, s.Root)
+			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/rust: %s not found", marker)
 		}
 		return graph.Facts{}, absentCoverage(""), nil
 	}
