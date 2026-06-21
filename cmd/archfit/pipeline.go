@@ -326,6 +326,19 @@ func buildToolAffectedMetrics() map[string]affectedMetrics {
 	return m
 }
 
+// primaryToolLanguage maps a language's primary-tool coverage name back to its
+// config language key, so a coverage gap for a disabled language can be suppressed
+// (a Rust-only repo should not be told to install go/ts/py analyzers). Built once.
+var primaryToolLanguage = buildPrimaryToolLanguage()
+
+func buildPrimaryToolLanguage() map[string]string {
+	m := make(map[string]string, len(languageRegistry))
+	for _, lang := range languageRegistry {
+		m[lang.PrimaryTool] = lang.ID
+	}
+	return m
+}
+
 // buildCoverageGaps derives the CoverageGaps block from the absent tool-coverage
 // records. Each gap's Gate is the configured posture for that tool (tools.<x>.gate,
 // default warn) — the --require-tools override is applied later by applyToolGate so
@@ -336,6 +349,14 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config) []diagnosti
 	var gaps []diagnostic.CoverageGap
 	for _, c := range cov {
 		if c.Status != diagnostic.StatusAbsent {
+			continue
+		}
+		// A disabled language's primary tool is not a gap the user needs to close —
+		// don't tell a Rust-only repo to install dependency-cruiser/grimp/go-packages.
+		// An explicit gate on that tool (tools.<lang>.gate) is an intentional
+		// "require it anyway" override and is preserved.
+		if lang, isPrimary := primaryToolLanguage[c.Tool]; isPrimary &&
+			cfg.Tools[lang].Enabled == config.ModeOff && cfg.Tools[lang].Gate == "" {
 			continue
 		}
 		info, ok := toolAffectedMetrics[c.Tool]
