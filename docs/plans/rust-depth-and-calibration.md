@@ -144,3 +144,73 @@ analysis_confidence drops when dimensions are n/a.
   that module depth needs Task 1.
 
 Verification: skills lint clean; docs match behaviour.
+
+## Calibration findings (2026-06-21 all-tools two-repo re-run)
+
+Re-ran archfit with ALL tools (rust + cargo-modules + scip + complexity + clones +
+gitnexus), full and delta, on yazi (32-crate workspace) and herdr (single crate), and
+re-compared against the architect reviews. Two virtual-workspace showstoppers were
+fixed first (commit b148996): cargo 1.96's `workspace_members` ID format
+(`path+file:///…/<name>#<version>`) broke SCIP member enumeration, and cargo-modules
+needs `--package` per member in a workspace — both made "all tools" silently no-op on
+workspaces.
+
+Result: archfit now ORDERS the same as the architect (yazi 43 > herdr 37 ↔ architect
+5.4 > 4.7); the pre-fix false-green inversion (herdr 73 > yazi 59) is gone. archfit and
+the architect converge on the verdict and core issues. archfit even caught **module
+cycles the architect missed** (yazi 26, herdr 5) — the human review only checked
+crate/top-level granularity. SCIP coverage was deep (yazi seen=12929, herdr seen=2375).
+
+The following calibration items remain (evidence: the two-repo run). None is a broken
+tool; they are scoring/labelling refinements.
+
+### Cal-1: dependency_graph_health vs dependency_health name collision
+
+archfit's `dependency_graph_health` measures INTRA-crate module-graph health
+(cycles/instability → poor); the architect's same-named dimension measured EXTERNAL
+dependency hygiene (clean → good). They are different axes; archfit's number tracks the
+architect's `complexity`, not its `dependency_health`. Rename/clarify the dimension (or
+split intra-graph health from dependency hygiene) so the two are not conflated.
+Files: `internal/score/score.go` (dimension name/summary), docs.
+
+### Cal-2: Rust module-cycle severity should be softer than crate cycles
+
+archfit flags module cycles as `critical` (yazi cycle=26, herdr cycle=5). But Rust
+PERMITS module cycles — only crate cycles are forbidden by cargo. The crate-level
+"cycles defeat boundaries outright" severity is too harsh at module granularity. Add a
+language/granularity-aware cycle penalty: module-level Rust cycles → advisory/serviceable
+band, not critical. Files: `internal/score/score.go` `dependencyGraphHealth` (cycle
+penalty), and/or the cycle metric tagging module vs crate scope.
+
+### Cal-3: propagation_cost is granularity-dependent
+
+yazi propagation_cost = 0.15 (crate) vs 0.013 (module) — the [0,1] density shrinks with
+node count, so the band is not comparable across granularities. Normalise the band by
+node count, or report it only at a fixed granularity. File:
+`internal/metrics/.../propagation_cost`.
+
+### Cal-4: structural_weight n/a for Rust MODULES (god-module-by-size miss)
+
+structural_weight works at crate level (caught yazi's 2 god crates) but is n/a at module
+level, because per-file LOC maps to the crate, not the module node — so archfit missed
+herdr's god FILES (server/headless.rs 7,843 lines; integration/mod.rs 6,365) that the
+architect flagged. This is the "file→module LOC/churn mapping" polish (also unblocks
+change_coupling/cohesion at module granularity). The hard part is the core-ring's
+filesystem-free constraint; plumb the cargo-modules member→module file ranges, or map via
+the rust file→module convention. Files: `internal/extract/rust/modules.go` (emit per-module
+file/LOC), `internal/metrics/internal/modgraph` (FileToModuleKey for module nodes).
+
+### Cal-5: cargo-modules partial on workspaces — surface which crates failed
+
+yazi cargo-modules came back `partial` (some of 31 crates' invocations failed — likely
+proc-macro/codegen crates). Record and `log()` the failed crate names in the coverage
+reason so the gap is visible, not silent. File: `internal/extract/rust/modules.go`
+`runModuleGraph` (collect failedCrate names into Coverage.Reason).
+
+### Cal-6: analysis_confidence ignores the n/a-dimension ratio (non-degenerate case)
+
+Both repos scored analysis_confidence 100 with several low-confidence dims. The
+degenerate-graph cap no longer fires once a real module graph exists, but the meta score
+still doesn't reflect how many dimensions came back n/a/low. Reconsider the
+measured-dimension-ratio cap (reverted earlier for test friction) now that module graphs
+make more dims measurable. File: `internal/score/score.go` `analysisConfidence`. Meta-only.
