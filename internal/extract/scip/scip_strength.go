@@ -22,13 +22,16 @@ const (
 	indexerPython = "scip-python"
 	indexerGo     = "scip-go"
 	indexerTS     = "scip-typescript"
+	indexerRust   = "rust-analyzer"
 	flagOutput    = "--output"
+	langRust      = "rust"
+	toolCargo     = "cargo"
 
 	nodeModulesDir = "node_modules"
 
 	// Absent-coverage reasons: why semantic strength is unavailable and the
 	// actionable enable step. Static strings so a double-run stays byte-stable.
-	reasonScipNoIndexer   = "no SCIP indexer found — install scip-go, scip-typescript, or scip-python for semantic integration strength"
+	reasonScipNoIndexer   = "no SCIP indexer found — install scip-go, scip-typescript, scip-python, or rust-analyzer for semantic integration strength"
 	reasonScipNoUv        = "uv not found — install uv (https://astral.sh/uv) so archfit can read the SCIP index"
 	reasonTSNoNodeModules = "install JS/TS dependencies (e.g. `npm install`) for semantic strength — scip-typescript needs node_modules to resolve cross-package imports"
 )
@@ -234,7 +237,55 @@ func (a *Adapter) detectIndexer(ctx context.Context, root string) (indexer, pkg,
 			}
 		}
 	}
+	if fileExists(filepath.Join(root, "Cargo.toml")) {
+		if _, found := a.runner.Detect(ctx, indexerRust); found {
+			if n := cargoPackageName(root); n != "" {
+				// Single-package crate: pass the name directly.
+				return indexerRust, n, langRust, true
+			}
+			// Virtual workspace ([workspace] with no [package]): enumerate members
+			// via cargo metadata and pass them comma-joined so the reader can build
+			// the _is_internal membership set.
+			if members := a.cargoWorkspaceMembers(ctx, root); len(members) > 0 {
+				return indexerRust, strings.Join(members, ","), langRust, true
+			}
+		}
+	}
 	return "", "", "", false
+}
+
+// cargoWorkspaceMembers runs `cargo metadata --no-deps --format-version 1` in root
+// and returns the names of all workspace member packages. Returns nil on any failure.
+// Used for virtual workspaces (no [package] in root Cargo.toml) so detectIndexer
+// can build a comma-separated package list for the SCIP reader.
+func (a *Adapter) cargoWorkspaceMembers(ctx context.Context, root string) []string {
+	out, err := a.runner.Run(ctx, toolrun.ToolCmd{
+		Name:    toolCargo,
+		Args:    []string{"metadata", "--no-deps", "--format-version", "1"},
+		WorkDir: root,
+		Timeout: 60 * time.Second,
+	})
+	if err != nil || out.ExitCode != 0 {
+		return nil
+	}
+	var meta struct {
+		Packages []struct {
+			Name string `json:"name"`
+		} `json:"packages"`
+	}
+	if err := json.Unmarshal(out.Stdout, &meta); err != nil {
+		return nil
+	}
+	// With --no-deps, `packages` already contains ONLY workspace members (external
+	// dependencies are excluded), so every package name is a member. This avoids
+	// parsing the workspace_members package-IDs, whose format changed in cargo 1.96
+	// to "path+file:///…/<name>#<version>" (no spaces) — the old space-split parser
+	// produced an empty set there, which silently disabled SCIP on every workspace.
+	names := make([]string, 0, len(meta.Packages))
+	for _, p := range meta.Packages {
+		names = append(names, p.Name)
+	}
+	return names
 }
 
 // indexArgs returns the per-indexer command arguments to write an index to out.
@@ -245,6 +296,11 @@ func indexArgs(indexer, pkg, root, out string) []string {
 		return []string{flagOutput, out}
 	case indexerTS:
 		return []string{"index", flagOutput, out}
+	case indexerRust:
+		// rust-analyzer scip REQUIRES the project path as a positional arg; with only
+		// --output it exits 0 in milliseconds and writes nothing. WorkDir is the root,
+		// so pass ".". (Omitting it was why Rust SCIP silently produced no index.)
+		return []string{"scip", ".", flagOutput, out}
 	default: // scip-python
 		return []string{"index", "--project-name", pkg, "--cwd", root, flagOutput, out, "--quiet"}
 	}
@@ -260,6 +316,31 @@ func goModulePath(root string) string {
 		line = strings.TrimSpace(line)
 		if rest, found := strings.CutPrefix(line, "module "); found {
 			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
+}
+
+// cargoPackageName reads the package name from Cargo.toml's [package] table
+// (name = "x" → "x"). A virtual-workspace manifest (no [package]) yields "",
+// which makes detectIndexer skip rust-analyzer — strength stays graph-only.
+func cargoPackageName(root string) string {
+	data, err := os.ReadFile(filepath.Join(root, "Cargo.toml")) //nolint:gosec
+	if err != nil {
+		return ""
+	}
+	inPackage := false
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") {
+			inPackage = line == "[package]"
+			continue
+		}
+		if !inPackage {
+			continue
+		}
+		if key, val, found := strings.Cut(line, "="); found && strings.TrimSpace(key) == "name" {
+			return strings.Trim(strings.TrimSpace(val), `"'`)
 		}
 	}
 	return ""

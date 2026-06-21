@@ -96,21 +96,17 @@ const (
 	LangGo         = "go"
 	LangTypeScript = "typescript"
 	LangPython     = "python"
+	LangRust       = "rust"
 )
 
-// languagePriority returns a numeric priority for language-based tiebreaking.
-// Lower number = higher priority.
-func languagePriority(lang string) int {
-	switch lang {
-	case LangGo:
-		return 0
-	case LangTypeScript:
-		return 1
-	case LangPython:
-		return 2
-	default:
-		return 3
-	}
+// CrateRoot maps a Rust crate's repo-relative source directory to its crate name.
+// The Rust extractor (which alone knows cargo's package→manifest layout) emits one
+// per workspace member so the filesystem-free core ring can resolve a .rs file path
+// to its module key ("<crate>::<mod>") — the crate name is not derivable from the
+// path alone. Dir is repo-relative and slash-separated ("" for a root crate).
+type CrateRoot struct {
+	Dir  string
+	Name string
 }
 
 // Facts holds raw extractor output — nodes, edges, and unresolved counts —
@@ -120,13 +116,17 @@ type Facts struct {
 	Edges      []Edge
 	Language   string
 	Unresolved int
+	// CrateRoots carries the Rust workspace members' source dirs and names so the
+	// core ring can map .rs files to module keys. Empty for non-Rust facts.
+	CrateRoots []CrateRoot
 }
 
 // Graph is a sealed, immutable dependency graph produced by Build.
 // After construction no field is mutated; accessors return copies.
 type Graph struct {
-	nodes []Node
-	edges []Edge
+	nodes      []Node
+	edges      []Edge
+	crateRoots []CrateRoot
 }
 
 // Build merges one or more Facts into a sealed, deterministic Graph.
@@ -152,6 +152,24 @@ func Build(facts []Facts) *Graph {
 			}
 		}
 	}
+
+	// --- Collect crate roots (Rust) ---
+	// Pure carry-through of the Rust extractor's package layout, deduped by Dir.
+	// Sorted by Dir for deterministic longest-prefix matching downstream.
+	var crateRoots []CrateRoot
+	seenCrate := make(map[string]struct{})
+	for _, f := range facts {
+		for _, c := range f.CrateRoots {
+			if _, ok := seenCrate[c.Dir]; ok {
+				continue
+			}
+			seenCrate[c.Dir] = struct{}{}
+			crateRoots = append(crateRoots, c)
+		}
+	}
+	slices.SortFunc(crateRoots, func(a, b CrateRoot) int {
+		return cmp.Compare(a.Dir, b.Dir)
+	})
 	slices.SortFunc(nodes, func(a, b Node) int {
 		return cmp.Compare(a.ID(), b.ID())
 	})
@@ -166,7 +184,7 @@ func Build(facts []Facts) *Graph {
 	winners := make(map[canonicalKey]candidate)
 
 	for _, f := range facts {
-		prio := languagePriority(f.Language)
+		prio := BuiltinConventions.Lookup(f.Language).Priority
 		for _, e := range f.Edges {
 			k := edgeKey(e)
 			existing, ok := winners[k]
@@ -227,7 +245,7 @@ func Build(facts []Facts) *Graph {
 		return cmp.Compare(aLine, bLine)
 	})
 
-	return &Graph{nodes: nodes, edges: edges}
+	return &Graph{nodes: nodes, edges: edges, crateRoots: crateRoots}
 }
 
 func firstLoc(e Edge) (string, int) {
@@ -248,6 +266,14 @@ func (g *Graph) Nodes() []Node {
 func (g *Graph) Edges() []Edge {
 	out := make([]Edge, len(g.edges))
 	copy(out, g.edges)
+	return out
+}
+
+// CrateRoots returns a copy of the Rust crate roots carried from extraction,
+// sorted by Dir. Empty for graphs with no Rust facts.
+func (g *Graph) CrateRoots() []CrateRoot {
+	out := make([]CrateRoot, len(g.crateRoots))
+	copy(out, g.crateRoots)
 	return out
 }
 

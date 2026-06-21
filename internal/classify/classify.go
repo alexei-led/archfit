@@ -3,6 +3,7 @@
 package classify
 
 import (
+	"maps"
 	"sort"
 	"strings"
 
@@ -94,6 +95,43 @@ func (mi moduleIndex) moduleFor(path string) (string, bool) {
 	return "", false
 }
 
+// AugmentModulesFromGraph returns a Modules map extended with a synthetic module
+// for every first-party module-graph node not already covered by a configured
+// module's path globs. Rust intra-crate module nodes ("<crate>::<mod>", produced by
+// the cargo-modules extractor) are otherwise unknown to moduleFor, so their edges
+// classify as distance-unknown and never count toward coupling_balance or
+// encapsulation. The gate is the "::" separator, which only the Rust module-graph
+// convention uses (Go/TS use "/", Python "."), so Go/TS/Python graphs and their
+// configured modules are untouched. Existing config modules keep precedence — a
+// synthetic module is only added when nothing already covers the node. The input
+// map is not mutated; a copy is returned only if something is added.
+func AugmentModulesFromGraph(g *graph.Graph, modules map[string]config.ModuleDef) map[string]config.ModuleDef {
+	if g == nil {
+		return modules
+	}
+	mi := buildModuleIndex(modules)
+	out := modules
+	cloned := false
+	for _, n := range g.Nodes() {
+		path := n.Path
+		if n.Kind == graph.NodeKindExternal || !strings.Contains(path, "::") {
+			continue // external dep, or not a Rust module-graph node
+		}
+		if _, ok := mi.moduleFor(path); ok {
+			continue // already covered by a configured module
+		}
+		if !cloned {
+			out = make(map[string]config.ModuleDef, len(modules)+8)
+			maps.Copy(out, modules)
+			cloned = true
+		}
+		if _, exists := out[path]; !exists {
+			out[path] = config.ModuleDef{Paths: []string{path}}
+		}
+	}
+	return out
+}
+
 // matchesAnyGlob reports whether path matches any of the given glob patterns.
 func matchesAnyGlob(path string, globs []string) bool {
 	for _, pattern := range globs {
@@ -134,7 +172,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) coupling.Cl
 	}
 
 	// --- Distance ---
-	dist := classifyDistance(fromPath, toPath, mi, modules, c.ExplicitOwners)
+	dist := classifyDistance(fromPath, toPath, e.Language, mi, modules, c.ExplicitOwners)
 	// Role-aware downgrade: a composition root (or a generated/test module) reaches
 	// into the modules it wires by design — that fan-out is cohesion, not high-
 	// distance coupling — so its outbound edges must never be scored as unbalanced.
@@ -281,7 +319,7 @@ func strengthFromHint(hint string) coupling.Strength {
 // names as different subtrees) can apply.
 //
 // runtime_adjust (+1 level for async bridges) is a Phase-4 addition (Task 12).
-func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[string]config.ModuleDef, explicitOwners map[string]bool) coupling.Distance {
+func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map[string]config.ModuleDef, explicitOwners map[string]bool) coupling.Distance {
 	fromMod, fromOK := mi.moduleFor(fromPath)
 	toMod, toOK := mi.moduleFor(toPath)
 
@@ -318,7 +356,7 @@ func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[strin
 	}
 
 	// Step 4: git-author degenerate or no ownership → code structure.
-	return maxDistance(codeStructureDistance(fromMod, toMod), deploy)
+	return maxDistance(codeStructureDistance(fromMod, toMod, lang), deploy)
 }
 
 // classifyVolatility derives domain volatility for the to-module using three

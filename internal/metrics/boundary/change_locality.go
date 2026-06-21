@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/metrics/internal/modgraph"
 	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -51,7 +52,8 @@ func (m ChangeLocalityMetric) Calculate(in signal.CommonInput) diagnostic.Metric
 	// scheme (Go/TS "file:", Python "module:") so cross-edge and reach counts
 	// work for all languages. Matching the raw "file:"+path form here produced a
 	// false zero for Python, whose IDs are dotted "module:" names.
-	changedNodes := changedNodeIDs(in.Graph, changed)
+	conv := graph.BuiltinConventions.Lookup(modgraph.DominantLanguage(in.Graph))
+	changedNodes := changedNodeIDs(in.Graph, changed, conv)
 
 	// Cross-module edges from changed files, judged by the classification's
 	// distance dimension (same_module and unknown do not count).
@@ -119,7 +121,7 @@ func (m ChangeLocalityMetric) Calculate(in signal.CommonInput) diagnostic.Metric
 // "app.handlers", inflating the count. Two-level roots (packages/x/src/...) still
 // will not match; acceptable for a report-only signal. The stripped alias applies
 // to module nodes only — file nodes (Go, TS) carry the full path and match exactly.
-func changedNodeIDs(g *graph.Graph, changed map[string]struct{}) map[string]struct{} {
+func changedNodeIDs(g *graph.Graph, changed map[string]struct{}, conv graph.NodeConvention) map[string]struct{} {
 	rootStripped := make(map[string]struct{})
 	for f := range changed {
 		if root, rest, found := strings.Cut(f, "/"); found && root == "src" && strings.Contains(rest, "/") {
@@ -129,7 +131,7 @@ func changedNodeIDs(g *graph.Graph, changed map[string]struct{}) map[string]stru
 
 	out := make(map[string]struct{})
 	for _, n := range g.Nodes() {
-		for _, cand := range nodeFileCandidates(n) {
+		for _, cand := range nodeFileCandidates(n, conv) {
 			if _, ok := changed[cand]; ok {
 				out[n.ID()] = struct{}{}
 				break
@@ -147,16 +149,15 @@ func changedNodeIDs(g *graph.Graph, changed map[string]struct{}) map[string]stru
 
 // nodeFileCandidates returns the repo-relative source-file path(s) a node could
 // have been built from, per its kind. Returns nil for nodes that do not map to a
-// single changed source file (Go package, repo, external).
-func nodeFileCandidates(n graph.Node) []string {
+// single changed source file (Go package, repo, external). Module nodes (Python)
+// defer to the language's NodeConvention for their candidate files — e.g. a dotted
+// module maps to "<path>.py", a typed stub "<path>.pyi", or "<path>/__init__.py".
+func nodeFileCandidates(n graph.Node, conv graph.NodeConvention) []string {
 	switch n.Kind {
 	case graph.NodeKindFile:
 		return []string{n.Path}
 	case graph.NodeKindModule:
-		// Python: dotted module → slash path; the file is "<path>.py", a typed
-		// stub "<path>.pyi", or a package's "<path>/__init__.py".
-		slashed := strings.ReplaceAll(n.Path, ".", "/")
-		return []string{slashed + ".py", slashed + ".pyi", slashed + "/__init__.py"}
+		return conv.ModuleFileCandidates(n.Path)
 	default:
 		return nil
 	}

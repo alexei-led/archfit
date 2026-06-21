@@ -77,7 +77,7 @@ coupling carries elevated maintenance effort but no distributed-monolith edges
 - worst-case high/high/high (distributed-monolith) edges: 0
 
 ### dependency_graph_health — 99/100 (strong) · confidence: high
-dependency graph health: cycles, hubs, instability, and propagation cost
+internal dependency-graph shape: cycles, blast-radius hubs, instability, and propagation cost (not external dependency hygiene)
 - import cycles: 0
 - blast-radius hubs: 0
 - unstable modules (I>0.7): 0

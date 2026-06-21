@@ -211,6 +211,13 @@ type Diagnostic struct {
 	// leaves unmeasured, and how to install them (warn-loud coverage reporting).
 	// Omitted when every required tool ran. Populated in cmd/, never the core ring.
 	CoverageGaps []CoverageGap `json:"coverage_gaps,omitempty"`
+	// PrimaryExtractorTools names the per-language file extractors whose coverage
+	// the scorecard treats as load-bearing: their absence (when coverage is n/a)
+	// means the repo was not analysed at all and drives analysis_confidence toward
+	// critical. Injected by the composition root from the language registry so the
+	// score package holds no hardcoded tool list. Omitted when empty; score then
+	// falls back to its built-in default set.
+	PrimaryExtractorTools []string `json:"primary_extractor_tools,omitempty"`
 	// ConfigWarnings carries advisory config-quality messages (under-specified
 	// modules, swallowed optional-tool errors) so they reach md/json/CI instead
 	// of being stderr-only. Omitted when empty. Advisory — never gates.

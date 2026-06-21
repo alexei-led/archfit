@@ -193,13 +193,16 @@ func TestCouplingBalance(t *testing.T) {
 	cb := func(edges ...finding.Finding) Dimension {
 		d := diagnostic.New()
 		d.Findings = edges
+		// A non-degenerate graph (≥2 connected modules) so the 0-edge branch is the
+		// "edges unclassified/all-balanced" case, not the single-module degenerate one.
+		d.Metrics = []diagnostic.MetricResult{metric("blast_radius", 3, "info", "high")}
 		return dimByName(t, Synthesize(d), DimCouplingBalance)
 	}
 
-	t.Run("no edges → high, not flagged", func(t *testing.T) {
+	t.Run("no classified edges → unconfirmed, never strong", func(t *testing.T) {
 		got := cb()
-		if got.Value < 81 {
-			t.Errorf("no-edges value = %d, want strong (≥81)", got.Value)
+		if got.Value > 60 {
+			t.Errorf("no-edges value = %d, want ≤60 (unconfirmed, not false-green)", got.Value)
 		}
 	})
 
@@ -241,62 +244,94 @@ func TestCouplingBalance(t *testing.T) {
 			return bcAdv(from, to, "intrusive", "cross_deploy_unit", "high", 10, "critical", "critical", 10)
 		}
 		// Two worst-case edges, both operator-suppressed (excepted / baseline). They
-		// must not penalise the dimension — same view the gate verdict takes.
+		// must not penalise the dimension — same view the gate verdict takes. With no
+		// counted edges left, the dimension is unconfirmed (mixed), never poor.
 		got := cb(
 			withStatus(worst("a", "b"), finding.StatusExcepted),
 			withStatus(worst("c", "d"), finding.StatusBaseline),
 		)
-		if got.Value < 81 {
-			t.Errorf("suppressed edges value = %d, want strong (≥81); excepted/baseline must not count", got.Value)
+		if got.Value <= 40 {
+			t.Errorf("suppressed edges value = %d, want > poor (>40); excepted/baseline must not penalise", got.Value)
+		}
+		if got.Value > 60 {
+			t.Errorf("suppressed edges value = %d, want ≤60 (no counted edges = unconfirmed, not strong)", got.Value)
 		}
 	})
 }
 
-// TestCouplingBalance_EmptyEdgesBase asserts the empty-edges branch reads the
-// baseline coverage confidence: low coverage → neutral 50/low (no false-green),
-// medium-or-better coverage → the established 90/medium "no unbalanced coupling".
-func TestCouplingBalance_EmptyEdgesBase(t *testing.T) {
-	t.Run("empty edges + low base → 50/low", func(t *testing.T) {
-		got := couplingBalance(nil, ConfidenceLow)
-		if got.Value != 50 {
-			t.Errorf("value = %d, want 50", got.Value)
+// TestCouplingBalance_EmptyEdges asserts zero classified coupling edges never
+// produces a strong band. Zero edges means the classifier did not run (e.g. SCIP
+// absent), the graph has no cross-boundary edges, or all edges are balanced — none
+// distinguishable from the scorecard — so the result is capped at mixed and low
+// confidence regardless of baseline coverage (coverage-gap cap).
+func TestCouplingBalance_EmptyEdges(t *testing.T) {
+	// A non-degenerate graph carries graph-shape metrics (≥2 connected modules).
+	nonDegen := metricIndex{"blast_radius": metric("blast_radius", 3, "info", "high")}
+
+	t.Run("non-degenerate + no edges → ≤60/low, never strong", func(t *testing.T) {
+		got := couplingBalance(nil, nonDegen)
+		if got.Value > 60 {
+			t.Errorf("value = %d, want ≤60 (no false-green on 0 classified edges)", got.Value)
 		}
 		if got.Confidence != ConfidenceLow {
 			t.Errorf("confidence = %q, want low", got.Confidence)
 		}
 	})
 
-	t.Run("empty edges + medium base → 90/medium", func(t *testing.T) {
-		got := couplingBalance(nil, ConfidenceMedium)
-		if got.Value != 90 {
-			t.Errorf("value = %d, want 90", got.Value)
-		}
-		if got.Confidence != ConfidenceMedium {
-			t.Errorf("confidence = %q, want medium", got.Confidence)
+	t.Run("degenerate graph + no edges → 50/low", func(t *testing.T) {
+		got := couplingBalance(nil, metricIndex{})
+		if got.Value != 50 || got.Confidence != ConfidenceLow {
+			t.Errorf("value/conf = %d/%q, want 50/low", got.Value, got.Confidence)
 		}
 	})
 
-	t.Run("low base propagates through Synthesize", func(t *testing.T) {
-		// A coverage metric with value 0.2 drives the baseline confidence to low,
-		// so an un-analysed repo with no BC edges must not present a strong 90.
+	t.Run("no edges never strong through Synthesize", func(t *testing.T) {
 		d := diagnostic.New()
 		d.Metrics = []diagnostic.MetricResult{metric("coverage", 0.2, "poor", "low")}
 		cb := dimByName(t, Synthesize(d), DimCouplingBalance)
 		if cb.Value > 60 {
-			t.Errorf("low-coverage no-edge coupling_balance = %d, want ≤60 (not false-green)", cb.Value)
+			t.Errorf("no-edge coupling_balance = %d, want ≤60 (not false-green)", cb.Value)
 		}
 	})
+}
+
+// TestDegenerateGraph_NoFalseGreen is the regression guard for the single-module
+// false-green (e.g. a single-crate Rust binary archfit sees as one node): with no
+// graph-shape metrics, the structural dimensions must report unmeasured (≤60/low),
+// not a vacuous strong — even when the encapsulation metric reports a vacuous 1.0.
+func TestDegenerateGraph_NoFalseGreen(t *testing.T) {
+	d := diagnostic.New()
+	d.Metrics = []diagnostic.MetricResult{
+		metric("encapsulation", 1.0, "strong", "high"), // vacuous on a 1-module graph
+		metric("cycle", 0, "strong", "high"),
+		metric("propagation_cost", 0.05, "info", "high"),
+		// no blast_radius, no instability → degenerate graph
+	}
+	sc := Synthesize(d)
+	for _, name := range []string{
+		DimBoundaryIntegrity, DimDependencyGraphHealth, DimCohesionModularity, DimCouplingBalance,
+	} {
+		dim := dimByName(t, sc, name)
+		if dim.Value > 60 {
+			t.Errorf("%s = %d on a degenerate (<2-module) graph, want ≤60 (no false-green)", name, dim.Value)
+		}
+		if dim.Confidence != ConfidenceLow {
+			t.Errorf("%s confidence = %q on a degenerate graph, want low", name, dim.Confidence)
+		}
+	}
 }
 
 // TestBoundaryIntegrity_GateViolations asserts active gate findings subtract from
 // boundary integrity and are cited as evidence.
 func TestBoundaryIntegrity_GateViolations(t *testing.T) {
+	// blast_radius makes the graph non-degenerate so encapsulation 1.0 is a genuine
+	// multi-module measurement, not the vacuous single-module case.
 	clean := diagnostic.New()
-	clean.Metrics = []diagnostic.MetricResult{metric("encapsulation", 1.0, "strong", "high")}
+	clean.Metrics = []diagnostic.MetricResult{metric("encapsulation", 1.0, "strong", "high"), metric("blast_radius", 2, "info", "high")}
 	cleanDim := dimByName(t, Synthesize(clean), DimBoundaryIntegrity)
 
 	dirty := diagnostic.New()
-	dirty.Metrics = []diagnostic.MetricResult{metric("encapsulation", 1.0, "strong", "high")}
+	dirty.Metrics = []diagnostic.MetricResult{metric("encapsulation", 1.0, "strong", "high"), metric("blast_radius", 2, "info", "high")}
 	dirty.Findings = []finding.Finding{gate("g1"), gate("g2")}
 	dirtyDim := dimByName(t, Synthesize(dirty), DimBoundaryIntegrity)
 
@@ -318,7 +353,9 @@ func TestBoundaryIntegrity_GateViolations(t *testing.T) {
 // measured the dimension does not fabricate a perfect baseline: it starts neutral
 // with low confidence and cites the unmeasured baseline explicitly.
 func TestBoundaryIntegrity_EncapsulationNA(t *testing.T) {
-	mi := indexMetrics(nil) // no encapsulation metric → n/a
+	// blast_radius present (non-degenerate graph) but no encapsulation metric → the
+	// genuine encapsulation-n/a branch, not the single-module degenerate guard.
+	mi := indexMetrics([]diagnostic.MetricResult{metric("blast_radius", 2, "info", "high")})
 	dim := finalize(boundaryIntegrity(mi, nil, ConfidenceHigh))
 
 	if dim.Value == 100 {
@@ -472,8 +509,15 @@ func TestAnalysisConfidence(t *testing.T) {
 			maxValue: 60,
 		},
 		{
-			name:    "coverage ok + all semantic absent → graded drop, not critical",
-			metrics: []diagnostic.MetricResult{metric("coverage", 0.95, "strong", "high")},
+			name: "coverage ok + all semantic absent → graded drop, not critical",
+			// blast_radius+instability → a real (non-degenerate) graph, so the
+			// measured-dimension ceiling does not bind and this exercises the
+			// tool-coverage grading.
+			metrics: []diagnostic.MetricResult{
+				metric("coverage", 0.95, "strong", "high"),
+				metric("blast_radius", 3, "info", "high"),
+				metric("instability", 2, "info", "high"),
+			},
 			// primary present, semantic (scip/gitnexus/lizard/jscpd) all absent
 			coverage: []diagnostic.Coverage{okCov("go/packages")},
 			wantBand: BandServiceable,
@@ -504,5 +548,81 @@ func TestAnalysisConfidence(t *testing.T) {
 				t.Errorf("band %q does not match value %d (want %q)", meta.Band, meta.Value, got)
 			}
 		})
+	}
+}
+
+// TestAnalysisConfidence_PrimaryExtractorTools asserts the meta dimension checks
+// the Diagnostic's injected PrimaryExtractorTools list (not a hardcoded literal)
+// and falls back to the built-in default when the list is empty.
+func TestAnalysisConfidence_PrimaryExtractorTools(t *testing.T) {
+	// coverage n/a forces the primary-extractor penalty branch. The only primary
+	// tool with ok coverage is "cargo"; all semantic tools are present so they add
+	// no penalty.
+	base := func() diagnostic.Diagnostic {
+		d := diagnostic.New()
+		// blast_radius+instability → a non-degenerate graph so the measured-dimension
+		// ceiling does not bind; this test isolates the primary-extractor penalty.
+		d.Metrics = []diagnostic.MetricResult{
+			metric("coverage", 0, "n/a", "low"),
+			metric("blast_radius", 3, "info", "high"),
+			metric("instability", 2, "info", "high"),
+		}
+		d.ToolCoverage = []diagnostic.Coverage{
+			okCov("cargo"),
+			okCov("scip"), okCov("gitnexus"), okCov("lizard"), okCov("jscpd"),
+		}
+		return d
+	}
+
+	// Injected list names the present tool → no primary extractor is absent → no penalty.
+	injected := base()
+	injected.PrimaryExtractorTools = []string{"cargo"}
+	injectedMeta := dimByName(t, Synthesize(injected), DimAnalysisConfidence)
+	if injectedMeta.Value != 60 {
+		t.Errorf("injected list value = %d, want 60 (no primary absent)", injectedMeta.Value)
+	}
+
+	// Empty list → default set (go/packages, dependency-cruiser, grimp), all absent
+	// → −45 penalty. Proves the empty-slice fallback uses the built-in default.
+	fallback := base() // PrimaryExtractorTools left empty
+	fallbackMeta := dimByName(t, Synthesize(fallback), DimAnalysisConfidence)
+	if fallbackMeta.Value != 15 {
+		t.Errorf("empty-list fallback value = %d, want 15 (default primaries absent)", fallbackMeta.Value)
+	}
+
+	if injectedMeta.Value <= fallbackMeta.Value {
+		t.Errorf("injected list did not override default: injected=%d fallback=%d",
+			injectedMeta.Value, fallbackMeta.Value)
+	}
+}
+
+// TestAnalysisConfidence_NADimensionRatioCap is the Cal-6 regression: a fully-tooled
+// run (coverage 1.0, every semantic tool present) over a real graph must NOT read 100
+// when several scorecard dimensions came back n/a — the meta score reflects how many
+// dimensions were actually measured, not just whether the tools ran.
+func TestAnalysisConfidence_NADimensionRatioCap(t *testing.T) {
+	// All tools present and a non-degenerate graph (blast_radius+instability), but no
+	// encapsulation, no change history, no fitness scan → 5 of 6 dimensions n/a.
+	d := diagnostic.New()
+	d.Metrics = []diagnostic.MetricResult{
+		metric("coverage", 1.0, "strong", "high"),
+		metric("blast_radius", 0, "info", "high"),
+		metric("instability", 0, "info", "high"),
+	}
+	d.ToolCoverage = []diagnostic.Coverage{
+		okCov("go/packages"), okCov("scip"), okCov("gitnexus"), okCov("lizard"), okCov("jscpd"),
+	}
+	naMeta := dimByName(t, Synthesize(d), DimAnalysisConfidence)
+	if naMeta.Value >= 100 {
+		t.Errorf("meta must be capped below 100 when most dimensions are n/a, got %d", naMeta.Value)
+	}
+	if naMeta.Value < 50 {
+		t.Errorf("a fully-tooled run should stay reasonably confident, got %d", naMeta.Value)
+	}
+
+	// A fully-measured run (all dimensions real) must out-score the n/a-heavy run.
+	fullMeta := dimByName(t, Synthesize(richDiagnostic()), DimAnalysisConfidence)
+	if fullMeta.Value <= naMeta.Value {
+		t.Errorf("fully-measured run should out-score the n/a-heavy run: full=%d na=%d", fullMeta.Value, naMeta.Value)
 	}
 }

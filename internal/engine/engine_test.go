@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -360,6 +361,58 @@ func TestRun_DiagnosticShape(t *testing.T) {
 	// Metrics should contain all registered metrics.
 	if len(d.Metrics) != 19 {
 		t.Errorf("len(metrics)=%d, want 19", len(d.Metrics))
+	}
+}
+
+// TestRun_PrimaryExtractorTools_Forwarded asserts the injected primary-extractor
+// tool list is copied verbatim onto the Diagnostic so the score package can read
+// it instead of a hardcoded literal. Empty input leaves the field empty (score
+// falls back to its default set).
+func TestRun_PrimaryExtractorTools_Forwarded(t *testing.T) {
+	ctx := context.Background()
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return graph.Facts{Language: "go"}, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+
+	build := func(tools []string) engine.RunInput {
+		return engine.RunInput{
+			Mode:                  engine.Mode{},
+			Scope:                 scope.Scope{Root: "."},
+			Classify:              classifyCfg,
+			Exceptions:            config.ExceptionSet{},
+			Extractors:            []ports.Extractor{ex},
+			Patterns:              ports.NopPatternProvider{},
+			Resolver:              ports.NopSymbolResolver{},
+			Rules:                 rs,
+			Metrics:               ms,
+			Accepted:              base,
+			BaseMetrics:           base.Metrics,
+			Now:                   time.Now(),
+			PrimaryExtractorTools: tools,
+		}
+	}
+
+	want := []string{"go/packages", "cargo"}
+	d, err := engine.Run(ctx, build(want))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !slices.Equal(d.PrimaryExtractorTools, want) {
+		t.Errorf("PrimaryExtractorTools=%v, want %v", d.PrimaryExtractorTools, want)
+	}
+
+	empty, err := engine.Run(ctx, build(nil))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(empty.PrimaryExtractorTools) != 0 {
+		t.Errorf("PrimaryExtractorTools=%v, want empty", empty.PrimaryExtractorTools)
 	}
 }
 

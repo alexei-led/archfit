@@ -31,7 +31,7 @@ func TestUnbalancedEdge_Count(t *testing.T) {
 	if result.Value != 1 {
 		t.Errorf("expected value 1 got %v", result.Value)
 	}
-	if result.Band != "critical" {
+	if result.Band != bandCritical {
 		t.Errorf("expected band critical got %q", result.Band)
 	}
 }

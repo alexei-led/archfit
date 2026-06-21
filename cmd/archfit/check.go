@@ -33,7 +33,7 @@ type CheckCmd struct {
 
 	// Overrides — each flag overrides the equivalent setting from the config file.
 	Severity string   `name:"severity" help:"Show only coupling advisories at or above this level: low, medium, high, critical. Default: medium." enum:"low,medium,high,critical," default:""`
-	Lang     []string `name:"lang"     help:"Languages to analyze: go, ts, py. Repeatable: --lang go --lang ts. Sets each to 'on'; unspecified languages follow config or auto-detect."`
+	Lang     []string `name:"lang"     help:"Languages to analyze: go, ts, py, rust (alias rs). Repeatable: --lang go --lang ts. Sets each to 'on'; unspecified languages follow config or auto-detect."`
 }
 
 func (c *CheckCmd) Run(deps *appDeps) error {

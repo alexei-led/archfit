@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -13,26 +14,28 @@ const installSubcmd = "install"
 
 // InstallCmd installs external tools required for language analysis.
 type InstallCmd struct {
-	Lang   []string `name:"lang" help:"Languages to install tools for: py, ts, go. Repeatable. Default: py." enum:"go,ts,py" default:"py"`
+	Lang   []string `name:"lang" help:"Languages to install tools for: py, ts, go, rust. Repeatable. Default: py." enum:"go,ts,py,rust" default:"py"`
 	DryRun bool     `name:"dry-run" short:"n" help:"Print install commands without running them."`
 }
 
 func (c *InstallCmd) Run(deps *appDeps) error {
 	ctx := context.Background()
 	for _, lang := range c.Lang {
-		switch lang {
-		case "py":
+		switch languageByAlias(lang) {
+		case config.LangPython:
 			if err := c.installPy(ctx, deps); err != nil {
 				return err
 			}
-		case "ts":
+		case config.LangTypeScript:
 			if err := c.installTS(ctx, deps); err != nil {
 				return err
 			}
-		case "go":
+		case config.LangGo:
 			if err := c.installGo(ctx, deps); err != nil {
 				return err
 			}
+		case config.LangRust:
+			c.installRust(ctx, deps)
 		}
 	}
 	return nil
@@ -59,6 +62,15 @@ func (c *InstallCmd) installGo(ctx context.Context, deps *appDeps) error {
 		_, _ = fmt.Fprintf(deps.Stdout, "  go: missing — install from https://go.dev/dl/\n")
 	}
 	return nil
+}
+
+func (c *InstallCmd) installRust(ctx context.Context, deps *appDeps) {
+	_, _ = fmt.Fprintln(deps.Stdout, "rust tools:")
+	if _, ok := deps.Runner.Detect(ctx, "cargo"); ok {
+		_, _ = fmt.Fprintf(deps.Stdout, "  %-16s ok\n", "cargo")
+	} else {
+		_, _ = fmt.Fprintf(deps.Stdout, "  cargo: missing — install Rust from https://rustup.rs/\n")
+	}
 }
 
 // ensureTool checks whether tool is present; if not, tries brew install formula.

@@ -5,12 +5,23 @@
 """scip_reader.py — read a SCIP index and emit per-edge integration strength as JSON.
 
 SCIP (https://scip-code.org/) is a language-agnostic code-intelligence format, so
-one reader serves scip-python, scip-go, and scip-typescript. It maps each
-cross-module symbol reference to a Balanced-Coupling integration strength and emits
-edges whose from/to paths match archfit's graph node paths for that language:
+one reader serves scip-python, scip-go, scip-typescript, and rust-analyzer. It maps
+each cross-module symbol reference to a Balanced-Coupling integration strength and
+emits edges whose from/to paths match archfit's graph node paths for that language:
   - python : module -> module   (dotted, e.g. "ccgram.handlers")
   - go     : file   -> package  (e.g. "internal/x/y.go" -> "internal/z", gomod-stripped)
   - ts     : file   -> file     (e.g. "src/a.ts" -> "src/b.ts")
+  - rust   : module -> module   (crate::mod, e.g. "mycrate::api" -> "mycrate::server")
+
+rust-analyzer SCIP symbol format:
+  "rust-analyzer cargo <crate> <version> <descriptor>"
+  The descriptor is a CRATE-RELATIVE path rooted at "crate/" (e.g. "crate/",
+  "crate/some_mod/SomeType#", "main()."). File paths live in Document.relative_path,
+  NOT in the symbol. Module node keys are "<crate>::<mod>" (double-colon, matching
+  cargo-modules' own DOT node IDs from Task 1).
+
+--package for Rust is a comma-separated list of workspace crate names. _is_internal
+accepts any crate in that set.
 
 Strength (BC, strongest->weakest): intrusive > functional > model > contract.
   private (underscore) -> intrusive; Protocol/ABC/interface -> contract;
@@ -18,7 +29,7 @@ Strength (BC, strongest->weakest): intrusive > functional > model > contract.
 Edge strength = strongest among its cross-module references.
 
 Usage: uv run scip_reader.py --proto scip.proto --index index.scip
-                             --package <root> --lang <python|go|typescript>
+                             --package <root> --lang <python|go|typescript|rust>
 """
 from __future__ import annotations
 
@@ -74,8 +85,55 @@ def _container(descriptors: str) -> str:
     return "/".join(segs)
 
 
+def _rust_module_key(symbol: str) -> str | None:
+    """Derive a module node key for a rust-analyzer SCIP symbol.
+
+    rust-analyzer symbol format:
+      "rust-analyzer cargo <crate> <version> <descriptor>"
+    The descriptor is crate-relative (e.g. "crate/", "crate/api/Server#", "main().").
+    We map it to "<crate>::<mod_path>" matching cargo-modules' DOT node IDs:
+      crate/api/Server# → mycrate::api
+      crate/           → mycrate        (crate root)
+      main().          → None           (binary entry — not a module node)
+
+    Returns None when the descriptor does not resolve to a module node.
+    """
+    f = _fields(symbol)
+    if f is None:
+        return None
+    crate, descriptors = f[2], f[4]
+    # rust-analyzer descriptor scheme (observed): the crate ROOT module is "crate/";
+    # everything else is named DIRECTLY with no "crate/" prefix — a top-level module
+    # "a" is "a/", its type "a/Thing#", a crate-root fn "main().". So strip a leading
+    # "crate/" when present (nested modules), but otherwise treat the leading namespace
+    # segments as the module path. (The earlier code REQUIRED a "crate/" prefix, so
+    # every top-level module collapsed to the crate node and all cross-module
+    # references were misread as intra-module → zero edges.)
+    rest = descriptors
+    if rest.startswith("crate/"):
+        rest = rest[len("crate/"):]
+    elif rest in ("crate", "crate/"):
+        return crate
+    # Collect the leading namespace (mod) segments only; stop at the first item
+    # descriptor (type "#", term "().", "."; meta ":").
+    #   "a/"            → ["a"]            → <crate>::a
+    #   "b/Thing#x."    → ["b"]            → <crate>::b
+    #   "api/inner/Fn#" → ["api","inner"]  → <crate>::api::inner
+    #   "main()." / ""  → []               → <crate>  (crate-root item)
+    mod_segs: list[str] = []
+    for tok in rest.split("/"):
+        if tok == "" or tok.endswith(("#", "().", ":", ".")):
+            break
+        mod_segs.append(tok)
+    if mod_segs:
+        return crate + "::" + "::".join(mod_segs)
+    return crate  # crate-root node
+
+
 def _to_path(symbol: str, lang: str) -> str | None:
     """The target module/package/file path for an edge, matching archfit node paths."""
+    if lang == "rust":
+        return _rust_module_key(symbol)
     f = _fields(symbol)
     if f is None:
         return None
@@ -91,10 +149,19 @@ def _to_path(symbol: str, lang: str) -> str | None:
     return c                                                # ts: file path as-is
 
 
-def _is_internal(symbol: str, root: str) -> bool:
-    """A symbol belongs to the analysed project (not stdlib / a dependency)."""
+def _is_internal(symbol: str, root: str | set[str]) -> bool:
+    """A symbol belongs to the analysed project (not stdlib / a dependency).
+
+    root is either a single package/module name or a set of crate names
+    (for virtual Rust workspaces where --package is comma-separated).
+    """
     f = _fields(symbol)
-    return f is not None and f[2] == root
+    if f is None:
+        return False
+    crate = f[2]
+    if isinstance(root, set):
+        return crate in root
+    return crate == root
 
 
 def _is_private(symbol: str) -> bool:
@@ -117,7 +184,33 @@ def _suffix(symbol: str) -> str:
     return "term"
 
 
-def _doc_from(relative_path: str, lang: str) -> str | None:
+def _doc_from(relative_path: str, lang: str, doc_defs: "set[str] | None" = None) -> str | None:
+    """Return the source node key for a document.
+
+    For Rust, relative_path is a .rs file path (not a module path), so we derive
+    the owning module from the definition symbols in that document. doc_defs is the
+    set of internal definition symbols seen in this document. When doc_defs is
+    provided and lang=="rust", we pick the common module prefix across all defs;
+    when there are no defs we return None (no source node to attach strength from).
+
+    For all other languages, relative_path is the node key (file or dotted module).
+    """
+    if lang == "rust":
+        if not doc_defs:
+            return None
+        # Derive module keys for all definitions in this document and pick the
+        # common one. A well-formed .rs file lives in exactly one module, so all
+        # defs share the same module key. If they differ (shouldn't happen in
+        # rust-analyzer output), take the majority or first alphabetically.
+        keys: list[str] = []
+        for sym in doc_defs:
+            k = _rust_module_key(sym)
+            if k is not None:
+                keys.append(k)
+        if not keys:
+            return None
+        # All defs in a document share one module — return the first sorted key.
+        return min(keys)
     if lang == "python":
         p = relative_path[:-3] if relative_path.endswith(".py") else relative_path
         p = p.replace("/", ".").replace("\\", ".")
@@ -134,7 +227,7 @@ _DEFINITION_ROLE = 0x1  # SymbolRole.Definition bit
 
 def _compute_symbols(
     idx: object,
-    root: str,
+    root: "str | set[str]",
     lang: str,
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """Return (symbols, symbol_refs, intra_refs) for the given index.
@@ -243,9 +336,15 @@ def main() -> None:
     ap.add_argument("--proto", required=True)
     ap.add_argument("--index", required=True)
     ap.add_argument("--package", required=True)
-    ap.add_argument("--lang", required=True, choices=["python", "go", "typescript"])
+    ap.add_argument("--lang", required=True, choices=["python", "go", "typescript", "rust"])
     args = ap.parse_args()
-    lang, root = args.lang, args.package
+    lang = args.lang
+    # For Rust virtual workspaces, --package is comma-separated crate names.
+    # Build a set so _is_internal can test membership efficiently.
+    if lang == "rust" and "," in args.package:
+        root: str | set[str] = {c.strip() for c in args.package.split(",") if c.strip()}
+    else:
+        root = args.package
 
     try:
         scip_pb2 = _load_scip_pb2(args.proto)
@@ -282,8 +381,21 @@ def main() -> None:
 
     symbols_out, symbol_refs_out, intra_refs_out = _compute_symbols(idx, root, lang)
 
+    # For Rust, build a doc→internal-defs map so _doc_from can derive module keys.
+    # For other languages _doc_from only needs relative_path.
+    rust_doc_defs: dict[str, set[str]] = {}
+    if lang == "rust":
+        for doc in idx.documents:
+            defs: set[str] = set()
+            for occ in doc.occurrences:
+                if (occ.symbol_roles & _DEFINITION_ROLE) and _is_internal(occ.symbol, root):
+                    defs.add(occ.symbol)
+            if defs:
+                rust_doc_defs[doc.relative_path] = defs
+
     for doc in idx.documents:
-        a = _doc_from(doc.relative_path, lang)
+        doc_defs_for_from = rust_doc_defs.get(doc.relative_path) if lang == "rust" else None
+        a = _doc_from(doc.relative_path, lang, doc_defs_for_from)
         if a is None:
             continue
         for occ in doc.occurrences:

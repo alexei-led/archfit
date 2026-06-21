@@ -245,6 +245,57 @@ func TestRun_EmptyGraph(t *testing.T) {
 	}
 }
 
+// TestRun_RegistersRustModuleGraphNodes verifies the last-mile: a Rust module-graph
+// edge ("crate::mod" nodes) with NO configured modules must still classify to a
+// cross-module distance, because AugmentModulesFromGraph synthesises the module
+// definitions. Without it, moduleFor fails and the edge is distance-unknown (never
+// counted by coupling_balance/encapsulation). Siblings under the same crate resolve
+// to same-owner (the "::" segment separator).
+func TestRun_RegistersRustModuleGraphNodes(t *testing.T) {
+	e := graph.Edge{
+		From:         "package:demo::a",
+		To:           "package:demo::b",
+		Kind:         graph.EdgeKindDependsOn,
+		Language:     "rust",
+		StrengthHint: "functional",
+	}
+	g := makeGraph([]graph.Edge{e})
+
+	// Without registration: unknown distance (not counted).
+	bare := classify.Run(g, config.ClassifyConfig{Modules: map[string]config.ModuleDef{}})
+	if cl := bare[edgeKey(e)]; cl.Distance != coupling.DistanceUnknown {
+		t.Errorf("unregistered: Distance = %q, want unknown (module nodes not in config)", cl.Distance)
+	}
+
+	// With registration: cross-module, same owner (siblings in one crate), functional.
+	mods := classify.AugmentModulesFromGraph(g, map[string]config.ModuleDef{})
+	idx := classify.Run(g, config.ClassifyConfig{Modules: mods})
+	cl, ok := idx[edgeKey(e)]
+	if !ok {
+		t.Fatalf("edge not found in index")
+	}
+	if cl.Distance != coupling.DistanceCrossModuleSameOwner {
+		t.Errorf("Distance = %q, want cross_module_same_owner (registered sibling modules)", cl.Distance)
+	}
+	if cl.Strength != coupling.StrengthFunctional {
+		t.Errorf("Strength = %q, want functional (from hint)", cl.Strength)
+	}
+}
+
+// TestAugmentModulesFromGraph_LeavesNonRustUntouched guards the "::" gate: Go/TS/Python
+// graph nodes (slash/dot separators) must NOT be auto-registered, so configured-module
+// semantics for those languages are unchanged.
+func TestAugmentModulesFromGraph_LeavesNonRustUntouched(t *testing.T) {
+	g := makeGraph([]graph.Edge{{
+		From: "package:internal/x", To: "package:internal/y", Kind: graph.EdgeKindImports, Language: "go",
+	}})
+	in := map[string]config.ModuleDef{}
+	out := classify.AugmentModulesFromGraph(g, in)
+	if len(out) != 0 {
+		t.Errorf("non-Rust nodes must not be registered, got %d modules: %v", len(out), out)
+	}
+}
+
 // TestRun_IndexKeyMatchesEdge verifies that the index key format is consistent
 // with edge canonical key (from + NUL + to + NUL + kind).
 func TestRun_IndexKeyMatchesEdge(t *testing.T) {

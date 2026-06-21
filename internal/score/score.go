@@ -107,7 +107,7 @@ func Synthesize(d diagnostic.Diagnostic) Scorecard {
 
 	dims := []Dimension{
 		boundaryIntegrity(mi, gate, base),
-		couplingBalance(edges, base),
+		couplingBalance(edges, mi),
 		dependencyGraphHealth(mi, base),
 		cohesionModularity(mi, base),
 		changeLocality(mi, base),
@@ -117,7 +117,25 @@ func Synthesize(d diagnostic.Diagnostic) Scorecard {
 		dims[i] = finalize(dims[i])
 	}
 
-	meta := finalizeMeta(analysisConfidence(d, mi))
+	// A partial Rust module graph (some crates' cargo-modules failed) means the
+	// structural dimensions were computed over an incomplete graph — and the surviving
+	// nodes can defeat the degenerate-graph guard. Don't present those dims at high
+	// confidence; cap to medium so partial coverage cannot read as a confident verdict.
+	if cargoModulesPartial(d) {
+		for i := range dims {
+			// Every graph-derived dimension is built over the same incomplete module
+			// graph when cargo-modules only partially succeeded — coupling and boundary
+			// included, not just dep-graph/cohesion. Cap them all to medium so partial
+			// coverage never reads as a confident verdict.
+			if structuralDimensions[dims[i].Name] && dims[i].Confidence == ConfidenceHigh {
+				dims[i].Confidence = ConfidenceMedium
+				dims[i].Evidence = append(dims[i].Evidence,
+					"module graph partial (some crates failed cargo-modules) — confidence capped to medium")
+			}
+		}
+	}
+
+	meta := finalizeMeta(analysisConfidence(d, mi, dims))
 
 	overall := meanValue(dims)
 	all := make([]Dimension, 0, len(dims)+1)
@@ -168,6 +186,17 @@ func finalizeMeta(dim Dimension) Dimension {
 // that crossed a boundary) is a measured breach and subtracts a fixed penalty.
 func boundaryIntegrity(mi metricIndex, gate []finding.Finding, base Confidence) Dimension {
 	dim := Dimension{Name: DimBoundaryIntegrity, Confidence: base}
+	// On a <2-module graph the encapsulation metric reports a vacuous 1.0 ("no
+	// cross-boundary edges, so nothing leaks"). That is absence of evidence, not
+	// earned encapsulation, so don't let it produce a strong band. Gate findings,
+	// if any, are still real boundary breaches and take the normal path below.
+	if degenerateGraph(mi) && len(gate) == 0 {
+		return Dimension{
+			Name: DimBoundaryIntegrity, Value: 50, Confidence: ConfidenceLow,
+			Evidence: []string{"encapsulation vacuous: no cross-module boundaries on a graph with fewer than two connected modules"},
+			Summary:  "boundary integrity unconfirmed: no internal module boundaries to assess",
+		}
+	}
 	var value int
 	encMeasured := false
 	if enc, ok := mi.measured("encapsulation"); ok {
@@ -211,24 +240,25 @@ func boundaryIntegrity(mi metricIndex, gate []finding.Finding, base Confidence) 
 // mixed; pervasive (≥5% of edges) → no better than poor. Cohesion (high strength
 // + low distance) never appears here — the classifier scores it as balanced — so
 // it is never counted against this dimension.
-func couplingBalance(edges []bcEdge, base Confidence) Dimension {
+func couplingBalance(edges []bcEdge, mi metricIndex) Dimension {
 	dim := Dimension{Name: DimCouplingBalance}
 	if len(edges) == 0 {
-		// No classified edges. With low baseline coverage this is "extraction
-		// found nothing", not "coupling is great" — report neutral/low, never a
-		// false-green 90. Only when coverage is at least medium can zero advisories
-		// be read as genuinely no unbalanced coupling.
-		if base == ConfidenceLow {
+		// Zero classified edges is never a false-green. It means one of: the
+		// classifier did not run (e.g. SCIP absent — the common Rust case), the
+		// graph has no cross-boundary edges to classify (single-module repo), or
+		// the edges exist but are all balanced. We cannot tell these apart from the
+		// scorecard, so we never present better than mixed and never high
+		// confidence — matching the architecture-review coverage-gap cap.
+		dim.Confidence = ConfidenceLow
+		if degenerateGraph(mi) {
 			dim.Value = 50
-			dim.Confidence = ConfidenceLow
-			dim.Evidence = []string{"no edges classified; extraction coverage insufficient (0 classified edges)"}
-			dim.Summary = "coupling unmeasured: no classified edges and insufficient extraction coverage"
+			dim.Evidence = []string{"no classified coupling edges on a graph with fewer than two connected modules — coupling unmeasurable"}
+			dim.Summary = "coupling balance unmeasured: no internal module structure"
 			return dim
 		}
-		dim.Value = 90
-		dim.Confidence = ConfidenceMedium
-		dim.Evidence = []string{"no unbalanced coupling among 0 classified edges"}
-		dim.Summary = "no unbalanced coupling detected (strength × distance × volatility balanced, or cohesive)"
+		dim.Value = 60 // top of mixed: unconfirmed, never strong on zero evidence
+		dim.Evidence = []string{"no classified coupling edges — coupling balance unconfirmed (edge classification absent, e.g. SCIP not run, or all edges balanced)"}
+		dim.Summary = "coupling balance unconfirmed: no classified cross-boundary edges"
 		return dim
 	}
 
@@ -273,6 +303,15 @@ func couplingBalance(edges []bcEdge, base Confidence) Dimension {
 // unstable modules, and high propagation cost each subtract a bounded amount.
 func dependencyGraphHealth(mi metricIndex, base Confidence) Dimension {
 	dim := Dimension{Name: DimDependencyGraphHealth, Confidence: base}
+	if degenerateGraph(mi) {
+		// 0 cycles / ~0 propagation are trivially true on a <2-module graph and
+		// say nothing about dependency health — report unmeasured, not strong.
+		return Dimension{
+			Name: DimDependencyGraphHealth, Value: 50, Confidence: ConfidenceLow,
+			Evidence: []string{"dependency graph too small to assess: fewer than two connected first-party modules"},
+			Summary:  "dependency graph health unmeasured: no internal module structure to analyse",
+		}
+	}
 	value := 100
 	measured := false
 
@@ -281,7 +320,13 @@ func dependencyGraphHealth(mi metricIndex, base Confidence) Dimension {
 		n := int(cyc.Value)
 		dim.Evidence = append(dim.Evidence, fmt.Sprintf("import cycles: %d", n))
 		if n > 0 {
-			value -= capInt(30+(n-1)*5, 60)
+			pen := capInt(30+(n-1)*5, 60) // crate/package cycles defeat boundaries
+			if cyc.Band != "critical" {
+				// Softened cycles (Rust module-level: language-permitted, often just
+				// mutual type references) — a real but mild signal, not a boundary defeat.
+				pen = capInt(n*3, 20)
+			}
+			value -= pen
 		}
 	}
 	if br, ok := mi.measured("blast_radius"); ok {
@@ -309,7 +354,10 @@ func dependencyGraphHealth(mi metricIndex, base Confidence) Dimension {
 		dim.Evidence = append(dim.Evidence, "no dependency-graph metrics available")
 	}
 	dim.Value = value
-	dim.Summary = "dependency graph health: cycles, hubs, instability, and propagation cost"
+	// Clarify scope: this is the shape of the INTERNAL dependency graph (cycles, hubs,
+	// instability, propagation among first-party modules) — not external dependency
+	// hygiene (versions, unused/vulnerable deps), which archfit does not score here.
+	dim.Summary = "internal dependency-graph shape: cycles, blast-radius hubs, instability, and propagation cost (not external dependency hygiene)"
 	return dim
 }
 
@@ -320,6 +368,14 @@ func dependencyGraphHealth(mi metricIndex, base Confidence) Dimension {
 // coupling" — and is never penalised here.
 func cohesionModularity(mi metricIndex, base Confidence) Dimension {
 	dim := Dimension{Name: DimCohesionModularity, Confidence: base}
+	if degenerateGraph(mi) {
+		// "0 god modules / 0 hidden-coupling pairs" is vacuous with <2 modules.
+		return Dimension{
+			Name: DimCohesionModularity, Value: 50, Confidence: ConfidenceLow,
+			Evidence: []string{"cohesion unmeasurable: fewer than two connected first-party modules"},
+			Summary:  "cohesion/modularity unmeasured: no internal module structure to analyse",
+		}
+	}
 	value := 100
 	measured := false
 
@@ -345,6 +401,13 @@ func cohesionModularity(mi metricIndex, base Confidence) Dimension {
 	if !measured {
 		dim.Confidence = ConfidenceLow
 		dim.Evidence = append(dim.Evidence, "no cohesion metrics available (size/history/clone tools absent)")
+	} else if _, swMeasured := mi.measured("structural_weight"); !swMeasured {
+		// God-module size is the dominant cohesion signal. Without it (e.g. a Rust
+		// module graph whose per-module LOC is not yet mapped), "no clones / no hidden
+		// coupling" cannot justify a strong band — cap confidence so finalize() holds
+		// the value to mixed rather than presenting an unearned strong.
+		dim.Confidence = ConfidenceLow
+		dim.Evidence = append(dim.Evidence, "god-module size unmeasured (structural_weight n/a) — cohesion unconfirmed")
 	}
 	dim.Value = value
 	dim.Summary = "cohesion: god modules, hidden coupling, and duplication (cohesion = high strength + low distance is healthy, not penalised)"
@@ -415,16 +478,34 @@ func architectureFitness(mi metricIndex, base Confidence) Dimension {
 	return dim
 }
 
+// naDimensionPenalty is the meta-confidence points deducted per unmeasured structural
+// dimension. Set so all four structural dimensions blind lands at 60 — the same ceiling
+// the degenerate-graph guard applies — while one design-driven n/a (e.g. Rust's
+// encapsulation) degrades gently to 90.
+const naDimensionPenalty = 10
+
+// structuralDimensions are the graph-derived dimensions whose n/a state means the graph
+// was too sparse to measure architecture (a fidelity gap), as opposed to change_locality
+// and architecture_fitness, whose n/a is a deliberate scope choice (no --base / no
+// enforcement signals) and must not lower review confidence.
+var structuralDimensions = map[string]bool{
+	DimBoundaryIntegrity:     true,
+	DimCouplingBalance:       true,
+	DimDependencyGraphHealth: true,
+	DimCohesionModularity:    true,
+}
+
 // analysisConfidence is the meta dimension: how trustworthy this review is given
 // tool coverage. When extraction ran, file-extraction coverage sets the baseline.
 // When the coverage metric is n/a (no extractor contributed — the repo was not
 // analysed), the baseline starts neutral at 60 and each absent primary extractor
-// (go/packages, dependency-cruiser, grimp) subtracts a fixed penalty so an
-// all-absent repo lands ~0/critical rather than reading pct(0)=0, which hides
-// which extractors are missing. Each absent semantic tool (scip, gitnexus,
+// (the injected PrimaryExtractorTools — go/packages, dependency-cruiser, grimp,
+// cargo — or defaultPrimaryExtractors when none is injected) subtracts a fixed
+// penalty so an all-absent repo lands ~0/critical rather than reading pct(0)=0,
+// which hides which extractors are missing. Each absent semantic tool (scip, gitnexus,
 // lizard/complexity, jscpd/clones) then lowers confidence in the depth of the
 // analysis on top.
-func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex) Dimension {
+func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex, dims []Dimension) Dimension {
 	dim := Dimension{Name: DimAnalysisConfidence, Confidence: ConfidenceHigh}
 	statuses := toolStatuses(d)
 	value := 60
@@ -438,7 +519,7 @@ func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex) Dimension {
 		// missing primary extractor so an all-absent repo collapses to critical.
 		dim.Evidence = append(dim.Evidence, "file extraction coverage: n/a (no extractor contributed)")
 		primaryAbsent := 0
-		for _, tool := range primaryExtractors {
+		for _, tool := range primaryExtractorTools(d) {
 			if statuses[tool] != diagnostic.StatusOK {
 				primaryAbsent++
 			}
@@ -456,16 +537,60 @@ func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex) Dimension {
 	}
 	value -= capInt(absent*5, 20)
 
+	// n/a-dimension ratio: tool coverage can read high while the graph-derived
+	// dimensions still came back unmeasured. Only the STRUCTURAL dimensions signal a
+	// measurement-fidelity gap when n/a (a graph too sparse to assess architecture).
+	// change_locality (needs --base/git) and architecture_fitness (needs enforcement
+	// signals) being n/a is a deliberate scope choice, not a blind spot, so they never
+	// lower review confidence. A fully-blind structural set lands at 60 (= the degenerate
+	// cap), so the two stay consistent rather than double-penalising.
+	naStructural := 0
+	for _, dm := range dims {
+		if structuralDimensions[dm.Name] && dm.Confidence == ConfidenceLow {
+			naStructural++
+		}
+	}
+	if naStructural > 0 {
+		ceiling := 100 - naStructural*naDimensionPenalty
+		if value > ceiling {
+			dim.Evidence = append(dim.Evidence, fmt.Sprintf(
+				"%d of %d structural dimensions unmeasured (n/a) — capped at %d",
+				naStructural, len(structuralDimensions), ceiling))
+			value = ceiling
+		}
+	}
+
+	// Tool coverage alone overstates trust on a degenerate graph: file extraction can
+	// be 100% while the dependency graph is a single node (the single-crate Rust case),
+	// leaving the structural dimensions unmeasured. Cap meta-confidence at mixed there
+	// so "we read every file" cannot read as "we assessed the architecture".
+	if degenerateGraph(mi) && value > 60 {
+		dim.Evidence = append(dim.Evidence,
+			"capped at 60: dependency graph too small to assess (fewer than two connected modules)")
+		value = 60
+	}
+
 	dim.Value = value
 	dim.Summary = "review trustworthiness given tool coverage and evidence depth"
 	return dim
 }
 
-// primaryExtractors are the per-language file extractors that produce the coverage
-// facts. Their absence (when coverage is n/a) means the repo was not analysed at
-// all and drives the meta confidence toward critical. Checked by exact
-// ToolCoverage.Tool name.
-var primaryExtractors = []string{"go/packages", "dependency-cruiser", "grimp"}
+// defaultPrimaryExtractors is the fallback set of per-language file extractors
+// used when a Diagnostic carries no injected PrimaryExtractorTools (older
+// diagnostics, direct score callers). The composition root normally supplies the
+// authoritative list from the language registry; this keeps score correct when it
+// does not. Checked by exact ToolCoverage.Tool name.
+var defaultPrimaryExtractors = []string{"go/packages", "dependency-cruiser", "grimp"}
+
+// primaryExtractorTools returns the file extractors whose coverage the scorecard
+// treats as load-bearing: the Diagnostic's injected list, or the built-in default
+// when none was injected.
+func primaryExtractorTools(d diagnostic.Diagnostic) []string {
+	if len(d.PrimaryExtractorTools) > 0 {
+		return d.PrimaryExtractorTools
+	}
+	return defaultPrimaryExtractors
+}
 
 // semanticTools are the optional deep-analysis tools whose absence lowers the
 // meta confidence. Checked by exact ToolCoverage.Tool name.
@@ -500,6 +625,32 @@ func (mi metricIndex) measured(name string) (diagnostic.MetricResult, bool) {
 		return diagnostic.MetricResult{}, false
 	}
 	return m, true
+}
+
+// cargoModulesPartial reports whether the Rust module-graph tool ran but only
+// covered some crates (status "partial") — the structural dimensions are then built
+// over an incomplete graph.
+func cargoModulesPartial(d diagnostic.Diagnostic) bool {
+	for _, c := range d.ToolCoverage {
+		if c.Tool == "cargo-modules" {
+			return c.Status == diagnostic.StatusPartial
+		}
+	}
+	return false
+}
+
+// degenerateGraph reports whether the dependency graph is too small to assess
+// structure — fewer than two connected first-party modules. blast_radius and
+// instability both go n/a exactly in that case (they need ≥2 modules joined by an
+// edge), so their joint absence is the proxy. On such a graph cycle=0,
+// propagation≈0, and "0 hidden-coupling pairs" are trivially true and carry no
+// signal: the graph-shape dimensions must report n/a, not a vacuous strong. The
+// canonical case is a single-crate Rust binary, which archfit's crate-level model
+// sees as one node (see internal/extract/rust).
+func degenerateGraph(mi metricIndex) bool {
+	_, br := mi.measured("blast_radius")
+	_, inst := mi.measured("instability")
+	return !br && !inst
 }
 
 // bcEdge is a parsed Balanced-Coupling advisory edge (a rollup of count

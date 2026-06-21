@@ -39,7 +39,7 @@ func (m ChangeAmplificationMetric) Calculate(in signal.HistoryInput) diagnostic.
 	if n < 2 {
 		return result.NACount(m.Name(), m.Version(), "blast radius weighted by recent churn (expected change cost)")
 	}
-	mc := modgraph.ModuleChurn(in.History.FileChurn, modgraph.DominantLanguage(in.Graph))
+	mc := modgraph.ModuleChurn(in.Graph, in.History.FileChurn)
 	maxChurn := 0
 	for _, c := range mc {
 		if c > maxChurn {

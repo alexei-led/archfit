@@ -48,7 +48,7 @@ func writeViolatingRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	files := map[string]string{
-		"go.mod": "module example.com/test\n\ngo 1.21\n",
+		markerGoMod: "module example.com/test\n\ngo 1.21\n",
 		filePkgAA: "package a\n\nimport \"example.com/test/pkg/b/internal/impl\"\n\n" +
 			"func UseSecret() string { return impl.Secret() }\n",
 		"pkg/b/internal/impl/impl.go": "package impl\n\nfunc Secret() string { return \"s\" }\n",
@@ -233,7 +233,7 @@ func writeRepoWithExternalConfig(t *testing.T) (repoDir, cfgPath string) {
 	t.Helper()
 	repoDir = t.TempDir()
 	srcFiles := map[string]string{
-		"go.mod": "module example.com/test\n\ngo 1.21\n",
+		markerGoMod: "module example.com/test\n\ngo 1.21\n",
 		filePkgAA: "package a\n\nimport \"example.com/test/pkg/b/internal/impl\"\n\n" +
 			"func UseSecret() string { return impl.Secret() }\n",
 		"pkg/b/internal/impl/impl.go": "package impl\n\nfunc Secret() string { return \"s\" }\n",

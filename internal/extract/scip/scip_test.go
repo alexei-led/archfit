@@ -102,11 +102,11 @@ func TestResolve_DetectCalledOnce(t *testing.T) {
 		a.Resolve(ctx, "from.ts", "to.ts")
 	}
 
-	// Detect is called once per known tool (3 tools checked: scip-typescript,
-	// scip-python, scip-go), all absent so all 3 calls happen on first Resolve,
-	// then sync.Once prevents re-detection.
-	if detectCount > 3 {
-		t.Errorf("Detect called %d times across 5 Resolve calls; want ≤3 (sync.Once)", detectCount)
+	// Detect is called once per known tool (4 tools checked: scip-typescript,
+	// scip-python, scip-go, rust-analyzer), all absent so all 4 calls happen on
+	// first Resolve, then sync.Once prevents re-detection.
+	if detectCount > 4 {
+		t.Errorf("Detect called %d times across 5 Resolve calls; want ≤4 (sync.Once)", detectCount)
 	}
 }
 

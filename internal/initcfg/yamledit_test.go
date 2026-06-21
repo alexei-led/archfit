@@ -187,7 +187,7 @@ func TestApplyEdits_AddModule_CommentsAndRulesIntact(t *testing.T) {
 	ed := AddModuleEdit{
 		Def: ModuleDef{
 			Name:  layerModel,
-			Paths: []string{"internal/model/**"},
+			Paths: []string{testModelPath},
 			Layer: layerModel,
 		},
 	}

@@ -22,11 +22,8 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/deployunit"
 	"github.com/alexei-led/archfit/internal/extract/dynimports"
 	"github.com/alexei-led/archfit/internal/extract/gitnexus"
-	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/extract/loc"
-	"github.com/alexei-led/archfit/internal/extract/py"
 	"github.com/alexei-led/archfit/internal/extract/scip"
-	"github.com/alexei-led/archfit/internal/extract/ts"
 	"github.com/alexei-led/archfit/internal/fitness"
 	"github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
@@ -96,11 +93,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		return diagnostic.Diagnostic{}, err
 	}
 
-	extractors := []ports.Extractor{
-		golang.New(cfg.ForExtract("go")),
-		ts.New(deps.Runner, cfg.ForExtract("typescript")),
-		py.New(deps.Runner, cfg.ForExtract("python")),
-	}
+	extractors := buildExtractors(deps.Runner, cfg)
 
 	rs := rules.New(cfg.ForRules())
 	// risk_hub reads hand-authored volatility only (never git churn).
@@ -237,6 +230,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		Signals:     change,
 		Now:         time.Now(),
 		ConfigHash:  configHash,
+		// Primary dependency-graph analyzer coverage names, in registry order, so
+		// score synthesis names them without the core ring hardcoding tool strings.
+		PrimaryExtractorTools: primaryExtractorTools(),
 	})
 	if err != nil {
 		return diag, err
@@ -261,6 +257,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate})
 
+	// cargo-modules module-graph coverage: opt-in (tools.cargo-modules.enabled: on).
+	// The Rust extractor runs cargo-modules during its Extract call (inside engine.Run
+	// above) and caches the coverage record. Append it here so it appears in
+	// ToolCoverage and the CoverageGap block — mirrors the gitnexus/complexity pattern.
+	if rustEx := rustExtractor(extractors); rustEx != nil {
+		diag.ToolCoverage = append(diag.ToolCoverage, rustEx.LastModuleGraphCoverage())
+	}
+
 	// Warn-loud coverage reporting: turn the absent tool-coverage records into a
 	// machine-readable CoverageGaps block (tool → unlocked metrics → install cmd)
 	// and surface config-quality lint plus any swallowed optional-tool errors in
@@ -283,34 +287,66 @@ const (
 // e.g. "go/packages") to the config Tools map key whose gate: governs it (e.g.
 // "go"). Lets a user write tools.go.gate: fail to gate on the go/packages analyzer
 // without knowing the internal coverage name. Tools absent here fall back to warn.
-var coverageToolConfigKey = map[string]string{
-	toolGoPackages: config.LangGo,
-	toolDepCruiser: config.LangTypeScript,
-	toolGrimp:      config.LangPython,
-	toolLizard:     config.ToolComplexity,
-	toolJscpd:      config.ToolClones,
-	toolGitnexus:   config.ToolGitnexus,
+// The per-language primary analyzers come from the language registry; the
+// cross-language optional tools stay literal. Built once at init.
+var coverageToolConfigKey = buildCoverageToolConfigKey()
+
+func buildCoverageToolConfigKey() map[string]string {
+	m := map[string]string{
+		toolLizard:       config.ToolComplexity,
+		toolJscpd:        config.ToolClones,
+		toolGitnexus:     config.ToolGitnexus,
+		toolCargoModules: config.ToolCargoModules,
+	}
+	for _, lang := range languageRegistry {
+		m[lang.PrimaryTool] = lang.ID
+	}
+	return m
 }
 
 // primaryGraphMetrics are the metrics the dependency-graph extractors
 // (go/packages, dependency-cruiser, grimp) unlock; absent any of them, all of
-// these drop to n/a. Shared (read-only) across those three table entries.
+// these drop to n/a. Shared (read-only) across those per-language table entries.
 var primaryGraphMetrics = []string{"coverage", "coupling_balance", "encapsulation", "cycle", "blast_radius"}
+
+// affectedMetrics carries an absent analyzer's one-line install hint and the
+// metrics its absence leaves unmeasured.
+type affectedMetrics struct {
+	install string
+	metrics []string
+}
 
 // toolAffectedMetrics maps an absent analyzer's coverage name to its one-line
 // install hint and the metrics its absence leaves unmeasured. Only tools listed
 // here produce a CoverageGap — an absent coverage entry with no actionable
-// install path is not a gap a user can close. Static and deterministic.
-var toolAffectedMetrics = map[string]struct {
-	install string
-	metrics []string
-}{
-	toolGoPackages: {"https://go.dev/dl (bundled with the Go toolchain)", primaryGraphMetrics},
-	toolDepCruiser: {"npm install -g dependency-cruiser", primaryGraphMetrics},
-	toolGrimp:      {"uv tool install grimp / pip install grimp", primaryGraphMetrics},
-	toolLizard:     {"uv tool install lizard / pip install lizard", []string{"complexity"}},
-	toolJscpd:      {"npm install -g jscpd", []string{"functional_candidates"}},
-	toolGitnexus:   {"see docs/guide — git-history change-coupling index", []string{"risk_hub"}},
+// install path is not a gap a user can close. Per-language analyzers come from
+// the registry; cross-language optional tools stay literal. Built once at init.
+var toolAffectedMetrics = buildToolAffectedMetrics()
+
+func buildToolAffectedMetrics() map[string]affectedMetrics {
+	m := map[string]affectedMetrics{
+		toolLizard:       {"uv tool install lizard / pip install lizard", []string{"complexity"}},
+		toolJscpd:        {"npm install -g jscpd", []string{"functional_candidates"}},
+		toolGitnexus:     {"see docs/guide — git-history change-coupling index", []string{"risk_hub"}},
+		toolCargoModules: {"cargo install cargo-modules (tools.cargo-modules.enabled: on)", []string{"cycle", "blast_radius", "cohesion", "encapsulation"}},
+	}
+	for _, lang := range languageRegistry {
+		m[lang.PrimaryTool] = affectedMetrics{lang.InstallHint, primaryGraphMetrics}
+	}
+	return m
+}
+
+// primaryToolLanguage maps a language's primary-tool coverage name back to its
+// config language key, so a coverage gap for a disabled language can be suppressed
+// (a Rust-only repo should not be told to install go/ts/py analyzers). Built once.
+var primaryToolLanguage = buildPrimaryToolLanguage()
+
+func buildPrimaryToolLanguage() map[string]string {
+	m := make(map[string]string, len(languageRegistry))
+	for _, lang := range languageRegistry {
+		m[lang.PrimaryTool] = lang.ID
+	}
+	return m
 }
 
 // buildCoverageGaps derives the CoverageGaps block from the absent tool-coverage
@@ -323,6 +359,14 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config) []diagnosti
 	var gaps []diagnostic.CoverageGap
 	for _, c := range cov {
 		if c.Status != diagnostic.StatusAbsent {
+			continue
+		}
+		// A disabled language's primary tool is not a gap the user needs to close —
+		// don't tell a Rust-only repo to install dependency-cruiser/grimp/go-packages.
+		// An explicit gate on that tool (tools.<lang>.gate) is an intentional
+		// "require it anyway" override and is preserved.
+		if lang, isPrimary := primaryToolLanguage[c.Tool]; isPrimary &&
+			cfg.Tools[lang].Enabled == config.ModeOff && cfg.Tools[lang].Gate == "" {
 			continue
 		}
 		info, ok := toolAffectedMetrics[c.Tool]
@@ -426,21 +470,6 @@ func loadConfig(ctx context.Context, path string, noConfig bool) (config.Config,
 	return config.Config{}, err
 }
 
-// canonicalLang maps a --lang key (go, ts, py, or full name) to the config
-// language name. Returns "" for unknown keys.
-func canonicalLang(key string) string {
-	switch key {
-	case "go":
-		return config.LangGo
-	case "ts", config.LangTypeScript:
-		return config.LangTypeScript
-	case "py", config.LangPython:
-		return config.LangPython
-	default:
-		return ""
-	}
-}
-
 // applyFlagOverrides applies non-empty CLI flag values onto cfg, overriding
 // whatever the config file (or Default) provided.
 func applyFlagOverrides(cfg *config.Config, severity string, lang []string) error {
@@ -448,9 +477,9 @@ func applyFlagOverrides(cfg *config.Config, severity string, lang []string) erro
 		cfg.BCAdvisoryMinSeverity = severity
 	}
 	for _, key := range lang {
-		canonical := canonicalLang(key)
+		canonical := languageByAlias(key)
 		if canonical == "" {
-			return fmt.Errorf("--lang: unknown language %q; use go, ts, or py", key)
+			return fmt.Errorf("--lang: unknown language %q; use go, ts, py, or rust", key)
 		}
 		if cfg.Tools == nil {
 			cfg.Tools = make(map[string]config.ToolConfig)

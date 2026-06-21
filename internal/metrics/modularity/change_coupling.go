@@ -51,8 +51,8 @@ func (m ChangeCouplingMetric) Calculate(in signal.HistoryInput) diagnostic.Metri
 	if in.Graph == nil || len(in.History.CoChange) == 0 {
 		return result.NACount(m.Name(), m.Version(), changeCouplingDef)
 	}
-	lang := modgraph.DominantLanguage(in.Graph)
-	mc := modgraph.ModuleChurn(in.History.FileChurn, lang)
+	resolve := modgraph.ModuleKeyResolver(in.Graph)
+	mc := modgraph.ModuleChurn(in.Graph, in.History.FileChurn)
 	if len(mc) == 0 {
 		return result.NACount(m.Name(), m.Version(), changeCouplingDef)
 	}
@@ -75,8 +75,8 @@ func (m ChangeCouplingMetric) Calculate(in signal.HistoryInput) diagnostic.Metri
 	// replace this with the exact commit count.
 	modPair := make(map[[2]string]int)
 	for fp, c := range in.History.CoChange {
-		a := modgraph.FileToModuleKey(fp[0], lang)
-		b := modgraph.FileToModuleKey(fp[1], lang)
+		a := resolve(fp[0])
+		b := resolve(fp[1])
 		if a == "" || b == "" || a == b {
 			continue
 		}

@@ -35,10 +35,10 @@ func (m StructuralWeightMetric) Calculate(in signal.SizeInput) diagnostic.Metric
 	if in.Graph == nil || len(in.Size.FileLOC) == 0 {
 		return result.NACount(m.Name(), m.Version(), def)
 	}
-	lang := modgraph.DominantLanguage(in.Graph)
+	resolve := modgraph.ModuleKeyResolver(in.Graph)
 	modLOC := map[string]int{}
 	for f, n := range in.Size.FileLOC {
-		if k := modgraph.FileToModuleKey(f, lang); k != "" {
+		if k := resolve(f); k != "" {
 			modLOC[k] += n
 		}
 	}

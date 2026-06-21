@@ -12,6 +12,9 @@ import (
 
 const bandNAStr = "n/a"
 
+// crateHerdr is the single-crate fixture name reused across the Rust Cal-4 cases.
+const crateHerdr = "herdr"
+
 // Chain A -> B -> C (A imports B, B imports C). Reverse-deps: C has {A,B}=2,
 // B has {A}=1, A has 0.
 func TestBlastRadius_TransitiveReverseDeps(t *testing.T) {
@@ -66,6 +69,53 @@ func TestStructuralWeight_GodModuleBySize(t *testing.T) {
 	}
 	if strings.Contains(res.Display, "internal/small") || strings.Contains(res.Display, "internal/mid") {
 		t.Errorf("small/mid modules must not be god-modules; display=%q", res.Display)
+	}
+}
+
+// TestStructuralWeight_RustModuleGranularity is the Cal-4 regression: a single-crate
+// Rust repo must expose god *modules/files* by size, not collapse every .rs file to
+// the one crate (which left structural_weight n/a, missing god files). With crate
+// roots carried on the graph, per-file LOC maps to module keys ("<crate>::<mod>");
+// without them the crate-only convention sees a single bucket and reports n/a.
+func TestStructuralWeight_RustModuleGranularity(t *testing.T) {
+	fileLOC := map[string]int{
+		"src/server/headless.rs": 7843, // god file
+		"src/integration/mod.rs": 6365, // god file
+		"src/lib.rs":             50,
+		"src/util.rs":            120,
+		"src/config.rs":          100,
+	}
+
+	// With crate roots → module granularity → god modules measured.
+	withRoots := graph.Build([]graph.Facts{{
+		Nodes:      []graph.Node{{Kind: graph.NodeKindPackage, Path: crateHerdr}},
+		Language:   graph.LangRust,
+		CrateRoots: []graph.CrateRoot{{Dir: "", Name: crateHerdr}},
+	}})
+	res := modularity.StructuralWeightMetric{}.Calculate(signal.SizeInput{
+		CommonInput: signal.CommonInput{Graph: withRoots},
+		Size:        signal.SizeSignals{FileLOC: fileLOC},
+	})
+	if res.Value != 2 {
+		t.Errorf("expected 2 god modules (server, integration) got %v; display=%q", res.Value, res.Display)
+	}
+	if !strings.Contains(res.Display, "headless") || !strings.Contains(res.Display, "integration") {
+		t.Errorf("expected server/integration god files flagged; display=%q", res.Display)
+	}
+
+	// Without crate roots, the crate-only convention collapses src/ files to "" → n/a
+	// (the pre-Cal-4 blind spot this change fixes).
+	noRoots := graph.Build([]graph.Facts{{
+		Nodes:    []graph.Node{{Kind: graph.NodeKindPackage, Path: crateHerdr}, {Kind: graph.NodeKindExternal, Path: "serde"}},
+		Edges:    []graph.Edge{{From: "package:" + crateHerdr, To: "external:serde", Kind: graph.EdgeKindDependsOn, Language: graph.LangRust}},
+		Language: graph.LangRust,
+	}})
+	naRes := modularity.StructuralWeightMetric{}.Calculate(signal.SizeInput{
+		CommonInput: signal.CommonInput{Graph: noRoots},
+		Size:        signal.SizeSignals{FileLOC: fileLOC},
+	})
+	if naRes.Band != bandNAStr {
+		t.Errorf("expected n/a without crate roots (crate-only collapse), got band=%q value=%v", naRes.Band, naRes.Value)
 	}
 }
 

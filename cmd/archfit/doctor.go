@@ -14,26 +14,20 @@ type DoctorCmd struct{}
 func (c *DoctorCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kong command interface; future versions may return errors
 	ctx := context.Background()
 
-	tools := []struct {
-		name    string
-		cmd     string
-		install string // one-line hint shown when the tool is missing
-	}{
-		{"go", "go", "https://go.dev/dl"},
+	// Cross-language tools stay literal here; per-language tools (compilers,
+	// scip indexers) come from the language registry so adding a language adds
+	// its doctor probes in one place.
+	tools := []doctorTool{
 		{"git", "git", "https://git-scm.com/downloads"},
-		{"node", "node", "https://nodejs.org"},
-		{"bunx", "bunx", "https://bun.sh"},
-		{"npx", "npx", "ships with node"},
 		{"uv", "uv", "https://docs.astral.sh/uv/getting-started/installation"},
-		{"python3", "python3", "https://www.python.org/downloads"},
 		{"sg (ast-grep)", "sg", "cargo install ast-grep / brew install ast-grep"},
-		{"scip-typescript", "scip-typescript", "npm install -g @sourcegraph/scip-typescript"},
-		{"scip-python", "scip-python", "npm install -g @sourcegraph/scip-python"},
-		{"scip-go", "scip-go", "go install github.com/sourcegraph/scip-go/cmd/scip-go@latest"},
 		// Semantic depth tools — their absence lowers analysis_confidence.
 		{toolLizard, toolLizard, "uv tool install lizard / pip install lizard"},
 		{toolJscpd, toolJscpd, "npm install -g jscpd"},
 		{toolGitnexus, toolGitnexus, "see docs/guide — git-history change-coupling index"},
+	}
+	for _, lang := range languageRegistry {
+		tools = append(tools, lang.DoctorTools...)
 	}
 
 	_, _ = fmt.Fprintf(deps.Stdout, "%-16s %-8s %s\n", "TOOL", "STATUS", "PATH / INSTALL")

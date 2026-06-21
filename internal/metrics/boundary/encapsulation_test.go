@@ -21,6 +21,9 @@ const (
 	pathE = "pkg/e/e.go"
 )
 
+// Band literals reused across boundary metric tests (deduplicated for goconst).
+const bandCritical = "critical"
+
 // Band/confidence string constants used across boundary metric tests.
 const (
 	bandMixed = "mixed"
@@ -28,10 +31,11 @@ const (
 	confLow   = "low"
 )
 
-func TestEncapsulation_VacuouslyEncapsulated(t *testing.T) {
-	// Dependency edges exist but none cross a module boundary (all same-module):
-	// nothing can leak → value 1.0, no panic. This is a genuine analysed result,
-	// distinct from an empty graph (which must read n/a).
+func TestEncapsulation_NoCrossBoundaryIsNA(t *testing.T) {
+	// Dependency edges exist but none cross a module boundary (all same-module).
+	// This is not earned encapsulation — it is absence of a boundary signal (often
+	// just unclassified edge distance), so it must read n/a, never a vacuous 1.0 that
+	// would let an unclassified module graph look perfectly encapsulated.
 	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
 	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
 	edge := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
@@ -44,8 +48,11 @@ func TestEncapsulation_VacuouslyEncapsulated(t *testing.T) {
 	}
 	m := boundary.EncapsulationMetric{}
 	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
-	if result.Value != 1.0 {
-		t.Errorf("expected value 1.0 got %v", result.Value)
+	if result.Band != "n/a" {
+		t.Errorf("expected n/a band, got %q (value %v)", result.Band, result.Value)
+	}
+	if result.Value == 1.0 {
+		t.Errorf("no cross-boundary edges must not yield value 1.0 (false-green)")
 	}
 }
 

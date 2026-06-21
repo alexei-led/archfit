@@ -1,0 +1,15 @@
+{
+  "packages": [
+    {
+      "id": "path+file:///repo#just@1.0.0",
+      "name": "just",
+      "manifest_path": "/repo/Cargo.toml",
+      "source": null,
+      "dependencies": []
+    }
+  ],
+  "workspace_members": [
+    "path+file:///repo#just@1.0.0"
+  ],
+  "workspace_root": "/repo"
+}

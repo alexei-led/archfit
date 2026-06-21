@@ -20,6 +20,14 @@ GO_FUNC = "scip-go gomod spotinfo v2.3.1 `spotinfo/internal/mcp`/handle()."
 TS_TYPE = "scip-typescript npm @colbymchenry/codegraph 0.9.9 src/db/`sqlite-adapter.ts`/SqliteStatement#"
 EXT_PY = "scip-python python python-stdlib 3.12 typing/Protocol#"
 
+# rust-analyzer SCIP symbol strings.
+# Format: "rust-analyzer cargo <crate> <version> <descriptor>"
+# Descriptor is crate-relative: "crate/" prefix, then slash-separated module path, then item.
+RUST_TYPE = "rust-analyzer cargo mycrate 0.1.0 crate/api/Server#"         # module: mycrate::api
+RUST_FN   = "rust-analyzer cargo mycrate 0.1.0 crate/server/run()."        # module: mycrate::server
+RUST_ROOT = "rust-analyzer cargo mycrate 0.1.0 crate/"                     # crate root: mycrate
+RUST_EXT  = "rust-analyzer cargo serde 1.0.0 crate/Serialize#"             # external dep
+
 failures = []
 
 
@@ -32,12 +40,20 @@ def check(name, got, want):
 check("py to (strip src.)", r._to_path(PY_MOD, "python"), "ccgram.llm.base")
 check("go to (strip gomod)", r._to_path(GO_TYPE, "go"), "internal/spot")
 check("ts to (ns+backtick file)", r._to_path(TS_TYPE, "typescript"), "src/db/sqlite-adapter.ts")
+# Rust: descriptor → crate::module key matching cargo-modules DOT node IDs.
+check("rust to (type in module)",  r._to_path(RUST_TYPE, "rust"), "mycrate::api")
+check("rust to (fn in module)",    r._to_path(RUST_FN,   "rust"), "mycrate::server")
+check("rust to (crate root)",      r._to_path(RUST_ROOT, "rust"), "mycrate")
 
 # _doc_from: source path per language.
 check("py doc (dotted, strip src)", r._doc_from("src/ccgram/handlers/x.py", "python"), "ccgram.handlers.x")
 check("py doc __init__", r._doc_from("src/ccgram/handlers/__init__.py", "python"), "ccgram.handlers")
 check("go doc (file)", r._doc_from("internal/spot/client.go", "go"), "internal/spot/client.go")
 check("ts doc (file)", r._doc_from("src/db/sqlite-adapter.ts", "typescript"), "src/db/sqlite-adapter.ts")
+# Rust: _doc_from derives module key from definition symbols, not from file path.
+check("rust doc (no defs → None)", r._doc_from("src/api/mod.rs", "rust", None), None)
+check("rust doc (defs → module)",  r._doc_from("src/api/mod.rs", "rust", {RUST_TYPE}), "mycrate::api")
+check("rust doc (crate root defs)", r._doc_from("src/main.rs", "rust", {RUST_ROOT}), "mycrate")
 
 # _is_private: underscore symbol/module → private; public → not.
 check("py private symbol", r._is_private(PY_PRIV), True)
@@ -49,6 +65,13 @@ check("py internal", r._is_internal(PY_MOD, "ccgram"), True)
 check("py external (stdlib)", r._is_internal(EXT_PY, "ccgram"), False)
 check("go internal", r._is_internal(GO_TYPE, "spotinfo"), True)
 check("ts internal", r._is_internal(TS_TYPE, "@colbymchenry/codegraph"), True)
+# Rust single-crate: root is the crate name string.
+check("rust internal (single)",   r._is_internal(RUST_TYPE, "mycrate"), True)
+check("rust external (single)",   r._is_internal(RUST_EXT,  "mycrate"), False)
+# Rust virtual workspace: root is a set of crate names.
+check("rust internal (workspace)", r._is_internal(RUST_TYPE, {"mycrate", "other"}), True)
+check("rust member (workspace)",   r._is_internal(RUST_EXT,  {"mycrate", "serde"}), True)
+check("rust external (workspace)", r._is_internal(RUST_EXT,  {"mycrate", "other"}), False)
 
 # _suffix: descriptor kind drives strength.
 check("suffix type", r._suffix(GO_TYPE), "type")

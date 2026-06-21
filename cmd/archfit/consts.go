@@ -41,7 +41,24 @@ const (
 // ToolCoverage). Their absence drops the structural metrics to n/a; shared by the
 // coverage-gap table and its config-key map.
 const (
-	toolGoPackages = "go/packages"
-	toolDepCruiser = "dependency-cruiser"
-	toolGrimp      = "grimp"
+	toolGoPackages   = "go/packages"
+	toolDepCruiser   = "dependency-cruiser"
+	toolGrimp        = "grimp"
+	toolCargo        = "cargo"
+	toolCargoModules = "cargo-modules" // opt-in intra-crate module graph; mirrors config.ToolCargoModules
+)
+
+// SCIP indexer binary names shared by the language registry (DoctorTools) and
+// the doctor command.
+const (
+	scipGo         = "scip-go"
+	scipTypeScript = "scip-typescript"
+	scipPython     = "scip-python"
+	scipRust       = "rust-analyzer"
+)
+
+// Project-marker filenames used by the language registry and test fixtures.
+const (
+	markerGoMod     = "go.mod"
+	markerCargoToml = "Cargo.toml"
 )
