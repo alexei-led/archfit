@@ -55,6 +55,16 @@ reports `n/a` (never fails) in the image; run on a host with cargo or extend it.
 `archfit doctor` checks tools; `sg` must resolve to ast-grep, not util-linux. Build
 amd64 in CI, not local emulation.
 
+## Rust analysis granularity
+
+Rust facts are **crate-level**: `cargo metadata` makes one graph node per workspace
+member, so a single-crate project is one node and its `src/` module tree is invisible
+(crate-graph metrics go n/a). The scorecard caps such degenerate graphs at `mixed`
+(it never scores `strong` on a one-node graph — see `internal/score`). Module-level
+depth (intra-crate nodes/edges) and rust-analyzer SCIP strength are the planned
+upgrade path: `docs/plans/rust-depth-and-calibration.md`. rust-analyzer SCIP does
+not yet attach (its descriptors are module paths, not file paths — same plan).
+
 ## Layout
 
 `cmd/archfit` (kong CLI) · `internal/` decision core + adapters · `docs/design`

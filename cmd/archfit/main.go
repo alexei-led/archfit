@@ -106,7 +106,7 @@ func Run(args []string, stdout io.Writer) (exitStatus int) {
 	var c cli
 	parser, err := kong.New(&c,
 		kong.Name("archfit"),
-		kong.Description("Architecture fitness checker for Go, TypeScript, and Python."),
+		kong.Description("Architecture fitness checker for Go, TypeScript, Python, and Rust."),
 		kong.Writers(stdout, stdout),
 		kong.Exit(func(code int) { panic(exitCode(code)) }),
 		kong.Bind(deps),
