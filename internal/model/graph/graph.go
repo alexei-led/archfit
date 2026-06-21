@@ -96,6 +96,7 @@ const (
 	LangGo         = "go"
 	LangTypeScript = "typescript"
 	LangPython     = "python"
+	LangRust       = "rust"
 )
 
 // languagePriority returns a numeric priority for language-based tiebreaking.

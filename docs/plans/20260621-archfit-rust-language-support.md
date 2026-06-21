@@ -141,19 +141,19 @@ Templates to copy: `internal/extract/ts/ts.go` (subprocess + JSON), `internal/ex
 
 ### Task 4: Add `NodeConvention` registry to `internal/model/graph` (model ring)
 
-- [ ] new `internal/model/graph/convention.go` (imports stdlib `strings` only):
+- [x] new `internal/model/graph/convention.go` (imports stdlib `strings` only):
       `NodeConvention{Language, ModuleSegmentSep, FileExtensions, Priority,
 moduleFileCandidatesFn, fileToModuleKeyFn}` + methods `ModuleSegments`,
       `ModuleFileCandidates`, `FileToModuleKey`; `ConventionRegistry` map +
       `Lookup(lang)` (zero-value default sep `/`, low priority)
-- [ ] populate `BuiltinConventions` with `go`/`typescript`/`python`/`rust` — Go/TS/Python
+- [x] populate `BuiltinConventions` with `go`/`typescript`/`python`/`rust` — Go/TS/Python
       entries are **exact copies** of current heuristics (slash; dot + Python candidates;
       priorities 0/1/2); `rust`: sep `/`, ext `.rs`, priority 3
-- [ ] write table tests: `ModuleSegments` (go/ts slash, py dot, rust crate-dir),
+- [x] write table tests: `ModuleSegments` (go/ts slash, py dot, rust crate-dir),
       `ModuleFileCandidates` (python triple; nil for file-node langs), `FileToModuleKey`
       (go dir-collapse, py dotted, ts passthrough), `Lookup` unknown→default
-- [ ] no callers yet — `go build ./... && go test ./internal/model/graph/ -v` green
-- [ ] run `go test ./internal/ -run TestArchImports` + `make test` + `make lint`
+- [x] no callers yet — `go build ./... && go test ./internal/model/graph/ -v` green
+- [x] run `go test ./internal/ -run TestArchImports` + `make test` + `make lint`
 
 ### Task 5: Rewire core-ring leak sites to `NodeConvention`
 
