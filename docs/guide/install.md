@@ -4,7 +4,7 @@ Install from source with Go. Use a release tag, not `@latest`, in scripts and
 repeatable docs:
 
 ```sh
-go install github.com/alexei-led/archfit/cmd/archfit@v0.5.0
+go install github.com/alexei-led/archfit/cmd/archfit@v0.6.1
 ```
 
 Check the binary and available analyzers:
@@ -148,7 +148,7 @@ Use Docker when you want the bundled toolchain instead of installing language
 analysis tools on the host:
 
 ```sh
-docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.5.0 \
+docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.6.1 \
   check --config /repo/.archfit.yaml --full
 ```
 

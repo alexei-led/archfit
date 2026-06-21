@@ -21,19 +21,35 @@ import (
 // CheckCmd runs the full archfit analysis pipeline.
 type CheckCmd struct {
 	Config   string   `short:"c" help:"Path to config file (optional; built-in defaults used if absent)." default:".archfit.yaml"`
-	Root     string   `help:"Repository root to analyze (default: directory of --config). Decouples the scanned repo from where the config lives, e.g. an external CI config outside the repo." type:"path"`
-	Base     string   `help:"Git ref to compare against for incremental mode (e.g. main, HEAD~1)."`
-	Full     bool     `help:"Scan all files, not just files changed since --base."`
-	Format   []string `help:"Output format: text (human-readable), json, markdown, md, sarif, scorecard. Repeatable." enum:"json,text,markdown,md,sarif,scorecard" default:"text"`
-	Advisory bool     `help:"Include informational findings (coupling advisories) in output."`
-	Report   bool     `help:"Never exit with a failure code, even when violations are found."`
-	NoConfig bool     `name:"no-config" help:"Skip config file entirely; use built-in defaults. Combine with --lang and --severity to run without any config file."`
+	Root     string   `help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
+	Base     string   `help:"Git ref to compare against for PR/delta mode (e.g. origin/main, HEAD~1)."`
+	Full     bool     `help:"Scan all files instead of only files changed since --base."`
+	Format   []string `help:"Output format for stdout: text, json, markdown, md, sarif, scorecard. Repeatable." enum:"json,text,markdown,md,sarif,scorecard" default:"text"`
+	Advisory bool     `help:"Include informational Balanced-Coupling advisories in output."`
+	Report   bool     `help:"Render findings but never fail for architecture violations; useful for report artifacts."`
+	NoConfig bool     `name:"no-config" help:"Skip the config file and use built-in defaults. Combine with --lang and --severity for an ad-hoc scan."`
 
-	RequireTools bool `name:"require-tools" help:"Exit non-zero when any required analyzer tool is missing (opt-in hard gate); equivalent to tools.<x>.gate: fail for every tool."`
+	RequireTools bool `name:"require-tools" help:"Fail when analyzer coverage is incomplete. Default is warn-loud: report n/a coverage gaps without blocking."`
 
 	// Overrides — each flag overrides the equivalent setting from the config file.
-	Severity string   `name:"severity" help:"Show only coupling advisories at or above this level: low, medium, high, critical. Default: medium." enum:"low,medium,high,critical," default:""`
-	Lang     []string `name:"lang"     help:"Languages to analyze: go, ts, py, rust (alias rs). Repeatable: --lang go --lang ts. Sets each to 'on'; unspecified languages follow config or auto-detect."`
+	Severity string   `name:"severity" help:"Minimum advisory severity to show: low, medium, high, critical. Default: medium." enum:"low,medium,high,critical," default:""`
+	Lang     []string `name:"lang"     help:"Analyzer name to force on. Repeatable. See analyzer setup docs for valid names."`
+}
+
+func (*CheckCmd) Help() string {
+	return `Use check as the merge gate. Exit codes are stable for scripts: 0 means clean, 1 means an architecture policy failed, and 3 means a config or tool error.
+
+Common runs:
+  archfit check --config .archfit.yaml --full
+  archfit check --config .archfit.yaml --base origin/main --format json
+  archfit check --config .archfit.yaml --full --format sarif > archfit.sarif
+
+AI agents should read agent_tasks[] from JSON on exit 1, make the constrained repair, then rerun the validation command in that task.
+
+Docs:
+  CI: ` + ciDocsURL + `
+  Agent feedback: ` + agentDocsURL + `
+  Analyzer setup: ` + languagesDocsURL
 }
 
 func (c *CheckCmd) Run(deps *appDeps) error {

@@ -13,10 +13,19 @@ import (
 
 // BaselineCmd runs the engine and saves findings as the new baseline.
 type BaselineCmd struct {
-	Config   string `short:"c" default:".archfit.yaml"`
-	Full     bool
-	Advisory bool `help:"Include advisory findings in the baseline."`
-	Base     string
+	Config   string `short:"c" help:"Config file." default:".archfit.yaml"`
+	Full     bool   `help:"Scan all files before saving the accepted baseline."`
+	Advisory bool   `help:"Include advisory findings in the baseline."`
+	Base     string `help:"Git ref to compare against when baselining a delta run."`
+}
+
+func (*BaselineCmd) Help() string {
+	return `Use baseline after reviewing current findings so CI can block only new architecture drift.
+
+Typical calibration:
+  archfit check --config .archfit.yaml --full
+  archfit baseline --config .archfit.yaml --full
+  archfit check --config .archfit.yaml --base origin/main`
 }
 
 func (c *BaselineCmd) Run(deps *appDeps) error {

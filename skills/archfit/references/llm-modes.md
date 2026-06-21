@@ -1,8 +1,9 @@
 # archfit LLM modes (off-gate)
 
 archfit's gate is deterministic — `check` never calls a model. LLM features are
-opt-in and off-gate: `init`/`update` classification, `enrich` coupling labels,
-and `explain --llm`. `check` only reads the final config and approved labels.
+opt-in and off-gate: `review`, `init`/`update` classification, `enrich` labels
+and metadata, `autopilot`, and `explain --llm`. `check` only reads the final
+config and approved labels.
 
 ## Configuration
 
@@ -23,8 +24,17 @@ setting a key only when it is currently unset (real env / CI secrets win); keep
 status. Responses are cached at `.archfit-cache/llm/`; `--no-cache` forces fresh
 calls.
 
-LLM flags (`init` and `update`): `--llm`, `--llm-provider`, `--llm-model`,
-`--no-cache`.
+## review
+
+`archfit review` is an off-gate LLM narrative over deterministic evidence. It can
+prioritize and explain existing findings, but it does not create new gate facts
+and it does not change `check`.
+
+- Requires `tools.llm` configured and the matching API key.
+- Use it for explanation and prioritization after `check` / `score`, not instead
+  of them.
+- If LLM config is missing, it exits `3`; that is a setup problem, not a gate
+  failure.
 
 ## init / update classification (subdomain, volatility, layer)
 
@@ -72,7 +82,7 @@ re-run with `--apply`. Treat applied classifications as a reviewed starting poin
 - Removed modules — config modules with no discovered paths → commented out with
   a marker; verify before deleting.
 
-## enrich — coupling-strength labels (draft → review → pin)
+## enrich — labels and module metadata (draft → review → pin)
 
 `enrich` refines whether a cross-module edge is `functional` (invokes behavior),
 `model` (types cross the boundary), `contract` (published stable interface), or
@@ -95,15 +105,20 @@ Labels file (`.archfit-labels.yaml`) notes:
 - A malformed labels file fails `check` loudly (exit 3) — it never silently
   alters the gate.
 
-## enrich --owner / --volatility (draft → review → pin)
+## enrich --subdomains / --owner / --volatility (draft → review → pin)
 
-`enrich --owner` and `enrich --volatility` draft the `owner` and `volatility`
-module fields the structural metrics depend on. `--owner` reads `CODEOWNERS` plus
-module paths into `.archfit-owners.yaml`; `--volatility` infers low/medium/high
-into `.archfit-volatility.yaml`. `--pin` writes only `status: approved` entries
-into `modules.<name>` and never overwrites a live field. Filling these makes
-`encapsulation` measurable, so `boundary_integrity` and `coupling_balance` leave
-`n/a`. Never auto-pin without review.
+These modes draft module metadata the structural metrics depend on.
+
+- `enrich --subdomains` drafts `core` / `supporting` / `generic` into
+  `.archfit-subdomains.yaml`.
+- `enrich --owner` reads `CODEOWNERS` plus module paths into `.archfit-owners.yaml`.
+- `enrich --volatility` infers low / medium / high into `.archfit-volatility.yaml`.
+- `--pin` writes only `status: approved` entries into `modules.<name>` and never
+  overwrites a live field.
+
+Filling these makes distance and encapsulation metrics more honest; without them,
+`boundary_integrity` and `coupling_balance` may stay partly `n/a`. Never auto-pin
+without review.
 
 ## autopilot — full config draft (review-only)
 
@@ -120,3 +135,17 @@ live config — autopilot applies nothing.
 `archfit explain <fingerprint> --llm` appends a Balanced Coupling narrative (why
 the finding matters, the risk, a repair sketch) after the deterministic explain
 output, using the same provider and cache. Without `--llm`, explain is offline.
+
+## Generated artifacts
+
+LLM modes can write repo-local drafts or cache:
+
+- `.archfit-labels.yaml`
+- `.archfit-subdomains.yaml`
+- `.archfit-owners.yaml`
+- `.archfit-volatility.yaml`
+- `.archfit-autopilot.yaml`
+- `.archfit-cache/llm/`
+
+Treat them as generated state. Review them before committing; prefer stdout or a
+temp copy when the task is analysis-only.

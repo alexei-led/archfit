@@ -1,6 +1,36 @@
 # CI
 
-Run the gate in CI after checkout and language setup:
+Use `archfit check` like a linter for architecture drift: run it after normal
+build/test setup, fail the job on new gate violations, and hand JSON
+`agent_tasks[]` back to coding agents when they need to repair the change.
+
+## Local Makefile loop
+
+Keep the local and CI command identical. A simple target is enough:
+
+```text
+.PHONY: archfit
+archfit: build
+<TAB>.bin/archfit check --config .archfit.yaml --full
+```
+
+Then make the full local gate obvious:
+
+```sh
+make test
+make archfit
+```
+
+This repository dogfoods that target in `make all` and in GitHub Actions:
+
+```yaml
+- name: CI gate — architecture drift
+  run: make archfit
+```
+
+## Pull-request gate
+
+Run the gate in CI after checkout and analyzer setup:
 
 ```sh
 archfit check --config .archfit.yaml --full
@@ -9,8 +39,12 @@ archfit check --config .archfit.yaml --full
 For pull requests, compare to the base branch when available:
 
 ```sh
-archfit check --config .archfit.yaml --base origin/main
+archfit check --config .archfit.yaml --base origin/main --format json
 ```
+
+On exit `1`, a coding agent should read `agent_tasks[]`, apply the constrained
+repair, and rerun the task's `validation` command. See
+[agent-feedback.md](agent-feedback.md).
 
 Store `archfit scan` output as an artifact when a full report is useful:
 

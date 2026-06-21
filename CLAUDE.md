@@ -11,8 +11,10 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`.
 - `make test` — `go test -race -coverprofile=coverage.out ./...`
 - `make lint` — `golangci-lint run -c .golangci.yaml ./...` (pinned v2.1.6)
 - `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit`
+- `make archfit` — dogfood architecture-drift gate: `.bin/archfit check --config .archfit.yaml --full`
+- `make archfit-report` — write `reports/archfit-report.md` via `archfit scan`
 - `make mock` — regenerate moq fakes (`go generate ./...`)
-- `make all` — fmt → lint → test → build
+- `make all` — fmt → lint → test → archfit
 - One test: `go test ./internal/<pkg>/ -run TestName`
 
 ## Structural gates (CI runs these explicitly — keep green)
@@ -20,6 +22,7 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`.
 - Import ring: `go test ./internal/ -run TestArchImports`
 - Golden output: `go test ./internal/engine/ -run TestGolden` — regenerate
   deliberately and inspect the diff; output changes are never automatic.
+- Dogfood gate: `make archfit` — CI runs the same target after tests/goldens.
 
 ## Invariants
 

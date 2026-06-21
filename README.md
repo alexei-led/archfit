@@ -175,13 +175,13 @@ machine-readable verdict, and feedback shaped for an AI-agent repair loop.
 Install the CLI (use a release tag, not `@latest`, in repeatable docs):
 
 ```sh
-go install github.com/alexei-led/archfit/cmd/archfit@v0.5.0
+go install github.com/alexei-led/archfit/cmd/archfit@v0.6.1
 ```
 
 Or run the Docker image with the bundled toolchain:
 
 ```sh
-docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.5.0 \
+docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.6.1 \
   check --config /repo/.archfit.yaml --full
 ```
 
@@ -220,7 +220,7 @@ language-specific setup? Start with the [guide](docs/guide/README.md).
 | `archfit enrich`       | Draft off-gate LLM coupling-label refinements.      |
 | `archfit autopilot`    | Draft a full `.archfit.yaml` via LLM (review-only). |
 | `archfit explain <id>` | Explain one finding by fingerprint prefix.          |
-| `archfit install`      | Check or install optional language tools.           |
+| `archfit install`      | Check or install optional analyzer tools.           |
 
 See the [commands guide](docs/guide/commands.md) for flags, formats, and exit
 codes. Point `--root` at the repo and `--config` elsewhere to run archfit from

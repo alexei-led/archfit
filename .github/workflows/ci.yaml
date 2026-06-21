@@ -11,7 +11,7 @@ permissions:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # persist-credentials:false: govulncheck-action runs a nested checkout;
       # a persisted auth extraheader here collides with it (duplicate
@@ -33,7 +33,7 @@ jobs:
           go-version-file: go.mod
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: lint
     steps:
       - uses: actions/checkout@v7
@@ -54,6 +54,8 @@ jobs:
         run: go test ./internal/ -run TestArchImports
       - name: CI gate — golden output
         run: go test ./internal/engine/ -run TestGolden
+      - name: CI gate — architecture drift
+        run: make archfit
       - name: Upload coverage
         uses: actions/upload-artifact@v7
         with:
@@ -62,7 +64,7 @@ jobs:
           retention-days: 7
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: test
     strategy:
       matrix:
