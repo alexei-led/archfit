@@ -66,11 +66,29 @@ func FileToModuleKey(file, lang string) string {
 	return graph.BuiltinConventions.Lookup(lang).FileToModuleKey(file)
 }
 
-// ModuleChurn aggregates per-file churn onto module keys.
-func ModuleChurn(fileChurn map[string]int, lang string) map[string]int {
+// ModuleKeyResolver returns a file→module-key mapper bound to this graph, computing
+// the language (and, for Rust, the crate roots) once instead of per file. For a
+// Rust-dominant graph carrying crate roots it resolves to module granularity
+// ("<crate>::<mod>") so per-file LOC/churn aggregates onto module nodes rather than
+// collapsing to the crate; every other case uses the language convention. The crate
+// roots are honoured only when Rust is the dominant language (or the graph has no
+// edges to judge), so a stray Cargo.toml in a Go/TS repo never flips the mapping.
+func ModuleKeyResolver(g *graph.Graph) func(string) string {
+	lang := DominantLanguage(g)
+	if crates := g.CrateRoots(); len(crates) > 0 && (lang == graph.LangRust || lang == "") {
+		return func(f string) string { return graph.RustFileToModuleKey(f, crates) }
+	}
+	return func(f string) string { return FileToModuleKey(f, lang) }
+}
+
+// ModuleChurn aggregates per-file churn onto module keys using the graph-bound
+// resolver, so Rust files resolve to module granularity when crate roots are present
+// (identical to the per-language convention otherwise).
+func ModuleChurn(g *graph.Graph, fileChurn map[string]int) map[string]int {
+	resolve := ModuleKeyResolver(g)
 	mc := map[string]int{}
 	for f, c := range fileChurn {
-		if k := FileToModuleKey(f, lang); k != "" {
+		if k := resolve(f); k != "" {
 			mc[k] += c
 		}
 	}

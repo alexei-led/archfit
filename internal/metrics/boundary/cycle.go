@@ -36,11 +36,13 @@ func (m CycleMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 	switch {
 	case cycles == 0:
 		band = result.BandStrong
-	case rustDominant(in.Graph):
-		// cargo forbids crate cycles, so every cycle in a Rust graph is module-level —
-		// which the language permits and which is commonly just mutual type references
+	case cyclesAllRust(in.Graph):
+		// cargo forbids crate cycles, so a cycle built only from Rust edges is
+		// module-level — language-permitted, commonly just mutual type references
 		// (cargo-modules `uses` edges). Treat as a real but mild signal (poor), not the
-		// boundary-defeating critical defect a crate/package cycle is.
+		// boundary-defeating critical defect a crate/package cycle is. Any cycle that
+		// includes a non-Rust edge (e.g. a Go import cycle in a polyglot repo) stays
+		// critical, regardless of which language has the most edges overall.
 		band = result.BandPoor
 	default:
 		band = result.BandCritical
@@ -69,22 +71,39 @@ func countCycles(g *graph.Graph) int {
 	return len(g.Cycles())
 }
 
-// rustDominant reports whether Rust is the most common edge language — the signal
-// that the dependency graph is the Rust module graph (cargo metadata + cargo-modules),
-// where cycles are module-level and language-permitted rather than crate cycles.
-func rustDominant(g *graph.Graph) bool {
+// cyclesAllRust reports whether every detected cycle is built solely from Rust edges
+// — the signal that all cycles are intra-crate module cycles (cargo forbids crate
+// cycles), which the language permits. It inspects the dependency edges WITHIN each SCC,
+// not the global edge-language majority: a polyglot repo whose Rust crate-dep edges
+// outnumber a single Go import cycle must still flag that Go cycle as critical. Returns
+// false when there are no cycles or any cycle includes a non-Rust edge.
+func cyclesAllRust(g *graph.Graph) bool {
 	if g == nil {
 		return false
 	}
-	counts := map[string]int{}
-	for _, e := range g.Edges() {
-		counts[e.Language]++
+	sccs := g.Cycles() // SCCs of size > 1, as node-ID slices
+	if len(sccs) == 0 {
+		return false
 	}
-	best, bestN := "", 0
-	for lang, n := range counts {
-		if n > bestN {
-			best, bestN = lang, n
+	sccOf := make(map[string]int)
+	for i, scc := range sccs {
+		for _, id := range scc {
+			sccOf[id] = i
 		}
 	}
-	return best == graph.LangRust
+	for _, e := range g.Edges() {
+		// Only the dependency edges that g.Cycles() considers can form a cycle.
+		switch e.Kind {
+		case graph.EdgeKindImports, graph.EdgeKindDependsOn, graph.EdgeKindUsesInternal:
+		default:
+			continue
+		}
+		// An edge is part of a cycle iff both endpoints sit in the same SCC.
+		if fi, ok := sccOf[e.From]; ok {
+			if ti, ok2 := sccOf[e.To]; ok2 && fi == ti && e.Language != graph.LangRust {
+				return false
+			}
+		}
+	}
+	return true
 }

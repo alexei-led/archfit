@@ -29,8 +29,8 @@ func (m HiddenCouplingMetric) Calculate(in signal.HistoryInput) diagnostic.Metri
 	if in.Graph == nil || len(in.History.CoChange) == 0 {
 		return result.NACount(m.Name(), m.Version(), def)
 	}
-	lang := modgraph.DominantLanguage(in.Graph)
-	mc := modgraph.ModuleChurn(in.History.FileChurn, lang)
+	resolve := modgraph.ModuleKeyResolver(in.Graph)
+	mc := modgraph.ModuleChurn(in.Graph, in.History.FileChurn)
 
 	// First-party module nodes: restrict co-change to real graph modules so docs
 	// (CHANGELOG.md), config files, and pre-rename historical paths are excluded.
@@ -50,7 +50,7 @@ func (m HiddenCouplingMetric) Calculate(in signal.HistoryInput) diagnostic.Metri
 	// Aggregate file-pair co-change onto module pairs (graph modules only).
 	modPair := make(map[[2]string]int)
 	for fp, c := range in.History.CoChange {
-		a, b := modgraph.FileToModuleKey(fp[0], lang), modgraph.FileToModuleKey(fp[1], lang)
+		a, b := resolve(fp[0]), resolve(fp[1])
 		if a == "" || b == "" || a == b {
 			continue
 		}

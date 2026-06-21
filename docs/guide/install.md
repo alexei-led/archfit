@@ -100,13 +100,27 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo --version
 ```
 
-`archfit` runs `cargo metadata` to extract the crate dependency graph. For
-optional symbol-level strength (`tools.scip.enabled: on`), also add the
-`rust-analyzer` component:
+`archfit` runs `cargo metadata` to extract the crate dependency graph. Two opt-in
+tools add intra-crate module depth (important for single-crate repos, which are one
+node at crate level):
 
-```sh
-rustup component add rust-analyzer
-```
+- **`cargo-modules`** (`tools.cargo-modules.enabled: on`) builds the intra-crate
+  module graph (`<crate>::<mod>` nodes + `uses` edges):
+
+  ```sh
+  cargo install cargo-modules
+  ```
+
+- **`rust-analyzer`** (`tools.scip.enabled: on`) adds symbol-level integration
+  strength via `rust-analyzer scip`:
+
+  ```sh
+  rustup component add rust-analyzer
+  ```
+
+With either on, per-file LOC/churn resolves to module granularity, so `structural_weight`
+flags god _files/modules_ (not just god crates) and the history metrics measure inside a
+single crate.
 
 ## Optional analysis tools
 

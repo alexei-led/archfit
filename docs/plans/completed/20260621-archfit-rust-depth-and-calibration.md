@@ -161,14 +161,12 @@ the architect converge on the verdict and core issues. archfit even caught **mod
 cycles the architect missed** (yazi 26, herdr 5) — the human review only checked
 crate/top-level granularity. SCIP coverage was deep (yazi seen=12929, herdr seen=2375).
 
-Status (commit 30ac2c7, branch rebased onto main): **Cal-1, Cal-2, Cal-3, Cal-5 done**
+Status (branch rebased onto main): **Cal-1 … Cal-6 ALL DONE**
 (+ real cargo-modules/coverage bugs fixed: ModeOff zero-coverage, `--bin` target-name,
-partial-coverage confidence cap). **Cal-4 and Cal-6 remain** — Cal-4 is a real feature
-(file→module LOC plumbing under the filesystem-free core ring); Cal-6 is meta-only and
-was reverted once for test friction, so it is deferred as low-value/low-risk-to-defer.
+partial-coverage confidence cap). This plan is complete.
 
-The following calibration items remain (evidence: the two-repo run). None is a broken
-tool; they are scoring/labelling refinements.
+The calibration items below are kept for the record (evidence: the two-repo run). None
+was a broken tool; they were scoring/labelling refinements.
 
 ### Cal-1: dependency_graph_health vs dependency_health name collision
 
@@ -195,16 +193,28 @@ node count, so the band is not comparable across granularities. Normalise the ba
 node count, or report it only at a fixed granularity. File:
 `internal/metrics/.../propagation_cost`.
 
-### Cal-4: structural_weight n/a for Rust MODULES (god-module-by-size miss)
+### Cal-4: structural_weight n/a for Rust MODULES (god-module-by-size miss) — DONE
 
-structural_weight works at crate level (caught yazi's 2 god crates) but is n/a at module
-level, because per-file LOC maps to the crate, not the module node — so archfit missed
-herdr's god FILES (server/headless.rs 7,843 lines; integration/mod.rs 6,365) that the
-architect flagged. This is the "file→module LOC/churn mapping" polish (also unblocks
-change_coupling/cohesion at module granularity). The hard part is the core-ring's
-filesystem-free constraint; plumb the cargo-modules member→module file ranges, or map via
-the rust file→module convention. Files: `internal/extract/rust/modules.go` (emit per-module
-file/LOC), `internal/metrics/internal/modgraph` (FileToModuleKey for module nodes).
+structural_weight worked at crate level (caught yazi's 2 god crates) but was n/a at
+module level, because per-file LOC mapped to the crate, not the module node — so archfit
+missed herdr's god FILES (server/headless.rs 7,843 lines; integration/mod.rs 6,365) that
+the architect flagged.
+
+Fix: the Rust extractor now carries crate roots (repo-relative src dir + crate name from
+cargo metadata) on `graph.Facts`/`graph.Graph` (`crateRoots` in `internal/extract/rust/
+rust.go`; `CrateRoot` + `Build` carry-through in `internal/model/graph/graph.go`). A pure
+crate-aware mapper `graph.RustFileToModuleKey(file, crates)` resolves a `.rs` file to its
+module key (`crate/src/a/b.rs → crate::a::b`, `mod.rs`→parent, `lib.rs`/`main.rs`→crate,
+tests/benches/examples namespaced) — the crate name is supplied, not guessed, so it works
+under the filesystem-free core ring. `modgraph.ModuleKeyResolver(g)` binds the mapper to a
+graph (Rust-dominant + crate roots → module granularity; identical to the per-language
+convention otherwise). structural_weight, change_coupling, change_amplification,
+hidden_coupling and functional_candidates all route through it, so size/history/duplication
+metrics now measure at Rust module granularity. Accepted ceiling (documented on the func):
+filesystem convention diverges from rust-analyzer's semantic tree on `#[path]`, inline
+`mod {}`, and `include!`; SCIP-derived mapping is the precision upgrade. Tests:
+`TestRustFileToModuleKey`, `TestCrateRoots`, `TestStructuralWeight_RustModuleGranularity`
+(before/after contrast), `TestChangeCoupling_RustModuleGranularity`.
 
 ### Cal-5: cargo-modules partial on workspaces — surface which crates failed
 
@@ -213,10 +223,17 @@ proc-macro/codegen crates). Record and `log()` the failed crate names in the cov
 reason so the gap is visible, not silent. File: `internal/extract/rust/modules.go`
 `runModuleGraph` (collect failedCrate names into Coverage.Reason).
 
-### Cal-6: analysis_confidence ignores the n/a-dimension ratio (non-degenerate case)
+### Cal-6: analysis_confidence ignores the n/a-dimension ratio (non-degenerate case) — DONE
 
-Both repos scored analysis_confidence 100 with several low-confidence dims. The
-degenerate-graph cap no longer fires once a real module graph exists, but the meta score
-still doesn't reflect how many dimensions came back n/a/low. Reconsider the
-measured-dimension-ratio cap (reverted earlier for test friction) now that module graphs
-make more dims measurable. File: `internal/score/score.go` `analysisConfidence`. Meta-only.
+Both repos scored analysis_confidence 100 with several low-confidence dims: the
+degenerate-graph cap stops firing once a real module graph exists, yet the meta score did
+not reflect how many dimensions came back n/a/low.
+
+Fix: `analysisConfidence` now takes the computed non-meta dimensions and caps meta by the
+share that are unmeasured (a dimension is set to low confidence exactly when its evidence
+is n/a/vacuous). `naDimensionPenalty = 5` points per unmeasured dimension — a fully-tooled
+run with one or two design-driven n/a dims (e.g. Rust encapsulation) degrades gently,
+while a run where most dims are blind can no longer read as confident. The existing
+tool-coverage fixtures pass unchanged (their blast_radius+instability shape keeps the cap
+from binding below their asserted floors); new test `TestAnalysisConfidence_NADimensionRatioCap`
+covers the cap. File: `internal/score/score.go` `analysisConfidence`. Meta-only.

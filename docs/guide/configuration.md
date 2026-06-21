@@ -56,6 +56,8 @@ tools:
     enabled: auto
   python:
     enabled: auto
+  rust:
+    enabled: auto
 ```
 
 Start with explicit, high-value rules. Avoid encoding every preference on day one.

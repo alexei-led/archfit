@@ -21,6 +21,36 @@ const (
 // ccGoFile returns the representative Go file path for a module key.
 func ccGoFile(mod string) string { return mod + "/x.go" }
 
+// TestChangeCoupling_RustModuleGranularity is the Cal-4 follow-on: with crate roots
+// carried on the graph, per-file churn/co-change resolves to Rust module nodes
+// (<crate>::<mod>) instead of collapsing to the crate, so module-level change coupling
+// is measured. cargo-modules module nodes supply the first-party node set.
+func TestChangeCoupling_RustModuleGranularity(t *testing.T) {
+	g := graph.Build([]graph.Facts{{
+		Nodes: []graph.Node{
+			{Kind: graph.NodeKindPackage, Path: "demo::a"},
+			{Kind: graph.NodeKindPackage, Path: "demo::b"},
+		},
+		Edges: []graph.Edge{{
+			From: "package:demo::a", To: "package:demo::b",
+			Kind: graph.EdgeKindDependsOn, Language: graph.LangRust,
+		}},
+		Language:   graph.LangRust,
+		CrateRoots: []graph.CrateRoot{{Dir: "", Name: "demo"}},
+	}})
+	in := signal.HistoryInput{
+		CommonInput: signal.CommonInput{Graph: g},
+		History: signal.HistorySignals{
+			FileChurn: map[string]int{"src/a.rs": 10, "src/b.rs": 10},
+			CoChange:  map[[2]string]int{{"src/a.rs", "src/b.rs"}: 9}, // CC=9/10=0.9 ≥0.65
+		},
+	}
+	res := modularity.ChangeCouplingMetric{}.Calculate(in)
+	if res.Value != 1 {
+		t.Errorf("value=%.0f want 1 (demo::a↔demo::b); display=%q", res.Value, res.Display)
+	}
+}
+
 // buildCCInput constructs a HistoryInput from explicit module-level commit
 // counts.  mods: ordered list of module paths; modChurn: module→commit-count;
 // pairs: (modA,modB)→co-change-count.

@@ -241,11 +241,23 @@ How extraction works:
 - emits `depends_on` edges located at `Cargo.toml`;
 - skips dev-dependencies unless `rust_include_dev_deps: true`.
 
-Granularity is **crate-level**, not file- or module-level. Each workspace member
-is one node; intra-crate module edges are out of scope. A single-crate repo
-therefore yields exactly one `package:` node and no intra-workspace edges. For
-finer resolution, enable the optional `rust-analyzer scip` strength pass (see
-below) — it is the upgrade path.
+Granularity is **crate-level by default**: each workspace member is one node, so a
+single-crate repo yields exactly one `package:` node and no intra-workspace edges. The
+scorecard treats such a degenerate (<2-node) graph honestly — it never scores `strong`
+on it.
+
+For finer resolution, two opt-in passes add the **intra-crate module graph** so
+single-crate repos get real cycle, blast-radius, cohesion, and god-file signal:
+
+- `tools.cargo-modules.enabled: on` runs `cargo-modules` to emit `<crate>::<mod>` nodes
+  and aggregated `uses` edges.
+- `tools.scip.enabled: on` runs `rust-analyzer scip` for symbol-level integration
+  strength on those module edges.
+
+With either on, per-file LOC and git churn also resolve to module granularity (via the
+crate roots cargo metadata provides), so `structural_weight` flags god _files/modules_ by
+size and the change-history metrics measure inside a single crate — not just across
+crates. See [Optional analyzers](#optional-analyzers-per-language) below.
 
 Optional config:
 
@@ -294,12 +306,13 @@ metrics need extra tools, and several are language-specific. When a tool is
 missing the dependent metric reports `n/a` **with the reason and enable step** —
 the run never fails — but the metric stays blind until you install it.
 
-| Tool                | Powers                  | Go  | TS/JS | Python | Rust | Setup                                                                              |
-| ------------------- | ----------------------- | --- | ----- | ------ | ---- | ---------------------------------------------------------------------------------- |
-| `lizard`            | `complexity`            | yes | yes   | yes    | yes  | `tools.complexity.enabled: on`; `pip install lizard` (or `uv tool install lizard`) |
-| SCIP indexer + `uv` | `risk_hub`              | yes | yes   | yes    | yes  | `tools.scip.enabled: on`; see notes below                                          |
-| clone detector      | `functional_candidates` | yes | yes   | yes    | yes  | `tools.clones.enabled: on`; jscpd (JS/TS) or PMD                                   |
-| `gitnexus`          | enriches `risk_hub`     | yes | yes   | yes    | yes  | `tools.gitnexus.enabled: on` (or auto-detect)                                      |
+| Tool                | Powers                          | Go  | TS/JS | Python | Rust | Setup                                                                              |
+| ------------------- | ------------------------------- | --- | ----- | ------ | ---- | ---------------------------------------------------------------------------------- |
+| `lizard`            | `complexity`                    | yes | yes   | yes    | yes  | `tools.complexity.enabled: on`; `pip install lizard` (or `uv tool install lizard`) |
+| SCIP indexer + `uv` | `risk_hub`                      | yes | yes   | yes    | yes  | `tools.scip.enabled: on`; see notes below                                          |
+| clone detector      | `functional_candidates`         | yes | yes   | yes    | yes  | `tools.clones.enabled: on`; jscpd (JS/TS) or PMD                                   |
+| `gitnexus`          | enriches `risk_hub`             | yes | yes   | yes    | yes  | `tools.gitnexus.enabled: on` (or auto-detect)                                      |
+| `cargo-modules`     | intra-crate module graph (Rust) | —   | —     | —      | yes  | `tools.cargo-modules.enabled: on`; `cargo install cargo-modules`                   |
 
 Notes that bite most often:
 
@@ -315,6 +328,13 @@ Notes that bite most often:
   strength on top of the crate-level `cargo metadata` graph. When the binary is
   absent the pass no-ops cleanly — no error, `risk_hub` stays `n/a` with the
   reason.
+- **Rust module depth needs `cargo-modules`.** A single crate is one node at crate
+  level, so cycle/blast-radius/cohesion go `n/a`. `tools.cargo-modules.enabled: on`
+  (with `cargo install cargo-modules`) adds the `<crate>::<mod>` graph; archfit then
+  maps per-file LOC/churn to module keys so `structural_weight` flags god _files_ and
+  the change-history metrics measure within the crate. On a workspace, crates whose
+  `cargo-modules` run fails (proc-macro/codegen) are named in the coverage reason and
+  the structural dimensions drop to medium confidence — partial, never silent.
 - **Clone detection is opt-in.** `tools.clones.enabled: on` plus a detector
   (`npm install -g jscpd@5.0.9` for JS/TS, or PMD/CPD for Go/Python) turns
   `functional_candidates` on. Off or absent → `n/a`.

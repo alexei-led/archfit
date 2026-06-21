@@ -123,8 +123,11 @@ func Synthesize(d diagnostic.Diagnostic) Scorecard {
 	// confidence; cap to medium so partial coverage cannot read as a confident verdict.
 	if cargoModulesPartial(d) {
 		for i := range dims {
-			n := dims[i].Name
-			if (n == DimDependencyGraphHealth || n == DimCohesionModularity) && dims[i].Confidence == ConfidenceHigh {
+			// Every graph-derived dimension is built over the same incomplete module
+			// graph when cargo-modules only partially succeeded — coupling and boundary
+			// included, not just dep-graph/cohesion. Cap them all to medium so partial
+			// coverage never reads as a confident verdict.
+			if structuralDimensions[dims[i].Name] && dims[i].Confidence == ConfidenceHigh {
 				dims[i].Confidence = ConfidenceMedium
 				dims[i].Evidence = append(dims[i].Evidence,
 					"module graph partial (some crates failed cargo-modules) — confidence capped to medium")
@@ -132,7 +135,7 @@ func Synthesize(d diagnostic.Diagnostic) Scorecard {
 		}
 	}
 
-	meta := finalizeMeta(analysisConfidence(d, mi))
+	meta := finalizeMeta(analysisConfidence(d, mi, dims))
 
 	overall := meanValue(dims)
 	all := make([]Dimension, 0, len(dims)+1)
@@ -475,6 +478,23 @@ func architectureFitness(mi metricIndex, base Confidence) Dimension {
 	return dim
 }
 
+// naDimensionPenalty is the meta-confidence points deducted per unmeasured structural
+// dimension. Set so all four structural dimensions blind lands at 60 — the same ceiling
+// the degenerate-graph guard applies — while one design-driven n/a (e.g. Rust's
+// encapsulation) degrades gently to 90.
+const naDimensionPenalty = 10
+
+// structuralDimensions are the graph-derived dimensions whose n/a state means the graph
+// was too sparse to measure architecture (a fidelity gap), as opposed to change_locality
+// and architecture_fitness, whose n/a is a deliberate scope choice (no --base / no
+// enforcement signals) and must not lower review confidence.
+var structuralDimensions = map[string]bool{
+	DimBoundaryIntegrity:     true,
+	DimCouplingBalance:       true,
+	DimDependencyGraphHealth: true,
+	DimCohesionModularity:    true,
+}
+
 // analysisConfidence is the meta dimension: how trustworthy this review is given
 // tool coverage. When extraction ran, file-extraction coverage sets the baseline.
 // When the coverage metric is n/a (no extractor contributed — the repo was not
@@ -485,7 +505,7 @@ func architectureFitness(mi metricIndex, base Confidence) Dimension {
 // which hides which extractors are missing. Each absent semantic tool (scip, gitnexus,
 // lizard/complexity, jscpd/clones) then lowers confidence in the depth of the
 // analysis on top.
-func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex) Dimension {
+func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex, dims []Dimension) Dimension {
 	dim := Dimension{Name: DimAnalysisConfidence, Confidence: ConfidenceHigh}
 	statuses := toolStatuses(d)
 	value := 60
@@ -516,6 +536,29 @@ func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex) Dimension {
 		dim.Evidence = append(dim.Evidence, fmt.Sprintf("%s: %s", tool, orAbsent(st)))
 	}
 	value -= capInt(absent*5, 20)
+
+	// n/a-dimension ratio: tool coverage can read high while the graph-derived
+	// dimensions still came back unmeasured. Only the STRUCTURAL dimensions signal a
+	// measurement-fidelity gap when n/a (a graph too sparse to assess architecture).
+	// change_locality (needs --base/git) and architecture_fitness (needs enforcement
+	// signals) being n/a is a deliberate scope choice, not a blind spot, so they never
+	// lower review confidence. A fully-blind structural set lands at 60 (= the degenerate
+	// cap), so the two stay consistent rather than double-penalising.
+	naStructural := 0
+	for _, dm := range dims {
+		if structuralDimensions[dm.Name] && dm.Confidence == ConfidenceLow {
+			naStructural++
+		}
+	}
+	if naStructural > 0 {
+		ceiling := 100 - naStructural*naDimensionPenalty
+		if value > ceiling {
+			dim.Evidence = append(dim.Evidence, fmt.Sprintf(
+				"%d of %d structural dimensions unmeasured (n/a) — capped at %d",
+				naStructural, len(structuralDimensions), ceiling))
+			value = ceiling
+		}
+	}
 
 	// Tool coverage alone overstates trust on a degenerate graph: file extraction can
 	// be 100% while the dependency graph is a single node (the single-crate Rust case),

@@ -595,3 +595,34 @@ func TestAnalysisConfidence_PrimaryExtractorTools(t *testing.T) {
 			injectedMeta.Value, fallbackMeta.Value)
 	}
 }
+
+// TestAnalysisConfidence_NADimensionRatioCap is the Cal-6 regression: a fully-tooled
+// run (coverage 1.0, every semantic tool present) over a real graph must NOT read 100
+// when several scorecard dimensions came back n/a — the meta score reflects how many
+// dimensions were actually measured, not just whether the tools ran.
+func TestAnalysisConfidence_NADimensionRatioCap(t *testing.T) {
+	// All tools present and a non-degenerate graph (blast_radius+instability), but no
+	// encapsulation, no change history, no fitness scan → 5 of 6 dimensions n/a.
+	d := diagnostic.New()
+	d.Metrics = []diagnostic.MetricResult{
+		metric("coverage", 1.0, "strong", "high"),
+		metric("blast_radius", 0, "info", "high"),
+		metric("instability", 0, "info", "high"),
+	}
+	d.ToolCoverage = []diagnostic.Coverage{
+		okCov("go/packages"), okCov("scip"), okCov("gitnexus"), okCov("lizard"), okCov("jscpd"),
+	}
+	naMeta := dimByName(t, Synthesize(d), DimAnalysisConfidence)
+	if naMeta.Value >= 100 {
+		t.Errorf("meta must be capped below 100 when most dimensions are n/a, got %d", naMeta.Value)
+	}
+	if naMeta.Value < 50 {
+		t.Errorf("a fully-tooled run should stay reasonably confident, got %d", naMeta.Value)
+	}
+
+	// A fully-measured run (all dimensions real) must out-score the n/a-heavy run.
+	fullMeta := dimByName(t, Synthesize(richDiagnostic()), DimAnalysisConfidence)
+	if fullMeta.Value <= naMeta.Value {
+		t.Errorf("fully-measured run should out-score the n/a-heavy run: full=%d na=%d", fullMeta.Value, naMeta.Value)
+	}
+}

@@ -40,12 +40,10 @@ func (m FunctionalCandidatesMetric) Calculate(in signal.DuplicationInput) diagno
 		return result.NACount(m.Name(), m.Version(), functionalCandidatesDef)
 	}
 
-	lang := modgraph.DominantLanguage(in.Graph)
+	resolve := modgraph.ModuleKeyResolver(in.Graph)
 
 	// Map clone clusters to canonical cross-module pairs (deduped + sorted by ModulePairs).
-	pairs := clone.ModulePairs(in.Duplication.Clusters, func(f string) string {
-		return modgraph.FileToModuleKey(f, lang)
-	})
+	pairs := clone.ModulePairs(in.Duplication.Clusters, resolve)
 
 	if len(pairs) == 0 {
 		return result.NACount(m.Name(), m.Version(), functionalCandidatesDef)
@@ -54,8 +52,8 @@ func (m FunctionalCandidatesMetric) Calculate(in signal.DuplicationInput) diagno
 	// Build module-pair co-change set from CoChange for cross-reference.
 	coChangePairs := make(map[[2]string]struct{}, len(in.History.CoChange))
 	for fp := range in.History.CoChange {
-		a := modgraph.FileToModuleKey(fp[0], lang)
-		b := modgraph.FileToModuleKey(fp[1], lang)
+		a := resolve(fp[0])
+		b := resolve(fp[1])
 		if a == "" || b == "" || a == b {
 			continue
 		}

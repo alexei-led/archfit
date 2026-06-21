@@ -72,7 +72,19 @@ herdr: `coupling_balance` and `cohesion_lcom` measure (were n/a). `encapsulation
 stays `n/a` for typical Rust by design: it scores only contract/intrusive edges, and
 Rust's module privacy makes cross-module _intrusive_ edges rare. With all three on
 (`tools.rust` + `tools.cargo-modules` + `tools.scip`) a single-crate Rust project gets
-full module-level coupling analysis. See `docs/plans/rust-depth-and-calibration.md`.
+full module-level coupling analysis.
+
+Per-file size/history metrics resolve to **module granularity** too: the extractor carries
+crate roots (`graph.CrateRoot`, repo-relative src dir + crate name from cargo metadata) on
+the graph, and `modgraph.ModuleKeyResolver` maps a `.rs` file to its module key
+(`crate/src/a/b.rs → crate::a::b`) so `structural_weight` (god-file-by-size),
+`change_coupling`, `change_amplification`, `hidden_coupling` and `functional_candidates`
+measure at module level instead of collapsing every file to the crate. It is filesystem
+convention (accepted ceiling: `#[path]`, inline `mod {}`, `include!` diverge from
+rust-analyzer's semantic tree; SCIP is the precision upgrade). The meta dimension
+`analysis_confidence` is also capped by the share of n/a/low-confidence dimensions, so a
+fully-tooled run no longer reads 100 when (by Rust design) encapsulation is n/a. See
+`docs/plans/completed/20260621-archfit-rust-depth-and-calibration.md`.
 
 ## Layout
 

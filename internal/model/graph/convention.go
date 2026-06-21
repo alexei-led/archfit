@@ -15,7 +15,7 @@ type NodeConvention struct {
 	// Language is the canonical language id ("go", "typescript", "python", "rust").
 	Language string
 	// ModuleSegmentSep separates a hierarchical module name into path segments:
-	// "/" for path modules (Go/TS/Rust), "." for dotted modules (Python).
+	// "/" for path modules (Go/TS), "::" for Rust, "." for dotted modules (Python).
 	ModuleSegmentSep string
 	// FileExtensions lists this language's source-file extensions.
 	FileExtensions []string
@@ -151,10 +151,13 @@ func pythonModuleFileCandidates(modulePath string) []string {
 	return []string{slashed + ".py", slashed + ".pyi", slashed + "/__init__.py"}
 }
 
-// rustCrateSubdirs are the conventional top-level directories inside a Cargo
-// crate. Their presence as the second path segment marks the first segment as a
-// crate directory in a root-level workspace layout (<crate>/src/…).
-var rustCrateSubdirs = map[string]bool{"src": true, "tests": true, "benches": true, "examples": true}
+// rustCrateSubdirs maps a Cargo crate's conventional source subdir to the module
+// namespace prefix for files under it. "src" → "" (lib/bin modules map straight to
+// the crate path); tests/benches/examples are separate cargo targets, so their files
+// are namespaced (e.g. crate::tests::…) to stay distinct from lib modules. Membership
+// also marks the first path segment as a crate dir in the root-level workspace layout
+// (<crate>/src/…).
+var rustCrateSubdirs = map[string]string{"src": "", "tests": "tests", "benches": "benches", "examples": "examples"}
 
 // rustFileToModuleKey maps a Rust source file to its crate. It handles the two
 // dominant Cargo workspace layouts: members nested under crates/ (crates/<name>/…)
@@ -177,9 +180,94 @@ func rustFileToModuleKey(file string) string {
 	}
 	// Root-level workspace member: <crate>/{src,tests,benches,examples}/…
 	if dir, rest, found := strings.Cut(file, "/"); found {
-		if sub, _, ok := strings.Cut(rest, "/"); ok && rustCrateSubdirs[sub] {
-			return dir
+		if sub, _, ok := strings.Cut(rest, "/"); ok {
+			if _, isSubdir := rustCrateSubdirs[sub]; isSubdir {
+				return dir
+			}
 		}
 	}
 	return ""
+}
+
+// RustFileToModuleKey maps a Rust source file to its module key ("<crate>::<mod>"),
+// using the crate roots the extractor discovered from cargo metadata. Unlike the
+// crate-only rustFileToModuleKey convention, this resolves to module granularity so
+// size/cohesion metrics see god *modules*, not just god crates. The crate name is
+// supplied (not guessed from the directory), and the within-crate module path is the
+// standard Rust file layout: src/a/b.rs → crate::a::b, src/a/mod.rs → crate::a,
+// src/{lib,main}.rs → crate. Files under tests/benches/examples are separate crates
+// in cargo's model, so they are namespaced (crate::tests::…) to stay distinct from
+// the lib modules and from the cargo-modules/SCIP node ids (which cover lib/bin only).
+//
+// Accepted ceiling: this is filesystem convention, so #[path="…"], inline `mod foo {}`
+// submodules, and include! diverge from rust-analyzer's semantic module tree. For
+// size-skew (god-file) detection a big file is still attributed to one real module,
+// which is sufficient; SCIP-derived mapping would be the precision upgrade. Returns
+// "" for non-.rs files or files outside every known crate root.
+func RustFileToModuleKey(file string, crates []CrateRoot) string {
+	if !strings.HasSuffix(file, ".rs") {
+		return ""
+	}
+	crate, rel, ok := matchCrateRoot(file, crates)
+	if !ok {
+		return ""
+	}
+	// rel is the crate-relative path (e.g. "src/a/b.rs"). Split off the conventional
+	// target subdir; src maps straight to the module path, the rest is namespaced by
+	// the prefix the subdir map carries.
+	sub, within, hasSub := strings.Cut(rel, "/")
+	ns, isSubdir := rustCrateSubdirs[sub]
+	if !hasSub || !isSubdir {
+		return crate.Name // crate-root file outside a recognised subdir (e.g. build.rs)
+	}
+	key := crate.Name
+	if ns != "" {
+		key += "::" + ns
+	}
+	if mod := rustModulePathFromWithin(within); mod != "" {
+		key += "::" + mod
+	}
+	return key
+}
+
+// matchCrateRoot returns the crate whose Dir is the longest path-prefix of file and
+// the crate-relative remainder. A root crate (Dir "") contains every file but at
+// lowest priority, so a nested workspace member always wins. ok=false when no crate
+// contains the file.
+func matchCrateRoot(file string, crates []CrateRoot) (CrateRoot, string, bool) {
+	best, bestLen := -1, -1
+	for i, c := range crates {
+		var pfxLen int
+		switch {
+		case c.Dir == "":
+			pfxLen = 0 // root crate: matches everything, lowest priority
+		case strings.HasPrefix(file, c.Dir+"/"):
+			pfxLen = len(c.Dir)
+		default:
+			continue
+		}
+		if best < 0 || pfxLen > bestLen {
+			best, bestLen = i, pfxLen
+		}
+	}
+	if best < 0 {
+		return CrateRoot{}, "", false
+	}
+	c := crates[best]
+	if c.Dir == "" {
+		return c, file, true
+	}
+	return c, strings.TrimPrefix(file, c.Dir+"/"), true
+}
+
+// rustModulePathFromWithin converts a crate-subdir-relative file path to a "::" module
+// path: "a/b.rs" → "a::b", "a/mod.rs" → "a", "lib.rs"/"main.rs"/"mod.rs" → "".
+func rustModulePathFromWithin(within string) string {
+	p := strings.TrimSuffix(within, ".rs")
+	switch p {
+	case "lib", "main", "mod", "":
+		return ""
+	}
+	p = strings.TrimSuffix(p, "/mod") // a/mod.rs → a
+	return strings.ReplaceAll(p, "/", "::")
 }

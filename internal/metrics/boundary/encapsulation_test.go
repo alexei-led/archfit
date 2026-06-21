@@ -21,6 +21,9 @@ const (
 	pathE = "pkg/e/e.go"
 )
 
+// Band literals reused across boundary metric tests (deduplicated for goconst).
+const bandCritical = "critical"
+
 // Band/confidence string constants used across boundary metric tests.
 const (
 	bandMixed = "mixed"

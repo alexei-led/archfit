@@ -40,9 +40,15 @@ type Extractor struct {
 	lastModuleGraphCov diagnostic.Coverage // cargo-modules coverage from most recent Extract call
 }
 
-// New returns an Extractor configured with the given runner and config.
+// New returns an Extractor configured with the given runner and config. The
+// module-graph coverage is seeded to a well-formed absent record so a caller that
+// reads LastModuleGraphCoverage before Extract never sees a zero-value Coverage.
 func New(runner toolrun.Runner, cfg config.ExtractConfig) *Extractor {
-	return &Extractor{runner: runner, cfg: cfg}
+	return &Extractor{
+		runner:             runner,
+		cfg:                cfg,
+		lastModuleGraphCov: diagnostic.Coverage{Tool: toolCargoModules, Status: statusAbsent},
+	}
 }
 
 // Name returns the language identifier for this extractor.
@@ -124,6 +130,11 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	if err != nil {
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/rust: parse output: %w", err)
 	}
+
+	// Carry crate roots (repo-relative src dir + crate name) so the filesystem-free
+	// core ring can resolve .rs files to module keys ("<crate>::<mod>") for the
+	// size/cohesion metrics — the crate name is not derivable from a path alone.
+	facts.CrateRoots = crateRoots(s.Root, members)
 
 	// Opt-in intra-crate module graph via cargo-modules (tools.cargo-modules.enabled: on).
 	// When enabled, module-level nodes and edges are merged into facts alongside the
@@ -248,7 +259,13 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 			memberNames[p.Name] = struct{}{}
 		}
 	}
+	idFallback := false
 	if len(members) == 0 {
+		// workspace_members listed IDs but none matched a package ID — a cargo
+		// metadata format drift (e.g. the cargo 1.96 `path+file://…#name@ver` change).
+		// Under --no-deps every package is a member, so promoting them all is correct,
+		// but record it so the regression is visible, not silent.
+		idFallback = true
 		for _, p := range meta.Packages {
 			members = append(members, p)
 			memberNames[p.Name] = struct{}{}
@@ -308,12 +325,39 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 		FilesApplicable: len(members),
 		Status:          statusOK,
 	}
+	if idFallback {
+		cov.Reason = "workspace_members IDs matched no package (cargo metadata format drift?); treated all packages as members"
+	}
 	facts := graph.Facts{
 		Nodes:    nodes,
 		Edges:    edges,
 		Language: langRust,
 	}
 	return facts, members, cov, nil
+}
+
+// crateRoots maps each workspace member to its repo-relative source dir and crate
+// name so the core ring can resolve a .rs path to its module key. cargo reports an
+// absolute manifest_path; members whose dir is outside the analysed root, or that
+// cannot be made relative to it, are skipped (best-effort — never fails extraction).
+// A member at the root itself yields Dir "".
+func crateRoots(root string, members []cargoPackage) []graph.CrateRoot {
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return nil
+	}
+	out := make([]graph.CrateRoot, 0, len(members))
+	for _, m := range members {
+		rel, err := filepath.Rel(rootAbs, filepath.Dir(m.ManifestPath))
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue // outside the analysed root
+		}
+		if rel == "." {
+			rel = ""
+		}
+		out = append(out, graph.CrateRoot{Dir: filepath.ToSlash(rel), Name: m.Name})
+	}
+	return out
 }
 
 // absentCoverage returns a Coverage record indicating cargo was not found.
