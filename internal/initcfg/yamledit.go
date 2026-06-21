@@ -431,7 +431,7 @@ func resolveAddModulesNoSection(eds []AddModuleEdit, pf parsedFile) *splice {
 		if pf.findModule(ed.Def.Name) != nil {
 			continue // already exists — skip
 		}
-		writeModuleStanza(&b, "  ", ed.Def.Name, ed.Def, pf.allowedLayers, ed.Ann, true)
+		writeModuleStanza(&b, ed.Def.Name, ed.Def, pf.allowedLayers, ed.Ann, true)
 		wrote++
 	}
 	if wrote == 0 {
@@ -454,7 +454,7 @@ func resolveAddModule(ed AddModuleEdit, pf parsedFile) *splice {
 	}
 
 	var b strings.Builder
-	writeModuleStanza(&b, "  ", ed.Def.Name, ed.Def, pf.allowedLayers, ed.Ann, true)
+	writeModuleStanza(&b, ed.Def.Name, ed.Def, pf.allowedLayers, ed.Ann, true)
 	stanza := b.String()
 
 	if pf.modulesKeyLine > 0 {
