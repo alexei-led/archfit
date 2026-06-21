@@ -5,6 +5,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
+	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
 const (
@@ -24,58 +25,59 @@ func TestCodeStructureDistance(t *testing.T) {
 		name string
 		from string
 		to   string
+		lang string
 		want coupling.Distance
 	}{
-		// Empty inputs.
-		{name: "empty from", from: "", to: modInternalFoo, want: coupling.DistanceUnknown},
-		{name: "empty to", from: modInternalFoo, to: "", want: coupling.DistanceUnknown},
-		{name: "both empty", from: "", to: "", want: coupling.DistanceUnknown},
+		// Empty inputs (language irrelevant — returns before segmenting).
+		{name: "empty from", from: "", to: modInternalFoo, lang: graph.LangGo, want: coupling.DistanceUnknown},
+		{name: "empty to", from: modInternalFoo, to: "", lang: graph.LangGo, want: coupling.DistanceUnknown},
+		{name: "both empty", from: "", to: "", lang: graph.LangGo, want: coupling.DistanceUnknown},
 
 		// Two flat single-segment names share no tree structure → DiffOwner.
 		// (Explicit same-owner config is resolved upstream in classifyDistance.)
-		{name: "flat a vs b", from: "a", to: "b", want: coupling.DistanceCrossModuleDiffOwner},
-		{name: "flat alpha vs beta", from: "alpha", to: "beta", want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "flat a vs b", from: "a", to: "b", lang: graph.LangGo, want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "flat alpha vs beta", from: "alpha", to: "beta", lang: graph.LangGo, want: coupling.DistanceCrossModuleDiffOwner},
 
 		// Siblings (same parent, different last segment).
-		{name: "sibling metrics packages", from: modInternalMetricsBoundary, to: "internal/metrics/modularity", want: coupling.DistanceCrossModuleSameOwner},
-		{name: "sibling top-level", from: modCmdArchfit, to: "cmd/other", want: coupling.DistanceCrossModuleSameOwner},
-		{name: "sibling two-deep", from: "pkg/a", to: "pkg/b", want: coupling.DistanceCrossModuleSameOwner},
+		{name: "sibling metrics packages", from: modInternalMetricsBoundary, to: "internal/metrics/modularity", lang: graph.LangGo, want: coupling.DistanceCrossModuleSameOwner},
+		{name: "sibling top-level", from: modCmdArchfit, to: "cmd/other", lang: graph.LangGo, want: coupling.DistanceCrossModuleSameOwner},
+		{name: "sibling two-deep", from: "pkg/a", to: "pkg/b", lang: graph.LangGo, want: coupling.DistanceCrossModuleSameOwner},
 
 		// Parent-child (shorter path is a prefix of the longer).
-		{name: "parent-child internal/metrics", from: "internal/metrics", to: modInternalMetricsBoundary, want: coupling.DistanceCrossModuleSameOwner},
+		{name: "parent-child internal/metrics", from: "internal/metrics", to: modInternalMetricsBoundary, lang: graph.LangGo, want: coupling.DistanceCrossModuleSameOwner},
 
 		// Different subtrees under the same root.
-		{name: "different subtrees under internal", from: "internal/classify", to: modInternalMetricsBoundary, want: coupling.DistanceCrossModuleDiffOwner},
-		{name: "different subtrees deep", from: "internal/extract/go", to: "internal/metrics/modularity", want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "different subtrees under internal", from: "internal/classify", to: modInternalMetricsBoundary, lang: graph.LangGo, want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "different subtrees deep", from: "internal/extract/go", to: "internal/metrics/modularity", lang: graph.LangGo, want: coupling.DistanceCrossModuleDiffOwner},
 
 		// Different top-level roots (no common prefix segments).
-		{name: "cmd vs internal", from: modCmdArchfit, to: "internal/extract/py", want: coupling.DistanceCrossModuleDiffOwner},
-		{name: "services vs infra", from: "services/payments", to: "infra/db", want: coupling.DistanceCrossModuleDiffOwner},
-		{name: "single vs multi-segment", from: "a", to: modInternalFoo, want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "cmd vs internal", from: modCmdArchfit, to: "internal/extract/py", lang: graph.LangGo, want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "services vs infra", from: "services/payments", to: "infra/db", lang: graph.LangGo, want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "single vs multi-segment", from: "a", to: modInternalFoo, lang: graph.LangGo, want: coupling.DistanceCrossModuleDiffOwner},
 
 		// Plan examples: siblings closer than distant trees.
-		{name: "plan: metrics siblings are closer", from: "metrics/boundary", to: "metrics/modularity", want: coupling.DistanceCrossModuleSameOwner},
-		{name: "plan: cmd vs extract is farther", from: modCmdArchfit, to: "extract/py", want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "plan: metrics siblings are closer", from: "metrics/boundary", to: "metrics/modularity", lang: graph.LangGo, want: coupling.DistanceCrossModuleSameOwner},
+		{name: "plan: cmd vs extract is farther", from: modCmdArchfit, to: "extract/py", lang: graph.LangGo, want: coupling.DistanceCrossModuleDiffOwner},
 
 		// Dotted Python module names: split on "." so dotted siblings are not all
 		// collapsed to single segments (the bug that drove the BC advisory flood).
-		{name: "py dotted siblings", from: "pkg.foo", to: "pkg.bar", want: coupling.DistanceCrossModuleSameOwner},
-		{name: "py dotted deep siblings", from: "pkg.metrics.boundary", to: "pkg.metrics.modularity", want: coupling.DistanceCrossModuleSameOwner},
-		{name: "py dotted parent-child", from: "pkg.metrics", to: "pkg.metrics.boundary", want: coupling.DistanceCrossModuleSameOwner},
-		{name: "py dotted distant trees", from: "pkg.api.routes", to: "pkg.store.db", want: coupling.DistanceCrossModuleDiffOwner},
-		{name: "py dotted distant deep trees", from: "a.b.c.d", to: "a.x.y.z", want: coupling.DistanceCrossModuleDiffOwner},
-		{name: "py flat single names unchanged", from: "core", to: "api", want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "py dotted siblings", from: "pkg.foo", to: "pkg.bar", lang: graph.LangPython, want: coupling.DistanceCrossModuleSameOwner},
+		{name: "py dotted deep siblings", from: "pkg.metrics.boundary", to: "pkg.metrics.modularity", lang: graph.LangPython, want: coupling.DistanceCrossModuleSameOwner},
+		{name: "py dotted parent-child", from: "pkg.metrics", to: "pkg.metrics.boundary", lang: graph.LangPython, want: coupling.DistanceCrossModuleSameOwner},
+		{name: "py dotted distant trees", from: "pkg.api.routes", to: "pkg.store.db", lang: graph.LangPython, want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "py dotted distant deep trees", from: "a.b.c.d", to: "a.x.y.z", lang: graph.LangPython, want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "py flat single names unchanged", from: "core", to: "api", lang: graph.LangPython, want: coupling.DistanceCrossModuleDiffOwner},
 
-		// Slash paths with a dotted filename keep their slash-split shape (slash
-		// wins over dot): two files in one dir stay siblings, not split on ".ts".
-		{name: "ts dotted filenames stay siblings", from: "src/utils.ts", to: "src/helpers.ts", want: coupling.DistanceCrossModuleSameOwner},
+		// TS module names are slash-separated, so two files in one dir keep their
+		// two-segment shape and stay siblings — never split on the ".ts" suffix.
+		{name: "ts dotted filenames stay siblings", from: "src/utils.ts", to: "src/helpers.ts", lang: graph.LangTypeScript, want: coupling.DistanceCrossModuleSameOwner},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := codeStructureDistance(tc.from, tc.to)
+			got := codeStructureDistance(tc.from, tc.to, tc.lang)
 			if got != tc.want {
-				t.Errorf("codeStructureDistance(%q, %q) = %q, want %q", tc.from, tc.to, got, tc.want)
+				t.Errorf("codeStructureDistance(%q, %q, %q) = %q, want %q", tc.from, tc.to, tc.lang, got, tc.want)
 			}
 		})
 	}
@@ -145,7 +147,7 @@ func TestClassifyDistance_Precedence(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mi := buildModuleIndex(tc.modules)
-			got := classifyDistance(fromPath, toPath, mi, tc.modules, tc.explicit)
+			got := classifyDistance(fromPath, toPath, graph.LangGo, mi, tc.modules, tc.explicit)
 			if got != tc.want {
 				t.Errorf("classifyDistance = %q, want %q", got, tc.want)
 			}

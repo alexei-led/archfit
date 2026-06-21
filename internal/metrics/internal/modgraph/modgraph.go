@@ -58,28 +58,12 @@ func DominantLanguage(g *graph.Graph) string {
 }
 
 // FileToModuleKey maps a git file path to the same module unit as ModuleKey, so
-// per-file churn/co-change aggregates onto graph nodes.
+// per-file churn/co-change aggregates onto graph nodes. The per-language mapping
+// lives in the NodeConvention registry (model ring): Go collapses to the package
+// directory, Python to the dotted module, and TS/JS (or any unknown language)
+// passes the file through unchanged.
 func FileToModuleKey(file, lang string) string {
-	switch lang {
-	case "python":
-		if !strings.HasSuffix(file, ".py") {
-			return ""
-		}
-		p := strings.TrimSuffix(file, ".py")
-		p = strings.TrimPrefix(p, "src/")
-		p = strings.TrimSuffix(p, "/__init__")
-		return strings.ReplaceAll(p, "/", ".")
-	case "go":
-		if !strings.HasSuffix(file, ".go") {
-			return ""
-		}
-		if i := strings.LastIndexByte(file, '/'); i >= 0 {
-			return file[:i]
-		}
-		return ""
-	default: // typescript / javascript: the file is the node
-		return file
-	}
+	return graph.BuiltinConventions.Lookup(lang).FileToModuleKey(file)
 }
 
 // ModuleChurn aggregates per-file churn onto module keys.

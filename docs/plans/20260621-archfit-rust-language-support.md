@@ -157,17 +157,17 @@ moduleFileCandidatesFn, fileToModuleKeyFn}` + methods `ModuleSegments`,
 
 ### Task 5: Rewire core-ring leak sites to `NodeConvention`
 
-- [ ] `model/graph/graph.go` `languagePriority()` → `BuiltinConventions.Lookup(lang).Priority`
-- [ ] `classify/distance_structure.go`: `moduleSegments(mod)` → `moduleSegments(mod, lang)`;
+- [x] `model/graph/graph.go` `languagePriority()` → `BuiltinConventions.Lookup(lang).Priority`
+- [x] `classify/distance_structure.go`: `moduleSegments(mod)` → `moduleSegments(mod, lang)`;
       thread `e.Language` from the edge into `codeStructureDistance`
-- [ ] `metrics/boundary/change_locality.go`: `nodeFileCandidates(n)` takes a looked-up
+- [x] `metrics/boundary/change_locality.go`: `nodeFileCandidates(n)` takes a looked-up
       `graph.NodeConvention` (via `modgraph.DominantLanguage(g)`) → `conv.ModuleFileCandidates`
-- [ ] `metrics/internal/modgraph/modgraph.go`: `FileToModuleKey(file,lang)` →
+- [x] `metrics/internal/modgraph/modgraph.go`: `FileToModuleKey(file,lang)` →
       `BuiltinConventions.Lookup(lang).FileToModuleKey(file)`; leave `ModuleKey` `.go`-collapse
       as-is (Rust/Py module IDs pass through — verified)
-- [ ] update/extend the affected packages' unit tests for the new signatures
-- [ ] run `go test ./internal/engine/ -run TestGolden` — **byte-identical** + `TestArchImports`
-- [ ] run `make test` + `make lint` — must pass before Task 6
+- [x] update/extend the affected packages' unit tests for the new signatures
+- [x] run `go test ./internal/engine/ -run TestGolden` — **byte-identical** + `TestArchImports`
+- [x] run `make test` + `make lint` — must pass before Task 6
 
 ### Task 6: Inject primary-extractor tool names via `RunInput` (remove score.go literals)
 

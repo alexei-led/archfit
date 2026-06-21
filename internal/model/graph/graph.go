@@ -99,21 +99,6 @@ const (
 	LangRust       = "rust"
 )
 
-// languagePriority returns a numeric priority for language-based tiebreaking.
-// Lower number = higher priority.
-func languagePriority(lang string) int {
-	switch lang {
-	case LangGo:
-		return 0
-	case LangTypeScript:
-		return 1
-	case LangPython:
-		return 2
-	default:
-		return 3
-	}
-}
-
 // Facts holds raw extractor output — nodes, edges, and unresolved counts —
 // before deduplication and sorting.
 type Facts struct {
@@ -167,7 +152,7 @@ func Build(facts []Facts) *Graph {
 	winners := make(map[canonicalKey]candidate)
 
 	for _, f := range facts {
-		prio := languagePriority(f.Language)
+		prio := BuiltinConventions.Lookup(f.Language).Priority
 		for _, e := range f.Edges {
 			k := edgeKey(e)
 			existing, ok := winners[k]

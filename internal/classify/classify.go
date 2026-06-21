@@ -134,7 +134,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) coupling.Cl
 	}
 
 	// --- Distance ---
-	dist := classifyDistance(fromPath, toPath, mi, modules, c.ExplicitOwners)
+	dist := classifyDistance(fromPath, toPath, e.Language, mi, modules, c.ExplicitOwners)
 	// Role-aware downgrade: a composition root (or a generated/test module) reaches
 	// into the modules it wires by design — that fan-out is cohesion, not high-
 	// distance coupling — so its outbound edges must never be scored as unbalanced.
@@ -281,7 +281,7 @@ func strengthFromHint(hint string) coupling.Strength {
 // names as different subtrees) can apply.
 //
 // runtime_adjust (+1 level for async bridges) is a Phase-4 addition (Task 12).
-func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[string]config.ModuleDef, explicitOwners map[string]bool) coupling.Distance {
+func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map[string]config.ModuleDef, explicitOwners map[string]bool) coupling.Distance {
 	fromMod, fromOK := mi.moduleFor(fromPath)
 	toMod, toOK := mi.moduleFor(toPath)
 
@@ -318,7 +318,7 @@ func classifyDistance(fromPath, toPath string, mi moduleIndex, modules map[strin
 	}
 
 	// Step 4: git-author degenerate or no ownership → code structure.
-	return maxDistance(codeStructureDistance(fromMod, toMod), deploy)
+	return maxDistance(codeStructureDistance(fromMod, toMod, lang), deploy)
 }
 
 // classifyVolatility derives domain volatility for the to-module using three

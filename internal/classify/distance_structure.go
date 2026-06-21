@@ -3,10 +3,9 @@
 package classify
 
 import (
-	"strings"
-
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
+	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
 // codeStructureDistance returns the structural distance between two module names
@@ -35,13 +34,13 @@ import (
 // classifyDistance resolves explicit same-owner config BEFORE reaching here, so
 // an owned flat module is not mis-distanced by this fallback.
 // Returns DistanceUnknown when either name is empty.
-func codeStructureDistance(fromMod, toMod string) coupling.Distance {
+func codeStructureDistance(fromMod, toMod, lang string) coupling.Distance {
 	if fromMod == "" || toMod == "" {
 		return coupling.DistanceUnknown
 	}
 
-	fromParts := moduleSegments(fromMod)
-	toParts := moduleSegments(toMod)
+	fromParts := moduleSegments(fromMod, lang)
+	toParts := moduleSegments(toMod, lang)
 
 	if len(fromParts) == 1 && len(toParts) == 1 {
 		return coupling.DistanceCrossModuleDiffOwner
@@ -67,17 +66,13 @@ func codeStructureDistance(fromMod, toMod string) coupling.Distance {
 	return coupling.DistanceCrossModuleDiffOwner
 }
 
-// moduleSegments splits a hierarchical module name into its path segments. Go/TS
-// modules are slash-separated ("internal/metrics/boundary"); Python modules are
-// dot-separated ("pkg.metrics.boundary"). A name is split on whichever separator
-// it contains: slash wins when present (so slash paths with dotted filenames such
-// as "src/utils.ts" keep their pre-existing two-segment shape), otherwise the
-// name is treated as dotted. A flat name with neither separator is one segment.
-func moduleSegments(mod string) []string {
-	if strings.Contains(mod, "/") {
-		return strings.Split(mod, "/")
-	}
-	return strings.Split(mod, ".")
+// moduleSegments splits a hierarchical module name into its path segments using
+// the edge language's NodeConvention separator: Go/TS/Rust modules are
+// slash-separated ("internal/metrics/boundary"); Python modules are dot-separated
+// ("pkg.metrics.boundary"). An unknown language defaults to slash (see
+// graph.ConventionRegistry.Lookup). A flat name with no separator is one segment.
+func moduleSegments(mod, lang string) []string {
+	return graph.BuiltinConventions.Lookup(lang).ModuleSegments(mod)
 }
 
 // ownershipDistance returns the distance contribution from module ownership.
