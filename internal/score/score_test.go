@@ -506,3 +506,42 @@ func TestAnalysisConfidence(t *testing.T) {
 		})
 	}
 }
+
+// TestAnalysisConfidence_PrimaryExtractorTools asserts the meta dimension checks
+// the Diagnostic's injected PrimaryExtractorTools list (not a hardcoded literal)
+// and falls back to the built-in default when the list is empty.
+func TestAnalysisConfidence_PrimaryExtractorTools(t *testing.T) {
+	// coverage n/a forces the primary-extractor penalty branch. The only primary
+	// tool with ok coverage is "cargo"; all semantic tools are present so they add
+	// no penalty.
+	base := func() diagnostic.Diagnostic {
+		d := diagnostic.New()
+		d.Metrics = []diagnostic.MetricResult{metric("coverage", 0, "n/a", "low")}
+		d.ToolCoverage = []diagnostic.Coverage{
+			okCov("cargo"),
+			okCov("scip"), okCov("gitnexus"), okCov("lizard"), okCov("jscpd"),
+		}
+		return d
+	}
+
+	// Injected list names the present tool → no primary extractor is absent → no penalty.
+	injected := base()
+	injected.PrimaryExtractorTools = []string{"cargo"}
+	injectedMeta := dimByName(t, Synthesize(injected), DimAnalysisConfidence)
+	if injectedMeta.Value != 60 {
+		t.Errorf("injected list value = %d, want 60 (no primary absent)", injectedMeta.Value)
+	}
+
+	// Empty list → default set (go/packages, dependency-cruiser, grimp), all absent
+	// → −45 penalty. Proves the empty-slice fallback uses the built-in default.
+	fallback := base() // PrimaryExtractorTools left empty
+	fallbackMeta := dimByName(t, Synthesize(fallback), DimAnalysisConfidence)
+	if fallbackMeta.Value != 15 {
+		t.Errorf("empty-list fallback value = %d, want 15 (default primaries absent)", fallbackMeta.Value)
+	}
+
+	if injectedMeta.Value <= fallbackMeta.Value {
+		t.Errorf("injected list did not override default: injected=%d fallback=%d",
+			injectedMeta.Value, fallbackMeta.Value)
+	}
+}

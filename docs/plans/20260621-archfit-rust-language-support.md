@@ -171,13 +171,13 @@ moduleFileCandidatesFn, fileToModuleKeyFn}` + methods `ModuleSegments`,
 
 ### Task 6: Inject primary-extractor tool names via `RunInput` (remove score.go literals)
 
-- [ ] add `PrimaryExtractorTools []string` to `engine.RunInput`; pass it through to
+- [x] add `PrimaryExtractorTools []string` to `engine.RunInput`; pass it through to
       `score` synthesis in place of the `primaryExtractors` package var in `score.go`
-- [ ] `cmd/archfit/pipeline.go`: set the field from the (Task 7) registry helper; until
+- [x] `cmd/archfit/pipeline.go`: set the field from the (Task 7) registry helper; until
       then a temporary literal `["go/packages","dependency-cruiser","grimp"]` keeps output stable
-- [ ] update `score` + `engine` tests for the injected field; assert empty-slice fallback
-- [ ] run `go test ./internal/engine/ -run TestGolden` — **byte-identical**
-- [ ] run `make test` + `make lint` — must pass before Task 7
+- [x] update `score` + `engine` tests for the injected field; assert empty-slice fallback
+- [x] run `go test ./internal/engine/ -run TestGolden` — **byte-identical**
+- [x] run `make test` + `make lint` — must pass before Task 7
 
 ### Task 7: Add `cmd/archfit/registry.go` language registry; rewire pipeline/doctor/install
 

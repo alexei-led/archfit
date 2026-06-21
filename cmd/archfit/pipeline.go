@@ -237,6 +237,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		Signals:     change,
 		Now:         time.Now(),
 		ConfigHash:  configHash,
+		// TODO(Task 7): replace with primaryExtractorTools() from the language
+		// registry. Temporary literal keeps scorecard output stable meanwhile.
+		PrimaryExtractorTools: []string{"go/packages", "dependency-cruiser", "grimp"},
 	})
 	if err != nil {
 		return diag, err

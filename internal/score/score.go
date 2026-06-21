@@ -438,7 +438,7 @@ func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex) Dimension {
 		// missing primary extractor so an all-absent repo collapses to critical.
 		dim.Evidence = append(dim.Evidence, "file extraction coverage: n/a (no extractor contributed)")
 		primaryAbsent := 0
-		for _, tool := range primaryExtractors {
+		for _, tool := range primaryExtractorTools(d) {
 			if statuses[tool] != diagnostic.StatusOK {
 				primaryAbsent++
 			}
@@ -461,11 +461,22 @@ func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex) Dimension {
 	return dim
 }
 
-// primaryExtractors are the per-language file extractors that produce the coverage
-// facts. Their absence (when coverage is n/a) means the repo was not analysed at
-// all and drives the meta confidence toward critical. Checked by exact
-// ToolCoverage.Tool name.
-var primaryExtractors = []string{"go/packages", "dependency-cruiser", "grimp"}
+// defaultPrimaryExtractors is the fallback set of per-language file extractors
+// used when a Diagnostic carries no injected PrimaryExtractorTools (older
+// diagnostics, direct score callers). The composition root normally supplies the
+// authoritative list from the language registry; this keeps score correct when it
+// does not. Checked by exact ToolCoverage.Tool name.
+var defaultPrimaryExtractors = []string{"go/packages", "dependency-cruiser", "grimp"}
+
+// primaryExtractorTools returns the file extractors whose coverage the scorecard
+// treats as load-bearing: the Diagnostic's injected list, or the built-in default
+// when none was injected.
+func primaryExtractorTools(d diagnostic.Diagnostic) []string {
+	if len(d.PrimaryExtractorTools) > 0 {
+		return d.PrimaryExtractorTools
+	}
+	return defaultPrimaryExtractors
+}
 
 // semanticTools are the optional deep-analysis tools whose absence lowers the
 // meta confidence. Checked by exact ToolCoverage.Tool name.

@@ -50,6 +50,11 @@ type RunInput struct {
 	Labels      []labels.Label            // pinned coupling labels; nil = none
 	Signals     signal.RunSignals
 	Now         time.Time
+	// PrimaryExtractorTools names the per-language file extractors whose coverage
+	// the scorecard treats as load-bearing (see diagnostic.Diagnostic). Supplied by
+	// the composition root from the language registry; attached to the Diagnostic so
+	// the score package needs no hardcoded tool list. Empty = score's default set.
+	PrimaryExtractorTools []string
 	// ConfigHash is the sha256 hex digest of the raw .archfit.yaml bytes,
 	// computed by the caller before parsing. Empty when no config file was loaded.
 	// Attached to the Diagnostic for reproducibility: same config + same repo → same hash.
@@ -218,18 +223,19 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	delta := deltaReport(in.Scope.Mode, resolvedFindings, in.Accepted, in.Scope.Changed)
 
 	d := diagnostic.Diagnostic{
-		SchemaVersion:  diagnostic.SchemaVersion,
-		Verdict:        verdict,
-		Base:           in.Mode.Base,
-		Head:           in.Mode.Head,
-		ConfigHash:     in.ConfigHash,
-		Metrics:        metricResults,
-		Findings:       resolvedFindings,
-		FileFacts:      fileFacts,
-		DynamicImports: dynamicImports,
-		AgentTasks:     []diagnostic.AgentTask{},
-		ToolCoverage:   ex.coverages,
-		Delta:          delta,
+		SchemaVersion:         diagnostic.SchemaVersion,
+		Verdict:               verdict,
+		Base:                  in.Mode.Base,
+		Head:                  in.Mode.Head,
+		ConfigHash:            in.ConfigHash,
+		PrimaryExtractorTools: in.PrimaryExtractorTools,
+		Metrics:               metricResults,
+		Findings:              resolvedFindings,
+		FileFacts:             fileFacts,
+		DynamicImports:        dynamicImports,
+		AgentTasks:            []diagnostic.AgentTask{},
+		ToolCoverage:          ex.coverages,
+		Delta:                 delta,
 		Summary: diagnostic.Summary{
 			GateFindings:   gateNew,
 			Warnings:       warnings,
