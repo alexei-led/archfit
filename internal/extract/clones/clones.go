@@ -27,16 +27,17 @@ import (
 
 const (
 	toolName      = "jscpd"
-	statusOK      = "ok"
-	statusPartial = "partial"
-	statusAbsent  = "absent"
 	clonesTimeout = 3 * time.Minute
 	reportFile    = "jscpd-report.json"
 	flagOutput    = "--output"
 
-	// Absent/partial-coverage reasons: why functional-candidate (clone) detection
-	// is n/a and the enable step. Static strings so a double-run stays byte-stable.
-	reasonDisabled     = "clone detection is opt-in — set `tools.clones.enabled: true` in .archfit.yaml"
+	// Coverage reasons: why functional-candidate (clone) detection is n/a.
+	// Static strings so a double-run stays byte-stable.
+	// reasonDisabled is used when tools.clones.enabled is off — the tool may be
+	// installed, but the user deliberately opted out. The action is to enable it
+	// in config, NOT to install it. reasonNotInstalled is used when the tool is
+	// genuinely absent from the environment.
+	reasonDisabled     = "clone detection disabled by config — set `tools.clones.enabled: on` in .archfit.yaml to enable"
 	reasonNotInstalled = "jscpd not found — install it (`npm install -g jscpd`) to enable clone detection"
 	reasonRunFailed    = "jscpd run failed or its report was unreadable"
 )
@@ -47,20 +48,23 @@ const (
 // and a nil error.
 func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) ([]clone.Cluster, diagnostic.Coverage, error) {
 	if !enabled {
-		return nil, diagnostic.Coverage{Tool: toolName, Status: statusAbsent, Reason: reasonDisabled}, nil
+		// Disabled by config — tool may or may not be installed. Report as
+		// disabled (not absent) so the pipeline does not generate an "install"
+		// coverage gap for a deliberate opt-out.
+		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusDisabled, Reason: reasonDisabled}, nil
 	}
 
 	if _, found := runner.Detect(ctx, toolName); !found {
-		return nil, diagnostic.Coverage{Tool: toolName, Status: statusAbsent, Reason: reasonNotInstalled}, nil
+		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusAbsent, Reason: reasonNotInstalled}, nil
 	}
 
 	tmp, err := os.MkdirTemp("", "archfit-clones-")
 	if err != nil {
-		return nil, diagnostic.Coverage{Tool: toolName, Status: statusAbsent, Reason: reasonRunFailed}, nil
+		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusAbsent, Reason: reasonRunFailed}, nil
 	}
 	defer os.RemoveAll(tmp) //nolint:errcheck
 
-	partial := diagnostic.Coverage{Tool: toolName, Status: statusPartial, Reason: reasonRunFailed}
+	partial := diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusPartial, Reason: reasonRunFailed}
 
 	// jscpd --reporters json --output <tmp> <root>
 	// The JSON reporter writes jscpd-report.json into the output directory.
@@ -92,7 +96,7 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) 
 		Tool:            toolName,
 		FilesSeen:       filesScanned,
 		FilesApplicable: filesScanned,
-		Status:          statusOK,
+		Status:          diagnostic.StatusOK,
 	}
 	return clusters, cov, nil
 }

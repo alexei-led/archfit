@@ -293,6 +293,34 @@ func TestDiagnostic_CoverageGapsOmitEmpty(t *testing.T) {
 	}
 }
 
+// TestCoverageStatusConstants ensures all status constants have distinct,
+// stable values. A change here would break the disabled-vs-absent contract.
+func TestCoverageStatusConstants(t *testing.T) {
+	cases := []struct {
+		name string
+		val  string
+		want string
+	}{
+		{"StatusOK", diagnostic.StatusOK, "ok"},
+		{"StatusPartial", diagnostic.StatusPartial, "partial"},
+		{"StatusAbsent", diagnostic.StatusAbsent, "absent"},
+		{"StatusDisabled", diagnostic.StatusDisabled, "disabled"},
+	}
+	for _, tc := range cases {
+		if tc.val != tc.want {
+			t.Errorf("%s = %q, want %q", tc.name, tc.val, tc.want)
+		}
+	}
+	// All constants must be distinct.
+	seen := map[string]string{}
+	for _, tc := range cases {
+		if prev, dup := seen[tc.val]; dup {
+			t.Errorf("duplicate status value %q shared by %s and %s", tc.val, prev, tc.name)
+		}
+		seen[tc.val] = tc.name
+	}
+}
+
 func TestDiagnostic_SchemaVersionInJSON(t *testing.T) {
 	d := diagnostic.New()
 	data, err := json.Marshal(d)

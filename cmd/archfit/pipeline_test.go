@@ -61,6 +61,21 @@ func TestBuildCoverageGaps(t *testing.T) {
 			cfg:       cfgWarn,
 			wantTools: []string{toolGoPackages, toolGrimp, toolJscpd},
 		},
+		{
+			// A tool disabled by config (StatusDisabled) must NOT produce a coverage
+			// gap — the user deliberately opted out; telling them to "install" is wrong.
+			name:      "disabled-by-config tool produces no gap",
+			cov:       []diagnostic.Coverage{{Tool: toolJscpd, Status: diagnostic.StatusDisabled}},
+			cfg:       cfgWarn,
+			wantTools: nil,
+		},
+		{
+			// Partial coverage is informational, not an install prompt.
+			name:      "partial tool produces no gap",
+			cov:       []diagnostic.Coverage{{Tool: toolJscpd, Status: diagnostic.StatusPartial}},
+			cfg:       cfgWarn,
+			wantTools: nil,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
