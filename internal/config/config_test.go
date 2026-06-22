@@ -730,6 +730,141 @@ func TestLoad_SelfConfig(t *testing.T) {
 	}
 }
 
+// TestSelfConfig_ExtractModuleMap verifies that all known internal/extract
+// sub-packages are declared as explicit modules in the self-config, each with
+// layer: adapter and role: adapter. This prevents accidental coverage by the
+// broad internal/extract fallback stanza and makes adapter boundaries visible.
+func TestSelfConfig_ExtractModuleMap(t *testing.T) {
+	// Go tests run with cwd = package dir (internal/config); repo root is two levels up.
+	cfg, err := config.Load(context.Background(), "../../.archfit.yaml")
+	if err != nil {
+		t.Fatalf("Load self-config: %v", err)
+	}
+
+	// These are the actual directories that exist under internal/extract.
+	wantExtractModules := []string{
+		"internal/extract/golang",
+		"internal/extract/ts",
+		"internal/extract/py",
+		"internal/extract/rust",
+		"internal/extract/scip",
+		"internal/extract/astgrep",
+		"internal/extract/deployunit",
+		"internal/extract/runtime",
+		"internal/extract/dynimports",
+		"internal/extract/clones",
+		"internal/extract/complexity",
+		"internal/extract/loc",
+		"internal/extract/gitnexus",
+	}
+
+	for _, modName := range wantExtractModules {
+		t.Run(modName, func(t *testing.T) {
+			def, ok := cfg.Modules[modName]
+			if !ok {
+				t.Fatalf("module %q not found in self-config", modName)
+			}
+			if def.Layer != layerAdapter {
+				t.Errorf("module %q: layer = %q, want adapter", modName, def.Layer)
+			}
+			if def.Role != config.RoleAdapter {
+				t.Errorf("module %q: role = %q, want adapter", modName, def.Role)
+			}
+		})
+	}
+}
+
+// TestSelfConfig_HistoryIsAdapter verifies that internal/history is declared as
+// layer: adapter (git I/O adapter, not support).
+func TestSelfConfig_HistoryIsAdapter(t *testing.T) {
+	cfg, err := config.Load(context.Background(), "../../.archfit.yaml")
+	if err != nil {
+		t.Fatalf("Load self-config: %v", err)
+	}
+	def, ok := cfg.Modules["internal/history"]
+	if !ok {
+		t.Fatal("module internal/history not found in self-config")
+	}
+	if def.Layer != layerAdapter {
+		t.Errorf("internal/history: layer = %q, want adapter", def.Layer)
+	}
+	if def.Role != config.RoleAdapter {
+		t.Errorf("internal/history: role = %q, want adapter", def.Role)
+	}
+}
+
+// TestSelfConfig_ScoreIsCore verifies that internal/score has an explicit module
+// stanza in the self-config and is classified as core.
+func TestSelfConfig_ScoreIsCore(t *testing.T) {
+	cfg, err := config.Load(context.Background(), "../../.archfit.yaml")
+	if err != nil {
+		t.Fatalf("Load self-config: %v", err)
+	}
+	def, ok := cfg.Modules["internal/score"]
+	if !ok {
+		t.Fatal("module internal/score not found in self-config: add an explicit stanza so it is not hidden by the internal/** fallback")
+	}
+	if def.Layer != layerCore {
+		t.Errorf("internal/score: layer = %q, want core", def.Layer)
+	}
+}
+
+// TestSelfConfig_CmdIsCompositionRoot verifies that cmd/archfit carries
+// role: composition_root so the distance model treats its fan-out as cohesion,
+// not high-distance coupling.
+func TestSelfConfig_CmdIsCompositionRoot(t *testing.T) {
+	cfg, err := config.Load(context.Background(), "../../.archfit.yaml")
+	if err != nil {
+		t.Fatalf("Load self-config: %v", err)
+	}
+	def, ok := cfg.Modules["cmd/archfit"]
+	if !ok {
+		t.Fatal("module cmd/archfit not found in self-config")
+	}
+	if def.Role != config.RoleCompositionRoot {
+		t.Errorf("cmd/archfit: role = %q, want composition_root", def.Role)
+	}
+}
+
+// TestSelfConfig_RoleLayerConformance checks that every module with role: adapter
+// is in layer: adapter, and role: composition_root is in layer: cmd.
+// This catches mismatches between role declarations and layer assignments.
+func TestSelfConfig_RoleLayerConformance(t *testing.T) {
+	cfg, err := config.Load(context.Background(), "../../.archfit.yaml")
+	if err != nil {
+		t.Fatalf("Load self-config: %v", err)
+	}
+
+	// Collect module names for deterministic ordering.
+	names := make([]string, 0, len(cfg.Modules))
+	for name := range cfg.Modules {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	for _, name := range names {
+		def := cfg.Modules[name]
+		switch def.Role {
+		case config.RoleAdapter:
+			if def.Layer != layerAdapter {
+				t.Errorf("module %q: role=adapter but layer=%q (want adapter)", name, def.Layer)
+			}
+		case config.RoleCompositionRoot:
+			if def.Layer != "cmd" {
+				t.Errorf("module %q: role=composition_root but layer=%q (want cmd)", name, def.Layer)
+			}
+		case config.RoleCore:
+			if def.Layer != layerCore && def.Layer != "engine" {
+				t.Errorf("module %q: role=core but layer=%q (want core or engine)", name, def.Layer)
+			}
+		default:
+			if def.Role != "" {
+				t.Errorf("module %q: unknown role %q", name, def.Role)
+			}
+		}
+	}
+}
+
 // TestFillMissingOwners verifies that FillMissingOwners merges resolved ownership
 // correctly: config owner wins, resolver fills gaps, absent entries are unchanged.
 func TestFillMissingOwners(t *testing.T) {
@@ -993,6 +1128,10 @@ const (
 	lintOwner = "owner"
 	lintVol   = "subdomain/volatility"
 	lintTeam  = "team-a"
+
+	// Layer name constants used in self-config conformance tests.
+	layerAdapter = "adapter"
+	layerCore    = "core"
 )
 
 func TestLint(t *testing.T) {
@@ -1003,12 +1142,12 @@ func TestLint(t *testing.T) {
 	}{
 		{
 			name: "fully specified",
-			mod:  config.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Subdomain: "core", Volatility: "high"},
+			mod:  config.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Subdomain: layerCore, Volatility: "high"},
 			want: nil,
 		},
 		{
 			name: "missing owner only",
-			mod:  config.ModuleDef{Paths: []string{lintPath}, Subdomain: "core"},
+			mod:  config.ModuleDef{Paths: []string{lintPath}, Subdomain: layerCore},
 			want: []string{lintOwner},
 		},
 		{
