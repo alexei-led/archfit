@@ -156,4 +156,24 @@ func TestMergeExclusions(t *testing.T) {
 			t.Errorf("merged exclusions must be sorted for double-run stability: %v", got)
 		}
 	})
+
+	t.Run("testdata excluded by default", func(t *testing.T) {
+		got := scope.MergeExclusions(nil)
+		if !slices.Contains(got, "**/testdata/**") {
+			t.Errorf("testdata glob must be in DefaultExclusions; got %v", got)
+		}
+	})
+
+	t.Run("testdata re-included by negation", func(t *testing.T) {
+		// A user who intentionally wants to analyse testdata can opt in with
+		// "!testdata" (bare name) or "!**/testdata/**" (exact glob).
+		gotBare := scope.MergeExclusions([]string{"!testdata"})
+		if slices.Contains(gotBare, "**/testdata/**") {
+			t.Errorf("!testdata should remove the testdata default; got %v", gotBare)
+		}
+		gotExact := scope.MergeExclusions([]string{"!**/testdata/**"})
+		if slices.Contains(gotExact, "**/testdata/**") {
+			t.Errorf("!**/testdata/** should remove the testdata default; got %v", gotExact)
+		}
+	})
 }
