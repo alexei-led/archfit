@@ -45,6 +45,9 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 			"distance":   string(cl.Distance),
 			"volatility": string(cl.Volatility),
 		}
+		if cl.DistanceBasis != coupling.DistanceBasisUnknown {
+			matched["distance_basis"] = string(cl.DistanceBasis)
+		}
 		// Attach continuous score fields when a scorer produced them.
 		// score = scorer name; score_value = integer 0-10; score_band = severity band.
 		if cl.Score.Reason != "" {
