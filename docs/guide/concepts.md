@@ -94,11 +94,13 @@ distance: the same import can be cheap (same team, same service) or expensive
 (two teams, two deploy units). `archfit` treats
 `cross_module_different_owner` and `cross_deploy_unit` as **high** distance.
 
-Distance is resolved by a precedence chain — a deploy boundary is absolute, then
-an explicit `owner` decides, then a resolved multi-owner signal, and finally code
-structure (package-tree position) as the always-available fallback. Explicit
-config is never overridden by the structural fallback. See the
-[configuration reference](configuration-reference.md) for the exact order.
+Distance is a composite of three signals. A deploy boundary is absolute. When
+multiple distinct owners exist, ownership overrides code structure. In repos with
+a single maintainer or one team everywhere, ownership is **neutral** — it does not
+collapse far-apart modules to "same owner = low risk". Code structure (package-tree
+position) is the always-available baseline and distinguishes close from far modules
+regardless of owner count. See the
+[configuration reference](configuration-reference.md) for the exact composite order.
 
 ### 3. Volatility — how likely it is to change at all
 
