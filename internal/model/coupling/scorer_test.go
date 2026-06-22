@@ -341,56 +341,23 @@ func TestMultiplicativeScorer_IntrusiveFloor(t *testing.T) {
 	}
 }
 
-// TestAsyncBridgeDistanceBump verifies that setting AsyncBridge=true raises the
-// score relative to the same Classification with AsyncBridge=false, for both
-// AdditiveScorer and MultiplicativeScorer. The bump models lifecycle decoupling
-// (+1 distance level) and is report-only — never changes the gate verdict.
-func TestAsyncBridgeDistanceBump(t *testing.T) {
-	base := Classification{
+// TestScorer_ScoreRange verifies that scores are always in [0,10] across all
+// strength/distance/volatility combinations for both scorers.
+// (Replaces the removed TestAsyncBridgeDistanceBump — AsyncBridge machinery was
+// dead code: the field was never read by score.go or rules.go.)
+func TestScorer_ScoreRange_CrossDeployMax(t *testing.T) {
+	// cross_deploy_unit + functional + high volatility should never exceed 10.
+	atMax := Classification{
 		Strength:   StrengthFunctional,
-		Distance:   DistanceCrossModuleSameOwner,
+		Distance:   DistanceCrossDeployUnit,
 		Volatility: VolatilityHigh,
 	}
-	bridged := base
-	bridged.AsyncBridge = true
-
-	t.Run("AdditiveScorer", func(t *testing.T) {
-		s := AdditiveScorer{}
-		without := s.Score(base)
-		with := s.Score(bridged)
-		if with.Value <= without.Value {
-			t.Errorf("AsyncBridge should raise score: without=%d with=%d", without.Value, with.Value)
+	for _, s := range []Scorer{AdditiveScorer{}, MultiplicativeScorer{}} {
+		got := s.Score(atMax)
+		if got.Value < 0 || got.Value > 10 {
+			t.Errorf("clamp violated at max distance: value=%d", got.Value)
 		}
-	})
-
-	t.Run("MultiplicativeScorer", func(t *testing.T) {
-		s := MultiplicativeScorer{}
-		without := s.Score(base)
-		with := s.Score(bridged)
-		// Multiplicative uses continuous XOR; bump moves dNorm closer to sNorm
-		// (functional=5/8=0.625, same_owner=1/5=0.2 → bumped=2/5=0.4).
-		// R_mod without=1-|0.625-0.2|=0.575; with=1-|0.625-0.4|=0.775.
-		// Both * high_vol(1.0): scores 6 → 8. Value must be higher.
-		if with.Value <= without.Value {
-			t.Errorf("AsyncBridge should raise score: without=%d with=%d", without.Value, with.Value)
-		}
-	})
-
-	t.Run("AsyncBridge_at_max_distance_no_overflow", func(t *testing.T) {
-		// When already at cross_deploy (dv=5), bump is clamped to 5 — no overflow.
-		atMax := Classification{
-			Strength:    StrengthFunctional,
-			Distance:    DistanceCrossDeployUnit,
-			Volatility:  VolatilityHigh,
-			AsyncBridge: true,
-		}
-		for _, s := range []Scorer{AdditiveScorer{}, MultiplicativeScorer{}} {
-			got := s.Score(atMax)
-			if got.Value < 0 || got.Value > 10 {
-				t.Errorf("clamp violated at max distance with AsyncBridge: value=%d", got.Value)
-			}
-		}
-	})
+	}
 }
 
 // TestVolatilityMoveLabel verifies the cheapest-move label distinguishes a

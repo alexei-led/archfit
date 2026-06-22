@@ -99,57 +99,86 @@ func TestClassifyDistance_Precedence(t *testing.T) {
 	both := map[string]bool{distModCore: true, distModAPI: true}
 
 	tests := []struct {
-		name     string
-		modules  map[string]config.ModuleDef
-		explicit map[string]bool
-		want     coupling.Distance
+		name      string
+		modules   map[string]config.ModuleDef
+		explicit  map[string]bool
+		want      coupling.Distance
+		wantBasis coupling.DistanceBasis
 	}{
 		{
-			name:    "ownerless flat names → code structure (DiffOwner)",
-			modules: mods("", "", "", ""),
-			want:    coupling.DistanceCrossModuleDiffOwner,
+			name:      "ownerless flat names → code structure (DiffOwner)",
+			modules:   mods("", "", "", ""),
+			want:      coupling.DistanceCrossModuleDiffOwner,
+			wantBasis: coupling.DistanceBasisStructure,
 		},
 		{
-			name:     "explicit same owner overrides flat-name default → SameOwner",
-			modules:  mods(distOwnerTeamX, distOwnerTeamX, "", ""),
-			explicit: both,
-			want:     coupling.DistanceCrossModuleSameOwner,
+			// Both modules have the same explicit owner (team-x/team-x): the
+			// explicit-owner sub-map is degenerate (1 distinct owner) → Step 2
+			// falls through to code structure. Flat names "core" and "api" have no
+			// shared tree prefix → DiffOwner. This is the archfit self-scan fix:
+			// a single-team repo with owner: on every module must not collapse all
+			// distances to SameOwner via the explicit-owner branch.
+			name:      "explicit same owner (degenerate) → falls through to code structure (DiffOwner)",
+			modules:   mods(distOwnerTeamX, distOwnerTeamX, "", ""),
+			explicit:  both,
+			want:      coupling.DistanceCrossModuleDiffOwner,
+			wantBasis: coupling.DistanceBasisStructure,
 		},
 		{
-			name:     "explicit different owners → DiffOwner",
-			modules:  mods(distOwnerTeamX, distOwnerTeamY, "", ""),
-			explicit: both,
-			want:     coupling.DistanceCrossModuleDiffOwner,
+			// Two distinct explicit owners: sub-map is NOT degenerate → ownership applies.
+			name:      "explicit different owners → DiffOwner (ownership basis)",
+			modules:   mods(distOwnerTeamX, distOwnerTeamY, "", ""),
+			explicit:  both,
+			want:      coupling.DistanceCrossModuleDiffOwner,
+			wantBasis: coupling.DistanceBasisOwnership,
 		},
 		{
-			name:     "one-sided explicit owner, same → SameOwner",
-			modules:  mods(distOwnerTeamX, distOwnerTeamX, "", ""),
-			explicit: map[string]bool{distModCore: true},
-			want:     coupling.DistanceCrossModuleSameOwner,
+			// One-sided explicit owner with same owner on both sides: explicit sub-map
+			// has 1 distinct owner (team-x) → degenerate → falls through to code structure.
+			name:      "one-sided explicit owner, same (degenerate) → code structure (DiffOwner)",
+			modules:   mods(distOwnerTeamX, distOwnerTeamX, "", ""),
+			explicit:  map[string]bool{distModCore: true},
+			want:      coupling.DistanceCrossModuleDiffOwner,
+			wantBasis: coupling.DistanceBasisStructure,
 		},
 		{
-			// Explicit owner on one side, the other ownerless: ownershipDistance
-			// compares "team-x" vs "" → DiffOwner (a known owner differs from an
-			// unknown one). Locks in this branch of the precedence chain.
-			name:     "one-sided explicit owner, other ownerless → DiffOwner",
-			modules:  mods(distOwnerTeamX, "", "", ""),
-			explicit: map[string]bool{distModCore: true},
-			want:     coupling.DistanceCrossModuleDiffOwner,
+			// One-sided explicit owner; the other endpoint is ownerless. The explicit
+			// sub-map contains only {distModCore: "team-x"} → 1 distinct owner →
+			// degenerate → falls through to code structure. Flat names → DiffOwner.
+			name:      "one-sided explicit owner, other ownerless (degenerate) → code structure (DiffOwner)",
+			modules:   mods(distOwnerTeamX, "", "", ""),
+			explicit:  map[string]bool{distModCore: true},
+			want:      coupling.DistanceCrossModuleDiffOwner,
+			wantBasis: coupling.DistanceBasisStructure,
 		},
 		{
-			name:     "differing deploy units are absolute → CrossDeployUnit",
-			modules:  mods(distOwnerTeamX, distOwnerTeamX, distDeployUnitA, distDeployUnitB),
-			explicit: both,
-			want:     coupling.DistanceCrossDeployUnit,
+			name:      "differing deploy units are absolute → CrossDeployUnit",
+			modules:   mods(distOwnerTeamX, distOwnerTeamX, distDeployUnitA, distDeployUnitB),
+			explicit:  both,
+			want:      coupling.DistanceCrossDeployUnit,
+			wantBasis: coupling.DistanceBasisDeployUnit,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mi := buildModuleIndex(tc.modules)
-			got := classifyDistance(fromPath, toPath, graph.LangGo, mi, tc.modules, tc.explicit)
+			explicitOwnerMap := make(map[string]string, len(tc.explicit))
+			for mod := range tc.explicit {
+				explicitOwnerMap[mod] = tc.modules[mod].Owner
+			}
+			degExplicit := isDegenerateOwnerMap(explicitOwnerMap)
+			fullOwnerMap := make(map[string]string, len(tc.modules))
+			for name, def := range tc.modules {
+				fullOwnerMap[name] = def.Owner
+			}
+			degOwners := isDegenerateOwnerMap(fullOwnerMap)
+			got, gotBasis := classifyDistance(fromPath, toPath, graph.LangGo, mi, tc.modules, tc.explicit, degExplicit, degOwners)
 			if got != tc.want {
 				t.Errorf("classifyDistance = %q, want %q", got, tc.want)
+			}
+			if gotBasis != tc.wantBasis {
+				t.Errorf("DistanceBasis = %q, want %q", gotBasis, tc.wantBasis)
 			}
 		})
 	}

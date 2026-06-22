@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/clone"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -115,8 +116,8 @@ func TestRun_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != statusOK {
-		t.Errorf("coverage status = %q, want %q", cov.Status, statusOK)
+	if cov.Status != diagnostic.StatusOK {
+		t.Errorf("coverage status = %q, want %q", cov.Status, diagnostic.StatusOK)
 	}
 	if cov.FilesSeen != 12 || cov.FilesApplicable != 12 {
 		t.Errorf("coverage files = %d/%d, want 12/12 (scanned files, not clone pairs)", cov.FilesSeen, cov.FilesApplicable)
@@ -137,8 +138,8 @@ func TestRun_AbsentTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != statusAbsent {
-		t.Errorf("coverage status = %q, want %q", cov.Status, statusAbsent)
+	if cov.Status != diagnostic.StatusAbsent {
+		t.Errorf("coverage status = %q, want %q", cov.Status, diagnostic.StatusAbsent)
 	}
 	if len(clusters) != 0 {
 		t.Errorf("expected empty clusters, got %d", len(clusters))
@@ -146,29 +147,39 @@ func TestRun_AbsentTool(t *testing.T) {
 }
 
 func TestRun_Disabled(t *testing.T) {
-	// enabled=false → absent, no Detect call needed
+	// enabled=false → disabled status (not absent), no Detect call needed.
+	// The tool may or may not be installed; the user turned it off in config.
 	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != statusAbsent {
-		t.Errorf("coverage status = %q, want %q", cov.Status, statusAbsent)
+	if cov.Status != diagnostic.StatusDisabled {
+		t.Errorf("coverage status = %q, want %q", cov.Status, diagnostic.StatusDisabled)
 	}
 	if len(clusters) != 0 {
 		t.Errorf("expected empty clusters for disabled tool, got %d", len(clusters))
 	}
 }
 
-// TestRun_AbsentReasons asserts opt-in-off and not-installed give distinct,
-// actionable coverage reasons so the report explains why clone detection is n/a.
-func TestRun_AbsentReasons(t *testing.T) {
+// TestRun_StatusDistinction asserts that disabled-by-config and tool-absent
+// produce different statuses so the pipeline can distinguish them.
+// disabled → StatusDisabled (do not show "install" prompt).
+// not installed but enabled → StatusAbsent (show "install" prompt).
+func TestRun_StatusDistinction(t *testing.T) {
 	_, covDisabled, _ := Run(context.Background(), absentRunner(), t.TempDir(), false)
+	if covDisabled.Status != diagnostic.StatusDisabled {
+		t.Errorf("disabled status = %q, want %q", covDisabled.Status, diagnostic.StatusDisabled)
+	}
 	if covDisabled.Reason != reasonDisabled {
 		t.Errorf("disabled reason = %q, want %q", covDisabled.Reason, reasonDisabled)
 	}
+
 	_, covAbsent, _ := Run(context.Background(), absentRunner(), t.TempDir(), true)
+	if covAbsent.Status != diagnostic.StatusAbsent {
+		t.Errorf("absent status = %q, want %q", covAbsent.Status, diagnostic.StatusAbsent)
+	}
 	if covAbsent.Reason != reasonNotInstalled {
-		t.Errorf("absent-tool reason = %q, want %q", covAbsent.Reason, reasonNotInstalled)
+		t.Errorf("absent reason = %q, want %q", covAbsent.Reason, reasonNotInstalled)
 	}
 }
 
@@ -177,8 +188,8 @@ func TestRun_MalformedOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != statusPartial {
-		t.Errorf("coverage status = %q, want %q", cov.Status, statusPartial)
+	if cov.Status != diagnostic.StatusPartial {
+		t.Errorf("coverage status = %q, want %q", cov.Status, diagnostic.StatusPartial)
 	}
 	if len(clusters) != 0 {
 		t.Errorf("expected empty clusters for malformed output, got %d", len(clusters))
@@ -190,8 +201,8 @@ func TestRun_ToolFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cov.Status != statusPartial {
-		t.Errorf("coverage status = %q, want %q", cov.Status, statusPartial)
+	if cov.Status != diagnostic.StatusPartial {
+		t.Errorf("coverage status = %q, want %q", cov.Status, diagnostic.StatusPartial)
 	}
 	if len(clusters) != 0 {
 		t.Errorf("expected empty clusters for tool failure, got %d", len(clusters))

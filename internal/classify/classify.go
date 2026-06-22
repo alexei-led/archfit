@@ -37,8 +37,22 @@ func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 		scorer = coupling.DefaultScorer()
 	}
 
+	// Pre-compute per-run invariants so classifyDistance does not rebuild maps on
+	// every edge. Both results depend only on config (loaded once before Run).
+	explicitOwnerMap := make(map[string]string, len(c.ExplicitOwners))
+	for mod := range c.ExplicitOwners {
+		explicitOwnerMap[mod] = c.Modules[mod].Owner
+	}
+	degenerateExplicit := isDegenerateOwnerMap(explicitOwnerMap)
+
+	fullOwnerMap := make(map[string]string, len(c.Modules))
+	for name, def := range c.Modules {
+		fullOwnerMap[name] = def.Owner
+	}
+	degenerateOwners := isDegenerateOwnerMap(fullOwnerMap)
+
 	for _, e := range g.Edges() {
-		cl := classify(e, mm, c)
+		cl := classify(e, mm, c, degenerateExplicit, degenerateOwners)
 		// Attach a continuous score for cross-boundary edges that have a severity.
 		// Same-module and unknown-distance edges are not scored (zero EdgeScore).
 		if cl.Distance != coupling.DistanceSameModule && cl.Distance != coupling.DistanceUnknown {
@@ -147,7 +161,7 @@ func matchesAnyGlob(path string, globs []string) bool {
 // ExplicitnessHint on the edge overrides the config-glob-derived explicitness
 // when non-empty ("explicit" or "implicit"). BalanceResult is then called to
 // derive advisory Severity for cross-boundary edges.
-func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) coupling.Classification {
+func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateExplicit, degenerateOwners bool) coupling.Classification {
 	modules := c.Modules
 	fromPath := pathFromID(e.From)
 	toPath := pathFromID(e.To)
@@ -172,13 +186,14 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) coupling.Cl
 	}
 
 	// --- Distance ---
-	dist := classifyDistance(fromPath, toPath, e.Language, mi, modules, c.ExplicitOwners)
+	dist, distBasis := classifyDistance(fromPath, toPath, e.Language, mi, modules, c.ExplicitOwners, degenerateExplicit, degenerateOwners)
 	// Role-aware downgrade: a composition root (or a generated/test module) reaches
 	// into the modules it wires by design — that fan-out is cohesion, not high-
 	// distance coupling — so its outbound edges must never be scored as unbalanced.
 	// Cap the source's outbound distance below the high-distance threshold; this
 	// single point flows to Severity (BalanceResult below), the continuous Score,
 	// and every distance-reading metric (unbalanced_edge, encapsulation, …).
+	// The basis stays as-is: it reflects what drove the original signal, not the cap.
 	if fromMod, ok := mi.moduleFor(fromPath); ok && cohesiveRole(modules[fromMod].Role) {
 		dist = capDistanceForRole(dist)
 	}
@@ -213,7 +228,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) coupling.Cl
 		Volatility:          vol,
 		Explicitness:        exp,
 		ContractRecommended: contractRecommended,
-		AsyncBridge:         e.AsyncBridge,
+		DistanceBasis:       distBasis,
 	}
 
 	// --- Severity + Connascence ---
@@ -305,30 +320,26 @@ func strengthFromHint(hint string) coupling.Strength {
 // overridden by the structural fallback:
 //
 //  1. A differing deploy unit is an absolute boundary → cross_deploy_unit.
-//  2. Hand-authored ownership on EITHER endpoint is authoritative → ownership
-//     decides (vs deploy). The user told us something; don't drop it to the
-//     code-structure default. (One-sided is fine: ownershipDistance compares the
-//     explicit owner against the other endpoint's owner as usual.)
+//  2. Hand-authored ownership on EITHER endpoint is authoritative — BUT only when
+//     the explicit-owner sub-map is NOT degenerate (i.e. at least two distinct
+//     owners exist among explicitly-owned modules). A single-owner repo where every
+//     module carries the same explicit owner yields no useful signal: Step 2 falls
+//     through to Step 3 and Step 4 in that case so code structure dominates.
 //  3. A real resolver ownership signal (≥2 distinct owners, not the single
 //     git-author degenerate case) is authoritative too → ownership decides.
 //  4. Otherwise (degenerate or no ownership) fall back to code structure.
 //
-// This precedence is why a flat-named explicit `owner: same-team` config no
-// longer collapses to the code-structure default: explicit ownership is handled
-// in step 2, before codeStructureDistance (which treats two flat single-segment
-// names as different subtrees) can apply.
-//
-// runtime_adjust (+1 level for async bridges) is a Phase-4 addition (Task 12).
-func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map[string]config.ModuleDef, explicitOwners map[string]bool) coupling.Distance {
+// The returned DistanceBasis records which signal drove the final distance value.
+func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map[string]config.ModuleDef, explicitOwners map[string]bool, degenerateExplicit, degenerateOwners bool) (coupling.Distance, coupling.DistanceBasis) {
 	fromMod, fromOK := mi.moduleFor(fromPath)
 	toMod, toOK := mi.moduleFor(toPath)
 
 	if !fromOK || !toOK {
-		return coupling.DistanceUnknown
+		return coupling.DistanceUnknown, coupling.DistanceBasisUnknown
 	}
 
 	if fromMod == toMod {
-		return coupling.DistanceSameModule
+		return coupling.DistanceSameModule, coupling.DistanceBasisUnknown
 	}
 
 	fromDef := modules[fromMod]
@@ -336,27 +347,32 @@ func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map
 
 	deploy := deployDistance(fromDef.DeployUnit, toDef.DeployUnit)
 	if deploy == coupling.DistanceCrossDeployUnit {
-		return deploy // a deploy boundary is absolute
+		return deploy, coupling.DistanceBasisDeployUnit // a deploy boundary is absolute
 	}
 
-	// Step 2: explicit hand-authored ownership on either endpoint is authoritative.
+	// Step 2: explicit hand-authored ownership on either endpoint fires only when
+	// the explicit-owner sub-map is NOT degenerate (not all same owner). When every
+	// explicitly-owned module shares a single owner (e.g. a single-team repo with
+	// owner: alexei-led on all modules), Step 2 falls through so code structure
+	// dominates — ownershipDistance("alexei-led","alexei-led") → SameOwner for every
+	// edge, which would flatten all distances and defeat the structural signal.
+	// degenerateExplicit is pre-computed once per Run to avoid rebuilding the map
+	// on every edge.
 	if explicitOwners[fromMod] || explicitOwners[toMod] {
-		return maxDistance(ownershipDistance(fromDef.Owner, toDef.Owner), deploy)
+		if !degenerateExplicit {
+			return maxDistance(ownershipDistance(fromDef.Owner, toDef.Owner), deploy), coupling.DistanceBasisOwnership
+		}
 	}
 
 	// Step 3: a real resolver ownership signal (≥2 distinct owners) is authoritative.
-	// The module→owner map is only built here (not on every edge) — explicit-owner
-	// edges short-circuit above.
-	owners := make(map[string]string, len(modules))
-	for name, def := range modules {
-		owners[name] = def.Owner
-	}
-	if !isDegenerateOwnerMap(owners) {
-		return maxDistance(ownershipDistance(fromDef.Owner, toDef.Owner), deploy)
+	// degenerateOwners is pre-computed once per Run to avoid rebuilding the full
+	// module→owner map on every edge.
+	if !degenerateOwners {
+		return maxDistance(ownershipDistance(fromDef.Owner, toDef.Owner), deploy), coupling.DistanceBasisOwnership
 	}
 
 	// Step 4: git-author degenerate or no ownership → code structure.
-	return maxDistance(codeStructureDistance(fromMod, toMod, lang), deploy)
+	return maxDistance(codeStructureDistance(fromMod, toMod, lang), deploy), coupling.DistanceBasisStructure
 }
 
 // classifyVolatility derives domain volatility for the to-module using three

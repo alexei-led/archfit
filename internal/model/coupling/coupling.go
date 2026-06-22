@@ -71,6 +71,19 @@ const (
 	ExplicitnessUnknown  Explicitness = "unknown"
 )
 
+// DistanceBasis records which signal drove the distance composite for an edge.
+// Set by classify.Run; empty (DistanceBasisUnknown) when distance is unknown or same_module.
+type DistanceBasis string
+
+// DistanceBasis signal constants. DistanceBasisUnknown (empty string) is used for
+// same_module and unknown-distance edges and omits from JSON output via omitempty.
+const (
+	DistanceBasisUnknown    DistanceBasis = ""               // same_module or unknown distance
+	DistanceBasisStructure  DistanceBasis = "code_structure" // structural tree-distance fallback
+	DistanceBasisOwnership  DistanceBasis = "ownership"      // explicit or multi-owner signal
+	DistanceBasisDeployUnit DistanceBasis = "deploy_unit"    // differing deploy units (absolute)
+)
+
 // Connascence is the degree of connascence detected on a cross-module edge.
 // Report-only vocabulary — never scored, never gates.
 type Connascence string
@@ -98,16 +111,15 @@ type Classification struct {
 	Severity            Severity
 	ContractRecommended bool      // generic-subdomain target reached via non-contract strength
 	Score               EdgeScore // numeric score; zero when not scored
-	// AsyncBridge marks this edge as crossing an async integration boundary.
-	// When set, the scorer applies a +1 distance level adjustment.
-	// Report-only in v1 — never changes the gate verdict.
-	AsyncBridge bool
 	// Connascence is the detected connascence degree for this edge.
 	// CoT (type) when the edge is a cross-module struct/interface/field use,
 	// derivable from model/contract strength with a SCIP hint.
 	// CoA (algorithm) when a clone pair crosses this module boundary.
 	// Report-only — not fed into the scorer or any gate decision.
 	Connascence Connascence `json:"connascence,omitempty"`
+	// DistanceBasis records which signal drove the composite distance.
+	// Report-only — not fed into severity or scoring.
+	DistanceBasis DistanceBasis `json:"distance_basis,omitempty"`
 }
 
 // Index maps each edge's canonical key (from + "\x00" + to + "\x00" + kind)

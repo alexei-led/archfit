@@ -169,10 +169,16 @@ tools:
 
 ### `tools.<x>.gate` (coverage gate)
 
-When an analyzer does not run, its metrics drop to `n/a` and a coverage gap is
-reported (see [commands](commands.md#coverage-gaps-and-required-tools)). By default
-this is **warn-loud** — surfaced, but exit 0. Set a per-tool `gate` to make CI
-block on the missing tool:
+When an analyzer is **absent** (tool not installed or not found), its metrics drop
+to `n/a` and a coverage gap is reported with an install hint
+(see [commands](commands.md#coverage-gaps-and-required-tools)). By default this is
+**warn-loud** — surfaced, but exit 0. Set a per-tool `gate` to make CI block on
+the missing tool:
+
+When an analyzer is **disabled by config** (`enabled: off`), it is simply skipped
+— no coverage gap is emitted and no install prompt is shown. Disabled-by-config
+is distinct from absent: a tool you deliberately turned off should not appear as
+a gap to resolve.
 
 ```yaml
 tools:
@@ -244,20 +250,39 @@ Balanced Coupling classification uses this metadata:
 - target `internal` match -> `intrusive` strength;
 - `volatility` or `subdomain` -> target volatility.
 
-Distance is resolved by a precedence chain (first match wins), not a flat blend,
-so explicit configuration is never overridden by the structural fallback:
+Distance is a **composite** of three signals, not a single-winner precedence chain:
 
-1. same module -> same-module distance;
-2. different `deploy_unit` on the two modules -> `cross_deploy_unit` (a deploy
-   boundary is absolute);
-3. a hand-authored `owner` on either module -> ownership decides: same owner ->
-   cross-module same-owner; different (or one unknown) -> cross-module
-   different-owner;
-4. a resolved multi-owner signal (CODEOWNERS / git authors, two or more distinct
-   owners) -> ownership decides as above;
-5. otherwise -> code structure: sibling or parent-child packages (shared subtree)
-   -> cross-module same-owner; different subtrees, or two unrelated flat
-   (single-segment) names -> cross-module different-owner.
+1. **Code structure** — always-available baseline. Sibling or parent-child packages
+   (shared subtree) → `cross_module_same_owner`; different subtrees or unrelated
+   flat (single-segment) names → `cross_module_different_owner`.
+2. **Ownership** — contributes only when ownership is informative. In repos where
+   every module has the same owner (single-maintainer or one-team repos), ownership
+   becomes **neutral** and does not collapse far-apart modules to "same owner = low
+   risk". When multiple distinct owners exist, ownership overrides code structure.
+3. **Deploy unit** — absolute boundary. If the two modules have different
+   `deploy_unit` values, distance is always `cross_deploy_unit` regardless of owner
+   or structure.
+
+Composite resolution order (first applicable wins):
+
+1. same module → `same_module`;
+2. different `deploy_unit` on the two modules → `cross_deploy_unit`;
+3. ownership is informative (two or more distinct owners in the repo) →
+   same owner → `cross_module_same_owner`; different (or one unknown) →
+   `cross_module_different_owner`;
+4. otherwise → code structure decides (shared subtree → `cross_module_same_owner`;
+   different subtrees or unrelated flat names → `cross_module_different_owner`).
+
+A detected runtime async bridge is recorded as report-only evidence in the
+`runtime_async` JSON field per module; it does not annotate graph edges, does not
+affect distance or score, and does not change the gate verdict.
+
+The `distance_basis` field on each advisory edge (`code_structure`, `ownership`,
+or `deploy_unit`) shows which signal drove the composite, so the result is auditable.
+
+> **Small-OSS note:** a repo with one maintainer is not a flat distance space.
+> Code structure is the baseline and still distinguishes close vs far modules.
+> Ownership only contributes when there are genuinely distinct owners to compare.
 
 ### Module role
 
@@ -460,15 +485,21 @@ exclusions:
   - "**/*.pb.go"
 ```
 
-archfit also ships a built-in default exclusion set — tool-artifact, cache, and
-dependency directories it never analyses, because measuring them yields
-non-deterministic or irrelevant facts (a vendored tree's complexity, a generated
-index, or a report written back into the scanned repo):
+archfit also ships a built-in default exclusion set — tool-artifact, cache,
+dependency directories, and test fixtures it never analyses, because measuring them
+yields non-deterministic or irrelevant facts (a vendored tree's complexity, a
+generated index, a report written back into the scanned repo, or a fixture repo
+inside `testdata/` distorting coverage signals):
 
 ```text
 .archfit-cache/  .archfit-baseline.json  .gitnexus/  .codegraph/  reports/
-.venv/  node_modules/  vendor/  dist/  build/
+.venv/  node_modules/  vendor/  dist/  build/  **/testdata/**
 ```
+
+`**/testdata/**` is excluded by default because test fixture repos are not
+production architecture: analysing them creates false coverage gaps and phantom
+language detections. Re-include intentionally with `!testdata` or
+`!**/testdata/**` in your `exclusions` list.
 
 The built-ins are **merged with** your config `exclusions`, not replaced. To
 re-include one of them, prefix it with `!`:

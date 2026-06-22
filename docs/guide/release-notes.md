@@ -25,6 +25,68 @@ portable references.
 
 No gate, scoring, or runtime behavior changed.
 
+## v0.7.0 — Balanced Coupling self-alignment
+
+Correctness and honesty fixes across distance, coverage reporting, scope, and
+self-config. No breaking changes to gate verdicts, exit codes, or metric names.
+
+### Distance composite model (Task 1)
+
+- **Code-structure baseline always applies.** Distance is computed from a composite
+  of code structure, ownership, and deploy unit — not a single-winner precedence.
+  Code structure (package-tree position) is the always-available baseline; a
+  single-maintainer repo with one owner everywhere does **not** collapse every edge
+  to "same owner = low risk". Far-apart modules remain far.
+- **Degenerate-owner suppression.** In repos where all modules share the same
+  owner, ownership becomes neutral — it does not lower a far code-structure
+  distance. Only when multiple distinct owners exist does ownership override the
+  structural signal.
+- **Deploy unit is the absolute boundary.** Different `deploy_unit` values produce
+  `cross_deploy_unit` even when ownership is the same.
+- **`distance_basis` field.** Each advisory edge now carries a `distance_basis`
+  field (`code_structure`, `ownership`, or `deploy_unit`) recording which signal
+  drove the composite. Auditable without re-reading the config.
+- **Runtime async bridge (report-only).** When the runtime detector identifies an
+  async bridge (message queue, event bus, async task), evidence is recorded per
+  module. Never annotates graph edges, never affects distance or score.
+  Evidence surfaces in `Diagnostic.RuntimeAsync` and the `runtime_async` JSON field.
+
+### Self-config reclassification (Task 2)
+
+- `internal/extract` is split into 13 explicit adapter submodule stanzas in
+  `.archfit.yaml` (`golang`, `ts`, `py`, `rust`, `scip`, `astgrep`, `deployunit`,
+  `runtime`, `dynimports`, `clones`, `complexity`, `loc`, `gitnexus`) so adapter
+  boundaries are visible, not hidden behind a broad glob.
+- `internal/history` reclassified as adapter, not support.
+- `internal/score` has an explicit core stanza.
+- `cmd/archfit` marked `role: composition_root` — fan-out from the wiring root is
+  cohesion, not high-distance coupling.
+
+### Runtime async detection wired end-to-end (Task 3)
+
+`runtime.Detect` is called in the pipeline after dynimports. Detected sites flow
+into `RunSignals.RuntimeAsync`, are assembled into `Diagnostic.RuntimeAsync`, and
+render in the `runtime_async` JSON field. Evidence-only — never annotates graph
+edges, never affects distance, score, or gate verdict.
+
+### `testdata/**` excluded by default (Task 4)
+
+`**/testdata/**` is now in the built-in default exclusion set. Test fixture repos
+inside `testdata/` are not production architecture: analysing them created false
+coverage gaps and phantom language detections. Re-include intentionally with
+`!testdata` or `!**/testdata/**` in your config `exclusions`.
+
+### Clone detection enabled; disabled-vs-missing coverage (Task 5)
+
+- Clone detection (`tools.clones`) is now enabled in archfit's self-config.
+  `functional_candidates` reports real cross-module clone pairs when `jscpd` is
+  installed.
+- Coverage gap reporting now distinguishes **absent** (tool not installed → gap
+  with install hint) from **disabled by config** (`enabled: off` → no gap, no
+  prompt). A tool you deliberately disabled should not appear as a gap to resolve.
+
+---
+
 ## v0.3.0 — Balanced Coupling engine v2 (BREAKING in SCORING)
 
 ### Breaking changes
@@ -40,9 +102,13 @@ implementation) instead of the `LegacyShim` that wrapped `BalanceResult`.
   computed from strength × distance × volatility ordinals).
 - `metric_version` bumped to `*.v2` for the two metrics whose input semantics changed:
   `unbalanced_edge.v2` and `change_locality.v2`.
-- Distance is now a composite: `max(code_structure, ownership, deploy_unit)` +
-  `runtime_adjust`. Ownership is suppressed in single-author repos. Deploy-unit
-  distance (`cross_deploy_unit`) is now reachable via auto-detection.
+- Distance is now a composite of code structure (always-available baseline),
+  ownership (contributes only when genuinely informative — suppressed in
+  single-owner repos so one maintainer does not flatten distance to "same owner =
+  low risk"), and deploy unit (absolute boundary). Each advisory edge reports a
+  `distance_basis` field (`code_structure`, `ownership`, or `deploy_unit`) so the
+  result is auditable. Deploy-unit distance (`cross_deploy_unit`) is now reachable
+  via auto-detection.
 - Gate volatility no longer reads git churn — only explicit `volatility:` config keys
   and the path-pattern heuristic (vendor/lib/util → low; infra/platform/db → medium).
 
@@ -79,8 +145,12 @@ archfit baseline --update
   `abstractness`, `martin_distance`, `propagation_cost`, `change_coupling`.
 - **Connascence tags (report-only):** edges tagged `connascence: type` (SCIP struct/
   interface) or `connascence: algorithm` (clone pair crossing a module boundary).
-- **Runtime async detection (report-only):** ast-grep patterns detect message-queue
-  and event-bus async bridges; confidence recorded.
+- **Runtime async detection (report-only):** deterministic FS scan plus optional
+  ast-grep patterns detect message-queue, event-bus, and async-task integration
+  patterns per language. Evidence flows into `Diagnostic.RuntimeAsync` and renders
+  as the `runtime_async` JSON field (`omitempty` when empty). When a bridge is
+  detected, evidence is recorded per module in the `runtime_async` JSON field —
+  it never annotates graph edges, never affects distance or score, never gates.
 - **`enrich --subdomains`:** LLM-assisted subdomain drafting with `--pin` workflow
   and `reviewed_at`/`reviewed_by` provenance.
 - **BC-aligned report format:** lint-message format `ARCHFIT[BC-UNBALANCED <SEV>]`,
@@ -93,11 +163,14 @@ archfit baseline --update
 Correctness and robustness fixes folded into this release. No gate-verdict
 changes; output stays byte-for-byte deterministic.
 
-- **Distance precedence chain.** Distance is resolved by precedence (deploy
-  boundary > explicit `owner` > resolved multi-owner signal > code structure)
-  instead of a flat max, so an explicit `owner:` is no longer overridden by the
-  structural fallback. Two unrelated flat (single-segment) module names now read
-  as `cross_module_different_owner` instead of collapsing to same-owner.
+- **Distance composite model.** Distance is a composite of code structure (always-
+  available baseline), ownership (informative only when multiple distinct owners
+  exist — suppressed in single-owner repos), and deploy unit (absolute boundary).
+  A `distance_basis` field on each advisory edge records which signal drove the
+  result. Two unrelated flat (single-segment) module names now read as
+  `cross_module_different_owner` via code structure instead of collapsing to
+  same-owner. A single-maintainer repo does not get a flat distance map — code
+  structure still differentiates close and far modules.
 - **Deploy-unit detection robustness.** `package.json` `workspaces` accepts both
   the array form and the `{ "packages": [...] }` object form; detected units are
   remapped to their owning module before filling, so auto-detection works for

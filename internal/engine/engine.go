@@ -123,6 +123,10 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Go/TS/Python (their nodes are already configured; the "::" gate excludes them).
 	classifyCfg.Modules = classify.AugmentModulesFromGraph(ex.g, classifyCfg.Modules)
 
+	// Runtime async evidence: build per-module rollup for the diagnostic.
+	// Report-only — never changes the gate verdict.
+	runtimeAsync := buildRuntimeAsync(in.Signals.RuntimeAsync.Sites, in.Signals.RuntimeAsync.Confidence, classifyCfg.ModuleMap)
+
 	couplingIdx := classify.Run(ex.g, classifyCfg)
 
 	// --- Stage 4: Rules ---
@@ -239,6 +243,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		Findings:              resolvedFindings,
 		FileFacts:             fileFacts,
 		DynamicImports:        dynamicImports,
+		RuntimeAsync:          runtimeAsync,
 		AgentTasks:            []diagnostic.AgentTask{},
 		ToolCoverage:          ex.coverages,
 		Delta:                 delta,

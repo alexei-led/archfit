@@ -54,6 +54,8 @@ const (
 	symbolBar     = "pkg/b.Bar"
 	pathFileB     = "pkg/b/b.go"
 	strengthModel = "model"
+
+	ruleIDBCImbalanced = "bc/imbalanced_coupling"
 )
 
 // cannedConfig builds a ClassifyConfig and RuleConfig for a two-module (a, b)
@@ -573,7 +575,7 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 
 	var adv *finding.Finding
 	for i := range d.Findings {
-		if d.Findings[i].RuleID == "bc/imbalanced_coupling" {
+		if d.Findings[i].RuleID == ruleIDBCImbalanced {
 			adv = &d.Findings[i]
 			break
 		}
@@ -610,6 +612,63 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 	// formula change is observable in output.
 	if got := adv.MatchedBy["score_version"]; got != coupling.ScoreVersion {
 		t.Errorf("MatchedBy[score_version]=%q, want %q", got, coupling.ScoreVersion)
+	}
+}
+
+// TestRun_Advisory_DistanceBasisInMatchedBy asserts that advisory findings include
+// distance_basis in their MatchedBy map when the distance basis is known. This makes
+// the distance signal auditable in JSON output.
+func TestRun_Advisory_DistanceBasisInMatchedBy(t *testing.T) {
+	ctx := context.Background()
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return advisoryFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef, Advisory: true},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Signals:     signal.RunSignals{},
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var adv *finding.Finding
+	for i := range d.Findings {
+		if d.Findings[i].RuleID == ruleIDBCImbalanced {
+			adv = &d.Findings[i]
+			break
+		}
+	}
+	if adv == nil {
+		t.Fatalf("no bc/imbalanced_coupling advisory; findings=%+v", d.Findings)
+	}
+
+	// cannedConfig uses distinct owners (team-a / team-b) → ownership basis.
+	basis, ok := adv.MatchedBy["distance_basis"]
+	if !ok || basis != "ownership" {
+		t.Errorf("MatchedBy[distance_basis] = %q, want \"ownership\"; MatchedBy=%+v", basis, adv.MatchedBy)
 	}
 }
 
@@ -686,7 +745,7 @@ func TestRun_Advisory_GroupedRollups(t *testing.T) {
 
 	var bc []finding.Finding
 	for _, f := range d.Findings {
-		if f.RuleID == "bc/imbalanced_coupling" {
+		if f.RuleID == ruleIDBCImbalanced {
 			bc = append(bc, f)
 		}
 	}
@@ -1377,6 +1436,13 @@ const (
 	langPyTest = "python"
 	kindLazy   = "lazy_import"
 	pathPyA    = "pkg/a/x.py"
+
+	// Runtime async test constants.
+	kindMQ        = "message_queue"
+	kindEventBus  = "event_bus"
+	kindAsyncTask = "async_task"
+	libAmqp       = "amqp"
+	confMedium    = "medium"
 )
 
 // dynImportRun executes the engine over cleanFacts with the given dynamic-import
@@ -1500,5 +1566,139 @@ func TestRun_DynamicImports_Deterministic(t *testing.T) {
 	}
 	if !bytes.Equal(first, second) {
 		t.Errorf("non-deterministic dynamic_imports:\n first:  %s\n second: %s", first, second)
+	}
+}
+
+// runtimeAsyncRun executes the engine over cleanFacts with the given runtime-async
+// sites and returns the assembled Diagnostic. The graph is identical regardless of
+// the sites — the sites only feed the report-only RuntimeAsync block; they do not
+// annotate graph edges or affect classify, score, or verdict.
+func runtimeAsyncRun(t *testing.T, sites []diagnostic.RuntimeAsyncSite, confidence string) diagnostic.Diagnostic {
+	t.Helper()
+	classifyCfg, rs := cannedConfig()
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+	base := baseline.Baseline{}
+	in := engine.RunInput{
+		Mode: engine.Mode{Head: headRef}, Scope: scope.Scope{Root: "."},
+		Classify: classifyCfg, Staleness: config.StalenessConfig{}, Exceptions: config.ExceptionSet{},
+		Extractors: []ports.Extractor{ex}, Patterns: ports.NopPatternProvider{}, Resolver: ports.NopSymbolResolver{},
+		PatternCfg: config.PatternConfig{}, Rules: rs, Metrics: metrics.New(config.Config{Version: 1}),
+		Accepted: base, BaseMetrics: base.Metrics,
+		Signals: signal.RunSignals{RuntimeAsync: signal.RuntimeAsyncSignals{Sites: sites, Confidence: confidence}},
+		Now:     time.Date(2026, 6, 22, 0, 0, 0, 0, time.UTC),
+	}
+	d, err := engine.Run(context.Background(), in)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return d
+}
+
+// TestRun_RuntimeAsync_GroupedPerModule asserts async sites are rolled up per module
+// (module-map key, or file directory when unmapped), counted, and sorted.
+func TestRun_RuntimeAsync_GroupedPerModule(t *testing.T) {
+	sites := []diagnostic.RuntimeAsyncSite{
+		{File: pathFileA, Line: 1, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"},
+		{File: pathFileA, Line: 2, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"},
+		{File: "pkg/b/b.go", Line: 5, Library: "kafka", IntegrationKind: kindEventBus, Language: "go"},
+		{File: "scripts/worker.py", Line: 3, Library: "celery", IntegrationKind: kindAsyncTask, Language: langPyTest},
+	}
+	d := runtimeAsyncRun(t, sites, confMedium)
+
+	// Modules sorted: "a" (2 sites, message_queue), "b" (1 site, event_bus), "scripts" (unmapped dir)
+	want := []struct {
+		module string
+		kind   string
+		count  int
+		conf   string
+	}{
+		{"a", kindMQ, 2, confMedium},
+		{"b", kindEventBus, 1, confMedium},
+		{"scripts", kindAsyncTask, 1, confMedium},
+	}
+	if len(d.RuntimeAsync) != len(want) {
+		t.Fatalf("runtime_async groups = %d, want %d (%+v)", len(d.RuntimeAsync), len(want), d.RuntimeAsync)
+	}
+	for i, w := range want {
+		got := d.RuntimeAsync[i]
+		if got.Module != w.module {
+			t.Errorf("group[%d].Module = %q, want %q", i, got.Module, w.module)
+		}
+		if got.IntegrationKind != w.kind {
+			t.Errorf("group[%d].IntegrationKind = %q, want %q", i, got.IntegrationKind, w.kind)
+		}
+		if got.Count != w.count {
+			t.Errorf("group[%d].Count = %d, want %d", i, got.Count, w.count)
+		}
+		if got.Confidence != w.conf {
+			t.Errorf("group[%d].Confidence = %q, want %q", i, got.Confidence, w.conf)
+		}
+	}
+}
+
+// TestRun_RuntimeAsync_EmptySites asserts that an empty site list produces no
+// runtime_async block in the diagnostic (omitempty).
+func TestRun_RuntimeAsync_EmptySites(t *testing.T) {
+	d := runtimeAsyncRun(t, nil, "low")
+	if len(d.RuntimeAsync) != 0 {
+		t.Errorf("expected empty runtime_async, got %+v", d.RuntimeAsync)
+	}
+}
+
+// TestRun_RuntimeAsync_StaticGraphUnchanged proves the runtime-async signal is
+// purely additive: a run with sites and a run without them produce a byte-identical
+// diagnostic once the RuntimeAsync block is nulled out. Verdict, metrics, findings
+// must be unchanged — this is report-only signal.
+func TestRun_RuntimeAsync_StaticGraphUnchanged(t *testing.T) {
+	withSites := runtimeAsyncRun(t, []diagnostic.RuntimeAsyncSite{
+		{File: pathFileA, Line: 1, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"},
+	}, confMedium)
+	withoutSites := runtimeAsyncRun(t, nil, "low")
+
+	if len(withSites.RuntimeAsync) == 0 {
+		t.Fatal("expected runtime_async to be populated in the with-sites run")
+	}
+	if len(withoutSites.RuntimeAsync) != 0 {
+		t.Errorf("expected empty runtime_async in the no-sites run, got %+v", withoutSites.RuntimeAsync)
+	}
+
+	withSites.RuntimeAsync = nil
+	withoutSites.RuntimeAsync = nil
+	a, err := json.Marshal(withSites)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	b, err := json.Marshal(withoutSites)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !bytes.Equal(a, b) {
+		t.Errorf("runtime-async signal altered the rest of the diagnostic:\n with: %s\n without: %s", a, b)
+	}
+}
+
+// TestRun_RuntimeAsync_Deterministic asserts a double run with identical sites
+// yields byte-identical diagnostics (no map-order leakage in the rollup).
+func TestRun_RuntimeAsync_Deterministic(t *testing.T) {
+	sites := []diagnostic.RuntimeAsyncSite{
+		{File: "pkg/b/b.go", Line: 1, Library: "kafka", IntegrationKind: kindEventBus, Language: "go"},
+		{File: pathFileA, Line: 2, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"},
+		{File: "scripts/z.py", Line: 3, Library: "celery", IntegrationKind: kindAsyncTask, Language: langPyTest},
+	}
+	first, err := json.Marshal(runtimeAsyncRun(t, sites, confMedium).RuntimeAsync)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	second, err := json.Marshal(runtimeAsyncRun(t, sites, confMedium).RuntimeAsync)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Errorf("non-deterministic runtime_async:\n first:  %s\n second: %s", first, second)
 	}
 }

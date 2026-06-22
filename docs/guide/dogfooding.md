@@ -58,10 +58,10 @@ own newest capabilities:
 - `architecture_fitness` — archfit enforces its own architecture
   (`internal/arch_test.go` plus an arch-linter in CI), so this scores a real,
   high enforcement signal.
-- `functional_candidates` — surfaced on; reports `n/a` with an actionable
-  coverage reason until a clone detector (`tools.clones`) is installed. That
-  honest `n/a` is the point: the metric is visible, and the report tells you the
-  one step to make it real.
+- `functional_candidates` — surfaced on; clone detection (`tools.clones`) is
+  enabled in archfit's self-config. When `jscpd` is installed, this metric reports
+  real cross-module clone pairs. When `jscpd` is absent, it reports `n/a` with an
+  install hint. A disabled-by-config tool produces no coverage gap at all.
 
 None of these can fail the build. They show up in `archfit scan`,
 `archfit score`, and the JSON bundle that `archfit review` narrates.

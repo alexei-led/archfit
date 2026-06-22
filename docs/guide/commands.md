@@ -85,10 +85,16 @@ architecture review and refactoring, not as automatic pass/fail rules.
 
 ## Coverage gaps and required tools
 
-When an analyzer does not run, archfit does **not** silently score the repo as
-healthy. The dependent metrics drop to `n/a` (no evidence — never `strong`), and
-a machine-readable **coverage gap** lists the tool, the metrics its absence
-leaves unmeasured, and a one-line install hint. Gaps appear in every format:
+When an analyzer is **absent** (tool not installed or not detected), archfit does
+**not** silently score the repo as healthy. The dependent metrics drop to `n/a`
+(no evidence — never `strong`), and a machine-readable **coverage gap** lists the
+tool, the metrics its absence leaves unmeasured, and a one-line install hint.
+
+When an analyzer is **disabled by config** (`enabled: off`), it is simply skipped
+— no coverage gap is emitted and no install prompt appears. Disabled-by-config is
+a deliberate opt-out, not a gap to resolve.
+
+Coverage gaps for absent tools appear in every format:
 
 - markdown / `scan` — a `## Coverage gaps (N)` section before findings;
 - `scorecard` / `score` — a `## Required tools missing (N)` section;

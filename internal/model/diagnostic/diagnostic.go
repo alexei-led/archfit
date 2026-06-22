@@ -104,6 +104,26 @@ type FileFact struct {
 	GitnexusImpact *int `json:"gitnexus_impact,omitempty"`
 }
 
+// RuntimeAsyncSite is one detected async integration pattern location.
+// Produced by the runtime detector (internal/extract/runtime); translated to this
+// model type in cmd so the core ring never imports an adapter package.
+type RuntimeAsyncSite struct {
+	File            string `json:"file"`
+	Line            int    `json:"line"`
+	Library         string `json:"library"`
+	IntegrationKind string `json:"integration_kind"` // "message_queue" | "event_bus" | "async_task"
+	Language        string `json:"language"`
+}
+
+// RuntimeAsyncModule is a per-module rollup of detected async integration patterns.
+// Report-only evidence — never consumed by verdict or gate logic.
+type RuntimeAsyncModule struct {
+	Module          string `json:"module"`
+	IntegrationKind string `json:"integration_kind"` // "message_queue" | "event_bus" | "async_task"
+	Count           int    `json:"count"`            // number of detected signals
+	Confidence      string `json:"confidence"`       // "low" | "medium"
+}
+
 // DynamicImport is the report-only dynamic/lazy-import risk signal for one module
 // (Task 9). Dynamic/lazy imports — Python non-top-level (in-function) imports,
 // importlib.import_module / __import__, and TS require() / dynamic import() — are
@@ -173,9 +193,10 @@ type DeltaReport struct {
 
 // Coverage status constants used across all extractor adapters.
 const (
-	StatusOK      = "ok"
-	StatusPartial = "partial"
-	StatusAbsent  = "absent"
+	StatusOK       = "ok"
+	StatusPartial  = "partial"
+	StatusAbsent   = "absent"
+	StatusDisabled = "disabled" // tool is present but turned off in config
 )
 
 // SchemaVersion is the fixed schema_version value emitted in every diagnostic.
@@ -205,8 +226,13 @@ type Diagnostic struct {
 	// Evidence only — never consumed by verdict or gate logic, never alters the
 	// dependency graph or any metric. Empty when no dynamic imports were found.
 	DynamicImports []DynamicImport `json:"dynamic_imports"`
-	AgentTasks     []AgentTask     `json:"agent_tasks"`
-	ToolCoverage   []Coverage      `json:"tool_coverage"`
+	// RuntimeAsync is the report-only async-bridge detection block.
+	// Evidence only — never consumed by classify, score, or gate logic; never
+	// annotates graph edges and never affects distance, score, or verdict.
+	// Empty when no async patterns were detected.
+	RuntimeAsync []RuntimeAsyncModule `json:"runtime_async,omitempty"`
+	AgentTasks   []AgentTask          `json:"agent_tasks"`
+	ToolCoverage []Coverage           `json:"tool_coverage"`
 	// CoverageGaps lists analyzers that did not run, the metrics their absence
 	// leaves unmeasured, and how to install them (warn-loud coverage reporting).
 	// Omitted when every required tool ran. Populated in cmd/, never the core ring.

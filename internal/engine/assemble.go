@@ -83,6 +83,55 @@ func buildDynamicImports(sites []diagnostic.DynamicImportSite, mm config.ModuleM
 	return out
 }
 
+// buildRuntimeAsync groups async-integration sites per module and returns a
+// deterministic per-module rollup for the diagnostic.
+// Returns an empty (non-nil) slice when no sites were found.
+// Never touches the graph, metrics, or the verdict — this is evidence only.
+func buildRuntimeAsync(sites []diagnostic.RuntimeAsyncSite, confidence string, mm config.ModuleMap) []diagnostic.RuntimeAsyncModule {
+	byModule := make(map[string][]diagnostic.RuntimeAsyncSite)
+	for _, s := range sites {
+		mod, ok := mm.ModuleFor(s.File)
+		if !ok || mod == "" {
+			mod = pathDir(s.File)
+		}
+		byModule[mod] = append(byModule[mod], s)
+	}
+	mods := make([]string, 0, len(byModule))
+	for m := range byModule {
+		mods = append(mods, m)
+	}
+	sort.Strings(mods)
+
+	out := make([]diagnostic.RuntimeAsyncModule, 0, len(mods))
+	for _, m := range mods {
+		ss := byModule[m]
+		kind := dominantKind(ss)
+		out = append(out, diagnostic.RuntimeAsyncModule{
+			Module:          m,
+			IntegrationKind: kind,
+			Count:           len(ss),
+			Confidence:      confidence,
+		})
+	}
+	return out
+}
+
+// dominantKind returns the most frequent IntegrationKind among sites.
+// Ties broken alphabetically for determinism.
+func dominantKind(sites []diagnostic.RuntimeAsyncSite) string {
+	counts := make(map[string]int, len(sites))
+	for _, s := range sites {
+		counts[s.IntegrationKind]++
+	}
+	best, bestN := "", 0
+	for k, n := range counts {
+		if n > bestN || (n == bestN && k < best) {
+			best, bestN = k, n
+		}
+	}
+	return best
+}
+
 // pathDir returns the directory portion of a repo-relative slash path, or "."
 // when the path has no directory. Used as the dynamic-import module key when the
 // module map does not cover a file.

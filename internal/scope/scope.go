@@ -30,6 +30,12 @@ var DefaultExclusions = []string{
 	"**/vendor/**",
 	"**/dist/**",
 	"**/build/**",
+	// testdata trees hold fixture repos used by test suites; they are not
+	// production architecture and would distort self-dogfooding signals
+	// (false coverage gaps, phantom language detections). Re-include with
+	// "!testdata" in the config exclusions when analysing fixtures
+	// intentionally.
+	"**/testdata/**",
 }
 
 // MergeExclusions returns the effective exclusion globs: DefaultExclusions
