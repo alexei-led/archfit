@@ -33,6 +33,12 @@ const (
 	KindAsyncTask    IntegrationKind = "async_task"
 )
 
+// Confidence levels for runtime async detection results.
+const (
+	ConfidenceLow    = "low"
+	ConfidenceMedium = "medium"
+)
+
 // AsyncSignal records one detected async integration at a file location.
 type AsyncSignal struct {
 	File            string
@@ -117,9 +123,9 @@ func (d *detector) detect(ctx context.Context) Result {
 	signals = append(signals, d.detectTS(ctx)...)
 	signals = append(signals, d.detectPython(ctx)...)
 
-	conf := "low"
+	conf := ConfidenceLow
 	if len(signals) > 0 {
-		conf = "medium"
+		conf = ConfidenceMedium
 	}
 
 	modSigs := make(map[string][]AsyncSignal)

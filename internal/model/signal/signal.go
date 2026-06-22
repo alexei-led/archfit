@@ -78,6 +78,11 @@ type RunSignals struct {
 	// the diagnostic (rolled up per module) — no metric ever sees it, and it never
 	// touches the dependency graph or the verdict.
 	DynamicImports DynamicImportSignals
+	// RuntimeAsync carries the async-bridge signals detected by the runtime adapter.
+	// The engine rolls the sites up per module and writes them into the diagnostic.
+	// Evidence-only — never annotates graph edges, never consumed by classify or
+	// score, never changes the gate verdict.
+	RuntimeAsync RuntimeAsyncSignals
 }
 
 // DynamicImportSignals carries the dynamic/lazy-import sites detected by the
@@ -85,6 +90,14 @@ type RunSignals struct {
 // metric or the dependency graph.
 type DynamicImportSignals struct {
 	Sites []diagnostic.DynamicImportSite
+}
+
+// RuntimeAsyncSignals carries the async-bridge sites detected by the runtime
+// adapter. Empty when none were found. Evidence-only — never annotates graph
+// edges, never consumed by classify or score, never alters the verdict.
+type RuntimeAsyncSignals struct {
+	Sites      []diagnostic.RuntimeAsyncSite
+	Confidence string // "low" | "medium"
 }
 
 // ---------------------------------------------------------------------------

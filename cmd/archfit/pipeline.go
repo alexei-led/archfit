@@ -23,6 +23,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/dynimports"
 	"github.com/alexei-led/archfit/internal/extract/gitnexus"
 	"github.com/alexei-led/archfit/internal/extract/loc"
+	runtimedetect "github.com/alexei-led/archfit/internal/extract/runtime"
 	"github.com/alexei-led/archfit/internal/extract/scip"
 	"github.com/alexei-led/archfit/internal/fitness"
 	"github.com/alexei-led/archfit/internal/history/git"
@@ -151,6 +152,23 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// non-top-level imports + importlib/__import__, TS require()/dynamic import().
 	// Report-only — surfaced as evidence, never modifies the graph, metrics, or gate.
 	change.DynamicImports.Sites = dynimports.Detect(s.Root)
+
+	// Runtime async-bridge detection (deterministic FS scan + optional ast-grep).
+	// Detects message-queue, event-bus, async-task integration patterns per language.
+	// Report-only evidence — never annotates graph edges, never affects distance/score or the gate verdict.
+	{
+		r := runtimedetect.Detect(ctx, s.Root, deps.Runner)
+		for _, sig := range r.Signals {
+			change.RuntimeAsync.Sites = append(change.RuntimeAsync.Sites, diagnostic.RuntimeAsyncSite{
+				File:            sig.File,
+				Line:            sig.Line,
+				Library:         sig.Library,
+				IntegrationKind: string(sig.IntegrationKind),
+				Language:        sig.Language,
+			})
+		}
+		change.RuntimeAsync.Confidence = r.Confidence
+	}
 
 	// Ownership resolution: fills module owner gaps from CODEOWNERS or git-author
 	// history. Explicit config owner always wins; resolver only fills empty slots.
@@ -355,9 +373,15 @@ func buildPrimaryToolLanguage() map[string]string {
 // the non-check callers of runPipeline are unaffected. Gaps are sorted by tool name
 // so a double-run stays byte-identical regardless of upstream coverage order.
 // Returns nil when no known tool is absent (omitempty keeps clean output unchanged).
+//
+// StatusDisabled entries (tools present but turned off in config) are intentionally
+// excluded — the user does not need an "install" prompt for a deliberate opt-out.
+// The tool_coverage block already carries the reason for any reader who wants it.
 func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config) []diagnostic.CoverageGap {
 	var gaps []diagnostic.CoverageGap
 	for _, c := range cov {
+		// Only truly absent tools produce a gap. Disabled-by-config tools are an
+		// intentional opt-out; partial coverage is informational (not actionable).
 		if c.Status != diagnostic.StatusAbsent {
 			continue
 		}

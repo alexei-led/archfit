@@ -5,6 +5,14 @@ parts of `arch-fitness-architecture-v0.2.md` and `hybrid-llm-strength-v0.1.md`;
 extends `agent-feedback-loop-v0.1.md`. Implementation plan to follow in
 `docs/plans/` once approved.
 
+> **Superseded note (2026-06-22):** The `runtime_adjust` / `+1 async bridge` step
+> described in §4.2 and the scoring table below was redesigned before shipping.
+> The shipped behavior (v0.7.0) is **report-only**: runtime async detection records
+> evidence in the `runtime_async` JSON field per module and does not modify edge
+> distance, does not annotate graph edges, and does not affect the score or gate
+> verdict. The pseudocode and table entries below are historical design content;
+> they do not reflect current behavior.
+
 ## 1. Purpose
 
 Make archfit's measurement engine a **faithful, deterministic instantiation of the
@@ -91,7 +99,7 @@ distance(edge) = max(
     code_structure_distance(from.path, to.path),   # always available
     ownership_distance(from.owner, to.owner),      # only when CODEOWNERS or multi-author
     deploy_distance(from.unit, to.unit)            # only when deploy units detected
-) + runtime_adjust(edge)                            # async bridge => +1 level
+) + runtime_adjust(edge)                            # async bridge => +1 level [NOT SHIPPED — redesigned to report-only; see superseded note above]
 ```
 
 - **code_structure_distance** (NEW, the always-available baseline). Deterministic
@@ -111,12 +119,13 @@ distance(edge) = max(
   `[project]`), `Dockerfile` locations, k8s `Deployment`/`StatefulSet`. Output
   `map[path]→unit`, merged via a new `FillMissingDeployUnits` mirroring
   `FillMissingOwners` (`config.go:545`). Unresolved → `unknown`.
-- **runtime_adjust** (NEW, report-only in v1). ast-grep per language: Go `go`/chan +
-  MQ imports (sarama/kafka-go/nats/amqp); TS `kafkajs`/`amqplib`/`@google-cloud/pubsub`
-  - `@MessagePattern`; Python `asyncio`/`celery`/`dramatiq` + `pika`/`confluent_kafka`.
-    Async bridge raises effective distance by one level (decouples lifecycle). A curated
-    `library → integration-kind` table (YAML, off-gate config) drives it; absence of
-    signal ⇒ `confidence: low`, not "synchronous".
+- **runtime_adjust** (NOT SHIPPED — redesigned to report-only; see superseded note
+  above). Original design: ast-grep per language: Go `go`/chan + MQ imports
+  (sarama/kafka-go/nats/amqp); TS `kafkajs`/`amqplib`/`@google-cloud/pubsub` /
+  `@MessagePattern`; Python `asyncio`/`celery`/`dramatiq` + `pika`/`confluent_kafka`.
+  Async bridge was intended to raise effective distance by one level (decouples
+  lifecycle). Shipped behavior: detection results are recorded per module in
+  `runtime_async` JSON field as report-only evidence; distance is not modified.
 
 Distance confidence is reported per module (`owner_source`, `deploy_unit_source`,
 `code_structure: always`) so the agent knows how much to trust it.
@@ -167,7 +176,7 @@ Both impls map the 4 ordinal levels to numbers (frozen tables, cited to BC):
 ```
 strength: contract 0  model 2  functional 5  intrusive 8   unknown 3
 distance: same_module 0  same_owner 1  cross_module 3  cross_deploy 5   unknown 2
-          (+1 async bridge)
+          (+1 async bridge) [NOT SHIPPED — redesigned to report-only; see superseded note above]
 volatility: low / medium / high / unknown
 ```
 

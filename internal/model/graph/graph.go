@@ -73,11 +73,6 @@ type Edge struct {
 	// classify honors it only as a fallback when config public/internal globs do
 	// not decide, so an architect's explicit declaration always wins.
 	StrengthHint string `json:"strength_hint,omitempty"`
-	// AsyncBridge marks this edge as crossing an async integration boundary
-	// (message queue, event bus, or async task). When true, the scorer adds
-	// +1 distance level to reflect the lifecycle decoupling. Report-only in v1;
-	// never changes the gate verdict.
-	AsyncBridge bool `json:"async_bridge,omitempty"`
 }
 
 // canonicalKey uniquely identifies an edge regardless of source.
