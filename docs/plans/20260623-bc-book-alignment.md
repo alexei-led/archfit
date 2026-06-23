@@ -220,17 +220,24 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
 
 ### Task 4: Runtime coupling → distance (book Ch8) via the AsyncBridge signal
 
-- [ ] Per the book (async integration increases lifecycle independence = higher effective
+- [x] Per the book (async integration increases lifecycle independence = higher effective
       distance), wire the existing `Classification.AsyncBridge` signal into distance:
       an async edge raises effective distance by one book anchor (capped at the
       cross_deploy/services anchor). This replaces the dead AsyncBridge infra (previously
       annotated but never consumed by the scorer) with book-faithful behavior.
-- [ ] If, on inspection, async detection is too unreliable to drive scoring, instead
+- [x] If, on inspection, async detection is too unreliable to drive scoring, instead
       **delete** the dead AsyncBridge annotation path rather than leave inert infra —
-      decide in-task and record which.
-- [ ] Write tests: async edge gets the higher distance anchor and a correspondingly
+      decide in-task and record which. **Decision: do not wire.** `Classification.AsyncBridge`
+      was never implemented as an edge-level field. `RuntimeAsync` operates at module
+      granularity (not edge granularity), is explicitly report-only by contract test
+      `TestRun_RuntimeAsync_StaticGraphUnchanged`, and is confidence=low|medium. No edge
+      annotation path exists to delete — it was never built, which is correct. Status quo kept.
+- [x] Write tests: async edge gets the higher distance anchor and a correspondingly
       higher balance (looser lifecycle); sync edge unchanged; capped at max anchor.
-- [ ] Regenerate goldens + inspect; run gates — must pass before Task 5.
+      (skipped — no implementation; existing TestRun_RuntimeAsync_StaticGraphUnchanged
+      encodes the correct contract that async signal does not affect scoring)
+- [x] Regenerate goldens + inspect; run gates — must pass before Task 5.
+      (no code changes; all gates pass: make test, make lint, TestArchImports green)
 
 ### Task 5: Inferred-volatility cascade (book Ch9)
 
