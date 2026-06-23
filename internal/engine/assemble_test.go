@@ -124,5 +124,80 @@ func TestBuildClassifiedEdgeSummary(t *testing.T) {
 		if crossTotal != 4 {
 			t.Errorf("ByStrength total = %d, want 4 (cross-boundary only)", crossTotal)
 		}
+		// External should be zero: no DistanceUnknown edges in this fixture.
+		if s.External != 0 {
+			t.Errorf("External = %d, want 0", s.External)
+		}
+	})
+
+	t.Run("DistanceUnknown edges excluded from scored/abstained, counted as External", func(t *testing.T) {
+		// 1 internal scored edge (cross_module_same_owner, contract, balanced)
+		// 1 internal abstained edge (cross_module_diff_owner, unknown strength)
+		// 2 external edges (DistanceUnknown): one scored, one not — both go to External
+		// This proves the exclusion is keyed on Distance==DistanceUnknown, not on
+		// whether the scorer happened to score the edge.
+		idx := coupling.Index{
+			// internal scored
+			key("internal/a", "internal/b", "import"): {
+				Distance: coupling.DistanceCrossModuleSameOwner,
+				Strength: coupling.StrengthContract,
+				Score:    coupling.EdgeScore{Scored: true, Balance: 9, Band: coupling.SeverityNone},
+			},
+			// internal abstained (known distance, unknown strength)
+			key("internal/a", "internal/c", "import"): {
+				Distance: coupling.DistanceCrossModuleDiffOwner,
+				Strength: coupling.StrengthUnknown,
+				Score:    coupling.EdgeScore{Scored: false},
+			},
+			// external: stdlib/third-party (DistanceUnknown) — NOT scored into balance
+			key("internal/a", "fmt", "import"): {
+				Distance: coupling.DistanceUnknown,
+				Strength: coupling.StrengthFunctional,
+				Score:    coupling.EdgeScore{Scored: false},
+			},
+			// external: synthetic non-Go style (DistanceUnknown) — language-agnostic check
+			// Simulates a Rust dependency crate or TS node_modules edge.
+			key("crate::mymod", "serde::de", "use"): {
+				Distance: coupling.DistanceUnknown,
+				Strength: coupling.StrengthUnknown,
+				Score:    coupling.EdgeScore{Scored: false},
+			},
+		}
+
+		s := buildClassifiedEdgeSummary(idx)
+
+		if s.Total != 4 {
+			t.Errorf("Total = %d, want 4", s.Total)
+		}
+		if s.SameModule != 0 {
+			t.Errorf("SameModule = %d, want 0", s.SameModule)
+		}
+		// External edges excluded from coupling_balance denominator.
+		if s.External != 2 {
+			t.Errorf("External = %d, want 2 (both DistanceUnknown edges)", s.External)
+		}
+		// Only internal edges counted in Scored/Abstained.
+		if s.Scored != 1 {
+			t.Errorf("Scored = %d, want 1 (internal scored only)", s.Scored)
+		}
+		if s.Abstained != 1 {
+			t.Errorf("Abstained = %d, want 1 (internal abstained only)", s.Abstained)
+		}
+		// MeanBalance from internal-only scored edge.
+		if s.MeanBalance != 9.0 {
+			t.Errorf("MeanBalance = %v, want 9.0 (internal edge only)", s.MeanBalance)
+		}
+		// ByStrength/ByDistance/ByVolatility must NOT include external edges.
+		if s.ByDistance[string(coupling.DistanceUnknown)] != 0 {
+			t.Errorf("ByDistance[unknown] = %d, want 0 (external edges not counted in distribution)",
+				s.ByDistance[string(coupling.DistanceUnknown)])
+		}
+		internalCrossTotal := 0
+		for _, n := range s.ByStrength {
+			internalCrossTotal += n
+		}
+		if internalCrossTotal != 2 {
+			t.Errorf("ByStrength total = %d, want 2 (internal cross-boundary only)", internalCrossTotal)
+		}
 	})
 }

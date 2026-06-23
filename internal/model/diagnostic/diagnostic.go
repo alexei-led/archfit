@@ -216,6 +216,15 @@ type ClassifiedEdgeSummary struct {
 	ByVolatility map[string]int `json:"by_volatility,omitempty"`
 	// BySeverity counts cross-boundary edges by score band (severity label).
 	BySeverity map[string]int `json:"by_severity,omitempty"`
+	// External is the count of cross-boundary edges whose target is NOT a declared
+	// module (Distance == unknown: stdlib, third-party, undeclared packages). These
+	// are EXCLUDED from the Scored/Abstained distribution that drives coupling_balance
+	// — the book measures coupling among YOUR components, not your libraries.
+	// External dependency hygiene is a dependency_graph_health concern.
+	// This field is language-agnostic: it keys on DistanceUnknown, which classifyDistance
+	// sets for all languages (Go stdlib/3p, Rust dependency crates, TS node_modules,
+	// Python external imports). Zero means no external edges were detected.
+	External int `json:"external,omitempty"`
 	// LLMApproved is the count of approved cross-boundary labels whose provenance
 	// is "llm" and confidence is not "high". These lower the coupling_balance
 	// dimension confidence by one band — they are human-approved but not human-judged.

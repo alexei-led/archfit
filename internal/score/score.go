@@ -271,15 +271,22 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 
 	// --- Distribution path (preferred): use the full classified-edge summary ---
 	if summary != nil {
+		// Internal cross-boundary edges only (external/library edges excluded from
+		// coupling_balance — they are a dependency_graph_health concern, not a
+		// coupling_balance concern; the book scores YOUR components only).
 		crossBoundary := summary.Scored + summary.Abstained
 
-		// Zero cross-boundary edges (or zero scored): unanalyzed sentinel.
+		// Zero internal cross-boundary edges (or zero scored): unanalyzed sentinel.
 		if summary.Scored == 0 {
 			dim.Confidence = ConfidenceLow
 			dim.Value = 60
 			dim.Evidence = []string{
-				"0 scored cross-boundary edges — coupling balance unconfirmed (edge classification absent or all edges abstained)",
+				"0 scored internal cross-boundary edges — coupling balance unconfirmed (edge classification absent or all edges abstained)",
 				fmt.Sprintf("worst-case (critical band) edges: %d", worst),
+			}
+			if summary.External > 0 {
+				dim.Evidence = append(dim.Evidence,
+					fmt.Sprintf("%d external/library edges excluded — see dependency_graph_health", summary.External))
 			}
 			dim.Summary = "coupling balance unconfirmed: no scored cross-boundary edges"
 			return dim
@@ -288,7 +295,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		// value = round(100 × (MeanBalance − 1) / 9): linear rescale of book's 1–10.
 		value := int(math.Round(100 * (summary.MeanBalance - 1) / 9))
 
-		// Confidence from scored fraction.
+		// Confidence from internal-only scored fraction (external edges do not count).
 		var conf Confidence
 		scoredPct := 100 * summary.Scored / crossBoundary
 		switch {
@@ -321,11 +328,15 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		dim.Value = value
 		dim.Confidence = conf
 		dim.Evidence = []string{
-			fmt.Sprintf("%d scored cross-boundary edges; mean book balance %.1f/10 → value %d",
+			fmt.Sprintf("%d scored internal cross-boundary edges; mean book balance %.1f/10 → value %d",
 				summary.Scored, summary.MeanBalance, value),
-			fmt.Sprintf("scored fraction: %d%% (%d scored, %d abstained)",
+			fmt.Sprintf("scored fraction: %d%% (%d scored, %d abstained, internal only)",
 				scoredPct, summary.Scored, summary.Abstained),
 			fmt.Sprintf("worst-case (critical band) edges: %d", criticalCount),
+		}
+		if summary.External > 0 {
+			dim.Evidence = append(dim.Evidence,
+				fmt.Sprintf("%d external/library edges excluded — see dependency_graph_health", summary.External))
 		}
 		if summary.LLMApproved > 0 {
 			dim.Evidence = append(dim.Evidence,
@@ -334,7 +345,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		if criticalCount > 0 {
 			dim.Summary = "unbalanced coupling: critical-band edges (distributed-monolith risk) present"
 		} else {
-			dim.Summary = fmt.Sprintf("mean book balance %.1f/10 across %d scored cross-boundary edges",
+			dim.Summary = fmt.Sprintf("mean book balance %.1f/10 across %d scored internal cross-boundary edges",
 				summary.MeanBalance, summary.Scored)
 		}
 		return dim

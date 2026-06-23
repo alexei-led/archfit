@@ -831,6 +831,125 @@ func TestCouplingBalance_LLMProvenance_EvidenceString(t *testing.T) {
 	}
 }
 
+// TestCouplingBalance_ExternalEdgesExcluded verifies that external/library edges
+// (Distance==unknown) are excluded from the coupling_balance denominator and that
+// the excluded count is surfaced in evidence. This is language-agnostic: the same
+// External field covers Go stdlib/3p, Rust dependency crates, TS node_modules, and
+// Python external imports — all classified as DistanceUnknown by classifyDistance.
+func TestCouplingBalance_ExternalEdgesExcluded(t *testing.T) {
+	nonDegen := metricIndex{metricBlastRadius: metric(metricBlastRadius, 3, "info", "high")}
+
+	t.Run("external count surfaced in evidence when present", func(t *testing.T) {
+		// 10 internal scored edges (mean balance 9.0 → high value/conf)
+		// 447 external edges excluded from denominator
+		sum := &diagnostic.ClassifiedEdgeSummary{
+			Total:       457, // 10 internal + 447 external
+			Scored:      10,
+			Abstained:   0,
+			External:    447,
+			MeanBalance: 9.0,
+			BySeverity:  map[string]int{sevLow: 10},
+		}
+		got := couplingBalance(nil, nonDegen, sum)
+
+		// Value/confidence derived from internal-only (10 scored, 0 abstained) → high.
+		if got.Confidence != ConfidenceHigh {
+			t.Errorf("confidence = %q, want high (internal-only fraction is 100%%)", got.Confidence)
+		}
+
+		// Evidence must mention external exclusion.
+		foundExternal := false
+		for _, ev := range got.Evidence {
+			if strings.Contains(ev, "447 external/library edges excluded") {
+				foundExternal = true
+			}
+		}
+		if !foundExternal {
+			t.Errorf("expected external-exclusion line in evidence, got: %v", got.Evidence)
+		}
+
+		// Evidence must say "internal" to distinguish from old phrasing.
+		foundInternal := false
+		for _, ev := range got.Evidence {
+			if strings.Contains(ev, "internal") {
+				foundInternal = true
+			}
+		}
+		if !foundInternal {
+			t.Errorf("evidence must mention 'internal' cross-boundary edges, got: %v", got.Evidence)
+		}
+	})
+
+	t.Run("zero internal scored edges + many external → 60/mixed/low with external in evidence", func(t *testing.T) {
+		// All edges are external (DistanceUnknown) — nothing internal was classified.
+		sum := &diagnostic.ClassifiedEdgeSummary{
+			Total:     300,
+			Scored:    0,
+			Abstained: 0,
+			External:  300,
+		}
+		got := finalize(couplingBalance(nil, nonDegen, sum))
+
+		// Sentinel: zero internal edges → 60/mixed/low (unanalyzed), not suppressed score.
+		if got.Value != 60 {
+			t.Errorf("value = %d, want 60 (zero-internal sentinel)", got.Value)
+		}
+		if got.Band != BandMixed {
+			t.Errorf("band = %q, want mixed", got.Band)
+		}
+		if got.Confidence != ConfidenceLow {
+			t.Errorf("confidence = %q, want low", got.Confidence)
+		}
+		// External count must still appear in evidence.
+		foundExternal := false
+		for _, ev := range got.Evidence {
+			if strings.Contains(ev, "300 external/library edges excluded") {
+				foundExternal = true
+			}
+		}
+		if !foundExternal {
+			t.Errorf("expected external-exclusion line in evidence (zero-internal path), got: %v", got.Evidence)
+		}
+	})
+
+	t.Run("zero external → evidence has no external line", func(t *testing.T) {
+		// Clean internal-only repo with no external edges.
+		sum := &diagnostic.ClassifiedEdgeSummary{
+			Total:       5,
+			Scored:      5,
+			Abstained:   0,
+			External:    0,
+			MeanBalance: 8.0,
+			BySeverity:  map[string]int{sevLow: 5},
+		}
+		got := couplingBalance(nil, nonDegen, sum)
+
+		for _, ev := range got.Evidence {
+			if strings.Contains(ev, "external") {
+				t.Errorf("unexpected external line in evidence when External==0: %q", ev)
+			}
+		}
+	})
+
+	t.Run("internal confidence unaffected by external count", func(t *testing.T) {
+		// 80 internal scored + 0 abstained + 1000 external → scored fraction still 100%.
+		sum := &diagnostic.ClassifiedEdgeSummary{
+			Total:       1080,
+			Scored:      80,
+			Abstained:   0,
+			External:    1000,
+			MeanBalance: 8.0,
+			BySeverity:  map[string]int{sevLow: 80},
+		}
+		got := couplingBalance(nil, nonDegen, sum)
+
+		// Internal scored fraction = 80/(80+0) = 100% → high confidence.
+		if got.Confidence != ConfidenceHigh {
+			t.Errorf("confidence = %q, want high (external edges must not count in scored fraction)", got.Confidence)
+		}
+	})
+}
+
 // TestAnalysisConfidence_NADimensionRatioCap is the Cal-6 regression: a fully-tooled
 // run (coverage 1.0, every semantic tool present) over a real graph must NOT read 100
 // when several scorecard dimensions came back n/a — the meta score reflects how many
