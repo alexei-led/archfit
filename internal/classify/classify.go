@@ -508,9 +508,7 @@ func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, modules map[stri
 	// Snapshot the base volatility before propagation so reads during the pass
 	// always reflect config (not yet-written effective values).
 	base := make(map[string]coupling.Volatility, len(effective))
-	for k, v := range effective {
-		base[k] = v
-	}
+	maps.Copy(base, effective)
 	// Propagation pass: iterate edges once, raise effective vol where applicable.
 	for _, e := range g.Edges() {
 		str := strengthFromHint(e.StrengthHint)
