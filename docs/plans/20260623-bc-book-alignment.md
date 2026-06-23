@@ -310,20 +310,36 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
 
 ### Task 9: Update archfit self-config (.archfit.yaml) for the book model
 
-- [ ] Review every module's `subdomain`/`volatility` so the book anchors (core→10,
+- [x] Review every module's `subdomain`/`volatility` so the book anchors (core→10,
       supporting/generic→3, frozen/legacy→1) are expressed; declare any genuinely stable
       module as frozen/legacy. Goal: the self-scan emits decision tasks only where a
       judgment input is truly undeclared, not for already-known modules.
-- [ ] Verify `owner`/`deploy_unit`/`role` are accurate so distance maps onto the correct
+      Corrections made: `internal/model` removed `volatility: low` override (model types
+      evolve with every feature → core→V=10 is accurate); `internal/status` reclassified
+      from `subdomain: core` to `subdomain: supporting` (AcceptedSet is infra, not domain
+      logic; keeps `volatility: low`). No module qualifies as frozen/legacy (no
+      `VolatilityFrozen` constant exists; all modules are in active development).
+- [x] Verify `owner`/`deploy_unit`/`role` are accurate so distance maps onto the correct
       book anchors (no module mislabeled; composition_root/adapter/core roles right).
-- [ ] Enable the inferred-volatility cascade in the self-config
+      All owners are `alexei-led` (single-owner repo — correct), `cmd/archfit` has
+      `role: composition_root` (correct), adapter modules have `role: adapter`, layers
+      are accurate (model/support/core/engine/adapter/cmd). No corrections needed.
+- [x] Enable the inferred-volatility cascade in the self-config
       (`volatility_cascade_enabled: true`) so archfit dogfoods the full book model (Ch9),
       provided results stay sensible (cascade does not flood the graph with high
       volatility); if it over-propagates, leave it off and record why.
-- [ ] Build (`make build`) and run a self-scan; iterate the config until the self-scan is
+      Enabled. Cascade does not over-propagate: scored edges remain at severity=low
+      (mean_balance=8), 0 gate findings, 0 agent_tasks. Safe to enable.
+- [x] Build (`make build`) and run a self-scan; iterate the config until the self-scan is
       deterministic and free of spurious abstain/decision warnings.
-- [ ] Regenerate goldens (self-config drives golden output) + inspect; run gates
+      Self-scan: 0 findings, 0 agent_tasks, 0 coverage gaps, byte-identical double-run.
+      The 447 abstained edges are expected (unknown strength from SCIP — no config fix
+      can resolve these; they require labels or SCIP contract evidence).
+- [x] Regenerate goldens (self-config drives golden output) + inspect; run gates
       (`make test`, `make lint`, `TestArchImports`). Commit config + goldens.
+      Golden tests pass unchanged (config changes only affect runtime behavior, not
+      golden fixtures which use embedded testdata). All gates green: make test, make lint,
+      TestArchImports, TestGolden, make archfit.
 
 ### Task 10: Dogfood — evaluate archfit on archfit with the new formula
 

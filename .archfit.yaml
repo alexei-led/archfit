@@ -4,6 +4,10 @@ version: 1
 # medium: only over-decoupled volatile seams and tight cross-boundary coupling
 # high/critical: only intrusive or functional coupling across large boundaries
 bc_advisory_min_severity: medium
+# Enable book Ch9 inferred-volatility cascade: a module strongly coupled
+# (strength ≥ functional) to a high-volatility module inherits raised effective
+# volatility. Config-declared volatility always takes precedence and is never lowered.
+volatility_cascade_enabled: true
 # Architecture layers — innermost to outermost.
 # forbidden_layer_direction fires when fromRank < toRank (inner imports outer).
 layers:
@@ -29,8 +33,10 @@ modules:
       - internal/model/signal
       - internal/model/symbol
     layer: model
+    # Core domain model — these types evolve with every new feature (new
+    # Diagnostic fields, graph node types, coupling constants). Volatile by
+    # nature; book anchor core→V=10. No explicit volatility override.
     subdomain: core
-    volatility: low
   internal/config:
     owner: alexei-led
     paths:
@@ -85,7 +91,10 @@ modules:
     public:
       - internal/status
     layer: core
-    subdomain: core
+    # AcceptedSet / AcceptedItem: stable infrastructure tracking baseline
+    # exceptions, not domain logic. Supporting subdomain; low volatility
+    # (stable since the decoupling refactor). Book anchor: supporting→V=3.
+    subdomain: supporting
     volatility: low
   internal/engine:
     owner: alexei-led
