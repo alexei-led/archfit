@@ -81,6 +81,13 @@ modules:
       - internal/metrics/**
     public:
       - internal/metrics
+      - internal/metrics/boundary
+      - internal/metrics/intramodule
+      - internal/metrics/modularity
+      - internal/metrics/risk
+      - internal/metrics/metricstest
+      - internal/metrics/internal/modgraph
+      - internal/metrics/internal/result
     layer: core
     subdomain: core
     volatility: medium
@@ -132,6 +139,7 @@ modules:
       - internal/labels/**
     public:
       - internal/labels
+      - internal/labels/labelsio
     # Reviewed coupling-label artifact. Support-tier like config until the
     # value type and YAML loader split.
     layer: support
@@ -323,6 +331,7 @@ modules:
       - internal/output/console
       - internal/output/markdown
       - internal/output/sarif
+      - internal/output/scorecard
     layer: adapter
     subdomain: supporting
     volatility: medium
@@ -363,6 +372,17 @@ modules:
     layer: adapter
     subdomain: generic
     volatility: low
+  internal/calibrate:
+    owner: alexei-led
+    paths:
+      - internal/calibrate/**
+    public:
+      - internal/calibrate
+    # Pure scorer-comparison utility: no I/O, no os/exec, no YAML.
+    # cmd imports it for the calibrate subcommand.
+    layer: core
+    subdomain: supporting
+    volatility: low
   internal:
     owner: alexei-led
     paths:
@@ -378,6 +398,7 @@ modules:
       - internal/history/**
     public:
       - internal/history
+      - internal/history/git
     # Git log/blame reader: out-of-process I/O, belongs in adapter tier.
     role: adapter
     layer: adapter

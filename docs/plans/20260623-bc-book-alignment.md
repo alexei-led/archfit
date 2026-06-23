@@ -406,21 +406,21 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
 
 ### Task 13: Path to a higher honest score (2) — LLM-as-architect strength labels for unknown edges
 
-- [ ] Configure the LLM from the repo `.env` Anthropic key (do NOT hardcode the key); set
+- [x] Configure the LLM from the repo `.env` Anthropic key (do NOT hardcode the key); set
       `tools.llm` (provider anthropic + a current Claude model) in `.archfit.yaml` if needed.
       If no key is available, fall back to authoring labels directly and note the fallback.
-- [ ] Acting as a human architect who UNDERSTANDS archfit's design — first read `CLAUDE.md`,
+- [x] Acting as a human architect who UNDERSTANDS archfit's design — first read `CLAUDE.md`,
       `docs/design/`, `README.md`, and inspect the module graph — classify the highest-traffic
       remaining unknown-strength cross-boundary seams. Prefer `archfit enrich` to LLM-draft
       strength labels (Task 7 made enrich target unknown edges), then CURATE/CORRECT the
       drafts using your design understanding; the draft is a starting point, not gospel.
-- [ ] Approve and pin the well-justified labels (`.archfit-labels.yaml`, `status: approved`,
+- [x] Approve and pin the well-justified labels (`.archfit-labels.yaml`, `status: approved`,
       `provenance`, `confidence`, rationale grounded in archfit's design) for the main seams
       (e.g. engine→model, cmd→internal, classify→model/coupling). Aim to classify a
       meaningful share of the 447 unknowns.
-- [ ] Re-run the self-scan; confirm the scored-edge fraction rose and decision tasks shrank;
+- [x] Re-run the self-scan; confirm the scored-edge fraction rose and decision tasks shrank;
       the gate consumes only `approved` labels and stays deterministic (double-run identical).
-- [ ] Regenerate goldens + inspect; run gates; commit labels + config + goldens.
+- [x] Regenerate goldens + inspect; run gates; commit labels + config + goldens.
 
 ### Task 14: Recalculate archfit-on-archfit (honest score after classification)
 
