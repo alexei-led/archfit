@@ -234,8 +234,11 @@ Fields:
 - `internal` — private surface. Matching targets are classified as intrusive
   coupling or internal API access when the extractor emits that edge kind.
 - `layer` — one of the names from `layers`.
-- `subdomain` — `core`, `supporting`, `generic`, or `unknown`.
-- `volatility` — optional explicit override: `high`, `medium`, or `low`.
+- `subdomain` — `core`, `supporting`, or `generic`. Controls the volatility
+  ordinal used by the book scorer: `core`→10, `supporting`/`generic`→3.
+- `volatility` — optional explicit override: `high` (=10), `medium` (=6), or
+  `low` (=3). Overrides the subdomain-derived value. Use `subdomain` unless you
+  need a different number than the DDD default.
 - `owner` — team or person responsible for the module.
 - `deploy_unit` — deployable/runtime unit used for distance classification.
 - `role` — optional architectural role:
@@ -521,6 +524,24 @@ their directory, to keep scans deterministic.
   finding fingerprints.
 - For Python, see [Language support](languages.md#python) before writing globs.
 
+## `volatility_cascade_enabled`
+
+Top-level boolean (default `false`). When `true`, enables the inferred-volatility
+cascade from Khononov Ch9: after classifying each module's volatility from
+`subdomain`/`volatility` config, a single-hop propagation pass raises a
+module's effective volatility to `high` when it is strongly coupled
+(`functional` or `intrusive` strength) to a `core` module. The cascade runs
+before scoring, so the raised volatility is visible in advisory output.
+
+```yaml
+volatility_cascade_enabled: true
+```
+
+Use when you want archfit to dogfood the full book model and surface coupling
+chains that inherit core volatility transitively. Set it to `false` (or omit)
+to use only declared per-module volatility — safer for repos where the cascade
+would produce noise until `subdomain` fields are complete.
+
 ## tools.llm (off-gate)
 
 Used by `archfit init --llm`, `archfit update --llm`, `archfit enrich`,
@@ -556,3 +577,49 @@ The LLM authoring commands write proposals to review files, never to
 Review each, then `enrich --<field> --pin` (or move the field manually) to write
 approved values into `modules.<name>`. Pinning never overwrites a live field. See
 [llm-enrich.md](llm-enrich.md).
+
+### Label `confidence` and `provenance` fields
+
+Each label entry in `.archfit-labels.yaml` may carry two optional fields:
+
+```yaml
+- from: internal/engine
+  to: internal/classify
+  strength: functional
+  status: approved
+  confidence: medium # high | medium | low
+  provenance: llm # human | llm | tool
+  reviewed_by: "@architect"
+  reviewed_at: "2026-06-23"
+```
+
+- `provenance` — source of the strength judgment: `human` (direct human
+  decision), `llm` (drafted by `archfit enrich`, then human-approved), or
+  `tool` (deterministic extractor hint).
+- `confidence` — how certain the judgment is: `high`, `medium`, or `low`.
+
+**Effect on scoring:** when an approved label has `provenance: llm` and
+`confidence` below `high`, `coupling_balance` confidence is lowered by one
+band. Rationale: LLM drafts have been human-reviewed, but they are not as
+certain as a config-glob or SCIP symbol-kind classification. `provenance:
+human` and `provenance: tool` do not lower confidence.
+
+`check` reads only `status: approved` labels. Draft labels (no `status` or
+`status: draft`) are never consumed by the gate.
+
+### Abstain and decision tasks
+
+When an edge's strength cannot be classified (`unknown`) but its distance
+resolves to an internal module, archfit **abstains** — the edge is excluded
+from the `coupling_balance` scored distribution (honest denominator) and an
+`agent_task` is emitted in JSON/SARIF output prompting the operator to add a
+label. The same happens for modules with no declared `subdomain` or
+`volatility`: an `agent_task` asks for a declaration or suggests
+`archfit enrich --subdomains`.
+
+External/library edges (`Distance == DistanceUnknown`, i.e. stdlib,
+third-party packages, undeclared imports) are excluded from
+`coupling_balance` entirely — they are not internal coupling seams. Their
+count is visible in `classified_edges.external` and the `coupling_balance`
+evidence string. External dependency hygiene is a `dependency_graph_health`
+concern, not a `coupling_balance` concern.

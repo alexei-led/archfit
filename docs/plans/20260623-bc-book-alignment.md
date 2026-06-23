@@ -470,18 +470,24 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
 
 ### Task 16: [Final] Documentation
 
-- [ ] Rewrite `docs/design/bc-measurement-v2.md` (or supersede with a `-v3`): state that
+- [x] Rewrite `docs/design/bc-measurement-v2.md` (or supersede with a `-v3`): state that
       archfit implements Khononov's published formula and ordinal anchors verbatim;
       document the instrumentation mapping (measured signal → book anchor), the abstain
       rule, and the LLM-as-judge-off-gate + human-editable-fallback design.
-- [ ] Update `docs/guide/configuration-reference.md` (new label `confidence`/`provenance`
+      → Created `docs/design/bc-measurement-v3.md` (v2 kept as historical record).
+- [x] Update `docs/guide/configuration-reference.md` (new label `confidence`/`provenance`
       fields; frozen/legacy volatility; LLM subdomain draft; abstain → decision tasks),
       `concepts.md`, and `release-notes.md`.
-- [ ] Update `CLAUDE.md` with the new patterns (book-verbatim scorer, abstain-not-fake,
+      → Added `volatility_cascade_enabled`, label fields, abstain/decision-tasks, external-edge
+      exclusion sections to config-ref; updated strength table + balance rule in concepts.md;
+      added v0.8.0 release notes section.
+- [x] Update `CLAUDE.md` with the new patterns (book-verbatim scorer, abstain-not-fake,
       provenance-lowers-confidence, opt-in volatility cascade) and the bumped `ScoreVersion`.
-- [ ] Document the new archfit self-scorecard (from Task 10's dogfood) in `release-notes.md`,
+      → Added "Coupling scorer — key design facts" section; `ScoreVersion = "bc_score.v3"`.
+- [x] Document the new archfit self-scorecard (from Task 10's dogfood) in `release-notes.md`,
       and record the Task 4 decision that runtime/async coupling stays report-only (NOT wired
       into distance) by design — do not document an async→distance behavior that does not exist.
+      → Self-scorecard table in v0.8.0 release notes; explicit "report-only by design" note.
 
 _Note: ralphex automatically moves completed plans to `docs/plans/completed/`._
 
