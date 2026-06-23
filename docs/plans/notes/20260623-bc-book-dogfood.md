@@ -133,14 +133,21 @@ correctly capped at 80 by the n/a fraction.
 
 ### 1. Enable SCIP-based strength inference for Go (highest-impact)
 
-The 447 unknown-strength edges are all Go package imports with no strength label.
-Go has no native `import` strength annotation. The book's strength scale is a human
-judgment that SCIP call-graph evidence could inform (e.g. if module A only calls
-B's exported interface types → contract; if it calls internal constructors → functional
-or intrusive). Adding SCIP-assisted strength inference for Go would be the largest
-single lever to move `coupling_balance` from 60/low to a high-confidence score.
-Config: add `tools.scip.enabled: true` (currently enabled for SCIP extraction but
-strength _inference_ from call patterns is not yet implemented for Go).
+**Task 12 outcome (2026-06-23):** `tools.scip.enabled: "on"` was already set. scip-go
+is available and runs successfully (`scip: ok (1000 files)` in coverage). However,
+Go SCIP strength classification does NOT reduce the 447 unknown count. Investigation:
+
+- scip-go produces strength edges only for **observed symbol references** — not for every
+  `import` statement. Of ~1386 go file→pkg import edges, SCIP covers ~126 (9%).
+- Those 126 SCIP-covered edges hit packages that config `public:` globs already classify
+  as `contract` — the SCIP `functional` hint is never reached (config globs take
+  precedence in `classify.go`). Net new classifications from SCIP: **0**.
+- The 447 unknown edges point to sub-packages (`internal/metrics/boundary`,
+  `internal/output/console`, etc.) with no `public:` glob AND no SCIP symbol-reference
+  edge. These are structurally invisible to both the config-glob path and the SCIP path.
+
+**Conclusion:** SCIP is not the lever for Go strength. The ceiling for deterministic
+classification is already reached. Active path forward: Task 13 (LLM-as-architect labels).
 
 ### 2. Add `labels:` strength annotations for high-traffic module pairs
 

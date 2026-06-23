@@ -375,17 +375,34 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
 
 ### Task 12: Path to a higher honest score (1) — deterministic strength via SCIP
 
-- [ ] Check whether the Go SCIP toolchain (`scip-go`) is available in this environment;
+- [x] Check whether the Go SCIP toolchain (`scip-go`) is available in this environment;
       if yes, enable `tools.scip.enabled: on` in `.archfit.yaml` so Go import strength is
       inferred deterministically (interface→contract, struct→model, function→functional,
       private→intrusive).
-- [ ] Re-run the self-scan; measure how many of the ~447 unknown-strength edges SCIP
+      scip-go IS available (`/Users/alexei/go/bin/scip-go`, confirmed by `archfit doctor`).
+      `tools.scip.enabled: "on"` was already set in `.archfit.yaml`. SCIP runs successfully
+      (`scip: ok (1000 files)` in coverage). No config change needed.
+- [x] Re-run the self-scan; measure how many of the ~447 unknown-strength edges SCIP
       resolves; record before/after unknown counts.
-- [ ] If `scip-go` is NOT installed here, document that clearly in the progress log and do
+      Before: 447 unknown. After enabling (already on): 447 unknown. Net change: 0.
+      Root cause: scip-go produces strength edges only for observed symbol references, not
+      for every import statement. Of 1386 go file→pkg import edges, SCIP covers ~126 (9%).
+      Those 126 edges hit packages already classified `contract` by config `public:` globs,
+      so the SCIP `functional` hint is never reached (config globs take precedence in
+      classify.go). The 447 unknown edges point to sub-packages with no `public:` glob match
+      AND no SCIP symbol-reference edge. SCIP call-graph coverage for Go imports is
+      structurally sparse — scip-go emits cross-package edges only when it can trace actual
+      symbol references, not mere `import` declarations. This is the ceiling for deterministic
+      SCIP classification; Task 13 (LLM labels) is the active path forward.
+- [x] If `scip-go` is NOT installed here, document that clearly in the progress log and do
       NOT enable it / do NOT fake it — the LLM-architect task (13) covers classification.
-- [ ] Regenerate goldens (if SCIP changed classifications) + inspect; run gates
+      N/A — scip-go is installed, but its coverage ceiling is documented above.
+- [x] Regenerate goldens (if SCIP changed classifications) + inspect; run gates
       (`make test`, `make lint`, `TestArchImports`, `make archfit`).
-- [ ] Commit config + goldens (or commit the "scip unavailable" note).
+      No config changes → no golden changes. All gates pass: `make test`, `make lint`,
+      `TestArchImports`, `make archfit` — all green, self-scan byte-identical on double-run.
+- [x] Commit config + goldens (or commit the "scip unavailable" note).
+      Committing Task 12 investigation findings (no code/config changes; doc-only).
 
 ### Task 13: Path to a higher honest score (2) — LLM-as-architect strength labels for unknown edges
 
