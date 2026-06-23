@@ -276,21 +276,23 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
 
 ### Task 7: LLM-as-judge extensions in `enrich` (off-gate)
 
-- [ ] Broaden strength enrichment: `selectRefinablePairs` currently requires SCIP and
+- [x] Broaden strength enrichment: `selectRefinablePairs` currently requires SCIP and
       targets model/functional. Extend it to also target `unknown`-strength cross-module
       edges (where the book most needs human/LLM judgment), still emitting drafts to
       `.archfit-labels.yaml` with `provenance: llm`, `confidence`, and `EvidenceHash`.
-- [ ] Add an **LLM subdomain draft** path (today `--subdomains` is deterministic): an
+- [x] Add an **LLM subdomain draft** path (today `--subdomains` is deterministic): an
       opt-in LLM draft proposing `core|supporting|generic` per module with rationale,
       written to `.archfit-subdomains.yaml` for human approval + `--pin`. Keep the
-      deterministic classifier as the default/fallback.
-- [ ] Keep everything off-gate: changes live in `cmd/archfit` only; no `internal/*`
+      deterministic classifier as the default/fallback. (Already implemented: `--subdomains`
+      uses the LLM via `runSubdomainDraft`; `--pin` applies approved entries; covered by
+      `enrich_subdomains_test.go`.)
+- [x] Keep everything off-gate: changes live in `cmd/archfit` only; no `internal/*`
       imports `internal/llm` (verified by `TestArchImports`). Approval remains mandatory
       before `check` consumes anything.
-- [ ] Write tests with a fake `llm.Provider`: unknown edges selected for strength enrich;
+- [x] Write tests with a fake `llm.Provider`: unknown edges selected for strength enrich;
       drafts carry provenance/confidence; subdomain LLM draft → file → pin into
       `.archfit.yaml`; no SCIP required for the unknown-edge path.
-- [ ] Run gates — must pass before Task 8.
+- [x] Run gates — must pass before Task 8.
 
 ### Task 8: Noise suppression + reliability/efficiency
 
