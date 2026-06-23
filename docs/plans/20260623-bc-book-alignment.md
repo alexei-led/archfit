@@ -343,19 +343,19 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
 
 ### Task 10: Dogfood — evaluate archfit on archfit with the new formula
 
-- [ ] Build and run the new scorer on archfit itself: `make archfit-report` (and/or
+- [x] Build and run the new scorer on archfit itself: `make archfit-report` (and/or
       `.bin/archfit scan --config .archfit.yaml --full --format json`); capture the new
       banded scorecard.
-- [ ] Record the new per-dimension scores and overall vs the pre-change baseline (~82):
+- [x] Record the new per-dimension scores and overall vs the pre-change baseline (~82):
       confirm `coupling_balance` is no longer `60/mixed/low` and now reads with real
       confidence; note movement in `boundary_integrity`, `cohesion_modularity`, etc.
-- [ ] Confirm book behavior on real archfit edges: symmetric/distributed-monolith edges
+- [x] Confirm book behavior on real archfit edges: symmetric/distributed-monolith edges
       (if any) flagged correctly; no spurious criticals; abstain/decision tasks appear
       only where a judgment input is genuinely undeclared.
-- [ ] Write the dogfood scorecard + interpretation to
+- [x] Write the dogfood scorecard + interpretation to
       `docs/plans/notes/20260623-bc-book-dogfood.md` (scores, deltas, anything surprising,
       and any config follow-ups discovered).
-- [ ] Gates: `make archfit` (dogfood gate) green; determinism byte-identical double-run;
+- [x] Gates: `make archfit` (dogfood gate) green; determinism byte-identical double-run;
       commit the report.
 
 ### Task 11: Verify acceptance criteria, goldens, determinism, dogfood
