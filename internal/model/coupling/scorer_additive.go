@@ -7,6 +7,8 @@ package coupling
 // CheapestMove is the single adjacent dimension change that drops the band
 // the most. Tie-break: prefer strength reduction over distance reduction
 // over volatility change.
+//
+// Kept for calibration reference; DefaultScorer() now returns BookScorer.
 type AdditiveScorer struct{}
 
 // reasonAdditive labels EdgeScores produced by the additive scorer.
@@ -24,7 +26,7 @@ func (AdditiveScorer) Score(c Classification) EdgeScore {
 	vd := volatilityDiscount[c.Volatility]
 
 	raw := clamp(sv+dv-vd, 0, 10)
-	band := ScoreBand(raw)
+	band := legacyScoreBand(raw)
 
 	return EdgeScore{
 		Value:  raw,
@@ -93,6 +95,8 @@ func additiveCheapestMove(c Classification, currentBand Severity) string {
 func lowerStrength(s Strength) (Strength, bool) {
 	switch s {
 	case StrengthIntrusive:
+		return StrengthSymmetric, true
+	case StrengthSymmetric:
 		return StrengthFunctional, true
 	case StrengthFunctional:
 		return StrengthUnknown, true

@@ -584,12 +584,12 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 		t.Fatalf("no bc/imbalanced_coupling advisory present; findings=%+v", d.Findings)
 	}
 
-	// score = scorer name (default is the multiplicative scorer).
-	if got := adv.MatchedBy["score"]; got != "multiplicative" {
-		t.Errorf("MatchedBy[score]=%q, want scorer name %q", got, "multiplicative")
+	// score = scorer name (default is BookScorer as of bc_score.v3).
+	if got := adv.MatchedBy["score"]; got != "book" {
+		t.Errorf("MatchedBy[score]=%q, want scorer name %q", got, "book")
 	}
 
-	// score_value must parse to an int in [0,10].
+	// score_value must parse to an int in [1,10] (BookScorer balance range).
 	rawValue, ok := adv.MatchedBy["score_value"]
 	if !ok {
 		t.Fatalf("MatchedBy missing score_value; got %+v", adv.MatchedBy)
@@ -598,8 +598,8 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("score_value %q not an integer: %v", rawValue, err)
 	}
-	if value < 0 || value > 10 {
-		t.Errorf("score_value=%d out of range [0,10]", value)
+	if value < 1 || value > 10 {
+		t.Errorf("score_value=%d out of range [1,10]", value)
 	}
 
 	// score_band must equal the band derived from the value (consistency).

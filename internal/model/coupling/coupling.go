@@ -12,7 +12,10 @@ const (
 	StrengthIntrusive  Strength = "intrusive"
 	StrengthModel      Strength = "model"
 	StrengthFunctional Strength = "functional"
-	StrengthUnknown    Strength = "unknown"
+	// StrengthSymmetric is bidirectional coupling at implementation level —
+	// book ordinal 9, between functional (8) and intrusive (10).
+	StrengthSymmetric Strength = "symmetric"
+	StrengthUnknown   Strength = "unknown"
 )
 
 // Distance measures how far apart two modules are in the ownership hierarchy.
@@ -143,7 +146,7 @@ const (
 // Contract and model are low-coupling (explicit, stable API surface).
 // Functional and intrusive are high-coupling (implementation-level dependency).
 func strengthIsHigh(s Strength) bool {
-	return s == StrengthFunctional || s == StrengthIntrusive
+	return s == StrengthFunctional || s == StrengthSymmetric || s == StrengthIntrusive
 }
 
 // distanceIsHigh returns true for distances that represent a large ownership gap.
