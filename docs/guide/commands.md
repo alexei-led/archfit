@@ -50,7 +50,8 @@ Use `check` for gates. Use `scan` for a human-readable audit report.
 - `archfit autopilot` — one-shot LLM drafter for a full `.archfit.yaml` (off-gate,
   review-only; never applies — writes `.archfit-autopilot.yaml`). See
   [llm-enrich.md](llm-enrich.md).
-- `archfit install` — install or print commands for optional analyzer tools.
+- `archfit install` — install or print commands for the common analyzer tools it
+  can bootstrap; see [Tooling reference](tooling.md) for the full platform matrix.
 
 Output formats for `check`: `text`, `json`, `markdown`/`md`, `sarif`
 (SARIF 2.1.0 for CI code-scanning annotations), `scorecard` (the banded

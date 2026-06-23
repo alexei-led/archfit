@@ -85,7 +85,8 @@ not individual `.go` files.
 Requirements:
 
 - `package.json` at the repository root;
-- Node.js 24 LTS with `npx`, or Bun with `bunx`;
+- Node.js `24.x` preferred (`22+` for the full optional npm toolset) with `npx`,
+  or Bun with `bunx`;
 - dependency-cruiser available locally or through the package runner.
 
 Install a pinned dependency-cruiser version:
@@ -146,13 +147,13 @@ For TypeScript, module paths and rule filters are repo-relative file path globs.
 Requirements:
 
 - `pyproject.toml`, `setup.py`, or configured `python_package`;
-- `uv`, or Python 3.14 recommended / Python 3.12+ minimum with `grimp`
-  installed.
+- `uv` (preferred), or Python `3.12+` with `grimp` installed.
 
 Recommended install:
 
 ```sh
-brew install uv
+brew install uv              # macOS
+# Linux: use a current distro package or the Astral installer; see tooling.md
 ```
 
 How extraction works:
@@ -229,9 +230,12 @@ Requirements:
 Recommended install:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup default stable
 cargo --version
 ```
+
+If rustup is not installed, use your platform package manager where available, or
+follow the official rustup installer at <https://rust-lang.org/tools/install/>.
 
 How extraction works:
 
@@ -306,19 +310,25 @@ metrics need extra tools, and several are language-specific. When a tool is
 missing the dependent metric reports `n/a` **with the reason and enable step** —
 the run never fails — but the metric stays blind until you install it.
 
-| Tool                | Powers                          | Go  | TS/JS | Python | Rust | Setup                                                                              |
-| ------------------- | ------------------------------- | --- | ----- | ------ | ---- | ---------------------------------------------------------------------------------- |
-| `lizard`            | `complexity`                    | yes | yes   | yes    | yes  | `tools.complexity.enabled: on`; `pip install lizard` (or `uv tool install lizard`) |
-| SCIP indexer + `uv` | `risk_hub`                      | yes | yes   | yes    | yes  | `tools.scip.enabled: on`; see notes below                                          |
-| clone detector      | `functional_candidates`         | yes | yes   | yes    | yes  | `tools.clones.enabled: on`; jscpd (JS/TS) or PMD                                   |
-| `gitnexus`          | enriches `risk_hub`             | yes | yes   | yes    | yes  | `tools.gitnexus.enabled: on` (or auto-detect)                                      |
-| `cargo-modules`     | intra-crate module graph (Rust) | —   | —     | —      | yes  | `tools.cargo-modules.enabled: on`; `cargo install cargo-modules`                   |
+| Tool                | Powers                          | Go  | TS/JS | Python | Rust | Setup                                                                             |
+| ------------------- | ------------------------------- | --- | ----- | ------ | ---- | --------------------------------------------------------------------------------- |
+| `lizard`            | `complexity`                    | yes | yes   | yes    | yes  | `tools.complexity.enabled: on`; `uv tool install 'lizard==1.23.0'`                |
+| SCIP indexer + `uv` | `risk_hub`                      | yes | yes   | yes    | yes  | `tools.scip.enabled: on`; see notes below                                         |
+| clone detector      | `functional_candidates`         | yes | yes   | yes    | yes  | `tools.clones.enabled: on`; `npm install -g jscpd@5.0.11`                         |
+| `gitnexus`          | enriches `risk_hub`             | yes | yes   | yes    | yes  | `tools.gitnexus.enabled: on` (or auto-detect); `npm install -g gitnexus@1.6.8`    |
+| `cargo-modules`     | intra-crate module graph (Rust) | —   | —     | —      | yes  | `tools.cargo-modules.enabled: on`; `cargo install cargo-modules --version 0.26.0` |
 
 Notes that bite most often:
 
-- **Complexity needs `lizard` and `tools.complexity.enabled: on`.** Without both,
-  `complexity` is `n/a` for every language. lizard supports Go, Python, TypeScript,
-  and TSX. Install it and set the config flag, then re-run.
+- **Complexity needs PyPI `lizard` and `tools.complexity.enabled: on`.** Without
+  both, `complexity` is `n/a` for every language. lizard supports Go, Python,
+  TypeScript, TSX, and Rust. Install it with `uv tool install 'lizard==1.23.0'` and
+  set the config flag, then re-run. Do **not** use `brew install lizard`; that is
+  a compression tool with the same command name.
+- **SCIP indexers are language-specific.** Use `go install github.com/sourcegraph/scip-go/cmd/scip-go@v0.2.7`,
+  `npm install -g @sourcegraph/scip-typescript@0.4.0`,
+  `npm install -g @sourcegraph/scip-python@0.6.6`, or
+  `rustup component add rust-analyzer`, plus `uv` for archfit's embedded SCIP reader.
 - **SCIP for TypeScript needs `node_modules`.** `scip-typescript` resolves
   imports through installed dependencies, so run `npm ci` (or `bun install`)
   before the run. If `node_modules` is absent, archfit reports `risk_hub` as
@@ -330,14 +340,14 @@ Notes that bite most often:
   reason.
 - **Rust module depth needs `cargo-modules`.** A single crate is one node at crate
   level, so cycle/blast-radius/cohesion go `n/a`. `tools.cargo-modules.enabled: on`
-  (with `cargo install cargo-modules`) adds the `<crate>::<mod>` graph; archfit then
+  (with `cargo install cargo-modules --version 0.26.0`) adds the `<crate>::<mod>` graph; archfit then
   maps per-file LOC/churn to module keys so `structural_weight` flags god _files_ and
   the change-history metrics measure within the crate. On a workspace, crates whose
   `cargo-modules` run fails (proc-macro/codegen) are named in the coverage reason and
   the structural dimensions drop to medium confidence — partial, never silent.
-- **Clone detection is opt-in.** `tools.clones.enabled: on` plus a detector
-  (`npm install -g jscpd@5.0.9` for JS/TS, or PMD/CPD for Go/Python) turns
-  `functional_candidates` on. Off or absent → `n/a`.
+- **Clone detection is opt-in.** `tools.clones.enabled: on` plus `jscpd`
+  (`npm install -g jscpd@5.0.11`) turns `functional_candidates` on. Off or absent
+  → `n/a`.
 - **gitnexus auto-detects a present index.** With `tools.gitnexus.enabled`
   unset/`auto`, a present `.gitnexus/` or `.codegraph` index is used
   automatically; `on` always queries; `off` opts out but still reports that an
@@ -345,7 +355,8 @@ Notes that bite most often:
   `node .gitnexus/run.cjs analyze --index-only`. archfit only reads it.
 
 See [Install → optional analysis tools](install.md#optional-analysis-tools) for
-the full install matrix.
+quick setup and [Tooling reference](tooling.md) for platform-specific package
+manager choices, versions, home pages, and PATH checks.
 
 ## Mixed repositories
 

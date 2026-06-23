@@ -14,7 +14,9 @@ small references while configuring a repo.
   archfit makes executable.
 - [Metrics reference](metrics.md) — every metric, what it represents, and how it
   is scored.
-- [Install](install.md) — binary, optional tools, and Docker.
+- [Install](install.md) — binary install, Docker, and first analyzer checks.
+- [Tooling reference](tooling.md) — platform setup, package managers, tool
+  versions, home pages, and PATH checks.
 - [Quick start](quick-start.md) — first run workflow.
 - [Language support](languages.md) — supported languages and setup.
 - [Configuration basics](configuration.md) — `.archfit.yaml` shape.
