@@ -360,20 +360,65 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
 
 ### Task 11: Verify acceptance criteria, goldens, determinism, dogfood
 
-- [ ] Add a dedicated **book-examples regression test** (`internal/engine` or
+- [x] Add a dedicated **book-examples regression test** (`internal/engine` or
       `internal/model/coupling`) encoding Ch10 examples 1–4 with their exact balance
       values, as the durable proof archfit matches the book.
-- [ ] Review the cumulative golden diff deliberately; confirm every changed value is
+- [x] Review the cumulative golden diff deliberately; confirm every changed value is
       explained by a book-justified reason; commit regenerated goldens.
-- [ ] Verify determinism: byte-identical double-run of `check`/`scan` on the repo.
-- [ ] Run the full gate set: `make test`, `make lint`, `TestArchImports`, `TestGolden`,
+- [x] Verify determinism: byte-identical double-run of `check`/`scan` on the repo.
+- [x] Run the full gate set: `make test`, `make lint`, `TestArchImports`, `TestGolden`,
       `make archfit` (dogfood). All green.
-- [ ] Confirm acceptance: distributed monolith scores ≈1; frozen legacy ≈10; a
+- [x] Confirm acceptance: distributed monolith scores ≈1; frozen legacy ≈10; a
       well-structured repo's `coupling_balance` reads high/high (not `60/mixed/low`) and
       is distinct from an unanalyzed repo; `ScoreVersion == bc_score.v3`; no LLM import
       reachable from `internal/*`.
 
-### Task 12: [Final] Documentation
+### Task 12: Path to a higher honest score (1) — deterministic strength via SCIP
+
+- [ ] Check whether the Go SCIP toolchain (`scip-go`) is available in this environment;
+      if yes, enable `tools.scip.enabled: on` in `.archfit.yaml` so Go import strength is
+      inferred deterministically (interface→contract, struct→model, function→functional,
+      private→intrusive).
+- [ ] Re-run the self-scan; measure how many of the ~447 unknown-strength edges SCIP
+      resolves; record before/after unknown counts.
+- [ ] If `scip-go` is NOT installed here, document that clearly in the progress log and do
+      NOT enable it / do NOT fake it — the LLM-architect task (13) covers classification.
+- [ ] Regenerate goldens (if SCIP changed classifications) + inspect; run gates
+      (`make test`, `make lint`, `TestArchImports`, `make archfit`).
+- [ ] Commit config + goldens (or commit the "scip unavailable" note).
+
+### Task 13: Path to a higher honest score (2) — LLM-as-architect strength labels for unknown edges
+
+- [ ] Configure the LLM from the repo `.env` Anthropic key (do NOT hardcode the key); set
+      `tools.llm` (provider anthropic + a current Claude model) in `.archfit.yaml` if needed.
+      If no key is available, fall back to authoring labels directly and note the fallback.
+- [ ] Acting as a human architect who UNDERSTANDS archfit's design — first read `CLAUDE.md`,
+      `docs/design/`, `README.md`, and inspect the module graph — classify the highest-traffic
+      remaining unknown-strength cross-boundary seams. Prefer `archfit enrich` to LLM-draft
+      strength labels (Task 7 made enrich target unknown edges), then CURATE/CORRECT the
+      drafts using your design understanding; the draft is a starting point, not gospel.
+- [ ] Approve and pin the well-justified labels (`.archfit-labels.yaml`, `status: approved`,
+      `provenance`, `confidence`, rationale grounded in archfit's design) for the main seams
+      (e.g. engine→model, cmd→internal, classify→model/coupling). Aim to classify a
+      meaningful share of the 447 unknowns.
+- [ ] Re-run the self-scan; confirm the scored-edge fraction rose and decision tasks shrank;
+      the gate consumes only `approved` labels and stays deterministic (double-run identical).
+- [ ] Regenerate goldens + inspect; run gates; commit labels + config + goldens.
+
+### Task 14: Recalculate archfit-on-archfit (honest score after classification)
+
+- [ ] Re-run the dogfood: `make archfit-report` and/or
+      `.bin/archfit scan --config .archfit.yaml --full --format json`; capture the new
+      banded scorecard.
+- [ ] Update `docs/plans/notes/20260623-bc-book-dogfood.md` with a before/after table:
+      scored/abstained edge counts, `coupling_balance` value/band/confidence (should now read
+      with higher confidence as the scored fraction rose), and overall-score movement — all
+      honestly reported (no forced pass).
+- [ ] Confirm no spurious criticals introduced by the new labels; symmetric/distributed-
+      monolith detection still correct; gates green; determinism byte-identical double-run.
+- [ ] Commit the updated report.
+
+### Task 15: [Final] Documentation
 
 - [ ] Rewrite `docs/design/bc-measurement-v2.md` (or supersede with a `-v3`): state that
       archfit implements Khononov's published formula and ordinal anchors verbatim;
