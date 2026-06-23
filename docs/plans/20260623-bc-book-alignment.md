@@ -450,16 +450,23 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
 
 ### Task 15: Recalculate archfit-on-archfit (honest score after classification)
 
-- [ ] Re-run the dogfood: `make archfit-report` and/or
+- [x] Re-run the dogfood: `make archfit-report` and/or
       `.bin/archfit scan --config .archfit.yaml --full --format json`; capture the new
       banded scorecard.
-- [ ] Update `docs/plans/notes/20260623-bc-book-dogfood.md` with a before/after table:
+      Overall 60/mixed; coupling_balance 78/serviceable/high; analysis_confidence 90/strong/high.
+      Edge distribution: 89 scored internal, 0 abstained, 447 external excluded, 238 same-module.
+- [x] Update `docs/plans/notes/20260623-bc-book-dogfood.md` with a before/after table:
       scored/abstained edge counts, `coupling_balance` value/band/confidence (should now read
       with higher confidence as the scored fraction rose), and overall-score movement — all
       honestly reported (no forced pass).
-- [ ] Confirm no spurious criticals introduced by the new labels; symmetric/distributed-
+      Full BEFORE→AFTER journey table added: pre-change (~82/false) → Task 10 (57/60-low) →
+      Task 14 (60/78-high). Interpretation: score rose because external/library edges no longer
+      dilute the internal coupling measurement; 447 excluded externals surfaced transparently.
+- [x] Confirm no spurious criticals introduced by the new labels; symmetric/distributed-
       monolith detection still correct; gates green; determinism byte-identical double-run.
-- [ ] Commit the updated report.
+      0 criticals, 0 gate violations, 5 symmetric edges correctly low-severity same-owner;
+      double-run byte-identical (md5 match); make test, make lint, TestArchImports all pass.
+- [x] Commit the updated report.
 
 ### Task 16: [Final] Documentation
 
