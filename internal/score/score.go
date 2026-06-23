@@ -107,7 +107,7 @@ func Synthesize(d diagnostic.Diagnostic) Scorecard {
 
 	dims := []Dimension{
 		boundaryIntegrity(mi, gate, base),
-		couplingBalance(edges, mi),
+		couplingBalance(edges, mi, d.ClassifiedEdges),
 		dependencyGraphHealth(mi, base),
 		cohesionModularity(mi, base),
 		changeLocality(mi, base),
@@ -232,37 +232,111 @@ func boundaryIntegrity(mi metricIndex, gate []finding.Finding, base Confidence) 
 }
 
 // couplingBalance scores integration strength vs distance vs volatility using
-// Vlad Khononov's balance rule, strictly over the BC advisory edges. The
-// per-edge maintenance-effort score (Effort ∝ Strength × Distance × Volatility)
-// is averaged weighted by how many edges each rollup represents; balance is the
-// inverse (low effort = balanced). High/high/high edges (the critical band — a
-// distributed-monolith risk) cap the score: present at all → no better than
-// mixed; pervasive (≥5% of edges) → no better than poor. Cohesion (high strength
-// + low distance) never appears here — the classifier scores it as balanced — so
-// it is never counted against this dimension.
-func couplingBalance(edges []bcEdge, mi metricIndex) Dimension {
+// Vlad Khononov's balance formula from _Balancing Coupling in Software Design_ Ch10.
+//
+// When a ClassifiedEdgeSummary is supplied (populated from the full coupling.Index
+// before advisory filtering), the value comes from the mean book balance over all
+// scored cross-boundary edges:
+//
+//	value = round(100 × (MeanBalance − 1) / 9)
+//
+// This is a transparent linear rescale of the book's own 1–10 per-edge score
+// (balance 1→value 0, balance 10→value 100). Confidence scales with the scored
+// fraction (high ≥80%, medium 50–79%, low <50%). Zero scored edges → 60/mixed/low
+// (unanalyzed sentinel). The advisory worst-edge cap (critical band) is still
+// applied on top: any critical edge → cap at 60; pervasive (≥5% of
+// scored+abstained) → cap at 40.
+//
+// When summary is nil (backward compat), the function falls back to the legacy
+// advisory-edge path using the edges []bcEdge slice.
+func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.ClassifiedEdgeSummary) Dimension {
 	dim := Dimension{Name: DimCouplingBalance}
-	if len(edges) == 0 {
-		// Zero classified edges is never a false-green. It means one of: the
-		// classifier did not run (e.g. SCIP absent — the common Rust case), the
-		// graph has no cross-boundary edges to classify (single-module repo), or
-		// the edges exist but are all balanced. We cannot tell these apart from the
-		// scorecard, so we never present better than mixed and never high
-		// confidence — matching the architecture-review coverage-gap cap.
+
+	// Degenerate graph: <2 connected modules — coupling unmeasurable regardless of summary.
+	if degenerateGraph(mi) {
 		dim.Confidence = ConfidenceLow
-		if degenerateGraph(mi) {
-			dim.Value = 50
-			dim.Evidence = []string{"no classified coupling edges on a graph with fewer than two connected modules — coupling unmeasurable"}
-			dim.Summary = "coupling balance unmeasured: no internal module structure"
+		dim.Value = 50
+		dim.Evidence = []string{"no classified coupling edges on a graph with fewer than two connected modules — coupling unmeasurable"}
+		dim.Summary = "coupling balance unmeasured: no internal module structure"
+		return dim
+	}
+
+	// Advisory worst-edge count — used for the cap logic and evidence in both paths.
+	worst := 0
+	for _, e := range edges {
+		if e.worstCase() {
+			worst += e.count
+		}
+	}
+
+	// --- Distribution path (preferred): use the full classified-edge summary ---
+	if summary != nil {
+		crossBoundary := summary.Scored + summary.Abstained
+
+		// Zero cross-boundary edges (or zero scored): unanalyzed sentinel.
+		if summary.Scored == 0 {
+			dim.Confidence = ConfidenceLow
+			dim.Value = 60
+			dim.Evidence = []string{
+				"0 scored cross-boundary edges — coupling balance unconfirmed (edge classification absent or all edges abstained)",
+				fmt.Sprintf("worst-case (critical band) edges: %d", worst),
+			}
+			dim.Summary = "coupling balance unconfirmed: no scored cross-boundary edges"
 			return dim
 		}
-		dim.Value = 60 // top of mixed: unconfirmed, never strong on zero evidence
+
+		// value = round(100 × (MeanBalance − 1) / 9): linear rescale of book's 1–10.
+		value := int(math.Round(100 * (summary.MeanBalance - 1) / 9))
+
+		// Confidence from scored fraction.
+		var conf Confidence
+		scoredPct := 100 * summary.Scored / crossBoundary
+		switch {
+		case scoredPct >= 80:
+			conf = ConfidenceHigh
+		case scoredPct >= 50:
+			conf = ConfidenceMedium
+		default:
+			conf = ConfidenceLow
+		}
+
+		// Advisory cap: worst-case (critical) edges.
+		criticalCount := summary.BySeverity[string(coupling.SeverityCritical)]
+		switch {
+		case crossBoundary > 0 && criticalCount*100/crossBoundary >= 5:
+			value = capInt(value, 40) // pervasive distributed-monolith risk
+		case criticalCount > 0:
+			value = capInt(value, 60) // any critical edge present
+		}
+
+		dim.Value = value
+		dim.Confidence = conf
+		dim.Evidence = []string{
+			fmt.Sprintf("%d scored cross-boundary edges; mean book balance %.1f/10 → value %d",
+				summary.Scored, summary.MeanBalance, value),
+			fmt.Sprintf("scored fraction: %d%% (%d scored, %d abstained)",
+				scoredPct, summary.Scored, summary.Abstained),
+			fmt.Sprintf("worst-case (critical band) edges: %d", criticalCount),
+		}
+		if criticalCount > 0 {
+			dim.Summary = "unbalanced coupling: critical-band edges (distributed-monolith risk) present"
+		} else {
+			dim.Summary = fmt.Sprintf("mean book balance %.1f/10 across %d scored cross-boundary edges",
+				summary.MeanBalance, summary.Scored)
+		}
+		return dim
+	}
+
+	// --- Legacy fallback: advisory-edge path (summary == nil) ---
+	if len(edges) == 0 {
+		dim.Confidence = ConfidenceLow
+		dim.Value = 60
 		dim.Evidence = []string{"no classified coupling edges — coupling balance unconfirmed (edge classification absent, e.g. SCIP not run, or all edges balanced)"}
 		dim.Summary = "coupling balance unconfirmed: no classified cross-boundary edges"
 		return dim
 	}
 
-	var totalEffort, totalEdges, worst int
+	var totalEffort, totalEdges int
 	for _, e := range edges {
 		eff := e.effort
 		if eff < 0 {
@@ -270,18 +344,15 @@ func couplingBalance(edges []bcEdge, mi metricIndex) Dimension {
 		}
 		totalEffort += eff * e.count
 		totalEdges += e.count
-		if e.worstCase() {
-			worst += e.count
-		}
 	}
-	meanEffort := float64(totalEffort) / float64(totalEdges) // 0-10
+	meanEffort := float64(totalEffort) / float64(totalEdges)
 	value := int(math.Round((1 - meanEffort/10) * 100))
 
 	switch {
 	case totalEdges > 0 && worst*100/totalEdges >= 5:
-		value = capInt(value, 40) // pervasive distributed-monolith risk
+		value = capInt(value, 40)
 	case worst > 0:
-		value = capInt(value, 60) // a high/high/high edge exists
+		value = capInt(value, 60)
 	}
 
 	dim.Value = value
@@ -321,7 +392,7 @@ func dependencyGraphHealth(mi metricIndex, base Confidence) Dimension {
 		dim.Evidence = append(dim.Evidence, fmt.Sprintf("import cycles: %d", n))
 		if n > 0 {
 			pen := capInt(30+(n-1)*5, 60) // crate/package cycles defeat boundaries
-			if cyc.Band != "critical" {
+			if cyc.Band != string(BandCritical) {
 				// Softened cycles (Rust module-level: language-permitted, often just
 				// mutual type references) — a real but mild signal, not a boundary defeat.
 				pen = capInt(n*3, 20)
@@ -774,9 +845,9 @@ func sampleIDs(fs []finding.Finding) string {
 // (unqualified) to high — the same convention the markdown renderer uses.
 func metricConf(s string) Confidence {
 	switch s {
-	case "low":
+	case string(ConfidenceLow):
 		return ConfidenceLow
-	case "medium":
+	case string(ConfidenceMedium):
 		return ConfidenceMedium
 	default:
 		return ConfidenceHigh

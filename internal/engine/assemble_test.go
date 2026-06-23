@@ -1,0 +1,128 @@
+package engine
+
+import (
+	"testing"
+
+	"github.com/alexei-led/archfit/internal/model/coupling"
+)
+
+// TestBuildClassifiedEdgeSummary verifies the aggregate distribution counts and
+// MeanBalance computed from a coupling.Index.
+func TestBuildClassifiedEdgeSummary(t *testing.T) {
+	// edge key format: "from\x00to\x00kind"
+	key := func(from, to, kind string) string { return from + "\x00" + to + "\x00" + kind }
+
+	t.Run("empty index → all zeros, MeanBalance=0", func(t *testing.T) {
+		s := buildClassifiedEdgeSummary(coupling.Index{})
+		if s.Total != 0 {
+			t.Errorf("Total = %d, want 0", s.Total)
+		}
+		if s.Scored != 0 {
+			t.Errorf("Scored = %d, want 0", s.Scored)
+		}
+		if s.Abstained != 0 {
+			t.Errorf("Abstained = %d, want 0", s.Abstained)
+		}
+		if s.SameModule != 0 {
+			t.Errorf("SameModule = %d, want 0", s.SameModule)
+		}
+		if s.MeanBalance != 0.0 {
+			t.Errorf("MeanBalance = %v, want 0.0", s.MeanBalance)
+		}
+	})
+
+	t.Run("mix of same_module, scored, abstained → correct totals and mean", func(t *testing.T) {
+		// 2 same_module edges (excluded from balance)
+		// 3 scored cross-boundary edges with balances 2, 6, 10 → mean = 6.0
+		// 1 abstained cross-boundary edge (strength unknown)
+		idx := coupling.Index{
+			key("a", "b", "import"): {
+				Distance: coupling.DistanceSameModule,
+				Strength: coupling.StrengthFunctional,
+				Score:    coupling.EdgeScore{Scored: false},
+			},
+			key("a", "c", "import"): {
+				Distance: coupling.DistanceSameModule,
+				Strength: coupling.StrengthModel,
+				Score:    coupling.EdgeScore{Scored: false},
+			},
+			// scored: balance 2 → critical band
+			key("a", "d", "import"): {
+				Distance:   coupling.DistanceCrossDeployUnit,
+				Strength:   coupling.StrengthSymmetric,
+				Volatility: coupling.VolatilityHigh,
+				Score: coupling.EdgeScore{
+					Scored:  true,
+					Balance: 2,
+					Band:    coupling.SeverityCritical,
+				},
+			},
+			// scored: balance 6 → medium band
+			key("b", "d", "import"): {
+				Distance:   coupling.DistanceCrossModuleDiffOwner,
+				Strength:   coupling.StrengthFunctional,
+				Volatility: coupling.VolatilityMedium,
+				Score: coupling.EdgeScore{
+					Scored:  true,
+					Balance: 6,
+					Band:    coupling.SeverityMedium,
+				},
+			},
+			// scored: balance 10 → none band
+			key("b", "e", "import"): {
+				Distance:   coupling.DistanceCrossModuleSameOwner,
+				Strength:   coupling.StrengthContract,
+				Volatility: coupling.VolatilityLow,
+				Score: coupling.EdgeScore{
+					Scored:  true,
+					Balance: 10,
+					Band:    coupling.SeverityNone,
+				},
+			},
+			// abstained: unknown strength
+			key("c", "e", "import"): {
+				Distance:   coupling.DistanceCrossModuleDiffOwner,
+				Strength:   coupling.StrengthUnknown,
+				Volatility: coupling.VolatilityHigh,
+				Score:      coupling.EdgeScore{Scored: false},
+			},
+		}
+
+		s := buildClassifiedEdgeSummary(idx)
+
+		if s.Total != 6 {
+			t.Errorf("Total = %d, want 6", s.Total)
+		}
+		if s.SameModule != 2 {
+			t.Errorf("SameModule = %d, want 2", s.SameModule)
+		}
+		if s.Scored != 3 {
+			t.Errorf("Scored = %d, want 3", s.Scored)
+		}
+		if s.Abstained != 1 {
+			t.Errorf("Abstained = %d, want 1", s.Abstained)
+		}
+		wantMean := (2.0 + 6.0 + 10.0) / 3.0
+		if s.MeanBalance != wantMean {
+			t.Errorf("MeanBalance = %v, want %v", s.MeanBalance, wantMean)
+		}
+		// BySeverity: critical=1, medium=1, none=1, abstained=1
+		if s.BySeverity[string(coupling.SeverityCritical)] != 1 {
+			t.Errorf("BySeverity[critical] = %d, want 1", s.BySeverity[string(coupling.SeverityCritical)])
+		}
+		if s.BySeverity[string(coupling.SeverityMedium)] != 1 {
+			t.Errorf("BySeverity[medium] = %d, want 1", s.BySeverity[string(coupling.SeverityMedium)])
+		}
+		if s.BySeverity["abstained"] != 1 {
+			t.Errorf("BySeverity[abstained] = %d, want 1", s.BySeverity["abstained"])
+		}
+		// ByStrength should count only cross-boundary edges (4 total: sym, func, contract, unknown)
+		crossTotal := 0
+		for _, n := range s.ByStrength {
+			crossTotal += n
+		}
+		if crossTotal != 4 {
+			t.Errorf("ByStrength total = %d, want 4 (cross-boundary only)", crossTotal)
+		}
+	})
+}

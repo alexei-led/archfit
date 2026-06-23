@@ -10,6 +10,14 @@ import (
 	"github.com/alexei-led/archfit/internal/model/finding"
 )
 
+// Test-local string constants to satisfy goconst (these values match the
+// coupling/score package constants but live here to avoid cross-package imports).
+const (
+	metricBlastRadius = "blast_radius"
+	sevCritical       = "critical"
+	sevLow            = "low"
+)
+
 // metric builds a MetricResult for a test Diagnostic.
 func metric(name string, value float64, band, conf string) diagnostic.MetricResult {
 	return diagnostic.MetricResult{
@@ -266,10 +274,10 @@ func TestCouplingBalance(t *testing.T) {
 // confidence regardless of baseline coverage (coverage-gap cap).
 func TestCouplingBalance_EmptyEdges(t *testing.T) {
 	// A non-degenerate graph carries graph-shape metrics (≥2 connected modules).
-	nonDegen := metricIndex{"blast_radius": metric("blast_radius", 3, "info", "high")}
+	nonDegen := metricIndex{metricBlastRadius: metric(metricBlastRadius, 3, "info", "high")}
 
 	t.Run("non-degenerate + no edges → ≤60/low, never strong", func(t *testing.T) {
-		got := couplingBalance(nil, nonDegen)
+		got := couplingBalance(nil, nonDegen, nil)
 		if got.Value > 60 {
 			t.Errorf("value = %d, want ≤60 (no false-green on 0 classified edges)", got.Value)
 		}
@@ -279,7 +287,7 @@ func TestCouplingBalance_EmptyEdges(t *testing.T) {
 	})
 
 	t.Run("degenerate graph + no edges → 50/low", func(t *testing.T) {
-		got := couplingBalance(nil, metricIndex{})
+		got := couplingBalance(nil, metricIndex{}, nil)
 		if got.Value != 50 || got.Confidence != ConfidenceLow {
 			t.Errorf("value/conf = %d/%q, want 50/low", got.Value, got.Confidence)
 		}
@@ -593,6 +601,155 @@ func TestAnalysisConfidence_PrimaryExtractorTools(t *testing.T) {
 	if injectedMeta.Value <= fallbackMeta.Value {
 		t.Errorf("injected list did not override default: injected=%d fallback=%d",
 			injectedMeta.Value, fallbackMeta.Value)
+	}
+}
+
+// TestCouplingBalance_Distribution tests the new distribution-based scoring path
+// using ClassifiedEdgeSummary. These encode book-justified expected values.
+func TestCouplingBalance_Distribution(t *testing.T) {
+	// nonDegen makes the graph non-degenerate so the degenerate-graph early-return
+	// does not fire before we reach the distribution logic.
+	nonDegen := metricIndex{metricBlastRadius: metric(metricBlastRadius, 3, "info", "high")}
+
+	summary := func(scored, abstained int, meanBalance float64, bySev map[string]int) *diagnostic.ClassifiedEdgeSummary {
+		s := &diagnostic.ClassifiedEdgeSummary{
+			Total:       scored + abstained,
+			Scored:      scored,
+			Abstained:   abstained,
+			MeanBalance: meanBalance,
+			BySeverity:  bySev,
+		}
+		return s
+	}
+
+	cases := []struct {
+		name       string
+		sum        *diagnostic.ClassifiedEdgeSummary
+		wantMinVal int
+		wantMaxVal int
+		wantConf   Confidence
+		wantBand   Band
+	}{
+		{
+			// All balanced, high scored fraction: balance=9 → value=round(100×8/9)=89, high conf.
+			name:       "all balanced high scored fraction → strong/high",
+			sum:        summary(50, 0, 9.0, map[string]int{"none": 50}),
+			wantMinVal: 88, wantMaxVal: 90,
+			wantConf: ConfidenceHigh,
+			wantBand: BandStrong,
+		},
+		{
+			// Unknown-heavy repo: 30% scored → confidence low; value capped at 60 by finalize.
+			name:       "unknown-heavy 30% scored → low confidence",
+			sum:        summary(3, 7, 8.0, map[string]int{sevLow: 3}),
+			wantConf:   ConfidenceLow,
+			wantMaxVal: 60, // finalize caps low-conf at 60
+		},
+		{
+			// Zero scored edges but cross-boundary abstained exist → 60/mixed/low.
+			name:       "zero scored with abstained → 60/mixed/low",
+			sum:        summary(0, 5, 0.0, nil),
+			wantMinVal: 60, wantMaxVal: 60,
+			wantConf: ConfidenceLow,
+			wantBand: BandMixed,
+		},
+		{
+			// Zero cross-boundary edges (scored=0, abstained=0) → 60/mixed/low.
+			name:       "zero cross-boundary → 60/mixed/low",
+			sum:        summary(0, 0, 0.0, nil),
+			wantMinVal: 60, wantMaxVal: 60,
+			wantConf: ConfidenceLow,
+			wantBand: BandMixed,
+		},
+		{
+			// Mean balance 7.0 → value=round(100×6/9)=67, but critical edge present → capped at 60.
+			name:       "critical edge caps at 60",
+			sum:        summary(10, 0, 7.0, map[string]int{sevLow: 9, sevCritical: 1}),
+			wantMaxVal: 60,
+			wantConf:   ConfidenceHigh,
+		},
+		{
+			// Pervasive critical (≥5% of scored+abstained) → cap at 40.
+			name:       "pervasive critical → cap at 40",
+			sum:        summary(20, 0, 7.0, map[string]int{sevLow: 19, sevCritical: 1}),
+			wantMaxVal: 40,
+			wantConf:   ConfidenceHigh,
+		},
+		{
+			// Medium scored fraction (55%) → medium confidence.
+			name:       "55% scored → medium confidence",
+			sum:        summary(11, 9, 8.0, map[string]int{sevLow: 11}),
+			wantConf:   ConfidenceMedium,
+			wantMinVal: 61, // value=round(100×7/9)=78, no cap → serviceable; but finalize allows medium
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := finalize(couplingBalance(nil, nonDegen, tc.sum))
+			if tc.wantConf != "" && got.Confidence != tc.wantConf {
+				t.Errorf("confidence = %q, want %q", got.Confidence, tc.wantConf)
+			}
+			if tc.wantBand != "" && got.Band != tc.wantBand {
+				t.Errorf("band = %q (value %d), want %q", got.Band, got.Value, tc.wantBand)
+			}
+			if tc.wantMinVal > 0 && got.Value < tc.wantMinVal {
+				t.Errorf("value = %d, want ≥%d", got.Value, tc.wantMinVal)
+			}
+			if tc.wantMaxVal > 0 && got.Value > tc.wantMaxVal {
+				t.Errorf("value = %d, want ≤%d", got.Value, tc.wantMaxVal)
+			}
+			// band_matches_value invariant.
+			if got.Band != bandFor(got.Value) {
+				t.Errorf("band %q does not match value %d (want %q)", got.Band, got.Value, bandFor(got.Value))
+			}
+			// high_quality_requires_confidence invariant.
+			if (got.Band == BandServiceable || got.Band == BandStrong) && got.Confidence == ConfidenceLow {
+				t.Errorf("band %q with low confidence violates high_quality_requires_confidence", got.Band)
+			}
+		})
+	}
+}
+
+// TestCouplingBalance_Distribution_AdvisoryTailIndependent verifies that the
+// advisory edge list (bcEdge) still drives the worst-case evidence in the
+// summary path, and that the value comes from the distribution (not the advisory).
+func TestCouplingBalance_Distribution_AdvisoryTailIndependent(t *testing.T) {
+	nonDegen := metricIndex{metricBlastRadius: metric(metricBlastRadius, 3, "info", "high")}
+
+	// Summary says 10 scored edges, mean balance 9.0 → value≈89 before cap.
+	// Advisory edges include one critical → cap at 60.
+	sum := &diagnostic.ClassifiedEdgeSummary{
+		Total: 10, Scored: 10, Abstained: 0,
+		MeanBalance: 9.0,
+		BySeverity:  map[string]int{"none": 9, sevCritical: 1},
+	}
+	worstAdvisory := bcAdv("a", "b", "intrusive", "cross_deploy_unit", "high", 1, "critical", "critical", 1)
+
+	got := finalize(couplingBalance([]bcEdge{
+		{
+			strength: worstAdvisory.MatchedBy["strength"],
+			distance: worstAdvisory.MatchedBy["distance"],
+			band:     worstAdvisory.MatchedBy["score_band"],
+			severity: string(worstAdvisory.Severity),
+			effort:   atoiDefault(worstAdvisory.MatchedBy["score_value"], -1),
+			count:    1,
+		},
+	}, nonDegen, sum))
+
+	// Value must come from distribution (≈89 before cap), then capped at 60 by critical.
+	if got.Value > 60 {
+		t.Errorf("critical edge should cap at 60, got %d", got.Value)
+	}
+	// Evidence must mention worst-case count from the summary's BySeverity.
+	foundWorst := false
+	for _, ev := range got.Evidence {
+		if strings.Contains(ev, "worst-case (critical band) edges: 1") {
+			foundWorst = true
+		}
+	}
+	if !foundWorst {
+		t.Errorf("evidence missing worst-case critical count: %v", got.Evidence)
 	}
 }
 

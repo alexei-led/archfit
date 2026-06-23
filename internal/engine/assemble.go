@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/scope"
@@ -140,6 +141,45 @@ func pathDir(p string) string {
 		return p[:i]
 	}
 	return "."
+}
+
+// buildClassifiedEdgeSummary aggregates the full coupling.Index into a
+// ClassifiedEdgeSummary for coupling_balance scoring. It counts every edge
+// (including same_module), separates cross-boundary scored vs abstained edges,
+// and computes the arithmetic mean book balance over scored edges.
+// The summary uses string keys (not coupling package constants) so it stays
+// usable from diagnostic (stdlib-only) and score packages.
+func buildClassifiedEdgeSummary(idx coupling.Index) *diagnostic.ClassifiedEdgeSummary {
+	s := &diagnostic.ClassifiedEdgeSummary{
+		ByStrength:   make(map[string]int),
+		ByDistance:   make(map[string]int),
+		ByVolatility: make(map[string]int),
+		BySeverity:   make(map[string]int),
+	}
+	balanceSum := 0
+	for _, cl := range idx {
+		s.Total++
+		if cl.Distance == coupling.DistanceSameModule {
+			s.SameModule++
+			continue
+		}
+		// Cross-boundary edge.
+		s.ByStrength[string(cl.Strength)]++
+		s.ByDistance[string(cl.Distance)]++
+		s.ByVolatility[string(cl.Volatility)]++
+		if cl.Score.Scored {
+			s.Scored++
+			balanceSum += cl.Score.Balance
+			s.BySeverity[string(cl.Score.Band)]++
+		} else {
+			s.Abstained++
+			s.BySeverity["abstained"]++
+		}
+	}
+	if s.Scored > 0 {
+		s.MeanBalance = float64(balanceSum) / float64(s.Scored)
+	}
+	return s
 }
 
 // countActive returns the number of findings whose status is not fixed.

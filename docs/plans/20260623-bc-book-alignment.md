@@ -184,25 +184,25 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
 
 ### Task 2: Surface the per-edge book-balance distribution into `coupling_balance`
 
-- [ ] Add stdlib-only `ClassifiedEdgeSummary` to `internal/model/diagnostic/diagnostic.go`:
+- [x] Add stdlib-only `ClassifiedEdgeSummary` to `internal/model/diagnostic/diagnostic.go`:
       counts `ByStrength`/`ByDistance`/`ByVolatility`/`BySeverity`, `Total`, `Scored`,
       `Abstained`, and an aggregate `MeanBalance` (or the balance histogram) over scored
       cross-boundary edges. Add `Diagnostic.ClassifiedEdges *ClassifiedEdgeSummary`.
-- [ ] In `internal/engine/engine.go`, after `classify.Run`, populate the summary from the
+- [x] In `internal/engine/engine.go`, after `classify.Run`, populate the summary from the
       full `coupling.Index` (a pure read; skip `same_module` and abstained edges from the
       balance aggregate but count them). Keep `collectAdvisories`/`BCAdvisoryMinSeverity`
       unchanged — advisories stay noise-controlled; the **dimension** sees everything.
-- [ ] In `internal/score/score.go`, pass the summary into `Synthesize` and rewrite
+- [x] In `internal/score/score.go`, pass the summary into `Synthesize` and rewrite
       `couplingBalance` to value from the distribution: `value = round(100 × (MeanBalance
 − 1) / 9)` (a transparent linear rescale of the book's own 1–10 score — not a new
       model); confidence scales with scored fraction (high ≥80% scored, medium 50–79%,
       low <50% or unknown-heavy); **zero scored edges → keep `60/mixed/low` (unanalyzed)**;
       worst edges remain surfaced via existing advisories.
-- [ ] Write tests: all-balanced repo with N≥50 scored edges → high value + high
+- [x] Write tests: all-balanced repo with N≥50 scored edges → high value + high
       confidence (and distinct from the zero-edge unanalyzed case); unknown-heavy repo →
       lower confidence; zero edges → 60/low; verify advisory tail still flags the worst
       edges independently of the mean.
-- [ ] Regenerate goldens + inspect; run gates — must pass before Task 3.
+- [x] Regenerate goldens + inspect; run gates — must pass before Task 3.
 
 ### Task 3: Assign the Symmetric strength level from clone detection
 

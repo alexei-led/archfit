@@ -246,6 +246,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		RuntimeAsync:          runtimeAsync,
 		AgentTasks:            []diagnostic.AgentTask{},
 		ToolCoverage:          ex.coverages,
+		ClassifiedEdges:       buildClassifiedEdgeSummary(couplingIdx),
 		Delta:                 delta,
 		Summary: diagnostic.Summary{
 			GateFindings:   gateNew,
