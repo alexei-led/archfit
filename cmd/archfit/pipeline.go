@@ -288,7 +288,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// machine-readable CoverageGaps block (tool → unlocked metrics → install cmd)
 	// and surface config-quality lint plus any swallowed optional-tool errors in
 	// ConfigWarnings so they reach md/json/CI instead of being stderr-only.
-	diag.CoverageGaps = buildCoverageGaps(diag.ToolCoverage, cfg)
+	diag.CoverageGaps = buildCoverageGaps(diag.ToolCoverage, cfg, s.Root)
 	diag.ConfigWarnings = buildConfigWarnings(cfg, toolWarnings)
 
 	// Decision tasks: undeclared judgment inputs that prevent the scorer from
@@ -375,6 +375,37 @@ func buildPrimaryToolLanguage() map[string]string {
 	return m
 }
 
+// primaryToolProjectMarkers maps a language's primary-tool coverage name to the
+// project-marker filenames that signal the language is present in a repo root
+// (e.g. "go/packages" → ["go.mod"], "cargo" → ["Cargo.toml"]). Used by
+// buildCoverageGaps to suppress gaps for languages whose project is absent from
+// the scan root. Built once at init.
+var primaryToolProjectMarkers = buildPrimaryToolProjectMarkers()
+
+func buildPrimaryToolProjectMarkers() map[string][]string {
+	m := make(map[string][]string, len(languageRegistry))
+	for _, lang := range languageRegistry {
+		m[lang.PrimaryTool] = lang.ProjectMarkers
+	}
+	return m
+}
+
+// projectMarkerPresent reports whether any of the given project-marker filenames
+// exist in root. Checks only the root dir (not recursive) — markers like go.mod
+// and Cargo.toml are always at the repo root. Returns true when markers is empty
+// (no marker = cannot determine absence, so don't suppress).
+func projectMarkerPresent(root string, markers []string) bool {
+	if len(markers) == 0 {
+		return true
+	}
+	for _, m := range markers {
+		if _, err := os.Stat(filepath.Join(root, m)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // buildCoverageGaps derives the CoverageGaps block from the absent tool-coverage
 // records. Each gap's Gate is the configured posture for that tool (tools.<x>.gate,
 // default warn) — the --require-tools override is applied later by applyToolGate so
@@ -385,7 +416,12 @@ func buildPrimaryToolLanguage() map[string]string {
 // StatusDisabled entries (tools present but turned off in config) are intentionally
 // excluded — the user does not need an "install" prompt for a deliberate opt-out.
 // The tool_coverage block already carries the reason for any reader who wants it.
-func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config) []diagnostic.CoverageGap {
+//
+// Gaps are also suppressed when the language's project marker is absent from root
+// (e.g. no Cargo.toml → Rust is not present → cargo gap is noise). An explicit
+// gate on that tool overrides the suppression — it is an intentional "require it"
+// even in repos that don't currently use that language.
+func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string) []diagnostic.CoverageGap {
 	var gaps []diagnostic.CoverageGap
 	for _, c := range cov {
 		// Only truly absent tools produce a gap. Disabled-by-config tools are an
@@ -400,6 +436,27 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config) []diagnosti
 		if lang, isPrimary := primaryToolLanguage[c.Tool]; isPrimary &&
 			cfg.Tools[lang].Enabled == config.ModeOff && cfg.Tools[lang].Gate == "" {
 			continue
+		}
+		// Suppress the gap when the language's project marker is absent from the
+		// scan root — the language simply isn't present in this repo, so the missing
+		// tool is not actionable. An explicit gate overrides this (same carve-out as
+		// the disabled-language check above). cargo-modules (opt-in intra-crate tool,
+		// not a language primary) is also suppressed when no Cargo.toml is present.
+		if root != "" {
+			switch c.Tool {
+			case toolCargoModules:
+				// cargo-modules is Rust-specific but not a primary tool; use Cargo.toml.
+				if configToolGate(cfg, c.Tool) == gateWarn && !projectMarkerPresent(root, []string{markerCargoToml}) {
+					continue
+				}
+			default:
+				if markers, ok := primaryToolProjectMarkers[c.Tool]; ok {
+					lang := primaryToolLanguage[c.Tool]
+					if cfg.Tools[lang].Gate == "" && !projectMarkerPresent(root, markers) {
+						continue
+					}
+				}
+			}
 		}
 		info, ok := toolAffectedMetrics[c.Tool]
 		if !ok {

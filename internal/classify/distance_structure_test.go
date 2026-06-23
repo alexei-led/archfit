@@ -232,6 +232,80 @@ func TestDeployDistance(t *testing.T) {
 	}
 }
 
+// TestClassifyDistance_MultiOwnerPrecomputed verifies that classifyDistance
+// returns identical results when the degenerate flags are pre-computed once
+// (as Run does) versus computed inline. This covers the O(E·M) fix: the
+// maps are built once before the edge loop and passed in, not rebuilt per edge.
+func TestClassifyDistance_MultiOwnerPrecomputed(t *testing.T) {
+	// Two modules with two distinct explicit owners — non-degenerate.
+	modules := map[string]config.ModuleDef{
+		distModCore: {Paths: []string{distModCore + "/**"}, Owner: distOwnerTeamX},
+		distModAPI:  {Paths: []string{distModAPI + "/**"}, Owner: distOwnerTeamY},
+	}
+	explicit := map[string]bool{distModCore: true, distModAPI: true}
+
+	mi := buildModuleIndex(modules)
+
+	// Pre-compute as Run() does.
+	explicitOwnerMap := make(map[string]string, len(explicit))
+	for mod := range explicit {
+		explicitOwnerMap[mod] = modules[mod].Owner
+	}
+	degExplicit := isDegenerateOwnerMap(explicitOwnerMap)
+
+	fullOwnerMap := make(map[string]string, len(modules))
+	for name, def := range modules {
+		fullOwnerMap[name] = def.Owner
+	}
+	degOwners := isDegenerateOwnerMap(fullOwnerMap)
+
+	// Two distinct owners → explicit map is NOT degenerate → ownership basis.
+	if degExplicit {
+		t.Fatal("explicit owner map with two distinct owners must not be degenerate")
+	}
+
+	fromPath := distModCore + "/x.go"
+	toPath := distModAPI + "/y.go"
+
+	got, gotBasis := classifyDistance(fromPath, toPath, "go", mi, modules, explicit, degExplicit, degOwners)
+	if got != coupling.DistanceCrossModuleDiffOwner {
+		t.Errorf("distance = %q, want cross_module_diff_owner", got)
+	}
+	if gotBasis != coupling.DistanceBasisOwnership {
+		t.Errorf("basis = %q, want ownership", gotBasis)
+	}
+
+	// Calling again with the same pre-computed flags must return the same result
+	// (verifies the flags are stateless / not mutated between calls).
+	got2, gotBasis2 := classifyDistance(fromPath, toPath, "go", mi, modules, explicit, degExplicit, degOwners)
+	if got2 != got || gotBasis2 != gotBasis {
+		t.Errorf("second call returned different result: dist=%q basis=%q", got2, gotBasis2)
+	}
+
+	// Same-owner pair in the same config → SameOwner via ownership basis.
+	modulesSame := map[string]config.ModuleDef{
+		distModCore: {Paths: []string{distModCore + "/**"}, Owner: distOwnerTeamX},
+		distModAPI:  {Paths: []string{distModAPI + "/**"}, Owner: distOwnerTeamX},
+	}
+	explicitSameMap := map[string]string{distModCore: distOwnerTeamX, distModAPI: distOwnerTeamX}
+	degSame := isDegenerateOwnerMap(explicitSameMap)
+	// Single owner → degenerate → falls through to code structure (flat names → DiffOwner).
+	if !degSame {
+		t.Fatal("single-owner explicit map must be degenerate")
+	}
+	miSame := buildModuleIndex(modulesSame)
+	fullSame := map[string]string{distModCore: distOwnerTeamX, distModAPI: distOwnerTeamX}
+	degFullSame := isDegenerateOwnerMap(fullSame)
+	gotSame, gotBasisSame := classifyDistance(fromPath, toPath, "go", miSame, modulesSame, explicit, degSame, degFullSame)
+	// Flat names "core" and "api" with degenerate owner → code structure → DiffOwner.
+	if gotSame != coupling.DistanceCrossModuleDiffOwner {
+		t.Errorf("degenerate same-owner: distance = %q, want cross_module_diff_owner", gotSame)
+	}
+	if gotBasisSame != coupling.DistanceBasisStructure {
+		t.Errorf("degenerate same-owner: basis = %q, want structure", gotBasisSame)
+	}
+}
+
 func TestIsDegenerateOwnerMap(t *testing.T) {
 	tests := []struct {
 		name   string

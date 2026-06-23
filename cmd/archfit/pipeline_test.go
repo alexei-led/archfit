@@ -81,7 +81,7 @@ func TestBuildCoverageGaps(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			gaps := buildCoverageGaps(tc.cov, tc.cfg)
+			gaps := buildCoverageGaps(tc.cov, tc.cfg, "")
 			if len(gaps) != len(tc.wantTools) {
 				t.Fatalf("gaps = %d, want %d: %+v", len(gaps), len(tc.wantTools), gaps)
 			}
@@ -95,6 +95,117 @@ func TestBuildCoverageGaps(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBuildCoverageGaps_ProjectMarkerSuppression verifies that gaps for a
+// language whose project marker is absent from the scan root are suppressed,
+// while gaps for present markers and explicit gates are preserved.
+func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
+	// Pure-Go repo: only go.mod present, no Cargo.toml.
+	goOnlyDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(goOnlyDir, markerGoMod), []byte("module example\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mixed Go+Rust repo: both go.mod and Cargo.toml present.
+	mixedDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(mixedDir, markerGoMod), []byte("module example\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mixedDir, markerCargoToml), []byte("[package]\nname = \"x\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgDefault := config.Config{}
+	cfgRustGate := config.Config{Tools: config.ToolsConfig{
+		config.LangRust: {Gate: config.GateFail},
+	}}
+	cfgCargoModulesGate := config.Config{Tools: config.ToolsConfig{
+		config.ToolCargoModules: {Gate: config.GateFail},
+	}}
+
+	allRustAbsent := []diagnostic.Coverage{
+		{Tool: toolCargo, Status: diagnostic.StatusAbsent},
+		{Tool: toolCargoModules, Status: diagnostic.StatusAbsent},
+	}
+
+	t.Run("pure-Go repo: no cargo or cargo-modules gap", func(t *testing.T) {
+		gaps := buildCoverageGaps(allRustAbsent, cfgDefault, goOnlyDir)
+		for _, g := range gaps {
+			if g.Tool == toolCargo || g.Tool == toolCargoModules {
+				t.Errorf("unexpected gap %q in pure-Go repo (no Cargo.toml)", g.Tool)
+			}
+		}
+	})
+
+	t.Run("mixed Go+Rust repo: cargo gap present", func(t *testing.T) {
+		gaps := buildCoverageGaps(allRustAbsent, cfgDefault, mixedDir)
+		found := false
+		for _, g := range gaps {
+			if g.Tool == toolCargo {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("expected cargo gap in mixed repo with Cargo.toml, got none")
+		}
+	})
+
+	t.Run("mixed Go+Rust repo: cargo-modules gap present", func(t *testing.T) {
+		gaps := buildCoverageGaps(allRustAbsent, cfgDefault, mixedDir)
+		found := false
+		for _, g := range gaps {
+			if g.Tool == toolCargoModules {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("expected cargo-modules gap in mixed repo with Cargo.toml, got none")
+		}
+	})
+
+	t.Run("explicit gate on rust overrides marker suppression", func(t *testing.T) {
+		gaps := buildCoverageGaps([]diagnostic.Coverage{
+			{Tool: toolCargo, Status: diagnostic.StatusAbsent},
+		}, cfgRustGate, goOnlyDir)
+		found := false
+		for _, g := range gaps {
+			if g.Tool == toolCargo {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("explicit gate: expected cargo gap even without Cargo.toml, got none")
+		}
+	})
+
+	t.Run("explicit gate on cargo-modules overrides marker suppression", func(t *testing.T) {
+		gaps := buildCoverageGaps([]diagnostic.Coverage{
+			{Tool: toolCargoModules, Status: diagnostic.StatusAbsent},
+		}, cfgCargoModulesGate, goOnlyDir)
+		found := false
+		for _, g := range gaps {
+			if g.Tool == toolCargoModules {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("explicit gate: expected cargo-modules gap even without Cargo.toml, got none")
+		}
+	})
+
+	t.Run("empty root disables suppression (backward compat)", func(t *testing.T) {
+		gaps := buildCoverageGaps(allRustAbsent, cfgDefault, "")
+		found := false
+		for _, g := range gaps {
+			if g.Tool == toolCargo {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("empty root: expected cargo gap (no suppression), got none")
+		}
+	})
 }
 
 // TestBuildConfigWarnings verifies the config-warnings block: lint warnings and

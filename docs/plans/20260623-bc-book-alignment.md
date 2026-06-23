@@ -296,17 +296,17 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
 
 ### Task 8: Noise suppression + reliability/efficiency
 
-- [ ] In `cmd/archfit/pipeline.go` `buildCoverageGaps`, suppress tool-coverage-gap noise
+- [x] In `cmd/archfit/pipeline.go` `buildCoverageGaps`, suppress tool-coverage-gap noise
       for a language whose project marker is absent (e.g. no `Cargo.toml` → no
       cargo/cargo-modules gap) in addition to the existing disabled-primary-tool
       suppression; do not suppress when the marker is present. Keep `StatusDisabled`
       distinct from `StatusAbsent`.
-- [ ] Fix the O(E·M) owner-map rebuild in `classifyDistance` (rebuild the owner index once,
+- [x] Fix the O(E·M) owner-map rebuild in `classifyDistance` (rebuild the owner index once,
       O(M+E), not per-edge) — behavior-preserving.
-- [ ] Write tests: pure-Go repo (no Cargo.toml) reports no cargo gaps; mixed Go+Rust repo
+- [x] Write tests: pure-Go repo (no Cargo.toml) reports no cargo gaps; mixed Go+Rust repo
       with Cargo.toml still does; owner-map fix preserves identical distance classification
       on a fixture with multiple owners.
-- [ ] Run gates — must pass before Task 9.
+- [x] Run gates — must pass before Task 9.
 
 ### Task 9: Verify acceptance criteria, goldens, determinism, dogfood
 
