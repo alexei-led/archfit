@@ -206,17 +206,17 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
 
 ### Task 3: Assign the Symmetric strength level from clone detection
 
-- [ ] In `internal/classify/classify.go` reorder so clone-pair membership
+- [x] In `internal/classify/classify.go` reorder so clone-pair membership
       (`CrossModuleClonePairs` → `ConnascenceAlgorithm`) is known before strength is
       finalized (compute connascence first, or post-adjust strength).
-- [ ] When a cross-module clone pair exists for an edge and the deterministic strength is
+- [x] When a cross-module clone pair exists for an edge and the deterministic strength is
       `functional` or `unknown`, upgrade strength to `StrengthSymmetric` (book level 9 =
       duplicated functionality / DRY violation). Do not override `contract`/`intrusive`
       (config-authoritative) or an approved pinned label.
-- [ ] Write tests: clone pair between modules → `StrengthSymmetric`; no clone → unchanged;
+- [x] Write tests: clone pair between modules → `StrengthSymmetric`; no clone → unchanged;
       config glob / pinned label still wins; integration — duplicated logic across deploy
       units yields balance ≈ 1 (distributed monolith now detected).
-- [ ] Regenerate goldens + inspect; run gates — must pass before Task 4.
+- [x] Regenerate goldens + inspect; run gates — must pass before Task 4.
 
 ### Task 4: Runtime coupling → distance (book Ch8) via the AsyncBridge signal
 

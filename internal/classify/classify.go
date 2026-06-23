@@ -185,6 +185,24 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 		str = strengthFromHint(e.StrengthHint)
 	}
 
+	// --- Symmetric upgrade from clone detection ---
+	// A cross-module clone pair (CoA / DRY violation) signals bidirectional
+	// coupling at implementation level — book ordinal 9 (Symmetric), between
+	// Functional (8) and Intrusive (10). Upgrade only when strength is still
+	// functional or unknown; config-authoritative (contract/intrusive) and
+	// human-approved pinned labels (model, symmetric, etc.) are never overridden.
+	if str == coupling.StrengthFunctional || str == coupling.StrengthUnknown {
+		if len(c.CrossModuleClonePairs) > 0 {
+			if fromMod, okF := mi.moduleFor(fromPath); okF {
+				if toMod, okT := mi.moduleFor(toPath); okT {
+					if _, hasPair := c.CrossModuleClonePairs[connascencePairKey(fromMod, toMod)]; hasPair {
+						str = coupling.StrengthSymmetric
+					}
+				}
+			}
+		}
+	}
+
 	// --- Distance ---
 	dist, distBasis := classifyDistance(fromPath, toPath, e.Language, mi, modules, c.ExplicitOwners, degenerateExplicit, degenerateOwners)
 	// Role-aware downgrade: a composition root (or a generated/test module) reaches

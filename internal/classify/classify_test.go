@@ -74,7 +74,7 @@ func TestRun(t *testing.T) {
 	//               owner="team-x", deploy_unit="svc-a", subdomain=""  (unknown)
 	modules := map[string]config.ModuleDef{
 		"a": {
-			Paths:      []string{"services/a/**"},
+			Paths:      []string{pathsA},
 			Public:     []string{"services/a/api/**"},
 			Internal:   []string{"services/a/internal/**"},
 			Owner:      ownerTeamX,
@@ -82,8 +82,8 @@ func TestRun(t *testing.T) {
 			Subdomain:  subdomainCore,
 		},
 		"b": {
-			Paths:      []string{"services/b/**"},
-			Public:     []string{"services/b/api/**"},
+			Paths:      []string{pathsB},
+			Public:     []string{publicB},
 			Internal:   []string{"services/b/internal/**"},
 			Owner:      ownerTeamY,
 			DeployUnit: deployUnitB,
@@ -325,7 +325,7 @@ func TestRun_IndexKeyMatchesEdge(t *testing.T) {
 func TestRun_ExplicitVolatilityFieldOverridesSubdomain(t *testing.T) {
 	modules := map[string]config.ModuleDef{
 		"a": {Paths: []string{globPkgA}},
-		"b": {Paths: []string{globPkgB}, Subdomain: "core", Volatility: "low"},
+		"b": {Paths: []string{globPkgB}, Subdomain: subdomainCore, Volatility: "low"},
 	}
 	cfg := config.ClassifyConfig{Modules: modules}
 
