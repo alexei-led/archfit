@@ -308,7 +308,41 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
       on a fixture with multiple owners.
 - [x] Run gates — must pass before Task 9.
 
-### Task 9: Verify acceptance criteria, goldens, determinism, dogfood
+### Task 9: Update archfit self-config (.archfit.yaml) for the book model
+
+- [ ] Review every module's `subdomain`/`volatility` so the book anchors (core→10,
+      supporting/generic→3, frozen/legacy→1) are expressed; declare any genuinely stable
+      module as frozen/legacy. Goal: the self-scan emits decision tasks only where a
+      judgment input is truly undeclared, not for already-known modules.
+- [ ] Verify `owner`/`deploy_unit`/`role` are accurate so distance maps onto the correct
+      book anchors (no module mislabeled; composition_root/adapter/core roles right).
+- [ ] Enable the inferred-volatility cascade in the self-config
+      (`volatility_cascade_enabled: true`) so archfit dogfoods the full book model (Ch9),
+      provided results stay sensible (cascade does not flood the graph with high
+      volatility); if it over-propagates, leave it off and record why.
+- [ ] Build (`make build`) and run a self-scan; iterate the config until the self-scan is
+      deterministic and free of spurious abstain/decision warnings.
+- [ ] Regenerate goldens (self-config drives golden output) + inspect; run gates
+      (`make test`, `make lint`, `TestArchImports`). Commit config + goldens.
+
+### Task 10: Dogfood — evaluate archfit on archfit with the new formula
+
+- [ ] Build and run the new scorer on archfit itself: `make archfit-report` (and/or
+      `.bin/archfit scan --config .archfit.yaml --full --format json`); capture the new
+      banded scorecard.
+- [ ] Record the new per-dimension scores and overall vs the pre-change baseline (~82):
+      confirm `coupling_balance` is no longer `60/mixed/low` and now reads with real
+      confidence; note movement in `boundary_integrity`, `cohesion_modularity`, etc.
+- [ ] Confirm book behavior on real archfit edges: symmetric/distributed-monolith edges
+      (if any) flagged correctly; no spurious criticals; abstain/decision tasks appear
+      only where a judgment input is genuinely undeclared.
+- [ ] Write the dogfood scorecard + interpretation to
+      `docs/plans/notes/20260623-bc-book-dogfood.md` (scores, deltas, anything surprising,
+      and any config follow-ups discovered).
+- [ ] Gates: `make archfit` (dogfood gate) green; determinism byte-identical double-run;
+      commit the report.
+
+### Task 11: Verify acceptance criteria, goldens, determinism, dogfood
 
 - [ ] Add a dedicated **book-examples regression test** (`internal/engine` or
       `internal/model/coupling`) encoding Ch10 examples 1–4 with their exact balance
@@ -323,7 +357,7 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
       is distinct from an unanalyzed repo; `ScoreVersion == bc_score.v3`; no LLM import
       reachable from `internal/*`.
 
-### Task 10: [Final] Documentation
+### Task 12: [Final] Documentation
 
 - [ ] Rewrite `docs/design/bc-measurement-v2.md` (or supersede with a `-v3`): state that
       archfit implements Khononov's published formula and ordinal anchors verbatim;
@@ -333,8 +367,10 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
       fields; frozen/legacy volatility; LLM subdomain draft; abstain → decision tasks),
       `concepts.md`, and `release-notes.md`.
 - [ ] Update `CLAUDE.md` with the new patterns (book-verbatim scorer, abstain-not-fake,
-      provenance-lowers-confidence, async→distance, volatility cascade) and the bumped
-      `ScoreVersion`.
+      provenance-lowers-confidence, opt-in volatility cascade) and the bumped `ScoreVersion`.
+- [ ] Document the new archfit self-scorecard (from Task 10's dogfood) in `release-notes.md`,
+      and record the Task 4 decision that runtime/async coupling stays report-only (NOT wired
+      into distance) by design — do not document an async→distance behavior that does not exist.
 
 _Note: ralphex automatically moves completed plans to `docs/plans/completed/`._
 
