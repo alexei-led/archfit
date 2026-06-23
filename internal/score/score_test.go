@@ -753,6 +753,84 @@ func TestCouplingBalance_Distribution_AdvisoryTailIndependent(t *testing.T) {
 	}
 }
 
+// TestCouplingBalance_LLMProvenance_LowersConfidence verifies that when a
+// significant fraction (≥20%) of scored edges have LLM-provenance approved
+// labels, coupling_balance confidence is lowered by one band.
+func TestCouplingBalance_LLMProvenance_LowersConfidence(t *testing.T) {
+	nonDegen := metricIndex{metricBlastRadius: metric(metricBlastRadius, 3, "info", "high")}
+
+	cases := []struct {
+		name        string
+		scored      int
+		llmApproved int
+		wantConf    Confidence
+	}{
+		{
+			name:        "no llm labels → confidence unaffected (high)",
+			scored:      10,
+			llmApproved: 0,
+			wantConf:    ConfidenceHigh,
+		},
+		{
+			name:        "llm labels <20% → confidence unaffected",
+			scored:      10,
+			llmApproved: 1, // 10% < 20% threshold
+			wantConf:    ConfidenceHigh,
+		},
+		{
+			name:        "llm labels ≥20% → confidence lowered by one band (high→medium)",
+			scored:      10,
+			llmApproved: 2, // 20% = threshold
+			wantConf:    ConfidenceMedium,
+		},
+		{
+			name:        "llm labels majority → confidence lowered by one band (high→medium)",
+			scored:      10,
+			llmApproved: 8,
+			wantConf:    ConfidenceMedium,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sum := &diagnostic.ClassifiedEdgeSummary{
+				Total:       tc.scored,
+				Scored:      tc.scored,
+				Abstained:   0,
+				MeanBalance: 9.0, // good balance → high value so finalize's low-conf cap is irrelevant
+				BySeverity:  map[string]int{sevLow: tc.scored},
+				LLMApproved: tc.llmApproved,
+			}
+			got := couplingBalance(nil, nonDegen, sum)
+			if got.Confidence != tc.wantConf {
+				t.Errorf("confidence = %q, want %q (llmApproved=%d, scored=%d)",
+					got.Confidence, tc.wantConf, tc.llmApproved, tc.scored)
+			}
+		})
+	}
+}
+
+// TestCouplingBalance_LLMProvenance_EvidenceString verifies that when LLM labels
+// are in effect, the evidence slice mentions them.
+func TestCouplingBalance_LLMProvenance_EvidenceString(t *testing.T) {
+	nonDegen := metricIndex{metricBlastRadius: metric(metricBlastRadius, 3, "info", "high")}
+	sum := &diagnostic.ClassifiedEdgeSummary{
+		Total: 10, Scored: 10, MeanBalance: 9.0,
+		BySeverity:  map[string]int{sevLow: 10},
+		LLMApproved: 3,
+	}
+	got := couplingBalance(nil, nonDegen, sum)
+	found := false
+	for _, ev := range got.Evidence {
+		if strings.Contains(ev, "llm-provenance") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected llm-provenance mention in evidence, got: %v", got.Evidence)
+	}
+}
+
 // TestAnalysisConfidence_NADimensionRatioCap is the Cal-6 regression: a fully-tooled
 // run (coverage 1.0, every semantic tool present) over a real graph must NOT read 100
 // when several scorecard dimensions came back n/a — the meta score reflects how many

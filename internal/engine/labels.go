@@ -12,9 +12,10 @@ import (
 // the classify config (precedence: config globs > approved labels > extractor
 // hint). Freshness is checked against the full import graph — on full runs
 // only (a delta graph is partial and would false-stale every label). Returns
-// one labels/stale advisory per ignored stale label. Deterministic — the gate
-// never calls an LLM; labels are reviewed YAML.
-func applyPinnedLabels(g *graph.Graph, classifyCfg *config.ClassifyConfig, mode Mode, lbls []labels.Label) []finding.Finding {
+// one labels/stale advisory per ignored stale label plus the count of approved
+// labels with llm provenance (used to lower coupling_balance confidence).
+// Deterministic — the gate never calls an LLM; labels are reviewed YAML.
+func applyPinnedLabels(g *graph.Graph, classifyCfg *config.ClassifyConfig, mode Mode, lbls []labels.Label) ([]finding.Finding, int) {
 	var evidence map[string]string
 	if mode.Full || mode.Base == "" {
 		wanted := make(map[string]struct{}, len(lbls))
@@ -25,6 +26,8 @@ func applyPinnedLabels(g *graph.Graph, classifyCfg *config.ClassifyConfig, mode 
 	}
 	approved, stale := labels.Approved(lbls, evidence)
 	classifyCfg.ApprovedLabels = approved
+
+	llmCount := labels.LLMApprovedCount(lbls, evidence)
 
 	out := make([]finding.Finding, 0, len(stale))
 	for _, sl := range stale {
@@ -42,7 +45,7 @@ func applyPinnedLabels(g *graph.Graph, classifyCfg *config.ClassifyConfig, mode 
 				" dependency surface changed since approval; label ignored — re-run `archfit enrich` and re-review",
 		})
 	}
-	return out
+	return out, llmCount
 }
 
 // PairEvidence computes the current evidence hash per module pair (keyed by

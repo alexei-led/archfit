@@ -111,7 +111,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// classification (precedence: config globs > approved labels > extractor
 	// hint); stale ones surface as labels/stale advisories.
 	classifyCfg := in.Classify
-	staleLabelFindings := applyPinnedLabels(ex.g, &classifyCfg, in.Mode, in.Labels)
+	staleLabelFindings, llmApprovedCount := applyPinnedLabels(ex.g, &classifyCfg, in.Mode, in.Labels)
 	// Thread clone pairs for CoA (connascence of algorithm) tagging — report-only.
 	if len(in.Signals.Duplication.Clusters) > 0 {
 		classifyCfg.CrossModuleClonePairs = buildClonePairSet(in.Signals.Duplication.Clusters, classifyCfg.ModuleMap)
@@ -246,7 +246,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		RuntimeAsync:          runtimeAsync,
 		AgentTasks:            []diagnostic.AgentTask{},
 		ToolCoverage:          ex.coverages,
-		ClassifiedEdges:       buildClassifiedEdgeSummary(couplingIdx),
+		ClassifiedEdges:       buildClassifiedEdgeSummaryWithLLM(couplingIdx, llmApprovedCount),
 		Delta:                 delta,
 		Summary: diagnostic.Summary{
 			GateFindings:   gateNew,

@@ -31,6 +31,20 @@ const (
 	StatusApproved = "approved"
 )
 
+// Provenance values indicate the source of a label's judgment.
+const (
+	ProvenanceHuman = "human"
+	ProvenanceLLM   = "llm"
+	ProvenanceTool  = "tool"
+)
+
+// Confidence values indicate how trustworthy a label's judgment is.
+const (
+	ConfidenceHigh   = "high"
+	ConfidenceMedium = "medium"
+	ConfidenceLow    = "low"
+)
+
 // validStrengths are the Balanced Coupling strengths a label may pin.
 var validStrengths = map[string]struct{}{
 	"contract": {}, "model": {}, "functional": {}, "intrusive": {},
@@ -52,6 +66,13 @@ type Label struct {
 	Rationale    string `yaml:"rationale"`
 	EvidenceHash string `yaml:"evidence_hash"`
 	Status       string `yaml:"status"`
+	// Confidence records how trustworthy the strength judgment is (high|medium|low).
+	// Empty means unset (treated as high for approved human labels). Optional — omitted
+	// from YAML when unset so existing files remain valid.
+	Confidence string `yaml:"confidence,omitempty"`
+	// Provenance records the source of the judgment (human|llm|tool). Empty means
+	// unset (treated as human). Optional — omitted from YAML when unset.
+	Provenance string `yaml:"provenance,omitempty"`
 }
 
 // File is the on-disk shape of .archfit-labels.yaml.
@@ -104,4 +125,25 @@ func Approved(lbls []Label, evidence map[string]string) (approved map[string]str
 		approved[Key(l.From, l.To)] = l.Strength
 	}
 	return approved, stale
+}
+
+// LLMApprovedCount returns the count of approved labels whose provenance is
+// "llm" (and confidence is not "high"). These labels lower the consuming
+// dimension's confidence by one band — they have been human-approved but the
+// original judgment came from an LLM, not a human reading the code.
+// Draft labels and stale labels (same freshness rules as Approved) are excluded.
+func LLMApprovedCount(lbls []Label, evidence map[string]string) int {
+	n := 0
+	for _, l := range lbls {
+		if l.Status != StatusApproved {
+			continue
+		}
+		if current, ok := evidence[Key(l.From, l.To)]; ok && l.EvidenceHash != "" && l.EvidenceHash != current {
+			continue // stale — excluded
+		}
+		if l.Provenance == ProvenanceLLM && l.Confidence != ConfidenceHigh {
+			n++
+		}
+	}
+	return n
 }

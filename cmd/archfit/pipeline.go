@@ -27,6 +27,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/scip"
 	"github.com/alexei-led/archfit/internal/fitness"
 	"github.com/alexei-led/archfit/internal/history/git"
+	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -289,6 +290,13 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// ConfigWarnings so they reach md/json/CI instead of being stderr-only.
 	diag.CoverageGaps = buildCoverageGaps(diag.ToolCoverage, cfg)
 	diag.ConfigWarnings = buildConfigWarnings(cfg, toolWarnings)
+
+	// Decision tasks: undeclared judgment inputs that prevent the scorer from
+	// placing edges on the book's scale. Appended to ConfigWarnings so they reach
+	// the JSON/md output and are actionable for humans and AI agents.
+	diag.ConfigWarnings = append(diag.ConfigWarnings,
+		buildJudgmentDecisionTasks(cfg, lbls, configPath)...)
+
 	return diag, nil
 }
 
@@ -456,6 +464,51 @@ func buildConfigWarnings(cfg config.Config, toolWarnings []string) []string {
 	if len(out) == 0 {
 		return nil
 	}
+	return out
+}
+
+// buildJudgmentDecisionTasks returns actionable decision-task strings for
+// undeclared judgment inputs that force the scorer to abstain:
+//
+//  1. Modules with no subdomain AND no volatility declared — the scorer cannot
+//     place their edges on the book's volatility scale. Tells the user to edit
+//     .archfit.yaml and add subdomain: or volatility:.
+//  2. Approved labels whose strength came from an LLM (provenance: llm) —
+//     notifies the user they can upgrade provenance to "human" after code review.
+//
+// These are advisory strings appended to ConfigWarnings, not gate findings.
+// Sorted for deterministic output.
+func buildJudgmentDecisionTasks(cfg config.Config, lbls []labels.Label, configPath string) []string {
+	var out []string
+
+	// 1. Modules missing subdomain and volatility — scorer abstains on volatility.
+	names := make([]string, 0, len(cfg.Modules))
+	for name := range cfg.Modules {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		def := cfg.Modules[name]
+		if def.Subdomain == "" && def.Volatility == "" {
+			out = append(out,
+				"decision needed: module "+name+" has no subdomain or volatility declared — "+
+					"scorer abstains on volatility for its edges; "+
+					"add `subdomain: core|supporting|generic` or `volatility: high|medium|low` "+
+					"to modules."+name+" in "+configPath)
+		}
+	}
+
+	// 2. LLM-provenance approved labels — inform the user they can promote to human.
+	for _, l := range lbls {
+		if l.Status == labels.StatusApproved && l.Provenance == labels.ProvenanceLLM {
+			out = append(out,
+				"decision needed: label "+l.From+" → "+l.To+
+					" approved but provenance is llm — "+
+					"if you have reviewed the code, set `provenance: human` in .archfit-labels.yaml "+
+					"to restore full confidence in coupling_balance")
+		}
+	}
+
 	return out
 }
 

@@ -255,23 +255,23 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
 
 ### Task 6: Human-editable judgment surfaces + abstain-to-decision (the human fallback)
 
-- [ ] Add `Confidence` (e.g. `high|medium|low`) and `Provenance` (`human|llm|tool`) to the
+- [x] Add `Confidence` (e.g. `high|medium|low`) and `Provenance` (`human|llm|tool`) to the
       `Label` record (`internal/labels/labels.go`) and to the owner/volatility/subdomain
       value-draft records; round-trip through `labelsio`. Keep schema backward-compatible.
-- [ ] Make the gate treat judgment inputs honestly: a low-confidence or unreviewed
+- [x] Make the gate treat judgment inputs honestly: a low-confidence or unreviewed
       (`status: draft`) label is **not** consumed by `check` (only `approved` is, as
       today); an `approved` label of `provenance: llm` lowers the affected dimension's
       confidence by one band unless confirmed `human`. Config-declared values
       (subdomain/volatility/owner/globs) are the authoritative human surface.
-- [ ] When a judgment input is **undeclared and undrafted** (unknown strength edge with no
+- [x] When a judgment input is **undeclared and undrafted** (unknown strength edge with no
       label; module with no subdomain/volatility), the scorer abstains AND archfit emits
       an actionable item (coverage gap / `agent_task`): "declare subdomain for module X" /
       "classify strength for edge A→B" — so a human knows exactly what to decide and where
       to edit (`.archfit.yaml` / `.archfit-labels.yaml`).
-- [ ] Write tests: confidence/provenance round-trip; draft labels ignored by gate; llm
+- [x] Write tests: confidence/provenance round-trip; draft labels ignored by gate; llm
       provenance lowers dimension confidence; undeclared inputs abstain and emit a decision
       item pointing at the right file/key.
-- [ ] Run gates (this task may not change goldens; regen only if scores move) — must pass
+- [x] Run gates (this task may not change goldens; regen only if scores move) — must pass
       before Task 7.
 
 ### Task 7: LLM-as-judge extensions in `enrich` (off-gate)

@@ -309,6 +309,15 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			value = capInt(value, 60) // any critical edge present
 		}
 
+		// LLM-provenance labels lower confidence by one band: the strength
+		// classifications driving the balance came from an LLM judge (human-approved
+		// but not human-judged). Only applied when LLM labels account for ≥20% of
+		// scored edges so a single stray label does not flip a well-measured repo.
+		if summary.LLMApproved > 0 && summary.Scored > 0 &&
+			summary.LLMApproved*100/summary.Scored >= 20 {
+			conf = lowerConf(conf)
+		}
+
 		dim.Value = value
 		dim.Confidence = conf
 		dim.Evidence = []string{
@@ -317,6 +326,10 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			fmt.Sprintf("scored fraction: %d%% (%d scored, %d abstained)",
 				scoredPct, summary.Scored, summary.Abstained),
 			fmt.Sprintf("worst-case (critical band) edges: %d", criticalCount),
+		}
+		if summary.LLMApproved > 0 {
+			dim.Evidence = append(dim.Evidence,
+				fmt.Sprintf("llm-provenance labels in effect: %d (confidence lowered)", summary.LLMApproved))
 		}
 		if criticalCount > 0 {
 			dim.Summary = "unbalanced coupling: critical-band edges (distributed-monolith risk) present"
@@ -872,6 +885,18 @@ func minConf(a, b Confidence) Confidence {
 		return a
 	}
 	return b
+}
+
+// lowerConf drops a confidence level by one band (high→medium, medium→low, low→low).
+func lowerConf(c Confidence) Confidence {
+	switch c {
+	case ConfidenceHigh:
+		return ConfidenceMedium
+	case ConfidenceMedium:
+		return ConfidenceLow
+	default:
+		return ConfidenceLow
+	}
 }
 
 // effortFromSeverity approximates a 0-10 maintenance-effort score for a BC edge

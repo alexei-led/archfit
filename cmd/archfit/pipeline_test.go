@@ -3,9 +3,11 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 )
 
@@ -257,6 +259,127 @@ func TestApplyToolGate(t *testing.T) {
 		}
 		if diag.Verdict != diagnostic.VerdictPass {
 			t.Errorf("verdict = %q, want pass (unchanged)", diag.Verdict)
+		}
+	})
+}
+
+// Test-local constants for buildJudgmentDecisionTasks tests.
+const (
+	decisionModA = "app.a"
+	decisionModB = "app.b"
+)
+
+// TestBuildJudgmentDecisionTasks verifies that undeclared judgment inputs emit
+// actionable decision strings pointing at the right file/key.
+func TestBuildJudgmentDecisionTasks(t *testing.T) {
+	configPath := "/repo/.archfit.yaml"
+
+	t.Run("module with neither subdomain nor volatility emits decision task", func(t *testing.T) {
+		cfg := config.Config{
+			Modules: map[string]config.ModuleDef{
+				"app.core": {Paths: []string{"internal/core/**"}, Subdomain: commandGroupCore},
+				"app.util": {Paths: []string{"internal/util/**"}}, // no subdomain, no volatility
+			},
+		}
+		tasks := buildJudgmentDecisionTasks(cfg, nil, configPath)
+		found := false
+		for _, t2 := range tasks {
+			if strings.Contains(t2, "app.util") && strings.Contains(t2, configPath) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected decision task for app.util, got: %v", tasks)
+		}
+		// app.core has subdomain set — must NOT appear.
+		for _, t2 := range tasks {
+			if strings.Contains(t2, "app.core") {
+				t.Errorf("unexpected decision task for app.core: %s", t2)
+			}
+		}
+	})
+
+	t.Run("module with volatility declared is not flagged", func(t *testing.T) {
+		cfg := config.Config{
+			Modules: map[string]config.ModuleDef{
+				"app.util": {Paths: []string{"internal/util/**"}, Volatility: "low"},
+			},
+		}
+		tasks := buildJudgmentDecisionTasks(cfg, nil, configPath)
+		for _, t2 := range tasks {
+			if strings.Contains(t2, "app.util") {
+				t.Errorf("unexpected decision task for module with volatility: %s", t2)
+			}
+		}
+	})
+
+	t.Run("no modules emits no tasks", func(t *testing.T) {
+		cfg := config.Config{}
+		tasks := buildJudgmentDecisionTasks(cfg, nil, configPath)
+		if len(tasks) != 0 {
+			t.Errorf("expected no tasks, got: %v", tasks)
+		}
+	})
+
+	t.Run("approved llm label emits decision task pointing at labels file", func(t *testing.T) {
+		cfg := config.Config{}
+		lbls := []labels.Label{
+			{From: decisionModA, To: decisionModB, Strength: enrichModel,
+				Status: labels.StatusApproved, Provenance: labels.ProvenanceLLM},
+		}
+		tasks := buildJudgmentDecisionTasks(cfg, lbls, configPath)
+		found := false
+		for _, t2 := range tasks {
+			if strings.Contains(t2, decisionModA) && strings.Contains(t2, decisionModB) &&
+				strings.Contains(t2, ".archfit-labels.yaml") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected decision task for llm label, got: %v", tasks)
+		}
+	})
+
+	t.Run("draft llm label does NOT emit decision task", func(t *testing.T) {
+		cfg := config.Config{}
+		lbls := []labels.Label{
+			{From: decisionModA, To: decisionModB, Strength: enrichModel,
+				Status: labels.StatusDraft, Provenance: labels.ProvenanceLLM},
+		}
+		tasks := buildJudgmentDecisionTasks(cfg, lbls, configPath)
+		if len(tasks) != 0 {
+			t.Errorf("expected no tasks for draft label, got: %v", tasks)
+		}
+	})
+
+	t.Run("approved human label does NOT emit decision task", func(t *testing.T) {
+		cfg := config.Config{}
+		lbls := []labels.Label{
+			{From: decisionModA, To: decisionModB, Strength: enrichModel,
+				Status: labels.StatusApproved, Provenance: labels.ProvenanceHuman},
+		}
+		tasks := buildJudgmentDecisionTasks(cfg, lbls, configPath)
+		if len(tasks) != 0 {
+			t.Errorf("expected no tasks for human label, got: %v", tasks)
+		}
+	})
+
+	t.Run("output is sorted deterministically", func(t *testing.T) {
+		cfg := config.Config{
+			Modules: map[string]config.ModuleDef{
+				"zz.module": {Paths: []string{"zz/**"}},
+				"aa.module": {Paths: []string{"aa/**"}},
+			},
+		}
+		tasks := buildJudgmentDecisionTasks(cfg, nil, configPath)
+		if len(tasks) < 2 {
+			t.Fatalf("expected ≥2 tasks, got %d", len(tasks))
+		}
+		if !strings.Contains(tasks[0], "aa.module") {
+			t.Errorf("first task should be aa.module (sorted), got: %s", tasks[0])
+		}
+		if !strings.Contains(tasks[1], "zz.module") {
+			t.Errorf("second task should be zz.module (sorted), got: %s", tasks[1])
 		}
 	})
 }

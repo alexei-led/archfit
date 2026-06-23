@@ -6,10 +6,124 @@ import (
 	"github.com/alexei-led/archfit/internal/labels"
 )
 
+// TestLabel_ConfidenceProvenance_Fields verifies round-trip of new fields via
+// the Label struct (YAML serialisation is covered by labelsio tests).
+func TestLabel_ConfidenceProvenance_Fields(t *testing.T) {
+	l := labels.Label{
+		From:       modA,
+		To:         modB,
+		Strength:   strengthModel,
+		Status:     labels.StatusApproved,
+		Confidence: labels.ConfidenceMedium,
+		Provenance: labels.ProvenanceLLM,
+	}
+	if l.Confidence != labels.ConfidenceMedium {
+		t.Errorf("Confidence = %q, want %q", l.Confidence, labels.ConfidenceMedium)
+	}
+	if l.Provenance != labels.ProvenanceLLM {
+		t.Errorf("Provenance = %q, want %q", l.Provenance, labels.ProvenanceLLM)
+	}
+}
+
+func TestLLMApprovedCount(t *testing.T) {
+	freshHash := labels.HashItems([]string{"a.go\x00b.go\x00imports"})
+	evidence := map[string]string{
+		labels.Key(modA, modB): freshHash,
+		labels.Key(modC, modD): labels.HashItems([]string{"c.go\x00d.go\x00imports"}),
+	}
+
+	cases := []struct {
+		name    string
+		lbls    []labels.Label
+		nilEvid bool
+		want    int
+	}{
+		{
+			name: "no labels",
+			lbls: nil,
+			want: 0,
+		},
+		{
+			name: "draft llm label not counted",
+			lbls: []labels.Label{
+				{From: modA, To: modB, Strength: strengthModel, EvidenceHash: freshHash,
+					Status: labels.StatusDraft, Provenance: labels.ProvenanceLLM, Confidence: labels.ConfidenceMedium},
+			},
+			want: 0,
+		},
+		{
+			name: "approved llm medium-confidence counted",
+			lbls: []labels.Label{
+				{From: modA, To: modB, Strength: strengthModel, EvidenceHash: freshHash,
+					Status: labels.StatusApproved, Provenance: labels.ProvenanceLLM, Confidence: labels.ConfidenceMedium},
+			},
+			want: 1,
+		},
+		{
+			name: "approved llm low-confidence counted",
+			lbls: []labels.Label{
+				{From: modA, To: modB, Strength: strengthModel, EvidenceHash: freshHash,
+					Status: labels.StatusApproved, Provenance: labels.ProvenanceLLM, Confidence: labels.ConfidenceLow},
+			},
+			want: 1,
+		},
+		{
+			name: "approved llm high-confidence NOT counted (user confirmed)",
+			lbls: []labels.Label{
+				{From: modA, To: modB, Strength: strengthModel, EvidenceHash: freshHash,
+					Status: labels.StatusApproved, Provenance: labels.ProvenanceLLM, Confidence: labels.ConfidenceHigh},
+			},
+			want: 0,
+		},
+		{
+			name: "approved human label not counted",
+			lbls: []labels.Label{
+				{From: modA, To: modB, Strength: strengthModel, EvidenceHash: freshHash,
+					Status: labels.StatusApproved, Provenance: labels.ProvenanceHuman},
+			},
+			want: 0,
+		},
+		{
+			name: "stale llm label excluded",
+			lbls: []labels.Label{
+				{From: modA, To: modB, Strength: strengthModel, EvidenceHash: "stale",
+					Status: labels.StatusApproved, Provenance: labels.ProvenanceLLM, Confidence: labels.ConfidenceMedium},
+			},
+			want: 0,
+		},
+		{
+			name:    "nil evidence: llm labels counted regardless (delta run)",
+			nilEvid: true,
+			lbls: []labels.Label{
+				{From: modA, To: modB, Strength: strengthModel,
+					Status: labels.StatusApproved, Provenance: labels.ProvenanceLLM, Confidence: labels.ConfidenceMedium},
+			},
+			want: 1,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var ev map[string]string
+			if !tc.nilEvid {
+				ev = evidence
+			}
+			got := labels.LLMApprovedCount(tc.lbls, ev)
+			if got != tc.want {
+				t.Errorf("LLMApprovedCount = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 const (
 	modStore      = "app.store"
 	modHandlers   = "app.handlers"
 	strengthModel = "model"
+	modA          = "app.a"
+	modB          = "app.b"
+	modC          = "app.c"
+	modD          = "app.d"
 )
 
 func TestHashItems_DeterministicAndChangeSensitive(t *testing.T) {

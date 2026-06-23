@@ -216,6 +216,11 @@ type ClassifiedEdgeSummary struct {
 	ByVolatility map[string]int `json:"by_volatility,omitempty"`
 	// BySeverity counts cross-boundary edges by score band (severity label).
 	BySeverity map[string]int `json:"by_severity,omitempty"`
+	// LLMApproved is the count of approved cross-boundary labels whose provenance
+	// is "llm" and confidence is not "high". These lower the coupling_balance
+	// dimension confidence by one band — they are human-approved but not human-judged.
+	// Zero means no LLM-provenance labels are in effect.
+	LLMApproved int `json:"llm_approved,omitempty"`
 }
 
 // Coverage status constants used across all extractor adapters.
