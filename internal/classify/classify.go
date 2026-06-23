@@ -182,11 +182,13 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 	// undecided; the extractor-supplied language-aware hint (e.g. the blanket
 	// "functional" for SCIP call edges) is the last resort before unknown.
 	str := classifyStrength(toPath, mi)
+	fromPin := false
 	if str == coupling.StrengthUnknown && len(c.ApprovedLabels) > 0 {
 		if fromMod, okF := mi.moduleFor(fromPath); okF {
 			if toMod, okT := mi.moduleFor(toPath); okT {
 				if pinned, ok := c.ApprovedLabels[fromMod+"\x00"+toMod]; ok {
 					str = coupling.Strength(pinned)
+					fromPin = true
 				}
 			}
 		}
@@ -200,8 +202,9 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 	// coupling at implementation level — book ordinal 9 (Symmetric), between
 	// Functional (8) and Intrusive (10). Upgrade only when strength is still
 	// functional or unknown; config-authoritative (contract/intrusive) and
-	// human-approved pinned labels (model, symmetric, etc.) are never overridden.
-	if str == coupling.StrengthFunctional || str == coupling.StrengthUnknown {
+	// human-approved pinned labels (including functional) are never overridden —
+	// fromPin guards against silently overriding a pinned functional label with Symmetric.
+	if !fromPin && (str == coupling.StrengthFunctional || str == coupling.StrengthUnknown) {
 		if len(c.CrossModuleClonePairs) > 0 {
 			if fromMod, okF := mi.moduleFor(fromPath); okF {
 				if toMod, okT := mi.moduleFor(toPath); okT {

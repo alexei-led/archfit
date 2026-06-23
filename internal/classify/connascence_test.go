@@ -36,7 +36,7 @@ func twoModuleConfig(publicGlobs []string, clonePairs map[string]struct{}) confi
 
 // modABClonePair is the canonical clone-pair key set for the modA/modB test pair.
 // "modA" < "modB" lexicographically so the key is always modA\x00modB.
-var modABClonePair = map[string]struct{}{"modA\x00modB": {}}
+var modABClonePair = map[string]struct{}{modABKey: {}}
 
 func TestConnascenceTagging(t *testing.T) {
 	t.Parallel()

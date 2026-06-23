@@ -193,9 +193,9 @@ func TestVolatilityCascade(t *testing.T) {
 // The cascade never chains through effective values.
 func TestVolatilityCascade_SingleHop(t *testing.T) {
 	modules := map[string]config.ModuleDef{
-		"modA": {Paths: []string{"a/**"}, Subdomain: subdomainSupporting}, // low base (book Table 9.1)
-		"modB": {Paths: []string{"b/**"}, Subdomain: subdomainCore},       // high base
-		"modC": {Paths: []string{"c/**"}, Subdomain: subdomainSupporting}, // low base (book Table 9.1)
+		modNameA: {Paths: []string{"a/**"}, Subdomain: subdomainSupporting}, // low base (book Table 9.1)
+		modNameB: {Paths: []string{"b/**"}, Subdomain: subdomainCore},       // high base
+		"modC":   {Paths: []string{"c/**"}, Subdomain: subdomainSupporting}, // low base (book Table 9.1)
 	}
 	probe := "probe/x.go"
 	g := buildGraph([][3]string{

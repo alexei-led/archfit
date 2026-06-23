@@ -180,14 +180,17 @@ func bookLowerStrength(s Strength) (Strength, bool) {
 // bookLowerDistance is like lowerDistance but skips DistanceUnknown.
 // DistanceUnknown causes BookScorer to abstain, so tryMove would silently drop
 // the suggestion; this ladder jumps directly from CrossModuleDiffOwner to CrossModuleSameOwner.
+// DistanceCrossModuleSameOwner is the terminal rung: the next step down is
+// DistanceSameModule, which exits the coupling domain (scored as cohesion, not
+// coupling) and causes BookScorer to return Scored:false — tryMove would silently
+// discard any "reduce_distance" suggestion for that step.
 func bookLowerDistance(d Distance) (Distance, bool) {
 	switch d {
 	case DistanceCrossDeployUnit:
 		return DistanceCrossModuleDiffOwner, true
 	case DistanceCrossModuleDiffOwner:
 		return DistanceCrossModuleSameOwner, true // skip DistanceUnknown
-	case DistanceCrossModuleSameOwner:
-		return DistanceSameModule, true
+	// DistanceCrossModuleSameOwner is terminal — further reduction collapses to cohesion
 	default:
 		return d, false
 	}

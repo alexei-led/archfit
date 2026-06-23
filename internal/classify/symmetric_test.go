@@ -9,6 +9,9 @@ import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
+// modABKey is the sorted null-delimited key for the modA→modB pair used in label maps.
+const modABKey = modNameA + "\x00" + modNameB
+
 // TestSymmetricStrengthUpgrade covers the clone-pair → Symmetric upgrade path
 // and all cases where the upgrade must NOT fire (authoritative labels).
 func TestSymmetricStrengthUpgrade(t *testing.T) {
@@ -68,12 +71,12 @@ func TestSymmetricStrengthUpgrade(t *testing.T) {
 			},
 			cfg: config.ClassifyConfig{
 				Modules: map[string]config.ModuleDef{
-					"modA": {Paths: []string{pathsA}},
-					"modB": {Paths: []string{pathsB}},
+					modNameA: {Paths: []string{pathsA}},
+					modNameB: {Paths: []string{pathsB}},
 				},
 				ApprovedLabels: map[string]string{
 					// key must be sorted: modA < modB
-					"modA\x00modB": string(coupling.StrengthModel),
+					modABKey: string(coupling.StrengthModel),
 				},
 				CrossModuleClonePairs: modABClonePair,
 			},
@@ -92,6 +95,31 @@ func TestSymmetricStrengthUpgrade(t *testing.T) {
 			cfg:             twoModuleConfig(nil, nil),
 			wantStrength:    coupling.StrengthFunctional,
 			wantConnascence: coupling.ConnascenceNone,
+		},
+		{
+			name: "clone pair + pinned functional label → functional (not overridden)",
+			edge: graph.Edge{
+				From: fileFromA,
+				To:   fileToB,
+				Kind: graph.EdgeKindImports,
+				// no StrengthHint — pinned label provides functional
+			},
+			cfg: config.ClassifyConfig{
+				Modules: map[string]config.ModuleDef{
+					modNameA: {Paths: []string{pathsA}},
+					modNameB: {Paths: []string{pathsB}},
+				},
+				ApprovedLabels: map[string]string{
+					// human pinned this edge as functional
+					modABKey: string(coupling.StrengthFunctional),
+				},
+				CrossModuleClonePairs: modABClonePair,
+			},
+			// functional is a pinned human judgment — clone upgrade must not override it.
+			// Connascence is still CoA: the clone pair signals algorithm-level coupling
+			// regardless of strength (connascence is report-only, not scored).
+			wantStrength:    coupling.StrengthFunctional,
+			wantConnascence: coupling.ConnascenceAlgorithm,
 		},
 	}
 
