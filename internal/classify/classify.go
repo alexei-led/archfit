@@ -32,10 +32,10 @@ const (
 //     cross_module_same_owner / cross_module_different_owner / cross_deploy_unit).
 //     When either endpoint cannot be resolved to a module, distance is unknown.
 //   - Volatility: derived from the to-module's subdomain field
-//     (core→high, supporting→medium, generic→low, ""/"unknown"→unknown).
+//     (core→high, supporting→low, generic→low, ""/"unknown"→unknown).
 //   - Explicitness: explicit when strength=contract; implicit when strength=intrusive;
 //     unknown otherwise.
-//   - Score: continuous EdgeScore from the configured Scorer (default: MultiplicativeScorer, locked Task 16).
+//   - Score: continuous EdgeScore from the configured Scorer (default: BookScorer, bc_score.v3).
 //     Applied to cross-boundary edges only (same-module and unknown-distance are zero).
 func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 	mm := buildModuleIndex(c.Modules)
@@ -405,7 +405,7 @@ func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map
 
 // classifyVolatility derives domain volatility for the to-module using three
 // sources in priority order, per Khononov's volatility-from-subdomain mapping
-// (core→high, supporting→medium, generic→low) with an explicit per-module
+// (core→high, supporting→low, generic→low) with an explicit per-module
 // override:
 //
 //  1. Explicit `volatility` field on the module definition (hand-authored override).
@@ -429,6 +429,7 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 	def := modules[toMod]
 
 	// Priority 1: explicit Volatility field.
+	// Accepted values: high, medium, low, frozen, legacy.
 	switch strings.ToLower(def.Volatility) {
 	case "high":
 		return coupling.VolatilityHigh
@@ -436,6 +437,8 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 		return coupling.VolatilityMedium
 	case "low":
 		return coupling.VolatilityLow
+	case "frozen", "legacy":
+		return coupling.VolatilityFrozen
 	}
 
 	// Priority 2: subdomain heuristic.
@@ -443,7 +446,7 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 	case subdomainCore:
 		return coupling.VolatilityHigh
 	case subdomainSupporting:
-		return coupling.VolatilityMedium
+		return coupling.VolatilityLow
 	case subdomainGeneric:
 		return coupling.VolatilityLow
 	}
@@ -544,12 +547,14 @@ func volatilityFromDef(def config.ModuleDef) coupling.Volatility {
 		return coupling.VolatilityMedium
 	case "low":
 		return coupling.VolatilityLow
+	case "frozen", "legacy":
+		return coupling.VolatilityFrozen
 	}
 	switch strings.ToLower(def.Subdomain) {
 	case subdomainCore:
 		return coupling.VolatilityHigh
 	case subdomainSupporting:
-		return coupling.VolatilityMedium
+		return coupling.VolatilityLow
 	case subdomainGeneric:
 		return coupling.VolatilityLow
 	}

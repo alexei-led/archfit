@@ -59,8 +59,12 @@ var bookDistanceOrdinal = map[Distance]int{
 	DistanceCrossDeployUnit:      bookDistanceCrossDeployUnit,
 }
 
+// bookVolatilityFrozen is V=1 for frozen/legacy systems (most stable).
+const bookVolatilityFrozen = 1
+
 // bookVolatilityOrdinal maps Volatility to its book Ch9 ordinal.
 var bookVolatilityOrdinal = map[Volatility]int{
+	VolatilityFrozen:     bookVolatilityFrozen,
 	VolatilityLow:        bookVolatilityLow,
 	VolatilityMedium:     bookVolatilityMedium,
 	VolatilityHigh:       bookVolatilityHigh,
@@ -142,12 +146,12 @@ func bookCheapestMove(c Classification, currentBand Severity) string {
 		}
 	}
 
-	if next, ok := lowerStrength(c.Strength); ok {
+	if next, ok := bookLowerStrength(c.Strength); ok {
 		mod := c
 		mod.Strength = next
 		tryMove("reduce_strength", mod)
 	}
-	if next, ok := lowerDistance(c.Distance); ok {
+	if next, ok := bookLowerDistance(c.Distance); ok {
 		mod := c
 		mod.Distance = next
 		tryMove("reduce_distance", mod)
@@ -159,6 +163,40 @@ func bookCheapestMove(c Classification, currentBand Severity) string {
 	}
 
 	return bestLabel
+}
+
+// bookLowerStrength is like lowerStrength but skips StrengthUnknown.
+// StrengthUnknown causes BookScorer to abstain, so tryMove would silently drop
+// the suggestion; this ladder jumps directly from Functional to Model.
+func bookLowerStrength(s Strength) (Strength, bool) {
+	switch s {
+	case StrengthIntrusive:
+		return StrengthSymmetric, true
+	case StrengthSymmetric:
+		return StrengthFunctional, true
+	case StrengthFunctional:
+		return StrengthModel, true // skip StrengthUnknown
+	case StrengthModel:
+		return StrengthContract, true
+	default:
+		return s, false
+	}
+}
+
+// bookLowerDistance is like lowerDistance but skips DistanceUnknown.
+// DistanceUnknown causes BookScorer to abstain, so tryMove would silently drop
+// the suggestion; this ladder jumps directly from CrossModuleDiffOwner to CrossModuleSameOwner.
+func bookLowerDistance(d Distance) (Distance, bool) {
+	switch d {
+	case DistanceCrossDeployUnit:
+		return DistanceCrossModuleDiffOwner, true
+	case DistanceCrossModuleDiffOwner:
+		return DistanceCrossModuleSameOwner, true // skip DistanceUnknown
+	case DistanceCrossModuleSameOwner:
+		return DistanceSameModule, true
+	default:
+		return d, false
+	}
 }
 
 // abs returns the absolute value of x.

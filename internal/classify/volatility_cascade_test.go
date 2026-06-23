@@ -77,13 +77,13 @@ func TestVolatilityCascade(t *testing.T) {
 		wantVol     coupling.Volatility
 	}{
 		{
-			name:           "disabled: supporting stays medium",
+			name:           "disabled: supporting stays low",
 			cascadeEnabled: false,
 			from:           cascadeFileNotifications,
 			to:             cascadeFilePayment,
 			hint:           string(coupling.StrengthFunctional),
 			probeTarget:    cascadeFileNotifications,
-			wantVol:        coupling.VolatilityMedium,
+			wantVol:        coupling.VolatilityLow, // supporting→low (book Table 9.1)
 		},
 		{
 			name:           "enabled functional: supporting raised to high",
@@ -119,7 +119,7 @@ func TestVolatilityCascade(t *testing.T) {
 			to:             cascadeFilePayment,
 			hint:           string(coupling.StrengthContract),
 			probeTarget:    cascadeFileNotifications,
-			wantVol:        coupling.VolatilityMedium,
+			wantVol:        coupling.VolatilityLow, // supporting→low (book Table 9.1); contract does not cascade
 		},
 		{
 			name:           "enabled model: does NOT propagate",
@@ -128,7 +128,7 @@ func TestVolatilityCascade(t *testing.T) {
 			to:             cascadeFilePayment,
 			hint:           string(coupling.StrengthModel),
 			probeTarget:    cascadeFileNotifications,
-			wantVol:        coupling.VolatilityMedium,
+			wantVol:        coupling.VolatilityLow, // supporting→low (book Table 9.1); model does not cascade
 		},
 		{
 			// payment→gateway: gateway(low) is NOT high, so payment is not raised.
@@ -187,15 +187,15 @@ func TestVolatilityCascade(t *testing.T) {
 
 // TestVolatilityCascade_SingleHop verifies the cascade is a single read-base-only pass.
 //
-// Setup: A→B (functional, B=core/high), B→C (functional, C=supporting/medium).
+// Setup: A→B (functional, B=core/high), B→C (functional, C=supporting/low).
 // A should be raised (A→B, base[B]=high).
-// C should NOT be raised: edge B→C has base[C]=medium — not high — so no raise.
+// C should NOT be raised: edge B→C has base[C]=low — not high — so no raise.
 // The cascade never chains through effective values.
 func TestVolatilityCascade_SingleHop(t *testing.T) {
 	modules := map[string]config.ModuleDef{
-		"modA": {Paths: []string{"a/**"}, Subdomain: subdomainSupporting}, // medium base
+		"modA": {Paths: []string{"a/**"}, Subdomain: subdomainSupporting}, // low base (book Table 9.1)
 		"modB": {Paths: []string{"b/**"}, Subdomain: subdomainCore},       // high base
-		"modC": {Paths: []string{"c/**"}, Subdomain: subdomainSupporting}, // medium base
+		"modC": {Paths: []string{"c/**"}, Subdomain: subdomainSupporting}, // low base (book Table 9.1)
 	}
 	probe := "probe/x.go"
 	g := buildGraph([][3]string{
@@ -219,8 +219,8 @@ func TestVolatilityCascade_SingleHop(t *testing.T) {
 	if clA.Volatility != coupling.VolatilityHigh {
 		t.Errorf("modA: got %q, want high (raised by cascade)", clA.Volatility)
 	}
-	// C not raised: base[C]=medium, so B→C does not trigger propagation.
-	if clC.Volatility != coupling.VolatilityMedium {
-		t.Errorf("modC: got %q, want medium (single-hop: no chaining)", clC.Volatility)
+	// C not raised: base[C]=low, so B→C does not trigger propagation.
+	if clC.Volatility != coupling.VolatilityLow {
+		t.Errorf("modC: got %q, want low (single-hop: no chaining)", clC.Volatility)
 	}
 }

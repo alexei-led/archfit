@@ -320,8 +320,9 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		// classifications driving the balance came from an LLM judge (human-approved
 		// but not human-judged). Only applied when LLM labels account for ≥20% of
 		// scored edges so a single stray label does not flip a well-measured repo.
-		if summary.LLMApproved > 0 && summary.Scored > 0 &&
-			summary.LLMApproved*100/summary.Scored >= 20 {
+		llmConfLowered := summary.LLMApproved > 0 && summary.Scored > 0 &&
+			summary.LLMApproved*100/summary.Scored >= 20
+		if llmConfLowered {
 			conf = lowerConf(conf)
 		}
 
@@ -338,9 +339,12 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			dim.Evidence = append(dim.Evidence,
 				fmt.Sprintf("%d external/library edges excluded — see dependency_graph_health", summary.External))
 		}
-		if summary.LLMApproved > 0 {
+		if llmConfLowered {
 			dim.Evidence = append(dim.Evidence,
 				fmt.Sprintf("llm-provenance labels in effect: %d (confidence lowered)", summary.LLMApproved))
+		} else if summary.LLMApproved > 0 {
+			dim.Evidence = append(dim.Evidence,
+				fmt.Sprintf("llm-provenance labels in effect: %d", summary.LLMApproved))
 		}
 		if criticalCount > 0 {
 			dim.Summary = "unbalanced coupling: critical-band edges (distributed-monolith risk) present"

@@ -8,16 +8,14 @@ type Scorer interface {
 }
 
 // ScoreDefinition is the canonical, user-facing definition of archfit's numeric
-// BC score. It is deliberately explicit that the formula is archfit's OWN
-// deterministic implementation of Vlad Khononov's qualitative Balanced Coupling
-// heuristic — Khononov publishes no literal equation. coupling.dev frames a
-// single qualitative "formula": maintenance effort rises monotonically with
-// integration strength, distance, and volatility. archfit operationalises that
-// as Effort ∝ Strength × Distance × Volatility over frozen ordinals.
-const ScoreDefinition = "maintenance-effort proxy — Effort ∝ Strength × Distance × Volatility; " +
-	"archfit's deterministic implementation of Vlad Khononov's qualitative Balanced Coupling " +
-	"heuristic (low volatility neutralises; cohesion = high strength + low distance is healthy, " +
-	"not flagged), NOT a literal published equation"
+// BC score. Implements Vlad Khononov's published formula from _Balancing Coupling
+// in Software Design_ Ch10 verbatim: balance = max(|S−D|, 10−V) + 1.
+// Range 1 (distributed monolith / ball-of-mud) to 10 (frozen/contract); higher
+// is better balanced. Strength, distance, and volatility ordinals are fixed per
+// the book (Ch8–Ch10); changing any is a breaking metric change (bump ScoreVersion).
+const ScoreDefinition = "book balance score — balance = max(|S−D|, 10−V) + 1 " +
+	"(Khononov, _Balancing Coupling in Software Design_, Ch10); " +
+	"range 1 (distributed monolith) to 10 (frozen/contract); higher = better balanced"
 
 // ScoreVersion versions the BC score: its ordinals, normalisation, and the
 // severity mapping derived from them. Bump it when any of those change so the

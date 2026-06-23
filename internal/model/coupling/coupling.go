@@ -48,19 +48,20 @@ type Volatility string
 // Both are scored conservatively (treated as potentially volatile); they differ
 // only in the guidance surfaced to the user.
 const (
-	VolatilityHigh       Volatility = "high"
-	VolatilityMedium     Volatility = "medium"
+	VolatilityFrozen     Volatility = "frozen" // frozen/legacy systems; V=1 (most stable)
 	VolatilityLow        Volatility = "low"
+	VolatilityMedium     Volatility = "medium"
+	VolatilityHigh       Volatility = "high"
 	VolatilityUndeclared Volatility = "undeclared"
 	VolatilityUnknown    Volatility = "unknown"
 )
 
 // VolatilityResolved reports whether v is a concrete level the tool can act on
-// (high/medium/low), as opposed to undeclared (config gap) or unknown
+// (frozen/low/medium/high), as opposed to undeclared (config gap) or unknown
 // (unresolvable). Callers that need "do we actually have a volatility?" should
 // use this rather than comparing against VolatilityUnknown alone.
 func VolatilityResolved(v Volatility) bool {
-	return v == VolatilityHigh || v == VolatilityMedium || v == VolatilityLow
+	return v == VolatilityFrozen || v == VolatilityLow || v == VolatilityMedium || v == VolatilityHigh
 }
 
 // Explicitness classifies whether the coupling is via a declared contract.

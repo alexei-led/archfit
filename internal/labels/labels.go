@@ -47,7 +47,7 @@ const (
 
 // validStrengths are the Balanced Coupling strengths a label may pin.
 var validStrengths = map[string]struct{}{
-	"contract": {}, "model": {}, "functional": {}, "intrusive": {},
+	"contract": {}, "model": {}, "functional": {}, "symmetric": {}, "intrusive": {},
 }
 
 // ValidStrength reports whether s is a Balanced Coupling strength a label may

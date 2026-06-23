@@ -131,7 +131,7 @@ func TestRun(t *testing.T) {
 			edge:     importEdge("services/a/impl.go", "services/b/api/client.go"),
 			wantStr:  coupling.StrengthContract,
 			wantDist: coupling.DistanceCrossDeployUnit, // different owner, different deploy_unit
-			wantVol:  coupling.VolatilityMedium,        // b.subdomain = "supporting"
+			wantVol:  coupling.VolatilityLow,           // b.subdomain = "supporting" → low (book Table 9.1)
 			wantExp:  coupling.ExplicitnessExplicit,
 		},
 		{
@@ -139,7 +139,7 @@ func TestRun(t *testing.T) {
 			edge:     importEdge("services/a/impl.go", "services/b/internal/secret.go"),
 			wantStr:  coupling.StrengthIntrusive,
 			wantDist: coupling.DistanceCrossDeployUnit,
-			wantVol:  coupling.VolatilityMedium,
+			wantVol:  coupling.VolatilityLow, // b.subdomain = "supporting" → low (book Table 9.1)
 			wantExp:  coupling.ExplicitnessImplicit,
 		},
 		{
@@ -147,7 +147,7 @@ func TestRun(t *testing.T) {
 			edge:     importEdge("services/a/impl.go", "services/b/util/helper.go"),
 			wantStr:  coupling.StrengthUnknown,
 			wantDist: coupling.DistanceCrossDeployUnit,
-			wantVol:  coupling.VolatilityMedium,
+			wantVol:  coupling.VolatilityLow, // b.subdomain = "supporting" → low (book Table 9.1)
 			wantExp:  coupling.ExplicitnessUnknown,
 		},
 		{
@@ -179,7 +179,7 @@ func TestRun(t *testing.T) {
 			edge:     importEdge("services/a/impl.go", "services/b/api/client.go"),
 			wantStr:  coupling.StrengthContract,
 			wantDist: coupling.DistanceCrossDeployUnit,
-			wantVol:  coupling.VolatilityMedium,
+			wantVol:  coupling.VolatilityLow, // b.subdomain = "supporting" → low (book Table 9.1)
 			wantExp:  coupling.ExplicitnessExplicit,
 		},
 		{
@@ -195,7 +195,7 @@ func TestRun(t *testing.T) {
 			edge:     importEdge("external/foo.go", "services/b/api/client.go"),
 			wantStr:  coupling.StrengthContract,
 			wantDist: coupling.DistanceUnknown, // external/foo.go matches no module
-			wantVol:  coupling.VolatilityMedium,
+			wantVol:  coupling.VolatilityLow,   // b.subdomain = "supporting" → low (book Table 9.1)
 			wantExp:  coupling.ExplicitnessExplicit,
 		},
 		{
@@ -459,7 +459,7 @@ func TestRun_Severity(t *testing.T) {
 	}{
 		{
 			// contract + cross_deploy_unit → low+high → XOR modular quadrant → none (BC-correct).
-			name:         "contract cross-deploy medium-vol → none (XOR loose quadrant)",
+			name:         "contract cross-deploy low-vol → none (XOR loose quadrant)",
 			edge:         importEdge("services/a/impl.go", "services/b/api/client.go"),
 			wantSeverity: coupling.SeverityNone,
 		},

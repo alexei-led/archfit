@@ -106,19 +106,18 @@ func TestBookScorer_BookExamples(t *testing.T) {
 			wantBand:    SeverityCritical,
 			wantScored:  true,
 		},
-		// Frozen legacy: S=10(intrusive), D=9(cross_deploy), V=3(low≈supporting).
-		// VolatilityLow maps to V=3 (not V=1; frozen/legacy anchor added in Task 5).
-		// |10-9|=1, 10-3=7, max(1,7)+1=8 → low.
-		// (True frozen/legacy V=1 would yield balance=10; Task 5 adds that constant.)
+		// Frozen legacy: S=10(intrusive), D=9(cross_deploy), V=1(frozen).
+		// |10-9|=1, 10-1=9, max(1,9)+1=10 → none.
+		// Book example: even an intrusive cross-deploy edge into a frozen system is safe.
 		{
-			name: "frozen legacy approx (VolatilityLow→V=3): intrusive/cross_deploy/low",
+			name: "frozen legacy: intrusive/cross_deploy/frozen",
 			c: Classification{
 				Strength:   StrengthIntrusive,
 				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityLow,
+				Volatility: VolatilityFrozen,
 			},
-			wantBalance: 8,
-			wantBand:    SeverityLow,
+			wantBalance: 10,
+			wantBand:    SeverityNone,
 			wantScored:  true,
 		},
 	}
@@ -254,7 +253,7 @@ func TestBookScorer_BalanceRange(t *testing.T) {
 	s := BookScorer{}
 	strengths := []Strength{StrengthContract, StrengthModel, StrengthFunctional, StrengthSymmetric, StrengthIntrusive}
 	distances := []Distance{DistanceSameModule, DistanceCrossModuleSameOwner, DistanceCrossModuleDiffOwner, DistanceCrossDeployUnit}
-	vols := []Volatility{VolatilityLow, VolatilityMedium, VolatilityHigh, VolatilityUndeclared, VolatilityUnknown}
+	vols := []Volatility{VolatilityFrozen, VolatilityLow, VolatilityMedium, VolatilityHigh, VolatilityUndeclared, VolatilityUnknown}
 
 	for _, str := range strengths {
 		for _, dist := range distances {
