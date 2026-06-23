@@ -422,7 +422,33 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
       the gate consumes only `approved` labels and stays deterministic (double-run identical).
 - [x] Regenerate goldens + inspect; run gates; commit labels + config + goldens.
 
-### Task 14: Recalculate archfit-on-archfit (honest score after classification)
+### Task 14: Exclude external/library edges from coupling_balance (honest denominator)
+
+- [ ] In `buildClassifiedEdgeSummary` (`internal/engine/assemble.go`), split cross-boundary
+      edges by whether the target resolves to a DECLARED module. Edges whose target is not a
+      declared module — `Distance == DistanceUnknown` (stdlib, third-party, undeclared pkgs) —
+      are EXCLUDED from the scored/abstained distribution that drives `coupling_balance`; count
+      them in a new `external`/`unscoped` field on `ClassifiedEdgeSummary` (stdlib-only).
+- [ ] Keep the genuine "internal coupling, strength unknown" case (distance known + strength
+      unknown) as `abstained` — it stays in the denominator and honestly lowers confidence.
+- [ ] Surface the excluded count for transparency (evidence string on `coupling_balance` /
+      summary field) — external/library coupling is a `dependency_graph_health` concern, not
+      hidden. `couplingBalance` confidence now derives from the internal-only scored fraction.
+- [ ] Declare any genuinely-internal packages (under `internal/…`, matching archfit's own
+      import path) currently undeclared so their edges count as internal coupling.
+- [ ] This exclusion is LANGUAGE-AGNOSTIC: it keys on the unresolved-to-module signal
+      (`Distance == DistanceUnknown`, set by `classifyDistance` for every language), so ONE
+      implementation covers Go (stdlib/3p), Rust (dependency crates), TS (node_modules), and
+      Python (external imports) — no per-language code. Where an extractor already omits
+      externals, the exclusion is a harmless no-op.
+- [ ] Tests: edge to stdlib/third-party excluded from scored/abstained; a NON-Go (synthetic
+      Rust/TS-style external) edge also excluded (proves language-agnostic); internal
+      cross-module edge still counted; `coupling_balance` value/confidence from internal-only
+      distribution; excluded count reported; zero-internal-edges still 60/low (unanalyzed).
+- [ ] Regenerate goldens + inspect; run gates (`make test`, `make lint`, `TestArchImports`,
+      `make archfit`); determinism byte-identical double-run. Commit code + goldens.
+
+### Task 15: Recalculate archfit-on-archfit (honest score after classification)
 
 - [ ] Re-run the dogfood: `make archfit-report` and/or
       `.bin/archfit scan --config .archfit.yaml --full --format json`; capture the new
@@ -435,7 +461,7 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
       monolith detection still correct; gates green; determinism byte-identical double-run.
 - [ ] Commit the updated report.
 
-### Task 15: [Final] Documentation
+### Task 16: [Final] Documentation
 
 - [ ] Rewrite `docs/design/bc-measurement-v2.md` (or supersede with a `-v3`): state that
       archfit implements Khononov's published formula and ordinal anchors verbatim;
