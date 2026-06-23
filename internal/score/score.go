@@ -355,6 +355,10 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		return dim
 	}
 
+	// Legacy fallback: advisory-edge path (summary == nil).
+	// This path is unreachable from engine.go — the engine always populates
+	// ClassifiedEdges. It exists for calibration test suites that construct
+	// a bare Diagnostic without a ClassifiedEdges summary.
 	// --- Legacy fallback: advisory-edge path (summary == nil) ---
 	if len(edges) == 0 {
 		dim.Confidence = ConfidenceLow

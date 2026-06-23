@@ -232,6 +232,9 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// full-repo dump. Report-only; never enters the verdict. Nil outside delta mode.
 	delta := deltaReport(in.Scope.Mode, resolvedFindings, in.Accepted, in.Scope.Changed)
 
+	classifiedEdges := buildClassifiedEdgeSummary(couplingIdx)
+	classifiedEdges.LLMApproved = llmApprovedCount
+
 	d := diagnostic.Diagnostic{
 		SchemaVersion:         diagnostic.SchemaVersion,
 		Verdict:               verdict,
@@ -246,7 +249,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		RuntimeAsync:          runtimeAsync,
 		AgentTasks:            []diagnostic.AgentTask{},
 		ToolCoverage:          ex.coverages,
-		ClassifiedEdges:       buildClassifiedEdgeSummaryWithLLM(couplingIdx, llmApprovedCount),
+		ClassifiedEdges:       classifiedEdges,
 		Delta:                 delta,
 		Summary: diagnostic.Summary{
 			GateFindings:   gateNew,

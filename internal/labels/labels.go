@@ -51,7 +51,7 @@ var validStrengths = map[string]struct{}{
 }
 
 // ValidStrength reports whether s is a Balanced Coupling strength a label may
-// pin (contract, model, functional, intrusive).
+// pin (contract, model, functional, symmetric, intrusive).
 func ValidStrength(s string) bool {
 	_, ok := validStrengths[s]
 	return ok
@@ -103,6 +103,19 @@ func HashItems(items []string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// isEffective reports whether l is an approved, non-stale label.
+// A label is stale when its stored EvidenceHash disagrees with the current
+// evidence for the pair (same rule as Approved). Empty EvidenceHash (hand-authored),
+// a pair with no current evidence (edges gone — label is moot), and a nil
+// evidence map (delta run: partial graph) all pass without the check.
+func isEffective(l Label, evidence map[string]string) bool {
+	if l.Status != StatusApproved {
+		return false
+	}
+	h, ok := evidence[Key(l.From, l.To)]
+	return !ok || l.EvidenceHash == "" || l.EvidenceHash == h
+}
+
 // Approved partitions labels into the consumable map (Key(from,to) → strength)
 // and the stale list. Draft labels are skipped entirely.
 //
@@ -115,11 +128,10 @@ func HashItems(items []string) string {
 func Approved(lbls []Label, evidence map[string]string) (approved map[string]string, stale []Label) {
 	approved = map[string]string{}
 	for _, l := range lbls {
-		if l.Status != StatusApproved {
-			continue
-		}
-		if current, ok := evidence[Key(l.From, l.To)]; ok && l.EvidenceHash != "" && l.EvidenceHash != current {
-			stale = append(stale, l)
+		if !isEffective(l, evidence) {
+			if l.Status == StatusApproved {
+				stale = append(stale, l)
+			}
 			continue
 		}
 		approved[Key(l.From, l.To)] = l.Strength
@@ -135,11 +147,8 @@ func Approved(lbls []Label, evidence map[string]string) (approved map[string]str
 func LLMApprovedCount(lbls []Label, evidence map[string]string) int {
 	n := 0
 	for _, l := range lbls {
-		if l.Status != StatusApproved {
+		if !isEffective(l, evidence) {
 			continue
-		}
-		if current, ok := evidence[Key(l.From, l.To)]; ok && l.EvidenceHash != "" && l.EvidenceHash != current {
-			continue // stale — excluded
 		}
 		if l.Provenance == ProvenanceLLM && l.Confidence != ConfidenceHigh {
 			n++

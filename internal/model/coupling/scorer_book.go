@@ -76,15 +76,9 @@ const reasonBook = "book"
 
 // Score computes the book balance score for c.
 func (BookScorer) Score(c Classification) EdgeScore {
-	// Cohesion: same-module is not cross-boundary coupling.
+	// Cohesion: same-module is not cross-boundary coupling — not a coupling edge.
 	if c.Distance == DistanceSameModule {
-		return EdgeScore{
-			Scored:  true,
-			Balance: 10,
-			Value:   10,
-			Band:    SeverityNone,
-			Reason:  reasonBook,
-		}
+		return EdgeScore{Scored: false, Reason: reasonBook}
 	}
 
 	// Abstain when strength or distance is unknown — no book ordinal exists.
@@ -95,8 +89,8 @@ func (BookScorer) Score(c Classification) EdgeScore {
 	}
 
 	// Volatility: undeclared/unknown → worst-case 10 (conservative).
-	v := bookVolatilityOrdinal[c.Volatility]
-	if v == 0 {
+	v, vOK := bookVolatilityOrdinal[c.Volatility]
+	if !vOK {
 		v = bookVolatilityUnknown
 	}
 

@@ -65,7 +65,7 @@ func TestBookScorer_BookExamples(t *testing.T) {
 			wantScored:  true,
 		},
 		// Transactional cohesion: S=8(functional), D=2(same_module), V=10(high).
-		// same_module is the cohesion guard → balance=10, band=none.
+		// same_module is not coupling — BookScorer abstains (Scored=false).
 		{
 			name: "transactional cohesion: functional/same_module/high",
 			c: Classification{
@@ -73,9 +73,9 @@ func TestBookScorer_BookExamples(t *testing.T) {
 				Distance:   DistanceSameModule,
 				Volatility: VolatilityHigh,
 			},
-			wantBalance: 10,
-			wantBand:    SeverityNone,
-			wantScored:  true,
+			wantBalance: 0,
+			wantBand:    "",
+			wantScored:  false,
 		},
 		// Loose coupling: S=1(contract), D=9(cross_deploy), V=10(high).
 		// |1-9|=8, 10-10=0, max(8,0)+1=9 → none.
@@ -151,11 +151,11 @@ func TestBookScorer_FourCorners(t *testing.T) {
 		wantBand    Severity
 		wantScored  bool
 	}{
-		// Same-module cohesion: any strength/vol → balance=10, none.
+		// Same-module cohesion: not coupling — BookScorer abstains (Scored=false).
 		{
 			name:        "cohesion same_module",
 			c:           Classification{Strength: StrengthContract, Distance: DistanceSameModule, Volatility: VolatilityHigh},
-			wantBalance: 10, wantBand: SeverityNone, wantScored: true,
+			wantBalance: 0, wantBand: "", wantScored: false,
 		},
 		// Distributed monolith: symmetric/cross_deploy/high → 1, critical.
 		{
@@ -248,7 +248,8 @@ func TestBookScorer_VolatilityConservative(t *testing.T) {
 }
 
 // TestBookScorer_BalanceRange verifies balance stays in [1,10] for all
-// concrete strength/distance/volatility combinations.
+// concrete cross-boundary strength/distance/volatility combinations, and that
+// same-module edges abstain (not coupling).
 func TestBookScorer_BalanceRange(t *testing.T) {
 	s := BookScorer{}
 	strengths := []Strength{StrengthContract, StrengthModel, StrengthFunctional, StrengthSymmetric, StrengthIntrusive}
@@ -260,6 +261,13 @@ func TestBookScorer_BalanceRange(t *testing.T) {
 			for _, vol := range vols {
 				c := Classification{Strength: str, Distance: dist, Volatility: vol}
 				got := s.Score(c)
+				if dist == DistanceSameModule {
+					// Same-module is cohesion, not coupling — BookScorer must abstain.
+					if got.Scored {
+						t.Errorf("expected abstain for same_module: %s/%s/%s", str, dist, vol)
+					}
+					continue
+				}
 				if !got.Scored {
 					t.Errorf("unexpected abstain: %s/%s/%s", str, dist, vol)
 					continue

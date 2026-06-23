@@ -202,15 +202,6 @@ func buildClassifiedEdgeSummary(idx coupling.Index) *diagnostic.ClassifiedEdgeSu
 	return s
 }
 
-// buildClassifiedEdgeSummaryWithLLM is like buildClassifiedEdgeSummary but also
-// stamps the LLM-approved label count so score.go can lower coupling_balance
-// confidence when a significant fraction of labels came from an LLM judge.
-func buildClassifiedEdgeSummaryWithLLM(idx coupling.Index, llmApproved int) *diagnostic.ClassifiedEdgeSummary {
-	s := buildClassifiedEdgeSummary(idx)
-	s.LLMApproved = llmApproved
-	return s
-}
-
 // countActive returns the number of findings whose status is not fixed.
 func countActive(findings []finding.Finding) int {
 	n := 0
