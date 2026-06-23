@@ -241,17 +241,17 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
 
 ### Task 5: Inferred-volatility cascade (book Ch9)
 
-- [ ] In `internal/classify`, after base module volatility is assigned, add a deterministic
+- [x] In `internal/classify`, after base module volatility is assigned, add a deterministic
       propagation pass: a module strongly coupled (strength ≥ functional) to a
       high-volatility module inherits raised effective volatility (book: "high integration
       strength with volatile components makes it highly volatile as well"). Bound the
       propagation (single hop or fixpoint with an explicit cap) and make it config-gateable.
-- [ ] Edges consume the to-module's **effective** (post-cascade) volatility.
-- [ ] Write tests reproducing the book's inferred-volatility example: a supporting module
+- [x] Edges consume the to-module's **effective** (post-cascade) volatility.
+- [x] Write tests reproducing the book's inferred-volatility example: a supporting module
       (would be low) strongly coupled to a core module scores as high-volatility;
       weak coupling to a volatile module does **not** propagate; cascade is deterministic
       and terminates.
-- [ ] Regenerate goldens + inspect; run gates — must pass before Task 6.
+- [x] Regenerate goldens + inspect; run gates — must pass before Task 6.
 
 ### Task 6: Human-editable judgment surfaces + abstain-to-decision (the human fallback)
 

@@ -433,14 +433,14 @@ func TestRun_Severity(t *testing.T) {
 			Internal:   []string{"services/b/internal/**"},
 			Owner:      ownerTeamY,
 			DeployUnit: deployUnitB,
-			Subdomain:  "supporting",
+			Subdomain:  subdomainSupporting,
 		},
 		"c": {
 			Paths:      []string{"services/c/**"},
 			Public:     []string{"services/c/api/**"},
 			Owner:      ownerTeamX,
 			DeployUnit: deployUnitA,
-			Subdomain:  "generic",
+			Subdomain:  subdomainGeneric,
 		},
 	}
 	cfg := config.ClassifyConfig{Modules: modules}
@@ -664,21 +664,21 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 // same-module, or the to-module is not a generic subdomain.
 func TestRun_ContractRecommended(t *testing.T) {
 	modules := map[string]config.ModuleDef{
-		"core": {
+		subdomainCore: {
 			Paths:      []string{"services/core/**"},
 			Public:     []string{"services/core/api/**"},
 			Owner:      ownerTeamX,
 			DeployUnit: deployUnitA,
 			Subdomain:  subdomainCore,
 		},
-		"generic": {
+		subdomainGeneric: {
 			Paths:      []string{"services/generic/**"},
 			Public:     []string{"services/generic/api/**"},
 			Owner:      ownerTeamY,
 			DeployUnit: deployUnitB,
 			Subdomain:  subdomainGeneric,
 		},
-		"supporting": {
+		subdomainSupporting: {
 			Paths:      []string{"services/supporting/**"},
 			Public:     []string{"services/supporting/api/**"},
 			Owner:      ownerTeamY,

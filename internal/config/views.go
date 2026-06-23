@@ -127,11 +127,12 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 // forbids commit-history volatility on the gate path.
 func (c Config) ForClassify() ClassifyConfig {
 	return ClassifyConfig{
-		Modules:               c.Modules,
-		Layers:                c.Layers,
-		ModuleMap:             buildModuleMap(c.Modules),
-		BCAdvisoryMinSeverity: c.BCAdvisoryMinSeverity,
-		ExplicitOwners:        c.explicitOwners,
+		Modules:                  c.Modules,
+		Layers:                   c.Layers,
+		ModuleMap:                buildModuleMap(c.Modules),
+		BCAdvisoryMinSeverity:    c.BCAdvisoryMinSeverity,
+		ExplicitOwners:           c.explicitOwners,
+		VolatilityCascadeEnabled: c.VolatilityCascadeEnabled,
 	}
 }
 

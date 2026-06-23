@@ -16,21 +16,22 @@ import (
 
 // Config is the parsed and validated content of an archfit.yaml file.
 type Config struct {
-	Version               int                  `yaml:"version"`
-	Modules               map[string]ModuleDef `yaml:"modules"`
-	Layers                []string             `yaml:"layers"`
-	Rules                 []RuleDef            `yaml:"rules"`
-	Exclusions            []string             `yaml:"exclusions"`
-	Tools                 ToolsConfig          `yaml:"tools"`
-	Metrics               MetricsConfig        `yaml:"metrics"`
-	Exceptions            []ExceptionDef       `yaml:"exceptions"`
-	MapReview             MapReviewConfig      `yaml:"map_review"`
-	Outputs               OutputsConfig        `yaml:"outputs"`
-	PythonPackage         string               `yaml:"python_package"`           // top-level Python package name for grimp
-	RustManifest          string               `yaml:"rust_manifest"`            // path to Cargo.toml (empty = auto, root manifest)
-	RustFeatures          []string             `yaml:"rust_features"`            // cargo features to activate for metadata
-	RustIncludeDevDeps    bool                 `yaml:"rust_include_dev_deps"`    // include dev-dependencies as crate edges
-	BCAdvisoryMinSeverity string               `yaml:"bc_advisory_min_severity"` // minimum severity to emit BC coupling advisories: low|medium|high|critical (default: low)
+	Version                  int                  `yaml:"version"`
+	Modules                  map[string]ModuleDef `yaml:"modules"`
+	Layers                   []string             `yaml:"layers"`
+	Rules                    []RuleDef            `yaml:"rules"`
+	Exclusions               []string             `yaml:"exclusions"`
+	Tools                    ToolsConfig          `yaml:"tools"`
+	Metrics                  MetricsConfig        `yaml:"metrics"`
+	Exceptions               []ExceptionDef       `yaml:"exceptions"`
+	MapReview                MapReviewConfig      `yaml:"map_review"`
+	Outputs                  OutputsConfig        `yaml:"outputs"`
+	PythonPackage            string               `yaml:"python_package"`             // top-level Python package name for grimp
+	RustManifest             string               `yaml:"rust_manifest"`              // path to Cargo.toml (empty = auto, root manifest)
+	RustFeatures             []string             `yaml:"rust_features"`              // cargo features to activate for metadata
+	RustIncludeDevDeps       bool                 `yaml:"rust_include_dev_deps"`      // include dev-dependencies as crate edges
+	BCAdvisoryMinSeverity    string               `yaml:"bc_advisory_min_severity"`   // minimum severity to emit BC coupling advisories: low|medium|high|critical (default: low)
+	VolatilityCascadeEnabled bool                 `yaml:"volatility_cascade_enabled"` // propagate high volatility across strongly-coupled module pairs (book Ch9)
 
 	// explicitOwners records which modules had a hand-authored `owner:` in YAML,
 	// populated by Load before any resolver fill. Distinguishes a user's explicit

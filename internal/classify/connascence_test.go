@@ -18,6 +18,8 @@ const (
 	fileToB        = "file:services/b/b.go"
 	hintFunctional = "functional"
 	hintIntrusive  = "intrusive"
+	modNameA       = "modA"
+	modNameB       = "modB"
 )
 
 // twoModuleConfig returns a ClassifyConfig with two modules (modA: services/a/**,
@@ -25,8 +27,8 @@ const (
 func twoModuleConfig(publicGlobs []string, clonePairs map[string]struct{}) config.ClassifyConfig {
 	return config.ClassifyConfig{
 		Modules: map[string]config.ModuleDef{
-			"modA": {Paths: []string{pathsA}},
-			"modB": {Paths: []string{pathsB}, Public: publicGlobs},
+			modNameA: {Paths: []string{pathsA}},
+			modNameB: {Paths: []string{pathsB}, Public: publicGlobs},
 		},
 		CrossModuleClonePairs: clonePairs,
 	}
