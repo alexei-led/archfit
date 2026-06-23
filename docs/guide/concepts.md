@@ -53,21 +53,24 @@ component must know about another's internals, the stronger — and more
 change-propagating — the coupling. Four levels, strongest to weakest
 (<https://coupling.dev/posts/dimensions-of-coupling/integration-strength/>):
 
-| Level        | Meaning                                                                                           | `archfit` signal                                                                      |
-| ------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `intrusive`  | Depends on private interfaces / implementation details not meant to be shared.                    | `internal:` globs, Go `internal/`, `_private.py`, SCIP "private" symbol kind.         |
-| `functional` | Shares knowledge of business requirements; the two must change together when requirements change. | Duplicated logic (clone detector), config-declared, or SCIP function-level reference. |
-| `model`      | Shares a domain model / schema that must be updated in both when the model changes.               | Shared exported type, SCIP concrete-class symbol kind.                                |
-| `contract`   | Integrates through an explicit, intention-revealing contract that hides implementation.           | `public:` globs, SCIP Protocol/ABC/interface symbol kind.                             |
+| Level        | Ordinal | Meaning                                                                                           | `archfit` signal                                                              |
+| ------------ | ------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `intrusive`  | 10      | Depends on private interfaces / implementation details not meant to be shared.                    | `internal:` globs, Go `internal/`, `_private.py`, SCIP "private" symbol kind. |
+| `symmetric`  | 9       | Duplicated functionality — both sides must change together (DRY violation across a boundary).     | Cross-module clone pair detected by the clone detector (`tools.clones`).      |
+| `functional` | 8       | Shares knowledge of business requirements; the two must change together when requirements change. | Config-declared or SCIP function/method-level reference.                      |
+| `model`      | 3       | Shares a domain model / schema that must be updated in both when the model changes.               | Shared exported type, SCIP concrete-class symbol kind.                        |
+| `contract`   | 1       | Integrates through an explicit, intention-revealing contract that hides implementation.           | `public:` globs, SCIP Protocol/ABC/interface symbol kind.                     |
 
 `contract` and `intrusive` are decided deterministically from config globs and
-visibility. `model` and `functional` are weaker signals — inferred from symbol
-kinds (SCIP) or duplication, and refined under human review by `archfit enrich`
-(see [LLM enrichment](llm-enrich.md)). When nothing classifies an edge, its
-strength is `unknown` (absence of evidence, never counted as a leak).
+visibility. `symmetric` is assigned when clone detection finds duplicated logic
+crossing a module boundary. `model` and `functional` are inferred from symbol
+kinds (SCIP) or config-declared, and refined under human review by
+`archfit enrich` (see [LLM enrichment](llm-enrich.md)). When nothing classifies
+an edge, its strength is `unknown` — the edge is **abstained** (excluded from
+scoring), never assigned an invented ordinal.
 
-`archfit` treats `functional` and `intrusive` as **high** strength and
-`contract` and `model` as **low** strength when it applies the balance rule.
+The ordinals are the book's published values and drive the balance formula
+directly.
 
 ### 2. Distance — how expensive it is to change them together
 
@@ -113,15 +116,28 @@ weekly is a recurring tax.
 
 Volatility comes primarily from **DDD subdomains**, not from the codebase itself:
 
-| Subdomain    | Volatility | Why                                                   |
-| ------------ | ---------- | ----------------------------------------------------- |
-| `core`       | high       | Competitive advantage; continuously optimized.        |
-| `supporting` | medium     | Custom but not differentiating; changes occasionally. |
-| `generic`    | low        | Solved problem / off-the-shelf; rarely changes.       |
+| Subdomain    | Book anchor | Ordinal (V) | Why                                                   |
+| ------------ | ----------- | ----------- | ----------------------------------------------------- |
+| `core`       | core        | 10          | Competitive advantage; continuously optimized.        |
+| `supporting` | supporting  | 3           | Custom but not differentiating; changes occasionally. |
+| `generic`    | generic     | 3           | Solved problem / off-the-shelf; rarely changes.       |
+
+The book also describes a `frozen/legacy` anchor (V=1) for genuinely stable,
+never-changing modules. Support for explicit frozen/legacy volatility is planned
+but not yet a named constant in the codebase.
 
 In `archfit` you set volatility per module (`volatility:` or `subdomain:` in
-`.archfit.yaml`). Git churn can fill in a value only for modules with no declared
-volatility, and never overrides a human one.
+`.archfit.yaml`). Git churn fills in a value only for modules with no declared
+volatility and only for report-only metrics — it never overrides a human declaration
+and never drives the coupling-balance gate.
+
+**Inferred-volatility cascade (opt-in, book Ch9):** when
+`volatility_cascade_enabled: true` is set in `.archfit.yaml`, a single-hop
+propagation pass runs before scoring. If a module is strongly coupled
+(`functional` or `intrusive`) to a `core` module, its effective volatility
+is raised to `high` for scoring purposes. This lets archfit surface coupling
+chains that inherit core-domain volatility without requiring every module to be
+manually annotated.
 
 #### Essential vs accidental volatility
 
@@ -169,33 +185,54 @@ distance is fine when strength is low (a thin contract between services).
 The dangerous combination is **high strength + high distance**, and **high
 volatility** is what turns that imbalance from theoretical into painful.
 
-`archfit` implements this as a severity table over every cross-boundary edge
-(`internal/model/coupling/coupling.go`, `BalanceResult`):
+`archfit` implements Khononov's published per-edge formula (Ch10) verbatim:
 
-| Strength                          | Distance                     | Volatility  | Severity                                |
-| --------------------------------- | ---------------------------- | ----------- | --------------------------------------- |
-| intrusive                         | cross_deploy_unit            | any         | `critical`                              |
-| intrusive                         | cross_module_different_owner | high        | `high`                                  |
-| intrusive                         | cross_module_different_owner | other       | `medium`                                |
-| high (functional/intrusive)       | high                         | high        | `critical`                              |
-| high                              | high                         | other       | `medium`                                |
-| low (contract/model)              | low                          | high        | `medium` (over-decoupled volatile seam) |
-| low                               | low                          | low/unknown | none (balanced)                         |
-| asymmetric (high+low or low+high) | —                            | —           | `low`                                   |
+```
+modularity = |S − D|                    // strength and distance ordinals
+balance    = max(modularity, 10 − V) + 1  // 1 (critical) … 10 (perfectly balanced)
+```
 
-Two things worth noting:
+Ordinal anchors (book-exact):
 
-- **Intrusive coupling is always surfaced.** Reaching into internals is the one
-  case the model treats as a leak regardless of the rest, escalating with
-  distance and volatility.
-- **Over-decoupling is also a finding.** A thin contract across a tiny distance
-  that nonetheless changes constantly (`low strength + low distance + high
-volatility`) is flagged `medium`: the seam is more ceremony than the
-  relationship warrants. The model is about balance in both directions, not
-  minimization.
+| Dimension  | Level                          | Ordinal |
+| ---------- | ------------------------------ | ------- |
+| Strength   | Contract                       | 1       |
+| Strength   | Model                          | 3       |
+| Strength   | Functional                     | 8       |
+| Strength   | Symmetric (clone-detected DRY) | 9       |
+| Strength   | Intrusive                      | 10      |
+| Distance   | `same_module`                  | 2       |
+| Distance   | `cross_module_same_owner`      | 4       |
+| Distance   | `cross_module_different_owner` | 7       |
+| Distance   | `cross_deploy_unit`            | 9       |
+| Volatility | `supporting` / `generic`       | 3       |
+| Volatility | `core`                         | 10      |
 
-These severities drive the `bc/imbalanced_coupling` advisories (see
-[`archfit scan`](commands.md)) and the `unbalanced_edge` metric.
+Balance maps to severity bands: 1–2 → `critical`, 3–4 → `high`,
+5–6 → `medium`, 7–8 → `low`, 9–10 → `none`.
+
+Three things worth noting:
+
+- **The distributed monolith** (S=Intrusive/Symmetric, D=cross_deploy_unit,
+  V=core): `max(|10−9|, 10−10) + 1 = 1` → `critical`. The worst pattern
+  scores 1 exactly as the book says.
+- **Asymmetric (modular) cases score well.** A Contract edge across a deploy
+  boundary (S=1, D=9, V=10): `max(8, 0) + 1 = 9` → `none`. Low strength
+  over high distance is balanced — the formula rewards it.
+- **Over-decoupling is also visible.** Contract coupling across a tiny
+  same-module distance with high volatility (S=1, D=2, V=10):
+  `max(1, 0) + 1 = 2` → `critical`. The seam is more ceremony than the
+  relationship warrants.
+
+When strength or distance cannot be classified (`unknown`), the edge is
+**abstained** — excluded from scoring rather than assigned an invented ordinal.
+Abstained internal edges lower `coupling_balance` confidence and emit decision
+tasks. See the [configuration reference](configuration-reference.md) for the
+abstain rule and decision-task behavior.
+
+These balance scores drive the `bc/imbalanced_coupling` advisories (see
+[`archfit scan`](commands.md)) and the `unbalanced_edge` metric. `ScoreVersion`
+is `bc_score.v3`.
 
 ---
 

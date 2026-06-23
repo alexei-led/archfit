@@ -42,6 +42,18 @@ func Load(path string) ([]labels.Label, error) {
 		if l.Status != labels.StatusDraft && l.Status != labels.StatusApproved {
 			return nil, fmt.Errorf("labels: entry %d (%s -> %s): invalid status %q (draft|approved)", i, l.From, l.To, l.Status)
 		}
+		if l.Confidence != "" &&
+			l.Confidence != labels.ConfidenceHigh &&
+			l.Confidence != labels.ConfidenceMedium &&
+			l.Confidence != labels.ConfidenceLow {
+			return nil, fmt.Errorf("labels: entry %d (%s -> %s): invalid confidence %q (high|medium|low)", i, l.From, l.To, l.Confidence)
+		}
+		if l.Provenance != "" &&
+			l.Provenance != labels.ProvenanceHuman &&
+			l.Provenance != labels.ProvenanceLLM &&
+			l.Provenance != labels.ProvenanceTool {
+			return nil, fmt.Errorf("labels: entry %d (%s -> %s): invalid provenance %q (human|llm|tool)", i, l.From, l.To, l.Provenance)
+		}
 	}
 	return f.Labels, nil
 }

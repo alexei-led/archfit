@@ -14,6 +14,14 @@ import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
+// subdomain constants are the accepted Khononov subdomain values used throughout
+// the classify package to derive volatility and detect generic targets.
+const (
+	subdomainCore       = "core"
+	subdomainSupporting = "supporting"
+	subdomainGeneric    = "generic"
+)
+
 // Run classifies every edge in g and returns a coupling.Index keyed by the
 // edge canonical key (from + "\x00" + to + "\x00" + kind).
 //
@@ -24,10 +32,10 @@ import (
 //     cross_module_same_owner / cross_module_different_owner / cross_deploy_unit).
 //     When either endpoint cannot be resolved to a module, distance is unknown.
 //   - Volatility: derived from the to-module's subdomain field
-//     (core→high, supporting→medium, generic→low, ""/"unknown"→unknown).
+//     (core→high, supporting→low, generic→low, ""/"unknown"→unknown).
 //   - Explicitness: explicit when strength=contract; implicit when strength=intrusive;
 //     unknown otherwise.
-//   - Score: continuous EdgeScore from the configured Scorer (default: MultiplicativeScorer, locked Task 16).
+//   - Score: continuous EdgeScore from the configured Scorer (default: BookScorer, bc_score.v3).
 //     Applied to cross-boundary edges only (same-module and unknown-distance are zero).
 func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 	mm := buildModuleIndex(c.Modules)
@@ -51,8 +59,10 @@ func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 	}
 	degenerateOwners := isDegenerateOwnerMap(fullOwnerMap)
 
+	effectiveVol := computeEffectiveVolatility(g, mm, c.Modules, c.VolatilityCascadeEnabled)
+
 	for _, e := range g.Edges() {
-		cl := classify(e, mm, c, degenerateExplicit, degenerateOwners)
+		cl := classify(e, mm, c, degenerateExplicit, degenerateOwners, effectiveVol)
 		// Attach a continuous score for cross-boundary edges that have a severity.
 		// Same-module and unknown-distance edges are not scored (zero EdgeScore).
 		if cl.Distance != coupling.DistanceSameModule && cl.Distance != coupling.DistanceUnknown {
@@ -161,7 +171,7 @@ func matchesAnyGlob(path string, globs []string) bool {
 // ExplicitnessHint on the edge overrides the config-glob-derived explicitness
 // when non-empty ("explicit" or "implicit"). BalanceResult is then called to
 // derive advisory Severity for cross-boundary edges.
-func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateExplicit, degenerateOwners bool) coupling.Classification {
+func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility) coupling.Classification {
 	modules := c.Modules
 	fromPath := pathFromID(e.From)
 	toPath := pathFromID(e.To)
@@ -172,17 +182,38 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 	// undecided; the extractor-supplied language-aware hint (e.g. the blanket
 	// "functional" for SCIP call edges) is the last resort before unknown.
 	str := classifyStrength(toPath, mi)
+	fromPin := false
 	if str == coupling.StrengthUnknown && len(c.ApprovedLabels) > 0 {
 		if fromMod, okF := mi.moduleFor(fromPath); okF {
 			if toMod, okT := mi.moduleFor(toPath); okT {
 				if pinned, ok := c.ApprovedLabels[fromMod+"\x00"+toMod]; ok {
 					str = coupling.Strength(pinned)
+					fromPin = true
 				}
 			}
 		}
 	}
 	if str == coupling.StrengthUnknown {
 		str = strengthFromHint(e.StrengthHint)
+	}
+
+	// --- Symmetric upgrade from clone detection ---
+	// A cross-module clone pair (CoA / DRY violation) signals bidirectional
+	// coupling at implementation level — book ordinal 9 (Symmetric), between
+	// Functional (8) and Intrusive (10). Upgrade only when strength is still
+	// functional or unknown; config-authoritative (contract/intrusive) and
+	// human-approved pinned labels (including functional) are never overridden —
+	// fromPin guards against silently overriding a pinned functional label with Symmetric.
+	if !fromPin && (str == coupling.StrengthFunctional || str == coupling.StrengthUnknown) {
+		if len(c.CrossModuleClonePairs) > 0 {
+			if fromMod, okF := mi.moduleFor(fromPath); okF {
+				if toMod, okT := mi.moduleFor(toPath); okT {
+					if _, hasPair := c.CrossModuleClonePairs[connascencePairKey(fromMod, toMod)]; hasPair {
+						str = coupling.StrengthSymmetric
+					}
+				}
+			}
+		}
 	}
 
 	// --- Distance ---
@@ -199,7 +230,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 	}
 
 	// --- Volatility ---
-	vol := classifyVolatility(toPath, mi, modules)
+	vol := classifyVolatilityEffective(toPath, mi, modules, effectiveVol)
 
 	// --- Explicitness ---
 	// ExplicitnessHint from the extractor (AST signal) takes precedence over the
@@ -308,7 +339,7 @@ func classifyStrength(toPath string, mi moduleIndex) coupling.Strength {
 func strengthFromHint(hint string) coupling.Strength {
 	switch coupling.Strength(hint) {
 	case coupling.StrengthContract, coupling.StrengthModel,
-		coupling.StrengthFunctional, coupling.StrengthIntrusive:
+		coupling.StrengthFunctional, coupling.StrengthSymmetric, coupling.StrengthIntrusive:
 		return coupling.Strength(hint)
 	default:
 		return coupling.StrengthUnknown
@@ -377,7 +408,7 @@ func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map
 
 // classifyVolatility derives domain volatility for the to-module using three
 // sources in priority order, per Khononov's volatility-from-subdomain mapping
-// (core→high, supporting→medium, generic→low) with an explicit per-module
+// (core→high, supporting→low, generic→low) with an explicit per-module
 // override:
 //
 //  1. Explicit `volatility` field on the module definition (hand-authored override).
@@ -401,6 +432,7 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 	def := modules[toMod]
 
 	// Priority 1: explicit Volatility field.
+	// Accepted values: high, medium, low, frozen, legacy.
 	switch strings.ToLower(def.Volatility) {
 	case "high":
 		return coupling.VolatilityHigh
@@ -408,15 +440,17 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 		return coupling.VolatilityMedium
 	case "low":
 		return coupling.VolatilityLow
+	case "frozen", "legacy":
+		return coupling.VolatilityFrozen
 	}
 
 	// Priority 2: subdomain heuristic.
 	switch strings.ToLower(def.Subdomain) {
-	case "core":
+	case subdomainCore:
 		return coupling.VolatilityHigh
-	case "supporting":
-		return coupling.VolatilityMedium
-	case "generic":
+	case subdomainSupporting:
+		return coupling.VolatilityLow
+	case subdomainGeneric:
 		return coupling.VolatilityLow
 	}
 
@@ -442,7 +476,7 @@ func isGenericSubdomain(toPath string, mi moduleIndex, modules map[string]config
 		return false
 	}
 	def := modules[toMod]
-	if strings.ToLower(def.Subdomain) == "generic" {
+	if strings.ToLower(def.Subdomain) == subdomainGeneric {
 		return true
 	}
 	// Treat heuristic-generic paths the same way when no explicit subdomain is set.
@@ -450,6 +484,113 @@ func isGenericSubdomain(toPath string, mi moduleIndex, modules map[string]config
 		return true
 	}
 	return false
+}
+
+// computeEffectiveVolatility computes per-module effective volatility after a
+// single-hop inferred-volatility cascade (book Ch9). When cascade is disabled,
+// returns the base (config-declared) volatility for each module unchanged.
+//
+// Propagation rule: for each edge in the graph, if the from-module is strongly
+// coupled (strength ≥ functional) to a to-module with high BASE volatility, the
+// from-module's effective volatility is raised to high. Config-declared volatility
+// always takes precedence and is never lowered.
+//
+// The cascade reads only the BASE volatility of the to-module — not the
+// propagated value — making the result order-independent (single hop, no fixpoint).
+//
+// Strong strength set for propagation: Functional, Symmetric, Intrusive.
+func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, modules map[string]config.ModuleDef, cascadeEnabled bool) map[string]coupling.Volatility {
+	// Seed effective map from config-declared volatility.
+	effective := make(map[string]coupling.Volatility, len(modules))
+	for name, def := range modules {
+		effective[name] = volatilityFromDef(def)
+	}
+	if !cascadeEnabled || g == nil {
+		return effective
+	}
+	// Snapshot the base volatility before propagation so reads during the pass
+	// always reflect config (not yet-written effective values).
+	base := make(map[string]coupling.Volatility, len(effective))
+	maps.Copy(base, effective)
+	// Propagation pass: iterate edges once, raise effective vol where applicable.
+	for _, e := range g.Edges() {
+		str := strengthFromHint(e.StrengthHint)
+		if !isStrongStrength(str) {
+			continue
+		}
+		fromPath := pathFromID(e.From)
+		toPath := pathFromID(e.To)
+		fromMod, okFrom := mi.moduleFor(fromPath)
+		toMod, okTo := mi.moduleFor(toPath)
+		if !okFrom || !okTo || fromMod == toMod {
+			continue
+		}
+		// Read the BASE volatility of the to-module (order-independent).
+		if base[toMod] != coupling.VolatilityHigh {
+			continue
+		}
+		// Raise the from-module's effective volatility to high (never lower it).
+		if effective[fromMod] != coupling.VolatilityHigh {
+			effective[fromMod] = coupling.VolatilityHigh
+		}
+	}
+	return effective
+}
+
+// volatilityFromDef derives base volatility from a ModuleDef using the same
+// priority logic as classifyVolatility but without the path heuristic (the
+// module is already resolved; we want the config-declared level only).
+func volatilityFromDef(def config.ModuleDef) coupling.Volatility {
+	switch strings.ToLower(def.Volatility) {
+	case "high":
+		return coupling.VolatilityHigh
+	case "medium":
+		return coupling.VolatilityMedium
+	case "low":
+		return coupling.VolatilityLow
+	case "frozen", "legacy":
+		return coupling.VolatilityFrozen
+	}
+	switch strings.ToLower(def.Subdomain) {
+	case subdomainCore:
+		return coupling.VolatilityHigh
+	case subdomainSupporting:
+		return coupling.VolatilityLow
+	case subdomainGeneric:
+		return coupling.VolatilityLow
+	}
+	return coupling.VolatilityUndeclared
+}
+
+// isStrongStrength reports whether str is at or above the functional threshold
+// for the inferred-volatility cascade. Contract and model are below the threshold.
+func isStrongStrength(str coupling.Strength) bool {
+	return str == coupling.StrengthFunctional ||
+		str == coupling.StrengthSymmetric ||
+		str == coupling.StrengthIntrusive
+}
+
+// classifyVolatilityEffective derives effective volatility for the to-module
+// using the pre-computed effectiveVol map (post-cascade). Falls back to
+// classifyVolatility when the map is nil or the module is not found.
+func classifyVolatilityEffective(toPath string, mi moduleIndex, modules map[string]config.ModuleDef, effectiveVol map[string]coupling.Volatility) coupling.Volatility {
+	toMod, ok := mi.moduleFor(toPath)
+	if !ok {
+		return coupling.VolatilityUnknown
+	}
+	if effectiveVol != nil {
+		if v, found := effectiveVol[toMod]; found {
+			// Undeclared: fall through to the path heuristic (same as classifyVolatility priority 3).
+			if v != coupling.VolatilityUndeclared {
+				return v
+			}
+			if pv := domainVolatilityFromPath(toPath); pv != coupling.VolatilityUnknown {
+				return pv
+			}
+			return coupling.VolatilityUndeclared
+		}
+	}
+	return classifyVolatility(toPath, mi, modules)
 }
 
 // classifyExplicitness derives explicitness from strength.

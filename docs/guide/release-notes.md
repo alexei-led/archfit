@@ -1,5 +1,139 @@
 # Release notes
 
+## v0.8.0 — Book-verbatim scorer (bc_score.v3)
+
+Replaces archfit's homegrown multiplicative scorer with Vlad Khononov's
+_Balancing Coupling in Software Design_ published formula and ordinal anchors
+**verbatim**. Scores shift by design — this is a breaking metric change.
+`ScoreVersion` is now `bc_score.v3`.
+
+No breaking changes to gate verdicts, exit codes, or metric names.
+
+### Book formula and ordinal anchors (Tasks 1–2)
+
+The per-edge balance formula is now:
+
+```
+modularity = |S − D|
+balance    = max(modularity, 10 − V) + 1    // 1 (critical) … 10 (perfect)
+```
+
+Strength ordinals: Contract=1, Model=3, Functional=8, Symmetric=9, Intrusive=10.
+Distance ordinals: `same_module`=2, `cross_module_same_owner`=4,
+`cross_module_different_owner`=7, `cross_deploy_unit`=9.
+Volatility ordinals: `supporting`/`generic`=3, `core`=10; explicit
+`low`/`medium`/`high` map to 3/6/10.
+
+The distributed-monolith case (S=10, D=9, V=10) now scores balance=1
+(`critical`) exactly as the book says.
+
+`coupling_balance` dimension value = `round(100 × (mean balance − 1) / 9)` over
+all scored internal cross-boundary edges.
+
+Severity bands: 1–2 → `critical`, 3–4 → `high`, 5–6 → `medium`, 7–8 → `low`,
+9–10 → `none`.
+
+### Abstain — no invented ordinals (Task 1)
+
+When strength or distance cannot be classified (`unknown`), the edge is
+**abstained** (`EdgeScore.Scored = false`) — never assigned an invented ordinal.
+Genuine internal edges with unknown strength stay in the denominator as
+`abstained` and lower `coupling_balance` confidence. Decision tasks are emitted
+prompting the operator to classify strength via labels or `archfit enrich`.
+
+### Symmetric strength from clone detection (Task 3)
+
+A new `symmetric` strength level (S=9, book: duplicated functionality / DRY
+violation) is assigned when the clone detector (`tools.clones.enabled: on`)
+finds a clone pair crossing a module boundary and the deterministic strength is
+`functional` or `unknown`. Config-authoritative `contract`/`intrusive`
+assignments and approved pinned labels are never overridden.
+
+Same-owner symmetric edges score `low` severity (not a crisis). Cross-deploy
+symmetric edges score `critical` — the distributed-monolith DRY anti-pattern.
+
+### Runtime async coupling stays report-only (Task 4 — unchanged by design)
+
+Runtime async detection was not wired into distance. It remains report-only:
+detected async bridges (message queues, event buses, async tasks) are recorded
+in the `runtime_async` JSON field per module. The field is evidence only — it
+never annotates graph edges, never affects distance or the balance score, and
+never gates. This was an explicit design decision made before v0.7.0 shipped and
+is unchanged.
+
+### Inferred-volatility cascade (Task 5)
+
+New opt-in config field `volatility_cascade_enabled: true` (book Ch9). When
+enabled, a single-hop propagation pass before scoring raises a module's effective
+volatility to `high` when it is strongly coupled (`functional` or `intrusive`)
+to a `core` module. Disabled by default; archfit's own self-config enables it.
+
+### Label confidence and provenance (Task 6)
+
+Two new optional fields on entries in `.archfit-labels.yaml`:
+
+- `confidence: high | medium | low` — how certain the strength judgment is.
+- `provenance: human | llm | tool` — source of the judgment.
+
+When an approved label has `provenance: llm` and `confidence` below `high`,
+`coupling_balance` confidence is lowered by one band. LLM drafts that have been
+human-approved but carry no explicit high-confidence signal are treated with
+appropriate skepticism without being rejected. All existing label files without
+these fields continue to work unchanged (`omitempty`).
+
+### External/library edges excluded from `coupling_balance` (Task 14)
+
+Edges whose target does not resolve to a declared module (`DistanceUnknown` —
+stdlib, third-party packages, undeclared imports) are excluded from the
+`coupling_balance` scored/abstained distribution. They are NOT internal coupling
+seams; mixing them in deflated the scored fraction and artificially lowered
+confidence. Their count is surfaced in `classified_edges.external` and the
+`coupling_balance` evidence string. External dependency hygiene is a
+`dependency_graph_health` concern.
+
+This exclusion is language-agnostic: it keys on `DistanceUnknown`, which every
+language extractor sets for unresolved targets (Go stdlib, `node_modules`, Python
+site-packages, Rust dependency crates).
+
+### archfit self-scorecard after book-model alignment (Task 15)
+
+| Stage                         | Overall | `coupling_balance`          | Notes                                       |
+| ----------------------------- | ------- | --------------------------- | ------------------------------------------- |
+| Pre-change (bespoke scorer)   | ~82     | ~60 / mixed / **false**     | Invented ordinals for all unknown edges     |
+| Book model, external in denom | 57      | 60 / mixed / **low**        | Honest abstain; 447 external in denominator |
+| External-edge exclusion       | 60      | 78 / serviceable / **high** | 89/89 internal edges scored                 |
+
+89 scored internal cross-boundary edges: all `contract` or `symmetric` strength,
+all `cross_module_same_owner` distance, all `low` volatility (supporting/generic
+subdomains). 84 edges at severity `none`, 5 `low` (symmetric clone pairs). No
+criticals.
+
+Honestly-low dimensions:
+
+- `cohesion_modularity: 5/100 / critical` — 5 god modules (`cmd/archfit`
+  4158 LOC, `internal/initcfg` 2698 LOC, etc.), 75 hidden-coupling pairs. This
+  is pre-existing structural debt not caused by the book-model change; it
+  warrants a separate refactoring effort.
+- `boundary_integrity: 50/100 / mixed / low confidence` — SCIP Go covers only
+  ~9% of Go import edges (structural ceiling of the SCIP Go extractor), so most
+  edges lack symbol-level strength hints.
+- `analysis_confidence: 90/100 / strong` — improved from 80 after external-edge
+  exclusion removed false abstains from the scored fraction.
+
+### Migration notes
+
+`ScoreVersion` bumped from `bc_score.v2` to `bc_score.v3`. Per-edge `balance`
+and `band` values shift. Regenerate `.archfit-baseline.json` after upgrade:
+
+```sh
+archfit baseline --update
+```
+
+Existing `.archfit-labels.yaml` files without `confidence`/`provenance` fields
+continue to work — both fields are `omitempty`.
+
+---
+
 ## v0.6.1 — Skill docs: archfit routing, language guidance, and CLI accuracy
 
 Documentation-only patch release for the built-in `archfit` agent skill and its

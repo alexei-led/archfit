@@ -191,6 +191,47 @@ type DeltaReport struct {
 	TouchedByDelta []string `json:"touched_by_delta,omitempty"`
 }
 
+// ClassifiedEdgeSummary holds aggregate distribution counts over the
+// coupling.Index produced by classify.Run. Stdlib-only (no coupling imports).
+// Populated in engine.go; consumed by score.go to drive coupling_balance.
+type ClassifiedEdgeSummary struct {
+	// Total is the total edge count in the coupling.Index (all edges, including same_module).
+	Total int `json:"total"`
+	// Scored is the count of cross-boundary edges with a concrete book balance
+	// (Scored=true on EdgeScore, i.e. strength and distance both known).
+	Scored int `json:"scored"`
+	// Abstained is the count of cross-boundary edges where the scorer abstained
+	// (strength or distance unknown — excluded from MeanBalance).
+	Abstained int `json:"abstained"`
+	// SameModule is the count of same_module edges (excluded from the balance aggregate).
+	SameModule int `json:"same_module"`
+	// MeanBalance is the arithmetic mean of the book balance (1..10) over scored
+	// cross-boundary edges. 0.0 when Scored == 0.
+	MeanBalance float64 `json:"mean_balance"`
+	// ByStrength counts cross-boundary edges by strength label (string keys, coupling package values).
+	ByStrength map[string]int `json:"by_strength,omitempty"`
+	// ByDistance counts cross-boundary edges by distance label.
+	ByDistance map[string]int `json:"by_distance,omitempty"`
+	// ByVolatility counts cross-boundary edges by volatility label.
+	ByVolatility map[string]int `json:"by_volatility,omitempty"`
+	// BySeverity counts cross-boundary edges by score band (severity label).
+	BySeverity map[string]int `json:"by_severity,omitempty"`
+	// External is the count of cross-boundary edges whose target is NOT a declared
+	// module (Distance == unknown: stdlib, third-party, undeclared packages). These
+	// are EXCLUDED from the Scored/Abstained distribution that drives coupling_balance
+	// — the book measures coupling among YOUR components, not your libraries.
+	// External dependency hygiene is a dependency_graph_health concern.
+	// This field is language-agnostic: it keys on DistanceUnknown, which classifyDistance
+	// sets for all languages (Go stdlib/3p, Rust dependency crates, TS node_modules,
+	// Python external imports). Zero means no external edges were detected.
+	External int `json:"external,omitempty"`
+	// LLMApproved is the count of approved cross-boundary labels whose provenance
+	// is "llm" and confidence is not "high". These lower the coupling_balance
+	// dimension confidence by one band — they are human-approved but not human-judged.
+	// Zero means no LLM-provenance labels are in effect.
+	LLMApproved int `json:"llm_approved,omitempty"`
+}
+
 // Coverage status constants used across all extractor adapters.
 const (
 	StatusOK       = "ok"
@@ -248,6 +289,11 @@ type Diagnostic struct {
 	// modules, swallowed optional-tool errors) so they reach md/json/CI instead
 	// of being stderr-only. Omitted when empty. Advisory — never gates.
 	ConfigWarnings []string `json:"config_warnings,omitempty"`
+	// ClassifiedEdges is the aggregate distribution of all classified coupling
+	// edges from this run. Populated from the full coupling.Index (before advisory
+	// filtering) so coupling_balance sees every edge, not just the noise-controlled
+	// advisory subset. Nil when classification did not run (backward compatible).
+	ClassifiedEdges *ClassifiedEdgeSummary `json:"classified_edges,omitempty"`
 	// Delta groups findings by lifecycle bucket (new/existing/resolved/
 	// severity_changed/touched_by_delta) for a delta run. Nil (omitted) outside
 	// delta mode and when the run produced no findings to bucket.

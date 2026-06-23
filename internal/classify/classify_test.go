@@ -74,7 +74,7 @@ func TestRun(t *testing.T) {
 	//               owner="team-x", deploy_unit="svc-a", subdomain=""  (unknown)
 	modules := map[string]config.ModuleDef{
 		"a": {
-			Paths:      []string{"services/a/**"},
+			Paths:      []string{pathsA},
 			Public:     []string{"services/a/api/**"},
 			Internal:   []string{"services/a/internal/**"},
 			Owner:      ownerTeamX,
@@ -82,8 +82,8 @@ func TestRun(t *testing.T) {
 			Subdomain:  subdomainCore,
 		},
 		"b": {
-			Paths:      []string{"services/b/**"},
-			Public:     []string{"services/b/api/**"},
+			Paths:      []string{pathsB},
+			Public:     []string{publicB},
 			Internal:   []string{"services/b/internal/**"},
 			Owner:      ownerTeamY,
 			DeployUnit: deployUnitB,
@@ -131,7 +131,7 @@ func TestRun(t *testing.T) {
 			edge:     importEdge("services/a/impl.go", "services/b/api/client.go"),
 			wantStr:  coupling.StrengthContract,
 			wantDist: coupling.DistanceCrossDeployUnit, // different owner, different deploy_unit
-			wantVol:  coupling.VolatilityMedium,        // b.subdomain = "supporting"
+			wantVol:  coupling.VolatilityLow,           // b.subdomain = "supporting" → low (book Table 9.1)
 			wantExp:  coupling.ExplicitnessExplicit,
 		},
 		{
@@ -139,7 +139,7 @@ func TestRun(t *testing.T) {
 			edge:     importEdge("services/a/impl.go", "services/b/internal/secret.go"),
 			wantStr:  coupling.StrengthIntrusive,
 			wantDist: coupling.DistanceCrossDeployUnit,
-			wantVol:  coupling.VolatilityMedium,
+			wantVol:  coupling.VolatilityLow, // b.subdomain = "supporting" → low (book Table 9.1)
 			wantExp:  coupling.ExplicitnessImplicit,
 		},
 		{
@@ -147,7 +147,7 @@ func TestRun(t *testing.T) {
 			edge:     importEdge("services/a/impl.go", "services/b/util/helper.go"),
 			wantStr:  coupling.StrengthUnknown,
 			wantDist: coupling.DistanceCrossDeployUnit,
-			wantVol:  coupling.VolatilityMedium,
+			wantVol:  coupling.VolatilityLow, // b.subdomain = "supporting" → low (book Table 9.1)
 			wantExp:  coupling.ExplicitnessUnknown,
 		},
 		{
@@ -179,7 +179,7 @@ func TestRun(t *testing.T) {
 			edge:     importEdge("services/a/impl.go", "services/b/api/client.go"),
 			wantStr:  coupling.StrengthContract,
 			wantDist: coupling.DistanceCrossDeployUnit,
-			wantVol:  coupling.VolatilityMedium,
+			wantVol:  coupling.VolatilityLow, // b.subdomain = "supporting" → low (book Table 9.1)
 			wantExp:  coupling.ExplicitnessExplicit,
 		},
 		{
@@ -195,7 +195,7 @@ func TestRun(t *testing.T) {
 			edge:     importEdge("external/foo.go", "services/b/api/client.go"),
 			wantStr:  coupling.StrengthContract,
 			wantDist: coupling.DistanceUnknown, // external/foo.go matches no module
-			wantVol:  coupling.VolatilityMedium,
+			wantVol:  coupling.VolatilityLow,   // b.subdomain = "supporting" → low (book Table 9.1)
 			wantExp:  coupling.ExplicitnessExplicit,
 		},
 		{
@@ -325,7 +325,7 @@ func TestRun_IndexKeyMatchesEdge(t *testing.T) {
 func TestRun_ExplicitVolatilityFieldOverridesSubdomain(t *testing.T) {
 	modules := map[string]config.ModuleDef{
 		"a": {Paths: []string{globPkgA}},
-		"b": {Paths: []string{globPkgB}, Subdomain: "core", Volatility: "low"},
+		"b": {Paths: []string{globPkgB}, Subdomain: subdomainCore, Volatility: "low"},
 	}
 	cfg := config.ClassifyConfig{Modules: modules}
 
@@ -433,14 +433,14 @@ func TestRun_Severity(t *testing.T) {
 			Internal:   []string{"services/b/internal/**"},
 			Owner:      ownerTeamY,
 			DeployUnit: deployUnitB,
-			Subdomain:  "supporting",
+			Subdomain:  subdomainSupporting,
 		},
 		"c": {
 			Paths:      []string{"services/c/**"},
 			Public:     []string{"services/c/api/**"},
 			Owner:      ownerTeamX,
 			DeployUnit: deployUnitA,
-			Subdomain:  "generic",
+			Subdomain:  subdomainGeneric,
 		},
 	}
 	cfg := config.ClassifyConfig{Modules: modules}
@@ -459,7 +459,7 @@ func TestRun_Severity(t *testing.T) {
 	}{
 		{
 			// contract + cross_deploy_unit → low+high → XOR modular quadrant → none (BC-correct).
-			name:         "contract cross-deploy medium-vol → none (XOR loose quadrant)",
+			name:         "contract cross-deploy low-vol → none (XOR loose quadrant)",
 			edge:         importEdge("services/a/impl.go", "services/b/api/client.go"),
 			wantSeverity: coupling.SeverityNone,
 		},
@@ -664,21 +664,21 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 // same-module, or the to-module is not a generic subdomain.
 func TestRun_ContractRecommended(t *testing.T) {
 	modules := map[string]config.ModuleDef{
-		"core": {
+		subdomainCore: {
 			Paths:      []string{"services/core/**"},
 			Public:     []string{"services/core/api/**"},
 			Owner:      ownerTeamX,
 			DeployUnit: deployUnitA,
 			Subdomain:  subdomainCore,
 		},
-		"generic": {
+		subdomainGeneric: {
 			Paths:      []string{"services/generic/**"},
 			Public:     []string{"services/generic/api/**"},
 			Owner:      ownerTeamY,
 			DeployUnit: deployUnitB,
 			Subdomain:  subdomainGeneric,
 		},
-		"supporting": {
+		subdomainSupporting: {
 			Paths:      []string{"services/supporting/**"},
 			Public:     []string{"services/supporting/api/**"},
 			Owner:      ownerTeamY,

@@ -50,10 +50,11 @@ const (
 	confidenceHigh = "high"
 
 	// symbolFoo is the test symbol used in SymbolGraph forwarding tests.
-	symbolFoo     = "pkg/a.Foo"
-	symbolBar     = "pkg/b.Bar"
-	pathFileB     = "pkg/b/b.go"
-	strengthModel = "model"
+	symbolFoo          = "pkg/a.Foo"
+	symbolBar          = "pkg/b.Bar"
+	pathFileB          = "pkg/b/b.go"
+	strengthModel      = "model"
+	strengthFunctional = "functional"
 
 	ruleIDBCImbalanced = "bc/imbalanced_coupling"
 )
@@ -164,7 +165,7 @@ func advisoryFacts() graph.Facts {
 				Kind:         graph.EdgeKindImports,
 				Language:     "go",
 				Confidence:   confidenceHigh,
-				StrengthHint: "functional",
+				StrengthHint: strengthFunctional,
 				Locations:    []graph.Location{{File: pathFileA, Line: 7}},
 			},
 		},
@@ -584,12 +585,12 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 		t.Fatalf("no bc/imbalanced_coupling advisory present; findings=%+v", d.Findings)
 	}
 
-	// score = scorer name (default is the multiplicative scorer).
-	if got := adv.MatchedBy["score"]; got != "multiplicative" {
-		t.Errorf("MatchedBy[score]=%q, want scorer name %q", got, "multiplicative")
+	// score = scorer name (default is BookScorer as of bc_score.v3).
+	if got := adv.MatchedBy["score"]; got != "book" {
+		t.Errorf("MatchedBy[score]=%q, want scorer name %q", got, "book")
 	}
 
-	// score_value must parse to an int in [0,10].
+	// score_value must parse to an int in [1,10] (BookScorer balance range).
 	rawValue, ok := adv.MatchedBy["score_value"]
 	if !ok {
 		t.Fatalf("MatchedBy missing score_value; got %+v", adv.MatchedBy)
@@ -598,8 +599,8 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("score_value %q not an integer: %v", rawValue, err)
 	}
-	if value < 0 || value > 10 {
-		t.Errorf("score_value=%d out of range [0,10]", value)
+	if value < 1 || value > 10 {
+		t.Errorf("score_value=%d out of range [1,10]", value)
 	}
 
 	// score_band must equal the band derived from the value (consistency).
@@ -690,7 +691,7 @@ func bcFloodFacts(n int) graph.Facts {
 			Kind:         graph.EdgeKindImports,
 			Language:     "go",
 			Confidence:   confidenceHigh,
-			StrengthHint: "functional",
+			StrengthHint: strengthFunctional,
 			Locations:    []graph.Location{{File: from, Line: 7}},
 		})
 	}
@@ -1700,5 +1701,263 @@ func TestRun_RuntimeAsync_Deterministic(t *testing.T) {
 	}
 	if !bytes.Equal(first, second) {
 		t.Errorf("non-deterministic runtime_async:\n first:  %s\n second: %s", first, second)
+	}
+}
+
+// bookExampleFacts builds Facts with a single import edge using the given StrengthHint.
+// fromFile and toFile are repo-relative file paths; the edge is tagged EdgeKindImports.
+func bookExampleFacts(fromFile, toFile, strengthHint string) graph.Facts {
+	fromNode := "file:" + fromFile
+	toNode := "file:" + toFile
+	return graph.Facts{
+		Language: "go",
+		Nodes: []graph.Node{
+			{Kind: graph.NodeKindFile, Path: fromFile},
+			{Kind: graph.NodeKindFile, Path: toFile},
+		},
+		Edges: []graph.Edge{
+			{
+				From:         fromNode,
+				To:           toNode,
+				Kind:         graph.EdgeKindImports,
+				Language:     "go",
+				Confidence:   confidenceHigh,
+				StrengthHint: strengthHint,
+				Locations:    []graph.Location{{File: fromFile, Line: 1}},
+			},
+		},
+	}
+}
+
+// bookExampleConfig builds a two-module ClassifyConfig for Ch10 engine tests.
+//
+// Module "src" owns fromFile paths, module "dst" owns toFile paths.
+// sameDeployUnit controls whether cross_deploy_unit distance fires:
+//
+//	false → src gets deploy_unit="svc-src", dst gets deploy_unit="svc-dst" → D=9
+//	true  → both get deploy_unit="svc-shared" → distance stays at cross_module_diff_owner or same_module
+//
+// sameOwner=true sets both modules to "team-shared" → cross_module_same_owner (D=4) when in the same deploy unit.
+// targetSubdomain controls the dst module's domain volatility ("core"→V=10, "supporting"→V=6, "generic"→V=3).
+func bookExampleConfig(fromGlob, toGlob string, sameDeployUnit, sameOwner bool, targetSubdomain string) (config.ClassifyConfig, []rules.Rule) {
+	srcUnit := "svc-src"
+	dstUnit := "svc-dst"
+	if sameDeployUnit {
+		srcUnit = "svc-shared"
+		dstUnit = "svc-shared"
+	}
+	srcOwner := "team-src"
+	dstOwner := "team-dst"
+	if sameOwner {
+		srcOwner = "team-shared"
+		dstOwner = "team-shared"
+	}
+
+	// No Public/Internal globs: classifyStrength returns StrengthUnknown so the
+	// edge's StrengthHint is used verbatim (last-resort fallback in classify.go).
+	//
+	// A third sentinel module with a distinct owner ("team-other") ensures the
+	// owner map is never degenerate (≥2 distinct owners), which allows the explicit-
+	// owner distance signal to fire for the src→dst edge. Without it, both modules
+	// sharing one owner triggers degenerateExplicit suppression and falls through to
+	// code-structure distance, which cannot produce cross_module_same_owner.
+	modules := map[string]config.ModuleDef{
+		"src": {
+			Paths:      []string{fromGlob},
+			Owner:      srcOwner,
+			DeployUnit: srcUnit,
+		},
+		"dst": {
+			Paths:      []string{toGlob},
+			Owner:      dstOwner,
+			DeployUnit: dstUnit,
+			Subdomain:  targetSubdomain,
+		},
+		"sentinel": {
+			Paths:      []string{"services/sentinel/**"},
+			Owner:      "team-other",
+			DeployUnit: srcUnit,
+		},
+	}
+
+	cfg := config.Config{Version: 1, Modules: modules}
+	return cfg.ForClassify(), rules.New(cfg.ForRules())
+}
+
+// TestRun_BookExamples_Ch10 is an engine-level regression test anchoring the full
+// pipeline (facts → classify → score → advisory) to Khononov Ch10 book examples.
+// It verifies that synthetic graphs with known StrengthHint / distance / volatility
+// produce the balance values computed by the BookScorer formula:
+//
+//	modularity = |S - D|
+//	balance    = max(modularity, 10 - V) + 1
+//	same_module guard: if D == same_module → balance = 10 (no advisory)
+func TestRun_BookExamples_Ch10(t *testing.T) {
+	// File and glob constants local to this test suite to avoid collision with
+	// the global cannedConfig globs (pkg/a/** / pkg/b/**).
+	const (
+		fromFile = "services/src/main.go"
+		fromGlob = "services/src/**"
+		toFile   = "services/dst/impl.go"
+		toGlob   = "services/dst/**"
+		toFileSM = "services/src/impl.go" // same module as fromFile for the same_module case
+	)
+
+	type tc struct {
+		name            string
+		strengthHint    string // StrengthHint on the edge
+		sameDeployUnit  bool   // false → cross_deploy_unit (D=9), true → same-deploy-unit distance
+		sameOwner       bool   // true → cross_module_same_owner (D=4); false → cross_module_diff_owner (D=7)
+		targetSubdomain string // dst module subdomain ("core"→high V=10, "supporting"→medium V=6, "generic"→low V=3)
+		usesSameModule  bool   // true → fromFile and toFile are in the same module (same_module guard)
+		wantBalance     int    // expected balance score_value
+		wantBand        string // expected score_band
+		wantAdvisory    bool   // false → no bc/imbalanced_coupling finding expected
+		comment         string
+	}
+
+	cases := []tc{
+		{
+			// Ch10: "Distributed Monolith" — symmetric strength (S=9), cross-deploy distance (D=9),
+			// core domain (V=10). mod=|9-9|=0, volR=10-10=0, balance=max(0,0)+1=1.
+			name:            "distributed_monolith",
+			strengthHint:    "symmetric",
+			sameDeployUnit:  false,
+			targetSubdomain: "core",
+			wantBalance:     1,
+			wantBand:        "critical",
+			wantAdvisory:    true,
+			comment:         "S=9 D=9 V=10 → mod=0 volR=0 balance=1 (critical)",
+		},
+		{
+			// Ch10: "Ball of Mud" — model strength (S=3, low), cross_module_same_owner distance (D=4, low),
+			// core domain (V=10, high). low+low → advisory (over-decoupled volatile seam).
+			// mod=|3-4|=1, volR=10-10=0, balance=max(1,0)+1=2 (critical).
+			// Note: "model over distance" (S=3 low, D=9 high) is XOR loose quadrant → SeverityNone by design.
+			name:            "ball_of_mud",
+			strengthHint:    "model",
+			sameDeployUnit:  true,
+			sameOwner:       true,
+			targetSubdomain: "core",
+			wantBalance:     2,
+			wantBand:        "critical",
+			wantAdvisory:    true,
+			comment:         "S=3 D=4 V=10 → mod=1 volR=0 balance=2 (critical)",
+		},
+		{
+			// Ch10: "Frozen Legacy" (approximation) — intrusive strength (S=10), cross-deploy distance (D=9),
+			// generic domain (V=3, archfit minimum; book uses V=1 "frozen" which doesn't exist here).
+			// mod=|10-9|=1, volR=10-3=7, balance=max(1,7)+1=8.
+			// Book result with V=1: volR=9, balance=10 (none). This approximation gives balance=8 (low).
+			name:            "frozen_legacy_approx",
+			strengthHint:    "intrusive",
+			sameDeployUnit:  false,
+			targetSubdomain: "generic",
+			wantBalance:     8,
+			wantBand:        "low",
+			wantAdvisory:    true,
+			comment:         "S=10 D=9 V=3(low/approx) → mod=1 volR=7 balance=8 (low); book V=1→balance=10",
+		},
+		{
+			// Ch10: "Transactional Cohesion" — functional strength (S=8), same_module (D=2, guard fires).
+			// same_module guard → balance=10 → no advisory emitted.
+			name:           "transactional_cohesion",
+			strengthHint:   strengthFunctional,
+			usesSameModule: true,
+			wantBalance:    10,
+			wantBand:       "none",
+			wantAdvisory:   false,
+			comment:        "S=8 D=same_module → guard → balance=10 (none), no advisory",
+		},
+	}
+
+	ctx := context.Background()
+	now := time.Date(2026, 6, 23, 0, 0, 0, 0, time.UTC)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var facts graph.Facts
+			var classifyCfg config.ClassifyConfig
+			var rs []rules.Rule
+
+			if tc.usesSameModule {
+				// Both files in the same module (services/src/**) → same_module distance guard.
+				facts = bookExampleFacts(fromFile, toFileSM, tc.strengthHint)
+				classifyCfg, rs = bookExampleConfig(fromGlob, fromGlob, true, false, tc.targetSubdomain)
+			} else {
+				facts = bookExampleFacts(fromFile, toFile, tc.strengthHint)
+				classifyCfg, rs = bookExampleConfig(fromGlob, toGlob, tc.sameDeployUnit, tc.sameOwner, tc.targetSubdomain)
+			}
+
+			ex := &ports.ExtractorMock{
+				NameFunc: func() string { return "go" },
+				ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+					return facts, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+				},
+			}
+
+			ms := metrics.New(config.Config{Version: 1})
+			base := baseline.Baseline{}
+
+			d, err := engine.Run(ctx, engine.RunInput{
+				Mode:        engine.Mode{Head: headRef, Advisory: true},
+				Scope:       scope.Scope{Root: "."},
+				Classify:    classifyCfg,
+				Staleness:   config.StalenessConfig{},
+				Exceptions:  config.ExceptionSet{},
+				Extractors:  []ports.Extractor{ex},
+				Patterns:    ports.NopPatternProvider{},
+				Resolver:    ports.NopSymbolResolver{},
+				PatternCfg:  config.PatternConfig{},
+				Rules:       rs,
+				Metrics:     ms,
+				Accepted:    base,
+				BaseMetrics: base.Metrics,
+				Labels:      nil,
+				Signals:     signal.RunSignals{},
+				Now:         now,
+			})
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+
+			// Find the bc/imbalanced_coupling advisory (there may be at most one for a single edge).
+			var adv *finding.Finding
+			for i := range d.Findings {
+				if d.Findings[i].RuleID == ruleIDBCImbalanced && d.Findings[i].Kind == kindAdvisory {
+					adv = &d.Findings[i]
+					break
+				}
+			}
+
+			if !tc.wantAdvisory {
+				if adv != nil {
+					t.Errorf("%s: expected no bc/imbalanced_coupling advisory (same_module guard), got score_value=%s score_band=%s",
+						tc.comment, adv.MatchedBy["score_value"], adv.MatchedBy["score_band"])
+				}
+				return
+			}
+
+			if adv == nil {
+				t.Fatalf("%s: no bc/imbalanced_coupling advisory; findings=%+v", tc.comment, d.Findings)
+			}
+
+			rawValue, ok := adv.MatchedBy["score_value"]
+			if !ok {
+				t.Fatalf("%s: MatchedBy missing score_value; got %+v", tc.comment, adv.MatchedBy)
+			}
+			gotValue, err := strconv.Atoi(rawValue)
+			if err != nil {
+				t.Fatalf("%s: score_value %q not an integer: %v", tc.comment, rawValue, err)
+			}
+			if gotValue != tc.wantBalance {
+				t.Errorf("%s: score_value=%d, want %d", tc.comment, gotValue, tc.wantBalance)
+			}
+
+			gotBand := adv.MatchedBy["score_band"]
+			if gotBand != tc.wantBand {
+				t.Errorf("%s: score_band=%q, want %q", tc.comment, gotBand, tc.wantBand)
+			}
+		})
 	}
 }

@@ -21,6 +21,8 @@ import "math"
 //
 // Intrusive floor: intrusive strength always scores at least 3 (band low),
 // regardless of V — reconciles BC's "intrusive always fragile" with the gate.
+//
+// Kept for calibration reference; DefaultScorer() now returns BookScorer.
 type MultiplicativeScorer struct{}
 
 // Frozen normalisation constants — Balanced Coupling (Khononov) §4.1 / BC-pure formula.
@@ -83,7 +85,7 @@ func (MultiplicativeScorer) Score(c Classification) EdgeScore {
 		raw = intrusiveFloor
 	}
 
-	band := ScoreBand(raw)
+	band := legacyScoreBand(raw)
 
 	return EdgeScore{
 		Value:  raw,

@@ -8,32 +8,35 @@ type Scorer interface {
 }
 
 // ScoreDefinition is the canonical, user-facing definition of archfit's numeric
-// BC score. It is deliberately explicit that the formula is archfit's OWN
-// deterministic implementation of Vlad Khononov's qualitative Balanced Coupling
-// heuristic — Khononov publishes no literal equation. coupling.dev frames a
-// single qualitative "formula": maintenance effort rises monotonically with
-// integration strength, distance, and volatility. archfit operationalises that
-// as Effort ∝ Strength × Distance × Volatility over frozen ordinals.
-const ScoreDefinition = "maintenance-effort proxy — Effort ∝ Strength × Distance × Volatility; " +
-	"archfit's deterministic implementation of Vlad Khononov's qualitative Balanced Coupling " +
-	"heuristic (low volatility neutralises; cohesion = high strength + low distance is healthy, " +
-	"not flagged), NOT a literal published equation"
+// BC score. Implements Vlad Khononov's published formula from _Balancing Coupling
+// in Software Design_ Ch10 verbatim: balance = max(|S−D|, 10−V) + 1.
+// Range 1 (distributed monolith / ball-of-mud) to 10 (frozen/contract); higher
+// is better balanced. Strength, distance, and volatility ordinals are fixed per
+// the book (Ch8–Ch10); changing any is a breaking metric change (bump ScoreVersion).
+const ScoreDefinition = "book balance score — balance = max(|S−D|, 10−V) + 1 " +
+	"(Khononov, _Balancing Coupling in Software Design_, Ch10); " +
+	"range 1 (distributed monolith) to 10 (frozen/contract); higher = better balanced"
 
 // ScoreVersion versions the BC score: its ordinals, normalisation, and the
 // severity mapping derived from them. Bump it when any of those change so the
-// delta baseline treats the score as a new measurement. Held at v2: the
-// Balanced Coupling measurement engine v2 (2026-06-18) plus the volatility
-// undeclared/unknown split and balance-rule attribution (Task 10).
-const ScoreVersion = "bc_score.v2"
+// delta baseline treats the score as a new measurement.
+// v3: book-verbatim formula (Khononov Ch10) — balance = max(|S-D|, 10-V)+1,
+// new ScoreBand mapping (1-2 critical → 9-10 none), BookScorer as default.
+const ScoreVersion = "bc_score.v3"
 
 // EdgeScore is the result produced by a Scorer for one graph edge.
-// Value is the final integer score in [0, 10].
-// Band is the severity band derived from Value.
+//
+// Scored is false when the scorer abstained (strength or distance unknown).
+// Balance is the book balance value 1..10 (higher = better balanced); 0 when !Scored.
+// Value equals Balance for BookScorer; legacy scorers set it to their 0..10 risk integer.
+// Band is the severity band derived from Balance (or Value for legacy scorers).
 // Reason is a short human-readable label identifying the scorer variant.
 // Breakdown holds the per-dimension contribution for diagnostics.
 // CheapestMove is the single dimension change that drops the band the most;
 // empty when already at band none or when no move exists.
 type EdgeScore struct {
+	Scored       bool // false when strength or distance is unknown → edge abstained
+	Balance      int  // book balance 1..10 (0 when !Scored)
 	Value        int
 	Band         Severity
 	Reason       string
@@ -44,9 +47,11 @@ type EdgeScore struct {
 // ScoreBreakdown records the per-dimension ordinal values used in scoring.
 // All fields are the raw ordinal integers before final combination.
 type ScoreBreakdown struct {
-	StrengthVal int
-	DistanceVal int
-	VolDiscount int
+	StrengthVal   int // S ordinal (book Ch10)
+	DistanceVal   int // D ordinal (book Ch8)
+	VolatilityVal int // V ordinal (book Ch9); 0 for legacy scorers
+	Modularity    int // |S-D|; 0 for legacy scorers
+	VolDiscount   int // legacy additive/multiplicative only; 0 for BookScorer
 }
 
 // ---------------------------------------------------------------------------
@@ -128,9 +133,29 @@ var volatilityDiscount = map[Volatility]int{
 	VolatilityUnknown:    volatilityDiscountUnknown,
 }
 
-// ScoreBand maps a numeric score in [0, 10] to a Severity band.
+// ScoreBand maps a book balance value 1..10 to a Severity band.
+// Higher balance = better balanced coupling = lower (or no) finding.
+// Bands: 1–2 critical · 3–4 high · 5–6 medium · 7–8 low · 9–10 none.
+func ScoreBand(balance int) Severity {
+	switch {
+	case balance <= 2:
+		return SeverityCritical
+	case balance <= 4:
+		return SeverityHigh
+	case balance <= 6:
+		return SeverityMedium
+	case balance <= 8:
+		return SeverityLow
+	default:
+		return SeverityNone
+	}
+}
+
+// legacyScoreBand maps a legacy risk score [0,10] to a Severity band.
+// Used only by AdditiveScorer and MultiplicativeScorer (kept for calibration).
+// Lower score = lower risk = lower/no finding.
 // Bands: 0–2 none · 3–4 low · 5–6 medium · 7–8 high · 9–10 critical.
-func ScoreBand(score int) Severity {
+func legacyScoreBand(score int) Severity {
 	switch {
 	case score <= 2:
 		return SeverityNone
@@ -146,10 +171,10 @@ func ScoreBand(score int) Severity {
 }
 
 // DefaultScorer returns the scorer used by classify.Run when the config
-// does not specify one. Locked to MultiplicativeScorer per Task 16 calibration
-// decision (2026-06-18): 150 edges on archfit, 105 agree, rate=0.70 vs AdditiveScorer.
+// does not specify one. Changed to BookScorer (bc_score.v3): implements
+// Vlad Khononov's published formula from _Balancing Coupling in Software Design_ Ch10.
 func DefaultScorer() Scorer {
-	return MultiplicativeScorer{}
+	return BookScorer{}
 }
 
 // clamp returns v clamped to [lo, hi].
