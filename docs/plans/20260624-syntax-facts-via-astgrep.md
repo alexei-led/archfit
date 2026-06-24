@@ -114,10 +114,10 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 8: Role derivation (new core pkg)
 
-- [ ] create `internal/syntax` core pkg; pure `DeriveRoles([]SyntaxFact, moduleViews) []SyntaxFact` setting Role/RoleConf/Evidence per design §5
-- [ ] add `internal/syntax` to the core-ring allow-list in `internal/arch_test.go`
-- [ ] write table-driven tests: each role, each confidence tier, no-match
-- [ ] run `TestArchImports` + unit tests — must pass before next task
+- [x] create `internal/syntax` core pkg; pure `DeriveRoles([]SyntaxFact, moduleViews) []SyntaxFact` setting Role/RoleConf/Evidence per design §5
+- [x] add `internal/syntax` to the core-ring allow-list in `internal/arch_test.go`
+- [x] write table-driven tests: each role, each confidence tier, no-match
+- [x] run `TestArchImports` + unit tests — must pass before next task
 
 ### Task 9: NodeRoleIndex — the role→graph-node join
 

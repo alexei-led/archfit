@@ -1,0 +1,170 @@
+// Package syntax provides pure role derivation over SyntaxFacts gathered by
+// the ast-grep extractor. It is a core-ring package: no os, no subprocess, no
+// YAML, no adapter imports.
+package syntax
+
+import (
+	"strings"
+
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
+)
+
+// Role constants — the four roles §5 defines.
+const (
+	RoleHandler    = "handler"
+	RoleService    = "service"
+	RoleRepository = "repository"
+	RoleDomain     = "domain"
+)
+
+// Confidence constants — §5 confidence tiers.
+const (
+	ConfHigh   = "high"
+	ConfMedium = "medium"
+	ConfLow    = "low"
+)
+
+// DeriveRoles returns a new slice of SyntaxFacts with Role, RoleConf, and
+// Evidence populated per design §5. Facts that do not match any heuristic are
+// returned unchanged (Role/RoleConf/Evidence stay empty).
+//
+// Derivation is language-agnostic and purely structural — it inspects each
+// fact's Kind, Name, File, and Framework fields without I/O.
+//
+// Precedence (highest wins, first match sets and stops):
+//  1. annotation / route / non-empty Framework  → high  (structural evidence)
+//  2. Name suffix (*Handler, *Controller, *Repository, *Service, *Domain, …) → medium
+//  3. File path substring                        → low
+func DeriveRoles(facts []diagnostic.SyntaxFact) []diagnostic.SyntaxFact {
+	out := make([]diagnostic.SyntaxFact, len(facts))
+	for i, f := range facts {
+		out[i] = deriveOne(f)
+	}
+	return out
+}
+
+// deriveOne classifies a single SyntaxFact and returns it with Role/RoleConf/
+// Evidence set (or unchanged when no heuristic fires).
+func deriveOne(f diagnostic.SyntaxFact) diagnostic.SyntaxFact {
+	// Tier 1 — annotation / route / framework: high confidence.
+	//
+	// Kind "route" is set by the ast-grep extractor for route registrations.
+	// Kind "annotation" covers Java-style @Controller, @Service, @Repository
+	// decorators produced by TypeScript/Python decorators and Go //go:embed-style.
+	// Non-empty Framework means a known web framework route registration was
+	// detected by the extractor.
+	//
+	// Ceiling: Go signature `http.ResponseWriter`/`*http.Request` evidence would
+	// also be high-confidence but is not observable from SyntaxFact (no params
+	// field); upgrade to high when a params/signature field is added.
+	if f.Kind == "route" || f.Framework != "" {
+		return set(f, RoleHandler, ConfHigh, handlerEvidence(f))
+	}
+
+	// Kind "annotation" — role determined by the annotation's name so we can
+	// distinguish @Controller (handler) from @Service, @Repository, etc.
+	if f.Kind == "annotation" {
+		if r, ev := roleFromAnnotationName(f.Name); r != "" {
+			return set(f, r, ConfHigh, ev)
+		}
+	}
+
+	// Tier 2 — name suffix: medium confidence.
+	if r, ev := roleFromName(f.Name); r != "" {
+		return set(f, r, ConfMedium, ev)
+	}
+
+	// Tier 3 — file path substring: low confidence.
+	if r, ev := roleFromPath(f.File); r != "" {
+		return set(f, r, ConfLow, ev)
+	}
+
+	return f
+}
+
+// handlerEvidence builds the high-confidence evidence string for route/framework hits.
+func handlerEvidence(f diagnostic.SyntaxFact) string {
+	if f.Framework != "" {
+		return "framework " + f.Framework + " route registration"
+	}
+	return "route registration (kind=route)"
+}
+
+// roleFromAnnotationName derives a role from an annotation/decorator name.
+// Covers patterns like @Controller, @Service, @Repository, @Handler.
+// Name comparison is case-insensitive.
+func roleFromAnnotationName(name string) (role, evidence string) {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.Contains(lower, "controller") || strings.Contains(lower, "handler") || strings.Contains(lower, "route"):
+		return RoleHandler, "decorator " + name
+	case strings.Contains(lower, "repository") || strings.Contains(lower, "repo") || strings.Contains(lower, "storage") || strings.Contains(lower, "persistence"):
+		return RoleRepository, "decorator " + name
+	case strings.Contains(lower, "service") || strings.Contains(lower, "usecase"):
+		return RoleService, "decorator " + name
+	case strings.Contains(lower, "domain") || strings.Contains(lower, "entity") || strings.Contains(lower, "model"):
+		return RoleDomain, "decorator " + name
+	}
+	return "", ""
+}
+
+// roleFromName derives a role from a symbol name using §5 suffix heuristics.
+// Name checks are case-sensitive suffix matches per §5 ("*Repository", "*Service").
+func roleFromName(name string) (role, evidence string) {
+	switch {
+	case strings.HasSuffix(name, "Handler") || strings.HasSuffix(name, "Controller"):
+		return RoleHandler, "name suffix " + name
+	case strings.HasSuffix(name, "Repository") || strings.HasSuffix(name, "Repo") || strings.HasSuffix(name, "Storage") || strings.HasSuffix(name, "Persistence"):
+		return RoleRepository, "name suffix " + name
+	case strings.HasSuffix(name, "Service") || strings.HasSuffix(name, "UseCase") || strings.HasSuffix(name, "Usecase"):
+		return RoleService, "name suffix " + name
+	case strings.HasSuffix(name, "Domain") || strings.HasSuffix(name, "Entity") || strings.HasSuffix(name, "Model"):
+		return RoleDomain, "name suffix " + name
+	}
+	return "", ""
+}
+
+// roleFromPath derives a role from a file path using §5 path-substring
+// heuristics. Path is lowercased before comparison.
+func roleFromPath(file string) (role, evidence string) {
+	lower := strings.ToLower(file)
+	switch {
+	case containsAny(lower, "handler", "controller", "routes"):
+		return RoleHandler, "path contains " + matchedSegment(lower, "handler", "controller", "routes")
+	case containsAny(lower, "repository", "repo", "storage", "persistence"):
+		return RoleRepository, "path contains " + matchedSegment(lower, "repository", "repo", "storage", "persistence")
+	case containsAny(lower, "service", "usecase", "application"):
+		return RoleService, "path contains " + matchedSegment(lower, "service", "usecase", "application")
+	case containsAny(lower, "domain", "model", "entity"):
+		return RoleDomain, "path contains " + matchedSegment(lower, "domain", "model", "entity")
+	}
+	return "", ""
+}
+
+// set returns a copy of f with Role, RoleConf, and Evidence set.
+func set(f diagnostic.SyntaxFact, role, conf, evidence string) diagnostic.SyntaxFact {
+	f.Role = role
+	f.RoleConf = conf
+	f.Evidence = evidence
+	return f
+}
+
+// containsAny reports whether s contains any of the given substrings.
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchedSegment returns the first sub in subs that s contains.
+func matchedSegment(s string, subs ...string) string {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return sub
+		}
+	}
+	return ""
+}
