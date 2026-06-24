@@ -15,9 +15,17 @@ const (
 	fileSvcGo = "pkg/svc/svc.go"
 
 	// Repeated kind and language strings used across syntax tests.
+	kindFunctionStr   = "function"
+	kindStructStr     = "struct"
+	kindInterfaceStr  = "interface"
+	kindAnnotStr      = "annotation"
 	kindRouteStr      = "route"
 	langTypeScriptStr = "typescript"
 	langPythonStr     = "python"
+	langRustStr       = "rust"
+
+	// Repeated name strings used across syntax tests.
+	nameProcess = "process"
 
 	// Repeated route path strings used across syntax tests.
 	pathUsers = "/users"

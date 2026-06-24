@@ -100,10 +100,10 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 6: Embedded Rust rules
 
-- [ ] add `rules/rust.yml`: function/struct/enum/trait/impl/mod items, pub via `has: {kind: visibility_modifier}`, `attribute_item` capture, routes (actix/rocket `#[get]`; axum/warp `.route()` builder)
-- [ ] wire Rust into `Syntax()` dispatch
-- [ ] write adapter tests (canned JSON): pub detection, attribute, route per framework
-- [ ] run tests — must pass before next task
+- [x] add `rules/rust.yml`: function/struct/enum/trait/impl/mod items, pub via `has: {kind: visibility_modifier}`, `attribute_item` capture, routes (actix/rocket `#[get]`; axum/warp `.route()` builder)
+- [x] wire Rust into `Syntax()` dispatch
+- [x] write adapter tests (canned JSON): pub detection, attribute, route per framework
+- [x] run tests — must pass before next task
 
 ### Task 7: JSON-shape guard + Docker pin
 

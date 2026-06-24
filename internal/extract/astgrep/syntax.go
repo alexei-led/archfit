@@ -26,6 +26,9 @@ var tsRules string
 //go:embed rules/python.yml
 var pyRules string
 
+//go:embed rules/rust.yml
+var rustRules string
+
 // SyntaxFact Kind constants for Go and TypeScript declarations and routes.
 const (
 	kindFunction   = "function"
@@ -44,6 +47,7 @@ const (
 	langGo         = "go"
 	langTypeScript = "typescript"
 	langPython     = "python"
+	langRust       = "rust"
 )
 
 // kindInfo maps a ruleId to the SyntaxFact Kind and optional Framework.
@@ -98,20 +102,36 @@ var pyRuleKinds = map[string]kindInfo{
 	"py-route-django-repath": {Kind: kindRoute, Framework: "django"},
 }
 
+// rustRuleKinds maps each rust.yml ruleId to its Kind and Framework.
+// Route rules carry a non-empty Framework; declaration and attribute rules do not.
+// actix/rocket share the same #[verb(path)] attribute shape and are labelled "actix".
+// axum/warp share the same .route(path, handler) builder shape and are labelled "axum".
+var rustRuleKinds = map[string]kindInfo{
+	"rs-func":               {Kind: kindFunction},
+	"rs-struct":             {Kind: kindStruct},
+	"rs-enum":               {Kind: kindEnum},
+	"rs-trait":              {Kind: kindInterface},
+	"rs-impl":               {Kind: kindMethod},
+	"rs-mod":                {Kind: kindStruct},
+	"rs-attribute":          {Kind: kindAnnotation},
+	"rs-route-actix-rocket": {Kind: kindRoute, Framework: "actix"},
+	"rs-route-axum-warp":    {Kind: kindRoute, Framework: "axum"},
+}
+
 // langRuleKinds maps a language identifier to its ruleId→kindInfo table.
-// Add new language entries here when Task 6 adds Rust rules.
 var langRuleKinds = map[string]map[string]kindInfo{
 	langGo:         goRuleKinds,
 	langTypeScript: tsRuleKinds,
 	langPython:     pyRuleKinds,
+	langRust:       rustRuleKinds,
 }
 
 // embeddedRules maps language identifiers (as passed in langs) to their embedded YAML.
-// Add new entries here when Task 6 adds Rust rules.
 var embeddedRules = map[string]string{
 	langGo:         goRules,
 	langTypeScript: tsRules,
 	langPython:     pyRules,
+	langRust:       rustRules,
 }
 
 // sgSyntaxMatch is the JSON shape ast-grep emits for --json=compact scan output.
@@ -234,6 +254,8 @@ func nameFromMatch(m sgSyntaxMatch) string {
 // exported; route and annotation rules are never exported.
 // Python: public means the name does not start with underscore; route and decorator rules
 // are never exported.
+// Rust: pub = has visibility_modifier (the YAML rule already filters for it); route and
+// attribute rules are never exported.
 func isExported(lang, ruleID, name string) bool {
 	switch lang {
 	case langTypeScript:
@@ -249,6 +271,13 @@ func isExported(lang, ruleID, name string) bool {
 		}
 		// Public = name does not start with underscore.
 		return len(name) > 0 && name[0] != '_'
+	case langRust:
+		// Route and attribute ruleIds are never exported.
+		if strings.HasPrefix(ruleID, "rs-route-") || ruleID == "rs-attribute" {
+			return false
+		}
+		// The YAML rule already requires visibility_modifier, so any match is pub.
+		return true
 	default: // go and future languages: uppercase-first convention
 		if strings.HasPrefix(ruleID, "go-route-") {
 			return false

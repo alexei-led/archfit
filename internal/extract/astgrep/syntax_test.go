@@ -113,10 +113,10 @@ func TestSyntax_Go_Kinds(t *testing.T) {
 		startLine int
 		exported  bool
 	}{
-		{"pkg/repo/repo.go", "interface", "Repository", 4, true}, // 3+1
-		{fileSvcGo, "struct", "Service", 6, true},                // 5+1
-		{fileSvcGo, "function", "NewService", 11, true},          // 10+1
-		{fileSvcGo, "method", "Save", 21, true},                  // 20+1
+		{"pkg/repo/repo.go", kindInterfaceStr, "Repository", 4, true}, // 3+1
+		{fileSvcGo, kindStructStr, "Service", 6, true},                // 5+1
+		{fileSvcGo, kindFunctionStr, "NewService", 11, true},          // 10+1
+		{fileSvcGo, "method", "Save", 21, true},                       // 20+1
 	}
 	for i, tc := range cases {
 		f := facts[i]
@@ -357,7 +357,7 @@ func TestSyntax_TS_Decorator_NotExported(t *testing.T) {
 		t.Fatalf("len(facts) = %d, want 1", len(facts))
 	}
 	f := facts[0]
-	if f.Kind != "annotation" {
+	if f.Kind != kindAnnotStr {
 		t.Errorf("Kind = %q, want annotation", f.Kind)
 	}
 	if f.Name != "Injectable" {
@@ -438,7 +438,7 @@ const fileSvcPy = "pkg/svc/service.py"
 
 func TestSyntax_Py_Kinds(t *testing.T) {
 	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntryWithName("py-func", fileSvcPy, "process", 5, 8),
+		syntaxEntryWithName("py-func", fileSvcPy, nameProcess, 5, 8),
 		syntaxEntryWithName("py-class", fileSvcPy, "UserService", 10, 30),
 	})
 
@@ -454,7 +454,7 @@ func TestSyntax_Py_Kinds(t *testing.T) {
 		t.Fatalf("len(facts) = %d, want 2", len(facts))
 	}
 	// Sorted by (File, StartLine): process(6) < UserService(11).
-	if facts[0].Kind != "function" || facts[0].Name != "process" {
+	if facts[0].Kind != "function" || facts[0].Name != nameProcess {
 		t.Errorf("facts[0] = {%s %s}, want {function process}", facts[0].Kind, facts[0].Name)
 	}
 	if facts[1].Kind != "class" || facts[1].Name != "UserService" {
@@ -474,7 +474,7 @@ func TestSyntax_Py_PublicDetection(t *testing.T) {
 	// Public names (no leading underscore) → Exported=true.
 	// Private names (leading underscore) → Exported=false.
 	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntryWithName("py-func", fileSvcPy, "process", 1, 3),
+		syntaxEntryWithName("py-func", fileSvcPy, nameProcess, 1, 3),
 		syntaxEntryWithName("py-func", fileSvcPy, "_internal", 5, 7),
 		syntaxEntryWithName("py-class", fileSvcPy, "UserService", 10, 20),
 		syntaxEntryWithName("py-class", fileSvcPy, "_Base", 22, 25),
@@ -493,7 +493,7 @@ func TestSyntax_Py_PublicDetection(t *testing.T) {
 		name     string
 		exported bool
 	}{
-		{"process", true},
+		{nameProcess, true},
 		{"_internal", false},
 		{"UserService", true},
 		{"_Base", false},
@@ -522,7 +522,7 @@ func TestSyntax_Py_Decorator_NotExported(t *testing.T) {
 		t.Fatalf("len(facts) = %d, want 1", len(facts))
 	}
 	f := facts[0]
-	if f.Kind != "annotation" {
+	if f.Kind != kindAnnotStr {
 		t.Errorf("Kind = %q, want annotation", f.Kind)
 	}
 	if f.Name != "dataclass" {
@@ -609,5 +609,204 @@ func TestSyntax_Py_Route_Django(t *testing.T) {
 	// Sorted by StartLine: /users/(4) < ^/items/\d+/$(5).
 	if facts[0].Name != "/users/" {
 		t.Errorf("facts[0].Name = %q, want /users/", facts[0].Name)
+	}
+}
+
+// --- Rust adapter tests ---
+
+const fileSvcRs = "src/svc/service.rs"
+
+func TestSyntax_Rust_Kinds(t *testing.T) {
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithName("rs-func", fileSvcRs, "new_service", 5, 10),
+		syntaxEntryWithName("rs-struct", fileSvcRs, "Service", 15, 20),
+		syntaxEntryWithName("rs-enum", fileSvcRs, "Status", 22, 26),
+		syntaxEntryWithName("rs-trait", "src/svc/port.rs", "Repository", 3, 8),
+		syntaxEntryWithName("rs-impl", fileSvcRs, "save", 30, 35),
+		syntaxEntryWithName("rs-mod", fileSvcRs, "handlers", 40, 50),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, cov, err := a.Syntax(context.Background(), syntaxScope, []string{langRustStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if cov.Status != "ok" {
+		t.Errorf("cov.Status = %q, want ok", cov.Status)
+	}
+	if len(facts) != 6 {
+		t.Fatalf("len(facts) = %d, want 6", len(facts))
+	}
+	// All declaration facts must have Language=rust and Exported=true (pub filtered by YAML).
+	for i, f := range facts {
+		if f.Language != langRustStr {
+			t.Errorf("facts[%d].Language = %q, want rust", i, f.Language)
+		}
+		if !f.Exported {
+			t.Errorf("facts[%d] (%s %s) should be exported (pub)", i, f.Kind, f.Name)
+		}
+	}
+}
+
+func TestSyntax_Rust_KindMapping(t *testing.T) {
+	// Verify each ruleId maps to the correct Kind.
+	cases := []struct {
+		ruleID string
+		name   string
+		want   string
+	}{
+		{"rs-func", nameProcess, "function"},
+		{"rs-struct", "Config", "struct"},
+		{"rs-enum", "Color", "enum"},
+		{"rs-trait", "Storage", "interface"},
+		{"rs-impl", "handle", "method"},
+		{"rs-mod", "api", "struct"},
+	}
+
+	for _, tc := range cases {
+		entries := marshalSyntaxEntries(t, []map[string]any{
+			syntaxEntryWithName(tc.ruleID, fileSvcRs, tc.name, 1, 5),
+		})
+		a := astgrep.New(presentRunner(entries))
+		facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langRustStr})
+		if err != nil {
+			t.Fatalf("ruleID=%s Syntax: %v", tc.ruleID, err)
+		}
+		if len(facts) != 1 {
+			t.Fatalf("ruleID=%s len(facts) = %d, want 1", tc.ruleID, len(facts))
+		}
+		if facts[0].Kind != tc.want {
+			t.Errorf("ruleID=%s Kind = %q, want %q", tc.ruleID, facts[0].Kind, tc.want)
+		}
+	}
+}
+
+func TestSyntax_Rust_PubExported(t *testing.T) {
+	// The YAML rule already requires visibility_modifier; isExported always returns
+	// true for declaration ruleIds. Verify the Exported flag is set correctly.
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithName("rs-func", fileSvcRs, "public_fn", 1, 3),
+		syntaxEntryWithName("rs-struct", fileSvcRs, "PubStruct", 5, 8),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langRustStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if len(facts) != 2 {
+		t.Fatalf("len(facts) = %d, want 2", len(facts))
+	}
+	for i, f := range facts {
+		if !f.Exported {
+			t.Errorf("facts[%d] (%s %s) should be exported", i, f.Kind, f.Name)
+		}
+	}
+}
+
+func TestSyntax_Rust_Attribute_NotExported(t *testing.T) {
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithName("rs-attribute", fileSvcRs, "derive", 1, 1),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langRustStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("len(facts) = %d, want 1", len(facts))
+	}
+	f := facts[0]
+	if f.Kind != kindAnnotStr {
+		t.Errorf("Kind = %q, want annotation", f.Kind)
+	}
+	if f.Name != "derive" {
+		t.Errorf("Name = %q, want derive", f.Name)
+	}
+	if f.Exported {
+		t.Errorf("attribute fact should not be exported")
+	}
+	if f.Framework != "" {
+		t.Errorf("attribute fact should have no framework, got %q", f.Framework)
+	}
+	if f.Language != langRustStr {
+		t.Errorf("Language = %q, want rust", f.Language)
+	}
+}
+
+func TestSyntax_Rust_Route_Actix(t *testing.T) {
+	// actix/rocket share the same #[get(...)]/etc. attribute shape; labelled "actix".
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithPath("rs-route-actix-rocket", "src/api/handlers.rs", pathUsers, 10),
+		syntaxEntryWithPath("rs-route-actix-rocket", "src/api/handlers.rs", "/health", 20),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langRustStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if len(facts) != 2 {
+		t.Fatalf("len(facts) = %d, want 2", len(facts))
+	}
+	for i, f := range facts {
+		if f.Kind != kindRouteStr {
+			t.Errorf("facts[%d].Kind = %q, want route", i, f.Kind)
+		}
+		if f.Framework != "actix" {
+			t.Errorf("facts[%d].Framework = %q, want actix", i, f.Framework)
+		}
+		if f.Exported {
+			t.Errorf("facts[%d] route should not be exported", i)
+		}
+		if f.Language != langRustStr {
+			t.Errorf("facts[%d].Language = %q, want rust", i, f.Language)
+		}
+	}
+	// Sorted by StartLine: /users(11) < /health(21).
+	if facts[0].Name != pathUsers {
+		t.Errorf("facts[0].Name = %q, want /users", facts[0].Name)
+	}
+	if facts[1].Name != "/health" {
+		t.Errorf("facts[1].Name = %q, want /health", facts[1].Name)
+	}
+}
+
+func TestSyntax_Rust_Route_Axum(t *testing.T) {
+	// axum/warp share the .route(path, handler) builder shape; labelled "axum".
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithPath("rs-route-axum-warp", "src/api/router.rs", pathUsers, 5),
+		syntaxEntryWithPath("rs-route-axum-warp", "src/api/router.rs", "/items", 8),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langRustStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if len(facts) != 2 {
+		t.Fatalf("len(facts) = %d, want 2", len(facts))
+	}
+	for i, f := range facts {
+		if f.Kind != kindRouteStr {
+			t.Errorf("facts[%d].Kind = %q, want route", i, f.Kind)
+		}
+		if f.Framework != "axum" {
+			t.Errorf("facts[%d].Framework = %q, want axum", i, f.Framework)
+		}
+		if f.Exported {
+			t.Errorf("facts[%d] route should not be exported", i)
+		}
+		if f.Language != langRustStr {
+			t.Errorf("facts[%d].Language = %q, want rust", i, f.Language)
+		}
+	}
+	// Sorted by StartLine: /users(6) < /items(9).
+	if facts[0].Name != pathUsers {
+		t.Errorf("facts[0].Name = %q, want /users", facts[0].Name)
+	}
+	if facts[1].Name != "/items" {
+		t.Errorf("facts[1].Name = %q, want /items", facts[1].Name)
 	}
 }
