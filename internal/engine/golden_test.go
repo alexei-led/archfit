@@ -69,7 +69,10 @@ func goldenConfig() (config.ClassifyConfig, []rules.Rule, []metrics.Metric) {
 	}
 
 	classifyCfg := cfg.ForClassify()
-	rs := rules.New(cfg.ForRules())
+	rs, err := rules.New(cfg.ForRules())
+	if err != nil {
+		panic("goldenConfig: " + err.Error())
+	}
 	ms := metrics.New(cfg)
 	return classifyCfg, rs, ms
 }

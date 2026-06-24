@@ -12,21 +12,40 @@ import (
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
-// SymbolResolverMock is a mock implementation of SymbolResolver for testing.
+// Ensure, that SymbolResolverMock does implement SymbolResolver.
+// If this is not the case, regenerate this file with moq.
+var _ SymbolResolver = &SymbolResolverMock{}
+
+// SymbolResolverMock is a mock implementation of SymbolResolver.
 //
-//	func TestSomething(t *testing.T) {
-//	    sr := &ports.SymbolResolverMock{
-//	        NameFunc:    func() string { return "scip" },
-//	        ResolveFunc: func(ctx context.Context, fromFile, toPath string) (string, string) { return toPath, "high" },
-//	    }
-//	    ...
+//	func TestSomethingThatUsesSymbolResolver(t *testing.T) {
+//
+//		// make and configure a mocked SymbolResolver
+//		mockedSymbolResolver := &SymbolResolverMock{
+//			NameFunc: func() string {
+//				panic("mock out the Name method")
+//			},
+//			ResolveFunc: func(ctx context.Context, fromFile string, toPath string) (string, string) {
+//				panic("mock out the Resolve method")
+//			},
+//			StrengthsFunc: func(ctx context.Context, s scope.Scope) (map[string]string, diagnostic.Coverage, error) {
+//				panic("mock out the Strengths method")
+//			},
+//			SymbolsFunc: func(ctx context.Context, s scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
+//				panic("mock out the Symbols method")
+//			},
+//		}
+//
+//		// use mockedSymbolResolver in code that requires SymbolResolver
+//		// and then make assertions.
+//
 //	}
 type SymbolResolverMock struct {
 	// NameFunc mocks the Name method.
 	NameFunc func() string
 
 	// ResolveFunc mocks the Resolve method.
-	ResolveFunc func(ctx context.Context, fromFile, toPath string) (realPath, confidence string)
+	ResolveFunc func(ctx context.Context, fromFile string, toPath string) (string, string)
 
 	// StrengthsFunc mocks the Strengths method.
 	StrengthsFunc func(ctx context.Context, s scope.Scope) (map[string]string, diagnostic.Coverage, error)
@@ -37,7 +56,8 @@ type SymbolResolverMock struct {
 	// calls tracks calls to the methods.
 	calls struct {
 		// Name holds details about calls to the Name method.
-		Name []struct{}
+		Name []struct {
+		}
 		// Resolve holds details about calls to the Resolve method.
 		Resolve []struct {
 			// Ctx is the ctx argument value.
@@ -69,114 +89,140 @@ type SymbolResolverMock struct {
 }
 
 // Name calls NameFunc.
-func (m *SymbolResolverMock) Name() string {
-	if m.NameFunc == nil {
-		panic("SymbolResolverMock.NameFunc is nil but SymbolResolver.Name was called")
+func (mock *SymbolResolverMock) Name() string {
+	if mock.NameFunc == nil {
+		panic("SymbolResolverMock.NameFunc: method is nil but SymbolResolver.Name was just called")
 	}
-	m.lockName.Lock()
-	m.calls.Name = append(m.calls.Name, struct{}{})
-	m.lockName.Unlock()
-	return m.NameFunc()
+	callInfo := struct {
+	}{}
+	mock.lockName.Lock()
+	mock.calls.Name = append(mock.calls.Name, callInfo)
+	mock.lockName.Unlock()
+	return mock.NameFunc()
 }
 
-// NameCalls returns all calls that were made to Name.
-func (m *SymbolResolverMock) NameCalls() []struct{} {
-	m.lockName.RLock()
-	defer m.lockName.RUnlock()
-	calls := make([]struct{}, len(m.calls.Name))
-	copy(calls, m.calls.Name)
+// NameCalls gets all the calls that were made to Name.
+// Check the length with:
+//
+//	len(mockedSymbolResolver.NameCalls())
+func (mock *SymbolResolverMock) NameCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockName.RLock()
+	calls = mock.calls.Name
+	mock.lockName.RUnlock()
 	return calls
 }
 
 // Resolve calls ResolveFunc.
-func (m *SymbolResolverMock) Resolve(ctx context.Context, fromFile, toPath string) (string, string) {
-	if m.ResolveFunc == nil {
-		panic("SymbolResolverMock.ResolveFunc is nil but SymbolResolver.Resolve was called")
+func (mock *SymbolResolverMock) Resolve(ctx context.Context, fromFile string, toPath string) (string, string) {
+	if mock.ResolveFunc == nil {
+		panic("SymbolResolverMock.ResolveFunc: method is nil but SymbolResolver.Resolve was just called")
 	}
-	call := struct {
+	callInfo := struct {
 		Ctx      context.Context
 		FromFile string
 		ToPath   string
-	}{Ctx: ctx, FromFile: fromFile, ToPath: toPath}
-	m.lockResolve.Lock()
-	m.calls.Resolve = append(m.calls.Resolve, call)
-	m.lockResolve.Unlock()
-	return m.ResolveFunc(ctx, fromFile, toPath)
+	}{
+		Ctx:      ctx,
+		FromFile: fromFile,
+		ToPath:   toPath,
+	}
+	mock.lockResolve.Lock()
+	mock.calls.Resolve = append(mock.calls.Resolve, callInfo)
+	mock.lockResolve.Unlock()
+	return mock.ResolveFunc(ctx, fromFile, toPath)
 }
 
-// ResolveCalls returns all calls that were made to Resolve.
-func (m *SymbolResolverMock) ResolveCalls() []struct {
+// ResolveCalls gets all the calls that were made to Resolve.
+// Check the length with:
+//
+//	len(mockedSymbolResolver.ResolveCalls())
+func (mock *SymbolResolverMock) ResolveCalls() []struct {
 	Ctx      context.Context
 	FromFile string
 	ToPath   string
 } {
-	m.lockResolve.RLock()
-	defer m.lockResolve.RUnlock()
-	calls := make([]struct {
+	var calls []struct {
 		Ctx      context.Context
 		FromFile string
 		ToPath   string
-	}, len(m.calls.Resolve))
-	copy(calls, m.calls.Resolve)
+	}
+	mock.lockResolve.RLock()
+	calls = mock.calls.Resolve
+	mock.lockResolve.RUnlock()
 	return calls
 }
 
 // Strengths calls StrengthsFunc.
-func (m *SymbolResolverMock) Strengths(ctx context.Context, s scope.Scope) (map[string]string, diagnostic.Coverage, error) {
-	if m.StrengthsFunc == nil {
-		panic("SymbolResolverMock.StrengthsFunc is nil but SymbolResolver.Strengths was called")
+func (mock *SymbolResolverMock) Strengths(ctx context.Context, s scope.Scope) (map[string]string, diagnostic.Coverage, error) {
+	if mock.StrengthsFunc == nil {
+		panic("SymbolResolverMock.StrengthsFunc: method is nil but SymbolResolver.Strengths was just called")
 	}
-	call := struct {
+	callInfo := struct {
 		Ctx context.Context
 		S   scope.Scope
-	}{Ctx: ctx, S: s}
-	m.lockStrengths.Lock()
-	m.calls.Strengths = append(m.calls.Strengths, call)
-	m.lockStrengths.Unlock()
-	return m.StrengthsFunc(ctx, s)
+	}{
+		Ctx: ctx,
+		S:   s,
+	}
+	mock.lockStrengths.Lock()
+	mock.calls.Strengths = append(mock.calls.Strengths, callInfo)
+	mock.lockStrengths.Unlock()
+	return mock.StrengthsFunc(ctx, s)
 }
 
-// StrengthsCalls returns all calls that were made to Strengths.
-func (m *SymbolResolverMock) StrengthsCalls() []struct {
+// StrengthsCalls gets all the calls that were made to Strengths.
+// Check the length with:
+//
+//	len(mockedSymbolResolver.StrengthsCalls())
+func (mock *SymbolResolverMock) StrengthsCalls() []struct {
 	Ctx context.Context
 	S   scope.Scope
 } {
-	m.lockStrengths.RLock()
-	defer m.lockStrengths.RUnlock()
-	calls := make([]struct {
+	var calls []struct {
 		Ctx context.Context
 		S   scope.Scope
-	}, len(m.calls.Strengths))
-	copy(calls, m.calls.Strengths)
+	}
+	mock.lockStrengths.RLock()
+	calls = mock.calls.Strengths
+	mock.lockStrengths.RUnlock()
 	return calls
 }
 
 // Symbols calls SymbolsFunc.
-func (m *SymbolResolverMock) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
-	if m.SymbolsFunc == nil {
-		panic("SymbolResolverMock.SymbolsFunc is nil but SymbolResolver.Symbols was called")
+func (mock *SymbolResolverMock) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
+	if mock.SymbolsFunc == nil {
+		panic("SymbolResolverMock.SymbolsFunc: method is nil but SymbolResolver.Symbols was just called")
 	}
-	call := struct {
+	callInfo := struct {
 		Ctx context.Context
 		S   scope.Scope
-	}{Ctx: ctx, S: s}
-	m.lockSymbols.Lock()
-	m.calls.Symbols = append(m.calls.Symbols, call)
-	m.lockSymbols.Unlock()
-	return m.SymbolsFunc(ctx, s)
+	}{
+		Ctx: ctx,
+		S:   s,
+	}
+	mock.lockSymbols.Lock()
+	mock.calls.Symbols = append(mock.calls.Symbols, callInfo)
+	mock.lockSymbols.Unlock()
+	return mock.SymbolsFunc(ctx, s)
 }
 
-// SymbolsCalls returns all calls that were made to Symbols.
-func (m *SymbolResolverMock) SymbolsCalls() []struct {
+// SymbolsCalls gets all the calls that were made to Symbols.
+// Check the length with:
+//
+//	len(mockedSymbolResolver.SymbolsCalls())
+func (mock *SymbolResolverMock) SymbolsCalls() []struct {
 	Ctx context.Context
 	S   scope.Scope
 } {
-	m.lockSymbols.RLock()
-	defer m.lockSymbols.RUnlock()
-	calls := make([]struct {
+	var calls []struct {
 		Ctx context.Context
 		S   scope.Scope
-	}, len(m.calls.Symbols))
-	copy(calls, m.calls.Symbols)
+	}
+	mock.lockSymbols.RLock()
+	calls = mock.calls.Symbols
+	mock.lockSymbols.RUnlock()
 	return calls
 }

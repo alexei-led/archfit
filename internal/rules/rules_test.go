@@ -5,8 +5,10 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/rules"
+	"github.com/alexei-led/archfit/internal/syntax"
 )
 
 // Node ID constants reused across multiple test cases.
@@ -38,10 +40,13 @@ const (
 
 // Rule type and ID constants for gate semantics tests.
 const (
-	typeForbiddenDependency = "forbidden_dependency"
-	ruleIDNoDep             = "no-dep"
-	globServicesA           = "services/a/**"
-	globServicesB           = "services/b/**"
+	typeForbiddenDependency     = "forbidden_dependency"
+	typeForbiddenRoleDependency = "forbidden_role_dependency"
+	kindGate                    = "gate"
+	ruleIDNoDep                 = "no-dep"
+	ruleIDRoleDep               = "no-handler-to-repo"
+	globServicesA               = "services/a/**"
+	globServicesB               = "services/b/**"
 )
 
 // ---------------------------------------------------------------------------
@@ -434,7 +439,7 @@ func TestGateSemantics(t *testing.T) {
 		if len(findings) != 1 {
 			t.Fatalf("gate:fail: got %d findings, want 1", len(findings))
 		}
-		if findings[0].Kind != "gate" {
+		if findings[0].Kind != kindGate {
 			t.Errorf("gate:fail finding.Kind=%q, want gate", findings[0].Kind)
 		}
 	})
@@ -453,7 +458,7 @@ func TestGateSemantics(t *testing.T) {
 		if len(findings) != 1 {
 			t.Fatalf("gate unset: got %d findings, want 1", len(findings))
 		}
-		if findings[0].Kind != "gate" {
+		if findings[0].Kind != kindGate {
 			t.Errorf("gate unset finding.Kind=%q, want gate", findings[0].Kind)
 		}
 	})
@@ -467,6 +472,342 @@ func TestGateSemantics(t *testing.T) {
 		_, err := rules.New(cfg)
 		if err == nil {
 			t.Fatal("want error for unknown type, got nil")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// ForbiddenRoleDependency
+// ---------------------------------------------------------------------------
+
+// makeRoleGraph builds a graph and NodeRoleIndex for forbidden_role_dependency tests.
+// facts must already have Role/RoleConf set (pre-derived).
+func makeRoleGraph(facts []graph.Facts, syntaxFacts []diagnostic.SyntaxFact) (*graph.Graph, *syntax.NodeRoleIndex) {
+	g := graph.Build(facts)
+	idx := syntax.BuildNodeRoleIndex(g, syntaxFacts)
+	return g, idx
+}
+
+// roleDef is a shorthand for building a forbidden_role_dependency RuleDef.
+// Always uses ruleIDRoleDep, RoleHandler→RoleRepository. minConf and gate are variable.
+func roleDef(minConf, gate string) config.RuleDef {
+	return config.RuleDef{
+		ID:            ruleIDRoleDep,
+		Type:          typeForbiddenRoleDependency,
+		FromRole:      syntax.RoleHandler,
+		ToRole:        syntax.RoleRepository,
+		MinConfidence: minConf,
+		Gate:          gate,
+	}
+}
+
+func TestForbiddenRoleDependency(t *testing.T) {
+	const (
+		ruleID    = "no-handler-to-repo"
+		fromRole  = syntax.RoleHandler
+		toRole    = syntax.RoleRepository
+		nodeHFile = "src/handler/user.ts"
+		nodeRFile = "src/repository/user.ts"
+	)
+
+	// Reusable TypeScript graph: two file nodes + one import edge.
+	tsFacts := []graph.Facts{{
+		Language: graph.LangTypeScript,
+		Nodes: []graph.Node{
+			{Kind: graph.NodeKindFile, Path: nodeHFile},
+			{Kind: graph.NodeKindFile, Path: nodeRFile},
+		},
+		Edges: []graph.Edge{
+			{From: "file:" + nodeHFile, To: "file:" + nodeRFile, Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
+		},
+	}}
+
+	t.Run("violation fires at high confidence", func(t *testing.T) {
+		syntaxFacts := []diagnostic.SyntaxFact{
+			{Language: graph.LangTypeScript, File: nodeHFile, Role: syntax.RoleHandler, RoleConf: syntax.ConfHigh},
+			{Language: graph.LangTypeScript, File: nodeRFile, Role: syntax.RoleRepository, RoleConf: syntax.ConfHigh},
+		}
+		g, idx := makeRoleGraph(tsFacts, syntaxFacts)
+		ev := rules.Evidence{Roles: idx}
+
+		rs, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{roleDef("", "")}})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		findings := rs[0].Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding, got %d", len(findings))
+		}
+		f := findings[0]
+		if f.RuleID != ruleID {
+			t.Errorf("RuleID=%q, want %q", f.RuleID, ruleID)
+		}
+		if f.MatchedBy["from_role"] != fromRole {
+			t.Errorf("matched_by.from_role=%q, want %q", f.MatchedBy["from_role"], fromRole)
+		}
+		if f.MatchedBy["to_role"] != toRole {
+			t.Errorf("matched_by.to_role=%q, want %q", f.MatchedBy["to_role"], toRole)
+		}
+		if f.Why == "" {
+			t.Error("Why is empty")
+		}
+		if f.Constraint == "" {
+			t.Error("Constraint is empty")
+		}
+	})
+
+	t.Run("suppressed when to_role below default threshold", func(t *testing.T) {
+		// handler=high, repository=medium — default min is high → no fire.
+		syntaxFacts := []diagnostic.SyntaxFact{
+			{Language: graph.LangTypeScript, File: nodeHFile, Role: syntax.RoleHandler, RoleConf: syntax.ConfHigh},
+			{Language: graph.LangTypeScript, File: nodeRFile, Role: syntax.RoleRepository, RoleConf: syntax.ConfMedium},
+		}
+		g, idx := makeRoleGraph(tsFacts, syntaxFacts)
+		ev := rules.Evidence{Roles: idx}
+
+		rs, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{roleDef("", "")}})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		findings := rs[0].Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("want 0 findings (below threshold), got %d", len(findings))
+		}
+	})
+
+	t.Run("MinConfidence relaxed fires at medium", func(t *testing.T) {
+		// Same handler=high, repository=medium but MinConfidence="medium" → fires.
+		syntaxFacts := []diagnostic.SyntaxFact{
+			{Language: graph.LangTypeScript, File: nodeHFile, Role: syntax.RoleHandler, RoleConf: syntax.ConfHigh},
+			{Language: graph.LangTypeScript, File: nodeRFile, Role: syntax.RoleRepository, RoleConf: syntax.ConfMedium},
+		}
+		g, idx := makeRoleGraph(tsFacts, syntaxFacts)
+		ev := rules.Evidence{Roles: idx}
+
+		rs, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{roleDef(syntax.ConfMedium, "")}})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		findings := rs[0].Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding with relaxed threshold, got %d", len(findings))
+		}
+	})
+
+	t.Run("nil Roles no panic", func(t *testing.T) {
+		g := graph.Build(tsFacts)
+		ev := rules.Evidence{Roles: nil}
+
+		rs, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{roleDef("", "")}})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		findings := rs[0].Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("nil Roles: want 0 findings, got %d", len(findings))
+		}
+	})
+
+	t.Run("gate semantics", func(t *testing.T) {
+		syntaxFacts := []diagnostic.SyntaxFact{
+			{Language: graph.LangTypeScript, File: nodeHFile, Role: syntax.RoleHandler, RoleConf: syntax.ConfHigh},
+			{Language: graph.LangTypeScript, File: nodeRFile, Role: syntax.RoleRepository, RoleConf: syntax.ConfHigh},
+		}
+		g, idx := makeRoleGraph(tsFacts, syntaxFacts)
+
+		t.Run("off_skips_finding", func(t *testing.T) {
+			rs, _ := rules.New(config.RuleConfig{Rules: []config.RuleDef{roleDef("", "off")}})
+			if findings := rs[0].Check(g, rules.Evidence{Roles: idx}); len(findings) != 0 {
+				t.Fatalf("gate:off: got %d findings, want 0", len(findings))
+			}
+		})
+		t.Run("warn_produces_advisory", func(t *testing.T) {
+			rs, _ := rules.New(config.RuleConfig{Rules: []config.RuleDef{roleDef("", "warn")}})
+			findings := rs[0].Check(g, rules.Evidence{Roles: idx})
+			if len(findings) != 1 {
+				t.Fatalf("gate:warn: got %d findings, want 1", len(findings))
+			}
+			if findings[0].Kind != "advisory" {
+				t.Errorf("gate:warn Kind=%q, want advisory", findings[0].Kind)
+			}
+		})
+		t.Run("fail_produces_gate_finding", func(t *testing.T) {
+			rs, _ := rules.New(config.RuleConfig{Rules: []config.RuleDef{roleDef("", "fail")}})
+			findings := rs[0].Check(g, rules.Evidence{Roles: idx})
+			if len(findings) != 1 {
+				t.Fatalf("gate:fail: got %d findings, want 1", len(findings))
+			}
+			if findings[0].Kind != "gate" {
+				t.Errorf("gate:fail Kind=%q, want gate", findings[0].Kind)
+			}
+		})
+		t.Run("unset_gate_produces_gate_finding", func(t *testing.T) {
+			rs, _ := rules.New(config.RuleConfig{Rules: []config.RuleDef{roleDef("", "")}})
+			findings := rs[0].Check(g, rules.Evidence{Roles: idx})
+			if len(findings) != 1 {
+				t.Fatalf("gate unset: got %d findings, want 1", len(findings))
+			}
+			if findings[0].Kind != "gate" {
+				t.Errorf("gate unset Kind=%q, want gate", findings[0].Kind)
+			}
+		})
+	})
+
+	t.Run("per-language endpoint resolution", func(t *testing.T) {
+		t.Run("Go package nodes", func(t *testing.T) {
+			// Go rules fire on package→package edges; roles attach to package nodes.
+			goFacts := []graph.Facts{{
+				Language: graph.LangGo,
+				Nodes: []graph.Node{
+					{Kind: graph.NodeKindPackage, Path: "internal/handler"},
+					{Kind: graph.NodeKindPackage, Path: "internal/repository"},
+				},
+				Edges: []graph.Edge{
+					{From: "package:internal/handler", To: "package:internal/repository", Kind: graph.EdgeKindImports, Language: graph.LangGo},
+				},
+			}}
+			syntaxFacts := []diagnostic.SyntaxFact{
+				{Language: graph.LangGo, File: "internal/handler/user.go", Role: syntax.RoleHandler, RoleConf: syntax.ConfHigh},
+				{Language: graph.LangGo, File: "internal/repository/user.go", Role: syntax.RoleRepository, RoleConf: syntax.ConfHigh},
+			}
+			g, idx := makeRoleGraph(goFacts, syntaxFacts)
+			rs, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{roleDef("", "")}})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			findings := rs[0].Check(g, rules.Evidence{Roles: idx})
+			if len(findings) != 1 {
+				t.Fatalf("Go: want 1 finding, got %d", len(findings))
+			}
+		})
+
+		t.Run("Python module nodes", func(t *testing.T) {
+			pyFacts := []graph.Facts{{
+				Language: graph.LangPython,
+				Nodes: []graph.Node{
+					{Kind: graph.NodeKindModule, Path: "billing.handler"},
+					{Kind: graph.NodeKindModule, Path: "billing.repository"},
+				},
+				Edges: []graph.Edge{
+					{From: "module:billing.handler", To: "module:billing.repository", Kind: graph.EdgeKindImports, Language: graph.LangPython},
+				},
+			}}
+			syntaxFacts := []diagnostic.SyntaxFact{
+				{Language: graph.LangPython, File: "billing/handler.py", Role: syntax.RoleHandler, RoleConf: syntax.ConfHigh},
+				{Language: graph.LangPython, File: "billing/repository.py", Role: syntax.RoleRepository, RoleConf: syntax.ConfHigh},
+			}
+			g, idx := makeRoleGraph(pyFacts, syntaxFacts)
+			rs, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{roleDef("", "")}})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			findings := rs[0].Check(g, rules.Evidence{Roles: idx})
+			if len(findings) != 1 {
+				t.Fatalf("Python: want 1 finding, got %d", len(findings))
+			}
+		})
+
+		t.Run("TypeScript file nodes", func(t *testing.T) {
+			// Already covered by the top-level TS graph; verify identity map explicitly.
+			syntaxFacts := []diagnostic.SyntaxFact{
+				{Language: graph.LangTypeScript, File: nodeHFile, Role: syntax.RoleHandler, RoleConf: syntax.ConfHigh},
+				{Language: graph.LangTypeScript, File: nodeRFile, Role: syntax.RoleRepository, RoleConf: syntax.ConfHigh},
+			}
+			g, idx := makeRoleGraph(tsFacts, syntaxFacts)
+			rs, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{roleDef("", "")}})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			findings := rs[0].Check(g, rules.Evidence{Roles: idx})
+			if len(findings) != 1 {
+				t.Fatalf("TypeScript: want 1 finding, got %d", len(findings))
+			}
+		})
+
+		t.Run("Rust package nodes", func(t *testing.T) {
+			// Dir is the crate root (where Cargo.toml lives); files live under Dir/src/.
+			crates := []graph.CrateRoot{{Dir: "myapp", Name: "myapp"}}
+			rustFacts := []graph.Facts{{
+				Language: graph.LangRust,
+				Nodes: []graph.Node{
+					{Kind: graph.NodeKindPackage, Path: "myapp::handler"},
+					{Kind: graph.NodeKindPackage, Path: "myapp::repository"},
+				},
+				Edges: []graph.Edge{
+					{From: "package:myapp::handler", To: "package:myapp::repository", Kind: graph.EdgeKindDependsOn, Language: graph.LangRust},
+				},
+				CrateRoots: crates,
+			}}
+			syntaxFacts := []diagnostic.SyntaxFact{
+				// myapp/src/handler/mod.rs → myapp::handler via RustFileToModuleKey
+				{Language: graph.LangRust, File: "myapp/src/handler/mod.rs", Role: syntax.RoleHandler, RoleConf: syntax.ConfHigh},
+				{Language: graph.LangRust, File: "myapp/src/repository/mod.rs", Role: syntax.RoleRepository, RoleConf: syntax.ConfHigh},
+			}
+			g, idx := makeRoleGraph(rustFacts, syntaxFacts)
+			rs, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{roleDef("", "")}})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			findings := rs[0].Check(g, rules.Evidence{Roles: idx})
+			if len(findings) != 1 {
+				t.Fatalf("Rust: want 1 finding, got %d", len(findings))
+			}
+		})
+	})
+}
+
+func TestForbiddenRoleDependency_InvalidConfig(t *testing.T) {
+	t.Run("empty FromRole returns error", func(t *testing.T) {
+		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+			{ID: "x", Type: typeForbiddenRoleDependency, ToRole: syntax.RoleRepository},
+		}})
+		if err == nil {
+			t.Fatal("want error for empty FromRole, got nil")
+		}
+	})
+
+	t.Run("empty ToRole returns error", func(t *testing.T) {
+		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+			{ID: "x", Type: typeForbiddenRoleDependency, FromRole: syntax.RoleHandler},
+		}})
+		if err == nil {
+			t.Fatal("want error for empty ToRole, got nil")
+		}
+	})
+
+	t.Run("unknown FromRole returns error", func(t *testing.T) {
+		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+			{ID: "x", Type: typeForbiddenRoleDependency, FromRole: "gateway", ToRole: syntax.RoleRepository},
+		}})
+		if err == nil {
+			t.Fatal("want error for unknown from_role, got nil")
+		}
+	})
+
+	t.Run("unknown ToRole returns error", func(t *testing.T) {
+		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+			{ID: "x", Type: typeForbiddenRoleDependency, FromRole: syntax.RoleHandler, ToRole: "store"},
+		}})
+		if err == nil {
+			t.Fatal("want error for unknown to_role, got nil")
+		}
+	})
+
+	t.Run("bad MinConfidence returns error", func(t *testing.T) {
+		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+			{ID: "x", Type: typeForbiddenRoleDependency, FromRole: syntax.RoleHandler, ToRole: syntax.RoleRepository, MinConfidence: "hi"},
+		}})
+		if err == nil {
+			t.Fatal("want error for unknown min_confidence, got nil")
+		}
+	})
+
+	t.Run("valid config returns no error", func(t *testing.T) {
+		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+			{ID: "x", Type: typeForbiddenRoleDependency, FromRole: syntax.RoleHandler, ToRole: syntax.RoleRepository, MinConfidence: syntax.ConfMedium},
+		}})
+		if err != nil {
+			t.Fatalf("unexpected error for valid config: %v", err)
 		}
 	})
 }

@@ -48,14 +48,17 @@ type ModuleDef struct {
 
 // RuleDef declares a single architecture rule.
 type RuleDef struct {
-	ID        string       `yaml:"id"`
-	Type      string       `yaml:"type"`
-	Gate      string       `yaml:"gate"`
-	From      string       `yaml:"from"`
-	To        string       `yaml:"to"`
-	FromLayer string       `yaml:"from_layer"`
-	ToLayer   string       `yaml:"to_layer"`
-	Patterns  []PatternDef `yaml:"patterns,omitempty"`
+	ID            string       `yaml:"id"`
+	Type          string       `yaml:"type"`
+	Gate          string       `yaml:"gate"`
+	From          string       `yaml:"from"`
+	To            string       `yaml:"to"`
+	FromLayer     string       `yaml:"from_layer"`
+	ToLayer       string       `yaml:"to_layer"`
+	FromRole      string       `yaml:"from_role"`
+	ToRole        string       `yaml:"to_role"`
+	MinConfidence string       `yaml:"min_confidence"`
+	Patterns      []PatternDef `yaml:"patterns,omitempty"`
 }
 
 // ExceptionDef grants a temporary exception to a rule.

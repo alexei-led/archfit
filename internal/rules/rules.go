@@ -42,6 +42,7 @@ type Rule interface {
 //	"internal_api_access"         → internalAPIAccess
 //	"new_cross_module_dependency" → newCrossModuleDependency
 //	"cycle"                       → cycleRule
+//	"forbidden_role_dependency"   → forbiddenRoleDependency
 //
 // Unknown type strings are a config error.
 func New(cfg config.RuleConfig) ([]Rule, error) {
@@ -65,12 +66,53 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 			inner = &newCrossModuleDependency{def: def, mm: cfg.ModuleMap}
 		case "cycle":
 			inner = &cycleRule{def: def}
+		case "forbidden_role_dependency":
+			if err := validateRoleDependencyDef(def); err != nil {
+				return nil, err
+			}
+			inner = &forbiddenRoleDependency{def: def}
 		default:
 			return nil, fmt.Errorf("rules: unknown rule type %q (id=%q)", def.Type, def.ID)
 		}
 		rs = append(rs, &gatedRule{inner: inner, gate: def.Gate})
 	}
 	return rs, nil
+}
+
+// validateRoleDependencyDef validates a RuleDef for the forbidden_role_dependency
+// rule type. Returns an error describing any invalid field.
+func validateRoleDependencyDef(def config.RuleDef) error {
+	if def.FromRole == "" || def.ToRole == "" {
+		return fmt.Errorf("rules: forbidden_role_dependency %q requires both from_role and to_role", def.ID)
+	}
+	knownRole := func(r string) bool {
+		for _, k := range syntax.KnownRoles {
+			if k == r {
+				return true
+			}
+		}
+		return false
+	}
+	if !knownRole(def.FromRole) {
+		return fmt.Errorf("rules: forbidden_role_dependency %q: unknown from_role %q (known: %s)", def.ID, def.FromRole, strings.Join(syntax.KnownRoles, ", "))
+	}
+	if !knownRole(def.ToRole) {
+		return fmt.Errorf("rules: forbidden_role_dependency %q: unknown to_role %q (known: %s)", def.ID, def.ToRole, strings.Join(syntax.KnownRoles, ", "))
+	}
+	if def.MinConfidence != "" {
+		knownConf := func(c string) bool {
+			for _, k := range syntax.KnownConfidences {
+				if k == c {
+					return true
+				}
+			}
+			return false
+		}
+		if !knownConf(def.MinConfidence) {
+			return fmt.Errorf("rules: forbidden_role_dependency %q: unknown min_confidence %q (known: %s)", def.ID, def.MinConfidence, strings.Join(syntax.KnownConfidences, ", "))
+		}
+	}
+	return nil
 }
 
 // gatedRule wraps a Rule and applies gate semantics to its findings:
@@ -389,6 +431,70 @@ func (r *cycleRule) Check(g *graph.Graph, _ Evidence) []finding.Finding {
 			Why:        fmt.Sprintf("Import cycle detected among %d nodes: %s", len(scc), strings.Join(scc, " → ")),
 			Constraint: "Break the cycle by introducing an abstraction or reorganizing packages",
 		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// ForbiddenRoleDependency
+// ---------------------------------------------------------------------------
+
+// forbiddenRoleDependency fires when an edge exists from a node whose role
+// matches def.FromRole (at or above def.MinConfidence) to a node whose role
+// matches def.ToRole (at or above def.MinConfidence). When def.MinConfidence
+// is empty, syntax.ConfHigh is used as the default threshold. When
+// ev.Roles is nil (syntax off), the rule silently returns nil.
+type forbiddenRoleDependency struct {
+	def config.RuleDef
+}
+
+func (r *forbiddenRoleDependency) ID() string { return r.def.ID }
+
+func (r *forbiddenRoleDependency) Check(g *graph.Graph, ev Evidence) []finding.Finding {
+	if ev.Roles == nil {
+		return nil
+	}
+	minConf := r.def.MinConfidence
+	if minConf == "" {
+		minConf = syntax.ConfHigh
+	}
+
+	var out []finding.Finding
+	for _, e := range g.Edges() {
+		fromHits := ev.Roles.RolesFor(e.From)
+		toHits := ev.Roles.RolesFor(e.To)
+
+		fromMatch := false
+		for _, h := range fromHits {
+			if h.Role == r.def.FromRole && syntax.ConfidenceMeets(h.Confidence, minConf) {
+				fromMatch = true
+				break
+			}
+		}
+		if !fromMatch {
+			continue
+		}
+
+		toMatch := false
+		for _, h := range toHits {
+			if h.Role == r.def.ToRole && syntax.ConfidenceMeets(h.Confidence, minConf) {
+				toMatch = true
+				break
+			}
+		}
+		if !toMatch {
+			continue
+		}
+
+		f := finding.New(r.def.ID, e, e.Locations)
+		f.Severity = finding.SeverityHigh
+		f.MatchedBy = map[string]string{
+			"from_role": r.def.FromRole,
+			"to_role":   r.def.ToRole,
+		}
+		f.Why = "Role dependency from " + r.def.FromRole + " to " + r.def.ToRole + " is forbidden"
+		f.Constraint = "Remove the dependency or restructure the architectural layers"
 		out = append(out, f)
 	}
 	return out

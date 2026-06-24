@@ -12,26 +12,37 @@ import (
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
-// ExtractorMock is a mock implementation of Extractor for testing.
+// Ensure, that ExtractorMock does implement Extractor.
+// If this is not the case, regenerate this file with moq.
+var _ Extractor = &ExtractorMock{}
+
+// ExtractorMock is a mock implementation of Extractor.
 //
-//	func TestSomething(t *testing.T) {
-//	    ex := &ports.ExtractorMock{
-//	        NameFunc:    func() string { return "go" },
-//	        ExtractFunc: func(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) { ... },
-//	    }
-//	    ...
+//	func TestSomethingThatUsesExtractor(t *testing.T) {
+//
+//		// make and configure a mocked Extractor
+//		mockedExtractor := &ExtractorMock{
+//			ExtractFunc: func(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+//				panic("mock out the Extract method")
+//			},
+//			NameFunc: func() string {
+//				panic("mock out the Name method")
+//			},
+//		}
+//
+//		// use mockedExtractor in code that requires Extractor
+//		// and then make assertions.
+//
 //	}
 type ExtractorMock struct {
-	// NameFunc mocks the Name method.
-	NameFunc func() string
-
 	// ExtractFunc mocks the Extract method.
 	ExtractFunc func(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error)
 
+	// NameFunc mocks the Name method.
+	NameFunc func() string
+
 	// calls tracks calls to the methods.
 	calls struct {
-		// Name holds details about calls to the Name method.
-		Name []struct{}
 		// Extract holds details about calls to the Extract method.
 		Extract []struct {
 			// Ctx is the ctx argument value.
@@ -39,57 +50,73 @@ type ExtractorMock struct {
 			// S is the s argument value.
 			S scope.Scope
 		}
+		// Name holds details about calls to the Name method.
+		Name []struct {
+		}
 	}
-	lockName    sync.RWMutex
 	lockExtract sync.RWMutex
-}
-
-// Name calls NameFunc.
-func (m *ExtractorMock) Name() string {
-	if m.NameFunc == nil {
-		panic("ExtractorMock.NameFunc is nil but Extractor.Name was called")
-	}
-	m.lockName.Lock()
-	m.calls.Name = append(m.calls.Name, struct{}{})
-	m.lockName.Unlock()
-	return m.NameFunc()
-}
-
-// NameCalls returns all calls that were made to Name.
-func (m *ExtractorMock) NameCalls() []struct{} {
-	m.lockName.RLock()
-	defer m.lockName.RUnlock()
-	calls := make([]struct{}, len(m.calls.Name))
-	copy(calls, m.calls.Name)
-	return calls
+	lockName    sync.RWMutex
 }
 
 // Extract calls ExtractFunc.
-func (m *ExtractorMock) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-	if m.ExtractFunc == nil {
-		panic("ExtractorMock.ExtractFunc is nil but Extractor.Extract was called")
+func (mock *ExtractorMock) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+	if mock.ExtractFunc == nil {
+		panic("ExtractorMock.ExtractFunc: method is nil but Extractor.Extract was just called")
 	}
-	call := struct {
+	callInfo := struct {
 		Ctx context.Context
 		S   scope.Scope
-	}{Ctx: ctx, S: s}
-	m.lockExtract.Lock()
-	m.calls.Extract = append(m.calls.Extract, call)
-	m.lockExtract.Unlock()
-	return m.ExtractFunc(ctx, s)
+	}{
+		Ctx: ctx,
+		S:   s,
+	}
+	mock.lockExtract.Lock()
+	mock.calls.Extract = append(mock.calls.Extract, callInfo)
+	mock.lockExtract.Unlock()
+	return mock.ExtractFunc(ctx, s)
 }
 
-// ExtractCalls returns all calls that were made to Extract.
-func (m *ExtractorMock) ExtractCalls() []struct {
+// ExtractCalls gets all the calls that were made to Extract.
+// Check the length with:
+//
+//	len(mockedExtractor.ExtractCalls())
+func (mock *ExtractorMock) ExtractCalls() []struct {
 	Ctx context.Context
 	S   scope.Scope
 } {
-	m.lockExtract.RLock()
-	defer m.lockExtract.RUnlock()
-	calls := make([]struct {
+	var calls []struct {
 		Ctx context.Context
 		S   scope.Scope
-	}, len(m.calls.Extract))
-	copy(calls, m.calls.Extract)
+	}
+	mock.lockExtract.RLock()
+	calls = mock.calls.Extract
+	mock.lockExtract.RUnlock()
+	return calls
+}
+
+// Name calls NameFunc.
+func (mock *ExtractorMock) Name() string {
+	if mock.NameFunc == nil {
+		panic("ExtractorMock.NameFunc: method is nil but Extractor.Name was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockName.Lock()
+	mock.calls.Name = append(mock.calls.Name, callInfo)
+	mock.lockName.Unlock()
+	return mock.NameFunc()
+}
+
+// NameCalls gets all the calls that were made to Name.
+// Check the length with:
+//
+//	len(mockedExtractor.NameCalls())
+func (mock *ExtractorMock) NameCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockName.RLock()
+	calls = mock.calls.Name
+	mock.lockName.RUnlock()
 	return calls
 }

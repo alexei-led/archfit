@@ -5,9 +5,10 @@ package ports
 
 import (
 	"context"
+	"sync"
+
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/scope"
-	"sync"
 )
 
 // Ensure, that SyntaxProviderMock does implement SyntaxProvider.

@@ -24,6 +24,37 @@ const (
 	ConfLow    = "low"
 )
 
+// KnownRoles lists the accepted role values for validation.
+var KnownRoles = []string{RoleHandler, RoleService, RoleRepository, RoleDomain}
+
+// KnownConfidences lists the accepted confidence values for validation.
+var KnownConfidences = []string{ConfHigh, ConfMedium, ConfLow}
+
+// ConfidenceMeets reports whether conf meets or exceeds minimum.
+// Ordinals: high=3, medium=2, low=1. Unknown strings return false.
+func ConfidenceMeets(conf, minimum string) bool {
+	c, m := confRank(conf), confRank(minimum)
+	if c == 0 || m == 0 {
+		return false
+	}
+	return c >= m
+}
+
+// confRank maps a confidence string to a numeric rank (high=3, medium=2, low=1,
+// unknown=0). Higher values represent higher confidence.
+func confRank(c string) int {
+	switch strings.ToLower(c) {
+	case ConfHigh:
+		return 3
+	case ConfMedium:
+		return 2
+	case ConfLow:
+		return 1
+	default:
+		return 0
+	}
+}
+
 // DeriveRoles returns a new slice of SyntaxFacts with Role, RoleConf, and
 // Evidence populated per design §5. Facts that do not match any heuristic are
 // returned unchanged (Role/RoleConf/Evidence stay empty).
