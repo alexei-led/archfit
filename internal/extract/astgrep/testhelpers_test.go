@@ -17,4 +17,8 @@ const (
 	// Repeated kind and language strings used across syntax tests.
 	kindRouteStr      = "route"
 	langTypeScriptStr = "typescript"
+	langPythonStr     = "python"
+
+	// Repeated route path strings used across syntax tests.
+	pathUsers = "/users"
 )

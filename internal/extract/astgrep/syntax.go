@@ -23,6 +23,9 @@ var goRules string
 //go:embed rules/typescript.yml
 var tsRules string
 
+//go:embed rules/python.yml
+var pyRules string
+
 // SyntaxFact Kind constants for Go and TypeScript declarations and routes.
 const (
 	kindFunction   = "function"
@@ -40,6 +43,7 @@ const (
 const (
 	langGo         = "go"
 	langTypeScript = "typescript"
+	langPython     = "python"
 )
 
 // kindInfo maps a ruleId to the SyntaxFact Kind and optional Framework.
@@ -81,18 +85,33 @@ var tsRuleKinds = map[string]kindInfo{
 	"ts-route-nest-method":     {Kind: kindRoute, Framework: "nest"},
 }
 
+// pyRuleKinds maps each python.yml ruleId to its Kind and Framework.
+// Route rules carry a non-empty Framework; declaration and decorator rules do not.
+// fastapi/flask/starlette/aiohttp share the same @recv.verb(path) shape and are
+// labelled "fastapi" as the canonical representative (see python.yml).
+var pyRuleKinds = map[string]kindInfo{
+	"py-func":                {Kind: kindFunction},
+	"py-class":               {Kind: kindClass},
+	"py-decorator":           {Kind: kindAnnotation},
+	"py-route-decorator":     {Kind: kindRoute, Framework: "fastapi"},
+	"py-route-django-path":   {Kind: kindRoute, Framework: "django"},
+	"py-route-django-repath": {Kind: kindRoute, Framework: "django"},
+}
+
 // langRuleKinds maps a language identifier to its ruleId→kindInfo table.
-// Add new language entries here when Tasks 5-6 add Python/Rust rules.
+// Add new language entries here when Task 6 adds Rust rules.
 var langRuleKinds = map[string]map[string]kindInfo{
 	langGo:         goRuleKinds,
 	langTypeScript: tsRuleKinds,
+	langPython:     pyRuleKinds,
 }
 
 // embeddedRules maps language identifiers (as passed in langs) to their embedded YAML.
-// Add new entries here when Tasks 5-6 add Python/Rust rules.
+// Add new entries here when Task 6 adds Rust rules.
 var embeddedRules = map[string]string{
 	langGo:         goRules,
 	langTypeScript: tsRules,
+	langPython:     pyRules,
 }
 
 // sgSyntaxMatch is the JSON shape ast-grep emits for --json=compact scan output.
@@ -213,6 +232,8 @@ func nameFromMatch(m sgSyntaxMatch) string {
 // Go: exported means the name starts with an uppercase letter; route rules are never exported.
 // TypeScript: all declaration rules require inside:export_statement so they are always
 // exported; route and annotation rules are never exported.
+// Python: public means the name does not start with underscore; route and decorator rules
+// are never exported.
 func isExported(lang, ruleID, name string) bool {
 	switch lang {
 	case langTypeScript:
@@ -221,6 +242,13 @@ func isExported(lang, ruleID, name string) bool {
 			return false
 		}
 		return true // inside: export_statement guarantees export
+	case langPython:
+		// Route and decorator ruleIds are never exported.
+		if strings.HasPrefix(ruleID, "py-route-") || ruleID == "py-decorator" {
+			return false
+		}
+		// Public = name does not start with underscore.
+		return len(name) > 0 && name[0] != '_'
 	default: // go and future languages: uppercase-first convention
 		if strings.HasPrefix(ruleID, "go-route-") {
 			return false

@@ -93,10 +93,10 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 5: Embedded Python rules
 
-- [ ] add `rules/python.yml`: function*definition/class_definition, public via name regex `^[^*]`, `decorator`(has call), routes (fastapi/flask/starlette/aiohttp decorators; django`urlpatterns` path/re_path)
-- [ ] wire Python into `Syntax()` dispatch
-- [ ] write adapter tests (canned JSON): public detection, decorator, route per framework
-- [ ] run tests — must pass before next task
+- [x] add `rules/python.yml`: function*definition/class_definition, public via name regex `^[^*]`, `decorator`(has call), routes (fastapi/flask/starlette/aiohttp decorators; django`urlpatterns` path/re_path)
+- [x] wire Python into `Syntax()` dispatch
+- [x] write adapter tests (canned JSON): public detection, decorator, route per framework
+- [x] run tests — must pass before next task
 
 ### Task 6: Embedded Rust rules
 

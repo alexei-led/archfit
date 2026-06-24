@@ -194,7 +194,7 @@ func TestSyntax_Go_TypeAlias(t *testing.T) {
 
 func TestSyntax_Go_RouteAndFramework(t *testing.T) {
 	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntryWithPath("go-route-gin", "internal/api/router.go", "/users", 10),
+		syntaxEntryWithPath("go-route-gin", "internal/api/router.go", pathUsers, 10),
 		syntaxEntryWithPath("go-route-net-http", "internal/api/router.go", "/health", 20),
 	})
 
@@ -216,7 +216,7 @@ func TestSyntax_Go_RouteAndFramework(t *testing.T) {
 	if gin.Framework != "gin" {
 		t.Errorf("facts[0].Framework = %q, want gin", gin.Framework)
 	}
-	if gin.Name != "/users" {
+	if gin.Name != pathUsers {
 		t.Errorf("facts[0].Name = %q, want /users", gin.Name)
 	}
 	if gin.Exported {
@@ -373,7 +373,7 @@ func TestSyntax_TS_Decorator_NotExported(t *testing.T) {
 
 func TestSyntax_TS_Route_Express(t *testing.T) {
 	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntryWithPath("ts-route-express", "src/api/router.ts", "/users", 10),
+		syntaxEntryWithPath("ts-route-express", "src/api/router.ts", pathUsers, 10),
 		syntaxEntryWithPath("ts-route-express", "src/api/router.ts", "/health", 20),
 	})
 
@@ -397,7 +397,7 @@ func TestSyntax_TS_Route_Express(t *testing.T) {
 		}
 	}
 	// Sorted by StartLine: /users(11) < /health(21)
-	if facts[0].Name != "/users" {
+	if facts[0].Name != pathUsers {
 		t.Errorf("facts[0].Name = %q, want /users", facts[0].Name)
 	}
 	if facts[1].Name != "/health" {
@@ -407,7 +407,7 @@ func TestSyntax_TS_Route_Express(t *testing.T) {
 
 func TestSyntax_TS_Route_Nest(t *testing.T) {
 	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntryWithPath("ts-route-nest-controller", "src/api/user.controller.ts", "/users", 5),
+		syntaxEntryWithPath("ts-route-nest-controller", "src/api/user.controller.ts", pathUsers, 5),
 		syntaxEntryWithPath("ts-route-nest-method", "src/api/user.controller.ts", "/", 10),
 	})
 
@@ -429,5 +429,185 @@ func TestSyntax_TS_Route_Nest(t *testing.T) {
 		if f.Exported {
 			t.Errorf("facts[%d] nest route should not be exported", i)
 		}
+	}
+}
+
+// --- Python adapter tests ---
+
+const fileSvcPy = "pkg/svc/service.py"
+
+func TestSyntax_Py_Kinds(t *testing.T) {
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithName("py-func", fileSvcPy, "process", 5, 8),
+		syntaxEntryWithName("py-class", fileSvcPy, "UserService", 10, 30),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, cov, err := a.Syntax(context.Background(), syntaxScope, []string{langPythonStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if cov.Status != "ok" {
+		t.Errorf("cov.Status = %q, want ok", cov.Status)
+	}
+	if len(facts) != 2 {
+		t.Fatalf("len(facts) = %d, want 2", len(facts))
+	}
+	// Sorted by (File, StartLine): process(6) < UserService(11).
+	if facts[0].Kind != "function" || facts[0].Name != "process" {
+		t.Errorf("facts[0] = {%s %s}, want {function process}", facts[0].Kind, facts[0].Name)
+	}
+	if facts[1].Kind != "class" || facts[1].Name != "UserService" {
+		t.Errorf("facts[1] = {%s %s}, want {class UserService}", facts[1].Kind, facts[1].Name)
+	}
+	for i, f := range facts {
+		if f.Language != langPythonStr {
+			t.Errorf("facts[%d].Language = %q, want python", i, f.Language)
+		}
+		if !f.Exported {
+			t.Errorf("facts[%d] (%s %s) should be exported (public)", i, f.Kind, f.Name)
+		}
+	}
+}
+
+func TestSyntax_Py_PublicDetection(t *testing.T) {
+	// Public names (no leading underscore) → Exported=true.
+	// Private names (leading underscore) → Exported=false.
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithName("py-func", fileSvcPy, "process", 1, 3),
+		syntaxEntryWithName("py-func", fileSvcPy, "_internal", 5, 7),
+		syntaxEntryWithName("py-class", fileSvcPy, "UserService", 10, 20),
+		syntaxEntryWithName("py-class", fileSvcPy, "_Base", 22, 25),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langPythonStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if len(facts) != 4 {
+		t.Fatalf("len(facts) = %d, want 4", len(facts))
+	}
+	// Sorted by StartLine: process(2), _internal(6), UserService(11), _Base(23).
+	cases := []struct {
+		name     string
+		exported bool
+	}{
+		{"process", true},
+		{"_internal", false},
+		{"UserService", true},
+		{"_Base", false},
+	}
+	for i, tc := range cases {
+		if facts[i].Name != tc.name {
+			t.Errorf("facts[%d].Name = %q, want %q", i, facts[i].Name, tc.name)
+		}
+		if facts[i].Exported != tc.exported {
+			t.Errorf("facts[%d] (%s) Exported = %v, want %v", i, tc.name, facts[i].Exported, tc.exported)
+		}
+	}
+}
+
+func TestSyntax_Py_Decorator_NotExported(t *testing.T) {
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithName("py-decorator", fileSvcPy, "dataclass", 1, 1),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langPythonStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("len(facts) = %d, want 1", len(facts))
+	}
+	f := facts[0]
+	if f.Kind != "annotation" {
+		t.Errorf("Kind = %q, want annotation", f.Kind)
+	}
+	if f.Name != "dataclass" {
+		t.Errorf("Name = %q, want dataclass", f.Name)
+	}
+	if f.Exported {
+		t.Errorf("decorator fact should not be exported")
+	}
+	if f.Framework != "" {
+		t.Errorf("decorator fact should have no framework, got %q", f.Framework)
+	}
+	if f.Language != langPythonStr {
+		t.Errorf("Language = %q, want python", f.Language)
+	}
+}
+
+func TestSyntax_Py_Route_Decorator(t *testing.T) {
+	// fastapi/flask/starlette/aiohttp all share the same @recv.verb(path) shape.
+	// Labelled "fastapi" as the canonical representative.
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithPath("py-route-decorator", "src/api/routes.py", pathUsers, 5),
+		syntaxEntryWithPath("py-route-decorator", "src/api/routes.py", "/items", 10),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langPythonStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if len(facts) != 2 {
+		t.Fatalf("len(facts) = %d, want 2", len(facts))
+	}
+	for i, f := range facts {
+		if f.Kind != kindRouteStr {
+			t.Errorf("facts[%d].Kind = %q, want route", i, f.Kind)
+		}
+		if f.Framework != "fastapi" {
+			t.Errorf("facts[%d].Framework = %q, want fastapi", i, f.Framework)
+		}
+		if f.Exported {
+			t.Errorf("facts[%d] route should not be exported", i)
+		}
+		if f.Language != langPythonStr {
+			t.Errorf("facts[%d].Language = %q, want python", i, f.Language)
+		}
+	}
+	// Sorted by StartLine: /users(6) < /items(11).
+	if facts[0].Name != pathUsers {
+		t.Errorf("facts[0].Name = %q, want /users", facts[0].Name)
+	}
+	if facts[1].Name != "/items" {
+		t.Errorf("facts[1].Name = %q, want /items", facts[1].Name)
+	}
+}
+
+func TestSyntax_Py_Route_Django(t *testing.T) {
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithPath("py-route-django-path", "myapp/urls.py", "/users/", 3),
+		syntaxEntryWithPath("py-route-django-repath", "myapp/urls.py", `^/items/\d+/$`, 4),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langPythonStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if len(facts) != 2 {
+		t.Fatalf("len(facts) = %d, want 2", len(facts))
+	}
+	for i, f := range facts {
+		if f.Kind != kindRouteStr {
+			t.Errorf("facts[%d].Kind = %q, want route", i, f.Kind)
+		}
+		if f.Framework != "django" {
+			t.Errorf("facts[%d].Framework = %q, want django", i, f.Framework)
+		}
+		if f.Exported {
+			t.Errorf("facts[%d] django route should not be exported", i)
+		}
+		if f.Language != langPythonStr {
+			t.Errorf("facts[%d].Language = %q, want python", i, f.Language)
+		}
+	}
+	// Sorted by StartLine: /users/(4) < ^/items/\d+/$(5).
+	if facts[0].Name != "/users/" {
+		t.Errorf("facts[0].Name = %q, want /users/", facts[0].Name)
 	}
 }
