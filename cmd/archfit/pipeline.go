@@ -287,7 +287,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	if mode.Full {
 		validate += " --full"
 	}
-	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate})
+	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate}, diag.SyntaxFacts)
 
 	// cargo-modules module-graph coverage: opt-in (tools.cargo-modules.enabled: on).
 	// The Rust extractor runs cargo-modules during its Extract call (inside engine.Run

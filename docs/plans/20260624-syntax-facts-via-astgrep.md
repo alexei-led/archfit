@@ -168,9 +168,9 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 16: Consumer — agent_tasks evidence enrichment
 
-- [ ] enrich `agent_tasks` evidence with declarations + role + file:line for referenced files; unchanged when `SyntaxFacts` empty
-- [ ] write tests: enriched when present, no regression when absent
-- [ ] run tests — must pass before next task
+- [x] enrich `agent_tasks` evidence with declarations + role + file:line for referenced files; unchanged when `SyntaxFacts` empty
+- [x] write tests: enriched when present, no regression when absent
+- [x] run tests — must pass before next task
 
 ### Task 17: Self-config enablement + golden
 

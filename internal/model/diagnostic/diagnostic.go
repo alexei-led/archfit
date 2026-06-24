@@ -114,6 +114,11 @@ type AgentTask struct {
 	Files []string `json:"files"`
 	// Validation are the exact commands that must pass after the fix.
 	Validation []string `json:"validation"`
+	// Declarations holds the syntax declarations found in the referenced files
+	// (name, kind, exported, role, file:line). Populated only when syntax facts
+	// are present (tools.syntax.enabled: on); absent otherwise — no empty slice,
+	// no JSON key emitted (omitempty ensures byte-for-byte parity with prior runs).
+	Declarations []SyntaxFact `json:"declarations,omitempty"`
 }
 
 // FileFact holds neutral per-module structural facts assembled from collected
