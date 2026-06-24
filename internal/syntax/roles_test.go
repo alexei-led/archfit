@@ -14,6 +14,7 @@ const (
 	kindClass      = "class"
 	kindAnnotation = "annotation"
 	kindInterface  = "interface"
+	kindRoute      = "route"
 )
 
 // evidence prefix constants.
@@ -46,7 +47,7 @@ func TestDeriveRoles(t *testing.T) {
 		// ---- Tier 1: route kind → handler high ----
 		{
 			name:      "kind=route gives handler high",
-			input:     diagnostic.SyntaxFact{Kind: "route", Name: "GetUsers", File: "pkg/api/users.go"},
+			input:     diagnostic.SyntaxFact{Kind: kindRoute, Name: "GetUsers", File: "pkg/api/users.go"},
 			wantRole:  syntax.RoleHandler,
 			wantConf:  syntax.ConfHigh,
 			wantEvPfx: "route registration",
@@ -240,7 +241,7 @@ func TestDeriveRoles(t *testing.T) {
 		{
 			name: "route+name-suffix: tier 1 (route) wins over tier 2 (name suffix Repository)",
 			input: diagnostic.SyntaxFact{
-				Kind: "route", Name: nameUserRepository, File: "internal/repository/user.go",
+				Kind: kindRoute, Name: nameUserRepository, File: "internal/repository/user.go",
 			},
 			wantRole:  syntax.RoleHandler, // route wins
 			wantConf:  syntax.ConfHigh,

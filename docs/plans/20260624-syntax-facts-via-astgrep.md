@@ -121,10 +121,10 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 9: NodeRoleIndex — the role→graph-node join
 
-- [ ] add `BuildNodeRoleIndex(g, []SyntaxFact, moduleViews)` + `RolesFor(nodeID) []RoleHit` in `internal/syntax`
-- [ ] implement per-language resolution: TS identity; Go aggregate file roles to package via `EdgeKindBelongsTo`; Python dotted↔slash normalization; Rust reuse `modgraph.ModuleKeyResolver` (file→`crate::mod`)
-- [ ] write table-driven tests with one synthetic graph per language asserting `RolesFor` resolves endpoints (esp. Python dotted, Go package, Rust crate::mod)
-- [ ] run tests — must pass before next task
+- [x] add `BuildNodeRoleIndex(g, []SyntaxFact, moduleViews)` + `RolesFor(nodeID) []RoleHit` in `internal/syntax`
+- [x] implement per-language resolution: TS identity; Go aggregate file roles to package via `EdgeKindBelongsTo`; Python dotted↔slash normalization; Rust reuse `modgraph.ModuleKeyResolver` (file→`crate::mod`)
+- [x] write table-driven tests with one synthetic graph per language asserting `RolesFor` resolves endpoints (esp. Python dotted, Go package, Rust crate::mod)
+- [x] run tests — must pass before next task
 
 ### Task 10: Engine wiring — populate SyntaxFacts
 
