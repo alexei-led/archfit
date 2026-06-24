@@ -16,6 +16,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/pattern"
+	"github.com/alexei-led/archfit/internal/syntax"
 )
 
 // Evidence carries supplemental evidence provided to a rule's Check method.
@@ -23,6 +24,7 @@ import (
 // rules run, by status.Assign against the baseline.
 type Evidence struct {
 	PatternMatches []pattern.Match
+	Roles          *syntax.NodeRoleIndex // nil when syntax is off; consumed by Task-11 rules
 }
 
 // Rule is the interface implemented by every built-in and user-defined rule.

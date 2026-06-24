@@ -19,6 +19,7 @@ import (
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/status"
+	"github.com/alexei-led/archfit/internal/syntax"
 )
 
 // Mode controls how the engine run behaves.
@@ -43,6 +44,8 @@ type RunInput struct {
 	Patterns    ports.PatternProvider
 	PatternCfg  config.PatternConfig
 	Resolver    ports.SymbolResolver
+	Syntax      ports.SyntaxProvider // syntactic declaration/route provider; nil = Nop
+	SyntaxCfg   config.SyntaxConfig  // derived from ForSyntax(); Enabled gates the call
 	Rules       []rules.Rule
 	Metrics     []metrics.Metric
 	Accepted    status.AcceptedSet
@@ -106,6 +109,23 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	}
 	ex.coverages = append(ex.coverages, ppCov)
 
+	// --- Stage 2b: Syntax facts ---
+	// Collect syntactic declarations and route registrations (ast-grep rules).
+	// Derive roles, build NodeRoleIndex for rule consumption — all before the
+	// rules stage. Off-gate: facts populate the report but never affect the verdict.
+	var syntaxFacts []diagnostic.SyntaxFact
+	var nodeRoleIndex *syntax.NodeRoleIndex
+	if in.SyntaxCfg.Enabled && in.Syntax != nil {
+		sf, synCov, synErr := in.Syntax.Syntax(ctx, in.Scope, in.SyntaxCfg.Languages)
+		if synErr != nil {
+			return diagnostic.New(), synErr
+		}
+		syntaxFacts = syntax.DeriveRoles(sf)
+		nodeRoleIndex = syntax.BuildNodeRoleIndex(ex.g, syntaxFacts)
+		diagnostic.SortSyntaxFacts(syntaxFacts)
+		ex.coverages = append(ex.coverages, synCov)
+	}
+
 	// --- Stage 3: Classify ---
 	// Pinned coupling labels first: approved entries refine strength
 	// classification (precedence: config globs > approved labels > extractor
@@ -133,7 +153,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Call each rule once with the full evidence set. Rules iterate edges internally;
 	// the Evidence carries all pattern matches so each rule can filter by edge's from-file.
 	var rawFindings []finding.Finding
-	allPatternMatches := rules.Evidence{PatternMatches: patternMatches}
+	allPatternMatches := rules.Evidence{PatternMatches: patternMatches, Roles: nodeRoleIndex}
 	for _, r := range in.Rules {
 		rawFindings = append(rawFindings, r.Check(ex.g, allPatternMatches)...)
 	}
@@ -244,6 +264,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		PrimaryExtractorTools: in.PrimaryExtractorTools,
 		Metrics:               metricResults,
 		Findings:              resolvedFindings,
+		SyntaxFacts:           syntaxFacts,
 		FileFacts:             fileFacts,
 		DynamicImports:        dynamicImports,
 		RuntimeAsync:          runtimeAsync,

@@ -1961,3 +1961,134 @@ func TestRun_BookExamples_Ch10(t *testing.T) {
 		})
 	}
 }
+
+func TestRun_SyntaxFacts_Populated(t *testing.T) {
+	ctx := context.Background()
+	facts := cleanFacts()
+
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return facts, diagnostic.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
+		},
+	}
+
+	synMock := &ports.SyntaxProviderMock{
+		NameFunc: func() string { return toolNameAstgrep },
+		SyntaxFunc: func(_ context.Context, _ scope.Scope, _ []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
+			return []diagnostic.SyntaxFact{
+				{File: pathFileA, Language: "go", Kind: "function_declaration", Name: "FooHandler", StartLine: 10},
+			}, diagnostic.Coverage{Tool: toolNameAstgrep, Status: "ok", FilesSeen: 1, FilesApplicable: 1}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		Syntax:      synMock,
+		SyntaxCfg:   config.SyntaxConfig{Enabled: true, Languages: []string{"go"}},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Signals:     signal.RunSignals{},
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(d.SyntaxFacts) == 0 {
+		t.Fatal("SyntaxFacts should be populated when syntax is enabled")
+	}
+	// DeriveRoles assigns Role for function_declaration via name-suffix heuristic (HandleFoo → handler).
+	if d.SyntaxFacts[0].Role == "" {
+		t.Error("SyntaxFacts[0].Role should be set by DeriveRoles")
+	}
+	// Coverage must include the syntax coverage entry.
+	var foundSynCov bool
+	for _, c := range d.ToolCoverage {
+		if c.Tool == "ast-grep" && c.FilesSeen == 1 {
+			foundSynCov = true
+			break
+		}
+	}
+	if !foundSynCov {
+		t.Error("syntax coverage not found in ToolCoverage")
+	}
+	// Facts are off-gate — verdict stays pass.
+	if d.Verdict != diagnostic.VerdictPass {
+		t.Errorf("verdict = %v, want pass", d.Verdict)
+	}
+	if len(synMock.SyntaxCalls()) == 0 {
+		t.Error("SyntaxProvider.Syntax was never called")
+	}
+}
+
+func TestRun_SyntaxFacts_DisabledNoCallNoCoverage(t *testing.T) {
+	ctx := context.Background()
+	facts := cleanFacts()
+
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return facts, diagnostic.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
+		},
+	}
+
+	synMock := &ports.SyntaxProviderMock{
+		NameFunc: func() string { return "ast-grep" },
+		SyntaxFunc: func(_ context.Context, _ scope.Scope, _ []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
+			return nil, diagnostic.Coverage{}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		Syntax:      synMock,
+		SyntaxCfg:   config.SyntaxConfig{Enabled: false},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Signals:     signal.RunSignals{},
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(d.SyntaxFacts) != 0 {
+		t.Errorf("SyntaxFacts should be empty when syntax disabled, got %d", len(d.SyntaxFacts))
+	}
+	if len(synMock.SyntaxCalls()) != 0 {
+		t.Error("SyntaxProvider should not be called when disabled")
+	}
+}

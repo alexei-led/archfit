@@ -128,10 +128,10 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 10: Engine wiring — populate SyntaxFacts
 
-- [ ] run `SyntaxProvider` when `tools.syntax` enabled; derive roles (Task 8); build `NodeRoleIndex` (Task 9) — all **before** the rules stage
-- [ ] populate `Diagnostic.SyntaxFacts`; append ast-grep `Coverage` to `ToolCoverage`
-- [ ] write engine tests (fake provider): block populated, roles applied, coverage recorded, verdict unchanged (off-gate)
-- [ ] run tests — must pass before next task
+- [x] run `SyntaxProvider` when `tools.syntax` enabled; derive roles (Task 8); build `NodeRoleIndex` (Task 9) — all **before** the rules stage
+- [x] populate `Diagnostic.SyntaxFacts`; append ast-grep `Coverage` to `ToolCoverage`
+- [x] write engine tests (fake provider): block populated, roles applied, coverage recorded, verdict unchanged (off-gate)
+- [x] run tests — must pass before next task
 
 ### Task 11: Wire gate: semantics for all rules
 
