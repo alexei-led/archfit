@@ -70,12 +70,12 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 2: SyntaxProvider port + tools.syntax config
 
-- [ ] add `SyntaxProvider` interface to `internal/ports/ports.go`
-- [ ] add `const ToolSyntax` + mode accessor in `internal/config/tools.go` (mirror `tools.scip`)
-- [ ] expose mode + target languages via `ForSyntax()` in `internal/config/views.go`
-- [ ] `make mock` to regenerate the port fake
-- [ ] write config tests (enabled/auto/off parsing)
-- [ ] run tests — must pass before next task
+- [x] add `SyntaxProvider` interface to `internal/ports/ports.go`
+- [x] add `const ToolSyntax` + mode accessor in `internal/config/tools.go` (mirror `tools.scip`)
+- [x] expose mode + target languages via `ForSyntax()` in `internal/config/views.go`
+- [x] `make mock` to regenerate the port fake
+- [x] write config tests (enabled/auto/off parsing)
+- [x] run tests — must pass before next task
 
 ### Task 3: Adapter Syntax() + embedded Go rules
 
