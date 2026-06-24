@@ -517,6 +517,24 @@ rules:
   - id: layer_inversion
     type: forbidden_layer_direction
     gate: fail
+  # --- Syntax-facts example rules (gate: warn = advisory, non-blocking) ---
+  # Example: handlers must not call repositories directly.
+  # archfit is a CLI tool with no web handlers, so this is inert for this repo;
+  # included to document the pattern for projects that do have handler/repository roles.
+  - id: syntax_no_handler_to_repo
+    type: forbidden_role_dependency
+    from_role: handler
+    to_role: repository
+    gate: warn
+  # Example: warn when any module's exported API exceeds a generous ceiling.
+  # public_api_max is global (no per-module scoping); the threshold must exceed
+  # the largest module count. archfit's catch-all "internal" module currently
+  # resolves ~1271 declarations; 1500 gives safe headroom and documents the shape.
+  # In practice, set max per module after splitting the catch-all stanza.
+  - id: syntax_api_size_ceiling
+    type: public_api_max
+    max: 1500
+    gate: warn
 map_review:
   stale_after: 2160h # 90 days
   gate: warn
@@ -527,6 +545,11 @@ tools:
     enabled: "off"
   python:
     enabled: "off"
+  # Syntax-facts provider (ast-grep). Enabled for dogfooding — produces
+  # syntax_facts (declarations, exported surface, roles, routes) visible in
+  # scan/review/agent_tasks output. Off-gate by itself; gate rules below.
+  syntax:
+    enabled: "on"
   scip:
     enabled: "on"
   complexity:

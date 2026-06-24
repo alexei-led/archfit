@@ -174,11 +174,11 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 17: Self-config enablement + golden
 
-- [ ] enable `tools.syntax` (facts, off-gate) in `.archfit.yaml`
-- [ ] add example gate rules to `.archfit.yaml` as `gate: warn` (or omit) so `make archfit` stays green; document them
-- [ ] regenerate `TestGolden`; inspect + commit the `syntax_facts` diff
-- [ ] run `make archfit` — must stay green
-- [ ] run tests — must pass before next task
+- [x] enable `tools.syntax` (facts, off-gate) in `.archfit.yaml`
+- [x] add example gate rules to `.archfit.yaml` as `gate: warn` (or omit) so `make archfit` stays green; document them
+- [x] regenerate `TestGolden`; inspect + commit the `syntax_facts` diff — NOTE: TestGolden is a determinism test (double-run); no snapshot file. `syntax_facts` block confirmed in check --format json output (1424 facts, all Go exported declarations). TestGolden still passes unaffected.
+- [x] run `make archfit` — must stay green
+- [x] run tests — must pass before next task
 
 ### Task 18: Verify acceptance criteria
 
