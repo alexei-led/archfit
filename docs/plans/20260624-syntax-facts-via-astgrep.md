@@ -182,11 +182,11 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 18: Verify acceptance criteria
 
-- [ ] verify facts (declarations + exported + public API + decorators/routes→roles) for Go, TS, Python, Rust
-- [ ] verify gate control: `forbidden_role_dependency`, `public_api_max`, `public_api_change` fire correctly; `gate:` off/warn/fail honored for all rules; unknown type errors
-- [ ] verify absent-`sg` → empty facts + `n/a` coverage, no verdict change (no false green)
-- [ ] run `make test`; `TestArchImports`; `TestGolden`; `make lint`; `make archfit`
-- [ ] verify coverage meets project standard
+- [x] verify facts (declarations + exported + public API + decorators/routes→roles) for Go, TS, Python, Rust — confirmed by `TestSyntax_Go_Kinds/Exported/Route`, `TestSyntax_TS_*/Decorator/Route`, `TestSyntax_Py_*/Decorator/Route`, `TestSyntax_Rust_*/Attribute/Route` (all PASS); integration `TestSyntaxIntegration_JSONShape` PASS (sg 0.44.0 present)
+- [x] verify gate control: `forbidden_role_dependency`, `public_api_max`, `public_api_change` fire correctly; `gate:` off/warn/fail honored for all rules; unknown type errors — confirmed by TestForbiddenRoleDependency, TestPublicAPIMax, TestPublicAPIChange (all gate_semantics subtests PASS); TestGateSemantics covers off/warn/fail/unset/unknown-type; TestNew_UnknownTypeError PASS
+- [x] verify absent-`sg` → empty facts + `n/a` coverage, no verdict change (no false green) — confirmed by `TestSyntax_AbsentTool_ReturnsAbsentCoverageNoError` PASS; engine disabled test in `internal/engine` covers coverage=absent verdict-unchanged path
+- [x] run `make test`; `TestArchImports`; `TestGolden`; `make lint`; `make archfit` — all green: 51 packages ok 0 FAIL; TestArchImports PASS; TestGolden_DoubleRun PASS; lint 0 issues; archfit verdict PASS gate-findings 0
+- [x] verify coverage meets project standard — no enforced threshold; new packages: internal/syntax 88.6% (up from 77.3% after adding TestConfidenceMeets + TestBuildNodeRoleIndex_UnknownLanguage), internal/extract/astgrep 90.2%, internal/rules 72.8%; all above project median
 
 ### Task 19: Update documentation
 

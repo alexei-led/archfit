@@ -29,6 +29,11 @@ const (
 	fileSortTS     = "src/a.ts"
 )
 
+// evidence string constants reused across index test cases.
+const (
+	evName = "name"
+)
+
 // buildGraph constructs a minimal Graph from a Facts slice (one language).
 func buildGraph(facts graph.Facts) *graph.Graph {
 	return graph.Build([]graph.Facts{facts})
@@ -271,7 +276,7 @@ func TestBuildNodeRoleIndex_ConfidenceSorting(t *testing.T) {
 	facts := []diagnostic.SyntaxFact{
 		{Language: graph.LangTypeScript, File: fileSortTS, Kind: kindFunction, Name: "aHandler", Role: RoleHandler, RoleConf: ConfLow, Evidence: "path"},
 		{Language: graph.LangTypeScript, File: fileSortTS, Kind: kindClass, Name: "AService", Role: RoleService, RoleConf: ConfHigh, Evidence: "decorator"},
-		{Language: graph.LangTypeScript, File: fileSortTS, Kind: kindFunction, Name: "doService", Role: RoleService, RoleConf: ConfMedium, Evidence: "name"},
+		{Language: graph.LangTypeScript, File: fileSortTS, Kind: kindFunction, Name: "doService", Role: RoleService, RoleConf: ConfMedium, Evidence: evName},
 	}
 
 	idx := syntax.BuildNodeRoleIndex(g, facts)
@@ -290,6 +295,38 @@ func TestBuildNodeRoleIndex_ConfidenceSorting(t *testing.T) {
 	if hits[2].Role != RoleService || hits[2].Confidence != ConfMedium {
 		t.Errorf("slot 2: want service/medium, got %q/%q", hits[2].Role, hits[2].Confidence)
 	}
+}
+
+// TestBuildNodeRoleIndex_UnknownLanguage: default branch in resolveFileToNodes —
+// an unknown language attempts file-identity lookup then returns nil.
+func TestBuildNodeRoleIndex_UnknownLanguage(t *testing.T) {
+	const unknownLang = "julia"
+	g := buildGraph(graph.Facts{
+		Language: unknownLang,
+		Nodes:    []graph.Node{{Kind: graph.NodeKindFile, Path: "src/main.jl"}},
+	})
+
+	facts := []diagnostic.SyntaxFact{
+		// File node exists in graph — should resolve via file-identity fallback.
+		{Language: unknownLang, File: "src/main.jl", Kind: kindFunction, Name: "MyFunc", Role: RoleService, RoleConf: ConfHigh, Evidence: evName},
+		// File node absent — should produce no hit.
+		{Language: unknownLang, File: "src/missing.jl", Kind: kindFunction, Name: "NoHit", Role: RoleHandler, RoleConf: ConfHigh, Evidence: evName},
+	}
+
+	idx := syntax.BuildNodeRoleIndex(g, facts)
+
+	t.Run("file node present resolves via identity", func(t *testing.T) {
+		hits := idx.RolesFor("file:src/main.jl")
+		if len(hits) == 0 {
+			t.Error("expected hits for file:src/main.jl, got none")
+		}
+	})
+	t.Run("file node absent returns nil", func(t *testing.T) {
+		hits := idx.RolesFor("file:src/missing.jl")
+		if len(hits) != 0 {
+			t.Errorf("expected nil hits for absent file node, got %v", hits)
+		}
+	})
 }
 
 // TestBuildNodeRoleIndex_EmptyInputs: both nil and empty facts are safe.

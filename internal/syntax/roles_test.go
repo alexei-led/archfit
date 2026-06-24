@@ -319,6 +319,37 @@ func TestDeriveRoles_Empty(t *testing.T) {
 	}
 }
 
+// TestConfidenceMeets exercises the ConfidenceMeets helper directly.
+func TestConfidenceMeets(t *testing.T) {
+	t.Parallel()
+	const confBogus = "bogus"
+	cases := []struct {
+		conf, min string
+		want      bool
+	}{
+		{syntax.ConfHigh, syntax.ConfHigh, true},
+		{syntax.ConfHigh, syntax.ConfMedium, true},
+		{syntax.ConfHigh, syntax.ConfLow, true},
+		{syntax.ConfMedium, syntax.ConfHigh, false},
+		{syntax.ConfMedium, syntax.ConfMedium, true},
+		{syntax.ConfMedium, syntax.ConfLow, true},
+		{syntax.ConfLow, syntax.ConfHigh, false},
+		{syntax.ConfLow, syntax.ConfMedium, false},
+		{syntax.ConfLow, syntax.ConfLow, true},
+		// Unknown strings return false regardless of the other operand.
+		{"", syntax.ConfHigh, false},
+		{syntax.ConfHigh, "", false},
+		{confBogus, syntax.ConfHigh, false},
+		{syntax.ConfHigh, confBogus, false},
+	}
+	for _, tc := range cases {
+		got := syntax.ConfidenceMeets(tc.conf, tc.min)
+		if got != tc.want {
+			t.Errorf("ConfidenceMeets(%q, %q) = %v, want %v", tc.conf, tc.min, got, tc.want)
+		}
+	}
+}
+
 func hasPrefix(s, prefix string) bool {
 	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
 }
