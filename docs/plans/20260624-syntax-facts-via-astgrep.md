@@ -79,10 +79,10 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 3: Adapter Syntax() + embedded Go rules
 
-- [ ] add `internal/extract/astgrep/rules/go.yml` (go:embed): function/method/type declarations, exported via name regex `^[A-Z]`, route calls (net/http, gin, echo, chi, fiber, gorilla) + handler signature
-- [ ] implement `Syntax()`: one `sg scan --inline-rules <yaml> --json=compact .` per language, map `ruleId`→Kind, capture name + start/end line + framework; absent `sg` → `absent`, no error; sort via Task 1 helper
-- [ ] write adapter tests with `RunnerMock` canned JSON: kinds, exported, route+framework, absent path, malformed-JSON error
-- [ ] run tests — must pass before next task
+- [x] add `internal/extract/astgrep/rules/go.yml` (go:embed): function/method/type declarations, exported via name regex `^[A-Z]`, route calls (net/http, gin, echo, chi, fiber, gorilla) + handler signature
+- [x] implement `Syntax()`: one `sg scan --inline-rules <yaml> --json=compact .` per language, map `ruleId`→Kind, capture name + start/end line + framework; absent `sg` → `absent`, no error; sort via Task 1 helper
+- [x] write adapter tests with `RunnerMock` canned JSON: kinds, exported, route+framework, absent path, malformed-JSON error
+- [x] run tests — must pass before next task
 
 ### Task 4: Embedded TypeScript rules
 

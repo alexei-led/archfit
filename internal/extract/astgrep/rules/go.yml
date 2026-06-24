@@ -1,0 +1,154 @@
+# Embedded ast-grep rules for Go declaration and route extraction.
+# Each rule's id maps to a SyntaxFact Kind (and optionally Framework) in the adapter.
+# Validated against sg 0.44.0 with Go tree-sitter grammar.
+#
+# ruleId → Kind mapping (see syntax.go):
+#   go-func         → function  (exported top-level functions)
+#   go-method       → method    (exported methods)
+#   go-struct       → struct    (exported struct types)
+#   go-interface    → interface (exported interface types)
+#   go-type-alias   → type_alias (exported type aliases and named types)
+#   go-route-net-http → route, framework=net/http
+#   go-route-gin    → route, framework=gin
+#   go-route-echo   → route, framework=echo
+#   go-route-chi    → route, framework=chi
+#   go-route-fiber  → route, framework=fiber
+#   go-route-gorilla → route, framework=gorilla/mux
+#   go-handler-sig  → function  (handler signature: exported fn with http.ResponseWriter param)
+
+id: go-func
+language: go
+rule:
+  kind: function_declaration
+  has:
+    field: name
+    pattern: $NAME
+    regex: ^[A-Z]
+---
+id: go-method
+language: go
+rule:
+  kind: method_declaration
+  has:
+    field: name
+    pattern: $NAME
+    regex: ^[A-Z]
+---
+id: go-struct
+language: go
+rule:
+  kind: type_spec
+  all:
+    - has:
+        field: name
+        pattern: $NAME
+        regex: ^[A-Z]
+    - has:
+        field: type
+        kind: struct_type
+  inside:
+    kind: type_declaration
+---
+id: go-interface
+language: go
+rule:
+  kind: type_spec
+  all:
+    - has:
+        field: name
+        pattern: $NAME
+        regex: ^[A-Z]
+    - has:
+        field: type
+        kind: interface_type
+  inside:
+    kind: type_declaration
+---
+# go-type-alias matches exported type aliases (type Foo = Bar) and named types
+# (type Foo Bar) that are neither struct nor interface. The name is extracted
+# from the match text in the adapter via "type (\w+)" regex since nested
+# has+pattern on type_declaration children does not propagate $NAME.
+id: go-type-alias
+language: go
+rule:
+  kind: type_declaration
+  all:
+    - not:
+        has:
+          kind: type_spec
+          has:
+            field: type
+            any:
+              - kind: struct_type
+              - kind: interface_type
+    - has:
+        kind: type_spec
+        has:
+          field: name
+          regex: ^[A-Z]
+---
+# Route rules: one per framework. ruleId carries both Kind=route and Framework.
+# $PATH captures the first string-literal argument (the URL pattern).
+# net/http: mux.HandleFunc("/path", handler) and mux.Handle("/path", handler)
+id: go-route-net-http
+language: go
+rule:
+  pattern: $RECV.HandleFunc($PATH, $HANDLER)
+---
+id: go-route-net-http-handle
+language: go
+rule:
+  pattern: $RECV.Handle($PATH, $HANDLER)
+---
+# gin: r.GET/POST/PUT/DELETE/PATCH("/path", handlers...)
+id: go-route-gin
+language: go
+rule:
+  any:
+    - pattern: $RECV.GET($PATH, $$$)
+    - pattern: $RECV.POST($PATH, $$$)
+    - pattern: $RECV.PUT($PATH, $$$)
+    - pattern: $RECV.DELETE($PATH, $$$)
+    - pattern: $RECV.PATCH($PATH, $$$)
+    - pattern: $RECV.HEAD($PATH, $$$)
+    - pattern: $RECV.OPTIONS($PATH, $$$)
+---
+# echo: e.GET/POST/PUT/DELETE/PATCH("/path", handler)
+id: go-route-echo
+language: go
+rule:
+  any:
+    - pattern: $RECV.GET($PATH, $HANDLER)
+    - pattern: $RECV.POST($PATH, $HANDLER)
+    - pattern: $RECV.PUT($PATH, $HANDLER)
+    - pattern: $RECV.DELETE($PATH, $HANDLER)
+    - pattern: $RECV.PATCH($PATH, $HANDLER)
+---
+# chi: r.Get/Post/Put/Delete/Patch("/path", handler)
+id: go-route-chi
+language: go
+rule:
+  any:
+    - pattern: $RECV.Get($PATH, $HANDLER)
+    - pattern: $RECV.Post($PATH, $HANDLER)
+    - pattern: $RECV.Put($PATH, $HANDLER)
+    - pattern: $RECV.Delete($PATH, $HANDLER)
+    - pattern: $RECV.Patch($PATH, $HANDLER)
+---
+# fiber: app.Get/Post/Put/Delete/Patch("/path", handler)
+id: go-route-fiber
+language: go
+rule:
+  any:
+    - pattern: $RECV.Get($PATH, $HANDLER)
+    - pattern: $RECV.Post($PATH, $HANDLER)
+    - pattern: $RECV.Put($PATH, $HANDLER)
+    - pattern: $RECV.Delete($PATH, $HANDLER)
+    - pattern: $RECV.Patch($PATH, $HANDLER)
+---
+# gorilla/mux: r.HandleFunc("/path", handler).Methods("GET")
+# The outer call matches HandleFunc; Methods chaining is advisory only.
+id: go-route-gorilla
+language: go
+rule:
+  pattern: $RECV.HandleFunc($PATH, $HANDLER)
