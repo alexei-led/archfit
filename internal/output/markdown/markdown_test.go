@@ -42,6 +42,11 @@ const (
 	mbStrength   = "strength"
 	mbDistance   = "distance"
 	mbVolatility = "volatility"
+
+	// Kind, role, and file literals reused in syntax surface tests.
+	kindFunction   = "function"
+	roleHandler    = "handler"
+	fileAPIHandler = "pkg/api/handler.go"
 )
 
 func TestRenderer_Format(t *testing.T) {
@@ -90,7 +95,7 @@ func TestRenderer_Render_EmptyDiagnostic(t *testing.T) {
 	}
 
 	// Optional sections absent when no findings or metrics.
-	for _, absent := range []string{secGate, secAdvisories, "Metrics", "Structural facts", "## Delta"} {
+	for _, absent := range []string{secGate, secAdvisories, "Metrics", "Structural facts", "Syntax surface", "## Delta"} {
 		if strings.Contains(out, absent) {
 			t.Errorf("output should not contain %q in empty diagnostic\nfull output:\n%s", absent, out)
 		}
@@ -1044,5 +1049,160 @@ func TestRenderer_Render_EmptyDiagnosticHasDistanceConfidence(t *testing.T) {
 	// Distance confidence always present — it documents what signals were used.
 	if !strings.Contains(out, secDistanceConf) {
 		t.Errorf("distance confidence section missing in empty diagnostic\nfull output:\n%s", out)
+	}
+}
+
+// TestRenderer_Render_SyntaxSurface_Present verifies that the "Syntax surface"
+// section appears when SyntaxFacts is non-empty and contains declaration counts,
+// the public API list grouped by file, and detected role/route summaries.
+func TestRenderer_Render_SyntaxSurface_Present(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.SyntaxFacts = []diagnostic.SyntaxFact{
+		{Language: "go", File: fileAPIHandler, Kind: kindFunction, Name: "HandleRequest", Exported: true, StartLine: 10, Role: roleHandler},
+		{Language: "go", File: fileAPIHandler, Kind: kindFunction, Name: "internalHelper", Exported: false, StartLine: 30},
+		{Language: "go", File: fileAPIHandler, Kind: "route", Name: "GET /health", Exported: false, StartLine: 50, Framework: "gin", Role: roleHandler},
+		{Language: "go", File: "pkg/repo/store.go", Kind: "struct", Name: "Store", Exported: true, StartLine: 5, Role: "repository"},
+		{Language: "go", File: "pkg/repo/store.go", Kind: kindFunction, Name: "FindByID", Exported: true, StartLine: 20, Role: "repository"},
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	// Section header present.
+	if !strings.Contains(out, "## Syntax surface") {
+		t.Fatalf("missing Syntax surface section\nfull output:\n%s", out)
+	}
+
+	// Total declaration count in header.
+	if !strings.Contains(out, "5 declaration(s)") {
+		t.Errorf("missing total declaration count\nfull output:\n%s", out)
+	}
+
+	// Kind counts present.
+	for _, want := range []string{"- function: 3", "- route: 1", "- struct: 1"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing kind count %q\nfull output:\n%s", want, out)
+		}
+	}
+
+	// Exported count present.
+	if !strings.Contains(out, "- exported (public API): 3") {
+		t.Errorf("missing exported count\nfull output:\n%s", out)
+	}
+
+	// Public API section present with file grouping.
+	if !strings.Contains(out, "### Public API") {
+		t.Fatalf("missing Public API subsection\nfull output:\n%s", out)
+	}
+	if !strings.Contains(out, "`"+fileAPIHandler+"`") {
+		t.Errorf("missing file grouping for %s\nfull output:\n%s", fileAPIHandler, out)
+	}
+	if !strings.Contains(out, "`HandleRequest` (function)") {
+		t.Errorf("missing exported decl HandleRequest\nfull output:\n%s", out)
+	}
+	// Role annotation on exported declaration.
+	if !strings.Contains(out, "role: handler") {
+		t.Errorf("missing role annotation on exported decl\nfull output:\n%s", out)
+	}
+
+	// Detected roles section.
+	if !strings.Contains(out, "### Detected roles") {
+		t.Fatalf("missing Detected roles subsection\nfull output:\n%s", out)
+	}
+	for _, want := range []string{"- handler:", "- repository:", "- route: 1 registration(s)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing roles entry %q\nfull output:\n%s", want, out)
+		}
+	}
+
+	// Non-exported declarations must NOT appear in the Public API list.
+	if strings.Contains(out, "`internalHelper`") {
+		t.Errorf("non-exported decl internalHelper must not appear in Public API\nfull output:\n%s", out)
+	}
+}
+
+// TestRenderer_Render_SyntaxSurface_Absent verifies that the "Syntax surface"
+// section is omitted entirely when SyntaxFacts is nil/empty (syntax disabled or
+// sg absent). No empty section, no false signal.
+func TestRenderer_Render_SyntaxSurface_Absent(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	// SyntaxFacts intentionally empty.
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	if strings.Contains(out, "Syntax surface") {
+		t.Errorf("Syntax surface section must be absent when SyntaxFacts is empty\nfull output:\n%s", out)
+	}
+	if strings.Contains(out, "Public API") {
+		t.Errorf("Public API subsection must be absent when SyntaxFacts is empty\nfull output:\n%s", out)
+	}
+}
+
+// TestRenderer_Render_SyntaxSurface_ExportedCap verifies that when exported
+// declarations exceed syntaxSurfaceExportedTopN (20), the section caps the
+// list and appends a "N more" overflow line.
+func TestRenderer_Render_SyntaxSurface_ExportedCap(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+
+	// 25 exported functions across one file.
+	for i := range 25 {
+		d.SyntaxFacts = append(d.SyntaxFacts, diagnostic.SyntaxFact{
+			Language:  "go",
+			File:      "pkg/big/api.go",
+			Kind:      "function",
+			Name:      "Func" + strings.Repeat("X", i),
+			Exported:  true,
+			StartLine: i + 1,
+		})
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	if !strings.Contains(out, "## Syntax surface") {
+		t.Fatalf("missing Syntax surface section\nfull output:\n%s", out)
+	}
+	// Overflow line must appear.
+	if !strings.Contains(out, "+5 more exported declarations") {
+		t.Errorf("missing overflow line for capped exported list\nfull output:\n%s", out)
+	}
+}
+
+// TestRenderer_Render_SyntaxSurface_RouteFramework verifies that route facts
+// with a Framework field render the framework name in the Public API list.
+func TestRenderer_Render_SyntaxSurface_RouteFramework(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.SyntaxFacts = []diagnostic.SyntaxFact{
+		{Language: "go", File: "cmd/server/routes.go", Kind: "route", Name: "GET /ping",
+			Exported: true, StartLine: 1, Role: "handler", Framework: "gin"},
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	// Framework must appear in brackets next to the role annotation.
+	if !strings.Contains(out, "[gin]") {
+		t.Errorf("missing framework annotation [gin]\nfull output:\n%s", out)
 	}
 }

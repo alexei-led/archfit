@@ -162,9 +162,9 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 15: Consumer — scan output + public API summary
 
-- [ ] add a "Syntax surface" section to `scan`: per-module declaration counts, public API (exported) list, detected roles/routes
-- [ ] write output tests (table-driven/golden)
-- [ ] run tests — must pass before next task
+- [x] add a "Syntax surface" section to `scan`: per-module declaration counts, public API (exported) list, detected roles/routes
+- [x] write output tests (table-driven/golden)
+- [x] run tests — must pass before next task
 
 ### Task 16: Consumer — agent_tasks evidence enrichment
 
