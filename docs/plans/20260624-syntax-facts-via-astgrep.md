@@ -107,10 +107,10 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 7: JSON-shape guard + Docker pin
 
-- [ ] add skip-if-`sg`-absent integration test asserting `ruleId`/`range`/`metaVariables` against a fixture
-- [ ] align Dockerfile `ASTGREP_VERSION` (0.44.x) or comment-confirm 0.43.0 supports `--inline-rules`
-- [ ] confirm the test skips cleanly without `sg`
-- [ ] run tests — must pass before next task
+- [x] add skip-if-`sg`-absent integration test asserting `ruleId`/`range`/`metaVariables` against a fixture
+- [x] align Dockerfile `ASTGREP_VERSION` (0.44.x) or comment-confirm 0.43.0 supports `--inline-rules`
+- [x] confirm the test skips cleanly without `sg`
+- [x] run tests — must pass before next task
 
 ### Task 8: Role derivation (new core pkg)
 

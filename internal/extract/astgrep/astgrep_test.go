@@ -149,7 +149,7 @@ func TestFind_AbsentTool_ReturnsEmptyAndAbsentStatus(t *testing.T) {
 	if len(matches) != 0 {
 		t.Errorf("expected 0 matches for absent tool, got %d", len(matches))
 	}
-	if cov.Status != "absent" {
+	if cov.Status != statusAbsentStr {
 		t.Errorf("cov.Status = %q, want absent", cov.Status)
 	}
 	if cov.Tool != toolAstGrep {

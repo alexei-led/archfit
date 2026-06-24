@@ -73,8 +73,8 @@ func TestSyntax_AbsentTool_ReturnsAbsentCoverageNoError(t *testing.T) {
 	if len(facts) != 0 {
 		t.Errorf("expected 0 facts for absent tool, got %d", len(facts))
 	}
-	if cov.Status != "absent" {
-		t.Errorf("cov.Status = %q, want %q", cov.Status, "absent")
+	if cov.Status != statusAbsentStr {
+		t.Errorf("cov.Status = %q, want %q", cov.Status, statusAbsentStr)
 	}
 	if cov.Tool != "ast-grep" {
 		t.Errorf("cov.Tool = %q, want %q", cov.Tool, "ast-grep")
@@ -454,7 +454,7 @@ func TestSyntax_Py_Kinds(t *testing.T) {
 		t.Fatalf("len(facts) = %d, want 2", len(facts))
 	}
 	// Sorted by (File, StartLine): process(6) < UserService(11).
-	if facts[0].Kind != "function" || facts[0].Name != nameProcess {
+	if facts[0].Kind != kindFunctionStr || facts[0].Name != nameProcess {
 		t.Errorf("facts[0] = {%s %s}, want {function process}", facts[0].Kind, facts[0].Name)
 	}
 	if facts[1].Kind != "class" || facts[1].Name != "UserService" {

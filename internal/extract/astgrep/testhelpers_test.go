@@ -11,6 +11,9 @@ const (
 	jsonKeySingle = "single"
 	jsonKeyMulti  = "multi"
 
+	// Coverage status strings.
+	statusAbsentStr = "absent"
+
 	// Repeated file paths used in table-driven tests.
 	fileSvcGo = "pkg/svc/svc.go"
 
