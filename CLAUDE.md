@@ -29,9 +29,11 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`.
 Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
 
 - Core ring (`classify`, `rules`, `metrics` + sub-packages, `status`, `staleness`,
-  `facts`, `score`, `scope`) must not import `os`, `os/exec`, any YAML lib, or
-  adapter packages — it decides over already-gathered facts. `score` synthesises
-  the banded scorecard from an already-computed `Diagnostic`.
+  `facts`, `score`, `scope`, `syntax`) must not import `os`, `os/exec`, any YAML
+  lib, or adapter packages — it decides over already-gathered facts. `score`
+  synthesises the banded scorecard from an already-computed `Diagnostic`.
+  `syntax` derives architectural roles (handler/service/repository/domain) and
+  builds the `NodeRoleIndex` used by `forbidden_role_dependency`.
 - `internal/model/*` imports stdlib only.
 - Every subprocess call goes through `toolrun.Runner` (interface in `internal/ports`);
   extractors in `internal/extract/{go,ts,py,rust}` are out-of-process adapters. No
@@ -41,6 +43,8 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   `autopilot`, `explain`, and `review` touch them, never `check`. Enforced
   structurally — `arch_test.go` forbids any `internal/*` package from importing
   `internal/llm`, so the LLM commands live in `cmd`.
+- `gate:` is wired for **all rule types** (`off` skips, `warn` is advisory/non-blocking,
+  `fail`/unset is blocking). An unknown `type` value is a config error.
 
 ## Coupling scorer — key design facts
 

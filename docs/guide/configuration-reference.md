@@ -167,6 +167,42 @@ tools:
 `auto`, `off`, or absent all disable it, and the dependent metric then reports
 `n/a` without ever failing the run.
 
+### `tools.syntax` (syntax-facts provider)
+
+`tools.syntax` runs the ast-grep adapter to extract declaration-level facts for
+Go, TypeScript, Python, and Rust. Unlike the dependency extractors, which answer
+_who imports whom_, `tools.syntax` answers _what declarations exist_ — exported
+names, kinds, framework routes, and architectural roles.
+
+Opt-in only: `auto` and `off` (and absent) all disable it. Enable with `on`:
+
+```yaml
+tools:
+  syntax:
+    enabled: on
+```
+
+**What it does:**
+
+- Emits a `syntax_facts` block in the diagnostic (neutral, off-gate, omitted
+  when empty).
+- Each fact records: `language`, `file`, `kind` (function/method/class/struct/
+  interface/trait/enum/type_alias/annotation/route), `name`, `exported`, `role`
+  (handler/service/repository/domain), `role_confidence` (high/medium/low),
+  `evidence`, `framework`, `start_line`, `end_line`.
+- Role derivation (`internal/syntax`) runs heuristics on name patterns,
+  annotations, and framework evidence.
+- The `scan` output gains a **Syntax surface** section listing declaration counts,
+  roles, and public API totals per module.
+- `agent_tasks` evidence is enriched with per-node declaration counts when
+  syntax facts are present.
+
+**Supported languages:** Go, TypeScript, Python, Rust. Requires `sg` (ast-grep)
+on PATH; `archfit doctor` checks it.
+
+**No new binary dependency:** `sg` is already required for ast-grep pattern rules
+and is bundled in the runtime image. No CGO; the static binary is unchanged.
+
 ### `tools.<x>.gate` (coverage gate)
 
 When an analyzer is **absent** (tool not installed or not found), its metrics drop
@@ -334,15 +370,19 @@ rules:
 Rule fields:
 
 - `id` — stable ID used in findings, baselines, and exceptions.
-- `type` — built-in rule type.
+- `type` — built-in rule type. An unrecognised type is a config error.
 - `from` — optional source glob.
 - `to` — optional target glob.
-- `from_layer`, `to_layer` — parsed fields reserved for layer-specific policy.
-- `gate` — policy marker such as `fail` or `warn`.
-- `patterns` — optional ast-grep patterns for future structural evidence.
-
-Current behavior note: active structural rule findings are emitted in the gate
-channel. Use baselines and exceptions while calibrating noisy rules.
+- `from_layer`, `to_layer` — layer names for `forbidden_layer_direction`.
+- `from_role`, `to_role` — role names for `forbidden_role_dependency`.
+- `min_confidence` — minimum role confidence to match (`high` by default;
+  set to `medium` to relax). Applies to `forbidden_role_dependency`.
+- `max` — integer ceiling for `public_api_max`.
+- `gate` — controls how the rule blocks the run:
+  - `fail` (or absent) — finding blocks CI; exit 1.
+  - `warn` — finding is advisory; surfaced but exit 0.
+  - `off` — rule is skipped entirely; no findings emitted.
+- `patterns` — optional ast-grep patterns for structural evidence.
 
 Built-in rule types:
 
@@ -352,10 +392,48 @@ Built-in rule types:
 - `internal_api_access` — same internal-access signal, with separate rule ID.
 - `forbidden_layer_direction` — fires when dependency direction violates the
   ordered `layers` list.
-- `new_cross_module_dependency` — fires on cross-module edges. Current
-  implementation reports all cross-module edges, then baseline status separates
-  known from new findings.
+- `new_cross_module_dependency` — fires on cross-module edges. Baseline status
+  separates known from new findings.
 - `cycle` — fires once per detected import cycle.
+- `forbidden_role_dependency` — fires when an edge goes from a node with
+  `from_role` to a node with `to_role` (requires `tools.syntax.enabled: on`).
+  Only matches edges where both roles are assigned at or above `min_confidence`
+  (default `high`). Example: handlers must not call repositories directly.
+- `public_api_max` — fires when any module's exported declaration count exceeds
+  `max` (requires `tools.syntax.enabled: on`). Scoped per module using the
+  module path map. No baseline — static ceiling.
+- `public_api_change` — emits one finding per exported declaration; baseline
+  suppresses known ones so only newly-added surface shows as `StatusNew`.
+  Defaults to `gate: warn` (advisory drift signal). Requires
+  `tools.syntax.enabled: on`.
+
+**`gate:` is now wired for all rule types.** Previously `gate:` was stored but
+not applied — that latent bug is fixed. Every rule respects `off`/`warn`/`fail`
+regardless of type. An unknown `type` value is now a config error (not silently
+ignored).
+
+Example syntax-facts rules:
+
+```yaml
+rules:
+  # Handlers must not call repositories directly.
+  - id: no_handler_to_repo
+    type: forbidden_role_dependency
+    from_role: handler
+    to_role: repository
+    gate: warn # advisory; set to fail once roles are stable
+
+  # Warn when any module's exported API exceeds the ceiling.
+  - id: api_size_ceiling
+    type: public_api_max
+    max: 200
+    gate: warn
+
+  # Surface newly-added public API (baseline suppresses known surface).
+  - id: track_public_api
+    type: public_api_change
+    gate: warn
+```
 
 ## `exceptions`
 

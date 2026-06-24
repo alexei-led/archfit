@@ -190,9 +190,9 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 19: Update documentation
 
-- [ ] update user guide (`docs/guide`): `tools.syntax`, `syntax_facts` block, the 3 new rule types, `gate:` semantics
-- [ ] flip design doc status PROPOSED → SHIPPED; note deviations
-- [ ] update `CLAUDE.md`: new `internal/syntax` core pkg in the ring; `gate:` now wired for all rules
+- [x] update user guide (`docs/guide`): `tools.syntax`, `syntax_facts` block, the 3 new rule types, `gate:` semantics
+- [x] flip design doc status PROPOSED → SHIPPED; note deviations
+- [x] update `CLAUDE.md`: new `internal/syntax` core pkg in the ring; `gate:` now wired for all rules
 
 ## Technical Details
 

@@ -1,6 +1,6 @@
 # Syntax facts via ast-grep — design v1.0 (complete)
 
-Date: 2026-06-24. Status: PROPOSED. This is the complete implementation — all
+Date: 2026-06-24. Status: SHIPPED. This is the complete implementation — all
 four languages and gate control, no phases (it replaces an earlier phased draft
 that scoped only Go+TS and deferred Python/Rust + gate rules).
 Research basis: `docs/research/tree-sitter-for-archfit.md`.
@@ -278,3 +278,26 @@ See `docs/research/tree-sitter-for-archfit.md` §"Rejected alternatives"
 (in-process bindings, zig-cc CGO cross toolchain, purego + per-arch shared libs,
 wazero, raw tree-sitter CLI). All cost more than reusing the bundled ast-grep
 subprocess for the same facts.
+
+---
+
+## 13. Deviations from design (as shipped)
+
+Minor implementation details that differ from the design text above:
+
+- **`DeriveRoles` signature** — the design showed a `moduleViews` parameter for
+  module-context refinement; the shipped function takes only `[]SyntaxFact` and
+  the language string. Module context was not needed for the current heuristics.
+- **Go file → package resolution in `NodeRoleIndex`** — the design referenced
+  `EdgeKindBelongsTo` edges to map files to packages. The Go extractor emits no
+  `belongs_to` edges, so the implementation uses a directory-mapping approach
+  instead: the file's directory path is matched against graph node keys.
+- **`forbidden_role_dependency` lookup** — the design mentioned consulting raw
+  `SyntaxFacts` in addition to `NodeRoleIndex`. The shipped rule uses
+  `NodeRoleIndex` only; raw facts are not needed once the index is built.
+- **`public_api_max` / `public_api_change` module scoping** — the design did not
+  specify the scoping mechanism. Both rules use `config.ModuleMap.ModuleFor` to
+  resolve a file's owning module, consistent with how other rules scope findings.
+- **`public_api_max` in self-config** — set to `max: 1500` (advisory `gate: warn`)
+  to stay green while archfit's own catch-all `internal` module resolves ~1271
+  declarations. Tighten per module once the module map is split.
