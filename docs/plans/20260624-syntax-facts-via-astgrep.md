@@ -135,11 +135,11 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 11: Wire gate: semantics for all rules
 
-- [ ] in the engine/rules layer, set finding `Kind` from each rule's `gate:`: `off`→skip, `warn`→`advisory`, `fail`/unset→`gate`
-- [ ] make unknown rule `type:` a config error in `rules.New` (fail fast)
-- [ ] write tests: off skips, warn→advisory (verdict warn, non-blocking), fail→blocking; unknown type errors
-- [ ] regenerate/verify `TestGolden`; run `make archfit` — dogfood stays green
-- [ ] run tests — must pass before next task
+- [x] in the engine/rules layer, set finding `Kind` from each rule's `gate:`: `off`→skip, `warn`→`advisory`, `fail`/unset→`gate`
+- [x] make unknown rule `type:` a config error in `rules.New` (fail fast)
+- [x] write tests: off skips, warn→advisory (verdict warn, non-blocking), fail→blocking; unknown type errors
+- [x] regenerate/verify `TestGolden`; run `make archfit` — dogfood stays green
+- [x] run tests — must pass before next task
 
 ### Task 12: forbidden_role_dependency rule
 

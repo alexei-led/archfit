@@ -36,6 +36,14 @@ const (
 	layerInfrastructure = "infrastructure"
 )
 
+// Rule type and ID constants for gate semantics tests.
+const (
+	typeForbiddenDependency = "forbidden_dependency"
+	ruleIDNoDep             = "no-dep"
+	globServicesA           = "services/a/**"
+	globServicesB           = "services/b/**"
+)
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
@@ -62,10 +70,13 @@ func makeGraph(edges []graph.Edge) *graph.Graph {
 func TestForbiddenDependency(t *testing.T) {
 	cfg := config.RuleConfig{
 		Rules: []config.RuleDef{
-			{ID: "no-a-to-b", Type: "forbidden_dependency", From: "services/a/**", To: "services/b/**"},
+			{ID: "no-a-to-b", Type: typeForbiddenDependency, From: globServicesA, To: globServicesB},
 		},
 	}
-	ruleSet := rules.New(cfg)
+	ruleSet, err := rules.New(cfg)
+	if err != nil {
+		t.Fatalf("New: unexpected error: %v", err)
+	}
 	if len(ruleSet) != 1 {
 		t.Fatalf("New: got %d rules, want 1", len(ruleSet))
 	}
@@ -119,11 +130,11 @@ func TestForbiddenDependency(t *testing.T) {
 				if f.RuleID != "no-a-to-b" {
 					t.Errorf("finding.RuleID = %q, want %q", f.RuleID, "no-a-to-b")
 				}
-				if f.MatchedBy["from_glob"] != "services/a/**" {
-					t.Errorf("matched_by.from_glob = %q, want %q", f.MatchedBy["from_glob"], "services/a/**")
+				if f.MatchedBy["from_glob"] != globServicesA {
+					t.Errorf("matched_by.from_glob = %q, want %q", f.MatchedBy["from_glob"], globServicesA)
 				}
-				if f.MatchedBy["to_glob"] != "services/b/**" {
-					t.Errorf("matched_by.to_glob = %q, want %q", f.MatchedBy["to_glob"], "services/b/**")
+				if f.MatchedBy["to_glob"] != globServicesB {
+					t.Errorf("matched_by.to_glob = %q, want %q", f.MatchedBy["to_glob"], globServicesB)
 				}
 				if f.Why == "" {
 					t.Error("finding.Why is empty")
@@ -152,7 +163,10 @@ func TestPublicAPIOnly(t *testing.T) {
 			{ID: "no-internal-access", Type: "public_api_only"},
 		},
 	}
-	ruleSet := rules.New(cfg)
+	ruleSet, err := rules.New(cfg)
+	if err != nil {
+		t.Fatalf("New: unexpected error: %v", err)
+	}
 	if len(ruleSet) != 1 {
 		t.Fatalf("New: got %d rules, want 1", len(ruleSet))
 	}
@@ -246,7 +260,10 @@ func TestForbiddenLayerDirection(t *testing.T) {
 		},
 	}
 	rc := cfg.ForRules()
-	ruleSet := rules.New(rc)
+	ruleSet, err := rules.New(rc)
+	if err != nil {
+		t.Fatalf("New: unexpected error: %v", err)
+	}
 	if len(ruleSet) != 1 {
 		t.Fatalf("New: got %d rules, want 1", len(ruleSet))
 	}
@@ -338,25 +355,118 @@ func TestForbiddenLayerDirection(t *testing.T) {
 // rules.New — mapping and unknown type skipping
 // ---------------------------------------------------------------------------
 
-func TestNew_UnknownTypeSkipped(t *testing.T) {
+func TestNew_UnknownTypeError(t *testing.T) {
 	cfg := config.RuleConfig{
 		Rules: []config.RuleDef{
-			{ID: "known", Type: "public_api_only"},
 			{ID: "unknown", Type: "cycle_check_future"},
 		},
 	}
-	ruleSet := rules.New(cfg)
-	if len(ruleSet) != 1 {
-		t.Fatalf("New: got %d rules, want 1 (unknown type skipped)", len(ruleSet))
-	}
-	if ruleSet[0].ID() != "known" {
-		t.Errorf("rule ID = %q, want %q", ruleSet[0].ID(), "known")
+	_, err := rules.New(cfg)
+	if err == nil {
+		t.Fatal("New: got nil error, want error for unknown rule type")
 	}
 }
 
 func TestNew_EmptyRules(t *testing.T) {
-	ruleSet := rules.New(config.RuleConfig{})
+	ruleSet, err := rules.New(config.RuleConfig{})
+	if err != nil {
+		t.Fatalf("New: unexpected error: %v", err)
+	}
 	if len(ruleSet) != 0 {
 		t.Fatalf("New(empty): got %d rules, want 0", len(ruleSet))
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Gate semantics
+// ---------------------------------------------------------------------------
+
+func TestGateSemantics(t *testing.T) {
+	edge := graph.Edge{From: nodeAFoo, To: nodeBBar, Kind: graph.EdgeKindImports}
+	ev := rules.Evidence{}
+
+	t.Run("off_skips_finding", func(t *testing.T) {
+		cfg := config.RuleConfig{
+			Rules: []config.RuleDef{
+				{ID: ruleIDNoDep, Type: typeForbiddenDependency, From: globServicesA, To: globServicesB, Gate: "off"},
+			},
+		}
+		rs, err := rules.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		findings := rs[0].Check(makeGraph([]graph.Edge{edge}), ev)
+		if len(findings) != 0 {
+			t.Fatalf("gate:off: got %d findings, want 0", len(findings))
+		}
+	})
+
+	t.Run("warn_produces_advisory", func(t *testing.T) {
+		cfg := config.RuleConfig{
+			Rules: []config.RuleDef{
+				{ID: ruleIDNoDep, Type: typeForbiddenDependency, From: globServicesA, To: globServicesB, Gate: "warn"},
+			},
+		}
+		rs, err := rules.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		findings := rs[0].Check(makeGraph([]graph.Edge{edge}), ev)
+		if len(findings) != 1 {
+			t.Fatalf("gate:warn: got %d findings, want 1", len(findings))
+		}
+		if findings[0].Kind != "advisory" {
+			t.Errorf("gate:warn finding.Kind=%q, want advisory", findings[0].Kind)
+		}
+	})
+
+	t.Run("fail_produces_gate_finding", func(t *testing.T) {
+		cfg := config.RuleConfig{
+			Rules: []config.RuleDef{
+				{ID: ruleIDNoDep, Type: typeForbiddenDependency, From: globServicesA, To: globServicesB, Gate: "fail"},
+			},
+		}
+		rs, err := rules.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		findings := rs[0].Check(makeGraph([]graph.Edge{edge}), ev)
+		if len(findings) != 1 {
+			t.Fatalf("gate:fail: got %d findings, want 1", len(findings))
+		}
+		if findings[0].Kind != "gate" {
+			t.Errorf("gate:fail finding.Kind=%q, want gate", findings[0].Kind)
+		}
+	})
+
+	t.Run("unset_gate_produces_gate_finding", func(t *testing.T) {
+		cfg := config.RuleConfig{
+			Rules: []config.RuleDef{
+				{ID: ruleIDNoDep, Type: typeForbiddenDependency, From: globServicesA, To: globServicesB},
+			},
+		}
+		rs, err := rules.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		findings := rs[0].Check(makeGraph([]graph.Edge{edge}), ev)
+		if len(findings) != 1 {
+			t.Fatalf("gate unset: got %d findings, want 1", len(findings))
+		}
+		if findings[0].Kind != "gate" {
+			t.Errorf("gate unset finding.Kind=%q, want gate", findings[0].Kind)
+		}
+	})
+
+	t.Run("unknown_type_returns_error", func(t *testing.T) {
+		cfg := config.RuleConfig{
+			Rules: []config.RuleDef{
+				{ID: "x", Type: "nonexistent_type"},
+			},
+		}
+		_, err := rules.New(cfg)
+		if err == nil {
+			t.Fatal("want error for unknown type, got nil")
+		}
+	})
 }

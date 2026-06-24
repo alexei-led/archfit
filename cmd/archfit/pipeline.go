@@ -97,7 +97,10 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 
 	extractors := buildExtractors(deps.Runner, cfg)
 
-	rs := rules.New(cfg.ForRules())
+	rs, err := rules.New(cfg.ForRules())
+	if err != nil {
+		return diagnostic.Diagnostic{}, err
+	}
 	// risk_hub reads hand-authored volatility only (never git churn).
 	ms := append(metrics.New(cfg), extraMetrics...)
 

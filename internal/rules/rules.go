@@ -43,30 +43,60 @@ type Rule interface {
 //	"new_cross_module_dependency" → newCrossModuleDependency
 //	"cycle"                       → cycleRule
 //
-// Unknown type strings are silently skipped.
-func New(cfg config.RuleConfig) []Rule {
-	rules := make([]Rule, 0, len(cfg.Rules))
+// Unknown type strings are a config error.
+func New(cfg config.RuleConfig) ([]Rule, error) {
+	rs := make([]Rule, 0, len(cfg.Rules))
 	for _, def := range cfg.Rules {
+		var inner Rule
 		switch def.Type {
 		case "forbidden_dependency":
-			rules = append(rules, &forbiddenDependency{def: def})
+			inner = &forbiddenDependency{def: def}
 		case "public_api_only":
-			rules = append(rules, &publicAPIOnly{def: def})
+			inner = &publicAPIOnly{def: def}
 		case "forbidden_layer_direction":
-			rules = append(rules, &forbiddenLayerDirection{
+			inner = &forbiddenLayerDirection{
 				def:    def,
 				layers: cfg.Layers,
 				mm:     cfg.ModuleMap,
-			})
+			}
 		case "internal_api_access":
-			rules = append(rules, &internalAPIAccess{def: def})
+			inner = &internalAPIAccess{def: def}
 		case "new_cross_module_dependency":
-			rules = append(rules, &newCrossModuleDependency{def: def, mm: cfg.ModuleMap})
+			inner = &newCrossModuleDependency{def: def, mm: cfg.ModuleMap}
 		case "cycle":
-			rules = append(rules, &cycleRule{def: def})
+			inner = &cycleRule{def: def}
+		default:
+			return nil, fmt.Errorf("rules: unknown rule type %q (id=%q)", def.Type, def.ID)
 		}
+		rs = append(rs, &gatedRule{inner: inner, gate: def.Gate})
 	}
-	return rules
+	return rs, nil
+}
+
+// gatedRule wraps a Rule and applies gate semantics to its findings:
+//   - gate "off"  → suppress all findings
+//   - gate "warn" → set Kind="advisory" (non-blocking)
+//   - gate "fail" or "" → pass findings through unchanged (Kind stays "gate")
+type gatedRule struct {
+	inner Rule
+	gate  string // "off" | "warn" | "fail" | ""
+}
+
+func (r *gatedRule) ID() string { return r.inner.ID() }
+
+func (r *gatedRule) Check(g *graph.Graph, ev Evidence) []finding.Finding {
+	raw := r.inner.Check(g, ev)
+	switch r.gate {
+	case "off":
+		return nil
+	case "warn":
+		for i := range raw {
+			raw[i].Kind = "advisory"
+		}
+		return raw
+	default: // "fail" or ""
+		return raw // Kind already "gate" (default from finding.New)
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -191,9 +191,25 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Edges with Severity != "" and at or above the configured minimum severity are included.
 	advisoryFindings := collectAdvisories(ex.g, couplingIdx, classifyCfg, staleLabelFindings, in)
 
-	// Gate findings: kind=="gate" and not already resolved (fixed findings don't block verdict or inflate count).
-	var gateFindings []finding.Finding
+	// Partition ev.resolvedFindings: rule-advisory findings (Kind="advisory", set by
+	// gatedRule for gate:warn rules) go into advisoryFindings; all others go into
+	// baseFindings. This prevents double-emission when mode.Advisory is on, and lets
+	// computeVerdict count rule-advisories separately from coupling advisories
+	// (coupling advisories must never flip the verdict).
+	var baseFindings []finding.Finding
+	var ruleAdvisoryFindings []finding.Finding
 	for _, f := range ev.resolvedFindings {
+		if f.Kind == "advisory" {
+			ruleAdvisoryFindings = append(ruleAdvisoryFindings, f)
+			advisoryFindings = append(advisoryFindings, f)
+		} else {
+			baseFindings = append(baseFindings, f)
+		}
+	}
+
+	// Gate findings: kind=="gate" and not fixed.
+	var gateFindings []finding.Finding
+	for _, f := range baseFindings {
 		if f.Kind == "gate" && f.Status != finding.StatusFixed {
 			gateFindings = append(gateFindings, f)
 		}
@@ -201,7 +217,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 
 	// Summary counts.
 	var exceptionsUsed int
-	for _, f := range ev.resolvedFindings {
+	for _, f := range baseFindings {
 		if f.Status == finding.StatusExcepted {
 			exceptionsUsed++
 		}
@@ -213,12 +229,16 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		}
 	}
 
-	verdict := computeVerdict(gateFindings, metricResults)
+	// Pass only rule-advisory count to computeVerdict — coupling advisories must
+	// not flip verdict regardless of mode.Advisory.
+	verdict := computeVerdict(gateFindings, metricResults, countActive(ruleAdvisoryFindings))
 
 	// --- Stage 9: Assemble Diagnostic ---
 	// Include advisory findings in Findings only when mode.Advisory is set.
-	// Advisory findings never affect the verdict or gate counts.
-	resolvedFindings := ev.resolvedFindings
+	// Advisory findings never affect gate counts.
+	// Active rule-advisory findings (gate: warn) contribute to VerdictWarn
+	// even when mode.Advisory is off — warn-rules are intentional non-blocking signals.
+	resolvedFindings := baseFindings
 	warnings := 0
 	if in.Mode.Advisory {
 		resolvedFindings = append(resolvedFindings, advisoryFindings...)
@@ -370,11 +390,16 @@ func resolveEvidence(
 	return evidenceResult{resolvedFindings: resolvedFindings}
 }
 
-// computeVerdict derives the overall verdict from gate findings and metric results.
+// computeVerdict derives the overall verdict from gate findings, metric results,
+// and active rule-advisory findings (gate: warn).
 //   - Any gate finding with status new or expired_exception → fail
 //   - Any metric with delta != nil && *delta < 0 → warn (if not already fail)
+//   - Any active rule-advisory finding (activeRuleAdvisories > 0) → warn (if not already fail)
 //   - Otherwise → pass
-func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult) diagnostic.Verdict {
+//
+// Coupling advisories are intentionally excluded from activeRuleAdvisories — they
+// must not flip the verdict.
+func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult, activeRuleAdvisories int) diagnostic.Verdict {
 	for _, f := range gateFindings {
 		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept {
 			return diagnostic.VerdictFail
@@ -384,6 +409,9 @@ func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult
 		if m.Delta != nil && *m.Delta < 0 {
 			return diagnostic.VerdictWarn
 		}
+	}
+	if activeRuleAdvisories > 0 {
+		return diagnostic.VerdictWarn
 	}
 	return diagnostic.VerdictPass
 }

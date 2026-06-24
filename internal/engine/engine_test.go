@@ -94,7 +94,10 @@ func cannedConfig() (config.ClassifyConfig, []rules.Rule) {
 
 	classifyCfg := cfg.ForClassify()
 	ruleCfg := cfg.ForRules()
-	rs := rules.New(ruleCfg)
+	rs, err := rules.New(ruleCfg)
+	if err != nil {
+		panic("cannedConfig: " + err.Error())
+	}
 	return classifyCfg, rs
 }
 
@@ -1249,7 +1252,10 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 		Rules: []config.RuleDef{{ID: crossModRuleID, Type: "new_cross_module_dependency", Gate: gateFail}},
 	}
 	classifyCfg := cfg.ForClassify()
-	rs := rules.New(cfg.ForRules())
+	rs, err := rules.New(cfg.ForRules())
+	if err != nil {
+		t.Fatalf("rules.New: %v", err)
+	}
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
@@ -1348,6 +1354,11 @@ func TestRun_PinnedLabels(t *testing.T) {
 	// The engine hashes "fromPath\x00toPath\x00kind" per edge of the pair.
 	freshHash := labels.HashItems([]string{pathFileA + "\x00" + pathFileBAPIService + "\x00imports"})
 
+	pinnedRules, err := rules.New(cfg.ForRules())
+	if err != nil {
+		t.Fatalf("rules.New: %v", err)
+	}
+
 	run := func(lbls []labels.Label) (diagnostic.Diagnostic, signal.CollectedSignals) {
 		t.Helper()
 		var captured signal.CollectedSignals
@@ -1362,7 +1373,7 @@ func TestRun_PinnedLabels(t *testing.T) {
 			Patterns:    ports.NopPatternProvider{},
 			Resolver:    ports.NopSymbolResolver{},
 			PatternCfg:  config.PatternConfig{},
-			Rules:       rules.New(cfg.ForRules()),
+			Rules:       pinnedRules,
 			Metrics:     []metrics.Metric{spy},
 			Accepted:    baseline.Baseline{},
 			BaseMetrics: nil,
@@ -1781,7 +1792,11 @@ func bookExampleConfig(fromGlob, toGlob string, sameDeployUnit, sameOwner bool, 
 	}
 
 	cfg := config.Config{Version: 1, Modules: modules}
-	return cfg.ForClassify(), rules.New(cfg.ForRules())
+	rs, err := rules.New(cfg.ForRules())
+	if err != nil {
+		panic("ch10Config: " + err.Error())
+	}
+	return cfg.ForClassify(), rs
 }
 
 // TestRun_BookExamples_Ch10 is an engine-level regression test anchoring the full
@@ -2090,5 +2105,109 @@ func TestRun_SyntaxFacts_DisabledNoCallNoCoverage(t *testing.T) {
 	}
 	if len(synMock.SyntaxCalls()) != 0 {
 		t.Error("SyntaxProvider should not be called when disabled")
+	}
+}
+
+// TestRun_WarnRule_ProducesVerdictWarn verifies that a rule with gate:warn
+// produces VerdictWarn (not VerdictFail), zero gate findings, and — when
+// advisory mode is on — exactly one advisory finding (not two, which would
+// indicate double-emission from the stage-8 partition bug).
+func TestRun_WarnRule_ProducesVerdictWarn(t *testing.T) {
+	ctx := context.Background()
+
+	const warnRuleID = "warn-no-internal"
+
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"a": {Paths: []string{globModuleA}},
+			"b": {Paths: []string{globModuleB}},
+		},
+		Rules: []config.RuleDef{
+			{
+				ID:   warnRuleID,
+				Type: rulePublicAPIOnly,
+				Gate: "warn",
+			},
+		},
+	}
+
+	rs, err := rules.New(cfg.ForRules())
+	if err != nil {
+		t.Fatalf("rules.New: %v", err)
+	}
+
+	makeEx := func() ports.Extractor {
+		return &ports.ExtractorMock{
+			NameFunc: func() string { return "go" },
+			ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+				return violationFacts(), diagnostic.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
+			},
+		}
+	}
+
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
+
+	runWith := func(advisory bool) diagnostic.Diagnostic {
+		t.Helper()
+		d, runErr := engine.Run(ctx, engine.RunInput{
+			Mode:        engine.Mode{Head: headRef, Advisory: advisory},
+			Scope:       scope.Scope{Root: "."},
+			Classify:    cfg.ForClassify(),
+			Staleness:   config.StalenessConfig{},
+			Exceptions:  config.ExceptionSet{},
+			Extractors:  []ports.Extractor{makeEx()},
+			Patterns:    ports.NopPatternProvider{},
+			Resolver:    ports.NopSymbolResolver{},
+			PatternCfg:  config.PatternConfig{},
+			Rules:       rs,
+			Metrics:     ms,
+			Accepted:    base,
+			BaseMetrics: base.Metrics,
+			Labels:      nil,
+			Signals:     signal.RunSignals{},
+			Now:         now,
+		})
+		if runErr != nil {
+			t.Fatalf("Run: %v", runErr)
+		}
+		return d
+	}
+
+	// Advisory mode OFF: verdict must be warn; no gate findings.
+	d := runWith(false)
+
+	if d.Verdict != diagnostic.VerdictWarn {
+		t.Errorf("verdict=%q, want %q", d.Verdict, diagnostic.VerdictWarn)
+	}
+	for _, f := range d.Findings {
+		if f.Kind == kindGate && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept) {
+			t.Errorf("unexpected gate finding for warn rule: %+v", f)
+		}
+	}
+	if d.Summary.GateFindings != 0 {
+		t.Errorf("summary.gate_findings=%d, want 0 for warn rule", d.Summary.GateFindings)
+	}
+
+	// Advisory mode ON: the warn finding must appear exactly once with Kind=advisory.
+	// Two occurrences would indicate double-emission from a missing stage-8 partition.
+	dAdv := runWith(true)
+
+	var warnCount int
+	for _, f := range dAdv.Findings {
+		if f.RuleID == warnRuleID {
+			warnCount++
+			if f.Kind != kindAdvisory {
+				t.Errorf("warn finding Kind=%q, want %q", f.Kind, kindAdvisory)
+			}
+		}
+	}
+	if warnCount != 1 {
+		t.Fatalf("got %d warn findings, want exactly 1 (double-emission guard)", warnCount)
+	}
+	if dAdv.Summary.Warnings != 1 {
+		t.Errorf("summary.warnings=%d, want 1", dAdv.Summary.Warnings)
 	}
 }
