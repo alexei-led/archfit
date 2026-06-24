@@ -116,10 +116,10 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// rules stage. Off-gate: facts populate the report but never affect the verdict.
 	var syntaxFacts []diagnostic.SyntaxFact
 	var nodeRoleIndex *syntax.NodeRoleIndex
-	if in.SyntaxCfg.Enabled && in.Syntax == nil {
-		return diagnostic.New(), errors.New("engine: SyntaxCfg.Enabled=true but no Syntax provider")
-	}
-	if in.SyntaxCfg.Enabled && in.Syntax != nil {
+	if in.SyntaxCfg.Enabled {
+		if in.Syntax == nil {
+			return diagnostic.New(), errors.New("engine: SyntaxCfg.Enabled=true but no Syntax provider")
+		}
 		sf, synCov, synErr := in.Syntax.Syntax(ctx, in.Scope, in.SyntaxCfg.Languages)
 		if synErr != nil {
 			return diagnostic.New(), synErr

@@ -166,7 +166,7 @@ var goTypeAliasNameRe = regexp.MustCompile(`^type\s+(\w+)`)
 func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
 	_, ok := a.runner.Detect(ctx, "sg")
 	if !ok {
-		return nil, diagnostic.Coverage{Tool: toolName, Status: statusAbsent}, nil
+		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusAbsent}, nil
 	}
 
 	var facts []diagnostic.SyntaxFact
@@ -224,7 +224,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 	}
 
 	diagnostic.SortSyntaxFacts(facts)
-	cov := diagnostic.Coverage{Tool: toolName, Status: statusOK}
+	cov := diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusOK}
 	return facts, cov, nil
 }
 
@@ -285,12 +285,6 @@ func isExported(lang, ruleID, name string) bool {
 		return len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z'
 	}
 }
-
-// statusAbsent is the Coverage status for a missing tool.
-const statusAbsent = "absent"
-
-// statusOK is the Coverage status when the tool ran and produced output (or no matches).
-const statusOK = "ok"
 
 // Compile-time interface check.
 var _ ports.SyntaxProvider = (*Adapter)(nil)

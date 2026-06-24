@@ -592,7 +592,7 @@ func (r *publicAPIMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 		h := sha256.Sum256([]byte(r.def.ID + "\x00" + mod))
 		f := finding.Finding{
 			ID:       hex.EncodeToString(h[:16]),
-			Kind:     kindGate,
+			Kind:     kindGate, // pre-wrap default; gatedRule overrides to kindAdvisory when gate: warn
 			RuleID:   r.def.ID,
 			Status:   finding.StatusNew,
 			Severity: finding.SeverityMedium,
@@ -663,7 +663,7 @@ func (r *publicAPIChange) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 		h := sha256.Sum256([]byte(r.def.ID + "\x00" + mod + "\x00" + f.Name))
 		fnd := finding.Finding{
 			ID:       hex.EncodeToString(h[:16]),
-			Kind:     kindGate,
+			Kind:     kindGate, // pre-wrap default; gatedRule overrides to kindAdvisory when gate: warn
 			RuleID:   r.def.ID,
 			Status:   finding.StatusNew,
 			Severity: finding.SeverityLow,
