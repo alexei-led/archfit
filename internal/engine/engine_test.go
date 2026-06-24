@@ -2146,6 +2146,17 @@ func TestRun_SyntaxFacts_DisabledNoCallNoCoverage(t *testing.T) {
 	if len(synMock.SyntaxCalls()) != 0 {
 		t.Error("SyntaxProvider should not be called when disabled")
 	}
+	// NopPatternProvider contributes exactly one ast-grep absent entry.
+	// The syntax path must not add a second one when disabled.
+	var astGrepCount int
+	for _, cov := range d.ToolCoverage {
+		if cov.Tool == toolNameAstgrep {
+			astGrepCount++
+		}
+	}
+	if astGrepCount != 1 {
+		t.Errorf("want exactly 1 ast-grep coverage entry (from NopPatternProvider), got %d; ToolCoverage=%+v", astGrepCount, d.ToolCoverage)
+	}
 }
 
 // TestRun_WarnRule_ProducesVerdictWarn verifies that a rule with gate:warn
