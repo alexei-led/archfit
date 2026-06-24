@@ -153,7 +153,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Call each rule once with the full evidence set. Rules iterate edges internally;
 	// the Evidence carries all pattern matches so each rule can filter by edge's from-file.
 	var rawFindings []finding.Finding
-	allPatternMatches := rules.Evidence{PatternMatches: patternMatches, Roles: nodeRoleIndex}
+	allPatternMatches := rules.Evidence{PatternMatches: patternMatches, Roles: nodeRoleIndex, SyntaxFacts: syntaxFacts}
 	for _, r := range in.Rules {
 		rawFindings = append(rawFindings, r.Check(ex.g, allPatternMatches)...)
 	}

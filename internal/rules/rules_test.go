@@ -42,11 +42,18 @@ const (
 const (
 	typeForbiddenDependency     = "forbidden_dependency"
 	typeForbiddenRoleDependency = "forbidden_role_dependency"
+	typePublicAPIMax            = "public_api_max"
 	kindGate                    = "gate"
+	kindAdvisory                = "advisory"
 	ruleIDNoDep                 = "no-dep"
 	ruleIDRoleDep               = "no-handler-to-repo"
 	globServicesA               = "services/a/**"
 	globServicesB               = "services/b/**"
+	// publicAPIMax test file constants
+	fileDomainA  = "domain/a.go"
+	fileDomainB  = "domain/b.go"
+	moduleInfra  = "infra"
+	kindFunction = "function"
 )
 
 // ---------------------------------------------------------------------------
@@ -805,6 +812,244 @@ func TestForbiddenRoleDependency_InvalidConfig(t *testing.T) {
 	t.Run("valid config returns no error", func(t *testing.T) {
 		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
 			{ID: "x", Type: typeForbiddenRoleDependency, FromRole: syntax.RoleHandler, ToRole: syntax.RoleRepository, MinConfidence: syntax.ConfMedium},
+		}})
+		if err != nil {
+			t.Fatalf("unexpected error for valid config: %v", err)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// PublicAPIMax
+// ---------------------------------------------------------------------------
+
+// maxPtr returns a pointer to n, for use in RuleDef.Max.
+func maxPtr(n int) *int { return &n }
+
+// makePublicAPIMaxConfig constructs a Config with two modules and a
+// public_api_max rule, then returns the RuleConfig view for rules.New.
+func makePublicAPIMaxConfig(ceiling int, gate string) config.RuleConfig {
+	return config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			layerDomain: {Paths: []string{"domain/**"}},
+			moduleInfra: {Paths: []string{"infra/**"}},
+		},
+		Rules: []config.RuleDef{
+			{ID: "api-max", Type: typePublicAPIMax, Gate: gate, Max: maxPtr(ceiling)},
+		},
+	}.ForRules()
+}
+
+func TestPublicAPIMax(t *testing.T) {
+	// SyntaxFacts used across subtests: domain has 3 exported, infra has 1 exported.
+	allFacts := make([]diagnostic.SyntaxFact, 0, 5)
+	allFacts = append(allFacts,
+		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "FuncA", Exported: true},
+		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "FuncB", Exported: true},
+		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: "struct", Name: "Model", Exported: true},
+		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: "internal", Exported: false},
+		diagnostic.SyntaxFact{Language: graph.LangGo, File: "infra/repo.go", Kind: "struct", Name: "Repo", Exported: true},
+	)
+
+	emptyGraph := makeGraph(nil)
+	ev := func(facts []diagnostic.SyntaxFact) rules.Evidence {
+		return rules.Evidence{SyntaxFacts: facts}
+	}
+
+	t.Run("under_limit_no_finding", func(t *testing.T) {
+		// ceiling=5: both modules under limit → no findings.
+		rc := makePublicAPIMaxConfig(5, "")
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if findings := rs[0].Check(emptyGraph, ev(allFacts)); len(findings) != 0 {
+			t.Fatalf("want 0 findings, got %d", len(findings))
+		}
+	})
+
+	t.Run("over_limit_emits_finding_with_correct_count", func(t *testing.T) {
+		// ceiling=2: domain has 3 exported → 1 finding; infra has 1 → no finding.
+		rc := makePublicAPIMaxConfig(2, "")
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		findings := rs[0].Check(emptyGraph, ev(allFacts))
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding, got %d", len(findings))
+		}
+		f := findings[0]
+		if f.MatchedBy["module"] != layerDomain {
+			t.Errorf("matched_by.module=%q, want %q", f.MatchedBy["module"], layerDomain)
+		}
+		if f.MatchedBy["count"] != "3" {
+			t.Errorf("matched_by.count=%q, want %q", f.MatchedBy["count"], "3")
+		}
+		if f.MatchedBy["max"] != "2" {
+			t.Errorf("matched_by.max=%q, want %q", f.MatchedBy["max"], "2")
+		}
+		if f.Why == "" {
+			t.Error("Why is empty")
+		}
+		if f.Constraint == "" {
+			t.Error("Constraint is empty")
+		}
+	})
+
+	t.Run("per_module_scoping_both_over", func(t *testing.T) {
+		// ceiling=0: domain(3)>0 fires, infra(1)>0 fires → 2 findings.
+		rc := makePublicAPIMaxConfig(0, "")
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		findings := rs[0].Check(emptyGraph, ev(allFacts))
+		if len(findings) != 2 {
+			t.Fatalf("ceiling=0: want 2 findings, got %d", len(findings))
+		}
+		// Findings are emitted in sorted module-name order: domain < infra.
+		if findings[0].MatchedBy["module"] != layerDomain {
+			t.Errorf("findings[0].module=%q, want %q", findings[0].MatchedBy["module"], layerDomain)
+		}
+		if findings[1].MatchedBy["module"] != moduleInfra {
+			t.Errorf("findings[1].module=%q, want %q", findings[1].MatchedBy["module"], moduleInfra)
+		}
+	})
+
+	t.Run("only_domain_over_limit", func(t *testing.T) {
+		// ceiling=1: domain(3)>1 fires, infra(1)=1 does not.
+		rc := makePublicAPIMaxConfig(1, "")
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		findings := rs[0].Check(emptyGraph, ev(allFacts))
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding, got %d", len(findings))
+		}
+		if findings[0].MatchedBy["module"] != layerDomain {
+			t.Errorf("module=%q, want %q", findings[0].MatchedBy["module"], layerDomain)
+		}
+	})
+
+	t.Run("empty_syntax_facts_no_findings", func(t *testing.T) {
+		rc := makePublicAPIMaxConfig(0, "")
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if findings := rs[0].Check(emptyGraph, ev(nil)); len(findings) != 0 {
+			t.Fatalf("empty facts: want 0 findings, got %d", len(findings))
+		}
+	})
+
+	t.Run("unexported_decls_not_counted", func(t *testing.T) {
+		// Only unexported facts → no exported count → no findings.
+		onlyUnexported := []diagnostic.SyntaxFact{
+			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "internal", Exported: false},
+			{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: "helper", Exported: false},
+		}
+		rc := makePublicAPIMaxConfig(0, "")
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if findings := rs[0].Check(emptyGraph, ev(onlyUnexported)); len(findings) != 0 {
+			t.Fatalf("unexported only: want 0, got %d", len(findings))
+		}
+	})
+
+	t.Run("file_not_in_any_module_skipped", func(t *testing.T) {
+		// File outside declared modules → not counted.
+		outsideFacts := []diagnostic.SyntaxFact{
+			{Language: graph.LangGo, File: "cmd/main.go", Kind: kindFunction, Name: "Main", Exported: true},
+		}
+		rc := makePublicAPIMaxConfig(0, "")
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if findings := rs[0].Check(emptyGraph, ev(outsideFacts)); len(findings) != 0 {
+			t.Fatalf("outside module: want 0, got %d", len(findings))
+		}
+	})
+
+	t.Run("gate_semantics", func(t *testing.T) {
+		// domain(3) > ceiling(2) fires. Check that gate modes work.
+		overFacts := allFacts // domain=3, infra=1, ceiling=2 → 1 finding
+
+		t.Run("off_skips_finding", func(t *testing.T) {
+			rs, _ := rules.New(makePublicAPIMaxConfig(2, "off"))
+			if findings := rs[0].Check(emptyGraph, ev(overFacts)); len(findings) != 0 {
+				t.Fatalf("gate:off: want 0 findings, got %d", len(findings))
+			}
+		})
+		t.Run("warn_produces_advisory", func(t *testing.T) {
+			rs, _ := rules.New(makePublicAPIMaxConfig(2, "warn"))
+			findings := rs[0].Check(emptyGraph, ev(overFacts))
+			if len(findings) != 1 {
+				t.Fatalf("gate:warn: want 1 finding, got %d", len(findings))
+			}
+			if findings[0].Kind != kindAdvisory {
+				t.Errorf("gate:warn Kind=%q, want %q", findings[0].Kind, kindAdvisory)
+			}
+		})
+		t.Run("fail_produces_gate_finding", func(t *testing.T) {
+			rs, _ := rules.New(makePublicAPIMaxConfig(2, "fail"))
+			findings := rs[0].Check(emptyGraph, ev(overFacts))
+			if len(findings) != 1 {
+				t.Fatalf("gate:fail: want 1 finding, got %d", len(findings))
+			}
+			if findings[0].Kind != kindGate {
+				t.Errorf("gate:fail Kind=%q, want %q", findings[0].Kind, kindGate)
+			}
+		})
+		t.Run("unset_gate_produces_gate_finding", func(t *testing.T) {
+			rs, _ := rules.New(makePublicAPIMaxConfig(2, ""))
+			findings := rs[0].Check(emptyGraph, ev(overFacts))
+			if len(findings) != 1 {
+				t.Fatalf("gate unset: want 1 finding, got %d", len(findings))
+			}
+			if findings[0].Kind != kindGate {
+				t.Errorf("gate unset Kind=%q, want %q", findings[0].Kind, kindGate)
+			}
+		})
+	})
+}
+
+func TestPublicAPIMax_InvalidConfig(t *testing.T) {
+	t.Run("nil_max_returns_error", func(t *testing.T) {
+		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+			{ID: "x", Type: typePublicAPIMax},
+		}})
+		if err == nil {
+			t.Fatal("want error for nil Max, got nil")
+		}
+	})
+
+	t.Run("negative_max_returns_error", func(t *testing.T) {
+		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+			{ID: "x", Type: typePublicAPIMax, Max: maxPtr(-1)},
+		}})
+		if err == nil {
+			t.Fatal("want error for negative Max, got nil")
+		}
+	})
+
+	t.Run("zero_max_is_valid", func(t *testing.T) {
+		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+			{ID: "x", Type: typePublicAPIMax, Max: maxPtr(0)},
+		}})
+		if err != nil {
+			t.Fatalf("unexpected error for max=0: %v", err)
+		}
+	})
+
+	t.Run("valid_config_returns_no_error", func(t *testing.T) {
+		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+			{ID: "x", Type: typePublicAPIMax, Max: maxPtr(10)},
 		}})
 		if err != nil {
 			t.Fatalf("unexpected error for valid config: %v", err)

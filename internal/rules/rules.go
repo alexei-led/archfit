@@ -1,18 +1,21 @@
 // Package rules defines the Rule interface and the built-in rule
 // implementations: ForbiddenDependency, PublicAPIOnly, ForbiddenLayerDirection,
-// InternalAPIAccess, NewCrossModuleDependency, CycleRule.
+// InternalAPIAccess, NewCrossModuleDependency, CycleRule, ForbiddenRoleDependency,
+// PublicAPIMax.
 package rules
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/pattern"
@@ -24,7 +27,8 @@ import (
 // rules run, by status.Assign against the baseline.
 type Evidence struct {
 	PatternMatches []pattern.Match
-	Roles          *syntax.NodeRoleIndex // nil when syntax is off; consumed by Task-11 rules
+	Roles          *syntax.NodeRoleIndex   // nil when syntax is off; consumed by forbidden_role_dependency
+	SyntaxFacts    []diagnostic.SyntaxFact // nil/empty when syntax is off; consumed by public_api_max
 }
 
 // Rule is the interface implemented by every built-in and user-defined rule.
@@ -43,6 +47,7 @@ type Rule interface {
 //	"new_cross_module_dependency" → newCrossModuleDependency
 //	"cycle"                       → cycleRule
 //	"forbidden_role_dependency"   → forbiddenRoleDependency
+//	"public_api_max"              → publicAPIMax
 //
 // Unknown type strings are a config error.
 func New(cfg config.RuleConfig) ([]Rule, error) {
@@ -71,6 +76,11 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 				return nil, err
 			}
 			inner = &forbiddenRoleDependency{def: def}
+		case "public_api_max":
+			if err := validatePublicAPIMaxDef(def); err != nil {
+				return nil, err
+			}
+			inner = &publicAPIMax{def: def, mm: cfg.ModuleMap, max: *def.Max}
 		default:
 			return nil, fmt.Errorf("rules: unknown rule type %q (id=%q)", def.Type, def.ID)
 		}
@@ -505,4 +515,91 @@ func (r *forbiddenRoleDependency) Check(g *graph.Graph, ev Evidence) []finding.F
 func cycleFingerprintID(ruleID string, scc []string) string {
 	h := sha256.Sum256([]byte(ruleID + "\x00" + strings.Join(scc, "\x00")))
 	return hex.EncodeToString(h[:16])
+}
+
+// ---------------------------------------------------------------------------
+// PublicAPIMax
+// ---------------------------------------------------------------------------
+
+// validatePublicAPIMaxDef validates a RuleDef for the public_api_max rule type.
+func validatePublicAPIMaxDef(def config.RuleDef) error {
+	if def.Max == nil {
+		return fmt.Errorf("rules: public_api_max %q requires max to be set", def.ID)
+	}
+	if *def.Max < 0 {
+		return fmt.Errorf("rules: public_api_max %q: max must be non-negative, got %d", def.ID, *def.Max)
+	}
+	return nil
+}
+
+// publicAPIMax fires when a module's exported-declaration count exceeds the
+// configured maximum. It counts exported SyntaxFacts per module (via
+// ModuleMap file→module resolution) and emits one finding per violating module.
+// When ev.SyntaxFacts is empty (syntax off), the rule returns nil silently.
+type publicAPIMax struct {
+	def config.RuleDef
+	mm  config.ModuleMap
+	max int
+}
+
+func (r *publicAPIMax) ID() string { return r.def.ID }
+
+func (r *publicAPIMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
+	if len(ev.SyntaxFacts) == 0 {
+		return nil
+	}
+
+	// Count exported declarations per module.
+	counts := make(map[string]int)
+	for _, f := range ev.SyntaxFacts {
+		if !f.Exported {
+			continue
+		}
+		mod, ok := r.mm.ModuleFor(f.File)
+		if !ok {
+			continue // file not owned by any declared module — skip
+		}
+		counts[mod]++
+	}
+
+	if len(counts) == 0 {
+		return nil
+	}
+
+	// Emit one finding per module that exceeds the limit.
+	// Sort module names for deterministic output.
+	modules := make([]string, 0, len(counts))
+	for mod := range counts {
+		modules = append(modules, mod)
+	}
+	sort.Strings(modules)
+
+	var out []finding.Finding
+	for _, mod := range modules {
+		count := counts[mod]
+		if count <= r.max {
+			continue
+		}
+		h := sha256.Sum256([]byte(r.def.ID + "\x00" + mod))
+		f := finding.Finding{
+			ID:       hex.EncodeToString(h[:16]),
+			Kind:     "gate",
+			RuleID:   r.def.ID,
+			Status:   finding.StatusNew,
+			Severity: finding.SeverityMedium,
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Path: mod},
+				To:   finding.Endpoint{Path: mod},
+			},
+			MatchedBy: map[string]string{
+				"module": mod,
+				"count":  strconv.Itoa(count),
+				"max":    strconv.Itoa(r.max),
+			},
+			Why:        fmt.Sprintf("Module %q has %d exported declarations, exceeding the limit of %d", mod, count, r.max),
+			Constraint: "Reduce the public API surface or raise the max threshold",
+		}
+		out = append(out, f)
+	}
+	return out
 }

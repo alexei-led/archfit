@@ -150,9 +150,9 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 13: public_api_max rule
 
-- [ ] add `Max` to `RuleDef`; add `case "public_api_max"`: count exported decls per module (from `SyntaxFacts`); `> Max` → finding with the offending count
-- [ ] write tests: under/over limit, per-module scoping, gate modes
-- [ ] run tests — must pass before next task
+- [x] add `Max` to `RuleDef`; add `case "public_api_max"`: count exported decls per module (from `SyntaxFacts`); `> Max` → finding with the offending count
+- [x] write tests: under/over limit, per-module scoping, gate modes
+- [x] run tests — must pass before next task
 
 ### Task 14: public_api_change rule
 

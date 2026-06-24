@@ -58,6 +58,7 @@ type RuleDef struct {
 	FromRole      string       `yaml:"from_role"`
 	ToRole        string       `yaml:"to_role"`
 	MinConfidence string       `yaml:"min_confidence"`
+	Max           *int         `yaml:"max,omitempty"` // public_api_max: exported-declaration ceiling per module
 	Patterns      []PatternDef `yaml:"patterns,omitempty"`
 }
 
