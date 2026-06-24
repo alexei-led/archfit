@@ -62,11 +62,11 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 1: SyntaxFact model + Diagnostic block
 
-- [ ] add `SyntaxFact` to `internal/model/diagnostic/diagnostic.go` (fields per design §3, incl. Role/RoleConf/Evidence/Framework)
-- [ ] add `SyntaxFacts` slice to `Diagnostic` with omitempty json tag
-- [ ] add `SortSyntaxFacts` (File, StartLine, Kind, Name)
-- [ ] write tests for the sort (stable order, tie-breaks)
-- [ ] run tests — must pass before next task
+- [x] add `SyntaxFact` to `internal/model/diagnostic/diagnostic.go` (fields per design §3, incl. Role/RoleConf/Evidence/Framework)
+- [x] add `SyntaxFacts` slice to `Diagnostic` with omitempty json tag
+- [x] add `SortSyntaxFacts` (File, StartLine, Kind, Name)
+- [x] write tests for the sort (stable order, tie-breaks)
+- [x] run tests — must pass before next task
 
 ### Task 2: SyntaxProvider port + tools.syntax config
 

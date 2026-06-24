@@ -1,6 +1,47 @@
 package diagnostic
 
-import "github.com/alexei-led/archfit/internal/model/finding"
+import (
+	"sort"
+
+	"github.com/alexei-led/archfit/internal/model/finding"
+)
+
+// SyntaxFact holds one syntactic declaration or route registration extracted
+// by ast-grep from a source file. It is a neutral, score-free, off-gate fact
+// (like FileFact) that surfaces in scan/review output and agent_tasks evidence.
+// Fields per design §3.
+type SyntaxFact struct {
+	Language  string `json:"language"` // go|typescript|python|rust
+	File      string `json:"file"`     // repo-relative, slash
+	Kind      string `json:"kind"`     // function|method|class|struct|interface|trait|enum|type_alias|annotation|route
+	Name      string `json:"name"`
+	Exported  bool   `json:"exported,omitempty"`
+	StartLine int    `json:"start_line"`
+	EndLine   int    `json:"end_line,omitempty"`
+	Role      string `json:"role,omitempty"`            // handler|service|repository|domain (derived)
+	RoleConf  string `json:"role_confidence,omitempty"` // high|medium|low
+	Evidence  string `json:"role_evidence,omitempty"`   // e.g. "decorator @Controller", "path contains repository"
+	Framework string `json:"framework,omitempty"`       // for routes: gin|fastapi|express|axum|…
+}
+
+// SortSyntaxFacts sorts in place by (File, StartLine, Kind, Name).
+// sort.SliceStable preserves input order among facts that are equal on all
+// four keys, guaranteeing deterministic golden output.
+func SortSyntaxFacts(facts []SyntaxFact) {
+	sort.SliceStable(facts, func(i, j int) bool {
+		a, b := facts[i], facts[j]
+		if a.File != b.File {
+			return a.File < b.File
+		}
+		if a.StartLine != b.StartLine {
+			return a.StartLine < b.StartLine
+		}
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		return a.Name < b.Name
+	})
+}
 
 // Verdict is the top-level pass/fail/warn outcome of an archfit run (spec §12).
 type Verdict string
@@ -272,8 +313,13 @@ type Diagnostic struct {
 	// annotates graph edges and never affects distance, score, or verdict.
 	// Empty when no async patterns were detected.
 	RuntimeAsync []RuntimeAsyncModule `json:"runtime_async,omitempty"`
-	AgentTasks   []AgentTask          `json:"agent_tasks"`
-	ToolCoverage []Coverage           `json:"tool_coverage"`
+	// SyntaxFacts is the report-only syntactic declaration/route block extracted
+	// by ast-grep (design §3). Neutral, off-gate evidence — never consumed by
+	// verdict or gate logic. Omitted (omitempty) when tools.syntax is off or sg
+	// is absent, so absent sg never emits a null/empty block (no false green).
+	SyntaxFacts  []SyntaxFact `json:"syntax_facts,omitempty"`
+	AgentTasks   []AgentTask  `json:"agent_tasks"`
+	ToolCoverage []Coverage   `json:"tool_coverage"`
 	// CoverageGaps lists analyzers that did not run, the metrics their absence
 	// leaves unmeasured, and how to install them (warn-loud coverage reporting).
 	// Omitted when every required tool ran. Populated in cmd/, never the core ring.
