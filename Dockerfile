@@ -2,10 +2,9 @@
 ARG GO_VERSION=1.26
 ARG UV_VERSION=0.5.0
 ARG DEPCRUISER_VERSION=17
-# 0.43.0 supports --inline-rules (available since 0.33.x); validated on 0.44.0.
-# No bump needed: the embedded-rules feature the Syntax() adapter relies on is
-# present in 0.43.0. Bump only when a newer release fixes a confirmed bug.
-ARG ASTGREP_VERSION=0.43.0
+# 0.44.0 is the version --inline-rules (used by the syntax-facts adapter) was
+# validated against; matches the local toolchain. Bump only after re-validating.
+ARG ASTGREP_VERSION=0.44.0
 
 # ── uv binary stage: FROM expands the global ARG; COPY --from=<image:${VAR}>
 # does not (buildkit rejects variable expansion in --from), so alias it here. ──
