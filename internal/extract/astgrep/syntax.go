@@ -20,14 +20,26 @@ import (
 //go:embed rules/go.yml
 var goRules string
 
-// SyntaxFact Kind constants for Go declarations and routes.
+//go:embed rules/typescript.yml
+var tsRules string
+
+// SyntaxFact Kind constants for Go and TypeScript declarations and routes.
 const (
-	kindFunction  = "function"
-	kindMethod    = "method"
-	kindStruct    = "struct"
-	kindInterface = "interface"
-	kindTypeAlias = "type_alias"
-	kindRoute     = "route"
+	kindFunction   = "function"
+	kindMethod     = "method"
+	kindStruct     = "struct"
+	kindInterface  = "interface"
+	kindTypeAlias  = "type_alias"
+	kindRoute      = "route"
+	kindClass      = "class"
+	kindEnum       = "enum"
+	kindAnnotation = "annotation"
+)
+
+// Language identifier constants used as keys in embeddedRules and langRuleKinds.
+const (
+	langGo         = "go"
+	langTypeScript = "typescript"
 )
 
 // kindInfo maps a ruleId to the SyntaxFact Kind and optional Framework.
@@ -53,10 +65,34 @@ var goRuleKinds = map[string]kindInfo{
 	"go-route-gorilla":         {Kind: kindRoute, Framework: "gorilla/mux"},
 }
 
+// tsRuleKinds maps each typescript.yml ruleId to its Kind and Framework.
+// Route rules carry a non-empty Framework; declaration and decorator rules do not.
+// express/koa/fastify share the same call shape and are labelled "express" (see typescript.yml).
+var tsRuleKinds = map[string]kindInfo{
+	"ts-func":                  {Kind: kindFunction},
+	"ts-class":                 {Kind: kindClass},
+	"ts-interface":             {Kind: kindInterface},
+	"ts-enum":                  {Kind: kindEnum},
+	"ts-type-alias":            {Kind: kindTypeAlias},
+	"ts-method":                {Kind: kindMethod},
+	"ts-decorator":             {Kind: kindAnnotation},
+	"ts-route-express":         {Kind: kindRoute, Framework: "express"},
+	"ts-route-nest-controller": {Kind: kindRoute, Framework: "nest"},
+	"ts-route-nest-method":     {Kind: kindRoute, Framework: "nest"},
+}
+
+// langRuleKinds maps a language identifier to its ruleId→kindInfo table.
+// Add new language entries here when Tasks 5-6 add Python/Rust rules.
+var langRuleKinds = map[string]map[string]kindInfo{
+	langGo:         goRuleKinds,
+	langTypeScript: tsRuleKinds,
+}
+
 // embeddedRules maps language identifiers (as passed in langs) to their embedded YAML.
-// Add new entries here when Tasks 4-6 add TS/Python/Rust rules.
+// Add new entries here when Tasks 5-6 add Python/Rust rules.
 var embeddedRules = map[string]string{
-	"go": goRules,
+	langGo:         goRules,
+	langTypeScript: tsRules,
 }
 
 // sgSyntaxMatch is the JSON shape ast-grep emits for --json=compact scan output.
@@ -120,8 +156,9 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 			return nil, diagnostic.Coverage{}, fmt.Errorf("astgrep: parse syntax output for %q: %w", lang, err)
 		}
 
+		ruleKinds := langRuleKinds[lang]
 		for _, m := range raw {
-			ki, known := goRuleKinds[m.RuleID]
+			ki, known := ruleKinds[m.RuleID]
 			if !known {
 				// Unknown ruleId — skip; future rules won't break existing facts.
 				continue
@@ -132,7 +169,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 				continue
 			}
 
-			exported := isExportedGo(m.RuleID, name)
+			exported := isExported(lang, m.RuleID, name)
 
 			facts = append(facts, diagnostic.SyntaxFact{
 				Language:  lang,
@@ -171,14 +208,25 @@ func nameFromMatch(m sgSyntaxMatch) string {
 	return ""
 }
 
-// isExportedGo returns true if the fact represents an exported Go identifier.
-// For declarations, exported means the name starts with an uppercase letter.
-// For route rules, exported is always false (routes are registrations, not exports).
-func isExportedGo(ruleID, name string) bool {
-	if strings.HasPrefix(ruleID, "go-route-") {
-		return false
+// isExported returns true if the fact represents an exported identifier.
+//
+// Go: exported means the name starts with an uppercase letter; route rules are never exported.
+// TypeScript: all declaration rules require inside:export_statement so they are always
+// exported; route and annotation rules are never exported.
+func isExported(lang, ruleID, name string) bool {
+	switch lang {
+	case langTypeScript:
+		// Route and annotation ruleIds start with "ts-route-" or equal "ts-decorator".
+		if strings.HasPrefix(ruleID, "ts-route-") || ruleID == "ts-decorator" {
+			return false
+		}
+		return true // inside: export_statement guarantees export
+	default: // go and future languages: uppercase-first convention
+		if strings.HasPrefix(ruleID, "go-route-") {
+			return false
+		}
+		return len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z'
 	}
-	return len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z'
 }
 
 // statusAbsent is the Coverage status for a missing tool.

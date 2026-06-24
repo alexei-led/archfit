@@ -210,7 +210,7 @@ func TestSyntax_Go_RouteAndFramework(t *testing.T) {
 	// sorted by StartLine: /health (20+1=21) < /users (10+1=11) — wait, /users is line 10
 	// sorted: StartLine 11 (/users, gin) then 21 (/health, net/http)
 	gin := facts[0]
-	if gin.Kind != "route" {
+	if gin.Kind != kindRouteStr {
 		t.Errorf("facts[0].Kind = %q, want route", gin.Kind)
 	}
 	if gin.Framework != "gin" {
@@ -230,9 +230,10 @@ func TestSyntax_Go_RouteAndFramework(t *testing.T) {
 }
 
 func TestSyntax_UnknownLanguage_Skipped(t *testing.T) {
-	// "typescript" has no embedded rules yet — must not error, return empty facts.
+	// A language with no embedded rules must not error and return empty facts.
+	// Use "cobol" — never a supported language in archfit.
 	a := astgrep.New(presentRunner([]byte("[]")))
-	facts, cov, err := a.Syntax(context.Background(), syntaxScope, []string{"typescript"})
+	facts, cov, err := a.Syntax(context.Background(), syntaxScope, []string{"cobol"})
 	if err != nil {
 		t.Fatalf("Syntax with unknown lang must not error: %v", err)
 	}
@@ -280,5 +281,153 @@ func TestSyntax_SortedOutput(t *testing.T) {
 	}
 	if facts[2].Name != "ZFunc" {
 		t.Errorf("facts[2].Name = %q, want ZFunc", facts[2].Name)
+	}
+}
+
+// --- TypeScript adapter tests ---
+
+const fileSvcTS = "src/svc/service.ts"
+
+func TestSyntax_TS_Kinds(t *testing.T) {
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithName("ts-func", fileSvcTS, "createUser", 5, 10),
+		syntaxEntryWithName("ts-class", fileSvcTS, "UserService", 15, 40),
+		syntaxEntryWithName("ts-interface", "src/svc/types.ts", "UserRepository", 3, 8),
+		syntaxEntryWithName("ts-enum", "src/svc/types.ts", "UserRole", 10, 14),
+		syntaxEntryWithName("ts-type-alias", "src/svc/types.ts", "UserId", 16, 16),
+		syntaxEntryWithName("ts-method", fileSvcTS, "save", 20, 22),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, cov, err := a.Syntax(context.Background(), syntaxScope, []string{langTypeScriptStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if cov.Status != "ok" {
+		t.Errorf("cov.Status = %q, want ok", cov.Status)
+	}
+	if len(facts) != 6 {
+		t.Fatalf("len(facts) = %d, want 6", len(facts))
+	}
+	// All declaration facts must have Language=langTypeScriptStr and Exported=true.
+	for i, f := range facts {
+		if f.Language != langTypeScriptStr {
+			t.Errorf("facts[%d].Language = %q, want typescript", i, f.Language)
+		}
+		if !f.Exported {
+			t.Errorf("facts[%d] (%s %s) should be exported", i, f.Kind, f.Name)
+		}
+	}
+}
+
+func TestSyntax_TS_ClassAndInterface_Kinds(t *testing.T) {
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithName("ts-class", fileSvcTS, "AuthService", 1, 30),
+		syntaxEntryWithName("ts-interface", fileSvcTS, "AuthPort", 32, 36),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langTypeScriptStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if len(facts) != 2 {
+		t.Fatalf("len(facts) = %d, want 2", len(facts))
+	}
+	// Sorted: AuthService (line 1) < AuthPort (line 32) — same file, StartLine order.
+	if facts[0].Kind != "class" || facts[0].Name != "AuthService" {
+		t.Errorf("facts[0] = {%s %s}, want {class AuthService}", facts[0].Kind, facts[0].Name)
+	}
+	if facts[1].Kind != "interface" || facts[1].Name != "AuthPort" {
+		t.Errorf("facts[1] = {%s %s}, want {interface AuthPort}", facts[1].Kind, facts[1].Name)
+	}
+}
+
+func TestSyntax_TS_Decorator_NotExported(t *testing.T) {
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithName("ts-decorator", fileSvcTS, "Injectable", 1, 1),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langTypeScriptStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("len(facts) = %d, want 1", len(facts))
+	}
+	f := facts[0]
+	if f.Kind != "annotation" {
+		t.Errorf("Kind = %q, want annotation", f.Kind)
+	}
+	if f.Name != "Injectable" {
+		t.Errorf("Name = %q, want Injectable", f.Name)
+	}
+	if f.Exported {
+		t.Errorf("decorator fact should not be exported")
+	}
+	if f.Framework != "" {
+		t.Errorf("decorator fact should have no framework, got %q", f.Framework)
+	}
+}
+
+func TestSyntax_TS_Route_Express(t *testing.T) {
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithPath("ts-route-express", "src/api/router.ts", "/users", 10),
+		syntaxEntryWithPath("ts-route-express", "src/api/router.ts", "/health", 20),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langTypeScriptStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if len(facts) != 2 {
+		t.Fatalf("len(facts) = %d, want 2", len(facts))
+	}
+	for i, f := range facts {
+		if f.Kind != kindRouteStr {
+			t.Errorf("facts[%d].Kind = %q, want route", i, f.Kind)
+		}
+		if f.Framework != "express" {
+			t.Errorf("facts[%d].Framework = %q, want express", i, f.Framework)
+		}
+		if f.Exported {
+			t.Errorf("facts[%d] route should not be exported", i)
+		}
+	}
+	// Sorted by StartLine: /users(11) < /health(21)
+	if facts[0].Name != "/users" {
+		t.Errorf("facts[0].Name = %q, want /users", facts[0].Name)
+	}
+	if facts[1].Name != "/health" {
+		t.Errorf("facts[1].Name = %q, want /health", facts[1].Name)
+	}
+}
+
+func TestSyntax_TS_Route_Nest(t *testing.T) {
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithPath("ts-route-nest-controller", "src/api/user.controller.ts", "/users", 5),
+		syntaxEntryWithPath("ts-route-nest-method", "src/api/user.controller.ts", "/", 10),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langTypeScriptStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if len(facts) != 2 {
+		t.Fatalf("len(facts) = %d, want 2", len(facts))
+	}
+	for i, f := range facts {
+		if f.Kind != kindRouteStr {
+			t.Errorf("facts[%d].Kind = %q, want route", i, f.Kind)
+		}
+		if f.Framework != "nest" {
+			t.Errorf("facts[%d].Framework = %q, want nest", i, f.Framework)
+		}
+		if f.Exported {
+			t.Errorf("facts[%d] nest route should not be exported", i)
+		}
 	}
 }

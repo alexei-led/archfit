@@ -13,4 +13,8 @@ const (
 
 	// Repeated file paths used in table-driven tests.
 	fileSvcGo = "pkg/svc/svc.go"
+
+	// Repeated kind and language strings used across syntax tests.
+	kindRouteStr      = "route"
+	langTypeScriptStr = "typescript"
 )

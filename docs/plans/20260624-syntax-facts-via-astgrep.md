@@ -86,10 +86,10 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 4: Embedded TypeScript rules
 
-- [ ] add `rules/typescript.yml`: function/class/interface/enum/type_alias/method, exported via `inside: export_statement`, `decorator` capture, routes (express/koa/fastify calls; nest `@Controller`/`@Get`)
-- [ ] wire TS into `Syntax()` dispatch
-- [ ] write adapter tests (canned JSON): class/interface/exported/decorator/route
-- [ ] run tests — must pass before next task
+- [x] add `rules/typescript.yml`: function/class/interface/enum/type_alias/method, exported via `inside: export_statement`, `decorator` capture, routes (express/koa/fastify calls; nest `@Controller`/`@Get`)
+- [x] wire TS into `Syntax()` dispatch
+- [x] write adapter tests (canned JSON): class/interface/exported/decorator/route
+- [x] run tests — must pass before next task
 
 ### Task 5: Embedded Python rules
 
