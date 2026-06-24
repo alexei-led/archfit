@@ -43,17 +43,23 @@ const (
 	typeForbiddenDependency     = "forbidden_dependency"
 	typeForbiddenRoleDependency = "forbidden_role_dependency"
 	typePublicAPIMax            = "public_api_max"
+	typePublicAPIChange         = "public_api_change"
 	kindGate                    = "gate"
 	kindAdvisory                = "advisory"
 	ruleIDNoDep                 = "no-dep"
 	ruleIDRoleDep               = "no-handler-to-repo"
 	globServicesA               = "services/a/**"
 	globServicesB               = "services/b/**"
-	// publicAPIMax test file constants
+	// publicAPIMax / publicAPIChange test constants
 	fileDomainA  = "domain/a.go"
 	fileDomainB  = "domain/b.go"
 	moduleInfra  = "infra"
 	kindFunction = "function"
+	kindStruct   = "struct"
+	nameFuncA    = "FuncA"
+	nameInternal = "internal"
+	nameMain     = "Main"
+	fileCmd      = "cmd/main.go"
 )
 
 // ---------------------------------------------------------------------------
@@ -845,11 +851,11 @@ func TestPublicAPIMax(t *testing.T) {
 	// SyntaxFacts used across subtests: domain has 3 exported, infra has 1 exported.
 	allFacts := make([]diagnostic.SyntaxFact, 0, 5)
 	allFacts = append(allFacts,
-		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "FuncA", Exported: true},
+		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
 		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "FuncB", Exported: true},
-		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: "struct", Name: "Model", Exported: true},
-		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: "internal", Exported: false},
-		diagnostic.SyntaxFact{Language: graph.LangGo, File: "infra/repo.go", Kind: "struct", Name: "Repo", Exported: true},
+		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: kindStruct, Name: "Model", Exported: true},
+		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: nameInternal, Exported: false},
+		diagnostic.SyntaxFact{Language: graph.LangGo, File: "infra/repo.go", Kind: kindStruct, Name: "Repo", Exported: true},
 	)
 
 	emptyGraph := makeGraph(nil)
@@ -948,7 +954,7 @@ func TestPublicAPIMax(t *testing.T) {
 	t.Run("unexported_decls_not_counted", func(t *testing.T) {
 		// Only unexported facts → no exported count → no findings.
 		onlyUnexported := []diagnostic.SyntaxFact{
-			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "internal", Exported: false},
+			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameInternal, Exported: false},
 			{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: "helper", Exported: false},
 		}
 		rc := makePublicAPIMaxConfig(0, "")
@@ -964,7 +970,7 @@ func TestPublicAPIMax(t *testing.T) {
 	t.Run("file_not_in_any_module_skipped", func(t *testing.T) {
 		// File outside declared modules → not counted.
 		outsideFacts := []diagnostic.SyntaxFact{
-			{Language: graph.LangGo, File: "cmd/main.go", Kind: kindFunction, Name: "Main", Exported: true},
+			{Language: graph.LangGo, File: fileCmd, Kind: kindFunction, Name: nameMain, Exported: true},
 		}
 		rc := makePublicAPIMaxConfig(0, "")
 		rs, err := rules.New(rc)
@@ -1054,5 +1060,191 @@ func TestPublicAPIMax_InvalidConfig(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error for valid config: %v", err)
 		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// PublicAPIChange
+// ---------------------------------------------------------------------------
+
+// makePublicAPIChangeConfig constructs a RuleConfig with two modules and a
+// public_api_change rule with the given gate.
+func makePublicAPIChangeConfig(gate string) config.RuleConfig {
+	return config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			layerDomain: {Paths: []string{"domain/**"}},
+			moduleInfra: {Paths: []string{"infra/**"}},
+		},
+		Rules: []config.RuleDef{
+			{ID: "api-change", Type: typePublicAPIChange, Gate: gate},
+		},
+	}.ForRules()
+}
+
+func TestPublicAPIChange(t *testing.T) {
+	// Facts: domain has 2 exported + 1 unexported; infra has 1 exported; one file outside modules.
+	exportedFacts := []diagnostic.SyntaxFact{
+		{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
+		{Language: graph.LangGo, File: fileDomainB, Kind: kindStruct, Name: "Model", Exported: true},
+		{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: nameInternal, Exported: false},
+		{Language: graph.LangGo, File: "infra/repo.go", Kind: kindStruct, Name: "Repo", Exported: true},
+		{Language: graph.LangGo, File: fileCmd, Kind: kindFunction, Name: nameMain, Exported: true}, // outside any module
+	}
+
+	emptyGraph := makeGraph(nil)
+	ev := func(facts []diagnostic.SyntaxFact) rules.Evidence {
+		return rules.Evidence{SyntaxFacts: facts}
+	}
+
+	t.Run("emits_one_finding_per_exported_decl_per_module", func(t *testing.T) {
+		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		findings := rs[0].Check(emptyGraph, ev(exportedFacts))
+		// domain: FuncA + Model = 2; infra: Repo = 1; cmd/main.go outside modules = 0
+		if len(findings) != 3 {
+			t.Fatalf("want 3 findings (2 domain + 1 infra), got %d", len(findings))
+		}
+	})
+
+	t.Run("empty_syntax_facts_returns_nil", func(t *testing.T) {
+		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if findings := rs[0].Check(emptyGraph, ev(nil)); len(findings) != 0 {
+			t.Fatalf("empty facts: want 0 findings, got %d", len(findings))
+		}
+	})
+
+	t.Run("unexported_decls_not_emitted", func(t *testing.T) {
+		onlyUnexported := []diagnostic.SyntaxFact{
+			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "helper", Exported: false},
+		}
+		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if findings := rs[0].Check(emptyGraph, ev(onlyUnexported)); len(findings) != 0 {
+			t.Fatalf("unexported only: want 0, got %d", len(findings))
+		}
+	})
+
+	t.Run("file_outside_modules_skipped", func(t *testing.T) {
+		outsideFacts := []diagnostic.SyntaxFact{
+			{Language: graph.LangGo, File: fileCmd, Kind: kindFunction, Name: nameMain, Exported: true},
+		}
+		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if findings := rs[0].Check(emptyGraph, ev(outsideFacts)); len(findings) != 0 {
+			t.Fatalf("outside module: want 0, got %d", len(findings))
+		}
+	})
+
+	t.Run("duplicate_name_in_module_deduped", func(t *testing.T) {
+		// Two facts with same (module, name) → only one finding.
+		dupFacts := []diagnostic.SyntaxFact{
+			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "Start", Exported: true},
+			{Language: graph.LangGo, File: fileDomainB, Kind: "method", Name: "Start", Exported: true},
+		}
+		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		findings := rs[0].Check(emptyGraph, ev(dupFacts))
+		if len(findings) != 1 {
+			t.Fatalf("duplicate name: want 1 finding (deduped), got %d", len(findings))
+		}
+	})
+
+	t.Run("finding_matchedby_has_module_name_kind_file", func(t *testing.T) {
+		oneFact := []diagnostic.SyntaxFact{
+			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
+		}
+		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		findings := rs[0].Check(emptyGraph, ev(oneFact))
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding, got %d", len(findings))
+		}
+		f := findings[0]
+		if f.MatchedBy["module"] != layerDomain {
+			t.Errorf("MatchedBy[module]=%q, want %q", f.MatchedBy["module"], layerDomain)
+		}
+		if f.MatchedBy["name"] != "FuncA" {
+			t.Errorf("MatchedBy[name]=%q, want FuncA", f.MatchedBy["name"])
+		}
+		if f.MatchedBy["kind"] != kindFunction {
+			t.Errorf("MatchedBy[kind]=%q, want %q", f.MatchedBy["kind"], kindFunction)
+		}
+		if f.MatchedBy["file"] != fileDomainA {
+			t.Errorf("MatchedBy[file]=%q, want %q", f.MatchedBy["file"], fileDomainA)
+		}
+	})
+
+	t.Run("stable_fingerprint_across_runs", func(t *testing.T) {
+		// Same fact → same ID on repeated calls.
+		oneFact := []diagnostic.SyntaxFact{
+			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
+		}
+		rs, err := rules.New(makePublicAPIChangeConfig("fail"))
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		id1 := rs[0].Check(emptyGraph, ev(oneFact))[0].ID
+		id2 := rs[0].Check(emptyGraph, ev(oneFact))[0].ID
+		if id1 != id2 {
+			t.Errorf("fingerprint unstable: %q != %q", id1, id2)
+		}
+	})
+
+	t.Run("gate_semantics", func(t *testing.T) {
+		oneFact := []diagnostic.SyntaxFact{
+			{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
+		}
+
+		t.Run("off_skips_finding", func(t *testing.T) {
+			rs, _ := rules.New(makePublicAPIChangeConfig("off"))
+			if findings := rs[0].Check(emptyGraph, ev(oneFact)); len(findings) != 0 {
+				t.Fatalf("gate:off: want 0 findings, got %d", len(findings))
+			}
+		})
+		t.Run("warn_produces_advisory", func(t *testing.T) {
+			rs, _ := rules.New(makePublicAPIChangeConfig("warn"))
+			findings := rs[0].Check(emptyGraph, ev(oneFact))
+			if len(findings) != 1 {
+				t.Fatalf("gate:warn: want 1 finding, got %d", len(findings))
+			}
+			if findings[0].Kind != kindAdvisory {
+				t.Errorf("gate:warn Kind=%q, want %q", findings[0].Kind, kindAdvisory)
+			}
+		})
+		t.Run("fail_produces_gate_finding", func(t *testing.T) {
+			rs, _ := rules.New(makePublicAPIChangeConfig("fail"))
+			findings := rs[0].Check(emptyGraph, ev(oneFact))
+			if len(findings) != 1 {
+				t.Fatalf("gate:fail: want 1 finding, got %d", len(findings))
+			}
+			if findings[0].Kind != kindGate {
+				t.Errorf("gate:fail Kind=%q, want %q", findings[0].Kind, kindGate)
+			}
+		})
+		t.Run("unset_gate_produces_advisory", func(t *testing.T) {
+			// public_api_change defaults to warn (advisory) when gate is unset.
+			rs, _ := rules.New(makePublicAPIChangeConfig(""))
+			findings := rs[0].Check(emptyGraph, ev(oneFact))
+			if len(findings) != 1 {
+				t.Fatalf("gate unset: want 1 finding, got %d", len(findings))
+			}
+			if findings[0].Kind != kindAdvisory {
+				t.Errorf("gate unset Kind=%q, want %q (warn-by-default)", findings[0].Kind, kindAdvisory)
+			}
+		})
 	})
 }

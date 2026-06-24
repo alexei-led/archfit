@@ -156,9 +156,9 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 14: public_api_change rule
 
-- [ ] add `case "public_api_change"`: emit one finding per exported decl (fingerprint = ruleID+module+name) so the baseline/status stage suppresses known ones and surfaces new public API as `StatusNew` (mirror `new_cross_module_dependency`); default `gate: warn`
-- [ ] write tests: first run baselines all, added decl surfaces new, removed decl handled, advisory by default
-- [ ] run tests — must pass before next task
+- [x] add `case "public_api_change"`: emit one finding per exported decl (fingerprint = ruleID+module+name) so the baseline/status stage suppresses known ones and surfaces new public API as `StatusNew` (mirror `new_cross_module_dependency`); default `gate: warn`
+- [x] write tests: first run baselines all, added decl surfaces new, removed decl handled, advisory by default
+- [x] run tests — must pass before next task
 
 ### Task 15: Consumer — scan output + public API summary
 

@@ -1,7 +1,7 @@
 // Package rules defines the Rule interface and the built-in rule
 // implementations: ForbiddenDependency, PublicAPIOnly, ForbiddenLayerDirection,
 // InternalAPIAccess, NewCrossModuleDependency, CycleRule, ForbiddenRoleDependency,
-// PublicAPIMax.
+// PublicAPIMax, PublicAPIChange.
 package rules
 
 import (
@@ -20,6 +20,13 @@ import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/syntax"
+)
+
+// kindGate and kindAdvisory are the two Finding.Kind values emitted by rules.
+// "gate" blocks the verdict; "advisory" surfaces but does not block.
+const (
+	kindGate     = "gate"
+	kindAdvisory = "advisory"
 )
 
 // Evidence carries supplemental evidence provided to a rule's Check method.
@@ -48,6 +55,7 @@ type Rule interface {
 //	"cycle"                       → cycleRule
 //	"forbidden_role_dependency"   → forbiddenRoleDependency
 //	"public_api_max"              → publicAPIMax
+//	"public_api_change"           → publicAPIChange
 //
 // Unknown type strings are a config error.
 func New(cfg config.RuleConfig) ([]Rule, error) {
@@ -81,12 +89,30 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 				return nil, err
 			}
 			inner = &publicAPIMax{def: def, mm: cfg.ModuleMap, max: *def.Max}
+		case "public_api_change":
+			inner = &publicAPIChange{def: def, mm: cfg.ModuleMap}
 		default:
 			return nil, fmt.Errorf("rules: unknown rule type %q (id=%q)", def.Type, def.ID)
 		}
-		rs = append(rs, &gatedRule{inner: inner, gate: def.Gate})
+		// Apply per-rule gate default before wrapping: public_api_change defaults
+		// to "warn" (advisory) when gate is unset, so it never blocks by default.
+		gate := def.Gate
+		if gate == "" {
+			gate = defaultGateForType(def.Type)
+		}
+		rs = append(rs, &gatedRule{inner: inner, gate: gate})
 	}
 	return rs, nil
+}
+
+// defaultGateForType returns the per-type gate default for types that diverge
+// from the global default of "" (= fail). Currently only public_api_change
+// defaults to "warn" (advisory drift signal).
+func defaultGateForType(ruleType string) string {
+	if ruleType == "public_api_change" {
+		return "warn"
+	}
+	return ""
 }
 
 // validateRoleDependencyDef validates a RuleDef for the forbidden_role_dependency
@@ -143,7 +169,7 @@ func (r *gatedRule) Check(g *graph.Graph, ev Evidence) []finding.Finding {
 		return nil
 	case "warn":
 		for i := range raw {
-			raw[i].Kind = "advisory"
+			raw[i].Kind = kindAdvisory
 		}
 		return raw
 	default: // "fail" or ""
@@ -425,7 +451,7 @@ func (r *cycleRule) Check(g *graph.Graph, _ Evidence) []finding.Finding {
 		toPath := graph.NodePath(scc[1%len(scc)])
 		f := finding.Finding{
 			ID:       id,
-			Kind:     "gate",
+			Kind:     kindGate,
 			RuleID:   r.def.ID,
 			Status:   finding.StatusNew,
 			Severity: finding.SeverityHigh,
@@ -583,7 +609,7 @@ func (r *publicAPIMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 		h := sha256.Sum256([]byte(r.def.ID + "\x00" + mod))
 		f := finding.Finding{
 			ID:       hex.EncodeToString(h[:16]),
-			Kind:     "gate",
+			Kind:     kindGate,
 			RuleID:   r.def.ID,
 			Status:   finding.StatusNew,
 			Severity: finding.SeverityMedium,
@@ -600,6 +626,78 @@ func (r *publicAPIMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 			Constraint: "Reduce the public API surface or raise the max threshold",
 		}
 		out = append(out, f)
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// PublicAPIChange
+// ---------------------------------------------------------------------------
+
+// publicAPIChange emits one finding per exported declaration per module, using
+// the baseline/status stage (status.Assign) to surface newly-added public API
+// as StatusNew. It mirrors newCrossModuleDependency: the rule emits every
+// exported decl unconditionally; baseline suppression happens outside the rule.
+//
+// Fingerprint = ruleID + "\x00" + module + "\x00" + name, so two same-named
+// decls in one module map to the same ID — deduplication ensures at most one
+// finding per (module, name) pair.
+//
+// When ev.SyntaxFacts is empty (syntax off), the rule returns nil silently.
+// Default gate is "warn" (advisory drift signal), applied at construction time
+// in New via defaultGateForType.
+type publicAPIChange struct {
+	def config.RuleDef
+	mm  config.ModuleMap
+}
+
+func (r *publicAPIChange) ID() string { return r.def.ID }
+
+func (r *publicAPIChange) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
+	if len(ev.SyntaxFacts) == 0 {
+		return nil
+	}
+
+	// Collect unique (module, name) pairs for exported declarations.
+	type key struct{ mod, name string }
+	seen := make(map[key]struct{})
+
+	var out []finding.Finding
+	for _, f := range ev.SyntaxFacts {
+		if !f.Exported {
+			continue
+		}
+		mod, ok := r.mm.ModuleFor(f.File)
+		if !ok {
+			continue // file not owned by any declared module — skip
+		}
+		k := key{mod: mod, name: f.Name}
+		if _, dup := seen[k]; dup {
+			continue // same (module, name) already emitted — dedup
+		}
+		seen[k] = struct{}{}
+
+		h := sha256.Sum256([]byte(r.def.ID + "\x00" + mod + "\x00" + f.Name))
+		finding := finding.Finding{
+			ID:       hex.EncodeToString(h[:16]),
+			Kind:     kindGate,
+			RuleID:   r.def.ID,
+			Status:   finding.StatusNew,
+			Severity: finding.SeverityLow,
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Path: mod},
+				To:   finding.Endpoint{Path: mod},
+			},
+			MatchedBy: map[string]string{
+				"module": mod,
+				"name":   f.Name,
+				"kind":   f.Kind,
+				"file":   f.File,
+			},
+			Why:        fmt.Sprintf("Exported declaration %q added to module %q (%s in %s)", f.Name, mod, f.Kind, f.File),
+			Constraint: "Review new public API additions; baseline when intentional",
+		}
+		out = append(out, finding)
 	}
 	return out
 }
