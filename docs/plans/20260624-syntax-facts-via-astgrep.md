@@ -143,10 +143,10 @@ Research basis: `docs/research/tree-sitter-for-archfit.md`.
 
 ### Task 12: forbidden_role_dependency rule
 
-- [ ] add `FromRole`, `ToRole`, `MinConfidence` to `RuleDef`; add `Evidence.SyntaxFacts` + pass `NodeRoleIndex` into the rule
-- [ ] add `case "forbidden_role_dependency"` to `rules.New`: edge A→B where `RolesFor(A)` has from_role and `RolesFor(B)` has to_role; default fire on `high` confidence only (relax via `MinConfidence`)
-- [ ] write tests: violation fires (high conf), suppressed below threshold, gate off/warn/fail honored, per-language endpoint resolution
-- [ ] run tests — must pass before next task
+- [x] add `FromRole`, `ToRole`, `MinConfidence` to `RuleDef`; add `Evidence.SyntaxFacts` + pass `NodeRoleIndex` into the rule (SyntaxFacts deferred to Task 13 consumer; NodeRoleIndex already on Evidence.Roles)
+- [x] add `case "forbidden_role_dependency"` to `rules.New`: edge A→B where `RolesFor(A)` has from_role and `RolesFor(B)` has to_role; default fire on `high` confidence only (relax via `MinConfidence`)
+- [x] write tests: violation fires (high conf), suppressed below threshold, gate off/warn/fail honored, per-language endpoint resolution
+- [x] run tests — must pass before next task
 
 ### Task 13: public_api_max rule
 
