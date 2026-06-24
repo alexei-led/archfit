@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -121,32 +122,14 @@ func validateRoleDependencyDef(def config.RuleDef) error {
 	if def.FromRole == "" || def.ToRole == "" {
 		return fmt.Errorf("rules: forbidden_role_dependency %q requires both from_role and to_role", def.ID)
 	}
-	knownRole := func(r string) bool {
-		for _, k := range syntax.KnownRoles {
-			if k == r {
-				return true
-			}
-		}
-		return false
-	}
-	if !knownRole(def.FromRole) {
+	if !slices.Contains(syntax.KnownRoles, def.FromRole) {
 		return fmt.Errorf("rules: forbidden_role_dependency %q: unknown from_role %q (known: %s)", def.ID, def.FromRole, strings.Join(syntax.KnownRoles, ", "))
 	}
-	if !knownRole(def.ToRole) {
+	if !slices.Contains(syntax.KnownRoles, def.ToRole) {
 		return fmt.Errorf("rules: forbidden_role_dependency %q: unknown to_role %q (known: %s)", def.ID, def.ToRole, strings.Join(syntax.KnownRoles, ", "))
 	}
-	if def.MinConfidence != "" {
-		knownConf := func(c string) bool {
-			for _, k := range syntax.KnownConfidences {
-				if k == c {
-					return true
-				}
-			}
-			return false
-		}
-		if !knownConf(def.MinConfidence) {
-			return fmt.Errorf("rules: forbidden_role_dependency %q: unknown min_confidence %q (known: %s)", def.ID, def.MinConfidence, strings.Join(syntax.KnownConfidences, ", "))
-		}
+	if def.MinConfidence != "" && !slices.Contains(syntax.KnownConfidences, def.MinConfidence) {
+		return fmt.Errorf("rules: forbidden_role_dependency %q: unknown min_confidence %q (known: %s)", def.ID, def.MinConfidence, strings.Join(syntax.KnownConfidences, ", "))
 	}
 	return nil
 }
@@ -676,9 +659,9 @@ func (r *publicAPIChange) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 			continue // same (module, name) already emitted — dedup
 		}
 		seen[k] = struct{}{}
-
+		// Ceiling: two TS exports with identical names across different files collapse to one finding.
 		h := sha256.Sum256([]byte(r.def.ID + "\x00" + mod + "\x00" + f.Name))
-		finding := finding.Finding{
+		fnd := finding.Finding{
 			ID:       hex.EncodeToString(h[:16]),
 			Kind:     kindGate,
 			RuleID:   r.def.ID,
@@ -697,7 +680,7 @@ func (r *publicAPIChange) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 			Why:        fmt.Sprintf("Exported declaration %q added to module %q (%s in %s)", f.Name, mod, f.Kind, f.File),
 			Constraint: "Review new public API additions; baseline when intentional",
 		}
-		out = append(out, finding)
+		out = append(out, fnd)
 	}
 	return out
 }

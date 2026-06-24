@@ -189,7 +189,7 @@ tools:
 - Each fact records: `language`, `file`, `kind` (function/method/class/struct/
   interface/trait/enum/type_alias/annotation/route), `name`, `exported`, `role`
   (handler/service/repository/domain), `role_confidence` (high/medium/low),
-  `evidence`, `framework`, `start_line`, `end_line`.
+  `role_evidence`, `framework`, `start_line`, `end_line`.
 - Role derivation (`internal/syntax`) runs heuristics on name patterns,
   annotations, and framework evidence.
 - The `scan` output gains a **Syntax surface** section listing declaration counts,
@@ -379,7 +379,7 @@ Rule fields:
   set to `medium` to relax). Applies to `forbidden_role_dependency`.
 - `max` — integer ceiling for `public_api_max`.
 - `gate` — controls how the rule blocks the run:
-  - `fail` (or absent) — finding blocks CI; exit 1.
+  - `fail` (or absent) — finding blocks CI; exit 1. **Exception:** `public_api_change` defaults to `warn` when `gate` is absent (see below).
   - `warn` — finding is advisory; surfaced but exit 0.
   - `off` — rule is skipped entirely; no findings emitted.
 - `patterns` — optional ast-grep patterns for structural evidence.
@@ -406,6 +406,8 @@ Built-in rule types:
   suppresses known ones so only newly-added surface shows as `StatusNew`.
   Defaults to `gate: warn` (advisory drift signal). Requires
   `tools.syntax.enabled: on`.
+
+**Note:** When `tools.syntax.enabled` is not `on`, the rule types `forbidden_role_dependency`, `public_api_max`, and `public_api_change` emit zero findings silently — they are not errors.
 
 **`gate:` is now wired for all rule types.** Previously `gate:` was stored but
 not applied — that latent bug is fixed. Every rule respects `off`/`warn`/`fail`

@@ -44,7 +44,7 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   structurally — `arch_test.go` forbids any `internal/*` package from importing
   `internal/llm`, so the LLM commands live in `cmd`.
 - `gate:` is wired for **all rule types** (`off` skips, `warn` is advisory/non-blocking,
-  `fail`/unset is blocking). An unknown `type` value is a config error.
+  `fail`/unset is blocking; exception: `public_api_change` defaults to `warn` when unset). An unknown `type` value is a config error.
 
 ## Coupling scorer — key design facts
 

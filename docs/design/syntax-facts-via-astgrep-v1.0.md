@@ -301,3 +301,4 @@ Minor implementation details that differ from the design text above:
 - **`public_api_max` in self-config** — set to `max: 1500` (advisory `gate: warn`)
   to stay green while archfit's own catch-all `internal` module resolves ~1271
   declarations. Tighten per module once the module map is split.
+- **`public_api_change` warn-by-default** — `defaultGateForType("public_api_change")` returns `"warn"` at construction time in `rules.New`. When `gate:` is absent in the rule definition, `public_api_change` gets `warn` (advisory) instead of the global default `""` (= `fail`). This is deliberate: the rule surfaces newly-added public API as a drift signal, not a hard gate.

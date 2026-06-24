@@ -122,6 +122,10 @@ reports `n/a` with the enable step instead of pretending everything is fine.
 - **Honest coverage** — missing tools degrade to `n/a`, not a false green; gaps
   are reported in every output format.
 - **Baselines** so accepted current debt does not hide new findings.
+- **Syntax facts** (`tools.syntax.enabled: on`) — declaration counts, public API
+  totals, and architectural roles (handler/service/repository/domain) for Go,
+  TypeScript, Python, and Rust. Powers three new rule types:
+  `forbidden_role_dependency`, `public_api_max`, and `public_api_change`.
 - **Off-gate LLM narration** (`review`, `enrich`, `autopilot`) that may only
   narrate and prioritize collected evidence — never invent gate violations.
 

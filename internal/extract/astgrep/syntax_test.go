@@ -35,7 +35,6 @@ func syntaxEntryWithName(ruleID, file, name string, startLine, endLine int) map[
 		"single": map[string]any{
 			"NAME": map[string]any{"text": name},
 		},
-		"multi": map[string]any{},
 	}
 	return e
 }
@@ -47,7 +46,6 @@ func syntaxEntryWithPath(ruleID, file, path string, startLine int) map[string]an
 		"single": map[string]any{
 			"PATH": map[string]any{"text": `"` + path + `"`},
 		},
-		"multi": map[string]any{},
 	}
 	return e
 }

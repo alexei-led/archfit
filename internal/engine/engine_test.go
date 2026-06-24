@@ -2029,9 +2029,16 @@ func TestRun_SyntaxFacts_Populated(t *testing.T) {
 	if len(d.SyntaxFacts) == 0 {
 		t.Fatal("SyntaxFacts should be populated when syntax is enabled")
 	}
-	// DeriveRoles assigns Role for function_declaration via name-suffix heuristic (HandleFoo → handler).
-	if d.SyntaxFacts[0].Role == "" {
-		t.Error("SyntaxFacts[0].Role should be set by DeriveRoles")
+	// DeriveRoles assigns Role for function_declaration via name-suffix heuristic (FooHandler → handler).
+	var foundRole bool
+	for _, sf := range d.SyntaxFacts {
+		if sf.Role != "" {
+			foundRole = true
+			break
+		}
+	}
+	if !foundRole {
+		t.Error("DeriveRoles: no SyntaxFact has a Role set")
 	}
 	// Coverage must include the syntax coverage entry.
 	var foundSynCov bool
@@ -2050,6 +2057,39 @@ func TestRun_SyntaxFacts_Populated(t *testing.T) {
 	}
 	if len(synMock.SyntaxCalls()) == 0 {
 		t.Error("SyntaxProvider.Syntax was never called")
+	}
+}
+
+func TestRun_SyntaxEnabled_NilProvider_ReturnsError(t *testing.T) {
+	ctx := context.Background()
+	facts := cleanFacts()
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return facts, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
+
+	_, err := engine.Run(ctx, engine.RunInput{
+		Mode:       engine.Mode{Head: headRef},
+		Scope:      scope.Scope{Root: "."},
+		Classify:   classifyCfg,
+		Extractors: []ports.Extractor{ex},
+		Patterns:   ports.NopPatternProvider{},
+		Resolver:   ports.NopSymbolResolver{},
+		Syntax:     nil, // deliberately nil
+		SyntaxCfg:  config.SyntaxConfig{Enabled: true, Languages: []string{"go"}},
+		Rules:      rs,
+		Metrics:    ms,
+		Accepted:   base,
+		Now:        now,
+	})
+	if err == nil {
+		t.Fatal("want error when Enabled=true and Syntax=nil, got nil")
 	}
 }
 

@@ -252,10 +252,7 @@ func isForbiddenForCore(imp string) bool {
 // A package is stdlib if its first path segment contains no dot
 // (e.g. "fmt", "encoding/json" — not "github.com/..." or "golang.org/...").
 func isStdlib(imp string) bool {
-	first := imp
-	if i := strings.IndexByte(imp, '/'); i >= 0 {
-		first = imp[:i]
-	}
+	first, _, _ := strings.Cut(imp, "/")
 	return !strings.Contains(first, ".")
 }
 

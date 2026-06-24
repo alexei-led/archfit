@@ -159,15 +159,17 @@ func roleFromName(name string) (role, evidence string) {
 // heuristics. Path is lowercased before comparison.
 func roleFromPath(file string) (role, evidence string) {
 	lower := strings.ToLower(file)
-	switch {
-	case containsAny(lower, "handler", "controller", "routes"):
-		return RoleHandler, "path contains " + matchedSegment(lower, "handler", "controller", "routes")
-	case containsAny(lower, "repository", "repo", "storage", "persistence"):
-		return RoleRepository, "path contains " + matchedSegment(lower, "repository", "repo", "storage", "persistence")
-	case containsAny(lower, "service", "usecase", "application"):
-		return RoleService, "path contains " + matchedSegment(lower, "service", "usecase", "application")
-	case containsAny(lower, "domain", "model", "entity"):
-		return RoleDomain, "path contains " + matchedSegment(lower, "domain", "model", "entity")
+	if seg, ok := firstMatch(lower, "handler", "controller", "routes"); ok {
+		return RoleHandler, "path contains " + seg
+	}
+	if seg, ok := firstMatch(lower, "repository", "repo", "storage", "persistence"); ok {
+		return RoleRepository, "path contains " + seg
+	}
+	if seg, ok := firstMatch(lower, "service", "usecase", "application"); ok {
+		return RoleService, "path contains " + seg
+	}
+	if seg, ok := firstMatch(lower, "domain", "model", "entity"); ok {
+		return RoleDomain, "path contains " + seg
 	}
 	return "", ""
 }
@@ -180,22 +182,13 @@ func set(f diagnostic.SyntaxFact, role, conf, evidence string) diagnostic.Syntax
 	return f
 }
 
-// containsAny reports whether s contains any of the given substrings.
-func containsAny(s string, subs ...string) bool {
+// firstMatch returns the first sub in subs that s contains, and true.
+// Returns "", false if none match.
+func firstMatch(s string, subs ...string) (string, bool) {
 	for _, sub := range subs {
 		if strings.Contains(s, sub) {
-			return true
+			return sub, true
 		}
 	}
-	return false
-}
-
-// matchedSegment returns the first sub in subs that s contains.
-func matchedSegment(s string, subs ...string) string {
-	for _, sub := range subs {
-		if strings.Contains(s, sub) {
-			return sub
-		}
-	}
-	return ""
+	return "", false
 }

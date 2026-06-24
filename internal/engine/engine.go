@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/classify"
@@ -115,6 +116,9 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// rules stage. Off-gate: facts populate the report but never affect the verdict.
 	var syntaxFacts []diagnostic.SyntaxFact
 	var nodeRoleIndex *syntax.NodeRoleIndex
+	if in.SyntaxCfg.Enabled && in.Syntax == nil {
+		return diagnostic.New(), errors.New("engine: SyntaxCfg.Enabled=true but no Syntax provider")
+	}
 	if in.SyntaxCfg.Enabled && in.Syntax != nil {
 		sf, synCov, synErr := in.Syntax.Syntax(ctx, in.Scope, in.SyntaxCfg.Languages)
 		if synErr != nil {
@@ -122,7 +126,6 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		}
 		syntaxFacts = syntax.DeriveRoles(sf)
 		nodeRoleIndex = syntax.BuildNodeRoleIndex(ex.g, syntaxFacts)
-		diagnostic.SortSyntaxFacts(syntaxFacts)
 		ex.coverages = append(ex.coverages, synCov)
 	}
 

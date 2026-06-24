@@ -112,6 +112,8 @@ func resolveFileToNodes(f diagnostic.SyntaxFact, nodeSet map[string]struct{}, cr
 		// The import path (after stripping the module prefix) equals the directory
 		// in a standard Go module layout. goFileToModuleKey returns that directory.
 		// We attach roles to the package node because rules operate on package edges.
+		// Ceiling: files with no directory component (e.g. "main.go") resolve to key ""
+		// which matches no graph node — root-package roles are silently skipped.
 		pkgPath := graph.BuiltinConventions.Lookup(graph.LangGo).FileToModuleKey(file)
 		if pkgPath == "" {
 			return nil

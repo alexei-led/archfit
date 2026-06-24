@@ -6,6 +6,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/syntax"
@@ -514,6 +515,20 @@ func roleDef(minConf, gate string) config.RuleDef {
 	}
 }
 
+// assertRoleFinding checks that a finding has the expected from_role, to_role, and non-empty Why.
+func assertRoleFinding(t *testing.T, f finding.Finding, wantFrom, wantTo string) {
+	t.Helper()
+	if f.MatchedBy["from_role"] != wantFrom {
+		t.Errorf("matched_by.from_role=%q, want %q", f.MatchedBy["from_role"], wantFrom)
+	}
+	if f.MatchedBy["to_role"] != wantTo {
+		t.Errorf("matched_by.to_role=%q, want %q", f.MatchedBy["to_role"], wantTo)
+	}
+	if f.Why == "" {
+		t.Error("Why is empty")
+	}
+}
+
 func TestForbiddenRoleDependency(t *testing.T) {
 	const (
 		ruleID    = "no-handler-to-repo"
@@ -692,6 +707,7 @@ func TestForbiddenRoleDependency(t *testing.T) {
 			if len(findings) != 1 {
 				t.Fatalf("Go: want 1 finding, got %d", len(findings))
 			}
+			assertRoleFinding(t, findings[0], syntax.RoleHandler, syntax.RoleRepository)
 		})
 
 		t.Run("Python module nodes", func(t *testing.T) {

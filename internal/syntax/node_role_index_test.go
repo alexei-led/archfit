@@ -99,6 +99,10 @@ func TestBuildNodeRoleIndex_TypeScript(t *testing.T) {
 	})
 }
 
+// NOTE: Fixture assumes standard Go module layout where the directory component
+// of a file path equals the stripped import path (e.g. "internal/handler/x.go" → "internal/handler").
+// BuildNodeRoleIndex uses graph.BuiltinConventions.FileToModuleKey(dir) for Go resolution.
+
 // TestBuildNodeRoleIndex_Go: Go files aggregate to package node.
 func TestBuildNodeRoleIndex_Go(t *testing.T) {
 	// Go package node path = stripped import path = directory in standard layout.
@@ -158,6 +162,20 @@ func TestBuildNodeRoleIndex_Go(t *testing.T) {
 	t.Run("non-matching package has no hits", func(t *testing.T) {
 		if hits := idx.RolesFor("package:internal/repository"); hits != nil {
 			t.Errorf("expected nil for unmatched package, got %v", hits)
+		}
+	})
+
+	t.Run("root-package file (no directory) returns nil — accepted ceiling", func(t *testing.T) {
+		// goFileToModuleKey("main.go") returns "" (no directory component).
+		// The real Go extractor emits `package:.` for root-package files,
+		// but BuildNodeRoleIndex finds no node keyed "" and returns nil.
+		// This is an accepted ceiling: root-package files with roles are rare.
+		fact := diagnostic.SyntaxFact{Language: graph.LangGo, File: "main.go", Role: RoleHandler, RoleConf: ConfHigh}
+		idx := syntax.BuildNodeRoleIndex(g, []diagnostic.SyntaxFact{fact})
+		// No spurious hits — resolveFileToNodes returns nil for key "".
+		hits := idx.RolesFor("package:")
+		if len(hits) != 0 {
+			t.Errorf("root-package file: want 0 hits, got %d", len(hits))
 		}
 	})
 }
