@@ -1445,9 +1445,10 @@ func TestRun_PinnedLabels(t *testing.T) {
 // langPyTest / kindLazy are factored out so the dynamic-import test stays under
 // goconst's repeated-literal threshold.
 const (
-	langPyTest = "python"
-	kindLazy   = "lazy_import"
-	pathPyA    = "pkg/a/x.py"
+	langPyTest   = "python"
+	kindLazy     = "lazy_import"
+	kindFuncDecl = "function_declaration"
+	pathPyA      = "pkg/a/x.py"
 
 	// Runtime async test constants.
 	kindMQ        = "message_queue"
@@ -1992,7 +1993,7 @@ func TestRun_SyntaxFacts_Populated(t *testing.T) {
 		NameFunc: func() string { return toolNameAstgrep },
 		SyntaxFunc: func(_ context.Context, _ scope.Scope, _ []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
 			return []diagnostic.SyntaxFact{
-				{File: pathFileA, Language: "go", Kind: "function_declaration", Name: "FooHandler", StartLine: 10},
+				{File: pathFileA, Language: "go", Kind: kindFuncDecl, Name: "FooHandler", StartLine: 10},
 			}, diagnostic.Coverage{Tool: toolNameAstgrep, Status: "ok", FilesSeen: 1, FilesApplicable: 1}, nil
 		},
 	}
@@ -2057,6 +2058,81 @@ func TestRun_SyntaxFacts_Populated(t *testing.T) {
 	}
 	if len(synMock.SyntaxCalls()) == 0 {
 		t.Error("SyntaxProvider.Syntax was never called")
+	}
+}
+
+// TestRun_SyntaxFacts_ModuleBackfill asserts that after syntax facts are produced
+// the engine populates SyntaxFact.Module from the ModuleMap for files that match
+// a declared module, and leaves Module empty for files outside declared modules.
+// Uses index-based range to avoid the range-copy trap.
+func TestRun_SyntaxFacts_ModuleBackfill(t *testing.T) {
+	ctx := context.Background()
+	facts := cleanFacts()
+
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return facts, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	// pathFileA = "pkg/a/a.go" is in module "a" per cannedConfig.
+	// outsideFile is not covered by any module glob.
+	const outsideFile = "scripts/gen.go"
+	synMock := &ports.SyntaxProviderMock{
+		NameFunc: func() string { return toolNameAstgrep },
+		SyntaxFunc: func(_ context.Context, _ scope.Scope, _ []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
+			return []diagnostic.SyntaxFact{
+				{File: pathFileA, Language: "go", Kind: kindFuncDecl, Name: "Handler", StartLine: 1},
+				{File: outsideFile, Language: "go", Kind: kindFuncDecl, Name: "Gen", StartLine: 1},
+			}, diagnostic.Coverage{Tool: toolNameAstgrep, Status: "ok"}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		Syntax:      synMock,
+		SyntaxCfg:   config.SyntaxConfig{Enabled: true, Languages: []string{"go"}},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Signals:     signal.RunSignals{},
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(d.SyntaxFacts) != 2 {
+		t.Fatalf("SyntaxFacts len = %d; want 2", len(d.SyntaxFacts))
+	}
+
+	// Find facts by file — order may vary after DeriveRoles+Sort.
+	modByFile := make(map[string]string, len(d.SyntaxFacts))
+	for _, sf := range d.SyntaxFacts {
+		modByFile[sf.File] = sf.Module
+	}
+
+	if got := modByFile[pathFileA]; got != "a" {
+		t.Errorf("SyntaxFact[%s].Module = %q; want %q (in-module backfill)", pathFileA, got, "a")
+	}
+	if got := modByFile[outsideFile]; got != "" {
+		t.Errorf("SyntaxFact[%s].Module = %q; want empty (outside declared modules)", outsideFile, got)
 	}
 }
 

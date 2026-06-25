@@ -11,9 +11,10 @@ import (
 // (like FileFact) that surfaces in scan/review output and agent_tasks evidence.
 // Fields per design §3.
 type SyntaxFact struct {
-	Language  string `json:"language"` // go|typescript|python|rust
-	File      string `json:"file"`     // repo-relative, slash
-	Kind      string `json:"kind"`     // function|method|class|struct|interface|trait|enum|type_alias|annotation|route
+	Language  string `json:"language"`         // go|typescript|python|rust
+	File      string `json:"file"`             // repo-relative, slash
+	Module    string `json:"module,omitempty"` // module-map key this file belongs to; empty when outside declared modules
+	Kind      string `json:"kind"`             // function|method|class|struct|interface|trait|enum|type_alias|annotation|route
 	Name      string `json:"name"`
 	Exported  bool   `json:"exported,omitempty"`
 	StartLine int    `json:"start_line"`

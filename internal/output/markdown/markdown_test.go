@@ -1206,3 +1206,56 @@ func TestRenderer_Render_SyntaxSurface_RouteFramework(t *testing.T) {
 		t.Errorf("missing framework annotation [gin]\nfull output:\n%s", out)
 	}
 }
+
+// TestRenderer_Render_SyntaxSurface_PerModuleCounts verifies that per-module
+// declaration counts are emitted when Module fields are populated, that files
+// outside declared modules are bucketed as "(unscoped)", and that the Public API
+// file header includes the module name when Module is set.
+func TestRenderer_Render_SyntaxSurface_PerModuleCounts(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.SyntaxFacts = []diagnostic.SyntaxFact{
+		// module "api" — two facts, one exported
+		{Language: "go", File: "pkg/api/handler.go", Module: "api", Kind: kindFunction, Name: "Handle", Exported: true, StartLine: 10},
+		{Language: "go", File: "pkg/api/handler.go", Module: "api", Kind: kindFunction, Name: "internal", Exported: false, StartLine: 20},
+		// module "svc" — one fact, exported
+		{Language: "go", File: "pkg/svc/service.go", Module: "svc", Kind: "struct", Name: "Service", Exported: true, StartLine: 5},
+		// outside declared modules — one fact
+		{Language: "go", File: "scripts/gen.go", Module: "", Kind: kindFunction, Name: "Generate", Exported: false, StartLine: 1},
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	// Per-module section header.
+	if !strings.Contains(out, "Per module:") {
+		t.Fatalf("missing per-module section\nfull output:\n%s", out)
+	}
+
+	// module "api" has 2 declarations.
+	if !strings.Contains(out, "- api: 2") {
+		t.Errorf("missing module api count\nfull output:\n%s", out)
+	}
+
+	// module "svc" has 1 declaration.
+	if !strings.Contains(out, "- svc: 1") {
+		t.Errorf("missing module svc count\nfull output:\n%s", out)
+	}
+
+	// Outside-module file buckets as "(unscoped)".
+	if !strings.Contains(out, "- (unscoped): 1") {
+		t.Errorf("missing (unscoped) count\nfull output:\n%s", out)
+	}
+
+	// Public API file header includes module name in brackets.
+	if !strings.Contains(out, "[api]") {
+		t.Errorf("Public API file header must include [api] module annotation\nfull output:\n%s", out)
+	}
+	if !strings.Contains(out, "[svc]") {
+		t.Errorf("Public API file header must include [svc] module annotation\nfull output:\n%s", out)
+	}
+}

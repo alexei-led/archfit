@@ -452,6 +452,28 @@ func writeSyntaxSurface(b *strings.Builder, facts []diagnostic.SyntaxFact) {
 	}
 	fmt.Fprintf(b, "- exported (public API): %d\n", exportedCount)
 
+	// Per-module declaration counts — deterministic order: sort module keys.
+	// Facts with an empty Module (outside declared modules) are bucketed as "(unscoped)".
+	moduleCounts := make(map[string]int)
+	for _, f := range facts {
+		mod := f.Module
+		if mod == "" {
+			mod = "(unscoped)"
+		}
+		moduleCounts[mod]++
+	}
+	if len(moduleCounts) > 0 {
+		b.WriteString("\nPer module:\n\n")
+		mods := make([]string, 0, len(moduleCounts))
+		for m := range moduleCounts {
+			mods = append(mods, m)
+		}
+		sort.Strings(mods)
+		for _, m := range mods {
+			fmt.Fprintf(b, "- %s: %d\n", m, moduleCounts[m])
+		}
+	}
+
 	// Public API list (exported declarations), grouped by file, capped.
 	var exported []diagnostic.SyntaxFact
 	for _, f := range facts {
@@ -471,7 +493,11 @@ func writeSyntaxSurface(b *strings.Builder, facts []diagnostic.SyntaxFact) {
 			}
 			if f.File != curFile {
 				curFile = f.File
-				fmt.Fprintf(b, "\n`%s`:\n", f.File)
+				if f.Module != "" {
+					fmt.Fprintf(b, "\n`%s` [%s]:\n", f.File, f.Module)
+				} else {
+					fmt.Fprintf(b, "\n`%s`:\n", f.File)
+				}
 			}
 			line := fmt.Sprintf("- `%s` (%s)", f.Name, f.Kind)
 			if f.Role != "" {

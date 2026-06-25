@@ -512,3 +512,56 @@ func TestDiagnostic_SchemaVersionInJSON(t *testing.T) {
 		t.Errorf("schema_version = %q; want \"archfit.diagnostic.v1\"", sv)
 	}
 }
+
+// TestSyntaxFact_ModuleIncludedInJSON verifies that Module appears in JSON when set
+// and is omitted (omitempty) when empty, matching the field contract.
+func TestSyntaxFact_ModuleIncludedInJSON(t *testing.T) {
+	// With module set: must appear as "module" key.
+	sf := diagnostic.SyntaxFact{
+		Language:  "go",
+		File:      "pkg/svc/svc.go",
+		Module:    "svc",
+		Kind:      kindFunction,
+		Name:      "Handle",
+		StartLine: 1,
+	}
+	data, err := json.Marshal(sf)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	raw, ok := m["module"]
+	if !ok {
+		t.Fatal("module field must appear when Module is set")
+	}
+	var got string
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal module: %v", err)
+	}
+	if got != "svc" {
+		t.Errorf("module = %q; want %q", got, "svc")
+	}
+
+	// With module empty: must be omitted.
+	sfNoModule := diagnostic.SyntaxFact{
+		Language:  "go",
+		File:      "standalone.go",
+		Kind:      kindFunction,
+		Name:      "Main",
+		StartLine: 1,
+	}
+	data2, err := json.Marshal(sfNoModule)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var m2 map[string]json.RawMessage
+	if err := json.Unmarshal(data2, &m2); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if _, ok := m2["module"]; ok {
+		t.Error("module field must be omitted when Module is empty")
+	}
+}

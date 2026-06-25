@@ -125,6 +125,12 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 			return diagnostic.New(), synErr
 		}
 		syntaxFacts = syntax.DeriveRoles(sf)
+		// Backfill Module from ModuleMap — uniform across all languages,
+		// no per-language branching. Files outside declared modules get an
+		// empty Module (legitimate: a script in the repo root, for example).
+		for i := range syntaxFacts {
+			syntaxFacts[i].Module, _ = in.Classify.ModuleMap.ModuleFor(syntaxFacts[i].File)
+		}
 		nodeRoleIndex = syntax.BuildNodeRoleIndex(ex.g, syntaxFacts)
 		ex.coverages = append(ex.coverages, synCov)
 	}
