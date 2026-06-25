@@ -1750,4 +1750,78 @@ func TestPublicAPITypeLeak(t *testing.T) {
 			t.Fatalf("want 0 findings when extPkgs empty, got %d: %+v", len(findings), findings)
 		}
 	})
+
+	t.Run("first_party_basename_collision_fires", func(t *testing.T) {
+		// A graph with both an external "github.com/urfave/cli/v2" node AND a
+		// first-party undotted "cli" package share a basename. The collision guard was
+		// removed because it caused false negatives: real external leaks were suppressed
+		// whenever any first-party package shared a basename with an external one. This
+		// is the regression test: the external leak MUST fire even when a same-basename
+		// first-party package exists. A false positive (flagging a first-party reference)
+		// is acceptable for this report-only/default-warn candidate surfacer.
+		g := makeTypeLeakGraph([]string{externalCliPkg, "cli"})
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding: external leak fires even when basename collides with first-party package, got %d: %+v", len(findings), findings)
+		}
+	})
+
+	t.Run("external_type_leak_fires_edge_target_graph", func(t *testing.T) {
+		// Build a graph shaped like the Go extractor: external package as edge target only,
+		// no NodeKindPackage node for it. This is how Go graphs actually look.
+		fileNode := graph.Node{Kind: graph.NodeKindFile, Path: fileDomain}
+		extPkgID := graph.Node{Kind: graph.NodeKindPackage, Path: externalCliPkg}.ID()
+		edge := graph.Edge{
+			From:       fileNode.ID(),
+			To:         extPkgID,
+			Kind:       graph.EdgeKindImports,
+			Language:   "go",
+			Confidence: "high",
+		}
+		g := graph.Build([]graph.Facts{{Nodes: []graph.Node{fileNode}, Edges: []graph.Edge{edge}, Language: "go"}})
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding on edge-target graph, got %d: %+v", len(findings), findings)
+		}
+	})
+
+	t.Run("edge_target_first_party_collision_fires", func(t *testing.T) {
+		// Edge-target external path whose basename collides with a first-party undotted
+		// package node. The collision guard was removed — see first_party_basename_collision_fires
+		// for rationale. External leak MUST fire; the first-party node does not suppress it.
+		fileNode := graph.Node{Kind: graph.NodeKindFile, Path: fileDomain}
+		firstPartyNode := graph.Node{Kind: graph.NodeKindPackage, Path: "cli"} // undotted first-party
+		extPkgID := graph.Node{Kind: graph.NodeKindPackage, Path: externalCliPkg}.ID()
+		edge := graph.Edge{
+			From:       fileNode.ID(),
+			To:         extPkgID,
+			Kind:       graph.EdgeKindImports,
+			Language:   "go",
+			Confidence: "high",
+		}
+		g := graph.Build([]graph.Facts{{
+			Nodes:    []graph.Node{fileNode, firstPartyNode},
+			Edges:    []graph.Edge{edge},
+			Language: "go",
+		}})
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding: external leak fires even when edge-target basename collides with first-party package, got %d: %+v", len(findings), findings)
+		}
+	})
 }

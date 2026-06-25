@@ -19,7 +19,12 @@ import (
 // coverage-tool run and stays LLM/human territory.
 //
 // Report-only — Band: BandInformational, never gates.
-// n/a when no test_fn syntax facts are present (tooling absent or no tests found).
+// Distinction:
+//   - SyntaxFacts nil/empty (syntax layer did not run): n/a.
+//   - SyntaxFacts present but zero test_fn (syntax ran; repo has no tests): Value=0, BandInformational.
+//
+// This matters for absence-signal coverage probes: Value=0 / non-n/a band is the
+// "no tests found" signal; n/a means "tooling absent / not analysed".
 type TestDensityMetric struct{}
 
 // Name returns "test_density".
@@ -34,9 +39,17 @@ type testModule struct {
 }
 
 // Calculate counts test_fn facts per module and returns the total count with a
-// human-readable summary of the top modules. n/a when no test_fn facts exist.
+// human-readable summary of the top modules.
+// n/a only when SyntaxFacts is nil or empty (syntax layer did not run).
+// Value=0 / BandInformational when syntax ran but found no test_fn (no tests in repo).
 func (m TestDensityMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 	const def = "test functions per module (Go: func TestXxx, Rust: fn test_xxx, Python: def test_xxx) — proxy for test coverage, report-only"
+
+	// n/a only when the syntax layer produced no facts at all — tooling absent or unsupported.
+	if len(in.SyntaxFacts) == 0 {
+		return result.NACount(m.Name(), m.Version(), def)
+	}
+
 	modCounts := make(map[string]int)
 	total := 0
 	for _, f := range in.SyntaxFacts {
@@ -51,7 +64,17 @@ func (m TestDensityMetric) Calculate(in signal.CommonInput) diagnostic.MetricRes
 		total++
 	}
 	if total == 0 {
-		return result.NACount(m.Name(), m.Version(), def)
+		// Syntax ran and found other facts, but zero test functions — absence IS the signal.
+		return diagnostic.MetricResult{
+			Name:       m.Name(),
+			Value:      0,
+			Display:    testDisplay(nil, 0),
+			Band:       result.BandInformational,
+			Confidence: result.ConfidenceLow,
+			Version:    m.Version(),
+			Mode:       result.ModeCount,
+			Definition: def,
+		}
 	}
 
 	mods := make([]testModule, 0, len(modCounts))

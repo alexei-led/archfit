@@ -12,10 +12,16 @@ import (
 )
 
 // FileMutualImportMetric detects file-level mutual imports: pairs of source files
-// that import each other directly (A imports B and B imports A). This is a
+// that import each other directly (A imports B AND B imports A). This is a
 // file-granularity signal that the module-level cycle metric misses when both files
 // sit inside the same module — module-level SCC detection cannot see intra-module
 // file cycles.
+//
+// Detection uses actual bidirectional edges: for each file→file dependency edge A→B
+// (EdgeKindImports, EdgeKindDependsOn, EdgeKindUsesInternal — mirrors g.Cycles()),
+// the metric checks whether B→A also exists. Only genuinely bidirectional pairs
+// {A,B} are counted. A 3-node cycle A→B→C→A has zero bidirectional pairs because
+// no two nodes have edges in both directions.
 //
 // Scope: languages that emit file→file import edges (TypeScript). Go emits
 // file→package edges and Python emits module→module edges — neither produces
@@ -35,13 +41,14 @@ type mutualFilePair struct {
 	a, b string // node paths (not IDs), sorted a < b for dedup
 }
 
-// Calculate finds file→file mutual-import cycles using g.Cycles() (Tarjan SCC).
-// It keeps only SCCs where every node has NodeKindFile. Each such SCC of size ≥ 2
-// is decomposed into all mutual-import pairs within it (the SCC may be larger than 2
-// when three or more files form a cycle together). The returned count is the number
-// of distinct mutual-import pairs found. n/a when the graph is nil or has no file nodes.
+// Calculate finds file→file mutual-import pairs by checking for genuinely
+// bidirectional edges: for each dependency edge A→B where both A and B are file-kind
+// nodes (EdgeKindImports, EdgeKindDependsOn, EdgeKindUsesInternal), it checks whether
+// B→A also exists. Each unordered {A,B} pair is counted once. A pure cycle
+// A→B→C→A has zero bidirectional pairs — only actual A↔B double-edges qualify.
+// n/a when the graph is nil or has no file nodes.
 func (m FileMutualImportMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
-	const def = "file-level mutual imports: pairs of source files that import each other (file→file cycles; TypeScript only — Go/Python have no file→file edges)"
+	const def = "file-level mutual imports: pairs of source files that import each other (file→file bidirectional edges; TypeScript only — Go/Python have no file→file edges)"
 
 	g := in.Graph
 	if g == nil {
@@ -59,25 +66,41 @@ func (m FileMutualImportMetric) Calculate(in signal.CommonInput) diagnostic.Metr
 		return result.NACount(m.Name(), m.Version(), def)
 	}
 
-	// g.Cycles() returns SCCs of size > 1 across all dependency edges.
-	// We filter for SCCs where every member is a file node.
-	sccs := g.Cycles()
-	pairs := make(map[[2]string]struct{})
-	for _, scc := range sccs {
-		if !allFileNodes(scc, fileNodes) {
+	// Build a set of all file→file dependency edges for O(1) reverse-edge lookup.
+	// Mirror the same edge-kind set used by g.Cycles() so TS uses_internal edges
+	// (and any future depends_on file→file edges) are not missed.
+	fileEdges := make(map[[2]string]struct{})
+	for _, e := range g.Edges() {
+		switch e.Kind {
+		case graph.EdgeKindImports, graph.EdgeKindDependsOn, graph.EdgeKindUsesInternal:
+		default:
 			continue
 		}
-		// Decompose the SCC into all ordered pairs — every node in the SCC is
-		// mutually reachable from every other, so each unordered pair is a mutual import.
-		for i := 0; i < len(scc); i++ {
-			for j := i + 1; j < len(scc); j++ {
-				a, b := graph.NodePath(scc[i]), graph.NodePath(scc[j])
-				if a > b {
-					a, b = b, a
-				}
-				pairs[[2]string{a, b}] = struct{}{}
-			}
+		if _, ok := fileNodes[e.From]; !ok {
+			continue
 		}
+		if _, ok := fileNodes[e.To]; !ok {
+			continue
+		}
+		fileEdges[[2]string{e.From, e.To}] = struct{}{}
+	}
+
+	// For each A→B file edge, check B→A; record each unordered {pathA, pathB} once.
+	pairs := make(map[[2]string]struct{})
+	for e := range fileEdges {
+		from, to := e[0], e[1]
+		if from == to {
+			continue // skip self-loops
+		}
+		if _, rev := fileEdges[[2]string{to, from}]; !rev {
+			continue
+		}
+		// Canonical key: sorted so A↔B and B↔A produce the same entry.
+		pathFrom, pathTo := graph.NodePath(from), graph.NodePath(to)
+		if pathFrom > pathTo {
+			pathFrom, pathTo = pathTo, pathFrom
+		}
+		pairs[[2]string{pathFrom, pathTo}] = struct{}{}
 	}
 
 	if len(pairs) == 0 {
@@ -119,16 +142,6 @@ func (m FileMutualImportMetric) Calculate(in signal.CommonInput) diagnostic.Metr
 		Mode:       result.ModeCount,
 		Definition: def,
 	}
-}
-
-// allFileNodes reports whether every node ID in scc is in the fileNodes set.
-func allFileNodes(scc []string, fileNodes map[string]struct{}) bool {
-	for _, id := range scc {
-		if _, ok := fileNodes[id]; !ok {
-			return false
-		}
-	}
-	return true
 }
 
 func fileMutualImportDisplay(pairs []mutualFilePair) string {

@@ -42,15 +42,18 @@ check_toolchain() {
 		fi
 	elif [[ -f "${repo_dir}/package.json" ]]; then
 		# TypeScript repos: dependency-cruiser is required.
-		if ! command -v depcruise &>/dev/null && ! npx depcruise --version &>/dev/null 2>&1; then
+		if ! command -v depcruise &>/dev/null && ! npx --no-install depcruise --version &>/dev/null 2>&1; then
 			echo "SKIP: dependency-cruiser (depcruise) not found — required for TS repo '${repo}'"
 			return 1
 		fi
-	elif find "${repo_dir}" -maxdepth 2 -name "*.py" -quit 2>/dev/null | grep -q .; then
-		# Python repos: grimp is required.
+	elif [[ -n "$(find "${repo_dir}" -maxdepth 2 -name "*.py" -print -quit 2>/dev/null)" ]]; then
+		# Python repos: grimp is required. Accept either a direct install or uv (archfit
+		# runs `uv run --with grimp` when uv is available, so uv-only repos are valid).
 		if ! python3 -c "import grimp" &>/dev/null 2>&1; then
-			echo "SKIP: grimp not installed — required for Python repo '${repo}'"
-			return 1
+			if ! command -v uv &>/dev/null; then
+				echo "SKIP: grimp not installed and uv not found — one is required for Python repo '${repo}'"
+				return 1
+			fi
 		fi
 	fi
 
@@ -82,6 +85,8 @@ for repo in "${REPOS[@]}"; do
 	if [[ ! -d "${repo_dir}" ]]; then
 		echo "SKIP: ${repo_dir} does not exist"
 		echo ""
+		# Remove stale output so a prior run's full.json is never silently reused.
+		rm -rf "${out_dir}"
 		SKIPPED=$((SKIPPED + 1))
 		continue
 	fi
@@ -90,15 +95,17 @@ for repo in "${REPOS[@]}"; do
 	if [[ ! -f "${config_file}" ]]; then
 		echo "SKIP: .archfit.yaml missing at ${config_file}"
 		echo ""
+		rm -rf "${out_dir}"
 		SKIPPED=$((SKIPPED + 1))
 		continue
 	fi
 
-	# Check toolchain.
-	skip_reason=$(check_toolchain "${repo}" 2>&1)
-	if [[ -n "${skip_reason}" ]]; then
+	# Check toolchain — capture non-zero exit without tripping set -e.
+	skip_reason=""
+	if ! skip_reason=$(check_toolchain "${repo}" 2>&1); then
 		echo "${skip_reason}"
 		echo ""
+		rm -rf "${out_dir}"
 		SKIPPED=$((SKIPPED + 1))
 		continue
 	fi
@@ -107,18 +114,27 @@ for repo in "${REPOS[@]}"; do
 	mkdir -p "${out_dir}"
 
 	# Run full check — JSON (coverage generator reads this).
+	# Exit-code contract (stable): 0 = clean, 1 = gate violations, 3 = config/tool error.
+	# Only 0 and 1 produce valid JSON output. Exit 3 (crash) leaves empty/invalid JSON;
+	# remove it so the coverage generator does not silently process stale or empty output.
 	echo "  full check (json)..."
-	if "${ARCHFIT}" check \
+	full_json_exit=0
+	"${ARCHFIT}" check \
 		--config "${config_file}" \
 		--root "${repo_dir}" \
 		--full \
 		--format json \
 		>"${out_dir}/full.json" \
-		2>"${out_dir}/full.stderr"; then
+		2>"${out_dir}/full.stderr" ||
+		full_json_exit=$?
+	if [[ "${full_json_exit}" -eq 0 ]]; then
 		echo "  full json: OK → ${out_dir}/full.json"
+	elif [[ "${full_json_exit}" -eq 1 ]]; then
+		echo "  full json: exit 1 (gate violations) — output still written → ${out_dir}/full.json"
 	else
-		exit_code=$?
-		echo "  full json: archfit exited ${exit_code} (gate violations expected — output still written)"
+		echo "  full json: UNEXPECTED exit ${full_json_exit} (config/tool error) — removing output to prevent stale JSON"
+		rm -f "${out_dir}/full.json"
+		cat "${out_dir}/full.stderr" >&2
 	fi
 
 	# Run full check — Markdown (human-readable report).

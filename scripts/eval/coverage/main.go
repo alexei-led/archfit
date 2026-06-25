@@ -54,8 +54,12 @@ const (
 
 // Finding ID constants that appear in both main and test files.
 const (
-	findingID61 = "6.1"
+	findingID61  = "6.1"
+	findingID132 = "13.2"
 )
+
+// bandNA is the sentinel band value emitted when a metric is not applicable.
+const bandNA = "n/a"
 
 // Finding is one row in the frozen 20-row inventory table.
 type Finding struct {
@@ -71,6 +75,12 @@ type Finding struct {
 	ProbeMetric string
 	// ProbeKind is the syntax_fact kind that will be present after the detector ships.
 	ProbeKind string
+	// SurfaceWhenZero inverts the probe polarity for absence-signal findings.
+	// Default (false): surfaced when metric value > 0 (detector found something).
+	// True: surfaced when metric is present, band != "n/a", AND value == 0 (detector
+	// ran and found NOTHING — the absence IS the finding, e.g. zero test density).
+	// Tool-absent (metric missing or band == "n/a") is never surfaced for either polarity.
+	SurfaceWhenZero bool
 }
 
 // inventory is the frozen 20-row ground truth from architect-only-inventory.md.
@@ -222,12 +232,14 @@ var inventory = []Finding{
 		ProbeKind:   probeKindTestFn,
 	},
 	{
-		ID:          "13.2",
-		Title:       "No unit tests (herdr)",
-		Repo:        repoHerdr,
-		Category:    "Test Coverage Blind Spot",
-		ProbeMetric: probeMetricTestDensity,
-		ProbeKind:   probeKindTestFn,
+		ID:              findingID132,
+		Title:           "No unit tests (herdr)",
+		Repo:            repoHerdr,
+		Category:        "Test Coverage Blind Spot",
+		ProbeMetric:     probeMetricTestDensity,
+		SurfaceWhenZero: true,
+		// No ProbeKind: test_fn would surface when tests ARE found, inverting the signal.
+		// Absence is signalled by test_density == 0 (detector ran, found nothing).
 	},
 }
 
@@ -239,7 +251,9 @@ type fullJSON struct {
 }
 
 type metricEntry struct {
-	Name string `json:"name"`
+	Name  string  `json:"name"`
+	Band  string  `json:"band"`
+	Value float64 `json:"value"`
 }
 
 type findingEntry struct {
@@ -253,8 +267,14 @@ type syntaxFact struct {
 
 // repoData holds all parsed JSON for a single repo.
 type repoData struct {
-	metricNames map[string]bool
-	factKinds   map[string]bool
+	// metricPosSignal: metric name → true when present, band != "n/a", value > 0.
+	// Used by default (positive-polarity) probes.
+	metricPosSignal map[string]bool
+	// metricZeroSignal: metric name → true when present, band != "n/a", value == 0.
+	// Used by absence-signal (SurfaceWhenZero) probes where zero IS the finding.
+	// Distinct from tool-absent: a metric missing from the JSON is in neither map.
+	metricZeroSignal map[string]bool
+	factKinds        map[string]bool
 }
 
 func parseFullJSON(path string) (*repoData, error) {
@@ -275,11 +295,20 @@ func parseFullJSON(path string) (*repoData, error) {
 	}
 
 	rd := &repoData{
-		metricNames: make(map[string]bool),
-		factKinds:   make(map[string]bool),
+		metricPosSignal:  make(map[string]bool),
+		metricZeroSignal: make(map[string]bool),
+		factKinds:        make(map[string]bool),
 	}
 	for _, m := range doc.Metrics {
-		rd.metricNames[m.Name] = true
+		if m.Band == "" || m.Band == bandNA {
+			continue // tool absent or no signal — not surfaced for either polarity
+		}
+		if m.Value > 0 {
+			rd.metricPosSignal[m.Name] = true
+		} else {
+			// value == 0: detector ran, found nothing — absence-signal probes check this.
+			rd.metricZeroSignal[m.Name] = true
+		}
 	}
 	for _, sf := range doc.SyntaxFacts {
 		rd.factKinds[sf.Kind] = true
@@ -301,9 +330,20 @@ func ClassifyFinding(f Finding, rd *repoData) string {
 		return statusNotSurfaced
 	}
 
-	// Check for the expected future signal.
-	if f.ProbeMetric != "" && rd.metricNames[f.ProbeMetric] {
-		return statusSurfaced
+	// Check for the expected future signal. Polarity is per-probe:
+	//   default (SurfaceWhenZero=false): metric present, band != "n/a", value > 0
+	//   absence-signal (SurfaceWhenZero=true): metric present, band != "n/a", value == 0
+	// Tool-absent (metric not in JSON or band == "n/a") is never surfaced.
+	if f.ProbeMetric != "" {
+		if f.SurfaceWhenZero {
+			if rd.metricZeroSignal[f.ProbeMetric] {
+				return statusSurfaced
+			}
+		} else {
+			if rd.metricPosSignal[f.ProbeMetric] {
+				return statusSurfaced
+			}
+		}
 	}
 	if f.ProbeKind != "" && rd.factKinds[f.ProbeKind] {
 		return statusSurfaced

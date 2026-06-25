@@ -25,14 +25,23 @@ func TestTestDensity_NoFacts_ReturnsNA(t *testing.T) {
 	}
 }
 
-func TestTestDensity_OnlyOtherKinds_ReturnsNA(t *testing.T) {
+// TestTestDensity_OnlyOtherKinds_ReturnsZero: syntax ran (facts present) but no
+// test_fn → Value=0, BandInformational. The absence of tests IS the signal.
+// This is the case that makes the coverage 13.2 absence-signal probe fire.
+func TestTestDensity_OnlyOtherKinds_ReturnsZero(t *testing.T) {
 	in := signal.CommonInput{SyntaxFacts: []diagnostic.SyntaxFact{
 		{Kind: kindFunctionSF, Module: modMyMod, File: fileARs, Language: langRust},
 		{Kind: kindStructStr, Module: modMyMod, File: fileARs, Language: langRust},
 	}}
 	res := modularity.TestDensityMetric{}.Calculate(in)
-	if res.Band != bandNAStr {
-		t.Errorf("Band = %q, want n/a when no test_fn facts among other facts", res.Band)
+	if res.Band == bandNAStr {
+		t.Errorf("Band = n/a, want informational — syntax ran, absence of test_fn is the signal, not n/a")
+	}
+	if res.Band != bandInfo {
+		t.Errorf("Band = %q, want %q (syntax ran, zero tests = absence signal)", res.Band, bandInfo)
+	}
+	if res.Value != 0 {
+		t.Errorf("Value = %v, want 0", res.Value)
 	}
 }
 

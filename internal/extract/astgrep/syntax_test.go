@@ -1122,6 +1122,36 @@ func TestSyntax_Py_LazyImport_Empty(t *testing.T) {
 	}
 }
 
+// TestSyntax_Rust_PanicOp_ExportedFalse verifies that panic-op facts (rs-unwrap,
+// rs-expect, rs-panic) are never marked Exported=true. They are call-site
+// occurrences, not exported declarations, and must not contribute to public API
+// surface analysis.
+func TestSyntax_Rust_PanicOp_ExportedFalse(t *testing.T) {
+	// panic_op rules have no NAME metavar — the name is derived from the ruleId.
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntry("rs-unwrap", "src/lib.rs", "unwrap", 5, 5),
+		syntaxEntry("rs-expect", "src/lib.rs", "expect", 10, 10),
+		syntaxEntry("rs-panic", "src/lib.rs", "panic", 15, 15),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langRustStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if len(facts) == 0 {
+		t.Fatal("expected at least 1 panic_op fact, got none")
+	}
+	for _, f := range facts {
+		if f.Kind != kindPanicOpStr {
+			continue
+		}
+		if f.Exported {
+			t.Errorf("panic_op fact %q (file %s) must have Exported=false, got true", f.Name, f.File)
+		}
+	}
+}
+
 func TestSyntax_Py_LazyImport_TopLevelNotMatched(t *testing.T) {
 	// Note: this test exercises adapter fact-mapping using a mock runner.
 	// It does NOT test the YAML `inside:` guard — the integration test

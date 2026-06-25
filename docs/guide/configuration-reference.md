@@ -451,9 +451,22 @@ Built-in rule types:
   than `max` (Go and Rust; requires `tools.syntax.enabled: on`). Surfaces
   god-struct candidates. `max` is required. Defaults to `gate: warn`.
 - `public_api_type_leak` — fires when an exported struct field or function return
-  type names a type from an external (non-first-party) package (Go and TypeScript;
+  type names a type from an external (non-first-party) package (Go only;
   requires `tools.syntax.enabled: on`). Flags API surface that couples callers to
-  a transitive dependency. Defaults to `gate: warn`.
+  a transitive dependency. Defaults to `gate: warn`. TypeScript and Rust type-leak
+  patterns require different grammar rules — extend in a future task.
+
+  **Struct field ceiling:** covers direct (`pkg.Type`) and pointer (`*pkg.Type`)
+  field types. Does not match slice (`[]pkg.Type`), map, generic (`pkg.Type[T]`), or
+  embedded (`pkg.Type` without a name) forms — these are structurally complex in the
+  Go tree-sitter grammar and represent a smaller share of real cases. The LLM/human
+  path covers the residue.
+
+  **Function return ceiling:** covers single-return, pointer-return, and the common
+  multi-result tuple (`(pkg.Type, error)`, `(*pkg.Type, error)`). Does not match
+  slice/map/generic returns inside a multi-result tuple. This is an accepted
+  ast-grep structural precision ceiling for a candidate-surfacer (bias toward false
+  positives, never false negatives).
 
 **Note:** When `tools.syntax.enabled` is not `on`, the rule types `forbidden_role_dependency`, `public_api_max`, `public_api_change`, `struct_field_max`, and `public_api_type_leak` emit zero findings silently — they are not errors.
 

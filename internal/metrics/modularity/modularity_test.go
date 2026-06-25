@@ -28,6 +28,7 @@ const (
 	// TypeScript file paths reused across martin and file_mutual_import tests.
 	tsFileA = "src/a.ts"
 	tsFileB = "src/b.ts"
+	tsFileC = "src/c.ts"
 )
 
 // crateHerdr is the single-crate fixture name reused across the Rust Cal-4 cases.

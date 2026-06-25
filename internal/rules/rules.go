@@ -893,23 +893,31 @@ var versionSegmentRe = regexp.MustCompile(`^v\d+$`)
 
 // externalPackageSegments builds a set of last meaningful path segments for
 // every NodeKindPackage node whose path looks like a fully-qualified import
-// path (contains a "."). Versioned suffixes (/v2, /v3, …) are skipped so that
+// path (contains a "."), every NodeKindExternal node, and the targets of
+// EdgeKindImports/EdgeKindUsesInternal edges. The edge-target scan is required
+// because the Go extractor emits external packages only as edge targets — never
+// as nodes — so without it the set is always empty on real Go graphs.
+// Versioned suffixes (/v2, /v3, …) are skipped so that
 // "github.com/urfave/cli/v2" maps to "cli", not "v2".
 //
-// Ceiling: first-party check uses graph's NodeKindPackage with dotted paths
-// (Go-style). Rust/TS external nodes use NodeKindExternal; extend if adding
-// those languages.
+// Precision ceiling: the type_leak fact carries only the package selector basename
+// (e.g. "cli"), not a full import path. A repo with both "github.com/urfave/cli/v2"
+// (external) AND a first-party package "cli" cannot be precisely disambiguated here
+// without per-file resolution. The prior first-party-collision guard removed the
+// external segment globally, which caused false negatives — missing real leaks when
+// any first-party package shared a basename with an external one. This is the worst
+// error for a candidate surfacer (report-only, default gate: warn). The guard is
+// removed: a false positive (flagging a first-party-type reference as a leak) is
+// acceptable; a false negative (silently missing a real external leak) is not.
 func externalPackageSegments(g *graph.Graph) map[string]struct{} {
+	// addExternal extracts and registers the last non-version segment of a dotted
+	// import path. No first-party-collision guard — bias to surface, not suppress.
 	set := make(map[string]struct{})
-	for _, n := range g.Nodes() {
-		if n.Kind != graph.NodeKindPackage {
-			continue
+	addExternal := func(importPath string) {
+		if !strings.Contains(importPath, ".") {
+			return // not a fully-qualified import path
 		}
-		if !strings.Contains(n.Path, ".") {
-			continue // not a fully-qualified import path (no dot → first-party or stdlib)
-		}
-		// Find the last segment that is not a version tag.
-		segs := strings.Split(n.Path, "/")
+		segs := strings.Split(importPath, "/")
 		for i := len(segs) - 1; i >= 0; i-- {
 			if !versionSegmentRe.MatchString(segs[i]) {
 				set[path.Base(segs[i])] = struct{}{}
@@ -917,6 +925,38 @@ func externalPackageSegments(g *graph.Graph) map[string]struct{} {
 			}
 		}
 	}
+
+	// Scan NodeKindPackage nodes (any extractor that emits package nodes).
+	for _, n := range g.Nodes() {
+		if n.Kind == graph.NodeKindPackage {
+			addExternal(n.Path)
+		}
+	}
+
+	// Scan NodeKindExternal nodes (Rust/TS extractors).
+	for _, n := range g.Nodes() {
+		if n.Kind == graph.NodeKindExternal {
+			addExternal(n.Path)
+		}
+	}
+
+	// Scan edge targets: Go emits external packages only as edge targets, never
+	// as nodes. Parse the kind:path ID to recover the import path.
+	for _, e := range g.Edges() {
+		if e.Kind != graph.EdgeKindImports && e.Kind != graph.EdgeKindUsesInternal {
+			continue
+		}
+		before, importPath, ok := strings.Cut(e.To, ":")
+		if !ok {
+			continue
+		}
+		nodeKind := graph.NodeKind(before)
+		if nodeKind != graph.NodeKindPackage && nodeKind != graph.NodeKindExternal {
+			continue
+		}
+		addExternal(importPath)
+	}
+
 	return set
 }
 

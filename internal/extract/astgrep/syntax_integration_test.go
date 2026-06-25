@@ -232,6 +232,28 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 					t.Errorf("Syntax(%q): expected ≥1 fact of Kind=%q but got 0 — rule for this kind matches nothing in the fixture", tc.lang, wantKind)
 				}
 			}
+			// Go-specific: verify go-func-type-leak fires on multi-result returns.
+			// GetContext() (somepkg.Context, error) is the idiomatic form the old rule missed.
+			// The adapter names type_leak facts after the leaked type ($PKG.$TYPE), not the
+			// function name — so we look for Name="somepkg.Context" from a func return context.
+			// This is a discriminating assertion: kindTypeLeakStr in requiredKinds is already
+			// satisfied by the struct fixtures; we separately count type_leak facts to prove
+			// the multi-result func adds at least one more (NewClient + GetContext + GetPointerContext
+			// + struct fields = at least 4 total; struct-only would be 2).
+			if tc.lang == "go" {
+				typeLeakCount := 0
+				for _, f := range facts {
+					if f.Kind == kindTypeLeakStr {
+						typeLeakCount++
+					}
+				}
+				// fixture_type_leak.go has: 2 struct fields + NewClient (single) + GetContext
+				// (multi-result) + GetPointerContext (multi-result pointer) = 5 type_leak facts.
+				// The old rule (no parameter_list branch) would yield only 3 (2 struct + NewClient).
+				if typeLeakCount < 5 {
+					t.Errorf("Syntax(go): expected ≥5 type_leak facts (struct fields + single return + multi-result returns), got %d — go-func-type-leak may not cover (pkg.Type, error) idiom", typeLeakCount)
+				}
+			}
 			// Rust-specific: verify rs-transmute fired (Name="transmute" unsafe_op fact).
 			if tc.lang == "rust" {
 				foundTransmute := false

@@ -58,6 +58,12 @@ const (
 	langRust       = "rust"
 )
 
+// Rule ID constants for rules referenced more than once in this file.
+const (
+	ruleGoTypeLeak     = "go-type-leak"
+	ruleGoFuncTypeLeak = "go-func-type-leak"
+)
+
 // kindInfo maps a ruleId to the SyntaxFact Kind and optional Framework.
 // IsSignal=true marks import-signal rules: they are never emitted as SyntaxFacts;
 // instead they populate the per-file framework-confirmed map used by the two-pass
@@ -133,9 +139,10 @@ var goRuleKinds = map[string]kindInfo{
 	"go-struct-field": {Kind: kindStructField},
 	// Panic-operation rules: report-only, never gates.
 	"go-panic": {Kind: kindPanicOp},
-	// Type-leak rules: exported struct fields with qualified external-package types.
-	// report-only (Cat 5); consumed by public_api_type_leak rule.
-	"go-type-leak": {Kind: kindTypeLeak},
+	// Type-leak rules: exported struct fields or function/method return types with
+	// qualified external-package types. report-only (Cat 5); consumed by public_api_type_leak rule.
+	ruleGoTypeLeak:     {Kind: kindTypeLeak},
+	ruleGoFuncTypeLeak: {Kind: kindTypeLeak},
 	// Test-function detection: emit test_fn facts for Go test functions (^Test prefix).
 	"go-test-fn": {Kind: kindTestFn},
 	// Test-import rules: emit test_import facts for production Go files.
@@ -427,20 +434,27 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 // For most rules the name is in metaVariables.single["NAME"].text.
 // For go-type-alias it is absent from metaVariables, so we fall back to
 // parsing the match text ("type ID = int" → "ID").
-// For go-type-leak the name is built from $PKG and $TYPE ("pkg.Type").
+// For go-type-leak and go-func-type-leak the name is the leaked type built
+// from $PKG and $TYPE ("pkg.Type"). For go-func-type-leak both $NAME (function
+// name) and $PKG/$TYPE are present — $PKG.$TYPE is used as the fact name so
+// the leaked type is tracked, not the function name.
 func nameFromMatch(m sgSyntaxMatch) string {
+	// Type-leak rules: always use $PKG.$TYPE as the name (the leaked type),
+	// even when $NAME is also present (go-func-type-leak captures function name).
+	if m.RuleID == ruleGoTypeLeak || m.RuleID == ruleGoFuncTypeLeak {
+		pkg := m.MetaVariables.Single["PKG"].Text
+		typ := m.MetaVariables.Single["TYPE"].Text
+		if pkg != "" && typ != "" {
+			return pkg + "." + typ
+		}
+		return ""
+	}
 	if nv, ok := m.MetaVariables.Single["NAME"]; ok && nv.Text != "" {
 		return nv.Text
 	}
 	// Route rules: use $PATH as the name (the URL pattern string).
 	if pv, ok := m.MetaVariables.Single["PATH"]; ok && pv.Text != "" {
 		return strings.Trim(pv.Text, `"`+"`")
-	}
-	// go-type-leak: build "pkg.Type" from $PKG and $TYPE metavars.
-	pkg := m.MetaVariables.Single["PKG"].Text
-	typ := m.MetaVariables.Single["TYPE"].Text
-	if pkg != "" && typ != "" {
-		return pkg + "." + typ
 	}
 	// Fallback for go-type-alias: extract from declaration text.
 	if sub := goTypeAliasNameRe.FindStringSubmatch(m.Text); len(sub) == 2 {
@@ -454,7 +468,7 @@ func nameFromMatch(m sgSyntaxMatch) string {
 func isNonExportedGoRule(ruleID string) bool {
 	return strings.HasPrefix(ruleID, "go-route-") || strings.HasPrefix(ruleID, "go-import-") ||
 		strings.HasPrefix(ruleID, "go-test-import-") || ruleID == "go-struct-field" ||
-		ruleID == "go-type-leak" || ruleID == "go-test-fn"
+		ruleID == ruleGoTypeLeak || ruleID == ruleGoFuncTypeLeak || ruleID == "go-test-fn"
 }
 
 // isNonExportedTSRule returns true for TypeScript ruleIds that are never exported.
@@ -473,11 +487,14 @@ func isNonExportedPyRule(ruleID string) bool {
 // isNonExportedRustRule returns true for Rust ruleIds that are never exported.
 // struct-field facts represent whole structs with field counts, not API surface.
 // global-state facts are module-level statics; visibility is not the relevant signal.
+// panic-op facts (rs-unwrap/rs-expect/rs-panic) are call-site occurrences, not
+// exported declarations — must not be counted as public API surface.
 func isNonExportedRustRule(ruleID string) bool {
 	return strings.HasPrefix(ruleID, "rs-route-") || strings.HasPrefix(ruleID, "rs-import-") ||
 		ruleID == "rs-attribute" || strings.HasPrefix(ruleID, "rs-test-import-") ||
 		strings.HasPrefix(ruleID, "rs-unsafe-") || ruleID == "rs-raw-cast" || ruleID == "rs-transmute" ||
-		ruleID == "rs-struct-field" || strings.HasPrefix(ruleID, "rs-static-") || ruleID == "rs-test-fn"
+		ruleID == "rs-struct-field" || strings.HasPrefix(ruleID, "rs-static-") || ruleID == "rs-test-fn" ||
+		ruleID == "rs-unwrap" || ruleID == "rs-expect" || ruleID == "rs-panic"
 }
 
 // isExported returns true if the fact represents an exported identifier.

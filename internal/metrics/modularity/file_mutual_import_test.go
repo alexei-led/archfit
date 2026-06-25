@@ -63,7 +63,7 @@ func TestFileMutualImport_MutualPair(t *testing.T) {
 func TestFileMutualImport_NoPair(t *testing.T) {
 	a := graph.Node{Kind: graph.NodeKindFile, Path: tsFileA}
 	b := graph.Node{Kind: graph.NodeKindFile, Path: tsFileB}
-	c := graph.Node{Kind: graph.NodeKindFile, Path: "src/c.ts"}
+	c := graph.Node{Kind: graph.NodeKindFile, Path: tsFileC}
 	edges := []graph.Edge{
 		{From: a.ID(), To: b.ID(), Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
 		{From: b.ID(), To: c.ID(), Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
@@ -78,11 +78,13 @@ func TestFileMutualImport_NoPair(t *testing.T) {
 	}
 }
 
-// TestFileMutualImport_ThreeFileCycle: A↔B↔C↔A (3-node SCC) → 3 pairs (all combinations).
+// TestFileMutualImport_ThreeFileCycle: A→B→C→A (pure 3-node cycle) → 0 pairs.
+// A pure cycle has no genuinely bidirectional edge (A↔B), so mutual-import count
+// is zero. Contrast with TestFileMutualImport_ThreeFileMutualPairs below.
 func TestFileMutualImport_ThreeFileCycle(t *testing.T) {
 	a := graph.Node{Kind: graph.NodeKindFile, Path: tsFileA}
 	b := graph.Node{Kind: graph.NodeKindFile, Path: tsFileB}
-	c := graph.Node{Kind: graph.NodeKindFile, Path: "src/c.ts"}
+	c := graph.Node{Kind: graph.NodeKindFile, Path: tsFileC}
 	edges := []graph.Edge{
 		{From: a.ID(), To: b.ID(), Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
 		{From: b.ID(), To: c.ID(), Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
@@ -93,9 +95,32 @@ func TestFileMutualImport_ThreeFileCycle(t *testing.T) {
 	if res.Band != result.BandInformational {
 		t.Errorf("expected info band, got %q", res.Band)
 	}
-	// 3-node SCC → C(3,2)=3 pairs
-	if res.Value != 3 {
-		t.Errorf("expected 3 pairs from 3-node SCC, got %v; display=%q", res.Value, res.Display)
+	// Pure cycle A→B→C→A: no bidirectional pair → 0 mutual imports.
+	if res.Value != 0 {
+		t.Errorf("expected 0 pairs for pure 3-cycle, got %v; display=%q", res.Value, res.Display)
+	}
+}
+
+// TestFileMutualImport_ThreeFileMutualPairs: A↔B, B↔C (all three mutually linked)
+// with edges in both directions → 2 mutual pairs {A,B} and {B,C}.
+func TestFileMutualImport_ThreeFileMutualPairs(t *testing.T) {
+	a := graph.Node{Kind: graph.NodeKindFile, Path: tsFileA}
+	b := graph.Node{Kind: graph.NodeKindFile, Path: tsFileB}
+	c := graph.Node{Kind: graph.NodeKindFile, Path: tsFileC}
+	edges := []graph.Edge{
+		{From: a.ID(), To: b.ID(), Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
+		{From: b.ID(), To: a.ID(), Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
+		{From: b.ID(), To: c.ID(), Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
+		{From: c.ID(), To: b.ID(), Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
+	}
+	g := metricstest.BuildGraph([]graph.Node{a, b, c}, edges)
+	res := modularity.FileMutualImportMetric{}.Calculate(signal.CommonInput{Graph: g})
+	if res.Band != result.BandInformational {
+		t.Errorf("expected info band, got %q", res.Band)
+	}
+	// {A,B} and {B,C} are bidirectional → 2 mutual pairs.
+	if res.Value != 2 {
+		t.Errorf("expected 2 mutual pairs, got %v; display=%q", res.Value, res.Display)
 	}
 }
 
@@ -156,6 +181,40 @@ func TestFileMutualImport_IsolatedFileNode_ZeroPairs(t *testing.T) {
 	}
 	if res.Value != 0 {
 		t.Errorf("expected 0 mutual pairs for isolated node, got %v; display=%q", res.Value, res.Display)
+	}
+}
+
+// TestFileMutualImport_SelfLoop: A self-loop A→A must NOT count as a mutual pair.
+func TestFileMutualImport_SelfLoop(t *testing.T) {
+	fileA := graph.Node{Kind: graph.NodeKindFile, Path: "pkg/a/a.ts"}
+	pkgA := graph.Node{Kind: graph.NodeKindPackage, Path: "pkg/a"}
+	edges := []graph.Edge{
+		{From: fileA.ID(), To: fileA.ID(), Kind: graph.EdgeKindImports, Language: "typescript", Confidence: "high"},
+	}
+	g := metricstest.BuildGraph([]graph.Node{fileA, pkgA}, edges)
+	m := modularity.FileMutualImportMetric{}
+	res := m.Calculate(signal.CommonInput{Graph: g})
+	if res.Value != 0 {
+		t.Errorf("self-loop counted as mutual pair: got value=%.0f, want 0", res.Value)
+	}
+}
+
+// TestFileMutualImport_UsesInternal_MutualPair: EdgeKindUsesInternal file→file mutual
+// edges (TS internal-glob rewriting) are detected — not just EdgeKindImports.
+func TestFileMutualImport_UsesInternal_MutualPair(t *testing.T) {
+	fileA := graph.Node{Kind: graph.NodeKindFile, Path: "src/a/index.ts"}
+	fileB := graph.Node{Kind: graph.NodeKindFile, Path: "src/b/index.ts"}
+	edges := []graph.Edge{
+		{From: fileA.ID(), To: fileB.ID(), Kind: graph.EdgeKindUsesInternal, Language: graph.LangTypeScript},
+		{From: fileB.ID(), To: fileA.ID(), Kind: graph.EdgeKindUsesInternal, Language: graph.LangTypeScript},
+	}
+	g := metricstest.BuildGraph([]graph.Node{fileA, fileB}, edges)
+	res := modularity.FileMutualImportMetric{}.Calculate(signal.CommonInput{Graph: g})
+	if res.Band != result.BandInformational {
+		t.Errorf("expected info band, got %q", res.Band)
+	}
+	if res.Value != 1 {
+		t.Errorf("expected 1 mutual pair for uses_internal bidirectional edges, got %v; display=%q", res.Value, res.Display)
 	}
 }
 

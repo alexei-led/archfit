@@ -1259,3 +1259,53 @@ func TestRenderer_Render_SyntaxSurface_PerModuleCounts(t *testing.T) {
 		t.Errorf("Public API file header must include [svc] module annotation\nfull output:\n%s", out)
 	}
 }
+
+// TestRender_DeprecatedDep_PipeEscaping verifies that pipe characters and newlines
+// in manifest deprecation note cells are escaped so the Markdown table is valid.
+func TestRender_DeprecatedDep_PipeEscaping(t *testing.T) {
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.DeprecatedDeps = []diagnostic.DeprecatedDep{
+		{
+			File:    "go|mod",
+			Kind:    "retract",
+			Subject: "v1|0",
+			Note:    "broken | see changelog\nuse v1.0.1",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := markdown.New().Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	// The raw pipe in the note must be escaped as \| so the table cell is valid.
+	if strings.Contains(out, "broken | see") {
+		t.Errorf("unescaped pipe in table cell corrupts markdown table; output:\n%s", out)
+	}
+	if !strings.Contains(out, `broken \| see`) {
+		t.Errorf("pipe must be escaped as \\|; output:\n%s", out)
+	}
+	// Newline must be collapsed to a space.
+	if strings.Contains(out, "changelog\nuse") {
+		t.Errorf("newline in table cell corrupts markdown table; output:\n%s", out)
+	}
+	if !strings.Contains(out, "changelog use v1.0.1") {
+		t.Errorf("newline must be collapsed to space; output:\n%s", out)
+	}
+	// Pipe in file field must be escaped.
+	if strings.Contains(out, "go|mod") {
+		t.Errorf("unescaped pipe in file cell corrupts markdown table; output:\n%s", out)
+	}
+	if !strings.Contains(out, `go\|mod`) {
+		t.Errorf("pipe in file must be escaped as \\|; output:\n%s", out)
+	}
+	// Pipe in subject field must be escaped.
+	if strings.Contains(out, "v1|0") {
+		t.Errorf("unescaped pipe in subject cell corrupts markdown table; output:\n%s", out)
+	}
+	if !strings.Contains(out, `v1\|0`) {
+		t.Errorf("pipe in subject must be escaped as \\|; output:\n%s", out)
+	}
+}
