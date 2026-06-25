@@ -210,6 +210,22 @@ Dynamic/lazy imports (detected by TypeScript and Python extractors as
 `dynamic_imports`) are included in the review prompt as a hidden-coupling risk
 section so the narrative can flag coupling the static dependency graph misses.
 
+**Judgment on report-only facts (Cat 6/7/8/12 residue):** the new report-only
+syntax-facts metrics (`unsafe_density`, `panic_density`, `global_state`,
+`struct_field_max`) surface candidates deterministically. `review` and `enrich` are
+the designed home for the _soundness and acceptability_ judgments those facts
+require:
+
+- **Unsafe/panic soundness (Cat 6, Cat 8):** detection tells you _where_ `unsafe`
+  blocks and production `unwrap`/`panic!` calls are; whether each is acceptable
+  needs context. Feed `archfit review` — it narrates the findings with risk context.
+- **Semantic intent (Cat 12):** deep questions (key-format agreement, data-vs-behavior
+  in config, naming contracts) cannot be answered deterministically. `archfit review`
+  and `archfit enrich` are the designed path.
+- **Layer intent (Cat 10 residue):** when layers are declared, `forbidden_layer_direction`
+  gates deterministically. When they are not, `archfit enrich` can propose a layer
+  structure; see [configuration-reference.md → layers](configuration-reference.md#layers).
+
 Requirements:
 
 - `tools.llm` configured (provider + model) and the provider's API key set.

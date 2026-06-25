@@ -256,15 +256,17 @@ while keeping the judgment layer (LLM/human) where the doc says it belongs.
 
 ### Task 11: Cat 10/12 residue — config/LLM routing + acceptance documentation
 
-- [ ] document the named irreducible residue in `docs/design/archfit-architect-gap-closure-v1.0.md`
+- [x] document the named irreducible residue in `docs/design/archfit-architect-gap-closure-v1.0.md`
       (flip P2/P3 status to implemented; keep Cat 10 layer-intent, Cat 12 semantic, live-EOL, true
       coverage, unsafe/panic _soundness_ as LLM/human-routed) — this is the doc's thesis, kept honest
-- [ ] add a worked `forbidden_layer_direction` example to the docs/guide showing how Cat 10 closes by
+- [x] add a worked `forbidden_layer_direction` example to the docs/guide showing how Cat 10 closes by
       _authoring a rule_ (e.g. yazi `yazi-core` must not depend on `yazi-adapter`) — capability exists,
       it is a config gap; note `enrich` can propose it
-- [ ] add a short note to the `review`/`enrich` user docs that unsafe/panic soundness and semantic
+- [x] add a short note to the `review`/`enrich` user docs that unsafe/panic soundness and semantic
       intent (Cat 12) are the designed home for the LLM path, consuming the new report-only facts
-- [ ] no code-behavior change; run `make test` + `make lint` + `TestArchImports` — must pass before Task 12
+- [x] no code-behavior change; run `make test` + `make lint` + `TestArchImports` — must pass before Task 12
+      [NOTE: make test + TestArchImports pass; make lint has pre-existing "no go files to analyze"
+      golangci-lint error unrelated to doc-only changes (verified: error present before this task)]
 
 ### Task 12: Final cross-repo validation + coverage table
 

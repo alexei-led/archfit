@@ -247,6 +247,45 @@ The `forbidden_layer_direction` rule treats dependencies from an earlier layer t
 a later layer as violations. With the example above, `domain -> adapter` is a
 violation, while `adapter -> domain` is allowed.
 
+### Worked example: closing a layer-direction gap (Cat 10)
+
+Repos like yazi (Rust) have clear architectural layers (`yazi-core`, `yazi-adapter`,
+`yazi-plugin`) but no declared `layers:` or `forbidden_layer_direction` rule in
+`.archfit.yaml`. The capability exists; the config gap is the missing step. Adding
+the rule closes the gap:
+
+```yaml
+layers:
+  - core # innermost
+  - plugin # extension layer
+  - adapter # I/O and system adapters (outermost)
+
+modules:
+  yazi-core:
+    paths: [yazi-core/**]
+    layer: core
+  yazi-plugin:
+    paths: [yazi-plugin/**]
+    layer: plugin
+  yazi-adapter:
+    paths: [yazi-adapter/**]
+    layer: adapter
+
+rules:
+  - id: no_core_to_adapter
+    type: forbidden_layer_direction
+    gate: warn # start advisory; flip to fail when the layer map is stable
+```
+
+With this in place, any `yazi-core` → `yazi-adapter` import becomes a finding.
+Without the rule, archfit has no way to know the intent — `forbidden_layer_direction`
+fires only on _declared_ rules.
+
+**How to get there without authoring manually:** `archfit enrich` can propose a
+layer structure and `forbidden_layer_direction` rules from the module graph; draft
+the output, review, then move approved entries into `.archfit.yaml`. See
+[LLM enrichment](llm-enrich.md).
+
 ## `modules`
 
 `modules` maps a stable module name to owned paths and metadata.
