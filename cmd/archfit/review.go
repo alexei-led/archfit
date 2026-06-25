@@ -52,6 +52,7 @@ func persistRawReview(cacheDir, text string) {
 // never affects the check gate.
 type ReviewCmd struct {
 	Config  string `short:"c" default:".archfit.yaml"`
+	Root    string `help:"Repository root to analyze (default: directory of --config). Decouples the scanned repo from where the config lives." type:"path"`
 	NoCache bool   `name:"no-cache" help:"Bypass the LLM response cache."`
 
 	// providerOverride is a test seam — set directly on the struct to inject a fake provider.
@@ -86,7 +87,7 @@ func (c *ReviewCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	diag, err := runPipeline(ctx, deps, cfg, c.Config, "", false, engine.Mode{Full: true, Advisory: true}, existingBase)
+	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, engine.Mode{Full: true, Advisory: true}, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
