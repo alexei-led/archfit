@@ -167,11 +167,12 @@ var inventory = []Finding{
 		ProbeKind:   probeKindUnsafeOp,
 	},
 	{
-		ID:        "7.1",
-		Title:     "15+ OnceLock/Atomic singletons",
-		Repo:      repoHerdr,
-		Category:  "Global Mutable State",
-		ProbeKind: "global_state",
+		ID:          "7.1",
+		Title:       "15+ OnceLock/Atomic singletons",
+		Repo:        repoHerdr,
+		Category:    "Global Mutable State",
+		ProbeMetric: "global_state_density",
+		ProbeKind:   "global_state",
 	},
 	{
 		ID:          "8.1",

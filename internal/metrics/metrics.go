@@ -73,6 +73,7 @@ func New(cfg config.Config) []Metric {
 		adapt(modularity.StructuralWeightMetric{}, signal.CollectedSignals.AsSize),
 		adapt(modularity.FileStructuralWeightMetric{}, signal.CollectedSignals.AsSize),
 		adapt(modularity.UnsafeDensityMetric{}, signal.CollectedSignals.AsCommon),
+		adapt(modularity.GlobalStateDensityMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(modularity.PanicDensityMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(modularity.TestDensityMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(modularity.StructFieldDensityMetric{}, signal.CollectedSignals.AsCommon),

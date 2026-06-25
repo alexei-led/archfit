@@ -5,10 +5,10 @@ exists, how it is scored, and whether it can affect the verdict. For the theory
 behind the strength / distance / volatility vocabulary used throughout, read
 [Concepts](concepts.md) first.
 
-`archfit` ships **26 metrics**. They split into two roles:
+`archfit` ships **27 metrics**. They split into two roles:
 
 - **Verdict-affecting** (4): scored 0–10, can `warn` the run when they regress.
-- **Report-only** (22): band `info`; surface facts for humans and agents, never
+- **Report-only** (23): band `info`; surface facts for humans and agents, never
   change the verdict.
 
 A metric absent from the config is enabled by default; only an explicit
@@ -340,6 +340,11 @@ They require `tools.syntax.enabled: on`; when absent the metric reports `n/a`.
   blocks, `UnsafeCell`, `transmute`, and raw-pointer casts (`as *mut`/`as *const`).
   A high count surfaces candidate modules for manual soundness review; `archfit` does
   not judge acceptability — route to `archfit review` or a human for that.
+- **`global_state_density`** — count of global mutable state sites per module
+  (Rust): `static mut` variables, `Atomic*` singletons, and `OnceLock`/`OnceCell`
+  statics. Extracted by ast-grep. Does not exclude test files (like `unsafe_density`).
+  Report-only; never gates. Route high counts to `archfit review` or a human to
+  assess whether the concurrency strategy is intentional.
 - **`panic_density`** — count of panic/unwrap operations per module in production
   code. Counts `unwrap()`/`expect()` (Rust) and `panic(` (Go). Test files are
   excluded using the same heuristic as `test_in_production` — the production-only
@@ -472,7 +477,7 @@ failure.
 | complexity                                                                                                              | `lizard` (`tools.complexity.enabled: on`)                           |
 | functional_candidates                                                                                                   | clone detector (`tools.clones.enabled: on`)                         |
 | risk_hub (refinement only)                                                                                              | GitNexus (`tools.gitnexus.enabled: on`)                             |
-| unsafe_density, panic_density, struct_field_density, test_density                                                       | `sg` (ast-grep); `tools.syntax.enabled: on`                         |
+| unsafe_density, global_state_density, panic_density, struct_field_density, test_density                                 | `sg` (ast-grep); `tools.syntax.enabled: on`                         |
 | deprecated_dep_count                                                                                                    | manifest files (`go.mod`, `package.json`) — built-in; no extra tool |
 | file_mutual_import                                                                                                      | built-in (TS file→file graph); no extra tool                        |
 
