@@ -220,15 +220,15 @@ while keeping the judgment layer (LLM/human) where the doc says it belongs.
 
 ### Task 9: Cat 4 — manifest-declared deprecation markers, report-only
 
-- [ ] add a manifest-marker signal read **out-of-process via `toolrun.Runner`** (or by the existing
+- [x] add a manifest-marker signal read **out-of-process via `toolrun.Runner`** (or by the existing
       manifest-reading extractors): `go.mod` `retract`, npm `deprecated`, cargo `yanked` — declared
       markers only; **live-version EOL is external-registry territory, documented as residue**
-- [ ] surface flagged dependencies as report-only facts in `dependency_graph_health` evidence
+- [x] surface flagged dependencies as report-only facts in `dependency_graph_health` evidence
       (CLAUDE.md: external-dependency concerns live there, not `coupling_balance`)
-- [ ] keep the core ring clean — the parser lives in an extractor/adapter, not in `classify`/`metrics`
+- [x] keep the core ring clean — the parser lives in an extractor/adapter, not in `classify`/`metrics`
       (verify with `TestArchImports`)
-- [ ] write unit tests for the manifest parser (marker present / absent / malformed)
-- [ ] regenerate goldens + full gate — must pass before Task 10
+- [x] write unit tests for the manifest parser (marker present / absent / malformed)
+- [x] regenerate goldens + full gate — must pass before Task 10
 
 ### Task 10: Cat 11 — file-level mutual-import detector, report-only
 
@@ -277,11 +277,44 @@ while keeping the judgment layer (LLM/human) where the doc says it belongs.
       (no finding left unclassified)
 - [ ] final full gate: `make all` (fmt → lint → test → archfit) — must pass
 
-### Task 13: [Final] Documentation
+### Task 13: ➕ Speed up the test + lint feedback loop
+
+_Discovered mid-execution (user request): every change runs `make lint` + `make test`, so the
+inner-loop latency matters. Measure first, then cut — do not trade correctness, the `-race` gate, or
+coverage for speed. Keep all existing gates green._
+
+- [ ] **measure the baseline first (no silent caps):** time `make test` and `make lint` cold and warm
+      (`go test -race ./... -count=1` wall time; `go test -json ... | go-test-report`-style or
+      `-v` parse to list the slowest packages/tests); capture the top offenders in
+      `reports/eval/test-speed-baseline.md` so the speedup is evidence-driven, not guesswork
+- [ ] **parallelize where safe:** add `t.Parallel()` to independent unit tests and their subtests
+      (table-driven loops — capture range var if Go <1.22 idiom requires), but NEVER to tests that
+      mutate shared/global state, `t.Setenv`, the working dir, or golden files; document any test
+      deliberately left serial with a one-line reason
+- [ ] **kill duplication / fixture waste:** find repeated heavy setup (re-parsing the same config,
+      rebuilding the same graph, re-running ast-grep) and hoist to `TestMain`/package-level fixtures or
+      a shared helper; dedupe near-identical test bodies into table-driven cases
+- [ ] **replace sleeps/polling with events where any exist:** grep for `time.Sleep`/busy-wait in tests;
+      convert to channel/`sync` signaling or `Eventually`-style bounded waits (do not just shorten the
+      sleep). If none exist, record that and skip — no invented work
+- [ ] **investigate the genuinely slow tests** surfaced by the baseline (e.g. subprocess/ast-grep
+      integration, golden regen): cache the expensive artifact across subtests, gate the heaviest
+      behind `testing.Short()` with `-short` wired into a fast `make test-fast` target (keep full
+      `make test` running everything in CI), or shrink fixtures without losing the assertion's teeth
+- [ ] **tune the linter for inner-loop speed:** review `.golangci.yaml` — keep fast correctness linters
+      in `make lint`; move demonstrably slow linters (whole-program / type-heavy, e.g. the slow ones
+      among `gocritic`/`unparam`/`govet shadow`/`staticcheck` extras) to a CI-only profile
+      (`.golangci.ci.yaml` or a `make lint-ci` target) IF measurement shows they dominate — keep the
+      default `make lint` complete enough to catch real defects locally; document what moved and why
+- [ ] **verify nothing regressed:** full `make test` (race, all tests) + `make lint` (full profile) + `TestGolden` + `TestArchImports` + `make archfit` all green; report the before/after wall-clock
+      delta in `reports/eval/test-speed-baseline.md`
+
+### Task 14: [Final] Documentation
 
 - [ ] update `docs/guide` with the new report-only metrics/facts and the opt-in rule types
       (`struct_field_max`, `public_api_type_leak`) — defaults, what they flag, how to gate
 - [ ] update `CLAUDE.md` "Invariants"/metric notes if a new core-ring package or fact kind was added
+      (and any new `make` target like `test-fast`/`lint-ci` from Task 13)
 - [ ] update project memory only if a non-obvious decision was made (per memory rules)
 
 ## Technical Details

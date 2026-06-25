@@ -173,6 +173,18 @@ type RuntimeAsyncModule struct {
 	Confidence      string `json:"confidence"`       // "low" | "medium"
 }
 
+// DeprecatedDep is one locally-declared deprecation or retraction marker found
+// in a manifest file. Report-only evidence — never consumed by verdict or gate
+// logic, never alters the dependency graph or any metric.
+// Ceiling: cargo yanked and live-version EOL require external registry queries
+// and are routed to the LLM review path (archfit review/enrich), not this detector.
+type DeprecatedDep struct {
+	File    string `json:"file"`           // repo-relative manifest file path
+	Kind    string `json:"kind"`           // "retract" | "deprecated"
+	Subject string `json:"subject"`        // version range (retract) or package name (deprecated)
+	Note    string `json:"note,omitempty"` // optional annotation text from the marker
+}
+
 // DynamicImport is the report-only dynamic/lazy-import risk signal for one module
 // (Task 9). Dynamic/lazy imports — Python non-top-level (in-function) imports,
 // importlib.import_module / __import__, and TS require() / dynamic import() — are
@@ -321,6 +333,12 @@ type Diagnostic struct {
 	// annotates graph edges and never affects distance, score, or verdict.
 	// Empty when no async patterns were detected.
 	RuntimeAsync []RuntimeAsyncModule `json:"runtime_async,omitempty"`
+	// DeprecatedDeps is the report-only locally-declared deprecation/retraction
+	// marker block. Evidence only — never consumed by verdict or gate logic, never
+	// alters the dependency graph or any metric. Omitted when no markers were found.
+	// Ceiling: cargo yanked and live-version EOL require external registry queries
+	// and are routed to the LLM review path (archfit review/enrich), not here.
+	DeprecatedDeps []DeprecatedDep `json:"deprecated_deps,omitempty"`
 	// SyntaxFacts is the report-only syntactic declaration/route block extracted
 	// by ast-grep (design §3). Neutral, off-gate evidence — never consumed by
 	// verdict or gate logic. Omitted (omitempty) when tools.syntax is off or sg

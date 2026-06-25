@@ -76,6 +76,9 @@ func New(cfg config.Config) []Metric {
 		adapt(modularity.PanicDensityMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(modularity.TestDensityMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(modularity.StructFieldDensityMetric{}, signal.CollectedSignals.AsCommon),
+		// Manifest deprecation markers (go.mod retract, package.json deprecated).
+		// Report-only — BandInformational, never gates.
+		adapt(modularity.DeprecatedDepCountMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(intramodule.ComplexityMetric{}, signal.CollectedSignals.AsComplexity),
 		adapt(risk.NewMetric(cfg), signal.CollectedSignals.AsSymbol),
 		adapt(intramodule.ArchitectureFitnessMetric{}, signal.CollectedSignals.AsFitness),

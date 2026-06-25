@@ -452,6 +452,10 @@ func dependencyGraphHealth(mi metricIndex, base Confidence) Dimension {
 		value -= capInt(int(math.Round(pc.Value*25)), 25)
 	}
 
+	// Manifest deprecation markers: report-only evidence, zero score penalty.
+	if dd, ok := mi.get("deprecated_dep_count"); ok && dd.Value > 0 {
+		dim.Evidence = append(dim.Evidence, fmt.Sprintf("declared deprecation markers: %d (see deprecated_deps in output)", int(dd.Value)))
+	}
 	if !measured {
 		dim.Confidence = ConfidenceLow
 		dim.Evidence = append(dim.Evidence, "no dependency-graph metrics available")
