@@ -186,6 +186,13 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 		if err != nil {
 			return nil, diagnostic.Coverage{}, fmt.Errorf("astgrep: syntax scan for %q: %w", lang, err)
 		}
+		// sg present but exited non-zero with empty stdout → rule file was rejected
+		// (e.g. YAML parse error). Silently continuing would produce zero facts and
+		// report status=ok — a false green. Surface it as a partial/degraded result.
+		if out.ExitCode != 0 && len(out.Stdout) == 0 {
+			reason := fmt.Sprintf("sg rejected rule file for %q (exit %d): %s", lang, out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+			return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusPartial, Reason: reason}, nil
+		}
 		if len(out.Stdout) == 0 {
 			continue
 		}

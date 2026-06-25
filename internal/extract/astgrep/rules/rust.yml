@@ -105,7 +105,7 @@ rule:
   all:
     - kind: attribute_item
     - has:
-        pattern: #[$NAME($$$)]
+        pattern: '#[$NAME($$$)]'
 ---
 # Route rules: attribute-based routes (actix-web / rocket).
 # #[get("/path")] / #[post("/path")] etc. on a function.

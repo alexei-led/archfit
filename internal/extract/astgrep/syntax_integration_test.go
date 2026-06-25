@@ -13,6 +13,20 @@ import (
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
+// sgSkipGuard skips t if sg is absent from PATH or is not ast-grep
+// (util-linux ships an unrelated /usr/bin/sg).
+func sgSkipGuard(t *testing.T) {
+	t.Helper()
+	sgPath, err := exec.LookPath("sg")
+	if err != nil {
+		t.Skip("sg not found on PATH — skipping integration test")
+	}
+	out, err := exec.Command(sgPath, "--version").Output() //nolint:gosec // path from LookPath
+	if err != nil || !strings.Contains(string(out), "ast-grep") {
+		t.Skipf("sg at %s is not ast-grep (version output: %q) — skipping", sgPath, string(out))
+	}
+}
+
 // TestSyntaxIntegration_JSONShape runs the real sg binary against a small Go
 // fixture and asserts that the JSON shape archfit depends on is present:
 //   - ruleId   — rule identifier string
@@ -23,18 +37,7 @@ import (
 // binary is not ast-grep (util-linux ships an unrelated /usr/bin/sg).
 func TestSyntaxIntegration_JSONShape(t *testing.T) {
 	t.Helper()
-
-	// --- skip guard: sg must be on PATH ---
-	sgPath, err := exec.LookPath("sg")
-	if err != nil {
-		t.Skip("sg not found on PATH — skipping integration test")
-	}
-
-	// --- skip guard: must be ast-grep, not util-linux sg ---
-	out, err := exec.Command(sgPath, "--version").Output() //nolint:gosec // path from LookPath
-	if err != nil || !strings.Contains(string(out), "ast-grep") {
-		t.Skipf("sg at %s is not ast-grep (version output: %q) — skipping", sgPath, string(out))
-	}
+	sgSkipGuard(t)
 
 	// --- locate fixture directory relative to this test file ---
 	_, thisFile, _, ok := runtime.Caller(0)
@@ -96,5 +99,77 @@ func TestSyntaxIntegration_JSONShape(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected a fact with Name=%q Kind=%q; got facts: %+v", "Hello", "function", facts)
+	}
+}
+
+// TestSyntaxIntegration_AllRuleFiles verifies that every embedded language rule
+// file is valid YAML that sg accepts AND produces at least one fact against its
+// per-language fixture. This is the systemic guard: a malformed rule file
+// (e.g. an unquoted YAML-special character like '#' in a pattern value) will
+// cause sg to exit non-zero with empty stdout, which this test catches.
+//
+// Each sub-test is independent; adding a new language rule file requires only a
+// new fixture and a new table row.
+func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
+	sgSkipGuard(t)
+
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	fixtureDir := filepath.Join(filepath.Dir(thisFile), "testdata", "integration")
+
+	// spotName is a fact Name that must appear for each language so we know the
+	// rule file fired on real source, not just parsed without matching anything.
+	tests := []struct {
+		lang     string
+		spotName string
+		spotKind string
+	}{
+		// Go: fixture.go exports func Hello.
+		{lang: "go", spotName: "Hello", spotKind: kindFunctionStr},
+		// TypeScript: fixture.ts exports func greet.
+		{lang: "typescript", spotName: "greet", spotKind: kindFunctionStr},
+		// Python: fixture.py declares func process.
+		{lang: "python", spotName: "process", spotKind: kindFunctionStr},
+		// Rust: fixture.rs exports func create_widget.
+		// Also exercises rs-attribute (the #[$NAME($$$)] pattern that was previously broken).
+		{lang: "rust", spotName: "create_widget", spotKind: kindFunctionStr},
+	}
+
+	runner := toolrun.New()
+	a := astgrep.New(runner)
+	s := scope.Scope{Root: fixtureDir}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.lang, func(t *testing.T) {
+			facts, cov, err := a.Syntax(context.Background(), s, []string{tc.lang})
+			if err != nil {
+				t.Fatalf("Syntax(%q) returned unexpected error: %v", tc.lang, err)
+			}
+			if cov.Status == statusAbsentStr {
+				t.Skip("sg reported absent from within Syntax() — environment inconsistency")
+			}
+			// Non-ok status means the rule file was rejected by sg (YAML error,
+			// exit non-zero with empty stdout). This is the key regression check.
+			if cov.Status != "ok" {
+				t.Fatalf("Syntax(%q) returned non-ok coverage status=%q reason=%q — rule file likely rejected by sg", tc.lang, cov.Status, cov.Reason)
+			}
+			if len(facts) == 0 {
+				t.Fatalf("Syntax(%q) returned 0 facts for fixture with exported declarations", tc.lang)
+			}
+			// Spot-check: the expected declaration must appear.
+			found := false
+			for _, f := range facts {
+				if f.Name == tc.spotName && f.Kind == tc.spotKind {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("Syntax(%q): expected fact Name=%q Kind=%q; got %d facts: %+v", tc.lang, tc.spotName, tc.spotKind, len(facts), facts)
+			}
+		})
 	}
 }
