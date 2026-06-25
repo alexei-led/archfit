@@ -45,3 +45,9 @@ def lazy_from_loader():
     """Function with a deferred from-import — must produce a lazy_import fact."""
     from pathlib import Path  # lazy: import_from_statement inside function_definition
     return Path(".")
+
+
+# Test-function fixture: exercises py-test-fn (test_fn kind).
+def test_process():
+    """Test function with test_ prefix — must produce a test_fn fact."""
+    pass

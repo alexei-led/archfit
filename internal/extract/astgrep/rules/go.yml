@@ -293,6 +293,19 @@ rule:
   kind: call_expression
   regex: ^panic\(
 ---
+# go-test-fn: matches Go test functions (func TestXxx(t *testing.T)).
+# Emits test_fn facts consumed by the test_density report-only metric.
+# Ceiling: only fires on files sg scans; Go's convention places tests in *_test.go
+# which sg scans unconditionally (no file-filter in the adapter).
+id: go-test-fn
+language: go
+rule:
+  kind: function_declaration
+  has:
+    field: name
+    pattern: $NAME
+    regex: ^Test
+---
 # go-type-leak: exported struct fields whose type is a qualified (external-package)
 # type. Matches both direct (pkg.Type) and pointer (*pkg.Type) forms.
 # ruleId maps to kindTypeLeak in goRuleKinds (syntax.go).

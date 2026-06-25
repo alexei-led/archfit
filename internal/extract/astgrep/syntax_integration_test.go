@@ -136,13 +136,14 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 	}{
 		// Go: fixture.go exports func Hello + BigStruct (struct_field) + PanicFixture (panic_op);
 		// fixture_test_import.go imports testify/mock;
-		// fixture_type_leak.go (//go:build ignore) exercises go-type-leak (type_leak kind).
-		// Fixture covers: function, struct, interface, test_import, struct_field, panic_op, type_leak (see fixture*.go).
+		// fixture_type_leak.go (//go:build ignore) exercises go-type-leak (type_leak kind);
+		// fixture_test_fn.go (//go:build ignore) exercises go-test-fn (test_fn kind).
+		// Fixture covers: function, struct, interface, test_import, struct_field, panic_op, type_leak, test_fn (see fixture*.go).
 		{
 			lang:          "go",
 			spotName:      "Hello",
 			spotKind:      kindFunctionStr,
-			requiredKinds: []string{kindFunctionStr, kindStructStr, kindInterfaceStr, kindTestImportStr, kindStructFieldStr, kindPanicOpStr, kindTypeLeakStr},
+			requiredKinds: []string{kindFunctionStr, kindStructStr, kindInterfaceStr, kindTestImportStr, kindStructFieldStr, kindPanicOpStr, kindTypeLeakStr, kindTestFnStr},
 		},
 		// TypeScript: fixture.ts exports func greet + @Controller decorator + express route + jest import.
 		// Fixture covers: function, class, interface, annotation, route, test_import (see fixture.ts).
@@ -153,26 +154,28 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 			requiredKinds: []string{kindFunctionStr, kindClassStr, kindInterfaceStr, kindAnnotStr, kindRouteStr, kindTestImportStr},
 		},
 		// Python: fixture.py declares func process + @staticmethod decorator + fastapi route + pytest import +
-		// lazy_loader (import os inside function) + lazy_from_loader (from pathlib import Path inside function).
-		// Fixture covers: function, class, annotation, route, test_import, lazy_import (see fixture.py).
+		// lazy_loader (import os inside function) + lazy_from_loader (from pathlib import Path inside function) +
+		// test_process (test_ prefix function for test_fn kind).
+		// Fixture covers: function, class, annotation, route, test_import, lazy_import, test_fn (see fixture.py).
 		{
 			lang:          "python",
 			spotName:      "process",
 			spotKind:      kindFunctionStr,
-			requiredKinds: []string{kindFunctionStr, kindClassStr, kindAnnotStr, kindRouteStr, kindTestImportStr, kindLazyImportStr},
+			requiredKinds: []string{kindFunctionStr, kindClassStr, kindAnnotStr, kindRouteStr, kindTestImportStr, kindLazyImportStr, kindTestFnStr},
 		},
 		// Rust: fixture.rs exports func create_widget + #[derive(Debug, Clone)] attribute + mockall import +
 		// unsafe block, UnsafeCell, raw cast (safety surface fixture) + MultiField struct (struct_field) +
 		// fixture_panics with unwrap/expect/panic! (panic_op) +
-		// global-state fixture: static mut GLOBAL_COUNTER, AtomicU32 ID_GENERATOR, OnceLock REGISTRY.
+		// global-state fixture: static mut GLOBAL_COUNTER, AtomicU32 ID_GENERATOR, OnceLock REGISTRY +
+		// test_create_widget (test_ prefix function for test_fn kind).
 		// Fixture covers: function, struct, enum, interface, method, annotation, test_import, unsafe_op,
-		//                 struct_field, panic_op, global_state.
+		//                 struct_field, panic_op, global_state, test_fn.
 		// annotation (rs-attribute) was the previously-broken kind — it must now yield ≥1 match.
 		{
 			lang:          "rust",
 			spotName:      "create_widget",
 			spotKind:      kindFunctionStr,
-			requiredKinds: []string{kindFunctionStr, kindStructStr, kindEnumStr, kindInterfaceStr, kindMethodStr, kindAnnotStr, kindTestImportStr, kindUnsafeOpStr, kindStructFieldStr, kindPanicOpStr, kindGlobalStateStr},
+			requiredKinds: []string{kindFunctionStr, kindStructStr, kindEnumStr, kindInterfaceStr, kindMethodStr, kindAnnotStr, kindTestImportStr, kindUnsafeOpStr, kindStructFieldStr, kindPanicOpStr, kindGlobalStateStr, kindTestFnStr},
 		},
 	}
 

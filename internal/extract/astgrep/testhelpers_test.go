@@ -33,6 +33,7 @@ const (
 	kindGlobalStateStr = "global_state"
 	kindTypeLeakStr    = "type_leak"
 	kindLazyImportStr  = "lazy_import"
+	kindTestFnStr      = "test_fn"
 	langTypeScriptStr  = "typescript"
 	langPythonStr      = "python"
 	langRustStr        = "rust"

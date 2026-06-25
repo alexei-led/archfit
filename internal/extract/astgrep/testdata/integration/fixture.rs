@@ -76,3 +76,10 @@ pub fn fixture_panics() -> String {
     let _ = v.expect("oops");     // rs-expect
     panic!("fixture panic");      // rs-panic
 }
+
+// Test-function fixture: exercises rs-test-fn (test_fn kind).
+// Name starts with test_ to match the rs-test-fn rule's regex.
+fn test_create_widget() {
+    let w = create_widget("hello".to_string());
+    let _ = w;
+}

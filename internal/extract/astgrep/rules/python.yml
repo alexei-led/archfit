@@ -178,3 +178,14 @@ rule:
   has:
     field: module_name
     pattern: $NAME
+---
+# py-test-fn: matches Python test functions (def test_xxx(...)).
+# Emits test_fn facts consumed by the test_density report-only metric.
+id: py-test-fn
+language: Python
+rule:
+  kind: function_definition
+  has:
+    field: name
+    pattern: $NAME
+    regex: ^test_

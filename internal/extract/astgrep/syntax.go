@@ -47,6 +47,7 @@ const (
 	kindGlobalState = "global_state"
 	kindTypeLeak    = "type_leak"
 	kindLazyImport  = "lazy_import"
+	kindTestFn      = "test_fn"
 )
 
 // Language identifier constants used as keys in embeddedRules and langRuleKinds.
@@ -135,6 +136,8 @@ var goRuleKinds = map[string]kindInfo{
 	// Type-leak rules: exported struct fields with qualified external-package types.
 	// report-only (Cat 5); consumed by public_api_type_leak rule.
 	"go-type-leak": {Kind: kindTypeLeak},
+	// Test-function detection: emit test_fn facts for Go test functions (^Test prefix).
+	"go-test-fn": {Kind: kindTestFn},
 	// Test-import rules: emit test_import facts for production Go files.
 	"go-test-import-testify-mock":    {Kind: kindTestImport, Framework: fwGroupTestifyMock},
 	"go-test-import-testify-assert":  {Kind: kindTestImport, Framework: fwGroupTestifyAssert},
@@ -185,6 +188,8 @@ var pyRuleKinds = map[string]kindInfo{
 	// Import-signal rules (IsSignal=true): confirm framework import per file.
 	"py-import-fastapi": {Framework: fwGroupFastAPI, IsSignal: true},
 	"py-import-django":  {Framework: fwGroupDjango, IsSignal: true},
+	// Test-function detection: emit test_fn facts for Python test functions (^test_ prefix).
+	"py-test-fn": {Kind: kindTestFn},
 	// Test-import rules: emit test_import facts for production Python files.
 	"py-test-import-pytest":   {Kind: kindTestImport, Framework: fwGroupPytest},
 	"py-test-import-unittest": {Kind: kindTestImport, Framework: fwGroupUnittest},
@@ -214,6 +219,10 @@ var rustRuleKinds = map[string]kindInfo{
 	// Import-signal rules (IsSignal=true): confirm framework import per file.
 	"rs-import-actix": {Framework: fwGroupActix, IsSignal: true},
 	"rs-import-axum":  {Framework: fwGroupAxum, IsSignal: true},
+	// Test-function detection: emit test_fn facts for Rust test functions (^test_ name prefix).
+	// Ceiling: misses #[test] fn check_foo() where name doesn't start with test_.
+	// Practical proxy for test density; use SCIP for semantic precision.
+	"rs-test-fn": {Kind: kindTestFn},
 	// Test-import rules: emit test_import facts for production Rust files.
 	"rs-test-import-mockall":  {Kind: kindTestImport, Framework: fwGroupMockall},
 	"rs-test-import-proptest": {Kind: kindTestImport, Framework: fwGroupProptest},
@@ -440,6 +449,37 @@ func nameFromMatch(m sgSyntaxMatch) string {
 	return ""
 }
 
+// isNonExportedGoRule returns true for Go ruleIds that produce signal/structural
+// facts rather than exported API surface entries.
+func isNonExportedGoRule(ruleID string) bool {
+	return strings.HasPrefix(ruleID, "go-route-") || strings.HasPrefix(ruleID, "go-import-") ||
+		strings.HasPrefix(ruleID, "go-test-import-") || ruleID == "go-struct-field" ||
+		ruleID == "go-type-leak" || ruleID == "go-test-fn"
+}
+
+// isNonExportedTSRule returns true for TypeScript ruleIds that are never exported.
+func isNonExportedTSRule(ruleID string) bool {
+	return strings.HasPrefix(ruleID, "ts-route-") || strings.HasPrefix(ruleID, "ts-import-") ||
+		ruleID == "ts-decorator" || strings.HasPrefix(ruleID, "ts-test-import-")
+}
+
+// isNonExportedPyRule returns true for Python ruleIds that are never exported.
+func isNonExportedPyRule(ruleID string) bool {
+	return strings.HasPrefix(ruleID, "py-route-") || strings.HasPrefix(ruleID, "py-import-") ||
+		ruleID == "py-decorator" || strings.HasPrefix(ruleID, "py-test-import-") ||
+		strings.HasPrefix(ruleID, "py-lazy-import-") || ruleID == "py-test-fn"
+}
+
+// isNonExportedRustRule returns true for Rust ruleIds that are never exported.
+// struct-field facts represent whole structs with field counts, not API surface.
+// global-state facts are module-level statics; visibility is not the relevant signal.
+func isNonExportedRustRule(ruleID string) bool {
+	return strings.HasPrefix(ruleID, "rs-route-") || strings.HasPrefix(ruleID, "rs-import-") ||
+		ruleID == "rs-attribute" || strings.HasPrefix(ruleID, "rs-test-import-") ||
+		strings.HasPrefix(ruleID, "rs-unsafe-") || ruleID == "rs-raw-cast" || ruleID == "rs-transmute" ||
+		ruleID == "rs-struct-field" || strings.HasPrefix(ruleID, "rs-static-") || ruleID == "rs-test-fn"
+}
+
 // isExported returns true if the fact represents an exported identifier.
 //
 // Go: exported means the name starts with an uppercase letter; route and signal rules are never exported.
@@ -452,38 +492,24 @@ func nameFromMatch(m sgSyntaxMatch) string {
 func isExported(lang, ruleID, name string) bool {
 	switch lang {
 	case langTypeScript:
-		// Route, annotation, signal, and test-import ruleIds.
-		if strings.HasPrefix(ruleID, "ts-route-") || strings.HasPrefix(ruleID, "ts-import-") ||
-			ruleID == "ts-decorator" || strings.HasPrefix(ruleID, "ts-test-import-") {
+		if isNonExportedTSRule(ruleID) {
 			return false
 		}
 		return true // inside: export_statement guarantees export
 	case langPython:
-		// Route, decorator, signal, test-import, and lazy-import ruleIds are never exported.
-		if strings.HasPrefix(ruleID, "py-route-") || strings.HasPrefix(ruleID, "py-import-") ||
-			ruleID == "py-decorator" || strings.HasPrefix(ruleID, "py-test-import-") ||
-			strings.HasPrefix(ruleID, "py-lazy-import-") {
+		if isNonExportedPyRule(ruleID) {
 			return false
 		}
 		// Public = name does not start with underscore.
 		return len(name) > 0 && name[0] != '_'
 	case langRust:
-		// Route, attribute, signal, test-import, unsafe-op, struct-field, and global-state ruleIds are never exported.
-		// struct-field facts represent whole structs with field counts, not individual API surface entries.
-		// global-state facts are module-level statics; visibility is not the relevant signal here.
-		if strings.HasPrefix(ruleID, "rs-route-") || strings.HasPrefix(ruleID, "rs-import-") ||
-			ruleID == "rs-attribute" || strings.HasPrefix(ruleID, "rs-test-import-") ||
-			strings.HasPrefix(ruleID, "rs-unsafe-") || ruleID == "rs-raw-cast" || ruleID == "rs-transmute" ||
-			ruleID == "rs-struct-field" || strings.HasPrefix(ruleID, "rs-static-") {
+		if isNonExportedRustRule(ruleID) {
 			return false
 		}
 		// The YAML rule already requires visibility_modifier, so any match is pub.
 		return true
 	default: // go and future languages: uppercase-first convention
-		// struct-field and type-leak facts are signal/structural, not exported API entries.
-		if strings.HasPrefix(ruleID, "go-route-") || strings.HasPrefix(ruleID, "go-import-") ||
-			strings.HasPrefix(ruleID, "go-test-import-") || ruleID == "go-struct-field" ||
-			ruleID == "go-type-leak" {
+		if isNonExportedGoRule(ruleID) {
 			return false
 		}
 		return len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z'

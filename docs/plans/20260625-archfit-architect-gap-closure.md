@@ -209,14 +209,14 @@ while keeping the judgment layer (LLM/human) where the doc says it belongs.
 
 ### Task 8: Cat 13 — test-density proxy metric, report-only
 
-- [ ] add a report-only `test_density` metric: test-function / `#[test]` / `def test_*` density per
+- [x] add a report-only `test_density` metric: test-function / `#[test]` / `def test_*` density per
       module from `Evidence.SyntaxFacts` (a `kindTestFn` fact added per language, or reuse existing
       function facts + a name/attribute predicate), `Band: BandInformational`
-- [ ] document the ceiling in a comment: this is a proxy; real coverage needs a coverage-tool run
+- [x] document the ceiling in a comment: this is a proxy; real coverage needs a coverage-tool run
       (expensive) and stays LLM/human territory
-- [ ] if a new `kindTestFn` fact is introduced, add fixtures + required-kind rows for each language
-- [ ] write unit tests for the density metric (no tests, sparse, dense)
-- [ ] regenerate goldens + full gate — must pass before Task 9
+- [x] if a new `kindTestFn` fact is introduced, add fixtures + required-kind rows for each language
+- [x] write unit tests for the density metric (no tests, sparse, dense)
+- [x] regenerate goldens + full gate — must pass before Task 9
 
 ### Task 9: Cat 4 — manifest-declared deprecation markers, report-only
 

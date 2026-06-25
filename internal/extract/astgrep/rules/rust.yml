@@ -292,3 +292,16 @@ language: Rust
 rule:
   kind: macro_invocation
   regex: ^panic
+---
+# rs-test-fn: matches Rust test functions by name convention (fn test_xxx).
+# Emits test_fn facts consumed by the test_density report-only metric.
+# Ceiling: misses #[test] fn check_foo() where name doesn't start with test_.
+# Use SCIP for semantic precision; this is a name-convention proxy.
+id: rs-test-fn
+language: Rust
+rule:
+  kind: function_item
+  has:
+    field: name
+    pattern: $NAME
+    regex: ^test_

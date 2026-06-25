@@ -61,11 +61,11 @@ func TestPanicDensity_TestFileExcluded_CountsOnlyProd(t *testing.T) {
 	// 2 prod Go facts (main.go), 1 test Go file (foo_test.go) excluded,
 	// 1 prod Rust fact (src/main.rs), 1 test Rust file (tests/integration.rs) excluded.
 	in := signal.CommonInput{SyntaxFacts: []diagnostic.SyntaxFact{
-		{Kind: panicOpKind, Module: modMyApp, File: "main.go", Language: langGo},
-		{Kind: panicOpKind, Module: modMyApp, File: "main.go", Language: langGo},
-		{Kind: panicOpKind, Module: modMyApp, File: "foo_test.go", Language: langGo}, // excluded: *_test.go
+		{Kind: panicOpKind, Module: modMyApp, File: fileMainGo, Language: langGo},
+		{Kind: panicOpKind, Module: modMyApp, File: fileMainGo, Language: langGo},
+		{Kind: panicOpKind, Module: modMyApp, File: fileFooTestGo, Language: langGo}, // excluded: *_test.go
 		{Kind: panicOpKind, Module: modMyMod, File: "src/main.rs", Language: langRust},
-		{Kind: panicOpKind, Module: modMyMod, File: "tests/integration.rs", Language: langRust}, // excluded: /tests/ segment
+		{Kind: panicOpKind, Module: modMyMod, File: fileTestsIntegRs, Language: langRust}, // excluded: /tests/ segment
 	}}
 	res := modularity.PanicDensityMetric{}.Calculate(in)
 	if res.Band == bandNAStr {
@@ -79,8 +79,8 @@ func TestPanicDensity_TestFileExcluded_CountsOnlyProd(t *testing.T) {
 func TestPanicDensity_AllTestFiles_ReturnsNA(t *testing.T) {
 	// All facts are in test files — result must be n/a (no production panics).
 	in := signal.CommonInput{SyntaxFacts: []diagnostic.SyntaxFact{
-		{Kind: panicOpKind, Module: modMyApp, File: "foo_test.go", Language: langGo},
-		{Kind: panicOpKind, Module: modMyMod, File: "tests/integration.rs", Language: langRust},
+		{Kind: panicOpKind, Module: modMyApp, File: fileFooTestGo, Language: langGo},
+		{Kind: panicOpKind, Module: modMyMod, File: fileTestsIntegRs, Language: langRust},
 	}}
 	res := modularity.PanicDensityMetric{}.Calculate(in)
 	if res.Band != bandNAStr {
