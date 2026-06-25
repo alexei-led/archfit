@@ -114,7 +114,7 @@ func TestSyntax_Go_Kinds(t *testing.T) {
 		{"pkg/repo/repo.go", kindInterfaceStr, "Repository", 4, true}, // 3+1
 		{fileSvcGo, kindStructStr, "Service", 6, true},                // 5+1
 		{fileSvcGo, kindFunctionStr, "NewService", 11, true},          // 10+1
-		{fileSvcGo, "method", "Save", 21, true},                       // 20+1
+		{fileSvcGo, kindMethodStr, "Save", 21, true},                  // 20+1
 	}
 	for i, tc := range cases {
 		f := facts[i]
@@ -340,10 +340,10 @@ func TestSyntax_TS_ClassAndInterface_Kinds(t *testing.T) {
 		t.Fatalf("len(facts) = %d, want 2", len(facts))
 	}
 	// Sorted: AuthService (line 1) < AuthPort (line 32) — same file, StartLine order.
-	if facts[0].Kind != "class" || facts[0].Name != "AuthService" {
+	if facts[0].Kind != kindClassStr || facts[0].Name != "AuthService" {
 		t.Errorf("facts[0] = {%s %s}, want {class AuthService}", facts[0].Kind, facts[0].Name)
 	}
-	if facts[1].Kind != "interface" || facts[1].Name != "AuthPort" {
+	if facts[1].Kind != kindInterfaceStr || facts[1].Name != "AuthPort" {
 		t.Errorf("facts[1] = {%s %s}, want {interface AuthPort}", facts[1].Kind, facts[1].Name)
 	}
 }

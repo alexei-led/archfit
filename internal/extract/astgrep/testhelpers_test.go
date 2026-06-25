@@ -19,8 +19,11 @@ const (
 
 	// Repeated kind and language strings used across syntax tests.
 	kindFunctionStr   = "function"
+	kindMethodStr     = "method"
 	kindStructStr     = "struct"
 	kindInterfaceStr  = "interface"
+	kindClassStr      = "class"
+	kindEnumStr       = "enum"
 	kindAnnotStr      = "annotation"
 	kindRouteStr      = "route"
 	langTypeScriptStr = "typescript"

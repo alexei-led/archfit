@@ -108,6 +108,11 @@ func TestSyntaxIntegration_JSONShape(t *testing.T) {
 // (e.g. an unquoted YAML-special character like '#' in a pattern value) will
 // cause sg to exit non-zero with empty stdout, which this test catches.
 //
+// Per-kind assertions: each language has a set of expected kinds that its
+// fixture must produce. This catches "rule parses but never matches" (e.g. the
+// rs-attribute bug where #[$NAME($$$)] inside has: never matched any real
+// attribute_item). Any expected kind with 0 facts fails the sub-test.
+//
 // Each sub-test is independent; adding a new language rule file requires only a
 // new fixture and a new table row.
 func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
@@ -121,20 +126,47 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 
 	// spotName is a fact Name that must appear for each language so we know the
 	// rule file fired on real source, not just parsed without matching anything.
+	// requiredKinds lists every Kind that the fixture contains at least one of —
+	// the test fails if any of these yields 0 facts (rule parsed but never matched).
 	tests := []struct {
-		lang     string
-		spotName string
-		spotKind string
+		lang          string
+		spotName      string
+		spotKind      string
+		requiredKinds []string
 	}{
 		// Go: fixture.go exports func Hello.
-		{lang: "go", spotName: "Hello", spotKind: kindFunctionStr},
-		// TypeScript: fixture.ts exports func greet.
-		{lang: "typescript", spotName: "greet", spotKind: kindFunctionStr},
-		// Python: fixture.py declares func process.
-		{lang: "python", spotName: "process", spotKind: kindFunctionStr},
-		// Rust: fixture.rs exports func create_widget.
-		// Also exercises rs-attribute (the #[$NAME($$$)] pattern that was previously broken).
-		{lang: "rust", spotName: "create_widget", spotKind: kindFunctionStr},
+		// Fixture covers: function, struct, interface (see fixture.go).
+		{
+			lang:          "go",
+			spotName:      "Hello",
+			spotKind:      kindFunctionStr,
+			requiredKinds: []string{kindFunctionStr, kindStructStr, kindInterfaceStr},
+		},
+		// TypeScript: fixture.ts exports func greet + @Controller decorator + express route.
+		// Fixture covers: function, class, interface, annotation, route (see fixture.ts).
+		{
+			lang:          "typescript",
+			spotName:      "greet",
+			spotKind:      kindFunctionStr,
+			requiredKinds: []string{kindFunctionStr, kindClassStr, kindInterfaceStr, kindAnnotStr, kindRouteStr},
+		},
+		// Python: fixture.py declares func process + @staticmethod decorator + fastapi route.
+		// Fixture covers: function, class, annotation, route (see fixture.py).
+		{
+			lang:          "python",
+			spotName:      "process",
+			spotKind:      kindFunctionStr,
+			requiredKinds: []string{kindFunctionStr, kindClassStr, kindAnnotStr, kindRouteStr},
+		},
+		// Rust: fixture.rs exports func create_widget + #[derive(Debug, Clone)] attribute.
+		// Fixture covers: function, struct, enum, interface, method, annotation (see fixture.rs).
+		// annotation (rs-attribute) was the previously-broken kind — it must now yield ≥1 match.
+		{
+			lang:          "rust",
+			spotName:      "create_widget",
+			spotKind:      kindFunctionStr,
+			requiredKinds: []string{kindFunctionStr, kindStructStr, kindEnumStr, kindInterfaceStr, kindMethodStr, kindAnnotStr},
+		},
 	}
 
 	runner := toolrun.New()
@@ -169,6 +201,21 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 			}
 			if !found {
 				t.Errorf("Syntax(%q): expected fact Name=%q Kind=%q; got %d facts: %+v", tc.lang, tc.spotName, tc.spotKind, len(facts), facts)
+			}
+			// Per-kind assertion: every expected kind must yield at least one fact.
+			// This catches rules that parse correctly but never match real code.
+			kindCount := make(map[string]int, len(facts))
+			for _, f := range facts {
+				kindCount[f.Kind]++
+			}
+			for _, wantKind := range tc.requiredKinds {
+				if kindCount[wantKind] == 0 {
+					t.Errorf("Syntax(%q): expected ≥1 fact of Kind=%q but got 0 — rule for this kind matches nothing in the fixture", tc.lang, wantKind)
+				}
+			}
+			// FilesSeen must be > 0 when facts were produced.
+			if cov.FilesSeen == 0 {
+				t.Errorf("Syntax(%q): FilesSeen=0 but %d facts were produced — coverage counter not set", tc.lang, len(facts))
 			}
 		})
 	}

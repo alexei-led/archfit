@@ -98,14 +98,18 @@ rule:
         pattern: $NAME
 ---
 # Attribute rule: captures #[...] attribute items.
-# $NAME captures the attribute identifier (e.g. "derive", "cfg", "get", "post").
+# $NAME captures the attribute path (e.g. "derive", "cfg", "tokio::main", "serde").
+# Two pattern alternatives cover every attribute form:
+#   - '#[$NAME($$$)]' — with arguments: #[derive(...)], #[cfg(...)], #[serde(...)]
+#   - '#[$NAME]'      — without arguments: #[test], #[no_mangle], #[tokio::main]
+# Using `any:` at rule level (not inside `has:`) so metavar $NAME surfaces in
+# metaVariables.single — confirmed against sg 0.44 on real Rust files.
 id: rs-attribute
 language: Rust
 rule:
-  all:
-    - kind: attribute_item
-    - has:
-        pattern: '#[$NAME($$$)]'
+  any:
+    - pattern: '#[$NAME($$$)]'
+    - pattern: '#[$NAME]'
 ---
 # Route rules: attribute-based routes (actix-web / rocket).
 # #[get("/path")] / #[post("/path")] etc. on a function.

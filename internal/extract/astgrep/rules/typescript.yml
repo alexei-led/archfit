@@ -78,17 +78,20 @@ rule:
 ---
 # Decorator rule: captures the decorator identifier applied to a class.
 # $NAME is the decorator name (e.g. "Controller", "Injectable").
-# Ceiling: only matches decorators directly on exported class declarations.
+# The decorator node is a direct child of export_statement (a sibling of
+# class_declaration), NOT nested inside class_declaration — the tree shape is:
+#   export_statement > decorator + class_declaration
+# So `inside: export_statement` is the correct constraint, not the double-nesting.
+# `has: pattern: $NAME($$$)` captures the identifier (arg-ful form only; most
+# class-level decorators carry arguments — @Injectable(), @Component({...}), etc.)
 id: ts-decorator
 language: TypeScript
 rule:
   kind: decorator
   has:
-    pattern: $NAME
+    pattern: $NAME($$$)
   inside:
-    kind: class_declaration
-    inside:
-      kind: export_statement
+    kind: export_statement
 ---
 # Route rules: one entry covers express/koa/fastify (syntactically identical
 # call patterns: receiver.get/post/put/delete/patch(path, handler)).
@@ -131,19 +134,21 @@ rule:
 # here + one entry in tsRuleKinds (syntax.go) with IsSignal:true.
 #
 # express group: express, koa, fastify all share the same call shape (labelled "express").
+# Use $$$ (multi-metavar) to match both default imports (import express from '...')
+# and named imports (import { Router } from '...') — $$ only matches named imports.
 id: ts-import-express
 language: TypeScript
 rule:
   any:
-    - pattern: import $$ from 'express'
-    - pattern: import $$ from 'koa'
-    - pattern: import $$ from 'fastify'
-    - pattern: import $$ from '@fastify/autoload'
+    - pattern: import $$$ from 'express'
+    - pattern: import $$$ from 'koa'
+    - pattern: import $$$ from 'fastify'
+    - pattern: import $$$ from '@fastify/autoload'
 ---
 # nest group: @nestjs/common decorators.
 id: ts-import-nest
 language: TypeScript
 rule:
   any:
-    - pattern: import $$ from '@nestjs/common'
-    - pattern: import $$ from '@nestjs/core'
+    - pattern: import $$$ from '@nestjs/common'
+    - pattern: import $$$ from '@nestjs/core'

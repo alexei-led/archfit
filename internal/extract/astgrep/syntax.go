@@ -302,7 +302,15 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 	}
 
 	diagnostic.SortSyntaxFacts(facts)
-	cov := diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusOK}
+
+	// Count distinct files that produced at least one fact.
+	// FilesSeen=0 is reserved for "ran but nothing matched" — callers use it to
+	// distinguish zero-match runs from untooled runs (StatusAbsent/StatusPartial).
+	seen := make(map[string]struct{}, len(facts))
+	for i := range facts {
+		seen[facts[i].File] = struct{}{}
+	}
+	cov := diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusOK, FilesSeen: len(seen)}
 	return facts, cov, nil
 }
 
