@@ -135,13 +135,14 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 		requiredKinds []string
 	}{
 		// Go: fixture.go exports func Hello + BigStruct (struct_field) + PanicFixture (panic_op);
-		// fixture_test_import.go imports testify/mock.
-		// Fixture covers: function, struct, interface, test_import, struct_field, panic_op (see fixture*.go).
+		// fixture_test_import.go imports testify/mock;
+		// fixture_type_leak.go (//go:build ignore) exercises go-type-leak (type_leak kind).
+		// Fixture covers: function, struct, interface, test_import, struct_field, panic_op, type_leak (see fixture*.go).
 		{
 			lang:          "go",
 			spotName:      "Hello",
 			spotKind:      kindFunctionStr,
-			requiredKinds: []string{kindFunctionStr, kindStructStr, kindInterfaceStr, kindTestImportStr, kindStructFieldStr, kindPanicOpStr},
+			requiredKinds: []string{kindFunctionStr, kindStructStr, kindInterfaceStr, kindTestImportStr, kindStructFieldStr, kindPanicOpStr, kindTypeLeakStr},
 		},
 		// TypeScript: fixture.ts exports func greet + @Controller decorator + express route + jest import.
 		// Fixture covers: function, class, interface, annotation, route, test_import (see fixture.ts).

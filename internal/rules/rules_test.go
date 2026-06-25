@@ -1610,3 +1610,129 @@ func TestStructFieldMax_InvalidConfig(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// PublicAPITypeLeak
+// ---------------------------------------------------------------------------
+
+const (
+	typePublicAPITypeLeak = "public_api_type_leak"
+	typeCliContext        = "cli.Context"
+)
+
+// makeTypeLeakGraph builds a graph with the given package nodes (no edges needed).
+func makeTypeLeakGraph(pkgPaths []string) *graph.Graph {
+	nodes := make([]graph.Node, len(pkgPaths))
+	for i, p := range pkgPaths {
+		nodes[i] = graph.Node{Kind: graph.NodeKindPackage, Path: p}
+	}
+	return graph.Build([]graph.Facts{{Nodes: nodes, Language: "go"}})
+}
+
+func TestPublicAPITypeLeak(t *testing.T) {
+	const (
+		ruleID         = "no-type-leak"
+		fileDomain     = "domain/service.go"
+		moduleNameDom  = "domain"
+		typeLeakKind   = "type_leak"
+		externalCliPkg = "github.com/urfave/cli/v2"
+	)
+
+	rc := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			moduleNameDom: {Paths: []string{"domain/**"}},
+		},
+		Rules: []config.RuleDef{
+			{ID: ruleID, Type: typePublicAPITypeLeak},
+		},
+	}.ForRules()
+	rs, err := rules.New(rc)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	r := rs[0]
+
+	t.Run("external_type_leak_fires", func(t *testing.T) {
+		g := makeTypeLeakGraph([]string{externalCliPkg})
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding, got %d: %+v", len(findings), findings)
+		}
+		f := findings[0]
+		if f.RuleID != ruleID {
+			t.Errorf("RuleID=%q, want %q", f.RuleID, ruleID)
+		}
+		if f.MatchedBy["module"] != moduleNameDom {
+			t.Errorf("matched_by.module=%q, want %q", f.MatchedBy["module"], moduleNameDom)
+		}
+		if f.MatchedBy["type"] != typeCliContext {
+			t.Errorf("matched_by.type=%q, want %q", f.MatchedBy["type"], typeCliContext)
+		}
+		if f.Why == "" {
+			t.Error("Why is empty")
+		}
+		if f.Severity != finding.SeverityMedium {
+			t.Errorf("Severity=%v, want Medium", f.Severity)
+		}
+	})
+
+	t.Run("first_party_type_no_finding", func(t *testing.T) {
+		// "internal" has no dot — not a fully-qualified external path.
+		g := makeTypeLeakGraph([]string{"internal/service"})
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: "internal.Service", File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("want 0 findings for first-party type, got %d", len(findings))
+		}
+	})
+
+	t.Run("no_syntax_facts_returns_nil", func(t *testing.T) {
+		g := makeTypeLeakGraph([]string{externalCliPkg})
+		ev := rules.Evidence{}
+		findings := r.Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("want 0 findings with empty SyntaxFacts, got %d", len(findings))
+		}
+	})
+
+	t.Run("dedup_same_module_and_type", func(t *testing.T) {
+		g := makeTypeLeakGraph([]string{externalCliPkg})
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding after dedup, got %d", len(findings))
+		}
+	})
+
+	t.Run("default_gate_is_warn", func(t *testing.T) {
+		// gatedRule wraps with gate="warn" → Kind=advisory.
+		g := makeTypeLeakGraph([]string{externalCliPkg})
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding, got %d", len(findings))
+		}
+		if findings[0].Kind != kindAdvisory {
+			t.Errorf("Kind=%q, want %q (gate: warn default)", findings[0].Kind, kindAdvisory)
+		}
+	})
+}

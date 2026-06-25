@@ -45,6 +45,7 @@ const (
 	kindStructField = "struct_field"
 	kindPanicOp     = "panic_op"
 	kindGlobalState = "global_state"
+	kindTypeLeak    = "type_leak"
 )
 
 // Language identifier constants used as keys in embeddedRules and langRuleKinds.
@@ -130,6 +131,9 @@ var goRuleKinds = map[string]kindInfo{
 	"go-struct-field": {Kind: kindStructField},
 	// Panic-operation rules: report-only, never gates.
 	"go-panic": {Kind: kindPanicOp},
+	// Type-leak rules: exported struct fields with qualified external-package types.
+	// report-only (Cat 5); consumed by public_api_type_leak rule.
+	"go-type-leak": {Kind: kindTypeLeak},
 	// Test-import rules: emit test_import facts for production Go files.
 	"go-test-import-testify-mock":    {Kind: kindTestImport, Framework: fwGroupTestifyMock},
 	"go-test-import-testify-assert":  {Kind: kindTestImport, Framework: fwGroupTestifyAssert},
@@ -408,6 +412,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 // For most rules the name is in metaVariables.single["NAME"].text.
 // For go-type-alias it is absent from metaVariables, so we fall back to
 // parsing the match text ("type ID = int" → "ID").
+// For go-type-leak the name is built from $PKG and $TYPE ("pkg.Type").
 func nameFromMatch(m sgSyntaxMatch) string {
 	if nv, ok := m.MetaVariables.Single["NAME"]; ok && nv.Text != "" {
 		return nv.Text
@@ -415,6 +420,12 @@ func nameFromMatch(m sgSyntaxMatch) string {
 	// Route rules: use $PATH as the name (the URL pattern string).
 	if pv, ok := m.MetaVariables.Single["PATH"]; ok && pv.Text != "" {
 		return strings.Trim(pv.Text, `"`+"`")
+	}
+	// go-type-leak: build "pkg.Type" from $PKG and $TYPE metavars.
+	pkg := m.MetaVariables.Single["PKG"].Text
+	typ := m.MetaVariables.Single["TYPE"].Text
+	if pkg != "" && typ != "" {
+		return pkg + "." + typ
 	}
 	// Fallback for go-type-alias: extract from declaration text.
 	if sub := goTypeAliasNameRe.FindStringSubmatch(m.Text); len(sub) == 2 {
@@ -462,9 +473,10 @@ func isExported(lang, ruleID, name string) bool {
 		// The YAML rule already requires visibility_modifier, so any match is pub.
 		return true
 	default: // go and future languages: uppercase-first convention
-		// struct-field facts represent whole structs for field-count analysis, not API surface.
+		// struct-field and type-leak facts are signal/structural, not exported API entries.
 		if strings.HasPrefix(ruleID, "go-route-") || strings.HasPrefix(ruleID, "go-import-") ||
-			strings.HasPrefix(ruleID, "go-test-import-") || ruleID == "go-struct-field" {
+			strings.HasPrefix(ruleID, "go-test-import-") || ruleID == "go-struct-field" ||
+			ruleID == "go-type-leak" {
 			return false
 		}
 		return len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z'

@@ -31,6 +31,7 @@ const (
 	kindStructFieldStr = "struct_field"
 	kindPanicOpStr     = "panic_op"
 	kindGlobalStateStr = "global_state"
+	kindTypeLeakStr    = "type_leak"
 	langTypeScriptStr  = "typescript"
 	langPythonStr      = "python"
 	langRustStr        = "rust"

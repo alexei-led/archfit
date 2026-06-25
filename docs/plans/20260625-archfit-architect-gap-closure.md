@@ -185,16 +185,16 @@ while keeping the judgment layer (LLM/human) where the doc says it belongs.
 
 ### Task 6: Cat 5 — public-API framework-type-leak facts (typed langs), report-only
 
-- [ ] add ast-grep rules for exported fields / function return types whose type names an external
+- [x] add ast-grep rules for exported fields / function return types whose type names an external
       package (Go: exported struct field type from an imported non-stdlib pkg; mirror for Rust/TS);
       map to a `kindTypeLeak` Kind
-- [ ] cross-reference the leaked type against `Evidence.Graph` `NodeKindExternal` targets to confirm
+- [x] cross-reference the leaked type against `Evidence.Graph` `NodeKindExternal` targets to confirm
       the type is external (not first-party) before emitting — keep precision high; surface report-only
-- [ ] add an opt-in `public_api_type_leak` rule (`case` + struct + `defaultGateForType` → `warn`)
+- [x] add an opt-in `public_api_type_leak` rule (`case` + struct + `defaultGateForType` → `warn`)
       so a project can gate it when desired
-- [ ] add fixture (an exported field typed by an imported external pkg, e.g. `*cli.Context`-shaped) + required-kind row
-- [ ] write unit tests for the rule (leak present vs first-party type → no finding)
-- [ ] regenerate goldens + full gate — must pass before Task 7
+- [x] add fixture (an exported field typed by an imported external pkg, e.g. `*cli.Context`-shaped) + required-kind row
+- [x] write unit tests for the rule (leak present vs first-party type → no finding)
+- [x] regenerate goldens + full gate — must pass before Task 7
 
 ### Task 7: Cat 9 — Python lazy / in-function import signal, report-only
 

@@ -15,6 +15,7 @@
 #   go-route-fiber  → route, framework=fiber
 #   go-route-gorilla → route, framework=gorilla/mux
 #   go-handler-sig  → function  (handler signature: exported fn with http.ResponseWriter param)
+#   go-type-leak    → type_leak (exported struct fields with qualified external-package types)
 
 id: go-func
 language: go
@@ -291,3 +292,36 @@ language: go
 rule:
   kind: call_expression
   regex: ^panic\(
+---
+# go-type-leak: exported struct fields whose type is a qualified (external-package)
+# type. Matches both direct (pkg.Type) and pointer (*pkg.Type) forms.
+# ruleId maps to kindTypeLeak in goRuleKinds (syntax.go).
+# $PKG = package selector (e.g. "cli"), $TYPE = type name (e.g. "Context").
+# Ceiling: field-level export is not checked — unexported fields on exported
+# structs are also captured (report-only; acceptable Cat 5 structural signal).
+# Ceiling: go-type-leak covers Go only. Rust qualified types (crate::Module::Type) and
+# TypeScript import-path types require different grammar patterns — extend in a future task.
+id: go-type-leak
+language: go
+rule:
+  kind: field_declaration
+  inside:
+    kind: struct_type
+    stopBy: end
+    inside:
+      kind: type_spec
+      stopBy: end
+      has:
+        field: name
+        pattern: $STRUCT
+        regex: ^[A-Z]
+      inside:
+        kind: type_declaration
+  has:
+    any:
+      - kind: qualified_type
+        pattern: $PKG.$TYPE
+      - kind: pointer_type
+        has:
+          kind: qualified_type
+          pattern: $PKG.$TYPE
