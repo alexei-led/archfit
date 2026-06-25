@@ -132,3 +132,27 @@ rule:
   all:
     - kind: call_expression
     - pattern: $ROUTER.route($PATH, $$$)
+---
+# Import-signal rules: used by the adapter (IsSignal=true) to confirm that the
+# file actually imports the route framework before emitting route facts.
+# Signal rules are NEVER emitted as SyntaxFacts — they only populate the
+# per-file framework-confirmed map in the two-pass gating logic.
+#
+# Extensibility: to add a new framework, add one route rule + one signal rule
+# here + one entry in rustRuleKinds (syntax.go) with IsSignal:true.
+#
+# actix group: actix-web / rocket (both use #[get(...)]/etc. attributes).
+id: rs-import-actix
+language: Rust
+rule:
+  any:
+    - pattern: use actix_web::$$$
+    - pattern: use rocket::$$$
+---
+# axum group: axum / warp (both use .route(path, handler) builder).
+id: rs-import-axum
+language: Rust
+rule:
+  any:
+    - pattern: use axum::$$$
+    - pattern: use warp::$$$

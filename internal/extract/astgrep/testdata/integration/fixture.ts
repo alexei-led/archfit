@@ -1,5 +1,8 @@
 // Minimal TypeScript fixture for per-rule-file integration tests.
-// Covers: ts-func, ts-class, ts-interface, ts-type-alias, ts-enum, ts-method, ts-decorator.
+// Covers: ts-func, ts-class, ts-interface, ts-type-alias, ts-enum, ts-method, ts-decorator,
+//         ts-route-express (confirmed via ts-import-express signal).
+
+import express from 'express';
 
 export function greet(name: string): string {
     return `Hello, ${name}`;
@@ -24,3 +27,6 @@ export enum Direction {
 
 @Controller("/api")
 export class ApiController {}
+
+const app = express();
+app.get('/hello', (req, res) => { res.send('hello'); });

@@ -31,7 +31,8 @@ const (
 
 // file path constants reused across cases.
 const (
-	fileInternalDBUser = "internal/db/user.go"
+	fileInternalDBUser   = "internal/db/user.go"
+	fileInternalRepoUser = "internal/repository/user.go"
 )
 
 func TestDeriveRoles(t *testing.T) {
@@ -191,7 +192,7 @@ func TestDeriveRoles(t *testing.T) {
 		},
 		{
 			name:      "path contains repository → repository low",
-			input:     diagnostic.SyntaxFact{Kind: kindFunction, Name: "findByID", File: "internal/repository/user.go"},
+			input:     diagnostic.SyntaxFact{Kind: kindFunction, Name: "findByID", File: fileInternalRepoUser},
 			wantRole:  syntax.RoleRepository,
 			wantConf:  syntax.ConfLow,
 			wantEvPfx: "path contains repository",
@@ -241,7 +242,7 @@ func TestDeriveRoles(t *testing.T) {
 		{
 			name: "route+name-suffix: tier 1 (route) wins over tier 2 (name suffix Repository)",
 			input: diagnostic.SyntaxFact{
-				Kind: kindRoute, Name: nameUserRepository, File: "internal/repository/user.go",
+				Kind: kindRoute, Name: nameUserRepository, File: fileInternalRepoUser,
 			},
 			wantRole:  syntax.RoleHandler, // route wins
 			wantConf:  syntax.ConfHigh,
@@ -289,6 +290,54 @@ func TestDeriveRoles(t *testing.T) {
 			}
 			if tc.wantRole == "" && f.Evidence != "" {
 				t.Errorf("Evidence = %q, want empty (no match)", f.Evidence)
+			}
+		})
+	}
+}
+
+// TestRoleFromPath_WordBoundary verifies the segment-tokenizer fix for F2:
+// short tokens like "repo" and "domain" must not match as substrings of longer
+// path segments like "update_report" or "subdomain".
+func TestRoleFromPath_WordBoundary(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		file     string
+		wantRole string // empty = no role
+	}{
+		// FP cases (were false-positive before fix)
+		{name: "update_report not repository", file: "internal/update_report.go", wantRole: ""},
+		{name: "update_report_handler not repository (is handler)", file: "internal/update_report_handler.go", wantRole: syntax.RoleHandler},
+		{name: "subdomain not domain", file: "pkg/subdomain/service.go", wantRole: syntax.RoleService},
+
+		// TP cases (must still match after fix)
+		{name: "handlers/ matches handler", file: "pkg/handlers/user.go", wantRole: syntax.RoleHandler},
+		{name: "handler/ matches handler", file: "pkg/handler/user.go", wantRole: syntax.RoleHandler},
+		{name: "controller/ matches handler", file: "app/controller/home.go", wantRole: syntax.RoleHandler},
+		{name: "routes/ matches handler", file: "internal/routes/setup.go", wantRole: syntax.RoleHandler},
+		{name: "repositories/ matches repository", file: "internal/repositories/user.go", wantRole: syntax.RoleRepository},
+		{name: "repository/ matches repository", file: fileInternalRepoUser, wantRole: syntax.RoleRepository},
+		{name: "repo/ matches repository", file: "internal/repo/user.go", wantRole: syntax.RoleRepository},
+		{name: "storage/ matches repository", file: "internal/storage/user.go", wantRole: syntax.RoleRepository},
+		{name: "services/ matches service", file: "pkg/services/billing.go", wantRole: syntax.RoleService},
+		{name: "service/ matches service", file: "internal/service/billing.go", wantRole: syntax.RoleService},
+		{name: "usecase/ matches service", file: "internal/usecase/order.go", wantRole: syntax.RoleService},
+		{name: "domain/ matches domain", file: "internal/domain/pricing.go", wantRole: syntax.RoleDomain},
+		{name: "model/ matches domain", file: "internal/model/user.go", wantRole: syntax.RoleDomain},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			facts := syntax.DeriveRoles([]diagnostic.SyntaxFact{
+				{Kind: kindFunction, Name: "someFunc", File: tc.file},
+			})
+			if len(facts) != 1 {
+				t.Fatalf("DeriveRoles returned %d facts, want 1", len(facts))
+			}
+			if facts[0].Role != tc.wantRole {
+				t.Errorf("file=%q: Role = %q, want %q", tc.file, facts[0].Role, tc.wantRole)
 			}
 		})
 	}

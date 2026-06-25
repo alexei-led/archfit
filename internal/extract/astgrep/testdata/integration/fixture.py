@@ -1,5 +1,10 @@
 # Minimal Python fixture for per-rule-file integration tests.
-# Covers: py-func, py-class, py-decorator.
+# Covers: py-func, py-class, py-decorator,
+#         py-route-decorator (confirmed via py-import-fastapi signal).
+
+from fastapi import FastAPI
+
+app = FastAPI()
 
 
 def process(data):
@@ -16,3 +21,9 @@ class Processor:
 def _hidden():
     """Private — must not appear in exported facts."""
     pass
+
+
+@app.get('/items')
+def list_items():
+    """FastAPI route — confirmed by import above."""
+    return []

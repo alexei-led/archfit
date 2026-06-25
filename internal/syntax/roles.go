@@ -155,20 +155,55 @@ func roleFromName(name string) (role, evidence string) {
 	return "", ""
 }
 
-// roleFromPath derives a role from a file path using §5 path-substring
-// heuristics. Path is lowercased before comparison.
+// roleToken is a canonical path segment and its common plural form used for
+// whole-segment matching in roleFromPath. Empty Plural means no plural form.
+type roleToken struct {
+	Token  string
+	Plural string
+}
+
+// Path-segment token tables, ordered highest-priority first within each role group.
+// Extensibility: add entries here to recognise new path-segment conventions.
+var (
+	handlerTokens = []roleToken{
+		{Token: "handler", Plural: "handlers"},
+		{Token: "controller", Plural: "controllers"},
+		{Token: "route", Plural: "routes"},
+		{Token: "router", Plural: "routers"},
+	}
+	repoTokens = []roleToken{
+		{Token: "repository", Plural: "repositories"},
+		{Token: "repo", Plural: "repos"},
+		{Token: "storage", Plural: "storages"},
+		{Token: "persistence", Plural: ""},
+	}
+	serviceTokens = []roleToken{
+		{Token: "service", Plural: "services"},
+		{Token: "usecase", Plural: "usecases"},
+		{Token: "application", Plural: "applications"},
+	}
+	domainTokens = []roleToken{
+		{Token: "domain", Plural: "domains"},
+		{Token: "model", Plural: "models"},
+		{Token: "entity", Plural: "entities"},
+	}
+)
+
+// roleFromPath derives a role from a file path using §5 path-segment heuristics.
+// Path is lowercased and split on [/\_\-.] so only whole tokens match.
+// This prevents "repo" matching "update_report" or "domain" matching "subdomain".
 func roleFromPath(file string) (role, evidence string) {
 	lower := strings.ToLower(file)
-	if seg, ok := firstMatch(lower, "handler", "controller", "routes"); ok {
+	if seg, ok := firstSegmentMatch(lower, handlerTokens); ok {
 		return RoleHandler, "path contains " + seg
 	}
-	if seg, ok := firstMatch(lower, "repository", "repo", "storage", "persistence"); ok {
+	if seg, ok := firstSegmentMatch(lower, repoTokens); ok {
 		return RoleRepository, "path contains " + seg
 	}
-	if seg, ok := firstMatch(lower, "service", "usecase", "application"); ok {
+	if seg, ok := firstSegmentMatch(lower, serviceTokens); ok {
 		return RoleService, "path contains " + seg
 	}
-	if seg, ok := firstMatch(lower, "domain", "model", "entity"); ok {
+	if seg, ok := firstSegmentMatch(lower, domainTokens); ok {
 		return RoleDomain, "path contains " + seg
 	}
 	return "", ""
@@ -182,12 +217,19 @@ func set(f diagnostic.SyntaxFact, role, conf, evidence string) diagnostic.Syntax
 	return f
 }
 
-// firstMatch returns the first sub in subs that s contains, and true.
-// Returns "", false if none match.
-func firstMatch(s string, subs ...string) (string, bool) {
-	for _, sub := range subs {
-		if strings.Contains(s, sub) {
-			return sub, true
+// firstSegmentMatch splits lower on path delimiters and returns the matched
+// segment (the actual token found in the path) if any token in the table
+// matches a whole segment (including plural forms). Returns "", false if none match.
+// Evidence uses the matched segment from the path, not the canonical token name.
+func firstSegmentMatch(lower string, tokens []roleToken) (string, bool) {
+	segs := strings.FieldsFunc(lower, func(r rune) bool {
+		return r == '/' || r == '\\' || r == '_' || r == '-' || r == '.'
+	})
+	for _, seg := range segs {
+		for _, t := range tokens {
+			if seg == t.Token || (t.Plural != "" && seg == t.Plural) {
+				return seg, true // return the actual path segment for evidence
+			}
 		}
 	}
 	return "", false

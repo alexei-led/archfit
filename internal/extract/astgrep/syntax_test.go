@@ -191,9 +191,14 @@ func TestSyntax_Go_TypeAlias(t *testing.T) {
 }
 
 func TestSyntax_Go_RouteAndFramework(t *testing.T) {
+	const fileRouter = "internal/api/router.go"
 	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntryWithPath("go-route-gin", "internal/api/router.go", pathUsers, 10),
-		syntaxEntryWithPath("go-route-net-http", "internal/api/router.go", "/health", 20),
+		// Import signals: confirm gin and net/http are imported in this file.
+		syntaxEntry("go-import-gin", fileRouter, `"github.com/gin-gonic/gin"`, 1, 1),
+		syntaxEntry("go-import-net-http", fileRouter, `"net/http"`, 2, 2),
+		// Route facts: will be emitted because imports are confirmed above.
+		syntaxEntryWithPath("go-route-gin", fileRouter, pathUsers, 10),
+		syntaxEntryWithPath("go-route-net-http", fileRouter, "/health", 20),
 	})
 
 	a := astgrep.New(presentRunner(entries))
@@ -202,11 +207,10 @@ func TestSyntax_Go_RouteAndFramework(t *testing.T) {
 		t.Fatalf("Syntax: %v", err)
 	}
 	if len(facts) != 2 {
-		t.Fatalf("len(facts) = %d, want 2", len(facts))
+		t.Fatalf("len(facts) = %d, want 2 (signal entries must not appear as facts)", len(facts))
 	}
 
-	// sorted by StartLine: /health (20+1=21) < /users (10+1=11) — wait, /users is line 10
-	// sorted: StartLine 11 (/users, gin) then 21 (/health, net/http)
+	// sorted by StartLine: /users(11) then /health(21)
 	gin := facts[0]
 	if gin.Kind != kindRouteStr {
 		t.Errorf("facts[0].Kind = %q, want route", gin.Kind)
@@ -219,6 +223,9 @@ func TestSyntax_Go_RouteAndFramework(t *testing.T) {
 	}
 	if gin.Exported {
 		t.Errorf("facts[0].Exported should be false for routes")
+	}
+	if !gin.FrameworkConfirmed {
+		t.Errorf("facts[0].FrameworkConfirmed should be true for confirmed route")
 	}
 
 	http := facts[1]
@@ -370,9 +377,13 @@ func TestSyntax_TS_Decorator_NotExported(t *testing.T) {
 }
 
 func TestSyntax_TS_Route_Express(t *testing.T) {
+	const fileRouter = "src/api/router.ts"
 	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntryWithPath("ts-route-express", "src/api/router.ts", pathUsers, 10),
-		syntaxEntryWithPath("ts-route-express", "src/api/router.ts", "/health", 20),
+		// Import signal: confirm express is imported in this file.
+		syntaxEntry("ts-import-express", fileRouter, "express", 1, 1),
+		// Route facts: emitted because import is confirmed above.
+		syntaxEntryWithPath("ts-route-express", fileRouter, pathUsers, 10),
+		syntaxEntryWithPath("ts-route-express", fileRouter, "/health", 20),
 	})
 
 	a := astgrep.New(presentRunner(entries))
@@ -404,9 +415,13 @@ func TestSyntax_TS_Route_Express(t *testing.T) {
 }
 
 func TestSyntax_TS_Route_Nest(t *testing.T) {
+	const fileController = "src/api/user.controller.ts"
 	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntryWithPath("ts-route-nest-controller", "src/api/user.controller.ts", pathUsers, 5),
-		syntaxEntryWithPath("ts-route-nest-method", "src/api/user.controller.ts", "/", 10),
+		// Import signal: confirm @nestjs/common is imported in this file.
+		syntaxEntry("ts-import-nest", fileController, "@nestjs/common", 1, 1),
+		// Route facts: emitted because import is confirmed above.
+		syntaxEntryWithPath("ts-route-nest-controller", fileController, pathUsers, 5),
+		syntaxEntryWithPath("ts-route-nest-method", fileController, "/", 10),
 	})
 
 	a := astgrep.New(presentRunner(entries))
@@ -540,9 +555,13 @@ func TestSyntax_Py_Decorator_NotExported(t *testing.T) {
 func TestSyntax_Py_Route_Decorator(t *testing.T) {
 	// fastapi/flask/starlette/aiohttp all share the same @recv.verb(path) shape.
 	// Labelled "fastapi" as the canonical representative.
+	const fileRoutes = "src/api/routes.py"
 	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntryWithPath("py-route-decorator", "src/api/routes.py", pathUsers, 5),
-		syntaxEntryWithPath("py-route-decorator", "src/api/routes.py", "/items", 10),
+		// Import signal: confirm fastapi is imported in this file.
+		syntaxEntry("py-import-fastapi", fileRoutes, "fastapi", 1, 1),
+		// Route facts: emitted because import is confirmed above.
+		syntaxEntryWithPath("py-route-decorator", fileRoutes, pathUsers, 5),
+		syntaxEntryWithPath("py-route-decorator", fileRoutes, "/items", 10),
 	})
 
 	a := astgrep.New(presentRunner(entries))
@@ -577,9 +596,13 @@ func TestSyntax_Py_Route_Decorator(t *testing.T) {
 }
 
 func TestSyntax_Py_Route_Django(t *testing.T) {
+	const fileURLs = "myapp/urls.py"
 	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntryWithPath("py-route-django-path", "myapp/urls.py", "/users/", 3),
-		syntaxEntryWithPath("py-route-django-repath", "myapp/urls.py", `^/items/\d+/$`, 4),
+		// Import signal: confirm django.urls is imported in this file.
+		syntaxEntry("py-import-django", fileURLs, "django", 1, 1),
+		// Route facts: emitted because import is confirmed above.
+		syntaxEntryWithPath("py-route-django-path", fileURLs, "/users/", 3),
+		syntaxEntryWithPath("py-route-django-repath", fileURLs, `^/items/\d+/$`, 4),
 	})
 
 	a := astgrep.New(presentRunner(entries))
@@ -735,9 +758,13 @@ func TestSyntax_Rust_Attribute_NotExported(t *testing.T) {
 
 func TestSyntax_Rust_Route_Actix(t *testing.T) {
 	// actix/rocket share the same #[get(...)]/etc. attribute shape; labelled "actix".
+	const fileHandlers = "src/api/handlers.rs"
 	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntryWithPath("rs-route-actix-rocket", "src/api/handlers.rs", pathUsers, 10),
-		syntaxEntryWithPath("rs-route-actix-rocket", "src/api/handlers.rs", "/health", 20),
+		// Import signal: confirm actix_web is imported in this file.
+		syntaxEntry("rs-import-actix", fileHandlers, "actix_web", 1, 1),
+		// Route facts: emitted because import is confirmed above.
+		syntaxEntryWithPath("rs-route-actix-rocket", fileHandlers, pathUsers, 10),
+		syntaxEntryWithPath("rs-route-actix-rocket", fileHandlers, "/health", 20),
 	})
 
 	a := astgrep.New(presentRunner(entries))
@@ -773,9 +800,13 @@ func TestSyntax_Rust_Route_Actix(t *testing.T) {
 
 func TestSyntax_Rust_Route_Axum(t *testing.T) {
 	// axum/warp share the .route(path, handler) builder shape; labelled "axum".
+	const fileRouter = "src/api/router.rs"
 	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntryWithPath("rs-route-axum-warp", "src/api/router.rs", pathUsers, 5),
-		syntaxEntryWithPath("rs-route-axum-warp", "src/api/router.rs", "/items", 8),
+		// Import signal: confirm axum is imported in this file.
+		syntaxEntry("rs-import-axum", fileRouter, "axum", 1, 1),
+		// Route facts: emitted because import is confirmed above.
+		syntaxEntryWithPath("rs-route-axum-warp", fileRouter, pathUsers, 5),
+		syntaxEntryWithPath("rs-route-axum-warp", fileRouter, "/items", 8),
 	})
 
 	a := astgrep.New(presentRunner(entries))
@@ -806,5 +837,130 @@ func TestSyntax_Rust_Route_Axum(t *testing.T) {
 	}
 	if facts[1].Name != "/items" {
 		t.Errorf("facts[1].Name = %q, want /items", facts[1].Name)
+	}
+}
+
+// --- Import-gating false-positive regression tests ---
+// Each test reproduces a validated FP from the field and asserts it is dropped.
+
+// TestSyntax_FP_Go_NoImport_RouteDropped reproduces the pumba false positive:
+// cntr.Delete(ctx, ...) matches go-route-chi/go-route-fiber patterns, but the
+// file has NO chi/fiber import. With import-gating the route facts must be dropped.
+func TestSyntax_FP_Go_NoImport_RouteDropped(t *testing.T) {
+	const fileCntr = "container/container.go"
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		// No import-signal entry: file has no chi/fiber import.
+		// Route match: cntr.Delete(ctx, ...) matches go-route-chi pattern.
+		syntaxEntryWithPath("go-route-chi", fileCntr, "ctx", 42),
+		syntaxEntryWithPath("go-route-fiber", fileCntr, "ctx", 42),
+		// A declaration in the same file (must still be emitted).
+		syntaxEntryWithName("go-func", fileCntr, "Delete", 40, 50),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{"go"})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	// Route facts must be dropped; only the function declaration survives.
+	if len(facts) != 1 {
+		t.Fatalf("len(facts) = %d, want 1 (route FPs must be dropped)", len(facts))
+	}
+	if facts[0].Kind != kindFunctionStr {
+		t.Errorf("remaining fact Kind = %q, want function", facts[0].Kind)
+	}
+	if facts[0].Name != "Delete" {
+		t.Errorf("remaining fact Name = %q, want Delete", facts[0].Name)
+	}
+}
+
+// TestSyntax_FP_TS_NoImport_RouteDropped reproduces the codegraph false positive:
+// https.get(url, cb) matches ts-route-express pattern, but the file has NO express import.
+// With import-gating the route fact must be dropped.
+func TestSyntax_FP_TS_NoImport_RouteDropped(t *testing.T) {
+	const fileClient = "src/client/http.ts"
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		// No import-signal entry: file has no express import.
+		// Route match: https.get(url, cb) matches ts-route-express pattern.
+		syntaxEntryWithPath("ts-route-express", fileClient, "url", 10),
+		// A declaration in the same file (must still be emitted).
+		syntaxEntryWithName("ts-func", fileClient, "fetchData", 8, 15),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langTypeScriptStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	// Route fact must be dropped; only the function declaration survives.
+	if len(facts) != 1 {
+		t.Fatalf("len(facts) = %d, want 1 (route FP must be dropped)", len(facts))
+	}
+	if facts[0].Kind != kindFunctionStr {
+		t.Errorf("remaining fact Kind = %q, want function", facts[0].Kind)
+	}
+}
+
+// TestSyntax_FP_Py_VerbSet_RouteDropped reproduces the ccgram false positives:
+// @topic_state.register("topic") and @pytest.fixture(autouse=True) matched the
+// old py-route-decorator rule. With verb-set constraint they must not match at all
+// (the sg output will not contain them), so this test verifies that even if a
+// py-route-decorator match somehow appears in sg output without an import signal,
+// it is gated out by the import-gating logic.
+//
+// The verb-set itself is enforced in the YAML by sg; unit tests cannot re-invoke sg.
+// What this test verifies: a py-route-decorator without py-import-fastapi → dropped.
+func TestSyntax_FP_Py_NoImport_RouteDropped(t *testing.T) {
+	const fileApp = "app/tasks.py"
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		// No import-signal entry: file has no fastapi/aiohttp/flask import.
+		// If a decorator somehow matched (e.g. aiohttp not in signal list), it is dropped.
+		syntaxEntryWithPath("py-route-decorator", fileApp, "topic", 5),
+		// A declaration in the same file (must still be emitted).
+		syntaxEntryWithName("py-func", fileApp, "process_message", 3, 8),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langPythonStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	// Route fact must be dropped; only the function declaration survives.
+	if len(facts) != 1 {
+		t.Fatalf("len(facts) = %d, want 1 (route FP must be dropped)", len(facts))
+	}
+	if facts[0].Kind != kindFunctionStr {
+		t.Errorf("remaining fact Kind = %q, want function", facts[0].Kind)
+	}
+}
+
+// TestSyntax_Confirmed_Route_Emitted verifies the happy path: a route fact WITH
+// a matching import signal is emitted with FrameworkConfirmed=true.
+func TestSyntax_Confirmed_Route_Emitted(t *testing.T) {
+	const fileRouter = "src/routes/api.ts"
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		// Import signal: file imports express.
+		syntaxEntry("ts-import-express", fileRouter, "express", 1, 1),
+		// Route fact: should be emitted confirmed.
+		syntaxEntryWithPath("ts-route-express", fileRouter, pathUsers, 10),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langTypeScriptStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("len(facts) = %d, want 1", len(facts))
+	}
+	f := facts[0]
+	if f.Kind != kindRouteStr {
+		t.Errorf("Kind = %q, want route", f.Kind)
+	}
+	if f.Framework != "express" {
+		t.Errorf("Framework = %q, want express", f.Framework)
+	}
+	if !f.FrameworkConfirmed {
+		t.Errorf("FrameworkConfirmed = false, want true for confirmed route")
 	}
 }

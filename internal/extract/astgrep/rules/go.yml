@@ -152,3 +152,58 @@ id: go-route-gorilla
 language: go
 rule:
   pattern: $RECV.HandleFunc($PATH, $HANDLER)
+---
+# Import-signal rules: used by the adapter (IsSignal=true) to confirm that the
+# file actually imports the route framework before emitting route facts.
+# Signal rules are NEVER emitted as SyntaxFacts — they only populate the
+# per-file framework-confirmed map in the two-pass gating logic.
+#
+# Extensibility: to add a new framework, add one route rule + one signal rule
+# here + one entry in goRuleKinds (syntax.go) with IsSignal:true.
+#
+# go-import-net-http: stdlib import — present in any file that calls net/http.
+id: go-import-net-http
+language: go
+rule:
+  kind: import_spec
+  has:
+    pattern: '"net/http"'
+---
+id: go-import-gin
+language: go
+rule:
+  kind: import_spec
+  has:
+    pattern: '"github.com/gin-gonic/gin"'
+---
+id: go-import-echo
+language: go
+rule:
+  kind: import_spec
+  has:
+    pattern: '"github.com/labstack/echo/v4"'
+---
+# chi uses different import paths across major versions; cover v4 and v5.
+id: go-import-chi
+language: go
+rule:
+  kind: import_spec
+  any:
+    - has:
+        pattern: '"github.com/go-chi/chi/v5"'
+    - has:
+        pattern: '"github.com/go-chi/chi"'
+---
+id: go-import-fiber
+language: go
+rule:
+  kind: import_spec
+  has:
+    pattern: '"github.com/gofiber/fiber/v2"'
+---
+id: go-import-gorilla
+language: go
+rule:
+  kind: import_spec
+  has:
+    pattern: '"github.com/gorilla/mux"'

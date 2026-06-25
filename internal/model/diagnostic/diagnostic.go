@@ -11,18 +11,19 @@ import (
 // (like FileFact) that surfaces in scan/review output and agent_tasks evidence.
 // Fields per design §3.
 type SyntaxFact struct {
-	Language  string `json:"language"`         // go|typescript|python|rust
-	File      string `json:"file"`             // repo-relative, slash
-	Module    string `json:"module,omitempty"` // module-map key this file belongs to; empty when outside declared modules
-	Kind      string `json:"kind"`             // function|method|class|struct|interface|trait|enum|type_alias|annotation|route
-	Name      string `json:"name"`
-	Exported  bool   `json:"exported,omitempty"`
-	StartLine int    `json:"start_line"`
-	EndLine   int    `json:"end_line,omitempty"`
-	Role      string `json:"role,omitempty"`            // handler|service|repository|domain (derived)
-	RoleConf  string `json:"role_confidence,omitempty"` // high|medium|low
-	Evidence  string `json:"role_evidence,omitempty"`   // e.g. "decorator @Controller", "path contains repository"
-	Framework string `json:"framework,omitempty"`       // for routes: gin|fastapi|express|axum|…
+	Language           string `json:"language"`         // go|typescript|python|rust
+	File               string `json:"file"`             // repo-relative, slash
+	Module             string `json:"module,omitempty"` // module-map key this file belongs to; empty when outside declared modules
+	Kind               string `json:"kind"`             // function|method|class|struct|interface|trait|enum|type_alias|annotation|route
+	Name               string `json:"name"`
+	Exported           bool   `json:"exported,omitempty"`
+	StartLine          int    `json:"start_line"`
+	EndLine            int    `json:"end_line,omitempty"`
+	Role               string `json:"role,omitempty"`            // handler|service|repository|domain (derived)
+	RoleConf           string `json:"role_confidence,omitempty"` // high|medium|low
+	Evidence           string `json:"role_evidence,omitempty"`   // e.g. "decorator @Controller", "path contains repository"
+	Framework          string `json:"framework,omitempty"`       // for routes: gin|fastapi|express|axum|…
+	FrameworkConfirmed bool   `json:"-"`                         // true when the file imports the route framework; set by the adapter, never serialised
 }
 
 // SortSyntaxFacts sorts in place by (File, StartLine, Kind, Name).

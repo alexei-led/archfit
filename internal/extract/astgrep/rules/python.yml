@@ -54,11 +54,18 @@ rule:
 # All share the same syntactic shape; framework cannot be distinguished by pattern.
 # Labelled "fastapi" as the canonical representative.
 # $PATH captures the first argument (the URL pattern string).
+# $VERB is constrained to HTTP verbs and lifecycle hooks — prevents matching
+# @topic_state.register("…") and @pytest.fixture(...) (verb-set guard).
+# Layer 1 ($PATH: {kind: string}) is intentionally omitted: variable/const paths
+# are common and would cause false negatives.
 id: py-route-decorator
 language: Python
 rule:
   kind: decorator
   pattern: '@$RECV.$VERB($PATH)'
+constraints:
+  VERB:
+    regex: '^(get|post|put|delete|patch|head|options|route|websocket|on_startup|on_shutdown)$'
 ---
 # Django urlpatterns: path("/url", view) call inside urlpatterns assignment.
 # $PATH captures the first argument (the URL pattern string).
@@ -75,3 +82,36 @@ language: Python
 rule:
   kind: call
   pattern: re_path($PATH, $$$)
+---
+# Import-signal rules: used by the adapter (IsSignal=true) to confirm that the
+# file actually imports the route framework before emitting route facts.
+# Signal rules are NEVER emitted as SyntaxFacts — they only populate the
+# per-file framework-confirmed map in the two-pass gating logic.
+#
+# Extensibility: to add a new framework, add one route rule + one signal rule
+# here + one entry in pyRuleKinds (syntax.go) with IsSignal:true.
+#
+# fastapi group: fastapi/flask/starlette/aiohttp/sanic (all use @recv.verb(path)).
+id: py-import-fastapi
+language: Python
+rule:
+  any:
+    - pattern: from fastapi import $$$
+    - pattern: import fastapi
+    - pattern: from flask import $$$
+    - pattern: import flask
+    - pattern: from starlette import $$$
+    - pattern: from starlette.applications import $$$
+    - pattern: from aiohttp import $$$
+    - pattern: import aiohttp
+    - pattern: from sanic import $$$
+    - pattern: import sanic
+---
+# django group: django.urls path/re_path.
+id: py-import-django
+language: Python
+rule:
+  any:
+    - pattern: from django.urls import $$$
+    - pattern: from django.conf.urls import $$$
+    - pattern: import django

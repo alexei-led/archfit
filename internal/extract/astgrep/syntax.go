@@ -51,31 +51,65 @@ const (
 )
 
 // kindInfo maps a ruleId to the SyntaxFact Kind and optional Framework.
+// IsSignal=true marks import-signal rules: they are never emitted as SyntaxFacts;
+// instead they populate the per-file framework-confirmed map used by the two-pass
+// import-gating logic. One signal rule per framework group is sufficient.
+//
+// Extensibility: to add a new framework, add one route rule + one signal rule in
+// the YAML + one entry in the *RuleKinds map with IsSignal:true. No other changes.
 type kindInfo struct {
 	Kind      string
 	Framework string
+	IsSignal  bool // true = import-signal rule; never emitted as a SyntaxFact
 }
+
+// Framework group constants: each route rule belongs to one group; the matching
+// signal rule confirms that the file imports that group. Groups are strings so
+// new frameworks need no code change beyond the YAML + kindInfo entry.
+const (
+	fwGroupNetHTTP = "net/http"    // net/http + gorilla/mux (gorilla always imports net/http too)
+	fwGroupGin     = "gin"         // gin
+	fwGroupEcho    = "echo"        // echo
+	fwGroupChi     = "chi"         // chi
+	fwGroupFiber   = "fiber"       // fiber
+	fwGroupGorilla = "gorilla/mux" // gorilla/mux (confirmed via go-import-gorilla)
+	fwGroupExpress = "express"     // express/koa/fastify
+	fwGroupNest    = "nest"        // NestJS
+	fwGroupFastAPI = "fastapi"     // fastapi/flask/starlette/aiohttp/sanic
+	fwGroupDjango  = "django"      // django
+	fwGroupActix   = "actix"       // actix-web/rocket
+	fwGroupAxum    = "axum"        // axum/warp
+)
 
 // goRuleKinds maps each go.yml ruleId to its Kind and Framework.
 // Route rules carry a non-empty Framework; declaration rules do not.
+// Signal rules have IsSignal=true and are never emitted as SyntaxFacts.
 var goRuleKinds = map[string]kindInfo{
 	"go-func":                  {Kind: kindFunction},
 	"go-method":                {Kind: kindMethod},
 	"go-struct":                {Kind: kindStruct},
 	"go-interface":             {Kind: kindInterface},
 	"go-type-alias":            {Kind: kindTypeAlias},
-	"go-route-net-http":        {Kind: kindRoute, Framework: "net/http"},
-	"go-route-net-http-handle": {Kind: kindRoute, Framework: "net/http"},
-	"go-route-gin":             {Kind: kindRoute, Framework: "gin"},
-	"go-route-echo":            {Kind: kindRoute, Framework: "echo"},
-	"go-route-chi":             {Kind: kindRoute, Framework: "chi"},
-	"go-route-fiber":           {Kind: kindRoute, Framework: "fiber"},
-	"go-route-gorilla":         {Kind: kindRoute, Framework: "gorilla/mux"},
+	"go-route-net-http":        {Kind: kindRoute, Framework: fwGroupNetHTTP},
+	"go-route-net-http-handle": {Kind: kindRoute, Framework: fwGroupNetHTTP},
+	"go-route-gin":             {Kind: kindRoute, Framework: fwGroupGin},
+	"go-route-echo":            {Kind: kindRoute, Framework: fwGroupEcho},
+	"go-route-chi":             {Kind: kindRoute, Framework: fwGroupChi},
+	"go-route-fiber":           {Kind: kindRoute, Framework: fwGroupFiber},
+	"go-route-gorilla":         {Kind: kindRoute, Framework: fwGroupGorilla},
+	// Import-signal rules (IsSignal=true): confirm framework import per file.
+	"go-import-net-http": {Framework: fwGroupNetHTTP, IsSignal: true},
+	"go-import-gin":      {Framework: fwGroupGin, IsSignal: true},
+	"go-import-echo":     {Framework: fwGroupEcho, IsSignal: true},
+	"go-import-chi":      {Framework: fwGroupChi, IsSignal: true},
+	"go-import-fiber":    {Framework: fwGroupFiber, IsSignal: true},
+	"go-import-gorilla":  {Framework: fwGroupGorilla, IsSignal: true},
 }
 
 // tsRuleKinds maps each typescript.yml ruleId to its Kind and Framework.
 // Route rules carry a non-empty Framework; declaration and decorator rules do not.
 // express/koa/fastify share the same call shape and are labelled "express" (see typescript.yml).
+// Signal rules have IsSignal=true and are never emitted as SyntaxFacts.
 var tsRuleKinds = map[string]kindInfo{
 	"ts-func":                  {Kind: kindFunction},
 	"ts-class":                 {Kind: kindClass},
@@ -84,28 +118,36 @@ var tsRuleKinds = map[string]kindInfo{
 	"ts-type-alias":            {Kind: kindTypeAlias},
 	"ts-method":                {Kind: kindMethod},
 	"ts-decorator":             {Kind: kindAnnotation},
-	"ts-route-express":         {Kind: kindRoute, Framework: "express"},
-	"ts-route-nest-controller": {Kind: kindRoute, Framework: "nest"},
-	"ts-route-nest-method":     {Kind: kindRoute, Framework: "nest"},
+	"ts-route-express":         {Kind: kindRoute, Framework: fwGroupExpress},
+	"ts-route-nest-controller": {Kind: kindRoute, Framework: fwGroupNest},
+	"ts-route-nest-method":     {Kind: kindRoute, Framework: fwGroupNest},
+	// Import-signal rules (IsSignal=true): confirm framework import per file.
+	"ts-import-express": {Framework: fwGroupExpress, IsSignal: true},
+	"ts-import-nest":    {Framework: fwGroupNest, IsSignal: true},
 }
 
 // pyRuleKinds maps each python.yml ruleId to its Kind and Framework.
 // Route rules carry a non-empty Framework; declaration and decorator rules do not.
 // fastapi/flask/starlette/aiohttp share the same @recv.verb(path) shape and are
 // labelled "fastapi" as the canonical representative (see python.yml).
+// Signal rules have IsSignal=true and are never emitted as SyntaxFacts.
 var pyRuleKinds = map[string]kindInfo{
 	"py-func":                {Kind: kindFunction},
 	"py-class":               {Kind: kindClass},
 	"py-decorator":           {Kind: kindAnnotation},
-	"py-route-decorator":     {Kind: kindRoute, Framework: "fastapi"},
-	"py-route-django-path":   {Kind: kindRoute, Framework: "django"},
-	"py-route-django-repath": {Kind: kindRoute, Framework: "django"},
+	"py-route-decorator":     {Kind: kindRoute, Framework: fwGroupFastAPI},
+	"py-route-django-path":   {Kind: kindRoute, Framework: fwGroupDjango},
+	"py-route-django-repath": {Kind: kindRoute, Framework: fwGroupDjango},
+	// Import-signal rules (IsSignal=true): confirm framework import per file.
+	"py-import-fastapi": {Framework: fwGroupFastAPI, IsSignal: true},
+	"py-import-django":  {Framework: fwGroupDjango, IsSignal: true},
 }
 
 // rustRuleKinds maps each rust.yml ruleId to its Kind and Framework.
 // Route rules carry a non-empty Framework; declaration and attribute rules do not.
 // actix/rocket share the same #[verb(path)] attribute shape and are labelled "actix".
 // axum/warp share the same .route(path, handler) builder shape and are labelled "axum".
+// Signal rules have IsSignal=true and are never emitted as SyntaxFacts.
 var rustRuleKinds = map[string]kindInfo{
 	"rs-func":               {Kind: kindFunction},
 	"rs-struct":             {Kind: kindStruct},
@@ -114,8 +156,11 @@ var rustRuleKinds = map[string]kindInfo{
 	"rs-impl":               {Kind: kindMethod},
 	"rs-mod":                {Kind: kindStruct},
 	"rs-attribute":          {Kind: kindAnnotation},
-	"rs-route-actix-rocket": {Kind: kindRoute, Framework: "actix"},
-	"rs-route-axum-warp":    {Kind: kindRoute, Framework: "axum"},
+	"rs-route-actix-rocket": {Kind: kindRoute, Framework: fwGroupActix},
+	"rs-route-axum-warp":    {Kind: kindRoute, Framework: fwGroupAxum},
+	// Import-signal rules (IsSignal=true): confirm framework import per file.
+	"rs-import-actix": {Framework: fwGroupActix, IsSignal: true},
+	"rs-import-axum":  {Framework: fwGroupAxum, IsSignal: true},
 }
 
 // langRuleKinds maps a language identifier to its ruleId→kindInfo table.
@@ -203,10 +248,27 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 		}
 
 		ruleKinds := langRuleKinds[lang]
+
+		// Pass 1: collect import-signal matches to build the confirmed map.
+		// confirmed[file][frameworkGroup] = true when that file imports the group's framework.
+		confirmed := make(map[string]map[string]bool)
 		for _, m := range raw {
 			ki, known := ruleKinds[m.RuleID]
-			if !known {
-				// Unknown ruleId — skip; future rules won't break existing facts.
+			if !known || !ki.IsSignal {
+				continue
+			}
+			if confirmed[m.File] == nil {
+				confirmed[m.File] = make(map[string]bool)
+			}
+			confirmed[m.File][ki.Framework] = true
+		}
+
+		// Pass 2: emit declaration facts unconditionally; emit route facts only
+		// when the file's framework import was confirmed in pass 1.
+		for _, m := range raw {
+			ki, known := ruleKinds[m.RuleID]
+			if !known || ki.IsSignal {
+				// Signal rules are never emitted as facts; unknown ruleIds are skipped.
 				continue
 			}
 
@@ -215,17 +277,26 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 				continue
 			}
 
+			// Import-gating: route facts require a confirmed framework import.
+			// If no signal rule fired for this framework in this file, drop the fact.
+			if ki.Kind == kindRoute && ki.Framework != "" {
+				if !confirmed[m.File][ki.Framework] {
+					continue // no import confirmed → drop (not downgrade)
+				}
+			}
+
 			exported := isExported(lang, m.RuleID, name)
 
 			facts = append(facts, diagnostic.SyntaxFact{
-				Language:  lang,
-				File:      m.File,
-				Kind:      ki.Kind,
-				Name:      name,
-				Exported:  exported,
-				StartLine: m.Range.Start.Line + 1, // 0-based → 1-based
-				EndLine:   m.Range.End.Line + 1,
-				Framework: ki.Framework,
+				Language:           lang,
+				File:               m.File,
+				Kind:               ki.Kind,
+				Name:               name,
+				Exported:           exported,
+				StartLine:          m.Range.Start.Line + 1, // 0-based → 1-based
+				EndLine:            m.Range.End.Line + 1,
+				Framework:          ki.Framework,
+				FrameworkConfirmed: ki.Kind == kindRoute && ki.Framework != "",
 			})
 		}
 	}
@@ -256,37 +327,37 @@ func nameFromMatch(m sgSyntaxMatch) string {
 
 // isExported returns true if the fact represents an exported identifier.
 //
-// Go: exported means the name starts with an uppercase letter; route rules are never exported.
+// Go: exported means the name starts with an uppercase letter; route and signal rules are never exported.
 // TypeScript: all declaration rules require inside:export_statement so they are always
-// exported; route and annotation rules are never exported.
-// Python: public means the name does not start with underscore; route and decorator rules
+// exported; route, annotation, and signal rules are never exported.
+// Python: public means the name does not start with underscore; route, decorator, and signal rules
 // are never exported.
-// Rust: pub = has visibility_modifier (the YAML rule already filters for it); route and
-// attribute rules are never exported.
+// Rust: pub = has visibility_modifier (the YAML rule already filters for it); route, attribute,
+// and signal rules are never exported.
 func isExported(lang, ruleID, name string) bool {
 	switch lang {
 	case langTypeScript:
-		// Route and annotation ruleIds start with "ts-route-" or equal "ts-decorator".
-		if strings.HasPrefix(ruleID, "ts-route-") || ruleID == "ts-decorator" {
+		// Route, annotation, and signal ruleIds.
+		if strings.HasPrefix(ruleID, "ts-route-") || strings.HasPrefix(ruleID, "ts-import-") || ruleID == "ts-decorator" {
 			return false
 		}
 		return true // inside: export_statement guarantees export
 	case langPython:
-		// Route and decorator ruleIds are never exported.
-		if strings.HasPrefix(ruleID, "py-route-") || ruleID == "py-decorator" {
+		// Route, decorator, and signal ruleIds are never exported.
+		if strings.HasPrefix(ruleID, "py-route-") || strings.HasPrefix(ruleID, "py-import-") || ruleID == "py-decorator" {
 			return false
 		}
 		// Public = name does not start with underscore.
 		return len(name) > 0 && name[0] != '_'
 	case langRust:
-		// Route and attribute ruleIds are never exported.
-		if strings.HasPrefix(ruleID, "rs-route-") || ruleID == "rs-attribute" {
+		// Route, attribute, and signal ruleIds are never exported.
+		if strings.HasPrefix(ruleID, "rs-route-") || strings.HasPrefix(ruleID, "rs-import-") || ruleID == "rs-attribute" {
 			return false
 		}
 		// The YAML rule already requires visibility_modifier, so any match is pub.
 		return true
 	default: // go and future languages: uppercase-first convention
-		if strings.HasPrefix(ruleID, "go-route-") {
+		if strings.HasPrefix(ruleID, "go-route-") || strings.HasPrefix(ruleID, "go-import-") {
 			return false
 		}
 		return len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z'

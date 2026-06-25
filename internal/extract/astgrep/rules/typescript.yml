@@ -121,3 +121,29 @@ rule:
     - pattern: '@Put($PATH)'
     - pattern: '@Delete($PATH)'
     - pattern: '@Patch($PATH)'
+---
+# Import-signal rules: used by the adapter (IsSignal=true) to confirm that the
+# file actually imports the route framework before emitting route facts.
+# Signal rules are NEVER emitted as SyntaxFacts — they only populate the
+# per-file framework-confirmed map in the two-pass gating logic.
+#
+# Extensibility: to add a new framework, add one route rule + one signal rule
+# here + one entry in tsRuleKinds (syntax.go) with IsSignal:true.
+#
+# express group: express, koa, fastify all share the same call shape (labelled "express").
+id: ts-import-express
+language: TypeScript
+rule:
+  any:
+    - pattern: import $$ from 'express'
+    - pattern: import $$ from 'koa'
+    - pattern: import $$ from 'fastify'
+    - pattern: import $$ from '@fastify/autoload'
+---
+# nest group: @nestjs/common decorators.
+id: ts-import-nest
+language: TypeScript
+rule:
+  any:
+    - pattern: import $$ from '@nestjs/common'
+    - pattern: import $$ from '@nestjs/core'
