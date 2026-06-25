@@ -232,22 +232,27 @@ while keeping the judgment layer (LLM/human) where the doc says it belongs.
 
 ### Task 10: Cat 11 — file-level mutual-import detector, report-only
 
-- [ ] **FIRST verify edge granularity** (de-risks this task): confirm which languages resolve
+- [x] **FIRST verify edge granularity** (de-risks this task): confirm which languages resolve
       file→file `imports` edges vs file→package. Current code: TS/Python emit `file:a → file:b`
       edges (file→file); Go's `imports` target is the **package** (`pkg/a/a.go → pkg/b`), with the
       source file only on the edge `From`/`Location`. Cat 11's repo is **codegraph (TypeScript)**,
       which has the needed file→file edges — so the detector works over the existing graph there.
-- [ ] add a detector that, **for languages with file→file edges (TS/Python)**, finds cross-module
-      file pairs A↔B that import each other but do NOT form a module-level SCC (the module-level
-      `cycle` metric already covers module-level mutual deps; the miss is file-level granularity)
-- [ ] **contingency:** if Go file-level coverage is later wanted, it needs an extraction change
-      (file→file resolution for Go) — document that as a ceiling here, do NOT expand this task to it
-- [ ] surface as a report-only finding (e.g. `file_mutual_import`), `BandInformational`; do not gate
-- [ ] reproduce the codegraph `extraction ↔ resolution` case in a synthetic-graph unit test
-      (mutual file imports across modules, no file-level cycle → flagged; a true SCC → not double-reported)
-- [ ] write unit tests over the synthetic graph (mutual present, mutual absent, module-SCC, and a
-      Go-style file→package graph → cleanly skipped/no false positive)
-- [ ] regenerate goldens + full gate — must pass before Task 11
+      [NOTE: Python actually emits module→module (dotted) edges, not file→file — only TS has file→file]
+- [x] add a detector that, **for languages with file→file edges (TS)**, finds file pairs A↔B that
+      import each other via Tarjan SCC on the graph, filtering for SCCs where all nodes are
+      NodeKindFile; Go/Python graphs naturally produce no file↔file cycles (different node kinds)
+- [x] **contingency:** if Go file-level coverage is later wanted, it needs an extraction change
+      (file→file resolution for Go) — documented as a ceiling in file_mutual_import.go comment,
+      not expanded in this task
+- [x] surface as a report-only metric `file_mutual_import`, `BandInformational`; does not gate;
+      registered in metrics.New() between deprecated_dep_count and intramodule metrics
+- [x] reproduce the codegraph `extraction ↔ resolution` case in a synthetic-graph unit test
+      (TestFileMutualImport_MutualPair); Go-style file→package → TestFileMutualImport_GoStyleFileToPackage
+- [x] write unit tests over the synthetic graph (mutual present, mutual absent, module-SCC, and a
+      Go-style file→package graph → cleanly skipped/no false positive) — 8 tests total
+- [x] regenerate goldens + full gate — must pass before Task 11
+      [NOTE: goldens unchanged (fixture graph returns n/a — no file nodes in golden fixture);
+      make test + make lint + TestGolden + TestArchImports + make archfit all pass]
 
 ### Task 11: Cat 10/12 residue — config/LLM routing + acceptance documentation
 

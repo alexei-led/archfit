@@ -25,6 +25,9 @@ const (
 	modMyApp         = "myapp"
 	langRust         = "rust"
 	langGo           = "go"
+	// TypeScript file paths reused across martin and file_mutual_import tests.
+	tsFileA = "src/a.ts"
+	tsFileB = "src/b.ts"
 )
 
 // crateHerdr is the single-crate fixture name reused across the Rust Cal-4 cases.
@@ -177,7 +180,7 @@ func TestFileStructuralWeight_NoLOCIsNA(t *testing.T) {
 func TestFileStructuralWeight_NoGodsClean(t *testing.T) {
 	// All files similar size → no god-files (value 0).
 	fileLOC := map[string]int{
-		"pkg/a/a.go": 100,
+		fcPathA:      100,
 		"pkg/b/b.go": 110,
 		"pkg/c/c.go": 95,
 		"pkg/d/d.go": 105,

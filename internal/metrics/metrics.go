@@ -79,6 +79,9 @@ func New(cfg config.Config) []Metric {
 		// Manifest deprecation markers (go.mod retract, package.json deprecated).
 		// Report-only — BandInformational, never gates.
 		adapt(modularity.DeprecatedDepCountMetric{}, signal.CollectedSignals.AsCommon),
+		// File-level mutual imports (TypeScript file→file cycles not caught by module-level cycle metric).
+		// Report-only — BandInformational, never gates.
+		adapt(modularity.FileMutualImportMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(intramodule.ComplexityMetric{}, signal.CollectedSignals.AsComplexity),
 		adapt(risk.NewMetric(cfg), signal.CollectedSignals.AsSymbol),
 		adapt(intramodule.ArchitectureFitnessMetric{}, signal.CollectedSignals.AsFitness),
