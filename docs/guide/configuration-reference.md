@@ -447,8 +447,15 @@ Built-in rule types:
   suppresses known ones so only newly-added surface shows as `StatusNew`.
   Defaults to `gate: warn` (advisory drift signal). Requires
   `tools.syntax.enabled: on`.
+- `struct_field_max` — fires when any module's struct definition has more fields
+  than `max` (Go and Rust; requires `tools.syntax.enabled: on`). Surfaces
+  god-struct candidates. `max` is required. Defaults to `gate: warn`.
+- `public_api_type_leak` — fires when an exported struct field or function return
+  type names a type from an external (non-first-party) package (Go and TypeScript;
+  requires `tools.syntax.enabled: on`). Flags API surface that couples callers to
+  a transitive dependency. Defaults to `gate: warn`.
 
-**Note:** When `tools.syntax.enabled` is not `on`, the rule types `forbidden_role_dependency`, `public_api_max`, and `public_api_change` emit zero findings silently — they are not errors.
+**Note:** When `tools.syntax.enabled` is not `on`, the rule types `forbidden_role_dependency`, `public_api_max`, `public_api_change`, `struct_field_max`, and `public_api_type_leak` emit zero findings silently — they are not errors.
 
 **`gate:` is now wired for all rule types.** Previously `gate:` was stored but
 not applied — that latent bug is fixed. Every rule respects `off`/`warn`/`fail`
@@ -475,6 +482,17 @@ rules:
   # Surface newly-added public API (baseline suppresses known surface).
   - id: track_public_api
     type: public_api_change
+    gate: warn
+
+  # Warn on structs with more than 30 fields (god-struct candidate).
+  - id: no_god_struct
+    type: struct_field_max
+    max: 30
+    gate: warn
+
+  # Warn when exported API leaks an external type to callers.
+  - id: no_type_leak
+    type: public_api_type_leak
     gate: warn
 ```
 
@@ -531,6 +549,18 @@ Report-only metrics (band `info`; they never gate the verdict):
   cross-referenced with co-change. Requires `tools.clones.enabled: on`.
 - `change_locality` — per-change drift: how far a change reaches beyond its own
   modules (delta mode only; `n/a` in full mode).
+- `unsafe_density` — count of unsafe operations per module (Rust; needs
+  `tools.syntax.enabled: on`).
+- `panic_density` — count of production panic/unwrap operations per module
+  (Rust/Go; excludes test files; needs `tools.syntax.enabled: on`).
+- `struct_field_density` — per-module count of struct definitions (Go/Rust;
+  needs `tools.syntax.enabled: on`).
+- `test_density` — per-module count of test functions (Go/Rust/Python proxy;
+  needs `tools.syntax.enabled: on`).
+- `deprecated_dep_count` — count of locally-declared deprecation/retraction
+  markers in manifest files (`go.mod retract`, `package.json deprecated`).
+- `file_mutual_import` — count of file pairs that mutually import each other
+  (TypeScript file→file cycles; no extra tool required).
 
 Metric entry fields:
 

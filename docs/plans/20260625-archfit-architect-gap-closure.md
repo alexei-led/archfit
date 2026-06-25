@@ -336,11 +336,13 @@ coverage for speed. Keep all existing gates green._
 
 ### Task 14: [Final] Documentation
 
-- [ ] update `docs/guide` with the new report-only metrics/facts and the opt-in rule types
+- [x] update `docs/guide` with the new report-only metrics/facts and the opt-in rule types
       (`struct_field_max`, `public_api_type_leak`) — defaults, what they flag, how to gate
-- [ ] update `CLAUDE.md` "Invariants"/metric notes if a new core-ring package or fact kind was added
+- [x] update `CLAUDE.md` "Invariants"/metric notes if a new core-ring package or fact kind was added
       (and any new `make` target like `test-fast`/`lint-ci` from Task 13)
-- [ ] update project memory only if a non-obvious decision was made (per memory rules)
+      [NOTE: added `make test-fast` to Commands; no core-ring package or invariant changed]
+- [x] update project memory only if a non-obvious decision was made (per memory rules)
+      [NOTE: doc-only task; no non-obvious design decision made — nothing warrants a memory entry]
 
 ## Technical Details
 

@@ -14,6 +14,7 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`.
 - `make archfit` — dogfood architecture-drift gate: `.bin/archfit check --config .archfit.yaml --full`
 - `make archfit-report` — write `reports/archfit-report.md` via `archfit scan`
 - `make mock` — regenerate moq fakes (`go generate ./...`)
+- `make test-fast` — `go test -race -short ./...` (skips slow subprocess/ast-grep integration tests; for inner-loop speed)
 - `make all` — fmt → lint → test → archfit
 - One test: `go test ./internal/<pkg>/ -run TestName`
 
