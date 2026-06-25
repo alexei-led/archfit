@@ -173,12 +173,12 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 			requiredKinds: []string{kindFunctionStr, kindClassStr, kindAnnotStr, kindRouteStr, kindTestImportStr, kindLazyImportStr, kindTestFnStr},
 		},
 		// Rust: fixture.rs exports func create_widget + #[derive(Debug, Clone)] attribute + mockall import +
-		// unsafe block, UnsafeCell, raw cast (safety surface fixture) + MultiField struct (struct_field) +
+		// unsafe block, UnsafeCell, raw cast, transmute (safety surface fixture) + MultiField struct (struct_field) +
 		// fixture_panics with unwrap/expect/panic! (panic_op) +
 		// global-state fixture: static mut GLOBAL_COUNTER, AtomicU32 ID_GENERATOR, OnceLock REGISTRY +
 		// test_create_widget (test_ prefix function for test_fn kind).
 		// Fixture covers: function, struct, enum, interface, method, annotation, test_import, unsafe_op,
-		//                 struct_field, panic_op, global_state, test_fn.
+		//                 struct_field, panic_op, global_state, test_fn (unsafe_op includes transmute).
 		// annotation (rs-attribute) was the previously-broken kind — it must now yield ≥1 match.
 		{
 			lang:          "rust",
@@ -230,6 +230,19 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 			for _, wantKind := range tc.requiredKinds {
 				if kindCount[wantKind] == 0 {
 					t.Errorf("Syntax(%q): expected ≥1 fact of Kind=%q but got 0 — rule for this kind matches nothing in the fixture", tc.lang, wantKind)
+				}
+			}
+			// Rust-specific: verify rs-transmute fired (Name="transmute" unsafe_op fact).
+			if tc.lang == "rust" {
+				foundTransmute := false
+				for _, f := range facts {
+					if f.Kind == kindUnsafeOpStr && f.Name == "transmute" {
+						foundTransmute = true
+						break
+					}
+				}
+				if !foundTransmute {
+					t.Errorf("Syntax(rust): expected unsafe_op fact Name=transmute from rs-transmute rule, got none")
 				}
 			}
 			// FilesSeen must be > 0 when facts were produced.

@@ -1123,11 +1123,13 @@ func TestSyntax_Py_LazyImport_Empty(t *testing.T) {
 }
 
 func TestSyntax_Py_LazyImport_TopLevelNotMatched(t *testing.T) {
-	// Regression: top-level imports must NOT produce lazy_import facts.
-	// The rule is guarded by `inside: kind: function_definition`.
+	// Note: this test exercises adapter fact-mapping using a mock runner.
+	// It does NOT test the YAML `inside:` guard — the integration test
+	// (syntax_integration_test.go, fixture.py top-level imports) covers that.
+	//
 	// Here we inject a py-func fact alongside lazy-import facts to confirm that
 	// top-level imports (represented as py-func, py-class, etc.) do not get
-	// mislabelled as lazy_import.
+	// mislabelled as lazy_import by the adapter mapping logic.
 	entries := marshalSyntaxEntries(t, []map[string]any{
 		syntaxEntryWithName("py-func", fileSvcPy, "top_level_module", 1, 1),
 		syntaxEntryWithName("py-lazy-import-module", fileSvcPy, "requests", 5, 5),

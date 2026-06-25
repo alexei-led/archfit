@@ -125,16 +125,12 @@ var inventory = []Finding{
 		BaseStatus: statusLLMRoutedDesign,
 	},
 	{
-		ID:          "4.1",
-		Title:       "urfave/cli v1 EOL",
-		Repo:        repoPumba,
-		Category:    "Dependency Deprecation",
-		ProbeMetric: "deprecated_dep_count",
-		// Note: urfave/cli v1 EOL is not a go.mod retract marker — it is a live-registry
-		// EOL fact not encoded in the manifest. The deprecated_dep_count metric surfaces
-		// retract/deprecated/yanked manifest markers; live-version EOL stays LLM-routed.
-		// This finding is partially-detected: the metric exists and fires when markers are
-		// present. The specific v1 EOL is documented as residue (see docs/design/).
+		ID:         "4.1",
+		Title:      "urfave/cli v1 EOL",
+		Repo:       repoPumba,
+		Category:   "Dependency Deprecation",
+		BaseStatus: statusLLMRoutedDesign,
+		// deprecated_dep_count tracks go.mod retract markers; EOL=live-registry fact, routed to LLM
 	},
 	{
 		ID:          "5.1",

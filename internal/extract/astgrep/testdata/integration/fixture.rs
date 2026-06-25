@@ -36,9 +36,7 @@ pub mod shapes {
     }
 }
 
-// Safety surface fixture: exercises rs-unsafe-block, rs-unsafe-cell, rs-raw-cast.
-// (rs-transmute not exercised here — it uses a regex on call_expression which
-// requires a real Rust call; the rule fires on yazi's mem::transmute usage.)
+// Safety surface fixture: exercises rs-unsafe-block, rs-unsafe-cell, rs-raw-cast, rs-transmute.
 use std::cell::UnsafeCell;
 
 pub struct SharedState {
@@ -51,6 +49,11 @@ pub unsafe fn raw_bytes(ptr: *const u8) -> u8 {
 
 pub fn raw_cast_example(val: u32) -> *const u32 {
     val as *const u32
+}
+
+pub fn transmute_example(val: u64) -> u64 {
+    // SAFETY: u64 → u64 is trivially safe; exercises rs-transmute detection.
+    unsafe { std::mem::transmute(val) }
 }
 
 // MultiField exercises rs-struct-field (struct with named field_declaration_list).

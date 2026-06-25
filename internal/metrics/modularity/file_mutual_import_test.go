@@ -23,8 +23,8 @@ func TestFileMutualImport_NilGraph(t *testing.T) {
 // TestFileMutualImport_NoFileNodes: n/a when graph has only package/module nodes (e.g. Go graph).
 func TestFileMutualImport_NoFileNodes(t *testing.T) {
 	// Go-style: file→package (no file→file edges, no NodeKindFile nodes in this test).
-	pkgA := graph.Node{Kind: graph.NodeKindPackage, Path: "pkg/a"}
-	pkgB := graph.Node{Kind: graph.NodeKindPackage, Path: "pkg/b"}
+	pkgA := graph.Node{Kind: graph.NodeKindPackage, Path: ccModA}
+	pkgB := graph.Node{Kind: graph.NodeKindPackage, Path: ccModB}
 	edges := []graph.Edge{
 		{From: pkgA.ID(), To: pkgB.ID(), Kind: graph.EdgeKindImports, Language: graph.LangGo},
 		{From: pkgB.ID(), To: pkgA.ID(), Kind: graph.EdgeKindImports, Language: graph.LangGo},
@@ -141,6 +141,21 @@ func TestFileMutualImport_MixedGraph(t *testing.T) {
 	}
 	if !strings.Contains(res.Display, tsFileA) || !strings.Contains(res.Display, tsFileB) {
 		t.Errorf("display must name the TS mutual pair; got %q", res.Display)
+	}
+}
+
+// TestFileMutualImport_IsolatedFileNode_ZeroPairs: a file node exists but has no
+// edges at all → 0 pairs, Band=Informational (not n/a). The n/a boundary is the
+// absence of file-kind nodes, not the absence of edges.
+func TestFileMutualImport_IsolatedFileNode_ZeroPairs(t *testing.T) {
+	isolated := graph.Node{Kind: graph.NodeKindFile, Path: tsFileA}
+	g := metricstest.BuildGraph([]graph.Node{isolated}, nil)
+	res := modularity.FileMutualImportMetric{}.Calculate(signal.CommonInput{Graph: g})
+	if res.Band != result.BandInformational {
+		t.Errorf("expected info band for isolated file node, got %q", res.Band)
+	}
+	if res.Value != 0 {
+		t.Errorf("expected 0 mutual pairs for isolated node, got %v; display=%q", res.Value, res.Display)
 	}
 }
 

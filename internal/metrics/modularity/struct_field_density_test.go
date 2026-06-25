@@ -86,6 +86,23 @@ func TestStructFieldDensity_NoModule_FallsBackToFile(t *testing.T) {
 	}
 }
 
+func TestStructFieldDensity_AllZeroCount_ReturnsZeroNotNA(t *testing.T) {
+	// Bug regression: when ALL struct_field facts have Count==0, maxCounts must
+	// still be populated (the key must be registered), so the metric returns
+	// value=0 instead of n/a.
+	in := signal.CommonInput{SyntaxFacts: []diagnostic.SyntaxFact{
+		{Kind: structFieldKind, Module: structFieldMod, File: structFieldFile, Name: "UnitA", Count: 0},
+		{Kind: structFieldKind, Module: structFieldMod, File: structFieldFile, Name: "UnitB", Count: 0},
+	}}
+	got := modularity.StructFieldDensityMetric{}.Calculate(in)
+	if got.Value != 0 {
+		t.Errorf("Value = %v, want 0 (all-zero counts must sum to 0)", got.Value)
+	}
+	if got.Band == bandNAStr {
+		t.Errorf("Band = %q, want non-n/a when struct_field facts are present", got.Band)
+	}
+}
+
 func TestStructFieldDensity_Metadata(t *testing.T) {
 	m := modularity.StructFieldDensityMetric{}
 	if m.Name() != structFieldDensityName {

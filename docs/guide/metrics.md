@@ -352,6 +352,14 @@ They require `tools.syntax.enabled: on`; when absent the metric reports `n/a`.
   real coverage percentages need a dedicated coverage tool and stay in the LLM/human
   review path.
 
+### public_api_type_leak (rule)
+
+Fires when a public API exposes a type from an external framework package directly in a function or method signature. Requires `tools.syntax.enabled: on`.
+
+Defaults to `gate: warn` when unset (advisory, non-blocking). Fires once per unique module+type combination.
+
+**Limitation:** only fires on repos with Go-style dotted external package nodes in the dependency graph. Rust/TypeScript/Python repos may have type_leak facts but no matching external nodes — see [configuration reference](configuration-reference.md#rules).
+
 ### Manifest and graph metrics
 
 - **`deprecated_dep_count`** — count of locally-declared deprecation/retraction

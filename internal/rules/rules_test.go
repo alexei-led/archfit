@@ -1735,4 +1735,19 @@ func TestPublicAPITypeLeak(t *testing.T) {
 			t.Errorf("Kind=%q, want %q (gate: warn default)", findings[0].Kind, kindAdvisory)
 		}
 	})
+
+	t.Run("no_ext_pkgs_returns_nil", func(t *testing.T) {
+		// Ceiling: no dotted external nodes → extPkgs empty → returns nil regardless
+		// of type_leak facts. Documents the Go-only graph limitation.
+		g := makeTypeLeakGraph(nil)
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("want 0 findings when extPkgs empty, got %d: %+v", len(findings), findings)
+		}
+	})
 }

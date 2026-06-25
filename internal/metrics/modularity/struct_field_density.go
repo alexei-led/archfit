@@ -36,9 +36,6 @@ type structEntry struct {
 // One fact per struct; Count = estimated field count from line range.
 func (m StructFieldDensityMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 	const def = "estimated struct field counts (line-range heuristic) — report-only; signals potential god-structs"
-	if len(in.SyntaxFacts) == 0 {
-		return result.NACount(m.Name(), m.Version(), def)
-	}
 
 	// Collect max field count per (module-or-file, struct-name).
 	// "max" because the same struct name can appear in different files in the same
@@ -54,7 +51,7 @@ func (m StructFieldDensityMetric) Calculate(in signal.CommonInput) diagnostic.Me
 			mod = f.File
 		}
 		k := structKey{mod: mod, name: f.Name}
-		if f.Count > maxCounts[k] {
+		if c, ok := maxCounts[k]; !ok || f.Count > c {
 			maxCounts[k] = f.Count
 		}
 	}

@@ -40,9 +40,9 @@ func TestUnsafeDensity_OnlyOtherKinds_ReturnsNA(t *testing.T) {
 
 func TestUnsafeDensity_SomeFacts_ReturnsTotalCount(t *testing.T) {
 	in := signal.CommonInput{SyntaxFacts: []diagnostic.SyntaxFact{
-		{Kind: unsafeOpKind, Module: unsafeActorMod, File: unsafeActorFile},
-		{Kind: unsafeOpKind, Module: unsafeActorMod, File: unsafeActorFile},
-		{Kind: unsafeOpKind, Module: "yazi::shim", File: "shim/cell.rs"},
+		{Kind: unsafeOpKind, Module: unsafeActorMod, File: unsafeActorFile, Language: langRust},
+		{Kind: unsafeOpKind, Module: unsafeActorMod, File: unsafeActorFile, Language: langRust},
+		{Kind: unsafeOpKind, Module: "yazi::shim", File: "shim/cell.rs", Language: langRust},
 		{Kind: "function", Module: unsafeActorMod, File: unsafeActorFile}, // ignored
 	}}
 	res := modularity.UnsafeDensityMetric{}.Calculate(in)
@@ -59,8 +59,8 @@ func TestUnsafeDensity_SomeFacts_ReturnsTotalCount(t *testing.T) {
 
 func TestUnsafeDensity_NoModule_FallsBackToFile(t *testing.T) {
 	in := signal.CommonInput{SyntaxFacts: []diagnostic.SyntaxFact{
-		{Kind: unsafeOpKind, Module: "", File: fileMainRs},
-		{Kind: unsafeOpKind, Module: "", File: fileMainRs},
+		{Kind: unsafeOpKind, Module: "", File: fileMainRs, Language: langRust},
+		{Kind: unsafeOpKind, Module: "", File: fileMainRs, Language: langRust},
 	}}
 	res := modularity.UnsafeDensityMetric{}.Calculate(in)
 	if res.Value != 2 {
@@ -68,6 +68,20 @@ func TestUnsafeDensity_NoModule_FallsBackToFile(t *testing.T) {
 	}
 	if res.Band != bandInfo {
 		t.Errorf("Band = %q, want info", res.Band)
+	}
+}
+
+func TestUnsafeDensity_TestFileFact_IsCounted(t *testing.T) {
+	// unsafe_density intentionally counts unsafe_op in test files (unlike panic_density).
+	in := signal.CommonInput{SyntaxFacts: []diagnostic.SyntaxFact{
+		{Kind: unsafeOpKind, Module: unsafeActorMod, File: "actor/lives_test.rs", Language: langRust},
+	}}
+	res := modularity.UnsafeDensityMetric{}.Calculate(in)
+	if res.Band != bandInfo {
+		t.Errorf("Band = %q, want info (test-file unsafe_op must be counted)", res.Band)
+	}
+	if res.Value != 1 {
+		t.Errorf("Value = %v, want 1 (test-file fact counted, not skipped)", res.Value)
 	}
 }
 

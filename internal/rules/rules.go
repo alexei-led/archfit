@@ -938,6 +938,10 @@ func (r *publicAPITypeLeak) Check(g *graph.Graph, ev Evidence) []finding.Finding
 	}
 
 	extPkgs := externalPackageSegments(g)
+	// Ceiling: extPkgs is built from dotted-package external nodes (Go-style).
+	// For Rust/TS/Python repos with no such nodes, type_leak facts are present
+	// but cannot be matched — this check fires only when the graph has Go-style
+	// external package nodes.
 	if len(extPkgs) == 0 {
 		return nil
 	}

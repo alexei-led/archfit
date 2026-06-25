@@ -211,8 +211,8 @@ Dynamic/lazy imports (detected by TypeScript and Python extractors as
 section so the narrative can flag coupling the static dependency graph misses.
 
 **Judgment on report-only facts (Cat 6/7/8/12 residue):** the new report-only
-syntax-facts metrics (`unsafe_density`, `panic_density`, `global_state`,
-`struct_field_max`) surface candidates deterministically. `review` and `enrich` are
+syntax-facts metrics (`unsafe_density`, `panic_density`, `struct_field_density`,
+`test_density`) surface candidates deterministically. `review` and `enrich` are
 the designed home for the _soundness and acceptability_ judgments those facts
 require:
 

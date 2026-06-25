@@ -189,7 +189,7 @@ tools:
 - Emits a `syntax_facts` block in the diagnostic (neutral, off-gate, omitted
   when empty).
 - Each fact records: `language`, `file`, `kind` (function/method/class/struct/
-  interface/trait/enum/type_alias/annotation/route), `name`, `exported`, `role`
+  interface/trait/enum/type_alias/annotation/route/unsafe_op/struct_field/panic_op/global_state/type_leak/lazy_import/test_fn), `name`, `exported`, `role`
   (handler/service/repository/domain), `role_confidence` (high/medium/low),
   `role_evidence`, `framework`, `start_line`, `end_line`.
 - Role derivation (`internal/syntax`) runs heuristics on name patterns,

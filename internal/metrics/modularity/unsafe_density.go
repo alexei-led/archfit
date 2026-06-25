@@ -14,6 +14,10 @@ import (
 // (unsafe{} blocks, UnsafeCell, raw pointer casts, transmute) extracted by
 // ast-grep, grouped by module. Report-only — Band: BandInformational, never
 // gates. n/a when no unsafe_op syntax facts are present (sg absent or no Rust).
+//
+// Note: unlike panic_density, this metric does NOT exclude test files.
+// Unsafe operations in test helpers and bench fixtures are still part of
+// the safety surface and should be measured.
 type UnsafeDensityMetric struct{}
 
 // Name returns "unsafe_density".

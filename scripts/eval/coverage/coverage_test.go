@@ -275,7 +275,7 @@ func TestAllSurfaced_NoUnknownStatus(t *testing.T) {
 }
 
 // TestBaseline_ExpectedCounts verifies the 20-row inventory produces the expected
-// 1 agree / 8 llm-routed / 11 not-surfaced split when no detector data is present.
+// 1 agree / 9 llm-routed / 10 not-surfaced split when no detector data is present.
 func TestBaseline_ExpectedCounts(t *testing.T) {
 	// Empty repoData for all repos simulates baseline (no detectors shipped).
 	emptyRepo := &repoData{
@@ -298,8 +298,8 @@ func TestBaseline_ExpectedCounts(t *testing.T) {
 	}
 
 	wantAgree := 1
-	wantLLM := 8
-	wantNotSurfaced := 11
+	wantLLM := 9
+	wantNotSurfaced := 10
 
 	if counts[statusAgree] != wantAgree {
 		t.Errorf("agree: got %d, want %d", counts[statusAgree], wantAgree)

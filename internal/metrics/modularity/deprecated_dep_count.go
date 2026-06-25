@@ -54,8 +54,8 @@ func deprecatedDepDisplay(deps []diagnostic.DeprecatedDep) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d declared deprecation marker(s): ", n)
 	for i, d := range deps {
-		if i == 3 {
-			fmt.Fprintf(&b, "+%d more", n-3)
+		if i == 5 {
+			fmt.Fprintf(&b, "+%d more", n-5)
 			break
 		}
 		if i > 0 {
