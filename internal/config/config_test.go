@@ -559,8 +559,8 @@ func TestForPatterns(t *testing.T) {
 				{
 					ID: "r3",
 					Patterns: []config.PatternDef{
-						{ID: "p2", Lang: "typescript", Rule: "bar($X)"},
-						{ID: "p3", Lang: "typescript", Rule: "baz($X)"},
+						{ID: "p2", Lang: langTypeScript, Rule: "bar($X)"},
+						{ID: "p3", Lang: langTypeScript, Rule: "baz($X)"},
 					},
 				},
 			},
@@ -988,7 +988,7 @@ func TestLoad_ValidateEnums(t *testing.T) {
 		},
 		{
 			name:    "empty bc severity is allowed",
-			yaml:    "version: 1\n",
+			yaml:    yamlV1,
 			wantErr: "",
 		},
 		{
@@ -1132,6 +1132,11 @@ const (
 	// Layer name constants used in self-config conformance tests.
 	layerAdapter = "adapter"
 	layerCore    = "core"
+
+	// langTypeScript and yamlV1 appear in many tests; kept as constants to
+	// satisfy the goconst linter.
+	langTypeScript = "typescript"
+	yamlV1         = "version: 1\n"
 )
 
 func TestLint(t *testing.T) {
@@ -1238,6 +1243,153 @@ func TestLintWarning_String(t *testing.T) {
 	if got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// tools.syntax — SyntaxEnabled + ForSyntax
+// ---------------------------------------------------------------------------
+
+func TestSyntaxEnabled(t *testing.T) {
+	cases := []struct {
+		name string
+		mode string
+		want bool
+	}{
+		{"on enables", "on", true},
+		{"true enables", "true", true},
+		{"off disables", "off", false},
+		{"false disables", "false", false},
+		{"auto disables (opt-in only)", "auto", false},
+		{"absent disables", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var yamlBody string
+			if tc.mode == "" {
+				yamlBody = "version: 1\n"
+			} else {
+				yamlBody = "version: 1\ntools:\n  syntax:\n    enabled: " + tc.mode + "\n"
+			}
+			dir := t.TempDir()
+			path := filepath.Join(dir, ".archfit.yaml")
+			if err := writeFile(path, yamlBody); err != nil {
+				t.Fatalf("writeFile: %v", err)
+			}
+			cfg, err := config.Load(context.Background(), path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if got := cfg.SyntaxEnabled(); got != tc.want {
+				t.Errorf("SyntaxEnabled() = %v, want %v (mode=%q)", got, tc.want, tc.mode)
+			}
+		})
+	}
+}
+
+func TestForSyntax_Mode(t *testing.T) {
+	cases := []struct {
+		name    string
+		yaml    string
+		enabled bool
+	}{
+		{
+			name:    "enabled when on",
+			yaml:    "version: 1\ntools:\n  syntax:\n    enabled: on\n",
+			enabled: true,
+		},
+		{
+			name:    "disabled when auto",
+			yaml:    "version: 1\ntools:\n  syntax:\n    enabled: auto\n",
+			enabled: false,
+		},
+		{
+			name:    "disabled when off",
+			yaml:    "version: 1\ntools:\n  syntax:\n    enabled: off\n",
+			enabled: false,
+		},
+		{
+			name:    "disabled when absent",
+			yaml:    "version: 1\n",
+			enabled: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, ".archfit.yaml")
+			if err := writeFile(path, tc.yaml); err != nil {
+				t.Fatalf("writeFile: %v", err)
+			}
+			cfg, err := config.Load(context.Background(), path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			sc := cfg.ForSyntax()
+			if sc.Enabled != tc.enabled {
+				t.Errorf("ForSyntax().Enabled = %v, want %v", sc.Enabled, tc.enabled)
+			}
+		})
+	}
+}
+
+func TestForSyntax_Languages(t *testing.T) {
+	allFour := []string{"go", "typescript", "python", "rust"}
+
+	t.Run("all four when no tools configured", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".archfit.yaml")
+		if err := writeFile(path, "version: 1\n"); err != nil {
+			t.Fatalf("writeFile: %v", err)
+		}
+		cfg, _ := config.Load(context.Background(), path)
+		sc := cfg.ForSyntax()
+		if !slices.Equal(sc.Languages, allFour) {
+			t.Errorf("Languages = %v, want %v", sc.Languages, allFour)
+		}
+	})
+
+	t.Run("excludes language set to off", func(t *testing.T) {
+		yaml := "version: 1\ntools:\n  rust:\n    enabled: off\n"
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".archfit.yaml")
+		if err := writeFile(path, yaml); err != nil {
+			t.Fatalf("writeFile: %v", err)
+		}
+		cfg, _ := config.Load(context.Background(), path)
+		sc := cfg.ForSyntax()
+		want := []string{"go", "typescript", "python"}
+		if !slices.Equal(sc.Languages, want) {
+			t.Errorf("Languages = %v, want %v", sc.Languages, want)
+		}
+	})
+
+	t.Run("includes language set to auto", func(t *testing.T) {
+		yaml := "version: 1\ntools:\n  python:\n    enabled: auto\n"
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".archfit.yaml")
+		if err := writeFile(path, yaml); err != nil {
+			t.Fatalf("writeFile: %v", err)
+		}
+		cfg, _ := config.Load(context.Background(), path)
+		sc := cfg.ForSyntax()
+		if !slices.Equal(sc.Languages, allFour) {
+			t.Errorf("Languages = %v, want %v (auto should be included)", sc.Languages, allFour)
+		}
+	})
+
+	t.Run("all off yields empty languages", func(t *testing.T) {
+		yaml := "version: 1\ntools:\n  go:\n    enabled: off\n  typescript:\n    enabled: off\n  python:\n    enabled: off\n  rust:\n    enabled: off\n"
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".archfit.yaml")
+		if err := writeFile(path, yaml); err != nil {
+			t.Fatalf("writeFile: %v", err)
+		}
+		cfg, _ := config.Load(context.Background(), path)
+		sc := cfg.ForSyntax()
+		if len(sc.Languages) != 0 {
+			t.Errorf("Languages = %v, want empty", sc.Languages)
+		}
+	})
 }
 
 // writeFile is a test helper that writes content to path.

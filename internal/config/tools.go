@@ -24,6 +24,18 @@ const (
 // ToolScip is the Tools map key for the SCIP symbol-level strength provider.
 const ToolScip = "scip"
 
+// ToolSyntax is the Tools map key for the ast-grep syntax-facts provider.
+// Off by default — running ast-grep over the full repo adds cost to the check
+// path; opt-in via tools.syntax.enabled: on. Config-driven (not PATH presence)
+// for same-config→same-metrics determinism.
+const ToolSyntax = "syntax"
+
+// SyntaxEnabled reports whether the syntax-facts provider is explicitly enabled
+// (tools.syntax.enabled: on). Opt-in only — auto/off/absent all disable it.
+func (c Config) SyntaxEnabled() bool {
+	return c.Tools[ToolSyntax].Enabled == ModeOn
+}
+
 // ToolCargoModules is the Tools map key for the cargo-modules intra-crate module
 // graph provider. Off by default — it compiles the crate (minutes); opt-in via
 // tools.cargo-modules.enabled: on.

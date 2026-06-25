@@ -97,7 +97,10 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 
 	extractors := buildExtractors(deps.Runner, cfg)
 
-	rs := rules.New(cfg.ForRules())
+	rs, err := rules.New(cfg.ForRules())
+	if err != nil {
+		return diagnostic.Diagnostic{}, err
+	}
 	// risk_hub reads hand-authored volatility only (never git churn).
 	ms := append(metrics.New(cfg), extraMetrics...)
 
@@ -227,6 +230,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		resolver = scip.New(deps.Runner)
 	}
 
+	// Syntax facts (ast-grep syntax rules) are opt-in (tools.syntax.enabled: on):
+	// language-specific rules add overhead and the result is report-only.
+	syntaxCfg := cfg.ForSyntax()
+	var syntaxProvider ports.SyntaxProvider = ports.NopSyntaxProvider{}
+	if syntaxCfg.Enabled {
+		syntaxProvider = astgrep.New(deps.Runner)
+	}
+
 	// Config hash for reproducibility — empty when --no-config ignored the file.
 	configHash := effectiveConfigHash(configPath, noConfig)
 
@@ -240,6 +251,8 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		Extractors:  extractors,
 		Patterns:    astgrep.New(deps.Runner),
 		Resolver:    resolver,
+		Syntax:      syntaxProvider,
+		SyntaxCfg:   syntaxCfg,
 		PatternCfg:  patternCfg,
 		Rules:       rs,
 		Metrics:     ms,
@@ -274,7 +287,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	if mode.Full {
 		validate += " --full"
 	}
-	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate})
+	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate}, diag.SyntaxFacts)
 
 	// cargo-modules module-graph coverage: opt-in (tools.cargo-modules.enabled: on).
 	// The Rust extractor runs cargo-modules during its Extract call (inside engine.Run

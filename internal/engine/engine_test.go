@@ -94,7 +94,10 @@ func cannedConfig() (config.ClassifyConfig, []rules.Rule) {
 
 	classifyCfg := cfg.ForClassify()
 	ruleCfg := cfg.ForRules()
-	rs := rules.New(ruleCfg)
+	rs, err := rules.New(ruleCfg)
+	if err != nil {
+		panic("cannedConfig: " + err.Error())
+	}
 	return classifyCfg, rs
 }
 
@@ -362,8 +365,8 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		t.Errorf("tool_coverage is nil, want typed empty slice")
 	}
 	// Metrics should contain all registered metrics.
-	if len(d.Metrics) != 19 {
-		t.Errorf("len(metrics)=%d, want 19", len(d.Metrics))
+	if len(d.Metrics) != 20 {
+		t.Errorf("len(metrics)=%d, want 20", len(d.Metrics))
 	}
 }
 
@@ -1249,7 +1252,10 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 		Rules: []config.RuleDef{{ID: crossModRuleID, Type: "new_cross_module_dependency", Gate: gateFail}},
 	}
 	classifyCfg := cfg.ForClassify()
-	rs := rules.New(cfg.ForRules())
+	rs, err := rules.New(cfg.ForRules())
+	if err != nil {
+		t.Fatalf("rules.New: %v", err)
+	}
 
 	ex := &ports.ExtractorMock{
 		NameFunc: func() string { return "go" },
@@ -1348,6 +1354,11 @@ func TestRun_PinnedLabels(t *testing.T) {
 	// The engine hashes "fromPath\x00toPath\x00kind" per edge of the pair.
 	freshHash := labels.HashItems([]string{pathFileA + "\x00" + pathFileBAPIService + "\x00imports"})
 
+	pinnedRules, err := rules.New(cfg.ForRules())
+	if err != nil {
+		t.Fatalf("rules.New: %v", err)
+	}
+
 	run := func(lbls []labels.Label) (diagnostic.Diagnostic, signal.CollectedSignals) {
 		t.Helper()
 		var captured signal.CollectedSignals
@@ -1362,7 +1373,7 @@ func TestRun_PinnedLabels(t *testing.T) {
 			Patterns:    ports.NopPatternProvider{},
 			Resolver:    ports.NopSymbolResolver{},
 			PatternCfg:  config.PatternConfig{},
-			Rules:       rules.New(cfg.ForRules()),
+			Rules:       pinnedRules,
 			Metrics:     []metrics.Metric{spy},
 			Accepted:    baseline.Baseline{},
 			BaseMetrics: nil,
@@ -1434,9 +1445,10 @@ func TestRun_PinnedLabels(t *testing.T) {
 // langPyTest / kindLazy are factored out so the dynamic-import test stays under
 // goconst's repeated-literal threshold.
 const (
-	langPyTest = "python"
-	kindLazy   = "lazy_import"
-	pathPyA    = "pkg/a/x.py"
+	langPyTest   = "python"
+	kindLazy     = "lazy_import"
+	kindFuncDecl = "function_declaration"
+	pathPyA      = "pkg/a/x.py"
 
 	// Runtime async test constants.
 	kindMQ        = "message_queue"
@@ -1781,7 +1793,11 @@ func bookExampleConfig(fromGlob, toGlob string, sameDeployUnit, sameOwner bool, 
 	}
 
 	cfg := config.Config{Version: 1, Modules: modules}
-	return cfg.ForClassify(), rules.New(cfg.ForRules())
+	rs, err := rules.New(cfg.ForRules())
+	if err != nil {
+		panic("ch10Config: " + err.Error())
+	}
+	return cfg.ForClassify(), rs
 }
 
 // TestRun_BookExamples_Ch10 is an engine-level regression test anchoring the full
@@ -1959,5 +1975,366 @@ func TestRun_BookExamples_Ch10(t *testing.T) {
 				t.Errorf("%s: score_band=%q, want %q", tc.comment, gotBand, tc.wantBand)
 			}
 		})
+	}
+}
+
+func TestRun_SyntaxFacts_Populated(t *testing.T) {
+	ctx := context.Background()
+	facts := cleanFacts()
+
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return facts, diagnostic.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
+		},
+	}
+
+	synMock := &ports.SyntaxProviderMock{
+		NameFunc: func() string { return toolNameAstgrep },
+		SyntaxFunc: func(_ context.Context, _ scope.Scope, _ []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
+			return []diagnostic.SyntaxFact{
+				{File: pathFileA, Language: "go", Kind: kindFuncDecl, Name: "FooHandler", StartLine: 10},
+			}, diagnostic.Coverage{Tool: toolNameAstgrep, Status: "ok", FilesSeen: 1, FilesApplicable: 1}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		Syntax:      synMock,
+		SyntaxCfg:   config.SyntaxConfig{Enabled: true, Languages: []string{"go"}},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Signals:     signal.RunSignals{},
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(d.SyntaxFacts) == 0 {
+		t.Fatal("SyntaxFacts should be populated when syntax is enabled")
+	}
+	// DeriveRoles assigns Role for function_declaration via name-suffix heuristic (FooHandler → handler).
+	var foundRole bool
+	for _, sf := range d.SyntaxFacts {
+		if sf.Role != "" {
+			foundRole = true
+			break
+		}
+	}
+	if !foundRole {
+		t.Error("DeriveRoles: no SyntaxFact has a Role set")
+	}
+	// Coverage must include the syntax coverage entry.
+	var foundSynCov bool
+	for _, c := range d.ToolCoverage {
+		if c.Tool == "ast-grep" && c.FilesSeen == 1 {
+			foundSynCov = true
+			break
+		}
+	}
+	if !foundSynCov {
+		t.Error("syntax coverage not found in ToolCoverage")
+	}
+	// Facts are off-gate — verdict stays pass.
+	if d.Verdict != diagnostic.VerdictPass {
+		t.Errorf("verdict = %v, want pass", d.Verdict)
+	}
+	if len(synMock.SyntaxCalls()) == 0 {
+		t.Error("SyntaxProvider.Syntax was never called")
+	}
+}
+
+// TestRun_SyntaxFacts_ModuleBackfill asserts that after syntax facts are produced
+// the engine populates SyntaxFact.Module from the ModuleMap for files that match
+// a declared module, and leaves Module empty for files outside declared modules.
+// Uses index-based range to avoid the range-copy trap.
+func TestRun_SyntaxFacts_ModuleBackfill(t *testing.T) {
+	ctx := context.Background()
+	facts := cleanFacts()
+
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return facts, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+
+	// pathFileA = "pkg/a/a.go" is in module "a" per cannedConfig.
+	// outsideFile is not covered by any module glob.
+	const outsideFile = "scripts/gen.go"
+	synMock := &ports.SyntaxProviderMock{
+		NameFunc: func() string { return toolNameAstgrep },
+		SyntaxFunc: func(_ context.Context, _ scope.Scope, _ []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
+			return []diagnostic.SyntaxFact{
+				{File: pathFileA, Language: "go", Kind: kindFuncDecl, Name: "Handler", StartLine: 1},
+				{File: outsideFile, Language: "go", Kind: kindFuncDecl, Name: "Gen", StartLine: 1},
+			}, diagnostic.Coverage{Tool: toolNameAstgrep, Status: "ok"}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		Syntax:      synMock,
+		SyntaxCfg:   config.SyntaxConfig{Enabled: true, Languages: []string{"go"}},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Signals:     signal.RunSignals{},
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(d.SyntaxFacts) != 2 {
+		t.Fatalf("SyntaxFacts len = %d; want 2", len(d.SyntaxFacts))
+	}
+
+	// Find facts by file — order may vary after DeriveRoles+Sort.
+	modByFile := make(map[string]string, len(d.SyntaxFacts))
+	for _, sf := range d.SyntaxFacts {
+		modByFile[sf.File] = sf.Module
+	}
+
+	if got := modByFile[pathFileA]; got != "a" {
+		t.Errorf("SyntaxFact[%s].Module = %q; want %q (in-module backfill)", pathFileA, got, "a")
+	}
+	if got := modByFile[outsideFile]; got != "" {
+		t.Errorf("SyntaxFact[%s].Module = %q; want empty (outside declared modules)", outsideFile, got)
+	}
+}
+
+func TestRun_SyntaxEnabled_NilProvider_ReturnsError(t *testing.T) {
+	ctx := context.Background()
+	facts := cleanFacts()
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return facts, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
+
+	_, err := engine.Run(ctx, engine.RunInput{
+		Mode:       engine.Mode{Head: headRef},
+		Scope:      scope.Scope{Root: "."},
+		Classify:   classifyCfg,
+		Extractors: []ports.Extractor{ex},
+		Patterns:   ports.NopPatternProvider{},
+		Resolver:   ports.NopSymbolResolver{},
+		Syntax:     nil, // deliberately nil
+		SyntaxCfg:  config.SyntaxConfig{Enabled: true, Languages: []string{"go"}},
+		Rules:      rs,
+		Metrics:    ms,
+		Accepted:   base,
+		Now:        now,
+	})
+	if err == nil {
+		t.Fatal("want error when Enabled=true and Syntax=nil, got nil")
+	}
+}
+
+func TestRun_SyntaxFacts_DisabledNoCallNoCoverage(t *testing.T) {
+	ctx := context.Background()
+	facts := cleanFacts()
+
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return facts, diagnostic.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
+		},
+	}
+
+	synMock := &ports.SyntaxProviderMock{
+		NameFunc: func() string { return "ast-grep" },
+		SyntaxFunc: func(_ context.Context, _ scope.Scope, _ []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
+			return nil, diagnostic.Coverage{}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Exceptions:  config.ExceptionSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		Syntax:      synMock,
+		SyntaxCfg:   config.SyntaxConfig{Enabled: false},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Signals:     signal.RunSignals{},
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(d.SyntaxFacts) != 0 {
+		t.Errorf("SyntaxFacts should be empty when syntax disabled, got %d", len(d.SyntaxFacts))
+	}
+	if len(synMock.SyntaxCalls()) != 0 {
+		t.Error("SyntaxProvider should not be called when disabled")
+	}
+	// NopPatternProvider contributes exactly one ast-grep absent entry.
+	// The syntax path must not add a second one when disabled.
+	var astGrepCount int
+	for _, cov := range d.ToolCoverage {
+		if cov.Tool == toolNameAstgrep {
+			astGrepCount++
+		}
+	}
+	if astGrepCount != 1 {
+		t.Errorf("want exactly 1 ast-grep coverage entry (from NopPatternProvider), got %d; ToolCoverage=%+v", astGrepCount, d.ToolCoverage)
+	}
+}
+
+// TestRun_WarnRule_ProducesVerdictWarn verifies that a rule with gate:warn
+// produces VerdictWarn (not VerdictFail), zero gate findings, and — when
+// advisory mode is on — exactly one advisory finding (not two, which would
+// indicate double-emission from the stage-8 partition bug).
+func TestRun_WarnRule_ProducesVerdictWarn(t *testing.T) {
+	ctx := context.Background()
+
+	const warnRuleID = "warn-no-internal"
+
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"a": {Paths: []string{globModuleA}},
+			"b": {Paths: []string{globModuleB}},
+		},
+		Rules: []config.RuleDef{
+			{
+				ID:   warnRuleID,
+				Type: rulePublicAPIOnly,
+				Gate: "warn",
+			},
+		},
+	}
+
+	rs, err := rules.New(cfg.ForRules())
+	if err != nil {
+		t.Fatalf("rules.New: %v", err)
+	}
+
+	makeEx := func() ports.Extractor {
+		return &ports.ExtractorMock{
+			NameFunc: func() string { return "go" },
+			ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+				return violationFacts(), diagnostic.Coverage{Tool: "go", Status: "ok", FilesSeen: 2, FilesApplicable: 2}, nil
+			},
+		}
+	}
+
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
+
+	runWith := func(advisory bool) diagnostic.Diagnostic {
+		t.Helper()
+		d, runErr := engine.Run(ctx, engine.RunInput{
+			Mode:        engine.Mode{Head: headRef, Advisory: advisory},
+			Scope:       scope.Scope{Root: "."},
+			Classify:    cfg.ForClassify(),
+			Staleness:   config.StalenessConfig{},
+			Exceptions:  config.ExceptionSet{},
+			Extractors:  []ports.Extractor{makeEx()},
+			Patterns:    ports.NopPatternProvider{},
+			Resolver:    ports.NopSymbolResolver{},
+			PatternCfg:  config.PatternConfig{},
+			Rules:       rs,
+			Metrics:     ms,
+			Accepted:    base,
+			BaseMetrics: base.Metrics,
+			Labels:      nil,
+			Signals:     signal.RunSignals{},
+			Now:         now,
+		})
+		if runErr != nil {
+			t.Fatalf("Run: %v", runErr)
+		}
+		return d
+	}
+
+	// Advisory mode OFF: verdict must be warn; no gate findings.
+	d := runWith(false)
+
+	if d.Verdict != diagnostic.VerdictWarn {
+		t.Errorf("verdict=%q, want %q", d.Verdict, diagnostic.VerdictWarn)
+	}
+	for _, f := range d.Findings {
+		if f.Kind == kindGate && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept) {
+			t.Errorf("unexpected gate finding for warn rule: %+v", f)
+		}
+	}
+	if d.Summary.GateFindings != 0 {
+		t.Errorf("summary.gate_findings=%d, want 0 for warn rule", d.Summary.GateFindings)
+	}
+
+	// Advisory mode ON: the warn finding must appear exactly once with Kind=advisory.
+	// Two occurrences would indicate double-emission from a missing stage-8 partition.
+	dAdv := runWith(true)
+
+	var warnCount int
+	for _, f := range dAdv.Findings {
+		if f.RuleID == warnRuleID {
+			warnCount++
+			if f.Kind != kindAdvisory {
+				t.Errorf("warn finding Kind=%q, want %q", f.Kind, kindAdvisory)
+			}
+		}
+	}
+	if warnCount != 1 {
+		t.Fatalf("got %d warn findings, want exactly 1 (double-emission guard)", warnCount)
+	}
+	if dAdv.Summary.Warnings != 1 {
+		t.Errorf("summary.warnings=%d, want 1", dAdv.Summary.Warnings)
 	}
 }

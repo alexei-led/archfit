@@ -1,0 +1,179 @@
+# Embedded ast-grep rules for Rust declaration and route extraction.
+# Each rule's id maps to a SyntaxFact Kind (and optionally Framework) in the adapter.
+# Validated against sg 0.44.0 with Rust tree-sitter grammar.
+#
+# ruleId → Kind mapping (see syntax.go):
+#   rs-func       → function  (pub functions)
+#   rs-struct     → struct    (pub structs)
+#   rs-enum       → enum      (pub enums)
+#   rs-trait      → interface (pub traits)
+#   rs-impl       → method    (pub fn items inside impl blocks)
+#   rs-mod        → struct    (pub mod declarations; closest structural kind)
+#   rs-attribute  → annotation (attribute items: #[derive(...)], #[cfg(...)] etc.)
+#   rs-route-actix-rocket → route, framework=actix (actix/rocket share #[get(...)]/
+#                           #[post(...)]/etc. attribute shape; framework cannot be
+#                           distinguished by pattern alone — labelled "actix" as the
+#                           canonical representative of this shape)
+#   rs-route-axum-warp    → route, framework=axum  (axum/warp share the
+#                           .route(path, handler) builder shape; labelled "axum" as
+#                           the canonical representative of this shape)
+#
+# Pub detection: has:{kind:visibility_modifier} (covers `pub`, `pub(crate)`, `pub(super)`).
+# attribute_item: the #[...] node that precedes declaration items.
+# Route detection: attribute-based (#[get(...)]) or builder-based (.route(path, handler)).
+
+# Declaration rules: pub = has a visibility_modifier child AND a named field.
+# ast-grep requires a single `rule:` entry; multiple constraints use `all:`.
+
+id: rs-func
+language: Rust
+rule:
+  all:
+    - kind: function_item
+    - has:
+        kind: visibility_modifier
+    - has:
+        field: name
+        pattern: $NAME
+---
+id: rs-struct
+language: Rust
+rule:
+  all:
+    - kind: struct_item
+    - has:
+        kind: visibility_modifier
+    - has:
+        field: name
+        pattern: $NAME
+---
+id: rs-enum
+language: Rust
+rule:
+  all:
+    - kind: enum_item
+    - has:
+        kind: visibility_modifier
+    - has:
+        field: name
+        pattern: $NAME
+---
+id: rs-trait
+language: Rust
+rule:
+  all:
+    - kind: trait_item
+    - has:
+        kind: visibility_modifier
+    - has:
+        field: name
+        pattern: $NAME
+---
+# rs-impl: pub fn items inside impl blocks.
+# Matches function_item children of impl_item that have visibility_modifier.
+id: rs-impl
+language: Rust
+rule:
+  all:
+    - kind: function_item
+    - inside:
+        kind: declaration_list
+        inside:
+          kind: impl_item
+    - has:
+        kind: visibility_modifier
+    - has:
+        field: name
+        pattern: $NAME
+---
+id: rs-mod
+language: Rust
+rule:
+  all:
+    - kind: mod_item
+    - has:
+        kind: visibility_modifier
+    - has:
+        field: name
+        pattern: $NAME
+---
+# Attribute rule: captures #[...] attribute items.
+# $NAME captures the attribute path (e.g. "derive", "cfg", "tokio::main", "serde").
+# Two pattern alternatives cover every attribute form:
+#   - '#[$NAME($$$)]' — with arguments: #[derive(...)], #[cfg(...)], #[serde(...)]
+#   - '#[$NAME]'      — without arguments: #[test], #[no_mangle], #[tokio::main]
+# Using `any:` at rule level (not inside `has:`) so metavar $NAME surfaces in
+# metaVariables.single — confirmed against sg 0.44 on real Rust files.
+id: rs-attribute
+language: Rust
+rule:
+  any:
+    - pattern: '#[$NAME($$$)]'
+    - pattern: '#[$NAME]'
+---
+# Route rules: attribute-based routes (actix-web / rocket).
+# #[get("/path")] / #[post("/path")] etc. on a function.
+# All share the same #[verb(path)] shape; framework cannot be distinguished by pattern.
+# Labelled "actix" as the canonical representative.
+# $PATH captures the URL pattern string.
+id: rs-route-actix-rocket
+language: Rust
+rule:
+  any:
+    - pattern: '#[get($PATH)]'
+    - pattern: '#[post($PATH)]'
+    - pattern: '#[put($PATH)]'
+    - pattern: '#[delete($PATH)]'
+    - pattern: '#[patch($PATH)]'
+---
+# Route rules: builder-based routes (axum / warp).
+# Router::new().route("/path", handler) — the .route("path", ...) call.
+# Labelled "axum" as the canonical representative.
+# $PATH captures the URL pattern string.
+id: rs-route-axum-warp
+language: Rust
+rule:
+  all:
+    - kind: call_expression
+    - pattern: $ROUTER.route($PATH, $$$)
+---
+# Import-signal rules: used by the adapter (IsSignal=true) to confirm that the
+# file actually imports the route framework before emitting route facts.
+# Signal rules are NEVER emitted as SyntaxFacts — they only populate the
+# per-file framework-confirmed map in the two-pass gating logic.
+#
+# Extensibility: to add a new framework, add one route rule + one signal rule
+# here + one entry in rustRuleKinds (syntax.go) with IsSignal:true.
+#
+# actix group: actix-web / rocket (both use #[get(...)]/etc. attributes).
+id: rs-import-actix
+language: Rust
+rule:
+  any:
+    - pattern: use actix_web::$$$
+    - pattern: use rocket::$$$
+---
+# axum group: axum / warp (both use .route(path, handler) builder).
+id: rs-import-axum
+language: Rust
+rule:
+  any:
+    - pattern: use axum::$$$
+    - pattern: use warp::$$$
+---
+# Test-framework import rules: emit test_import facts for production Rust files.
+# ruleId → Kind=test_import (see syntax.go rustRuleKinds).
+# Note: Rust test deps are typically dev-dependencies behind cfg(test).
+# These rules catch leaks where test frameworks appear outside cfg(test).
+# Ceiling: inline #[cfg(test)] mod blocks are not excluded by path analysis.
+id: rs-test-import-mockall
+language: Rust
+rule:
+  kind: use_declaration
+  regex: mockall
+---
+id: rs-test-import-proptest
+language: Rust
+rule:
+  kind: use_declaration
+  regex: proptest

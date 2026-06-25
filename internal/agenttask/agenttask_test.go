@@ -1,19 +1,24 @@
 package agenttask_test
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/agenttask"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
 const (
-	ruleForbidden = "no_internal_access"
-	fileFrom      = "pkg/a/a.go"
-	fileTo        = "pkg/b/internal/impl.go"
+	ruleForbidden     = "no_internal_access"
+	fileFrom          = "pkg/a/a.go"
+	fileTo            = "pkg/b/internal/impl.go"
+	ruleTypeForbidden = "forbidden_dependency"
+	validateCmd       = "archfit check"
+	kindFunction      = "function"
 )
 
 func gateFinding(id, ruleID string, status finding.Status) finding.Finding {
@@ -48,9 +53,10 @@ func TestBuild_ActiveGateFindingsOnly(t *testing.T) {
 	}
 
 	tasks := agenttask.Build(findings,
-		map[string]string{ruleForbidden: "forbidden_dependency"},
+		map[string]string{ruleForbidden: ruleTypeForbidden},
 		nil,
 		[]string{"archfit check --full"},
+		nil,
 	)
 
 	if len(tasks) != 2 {
@@ -68,6 +74,7 @@ func TestBuild_TaskShape(t *testing.T) {
 		map[string]string{ruleForbidden: "public_api_only"},
 		map[string][]string{"b": {"pkg/b/api/**"}},
 		[]string{"archfit check -c .archfit.yaml --full"},
+		nil,
 	)
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d, want 1", len(tasks))
@@ -100,7 +107,7 @@ func TestBuild_GoalTemplates(t *testing.T) {
 		ruleType string
 		want     string
 	}{
-		{"forbidden_dependency", "Remove the forbidden dependency"},
+		{ruleTypeForbidden, "Remove the forbidden dependency"},
 		{"public_api_only", "public API"},
 		{"internal_api_access", "public API"},
 		{"forbidden_layer_direction", "inner layers must not import outer layers"},
@@ -113,7 +120,7 @@ func TestBuild_GoalTemplates(t *testing.T) {
 			tasks := agenttask.Build(
 				[]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)},
 				map[string]string{ruleForbidden: tc.ruleType},
-				nil, nil,
+				nil, nil, nil,
 			)
 			if len(tasks) != 1 {
 				t.Fatalf("tasks = %d, want 1", len(tasks))
@@ -126,7 +133,7 @@ func TestBuild_GoalTemplates(t *testing.T) {
 }
 
 func TestBuild_EmptyAndDeterministic(t *testing.T) {
-	if got := agenttask.Build(nil, nil, nil, nil); got == nil || len(got) != 0 {
+	if got := agenttask.Build(nil, nil, nil, nil, nil); got == nil || len(got) != 0 {
 		t.Errorf("nil findings → %v, want empty non-nil slice", got)
 	}
 
@@ -134,12 +141,76 @@ func TestBuild_EmptyAndDeterministic(t *testing.T) {
 		gateFinding("z", ruleForbidden, finding.StatusNew),
 		gateFinding("a", ruleForbidden, finding.StatusNew),
 	}
-	first := agenttask.Build(findings, nil, nil, []string{"archfit check"})
-	second := agenttask.Build(findings, nil, nil, []string{"archfit check"})
+	first := agenttask.Build(findings, nil, nil, []string{validateCmd}, nil)
+	second := agenttask.Build(findings, nil, nil, []string{validateCmd}, nil)
 	if !reflect.DeepEqual(first, second) {
 		t.Error("two builds differ — must be deterministic")
 	}
 	if first[0].FindingID != "a" || first[1].FindingID != "z" {
 		t.Errorf("not sorted by FindingID: %s, %s", first[0].FindingID, first[1].FindingID)
+	}
+}
+
+// TestBuild_DeclarationsEnrichedWhenSyntaxPresent verifies that when SyntaxFacts
+// are provided, each task's Declarations field contains the facts for its files.
+func TestBuild_DeclarationsEnrichedWhenSyntaxPresent(t *testing.T) {
+	sf := []diagnostic.SyntaxFact{
+		{File: fileFrom, Kind: kindFunction, Name: "CallB", Exported: true, StartLine: 3, Role: "service", RoleConf: "medium"},
+		{File: fileTo, Kind: kindFunction, Name: "internalImpl", Exported: false, StartLine: 10},
+		{File: "pkg/other/other.go", Kind: kindFunction, Name: "Unrelated", Exported: true, StartLine: 1},
+	}
+
+	tasks := agenttask.Build(
+		[]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)},
+		map[string]string{ruleForbidden: "forbidden_dependency"},
+		nil,
+		[]string{validateCmd},
+		sf,
+	)
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %d, want 1", len(tasks))
+	}
+	decls := tasks[0].Declarations
+	if len(decls) != 2 {
+		t.Fatalf("declarations = %d, want 2 (fileFrom + fileTo facts only); got %+v", len(decls), decls)
+	}
+	// fileFrom appears before fileTo (sorted), so CallB comes first.
+	if decls[0].Name != "CallB" || decls[0].File != fileFrom {
+		t.Errorf("decls[0] = %+v, want CallB in %s", decls[0], fileFrom)
+	}
+	if decls[1].Name != "internalImpl" || decls[1].File != fileTo {
+		t.Errorf("decls[1] = %+v, want internalImpl in %s", decls[1], fileTo)
+	}
+	// Role and file:line are preserved.
+	if decls[0].Role != "service" || decls[0].StartLine != 3 {
+		t.Errorf("decls[0] role/line = %q/%d, want service/3", decls[0].Role, decls[0].StartLine)
+	}
+}
+
+// TestBuild_DeclarationsAbsentWhenSyntaxEmpty verifies that when no SyntaxFacts
+// are provided, the Declarations field is nil and the JSON output is byte-for-byte
+// identical to the pre-enrichment shape (no extra key, no empty array).
+func TestBuild_DeclarationsAbsentWhenSyntaxEmpty(t *testing.T) {
+	tasks := agenttask.Build(
+		[]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)},
+		map[string]string{ruleForbidden: "forbidden_dependency"},
+		nil,
+		[]string{validateCmd},
+		nil,
+	)
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %d, want 1", len(tasks))
+	}
+	if tasks[0].Declarations != nil {
+		t.Errorf("Declarations = %v, want nil when SyntaxFacts absent", tasks[0].Declarations)
+	}
+
+	// Marshal and confirm the "declarations" key is absent from JSON.
+	b, err := json.Marshal(tasks[0])
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if strings.Contains(string(b), `"declarations"`) {
+		t.Errorf("JSON contains 'declarations' key but should be absent; got: %s", b)
 	}
 }

@@ -8,14 +8,27 @@ import (
 	"sync"
 )
 
-// RunnerMock is a mock implementation of Runner for testing.
+// Ensure, that RunnerMock does implement Runner.
+// If this is not the case, regenerate this file with moq.
+var _ Runner = &RunnerMock{}
+
+// RunnerMock is a mock implementation of Runner.
 //
-//	func TestSomething(t *testing.T) {
-//	    runner := &toolrun.RunnerMock{
-//	        DetectFunc: func(ctx context.Context, tool string) (ToolInfo, bool) { ... },
-//	        RunFunc:    func(ctx context.Context, cmd ToolCmd) (Output, error) { ... },
-//	    }
-//	    ...
+//	func TestSomethingThatUsesRunner(t *testing.T) {
+//
+//		// make and configure a mocked Runner
+//		mockedRunner := &RunnerMock{
+//			DetectFunc: func(ctx context.Context, tool string) (ToolInfo, bool) {
+//				panic("mock out the Detect method")
+//			},
+//			RunFunc: func(ctx context.Context, cmd ToolCmd) (Output, error) {
+//				panic("mock out the Run method")
+//			},
+//		}
+//
+//		// use mockedRunner in code that requires Runner
+//		// and then make assertions.
+//
 //	}
 type RunnerMock struct {
 	// DetectFunc mocks the Detect method.
@@ -46,61 +59,73 @@ type RunnerMock struct {
 }
 
 // Detect calls DetectFunc.
-func (m *RunnerMock) Detect(ctx context.Context, tool string) (ToolInfo, bool) {
-	if m.DetectFunc == nil {
-		panic("RunnerMock.DetectFunc is nil but Runner.Detect was called")
+func (mock *RunnerMock) Detect(ctx context.Context, tool string) (ToolInfo, bool) {
+	if mock.DetectFunc == nil {
+		panic("RunnerMock.DetectFunc: method is nil but Runner.Detect was just called")
 	}
-	call := struct {
+	callInfo := struct {
 		Ctx  context.Context
 		Tool string
-	}{Ctx: ctx, Tool: tool}
-	m.lockDetect.Lock()
-	m.calls.Detect = append(m.calls.Detect, call)
-	m.lockDetect.Unlock()
-	return m.DetectFunc(ctx, tool)
+	}{
+		Ctx:  ctx,
+		Tool: tool,
+	}
+	mock.lockDetect.Lock()
+	mock.calls.Detect = append(mock.calls.Detect, callInfo)
+	mock.lockDetect.Unlock()
+	return mock.DetectFunc(ctx, tool)
 }
 
-// DetectCalls returns all calls that were made to Detect.
-func (m *RunnerMock) DetectCalls() []struct {
+// DetectCalls gets all the calls that were made to Detect.
+// Check the length with:
+//
+//	len(mockedRunner.DetectCalls())
+func (mock *RunnerMock) DetectCalls() []struct {
 	Ctx  context.Context
 	Tool string
 } {
-	m.lockDetect.RLock()
-	defer m.lockDetect.RUnlock()
-	calls := make([]struct {
+	var calls []struct {
 		Ctx  context.Context
 		Tool string
-	}, len(m.calls.Detect))
-	copy(calls, m.calls.Detect)
+	}
+	mock.lockDetect.RLock()
+	calls = mock.calls.Detect
+	mock.lockDetect.RUnlock()
 	return calls
 }
 
 // Run calls RunFunc.
-func (m *RunnerMock) Run(ctx context.Context, cmd ToolCmd) (Output, error) {
-	if m.RunFunc == nil {
-		panic("RunnerMock.RunFunc is nil but Runner.Run was called")
+func (mock *RunnerMock) Run(ctx context.Context, cmd ToolCmd) (Output, error) {
+	if mock.RunFunc == nil {
+		panic("RunnerMock.RunFunc: method is nil but Runner.Run was just called")
 	}
-	call := struct {
+	callInfo := struct {
 		Ctx context.Context
 		Cmd ToolCmd
-	}{Ctx: ctx, Cmd: cmd}
-	m.lockRun.Lock()
-	m.calls.Run = append(m.calls.Run, call)
-	m.lockRun.Unlock()
-	return m.RunFunc(ctx, cmd)
+	}{
+		Ctx: ctx,
+		Cmd: cmd,
+	}
+	mock.lockRun.Lock()
+	mock.calls.Run = append(mock.calls.Run, callInfo)
+	mock.lockRun.Unlock()
+	return mock.RunFunc(ctx, cmd)
 }
 
-// RunCalls returns all calls that were made to Run.
-func (m *RunnerMock) RunCalls() []struct {
+// RunCalls gets all the calls that were made to Run.
+// Check the length with:
+//
+//	len(mockedRunner.RunCalls())
+func (mock *RunnerMock) RunCalls() []struct {
 	Ctx context.Context
 	Cmd ToolCmd
 } {
-	m.lockRun.RLock()
-	defer m.lockRun.RUnlock()
-	calls := make([]struct {
+	var calls []struct {
 		Ctx context.Context
 		Cmd ToolCmd
-	}, len(m.calls.Run))
-	copy(calls, m.calls.Run)
+	}
+	mock.lockRun.RLock()
+	calls = mock.calls.Run
+	mock.lockRun.RUnlock()
 	return calls
 }

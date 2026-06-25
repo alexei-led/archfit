@@ -1,0 +1,141 @@
+# Embedded ast-grep rules for Python declaration and route extraction.
+# Each rule's id maps to a SyntaxFact Kind (and optionally Framework) in the adapter.
+# Validated against sg 0.44.0 with Python tree-sitter grammar.
+#
+# ruleId → Kind mapping (see syntax.go):
+#   py-func              → function  (public top-level and method functions)
+#   py-class             → class     (public class definitions)
+#   py-decorator         → annotation (decorator applied via a call, e.g. @app.get, @dataclass)
+#   py-route-decorator   → route, framework=fastapi (fastapi/flask/starlette/aiohttp share
+#                          the same @recv.verb(path) or @recv.route(path) shape; framework
+#                          cannot be distinguished by pattern alone — labelled "fastapi" as
+#                          the canonical representative of this shape)
+#   py-route-django-path   → route, framework=django (urlpatterns path("/url", view))
+#   py-route-django-repath → route, framework=django (urlpatterns re_path(r"^/url", view))
+#
+# Public detection: name regex '^[^_]' (not starting with underscore).
+# function_definition matches decorated functions too — no decorated_definition trap.
+# decorator has:{kind:call} skips bare decorators like @staticmethod (no call parens).
+
+# Declaration rules: public = name does not start with underscore.
+
+id: py-func
+language: Python
+rule:
+  kind: function_definition
+  has:
+    field: name
+    regex: ^[^_]
+    pattern: $NAME
+---
+id: py-class
+language: Python
+rule:
+  kind: class_definition
+  has:
+    field: name
+    regex: ^[^_]
+    pattern: $NAME
+---
+# Decorator rule: captures decorators applied as calls (e.g. @dataclass(), @app.get(...)).
+# has:{kind:call} ensures bare decorators like @staticmethod are excluded.
+# $NAME captures the full call expression (e.g. "app.get", "dataclass").
+# Ceiling: only matches decorators that are call expressions — not bare name decorators.
+id: py-decorator
+language: Python
+rule:
+  kind: decorator
+  has:
+    kind: call
+    pattern: $NAME($$$)
+---
+# Route rules: decorator-based routes (fastapi/flask/starlette/aiohttp).
+# @recv.verb(path) — @app.get("/url"), @router.post("/url"), @app.route("/url").
+# All share the same syntactic shape; framework cannot be distinguished by pattern.
+# Labelled "fastapi" as the canonical representative.
+# $PATH captures the first argument (the URL pattern string).
+# $VERB is constrained to HTTP verbs and lifecycle hooks — prevents matching
+# @topic_state.register("…") and @pytest.fixture(...) (verb-set guard).
+# Layer 1 ($PATH: {kind: string}) is intentionally omitted: variable/const paths
+# are common and would cause false negatives.
+id: py-route-decorator
+language: Python
+rule:
+  kind: decorator
+  pattern: '@$RECV.$VERB($PATH)'
+constraints:
+  VERB:
+    regex: ^(get|post|put|delete|patch|head|options|route|websocket|on_startup|on_shutdown)$
+---
+# Django urlpatterns: path("/url", view) call inside urlpatterns assignment.
+# $PATH captures the first argument (the URL pattern string).
+id: py-route-django-path
+language: Python
+rule:
+  kind: call
+  pattern: path($PATH, $$$)
+---
+# Django urlpatterns: re_path(r"^/url/", view) call inside urlpatterns assignment.
+# $PATH captures the first argument (the regex URL pattern string).
+id: py-route-django-repath
+language: Python
+rule:
+  kind: call
+  pattern: re_path($PATH, $$$)
+---
+# Import-signal rules: used by the adapter (IsSignal=true) to confirm that the
+# file actually imports the route framework before emitting route facts.
+# Signal rules are NEVER emitted as SyntaxFacts — they only populate the
+# per-file framework-confirmed map in the two-pass gating logic.
+#
+# Extensibility: to add a new framework, add one route rule + one signal rule
+# here + one entry in pyRuleKinds (syntax.go) with IsSignal:true.
+#
+# fastapi group: fastapi/flask/starlette/aiohttp/sanic (all use @recv.verb(path)).
+id: py-import-fastapi
+language: Python
+rule:
+  any:
+    - pattern: from fastapi import $$$
+    - pattern: import fastapi
+    - pattern: from flask import $$$
+    - pattern: import flask
+    - pattern: from starlette import $$$
+    - pattern: from starlette.applications import $$$
+    - pattern: from aiohttp import $$$
+    - pattern: import aiohttp
+    - pattern: from sanic import $$$
+    - pattern: import sanic
+---
+# django group: django.urls path/re_path.
+id: py-import-django
+language: Python
+rule:
+  any:
+    - pattern: from django.urls import $$$
+    - pattern: from django.conf.urls import $$$
+    - pattern: import django
+---
+# Test-framework import rules: emit test_import facts for production Python files.
+# ruleId → Kind=test_import (see syntax.go pyRuleKinds).
+id: py-test-import-pytest
+language: Python
+rule:
+  any:
+    - pattern: import pytest
+    - pattern: from pytest import $$$
+---
+id: py-test-import-unittest
+language: Python
+rule:
+  any:
+    - pattern: import unittest
+    - pattern: from unittest import $$$
+    - pattern: from unittest.mock import $$$
+---
+id: py-test-import-mock
+language: Python
+rule:
+  any:
+    - pattern: import mock
+    - pattern: from mock import $$$

@@ -4,7 +4,7 @@
 //
 //	boundary     encapsulation, unbalanced_edge, cycle, coverage, change_locality
 //	modularity   blast_radius, change_amplification, hidden_coupling,
-//	             structural_weight, functional_candidates
+//	             structural_weight, file_structural_weight, functional_candidates
 //	risk         risk_hub
 //	intramodule  complexity, architecture_fitness
 //

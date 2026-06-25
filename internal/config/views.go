@@ -183,6 +183,36 @@ func (c Config) ForPatterns() PatternConfig {
 	return out
 }
 
+// SyntaxConfig is the view passed to the syntax-facts provider.
+// Enabled reflects tools.syntax.enabled: on (opt-in only).
+// Languages is the list of language keys whose extractor is not explicitly
+// off — derived from the Tools map so the engine need not re-read config.
+// An empty Languages slice means "all four known languages" (the provider falls
+// back to its built-in set when Languages is empty).
+type SyntaxConfig struct {
+	Enabled   bool
+	Languages []string
+}
+
+// ForSyntax returns the SyntaxConfig view.
+// Languages is derived from the four known language keys (go, typescript, python,
+// rust): a language is included when its extractor mode is not ModeOff. Languages
+// absent from the Tools map default to ModeAuto, which is included.
+func (c Config) ForSyntax() SyntaxConfig {
+	enabled := c.SyntaxEnabled()
+	var langs []string
+	for _, lang := range []string{LangGo, LangTypeScript, LangPython, LangRust} {
+		if tc, ok := c.Tools[lang]; ok && tc.Enabled == ModeOff {
+			continue
+		}
+		langs = append(langs, lang)
+	}
+	return SyntaxConfig{
+		Enabled:   enabled,
+		Languages: langs,
+	}
+}
+
 // ForStaleness returns the StalenessConfig view.
 func (c Config) ForStaleness() StalenessConfig {
 	var threshold time.Duration

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/classify"
@@ -19,6 +20,7 @@ import (
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/status"
+	"github.com/alexei-led/archfit/internal/syntax"
 )
 
 // Mode controls how the engine run behaves.
@@ -43,6 +45,8 @@ type RunInput struct {
 	Patterns    ports.PatternProvider
 	PatternCfg  config.PatternConfig
 	Resolver    ports.SymbolResolver
+	Syntax      ports.SyntaxProvider // syntactic declaration/route provider; nil = Nop
+	SyntaxCfg   config.SyntaxConfig  // derived from ForSyntax(); Enabled gates the call
 	Rules       []rules.Rule
 	Metrics     []metrics.Metric
 	Accepted    status.AcceptedSet
@@ -106,6 +110,31 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	}
 	ex.coverages = append(ex.coverages, ppCov)
 
+	// --- Stage 2b: Syntax facts ---
+	// Collect syntactic declarations and route registrations (ast-grep rules).
+	// Derive roles, build NodeRoleIndex for rule consumption — all before the
+	// rules stage. Off-gate: facts populate the report but never affect the verdict.
+	var syntaxFacts []diagnostic.SyntaxFact
+	var nodeRoleIndex *syntax.NodeRoleIndex
+	if in.SyntaxCfg.Enabled {
+		if in.Syntax == nil {
+			return diagnostic.New(), errors.New("engine: SyntaxCfg.Enabled=true but no Syntax provider")
+		}
+		sf, synCov, synErr := in.Syntax.Syntax(ctx, in.Scope, in.SyntaxCfg.Languages)
+		if synErr != nil {
+			return diagnostic.New(), synErr
+		}
+		syntaxFacts = syntax.DeriveRoles(sf)
+		// Backfill Module from ModuleMap — uniform across all languages,
+		// no per-language branching. Files outside declared modules get an
+		// empty Module (legitimate: a script in the repo root, for example).
+		for i := range syntaxFacts {
+			syntaxFacts[i].Module, _ = in.Classify.ModuleMap.ModuleFor(syntaxFacts[i].File)
+		}
+		nodeRoleIndex = syntax.BuildNodeRoleIndex(ex.g, syntaxFacts)
+		ex.coverages = append(ex.coverages, synCov)
+	}
+
 	// --- Stage 3: Classify ---
 	// Pinned coupling labels first: approved entries refine strength
 	// classification (precedence: config globs > approved labels > extractor
@@ -133,7 +162,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Call each rule once with the full evidence set. Rules iterate edges internally;
 	// the Evidence carries all pattern matches so each rule can filter by edge's from-file.
 	var rawFindings []finding.Finding
-	allPatternMatches := rules.Evidence{PatternMatches: patternMatches}
+	allPatternMatches := rules.Evidence{PatternMatches: patternMatches, Roles: nodeRoleIndex, SyntaxFacts: syntaxFacts}
 	for _, r := range in.Rules {
 		rawFindings = append(rawFindings, r.Check(ex.g, allPatternMatches)...)
 	}
@@ -171,9 +200,25 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Edges with Severity != "" and at or above the configured minimum severity are included.
 	advisoryFindings := collectAdvisories(ex.g, couplingIdx, classifyCfg, staleLabelFindings, in)
 
-	// Gate findings: kind=="gate" and not already resolved (fixed findings don't block verdict or inflate count).
-	var gateFindings []finding.Finding
+	// Partition ev.resolvedFindings: rule-advisory findings (Kind="advisory", set by
+	// gatedRule for gate:warn rules) go into advisoryFindings; all others go into
+	// baseFindings. This prevents double-emission when mode.Advisory is on, and lets
+	// computeVerdict count rule-advisories separately from coupling advisories
+	// (coupling advisories must never flip the verdict).
+	var baseFindings []finding.Finding
+	var ruleAdvisoryFindings []finding.Finding
 	for _, f := range ev.resolvedFindings {
+		if f.Kind == "advisory" {
+			ruleAdvisoryFindings = append(ruleAdvisoryFindings, f)
+			advisoryFindings = append(advisoryFindings, f)
+		} else {
+			baseFindings = append(baseFindings, f)
+		}
+	}
+
+	// Gate findings: kind=="gate" and not fixed.
+	var gateFindings []finding.Finding
+	for _, f := range baseFindings {
 		if f.Kind == "gate" && f.Status != finding.StatusFixed {
 			gateFindings = append(gateFindings, f)
 		}
@@ -181,7 +226,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 
 	// Summary counts.
 	var exceptionsUsed int
-	for _, f := range ev.resolvedFindings {
+	for _, f := range baseFindings {
 		if f.Status == finding.StatusExcepted {
 			exceptionsUsed++
 		}
@@ -193,12 +238,16 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		}
 	}
 
-	verdict := computeVerdict(gateFindings, metricResults)
+	// Pass only rule-advisory count to computeVerdict — coupling advisories must
+	// not flip verdict regardless of mode.Advisory.
+	verdict := computeVerdict(gateFindings, metricResults, countActive(ruleAdvisoryFindings))
 
 	// --- Stage 9: Assemble Diagnostic ---
 	// Include advisory findings in Findings only when mode.Advisory is set.
-	// Advisory findings never affect the verdict or gate counts.
-	resolvedFindings := ev.resolvedFindings
+	// Advisory findings never affect gate counts.
+	// Active rule-advisory findings (gate: warn) contribute to VerdictWarn
+	// even when mode.Advisory is off — warn-rules are intentional non-blocking signals.
+	resolvedFindings := baseFindings
 	warnings := 0
 	if in.Mode.Advisory {
 		resolvedFindings = append(resolvedFindings, advisoryFindings...)
@@ -244,6 +293,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		PrimaryExtractorTools: in.PrimaryExtractorTools,
 		Metrics:               metricResults,
 		Findings:              resolvedFindings,
+		SyntaxFacts:           syntaxFacts,
 		FileFacts:             fileFacts,
 		DynamicImports:        dynamicImports,
 		RuntimeAsync:          runtimeAsync,
@@ -349,11 +399,16 @@ func resolveEvidence(
 	return evidenceResult{resolvedFindings: resolvedFindings}
 }
 
-// computeVerdict derives the overall verdict from gate findings and metric results.
+// computeVerdict derives the overall verdict from gate findings, metric results,
+// and active rule-advisory findings (gate: warn).
 //   - Any gate finding with status new or expired_exception → fail
 //   - Any metric with delta != nil && *delta < 0 → warn (if not already fail)
+//   - Any active rule-advisory finding (activeRuleAdvisories > 0) → warn (if not already fail)
 //   - Otherwise → pass
-func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult) diagnostic.Verdict {
+//
+// Coupling advisories are intentionally excluded from activeRuleAdvisories — they
+// must not flip the verdict.
+func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult, activeRuleAdvisories int) diagnostic.Verdict {
 	for _, f := range gateFindings {
 		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept {
 			return diagnostic.VerdictFail
@@ -363,6 +418,9 @@ func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult
 		if m.Delta != nil && *m.Delta < 0 {
 			return diagnostic.VerdictWarn
 		}
+	}
+	if activeRuleAdvisories > 0 {
+		return diagnostic.VerdictWarn
 	}
 	return diagnostic.VerdictPass
 }

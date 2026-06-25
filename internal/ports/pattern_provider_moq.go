@@ -13,26 +13,37 @@ import (
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
-// PatternProviderMock is a mock implementation of PatternProvider for testing.
+// Ensure, that PatternProviderMock does implement PatternProvider.
+// If this is not the case, regenerate this file with moq.
+var _ PatternProvider = &PatternProviderMock{}
+
+// PatternProviderMock is a mock implementation of PatternProvider.
 //
-//	func TestSomething(t *testing.T) {
-//	    pp := &ports.PatternProviderMock{
-//	        NameFunc: func() string { return "ast-grep" },
-//	        FindFunc: func(ctx context.Context, s scope.Scope, c config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) { ... },
-//	    }
-//	    ...
+//	func TestSomethingThatUsesPatternProvider(t *testing.T) {
+//
+//		// make and configure a mocked PatternProvider
+//		mockedPatternProvider := &PatternProviderMock{
+//			FindFunc: func(ctx context.Context, s scope.Scope, c config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
+//				panic("mock out the Find method")
+//			},
+//			NameFunc: func() string {
+//				panic("mock out the Name method")
+//			},
+//		}
+//
+//		// use mockedPatternProvider in code that requires PatternProvider
+//		// and then make assertions.
+//
 //	}
 type PatternProviderMock struct {
-	// NameFunc mocks the Name method.
-	NameFunc func() string
-
 	// FindFunc mocks the Find method.
 	FindFunc func(ctx context.Context, s scope.Scope, c config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error)
 
+	// NameFunc mocks the Name method.
+	NameFunc func() string
+
 	// calls tracks calls to the methods.
 	calls struct {
-		// Name holds details about calls to the Name method.
-		Name []struct{}
 		// Find holds details about calls to the Find method.
 		Find []struct {
 			// Ctx is the ctx argument value.
@@ -42,60 +53,77 @@ type PatternProviderMock struct {
 			// C is the c argument value.
 			C config.PatternConfig
 		}
+		// Name holds details about calls to the Name method.
+		Name []struct {
+		}
 	}
-	lockName sync.RWMutex
 	lockFind sync.RWMutex
-}
-
-// Name calls NameFunc.
-func (m *PatternProviderMock) Name() string {
-	if m.NameFunc == nil {
-		panic("PatternProviderMock.NameFunc is nil but PatternProvider.Name was called")
-	}
-	m.lockName.Lock()
-	m.calls.Name = append(m.calls.Name, struct{}{})
-	m.lockName.Unlock()
-	return m.NameFunc()
-}
-
-// NameCalls returns all calls that were made to Name.
-func (m *PatternProviderMock) NameCalls() []struct{} {
-	m.lockName.RLock()
-	defer m.lockName.RUnlock()
-	calls := make([]struct{}, len(m.calls.Name))
-	copy(calls, m.calls.Name)
-	return calls
+	lockName sync.RWMutex
 }
 
 // Find calls FindFunc.
-func (m *PatternProviderMock) Find(ctx context.Context, s scope.Scope, c config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
-	if m.FindFunc == nil {
-		panic("PatternProviderMock.FindFunc is nil but PatternProvider.Find was called")
+func (mock *PatternProviderMock) Find(ctx context.Context, s scope.Scope, c config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
+	if mock.FindFunc == nil {
+		panic("PatternProviderMock.FindFunc: method is nil but PatternProvider.Find was just called")
 	}
-	call := struct {
+	callInfo := struct {
 		Ctx context.Context
 		S   scope.Scope
 		C   config.PatternConfig
-	}{Ctx: ctx, S: s, C: c}
-	m.lockFind.Lock()
-	m.calls.Find = append(m.calls.Find, call)
-	m.lockFind.Unlock()
-	return m.FindFunc(ctx, s, c)
+	}{
+		Ctx: ctx,
+		S:   s,
+		C:   c,
+	}
+	mock.lockFind.Lock()
+	mock.calls.Find = append(mock.calls.Find, callInfo)
+	mock.lockFind.Unlock()
+	return mock.FindFunc(ctx, s, c)
 }
 
-// FindCalls returns all calls that were made to Find.
-func (m *PatternProviderMock) FindCalls() []struct {
+// FindCalls gets all the calls that were made to Find.
+// Check the length with:
+//
+//	len(mockedPatternProvider.FindCalls())
+func (mock *PatternProviderMock) FindCalls() []struct {
 	Ctx context.Context
 	S   scope.Scope
 	C   config.PatternConfig
 } {
-	m.lockFind.RLock()
-	defer m.lockFind.RUnlock()
-	calls := make([]struct {
+	var calls []struct {
 		Ctx context.Context
 		S   scope.Scope
 		C   config.PatternConfig
-	}, len(m.calls.Find))
-	copy(calls, m.calls.Find)
+	}
+	mock.lockFind.RLock()
+	calls = mock.calls.Find
+	mock.lockFind.RUnlock()
+	return calls
+}
+
+// Name calls NameFunc.
+func (mock *PatternProviderMock) Name() string {
+	if mock.NameFunc == nil {
+		panic("PatternProviderMock.NameFunc: method is nil but PatternProvider.Name was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockName.Lock()
+	mock.calls.Name = append(mock.calls.Name, callInfo)
+	mock.lockName.Unlock()
+	return mock.NameFunc()
+}
+
+// NameCalls gets all the calls that were made to Name.
+// Check the length with:
+//
+//	len(mockedPatternProvider.NameCalls())
+func (mock *PatternProviderMock) NameCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockName.RLock()
+	calls = mock.calls.Name
+	mock.lockName.RUnlock()
 	return calls
 }
