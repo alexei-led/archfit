@@ -3,9 +3,11 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 )
 
@@ -79,7 +81,7 @@ func TestBuildCoverageGaps(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			gaps := buildCoverageGaps(tc.cov, tc.cfg)
+			gaps := buildCoverageGaps(tc.cov, tc.cfg, "")
 			if len(gaps) != len(tc.wantTools) {
 				t.Fatalf("gaps = %d, want %d: %+v", len(gaps), len(tc.wantTools), gaps)
 			}
@@ -93,6 +95,117 @@ func TestBuildCoverageGaps(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBuildCoverageGaps_ProjectMarkerSuppression verifies that gaps for a
+// language whose project marker is absent from the scan root are suppressed,
+// while gaps for present markers and explicit gates are preserved.
+func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
+	// Pure-Go repo: only go.mod present, no Cargo.toml.
+	goOnlyDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(goOnlyDir, markerGoMod), []byte("module example\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mixed Go+Rust repo: both go.mod and Cargo.toml present.
+	mixedDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(mixedDir, markerGoMod), []byte("module example\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mixedDir, markerCargoToml), []byte("[package]\nname = \"x\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgDefault := config.Config{}
+	cfgRustGate := config.Config{Tools: config.ToolsConfig{
+		config.LangRust: {Gate: config.GateFail},
+	}}
+	cfgCargoModulesGate := config.Config{Tools: config.ToolsConfig{
+		config.ToolCargoModules: {Gate: config.GateFail},
+	}}
+
+	allRustAbsent := []diagnostic.Coverage{
+		{Tool: toolCargo, Status: diagnostic.StatusAbsent},
+		{Tool: toolCargoModules, Status: diagnostic.StatusAbsent},
+	}
+
+	t.Run("pure-Go repo: no cargo or cargo-modules gap", func(t *testing.T) {
+		gaps := buildCoverageGaps(allRustAbsent, cfgDefault, goOnlyDir)
+		for _, g := range gaps {
+			if g.Tool == toolCargo || g.Tool == toolCargoModules {
+				t.Errorf("unexpected gap %q in pure-Go repo (no Cargo.toml)", g.Tool)
+			}
+		}
+	})
+
+	t.Run("mixed Go+Rust repo: cargo gap present", func(t *testing.T) {
+		gaps := buildCoverageGaps(allRustAbsent, cfgDefault, mixedDir)
+		found := false
+		for _, g := range gaps {
+			if g.Tool == toolCargo {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("expected cargo gap in mixed repo with Cargo.toml, got none")
+		}
+	})
+
+	t.Run("mixed Go+Rust repo: cargo-modules gap present", func(t *testing.T) {
+		gaps := buildCoverageGaps(allRustAbsent, cfgDefault, mixedDir)
+		found := false
+		for _, g := range gaps {
+			if g.Tool == toolCargoModules {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("expected cargo-modules gap in mixed repo with Cargo.toml, got none")
+		}
+	})
+
+	t.Run("explicit gate on rust overrides marker suppression", func(t *testing.T) {
+		gaps := buildCoverageGaps([]diagnostic.Coverage{
+			{Tool: toolCargo, Status: diagnostic.StatusAbsent},
+		}, cfgRustGate, goOnlyDir)
+		found := false
+		for _, g := range gaps {
+			if g.Tool == toolCargo {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("explicit gate: expected cargo gap even without Cargo.toml, got none")
+		}
+	})
+
+	t.Run("explicit gate on cargo-modules overrides marker suppression", func(t *testing.T) {
+		gaps := buildCoverageGaps([]diagnostic.Coverage{
+			{Tool: toolCargoModules, Status: diagnostic.StatusAbsent},
+		}, cfgCargoModulesGate, goOnlyDir)
+		found := false
+		for _, g := range gaps {
+			if g.Tool == toolCargoModules {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("explicit gate: expected cargo-modules gap even without Cargo.toml, got none")
+		}
+	})
+
+	t.Run("empty root disables suppression (backward compat)", func(t *testing.T) {
+		gaps := buildCoverageGaps(allRustAbsent, cfgDefault, "")
+		found := false
+		for _, g := range gaps {
+			if g.Tool == toolCargo {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("empty root: expected cargo gap (no suppression), got none")
+		}
+	})
 }
 
 // TestBuildConfigWarnings verifies the config-warnings block: lint warnings and
@@ -257,6 +370,127 @@ func TestApplyToolGate(t *testing.T) {
 		}
 		if diag.Verdict != diagnostic.VerdictPass {
 			t.Errorf("verdict = %q, want pass (unchanged)", diag.Verdict)
+		}
+	})
+}
+
+// Test-local constants for buildJudgmentDecisionTasks tests.
+const (
+	decisionModA = "app.a"
+	decisionModB = "app.b"
+)
+
+// TestBuildJudgmentDecisionTasks verifies that undeclared judgment inputs emit
+// actionable decision strings pointing at the right file/key.
+func TestBuildJudgmentDecisionTasks(t *testing.T) {
+	configPath := "/repo/.archfit.yaml"
+
+	t.Run("module with neither subdomain nor volatility emits decision task", func(t *testing.T) {
+		cfg := config.Config{
+			Modules: map[string]config.ModuleDef{
+				"app.core": {Paths: []string{"internal/core/**"}, Subdomain: commandGroupCore},
+				"app.util": {Paths: []string{"internal/util/**"}}, // no subdomain, no volatility
+			},
+		}
+		tasks := buildJudgmentDecisionTasks(cfg, nil, configPath)
+		found := false
+		for _, t2 := range tasks {
+			if strings.Contains(t2, "app.util") && strings.Contains(t2, configPath) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected decision task for app.util, got: %v", tasks)
+		}
+		// app.core has subdomain set — must NOT appear.
+		for _, t2 := range tasks {
+			if strings.Contains(t2, "app.core") {
+				t.Errorf("unexpected decision task for app.core: %s", t2)
+			}
+		}
+	})
+
+	t.Run("module with volatility declared is not flagged", func(t *testing.T) {
+		cfg := config.Config{
+			Modules: map[string]config.ModuleDef{
+				"app.util": {Paths: []string{"internal/util/**"}, Volatility: "low"},
+			},
+		}
+		tasks := buildJudgmentDecisionTasks(cfg, nil, configPath)
+		for _, t2 := range tasks {
+			if strings.Contains(t2, "app.util") {
+				t.Errorf("unexpected decision task for module with volatility: %s", t2)
+			}
+		}
+	})
+
+	t.Run("no modules emits no tasks", func(t *testing.T) {
+		cfg := config.Config{}
+		tasks := buildJudgmentDecisionTasks(cfg, nil, configPath)
+		if len(tasks) != 0 {
+			t.Errorf("expected no tasks, got: %v", tasks)
+		}
+	})
+
+	t.Run("approved llm label emits decision task pointing at labels file", func(t *testing.T) {
+		cfg := config.Config{}
+		lbls := []labels.Label{
+			{From: decisionModA, To: decisionModB, Strength: enrichModel,
+				Status: labels.StatusApproved, Provenance: labels.ProvenanceLLM},
+		}
+		tasks := buildJudgmentDecisionTasks(cfg, lbls, configPath)
+		found := false
+		for _, t2 := range tasks {
+			if strings.Contains(t2, decisionModA) && strings.Contains(t2, decisionModB) &&
+				strings.Contains(t2, ".archfit-labels.yaml") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected decision task for llm label, got: %v", tasks)
+		}
+	})
+
+	t.Run("draft llm label does NOT emit decision task", func(t *testing.T) {
+		cfg := config.Config{}
+		lbls := []labels.Label{
+			{From: decisionModA, To: decisionModB, Strength: enrichModel,
+				Status: labels.StatusDraft, Provenance: labels.ProvenanceLLM},
+		}
+		tasks := buildJudgmentDecisionTasks(cfg, lbls, configPath)
+		if len(tasks) != 0 {
+			t.Errorf("expected no tasks for draft label, got: %v", tasks)
+		}
+	})
+
+	t.Run("approved human label does NOT emit decision task", func(t *testing.T) {
+		cfg := config.Config{}
+		lbls := []labels.Label{
+			{From: decisionModA, To: decisionModB, Strength: enrichModel,
+				Status: labels.StatusApproved, Provenance: labels.ProvenanceHuman},
+		}
+		tasks := buildJudgmentDecisionTasks(cfg, lbls, configPath)
+		if len(tasks) != 0 {
+			t.Errorf("expected no tasks for human label, got: %v", tasks)
+		}
+	})
+
+	t.Run("output is sorted deterministically", func(t *testing.T) {
+		cfg := config.Config{
+			Modules: map[string]config.ModuleDef{
+				"zz.module": {Paths: []string{"zz/**"}},
+				"aa.module": {Paths: []string{"aa/**"}},
+			},
+		}
+		tasks := buildJudgmentDecisionTasks(cfg, nil, configPath)
+		if len(tasks) < 2 {
+			t.Fatalf("expected ≥2 tasks, got %d", len(tasks))
+		}
+		if !strings.Contains(tasks[0], "aa.module") {
+			t.Errorf("first task should be aa.module (sorted), got: %s", tasks[0])
+		}
+		if !strings.Contains(tasks[1], "zz.module") {
+			t.Errorf("second task should be zz.module (sorted), got: %s", tasks[1])
 		}
 	})
 }

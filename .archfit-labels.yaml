@@ -1,0 +1,478 @@
+# Architect-authored strength labels for archfit's main cross-boundary seams.
+# Reviewed by: Alexei Ledenev (architect)
+# Method: human — grounded in design docs, CLAUDE.md, arch_test.go invariants,
+#         and direct code reading. No LLM involved; provenance: human throughout.
+# Note: the 447 unknown-strength edges are resolved primarily by adding missing
+#       public: glob entries in .archfit.yaml (Task 13 config fix). These labels
+#       cover the remaining cross-boundary module-pair seams that globs cannot
+#       express (model vs. functional distinction for specific caller→callee pairs).
+#
+# Strength taxonomy (Khononov BC model):
+#   contract   — consumer depends on a deliberately published stable interface
+#   model      — consumer depends on producer's data/domain types (types cross boundary)
+#   functional — consumer invokes producer's behavior (calls functions, no deep type coupling)
+#   intrusive  — consumer reaches into internals, private state, or implementation details
+labels:
+  # --- engine → core ring ---
+  - from: internal/engine
+    to: internal/classify
+    strength: functional
+    rationale: engine calls classify.Run to produce the coupling.Index; invokes behavior, no shared domain types beyond the Index itself.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/engine
+    to: internal/rules
+    strength: functional
+    rationale: engine calls rules.Check to evaluate the classified index; pure behavior invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/engine
+    to: internal/metrics
+    strength: functional
+    rationale: engine calls metric calculators via the Metric interface; behavior invocation on stable ports.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/engine
+    to: internal/facts
+    strength: functional
+    rationale: engine calls facts.Build to assemble collected signals; behavior invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/engine
+    to: internal/staleness
+    strength: functional
+    rationale: engine calls staleness.Check to detect stale labels; behavior invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/engine
+    to: internal/status
+    strength: functional
+    rationale: engine uses status.AcceptedSet to filter baseline exceptions; invokes stable behavior interface.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/engine
+    to: internal/labels
+    strength: functional
+    rationale: engine calls labels.Approved to load approved labels into the classify config; behavior invocation on pure package.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/engine
+    to: internal/scope
+    strength: functional
+    rationale: engine uses scope.Resolver to determine which files to analyze; behavior invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/engine
+    to: internal/ports
+    strength: contract
+    rationale: engine depends on ports.Runner and ports.Analyzer interfaces — deliberately published stable contracts for subprocess and analyzer injection.
+    status: approved
+    confidence: high
+    provenance: human
+  # --- classify → model ring ---
+  - from: internal/classify
+    to: internal/model
+    strength: model
+    rationale: classify consumes coupling.Strength/Distance/Volatility/Classification value types and graph.Edge/Node — pure data model coupling, no behavior invocation beyond value construction.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/classify
+    to: internal/config
+    strength: model
+    rationale: classify receives config.ClassifyConfig (a typed view) and reads ModuleDef value types; data model coupling, not behavior.
+    status: approved
+    confidence: high
+    provenance: human
+  # --- score → model ring ---
+  - from: internal/score
+    to: internal/model
+    strength: model
+    rationale: score.Synthesize reads ClassifiedEdgeSummary and Diagnostic value types; no behavior calls — pure data model consumption.
+    status: approved
+    confidence: high
+    provenance: human
+  # --- rules → model ring ---
+  - from: internal/rules
+    to: internal/model
+    strength: model
+    rationale: rules.Check reads finding.Finding and coupling value types to produce findings; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  # --- metrics → model ring ---
+  - from: internal/metrics
+    to: internal/model
+    strength: model
+    rationale: metric calculators read graph.Graph, coupling.Index, diagnostic.Diagnostic value types; data model coupling throughout.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/metrics
+    to: internal/config
+    strength: model
+    rationale: metrics reads ModuleDef config views for subdomain/volatility context; data model coupling, not behavior.
+    status: approved
+    confidence: high
+    provenance: human
+  # --- output → model ring ---
+  - from: internal/output
+    to: internal/model
+    strength: model
+    rationale: renderers (markdown, JSON, SARIF, scorecard) read Diagnostic, Finding, coupling value types; data model coupling — they transform, not invoke.
+    status: approved
+    confidence: high
+    provenance: human
+  # --- facts → model ring ---
+  - from: internal/facts
+    to: internal/model
+    strength: model
+    rationale: facts.Build assembles CollectedSignals from graph/signal value types; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  # --- staleness → model ring ---
+  - from: internal/staleness
+    to: internal/model
+    strength: model
+    rationale: staleness reads finding.Finding value types to check stale labels; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  # --- agenttask → model ring ---
+  - from: internal/agenttask
+    to: internal/model
+    strength: model
+    rationale: agenttask produces diagnostic.AgentTask value types; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  # --- ports → model ring ---
+  - from: internal/ports
+    to: internal/model
+    strength: model
+    rationale: ports.Runner/Analyzer interface signatures reference graph.Graph and signal types; interface contracts carry model types.
+    status: approved
+    confidence: high
+    provenance: human
+  # --- config → model ring ---
+  - from: internal/config
+    to: internal/model
+    strength: model
+    rationale: config.ModuleDef embeds coupling.Volatility and references model types in typed config views; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  # --- baseline → model / status ---
+  - from: internal/baseline
+    to: internal/model
+    strength: model
+    rationale: baseline reads diagnostic.Diagnostic and finding.Finding value types for delta comparison; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/baseline
+    to: internal/status
+    strength: functional
+    rationale: baseline calls status.NewAcceptedSet to build the exception set from baseline findings; behavior invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  # --- extractors → model ring ---
+  - from: internal/extract/golang
+    to: internal/model
+    strength: model
+    rationale: Go extractor populates graph.Graph nodes/edges and model/signal types; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/ts
+    to: internal/model
+    strength: model
+    rationale: TS extractor populates graph.Graph nodes/edges; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/py
+    to: internal/model
+    strength: model
+    rationale: Python extractor populates graph.Graph nodes/edges; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/rust
+    to: internal/model
+    strength: model
+    rationale: Rust extractor populates graph.Graph nodes/edges and crate metadata; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/scip
+    to: internal/model
+    strength: model
+    rationale: SCIP extractor populates graph.Graph symbol edges with StrengthHint; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/astgrep
+    to: internal/model
+    strength: model
+    rationale: ast-grep extractor populates graph.Graph pattern findings; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/clones
+    to: internal/model
+    strength: model
+    rationale: clones extractor populates model/clone types; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/complexity
+    to: internal/model
+    strength: model
+    rationale: complexity extractor populates diagnostic value types; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/dynimports
+    to: internal/model
+    strength: model
+    rationale: dynamic imports extractor populates diagnostic value types; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/gitnexus
+    to: internal/model
+    strength: model
+    rationale: gitnexus extractor populates diagnostic value types; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  # --- extractors → config/ports/toolrun ---
+  - from: internal/extract/astgrep
+    to: internal/config
+    strength: model
+    rationale: extractor reads config view for language/module settings; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/astgrep
+    to: internal/ports
+    strength: contract
+    rationale: extractor depends on ports.Runner interface to run ast-grep subprocess; stable contract dependency.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/astgrep
+    to: internal/scope
+    strength: functional
+    rationale: extractor calls scope.Resolver to determine file scope; behavior invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/astgrep
+    to: internal/toolrun
+    strength: functional
+    rationale: extractor uses toolrun.Runner to execute ast-grep subprocess; behavior invocation on the runner adapter.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/clones
+    to: internal/toolrun
+    strength: functional
+    rationale: clones extractor uses toolrun.Runner to execute clone-detection tool; behavior invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/complexity
+    to: internal/toolrun
+    strength: functional
+    rationale: complexity extractor uses toolrun.Runner to execute lizard/CCN tool; behavior invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/deployunit
+    to: internal/config
+    strength: model
+    rationale: deploy-unit extractor reads config module definitions; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/deployunit
+    to: internal/toolrun
+    strength: functional
+    rationale: deploy-unit extractor uses toolrun to run detection logic; behavior invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/gitnexus
+    to: internal/toolrun
+    strength: functional
+    rationale: gitnexus extractor uses toolrun.Runner to invoke the gitnexus index tool; behavior invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: internal/extract/golang
+    to: internal/config
+    strength: model
+    rationale: Go extractor reads config module/language settings; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  # --- cmd → everything (composition root) ---
+  - from: cmd/archfit
+    to: internal/engine
+    strength: functional
+    rationale: cmd wires and calls engine.Run; composition root invokes behavior via the engine's published entry point.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/classify
+    strength: functional
+    rationale: cmd passes classify config to the pipeline; functional invocation at the composition root.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/config
+    strength: functional
+    rationale: cmd calls config.Load and constructs typed views; functional invocation at composition root.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/model
+    strength: model
+    rationale: cmd reads coupling/diagnostic value types to format output and interpret results; data model coupling.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/output
+    strength: functional
+    rationale: cmd calls output renderers (markdown, JSON, SARIF, scorecard) to format results; behavior invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/labels
+    strength: functional
+    rationale: cmd calls labels.Approved and labelsio.Load to load approved labels; functional invocation at composition root.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/baseline
+    strength: functional
+    rationale: cmd calls baseline.Load/Save for delta-mode comparison; functional invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/rules
+    strength: functional
+    rationale: cmd invokes rules.Check on the classified index; functional invocation at composition root.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/score
+    strength: functional
+    rationale: cmd calls score.Synthesize to produce the scorecard; functional invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/metrics
+    strength: functional
+    rationale: cmd registers and runs metric calculators; functional invocation at composition root.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/scope
+    strength: functional
+    rationale: cmd constructs scope.Resolver and passes it to the pipeline; functional invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/ports
+    strength: contract
+    rationale: cmd depends on ports.Runner and ports.Analyzer stable interfaces to wire extractors; contract dependency.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/toolrun
+    strength: functional
+    rationale: cmd constructs toolrun.Runner and injects it; functional wiring at composition root.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/llm
+    strength: functional
+    rationale: cmd uses internal/llm provider factory for enrich/review/explain/autopilot; functional invocation off-gate.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/initcfg
+    strength: functional
+    rationale: cmd calls initcfg.WriteConfig to generate initial .archfit.yaml; functional invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/ownership
+    strength: functional
+    rationale: cmd uses ownership.Resolver to determine module owners from CODEOWNERS; functional invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/agenttask
+    strength: functional
+    rationale: cmd uses agenttask types to emit agent_tasks in JSON output; functional invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/facts
+    strength: functional
+    rationale: cmd passes facts.Build into the pipeline; functional invocation at composition root.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/calibrate
+    strength: functional
+    rationale: cmd calls calibrate.Compare to compare additive vs multiplicative scorer outputs; functional invocation of the calibration utility.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/history
+    strength: functional
+    rationale: cmd uses history/git to read git log for change-coupling analysis; functional invocation of the git adapter.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/fitness
+    strength: functional
+    rationale: cmd calls fitness checkers to measure architecture fitness signals; functional invocation.
+    status: approved
+    confidence: high
+    provenance: human

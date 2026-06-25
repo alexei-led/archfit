@@ -29,9 +29,11 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`.
 Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
 
 - Core ring (`classify`, `rules`, `metrics` + sub-packages, `status`, `staleness`,
-  `facts`, `score`, `scope`) must not import `os`, `os/exec`, any YAML lib, or
-  adapter packages — it decides over already-gathered facts. `score` synthesises
-  the banded scorecard from an already-computed `Diagnostic`.
+  `facts`, `score`, `scope`, `syntax`) must not import `os`, `os/exec`, any YAML
+  lib, or adapter packages — it decides over already-gathered facts. `score`
+  synthesises the banded scorecard from an already-computed `Diagnostic`.
+  `syntax` derives architectural roles (handler/service/repository/domain) and
+  builds the `NodeRoleIndex` used by `forbidden_role_dependency`.
 - `internal/model/*` imports stdlib only.
 - Every subprocess call goes through `toolrun.Runner` (interface in `internal/ports`);
   extractors in `internal/extract/{go,ts,py,rust}` are out-of-process adapters. No
@@ -41,6 +43,44 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   `autopilot`, `explain`, and `review` touch them, never `check`. Enforced
   structurally — `arch_test.go` forbids any `internal/*` package from importing
   `internal/llm`, so the LLM commands live in `cmd`.
+- `gate:` is wired for **all rule types** (`off` skips, `warn` is advisory/non-blocking,
+  `fail`/unset is blocking; exception: `public_api_change` defaults to `warn` when unset). An unknown `type` value is a config error.
+
+## Coupling scorer — key design facts
+
+`ScoreVersion = "bc_score.v3"` (`internal/model/coupling/scorer.go`).
+Formula: `balance = max(|S−D|, 10−V) + 1` (Khononov Ch10 verbatim).
+Ordinals frozen as named constants — changing any is a breaking metric change.
+
+**Abstain-not-fake:** when strength OR distance is `unknown`, the edge is
+unscored (`EdgeScore.Scored = false`). No invented ordinals. Genuine internal
+edges with unknown strength stay in the `abstained` bucket (lowers
+`coupling_balance` confidence); external/library edges (`DistanceUnknown`) are
+excluded from the denominator entirely (counted in `classified_edges.external`).
+
+**External edges excluded from `coupling_balance`:** edges whose target is not a
+declared module are NOT internal coupling seams. Their count surfaces in
+`classified_edges.external` and the `coupling_balance` evidence string.
+`dependency_graph_health` is where external-dependency concerns live.
+
+**Symmetric from clones:** when `tools.clones` detects a cross-module clone
+pair, the edge strength is upgraded to `StrengthSymmetric` (S=9) unless a
+config-authoritative `contract`/`intrusive` or an approved pinned label already
+applies.
+
+**Provenance lowers confidence:** approved labels in `.archfit-labels.yaml` with
+`provenance: llm` and `confidence` below `high` lower `coupling_balance`
+confidence by one band. `provenance: human` and `provenance: tool` do not.
+
+**Opt-in volatility cascade:** `volatility_cascade_enabled: true` in
+`.archfit.yaml` enables a single-hop propagation pass (book Ch9) that raises
+effective volatility to `high` for modules strongly coupled to a `core` module.
+archfit's own self-config has this enabled.
+
+**Runtime async is report-only:** `runtime_async` JSON field records async-bridge
+evidence per module. Never annotates graph edges, never affects distance or
+balance score, never gates. This is a deliberate design decision — do not wire
+async detection into distance.
 
 ## Release (tag-triggered — never release manually)
 

@@ -16,12 +16,10 @@ import (
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
-// statusAbsent is the coverage status returned by no-op ports when the tool is not present.
-const statusAbsent = "absent"
-
 //go:generate moq -out extractor_moq.go . Extractor
 //go:generate moq -out pattern_provider_moq.go . PatternProvider
 //go:generate moq -out symbol_resolver_moq.go . SymbolResolver
+//go:generate moq -out syntax_provider_moq.go . SyntaxProvider
 
 // Extractor is the port that language-specific adapters satisfy.
 // Each adapter runs a single-language extraction pipeline and returns
@@ -80,6 +78,36 @@ type SymbolResolver interface {
 	Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, diagnostic.Coverage, error)
 }
 
+// SyntaxProvider is the port for syntactic declaration and route extraction
+// (syntax facts via ast-grep). The engine consumes this interface; the astgrep
+// adapter implements it.
+//
+//go:generate moq -out syntax_provider_moq.go . SyntaxProvider
+type SyntaxProvider interface {
+	// Name returns the tool name (e.g. "ast-grep").
+	Name() string
+
+	// Syntax runs embedded ast-grep rules for the requested languages against the
+	// given scope and returns extracted syntax facts, a coverage record, and any
+	// hard error. A missing tool must not return an error — it returns empty facts
+	// and a coverage record with status="absent".
+	Syntax(ctx context.Context, s scope.Scope, langs []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error)
+}
+
+// NopSyntaxProvider is a no-op SyntaxProvider used when tools.syntax is off or
+// sg is absent. Syntax returns empty facts and a coverage record with status="absent".
+type NopSyntaxProvider struct{}
+
+var _ SyntaxProvider = NopSyntaxProvider{}
+
+// Name returns "nop-syntax".
+func (NopSyntaxProvider) Name() string { return "nop-syntax" }
+
+// Syntax returns empty facts and an absent coverage record.
+func (NopSyntaxProvider) Syntax(_ context.Context, _ scope.Scope, _ []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
+	return nil, diagnostic.Coverage{Tool: "ast-grep", Status: diagnostic.StatusAbsent}, nil
+}
+
 // NopPatternProvider is a no-op PatternProvider used when no Phase 3 tools are
 // present. Find returns empty matches and a coverage record with status="absent".
 type NopPatternProvider struct{}
@@ -91,7 +119,7 @@ func (NopPatternProvider) Name() string { return "nop-pattern" }
 
 // Find returns empty matches and an absent coverage record.
 func (NopPatternProvider) Find(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
-	return nil, diagnostic.Coverage{Tool: "ast-grep", Status: statusAbsent}, nil
+	return nil, diagnostic.Coverage{Tool: "ast-grep", Status: diagnostic.StatusAbsent}, nil
 }
 
 // NopSymbolResolver is a no-op SymbolResolver used when no Phase 3 tools are
@@ -110,12 +138,12 @@ func (NopSymbolResolver) Resolve(_ context.Context, _, toPath string) (string, s
 
 // Strengths returns an empty map and an absent coverage record.
 func (NopSymbolResolver) Strengths(_ context.Context, _ scope.Scope) (map[string]string, diagnostic.Coverage, error) {
-	return nil, diagnostic.Coverage{Tool: "scip", Status: statusAbsent}, nil
+	return nil, diagnostic.Coverage{Tool: "scip", Status: diagnostic.StatusAbsent}, nil
 }
 
 // Symbols returns an empty Graph and an absent coverage record.
 func (NopSymbolResolver) Symbols(_ context.Context, _ scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
-	return symbol.Graph{}, diagnostic.Coverage{Tool: "scip-symbols", Status: statusAbsent}, nil
+	return symbol.Graph{}, diagnostic.Coverage{Tool: "scip-symbols", Status: diagnostic.StatusAbsent}, nil
 }
 
 // Renderer is the port that output adapters satisfy.

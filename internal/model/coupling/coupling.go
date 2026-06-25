@@ -12,7 +12,10 @@ const (
 	StrengthIntrusive  Strength = "intrusive"
 	StrengthModel      Strength = "model"
 	StrengthFunctional Strength = "functional"
-	StrengthUnknown    Strength = "unknown"
+	// StrengthSymmetric is bidirectional coupling at implementation level —
+	// book ordinal 9, between functional (8) and intrusive (10).
+	StrengthSymmetric Strength = "symmetric"
+	StrengthUnknown   Strength = "unknown"
 )
 
 // Distance measures how far apart two modules are in the ownership hierarchy.
@@ -45,19 +48,20 @@ type Volatility string
 // Both are scored conservatively (treated as potentially volatile); they differ
 // only in the guidance surfaced to the user.
 const (
-	VolatilityHigh       Volatility = "high"
-	VolatilityMedium     Volatility = "medium"
+	VolatilityFrozen     Volatility = "frozen" // frozen/legacy systems; V=1 (most stable)
 	VolatilityLow        Volatility = "low"
+	VolatilityMedium     Volatility = "medium"
+	VolatilityHigh       Volatility = "high"
 	VolatilityUndeclared Volatility = "undeclared"
 	VolatilityUnknown    Volatility = "unknown"
 )
 
 // VolatilityResolved reports whether v is a concrete level the tool can act on
-// (high/medium/low), as opposed to undeclared (config gap) or unknown
+// (frozen/low/medium/high), as opposed to undeclared (config gap) or unknown
 // (unresolvable). Callers that need "do we actually have a volatility?" should
 // use this rather than comparing against VolatilityUnknown alone.
 func VolatilityResolved(v Volatility) bool {
-	return v == VolatilityHigh || v == VolatilityMedium || v == VolatilityLow
+	return v == VolatilityFrozen || v == VolatilityLow || v == VolatilityMedium || v == VolatilityHigh
 }
 
 // Explicitness classifies whether the coupling is via a declared contract.
@@ -143,7 +147,7 @@ const (
 // Contract and model are low-coupling (explicit, stable API surface).
 // Functional and intrusive are high-coupling (implementation-level dependency).
 func strengthIsHigh(s Strength) bool {
-	return s == StrengthFunctional || s == StrengthIntrusive
+	return s == StrengthFunctional || s == StrengthSymmetric || s == StrengthIntrusive
 }
 
 // distanceIsHigh returns true for distances that represent a large ownership gap.

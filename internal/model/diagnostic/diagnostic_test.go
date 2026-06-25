@@ -10,6 +10,12 @@ import (
 // gateWarn is the default coverage-gap gate value reused across these tests.
 const gateWarn = "warn"
 
+// constants for repeated string literals flagged by goconst.
+const (
+	kindFunction = "function"
+	fileAGo      = "a.go"
+)
+
 func TestNew_ZeroValue(t *testing.T) {
 	d := diagnostic.New()
 	if d.SchemaVersion != diagnostic.SchemaVersion {
@@ -321,6 +327,171 @@ func TestCoverageStatusConstants(t *testing.T) {
 	}
 }
 
+func TestSyntaxFact_JSONFieldNames(t *testing.T) {
+	sf := diagnostic.SyntaxFact{
+		Language:  "go",
+		File:      "internal/foo/foo.go",
+		Kind:      kindFunction,
+		Name:      "HandleRequest",
+		Exported:  true,
+		StartLine: 10,
+		EndLine:   25,
+		Role:      "handler",
+		RoleConf:  "high",
+		Evidence:  "signature http.ResponseWriter",
+		Framework: "net/http",
+	}
+
+	data, err := json.Marshal(sf)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	required := []string{
+		"language", "file", "kind", "name",
+		"exported", "start_line", "end_line",
+		"role", "role_confidence", "role_evidence", "framework",
+	}
+	for _, f := range required {
+		if _, ok := m[f]; !ok {
+			t.Errorf("SyntaxFact JSON field %q missing", f)
+		}
+	}
+}
+
+func TestSyntaxFact_OmitEmptyFields(t *testing.T) {
+	// Only language, file, kind, name, start_line must appear when optional
+	// fields are zero/empty.
+	sf := diagnostic.SyntaxFact{
+		Language:  "go",
+		File:      "internal/foo/foo.go",
+		Kind:      kindFunction,
+		Name:      "internalHelper",
+		StartLine: 5,
+	}
+
+	data, err := json.Marshal(sf)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	// start_line must always be present (no omitempty).
+	if _, ok := m["start_line"]; !ok {
+		t.Error("start_line must always be present")
+	}
+
+	// Optional fields must be absent when zero/empty.
+	for _, f := range []string{"exported", "end_line", "role", "role_confidence", "role_evidence", "framework"} {
+		if _, ok := m[f]; ok {
+			t.Errorf("field %q must be omitted when zero", f)
+		}
+	}
+}
+
+func TestDiagnostic_SyntaxFactsOmitWhenEmpty(t *testing.T) {
+	d := diagnostic.New()
+
+	data, err := json.Marshal(d)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	if _, ok := m["syntax_facts"]; ok {
+		t.Error("syntax_facts must be omitted when nil (sg absent / tools.syntax off)")
+	}
+}
+
+func TestDiagnostic_SyntaxFactsRoundTrip(t *testing.T) {
+	d := diagnostic.New()
+	d.SyntaxFacts = []diagnostic.SyntaxFact{
+		{Language: "go", File: "a/b.go", Kind: kindFunction, Name: "Run", Exported: true, StartLine: 1},
+	}
+
+	data, err := json.Marshal(d)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var got diagnostic.Diagnostic
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	if len(got.SyntaxFacts) != 1 {
+		t.Fatalf("SyntaxFacts len = %d; want 1", len(got.SyntaxFacts))
+	}
+	sf := got.SyntaxFacts[0]
+	if sf.Language != "go" || sf.File != "a/b.go" || sf.Kind != kindFunction || sf.Name != "Run" || !sf.Exported || sf.StartLine != 1 {
+		t.Errorf("SyntaxFact round-trip = %+v", sf)
+	}
+}
+
+func TestSortSyntaxFacts(t *testing.T) {
+	facts := []diagnostic.SyntaxFact{
+		{File: "b.go", StartLine: 5, Kind: kindFunction, Name: "B"},
+		{File: fileAGo, StartLine: 10, Kind: "method", Name: "Z"},
+		{File: fileAGo, StartLine: 3, Kind: kindFunction, Name: "A"},
+		{File: fileAGo, StartLine: 3, Kind: kindFunction, Name: "B"}, // same file/line/kind — name tie-break
+		{File: fileAGo, StartLine: 3, Kind: "class", Name: "A"},      // same file/line — kind tie-break
+	}
+
+	diagnostic.SortSyntaxFacts(facts)
+
+	// Expected order: a.go:3:class:A, a.go:3:function:A, a.go:3:function:B, a.go:10:method:Z, b.go:5:function:B
+	type key struct {
+		file, kind, name string
+		line             int
+	}
+	expected := []key{
+		{fileAGo, "class", "A", 3},
+		{fileAGo, kindFunction, "A", 3},
+		{fileAGo, kindFunction, "B", 3},
+		{fileAGo, "method", "Z", 10},
+		{"b.go", kindFunction, "B", 5},
+	}
+
+	if len(facts) != len(expected) {
+		t.Fatalf("len = %d; want %d", len(facts), len(expected))
+	}
+	for i, want := range expected {
+		got := facts[i]
+		if got.File != want.file || got.StartLine != want.line || got.Kind != want.kind || got.Name != want.name {
+			t.Errorf("[%d] got {%s %d %s %s}; want {%s %d %s %s}",
+				i, got.File, got.StartLine, got.Kind, got.Name,
+				want.file, want.line, want.kind, want.name)
+		}
+	}
+}
+
+func TestSortSyntaxFacts_StableOnTies(t *testing.T) {
+	// Two facts identical on all four keys — stable sort must preserve input order.
+	f1 := diagnostic.SyntaxFact{File: "x.go", StartLine: 1, Kind: kindFunction, Name: "F", Language: "go"}
+	f2 := diagnostic.SyntaxFact{File: "x.go", StartLine: 1, Kind: kindFunction, Name: "F", Language: "typescript"} // different language, same keys
+
+	facts := []diagnostic.SyntaxFact{f1, f2}
+	diagnostic.SortSyntaxFacts(facts)
+
+	if facts[0].Language != "go" || facts[1].Language != "typescript" {
+		t.Errorf("stable sort violated: got [%s, %s]; want [go, typescript]",
+			facts[0].Language, facts[1].Language)
+	}
+}
+
 func TestDiagnostic_SchemaVersionInJSON(t *testing.T) {
 	d := diagnostic.New()
 	data, err := json.Marshal(d)
@@ -339,5 +510,58 @@ func TestDiagnostic_SchemaVersionInJSON(t *testing.T) {
 	}
 	if sv != "archfit.diagnostic.v1" {
 		t.Errorf("schema_version = %q; want \"archfit.diagnostic.v1\"", sv)
+	}
+}
+
+// TestSyntaxFact_ModuleIncludedInJSON verifies that Module appears in JSON when set
+// and is omitted (omitempty) when empty, matching the field contract.
+func TestSyntaxFact_ModuleIncludedInJSON(t *testing.T) {
+	// With module set: must appear as "module" key.
+	sf := diagnostic.SyntaxFact{
+		Language:  "go",
+		File:      "pkg/svc/svc.go",
+		Module:    "svc",
+		Kind:      kindFunction,
+		Name:      "Handle",
+		StartLine: 1,
+	}
+	data, err := json.Marshal(sf)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	raw, ok := m["module"]
+	if !ok {
+		t.Fatal("module field must appear when Module is set")
+	}
+	var got string
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal module: %v", err)
+	}
+	if got != "svc" {
+		t.Errorf("module = %q; want %q", got, "svc")
+	}
+
+	// With module empty: must be omitted.
+	sfNoModule := diagnostic.SyntaxFact{
+		Language:  "go",
+		File:      "standalone.go",
+		Kind:      kindFunction,
+		Name:      "Main",
+		StartLine: 1,
+	}
+	data2, err := json.Marshal(sfNoModule)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var m2 map[string]json.RawMessage
+	if err := json.Unmarshal(data2, &m2); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if _, ok := m2["module"]; ok {
+		t.Error("module field must be omitted when Module is empty")
 	}
 }

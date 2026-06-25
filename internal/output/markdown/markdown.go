@@ -108,6 +108,8 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 	writeFileFacts(&b, d.FileFacts)
 
+	writeSyntaxSurface(&b, d.SyntaxFacts)
+
 	writeDynamicImports(&b, d.DynamicImports)
 
 	writeCoverageGaps(&b, d.CoverageGaps)
@@ -410,6 +412,129 @@ func writeFileFacts(b *strings.Builder, facts []diagnostic.FileFact) {
 			fmt.Fprintf(b, " %s (%d)", f.Module, axis.value(f))
 		}
 		b.WriteString("\n")
+	}
+}
+
+// syntaxSurfaceExportedTopN is the cap on exported declarations listed in the
+// Syntax surface section. Full list remains in `--format json`.
+const syntaxSurfaceExportedTopN = 20
+
+// writeSyntaxSurface prints the neutral syntax-surface block: declaration
+// counts by kind, the public API (exported declarations) grouped by file, and
+// detected architectural roles/routes. Omitted entirely when SyntaxFacts is
+// empty (syntax disabled or sg absent) — no false signal, no empty section.
+func writeSyntaxSurface(b *strings.Builder, facts []diagnostic.SyntaxFact) {
+	if len(facts) == 0 {
+		return
+	}
+
+	// Aggregate totals.
+	kindCounts := make(map[string]int)
+	var exportedCount int
+	for _, f := range facts {
+		kindCounts[f.Kind]++
+		if f.Exported {
+			exportedCount++
+		}
+	}
+
+	b.WriteString("\n## Syntax surface (neutral evidence)\n\n")
+	fmt.Fprintf(b, "%d declaration(s) extracted by ast-grep (full list in `--format json`):\n\n", len(facts))
+
+	// Kind counts — deterministic order: sort keys.
+	kinds := make([]string, 0, len(kindCounts))
+	for k := range kindCounts {
+		kinds = append(kinds, k)
+	}
+	sort.Strings(kinds)
+	for _, k := range kinds {
+		fmt.Fprintf(b, "- %s: %d\n", k, kindCounts[k])
+	}
+	fmt.Fprintf(b, "- exported (public API): %d\n", exportedCount)
+
+	// Per-module declaration counts — deterministic order: sort module keys.
+	// Facts with an empty Module (outside declared modules) are bucketed as "(unscoped)".
+	moduleCounts := make(map[string]int)
+	for _, f := range facts {
+		mod := f.Module
+		if mod == "" {
+			mod = "(unscoped)"
+		}
+		moduleCounts[mod]++
+	}
+	if len(moduleCounts) > 0 {
+		b.WriteString("\nPer module:\n\n")
+		mods := make([]string, 0, len(moduleCounts))
+		for m := range moduleCounts {
+			mods = append(mods, m)
+		}
+		sort.Strings(mods)
+		for _, m := range mods {
+			fmt.Fprintf(b, "- %s: %d\n", m, moduleCounts[m])
+		}
+	}
+
+	// Public API list (exported declarations), grouped by file, capped.
+	var exported []diagnostic.SyntaxFact
+	for _, f := range facts {
+		if f.Exported {
+			exported = append(exported, f)
+		}
+	}
+	if len(exported) > 0 {
+		b.WriteString("\n### Public API\n\n")
+		// Group by file — facts are pre-sorted (File, StartLine) upstream.
+		printed := 0
+		var curFile string
+		for _, f := range exported {
+			if printed >= syntaxSurfaceExportedTopN {
+				fmt.Fprintf(b, "- ... +%d more exported declarations (use `--format json`)\n", exportedCount-printed)
+				break
+			}
+			if f.File != curFile {
+				curFile = f.File
+				if f.Module != "" {
+					fmt.Fprintf(b, "\n`%s` [%s]:\n", f.File, f.Module)
+				} else {
+					fmt.Fprintf(b, "\n`%s`:\n", f.File)
+				}
+			}
+			line := fmt.Sprintf("- `%s` (%s)", f.Name, f.Kind)
+			if f.Role != "" {
+				line += " — role: " + f.Role
+				if f.Framework != "" {
+					line += " [" + f.Framework + "]"
+				}
+			}
+			b.WriteString(line + "\n")
+			printed++
+		}
+	}
+
+	// Roles / routes summary.
+	roleCounts := make(map[string]int)
+	routeCount := 0
+	for _, f := range facts {
+		if f.Role != "" {
+			roleCounts[f.Role]++
+		}
+		if f.Kind == "route" {
+			routeCount++
+		}
+	}
+	if len(roleCounts) > 0 || routeCount > 0 {
+		b.WriteString("\n### Detected roles\n\n")
+		roles := make([]string, 0, len(roleCounts))
+		for r := range roleCounts {
+			roles = append(roles, r)
+		}
+		sort.Strings(roles)
+		for _, r := range roles {
+			fmt.Fprintf(b, "- %s: %d declaration(s)\n", r, roleCounts[r])
+		}
+		if routeCount > 0 {
+			fmt.Fprintf(b, "- route: %d registration(s)\n", routeCount)
+		}
 	}
 }
 

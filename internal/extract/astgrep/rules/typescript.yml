@@ -1,0 +1,181 @@
+# Embedded ast-grep rules for TypeScript declaration and route extraction.
+# Each rule's id maps to a SyntaxFact Kind (and optionally Framework) in the adapter.
+# Validated against sg 0.44.0 with TypeScript tree-sitter grammar.
+#
+# ruleId → Kind mapping (see syntax.go):
+#   ts-func        → function  (exported top-level functions)
+#   ts-class       → class     (exported class declarations)
+#   ts-interface   → interface (exported interface declarations)
+#   ts-enum        → enum      (exported enum declarations)
+#   ts-type-alias  → type_alias (exported type alias declarations)
+#   ts-method      → method    (exported methods inside classes)
+#   ts-decorator   → annotation (decorator applied to a class; $NAME = decorator identifier)
+#   ts-route-express → route, framework=express (app.get/post/put/delete/patch calls)
+#   ts-route-nest-controller → route, framework=nest (@Controller path)
+#   ts-route-nest-method     → route, framework=nest (@Get/@Post/@Put/@Delete/@Patch path)
+
+# Declaration rules: all require inside export_statement for exported-only capture.
+
+id: ts-func
+language: TypeScript
+rule:
+  kind: function_declaration
+  has:
+    field: name
+    pattern: $NAME
+  inside:
+    kind: export_statement
+---
+id: ts-class
+language: TypeScript
+rule:
+  kind: class_declaration
+  has:
+    field: name
+    pattern: $NAME
+  inside:
+    kind: export_statement
+---
+id: ts-interface
+language: TypeScript
+rule:
+  kind: interface_declaration
+  has:
+    field: name
+    pattern: $NAME
+  inside:
+    kind: export_statement
+---
+id: ts-enum
+language: TypeScript
+rule:
+  kind: enum_declaration
+  has:
+    field: name
+    pattern: $NAME
+  inside:
+    kind: export_statement
+---
+id: ts-type-alias
+language: TypeScript
+rule:
+  kind: type_alias_declaration
+  has:
+    field: name
+    pattern: $NAME
+  inside:
+    kind: export_statement
+---
+id: ts-method
+language: TypeScript
+rule:
+  kind: method_definition
+  has:
+    field: name
+    pattern: $NAME
+  inside:
+    kind: export_statement
+---
+# Decorator rule: captures the decorator identifier applied to a class.
+# $NAME is the decorator name (e.g. "Controller", "Injectable").
+# The decorator node is a direct child of export_statement (a sibling of
+# class_declaration), NOT nested inside class_declaration — the tree shape is:
+#   export_statement > decorator + class_declaration
+# So `inside: export_statement` is the correct constraint, not the double-nesting.
+# `has: pattern: $NAME($$$)` captures the identifier (arg-ful form only; most
+# class-level decorators carry arguments — @Injectable(), @Component({...}), etc.)
+id: ts-decorator
+language: TypeScript
+rule:
+  kind: decorator
+  has:
+    pattern: $NAME($$$)
+  inside:
+    kind: export_statement
+---
+# Route rules: one entry covers express/koa/fastify (syntactically identical
+# call patterns: receiver.get/post/put/delete/patch(path, handler)).
+# Ceiling: framework cannot be distinguished by pattern alone — all three are
+# labelled "express" as the canonical representative of this shape.
+id: ts-route-express
+language: TypeScript
+rule:
+  any:
+    - pattern: $RECV.get($PATH, $$$)
+    - pattern: $RECV.post($PATH, $$$)
+    - pattern: $RECV.put($PATH, $$$)
+    - pattern: $RECV.delete($PATH, $$$)
+    - pattern: $RECV.patch($PATH, $$$)
+---
+# NestJS route detection via decorators.
+# @Controller("path") on a class declaration.
+id: ts-route-nest-controller
+language: TypeScript
+rule:
+  pattern: '@Controller($PATH)'
+---
+# @Get/@Post/@Put/@Delete/@Patch("path") on a method definition.
+id: ts-route-nest-method
+language: TypeScript
+rule:
+  any:
+    - pattern: '@Get($PATH)'
+    - pattern: '@Post($PATH)'
+    - pattern: '@Put($PATH)'
+    - pattern: '@Delete($PATH)'
+    - pattern: '@Patch($PATH)'
+---
+# Import-signal rules: used by the adapter (IsSignal=true) to confirm that the
+# file actually imports the route framework before emitting route facts.
+# Signal rules are NEVER emitted as SyntaxFacts — they only populate the
+# per-file framework-confirmed map in the two-pass gating logic.
+#
+# Extensibility: to add a new framework, add one route rule + one signal rule
+# here + one entry in tsRuleKinds (syntax.go) with IsSignal:true.
+#
+# express group: express, koa, fastify all share the same call shape (labelled "express").
+# Use $$$ (multi-metavar) to match both default imports (import express from '...')
+# and named imports (import { Router } from '...') — $$ only matches named imports.
+id: ts-import-express
+language: TypeScript
+rule:
+  any:
+    - pattern: import $$$ from 'express'
+    - pattern: import $$$ from 'koa'
+    - pattern: import $$$ from 'fastify'
+    - pattern: import $$$ from '@fastify/autoload'
+---
+# nest group: @nestjs/common decorators.
+id: ts-import-nest
+language: TypeScript
+rule:
+  any:
+    - pattern: import $$$ from '@nestjs/common'
+    - pattern: import $$$ from '@nestjs/core'
+---
+# Test-framework import rules: emit test_import facts for production TS files.
+# ruleId → Kind=test_import (see syntax.go tsRuleKinds).
+id: ts-test-import-jest
+language: TypeScript
+rule:
+  any:
+    - pattern: import $$$ from 'jest'
+    - pattern: import $$$ from '@jest/globals'
+    - pattern: import $$$ from 'jest-mock'
+---
+id: ts-test-import-vitest
+language: TypeScript
+rule:
+  pattern: import $$$ from 'vitest'
+---
+id: ts-test-import-mocha
+language: TypeScript
+rule:
+  any:
+    - pattern: import $$$ from 'mocha'
+    - pattern: import $$$ from 'chai'
+---
+id: ts-test-import-sinon
+language: TypeScript
+rule:
+  pattern: import $$$ from 'sinon'

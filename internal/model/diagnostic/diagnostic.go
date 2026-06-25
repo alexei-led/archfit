@@ -1,6 +1,49 @@
 package diagnostic
 
-import "github.com/alexei-led/archfit/internal/model/finding"
+import (
+	"sort"
+
+	"github.com/alexei-led/archfit/internal/model/finding"
+)
+
+// SyntaxFact holds one syntactic declaration or route registration extracted
+// by ast-grep from a source file. It is a neutral, score-free, off-gate fact
+// (like FileFact) that surfaces in scan/review output and agent_tasks evidence.
+// Fields per design §3.
+type SyntaxFact struct {
+	Language           string `json:"language"`         // go|typescript|python|rust
+	File               string `json:"file"`             // repo-relative, slash
+	Module             string `json:"module,omitempty"` // module-map key this file belongs to; empty when outside declared modules
+	Kind               string `json:"kind"`             // function|method|class|struct|interface|trait|enum|type_alias|annotation|route
+	Name               string `json:"name"`
+	Exported           bool   `json:"exported,omitempty"`
+	StartLine          int    `json:"start_line"`
+	EndLine            int    `json:"end_line,omitempty"`
+	Role               string `json:"role,omitempty"`            // handler|service|repository|domain (derived)
+	RoleConf           string `json:"role_confidence,omitempty"` // high|medium|low
+	Evidence           string `json:"role_evidence,omitempty"`   // e.g. "decorator @Controller", "path contains repository"
+	Framework          string `json:"framework,omitempty"`       // for routes: gin|fastapi|express|axum|…
+	FrameworkConfirmed bool   `json:"-"`                         // true when the file imports the route framework; set by the adapter, never serialised
+}
+
+// SortSyntaxFacts sorts in place by (File, StartLine, Kind, Name).
+// sort.SliceStable preserves input order among facts that are equal on all
+// four keys, guaranteeing deterministic golden output.
+func SortSyntaxFacts(facts []SyntaxFact) {
+	sort.SliceStable(facts, func(i, j int) bool {
+		a, b := facts[i], facts[j]
+		if a.File != b.File {
+			return a.File < b.File
+		}
+		if a.StartLine != b.StartLine {
+			return a.StartLine < b.StartLine
+		}
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		return a.Name < b.Name
+	})
+}
 
 // Verdict is the top-level pass/fail/warn outcome of an archfit run (spec §12).
 type Verdict string
@@ -73,6 +116,11 @@ type AgentTask struct {
 	Files []string `json:"files"`
 	// Validation are the exact commands that must pass after the fix.
 	Validation []string `json:"validation"`
+	// Declarations holds the syntax declarations found in the referenced files
+	// (name, kind, exported, role, file:line). Populated only when syntax facts
+	// are present (tools.syntax.enabled: on); absent otherwise — no empty slice,
+	// no JSON key emitted (omitempty ensures byte-for-byte parity with prior runs).
+	Declarations []SyntaxFact `json:"declarations,omitempty"`
 }
 
 // FileFact holds neutral per-module structural facts assembled from collected
@@ -191,6 +239,47 @@ type DeltaReport struct {
 	TouchedByDelta []string `json:"touched_by_delta,omitempty"`
 }
 
+// ClassifiedEdgeSummary holds aggregate distribution counts over the
+// coupling.Index produced by classify.Run. Stdlib-only (no coupling imports).
+// Populated in engine.go; consumed by score.go to drive coupling_balance.
+type ClassifiedEdgeSummary struct {
+	// Total is the total edge count in the coupling.Index (all edges, including same_module).
+	Total int `json:"total"`
+	// Scored is the count of cross-boundary edges with a concrete book balance
+	// (Scored=true on EdgeScore, i.e. strength and distance both known).
+	Scored int `json:"scored"`
+	// Abstained is the count of cross-boundary edges where the scorer abstained
+	// (strength or distance unknown — excluded from MeanBalance).
+	Abstained int `json:"abstained"`
+	// SameModule is the count of same_module edges (excluded from the balance aggregate).
+	SameModule int `json:"same_module"`
+	// MeanBalance is the arithmetic mean of the book balance (1..10) over scored
+	// cross-boundary edges. 0.0 when Scored == 0.
+	MeanBalance float64 `json:"mean_balance"`
+	// ByStrength counts cross-boundary edges by strength label (string keys, coupling package values).
+	ByStrength map[string]int `json:"by_strength,omitempty"`
+	// ByDistance counts cross-boundary edges by distance label.
+	ByDistance map[string]int `json:"by_distance,omitempty"`
+	// ByVolatility counts cross-boundary edges by volatility label.
+	ByVolatility map[string]int `json:"by_volatility,omitempty"`
+	// BySeverity counts cross-boundary edges by score band (severity label).
+	BySeverity map[string]int `json:"by_severity,omitempty"`
+	// External is the count of cross-boundary edges whose target is NOT a declared
+	// module (Distance == unknown: stdlib, third-party, undeclared packages). These
+	// are EXCLUDED from the Scored/Abstained distribution that drives coupling_balance
+	// — the book measures coupling among YOUR components, not your libraries.
+	// External dependency hygiene is a dependency_graph_health concern.
+	// This field is language-agnostic: it keys on DistanceUnknown, which classifyDistance
+	// sets for all languages (Go stdlib/3p, Rust dependency crates, TS node_modules,
+	// Python external imports). Zero means no external edges were detected.
+	External int `json:"external,omitempty"`
+	// LLMApproved is the count of approved cross-boundary labels whose provenance
+	// is "llm" and confidence is not "high". These lower the coupling_balance
+	// dimension confidence by one band — they are human-approved but not human-judged.
+	// Zero means no LLM-provenance labels are in effect.
+	LLMApproved int `json:"llm_approved,omitempty"`
+}
+
 // Coverage status constants used across all extractor adapters.
 const (
 	StatusOK       = "ok"
@@ -231,8 +320,13 @@ type Diagnostic struct {
 	// annotates graph edges and never affects distance, score, or verdict.
 	// Empty when no async patterns were detected.
 	RuntimeAsync []RuntimeAsyncModule `json:"runtime_async,omitempty"`
-	AgentTasks   []AgentTask          `json:"agent_tasks"`
-	ToolCoverage []Coverage           `json:"tool_coverage"`
+	// SyntaxFacts is the report-only syntactic declaration/route block extracted
+	// by ast-grep (design §3). Neutral, off-gate evidence — never consumed by
+	// verdict or gate logic. Omitted (omitempty) when tools.syntax is off or sg
+	// is absent, so absent sg never emits a null/empty block (no false green).
+	SyntaxFacts  []SyntaxFact `json:"syntax_facts,omitempty"`
+	AgentTasks   []AgentTask  `json:"agent_tasks"`
+	ToolCoverage []Coverage   `json:"tool_coverage"`
 	// CoverageGaps lists analyzers that did not run, the metrics their absence
 	// leaves unmeasured, and how to install them (warn-loud coverage reporting).
 	// Omitted when every required tool ran. Populated in cmd/, never the core ring.
@@ -248,6 +342,11 @@ type Diagnostic struct {
 	// modules, swallowed optional-tool errors) so they reach md/json/CI instead
 	// of being stderr-only. Omitted when empty. Advisory — never gates.
 	ConfigWarnings []string `json:"config_warnings,omitempty"`
+	// ClassifiedEdges is the aggregate distribution of all classified coupling
+	// edges from this run. Populated from the full coupling.Index (before advisory
+	// filtering) so coupling_balance sees every edge, not just the noise-controlled
+	// advisory subset. Nil when classification did not run (backward compatible).
+	ClassifiedEdges *ClassifiedEdgeSummary `json:"classified_edges,omitempty"`
 	// Delta groups findings by lifecycle bucket (new/existing/resolved/
 	// severity_changed/touched_by_delta) for a delta run. Nil (omitted) outside
 	// delta mode and when the run produced no findings to bucket.

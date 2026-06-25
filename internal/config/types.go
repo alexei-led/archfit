@@ -95,6 +95,11 @@ type ClassifyConfig struct {
 	// `owner: same-team` is not overridden by the code-structure fallback even in
 	// a single-author (degenerate) repo.
 	ExplicitOwners map[string]bool
+	// VolatilityCascadeEnabled enables a single-hop volatility propagation pass:
+	// a module strongly coupled (strength ≥ functional) to a high-volatility
+	// module inherits high effective volatility. Config-declared volatility always
+	// takes precedence over the inferred result.
+	VolatilityCascadeEnabled bool
 }
 
 // RuleConfig is the view passed to the rules stage.

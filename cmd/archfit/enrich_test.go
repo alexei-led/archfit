@@ -24,6 +24,11 @@ const (
 	modB             = "b"
 	enrichModel      = "model"
 	enrichFunctional = "functional"
+
+	// fileNodeA and fileNodeB are the file-URI node identifiers used in
+	// enrichFixture and the unknown-strength test.
+	fileNodeA = "file:pkg/a/a.go"
+	fileNodeB = "file:pkg/b/b.go"
 )
 
 func enrichFixture() (*graph.Graph, coupling.Index, config.ModuleMap) {
@@ -36,10 +41,10 @@ func enrichFixture() (*graph.Graph, coupling.Index, config.ModuleMap) {
 		},
 	}
 	edges := []graph.Edge{
-		{From: "file:pkg/a/a.go", To: "file:pkg/b/b.go", Kind: graph.EdgeKindImports, Language: "go"},
+		{From: fileNodeA, To: fileNodeB, Kind: graph.EdgeKindImports, Language: "go"},
 		{From: "file:pkg/a/a2.go", To: "file:pkg/b/b2.go", Kind: graph.EdgeKindImports, Language: "go"},
-		{From: "file:pkg/a/a.go", To: "file:pkg/c/c.go", Kind: graph.EdgeKindImports, Language: "go"},
-		{From: "file:pkg/c/c.go", To: "file:pkg/b/b.go", Kind: graph.EdgeKindImports, Language: "go"},
+		{From: fileNodeA, To: "file:pkg/c/c.go", Kind: graph.EdgeKindImports, Language: "go"},
+		{From: "file:pkg/c/c.go", To: fileNodeB, Kind: graph.EdgeKindImports, Language: "go"},
 	}
 	nodes := []graph.Node{
 		{Kind: graph.NodeKindFile, Path: filePkgAA},
@@ -52,12 +57,12 @@ func enrichFixture() (*graph.Graph, coupling.Index, config.ModuleMap) {
 
 	cross := coupling.Classification{Strength: coupling.StrengthFunctional, Distance: coupling.DistanceCrossModuleDiffOwner}
 	idx := coupling.Index{
-		"file:pkg/a/a.go\x00file:pkg/b/b.go\x00imports":   cross,
+		fileNodeA + "\x00" + fileNodeB + "\x00imports":    cross,
 		"file:pkg/a/a2.go\x00file:pkg/b/b2.go\x00imports": cross,
 		// a→c is contract (glob-decided elsewhere) — must not be refinable.
-		"file:pkg/a/a.go\x00file:pkg/c/c.go\x00imports": {Strength: coupling.StrengthContract, Distance: coupling.DistanceCrossModuleDiffOwner},
+		fileNodeA + "\x00file:pkg/c/c.go\x00imports": {Strength: coupling.StrengthContract, Distance: coupling.DistanceCrossModuleDiffOwner},
 		// c→b functional but same-module distance? keep cross to test approved skip.
-		"file:pkg/c/c.go\x00file:pkg/b/b.go\x00imports": cross,
+		"file:pkg/c/c.go\x00" + fileNodeB + "\x00imports": cross,
 	}
 	return g, idx, cfg.ForClassify().ModuleMap
 }
@@ -187,6 +192,69 @@ func (p *scriptedProvider) Complete(_ context.Context, _ llm.Request) (llm.Respo
 	r := p.responses[p.calls]
 	p.calls++
 	return llm.Response{Text: r}, nil
+}
+
+// TestSelectRefinablePairs_UnknownStrength verifies that edges with
+// StrengthUnknown (no heuristic available) are selected without requiring SCIP.
+func TestSelectRefinablePairs_UnknownStrength(t *testing.T) {
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			modA: {Paths: []string{"pkg/a/**"}},
+			modB: {Paths: []string{"pkg/b/**"}},
+		},
+	}
+	edges := []graph.Edge{
+		{From: fileNodeA, To: fileNodeB, Kind: graph.EdgeKindImports, Language: "go"},
+	}
+	nodes := []graph.Node{
+		{Kind: graph.NodeKindFile, Path: filePkgAA},
+		{Kind: graph.NodeKindFile, Path: "pkg/b/b.go"},
+	}
+	g := graph.Build([]graph.Facts{{Language: "go", Nodes: nodes, Edges: edges}})
+	idx := coupling.Index{
+		fileNodeA + "\x00" + fileNodeB + "\x00imports": {
+			Strength: coupling.StrengthUnknown,
+			Distance: coupling.DistanceCrossModuleDiffOwner,
+		},
+	}
+	mm := cfg.ForClassify().ModuleMap
+
+	pairs := selectRefinablePairs(g, idx, mm, nil)
+	if len(pairs) != 1 {
+		t.Fatalf("pairs = %+v, want exactly a->b for unknown strength", pairs)
+	}
+	if pairs[0].Strength != string(coupling.StrengthUnknown) {
+		t.Errorf("strength = %q, want %q", pairs[0].Strength, coupling.StrengthUnknown)
+	}
+}
+
+// TestDraftLabels_ProvenanceAndConfidence checks that drafts carry provenance:llm
+// and confidence:medium on all parsed entries.
+func TestDraftLabels_ProvenanceAndConfidence(t *testing.T) {
+	pairs := []refinablePair{
+		{From: modA, To: modB, Strength: enrichFunctional},
+	}
+	resp := `[{"from":"a","to":"b","strength":"model","rationale":"types cross"}]`
+	p := &scriptedProvider{responses: []string{resp}}
+
+	got, err := draftLabels(context.Background(), p, config.Config{}, pairs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 draft, got %d", len(got))
+	}
+	d := got[0]
+	if d.Provenance != labels.ProvenanceLLM {
+		t.Errorf("provenance = %q, want %q", d.Provenance, labels.ProvenanceLLM)
+	}
+	if d.Confidence != labels.ConfidenceMedium {
+		t.Errorf("confidence = %q, want %q", d.Confidence, labels.ConfidenceMedium)
+	}
+	if d.Status != labels.StatusDraft {
+		t.Errorf("status = %q, want %q", d.Status, labels.StatusDraft)
+	}
 }
 
 func TestDraftLabels_BatchesAndParses(t *testing.T) {

@@ -21,6 +21,10 @@ import (
 // for the edge's target module when present).
 // validation lists the exact commands that re-verify the gate; passed through
 // verbatim to every task.
+// syntaxFacts is the Diagnostic.SyntaxFacts slice (may be nil/empty when syntax
+// is disabled). When non-empty, each task is enriched with the declarations
+// found in its referenced files (compact agent context). When empty the output
+// is structurally identical to pre-enrichment builds.
 //
 // Output is sorted by FindingID; all nested slices carry a total order.
 func Build(
@@ -28,7 +32,17 @@ func Build(
 	ruleTypes map[string]string,
 	modulePublic map[string][]string,
 	validation []string,
+	syntaxFacts []diagnostic.SyntaxFact,
 ) []diagnostic.AgentTask {
+	// Build a file→facts index once so the per-task lookup is O(1).
+	var factsByFile map[string][]diagnostic.SyntaxFact
+	if len(syntaxFacts) > 0 {
+		factsByFile = make(map[string][]diagnostic.SyntaxFact, len(syntaxFacts))
+		for _, sf := range syntaxFacts {
+			factsByFile[sf.File] = append(factsByFile[sf.File], sf)
+		}
+	}
+
 	tasks := []diagnostic.AgentTask{}
 	for _, f := range findings {
 		if f.Kind != "gate" {
@@ -37,14 +51,19 @@ func Build(
 		if f.Status != finding.StatusNew && f.Status != finding.StatusExpiredExcept {
 			continue
 		}
-		tasks = append(tasks, diagnostic.AgentTask{
+		files := filesFor(f)
+		task := diagnostic.AgentTask{
 			FindingID:   f.ID,
 			RuleID:      f.RuleID,
 			Goal:        goalFor(ruleTypes[f.RuleID], f),
 			Constraints: constraintsFor(f, modulePublic),
-			Files:       filesFor(f),
+			Files:       files,
 			Validation:  append([]string{}, validation...),
-		})
+		}
+		if factsByFile != nil {
+			task.Declarations = declarationsFor(files, factsByFile)
+		}
+		tasks = append(tasks, task)
 	}
 	sort.Slice(tasks, func(i, j int) bool { return tasks[i].FindingID < tasks[j].FindingID })
 	return tasks
@@ -91,6 +110,17 @@ func constraintsFor(f finding.Finding, modulePublic map[string][]string) []strin
 		out = append(out, fmt.Sprintf("public surface of module %q: %v", f.Edge.To.Module, pub))
 	}
 	return out
+}
+
+// declarationsFor returns the SyntaxFacts for the given files, in file + start-line
+// order. Returns nil (not an empty slice) when no facts match any file, so the
+// AgentTask.Declarations field stays absent from JSON output (omitempty).
+func declarationsFor(files []string, factsByFile map[string][]diagnostic.SyntaxFact) []diagnostic.SyntaxFact {
+	var out []diagnostic.SyntaxFact
+	for _, f := range files { // files is already sorted
+		out = append(out, factsByFile[f]...)
+	}
+	return out // nil when nothing matched
 }
 
 // filesFor returns the deduplicated, sorted repo-relative files involved:

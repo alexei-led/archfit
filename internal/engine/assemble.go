@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/scope"
@@ -140,6 +141,65 @@ func pathDir(p string) string {
 		return p[:i]
 	}
 	return "."
+}
+
+// buildClassifiedEdgeSummary aggregates the full coupling.Index into a
+// ClassifiedEdgeSummary for coupling_balance scoring. It counts every edge
+// (including same_module), separates cross-boundary scored vs abstained edges,
+// and computes the arithmetic mean book balance over scored edges.
+//
+// Edges whose target is not a declared module (Distance == DistanceUnknown:
+// stdlib, third-party/library dependencies, undeclared packages) are EXCLUDED
+// from the Scored/Abstained distribution and counted in External instead.
+// This is language-agnostic: classifyDistance sets DistanceUnknown for all
+// languages (Go stdlib/3p, Rust dependency crates, TS node_modules, Python
+// external imports). External dependency hygiene is a dependency_graph_health
+// concern, not a coupling_balance concern — the book measures coupling among
+// YOUR components, not your libraries.
+//
+// Genuine internal coupling with known distance but unknown strength is still
+// counted as Abstained — it stays in the denominator and honestly lowers
+// confidence.
+//
+// The summary uses string keys (not coupling package constants) so it stays
+// usable from diagnostic (stdlib-only) and score packages.
+func buildClassifiedEdgeSummary(idx coupling.Index) *diagnostic.ClassifiedEdgeSummary {
+	s := &diagnostic.ClassifiedEdgeSummary{
+		ByStrength:   make(map[string]int),
+		ByDistance:   make(map[string]int),
+		ByVolatility: make(map[string]int),
+		BySeverity:   make(map[string]int),
+	}
+	balanceSum := 0
+	for _, cl := range idx {
+		s.Total++
+		if cl.Distance == coupling.DistanceSameModule {
+			s.SameModule++
+			continue
+		}
+		// External/library edge: target not a declared module. Excluded from the
+		// coupling_balance denominator — the book scores YOUR components only.
+		if cl.Distance == coupling.DistanceUnknown {
+			s.External++
+			continue
+		}
+		// Internal cross-boundary edge: target resolves to a declared module.
+		s.ByStrength[string(cl.Strength)]++
+		s.ByDistance[string(cl.Distance)]++
+		s.ByVolatility[string(cl.Volatility)]++
+		if cl.Score.Scored {
+			s.Scored++
+			balanceSum += cl.Score.Balance
+			s.BySeverity[string(cl.Score.Band)]++
+		} else {
+			s.Abstained++
+			s.BySeverity["abstained"]++
+		}
+	}
+	if s.Scored > 0 {
+		s.MeanBalance = float64(balanceSum) / float64(s.Scored)
+	}
+	return s
 }
 
 // countActive returns the number of findings whose status is not fixed.

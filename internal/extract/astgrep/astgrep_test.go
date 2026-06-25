@@ -45,10 +45,10 @@ func fixtureBytes(t *testing.T) []byte {
 // Column is fixed at 0; only file, line, and pattern identity matter for these tests.
 func sgEntry(text, file, ruleID string, line int) map[string]any {
 	return map[string]any{
-		"text": text,
+		jsonKeyText: text,
 		"range": map[string]any{
-			"start": map[string]any{"line": line, "column": 0},
-			"end":   map[string]any{"line": line, "column": len(text)},
+			"start": map[string]any{jsonKeyLine: line, jsonKeyColumn: 0},
+			"end":   map[string]any{jsonKeyLine: line, jsonKeyColumn: len(text)},
 		},
 		"file": file,
 		"rule": map[string]any{"id": ruleID},
@@ -149,7 +149,7 @@ func TestFind_AbsentTool_ReturnsEmptyAndAbsentStatus(t *testing.T) {
 	if len(matches) != 0 {
 		t.Errorf("expected 0 matches for absent tool, got %d", len(matches))
 	}
-	if cov.Status != "absent" {
+	if cov.Status != statusAbsentStr {
 		t.Errorf("cov.Status = %q, want absent", cov.Status)
 	}
 	if cov.Tool != toolAstGrep {

@@ -4,6 +4,10 @@ version: 1
 # medium: only over-decoupled volatile seams and tight cross-boundary coupling
 # high/critical: only intrusive or functional coupling across large boundaries
 bc_advisory_min_severity: medium
+# Enable book Ch9 inferred-volatility cascade: a module strongly coupled
+# (strength ≥ functional) to a high-volatility module inherits raised effective
+# volatility. Config-declared volatility always takes precedence and is never lowered.
+volatility_cascade_enabled: true
 # Architecture layers — innermost to outermost.
 # forbidden_layer_direction fires when fromRank < toRank (inner imports outer).
 layers:
@@ -29,8 +33,10 @@ modules:
       - internal/model/signal
       - internal/model/symbol
     layer: model
+    # Core domain model — these types evolve with every new feature (new
+    # Diagnostic fields, graph node types, coupling constants). Volatile by
+    # nature; book anchor core→V=10. No explicit volatility override.
     subdomain: core
-    volatility: low
   internal/config:
     owner: alexei-led
     paths:
@@ -75,6 +81,13 @@ modules:
       - internal/metrics/**
     public:
       - internal/metrics
+      - internal/metrics/boundary
+      - internal/metrics/intramodule
+      - internal/metrics/modularity
+      - internal/metrics/risk
+      - internal/metrics/metricstest
+      - internal/metrics/internal/modgraph
+      - internal/metrics/internal/result
     layer: core
     subdomain: core
     volatility: medium
@@ -85,7 +98,10 @@ modules:
     public:
       - internal/status
     layer: core
-    subdomain: core
+    # AcceptedSet / AcceptedItem: stable infrastructure tracking baseline
+    # exceptions, not domain logic. Supporting subdomain; low volatility
+    # (stable since the decoupling refactor). Book anchor: supporting→V=3.
+    subdomain: supporting
     volatility: low
   internal/engine:
     owner: alexei-led
@@ -123,6 +139,7 @@ modules:
       - internal/labels/**
     public:
       - internal/labels
+      - internal/labels/labelsio
     # Reviewed coupling-label artifact. Support-tier like config until the
     # value type and YAML loader split.
     layer: support
@@ -314,6 +331,7 @@ modules:
       - internal/output/console
       - internal/output/markdown
       - internal/output/sarif
+      - internal/output/scorecard
     layer: adapter
     subdomain: supporting
     volatility: medium
@@ -354,6 +372,17 @@ modules:
     layer: adapter
     subdomain: generic
     volatility: low
+  internal/calibrate:
+    owner: alexei-led
+    paths:
+      - internal/calibrate/**
+    public:
+      - internal/calibrate
+    # Pure scorer-comparison utility: no I/O, no os/exec, no YAML.
+    # cmd imports it for the calibrate subcommand.
+    layer: core
+    subdomain: supporting
+    volatility: low
   internal:
     owner: alexei-led
     paths:
@@ -369,6 +398,7 @@ modules:
       - internal/history/**
     public:
       - internal/history
+      - internal/history/git
     # Git log/blame reader: out-of-process I/O, belongs in adapter tier.
     role: adapter
     layer: adapter
@@ -487,6 +517,24 @@ rules:
   - id: layer_inversion
     type: forbidden_layer_direction
     gate: fail
+  # --- Syntax-facts example rules (gate: warn = advisory, non-blocking) ---
+  # Example: handlers must not call repositories directly.
+  # archfit is a CLI tool with no web handlers, so this is inert for this repo;
+  # included to document the pattern for projects that do have handler/repository roles.
+  - id: syntax_no_handler_to_repo
+    type: forbidden_role_dependency
+    from_role: handler
+    to_role: repository
+    gate: warn
+  # Example: warn when any module's exported API exceeds a generous ceiling.
+  # public_api_max is global (no per-module scoping); the threshold must exceed
+  # the largest module count. archfit's catch-all "internal" module currently
+  # resolves ~1271 declarations; 1500 gives safe headroom and documents the shape.
+  # In practice, set max per module after splitting the catch-all stanza.
+  - id: syntax_api_size_ceiling
+    type: public_api_max
+    max: 1500
+    gate: warn
 map_review:
   stale_after: 2160h # 90 days
   gate: warn
@@ -497,6 +545,11 @@ tools:
     enabled: "off"
   python:
     enabled: "off"
+  # Syntax-facts provider (ast-grep). Enabled for dogfooding — produces
+  # syntax_facts (declarations, exported surface, roles, routes) visible in
+  # scan/review/agent_tasks output. Off-gate by itself; gate rules below.
+  syntax:
+    enabled: "on"
   scip:
     enabled: "on"
   complexity:

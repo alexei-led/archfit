@@ -36,6 +36,9 @@ var coreRingPkgs = []string{
 	// scope is a value type + resolution logic over an injected Resolver;
 	// the concrete git/toolrun wiring lives in cmd. Keep it that way.
 	modulePrefix + "internal/scope",
+	// syntax derives roles from already-gathered SyntaxFacts — pure decision,
+	// no I/O, no subprocess.
+	modulePrefix + "internal/syntax",
 }
 
 // coreRingPrefixes are path prefixes whose packages — and ALL their
@@ -52,6 +55,7 @@ var coreRingPrefixes = []string{
 	modulePrefix + "internal/facts",
 	modulePrefix + "internal/score",
 	modulePrefix + "internal/scope",
+	modulePrefix + "internal/syntax",
 }
 
 // inCoreRing reports whether pkgPath is a core-ring package: an exact prefix
@@ -248,10 +252,7 @@ func isForbiddenForCore(imp string) bool {
 // A package is stdlib if its first path segment contains no dot
 // (e.g. "fmt", "encoding/json" — not "github.com/..." or "golang.org/...").
 func isStdlib(imp string) bool {
-	first := imp
-	if i := strings.IndexByte(imp, '/'); i >= 0 {
-		first = imp[:i]
-	}
+	first, _, _ := strings.Cut(imp, "/")
 	return !strings.Contains(first, ".")
 }
 

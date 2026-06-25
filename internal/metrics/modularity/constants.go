@@ -28,3 +28,11 @@ const (
 	godModuleMultiple = 4
 	godModuleFloor    = 400
 )
+
+// godFileMultiple is how many times the median file LOC a single file must
+// exceed (and godFileFloor absolute LOC) to count as a single-file god-file.
+// Same multiplier convention as godModuleMultiple; report-only.
+const (
+	godFileMultiple = 4
+	godFileFloor    = 400
+)

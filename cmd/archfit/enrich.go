@@ -109,9 +109,9 @@ func (c *EnrichCmd) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	if !configured {
 		return &exitError{code: 3, msg: "error: enrich needs tools.llm configured (provider + model); see docs/guide/llm-enrich.md"}
 	}
-	if !cfg.ScipEnabled() {
-		return &exitError{code: 3, msg: "error: enrich needs tools.scip.enabled: on — the refinable strength hints come from the SCIP symbol index"}
-	}
+	// SCIP is no longer required. Without it, functional/model edges are selected
+	// as before; additionally, unknown-strength cross-module edges are always
+	// eligible — those are exactly the pairs where LLM judgment adds the most value.
 
 	configDir := filepath.Dir(c.Config)
 	cacheDir := llmCacheDir(configDir)
@@ -372,9 +372,12 @@ type refinablePair struct {
 	SamplePaths []string // up to 5 "fromPath -> toPath" examples
 }
 
-// selectRefinablePairs picks cross-module pairs whose strength came from the
-// blanket call-edge heuristic (functional/model via hint — not glob-decided,
-// not already approved). Deterministic order (From, To).
+// selectRefinablePairs picks cross-module pairs that benefit from LLM judgment:
+//   - functional or model strength (heuristic blanket-labelled call edges), or
+//   - unknown strength (no heuristic available — LLM judgment needed most here).
+//
+// Contract and intrusive strengths are already decided (glob or SCIP); they are
+// excluded. Already-approved pairs are skipped. Deterministic order (From, To).
 func selectRefinablePairs(g *graph.Graph, idx coupling.Index, mm config.ModuleMap, existing []labels.Label) []refinablePair {
 	if g == nil {
 		return nil
@@ -397,7 +400,11 @@ func selectRefinablePairs(g *graph.Graph, idx coupling.Index, mm config.ModuleMa
 		if !ok {
 			continue
 		}
-		if cl.Strength != coupling.StrengthFunctional && cl.Strength != coupling.StrengthModel {
+		// Include functional/model (heuristic) and unknown (no heuristic — needs judgment).
+		// Contract and intrusive are already decided; skip them.
+		if cl.Strength != coupling.StrengthFunctional &&
+			cl.Strength != coupling.StrengthModel &&
+			cl.Strength != coupling.StrengthUnknown {
 			continue
 		}
 		if cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown || cl.Distance == "" {
@@ -545,10 +552,13 @@ func parseEnrichResponse(text string, batch []refinablePair) ([]labels.Label, er
 			continue
 		}
 		out = append(out, labels.Label{
-			From: e.From, To: e.To,
-			Strength:  e.Strength,
-			Rationale: e.Rationale,
-			Status:    labels.StatusDraft,
+			From:       e.From,
+			To:         e.To,
+			Strength:   e.Strength,
+			Rationale:  e.Rationale,
+			Status:     labels.StatusDraft,
+			Provenance: labels.ProvenanceLLM,
+			Confidence: labels.ConfidenceMedium,
 		})
 	}
 	return out, nil

@@ -18,27 +18,25 @@ const (
 	fileToB        = "file:services/b/b.go"
 	hintFunctional = "functional"
 	hintIntrusive  = "intrusive"
+	modNameA       = "modA"
+	modNameB       = "modB"
 )
 
 // twoModuleConfig returns a ClassifyConfig with two modules (modA: services/a/**,
 // modB: services/b/**) and no public/internal globs unless provided.
-func twoModuleConfig(publicB []string, clonePairs map[string]struct{}) config.ClassifyConfig {
+func twoModuleConfig(publicGlobs []string, clonePairs map[string]struct{}) config.ClassifyConfig {
 	return config.ClassifyConfig{
 		Modules: map[string]config.ModuleDef{
-			"modA": {Paths: []string{"services/a/**"}},
-			"modB": {Paths: []string{"services/b/**"}, Public: publicB},
+			modNameA: {Paths: []string{pathsA}},
+			modNameB: {Paths: []string{pathsB}, Public: publicGlobs},
 		},
 		CrossModuleClonePairs: clonePairs,
 	}
 }
 
-// clonePairSet builds the canonical clone-pair key set for (a, b).
-func clonePairSet(a, b string) map[string]struct{} {
-	if a > b {
-		a, b = b, a
-	}
-	return map[string]struct{}{a + "\x00" + b: {}}
-}
+// modABClonePair is the canonical clone-pair key set for the modA/modB test pair.
+// "modA" < "modB" lexicographically so the key is always modA\x00modB.
+var modABClonePair = map[string]struct{}{modABKey: {}}
 
 func TestConnascenceTagging(t *testing.T) {
 	t.Parallel()
@@ -82,7 +80,7 @@ func TestConnascenceTagging(t *testing.T) {
 				Kind: graph.EdgeKindImports,
 			},
 			// services/b/api/** is a public (contract) glob
-			cfg:          twoModuleConfig([]string{"services/b/api/**"}, nil),
+			cfg:          twoModuleConfig([]string{publicB}, nil),
 			wantConn:     coupling.ConnascenceType,
 			wantDistance: coupling.DistanceCrossModuleDiffOwner,
 		},
@@ -94,7 +92,7 @@ func TestConnascenceTagging(t *testing.T) {
 				Kind:         graph.EdgeKindImports,
 				StrengthHint: hintFunctional, // not CoT
 			},
-			cfg:          twoModuleConfig(nil, clonePairSet("modA", "modB")),
+			cfg:          twoModuleConfig(nil, modABClonePair),
 			wantConn:     coupling.ConnascenceAlgorithm,
 			wantDistance: coupling.DistanceCrossModuleDiffOwner,
 		},
@@ -107,7 +105,7 @@ func TestConnascenceTagging(t *testing.T) {
 				StrengthHint: pinnedModel, // CoT signal
 			},
 			// Also has clone pair → CoA should win
-			cfg:          twoModuleConfig(nil, clonePairSet("modA", "modB")),
+			cfg:          twoModuleConfig(nil, modABClonePair),
 			wantConn:     coupling.ConnascenceAlgorithm,
 			wantDistance: coupling.DistanceCrossModuleDiffOwner,
 		},
@@ -183,12 +181,14 @@ func TestConnascenceTagging(t *testing.T) {
 	}
 }
 
-// TestConnascenceReportOnly verifies that connascence tags do NOT influence score
-// or severity — they are purely descriptive metadata.
-func TestConnascenceReportOnly(t *testing.T) {
+// TestClonePairUpgradesStrengthToSymmetric verifies that a cross-module clone pair
+// upgrades strength from functional (or unknown) to Symmetric (book ordinal 9).
+// This changes severity and score — clone pairs are NOT purely descriptive.
+func TestClonePairUpgradesStrengthToSymmetric(t *testing.T) {
 	t.Parallel()
 
 	// Two identical edges differing only in whether a clone pair is present.
+	// StrengthHint=functional → without clone: Functional; with clone: Symmetric.
 	edge := graph.Edge{
 		From:         fileFromA,
 		To:           fileToB,
@@ -196,7 +196,7 @@ func TestConnascenceReportOnly(t *testing.T) {
 		StrengthHint: hintFunctional,
 	}
 
-	cfgWithClone := twoModuleConfig(nil, clonePairSet("modA", "modB"))
+	cfgWithClone := twoModuleConfig(nil, modABClonePair)
 	cfgWithout := twoModuleConfig(nil, nil)
 
 	g := makeGraph([]graph.Edge{edge})
@@ -205,22 +205,24 @@ func TestConnascenceReportOnly(t *testing.T) {
 	clWith := classify.Run(g, cfgWithClone)[key]
 	clWithout := classify.Run(g, cfgWithout)[key]
 
-	// CoA tag is set when clone pair present
+	// With clone pair: strength upgraded to Symmetric, CoA tagged.
+	if clWith.Strength != coupling.StrengthSymmetric {
+		t.Errorf("with clone: Strength = %q, want %q", clWith.Strength, coupling.StrengthSymmetric)
+	}
 	if clWith.Connascence != coupling.ConnascenceAlgorithm {
 		t.Errorf("with clone: Connascence = %q, want %q", clWith.Connascence, coupling.ConnascenceAlgorithm)
+	}
+
+	// Without clone pair: strength stays at functional (from hint), no CoA.
+	if clWithout.Strength != coupling.StrengthFunctional {
+		t.Errorf("without clone: Strength = %q, want %q", clWithout.Strength, coupling.StrengthFunctional)
 	}
 	if clWithout.Connascence != coupling.ConnascenceNone {
 		t.Errorf("without clone: Connascence = %q, want %q", clWithout.Connascence, coupling.ConnascenceNone)
 	}
 
-	// Severity and Score must be IDENTICAL regardless of connascence tag.
-	if clWith.Severity != clWithout.Severity {
-		t.Errorf("Severity differs: with=%q without=%q", clWith.Severity, clWithout.Severity)
-	}
-	if clWith.Score.Value != clWithout.Score.Value {
-		t.Errorf("Score.Value differs: with=%d without=%d", clWith.Score.Value, clWithout.Score.Value)
-	}
-	if clWith.Score.Band != clWithout.Score.Band {
-		t.Errorf("Score.Band differs: with=%q without=%q", clWith.Score.Band, clWithout.Score.Band)
+	// Symmetric (ordinal 9) > Functional (ordinal 8) → scores must differ.
+	if clWith.Score.Value == clWithout.Score.Value {
+		t.Errorf("Score.Value identical (%d); Symmetric and Functional should produce different scores", clWith.Score.Value)
 	}
 }

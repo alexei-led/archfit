@@ -2,23 +2,23 @@ package coupling
 
 import "testing"
 
-// TestScoreBand verifies the [0,10]→Severity band mapping.
+// TestScoreBand verifies the book balance 1..10 → Severity band mapping.
+// Higher balance = better balanced = lower severity.
 func TestScoreBand(t *testing.T) {
 	tests := []struct {
 		score int
 		want  Severity
 	}{
-		{0, SeverityNone},
-		{1, SeverityNone},
-		{2, SeverityNone},
-		{3, SeverityLow},
-		{4, SeverityLow},
+		{1, SeverityCritical},
+		{2, SeverityCritical},
+		{3, SeverityHigh},
+		{4, SeverityHigh},
 		{5, SeverityMedium},
 		{6, SeverityMedium},
-		{7, SeverityHigh},
-		{8, SeverityHigh},
-		{9, SeverityCritical},
-		{10, SeverityCritical},
+		{7, SeverityLow},
+		{8, SeverityLow},
+		{9, SeverityNone},
+		{10, SeverityNone},
 	}
 	for _, tt := range tests {
 		if got := ScoreBand(tt.score); got != tt.want {
@@ -341,21 +341,24 @@ func TestMultiplicativeScorer_IntrusiveFloor(t *testing.T) {
 	}
 }
 
-// TestScorer_ScoreRange verifies that scores are always in [0,10] across all
-// strength/distance/volatility combinations for both scorers.
-// (Replaces the removed TestAsyncBridgeDistanceBump — AsyncBridge machinery was
-// dead code: the field was never read by score.go or rules.go.)
+// TestScorer_ScoreRange_CrossDeployMax verifies that values stay in range across
+// all three scorers for a high-risk edge.
 func TestScorer_ScoreRange_CrossDeployMax(t *testing.T) {
-	// cross_deploy_unit + functional + high volatility should never exceed 10.
 	atMax := Classification{
 		Strength:   StrengthFunctional,
 		Distance:   DistanceCrossDeployUnit,
 		Volatility: VolatilityHigh,
 	}
-	for _, s := range []Scorer{AdditiveScorer{}, MultiplicativeScorer{}} {
+	for _, s := range []Scorer{AdditiveScorer{}, MultiplicativeScorer{}, BookScorer{}} {
 		got := s.Score(atMax)
 		if got.Value < 0 || got.Value > 10 {
-			t.Errorf("clamp violated at max distance: value=%d", got.Value)
+			t.Errorf("%T clamp violated: value=%d", s, got.Value)
+		}
+		// BookScorer: also verify balance is in [1,10] when scored.
+		if _, ok := s.(BookScorer); ok && got.Scored {
+			if got.Balance < 1 || got.Balance > 10 {
+				t.Errorf("BookScorer balance %d out of [1,10]", got.Balance)
+			}
 		}
 	}
 }
@@ -376,8 +379,8 @@ func TestVolatilityMoveLabel(t *testing.T) {
 }
 
 // TestVolatilityUndeclaredScoresLikeUnknown asserts that an undeclared volatility
-// is scored identically to unknown by both scorers: undeclared changes the
-// guidance, never the number. This keeps already-classified output byte-stable.
+// is scored identically to unknown by all scorers: undeclared changes the
+// guidance, never the number.
 func TestVolatilityUndeclaredScoresLikeUnknown(t *testing.T) {
 	combos := []struct {
 		s Strength
@@ -387,9 +390,10 @@ func TestVolatilityUndeclaredScoresLikeUnknown(t *testing.T) {
 		{StrengthIntrusive, DistanceCrossDeployUnit},
 		{StrengthContract, DistanceCrossDeployUnit},
 		{StrengthModel, DistanceCrossModuleSameOwner},
+		// StrengthUnknown/DistanceUnknown: BookScorer abstains for both — still equal.
 		{StrengthUnknown, DistanceUnknown},
 	}
-	for _, scorer := range []Scorer{AdditiveScorer{}, MultiplicativeScorer{}} {
+	for _, scorer := range []Scorer{AdditiveScorer{}, MultiplicativeScorer{}, BookScorer{}} {
 		for _, cc := range combos {
 			undeclared := scorer.Score(Classification{Strength: cc.s, Distance: cc.d, Volatility: VolatilityUndeclared})
 			unknown := scorer.Score(Classification{Strength: cc.s, Distance: cc.d, Volatility: VolatilityUnknown})
@@ -425,21 +429,19 @@ func TestMultiplicativeScorer_CheapestMove_DeclareVsLower(t *testing.T) {
 	}
 }
 
-// TestDefaultScorer returns LegacyShim (not nil).
+// TestDefaultScorer verifies DefaultScorer returns BookScorer (bc_score.v3).
 func TestDefaultScorer(t *testing.T) {
 	s := DefaultScorer()
 	if s == nil {
 		t.Fatal("DefaultScorer() returned nil")
 	}
-	// It should produce a valid score for a concrete input.
 	got := s.Score(Classification{
 		Strength:   StrengthFunctional,
 		Distance:   DistanceCrossDeployUnit,
 		Volatility: VolatilityHigh,
 	})
-	// DefaultScorer is locked to MultiplicativeScorer (Task 16) — assert the type,
-	// so a revert to a different default is caught.
-	if got.Reason != reasonMultiplicative {
-		t.Errorf("DefaultScorer should be the locked MultiplicativeScorer; Reason = %q, want %q", got.Reason, reasonMultiplicative)
+	// DefaultScorer is BookScorer as of bc_score.v3.
+	if got.Reason != reasonBook {
+		t.Errorf("DefaultScorer should be BookScorer; Reason = %q, want %q", got.Reason, reasonBook)
 	}
 }

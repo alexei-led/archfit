@@ -24,6 +24,12 @@ type ValueDraft struct {
 	Value     string `yaml:"value"`
 	Rationale string `yaml:"rationale"`
 	Status    string `yaml:"status"` // DraftStatusDraft or DraftStatusApproved
+	// Confidence records how trustworthy the judgment is (high|medium|low).
+	// Set by the LLM draft path; empty = unset (treated as high for human-approved entries).
+	Confidence string `yaml:"confidence,omitempty"`
+	// Provenance records the source of the judgment (human|llm|tool).
+	// Set to "llm" by the LLM draft path; empty = unset (treated as human).
+	Provenance string `yaml:"provenance,omitempty"`
 }
 
 // ValueDraftFile is the top-level container for .archfit-owners.yaml /
