@@ -11,6 +11,61 @@ Common fixes:
 - Check that optional analyzer tools are installed before enabling them.
 - Re-run `archfit baseline --full` only after reviewing accepted findings.
 
+For platform setup, package-manager choices, exact tool versions, home pages, and
+PATH checks, see [Tooling reference](tooling.md).
+
+## Installed but still reported missing
+
+`archfit` finds tools through the current process `PATH`. A package manager can
+install a tool successfully while your shell still cannot find its bin directory.
+Check before reinstalling:
+
+```sh
+command -v <tool>
+which -a <tool>
+echo "$PATH" | tr ':' '\n'
+```
+
+Common bin directories:
+
+- Homebrew: `$(brew --prefix)/bin` and `$(brew --prefix)/sbin`.
+- npm globals: `$(npm config get prefix)/bin`.
+- Go installs: `$(go env GOBIN)`, or `$(go env GOPATH)/bin` when `GOBIN` is empty.
+- Rust installs: `${CARGO_HOME:-$HOME/.cargo}/bin`.
+- uv tools: `uv tool dir --bin`.
+
+If `which -a` shows multiple copies, the first one wins. Fix PATH order rather
+than reinstalling the same tool through another package manager.
+
+## Wrong tool on PATH
+
+Some commands have name collisions:
+
+- **`sg`** must be ast-grep. Verify with `sg --version`; it should print
+  `ast-grep ...`. Linux systems may have util-linux `sg` at `/usr/bin/sg`, which
+  is not usable by archfit.
+- **`lizard`** must be the PyPI complexity analyzer. `brew install lizard` installs
+  a compression tool with the same command name. Use
+  `uv tool install 'lizard==1.23.0'`, then ensure `uv tool dir --bin` appears
+  before Homebrew in PATH if both exist.
+- **`node`/`npm`** can come from Homebrew, a distro package, nvm/fnm, or another
+  version manager. Use one Node source per shell profile and keep Node `22+` for
+  the optional npm tools (`gitnexus` requires Node `>=22`).
+- **`cargo`/`rustc`/`rust-analyzer`** can come from a distro package, Homebrew, or
+  rustup. Prefer one rustup-managed stable toolchain unless your CI deliberately
+  pins distro Rust.
+
+## Package manager version is too old
+
+Distro packages are preferred on Linux only when they satisfy archfit's tool
+constraints. If `apt` or `dnf` offers an old Go, Node, uv, or Rust version, use the
+upstream install path from [Tooling reference](tooling.md) instead of mixing random
+fallbacks.
+
+For CI, pin exact npm/cargo/go/uv tool versions in setup commands, then run
+`archfit doctor` for diagnostics and `archfit check --require-tools` when missing
+analyzers should fail the build.
+
 ## Metrics show `n/a` / a "Coverage gaps" section
 
 A dimension reading `n/a` (or a `## Coverage gaps` / `## Required tools missing`

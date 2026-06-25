@@ -102,4 +102,5 @@ Keep CI reproducible:
 - pin GitHub Actions to released versions, or preferably full SHAs with a version
   comment;
 - pin installed tools in CI commands instead of relying on package-manager
-  defaults.
+  defaults; use [Tooling reference](tooling.md) for current analyzer versions and
+  install sources.

@@ -206,8 +206,9 @@ archfit baseline --full --config .archfit.yaml
 ```
 
 Starter configs for common project shapes live in
-[`examples/`](examples/README.md). Need Docker, CI, optional analyzers, or
-language-specific setup? Start with the [guide](docs/guide/README.md).
+[`examples/`](examples/README.md). Need Docker, CI, optional analyzers, platform
+package managers, or PATH fixes? Start with the [guide](docs/guide/README.md) and
+[tooling reference](docs/guide/tooling.md).
 
 ## Core commands
 
@@ -224,7 +225,7 @@ language-specific setup? Start with the [guide](docs/guide/README.md).
 | `archfit enrich`       | Draft off-gate LLM coupling-label refinements.      |
 | `archfit autopilot`    | Draft a full `.archfit.yaml` via LLM (review-only). |
 | `archfit explain <id>` | Explain one finding by fingerprint prefix.          |
-| `archfit install`      | Check or install optional analyzer tools.           |
+| `archfit install`      | Check or install common analyzer tools.             |
 
 See the [commands guide](docs/guide/commands.md) for flags, formats, and exit
 codes. Point `--root` at the repo and `--config` elsewhere to run archfit from
@@ -238,7 +239,9 @@ outside the analyzed tree (external CI).
   architecture erosion, AI-agent risk, and why this is more than dependency lint.
 - [Concepts](docs/guide/concepts.md) — Balanced Coupling, made executable.
 - [Metrics](docs/guide/metrics.md) — every metric and how it is scored.
-- [Install](docs/guide/install.md) — Go install, Docker, and optional tools.
+- [Install](docs/guide/install.md) — binary install, Docker, and first analyzer checks.
+- [Tooling](docs/guide/tooling.md) — platform setup, package managers, tool versions,
+  home pages, and PATH checks.
 - [Quick start](docs/guide/quick-start.md) — first useful run.
 - [Language support](docs/guide/languages.md) — supported languages and setup.
 - [Configuration](docs/guide/configuration.md) — `.archfit.yaml` basics.

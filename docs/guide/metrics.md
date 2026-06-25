@@ -411,7 +411,8 @@ Key behaviors fixed in the v0.x gap-closure program (see
   and TS).
 
 For the install matrix and per-language tool setup, see
-[Language support → optional analyzers](languages.md#optional-analyzers-per-language).
+[Language support → optional analyzers](languages.md#optional-analyzers-per-language)
+and [Tooling reference](tooling.md).
 
 ## Tool requirements
 

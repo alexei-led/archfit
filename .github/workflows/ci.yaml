@@ -43,7 +43,7 @@ jobs:
           cache: true
       - uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "24"
       - uses: astral-sh/setup-uv@v8.2.0 # no bare v8 major tag published
         with:
           python-version: "3.13"

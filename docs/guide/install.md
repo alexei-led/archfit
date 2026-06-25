@@ -1,5 +1,11 @@
 # Install
 
+Install the `archfit` binary first, then install only the analyzer tools needed for
+your repository. For the full platform/tool matrix, versions, home pages, package
+manager choices, and PATH checks, see [Tooling reference](tooling.md).
+
+## Install the archfit CLI
+
 Install from source with Go. Use a release tag, not `@latest`, in scripts and
 repeatable docs:
 
@@ -13,27 +19,54 @@ Check the binary and available analyzers:
 archfit doctor
 ```
 
-## Tool summary
+## Analyzer summary
 
-- CLI install: Go 1.26+ builds and installs the binary.
 - Git: `git` resolves changed files and refs for diff mode.
-- Go analysis: `go` loads packages with `go/packages`.
-- TypeScript analysis: Node.js 24 LTS, `npx` or `bunx`, and dependency-cruiser
-  extract the TS/JS dependency graph.
-- Python analysis: `uv` or Python 3.14 recommended / Python 3.12+ minimum with
-  `grimp` extracts the Python import graph.
-- Rust analysis: `cargo` (from rustup) extracts the crate dependency graph with
+- Go analysis: `go` loads packages with `go/packages`; this repo targets Go
+  `1.26.x`.
+- TypeScript/JavaScript analysis: Node/npm or Bun plus dependency-cruiser extract
+  the import graph. Node `24.x` is preferred; Node `22+` keeps the optional npm
+  tools compatible.
+- Python analysis: `uv` is preferred. With `uv`, archfit injects `grimp` for the
+  run; without `uv`, use Python `3.12+` with `grimp` installed.
+- Rust analysis: `cargo` (normally from rustup) extracts the crate graph with
   `cargo metadata`.
-- Structural patterns: `sg` from ast-grep runs configured patterns.
-- Symbol indexers: `scip-typescript`, `scip-python`, `scip-go`, and
-  `rust-analyzer` are optional and reserved for higher-fidelity symbol resolution.
+- Structural patterns: `sg` must be the ast-grep binary, not the util-linux `sg`.
+- Optional depth tools: SCIP indexers, `lizard`, `jscpd`, `cargo-modules`, and
+  `gitnexus` feed report-only metrics and lower `analysis_confidence` when absent.
 
-`archfit doctor` reports all detected tools.
+## Platform setup quick start
+
+macOS:
+
+```sh
+brew install git go node uv ast-grep
+brew install rustup
+rustup default stable
+```
+
+Debian / Ubuntu:
+
+```sh
+sudo apt update
+sudo apt install git python3 nodejs npm
+```
+
+Fedora / RHEL-like:
+
+```sh
+sudo dnf install git python3 nodejs npm golang
+```
+
+Check distro package versions before relying on them for Go, Node, uv, or Rust.
+If the package is too old for the constraints above, use the upstream install docs
+linked from [Tooling reference](tooling.md).
 
 ## Install helper
 
 `archfit install` checks or installs the common external tools it knows how to
-bootstrap. Use `--dry-run` first:
+bootstrap. It is intentionally conservative and not a complete installer for every
+optional analyzer. Use `--dry-run` first:
 
 ```sh
 archfit install --lang go --lang ts --lang py --lang rust --dry-run
@@ -46,12 +79,14 @@ Current behavior:
 - `--lang py` checks for `uv` and installs it with Homebrew when available.
 - `--lang rust` checks for `cargo` and prints the rustup URL if missing.
 
-For deterministic CI, prefer explicit package-manager setup in your workflow.
+For deterministic CI, prefer explicit package-manager setup from
+[Tooling reference](tooling.md), then run `archfit doctor` as a diagnostic step.
 
-## TypeScript tools
+## TypeScript and JavaScript tools
 
-Install Node.js 24 LTS or Bun, then add dependency-cruiser to the repository.
-Pin the package version in examples, CI, and lockfiles:
+Install Node.js or Bun, then add dependency-cruiser to the repository. Project-local
+is preferred over a global install because it keeps the analyzer version in the
+repo lockfile.
 
 ```sh
 npm install --save-dev dependency-cruiser@17.4.3
@@ -67,17 +102,18 @@ otherwise through `npx depcruise`.
 Recommended setup:
 
 ```sh
-brew install uv
+brew install uv              # macOS
+# Linux: use a current distro package or the Astral installer; see tooling.md
 ```
 
 With `uv`, `archfit` injects `grimp` for the extractor run, so the project does
 not need to add `grimp` as a dependency.
 
-Without `uv`, use Python 3.14 when available, or Python 3.12+ minimum, and
-install a pinned `grimp` in the environment used by the repo:
+Without `uv`, use Python `3.12+` and install a pinned `grimp` in the environment
+used by the repo:
 
 ```sh
-python3.14 -m pip install 'grimp==3.13'
+python3.12 -m pip install 'grimp==3.14'
 ```
 
 ## Go tools
@@ -89,16 +125,20 @@ go version
 ```
 
 No extra Go analyzer is installed. The Go adapter uses the Go package loader.
+Optional SCIP support uses `scip-go`; see [Optional analysis tools](#optional-analysis-tools).
 
 ## Rust tools
 
-Rust repositories need the `cargo` command on `PATH`. Install the toolchain with
-rustup:
+Rust repositories need the `cargo` command on `PATH`. Prefer rustup-managed
+stable Rust so `cargo`, `rustc`, and components stay aligned:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup default stable
 cargo --version
 ```
+
+If rustup is not installed, use your platform package manager where available, or
+the official rustup installer from <https://rust-lang.org/tools/install/>.
 
 `archfit` runs `cargo metadata` to extract the crate dependency graph. Two opt-in
 tools add intra-crate module depth (important for single-crate repos, which are one
@@ -108,7 +148,7 @@ node at crate level):
   module graph (`<crate>::<mod>` nodes + `uses` edges):
 
   ```sh
-  cargo install cargo-modules
+  cargo install cargo-modules --version 0.26.0
   ```
 
 - **`rust-analyzer`** (`tools.scip.enabled: on`) adds symbol-level integration
@@ -118,29 +158,61 @@ node at crate level):
   rustup component add rust-analyzer
   ```
 
-With either on, per-file LOC/churn resolves to module granularity, so `structural_weight`
-flags god _files/modules_ (not just god crates) and the history metrics measure inside a
-single crate.
+With either on, per-file LOC/churn resolves to module granularity, so
+`structural_weight` flags god _files/modules_ (not just god crates) and the
+history metrics measure inside a single crate.
 
 ## Optional analysis tools
 
-These power the report-only metrics and are off by default. Install them only when
-you enable the matching `tools.*` key in `.archfit.yaml`.
+These power report-only metrics and are off by default. Install them only when you
+enable the matching `tools.*` key in `.archfit.yaml`.
 
-- **SCIP** (powers `risk_hub`) — install a SCIP indexer for your language
-  (`scip-go`, `scip-python`, `scip-typescript`, or `rust-analyzer` for Rust) plus
-  [`uv`](https://docs.astral.sh/uv/). Enable with `tools.scip.enabled: on`.
-- **Clone detectors** (power `functional_candidates`) — `npm install -g jscpd@5.0.9`
-  for JS/TS, or install [PMD](https://pmd.github.io/) (includes CPD) for Go/Python.
+- **SCIP** (powers `risk_hub` and symbol facts) — install the indexer for your
+  language plus `uv` for the embedded SCIP reader:
+
+  ```sh
+  go install github.com/sourcegraph/scip-go/cmd/scip-go@v0.2.7
+  npm install -g @sourcegraph/scip-typescript@0.4.0
+  npm install -g @sourcegraph/scip-python@0.6.6
+  rustup component add rust-analyzer
+  ```
+
+  Enable with `tools.scip.enabled: on`. TypeScript also needs project dependencies
+  installed (`npm ci` or `bun install`).
+
+- **Clone detection** (powers `functional_candidates`) — current extractor probes
+  `jscpd`:
+
+  ```sh
+  npm install -g jscpd@5.0.11
+  ```
+
   Enable with `tools.clones.enabled: on`.
-- **gitnexus** (enriches `risk_hub`) — install the `gitnexus` binary on `PATH`.
-  Enable with `tools.gitnexus.enabled: on`, or leave it unset/`auto` to use a
-  present `.gitnexus`/`.codegraph` index automatically.
-- **lizard** (powers `complexity`) — `pip install lizard` or
-  `uv tool install lizard`. Supports Go, Python, TypeScript, and TSX. Enable
-  with `tools.complexity.enabled: on`; `complexity` is `n/a` when not enabled.
 
-When a tool is absent, the dependent metric reports `n/a` — the run never fails.
+- **Complexity** (powers `complexity`) — use the PyPI lizard complexity analyzer:
+
+  ```sh
+  uv tool install 'lizard==1.23.0'
+  ```
+
+  Enable with `tools.complexity.enabled: on`. Do **not** use `brew install lizard`;
+  Homebrew's `lizard` formula is a compression tool with the same command name.
+
+- **gitnexus** (enriches `risk_hub`) — install the npm CLI and keep an index in
+  the repo:
+
+  ```sh
+  npm install -g gitnexus@1.6.8
+  # If the repo already has the GitNexus wrapper used by archfit integrations:
+  node .gitnexus/run.cjs analyze --index-only
+  ```
+
+  Enable with `tools.gitnexus.enabled: on`, or leave it unset/`auto` to use a
+  present `.gitnexus/` or `.codegraph` index automatically. For a new index, follow
+  the GitNexus project docs for the current `gitnexus`/`npx gitnexus` workflow.
+
+When a tool is absent, the dependent metric reports `n/a` — the run never fails
+unless you opt in with `--require-tools` or `tools.<x>.gate: fail`.
 
 ## Docker
 
@@ -152,8 +224,8 @@ docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.6.1 \
   check --config /repo/.archfit.yaml --full
 ```
 
-The image bundles the `archfit` binary plus the full analysis toolchain: the Go
-SDK (Go targets need it at runtime), Node.js 24 with dependency-cruiser and
+The image bundles the `archfit` binary plus the full non-Rust analysis toolchain:
+the Go SDK (Go targets need it at runtime), Node.js 24 with dependency-cruiser and
 ast-grep (`sg`), and `uv` with Python 3 (`grimp` is resolved at runtime via
 `uv run --with grimp`).
 

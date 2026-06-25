@@ -140,7 +140,9 @@ tools:
 - `off` — skip the adapter.
 - `true` means `on`; `false` means `off`.
 
-See [Language support](languages.md) for per-language install details.
+See [Language support](languages.md) for per-language setup and
+[Tooling reference](tooling.md) for platform-specific install commands, versions,
+home pages, and PATH checks.
 
 ### Opt-in analysis tools
 
@@ -152,14 +154,14 @@ tools:
   scip:
     enabled: on # symbol-level analysis (SCIP indexers + uv); powers risk_hub
   clones:
-    enabled: on # clone detection (jscpd / PMD-CPD); powers functional_candidates
+    enabled: on # clone detection (jscpd); powers functional_candidates
   gitnexus:
     enabled: on # historical change-impact; enriches risk_hub ranking
 ```
 
 - `scip` — runs a SCIP indexer (`scip-go`/`scip-python`/`scip-typescript`) plus `uv`
   to build the symbol graph. Required for `risk_hub`; without it `risk_hub` is `n/a`.
-- `clones` — runs a clone detector to find duplicated logic. Required for
+- `clones` — runs `jscpd` to find duplicated logic. Required for
   `functional_candidates`; without it that metric is `n/a`.
 - `gitnexus` — optional enrichment of `risk_hub` with historical impact. Never auto.
 
