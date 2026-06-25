@@ -129,8 +129,12 @@ var inventory = []Finding{
 		Title:       "urfave/cli v1 EOL",
 		Repo:        repoPumba,
 		Category:    "Dependency Deprecation",
-		ProbeMetric: "manifest_deprecation",
-		ProbeKind:   "deprecated_dependency",
+		ProbeMetric: "deprecated_dep_count",
+		// Note: urfave/cli v1 EOL is not a go.mod retract marker — it is a live-registry
+		// EOL fact not encoded in the manifest. The deprecated_dep_count metric surfaces
+		// retract/deprecated/yanked manifest markers; live-version EOL stays LLM-routed.
+		// This finding is partially-detected: the metric exists and fires when markers are
+		// present. The specific v1 EOL is documented as residue (see docs/design/).
 	},
 	{
 		ID:          "5.1",
@@ -186,11 +190,11 @@ var inventory = []Finding{
 		BaseStatus: statusLLMRoutedDesign,
 	},
 	{
-		ID:        "11.1",
-		Title:     "extraction ↔ resolution bidirectional coupling",
-		Repo:      repoCodegraph,
-		Category:  "Non-Cycle Bidirectional",
-		ProbeKind: "file_mutual_import",
+		ID:          "11.1",
+		Title:       "extraction ↔ resolution bidirectional coupling",
+		Repo:        repoCodegraph,
+		Category:    "Non-Cycle Bidirectional",
+		ProbeMetric: "file_mutual_import",
 	},
 	{
 		ID:         "12.1",

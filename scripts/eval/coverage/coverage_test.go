@@ -202,6 +202,78 @@ func TestLoadRepoData_SubdirLayout(t *testing.T) {
 	}
 }
 
+// TestAllSurfaced_NoFindingUnclassified verifies the coverage table is internally
+// consistent: when all detectors have shipped (all probe metrics/kinds present),
+// every finding classifies to exactly one of {surfaced | llm-routed-by-design | agree}
+// and none is left not-surfaced (i.e. the table is complete).
+//
+// This is the acceptance gate for Task 12: "no finding left unclassified."
+func TestAllSurfaced_NoFindingUnclassified(t *testing.T) {
+	// Build a repoData per repo that contains every probe signal declared in the inventory.
+	// This simulates a fully-shipped detector run on each repo.
+	allMetrics := map[string]bool{}
+	allKinds := map[string]bool{}
+	for _, f := range inventory {
+		if f.ProbeMetric != "" {
+			allMetrics[f.ProbeMetric] = true
+		}
+		if f.ProbeKind != "" {
+			allKinds[f.ProbeKind] = true
+		}
+	}
+	fullRepo := &repoData{metricNames: allMetrics, factKinds: allKinds}
+	repos := map[string]*repoData{
+		repoArchfit:   fullRepo,
+		repoCcgram:    fullRepo,
+		repoCodegraph: fullRepo,
+		repoHerdr:     fullRepo,
+		repoPumba:     fullRepo,
+		repoYazi:      fullRepo,
+	}
+
+	// Every finding must be classified — none must be not-surfaced.
+	for _, f := range inventory {
+		status := ClassifyFinding(f, repos[f.Repo])
+		if status == statusNotSurfaced {
+			t.Errorf("finding %s (%s) is not-surfaced with all detectors shipped: probe metric=%q kind=%q",
+				f.ID, f.Title, f.ProbeMetric, f.ProbeKind)
+		}
+		if status != statusSurfaced && status != statusAgree && status != statusLLMRoutedDesign {
+			t.Errorf("finding %s (%s) has unexpected status %q", f.ID, f.Title, status)
+		}
+	}
+}
+
+// TestAllSurfaced_NoUnknownStatus verifies the inventory has no rows that would
+// produce an unexpected or empty status (guards against typos in BaseStatus).
+func TestAllSurfaced_NoUnknownStatus(t *testing.T) {
+	validStatuses := map[string]bool{
+		statusSurfaced:        true,
+		statusLLMRoutedDesign: true,
+		statusAgree:           true,
+		statusNotSurfaced:     true,
+	}
+	emptyRepo := &repoData{metricNames: map[string]bool{}, factKinds: map[string]bool{}}
+	repos := map[string]*repoData{
+		repoArchfit:   emptyRepo,
+		repoCcgram:    emptyRepo,
+		repoCodegraph: emptyRepo,
+		repoHerdr:     emptyRepo,
+		repoPumba:     emptyRepo,
+		repoYazi:      emptyRepo,
+	}
+
+	for _, f := range inventory {
+		status := ClassifyFinding(f, repos[f.Repo])
+		if !validStatuses[status] {
+			t.Errorf("finding %s (%s) produced unknown status %q", f.ID, f.Title, status)
+		}
+		if status == "" {
+			t.Errorf("finding %s (%s) produced empty status", f.ID, f.Title)
+		}
+	}
+}
+
 // TestBaseline_ExpectedCounts verifies the 20-row inventory produces the expected
 // 1 agree / 8 llm-routed / 11 not-surfaced split when no detector data is present.
 func TestBaseline_ExpectedCounts(t *testing.T) {

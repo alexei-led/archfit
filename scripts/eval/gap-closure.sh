@@ -106,34 +106,64 @@ for repo in "${REPOS[@]}"; do
 	# Create output directory.
 	mkdir -p "${out_dir}"
 
-	# Run full check.
-	echo "  full check..."
+	# Run full check — JSON (coverage generator reads this).
+	echo "  full check (json)..."
 	if "${ARCHFIT}" check \
 		--config "${config_file}" \
 		--root "${repo_dir}" \
 		--full \
-		--format json,md \
-		--output "${out_dir}/full" \
+		--format json \
+		>"${out_dir}/full.json" \
 		2>"${out_dir}/full.stderr"; then
-		echo "  full: OK → ${out_dir}/full.{json,md}"
+		echo "  full json: OK → ${out_dir}/full.json"
 	else
 		exit_code=$?
-		echo "  full: archfit exited ${exit_code} (gate violations expected — output still written)"
+		echo "  full json: archfit exited ${exit_code} (gate violations expected — output still written)"
 	fi
 
-	# Run delta check (smoke: HEAD~1 base).
-	echo "  delta check (HEAD~1)..."
+	# Run full check — Markdown (human-readable report).
+	echo "  full check (md)..."
+	if "${ARCHFIT}" check \
+		--config "${config_file}" \
+		--root "${repo_dir}" \
+		--full \
+		--format md \
+		>"${out_dir}/full.md" \
+		2>>"${out_dir}/full.stderr"; then
+		echo "  full md: OK → ${out_dir}/full.md"
+	else
+		exit_code=$?
+		echo "  full md: archfit exited ${exit_code} (gate violations expected — output still written)"
+	fi
+
+	# Run delta check (smoke: HEAD~1 base) — JSON.
+	echo "  delta check (HEAD~1, json)..."
 	if (cd "${repo_dir}" && "${ARCHFIT}" check \
 		--config "${config_file}" \
 		--root "${repo_dir}" \
 		--base HEAD~1 \
-		--format json,md \
-		--output "${out_dir}/delta" \
+		--format json \
+		>"${out_dir}/delta.json" \
 		2>"${out_dir}/delta.stderr"); then
-		echo "  delta: OK → ${out_dir}/delta.{json,md}"
+		echo "  delta json: OK → ${out_dir}/delta.json"
 	else
 		exit_code=$?
-		echo "  delta: archfit exited ${exit_code} (expected for gate violations or shallow history)"
+		echo "  delta json: archfit exited ${exit_code} (expected for gate violations or shallow history)"
+	fi
+
+	# Run delta check — Markdown.
+	echo "  delta check (HEAD~1, md)..."
+	if (cd "${repo_dir}" && "${ARCHFIT}" check \
+		--config "${config_file}" \
+		--root "${repo_dir}" \
+		--base HEAD~1 \
+		--format md \
+		>"${out_dir}/delta.md" \
+		2>>"${out_dir}/delta.stderr"); then
+		echo "  delta md: OK → ${out_dir}/delta.md"
+	else
+		exit_code=$?
+		echo "  delta md: archfit exited ${exit_code} (expected for gate violations or shallow history)"
 	fi
 
 	echo ""
