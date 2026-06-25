@@ -224,6 +224,48 @@ rule:
     - has:
         kind: field_declaration_list
 ---
+# Global-state rules: static mut, module-level Atomic*, and OnceLock statics.
+# These are report-only signal (never gates) — info-level facts that flag shared
+# mutable state. AtomicU32/AtomicBool/etc. ID-generators are idiomatic Rust and
+# are captured here as informational signal, not violations.
+# ruleIds map to kindGlobalState in rustRuleKinds (syntax.go).
+#
+# Ceiling: a top-level `static` pattern also matches function-local statics in
+# principle, but `static_item` is a module-level AST node — local statics use
+# `let` with `static` lifetime, not `static_item`. The ceiling is fully-qualified
+# Atomic paths (e.g. std::sync::atomic::AtomicUsize) — the regex "Atomic" covers
+# both bare and path-qualified forms.
+id: rs-static-mut
+language: Rust
+rule:
+  all:
+    - kind: static_item
+    - has:
+        kind: mutable_specifier
+    - has:
+        field: name
+        pattern: $NAME
+---
+id: rs-static-atomic
+language: Rust
+rule:
+  all:
+    - kind: static_item
+    - regex: Atomic
+    - has:
+        field: name
+        pattern: $NAME
+---
+id: rs-static-oncelock
+language: Rust
+rule:
+  all:
+    - kind: static_item
+    - regex: OnceLock
+    - has:
+        field: name
+        pattern: $NAME
+---
 # Panic-operation rules: unwrap(), expect(...), and panic!() calls — production-only
 # signal. ruleIds map to kindPanicOp in rustRuleKinds (syntax.go).
 # rs-unwrap/rs-expect: call_expression with regex 'unwrap\(' / 'expect\(' — the

@@ -44,6 +44,7 @@ const (
 	kindUnsafeOp    = "unsafe_op"
 	kindStructField = "struct_field"
 	kindPanicOp     = "panic_op"
+	kindGlobalState = "global_state"
 )
 
 // Language identifier constants used as keys in embeddedRules and langRuleKinds.
@@ -217,6 +218,11 @@ var rustRuleKinds = map[string]kindInfo{
 	"rs-unwrap": {Kind: kindPanicOp},
 	"rs-expect": {Kind: kindPanicOp},
 	"rs-panic":  {Kind: kindPanicOp},
+	// Global-state rules: static mut, Atomic*, OnceLock — report-only, never gates.
+	// AtomicU32/Bool/etc. ID-generators are idiomatic Rust; these are info signal only.
+	"rs-static-mut":      {Kind: kindGlobalState},
+	"rs-static-atomic":   {Kind: kindGlobalState},
+	"rs-static-oncelock": {Kind: kindGlobalState},
 }
 
 // langRuleKinds maps a language identifier to its ruleId→kindInfo table.
@@ -444,12 +450,13 @@ func isExported(lang, ruleID, name string) bool {
 		// Public = name does not start with underscore.
 		return len(name) > 0 && name[0] != '_'
 	case langRust:
-		// Route, attribute, signal, test-import, unsafe-op, and struct-field ruleIds are never exported.
+		// Route, attribute, signal, test-import, unsafe-op, struct-field, and global-state ruleIds are never exported.
 		// struct-field facts represent whole structs with field counts, not individual API surface entries.
+		// global-state facts are module-level statics; visibility is not the relevant signal here.
 		if strings.HasPrefix(ruleID, "rs-route-") || strings.HasPrefix(ruleID, "rs-import-") ||
 			ruleID == "rs-attribute" || strings.HasPrefix(ruleID, "rs-test-import-") ||
 			strings.HasPrefix(ruleID, "rs-unsafe-") || ruleID == "rs-raw-cast" || ruleID == "rs-transmute" ||
-			ruleID == "rs-struct-field" {
+			ruleID == "rs-struct-field" || strings.HasPrefix(ruleID, "rs-static-") {
 			return false
 		}
 		// The YAML rule already requires visibility_modifier, so any match is pub.

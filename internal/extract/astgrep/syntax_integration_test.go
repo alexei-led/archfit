@@ -161,14 +161,16 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 		},
 		// Rust: fixture.rs exports func create_widget + #[derive(Debug, Clone)] attribute + mockall import +
 		// unsafe block, UnsafeCell, raw cast (safety surface fixture) + MultiField struct (struct_field) +
-		// fixture_panics with unwrap/expect/panic! (panic_op).
-		// Fixture covers: function, struct, enum, interface, method, annotation, test_import, unsafe_op, struct_field, panic_op.
+		// fixture_panics with unwrap/expect/panic! (panic_op) +
+		// global-state fixture: static mut GLOBAL_COUNTER, AtomicU32 ID_GENERATOR, OnceLock REGISTRY.
+		// Fixture covers: function, struct, enum, interface, method, annotation, test_import, unsafe_op,
+		//                 struct_field, panic_op, global_state.
 		// annotation (rs-attribute) was the previously-broken kind — it must now yield ≥1 match.
 		{
 			lang:          "rust",
 			spotName:      "create_widget",
 			spotKind:      kindFunctionStr,
-			requiredKinds: []string{kindFunctionStr, kindStructStr, kindEnumStr, kindInterfaceStr, kindMethodStr, kindAnnotStr, kindTestImportStr, kindUnsafeOpStr, kindStructFieldStr, kindPanicOpStr},
+			requiredKinds: []string{kindFunctionStr, kindStructStr, kindEnumStr, kindInterfaceStr, kindMethodStr, kindAnnotStr, kindTestImportStr, kindUnsafeOpStr, kindStructFieldStr, kindPanicOpStr, kindGlobalStateStr},
 		},
 	}
 

@@ -175,13 +175,13 @@ while keeping the judgment layer (LLM/human) where the doc says it belongs.
 
 ### Task 5: Cat 7 — Rust global mutable state facts, report-only
 
-- [ ] add ast-grep rules for `static mut`, module-level `static … Atomic*`, and `static … OnceLock`
+- [x] add ast-grep rules for `static mut`, module-level `static … Atomic*`, and `static … OnceLock`
       to `rust.yml`; map to a `kindGlobalState` Kind in `rustRuleKinds`
-- [ ] surface as report-only facts in SyntaxSurface; **do not gate** (note in the rule comment that
+- [x] surface as report-only facts in SyntaxSurface; **do not gate** (note in the rule comment that
       `AtomicU32` ID-gen is idiomatic → flags are info-only signal, not violations)
-- [ ] extend `fixture.rs` with a `static … AtomicU32` + `OnceLock`; add the required-kind row
-- [ ] write unit tests + run the integration guard
-- [ ] regenerate goldens + full gate — must pass before Task 6
+- [x] extend `fixture.rs` with a `static … AtomicU32` + `OnceLock`; add the required-kind row
+- [x] write unit tests + run the integration guard
+- [x] regenerate goldens + full gate — must pass before Task 6
 
 ### Task 6: Cat 5 — public-API framework-type-leak facts (typed langs), report-only
 

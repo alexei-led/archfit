@@ -60,6 +60,15 @@ pub struct MultiField {
     pub gamma: bool,
 }
 
+// Global-state fixture: exercises rs-static-mut, rs-static-atomic, rs-static-oncelock.
+// AtomicU32 ID-generator is idiomatic Rust — captured as info signal, not a violation.
+use std::sync::atomic::AtomicU32;
+use std::sync::OnceLock;
+
+static mut GLOBAL_COUNTER: u32 = 0;
+static ID_GENERATOR: AtomicU32 = AtomicU32::new(0);
+static REGISTRY: OnceLock<Vec<String>> = OnceLock::new();
+
 // Panic-op fixture: exercises rs-unwrap, rs-expect, rs-panic.
 pub fn fixture_panics() -> String {
     let v: Option<String> = None;

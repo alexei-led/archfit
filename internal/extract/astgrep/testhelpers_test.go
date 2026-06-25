@@ -30,6 +30,7 @@ const (
 	kindUnsafeOpStr    = "unsafe_op"
 	kindStructFieldStr = "struct_field"
 	kindPanicOpStr     = "panic_op"
+	kindGlobalStateStr = "global_state"
 	langTypeScriptStr  = "typescript"
 	langPythonStr      = "python"
 	langRustStr        = "rust"
