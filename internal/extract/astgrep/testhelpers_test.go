@@ -27,6 +27,7 @@ const (
 	kindAnnotStr      = "annotation"
 	kindRouteStr      = "route"
 	kindTestImportStr = "test_import"
+	kindUnsafeOpStr   = "unsafe_op"
 	langTypeScriptStr = "typescript"
 	langPythonStr     = "python"
 	langRustStr       = "rust"

@@ -131,17 +131,18 @@ while keeping the judgment layer (LLM/human) where the doc says it belongs.
 
 ### Task 2: Cat 6 — Rust unsafe-surface facts + report-only `unsafe_density`
 
-- [ ] add ast-grep rules to `internal/extract/astgrep/rules/rust.yml` for `unsafe { … }` blocks,
+- [x] add ast-grep rules to `internal/extract/astgrep/rules/rust.yml` for `unsafe { … }` blocks,
       `UnsafeCell`, `transmute`, and raw-pointer casts (`as *mut`/`as *const`); verify each pattern
       against `sg 0.44` (e.g. `sg run --pattern 'unsafe { $$$ }' --lang rust` → 167 in yazi)
-- [ ] add a `kindUnsafeOp` Kind const + map the new ruleIds in `rustRuleKinds` (`syntax.go`)
-- [ ] surface the new fact kind in the SyntaxSurface section of `internal/output/markdown/markdown.go`
-- [ ] add a report-only `unsafe_density` count (per module/file) over `Evidence.SyntaxFacts`,
+- [x] add a `kindUnsafeOp` Kind const + map the new ruleIds in `rustRuleKinds` (`syntax.go`)
+- [x] surface the new fact kind in the SyntaxSurface section of `internal/output/markdown/markdown.go`
+      (writeSyntaxSurface already aggregates all kinds generically — unsafe_op appears in kind counts)
+- [x] add a report-only `unsafe_density` count (per module/file) over `Evidence.SyntaxFacts`,
       `Band: BandInformational` — never gates
-- [ ] extend `testdata/integration/fixture.rs` with an `unsafe` block + raw cast; add `kindUnsafeOp`
+- [x] extend `testdata/integration/fixture.rs` with an `unsafe` block + raw cast; add `kindUnsafeOp`
       to the rust `requiredKinds` row in `TestSyntaxIntegration_AllRuleFiles`
-- [ ] write unit tests (density over facts: zero, some) + run the integration guard
-- [ ] regenerate goldens deliberately, inspect diff; `make test` + `make lint` + `TestGolden` +
+- [x] write unit tests (density over facts: zero, some) + run the integration guard
+- [x] regenerate goldens deliberately, inspect diff; `make test` + `make lint` + `TestGolden` +
       `TestArchImports`; confirm `make archfit` still green — must pass before Task 3
 
 ### Task 3: Cat 2 — struct field-count facts + opt-in `struct_field_max` rule (Go/Rust)

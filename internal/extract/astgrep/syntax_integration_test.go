@@ -158,14 +158,15 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 			spotKind:      kindFunctionStr,
 			requiredKinds: []string{kindFunctionStr, kindClassStr, kindAnnotStr, kindRouteStr, kindTestImportStr},
 		},
-		// Rust: fixture.rs exports func create_widget + #[derive(Debug, Clone)] attribute + mockall import.
-		// Fixture covers: function, struct, enum, interface, method, annotation, test_import (see fixture.rs).
+		// Rust: fixture.rs exports func create_widget + #[derive(Debug, Clone)] attribute + mockall import +
+		// unsafe block, UnsafeCell, raw cast (safety surface fixture).
+		// Fixture covers: function, struct, enum, interface, method, annotation, test_import, unsafe_op (see fixture.rs).
 		// annotation (rs-attribute) was the previously-broken kind — it must now yield ≥1 match.
 		{
 			lang:          "rust",
 			spotName:      "create_widget",
 			spotKind:      kindFunctionStr,
-			requiredKinds: []string{kindFunctionStr, kindStructStr, kindEnumStr, kindInterfaceStr, kindMethodStr, kindAnnotStr, kindTestImportStr},
+			requiredKinds: []string{kindFunctionStr, kindStructStr, kindEnumStr, kindInterfaceStr, kindMethodStr, kindAnnotStr, kindTestImportStr, kindUnsafeOpStr},
 		},
 	}
 

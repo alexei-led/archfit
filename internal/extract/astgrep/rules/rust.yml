@@ -177,3 +177,30 @@ language: Rust
 rule:
   kind: use_declaration
   regex: proptest
+---
+# Safety-operation rules: unsafe blocks, UnsafeCell usage, raw pointer casts,
+# and transmute calls. These produce kindUnsafeOp facts — report-only signal,
+# never gates. ruleId maps to kindUnsafeOp in rustRuleKinds (syntax.go).
+id: rs-unsafe-block
+language: Rust
+rule:
+  pattern: unsafe { $$$ }
+---
+id: rs-unsafe-cell
+language: Rust
+rule:
+  kind: type_identifier
+  regex: ^UnsafeCell$
+---
+id: rs-raw-cast
+language: Rust
+rule:
+  any:
+    - pattern: $E as *mut $T
+    - pattern: $E as *const $T
+---
+id: rs-transmute
+language: Rust
+rule:
+  kind: call_expression
+  regex: transmute

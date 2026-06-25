@@ -41,6 +41,7 @@ const (
 	kindEnum       = "enum"
 	kindAnnotation = "annotation"
 	kindTestImport = "test_import"
+	kindUnsafeOp   = "unsafe_op"
 )
 
 // Language identifier constants used as keys in embeddedRules and langRuleKinds.
@@ -199,6 +200,11 @@ var rustRuleKinds = map[string]kindInfo{
 	// Test-import rules: emit test_import facts for production Rust files.
 	"rs-test-import-mockall":  {Kind: kindTestImport, Framework: fwGroupMockall},
 	"rs-test-import-proptest": {Kind: kindTestImport, Framework: fwGroupProptest},
+	// Safety-operation rules: report-only, never gates.
+	"rs-unsafe-block": {Kind: kindUnsafeOp},
+	"rs-unsafe-cell":  {Kind: kindUnsafeOp},
+	"rs-raw-cast":     {Kind: kindUnsafeOp},
+	"rs-transmute":    {Kind: kindUnsafeOp},
 }
 
 // langRuleKinds maps a language identifier to its ruleId→kindInfo table.
@@ -317,6 +323,11 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 			if name == "" && ki.Kind == kindTestImport {
 				name = ki.Framework
 			}
+			// unsafe_op rules have no $NAME metavar. Use the ruleId (minus the "rs-"
+			// prefix) as the name so the fact is identifiable in displays and tests.
+			if name == "" && ki.Kind == kindUnsafeOp {
+				name = strings.TrimPrefix(m.RuleID, "rs-")
+			}
 			if name == "" {
 				continue
 			}
@@ -404,9 +415,10 @@ func isExported(lang, ruleID, name string) bool {
 		// Public = name does not start with underscore.
 		return len(name) > 0 && name[0] != '_'
 	case langRust:
-		// Route, attribute, signal, and test-import ruleIds are never exported.
+		// Route, attribute, signal, test-import, and unsafe-op ruleIds are never exported.
 		if strings.HasPrefix(ruleID, "rs-route-") || strings.HasPrefix(ruleID, "rs-import-") ||
-			ruleID == "rs-attribute" || strings.HasPrefix(ruleID, "rs-test-import-") {
+			ruleID == "rs-attribute" || strings.HasPrefix(ruleID, "rs-test-import-") ||
+			strings.HasPrefix(ruleID, "rs-unsafe-") || ruleID == "rs-raw-cast" || ruleID == "rs-transmute" {
 			return false
 		}
 		// The YAML rule already requires visibility_modifier, so any match is pub.

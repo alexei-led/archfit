@@ -964,3 +964,38 @@ func TestSyntax_Confirmed_Route_Emitted(t *testing.T) {
 		t.Errorf("FrameworkConfirmed = false, want true for confirmed route")
 	}
 }
+
+func TestSyntax_Rust_UnsafeOp_Facts(t *testing.T) {
+	// unsafe_op facts use ruleId as name fallback; they are never exported.
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntry("rs-unsafe-block", fileSvcRs, "unsafe { ... }", 10, 12),
+		syntaxEntry("rs-raw-cast", fileSvcRs, "ptr as *mut u8", 20, 20),
+		syntaxEntry("rs-unsafe-cell", fileSvcRs, "UnsafeCell", 25, 25),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, cov, err := a.Syntax(context.Background(), syntaxScope, []string{langRustStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if cov.Status != "ok" {
+		t.Errorf("cov.Status = %q, want ok", cov.Status)
+	}
+	if len(facts) != 3 {
+		t.Fatalf("len(facts) = %d, want 3", len(facts))
+	}
+	for i, f := range facts {
+		if f.Kind != kindUnsafeOpStr {
+			t.Errorf("facts[%d].Kind = %q, want %q", i, f.Kind, kindUnsafeOpStr)
+		}
+		if f.Exported {
+			t.Errorf("facts[%d] unsafe_op should not be exported", i)
+		}
+		if f.Name == "" {
+			t.Errorf("facts[%d] should have a non-empty Name (ruleId fallback)", i)
+		}
+		if f.Language != langRustStr {
+			t.Errorf("facts[%d].Language = %q, want rust", i, f.Language)
+		}
+	}
+}

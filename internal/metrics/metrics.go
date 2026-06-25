@@ -72,6 +72,7 @@ func New(cfg config.Config) []Metric {
 		adapt(modularity.HiddenCouplingMetric{}, signal.CollectedSignals.AsHistory),
 		adapt(modularity.StructuralWeightMetric{}, signal.CollectedSignals.AsSize),
 		adapt(modularity.FileStructuralWeightMetric{}, signal.CollectedSignals.AsSize),
+		adapt(modularity.UnsafeDensityMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(intramodule.ComplexityMetric{}, signal.CollectedSignals.AsComplexity),
 		adapt(risk.NewMetric(cfg), signal.CollectedSignals.AsSymbol),
 		adapt(intramodule.ArchitectureFitnessMetric{}, signal.CollectedSignals.AsFitness),

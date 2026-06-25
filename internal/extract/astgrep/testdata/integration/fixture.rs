@@ -35,3 +35,20 @@ pub mod shapes {
         pub radius: f64,
     }
 }
+
+// Safety surface fixture: exercises rs-unsafe-block, rs-unsafe-cell, rs-raw-cast.
+// (rs-transmute not exercised here — it uses a regex on call_expression which
+// requires a real Rust call; the rule fires on yazi's mem::transmute usage.)
+use std::cell::UnsafeCell;
+
+pub struct SharedState {
+    inner: UnsafeCell<u32>,
+}
+
+pub unsafe fn raw_bytes(ptr: *const u8) -> u8 {
+    unsafe { *ptr }
+}
+
+pub fn raw_cast_example(val: u32) -> *const u32 {
+    val as *const u32
+}

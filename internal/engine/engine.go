@@ -179,6 +179,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 			Baseline:        in.BaseMetrics,
 			ToolCoverage:    ex.coverages,
 			ChangedFiles:    in.Scope.Changed,
+			SyntaxFacts:     syntaxFacts,
 		},
 		History:     in.Signals.History,
 		Symbol:      signal.SymbolSignals{Graph: ex.scipSymbols, GitnexusImpact: in.Signals.GitnexusImpact},

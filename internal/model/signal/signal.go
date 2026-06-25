@@ -119,6 +119,10 @@ type CommonInput struct {
 	Baseline        diagnostic.MetricSnapshot
 	ToolCoverage    []diagnostic.Coverage
 	ChangedFiles    []string
+	// SyntaxFacts carries the ast-grep syntax facts produced by the syntax provider.
+	// Empty when syntax is disabled or sg is absent. Report-only metrics (e.g.
+	// unsafe_density) consume this to produce informational counts.
+	SyntaxFacts []diagnostic.SyntaxFact
 }
 
 // HistorySignals carries the git-history signals (empty when no history).
