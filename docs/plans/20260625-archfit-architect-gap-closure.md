@@ -105,29 +105,29 @@ while keeping the judgment layer (LLM/human) where the doc says it belongs.
 
 ### Task 1: Validation harness + frozen-inventory coverage-table generator
 
-- [ ] copy `architect-only-inventory.md` and `archfit-capability-map.md` from
+- [x] copy `architect-only-inventory.md` and `archfit-capability-map.md` from
       `~/Workspace/archfit/reports/eval/` into this branch's `reports/eval/` (self-contained ground truth)
-- [ ] add `scripts/eval/gap-closure.sh`: for each repo in {archfit,pumba,codegraph,ccgram,yazi,herdr}
+- [x] add `scripts/eval/gap-closure.sh`: for each repo in {archfit,pumba,codegraph,ccgram,yazi,herdr}
       under `~/Workspace`, run **full** `archfit check --config <repo>/.archfit.yaml --full --format json,md`
       and a **delta smoke check** `archfit check --config <repo>/.archfit.yaml --base HEAD~1 --format json,md`
       (explicit reproducible base ref; HEAD~1 always exists), writing
       `reports/eval/gap-closure/<repo>/{full,delta}.{json,md}` (mirror the existing
       `reports/archfit-vs-architect-20260620-postfix/<repo>/…` layout); **log and skip** any repo whose
       toolchain is absent (no silent caps)
-- [ ] create a minimal `~/Workspace/herdr/.archfit.yaml` — **syntax layer on** (the targeted herdr
+- [x] create a minimal `~/Workspace/herdr/.archfit.yaml` — **syntax layer on** (the targeted herdr
       findings Cat 2/6/7/8 are ast-grep syntax facts), declare the crate as a module; leave
       `tools.cargo-modules`/`tools.scip` **optional** (they add a heavy rust-analyzer dependency for
       module-coupling signal this validation does not require — enable only if you also want
       `coupling_balance` on herdr). Record the config in `reports/eval/gap-closure/herdr.config.md`
-- [ ] add a coverage-table generator (Go test-fixture-driven, e.g. `internal/eval` or a small
+- [x] add a coverage-table generator (Go test-fixture-driven, e.g. `internal/eval` or a small
       `scripts/eval/coverage` package, or jq) that reads a repo's `full.json` and maps each
       inventory finding id → `{surfaced | llm-routed-by-design | agree}` by probing for the expected
       metric/fact/rule signal; emit `reports/eval/gap-closure/coverage.md`
-- [ ] establish the **baseline**: run the generator now and confirm the table shows the gap OPEN for
+- [x] establish the **baseline**: run the generator now and confirm the table shows the gap OPEN for
       the P2/P3/Cat11 categories (proves the harness measures the right thing before any detector lands)
-- [ ] write unit tests for the generator's finding→status mapping over a fixture `full.json`
+- [x] write unit tests for the generator's finding→status mapping over a fixture `full.json`
       (surfaced, routed, and agree cases)
-- [ ] run `make test` + `make lint` — must pass before Task 2
+- [x] run `make test` + `make lint` — must pass before Task 2
 
 ### Task 2: Cat 6 — Rust unsafe-surface facts + report-only `unsafe_density`
 
