@@ -1060,3 +1060,92 @@ func TestSyntax_Rust_UnsafeOp_Facts(t *testing.T) {
 		}
 	}
 }
+
+func TestSyntax_Py_LazyImport_Facts(t *testing.T) {
+	// lazy_import facts use $NAME from the import statement; they are never exported.
+	// py-lazy-import-module: `import X` inside a function → Name is module name.
+	// py-lazy-import-from: `from X import Y` inside a function → Name is source module.
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithName("py-lazy-import-module", fileSvcPy, "os", 5, 5),
+		syntaxEntryWithName("py-lazy-import-from", fileSvcPy, "pathlib", 8, 8),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, cov, err := a.Syntax(context.Background(), syntaxScope, []string{langPythonStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if cov.Status != "ok" {
+		t.Errorf("cov.Status = %q, want ok", cov.Status)
+	}
+	if len(facts) != 2 {
+		t.Fatalf("len(facts) = %d, want 2", len(facts))
+	}
+	for i, f := range facts {
+		if f.Kind != kindLazyImportStr {
+			t.Errorf("facts[%d].Kind = %q, want %q", i, f.Kind, kindLazyImportStr)
+		}
+		if f.Exported {
+			t.Errorf("facts[%d] lazy_import should not be exported", i)
+		}
+		if f.Name == "" {
+			t.Errorf("facts[%d] should have a non-empty Name ($NAME from module field)", i)
+		}
+		if f.Language != langPythonStr {
+			t.Errorf("facts[%d].Language = %q, want python", i, f.Language)
+		}
+	}
+	// Verify specific names are preserved.
+	wantNames := []string{"os", "pathlib"}
+	for i, want := range wantNames {
+		if facts[i].Name != want {
+			t.Errorf("facts[%d].Name = %q, want %q", i, facts[i].Name, want)
+		}
+	}
+}
+
+func TestSyntax_Py_LazyImport_Empty(t *testing.T) {
+	// No lazy-import entries → no lazy_import facts; other kinds still work.
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithName("py-func", fileSvcPy, nameProcess, 1, 3),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langPythonStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	for _, f := range facts {
+		if f.Kind == kindLazyImportStr {
+			t.Errorf("unexpected lazy_import fact when none were injected: %+v", f)
+		}
+	}
+}
+
+func TestSyntax_Py_LazyImport_TopLevelNotMatched(t *testing.T) {
+	// Regression: top-level imports must NOT produce lazy_import facts.
+	// The rule is guarded by `inside: kind: function_definition`.
+	// Here we inject a py-func fact alongside lazy-import facts to confirm that
+	// top-level imports (represented as py-func, py-class, etc.) do not get
+	// mislabelled as lazy_import.
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithName("py-func", fileSvcPy, "top_level_module", 1, 1),
+		syntaxEntryWithName("py-lazy-import-module", fileSvcPy, "requests", 5, 5),
+	})
+
+	a := astgrep.New(presentRunner(entries))
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langPythonStr})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	lazyCount := 0
+	for _, f := range facts {
+		if f.Kind == kindLazyImportStr {
+			lazyCount++
+		}
+	}
+	// Only the explicitly injected lazy-import fact should appear (not the py-func).
+	if lazyCount != 1 {
+		t.Errorf("lazyCount = %d, want 1 (only injected lazy-import fact)", lazyCount)
+	}
+}

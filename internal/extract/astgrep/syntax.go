@@ -46,6 +46,7 @@ const (
 	kindPanicOp     = "panic_op"
 	kindGlobalState = "global_state"
 	kindTypeLeak    = "type_leak"
+	kindLazyImport  = "lazy_import"
 )
 
 // Language identifier constants used as keys in embeddedRules and langRuleKinds.
@@ -188,6 +189,11 @@ var pyRuleKinds = map[string]kindInfo{
 	"py-test-import-pytest":   {Kind: kindTestImport, Framework: fwGroupPytest},
 	"py-test-import-unittest": {Kind: kindTestImport, Framework: fwGroupUnittest},
 	"py-test-import-mock":     {Kind: kindTestImport, Framework: fwGroupMock},
+	// Lazy-import rules: emit lazy_import facts for in-function import statements.
+	// py-lazy-import-module: `import X` inside a function body.
+	// py-lazy-import-from:   `from X import Y` inside a function body.
+	"py-lazy-import-module": {Kind: kindLazyImport},
+	"py-lazy-import-from":   {Kind: kindLazyImport},
 }
 
 // rustRuleKinds maps each rust.yml ruleId to its Kind and Framework.
@@ -453,9 +459,10 @@ func isExported(lang, ruleID, name string) bool {
 		}
 		return true // inside: export_statement guarantees export
 	case langPython:
-		// Route, decorator, signal, and test-import ruleIds are never exported.
+		// Route, decorator, signal, test-import, and lazy-import ruleIds are never exported.
 		if strings.HasPrefix(ruleID, "py-route-") || strings.HasPrefix(ruleID, "py-import-") ||
-			ruleID == "py-decorator" || strings.HasPrefix(ruleID, "py-test-import-") {
+			ruleID == "py-decorator" || strings.HasPrefix(ruleID, "py-test-import-") ||
+			strings.HasPrefix(ruleID, "py-lazy-import-") {
 			return false
 		}
 		// Public = name does not start with underscore.

@@ -198,14 +198,14 @@ while keeping the judgment layer (LLM/human) where the doc says it belongs.
 
 ### Task 7: Cat 9 — Python lazy / in-function import signal, report-only
 
-- [ ] add an ast-grep rule for `import`/`from … import` statements inside a function body
+- [x] add an ast-grep rule for `import`/`from … import` statements inside a function body
       (`python.yml`); map to a `kindLazyImport` Kind in `pyRuleKinds`
-- [ ] surface as a report-only signal in SyntaxSurface (the doc is explicit: this is signal only;
+- [x] surface as a report-only signal in SyntaxSurface (the doc is explicit: this is signal only;
       full cycle confirmation needs adding lazy edges to the graph + re-running SCC — out of scope,
       documented as residue)
-- [ ] extend `fixture.py` with an in-function import; add the required-kind row
-- [ ] write unit tests + run the integration guard
-- [ ] regenerate goldens + full gate — must pass before Task 8
+- [x] extend `fixture.py` with an in-function import; add the required-kind row
+- [x] write unit tests + run the integration guard
+- [x] regenerate goldens + full gate — must pass before Task 8
 
 ### Task 8: Cat 13 — test-density proxy metric, report-only
 

@@ -32,6 +32,7 @@ const (
 	kindPanicOpStr     = "panic_op"
 	kindGlobalStateStr = "global_state"
 	kindTypeLeakStr    = "type_leak"
+	kindLazyImportStr  = "lazy_import"
 	langTypeScriptStr  = "typescript"
 	langPythonStr      = "python"
 	langRustStr        = "rust"

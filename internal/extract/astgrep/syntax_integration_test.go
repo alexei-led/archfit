@@ -152,13 +152,14 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 			spotKind:      kindFunctionStr,
 			requiredKinds: []string{kindFunctionStr, kindClassStr, kindInterfaceStr, kindAnnotStr, kindRouteStr, kindTestImportStr},
 		},
-		// Python: fixture.py declares func process + @staticmethod decorator + fastapi route + pytest import.
-		// Fixture covers: function, class, annotation, route, test_import (see fixture.py).
+		// Python: fixture.py declares func process + @staticmethod decorator + fastapi route + pytest import +
+		// lazy_loader (import os inside function) + lazy_from_loader (from pathlib import Path inside function).
+		// Fixture covers: function, class, annotation, route, test_import, lazy_import (see fixture.py).
 		{
 			lang:          "python",
 			spotName:      "process",
 			spotKind:      kindFunctionStr,
-			requiredKinds: []string{kindFunctionStr, kindClassStr, kindAnnotStr, kindRouteStr, kindTestImportStr},
+			requiredKinds: []string{kindFunctionStr, kindClassStr, kindAnnotStr, kindRouteStr, kindTestImportStr, kindLazyImportStr},
 		},
 		// Rust: fixture.rs exports func create_widget + #[derive(Debug, Clone)] attribute + mockall import +
 		// unsafe block, UnsafeCell, raw cast (safety surface fixture) + MultiField struct (struct_field) +

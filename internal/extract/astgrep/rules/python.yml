@@ -139,3 +139,42 @@ rule:
   any:
     - pattern: import mock
     - pattern: from mock import $$$
+---
+# Lazy-import rules: detect import statements inside function bodies (Cat 9).
+# In-function imports defer module loading, hide dependencies from the top-level
+# import graph, and can create hidden circular-import cycles. Surfaced as
+# lazy_import facts (report-only signal; full cycle confirmation requires adding
+# lazy edges to the SCC graph — documented as residue in Cat 9).
+#
+# Ceiling: a lazy import used deliberately for performance (e.g. TYPE_CHECKING
+# guards, heavy optional deps) is idiomatic Python; these are signal, not
+# violations. Judgment stays with the LLM/human reviewer.
+#
+# stopBy: end is required: without it, ast-grep only checks the immediate parent
+# node, not the full ancestor chain up to the function body.
+#
+# py-lazy-import-module: `import X` inside a function or method body.
+# $NAME captures the imported module name via `has: field: name`.
+id: py-lazy-import-module
+language: Python
+rule:
+  kind: import_statement
+  inside:
+    stopBy: end
+    kind: function_definition
+  has:
+    field: name
+    pattern: $NAME
+---
+# py-lazy-import-from: `from X import Y` inside a function or method body.
+# $NAME captures the source module name via `has: field: module_name`.
+id: py-lazy-import-from
+language: Python
+rule:
+  kind: import_from_statement
+  inside:
+    stopBy: end
+    kind: function_definition
+  has:
+    field: module_name
+    pattern: $NAME
