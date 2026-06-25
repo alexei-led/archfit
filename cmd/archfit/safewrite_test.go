@@ -19,6 +19,7 @@ func newTestDeps(t *testing.T) *appDeps {
 }
 
 func TestSafeWriteConfig_OriginalNil_ConcurrentAppearance(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".archfit.yaml")
 
@@ -38,6 +39,7 @@ func TestSafeWriteConfig_OriginalNil_ConcurrentAppearance(t *testing.T) {
 }
 
 func TestSafeWriteConfig_BackupClobber_TimestampedFallback(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".archfit.yaml")
 

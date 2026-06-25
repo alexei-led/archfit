@@ -40,6 +40,11 @@ build: ## compile the archfit binary
 test: ## run all tests with race detector and coverage
 	go test -race -coverprofile=coverage.out ./...
 
+## test-fast: run tests with race detector, skipping slow subprocess integration tests (-short)
+.PHONY: test-fast
+test-fast: ## run tests with race + -short (skips real-sg subprocess integration tests for inner-loop speed)
+	go test -race -short ./...
+
 ## test-coverage: open HTML coverage report
 .PHONY: test-coverage
 test-coverage: test ## open HTML coverage report

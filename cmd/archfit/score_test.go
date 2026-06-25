@@ -11,6 +11,7 @@ import (
 // had no Full field. Score is always report-only, so a violating repo still
 // exits 0; the assertion is that the flag is accepted and a scorecard renders.
 func TestRun_Score_FullFlagParses(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 
 	cases := []struct {
@@ -22,6 +23,7 @@ func TestRun_Score_FullFlagParses(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			var buf bytes.Buffer
 			code := Run(tc.args, &buf)
 			if code != 0 {

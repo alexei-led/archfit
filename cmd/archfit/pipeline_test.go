@@ -15,6 +15,7 @@ import (
 // absent known tools produce a gap with the right gate; present or unknown
 // tools produce no gap.
 func TestBuildCoverageGaps(t *testing.T) {
+	t.Parallel()
 	cfgFailGo := config.Config{Tools: config.ToolsConfig{
 		config.LangGo: {Gate: config.GateFail},
 	}}
@@ -81,6 +82,7 @@ func TestBuildCoverageGaps(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			gaps := buildCoverageGaps(tc.cov, tc.cfg, "")
 			if len(gaps) != len(tc.wantTools) {
 				t.Fatalf("gaps = %d, want %d: %+v", len(gaps), len(tc.wantTools), gaps)
@@ -101,6 +103,7 @@ func TestBuildCoverageGaps(t *testing.T) {
 // language whose project marker is absent from the scan root are suppressed,
 // while gaps for present markers and explicit gates are preserved.
 func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
+	t.Parallel()
 	// Pure-Go repo: only go.mod present, no Cargo.toml.
 	goOnlyDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(goOnlyDir, markerGoMod), []byte("module example\n"), 0o600); err != nil {
@@ -130,6 +133,7 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 	}
 
 	t.Run("pure-Go repo: no cargo or cargo-modules gap", func(t *testing.T) {
+		t.Parallel()
 		gaps := buildCoverageGaps(allRustAbsent, cfgDefault, goOnlyDir)
 		for _, g := range gaps {
 			if g.Tool == toolCargo || g.Tool == toolCargoModules {
@@ -139,6 +143,7 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 	})
 
 	t.Run("mixed Go+Rust repo: cargo gap present", func(t *testing.T) {
+		t.Parallel()
 		gaps := buildCoverageGaps(allRustAbsent, cfgDefault, mixedDir)
 		found := false
 		for _, g := range gaps {
@@ -152,6 +157,7 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 	})
 
 	t.Run("mixed Go+Rust repo: cargo-modules gap present", func(t *testing.T) {
+		t.Parallel()
 		gaps := buildCoverageGaps(allRustAbsent, cfgDefault, mixedDir)
 		found := false
 		for _, g := range gaps {
@@ -165,6 +171,7 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 	})
 
 	t.Run("explicit gate on rust overrides marker suppression", func(t *testing.T) {
+		t.Parallel()
 		gaps := buildCoverageGaps([]diagnostic.Coverage{
 			{Tool: toolCargo, Status: diagnostic.StatusAbsent},
 		}, cfgRustGate, goOnlyDir)
@@ -180,6 +187,7 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 	})
 
 	t.Run("explicit gate on cargo-modules overrides marker suppression", func(t *testing.T) {
+		t.Parallel()
 		gaps := buildCoverageGaps([]diagnostic.Coverage{
 			{Tool: toolCargoModules, Status: diagnostic.StatusAbsent},
 		}, cfgCargoModulesGate, goOnlyDir)
@@ -195,6 +203,7 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 	})
 
 	t.Run("empty root disables suppression (backward compat)", func(t *testing.T) {
+		t.Parallel()
 		gaps := buildCoverageGaps(allRustAbsent, cfgDefault, "")
 		found := false
 		for _, g := range gaps {
@@ -211,7 +220,9 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 // TestBuildConfigWarnings verifies the config-warnings block: lint warnings and
 // tool errors are combined, nil is returned when both are empty.
 func TestBuildConfigWarnings(t *testing.T) {
+	t.Parallel()
 	t.Run("empty config and no tool errors returns nil", func(t *testing.T) {
+		t.Parallel()
 		cfg := config.Config{Version: 1}
 		if got := buildConfigWarnings(cfg, nil); got != nil {
 			t.Errorf("got %v, want nil", got)
@@ -219,6 +230,7 @@ func TestBuildConfigWarnings(t *testing.T) {
 	})
 
 	t.Run("tool errors appear after lint warnings", func(t *testing.T) {
+		t.Parallel()
 		// A module with paths but no rules referencing it produces a lint warning.
 		cfg := config.Config{
 			Version: 1,
@@ -244,6 +256,7 @@ func TestBuildConfigWarnings(t *testing.T) {
 	})
 
 	t.Run("tool errors only, no lint", func(t *testing.T) {
+		t.Parallel()
 		cfg := config.Config{Version: 1}
 		toolErrs := []string{"jscpd: not found"}
 		got := buildConfigWarnings(cfg, toolErrs)
@@ -257,6 +270,7 @@ func TestBuildConfigWarnings(t *testing.T) {
 // config file: a run that ignored the file must report no hash, even when the
 // file exists, so the hash never reflects (or changes with) an ignored file.
 func TestEffectiveConfigHash(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".archfit.yaml")
 	if err := os.WriteFile(path, []byte("version: 1\n"), 0o600); err != nil {
@@ -292,6 +306,7 @@ func TestEffectiveConfigHash(t *testing.T) {
 // an unmapped tool and an empty gate both default to warn; a configured gate on
 // the mapped key (e.g. tools.go.gate for go/packages) is surfaced verbatim.
 func TestConfigToolGate(t *testing.T) {
+	t.Parallel()
 	cfg := config.Config{Tools: config.ToolsConfig{
 		config.LangGo:         {Gate: config.GateFail},
 		config.LangTypeScript: {Gate: config.GateOff},
@@ -318,7 +333,9 @@ func TestConfigToolGate(t *testing.T) {
 // gap to fail and stamps the verdict; an explicit per-tool fail gate trips without
 // the flag; an all-warn run with no flag does not trip and leaves the verdict alone.
 func TestApplyToolGate(t *testing.T) {
+	t.Parallel()
 	t.Run("require-tools raises all gaps to fail", func(t *testing.T) {
+		t.Parallel()
 		diag := diagnostic.Diagnostic{
 			Verdict: diagnostic.VerdictPass,
 			CoverageGaps: []diagnostic.CoverageGap{
@@ -340,6 +357,7 @@ func TestApplyToolGate(t *testing.T) {
 	})
 
 	t.Run("explicit fail gate trips without the flag", func(t *testing.T) {
+		t.Parallel()
 		diag := diagnostic.Diagnostic{
 			Verdict: diagnostic.VerdictPass,
 			CoverageGaps: []diagnostic.CoverageGap{
@@ -359,6 +377,7 @@ func TestApplyToolGate(t *testing.T) {
 	})
 
 	t.Run("all warn, no flag, does not trip", func(t *testing.T) {
+		t.Parallel()
 		diag := diagnostic.Diagnostic{
 			Verdict: diagnostic.VerdictPass,
 			CoverageGaps: []diagnostic.CoverageGap{
@@ -383,9 +402,11 @@ const (
 // TestBuildJudgmentDecisionTasks verifies that undeclared judgment inputs emit
 // actionable decision strings pointing at the right file/key.
 func TestBuildJudgmentDecisionTasks(t *testing.T) {
+	t.Parallel()
 	configPath := "/repo/.archfit.yaml"
 
 	t.Run("module with neither subdomain nor volatility emits decision task", func(t *testing.T) {
+		t.Parallel()
 		cfg := config.Config{
 			Modules: map[string]config.ModuleDef{
 				"app.core": {Paths: []string{"internal/core/**"}, Subdomain: commandGroupCore},
@@ -411,6 +432,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 	})
 
 	t.Run("module with volatility declared is not flagged", func(t *testing.T) {
+		t.Parallel()
 		cfg := config.Config{
 			Modules: map[string]config.ModuleDef{
 				"app.util": {Paths: []string{"internal/util/**"}, Volatility: "low"},
@@ -425,6 +447,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 	})
 
 	t.Run("no modules emits no tasks", func(t *testing.T) {
+		t.Parallel()
 		cfg := config.Config{}
 		tasks := buildJudgmentDecisionTasks(cfg, nil, configPath)
 		if len(tasks) != 0 {
@@ -433,6 +456,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 	})
 
 	t.Run("approved llm label emits decision task pointing at labels file", func(t *testing.T) {
+		t.Parallel()
 		cfg := config.Config{}
 		lbls := []labels.Label{
 			{From: decisionModA, To: decisionModB, Strength: enrichModel,
@@ -452,6 +476,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 	})
 
 	t.Run("draft llm label does NOT emit decision task", func(t *testing.T) {
+		t.Parallel()
 		cfg := config.Config{}
 		lbls := []labels.Label{
 			{From: decisionModA, To: decisionModB, Strength: enrichModel,
@@ -464,6 +489,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 	})
 
 	t.Run("approved human label does NOT emit decision task", func(t *testing.T) {
+		t.Parallel()
 		cfg := config.Config{}
 		lbls := []labels.Label{
 			{From: decisionModA, To: decisionModB, Strength: enrichModel,
@@ -476,6 +502,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 	})
 
 	t.Run("output is sorted deterministically", func(t *testing.T) {
+		t.Parallel()
 		cfg := config.Config{
 			Modules: map[string]config.ModuleDef{
 				"zz.module": {Paths: []string{"zz/**"}},
@@ -499,6 +526,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 // directory strictly inside the analyzed root warns; the root itself or any path
 // outside it does not.
 func TestOutputInsideRootWarning(t *testing.T) {
+	t.Parallel()
 	root := filepath.FromSlash("/repo")
 	cases := []struct {
 		name    string
@@ -513,6 +541,7 @@ func TestOutputInsideRootWarning(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got := outputInsideRootWarning(root, tc.dir)
 			if (got != "") != tc.wantMsg {
 				t.Errorf("outputInsideRootWarning(%q, %q) = %q, wantMsg=%v", root, tc.dir, got, tc.wantMsg)

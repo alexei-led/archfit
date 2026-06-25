@@ -301,31 +301,38 @@ _Discovered mid-execution (user request): every change runs `make lint` + `make 
 inner-loop latency matters. Measure first, then cut — do not trade correctness, the `-race` gate, or
 coverage for speed. Keep all existing gates green._
 
-- [ ] **measure the baseline first (no silent caps):** time `make test` and `make lint` cold and warm
+- [x] **measure the baseline first (no silent caps):** time `make test` and `make lint` cold and warm
       (`go test -race ./... -count=1` wall time; `go test -json ... | go-test-report`-style or
       `-v` parse to list the slowest packages/tests); capture the top offenders in
       `reports/eval/test-speed-baseline.md` so the speedup is evidence-driven, not guesswork
-- [ ] **parallelize where safe:** add `t.Parallel()` to independent unit tests and their subtests
+      [RESULT: cold ~23s, warm ~16s; cmd/archfit 4.5s (3.27s serial test time); all others < 0.1s actual test time — binary startup dominates]
+- [x] **parallelize where safe:** add `t.Parallel()` to independent unit tests and their subtests
       (table-driven loops — capture range var if Go <1.22 idiom requires), but NEVER to tests that
       mutate shared/global state, `t.Setenv`, the working dir, or golden files; document any test
       deliberately left serial with a one-line reason
-- [ ] **kill duplication / fixture waste:** find repeated heavy setup (re-parsing the same config,
+      [RESULT: added t.Parallel() to all 14 cmd/archfit test files (except TestLoadDotEnv + TestLoadDotEnv_EmptyEnvVarWins which use t.Setenv). Other packages: <0.1s in-test time — no wall benefit, documented. cmd/archfit: 4.5s → 2.5s (−44%)]
+- [x] **kill duplication / fixture waste:** find repeated heavy setup (re-parsing the same config,
       rebuilding the same graph, re-running ast-grep) and hoist to `TestMain`/package-level fixtures or
       a shared helper; dedupe near-identical test bodies into table-driven cases
-- [ ] **replace sleeps/polling with events where any exist:** grep for `time.Sleep`/busy-wait in tests;
+      [RESULT: no `TestMain` found; per-package test times are dominated by binary startup (~1.5s), not setup. Individual tests run in <1ms. Fixture hoisting would save <0.1s — no meaningful win. Checked cmd/archfit: each test uses t.TempDir() (correct isolation). No changes needed.]
+- [x] **replace sleeps/polling with events where any exist:** grep for `time.Sleep`/busy-wait in tests;
       convert to channel/`sync` signaling or `Eventually`-style bounded waits (do not just shorten the
       sleep). If none exist, record that and skip — no invented work
-- [ ] **investigate the genuinely slow tests** surfaced by the baseline (e.g. subprocess/ast-grep
+      [RESULT: one sleep found — `internal/llm/llm_test.go` TestAnthropic_Timeout: 200ms server-handler sleep blocked srv.Close(). Converted to `select { case <-time.After(200ms): case <-r.Context().Done(): return }`. All other tests: no sleeps.]
+- [x] **investigate the genuinely slow tests** surfaced by the baseline (e.g. subprocess/ast-grep
       integration, golden regen): cache the expensive artifact across subtests, gate the heaviest
       behind `testing.Short()` with `-short` wired into a fast `make test-fast` target (keep full
       `make test` running everything in CI), or shrink fixtures without losing the assertion's teeth
-- [ ] **tune the linter for inner-loop speed:** review `.golangci.yaml` — keep fast correctness linters
+      [RESULT: sg integration tests (TestSyntaxIntegration_JSONShape + TestSyntaxIntegration_AllRuleFiles) gated behind testing.Short() — skipped in make test-fast. Full make test still runs them. make test-fast target added to Makefile.]
+- [x] **tune the linter for inner-loop speed:** review `.golangci.yaml` — keep fast correctness linters
       in `make lint`; move demonstrably slow linters (whole-program / type-heavy, e.g. the slow ones
       among `gocritic`/`unparam`/`govet shadow`/`staticcheck` extras) to a CI-only profile
       (`.golangci.ci.yaml` or a `make lint-ci` target) IF measurement shows they dominate — keep the
       default `make lint` complete enough to catch real defects locally; document what moved and why
-- [ ] **verify nothing regressed:** full `make test` (race, all tests) + `make lint` (full profile) + `TestGolden` + `TestArchImports` + `make archfit` all green; report the before/after wall-clock
+      [RESULT: golangci-lint runs at 1.3s warm — no linter measurably slow. `.golangci.yaml` left unchanged. No CI-only profile created.]
+- [x] **verify nothing regressed:** full `make test` (race, all tests) + `make lint` (full profile) + `TestGolden` + `TestArchImports` + `make archfit` all green; report the before/after wall-clock
       delta in `reports/eval/test-speed-baseline.md`
+      [RESULT: all gates green — 53/53 packages pass, TestGolden pass, TestArchImports pass, lint 0 issues, make archfit verdict:PASS. Before/after: warm ~16s → ~14.7s (−8%); cmd/archfit 4.5s → 2.5s (−44%)]
 
 ### Task 14: [Final] Documentation
 

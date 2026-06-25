@@ -14,6 +14,7 @@ import (
 // composition root wires must have a NodeConvention in the model ring, or the
 // core-ring metrics fall back to the slash/default heuristic for it silently.
 func TestBuiltinConventionsCoverage(t *testing.T) {
+	t.Parallel()
 	for _, lang := range languageRegistry {
 		if _, ok := graph.BuiltinConventions[lang.ID]; !ok {
 			t.Errorf("language %q in registry has no graph.BuiltinConventions entry", lang.ID)
@@ -25,6 +26,7 @@ func TestBuiltinConventionsCoverage(t *testing.T) {
 // kong enum accepts resolves through the registry — install must never accept a
 // language it cannot dispatch.
 func TestLangAliasesInInstallEnum(t *testing.T) {
+	t.Parallel()
 	enum := installEnumTag(t)
 	if len(enum) == 0 {
 		t.Fatal("InstallCmd.Lang has no enum tag values")
@@ -56,6 +58,7 @@ func installEnumTag(t *testing.T) []string {
 // graph-merge order the engine golden test depends on) and that each extractor
 // reports the canonical language name.
 func TestBuildExtractorsOrder(t *testing.T) {
+	t.Parallel()
 	exs := buildExtractors(&toolrun.RunnerMock{}, config.Default())
 	want := []string{config.LangGo, config.LangTypeScript, config.LangPython, config.LangRust}
 	if len(exs) != len(want) {
@@ -70,6 +73,7 @@ func TestBuildExtractorsOrder(t *testing.T) {
 
 // TestLanguageByAlias covers canonical IDs, short aliases, and unknown keys.
 func TestLanguageByAlias(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"go":         config.LangGo,
 		"typescript": config.LangTypeScript,
@@ -91,6 +95,7 @@ func TestLanguageByAlias(t *testing.T) {
 // TestPrimaryExtractorTools pins the dependency-graph coverage names injected
 // into the scorecard, in registry order.
 func TestPrimaryExtractorTools(t *testing.T) {
+	t.Parallel()
 	got := primaryExtractorTools()
 	want := []string{toolGoPackages, toolDepCruiser, toolGrimp, toolCargo}
 	if !reflect.DeepEqual(got, want) {

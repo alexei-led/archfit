@@ -84,6 +84,7 @@ rules:
 // TestRun_Check_ReportSuppressesFailureExit verifies the --report contract:
 // the same violating repo exits 1 without --report and 0 with it.
 func TestRun_Check_ReportSuppressesFailureExit(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 
 	var buf bytes.Buffer
@@ -137,6 +138,7 @@ func writeNonGoRepo(t *testing.T, cfgBody string) string {
 // --require-tools and tools.<x>.gate: fail turn a missing tool into an exit-1
 // policy failure — distinct from the exit-3 tool/config error.
 func TestRun_Check_RequireToolsHardGate(t *testing.T) {
+	t.Parallel()
 	type gapsDiag struct {
 		Verdict      string `json:"verdict"`
 		CoverageGaps []struct {
@@ -146,6 +148,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 	}
 
 	t.Run("default is warn-loud: exit 0 with a gaps block", func(t *testing.T) {
+		t.Parallel()
 		cfgPath := writeNonGoRepo(t, "version: 1\n")
 		var buf bytes.Buffer
 		code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &buf)
@@ -167,6 +170,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 	})
 
 	t.Run("--require-tools fails: every gap becomes a fail gate, exit 1", func(t *testing.T) {
+		t.Parallel()
 		cfgPath := writeNonGoRepo(t, "version: 1\n")
 		var buf bytes.Buffer
 		code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, "--require-tools", fmtJSON}, &buf)
@@ -188,6 +192,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 	})
 
 	t.Run("per-tool gate: tools.go.gate fail on an absent analyzer exits 1", func(t *testing.T) {
+		t.Parallel()
 		// go is disabled so go/packages reports absent (a gap) deterministically,
 		// regardless of whether a Go toolchain happens to half-load a non-Go tree.
 		cfg := "version: 1\ntools:\n  go:\n    enabled: off\n    gate: fail\n"
@@ -215,6 +220,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 	})
 
 	t.Run("--require-tools is not suppressed by --report", func(t *testing.T) {
+		t.Parallel()
 		cfgPath := writeNonGoRepo(t, "version: 1\n")
 		var buf bytes.Buffer
 		code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, "--require-tools"}, &buf)
@@ -277,9 +283,11 @@ rules:
 // arbitrary repo using a config that lives outside it, while omitting --root
 // keeps the historical config-dir-as-root behaviour.
 func TestRun_Check_RootDecoupledFromConfig(t *testing.T) {
+	t.Parallel()
 	repoDir, cfgPath := writeRepoWithExternalConfig(t)
 
 	t.Run("--root scans the repo via an external config", func(t *testing.T) {
+		t.Parallel()
 		var buf bytes.Buffer
 		code := Run([]string{cmdCheck, "--root", repoDir, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 		if code != 1 {
@@ -305,6 +313,7 @@ func TestRun_Check_RootDecoupledFromConfig(t *testing.T) {
 	})
 
 	t.Run("omitting --root anchors at the config dir (unchanged default)", func(t *testing.T) {
+		t.Parallel()
 		// Without --root the scan root is the config directory, which is not a git
 		// repo here — scope resolution fails (exit 3), exactly as before this flag
 		// existed. This proves --root is the only behavioural change.
@@ -317,6 +326,7 @@ func TestRun_Check_RootDecoupledFromConfig(t *testing.T) {
 }
 
 func TestRun_Version(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	code := Run([]string{"--version"}, &buf)
 	if code != 0 {
@@ -329,6 +339,7 @@ func TestRun_Version(t *testing.T) {
 }
 
 func TestRun_NoArgs(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	code := Run(nil, &buf)
 	if code != 0 {
@@ -342,6 +353,7 @@ func TestRun_NoArgs(t *testing.T) {
 // TestRun_UnknownFlag_NotSilent verifies a bad flag exits 3 with a printed
 // error, not a silent exit (manual parser.Parse does not print on its own).
 func TestRun_UnknownFlag_NotSilent(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	code := Run([]string{cmdCheck, "--definitely-not-a-flag"}, &buf)
 	if code != 3 {
@@ -353,6 +365,7 @@ func TestRun_UnknownFlag_NotSilent(t *testing.T) {
 }
 
 func TestRun_Doctor(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	code := Run([]string{"doctor"}, &buf)
 	// Exit code varies with which tools are installed, but doctor always renders
@@ -367,6 +380,7 @@ func TestRun_Doctor(t *testing.T) {
 }
 
 func TestRun_Help_ShowsScan(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	code := Run([]string{flagHelp}, &buf)
 	if code != 0 {
@@ -381,6 +395,7 @@ func TestRun_Help_ShowsScan(t *testing.T) {
 }
 
 func TestRun_CheckHelp_ShowsAgentLoop(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	code := Run([]string{cmdCheck, flagHelp}, &buf)
 	if code != 0 {
@@ -400,6 +415,7 @@ func TestRun_CheckHelp_ShowsAgentLoop(t *testing.T) {
 // TestRun_Explain_ResolvesViaFullPipeline verifies explain finds the gate
 // finding through the same pipeline as check, with module labels resolved.
 func TestRun_Explain_ResolvesViaFullPipeline(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 
 	// Get the finding fingerprint from a check run.
@@ -431,6 +447,7 @@ func TestRun_Explain_ResolvesViaFullPipeline(t *testing.T) {
 // active gate finding yields one agent task with goal, files, and a
 // validation command matching the invocation.
 func TestRun_Check_AgentTasksPopulated(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 
 	var buf bytes.Buffer
@@ -471,6 +488,7 @@ func TestRun_Check_AgentTasksPopulated(t *testing.T) {
 // malformed labels file fails loudly (exit 3) rather than silently altering
 // the gate.
 func TestRun_Check_LabelsFileDeterministic(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 	dir := filepath.Dir(cfgPath)
 

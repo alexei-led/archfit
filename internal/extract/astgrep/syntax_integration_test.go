@@ -35,7 +35,12 @@ func sgSkipGuard(t *testing.T) {
 //
 // The test skips cleanly when sg is absent from PATH or when the resolved
 // binary is not ast-grep (util-linux ships an unrelated /usr/bin/sg).
+// Gate behind -short: this launches a real subprocess. Use make test-fast to
+// skip all integration tests for a subprocess-free inner loop.
 func TestSyntaxIntegration_JSONShape(t *testing.T) {
+	if testing.Short() {
+		t.Skip("subprocess integration test — skipped with -short (use make test-fast)")
+	}
 	t.Helper()
 	sgSkipGuard(t)
 
@@ -115,7 +120,11 @@ func TestSyntaxIntegration_JSONShape(t *testing.T) {
 //
 // Each sub-test is independent; adding a new language rule file requires only a
 // new fixture and a new table row.
+// Gate behind -short: runs real sg subprocesses for all four languages.
 func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("subprocess integration test — skipped with -short (use make test-fast)")
+	}
 	sgSkipGuard(t)
 
 	_, thisFile, _, ok := runtime.Caller(0)

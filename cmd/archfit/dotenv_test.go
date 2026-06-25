@@ -68,6 +68,7 @@ func TestLoadDotEnv_EmptyEnvVarWins(t *testing.T) {
 }
 
 func TestLoadDotEnv_MissingFileIsNoop(t *testing.T) {
+	t.Parallel()
 	// Must not panic or error on an absent file.
 	loadDotEnv(filepath.Join(t.TempDir(), "does-not-exist.env"))
 }

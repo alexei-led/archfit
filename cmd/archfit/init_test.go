@@ -60,6 +60,7 @@ func goListJSON(modPath, importPath string) []byte {
 }
 
 func TestInitCmd_ApplyWithoutLLM_IsError(t *testing.T) {
+	t.Parallel()
 	root := minimalRoot(t)
 	cmd := &InitCmd{
 		Root:   root,
@@ -78,6 +79,7 @@ func TestInitCmd_ApplyWithoutLLM_IsError(t *testing.T) {
 }
 
 func TestInitCmd_StdoutMode_NoFileWritten(t *testing.T) {
+	t.Parallel()
 	root := minimalRoot(t)
 	outPath := filepath.Join(root, ".archfit.yaml")
 	cmd := &InitCmd{
@@ -97,6 +99,7 @@ func TestInitCmd_StdoutMode_NoFileWritten(t *testing.T) {
 }
 
 func TestInitCmd_NoLLM_WritesFile(t *testing.T) {
+	t.Parallel()
 	root := minimalRoot(t)
 	outPath := filepath.Join(root, ".archfit.yaml")
 	cmd := &InitCmd{
@@ -120,6 +123,7 @@ func TestInitCmd_NoLLM_WritesFile(t *testing.T) {
 }
 
 func TestInitCmd_LLM_CommentedSuggestions(t *testing.T) {
+	t.Parallel()
 	root := minimalRoot(t)
 	if err := os.MkdirAll(filepath.Join(root, "internal", "mymod"), 0o750); err != nil {
 		t.Fatal(err)
@@ -156,6 +160,7 @@ func TestInitCmd_LLM_CommentedSuggestions(t *testing.T) {
 }
 
 func TestInitCmd_LLMApply_LiveFields(t *testing.T) {
+	t.Parallel()
 	root := minimalRoot(t)
 	if err := os.MkdirAll(filepath.Join(root, "internal", "mymod"), 0o750); err != nil {
 		t.Fatal(err)
@@ -199,6 +204,7 @@ func TestInitCmd_LLMApply_LiveFields(t *testing.T) {
 }
 
 func TestInitCmd_LLMStdout_NoFileWritten(t *testing.T) {
+	t.Parallel()
 	root := minimalRoot(t)
 	outPath := filepath.Join(root, ".archfit.yaml")
 
@@ -224,6 +230,7 @@ func TestInitCmd_LLMStdout_NoFileWritten(t *testing.T) {
 }
 
 func TestInitCmd_InvalidExistingConfig_LLMRunsFromFlags(t *testing.T) {
+	t.Parallel()
 	root := minimalRoot(t)
 	outPath := filepath.Join(root, ".archfit.yaml")
 	// Write a broken config at the output path.
