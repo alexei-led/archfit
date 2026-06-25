@@ -19,7 +19,7 @@ const (
 func TestUnsafeDensity_NoFacts_ReturnsNA(t *testing.T) {
 	in := signal.CommonInput{SyntaxFacts: nil}
 	res := modularity.UnsafeDensityMetric{}.Calculate(in)
-	if res.Band != "n/a" {
+	if res.Band != bandNAStr {
 		t.Errorf("Band = %q, want n/a when no unsafe_op facts", res.Band)
 	}
 	if res.Name != unsafeDensityName {
@@ -29,11 +29,11 @@ func TestUnsafeDensity_NoFacts_ReturnsNA(t *testing.T) {
 
 func TestUnsafeDensity_OnlyOtherKinds_ReturnsNA(t *testing.T) {
 	in := signal.CommonInput{SyntaxFacts: []diagnostic.SyntaxFact{
-		{Kind: "function", Module: "mymod", File: "a.rs"},
+		{Kind: kindFunctionSF, Module: "mymod", File: "a.rs"},
 		{Kind: "struct", Module: "mymod", File: "a.rs"},
 	}}
 	res := modularity.UnsafeDensityMetric{}.Calculate(in)
-	if res.Band != "n/a" {
+	if res.Band != bandNAStr {
 		t.Errorf("Band = %q, want n/a when no unsafe_op facts among other facts", res.Band)
 	}
 }

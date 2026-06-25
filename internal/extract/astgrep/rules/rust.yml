@@ -204,3 +204,22 @@ language: Rust
 rule:
   kind: call_expression
   regex: transmute
+---
+# rs-struct-field: matches pub struct declarations with named field lists and
+# estimates the field count from the line range (endLine - startLine - 1).
+# One fact per struct; $NAME captures the struct name.
+# Ceiling: tuple structs (struct Foo(A, B)) and unit structs (struct Foo;) are
+# excluded by the field_declaration_list constraint. Multi-line field declarations
+# diverge from the line-count estimate.
+id: rs-struct-field
+language: Rust
+rule:
+  all:
+    - kind: struct_item
+    - has:
+        kind: visibility_modifier
+    - has:
+        field: name
+        pattern: $NAME
+    - has:
+        kind: field_declaration_list

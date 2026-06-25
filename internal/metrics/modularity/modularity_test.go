@@ -11,7 +11,10 @@ import (
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
-const bandNAStr = "n/a"
+const (
+	bandNAStr      = "n/a"
+	kindFunctionSF = "function" // syntax fact Kind for functions; used by unsafe_density and struct_field_density tests
+)
 
 // crateHerdr is the single-crate fixture name reused across the Rust Cal-4 cases.
 const crateHerdr = "herdr"

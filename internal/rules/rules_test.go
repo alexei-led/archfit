@@ -62,6 +62,12 @@ const (
 	nameInternal = "internal"
 	nameMain     = "Main"
 	fileCmd      = "cmd/main.go"
+	// struct_field_max test constants
+	kindStructField = "struct_field"
+	nameRepo        = "Repo"
+	fileInfraRepo   = "infra/repo.go"
+	pathDomainGlob  = "domain/**"
+	pathInfraGlob   = "infra/**"
 	// test_in_production test constants
 	kindTestImport   = "test_import"
 	frameworkTestify = "testify/mock"
@@ -866,8 +872,8 @@ func makePublicAPIMaxConfig(ceiling int, gate string) config.RuleConfig {
 	return config.Config{
 		Version: 1,
 		Modules: map[string]config.ModuleDef{
-			layerDomain: {Paths: []string{"domain/**"}},
-			moduleInfra: {Paths: []string{"infra/**"}},
+			layerDomain: {Paths: []string{pathDomainGlob}},
+			moduleInfra: {Paths: []string{pathInfraGlob}},
 		},
 		Rules: []config.RuleDef{
 			{ID: "api-max", Type: typePublicAPIMax, Gate: gate, Max: maxPtr(ceiling)},
@@ -883,7 +889,7 @@ func TestPublicAPIMax(t *testing.T) {
 		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "FuncB", Exported: true},
 		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: kindStruct, Name: "Model", Exported: true},
 		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: nameInternal, Exported: false},
-		diagnostic.SyntaxFact{Language: graph.LangGo, File: "infra/repo.go", Kind: kindStruct, Name: "Repo", Exported: true},
+		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileInfraRepo, Kind: kindStruct, Name: nameRepo, Exported: true},
 	)
 
 	emptyGraph := makeGraph(nil)
@@ -1101,8 +1107,8 @@ func makePublicAPIChangeConfig(gate string) config.RuleConfig {
 	return config.Config{
 		Version: 1,
 		Modules: map[string]config.ModuleDef{
-			layerDomain: {Paths: []string{"domain/**"}},
-			moduleInfra: {Paths: []string{"infra/**"}},
+			layerDomain: {Paths: []string{pathDomainGlob}},
+			moduleInfra: {Paths: []string{pathInfraGlob}},
 		},
 		Rules: []config.RuleDef{
 			{ID: "api-change", Type: typePublicAPIChange, Gate: gate},
@@ -1116,7 +1122,7 @@ func TestPublicAPIChange(t *testing.T) {
 		{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
 		{Language: graph.LangGo, File: fileDomainB, Kind: kindStruct, Name: "Model", Exported: true},
 		{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: nameInternal, Exported: false},
-		{Language: graph.LangGo, File: "infra/repo.go", Kind: kindStruct, Name: "Repo", Exported: true},
+		{Language: graph.LangGo, File: fileInfraRepo, Kind: kindStruct, Name: nameRepo, Exported: true},
 		{Language: graph.LangGo, File: fileCmd, Kind: kindFunction, Name: nameMain, Exported: true}, // outside any module
 	}
 
@@ -1473,5 +1479,134 @@ func TestTestInProduction(t *testing.T) {
 				t.Errorf("gate unset Kind=%q, want advisory (warn-by-default)", findings[0].Kind)
 			}
 		})
+	})
+}
+
+// ---------------------------------------------------------------------------
+// StructFieldMax tests
+// ---------------------------------------------------------------------------
+
+const typeStructFieldMax = "struct_field_max"
+
+// makeStructFieldMaxConfig constructs a Config with two modules and a
+// struct_field_max rule, then returns the RuleConfig view for rules.New.
+func makeStructFieldMaxConfig(ceiling int) config.RuleConfig {
+	return config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			layerDomain: {Paths: []string{pathDomainGlob}},
+			moduleInfra: {Paths: []string{pathInfraGlob}},
+		},
+		Rules: []config.RuleDef{
+			{ID: "sf-max", Type: typeStructFieldMax, Max: maxPtr(ceiling)},
+		},
+	}.ForRules()
+}
+
+func TestStructFieldMax(t *testing.T) {
+	// struct_field SyntaxFacts: domain has AppState(10 fields), Small(2 fields);
+	// infra has Repo(3 fields).
+	allFacts := []diagnostic.SyntaxFact{
+		{Language: graph.LangGo, File: fileDomainA, Kind: kindStructField, Name: "AppState", Count: 10},
+		{Language: graph.LangGo, File: fileDomainB, Kind: kindStructField, Name: "Small", Count: 2},
+		{Language: graph.LangGo, File: fileInfraRepo, Kind: kindStructField, Name: nameRepo, Count: 3},
+		// non struct_field facts should be ignored
+		{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
+	}
+	emptyGraph := makeGraph(nil)
+	ev := func(facts []diagnostic.SyntaxFact) rules.Evidence {
+		return rules.Evidence{SyntaxFacts: facts}
+	}
+
+	t.Run("under_limit_no_finding", func(t *testing.T) {
+		rc := makeStructFieldMaxConfig(10)
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if findings := rs[0].Check(emptyGraph, ev(allFacts)); len(findings) != 0 {
+			t.Fatalf("want 0 findings at ceiling=10 (AppState=10), got %d", len(findings))
+		}
+	})
+
+	t.Run("over_limit_emits_finding", func(t *testing.T) {
+		rc := makeStructFieldMaxConfig(5)
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		findings := rs[0].Check(emptyGraph, ev(allFacts))
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding (AppState>5), got %d", len(findings))
+		}
+		f := findings[0]
+		if f.MatchedBy["struct"] != "AppState" {
+			t.Errorf("MatchedBy[struct]=%q, want AppState", f.MatchedBy["struct"])
+		}
+		if f.MatchedBy["count"] != "10" {
+			t.Errorf("MatchedBy[count]=%q, want 10", f.MatchedBy["count"])
+		}
+	})
+
+	t.Run("zero_count_ignored", func(t *testing.T) {
+		// Count=0 (tuple/unit struct) must never fire a finding.
+		facts := []diagnostic.SyntaxFact{
+			{Language: graph.LangGo, File: fileDomainA, Kind: kindStructField, Name: "UnitStruct", Count: 0},
+		}
+		rc := makeStructFieldMaxConfig(0)
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if findings := rs[0].Check(emptyGraph, ev(facts)); len(findings) != 0 {
+			t.Fatalf("Count=0 must be ignored, got %d findings", len(findings))
+		}
+	})
+
+	t.Run("empty_facts_returns_nil", func(t *testing.T) {
+		rc := makeStructFieldMaxConfig(1)
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if findings := rs[0].Check(emptyGraph, ev(nil)); len(findings) != 0 {
+			t.Fatalf("want 0 findings for empty facts, got %d", len(findings))
+		}
+	})
+
+	t.Run("default_gate_is_warn", func(t *testing.T) {
+		// struct_field_max has defaultGateForType="warn".
+		rc := makeStructFieldMaxConfig(5) // gate unset → warn
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		findings := rs[0].Check(emptyGraph, ev(allFacts))
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding, got %d", len(findings))
+		}
+		if findings[0].Kind != kindAdvisory {
+			t.Errorf("gate unset Kind=%q, want advisory (warn-by-default)", findings[0].Kind)
+		}
+	})
+}
+
+func TestStructFieldMax_InvalidConfig(t *testing.T) {
+	t.Run("nil_max_returns_error", func(t *testing.T) {
+		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+			{ID: "x", Type: typeStructFieldMax},
+		}})
+		if err == nil {
+			t.Fatal("want error for nil Max, got nil")
+		}
+	})
+
+	t.Run("negative_max_returns_error", func(t *testing.T) {
+		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+			{ID: "x", Type: typeStructFieldMax, Max: maxPtr(-1)},
+		}})
+		if err == nil {
+			t.Fatal("want error for negative Max, got nil")
+		}
 	})
 }

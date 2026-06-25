@@ -30,6 +30,10 @@ const (
 	kindAdvisory = "advisory"
 )
 
+// matchedByModule is the MatchedBy key for the owning module path, shared
+// across publicAPIMax, publicAPIChange, and structFieldMax.
+const matchedByModule = "module"
+
 // Evidence carries supplemental evidence provided to a rule's Check method.
 // Lifecycle status (new vs baselined) is NOT evidence — it is assigned after
 // rules run, by status.Assign against the baseline.
@@ -94,6 +98,11 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 			inner = &publicAPIChange{def: def, mm: cfg.ModuleMap}
 		case "test_in_production":
 			inner = &testInProduction{def: def, mm: cfg.ModuleMap}
+		case "struct_field_max":
+			if err := validateStructFieldMaxDef(def); err != nil {
+				return nil, err
+			}
+			inner = &structFieldMax{def: def, mm: cfg.ModuleMap, max: *def.Max}
 		default:
 			return nil, fmt.Errorf("rules: unknown rule type %q (id=%q)", def.Type, def.ID)
 		}
@@ -113,7 +122,7 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 // test_in_production default to "warn" (advisory drift signal).
 func defaultGateForType(ruleType string) string {
 	switch ruleType {
-	case "public_api_change", "test_in_production":
+	case "public_api_change", "test_in_production", "struct_field_max":
 		return "warn"
 	}
 	return ""
@@ -604,9 +613,9 @@ func (r *publicAPIMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 				To:   finding.Endpoint{Path: mod},
 			},
 			MatchedBy: map[string]string{
-				"module": mod,
-				"count":  strconv.Itoa(count),
-				"max":    strconv.Itoa(r.max),
+				matchedByModule: mod,
+				"count":         strconv.Itoa(count),
+				"max":           strconv.Itoa(r.max),
 			},
 			Why:        fmt.Sprintf("Module %q has %d exported declarations, exceeding the limit of %d", mod, count, r.max),
 			Constraint: "Reduce the public API surface or raise the max threshold",
@@ -675,10 +684,10 @@ func (r *publicAPIChange) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 				To:   finding.Endpoint{Path: mod},
 			},
 			MatchedBy: map[string]string{
-				"module": mod,
-				"name":   f.Name,
-				"kind":   f.Kind,
-				"file":   f.File,
+				matchedByModule: mod,
+				"name":          f.Name,
+				"kind":          f.Kind,
+				"file":          f.File,
 			},
 			Why:        fmt.Sprintf("Exported declaration %q added to module %q (%s in %s)", f.Name, mod, f.Kind, f.File),
 			Constraint: "Review new public API additions; baseline when intentional",
@@ -757,6 +766,112 @@ func (r *testInProduction) Check(_ *graph.Graph, ev Evidence) []finding.Finding 
 			Constraint: "Move to *_test.go or add a build tag; test frameworks must not ship in the production binary",
 		}
 		out = append(out, fnd)
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// StructFieldMax
+// ---------------------------------------------------------------------------
+
+// validateStructFieldMaxDef validates a RuleDef for the struct_field_max rule type.
+func validateStructFieldMaxDef(def config.RuleDef) error {
+	if def.Max == nil {
+		return fmt.Errorf("rules: struct_field_max %q requires max to be set", def.ID)
+	}
+	if *def.Max < 0 {
+		return fmt.Errorf("rules: struct_field_max %q: max must be non-negative, got %d", def.ID, *def.Max)
+	}
+	return nil
+}
+
+// structFieldMax fires when a struct's estimated field count exceeds the
+// configured maximum. It uses struct_field SyntaxFacts (one per exported
+// struct; Count = line-range heuristic) and emits one finding per violating
+// struct per module. When ev.SyntaxFacts is empty (syntax off), returns nil.
+// Default gate is "warn"; config can promote to "fail".
+//
+// Field count source: SyntaxFact.Count when > 0 (line-range heuristic from
+// the go-struct-field/rs-struct-field rules). Facts with Count == 0 are
+// skipped (tuple/unit structs with no named fields).
+type structFieldMax struct {
+	def config.RuleDef
+	mm  config.ModuleMap
+	max int
+}
+
+func (r *structFieldMax) ID() string { return r.def.ID }
+
+func (r *structFieldMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
+	if len(ev.SyntaxFacts) == 0 {
+		return nil
+	}
+
+	// Collect max field count per (module, struct-name).
+	// A struct name may appear in multiple files of the same module;
+	// use the maximum count to surface the worst case.
+	type key struct{ mod, name string }
+	maxCounts := make(map[key]int)
+	for _, f := range ev.SyntaxFacts {
+		if f.Kind != "struct_field" || f.Count == 0 {
+			continue
+		}
+		mod, ok := r.mm.ModuleFor(f.File)
+		if !ok {
+			continue
+		}
+		k := key{mod: mod, name: f.Name}
+		if f.Count > maxCounts[k] {
+			maxCounts[k] = f.Count
+		}
+	}
+
+	if len(maxCounts) == 0 {
+		return nil
+	}
+
+	// Sort for deterministic output.
+	type entry struct {
+		mod, name string
+		count     int
+	}
+	entries := make([]entry, 0, len(maxCounts))
+	for k, c := range maxCounts {
+		entries = append(entries, entry{mod: k.mod, name: k.name, count: c})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].mod != entries[j].mod {
+			return entries[i].mod < entries[j].mod
+		}
+		return entries[i].name < entries[j].name
+	})
+
+	var out []finding.Finding
+	for _, e := range entries {
+		if e.count <= r.max {
+			continue
+		}
+		h := sha256.Sum256([]byte(r.def.ID + "\x00" + e.mod + "\x00" + e.name))
+		f := finding.Finding{
+			ID:       hex.EncodeToString(h[:16]),
+			Kind:     kindGate,
+			RuleID:   r.def.ID,
+			Status:   finding.StatusNew,
+			Severity: finding.SeverityMedium,
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Path: e.mod},
+				To:   finding.Endpoint{Path: e.mod},
+			},
+			MatchedBy: map[string]string{
+				matchedByModule: e.mod,
+				"struct":        e.name,
+				"count":         strconv.Itoa(e.count),
+				"max":           strconv.Itoa(r.max),
+			},
+			Why:        fmt.Sprintf("Struct %q in module %q has ~%d fields, exceeding the limit of %d", e.name, e.mod, e.count, r.max),
+			Constraint: "Consider splitting this struct or extracting nested concerns",
+		}
+		out = append(out, f)
 	}
 	return out
 }

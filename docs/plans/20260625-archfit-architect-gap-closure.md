@@ -147,18 +147,18 @@ while keeping the judgment layer (LLM/human) where the doc says it belongs.
 
 ### Task 3: Cat 2 — struct field-count facts + opt-in `struct_field_max` rule (Go/Rust)
 
-- [ ] add ast-grep rules counting struct fields (Rust `struct $N { $$$F }` →
+- [x] add ast-grep rules counting struct fields (Rust `struct $N { $$$F }` →
       `metaVariables.multi.F` length; Go struct field list) to `rust.yml`/`go.yml`; verify field-count
       capture against `sg` (e.g. 6 fields on a known struct, 106 on herdr `AppState`)
-- [ ] carry the field count on the fact (extend `SyntaxFact` with an optional count, or emit one fact
+- [x] carry the field count on the fact (extend `SyntaxFact` with an optional count, or emit one fact
       per field and aggregate) and map ruleIds in `goRuleKinds`/`rustRuleKinds`
-- [ ] add an opt-in `struct_field_max` rule type: `case "struct_field_max":` in `rules.go` `New()`,
+- [x] add an opt-in `struct_field_max` rule type: `case "struct_field_max":` in `rules.go` `New()`,
       a `structFieldMax` struct consuming `ev.SyntaxFacts` + a config `Max` field + a `validate…Def`,
       mirroring `public_api_max`; `defaultGateForType` → `warn`
-- [ ] surface field-count facts in the SyntaxSurface output (report-only when no rule declared)
-- [ ] extend the Go + Rust fixtures with a multi-field struct; add the required kind row
-- [ ] write unit tests for `structFieldMax.Check` (over/under threshold, no-config) + density facts
-- [ ] regenerate goldens + run full gate (`make test`/`make lint`/`TestGolden`/`TestArchImports`/
+- [x] surface field-count facts in the SyntaxSurface output (report-only when no rule declared)
+- [x] extend the Go + Rust fixtures with a multi-field struct; add the required kind row
+- [x] write unit tests for `structFieldMax.Check` (over/under threshold, no-config) + density facts
+- [x] regenerate goldens + run full gate (`make test`/`make lint`/`TestGolden`/`TestArchImports`/
       `make archfit`) — must pass before Task 4
 
 ### Task 4: Cat 3+8 — production-only panic/unwrap density (Rust/Go), report-only

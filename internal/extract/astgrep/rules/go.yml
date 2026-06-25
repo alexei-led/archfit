@@ -260,3 +260,24 @@ rule:
   kind: import_spec
   has:
     pattern: '"github.com/DATA-DOG/go-sqlmock"'
+---
+# go-struct-field: matches exported struct type declarations and estimates the
+# field count from the line range (endLine - startLine - 1). One fact per struct.
+# The field count estimate is consumed by the struct_field_max rule and the
+# struct_field_density report-only metric.
+# Ceiling: multi-line field declarations and single-line struct literals diverge
+# from the line-count estimate; use as an approximate count.
+id: go-struct-field
+language: go
+rule:
+  kind: type_spec
+  all:
+    - has:
+        field: name
+        pattern: $NAME
+        regex: ^[A-Z]
+    - has:
+        field: type
+        kind: struct_type
+  inside:
+    kind: type_declaration

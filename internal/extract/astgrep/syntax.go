@@ -31,17 +31,18 @@ var rustRules string
 
 // SyntaxFact Kind constants for Go and TypeScript declarations and routes.
 const (
-	kindFunction   = "function"
-	kindMethod     = "method"
-	kindStruct     = "struct"
-	kindInterface  = "interface"
-	kindTypeAlias  = "type_alias"
-	kindRoute      = "route"
-	kindClass      = "class"
-	kindEnum       = "enum"
-	kindAnnotation = "annotation"
-	kindTestImport = "test_import"
-	kindUnsafeOp   = "unsafe_op"
+	kindFunction    = "function"
+	kindMethod      = "method"
+	kindStruct      = "struct"
+	kindInterface   = "interface"
+	kindTypeAlias   = "type_alias"
+	kindRoute       = "route"
+	kindClass       = "class"
+	kindEnum        = "enum"
+	kindAnnotation  = "annotation"
+	kindTestImport  = "test_import"
+	kindUnsafeOp    = "unsafe_op"
+	kindStructField = "struct_field"
 )
 
 // Language identifier constants used as keys in embeddedRules and langRuleKinds.
@@ -123,6 +124,8 @@ var goRuleKinds = map[string]kindInfo{
 	"go-import-chi":      {Framework: fwGroupChi, IsSignal: true},
 	"go-import-fiber":    {Framework: fwGroupFiber, IsSignal: true},
 	"go-import-gorilla":  {Framework: fwGroupGorilla, IsSignal: true},
+	// Struct-field rules: one fact per exported struct; Count = estimated field count.
+	"go-struct-field": {Kind: kindStructField},
 	// Test-import rules: emit test_import facts for production Go files.
 	"go-test-import-testify-mock":    {Kind: kindTestImport, Framework: fwGroupTestifyMock},
 	"go-test-import-testify-assert":  {Kind: kindTestImport, Framework: fwGroupTestifyAssert},
@@ -205,6 +208,8 @@ var rustRuleKinds = map[string]kindInfo{
 	"rs-unsafe-cell":  {Kind: kindUnsafeOp},
 	"rs-raw-cast":     {Kind: kindUnsafeOp},
 	"rs-transmute":    {Kind: kindUnsafeOp},
+	// Struct-field rules: one fact per pub struct with named fields; Count = estimated field count.
+	"rs-struct-field": {Kind: kindStructField},
 }
 
 // langRuleKinds maps a language identifier to its ruleId→kindInfo table.
@@ -342,6 +347,17 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 
 			exported := isExported(lang, m.RuleID, name)
 
+			// For struct_field facts, estimate the field count from the line range.
+			// count = endLine - startLine - 1 (opening and closing brace lines excluded).
+			// Negative results (single-line structs) clamp to 0.
+			count := 0
+			if ki.Kind == kindStructField {
+				count = m.Range.End.Line - m.Range.Start.Line - 1
+				if count < 0 {
+					count = 0
+				}
+			}
+
 			facts = append(facts, diagnostic.SyntaxFact{
 				Language:           lang,
 				File:               m.File,
@@ -352,6 +368,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 				EndLine:            m.Range.End.Line + 1,
 				Framework:          ki.Framework,
 				FrameworkConfirmed: ki.Kind == kindRoute && ki.Framework != "",
+				Count:              count,
 			})
 		}
 	}
@@ -415,17 +432,20 @@ func isExported(lang, ruleID, name string) bool {
 		// Public = name does not start with underscore.
 		return len(name) > 0 && name[0] != '_'
 	case langRust:
-		// Route, attribute, signal, test-import, and unsafe-op ruleIds are never exported.
+		// Route, attribute, signal, test-import, unsafe-op, and struct-field ruleIds are never exported.
+		// struct-field facts represent whole structs with field counts, not individual API surface entries.
 		if strings.HasPrefix(ruleID, "rs-route-") || strings.HasPrefix(ruleID, "rs-import-") ||
 			ruleID == "rs-attribute" || strings.HasPrefix(ruleID, "rs-test-import-") ||
-			strings.HasPrefix(ruleID, "rs-unsafe-") || ruleID == "rs-raw-cast" || ruleID == "rs-transmute" {
+			strings.HasPrefix(ruleID, "rs-unsafe-") || ruleID == "rs-raw-cast" || ruleID == "rs-transmute" ||
+			ruleID == "rs-struct-field" {
 			return false
 		}
 		// The YAML rule already requires visibility_modifier, so any match is pub.
 		return true
 	default: // go and future languages: uppercase-first convention
+		// struct-field facts represent whole structs for field-count analysis, not API surface.
 		if strings.HasPrefix(ruleID, "go-route-") || strings.HasPrefix(ruleID, "go-import-") ||
-			strings.HasPrefix(ruleID, "go-test-import-") {
+			strings.HasPrefix(ruleID, "go-test-import-") || ruleID == "go-struct-field" {
 			return false
 		}
 		return len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z'

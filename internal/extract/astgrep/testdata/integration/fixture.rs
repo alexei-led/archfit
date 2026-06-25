@@ -52,3 +52,10 @@ pub unsafe fn raw_bytes(ptr: *const u8) -> u8 {
 pub fn raw_cast_example(val: u32) -> *const u32 {
     val as *const u32
 }
+
+// MultiField exercises rs-struct-field (struct with named field_declaration_list).
+pub struct MultiField {
+    pub alpha: u32,
+    pub beta: String,
+    pub gamma: bool,
+}

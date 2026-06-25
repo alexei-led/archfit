@@ -19,6 +19,7 @@ type SyntaxFact struct {
 	Exported           bool   `json:"exported,omitempty"`
 	StartLine          int    `json:"start_line"`
 	EndLine            int    `json:"end_line,omitempty"`
+	Count              int    `json:"count,omitempty"`           // for kindStructField: estimated field count from line range (endLine - startLine - 1)
 	Role               string `json:"role,omitempty"`            // handler|service|repository|domain (derived)
 	RoleConf           string `json:"role_confidence,omitempty"` // high|medium|low
 	Evidence           string `json:"role_evidence,omitempty"`   // e.g. "decorator @Controller", "path contains repository"
