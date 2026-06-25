@@ -29,6 +29,7 @@ const (
 	kindTestImportStr  = "test_import"
 	kindUnsafeOpStr    = "unsafe_op"
 	kindStructFieldStr = "struct_field"
+	kindPanicOpStr     = "panic_op"
 	langTypeScriptStr  = "typescript"
 	langPythonStr      = "python"
 	langRustStr        = "rust"

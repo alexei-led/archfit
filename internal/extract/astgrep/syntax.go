@@ -43,6 +43,7 @@ const (
 	kindTestImport  = "test_import"
 	kindUnsafeOp    = "unsafe_op"
 	kindStructField = "struct_field"
+	kindPanicOp     = "panic_op"
 )
 
 // Language identifier constants used as keys in embeddedRules and langRuleKinds.
@@ -126,6 +127,8 @@ var goRuleKinds = map[string]kindInfo{
 	"go-import-gorilla":  {Framework: fwGroupGorilla, IsSignal: true},
 	// Struct-field rules: one fact per exported struct; Count = estimated field count.
 	"go-struct-field": {Kind: kindStructField},
+	// Panic-operation rules: report-only, never gates.
+	"go-panic": {Kind: kindPanicOp},
 	// Test-import rules: emit test_import facts for production Go files.
 	"go-test-import-testify-mock":    {Kind: kindTestImport, Framework: fwGroupTestifyMock},
 	"go-test-import-testify-assert":  {Kind: kindTestImport, Framework: fwGroupTestifyAssert},
@@ -210,6 +213,10 @@ var rustRuleKinds = map[string]kindInfo{
 	"rs-transmute":    {Kind: kindUnsafeOp},
 	// Struct-field rules: one fact per pub struct with named fields; Count = estimated field count.
 	"rs-struct-field": {Kind: kindStructField},
+	// Panic-operation rules: report-only, never gates.
+	"rs-unwrap": {Kind: kindPanicOp},
+	"rs-expect": {Kind: kindPanicOp},
+	"rs-panic":  {Kind: kindPanicOp},
 }
 
 // langRuleKinds maps a language identifier to its ruleId→kindInfo table.
@@ -332,6 +339,11 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 			// prefix) as the name so the fact is identifiable in displays and tests.
 			if name == "" && ki.Kind == kindUnsafeOp {
 				name = strings.TrimPrefix(m.RuleID, "rs-")
+			}
+			// panic_op rules have no $NAME metavar. Use the ruleId (minus the
+			// language prefix) as the name so the fact is identifiable in displays.
+			if name == "" && ki.Kind == kindPanicOp {
+				name = strings.TrimPrefix(strings.TrimPrefix(m.RuleID, "rs-"), "go-")
 			}
 			if name == "" {
 				continue

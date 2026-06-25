@@ -24,3 +24,11 @@ type BigStruct struct {
 	FieldB int
 	FieldC float64
 }
+
+// PanicFixture exercises go-panic.
+func PanicFixture(v interface{}) string {
+	if v == nil {
+		panic("nil input") // go-panic
+	}
+	return ""
+}

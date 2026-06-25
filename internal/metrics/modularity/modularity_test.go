@@ -14,6 +14,14 @@ import (
 const (
 	bandNAStr      = "n/a"
 	kindFunctionSF = "function" // syntax fact Kind for functions; used by unsafe_density and struct_field_density tests
+	kindStructStr  = "struct"   // syntax fact Kind for structs; used by unsafe_density and panic_density tests
+	// Shared file/module names used across unsafe_density and panic_density tests.
+	fileARs    = "a.rs"
+	fileMainRs = "main.rs"
+	modMyMod   = "mymod"
+	modMyApp   = "myapp"
+	langRust   = "rust"
+	langGo     = "go"
 )
 
 // crateHerdr is the single-crate fixture name reused across the Rust Cal-4 cases.

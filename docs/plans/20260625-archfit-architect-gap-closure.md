@@ -163,15 +163,15 @@ while keeping the judgment layer (LLM/human) where the doc says it belongs.
 
 ### Task 4: Cat 3+8 — production-only panic/unwrap density (Rust/Go), report-only
 
-- [ ] add ast-grep rules for `unwrap`/`expect`/`panic!` (Rust) and `panic(` (Go); map to a
+- [x] add ast-grep rules for `unwrap`/`expect`/`panic!` (Rust) and `panic(` (Go); map to a
       `kindPanicOp` Kind in `rustRuleKinds`/`goRuleKinds`
-- [ ] **exclude test code** using the existing `internal/syntax/testfile.go` helper (P1) so the
+- [x] **exclude test code** using the existing `internal/syntax/testfile.go` helper (P1) so the
       production count does not reproduce the 126 herdr number this study judged OVERSTATED — assert
       the production-only count is materially below the naive module-wide count in a test
-- [ ] add a report-only `panic_density` count over the test-excluded facts, `BandInformational`
-- [ ] surface in SyntaxSurface; add fixtures (a prod panic + a test-file panic that must be excluded) + required-kind rows for Go and Rust
-- [ ] write unit tests proving test-file panics are excluded and production panics are counted
-- [ ] regenerate goldens + full gate — must pass before Task 5
+- [x] add a report-only `panic_density` count over the test-excluded facts, `BandInformational`
+- [x] surface in SyntaxSurface; add fixtures (a prod panic + a test-file panic that must be excluded) + required-kind rows for Go and Rust
+- [x] write unit tests proving test-file panics are excluded and production panics are counted
+- [x] regenerate goldens + full gate — must pass before Task 5
 
 ### Task 5: Cat 7 — Rust global mutable state facts, report-only
 

@@ -59,3 +59,11 @@ pub struct MultiField {
     pub beta: String,
     pub gamma: bool,
 }
+
+// Panic-op fixture: exercises rs-unwrap, rs-expect, rs-panic.
+pub fn fixture_panics() -> String {
+    let v: Option<String> = None;
+    let _ = v.unwrap();           // rs-unwrap
+    let _ = v.expect("oops");     // rs-expect
+    panic!("fixture panic");      // rs-panic
+}

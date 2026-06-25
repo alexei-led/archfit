@@ -29,8 +29,8 @@ func TestUnsafeDensity_NoFacts_ReturnsNA(t *testing.T) {
 
 func TestUnsafeDensity_OnlyOtherKinds_ReturnsNA(t *testing.T) {
 	in := signal.CommonInput{SyntaxFacts: []diagnostic.SyntaxFact{
-		{Kind: kindFunctionSF, Module: "mymod", File: "a.rs"},
-		{Kind: "struct", Module: "mymod", File: "a.rs"},
+		{Kind: kindFunctionSF, Module: modMyMod, File: fileARs},
+		{Kind: kindStructStr, Module: modMyMod, File: fileARs},
 	}}
 	res := modularity.UnsafeDensityMetric{}.Calculate(in)
 	if res.Band != bandNAStr {
@@ -46,7 +46,7 @@ func TestUnsafeDensity_SomeFacts_ReturnsTotalCount(t *testing.T) {
 		{Kind: "function", Module: unsafeActorMod, File: unsafeActorFile}, // ignored
 	}}
 	res := modularity.UnsafeDensityMetric{}.Calculate(in)
-	if res.Band != "info" {
+	if res.Band != bandInfo {
 		t.Errorf("Band = %q, want info", res.Band)
 	}
 	if res.Value != 3 {
@@ -59,14 +59,14 @@ func TestUnsafeDensity_SomeFacts_ReturnsTotalCount(t *testing.T) {
 
 func TestUnsafeDensity_NoModule_FallsBackToFile(t *testing.T) {
 	in := signal.CommonInput{SyntaxFacts: []diagnostic.SyntaxFact{
-		{Kind: unsafeOpKind, Module: "", File: "main.rs"},
-		{Kind: unsafeOpKind, Module: "", File: "main.rs"},
+		{Kind: unsafeOpKind, Module: "", File: fileMainRs},
+		{Kind: unsafeOpKind, Module: "", File: fileMainRs},
 	}}
 	res := modularity.UnsafeDensityMetric{}.Calculate(in)
 	if res.Value != 2 {
 		t.Errorf("Value = %v, want 2", res.Value)
 	}
-	if res.Band != "info" {
+	if res.Band != bandInfo {
 		t.Errorf("Band = %q, want info", res.Band)
 	}
 }

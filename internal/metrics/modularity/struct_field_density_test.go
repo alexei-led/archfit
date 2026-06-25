@@ -30,7 +30,7 @@ func TestStructFieldDensity_NoFacts_ReturnsNA(t *testing.T) {
 func TestStructFieldDensity_OnlyOtherKinds_ReturnsNA(t *testing.T) {
 	in := signal.CommonInput{SyntaxFacts: []diagnostic.SyntaxFact{
 		{Kind: kindFunctionSF, Module: structFieldMod, File: structFieldFile},
-		{Kind: "struct", Module: structFieldMod, File: structFieldFile},
+		{Kind: kindStructStr, Module: structFieldMod, File: structFieldFile},
 	}}
 	res := modularity.StructFieldDensityMetric{}.Calculate(in)
 	if res.Band != bandNAStr {

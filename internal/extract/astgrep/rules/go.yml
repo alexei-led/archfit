@@ -281,3 +281,13 @@ rule:
         kind: struct_type
   inside:
     kind: type_declaration
+---
+# Panic-operation rule: panic() calls — production-only signal.
+# ruleId maps to kindPanicOp in goRuleKinds (syntax.go).
+# regex: '^panic\(' — the anchored paren excludes panicHelper() and other
+# functions whose names start with "panic" but are not the builtin.
+id: go-panic
+language: go
+rule:
+  kind: call_expression
+  regex: ^panic\(

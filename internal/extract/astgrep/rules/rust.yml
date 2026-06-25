@@ -223,3 +223,30 @@ rule:
         pattern: $NAME
     - has:
         kind: field_declaration_list
+---
+# Panic-operation rules: unwrap(), expect(...), and panic!() calls — production-only
+# signal. ruleIds map to kindPanicOp in rustRuleKinds (syntax.go).
+# rs-unwrap/rs-expect: call_expression with regex 'unwrap\(' / 'expect\(' — the
+#   anchored paren excludes safe variants: unwrap_or, unwrap_or_default,
+#   unwrap_or_else, expect_err, etc.
+# rs-panic: macro_invocation (Rust tree-sitter grammar; panic!() is NOT a
+#   call_expression). '^panic' anchors to the macro name.
+# Ceiling: inline #[cfg(test)] mod blocks are not excluded by path analysis;
+# only files under /tests/ are excluded by IsTestFile.
+id: rs-unwrap
+language: Rust
+rule:
+  kind: call_expression
+  regex: unwrap\(
+---
+id: rs-expect
+language: Rust
+rule:
+  kind: call_expression
+  regex: expect\(
+---
+id: rs-panic
+language: Rust
+rule:
+  kind: macro_invocation
+  regex: ^panic
