@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/metrics/metricstest"
 	"github.com/alexei-led/archfit/internal/metrics/modularity"
 	"github.com/alexei-led/archfit/internal/model/graph"
@@ -126,5 +127,109 @@ func TestStructuralWeight_NoLOCIsNA(t *testing.T) {
 	})
 	if res.Band != bandNAStr {
 		t.Errorf("expected n/a without LOC data, got %q", res.Band)
+	}
+}
+
+func TestFileStructuralWeight_GodFileBySize(t *testing.T) {
+	// One file far over 4x the median and floor → flagged.
+	// Three small files (median ~150) → not flagged.
+	fileLOC := map[string]int{
+		"internal/score/score.go": 900, // ~6x median → god-file
+		"internal/small/a.go":     150,
+		"internal/small/b.go":     140,
+		"internal/small/c.go":     160,
+	}
+	res := modularity.FileStructuralWeightMetric{}.Calculate(signal.SizeInput{
+		Size: signal.SizeSignals{FileLOC: fileLOC},
+	})
+	if res.Value != 1 {
+		t.Errorf("expected 1 god-file, got %v; display=%q", res.Value, res.Display)
+	}
+	if !strings.Contains(res.Display, "score.go") {
+		t.Errorf("expected score.go flagged; display=%q", res.Display)
+	}
+	if strings.Contains(res.Display, "small") {
+		t.Errorf("small files must not be god-files; display=%q", res.Display)
+	}
+}
+
+func TestFileStructuralWeight_NoLOCIsNA(t *testing.T) {
+	res := modularity.FileStructuralWeightMetric{}.Calculate(signal.SizeInput{})
+	if res.Band != bandNAStr {
+		t.Errorf("expected n/a without LOC data, got %q", res.Band)
+	}
+}
+
+func TestFileStructuralWeight_NoGodsClean(t *testing.T) {
+	// All files similar size → no god-files (value 0).
+	fileLOC := map[string]int{
+		"pkg/a/a.go": 100,
+		"pkg/b/b.go": 110,
+		"pkg/c/c.go": 95,
+		"pkg/d/d.go": 105,
+		"pkg/e/e.go": 108,
+	}
+	res := modularity.FileStructuralWeightMetric{}.Calculate(signal.SizeInput{
+		Size: signal.SizeSignals{FileLOC: fileLOC},
+	})
+	if res.Value != 0 {
+		t.Errorf("expected 0 god-files for uniform sizes, got %v; display=%q", res.Value, res.Display)
+	}
+	if res.Band != result.BandInformational {
+		t.Errorf("expected info band, got %q", res.Band)
+	}
+}
+
+func TestFileStructuralWeight_MedianThreshold(t *testing.T) {
+	// Verify threshold math: median=200, 4x=800, floor=400, threshold=800.
+	// File at 799 → NOT flagged. File at 800 → flagged.
+	base := map[string]int{
+		"a.go": 200, "b.go": 200, "c.go": 200, "d.go": 200, "e.go": 200,
+	}
+	notGod := make(map[string]int)
+	for k, v := range base {
+		notGod[k] = v
+	}
+	notGod["big.go"] = 799
+	res := modularity.FileStructuralWeightMetric{}.Calculate(signal.SizeInput{
+		Size: signal.SizeSignals{FileLOC: notGod},
+	})
+	if res.Value != 0 {
+		t.Errorf("799 LOC (just under threshold 800) must not be flagged; got %v display=%q", res.Value, res.Display)
+	}
+
+	isGod := make(map[string]int)
+	for k, v := range base {
+		isGod[k] = v
+	}
+	isGod["big.go"] = 800
+	res2 := modularity.FileStructuralWeightMetric{}.Calculate(signal.SizeInput{
+		Size: signal.SizeSignals{FileLOC: isGod},
+	})
+	if res2.Value != 1 {
+		t.Errorf("800 LOC (at threshold) must be flagged; got %v display=%q", res2.Value, res2.Display)
+	}
+}
+
+func TestFileStructuralWeight_DeterministicSort(t *testing.T) {
+	// Two files with the same LOC → order must be by path asc (deterministic).
+	fileLOC := map[string]int{
+		"z/file.go":  900, // same LOC
+		"a/file.go":  900, // same LOC
+		"x/small.go": 100,
+		"b/small.go": 110,
+		"c/small.go": 95,
+	}
+	res := modularity.FileStructuralWeightMetric{}.Calculate(signal.SizeInput{
+		Size: signal.SizeSignals{FileLOC: fileLOC},
+	})
+	// a/file.go must come before z/file.go in display
+	aIdx := strings.Index(res.Display, "a/file")
+	zIdx := strings.Index(res.Display, "z/file")
+	if aIdx < 0 || zIdx < 0 {
+		t.Fatalf("expected both a/file and z/file in display; got %q", res.Display)
+	}
+	if aIdx > zIdx {
+		t.Errorf("a/file.go must appear before z/file.go (path tiebreaker); display=%q", res.Display)
 	}
 }

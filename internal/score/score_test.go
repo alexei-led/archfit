@@ -72,6 +72,7 @@ func richDiagnostic() diagnostic.Diagnostic {
 		metric("instability", 2, "info", "high"),
 		metric("propagation_cost", 0.10, "info", "high"),
 		metric("structural_weight", 1, "info", "high"),
+		metric("file_structural_weight", 3, "info", "high"),
 		metric("hidden_coupling", 0, "info", "high"),
 		metric("functional_candidates", 0, "info", "high"),
 		metric("change_coupling", 1, "info", "high"),

@@ -488,6 +488,14 @@ func cohesionModularity(mi metricIndex, base Confidence) Dimension {
 		dim.Evidence = append(dim.Evidence, fmt.Sprintf("god modules (LOC skew): %d", n))
 		value -= capInt(n*12, 40)
 	}
+	if gf, ok := mi.measured("file_structural_weight"); ok {
+		// Evidence-only: file-level god-files are surfaced alongside the module-level
+		// signal without double-counting (same root cause, different granularity).
+		// No value -= penalty here.
+		measured = true
+		n := int(gf.Value)
+		dim.Evidence = append(dim.Evidence, fmt.Sprintf("god files (single-file LOC skew): %d", n))
+	}
 	if hc, ok := mi.measured("hidden_coupling"); ok {
 		measured = true
 		n := int(hc.Value)
