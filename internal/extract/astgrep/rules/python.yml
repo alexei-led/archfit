@@ -65,7 +65,7 @@ rule:
   pattern: '@$RECV.$VERB($PATH)'
 constraints:
   VERB:
-    regex: '^(get|post|put|delete|patch|head|options|route|websocket|on_startup|on_shutdown)$'
+    regex: ^(get|post|put|delete|patch|head|options|route|websocket|on_startup|on_shutdown)$
 ---
 # Django urlpatterns: path("/url", view) call inside urlpatterns assignment.
 # $PATH captures the first argument (the URL pattern string).
@@ -115,3 +115,27 @@ rule:
     - pattern: from django.urls import $$$
     - pattern: from django.conf.urls import $$$
     - pattern: import django
+---
+# Test-framework import rules: emit test_import facts for production Python files.
+# ruleId → Kind=test_import (see syntax.go pyRuleKinds).
+id: py-test-import-pytest
+language: Python
+rule:
+  any:
+    - pattern: import pytest
+    - pattern: from pytest import $$$
+---
+id: py-test-import-unittest
+language: Python
+rule:
+  any:
+    - pattern: import unittest
+    - pattern: from unittest import $$$
+    - pattern: from unittest.mock import $$$
+---
+id: py-test-import-mock
+language: Python
+rule:
+  any:
+    - pattern: import mock
+    - pattern: from mock import $$$

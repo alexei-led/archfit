@@ -207,3 +207,56 @@ rule:
   kind: import_spec
   has:
     pattern: '"github.com/gorilla/mux"'
+---
+# Test-framework import rules: emit test_import facts for production Go files
+# importing test libraries. NOT signal rules — emitted as SyntaxFacts directly.
+# ruleId → Kind=test_import (see syntax.go goRuleKinds).
+# Covered: testify suite, gomock (uber + golang), go-sqlmock.
+id: go-test-import-testify-mock
+language: go
+rule:
+  kind: import_spec
+  has:
+    pattern: '"github.com/stretchr/testify/mock"'
+---
+id: go-test-import-testify-assert
+language: go
+rule:
+  kind: import_spec
+  has:
+    pattern: '"github.com/stretchr/testify/assert"'
+---
+id: go-test-import-testify-require
+language: go
+rule:
+  kind: import_spec
+  has:
+    pattern: '"github.com/stretchr/testify/require"'
+---
+id: go-test-import-testify-suite
+language: go
+rule:
+  kind: import_spec
+  has:
+    pattern: '"github.com/stretchr/testify/suite"'
+---
+id: go-test-import-gomock-uber
+language: go
+rule:
+  kind: import_spec
+  has:
+    pattern: '"go.uber.org/mock/gomock"'
+---
+id: go-test-import-gomock-golang
+language: go
+rule:
+  kind: import_spec
+  has:
+    pattern: '"github.com/golang/mock/gomock"'
+---
+id: go-test-import-sqlmock
+language: go
+rule:
+  kind: import_spec
+  has:
+    pattern: '"github.com/DATA-DOG/go-sqlmock"'

@@ -160,3 +160,20 @@ rule:
   any:
     - pattern: use axum::$$$
     - pattern: use warp::$$$
+---
+# Test-framework import rules: emit test_import facts for production Rust files.
+# ruleId → Kind=test_import (see syntax.go rustRuleKinds).
+# Note: Rust test deps are typically dev-dependencies behind cfg(test).
+# These rules catch leaks where test frameworks appear outside cfg(test).
+# Ceiling: inline #[cfg(test)] mod blocks are not excluded by path analysis.
+id: rs-test-import-mockall
+language: Rust
+rule:
+  kind: use_declaration
+  regex: mockall
+---
+id: rs-test-import-proptest
+language: Rust
+rule:
+  kind: use_declaration
+  regex: proptest

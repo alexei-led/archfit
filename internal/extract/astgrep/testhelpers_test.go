@@ -26,6 +26,7 @@ const (
 	kindEnumStr       = "enum"
 	kindAnnotStr      = "annotation"
 	kindRouteStr      = "route"
+	kindTestImportStr = "test_import"
 	langTypeScriptStr = "typescript"
 	langPythonStr     = "python"
 	langRustStr       = "rust"

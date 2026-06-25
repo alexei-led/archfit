@@ -1,6 +1,9 @@
 // Minimal Rust fixture for per-rule-file integration tests.
-// Covers: rs-func, rs-struct, rs-enum, rs-trait, rs-impl, rs-mod, rs-attribute.
+// Covers: rs-func, rs-struct, rs-enum, rs-trait, rs-impl, rs-mod, rs-attribute,
+//         rs-test-import-mockall (test_import fact).
 // The #[derive(...)] attribute exercises the previously-broken rs-attribute rule.
+
+use mockall::automock;
 
 #[derive(Debug, Clone)]
 pub struct Widget {

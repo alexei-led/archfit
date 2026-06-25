@@ -134,38 +134,38 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 		spotKind      string
 		requiredKinds []string
 	}{
-		// Go: fixture.go exports func Hello.
-		// Fixture covers: function, struct, interface (see fixture.go).
+		// Go: fixture.go exports func Hello; fixture_test_import.go (//go:build ignore) imports testify/mock.
+		// Fixture covers: function, struct, interface, test_import (see fixture*.go).
 		{
 			lang:          "go",
 			spotName:      "Hello",
 			spotKind:      kindFunctionStr,
-			requiredKinds: []string{kindFunctionStr, kindStructStr, kindInterfaceStr},
+			requiredKinds: []string{kindFunctionStr, kindStructStr, kindInterfaceStr, kindTestImportStr},
 		},
-		// TypeScript: fixture.ts exports func greet + @Controller decorator + express route.
-		// Fixture covers: function, class, interface, annotation, route (see fixture.ts).
+		// TypeScript: fixture.ts exports func greet + @Controller decorator + express route + jest import.
+		// Fixture covers: function, class, interface, annotation, route, test_import (see fixture.ts).
 		{
 			lang:          "typescript",
 			spotName:      "greet",
 			spotKind:      kindFunctionStr,
-			requiredKinds: []string{kindFunctionStr, kindClassStr, kindInterfaceStr, kindAnnotStr, kindRouteStr},
+			requiredKinds: []string{kindFunctionStr, kindClassStr, kindInterfaceStr, kindAnnotStr, kindRouteStr, kindTestImportStr},
 		},
-		// Python: fixture.py declares func process + @staticmethod decorator + fastapi route.
-		// Fixture covers: function, class, annotation, route (see fixture.py).
+		// Python: fixture.py declares func process + @staticmethod decorator + fastapi route + pytest import.
+		// Fixture covers: function, class, annotation, route, test_import (see fixture.py).
 		{
 			lang:          "python",
 			spotName:      "process",
 			spotKind:      kindFunctionStr,
-			requiredKinds: []string{kindFunctionStr, kindClassStr, kindAnnotStr, kindRouteStr},
+			requiredKinds: []string{kindFunctionStr, kindClassStr, kindAnnotStr, kindRouteStr, kindTestImportStr},
 		},
-		// Rust: fixture.rs exports func create_widget + #[derive(Debug, Clone)] attribute.
-		// Fixture covers: function, struct, enum, interface, method, annotation (see fixture.rs).
+		// Rust: fixture.rs exports func create_widget + #[derive(Debug, Clone)] attribute + mockall import.
+		// Fixture covers: function, struct, enum, interface, method, annotation, test_import (see fixture.rs).
 		// annotation (rs-attribute) was the previously-broken kind — it must now yield ≥1 match.
 		{
 			lang:          "rust",
 			spotName:      "create_widget",
 			spotKind:      kindFunctionStr,
-			requiredKinds: []string{kindFunctionStr, kindStructStr, kindEnumStr, kindInterfaceStr, kindMethodStr, kindAnnotStr},
+			requiredKinds: []string{kindFunctionStr, kindStructStr, kindEnumStr, kindInterfaceStr, kindMethodStr, kindAnnotStr, kindTestImportStr},
 		},
 	}
 

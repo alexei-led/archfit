@@ -45,6 +45,7 @@ const (
 	typeForbiddenRoleDependency = "forbidden_role_dependency"
 	typePublicAPIMax            = "public_api_max"
 	typePublicAPIChange         = "public_api_change"
+	typeTestInProduction        = "test_in_production"
 	kindGate                    = "gate"
 	kindAdvisory                = "advisory"
 	ruleIDNoDep                 = "no-dep"
@@ -61,6 +62,17 @@ const (
 	nameInternal = "internal"
 	nameMain     = "Main"
 	fileCmd      = "cmd/main.go"
+	// test_in_production test constants
+	kindTestImport   = "test_import"
+	frameworkTestify = "testify/mock"
+	frameworkJest    = "jest"
+	frameworkPytest  = "pytest"
+	fileProdMock     = "pkg/container/mock_client.go"
+	fileProdMockTS   = "pkg/service/mock_service.ts"
+	fileProdMockPy   = "pkg/service/mock_service.py"
+	fileTestGo       = "pkg/container/client_test.go"
+	fileTestTS       = "pkg/service/service.test.ts"
+	fileTestPy       = "pkg/service/test_service.py"
 )
 
 // ---------------------------------------------------------------------------
@@ -1260,6 +1272,205 @@ func TestPublicAPIChange(t *testing.T) {
 			}
 			if findings[0].Kind != kindAdvisory {
 				t.Errorf("gate unset Kind=%q, want %q (warn-by-default)", findings[0].Kind, kindAdvisory)
+			}
+		})
+	})
+}
+
+// ---------------------------------------------------------------------------
+// TestInProduction
+// ---------------------------------------------------------------------------
+
+// makeTIPConfig builds a RuleConfig with two modules and a test_in_production rule.
+func makeTIPConfig(gate string) config.RuleConfig {
+	return config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"container": {Paths: []string{"pkg/container/**"}},
+			"service":   {Paths: []string{"pkg/service/**"}},
+		},
+		Rules: []config.RuleDef{
+			{ID: "tip", Type: typeTestInProduction, Gate: gate},
+		},
+	}.ForRules()
+}
+
+func TestTestInProduction(t *testing.T) {
+	emptyGraph := makeGraph(nil)
+	ev := func(facts []diagnostic.SyntaxFact) rules.Evidence {
+		return rules.Evidence{SyntaxFacts: facts}
+	}
+
+	t.Run("prod_go_file_imports_testify_fires", func(t *testing.T) {
+		facts := []diagnostic.SyntaxFact{
+			{Language: "go", File: fileProdMock, Kind: kindTestImport, Name: frameworkTestify, Framework: frameworkTestify},
+		}
+		rs, err := rules.New(makeTIPConfig("fail"))
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		findings := rs[0].Check(emptyGraph, ev(facts))
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding, got %d", len(findings))
+		}
+		f := findings[0]
+		if f.Kind != kindGate {
+			t.Errorf("Kind=%q, want %q", f.Kind, kindGate)
+		}
+		if f.MatchedBy["file"] != fileProdMock {
+			t.Errorf("matched_by.file=%q, want %q", f.MatchedBy["file"], fileProdMock)
+		}
+		if f.MatchedBy["framework"] != frameworkTestify {
+			t.Errorf("matched_by.framework=%q, want %q", f.MatchedBy["framework"], frameworkTestify)
+		}
+		if f.Why == "" {
+			t.Error("Why is empty")
+		}
+		if f.Constraint == "" {
+			t.Error("Constraint is empty")
+		}
+		// endpoint resolves to module path
+		if f.Edge.From.Path != "container" {
+			t.Errorf("Edge.From.Path=%q, want %q", f.Edge.From.Path, "container")
+		}
+	})
+
+	t.Run("go_test_file_suppressed", func(t *testing.T) {
+		facts := []diagnostic.SyntaxFact{
+			{Language: "go", File: fileTestGo, Kind: kindTestImport, Name: frameworkTestify, Framework: frameworkTestify},
+		}
+		rs, _ := rules.New(makeTIPConfig("fail"))
+		if findings := rs[0].Check(emptyGraph, ev(facts)); len(findings) != 0 {
+			t.Fatalf("test file: want 0 findings, got %d", len(findings))
+		}
+	})
+
+	t.Run("ts_prod_file_fires", func(t *testing.T) {
+		facts := []diagnostic.SyntaxFact{
+			{Language: "typescript", File: fileProdMockTS, Kind: kindTestImport, Name: frameworkJest, Framework: frameworkJest},
+		}
+		rs, _ := rules.New(makeTIPConfig("fail"))
+		findings := rs[0].Check(emptyGraph, ev(facts))
+		if len(findings) != 1 {
+			t.Fatalf("ts prod: want 1 finding, got %d", len(findings))
+		}
+	})
+
+	t.Run("ts_test_file_suppressed", func(t *testing.T) {
+		facts := []diagnostic.SyntaxFact{
+			{Language: "typescript", File: fileTestTS, Kind: kindTestImport, Name: "jest", Framework: "jest"},
+		}
+		rs, _ := rules.New(makeTIPConfig("fail"))
+		if findings := rs[0].Check(emptyGraph, ev(facts)); len(findings) != 0 {
+			t.Fatalf("ts test file: want 0 findings, got %d", len(findings))
+		}
+	})
+
+	t.Run("py_prod_file_fires", func(t *testing.T) {
+		facts := []diagnostic.SyntaxFact{
+			{Language: "python", File: fileProdMockPy, Kind: kindTestImport, Name: frameworkPytest, Framework: frameworkPytest},
+		}
+		rs, _ := rules.New(makeTIPConfig("fail"))
+		findings := rs[0].Check(emptyGraph, ev(facts))
+		if len(findings) != 1 {
+			t.Fatalf("py prod: want 1 finding, got %d", len(findings))
+		}
+	})
+
+	t.Run("py_test_file_suppressed", func(t *testing.T) {
+		facts := []diagnostic.SyntaxFact{
+			{Language: "python", File: fileTestPy, Kind: kindTestImport, Name: "pytest", Framework: "pytest"},
+		}
+		rs, _ := rules.New(makeTIPConfig("fail"))
+		if findings := rs[0].Check(emptyGraph, ev(facts)); len(findings) != 0 {
+			t.Fatalf("py test file: want 0 findings, got %d", len(findings))
+		}
+	})
+
+	t.Run("non_test_import_kind_ignored", func(t *testing.T) {
+		facts := []diagnostic.SyntaxFact{
+			{Language: "go", File: fileProdMock, Kind: "function", Name: "Mock", Framework: ""},
+		}
+		rs, _ := rules.New(makeTIPConfig("fail"))
+		if findings := rs[0].Check(emptyGraph, ev(facts)); len(findings) != 0 {
+			t.Fatalf("non-test_import kind: want 0 findings, got %d", len(findings))
+		}
+	})
+
+	t.Run("empty_syntax_facts_returns_nil", func(t *testing.T) {
+		rs, _ := rules.New(makeTIPConfig("fail"))
+		if findings := rs[0].Check(emptyGraph, ev(nil)); len(findings) != 0 {
+			t.Fatalf("empty facts: want 0, got %d", len(findings))
+		}
+	})
+
+	t.Run("file_outside_module_uses_file_path", func(t *testing.T) {
+		outsideFile := "cmd/main.go"
+		facts := []diagnostic.SyntaxFact{
+			{Language: "go", File: outsideFile, Kind: kindTestImport, Name: frameworkTestify, Framework: frameworkTestify},
+		}
+		rs, _ := rules.New(makeTIPConfig("fail"))
+		findings := rs[0].Check(emptyGraph, ev(facts))
+		if len(findings) != 1 {
+			t.Fatalf("outside module: want 1 finding, got %d", len(findings))
+		}
+		if findings[0].Edge.From.Path != outsideFile {
+			t.Errorf("Edge.From.Path=%q, want %q", findings[0].Edge.From.Path, outsideFile)
+		}
+	})
+
+	t.Run("deduplication_same_file_framework", func(t *testing.T) {
+		facts := []diagnostic.SyntaxFact{
+			{Language: "go", File: fileProdMock, Kind: kindTestImport, Name: frameworkTestify, Framework: frameworkTestify},
+			{Language: "go", File: fileProdMock, Kind: kindTestImport, Name: frameworkTestify, Framework: frameworkTestify},
+		}
+		rs, _ := rules.New(makeTIPConfig("fail"))
+		findings := rs[0].Check(emptyGraph, ev(facts))
+		if len(findings) != 1 {
+			t.Fatalf("dedup: want 1 finding, got %d", len(findings))
+		}
+	})
+
+	t.Run("gate_semantics", func(t *testing.T) {
+		facts := []diagnostic.SyntaxFact{
+			{Language: "go", File: fileProdMock, Kind: kindTestImport, Name: frameworkTestify, Framework: frameworkTestify},
+		}
+
+		t.Run("off_skips_finding", func(t *testing.T) {
+			rs, _ := rules.New(makeTIPConfig("off"))
+			if findings := rs[0].Check(emptyGraph, ev(facts)); len(findings) != 0 {
+				t.Fatalf("gate:off: want 0, got %d", len(findings))
+			}
+		})
+		t.Run("warn_produces_advisory", func(t *testing.T) {
+			rs, _ := rules.New(makeTIPConfig("warn"))
+			findings := rs[0].Check(emptyGraph, ev(facts))
+			if len(findings) != 1 {
+				t.Fatalf("gate:warn: want 1, got %d", len(findings))
+			}
+			if findings[0].Kind != kindAdvisory {
+				t.Errorf("gate:warn Kind=%q, want advisory", findings[0].Kind)
+			}
+		})
+		t.Run("fail_produces_gate_finding", func(t *testing.T) {
+			rs, _ := rules.New(makeTIPConfig("fail"))
+			findings := rs[0].Check(emptyGraph, ev(facts))
+			if len(findings) != 1 {
+				t.Fatalf("gate:fail: want 1, got %d", len(findings))
+			}
+			if findings[0].Kind != kindGate {
+				t.Errorf("gate:fail Kind=%q, want gate", findings[0].Kind)
+			}
+		})
+		t.Run("unset_gate_produces_advisory", func(t *testing.T) {
+			// test_in_production defaults to warn (advisory) when gate is unset.
+			rs, _ := rules.New(makeTIPConfig(""))
+			findings := rs[0].Check(emptyGraph, ev(facts))
+			if len(findings) != 1 {
+				t.Fatalf("gate unset: want 1, got %d", len(findings))
+			}
+			if findings[0].Kind != kindAdvisory {
+				t.Errorf("gate unset Kind=%q, want advisory (warn-by-default)", findings[0].Kind)
 			}
 		})
 	})

@@ -1,7 +1,9 @@
 # Minimal Python fixture for per-rule-file integration tests.
 # Covers: py-func, py-class, py-decorator,
-#         py-route-decorator (confirmed via py-import-fastapi signal).
+#         py-route-decorator (confirmed via py-import-fastapi signal),
+#         py-test-import-pytest (test_import fact).
 
+import pytest
 from fastapi import FastAPI
 
 app = FastAPI()

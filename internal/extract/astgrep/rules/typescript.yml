@@ -152,3 +152,30 @@ rule:
   any:
     - pattern: import $$$ from '@nestjs/common'
     - pattern: import $$$ from '@nestjs/core'
+---
+# Test-framework import rules: emit test_import facts for production TS files.
+# ruleId → Kind=test_import (see syntax.go tsRuleKinds).
+id: ts-test-import-jest
+language: TypeScript
+rule:
+  any:
+    - pattern: import $$$ from 'jest'
+    - pattern: import $$$ from '@jest/globals'
+    - pattern: import $$$ from 'jest-mock'
+---
+id: ts-test-import-vitest
+language: TypeScript
+rule:
+  pattern: import $$$ from 'vitest'
+---
+id: ts-test-import-mocha
+language: TypeScript
+rule:
+  any:
+    - pattern: import $$$ from 'mocha'
+    - pattern: import $$$ from 'chai'
+---
+id: ts-test-import-sinon
+language: TypeScript
+rule:
+  pattern: import $$$ from 'sinon'

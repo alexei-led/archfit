@@ -40,6 +40,7 @@ const (
 	kindClass      = "class"
 	kindEnum       = "enum"
 	kindAnnotation = "annotation"
+	kindTestImport = "test_import"
 )
 
 // Language identifier constants used as keys in embeddedRules and langRuleKinds.
@@ -79,6 +80,23 @@ const (
 	fwGroupDjango  = "django"      // django
 	fwGroupActix   = "actix"       // actix-web/rocket
 	fwGroupAxum    = "axum"        // axum/warp
+	// Test-framework groups (used by test_import rules).
+	fwGroupTestifyMock   = "testify/mock"
+	fwGroupTestifyAssert = "testify/assert"
+	fwGroupTestifyRequir = "testify/require"
+	fwGroupTestifySuite  = "testify/suite"
+	fwGroupGomockUber    = "gomock/uber"
+	fwGroupGomockGolang  = "gomock/golang"
+	fwGroupSQLMock       = "go-sqlmock"
+	fwGroupJest          = "jest"
+	fwGroupVitest        = "vitest"
+	fwGroupMocha         = "mocha"
+	fwGroupSinon         = "sinon"
+	fwGroupPytest        = "pytest"
+	fwGroupUnittest      = "unittest"
+	fwGroupMock          = "mock"
+	fwGroupMockall       = "mockall"
+	fwGroupProptest      = "proptest"
 )
 
 // goRuleKinds maps each go.yml ruleId to its Kind and Framework.
@@ -104,6 +122,14 @@ var goRuleKinds = map[string]kindInfo{
 	"go-import-chi":      {Framework: fwGroupChi, IsSignal: true},
 	"go-import-fiber":    {Framework: fwGroupFiber, IsSignal: true},
 	"go-import-gorilla":  {Framework: fwGroupGorilla, IsSignal: true},
+	// Test-import rules: emit test_import facts for production Go files.
+	"go-test-import-testify-mock":    {Kind: kindTestImport, Framework: fwGroupTestifyMock},
+	"go-test-import-testify-assert":  {Kind: kindTestImport, Framework: fwGroupTestifyAssert},
+	"go-test-import-testify-require": {Kind: kindTestImport, Framework: fwGroupTestifyRequir},
+	"go-test-import-testify-suite":   {Kind: kindTestImport, Framework: fwGroupTestifySuite},
+	"go-test-import-gomock-uber":     {Kind: kindTestImport, Framework: fwGroupGomockUber},
+	"go-test-import-gomock-golang":   {Kind: kindTestImport, Framework: fwGroupGomockGolang},
+	"go-test-import-sqlmock":         {Kind: kindTestImport, Framework: fwGroupSQLMock},
 }
 
 // tsRuleKinds maps each typescript.yml ruleId to its Kind and Framework.
@@ -124,6 +150,11 @@ var tsRuleKinds = map[string]kindInfo{
 	// Import-signal rules (IsSignal=true): confirm framework import per file.
 	"ts-import-express": {Framework: fwGroupExpress, IsSignal: true},
 	"ts-import-nest":    {Framework: fwGroupNest, IsSignal: true},
+	// Test-import rules: emit test_import facts for production TS files.
+	"ts-test-import-jest":   {Kind: kindTestImport, Framework: fwGroupJest},
+	"ts-test-import-vitest": {Kind: kindTestImport, Framework: fwGroupVitest},
+	"ts-test-import-mocha":  {Kind: kindTestImport, Framework: fwGroupMocha},
+	"ts-test-import-sinon":  {Kind: kindTestImport, Framework: fwGroupSinon},
 }
 
 // pyRuleKinds maps each python.yml ruleId to its Kind and Framework.
@@ -141,6 +172,10 @@ var pyRuleKinds = map[string]kindInfo{
 	// Import-signal rules (IsSignal=true): confirm framework import per file.
 	"py-import-fastapi": {Framework: fwGroupFastAPI, IsSignal: true},
 	"py-import-django":  {Framework: fwGroupDjango, IsSignal: true},
+	// Test-import rules: emit test_import facts for production Python files.
+	"py-test-import-pytest":   {Kind: kindTestImport, Framework: fwGroupPytest},
+	"py-test-import-unittest": {Kind: kindTestImport, Framework: fwGroupUnittest},
+	"py-test-import-mock":     {Kind: kindTestImport, Framework: fwGroupMock},
 }
 
 // rustRuleKinds maps each rust.yml ruleId to its Kind and Framework.
@@ -161,6 +196,9 @@ var rustRuleKinds = map[string]kindInfo{
 	// Import-signal rules (IsSignal=true): confirm framework import per file.
 	"rs-import-actix": {Framework: fwGroupActix, IsSignal: true},
 	"rs-import-axum":  {Framework: fwGroupAxum, IsSignal: true},
+	// Test-import rules: emit test_import facts for production Rust files.
+	"rs-test-import-mockall":  {Kind: kindTestImport, Framework: fwGroupMockall},
+	"rs-test-import-proptest": {Kind: kindTestImport, Framework: fwGroupProptest},
 }
 
 // langRuleKinds maps a language identifier to its ruleId→kindInfo table.
@@ -273,6 +311,12 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 			}
 
 			name := nameFromMatch(m)
+			// test_import rules use pattern forms (e.g. bare import, $$$ multi-metavar,
+			// regex) that don't populate $NAME/$PATH. Use the framework label as the
+			// name — it is non-empty for all test_import entries in kindInfo maps.
+			if name == "" && ki.Kind == kindTestImport {
+				name = ki.Framework
+			}
 			if name == "" {
 				continue
 			}
@@ -345,27 +389,31 @@ func nameFromMatch(m sgSyntaxMatch) string {
 func isExported(lang, ruleID, name string) bool {
 	switch lang {
 	case langTypeScript:
-		// Route, annotation, and signal ruleIds.
-		if strings.HasPrefix(ruleID, "ts-route-") || strings.HasPrefix(ruleID, "ts-import-") || ruleID == "ts-decorator" {
+		// Route, annotation, signal, and test-import ruleIds.
+		if strings.HasPrefix(ruleID, "ts-route-") || strings.HasPrefix(ruleID, "ts-import-") ||
+			ruleID == "ts-decorator" || strings.HasPrefix(ruleID, "ts-test-import-") {
 			return false
 		}
 		return true // inside: export_statement guarantees export
 	case langPython:
-		// Route, decorator, and signal ruleIds are never exported.
-		if strings.HasPrefix(ruleID, "py-route-") || strings.HasPrefix(ruleID, "py-import-") || ruleID == "py-decorator" {
+		// Route, decorator, signal, and test-import ruleIds are never exported.
+		if strings.HasPrefix(ruleID, "py-route-") || strings.HasPrefix(ruleID, "py-import-") ||
+			ruleID == "py-decorator" || strings.HasPrefix(ruleID, "py-test-import-") {
 			return false
 		}
 		// Public = name does not start with underscore.
 		return len(name) > 0 && name[0] != '_'
 	case langRust:
-		// Route, attribute, and signal ruleIds are never exported.
-		if strings.HasPrefix(ruleID, "rs-route-") || strings.HasPrefix(ruleID, "rs-import-") || ruleID == "rs-attribute" {
+		// Route, attribute, signal, and test-import ruleIds are never exported.
+		if strings.HasPrefix(ruleID, "rs-route-") || strings.HasPrefix(ruleID, "rs-import-") ||
+			ruleID == "rs-attribute" || strings.HasPrefix(ruleID, "rs-test-import-") {
 			return false
 		}
 		// The YAML rule already requires visibility_modifier, so any match is pub.
 		return true
 	default: // go and future languages: uppercase-first convention
-		if strings.HasPrefix(ruleID, "go-route-") || strings.HasPrefix(ruleID, "go-import-") {
+		if strings.HasPrefix(ruleID, "go-route-") || strings.HasPrefix(ruleID, "go-import-") ||
+			strings.HasPrefix(ruleID, "go-test-import-") {
 			return false
 		}
 		return len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z'
