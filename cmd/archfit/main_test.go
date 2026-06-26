@@ -106,12 +106,14 @@ func TestRun_Check_ReportSuppressesFailureExit(t *testing.T) {
 }
 
 const (
-	flagFull   = "--full"
-	cmdCheck   = "check"
-	cmdExplain = "explain"
-	fmtJSON    = "--format=json"
-	flagReport = "--report"
-	filePkgAA  = "pkg/a/a.go" // the gate-violating source file used across fixtures
+	flagFull          = "--full"
+	flagRoot          = "--root"
+	cmdCheck          = "check"
+	cmdExplain        = "explain"
+	fmtJSON           = "--format=json"
+	flagReport        = "--report"
+	filePkgAA         = "pkg/a/a.go"         // the gate-violating source file used across fixtures
+	ruleNoInternalAcc = "no_internal_access" // rule ID in the violating-repo fixture
 )
 
 // writeNonGoRepo creates a git repo with no analyzable source (README only) and
@@ -293,7 +295,7 @@ func TestRun_Check_RootDecoupledFromConfig(t *testing.T) {
 	t.Run("--root scans the repo via an external config", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
-		code := Run([]string{cmdCheck, "--root", repoDir, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+		code := Run([]string{cmdCheck, flagRoot, repoDir, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 		if code != 1 {
 			t.Fatalf("check --root: exit = %d, want 1 (forbidden-dependency gate)\noutput:\n%s", code, buf.String())
 		}
@@ -307,7 +309,7 @@ func TestRun_Check_RootDecoupledFromConfig(t *testing.T) {
 		}
 		var found bool
 		for _, f := range diag.Findings {
-			if f.RuleID == "no_internal_access" {
+			if f.RuleID == ruleNoInternalAcc {
 				found = true
 			}
 		}
@@ -316,15 +318,29 @@ func TestRun_Check_RootDecoupledFromConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("omitting --root anchors at the config dir (unchanged default)", func(t *testing.T) {
+	t.Run("omitting --root anchors at the config dir (no violations on empty dir)", func(t *testing.T) {
 		t.Parallel()
-		// Without --root the scan root is the config directory, which is not a git
-		// repo here — scope resolution fails (exit 3), exactly as before this flag
-		// existed. This proves --root is the only behavioural change.
+		// Without --root the scan root is the config directory. Since Task 2 made
+		// non-git + full mode non-fatal, the run succeeds with exit 0 and finds no
+		// violations (the config dir has no source code). This confirms --root is
+		// required to scan the actual repo — without it, nothing is analysed.
 		var buf bytes.Buffer
 		code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &buf)
-		if code != 3 {
-			t.Fatalf("check without --root on an external config: exit = %d, want 3 (config dir is not a git repo)\noutput:\n%s", code, buf.String())
+		if code != 0 {
+			t.Fatalf("check without --root on an external config: exit = %d, want 0 (empty config dir → pass)\noutput:\n%s", code, buf.String())
+		}
+		var diag struct {
+			Findings []struct {
+				RuleID string `json:"rule_id"`
+			} `json:"findings"`
+		}
+		if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
+			t.Fatalf("invalid JSON: %v\noutput:\n%s", err, buf.String())
+		}
+		for _, f := range diag.Findings {
+			if f.RuleID == ruleNoInternalAcc {
+				t.Errorf("found no_internal_access violation on empty config dir — scan root must be the repo, not the config dir")
+			}
 		}
 	})
 }
@@ -473,7 +489,7 @@ func TestRun_Check_AgentTasksPopulated(t *testing.T) {
 		t.Fatalf("agent_tasks = %d, want 1\noutput:\n%s", len(diag.AgentTasks), buf.String())
 	}
 	task := diag.AgentTasks[0]
-	if task.RuleID != "no_internal_access" {
+	if task.RuleID != ruleNoInternalAcc {
 		t.Errorf("rule_id = %q", task.RuleID)
 	}
 	if !strings.Contains(task.Goal, "pkg/a/a.go") {

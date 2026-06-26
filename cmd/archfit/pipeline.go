@@ -88,6 +88,13 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	cfg.Exclusions = scope.MergeExclusions(cfg.Exclusions)
 	sc := cfg.ForScope()
 	sc.WorkDir = scanDir
+	// Wire the explicit --root argument so scope.Resolve uses it as the
+	// analysis boundary (ScanRoot). When root is empty, cfg.Root="" falls
+	// through resolveScanRoot to gitRoot → byte-identical to the pre-flag
+	// behaviour. Without this line, --root only sets the gitResolver workDir
+	// (which resolves UP to the git toplevel), leaving ScanRoot == gitRoot
+	// even when --root points at a subtree of a monorepo.
+	sc.Root = root
 	sc.Base = mode.Base
 	sc.Full = mode.Full
 	s, err := scope.Resolve(ctx, sc, gitResolver{workDir: scanDir, runner: deps.Runner})

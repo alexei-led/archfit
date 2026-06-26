@@ -196,14 +196,14 @@ during discovery (go/packages workspace loading; depcruise/grimp scoping).
 
 ### Task 4: cmd wiring + non-git full-mode path
 
-- [ ] pass `c.Root` (abs) into `ScopeConfig.Root`; confirm `--root` now sets the
+- [x] pass `c.Root` (abs) into `ScopeConfig.Root`; confirm `--root` now sets the
       analysis boundary (not just git workdir) for `check`/`scan`/`explain`
-- [ ] confirm `outputInsideRootWarning` and `MergeExclusions` resolve against
+- [x] confirm `outputInsideRootWarning` and `MergeExclusions` resolve against
       ScanRoot (already via `s.Root`); add a regression test
-- [ ] write tests: `--root <subdir>` scopes loc/fitness file counts to the subtree
+- [x] write tests: `--root <subdir>` scopes loc/fitness file counts to the subtree
       (assert `FilesSeen` matches subtree, not whole repo); non-git dir with
       `--full` produces a scorecard (no exit-3)
-- [ ] run tests — must pass before next task
+- [x] run tests — must pass before next task
 
 ### Task 5: Go member discovery (go.work + multi-go.mod + single)
 
