@@ -207,19 +207,19 @@ during discovery (go/packages workspace loading; depcruise/grimp scoping).
 
 ### Task 5: Go member discovery (go.work + multi-go.mod + single)
 
-- [ ] add member discovery to `internal/extract/golang`: detect `go.work`
+- [x] add member discovery to `internal/extract/golang`: detect `go.work`
       (`os.Stat(scanRoot/go.work)`, else `go env GOWORK` / walk up); parse `use`
       dirs with `golang.org/x/mod/modfile.ParseWork` (no subprocess); keep members
       that are **under ScanRoot** and **not exclusion-matched** (globs relative to
       ScanRoot)
-- [ ] fallbacks: no go.work (or 0 in-scope members) → `[ScanRoot]` if it has
+- [x] fallbacks: no go.work (or 0 in-scope members) → `[ScanRoot]` if it has
       `go.mod`; else walk ScanRoot for `go.mod` dirs (exclusion-filtered); else no
       members (→ `absent`)
-- [ ] add `golang.org/x/mod` to go.mod; keep the change inside the `extract/golang`
+- [x] add `golang.org/x/mod` to go.mod; keep the change inside the `extract/golang`
       adapter (ring-safe)
-- [ ] write table-driven tests: go.work-with-members, single-go.mod, multi-go.mod
+- [x] write table-driven tests: go.work-with-members, single-go.mod, multi-go.mod
       walk, exclusion+subtree filtering, archfit-self collapses to one member
-- [ ] run tests — must pass before next task
+- [x] run tests — must pass before next task
 
 ### Task 6: Go per-member concurrent load + per-package strip + first-party
 
