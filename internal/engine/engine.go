@@ -151,6 +151,10 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// distance-unknown and coupling_balance/encapsulation never see them. No-op for
 	// Go/TS/Python (their nodes are already configured; the "::" gate excludes them).
 	classifyCfg.Modules = classify.AugmentModulesFromGraph(ex.g, classifyCfg.Modules)
+	// Register Go workspace members (≥2-member gate) as synthetic modules so
+	// cross-member edges classify with a real Distance for coupling_balance. No-op for
+	// single-module repos and archfit's own self-scan (1 surviving member after exclusion).
+	classifyCfg.Modules = classify.AugmentGoWorkspaceModules(ex.g, classifyCfg.Modules)
 
 	// Runtime async evidence: build per-module rollup for the diagnostic.
 	// Report-only — never changes the gate verdict.

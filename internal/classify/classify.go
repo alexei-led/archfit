@@ -156,6 +156,52 @@ func AugmentModulesFromGraph(g *graph.Graph, modules map[string]config.ModuleDef
 	return out
 }
 
+// AugmentGoWorkspaceModules returns a Modules map extended with a synthetic module
+// for each Go workspace member whose directory is not already covered by a configured
+// module's path globs. Called when ≥2 workspace members were loaded so cross-member
+// edges can classify with a real Distance for coupling_balance.
+//
+// The gate is len(GoModules) >= 2 — single-module repos and archfit's own self-scan
+// (which collapses to 1 surviving member after exclusion) are byte-identical to
+// before, mirroring the Rust "::" gate in AugmentModulesFromGraph.
+//
+// Members at the repo root (RelDir == ".") are skipped: a root-relative glob would
+// over-match sibling members (abstain-not-fake). Existing config modules keep
+// precedence — a synthetic module is only added when nothing already covers the
+// member's directory. The input map is not mutated; a copy is returned only if
+// something is added.
+func AugmentGoWorkspaceModules(g *graph.Graph, modules map[string]config.ModuleDef) map[string]config.ModuleDef {
+	if g == nil {
+		return modules
+	}
+	goMods := g.GoModules()
+	if len(goMods) < 2 {
+		return modules // ≥2 gate: single-module repos and self-scan are untouched
+	}
+	mi := buildModuleIndex(modules)
+	out := modules
+	cloned := false
+	for _, m := range goMods {
+		if m.RelDir == "." {
+			continue // root member: no precise glob boundary; abstain-not-fake
+		}
+		// "already covered" check: does any configured module glob match a
+		// representative path inside this member's directory?
+		if _, ok := mi.moduleFor(m.RelDir + "/x"); ok {
+			continue
+		}
+		if !cloned {
+			out = make(map[string]config.ModuleDef, len(modules)+len(goMods))
+			maps.Copy(out, modules)
+			cloned = true
+		}
+		if _, exists := out[m.Path]; !exists {
+			out[m.Path] = config.ModuleDef{Paths: []string{m.RelDir + "/**"}}
+		}
+	}
+	return out
+}
+
 // matchesAnyGlob reports whether path matches any of the given glob patterns.
 func matchesAnyGlob(path string, globs []string) bool {
 	for _, pattern := range globs {

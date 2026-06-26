@@ -262,19 +262,19 @@ graph has **no modules** until members are registered, so cross-module edges sta
 unclassified and `coupling_balance` reads `n/a`. This task supplies the
 **distance** half of the chain (Task 6's strength guard supplies the other half).
 
-- [ ] add a Go analogue of `classify.AugmentModulesFromGraph`: when **≥2**
+- [x] add a Go analogue of `classify.AugmentModulesFromGraph`: when **≥2**
       workspace members were loaded, register each member's `RelDir` as a module
       (path glob `<relDir>/**`) **unless** already covered by a config module glob;
       gate strictly on ≥2 members so single-module repos + archfit-self are
       untouched (mirrors the Rust `::` gate)
-- [ ] consume `graph.Facts.GoModules` (Task 6) in the classify stage; verify
+- [x] consume `graph.Facts.GoModules` (Task 6) in the classify stage; verify
       cross-member edges now classify with a real `Distance` so `BookScorer`
       scores them (volatility stays undeclared/conservative — emits the existing
       advisory decision-task, not a blocker)
-- [ ] write tests: ≥2 members auto-register + cross-member edge gets distance +
+- [x] write tests: ≥2 members auto-register + cross-member edge gets distance +
       `coupling_balance` measures; 1 member does not augment; config module globs
       win over auto-registration
-- [ ] run `make archfit` + tests — must stay green (1-member self path unchanged)
+- [x] run `make archfit` + tests — must stay green (1-member self path unchanged)
 
 ### Task 9: Byte-identical proof + omni Go acceptance (Tier 0 gate)
 

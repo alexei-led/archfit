@@ -1206,3 +1206,125 @@ func TestRun_VolatilityUnknownWhenModuleUnresolved(t *testing.T) {
 		t.Errorf("Volatility = %q, want unknown", cl.Volatility)
 	}
 }
+
+// buildGoWorkspaceGraph builds a Graph with the given GoModules and edges, suitable
+// for testing AugmentGoWorkspaceModules.
+func buildGoWorkspaceGraph(goMods []graph.GoModule, edges []graph.Edge) *graph.Graph {
+	seen := make(map[string]bool)
+	var nodes []graph.Node
+	for _, e := range edges {
+		for _, id := range []string{e.From, e.To} {
+			if !seen[id] {
+				seen[id] = true
+				kind, path := graph.NodeKindFile, id
+				for _, k := range []graph.NodeKind{
+					graph.NodeKindFile, graph.NodeKindPackage,
+					graph.NodeKindModule, graph.NodeKindRepo, graph.NodeKindExternal,
+				} {
+					prefix := string(k) + ":"
+					if len(id) > len(prefix) && id[:len(prefix)] == prefix {
+						kind = k
+						path = id[len(prefix):]
+						break
+					}
+				}
+				nodes = append(nodes, graph.Node{Kind: kind, Path: path})
+			}
+		}
+	}
+	return graph.Build([]graph.Facts{{
+		Nodes:     nodes,
+		Edges:     edges,
+		Language:  "go",
+		GoModules: goMods,
+	}})
+}
+
+// TestAugmentGoWorkspaceModules_TwoMembersAutoRegister verifies that when ≥2 Go
+// workspace members are loaded, each gets a synthetic module registered (one per
+// member), and that a cross-member edge with a StrengthHint classifies with a real
+// Distance and a scored EdgeScore — the direct proxy for "coupling_balance measures."
+func TestAugmentGoWorkspaceModules_TwoMembersAutoRegister(t *testing.T) {
+	e := graph.Edge{
+		From:         "package:services/a/foo",
+		To:           "package:services/b/bar",
+		Kind:         graph.EdgeKindImports,
+		Language:     "go",
+		StrengthHint: "functional",
+	}
+	goMods := []graph.GoModule{
+		{Path: "example.com/a", RelDir: "services/a"},
+		{Path: "example.com/b", RelDir: "services/b"},
+	}
+	g := buildGoWorkspaceGraph(goMods, []graph.Edge{e})
+
+	mods := classify.AugmentGoWorkspaceModules(g, map[string]config.ModuleDef{})
+	if len(mods) != 2 {
+		t.Fatalf("want 2 synthetic modules, got %d: %v", len(mods), mods)
+	}
+	// Each registered module must carry the member's glob.
+	for _, m := range goMods {
+		found := false
+		for _, def := range mods {
+			for _, p := range def.Paths {
+				if p == m.RelDir+"/**" {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Errorf("no synthetic module with glob %q for member %q", m.RelDir+"/**", m.Path)
+		}
+	}
+
+	// Cross-member edge must get a real Distance and score.
+	idx := classify.Run(g, config.ClassifyConfig{Modules: mods})
+	cl, ok := idx[edgeKey(e)]
+	if !ok {
+		t.Fatalf("edge not found in coupling index")
+	}
+	if cl.Distance == coupling.DistanceUnknown {
+		t.Errorf("Distance = unknown; want a real distance (auto-registration broken)")
+	}
+	// With strength=functional + a real distance, the scorer must produce a scored result
+	// — this is the unit-level proxy for "coupling_balance measures."
+	if !cl.Score.Scored {
+		t.Errorf("Score.Scored = false; want true (coupling_balance must measure when strength+distance are known)")
+	}
+}
+
+// TestAugmentGoWorkspaceModules_OneMemberNoOp guards the ≥2 gate: a single loaded
+// module must not trigger auto-registration, preserving byte-identical output for
+// single-module repos and archfit's own self-scan.
+func TestAugmentGoWorkspaceModules_OneMemberNoOp(t *testing.T) {
+	g := buildGoWorkspaceGraph(
+		[]graph.GoModule{{Path: "example.com/myapp", RelDir: "cmd/myapp"}},
+		nil,
+	)
+	in := map[string]config.ModuleDef{"mymod": {Paths: []string{pathsA}}}
+	out := classify.AugmentGoWorkspaceModules(g, in)
+	if len(out) != len(in) {
+		t.Errorf("1-member: want map unchanged (len %d), got len %d: %v", len(in), len(out), out)
+	}
+}
+
+// TestAugmentGoWorkspaceModules_ConfigGlobWins verifies that an already-configured
+// module covering a member's directory takes precedence over auto-registration.
+func TestAugmentGoWorkspaceModules_ConfigGlobWins(t *testing.T) {
+	goMods := []graph.GoModule{
+		{Path: "example.com/a", RelDir: "services/a"},
+		{Path: "example.com/b", RelDir: "services/b"},
+	}
+	g := buildGoWorkspaceGraph(goMods, nil)
+	// Both member directories already covered by explicit config modules.
+	// Use the deployUnitA/B constants ("svc-a"/"svc-b") as map keys to satisfy goconst.
+	in := map[string]config.ModuleDef{
+		deployUnitA: {Paths: []string{pathsA}},
+		deployUnitB: {Paths: []string{pathsB}},
+	}
+	out := classify.AugmentGoWorkspaceModules(g, in)
+	if len(out) != len(in) {
+		t.Errorf("config globs win: want map unchanged (len %d), got len %d; extra: %v",
+			len(in), len(out), out)
+	}
+}
