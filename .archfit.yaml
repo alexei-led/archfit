@@ -322,6 +322,18 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: low
+  internal/extract/manifest:
+    owner: alexei-led
+    paths:
+      - internal/extract/manifest/**
+    public:
+      - internal/extract/manifest
+    # Manifest-marker reader (go.mod retract, package.json deprecated, cargo
+    # yanked). Out-of-process file read; adapter tier like the other extractors.
+    role: adapter
+    layer: adapter
+    subdomain: supporting
+    volatility: low
   internal/output:
     owner: alexei-led
     paths:
@@ -389,6 +401,12 @@ modules:
       - internal/**
     public:
       - internal
+    # Catch-all stanza. Every production package has its own explicit stanza
+    # above, so this absorbs only root-level internal/arch_test.go plus testdata
+    # and helper fixtures (internal/extract/astgrep/testdata/**, internal/extract/py
+    # helper scripts). Any unsafe/panic/lazy-import facts reported under module
+    # "internal" therefore come from FIXTURES, not production code — not a real
+    # signal about archfit's own source.
     layer: support
     subdomain: generic
     volatility: low
@@ -437,6 +455,18 @@ modules:
     layer: cmd
     subdomain: generic
     volatility: medium
+  scripts/eval/coverage:
+    owner: alexei-led
+    paths:
+      - scripts/eval/coverage/**
+    public:
+      - scripts/eval/coverage
+    # Standalone gap-closure coverage-table generator (package main, no internal
+    # imports). Eval tooling, not shipped architecture; tracked so map_review
+    # covers it and it does not surface as an uncovered-path advisory.
+    layer: cmd
+    subdomain: generic
+    volatility: low
 rules:
   # Ring gate 1: core must not directly import the process boundary or extractors
   - id: core_no_toolrun
@@ -534,6 +564,26 @@ rules:
   - id: syntax_api_size_ceiling
     type: public_api_max
     max: 1500
+    gate: warn
+  # --- Architecture-drift prevention rules (dogfooding this branch's detectors) ---
+  # God-struct ceiling. NOTE: the Go struct_field count is a body-line-span
+  # heuristic (endLine-startLine-1), so per-field doc comments inflate it well
+  # above the true field count — it is a "struct body size" guard, not an exact
+  # field count. Current max in this repo: Diagnostic = 61 body lines (20 fields,
+  # one doc-comment per field). Diagnostic is the core value object that grows
+  # with every feature, so the ceiling is generous: 90 blocks a genuinely
+  # egregious god-struct while leaving the documented core aggregate headroom.
+  - id: arch_struct_field_max
+    type: struct_field_max
+    max: 90
+    gate: fail
+  # Public-API framework-type-leak — advisory dogfooding. Fires when an exported
+  # field or function return type names an external (non-first-party) package.
+  # archfit's adapter/cmd layers legitimately expose external types (kong, SDKs),
+  # so this is a candidate-surfacer kept non-blocking (warn); the model/core ring
+  # is guarded structurally by the forbidden_dependency rules above.
+  - id: arch_public_api_type_leak
+    type: public_api_type_leak
     gate: warn
 map_review:
   stale_after: 2160h # 90 days

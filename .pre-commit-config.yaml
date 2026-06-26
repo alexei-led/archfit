@@ -69,3 +69,11 @@ repos:
           - pre-push
         pass_filenames: false
         always_run: true
+      - id: arch-lint
+        name: arch-lint (archfit architecture drift gate)
+        language: system
+        entry: make arch-lint
+        stages:
+          - pre-push
+        pass_filenames: false
+        always_run: true

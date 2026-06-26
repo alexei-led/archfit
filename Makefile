@@ -55,6 +55,13 @@ test-coverage: test ## open HTML coverage report
 archfit: build ## run archfit check --full against this repo's architecture policy
 	$(BIN_DIR)/$(BINARY) check --config $(ARCHFIT_CONFIG) --full
 
+## arch-lint: architecture drift linter — fails on any blocking architecture
+## violation (forbidden dependency, layer inversion, god-struct ceiling). Alias
+## for the archfit dogfood gate; wired into the pre-push hook so drift is caught
+## before it reaches CI. `make all` runs this too.
+.PHONY: arch-lint
+arch-lint: archfit ## architecture drift linter (alias for the archfit dogfood gate)
+
 ## archfit-report: write a Markdown architecture audit report
 .PHONY: archfit-report
 archfit-report: build ## write reports/archfit-report.md for human review
