@@ -30,6 +30,22 @@ Python (ccgram 1835), Rust (herdr 203, yazi 1118). All tools installed and `ok`
 per `archfit doctor`. Numbers are single-host (Apple Silicon, warm OS cache
 unless noted); treat as relative, not absolute CI budgets.
 
+> **Implementation status (2026-06-26) — executed via the plan
+> `docs/plans/20260626-archfit-tooling-reduction.md`; validated lossless on all 7
+> repos (0 metric regressions).**
+>
+> | Recommendation                                           | Status                         | Result                                                                                                                                                                              |
+> | -------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+> | §9.1 depcruise `--ts-config` auto-detect                 | ✅ done (`dd40bf7`)            | codegraph unresolved edges 1→0; alias edges recovered into coupling                                                                                                                 |
+> | §5.1 drop gitnexus → SCIP-derived `symbol_dependants`    | ✅ done (`c631195`)            | Node tool + index build removed; risk_hub preserved, coverage **up** (archfit 53→98, ccgram 104→166, yazi 24→1208 files); schema v1→v2                                              |
+> | §5.2 lizard → gocyclo (Go) + ast-grep proxy (TS/Py/Rust) | ✅ done (`60dcb42`)            | default Python pin removed; complexity preserved `info→info` on archfit (gocyclo) + herdr (proxy) **without lizard**; recall vs lizard Py 0.96 / Rust 0.94 / TS 0.88; lizard opt-in |
+> | §5.3 cargo-modules vs scip                               | ⚠️ corrected — **not** demoted | code shows they are complementary (cargo-modules = structure, scip = strength); demoting would regress Rust                                                                         |
+> | go/packages `NeedTypes` → Go edge strength               | ✅ done (`7c86d7f`)            | scip-off Go gains scored edges (pumba 10 abstained→0, coupling_balance 63/high); scip-on archfit unchanged (78/high)                                                                |
+>
+> Net dependency reduction (fully-instrumented Go repo): gitnexus's Node runtime +
+> index build gone; lizard's Python pin gone by default. Validation method + per-repo
+> before/after in §7.4.
+
 ---
 
 ## 1. The prerequisite unit is a _runtime_, not a binary
@@ -492,6 +508,29 @@ across 58 packages:
 observation from §3. §5.4 was both benchmarked (221 MB → 13 MB) and **shipped** for
 the scan path (commit `a7dc937`); the benchmark detail lives in
 `big-json-in-go-2026-06.md`. §8's adjacent-tool numbers are fresh single-host runs.
+
+### 7.4 Cross-repo before/after validation of the executed changes — 0 regressions
+
+Captured a full `check --full --format json` baseline on all 7 repos **before** any
+change, then re-ran after gitnexus-drop + complexity-backends + Go-strength and
+diffed every metric's band/confidence (`scratchpad/baseline/` vs `scratchpad/after/`).
+
+- **No metric regressed on any repo** (0 of 7) — no dimension that measured in the
+  baseline went `n/a`, and `risk_hub`/`coupling_balance` held their band+confidence.
+- **gitnexus removed from every run** (`tool_coverage` no longer lists it); a stale
+  `tools.gitnexus` stanza in an existing config (herdr) is harmlessly ignored, not a
+  decode error — no config-compat break.
+- **risk_hub preserved + coverage up** (now SCIP-derived `symbol_dependants`):
+  identical hub counts and top hubs on archfit (98), ccgram (166), yazi (1180), with
+  files covered rising 53→98 / 104→166 / 24→1208 (SCIP graph ⊃ the old gitnexus index).
+- **complexity lossless without lizard**: the two repos that enable it kept `info` —
+  archfit via gocyclo, herdr via the ast-grep proxy — with lizard absent from coverage.
+- **Go strength gain**: on a scip-off Go repo (pumba) 10 previously-abstained edges
+  became scored (`coupling_balance` 63/high); scip-on archfit unchanged (78/high,
+  SCIP strength still wins).
+
+Acceptance gates on the final tree: `make test` (53 pkgs ok), `make lint` (0 issues),
+`TestArchImports`, `TestGolden`, and `make archfit` dogfood all green.
 
 ---
 

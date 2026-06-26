@@ -1,5 +1,12 @@
 # archfit tooling reduction: fewer external dependencies, same/more metrics
 
+> **STATUS: COMPLETED 2026-06-26.** Executed via multi-agent workflows; validated
+> lossless on all 7 repos (0 metric regressions — see report §7.4).
+> Done: T1 baseline · T2–4 gitnexus drop (`c631195`) · T5–7 complexity backends
+> (`60dcb42`) · T9 Go strength (`7c86d7f`) · T10 validation · T11–12 docs.
+> **T8 SKIPPED** — cargo-modules/scip are complementary, demoting would regress Rust
+> (report §5.3). depcruise `--ts-config` shipped earlier (`dd40bf7`).
+
 ## Overview
 
 Apply the lossless-core recommendations from
@@ -198,13 +205,13 @@ dependant files)` — exactly the gitnexus cypher semantics, in-process
       longer runs the tool. Add a one-line comment: "ignore index dirs; tool removed."
 - [ ] current user-facing docs: purge gitnexus from `CLAUDE.md`, `README.md`, and
       `docs/guide/{install,configuration-reference,tooling,languages,metrics,
-  troubleshooting,agent-feedback,release-notes}.md` (note the removal; risk_hub /
+troubleshooting,agent-feedback,release-notes}.md` (note the removal; risk_hub /
       `symbol_dependants` are SCIP-derived). **Leave historical records unchanged**:
       `docs/plans/completed/*`, `docs/plans/notes/*` (incl. `gitnexus-adapter-decision.md`),
       `docs/design/*`, `docs/notes/*` are history, not current behavior.
 - [ ] confirm `TestArchImports` green (gitnexus package gone from the ring)
 - [ ] **verification gate**: `grep -rin gitnexus internal/ cmd/ .archfit.yaml
-  .archfit-labels.yaml CLAUDE.md README.md docs/guide/` returns **only** the two
+.archfit-labels.yaml CLAUDE.md README.md docs/guide/` returns **only** the two
       intentional `scope.go` index-dir exclusions — zero other code/config/test/
       current-doc hits
 - [ ] run `make test` + `make lint` + `make archfit` (dogfood, gitnexus-free) — must
