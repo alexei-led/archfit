@@ -38,3 +38,44 @@ type Graph struct {
 func (g Graph) Empty() bool {
 	return len(g.Module) == 0 && len(g.FanIn) == 0 && len(g.Refs) == 0
 }
+
+// DependantsFromSymbolGraph computes a per-file distinct-dependant count from
+// the SCIP symbol graph. For each from→to edge in g.Refs, with fa=g.Path[from]
+// and fb=g.Path[to], when fa and fb are both non-empty and fa!=fb, fa is
+// counted as a distinct dependant of fb. Returns file→count or nil for an
+// empty graph.
+//
+// Semantics: per source file F, count distinct other files whose symbols
+// reference symbols defined in F. Derived in-process from the SCIP graph —
+// no external tool required.
+func DependantsFromSymbolGraph(g Graph) map[string]int {
+	if g.Empty() {
+		return nil
+	}
+	// dependantSet[fb] = set of distinct files fa that reference symbols in fb
+	dependantSet := make(map[string]map[string]struct{})
+	for from, tos := range g.Refs {
+		fa := g.Path[from]
+		if fa == "" {
+			continue
+		}
+		for to := range tos {
+			fb := g.Path[to]
+			if fb == "" || fa == fb {
+				continue
+			}
+			if dependantSet[fb] == nil {
+				dependantSet[fb] = make(map[string]struct{})
+			}
+			dependantSet[fb][fa] = struct{}{}
+		}
+	}
+	if len(dependantSet) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(dependantSet))
+	for fb, set := range dependantSet {
+		out[fb] = len(set)
+	}
+	return out
+}

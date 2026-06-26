@@ -315,7 +315,6 @@ the run never fails — but the metric stays blind until you install it.
 | `lizard`            | `complexity`                    | yes | yes   | yes    | yes  | `tools.complexity.enabled: on`; `uv tool install 'lizard==1.23.0'`                |
 | SCIP indexer + `uv` | `risk_hub`                      | yes | yes   | yes    | yes  | `tools.scip.enabled: on`; see notes below                                         |
 | clone detector      | `functional_candidates`         | yes | yes   | yes    | yes  | `tools.clones.enabled: on`; `npm install -g jscpd@5.0.11`                         |
-| `gitnexus`          | enriches `risk_hub`             | yes | yes   | yes    | yes  | `tools.gitnexus.enabled: on` (or auto-detect); `npm install -g gitnexus@1.6.8`    |
 | `cargo-modules`     | intra-crate module graph (Rust) | —   | —     | —      | yes  | `tools.cargo-modules.enabled: on`; `cargo install cargo-modules --version 0.26.0` |
 
 Notes that bite most often:
@@ -348,11 +347,6 @@ Notes that bite most often:
 - **Clone detection is opt-in.** `tools.clones.enabled: on` plus `jscpd`
   (`npm install -g jscpd@5.0.11`) turns `functional_candidates` on. Off or absent
   → `n/a`.
-- **gitnexus auto-detects a present index.** With `tools.gitnexus.enabled`
-  unset/`auto`, a present `.gitnexus/` or `.codegraph` index is used
-  automatically; `on` always queries; `off` opts out but still reports that an
-  index is present so you can flip the flag. Refresh the index with
-  `node .gitnexus/run.cjs analyze --index-only`. archfit only reads it.
 
 See [Install → optional analysis tools](install.md#optional-analysis-tools) for
 quick setup and [Tooling reference](tooling.md) for platform-specific package

@@ -56,22 +56,19 @@ type ComplexityFunc struct {
 }
 
 // RunSignals is the producer-side bundle the cmd layer gathers and hands to the
-// engine: git history, size, complexity, fitness, duplication, gitnexus impact,
-// and opt-in tool coverage. The engine folds it (plus its own extract outputs)
-// into a CollectedSignals for the metrics — no metric ever sees this type. Each
-// group is empty when its source is unavailable.
+// engine: git history, size, complexity, fitness, duplication, and opt-in tool
+// coverage. The engine folds it (plus its own extract outputs) into a
+// CollectedSignals for the metrics — no metric ever sees this type. Each group
+// is empty when its source is unavailable.
 type RunSignals struct {
 	History     HistorySignals
 	Size        SizeSignals
 	Complexity  ComplexitySignals
 	Fitness     Signals
 	Duplication DuplicationSignals
-	// GitnexusImpact maps repo-relative file path → distinct dependant-file count
-	// from the gitnexus CLI; the engine folds it into SymbolSignals for risk_hub.
-	GitnexusImpact map[string]int
 	// ExtraCoverage carries tool-coverage records for opt-in tools that run in cmd
-	// (loc, complexity, clones, gitnexus) rather than through the engine extractor
-	// loop. The engine appends these to the diagnostic ToolCoverage slice.
+	// (loc, complexity, clones) rather than through the engine extractor loop.
+	// The engine appends these to the diagnostic ToolCoverage slice.
 	ExtraCoverage []diagnostic.Coverage
 	// DynamicImports carries the report-only dynamic/lazy-import sites detected by
 	// the dynimports adapter. Like ExtraCoverage, the engine reads it straight into
@@ -139,11 +136,11 @@ type HistorySignals struct {
 	CoChange  map[[2]string]int // sorted file pair -> commits touching both
 }
 
-// SymbolSignals carries the SCIP symbol graph and the optional gitnexus impact
-// enrichment. Empty when SCIP is off.
+// SymbolSignals carries the SCIP symbol graph and the SCIP-derived per-file
+// dependant counts. Empty when SCIP is off.
 type SymbolSignals struct {
-	Graph          symbol.Graph
-	GitnexusImpact map[string]int // file -> distinct dependant-file count (optional)
+	Graph            symbol.Graph
+	SymbolDependants map[string]int // file -> distinct dependant-file count (SCIP-derived)
 }
 
 // SizeSignals carries per-file line counts (tests excluded). Empty when absent.

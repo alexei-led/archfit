@@ -610,26 +610,12 @@ func TestLoad_ExistingConfigUnchanged(t *testing.T) {
 	}
 }
 
-// TestLoad_NewToolsAndMetrics verifies that the new gitnexus/clones tool entries
-// and the three Tranche-1 metric entries parse correctly (checkbox: load with new keys).
+// TestLoad_NewToolsAndMetrics verifies that new tool entries and the three
+// Tranche-1 metric entries parse correctly (checkbox: load with new keys).
 func TestLoad_NewToolsAndMetrics(t *testing.T) {
 	cfg, err := config.Load(context.Background(), "testdata/new_tools_metrics.yaml")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
-	}
-
-	// tools.gitnexus.enabled: off
-	gitnexus, ok := cfg.Tools[config.ToolGitnexus]
-	if !ok {
-		t.Error("tools.gitnexus not found")
-	} else if gitnexus.Enabled != config.ModeOff {
-		t.Errorf("tools.gitnexus.enabled = %q, want off", gitnexus.Enabled)
-	}
-	if cfg.GitnexusEnabled() {
-		t.Error("GitnexusEnabled() = true, want false when off")
-	}
-	if !cfg.GitnexusExplicitlyDisabled() {
-		t.Error("GitnexusExplicitlyDisabled() = false, want true when explicitly off")
 	}
 
 	// tools.clones.enabled: on
@@ -665,18 +651,10 @@ func TestLoad_NewToolsAndMetrics(t *testing.T) {
 	}
 }
 
-// TestNewToolsDefaultOff verifies that absent gitnexus/clones entries default to
+// TestNewToolsDefaultOff verifies that absent clones entries default to
 // disabled (zero ToolMode is not ModeOn), matching the opt-in contract.
 func TestNewToolsDefaultOff(t *testing.T) {
 	cfg := config.Config{Version: 1}
-	if cfg.GitnexusEnabled() {
-		t.Error("GitnexusEnabled() = true when absent, want false")
-	}
-	// Absent is NOT an explicit opt-out — it is auto-detect mode (a present
-	// index will be used), distinct from `enabled: off`.
-	if cfg.GitnexusExplicitlyDisabled() {
-		t.Error("GitnexusExplicitlyDisabled() = true when absent, want false (auto-detect)")
-	}
 	if cfg.ClonesEnabled() {
 		t.Error("ClonesEnabled() = true when absent, want false")
 	}
@@ -697,22 +675,22 @@ func TestNewMetricsDefaultZero(t *testing.T) {
 	}
 }
 
-// TestNewToolInvalidMode verifies that an invalid mode value for a new tool key is rejected.
+// TestNewToolInvalidMode verifies that an invalid mode value for a tool key is rejected.
 func TestNewToolInvalidMode(t *testing.T) {
-	yaml := "version: 1\ntools:\n  gitnexus:\n    enabled: maybe\n"
+	yaml := "version: 1\ntools:\n  clones:\n    enabled: maybe\n"
 	tmp := t.TempDir() + "/cfg.yaml"
 	if err := writeFile(tmp, yaml); err != nil {
 		t.Fatalf("write temp: %v", err)
 	}
 	_, err := config.Load(context.Background(), tmp)
 	if err == nil {
-		t.Error("Load: expected error for invalid gitnexus mode, got nil")
+		t.Error("Load: expected error for invalid clones mode, got nil")
 	}
 }
 
 // TestLoad_SelfConfig verifies that the project's own .archfit.yaml — the realistic
 // config we run locally and in CI — loads cleanly and is well-formed. It deliberately
-// does NOT pin opt-in toggles (gitnexus, risk_hub, …): those are operational choices,
+// does NOT pin opt-in toggles (risk_hub, …): those are operational choices,
 // not invariants, and pinning them broke this test on every legitimate config change.
 // Toggle-accessor behavior is covered against synthetic configs by TestForMetric,
 // TestNewToolsDefaultOff, and the testdata fixture tests above.
@@ -755,7 +733,6 @@ func TestSelfConfig_ExtractModuleMap(t *testing.T) {
 		"internal/extract/clones",
 		"internal/extract/complexity",
 		"internal/extract/loc",
-		"internal/extract/gitnexus",
 	}
 
 	for _, modName := range wantExtractModules {

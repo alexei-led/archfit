@@ -142,7 +142,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	// cohesion) module granularity and preventing the degenerate-graph guard from
 	// tripping on single-crate repos. The module-graph coverage row is stored in
 	// lastModuleGraphCov so the pipeline can append it to ExtraCoverage (same pattern
-	// as complexity/clones/gitnexus, which also surface coverage outside Extract).
+	// as complexity/clones, which also surface coverage outside Extract).
 	if e.cfg.ModuleGraph {
 		modNodes, modEdges, modCov := e.runModuleGraph(ctx, members)
 		facts.Nodes = append(facts.Nodes, modNodes...)

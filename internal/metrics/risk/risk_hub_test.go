@@ -273,14 +273,14 @@ func TestRiskHub_BandIsInfo(t *testing.T) {
 	}
 }
 
-// TestRiskHub_GitnexusImpactRefinesRanking verifies two properties:
+// TestRiskHub_SymbolDependantsRefinesRanking verifies two properties:
 //
-//  1. When GitnexusImpact is non-empty, the module with higher historical impact
-//     ranks above one with identical surface-breadth but lower impact.
-//  2. When GitnexusImpact is nil, the result is byte-identical to today's
-//     surface-breadth × volatility output (the gitnexus path is a no-op).
-func TestRiskHub_GitnexusImpactRefinesRanking(t *testing.T) {
-	// Two modules with equal breadth=1 so only gitnexus factor breaks the tie.
+//  1. When SymbolDependants is non-empty, the module with higher dependant count
+//     ranks above one with identical surface-breadth but lower count.
+//  2. When SymbolDependants is nil, the result is byte-identical to plain
+//     surface-breadth × volatility output (the dependant path is a no-op).
+func TestRiskHub_SymbolDependantsRefinesRanking(t *testing.T) {
+	// Two modules with equal breadth=1 so only the dependant factor breaks the tie.
 	g := makeGraph(
 		map[string]string{
 			testSymA:    testModAlpha,
@@ -300,43 +300,43 @@ func TestRiskHub_GitnexusImpactRefinesRanking(t *testing.T) {
 	}
 	m := NewMetric(makeConfig(nil))
 
-	// Without gitnexus: both modules have equal score; alpha sorts first (alphabetical tiebreak).
-	withoutGN := m.Calculate(symInput(g))
-	if withoutGN.Band == result.BandNA {
-		t.Fatal("expected real result without gitnexus, got n/a")
+	// Without dependants: both modules have equal score; alpha sorts first (alphabetical tiebreak).
+	withoutDep := m.Calculate(symInput(g))
+	if withoutDep.Band == result.BandNA {
+		t.Fatal("expected real result without dependants, got n/a")
 	}
 
-	// With gitnexus: beta's file has much higher impact → beta ranks above alpha.
+	// With dependants: beta's file has much higher count → beta ranks above alpha.
 	impact := map[string]int{"src/beta.py": 100, "src/alpha.py": 1}
-	withGN := m.Calculate(signal.SymbolInput{Symbol: signal.SymbolSignals{Graph: g, GitnexusImpact: impact}})
-	if withGN.Band == result.BandNA {
-		t.Fatal("expected real result with gitnexus, got n/a")
+	withDep := m.Calculate(signal.SymbolInput{Symbol: signal.SymbolSignals{Graph: g, SymbolDependants: impact}})
+	if withDep.Band == result.BandNA {
+		t.Fatal("expected real result with dependants, got n/a")
 	}
 
 	// Verify ranking is affected: "beta" should appear before "alpha" in display.
-	betaPos := strings.Index(withGN.Display, "beta")
-	alphaPos := strings.Index(withGN.Display, "alpha")
+	betaPos := strings.Index(withDep.Display, "beta")
+	alphaPos := strings.Index(withDep.Display, "alpha")
 	if betaPos == -1 || alphaPos == -1 {
-		t.Fatalf("expected both 'beta' and 'alpha' in display, got: %s", withGN.Display)
+		t.Fatalf("expected both 'beta' and 'alpha' in display, got: %s", withDep.Display)
 	}
 	if betaPos > alphaPos {
-		t.Errorf("expected 'beta' (higher gitnexus impact) before 'alpha', got: %s", withGN.Display)
+		t.Errorf("expected 'beta' (higher dependant count) before 'alpha', got: %s", withDep.Display)
 	}
 
-	// Verify the gitnexus factor is surfaced in the display string.
-	if !strings.Contains(withGN.Display, "gn×") {
-		t.Errorf("expected gitnexus factor marker 'gn×' in display, got: %s", withGN.Display)
+	// Verify the dependant factor is surfaced in the display string.
+	if !strings.Contains(withDep.Display, "dep×") {
+		t.Errorf("expected dependant factor marker 'dep×' in display, got: %s", withDep.Display)
 	}
 
-	// Verify that nil GitnexusImpact produces the same output as an empty map
-	// (both are the no-gitnexus path — behavior must be identical).
-	withEmpty := m.Calculate(signal.SymbolInput{Symbol: signal.SymbolSignals{Graph: g, GitnexusImpact: map[string]int{}}})
-	if withoutGN.Display != withEmpty.Display {
-		t.Errorf("nil vs empty GitnexusImpact differ:\n  nil:   %s\n  empty: %s",
-			withoutGN.Display, withEmpty.Display)
+	// Verify that nil SymbolDependants produces the same output as an empty map
+	// (both are the no-dependants path — behavior must be identical).
+	withEmpty := m.Calculate(signal.SymbolInput{Symbol: signal.SymbolSignals{Graph: g, SymbolDependants: map[string]int{}}})
+	if withoutDep.Display != withEmpty.Display {
+		t.Errorf("nil vs empty SymbolDependants differ:\n  nil:   %s\n  empty: %s",
+			withoutDep.Display, withEmpty.Display)
 	}
-	if withoutGN.Value != withEmpty.Value {
-		t.Errorf("nil vs empty GitnexusImpact Value differ: %v vs %v", withoutGN.Value, withEmpty.Value)
+	if withoutDep.Value != withEmpty.Value {
+		t.Errorf("nil vs empty SymbolDependants Value differ: %v vs %v", withoutDep.Value, withEmpty.Value)
 	}
 }
 

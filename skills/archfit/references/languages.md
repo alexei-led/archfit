@@ -109,7 +109,6 @@ Guidance:
 - `tools.complexity.enabled: on` + `lizard` → `complexity`
 - `tools.scip.enabled: on` + language SCIP indexer / `rust-analyzer` → `risk_hub`
 - `tools.clones.enabled: on` + clone detector → `functional_candidates`
-- `tools.gitnexus.enabled: on` or auto-detected index → richer `risk_hub`
 - `tools.cargo-modules.enabled: on` + `cargo-modules` → Rust intra-crate depth
 
 When one is missing, say so explicitly. `n/a` means unmeasured, not strong.

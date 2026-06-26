@@ -182,13 +182,12 @@ func TestRenderer_Render_NewInfoMetrics(t *testing.T) {
 }
 
 func TestRenderer_Render_ToolCoverageNewTools(t *testing.T) {
-	// Confirm scip-symbols, jscpd (clones), and gitnexus coverage rows render.
+	// Confirm scip-symbols and jscpd (clones) coverage rows render.
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
 	d.ToolCoverage = []diagnostic.Coverage{
 		{Tool: "scip-symbols", Status: statusAbsent},
 		{Tool: "jscpd", Status: statusAbsent},
-		{Tool: "gitnexus", Status: statusAbsent},
 	}
 
 	r := console.New()
@@ -198,7 +197,7 @@ func TestRenderer_Render_ToolCoverageNewTools(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, want := range []string{"scip-symbols", "jscpd", "gitnexus"} {
+	for _, want := range []string{"scip-symbols", "jscpd"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("coverage section missing %q\nfull output:\n%s", want, out)
 		}

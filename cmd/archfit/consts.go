@@ -32,9 +32,8 @@ const (
 
 // Optional-analyzer tool names shared by doctor and the coverage-gap table.
 const (
-	toolLizard   = "lizard"
-	toolJscpd    = "jscpd"
-	toolGitnexus = "gitnexus"
+	toolLizard = "lizard"
+	toolJscpd  = "jscpd"
 )
 
 // Primary dependency-graph analyzer coverage names (as they appear in

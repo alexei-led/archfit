@@ -83,7 +83,7 @@ func richDiagnostic() diagnostic.Diagnostic {
 		bcAdv("a", "b", "functional", "cross_module_same_owner", "medium", 5, "medium", "medium", 3),
 	}
 	d.ToolCoverage = []diagnostic.Coverage{
-		okCov("go/packages"), okCov("scip"), okCov("gitnexus"), okCov("lizard"), okCov("jscpd"),
+		okCov("go/packages"), okCov("scip"), okCov("lizard"), okCov("jscpd"),
 	}
 	return d
 }
@@ -475,7 +475,7 @@ func TestAnalysisConfidence_SemanticToolsAbsent(t *testing.T) {
 
 	bare := diagnostic.New()
 	bare.Metrics = []diagnostic.MetricResult{metric("coverage", 0.95, "strong", "high")}
-	bare.ToolCoverage = []diagnostic.Coverage{okCov("go/packages")} // no scip/gitnexus/lizard/jscpd
+	bare.ToolCoverage = []diagnostic.Coverage{okCov("go/packages")} // no scip/lizard/jscpd
 	bareMeta := dimByName(t, Synthesize(bare), DimAnalysisConfidence)
 
 	if bareMeta.Value >= fullMeta.Value {
@@ -512,7 +512,7 @@ func TestAnalysisConfidence(t *testing.T) {
 			// 2/3 primary absent (−30), semantic tools present so they don't compound
 			coverage: []diagnostic.Coverage{
 				okCov("go/packages"),
-				okCov("scip"), okCov("gitnexus"), okCov("lizard"), okCov("jscpd"),
+				okCov("scip"), okCov("lizard"), okCov("jscpd"),
 			},
 			minValue: 21,
 			maxValue: 60,
@@ -527,7 +527,7 @@ func TestAnalysisConfidence(t *testing.T) {
 				metric("blast_radius", 3, "info", "high"),
 				metric("instability", 2, "info", "high"),
 			},
-			// primary present, semantic (scip/gitnexus/lizard/jscpd) all absent
+			// primary present, semantic (scip/lizard/jscpd) all absent
 			coverage: []diagnostic.Coverage{okCov("go/packages")},
 			wantBand: BandServiceable,
 			minValue: 61,
@@ -578,7 +578,7 @@ func TestAnalysisConfidence_PrimaryExtractorTools(t *testing.T) {
 		}
 		d.ToolCoverage = []diagnostic.Coverage{
 			okCov("cargo"),
-			okCov("scip"), okCov("gitnexus"), okCov("lizard"), okCov("jscpd"),
+			okCov("scip"), okCov("lizard"), okCov("jscpd"),
 		}
 		return d
 	}
@@ -965,7 +965,7 @@ func TestAnalysisConfidence_NADimensionRatioCap(t *testing.T) {
 		metric("instability", 0, "info", "high"),
 	}
 	d.ToolCoverage = []diagnostic.Coverage{
-		okCov("go/packages"), okCov("scip"), okCov("gitnexus"), okCov("lizard"), okCov("jscpd"),
+		okCov("go/packages"), okCov("scip"), okCov("lizard"), okCov("jscpd"),
 	}
 	naMeta := dimByName(t, Synthesize(d), DimAnalysisConfidence)
 	if naMeta.Value >= 100 {

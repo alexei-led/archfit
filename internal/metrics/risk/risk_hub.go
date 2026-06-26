@@ -128,22 +128,23 @@ func (m HubMetric) Version() string { return "risk_hub.v1" }
 
 // riskHubInfo holds per-module aggregated risk for display.
 type riskHubInfo struct {
-	module          string
-	breadth         int     // count of externally-referenced symbols
-	risk            float64 // breadth × volatility multiplier [× gitnexus factor when present]
-	multiplier      float64
-	gitnexusFactor  float64 // 1.0 when gitnexus absent; bounded [1.0, 2.0] when present
-	gitnexusPresent bool    // true when GitnexusImpact was non-empty
+	module            string
+	breadth           int     // count of externally-referenced symbols
+	risk              float64 // breadth × volatility multiplier [× dependant factor when present]
+	multiplier        float64
+	dependantFactor   float64 // 1.0 when absent; bounded [1.0, 2.0] when SCIP dependants present
+	dependantsPresent bool    // true when SymbolDependants was non-empty
 }
 
-// gitnexusImpactFactor converts a raw gitnexus impact count for a module into a
-// bounded multiplicative factor in [1.0, 2.0]. This keeps gitnexus as a refining
-// enrichment rather than allowing it to dominate the surface-breadth ranking.
+// dependantFactor converts a raw SCIP-derived dependant count for a module
+// into a bounded multiplicative factor in [1.0, 2.0]. This keeps the
+// dependant signal as a refining enrichment rather than allowing it to
+// dominate the surface-breadth ranking.
 //
-// Formula: 1.0 + clamp(impact / maxImpact, 0, 1) where maxImpact is the largest
-// impact value seen across all modules in this run (normalised per-run).
+// Formula: 1.0 + clamp(impact / maxImpact, 0, 1) where maxImpact is the
+// largest value seen across all modules in this run (normalised per-run).
 // A module absent from the impact map receives 1.0 (neutral — no penalty).
-func gitnexusImpactFactor(mod string, impactMap map[string]int, maxImpact int) float64 {
+func dependantFactor(mod string, impactMap map[string]int, maxImpact int) float64 {
 	if len(impactMap) == 0 || maxImpact <= 0 {
 		return 1.0
 	}
@@ -155,11 +156,11 @@ func gitnexusImpactFactor(mod string, impactMap map[string]int, maxImpact int) f
 	return 1.0 + normalised                       // [1.0, 2.0]
 }
 
-// moduleImpactFromFiles aggregates the file-keyed gitnexus dependant counts to
+// moduleDependantsFromFiles aggregates the file-keyed SCIP dependant counts to
 // module granularity via the symbol graph's defining-file paths. A module's
 // impact is the MAX of its files' counts (its most-depended-on file) — summing
 // would double-count multi-file modules against single-file ones.
-func moduleImpactFromFiles(g symbol.Graph, fileImpact map[string]int) map[string]int {
+func moduleDependantsFromFiles(g symbol.Graph, fileImpact map[string]int) map[string]int {
 	if len(fileImpact) == 0 {
 		return nil
 	}
@@ -179,20 +180,19 @@ func moduleImpactFromFiles(g symbol.Graph, fileImpact map[string]int) map[string
 // and reports the top hubs. Returns n/a when SymbolGraph is empty (SCIP off or
 // indexer absent) — never a false zero.
 //
-// When the SymbolInput's gitnexus impact is non-empty (gitnexus on or auto-detected
-// from a present .gitnexus/.codegraph index, with the CLI present), each module's
-// score is further multiplied by a bounded
-// gitnexus factor in [1.0, 2.0] derived from its historical change-impact count
-// (normalised to the per-run maximum). When GitnexusImpact is nil/empty (the
-// default), this factor is 1.0 for every module and the result is exactly the
-// same as plain surface-breadth × volatility.
+// When the SymbolInput's SymbolDependants is non-empty (SCIP on and the graph
+// contains cross-file references), each module's score is further multiplied by
+// a bounded dependant factor in [1.0, 2.0] derived from its SCIP-derived
+// dependant count (normalised to the per-run maximum). When SymbolDependants is
+// nil/empty (the default), this factor is 1.0 for every module and the result
+// is exactly the same as plain surface-breadth × volatility.
 func (m HubMetric) Calculate(in signal.SymbolInput) diagnostic.MetricResult {
-	hasGitnexus := len(in.Symbol.GitnexusImpact) > 0
+	hasDependants := len(in.Symbol.SymbolDependants) > 0
 	def := "cross-module surface breadth × explicit config volatility: count of a module's " +
 		"symbols referenced from other modules (churn-independent; never gates)"
-	if hasGitnexus {
-		def = "cross-module surface breadth × explicit config volatility × gitnexus historical impact: " +
-			"count of a module's symbols referenced from other modules, refined by historical change impact " +
+	if hasDependants {
+		def = "cross-module surface breadth × explicit config volatility × SCIP dependant count: " +
+			"count of a module's symbols referenced from other modules, refined by distinct dependant-file count " +
 			"(churn-independent; never gates)"
 	}
 	if in.Symbol.Graph.Empty() {
@@ -204,9 +204,9 @@ func (m HubMetric) Calculate(in signal.SymbolInput) diagnostic.MetricResult {
 		return result.NACount(m.Name(), m.Version(), def)
 	}
 
-	// GitnexusImpact is keyed by file path; aggregate to module granularity
+	// SymbolDependants is keyed by file path; aggregate to module granularity
 	// through the symbol graph, then normalise to the per-run maximum.
-	moduleImpact := moduleImpactFromFiles(in.Symbol.Graph, in.Symbol.GitnexusImpact)
+	moduleImpact := moduleDependantsFromFiles(in.Symbol.Graph, in.Symbol.SymbolDependants)
 	maxImpact := 0
 	for _, v := range moduleImpact {
 		if v > maxImpact {
@@ -218,14 +218,14 @@ func (m HubMetric) Calculate(in signal.SymbolInput) diagnostic.MetricResult {
 	hubs := make([]riskHubInfo, 0, len(breadth))
 	for mod, b := range breadth {
 		mult := m.volatilityMultiplier(mod)
-		gf := gitnexusImpactFactor(mod, moduleImpact, maxImpact)
+		df := dependantFactor(mod, moduleImpact, maxImpact)
 		hubs = append(hubs, riskHubInfo{
-			module:          mod,
-			breadth:         b,
-			risk:            float64(b) * mult * gf,
-			multiplier:      mult,
-			gitnexusFactor:  gf,
-			gitnexusPresent: hasGitnexus,
+			module:            mod,
+			breadth:           b,
+			risk:              float64(b) * mult * df,
+			multiplier:        mult,
+			dependantFactor:   df,
+			dependantsPresent: hasDependants,
 		})
 	}
 	sort.Slice(hubs, func(i, j int) bool {
@@ -282,9 +282,9 @@ func riskHubDisplay(hubs []riskHubInfo, totalExternalSymbols int) string {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		if h.gitnexusPresent {
-			fmt.Fprintf(&b, "%s [breadth %d, ×%.2f, gn×%.2f→%.2f]",
-				result.ShortModule(h.module), h.breadth, h.multiplier, h.gitnexusFactor, h.risk)
+		if h.dependantsPresent {
+			fmt.Fprintf(&b, "%s [breadth %d, ×%.2f, dep×%.2f→%.2f]",
+				result.ShortModule(h.module), h.breadth, h.multiplier, h.dependantFactor, h.risk)
 		} else {
 			fmt.Fprintf(&b, "%s [breadth %d, ×%.2f→%.2f]",
 				result.ShortModule(h.module), h.breadth, h.multiplier, h.risk)

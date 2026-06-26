@@ -139,7 +139,4 @@ fully-tooled run no longer reads 100 when (by Rust design) encapsulation is n/a.
 ## Layout
 
 `cmd/archfit` (kong CLI) · `internal/` decision core + adapters · `docs/design`
-(decisions) · `docs/guide` (user docs) · `docs/plans`. Optional GitNexus index in
-`.gitnexus/` / `.codegraph/`; refresh with `node .gitnexus/run.cjs analyze
---index-only` (`--index-only` skips gitnexus rewriting CLAUDE.md/AGENTS.md and
-installing `.claude/skills/gitnexus/`; archfit only reads the index).
+(decisions) · `docs/guide` (user docs) · `docs/plans`.

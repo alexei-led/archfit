@@ -24,7 +24,6 @@ func (c *DoctorCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kon
 		// Semantic depth tools — their absence lowers analysis_confidence.
 		{toolLizard, toolLizard, "uv tool install lizard / pip install lizard"},
 		{toolJscpd, toolJscpd, "npm install -g jscpd"},
-		{toolGitnexus, toolGitnexus, "see docs/guide — git-history change-coupling index"},
 	}
 	for _, lang := range languageRegistry {
 		tools = append(tools, lang.DoctorTools...)

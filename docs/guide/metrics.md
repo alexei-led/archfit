@@ -225,8 +225,8 @@ here.
   symbol surface, weighted by _declared_ volatility.
 - **Computed:** `breadth × volatility_multiplier`, where breadth is the count of a
   module's own symbols referenced from other modules' symbols, and the multiplier
-  is `high 1.0 / medium 0.66 / low 0.33 / unset 1.0`. An optional GitNexus factor
-  (1.0–2.0) refines but cannot dominate.
+  is `high 1.0 / medium 0.66 / low 0.33 / unset 1.0`. An optional SCIP-derived
+  dependant-count factor (1.0–2.0) refines but cannot dominate.
 - **Distinct from `blast_radius`:** blast radius counts _how many modules depend on
   M_; risk*hub counts \_how many of M's own symbols are used externally*. A state
   store with 73 externally-read fields outranks a utility with one widely-called
@@ -476,7 +476,6 @@ failure.
 | risk_hub, cohesion_lcom                                                                                                 | SCIP index (`tools.scip.enabled: on`)                               |
 | complexity                                                                                                              | `lizard` (`tools.complexity.enabled: on`)                           |
 | functional_candidates                                                                                                   | clone detector (`tools.clones.enabled: on`)                         |
-| risk_hub (refinement only)                                                                                              | GitNexus (`tools.gitnexus.enabled: on`)                             |
 | unsafe_density, global_state_density, panic_density, struct_field_density, test_density                                 | `sg` (ast-grep); `tools.syntax.enabled: on`                         |
 | deprecated_dep_count                                                                                                    | manifest files (`go.mod`, `package.json`) — built-in; no extra tool |
 | file_mutual_import                                                                                                      | built-in (TS file→file graph); no extra tool                        |

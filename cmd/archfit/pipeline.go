@@ -21,7 +21,6 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/complexity"
 	"github.com/alexei-led/archfit/internal/extract/deployunit"
 	"github.com/alexei-led/archfit/internal/extract/dynimports"
-	"github.com/alexei-led/archfit/internal/extract/gitnexus"
 	"github.com/alexei-led/archfit/internal/extract/loc"
 	"github.com/alexei-led/archfit/internal/extract/manifest"
 	runtimedetect "github.com/alexei-led/archfit/internal/extract/runtime"
@@ -143,7 +142,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 
 	// LOC walk — repo-relative path→line-count map + coverage record.
-	// ExtraCoverage order: loc, complexity, clones, gitnexus.
+	// ExtraCoverage order: loc, complexity, clones.
 	var locCov diagnostic.Coverage
 	var toolErr error
 	change.Size.FileLOC, locCov, toolErr = loc.Run(s.Root)
@@ -217,17 +216,6 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled())
 	noteToolErr("jscpd", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, clonesCov)
-
-	// gitnexus optional symbol-impact enrichment. tools.gitnexus.enabled is
-	// three-state: on always attempts, off respects the opt-out (but reports a
-	// present index), and auto/unset auto-detects — a present .gitnexus/.codegraph
-	// index is used automatically. Returns empty+absent when not used or the CLI is
-	// absent; risk_hub falls back to surface-breadth-only in that case.
-	// Coverage is appended to ExtraCoverage so the engine includes it in the diagnostic.
-	var gitnexusCov diagnostic.Coverage
-	change.GitnexusImpact, gitnexusCov, toolErr = gitnexus.Run(ctx, deps.Runner, s.Root, cfg.GitnexusEnabled(), cfg.GitnexusExplicitlyDisabled())
-	noteToolErr("gitnexus", toolErr)
-	change.ExtraCoverage = append(change.ExtraCoverage, gitnexusCov)
 
 	// Pinned coupling labels (.archfit-labels.yaml): the human-reviewed output of
 	// `archfit enrich`. Optional; a malformed file fails loudly — a half-read
@@ -307,7 +295,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// cargo-modules module-graph coverage: opt-in (tools.cargo-modules.enabled: on).
 	// The Rust extractor runs cargo-modules during its Extract call (inside engine.Run
 	// above) and caches the coverage record. Append it here so it appears in
-	// ToolCoverage and the CoverageGap block — mirrors the gitnexus/complexity pattern.
+	// ToolCoverage and the CoverageGap block — mirrors the complexity/clones pattern.
 	if rustEx := rustExtractor(extractors); rustEx != nil {
 		diag.ToolCoverage = append(diag.ToolCoverage, rustEx.LastModuleGraphCoverage())
 	}
@@ -349,7 +337,6 @@ func buildCoverageToolConfigKey() map[string]string {
 	m := map[string]string{
 		toolLizard:       config.ToolComplexity,
 		toolJscpd:        config.ToolClones,
-		toolGitnexus:     config.ToolGitnexus,
 		toolCargoModules: config.ToolCargoModules,
 	}
 	for _, lang := range languageRegistry {
@@ -381,7 +368,6 @@ func buildToolAffectedMetrics() map[string]affectedMetrics {
 	m := map[string]affectedMetrics{
 		toolLizard:       {"uv tool install lizard / pip install lizard", []string{"complexity"}},
 		toolJscpd:        {"npm install -g jscpd", []string{"functional_candidates"}},
-		toolGitnexus:     {"see docs/guide — git-history change-coupling index", []string{"risk_hub"}},
 		toolCargoModules: {"cargo install cargo-modules (tools.cargo-modules.enabled: on)", []string{"cycle", "blast_radius", "cohesion", "encapsulation"}},
 	}
 	for _, lang := range languageRegistry {

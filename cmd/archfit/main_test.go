@@ -116,7 +116,7 @@ const (
 
 // writeNonGoRepo creates a git repo with no analyzable source (README only) and
 // the given archfit config body, returning the config path. The optional analyzers
-// (dependency-cruiser, grimp, lizard, jscpd, gitnexus) are absent on such a tree,
+// (dependency-cruiser, grimp, lizard, jscpd) are absent on such a tree,
 // so every run yields a stable, non-empty CoverageGaps block — the input the
 // opt-in hard tool-gate acts on.
 func writeNonGoRepo(t *testing.T, cfgBody string) string {

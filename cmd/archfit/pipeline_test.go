@@ -320,7 +320,6 @@ func TestConfigToolGate(t *testing.T) {
 		{toolDepCruiser, string(config.GateOff)}, // tools.typescript.gate: off
 		{toolGrimp, gateWarn},                    // tools.python unset → default
 		{"loc", gateWarn},                        // unmapped tool → default
-		{toolGitnexus, gateWarn},                 // mapped key present but unset
 	}
 	for _, tc := range cases {
 		if got := configToolGate(cfg, tc.tool); got != tc.want {

@@ -617,7 +617,7 @@ var structuralDimensions = map[string]bool{
 // (the injected PrimaryExtractorTools — go/packages, dependency-cruiser, grimp,
 // cargo — or defaultPrimaryExtractors when none is injected) subtracts a fixed
 // penalty so an all-absent repo lands ~0/critical rather than reading pct(0)=0,
-// which hides which extractors are missing. Each absent semantic tool (scip, gitnexus,
+// which hides which extractors are missing. Each absent semantic tool (scip,
 // lizard/complexity, jscpd/clones) then lowers confidence in the depth of the
 // analysis on top.
 func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex, dims []Dimension) Dimension {
@@ -709,7 +709,7 @@ func primaryExtractorTools(d diagnostic.Diagnostic) []string {
 
 // semanticTools are the optional deep-analysis tools whose absence lowers the
 // meta confidence. Checked by exact ToolCoverage.Tool name.
-var semanticTools = []string{"scip", "gitnexus", "lizard", "jscpd"}
+var semanticTools = []string{"scip", "lizard", "jscpd"}
 
 // ---------------------------------------------------------------------------
 // Helpers
