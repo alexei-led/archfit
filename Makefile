@@ -40,24 +40,10 @@ build: ## compile the archfit binary
 test: ## run all tests with race detector and coverage
 	go test -race -coverprofile=coverage.out ./...
 
-## test-dev: run the fast local test lane (-short, no race, no coverage)
-.PHONY: test-dev
-test-dev: ## run fast local tests with -short for inner-loop work
-	go test -short ./...
-
-## test-dev-race: run the fast local test lane with the race detector
-.PHONY: test-dev-race
-test-dev-race: ## run fast local tests with -race -short when concurrency changed
-	go test -race -short ./...
-
-## test-fast: backwards-compatible alias for test-dev
+## test-fast: run tests with race detector, skipping slow subprocess integration tests (-short)
 .PHONY: test-fast
-test-fast: test-dev ## alias for test-dev
-
-## test-changed: run the smallest safe local test command for current changes
-.PHONY: test-changed
-test-changed: ## pick and run the smallest safe local go test command for current changes
-	@./scripts/test-select.py --run
+test-fast: ## run tests with race + -short (skips real-sg subprocess integration tests for inner-loop speed)
+	go test -race -short ./...
 
 ## test-coverage: open HTML coverage report
 .PHONY: test-coverage

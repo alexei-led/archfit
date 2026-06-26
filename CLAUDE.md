@@ -8,17 +8,14 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`.
 ## Commands (Makefile)
 
 - `make build` — static binary, `CGO_ENABLED=0` → `.bin/archfit`
-- `make test` — `go test -race -coverprofile=coverage.out ./...` (full gate; keep for CI / pre-push)
-- `make test-dev` — `go test -short ./...` (fast local / agent lane)
-- `make test-dev-race` — `go test -race -short ./...` (use when concurrency or shared state changed)
-- `make test-fast` — alias for `make test-dev`
-- `make test-changed` — run the smallest safe local `go test` command for the current diff
+- `make test` — `go test -race -coverprofile=coverage.out ./...`
 - `make lint` — `golangci-lint run -c .golangci.yaml ./...` (pinned v2.1.6)
 - `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit`
 - `make archfit` — dogfood architecture-drift gate: `.bin/archfit check --config .archfit.yaml --full`
 - `make arch-lint` — architecture drift linter (alias for `make archfit`); wired into the pre-push hook
 - `make archfit-report` — write `reports/archfit-report.md` via `archfit scan`
 - `make mock` — regenerate moq fakes (`go generate ./...`)
+- `make test-fast` — `go test -race -short ./...` (skips slow subprocess/ast-grep integration tests; for inner-loop speed)
 - `make all` — fmt → lint → test → archfit
 - One test: `go test ./internal/<pkg>/ -run TestName`
 
