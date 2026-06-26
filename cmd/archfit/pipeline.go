@@ -182,8 +182,17 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 
 	// Ownership resolution: fills module owner gaps from CODEOWNERS or git-author
 	// history. Explicit config owner always wins; resolver only fills empty slots.
-	// Absent CODEOWNERS and non-git repos yield an empty map — no fabrication.
-	cfg.FillMissingOwners(ownership.Resolve(ctx, s.Root, cfg.ModuleMapView(), deps.Runner))
+	// If every path-owning module already declares owner, skip the extra repo scan.
+	needsOwnerResolution := false
+	for _, def := range cfg.Modules {
+		if len(def.Paths) > 0 && def.Owner == "" {
+			needsOwnerResolution = true
+			break
+		}
+	}
+	if needsOwnerResolution {
+		cfg.FillMissingOwners(ownership.Resolve(ctx, s.Root, cfg.ModuleMapView(), deps.Runner))
+	}
 
 	// Deploy-unit detection: fills module deploy_unit gaps from static repo
 	// analysis (Go main pkgs, Dockerfiles, k8s manifests, package.json workspaces,

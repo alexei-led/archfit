@@ -56,9 +56,11 @@ func writeViolatingRepo(t *testing.T) string {
 modules:
   a:
     paths: ["pkg/a/**"]
+    owner: team-a
   b:
     paths: ["pkg/b/**"]
     internal: ["pkg/b/internal/**"]
+    owner: team-b
 rules:
   - id: no_internal_access
     type: forbidden_dependency
@@ -263,9 +265,11 @@ func writeRepoWithExternalConfig(t *testing.T) (repoDir, cfgPath string) {
 modules:
   a:
     paths: ["pkg/a/**"]
+    owner: team-a
   b:
     paths: ["pkg/b/**"]
     internal: ["pkg/b/internal/**"]
+    owner: team-b
 rules:
   - id: no_internal_access
     type: forbidden_dependency
