@@ -54,6 +54,7 @@ func validResponse(targets []initcfg.ClassifyTarget) string {
 }
 
 func TestClassifyModules_ValidResponse(t *testing.T) {
+	t.Parallel()
 	targets := makeTargets(2)
 	layers := []string{testLayerDomain, "application", "infrastructure"}
 	p := &fakeClassifyProvider{responses: []string{validResponse(targets)}}
@@ -87,6 +88,7 @@ func TestClassifyModules_ValidResponse(t *testing.T) {
 }
 
 func TestClassifyModules_UnknownModuleSkipped(t *testing.T) {
+	t.Parallel()
 	targets := []initcfg.ClassifyTarget{{Name: "mymod", Paths: []string{"internal/mymod/**"}}}
 	layers := []string{testLayerDomain}
 	// Response includes "mymod" (valid) and "ghost" (unknown — should be skipped).
@@ -113,6 +115,7 @@ func TestClassifyModules_UnknownModuleSkipped(t *testing.T) {
 }
 
 func TestClassifyModules_InvalidEnumSkipped(t *testing.T) {
+	t.Parallel()
 	targets := []initcfg.ClassifyTarget{
 		{Name: "a", Paths: []string{"internal/a/**"}},
 		{Name: "b", Paths: []string{"internal/b/**"}},
@@ -147,6 +150,7 @@ func TestClassifyModules_InvalidEnumSkipped(t *testing.T) {
 }
 
 func TestClassifyModules_OutOfSetLayerCarried(t *testing.T) {
+	t.Parallel()
 	targets := []initcfg.ClassifyTarget{{Name: "svc", Paths: []string{"internal/svc/**"}}}
 	layers := []string{testLayerDomain, "application"} // "infrastructure" is NOT in allowed set
 	resp := `[{"module":"svc","subdomain":"core","volatility":"low","layer":"infrastructure","name":"","rationale":"out-of-set layer"}]`
@@ -167,6 +171,7 @@ func TestClassifyModules_OutOfSetLayerCarried(t *testing.T) {
 }
 
 func TestClassifyModules_MalformedBodyError(t *testing.T) {
+	t.Parallel()
 	targets := []initcfg.ClassifyTarget{{Name: "mod0", Paths: []string{"internal/mod0/**"}}}
 	layers := []string{testLayerDomain}
 	p := &fakeClassifyProvider{responses: []string{"not a JSON array at all"}}
@@ -178,6 +183,7 @@ func TestClassifyModules_MalformedBodyError(t *testing.T) {
 }
 
 func TestClassifyModules_BatchBoundary(t *testing.T) {
+	t.Parallel()
 	// 26 targets → 2 batches (25 + 1) with classifyBatchSize=25.
 	targets := makeTargets(26)
 	layers := []string{testLayerDomain}
@@ -202,6 +208,7 @@ func TestClassifyModules_BatchBoundary(t *testing.T) {
 }
 
 func TestClassifyModules_JSONFenceTolerated(t *testing.T) {
+	t.Parallel()
 	targets := []initcfg.ClassifyTarget{{Name: "mod0", Paths: []string{"internal/mod0/**"}}}
 	layers := []string{testLayerDomain}
 	// Wrap valid JSON in markdown fences — should still parse.

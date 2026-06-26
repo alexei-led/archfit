@@ -8,6 +8,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"path"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -29,6 +31,14 @@ const (
 	kindGate     = "gate"
 	kindAdvisory = "advisory"
 )
+
+// matchedByModule is the MatchedBy key for the owning module path, shared
+// across publicAPIMax, publicAPIChange, structFieldMax, and publicAPITypeLeak.
+const matchedByModule = "module"
+
+// matchedByFile is the MatchedBy key for the source file path, shared
+// across publicAPIChange, testInProduction, and publicAPITypeLeak.
+const matchedByFile = "file"
 
 // Evidence carries supplemental evidence provided to a rule's Check method.
 // Lifecycle status (new vs baselined) is NOT evidence — it is assigned after
@@ -94,6 +104,13 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 			inner = &publicAPIChange{def: def, mm: cfg.ModuleMap}
 		case "test_in_production":
 			inner = &testInProduction{def: def, mm: cfg.ModuleMap}
+		case "public_api_type_leak":
+			inner = &publicAPITypeLeak{def: def, mm: cfg.ModuleMap}
+		case "struct_field_max":
+			if err := validateStructFieldMaxDef(def); err != nil {
+				return nil, err
+			}
+			inner = &structFieldMax{def: def, mm: cfg.ModuleMap, max: *def.Max}
 		default:
 			return nil, fmt.Errorf("rules: unknown rule type %q (id=%q)", def.Type, def.ID)
 		}
@@ -113,7 +130,7 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 // test_in_production default to "warn" (advisory drift signal).
 func defaultGateForType(ruleType string) string {
 	switch ruleType {
-	case "public_api_change", "test_in_production":
+	case "public_api_change", "test_in_production", "struct_field_max", "public_api_type_leak":
 		return "warn"
 	}
 	return ""
@@ -604,9 +621,9 @@ func (r *publicAPIMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 				To:   finding.Endpoint{Path: mod},
 			},
 			MatchedBy: map[string]string{
-				"module": mod,
-				"count":  strconv.Itoa(count),
-				"max":    strconv.Itoa(r.max),
+				matchedByModule: mod,
+				"count":         strconv.Itoa(count),
+				"max":           strconv.Itoa(r.max),
 			},
 			Why:        fmt.Sprintf("Module %q has %d exported declarations, exceeding the limit of %d", mod, count, r.max),
 			Constraint: "Reduce the public API surface or raise the max threshold",
@@ -675,10 +692,10 @@ func (r *publicAPIChange) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 				To:   finding.Endpoint{Path: mod},
 			},
 			MatchedBy: map[string]string{
-				"module": mod,
-				"name":   f.Name,
-				"kind":   f.Kind,
-				"file":   f.File,
+				matchedByModule: mod,
+				"name":          f.Name,
+				"kind":          f.Kind,
+				matchedByFile:   f.File,
 			},
 			Why:        fmt.Sprintf("Exported declaration %q added to module %q (%s in %s)", f.Name, mod, f.Kind, f.File),
 			Constraint: "Review new public API additions; baseline when intentional",
@@ -749,12 +766,270 @@ func (r *testInProduction) Check(_ *graph.Graph, ev Evidence) []finding.Finding 
 				To:   finding.Endpoint{Path: endpoint},
 			},
 			MatchedBy: map[string]string{
-				"file":      f.File,
-				"framework": f.Framework,
-				"language":  f.Language,
+				matchedByFile: f.File,
+				"framework":   f.Framework,
+				"language":    f.Language,
 			},
 			Why:        fmt.Sprintf("Production file %q imports test framework %q", f.File, f.Framework),
 			Constraint: "Move to *_test.go or add a build tag; test frameworks must not ship in the production binary",
+		}
+		out = append(out, fnd)
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// StructFieldMax
+// ---------------------------------------------------------------------------
+
+// validateStructFieldMaxDef validates a RuleDef for the struct_field_max rule type.
+func validateStructFieldMaxDef(def config.RuleDef) error {
+	if def.Max == nil {
+		return fmt.Errorf("rules: struct_field_max %q requires max to be set", def.ID)
+	}
+	if *def.Max < 0 {
+		return fmt.Errorf("rules: struct_field_max %q: max must be non-negative, got %d", def.ID, *def.Max)
+	}
+	return nil
+}
+
+// structFieldMax fires when a struct's estimated field count exceeds the
+// configured maximum. It uses struct_field SyntaxFacts (one per exported
+// struct; Count = line-range heuristic) and emits one finding per violating
+// struct per module. When ev.SyntaxFacts is empty (syntax off), returns nil.
+// Default gate is "warn"; config can promote to "fail".
+//
+// Field count source: SyntaxFact.Count when > 0 (line-range heuristic from
+// the go-struct-field/rs-struct-field rules). Facts with Count == 0 are
+// skipped (tuple/unit structs with no named fields).
+type structFieldMax struct {
+	def config.RuleDef
+	mm  config.ModuleMap
+	max int
+}
+
+func (r *structFieldMax) ID() string { return r.def.ID }
+
+func (r *structFieldMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
+	if len(ev.SyntaxFacts) == 0 {
+		return nil
+	}
+
+	// Collect max field count per (module, struct-name).
+	// A struct name may appear in multiple files of the same module;
+	// use the maximum count to surface the worst case.
+	type key struct{ mod, name string }
+	maxCounts := make(map[key]int)
+	for _, f := range ev.SyntaxFacts {
+		if f.Kind != "struct_field" || f.Count == 0 {
+			continue
+		}
+		mod, ok := r.mm.ModuleFor(f.File)
+		if !ok {
+			continue
+		}
+		k := key{mod: mod, name: f.Name}
+		if f.Count > maxCounts[k] {
+			maxCounts[k] = f.Count
+		}
+	}
+
+	if len(maxCounts) == 0 {
+		return nil
+	}
+
+	// Sort for deterministic output.
+	type entry struct {
+		mod, name string
+		count     int
+	}
+	entries := make([]entry, 0, len(maxCounts))
+	for k, c := range maxCounts {
+		entries = append(entries, entry{mod: k.mod, name: k.name, count: c})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].mod != entries[j].mod {
+			return entries[i].mod < entries[j].mod
+		}
+		return entries[i].name < entries[j].name
+	})
+
+	var out []finding.Finding
+	for _, e := range entries {
+		if e.count <= r.max {
+			continue
+		}
+		h := sha256.Sum256([]byte(r.def.ID + "\x00" + e.mod + "\x00" + e.name))
+		f := finding.Finding{
+			ID:       hex.EncodeToString(h[:16]),
+			Kind:     kindGate,
+			RuleID:   r.def.ID,
+			Status:   finding.StatusNew,
+			Severity: finding.SeverityMedium,
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Path: e.mod},
+				To:   finding.Endpoint{Path: e.mod},
+			},
+			MatchedBy: map[string]string{
+				matchedByModule: e.mod,
+				"struct":        e.name,
+				"count":         strconv.Itoa(e.count),
+				"max":           strconv.Itoa(r.max),
+			},
+			Why:        fmt.Sprintf("Struct %q in module %q has ~%d fields, exceeding the limit of %d", e.name, e.mod, e.count, r.max),
+			Constraint: "Consider splitting this struct or extracting nested concerns",
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// PublicAPITypeLeak
+// ---------------------------------------------------------------------------
+
+// versionSegmentRe matches trailing versioned path segments like "v2", "v3".
+var versionSegmentRe = regexp.MustCompile(`^v\d+$`)
+
+// externalPackageSegments builds a set of last meaningful path segments for
+// every NodeKindPackage node whose path looks like a fully-qualified import
+// path (contains a "."), every NodeKindExternal node, and the targets of
+// EdgeKindImports/EdgeKindUsesInternal edges. The edge-target scan is required
+// because the Go extractor emits external packages only as edge targets — never
+// as nodes — so without it the set is always empty on real Go graphs.
+// Versioned suffixes (/v2, /v3, …) are skipped so that
+// "github.com/urfave/cli/v2" maps to "cli", not "v2".
+//
+// Precision ceiling: the type_leak fact carries only the package selector basename
+// (e.g. "cli"), not a full import path. A repo with both "github.com/urfave/cli/v2"
+// (external) AND a first-party package "cli" cannot be precisely disambiguated here
+// without per-file resolution. The prior first-party-collision guard removed the
+// external segment globally, which caused false negatives — missing real leaks when
+// any first-party package shared a basename with an external one. This is the worst
+// error for a candidate surfacer (report-only, default gate: warn). The guard is
+// removed: a false positive (flagging a first-party-type reference as a leak) is
+// acceptable; a false negative (silently missing a real external leak) is not.
+func externalPackageSegments(g *graph.Graph) map[string]struct{} {
+	// addExternal extracts and registers the last non-version segment of a dotted
+	// import path. No first-party-collision guard — bias to surface, not suppress.
+	set := make(map[string]struct{})
+	addExternal := func(importPath string) {
+		if !strings.Contains(importPath, ".") {
+			return // not a fully-qualified import path
+		}
+		segs := strings.Split(importPath, "/")
+		for i := len(segs) - 1; i >= 0; i-- {
+			if !versionSegmentRe.MatchString(segs[i]) {
+				set[path.Base(segs[i])] = struct{}{}
+				break
+			}
+		}
+	}
+
+	// Scan NodeKindPackage nodes (any extractor that emits package nodes).
+	for _, n := range g.Nodes() {
+		if n.Kind == graph.NodeKindPackage {
+			addExternal(n.Path)
+		}
+	}
+
+	// Scan NodeKindExternal nodes (Rust/TS extractors).
+	for _, n := range g.Nodes() {
+		if n.Kind == graph.NodeKindExternal {
+			addExternal(n.Path)
+		}
+	}
+
+	// Scan edge targets: Go emits external packages only as edge targets, never
+	// as nodes. Parse the kind:path ID to recover the import path.
+	for _, e := range g.Edges() {
+		if e.Kind != graph.EdgeKindImports && e.Kind != graph.EdgeKindUsesInternal {
+			continue
+		}
+		before, importPath, ok := strings.Cut(e.To, ":")
+		if !ok {
+			continue
+		}
+		nodeKind := graph.NodeKind(before)
+		if nodeKind != graph.NodeKindPackage && nodeKind != graph.NodeKindExternal {
+			continue
+		}
+		addExternal(importPath)
+	}
+
+	return set
+}
+
+// publicAPITypeLeak fires when a type_leak SyntaxFact's package selector
+// matches a known external package node in the graph. It reports one finding
+// per (module, leaked-type-name) pair. Report-only by default (gate: warn).
+//
+// When ev.SyntaxFacts is empty (syntax off), the rule returns nil silently.
+type publicAPITypeLeak struct {
+	def config.RuleDef
+	mm  config.ModuleMap
+}
+
+func (r *publicAPITypeLeak) ID() string { return r.def.ID }
+
+func (r *publicAPITypeLeak) Check(g *graph.Graph, ev Evidence) []finding.Finding {
+	if len(ev.SyntaxFacts) == 0 {
+		return nil
+	}
+
+	extPkgs := externalPackageSegments(g)
+	// Ceiling: extPkgs is built from dotted-package external nodes (Go-style).
+	// For Rust/TS/Python repos with no such nodes, type_leak facts are present
+	// but cannot be matched — this check fires only when the graph has Go-style
+	// external package nodes.
+	if len(extPkgs) == 0 {
+		return nil
+	}
+
+	type key struct{ mod, name string }
+	seen := make(map[key]struct{})
+
+	var out []finding.Finding
+	for _, f := range ev.SyntaxFacts {
+		if f.Kind != "type_leak" {
+			continue
+		}
+		// Name is "pkg.Type"; split on first dot.
+		pkg, _, ok := strings.Cut(f.Name, ".")
+		if !ok || pkg == "" {
+			continue
+		}
+		if _, isExternal := extPkgs[pkg]; !isExternal {
+			continue
+		}
+		mod, modOK := r.mm.ModuleFor(f.File)
+		if !modOK {
+			mod = f.File // fall back to file path when module is unowned
+		}
+		k := key{mod: mod, name: f.Name}
+		if _, dup := seen[k]; dup {
+			continue
+		}
+		seen[k] = struct{}{}
+
+		h := sha256.Sum256([]byte(r.def.ID + "\x00" + mod + "\x00" + f.Name))
+		fnd := finding.Finding{
+			ID:       hex.EncodeToString(h[:16]),
+			Kind:     kindGate,
+			RuleID:   r.def.ID,
+			Status:   finding.StatusNew,
+			Severity: finding.SeverityMedium,
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Path: mod},
+				To:   finding.Endpoint{Path: mod},
+			},
+			MatchedBy: map[string]string{
+				matchedByModule: mod,
+				"type":          f.Name,
+				matchedByFile:   f.File,
+			},
+			Why:        fmt.Sprintf("Module %q leaks external type %q in its public API (file: %s)", mod, f.Name, f.File),
+			Constraint: "Replace the external type with an internal abstraction or alias at the module boundary",
 		}
 		out = append(out, fnd)
 	}

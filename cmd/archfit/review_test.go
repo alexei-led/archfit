@@ -98,6 +98,7 @@ func runReviewCmd(t *testing.T, cfgPath string, provider llm.Provider) (string, 
 // TestReviewCmd_Run_SchemaValidation drives ReviewCmd end-to-end with a fake
 // provider returning valid JSON and asserts all required output sections appear.
 func TestReviewCmd_Run_SchemaValidation(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 	appendLLMConfig(t, cfgPath)
 
@@ -126,6 +127,7 @@ func TestReviewCmd_Run_SchemaValidation(t *testing.T) {
 // TestReviewCmd_Run_EntityPostCheck verifies that invalid module names are
 // dropped and valid ones are preserved in the output.
 func TestReviewCmd_Run_EntityPostCheck(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 	appendLLMConfig(t, cfgPath)
 
@@ -163,6 +165,7 @@ func TestReviewCmd_Run_EntityPostCheck(t *testing.T) {
 // TestReviewCmd_Run_InvalidJSON asserts exit code 3 with a descriptive message
 // when the LLM returns non-JSON.
 func TestReviewCmd_Run_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 	appendLLMConfig(t, cfgPath)
 
@@ -178,6 +181,7 @@ func TestReviewCmd_Run_InvalidJSON(t *testing.T) {
 }
 
 func TestParseReviewResponse_ToleratesFencesAndProse(t *testing.T) {
+	t.Parallel()
 	wrapped := "model preface\n```json\n" + validReviewJSON + "\n```\n"
 	rev, err := parseReviewResponse(wrapped)
 	if err != nil {
@@ -189,6 +193,7 @@ func TestParseReviewResponse_ToleratesFencesAndProse(t *testing.T) {
 }
 
 func TestParseReviewResponse_TruncatedJSONHint(t *testing.T) {
+	t.Parallel()
 	_, err := parseReviewResponse(`{"overall_band":"` + reviewBandMixed + `","dimensions":[`)
 	if err == nil {
 		t.Fatal("want error for truncated JSON")
@@ -202,6 +207,7 @@ func TestParseReviewResponse_TruncatedJSONHint(t *testing.T) {
 // last-} extraction recovers a valid payload when the model wraps a complete
 // JSON object in prose and then gets cut off mid-sentence after the close brace.
 func TestParseReviewResponse_RecoversFromTrailingProse(t *testing.T) {
+	t.Parallel()
 	wrapped := "Here is the architecture review you requested:\n\n" +
 		validReviewJSON +
 		"\n\nNote: this analysis was based on the supplied evidence and may be inc"
@@ -218,6 +224,7 @@ func TestParseReviewResponse_RecoversFromTrailingProse(t *testing.T) {
 // and asserts every capped section stays within its budget — the regression
 // guard for the ccgram token-overflow the review caps were added to prevent.
 func TestBuildReviewPrompt_RespectsCaps(t *testing.T) {
+	t.Parallel()
 	const (
 		findingsN = 200
 		factsN    = 200
@@ -294,6 +301,7 @@ func TestBuildReviewPrompt_RespectsCaps(t *testing.T) {
 // TestReviewCmd_PersistsRawResponse verifies the raw LLM response is dumped to
 // the cache dir before parsing, so truncation/parse failures stay diagnosable.
 func TestReviewCmd_PersistsRawResponse(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 	appendLLMConfig(t, cfgPath)
 
@@ -313,6 +321,7 @@ func TestReviewCmd_PersistsRawResponse(t *testing.T) {
 }
 
 func TestReviewCmd_Run_UsesReviewTokenBudget(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 	appendLLMConfig(t, cfgPath)
 
@@ -329,6 +338,7 @@ func TestReviewCmd_Run_UsesReviewTokenBudget(t *testing.T) {
 // TestReviewCmd_Run_NoLLMConfig asserts exit code 3 with a tools.llm hint
 // when the config has no LLM provider configured.
 func TestReviewCmd_Run_NoLLMConfig(t *testing.T) {
+	t.Parallel()
 	// writeViolatingRepo produces a config without tools.llm.
 	cfgPath := writeViolatingRepo(t)
 
@@ -354,6 +364,7 @@ func TestReviewCmd_Run_NoLLMConfig(t *testing.T) {
 // rubric vocabulary are dropped (overall blanked), while a dynamic-import module
 // is accepted as valid evidence the review may cite.
 func TestPostVerify_RejectsInvalidEnums(t *testing.T) {
+	t.Parallel()
 	diag := diagnostic.Diagnostic{
 		FileFacts:      []diagnostic.FileFact{{Module: reviewModReal}},
 		DynamicImports: []diagnostic.DynamicImport{{Module: reviewModLazy, Count: 3}},
@@ -393,6 +404,7 @@ func TestPostVerify_RejectsInvalidEnums(t *testing.T) {
 // dynamic/lazy-import block is fed to the LLM so it can narrate the hidden
 // coupling the static metrics miss.
 func TestBuildReviewPrompt_IncludesDynamicImports(t *testing.T) {
+	t.Parallel()
 	diag := diagnostic.Diagnostic{
 		DynamicImports: []diagnostic.DynamicImport{{Module: reviewModLazy, Count: 7}},
 	}
@@ -405,6 +417,7 @@ func TestBuildReviewPrompt_IncludesDynamicImports(t *testing.T) {
 // TestPostVerify_DropsUnknownEntities unit-tests postVerify in isolation,
 // covering every drop path without a full pipeline run.
 func TestPostVerify_DropsUnknownEntities(t *testing.T) {
+	t.Parallel()
 	diag := diagnostic.Diagnostic{
 		FileFacts: []diagnostic.FileFact{
 			{Module: reviewModReal},

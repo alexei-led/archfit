@@ -189,7 +189,7 @@ tools:
 - Emits a `syntax_facts` block in the diagnostic (neutral, off-gate, omitted
   when empty).
 - Each fact records: `language`, `file`, `kind` (function/method/class/struct/
-  interface/trait/enum/type_alias/annotation/route), `name`, `exported`, `role`
+  interface/trait/enum/type_alias/annotation/route/unsafe_op/struct_field/panic_op/global_state/type_leak/lazy_import/test_fn), `name`, `exported`, `role`
   (handler/service/repository/domain), `role_confidence` (high/medium/low),
   `role_evidence`, `framework`, `start_line`, `end_line`.
 - Role derivation (`internal/syntax`) runs heuristics on name patterns,
@@ -246,6 +246,45 @@ layers: [domain, application, adapter]
 The `forbidden_layer_direction` rule treats dependencies from an earlier layer to
 a later layer as violations. With the example above, `domain -> adapter` is a
 violation, while `adapter -> domain` is allowed.
+
+### Worked example: closing a layer-direction gap (Cat 10)
+
+Repos like yazi (Rust) have clear architectural layers (`yazi-core`, `yazi-adapter`,
+`yazi-plugin`) but no declared `layers:` or `forbidden_layer_direction` rule in
+`.archfit.yaml`. The capability exists; the config gap is the missing step. Adding
+the rule closes the gap:
+
+```yaml
+layers:
+  - core # innermost
+  - plugin # extension layer
+  - adapter # I/O and system adapters (outermost)
+
+modules:
+  yazi-core:
+    paths: [yazi-core/**]
+    layer: core
+  yazi-plugin:
+    paths: [yazi-plugin/**]
+    layer: plugin
+  yazi-adapter:
+    paths: [yazi-adapter/**]
+    layer: adapter
+
+rules:
+  - id: no_core_to_adapter
+    type: forbidden_layer_direction
+    gate: warn # start advisory; flip to fail when the layer map is stable
+```
+
+With this in place, any `yazi-core` → `yazi-adapter` import becomes a finding.
+Without the rule, archfit has no way to know the intent — `forbidden_layer_direction`
+fires only on _declared_ rules.
+
+**How to get there without authoring manually:** `archfit enrich` can propose a
+layer structure and `forbidden_layer_direction` rules from the module graph; draft
+the output, review, then move approved entries into `.archfit.yaml`. See
+[LLM enrichment](llm-enrich.md).
 
 ## `modules`
 
@@ -408,8 +447,28 @@ Built-in rule types:
   suppresses known ones so only newly-added surface shows as `StatusNew`.
   Defaults to `gate: warn` (advisory drift signal). Requires
   `tools.syntax.enabled: on`.
+- `struct_field_max` — fires when any module's struct definition has more fields
+  than `max` (Go and Rust; requires `tools.syntax.enabled: on`). Surfaces
+  god-struct candidates. `max` is required. Defaults to `gate: warn`.
+- `public_api_type_leak` — fires when an exported struct field or function return
+  type names a type from an external (non-first-party) package (Go only;
+  requires `tools.syntax.enabled: on`). Flags API surface that couples callers to
+  a transitive dependency. Defaults to `gate: warn`. TypeScript and Rust type-leak
+  patterns require different grammar rules — extend in a future task.
 
-**Note:** When `tools.syntax.enabled` is not `on`, the rule types `forbidden_role_dependency`, `public_api_max`, and `public_api_change` emit zero findings silently — they are not errors.
+  **Struct field ceiling:** covers direct (`pkg.Type`) and pointer (`*pkg.Type`)
+  field types. Does not match slice (`[]pkg.Type`), map, generic (`pkg.Type[T]`), or
+  embedded (`pkg.Type` without a name) forms — these are structurally complex in the
+  Go tree-sitter grammar and represent a smaller share of real cases. The LLM/human
+  path covers the residue.
+
+  **Function return ceiling:** covers single-return, pointer-return, and the common
+  multi-result tuple (`(pkg.Type, error)`, `(*pkg.Type, error)`). Does not match
+  slice/map/generic returns inside a multi-result tuple. This is an accepted
+  ast-grep structural precision ceiling for a candidate-surfacer (bias toward false
+  positives, never false negatives).
+
+**Note:** When `tools.syntax.enabled` is not `on`, the rule types `forbidden_role_dependency`, `public_api_max`, `public_api_change`, `struct_field_max`, and `public_api_type_leak` emit zero findings silently — they are not errors.
 
 **`gate:` is now wired for all rule types.** Previously `gate:` was stored but
 not applied — that latent bug is fixed. Every rule respects `off`/`warn`/`fail`
@@ -436,6 +495,17 @@ rules:
   # Surface newly-added public API (baseline suppresses known surface).
   - id: track_public_api
     type: public_api_change
+    gate: warn
+
+  # Warn on structs with more than 30 fields (god-struct candidate).
+  - id: no_god_struct
+    type: struct_field_max
+    max: 30
+    gate: warn
+
+  # Warn when exported API leaks an external type to callers.
+  - id: no_type_leak
+    type: public_api_type_leak
     gate: warn
 ```
 
@@ -492,6 +562,18 @@ Report-only metrics (band `info`; they never gate the verdict):
   cross-referenced with co-change. Requires `tools.clones.enabled: on`.
 - `change_locality` — per-change drift: how far a change reaches beyond its own
   modules (delta mode only; `n/a` in full mode).
+- `unsafe_density` — count of unsafe operations per module (Rust; needs
+  `tools.syntax.enabled: on`).
+- `panic_density` — count of production panic/unwrap operations per module
+  (Rust/Go; excludes test files; needs `tools.syntax.enabled: on`).
+- `struct_field_density` — per-module count of struct definitions (Go/Rust;
+  needs `tools.syntax.enabled: on`).
+- `test_density` — per-module count of test functions (Go/Rust/Python proxy;
+  needs `tools.syntax.enabled: on`).
+- `deprecated_dep_count` — count of locally-declared deprecation/retraction
+  markers in manifest files (`go.mod retract`, `package.json deprecated`).
+- `file_mutual_import` — count of file pairs that mutually import each other
+  (TypeScript file→file cycles; no extra tool required).
 
 Metric entry fields:
 

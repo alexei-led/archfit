@@ -104,7 +104,7 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 			name: "same-module cluster → no cross-module pair → n/a",
 			clusters: []clone.Cluster{
 				// Both files resolve to module "pkg/a"
-				{Files: []string{"pkg/a/a.go", "pkg/a/b.go"}, Lines: 10},
+				{Files: []string{fcPathA, "pkg/a/b.go"}, Lines: 10},
 			},
 			g:         twoGoNodes(),
 			wantBand:  bandNAStr,

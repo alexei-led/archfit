@@ -68,6 +68,7 @@ func enrichFixture() (*graph.Graph, coupling.Index, config.ModuleMap) {
 }
 
 func TestSelectRefinablePairs(t *testing.T) {
+	t.Parallel()
 	g, idx, mm := enrichFixture()
 
 	// c→b is already approved — must be excluded.
@@ -93,9 +94,11 @@ func TestSelectRefinablePairs(t *testing.T) {
 }
 
 func TestParseEnrichResponse(t *testing.T) {
+	t.Parallel()
 	batch := []refinablePair{{From: modA, To: modB}}
 
 	t.Run("valid json with fences", func(t *testing.T) {
+		t.Parallel()
 		text := "```json\n[{\"from\":\"a\",\"to\":\"b\",\"strength\":\"model\",\"rationale\":\"types cross\"}]\n```"
 		got, err := parseEnrichResponse(text, batch)
 		if err != nil || len(got) != 1 {
@@ -107,6 +110,7 @@ func TestParseEnrichResponse(t *testing.T) {
 	})
 
 	t.Run("unrequested pair and invalid strength skipped", func(t *testing.T) {
+		t.Parallel()
 		text := `[
 			{"from":"x","to":"y","strength":"model","rationale":"hallucinated pair"},
 			{"from":"a","to":"b","strength":"mega","rationale":"invalid strength"}
@@ -121,6 +125,7 @@ func TestParseEnrichResponse(t *testing.T) {
 	})
 
 	t.Run("malformed body is an error", func(t *testing.T) {
+		t.Parallel()
 		if _, err := parseEnrichResponse("the strength is model, trust me", batch); err == nil {
 			t.Error("prose response must be rejected")
 		}
@@ -128,6 +133,7 @@ func TestParseEnrichResponse(t *testing.T) {
 }
 
 func TestMergeDrafts(t *testing.T) {
+	t.Parallel()
 	existing := []labels.Label{
 		{From: modA, To: modB, Strength: enrichModel, Status: labels.StatusApproved},
 		{From: modB, To: modA, Strength: enrichFunctional, Status: labels.StatusDraft},
@@ -161,6 +167,7 @@ func TestMergeDrafts(t *testing.T) {
 // TestEnrich_DraftModesMutuallyExclusive verifies that combining draft modes is
 // rejected before any work runs, instead of silently running just one.
 func TestEnrich_DraftModesMutuallyExclusive(t *testing.T) {
+	t.Parallel()
 	combos := []EnrichCmd{
 		{Owner: true, Volatility: true},
 		{Subdomains: true, Owner: true},
@@ -197,6 +204,7 @@ func (p *scriptedProvider) Complete(_ context.Context, _ llm.Request) (llm.Respo
 // TestSelectRefinablePairs_UnknownStrength verifies that edges with
 // StrengthUnknown (no heuristic available) are selected without requiring SCIP.
 func TestSelectRefinablePairs_UnknownStrength(t *testing.T) {
+	t.Parallel()
 	cfg := config.Config{
 		Version: 1,
 		Modules: map[string]config.ModuleDef{
@@ -232,6 +240,7 @@ func TestSelectRefinablePairs_UnknownStrength(t *testing.T) {
 // TestDraftLabels_ProvenanceAndConfidence checks that drafts carry provenance:llm
 // and confidence:medium on all parsed entries.
 func TestDraftLabels_ProvenanceAndConfidence(t *testing.T) {
+	t.Parallel()
 	pairs := []refinablePair{
 		{From: modA, To: modB, Strength: enrichFunctional},
 	}
@@ -258,6 +267,7 @@ func TestDraftLabels_ProvenanceAndConfidence(t *testing.T) {
 }
 
 func TestDraftLabels_BatchesAndParses(t *testing.T) {
+	t.Parallel()
 	// 31 pairs → two batches with enrichBatchSize 30.
 	pairs := make([]refinablePair, 31)
 	for i := range pairs {
@@ -291,6 +301,7 @@ func TestDraftLabels_BatchesAndParses(t *testing.T) {
 // TestRun_Explain_LLMNarrative drives explain --llm end-to-end against a mock
 // OpenAI-compatible server (the ollama provider path).
 func TestRun_Explain_LLMNarrative(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"id":"c1","object":"chat.completion","model":"m",
@@ -338,6 +349,7 @@ func TestRun_Explain_LLMNarrative(t *testing.T) {
 
 // TestRun_Explain_LLMUnconfigured verifies the setup hint when tools.llm is absent.
 func TestRun_Explain_LLMUnconfigured(t *testing.T) {
+	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 	var buf bytes.Buffer
 	Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &buf)

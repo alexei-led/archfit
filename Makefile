@@ -40,6 +40,11 @@ build: ## compile the archfit binary
 test: ## run all tests with race detector and coverage
 	go test -race -coverprofile=coverage.out ./...
 
+## test-fast: run tests with race detector, skipping slow subprocess integration tests (-short)
+.PHONY: test-fast
+test-fast: ## run tests with race + -short (skips real-sg subprocess integration tests for inner-loop speed)
+	go test -race -short ./...
+
 ## test-coverage: open HTML coverage report
 .PHONY: test-coverage
 test-coverage: test ## open HTML coverage report
@@ -49,6 +54,13 @@ test-coverage: test ## open HTML coverage report
 .PHONY: archfit
 archfit: build ## run archfit check --full against this repo's architecture policy
 	$(BIN_DIR)/$(BINARY) check --config $(ARCHFIT_CONFIG) --full
+
+## arch-lint: architecture drift linter — fails on any blocking architecture
+## violation (forbidden dependency, layer inversion, god-struct ceiling). Alias
+## for the archfit dogfood gate; wired into the pre-push hook so drift is caught
+## before it reaches CI. `make all` runs this too.
+.PHONY: arch-lint
+arch-lint: archfit ## architecture drift linter (alias for the archfit dogfood gate)
 
 ## archfit-report: write a Markdown architecture audit report
 .PHONY: archfit-report

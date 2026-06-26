@@ -83,6 +83,10 @@ type RunSignals struct {
 	// Evidence-only — never annotates graph edges, never consumed by classify or
 	// score, never changes the gate verdict.
 	RuntimeAsync RuntimeAsyncSignals
+	// DeprecatedDeps carries the locally-declared deprecation/retraction markers
+	// detected by the manifest adapter. Report-only — never reaches a metric or
+	// the dependency graph.
+	DeprecatedDeps []diagnostic.DeprecatedDep
 }
 
 // DynamicImportSignals carries the dynamic/lazy-import sites detected by the
@@ -119,6 +123,14 @@ type CommonInput struct {
 	Baseline        diagnostic.MetricSnapshot
 	ToolCoverage    []diagnostic.Coverage
 	ChangedFiles    []string
+	// SyntaxFacts carries the ast-grep syntax facts produced by the syntax provider.
+	// Empty when syntax is disabled or sg is absent. Report-only metrics (e.g.
+	// unsafe_density) consume this to produce informational counts.
+	SyntaxFacts []diagnostic.SyntaxFact
+	// DeprecatedDeps carries the locally-declared deprecation/retraction markers
+	// detected by the manifest adapter. Empty when none were found. Report-only
+	// metrics (e.g. deprecated_dep_count) consume this to produce informational counts.
+	DeprecatedDeps []diagnostic.DeprecatedDep
 }
 
 // HistorySignals carries the git-history signals (empty when no history).

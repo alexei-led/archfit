@@ -55,6 +55,7 @@ func runAutopilot(t *testing.T, cmd *AutopilotCmd) (string, error) {
 }
 
 func TestAutopilot_WritesDraftAppliesNothing(t *testing.T) {
+	t.Parallel()
 	root := minimalRoot(t)
 	if err := os.MkdirAll(filepath.Join(root, "internal", "mymod"), 0o750); err != nil {
 		t.Fatal(err)
@@ -106,6 +107,7 @@ func TestAutopilot_WritesDraftAppliesNothing(t *testing.T) {
 }
 
 func TestAutopilot_RefusesToWriteLiveConfig(t *testing.T) {
+	t.Parallel()
 	root := minimalRoot(t)
 	cmd := &AutopilotCmd{
 		Root:             root,

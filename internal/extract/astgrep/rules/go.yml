@@ -15,6 +15,7 @@
 #   go-route-fiber  → route, framework=fiber
 #   go-route-gorilla → route, framework=gorilla/mux
 #   go-handler-sig  → function  (handler signature: exported fn with http.ResponseWriter param)
+#   go-type-leak    → type_leak (exported struct fields with qualified external-package types)
 
 id: go-func
 language: go
@@ -260,3 +261,165 @@ rule:
   kind: import_spec
   has:
     pattern: '"github.com/DATA-DOG/go-sqlmock"'
+---
+# go-struct-field: matches exported struct type declarations and estimates the
+# field count from the line range (endLine - startLine - 1). One fact per struct.
+# The field count estimate is consumed by the struct_field_max rule and the
+# struct_field_density report-only metric.
+# Ceiling: multi-line field declarations and single-line struct literals diverge
+# from the line-count estimate; use as an approximate count.
+id: go-struct-field
+language: go
+rule:
+  kind: type_spec
+  all:
+    - has:
+        field: name
+        pattern: $NAME
+        regex: ^[A-Z]
+    - has:
+        field: type
+        kind: struct_type
+  inside:
+    kind: type_declaration
+---
+# Panic-operation rule: panic() calls — production-only signal.
+# ruleId maps to kindPanicOp in goRuleKinds (syntax.go).
+# regex: '^panic\(' — the anchored paren excludes panicHelper() and other
+# functions whose names start with "panic" but are not the builtin.
+id: go-panic
+language: go
+rule:
+  kind: call_expression
+  regex: ^panic\(
+---
+# go-test-fn: matches Go test functions (func TestXxx(t *testing.T)).
+# Emits test_fn facts consumed by the test_density report-only metric.
+# Ceiling: only fires on files sg scans; Go's convention places tests in *_test.go
+# which sg scans unconditionally (no file-filter in the adapter).
+id: go-test-fn
+language: go
+rule:
+  kind: function_declaration
+  has:
+    field: name
+    pattern: $NAME
+    regex: ^Test
+---
+# go-type-leak: exported struct fields whose type is a qualified (external-package)
+# type. Matches both direct (pkg.Type) and pointer (*pkg.Type) forms.
+# ruleId maps to kindTypeLeak in goRuleKinds (syntax.go).
+# $PKG = package selector (e.g. "cli"), $TYPE = type name (e.g. "Context").
+# $FIELD = exported field name (must start with uppercase — Go export rule).
+#
+# Accepted ceiling (documented): this is a candidate-surfacer, not an exhaustive scanner.
+# Covered: direct qualified fields (pkg.Type), pointer fields (*pkg.Type).
+# NOT covered: slice fields ([]pkg.Type), map fields (map[K]pkg.Type), generics
+# (pkg.Type[T]), embedded types (pkg.Type without a field name). These composite
+# shapes require multi-level has/inside nesting in the Go tree-sitter grammar and
+# represent a smaller share of real type-leak cases. The LLM/human path covers the
+# residue. For func return types see go-func-type-leak below.
+# Language ceiling: Go only. Rust qualified types (crate::Module::Type) and
+# TypeScript import-path types require different grammar patterns — extend in a future task.
+id: go-type-leak
+language: go
+rule:
+  kind: field_declaration
+  inside:
+    kind: struct_type
+    stopBy: end
+    inside:
+      kind: type_spec
+      stopBy: end
+      has:
+        field: name
+        pattern: $STRUCT
+        regex: ^[A-Z]
+      inside:
+        kind: type_declaration
+  all:
+    - has:
+        field: name
+        pattern: $FIELD
+        regex: ^[A-Z]
+    - has:
+        any:
+          - kind: qualified_type
+            pattern: $PKG.$TYPE
+          - kind: pointer_type
+            has:
+              kind: qualified_type
+              pattern: $PKG.$TYPE
+---
+# go-func-type-leak: exported functions or methods whose return type is a
+# qualified (external-package) type. Matches direct, pointer, and common multi-result
+# tuple returns (the idiomatic (pkg.Type, error) form).
+# $PKG = package selector, $TYPE = type name, $NAME = function/method name.
+# ruleId maps to kindTypeLeak in goRuleKinds (syntax.go), same as go-type-leak.
+#
+# Covered shapes:
+#   - Single return: func F() pkg.Type
+#   - Single pointer: func F() *pkg.Type
+#   - Multi-result tuple: func F() (pkg.Type, error), func F() (*pkg.Type, error),
+#     func F() (a, pkg.Type, error) — any result parameter_list containing a
+#     qualified_type (direct or pointer) anywhere inside it.
+#
+# Accepted ceiling (documented): does not match every generic/nested composite shape
+# (e.g. func F() ([]pkg.Type, error), map results, generics like pkg.Type[T]).
+# Those are structurally complex in the Go tree-sitter grammar and represent a
+# small fraction of real type-leak cases. The LLM/human path covers the residue.
+# go-type-leak (struct fields) has a similar ceiling for slices/maps/generics/embedded.
+id: go-func-type-leak
+language: go
+rule:
+  any:
+    - all:
+        - kind: function_declaration
+        - has:
+            field: name
+            pattern: $NAME
+            regex: ^[A-Z]
+        - has:
+            field: result
+            any:
+              - kind: qualified_type
+                pattern: $PKG.$TYPE
+              - kind: pointer_type
+                has:
+                  kind: qualified_type
+                  pattern: $PKG.$TYPE
+              - kind: parameter_list
+                has:
+                  stopBy: end
+                  any:
+                    - kind: qualified_type
+                      pattern: $PKG.$TYPE
+                    - kind: pointer_type
+                      has:
+                        kind: qualified_type
+                        pattern: $PKG.$TYPE
+    - all:
+        - kind: method_declaration
+        - has:
+            field: name
+            pattern: $NAME
+            regex: ^[A-Z]
+        - has:
+            field: result
+            any:
+              - kind: qualified_type
+                pattern: $PKG.$TYPE
+              - kind: pointer_type
+                has:
+                  kind: qualified_type
+                  pattern: $PKG.$TYPE
+              - kind: parameter_list
+                has:
+                  stopBy: end
+                  any:
+                    - kind: qualified_type
+                      pattern: $PKG.$TYPE
+                    - kind: pointer_type
+                      has:
+                        kind: qualified_type
+                        pattern: $PKG.$TYPE

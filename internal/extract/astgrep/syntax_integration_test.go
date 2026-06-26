@@ -35,7 +35,12 @@ func sgSkipGuard(t *testing.T) {
 //
 // The test skips cleanly when sg is absent from PATH or when the resolved
 // binary is not ast-grep (util-linux ships an unrelated /usr/bin/sg).
+// Gate behind -short: this launches a real subprocess. Use make test-fast to
+// skip all integration tests for a subprocess-free inner loop.
 func TestSyntaxIntegration_JSONShape(t *testing.T) {
+	if testing.Short() {
+		t.Skip("subprocess integration test — skipped with -short (use make test-fast)")
+	}
 	t.Helper()
 	sgSkipGuard(t)
 
@@ -115,7 +120,11 @@ func TestSyntaxIntegration_JSONShape(t *testing.T) {
 //
 // Each sub-test is independent; adding a new language rule file requires only a
 // new fixture and a new table row.
+// Gate behind -short: runs real sg subprocesses for all four languages.
 func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("subprocess integration test — skipped with -short (use make test-fast)")
+	}
 	sgSkipGuard(t)
 
 	_, thisFile, _, ok := runtime.Caller(0)
@@ -134,13 +143,16 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 		spotKind      string
 		requiredKinds []string
 	}{
-		// Go: fixture.go exports func Hello; fixture_test_import.go (//go:build ignore) imports testify/mock.
-		// Fixture covers: function, struct, interface, test_import (see fixture*.go).
+		// Go: fixture.go exports func Hello + BigStruct (struct_field) + PanicFixture (panic_op);
+		// fixture_test_import.go imports testify/mock;
+		// fixture_type_leak.go (//go:build ignore) exercises go-type-leak (type_leak kind);
+		// fixture_test_fn.go (//go:build ignore) exercises go-test-fn (test_fn kind).
+		// Fixture covers: function, struct, interface, test_import, struct_field, panic_op, type_leak, test_fn (see fixture*.go).
 		{
 			lang:          "go",
 			spotName:      "Hello",
 			spotKind:      kindFunctionStr,
-			requiredKinds: []string{kindFunctionStr, kindStructStr, kindInterfaceStr, kindTestImportStr},
+			requiredKinds: []string{kindFunctionStr, kindStructStr, kindInterfaceStr, kindTestImportStr, kindStructFieldStr, kindPanicOpStr, kindTypeLeakStr, kindTestFnStr},
 		},
 		// TypeScript: fixture.ts exports func greet + @Controller decorator + express route + jest import.
 		// Fixture covers: function, class, interface, annotation, route, test_import (see fixture.ts).
@@ -150,22 +162,29 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 			spotKind:      kindFunctionStr,
 			requiredKinds: []string{kindFunctionStr, kindClassStr, kindInterfaceStr, kindAnnotStr, kindRouteStr, kindTestImportStr},
 		},
-		// Python: fixture.py declares func process + @staticmethod decorator + fastapi route + pytest import.
-		// Fixture covers: function, class, annotation, route, test_import (see fixture.py).
+		// Python: fixture.py declares func process + @staticmethod decorator + fastapi route + pytest import +
+		// lazy_loader (import os inside function) + lazy_from_loader (from pathlib import Path inside function) +
+		// test_process (test_ prefix function for test_fn kind).
+		// Fixture covers: function, class, annotation, route, test_import, lazy_import, test_fn (see fixture.py).
 		{
 			lang:          "python",
 			spotName:      "process",
 			spotKind:      kindFunctionStr,
-			requiredKinds: []string{kindFunctionStr, kindClassStr, kindAnnotStr, kindRouteStr, kindTestImportStr},
+			requiredKinds: []string{kindFunctionStr, kindClassStr, kindAnnotStr, kindRouteStr, kindTestImportStr, kindLazyImportStr, kindTestFnStr},
 		},
-		// Rust: fixture.rs exports func create_widget + #[derive(Debug, Clone)] attribute + mockall import.
-		// Fixture covers: function, struct, enum, interface, method, annotation, test_import (see fixture.rs).
+		// Rust: fixture.rs exports func create_widget + #[derive(Debug, Clone)] attribute + mockall import +
+		// unsafe block, UnsafeCell, raw cast, transmute (safety surface fixture) + MultiField struct (struct_field) +
+		// fixture_panics with unwrap/expect/panic! (panic_op) +
+		// global-state fixture: static mut GLOBAL_COUNTER, AtomicU32 ID_GENERATOR, OnceLock REGISTRY +
+		// test_create_widget (test_ prefix function for test_fn kind).
+		// Fixture covers: function, struct, enum, interface, method, annotation, test_import, unsafe_op,
+		//                 struct_field, panic_op, global_state, test_fn (unsafe_op includes transmute).
 		// annotation (rs-attribute) was the previously-broken kind — it must now yield ≥1 match.
 		{
 			lang:          "rust",
 			spotName:      "create_widget",
 			spotKind:      kindFunctionStr,
-			requiredKinds: []string{kindFunctionStr, kindStructStr, kindEnumStr, kindInterfaceStr, kindMethodStr, kindAnnotStr, kindTestImportStr},
+			requiredKinds: []string{kindFunctionStr, kindStructStr, kindEnumStr, kindInterfaceStr, kindMethodStr, kindAnnotStr, kindTestImportStr, kindUnsafeOpStr, kindStructFieldStr, kindPanicOpStr, kindGlobalStateStr, kindTestFnStr},
 		},
 	}
 
@@ -211,6 +230,41 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 			for _, wantKind := range tc.requiredKinds {
 				if kindCount[wantKind] == 0 {
 					t.Errorf("Syntax(%q): expected ≥1 fact of Kind=%q but got 0 — rule for this kind matches nothing in the fixture", tc.lang, wantKind)
+				}
+			}
+			// Go-specific: verify go-func-type-leak fires on multi-result returns.
+			// GetContext() (somepkg.Context, error) is the idiomatic form the old rule missed.
+			// The adapter names type_leak facts after the leaked type ($PKG.$TYPE), not the
+			// function name — so we look for Name="somepkg.Context" from a func return context.
+			// This is a discriminating assertion: kindTypeLeakStr in requiredKinds is already
+			// satisfied by the struct fixtures; we separately count type_leak facts to prove
+			// the multi-result func adds at least one more (NewClient + GetContext + GetPointerContext
+			// + struct fields = at least 4 total; struct-only would be 2).
+			if tc.lang == "go" {
+				typeLeakCount := 0
+				for _, f := range facts {
+					if f.Kind == kindTypeLeakStr {
+						typeLeakCount++
+					}
+				}
+				// fixture_type_leak.go has: 2 struct fields + NewClient (single) + GetContext
+				// (multi-result) + GetPointerContext (multi-result pointer) = 5 type_leak facts.
+				// The old rule (no parameter_list branch) would yield only 3 (2 struct + NewClient).
+				if typeLeakCount < 5 {
+					t.Errorf("Syntax(go): expected ≥5 type_leak facts (struct fields + single return + multi-result returns), got %d — go-func-type-leak may not cover (pkg.Type, error) idiom", typeLeakCount)
+				}
+			}
+			// Rust-specific: verify rs-transmute fired (Name="transmute" unsafe_op fact).
+			if tc.lang == "rust" {
+				foundTransmute := false
+				for _, f := range facts {
+					if f.Kind == kindUnsafeOpStr && f.Name == "transmute" {
+						foundTransmute = true
+						break
+					}
+				}
+				if !foundTransmute {
+					t.Errorf("Syntax(rust): expected unsafe_op fact Name=transmute from rs-transmute rule, got none")
 				}
 			}
 			// FilesSeen must be > 0 when facts were produced.

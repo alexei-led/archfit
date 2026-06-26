@@ -1,6 +1,6 @@
 # Closing the archfit ⟷ architect gap
 
-**Status:** ANALYSIS — P1 SHIPPED in this PR; P2/P3 PROPOSED (future, separate PR)
+**Status:** P1/P2/P3 IMPLEMENTED — all detectors shipped; Cat 10 config gap documented; irreducible residue named
 **Date:** 2026-06-25
 **Basis:** 6-repo study (archfit/Go, pumba/Go, codegraph/TS, ccgram/Python, yazi/Rust, herdr/Rust).
 Inputs: `reports/eval/architect-only-inventory.md` (20 findings, 13 categories) +
@@ -72,14 +72,21 @@ That irreducible residue is the standing case for the deterministic+LLM hybrid, 
 - **P1 — SHIPPED IN THIS PR:** `file_structural_weight` report-only metric (Cat 1; now flags archfit's
   own `score.go`, 1017 LOC); `test_in_production` rule (Cat 3, default `gate: warn`; fires 14× on
   pumba's mock files). Both report-only/advisory by default so the dogfood stays green.
-- **P2 — PROPOSED (separate follow-up PR) — cheap detect, opt-in report-only `info` (signal needs thresholds/judgment):** `unsafe_density`
-  (Cat 6), `struct_field_max` (Cat 2). Ship as facts, never gate by default.
-- **P3 — partial/proxy/dependent:** panic-density _after_ test-exclusion (Cat 8+3), global-state facts
-  (Cat 7), public-API type-leak (Cat 5), lazy-import signal (Cat 9), test-density proxy (Cat 13),
-  manifest-declared deprecation (Cat 4).
-- **File-level cycle/mutual-import query** (Cat 11) — a real but non-trivial graph addition, not a rule.
-- **Accept as LLM/human (route via `review`/`enrich`):** semantic/intent (Cat 12 core), unsafe/panic
-  _soundness_, layer _intent_ inference, live-dep EOL, true coverage adequacy.
+- **P2 — IMPLEMENTED:** `unsafe_density` (Cat 6), `struct_field_max` opt-in rule (Cat 2). Report-only
+  by default; `struct_field_max` is an opt-in rule with `gate: warn`.
+- **P3 — IMPLEMENTED:** panic-density after test-exclusion (`panic_density`, Cat 8), global-state
+  facts (`global_state`, Cat 7), public-API type-leak (`public_api_type_leak` opt-in rule, Cat 5),
+  lazy-import signal (`lazy_import`, Cat 9), test-density proxy (`test_density`, Cat 13),
+  manifest-declared deprecation markers (`deprecated_dep_count`, Cat 4).
+- **File-level cycle/mutual-import query** (Cat 11) — IMPLEMENTED as `file_mutual_import` report-only
+  metric; works over TS file→file edges; Go/Python file→package granularity documented as ceiling.
+- **Cat 10 — Config gap, not capability gap:** `forbidden_layer_direction` exists; the missing step
+  is _authoring the rule_ for repos (e.g. yazi) that declared no layers. `archfit enrich` can propose
+  a layer structure; see [docs/guide/configuration-reference.md](../guide/configuration-reference.md#layers).
+- **Accept as LLM/human (route via `review`/`enrich`):** _soundness/acceptability judgment_ on
+  unsafe/panic findings (Cat 6/8 residue), layer _intent_ inference (Cat 10 residue), semantic/intent
+  (Cat 12 core), live-dep EOL (Cat 4 residue), true coverage adequacy (Cat 13 residue). Use
+  `archfit review` or `archfit enrich` to consume the new report-only facts for these judgments.
 
 ## Guardrail for any new check
 

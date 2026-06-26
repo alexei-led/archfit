@@ -141,8 +141,8 @@ func TestAbstractnessMetric_FromClassifications(t *testing.T) {
 func TestMartin_ExternalNodesExcluded(t *testing.T) {
 	const externalDep = "commander"
 
-	a := graph.Node{Kind: graph.NodeKindFile, Path: "src/a.ts"}
-	b := graph.Node{Kind: graph.NodeKindFile, Path: "src/b.ts"}
+	a := graph.Node{Kind: graph.NodeKindFile, Path: tsFileA}
+	b := graph.Node{Kind: graph.NodeKindFile, Path: tsFileB}
 	ext := graph.Node{Kind: graph.NodeKindExternal, Path: externalDep}
 	g := metricstest.BuildGraph([]graph.Node{a, b, ext}, []graph.Edge{
 		{From: a.ID(), To: b.ID(), Kind: graph.EdgeKindImports},

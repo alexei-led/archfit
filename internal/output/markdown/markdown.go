@@ -112,6 +112,8 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 	writeDynamicImports(&b, d.DynamicImports)
 
+	writeDeprecatedDeps(&b, d.DeprecatedDeps)
+
 	writeCoverageGaps(&b, d.CoverageGaps)
 
 	writeConfigWarnings(&b, d.ConfigWarnings)
@@ -576,6 +578,37 @@ func writeDynamicImports(b *strings.Builder, dyn []diagnostic.DynamicImport) {
 			break
 		}
 		fmt.Fprintf(b, "- **%s**: %d (e.g. %s)\n", d.Module, d.Count, sampleSites(d.Sites))
+	}
+}
+
+// writeDeprecatedDeps prints the report-only locally-declared deprecation/
+// mdTableCell escapes pipe characters and collapses newlines in a string so it
+// can be safely embedded in a Markdown table cell without corrupting the table.
+func mdTableCell(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "|", `\|`)
+	return s
+}
+
+// retraction marker block: go.mod retract directives and package.json
+// "deprecated" fields. Omitted when none were found.
+// Never gates — evidence only.
+func writeDeprecatedDeps(b *strings.Builder, deps []diagnostic.DeprecatedDep) {
+	if len(deps) == 0 {
+		return
+	}
+	b.WriteString("\n## Manifest deprecation markers (report-only)\n\n")
+	b.WriteString("Locally-declared deprecation/retraction markers found in checked-in manifest files.\n")
+	b.WriteString("Report-only evidence — never gates. Cargo yanked and live EOL require archfit review/enrich.\n\n")
+	fmt.Fprintf(b, "| file | kind | subject | note |\n")
+	fmt.Fprintf(b, "|------|------|---------|------|\n")
+	for _, d := range deps {
+		note := d.Note
+		if note == "" {
+			note = "—"
+		}
+		fmt.Fprintf(b, "| `%s` | %s | `%s` | %s |\n", mdTableCell(d.File), d.Kind, mdTableCell(d.Subject), mdTableCell(note))
 	}
 }
 

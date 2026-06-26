@@ -62,6 +62,12 @@ const (
 	nameInternal = "internal"
 	nameMain     = "Main"
 	fileCmd      = "cmd/main.go"
+	// struct_field_max test constants
+	kindStructField = "struct_field"
+	nameRepo        = "Repo"
+	fileInfraRepo   = "infra/repo.go"
+	pathDomainGlob  = "domain/**"
+	pathInfraGlob   = "infra/**"
 	// test_in_production test constants
 	kindTestImport   = "test_import"
 	frameworkTestify = "testify/mock"
@@ -866,8 +872,8 @@ func makePublicAPIMaxConfig(ceiling int, gate string) config.RuleConfig {
 	return config.Config{
 		Version: 1,
 		Modules: map[string]config.ModuleDef{
-			layerDomain: {Paths: []string{"domain/**"}},
-			moduleInfra: {Paths: []string{"infra/**"}},
+			layerDomain: {Paths: []string{pathDomainGlob}},
+			moduleInfra: {Paths: []string{pathInfraGlob}},
 		},
 		Rules: []config.RuleDef{
 			{ID: "api-max", Type: typePublicAPIMax, Gate: gate, Max: maxPtr(ceiling)},
@@ -883,7 +889,7 @@ func TestPublicAPIMax(t *testing.T) {
 		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: "FuncB", Exported: true},
 		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: kindStruct, Name: "Model", Exported: true},
 		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: nameInternal, Exported: false},
-		diagnostic.SyntaxFact{Language: graph.LangGo, File: "infra/repo.go", Kind: kindStruct, Name: "Repo", Exported: true},
+		diagnostic.SyntaxFact{Language: graph.LangGo, File: fileInfraRepo, Kind: kindStruct, Name: nameRepo, Exported: true},
 	)
 
 	emptyGraph := makeGraph(nil)
@@ -1101,8 +1107,8 @@ func makePublicAPIChangeConfig(gate string) config.RuleConfig {
 	return config.Config{
 		Version: 1,
 		Modules: map[string]config.ModuleDef{
-			layerDomain: {Paths: []string{"domain/**"}},
-			moduleInfra: {Paths: []string{"infra/**"}},
+			layerDomain: {Paths: []string{pathDomainGlob}},
+			moduleInfra: {Paths: []string{pathInfraGlob}},
 		},
 		Rules: []config.RuleDef{
 			{ID: "api-change", Type: typePublicAPIChange, Gate: gate},
@@ -1116,7 +1122,7 @@ func TestPublicAPIChange(t *testing.T) {
 		{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
 		{Language: graph.LangGo, File: fileDomainB, Kind: kindStruct, Name: "Model", Exported: true},
 		{Language: graph.LangGo, File: fileDomainB, Kind: kindFunction, Name: nameInternal, Exported: false},
-		{Language: graph.LangGo, File: "infra/repo.go", Kind: kindStruct, Name: "Repo", Exported: true},
+		{Language: graph.LangGo, File: fileInfraRepo, Kind: kindStruct, Name: nameRepo, Exported: true},
 		{Language: graph.LangGo, File: fileCmd, Kind: kindFunction, Name: nameMain, Exported: true}, // outside any module
 	}
 
@@ -1473,5 +1479,349 @@ func TestTestInProduction(t *testing.T) {
 				t.Errorf("gate unset Kind=%q, want advisory (warn-by-default)", findings[0].Kind)
 			}
 		})
+	})
+}
+
+// ---------------------------------------------------------------------------
+// StructFieldMax tests
+// ---------------------------------------------------------------------------
+
+const typeStructFieldMax = "struct_field_max"
+
+// makeStructFieldMaxConfig constructs a Config with two modules and a
+// struct_field_max rule, then returns the RuleConfig view for rules.New.
+func makeStructFieldMaxConfig(ceiling int) config.RuleConfig {
+	return config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			layerDomain: {Paths: []string{pathDomainGlob}},
+			moduleInfra: {Paths: []string{pathInfraGlob}},
+		},
+		Rules: []config.RuleDef{
+			{ID: "sf-max", Type: typeStructFieldMax, Max: maxPtr(ceiling)},
+		},
+	}.ForRules()
+}
+
+func TestStructFieldMax(t *testing.T) {
+	// struct_field SyntaxFacts: domain has AppState(10 fields), Small(2 fields);
+	// infra has Repo(3 fields).
+	allFacts := []diagnostic.SyntaxFact{
+		{Language: graph.LangGo, File: fileDomainA, Kind: kindStructField, Name: "AppState", Count: 10},
+		{Language: graph.LangGo, File: fileDomainB, Kind: kindStructField, Name: "Small", Count: 2},
+		{Language: graph.LangGo, File: fileInfraRepo, Kind: kindStructField, Name: nameRepo, Count: 3},
+		// non struct_field facts should be ignored
+		{Language: graph.LangGo, File: fileDomainA, Kind: kindFunction, Name: nameFuncA, Exported: true},
+	}
+	emptyGraph := makeGraph(nil)
+	ev := func(facts []diagnostic.SyntaxFact) rules.Evidence {
+		return rules.Evidence{SyntaxFacts: facts}
+	}
+
+	t.Run("under_limit_no_finding", func(t *testing.T) {
+		rc := makeStructFieldMaxConfig(10)
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if findings := rs[0].Check(emptyGraph, ev(allFacts)); len(findings) != 0 {
+			t.Fatalf("want 0 findings at ceiling=10 (AppState=10), got %d", len(findings))
+		}
+	})
+
+	t.Run("over_limit_emits_finding", func(t *testing.T) {
+		rc := makeStructFieldMaxConfig(5)
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		findings := rs[0].Check(emptyGraph, ev(allFacts))
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding (AppState>5), got %d", len(findings))
+		}
+		f := findings[0]
+		if f.MatchedBy["struct"] != "AppState" {
+			t.Errorf("MatchedBy[struct]=%q, want AppState", f.MatchedBy["struct"])
+		}
+		if f.MatchedBy["count"] != "10" {
+			t.Errorf("MatchedBy[count]=%q, want 10", f.MatchedBy["count"])
+		}
+	})
+
+	t.Run("zero_count_ignored", func(t *testing.T) {
+		// Count=0 (tuple/unit struct) must never fire a finding.
+		facts := []diagnostic.SyntaxFact{
+			{Language: graph.LangGo, File: fileDomainA, Kind: kindStructField, Name: "UnitStruct", Count: 0},
+		}
+		rc := makeStructFieldMaxConfig(0)
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if findings := rs[0].Check(emptyGraph, ev(facts)); len(findings) != 0 {
+			t.Fatalf("Count=0 must be ignored, got %d findings", len(findings))
+		}
+	})
+
+	t.Run("empty_facts_returns_nil", func(t *testing.T) {
+		rc := makeStructFieldMaxConfig(1)
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if findings := rs[0].Check(emptyGraph, ev(nil)); len(findings) != 0 {
+			t.Fatalf("want 0 findings for empty facts, got %d", len(findings))
+		}
+	})
+
+	t.Run("default_gate_is_warn", func(t *testing.T) {
+		// struct_field_max has defaultGateForType="warn".
+		rc := makeStructFieldMaxConfig(5) // gate unset → warn
+		rs, err := rules.New(rc)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		findings := rs[0].Check(emptyGraph, ev(allFacts))
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding, got %d", len(findings))
+		}
+		if findings[0].Kind != kindAdvisory {
+			t.Errorf("gate unset Kind=%q, want advisory (warn-by-default)", findings[0].Kind)
+		}
+	})
+}
+
+func TestStructFieldMax_InvalidConfig(t *testing.T) {
+	t.Run("nil_max_returns_error", func(t *testing.T) {
+		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+			{ID: "x", Type: typeStructFieldMax},
+		}})
+		if err == nil {
+			t.Fatal("want error for nil Max, got nil")
+		}
+	})
+
+	t.Run("negative_max_returns_error", func(t *testing.T) {
+		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+			{ID: "x", Type: typeStructFieldMax, Max: maxPtr(-1)},
+		}})
+		if err == nil {
+			t.Fatal("want error for negative Max, got nil")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// PublicAPITypeLeak
+// ---------------------------------------------------------------------------
+
+const (
+	typePublicAPITypeLeak = "public_api_type_leak"
+	typeCliContext        = "cli.Context"
+)
+
+// makeTypeLeakGraph builds a graph with the given package nodes (no edges needed).
+func makeTypeLeakGraph(pkgPaths []string) *graph.Graph {
+	nodes := make([]graph.Node, len(pkgPaths))
+	for i, p := range pkgPaths {
+		nodes[i] = graph.Node{Kind: graph.NodeKindPackage, Path: p}
+	}
+	return graph.Build([]graph.Facts{{Nodes: nodes, Language: "go"}})
+}
+
+func TestPublicAPITypeLeak(t *testing.T) {
+	const (
+		ruleID         = "no-type-leak"
+		fileDomain     = "domain/service.go"
+		moduleNameDom  = "domain"
+		typeLeakKind   = "type_leak"
+		externalCliPkg = "github.com/urfave/cli/v2"
+	)
+
+	rc := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			moduleNameDom: {Paths: []string{"domain/**"}},
+		},
+		Rules: []config.RuleDef{
+			{ID: ruleID, Type: typePublicAPITypeLeak},
+		},
+	}.ForRules()
+	rs, err := rules.New(rc)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	r := rs[0]
+
+	t.Run("external_type_leak_fires", func(t *testing.T) {
+		g := makeTypeLeakGraph([]string{externalCliPkg})
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding, got %d: %+v", len(findings), findings)
+		}
+		f := findings[0]
+		if f.RuleID != ruleID {
+			t.Errorf("RuleID=%q, want %q", f.RuleID, ruleID)
+		}
+		if f.MatchedBy["module"] != moduleNameDom {
+			t.Errorf("matched_by.module=%q, want %q", f.MatchedBy["module"], moduleNameDom)
+		}
+		if f.MatchedBy["type"] != typeCliContext {
+			t.Errorf("matched_by.type=%q, want %q", f.MatchedBy["type"], typeCliContext)
+		}
+		if f.Why == "" {
+			t.Error("Why is empty")
+		}
+		if f.Severity != finding.SeverityMedium {
+			t.Errorf("Severity=%v, want Medium", f.Severity)
+		}
+	})
+
+	t.Run("first_party_type_no_finding", func(t *testing.T) {
+		// "internal" has no dot — not a fully-qualified external path.
+		g := makeTypeLeakGraph([]string{"internal/service"})
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: "internal.Service", File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("want 0 findings for first-party type, got %d", len(findings))
+		}
+	})
+
+	t.Run("no_syntax_facts_returns_nil", func(t *testing.T) {
+		g := makeTypeLeakGraph([]string{externalCliPkg})
+		ev := rules.Evidence{}
+		findings := r.Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("want 0 findings with empty SyntaxFacts, got %d", len(findings))
+		}
+	})
+
+	t.Run("dedup_same_module_and_type", func(t *testing.T) {
+		g := makeTypeLeakGraph([]string{externalCliPkg})
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding after dedup, got %d", len(findings))
+		}
+	})
+
+	t.Run("default_gate_is_warn", func(t *testing.T) {
+		// gatedRule wraps with gate="warn" → Kind=advisory.
+		g := makeTypeLeakGraph([]string{externalCliPkg})
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding, got %d", len(findings))
+		}
+		if findings[0].Kind != kindAdvisory {
+			t.Errorf("Kind=%q, want %q (gate: warn default)", findings[0].Kind, kindAdvisory)
+		}
+	})
+
+	t.Run("no_ext_pkgs_returns_nil", func(t *testing.T) {
+		// Ceiling: no dotted external nodes → extPkgs empty → returns nil regardless
+		// of type_leak facts. Documents the Go-only graph limitation.
+		g := makeTypeLeakGraph(nil)
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("want 0 findings when extPkgs empty, got %d: %+v", len(findings), findings)
+		}
+	})
+
+	t.Run("first_party_basename_collision_fires", func(t *testing.T) {
+		// A graph with both an external "github.com/urfave/cli/v2" node AND a
+		// first-party undotted "cli" package share a basename. The collision guard was
+		// removed because it caused false negatives: real external leaks were suppressed
+		// whenever any first-party package shared a basename with an external one. This
+		// is the regression test: the external leak MUST fire even when a same-basename
+		// first-party package exists. A false positive (flagging a first-party reference)
+		// is acceptable for this report-only/default-warn candidate surfacer.
+		g := makeTypeLeakGraph([]string{externalCliPkg, "cli"})
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding: external leak fires even when basename collides with first-party package, got %d: %+v", len(findings), findings)
+		}
+	})
+
+	t.Run("external_type_leak_fires_edge_target_graph", func(t *testing.T) {
+		// Build a graph shaped like the Go extractor: external package as edge target only,
+		// no NodeKindPackage node for it. This is how Go graphs actually look.
+		fileNode := graph.Node{Kind: graph.NodeKindFile, Path: fileDomain}
+		extPkgID := graph.Node{Kind: graph.NodeKindPackage, Path: externalCliPkg}.ID()
+		edge := graph.Edge{
+			From:       fileNode.ID(),
+			To:         extPkgID,
+			Kind:       graph.EdgeKindImports,
+			Language:   "go",
+			Confidence: "high",
+		}
+		g := graph.Build([]graph.Facts{{Nodes: []graph.Node{fileNode}, Edges: []graph.Edge{edge}, Language: "go"}})
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding on edge-target graph, got %d: %+v", len(findings), findings)
+		}
+	})
+
+	t.Run("edge_target_first_party_collision_fires", func(t *testing.T) {
+		// Edge-target external path whose basename collides with a first-party undotted
+		// package node. The collision guard was removed — see first_party_basename_collision_fires
+		// for rationale. External leak MUST fire; the first-party node does not suppress it.
+		fileNode := graph.Node{Kind: graph.NodeKindFile, Path: fileDomain}
+		firstPartyNode := graph.Node{Kind: graph.NodeKindPackage, Path: "cli"} // undotted first-party
+		extPkgID := graph.Node{Kind: graph.NodeKindPackage, Path: externalCliPkg}.ID()
+		edge := graph.Edge{
+			From:       fileNode.ID(),
+			To:         extPkgID,
+			Kind:       graph.EdgeKindImports,
+			Language:   "go",
+			Confidence: "high",
+		}
+		g := graph.Build([]graph.Facts{{
+			Nodes:    []graph.Node{fileNode, firstPartyNode},
+			Edges:    []graph.Edge{edge},
+			Language: "go",
+		}})
+		ev := rules.Evidence{
+			SyntaxFacts: []diagnostic.SyntaxFact{
+				{Kind: typeLeakKind, Name: typeCliContext, File: fileDomain, Language: "go"},
+			},
+		}
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("want 1 finding: external leak fires even when edge-target basename collides with first-party package, got %d: %+v", len(findings), findings)
+		}
 	})
 }

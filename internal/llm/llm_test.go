@@ -118,8 +118,14 @@ func TestAnthropic_ErrorPaths(t *testing.T) {
 }
 
 func TestAnthropic_Timeout(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(200 * time.Millisecond)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Honor request cancellation so srv.Close() during t.Cleanup doesn't
+		// block ~200ms waiting for the handler goroutine to finish.
+		select {
+		case <-time.After(200 * time.Millisecond):
+		case <-r.Context().Done():
+			return
+		}
 		_, _ = w.Write([]byte(anthropicOK))
 	}))
 	t.Cleanup(srv.Close)

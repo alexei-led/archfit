@@ -23,6 +23,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/dynimports"
 	"github.com/alexei-led/archfit/internal/extract/gitnexus"
 	"github.com/alexei-led/archfit/internal/extract/loc"
+	"github.com/alexei-led/archfit/internal/extract/manifest"
 	runtimedetect "github.com/alexei-led/archfit/internal/extract/runtime"
 	"github.com/alexei-led/archfit/internal/extract/scip"
 	"github.com/alexei-led/archfit/internal/fitness"
@@ -156,6 +157,11 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// non-top-level imports + importlib/__import__, TS require()/dynamic import().
 	// Report-only — surfaced as evidence, never modifies the graph, metrics, or gate.
 	change.DynamicImports.Sites = dynimports.Detect(s.Root)
+
+	// Manifest deprecation markers (go.mod retract, package.json deprecated).
+	// Report-only — never modifies the graph, metric verdict, or gate.
+	// Ceiling: cargo yanked and live EOL are not locally declarable — use archfit review/enrich.
+	change.DeprecatedDeps = manifest.Scan(s.Root)
 
 	// Runtime async-bridge detection (deterministic FS scan + optional ast-grep).
 	// Detects message-queue, event-bus, async-task integration patterns per language.

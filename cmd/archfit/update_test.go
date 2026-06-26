@@ -102,6 +102,7 @@ rules:
 // TestUpdateCmd_PlanMode_FileUnchanged verifies plan mode (no --apply) leaves the
 // config file byte-identical.
 func TestUpdateCmd_PlanMode_FileUnchanged(t *testing.T) {
+	t.Parallel()
 	dir := minimalRoot(t)
 	cfgPath := writeConfig(t, dir, configWithRemovedModule)
 	before, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -133,6 +134,7 @@ func TestUpdateCmd_PlanMode_FileUnchanged(t *testing.T) {
 // TestUpdateCmd_Apply_CommentsRemoved verifies --apply: comments a removed module
 // and preserves rules and comments.
 func TestUpdateCmd_Apply_CommentsRemoved(t *testing.T) {
+	t.Parallel()
 	dir := minimalRoot(t)
 	cfgPath := writeConfig(t, dir, configWithRemovedModule)
 
@@ -180,6 +182,7 @@ func TestUpdateCmd_Apply_CommentsRemoved(t *testing.T) {
 // Config has mymod with subdomain+volatility but no layer.
 // LLM suggests layer=core (in layers). Expected: only layer is added.
 func TestUpdateCmd_LLMApply_WritesOnlyAbsentFields(t *testing.T) {
+	t.Parallel()
 	dir := minimalRoot(t)
 	cfg := `version: 1
 layers:
@@ -235,6 +238,7 @@ rules:
 // TestUpdateCmd_LLMApply_NoSetFieldsForAddedModule verifies that SetModuleFields is
 // never emitted for a newly-added module (AddModule handles classification).
 func TestUpdateCmd_LLMApply_NoSetFieldsForAddedModule(t *testing.T) {
+	t.Parallel()
 	dir := minimalRoot(t)
 	// Config has no modules; discovery will find one (it will be Added).
 	cfgPath := writeConfig(t, dir, minimalConfigNoModules)
@@ -274,6 +278,7 @@ func TestUpdateCmd_LLMApply_NoSetFieldsForAddedModule(t *testing.T) {
 // TestUpdateCmd_ExistingLayerNeverOverwritten verifies that an existing module's
 // layer field is never replaced by the LLM suggestion.
 func TestUpdateCmd_ExistingLayerNeverOverwritten(t *testing.T) {
+	t.Parallel()
 	dir := minimalRoot(t)
 	cfg := `version: 1
 layers:
@@ -326,6 +331,7 @@ rules:
 // subdomain+volatility but no layer gets the layer written when the LLM
 // returns a value that is in the allowed set.
 func TestUpdateCmd_MissingLayerFilledWhenValid(t *testing.T) {
+	t.Parallel()
 	dir := minimalRoot(t)
 	cfg := `version: 1
 layers:
@@ -371,6 +377,7 @@ rules:
 // TestUpdateCmd_OutOfSetLayerWritesNothing verifies that when the only pending
 // field-fill is a layer not in layers:, no backup is created and the file is unchanged.
 func TestUpdateCmd_OutOfSetLayerWritesNothing(t *testing.T) {
+	t.Parallel()
 	dir := minimalRoot(t)
 	// mymod has subdomain+volatility but no layer; LLM will suggest "infra" NOT in layers.
 	cfg := `version: 1
@@ -430,6 +437,7 @@ rules:
 // TestUpdateCmd_BackupCreatedOnApply verifies a backup file is created on a
 // real structural apply.
 func TestUpdateCmd_BackupCreatedOnApply(t *testing.T) {
+	t.Parallel()
 	dir := minimalRoot(t)
 	cfgPath := writeConfig(t, dir, configWithRemovedModule)
 
@@ -453,6 +461,7 @@ func TestUpdateCmd_BackupCreatedOnApply(t *testing.T) {
 // both runs, and no backup is created by the second run (because there are no
 // actionable edits left — AddModule and CommentModule are both no-ops on re-apply).
 func TestUpdateCmd_Apply_Idempotent(t *testing.T) {
+	t.Parallel()
 	dir := minimalRoot(t)
 	cfgPath := writeConfig(t, dir, configWithRemovedModule)
 
@@ -490,6 +499,7 @@ func TestUpdateCmd_Apply_Idempotent(t *testing.T) {
 // TestUpdateCmd_LLMPlanMode_FileUnchanged verifies that --llm without --apply
 // produces a report that includes LLM classification but leaves the config file untouched.
 func TestUpdateCmd_LLMPlanMode_FileUnchanged(t *testing.T) {
+	t.Parallel()
 	dir := minimalRoot(t)
 	// Config has mymod with no classification fields → it is Unclassified.
 	cfg := `version: 1
@@ -546,6 +556,7 @@ rules:
 // TestUpdateCmd_Apply_RoundTripsConfigLoad verifies that after a structural --apply
 // the written config is valid and loadable via config.Load.
 func TestUpdateCmd_Apply_RoundTripsConfigLoad(t *testing.T) {
+	t.Parallel()
 	dir := minimalRoot(t)
 	// Start with a removed module so --apply writes something.
 	cfgPath := writeConfig(t, dir, configWithRemovedModule)
@@ -564,6 +575,7 @@ func TestUpdateCmd_Apply_RoundTripsConfigLoad(t *testing.T) {
 // TestUpdateCmd_ChangedSinceReadAborts verifies that safeWriteConfig aborts when
 // the config file changes between the initial read and the write step.
 func TestUpdateCmd_ChangedSinceReadAborts(t *testing.T) {
+	t.Parallel()
 	dir := minimalRoot(t)
 	cfgPath := writeConfig(t, dir, configWithRemovedModule)
 
@@ -598,6 +610,7 @@ func TestUpdateCmd_ChangedSinceReadAborts(t *testing.T) {
 // module from its response, a warning is printed naming the unclassified module,
 // and other modules are still written in --apply mode.
 func TestUpdateCmd_LLM_WarnPartialClassify(t *testing.T) {
+	t.Parallel()
 	dir := minimalRoot(t)
 	// Config has no modules; discovery will find two (both will be Added).
 	cfgPath := writeConfig(t, dir, minimalConfigNoModules)

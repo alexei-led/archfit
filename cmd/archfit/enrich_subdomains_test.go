@@ -71,6 +71,7 @@ func classifyJSONFor(names []string) string {
 // ---------------------------------------------------------------------------
 
 func TestEnrichSubdomainDraft(t *testing.T) {
+	t.Parallel()
 	provider := &scriptedProvider{
 		responses: []string{classifyJSONFor([]string{enrichModAuth, enrichModNotify})},
 	}
@@ -119,6 +120,7 @@ func TestEnrichSubdomainDraft(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestEnrichSubdomainDraft_AllClassified(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".archfit.yaml")
 	content := `version: 1
@@ -160,6 +162,7 @@ tools:
 // ---------------------------------------------------------------------------
 
 func TestEnrichSubdomainPin(t *testing.T) {
+	t.Parallel()
 	cfgPath, dir := writeEnrichSubdomainFixture(t)
 	subdomainsPath := filepath.Join(dir, defaultSubdomainsPath)
 
@@ -221,6 +224,7 @@ func TestEnrichSubdomainPin(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestEnrichSubdomainPin_NoApproved(t *testing.T) {
+	t.Parallel()
 	cfgPath, dir := writeEnrichSubdomainFixture(t)
 	subdomainsPath := filepath.Join(dir, defaultSubdomainsPath)
 
@@ -255,6 +259,7 @@ func TestEnrichSubdomainPin_NoApproved(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestEnrichSubdomainPin_NoDraftFile(t *testing.T) {
+	t.Parallel()
 	cfgPath, _ := writeEnrichSubdomainFixture(t)
 
 	cmd := &EnrichCmd{
@@ -278,6 +283,7 @@ func TestEnrichSubdomainPin_NoDraftFile(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestEnrichSubdomains_LLMUnconfigured(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".archfit.yaml")
 	content := `version: 1

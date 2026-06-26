@@ -12,8 +12,10 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`.
 - `make lint` — `golangci-lint run -c .golangci.yaml ./...` (pinned v2.1.6)
 - `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit`
 - `make archfit` — dogfood architecture-drift gate: `.bin/archfit check --config .archfit.yaml --full`
+- `make arch-lint` — architecture drift linter (alias for `make archfit`); wired into the pre-push hook
 - `make archfit-report` — write `reports/archfit-report.md` via `archfit scan`
 - `make mock` — regenerate moq fakes (`go generate ./...`)
+- `make test-fast` — `go test -race -short ./...` (skips slow subprocess/ast-grep integration tests; for inner-loop speed)
 - `make all` — fmt → lint → test → archfit
 - One test: `go test ./internal/<pkg>/ -run TestName`
 
@@ -22,7 +24,12 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`.
 - Import ring: `go test ./internal/ -run TestArchImports`
 - Golden output: `go test ./internal/engine/ -run TestGolden` — regenerate
   deliberately and inspect the diff; output changes are never automatic.
-- Dogfood gate: `make archfit` — CI runs the same target after tests/goldens.
+- Dogfood gate: `make archfit` — CI runs the same target after tests/goldens. Also
+  runs locally pre-push via the `arch-lint` hook in `.pre-commit-config.yaml`. The
+  self-config (`.archfit.yaml`) gates its own architecture: forbidden-dependency
+  ring + `forbidden_layer_direction` (fail) and a god-struct ceiling
+  (`struct_field_max: 90`, fail; current max is `Diagnostic` at ~61 body-lines).
+  `public_api_type_leak` runs advisory (warn).
 
 ## Invariants
 

@@ -5,10 +5,10 @@ exists, how it is scored, and whether it can affect the verdict. For the theory
 behind the strength / distance / volatility vocabulary used throughout, read
 [Concepts](concepts.md) first.
 
-`archfit` ships **19 metrics**. They split into two roles:
+`archfit` ships **27 metrics**. They split into two roles:
 
 - **Verdict-affecting** (4): scored 0–10, can `warn` the run when they regress.
-- **Report-only** (15): band `info`; surface facts for humans and agents, never
+- **Report-only** (23): band `info`; surface facts for humans and agents, never
   change the verdict.
 
 A metric absent from the config is enabled by default; only an explicit
@@ -330,6 +330,54 @@ builtins, uninstalled packages) so they never flag third-party names.
   whether or not they share a static import edge. Complements `hidden_coupling`
   (which filters out importing pairs).
 
+### Syntax-surface metrics (ast-grep facts)
+
+These metrics are derived from `tools.syntax` (ast-grep) facts.
+All are report-only (`info`); none changes the verdict.
+They require `tools.syntax.enabled: on`; when absent the metric reports `n/a`.
+
+- **`unsafe_density`** — count of unsafe operations per module (Rust): `unsafe {}`
+  blocks, `UnsafeCell`, `transmute`, and raw-pointer casts (`as *mut`/`as *const`).
+  A high count surfaces candidate modules for manual soundness review; `archfit` does
+  not judge acceptability — route to `archfit review` or a human for that.
+- **`global_state_density`** — count of global mutable state sites per module
+  (Rust): `static mut` variables, `Atomic*` singletons, and `OnceLock`/`OnceCell`
+  statics. Extracted by ast-grep. Does not exclude test files (like `unsafe_density`).
+  Report-only; never gates. Route high counts to `archfit review` or a human to
+  assess whether the concurrency strategy is intentional.
+- **`panic_density`** — count of panic/unwrap operations per module in production
+  code. Counts `unwrap()`/`expect()` (Rust) and `panic(` (Go). Test files are
+  excluded using the same heuristic as `test_in_production` — the production-only
+  count is materially lower than the naive module-wide total.
+- **`struct_field_density`** — per-module count of struct definitions with ≥1 field
+  (Go and Rust). High field counts surface god-struct candidates; the opt-in
+  `struct_field_max` rule lets a project gate on a ceiling.
+- **`test_density`** — per-module count of test functions (`func Test…` in Go,
+  `#[test]` in Rust, `def test_*` in Python). A proxy for test coverage presence;
+  real coverage percentages need a dedicated coverage tool and stay in the LLM/human
+  review path.
+
+### public_api_type_leak (rule)
+
+Fires when a public API exposes a type from an external framework package directly in a function or method signature. Requires `tools.syntax.enabled: on`.
+
+Defaults to `gate: warn` when unset (advisory, non-blocking). Fires once per unique module+type combination.
+
+**Limitation:** only fires on repos with Go-style dotted external package nodes in the dependency graph. Rust/TypeScript/Python repos may have type_leak facts but no matching external nodes — see [configuration reference](configuration-reference.md#rules).
+
+### Manifest and graph metrics
+
+- **`deprecated_dep_count`** — count of locally-declared deprecation/retraction
+  markers found in manifest files: `retract` directives in `go.mod`, `deprecated`
+  fields in `package.json`. Report-only; never gates. Live-version EOL checking
+  (registry queries) is out of scope — route that to `archfit enrich`.
+- **`file_mutual_import`** — count of file pairs that mutually import each other
+  (file-level bidirectional cycles not caught by the module-level `cycle` metric).
+  Detected by running Tarjan SCC over the file-node projection of the dependency
+  graph. Currently only TypeScript has file→file edges; Go and Python produce
+  file→package or module→module edges, which yield no false positives here.
+  Report-only; never gates.
+
 ---
 
 ## Coupling classification reference
@@ -420,15 +468,18 @@ Most metrics work from the built-in extractors and `git`. A few need an opt-in
 tool and report `n/a` (with a coverage note) when it is absent — never a false
 failure.
 
-| Metric(s)                                                                                                               | Needs                                           |
-| ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| encapsulation, unbalanced_edge, cycle, coverage, blast_radius, structural_weight, architecture_fitness, change_locality | built-in extractors + `git`                     |
-| change_amplification, hidden_coupling, change_coupling                                                                  | `git` history (churn / co-change)               |
-| instability, abstractness, martin_distance, propagation_cost                                                            | built-in extractors (SCIP refines abstractness) |
-| risk_hub, cohesion_lcom                                                                                                 | SCIP index (`tools.scip.enabled: on`)           |
-| complexity                                                                                                              | `lizard` (`tools.complexity.enabled: on`)       |
-| functional_candidates                                                                                                   | clone detector (`tools.clones.enabled: on`)     |
-| risk_hub (refinement only)                                                                                              | GitNexus (`tools.gitnexus.enabled: on`)         |
+| Metric(s)                                                                                                               | Needs                                                               |
+| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| encapsulation, unbalanced_edge, cycle, coverage, blast_radius, structural_weight, architecture_fitness, change_locality | built-in extractors + `git`                                         |
+| change_amplification, hidden_coupling, change_coupling                                                                  | `git` history (churn / co-change)                                   |
+| instability, abstractness, martin_distance, propagation_cost                                                            | built-in extractors (SCIP refines abstractness)                     |
+| risk_hub, cohesion_lcom                                                                                                 | SCIP index (`tools.scip.enabled: on`)                               |
+| complexity                                                                                                              | `lizard` (`tools.complexity.enabled: on`)                           |
+| functional_candidates                                                                                                   | clone detector (`tools.clones.enabled: on`)                         |
+| risk_hub (refinement only)                                                                                              | GitNexus (`tools.gitnexus.enabled: on`)                             |
+| unsafe_density, global_state_density, panic_density, struct_field_density, test_density                                 | `sg` (ast-grep); `tools.syntax.enabled: on`                         |
+| deprecated_dep_count                                                                                                    | manifest files (`go.mod`, `package.json`) — built-in; no extra tool |
+| file_mutual_import                                                                                                      | built-in (TS file→file graph); no extra tool                        |
 
 The `llm` tool is used only by `archfit enrich`, `archfit explain --llm`,
 `archfit review`, `archfit autopilot`, `archfit init --llm`, and

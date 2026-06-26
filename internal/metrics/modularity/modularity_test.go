@@ -11,7 +11,25 @@ import (
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
-const bandNAStr = "n/a"
+const (
+	bandNAStr      = "n/a"
+	kindFunctionSF = "function" // syntax fact Kind for functions; used by unsafe_density and struct_field_density tests
+	kindStructStr  = "struct"   // syntax fact Kind for structs; used by unsafe_density and panic_density tests
+	// Shared file/module names used across unsafe_density and panic_density tests.
+	fileARs          = "a.rs"
+	fileMainRs       = "main.rs"
+	fileMainGo       = "main.go"
+	fileFooTestGo    = "foo_test.go"
+	fileTestsIntegRs = "tests/integration.rs"
+	modMyMod         = "mymod"
+	modMyApp         = "myapp"
+	langRust         = "rust"
+	langGo           = "go"
+	// TypeScript file paths reused across martin and file_mutual_import tests.
+	tsFileA = "src/a.ts"
+	tsFileB = "src/b.ts"
+	tsFileC = "src/c.ts"
+)
 
 // crateHerdr is the single-crate fixture name reused across the Rust Cal-4 cases.
 const crateHerdr = "herdr"
@@ -163,7 +181,7 @@ func TestFileStructuralWeight_NoLOCIsNA(t *testing.T) {
 func TestFileStructuralWeight_NoGodsClean(t *testing.T) {
 	// All files similar size → no god-files (value 0).
 	fileLOC := map[string]int{
-		"pkg/a/a.go": 100,
+		fcPathA:      100,
 		"pkg/b/b.go": 110,
 		"pkg/c/c.go": 95,
 		"pkg/d/d.go": 105,

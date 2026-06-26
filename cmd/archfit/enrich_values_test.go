@@ -22,6 +22,7 @@ func valueJSONFor(pairs map[string]string) string {
 }
 
 func TestEnrichOwnerDraft(t *testing.T) {
+	t.Parallel()
 	provider := &scriptedProvider{
 		responses: []string{valueJSONFor(map[string]string{enrichModAuth: "@team-auth", enrichModNotify: "@team-notify"})},
 	}
@@ -52,6 +53,7 @@ func TestEnrichOwnerDraft(t *testing.T) {
 }
 
 func TestEnrichOwnerPin(t *testing.T) {
+	t.Parallel()
 	cfgPath, dir := writeEnrichSubdomainFixture(t)
 	ownersPath := filepath.Join(dir, defaultOwnersPath)
 
@@ -89,6 +91,7 @@ func TestEnrichOwnerPin(t *testing.T) {
 }
 
 func TestEnrichVolatilityDraftAndPin(t *testing.T) {
+	t.Parallel()
 	provider := &scriptedProvider{
 		responses: []string{valueJSONFor(map[string]string{enrichModAuth: volatilityLow, enrichModNotify: volatilityMedium})},
 	}
@@ -131,6 +134,7 @@ func TestEnrichVolatilityDraftAndPin(t *testing.T) {
 }
 
 func TestEnrichVolatilityDraft_RejectsInvalidValue(t *testing.T) {
+	t.Parallel()
 	// "huge" is not a valid volatility — the parser must drop it, leaving no drafts.
 	provider := &scriptedProvider{
 		responses: []string{valueJSONFor(map[string]string{enrichModAuth: "huge", enrichModNotify: "huge"})},
@@ -153,6 +157,7 @@ func TestEnrichVolatilityDraft_RejectsInvalidValue(t *testing.T) {
 }
 
 func TestEnrichOwner_LLMUnconfigured(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".archfit.yaml")
 	content := "version: 1\nmodules:\n  auth:\n    paths:\n      - \"internal/auth/**\"\n"
