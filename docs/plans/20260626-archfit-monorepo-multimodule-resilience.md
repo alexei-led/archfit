@@ -165,20 +165,20 @@ during discovery (go/packages workspace loading; depcruise/grimp scoping).
 
 ### Task 2: Scope plumbing — GitRoot + ScanRoot + non-fatal RepoRoot
 
-- [ ] add `GitRoot string` to `scope.Scope` (`internal/scope/scope.go`); keep
+- [x] add `GitRoot string` to `scope.Scope` (`internal/scope/scope.go`); keep
       `Root` = the **analysis boundary** (ScanRoot); update the doc comment
-- [ ] add `Root string` to `config.ScopeConfig` (the absolute `--root`, empty =
+- [x] add `Root string` to `config.ScopeConfig` (the absolute `--root`, empty =
       default) + thread through `ForScope()` consumers in `cmd`
-- [ ] rework `Resolve`: resolve `gitRoot` via `RepoRoot`; on error, in **full
+- [x] rework `Resolve`: resolve `gitRoot` via `RepoRoot`; on error, in **full
       mode** set `GitRoot=""` and continue (non-git is analyzable); in **delta
       mode** keep the hard error (no git → no diff). Set
       `Root = abs(cfg.Root)` when non-empty, else `gitRoot` (when both empty,
       fall back to `abs(cfg.WorkDir)`). Compute and store the subtree prefix
       `rel(GitRoot, Root)` (helper returns `""` when equal or non-git)
-- [ ] write tests: scanRoot≠gitRoot resolution; `--root` absent → scanRoot=gitRoot
+- [x] write tests: scanRoot≠gitRoot resolution; `--root` absent → scanRoot=gitRoot
       (prefix ""); non-git full mode (GitRoot="", no error); non-git delta mode
       (hard error); prefix computation
-- [ ] run `TestArchImports` + scope tests — must pass before next task
+- [x] run `TestArchImports` + scope tests — must pass before next task
 
 ### Task 3: Git history/changed re-basing to the ScanRoot subtree
 

@@ -37,6 +37,11 @@ type OutputsConfig struct {
 
 // ScopeConfig is the view passed to the scope resolution stage.
 type ScopeConfig struct {
+	// Root is the absolute path of the analysis boundary (ScanRoot). When
+	// non-empty it overrides the git toplevel so archfit scans a subdirectory
+	// of a monorepo. Empty means "use the git toplevel (or WorkDir as a
+	// last resort)". Callers (cmd) are responsible for making this absolute.
+	Root       string
 	Base       string // git ref to diff against (empty = none)
 	Full       bool   // if true, full-repo mode (no diff)
 	Exclusions []string
