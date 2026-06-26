@@ -162,18 +162,38 @@ func Resolve(ctx context.Context, cfg config.ScopeConfig, r Resolver) (Scope, er
 	if err != nil {
 		return Scope{}, fmt.Errorf("scope: resolve changed files: %w", err)
 	}
+	scanRoot := resolveScanRoot(cfg, gitRoot)
+	prefix := subtreePrefix(gitRoot, scanRoot)
+	changed = rebaseChangedFiles(prefix, changed)
 	sort.Strings(changed)
 
-	scanRoot := resolveScanRoot(cfg, gitRoot)
 	return Scope{
 		Base:          cfg.Base,
 		Head:          head,
 		Changed:       changed,
 		Root:          scanRoot,
 		GitRoot:       gitRoot,
-		SubtreePrefix: subtreePrefix(gitRoot, scanRoot),
+		SubtreePrefix: prefix,
 		Mode:          ModeDelta,
 	}, nil
+}
+
+// rebaseChangedFiles keeps only paths under prefix and strips the prefix
+// component. When prefix is empty, the input is returned unchanged —
+// the no-op path for --root-absent runs where Root==GitRoot.
+// Git paths always use "/" as separator.
+func rebaseChangedFiles(prefix string, files []string) []string {
+	if prefix == "" {
+		return files
+	}
+	sep := prefix + "/"
+	var out []string
+	for _, f := range files {
+		if rel, ok := strings.CutPrefix(f, sep); ok {
+			out = append(out, rel)
+		}
+	}
+	return out
 }
 
 // resolveScanRoot determines the analysis boundary from the config and resolved

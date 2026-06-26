@@ -182,17 +182,17 @@ during discovery (go/packages workspace loading; depcruise/grimp scoping).
 
 ### Task 3: Git history/changed re-basing to the ScanRoot subtree
 
-- [ ] `git.History` / `git.Changed`: run in `GitRoot` (workDir) but add a
+- [x] `git.History` / `git.Changed`: run in `GitRoot` (workDir) but add a
       path-scope arg (`-- <prefix>`) and **re-base** returned paths to
       ScanRoot-relative, dropping paths outside the prefix; both are no-ops when
       prefix is `""`
-- [ ] `cmd/archfit/pipeline.go`: call history/changed with `GitRoot` + prefix,
+- [x] `cmd/archfit/pipeline.go`: call history/changed with `GitRoot` + prefix,
       keep all extractors on `s.Root` (ScanRoot); ensure `Scope.Changed` is
       ScanRoot-relative so `status.pathRelated` matches finding paths
-- [ ] write tests: history filtered+rebased to a subtree; changed-file filtering +
+- [x] write tests: history filtered+rebased to a subtree; changed-file filtering +
       re-basing in delta mode; prefix "" is byte-identical to today; a changed
       file outside the subtree is excluded
-- [ ] run tests — must pass before next task
+- [x] run tests — must pass before next task
 
 ### Task 4: cmd wiring + non-git full-mode path
 

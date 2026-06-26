@@ -235,6 +235,86 @@ func TestSubtreePrefix_NotUnderGitRoot(t *testing.T) {
 	}
 }
 
+// TestResolve_Delta_SubtreeRebase verifies that changed files outside the
+// subtree are excluded and paths inside are stripped to ScanRoot-relative.
+func TestResolve_Delta_SubtreeRebase(t *testing.T) {
+	r := fakeResolver{
+		root:    fakeGitRoot,
+		head:    "abc",
+		changed: []string{"services/api/handler.go", "services/api/routes.go", "other/main.go"},
+	}
+
+	s, err := scope.Resolve(context.Background(), config.ScopeConfig{
+		Root: fakeGitRoot + "/services/api",
+		Base: baseBranch,
+	}, r)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"handler.go", "routes.go"}
+	if len(s.Changed) != len(want) {
+		t.Fatalf("changed: got %v, want %v", s.Changed, want)
+	}
+	for i, f := range want {
+		if s.Changed[i] != f {
+			t.Errorf("changed[%d]: got %q, want %q", i, s.Changed[i], f)
+		}
+	}
+	if s.SubtreePrefix != "services/api" {
+		t.Errorf("SubtreePrefix: got %q, want %q", s.SubtreePrefix, "services/api")
+	}
+}
+
+// TestResolve_Delta_OutsideSubtreeExcluded verifies that all changed files
+// outside the subtree are excluded, leaving Changed empty.
+func TestResolve_Delta_OutsideSubtreeExcluded(t *testing.T) {
+	r := fakeResolver{
+		root:    fakeGitRoot,
+		head:    "sha1",
+		changed: []string{"completely/different.go"},
+	}
+
+	s, err := scope.Resolve(context.Background(), config.ScopeConfig{
+		Root: fakeGitRoot + "/myapp",
+		Base: baseBranch,
+	}, r)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(s.Changed) != 0 {
+		t.Errorf("changed: expected empty (all outside subtree), got %v", s.Changed)
+	}
+}
+
+// TestResolve_Delta_EmptyPrefix_Unchanged verifies that when cfg.Root is empty
+// (no subtree) the changed list is sorted but otherwise unchanged.
+func TestResolve_Delta_EmptyPrefix_Unchanged(t *testing.T) {
+	r := fakeResolver{
+		root:    fakeGitRoot,
+		head:    "sha1",
+		changed: []string{"pkg/y.go", "pkg/x.go"},
+	}
+
+	s, err := scope.Resolve(context.Background(), config.ScopeConfig{
+		Base: baseBranch,
+	}, r)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"pkg/x.go", "pkg/y.go"}
+	if len(s.Changed) != len(want) {
+		t.Fatalf("changed: got %v, want %v", s.Changed, want)
+	}
+	for i, f := range want {
+		if s.Changed[i] != f {
+			t.Errorf("changed[%d]: got %q, want %q", i, s.Changed[i], f)
+		}
+	}
+	if s.SubtreePrefix != "" {
+		t.Errorf("SubtreePrefix: got %q, want empty (root==gitroot)", s.SubtreePrefix)
+	}
+}
+
 func TestMergeExclusions(t *testing.T) {
 	const vendorGlob = "**/vendor/**"
 

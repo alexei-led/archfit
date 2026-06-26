@@ -32,11 +32,18 @@ const (
 )
 
 // Changed returns the sorted list of files that differ between base and head.
-// It runs: git diff --name-only <base>..<head>
-func Changed(ctx context.Context, workDir, base, head string, runner toolrun.Runner) (ChangeSet, error) {
+// It runs: git diff --name-only <base>..<head> [-- <prefix>]
+// When prefix is non-empty, only paths under that subtree are returned and the
+// prefix component is stripped, so returned paths are ScanRoot-relative.
+// When prefix is empty, behavior is byte-identical to the pre-prefix version.
+func Changed(ctx context.Context, workDir, base, head, prefix string, runner toolrun.Runner) (ChangeSet, error) {
+	args := []string{"diff", "--name-only", base + ".." + head}
+	if prefix != "" {
+		args = append(args, "--", prefix)
+	}
 	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    gitTool,
-		Args:    []string{"diff", "--name-only", base + ".." + head},
+		Args:    args,
 		Timeout: gitTimeout,
 		WorkDir: workDir,
 	})
@@ -52,9 +59,27 @@ func Changed(ctx context.Context, workDir, base, head string, runner toolrun.Run
 	if raw != "" {
 		files = strings.Split(raw, "\n")
 	}
+	files = rebaseToSubtree(prefix, files)
 	sort.Strings(files)
 
 	return ChangeSet{Files: files, Base: base, Head: head}, nil
+}
+
+// rebaseToSubtree keeps only paths starting with prefix+"/" and strips that
+// prefix so the returned paths are ScanRoot-relative.
+// Returns paths unchanged when prefix is "".
+func rebaseToSubtree(prefix string, paths []string) []string {
+	if prefix == "" {
+		return paths
+	}
+	sep := prefix + "/"
+	var out []string
+	for _, p := range paths {
+		if rel, ok := strings.CutPrefix(p, sep); ok {
+			out = append(out, rel)
+		}
+	}
+	return out
 }
 
 // HeadRef returns the SHA of HEAD.
@@ -105,7 +130,7 @@ const coChangeMaxFiles = 50
 
 // Churn returns per-file commit counts over the recent window (a volatility proxy).
 func Churn(ctx context.Context, workDir string, runner toolrun.Runner) (FileChurn, diagnostic.Coverage, error) {
-	churn, _, cov, err := History(ctx, workDir, runner)
+	churn, _, cov, err := History(ctx, workDir, "", runner)
 	return churn, cov, err
 }
 
@@ -113,15 +138,29 @@ func Churn(ctx context.Context, workDir string, runner toolrun.Runner) (FileChur
 // window in a single `git log` pass. A non-git directory or any failure yields
 // empty maps with absent coverage, never an error — this signal is best-effort.
 // The commit window is bounded by count (deterministic for a fixed HEAD).
-func History(ctx context.Context, workDir string, runner toolrun.Runner) (FileChurn, CoChange, diagnostic.Coverage, error) {
+//
+// When prefix is non-empty, the git log is scoped to that subtree path and only
+// matching files are collected; their prefix component is stripped so returned
+// paths are ScanRoot-relative. When prefix is "", behavior is byte-identical to
+// the pre-prefix version.
+func History(ctx context.Context, workDir, prefix string, runner toolrun.Runner) (FileChurn, CoChange, diagnostic.Coverage, error) {
+	args := []string{"log", fmt.Sprintf("-n%d", churnCommits), "--name-only", "--pretty=format:@"}
+	if prefix != "" {
+		args = append(args, "--", prefix)
+	}
 	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    gitTool,
-		Args:    []string{"log", fmt.Sprintf("-n%d", churnCommits), "--name-only", "--pretty=format:@"},
+		Args:    args,
 		Timeout: gitTimeout,
 		WorkDir: workDir,
 	})
 	if err != nil || out.ExitCode != 0 {
 		return nil, nil, diagnostic.Coverage{Tool: gitTool, Status: "absent"}, nil
+	}
+
+	subtree := ""
+	if prefix != "" {
+		subtree = prefix + "/"
 	}
 
 	churn := FileChurn{}
@@ -147,7 +186,11 @@ func History(ctx context.Context, workDir string, runner toolrun.Runner) (FileCh
 			continue
 		}
 		if f := strings.TrimSpace(line); f != "" {
-			commit = append(commit, f)
+			if subtree == "" {
+				commit = append(commit, f)
+			} else if rel, ok := strings.CutPrefix(f, subtree); ok {
+				commit = append(commit, rel)
+			}
 		}
 	}
 	flush()

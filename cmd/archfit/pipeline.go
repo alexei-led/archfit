@@ -56,7 +56,7 @@ func (g gitResolver) HeadRef(ctx context.Context) (string, error) {
 }
 
 func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, error) {
-	cs, err := git.Changed(ctx, g.workDir, base, head, g.runner)
+	cs, err := git.Changed(ctx, g.workDir, base, head, "", g.runner)
 	if err != nil {
 		return nil, err
 	}
@@ -136,8 +136,15 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// volatility (unbalanced_edge, BC severity) and the modularity metrics
 	// (change_amplification, hidden_coupling). Hand-authored volatility/subdomain
 	// config always wins; a non-git repo leaves these signals empty.
+	// Run history at the git toplevel (GitRoot) scoped to the analysis subtree
+	// (SubtreePrefix), so returned paths are ScanRoot-relative. Falls back to
+	// s.Root when GitRoot is empty (non-git run: History returns absent).
 	change := signal.RunSignals{}
-	if churn, coChange, _, herr := git.History(ctx, s.Root, deps.Runner); herr == nil {
+	histWorkDir := s.GitRoot
+	if histWorkDir == "" {
+		histWorkDir = s.Root
+	}
+	if churn, coChange, _, herr := git.History(ctx, histWorkDir, s.SubtreePrefix, deps.Runner); herr == nil {
 		change.History.FileChurn, change.History.CoChange = churn, coChange
 	}
 
