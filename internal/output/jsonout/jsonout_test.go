@@ -189,7 +189,7 @@ func TestJSONRenderer_Render(t *testing.T) {
 }
 
 // TestJSONRenderer_Render_FileFacts verifies the full facts block round-trips
-// through JSON with snake_case keys and omits gitnexus_impact when nil.
+// through JSON with snake_case keys and omits symbol_dependants when nil.
 func TestJSONRenderer_Render_FileFacts(t *testing.T) {
 	impact := 41
 	d := diagnostic.New()
@@ -201,7 +201,7 @@ func TestJSONRenderer_Render_FileFacts(t *testing.T) {
 			OutboundDestinations: 2,
 			LOC:                  310,
 			CoChangePartners:     []string{"src/tui/app.py"},
-			GitnexusImpact:       &impact,
+			SymbolDependants:     &impact,
 		},
 		{
 			Module:           "config",
@@ -232,20 +232,20 @@ func TestJSONRenderer_Render_FileFacts(t *testing.T) {
 	if first["inbound_module_fanin"] != float64(23) {
 		t.Errorf("inbound_module_fanin = %v, want 23", first["inbound_module_fanin"])
 	}
-	if first["gitnexus_impact"] != float64(41) {
-		t.Errorf("gitnexus_impact = %v, want 41", first["gitnexus_impact"])
+	if first["symbol_dependants"] != float64(41) {
+		t.Errorf("symbol_dependants = %v, want 41", first["symbol_dependants"])
 	}
 
 	second := raw.FileFacts[1]
-	if _, present := second["gitnexus_impact"]; present {
-		t.Error("gitnexus_impact should be omitted when nil")
+	if _, present := second["symbol_dependants"]; present {
+		t.Error("symbol_dependants should be omitted when nil")
 	}
 
 	var got diagnostic.Diagnostic
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("cannot unmarshal back into Diagnostic: %v", err)
 	}
-	if got.FileFacts[0].GitnexusImpact == nil || *got.FileFacts[0].GitnexusImpact != 41 {
-		t.Errorf("round-trip GitnexusImpact = %v, want 41", got.FileFacts[0].GitnexusImpact)
+	if got.FileFacts[0].SymbolDependants == nil || *got.FileFacts[0].SymbolDependants != 41 {
+		t.Errorf("round-trip SymbolDependants = %v, want 41", got.FileFacts[0].SymbolDependants)
 	}
 }

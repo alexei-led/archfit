@@ -5,6 +5,7 @@ package toolrun
 
 import (
 	"context"
+	"io"
 	"sync"
 )
 
@@ -24,6 +25,9 @@ var _ Runner = &RunnerMock{}
 //			RunFunc: func(ctx context.Context, cmd ToolCmd) (Output, error) {
 //				panic("mock out the Run method")
 //			},
+//			StreamFunc: func(ctx context.Context, cmd ToolCmd, consume func(io.Reader) error) (Output, error) {
+//				panic("mock out the Stream method")
+//			},
 //		}
 //
 //		// use mockedRunner in code that requires Runner
@@ -36,6 +40,9 @@ type RunnerMock struct {
 
 	// RunFunc mocks the Run method.
 	RunFunc func(ctx context.Context, cmd ToolCmd) (Output, error)
+
+	// StreamFunc mocks the Stream method.
+	StreamFunc func(ctx context.Context, cmd ToolCmd, consume func(io.Reader) error) (Output, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -53,9 +60,19 @@ type RunnerMock struct {
 			// Cmd is the cmd argument value.
 			Cmd ToolCmd
 		}
+		// Stream holds details about calls to the Stream method.
+		Stream []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Cmd is the cmd argument value.
+			Cmd ToolCmd
+			// Consume is the consume argument value.
+			Consume func(io.Reader) error
+		}
 	}
 	lockDetect sync.RWMutex
 	lockRun    sync.RWMutex
+	lockStream sync.RWMutex
 }
 
 // Detect calls DetectFunc.
@@ -127,5 +144,45 @@ func (mock *RunnerMock) RunCalls() []struct {
 	mock.lockRun.RLock()
 	calls = mock.calls.Run
 	mock.lockRun.RUnlock()
+	return calls
+}
+
+// Stream calls StreamFunc.
+func (mock *RunnerMock) Stream(ctx context.Context, cmd ToolCmd, consume func(io.Reader) error) (Output, error) {
+	if mock.StreamFunc == nil {
+		panic("RunnerMock.StreamFunc: method is nil but Runner.Stream was just called")
+	}
+	callInfo := struct {
+		Ctx     context.Context
+		Cmd     ToolCmd
+		Consume func(io.Reader) error
+	}{
+		Ctx:     ctx,
+		Cmd:     cmd,
+		Consume: consume,
+	}
+	mock.lockStream.Lock()
+	mock.calls.Stream = append(mock.calls.Stream, callInfo)
+	mock.lockStream.Unlock()
+	return mock.StreamFunc(ctx, cmd, consume)
+}
+
+// StreamCalls gets all the calls that were made to Stream.
+// Check the length with:
+//
+//	len(mockedRunner.StreamCalls())
+func (mock *RunnerMock) StreamCalls() []struct {
+	Ctx     context.Context
+	Cmd     ToolCmd
+	Consume func(io.Reader) error
+} {
+	var calls []struct {
+		Ctx     context.Context
+		Cmd     ToolCmd
+		Consume func(io.Reader) error
+	}
+	mock.lockStream.RLock()
+	calls = mock.calls.Stream
+	mock.lockStream.RUnlock()
 	return calls
 }

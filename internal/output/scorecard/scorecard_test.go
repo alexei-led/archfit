@@ -51,7 +51,6 @@ func goldenDiagnostic() diagnostic.Diagnostic {
 	d.ToolCoverage = []diagnostic.Coverage{
 		{Tool: "go/packages", Status: "ok"},
 		{Tool: "scip", Status: "ok"},
-		{Tool: "gitnexus", Status: "ok"},
 		{Tool: "lizard", Status: "ok"},
 		{Tool: "jscpd", Status: "ok"},
 	}
@@ -102,7 +101,6 @@ architecture intent enforced by executable fitness checks
 review trustworthiness given tool coverage and evidence depth
 - file extraction coverage 1.00
 - scip: ok
-- gitnexus: ok
 - lizard: ok
 - jscpd: ok
 `

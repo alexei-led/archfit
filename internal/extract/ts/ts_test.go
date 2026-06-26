@@ -14,6 +14,11 @@ import (
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
+const (
+	launcherBunx = "bunx"
+	tsconfigName = "tsconfig.json"
+)
+
 // fixtureDir is the testdata/ts directory with package.json and JSON fixtures.
 var fixtureDir = filepath.Join("..", "..", "..", "testdata", "ts")
 
@@ -33,8 +38,8 @@ func loadFixture(t *testing.T, name string) []byte {
 func mockRunner(fixtureData []byte) *toolrun.RunnerMock {
 	return &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-			if tool == "bunx" {
-				return toolrun.ToolInfo{Name: "bunx", Path: "/usr/bin/bunx"}, true
+			if tool == launcherBunx {
+				return toolrun.ToolInfo{Name: launcherBunx, Path: "/usr/bin/bunx"}, true
 			}
 			return toolrun.ToolInfo{}, false
 		},
@@ -298,5 +303,74 @@ func TestExtract_ToolAbsentAuto(t *testing.T) {
 	}
 	if cov.Tool != "dependency-cruiser" {
 		t.Errorf("Coverage.Tool = %q, want %q", cov.Tool, "dependency-cruiser")
+	}
+}
+
+// TestExtract_TSConfigAutoDetect verifies dependency-cruiser is passed --ts-config
+// so tsconfig path aliases resolve: an explicit config wins, otherwise a tsconfig
+// at the root is auto-detected, and nothing is passed when none is configured or
+// present. Without it, aliased imports come back unresolved and are dropped from
+// the coupling metrics.
+func TestExtract_TSConfigAutoDetect(t *testing.T) {
+	tests := []struct {
+		name      string
+		tsconfig  string // file created at root ("" = none)
+		cfgTS     string // explicit config.TSConfig ("" = unset)
+		wantTSArg string // expected --ts-config value ("" = flag absent)
+	}{
+		{name: "auto-detect tsconfig.json", tsconfig: tsconfigName, wantTSArg: tsconfigName},
+		{name: "auto-detect tsconfig.base.json", tsconfig: "tsconfig.base.json", wantTSArg: "tsconfig.base.json"},
+		{name: "no tsconfig present", tsconfig: "", wantTSArg: ""},
+		{name: "explicit config wins", tsconfig: tsconfigName, cfgTS: "custom/tsconfig.json", wantTSArg: "custom/tsconfig.json"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"t"}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if tt.tsconfig != "" {
+				if err := os.WriteFile(filepath.Join(root, tt.tsconfig), []byte("{}"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			var gotArgs []string
+			runner := &toolrun.RunnerMock{
+				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+					if tool == "bunx" {
+						return toolrun.ToolInfo{Name: "bunx", Path: "/usr/bin/bunx"}, true
+					}
+					return toolrun.ToolInfo{}, false
+				},
+				RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+					if slices.Contains(cmd.Args, "--version") {
+						return toolrun.Output{Stdout: []byte("14.0.0\n")}, nil
+					}
+					gotArgs = cmd.Args
+					return toolrun.Output{Stdout: []byte(`{"modules":[]}`)}, nil
+				},
+			}
+
+			extractor := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto, TSConfig: tt.cfgTS})
+			if _, _, err := extractor.Extract(context.Background(), scope.Scope{Root: root}); err != nil {
+				t.Fatalf("Extract: %v", err)
+			}
+
+			idx := slices.Index(gotArgs, "--ts-config")
+			if tt.wantTSArg == "" {
+				if idx != -1 {
+					t.Fatalf("expected no --ts-config flag, got args %v", gotArgs)
+				}
+				return
+			}
+			if idx == -1 || idx+1 >= len(gotArgs) {
+				t.Fatalf("expected --ts-config %q, got args %v", tt.wantTSArg, gotArgs)
+			}
+			if got := gotArgs[idx+1]; got != tt.wantTSArg {
+				t.Errorf("--ts-config = %q, want %q", got, tt.wantTSArg)
+			}
+		})
 	}
 }

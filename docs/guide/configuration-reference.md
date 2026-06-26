@@ -155,17 +155,14 @@ tools:
     enabled: on # symbol-level analysis (SCIP indexers + uv); powers risk_hub
   clones:
     enabled: on # clone detection (jscpd); powers functional_candidates
-  gitnexus:
-    enabled: on # historical change-impact; enriches risk_hub ranking
 ```
 
 - `scip` — runs a SCIP indexer (`scip-go`/`scip-python`/`scip-typescript`) plus `uv`
   to build the symbol graph. Required for `risk_hub`; without it `risk_hub` is `n/a`.
 - `clones` — runs `jscpd` to find duplicated logic. Required for
   `functional_candidates`; without it that metric is `n/a`.
-- `gitnexus` — optional enrichment of `risk_hub` with historical impact. Never auto.
 
-`scip`, `clones`, and `gitnexus` are opt-in: each enables only with `on`.
+`scip` and `clones` are opt-in: each enables only with `on`.
 `auto`, `off`, or absent all disable it, and the dependent metric then reports
 `n/a` without ever failing the run.
 
@@ -231,7 +228,7 @@ tools:
 `gate` accepts `off`, `warn` (default), or `fail`. A `fail` gate exits `1` (a
 policy violation, distinct from exit `3` tool errors). The tool key governs the
 analyzer behind it: `go` → go/packages, `typescript` → dependency-cruiser,
-`python` → grimp, `complexity` → lizard, `clones` → jscpd, `gitnexus` → gitnexus.
+`python` → grimp, `complexity` → lizard, `clones` → jscpd.
 The `--require-tools` flag on `check`/`scan` is the run-level shortcut — it raises
 **every** gap to `fail` without editing config.
 

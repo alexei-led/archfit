@@ -22,8 +22,8 @@ import (
 var DefaultExclusions = []string{
 	"**/.archfit-cache/**",
 	"**/.archfit-baseline.json",
-	"**/.gitnexus/**",
-	"**/.codegraph/**",
+	"**/.gitnexus/**",  // ignore index dirs; tool removed.
+	"**/.codegraph/**", // ignore index dirs; tool removed.
 	"**/reports/**",
 	"**/.venv/**",
 	"**/node_modules/**",

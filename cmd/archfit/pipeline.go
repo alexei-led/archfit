@@ -21,7 +21,6 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/complexity"
 	"github.com/alexei-led/archfit/internal/extract/deployunit"
 	"github.com/alexei-led/archfit/internal/extract/dynimports"
-	"github.com/alexei-led/archfit/internal/extract/gitnexus"
 	"github.com/alexei-led/archfit/internal/extract/loc"
 	"github.com/alexei-led/archfit/internal/extract/manifest"
 	runtimedetect "github.com/alexei-led/archfit/internal/extract/runtime"
@@ -143,7 +142,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 
 	// LOC walk — repo-relative path→line-count map + coverage record.
-	// ExtraCoverage order: loc, complexity, clones, gitnexus.
+	// ExtraCoverage order: loc, complexity, clones.
 	var locCov diagnostic.Coverage
 	var toolErr error
 	change.Size.FileLOC, locCov, toolErr = loc.Run(s.Root)
@@ -182,8 +181,17 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 
 	// Ownership resolution: fills module owner gaps from CODEOWNERS or git-author
 	// history. Explicit config owner always wins; resolver only fills empty slots.
-	// Absent CODEOWNERS and non-git repos yield an empty map — no fabrication.
-	cfg.FillMissingOwners(ownership.Resolve(ctx, s.Root, cfg.ModuleMapView(), deps.Runner))
+	// If every path-owning module already declares owner, skip the extra repo scan.
+	needsOwnerResolution := false
+	for _, def := range cfg.Modules {
+		if len(def.Paths) > 0 && def.Owner == "" {
+			needsOwnerResolution = true
+			break
+		}
+	}
+	if needsOwnerResolution {
+		cfg.FillMissingOwners(ownership.Resolve(ctx, s.Root, cfg.ModuleMapView(), deps.Runner))
+	}
 
 	// Deploy-unit detection: fills module deploy_unit gaps from static repo
 	// analysis (Go main pkgs, Dockerfiles, k8s manifests, package.json workspaces,
@@ -194,12 +202,12 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	duModules := cfg.ModuleMapView()
 	cfg.FillMissingDeployUnits(deployunit.KeyByModule(deployunit.Detect(ctx, s.Root, duModules, deps.Runner), duModules))
 
-	// Cyclomatic complexity via an external multi-language tool (lizard) — opt-in
-	// (tools.complexity.enabled: on) like SCIP, since it shells out and adds cost.
-	// Coverage carries zero file counts; status only — mirrors clones absent/ok pattern.
+	// Cyclomatic complexity — opt-in (tools.complexity.enabled: on).
+	// Backend: auto (default) = gocyclo(Go) + ast-grep proxy(TS/Py/Rust); lizard =
+	// exact multi-language CCN (re-pins Python). Coverage carries zero file counts.
 	var complexityCov diagnostic.Coverage
-	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled())
-	noteToolErr("lizard", toolErr)
+	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled(), cfg.ComplexityBackend())
+	noteToolErr("complexity", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, complexityCov)
 
 	// Clone detection — opt-in (tools.clones.enabled: on). Run returns empty+absent
@@ -208,17 +216,6 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled())
 	noteToolErr("jscpd", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, clonesCov)
-
-	// gitnexus optional symbol-impact enrichment. tools.gitnexus.enabled is
-	// three-state: on always attempts, off respects the opt-out (but reports a
-	// present index), and auto/unset auto-detects — a present .gitnexus/.codegraph
-	// index is used automatically. Returns empty+absent when not used or the CLI is
-	// absent; risk_hub falls back to surface-breadth-only in that case.
-	// Coverage is appended to ExtraCoverage so the engine includes it in the diagnostic.
-	var gitnexusCov diagnostic.Coverage
-	change.GitnexusImpact, gitnexusCov, toolErr = gitnexus.Run(ctx, deps.Runner, s.Root, cfg.GitnexusEnabled(), cfg.GitnexusExplicitlyDisabled())
-	noteToolErr("gitnexus", toolErr)
-	change.ExtraCoverage = append(change.ExtraCoverage, gitnexusCov)
 
 	// Pinned coupling labels (.archfit-labels.yaml): the human-reviewed output of
 	// `archfit enrich`. Optional; a malformed file fails loudly — a half-read
@@ -298,7 +295,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// cargo-modules module-graph coverage: opt-in (tools.cargo-modules.enabled: on).
 	// The Rust extractor runs cargo-modules during its Extract call (inside engine.Run
 	// above) and caches the coverage record. Append it here so it appears in
-	// ToolCoverage and the CoverageGap block — mirrors the gitnexus/complexity pattern.
+	// ToolCoverage and the CoverageGap block — mirrors the complexity/clones pattern.
 	if rustEx := rustExtractor(extractors); rustEx != nil {
 		diag.ToolCoverage = append(diag.ToolCoverage, rustEx.LastModuleGraphCoverage())
 	}
@@ -340,7 +337,6 @@ func buildCoverageToolConfigKey() map[string]string {
 	m := map[string]string{
 		toolLizard:       config.ToolComplexity,
 		toolJscpd:        config.ToolClones,
-		toolGitnexus:     config.ToolGitnexus,
 		toolCargoModules: config.ToolCargoModules,
 	}
 	for _, lang := range languageRegistry {
@@ -372,7 +368,6 @@ func buildToolAffectedMetrics() map[string]affectedMetrics {
 	m := map[string]affectedMetrics{
 		toolLizard:       {"uv tool install lizard / pip install lizard", []string{"complexity"}},
 		toolJscpd:        {"npm install -g jscpd", []string{"functional_candidates"}},
-		toolGitnexus:     {"see docs/guide — git-history change-coupling index", []string{"risk_hub"}},
 		toolCargoModules: {"cargo install cargo-modules (tools.cargo-modules.enabled: on)", []string{"cycle", "blast_radius", "cohesion", "encapsulation"}},
 	}
 	for _, lang := range languageRegistry {

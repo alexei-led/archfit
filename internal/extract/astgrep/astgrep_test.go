@@ -1,8 +1,10 @@
 package astgrep_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -65,8 +67,9 @@ func marshalEntries(t *testing.T, entries []map[string]any) []byte {
 	return b
 }
 
-// presentRunner returns a RunnerMock where Detect reports "sg" as present and
-// Run always returns the given bytes.
+// presentRunner returns a RunnerMock where Detect reports "sg" as present,
+// Run returns the given bytes (used by Find), and Stream calls the consumer
+// with a bytes.Reader over the same bytes (used by Syntax).
 func presentRunner(output []byte) *toolrun.RunnerMock {
 	return &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
@@ -74,6 +77,10 @@ func presentRunner(output []byte) *toolrun.RunnerMock {
 		},
 		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
 			return toolrun.Output{Stdout: output}, nil
+		},
+		StreamFunc: func(_ context.Context, _ toolrun.ToolCmd, consume func(io.Reader) error) (toolrun.Output, error) {
+			err := consume(bytes.NewReader(output))
+			return toolrun.Output{}, err
 		},
 	}
 }

@@ -13,6 +13,15 @@ import (
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
+// Constants used in strength-hint tests.
+const (
+	hintContract   = "contract"
+	hintModel      = "model"
+	hintFunctional = "functional"
+
+	pkgB = "pkg/b" // repo-relative path of the test helper package
+)
+
 // testdataRoot returns the absolute path to testdata/golang.
 func testdataRoot(t *testing.T) string {
 	t.Helper()
@@ -83,7 +92,7 @@ func TestExtract_SimpleImport(t *testing.T) {
 	}
 
 	// pkg/a/a.go imports pkg/b — expect an "imports" edge (repo-relative path after module prefix strip)
-	if !hasEdge(facts.Edges, "pkg/a/a.go", "pkg/b", graph.EdgeKindImports) {
+	if !hasEdge(facts.Edges, "pkg/a/a.go", pkgB, graph.EdgeKindImports) {
 		t.Errorf("expected imports edge from pkg/a/a.go to pkg/b; edges: %v", facts.Edges)
 	}
 }
@@ -124,8 +133,104 @@ func TestExtract_ExcludedPath(t *testing.T) {
 
 	// No edges should target pkg/b (regular import) or pkg/b/internal/impl.
 	for _, e := range facts.Edges {
-		if containsSuffix(e.To, "pkg/b") || containsSuffix(e.To, "pkg/b/internal/impl") {
+		if containsSuffix(e.To, pkgB) || containsSuffix(e.To, "pkg/b/internal/impl") {
 			t.Errorf("expected no edges to pkg/b after exclusion, got: %v", e)
+		}
+	}
+}
+
+// edgeStrengthHint returns the StrengthHint for the first edge matching
+// fromSuffix, toSuffix, and kind, or "" if no such edge exists.
+func edgeStrengthHint(edges []graph.Edge, fromSuffix, toSuffix string, kind graph.EdgeKind) string {
+	for _, e := range edges {
+		if containsSuffix(e.From, fromSuffix) && containsSuffix(e.To, toSuffix) && e.Kind == kind {
+			return e.StrengthHint
+		}
+	}
+	return ""
+}
+
+// TestExtract_StrengthHint verifies that the Go extractor sets StrengthHint on
+// edges using the SCIP reader mapping: interface TypeName → contract, concrete
+// TypeName → model, Func → functional, and that the strongest rank wins when a
+// file has multiple cross-package references.
+func TestExtract_StrengthHint(t *testing.T) {
+	root := testdataRoot(t)
+	ext := goextract.New(config.ExtractConfig{})
+	s := scope.Scope{Root: root, Mode: scope.ModeFull}
+
+	facts, _, err := ext.Extract(context.Background(), s)
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	cases := []struct {
+		name     string
+		from     string // file suffix
+		to       string // package suffix
+		kind     graph.EdgeKind
+		wantHint string
+	}{
+		// a.go calls b.Hello() (a function) → functional.
+		{"function call → functional", "pkg/a/a.go", pkgB, graph.EdgeKindImports, hintFunctional},
+		// contract_cons.go only takes b.Greeter as a parameter type (interface TypeName) → contract.
+		{"interface type → contract", "pkg/a/contract_cons.go", pkgB, graph.EdgeKindImports, hintContract},
+		// model_cons.go only returns b.Config{} (concrete TypeName, no field access) → model.
+		{"concrete type → model", "pkg/a/model_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// max_cons.go uses b.Greeter (contract, rank 1) AND b.Hello() (functional, rank 3) → functional wins.
+		{"max rank wins", "pkg/a/max_cons.go", pkgB, graph.EdgeKindImports, hintFunctional},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := edgeStrengthHint(facts.Edges, tc.from, tc.to, tc.kind)
+			if got != tc.wantHint {
+				t.Errorf("StrengthHint = %q, want %q (edges: %v)", got, tc.wantHint, facts.Edges)
+			}
+		})
+	}
+}
+
+// TestExtract_StrengthHint_UsesInternal verifies that StrengthHint is also set
+// on EdgeKindUsesInternal edges (not only imports).
+func TestExtract_StrengthHint_UsesInternal(t *testing.T) {
+	root := testdataRoot(t)
+	ext := goextract.New(config.ExtractConfig{
+		BuildFlags: []string{"-tags", "extractortest"},
+	})
+	s := scope.Scope{Root: root, Mode: scope.ModeFull}
+
+	facts, _, err := ext.Extract(context.Background(), s)
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	// violator.go calls impl.Secret() (a function) → uses_internal edge with functional hint.
+	hint := edgeStrengthHint(facts.Edges, "pkg/a/violator.go", "pkg/b/internal/impl", graph.EdgeKindUsesInternal)
+	if hint != "functional" {
+		t.Errorf("uses_internal StrengthHint = %q, want %q", hint, "functional")
+	}
+}
+
+// TestExtract_StrengthHint_NoHintForExcluded verifies that excluded paths do not
+// contribute to StrengthHints (the edge itself is dropped, so the hint is irrelevant,
+// but the map must not be keyed on excluded files).
+func TestExtract_StrengthHint_NoHintForExcluded(t *testing.T) {
+	root := testdataRoot(t)
+	ext := goextract.New(config.ExtractConfig{
+		Exclusions: []string{"**/pkg/b/**", "pkg/b/**"},
+	})
+	s := scope.Scope{Root: root, Mode: scope.ModeFull}
+
+	facts, _, err := ext.Extract(context.Background(), s)
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	// With pkg/b excluded, no edges to pkg/b should exist (hint is moot but assert no edge).
+	for _, e := range facts.Edges {
+		if containsSuffix(e.To, pkgB) {
+			t.Errorf("expected no edges to pkg/b after exclusion, got: %+v", e)
 		}
 	}
 }

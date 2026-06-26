@@ -50,7 +50,7 @@ Some commands have name collisions:
   before Homebrew in PATH if both exist.
 - **`node`/`npm`** can come from Homebrew, a distro package, nvm/fnm, or another
   version manager. Use one Node source per shell profile and keep Node `22+` for
-  the optional npm tools (`gitnexus` requires Node `>=22`).
+  the optional npm tools.
 - **`cargo`/`rustc`/`rust-analyzer`** can come from a distro package, Homebrew, or
   rustup. Prefer one rustup-managed stable toolchain unless your CI deliberately
   pins distro Rust.

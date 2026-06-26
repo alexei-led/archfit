@@ -250,13 +250,6 @@ labels:
     status: approved
     confidence: high
     provenance: human
-  - from: internal/extract/gitnexus
-    to: internal/model
-    strength: model
-    rationale: gitnexus extractor populates diagnostic value types; data model coupling.
-    status: approved
-    confidence: high
-    provenance: human
   # --- extractors → config/ports/toolrun ---
   - from: internal/extract/astgrep
     to: internal/config
@@ -311,13 +304,6 @@ labels:
     to: internal/toolrun
     strength: functional
     rationale: deploy-unit extractor uses toolrun to run detection logic; behavior invocation.
-    status: approved
-    confidence: high
-    provenance: human
-  - from: internal/extract/gitnexus
-    to: internal/toolrun
-    strength: functional
-    rationale: gitnexus extractor uses toolrun.Runner to invoke the gitnexus index tool; behavior invocation.
     status: approved
     confidence: high
     provenance: human

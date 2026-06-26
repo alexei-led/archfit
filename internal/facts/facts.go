@@ -1,5 +1,5 @@
 // Package facts assembles per-module structural facts from already-collected
-// data (symbol graph, file LOC, co-change history, optional gitnexus impact).
+// data (symbol graph, file LOC, co-change history, optional SCIP dependant count).
 // The output is a neutral evidence block — no risk labels, no rankings, no
 // gates. Ranking and judgment are the Tranche-2 LLM's job.
 package facts
@@ -22,9 +22,10 @@ const maxCoChangePartners = 5
 // against the file-keyed fileLOC and coChange maps. When g.Path is absent the
 // file-derived facts stay empty (no heuristic prefix joins, no fabrication).
 //
-// gitnexusImpact (repo-relative file path → distinct dependant-file count)
-// enriches matching facts when non-empty: a module's impact is the MAX over
-// its defining files' counts. Uncovered modules keep a nil GitnexusImpact.
+// symbolDependants (repo-relative file path → distinct dependant-file count,
+// derived from the SCIP symbol graph) enriches matching facts when non-empty:
+// a module's count is the MAX over its defining files' counts. Uncovered
+// modules keep a nil SymbolDependants.
 //
 // Returns an empty slice (never nil) when g is empty — no panic, no false
 // zeros. The result is sorted by Module; all nested lists carry a total order
@@ -33,7 +34,7 @@ func Build(
 	g symbol.Graph,
 	fileLOC map[string]int,
 	coChange map[[2]string]int,
-	gitnexusImpact map[string]int,
+	symbolDependants map[string]int,
 ) []diagnostic.FileFact {
 	if g.Empty() {
 		return []diagnostic.FileFact{}
@@ -136,7 +137,7 @@ func Build(
 		covered := false
 		impact := 0
 		for _, f := range ff.Files {
-			if v, ok := gitnexusImpact[f]; ok {
+			if v, ok := symbolDependants[f]; ok {
 				covered = true
 				if v > impact {
 					impact = v
@@ -144,7 +145,7 @@ func Build(
 			}
 		}
 		if covered {
-			ff.GitnexusImpact = &impact
+			ff.SymbolDependants = &impact
 		}
 		out = append(out, ff)
 	}

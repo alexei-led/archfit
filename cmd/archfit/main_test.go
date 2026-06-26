@@ -56,9 +56,11 @@ func writeViolatingRepo(t *testing.T) string {
 modules:
   a:
     paths: ["pkg/a/**"]
+    owner: team-a
   b:
     paths: ["pkg/b/**"]
     internal: ["pkg/b/internal/**"]
+    owner: team-b
 rules:
   - id: no_internal_access
     type: forbidden_dependency
@@ -114,7 +116,7 @@ const (
 
 // writeNonGoRepo creates a git repo with no analyzable source (README only) and
 // the given archfit config body, returning the config path. The optional analyzers
-// (dependency-cruiser, grimp, lizard, jscpd, gitnexus) are absent on such a tree,
+// (dependency-cruiser, grimp, lizard, jscpd) are absent on such a tree,
 // so every run yields a stable, non-empty CoverageGaps block — the input the
 // opt-in hard tool-gate acts on.
 func writeNonGoRepo(t *testing.T, cfgBody string) string {
@@ -263,9 +265,11 @@ func writeRepoWithExternalConfig(t *testing.T) (repoDir, cfgPath string) {
 modules:
   a:
     paths: ["pkg/a/**"]
+    owner: team-a
   b:
     paths: ["pkg/b/**"]
     internal: ["pkg/b/internal/**"]
+    owner: team-b
 rules:
   - id: no_internal_access
     type: forbidden_dependency

@@ -32,8 +32,8 @@ archfit doctor
 - Rust analysis: `cargo` (normally from rustup) extracts the crate graph with
   `cargo metadata`.
 - Structural patterns: `sg` must be the ast-grep binary, not the util-linux `sg`.
-- Optional depth tools: SCIP indexers, `lizard`, `jscpd`, `cargo-modules`, and
-  `gitnexus` feed report-only metrics and lower `analysis_confidence` when absent.
+- Optional depth tools: SCIP indexers, `lizard`, `jscpd`, and `cargo-modules`
+  feed report-only metrics and lower `analysis_confidence` when absent.
 
 ## Platform setup quick start
 
@@ -197,19 +197,6 @@ enable the matching `tools.*` key in `.archfit.yaml`.
 
   Enable with `tools.complexity.enabled: on`. Do **not** use `brew install lizard`;
   Homebrew's `lizard` formula is a compression tool with the same command name.
-
-- **gitnexus** (enriches `risk_hub`) — install the npm CLI and keep an index in
-  the repo:
-
-  ```sh
-  npm install -g gitnexus@1.6.8
-  # If the repo already has the GitNexus wrapper used by archfit integrations:
-  node .gitnexus/run.cjs analyze --index-only
-  ```
-
-  Enable with `tools.gitnexus.enabled: on`, or leave it unset/`auto` to use a
-  present `.gitnexus/` or `.codegraph` index automatically. For a new index, follow
-  the GitNexus project docs for the current `gitnexus`/`npx gitnexus` workflow.
 
 When a tool is absent, the dependent metric reports `n/a` — the run never fails
 unless you opt in with `--require-tools` or `tools.<x>.gate: fail`.

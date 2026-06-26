@@ -171,35 +171,35 @@ func TestBuild_CoChangePartners(t *testing.T) {
 	}
 }
 
-// TestBuild_GitnexusImpact verifies enrichment when the impact map is present
-// and nil GitnexusImpact when absent or uncovered.
-func TestBuild_GitnexusImpact(t *testing.T) {
+// TestBuild_SymbolDependants verifies enrichment when the dependant map is present
+// and nil SymbolDependants when absent or uncovered.
+func TestBuild_SymbolDependants(t *testing.T) {
 	g := threeModuleGraph()
 
 	t.Run("absent map leaves all nil", func(t *testing.T) {
 		for _, ff := range facts.Build(g, nil, nil, nil) {
-			if ff.GitnexusImpact != nil {
-				t.Errorf("module %q GitnexusImpact = %d, want nil", ff.Module, *ff.GitnexusImpact)
+			if ff.SymbolDependants != nil {
+				t.Errorf("module %q SymbolDependants = %d, want nil", ff.Module, *ff.SymbolDependants)
 			}
 		}
 	})
 
 	t.Run("present map enriches covered modules only", func(t *testing.T) {
-		// File-keyed counts; hub has two files — module impact is the MAX.
+		// File-keyed counts; hub has two files — module count is the MAX.
 		impact := map[string]int{fileHubPy: 41, fileHubExtra: 7, fileSprawlPy: 13}
 		got := facts.Build(g, nil, nil, impact)
 
 		hub := findFact(t, got, modHub)
-		if hub.GitnexusImpact == nil || *hub.GitnexusImpact != 41 {
-			t.Errorf("hub GitnexusImpact = %v, want 41 (max over files)", hub.GitnexusImpact)
+		if hub.SymbolDependants == nil || *hub.SymbolDependants != 41 {
+			t.Errorf("hub SymbolDependants = %v, want 41 (max over files)", hub.SymbolDependants)
 		}
 		sprawl := findFact(t, got, modSprawl)
-		if sprawl.GitnexusImpact == nil || *sprawl.GitnexusImpact != 13 {
-			t.Errorf("sprawl GitnexusImpact = %v, want 13", sprawl.GitnexusImpact)
+		if sprawl.SymbolDependants == nil || *sprawl.SymbolDependants != 13 {
+			t.Errorf("sprawl SymbolDependants = %v, want 13", sprawl.SymbolDependants)
 		}
 		leaf := findFact(t, got, "leaf")
-		if leaf.GitnexusImpact != nil {
-			t.Errorf("leaf GitnexusImpact = %d, want nil (not covered)", *leaf.GitnexusImpact)
+		if leaf.SymbolDependants != nil {
+			t.Errorf("leaf SymbolDependants = %d, want nil (not covered)", *leaf.SymbolDependants)
 		}
 	})
 }
@@ -251,7 +251,7 @@ func TestBuild_NeutralNoLabels(t *testing.T) {
 	allowed := map[string]struct{}{
 		"Module": {}, "Files": {}, "InboundModuleFanIn": {},
 		"OutboundDestinations": {}, "LOC": {}, "CoChangePartners": {},
-		"GitnexusImpact": {},
+		"SymbolDependants": {},
 	}
 	for field := range reflect.TypeFor[diagnostic.FileFact]().Fields() {
 		if _, ok := allowed[field.Name]; !ok {

@@ -3,6 +3,7 @@ package golang
 import (
 	"context"
 	"fmt"
+	"go/types"
 	"path/filepath"
 	"strings"
 
@@ -14,6 +15,25 @@ import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 )
+
+// BC integration-strength labels used for StrengthHint on Go edges.
+// These match the coupling.Strength constants and the SCIP reader's RANK table.
+const (
+	strengthContract   = "contract"
+	strengthModel      = "model"
+	strengthFunctional = "functional"
+)
+
+// goStrengthRank maps a BC integration-strength label to its coupling rank.
+// contract (rank 1) is the weakest coupling; intrusive (rank 4) is the strongest.
+// Used to pick the STRONGEST hint seen per (fromFile, toPkg) pair, mirroring the
+// SCIP reader's RANK = {"contract":1, "model":2, "functional":3, "intrusive":4}.
+var goStrengthRank = map[string]int{
+	strengthContract:   1,
+	strengthModel:      2,
+	strengthFunctional: 3,
+	"intrusive":        4,
+}
 
 // GoExtractor is the native Go import extractor using go/packages.
 // It is in-process (no subprocess) and satisfies the engine.Extractor interface
@@ -36,8 +56,9 @@ func (e *GoExtractor) Name() string {
 // import statement found in the AST, and returns a Coverage record.
 //
 // If mode is off, Extract returns empty Facts and an "absent" Coverage immediately.
-// LoadMode: NeedName | NeedFiles | NeedImports | NeedSyntax | NeedTypes | NeedModule
+// LoadMode: NeedName | NeedFiles | NeedImports | NeedSyntax | NeedTypes | NeedTypesInfo | NeedModule
 // (NeedTypes is required so that pkg.Fset is populated for position resolution.
+// NeedTypesInfo populates pkg.TypesInfo.Uses to derive per-edge StrengthHints.
 // NeedModule is required to strip the module path prefix from import paths so that
 // node IDs are repo-relative and match the glob patterns in archfit.yaml.)
 func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
@@ -51,6 +72,7 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 			packages.NeedImports |
 			packages.NeedSyntax |
 			packages.NeedTypes |
+			packages.NeedTypesInfo |
 			packages.NeedModule,
 		Dir:        s.Root,
 		Context:    ctx,
@@ -88,6 +110,16 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		}
 		return importPath
 	}
+
+	// isInModule reports whether a fully-qualified package path belongs to this module.
+	isInModule := func(pkgPath string) bool {
+		return modPath != "" && (pkgPath == modPath || strings.HasPrefix(pkgPath, modPath+"/"))
+	}
+
+	// Derive per-(relFile, importedPkgRelPath) StrengthHints from type info.
+	// Only in-module targets are considered; external deps are excluded from
+	// coupling_balance and setting hints for them would be noise.
+	strengthHints := buildStrengthHints(pkgs, s.Root, stripModPath, isInModule, e.isExcluded)
 
 	var nodes []graph.Node
 	var edges []graph.Edge
@@ -170,6 +202,7 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 					Locations: []graph.Location{
 						{File: locFile, Line: pos.Line},
 					},
+					StrengthHint: strengthHints[relFile+"\x00"+importPath],
 				}
 				edges = append(edges, edge)
 			}
@@ -203,6 +236,93 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		Status:          status,
 	}
 	return facts, cov, nil
+}
+
+// buildStrengthHints derives per-(relFile, importedPkgRelPath) BC integration-strength
+// hints from pkg.TypesInfo.Uses, mirroring the SCIP reader's classify_symbol mapping
+// applied to Go:
+//
+//   - *types.TypeName with interface underlying → "contract"  (rank 1, weakest)
+//   - *types.TypeName with concrete type         → "model"     (rank 2)
+//   - *types.Func (function or method)           → "functional" (rank 3)
+//   - *types.Var, *types.Const, …               → "functional" (rank 3)
+//
+// Go cross-package references are always to exported symbols, so "intrusive"
+// (private-symbol access) never occurs. Each (fromFile, toPkg) pair accumulates
+// the STRONGEST (highest-rank) hint seen.
+//
+// The returned map key is relFile + "\x00" + importedPkgRelPath.
+// Only in-module targets are considered (isInModule guard); external deps are
+// excluded from coupling_balance and adding hints for them is noise.
+func buildStrengthHints(
+	pkgs []*packages.Package,
+	root string,
+	stripModPath func(string) string,
+	isInModule func(string) bool,
+	isExcluded func(string) bool,
+) map[string]string {
+	hints := make(map[string]string)
+	for _, pkg := range pkgs {
+		if pkg.TypesInfo == nil {
+			continue
+		}
+		for ident, obj := range pkg.TypesInfo.Uses {
+			// Skip same-package refs and universe symbols (builtins, nil, …).
+			if obj.Pkg() == nil || obj.Pkg().Path() == pkg.PkgPath {
+				continue
+			}
+			// Only in-module targets.
+			if !isInModule(obj.Pkg().Path()) {
+				continue
+			}
+			// Skip package-name references (import alias, not a symbol use).
+			if _, isPkg := obj.(*types.PkgName); isPkg {
+				continue
+			}
+
+			// Classify the symbol's BC strength per the SCIP reader mapping.
+			strength := goObjectStrength(obj)
+
+			// Locate the file containing this identifier.
+			tf := pkg.Fset.File(ident.Pos())
+			if tf == nil {
+				continue
+			}
+			absFile := tf.Name()
+			relFile, ferr := filepath.Rel(root, absFile)
+			if ferr != nil || strings.HasPrefix(relFile, "..") {
+				continue
+			}
+			relFile = filepath.ToSlash(relFile)
+			if isExcluded(relFile) {
+				continue
+			}
+
+			importedPkg := stripModPath(obj.Pkg().Path())
+			k := relFile + "\x00" + importedPkg
+			if goStrengthRank[hints[k]] < goStrengthRank[strength] {
+				hints[k] = strength
+			}
+		}
+	}
+	return hints
+}
+
+// goObjectStrength maps a go/types Object to its BC integration-strength label,
+// following the same logic as the SCIP reader's classify_symbol for Go symbols.
+func goObjectStrength(obj types.Object) string {
+	switch tn := obj.(type) {
+	case *types.TypeName:
+		if types.IsInterface(tn.Type()) {
+			return strengthContract
+		}
+		return strengthModel
+	case *types.Func:
+		return strengthFunctional
+	default:
+		// *types.Var (field/variable), *types.Const → functional.
+		return strengthFunctional
+	}
 }
 
 // isExcluded reports whether path matches any of the configured exclusion globs.

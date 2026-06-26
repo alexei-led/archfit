@@ -1,7 +1,5 @@
 version: 1
 tools:
-  gitnexus:
-    enabled: "off"
   clones:
     enabled: "on"
 metrics:

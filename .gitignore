@@ -33,3 +33,6 @@ calibration-report.json
 
 # Generated comparison-study output (regenerable; not part of the repo)
 reports/
+
+# local analysis scratch (tooling-reduction plan baselines)
+scratchpad/

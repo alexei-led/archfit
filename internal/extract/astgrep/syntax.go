@@ -7,7 +7,9 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 
@@ -311,28 +313,33 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 			continue
 		}
 
-		out, err := a.runner.Run(ctx, toolrun.ToolCmd{
+		// Decode sg JSON element-by-element from the live stdout stream
+		// instead of buffering the full output then Unmarshalling.
+		// The two-pass logic below still requires the full slice (pass 1 builds
+		// confirmed[file][framework] before pass 2 can gate routes), so raw is
+		// populated in-order and the passes are unchanged.
+		var raw []sgSyntaxMatch
+		out, err := a.runner.Stream(ctx, toolrun.ToolCmd{
 			Name:    "sg",
 			Args:    []string{"scan", "--inline-rules", rules, "--json=compact", "."},
 			WorkDir: s.Root,
+		}, func(r io.Reader) error {
+			var decErr error
+			raw, decErr = decodeSyntaxStream(r, lang)
+			return decErr
 		})
 		if err != nil {
-			return nil, diagnostic.Coverage{}, fmt.Errorf("astgrep: syntax scan for %q: %w", lang, err)
+			return nil, diagnostic.Coverage{}, err
 		}
-		// sg present but exited non-zero with empty stdout → rule file was rejected
+		// sg present but exited non-zero with zero matches → rule file was rejected
 		// (e.g. YAML parse error). Silently continuing would produce zero facts and
 		// report status=ok — a false green. Surface it as a partial/degraded result.
-		if out.ExitCode != 0 && len(out.Stdout) == 0 {
+		if out.ExitCode != 0 && len(raw) == 0 {
 			reason := fmt.Sprintf("sg rejected rule file for %q (exit %d): %s", lang, out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 			return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusPartial, Reason: reason}, nil
 		}
-		if len(out.Stdout) == 0 {
+		if len(raw) == 0 {
 			continue
-		}
-
-		var raw []sgSyntaxMatch
-		if err := json.Unmarshal(out.Stdout, &raw); err != nil {
-			return nil, diagnostic.Coverage{}, fmt.Errorf("astgrep: parse syntax output for %q: %w", lang, err)
 		}
 
 		ruleKinds := langRuleKinds[lang]
@@ -428,6 +435,32 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 	}
 	cov := diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusOK, FilesSeen: len(seen)}
 	return facts, cov, nil
+}
+
+// decodeSyntaxStream decodes a sg --json=compact array from r element-by-element.
+// It returns all decoded matches without buffering the full JSON payload.
+// Empty output (io.EOF on the first token) is not an error — it returns nil, nil.
+func decodeSyntaxStream(r io.Reader, lang string) ([]sgSyntaxMatch, error) {
+	dec := json.NewDecoder(r)
+	tok, err := dec.Token()
+	if errors.Is(err, io.EOF) {
+		return nil, nil // empty output → zero matches
+	}
+	if err != nil {
+		return nil, fmt.Errorf("astgrep: parse syntax output for %q: %w", lang, err)
+	}
+	if delim, ok := tok.(json.Delim); !ok || delim != '[' {
+		return nil, fmt.Errorf("astgrep: parse syntax output for %q: expected JSON array, got %v", lang, tok)
+	}
+	var matches []sgSyntaxMatch
+	for dec.More() {
+		var m sgSyntaxMatch
+		if err := dec.Decode(&m); err != nil {
+			return nil, fmt.Errorf("astgrep: parse syntax output for %q: %w", lang, err)
+		}
+		matches = append(matches, m)
+	}
+	return matches, nil
 }
 
 // nameFromMatch extracts the declaration name from a syntax match.

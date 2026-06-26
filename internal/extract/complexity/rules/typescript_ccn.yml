@@ -1,0 +1,71 @@
+# CCN proxy rules for TypeScript — used by the ast-grep complexity backend.
+# No visibility filter — covers all named functions and methods.
+#
+# ts-ccn-func:       function declarations   → line range
+# ts-ccn-method:     class method definitions → line range
+# ts-ccn-func-arrow: const/let arrow functions  → line range (variable_declarator)
+# ts-ccn-func-objprop: object-property arrow functions → line range (pair)
+# ts-ccn-dp:         decision points → if/for/while/do/case/catch/ternary/&&/||/??
+
+id: ts-ccn-func
+language: TypeScript
+rule:
+  kind: function_declaration
+  has:
+    field: name
+    pattern: $NAME
+---
+id: ts-ccn-method
+language: TypeScript
+rule:
+  kind: method_definition
+  has:
+    field: name
+    pattern: $NAME
+---
+# const/let arrow-function declarations: `const fn = (args) => { ... }`
+# variable_declarator spans from the name through the arrow function body.
+# Rule ID contains -ccn-func so isCCNFuncRule treats it as a function boundary.
+id: ts-ccn-func-arrow
+language: TypeScript
+rule:
+  all:
+    - kind: variable_declarator
+    - has:
+        field: name
+        pattern: $NAME
+    - has:
+        field: value
+        kind: arrow_function
+---
+# Object-property arrow functions: `{ method: (args) => { ... } }`
+# pair node spans from the key name through the arrow function body.
+# Rule ID contains -ccn-func so isCCNFuncRule treats it as a function boundary.
+id: ts-ccn-func-objprop
+language: TypeScript
+rule:
+  all:
+    - kind: pair
+    - has:
+        field: key
+        pattern: $NAME
+    - has:
+        field: value
+        kind: arrow_function
+---
+# Decision-point rules for TypeScript/JavaScript.
+id: ts-ccn-dp
+language: TypeScript
+rule:
+  any:
+    - kind: if_statement
+    - kind: for_statement
+    - kind: for_in_statement
+    - kind: while_statement
+    - kind: do_statement
+    - kind: switch_case
+    - kind: catch_clause
+    - kind: ternary_expression
+    - pattern: $A && $B
+    - pattern: $A || $B
+    - pattern: $A ?? $B

@@ -3,7 +3,7 @@
 Architecture-fitness CLI (Go). Reads dependency facts from a target repo, checks
 them against `.archfit.yaml`, emits gate violations + metrics for CI and AI agents.
 Language facts come from external tools run out-of-process: `go list`,
-dependency-cruiser, ast-grep, grimp, `cargo metadata`.
+dependency-cruiser, ast-grep, grimp, `cargo metadata`, gocyclo.
 
 ## Commands (Makefile)
 
@@ -45,6 +45,18 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
 - Every subprocess call goes through `toolrun.Runner` (interface in `internal/ports`);
   extractors in `internal/extract/{go,ts,py,rust}` are out-of-process adapters. No
   `exec.Command` in core code — fake the `Runner` in tests.
+- **No gitnexus.** The `risk_hub` dependant-impact factor and the per-module
+  `symbol_dependants` facts/JSON field are derived in-process from the SCIP symbol
+  graph (`symbol.DependantsFromSymbolGraph`) — both are `n/a` unless SCIP is enabled.
+  The `.gitnexus`/`.codegraph` index dirs are still excluded from file walks
+  (`scope.go`), but archfit no longer runs the tool.
+- **Complexity backend is configurable** (`tools.complexity.backend`): `auto`
+  (default) = gocyclo for exact Go CCN + an ast-grep decision-point proxy for
+  TS/Py/Rust (no default Python pin); `lizard` opts back into exact per-function CCN.
+  Report-only hotspot metric (over-flagging is the safe direction).
+- **Go edge strength** comes from `go/packages` type info (`NeedTypesInfo`,
+  mirroring the `scip_reader` BC mapping) when SCIP is off; SCIP `enrichEdges`
+  overrides it when on. Unclassified edges stay `unknown` (abstain-not-fake).
 - Parse config once into typed views; pass a package its view, not the whole config.
 - LLM SDKs (`anthropic-sdk-go`, `openai-go`) are off-gate: only `enrich`,
   `autopilot`, `explain`, and `review` touch them, never `check`. Enforced
@@ -139,7 +151,4 @@ fully-tooled run no longer reads 100 when (by Rust design) encapsulation is n/a.
 ## Layout
 
 `cmd/archfit` (kong CLI) · `internal/` decision core + adapters · `docs/design`
-(decisions) · `docs/guide` (user docs) · `docs/plans`. Optional GitNexus index in
-`.gitnexus/` / `.codegraph/`; refresh with `node .gitnexus/run.cjs analyze
---index-only` (`--index-only` skips gitnexus rewriting CLAUDE.md/AGENTS.md and
-installing `.claude/skills/gitnexus/`; archfit only reads the index).
+(decisions) · `docs/guide` (user docs) · `docs/plans`.

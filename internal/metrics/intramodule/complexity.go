@@ -34,7 +34,8 @@ func (m ComplexityMetric) Version() string { return "complexity.v1" }
 // complexity data is available (the tool is opt-in / not installed).
 func (m ComplexityMetric) Calculate(in signal.ComplexityInput) diagnostic.MetricResult {
 	def := "functions whose cyclomatic complexity exceeds " +
-		strconv.Itoa(complexityThreshold) + " (external tool: lizard)"
+		strconv.Itoa(complexityThreshold) +
+		" (per-function CCN from the configured backend: gocyclo for Go, ast-grep proxy for TS/Py/Rust, or lizard when opted in)"
 	if len(in.Complexity.Funcs) == 0 {
 		return result.NACount(m.Name(), m.Version(), def)
 	}

@@ -187,9 +187,9 @@ self-config. No breaking changes to gate verdicts, exit codes, or metric names.
 
 ### Self-config reclassification (Task 2)
 
-- `internal/extract` is split into 13 explicit adapter submodule stanzas in
+- `internal/extract` is split into 12 explicit adapter submodule stanzas in
   `.archfit.yaml` (`golang`, `ts`, `py`, `rust`, `scip`, `astgrep`, `deployunit`,
-  `runtime`, `dynimports`, `clones`, `complexity`, `loc`, `gitnexus`) so adapter
+  `runtime`, `dynimports`, `clones`, `complexity`, `loc`) so adapter
   boundaries are visible, not hidden behind a broad glob.
 - `internal/history` reclassified as adapter, not support.
 - `internal/score` has an explicit core stanza.
@@ -404,7 +404,6 @@ breaking changes to gate verdicts, exit codes, or metric names.
 - **TypeScript dynamic-imports extractor:** report-only hidden-coupling signal the
   static graph misses.
 - **Config-quality lint** for under-specified modules (missing owner/subdomain/etc.).
-- **gitnexus auto-detection** of a present `.gitnexus/` / `.codegraph` index.
 - **Starter example configs:** go-monolith, microservices, ddd, python-package,
   ts-monorepo.
 - _Fixes:_ measurement and scoring correctness fixes folded in from multiple review

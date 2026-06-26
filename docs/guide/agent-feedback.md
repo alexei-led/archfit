@@ -66,7 +66,7 @@ is the gate; the metric is the trend an agent (or reviewer) watches.
   structural_weight, complexity), structural risk (risk_hub,
   architecture_fitness, functional_candidates), drift (change_locality).
 - **Structural facts** — neutral per-module evidence (fan-in, fan-out, LOC,
-  co-change, optional gitnexus blast radius) for downstream judgment.
+  co-change, symbol dependant count) for downstream judgment.
 
 ## Lifecycle the agent must respect
 

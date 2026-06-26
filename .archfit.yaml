@@ -312,16 +312,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: low
-  internal/extract/gitnexus:
-    owner: alexei-led
-    paths:
-      - internal/extract/gitnexus/**
-    public:
-      - internal/extract/gitnexus
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: low
   internal/extract/manifest:
     owner: alexei-led
     paths:
@@ -607,8 +597,6 @@ tools:
   llm:
     provider: anthropic
     model: claude-opus-4-8
-  gitnexus:
-    enabled: "on"
   clones:
     enabled: "on"
 metrics:

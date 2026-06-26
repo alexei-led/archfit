@@ -125,7 +125,7 @@ type AgentTask struct {
 }
 
 // FileFact holds neutral per-module structural facts assembled from collected
-// data (symbol graph, file LOC, co-change history, optional gitnexus impact).
+// data (symbol graph, file LOC, co-change history, optional SCIP dependant count).
 //
 // The facts block is report-only evidence for the Tranche-2 LLM: it carries no
 // band, no score, no risk label, never sets delta, and never enters the verdict
@@ -148,9 +148,9 @@ type FileFact struct {
 	// CoChangePartners lists files outside this module most frequently committed
 	// together with this module's files, count descending, capped.
 	CoChangePartners []string `json:"cochange_partners"`
-	// GitnexusImpact is the historical change-impact count for this module when
-	// gitnexus enrichment ran and covered it; nil otherwise (never fabricated).
-	GitnexusImpact *int `json:"gitnexus_impact,omitempty"`
+	// SymbolDependants is the SCIP-derived distinct-dependant-file count for this
+	// module (max over its defining files); nil when SCIP is off or uncovered.
+	SymbolDependants *int `json:"symbol_dependants,omitempty"`
 }
 
 // RuntimeAsyncSite is one detected async integration pattern location.
@@ -305,7 +305,7 @@ const (
 // The schema is additive within a major version: new optional fields (e.g. the
 // delta block) are introduced without a version bump, so JSON consumers must
 // ignore unknown fields — do not decode a v1 payload with DisallowUnknownFields.
-const SchemaVersion = "archfit.diagnostic.v1"
+const SchemaVersion = "archfit.diagnostic.v2"
 
 // Diagnostic is the top-level output contract for archfit check (spec §12).
 // JSON tags match spec §12 field names exactly.

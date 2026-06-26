@@ -171,6 +171,9 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	taggedFindings := status.Assign(rawFindings, in.Accepted, in.Exceptions, in.Now, "gate")
 
 	// --- Stage 6: Metrics ---
+	// Compute per-file dependant counts from the SCIP symbol graph once; feeds
+	// both risk_hub (via SymbolSignals) and the structural-facts block below.
+	symbolDependants := symbol.DependantsFromSymbolGraph(ex.scipSymbols)
 	collected := signal.CollectedSignals{
 		Common: signal.CommonInput{
 			Graph:           ex.g,
@@ -183,7 +186,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 			DeprecatedDeps:  in.Signals.DeprecatedDeps,
 		},
 		History:     in.Signals.History,
-		Symbol:      signal.SymbolSignals{Graph: ex.scipSymbols, GitnexusImpact: in.Signals.GitnexusImpact},
+		Symbol:      signal.SymbolSignals{Graph: ex.scipSymbols, SymbolDependants: symbolDependants},
 		Size:        in.Signals.Size,
 		Complexity:  in.Signals.Complexity,
 		Fitness:     in.Signals.Fitness,
@@ -270,7 +273,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Neutral structural-facts block (Tranche 1.5): assembled from the symbol
 	// graph + change history, attached as report-only evidence. Never read by
 	// computeVerdict or any gate logic. Empty when SCIP is off/absent.
-	fileFacts := facts.Build(ex.scipSymbols, in.Signals.Size.FileLOC, in.Signals.History.CoChange, in.Signals.GitnexusImpact)
+	fileFacts := facts.Build(ex.scipSymbols, in.Signals.Size.FileLOC, in.Signals.History.CoChange, symbolDependants)
 
 	// Dynamic/lazy-import risk (Task 9): report-only evidence rolled up per module.
 	// Dynamic imports are invisible to the static graph, so they hide cycles and
@@ -342,7 +345,7 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 	}
 	g := graph.Build(allFacts)
 
-	// Append opt-in tool coverage (clones, gitnexus) collected in cmd rather than
+	// Append opt-in tool coverage (clones, complexity) collected in cmd rather than
 	// through the extractor loop. These have no path into the diagnostic otherwise.
 	coverages = append(coverages, in.Signals.ExtraCoverage...)
 

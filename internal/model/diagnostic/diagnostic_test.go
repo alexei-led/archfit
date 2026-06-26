@@ -21,8 +21,8 @@ func TestNew_ZeroValue(t *testing.T) {
 	if d.SchemaVersion != diagnostic.SchemaVersion {
 		t.Errorf("schema_version = %q; want %q", d.SchemaVersion, diagnostic.SchemaVersion)
 	}
-	if d.SchemaVersion != "archfit.diagnostic.v1" {
-		t.Errorf("schema_version = %q; want \"archfit.diagnostic.v1\"", d.SchemaVersion)
+	if d.SchemaVersion != "archfit.diagnostic.v2" {
+		t.Errorf("schema_version = %q; want \"archfit.diagnostic.v2\"", d.SchemaVersion)
 	}
 	if d.Verdict != "" {
 		t.Errorf("verdict = %q; want empty", d.Verdict)
@@ -508,8 +508,8 @@ func TestDiagnostic_SchemaVersionInJSON(t *testing.T) {
 	if err := json.Unmarshal(m["schema_version"], &sv); err != nil {
 		t.Fatalf("unmarshal schema_version: %v", err)
 	}
-	if sv != "archfit.diagnostic.v1" {
-		t.Errorf("schema_version = %q; want \"archfit.diagnostic.v1\"", sv)
+	if sv != "archfit.diagnostic.v2" {
+		t.Errorf("schema_version = %q; want \"archfit.diagnostic.v2\"", sv)
 	}
 }
 
