@@ -1,0 +1,4 @@
+package b
+
+// Hello is the public API of module b.
+func Hello() string { return "hello" }

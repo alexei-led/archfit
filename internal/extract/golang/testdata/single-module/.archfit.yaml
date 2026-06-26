@@ -1,0 +1,35 @@
+version: 1
+modules:
+  a:
+    paths:
+      - pkg/a/**
+    owner: team-a
+    subdomain: supporting
+    volatility: medium
+  b:
+    paths:
+      - pkg/b/**
+    owner: team-b
+    subdomain: core
+    volatility: low
+rules:
+  - id: no_direct_b_dependency
+    type: forbidden_dependency
+    gate: fail
+    from: pkg/a/**
+    to: pkg/b/**
+# All optional/subprocess tools are disabled so the baseline is
+# machine-independent: go/packages (in-process) + loc are the only analyzers.
+tools:
+  typescript:
+    enabled: "off"
+  python:
+    enabled: "off"
+  scip:
+    enabled: "off"
+  complexity:
+    enabled: "off"
+  clones:
+    enabled: "off"
+  syntax:
+    enabled: "off"

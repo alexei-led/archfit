@@ -1,0 +1,6 @@
+package a
+
+import "example.com/single/pkg/b"
+
+// UseB calls the public API of module b.
+func UseB() string { return b.Hello() }
