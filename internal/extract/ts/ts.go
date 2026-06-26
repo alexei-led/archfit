@@ -86,8 +86,13 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		src = "src"
 	}
 	args := []string{toolName, src, "--output-type", "json", "--exclude", "^node_modules"}
-	if e.cfg.TSConfig != "" {
-		args = append(args, "--ts-config", e.cfg.TSConfig)
+	// Resolve tsconfig: an explicit config wins; otherwise auto-detect one at the
+	// root. Without --ts-config, dependency-cruiser cannot resolve tsconfig
+	// `paths`/`baseUrl` aliases — those imports come back unresolved and are
+	// classified as external, silently dropping internal cross-module edges from
+	// the coupling metrics. (--ts-config and --no-config compose.)
+	if tsConfig := e.resolveTSConfig(s.Root); tsConfig != "" {
+		args = append(args, "--ts-config", tsConfig)
 	}
 	// dependency-cruiser errors out when it cannot find its own config file. archfit
 	// only needs the dependency graph (not depcruise's rules), so fall back to
@@ -125,6 +130,27 @@ func (e *Extractor) detectLauncher(ctx context.Context) (string, string, bool) {
 		}
 	}
 	return "", "", false
+}
+
+// tsConfigNames are the conventional tsconfig file names archfit auto-detects at
+// the project root when no explicit TSConfig is configured. Ordered by preference:
+// a concrete tsconfig.json before a base-only tsconfig.base.json.
+var tsConfigNames = []string{"tsconfig.json", "tsconfig.base.json"}
+
+// resolveTSConfig returns the tsconfig path to pass to dependency-cruiser: the
+// explicitly configured path if set, otherwise the first conventional tsconfig
+// found at root (so `paths`/`baseUrl` aliases resolve). Returns "" when none is
+// configured or present. A relative name resolves against the run's WorkDir (root).
+func (e *Extractor) resolveTSConfig(root string) string {
+	if e.cfg.TSConfig != "" {
+		return e.cfg.TSConfig
+	}
+	for _, name := range tsConfigNames {
+		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
+			return name
+		}
+	}
+	return ""
 }
 
 // hasDepcruiseConfig reports whether a dependency-cruiser config file exists at root.
