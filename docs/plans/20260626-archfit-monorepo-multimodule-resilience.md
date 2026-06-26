@@ -246,14 +246,14 @@ during discovery (go/packages workspace loading; depcruise/grimp scoping).
 
 ### Task 7: Workspace fixture + extractor integration
 
-- [ ] add `internal/extract/golang/testdata/workspace/` — `go.work` + 2 modules +
+- [x] add `internal/extract/golang/testdata/workspace/` — `go.work` + 2 modules +
       a cross-module import, placed so the workspace root is **not** the git root
-- [ ] add a test loading that fixture: `go/packages: ok`, ≥2 first-party module
+- [x] add a test loading that fixture: `go/packages: ok`, ≥2 first-party module
       nodes, the cross-module edge classified first-party (carries a StrengthHint),
       node IDs ScanRoot-relative
-- [ ] write the negative case: load at the workspace root pre-fix would be
+- [x] write the negative case: load at the workspace root pre-fix would be
       empty/synthetic (guards the regression)
-- [ ] run tests — must pass before next task
+- [x] run tests — must pass before next task
 
 ### Task 8: Auto-register go.work members as modules (≥2-member gate)
 
