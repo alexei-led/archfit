@@ -6,6 +6,22 @@ what each tool actually extracts vs. what it _can_ extract, measure operational
 quality/performance, locate overlap, and recommend replacements / prerequisite
 reductions.
 
+**Operating principle (ordered).** This analysis optimizes for _evidence-based
+metric coverage first_, tool count second:
+
+1. **Maximize the metrics we can extract** from the tools we already run — and from
+   tools we could add — as long as each metric is evidence-based and trustworthy.
+2. **Before concluding a tool "can't" give a metric**, check that we are using it
+   correctly: a tool that returns nothing or noise is often _misconfigured_, not
+   incapable (see §9). Read the tool's current docs, fix the invocation, re-measure.
+3. **Reduce tool count only when it is lossless** — drop or merge a tool only if the
+   same metric, at the same quality, is recoverable from another tool or from code
+   analysis. Fewer prerequisites is a real win (less install/complexity), but never
+   at the cost of a metric. Every cut in §5 is gated on this.
+4. **Abstain, don't fake.** A metric that reads `n/a` because the signal genuinely
+   isn't there (no intrusive edges, no delta base) is _correct_ behavior, not a gap
+   to paper over — distinguish it from a misconfiguration (§9.3).
+
 Method: reproduced archfit's exact invocations (flags read from
 `internal/extract/*`) in one uniform benchmark (`scratchpad/bench.sh`) — cold +
 warm wall-clock, exit code, output size — across 7 local repos:
@@ -67,7 +83,7 @@ Every gate and metric decision flows from one of these signals. "Gate" = can fai
 | **lizard**                                  | Py                   | `lizard . --csv -l …`                                     | CCN + NLOC per function            | `complexity`, intramodule complexity                                                                      | gate            |
 | **jscpd**                                   | Node                 | `jscpd --reporters json --output <t> .`                   | cross-module clone pairs           | `functional_candidates` + symmetric-strength upgrade (classify)                                           | advisory        |
 | **git history**                             | git (in-proc)        | `git log -n<N> --name-only`                               | FileChurn, CoChange                | `change_coupling`, `change_amplification`, `hidden_coupling`, `functional_candidates`                     | gate            |
-| **gitnexus**                                | Node + index         | `gitnexus cypher -r . <CodeRelation query>`               | per-file dependants count          | **`risk_hub` only**                                                                                       | advisory/opt-in |
+| **gitnexus**                                | Node + index         | `gitnexus cypher -r . <CodeRelation query>`               | per-file dependants count          | **`risk_hub`** + `gitnexus_impact` facts/JSON field (`facts.Build`) — both SCIP-gated                     | advisory/opt-in |
 | **scip-{go,ts,python}, rust-analyzer scip** | per-lang + uv reader | `<indexer> … ; uv run scip_reader.py …`                   | StrengthHint upgrade (symbol refs) | martin / coupling classification (precision)                                                              | opt-in          |
 | **cargo-modules**                           | Rust                 | `cargo modules dependencies --no-externs --package <p>`   | intra-crate module graph           | graph metrics at `crate::mod` granularity                                                                 | opt-in          |
 | **loc**                                     | Go (in-proc)         | `filepath.WalkDir` + line count                           | LOC/file                           | `structural_weight`, `file_structural_weight`                                                             | gate            |
@@ -135,11 +151,15 @@ why their cost/benefit (§3, §5.1) looks poor for what's currently consumed.
 | jscpd         | range across repos | 0.15–0.88 | ~same  | tiny (report → file) |
 
 ast-grep is the cheapest analyzer by wall-clock (compiled Rust, 0.1–1s) but emits
-**huge JSON** (104 MB on herdr, 38 MB on ccgram) that archfit **buffers and fully
-`json.Unmarshal`s** (`syntax.go:334`). Output size tracks rule-match count, not
-file count (herdr's 203 files out-emit yazi's 1118 because `rust.yml` over-matches
-pub/trait/impl nodes). This is the one real operational liability in the fast tier:
-memory + GC pressure, and a latent OOM risk on large/rule-dense repos.
+**huge JSON** (104 MB on herdr, 38 MB on ccgram). The syntax-scan path
+(`syntax.go`) now **streams** this output element-by-element through a
+`json.Decoder` into a lean struct (commit `a7dc937`), so peak memory no longer
+tracks output size — see §5.4. Output size still tracks rule-match count, not file
+count (herdr's 203 files out-emit yazi's 1118 because `rust.yml` over-matches
+pub/trait/impl nodes). The one residual buffer is the **pattern** path
+(`astgrep.go:86`, `sg run --pattern`), which still `json.Unmarshal`s its whole
+output — far smaller than scan output (single pattern, not a rule pack), so it is
+the last, low-priority `Unmarshal`-the-world site in the fast tier.
 
 ### Primary dependency-graph tier — all fast
 
@@ -159,18 +179,18 @@ cache) — true cold (first-ever) would add a one-time download; thereafter ~0.1
 
 ### SCIP / opt-in heavy tier — seconds to tens of seconds
 
-| tool                  | repo (files)            | cold s   | note                                                          |
-| --------------------- | ----------------------- | -------- | ------------------------------------------------------------- |
-| scip-go               | archfit (287)           | 0.67     | warm Go build cache                                           |
-| scip-go               | pumba (159)             | 1.49     | more transitive deps to resolve                               |
-| scip-go               | spotinfo (22)           | **11.6** | **cold Go build cache** (first run of session)                |
-| scip-typescript       | codegraph (196)         | 2.06     | no `npm install`/build needed                                 |
-| scip-python           | ccgram (407 indexed)    | 12.68    | 16 MB index                                                   |
-| rust-analyzer scip    | herdr (203)             | 16.74    | 29 MB index; no pre-`cargo build` needed                      |
-| rust-analyzer scip    | yazi (1118)             | 14.82    | whole 31-crate workspace, one pass                            |
-| cargo-modules         | herdr (1 crate)         | 5.27     | compiles; 2.3 MB DOT                                          |
-| cargo-modules         | yazi (1 of 31 crates)   | 7.39     | **per-crate** — workspace = ×31                               |
-| gitnexus cypher query | archfit (index present) | 1.20     | + **75 MB index** built by a separate `gitnexus analyze` pass |
+| tool                  | repo (files)            | cold s   | note                                                                                |
+| --------------------- | ----------------------- | -------- | ----------------------------------------------------------------------------------- |
+| scip-go               | archfit (287)           | 0.67     | warm Go build cache                                                                 |
+| scip-go               | pumba (159)             | 1.49     | more transitive deps to resolve                                                     |
+| scip-go               | spotinfo (22)           | **11.6** | **cold Go build cache** (first run of session)                                      |
+| scip-typescript       | codegraph (196)         | 2.06     | no `npm install`/build needed                                                       |
+| scip-python           | ccgram (407 indexed)    | 12.68    | 16 MB index                                                                         |
+| rust-analyzer scip    | herdr (203)             | 16.74    | 29 MB index; no pre-`cargo build` needed                                            |
+| rust-analyzer scip    | yazi (1118)             | 14.82    | whole 31-crate workspace, one pass                                                  |
+| cargo-modules         | herdr (1 crate)         | 5.27     | compiles; 2.3 MB DOT                                                                |
+| cargo-modules         | yazi (1 of 31 crates)   | 7.39     | **per-crate** — workspace = ×31                                                     |
+| gitnexus cypher query | archfit (index present) | 1.20     | + a separate `gitnexus analyze` index build (≈75–100 MB; size is snapshot-specific) |
 
 Operational notes that matter for reliability:
 
@@ -183,8 +203,10 @@ Operational notes that matter for reliability:
 - **cargo-modules runs per crate** (5–7s each). On yazi (31 members) a full
   workspace pass is ~31 invocations → minutes. It also misses `#[path]`, inline
   `mod {}`, and re-exports that rust-analyzer resolves correctly.
-- **gitnexus** query is cheap (1.2s) but presupposes a **75 MB index** from a
-  separate, heavy `gitnexus analyze` build — the real cost is hidden from `check`.
+- **gitnexus** query is cheap (1.2s) but presupposes an index from a separate,
+  heavy `gitnexus analyze` build — its size is snapshot-specific (≈75–100 MB here,
+  and the current branch was unindexed at writing), and that build cost is hidden
+  from `check`.
 - No tool failed (all exit 0). No network was required by any tool on warm caches.
 
 ---
@@ -196,12 +218,26 @@ Three overlap zones, ranked by reduction value.
 **Zone A — symbol-reference graph computed three ways (highest overlap).**
 The same underlying fact — "who references whom at symbol granularity" — is
 produced independently by (a) the SCIP indexers (→ StrengthHint), (b) gitnexus's
-CodeRelation query (→ dependants count for risk*hub), and (c) the user's own
-`codegraph` tool. gitnexus's dependants count is a strict \_subset* of what SCIP
+CodeRelation query (→ dependants count for `risk_hub`), and (c) the user's own
+`codegraph` tool. gitnexus's dependants count is a strict _subset_ of what SCIP
 references already encode (SCIP is a true superset); the dependency graph's reverse
 fan-in is only a coarse echo of it (ρ=0.43, §7.2), not a substitute. gitnexus is
-the redundant one:
-a whole Node runtime + a 75 MB index build feeding **one advisory metric**.
+the redundant occupant — a whole Node runtime + an index build feeding **one
+advisory metric** — but two facts (both verified in code) qualify "redundant":
+
+- It is a **live, conditional consumer**, not dead code: `risk_hub` multiplies its
+  surface-breadth ranking by a bounded `[1.0, 2.0]` gitnexus factor
+  (`risk_hub.go:146,221`). Dropping it removes that refinement (§5.1), it does not
+  silently no-op.
+- gitnexus is **only ever consumed when SCIP is also on.** `risk_hub`'s breadth
+  comes from the SCIP symbol graph (`in.Symbol.Graph`); with SCIP off that graph is
+  empty and `risk_hub` returns n/a _before_ the gitnexus factor is read
+  (`risk_hub.go:198`). So gitnexus's index is wasted work unless SCIP is enabled —
+  exactly the case where SCIP references already encode the same fact. The code
+  labels the factor "historical impact," but its _derivation_ is static
+  (`CALLS/ACCESSES/IMPORTS/EXTENDS`); "historical" names its intended _role_ as a
+  change-impact proxy, not how it is computed — and static derivation is precisely
+  why SCIP can reproduce the data (with the wiring caveat in §5.1).
 
 **Zone B — import graph vs SCIP, per language (intentional, keep).**
 Every language ships _both_ a fast import-graph tool and a slow SCIP indexer. They
@@ -236,27 +272,52 @@ grounds (see §5.2).
 
 ## 5. Recommendations (prioritized)
 
-### 5.1 Drop gitnexus — HIGH value, replace via SCIP not raw fan-in (validated, §7.2)
+### 5.1 Drop gitnexus — HIGH value; the refinement it feeds is recoverable from SCIP with new wiring (corrected, §7.2)
 
 gitnexus is already the most conditional tool — it runs only when a
 `.gitnexus`/`.codegraph` index exists — so dropping it is the lowest-risk cut.
-Doing so removes a **Node** occupant and an expensive **75 MB index-build** step
-for a single advisory consumer (`risk_hub`). gitnexus's per-file dependants count
-(symbol-level CALLS/ACCESSES/EXTENDS references) is a strict **subset of what the
-SCIP indexers already compute** — so when `scip` is enabled, SCIP references are a
-true equivalent and gitnexus is pure redundancy.
+Doing so removes a **Node** occupant and a separate index-build step. It has **two**
+advisory consumers, both SCIP-gated: `risk_hub` (the `[1.0, 2.0]` factor) and the
+per-module `gitnexus_impact` facts/JSON field (`facts.Build`, which returns empty
+when the SCIP symbol graph is empty). gitnexus's per-file dependants count
+(symbol-level `CALLS/ACCESSES/IMPORTS/EXTENDS` references) is a strict **subset of
+what the SCIP indexers already compute** — SCIP references are a true superset of
+the same static fact.
 
-The replacement subtlety, validated in §7.2: the **in-process graph reverse
-fan-in** I first proposed as the always-available fallback is only a **coarse**
-proxy — package-level import fan-in correlates with gitnexus dependants at just
-**Spearman ρ=0.43** (though 7/10 of the top hubs agree). It captures _which
-modules are big hubs_ but loses the mid-tier ranking, because import-count ≠
-symbol-call breadth. So: when `scip` is on, drop gitnexus outright (SCIP subsumes
-it). When neither is on, `risk_hub` already degrades gracefully to "cross-module
-surface breadth × config volatility" from SyntaxFacts (`risk/risk_hub.go:190`) —
-keep that fallback rather than substituting raw fan-in, which would imply a
-precision it does not have. Net: one fewer Node tool + no index build; the only
-real loss is gitnexus's mid-tier symbol-impact precision, recoverable from SCIP.
+Two corrections to the earlier framing, both grounded in the code:
+
+- **There is no SyntaxFacts fallback.** `risk_hub`'s surface breadth is computed
+  from the **SCIP symbol graph** (`in.Symbol.Graph`, populated by `ex.scipSymbols`),
+  and the metric returns **n/a** when that graph is empty (`risk_hub.go:198`). So
+  with both SCIP and gitnexus off, `risk_hub` is n/a — it does **not** fall back to
+  a SyntaxFacts computation (the prior draft's claim at "risk_hub.go:190" was wrong;
+  line 190 is just the `hasGitnexus` check). gitnexus therefore only ever does
+  anything when SCIP is already enabled.
+- **SCIP does not yet auto-subsume the factor.** `risk_hub` reads the gitnexus
+  contribution from exactly one field — `in.Symbol.GitnexusImpact` (file → distinct
+  dependant count) — and that field is populated **only** by `gitnexus.Run`
+  (`pipeline.go:228`). SCIP feeds _different_ fields (`ex.scipSymbols` + edge
+  `StrengthHint`). So dropping gitnexus loses the `[1.0, 2.0]` factor **even when
+  SCIP is on**: `risk_hub` keeps working (SCIP breadth is intact) but its ranking
+  degrades from `breadth × config-volatility × dependant-impact` to `breadth ×
+config-volatility`. The factor is _recoverable_ — the dependant count is a strict
+  subset of SCIP's reverse-reference graph — but only with **new wiring** that
+  aggregates SCIP reverse-refs per file into the `GitnexusImpact` map. That wiring
+  does not exist today and is the real cost of the cut.
+
+§7.2 separately refuted the **in-process graph reverse fan-in** as a drop-in
+fallback: package-level import fan-in correlates with gitnexus dependants at only
+**Spearman ρ=0.43** (7/10 top hubs agree, mid-tier ranking diverges), because
+import-count ≠ symbol-call breadth. So do not substitute raw fan-in.
+
+Net recommendation: **drop gitnexus** (one fewer Node tool + no index build).
+Because it is only ever live alongside SCIP, and the data it adds is a static
+subset of SCIP references, the clean path is to wire SCIP reverse-refs into the
+dependant-count factor and retire gitnexus entirely. Until that wiring lands, the
+cut's cost is twofold: `risk_hub` loses its dependant-impact refinement (it stays
+informative on `breadth × config-volatility` whenever SCIP is on — not n/a), and the
+per-module `gitnexus_impact` facts/JSON field disappears. Both are recoverable from
+SCIP reverse-refs with the same wiring — no metric is lost permanently.
 
 ### 5.2 Replace lizard's CCN with ast-grep-derived complexity — validated (§7.1)
 
@@ -274,6 +335,15 @@ CCN>15 hotspots (recall 1.00, zero misses)** at precision 0.69 (~44% over-flag),
 Remaining action: tighten the rule to lift precision, port it to TS/Py/Rust, and
 keep lizard as the option for exact per-function CCN if false positives matter.
 
+**Go-specific exact alternative — gocyclo.** For Go targets specifically, `gocyclo`
+gives _exact_ per-function CCN as a **single static Go binary** — no Python pin,
+no ast-grep approximation. Measured on archfit: **0.08s warm**, 49 functions over
+CCN 15 (test files included). It shares the Go toolchain archfit already requires,
+so for Go it dominates both lizard (exact but +Python) and the ast-grep proxy
+(native but approximate). It does not generalize — Go-only, so lizard or the
+ast-grep proxy still covers TS/Py/Rust — but it is the obvious complexity source
+when exactness matters and only Go is in scope (see §8).
+
 ### 5.3 Prefer rust-analyzer scip over cargo-modules for multi-crate workspaces — HIGH value
 
 Measured: cargo-modules is **per-crate** (5–7s × N members; yazi = ~31 passes →
@@ -283,18 +353,30 @@ are available, prefer scip for the module graph; keep cargo-modules only as the
 no-rust-analyzer fallback. This is a "better results + faster + more reliable at
 scale" replacement, not a prereq cut.
 
-### 5.4 Stream ast-grep output instead of buffering — validated 17× cut (see `big-json-in-go-2026-06.md`)
+### 5.4 Stream ast-grep output instead of buffering — DONE for the scan path (commit `a7dc937`); residual = pattern path
 
-104 MB (herdr) / 38 MB (ccgram) of JSON is read into one buffer and
-`json.Unmarshal`'d into the full struct. **Benchmarked** (100 MB herdr output, Go
-1.26, `CGO_ENABLED=0`): streaming a `json.Decoder` off the subprocess pipe into a
-**lean struct** (only the fields archfit uses) drops peak RSS from **221 MB → 13 MB
-at identical wall time** — no new dependency, no lost matches. NDJSON
-(`--json=stream`) + `bufio.Reader.ReadBytes` is an equivalent 16 MB path — but
-**never `bufio.Scanner`** (validated: silently truncates at 64 KB, dropping 78% of
-herdr's matches). A faster JSON lib is the wrong fix — go-json/gjson cut CPU but
-_raise_ peak memory; the parse isn't the bottleneck. Full method, table, and the
-`encoding/json/v2` trajectory: **`docs/research/big-json-in-go-2026-06.md`**.
+**Status: implemented for the syntax-scan path.** `syntax.go` now streams `sg scan`
+output element-by-element through a `json.Decoder` (`decodeSyntaxStream`) into a
+lean `sgSyntaxMatch` struct, off the subprocess pipe via the new `Runner.Stream`
+hook — no full-output buffer, no reflective full-struct `Unmarshal`. (It still
+retains the decoded `[]sgSyntaxMatch` slice because the two-pass import-gating logic
+needs the whole set, so the win is "no raw buffer + lean-vs-full struct," not O(1)
+memory.)
+
+**Benchmarked** (100 MB herdr output, Go 1.26, `CGO_ENABLED=0`): the streaming +
+lean-struct path drops peak RSS from **221 MB → 13 MB at identical wall time** — no
+new dependency, no lost matches. NDJSON (`--json=stream`) + `bufio.Reader.ReadBytes`
+is an equivalent 16 MB path — but **never `bufio.Scanner`** (validated: silently
+truncates at 64 KB, dropping 78% of herdr's matches). A faster JSON lib is the wrong
+fix — go-json/gjson cut CPU but _raise_ peak memory; the parse isn't the bottleneck.
+Full method, table, and the `encoding/json/v2` trajectory:
+**`docs/research/big-json-in-go-2026-06.md`**.
+
+**Residual:** the **pattern** path (`astgrep.go:86`, `sg run --pattern`) still
+`json.Unmarshal`s its whole output. That output is far smaller than `sg scan`'s (a
+single pattern, not a rule pack), so it is lower-priority — but it is the last
+buffer-the-world site in the fast tier and should get the same `Stream` treatment
+for consistency.
 
 ### 5.5 Keep dynimports, jscpd, SCIP-as-opt-in as they are — defensible non-changes
 
@@ -319,7 +401,7 @@ is the payoff for users who want the rich signals without the install burden.
 
 | Project type | Fully instrumented today                                                | After §5.1 (drop gitnexus)                 | After §5.1 + §5.2 + §5.5-jscpd                 |
 | ------------ | ----------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------- |
-| **Go-only**  | go, git, sg, lizard(+Python), jscpd(+Node), gitnexus(+Node+75 MB index) | go, git, sg, lizard(+Python), jscpd(+Node) | **go, git, sg**                                |
+| **Go-only**  | go, git, sg, lizard(+Python), jscpd(+Node), gitnexus(+Node+index build) | go, git, sg, lizard(+Python), jscpd(+Node) | **go, git, sg**                                |
 | TS           | + Node (depcruise)                                                      | + Node                                     | + Node (depcruise; irreducible)                |
 | Python       | + uv/python (grimp)                                                     | + uv/python                                | + uv/python (grimp; irreducible)               |
 | Rust         | + cargo                                                                 | + cargo                                    | + cargo; prefer scip over cargo-modules (§5.3) |
@@ -372,21 +454,163 @@ across 58 packages:
   symbol-impact hubs but not import-fan-in hubs, and vice-versa for
   `model/symbol`, `scope`).
 - Conclusion: import-count ≠ symbol-call breadth. This **refuted** the "graph
-  fan-in is an equivalent replacement" framing and is why §5.1 now routes the
-  precision path through SCIP references (a true superset of gitnexus dependants)
-  and keeps the existing surface-breadth fallback rather than substituting raw
-  fan-in. The _decision to drop gitnexus still holds_ (cost + SCIP subsumption);
-  the _replacement mechanism_ was corrected by the data.
+  fan-in is an equivalent replacement" framing and is why §5.1 routes the precision
+  path through SCIP references (a true superset of gitnexus dependants). The
+  _decision to drop gitnexus still holds_ (cost + the data being an SCIP subset); the
+  _replacement mechanism_ was corrected by the data — and on re-reading the code, two
+  further claims in the earlier draft were wrong and are fixed in §5.1: there is **no
+  SyntaxFacts fallback** (`risk_hub` is n/a when the SCIP graph is empty,
+  `risk_hub.go:198`), and SCIP does **not yet** auto-supply the dependant-count
+  factor (only `gitnexus.Run` populates `GitnexusImpact`; SCIP→factor needs new
+  wiring).
 - Granularity caveat: this proxy used package-level dependants with `sum`
   aggregation, whereas `risk_hub` aggregates to **module** level with `max`
   (`moduleImpactFromFiles`). ρ=0.43 is therefore directional, not the exact signal
-  risk_hub consumes — but the conclusion (route precision through SCIP, keep the
-  surface-breadth fallback) is unaffected by the aggregation choice.
+  risk_hub consumes — but the conclusion (route precision through SCIP; gitnexus is
+  only ever active alongside SCIP) is unaffected by the aggregation choice.
 
 ### 7.3 Already measured (not re-validated)
 
-§5.3 (scip one-pass 14.8s vs cargo-modules 5–7s × 31 crates) and §5.4 (104 MB
-buffered ast-grep JSON) are direct benchmark observations from §3, not proposals.
+§5.3 (scip one-pass 14.8s vs cargo-modules 5–7s × 31 crates) is a direct benchmark
+observation from §3. §5.4 was both benchmarked (221 MB → 13 MB) and **shipped** for
+the scan path (commit `a7dc937`); the benchmark detail lives in
+`big-json-in-go-2026-06.md`. §8's adjacent-tool numbers are fresh single-host runs.
+
+---
+
+## 8. Adjacent tool lanes evaluated (hygiene, not coupling)
+
+A retry review surfaced four tool families archfit does not run. Recording them with
+a sharp boundary: **none measures coupling, distance, or volatility** — they detect
+_hygiene_ (unused deps, dead surface) or _security_, which sit next to
+`dependency_graph_health`/`deprecated_dep_count`, not inside `coupling_balance`. Each
+reuses a runtime archfit already pins for that language's primary graph tool, so on
+an already-instrumented repo they add **no new prerequisite**. Numbers: this host,
+warm cache.
+
+| Tool              | Lane                       | Runtime (pinned by)   | Measured                                                              | Verdict                      |
+| ----------------- | -------------------------- | --------------------- | --------------------------------------------------------------------- | ---------------------------- |
+| **gocyclo**       | exact Go CCN               | Go (go/packages)      | archfit **0.08s**, 49 fns > CCN 15 (tests incl.)                      | adopt for Go — §5.2          |
+| **cargo-machete** | Rust unused deps           | Rust (cargo metadata) | yazi **0.54s**, 5 unused deps / 4 crates                              | candidate (opt-in)           |
+| **deptry**        | Python missing/unused deps | uv/Python (grimp)     | ccgram fast; DEP001 count inflated by first-party self-imports        | candidate _with config only_ |
+| **knip**          | TS dead files/exports/deps | Node (depcruise)      | codegraph **6.62s cold** (npx-installs knip); rich dead-export output | candidate (TS only)          |
+
+- **gocyclo** is the standout — exact per-function Go CCN, one static binary, no
+  Python pin — and the only one that improves an _existing_ signal; promoted into
+  §5.2.
+- **deptry needs config to be trustworthy.** On ccgram its "imported but missing"
+  list is dominated by the package importing _itself_ (`'ccgram' imported but
+missing…`), a src-layout false positive. A raw "183 missing-import hits" count is
+  inflated by this; the real external misses are few (`PIL`, `telegram`). Any
+  integration must pass known-first-party config or the signal is noise.
+- **cargo-machete** is fast and clean (no false positives observed on yazi); the
+  count is checkout-/flag-dependent — `--with-metadata` finds more but mutates
+  `Cargo.lock`, so report the conservative default (5/4 here).
+
+**Keep / skip (confirmed):** keep rust-analyzer scip over cargo-modules (§5.3) and
+jscpd (unique near-clone signal, §5.5); skip tokei/scc (LOC already covered by the
+in-process `loc` signal) and go-callvis as a _metric_ (visualization only, not a
+scorable fact). The **security lane** (semgrep / CodeQL / govulncheck) is
+deliberately out of scope — a different question (vulnerabilities/taint vs coupling)
+that belongs in a separate gate, noted only to make the boundary explicit. Installed
+Go dead-surface tools (`deadcode`, `staticcheck`) additionally fail on Go 1.26 repos
+when built with an older toolchain — a version-pin hazard if ever wired in.
+
+---
+
+## 9. Using the tools correctly — configuration audit (a tool that returns "none" is often misconfigured)
+
+Per the operating principle: before deciding a tool can't supply a metric, confirm
+archfit is invoking it correctly. Auditing every extractor's flags against each
+tool's current docs surfaced **one real metric-quality loss in a primary tool** and
+several recoverable-with-config cases. Verified against code and re-measured.
+
+### 9.1 dependency-cruiser `--ts-config` is never auto-detected — silent edge loss in a primary metric (FIX)
+
+archfit invokes depcruise as `depcruise <src> --output-type json --no-config`
+(`internal/extract/ts/ts.go:88`) and appends `--ts-config` **only when the user has
+explicitly set `TSConfig` in config** (`ts.go:89–91`). There is **no
+auto-detection** — the default path passes no `--ts-config`. Consequence: without
+the tsconfig, depcruise falls back to bare Node resolution and **cannot resolve
+`paths`/`baseUrl` aliases** (`@app/x`, workspace aliases). Those imports come back
+`couldNotResolve`, and archfit's normalizer reclassifies unresolved targets as
+**external** nodes (`22401`) — so internal cross-module edges via path aliases are
+**silently dropped from `coupling_balance` and `blast_radius`**. This is a quality
+loss in a _required, gate-path_ metric, not an opt-in extra.
+
+- **Measured (codegraph, depcruise v18):** `--no-config` → 406 edges, 13
+  `couldNotResolve`; adding `--ts-config tsconfig.json` → 406 edges, 12
+  unresolved, and the one alias edge (`grammars.ts → web-tree-sitter`) flips from
+  external back to a resolved internal file. codegraph has almost no path aliases so
+  the delta is 1 edge; on an alias-heavy monorepo the loss is systematic (every
+  cross-module aliased import disappears from coupling).
+- **Root cause:** config gap in archfit, not a depcruise limit. `--ts-config` and
+  `--no-config` compose fine (verified).
+- **Fix (no new prereq):** implement the documented `(empty = auto)` intent — probe
+  `s.Root` for `tsconfig.json`/`tsconfig.base.json` and pass `--ts-config` when
+  found. One `os.Stat`, no wall-time change. Keep `--ts-pre-compilation-deps` off
+  (type-only imports are not runtime coupling).
+
+### 9.2 deptry (candidate, §8) — naive invocation is mostly noise; correct config makes it trustworthy
+
+deptry's raw signal on ccgram is dominated by misconfiguration, confirming §8's
+caveat with numbers (deptry 0.25.1):
+
+| Invocation                                    | DEP001 | self-import false positives |
+| --------------------------------------------- | ------ | --------------------------- |
+| `deptry .` (naive — scans the package itself) | 183    | 76                          |
+| `deptry src` (scan the source root)           | 107    | 0                           |
+| `deptry src` + `package_module_name_map`      | ~0     | 0                           |
+
+Two independent fixes: (1) pass the **source root** as deptry's ROOT (not `.`), which
+auto-classifies the package as first-party and kills the self-import hits; (2) a
+`[tool.deptry] package_module_name_map` for pypi-name ≠ import-name packages
+(`python-telegram-bot`→`telegram`, `Pillow`→`PIL`) clears the rest. With both,
+DEP001/DEP002 → ~0 real findings. **For archfit:** auto-detect the src root from
+`[tool.hatch…]`/`[tool.setuptools…]` packaging config, run `deptry <srcroot>`, let it
+read any existing `[tool.deptry]` block, and **surface deptry's name-map warning
+count as a confidence signal** (high warnings → lower confidence). The map itself is
+per-project knowledge archfit cannot synthesize — so the honest design is opt-in +
+confidence-weighted, never blocking. (Codex's raw "183 missing imports" was this
+noise; real external misses ≈ 0 once configured.)
+
+### 9.3 archfit's own `n/a` dimensions are principled abstentions, not misconfiguration
+
+Running `archfit check --full` on its own fully-instrumented repo, exactly two
+dimensions read `n/a` — and both are correct abstentions, not tool failures:
+
+- **`encapsulation` n/a** — it scores `contract / (contract + intrusive)`
+  cross-boundary edges; archfit's Go graph has no edges classified contract/intrusive
+  (functional/model/unknown are excluded by design), so there is nothing to score.
+  Recoverable only by real intrusive edges + strength labels, never by config. This
+  is the abstain-not-fake rule working as intended.
+- **`change_locality` n/a** — it is **delta-mode-only** (per-change drift; report-only,
+  never gates). In a plain non-delta `check` it is n/a by definition; even with
+  `--base HEAD~5` it stays n/a here when the diff yields no cross-module drift. Its
+  `n/a` is invocation-scoped (needs a delta with qualifying changes), not a defect.
+
+The contrast with §9.1/§9.2 is the point: distinguish **"tool misconfigured →
+fix the invocation"** (depcruise, deptry) from **"signal genuinely absent → abstain"**
+(encapsulation, change_locality). Only the first kind is a bug.
+
+### 9.4 Coverage gains available from already-pinned tools (no new prerequisite)
+
+The largest untapped metrics (detailed in §2.1) need **no new tool** — only deeper
+use of one already required for that language. Highest-value, in priority order:
+
+1. **depcruise `--ts-config`** (§9.1) — recover the dropped alias edges. _Fixes an
+   active loss; do first._
+2. **grimp `find_illegal_dependencies_for_layers`** — ready-made layer-violation
+   checks archfit currently reimplements internally; grimp already pins the Python
+   runtime, so this is free coverage.
+3. **go/packages `NeedTypes`/`TypesInfo`** — a type-checked call/reference graph
+   (SCIP-grade precision) without the SCIP indexer's 12–17s cost, on the Go
+   toolchain already required.
+4. **ast-grep relational rules** (`inside`/`has`/`follows`, metavar constraints) —
+   more structural facts (and the §5.2 CCN proxy) for the `sg` prereq already paid.
+
+These are pure coverage additions; none changes the prerequisite set. They are the
+"maximize metrics" half of the operating principle, complementary to the §5 cuts.
 
 ---
 
@@ -402,7 +626,15 @@ buffered ast-grep JSON) are direct benchmark observations from §3, not proposal
   `npx`/`bunx depcruise` fetch or a first-ever `uv run --with grimp` download is
   real but untested here — treat first-run-on-fresh-CI as an unmeasured risk.
 - §5.5's pure-Go jscpd replacement is a _proposal_, not a measured win. §5.2 was
-  validated (ρ=0.987) and §5.1 partially validated (the drop holds; the fan-in
-  replacement was refuted, ρ=0.43, and corrected to SCIP) — see §7.
+  validated per-function (ρ=0.838, recall 1.00 at CCN>15; the per-file ρ=0.987 is
+  partly tautological — see §7.1). §5.1's drop holds but its _mechanism_ was
+  corrected: fan-in refuted (ρ=0.43); SCIP encodes the same data but needs new
+  wiring to supply the factor; and there is no SyntaxFacts fallback — see §7.
 - §7 was validated on archfit's own Go repo only; §7.1's proxy still needs the
   TS/Py/Rust ports confirmed, and §7.2's ρ=0.43 is one repo's package graph.
+- §9.1's depcruise edge-loss is **verified in code** (`ts.go:89–91`, no
+  auto-detect) but its _magnitude_ was measured only on codegraph, which is
+  alias-light (delta = 1 edge); the systematic-loss claim for alias-heavy monorepos
+  is reasoned from the resolution mechanism, not measured on such a repo. §9.2's
+  deptry counts are one repo (ccgram). The §9.4 coverage-gain list is capability
+  (per tool docs/API), not yet wired or benchmarked.
