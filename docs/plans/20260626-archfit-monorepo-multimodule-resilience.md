@@ -223,26 +223,26 @@ during discovery (go/packages workspace loading; depcruise/grimp scoping).
 
 ### Task 6: Go per-member concurrent load + per-package strip + first-party
 
-- [ ] replace the single `packages.Load({Dir: s.Root}, "./...")` with a
+- [x] replace the single `packages.Load({Dir: s.Root}, "./...")` with a
       per-member load (`Dir=memberDir, "./..."`), concurrent via `errgroup` bounded
       to `GOMAXPROCS`/NumCPU; merge nodes/edges deterministically (sorted)
-- [ ] strip the module prefix **per package** via `pkg.Module.Dir` rel ScanRoot
+- [x] strip the module prefix **per package** via `pkg.Module.Dir` rel ScanRoot
       (not one global `modPath`); first-party = the import's `Module.Path` ∈ the
       loaded member set; detect the synthetic-error package
       (`Module==nil && len(Errors)>0`) → `unresolved++`, never fatal
-- [ ] **CRITICAL — strength guard:** `buildStrengthHints`' `isInModule` predicate
+- [x] **CRITICAL — strength guard:** `buildStrengthHints`' `isInModule` predicate
       is built from the single `modPath`; in workspace mode there is no single
       `modPath`, so it returns false for every target → **zero StrengthHints → every
       Go edge abstains on strength → `coupling_balance` collapses even when distance
       is present**. Replace `isInModule` with the **member-set predicate** (Task 5)
       for StrengthHints too, not just edge classification
-- [ ] keep StrengthHints (full LoadMode) per member; **1 member ⇒ identical code
+- [x] keep StrengthHints (full LoadMode) per member; **1 member ⇒ identical code
       path/output to today**; attach loaded members to `graph.Facts`
       (`GoModules []GoModule{Path, RelDir}`, mirroring Rust `CrateRoots`) for Task 8
-- [ ] write tests: 2-module strip produces ScanRoot-relative IDs; cross-module edge
+- [x] write tests: 2-module strip produces ScanRoot-relative IDs; cross-module edge
       is first-party **and carries a StrengthHint** (guards the predicate above);
       missing-dep module → `partial` not empty; merged output sorted
-- [ ] run tests — must pass before next task
+- [x] run tests — must pass before next task
 
 ### Task 7: Workspace fixture + extractor integration
 
