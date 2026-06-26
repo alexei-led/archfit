@@ -302,6 +302,7 @@ func TestDraftLabels_BatchesAndParses(t *testing.T) {
 // OpenAI-compatible server (the ollama provider path).
 func TestRun_Explain_LLMNarrative(t *testing.T) {
 	t.Parallel()
+	skipSlowPipelineTest(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"id":"c1","object":"chat.completion","model":"m",
@@ -350,6 +351,7 @@ func TestRun_Explain_LLMNarrative(t *testing.T) {
 // TestRun_Explain_LLMUnconfigured verifies the setup hint when tools.llm is absent.
 func TestRun_Explain_LLMUnconfigured(t *testing.T) {
 	t.Parallel()
+	skipSlowPipelineTest(t)
 	cfgPath := writeViolatingRepo(t)
 	var buf bytes.Buffer
 	Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &buf)

@@ -85,6 +85,7 @@ rules:
 // the same violating repo exits 1 without --report and 0 with it.
 func TestRun_Check_ReportSuppressesFailureExit(t *testing.T) {
 	t.Parallel()
+	skipSlowPipelineTest(t)
 	cfgPath := writeViolatingRepo(t)
 
 	var buf bytes.Buffer
@@ -139,6 +140,7 @@ func writeNonGoRepo(t *testing.T, cfgBody string) string {
 // policy failure — distinct from the exit-3 tool/config error.
 func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 	t.Parallel()
+	skipSlowPipelineTest(t)
 	type gapsDiag struct {
 		Verdict      string `json:"verdict"`
 		CoverageGaps []struct {
@@ -284,6 +286,7 @@ rules:
 // keeps the historical config-dir-as-root behaviour.
 func TestRun_Check_RootDecoupledFromConfig(t *testing.T) {
 	t.Parallel()
+	skipSlowPipelineTest(t)
 	repoDir, cfgPath := writeRepoWithExternalConfig(t)
 
 	t.Run("--root scans the repo via an external config", func(t *testing.T) {
@@ -416,6 +419,7 @@ func TestRun_CheckHelp_ShowsAgentLoop(t *testing.T) {
 // finding through the same pipeline as check, with module labels resolved.
 func TestRun_Explain_ResolvesViaFullPipeline(t *testing.T) {
 	t.Parallel()
+	skipSlowPipelineTest(t)
 	cfgPath := writeViolatingRepo(t)
 
 	// Get the finding fingerprint from a check run.
@@ -448,6 +452,7 @@ func TestRun_Explain_ResolvesViaFullPipeline(t *testing.T) {
 // validation command matching the invocation.
 func TestRun_Check_AgentTasksPopulated(t *testing.T) {
 	t.Parallel()
+	skipSlowPipelineTest(t)
 	cfgPath := writeViolatingRepo(t)
 
 	var buf bytes.Buffer
@@ -489,6 +494,7 @@ func TestRun_Check_AgentTasksPopulated(t *testing.T) {
 // the gate.
 func TestRun_Check_LabelsFileDeterministic(t *testing.T) {
 	t.Parallel()
+	skipSlowPipelineTest(t)
 	cfgPath := writeViolatingRepo(t)
 	dir := filepath.Dir(cfgPath)
 

@@ -21,6 +21,19 @@ make test
 make archfit
 ```
 
+Keep a separate fast local lane for agents and inner-loop work; do not replace the
+full CI gate with it:
+
+```sh
+make test-dev
+make test-dev-race
+make test-changed
+```
+
+- `make test-dev` runs `go test -short ./...`
+- `make test-dev-race` adds `-race` for concurrency-sensitive changes
+- `make test-changed` picks the smallest safe local `go test` command from the current diff
+
 This repository dogfoods that target in `make all` and in GitHub Actions:
 
 ```yaml
