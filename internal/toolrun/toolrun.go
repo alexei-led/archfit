@@ -10,6 +10,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -37,6 +39,7 @@ type ToolCmd struct {
 // Output holds the result of a subprocess invocation.
 // A non-zero exit code is recorded in ExitCode, not returned as an error.
 // Error is reserved for exec failures (binary not found, I/O error, etc.).
+// For Stream calls, Stdout is nil — bytes were consumed by the callback.
 type Output struct {
 	Stdout   []byte
 	Stderr   []byte
@@ -55,6 +58,14 @@ type Runner interface {
 	// A non-zero exit code is recorded in Output.ExitCode — it is NOT an error.
 	// Error is returned only for exec-level failures (binary missing, I/O error).
 	Run(ctx context.Context, cmd ToolCmd) (Output, error)
+
+	// Stream executes cmd and calls consume with the live process stdout.
+	// consume must drain r to EOF on success; returning non-nil aborts the
+	// process via context cancellation before Wait. Output.Stdout is always nil —
+	// bytes were consumed by the callback. Stderr is always captured.
+	// A non-zero exit code is recorded in Output.ExitCode and is not an error
+	// (same contract as Run).
+	Stream(ctx context.Context, cmd ToolCmd, consume func(io.Reader) error) (Output, error)
 }
 
 const gitCommand = "git"
@@ -77,22 +88,23 @@ func (r *ToolRunner) Detect(_ context.Context, tool string) (ToolInfo, bool) {
 	return ToolInfo{Name: tool, Path: path, Version: ""}, true
 }
 
-// Run executes cmd.Name with cmd.Args.
-// It pins LC_ALL=C and TZ=UTC for deterministic output, then appends any
-// caller-supplied cmd.Env on top. If cmd.Timeout > 0 a deadline is applied
-// via context.WithTimeout.
-// Non-zero exit codes are recorded in Output.ExitCode, not returned as errors.
-func (r *ToolRunner) Run(ctx context.Context, cmd ToolCmd) (Output, error) {
+// buildCmd creates an exec.Cmd from cmd, applying timeout, path resolution,
+// WorkDir, and environment pinning. The returned cancel must always be called;
+// on error the returned cancel is a no-op safe to call without effect.
+func (r *ToolRunner) buildCmd(parentCtx context.Context, cmd ToolCmd) (context.Context, *exec.Cmd, context.CancelFunc, error) {
+	var ctx context.Context
+	var cancel context.CancelFunc
 	if cmd.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, cmd.Timeout)
-		defer cancel()
+		ctx, cancel = context.WithTimeout(parentCtx, cmd.Timeout)
+	} else {
+		ctx, cancel = context.WithCancel(parentCtx)
 	}
 
 	// Resolve real path via Detect so callers can use bare tool names.
 	info, ok := r.Detect(ctx, cmd.Name)
 	if !ok {
-		return Output{}, &exec.Error{Name: cmd.Name, Err: exec.ErrNotFound}
+		cancel() // don't leak the derived context
+		return nil, nil, func() {}, &exec.Error{Name: cmd.Name, Err: exec.ErrNotFound}
 	}
 
 	c := exec.CommandContext(ctx, info.Path, cmd.Args...) //nolint:gosec // path is resolved via LookPath in Detect; args are caller-controlled by design
@@ -117,32 +129,103 @@ func (r *ToolRunner) Run(ctx context.Context, cmd ToolCmd) (Output, error) {
 	env = append(env, cmd.Env...)
 	c.Env = env
 
+	return ctx, c, cancel, nil
+}
+
+// Run executes cmd and returns its captured output.
+// It pins LC_ALL=C and TZ=UTC for deterministic output, then appends any
+// caller-supplied cmd.Env on top. If cmd.Timeout > 0 a deadline is applied
+// via context.WithTimeout.
+// Non-zero exit codes are recorded in Output.ExitCode, not returned as errors.
+func (r *ToolRunner) Run(ctx context.Context, cmd ToolCmd) (Output, error) {
+	cmdCtx, c, cancel, err := r.buildCmd(ctx, cmd)
+	if err != nil {
+		return Output{}, err
+	}
+	defer cancel()
+
 	var stdout, stderr bytes.Buffer
 	c.Stdout = &stdout
 	c.Stderr = &stderr
 
-	err := c.Run()
+	runErr := c.Run()
 	out := Output{
 		Stdout: stdout.Bytes(),
 		Stderr: stderr.Bytes(),
 	}
 
-	if err != nil {
+	if runErr != nil {
 		// Context cancellation / timeout takes priority: the exit code is
 		// meaningless (process was killed), so surface the context error.
-		if ctx.Err() != nil {
-			return out, ctx.Err()
+		if cmdCtx.Err() != nil {
+			return out, cmdCtx.Err()
 		}
 		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if errors.As(runErr, &exitErr) {
 			// Non-zero exit — record code, not an error.
 			out.ExitCode = exitErr.ExitCode()
 			return out, nil
 		}
 		// Real exec failure (binary gone, I/O error, etc.).
-		return out, err
+		return out, runErr
 	}
 
+	return out, nil
+}
+
+// Stream executes cmd and calls consume with the live stdout stream.
+// The process is started, consume is called with its stdout, then Wait is
+// called. If consume returns non-nil the process is cancelled (SIGKILL via
+// context) before Wait so it cannot deadlock on a full pipe.
+// Remaining unread stdout bytes are drained after consume returns.
+func (r *ToolRunner) Stream(ctx context.Context, cmd ToolCmd, consume func(io.Reader) error) (Output, error) {
+	cmdCtx, c, cancel, err := r.buildCmd(ctx, cmd)
+	if err != nil {
+		return Output{}, err
+	}
+	defer cancel()
+
+	var stderrBuf bytes.Buffer
+	c.Stderr = &stderrBuf
+
+	// Backstop: if the process does not exit within this window after its context
+	// is cancelled, os/exec forces the process group to stop.
+	c.WaitDelay = 10 * time.Second
+
+	stdout, err := c.StdoutPipe()
+	if err != nil {
+		return Output{}, fmt.Errorf("toolrun: stdout pipe for %s: %w", cmd.Name, err)
+	}
+
+	if err := c.Start(); err != nil {
+		return Output{}, fmt.Errorf("toolrun: start %s: %w", cmd.Name, err)
+	}
+
+	consumeErr := consume(stdout)
+	if consumeErr != nil {
+		// Kill the process so the pipe drains quickly and Wait does not block.
+		cancel()
+	}
+	// Drain any unread bytes so the child is not blocked writing to a full pipe.
+	_, _ = io.Copy(io.Discard, stdout)
+
+	waitErr := c.Wait()
+	out := Output{Stderr: stderrBuf.Bytes()}
+
+	if consumeErr != nil {
+		return out, consumeErr
+	}
+	if cmdCtx.Err() != nil {
+		return out, cmdCtx.Err()
+	}
+	if waitErr != nil {
+		var exitErr *exec.ExitError
+		if errors.As(waitErr, &exitErr) {
+			out.ExitCode = exitErr.ExitCode()
+			return out, nil
+		}
+		return out, waitErr
+	}
 	return out, nil
 }
 

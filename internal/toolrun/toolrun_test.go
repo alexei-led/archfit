@@ -2,6 +2,8 @@ package toolrun
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -134,5 +136,109 @@ func TestRun_GitWorkDirIgnoresHookRepoEnv(t *testing.T) {
 	}
 	if out.ExitCode != 0 {
 		t.Fatalf("ExitCode(repo) = %d, want 0; stderr=%q", out.ExitCode, out.Stderr)
+	}
+}
+
+func TestStream_CapturesStderrAndExitCode(t *testing.T) {
+	r := New()
+	out, err := r.Stream(context.Background(), ToolCmd{
+		Name: "sh",
+		Args: []string{"-c", `printf 'line1\n'; printf 'err1\n' >&2; exit 2`},
+	}, func(rd io.Reader) error {
+		_, err := io.ReadAll(rd)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("Stream returned error: %v", err)
+	}
+	if out.ExitCode != 2 {
+		t.Errorf("ExitCode = %d, want 2", out.ExitCode)
+	}
+	if !strings.Contains(string(out.Stderr), "err1") {
+		t.Errorf("Stderr = %q, want to contain err1", out.Stderr)
+	}
+	if out.Stdout != nil {
+		t.Errorf("Stdout = %v, want nil (stream does not capture stdout)", out.Stdout)
+	}
+}
+
+func TestStream_ConsumeError_Propagates(t *testing.T) {
+	r := New()
+	sentinel := errors.New("consume failed")
+	_, err := r.Stream(context.Background(), ToolCmd{
+		Name: "sh",
+		Args: []string{"-c", "sleep 5"},
+	}, func(_ io.Reader) error {
+		return sentinel
+	})
+	if !errors.Is(err, sentinel) {
+		t.Errorf("err = %v, want sentinel consume error", err)
+	}
+}
+
+func TestStream_Timeout_ReturnsContextError(t *testing.T) {
+	r := New()
+	_, err := r.Stream(context.Background(), ToolCmd{
+		Name:    "sh",
+		Args:    []string{"-c", "sleep 10"},
+		Timeout: 50 * time.Millisecond,
+	}, func(rd io.Reader) error {
+		_, _ = io.ReadAll(rd) // blocks until process is killed by timeout
+		return nil
+	})
+	if err == nil {
+		t.Error("Stream returned nil error, want timeout error")
+	}
+}
+
+func TestStream_NonZeroExit_RecordedInOutput(t *testing.T) {
+	r := New()
+	out, err := r.Stream(context.Background(), ToolCmd{
+		Name: "sh",
+		Args: []string{"-c", `printf '[]'; exit 42`},
+	}, func(rd io.Reader) error {
+		_, err := io.ReadAll(rd)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("Stream returned error: %v", err)
+	}
+	if out.ExitCode != 42 {
+		t.Errorf("ExitCode = %d, want 42", out.ExitCode)
+	}
+}
+
+func TestStream_EnvPinned(t *testing.T) {
+	r := New()
+	var captured []byte
+	_, err := r.Stream(context.Background(), ToolCmd{
+		Name: "sh",
+		Args: []string{"-c", "printf '%s' $LC_ALL"},
+	}, func(rd io.Reader) error {
+		b, err := io.ReadAll(rd)
+		captured = b
+		return err
+	})
+	if err != nil {
+		t.Fatalf("Stream returned error: %v", err)
+	}
+	if !strings.Contains(string(captured), "C") {
+		t.Errorf("stdout = %q, want LC_ALL=C to be visible", captured)
+	}
+}
+
+func TestStream_ToolNotFound_ReturnsError(t *testing.T) {
+	r := New()
+	_, err := r.Stream(context.Background(), ToolCmd{
+		Name: "definitely-not-a-real-binary-xyz",
+	}, func(_ io.Reader) error {
+		return nil
+	})
+	if err == nil {
+		t.Error("Stream returned nil error for missing tool, want exec.Error")
+	}
+	var execErr *exec.Error
+	if !errors.As(err, &execErr) {
+		t.Errorf("err = %v (%T), want *exec.Error", err, err)
 	}
 }
