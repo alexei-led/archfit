@@ -344,14 +344,31 @@ so for Go it dominates both lizard (exact but +Python) and the ast-grep proxy
 ast-grep proxy still covers TS/Py/Rust — but it is the obvious complexity source
 when exactness matters and only Go is in scope (see §8).
 
-### 5.3 Prefer rust-analyzer scip over cargo-modules for multi-crate workspaces — HIGH value
+### 5.3 cargo-modules and scip are COMPLEMENTARY, not substitutes — corrected (do NOT demote cargo-modules)
 
-Measured: cargo-modules is **per-crate** (5–7s × N members; yazi = ~31 passes →
-minutes) and misses `#[path]`/inline-mod/re-exports. rust-analyzer scip does the
-**whole workspace in one ~15s pass** and resolves those cases correctly. When both
-are available, prefer scip for the module graph; keep cargo-modules only as the
-no-rust-analyzer fallback. This is a "better results + faster + more reliable at
-scale" replacement, not a prereq cut.
+The earlier framing here ("prefer scip over cargo-modules for the module graph")
+was **wrong**, corrected against the code. In archfit's Rust pipeline the two tools
+do different jobs:
+
+- **cargo-modules** (`internal/extract/rust/rust.go` `runModuleGraph`) is the **sole
+  source of intra-crate `<crate>::<mod>` graph _structure_** — it appends the module
+  nodes + `uses` edges to `facts.Nodes/Edges`. `classify.AugmentModulesFromGraph`
+  (`classify.go:139`) only promotes graph nodes that already contain `::`; those
+  nodes exist only because cargo-modules created them.
+- **rust-analyzer scip** (`internal/extract/scip`) produces a symbol graph + a
+  `<crate>::<mod>` **strength map**; the engine uses it to _enrich existing edges_
+  with `StrengthHint` (`engine.go:342`) and to feed risk_hub / `symbol_dependants`.
+  It does **not** create module nodes/edges.
+
+So scip cannot replace cargo-modules: with scip on but cargo-modules off, a
+single-crate Rust project has no `<crate>::<mod>` nodes → the graph stays degenerate
+and `cycle`/`blast_radius`/`cohesion_lcom` go n/a, and scip's strength map has
+nothing to attach to. Demoting cargo-modules would **regress** Rust, and removes no
+prerequisite (cargo-modules is already opt-in). Keep both. cargo-modules' real
+costs remain real (per-crate ×N, misses `#[path]`/macros), but the lossless fix is
+not "prefer scip" — it is a future feature: **derive `<crate>::<mod>` module edges
+from the scip symbol graph's `Refs`** so scip can supply structure too, making
+cargo-modules genuinely optional. That is additive work, not a swap.
 
 ### 5.4 Stream ast-grep output instead of buffering — DONE for the scan path (commit `a7dc937`); residual = pattern path
 

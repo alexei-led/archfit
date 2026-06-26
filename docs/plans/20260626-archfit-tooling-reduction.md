@@ -112,7 +112,7 @@ prerequisite set drops.
 
 - [ ] write `scratchpad/metric-baseline.sh`: for each validation repo, run the
       current `.bin/archfit` (`make build` at HEAD first) with `check --full --format
-  json`, using the repo's `.archfit.yaml` if present, else a generated minimal
+json`, using the repo's `.archfit.yaml` if present, else a generated minimal
       config that enables the repo's language + `scip` + `complexity` + `clones`
       (so the gitnexus-replacement and complexity paths are exercised); save to
       `scratchpad/baseline/<repo>.json`
@@ -132,7 +132,7 @@ prerequisite set drops.
       `internal/model/symbol` or a small core helper): for each `from→to` in
       `g.Refs`, with `fa=g.Path[from]`, `fb=g.Path[to]`, when `fa!=""`, `fb!=""`,
       `fa!=fb`, add `fa` to the dependant set of `fb`; return `file → len(distinct
-  dependant files)` — exactly the gitnexus cypher semantics, in-process
+dependant files)` — exactly the gitnexus cypher semantics, in-process
 - [ ] ensure it returns nil/empty for an empty graph (no false zeros) and is
       deterministic (stable over map iteration — counts only, so order-independent)
 - [ ] keep it in the core ring (stdlib only; no os/exec) so `TestArchImports` stays
@@ -198,13 +198,13 @@ prerequisite set drops.
       longer runs the tool. Add a one-line comment: "ignore index dirs; tool removed."
 - [ ] current user-facing docs: purge gitnexus from `CLAUDE.md`, `README.md`, and
       `docs/guide/{install,configuration-reference,tooling,languages,metrics,
-    troubleshooting,agent-feedback,release-notes}.md` (note the removal; risk_hub /
+  troubleshooting,agent-feedback,release-notes}.md` (note the removal; risk_hub /
       `symbol_dependants` are SCIP-derived). **Leave historical records unchanged**:
       `docs/plans/completed/*`, `docs/plans/notes/*` (incl. `gitnexus-adapter-decision.md`),
       `docs/design/*`, `docs/notes/*` are history, not current behavior.
 - [ ] confirm `TestArchImports` green (gitnexus package gone from the ring)
 - [ ] **verification gate**: `grep -rin gitnexus internal/ cmd/ .archfit.yaml
-    .archfit-labels.yaml CLAUDE.md README.md docs/guide/` returns **only** the two
+  .archfit-labels.yaml CLAUDE.md README.md docs/guide/` returns **only** the two
       intentional `scope.go` index-dir exclusions — zero other code/config/test/
       current-doc hits
 - [ ] run `make test` + `make lint` + `make archfit` (dogfood, gitnexus-free) — must
@@ -258,19 +258,21 @@ prerequisite set drops.
       longer pinned by default
 - [ ] run `make test` — must pass before Task 8
 
-### Task 8: Demote cargo-modules to a fallback behind rust-analyzer SCIP
+### Task 8: ~~Demote cargo-modules to a fallback behind rust-analyzer SCIP~~ — SKIPPED (would regress Rust; see §5.3)
 
-- [ ] in `internal/extract/rust`, when SCIP is enabled and yields a
-      `<crate>::<mod>` module graph, use SCIP for the intra-crate module graph and
-      **skip cargo-modules**; run cargo-modules only when SCIP is unavailable
-- [ ] update coverage reasons to state which module-graph source was used and why
-      (SCIP one-pass vs cargo-modules per-crate fallback)
-- [ ] preserve current behavior when SCIP is off (cargo-modules still works as the
-      opt-in module graph)
-- [ ] write tests (fake runner): SCIP-present → cargo-modules not invoked, module
-      graph from SCIP; SCIP-absent → cargo-modules fallback path; coverage reason
-      correct in each
-- [ ] run tests — must pass before Task 9
+⚠️ **SKIPPED after code investigation.** cargo-modules and scip are **complementary,
+not substitutes**: cargo-modules is the _sole_ source of `<crate>::<mod>` module-graph
+**structure** (`runModuleGraph` appends the nodes/edges; `AugmentModulesFromGraph`
+only promotes existing `::` nodes), while scip only _enriches existing edges_ with
+`StrengthHint` and feeds symbol-level signals (`engine.go:342`). Demoting
+cargo-modules when scip is on would leave single-crate Rust with no module nodes →
+`cycle`/`blast_radius`/`cohesion_lcom` regress to n/a, and scip's strength map would
+have nothing to attach to. It also removes no prerequisite (cargo-modules is already
+opt-in). Not lossless → not done. The report's §5.3 has been corrected accordingly.
+
+Optional future feature (additive, NOT this plan): derive `<crate>::<mod>` module
+edges from the scip symbol graph's `Refs` so scip can supply structure too — only
+then could cargo-modules become genuinely optional.
 
 ### Task 9: go/packages NeedTypes → StrengthHint for Go internal edges (coverage gain)
 
