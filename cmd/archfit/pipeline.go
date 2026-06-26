@@ -202,12 +202,12 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	duModules := cfg.ModuleMapView()
 	cfg.FillMissingDeployUnits(deployunit.KeyByModule(deployunit.Detect(ctx, s.Root, duModules, deps.Runner), duModules))
 
-	// Cyclomatic complexity via an external multi-language tool (lizard) — opt-in
-	// (tools.complexity.enabled: on) like SCIP, since it shells out and adds cost.
-	// Coverage carries zero file counts; status only — mirrors clones absent/ok pattern.
+	// Cyclomatic complexity — opt-in (tools.complexity.enabled: on).
+	// Backend: auto (default) = gocyclo(Go) + ast-grep proxy(TS/Py/Rust); lizard =
+	// exact multi-language CCN (re-pins Python). Coverage carries zero file counts.
 	var complexityCov diagnostic.Coverage
-	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled())
-	noteToolErr("lizard", toolErr)
+	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled(), cfg.ComplexityBackend())
+	noteToolErr("complexity", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, complexityCov)
 
 	// Clone detection — opt-in (tools.clones.enabled: on). Run returns empty+absent

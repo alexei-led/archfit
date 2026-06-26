@@ -60,12 +60,25 @@ func (c Config) ScipEnabled() bool {
 // ToolComplexity is the Tools map key for the external cyclomatic-complexity tool.
 const ToolComplexity = "complexity"
 
-// ComplexityEnabled reports whether the external complexity tool (lizard) is
-// explicitly enabled (tools.complexity.enabled: on). Opt-in only — like SCIP it
-// shells out to an external tool and adds cost to the check path, so it stays off
-// unless asked for. Config-driven (not PATH presence) for deterministic metrics.
+// ComplexityEnabled reports whether the external complexity tool is explicitly
+// enabled (tools.complexity.enabled: on). Opt-in only — like SCIP it shells out
+// to an external tool and adds cost to the check path, so it stays off unless
+// asked for. Config-driven (not PATH presence) for deterministic metrics.
 func (c Config) ComplexityEnabled() bool {
 	return c.Tools[ToolComplexity].Enabled == ModeOn
+}
+
+// ComplexityBackend returns the selected complexity backend for the run.
+// Accepted values: "" or "auto" (default) → gocyclo(Go)+ast-grep proxy(TS/Py/Rust);
+// "lizard" → exact lizard (re-pins Python runtime).
+// An empty/missing value is normalised to "auto" so callers can compare against
+// the complexity.BackendAuto / complexity.BackendLizard constants.
+func (c Config) ComplexityBackend() string {
+	b := c.Tools[ToolComplexity].Backend
+	if b == "" {
+		return "auto"
+	}
+	return b
 }
 
 // ToolLLM is the Tools map key for the off-gate LLM provider used by the
@@ -151,9 +164,11 @@ const (
 
 // ToolConfig holds the settings for a single external tool.
 // Provider/Model/BaseURL apply to the "llm" key only (see Config.LLM).
+// Backend applies to the "complexity" key only (see Config.ComplexityBackend).
 type ToolConfig struct {
 	Enabled  ToolMode `yaml:"enabled"`
 	Gate     GateMode `yaml:"gate,omitempty"`
+	Backend  string   `yaml:"backend,omitempty"`
 	Provider string   `yaml:"provider,omitempty"`
 	Model    string   `yaml:"model,omitempty"`
 	BaseURL  string   `yaml:"base_url,omitempty"`

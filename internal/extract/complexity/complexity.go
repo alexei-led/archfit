@@ -1,12 +1,13 @@
-// Package complexity provides a cyclomatic-complexity runner that collects
-// per-function CCN values via the external lizard tool. It is opt-in and gated
-// by tools.complexity.enabled in the archfit config.
+// Package complexity provides cyclomatic-complexity runners for archfit.
 //
-// Supported backend: lizard — a multi-language cyclomatic complexity analyser
-// that supports Go, Python, JavaScript/TypeScript, and many other languages.
-// lizard is invoked directly when on PATH, or via `uvx lizard` otherwise.
+// Backends:
+//   - auto (default): gocyclo for Go (exact CCN, no Python pin) +
+//     ast-grep decision-point proxy for TypeScript/Python/Rust.
+//   - lizard: the multi-language lizard tool — exact per-function CCN but
+//     requires a Python runtime. Only invoked when backend=lizard.
+//   - off: complexity disabled (tools.complexity.enabled: false).
 //
-// When the tool is absent, disabled, or any non-fatal failure occurs, the
+// When the tools are absent, disabled, or a non-fatal failure occurs the
 // runner returns an empty result with absent/disabled coverage — never an error.
 package complexity
 
@@ -25,6 +26,12 @@ import (
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
+// Backend selector constants for tools.complexity.backend.
+const (
+	BackendAuto   = "auto"   // gocyclo(Go) + ast-grep proxy(TS/Py/Rust) — default
+	BackendLizard = "lizard" // exact lizard; re-pins Python runtime
+)
+
 const (
 	toolName      = "lizard"
 	statusOK      = "ok"
@@ -32,9 +39,11 @@ const (
 	lizardTimeout = 2 * time.Minute
 
 	// Absent-coverage reasons: why complexity is n/a and the enable step.
-	reasonDisabled     = "complexity is opt-in — set `tools.complexity.enabled: true` in .archfit.yaml"
-	reasonNotInstalled = "lizard not found — install it (`pip install lizard`, or have `uvx` available) to enable complexity"
-	reasonRunFailed    = "lizard run failed — check the install and rerun"
+	reasonDisabled       = "complexity is opt-in — set `tools.complexity.enabled: true` in .archfit.yaml"
+	reasonNotInstalled   = "no complexity tool found — install gocyclo (`go install github.com/fzipp/gocyclo/cmd/gocyclo@latest`) or have `sg` (ast-grep) available for the proxy"
+	reasonLizardMissing  = "lizard not found — install it (`pip install lizard`, or have `uvx` available) to enable complexity"
+	reasonRunFailed      = "complexity tool run failed — check the install and rerun"
+	reasonSGNotInstalled = "sg (ast-grep) not found — install ast-grep to enable the complexity proxy for TS/Py/Rust"
 )
 
 // lizardExcludes keep tests, mocks, vendored, and generated trees out of the
@@ -51,21 +60,62 @@ var lizardExcludes = []string{
 // in older lizard), so without this lizard could silently skip Python or TS
 // files and report complexity n/a even when the tool is installed. Names are
 // lizard's own language identifiers.
-var lizardLanguages = []string{"go", "python", "javascript", "typescript", "tsx", "rust"}
+var lizardLanguages = []string{langGo, langPython, "javascript", langTypeScript, "tsx", langRust}
 
-// Run invokes lizard over root and returns per-function complexity records.
-// When enabled is false or the tool is absent, it returns an empty slice with
-// an absent coverage record and a nil error, mirroring the clones.Run contract.
-// Coverage carries zero file counts (FilesSeen/FilesApplicable/Unresolved all 0)
-// so the coverage metric value does not shift between runs with/without the tool.
-func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+// Run invokes the complexity backend and returns per-function CCN records.
+// backend selects the implementation: "" or "auto" → gocyclo+proxy; "lizard"
+// → exact lizard. When enabled is false the runner returns an empty absent
+// coverage record. A nil/empty result on tool absence is always returned
+// without error — callers must treat absent coverage as n/a, not a failure.
+func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, backend string) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
 	if !enabled {
 		return nil, absentCov(reasonDisabled), nil
 	}
+	if backend == BackendLizard {
+		return runLizard(ctx, runner, root)
+	}
+	// default: auto
+	return runAuto(ctx, runner, root)
+}
 
+// runAuto runs gocyclo for Go (exact CCN) and the ast-grep decision-point
+// proxy for TS/Py/Rust. When gocyclo is absent the proxy also covers Go.
+func runAuto(ctx context.Context, runner toolrun.Runner, root string) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+	gocycloFuncs, gocycloOK := runGocyclo(ctx, runner, root)
+
+	// proxy covers TS/Py/Rust; also covers Go when gocyclo is absent.
+	proxyLangs := []string{langTypeScript, langPython, langRust}
+	if !gocycloOK {
+		proxyLangs = append([]string{langGo}, proxyLangs...)
+	}
+	proxyFuncs, proxyCov, err := runProxy(ctx, runner, root, proxyLangs)
+	if err != nil {
+		return nil, absentCov(reasonRunFailed), nil
+	}
+
+	all := gocycloFuncs
+	all = append(all, proxyFuncs...)
+
+	switch {
+	case gocycloOK:
+		cov := diagnostic.Coverage{Tool: gocycloTool, Status: statusOK}
+		if len(proxyFuncs) > 0 {
+			cov.Tool = gocycloTool + "+ast-grep"
+		}
+		return all, cov, nil
+	case proxyCov.Status == statusOK:
+		return all, proxyCov, nil
+	default:
+		return nil, absentCov(reasonNotInstalled), nil
+	}
+}
+
+// runLizard invokes lizard (directly or via uvx) and returns per-function CCN.
+// Only called when backend=lizard.
+func runLizard(ctx context.Context, runner toolrun.Runner, root string) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
 	name, pre := lizardCommand(ctx, runner)
 	if name == "" {
-		return nil, absentCov(reasonNotInstalled), nil
+		return nil, absentCov(reasonLizardMissing), nil
 	}
 
 	args := append(append([]string{}, pre...), root, "--csv")
