@@ -221,14 +221,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// Backend: auto (default) = gocyclo(Go) + ast-grep proxy(TS/Py/Rust); lizard =
 	// exact multi-language CCN (re-pins Python). Coverage carries zero file counts.
 	var complexityCov diagnostic.Coverage
-	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled(), cfg.ComplexityBackend())
+	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled(), cfg.ComplexityBackend(), cfg.ToolTimeout(config.ToolComplexity))
 	noteToolErr("complexity", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, complexityCov)
 
 	// Clone detection — opt-in (tools.clones.enabled: on). Run returns empty+absent
 	// when disabled or the tool is missing; the metric reports n/a in that case.
 	var clonesCov diagnostic.Coverage
-	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled())
+	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled(), cfg.ToolTimeout(config.ToolClones))
 	noteToolErr("jscpd", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, clonesCov)
 
@@ -245,7 +245,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// decision must live in config (not PATH presence) to keep metrics deterministic.
 	var resolver ports.SymbolResolver = ports.NopSymbolResolver{}
 	if cfg.ScipEnabled() {
-		resolver = scip.New(deps.Runner)
+		resolver = scip.New(deps.Runner, cfg.ToolTimeout(config.ToolScip))
 	}
 
 	// Syntax facts (ast-grep syntax rules) are opt-in (tools.syntax.enabled: on):

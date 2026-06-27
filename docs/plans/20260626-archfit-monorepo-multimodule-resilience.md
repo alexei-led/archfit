@@ -327,16 +327,16 @@ unclassified and `coupling_balance` reads `n/a`. This task supplies the
 
 ### Task 12: Per-analyzer timeout / watchdog (resilience)
 
-- [ ] wrap the subprocess analyzers (scip, jscpd/clones, complexity) with a
+- [x] wrap the subprocess analyzers (scip, jscpd/clones, complexity) with a
       per-analyzer context timeout; on timeout degrade to `n/a (timed out)`
       coverage, never hang the run (the focus-analytics >55-min hang on a
       122k-LOC generated file)
-- [ ] make the timeout configurable (`tools.<x>.timeout`, sensible default); the
+- [x] make the timeout configurable (`tools.<x>.timeout`, sensible default); the
       timeout is the **primary** mitigation (scip-go indexes via the Go build, not
       a file list, so it cannot be pre-filtered)
-- [ ] write tests (fake Runner that blocks): timeout fires → `n/a (timed out)`,
+- [x] write tests (fake Runner that blocks): timeout fires → `n/a (timed out)`,
       verdict unaffected, no deadlock
-- [ ] run tests — must pass before next task
+- [x] run tests — must pass before next task
 
 ### Task 13: Best-effort exclusion propagation to jscpd
 

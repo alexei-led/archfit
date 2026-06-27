@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/scope"
@@ -79,7 +80,7 @@ func TestStrengths_AbsentReason(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			root, runner := tc.setup(t)
-			a := New(runner)
+			a := New(runner, 0)
 			_, cov, err := a.Strengths(context.Background(), scope.Scope{Root: root})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -168,7 +169,7 @@ func TestDetectIndexer_Rust(t *testing.T) {
 			return toolrun.ToolInfo{}, false
 		},
 	}
-	indexer, pkg, lang, ok := New(runner).detectIndexer(context.Background(), dir)
+	indexer, pkg, lang, ok := New(runner, 0).detectIndexer(context.Background(), dir)
 	if !ok {
 		t.Fatal("detectIndexer: ok = false, want true")
 	}
@@ -208,7 +209,7 @@ func TestDetectIndexer_VirtualWorkspace(t *testing.T) {
 			return toolrun.Output{}, nil
 		},
 	}
-	indexer, pkg, lang, ok := New(runner).detectIndexer(context.Background(), dir)
+	indexer, pkg, lang, ok := New(runner, 0).detectIndexer(context.Background(), dir)
 	if !ok {
 		t.Fatal("detectIndexer: ok = false, want true for virtual workspace")
 	}
@@ -270,6 +271,42 @@ func TestIndexArgs_Rust(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("args[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+// TestStrengths_Timeout asserts that the per-analyzer watchdog fires and returns
+// StatusTimedOut coverage with nil error and no deadlock.
+func TestStrengths_Timeout(t *testing.T) {
+	// Minimal Go project: go.mod lets detectIndexer pick scip-go.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/timeout-test\n\ngo 1.21\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Runner detects scip-go and uv but blocks forever on Run.
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == indexerGo || tool == "uv" {
+				return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/" + tool}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(ctx context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			<-ctx.Done()
+			return toolrun.Output{}, ctx.Err()
+		},
+	}
+
+	a := New(runner, 10*time.Millisecond)
+	_, cov, err := a.Strengths(context.Background(), scope.Scope{Root: dir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cov.Status != diagnostic.StatusTimedOut {
+		t.Errorf("status = %q, want %q", cov.Status, diagnostic.StatusTimedOut)
+	}
+	if cov.Reason != reasonTimedOut {
+		t.Errorf("reason = %q, want %q", cov.Reason, reasonTimedOut)
 	}
 }
 

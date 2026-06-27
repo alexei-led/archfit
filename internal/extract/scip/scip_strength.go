@@ -3,6 +3,7 @@ package scip
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,11 @@ const (
 	pyInitFile    = "__init__.py"
 	pySrcDir      = "src"
 
+	// defaultTimeout is the per-analyzer outer watchdog when tools.scip.timeout
+	// is not configured. Generous relative to per-subprocess timeouts (index 10m +
+	// reader 5m = 15m sum) to guard only against pathological hangs.
+	defaultTimeout = 20 * time.Minute
+
 	indexerPython = "scip-python"
 	indexerGo     = "scip-go"
 	indexerTS     = "scip-typescript"
@@ -34,6 +40,7 @@ const (
 	reasonScipNoIndexer   = "no SCIP indexer found — install scip-go, scip-typescript, scip-python, or rust-analyzer for semantic integration strength"
 	reasonScipNoUv        = "uv not found — install uv (https://astral.sh/uv) so archfit can read the SCIP index"
 	reasonTSNoNodeModules = "install JS/TS dependencies (e.g. `npm install`) for semantic strength — scip-typescript needs node_modules to resolve cross-package imports"
+	reasonTimedOut        = "SCIP analysis timed out — increase tools.scip.timeout or reduce the scope"
 )
 
 // readerOutput mirrors the JSON emitted by scip_reader.py.
@@ -144,6 +151,19 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		return ro, absent, false
 	}
 
+	// Apply per-analyzer watchdog before any subprocess call. The outer timeout
+	// caps the full index+read pipeline. Per-subprocess timeouts (indexTimeout,
+	// readerTimeout) still apply inside runner.Run; this guard catches pathological
+	// hangs where a subprocess ignores its own limit.
+	to := a.timeout
+	if to <= 0 {
+		to = defaultTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, to)
+	defer cancel()
+
+	timedOut := diagnostic.Coverage{Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}
+
 	tmp, err := os.MkdirTemp("", "archfit-scip-")
 	if err != nil {
 		return ro, absent, false
@@ -168,6 +188,9 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		Timeout: indexTimeout,
 	})
 	if err != nil || idxOut.ExitCode != 0 {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return ro, timedOut, false
+		}
 		return ro, partial, false
 	}
 	if _, statErr := os.Stat(indexPath); statErr != nil {
@@ -182,6 +205,9 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		Timeout: readerTimeout,
 	})
 	if err != nil || rdOut.ExitCode != 0 {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return ro, timedOut, false
+		}
 		return ro, partial, false
 	}
 

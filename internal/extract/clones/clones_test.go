@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -112,7 +113,7 @@ func malformedRunner() *toolrun.RunnerMock {
 }
 
 func TestRun_Success(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), makeReportRunner(jscpdSuccessJSON), t.TempDir(), true)
+	clusters, cov, err := Run(context.Background(), makeReportRunner(jscpdSuccessJSON), t.TempDir(), true, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -134,7 +135,7 @@ func TestRun_Success(t *testing.T) {
 }
 
 func TestRun_AbsentTool(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true)
+	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -149,7 +150,7 @@ func TestRun_AbsentTool(t *testing.T) {
 func TestRun_Disabled(t *testing.T) {
 	// enabled=false → disabled status (not absent), no Detect call needed.
 	// The tool may or may not be installed; the user turned it off in config.
-	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), false)
+	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), false, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -166,7 +167,7 @@ func TestRun_Disabled(t *testing.T) {
 // disabled → StatusDisabled (do not show "install" prompt).
 // not installed but enabled → StatusAbsent (show "install" prompt).
 func TestRun_StatusDistinction(t *testing.T) {
-	_, covDisabled, _ := Run(context.Background(), absentRunner(), t.TempDir(), false)
+	_, covDisabled, _ := Run(context.Background(), absentRunner(), t.TempDir(), false, 0)
 	if covDisabled.Status != diagnostic.StatusDisabled {
 		t.Errorf("disabled status = %q, want %q", covDisabled.Status, diagnostic.StatusDisabled)
 	}
@@ -174,7 +175,7 @@ func TestRun_StatusDistinction(t *testing.T) {
 		t.Errorf("disabled reason = %q, want %q", covDisabled.Reason, reasonDisabled)
 	}
 
-	_, covAbsent, _ := Run(context.Background(), absentRunner(), t.TempDir(), true)
+	_, covAbsent, _ := Run(context.Background(), absentRunner(), t.TempDir(), true, 0)
 	if covAbsent.Status != diagnostic.StatusAbsent {
 		t.Errorf("absent status = %q, want %q", covAbsent.Status, diagnostic.StatusAbsent)
 	}
@@ -184,7 +185,7 @@ func TestRun_StatusDistinction(t *testing.T) {
 }
 
 func TestRun_MalformedOutput(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), malformedRunner(), t.TempDir(), true)
+	clusters, cov, err := Run(context.Background(), malformedRunner(), t.TempDir(), true, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -197,7 +198,7 @@ func TestRun_MalformedOutput(t *testing.T) {
 }
 
 func TestRun_ToolFailure(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true)
+	clusters, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -206,6 +207,42 @@ func TestRun_ToolFailure(t *testing.T) {
 	}
 	if len(clusters) != 0 {
 		t.Errorf("expected empty clusters for tool failure, got %d", len(clusters))
+	}
+}
+
+// blockingRunner detects jscpd but its Run method blocks until the context is done.
+// Used to test that the per-analyzer timeout fires and returns StatusTimedOut.
+func blockingRunner() *toolrun.RunnerMock {
+	return &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == toolName {
+				return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/" + tool}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(ctx context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			<-ctx.Done()
+			return toolrun.Output{}, ctx.Err()
+		},
+	}
+}
+
+// TestRun_Timeout asserts that when the per-analyzer watchdog fires the run
+// returns StatusTimedOut coverage, a nil error, and no deadlock.
+// The test must complete quickly (short timeout + blocking runner).
+func TestRun_Timeout(t *testing.T) {
+	clusters, cov, err := Run(context.Background(), blockingRunner(), t.TempDir(), true, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cov.Status != diagnostic.StatusTimedOut {
+		t.Errorf("status = %q, want %q", cov.Status, diagnostic.StatusTimedOut)
+	}
+	if cov.Reason != reasonTimedOut {
+		t.Errorf("reason = %q, want %q", cov.Reason, reasonTimedOut)
+	}
+	if len(clusters) != 0 {
+		t.Errorf("expected no clusters on timeout, got %d", len(clusters))
 	}
 }
 

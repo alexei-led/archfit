@@ -25,6 +25,7 @@ package scip
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -44,7 +45,8 @@ var scipTools = []string{indexerTS, indexerPython, indexerGo, indexerRust}
 // It detects available SCIP tools once (via sync.Once) and, when any are
 // present, is ready to run an indexer on first Resolve call.
 type Adapter struct {
-	runner toolrun.Runner
+	runner  toolrun.Runner
+	timeout time.Duration // per-analyzer outer watchdog; 0 = defaultTimeout in scip_strength.go
 
 	once      sync.Once
 	toolFound string // empty when no SCIP indexer detected
@@ -58,8 +60,9 @@ type Adapter struct {
 var _ ports.SymbolResolver = (*Adapter)(nil)
 
 // New returns an Adapter backed by the given runner.
-func New(runner toolrun.Runner) *Adapter {
-	return &Adapter{runner: runner}
+// timeout is the per-analyzer outer watchdog; 0 uses the built-in default (20 min).
+func New(runner toolrun.Runner, timeout time.Duration) *Adapter {
+	return &Adapter{runner: runner, timeout: timeout}
 }
 
 // Name returns the tool identifier.

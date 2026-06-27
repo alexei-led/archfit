@@ -1,6 +1,9 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // ToolMode represents the enabled state of an external tool.
 // It accepts true/false (bool) or "auto"/"on"/"off" (string) in YAML.
@@ -175,6 +178,9 @@ type GoModuleFilter struct {
 // Provider/Model/BaseURL apply to the "llm" key only (see Config.LLM).
 // Backend applies to the "complexity" key only (see Config.ComplexityBackend).
 // Modules applies to the "go" key only (see GoModuleFilter).
+// Timeout applies to subprocess analyzers (scip, clones, complexity): a per-analyzer
+// watchdog that caps the total run time. Parsed as a Go duration string (e.g. "5m").
+// Zero or absent means "use the built-in package default".
 type ToolConfig struct {
 	Enabled  ToolMode       `yaml:"enabled"`
 	Gate     GateMode       `yaml:"gate,omitempty"`
@@ -183,6 +189,21 @@ type ToolConfig struct {
 	Model    string         `yaml:"model,omitempty"`
 	BaseURL  string         `yaml:"base_url,omitempty"`
 	Modules  GoModuleFilter `yaml:"modules,omitempty"`
+	Timeout  string         `yaml:"timeout,omitempty"` // e.g. "5m", "10m30s"; 0/absent = built-in default
+}
+
+// ToolTimeout returns the configured per-analyzer timeout for the given tool key.
+// Returns 0 when not set or the value cannot be parsed (callers use their built-in default).
+func (c Config) ToolTimeout(key string) time.Duration {
+	s := c.Tools[key].Timeout
+	if s == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0
+	}
+	return d
 }
 
 // ToolsConfig holds settings for all known external tools, keyed by language name.

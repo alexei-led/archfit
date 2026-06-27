@@ -38,12 +38,18 @@ const (
 	statusAbsent  = "absent"
 	lizardTimeout = 2 * time.Minute
 
+	// defaultTimeout is the per-analyzer outer watchdog when tools.complexity.timeout
+	// is not configured. Generous relative to per-subprocess timeouts so it guards
+	// only pathological hangs (e.g. a 122k-LOC generated file).
+	defaultTimeout = 5 * time.Minute
+
 	// Absent-coverage reasons: why complexity is n/a and the enable step.
 	reasonDisabled       = "complexity is opt-in — set `tools.complexity.enabled: true` in .archfit.yaml"
 	reasonNotInstalled   = "no complexity tool found — install gocyclo (`go install github.com/fzipp/gocyclo/cmd/gocyclo@latest`) or have `sg` (ast-grep) available for the proxy"
 	reasonLizardMissing  = "lizard not found — install it (`pip install lizard`, or have `uvx` available) to enable complexity"
 	reasonRunFailed      = "complexity tool run failed — check the install and rerun"
 	reasonSGNotInstalled = "sg (ast-grep) not found — install ast-grep to enable the complexity proxy for TS/Py/Rust"
+	reasonTimedOut       = "complexity analysis timed out — increase tools.complexity.timeout or reduce the scope"
 )
 
 // lizardExcludes keep tests, mocks, vendored, and generated trees out of the
@@ -63,24 +69,46 @@ var lizardExcludes = []string{
 var lizardLanguages = []string{langGo, langPython, "javascript", langTypeScript, "tsx", langRust}
 
 // Run invokes the complexity backend and returns per-function CCN records.
-// backend selects the implementation: "" or "auto" → gocyclo+proxy; "lizard"
-// → exact lizard. When enabled is false the runner returns an empty absent
-// coverage record. A nil/empty result on tool absence is always returned
-// without error — callers must treat absent coverage as n/a, not a failure.
-func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, backend string) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+// timeout is the per-analyzer outer watchdog; 0 uses defaultTimeout. backend
+// selects the implementation: "" or "auto" → gocyclo+proxy; "lizard" → exact
+// lizard. When enabled is false an absent coverage record is returned. A nil
+// result on tool absence is always returned without error — callers treat
+// absent coverage as n/a. On watchdog timeout StatusTimedOut is returned with
+// nil error so the overall run continues.
+func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, backend string, timeout time.Duration) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
 	if !enabled {
 		return nil, absentCov(reasonDisabled), nil
 	}
-	if backend == BackendLizard {
-		return runLizard(ctx, runner, root)
+
+	// Apply per-analyzer watchdog before any subprocess call.
+	to := timeout
+	if to <= 0 {
+		to = defaultTimeout
 	}
-	// default: auto
-	return runAuto(ctx, runner, root)
+	ctx, cancel := context.WithTimeout(ctx, to)
+	defer cancel()
+
+	var funcs []signal.ComplexityFunc
+	var cov diagnostic.Coverage
+	if backend == BackendLizard {
+		funcs, cov = runLizard(ctx, runner, root)
+	} else {
+		funcs, cov = runAuto(ctx, runner, root)
+	}
+
+	// Check whether the per-analyzer watchdog fired after sub-runners returned.
+	// Sub-runners swallow failures and return absent coverage; ctx.Err() tells us
+	// whether that was because of a timeout vs a genuinely missing/failed tool.
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}, nil
+	}
+	return funcs, cov, nil
 }
 
 // runAuto runs gocyclo for Go (exact CCN) and the ast-grep decision-point
 // proxy for TS/Py/Rust. When gocyclo is absent the proxy also covers Go.
-func runAuto(ctx context.Context, runner toolrun.Runner, root string) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+// Never returns an error — failures degrade to absent coverage.
+func runAuto(ctx context.Context, runner toolrun.Runner, root string) ([]signal.ComplexityFunc, diagnostic.Coverage) {
 	gocycloFuncs, gocycloOK := runGocyclo(ctx, runner, root)
 
 	// proxy covers TS/Py/Rust; also covers Go when gocyclo is absent.
@@ -90,7 +118,7 @@ func runAuto(ctx context.Context, runner toolrun.Runner, root string) ([]signal.
 	}
 	proxyFuncs, proxyCov, err := runProxy(ctx, runner, root, proxyLangs)
 	if err != nil {
-		return nil, absentCov(reasonRunFailed), nil
+		return nil, absentCov(reasonRunFailed)
 	}
 
 	all := gocycloFuncs
@@ -102,20 +130,20 @@ func runAuto(ctx context.Context, runner toolrun.Runner, root string) ([]signal.
 		if len(proxyFuncs) > 0 {
 			cov.Tool = gocycloTool + "+ast-grep"
 		}
-		return all, cov, nil
+		return all, cov
 	case proxyCov.Status == statusOK:
-		return all, proxyCov, nil
+		return all, proxyCov
 	default:
-		return nil, absentCov(reasonNotInstalled), nil
+		return nil, absentCov(reasonNotInstalled)
 	}
 }
 
 // runLizard invokes lizard (directly or via uvx) and returns per-function CCN.
-// Only called when backend=lizard.
-func runLizard(ctx context.Context, runner toolrun.Runner, root string) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+// Only called when backend=lizard. Never returns an error — failures degrade to absent coverage.
+func runLizard(ctx context.Context, runner toolrun.Runner, root string) ([]signal.ComplexityFunc, diagnostic.Coverage) {
 	name, pre := lizardCommand(ctx, runner)
 	if name == "" {
-		return nil, absentCov(reasonLizardMissing), nil
+		return nil, absentCov(reasonLizardMissing)
 	}
 
 	args := append(append([]string{}, pre...), root, "--csv")
@@ -127,7 +155,7 @@ func runLizard(ctx context.Context, runner toolrun.Runner, root string) ([]signa
 	}
 	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: name, Args: args, WorkDir: root, Timeout: lizardTimeout})
 	if err != nil {
-		return nil, absentCov(reasonRunFailed), nil
+		return nil, absentCov(reasonRunFailed)
 	}
 
 	funcs := parseLizardCSV(out.Stdout, root)
@@ -137,11 +165,11 @@ func runLizard(ctx context.Context, runner toolrun.Runner, root string) ([]signa
 	// signal for any repo with a CCN>threshold function. Only treat the run as
 	// failed when it produced no records at all.
 	if out.ExitCode != 0 && len(funcs) == 0 {
-		return nil, absentCov(reasonRunFailed), nil
+		return nil, absentCov(reasonRunFailed)
 	}
 
 	cov := diagnostic.Coverage{Tool: toolName, Status: statusOK}
-	return funcs, cov, nil
+	return funcs, cov
 }
 
 // absentCov builds an absent coverage record with zero file counts and the

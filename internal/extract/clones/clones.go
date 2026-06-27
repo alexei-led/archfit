@@ -16,6 +16,7 @@ package clones
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
@@ -28,8 +29,15 @@ import (
 const (
 	toolName      = "jscpd"
 	clonesTimeout = 3 * time.Minute
-	reportFile    = "jscpd-report.json"
-	flagOutput    = "--output"
+
+	// defaultTimeout is the per-analyzer outer watchdog applied when no
+	// tools.clones.timeout is configured. It is intentionally generous (well
+	// above the per-subprocess clonesTimeout) to guard only against pathological
+	// hangs — not normal runs.
+	defaultTimeout = 5 * time.Minute
+
+	reportFile = "jscpd-report.json"
+	flagOutput = "--output"
 
 	// Coverage reasons: why functional-candidate (clone) detection is n/a.
 	// Static strings so a double-run stays byte-stable.
@@ -40,13 +48,15 @@ const (
 	reasonDisabled     = "clone detection disabled by config — set `tools.clones.enabled: on` in .archfit.yaml to enable"
 	reasonNotInstalled = "jscpd not found — install it (`npm install -g jscpd`) to enable clone detection"
 	reasonRunFailed    = "jscpd run failed or its report was unreadable"
+	reasonTimedOut     = "clone detection timed out — increase tools.clones.timeout or reduce the scope"
 )
 
 // Run invokes jscpd over root and returns detected clone clusters.
-// When enabled is false, or the tool is absent, or any non-fatal failure
-// occurs, it returns an empty slice with an absent/partial coverage record
-// and a nil error.
-func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) ([]clone.Cluster, diagnostic.Coverage, error) {
+// timeout is the per-analyzer outer watchdog; 0 uses defaultTimeout. When
+// enabled is false, or the tool is absent, or any non-fatal failure occurs, it
+// returns an empty slice with an absent/partial coverage record and a nil error.
+// On timeout it returns StatusTimedOut coverage and a nil error — the run continues.
+func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, timeout time.Duration) ([]clone.Cluster, diagnostic.Coverage, error) {
 	if !enabled {
 		// Disabled by config — tool may or may not be installed. Report as
 		// disabled (not absent) so the pipeline does not generate an "install"
@@ -57,6 +67,18 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) 
 	if _, found := runner.Detect(ctx, toolName); !found {
 		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusAbsent, Reason: reasonNotInstalled}, nil
 	}
+
+	// Apply per-analyzer watchdog. The outer timeout caps total clone-detection
+	// time (including jscpd startup + scan). On deadline: return n/a (timed out)
+	// and let the overall run continue. scip-go cannot be pre-filtered by file list
+	// (build-based indexing); jscpd can be scoped via exclude flags (Task 13), but
+	// this timeout is the primary guard against pathological inputs.
+	to := timeout
+	if to <= 0 {
+		to = defaultTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, to)
+	defer cancel()
 
 	tmp, err := os.MkdirTemp("", "archfit-clones-")
 	if err != nil {
@@ -75,6 +97,9 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) 
 		Timeout: clonesTimeout,
 	})
 	if err != nil || out.ExitCode != 0 {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}, nil
+		}
 		return nil, partial, nil
 	}
 
