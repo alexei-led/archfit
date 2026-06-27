@@ -1,4 +1,26 @@
 version: 1
+# --- Design rationale (Balanced Coupling, Khononov) --------------------------
+# archfit is a SOLE-OWNER, single-binary modular monolith. Every module declares
+# `owner: alexei-led`, so the BC distance classifier resolves all internal
+# coupling to `cross_module_same_owner` — book ordinal 4, the LOWEST cross-module
+# distance (Ch8: distance is socio-technical; a single owner is the minimum-
+# coordination, minimum-distance case). There is no lower cross-module band to
+# claim; same-owner IS the floor.
+#
+# Volatility is essential/domain-based (Ch9), never churn: the analysis core
+# (`internal/model/*`, classify, rules, metrics, score) is `subdomain: core` →
+# high volatility because it evolves with every feature; adapters/support/generic
+# are low. This is correct by design, not a gap.
+#
+# How to read coupling_balance: the book formula is `max(|S-D|, 10-V)+1`. With the
+# core at V=high (10) and distance fixed at 4, coupling INTO the core scores in the
+# mixed/high band regardless of strength — this is the honest signal that the
+# shared domain model (`Diagnostic`/`graph`/`coupling`) is a high-volatility,
+# high-fan-in hub (see risk_hub, blast_radius). The book's lever to improve it is
+# to lower the CORE's volatility or wrap it in a contract (reduce strength), NOT to
+# re-weight the metric. The frozen book ordinals are adopted verbatim and must not
+# be tuned to flatter this repo's own score.
+# -----------------------------------------------------------------------------
 # Minimum severity for BC coupling advisories to appear in scan output.
 # low: all cross-module deps (noisy for well-designed codebases)
 # medium: only over-decoupled volatile seams and tight cross-boundary coupling
@@ -391,12 +413,14 @@ modules:
       - internal/**
     public:
       - internal
-    # Catch-all stanza. Every production package has its own explicit stanza
-    # above, so this absorbs only root-level internal/arch_test.go plus testdata
-    # and helper fixtures (internal/extract/astgrep/testdata/**, internal/extract/py
-    # helper scripts). Any unsafe/panic/lazy-import facts reported under module
-    # "internal" therefore come from FIXTURES, not production code — not a real
-    # signal about archfit's own source.
+    # Catch-all stanza. With most-specific module resolution (config.ModuleMap.
+    # ModuleFor picks the longest-prefix glob, not first-match), every specific
+    # stanza above wins for its own subtree, so `internal/**` here resolves ONLY
+    # paths nothing more specific matches: root-level internal/arch_test.go plus
+    # testdata and helper fixtures (internal/extract/astgrep/testdata/**,
+    # internal/extract/py helper scripts). Verified: zero production graph nodes
+    # resolve to this module. Any unsafe/panic/lazy-import facts reported under
+    # module "internal" therefore come from FIXTURES, not production code.
     layer: support
     subdomain: generic
     volatility: low

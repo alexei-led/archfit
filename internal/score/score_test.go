@@ -358,18 +358,15 @@ func TestBoundaryIntegrity_GateViolations(t *testing.T) {
 	}
 }
 
-// TestBoundaryIntegrity_EncapsulationNA asserts that when encapsulation cannot be
-// measured the dimension does not fabricate a perfect baseline: it starts neutral
-// with low confidence and cites the unmeasured baseline explicitly.
+// TestBoundaryIntegrity_EncapsulationNA asserts that when neither encapsulation
+// nor cycles can be measured the dimension does not fabricate a perfect baseline:
+// it stays neutral with low confidence and cites the unmeasured baseline.
 func TestBoundaryIntegrity_EncapsulationNA(t *testing.T) {
-	// blast_radius present (non-degenerate graph) but no encapsulation metric → the
-	// genuine encapsulation-n/a branch, not the single-module degenerate guard.
+	// blast_radius present (non-degenerate graph) but no encapsulation AND no cycle
+	// metric → the genuine no-signal branch, not the single-module degenerate guard.
 	mi := indexMetrics([]diagnostic.MetricResult{metric("blast_radius", 2, "info", "high")})
 	dim := finalize(boundaryIntegrity(mi, nil, ConfidenceHigh))
 
-	if dim.Value == 100 {
-		t.Errorf("value = 100, encapsulation n/a must not fabricate a perfect score")
-	}
 	if dim.Value != 50 {
 		t.Errorf("value = %d, want 50 (neutral unmeasured baseline)", dim.Value)
 	}
@@ -378,13 +375,44 @@ func TestBoundaryIntegrity_EncapsulationNA(t *testing.T) {
 	}
 	found := false
 	for _, e := range dim.Evidence {
-		if strings.Contains(e, "encapsulation: n/a") && strings.Contains(e, "unmeasured") {
+		if strings.Contains(e, "n/a") && strings.Contains(e, "unmeasured") {
 			found = true
 		}
 	}
 	if !found {
 		t.Errorf("expected explicit unmeasured-baseline note in evidence: %v", dim.Evidence)
 	}
+}
+
+// TestBoundaryIntegrity_CycleFallback asserts the F3 fallback: when encapsulation
+// is structurally n/a (compiler-enforced boundary) the dimension assesses from the
+// import-cycle signal instead of capping at an unconfirmed 50. 0 cycles → a
+// serviceable score at medium confidence (not strong — contract discipline stays
+// unverified); cycles present → poor.
+func TestBoundaryIntegrity_CycleFallback(t *testing.T) {
+	t.Run("0 cycles → serviceable, medium", func(t *testing.T) {
+		mi := indexMetrics([]diagnostic.MetricResult{
+			metric("blast_radius", 2, "info", "high"),
+			metric("cycle", 0, "strong", "high"),
+		})
+		dim := finalize(boundaryIntegrity(mi, nil, ConfidenceHigh))
+		if dim.Value != boundaryCleanNoCycles {
+			t.Errorf("value = %d, want %d (clean, no cycles)", dim.Value, boundaryCleanNoCycles)
+		}
+		if dim.Confidence != ConfidenceMedium {
+			t.Errorf("confidence = %q, want medium (contract discipline unverified)", dim.Confidence)
+		}
+	})
+	t.Run("cycles present → poor", func(t *testing.T) {
+		mi := indexMetrics([]diagnostic.MetricResult{
+			metric("blast_radius", 2, "info", "high"),
+			metric("cycle", 3, "critical", "high"),
+		})
+		dim := finalize(boundaryIntegrity(mi, nil, ConfidenceHigh))
+		if dim.Value != boundaryWithCycles {
+			t.Errorf("value = %d, want %d (cycles cross boundaries)", dim.Value, boundaryWithCycles)
+		}
+	})
 }
 
 // TestArchitectureFitness_NA asserts that when the fitness scan never ran (metric

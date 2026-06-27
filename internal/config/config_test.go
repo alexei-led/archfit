@@ -158,6 +158,42 @@ func TestModuleFor_Deterministic(t *testing.T) {
 	}
 }
 
+// TestModuleFor_MostSpecific guards the catch-all shadowing regression: a broad
+// fallback glob (internal/**) must never shadow a specific module
+// (internal/model/**), even though the catch-all sorts first alphabetically.
+// Resolution is most-specific-match, so the specific stanza wins where it
+// applies and the catch-all only absorbs paths nothing more specific matches.
+func TestModuleFor_MostSpecific(t *testing.T) {
+	const catchAll = "internal" // broad fallback stanza; repeated below
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			catchAll:          {Paths: []string{"internal/**"}},
+			"internal/model":  {Paths: []string{"internal/model/**"}},
+			"internal/engine": {Paths: []string{"internal/engine/**"}},
+		},
+	}
+	mm := cfg.ModuleMapView()
+
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"internal/model/diagnostic/x.go", "internal/model"}, // specific beats catch-all
+		{"internal/engine/run.go", "internal/engine"},        // specific beats catch-all
+		{"internal/arch_test.go", catchAll},                  // only the catch-all matches
+		{"internal/scope/scope.go", catchAll},                // no specific stanza → catch-all
+	}
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			got, ok := mm.ModuleFor(tc.path)
+			if !ok || got != tc.want {
+				t.Errorf("ModuleFor(%q) = %q (ok=%v), want %q", tc.path, got, ok, tc.want)
+			}
+		})
+	}
+}
+
 func TestForScope(t *testing.T) {
 	cfg, err := config.Load(context.Background(), "testdata/valid.yaml")
 	if err != nil {
