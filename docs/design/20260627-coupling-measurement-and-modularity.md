@@ -4,6 +4,59 @@ Status: approved (scope confirmed by user 2026-06-27) · review-driven remediati
 Source: `reports/architecture-review-2026-06-27.md` (Findings F1–F5)
 Implements on branch `fix/coupling-measurement-modularity`.
 
+## Follow-up — F2 shipped via accurate strength hint (branch `fix/coupling-accurate-strength`)
+
+F2 was held in the first PR because the SCIP-on hint was coarse. **Resolved:**
+`enrichEdges` no longer lets SCIP overwrite a Go edge's compiler-grade `go/types`
+hint (SCIP-go collapses imports to a blanket `functional`); SCIP stays the
+strength source for TS/Py/Rust and for Go edges type-info left unresolved. The
+glob-floor + hint-kind refinement (Contract 2) is re-applied on top.
+
+Result on archfit-self (SCIP on): `by_strength` now diverse —
+`contract:8, functional:154, model:177, symmetric:3` (model coupling — shared
+concrete domain types like `Diagnostic`/`Graph`/`Finding` — is now visible, not
+flattened). `coupling_balance` reads **36/poor, 139 critical edges**: model
+coupling (s=3) into the high-volatility core (v=10) at d=4 → balance 2, the book's
+verbatim complexity-zone verdict. This is honest and corroborated (risk_hub #1 =
+`Diagnostic`; blast_radius model/\* 59–71%) — NOT a calibration artifact: the same
+36/poor holds with or without SCIP once the hint is accurate.
+
+### Editorial fix — distributed-monolith label is now distance-gated
+
+The "design improvement" request (wrap `Diagnostic` in a contract) was rejected as
+cargo-cult: the 177 model edges are mostly imports of shared VALUE TYPES
+(`MetricResult`/`Coverage`/`Finding`), not `Diagnostic` sharing; an interface over a
+data aggregate is an anti-pattern; the output contract already exists
+(`SchemaVersion`); and model coupling at low distance is high cohesion (BC's good
+quadrant). The real, in-scope improvement was **dogfooding**: archfit's OWN advisory
+layer was issuing that cargo-cult advice — labeling every critical-band edge
+"distributed-monolith risk → introduce a contract," when per the book (and
+`score_boundary_coupling.go`'s own comment) a distributed monolith is high strength ×
+high **distance** × high volatility.
+
+Fix (editorial only — the balance value/ordinals are untouched, so the honest 36
+stands): a new `ClassifiedEdgeSummary.DistributedMonolith` counts critical edges
+that are ALSO high distance (`coupling.DistanceIsHigh` = different owner / deploy
+unit). The score summary, the value cap, and the per-edge advisory
+(`bcRiskClause`) now name "distributed-monolith risk" only for those; critical
+edges at `cross_module_same_owner` are framed as local high-strength/high-volatility
+coupling whose cascade is cheap.
+
+archfit-self result: **139 critical → 2 distributed-monolith** (e.g.
+`extract/loc → model/diagnostic`: functional × `cross_module_different_owner`
+[code-structure basis] × high). Those 2 are genuine high-strength × high-distance ×
+high-volatility — the book's worst case — and there a contract genuinely helps
+(`cheapest_move: reduce_strength`). The other 137 no longer carry the false label.
+Value stays 36.
+
+Open refinement (not done; maintainer's call): the 2 DM use a **code-structure**
+distance basis, not a real deployment/ownership boundary. "Distributed monolith"
+strictly means separately-deployed-but-coupled, which a single-binary sole-owner
+repo cannot be. Gating DM on `DistanceBasis ∈ {deploy_unit, ownership}` (not the
+code-structure proxy) would report 0 DM for archfit and reframe the 2 as "tight
+coupling across an architectural boundary." Left as a follow-up — code structure is
+a legitimate distance component per the book, so both readings are defensible.
+
 ## source_inputs
 
 - Architecture review (this repo, 2026-06-27): F1 catch-all module shadowing,

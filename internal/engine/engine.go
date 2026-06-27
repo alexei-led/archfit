@@ -461,6 +461,17 @@ func enrichEdges(ctx context.Context, sr ports.SymbolResolver, scipStrength map[
 			prefix := e.To[:len(e.To)-len(toPath)]
 			facts.Edges[i].To = prefix + realPath
 		}
+		// Strength: SCIP refines the edge UNLESS the Go extractor already supplied a
+		// compiler-grade type-info hint. Go strength is derived from go/types — the
+		// actual resolved object (interface→contract, concrete type→model,
+		// func→functional) — so it is ground truth. SCIP-go is a coarser subprocess
+		// re-derivation that collapses package imports to a blanket "functional"; it
+		// must not overwrite the authoritative hint or coupling_balance loses its
+		// strength signal. SCIP remains the strength source for TS/Py/Rust (whose
+		// extractor hints are heuristics) and for Go edges type-info left unresolved.
+		if e.Language == graph.LangGo && e.StrengthHint != "" {
+			continue
+		}
 		if st, found := scipStrength[fromFile+"\x00"+toPath]; found {
 			facts.Edges[i].StrengthHint = st
 		}

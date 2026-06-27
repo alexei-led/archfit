@@ -1,10 +1,86 @@
 package engine
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
+	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/ports"
 )
+
+// TestBCRiskClause_DistanceAware verifies the advisory text only names
+// "distributed-monolith risk" for high-distance critical edges; a low-distance
+// critical edge is framed as local coupling, never distributed-monolith (which
+// would invite a cargo-cult "introduce a contract" fix).
+func TestBCRiskClause_DistanceAware(t *testing.T) {
+	mk := func(d coupling.Distance) coupling.Classification {
+		return coupling.Classification{Distance: d, Severity: coupling.SeverityCritical}
+	}
+	if got := bcRiskClause(mk(coupling.DistanceCrossDeployUnit)); !strings.Contains(got, "distributed-monolith risk") {
+		t.Errorf("high-distance critical: %q, want distributed-monolith risk", got)
+	}
+	got := bcRiskClause(mk(coupling.DistanceCrossModuleSameOwner))
+	if strings.Contains(got, "distributed-monolith risk") {
+		t.Errorf("low-distance critical: %q, must NOT claim distributed-monolith risk", got)
+	}
+	if !strings.Contains(got, "not a distributed monolith") {
+		t.Errorf("low-distance critical: %q, want 'not a distributed monolith' framing", got)
+	}
+}
+
+// TestEnrichEdges_GoTypeInfoHintAuthoritative guards the F2 strength-accuracy
+// fix: SCIP strength must NOT override a Go edge's compiler-grade type-info hint
+// (SCIP-go is coarser), but MUST refine non-Go edges and Go edges with no hint.
+func TestEnrichEdges_GoTypeInfoHintAuthoritative(t *testing.T) {
+	fn := string(coupling.StrengthFunctional)
+	md := string(coupling.StrengthModel)
+	scip := map[string]string{
+		"a.go\x00pkg/b": fn, // would coarsen the Go model hint
+		"c.ts\x00pkg/d": fn, // refines the TS heuristic hint
+		"e.go\x00pkg/f": fn, // fills the empty Go hint
+	}
+	facts := graph.Facts{Edges: []graph.Edge{
+		{From: "file:a.go", To: "pkg:pkg/b", Kind: graph.EdgeKindImports, Language: graph.LangGo, StrengthHint: md},
+		{From: "file:c.ts", To: "pkg:pkg/d", Kind: graph.EdgeKindImports, Language: "typescript", StrengthHint: md},
+		{From: "file:e.go", To: "pkg:pkg/f", Kind: graph.EdgeKindImports, Language: graph.LangGo, StrengthHint: ""},
+	}}
+	enrichEdges(context.Background(), ports.NopSymbolResolver{}, scip, facts)
+
+	want := []string{md, fn, fn}
+	for i, w := range want {
+		if got := facts.Edges[i].StrengthHint; got != w {
+			t.Errorf("edge %d (%s): StrengthHint = %q, want %q", i, facts.Edges[i].Language, got, w)
+		}
+	}
+}
+
+// TestBuildClassifiedEdgeSummary_DistributedMonolith verifies that the DM counter
+// counts only critical-band edges at HIGH distance (different owner / deploy unit).
+// A critical edge at cross_module_same_owner is local coupling, not a distributed
+// monolith, and must not be counted.
+func TestBuildClassifiedEdgeSummary_DistributedMonolith(t *testing.T) {
+	key := func(from, to, kind string) string { return from + "\x00" + to + "\x00" + kind }
+	crit := coupling.EdgeScore{Scored: true, Balance: 2, Band: coupling.SeverityCritical}
+	idx := coupling.Index{
+		// critical + high distance (different owner) → distributed-monolith
+		key("a", "b", "import"): {Distance: coupling.DistanceCrossModuleDiffOwner, Strength: coupling.StrengthFunctional, Volatility: coupling.VolatilityHigh, Score: crit},
+		// critical + high distance (deploy unit) → distributed-monolith
+		key("a", "c", "import"): {Distance: coupling.DistanceCrossDeployUnit, Strength: coupling.StrengthIntrusive, Volatility: coupling.VolatilityHigh, Score: crit},
+		// critical + LOW distance (same owner) → NOT distributed-monolith (local)
+		key("a", "d", "import"): {Distance: coupling.DistanceCrossModuleSameOwner, Strength: coupling.StrengthModel, Volatility: coupling.VolatilityHigh, Score: crit},
+		// non-critical + high distance → NOT distributed-monolith
+		key("a", "e", "import"): {Distance: coupling.DistanceCrossModuleDiffOwner, Strength: coupling.StrengthContract, Volatility: coupling.VolatilityLow, Score: coupling.EdgeScore{Scored: true, Balance: 8, Band: coupling.SeverityLow}},
+	}
+	s := buildClassifiedEdgeSummary(idx)
+	if s.DistributedMonolith != 2 {
+		t.Errorf("DistributedMonolith = %d, want 2 (critical AND high-distance only)", s.DistributedMonolith)
+	}
+	if got := s.BySeverity[string(coupling.SeverityCritical)]; got != 3 {
+		t.Errorf("critical band = %d, want 3 (all three critical edges counted)", got)
+	}
+}
 
 // TestBuildClassifiedEdgeSummary verifies the aggregate distribution counts and
 // MeanBalance computed from a coupling.Index.

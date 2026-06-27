@@ -150,8 +150,12 @@ func strengthIsHigh(s Strength) bool {
 	return s == StrengthFunctional || s == StrengthSymmetric || s == StrengthIntrusive
 }
 
-// distanceIsHigh returns true for distances that represent a large ownership gap.
-func distanceIsHigh(d Distance) bool {
+// DistanceIsHigh returns true for distances that represent a large socio-technical
+// gap — a different owner or a separate deployment unit. These are the only
+// distances at which tight coupling is a genuine "distributed monolith"; coupling
+// at cross_module_same_owner (a single owner/binary) is local, and its cascade is
+// cheap, so it must not be framed as distributed-monolith risk.
+func DistanceIsHigh(d Distance) bool {
 	return d == DistanceCrossModuleDiffOwner || d == DistanceCrossDeployUnit
 }
 
@@ -183,7 +187,7 @@ func BalanceResult(c Classification) Severity {
 	}
 
 	sHigh := strengthIsHigh(c.Strength)
-	dHigh := distanceIsHigh(c.Distance)
+	dHigh := DistanceIsHigh(c.Distance)
 
 	if sHigh == dHigh {
 		if sHigh {

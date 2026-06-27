@@ -580,7 +580,8 @@ func keys(idx coupling.Index) []string {
 }
 
 // TestRun_ApprovedLabelPrecedence verifies the strength precedence chain:
-// config globs > approved pinned labels > extractor hint.
+// internal glob (intrusive) is authoritative; a public glob is a not-intrusive
+// floor whose KIND is resolved by approved label > extractor hint > contract.
 const (
 	globPkgA    = "pkg/a/**"
 	globPkgB    = "pkg/b/**"
@@ -633,7 +634,12 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 		}
 	})
 
-	t.Run("config glob beats label", func(t *testing.T) {
+	t.Run("approved label refines public-glob kind", func(t *testing.T) {
+		// A public glob is a not-intrusive floor (contract); an approved human label
+		// is the most authoritative statement of the public-coupling KIND, so it
+		// refines the floor to model — beating the contract default and the
+		// functional hint. (Previously the glob was treated as authoritative contract,
+		// which masked the real coupling strength — the bug F2 fixes.)
 		withGlobs := map[string]config.ModuleDef{
 			"a": {Paths: []string{globPkgA}},
 			"b": {Paths: []string{globPkgB}, Public: []string{globPkgB}},
@@ -642,8 +648,21 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 			Modules:        withGlobs,
 			ApprovedLabels: map[string]string{"a\x00b": pinnedModel},
 		})
-		if got := idx[key].Strength; got != coupling.StrengthContract {
-			t.Errorf("strength = %q, want contract (glob wins over label)", got)
+		if got := idx[key].Strength; got != coupling.StrengthModel {
+			t.Errorf("strength = %q, want model (approved label refines public-glob floor)", got)
+		}
+	})
+
+	t.Run("public glob without label refines to hint kind", func(t *testing.T) {
+		// No human label: the public-glob contract floor is refined to the hint's
+		// kind (functional here), not left at the weakest contract default.
+		withGlobs := map[string]config.ModuleDef{
+			"a": {Paths: []string{globPkgA}},
+			"b": {Paths: []string{globPkgB}, Public: []string{globPkgB}},
+		}
+		idx := classify.Run(g, config.ClassifyConfig{Modules: withGlobs})
+		if got := idx[key].Strength; got != coupling.StrengthFunctional {
+			t.Errorf("strength = %q, want functional (hint refines public-glob floor)", got)
 		}
 	})
 
@@ -656,6 +675,58 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 			t.Errorf("strength = %q, want functional (label is directional)", got)
 		}
 	})
+}
+
+// TestRun_PublicGlobFloorRefinement is the F2 regression guard: a public-glob
+// match is a not-intrusive floor whose KIND is the hint's public-coupling kind,
+// while an internal glob stays authoritatively intrusive and a public floor is
+// never lowered to intrusive by a hint.
+func TestRun_PublicGlobFloorRefinement(t *testing.T) {
+	build := func(hint string) (*graph.Graph, string) {
+		e := graph.Edge{
+			From: "file:pkg/a/a.go", To: "file:pkg/b/b.go",
+			Kind: graph.EdgeKindImports, StrengthHint: hint,
+		}
+		g := graph.Build([]graph.Facts{{
+			Language: "go",
+			Nodes: []graph.Node{
+				{Kind: graph.NodeKindFile, Path: "pkg/a/a.go"},
+				{Kind: graph.NodeKindFile, Path: "pkg/b/b.go"},
+			},
+			Edges: []graph.Edge{e},
+		}})
+		return g, e.From + "\x00" + e.To + "\x00" + string(e.Kind)
+	}
+	publicB := map[string]config.ModuleDef{
+		"a": {Paths: []string{globPkgA}},
+		"b": {Paths: []string{globPkgB}, Public: []string{globPkgB}},
+	}
+	internalB := map[string]config.ModuleDef{
+		"a": {Paths: []string{globPkgA}},
+		"b": {Paths: []string{globPkgB}, Internal: []string{globPkgB}},
+	}
+	cases := []struct {
+		name    string
+		modules map[string]config.ModuleDef
+		hint    string
+		want    coupling.Strength
+	}{
+		{"public + model hint → model", publicB, string(coupling.StrengthModel), coupling.StrengthModel},
+		{"public + contract hint → contract", publicB, string(coupling.StrengthContract), coupling.StrengthContract},
+		{"public + functional hint → functional", publicB, hintFunctional, coupling.StrengthFunctional},
+		{"public + no hint → contract floor", publicB, "", coupling.StrengthContract},
+		{"public + intrusive hint → contract (floor not lowered)", publicB, hintIntrusive, coupling.StrengthContract},
+		{"internal glob → intrusive (authoritative)", internalB, hintFunctional, coupling.StrengthIntrusive},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g, key := build(tc.hint)
+			idx := classify.Run(g, config.ClassifyConfig{Modules: tc.modules})
+			if got := idx[key].Strength; got != tc.want {
+				t.Errorf("strength = %q, want %q", got, tc.want)
+			}
+		})
+	}
 }
 
 // TestRun_ContractRecommended verifies the generic-subdomain contract advisory:

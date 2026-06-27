@@ -191,6 +191,12 @@ func buildClassifiedEdgeSummary(idx coupling.Index) *diagnostic.ClassifiedEdgeSu
 			s.Scored++
 			balanceSum += cl.Score.Balance
 			s.BySeverity[string(cl.Score.Band)]++
+			// Genuine distributed-monolith: critical band AND high distance (diff
+			// owner / deploy unit). A critical edge at cross_module_same_owner is
+			// local coupling, not a distributed monolith — see ClassifiedEdgeSummary.
+			if cl.Score.Band == coupling.SeverityCritical && coupling.DistanceIsHigh(cl.Distance) {
+				s.DistributedMonolith++
+			}
 		} else {
 			s.Abstained++
 			s.BySeverity["abstained"]++
