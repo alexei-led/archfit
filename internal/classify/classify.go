@@ -220,13 +220,17 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 	fromPath := pathFromID(e.From)
 	toPath := pathFromID(e.To)
 
-	// Precedence: config public/internal globs are authoritative; an APPROVED
-	// pinned label for the edge's module pair refines what the globs leave
-	// undecided; the extractor-supplied language-aware hint (e.g. the blanket
-	// "functional" for SCIP call edges) is the last resort before unknown.
+	// An internal-glob match is authoritative intrusive. A public-glob match is a
+	// NOT-INTRUSIVE floor (str == contract): the edge goes through a declared public
+	// surface, but the glob alone cannot say WHICH kind of public coupling it is —
+	// a published interface (contract), a shared concrete type (model), or a function
+	// (functional). For a public (contract) or unknown edge the KIND is resolved by
+	// authority: an approved human label first (a reviewer's verdict beats a tool
+	// guess), then the symbol-level hint, then the contract default. An intrusive or
+	// human-pinned classification is never refined.
 	str := classifyStrength(toPath, mi)
 	fromPin := false
-	if str == coupling.StrengthUnknown && len(c.ApprovedLabels) > 0 {
+	if (str == coupling.StrengthContract || str == coupling.StrengthUnknown) && len(c.ApprovedLabels) > 0 {
 		if fromMod, okF := mi.moduleFor(fromPath); okF {
 			if toMod, okT := mi.moduleFor(toPath); okT {
 				if pinned, ok := c.ApprovedLabels[fromMod+"\x00"+toMod]; ok {
@@ -236,6 +240,17 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 			}
 		}
 	}
+	// Refine a public-glob contract floor to the hint's public-coupling kind when no
+	// human label pinned it. This is what makes coupling_balance sensitive to
+	// integration strength instead of reading every public edge as the weakest
+	// (contract) kind. The hint can only raise the kind among the public kinds; it
+	// never lowers a public edge to intrusive (the glob floor).
+	if !fromPin && str == coupling.StrengthContract {
+		if k := strengthFromHint(e.StrengthHint); isPublicKind(k) {
+			str = k
+		}
+	}
+	// Unknown (no glob, no label) falls back to the hint.
 	if str == coupling.StrengthUnknown {
 		str = strengthFromHint(e.StrengthHint)
 	}
@@ -369,6 +384,21 @@ func classifyStrength(toPath string, mi moduleIndex) coupling.Strength {
 		}
 	}
 	return coupling.StrengthUnknown
+}
+
+// isPublicKind reports whether a strength is one of the public-coupling kinds —
+// contract (published interface), model (shared concrete type), or functional
+// (function call). These are the kinds a public-glob edge may legitimately refine
+// to. Intrusive (internals reach), symmetric (clone-derived), and unknown are
+// excluded: a public-glob floor must never be lowered to intrusive, and the
+// symmetric upgrade is applied separately from clone evidence.
+func isPublicKind(s coupling.Strength) bool {
+	switch s {
+	case coupling.StrengthContract, coupling.StrengthModel, coupling.StrengthFunctional:
+		return true
+	default:
+		return false
+	}
 }
 
 // strengthFromHint maps an extractor's strength hint to a coupling.Strength.

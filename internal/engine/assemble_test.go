@@ -1,10 +1,39 @@
 package engine
 
 import (
+	"context"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
+	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/ports"
 )
+
+// TestEnrichEdges_GoTypeInfoHintAuthoritative guards the F2 strength-accuracy
+// fix: SCIP strength must NOT override a Go edge's compiler-grade type-info hint
+// (SCIP-go is coarser), but MUST refine non-Go edges and Go edges with no hint.
+func TestEnrichEdges_GoTypeInfoHintAuthoritative(t *testing.T) {
+	fn := string(coupling.StrengthFunctional)
+	md := string(coupling.StrengthModel)
+	scip := map[string]string{
+		"a.go\x00pkg/b": fn, // would coarsen the Go model hint
+		"c.ts\x00pkg/d": fn, // refines the TS heuristic hint
+		"e.go\x00pkg/f": fn, // fills the empty Go hint
+	}
+	facts := graph.Facts{Edges: []graph.Edge{
+		{From: "file:a.go", To: "pkg:pkg/b", Kind: graph.EdgeKindImports, Language: graph.LangGo, StrengthHint: md},
+		{From: "file:c.ts", To: "pkg:pkg/d", Kind: graph.EdgeKindImports, Language: "typescript", StrengthHint: md},
+		{From: "file:e.go", To: "pkg:pkg/f", Kind: graph.EdgeKindImports, Language: graph.LangGo, StrengthHint: ""},
+	}}
+	enrichEdges(context.Background(), ports.NopSymbolResolver{}, scip, facts)
+
+	want := []string{md, fn, fn}
+	for i, w := range want {
+		if got := facts.Edges[i].StrengthHint; got != w {
+			t.Errorf("edge %d (%s): StrengthHint = %q, want %q", i, facts.Edges[i].Language, got, w)
+		}
+	}
+}
 
 // TestBuildClassifiedEdgeSummary verifies the aggregate distribution counts and
 // MeanBalance computed from a coupling.Index.

@@ -74,9 +74,17 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   caps `scip`, `clones` (jscpd), and `complexity` subprocess runs. On timeout the
   result is dropped; dependent metrics report `n/a (timed out)`; the run
   continues on the verdict from the remaining analyzers.
-- **Go edge strength** comes from `go/packages` type info (`NeedTypesInfo`,
-  mirroring the `scip_reader` BC mapping) when SCIP is off; SCIP `enrichEdges`
-  overrides it when on. Unclassified edges stay `unknown` (abstain-not-fake).
+- **Go edge strength** comes from `go/packages` type info (`NeedTypesInfo`): the
+  resolved object kind (interface→contract, concrete type→model, func→functional)
+  is compiler-grade ground truth, so SCIP does **not** override it — `enrichEdges`
+  keeps the Go type-info hint and uses SCIP strength only where type-info is absent
+  (empty hint). SCIP-go is a coarser subprocess re-derivation that collapses
+  imports to a blanket `functional`; letting it override flattened
+  `coupling_balance`'s strength signal. For TS/Py/Rust (heuristic extractor hints)
+  SCIP **does** override — it is their precision upgrade. Unclassified edges stay
+  `unknown` (abstain-not-fake). A public-glob match is a not-intrusive _floor_
+  whose kind the hint refines (classify.go); an internal-glob match is
+  authoritative intrusive.
 - Parse config once into typed views; pass a package its view, not the whole config.
 - LLM SDKs (`anthropic-sdk-go`, `openai-go`) are off-gate: only `enrich`,
   `autopilot`, `explain`, and `review` touch them, never `check`. Enforced

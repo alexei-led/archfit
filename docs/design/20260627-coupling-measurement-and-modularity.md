@@ -4,6 +4,30 @@ Status: approved (scope confirmed by user 2026-06-27) · review-driven remediati
 Source: `reports/architecture-review-2026-06-27.md` (Findings F1–F5)
 Implements on branch `fix/coupling-measurement-modularity`.
 
+## Follow-up — F2 shipped via accurate strength hint (branch `fix/coupling-accurate-strength`)
+
+F2 was held in the first PR because the SCIP-on hint was coarse. **Resolved:**
+`enrichEdges` no longer lets SCIP overwrite a Go edge's compiler-grade `go/types`
+hint (SCIP-go collapses imports to a blanket `functional`); SCIP stays the
+strength source for TS/Py/Rust and for Go edges type-info left unresolved. The
+glob-floor + hint-kind refinement (Contract 2) is re-applied on top.
+
+Result on archfit-self (SCIP on): `by_strength` now diverse —
+`contract:8, functional:154, model:177, symmetric:3` (model coupling — shared
+concrete domain types like `Diagnostic`/`Graph`/`Finding` — is now visible, not
+flattened). `coupling_balance` reads **36/poor, 139 critical edges**: model
+coupling (s=3) into the high-volatility core (v=10) at d=4 → balance 2, the book's
+verbatim complexity-zone verdict. This is honest and corroborated (risk_hub #1 =
+`Diagnostic`; blast_radius model/\* 59–71%) — NOT a calibration artifact: the same
+36/poor holds with or without SCIP once the hint is accurate.
+
+Caveat (cosmetic, not fixed here): the scorecard summary says "distributed-monolith
+risk" whenever critical edges exist; for a single-binary monolith the accurate
+reading is "high-strength coupling concentrated on a volatile core." The book's
+remedy is the design lever, not a metric change: lower the core's volatility or
+wrap `Diagnostic` in a contract (drops those edges to s=1 → balance 4 → high, not
+critical). Tracked as a design choice for the maintainer, not a tool bug.
+
 ## source_inputs
 
 - Architecture review (this repo, 2026-06-27): F1 catch-all module shadowing,
