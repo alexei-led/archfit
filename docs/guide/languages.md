@@ -52,8 +52,11 @@ archfit loads each `use` directory that falls inside `--root` and is not
 exclusion-matched, then merges the graphs. When ≥2 members are loaded, archfit
 auto-registers each member as a synthetic module (mirroring the Rust
 `AugmentModulesFromGraph` pattern, gated on ≥2 to leave single-module repos and
-archfit's own self-scan byte-identical). Single surviving members collapse to the
-existing single-module path with no change in output.
+archfit's own self-scan byte-identical). Members whose `RelDir` is `"."` (the
+workspace root itself) are skipped during auto-registration — a workspace root
+without its own `go.mod` has no module identity and archfit treats it as a loader
+entry point only. Single surviving members collapse to the existing single-module
+path with no change in output.
 
 **go.work member scoping:** use `tools.go.modules` to restrict which workspace
 members are loaded (see

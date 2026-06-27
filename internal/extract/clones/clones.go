@@ -78,11 +78,7 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 	// Apply per-analyzer watchdog. The outer timeout caps total clone-detection
 	// time (including jscpd startup + scan). On deadline: return n/a (timed out)
 	// and let the overall run continue.
-	to := timeout
-	if to <= 0 {
-		to = defaultTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, to)
+	ctx, cancel := toolrun.WithWatchdog(ctx, timeout, defaultTimeout)
 	defer cancel()
 
 	tmp, err := os.MkdirTemp("", "archfit-clones-")

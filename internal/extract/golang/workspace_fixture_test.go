@@ -250,16 +250,10 @@ func TestWorkspaceFixture_Regression_SingleLoadAtRoot(t *testing.T) {
 			allSyntheticOrEmpty = true
 		}
 	}
-	// Confirm: no cross-module StrengthHint edge in the old output.
-	for _, pkg := range oldPkgs {
-		if pkg.TypesInfo == nil {
-			continue
-		}
-		// If TypesInfo is somehow populated, there must be no cross-module hint edge
-		// (because the old code had a single-module predicate that excludes
-		// cross-member references). We assert this by checking we never emit one.
-		// (TypesInfo being nil for synthetic packages is the common case.)
-	}
+	// Confirm the old approach returned only synthetic/empty packages. When TypesInfo
+	// is nil for every package (the common case for a workspace root with no go.mod),
+	// there is no basis for emitting cross-module StrengthHints — the allSyntheticOrEmpty
+	// check above already captures this invariant.
 
 	t.Logf("old single-load at workspace root: pkgs=%d, allSyntheticOrEmpty=%v", len(oldPkgs), allSyntheticOrEmpty)
 	if !allSyntheticOrEmpty {

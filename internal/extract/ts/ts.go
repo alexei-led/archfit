@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -111,7 +112,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	// Omitted when SubtreePrefix is empty to preserve byte-identical output on
 	// the no-subtree path.
 	if s.SubtreePrefix != "" {
-		args = append(args, "--include-only", "^"+filepath.ToSlash(s.SubtreePrefix))
+		args = append(args, "--include-only", "^"+regexp.QuoteMeta(filepath.ToSlash(s.SubtreePrefix)))
 	}
 	// Resolve tsconfig: an explicit config wins; otherwise auto-detect one at
 	// ScanRoot. Without --ts-config, dependency-cruiser cannot resolve tsconfig
@@ -184,6 +185,21 @@ func (e *Extractor) resolveTSConfig(scanRoot, workDir string) string {
 				return filepath.ToSlash(rel)
 			}
 			return full // absolute fallback
+		}
+	}
+	// Subtree mode: workDir is the git root, which may hold a root-level tsconfig
+	// that covers all packages. Fall back to searching workDir so path-alias edges
+	// (tsconfig.paths/baseUrl) are not silently dropped from coupling_balance.
+	if workDir != scanRoot {
+		for _, name := range tsConfigNames {
+			full := filepath.Join(workDir, name)
+			if _, err := os.Stat(full); err == nil {
+				rel, err := filepath.Rel(workDir, full)
+				if err == nil {
+					return filepath.ToSlash(rel)
+				}
+				return full // absolute fallback
+			}
 		}
 	}
 	return ""

@@ -549,7 +549,8 @@ rules:
   # Example: warn when any module's exported API exceeds a generous ceiling.
   # public_api_max is global (no per-module scoping); the threshold must exceed
   # the largest module count. archfit's catch-all "internal" module currently
-  # resolves ~1271 declarations; ceiling tracks current surface + headroom.
+  # resolves ~1400 exported declarations (verify with `make archfit-report`);
+  # ceiling was bumped from 1500→1600 (Task 17) to give headroom as the surface grows.
   # In practice, set max per module after splitting the catch-all stanza.
   - id: syntax_api_size_ceiling
     type: public_api_max

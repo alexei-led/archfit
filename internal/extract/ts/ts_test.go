@@ -333,6 +333,12 @@ func TestExtract_IncludeOnly(t *testing.T) {
 			subtreePrefix:   "",
 			wantIncludeOnly: false,
 		},
+		{
+			name:            "subtree with metachar: dot is escaped",
+			subtreePrefix:   "packages/my.app",
+			wantIncludeOnly: true,
+			wantPattern:     "^packages/my\\.app",
+		},
 	}
 
 	for _, tt := range tests {

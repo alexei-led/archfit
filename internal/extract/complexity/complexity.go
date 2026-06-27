@@ -81,11 +81,7 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 	}
 
 	// Apply per-analyzer watchdog before any subprocess call.
-	to := timeout
-	if to <= 0 {
-		to = defaultTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, to)
+	ctx, cancel := toolrun.WithWatchdog(ctx, timeout, defaultTimeout)
 	defer cancel()
 
 	var funcs []signal.ComplexityFunc

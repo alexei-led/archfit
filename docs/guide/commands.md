@@ -117,10 +117,12 @@ are no longer stderr-only.
 Two distinct `n/a` reasons appear in coverage and metric output:
 
 - **`n/a (no history)`** — the subtree (after `--root` scoping) has fewer than 2
-  commits visible to `git log`. History-fed dimensions (`change_amplification`,
-  `hidden_coupling`, `change_coupling`, `change_locality`) report `n/a` rather
-  than fabricating a number from a 1-commit checkout artifact. Add `git fetch
---unshallow` in CI or use a full clone.
+  commits visible to `git log`, or `--root` points at a non-git directory.
+  History-fed dimensions (`change_amplification`, `hidden_coupling`,
+  `change_coupling`, `change_locality`) report `n/a` rather than fabricating a
+  number from a 1-commit checkout artifact. For shallow clones: add `git fetch
+--unshallow` in CI or use a full clone. For non-git trees: history dimensions
+  are always `n/a`; all other metrics still run.
 - **`n/a (timed out)`** — a per-analyzer watchdog fired before the subprocess
   finished. The tool result is dropped cleanly; the run continues and exits with
   the verdict from the remaining analyzers. Increase the per-tool timeout or

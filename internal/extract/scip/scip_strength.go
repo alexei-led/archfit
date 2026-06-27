@@ -155,14 +155,10 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 	// caps the full index+read pipeline. Per-subprocess timeouts (indexTimeout,
 	// readerTimeout) still apply inside runner.Run; this guard catches pathological
 	// hangs where a subprocess ignores its own limit.
-	to := a.timeout
-	if to <= 0 {
-		to = defaultTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, to)
+	ctx, cancel := toolrun.WithWatchdog(ctx, a.timeout, defaultTimeout)
 	defer cancel()
 
-	timedOut := diagnostic.Coverage{Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}
+	timedOut := diagnostic.Coverage{Tool: indexer, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}
 
 	tmp, err := os.MkdirTemp("", "archfit-scip-")
 	if err != nil {

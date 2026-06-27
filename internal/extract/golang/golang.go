@@ -198,10 +198,14 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	// stripImportPath converts a Go import path to a ScanRoot-relative path.
 	// First-party imports (module path ∈ member set) are prefixed with their
 	// member's relative dir; external deps are returned unchanged.
-	// Single-member case (relDir=".") is identical to the old stripModPath.
+	// Single-member root package (relDir="."): ScanRoot-relative path is "" (node is
+	// the scan root itself). Identical to the old stripModPath root-module behavior.
 	stripImportPath := func(importPath string) string {
 		for _, m := range modEntries {
 			if importPath == m.path {
+				if m.relDir == "." {
+					return "" // root member's root package: ScanRoot-relative path is ""
+				}
 				return m.relDir
 			}
 			if strings.HasPrefix(importPath, m.path+"/") {

@@ -255,8 +255,9 @@ tools:
     timeout: 3m
 ```
 
-Zero or absent means the built-in package default (typically 5–15 minutes). Set
-an explicit timeout when a generated or very large file causes a hang.
+Zero or absent means the built-in package default (`scip`: 20 minutes, `clones`:
+5 minutes, `complexity`: 5 minutes). Set an explicit timeout when a generated or
+very large file causes a hang.
 
 ### `tools.<x>.gate` (coverage gate)
 

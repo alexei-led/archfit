@@ -182,7 +182,7 @@ func FilterMembers(members []string, scanRoot string, include, exclude []string)
 			continue
 		}
 		rel = filepath.ToSlash(rel)
-		if !memberMatchesInclude(rel, include) || memberMatchesExclude(rel, exclude) {
+		if !memberMatchesInclude(rel, include) || isMemberExcluded(rel, exclude) {
 			continue
 		}
 		out = append(out, abs)
@@ -197,16 +197,6 @@ func memberMatchesInclude(relPath string, include []string) bool {
 		return true
 	}
 	for _, pat := range include {
-		if matched, _ := doublestar.Match(pat, relPath); matched {
-			return true
-		}
-	}
-	return false
-}
-
-// memberMatchesExclude reports whether relPath matches any exclude glob.
-func memberMatchesExclude(relPath string, exclude []string) bool {
-	for _, pat := range exclude {
 		if matched, _ := doublestar.Match(pat, relPath); matched {
 			return true
 		}

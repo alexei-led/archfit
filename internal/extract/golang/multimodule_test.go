@@ -229,15 +229,12 @@ import _ "example.com/broken/notexist"
 	ext := goextract.New(config.ExtractConfig{})
 	_, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
 	if err != nil {
-		// Some load configurations return a fatal error; that is acceptable.
-		t.Logf("Extract returned error (acceptable for broken module): %v", err)
-		return
+		t.Skipf("Extract returned fatal error (platform-dependent, skip): %v", err)
 	}
 
 	// With a missing local import the package is ill-typed → unresolved>0 → "partial".
-	// It must NOT be "absent" (we did see main.go) or "ok" (there is an error).
-	if cov.Status == "absent" {
-		t.Errorf("status = %q, want partial (files were seen)", cov.Status)
+	if cov.Status != "partial" {
+		t.Errorf("status = %q, want %q (files were seen but type-checking failed)", cov.Status, "partial")
 	}
 }
 

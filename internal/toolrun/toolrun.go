@@ -229,6 +229,22 @@ func (r *ToolRunner) Stream(ctx context.Context, cmd ToolCmd, consume func(io.Re
 	return out, nil
 }
 
+// WithWatchdog returns a derived context that is cancelled after the given
+// timeout. If timeout is zero or negative, def is used instead. The caller
+// must call the returned cancel function to release resources.
+//
+// Usage:
+//
+//	ctx, cancel := toolrun.WithWatchdog(ctx, cfg.Timeout, defaultTimeout)
+//	defer cancel()
+func WithWatchdog(ctx context.Context, timeout, def time.Duration) (context.Context, context.CancelFunc) {
+	to := timeout
+	if to <= 0 {
+		to = def
+	}
+	return context.WithTimeout(ctx, to)
+}
+
 func scrubGitRepoEnv(env []string) []string {
 	blocked := map[string]bool{
 		"GIT_DIR":                          true,
