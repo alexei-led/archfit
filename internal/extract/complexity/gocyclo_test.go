@@ -162,6 +162,26 @@ func TestParseGocycloOutput_PathNormalised(t *testing.T) {
 	}
 }
 
+// TestParseGocycloLine_SkipsModuleCache is the bug-1 regression: functions from
+// the Go module cache (<root>/pkg/mod) must be dropped (ok=false) so cache files
+// like interp/ops.go (CCN 214) never appear as first-party complexity, while a
+// similarly-named pkg/models path must NOT be over-matched.
+func TestParseGocycloLine_SkipsModuleCache(t *testing.T) {
+	root := testRoot
+	cache := root + "/pkg/mod/golang.org/x/tools@v0.42.0/interp/ops.go:340:1"
+	if _, ok := parseGocycloLine("214 interp binop "+cache, root); ok {
+		t.Error("parseGocycloLine must return ok=false for a pkg/mod cache path")
+	}
+	models := root + "/pkg/models/user.go:5:1"
+	f, ok := parseGocycloLine("3 models GetUser "+models, root)
+	if !ok {
+		t.Fatal("parseGocycloLine must return ok=true for pkg/models (not a cache path)")
+	}
+	if f.File != "pkg/models/user.go" {
+		t.Errorf("File = %q, want %q", f.File, "pkg/models/user.go")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // runGocyclo
 // ---------------------------------------------------------------------------

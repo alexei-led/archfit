@@ -44,6 +44,12 @@ func Run(root string) (map[string]int, diagnostic.Coverage, error) {
 			if strings.HasPrefix(name, ".") || skipDirs[name] {
 				return filepath.SkipDir
 			}
+			// Skip the Go module cache (<root>/pkg/mod): third-party deps, not
+			// first-party source. Mirrors fitness.skipModuleCacheAndTestdata; the
+			// exact rel-path match never collides with pkg/model or pkg/modules.
+			if rel, relErr := filepath.Rel(root, path); relErr == nil && rel == filepath.Join("pkg", "mod") {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !sourceExts[filepath.Ext(name)] || isTestFile(name) {

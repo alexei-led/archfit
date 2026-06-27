@@ -3,6 +3,7 @@ package loc
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -174,5 +175,32 @@ func TestRun_EmptyRoot(t *testing.T) {
 	}
 	if cov.FilesSeen != 0 {
 		t.Errorf("FilesSeen = %d, want 0", cov.FilesSeen)
+	}
+}
+
+// TestRun_SkipsGoModuleCache is the bug-1 regression: a Go module cache
+// (<root>/pkg/mod) inside a repo must not be counted as first-party source (its
+// 18k-LOC stdlib files otherwise dominate file_structural_weight), while
+// similarly-named sibling dirs (pkg/api, pkg/models) must still be counted.
+func TestRun_SkipsGoModuleCache(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "pkg/mod/golang.org/x/tools@v0.42.0/manifest.go", "package stdlib\n\nvar M = 1\n")
+	writeFile(t, root, "pkg/api/api.go", "package api\n\nfunc A() {}\n")
+	writeFile(t, root, "pkg/models/user.go", "package models\n\ntype User struct{}\n")
+
+	out, _, err := Run(root)
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	for rel := range out {
+		if strings.HasPrefix(rel, "pkg/mod/") {
+			t.Errorf("module cache file must not be counted: %s", rel)
+		}
+	}
+	if _, ok := out["pkg/api/api.go"]; !ok {
+		t.Error("real source pkg/api/api.go must be counted")
+	}
+	if _, ok := out["pkg/models/user.go"]; !ok {
+		t.Error("pkg/models/user.go must not be over-excluded by the pkg/mod skip")
 	}
 }

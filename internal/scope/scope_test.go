@@ -6,6 +6,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/bmatcuk/doublestar/v4"
+
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/scope"
 )
@@ -391,6 +393,25 @@ func TestMergeExclusions(t *testing.T) {
 		gotExact := scope.MergeExclusions([]string{"!**/testdata/**"})
 		if slices.Contains(gotExact, "**/testdata/**") {
 			t.Errorf("!**/testdata/** should remove the testdata default; got %v", gotExact)
+		}
+	})
+
+	t.Run("go module cache excluded by default", func(t *testing.T) {
+		// Regression: a Go module cache (pkg/mod) inside a non-Go repo must not be
+		// walked — its 18k-LOC stdlib files otherwise pollute file_structural_weight
+		// and complexity. The glob must match at the root and nested, and must NOT
+		// over-match a legitimately-named source dir like pkg/models.
+		const pkgModGlob = "**/pkg/mod/**"
+		if !slices.Contains(scope.MergeExclusions(nil), pkgModGlob) {
+			t.Fatalf("pkg/mod glob must be in DefaultExclusions; got %v", scope.MergeExclusions(nil))
+		}
+		for _, p := range []string{"pkg/mod/golang.org/x/tools/foo.go", "a/b/pkg/mod/x.go"} {
+			if ok, _ := doublestar.Match(pkgModGlob, p); !ok {
+				t.Errorf("pkg/mod glob should match %q", p)
+			}
+		}
+		if ok, _ := doublestar.Match(pkgModGlob, "pkg/models/user.go"); ok {
+			t.Error("pkg/mod glob must not over-match pkg/models/")
 		}
 	})
 }
