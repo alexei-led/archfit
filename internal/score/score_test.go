@@ -698,9 +698,23 @@ func TestCouplingBalance_Distribution(t *testing.T) {
 			wantConf:   ConfidenceHigh,
 		},
 		{
-			// Pervasive critical (≥5% of scored+abstained) → cap at 40.
-			name:       "pervasive critical → cap at 40",
+			// Critical at LOW distance (no distributed-monolith) → cap at 60, not 40:
+			// local high-strength/high-volatility coupling is poor balance but its
+			// cascade is cheap (one owner/binary), so it is not pervasive-DM.
+			name:       "low-distance critical → cap at 60 (not distributed-monolith)",
 			sum:        summary(20, 0, 7.0, map[string]int{sevLow: 19, sevCritical: 1}),
+			wantMinVal: 41, // cap-to-40 must NOT apply
+			wantMaxVal: 60, // cap-to-60 (any critical) does
+			wantConf:   ConfidenceHigh,
+		},
+		{
+			// Pervasive distributed-monolith (critical AND high-distance ≥5%) → cap 40.
+			name: "pervasive distributed-monolith → cap at 40",
+			sum: func() *diagnostic.ClassifiedEdgeSummary {
+				s := summary(20, 0, 7.0, map[string]int{sevLow: 18, sevCritical: 2})
+				s.DistributedMonolith = 2 // 10% ≥ 5% threshold
+				return s
+			}(),
 			wantMaxVal: 40,
 			wantConf:   ConfidenceHigh,
 		},
@@ -770,15 +784,15 @@ func TestCouplingBalance_Distribution_AdvisoryTailIndependent(t *testing.T) {
 	if got.Value > 60 {
 		t.Errorf("critical edge should cap at 60, got %d", got.Value)
 	}
-	// Evidence must mention worst-case count from the summary's BySeverity.
+	// Evidence must mention the critical-band count from the summary's BySeverity.
 	foundWorst := false
 	for _, ev := range got.Evidence {
-		if strings.Contains(ev, "worst-case (critical band) edges: 1") {
+		if strings.Contains(ev, "critical-band edges: 1") {
 			foundWorst = true
 		}
 	}
 	if !foundWorst {
-		t.Errorf("evidence missing worst-case critical count: %v", got.Evidence)
+		t.Errorf("evidence missing critical-band count: %v", got.Evidence)
 	}
 }
 

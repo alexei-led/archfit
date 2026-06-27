@@ -245,19 +245,25 @@ func bcAdvisoryWhy(cl coupling.Classification) string {
 	return "balanced coupling: " + string(cl.Strength) + " integration strength" +
 		" × " + string(cl.Distance) + " distance" +
 		" × " + string(cl.Volatility) + " volatility" +
-		" → " + string(cl.Severity) + " severity (" + bcRiskClause(cl.Severity) + ")"
+		" → " + string(cl.Severity) + " severity (" + bcRiskClause(cl) + ")"
 }
 
-// bcRiskClause names the Balanced Coupling risk for an advisory severity in Vlad
-// Khononov's vocabulary. The worst case (critical = high strength + high distance +
-// high volatility) is cascading changes across a knowledge boundary — a distributed-
-// monolith risk; lesser bands are elevated maintenance effort. Cohesion (high strength
-// + low distance) never reaches here — coupling.BalanceResult returns SeverityNone for
-// it — so it is never framed as a problem.
-func bcRiskClause(sev coupling.Severity) string {
-	switch sev {
+// bcRiskClause names the Balanced Coupling risk for an edge in Vlad Khononov's
+// vocabulary. A critical edge is "distributed-monolith risk" ONLY at high distance
+// (different owner / deploy unit — the book's high strength × high distance × high
+// volatility worst case). A critical edge at low distance (cross_module_same_owner)
+// is local high-strength coupling to a volatile target: its cascade is cheap (one
+// owner, one binary), so it is named as such, NOT as a distributed monolith —
+// recommending "introduce a contract" there would be cargo-cult. Cohesion (high
+// strength + low distance, balanced) never reaches here — BalanceResult returns
+// SeverityNone for it.
+func bcRiskClause(cl coupling.Classification) string {
+	switch cl.Severity {
 	case coupling.SeverityCritical:
-		return "cascading changes across a knowledge boundary → distributed-monolith risk"
+		if coupling.DistanceIsHigh(cl.Distance) {
+			return "cascading changes across a high-distance boundary → distributed-monolith risk"
+		}
+		return "high-strength coupling to a volatile target at low distance → local cascade (cheap to change; not a distributed monolith)"
 	case coupling.SeverityHigh:
 		return "tight coupling across a volatile boundary → likely cascading changes"
 	default:

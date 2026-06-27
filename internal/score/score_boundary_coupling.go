@@ -168,13 +168,19 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			conf = ConfidenceLow
 		}
 
-		// Advisory cap: worst-case (critical) edges.
+		// Advisory cap. A genuine distributed monolith is the critical band AND high
+		// distance (different owner / deploy unit); pervasive DM caps the value hard.
+		// Critical edges at low distance (cross_module_same_owner) are local
+		// high-strength/high-volatility coupling — still poor balance (cap at 60), but
+		// the cascade is cheap (one owner, one binary) and it is NOT a distributed
+		// monolith, so it must not trigger the pervasive-DM cap or label.
 		criticalCount := summary.BySeverity[string(coupling.SeverityCritical)]
+		dmCount := summary.DistributedMonolith
 		switch {
-		case crossBoundary > 0 && criticalCount*100/crossBoundary >= 5:
+		case crossBoundary > 0 && dmCount*100/crossBoundary >= 5:
 			value = capInt(value, 40) // pervasive distributed-monolith risk
 		case criticalCount > 0:
-			value = capInt(value, 60) // any critical edge present
+			value = capInt(value, 60) // critical-band coupling present (poor balance)
 		}
 
 		// LLM-provenance labels lower confidence by one band: the strength
@@ -194,7 +200,8 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 				summary.Scored, summary.MeanBalance, value),
 			fmt.Sprintf("scored fraction: %d%% (%d scored, %d abstained, internal only)",
 				scoredPct, summary.Scored, summary.Abstained),
-			fmt.Sprintf("worst-case (critical band) edges: %d", criticalCount),
+			fmt.Sprintf("critical-band edges: %d (%d distributed-monolith: critical at high distance)",
+				criticalCount, dmCount),
 		}
 		if summary.External > 0 {
 			dim.Evidence = append(dim.Evidence,
@@ -207,9 +214,12 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			dim.Evidence = append(dim.Evidence,
 				fmt.Sprintf("llm-provenance labels in effect: %d", summary.LLMApproved))
 		}
-		if criticalCount > 0 {
-			dim.Summary = "unbalanced coupling: critical-band edges (distributed-monolith risk) present"
-		} else {
+		switch {
+		case dmCount > 0:
+			dim.Summary = "unbalanced coupling: distributed-monolith edges (high strength × high distance × high volatility) present"
+		case criticalCount > 0:
+			dim.Summary = "critical-band coupling at low distance — local high-strength/high-volatility coupling (cheap cascade), not a distributed monolith"
+		default:
 			dim.Summary = fmt.Sprintf("mean book balance %.1f/10 across %d scored internal cross-boundary edges",
 				summary.MeanBalance, summary.Scored)
 		}

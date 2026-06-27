@@ -21,12 +21,41 @@ verbatim complexity-zone verdict. This is honest and corroborated (risk_hub #1 =
 `Diagnostic`; blast_radius model/\* 59–71%) — NOT a calibration artifact: the same
 36/poor holds with or without SCIP once the hint is accurate.
 
-Caveat (cosmetic, not fixed here): the scorecard summary says "distributed-monolith
-risk" whenever critical edges exist; for a single-binary monolith the accurate
-reading is "high-strength coupling concentrated on a volatile core." The book's
-remedy is the design lever, not a metric change: lower the core's volatility or
-wrap `Diagnostic` in a contract (drops those edges to s=1 → balance 4 → high, not
-critical). Tracked as a design choice for the maintainer, not a tool bug.
+### Editorial fix — distributed-monolith label is now distance-gated
+
+The "design improvement" request (wrap `Diagnostic` in a contract) was rejected as
+cargo-cult: the 177 model edges are mostly imports of shared VALUE TYPES
+(`MetricResult`/`Coverage`/`Finding`), not `Diagnostic` sharing; an interface over a
+data aggregate is an anti-pattern; the output contract already exists
+(`SchemaVersion`); and model coupling at low distance is high cohesion (BC's good
+quadrant). The real, in-scope improvement was **dogfooding**: archfit's OWN advisory
+layer was issuing that cargo-cult advice — labeling every critical-band edge
+"distributed-monolith risk → introduce a contract," when per the book (and
+`score_boundary_coupling.go`'s own comment) a distributed monolith is high strength ×
+high **distance** × high volatility.
+
+Fix (editorial only — the balance value/ordinals are untouched, so the honest 36
+stands): a new `ClassifiedEdgeSummary.DistributedMonolith` counts critical edges
+that are ALSO high distance (`coupling.DistanceIsHigh` = different owner / deploy
+unit). The score summary, the value cap, and the per-edge advisory
+(`bcRiskClause`) now name "distributed-monolith risk" only for those; critical
+edges at `cross_module_same_owner` are framed as local high-strength/high-volatility
+coupling whose cascade is cheap.
+
+archfit-self result: **139 critical → 2 distributed-monolith** (e.g.
+`extract/loc → model/diagnostic`: functional × `cross_module_different_owner`
+[code-structure basis] × high). Those 2 are genuine high-strength × high-distance ×
+high-volatility — the book's worst case — and there a contract genuinely helps
+(`cheapest_move: reduce_strength`). The other 137 no longer carry the false label.
+Value stays 36.
+
+Open refinement (not done; maintainer's call): the 2 DM use a **code-structure**
+distance basis, not a real deployment/ownership boundary. "Distributed monolith"
+strictly means separately-deployed-but-coupled, which a single-binary sole-owner
+repo cannot be. Gating DM on `DistanceBasis ∈ {deploy_unit, ownership}` (not the
+code-structure proxy) would report 0 DM for archfit and reframe the 2 as "tight
+coupling across an architectural boundary." Left as a follow-up — code structure is
+a legitimate distance component per the book, so both readings are defensible.
 
 ## source_inputs
 

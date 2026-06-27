@@ -277,6 +277,13 @@ type ClassifiedEdgeSummary struct {
 	ByVolatility map[string]int `json:"by_volatility,omitempty"`
 	// BySeverity counts cross-boundary edges by score band (severity label).
 	BySeverity map[string]int `json:"by_severity,omitempty"`
+	// DistributedMonolith counts the genuine distributed-monolith edges: those in
+	// the critical band AND at high distance (different owner or deploy unit). The
+	// critical band alone is NOT distributed-monolith — a critical edge at
+	// cross_module_same_owner is local high-strength/high-volatility coupling whose
+	// cascade is cheap (one owner, one binary). Only this count may be framed as
+	// "distributed-monolith risk"; it never changes the balance value.
+	DistributedMonolith int `json:"distributed_monolith,omitempty"`
 	// External is the count of cross-boundary edges whose target is NOT a declared
 	// module (Distance == unknown: stdlib, third-party, undeclared packages). These
 	// are EXCLUDED from the Scored/Abstained distribution that drives coupling_balance
