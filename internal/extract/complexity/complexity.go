@@ -86,16 +86,17 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 
 	var funcs []signal.ComplexityFunc
 	var cov diagnostic.Coverage
+	var subErr error
 	if backend == BackendLizard {
-		funcs, cov = runLizard(ctx, runner, root)
+		funcs, cov, subErr = runLizard(ctx, runner, root)
 	} else {
-		funcs, cov = runAuto(ctx, runner, root)
+		funcs, cov, subErr = runAuto(ctx, runner, root)
 	}
 
-	// Check whether the per-analyzer watchdog fired after sub-runners returned.
-	// Sub-runners swallow failures and return absent coverage; ctx.Err() tells us
-	// whether that was because of a timeout vs a genuinely missing/failed tool.
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+	// Check both the inner per-subprocess deadline (subErr) and the outer
+	// watchdog (ctx.Err()). When an inner timeout fires, runner.Run returns
+	// context.DeadlineExceeded as subErr but ctx.Err() is still nil.
+	if errors.Is(subErr, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}, nil
 	}
 	return funcs, cov, nil
@@ -103,9 +104,13 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 
 // runAuto runs gocyclo for Go (exact CCN) and the ast-grep decision-point
 // proxy for TS/Py/Rust. When gocyclo is absent the proxy also covers Go.
-// Never returns an error — failures degrade to absent coverage.
-func runAuto(ctx context.Context, runner toolrun.Runner, root string) ([]signal.ComplexityFunc, diagnostic.Coverage) {
-	gocycloFuncs, gocycloOK := runGocyclo(ctx, runner, root)
+// Returns a non-nil error only when an inner per-subprocess deadline fires so
+// the caller can surface StatusTimedOut. Other failures degrade to absent coverage.
+func runAuto(ctx context.Context, runner toolrun.Runner, root string) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+	gocycloFuncs, gocycloOK, err := runGocyclo(ctx, runner, root)
+	if err != nil {
+		return nil, absentCov(reasonRunFailed), err
+	}
 
 	// proxy covers TS/Py/Rust; also covers Go when gocyclo is absent.
 	proxyLangs := []string{langTypeScript, langPython, langRust}
@@ -114,7 +119,10 @@ func runAuto(ctx context.Context, runner toolrun.Runner, root string) ([]signal.
 	}
 	proxyFuncs, proxyCov, err := runProxy(ctx, runner, root, proxyLangs)
 	if err != nil {
-		return nil, absentCov(reasonRunFailed)
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, absentCov(reasonRunFailed), err
+		}
+		return nil, absentCov(reasonRunFailed), nil
 	}
 
 	all := gocycloFuncs
@@ -126,20 +134,22 @@ func runAuto(ctx context.Context, runner toolrun.Runner, root string) ([]signal.
 		if len(proxyFuncs) > 0 {
 			cov.Tool = gocycloTool + "+ast-grep"
 		}
-		return all, cov
+		return all, cov, nil
 	case proxyCov.Status == statusOK:
-		return all, proxyCov
+		return all, proxyCov, nil
 	default:
-		return nil, absentCov(reasonNotInstalled)
+		return nil, absentCov(reasonNotInstalled), nil
 	}
 }
 
 // runLizard invokes lizard (directly or via uvx) and returns per-function CCN.
-// Only called when backend=lizard. Never returns an error — failures degrade to absent coverage.
-func runLizard(ctx context.Context, runner toolrun.Runner, root string) ([]signal.ComplexityFunc, diagnostic.Coverage) {
+// Only called when backend=lizard. Returns a non-nil error only when the inner
+// per-subprocess deadline fires (context.DeadlineExceeded) so the caller can
+// surface StatusTimedOut. Other failures degrade to absent coverage.
+func runLizard(ctx context.Context, runner toolrun.Runner, root string) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
 	name, pre := lizardCommand(ctx, runner)
 	if name == "" {
-		return nil, absentCov(reasonLizardMissing)
+		return nil, absentCov(reasonLizardMissing), nil
 	}
 
 	args := append(append([]string{}, pre...), root, "--csv")
@@ -151,7 +161,10 @@ func runLizard(ctx context.Context, runner toolrun.Runner, root string) ([]signa
 	}
 	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: name, Args: args, WorkDir: root, Timeout: lizardTimeout})
 	if err != nil {
-		return nil, absentCov(reasonRunFailed)
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, absentCov(reasonRunFailed), err
+		}
+		return nil, absentCov(reasonRunFailed), nil
 	}
 
 	funcs := parseLizardCSV(out.Stdout, root)
@@ -161,11 +174,11 @@ func runLizard(ctx context.Context, runner toolrun.Runner, root string) ([]signa
 	// signal for any repo with a CCN>threshold function. Only treat the run as
 	// failed when it produced no records at all.
 	if out.ExitCode != 0 && len(funcs) == 0 {
-		return nil, absentCov(reasonRunFailed)
+		return nil, absentCov(reasonRunFailed), nil
 	}
 
 	cov := diagnostic.Coverage{Tool: toolName, Status: statusOK}
-	return funcs, cov
+	return funcs, cov, nil
 }
 
 // absentCov builds an absent coverage record with zero file counts and the

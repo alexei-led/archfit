@@ -105,7 +105,10 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 		Timeout: clonesTimeout,
 	})
 	if err != nil || out.ExitCode != 0 {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		// Check both the inner per-subprocess deadline (err) and the outer watchdog
+		// (ctx.Err()). When clonesTimeout fires, runner.Run returns
+		// context.DeadlineExceeded as err but ctx.Err() is nil.
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}, nil
 		}
 		return nil, partial, nil

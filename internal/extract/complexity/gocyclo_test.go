@@ -166,7 +166,10 @@ func TestParseGocycloOutput_PathNormalised(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunGocyclo_Absent(t *testing.T) {
-	funcs, ok := runGocyclo(context.Background(), absentRunner(), t.TempDir())
+	funcs, ok, err := runGocyclo(context.Background(), absentRunner(), t.TempDir())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if ok {
 		t.Error("ok = true, want false when gocyclo absent")
 	}
@@ -177,7 +180,10 @@ func TestRunGocyclo_Absent(t *testing.T) {
 
 func TestRunGocyclo_Present(t *testing.T) {
 	output := "16 pkg HotFunc /tmp/repo/svc.go:10:1\n3 pkg CoolFunc /tmp/repo/svc.go:50:1\n"
-	funcs, ok := runGocyclo(context.Background(), gocycloRunnerWithOutput(output), "/tmp/repo")
+	funcs, ok, err := runGocyclo(context.Background(), gocycloRunnerWithOutput(output), "/tmp/repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if !ok {
 		t.Error("ok = false, want true when gocyclo present")
 	}
@@ -202,7 +208,10 @@ func TestRunGocyclo_NonZeroExitStillReturnsData(t *testing.T) {
 			return toolrun.Output{ExitCode: 2, Stdout: []byte("20 pkg Big /tmp/r/x.go:1:1\n")}, nil
 		},
 	}
-	funcs, ok := runGocyclo(context.Background(), runner, "/tmp/r")
+	funcs, ok, err := runGocyclo(context.Background(), runner, "/tmp/r")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if !ok {
 		t.Error("ok should be true even on non-zero exit")
 	}

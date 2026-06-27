@@ -148,6 +148,9 @@ func (r *ToolRunner) Run(ctx context.Context, cmd ToolCmd) (Output, error) {
 	c.Stdout = &stdout
 	c.Stderr = &stderr
 
+	// Backstop: if the process does not exit within this window after its context
+	// is cancelled, os/exec forces the process group to stop (mirrors Stream).
+	c.WaitDelay = 10 * time.Second
 	runErr := c.Run()
 	out := Output{
 		Stdout: stdout.Bytes(),

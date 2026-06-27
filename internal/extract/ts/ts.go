@@ -112,7 +112,10 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	// Omitted when SubtreePrefix is empty to preserve byte-identical output on
 	// the no-subtree path.
 	if s.SubtreePrefix != "" {
-		args = append(args, "--include-only", "^"+regexp.QuoteMeta(filepath.ToSlash(s.SubtreePrefix)))
+		// Trailing (?:/|$) ensures the pattern matches the exact prefix directory
+		// and not a sibling that shares a common prefix (e.g. "packages/api" must
+		// not match "packages/api-client").
+		args = append(args, "--include-only", "^"+regexp.QuoteMeta(filepath.ToSlash(s.SubtreePrefix))+"(?:/|$)")
 	}
 	// Resolve tsconfig: an explicit config wins; otherwise auto-detect one at
 	// ScanRoot. Without --ts-config, dependency-cruiser cannot resolve tsconfig
@@ -145,7 +148,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/ts: dependency-cruiser exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 	}
 
-	facts, cov, err := e.parseAndNormalize(out.Stdout, version)
+	facts, cov, err := e.parseAndNormalize(out.Stdout, version, s.SubtreePrefix)
 	if err != nil {
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/ts: parse output: %w", err)
 	}
@@ -307,10 +310,27 @@ func (d dcDep) strengthHint() string {
 // ---------------------------------------------------------------------------
 
 // parseAndNormalize parses dependency-cruiser JSON and builds graph.Facts.
-func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts, diagnostic.Coverage, error) {
+func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string) (graph.Facts, diagnostic.Coverage, error) {
 	var dc dcOutput
 	if err := json.Unmarshal(data, &dc); err != nil {
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("unmarshal: %w", err)
+	}
+	// normPath strips the git-root-relative prefix from paths emitted by
+	// depcruise when running from the git root (subtree mode). This converts
+	// git-root-relative paths like "packages/api/src/x.ts" to ScanRoot-relative
+	// "src/x.ts" so node IDs, matchesInternal globs, and downstream classify all
+	// work correctly against config patterns.
+	// No-op when subtreePrefix is "" — preserves byte-identical output on the
+	// non-subtree path.
+	normPath := func(path string) string {
+		if subtreePrefix == "" {
+			return path
+		}
+		prefix := subtreePrefix + "/"
+		if strings.HasPrefix(path, prefix) {
+			return path[len(prefix):]
+		}
+		return path // external/npm paths pass through unchanged
 	}
 
 	var nodes []graph.Node
@@ -342,13 +362,14 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 		// dependency of every file that imports it, and those edges below are the
 		// authoritative unresolved count. Counting the module entry too would
 		// double-count the same package.
+		srcPath := normPath(mod.Source)
 		if mod.CouldNotResolve {
-			emitNode(graph.Node{Kind: graph.NodeKindExternal, Path: mod.Source})
+			emitNode(graph.Node{Kind: graph.NodeKindExternal, Path: srcPath})
 			continue
 		}
 
-		fromID := "file:" + mod.Source
-		emitNode(graph.Node{Kind: graph.NodeKindFile, Path: mod.Source})
+		fromID := "file:" + srcPath
+		emitNode(graph.Node{Kind: graph.NodeKindFile, Path: srcPath})
 		filesSeen++
 
 		// Merge dependencies and deps (alternate key).
@@ -366,6 +387,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 			if toPath == "" {
 				toPath = dep.Module
 			}
+			toPath = normPath(toPath)
 
 			// An unresolved target is not a first-party source file: it is an
 			// uninstalled npm package, a path depcruise could not resolve, or a

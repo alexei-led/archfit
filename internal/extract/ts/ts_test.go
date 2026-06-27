@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"testing"
 
@@ -18,6 +19,7 @@ const (
 	launcherBunx     = "bunx"
 	launcherBunxPath = "/usr/bin/bunx"
 	tsconfigName     = "tsconfig.json"
+	modeFull         = "full"
 )
 
 // fixtureDir is the testdata/ts directory with package.json and JSON fixtures.
@@ -326,7 +328,7 @@ func TestExtract_IncludeOnly(t *testing.T) {
 			name:            "subtree: --include-only added",
 			subtreePrefix:   "services/api",
 			wantIncludeOnly: true,
-			wantPattern:     "^services/api",
+			wantPattern:     "^services/api(?:/|$)",
 		},
 		{
 			name:            "root: --include-only omitted (byte-identical)",
@@ -337,7 +339,7 @@ func TestExtract_IncludeOnly(t *testing.T) {
 			name:            "subtree with metachar: dot is escaped",
 			subtreePrefix:   "packages/my.app",
 			wantIncludeOnly: true,
-			wantPattern:     "^packages/my\\.app",
+			wantPattern:     "^packages/my\\.app(?:/|$)",
 		},
 	}
 
@@ -370,7 +372,7 @@ func TestExtract_IncludeOnly(t *testing.T) {
 				Root:          root,
 				GitRoot:       filepath.Dir(root),
 				SubtreePrefix: tt.subtreePrefix,
-				Mode:          "full",
+				Mode:          modeFull,
 			}
 			if _, _, err := extractor.Extract(context.Background(), s); err != nil {
 				t.Fatalf("Extract: %v", err)
@@ -386,13 +388,143 @@ func TestExtract_IncludeOnly(t *testing.T) {
 			if idx == -1 || idx+1 >= len(gotArgs) {
 				t.Fatalf("expected --include-only flag, got args %v", gotArgs)
 			}
-			if got := gotArgs[idx+1]; got != tt.wantPattern {
+			got := gotArgs[idx+1]
+			if got != tt.wantPattern {
 				t.Errorf("--include-only = %q, want %q", got, tt.wantPattern)
+			}
+			// Verify the boundary: the compiled pattern must match the prefix dir
+			// itself and a file inside it, but NOT a sibling with a longer name.
+			if tt.subtreePrefix != "" {
+				re, err := regexp.Compile(got)
+				if err != nil {
+					t.Fatalf("--include-only pattern %q is not a valid regexp: %v", got, err)
+				}
+				prefix := filepath.ToSlash(tt.subtreePrefix)
+				if !re.MatchString(prefix + "/src/index.ts") {
+					t.Errorf("pattern %q should match %q but does not", got, prefix+"/src/index.ts")
+				}
+				if re.MatchString(prefix + "-client/src/index.ts") {
+					t.Errorf("pattern %q should NOT match sibling %q but does", got, prefix+"-client/src/index.ts")
+				}
 			}
 			// --exclude ^node_modules must always be present.
 			exIdx := slices.Index(gotArgs, "--exclude")
 			if exIdx == -1 || exIdx+1 >= len(gotArgs) || gotArgs[exIdx+1] != "^node_modules" {
 				t.Errorf("expected --exclude ^node_modules in args %v", gotArgs)
+			}
+		})
+	}
+}
+
+// TestExtract_SubtreePathStrip verifies that parseAndNormalize strips the
+// SubtreePrefix from node IDs and edge paths in subtree mode, so downstream
+// classify and matchesInternal work against ScanRoot-relative config globs.
+// The byte-identical invariant (no-op when SubtreePrefix=="") is also checked.
+func TestExtract_SubtreePathStrip(t *testing.T) {
+	// depcruise JSON with git-root-relative paths (subtree prefix "packages/api").
+	const prefix = "packages/api"
+	depcruiseJSON := `{"modules":[
+		{"source":"packages/api/src/index.ts","dependencies":[
+			{"resolved":"packages/api/src/util.ts","module":"./util","dependencyTypes":["local"]},
+			{"resolved":"react","module":"react","dependencyTypes":["npm"],"couldNotResolve":true}
+		]},
+		{"source":"packages/api/src/util.ts","dependencies":[]}
+	]}`
+
+	tests := []struct {
+		name          string
+		subtreePrefix string
+		wantFromPath  string // expected node path for the first file
+		wantToPath    string // expected node path for the internal dep
+		wantEdgeKind  graph.EdgeKind
+	}{
+		{
+			name:          "subtree mode: prefix stripped",
+			subtreePrefix: prefix,
+			wantFromPath:  "src/index.ts",
+			wantToPath:    "src/util.ts",
+			wantEdgeKind:  graph.EdgeKindUsesInternal,
+		},
+		{
+			name:          "non-subtree mode: paths unchanged (byte-identical)",
+			subtreePrefix: "",
+			wantFromPath:  "packages/api/src/index.ts",
+			wantToPath:    "packages/api/src/util.ts",
+			wantEdgeKind:  graph.EdgeKindImports, // matchesInternal won't match
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Configure internal globs as ScanRoot-relative: "src/**"
+			cfg := config.ExtractConfig{
+				Mode:     config.ModeAuto,
+				Internal: []string{"src/**"},
+			}
+			runner := &toolrun.RunnerMock{
+				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+					if tool == launcherBunx {
+						return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+					}
+					return toolrun.ToolInfo{}, false
+				},
+				RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+					if slices.Contains(cmd.Args, "--version") {
+						return toolrun.Output{Stdout: []byte("14.0.0\n")}, nil
+					}
+					return toolrun.Output{Stdout: []byte(depcruiseJSON)}, nil
+				},
+			}
+
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"t"}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			extractor := ts.New(runner, cfg)
+			s := scope.Scope{
+				Root:          root,
+				GitRoot:       filepath.Dir(root),
+				SubtreePrefix: tt.subtreePrefix,
+				Mode:          modeFull,
+			}
+			facts, _, err := extractor.Extract(context.Background(), s)
+			if err != nil {
+				t.Fatalf("Extract: %v", err)
+			}
+
+			// Find the file node for index.ts.
+			var foundFrom bool
+			for _, n := range facts.Nodes {
+				if n.Path == tt.wantFromPath {
+					foundFrom = true
+					break
+				}
+			}
+			if !foundFrom {
+				var paths []string
+				for _, n := range facts.Nodes {
+					paths = append(paths, string(n.Kind)+":"+n.Path)
+				}
+				t.Errorf("node %q not found; got nodes: %v", tt.wantFromPath, paths)
+			}
+
+			// Find the internal edge (index.ts → util.ts).
+			var foundEdge bool
+			for _, e := range facts.Edges {
+				if e.To == "file:"+tt.wantToPath {
+					foundEdge = true
+					if e.Kind != tt.wantEdgeKind {
+						t.Errorf("edge kind = %v, want %v", e.Kind, tt.wantEdgeKind)
+					}
+					break
+				}
+			}
+			if !foundEdge {
+				var tos []string
+				for _, e := range facts.Edges {
+					tos = append(tos, string(e.Kind)+":"+e.To)
+				}
+				t.Errorf("edge to %q not found; got edges: %v", "file:"+tt.wantToPath, tos)
 			}
 		})
 	}
@@ -438,7 +570,7 @@ func TestExtract_TSConfigSubdir(t *testing.T) {
 		Root:          pkg,
 		GitRoot:       gitRoot,
 		SubtreePrefix: "packages/pkg-a",
-		Mode:          "full",
+		Mode:          modeFull,
 	}
 	if _, _, err := extractor.Extract(context.Background(), s); err != nil {
 		t.Fatalf("Extract: %v", err)

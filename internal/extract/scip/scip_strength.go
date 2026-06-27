@@ -133,6 +133,14 @@ func (a *Adapter) runSCIPPipeline(ctx context.Context, root, covTool string) (pi
 func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro pipelineResult, cov diagnostic.Coverage, ok bool) {
 	absent := diagnostic.Coverage{Status: diagnostic.StatusAbsent}
 
+	// Apply per-analyzer watchdog before any subprocess call. detectIndexer may
+	// run `cargo metadata` for Rust virtual workspaces; that call must be
+	// covered by the outer deadline. Per-subprocess timeouts (indexTimeout,
+	// readerTimeout) still apply inside runner.Run; this guard catches
+	// pathological hangs where a subprocess ignores its own limit.
+	ctx, cancel := toolrun.WithWatchdog(ctx, a.timeout, defaultTimeout)
+	defer cancel()
+
 	indexer, pkg, lang, found := a.detectIndexer(ctx, root)
 	if !found {
 		absent.Reason = scipAbsentReason(root)
@@ -150,13 +158,6 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		absent.Reason = reasonTSNoNodeModules
 		return ro, absent, false
 	}
-
-	// Apply per-analyzer watchdog before any subprocess call. The outer timeout
-	// caps the full index+read pipeline. Per-subprocess timeouts (indexTimeout,
-	// readerTimeout) still apply inside runner.Run; this guard catches pathological
-	// hangs where a subprocess ignores its own limit.
-	ctx, cancel := toolrun.WithWatchdog(ctx, a.timeout, defaultTimeout)
-	defer cancel()
 
 	timedOut := diagnostic.Coverage{Version: indexer, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}
 
@@ -184,7 +185,10 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		Timeout: indexTimeout,
 	})
 	if err != nil || idxOut.ExitCode != 0 {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		// Check both the inner per-subprocess deadline (err) and the outer
+		// watchdog (ctx.Err()). indexTimeout < defaultTimeout so the inner
+		// deadline may fire while ctx is still live.
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return ro, timedOut, false
 		}
 		return ro, partial, false
@@ -201,7 +205,10 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		Timeout: readerTimeout,
 	})
 	if err != nil || rdOut.ExitCode != 0 {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		// Check both the inner per-subprocess deadline (err) and the outer
+		// watchdog (ctx.Err()). readerTimeout < defaultTimeout so the inner
+		// deadline may fire while ctx is still live.
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return ro, timedOut, false
 		}
 		return ro, partial, false
