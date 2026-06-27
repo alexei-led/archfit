@@ -106,21 +106,49 @@ func (mm ModuleMap) Has(name string) bool {
 	return ok
 }
 
-// ModuleFor returns the first module name whose path globs match the given
-// repo-relative path (forward-slash separated). When multiple modules match,
-// the alphabetically-first module name wins (deterministic tiebreak).
-// Returns ("", false) if no module matches.
+// ModuleFor returns the module name whose path globs match the given
+// repo-relative path (forward-slash separated) MOST SPECIFICALLY. Among all
+// matching modules, the one whose matching pattern has the longest literal
+// prefix (segments before the first wildcard) wins, so a specific stanza
+// (internal/model/**) always beats a catch-all (internal/**). Ties break by
+// alphabetical module name (iteration is over sorted names with a strict-greater
+// comparison, so the result is order-independent and deterministic). Returns
+// ("", false) if no module matches.
+//
+// First-match resolution (the previous behaviour) let a broad catch-all glob
+// shadow every specific module, collapsing real cross-module coupling to
+// same-module and mis-classifying volatility/distance. Most-specific match makes
+// resolution honour the documented "specific stanza wins" intent.
 func (mm ModuleMap) ModuleFor(path string) (string, bool) {
+	best := ""
+	bestSpec := -1
 	for _, name := range mm.names {
-		def := mm.modules[name]
-		for _, pattern := range def.Paths {
-			matched, _ := doublestar.Match(pattern, path)
-			if matched {
-				return name, true
+		for _, pattern := range mm.modules[name].Paths {
+			if matched, _ := doublestar.Match(pattern, path); matched {
+				if spec := globSpecificity(pattern); spec > bestSpec {
+					bestSpec, best = spec, name
+				}
 			}
 		}
 	}
-	return "", false
+	if bestSpec < 0 {
+		return "", false
+	}
+	return best, true
+}
+
+// globSpecificity ranks a glob pattern by how specific it is: the byte length of
+// its literal prefix, i.e. everything before the first wildcard metacharacter
+// (* ? [ {). A pattern with no wildcard (an exact path) is maximally specific
+// (full length). "internal/model/**" (15) beats "internal/**" (9).
+func globSpecificity(pattern string) int {
+	for i := 0; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '*', '?', '[', '{':
+			return i
+		}
+	}
+	return len(pattern)
 }
 
 // LayerFor returns the layer name for the module that owns the given repo-relative

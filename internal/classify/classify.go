@@ -91,9 +91,13 @@ func pathFromID(id string) string {
 }
 
 // moduleIndex is a sorted list of module names for deterministic glob matching.
+// Path→module resolution delegates to the shared config.ModuleMap so there is a
+// single most-specific-match implementation; names/modules remain for the
+// public/internal glob strength scan in classifyStrength.
 type moduleIndex struct {
 	names   []string
 	modules map[string]config.ModuleDef
+	mm      config.ModuleMap
 }
 
 // buildModuleIndex builds a sorted module name index from the Modules map.
@@ -103,20 +107,14 @@ func buildModuleIndex(modules map[string]config.ModuleDef) moduleIndex {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	return moduleIndex{names: names, modules: modules}
+	return moduleIndex{names: names, modules: modules, mm: config.BuildModuleMap(modules)}
 }
 
-// moduleFor returns the first module name whose Paths globs match path.
+// moduleFor returns the most-specific module name whose Paths globs match path,
+// delegating to config.ModuleMap (single source of truth for resolution).
 // Returns ("", false) if no module matches.
 func (mi moduleIndex) moduleFor(path string) (string, bool) {
-	for _, name := range mi.names {
-		for _, pattern := range mi.modules[name].Paths {
-			if matched, _ := doublestar.Match(pattern, path); matched {
-				return name, true
-			}
-		}
-	}
-	return "", false
+	return mi.mm.ModuleFor(path)
 }
 
 // AugmentModulesFromGraph returns a Modules map extended with a synthetic module
@@ -222,7 +220,6 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 	fromPath := pathFromID(e.From)
 	toPath := pathFromID(e.To)
 
-	// --- Strength ---
 	// Precedence: config public/internal globs are authoritative; an APPROVED
 	// pinned label for the edge's module pair refines what the globs leave
 	// undecided; the extractor-supplied language-aware hint (e.g. the blanket
