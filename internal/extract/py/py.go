@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -92,12 +93,25 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/py: close temp helper: %w", err)
 	}
 
-	pkgName := e.cfg.PyPackage
-	if pkgName == "" {
-		pkgName = filepath.Base(s.Root)
+	// Determine the package list for grimp. An explicit PyPackage config wins;
+	// otherwise discover top-level packages under ScanRoot (dirs with __init__.py).
+	// If discovery finds nothing, fall back to the directory name (legacy behaviour).
+	var pkgs []string
+	if e.cfg.PyPackage != "" {
+		pkgs = []string{e.cfg.PyPackage}
+	} else {
+		pkgs = discoverPackages(s.Root)
+		if len(pkgs) == 0 {
+			pkgs = []string{filepath.Base(s.Root)}
+		}
 	}
 
 	// Build the command.
+	// grimp_helper --packages pkg1 pkg2 … accepts multiple top-level package names
+	// and calls grimp.build_graph(*packages). All packages must be importable from
+	// a single Python environment (see discoverPackages doc for the shared-venv
+	// constraint).
+	pkgsArgs := append([]string{"--packages"}, pkgs...)
 	var cmd toolrun.ToolCmd
 	if tool == "uv" {
 		// --with grimp injects grimp into the project's venv for this run without
@@ -105,14 +119,14 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		// the project's own packages (src-layout etc.) are importable.
 		cmd = toolrun.ToolCmd{
 			Name:    "uv",
-			Args:    []string{"run", "--with", "grimp", "--directory", s.Root, tmpName, "--package", pkgName},
+			Args:    append([]string{"run", "--with", "grimp", "--directory", s.Root, tmpName}, pkgsArgs...),
 			WorkDir: s.Root,
 			Timeout: runTimeout,
 		}
 	} else {
 		cmd = toolrun.ToolCmd{
 			Name:    tool,
-			Args:    []string{tmpName, "--package", pkgName, "--root", s.Root},
+			Args:    append([]string{tmpName, "--root", s.Root}, pkgsArgs...),
 			WorkDir: s.Root,
 			Timeout: runTimeout,
 		}
@@ -152,6 +166,34 @@ func (e *Extractor) isApplicable(root string) bool {
 		}
 	}
 	return false
+}
+
+// discoverPackages returns the sorted list of top-level Python package names
+// found directly under root — directories that contain an __init__.py file.
+// Used when no explicit PyPackage is configured.
+//
+// SHARED-VENV CONSTRAINT: all discovered packages are passed to a single
+// grimp.build_graph call and must therefore be co-importable from one Python
+// environment. In a monorepo where each service has its own virtualenv
+// (e.g. ~42 isolated services), cross-service coupling cannot be measured
+// in one run. This is a grimp limitation; archfit does not promise
+// cross-service Python analysis in that setup.
+func discoverPackages(root string) []string {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	var pkgs []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(root, entry.Name(), "__init__.py")); err == nil {
+			pkgs = append(pkgs, entry.Name())
+		}
+	}
+	sort.Strings(pkgs)
+	return pkgs
 }
 
 // detectTool tries uv then Python 3.12+. Returns (name, version, true) on success.

@@ -2,6 +2,9 @@ package py_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -250,5 +253,61 @@ func TestExtract_ToolAbsentAuto(t *testing.T) {
 	}
 	if !strings.EqualFold(cov.Status, "absent") {
 		t.Errorf("cov.Status = %q, want \"absent\"", cov.Status)
+	}
+}
+
+// TestExtract_MultiPackageArgs verifies that when multiple top-level Python packages
+// are discovered under ScanRoot, all names are passed to the grimp helper via
+// --packages pkg1 pkg2 … (grimp.build_graph is variadic).
+func TestExtract_MultiPackageArgs(t *testing.T) {
+	root := t.TempDir()
+
+	// Python project marker.
+	if err := os.WriteFile(filepath.Join(root, "pyproject.toml"), []byte("[project]"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Two top-level packages discovered by __init__.py.
+	for _, pkg := range []string{"alpha", "beta"} {
+		if err := os.MkdirAll(filepath.Join(root, pkg), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, pkg, "__init__.py"), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var gotArgs []string
+	mock := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == "uv" {
+				return toolrun.ToolInfo{Name: "uv"}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--version") {
+				return toolrun.Output{Stdout: []byte("uv 0.4.0"), ExitCode: 0}, nil
+			}
+			gotArgs = cmd.Args
+			return toolrun.Output{Stdout: []byte(`{"edges":[],"unresolved":0}`), ExitCode: 0}, nil
+		},
+	}
+
+	e := py.New(mock, config.ExtractConfig{Mode: config.ModeAuto})
+	if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root, Mode: testScopeMode}); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	// --packages flag must be present.
+	idx := slices.Index(gotArgs, "--packages")
+	if idx == -1 {
+		t.Fatalf("expected --packages flag in args %v", gotArgs)
+	}
+	// Both discovered packages (sorted) must follow --packages.
+	remaining := gotArgs[idx+1:]
+	for _, want := range []string{"alpha", "beta"} {
+		if !slices.Contains(remaining, want) {
+			t.Errorf("package %q not found after --packages in args %v", want, gotArgs)
+		}
 	}
 }

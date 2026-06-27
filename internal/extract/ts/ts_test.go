@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	launcherBunx = "bunx"
-	tsconfigName = "tsconfig.json"
+	launcherBunx     = "bunx"
+	launcherBunxPath = "/usr/bin/bunx"
+	tsconfigName     = "tsconfig.json"
 )
 
 // fixtureDir is the testdata/ts directory with package.json and JSON fixtures.
@@ -39,7 +40,7 @@ func mockRunner(fixtureData []byte) *toolrun.RunnerMock {
 	return &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
 			if tool == launcherBunx {
-				return toolrun.ToolInfo{Name: launcherBunx, Path: "/usr/bin/bunx"}, true
+				return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
 			}
 			return toolrun.ToolInfo{}, false
 		},
@@ -311,6 +312,143 @@ func TestExtract_ToolAbsentAuto(t *testing.T) {
 // at the root is auto-detected, and nothing is passed when none is configured or
 // present. Without it, aliased imports come back unresolved and are dropped from
 // the coupling metrics.
+// TestExtract_IncludeOnly verifies that --include-only ^<SubtreePrefix> is added
+// to depcruise args when ScanRoot is a subtree (SubtreePrefix != ""), and is
+// omitted entirely when SubtreePrefix is empty (byte-identical no-subtree path).
+func TestExtract_IncludeOnly(t *testing.T) {
+	tests := []struct {
+		name            string
+		subtreePrefix   string
+		wantIncludeOnly bool
+		wantPattern     string
+	}{
+		{
+			name:            "subtree: --include-only added",
+			subtreePrefix:   "services/api",
+			wantIncludeOnly: true,
+			wantPattern:     "^services/api",
+		},
+		{
+			name:            "root: --include-only omitted (byte-identical)",
+			subtreePrefix:   "",
+			wantIncludeOnly: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"t"}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			var gotArgs []string
+			runner := &toolrun.RunnerMock{
+				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+					if tool == launcherBunx {
+						return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+					}
+					return toolrun.ToolInfo{}, false
+				},
+				RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+					if slices.Contains(cmd.Args, "--version") {
+						return toolrun.Output{Stdout: []byte("14.0.0\n")}, nil
+					}
+					gotArgs = cmd.Args
+					return toolrun.Output{Stdout: []byte(`{"modules":[]}`)}, nil
+				},
+			}
+
+			extractor := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
+			s := scope.Scope{
+				Root:          root,
+				GitRoot:       filepath.Dir(root),
+				SubtreePrefix: tt.subtreePrefix,
+				Mode:          "full",
+			}
+			if _, _, err := extractor.Extract(context.Background(), s); err != nil {
+				t.Fatalf("Extract: %v", err)
+			}
+
+			idx := slices.Index(gotArgs, "--include-only")
+			if !tt.wantIncludeOnly {
+				if idx != -1 {
+					t.Fatalf("expected no --include-only flag, got args %v", gotArgs)
+				}
+				return
+			}
+			if idx == -1 || idx+1 >= len(gotArgs) {
+				t.Fatalf("expected --include-only flag, got args %v", gotArgs)
+			}
+			if got := gotArgs[idx+1]; got != tt.wantPattern {
+				t.Errorf("--include-only = %q, want %q", got, tt.wantPattern)
+			}
+			// --exclude ^node_modules must always be present.
+			exIdx := slices.Index(gotArgs, "--exclude")
+			if exIdx == -1 || exIdx+1 >= len(gotArgs) || gotArgs[exIdx+1] != "^node_modules" {
+				t.Errorf("expected --exclude ^node_modules in args %v", gotArgs)
+			}
+		})
+	}
+}
+
+// TestExtract_TSConfigSubdir is a regression test confirming that resolveTSConfig
+// finds the package-local tsconfig when ScanRoot is a subdirectory of the git root
+// (Task 4 made s.Root the ScanRoot). The path returned must be relative to the
+// depcruise workDir (gitRoot for the subtree case) so dependency-cruiser resolves
+// it correctly.
+func TestExtract_TSConfigSubdir(t *testing.T) {
+	gitRoot := t.TempDir()
+	pkg := filepath.Join(gitRoot, "packages", "pkg-a")
+	if err := os.MkdirAll(pkg, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkg, "package.json"), []byte(`{"name":"pkg-a"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkg, tsconfigName), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotArgs []string
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == "bunx" {
+				return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--version") {
+				return toolrun.Output{Stdout: []byte("14.0.0\n")}, nil
+			}
+			gotArgs = cmd.Args
+			return toolrun.Output{Stdout: []byte(`{"modules":[]}`)}, nil
+		},
+	}
+
+	extractor := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
+	s := scope.Scope{
+		Root:          pkg,
+		GitRoot:       gitRoot,
+		SubtreePrefix: "packages/pkg-a",
+		Mode:          "full",
+	}
+	if _, _, err := extractor.Extract(context.Background(), s); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	idx := slices.Index(gotArgs, "--ts-config")
+	if idx == -1 || idx+1 >= len(gotArgs) {
+		t.Fatalf("expected --ts-config in args %v", gotArgs)
+	}
+	// Path must be relative to gitRoot (workDir), not to pkg.
+	want := "packages/pkg-a/tsconfig.json"
+	if got := gotArgs[idx+1]; got != want {
+		t.Errorf("--ts-config = %q, want %q", got, want)
+	}
+}
+
 func TestExtract_TSConfigAutoDetect(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -339,8 +477,8 @@ func TestExtract_TSConfigAutoDetect(t *testing.T) {
 			var gotArgs []string
 			runner := &toolrun.RunnerMock{
 				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-					if tool == "bunx" {
-						return toolrun.ToolInfo{Name: "bunx", Path: "/usr/bin/bunx"}, true
+					if tool == launcherBunx {
+						return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
 					}
 					return toolrun.ToolInfo{}, false
 				},

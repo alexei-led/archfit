@@ -85,26 +85,55 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	if src == "" || src == "." {
 		src = "src"
 	}
-	args := []string{toolName, src, "--output-type", "json", "--exclude", "^node_modules"}
-	// Resolve tsconfig: an explicit config wins; otherwise auto-detect one at the
-	// root. Without --ts-config, dependency-cruiser cannot resolve tsconfig
+
+	// Determine work directory and source entry point.
+	//
+	// When ScanRoot is a subtree within a Git repo (SubtreePrefix != ""), run
+	// depcruise from the git root so that the root tsconfig covers cross-package
+	// alias resolution and paths in the output are git-root-relative (e.g.
+	// "packages/pkg-a/src/index.ts"). The --include-only flag then scopes the
+	// graph to the analysis boundary. This is the "multiple roots → merged graph"
+	// path: a single depcruise invocation from the git root with one tsconfig
+	// covering all workspace aliases produces the cross-package dependency graph.
+	//
+	// When SubtreePrefix == "" (ScanRoot == GitRoot, or non-git), the behaviour is
+	// byte-identical to the previous single-package path.
+	workDir := s.Root
+	srcArg := src
+	if s.SubtreePrefix != "" {
+		workDir = s.GitRoot
+		srcArg = filepath.ToSlash(filepath.Join(s.SubtreePrefix, src))
+	}
+
+	args := []string{toolName, srcArg, "--output-type", "json", "--exclude", "^node_modules"}
+	// Scope depcruise to the analysis subtree when running from the git root.
+	// --include-only uses a JS regex against the git-root-relative module paths.
+	// Omitted when SubtreePrefix is empty to preserve byte-identical output on
+	// the no-subtree path.
+	if s.SubtreePrefix != "" {
+		args = append(args, "--include-only", "^"+filepath.ToSlash(s.SubtreePrefix))
+	}
+	// Resolve tsconfig: an explicit config wins; otherwise auto-detect one at
+	// ScanRoot. Without --ts-config, dependency-cruiser cannot resolve tsconfig
 	// `paths`/`baseUrl` aliases — those imports come back unresolved and are
 	// classified as external, silently dropping internal cross-module edges from
 	// the coupling metrics. (--ts-config and --no-config compose.)
-	if tsConfig := e.resolveTSConfig(s.Root); tsConfig != "" {
+	// The path is returned relative to workDir so depcruise resolves it correctly
+	// whether running from ScanRoot (no-subtree) or the git root (subtree).
+	if tsConfig := e.resolveTSConfig(s.Root, workDir); tsConfig != "" {
 		args = append(args, "--ts-config", tsConfig)
 	}
 	// dependency-cruiser errors out when it cannot find its own config file. archfit
 	// only needs the dependency graph (not depcruise's rules), so fall back to
 	// --no-config (built-in defaults) for projects that ship no depcruise config.
-	if !hasDepcruiseConfig(s.Root) {
+	if !hasDepcruiseConfig(workDir) {
 		args = append(args, "--no-config")
 	}
 
 	cmd := toolrun.ToolCmd{
 		Name:    launcher,
 		Args:    args,
-		WorkDir: s.Root,
+		WorkDir: workDir,
 		Timeout: runTimeout,
 	}
 	out, err := e.runner.Run(ctx, cmd)
@@ -139,15 +168,22 @@ var tsConfigNames = []string{"tsconfig.json", "tsconfig.base.json"}
 
 // resolveTSConfig returns the tsconfig path to pass to dependency-cruiser: the
 // explicitly configured path if set, otherwise the first conventional tsconfig
-// found at root (so `paths`/`baseUrl` aliases resolve). Returns "" when none is
-// configured or present. A relative name resolves against the run's WorkDir (root).
-func (e *Extractor) resolveTSConfig(root string) string {
+// found at scanRoot (so `paths`/`baseUrl` aliases resolve). Returns "" when none
+// is configured or present. The returned path is relative to workDir (the
+// depcruise run directory) so dependency-cruiser resolves it correctly whether
+// running from scanRoot (no-subtree) or the git root (subtree).
+func (e *Extractor) resolveTSConfig(scanRoot, workDir string) string {
 	if e.cfg.TSConfig != "" {
 		return e.cfg.TSConfig
 	}
 	for _, name := range tsConfigNames {
-		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
-			return name
+		full := filepath.Join(scanRoot, name)
+		if _, err := os.Stat(full); err == nil {
+			rel, err := filepath.Rel(workDir, full)
+			if err == nil {
+				return filepath.ToSlash(rel)
+			}
+			return full // absolute fallback
 		}
 	}
 	return ""

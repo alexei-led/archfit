@@ -5,12 +5,18 @@
 """grimp_helper.py — emit the internal import graph as JSON.
 
 Usage (uv-managed project):
-  uv run --with grimp --directory <project_root> grimp_helper.py --package <top_pkg>
+  uv run --with grimp --directory <project_root> grimp_helper.py --packages <pkg1> [<pkg2> ...]
 
 Usage (direct Python, grimp must be installed):
-  python3.12 grimp_helper.py --package <top_pkg> --root <project_root>
+  python3.12 grimp_helper.py --packages <pkg1> [<pkg2> ...] --root <project_root>
 
 Output JSON: {"edges": [{"importer": "...", "imported": "...", "line": N, "line_contents": "..."}], "unresolved": N}
+
+SHARED-VENV CONSTRAINT: All package names passed via --packages must be importable
+from a single Python environment. In a monorepo where each service has its own
+virtualenv (e.g. ~42 services, each isolated), cross-service Python coupling cannot
+be measured in one grimp run — each service would need its own invocation. This is
+a grimp limitation; archfit does not promise cross-service analysis in that setup.
 """
 
 import argparse
@@ -42,11 +48,13 @@ def _ensure_importable(root: str, package: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--package", required=True)
+    parser.add_argument("--packages", nargs="+", required=True)
     parser.add_argument("--root", default=".")
     args = parser.parse_args()
 
-    _ensure_importable(os.path.abspath(args.root), args.package)
+    root = os.path.abspath(args.root)
+    for pkg in args.packages:
+        _ensure_importable(root, pkg)
 
     try:
         import grimp  # type: ignore[import]
@@ -57,7 +65,7 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        g = grimp.build_graph(args.package, exclude_type_checking_imports=True)
+        g = grimp.build_graph(*args.packages, exclude_type_checking_imports=True)
     except Exception as exc:  # noqa: BLE001
         print(json.dumps({"error": str(exc), "edges": [], "unresolved": 0}))
         sys.exit(1)

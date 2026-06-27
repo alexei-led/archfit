@@ -372,19 +372,19 @@ unclassified and `coupling_balance` reads `n/a`. This task supplies the
 
 ### Task 16: TS/Python multi-package scoping (depcruise/grimp)
 
-- [ ] TS: scope depcruise to the analysis subtree with `--include-only ^<rel>` +
+- [x] TS: scope depcruise to the analysis subtree with `--include-only ^<rel>` +
       `--exclude ^node_modules`; confirm `resolveTSConfig` finds the
       package-local tsconfig under ScanRoot (fixed transitively by Task 4); add a
       multi-package/workspace path (multiple roots → one merged graph) where a
       single tsconfig covers the aliases
-- [ ] Python: extend `grimp_helper.py` to accept multiple package names
+- [x] Python: extend `grimp_helper.py` to accept multiple package names
       (`build_graph('a','b',...)`); discover top-level packages under ScanRoot.
       **Document the shared-venv constraint**: packages must be co-importable from
       one environment — omni's ~42 services are not, so cross-service Python
       coupling stays out of reach without per-service venvs (note, don't promise)
-- [ ] write tests: depcruise include-only/exclude args; grimp multi-package arg
+- [x] write tests: depcruise include-only/exclude args; grimp multi-package arg
       construction; tsconfig resolution under a subdir
-- [ ] run tests — must pass before next task
+- [x] run tests — must pass before next task
 
 ### Task 17: Docs, CLAUDE.md, final acceptance
 
