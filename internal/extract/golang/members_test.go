@@ -203,6 +203,92 @@ func TestDiscoverMembers_Sorted(t *testing.T) {
 	}
 }
 
+// TestFilterMembers verifies include/exclude glob filtering for tools.go.modules.
+func TestFilterMembers(t *testing.T) {
+	root := t.TempDir()
+	abs := func(rel string) string { return filepath.Join(root, filepath.FromSlash(rel)) }
+
+	all := []string{
+		abs("svc/a"),
+		abs("svc/b"),
+		abs("lib/c"),
+		abs("tools/d"),
+	}
+
+	const globSvc = "svc/**"
+
+	tests := []struct {
+		name    string
+		members []string
+		include []string
+		exclude []string
+		want    []string
+	}{
+		{
+			name:    "no_filter_returns_all",
+			members: all,
+			want:    all,
+		},
+		{
+			name:    "include_selects_subset",
+			members: all,
+			include: []string{globSvc},
+			want:    []string{abs("svc/a"), abs("svc/b")},
+		},
+		{
+			name:    "exclude_removes_members",
+			members: all,
+			exclude: []string{"tools/**"},
+			want:    []string{abs("svc/a"), abs("svc/b"), abs("lib/c")},
+		},
+		{
+			name:    "include_matches_nothing_returns_nil",
+			members: all,
+			include: []string{"nonexistent/**"},
+			want:    nil,
+		},
+		{
+			name:    "include_and_exclude_combined",
+			members: all,
+			include: []string{globSvc},
+			exclude: []string{"svc/b"},
+			want:    []string{abs("svc/a")},
+		},
+		{
+			name:    "exact_member_name_include",
+			members: all,
+			include: []string{"lib/c"},
+			want:    []string{abs("lib/c")},
+		},
+		{
+			name:    "empty_members_returns_nil",
+			members: nil,
+			include: []string{globSvc},
+			want:    nil,
+		},
+		{
+			name:    "exclude_all_returns_nil",
+			members: all,
+			exclude: []string{"**"},
+			want:    nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := goextract.FilterMembers(tc.members, root, tc.include, tc.exclude)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v (len %d), want %v (len %d)", got, len(got), tc.want, len(tc.want))
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Errorf("members[%d] = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
 // TestDiscoverMembers_ArchfitSelfCollapses verifies the critical invariant:
 // archfit's own go.work has three use directives (., ./testdata/fixture-go,
 // ./testdata/golang) but the two testdata members are excluded by the default

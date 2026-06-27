@@ -162,16 +162,27 @@ const (
 	GateFail GateMode = "fail"
 )
 
+// GoModuleFilter restricts Go workspace analysis to a subset of go.work members.
+// It is only meaningful for the "go" tool key (tools.go.modules).
+// Globs are matched against each member's path relative to ScanRoot using
+// doublestar semantics (same matcher as scope exclusions).
+type GoModuleFilter struct {
+	Include []string `yaml:"include,omitempty"` // keep only members matching these globs; empty = all
+	Exclude []string `yaml:"exclude,omitempty"` // drop members matching these globs; applied after include
+}
+
 // ToolConfig holds the settings for a single external tool.
 // Provider/Model/BaseURL apply to the "llm" key only (see Config.LLM).
 // Backend applies to the "complexity" key only (see Config.ComplexityBackend).
+// Modules applies to the "go" key only (see GoModuleFilter).
 type ToolConfig struct {
-	Enabled  ToolMode `yaml:"enabled"`
-	Gate     GateMode `yaml:"gate,omitempty"`
-	Backend  string   `yaml:"backend,omitempty"`
-	Provider string   `yaml:"provider,omitempty"`
-	Model    string   `yaml:"model,omitempty"`
-	BaseURL  string   `yaml:"base_url,omitempty"`
+	Enabled  ToolMode       `yaml:"enabled"`
+	Gate     GateMode       `yaml:"gate,omitempty"`
+	Backend  string         `yaml:"backend,omitempty"`
+	Provider string         `yaml:"provider,omitempty"`
+	Model    string         `yaml:"model,omitempty"`
+	BaseURL  string         `yaml:"base_url,omitempty"`
+	Modules  GoModuleFilter `yaml:"modules,omitempty"`
 }
 
 // ToolsConfig holds settings for all known external tools, keyed by language name.

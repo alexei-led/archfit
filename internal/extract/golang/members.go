@@ -160,3 +160,56 @@ func isMemberExcluded(relPath string, exclusions []string) bool {
 	}
 	return false
 }
+
+// FilterMembers applies tools.go.modules include/exclude globs to a list of
+// discovered member absolute paths, returning only the subset that passes.
+//
+// Globs are matched against each member's path relative to scanRoot using
+// doublestar semantics — the same matcher as scope exclusions. An empty include
+// list accepts all members; exclude is applied after include. The order of the
+// input slice is preserved in the output.
+//
+// Returns nil when no members survive (caller should report absent).
+// This is a pure filtering step; it does not re-walk the filesystem.
+func FilterMembers(members []string, scanRoot string, include, exclude []string) []string {
+	if len(include) == 0 && len(exclude) == 0 {
+		return members // fast path: no filter configured
+	}
+	var out []string
+	for _, abs := range members {
+		rel, err := filepath.Rel(scanRoot, abs)
+		if err != nil {
+			continue
+		}
+		rel = filepath.ToSlash(rel)
+		if !memberMatchesInclude(rel, include) || memberMatchesExclude(rel, exclude) {
+			continue
+		}
+		out = append(out, abs)
+	}
+	return out // nil when empty — caller treats len==0 as absent
+}
+
+// memberMatchesInclude reports whether relPath matches any include glob.
+// Returns true when include is empty (accept-all default).
+func memberMatchesInclude(relPath string, include []string) bool {
+	if len(include) == 0 {
+		return true
+	}
+	for _, pat := range include {
+		if matched, _ := doublestar.Match(pat, relPath); matched {
+			return true
+		}
+	}
+	return false
+}
+
+// memberMatchesExclude reports whether relPath matches any exclude glob.
+func memberMatchesExclude(relPath string, exclude []string) bool {
+	for _, pat := range exclude {
+		if matched, _ := doublestar.Match(pat, relPath); matched {
+			return true
+		}
+	}
+	return false
+}

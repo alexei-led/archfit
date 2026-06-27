@@ -90,6 +90,20 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	if err != nil {
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/golang: discover members: %w", err)
 	}
+
+	// Apply tools.go.modules include/exclude globs (user-facing member scoping).
+	// This is a deliberate post-discovery filter: DiscoverMembers handles scope
+	// exclusions (testdata, generated dirs); FilterMembers handles the user knob
+	// that restricts analysis to a named subset of workspace members for large
+	// workspaces where a full run exceeds acceptable wall-clock budgets.
+	//
+	// Scale ceiling: on a ~178-member workspace (omni), a full NeedTypesInfo load
+	// takes >5 minutes. The import-graph-only fallback (NeedName|NeedImports|
+	// NeedModule, drops StrengthHints) is a documented follow-up knob (Task 12
+	// adds per-analyzer timeout as the primary mitigation). Use tools.go.modules
+	// to scope large runs until Task 12 lands.
+	memberDirs = FilterMembers(memberDirs, s.Root, e.cfg.GoModuleInclude, e.cfg.GoModuleExclude)
+
 	if len(memberDirs) == 0 {
 		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
 	}

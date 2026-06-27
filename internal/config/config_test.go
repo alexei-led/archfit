@@ -240,6 +240,45 @@ func TestForExtract(t *testing.T) {
 			t.Errorf("non-rust lang leaked rust fields: %+v", ec)
 		}
 	})
+
+	t.Run("go_module_filter_propagated", func(t *testing.T) {
+		// tools.go.modules.include/exclude must surface in ForExtract("go").
+		gc := config.Config{
+			Version: 1,
+			Tools: map[string]config.ToolConfig{
+				config.LangGo: {
+					Enabled: config.ModeAuto,
+					Modules: config.GoModuleFilter{
+						Include: []string{globSvcAll},
+						Exclude: []string{"svc/legacy"},
+					},
+				},
+			},
+		}
+		ec := gc.ForExtract("go")
+		if !slices.Equal(ec.GoModuleInclude, []string{globSvcAll}) {
+			t.Errorf("GoModuleInclude = %v, want [svc/**]", ec.GoModuleInclude)
+		}
+		if !slices.Equal(ec.GoModuleExclude, []string{"svc/legacy"}) {
+			t.Errorf("GoModuleExclude = %v, want [svc/legacy]", ec.GoModuleExclude)
+		}
+	})
+
+	t.Run("go_module_filter_absent_for_non_go", func(t *testing.T) {
+		// tools.go.modules must not leak into other language extractors.
+		gc := config.Config{
+			Version: 1,
+			Tools: map[string]config.ToolConfig{
+				config.LangGo: {
+					Modules: config.GoModuleFilter{Include: []string{globSvcAll}},
+				},
+			},
+		}
+		ec := gc.ForExtract("typescript")
+		if ec.GoModuleInclude != nil || ec.GoModuleExclude != nil {
+			t.Errorf("go module filter leaked into typescript extractor: %+v", ec)
+		}
+	})
 }
 
 func TestDefaultIncludesRust(t *testing.T) {
@@ -253,9 +292,11 @@ func TestDefaultIncludesRust(t *testing.T) {
 	}
 }
 
-// Test fixtures for the Rust ForExtract / Load round-trip, factored out to keep
-// goconst quiet about repeated literals across subtests.
-const rustManifestPath = "crates/core/Cargo.toml"
+// Test fixtures factored out to keep goconst quiet about repeated literals.
+const (
+	rustManifestPath = "crates/core/Cargo.toml"
+	globSvcAll       = "svc/**" // tools.go.modules include glob used across subtests
+)
 
 var rustFeatures = []string{"serde", "tokio"}
 

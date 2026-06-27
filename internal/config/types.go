@@ -59,7 +59,9 @@ type ExtractConfig struct {
 	Mode       ToolMode // derived from Tools map for the given language/tool
 
 	// Go-specific.
-	BuildFlags []string // extra build flags passed to go/packages (e.g. ["-tags", "extractortest"])
+	BuildFlags      []string // extra build flags passed to go/packages (e.g. ["-tags", "extractortest"])
+	GoModuleInclude []string // tools.go.modules.include: keep only members matching these ScanRoot-relative globs
+	GoModuleExclude []string // tools.go.modules.exclude: drop members matching these ScanRoot-relative globs
 
 	// TypeScript-specific.
 	TSConfig string // path to tsconfig.json (empty = auto)

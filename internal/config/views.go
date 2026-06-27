@@ -98,6 +98,14 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 	ec.Paths = paths
 	ec.Internal = internal
 
+	// Go-specific fields.
+	if lang == LangGo {
+		if tc, ok := c.Tools[LangGo]; ok {
+			ec.GoModuleInclude = tc.Modules.Include
+			ec.GoModuleExclude = tc.Modules.Exclude
+		}
+	}
+
 	// Python-specific fields.
 	if lang == LangPython {
 		ec.PyPackage = c.PythonPackage
