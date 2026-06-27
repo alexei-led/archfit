@@ -14,7 +14,7 @@ import (
 
 // xfail: Task 9 sets this to false once the workspace refactor (Tasks 2-8) is
 // complete and both fixtures produce verified, byte-identical output.
-const xfail = true
+const xfail = false
 
 // Fixture dirs relative to this source file (cmd/archfit/).
 const (

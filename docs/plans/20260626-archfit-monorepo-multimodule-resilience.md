@@ -278,19 +278,26 @@ unclassified and `coupling_balance` reads `n/a`. This task supplies the
 
 ### Task 9: Byte-identical proof + omni Go acceptance (Tier 0 gate)
 
-- [ ] flip Task 1's `TestByteIdentical_SingleModule` + `_OneMemberWorkspace` to
+- [x] flip Task 1's `TestByteIdentical_SingleModule` + `_OneMemberWorkspace` to
       hard assertions; diff the two **frozen fixtures** against the committed
       baselines; investigate and resolve any `Module==nil` divergence. (archfit-self
       is NOT byte-diffed — it is covered by the next bullet)
-- [ ] run `make archfit` (dogfood) + `TestGolden` — stay green; regenerate only if
+      **Result:** both tests passed byte-identical without any extractor fix needed
+      — no `Module==nil` divergence observed on single-module or 1-member-workspace
+      fixtures after Tasks 2-8.
+- [x] run `make archfit` (dogfood) + `TestGolden` — stay green; regenerate only if
       a block legitimately changed (inspect diff)
-- [ ] acceptance on `~/workspace/omni` (config-less, relying on Task 8
+      **Result:** both green, no regeneration needed.
+- [x] acceptance on `~/workspace/omni` (config-less, relying on Task 8
       auto-registration): `archfit check --root <go-subdir> --full` and at the
       workspace root → `go/packages: ok`, ≥2 connected first-party modules,
       **classified** cross-module edges, **measurable** `boundary_integrity` /
       `coupling_balance` / `dependency_graph_health` / `cohesion`; `--root <subdir>`
       restricts loc/complexity/clones/fitness counts to that subtree (record numbers)
-- [ ] run full suite (`make test`, `TestArchImports`, `make lint`) — all green
+      **Result (--root ~/workspace/omni/server/shared):** - go/packages: ok, 645 files_seen - N=223 modules; 2430 total edges (208 scored first-party cross-module, 117 abstained) - classified cross-module edges: ✓ (208 scored with distance) - boundary_integrity: 50/100 (mixed) ✓ measurable - coupling_balance: 38/100 (poor) · mean balance 4.4/10 ✓ measurable - dependency_graph_health: 81/100 (strong) ✓ measurable - cohesion_modularity: 35/100 (poor) ✓ measurable - loc: 519 files (subtree-scoped); jscpd: 802 files (subtree-scoped)
+      **Workspace root (~178 members):** timed out at 5 min — scale issue, no
+      output produced; motivates Task 11 (module scoping) + Task 12 (timeouts).
+- [x] run full suite (`make test`, `TestArchImports`, `make lint`) — all green
 
 ### Task 10: Flag vacuous history-fed dimensions
 
