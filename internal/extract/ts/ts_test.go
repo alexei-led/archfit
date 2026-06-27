@@ -650,3 +650,46 @@ func TestExtract_TSConfigAutoDetect(t *testing.T) {
 		})
 	}
 }
+
+// TestExtract_SourceDirMissing is the bug-3 regression: when dependency-cruiser
+// exits non-zero because the source dir does not exist ("Can't open 'src' for
+// reading", as on an npm-workspaces monorepo with no top-level src/), auto mode
+// degrades to a partial coverage gap instead of failing the whole run; ModeOn
+// still hard-errors so a required analyzer surfaces the problem.
+func TestExtract_SourceDirMissing(t *testing.T) {
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == launcherBunx {
+				return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--version") {
+				return toolrun.Output{Stdout: []byte("16.0.0\n")}, nil
+			}
+			return toolrun.Output{ExitCode: 1, Stderr: []byte("ERROR: Can't open 'src' for reading. Does it exist?")}, nil
+		},
+	}
+	s := scope.Scope{Root: fixtureDir}
+
+	t.Run("auto degrades to partial coverage", func(t *testing.T) {
+		facts, cov, err := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto}).Extract(context.Background(), s)
+		if err != nil {
+			t.Fatalf("auto mode must not error on depcruise non-zero exit; got %v", err)
+		}
+		if cov.Status != "partial" {
+			t.Errorf("Status = %q, want %q", cov.Status, "partial")
+		}
+		if len(facts.Edges) != 0 {
+			t.Errorf("expected no edges on degraded run; got %d", len(facts.Edges))
+		}
+	})
+
+	t.Run("on hard-errors", func(t *testing.T) {
+		_, _, err := ts.New(runner, config.ExtractConfig{Mode: config.ModeOn}).Extract(context.Background(), s)
+		if err == nil {
+			t.Error("ModeOn must hard-error on depcruise non-zero exit")
+		}
+	})
+}
