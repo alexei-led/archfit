@@ -158,7 +158,7 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 	ctx, cancel := toolrun.WithWatchdog(ctx, a.timeout, defaultTimeout)
 	defer cancel()
 
-	timedOut := diagnostic.Coverage{Tool: indexer, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}
+	timedOut := diagnostic.Coverage{Version: indexer, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}
 
 	tmp, err := os.MkdirTemp("", "archfit-scip-")
 	if err != nil {
