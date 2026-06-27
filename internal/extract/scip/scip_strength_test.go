@@ -176,7 +176,10 @@ func TestDetectIndexer_Rust(t *testing.T) {
 			return toolrun.ToolInfo{}, false
 		},
 	}
-	indexer, pkg, lang, ok := New(runner, 0).detectIndexer(context.Background(), dir)
+	indexer, pkg, lang, ok, err := New(runner, 0).detectIndexer(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("detectIndexer: unexpected error: %v", err)
+	}
 	if !ok {
 		t.Fatal("detectIndexer: ok = false, want true")
 	}
@@ -216,7 +219,10 @@ func TestDetectIndexer_VirtualWorkspace(t *testing.T) {
 			return toolrun.Output{}, nil
 		},
 	}
-	indexer, pkg, lang, ok := New(runner, 0).detectIndexer(context.Background(), dir)
+	indexer, pkg, lang, ok, err := New(runner, 0).detectIndexer(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("detectIndexer: unexpected error: %v", err)
+	}
 	if !ok {
 		t.Fatal("detectIndexer: ok = false, want true for virtual workspace")
 	}
@@ -491,5 +497,43 @@ func TestStrengths_PythonAbsent(t *testing.T) {
 	}
 	if len(m) != 0 {
 		t.Errorf("strength map non-empty when SCIP absent: %v", m)
+	}
+}
+
+// TestCargoWorkspaceMembers_TimeoutMapsToStatusTimedOut verifies that when cargo
+// metadata returns context.DeadlineExceeded (inner cap fired before outer watchdog),
+// Strengths returns StatusTimedOut — not StatusAbsent — so operators know to raise
+// tools.scip.timeout rather than thinking Rust SCIP is simply unsupported.
+func TestCargoWorkspaceMembers_TimeoutMapsToStatusTimedOut(t *testing.T) {
+	dir := t.TempDir()
+	// Virtual workspace (no [package]) so detectIndexer calls cargoWorkspaceMembers.
+	manifest := "[workspace]\nmembers = [\"crate-a\"]\n"
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == indexerRust || tool == toolCargo {
+				return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/" + tool}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if cmd.Name == toolCargo {
+				// Simulate the inner 60 s cap firing before the outer watchdog.
+				return toolrun.Output{}, context.DeadlineExceeded
+			}
+			return toolrun.Output{}, nil
+		},
+	}
+	// adapter timeout=0 → outer watchdog uses defaultTimeout (20 min), stays inert.
+	// Only the inner cargo cap fires (returned directly by the mock).
+	a := New(runner, 0)
+	_, cov, err := a.Strengths(context.Background(), scope.Scope{Root: dir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cov.Status != diagnostic.StatusTimedOut {
+		t.Errorf("status = %q, want %q (cargo timeout must not be absorbed as absent)", cov.Status, diagnostic.StatusTimedOut)
 	}
 }

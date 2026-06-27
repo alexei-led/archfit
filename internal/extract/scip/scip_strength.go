@@ -141,12 +141,11 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 	ctx, cancel := toolrun.WithWatchdog(ctx, a.timeout, defaultTimeout)
 	defer cancel()
 
-	indexer, pkg, lang, found := a.detectIndexer(ctx, root)
+	indexer, pkg, lang, found, detectErr := a.detectIndexer(ctx, root)
 	if !found {
-		// If the watchdog fired during detection (e.g. cargo metadata timed out),
 		// report StatusTimedOut rather than StatusAbsent so the caller knows the
-		// tool is present but the analysis was cut short.
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		// tool was present but the detection phase hit a time limit.
+		if errors.Is(detectErr, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return ro, diagnostic.Coverage{Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}, false
 		}
 		absent.Reason = scipAbsentReason(root)
@@ -260,25 +259,27 @@ func (e errReader) Error() string { return "scip reader: " + string(e) }
 // package/module name used for internal-symbol filtering and the reader --lang.
 // One reader handles all three (the .scip format is language-agnostic); only the
 // indexer binary and the root identifier differ.
-func (a *Adapter) detectIndexer(ctx context.Context, root string) (indexer, pkg, lang string, ok bool) {
+// Returns a non-nil err only when a cargo metadata timeout fires (inner cap or
+// outer ctx), so the caller can surface StatusTimedOut rather than StatusAbsent.
+func (a *Adapter) detectIndexer(ctx context.Context, root string) (indexer, pkg, lang string, ok bool, err error) {
 	if fileExists(filepath.Join(root, "pyproject.toml")) || fileExists(filepath.Join(root, "setup.py")) {
 		if _, found := a.runner.Detect(ctx, indexerPython); found {
 			if p := detectPyPackage(root); p != "" {
-				return indexerPython, p, "python", true
+				return indexerPython, p, "python", true, nil
 			}
 		}
 	}
 	if fileExists(filepath.Join(root, "go.mod")) {
 		if _, found := a.runner.Detect(ctx, indexerGo); found {
 			if m := goModulePath(root); m != "" {
-				return indexerGo, m, "go", true
+				return indexerGo, m, "go", true, nil
 			}
 		}
 	}
 	if fileExists(filepath.Join(root, "package.json")) {
 		if _, found := a.runner.Detect(ctx, indexerTS); found {
 			if n := npmPackageName(root); n != "" {
-				return indexerTS, n, "typescript", true
+				return indexerTS, n, "typescript", true, nil
 			}
 		}
 	}
@@ -286,32 +287,47 @@ func (a *Adapter) detectIndexer(ctx context.Context, root string) (indexer, pkg,
 		if _, found := a.runner.Detect(ctx, indexerRust); found {
 			if n := cargoPackageName(root); n != "" {
 				// Single-package crate: pass the name directly.
-				return indexerRust, n, langRust, true
+				return indexerRust, n, langRust, true, nil
 			}
 			// Virtual workspace ([workspace] with no [package]): enumerate members
 			// via cargo metadata and pass them comma-joined so the reader can build
 			// the _is_internal membership set.
-			if members := a.cargoWorkspaceMembers(ctx, root); len(members) > 0 {
-				return indexerRust, strings.Join(members, ","), langRust, true
+			members, membersErr := a.cargoWorkspaceMembers(ctx, root)
+			if errors.Is(membersErr, context.DeadlineExceeded) {
+				return "", "", "", false, context.DeadlineExceeded
+			}
+			if len(members) > 0 {
+				return indexerRust, strings.Join(members, ","), langRust, true, nil
 			}
 		}
 	}
-	return "", "", "", false
+	return "", "", "", false, nil
 }
 
 // cargoWorkspaceMembers runs `cargo metadata --no-deps --format-version 1` in root
 // and returns the names of all workspace member packages. Returns nil on any failure.
+// Returns context.DeadlineExceeded when the inner cap fires (so detectIndexer can
+// propagate StatusTimedOut rather than silently degrading to StatusAbsent).
+// The inner cap honours tools.scip.timeout when set; floor is 60 s.
 // Used for virtual workspaces (no [package] in root Cargo.toml) so detectIndexer
 // can build a comma-separated package list for the SCIP reader.
-func (a *Adapter) cargoWorkspaceMembers(ctx context.Context, root string) []string {
+func (a *Adapter) cargoWorkspaceMembers(ctx context.Context, root string) ([]string, error) {
+	// Floor: 60 s. Honour configured timeout so a larger value can extend detection.
+	inner := 60 * time.Second
+	if a.timeout > 0 {
+		inner = a.timeout
+	}
 	out, err := a.runner.Run(ctx, toolrun.ToolCmd{
 		Name:    toolCargo,
 		Args:    []string{"metadata", "--no-deps", "--format-version", "1"},
 		WorkDir: root,
-		Timeout: 60 * time.Second,
+		Timeout: inner,
 	})
 	if err != nil || out.ExitCode != 0 {
-		return nil
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, context.DeadlineExceeded
+		}
+		return nil, nil
 	}
 	var meta struct {
 		Packages []struct {
@@ -319,7 +335,7 @@ func (a *Adapter) cargoWorkspaceMembers(ctx context.Context, root string) []stri
 		} `json:"packages"`
 	}
 	if err := json.Unmarshal(out.Stdout, &meta); err != nil {
-		return nil
+		return nil, nil
 	}
 	// With --no-deps, `packages` already contains ONLY workspace members (external
 	// dependencies are excluded), so every package name is a member. This avoids
@@ -330,7 +346,7 @@ func (a *Adapter) cargoWorkspaceMembers(ctx context.Context, root string) []stri
 	for _, p := range meta.Packages {
 		names = append(names, p.Name)
 	}
-	return names
+	return names, nil
 }
 
 // indexArgs returns the per-indexer command arguments to write an index to out.

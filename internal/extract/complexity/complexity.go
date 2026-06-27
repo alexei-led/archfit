@@ -90,7 +90,7 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 	if backend == BackendLizard {
 		funcs, cov, subErr = runLizard(ctx, runner, root, timeout)
 	} else {
-		funcs, cov, subErr = runAuto(ctx, runner, root)
+		funcs, cov, subErr = runAuto(ctx, runner, root, timeout)
 	}
 
 	// Check both the inner per-subprocess deadline (subErr) and the outer
@@ -104,10 +104,12 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 
 // runAuto runs gocyclo for Go (exact CCN) and the ast-grep decision-point
 // proxy for TS/Py/Rust. When gocyclo is absent the proxy also covers Go.
+// timeout is the configured per-analyzer cap (0 → each sub uses its built-in
+// constant, which keeps the no-config path byte-identical).
 // Returns a non-nil error only when an inner per-subprocess deadline fires so
 // the caller can surface StatusTimedOut. Other failures degrade to absent coverage.
-func runAuto(ctx context.Context, runner toolrun.Runner, root string) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
-	gocycloFuncs, gocycloOK, err := runGocyclo(ctx, runner, root)
+func runAuto(ctx context.Context, runner toolrun.Runner, root string, timeout time.Duration) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+	gocycloFuncs, gocycloOK, err := runGocyclo(ctx, runner, root, timeout)
 	if err != nil {
 		return nil, absentCov(reasonRunFailed), err
 	}
@@ -117,7 +119,7 @@ func runAuto(ctx context.Context, runner toolrun.Runner, root string) ([]signal.
 	if !gocycloOK {
 		proxyLangs = append([]string{langGo}, proxyLangs...)
 	}
-	proxyFuncs, proxyCov, err := runProxy(ctx, runner, root, proxyLangs)
+	proxyFuncs, proxyCov, err := runProxy(ctx, runner, root, proxyLangs, timeout)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, absentCov(reasonRunFailed), err

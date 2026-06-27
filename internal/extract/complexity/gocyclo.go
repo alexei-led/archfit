@@ -20,19 +20,25 @@ const (
 )
 
 // runGocyclo invokes gocyclo over root and returns per-function CCN records.
+// timeout is the configured per-analyzer cap; 0 falls back to gocycloTimeout
+// (keeps the no-config path byte-identical).
 // Returns (nil, false, nil) when gocyclo is not on PATH or the run fails.
 // Returns a non-nil error only when the inner per-subprocess deadline fires
 // (context.DeadlineExceeded) so the caller can surface StatusTimedOut.
 // gocyclo's exit code is the number of functions above the threshold — ignored.
-func runGocyclo(ctx context.Context, runner toolrun.Runner, root string) ([]signal.ComplexityFunc, bool, error) {
+func runGocyclo(ctx context.Context, runner toolrun.Runner, root string, timeout time.Duration) ([]signal.ComplexityFunc, bool, error) {
 	if _, ok := runner.Detect(ctx, gocycloTool); !ok {
 		return nil, false, nil
+	}
+	inner := gocycloTimeout
+	if timeout > 0 {
+		inner = timeout
 	}
 	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    gocycloTool,
 		Args:    []string{"-over", "0", root},
 		WorkDir: root,
-		Timeout: gocycloTimeout,
+		Timeout: inner,
 	})
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
