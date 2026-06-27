@@ -91,6 +91,14 @@ func buildModuleMap(modules map[string]ModuleDef) ModuleMap {
 	return ModuleMap{names: names, modules: modules}
 }
 
+// BuildModuleMap is the exported counterpart of buildModuleMap.
+// It lets the engine rebuild a ModuleMap after module augmentation
+// (AugmentModulesFromGraph, AugmentGoWorkspaceModules) without importing
+// an unexported function.
+func BuildModuleMap(modules map[string]ModuleDef) ModuleMap {
+	return buildModuleMap(modules)
+}
+
 // Has reports whether a module with exactly this name (map key) is configured.
 // Distinct from ModuleFor, which matches a repo-relative path against path globs.
 func (mm ModuleMap) Has(name string) bool {

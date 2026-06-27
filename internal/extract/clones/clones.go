@@ -53,6 +53,16 @@ const (
 	reasonTimedOut     = "clone detection timed out — increase tools.clones.timeout or reduce the scope"
 )
 
+// effectiveTimeout returns configured when it is non-zero, else fallback.
+// This lets a configured tools.clones.timeout extend or shorten the inner
+// per-subprocess cap (not just the outer watchdog).
+func effectiveTimeout(configured, fallback time.Duration) time.Duration {
+	if configured > 0 {
+		return configured
+	}
+	return fallback
+}
+
 // Run invokes jscpd over root and returns detected clone clusters.
 // exclusions is the effective set of glob patterns (scope.MergeExclusions result)
 // that jscpd should skip via --ignore; empty means no --ignore flag is added
@@ -102,11 +112,11 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 		Name:    toolName,
 		Args:    args,
 		WorkDir: root,
-		Timeout: clonesTimeout,
+		Timeout: effectiveTimeout(timeout, clonesTimeout),
 	})
 	if err != nil || out.ExitCode != 0 {
 		// Check both the inner per-subprocess deadline (err) and the outer watchdog
-		// (ctx.Err()). When clonesTimeout fires, runner.Run returns
+		// (ctx.Err()). When the inner timeout fires, runner.Run returns
 		// context.DeadlineExceeded as err but ctx.Err() is nil.
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}, nil

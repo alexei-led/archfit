@@ -143,6 +143,12 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 
 	indexer, pkg, lang, found := a.detectIndexer(ctx, root)
 	if !found {
+		// If the watchdog fired during detection (e.g. cargo metadata timed out),
+		// report StatusTimedOut rather than StatusAbsent so the caller knows the
+		// tool is present but the analysis was cut short.
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return ro, diagnostic.Coverage{Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}, false
+		}
 		absent.Reason = scipAbsentReason(root)
 		return ro, absent, false
 	}
@@ -177,17 +183,27 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 
 	partial := diagnostic.Coverage{Version: indexer, Status: diagnostic.StatusPartial}
 
+	// innerTimeout returns the configured per-analyzer timeout when set, else
+	// the built-in constant. This lets tools.scip.timeout extend the per-phase
+	// inner cap beyond the fixed default (e.g. 10m index, 5m reader).
+	innerTimeout := func(builtin time.Duration) time.Duration {
+		if a.timeout > 0 {
+			return a.timeout
+		}
+		return builtin
+	}
+
 	// Index the project (the indexer runs in the project root, output to temp).
 	idxOut, err := a.runner.Run(ctx, toolrun.ToolCmd{
 		Name:    indexer,
 		Args:    indexArgs(indexer, pkg, root, indexPath),
 		WorkDir: root,
-		Timeout: indexTimeout,
+		Timeout: innerTimeout(indexTimeout),
 	})
 	if err != nil || idxOut.ExitCode != 0 {
 		// Check both the inner per-subprocess deadline (err) and the outer
-		// watchdog (ctx.Err()). indexTimeout < defaultTimeout so the inner
-		// deadline may fire while ctx is still live.
+		// watchdog (ctx.Err()). When the configured timeout equals the inner cap
+		// they may fire in either order.
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return ro, timedOut, false
 		}
@@ -202,12 +218,12 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		Name:    "uv",
 		Args:    []string{"run", readerPath, "--proto", protoPath, "--index", indexPath, "--package", pkg, "--lang", lang},
 		WorkDir: tmp,
-		Timeout: readerTimeout,
+		Timeout: innerTimeout(readerTimeout),
 	})
 	if err != nil || rdOut.ExitCode != 0 {
 		// Check both the inner per-subprocess deadline (err) and the outer
-		// watchdog (ctx.Err()). readerTimeout < defaultTimeout so the inner
-		// deadline may fire while ctx is still live.
+		// watchdog (ctx.Err()). When the configured timeout equals the inner cap
+		// they may fire in either order.
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return ro, timedOut, false
 		}

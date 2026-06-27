@@ -147,6 +147,13 @@ func validate(cfg Config) error {
 			return fmt.Errorf("map_review.stale_after %q is not a valid Go duration (e.g. 720h, 30m): %w", s, err)
 		}
 	}
+	for _, name := range sortedToolKeys(cfg.Tools) {
+		if s := cfg.Tools[name].Timeout; s != "" {
+			if _, err := time.ParseDuration(s); err != nil {
+				return fmt.Errorf("tools.%s.timeout %q is not a valid Go duration (e.g. 5m, 10m30s): %w", name, s, err)
+			}
+		}
+	}
 	return validateGate("map_review", cfg.MapReview.Gate)
 }
 

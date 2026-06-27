@@ -1075,6 +1075,16 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			wantErr: "",
 		},
 		{
+			name:    "invalid tool timeout rejected",
+			yaml:    "version: 1\ntools:\n  scip:\n    timeout: \"5min\"\n",
+			wantErr: "tools.scip.timeout",
+		},
+		{
+			name:    "valid tool timeout accepted",
+			yaml:    "version: 1\ntools:\n  scip:\n    timeout: \"5m\"\n",
+			wantErr: "",
+		},
+		{
 			name:    "valid module role",
 			yaml:    "version: 1\nmodules:\n  cmd:\n    paths: [\"cmd/**\"]\n    role: composition_root\n",
 			wantErr: "",

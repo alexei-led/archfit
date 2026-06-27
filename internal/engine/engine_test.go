@@ -1582,6 +1582,83 @@ func TestRun_DynamicImports_Deterministic(t *testing.T) {
 	}
 }
 
+// TestRun_GoWorkspace_ModuleMapRebuild verifies that secondary consumers
+// (buildDynamicImports, buildRuntimeAsync, diagnostic module-label resolution)
+// see the auto-registered Go workspace members after ModuleMap is rebuilt
+// post-augmentation (Finding A fix). Before the fix, the stale ModuleMap had
+// no entries for auto-registered members and sites would fall back to the
+// file's directory (e.g. "svc"), not the module path (e.g. "example.com/svc").
+func TestRun_GoWorkspace_ModuleMapRebuild(t *testing.T) {
+	// Two-member workspace: "example.com/svc" at svc/, "example.com/lib" at lib/.
+	// No modules are declared in config — AugmentGoWorkspaceModules must register them.
+	const (
+		modPathSvc = "example.com/svc"
+		modPathLib = "example.com/lib"
+		fileSvc    = "svc/main.go"
+	)
+
+	workspaceFacts := graph.Facts{
+		Language: "go",
+		Nodes: []graph.Node{
+			{Kind: graph.NodeKindFile, Path: fileSvc},
+			{Kind: graph.NodeKindFile, Path: "lib/util.go"},
+		},
+		Edges: []graph.Edge{
+			{
+				From: "file:" + fileSvc, To: "file:lib/util.go",
+				Kind: graph.EdgeKindImports, Language: "go", Confidence: "high",
+			},
+		},
+		GoModules: []graph.GoModule{
+			{Path: modPathSvc, RelDir: "svc"},
+			{Path: modPathLib, RelDir: "lib"},
+		},
+	}
+
+	emptyCfg := config.Config{Version: 1}
+	classifyCfg := emptyCfg.ForClassify()
+	rs, err := rules.New(emptyCfg.ForRules())
+	if err != nil {
+		t.Fatalf("rules.New: %v", err)
+	}
+
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return workspaceFacts, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+	base := baseline.Baseline{}
+	in := engine.RunInput{
+		Mode: engine.Mode{Head: headRef}, Scope: scope.Scope{Root: "."},
+		Classify: classifyCfg, Staleness: config.StalenessConfig{}, Exceptions: config.ExceptionSet{},
+		Extractors: []ports.Extractor{ex}, Patterns: ports.NopPatternProvider{}, Resolver: ports.NopSymbolResolver{},
+		PatternCfg: config.PatternConfig{}, Rules: rs, Metrics: metrics.New(config.Config{Version: 1}),
+		Accepted: base, BaseMetrics: base.Metrics,
+		Signals: signal.RunSignals{
+			DynamicImports: signal.DynamicImportSignals{
+				Sites: []diagnostic.DynamicImportSite{
+					{File: fileSvc, Line: 1, Kind: kindLazy, Language: langPyTest},
+				},
+			},
+		},
+		Now: time.Date(2026, 6, 27, 0, 0, 0, 0, time.UTC),
+	}
+	d, runErr := engine.Run(context.Background(), in)
+	if runErr != nil {
+		t.Fatalf("Run: %v", runErr)
+	}
+
+	if len(d.DynamicImports) == 0 {
+		t.Fatal("expected DynamicImports to be populated")
+	}
+	got := d.DynamicImports[0].Module
+	if got != modPathSvc {
+		// Before the fix the stale ModuleMap returned "" and the fallback was "svc".
+		t.Errorf("DynamicImports[0].Module = %q, want %q (rebuilt ModuleMap must resolve auto-registered workspace member)", got, modPathSvc)
+	}
+}
+
 // runtimeAsyncRun executes the engine over cleanFacts with the given runtime-async
 // sites and returns the assembled Diagnostic. The graph is identical regardless of
 // the sites — the sites only feed the report-only RuntimeAsync block; they do not

@@ -88,7 +88,7 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 	var cov diagnostic.Coverage
 	var subErr error
 	if backend == BackendLizard {
-		funcs, cov, subErr = runLizard(ctx, runner, root)
+		funcs, cov, subErr = runLizard(ctx, runner, root, timeout)
 	} else {
 		funcs, cov, subErr = runAuto(ctx, runner, root)
 	}
@@ -143,10 +143,13 @@ func runAuto(ctx context.Context, runner toolrun.Runner, root string) ([]signal.
 }
 
 // runLizard invokes lizard (directly or via uvx) and returns per-function CCN.
-// Only called when backend=lizard. Returns a non-nil error only when the inner
-// per-subprocess deadline fires (context.DeadlineExceeded) so the caller can
-// surface StatusTimedOut. Other failures degrade to absent coverage.
-func runLizard(ctx context.Context, runner toolrun.Runner, root string) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+// Only called when backend=lizard. timeout governs the inner subprocess cap when
+// non-zero (so a configured tools.complexity.timeout can extend beyond the
+// built-in lizardTimeout); zero falls back to the lizardTimeout constant.
+// Returns a non-nil error only when the inner per-subprocess deadline fires
+// (context.DeadlineExceeded) so the caller can surface StatusTimedOut.
+// Other failures degrade to absent coverage.
+func runLizard(ctx context.Context, runner toolrun.Runner, root string, timeout time.Duration) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
 	name, pre := lizardCommand(ctx, runner)
 	if name == "" {
 		return nil, absentCov(reasonLizardMissing), nil
@@ -159,7 +162,11 @@ func runLizard(ctx context.Context, runner toolrun.Runner, root string) ([]signa
 	for _, x := range lizardExcludes {
 		args = append(args, "-x", x)
 	}
-	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: name, Args: args, WorkDir: root, Timeout: lizardTimeout})
+	innerTimeout := lizardTimeout
+	if timeout > 0 {
+		innerTimeout = timeout
+	}
+	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: name, Args: args, WorkDir: root, Timeout: innerTimeout})
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, absentCov(reasonRunFailed), err
