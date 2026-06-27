@@ -340,13 +340,13 @@ unclassified and `coupling_balance` reads `n/a`. This task supplies the
 
 ### Task 13: Best-effort exclusion propagation to jscpd
 
-- [ ] pass the effective exclusion globs to jscpd (`--ignore`/glob) so excluded /
+- [x] pass the effective exclusion globs to jscpd (`--ignore`/glob) so excluded /
       generated files are skipped before duplication scanning
-- [ ] document explicitly that scip-go cannot honor file-level exclusions
+- [x] document explicitly that scip-go cannot honor file-level exclusions
       (build-based indexing) — Task 12's timeout is its guard; this task is
       jscpd-only / best-effort
-- [ ] write tests: excluded file absent from jscpd input
-- [ ] run tests — must pass before next task
+- [x] write tests: excluded file absent from jscpd input
+- [x] run tests — must pass before next task
 
 ### Task 14: Python intrusive strength at symbol level (cheap, no heuristics)
 
