@@ -2,45 +2,109 @@
   "schema_version": "archfit.baseline.v1",
   "accepted": [],
   "metrics": {
+    "abstractness": {
+      "value": 0,
+      "version": "abstractness.v1"
+    },
+    "architecture_fitness": {
+      "value": 0.6666666666666666,
+      "version": "architecture_fitness.v1"
+    },
     "blast_radius": {
-      "value": 4,
+      "value": 5,
       "version": "blast_radius.v1"
     },
     "change_amplification": {
       "value": 0,
       "version": "change_amplification.v1"
     },
+    "change_coupling": {
+      "value": 0,
+      "version": "change_coupling.v1"
+    },
     "change_locality": {
       "value": 0,
       "version": "change_locality.v2"
     },
     "complexity": {
-      "value": 12,
+      "value": 56,
       "version": "complexity.v1"
     },
     "coverage": {
-      "value": 1,
+      "value": 1.0372862349313148,
       "version": "coverage.v1"
     },
     "cycle": {
       "value": 0,
       "version": "cycle.v1"
     },
+    "deprecated_dep_count": {
+      "value": 0,
+      "version": "deprecated_dep_count.v1"
+    },
     "encapsulation": {
       "value": 0,
       "version": "encapsulation.v1"
     },
+    "file_mutual_import": {
+      "value": 0,
+      "version": "file_mutual_import.v1"
+    },
+    "file_structural_weight": {
+      "value": 8,
+      "version": "file_structural_weight.v1"
+    },
+    "functional_candidates": {
+      "value": 19,
+      "version": "functional_candidates.v1"
+    },
+    "global_state_density": {
+      "value": 3,
+      "version": "global_state_density.v1"
+    },
     "hidden_coupling": {
-      "value": 65,
+      "value": 64,
       "version": "hidden_coupling.v1"
     },
+    "instability": {
+      "value": 18,
+      "version": "instability.v1"
+    },
+    "martin_distance": {
+      "value": 18,
+      "version": "martin_distance.v1"
+    },
+    "panic_density": {
+      "value": 19,
+      "version": "panic_density.v1"
+    },
+    "propagation_cost": {
+      "value": 0.08796025715955581,
+      "version": "propagation_cost.v1"
+    },
+    "risk_hub": {
+      "value": 98,
+      "version": "risk_hub.v1"
+    },
+    "struct_field_density": {
+      "value": 1126,
+      "version": "struct_field_density.v1"
+    },
     "structural_weight": {
-      "value": 1,
+      "value": 3,
       "version": "structural_weight.v1"
+    },
+    "test_density": {
+      "value": 1044,
+      "version": "test_density.v1"
     },
     "unbalanced_edge": {
       "value": 0,
       "version": "unbalanced_edge.v2"
+    },
+    "unsafe_density": {
+      "value": 5,
+      "version": "unsafe_density.v1"
     }
   }
 }

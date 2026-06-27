@@ -202,6 +202,62 @@ on PATH; `archfit doctor` checks it.
 **No new binary dependency:** `sg` is already required for ast-grep pattern rules
 and is bundled in the runtime image. No CGO; the static binary is unchanged.
 
+### `tools.go.modules`
+
+Restricts Go workspace analysis to a subset of `go.work` members. Useful when the
+workspace has many members (hundreds) and you want a fast focused run, or when the
+workspace root run times out.
+
+```yaml
+tools:
+  go:
+    enabled: on
+    modules:
+      include:
+        - server/shared/** # keep only members whose RelDir matches
+        - server/auth/**
+      exclude:
+        - "**/testdata/**" # drop members matching these after include
+```
+
+- `include` — list of ScanRoot-relative globs; only members whose `RelDir` (the
+  path from ScanRoot to the member's directory) matches at least one glob are
+  loaded. Empty or absent means all in-scope members.
+- `exclude` — list of ScanRoot-relative globs; members matching any glob are
+  dropped (applied after `include`).
+
+When the resulting member set is empty, the Go extractor reports `absent`. The
+default (both absent) loads all members that survive the top-level `exclusions`
+filter.
+
+**Scale note:** a full `NeedTypesInfo` load of 100+ members takes 1–2 minutes
+wall-clock on a warm build cache. Use `tools.go.modules` to scope the load; also
+set a `timeout` (see below) as a watchdog for pathological cases.
+
+### `tools.<x>.timeout`
+
+Per-analyzer watchdog timeout for subprocess analyzers: `scip`, `clones`
+(jscpd), and `complexity` (gocyclo/lizard). When the subprocess exceeds the
+timeout, the result is dropped cleanly and the dependent metrics report
+`n/a (timed out)` — the run continues and exits on the verdict from the remaining
+analyzers.
+
+```yaml
+tools:
+  scip:
+    enabled: on
+    timeout: 10m # Go duration string; e.g. "5m", "10m30s"
+  clones:
+    enabled: on
+    timeout: 5m
+  complexity:
+    enabled: on
+    timeout: 3m
+```
+
+Zero or absent means the built-in package default (typically 5–15 minutes). Set
+an explicit timeout when a generated or very large file causes a hang.
+
 ### `tools.<x>.gate` (coverage gate)
 
 When an analyzer is **absent** (tool not installed or not found), its metrics drop
