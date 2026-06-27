@@ -175,6 +175,8 @@ var tsRuleKinds = map[string]kindInfo{
 	// Import-signal rules (IsSignal=true): confirm framework import per file.
 	"ts-import-express": {Framework: fwGroupExpress, IsSignal: true},
 	"ts-import-nest":    {Framework: fwGroupNest, IsSignal: true},
+	// Test-function detection: emit test_fn facts for TS test cases (it()/test() calls).
+	"ts-test-fn": {Kind: kindTestFn},
 	// Test-import rules: emit test_import facts for production TS files.
 	"ts-test-import-jest":   {Kind: kindTestImport, Framework: fwGroupJest},
 	"ts-test-import-vitest": {Kind: kindTestImport, Framework: fwGroupVitest},
@@ -507,7 +509,7 @@ func isNonExportedGoRule(ruleID string) bool {
 // isNonExportedTSRule returns true for TypeScript ruleIds that are never exported.
 func isNonExportedTSRule(ruleID string) bool {
 	return strings.HasPrefix(ruleID, "ts-route-") || strings.HasPrefix(ruleID, "ts-import-") ||
-		ruleID == "ts-decorator" || strings.HasPrefix(ruleID, "ts-test-import-")
+		ruleID == "ts-decorator" || strings.HasPrefix(ruleID, "ts-test-import-") || ruleID == "ts-test-fn"
 }
 
 // isNonExportedPyRule returns true for Python ruleIds that are never exported.
