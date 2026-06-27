@@ -23,6 +23,7 @@ import (
 
 const (
 	toolName      = "depcruise"
+	coverageTool  = "dependency-cruiser" // Coverage.Tool label (the CLI subcommand is toolName).
 	langTS        = "typescript"
 	statusOK      = "ok"
 	statusPartial = "partial"
@@ -145,7 +146,16 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/ts: run dependency-cruiser: %w", err)
 	}
 	if out.ExitCode != 0 {
-		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/ts: dependency-cruiser exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+		// dependency-cruiser exited non-zero — e.g. the source directory does not
+		// exist ("Can't open 'src' for reading"), as on an npm-workspaces monorepo
+		// with no top-level src/. In auto mode this is a coverage gap, not a
+		// run-level failure (the "warn-loud, don't block" contract); only an
+		// explicitly required analyzer (ModeOn) hard-errors.
+		reason := fmt.Sprintf("dependency-cruiser exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+		if e.cfg.Mode == config.ModeOn {
+			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/ts: %s", reason)
+		}
+		return graph.Facts{}, diagnostic.Coverage{Tool: coverageTool, Version: version, Status: statusPartial, Reason: reason}, nil
 	}
 
 	facts, cov, err := e.parseAndNormalize(out.Stdout, version, s.SubtreePrefix)
@@ -438,7 +448,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 		Unresolved: unresolved,
 	}
 	cov := diagnostic.Coverage{
-		Tool:            "dependency-cruiser",
+		Tool:            coverageTool,
 		Version:         version,
 		FilesSeen:       filesSeen,
 		FilesApplicable: filesSeen,
@@ -461,7 +471,7 @@ func (e *Extractor) matchesInternal(path string) bool {
 // absentCoverage returns a Coverage record indicating the tool was not found.
 func absentCoverage(version string) diagnostic.Coverage {
 	return diagnostic.Coverage{
-		Tool:    "dependency-cruiser",
+		Tool:    coverageTool,
 		Version: version,
 		Status:  statusAbsent,
 	}

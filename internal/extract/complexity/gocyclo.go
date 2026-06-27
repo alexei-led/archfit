@@ -102,6 +102,13 @@ func parseGocycloLine(line, root string) (signal.ComplexityFunc, bool) {
 	if rel, rerr := filepath.Rel(root, filePath); rerr == nil {
 		filePath = rel
 	}
+	// Drop functions from the Go module cache (<root>/pkg/mod): third-party deps,
+	// not first-party complexity. Component-exact "pkg/mod/" — never matches
+	// pkg/model/ or pkg/modules/. Contains covers the rare Rel-failure fallback
+	// where filePath stays absolute. Mirrors fitness.skipModuleCacheAndTestdata.
+	if slash := filepath.ToSlash(filePath); strings.HasPrefix(slash, "pkg/mod/") || strings.Contains(slash, "/pkg/mod/") {
+		return signal.ComplexityFunc{}, false
+	}
 	return signal.ComplexityFunc{
 		File: filepath.ToSlash(filePath),
 		Name: funcName,

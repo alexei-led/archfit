@@ -29,6 +29,7 @@ var DefaultExclusions = []string{
 	"**/.venv/**",
 	"**/node_modules/**",
 	"**/vendor/**",
+	"**/pkg/mod/**", // Go module download cache (GOPATH/pkg/mod): third-party deps, not first-party source.
 	"**/dist/**",
 	"**/build/**",
 	// testdata trees hold fixture repos used by test suites; they are not

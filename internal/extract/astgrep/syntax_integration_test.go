@@ -154,13 +154,14 @@ func TestSyntaxIntegration_AllRuleFiles(t *testing.T) {
 			spotKind:      kindFunctionStr,
 			requiredKinds: []string{kindFunctionStr, kindStructStr, kindInterfaceStr, kindTestImportStr, kindStructFieldStr, kindPanicOpStr, kindTypeLeakStr, kindTestFnStr},
 		},
-		// TypeScript: fixture.ts exports func greet + @Controller decorator + express route + jest import.
-		// Fixture covers: function, class, interface, annotation, route, test_import (see fixture.ts).
+		// TypeScript: fixture.ts exports func greet + @Controller decorator + express route + jest import +
+		// it()/test() call expressions (test_fn kind).
+		// Fixture covers: function, class, interface, annotation, route, test_import, test_fn (see fixture.ts).
 		{
 			lang:          "typescript",
 			spotName:      "greet",
 			spotKind:      kindFunctionStr,
-			requiredKinds: []string{kindFunctionStr, kindClassStr, kindInterfaceStr, kindAnnotStr, kindRouteStr, kindTestImportStr},
+			requiredKinds: []string{kindFunctionStr, kindClassStr, kindInterfaceStr, kindAnnotStr, kindRouteStr, kindTestImportStr, kindTestFnStr},
 		},
 		// Python: fixture.py declares func process + @staticmethod decorator + fastapi route + pytest import +
 		// lazy_loader (import os inside function) + lazy_from_loader (from pathlib import Path inside function) +

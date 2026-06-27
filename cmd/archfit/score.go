@@ -10,6 +10,8 @@ type ScoreCmd struct {
 	Root   string `help:"Repository root to analyze (default: directory of --config)." type:"path"`
 	Base   string `help:"Git ref to compare against, enabling the change-locality dimension (e.g. main, HEAD~1)."`
 	Full   bool   `help:"Scan all files, not just files changed since --base (implied when --base is absent)."`
+
+	NoConfig bool `name:"no-config" help:"Skip the config file and use built-in defaults. Combine with --root for an ad-hoc scoring run."`
 }
 
 func (c *ScoreCmd) Run(deps *appDeps) error {
@@ -21,6 +23,7 @@ func (c *ScoreCmd) Run(deps *appDeps) error {
 		Advisory: true,
 		Report:   true,
 		Format:   []string{"scorecard"},
+		NoConfig: c.NoConfig,
 	}
 	return check.Run(deps)
 }

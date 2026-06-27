@@ -179,3 +179,16 @@ id: ts-test-import-sinon
 language: TypeScript
 rule:
   pattern: import $$$ from 'sinon'
+---
+# Test-function detection: emit test_fn facts for TS test cases. Unlike Go/Py/Rust
+# (function declarations), jest/vitest tests are it()/test() CALL expressions; the
+# first argument (the description) is captured as $NAME so the fact has a name.
+# describe() is a suite, not a test, and is intentionally excluded. Ceiling:
+# it.skip/it.only/it.each member calls and .tsx/.js files are not matched — a
+# practical test-density proxy (see rs-test-fn for the analogous Rust ceiling).
+id: ts-test-fn
+language: TypeScript
+rule:
+  any:
+    - pattern: it($NAME, $$$)
+    - pattern: test($NAME, $$$)
