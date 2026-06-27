@@ -130,20 +130,21 @@ const coChangeMaxFiles = 50
 
 // Churn returns per-file commit counts over the recent window (a volatility proxy).
 func Churn(ctx context.Context, workDir string, runner toolrun.Runner) (FileChurn, diagnostic.Coverage, error) {
-	churn, _, cov, err := History(ctx, workDir, "", runner)
+	churn, _, _, cov, err := History(ctx, workDir, "", runner)
 	return churn, cov, err
 }
 
-// History returns per-file churn and pairwise co-change over the recent commit
-// window in a single `git log` pass. A non-git directory or any failure yields
-// empty maps with absent coverage, never an error — this signal is best-effort.
-// The commit window is bounded by count (deterministic for a fixed HEAD).
+// History returns per-file churn, pairwise co-change, and commit count over the
+// recent commit window in a single `git log` pass. A non-git directory or any
+// failure yields empty maps with absent coverage, never an error — this signal
+// is best-effort. The commit window is bounded by count (deterministic for a
+// fixed HEAD).
 //
 // When prefix is non-empty, the git log is scoped to that subtree path and only
 // matching files are collected; their prefix component is stripped so returned
 // paths are ScanRoot-relative. When prefix is "", behavior is byte-identical to
 // the pre-prefix version.
-func History(ctx context.Context, workDir, prefix string, runner toolrun.Runner) (FileChurn, CoChange, diagnostic.Coverage, error) {
+func History(ctx context.Context, workDir, prefix string, runner toolrun.Runner) (FileChurn, CoChange, int, diagnostic.Coverage, error) {
 	args := []string{"log", fmt.Sprintf("-n%d", churnCommits), "--name-only", "--pretty=format:@"}
 	if prefix != "" {
 		args = append(args, "--", prefix)
@@ -155,7 +156,7 @@ func History(ctx context.Context, workDir, prefix string, runner toolrun.Runner)
 		WorkDir: workDir,
 	})
 	if err != nil || out.ExitCode != 0 {
-		return nil, nil, diagnostic.Coverage{Tool: gitTool, Status: "absent"}, nil
+		return nil, nil, 0, diagnostic.Coverage{Tool: gitTool, Status: "absent"}, nil
 	}
 
 	subtree := ""
@@ -165,6 +166,7 @@ func History(ctx context.Context, workDir, prefix string, runner toolrun.Runner)
 
 	churn := FileChurn{}
 	coChange := CoChange{}
+	totalCommits := 0
 	var commit []string
 	flush := func() {
 		for _, f := range commit {
@@ -183,6 +185,7 @@ func History(ctx context.Context, workDir, prefix string, runner toolrun.Runner)
 	for _, line := range strings.Split(string(out.Stdout), "\n") {
 		if line == "@" {
 			flush()
+			totalCommits++
 			continue
 		}
 		if f := strings.TrimSpace(line); f != "" {
@@ -199,5 +202,5 @@ func History(ctx context.Context, workDir, prefix string, runner toolrun.Runner)
 	if len(churn) == 0 {
 		status = "absent"
 	}
-	return churn, coChange, diagnostic.Coverage{Tool: gitTool, Status: status, FilesSeen: len(churn)}, nil
+	return churn, coChange, totalCommits, diagnostic.Coverage{Tool: gitTool, Status: status, FilesSeen: len(churn)}, nil
 }

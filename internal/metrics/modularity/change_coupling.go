@@ -51,6 +51,11 @@ func (m ChangeCouplingMetric) Calculate(in signal.HistoryInput) diagnostic.Metri
 	if in.Graph == nil || len(in.History.CoChange) == 0 {
 		return result.NACount(m.Name(), m.Version(), changeCouplingDef)
 	}
+	// A window with a single commit always produces 0 co-change pairs regardless of
+	// the threshold — the result would be vacuously strong. Abstain instead.
+	if in.History.CommitCount > 0 && in.History.CommitCount < 2 {
+		return result.NACountMsg(m.Name(), m.Version(), changeCouplingDef, result.NANoHistory)
+	}
 	resolve := modgraph.ModuleKeyResolver(in.Graph)
 	mc := modgraph.ModuleChurn(in.Graph, in.History.FileChurn)
 	if len(mc) == 0 {

@@ -35,6 +35,11 @@ func (m ChangeAmplificationMetric) Calculate(in signal.HistoryInput) diagnostic.
 	if in.Graph == nil || len(in.History.FileChurn) == 0 {
 		return result.NACount(m.Name(), m.Version(), "blast radius weighted by recent churn (expected change cost)")
 	}
+	// A window with a single commit produces 0 hubs regardless of the threshold —
+	// churn values are all 1, so no module is meaningfully volatile. Abstain instead.
+	if in.History.CommitCount > 0 && in.History.CommitCount < 2 {
+		return result.NACountMsg(m.Name(), m.Version(), "blast radius weighted by recent churn (expected change cost)", result.NANoHistory)
+	}
 	blast, n := modgraph.BlastRadius(in.Graph)
 	if n < 2 {
 		return result.NACount(m.Name(), m.Version(), "blast radius weighted by recent churn (expected change cost)")

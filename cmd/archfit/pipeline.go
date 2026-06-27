@@ -151,8 +151,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	if histWorkDir == "" {
 		histWorkDir = s.Root
 	}
-	if churn, coChange, _, herr := git.History(ctx, histWorkDir, s.SubtreePrefix, deps.Runner); herr == nil {
+	if churn, coChange, commitCount, _, herr := git.History(ctx, histWorkDir, s.SubtreePrefix, deps.Runner); herr == nil {
 		change.History.FileChurn, change.History.CoChange = churn, coChange
+		change.History.CommitCount = commitCount
 	}
 
 	// LOC walk — repo-relative path→line-count map + coverage record.

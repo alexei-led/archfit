@@ -301,13 +301,13 @@ unclassified and `coupling_balance` reads `n/a`. This task supplies the
 
 ### Task 10: Flag vacuous history-fed dimensions
 
-- [ ] when the (subtree-scoped) history is empty/shallow (<2 commits, or
+- [x] when the (subtree-scoped) history is empty/shallow (<2 commits, or
       `git log` returns nothing for the prefix), mark `change_locality` and other
       churn-fed dimensions `n/a (no history)` instead of printing a strong number
       (the omni `96/strong` on a 1-commit checkout artifact)
-- [ ] write tests: empty-history subtree → `n/a (no history)`; populated history →
+- [x] write tests: empty-history subtree → `n/a (no history)`; populated history →
       unchanged
-- [ ] run tests — must pass before next task
+- [x] run tests — must pass before next task
 
 ### Task 11: Go module-scoping config + scale guardrails
 

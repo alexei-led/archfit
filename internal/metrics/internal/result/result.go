@@ -139,10 +139,23 @@ func ComputeDelta(current float64, baseline diagnostic.MetricSnapshot, name, ver
 	return &d
 }
 
+// NANoHistory is the display string for a metric that cannot be scored because
+// the analysed window contains fewer than 2 commits — results would be
+// statistically vacuous (a single commit always produces 0 pairs/hubs).
+const NANoHistory = "n/a (no history)"
+
 // NACount is the indeterminate result for a count-mode informational metric.
 func NACount(name, version, def string) diagnostic.MetricResult {
 	return diagnostic.MetricResult{
 		Name: name, Value: 0, Display: BandNA, Band: BandNA,
+		Confidence: ConfidenceLow, Version: version, Mode: ModeCount, Definition: def,
+	}
+}
+
+// NACountMsg is like NACount but sets a custom Display string (e.g. NANoHistory).
+func NACountMsg(name, version, def, display string) diagnostic.MetricResult {
+	return diagnostic.MetricResult{
+		Name: name, Value: 0, Display: display, Band: BandNA,
 		Confidence: ConfidenceLow, Version: version, Mode: ModeCount, Definition: def,
 	}
 }

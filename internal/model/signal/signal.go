@@ -132,8 +132,9 @@ type CommonInput struct {
 
 // HistorySignals carries the git-history signals (empty when no history).
 type HistorySignals struct {
-	FileChurn map[string]int    // file -> recent commit count
-	CoChange  map[[2]string]int // sorted file pair -> commits touching both
+	FileChurn   map[string]int    // file -> recent commit count
+	CoChange    map[[2]string]int // sorted file pair -> commits touching both
+	CommitCount int               // number of commits in the analysed window (0 = not counted / empty)
 }
 
 // SymbolSignals carries the SCIP symbol graph and the SCIP-derived per-file

@@ -132,7 +132,7 @@ func TestHistory_EmptyPrefix_Noop(t *testing.T) {
 		},
 	}
 
-	churn, _, _, err := gitpkg.History(ctx, "", "", mock)
+	churn, _, _, _, err := gitpkg.History(ctx, "", "", mock)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestHistory_Prefix_FilterAndRebase(t *testing.T) {
 		},
 	}
 
-	churn, _, _, err := gitpkg.History(ctx, "/repo", "services/api", mock)
+	churn, _, _, _, err := gitpkg.History(ctx, "/repo", "services/api", mock)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
