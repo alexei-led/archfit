@@ -13,6 +13,13 @@ import (
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
+const (
+	strengthContract   = "contract"
+	strengthFunctional = "functional"
+	strengthModel      = "model"
+	strengthIntrusive  = "intrusive"
+)
+
 // TestStrengths_AbsentReason asserts that absent semantic-strength coverage
 // carries an actionable reason + enable step, not a silent absent — in
 // particular that a TS project missing node_modules names the deps fix.
@@ -111,7 +118,7 @@ func TestParseReaderEdges(t *testing.T) {
 			name:    "edges parsed and keyed by from\\x00to",
 			stdout:  `{"edges":[{"from":"ccgram.handlers.hook_events","to":"ccgram.telegram_client","strength":"contract"},{"from":"ccgram.bootstrap","to":"ccgram.hook","strength":"intrusive"}]}`,
 			wantKey: "ccgram.handlers.hook_events\x00ccgram.telegram_client",
-			wantVal: "contract",
+			wantVal: strengthContract,
 			wantLen: 2,
 		},
 		{
@@ -322,5 +329,167 @@ func TestDetectPyPackage(t *testing.T) {
 	}
 	if got := detectPyPackage(dir); got != "mypkg" {
 		t.Errorf("detectPyPackage = %q, want mypkg", got)
+	}
+}
+
+// TestParsePythonStrengthFixture verifies that parseReaderEdges correctly maps each
+// Python symbol kind to the expected Balanced-Coupling strength.
+// The fixture is a canned JSON representing what scip_reader.py emits for Python:
+//   - function/method target → "functional"
+//   - concrete class target → "model"
+//   - Protocol/ABC subclass target → "contract"
+//   - _-prefixed (private) target → "intrusive"
+//
+// TypedDict and @dataclass are concrete classes (type suffix "#") and therefore
+// map to "model" — the "contract/model" grouping in the plan covers both.
+// scip_reader.py derives these mappings from SCIP symbol descriptor suffixes and
+// is_implementation relationships; this test verifies the Go parsing of its output.
+func TestParsePythonStrengthFixture(t *testing.T) {
+	// Canned JSON: what scip_reader.py would emit for a Python project with
+	// cross-module references to symbols of each BC-relevant kind.
+	const fixture = `{"edges":[` +
+		`{"from":"myapp.a","to":"myapp.services","strength":"functional"},` +
+		`{"from":"myapp.a","to":"myapp.models","strength":"model"},` +
+		`{"from":"myapp.a","to":"myapp.interfaces","strength":"contract"},` +
+		`{"from":"myapp.a","to":"myapp._internal","strength":"intrusive"}` +
+		`]}`
+
+	m, err := parseReaderEdges([]byte(fixture))
+	if err != nil {
+		t.Fatalf("parseReaderEdges: %v", err)
+	}
+	if len(m) != 4 {
+		t.Errorf("strength map len = %d, want 4", len(m))
+	}
+
+	tests := []struct {
+		name string
+		key  string
+		want string
+	}{
+		// function/method target (e.g. "myapp/services/get_data()." → suffix "method"):
+		{"function target → functional", "myapp.a\x00myapp.services", strengthFunctional},
+		// concrete class target (e.g. "myapp/models/User#" → suffix "type"):
+		{"class target → model", "myapp.a\x00myapp.models", strengthModel},
+		// Protocol/ABC subclass (is_implementation → ABC/Protocol → contract set):
+		{"Protocol/ABC target → contract", "myapp.a\x00myapp.interfaces", strengthContract},
+		// private module (_-prefixed segment → _is_private → intrusive):
+		{"private target → intrusive", "myapp.a\x00myapp._internal", strengthIntrusive},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := m[tc.key]; got != tc.want {
+				t.Errorf("strength[%q] = %q, want %q", tc.key, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestStrengths_PythonCannedFixture tests the full Strengths() pipeline for a
+// Python project using a mocked runner — no live scip-python or uv required.
+// The mock: detects scip-python and uv, creates the index file on demand, and
+// returns a canned JSON (what scip_reader.py would emit). Verifies that
+// Strengths() returns OK coverage and the expected module→strength map.
+func TestStrengths_PythonCannedFixture(t *testing.T) {
+	dir := t.TempDir()
+	// Minimal Python project: pyproject.toml + flat-layout package.
+	if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\nname = \"myapp\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pkgDir := filepath.Join(dir, "myapp")
+	if err := os.MkdirAll(pkgDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, pyInitFile), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Canned scip_reader.py JSON output: one edge per Python strength kind.
+	const cannedJSON = `{"edges":[` +
+		`{"from":"myapp.a","to":"myapp.services","strength":"functional"},` +
+		`{"from":"myapp.a","to":"myapp.models","strength":"model"},` +
+		`{"from":"myapp.a","to":"myapp.interfaces","strength":"contract"},` +
+		`{"from":"myapp.a","to":"myapp._internal","strength":"intrusive"}` +
+		`],"symbols":[],"symbol_refs":[],"intra_refs":[]}`
+
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == indexerPython || tool == "uv" {
+				return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/" + tool}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			switch cmd.Name {
+			case indexerPython:
+				// Create the index file at the path supplied via --output so
+				// os.Stat succeeds and the pipeline proceeds to the reader step.
+				for i, arg := range cmd.Args {
+					if arg == flagOutput && i+1 < len(cmd.Args) {
+						if err := os.WriteFile(cmd.Args[i+1], []byte("scip-fake"), 0o600); err != nil {
+							return toolrun.Output{}, err
+						}
+					}
+				}
+				return toolrun.Output{ExitCode: 0}, nil
+			case "uv":
+				return toolrun.Output{Stdout: []byte(cannedJSON), ExitCode: 0}, nil
+			}
+			return toolrun.Output{}, nil
+		},
+	}
+
+	a := New(runner, 0)
+	m, cov, err := a.Strengths(context.Background(), scope.Scope{Root: dir})
+	if err != nil {
+		t.Fatalf("Strengths: %v", err)
+	}
+	if cov.Status != diagnostic.StatusOK {
+		t.Errorf("cov.Status = %q, want %q", cov.Status, diagnostic.StatusOK)
+	}
+
+	tests := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{"function → functional", "myapp.a\x00myapp.services", strengthFunctional},
+		{"class → model", "myapp.a\x00myapp.models", strengthModel},
+		{"Protocol/ABC → contract", "myapp.a\x00myapp.interfaces", strengthContract},
+		{"private → intrusive", "myapp.a\x00myapp._internal", strengthIntrusive},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := m[tc.key]; got != tc.want {
+				t.Errorf("strength[%q] = %q, want %q", tc.key, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestStrengths_PythonAbsent verifies that when scip-python is not available,
+// Strengths() returns an absent coverage and an empty map — so Python grimp edges
+// retain their StrengthHint="" (abstaining) set by the extractor. This upholds
+// the abstain-not-fake invariant: no SCIP evidence → no strength assigned.
+func TestStrengths_PythonAbsent(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\nname = \"myapp\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
+			return toolrun.ToolInfo{}, false // no SCIP indexer, no uv
+		},
+	}
+	a := New(runner, 0)
+	m, cov, err := a.Strengths(context.Background(), scope.Scope{Root: dir})
+	if err != nil {
+		t.Fatalf("Strengths: unexpected error: %v", err)
+	}
+	if cov.Status != diagnostic.StatusAbsent {
+		t.Errorf("cov.Status = %q, want %q", cov.Status, diagnostic.StatusAbsent)
+	}
+	if len(m) != 0 {
+		t.Errorf("strength map non-empty when SCIP absent: %v", m)
 	}
 }

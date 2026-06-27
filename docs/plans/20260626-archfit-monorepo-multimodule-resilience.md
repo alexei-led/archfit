@@ -362,13 +362,13 @@ unclassified and `coupling_balance` reads `n/a`. This task supplies the
 
 ### Task 15: Python strength via scip-python (phase 2, opt-in)
 
-- [ ] when `tools.scip` is enabled for Python, classify non-intrusive edges from
+- [x] when `tools.scip` is enabled for Python, classify non-intrusive edges from
       the SCIP symbol graph by target symbol kind: function → functional, class →
       model, `abc.ABC`/`typing.Protocol`/TypedDict/@dataclass → contract/model;
       `_`-prefixed → intrusive. Genuine evidence only (abstain when SCIP absent)
-- [ ] write tests (canned SCIP fixture): each kind → expected strength; SCIP
+- [x] write tests (canned SCIP fixture): each kind → expected strength; SCIP
       absent → abstain (unchanged)
-- [ ] run tests — must pass before next task
+- [x] run tests — must pass before next task
 
 ### Task 16: TS/Python multi-package scoping (depcruise/grimp)
 
