@@ -16,8 +16,10 @@ package clones
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/model/clone"
@@ -28,8 +30,16 @@ import (
 const (
 	toolName      = "jscpd"
 	clonesTimeout = 3 * time.Minute
-	reportFile    = "jscpd-report.json"
-	flagOutput    = "--output"
+
+	// defaultTimeout is the per-analyzer outer watchdog applied when no
+	// tools.clones.timeout is configured. It is intentionally generous (well
+	// above the per-subprocess clonesTimeout) to guard only against pathological
+	// hangs — not normal runs.
+	defaultTimeout = 5 * time.Minute
+
+	reportFile = "jscpd-report.json"
+	flagOutput = "--output"
+	flagIgnore = "--ignore"
 
 	// Coverage reasons: why functional-candidate (clone) detection is n/a.
 	// Static strings so a double-run stays byte-stable.
@@ -40,13 +50,30 @@ const (
 	reasonDisabled     = "clone detection disabled by config — set `tools.clones.enabled: on` in .archfit.yaml to enable"
 	reasonNotInstalled = "jscpd not found — install it (`npm install -g jscpd`) to enable clone detection"
 	reasonRunFailed    = "jscpd run failed or its report was unreadable"
+	reasonTimedOut     = "clone detection timed out — increase tools.clones.timeout or reduce the scope"
 )
 
+// effectiveTimeout returns configured when it is non-zero, else fallback.
+// This lets a configured tools.clones.timeout extend or shorten the inner
+// per-subprocess cap (not just the outer watchdog).
+func effectiveTimeout(configured, fallback time.Duration) time.Duration {
+	if configured > 0 {
+		return configured
+	}
+	return fallback
+}
+
 // Run invokes jscpd over root and returns detected clone clusters.
-// When enabled is false, or the tool is absent, or any non-fatal failure
-// occurs, it returns an empty slice with an absent/partial coverage record
-// and a nil error.
-func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) ([]clone.Cluster, diagnostic.Coverage, error) {
+// exclusions is the effective set of glob patterns (scope.MergeExclusions result)
+// that jscpd should skip via --ignore; empty means no --ignore flag is added
+// (byte-identical to before this change). Best-effort: jscpd-only. scip-go
+// cannot honor file-level exclusions because it indexes via the Go build system,
+// not a file list — Task 12's per-analyzer timeout is its guard.
+// timeout is the per-analyzer outer watchdog; 0 uses defaultTimeout. When
+// enabled is false, or the tool is absent, or any non-fatal failure occurs, it
+// returns an empty slice with an absent/partial coverage record and a nil error.
+// On timeout it returns StatusTimedOut coverage and a nil error — the run continues.
+func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, timeout time.Duration, exclusions []string) ([]clone.Cluster, diagnostic.Coverage, error) {
 	if !enabled {
 		// Disabled by config — tool may or may not be installed. Report as
 		// disabled (not absent) so the pipeline does not generate an "install"
@@ -58,6 +85,12 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) 
 		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusAbsent, Reason: reasonNotInstalled}, nil
 	}
 
+	// Apply per-analyzer watchdog. The outer timeout caps total clone-detection
+	// time (including jscpd startup + scan). On deadline: return n/a (timed out)
+	// and let the overall run continue.
+	ctx, cancel := toolrun.WithWatchdog(ctx, timeout, defaultTimeout)
+	defer cancel()
+
 	tmp, err := os.MkdirTemp("", "archfit-clones-")
 	if err != nil {
 		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusAbsent, Reason: reasonRunFailed}, nil
@@ -66,15 +99,28 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool) 
 
 	partial := diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusPartial, Reason: reasonRunFailed}
 
-	// jscpd --reporters json --output <tmp> <root>
-	// The JSON reporter writes jscpd-report.json into the output directory.
+	// Build jscpd args: --reporters json --output <tmp> [--ignore "<globs>"] <root>
+	// --ignore accepts a comma-separated list of glob patterns. Only added when
+	// exclusions are configured — no exclusions → byte-identical to before.
+	args := []string{"--reporters", "json", flagOutput, tmp}
+	if len(exclusions) > 0 {
+		args = append(args, flagIgnore, strings.Join(exclusions, ","))
+	}
+	args = append(args, root)
+
 	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    toolName,
-		Args:    []string{"--reporters", "json", flagOutput, tmp, root},
+		Args:    args,
 		WorkDir: root,
-		Timeout: clonesTimeout,
+		Timeout: effectiveTimeout(timeout, clonesTimeout),
 	})
 	if err != nil || out.ExitCode != 0 {
+		// Check both the inner per-subprocess deadline (err) and the outer watchdog
+		// (ctx.Err()). When the inner timeout fires, runner.Run returns
+		// context.DeadlineExceeded as err but ctx.Err() is nil.
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}, nil
+		}
 		return nil, partial, nil
 	}
 

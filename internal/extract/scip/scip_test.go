@@ -34,7 +34,7 @@ func presentRunner() *toolrun.RunnerMock {
 }
 
 func TestAdapter_Name(t *testing.T) {
-	a := scip.New(absentRunner())
+	a := scip.New(absentRunner(), 0)
 	if a.Name() != "scip" {
 		t.Errorf("Name() = %q, want %q", a.Name(), "scip")
 	}
@@ -44,7 +44,7 @@ func TestAdapter_Name(t *testing.T) {
 // found on PATH, Resolve returns toPath unchanged with confidence "low"
 // (identity, no resolution capability).
 func TestResolve_AbsentTool_IdentityResolver(t *testing.T) {
-	a := scip.New(absentRunner())
+	a := scip.New(absentRunner(), 0)
 	ctx := context.Background()
 
 	cases := []struct {
@@ -71,7 +71,7 @@ func TestResolve_AbsentTool_IdentityResolver(t *testing.T) {
 // is detected, Resolve returns toPath unchanged with confidence "medium" (full
 // .scip parsing pending importable Go bindings).
 func TestResolve_PresentTool_IdentityResolver(t *testing.T) {
-	a := scip.New(presentRunner())
+	a := scip.New(presentRunner(), 0)
 	ctx := context.Background()
 
 	barrelPath := "src/components/index.ts"
@@ -95,7 +95,7 @@ func TestResolve_DetectCalledOnce(t *testing.T) {
 		},
 	}
 
-	a := scip.New(runner)
+	a := scip.New(runner, 0)
 	ctx := context.Background()
 
 	for i := 0; i < 5; i++ {

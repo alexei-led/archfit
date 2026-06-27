@@ -235,7 +235,7 @@ func sgProxyRunner(matches []ccnMatch) *toolrun.RunnerMock {
 }
 
 func TestRunProxy_SGAbsent(t *testing.T) {
-	funcs, cov, err := runProxy(context.Background(), absentRunner(), t.TempDir(), []string{langTypeScript})
+	funcs, cov, err := runProxy(context.Background(), absentRunner(), t.TempDir(), []string{langTypeScript}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestRunProxy_WithMatches(t *testing.T) {
 		buildCCNMatch("ts-ccn-dp", "src/app.ts", 2, 2, ""),
 		buildCCNMatch("ts-ccn-dp", "src/app.ts", 5, 5, ""),
 	}
-	funcs, cov, err := runProxy(context.Background(), sgProxyRunner(matches), t.TempDir(), []string{langTypeScript})
+	funcs, cov, err := runProxy(context.Background(), sgProxyRunner(matches), t.TempDir(), []string{langTypeScript}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestRunProxy_EmptyOutput(t *testing.T) {
 			return toolrun.Output{ExitCode: 0}, nil
 		},
 	}
-	funcs, cov, err := runProxy(context.Background(), runner, t.TempDir(), []string{langPython})
+	funcs, cov, err := runProxy(context.Background(), runner, t.TempDir(), []string{langPython}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -315,7 +315,7 @@ func TestRunProxy_KnownLanguageCCN(t *testing.T) {
 				buildCCNMatch(tc.ruleDP, "src/x."+tc.lang, 8, 8, ""),
 				buildCCNMatch(tc.ruleDP, "src/x."+tc.lang, 12, 12, ""),
 			}
-			funcs, _, err := runProxy(context.Background(), sgProxyRunner(matches), t.TempDir(), []string{tc.lang})
+			funcs, _, err := runProxy(context.Background(), sgProxyRunner(matches), t.TempDir(), []string{tc.lang}, 0)
 			if err != nil {
 				t.Fatalf("%s: unexpected error: %v", tc.lang, err)
 			}

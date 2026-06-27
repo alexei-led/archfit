@@ -29,6 +29,11 @@ func (m HiddenCouplingMetric) Calculate(in signal.HistoryInput) diagnostic.Metri
 	if in.Graph == nil || len(in.History.CoChange) == 0 {
 		return result.NACount(m.Name(), m.Version(), def)
 	}
+	// A window with a single commit always produces 0 qualifying pairs — co-change
+	// requires two or more commits touching the same files. Abstain instead.
+	if in.History.CommitCount > 0 && in.History.CommitCount < 2 {
+		return result.NACountMsg(m.Name(), m.Version(), def, result.NANoHistory)
+	}
 	resolve := modgraph.ModuleKeyResolver(in.Graph)
 	mc := modgraph.ModuleChurn(in.Graph, in.History.FileChurn)
 

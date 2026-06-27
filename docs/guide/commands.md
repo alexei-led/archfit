@@ -112,18 +112,54 @@ Config-quality warnings (e.g. "N modules under-specified") now reach md/json too
 as a `## Config warnings` section and the `config_warnings[]` JSON field — they
 are no longer stderr-only.
 
-## --root: scan a repo from an external config
+### n/a coverage semantics
 
-`--root` (on `check`, `scan`, `score`, and `enrich`) decouples the scanned repository from where
-the config lives. By default the scan root is the directory of `--config`; pass
-`--root` to point an external CI config at a repo it does not live inside:
+Two distinct `n/a` reasons appear in coverage and metric output:
+
+- **`n/a (no history)`** — the subtree (after `--root` scoping) has fewer than 2
+  commits visible to `git log`, or `--root` points at a non-git directory.
+  History-fed dimensions (`change_amplification`, `hidden_coupling`,
+  `change_coupling`, `change_locality`) report `n/a` rather than fabricating a
+  number from a 1-commit checkout artifact. For shallow clones: add `git fetch
+--unshallow` in CI or use a full clone. For non-git trees: history dimensions
+  are always `n/a`; all other metrics still run.
+- **`n/a (timed out)`** — a per-analyzer watchdog fired before the subprocess
+  finished. The tool result is dropped cleanly; the run continues and exits with
+  the verdict from the remaining analyzers. Increase the per-tool timeout or
+  reduce the scope via `tools.go.modules` / `--root`. See
+  [configuration-reference.md → tools.&lt;x&gt;.timeout](configuration-reference.md#toolsxtimeout).
+
+## --root: analysis boundary
+
+`--root` (on `check`, `scan`, `score`, and `enrich`) sets the **analysis
+boundary** — the directory tree that extractors walk, coverage counts against, and
+file-based metrics scope to. All tool calls (go/packages, dependency-cruiser,
+grimp, loc, complexity, clones, fitness) operate inside this tree.
+
+`--root` is decoupled from the git topmost directory. archfit resolves `git
+rev-parse --show-toplevel` separately (stored as the internal `GitRoot`); git
+history and changed-file diffs run there and are then re-based to the subtree.
+This lets a config in a CI repo point at a subdir of a monorepo:
 
 ```sh
-archfit check --root ./service --config ./policies/.archfit.yaml --full
+archfit check --root ./server/shared --config ./policies/.archfit.yaml --full
 ```
 
-Omitting `--root` keeps the previous behaviour (config directory = scan root), so
-nothing breaks. The baseline, labels, and config-hash stay config-adjacent.
+or let you analyze a monorepo subproject without touching any config:
+
+```sh
+archfit check --root ~/workspace/omni/server/shared --full
+```
+
+When `--root` is absent, the scan root equals `GitRoot` (or the config directory
+for a non-git tree), so no existing invocations change.
+
+**File-count scoping:** `FilesSeen` in coverage and loc counts only files inside
+`--root`. Running `--root <subdir>` restricts those counts to the subtree; running
+at the repo root includes everything.
+
+**Baseline, labels, and config-hash** stay config-adjacent — only the scanned
+tree moves.
 
 ## Delta buckets
 

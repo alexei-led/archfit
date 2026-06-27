@@ -54,6 +54,26 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   (default) = gocyclo for exact Go CCN + an ast-grep decision-point proxy for
   TS/Py/Rust (no default Python pin); `lizard` opts back into exact per-function CCN.
   Report-only hotspot metric (over-flagging is the safe direction).
+- **scanRoot vs gitRoot decoupling.** `Scope.Root` = ScanRoot (the analysis
+  boundary; all extractors walk this tree). `Scope.GitRoot` = `git rev-parse
+--show-toplevel` (git ops only). `Scope.SubtreePrefix = rel(GitRoot, Root)`.
+  `--root` absent ⇒ ScanRoot=GitRoot, prefix="" ⇒ byte-identical. Non-git full
+  mode proceeds with `GitRoot=""` (history empty); delta mode without git is a
+  hard error.
+- **Go workspace loading.** Member discovery: `go.work` at or above ScanRoot
+  (parsed in-process via `golang.org/x/mod/modfile`) → filter to members inside
+  ScanRoot and not exclusion-matched; else single `go.mod`; else walk for `go.mod`
+  dirs. Per-member `packages.Load({Dir: memberDir}, "./...")` concurrent
+  (bounded to GOMAXPROCS). Per-package strip via `pkg.Module.Dir`. First-party =
+  target `Module.Path` ∈ loaded member set. 1 surviving member = today's single-
+  module path (byte-identical). `classify.AugmentGoWorkspaceModules` auto-registers
+  each member as a synthetic module when **≥2** members were loaded and the
+  member's `RelDir != "."` and no config module already covers it — mirrors the
+  Rust `::` gate. `tools.go.modules.include/exclude` scopes which members load.
+- **Per-analyzer timeout.** `tools.<x>.timeout` (Go duration string, e.g. `"5m"`)
+  caps `scip`, `clones` (jscpd), and `complexity` subprocess runs. On timeout the
+  result is dropped; dependent metrics report `n/a (timed out)`; the run
+  continues on the verdict from the remaining analyzers.
 - **Go edge strength** comes from `go/packages` type info (`NeedTypesInfo`,
   mirroring the `scip_reader` BC mapping) when SCIP is off; SCIP `enrichEdges`
   overrides it when on. Unclassified edges stay `unknown` (abstain-not-fake).

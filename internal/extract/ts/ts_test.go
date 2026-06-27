@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"testing"
 
@@ -15,8 +16,10 @@ import (
 )
 
 const (
-	launcherBunx = "bunx"
-	tsconfigName = "tsconfig.json"
+	launcherBunx     = "bunx"
+	launcherBunxPath = "/usr/bin/bunx"
+	tsconfigName     = "tsconfig.json"
+	modeFull         = "full"
 )
 
 // fixtureDir is the testdata/ts directory with package.json and JSON fixtures.
@@ -39,7 +42,7 @@ func mockRunner(fixtureData []byte) *toolrun.RunnerMock {
 	return &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
 			if tool == launcherBunx {
-				return toolrun.ToolInfo{Name: launcherBunx, Path: "/usr/bin/bunx"}, true
+				return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
 			}
 			return toolrun.ToolInfo{}, false
 		},
@@ -311,6 +314,279 @@ func TestExtract_ToolAbsentAuto(t *testing.T) {
 // at the root is auto-detected, and nothing is passed when none is configured or
 // present. Without it, aliased imports come back unresolved and are dropped from
 // the coupling metrics.
+// TestExtract_IncludeOnly verifies that --include-only ^<SubtreePrefix> is added
+// to depcruise args when ScanRoot is a subtree (SubtreePrefix != ""), and is
+// omitted entirely when SubtreePrefix is empty (byte-identical no-subtree path).
+func TestExtract_IncludeOnly(t *testing.T) {
+	tests := []struct {
+		name            string
+		subtreePrefix   string
+		wantIncludeOnly bool
+		wantPattern     string
+	}{
+		{
+			name:            "subtree: --include-only added",
+			subtreePrefix:   "services/api",
+			wantIncludeOnly: true,
+			wantPattern:     "^services/api(?:/|$)",
+		},
+		{
+			name:            "root: --include-only omitted (byte-identical)",
+			subtreePrefix:   "",
+			wantIncludeOnly: false,
+		},
+		{
+			name:            "subtree with metachar: dot is escaped",
+			subtreePrefix:   "packages/my.app",
+			wantIncludeOnly: true,
+			wantPattern:     "^packages/my\\.app(?:/|$)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"t"}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			var gotArgs []string
+			runner := &toolrun.RunnerMock{
+				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+					if tool == launcherBunx {
+						return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+					}
+					return toolrun.ToolInfo{}, false
+				},
+				RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+					if slices.Contains(cmd.Args, "--version") {
+						return toolrun.Output{Stdout: []byte("14.0.0\n")}, nil
+					}
+					gotArgs = cmd.Args
+					return toolrun.Output{Stdout: []byte(`{"modules":[]}`)}, nil
+				},
+			}
+
+			extractor := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
+			s := scope.Scope{
+				Root:          root,
+				GitRoot:       filepath.Dir(root),
+				SubtreePrefix: tt.subtreePrefix,
+				Mode:          modeFull,
+			}
+			if _, _, err := extractor.Extract(context.Background(), s); err != nil {
+				t.Fatalf("Extract: %v", err)
+			}
+
+			idx := slices.Index(gotArgs, "--include-only")
+			if !tt.wantIncludeOnly {
+				if idx != -1 {
+					t.Fatalf("expected no --include-only flag, got args %v", gotArgs)
+				}
+				return
+			}
+			if idx == -1 || idx+1 >= len(gotArgs) {
+				t.Fatalf("expected --include-only flag, got args %v", gotArgs)
+			}
+			got := gotArgs[idx+1]
+			if got != tt.wantPattern {
+				t.Errorf("--include-only = %q, want %q", got, tt.wantPattern)
+			}
+			// Verify the boundary: the compiled pattern must match the prefix dir
+			// itself and a file inside it, but NOT a sibling with a longer name.
+			if tt.subtreePrefix != "" {
+				re, err := regexp.Compile(got)
+				if err != nil {
+					t.Fatalf("--include-only pattern %q is not a valid regexp: %v", got, err)
+				}
+				prefix := filepath.ToSlash(tt.subtreePrefix)
+				if !re.MatchString(prefix + "/src/index.ts") {
+					t.Errorf("pattern %q should match %q but does not", got, prefix+"/src/index.ts")
+				}
+				if re.MatchString(prefix + "-client/src/index.ts") {
+					t.Errorf("pattern %q should NOT match sibling %q but does", got, prefix+"-client/src/index.ts")
+				}
+			}
+			// --exclude ^node_modules must always be present.
+			exIdx := slices.Index(gotArgs, "--exclude")
+			if exIdx == -1 || exIdx+1 >= len(gotArgs) || gotArgs[exIdx+1] != "^node_modules" {
+				t.Errorf("expected --exclude ^node_modules in args %v", gotArgs)
+			}
+		})
+	}
+}
+
+// TestExtract_SubtreePathStrip verifies that parseAndNormalize strips the
+// SubtreePrefix from node IDs and edge paths in subtree mode, so downstream
+// classify and matchesInternal work against ScanRoot-relative config globs.
+// The byte-identical invariant (no-op when SubtreePrefix=="") is also checked.
+func TestExtract_SubtreePathStrip(t *testing.T) {
+	// depcruise JSON with git-root-relative paths (subtree prefix "packages/api").
+	const prefix = "packages/api"
+	depcruiseJSON := `{"modules":[
+		{"source":"packages/api/src/index.ts","dependencies":[
+			{"resolved":"packages/api/src/util.ts","module":"./util","dependencyTypes":["local"]},
+			{"resolved":"react","module":"react","dependencyTypes":["npm"],"couldNotResolve":true}
+		]},
+		{"source":"packages/api/src/util.ts","dependencies":[]}
+	]}`
+
+	tests := []struct {
+		name          string
+		subtreePrefix string
+		wantFromPath  string // expected node path for the first file
+		wantToPath    string // expected node path for the internal dep
+		wantEdgeKind  graph.EdgeKind
+	}{
+		{
+			name:          "subtree mode: prefix stripped",
+			subtreePrefix: prefix,
+			wantFromPath:  "src/index.ts",
+			wantToPath:    "src/util.ts",
+			wantEdgeKind:  graph.EdgeKindUsesInternal,
+		},
+		{
+			name:          "non-subtree mode: paths unchanged (byte-identical)",
+			subtreePrefix: "",
+			wantFromPath:  "packages/api/src/index.ts",
+			wantToPath:    "packages/api/src/util.ts",
+			wantEdgeKind:  graph.EdgeKindImports, // matchesInternal won't match
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Configure internal globs as ScanRoot-relative: "src/**"
+			cfg := config.ExtractConfig{
+				Mode:     config.ModeAuto,
+				Internal: []string{"src/**"},
+			}
+			runner := &toolrun.RunnerMock{
+				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+					if tool == launcherBunx {
+						return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+					}
+					return toolrun.ToolInfo{}, false
+				},
+				RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+					if slices.Contains(cmd.Args, "--version") {
+						return toolrun.Output{Stdout: []byte("14.0.0\n")}, nil
+					}
+					return toolrun.Output{Stdout: []byte(depcruiseJSON)}, nil
+				},
+			}
+
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"t"}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			extractor := ts.New(runner, cfg)
+			s := scope.Scope{
+				Root:          root,
+				GitRoot:       filepath.Dir(root),
+				SubtreePrefix: tt.subtreePrefix,
+				Mode:          modeFull,
+			}
+			facts, _, err := extractor.Extract(context.Background(), s)
+			if err != nil {
+				t.Fatalf("Extract: %v", err)
+			}
+
+			// Find the file node for index.ts.
+			var foundFrom bool
+			for _, n := range facts.Nodes {
+				if n.Path == tt.wantFromPath {
+					foundFrom = true
+					break
+				}
+			}
+			if !foundFrom {
+				var paths []string
+				for _, n := range facts.Nodes {
+					paths = append(paths, string(n.Kind)+":"+n.Path)
+				}
+				t.Errorf("node %q not found; got nodes: %v", tt.wantFromPath, paths)
+			}
+
+			// Find the internal edge (index.ts → util.ts).
+			var foundEdge bool
+			for _, e := range facts.Edges {
+				if e.To == "file:"+tt.wantToPath {
+					foundEdge = true
+					if e.Kind != tt.wantEdgeKind {
+						t.Errorf("edge kind = %v, want %v", e.Kind, tt.wantEdgeKind)
+					}
+					break
+				}
+			}
+			if !foundEdge {
+				var tos []string
+				for _, e := range facts.Edges {
+					tos = append(tos, string(e.Kind)+":"+e.To)
+				}
+				t.Errorf("edge to %q not found; got edges: %v", "file:"+tt.wantToPath, tos)
+			}
+		})
+	}
+}
+
+// TestExtract_TSConfigSubdir is a regression test confirming that resolveTSConfig
+// finds the package-local tsconfig when ScanRoot is a subdirectory of the git root
+// (Task 4 made s.Root the ScanRoot). The path returned must be relative to the
+// depcruise workDir (gitRoot for the subtree case) so dependency-cruiser resolves
+// it correctly.
+func TestExtract_TSConfigSubdir(t *testing.T) {
+	gitRoot := t.TempDir()
+	pkg := filepath.Join(gitRoot, "packages", "pkg-a")
+	if err := os.MkdirAll(pkg, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkg, "package.json"), []byte(`{"name":"pkg-a"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkg, tsconfigName), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotArgs []string
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == "bunx" {
+				return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--version") {
+				return toolrun.Output{Stdout: []byte("14.0.0\n")}, nil
+			}
+			gotArgs = cmd.Args
+			return toolrun.Output{Stdout: []byte(`{"modules":[]}`)}, nil
+		},
+	}
+
+	extractor := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
+	s := scope.Scope{
+		Root:          pkg,
+		GitRoot:       gitRoot,
+		SubtreePrefix: "packages/pkg-a",
+		Mode:          modeFull,
+	}
+	if _, _, err := extractor.Extract(context.Background(), s); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	idx := slices.Index(gotArgs, "--ts-config")
+	if idx == -1 || idx+1 >= len(gotArgs) {
+		t.Fatalf("expected --ts-config in args %v", gotArgs)
+	}
+	// Path must be relative to gitRoot (workDir), not to pkg.
+	want := "packages/pkg-a/tsconfig.json"
+	if got := gotArgs[idx+1]; got != want {
+		t.Errorf("--ts-config = %q, want %q", got, want)
+	}
+}
+
 func TestExtract_TSConfigAutoDetect(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -339,8 +615,8 @@ func TestExtract_TSConfigAutoDetect(t *testing.T) {
 			var gotArgs []string
 			runner := &toolrun.RunnerMock{
 				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
-					if tool == "bunx" {
-						return toolrun.ToolInfo{Name: "bunx", Path: "/usr/bin/bunx"}, true
+					if tool == launcherBunx {
+						return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
 					}
 					return toolrun.ToolInfo{}, false
 				},

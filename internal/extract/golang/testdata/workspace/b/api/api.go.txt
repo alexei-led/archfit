@@ -1,0 +1,7 @@
+package api
+
+// Greeter is a contract interface exported by module wb.
+// References to this type from other modules produce StrengthHint "contract".
+type Greeter interface {
+	Greet() string
+}

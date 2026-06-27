@@ -104,6 +104,16 @@ type CrateRoot struct {
 	Name string
 }
 
+// GoModule maps a Go workspace member's module path to its ScanRoot-relative directory.
+// The Go extractor emits one per loaded workspace member so downstream consumers
+// (classify stage, Task 8 auto-registration) can resolve the member layout without
+// re-reading the filesystem. Path is the Go module path (e.g. "example.com/a").
+// RelDir is ScanRoot-relative and slash-separated ("." for the root member).
+type GoModule struct {
+	Path   string
+	RelDir string
+}
+
 // Facts holds raw extractor output — nodes, edges, and unresolved counts —
 // before deduplication and sorting.
 type Facts struct {
@@ -114,6 +124,10 @@ type Facts struct {
 	// CrateRoots carries the Rust workspace members' source dirs and names so the
 	// core ring can map .rs files to module keys. Empty for non-Rust facts.
 	CrateRoots []CrateRoot
+	// GoModules carries the Go workspace members' module paths and ScanRoot-relative
+	// dirs so the classify stage can auto-register them as modules (Task 8).
+	// Empty for non-Go facts; a single-module repo still carries one entry.
+	GoModules []GoModule
 }
 
 // Graph is a sealed, immutable dependency graph produced by Build.
@@ -122,6 +136,7 @@ type Graph struct {
 	nodes      []Node
 	edges      []Edge
 	crateRoots []CrateRoot
+	goModules  []GoModule
 }
 
 // Build merges one or more Facts into a sealed, deterministic Graph.
@@ -165,6 +180,25 @@ func Build(facts []Facts) *Graph {
 	slices.SortFunc(crateRoots, func(a, b CrateRoot) int {
 		return cmp.Compare(a.Dir, b.Dir)
 	})
+
+	// --- Collect Go modules (workspace members) ---
+	// Pure carry-through of the Go extractor's workspace layout, deduped by Path.
+	// Sorted by Path for determinism; Task 8 consumes this for module auto-registration.
+	var goModules []GoModule
+	seenGoMod := make(map[string]struct{})
+	for _, f := range facts {
+		for _, m := range f.GoModules {
+			if _, ok := seenGoMod[m.Path]; ok {
+				continue
+			}
+			seenGoMod[m.Path] = struct{}{}
+			goModules = append(goModules, m)
+		}
+	}
+	slices.SortFunc(goModules, func(a, b GoModule) int {
+		return cmp.Compare(a.Path, b.Path)
+	})
+
 	slices.SortFunc(nodes, func(a, b Node) int {
 		return cmp.Compare(a.ID(), b.ID())
 	})
@@ -240,7 +274,7 @@ func Build(facts []Facts) *Graph {
 		return cmp.Compare(aLine, bLine)
 	})
 
-	return &Graph{nodes: nodes, edges: edges, crateRoots: crateRoots}
+	return &Graph{nodes: nodes, edges: edges, crateRoots: crateRoots, goModules: goModules}
 }
 
 func firstLoc(e Edge) (string, int) {
@@ -269,6 +303,15 @@ func (g *Graph) Edges() []Edge {
 func (g *Graph) CrateRoots() []CrateRoot {
 	out := make([]CrateRoot, len(g.crateRoots))
 	copy(out, g.crateRoots)
+	return out
+}
+
+// GoModules returns a copy of the Go workspace members carried from extraction,
+// sorted by Path. Empty for graphs with no Go facts. A single-module repo
+// carries one entry; multi-member workspaces carry one per discovered member.
+func (g *Graph) GoModules() []GoModule {
+	out := make([]GoModule, len(g.goModules))
+	copy(out, g.goModules)
 	return out
 }
 

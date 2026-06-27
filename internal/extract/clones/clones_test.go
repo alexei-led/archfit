@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -52,7 +53,7 @@ func makeReportRunner(reportJSON string) *toolrun.RunnerMock {
 		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
 			// Find --output arg and write the report file there.
 			for i, arg := range cmd.Args {
-				if arg == "--output" && i+1 < len(cmd.Args) {
+				if arg == flagOutput && i+1 < len(cmd.Args) {
 					outDir := cmd.Args[i+1]
 					dest := filepath.Join(outDir, reportFile)
 					_ = os.WriteFile(dest, []byte(reportJSON), 0o600)
@@ -99,7 +100,7 @@ func malformedRunner() *toolrun.RunnerMock {
 		},
 		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
 			for i, arg := range cmd.Args {
-				if arg == "--output" && i+1 < len(cmd.Args) {
+				if arg == flagOutput && i+1 < len(cmd.Args) {
 					outDir := cmd.Args[i+1]
 					dest := filepath.Join(outDir, reportFile)
 					_ = os.WriteFile(dest, []byte("not valid json at all"), 0o600)
@@ -112,7 +113,7 @@ func malformedRunner() *toolrun.RunnerMock {
 }
 
 func TestRun_Success(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), makeReportRunner(jscpdSuccessJSON), t.TempDir(), true)
+	clusters, cov, err := Run(context.Background(), makeReportRunner(jscpdSuccessJSON), t.TempDir(), true, 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -134,7 +135,7 @@ func TestRun_Success(t *testing.T) {
 }
 
 func TestRun_AbsentTool(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true)
+	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true, 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -149,7 +150,7 @@ func TestRun_AbsentTool(t *testing.T) {
 func TestRun_Disabled(t *testing.T) {
 	// enabled=false → disabled status (not absent), no Detect call needed.
 	// The tool may or may not be installed; the user turned it off in config.
-	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), false)
+	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), false, 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -166,7 +167,7 @@ func TestRun_Disabled(t *testing.T) {
 // disabled → StatusDisabled (do not show "install" prompt).
 // not installed but enabled → StatusAbsent (show "install" prompt).
 func TestRun_StatusDistinction(t *testing.T) {
-	_, covDisabled, _ := Run(context.Background(), absentRunner(), t.TempDir(), false)
+	_, covDisabled, _ := Run(context.Background(), absentRunner(), t.TempDir(), false, 0, nil)
 	if covDisabled.Status != diagnostic.StatusDisabled {
 		t.Errorf("disabled status = %q, want %q", covDisabled.Status, diagnostic.StatusDisabled)
 	}
@@ -174,7 +175,7 @@ func TestRun_StatusDistinction(t *testing.T) {
 		t.Errorf("disabled reason = %q, want %q", covDisabled.Reason, reasonDisabled)
 	}
 
-	_, covAbsent, _ := Run(context.Background(), absentRunner(), t.TempDir(), true)
+	_, covAbsent, _ := Run(context.Background(), absentRunner(), t.TempDir(), true, 0, nil)
 	if covAbsent.Status != diagnostic.StatusAbsent {
 		t.Errorf("absent status = %q, want %q", covAbsent.Status, diagnostic.StatusAbsent)
 	}
@@ -184,7 +185,7 @@ func TestRun_StatusDistinction(t *testing.T) {
 }
 
 func TestRun_MalformedOutput(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), malformedRunner(), t.TempDir(), true)
+	clusters, cov, err := Run(context.Background(), malformedRunner(), t.TempDir(), true, 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -197,7 +198,7 @@ func TestRun_MalformedOutput(t *testing.T) {
 }
 
 func TestRun_ToolFailure(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true)
+	clusters, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true, 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -206,6 +207,42 @@ func TestRun_ToolFailure(t *testing.T) {
 	}
 	if len(clusters) != 0 {
 		t.Errorf("expected empty clusters for tool failure, got %d", len(clusters))
+	}
+}
+
+// blockingRunner detects jscpd but its Run method blocks until the context is done.
+// Used to test that the per-analyzer timeout fires and returns StatusTimedOut.
+func blockingRunner() *toolrun.RunnerMock {
+	return &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == toolName {
+				return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/" + tool}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(ctx context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			<-ctx.Done()
+			return toolrun.Output{}, ctx.Err()
+		},
+	}
+}
+
+// TestRun_Timeout asserts that when the per-analyzer watchdog fires the run
+// returns StatusTimedOut coverage, a nil error, and no deadlock.
+// The test must complete quickly (short timeout + blocking runner).
+func TestRun_Timeout(t *testing.T) {
+	clusters, cov, err := Run(context.Background(), blockingRunner(), t.TempDir(), true, 10*time.Millisecond, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cov.Status != diagnostic.StatusTimedOut {
+		t.Errorf("status = %q, want %q", cov.Status, diagnostic.StatusTimedOut)
+	}
+	if cov.Reason != reasonTimedOut {
+		t.Errorf("reason = %q, want %q", cov.Reason, reasonTimedOut)
+	}
+	if len(clusters) != 0 {
+		t.Errorf("expected no clusters on timeout, got %d", len(clusters))
 	}
 }
 
@@ -291,6 +328,85 @@ func TestModulePairs_EmptyKey_Skipped(t *testing.T) {
 	// rootfile.go → empty key (skipped); only b remains; single-mod cluster → no pairs
 	if len(pairs) != 0 {
 		t.Errorf("expected 0 pairs when one file has empty key, got %d", len(pairs))
+	}
+}
+
+// capturingRunner detects jscpd as present and captures the ToolCmd passed to Run.
+// The captured command is stored via the provided pointer so the caller can inspect
+// which args were passed to jscpd (e.g. whether --ignore is present).
+func capturingRunner(captured *toolrun.ToolCmd, reportJSON string) *toolrun.RunnerMock {
+	return &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == toolName {
+				return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/" + tool}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			*captured = cmd
+			// Write the report so Run can parse it successfully.
+			for i, arg := range cmd.Args {
+				if arg == flagOutput && i+1 < len(cmd.Args) {
+					outDir := cmd.Args[i+1]
+					dest := filepath.Join(outDir, reportFile)
+					_ = os.WriteFile(dest, []byte(reportJSON), 0o600)
+					break
+				}
+			}
+			return toolrun.Output{ExitCode: 0}, nil
+		},
+	}
+}
+
+// hasArg returns true when args contains the target string.
+func hasArg(args []string, target string) bool {
+	for _, a := range args {
+		if a == target {
+			return true
+		}
+	}
+	return false
+}
+
+// argAfter returns the value immediately following flag in args, or "" if absent.
+func argAfter(args []string, flag string) string {
+	for i, a := range args {
+		if a == flag && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
+}
+
+// TestRun_ExclusionsPassedAsIgnore verifies that when exclusions are provided,
+// jscpd is invoked with --ignore "<comma-separated-globs>".
+func TestRun_ExclusionsPassedAsIgnore(t *testing.T) {
+	excl := []string{"**/vendor/**", "**/testdata/**"}
+	var captured toolrun.ToolCmd
+	_, _, err := Run(context.Background(), capturingRunner(&captured, jscpdEmptyJSON), t.TempDir(), true, 0, excl)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasArg(captured.Args, flagIgnore) {
+		t.Errorf("jscpd args %v missing %q flag", captured.Args, flagIgnore)
+	}
+	got := argAfter(captured.Args, flagIgnore)
+	want := "**/vendor/**,**/testdata/**"
+	if got != want {
+		t.Errorf("--ignore value = %q, want %q", got, want)
+	}
+}
+
+// TestRun_NoExclusions_NoIgnoreFlag verifies that when no exclusions are configured
+// the jscpd invocation is byte-identical to before this change: no --ignore flag.
+func TestRun_NoExclusions_NoIgnoreFlag(t *testing.T) {
+	var captured toolrun.ToolCmd
+	_, _, err := Run(context.Background(), capturingRunner(&captured, jscpdEmptyJSON), t.TempDir(), true, 0, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hasArg(captured.Args, flagIgnore) {
+		t.Errorf("jscpd args %v unexpectedly contains %q (no exclusions configured)", captured.Args, flagIgnore)
 	}
 }
 

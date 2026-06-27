@@ -56,7 +56,7 @@ func (g gitResolver) HeadRef(ctx context.Context) (string, error) {
 }
 
 func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, error) {
-	cs, err := git.Changed(ctx, g.workDir, base, head, g.runner)
+	cs, err := git.Changed(ctx, g.workDir, base, head, "", g.runner)
 	if err != nil {
 		return nil, err
 	}
@@ -88,6 +88,13 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	cfg.Exclusions = scope.MergeExclusions(cfg.Exclusions)
 	sc := cfg.ForScope()
 	sc.WorkDir = scanDir
+	// Wire the explicit --root argument so scope.Resolve uses it as the
+	// analysis boundary (ScanRoot). When root is empty, cfg.Root="" falls
+	// through resolveScanRoot to gitRoot → byte-identical to the pre-flag
+	// behaviour. Without this line, --root only sets the gitResolver workDir
+	// (which resolves UP to the git toplevel), leaving ScanRoot == gitRoot
+	// even when --root points at a subtree of a monorepo.
+	sc.Root = root
 	sc.Base = mode.Base
 	sc.Full = mode.Full
 	s, err := scope.Resolve(ctx, sc, gitResolver{workDir: scanDir, runner: deps.Runner})
@@ -136,9 +143,17 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// volatility (unbalanced_edge, BC severity) and the modularity metrics
 	// (change_amplification, hidden_coupling). Hand-authored volatility/subdomain
 	// config always wins; a non-git repo leaves these signals empty.
+	// Run history at the git toplevel (GitRoot) scoped to the analysis subtree
+	// (SubtreePrefix), so returned paths are ScanRoot-relative. Falls back to
+	// s.Root when GitRoot is empty (non-git run: History returns absent).
 	change := signal.RunSignals{}
-	if churn, coChange, _, herr := git.History(ctx, s.Root, deps.Runner); herr == nil {
+	histWorkDir := s.GitRoot
+	if histWorkDir == "" {
+		histWorkDir = s.Root
+	}
+	if churn, coChange, commitCount, _, herr := git.History(ctx, histWorkDir, s.SubtreePrefix, deps.Runner); herr == nil {
 		change.History.FileChurn, change.History.CoChange = churn, coChange
+		change.History.CommitCount = commitCount
 	}
 
 	// LOC walk — repo-relative path→line-count map + coverage record.
@@ -206,14 +221,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// Backend: auto (default) = gocyclo(Go) + ast-grep proxy(TS/Py/Rust); lizard =
 	// exact multi-language CCN (re-pins Python). Coverage carries zero file counts.
 	var complexityCov diagnostic.Coverage
-	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled(), cfg.ComplexityBackend())
+	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled(), cfg.ComplexityBackend(), cfg.ToolTimeout(config.ToolComplexity))
 	noteToolErr("complexity", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, complexityCov)
 
 	// Clone detection — opt-in (tools.clones.enabled: on). Run returns empty+absent
 	// when disabled or the tool is missing; the metric reports n/a in that case.
 	var clonesCov diagnostic.Coverage
-	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled())
+	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled(), cfg.ToolTimeout(config.ToolClones), cfg.Exclusions)
 	noteToolErr("jscpd", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, clonesCov)
 
@@ -230,7 +245,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// decision must live in config (not PATH presence) to keep metrics deterministic.
 	var resolver ports.SymbolResolver = ports.NopSymbolResolver{}
 	if cfg.ScipEnabled() {
-		resolver = scip.New(deps.Runner)
+		resolver = scip.New(deps.Runner, cfg.ToolTimeout(config.ToolScip))
 	}
 
 	// Syntax facts (ast-grep syntax rules) are opt-in (tools.syntax.enabled: on):

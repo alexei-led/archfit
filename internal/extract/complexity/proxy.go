@@ -75,8 +75,10 @@ func isCCNFuncRule(ruleID string) bool {
 
 // runProxy runs the ast-grep decision-point proxy for the given languages and
 // returns per-function complexity records with CCN = 1 + decision points.
+// timeout is the configured per-analyzer cap; 0 falls back to proxyTimeout
+// (keeps the no-config path byte-identical).
 // Returns (nil, absent coverage, nil) when sg is not on PATH.
-func runProxy(ctx context.Context, runner toolrun.Runner, root string, langs []string) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+func runProxy(ctx context.Context, runner toolrun.Runner, root string, langs []string, timeout time.Duration) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
 	if _, ok := runner.Detect(ctx, "sg"); !ok {
 		return nil, absentCov(reasonSGNotInstalled), nil
 	}
@@ -88,7 +90,7 @@ func runProxy(ctx context.Context, runner toolrun.Runner, root string, langs []s
 		if !ok {
 			continue
 		}
-		funcs, matched, err := runProxyForLang(ctx, runner, root, lang, rules)
+		funcs, matched, err := runProxyForLang(ctx, runner, root, lang, rules, timeout)
 		if err != nil {
 			return nil, diagnostic.Coverage{}, err
 		}
@@ -108,13 +110,18 @@ func runProxy(ctx context.Context, runner toolrun.Runner, root string, langs []s
 
 // runProxyForLang runs one language's CCN rules via sg scan and returns the
 // per-function complexity records. matched=true when sg produced output.
-func runProxyForLang(ctx context.Context, runner toolrun.Runner, root, lang, rules string) ([]signal.ComplexityFunc, bool, error) {
+// timeout is the configured per-analyzer cap; 0 falls back to proxyTimeout.
+func runProxyForLang(ctx context.Context, runner toolrun.Runner, root, lang, rules string, timeout time.Duration) ([]signal.ComplexityFunc, bool, error) {
+	inner := proxyTimeout
+	if timeout > 0 {
+		inner = timeout
+	}
 	var raw []ccnMatch
 	out, err := runner.Stream(ctx, toolrun.ToolCmd{
 		Name:    "sg",
 		Args:    []string{"scan", "--inline-rules", rules, "--json=compact", "."},
 		WorkDir: root,
-		Timeout: proxyTimeout,
+		Timeout: inner,
 	}, func(r io.Reader) error {
 		var decErr error
 		raw, decErr = decodeCCNStream(r, lang)

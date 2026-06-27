@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -92,12 +93,25 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/py: close temp helper: %w", err)
 	}
 
-	pkgName := e.cfg.PyPackage
-	if pkgName == "" {
-		pkgName = filepath.Base(s.Root)
+	// Determine the package list for grimp. An explicit PyPackage config wins;
+	// otherwise discover top-level packages under ScanRoot (dirs with __init__.py).
+	// If discovery finds nothing, fall back to the directory name (legacy behaviour).
+	var pkgs []string
+	if e.cfg.PyPackage != "" {
+		pkgs = []string{e.cfg.PyPackage}
+	} else {
+		pkgs = discoverPackages(s.Root)
+		if len(pkgs) == 0 {
+			pkgs = []string{filepath.Base(s.Root)}
+		}
 	}
 
 	// Build the command.
+	// grimp_helper --packages pkg1 pkg2 … accepts multiple top-level package names
+	// and calls grimp.build_graph(*packages). All packages must be importable from
+	// a single Python environment (see discoverPackages doc for the shared-venv
+	// constraint).
+	pkgsArgs := append([]string{"--packages"}, pkgs...)
 	var cmd toolrun.ToolCmd
 	if tool == "uv" {
 		// --with grimp injects grimp into the project's venv for this run without
@@ -105,14 +119,14 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		// the project's own packages (src-layout etc.) are importable.
 		cmd = toolrun.ToolCmd{
 			Name:    "uv",
-			Args:    []string{"run", "--with", "grimp", "--directory", s.Root, tmpName, "--package", pkgName},
+			Args:    append([]string{"run", "--with", "grimp", "--directory", s.Root, tmpName}, pkgsArgs...),
 			WorkDir: s.Root,
 			Timeout: runTimeout,
 		}
 	} else {
 		cmd = toolrun.ToolCmd{
 			Name:    tool,
-			Args:    []string{tmpName, "--package", pkgName, "--root", s.Root},
+			Args:    append([]string{tmpName, "--root", s.Root}, pkgsArgs...),
 			WorkDir: s.Root,
 			Timeout: runTimeout,
 		}
@@ -152,6 +166,34 @@ func (e *Extractor) isApplicable(root string) bool {
 		}
 	}
 	return false
+}
+
+// discoverPackages returns the sorted list of top-level Python package names
+// found directly under root — directories that contain an __init__.py file.
+// Used when no explicit PyPackage is configured.
+//
+// SHARED-VENV CONSTRAINT: all discovered packages are passed to a single
+// grimp.build_graph call and must therefore be co-importable from one Python
+// environment. In a monorepo where each service has its own virtualenv
+// (e.g. ~42 isolated services), cross-service coupling cannot be measured
+// in one run. This is a grimp limitation; archfit does not promise
+// cross-service Python analysis in that setup.
+func discoverPackages(root string) []string {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	var pkgs []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(root, entry.Name(), "__init__.py")); err == nil {
+			pkgs = append(pkgs, entry.Name())
+		}
+	}
+	sort.Strings(pkgs)
+	return pkgs
 }
 
 // detectTool tries uv then Python 3.12+. Returns (name, version, true) on success.
@@ -205,9 +247,10 @@ type helperOutput struct {
 }
 
 type helperEdge struct {
-	Importer string `json:"importer"`
-	Imported string `json:"imported"`
-	Line     int    `json:"line"`
+	Importer     string `json:"importer"`
+	Imported     string `json:"imported"`
+	Line         int    `json:"line"`
+	LineContents string `json:"line_contents"`
 }
 
 // ---------------------------------------------------------------------------
@@ -248,13 +291,17 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 		// Location file: dotted module name converted to path (dots → slashes).
 		locFile := strings.ReplaceAll(he.Importer, ".", "/")
 
-		// Strength hint: importing a PEP 8-private module (an underscore-prefixed
-		// segment) is reaching into another module's internals → intrusive. This
-		// is a fallback signal; config public/internal globs still take precedence
-		// in classify. We never emit a "contract" hint — grimp resolves imports to
-		// the defining submodule, so a public-API signal cannot be established here.
+		// Strength hint: intrusive is assigned when the edge reaches into PEP 8-private
+		// internals — either via a private module name ("pkg._internal") or via an
+		// imported private symbol ("from pkg import _sym"). Both are structural evidence;
+		// no naming-heuristic guessing (PascalCase/snake_case) is applied — non-intrusive
+		// edges stay abstaining until Task 15 (scip-python symbol kinds).
+		//
+		// Config public/internal globs still take precedence in classify.
+		// We never emit a "contract" hint — grimp resolves imports to the defining
+		// submodule, so a public-API signal cannot be established here.
 		strengthHint := ""
-		if isPrivatePythonModule(he.Imported) {
+		if isPrivatePythonModule(he.Imported) || hasPrivateSymbolImport(he.LineContents) {
 			strengthHint = string(coupling.StrengthIntrusive)
 		}
 
@@ -309,6 +356,51 @@ func isPrivatePythonModule(dotted string) bool {
 // isDunder reports whether a path segment is a __dunder__ name.
 func isDunder(seg string) bool {
 	return len(seg) >= 4 && strings.HasPrefix(seg, "__") && strings.HasSuffix(seg, "__")
+}
+
+// hasPrivateSymbolImport reports whether a Python "from … import …" statement
+// imports at least one PEP 8-private symbol (single leading underscore, not dunder).
+// Handles multiple imports ("from x import a, _b, c") and aliases ("from x import _sym as s").
+// For plain "import x" form there is no symbol name — returns false (module-level rule applies).
+//
+// Ceiling: multi-line parenthesized imports where line_contents captures only the
+// opening physical line ("from x import (\n") are not detected — the function abstains
+// safely. Upgrade path: Task 15 (scip-python) resolves individual symbol kinds precisely.
+func hasPrivateSymbolImport(line string) bool {
+	line = strings.TrimSpace(line)
+	// Must be a "from … import …" statement.
+	const fromPfx = "from "
+	const importKW = " import "
+	if !strings.HasPrefix(line, fromPfx) {
+		return false
+	}
+	idx := strings.Index(line, importKW)
+	if idx < 0 {
+		return false
+	}
+	symbols := line[idx+len(importKW):]
+	// Strip trailing inline comment.
+	if i := strings.Index(symbols, "#"); i >= 0 {
+		symbols = symbols[:i]
+	}
+	// Strip surrounding parentheses (single-line form: "from x import (a, _b)").
+	symbols = strings.Trim(symbols, " ()")
+	for _, sym := range strings.Split(symbols, ",") {
+		// Take the original name before any "as alias"; the alias is just a local
+		// binding and does not reflect access to a private internal.
+		name := sym
+		if parts := strings.SplitN(sym, " as ", 2); len(parts) == 2 {
+			name = parts[0]
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if strings.HasPrefix(name, "_") && !isDunder(name) {
+			return true
+		}
+	}
+	return false
 }
 
 // matchesInternal reports whether the dotted module name matches any internal glob.

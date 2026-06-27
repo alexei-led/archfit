@@ -30,14 +30,37 @@ be analyzed.
 Requirements:
 
 - `go` on `PATH`;
-- `go.mod` at the repository root.
+- `go.mod` at or under the analysis root, or a `go.work` workspace file anywhere
+  in or above `--root`.
 
 How extraction works:
 
-- loads packages with `go/packages`;
+- discovers workspace members from `go.work` when present (parsed without
+  subprocess using `golang.org/x/mod/modfile`), or falls back to a single
+  `go.mod`, then walks the tree for `go.mod` files when neither is at the root;
+- loads each member's packages with `go/packages` (`./...`) concurrently, bounded
+  to `GOMAXPROCS`;
 - emits file-to-package import edges;
-- strips the module path so internal imports become repo-relative paths;
-- records import locations when available.
+- strips each package's module prefix per `pkg.Module.Dir` so imports become
+  ScanRoot-relative paths;
+- records import locations when available;
+- detects and skips synthetic error packages (`Module==nil && len(Errors)>0`)
+  rather than failing.
+
+**Workspace (go.work) support:** on a repo with `go.work` and no root `go.mod`,
+archfit loads each `use` directory that falls inside `--root` and is not
+exclusion-matched, then merges the graphs. When ≥2 members are loaded, archfit
+auto-registers each member as a synthetic module (mirroring the Rust
+`AugmentModulesFromGraph` pattern, gated on ≥2 to leave single-module repos and
+archfit's own self-scan byte-identical). Members whose `RelDir` is `"."` (the
+workspace root itself) are skipped during auto-registration — a workspace root
+without its own `go.mod` has no module identity and archfit treats it as a loader
+entry point only. Single surviving members collapse to the existing single-module
+path with no change in output.
+
+**go.work member scoping:** use `tools.go.modules` to restrict which workspace
+members are loaded (see
+[configuration reference](configuration-reference.md#toolsgomodules)).
 
 Install/check:
 

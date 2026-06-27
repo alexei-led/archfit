@@ -148,6 +148,9 @@ func (r *ToolRunner) Run(ctx context.Context, cmd ToolCmd) (Output, error) {
 	c.Stdout = &stdout
 	c.Stderr = &stderr
 
+	// Backstop: if the process does not exit within this window after its context
+	// is cancelled, os/exec forces the process group to stop (mirrors Stream).
+	c.WaitDelay = 10 * time.Second
 	runErr := c.Run()
 	out := Output{
 		Stdout: stdout.Bytes(),
@@ -227,6 +230,22 @@ func (r *ToolRunner) Stream(ctx context.Context, cmd ToolCmd, consume func(io.Re
 		return out, waitErr
 	}
 	return out, nil
+}
+
+// WithWatchdog returns a derived context that is cancelled after the given
+// timeout. If timeout is zero or negative, def is used instead. The caller
+// must call the returned cancel function to release resources.
+//
+// Usage:
+//
+//	ctx, cancel := toolrun.WithWatchdog(ctx, cfg.Timeout, defaultTimeout)
+//	defer cancel()
+func WithWatchdog(ctx context.Context, timeout, def time.Duration) (context.Context, context.CancelFunc) {
+	to := timeout
+	if to <= 0 {
+		to = def
+	}
+	return context.WithTimeout(ctx, to)
 }
 
 func scrubGitRepoEnv(env []string) []string {

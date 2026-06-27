@@ -298,7 +298,8 @@ const (
 	StatusOK       = "ok"
 	StatusPartial  = "partial"
 	StatusAbsent   = "absent"
-	StatusDisabled = "disabled" // tool is present but turned off in config
+	StatusDisabled = "disabled"  // tool is present but turned off in config
+	StatusTimedOut = "timed out" // per-analyzer watchdog fired; result is n/a
 )
 
 // SchemaVersion is the fixed schema_version value emitted in every diagnostic.

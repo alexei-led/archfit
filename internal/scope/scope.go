@@ -5,6 +5,7 @@ package scope
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -92,8 +93,18 @@ type Scope struct {
 	// Changed is the sorted list of repo-relative files changed since Base.
 	// Nil/empty in full mode.
 	Changed []string
-	// Root is the absolute path to the repository root.
+	// Root is the absolute path of the analysis boundary (ScanRoot). All
+	// extractors walk this directory. Equal to GitRoot when --root is absent.
 	Root string
+	// GitRoot is the absolute path to the git repository toplevel, or empty
+	// when the directory is not inside a git repository (non-git full-mode runs).
+	// Git operations (history, diff) use this as their working root.
+	GitRoot string
+	// SubtreePrefix is the GitRoot-relative path from GitRoot to Root
+	// (filepath.Rel(GitRoot, Root)). Empty when Root equals GitRoot, or when
+	// GitRoot is empty (non-git). Git history consumers use this to scope
+	// commands to the subtree (Task 3).
+	SubtreePrefix string
 	// Mode indicates whether this is a delta or full-repo run.
 	Mode ScopeMode
 }
@@ -112,22 +123,34 @@ type Resolver interface {
 
 // Resolve determines the Scope for a run.
 //
-// It always resolves the repo root via the Resolver; a failing resolver is a
-// hard error (exit 3). If cfg.Full is true the result has Mode=full and no
-// Changed files. Otherwise HeadRef and Changed populate the delta. Changed
-// files are sorted here so scope's determinism contract does not depend on
-// resolver discipline.
+// It resolves the git root via the Resolver. In full mode a failing resolver
+// (e.g. non-git directory) is non-fatal: GitRoot is set to "" and analysis
+// continues. In delta mode a failing resolver is a hard error (no git → no diff).
+//
+// The analysis boundary (Scope.Root) is set from cfg.Root when non-empty;
+// otherwise it falls back to the git root; when both are empty it falls back to
+// cfg.WorkDir. Changed files are sorted here so scope's determinism contract
+// does not depend on resolver discipline.
 func Resolve(ctx context.Context, cfg config.ScopeConfig, r Resolver) (Scope, error) {
-	root, err := r.RepoRoot(ctx)
-	if err != nil {
-		return Scope{}, fmt.Errorf("scope: resolve repo root: %w", err)
-	}
+	gitRoot, rootErr := r.RepoRoot(ctx)
 
 	if cfg.Full {
+		// Non-git directories are analysable in full mode: degrade gracefully.
+		if rootErr != nil {
+			gitRoot = ""
+		}
+		scanRoot := resolveScanRoot(cfg, gitRoot)
 		return Scope{
-			Root: root,
-			Mode: ModeFull,
+			Root:          scanRoot,
+			GitRoot:       gitRoot,
+			SubtreePrefix: subtreePrefix(gitRoot, scanRoot),
+			Mode:          ModeFull,
 		}, nil
+	}
+
+	// Delta mode requires git — no git means no diff base.
+	if rootErr != nil {
+		return Scope{}, fmt.Errorf("scope: resolve repo root: %w", rootErr)
 	}
 
 	head, err := r.HeadRef(ctx)
@@ -139,13 +162,64 @@ func Resolve(ctx context.Context, cfg config.ScopeConfig, r Resolver) (Scope, er
 	if err != nil {
 		return Scope{}, fmt.Errorf("scope: resolve changed files: %w", err)
 	}
+	scanRoot := resolveScanRoot(cfg, gitRoot)
+	prefix := subtreePrefix(gitRoot, scanRoot)
+	changed = rebaseChangedFiles(prefix, changed)
 	sort.Strings(changed)
 
 	return Scope{
-		Base:    cfg.Base,
-		Head:    head,
-		Changed: changed,
-		Root:    root,
-		Mode:    ModeDelta,
+		Base:          cfg.Base,
+		Head:          head,
+		Changed:       changed,
+		Root:          scanRoot,
+		GitRoot:       gitRoot,
+		SubtreePrefix: prefix,
+		Mode:          ModeDelta,
 	}, nil
+}
+
+// rebaseChangedFiles keeps only paths under prefix and strips the prefix
+// component. When prefix is empty, the input is returned unchanged —
+// the no-op path for --root-absent runs where Root==GitRoot.
+// Git paths always use "/" as separator.
+func rebaseChangedFiles(prefix string, files []string) []string {
+	if prefix == "" {
+		return files
+	}
+	sep := prefix + "/"
+	var out []string
+	for _, f := range files {
+		if rel, ok := strings.CutPrefix(f, sep); ok {
+			out = append(out, rel)
+		}
+	}
+	return out
+}
+
+// resolveScanRoot determines the analysis boundary from the config and resolved
+// git root. Priority: explicit cfg.Root → gitRoot → cfg.WorkDir.
+// When cfg.Root is empty and gitRoot is non-empty the result equals gitRoot,
+// so --root-absent runs are byte-identical to before this change.
+func resolveScanRoot(cfg config.ScopeConfig, gitRoot string) string {
+	if cfg.Root != "" {
+		return cfg.Root
+	}
+	if gitRoot != "" {
+		return gitRoot
+	}
+	return cfg.WorkDir
+}
+
+// subtreePrefix returns the gitRoot-relative path from gitRoot to scanRoot.
+// Returns "" when they are equal, when gitRoot is empty (non-git), or when
+// scanRoot is not under gitRoot (e.g. a relative escape via "..").
+func subtreePrefix(gitRoot, scanRoot string) string {
+	if gitRoot == "" || gitRoot == scanRoot {
+		return ""
+	}
+	rel, err := filepath.Rel(gitRoot, scanRoot)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return ""
+	}
+	return rel
 }

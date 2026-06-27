@@ -141,16 +141,32 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// hint); stale ones surface as labels/stale advisories.
 	classifyCfg := in.Classify
 	staleLabelFindings, llmApprovedCount := applyPinnedLabels(ex.g, &classifyCfg, in.Mode, in.Labels)
-	// Thread clone pairs for CoA (connascence of algorithm) tagging — report-only.
-	if len(in.Signals.Duplication.Clusters) > 0 {
-		classifyCfg.CrossModuleClonePairs = buildClonePairSet(in.Signals.Duplication.Clusters, classifyCfg.ModuleMap)
-	}
 
 	// Register auto-discovered module-graph nodes (Rust "<crate>::<mod>") as modules so
 	// classify can resolve their distance/volatility; otherwise their edges are
 	// distance-unknown and coupling_balance/encapsulation never see them. No-op for
 	// Go/TS/Python (their nodes are already configured; the "::" gate excludes them).
 	classifyCfg.Modules = classify.AugmentModulesFromGraph(ex.g, classifyCfg.Modules)
+	// Register Go workspace members (≥2-member gate) as synthetic modules so
+	// cross-member edges classify with a real Distance for coupling_balance. No-op for
+	// single-module repos and archfit's own self-scan (1 surviving member after exclusion).
+	classifyCfg.Modules = classify.AugmentGoWorkspaceModules(ex.g, classifyCfg.Modules)
+
+	// Rebuild the ModuleMap from the augmented Modules slice so that all
+	// secondary consumers (buildRuntimeAsync, buildDynamicImports, diagnostic
+	// module-label resolution, clone-pair evidence) see auto-registered members.
+	// The two Augment* calls above mutate classifyCfg.Modules but NOT
+	// classifyCfg.ModuleMap (which was built at config-view construction time);
+	// without this rebuild, Go workspace members and Rust sub-modules would
+	// resolve to blank module names in the diagnostic.
+	classifyCfg.ModuleMap = config.BuildModuleMap(classifyCfg.Modules)
+
+	// Thread clone pairs for CoA (connascence of algorithm) tagging — report-only.
+	// Placed after the ModuleMap rebuild so auto-registered members participate
+	// in cross-module clone-pair detection.
+	if len(in.Signals.Duplication.Clusters) > 0 {
+		classifyCfg.CrossModuleClonePairs = buildClonePairSet(in.Signals.Duplication.Clusters, classifyCfg.ModuleMap)
+	}
 
 	// Runtime async evidence: build per-module rollup for the diagnostic.
 	// Report-only — never changes the gate verdict.

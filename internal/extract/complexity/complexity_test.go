@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -148,7 +149,7 @@ func failRunner() *toolrun.RunnerMock {
 }
 
 func TestRun_Disabled(t *testing.T) {
-	funcs, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), false, BackendLizard)
+	funcs, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), false, BackendLizard, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -168,7 +169,7 @@ func TestRun_Disabled(t *testing.T) {
 }
 
 func TestRun_AbsentTool(t *testing.T) {
-	funcs, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true, BackendLizard)
+	funcs, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true, BackendLizard, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -184,7 +185,7 @@ func TestRun_AbsentTool(t *testing.T) {
 }
 
 func TestRun_ToolFailure(t *testing.T) {
-	funcs, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true, BackendLizard)
+	funcs, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true, BackendLizard, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -200,7 +201,7 @@ func TestRun_Success(t *testing.T) {
 	root := t.TempDir()
 	// CSV uses /root prefix; path will be made relative inside parseLizardCSV.
 	csv := "10,5,100,2,20,fn@1-20@/root/pkg/a.go,/root/pkg/a.go,fn,fn(),1,20\n"
-	funcs, cov, err := Run(context.Background(), lizardRunner(csv), root, true, BackendLizard)
+	funcs, cov, err := Run(context.Background(), lizardRunner(csv), root, true, BackendLizard, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -216,7 +217,7 @@ func TestRun_Success(t *testing.T) {
 }
 
 func TestRun_CoverageToolName(t *testing.T) {
-	_, cov, _ := Run(context.Background(), absentRunner(), t.TempDir(), false, BackendLizard)
+	_, cov, _ := Run(context.Background(), absentRunner(), t.TempDir(), false, BackendLizard, 0)
 	if cov.Tool != toolName {
 		t.Errorf("Tool = %q, want %q", cov.Tool, toolName)
 	}
@@ -227,8 +228,8 @@ func TestRun_CoverageToolName(t *testing.T) {
 // actionable reasons so the report explains why complexity is n/a.
 func TestRun_DisabledVsAbsent(t *testing.T) {
 	root := t.TempDir()
-	_, covDisabled, _ := Run(context.Background(), absentRunner(), root, false, BackendLizard)
-	_, covAbsent, _ := Run(context.Background(), absentRunner(), root, true, BackendLizard)
+	_, covDisabled, _ := Run(context.Background(), absentRunner(), root, false, BackendLizard, 0)
+	_, covAbsent, _ := Run(context.Background(), absentRunner(), root, true, BackendLizard, 0)
 
 	if covDisabled.Status != covAbsent.Status {
 		t.Errorf("disabled Status %q != absent Status %q", covDisabled.Status, covAbsent.Status)
@@ -265,7 +266,7 @@ func capturingRunner(out toolrun.Output, gotArgs *[]string) *toolrun.RunnerMock 
 // lizard's default (version-dependent) language set.
 func TestRun_LanguageFlags(t *testing.T) {
 	var args []string
-	_, _, err := Run(context.Background(), capturingRunner(toolrun.Output{ExitCode: 0}, &args), t.TempDir(), true, BackendLizard)
+	_, _, err := Run(context.Background(), capturingRunner(toolrun.Output{ExitCode: 0}, &args), t.TempDir(), true, BackendLizard, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -294,7 +295,7 @@ func TestRun_PythonAndTypeScriptExtraction(t *testing.T) {
 		return fmt.Sprintf("20,%d,200,3,40,fn@1-40@%s,%s,fn,fn(),1,40\n", ccn, abs, abs)
 	}
 	csv := row(8, "svc/api.py") + row(6, "web/app.ts") + row(4, "web/view.tsx")
-	funcs, cov, err := Run(context.Background(), lizardRunner(csv), root, true, BackendLizard)
+	funcs, cov, err := Run(context.Background(), lizardRunner(csv), root, true, BackendLizard, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -333,7 +334,7 @@ func TestRun_NonZeroExitWithOutput(t *testing.T) {
 			return toolrun.Output{ExitCode: 1, Stdout: []byte(csv)}, nil
 		},
 	}
-	funcs, cov, err := Run(context.Background(), runner, root, true, BackendLizard)
+	funcs, cov, err := Run(context.Background(), runner, root, true, BackendLizard, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -348,7 +349,7 @@ func TestRun_NonZeroExitWithOutput(t *testing.T) {
 // TestRun_NonZeroExitNoOutput asserts a non-zero exit with no parseable records
 // is still a genuine failure (distinguished from the warning-count case above).
 func TestRun_NonZeroExitNoOutput(t *testing.T) {
-	funcs, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true, BackendLizard)
+	funcs, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true, BackendLizard, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -378,7 +379,7 @@ func TestRun_AbsentReasons(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, cov, err := Run(context.Background(), tc.runner, root, tc.enabled, tc.backend)
+			_, cov, err := Run(context.Background(), tc.runner, root, tc.enabled, tc.backend, 0)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -386,5 +387,36 @@ func TestRun_AbsentReasons(t *testing.T) {
 				t.Errorf("Reason = %q, want %q", cov.Reason, tc.wantReason)
 			}
 		})
+	}
+}
+
+// blockingRunner detects lizard but its Run method blocks until the context is done.
+func blockingRunner() *toolrun.RunnerMock {
+	return &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == toolName {
+				return toolrun.ToolInfo{Name: tool, Path: lizardPath}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(ctx context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			<-ctx.Done()
+			return toolrun.Output{}, ctx.Err()
+		},
+	}
+}
+
+// TestRun_Timeout asserts that when the per-analyzer watchdog fires the function
+// returns StatusTimedOut coverage with a nil error and no deadlock.
+func TestRun_Timeout(t *testing.T) {
+	_, cov, err := Run(context.Background(), blockingRunner(), t.TempDir(), true, BackendLizard, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cov.Status != diagnostic.StatusTimedOut {
+		t.Errorf("status = %q, want %q", cov.Status, diagnostic.StatusTimedOut)
+	}
+	if cov.Reason != reasonTimedOut {
+		t.Errorf("reason = %q, want %q", cov.Reason, reasonTimedOut)
 	}
 }

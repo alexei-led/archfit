@@ -38,12 +38,18 @@ const (
 	statusAbsent  = "absent"
 	lizardTimeout = 2 * time.Minute
 
+	// defaultTimeout is the per-analyzer outer watchdog when tools.complexity.timeout
+	// is not configured. Generous relative to per-subprocess timeouts so it guards
+	// only pathological hangs (e.g. a 122k-LOC generated file).
+	defaultTimeout = 5 * time.Minute
+
 	// Absent-coverage reasons: why complexity is n/a and the enable step.
 	reasonDisabled       = "complexity is opt-in — set `tools.complexity.enabled: true` in .archfit.yaml"
 	reasonNotInstalled   = "no complexity tool found — install gocyclo (`go install github.com/fzipp/gocyclo/cmd/gocyclo@latest`) or have `sg` (ast-grep) available for the proxy"
 	reasonLizardMissing  = "lizard not found — install it (`pip install lizard`, or have `uvx` available) to enable complexity"
 	reasonRunFailed      = "complexity tool run failed — check the install and rerun"
 	reasonSGNotInstalled = "sg (ast-grep) not found — install ast-grep to enable the complexity proxy for TS/Py/Rust"
+	reasonTimedOut       = "complexity analysis timed out — increase tools.complexity.timeout or reduce the scope"
 )
 
 // lizardExcludes keep tests, mocks, vendored, and generated trees out of the
@@ -63,33 +69,61 @@ var lizardExcludes = []string{
 var lizardLanguages = []string{langGo, langPython, "javascript", langTypeScript, "tsx", langRust}
 
 // Run invokes the complexity backend and returns per-function CCN records.
-// backend selects the implementation: "" or "auto" → gocyclo+proxy; "lizard"
-// → exact lizard. When enabled is false the runner returns an empty absent
-// coverage record. A nil/empty result on tool absence is always returned
-// without error — callers must treat absent coverage as n/a, not a failure.
-func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, backend string) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+// timeout is the per-analyzer outer watchdog; 0 uses defaultTimeout. backend
+// selects the implementation: "" or "auto" → gocyclo+proxy; "lizard" → exact
+// lizard. When enabled is false an absent coverage record is returned. A nil
+// result on tool absence is always returned without error — callers treat
+// absent coverage as n/a. On watchdog timeout StatusTimedOut is returned with
+// nil error so the overall run continues.
+func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, backend string, timeout time.Duration) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
 	if !enabled {
 		return nil, absentCov(reasonDisabled), nil
 	}
+
+	// Apply per-analyzer watchdog before any subprocess call.
+	ctx, cancel := toolrun.WithWatchdog(ctx, timeout, defaultTimeout)
+	defer cancel()
+
+	var funcs []signal.ComplexityFunc
+	var cov diagnostic.Coverage
+	var subErr error
 	if backend == BackendLizard {
-		return runLizard(ctx, runner, root)
+		funcs, cov, subErr = runLizard(ctx, runner, root, timeout)
+	} else {
+		funcs, cov, subErr = runAuto(ctx, runner, root, timeout)
 	}
-	// default: auto
-	return runAuto(ctx, runner, root)
+
+	// Check both the inner per-subprocess deadline (subErr) and the outer
+	// watchdog (ctx.Err()). When an inner timeout fires, runner.Run returns
+	// context.DeadlineExceeded as subErr but ctx.Err() is still nil.
+	if errors.Is(subErr, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}, nil
+	}
+	return funcs, cov, nil
 }
 
 // runAuto runs gocyclo for Go (exact CCN) and the ast-grep decision-point
 // proxy for TS/Py/Rust. When gocyclo is absent the proxy also covers Go.
-func runAuto(ctx context.Context, runner toolrun.Runner, root string) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
-	gocycloFuncs, gocycloOK := runGocyclo(ctx, runner, root)
+// timeout is the configured per-analyzer cap (0 → each sub uses its built-in
+// constant, which keeps the no-config path byte-identical).
+// Returns a non-nil error only when an inner per-subprocess deadline fires so
+// the caller can surface StatusTimedOut. Other failures degrade to absent coverage.
+func runAuto(ctx context.Context, runner toolrun.Runner, root string, timeout time.Duration) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+	gocycloFuncs, gocycloOK, err := runGocyclo(ctx, runner, root, timeout)
+	if err != nil {
+		return nil, absentCov(reasonRunFailed), err
+	}
 
 	// proxy covers TS/Py/Rust; also covers Go when gocyclo is absent.
 	proxyLangs := []string{langTypeScript, langPython, langRust}
 	if !gocycloOK {
 		proxyLangs = append([]string{langGo}, proxyLangs...)
 	}
-	proxyFuncs, proxyCov, err := runProxy(ctx, runner, root, proxyLangs)
+	proxyFuncs, proxyCov, err := runProxy(ctx, runner, root, proxyLangs, timeout)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, absentCov(reasonRunFailed), err
+		}
 		return nil, absentCov(reasonRunFailed), nil
 	}
 
@@ -111,8 +145,13 @@ func runAuto(ctx context.Context, runner toolrun.Runner, root string) ([]signal.
 }
 
 // runLizard invokes lizard (directly or via uvx) and returns per-function CCN.
-// Only called when backend=lizard.
-func runLizard(ctx context.Context, runner toolrun.Runner, root string) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+// Only called when backend=lizard. timeout governs the inner subprocess cap when
+// non-zero (so a configured tools.complexity.timeout can extend beyond the
+// built-in lizardTimeout); zero falls back to the lizardTimeout constant.
+// Returns a non-nil error only when the inner per-subprocess deadline fires
+// (context.DeadlineExceeded) so the caller can surface StatusTimedOut.
+// Other failures degrade to absent coverage.
+func runLizard(ctx context.Context, runner toolrun.Runner, root string, timeout time.Duration) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
 	name, pre := lizardCommand(ctx, runner)
 	if name == "" {
 		return nil, absentCov(reasonLizardMissing), nil
@@ -125,8 +164,15 @@ func runLizard(ctx context.Context, runner toolrun.Runner, root string) ([]signa
 	for _, x := range lizardExcludes {
 		args = append(args, "-x", x)
 	}
-	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: name, Args: args, WorkDir: root, Timeout: lizardTimeout})
+	innerTimeout := lizardTimeout
+	if timeout > 0 {
+		innerTimeout = timeout
+	}
+	out, err := runner.Run(ctx, toolrun.ToolCmd{Name: name, Args: args, WorkDir: root, Timeout: innerTimeout})
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, absentCov(reasonRunFailed), err
+		}
 		return nil, absentCov(reasonRunFailed), nil
 	}
 

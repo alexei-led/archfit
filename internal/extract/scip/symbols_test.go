@@ -153,7 +153,7 @@ func TestAdapter_Symbols_AbsentTool(t *testing.T) {
 		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
 			return toolrun.ToolInfo{}, false
 		},
-	})
+	}, 0)
 	graph, cov, err := a.Symbols(context.Background(), scope.Scope{Root: t.TempDir()})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -168,7 +168,7 @@ func TestAdapter_Symbols_AbsentTool(t *testing.T) {
 
 func TestAdapter_Symbols_Success(t *testing.T) {
 	root := makeGoRoot(t)
-	a := New(indexCreatingRunner(readerJSONSuccess))
+	a := New(indexCreatingRunner(readerJSONSuccess), 0)
 
 	graph, cov, err := a.Symbols(context.Background(), scope.Scope{Root: root})
 	if err != nil {
@@ -195,7 +195,7 @@ func TestAdapter_Symbols_Success(t *testing.T) {
 
 func TestAdapter_Symbols_MalformedOutput(t *testing.T) {
 	root := makeGoRoot(t)
-	a := New(indexCreatingRunner("not json at all"))
+	a := New(indexCreatingRunner("not json at all"), 0)
 
 	graph, cov, err := a.Symbols(context.Background(), scope.Scope{Root: root})
 	if err != nil {
@@ -215,7 +215,7 @@ func TestAdapter_Symbols_MalformedOutput(t *testing.T) {
 func TestAdapter_SinglePass(t *testing.T) {
 	root := makeGoRoot(t)
 	runner := indexCreatingRunner(readerJSONSuccess)
-	a := New(runner)
+	a := New(runner, 0)
 
 	if _, _, err := a.Strengths(context.Background(), scope.Scope{Root: root}); err != nil {
 		t.Fatalf("Strengths: %v", err)

@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"go/types"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/packages"
 
 	"github.com/alexei-led/archfit/internal/config"
@@ -22,6 +25,12 @@ const (
 	strengthContract   = "contract"
 	strengthModel      = "model"
 	strengthFunctional = "functional"
+	strengthIntrusive  = "intrusive"
+)
+
+const (
+	statusAbsent   = "absent"
+	toolGoPackages = "go/packages"
 )
 
 // goStrengthRank maps a BC integration-strength label to its coupling rank.
@@ -32,7 +41,7 @@ var goStrengthRank = map[string]int{
 	strengthContract:   1,
 	strengthModel:      2,
 	strengthFunctional: 3,
-	"intrusive":        4,
+	strengthIntrusive:  4,
 }
 
 // GoExtractor is the native Go import extractor using go/packages.
@@ -52,162 +61,198 @@ func (e *GoExtractor) Name() string {
 	return "go"
 }
 
-// Extract loads all Go packages under s.Root, emits nodes and edges for every
-// import statement found in the AST, and returns a Coverage record.
+// Extract loads all Go packages for every workspace member under s.Root,
+// emits nodes and edges for every import statement found in the AST, and
+// returns a Coverage record.
 //
-// If mode is off, Extract returns empty Facts and an "absent" Coverage immediately.
-// LoadMode: NeedName | NeedFiles | NeedImports | NeedSyntax | NeedTypes | NeedTypesInfo | NeedModule
+// Workspace support: DiscoverMembers locates go.work (or falls back to a
+// single go.mod / walk). Each member is loaded with its own packages.Config
+// (Dir=memberDir), run concurrently via errgroup bounded to GOMAXPROCS.
+// Results are merged deterministically (results[i] ↔ memberDirs[i]).
+//
+// LoadMode: NeedName | NeedFiles | NeedImports | NeedSyntax | NeedTypes |
+// NeedTypesInfo | NeedModule
 // (NeedTypes is required so that pkg.Fset is populated for position resolution.
 // NeedTypesInfo populates pkg.TypesInfo.Uses to derive per-edge StrengthHints.
-// NeedModule is required to strip the module path prefix from import paths so that
-// node IDs are repo-relative and match the glob patterns in archfit.yaml.)
+// NeedModule is required to strip the module path prefix from import paths so
+// that node IDs are ScanRoot-relative and match the globs in archfit.yaml.)
+//
+// Strength guard: buildStrengthHints uses the member-set predicate (isFirstParty)
+// so cross-member type references also produce StrengthHints. Without this,
+// every Go edge in workspace mode abstains on strength and coupling_balance
+// collapses even when distance is present.
 func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 	if e.cfg.Mode == config.ModeOff {
-		return graph.Facts{}, diagnostic.Coverage{Tool: "go/packages", Status: "absent"}, nil
+		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
 	}
 
-	cfg := &packages.Config{
-		Mode: packages.NeedName |
-			packages.NeedFiles |
-			packages.NeedImports |
-			packages.NeedSyntax |
-			packages.NeedTypes |
-			packages.NeedTypesInfo |
-			packages.NeedModule,
-		Dir:        s.Root,
-		Context:    ctx,
-		BuildFlags: e.cfg.BuildFlags,
-	}
-
-	pkgs, err := packages.Load(cfg, "./...")
+	// Discover workspace members (go.work → per-member dirs, or single go.mod).
+	memberDirs, err := DiscoverMembers(s.Root, e.cfg.Exclusions)
 	if err != nil {
-		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/golang: load packages: %w", err)
+		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/golang: discover members: %w", err)
 	}
 
-	// Determine the module path prefix from the first loaded package so we can
-	// strip it from import paths and produce repo-relative node IDs.
-	var modPath string
-	for _, pkg := range pkgs {
-		if pkg.Module != nil && pkg.Module.Path != "" {
-			modPath = pkg.Module.Path
-			break
+	// Apply tools.go.modules include/exclude globs (user-facing member scoping).
+	// This is a deliberate post-discovery filter: DiscoverMembers handles scope
+	// exclusions (testdata, generated dirs); FilterMembers handles the user knob
+	// that restricts analysis to a named subset of workspace members for large
+	// workspaces where a full run exceeds acceptable wall-clock budgets.
+	//
+	// Scale ceiling: on a ~178-member workspace (omni), a full NeedTypesInfo load
+	// takes >5 minutes. Two mitigations are available: tools.go.modules narrows
+	// the member set; tools.<x>.timeout caps the per-analyzer wall-clock budget
+	// (the watchdog fires before the full pipeline hangs). Use them together for
+	// large workspaces.
+	memberDirs = FilterMembers(memberDirs, s.Root, e.cfg.GoModuleInclude, e.cfg.GoModuleExclude)
+
+	if len(memberDirs) == 0 {
+		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
+	}
+
+	// Load packages concurrently — one goroutine per member, bounded by GOMAXPROCS.
+	// Write into results[i] by index so merge order is deterministic regardless of
+	// goroutine completion order.
+	type memberResult struct {
+		pkgs []*packages.Package
+	}
+	results := make([]memberResult, len(memberDirs))
+
+	loadMode := packages.NeedName |
+		packages.NeedFiles |
+		packages.NeedImports |
+		packages.NeedSyntax |
+		packages.NeedTypes |
+		packages.NeedTypesInfo |
+		packages.NeedModule
+
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(max(1, runtime.GOMAXPROCS(0)))
+	for i, dir := range memberDirs {
+		i, dir := i, dir
+		eg.Go(func() error {
+			cfg := &packages.Config{
+				Mode:       loadMode,
+				Dir:        dir,
+				Context:    egCtx,
+				BuildFlags: e.cfg.BuildFlags,
+			}
+			pkgs, loadErr := packages.Load(cfg, "./...")
+			if loadErr != nil {
+				return fmt.Errorf("extract/golang: load %s: %w", dir, loadErr)
+			}
+			results[i] = memberResult{pkgs: pkgs}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return graph.Facts{}, diagnostic.Coverage{}, err
+	}
+
+	// Build the module map from pkg.Module — same path family as pkg.Fset file
+	// paths, avoiding symlink skew that memberDirs (os.Stat-based) can introduce
+	// on macOS (/tmp → /private/tmp in temp dirs used by tests).
+	//
+	// modEntry holds a module path and its ScanRoot-relative dir ("." for root).
+	// Entries are sorted: longest path first (correct longest-prefix matching),
+	// then alpha for equal-length ties (determinism).
+	type modEntry struct {
+		path   string
+		relDir string
+	}
+	seenModPath := make(map[string]struct{})
+	var modEntries []modEntry
+	var goModules []graph.GoModule
+
+	for _, r := range results {
+		for _, pkg := range r.pkgs {
+			if pkg.Module == nil || pkg.Module.Path == "" || pkg.Module.Dir == "" {
+				continue
+			}
+			if _, ok := seenModPath[pkg.Module.Path]; ok {
+				continue
+			}
+			seenModPath[pkg.Module.Path] = struct{}{}
+			rel, relErr := filepath.Rel(s.Root, pkg.Module.Dir)
+			if relErr != nil || strings.HasPrefix(rel, "..") {
+				// Module dir is outside scanRoot — skip (shouldn't happen after DiscoverMembers).
+				continue
+			}
+			relDir := filepath.ToSlash(rel)
+			modEntries = append(modEntries, modEntry{path: pkg.Module.Path, relDir: relDir})
+			goModules = append(goModules, graph.GoModule{Path: pkg.Module.Path, RelDir: relDir})
 		}
 	}
 
-	// stripModPath converts a fully-qualified Go import path to a repo-relative
-	// path by removing the module prefix (e.g. "example.com/myapp/pkg/a" →
-	// "pkg/a"). Paths that do not belong to this module (stdlib, external) are
-	// returned unchanged so callers can still apply exclusion rules.
-	stripModPath := func(importPath string) string {
-		if modPath == "" {
-			return importPath
+	// Sort modEntries: longest path first for correct prefix matching; alpha tiebreak.
+	sort.Slice(modEntries, func(i, j int) bool {
+		li, lj := len(modEntries[i].path), len(modEntries[j].path)
+		if li != lj {
+			return li > lj
 		}
-		if importPath == modPath {
-			return "."
+		return modEntries[i].path < modEntries[j].path
+	})
+	// Sort goModules by Path for deterministic output.
+	sort.Slice(goModules, func(i, j int) bool {
+		return goModules[i].Path < goModules[j].Path
+	})
+
+	// stripImportPath converts a Go import path to a ScanRoot-relative path.
+	// First-party imports (module path ∈ member set) are prefixed with their
+	// member's relative dir; external deps are returned unchanged.
+	// Single-member root package (relDir="."): ScanRoot-relative path is "" (node is
+	// the scan root itself). Identical to the old stripModPath root-module behavior.
+	stripImportPath := func(importPath string) string {
+		for _, m := range modEntries {
+			if importPath == m.path {
+				if m.relDir == "." {
+					return "" // root member's root package: ScanRoot-relative path is ""
+				}
+				return m.relDir
+			}
+			if strings.HasPrefix(importPath, m.path+"/") {
+				suffix := importPath[len(m.path)+1:]
+				if m.relDir == "." {
+					return suffix
+				}
+				return m.relDir + "/" + suffix
+			}
 		}
-		if strings.HasPrefix(importPath, modPath+"/") {
-			return importPath[len(modPath)+1:]
-		}
-		return importPath
+		return importPath // external dep — unchanged
 	}
 
-	// isInModule reports whether a fully-qualified package path belongs to this module.
-	isInModule := func(pkgPath string) bool {
-		return modPath != "" && (pkgPath == modPath || strings.HasPrefix(pkgPath, modPath+"/"))
+	// isFirstParty reports whether importPath belongs to any loaded workspace member.
+	// Replaces the old single-module isInModule predicate; cross-member type
+	// references now produce StrengthHints (the critical strength guard).
+	isFirstParty := func(importPath string) bool {
+		for _, m := range modEntries {
+			if importPath == m.path || strings.HasPrefix(importPath, m.path+"/") {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Merge all packages from all member loads, deduplicating by PkgPath.
+	// Iterate results in member order (results[i] ↔ memberDirs[i]) for determinism.
+	seenPkg := make(map[string]struct{})
+	var allPkgs []*packages.Package
+	for _, r := range results {
+		for _, pkg := range r.pkgs {
+			if _, ok := seenPkg[pkg.PkgPath]; !ok {
+				seenPkg[pkg.PkgPath] = struct{}{}
+				allPkgs = append(allPkgs, pkg)
+			}
+		}
 	}
 
 	// Derive per-(relFile, importedPkgRelPath) StrengthHints from type info.
-	// Only in-module targets are considered; external deps are excluded from
-	// coupling_balance and setting hints for them would be noise.
-	strengthHints := buildStrengthHints(pkgs, s.Root, stripModPath, isInModule, e.isExcluded)
+	// Uses isFirstParty (member-set predicate) so cross-member type references
+	// also get hints — the critical strength guard for workspace mode.
+	strengthHints := buildStrengthHints(allPkgs, s.Root, stripImportPath, isFirstParty, e.isExcluded)
 
-	var nodes []graph.Node
-	var edges []graph.Edge
-	filesSeen := 0
-	unresolved := 0
-
-	// Track emitted node IDs to avoid duplicates within this extractor.
-	seenNodes := make(map[string]struct{})
-
-	emitNode := func(n graph.Node) {
-		id := n.ID()
-		if _, ok := seenNodes[id]; !ok {
-			seenNodes[id] = struct{}{}
-			nodes = append(nodes, n)
-		}
-	}
-
-	for _, pkg := range pkgs {
-		if pkg.IllTyped || len(pkg.Errors) > 0 {
-			unresolved++
-		}
-
-		// Emit package node with repo-relative path.
-		pkgPath := stripModPath(pkg.PkgPath)
-		if pkgPath != "" {
-			pkgNode := graph.Node{Kind: graph.NodeKindPackage, Path: pkgPath}
-			emitNode(pkgNode)
-		}
-
-		for _, f := range pkg.Syntax {
-			// Determine the repo-relative path for this file.
-			absFile := pkg.Fset.File(f.Pos()).Name()
-			relFile, err := filepath.Rel(s.Root, absFile)
-			if err != nil || strings.HasPrefix(relFile, "..") {
-				// Outside the root — skip.
-				continue
-			}
-			// Normalise to forward slashes.
-			relFile = filepath.ToSlash(relFile)
-
-			// Check exclusions.
-			if e.isExcluded(relFile) {
-				continue
-			}
-
-			filesSeen++
-			fileNode := graph.Node{Kind: graph.NodeKindFile, Path: relFile}
-			emitNode(fileNode)
-
-			for _, imp := range f.Imports {
-				pos := pkg.Fset.Position(imp.Pos())
-				rawImportPath := strings.Trim(imp.Path.Value, `"`)
-
-				// Strip module prefix to get a repo-relative path for matching.
-				importPath := stripModPath(rawImportPath)
-
-				// Check exclusions on the import target.
-				if e.isExcluded(importPath) {
-					continue
-				}
-
-				// Determine edge kind based on the repo-relative path.
-				edgeKind := graph.EdgeKindImports
-				if strings.Contains(importPath, "/internal/") || strings.HasSuffix(importPath, "/internal") {
-					edgeKind = graph.EdgeKindUsesInternal
-				}
-
-				// Make the location file repo-relative when possible.
-				locFile := pos.Filename
-				if rel, err := filepath.Rel(s.Root, locFile); err == nil && !strings.HasPrefix(rel, "..") {
-					locFile = filepath.ToSlash(rel)
-				}
-
-				edge := graph.Edge{
-					From:       graph.Node{Kind: graph.NodeKindFile, Path: relFile}.ID(),
-					To:         graph.Node{Kind: graph.NodeKindPackage, Path: importPath}.ID(),
-					Kind:       edgeKind,
-					Language:   "go",
-					Confidence: "high",
-					Locations: []graph.Location{
-						{File: locFile, Line: pos.Line},
-					},
-					StrengthHint: strengthHints[relFile+"\x00"+importPath],
-				}
-				edges = append(edges, edge)
-			}
-		}
-	}
+	nodes, edges, filesSeen, unresolved := e.collectNodesEdges(
+		allPkgs, s.Root, stripImportPath, strengthHints,
+	)
 
 	status := "ok"
 	switch {
@@ -217,7 +262,7 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		// n/a rather than a false-green 100% over an empty file set. A non-Go dir
 		// makes packages.Load return a synthetic error package (unresolved>0),
 		// which must not be mistaken for partial coverage.
-		status = "absent"
+		status = statusAbsent
 	case unresolved > 0:
 		status = "partial"
 	}
@@ -227,15 +272,96 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		Edges:      edges,
 		Language:   "go",
 		Unresolved: unresolved,
+		GoModules:  goModules,
 	}
 	cov := diagnostic.Coverage{
-		Tool:            "go/packages",
+		Tool:            toolGoPackages,
 		FilesSeen:       filesSeen,
 		FilesApplicable: filesSeen,
 		Unresolved:      unresolved,
 		Status:          status,
 	}
 	return facts, cov, nil
+}
+
+// collectNodesEdges iterates loaded packages and emits graph nodes and edges.
+// Extracted from Extract to keep Extract's cyclomatic complexity below the gate.
+//
+// Synthetic-error packages (Module==nil && Errors non-empty) increment unresolved
+// and are skipped — they represent unresolvable patterns, never fatal.
+func (e *GoExtractor) collectNodesEdges(
+	pkgs []*packages.Package,
+	root string,
+	stripImportPath func(string) string,
+	strengthHints map[string]string,
+) (nodes []graph.Node, edges []graph.Edge, filesSeen, unresolved int) {
+	// seenNodes deduplicates package/file nodes within this extractor.
+	seenNodes := make(map[string]struct{})
+	emitNode := func(n graph.Node) {
+		id := n.ID()
+		if _, ok := seenNodes[id]; !ok {
+			seenNodes[id] = struct{}{}
+			nodes = append(nodes, n)
+		}
+	}
+	for _, pkg := range pkgs {
+		if pkg.Module == nil && len(pkg.Errors) > 0 {
+			unresolved++
+			continue
+		}
+		if pkg.IllTyped || len(pkg.Errors) > 0 {
+			unresolved++
+		}
+
+		pkgPath := stripImportPath(pkg.PkgPath)
+		if pkgPath != "" {
+			emitNode(graph.Node{Kind: graph.NodeKindPackage, Path: pkgPath})
+		}
+
+		for _, f := range pkg.Syntax {
+			absFile := pkg.Fset.File(f.Pos()).Name()
+			relFile, err := filepath.Rel(root, absFile)
+			if err != nil || strings.HasPrefix(relFile, "..") {
+				continue
+			}
+			relFile = filepath.ToSlash(relFile)
+			if e.isExcluded(relFile) {
+				continue
+			}
+			filesSeen++
+			emitNode(graph.Node{Kind: graph.NodeKindFile, Path: relFile})
+
+			for _, imp := range f.Imports {
+				pos := pkg.Fset.Position(imp.Pos())
+				rawImportPath := strings.Trim(imp.Path.Value, `"`)
+				importPath := stripImportPath(rawImportPath)
+				if e.isExcluded(importPath) {
+					continue
+				}
+
+				edgeKind := graph.EdgeKindImports
+				if strings.Contains(importPath, "/internal/") || strings.HasSuffix(importPath, "/internal") {
+					edgeKind = graph.EdgeKindUsesInternal
+				}
+
+				locFile := pos.Filename
+				if rel, relErr := filepath.Rel(root, locFile); relErr == nil && !strings.HasPrefix(rel, "..") {
+					locFile = filepath.ToSlash(rel)
+				}
+
+				edges = append(edges, graph.Edge{
+					From:         graph.Node{Kind: graph.NodeKindFile, Path: relFile}.ID(),
+					To:           graph.Node{Kind: graph.NodeKindPackage, Path: importPath}.ID(),
+					Kind:         edgeKind,
+					Language:     "go",
+					Confidence:   "high",
+					Locations:    []graph.Location{{File: locFile, Line: pos.Line}},
+					StrengthHint: strengthHints[relFile+"\x00"+importPath],
+				})
+			}
+		}
+	}
+	return
 }
 
 // buildStrengthHints derives per-(relFile, importedPkgRelPath) BC integration-strength

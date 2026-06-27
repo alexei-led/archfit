@@ -2,6 +2,9 @@ package py_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -17,6 +20,12 @@ const (
 	testPkgName   = "myapp"
 	testScopeMode = "full"
 	testRoot      = "../../../testdata/py"
+
+	modMyappA        = "module:myapp.a"
+	modMyappB        = "module:myapp.b"
+	modMyappBPrivate = "module:myapp.b._internal.impl"
+	modPub           = "module:pub"
+	hintIntrusive    = "intrusive"
 )
 
 func TestExtract_Parse(t *testing.T) {
@@ -60,7 +69,7 @@ func TestExtract_Parse(t *testing.T) {
 
 	// Edge myapp.a → myapp.b should be "imports" with no strength hint
 	// (public module name, no config public glob).
-	k1 := edgeKey{"module:myapp.a", "module:myapp.b"}
+	k1 := edgeKey{modMyappA, modMyappB}
 	if got := edges[k1].Kind; got != graph.EdgeKindImports {
 		t.Errorf("edge %v: kind = %q, want %q", k1, got, graph.EdgeKindImports)
 	}
@@ -70,12 +79,12 @@ func TestExtract_Parse(t *testing.T) {
 
 	// Edge myapp.a → myapp.b._internal.impl should be "uses_internal" and carry
 	// an "intrusive" strength hint (PEP 8-private segment "_internal").
-	k2 := edgeKey{"module:myapp.a", "module:myapp.b._internal.impl"}
+	k2 := edgeKey{modMyappA, modMyappBPrivate}
 	if got := edges[k2].Kind; got != graph.EdgeKindUsesInternal {
 		t.Errorf("edge %v: kind = %q, want %q", k2, got, graph.EdgeKindUsesInternal)
 	}
-	if got := edges[k2].StrengthHint; got != "intrusive" {
-		t.Errorf("edge %v: StrengthHint = %q, want %q", k2, got, "intrusive")
+	if got := edges[k2].StrengthHint; got != hintIntrusive {
+		t.Errorf("edge %v: StrengthHint = %q, want %q", k2, got, hintIntrusive)
 	}
 }
 
@@ -110,6 +119,114 @@ func TestExtract_WithUnresolved(t *testing.T) {
 	}
 }
 
+func TestExtract_SymbolLevelStrength(t *testing.T) {
+	// Fixture: three edges, all module names are public (no module-level private check
+	// applies). Only the line_contents drives the strength hint.
+	const fixture = `{"edges":[` +
+		`{"importer":"pub","imported":"priv","line":1,"line_contents":"from priv import _sym"},` +
+		`{"importer":"pub","imported":"other","line":2,"line_contents":"from other import thing"},` +
+		`{"importer":"pub","imported":"multi","line":3,"line_contents":"from multi import a, _b, c"},` +
+		`{"importer":"pub","imported":"alias","line":4,"line_contents":"from alias import _hidden as h"}` +
+		`],"unresolved":0}`
+
+	mock := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == "uv" {
+				return toolrun.ToolInfo{Name: "uv"}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			return toolrun.Output{Stdout: []byte(fixture), ExitCode: 0}, nil
+		},
+	}
+
+	cfg := config.ExtractConfig{PyPackage: testPkgName, Mode: config.ModeAuto}
+	e := py.New(mock, cfg)
+
+	facts, _, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	type edgeKey struct{ from, to string }
+	byKey := make(map[edgeKey]graph.Edge)
+	for _, edge := range facts.Edges {
+		byKey[edgeKey{edge.From, edge.To}] = edge
+	}
+
+	tests := []struct {
+		name string
+		key  edgeKey
+		want string // expected StrengthHint; "" means abstained
+	}{
+		{"private symbol → intrusive", edgeKey{modPub, "module:priv"}, hintIntrusive},
+		{"public symbol → abstained", edgeKey{modPub, "module:other"}, ""},
+		{"multi-import one private → intrusive", edgeKey{modPub, "module:multi"}, hintIntrusive},
+		{"aliased private symbol → intrusive", edgeKey{modPub, "module:alias"}, hintIntrusive},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e, ok := byKey[tt.key]
+			if !ok {
+				t.Fatalf("edge %v not found in facts", tt.key)
+			}
+			if e.StrengthHint != tt.want {
+				t.Errorf("StrengthHint = %q, want %q", e.StrengthHint, tt.want)
+			}
+		})
+	}
+}
+
+// TestExtract_ModuleLevelIntrusiveStillDetected verifies the pre-existing module-level
+// private detection (underscore segment in the imported module name) is unaffected by
+// the symbol-level extension. It feeds edges WITHOUT line_contents so the symbol parser
+// sees empty strings and must not interfere.
+func TestExtract_ModuleLevelIntrusiveStillDetected(t *testing.T) {
+	// Edges have no line_contents — the module name itself carries the private segment.
+	const fixture = `{"edges":[` +
+		`{"importer":"myapp.a","imported":"myapp.b._internal.impl","line":1},` +
+		`{"importer":"myapp.a","imported":"myapp.b","line":2}` +
+		`],"unresolved":0}`
+
+	mock := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == "uv" {
+				return toolrun.ToolInfo{Name: "uv"}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			return toolrun.Output{Stdout: []byte(fixture), ExitCode: 0}, nil
+		},
+	}
+
+	cfg := config.ExtractConfig{PyPackage: testPkgName, Mode: config.ModeAuto}
+	e := py.New(mock, cfg)
+
+	facts, _, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	type edgeKey struct{ from, to string }
+	byKey := make(map[edgeKey]graph.Edge)
+	for _, edge := range facts.Edges {
+		byKey[edgeKey{edge.From, edge.To}] = edge
+	}
+
+	// Module with private segment → intrusive (module-level rule).
+	k1 := edgeKey{modMyappA, modMyappBPrivate}
+	if got := byKey[k1].StrengthHint; got != hintIntrusive {
+		t.Errorf("module-level private: StrengthHint = %q, want %q", got, hintIntrusive)
+	}
+	// Public module → abstained.
+	k2 := edgeKey{modMyappA, modMyappB}
+	if got := byKey[k2].StrengthHint; got != "" {
+		t.Errorf("public module: StrengthHint = %q, want empty", got)
+	}
+}
+
 func TestExtract_ToolAbsentAuto(t *testing.T) {
 	mock := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
@@ -136,5 +253,61 @@ func TestExtract_ToolAbsentAuto(t *testing.T) {
 	}
 	if !strings.EqualFold(cov.Status, "absent") {
 		t.Errorf("cov.Status = %q, want \"absent\"", cov.Status)
+	}
+}
+
+// TestExtract_MultiPackageArgs verifies that when multiple top-level Python packages
+// are discovered under ScanRoot, all names are passed to the grimp helper via
+// --packages pkg1 pkg2 … (grimp.build_graph is variadic).
+func TestExtract_MultiPackageArgs(t *testing.T) {
+	root := t.TempDir()
+
+	// Python project marker.
+	if err := os.WriteFile(filepath.Join(root, "pyproject.toml"), []byte("[project]"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Two top-level packages discovered by __init__.py.
+	for _, pkg := range []string{"alpha", "beta"} {
+		if err := os.MkdirAll(filepath.Join(root, pkg), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, pkg, "__init__.py"), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var gotArgs []string
+	mock := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == "uv" {
+				return toolrun.ToolInfo{Name: "uv"}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--version") {
+				return toolrun.Output{Stdout: []byte("uv 0.4.0"), ExitCode: 0}, nil
+			}
+			gotArgs = cmd.Args
+			return toolrun.Output{Stdout: []byte(`{"edges":[],"unresolved":0}`), ExitCode: 0}, nil
+		},
+	}
+
+	e := py.New(mock, config.ExtractConfig{Mode: config.ModeAuto})
+	if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root, Mode: testScopeMode}); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	// --packages flag must be present.
+	idx := slices.Index(gotArgs, "--packages")
+	if idx == -1 {
+		t.Fatalf("expected --packages flag in args %v", gotArgs)
+	}
+	// Both discovered packages (sorted) must follow --packages.
+	remaining := gotArgs[idx+1:]
+	for _, want := range []string{"alpha", "beta"} {
+		if !slices.Contains(remaining, want) {
+			t.Errorf("package %q not found after --packages in args %v", want, gotArgs)
+		}
 	}
 }

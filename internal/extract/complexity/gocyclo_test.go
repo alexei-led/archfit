@@ -3,6 +3,7 @@ package complexity
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -166,7 +167,10 @@ func TestParseGocycloOutput_PathNormalised(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunGocyclo_Absent(t *testing.T) {
-	funcs, ok := runGocyclo(context.Background(), absentRunner(), t.TempDir())
+	funcs, ok, err := runGocyclo(context.Background(), absentRunner(), t.TempDir(), 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if ok {
 		t.Error("ok = true, want false when gocyclo absent")
 	}
@@ -177,7 +181,10 @@ func TestRunGocyclo_Absent(t *testing.T) {
 
 func TestRunGocyclo_Present(t *testing.T) {
 	output := "16 pkg HotFunc /tmp/repo/svc.go:10:1\n3 pkg CoolFunc /tmp/repo/svc.go:50:1\n"
-	funcs, ok := runGocyclo(context.Background(), gocycloRunnerWithOutput(output), "/tmp/repo")
+	funcs, ok, err := runGocyclo(context.Background(), gocycloRunnerWithOutput(output), "/tmp/repo", 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if !ok {
 		t.Error("ok = false, want true when gocyclo present")
 	}
@@ -202,11 +209,48 @@ func TestRunGocyclo_NonZeroExitStillReturnsData(t *testing.T) {
 			return toolrun.Output{ExitCode: 2, Stdout: []byte("20 pkg Big /tmp/r/x.go:1:1\n")}, nil
 		},
 	}
-	funcs, ok := runGocyclo(context.Background(), runner, "/tmp/r")
+	funcs, ok, err := runGocyclo(context.Background(), runner, "/tmp/r", 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if !ok {
 		t.Error("ok should be true even on non-zero exit")
 	}
 	if len(funcs) != 1 || funcs[0].CCN != 20 {
 		t.Errorf("expected one func with CCN=20, got %+v", funcs)
+	}
+}
+
+// TestRunGocyclo_TimeoutParam asserts that runGocyclo threads the configured
+// timeout into ToolCmd.Timeout, and falls back to gocycloTimeout when zero
+// (the byte-identical no-config path).
+func TestRunGocyclo_TimeoutParam(t *testing.T) {
+	var capturedTimeout time.Duration
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == gocycloTool {
+				return toolrun.ToolInfo{Name: tool, Path: gocycloPath}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			capturedTimeout = cmd.Timeout
+			return toolrun.Output{ExitCode: 0, Stdout: []byte{}}, nil
+		},
+	}
+	// Zero → built-in constant (byte-identical guard).
+	if _, _, err := runGocyclo(context.Background(), runner, t.TempDir(), 0); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedTimeout != gocycloTimeout {
+		t.Errorf("timeout(0) = %v, want %v (gocycloTimeout)", capturedTimeout, gocycloTimeout)
+	}
+	// Configured value → used directly.
+	configured := 5 * time.Minute
+	if _, _, err := runGocyclo(context.Background(), runner, t.TempDir(), configured); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedTimeout != configured {
+		t.Errorf("timeout(configured) = %v, want %v", capturedTimeout, configured)
 	}
 }

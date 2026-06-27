@@ -1,0 +1,10 @@
+package consumer
+
+import "example.com/wb/api"
+
+// AsGreeter accepts a Greeter interface value (contract reference).
+// Only the TypeName api.Greeter is referenced here — no methods called —
+// so buildStrengthHints produces StrengthHint "contract" for this edge.
+func AsGreeter(g api.Greeter) api.Greeter {
+	return g
+}
