@@ -205,9 +205,10 @@ type helperOutput struct {
 }
 
 type helperEdge struct {
-	Importer string `json:"importer"`
-	Imported string `json:"imported"`
-	Line     int    `json:"line"`
+	Importer     string `json:"importer"`
+	Imported     string `json:"imported"`
+	Line         int    `json:"line"`
+	LineContents string `json:"line_contents"`
 }
 
 // ---------------------------------------------------------------------------
@@ -248,13 +249,17 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 		// Location file: dotted module name converted to path (dots → slashes).
 		locFile := strings.ReplaceAll(he.Importer, ".", "/")
 
-		// Strength hint: importing a PEP 8-private module (an underscore-prefixed
-		// segment) is reaching into another module's internals → intrusive. This
-		// is a fallback signal; config public/internal globs still take precedence
-		// in classify. We never emit a "contract" hint — grimp resolves imports to
-		// the defining submodule, so a public-API signal cannot be established here.
+		// Strength hint: intrusive is assigned when the edge reaches into PEP 8-private
+		// internals — either via a private module name ("pkg._internal") or via an
+		// imported private symbol ("from pkg import _sym"). Both are structural evidence;
+		// no naming-heuristic guessing (PascalCase/snake_case) is applied — non-intrusive
+		// edges stay abstaining until Task 15 (scip-python symbol kinds).
+		//
+		// Config public/internal globs still take precedence in classify.
+		// We never emit a "contract" hint — grimp resolves imports to the defining
+		// submodule, so a public-API signal cannot be established here.
 		strengthHint := ""
-		if isPrivatePythonModule(he.Imported) {
+		if isPrivatePythonModule(he.Imported) || hasPrivateSymbolImport(he.LineContents) {
 			strengthHint = string(coupling.StrengthIntrusive)
 		}
 
@@ -309,6 +314,51 @@ func isPrivatePythonModule(dotted string) bool {
 // isDunder reports whether a path segment is a __dunder__ name.
 func isDunder(seg string) bool {
 	return len(seg) >= 4 && strings.HasPrefix(seg, "__") && strings.HasSuffix(seg, "__")
+}
+
+// hasPrivateSymbolImport reports whether a Python "from … import …" statement
+// imports at least one PEP 8-private symbol (single leading underscore, not dunder).
+// Handles multiple imports ("from x import a, _b, c") and aliases ("from x import _sym as s").
+// For plain "import x" form there is no symbol name — returns false (module-level rule applies).
+//
+// Ceiling: multi-line parenthesized imports where line_contents captures only the
+// opening physical line ("from x import (\n") are not detected — the function abstains
+// safely. Upgrade path: Task 15 (scip-python) resolves individual symbol kinds precisely.
+func hasPrivateSymbolImport(line string) bool {
+	line = strings.TrimSpace(line)
+	// Must be a "from … import …" statement.
+	const fromPfx = "from "
+	const importKW = " import "
+	if !strings.HasPrefix(line, fromPfx) {
+		return false
+	}
+	idx := strings.Index(line, importKW)
+	if idx < 0 {
+		return false
+	}
+	symbols := line[idx+len(importKW):]
+	// Strip trailing inline comment.
+	if i := strings.Index(symbols, "#"); i >= 0 {
+		symbols = symbols[:i]
+	}
+	// Strip surrounding parentheses (single-line form: "from x import (a, _b)").
+	symbols = strings.Trim(symbols, " ()")
+	for _, sym := range strings.Split(symbols, ",") {
+		// Take the original name before any "as alias"; the alias is just a local
+		// binding and does not reflect access to a private internal.
+		name := sym
+		if parts := strings.SplitN(sym, " as ", 2); len(parts) == 2 {
+			name = parts[0]
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if strings.HasPrefix(name, "_") && !isDunder(name) {
+			return true
+		}
+	}
+	return false
 }
 
 // matchesInternal reports whether the dotted module name matches any internal glob.

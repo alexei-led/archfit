@@ -350,15 +350,15 @@ unclassified and `coupling_balance` reads `n/a`. This task supplies the
 
 ### Task 14: Python intrusive strength at symbol level (cheap, no heuristics)
 
-- [ ] `grimp_helper.py`: emit `line_contents` from `get_import_details()` (it is
+- [x] `grimp_helper.py`: emit `line_contents` from `get_import_details()` (it is
       already fetched and discarded)
-- [ ] `py.go`: parse `from x import _sym` → `StrengthIntrusive` at **symbol**
+- [x] `py.go`: parse `from x import _sym` → `StrengthIntrusive` at **symbol**
       level (extends today's module-level-only underscore check). Do **not** use
       PascalCase/snake_case naming heuristics for model/functional — that violates
       abstain-not-fake; leave non-intrusive edges abstaining until Task 15
-- [ ] write tests: `from pub import _priv` → intrusive; normal import stays
+- [x] write tests: `from pub import _priv` → intrusive; normal import stays
       abstained; existing module-level intrusive still detected
-- [ ] run tests — must pass before next task
+- [x] run tests — must pass before next task
 
 ### Task 15: Python strength via scip-python (phase 2, opt-in)
 

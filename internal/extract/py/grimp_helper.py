@@ -10,7 +10,7 @@ Usage (uv-managed project):
 Usage (direct Python, grimp must be installed):
   python3.12 grimp_helper.py --package <top_pkg> --root <project_root>
 
-Output JSON: {"edges": [{"importer": "...", "imported": "...", "line": N}], "unresolved": N}
+Output JSON: {"edges": [{"importer": "...", "imported": "...", "line": N, "line_contents": "..."}], "unresolved": N}
 """
 
 import argparse
@@ -76,6 +76,11 @@ def main() -> None:
                             "importer": importer,
                             "imported": imported,
                             "line": d["line_number"],
+                            # line_contents lets the Go consumer detect symbol-level private
+                            # imports ("from x import _sym" → intrusive strength hint).
+                            # Use .get so older grimp versions that omit this key degrade
+                            # to abstain rather than dropping the edge as unresolved.
+                            "line_contents": d.get("line_contents", ""),
                         }
                     )
             except Exception:  # noqa: BLE001
