@@ -111,11 +111,11 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	for _, format := range c.Format {
 		var renderErr error
 		switch format {
-		case "json":
+		case formatJSON:
 			renderErr = jsonout.New().Render(diag, deps.Stdout)
-		case "text":
+		case formatText:
 			renderErr = console.New().Render(diag, deps.Stdout)
-		case "md", "markdown":
+		case "md", formatMarkdown:
 			renderErr = markdown.New().Render(diag, deps.Stdout)
 		case "sarif":
 			renderErr = sarif.New().Render(diag, deps.Stdout)

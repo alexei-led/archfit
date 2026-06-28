@@ -54,6 +54,7 @@ type cli struct {
 	Baseline BaselineCmd `cmd:"" group:"core" help:"Accept current findings as the baseline."`
 
 	Score   ScoreCmd   `cmd:"" group:"reports" help:"Print the banded architecture scorecard."`
+	Diff    DiffCmd    `cmd:"" group:"reports" help:"Compare scorecard between a git ref and HEAD."`
 	Scan    ScanCmd    `cmd:"" group:"reports" help:"Write a full Markdown architecture audit report."`
 	Explain ExplainCmd `cmd:"" group:"reports" help:"Explain one finding by fingerprint prefix."`
 

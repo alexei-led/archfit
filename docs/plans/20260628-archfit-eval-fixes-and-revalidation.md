@@ -221,11 +221,11 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 18: P8 — native `archfit diff <ref>` scorecard comparison
 
-- [ ] add `DiffCmd` (`cmd/archfit/diff.go`): `archfit diff <base-ref> [--config --root --format text|json|markdown]`; create a clean detached worktree at `<base-ref>` in an `os.MkdirTemp` dir, run `score` on base + HEAD (both via the canonical-path resolution from Task 2), emit a structured before/after metric/dimension delta table, then remove the worktree (deferred cleanup even on error)
-- [ ] handle monorepo subtree via `--root`; non-git or missing ref → clear exit-3 error; never mutate the user's working tree
-- [ ] write test: diff between two fixture commit states emits a delta table and cleans up the worktree
-- [ ] write test: non-git root and bad ref produce graceful errors
-- [ ] run `go test ./cmd/...` — must pass before Task 19
+- [x] add `DiffCmd` (`cmd/archfit/diff.go`): `archfit diff <base-ref> [--config --root --format text|json|markdown]`; create a clean detached worktree at `<base-ref>` in an `os.MkdirTemp` dir, run `score` on base + HEAD (both via the canonical-path resolution from Task 2), emit a structured before/after metric/dimension delta table, then remove the worktree (deferred cleanup even on error)
+- [x] handle monorepo subtree via `--root`; non-git or missing ref → clear exit-3 error; never mutate the user's working tree
+- [x] write test: diff between two fixture commit states emits a delta table and cleans up the worktree
+- [x] write test: non-git root and bad ref produce graceful errors
+- [x] run `go test ./cmd/...` — must pass before Task 19
 
 ### Task 19: Author ideal per-repo configs (all tools + opt-in metrics)
 
