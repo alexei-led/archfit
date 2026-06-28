@@ -165,10 +165,10 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 11: P7 — jscpd clusters empty for Rust
 
-- [ ] reproduce: confirm whether `internal/extract/clones/clones.go:102-114` invokes jscpd with a format/language set that includes Rust (`.rs`); jscpd needs `--format` or relies on extension detection
-- [ ] fix the invocation so `.rs` (and other first-party langs) are scanned; verify `parseJscpdReport` (`clones.go:172-177`) populates `Duplicates`/clusters
-- [ ] write integration test (faked or real-tool, `-short`-gated): a known Rust clone fixture yields non-empty clusters → `functional_candidates` measures (not n/a)
-- [ ] run `go test ./internal/extract/clones/...` — must pass before Task 12
+- [x] reproduce: confirm whether `internal/extract/clones/clones.go:102-114` invokes jscpd with a format/language set that includes Rust (`.rs`); jscpd needs `--format` or relies on extension detection
+- [x] fix the invocation so `.rs` (and other first-party langs) are scanned; verify `parseJscpdReport` (`clones.go:172-177`) populates `Duplicates`/clusters
+- [x] write integration test (faked or real-tool, `-short`-gated): a known Rust clone fixture yields non-empty clusters → `functional_candidates` measures (not n/a)
+- [x] run `go test ./internal/extract/clones/...` — must pass before Task 12
 
 ### Task 12: Tool-coverage honesty (P12, #17, #18, #23)
 
