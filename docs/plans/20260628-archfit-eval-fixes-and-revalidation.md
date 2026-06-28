@@ -181,12 +181,12 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 13: `file_extraction_coverage`>1.0, `cohesion_lcom` TS wiring, `change_locality` n/a
 
-- [ ] `file_extraction_coverage`: align numerator/denominator scope so the ratio ≤ 1.0 — count only first-party source files in the SCIP numerator (exclude `.d.ts`/`node_modules` type decls) (locate metric; codegraph 1.02→≤1.0)
-- [ ] `cohesion_lcom` TS: investigate empty `g.IntraRefs` despite SCIP 5832 symbols (`cohesion.go:79` gate); wire scip-typescript occurrence→flat-module-key resolution so intra-module refs populate
-- [ ] `change_locality` (metric, not dimension): diagnose n/a while `change_coupling`/`change_amplification` compute from the same git history (yazi); fix or document with a precise reason string
-- [ ] detection+warning for scip-python vs Python 3.14 gap (65-byte empty index) — emit an actionable coverage note (no version pin in code)
-- [ ] write tests where a fixture exists; document tool-version gaps with reason strings otherwise
-- [ ] run `go test ./internal/...` — must pass before Task 14
+- [x] `file_extraction_coverage`: fixed in `coverage.go` — skip tools with `FilesApplicable==0` (auxiliary tools like ast-grep syntax pass inflate the numerator without a denominator; the ratio was 1.02 because ast-grep reported `seen=136, applicable=0`); test `TestCoverage_AuxiliaryToolSkipped` added
+- [x] `cohesion_lcom` TS: documented as tool-version gap — scip-typescript keys modules per file (single-document modules), so `cohesionMinDocs=2` filter eliminates all TS modules at `cohesion.go:88` even when `IntraRefs` is populated; wiring intra_refs cannot unblock n/a; the existing `cohesionDef` string already explains this correctly. No code change needed.
+- [x] `change_locality` (metric, not dimension): documented as by-design — metric is delta-mode only (`in.ChangedFiles` empty in full mode, line 42); `change_coupling`/`change_amplification` read commit history (always present); the eval ran full mode → correctly n/a. Reason string in `change_locality.go` already states "n/a in full mode (no diff to localize) — never a false zero".
+- [x] scip-python vs Python 3.14 gap: fixed in `symbols.go` — when `len(g.Module)==0` after a successful pipeline run, return `StatusPartial` with reason "scip indexer produced an empty symbol index — if this is a Python project, scip-python may not support the current Python version; try Python 3.12 or 3.13"; test `TestAdapter_Symbols_EmptyIndex` added
+- [x] tests written: `TestCoverage_AuxiliaryToolSkipped` (coverage.go fix), `TestAdapter_Symbols_EmptyIndex` (scip-python gap); documented-gap items have precise reason strings in the plan
+- [x] run `go test ./internal/...` — all pass
 - ➕ split this task during execution if any sub-item proves large
 
 ### Task 14: LLM fidelity — distance honesty + strength-claim verification

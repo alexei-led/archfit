@@ -92,6 +92,30 @@ func TestCoverage_AbsentRecordSkipped(t *testing.T) {
 	}
 }
 
+func TestCoverage_AuxiliaryToolSkipped(t *testing.T) {
+	// An auxiliary tool (e.g. ast-grep syntax pass) may report FilesSeen > 0
+	// but FilesApplicable == 0 because it does not define a first-party file
+	// scope. Adding its FilesSeen to the numerator without a denominator
+	// contribution inflates the ratio above 1.0, which is impossible.
+	// The fix: skip tools with FilesApplicable == 0.
+	m := boundary.CoverageMetric{}
+	result := m.Calculate(signal.CommonInput{
+		ToolCoverage: []diagnostic.Coverage{
+			{Tool: "dependency-cruiser", FilesSeen: 118, FilesApplicable: 118, Status: diagnostic.StatusOK},
+			{Tool: "loc", FilesSeen: 131, FilesApplicable: 131, Status: diagnostic.StatusOK},
+			// ast-grep aux: seen=136 but applicable=0 — must not inflate ratio
+			{Tool: "ast-grep", FilesSeen: 136, FilesApplicable: 0, Status: diagnostic.StatusOK},
+		},
+	})
+	if result.Value > 1.0 {
+		t.Errorf("coverage ratio = %.4f, want <= 1.0 (auxiliary tool with FilesApplicable=0 must not inflate numerator)", result.Value)
+	}
+	// dc+loc: 249/249 = 1.0
+	if !metricstest.ApproxEqual(result.Value, 1.0) {
+		t.Errorf("coverage ratio = %.4f, want 1.0 (dc+loc only)", result.Value)
+	}
+}
+
 func TestBandModel_LowConfidenceCap(t *testing.T) {
 	// FilesSeen=10, FilesApplicable=10, Unresolved=9 → ratio=0.9 → low confidence
 	// value = 10/10 = 1.0 → score 10 → band would be "strong" → capped to "mixed"

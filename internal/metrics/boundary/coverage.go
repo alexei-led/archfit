@@ -32,6 +32,14 @@ func (m CoverageMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult
 		if c.Status == diagnostic.StatusAbsent {
 			continue
 		}
+		// Auxiliary tools (e.g. ast-grep syntax pass) report FilesSeen > 0 but
+		// FilesApplicable == 0 because they do not define a first-party file
+		// scope — they annotate whatever they match. Counting their FilesSeen
+		// without a matching FilesApplicable inflates the ratio above 1.0, which
+		// is definitionally impossible. Skip them from both sides.
+		if c.FilesApplicable == 0 {
+			continue
+		}
 		totalApplicable += c.FilesApplicable
 		totalExtracted += c.FilesSeen
 		totalUnresolved += c.Unresolved
