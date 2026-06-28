@@ -153,9 +153,9 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 9: `inbound_module_fanin` — drop test packages from SCIP refs
 
-- [ ] `internal/facts/facts.go:130` (or `internal/extract/scip/symbols.go:50-53`): when building `inboundSources`, exclude referencing modules that are test packages (`.test` suffix, or referencing file `FileClass==Test`) so fan-in matches `blast_radius`/`instability`
-- [ ] write test: a SCIP-refs fixture with a `cmd/x.test` importer → `inbound_module_fanin` excludes it (reproduces spotinfo 3→2, consistent with blast_radius)
-- [ ] run `go test ./internal/facts/... ./internal/metrics/...` — must pass before Task 10
+- [x] `internal/facts/facts.go:130` (or `internal/extract/scip/symbols.go:50-53`): when building `inboundSources`, exclude referencing modules that are test packages (`.test` suffix, or referencing file `FileClass==Test`) so fan-in matches `blast_radius`/`instability`
+- [x] write test: a SCIP-refs fixture with a `cmd/x.test` importer → `inbound_module_fanin` excludes it (reproduces spotinfo 3→2, consistent with blast_radius)
+- [x] run `go test ./internal/facts/... ./internal/metrics/...` — must pass before Task 10
 
 ### Task 10: P6 — SCIP empty index → warn, not `ok`
 
