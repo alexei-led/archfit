@@ -29,10 +29,20 @@ import (
 //   - Modules in different subtrees (fewer shared segments) →
 //     DistanceCrossModuleDiffOwner.
 //
-// Two flat single-segment names (e.g. "core" vs "api") share no tree structure,
-// so they are treated as different subtrees → DiffOwner. classifyDistance only
-// reaches here when the ownership signal is absent or degenerate (all same owner),
-// so flat-named modules in a single-team repo correctly classify as DiffOwner.
+// Two flat single-segment names (e.g. "core" vs "api") carry no tree signal:
+// there is no structural evidence they belong to different teams.
+// codeStructureDistance is only reached via Step 4 of classifyDistance when
+// ownership is absent or degenerate (single-owner or zero-owner repo), so both
+// modules already share the same — or unknown — owner context. Fabricating
+// DiffOwner from absent data produced false "tight coupling" findings on every
+// flat-named single-team repo (eval P1: codegraph, spotinfo). The honest floor
+// is SameOwner (ordinal 4 vs 7).
+//
+// Accepted tradeoff: two genuinely-separate-but-unowned flat modules in a
+// zero-owner config are under-distanced. This is preferable to the eval-observed
+// false-positive harm on real single-team repos. Multi-team repos are unaffected:
+// their ≥2 distinct owners resolve via Steps 2/3 before reaching here.
+//
 // Returns DistanceUnknown when either name is empty.
 func codeStructureDistance(fromMod, toMod, lang string) coupling.Distance {
 	if fromMod == "" || toMod == "" {
@@ -43,7 +53,9 @@ func codeStructureDistance(fromMod, toMod, lang string) coupling.Distance {
 	toParts := moduleSegments(toMod, lang)
 
 	if len(fromParts) == 1 && len(toParts) == 1 {
-		return coupling.DistanceCrossModuleDiffOwner
+		// No tree structure to distinguish teams; return the honest floor.
+		// See comment on codeStructureDistance for the rationale and tradeoff.
+		return coupling.DistanceCrossModuleSameOwner
 	}
 
 	shared := 0

@@ -58,7 +58,7 @@ func TestConnascenceTagging(t *testing.T) {
 			},
 			cfg:          twoModuleConfig(nil, nil),
 			wantConn:     coupling.ConnascenceType,
-			wantDistance: coupling.DistanceCrossModuleDiffOwner,
+			wantDistance: coupling.DistanceCrossModuleSameOwner,
 		},
 		{
 			name: "CoT: StrengthHint=contract cross-module",
@@ -70,7 +70,7 @@ func TestConnascenceTagging(t *testing.T) {
 			},
 			cfg:          twoModuleConfig(nil, nil),
 			wantConn:     coupling.ConnascenceType,
-			wantDistance: coupling.DistanceCrossModuleDiffOwner,
+			wantDistance: coupling.DistanceCrossModuleSameOwner,
 		},
 		{
 			name: "CoT: strength=contract from config public glob",
@@ -82,7 +82,7 @@ func TestConnascenceTagging(t *testing.T) {
 			// services/b/api/** is a public (contract) glob
 			cfg:          twoModuleConfig([]string{publicB}, nil),
 			wantConn:     coupling.ConnascenceType,
-			wantDistance: coupling.DistanceCrossModuleDiffOwner,
+			wantDistance: coupling.DistanceCrossModuleSameOwner,
 		},
 		{
 			name: "CoA: clone pair crosses module boundary",
@@ -94,7 +94,7 @@ func TestConnascenceTagging(t *testing.T) {
 			},
 			cfg:          twoModuleConfig(nil, modABClonePair),
 			wantConn:     coupling.ConnascenceAlgorithm,
-			wantDistance: coupling.DistanceCrossModuleDiffOwner,
+			wantDistance: coupling.DistanceCrossModuleSameOwner,
 		},
 		{
 			name: "CoA beats CoT when both signals present",
@@ -107,7 +107,7 @@ func TestConnascenceTagging(t *testing.T) {
 			// Also has clone pair → CoA should win
 			cfg:          twoModuleConfig(nil, modABClonePair),
 			wantConn:     coupling.ConnascenceAlgorithm,
-			wantDistance: coupling.DistanceCrossModuleDiffOwner,
+			wantDistance: coupling.DistanceCrossModuleSameOwner,
 		},
 		{
 			name: "no connascence on same-module edge",
@@ -131,7 +131,7 @@ func TestConnascenceTagging(t *testing.T) {
 			},
 			cfg:          twoModuleConfig(nil, nil),
 			wantConn:     coupling.ConnascenceNone,
-			wantDistance: coupling.DistanceCrossModuleDiffOwner,
+			wantDistance: coupling.DistanceCrossModuleSameOwner,
 		},
 		{
 			name: "no connascence: intrusive hint, no clone pair",
@@ -143,7 +143,7 @@ func TestConnascenceTagging(t *testing.T) {
 			},
 			cfg:          twoModuleConfig(nil, nil),
 			wantConn:     coupling.ConnascenceNone,
-			wantDistance: coupling.DistanceCrossModuleDiffOwner,
+			wantDistance: coupling.DistanceCrossModuleSameOwner,
 		},
 		{
 			name: "no connascence: unknown hint, no clone pair",
@@ -154,7 +154,7 @@ func TestConnascenceTagging(t *testing.T) {
 			},
 			cfg:          twoModuleConfig(nil, nil),
 			wantConn:     coupling.ConnascenceNone,
-			wantDistance: coupling.DistanceCrossModuleDiffOwner,
+			wantDistance: coupling.DistanceCrossModuleSameOwner,
 		},
 	}
 
@@ -224,5 +224,79 @@ func TestClonePairUpgradesStrengthToSymmetric(t *testing.T) {
 	// Symmetric (ordinal 9) > Functional (ordinal 8) → scores must differ.
 	if clWith.Score.Value == clWithout.Score.Value {
 		t.Errorf("Score.Value identical (%d); Symmetric and Functional should produce different scores", clWith.Score.Value)
+	}
+}
+
+// TestFlatNameEdgeScoresSameOwnerAfterP1Fix verifies that a flat-named
+// (single-segment) edge in a degenerate-owner repo classifies as
+// cross_module_same_owner (not diff_owner) and scores Medium under the book
+// formula — the P1 fix for false tight-coupling on single-team flat-named repos.
+//
+// Case: StrengthSymmetric (S=9, via clone pair), Distance=SameOwner (D=4),
+// Volatility=high (V=10, via subdomain:core).
+// balance = max(|S-D|, 10-V)+1 = max(|9-4|, 10-10)+1 = max(5,0)+1 = 6.
+// ScoreBand(6) = Medium.
+//
+// Pre-fix: flat names → DiffOwner (D=7) → balance = max(|9-7|, 0)+1 = 3 → High.
+func TestFlatNameEdgeScoresSameOwnerAfterP1Fix(t *testing.T) {
+	t.Parallel()
+
+	const (
+		flatModA = "core"
+		flatModB = "api"
+	)
+	flatFileA := "file:" + flatModA + "/x.go"
+	flatFileB := "file:" + flatModB + "/y.go"
+	// "api" < "core" lexicographically → sorted key is "api\x00core".
+	var clonePairKey string
+	if flatModB < flatModA {
+		clonePairKey = flatModB + "\x00" + flatModA
+	} else {
+		clonePairKey = flatModA + "\x00" + flatModB
+	}
+
+	cfg := config.ClassifyConfig{
+		Modules: map[string]config.ModuleDef{
+			flatModA: {
+				Paths:     []string{flatModA + "/**"},
+				Subdomain: "core", // → high volatility
+			},
+			flatModB: {
+				Paths: []string{flatModB + "/**"},
+			},
+		},
+		CrossModuleClonePairs: map[string]struct{}{clonePairKey: {}},
+	}
+
+	edge := graph.Edge{
+		From:         flatFileA,
+		To:           flatFileB,
+		Kind:         graph.EdgeKindImports,
+		StrengthHint: hintFunctional, // upgraded to Symmetric by clone pair
+	}
+
+	g := makeGraph([]graph.Edge{edge})
+	idx := classify.Run(g, cfg)
+	key := edgeKey(edge)
+	cl, ok := idx[key]
+	if !ok {
+		t.Fatal("edge not in classification index")
+	}
+
+	// After P1 fix: flat names in degenerate-owner repo → SameOwner.
+	if cl.Distance != coupling.DistanceCrossModuleSameOwner {
+		t.Errorf("Distance = %q, want cross_module_same_owner (P1 fix)", cl.Distance)
+	}
+	// Clone pair upgrades strength to Symmetric.
+	if cl.Strength != coupling.StrengthSymmetric {
+		t.Errorf("Strength = %q, want symmetric (clone pair upgrade)", cl.Strength)
+	}
+	// balance = max(|9-4|, 10-10)+1 = 6 → Medium.
+	const wantBalance = 6
+	if cl.Score.Balance != wantBalance {
+		t.Errorf("Score.Balance = %d, want %d (S=9, D=4, V=10)", cl.Score.Balance, wantBalance)
+	}
+	if cl.Score.Band != coupling.SeverityMedium {
+		t.Errorf("Score.Band = %q, want medium", cl.Score.Band)
 	}
 }

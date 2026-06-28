@@ -100,13 +100,13 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 3: P1 — flat single-segment distance → `CrossModuleSameOwner`
 
-- [ ] `internal/classify/distance_structure.go:46`: return `coupling.DistanceCrossModuleSameOwner` (not `DiffOwner`) for the two-single-segment-names case; rewrite the `:32-35` comment to state the BC rationale (degenerate-owner path guarantees one owner → honest floor is same-owner cross-module; labeling it different-owner converts high cohesion into false tight coupling)
-- [ ] reconcile the `.archfit.yaml` comment the eval flagged as "factually wrong" so it matches the corrected behavior (search self-config for the single-owner/`cross_module_same_owner` note)
-- [ ] before flipping: `git blame`/grep for any existing test pinning `codeStructureDistance(flat,flat)==DiffOwner` (the early-return looks deliberate — "advisory flood" history) and update it here; confirm codegraph/spotinfo edges are genuinely flat single-segment (`extraction`,`mcp`,`spot`). Frame as a **misclassification fix, not an ordinal retune**: nested far-apart names still classify `DiffOwner`, and archfit's own self-repo uses nested module names so this does not flatter its own score
-- [ ] write table-driven `codeStructureDistance` tests: two flat names → SameOwner; nested siblings → SameOwner (unchanged); different subtrees → DiffOwner (unchanged); Python dotted names parallel cases
-- [ ] write classify-level test: a flat-named single-team `functional`+`high`-volatility edge scores `Medium` (balance 5) not `Critical`
-- [ ] `make build && make archfit`; inspect finding diff; restamp `.archfit-baseline.json` deliberately; commit baseline with code
-- [ ] run `go test ./internal/classify/... ./internal/engine/...` + `make archfit` — must pass before Task 4
+- [x] `internal/classify/distance_structure.go:46`: return `coupling.DistanceCrossModuleSameOwner` (not `DiffOwner`) for the two-single-segment-names case; rewrite the `:32-35` comment to state the BC rationale (degenerate-owner path guarantees one owner → honest floor is same-owner cross-module; labeling it different-owner converts high cohesion into false tight coupling)
+- [x] reconcile the `.archfit.yaml` comment the eval flagged as "factually wrong" so it matches the corrected behavior (search self-config for the single-owner/`cross_module_same_owner` note)
+- [x] before flipping: `git blame`/grep for any existing test pinning `codeStructureDistance(flat,flat)==DiffOwner` (the early-return looks deliberate — "advisory flood" history) and update it here; confirm codegraph/spotinfo edges are genuinely flat single-segment (`extraction`,`mcp`,`spot`). Frame as a **misclassification fix, not an ordinal retune**: nested far-apart names still classify `DiffOwner`, and archfit's own self-repo uses nested module names so this does not flatter its own score
+- [x] write table-driven `codeStructureDistance` tests: two flat names → SameOwner; nested siblings → SameOwner (unchanged); different subtrees → DiffOwner (unchanged); Python dotted names parallel cases
+- [x] write classify-level test: a flat-named single-team `functional`+`high`-volatility edge scores `Medium` (balance 6, plan said 5 — corrected; S=9,D=4,V=10 → max(5,0)+1=6) not `Critical`
+- [x] `make build && make archfit`; inspect finding diff; restamp `.archfit-baseline.json` deliberately; commit baseline with code
+- [x] run `go test ./internal/classify/... ./internal/engine/...` + `make archfit` — must pass before Task 4
 
 ### Task 4: P3 — derive `Severity` from the book formula (retire `BalanceResult` as severity source)
 
