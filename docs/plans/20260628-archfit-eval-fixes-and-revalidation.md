@@ -229,45 +229,63 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 19: Author ideal per-repo configs (all tools + opt-in metrics)
 
-- [ ] for each repo (spotinfo, pumba, ccgram, codegraph, herdr, yazi, omni/scheduled-tasks) write/refresh `.archfit.yaml` enabling `tools.scip`, `tools.cargo-modules` (Rust), `tools.complexity`(+backend), `tools.clones`, `tools.syntax.enabled`, `metrics.risk_hub`, `metrics.functional_candidates`, `volatility_cascade_enabled`; correct modules/layers/roles/owners; service-scoped config for omni; save under `reports/eval-2026-06-28/ideal-configs/`
-- [ ] run `archfit doctor` on the host; record which analyzers are present (gate the revalidation acceptance to available tools)
-- [ ] verify each config parses: `archfit score --config <cfg> --root <repo>` exits cleanly
-- [ ] run the parse checks — must pass before Task 20
+- [x] for each repo (spotinfo, pumba, ccgram, codegraph, herdr, yazi, omni/scheduled-tasks) write/refresh `.archfit.yaml` enabling `tools.scip`, `tools.cargo-modules` (Rust), `tools.complexity`(+backend), `tools.clones`, `tools.syntax.enabled`, `metrics.risk_hub`, `metrics.functional_candidates`, `volatility_cascade_enabled`; correct modules/layers/roles/owners; service-scoped config for omni; save under `reports/eval-2026-06-28/ideal-configs/`
+- [x] run `archfit doctor` on the host; record which analyzers are present (gate the revalidation acceptance to available tools)
+- [x] verify each config parses: `archfit score --config <cfg> --root <repo>` exits cleanly
+- [x] run the parse checks — must pass before Task 20
 
 ### Task 20: Held-constant revalidation (binary-only controlled experiment)
 
-- [ ] rebuild: `make build`
-- [ ] re-run the FIXED binary on the eval's EXACT inputs — the SAME configs and the SAME (lowercase `/Users/alexei/workspace/...`) `--root` paths used in the eval — for every repo: `score`, `check --full --advisory --format json`, `check --base <old-ref> --advisory --format json`; capture under `reports/eval-2026-06-28/revalidation-controlled/`
-- [ ] diff each output against the original eval JSON still on disk in `reports/eval-2026-06-28/` — only the binary changed, so every delta is attributable to a specific code fix. Keeping the lowercase path keeps the **P2 trigger LIVE**, so `hidden_coupling` recovering from 0 is real proof, not a vacuous canonical-path run
-- [ ] record the per-metric binary-only deltas; this controlled diff — NOT the subagents' estimates — is the acceptance ground truth
-- [ ] (system run; no unit test) — proceed to Task 21
+- [x] rebuild: `make build`
+- [x] re-run the FIXED binary on the eval's EXACT inputs — the SAME configs and the SAME (lowercase `/Users/alexei/workspace/...`) `--root` paths used in the eval — for every repo: `score`, `check --full --advisory --format json`, `check --base <old-ref> --advisory --format json`; capture under `reports/eval-2026-06-28/revalidation-controlled/`
+- [x] diff each output against the original eval JSON still on disk in `reports/eval-2026-06-28/` — only the binary changed, so every delta is attributable to a specific code fix. Keeping the lowercase path keeps the **P2 trigger LIVE**, so `hidden_coupling` recovering from 0 is real proof, not a vacuous canonical-path run
+- [x] record the per-metric binary-only deltas; this controlled diff — NOT the subagents' estimates — is the acceptance ground truth
+- [x] (system run; no unit test) — proceed to Task 21
 
 ### Task 21: Ideal-config best-achievable showcase (full + delta + LLM)
 
-- [ ] per repo with the Task-19 ideal config + rebuilt binary, run and capture under `reports/eval-2026-06-28/revalidation-ideal/`: `scan`, `score`, `check --full`, `check --base <old-ref>` (delta), `review` (LLM, key from `.env`), `explain <top-fp> [--llm]`
-- [ ] true version diff via `archfit diff <old-ref>` (Task 18) for single-repo targets; omni stays delta-only
-- [ ] reuse a workflow/parallel harness; heavy Rust/omni throttled (≤3-4 concurrent) to avoid per-analyzer timeouts
-- [ ] keep this SEPARATE from the controlled diff so the two variables (code vs config) never blur — this run shows the achievable ceiling with all tools/opt-in metrics on
-- [ ] (system run; no unit test) — proceed to Task 22
+- [x] per repo with the Task-19 ideal config + rebuilt binary, run and capture under `reports/eval-2026-06-28/revalidation-ideal/`: `scan`, `score`, `check --full`, `check --base <old-ref>` (delta), `review` (LLM, key from `.env`), `explain <top-fp> [--llm]`
+- [x] true version diff via `archfit diff <old-ref>` (Task 18) for single-repo targets; omni stays delta-only
+- [x] reuse a workflow/parallel harness; heavy Rust/omni throttled (≤3-4 concurrent) to avoid per-analyzer timeouts
+- [x] keep this SEPARATE from the controlled diff so the two variables (code vs config) never blur — this run shows the achievable ceiling with all tools/opt-in metrics on
+- [x] (system run; no unit test) — proceed to Task 22
 
 ### Task 22: Acceptance — verify each fix against the controlled diff
 
-- [ ] write `reports/eval-2026-06-28/REVALIDATION.md`: a before→after table + pass/fail per fix, anchored to the Task-20 **binary-only deltas** (not the report's estimates):
+- [x] write `reports/eval-2026-06-28/REVALIDATION.md`: a before→after table + pass/fail per fix, anchored to the Task-20 **binary-only deltas** (not the report's estimates):
       P2 — herdr `hidden_coupling` recovers from 0 (nonzero) and `structural_weight` from n/a on the SAME lowercase path ·
       P1 — codegraph/spotinfo `coupling_balance` rises (flat-name edges no longer `DiffOwner`) ·
       P3 — `explain` severity == `check` severity; S=9 edges band per the book formula ·
       Tasks 6-9 — pumba `panic_density` production ≈0 (+excluded count), `functional_candidates` drops test/mock pairs, spotinfo `inbound_module_fanin` 2 not 3 ·
       P6 — ccgram empty SCIP → `warn` · P10 — herdr submodule edges same-owner · omni `explain --root` scopes to the service · P8 — `archfit diff` emits a real version delta
-- [ ] for any fix whose controlled delta does NOT match its prediction, open a ➕ follow-up task with the diagnosis (do not hand-wave a pass)
-- [ ] cross-check the ideal-config run (Task 21) as the achievable ceiling; note any metric still n/a due to a genuine tool/version gap
-- [ ] run `go test ./...` — suite still green after revalidation work
+- [x] for any fix whose controlled delta does NOT match its prediction, open a ➕ follow-up task with the diagnosis (do not hand-wave a pass)
+- [x] cross-check the ideal-config run (Task 21) as the achievable ceiling; note any metric still n/a due to a genuine tool/version gap
+- [x] run `go test ./...` — suite still green after revalidation work
 
 ### Task 23: Verify acceptance criteria (suite, lint, dogfood, determinism)
 
-- [ ] `make all` (fmt → lint → test → archfit) green
-- [ ] `go test ./internal/ -run TestArchImports` and `go test ./internal/engine/ -run TestGolden` pass
-- [ ] `.archfit-baseline.json` reflects intended scoring changes only (diff reviewed)
-- [ ] coverage meets project standard; `make lint` clean
+- [x] `make all` (fmt → lint → test → archfit) green
+- [x] `go test ./internal/ -run TestArchImports` and `go test ./internal/engine/ -run TestGolden` pass
+- [x] `.archfit-baseline.json` reflects intended scoring changes only (diff reviewed)
+- [x] coverage meets project standard; `make lint` clean
+
+### ➕ Task 25: Fix macOS APFS case-path canonicalization (P2 follow-up)
+
+**Filed by:** Task 22 acceptance — P2 FAIL verdict
+
+**Problem:** `filepath.EvalSymlinks` does not canonicalize macOS APFS case-variant paths. When the user passes `--root /Users/alexei/workspace/herdr` (lowercase), the path is returned unchanged because there is no real symlink — the APFS volume is case-insensitive, but `EvalSymlinks` only follows symlinks, not case variants. The subtree-prefix comparison with the git repo's canonical uppercase path then fails silently, disabling `hidden_coupling`, `structural_weight`, and `change_locality` subtree scoping.
+
+**Evidence:** herdr controlled run: `hidden_coupling = 0` on lowercase path, `= 118` on canonical uppercase path, same binary and same config (path-only A/B). Task 21 ideal-config run reproduced the same result independently.
+
+**Fix direction:** Use `fcntl(fd, F_GETPATH)` on an opened file descriptor — the macOS kernel API that returns the canonical path (correct case) for a given fd. Gate with `//go:build darwin`. Fallback on non-darwin: current behavior. **Verify** the fix returns the correct uppercase casing on an APFS volume before committing. Do NOT use `strings.ToLower` or `filepath.Clean` after lowercasing — that forces a case rather than recovering the on-disk canonical case and breaks case-sensitive volumes.
+
+**Verification step:** `archfit check --root /Users/alexei/workspace/herdr` (lowercase) must produce `hidden_coupling = 118` (matching the canonical-path result).
+
+- [ ] implement `canonicalPath(p string) string` in `internal/scope` with darwin build tag using `fcntl F_GETPATH`
+- [ ] call it in `scope.New` after `filepath.EvalSymlinks`
+- [ ] verify canonical case returned on APFS before merging
+- [ ] add test: on darwin, `canonicalPath("/users/alexei/workspace")` returns uppercase-canonical form (or skip if not on APFS)
+- [ ] run `go test ./...` — must pass
 
 ### Task 24: Documentation
 
