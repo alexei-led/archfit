@@ -153,7 +153,7 @@ func AugmentModulesFromGraph(g *graph.Graph, modules map[string]config.ModuleDef
 			cloned = true
 		}
 		if _, exists := out[path]; !exists {
-			out[path] = config.ModuleDef{Paths: []string{path}}
+			out[path] = config.ModuleDef{Paths: []string{path}, Owner: ancestorOwner(path, modules)}
 		}
 	}
 	return out
@@ -199,10 +199,69 @@ func AugmentGoWorkspaceModules(g *graph.Graph, modules map[string]config.ModuleD
 			cloned = true
 		}
 		if _, exists := out[m.Path]; !exists {
-			out[m.Path] = config.ModuleDef{Paths: []string{m.RelDir + "/**"}}
+			// Inherit owner from the nearest config-declared ancestor module.
+			// For Go workspace members the "already covered" check above uses
+			// mi.moduleFor(m.RelDir+"/x") — if there were a covering ancestor
+			// we'd have skipped this member. Instead we do a direct prefix scan
+			// on the member's RelDir so partial ancestors (e.g. a module whose
+			// glob covers a parent dir) can still donate their owner.
+			owner := ancestorOwnerByPath(m.RelDir, modules)
+			out[m.Path] = config.ModuleDef{Paths: []string{m.RelDir + "/**"}, Owner: owner}
 		}
 	}
 	return out
+}
+
+// ancestorOwner finds the owner of the nearest config-declared ancestor of a
+// Rust module-graph node (key uses "::" separator). It returns the Owner of the
+// config module whose key is the longest "::"-prefix of path, or "" if none.
+func ancestorOwner(path string, modules map[string]config.ModuleDef) string {
+	best := ""
+	bestLen := 0
+	for name, def := range modules {
+		if def.Owner == "" {
+			continue
+		}
+		// A module is an ancestor when path starts with name+"::" or equals name.
+		prefix := name + "::"
+		if path == name || strings.HasPrefix(path, prefix) {
+			if len(name) > bestLen {
+				bestLen = len(name)
+				best = def.Owner
+			}
+		}
+	}
+	return best
+}
+
+// ancestorOwnerByPath finds the owner of the nearest config-declared ancestor
+// for a Go workspace member, matching by directory path prefix. It returns the
+// Owner of the config module whose glob paths share the longest directory prefix
+// with relDir, or "" if none. This is a fallback for the case where no module
+// glob fully covers the member (otherwise AugmentGoWorkspaceModules would have
+// skipped it), but a parent-directory module may still donate its owner.
+func ancestorOwnerByPath(relDir string, modules map[string]config.ModuleDef) string {
+	best := ""
+	bestLen := 0
+	for _, def := range modules {
+		if def.Owner == "" {
+			continue
+		}
+		for _, p := range def.Paths {
+			// Strip trailing glob suffixes to get the directory root.
+			dir := strings.TrimRight(strings.TrimSuffix(strings.TrimSuffix(p, "**"), "/"), "/")
+			if dir == "" {
+				continue
+			}
+			if relDir == dir || strings.HasPrefix(relDir, dir+"/") {
+				if len(dir) > bestLen {
+					bestLen = len(dir)
+					best = def.Owner
+				}
+			}
+		}
+	}
+	return best
 }
 
 // matchesAnyGlob reports whether path matches any of the given glob patterns.

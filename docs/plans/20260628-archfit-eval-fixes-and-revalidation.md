@@ -200,10 +200,10 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 15: P10 — owner inheritance for auto-registered submodules
 
-- [ ] `internal/classify/classify.go:148` (`AugmentModulesFromGraph`) and `:197` (`AugmentGoWorkspaceModules`): propagate `owner` from the nearest config-declared ancestor module to each synthetic module
-- [ ] write test: a cargo-modules submodule under a crate with `owner: X` inherits `X` → inter-submodule edges classify `cross_module_same_owner`, not `different_owner` (reproduces herdr fix)
-- [ ] `make build && make archfit`; restamp baseline only if self-config is affected (likely not)
-- [ ] run `go test ./internal/classify/...` — must pass before Task 16
+- [x] `internal/classify/classify.go:148` (`AugmentModulesFromGraph`) and `:197` (`AugmentGoWorkspaceModules`): propagate `owner` from the nearest config-declared ancestor module to each synthetic module
+- [x] write test: a cargo-modules submodule under a crate with `owner: X` inherits `X` → inter-submodule edges classify `cross_module_same_owner`, not `different_owner` (reproduces herdr fix)
+- [x] `make build && make archfit`; restamp baseline only if self-config is affected (likely not)
+- [x] run `go test ./internal/classify/...` — must pass before Task 16
 
 ### Task 16: P9 — delta "no baseline found" warning
 

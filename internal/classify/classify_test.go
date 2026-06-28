@@ -1406,3 +1406,47 @@ func TestAugmentGoWorkspaceModules_ConfigGlobWins(t *testing.T) {
 			len(in), len(out), out)
 	}
 }
+
+// TestAugmentModulesFromGraph_OwnerInheritance verifies that a synthetic Rust
+// submodule inherits the owner of its nearest config-declared ancestor (the crate
+// module). Without this fix, inter-submodule edges classify as different_owner
+// instead of cross_module_same_owner (the herdr regression).
+func TestAugmentModulesFromGraph_OwnerInheritance(t *testing.T) {
+	// Config declares the crate-level module with owner="team-x".
+	// cargo-modules graph produces submodule nodes "mycrate::a" and "mycrate::b"
+	// which are NOT in config — they should be synthesised and inherit owner "team-x".
+	configMods := map[string]config.ModuleDef{
+		"mycrate": {Paths: []string{"mycrate/**"}, Owner: ownerTeamX},
+	}
+	e := graph.Edge{
+		From:         "package:mycrate::a",
+		To:           "package:mycrate::b",
+		Kind:         graph.EdgeKindDependsOn,
+		Language:     "rust",
+		StrengthHint: hintFunctional,
+	}
+	g := makeGraph([]graph.Edge{e})
+
+	augmented := classify.AugmentModulesFromGraph(g, configMods)
+
+	// Both synthetic submodules must carry owner="team-x".
+	for _, key := range []string{"mycrate::a", "mycrate::b"} {
+		def, ok := augmented[key]
+		if !ok {
+			t.Fatalf("synthetic module %q not registered", key)
+		}
+		if def.Owner != ownerTeamX {
+			t.Errorf("module %q: Owner = %q, want %q (inherited from ancestor)", key, def.Owner, ownerTeamX)
+		}
+	}
+
+	// The inter-submodule edge must classify as cross_module_same_owner, not different_owner.
+	idx := classify.Run(g, config.ClassifyConfig{Modules: augmented})
+	cl, ok := idx[edgeKey(e)]
+	if !ok {
+		t.Fatalf("edge not found in index after augmentation")
+	}
+	if cl.Distance != coupling.DistanceCrossModuleSameOwner {
+		t.Errorf("Distance = %q, want cross_module_same_owner (submodules share inherited owner)", cl.Distance)
+	}
+}
