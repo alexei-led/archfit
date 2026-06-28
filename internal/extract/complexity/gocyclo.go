@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/signal"
+	"github.com/alexei-led/archfit/internal/syntax"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -106,7 +108,16 @@ func parseGocycloLine(line, root string) (signal.ComplexityFunc, bool) {
 	// not first-party complexity. Component-exact "pkg/mod/" — never matches
 	// pkg/model/ or pkg/modules/. Contains covers the rare Rel-failure fallback
 	// where filePath stays absolute. Mirrors fitness.skipModuleCacheAndTestdata.
-	if slash := filepath.ToSlash(filePath); strings.HasPrefix(slash, "pkg/mod/") || strings.Contains(slash, "/pkg/mod/") {
+	slash := filepath.ToSlash(filePath)
+	if strings.HasPrefix(slash, "pkg/mod/") || strings.Contains(slash, "/pkg/mod/") {
+		return signal.ComplexityFunc{}, false
+	}
+	// Drop test and generated files (*.pb.go, *_gen.go, *_test.go, etc.) from
+	// the Go complexity signal — report-only production metric only.
+	// nil index: filename heuristics cover the common cases without needing the
+	// LOC-walk index (gocyclo runs independently of the loc extractor).
+	fc := syntax.LookupFileClass(slash, nil, langGo, syntax.FileClassConfig{})
+	if fc == fileclass.Test || fc == fileclass.Generated {
 		return signal.ComplexityFunc{}, false
 	}
 	return signal.ComplexityFunc{

@@ -241,6 +241,27 @@ func TestRunGocyclo_NonZeroExitStillReturnsData(t *testing.T) {
 	}
 }
 
+// TestParseGocycloOutput_SkipsGeneratedAndTest asserts that *.pb.go (generated)
+// and *_test.go (test) functions are excluded from the hotspot signal.
+func TestParseGocycloOutput_SkipsGeneratedAndTest(t *testing.T) {
+	root := "/repo"
+	data := []byte(
+		// Generated — must be dropped.
+		"20 pkg BigProto /repo/pkg/api.pb.go:1:1\n" +
+			// Test — must be dropped.
+			"15 pkg TestFoo /repo/pkg/foo_test.go:10:1\n" +
+			// Real production function — must be kept.
+			"12 pkg RealFunc /repo/pkg/engine.go:5:1\n",
+	)
+	funcs := parseGocycloOutput(data, root)
+	if len(funcs) != 1 {
+		t.Fatalf("expected 1 func (generated and test dropped), got %d: %+v", len(funcs), funcs)
+	}
+	if funcs[0].Name != "RealFunc" {
+		t.Errorf("expected RealFunc, got %q", funcs[0].Name)
+	}
+}
+
 // TestRunGocyclo_TimeoutParam asserts that runGocyclo threads the configured
 // timeout into ToolCmd.Timeout, and falls back to gocycloTimeout when zero
 // (the byte-identical no-config path).

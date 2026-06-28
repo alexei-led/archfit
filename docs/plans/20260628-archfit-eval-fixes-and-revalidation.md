@@ -145,11 +145,11 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 8: `structural_weight` & `complexity` — exclude Generated consistently
 
-- [ ] `structural_weight`/`file_structural_weight` (`internal/metrics/modularity/structural_weight.go:33`): exclude `Generated` files (loc already drops `mock_`/`test_`; add header-based generated via `FileClass`)
-- [ ] complexity: make `gocyclo` (`internal/extract/complexity/gocyclo.go`) and the ast-grep `proxy` (`proxy.go:81`) exclude `Test`+`Generated`, matching `lizardExcludes` (`complexity.go:57-60`) so all three backends agree
-- [ ] write test: a generated `*.pb.go` god-file is excluded from `structural_weight`; a real god-file still flagged
-- [ ] write test: complexity hotspots exclude generated/test functions across backends
-- [ ] run `go test ./internal/...` — must pass before Task 9
+- [x] `structural_weight`/`file_structural_weight` (`internal/metrics/modularity/structural_weight.go:33`): exclude `Generated` files (loc already drops `mock_`/`test_`; add header-based generated via `FileClass`)
+- [x] complexity: make `gocyclo` (`internal/extract/complexity/gocyclo.go`) and the ast-grep `proxy` (`proxy.go:81`) exclude `Test`+`Generated`, matching `lizardExcludes` (`complexity.go:57-60`) so all three backends agree
+- [x] write test: a generated `*.pb.go` god-file is excluded from `structural_weight`; a real god-file still flagged
+- [x] write test: complexity hotspots exclude generated/test functions across backends
+- [x] run `go test ./internal/...` — must pass before Task 9
 
 ### Task 9: `inbound_module_fanin` — drop test packages from SCIP refs
 

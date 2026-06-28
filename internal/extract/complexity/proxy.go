@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/signal"
+	"github.com/alexei-led/archfit/internal/syntax"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -138,7 +140,20 @@ func runProxyForLang(ctx context.Context, runner toolrun.Runner, root, lang, rul
 	if len(raw) == 0 {
 		return nil, false, nil
 	}
-	return assignDecisionPoints(raw), true, nil
+	funcs := assignDecisionPoints(raw)
+	// Drop test and generated files from the complexity hotspot signal —
+	// production-code metric only. nil index: filename heuristics cover the
+	// common cases (*.gen.ts, *.pb.go, *_test.go, *.test.ts, etc.) without
+	// needing the LOC-walk index (proxy runs independently of the loc extractor).
+	cfg := syntax.FileClassConfig{}
+	prod := funcs[:0]
+	for _, f := range funcs {
+		fc := syntax.LookupFileClass(f.File, nil, lang, cfg)
+		if fc != fileclass.Test && fc != fileclass.Generated {
+			prod = append(prod, f)
+		}
+	}
+	return prod, true, nil
 }
 
 // decodeCCNStream decodes a sg --json=compact array from r element-by-element.

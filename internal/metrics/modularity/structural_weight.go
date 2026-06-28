@@ -8,7 +8,9 @@ import (
 	"github.com/alexei-led/archfit/internal/metrics/internal/modgraph"
 	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/signal"
+	"github.com/alexei-led/archfit/internal/syntax"
 )
 
 // StructuralWeightMetric reports size skew: modules far larger than the codebase
@@ -36,8 +38,16 @@ func (m StructuralWeightMetric) Calculate(in signal.SizeInput) diagnostic.Metric
 		return result.NACount(m.Name(), m.Version(), def)
 	}
 	resolve := modgraph.ModuleKeyResolver(in.Graph)
+	// FileClassConfig{} is intentional: index files already incorporate the
+	// user's config patterns; the fallback path uses built-in filename heuristics
+	// (mock_*.go, *.pb.go, generated header, etc.).
+	cfg := syntax.FileClassConfig{}
 	modLOC := map[string]int{}
 	for f, n := range in.Size.FileLOC {
+		fc := syntax.LookupFileClass(f, in.Size.FileClassIndex, "", cfg)
+		if fc == fileclass.Generated {
+			continue
+		}
 		if k := resolve(f); k != "" {
 			modLOC[k] += n
 		}

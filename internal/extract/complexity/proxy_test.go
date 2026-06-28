@@ -295,6 +295,37 @@ func TestRunProxy_EmptyOutput(t *testing.T) {
 	_ = cov // status absent is expected when no matches
 }
 
+// TestRunProxy_SkipsGeneratedAndTestFiles asserts that *.gen.ts (generated) and
+// *.test.ts (test) functions are excluded from the proxy hotspot signal, while
+// a real production function in a plain .ts file is kept.
+func TestRunProxy_SkipsGeneratedAndTestFiles(t *testing.T) {
+	matches := []ccnMatch{
+		// Generated TypeScript file — must be dropped.
+		buildCCNMatch("ts-ccn-func", "src/api.gen.ts", 0, 10, "GenFunc"),
+		buildCCNMatch("ts-ccn-dp", "src/api.gen.ts", 3, 3, ""),
+		// Test TypeScript file — must be dropped.
+		buildCCNMatch("ts-ccn-func", "src/app.test.ts", 0, 10, "TestFunc"),
+		buildCCNMatch("ts-ccn-dp", "src/app.test.ts", 5, 5, ""),
+		// Real production function — must be kept.
+		buildCCNMatch("ts-ccn-func", "src/engine.ts", 0, 15, "RealFunc"),
+		buildCCNMatch("ts-ccn-dp", "src/engine.ts", 4, 4, ""),
+		buildCCNMatch("ts-ccn-dp", "src/engine.ts", 9, 9, ""),
+	}
+	funcs, _, err := runProxy(context.Background(), sgProxyRunner(matches), t.TempDir(), []string{langTypeScript}, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(funcs) != 1 {
+		t.Fatalf("expected 1 func (generated and test dropped), got %d: %+v", len(funcs), funcs)
+	}
+	if funcs[0].Name != "RealFunc" {
+		t.Errorf("expected RealFunc, got %q", funcs[0].Name)
+	}
+	if funcs[0].CCN != 3 { // 1 + 2 DPs
+		t.Errorf("RealFunc CCN = %d, want 3", funcs[0].CCN)
+	}
+}
+
 func TestRunProxy_KnownLanguageCCN(t *testing.T) {
 	// Parametric test: confirm each proxy language returns the expected CCN
 	// from a known fixture (1 function + N decision points).

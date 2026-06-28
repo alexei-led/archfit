@@ -7,7 +7,9 @@ import (
 
 	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/signal"
+	"github.com/alexei-led/archfit/internal/syntax"
 )
 
 // FileStructuralWeightMetric reports size skew at file granularity: individual
@@ -37,8 +39,22 @@ func (m FileStructuralWeightMetric) Calculate(in signal.SizeInput) diagnostic.Me
 		return result.NACount(m.Name(), m.Version(), def)
 	}
 
-	locs := make([]int, 0, len(in.Size.FileLOC))
-	for _, n := range in.Size.FileLOC {
+	// FileClassConfig{} is intentional: index files already incorporate the
+	// user's config patterns; the fallback path uses built-in filename heuristics
+	// (mock_*.go, *.pb.go, generated header, etc.).
+	cfg := syntax.FileClassConfig{}
+	prodLOC := make(map[string]int, len(in.Size.FileLOC))
+	for f, n := range in.Size.FileLOC {
+		if syntax.LookupFileClass(f, in.Size.FileClassIndex, "", cfg) != fileclass.Generated {
+			prodLOC[f] = n
+		}
+	}
+	if len(prodLOC) == 0 {
+		return result.NACount(m.Name(), m.Version(), def)
+	}
+
+	locs := make([]int, 0, len(prodLOC))
+	for _, n := range prodLOC {
 		locs = append(locs, n)
 	}
 	sort.Ints(locs)
@@ -49,7 +65,7 @@ func (m FileStructuralWeightMetric) Calculate(in signal.SizeInput) diagnostic.Me
 	}
 
 	var gods []sizeFile
-	for path, l := range in.Size.FileLOC {
+	for path, l := range prodLOC {
 		if l >= threshold {
 			mult := 1
 			if median > 0 {
@@ -67,7 +83,7 @@ func (m FileStructuralWeightMetric) Calculate(in signal.SizeInput) diagnostic.Me
 	})
 
 	confidence := result.ConfidenceHigh
-	if len(in.Size.FileLOC) < result.ModularitySmallN {
+	if len(prodLOC) < result.ModularitySmallN {
 		confidence = result.ConfidenceLow
 	}
 	return diagnostic.MetricResult{
