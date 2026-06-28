@@ -191,12 +191,12 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 14: LLM fidelity — distance honesty + strength-claim verification
 
-- [ ] `cmd/archfit/explain.go:99-103`: render `distance_basis` (code_structure vs ownership) and append a `(degenerate_owner_map)` qualifier to the distance label when the code-structure fallback was used, so single-owner repos are never framed as cross-team (note: P1 already removes the false `DiffOwner`, so this is the belt-and-suspenders fix)
-- [ ] `internal/llm` / `cmd/archfit/review.go:266-349` `postVerify`: cross-check narrative strength claims (intrusive/functional/model/contract) against actual finding strengths; drop/flag unsupported claims (closes herdr "intrusive" hallucination)
-- [ ] flag config-vs-LLM-suggestion conflicts (e.g. review suggests `core` where config says `supporting`) instead of silently emitting
-- [ ] write test: `postVerify` drops an injected unsupported "intrusive" claim; counts it in the dropped tally
-- [ ] write test: explain output includes `distance_basis` and the degenerate-owner qualifier on a flat-name finding
-- [ ] run `go test ./internal/llm/... ./cmd/...` — must pass before Task 15
+- [x] `cmd/archfit/explain.go:99-103`: render `distance_basis` (code_structure vs ownership) and append a `(degenerate_owner_map)` qualifier to the distance label when the code-structure fallback was used, so single-owner repos are never framed as cross-team (note: P1 already removes the false `DiffOwner`, so this is the belt-and-suspenders fix)
+- [x] `internal/llm` / `cmd/archfit/review.go:266-349` `postVerify`: cross-check narrative strength claims (intrusive/functional/model/contract) against actual finding strengths; drop/flag unsupported claims (closes herdr "intrusive" hallucination)
+- [x] flag config-vs-LLM-suggestion conflicts (e.g. review suggests `core` where config says `supporting`) instead of silently emitting
+- [x] write test: `postVerify` drops an injected unsupported "intrusive" claim; counts it in the dropped tally
+- [x] write test: explain output includes `distance_basis` and the degenerate-owner qualifier on a flat-name finding
+- [x] run `go test ./internal/llm/... ./cmd/...` — must pass before Task 15
 
 ### Task 15: P10 — owner inheritance for auto-registered submodules
 

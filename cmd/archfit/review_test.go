@@ -24,6 +24,11 @@ const (
 	reviewModReal       = "real_module"
 	reviewModLazy       = "lazy_mod"
 	reviewNarrativeKeep = "keep"
+
+	// matchedByStrength is the MatchedBy key for coupling strength.
+	matchedByStrength = "strength"
+	// edgeKindImports is the edge kind string for plain import edges.
+	edgeKindImports = "imports"
 )
 
 // validReviewJSON is a well-formed LLM response that passes post-verification
@@ -384,7 +389,7 @@ func TestPostVerify_RejectsInvalidEnums(t *testing.T) {
 		},
 	}
 
-	result := postVerify(rev, diag)
+	result, _ := postVerify(rev, diag, nil)
 
 	if result.OverallBand != "" {
 		t.Errorf("overall_band = %q, want blanked", result.OverallBand)
@@ -450,7 +455,7 @@ func TestPostVerify_DropsUnknownEntities(t *testing.T) {
 		},
 	}
 
-	result := postVerify(rev, diag)
+	result, _ := postVerify(rev, diag, nil)
 
 	// Only known dimension kept.
 	if len(result.Dimensions) != 1 || result.Dimensions[0].Name != reviewDimBoundary {
@@ -474,5 +479,96 @@ func TestPostVerify_DropsUnknownEntities(t *testing.T) {
 	// Only real_module suggestion kept.
 	if len(result.SubdomainSuggestions) != 1 || result.SubdomainSuggestions[0].Module != reviewModReal {
 		t.Errorf("subdomain suggestions = %+v, want [%s]", result.SubdomainSuggestions, reviewModReal)
+	}
+}
+
+// TestPostVerify_DropsUnsupportedStrengthClaim verifies that a top_risk
+// asserting "intrusive" when no uses_internal edge or MatchedBy["strength"]
+// evidence is present is dropped and counted (herdr hallucination regression).
+func TestPostVerify_DropsUnsupportedStrengthClaim(t *testing.T) {
+	t.Parallel()
+	// Diagnostic has one finding with no strength evidence and no uses_internal edge.
+	diag := diagnostic.Diagnostic{
+		FileFacts: []diagnostic.FileFact{
+			{Module: "a"},
+			{Module: "b"},
+		},
+		Findings: []finding.Finding{
+			{
+				Edge: finding.EdgeEvidence{
+					From: finding.Endpoint{Module: "a"},
+					To:   finding.Endpoint{Module: "b"},
+					Kind: edgeKindImports, // NOT uses_internal
+				},
+				MatchedBy: map[string]string{
+					matchedByStrength: "functional", // functional evidence only
+				},
+			},
+		},
+	}
+
+	// LLM hallucinated an "intrusive" risk with no supporting evidence.
+	rev := reviewResponse{
+		OverallBand: reviewBandMixed,
+		TopRisks: []reviewRisk{
+			{
+				Title:         "Intrusive cross-module access",
+				Modules:       []string{"a", "b"},
+				Narrative:     "Module a uses intrusive access into b internals.",
+				BalancingMove: "Expose a contract.",
+			},
+			{
+				Title:         "Functional coupling",
+				Modules:       []string{"a"},
+				Narrative:     "High functional coupling between a and b.",
+				BalancingMove: "Reduce coupling.",
+			},
+		},
+	}
+
+	result, dropped := postVerify(rev, diag, nil)
+
+	// The "intrusive" risk must be dropped; the "functional" risk must be kept.
+	if dropped < 1 {
+		t.Errorf("dropped = %d, want >= 1 (intrusive claim must be counted)", dropped)
+	}
+	if len(result.TopRisks) != 1 {
+		t.Fatalf("top_risks count = %d, want 1: %+v", len(result.TopRisks), result.TopRisks)
+	}
+	if result.TopRisks[0].Title != "Functional coupling" {
+		t.Errorf("expected Functional coupling kept, got %q", result.TopRisks[0].Title)
+	}
+}
+
+// TestPostVerify_FlagsConfigSubdomainConflict verifies that a subdomain
+// suggestion conflicting with the config value is kept but annotated.
+func TestPostVerify_FlagsConfigSubdomainConflict(t *testing.T) {
+	t.Parallel()
+	const modPayments = "payments"
+	diag := diagnostic.Diagnostic{
+		FileFacts: []diagnostic.FileFact{
+			{Module: modPayments},
+		},
+	}
+	rev := reviewResponse{
+		OverallBand: reviewBandMixed,
+		SubdomainSuggestions: []reviewSubdomainSuggest{
+			// LLM says "core"; config says "supporting" → conflict must be flagged.
+			{Module: modPayments, SuggestedSubdomain: subdomainCore, Rationale: "central business logic"},
+		},
+	}
+
+	configSubdomains := map[string]string{modPayments: subdomainSupporting}
+	result, _ := postVerify(rev, diag, configSubdomains)
+
+	if len(result.SubdomainSuggestions) != 1 {
+		t.Fatalf("suggestion must be kept (not dropped): %+v", result.SubdomainSuggestions)
+	}
+	rationale := result.SubdomainSuggestions[0].Rationale
+	if !strings.Contains(rationale, "conflicts with config") {
+		t.Errorf("rationale missing conflict annotation: %q", rationale)
+	}
+	if !strings.Contains(rationale, subdomainSupporting) {
+		t.Errorf("rationale missing configured subdomain %q: %q", subdomainSupporting, rationale)
 	}
 }

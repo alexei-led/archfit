@@ -9,14 +9,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/score"
 )
 
@@ -114,7 +117,18 @@ func (c *ReviewCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: review: model response is not the required JSON: %v (raw response saved to %s)", err, filepath.Join(cacheDir, rawReviewFile))}
 	}
 
-	rev = postVerify(rev, diag)
+	// Build the configured subdomain map for conflict detection.
+	configSubdomains := make(map[string]string, len(cfg.Modules))
+	for name, def := range cfg.Modules {
+		if def.Subdomain != "" {
+			configSubdomains[name] = def.Subdomain
+		}
+	}
+
+	rev, dropped := postVerify(rev, diag, configSubdomains)
+	if dropped > 0 {
+		_, _ = fmt.Fprintf(os.Stderr, "review: post-verification dropped %d unsupported claim(s)\n", dropped)
+	}
 	printReview(deps, provider.Name(), rev)
 	return nil
 }
@@ -263,32 +277,27 @@ var validBands = map[string]struct{}{
 	string(score.BandStrong):      {},
 }
 
-// postVerify drops LLM claims that cite entities not present in the evidence.
-// Dropped item counts are logged to stderr (silent when zero).
-func postVerify(rev reviewResponse, diag diagnostic.Diagnostic) reviewResponse {
-	// Build valid module set from FileFacts and finding endpoints.
-	validModules := make(map[string]struct{})
-	for _, ff := range diag.FileFacts {
-		if ff.Module != "" {
-			validModules[ff.Module] = struct{}{}
-		}
-	}
-	for _, f := range diag.Findings {
-		if f.Edge.From.Module != "" {
-			validModules[f.Edge.From.Module] = struct{}{}
-		}
-		if f.Edge.To.Module != "" {
-			validModules[f.Edge.To.Module] = struct{}{}
-		}
-	}
-	// Dynamic/lazy-import modules are valid evidence the review may cite even when
-	// they carry no static finding or file fact.
-	for _, di := range diag.DynamicImports {
-		if di.Module != "" {
-			validModules[di.Module] = struct{}{}
-		}
-	}
+// strengthWords is the set of coupling-strength words the LLM may assert in
+// top_risk narratives and titles. Used by postVerify to cross-check claims
+// against actual evidence so fabricated strength labels are never rendered.
+var strengthWords = map[string]*regexp.Regexp{
+	string(coupling.StrengthIntrusive):  regexp.MustCompile(`(?i)\bintrusive\b`),
+	string(coupling.StrengthContract):   regexp.MustCompile(`(?i)\bcontract\b`),
+	string(coupling.StrengthModel):      regexp.MustCompile(`(?i)\bmodel\b`),
+	string(coupling.StrengthFunctional): regexp.MustCompile(`(?i)\bfunctional\b`),
+	string(coupling.StrengthSymmetric):  regexp.MustCompile(`(?i)\bsymmetric\b`),
+}
 
+// postVerify drops LLM claims that cite entities not present in the evidence.
+// Returns the filtered response and the number of dropped items (caller logs).
+//
+// configSubdomains maps module name → configured subdomain from .archfit.yaml.
+// When a suggestion's SuggestedSubdomain conflicts with the configured value, the
+// suggestion is kept but its Rationale is annotated with a conflict note so the
+// reader knows the LLM disagrees with the explicit config.
+func postVerify(rev reviewResponse, diag diagnostic.Diagnostic, configSubdomains map[string]string) (reviewResponse, int) {
+	validModules := buildValidModules(diag)
+	presentStrengths := buildPresentStrengths(diag)
 	dropped := 0
 
 	// Drop an overall band outside the rubric vocabulary so a fabricated label
@@ -311,9 +320,86 @@ func postVerify(rev reviewResponse, diag diagnostic.Diagnostic) reviewResponse {
 	}
 	rev.Dimensions = filteredDims
 
-	// Filter top_risks: drop unknown modules; drop entire risk if no valid modules remain.
-	filteredRisks := rev.TopRisks[:0]
-	for _, r := range rev.TopRisks {
+	// Filter top_risks: drop unknown modules, drop entire risk if no valid
+	// modules remain, and drop risks asserting a strength word absent from evidence.
+	var n int
+	rev.TopRisks, n = filterRisks(rev.TopRisks, validModules, presentStrengths)
+	dropped += n
+
+	// Filter subdomain_suggestions to known modules AND valid subdomains.
+	// When the suggestion conflicts with the explicit config value, keep it but
+	// annotate the rationale with a conflict note.
+	filteredSug := rev.SubdomainSuggestions[:0]
+	for _, s := range rev.SubdomainSuggestions {
+		_, knownMod := validModules[s.Module]
+		if !knownMod || !validSubdomains[s.SuggestedSubdomain] {
+			dropped++
+			continue
+		}
+		if configured, ok := configSubdomains[s.Module]; ok && configured != s.SuggestedSubdomain {
+			s.Rationale = fmt.Sprintf("[conflicts with config subdomain=%s] %s", configured, s.Rationale)
+		}
+		filteredSug = append(filteredSug, s)
+	}
+	rev.SubdomainSuggestions = filteredSug
+
+	return rev, dropped
+}
+
+// buildValidModules returns the set of module names attested by findings, file
+// facts, or dynamic imports in diag.
+func buildValidModules(diag diagnostic.Diagnostic) map[string]struct{} {
+	validModules := make(map[string]struct{})
+	for _, ff := range diag.FileFacts {
+		if ff.Module != "" {
+			validModules[ff.Module] = struct{}{}
+		}
+	}
+	for _, f := range diag.Findings {
+		if f.Edge.From.Module != "" {
+			validModules[f.Edge.From.Module] = struct{}{}
+		}
+		if f.Edge.To.Module != "" {
+			validModules[f.Edge.To.Module] = struct{}{}
+		}
+	}
+	// Dynamic/lazy-import modules are valid evidence the review may cite even
+	// when they carry no static finding or file fact.
+	for _, di := range diag.DynamicImports {
+		if di.Module != "" {
+			validModules[di.Module] = struct{}{}
+		}
+	}
+	return validModules
+}
+
+// buildPresentStrengths returns the set of strength labels attested in diag:
+// the union of MatchedBy["strength"] values from advisory findings AND the
+// intrusive label implied by any uses_internal edge kind.
+func buildPresentStrengths(diag diagnostic.Diagnostic) map[string]struct{} {
+	present := make(map[string]struct{})
+	for _, f := range diag.Findings {
+		if s, ok := f.MatchedBy["strength"]; ok && s != "" {
+			present[s] = struct{}{}
+		}
+		if f.Edge.Kind == string(graph.EdgeKindUsesInternal) {
+			present[string(coupling.StrengthIntrusive)] = struct{}{}
+		}
+	}
+	return present
+}
+
+// filterRisks filters top_risks entries, returning the kept slice and the
+// number of dropped items (modules + whole-entry drops).
+//
+//   - Drops unknown module names within each risk (counts each as 1 dropped).
+//   - Drops the whole entry when all listed modules were invalid.
+//   - Drops the whole entry when its title or narrative asserts a strength word
+//     absent from presentStrengths (prevents hallucinated "intrusive" claims).
+func filterRisks(risks []reviewRisk, validModules, presentStrengths map[string]struct{}) ([]reviewRisk, int) {
+	dropped := 0
+	out := risks[:0]
+	for _, r := range risks {
 		var validMods []string
 		for _, m := range r.Modules {
 			if _, ok := validModules[m]; ok {
@@ -323,32 +409,38 @@ func postVerify(rev reviewResponse, diag diagnostic.Diagnostic) reviewResponse {
 			}
 		}
 		if len(r.Modules) > 0 && len(validMods) == 0 {
-			// All modules were invalid — drop the whole risk entry. Its modules
-			// were already counted as dropped above; don't double-count the risk.
+			// All modules were invalid — drop the whole risk entry.
+			// Its modules were already counted above; don't double-count.
 			continue
 		}
 		sort.Strings(validMods)
 		r.Modules = validMods
-		filteredRisks = append(filteredRisks, r)
-	}
-	rev.TopRisks = filteredRisks
 
-	// Filter subdomain_suggestions to known modules AND valid subdomains.
-	filteredSug := rev.SubdomainSuggestions[:0]
-	for _, s := range rev.SubdomainSuggestions {
-		_, knownMod := validModules[s.Module]
-		if knownMod && validSubdomains[s.SuggestedSubdomain] {
-			filteredSug = append(filteredSug, s)
-		} else {
+		if riskAssertsMissingStrength(r, presentStrengths) {
 			dropped++
+			continue
+		}
+		out = append(out, r)
+	}
+	return out, dropped
+}
+
+// riskAssertsMissingStrength reports whether the risk's title or narrative
+// contains a strength word absent from presentStrengths. Returns false when
+// presentStrengths is empty (no coupling evidence at all → don't drop).
+func riskAssertsMissingStrength(r reviewRisk, presentStrengths map[string]struct{}) bool {
+	if len(presentStrengths) == 0 {
+		return false
+	}
+	for word, re := range strengthWords {
+		if _, present := presentStrengths[word]; present {
+			continue
+		}
+		if re.MatchString(r.Title) || re.MatchString(r.Narrative) {
+			return true
 		}
 	}
-	rev.SubdomainSuggestions = filteredSug
-
-	if dropped > 0 {
-		_, _ = fmt.Fprintf(os.Stderr, "review: post-verification dropped %d unsupported claim(s)\n", dropped)
-	}
-	return rev
+	return false
 }
 
 // printReview writes the formatted narrative to deps.Stdout.
