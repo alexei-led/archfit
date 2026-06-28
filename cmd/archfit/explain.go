@@ -17,6 +17,7 @@ import (
 // ExplainCmd re-runs the engine and prints the details of a single finding.
 type ExplainCmd struct {
 	Config      string `short:"c" default:".archfit.yaml"`
+	Root        string `help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
 	Fingerprint string `arg:"" help:"Finding fingerprint prefix."`
 	LLM         bool   `name:"llm" help:"Append an LLM narrative (off-gate; needs tools.llm configured)."`
 	NoCache     bool   `name:"no-cache" help:"Bypass the LLM response cache."`
@@ -38,7 +39,7 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 
 	// Same pipeline as check/scan: explain must resolve the finding from the
 	// same evidence (providers, change history) that produced it.
-	diag, err := runPipeline(ctx, deps, cfg, c.Config, "", false, engine.Mode{Full: true, Advisory: true}, existingBase)
+	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, engine.Mode{Full: true, Advisory: true}, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}

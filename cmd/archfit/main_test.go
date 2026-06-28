@@ -114,6 +114,9 @@ const (
 	flagReport        = "--report"
 	filePkgAA         = "pkg/a/a.go"         // the gate-violating source file used across fixtures
 	ruleNoInternalAcc = "no_internal_access" // rule ID in the violating-repo fixture
+	explainConstraint = "constraint:"        // explain output field label
+	explainRule       = "rule:"              // explain output field label
+	explainEdge       = "edge:"              // explain output field label
 )
 
 // writeNonGoRepo creates a git repo with no analyzable source (README only) and
@@ -456,9 +459,98 @@ func TestRun_Explain_ResolvesViaFullPipeline(t *testing.T) {
 		t.Fatalf("explain exit = %d, want 0\noutput:\n%s", code, buf.String())
 	}
 	out := buf.String()
-	for _, want := range []string{"rule:", "edge:", "modules:    a -> b", "constraint:"} {
+	for _, want := range []string{explainRule, explainEdge, "modules:    a -> b", explainConstraint} {
 		if !strings.Contains(out, want) {
 			t.Errorf("explain output missing %q\noutput:\n%s", want, out)
+		}
+	}
+}
+
+// TestRun_Explain_HonorsRoot verifies that explain --root scopes the pipeline
+// to the given repo when the config lives outside the repo (external-CI shape).
+// Without --root the pipeline analyses the empty config dir and finds nothing,
+// so explain exits 3 ("no finding with fingerprint prefix").
+// This is the regression guard for the c.Root wiring (Task 1 fix).
+func TestRun_Explain_HonorsRoot(t *testing.T) {
+	t.Parallel()
+	repoDir, cfgPath := writeRepoWithExternalConfig(t)
+
+	// Capture the finding ID from check --root so we have a valid fingerprint.
+	var checkBuf bytes.Buffer
+	code := Run([]string{cmdCheck, flagRoot, repoDir, "-c", cfgPath, flagFull, fmtJSON}, &checkBuf)
+	if code != 1 {
+		t.Fatalf("check --root: exit = %d, want 1 (gate violation)\noutput:\n%s", code, checkBuf.String())
+	}
+	var checkDiag struct {
+		Findings []struct {
+			ID string `json:"id"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(checkBuf.Bytes(), &checkDiag); err != nil || len(checkDiag.Findings) == 0 {
+		t.Fatalf("no findings from check --root: err=%v output=%s", err, checkBuf.String())
+	}
+	fp := checkDiag.Findings[0].ID[:8]
+
+	t.Run("with --root resolves the finding", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		code := Run([]string{cmdExplain, fp, flagRoot, repoDir, "-c", cfgPath}, &buf)
+		if code != 0 {
+			t.Fatalf("explain --root: exit = %d, want 0\noutput:\n%s", code, buf.String())
+		}
+		out := buf.String()
+		for _, want := range []string{explainRule, explainEdge, explainConstraint} {
+			if !strings.Contains(out, want) {
+				t.Errorf("explain --root output missing %q\noutput:\n%s", want, out)
+			}
+		}
+		if !strings.Contains(out, fp) {
+			t.Errorf("explain --root output does not contain fingerprint %q\noutput:\n%s", fp, out)
+		}
+	})
+
+	t.Run("without --root does not find the fingerprint (pre-patch regression proof)", func(t *testing.T) {
+		t.Parallel()
+		// Without --root the scan root is the config directory (an empty temp dir).
+		// The pipeline finds no findings → explain exits 3 (no matching fingerprint).
+		var buf bytes.Buffer
+		code := Run([]string{cmdExplain, fp, "-c", cfgPath}, &buf)
+		if code != 3 {
+			t.Fatalf("explain without --root: exit = %d, want 3 (no finding in empty config dir)\noutput:\n%s", code, buf.String())
+		}
+	})
+}
+
+// TestRun_Explain_BackCompatNoRoot verifies that explain without --root is
+// unchanged when the config is co-located with the repo source (the common case).
+// This is the back-compat guard: --root is additive and must not break callers
+// that do not pass it.
+func TestRun_Explain_BackCompatNoRoot(t *testing.T) {
+	t.Parallel()
+	// writeViolatingRepo puts config inside the repo dir, so omitting --root
+	// still analyses the right tree.
+	cfgPath := writeViolatingRepo(t)
+
+	var checkBuf bytes.Buffer
+	Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &checkBuf)
+	var checkDiag struct {
+		Findings []struct {
+			ID string `json:"id"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(checkBuf.Bytes(), &checkDiag); err != nil || len(checkDiag.Findings) == 0 {
+		t.Fatalf("no findings from check: err=%v output=%s", err, checkBuf.String())
+	}
+
+	var buf bytes.Buffer
+	code := Run([]string{cmdExplain, checkDiag.Findings[0].ID[:8], "-c", cfgPath}, &buf)
+	if code != 0 {
+		t.Fatalf("explain without --root: exit = %d, want 0\noutput:\n%s", code, buf.String())
+	}
+	out := buf.String()
+	for _, want := range []string{explainRule, explainEdge, "modules:    a -> b", explainConstraint} {
+		if !strings.Contains(out, want) {
+			t.Errorf("explain without --root output missing %q\noutput:\n%s", want, out)
 		}
 	}
 }
