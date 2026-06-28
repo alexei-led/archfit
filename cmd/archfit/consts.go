@@ -32,6 +32,7 @@ const (
 
 // Optional-analyzer tool names shared by doctor and the coverage-gap table.
 const (
+	toolLoc           = "loc" // always-on LOC walk; used in test assertions
 	toolLizard        = "lizard"
 	toolAstGrep       = "ast-grep"        // auto-backend complexity proxy; also pattern pass
 	toolAstGrepSyntax = "ast-grep/syntax" // syntax opt-in pass (distinct from pattern pass)

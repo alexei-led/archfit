@@ -11,6 +11,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/goccy/go-yaml"
 )
 
@@ -155,7 +156,39 @@ func validate(cfg Config) error {
 			}
 		}
 	}
-	return validateGate("map_review", cfg.MapReview.Gate)
+	if err := validateGate("map_review", cfg.MapReview.Gate); err != nil {
+		return err
+	}
+	return validateFileClass(cfg.FileClass)
+}
+
+// validateFileClass checks file_class glob patterns and mock framework entries.
+// GeneratedGlobs and TestGlobs are passed to doublestar.Match so they must be
+// valid glob syntax; MockFrameworks are plain prefix/suffix strings — only
+// emptiness is checked.
+func validateFileClass(fc FileClassDef) error {
+	for i, pat := range fc.GeneratedGlobs {
+		if pat == "" {
+			return fmt.Errorf("file_class.generated_globs[%d] must not be empty", i)
+		}
+		if !doublestar.ValidatePattern(pat) {
+			return fmt.Errorf("file_class.generated_globs[%d] %q is not a valid glob pattern", i, pat)
+		}
+	}
+	for i, pat := range fc.TestGlobs {
+		if pat == "" {
+			return fmt.Errorf("file_class.test_globs[%d] must not be empty", i)
+		}
+		if !doublestar.ValidatePattern(pat) {
+			return fmt.Errorf("file_class.test_globs[%d] %q is not a valid glob pattern", i, pat)
+		}
+	}
+	for i, mf := range fc.MockFrameworks {
+		if mf == "" {
+			return fmt.Errorf("file_class.mock_frameworks[%d] must not be empty", i)
+		}
+	}
+	return nil
 }
 
 // validateGate rejects a non-empty gate that is not one of off|warn|fail.

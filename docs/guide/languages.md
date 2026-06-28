@@ -326,6 +326,26 @@ rules:
 For Rust, module paths and rule filters are crate-name globs (the crate name from
 `Cargo.toml`, such as `grep-cli`), not file paths.
 
+## File classification per language
+
+archfit classifies every source file as `Production`, `Test`, `Generated`, or
+`Vendor` before computing production-health metrics. The per-language detection
+patterns are:
+
+| Language      | Test patterns                                        | Generated patterns                                                                                       |
+| ------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Go            | `*_test.go`                                          | `// Code generated .* DO NOT EDIT` header; `*.pb.go`; `*_gen.go`; `mock_*.go`; `*_mock.go`; `mocks/` dir |
+| TypeScript/JS | `*.test.ts`, `*.spec.ts`, `*.test.tsx`, `*.spec.tsx` | `*.gen.ts` (e.g. `api.gen.ts`); moq-style header                                                         |
+| Python        | `test_*.py`, `*_test.py`                             | `_pb2.py`; `// Code generated` header                                                                    |
+| Rust          | `tests/` directory path segment                      | `*.gen.rs`; moq-style header                                                                             |
+
+`Vendor` covers `vendor/`, `node_modules/`, and `pkg/mod/` regardless of language.
+
+Auto-detection runs first; the `file_class:` config key (`generated_globs`,
+`test_globs`, `mock_frameworks`) adds project-specific patterns on top. See
+[Metrics reference → File classification](metrics.md#file-classification-fileclass)
+for the policy and the config override syntax.
+
 ## Optional analyzers per language
 
 The deterministic gates need only the language adapter above. The report-only

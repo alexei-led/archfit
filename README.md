@@ -224,6 +224,7 @@ package managers, or PATH fixes? Start with the [guide](docs/guide/README.md) an
 | `archfit review`       | Off-gate LLM narrative review of the evidence.      |
 | `archfit enrich`       | Draft off-gate LLM coupling-label refinements.      |
 | `archfit autopilot`    | Draft a full `.archfit.yaml` via LLM (review-only). |
+| `archfit diff <ref>`   | Compare scorecard between a git ref and HEAD.       |
 | `archfit explain <id>` | Explain one finding by fingerprint prefix.          |
 | `archfit install`      | Check or install common analyzer tools.             |
 

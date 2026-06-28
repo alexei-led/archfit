@@ -50,7 +50,12 @@ type Rule interface {
 // defaultLayerRoleDivergenceThreshold is the default rank-delta threshold for
 // the layer_role_divergence rule. Modules whose scaled observed topological rank
 // differs from their declared layer rank by more than this value emit a finding.
-const defaultLayerRoleDivergenceThreshold = 3
+//
+// Value 1: tolerates one-step adjacency/rounding errors (delta=1 skips) while
+// ensuring that a fully-inverted module in a 3-layer config (max delta=2) fires.
+// Threshold=3 was dead-on-arrival for typical 3- or 4-layer configs where the
+// maximum possible delta is layerCount-1 = 2 or 3.
+const defaultLayerRoleDivergenceThreshold = 1
 
 // New constructs the slice of Rule values declared in cfg.
 // Config type strings (snake_case per spec §9):

@@ -52,6 +52,8 @@ Use `check` for gates. Use `scan` for a human-readable audit report.
   [llm-enrich.md](llm-enrich.md).
 - `archfit install` — install or print commands for the common analyzer tools it
   can bootstrap; see [Tooling reference](tooling.md) for the full platform matrix.
+- `archfit diff <ref>` — compare the architecture scorecard between `<ref>` and
+  the current working tree; see `archfit diff` below.
 
 Output formats for `check`: `text`, `json`, `markdown`/`md`, `sarif`
 (SARIF 2.1.0 for CI code-scanning annotations), `scorecard` (the banded
@@ -160,6 +162,12 @@ at the repo root includes everything.
 
 **Baseline, labels, and config-hash** stay config-adjacent — only the scanned
 tree moves.
+
+**Known limitation (macOS APFS — Task 25):** on case-insensitive APFS volumes,
+passing a `--root` path whose case differs from the on-disk canonical form (e.g.
+`/Users/alice/Workspace/MyRepo` vs `/Users/alice/workspace/myrepo`) silently
+disables subtree scoping — the scan falls back to the git root. Workaround: use
+the exact on-disk case for `--root`. A proper fix is deferred to Task 25.
 
 ## Delta buckets
 
@@ -393,3 +401,36 @@ Flags:
 - `--config` / `-c` — config file path (default: `.archfit.yaml`).
 - `--root` / `-r` — project root for discovery (default: directory of `--config`).
 - `--llm`, `--llm-provider`, `--llm-model`, `--no-cache` — same as `init --llm`.
+
+## archfit diff
+
+`archfit diff <ref>` compares the banded scorecard between a git ref and the
+current working tree. It creates a clean detached worktree at `<ref>`, scores
+both sides with the full advisory pipeline, and prints a dimension-by-dimension
+delta table.
+
+```sh
+archfit diff main
+archfit diff HEAD~1 --format json
+archfit diff v1.0.0 --root ./services/api --format markdown
+```
+
+**Both sides use the current `--config`** — this isolates code drift from config
+drift. The base ref may predate the config file.
+
+`archfit diff` is **off-gate and report-only**: it exits `0` on success and `3`
+on config or git errors. It never gates (no exit `1` or `2`). Use it to answer
+"did this branch improve or regress the architecture scorecard?"
+
+Flags:
+
+- `<ref>` (positional) — git ref to compare against (branch, tag, `HEAD~N`, commit SHA).
+- `--config` / `-c` — config file (default: `.archfit.yaml`).
+- `--root` — repository root to analyze (default: directory of `--config`).
+- `--format` — output format: `text` (default), `json`, `markdown`.
+- `--no-config` — skip the config file and use built-in defaults.
+
+**Difference from `--base <ref>` delta mode:** `archfit check --base <ref>`
+groups findings into new/resolved/severity-changed buckets for the _gate_ workflow.
+`archfit diff <ref>` compares the whole scorecard _side-by-side_ without running
+gates — use it for trend tracking and release notes, not for CI blocking.

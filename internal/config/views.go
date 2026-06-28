@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/alexei-led/archfit/internal/syntax"
 )
 
 // Config-quality lint field tokens, reported in ConfigWarning.Missing.
@@ -221,21 +223,12 @@ func (c Config) ForSyntax() SyntaxConfig {
 	}
 }
 
-// FileClassView is the view passed to the file-class classifier.
-// It carries only the pattern lists; auto-detection rules are built into
-// syntax.ClassifyFile and need no config.
-type FileClassView struct {
-	GeneratedGlobs []string
-	TestGlobs      []string
-	MockFrameworks []string
-}
-
-// ForFileClass returns the FileClassView projection.
-// Auto-detection rules are not represented here; this view carries only the
+// ForFileClass returns the file-class configuration for the classifier.
+// Auto-detection rules are not represented here; this carries only the
 // user-supplied extension patterns. A zero value is valid — auto-detection
 // still runs when all slices are empty.
-func (c Config) ForFileClass() FileClassView {
-	return FileClassView{
+func (c Config) ForFileClass() syntax.FileClassConfig {
+	return syntax.FileClassConfig{
 		GeneratedGlobs: c.FileClass.GeneratedGlobs,
 		TestGlobs:      c.FileClass.TestGlobs,
 		MockFrameworks: c.FileClass.MockFrameworks,

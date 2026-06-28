@@ -170,7 +170,8 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// ExtraCoverage order: loc, complexity, clones.
 	var locCov diagnostic.Coverage
 	var toolErr error
-	change.Size.FileLOC, change.Size.FileClassIndex, locCov, toolErr = loc.Run(s.Root)
+	fileCfg := cfg.ForFileClass()
+	change.Size.FileLOC, change.Size.FileClassIndex, locCov, toolErr = loc.RunWithConfig(s.Root, fileCfg)
 	noteToolErr("loc", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, locCov)
 
@@ -232,9 +233,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// exact multi-language CCN (re-pins Python). Coverage carries zero file counts.
 	// Config excludes + scope defaults are forwarded to lizard's -x flags so it
 	// skips the same paths that all other extractors skip.
-	complexityExcl := scope.MergeExclusions(cfg.Exclusions)
+	// cfg.Exclusions was already merged (scope.MergeExclusions) at the top of this
+	// function — do NOT call MergeExclusions again here. A second call re-seeds
+	// from DefaultExclusions on the already-merged list (which no longer contains
+	// the user's !-prefixed re-include markers), silently re-adding defaults the
+	// user intentionally negated (e.g. !testdata, !reports).
+	complexityExcl := cfg.Exclusions
 	var complexityCov diagnostic.Coverage
-	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled(), cfg.ComplexityBackend(), cfg.ToolTimeout(config.ToolComplexity), complexityExcl)
+	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled(), cfg.ComplexityBackend(), cfg.ToolTimeout(config.ToolComplexity), complexityExcl, fileCfg, change.Size.FileClassIndex)
 	noteToolErr("complexity", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, complexityCov)
 

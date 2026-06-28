@@ -76,7 +76,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	// edges reach the synthesis (advisory is additive — other formats are
 	// unaffected except for the extra advisory findings they already opt into).
 	advisory := c.Advisory
-	if slices.Contains(c.Format, "scorecard") {
+	if slices.Contains(c.Format, formatScorecard) {
 		advisory = true
 	}
 
@@ -97,7 +97,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	// appears "new" without this notice, silently misleading the reader.
 	if c.Base != "" && base.SchemaVersion == "" {
 		_, _ = fmt.Fprintf(deps.stderr(),
-			"no baseline found at %s — all %d findings are untracked; run `archfit baseline` to enable drift detection\n",
+			"no baseline found (ref: %s, file: .archfit-baseline.json) — all %d findings are untracked; run `archfit baseline` to enable drift detection\n",
 			c.Base, len(diag.Findings))
 	}
 
@@ -115,11 +115,11 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 			renderErr = jsonout.New().Render(diag, deps.Stdout)
 		case formatText:
 			renderErr = console.New().Render(diag, deps.Stdout)
-		case "md", formatMarkdown:
+		case formatMD, formatMarkdown:
 			renderErr = markdown.New().Render(diag, deps.Stdout)
-		case "sarif":
+		case formatSarif:
 			renderErr = sarif.New().Render(diag, deps.Stdout)
-		case "scorecard":
+		case formatScorecard:
 			renderErr = scorecard.New().Render(diag, deps.Stdout)
 		}
 		if renderErr != nil {
@@ -171,7 +171,7 @@ func (c *ScanCmd) Run(deps *appDeps) error {
 		Full:         true,
 		Advisory:     true,
 		Report:       true,
-		Format:       []string{"markdown"},
+		Format:       []string{formatMarkdown},
 		RequireTools: c.RequireTools,
 	}
 	return check.Run(deps)

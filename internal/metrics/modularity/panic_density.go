@@ -40,7 +40,7 @@ type panicModule struct {
 // paths for the index lookup to hit. When the index is nil (loc walk did not run),
 // LookupFileClass falls back to built-in filename/path patterns only.
 func (m PanicDensityMetric) Calculate(in signal.SizeInput) diagnostic.MetricResult {
-	const def = "production panic/unwrap/expect call sites (Rust: unwrap/expect/panic!, Go: panic) — excludes test/generated files, report-only"
+	const def = "production panic/unwrap/expect call sites (Rust: unwrap/expect/panic!, Go: panic) — excludes test/generated/vendor files, report-only"
 	modCounts := make(map[string]int)
 	total := 0
 	excluded := 0
@@ -54,7 +54,7 @@ func (m PanicDensityMetric) Calculate(in signal.SizeInput) diagnostic.MetricResu
 			continue
 		}
 		fc := syntax.LookupFileClass(f.File, in.Size.FileClassIndex, f.Language, cfg)
-		if fc == fileclass.Test || fc == fileclass.Generated {
+		if !fileclass.IsProduction(fc) {
 			excluded++
 			continue
 		}
@@ -114,7 +114,7 @@ func panicDisplay(mods []panicModule, total, excluded int) string {
 		}
 	}
 	if excluded > 0 {
-		fmt.Fprintf(&b, " (%d in test/generated excluded)", excluded)
+		fmt.Fprintf(&b, " (%d in test/generated/vendor excluded)", excluded)
 	}
 	return b.String()
 }

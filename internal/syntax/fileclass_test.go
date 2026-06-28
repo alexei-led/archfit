@@ -141,3 +141,62 @@ func TestLookupFileClass_FallbackPathOnly(t *testing.T) {
 		t.Errorf("fallback production: got %q, want production", got)
 	}
 }
+
+// TestClassifyFile_DoublestareGlobs verifies M2: user-supplied file_class globs
+// that use ** doublestar patterns match correctly via doublestar.Match.
+func TestClassifyFile_DoublestarGlobs(t *testing.T) {
+	cfg := syntax.FileClassConfig{
+		// Doublestar generated glob: any file under any "generated" directory.
+		GeneratedGlobs: []string{"**/generated/*.go"},
+		// Doublestar test glob: any file under any "testdata" directory.
+		TestGlobs: []string{"testdata/**"},
+	}
+
+	cases := []struct {
+		name string
+		path string
+		want fileclass.FileClass
+	}{
+		// ** generated glob: matches files at any depth.
+		{name: "generated/ at root", path: "generated/api.go", want: fileclass.Generated},
+		{name: "generated/ nested", path: "pkg/internal/generated/model.go", want: fileclass.Generated},
+		// ** test glob.
+		{name: "testdata/ nested", path: "testdata/fixtures/data.go", want: fileclass.Test},
+		// Non-matching paths remain Production.
+		{name: "production file", path: "pkg/core/core.go", want: fileclass.Production},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := syntax.ClassifyFile("go", tc.path, nil, cfg)
+			if got != tc.want {
+				t.Errorf("ClassifyFile(%q) = %q, want %q", tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestClassifyFile_EmptyMockFramework is a regression test for D1: an empty
+// string in MockFrameworks must not classify every production file as Generated
+// (strings.HasPrefix(base,"") is always true).
+func TestClassifyFile_EmptyMockFramework(t *testing.T) {
+	cfg := syntax.FileClassConfig{
+		MockFrameworks: []string{"", "mock_"}, // empty entry must be skipped
+	}
+	cases := []struct {
+		path string
+		want fileclass.FileClass
+	}{
+		{"pkg/service/service.go", fileclass.Production},
+		{"internal/handler/http.go", fileclass.Production},
+		{"mock_user.go", fileclass.Generated}, // legitimate mock prefix still works
+	}
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			got := syntax.ClassifyFile("go", tc.path, nil, cfg)
+			if got != tc.want {
+				t.Errorf("ClassifyFile(%q) with empty MockFrameworks entry = %q, want %q", tc.path, got, tc.want)
+			}
+		})
+	}
+}

@@ -6,9 +6,9 @@ package fileclass
 
 // FileClass categorises a source file for metric-filtering purposes.
 //
-// Policy (segregate, not hide): production-health metrics exclude Test and
-// Generated from their score but report the excluded count as evidence. Test
-// density deliberately retains Test files.
+// Policy (segregate, not hide): production-health metrics exclude Test,
+// Generated, and Vendor from their score but report the excluded count as
+// evidence. Test density deliberately retains Test files.
 type FileClass string
 
 const (
@@ -27,3 +27,8 @@ const (
 	// for any callers that scan vendor trees directly.
 	Vendor FileClass = "vendor"
 )
+
+// IsProduction reports whether fc is Production. Use this instead of
+// `fc != Test && fc != Generated` to ensure Vendor files are also excluded
+// from production-health metrics.
+func IsProduction(fc FileClass) bool { return fc == Production }

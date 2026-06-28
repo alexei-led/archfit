@@ -319,7 +319,7 @@ func TestConfigToolGate(t *testing.T) {
 		{toolGoPackages, gateFail},               // tools.go.gate: fail
 		{toolDepCruiser, string(config.GateOff)}, // tools.typescript.gate: off
 		{toolGrimp, gateWarn},                    // tools.python unset → default
-		{"loc", gateWarn},                        // unmapped tool → default
+		{toolLoc, gateWarn},                      // unmapped tool → default
 	}
 	for _, tc := range cases {
 		if got := configToolGate(cfg, tc.tool); got != tc.want {

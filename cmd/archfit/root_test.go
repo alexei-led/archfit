@@ -96,7 +96,7 @@ func locFilesSeen(t *testing.T, data []byte) (int, bool) {
 		t.Fatalf("locFilesSeen: invalid JSON: %v", err)
 	}
 	for _, c := range d.ToolCoverage {
-		if c.Tool == "loc" {
+		if c.Tool == toolLoc {
 			return c.FilesSeen, true
 		}
 	}

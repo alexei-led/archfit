@@ -147,9 +147,9 @@ type PatternConfig []PatternDef
 // custom mock frameworks and project-specific conventions.
 type FileClassDef struct {
 	// GeneratedGlobs are glob patterns (matched against the repo-relative
-	// slash path) that classify a file as Generated. Supports filepath.Match
-	// single-star semantics and trailing "/" for directory-segment matching.
-	// Example: ["**/generated/**", "*.pb.go"]
+	// slash path) that classify a file as Generated. Supports doublestar (`**`)
+	// semantics (github.com/bmatcuk/doublestar); `**` matches across path
+	// separators. Example: ["**/generated/**", "*.pb.go"]
 	GeneratedGlobs []string `yaml:"generated_globs,omitempty"`
 	// TestGlobs are glob patterns that classify a file as Test.
 	// Example: ["*_helpers_test.go", "testutil/**"]

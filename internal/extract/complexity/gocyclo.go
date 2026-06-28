@@ -24,11 +24,12 @@ const (
 // runGocyclo invokes gocyclo over root and returns per-function CCN records.
 // timeout is the configured per-analyzer cap; 0 falls back to gocycloTimeout
 // (keeps the no-config path byte-identical).
+// fileCfg carries the user-supplied file_class globs used to filter output.
 // Returns (nil, false, nil) when gocyclo is not on PATH or the run fails.
 // Returns a non-nil error only when the inner per-subprocess deadline fires
 // (context.DeadlineExceeded) so the caller can surface StatusTimedOut.
 // gocyclo's exit code is the number of functions above the threshold — ignored.
-func runGocyclo(ctx context.Context, runner toolrun.Runner, root string, timeout time.Duration) ([]signal.ComplexityFunc, bool, error) {
+func runGocyclo(ctx context.Context, runner toolrun.Runner, root string, timeout time.Duration, fileCfg syntax.FileClassConfig, classIndex map[string]fileclass.FileClass) ([]signal.ComplexityFunc, bool, error) {
 	if _, ok := runner.Detect(ctx, gocycloTool); !ok {
 		return nil, false, nil
 	}
@@ -49,17 +50,17 @@ func runGocyclo(ctx context.Context, runner toolrun.Runner, root string, timeout
 		// Binary present but run failed — treat as absent; don't propagate.
 		return nil, true, nil
 	}
-	return parseGocycloOutput(out.Stdout, root), true, nil
+	return parseGocycloOutput(out.Stdout, root, fileCfg, classIndex), true, nil
 }
 
 // parseGocycloOutput parses gocyclo output lines into ComplexityFunc records.
 // Each line: <ccn> <pkg> <func> <file>:<line>:<col>
 // NLOC is 0 — gocyclo has no NLOC; the pure-Go loc signal covers size.
-func parseGocycloOutput(data []byte, root string) []signal.ComplexityFunc {
+func parseGocycloOutput(data []byte, root string, fileCfg syntax.FileClassConfig, classIndex map[string]fileclass.FileClass) []signal.ComplexityFunc {
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	var out []signal.ComplexityFunc
 	for scanner.Scan() {
-		if f, ok := parseGocycloLine(scanner.Text(), root); ok {
+		if f, ok := parseGocycloLine(scanner.Text(), root, fileCfg, classIndex); ok {
 			out = append(out, f)
 		}
 	}
@@ -70,7 +71,7 @@ func parseGocycloOutput(data []byte, root string) []signal.ComplexityFunc {
 // Format: <ccn> <pkg> <func> <file>:<line>:<col>
 // Method names appear as "(*Receiver).MethodName".
 // The file path is the third-to-last element: strip last two ":N" suffixes.
-func parseGocycloLine(line, root string) (signal.ComplexityFunc, bool) {
+func parseGocycloLine(line, root string, fileCfg syntax.FileClassConfig, classIndex map[string]fileclass.FileClass) (signal.ComplexityFunc, bool) {
 	parts := strings.Fields(line)
 	if len(parts) < 4 {
 		return signal.ComplexityFunc{}, false
@@ -112,12 +113,13 @@ func parseGocycloLine(line, root string) (signal.ComplexityFunc, bool) {
 	if strings.HasPrefix(slash, "pkg/mod/") || strings.Contains(slash, "/pkg/mod/") {
 		return signal.ComplexityFunc{}, false
 	}
-	// Drop test and generated files (*.pb.go, *_gen.go, *_test.go, etc.) from
-	// the Go complexity signal — report-only production metric only.
-	// nil index: filename heuristics cover the common cases without needing the
-	// LOC-walk index (gocyclo runs independently of the loc extractor).
-	fc := syntax.LookupFileClass(slash, nil, langGo, syntax.FileClassConfig{})
-	if fc == fileclass.Test || fc == fileclass.Generated {
+	// Drop non-production files (test, generated, vendor) from the Go complexity
+	// signal — report-only production metric only.
+	// classIndex (from the loc walk) is consulted first; it includes header-sniff
+	// results that pure filename patterns miss. Falls back to fileCfg globs when
+	// the index is nil or the path is absent.
+	fc := syntax.LookupFileClass(slash, classIndex, langGo, fileCfg)
+	if !fileclass.IsProduction(fc) {
 		return signal.ComplexityFunc{}, false
 	}
 	return signal.ComplexityFunc{

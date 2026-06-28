@@ -100,7 +100,7 @@ func (m FunctionalCandidatesMetric) Calculate(in signal.DuplicationInput) diagno
 		fmt.Fprintf(&disp, " (%d also co-change)", alsoCoChange)
 	}
 	if excludedClusters > 0 {
-		fmt.Fprintf(&disp, " (%d test/generated excluded)", excludedClusters)
+		fmt.Fprintf(&disp, " (%d test/generated/vendor excluded)", excludedClusters)
 	}
 
 	return diagnostic.MetricResult{
@@ -115,9 +115,10 @@ func (m FunctionalCandidatesMetric) Calculate(in signal.DuplicationInput) diagno
 	}
 }
 
-// isTestOrGeneratedCluster reports whether any file in the cluster is a test
-// or generated file. A cluster containing such a file is excluded from the
-// production metric — we do not want mock/test clone noise inflating the count.
+// isTestOrGeneratedCluster reports whether any file in the cluster is not a
+// production file (test, generated, or vendor). A cluster containing such a
+// file is excluded from the production metric — we do not want mock/test/vendor
+// clone noise inflating the count.
 //
 // The language is derived from the file extension for the LookupFileClass
 // fallback path (files not in the index). Empty cfg means built-in patterns only.
@@ -125,7 +126,7 @@ func isTestOrGeneratedCluster(files []string, index map[string]fileclass.FileCla
 	for _, f := range files {
 		lang := langFromExt(filepath.Ext(f))
 		fc := syntax.LookupFileClass(filepath.ToSlash(f), index, lang, cfg)
-		if fc == fileclass.Test || fc == fileclass.Generated {
+		if !fileclass.IsProduction(fc) {
 			return true
 		}
 	}
@@ -133,15 +134,16 @@ func isTestOrGeneratedCluster(files []string, index map[string]fileclass.FileCla
 }
 
 // langFromExt maps a file extension (with leading dot) to a language tag
-// recognised by syntax.IsTestFile. Unknown extensions return "".
+// recognised by syntax.IsTestFile and syntax.ClassifyFile. Unknown extensions
+// return "". Must stay in sync with the canonical set: go, python, typescript, rust.
 func langFromExt(ext string) string {
 	switch ext {
 	case ".go":
 		return "go"
 	case ".ts", ".tsx":
-		return "ts"
+		return "typescript" // was "ts" — IsTestFile only handles "typescript"
 	case ".js", ".jsx", ".mjs", ".cjs":
-		return "js"
+		return "js" // no IsTestFile case for JS; kept for future extension
 	case ".py":
 		return "python"
 	case ".rs":

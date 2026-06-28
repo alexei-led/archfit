@@ -213,8 +213,8 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 17: P11 — observed-layer vs role divergence finding (new rule)
 
-- [x] add rule type `layer_role_divergence` (`internal/rules/rules.go:73`): compute each module's observed topological rank from the import DAG, compare to the rank implied by its declared `role`/`layer`, emit a `warn` finding when the delta exceeds a threshold (default 3)
-- [x] reuse `layerRank` (`rules.go:179-186`) / `ModuleMap.LayerFor` (`config/modules.go:154-163`); add config knobs (enabled, threshold) parsed into the rule view
+- [x] add rule type `layer_role_divergence` (`internal/rules/rules.go:73`): compute each module's observed topological rank from the import DAG, compare to the rank implied by its declared `role`/`layer`, emit a `warn` finding when the delta exceeds a threshold (default 1)
+- [x] reuse `layerRank` (`rules.go:179-186`) / `ModuleMap.LayerFor` (`config/modules.go:154-163`); add config knob `threshold` (disable via `gate: off`) parsed into the rule view
 - [x] write test: a config module placed at a high observed layer (yazi `yazi-config` at rank 11) emits the finding; an aligned module does not
 - [x] `make build && make archfit`; restamp baseline if self-config triggers it
 - [x] run `go test ./internal/rules/...` + `make archfit` — must pass before Task 18
@@ -289,9 +289,9 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 24: Documentation
 
-- [ ] update `docs/guide` (languages/metrics: file-class handling & segregated test/generated counts; tools opt-in; new `archfit diff`); update `cmd` help text
-- [ ] update root `CLAUDE.md` invariants if any changed (severity source, file-class, diff subcommand)
-- [ ] append a "fixes → findings" cross-reference to `reports/eval-2026-06-28/00-FINDINGS.md` linking each P-item to its task/commit
+- [x] update `docs/guide` (languages/metrics: file-class handling & segregated test/generated counts; tools opt-in; new `archfit diff`); update `cmd` help text
+- [x] update root `CLAUDE.md` invariants if any changed (severity source, file-class, diff subcommand)
+- [x] append a "fixes → findings" cross-reference to `reports/eval-2026-06-28/00-FINDINGS.md` linking each P-item to its task/commit
 
 ## Technical Details
 

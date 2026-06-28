@@ -250,6 +250,74 @@ func TestRun_FileClassIndex(t *testing.T) {
 	}
 }
 
+// TestRunWithConfig_PathGlobGenerated verifies that config-supplied
+// GeneratedGlobs with path patterns (e.g. "gen/**", "**/generated/*.go") match
+// via the repo-relative path passed through the loc walk.
+// This is a regression test for the abs-path bug: ClassifyFile was previously
+// called with the absolute path, so doublestar.Match("gen/**", "/abs/root/gen/foo.go")
+// returned false and the pattern silently never matched.
+func TestRunWithConfig_PathGlobGenerated(t *testing.T) {
+	root := t.TempDir()
+
+	writeFile(t, root, "gen/client.go", "package gen\n\nfunc C() {}\n")
+	writeFile(t, root, "pkg/generated/foo.go", "package generated\n\nfunc F() {}\n")
+	writeFile(t, root, "pkg/core/core.go", "package core\n\nfunc A() {}\n")
+
+	cfg := syntax.FileClassConfig{
+		GeneratedGlobs: []string{"gen/**", "**/generated/*.go"},
+	}
+	locMap, classes, _, err := RunWithConfig(root, cfg)
+	if err != nil {
+		t.Fatalf("RunWithConfig error: %v", err)
+	}
+
+	// Both path-glob matched files must be Generated.
+	if got := classes["gen/client.go"]; got != fileclass.Generated {
+		t.Errorf("gen/client.go class = %q, want generated (gen/** pattern failed to match repo-relative path)", got)
+	}
+	if got := classes["pkg/generated/foo.go"]; got != fileclass.Generated {
+		t.Errorf("pkg/generated/foo.go class = %q, want generated (**/generated/*.go pattern failed to match repo-relative path)", got)
+	}
+	// Neither must appear in LOC map.
+	if _, ok := locMap["gen/client.go"]; ok {
+		t.Error("gen/client.go must not be in LOC map (generated)")
+	}
+	if _, ok := locMap["pkg/generated/foo.go"]; ok {
+		t.Error("pkg/generated/foo.go must not be in LOC map (generated)")
+	}
+	// Production file unaffected.
+	if got := classes["pkg/core/core.go"]; got != fileclass.Production {
+		t.Errorf("core.go class = %q, want production", got)
+	}
+}
+
+// TestRunWithConfig_PathGlobTest verifies that config-supplied TestGlobs with
+// path patterns match via the repo-relative path.
+func TestRunWithConfig_PathGlobTest(t *testing.T) {
+	root := t.TempDir()
+
+	writeFile(t, root, "testutil/helpers.go", "package testutil\n\nfunc H() {}\n")
+	writeFile(t, root, "pkg/core/core.go", "package core\n\nfunc A() {}\n")
+
+	cfg := syntax.FileClassConfig{
+		TestGlobs: []string{"testutil/**"},
+	}
+	locMap, classes, _, err := RunWithConfig(root, cfg)
+	if err != nil {
+		t.Fatalf("RunWithConfig error: %v", err)
+	}
+
+	if got := classes["testutil/helpers.go"]; got != fileclass.Test {
+		t.Errorf("testutil/helpers.go class = %q, want test (testutil/** pattern failed to match repo-relative path)", got)
+	}
+	if _, ok := locMap["testutil/helpers.go"]; ok {
+		t.Error("testutil/helpers.go must not be in LOC map (test file)")
+	}
+	if got := classes["pkg/core/core.go"]; got != fileclass.Production {
+		t.Errorf("core.go class = %q, want production", got)
+	}
+}
+
 // TestRunWithConfig_CustomMockPattern verifies that a config-supplied mock
 // pattern reclassifies matching files as Generated, reproducing the pumba
 // fixture where mocks/ files inflate panic_density.

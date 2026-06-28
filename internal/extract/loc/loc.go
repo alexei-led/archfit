@@ -105,7 +105,7 @@ func RunWithConfig(root string, cfg syntax.FileClassConfig) (map[string]int, map
 
 		lang := extLang[ext]
 		header := readHeader(path)
-		fc := syntax.ClassifyFile(lang, path, header, cfg)
+		fc := syntax.ClassifyFile(lang, rel, header, cfg)
 		classes[rel] = fc
 
 		// LOC map: only production files (test/generated excluded).

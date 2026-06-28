@@ -220,7 +220,7 @@ func TestFunctionalCandidates_TestGenExclusion(t *testing.T) {
 		if got.Value != 1 {
 			t.Errorf("value=%v want 1 (only production pair; 3 test/generated excluded)", got.Value)
 		}
-		if !strings.Contains(got.Display, "3 test/generated excluded") {
+		if !strings.Contains(got.Display, "3 test/generated/vendor excluded") {
 			t.Errorf("display=%q missing excluded count", got.Display)
 		}
 	})

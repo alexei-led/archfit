@@ -82,11 +82,25 @@ func (a *Adapter) Strengths(ctx context.Context, s scope.Scope) (map[string]stri
 		return nil, partial, nil
 	}
 	if len(m) == 0 {
+		// Distinguish a valid index with no cross-module edges (e.g. a single
+		// package or all imports are intra-module) from a failed/empty index.
+		// Parse the raw output once more to check whether any symbols were
+		// indexed — if symbols exist the run succeeded, 0 edges is real (C8).
+		var out readerOutput
+		_ = json.Unmarshal(ro.raw, &out)
+		if len(out.Symbols) == 0 {
+			return m, diagnostic.Coverage{
+				Tool:    toolName,
+				Version: ro.indexer,
+				Status:  diagnostic.StatusPartial,
+				Reason:  "empty index (0 occurrences) — check path case / indexer version",
+			}, nil
+		}
+		// Index is valid but has no cross-module edges — return OK with 0 files.
 		return m, diagnostic.Coverage{
 			Tool:    toolName,
 			Version: ro.indexer,
-			Status:  diagnostic.StatusPartial,
-			Reason:  "empty index (0 occurrences) — check path case / indexer version",
+			Status:  diagnostic.StatusOK,
 		}, nil
 	}
 	return m, diagnostic.Coverage{

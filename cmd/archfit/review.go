@@ -71,7 +71,7 @@ func (c *ReviewCmd) Run(deps *appDeps) error {
 	}
 	// Config-quality lint → stderr, same as check/score: review narrates over the
 	// same evidence, so under-specified modules degrade what it can say.
-	printConfigLint(os.Stderr, cfg.Lint())
+	printConfigLint(deps.stderr(), cfg.Lint())
 
 	llmCfg, configured := cfg.LLM()
 	if !configured {
@@ -127,7 +127,7 @@ func (c *ReviewCmd) Run(deps *appDeps) error {
 
 	rev, dropped := postVerify(rev, diag, configSubdomains)
 	if dropped > 0 {
-		_, _ = fmt.Fprintf(os.Stderr, "review: post-verification dropped %d unsupported claim(s)\n", dropped)
+		_, _ = fmt.Fprintf(deps.stderr(), "review: post-verification dropped %d unsupported claim(s)\n", dropped)
 	}
 	printReview(deps, provider.Name(), rev)
 	return nil

@@ -3,12 +3,14 @@ package complexity
 import (
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/syntax"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -17,6 +19,15 @@ const lizardPath = "/usr/bin/lizard"
 
 // testRoot is the synthetic repo root used across test fixtures.
 const testRoot = "/repo"
+
+// noCfg is the zero FileClassConfig — built-in heuristics only, no user globs.
+var noCfg = syntax.FileClassConfig{}
+
+const (
+	sgPath       = "/usr/bin/sg"
+	codegenGlob  = "codegen/**"
+	realFuncName = "RealFunc"
+)
 
 // ---------------------------------------------------------------------------
 // parseLizardCSV — ported from cmd/archfit/complexity_parse_test.go
@@ -150,7 +161,7 @@ func failRunner() *toolrun.RunnerMock {
 }
 
 func TestRun_Disabled(t *testing.T) {
-	funcs, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), false, BackendLizard, 0, nil)
+	funcs, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), false, BackendLizard, 0, nil, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,7 +181,7 @@ func TestRun_Disabled(t *testing.T) {
 }
 
 func TestRun_AbsentTool(t *testing.T) {
-	funcs, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true, BackendLizard, 0, nil)
+	funcs, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true, BackendLizard, 0, nil, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -186,7 +197,7 @@ func TestRun_AbsentTool(t *testing.T) {
 }
 
 func TestRun_ToolFailure(t *testing.T) {
-	funcs, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true, BackendLizard, 0, nil)
+	funcs, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true, BackendLizard, 0, nil, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -202,7 +213,7 @@ func TestRun_Success(t *testing.T) {
 	root := t.TempDir()
 	// CSV uses /root prefix; path will be made relative inside parseLizardCSV.
 	csv := "10,5,100,2,20,fn@1-20@/root/pkg/a.go,/root/pkg/a.go,fn,fn(),1,20\n"
-	funcs, cov, err := Run(context.Background(), lizardRunner(csv), root, true, BackendLizard, 0, nil)
+	funcs, cov, err := Run(context.Background(), lizardRunner(csv), root, true, BackendLizard, 0, nil, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -218,7 +229,7 @@ func TestRun_Success(t *testing.T) {
 }
 
 func TestRun_CoverageToolName(t *testing.T) {
-	_, cov, _ := Run(context.Background(), absentRunner(), t.TempDir(), false, BackendLizard, 0, nil)
+	_, cov, _ := Run(context.Background(), absentRunner(), t.TempDir(), false, BackendLizard, 0, nil, noCfg, nil)
 	if cov.Tool != toolName {
 		t.Errorf("Tool = %q, want %q", cov.Tool, toolName)
 	}
@@ -229,8 +240,8 @@ func TestRun_CoverageToolName(t *testing.T) {
 // actionable reasons so the report explains why complexity is n/a.
 func TestRun_DisabledVsAbsent(t *testing.T) {
 	root := t.TempDir()
-	_, covDisabled, _ := Run(context.Background(), absentRunner(), root, false, BackendLizard, 0, nil)
-	_, covAbsent, _ := Run(context.Background(), absentRunner(), root, true, BackendLizard, 0, nil)
+	_, covDisabled, _ := Run(context.Background(), absentRunner(), root, false, BackendLizard, 0, nil, noCfg, nil)
+	_, covAbsent, _ := Run(context.Background(), absentRunner(), root, true, BackendLizard, 0, nil, noCfg, nil)
 
 	if covDisabled.Status != covAbsent.Status {
 		t.Errorf("disabled Status %q != absent Status %q", covDisabled.Status, covAbsent.Status)
@@ -267,7 +278,7 @@ func capturingRunner(out toolrun.Output, gotArgs *[]string) *toolrun.RunnerMock 
 // lizard's default (version-dependent) language set.
 func TestRun_LanguageFlags(t *testing.T) {
 	var args []string
-	_, _, err := Run(context.Background(), capturingRunner(toolrun.Output{ExitCode: 0}, &args), t.TempDir(), true, BackendLizard, 0, nil)
+	_, _, err := Run(context.Background(), capturingRunner(toolrun.Output{ExitCode: 0}, &args), t.TempDir(), true, BackendLizard, 0, nil, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -296,7 +307,7 @@ func TestRun_PythonAndTypeScriptExtraction(t *testing.T) {
 		return fmt.Sprintf("20,%d,200,3,40,fn@1-40@%s,%s,fn,fn(),1,40\n", ccn, abs, abs)
 	}
 	csv := row(8, "svc/api.py") + row(6, "web/app.ts") + row(4, "web/view.tsx")
-	funcs, cov, err := Run(context.Background(), lizardRunner(csv), root, true, BackendLizard, 0, nil)
+	funcs, cov, err := Run(context.Background(), lizardRunner(csv), root, true, BackendLizard, 0, nil, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -335,7 +346,7 @@ func TestRun_NonZeroExitWithOutput(t *testing.T) {
 			return toolrun.Output{ExitCode: 1, Stdout: []byte(csv)}, nil
 		},
 	}
-	funcs, cov, err := Run(context.Background(), runner, root, true, BackendLizard, 0, nil)
+	funcs, cov, err := Run(context.Background(), runner, root, true, BackendLizard, 0, nil, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -350,7 +361,7 @@ func TestRun_NonZeroExitWithOutput(t *testing.T) {
 // TestRun_NonZeroExitNoOutput asserts a non-zero exit with no parseable records
 // is still a genuine failure (distinguished from the warning-count case above).
 func TestRun_NonZeroExitNoOutput(t *testing.T) {
-	funcs, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true, BackendLizard, 0, nil)
+	funcs, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true, BackendLizard, 0, nil, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -380,7 +391,7 @@ func TestRun_AbsentReasons(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, cov, err := Run(context.Background(), tc.runner, root, tc.enabled, tc.backend, 0, nil)
+			_, cov, err := Run(context.Background(), tc.runner, root, tc.enabled, tc.backend, 0, nil, noCfg, nil)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -410,7 +421,7 @@ func blockingRunner() *toolrun.RunnerMock {
 // TestRun_Timeout asserts that when the per-analyzer watchdog fires the function
 // returns StatusTimedOut coverage with a nil error and no deadlock.
 func TestRun_Timeout(t *testing.T) {
-	_, cov, err := Run(context.Background(), blockingRunner(), t.TempDir(), true, BackendLizard, 10*time.Millisecond, nil)
+	_, cov, err := Run(context.Background(), blockingRunner(), t.TempDir(), true, BackendLizard, 10*time.Millisecond, nil, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -434,7 +445,7 @@ func TestRun_ConfigExcludesReachLizard(t *testing.T) {
 	runner := capturingRunner(toolrun.Output{ExitCode: 0}, &capturedArgs)
 	extraExcludes := []string{"*/generated/*", "*/vendor/special/*"}
 
-	_, _, err := Run(context.Background(), runner, t.TempDir(), true, BackendLizard, 0, extraExcludes)
+	_, _, err := Run(context.Background(), runner, t.TempDir(), true, BackendLizard, 0, extraExcludes, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -469,7 +480,7 @@ func TestRun_NilExcludesOK(t *testing.T) {
 	var capturedArgs []string
 	runner := capturingRunner(toolrun.Output{ExitCode: 0}, &capturedArgs)
 
-	_, _, err := Run(context.Background(), runner, t.TempDir(), true, BackendLizard, 0, nil)
+	_, _, err := Run(context.Background(), runner, t.TempDir(), true, BackendLizard, 0, nil, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -495,7 +506,7 @@ func TestRun_NilExcludesOK(t *testing.T) {
 // the ast-grep tool (not lizard). This is the regression for #23: the wrong
 // install hint was shown to users of the auto backend.
 func TestRun_AutoAbsentBothUsesAstGrepToolName(t *testing.T) {
-	_, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true, BackendAuto, 0, nil)
+	_, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true, BackendAuto, 0, nil, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -513,7 +524,7 @@ func TestRun_AutoAbsentBothUsesAstGrepToolName(t *testing.T) {
 // message implied gocyclo was required even though the ast-grep proxy already
 // covers Go when gocyclo is absent.
 func TestRun_ReasonNotInstalledMentionsSG(t *testing.T) {
-	_, cov, _ := Run(context.Background(), absentRunner(), t.TempDir(), true, BackendAuto, 0, nil)
+	_, cov, _ := Run(context.Background(), absentRunner(), t.TempDir(), true, BackendAuto, 0, nil, noCfg, nil)
 	if !strings.Contains(cov.Reason, "sg") && !strings.Contains(cov.Reason, proxyTool) {
 		t.Errorf("reasonNotInstalled should mention sg/ast-grep first; got %q", cov.Reason)
 	}
@@ -525,5 +536,134 @@ func TestRun_ReasonNotInstalledMentionsSG(t *testing.T) {
 	gcIdx := strings.Index(cov.Reason, "gocyclo")
 	if gcIdx >= 0 && gcIdx < sgIdx {
 		t.Errorf("reasonNotInstalled mentions gocyclo before sg/ast-grep; got %q", cov.Reason)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CB5: file_class config globs reach gocyclo and proxy backends
+// ---------------------------------------------------------------------------
+
+// gocycloRunnerWithLine builds a RunnerMock that detects gocyclo and returns
+// a canned output line for the given repo-relative file path.
+func gocycloRunnerWithLine(root, relFile string, ccn int) *toolrun.RunnerMock {
+	// gocyclo output: "<ccn> <pkg> <func> <file>:<line>:<col>"
+	absFile := root + "/" + relFile
+	line := fmt.Sprintf("%d pkg Fn %s:10:1\n", ccn, absFile)
+	return &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == gocycloTool {
+				return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/gocyclo"}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			return toolrun.Output{ExitCode: 0, Stdout: []byte(line)}, nil
+		},
+	}
+}
+
+// TestRun_GocycloHonorsGeneratedGlobs asserts that a file matched only by a
+// user-supplied generated_glob is excluded from gocyclo complexity output.
+// Built-in heuristics do not cover "codegen/**" — this is the regression test
+// for the config-consistency finding.
+func TestRun_GocycloHonorsGeneratedGlobs(t *testing.T) {
+	root := t.TempDir()
+
+	// "codegen/foo.go" is NOT matched by built-in heuristics (*_gen.go etc.)
+	// but IS matched by the user glob "codegen/**".
+	runner := gocycloRunnerWithLine(root, "codegen/foo.go", 5)
+
+	cfg := syntax.FileClassConfig{GeneratedGlobs: []string{codegenGlob}}
+	funcs, _, err := Run(context.Background(), runner, root, true, BackendAuto, 0, nil, cfg, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, f := range funcs {
+		if strings.Contains(f.File, "codegen/") {
+			t.Errorf("codegen file %q should be excluded by generated_glob but was kept", f.File)
+		}
+	}
+}
+
+// TestRun_GocycloNoConfigKeepsFile asserts that without user globs, a file that
+// doesn't match built-in heuristics is kept (byte-identical baseline).
+func TestRun_GocycloNoConfigKeepsFile(t *testing.T) {
+	root := t.TempDir()
+	runner := gocycloRunnerWithLine(root, "codegen/foo.go", 5)
+
+	funcs, _, err := Run(context.Background(), runner, root, true, BackendAuto, 0, nil, noCfg, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for _, f := range funcs {
+		if strings.Contains(f.File, "codegen/foo.go") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("codegen/foo.go should be kept when no generated_glob is set, but was absent")
+	}
+}
+
+// proxyRunnerWithMatch builds a RunnerMock that detects sg and returns a canned
+// JSON array with one function match for the given file.
+func proxyRunnerWithMatch(relFile string) *toolrun.RunnerMock {
+	// sg --json=compact emits a JSON array of match objects.
+	// We emit one func-boundary match (ruleId contains "-ccn-func").
+	jsonOut := fmt.Sprintf(`[{"file":%q,"ruleId":"ts-ccn-func","range":{"start":{"line":0},"end":{"line":20}},"metaVariables":{"single":{"NAME":{"text":"myFunc"}}}}]`, relFile)
+	return &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == "sg" {
+				return toolrun.ToolInfo{Name: tool, Path: sgPath}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		StreamFunc: func(_ context.Context, _ toolrun.ToolCmd, consume func(io.Reader) error) (toolrun.Output, error) {
+			r := strings.NewReader(jsonOut)
+			if err := consume(r); err != nil {
+				return toolrun.Output{}, err
+			}
+			return toolrun.Output{ExitCode: 0}, nil
+		},
+	}
+}
+
+// TestRun_ProxyHonorsGeneratedGlobs asserts that a TS file matched only by a
+// user-supplied generated_glob is excluded from proxy complexity output.
+func TestRun_ProxyHonorsGeneratedGlobs(t *testing.T) {
+	// "codegen/foo.ts" is not matched by built-in heuristics (*.gen.ts etc.)
+	// but IS matched by the user glob "codegen/**".
+	runner := proxyRunnerWithMatch("codegen/foo.ts")
+
+	cfg := syntax.FileClassConfig{GeneratedGlobs: []string{codegenGlob}}
+	funcs, _, err := Run(context.Background(), runner, t.TempDir(), true, BackendAuto, 0, nil, cfg, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, f := range funcs {
+		if strings.Contains(f.File, "codegen/") {
+			t.Errorf("codegen file %q should be excluded by generated_glob but was kept", f.File)
+		}
+	}
+}
+
+// TestRun_ProxyNoConfigKeepsFile asserts that without user globs, a TS file that
+// doesn't match built-in heuristics is kept (byte-identical baseline).
+func TestRun_ProxyNoConfigKeepsFile(t *testing.T) {
+	runner := proxyRunnerWithMatch("codegen/foo.ts")
+
+	funcs, _, err := Run(context.Background(), runner, t.TempDir(), true, BackendAuto, 0, nil, noCfg, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for _, f := range funcs {
+		if strings.Contains(f.File, "codegen/foo.ts") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("codegen/foo.ts should be kept when no generated_glob is set, but was absent")
 	}
 }

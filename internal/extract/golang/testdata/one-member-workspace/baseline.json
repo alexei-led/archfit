@@ -207,7 +207,7 @@
     {
       "band": "n/a",
       "confidence": "low",
-      "definition": "production panic/unwrap/expect call sites (Rust: unwrap/expect/panic!, Go: panic) — excludes test/generated files, report-only",
+      "definition": "production panic/unwrap/expect call sites (Rust: unwrap/expect/panic!, Go: panic) — excludes test/generated/vendor files, report-only",
       "display": "n/a",
       "metric_version": "panic_density.v1",
       "mode": "count",

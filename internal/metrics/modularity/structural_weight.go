@@ -45,7 +45,7 @@ func (m StructuralWeightMetric) Calculate(in signal.SizeInput) diagnostic.Metric
 	modLOC := map[string]int{}
 	for f, n := range in.Size.FileLOC {
 		fc := syntax.LookupFileClass(f, in.Size.FileClassIndex, "", cfg)
-		if fc == fileclass.Generated {
+		if !fileclass.IsProduction(fc) {
 			continue
 		}
 		if k := resolve(f); k != "" {

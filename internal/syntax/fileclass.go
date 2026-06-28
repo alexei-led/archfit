@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
+
 	"github.com/alexei-led/archfit/internal/model/fileclass"
 )
 
@@ -69,12 +71,24 @@ func ClassifyFile(lang, path string, header []byte, cfg FileClassConfig) filecla
 		return fileclass.Generated
 	}
 	for _, mf := range cfg.MockFrameworks {
+		if mf == "" {
+			continue // empty entry matches every filename — skip
+		}
 		if strings.HasPrefix(base, mf) || strings.HasSuffix(strings.TrimSuffix(base, filepath.Ext(base)), strings.TrimSuffix(mf, "*")) {
 			return fileclass.Generated
 		}
 	}
 
-	// 4. Vendor directory.
+	// 4a. Well-known generated/mock directory segments.
+	//     Files in mocks/ or __mocks__/ are conventionally generated mock code
+	//     (gomock, moq, mockery, Jest). loc's walk skips these dirs entirely, so
+	//     they never appear in the FileClassIndex; the path-only fallback must
+	//     classify them without a header sniff (C6).
+	if containsPathSegment(slash, "mocks") || containsPathSegment(slash, "__mocks__") {
+		return fileclass.Generated
+	}
+
+	// 4b. Vendor directory.
 	if containsPathSegment(slash, "vendor") {
 		return fileclass.Vendor
 	}
@@ -145,10 +159,12 @@ func isGeneratedFilename(base string) bool {
 }
 
 // matchesAny reports whether path matches any of the provided glob patterns.
-// Patterns use forward slashes; matching is against the full repo-relative path.
-// Uses filepath.Match (single-star) for efficiency — callers wanting doublestar
-// behaviour should pre-filter with their own matcher and pass an empty slice here.
+// Patterns use forward slashes and are matched against the full repo-relative
+// path or the base filename. Supports ** doublestar semantics (via
+// github.com/bmatcuk/doublestar/v4) so user-supplied globs like gen/** or
+// **/generated/*.go work as expected.
 func matchesAny(path string, patterns []string) bool {
+	base := filepath.Base(path)
 	for _, pat := range patterns {
 		// Simple substring for directory-segment patterns (e.g. "mocks/").
 		if strings.HasSuffix(pat, "/") {
@@ -157,10 +173,12 @@ func matchesAny(path string, patterns []string) bool {
 			}
 			continue
 		}
-		if ok, _ := filepath.Match(pat, filepath.Base(path)); ok {
+		// Match against the base filename (handles patterns like "mock_*.go").
+		if ok, _ := doublestar.Match(pat, base); ok {
 			return true
 		}
-		if ok, _ := filepath.Match(pat, path); ok {
+		// Match against the full repo-relative path (handles ** and dir-prefixed patterns).
+		if ok, _ := doublestar.Match(pat, path); ok {
 			return true
 		}
 	}
