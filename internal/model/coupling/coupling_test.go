@@ -2,8 +2,18 @@ package coupling
 
 import "testing"
 
-// TestBalanceResult covers the severity table from the Balanced Coupling model (Khononov).
-func TestBalanceResult(t *testing.T) {
+// TestScoreBand_Severity verifies the book-formula severity bands.
+// Severity is now derived entirely from ScoreBand(BookScorer.Score().Balance).
+// Cases are annotated with (S ordinal, D ordinal, V ordinal) → balance → expected band.
+func TestScoreBand_Severity(t *testing.T) {
+	scoreClassification := func(c Classification) Severity {
+		s := BookScorer{}.Score(c)
+		if !s.Scored {
+			return SeverityNone
+		}
+		return s.Band
+	}
+
 	tests := []struct {
 		name     string
 		c        Classification
@@ -11,80 +21,72 @@ func TestBalanceResult(t *testing.T) {
 	}{
 		// --- Symmetric balanced quadrant (low strength + low distance) ---
 		{
-			// low+low+low_vol → none (balanced).
-			// cross_module_same_owner is the realistic low-distance input
-			// (same_module edges are excluded by the classifier before BalanceResult).
-			name: "low+low low_vol returns none",
+			// S=1,D=4,V=3 → |1-4|=3, 10-3=7 → max(3,7)+1=8 → low
+			name: "contract cross-module-same-owner low_vol returns low",
 			c: Classification{
 				Strength:   StrengthContract,
 				Distance:   DistanceCrossModuleSameOwner,
 				Volatility: VolatilityLow,
 			},
+			expected: SeverityLow,
+		},
+		{
+			// S=1,D=4,V=10 → |1-4|=3, 10-10=0 → max(3,0)+1=4 → high
+			name: "contract cross-module-same-owner high_vol returns high",
+			c: Classification{
+				Strength:   StrengthContract,
+				Distance:   DistanceCrossModuleSameOwner,
+				Volatility: VolatilityHigh,
+			},
+			expected: SeverityHigh,
+		},
+
+		// --- XOR modular quadrants ---
+		{
+			// S=1,D=9,V=3 → |1-9|=8, 10-3=7 → max(8,7)+1=9 → none
+			name: "contract cross-deploy low_vol returns none (loose quadrant)",
+			c: Classification{
+				Strength:   StrengthContract,
+				Distance:   DistanceCrossDeployUnit,
+				Volatility: VolatilityLow,
+			},
 			expected: SeverityNone,
 		},
 		{
-			// low+low+high_vol → medium (over-decoupled volatile seam).
-			name: "low+low high_vol returns medium",
+			// S=1,D=9,V=10 → |1-9|=8, 10-10=0 → max(8,0)+1=9 → none
+			name: "contract cross-deploy high_vol returns none (loose quadrant)",
 			c: Classification{
 				Strength:   StrengthContract,
+				Distance:   DistanceCrossDeployUnit,
+				Volatility: VolatilityHigh,
+			},
+			expected: SeverityNone,
+		},
+		{
+			// S=8,D=4,V=10 → |8-4|=4, 10-10=0 → max(4,0)+1=5 → medium
+			name: "functional cross-module-same-owner high_vol returns medium (cohesive)",
+			c: Classification{
+				Strength:   StrengthFunctional,
 				Distance:   DistanceCrossModuleSameOwner,
 				Volatility: VolatilityHigh,
 			},
 			expected: SeverityMedium,
 		},
-
-		// --- XOR modular quadrants (Balanced Coupling §3): SeverityNone ---
 		{
-			// low strength + high distance → loose coupling across a large boundary.
-			// BC-modular: no finding regardless of volatility.
-			name: "low+high low_vol returns none (XOR loose quadrant)",
-			c: Classification{
-				Strength:   StrengthContract,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityLow,
-			},
-			expected: SeverityNone,
-		},
-		{
-			// low strength + high distance, volatile: still BC-modular, no finding.
-			name: "low+high high_vol returns none (XOR loose quadrant)",
-			c: Classification{
-				Strength:   StrengthContract,
-				Distance:   DistanceCrossDeployUnit,
-				Volatility: VolatilityHigh,
-			},
-			expected: SeverityNone,
-		},
-		{
-			// high strength + low distance → cohesive (co-located tight coupling).
-			// BC-modular: no finding regardless of volatility.
-			name: "high+low returns none (XOR cohesive quadrant)",
-			c: Classification{
-				Strength:   StrengthFunctional,
-				Distance:   DistanceCrossModuleSameOwner,
-				Volatility: VolatilityHigh,
-			},
-			expected: SeverityNone,
-		},
-		{
-			// functional strength + same-module-same-owner is a co-located case:
-			// strengthIsHigh=true, distanceIsHigh=false → XOR cohesive quadrant → none.
-			// (same_module edges are excluded by the classifier in practice, but the
-			// formula must be correct for cross_module_same_owner too.)
-			name: "functional+same_owner low_vol returns none (XOR cohesive quadrant)",
+			// S=8,D=4,V=3 → |8-4|=4, 10-3=7 → max(4,7)+1=8 → low
+			name: "functional cross-module-same-owner low_vol returns low",
 			c: Classification{
 				Strength:   StrengthFunctional,
 				Distance:   DistanceCrossModuleSameOwner,
 				Volatility: VolatilityLow,
 			},
-			expected: SeverityNone,
+			expected: SeverityLow,
 		},
 
 		// --- Symmetric unbalanced quadrant (high strength + high distance) ---
 		{
-			// high+high+low_vol → low (BC: a stable/low-volatility target neutralizes
-			// the imbalance; the cascade rarely fires).
-			name: "high+high low_vol returns low (neutralized)",
+			// S=8,D=9,V=3 → |8-9|=1, 10-3=7 → max(1,7)+1=8 → low
+			name: "functional cross-deploy low_vol returns low",
 			c: Classification{
 				Strength:   StrengthFunctional,
 				Distance:   DistanceCrossDeployUnit,
@@ -93,8 +95,8 @@ func TestBalanceResult(t *testing.T) {
 			expected: SeverityLow,
 		},
 		{
-			// high+high+high_vol → critical.
-			name: "high+high high_vol returns critical",
+			// S=8,D=9,V=10 → |8-9|=1, 10-10=0 → max(1,0)+1=2 → critical
+			name: "functional cross-deploy high_vol returns critical",
 			c: Classification{
 				Strength:   StrengthFunctional,
 				Distance:   DistanceCrossDeployUnit,
@@ -103,42 +105,56 @@ func TestBalanceResult(t *testing.T) {
 			expected: SeverityCritical,
 		},
 		{
-			// high+high+undeclared → medium: an undeclared (config-gap) volatility is
-			// treated conservatively, exactly like unknown — neither neutralizes nor
-			// escalates. Distinguished from VolatilityUnknown only in the guidance.
-			name: "high+high undeclared returns medium (conservative, like unknown)",
+			// S=8,D=9,V=10 undeclared → |8-9|=1, 10-10=0 → max(1,0)+1=2 → critical
+			name: "functional cross-deploy undeclared returns critical (conservative)",
 			c: Classification{
 				Strength:   StrengthFunctional,
 				Distance:   DistanceCrossDeployUnit,
 				Volatility: VolatilityUndeclared,
 			},
-			expected: SeverityMedium,
-		},
-		{
-			// low+low+undeclared → none, same as low+low+unknown.
-			name: "low+low undeclared returns none",
-			c: Classification{
-				Strength:   StrengthContract,
-				Distance:   DistanceCrossModuleSameOwner,
-				Volatility: VolatilityUndeclared,
-			},
-			expected: SeverityNone,
+			expected: SeverityCritical,
 		},
 
-		// --- Intrusive escalation paths ---
+		// --- P3 divergence Case A: StrengthSymmetric + SameOwner (was None, now Medium) ---
+		// S=9,D=4,V=10 → |9-4|=5, 10-10=0 → max(5,0)+1=6 → medium
+		// BalanceResult returned None (XOR cohesive quadrant). Book formula: Medium.
 		{
-			// intrusive + cross-module-diff-owner + low volatility → medium.
-			name: "intrusive cross-module low_vol returns medium",
+			name: "symmetric same-owner high_vol returns medium (P3 case A fix)",
+			c: Classification{
+				Strength:   StrengthSymmetric,
+				Distance:   DistanceCrossModuleSameOwner,
+				Volatility: VolatilityHigh,
+			},
+			expected: SeverityMedium,
+		},
+
+		// --- P3 divergence Case B: StrengthSymmetric + DiffOwner (was Critical, now High) ---
+		// S=9,D=7,V=10 → |9-7|=2, 10-10=0 → max(2,0)+1=3 → high
+		// BalanceResult returned Critical. Book formula: High.
+		{
+			name: "symmetric diff-owner high_vol returns high (P3 case B fix)",
+			c: Classification{
+				Strength:   StrengthSymmetric,
+				Distance:   DistanceCrossModuleDiffOwner,
+				Volatility: VolatilityHigh,
+			},
+			expected: SeverityHigh,
+		},
+
+		// --- Intrusive paths ---
+		{
+			// S=10,D=7,V=3 → |10-7|=3, 10-3=7 → max(3,7)+1=8 → low
+			name: "intrusive cross-module-diff-owner low_vol returns low",
 			c: Classification{
 				Strength:   StrengthIntrusive,
 				Distance:   DistanceCrossModuleDiffOwner,
 				Volatility: VolatilityLow,
 			},
-			expected: SeverityMedium,
+			expected: SeverityLow,
 		},
 		{
-			// intrusive + cross-module-diff-owner + high volatility → high.
-			name: "intrusive cross-module high_vol returns high",
+			// S=10,D=7,V=10 → |10-7|=3, 10-10=0 → max(3,0)+1=4 → high
+			name: "intrusive cross-module-diff-owner high_vol returns high",
 			c: Classification{
 				Strength:   StrengthIntrusive,
 				Distance:   DistanceCrossModuleDiffOwner,
@@ -147,8 +163,8 @@ func TestBalanceResult(t *testing.T) {
 			expected: SeverityHigh,
 		},
 		{
-			// intrusive + cross-deploy-unit → critical (volatility irrelevant).
-			name: "intrusive cross-deploy returns critical",
+			// S=10,D=9,V=10 → |10-9|=1, 10-10=0 → max(1,0)+1=2 → critical
+			name: "intrusive cross-deploy high_vol returns critical",
 			c: Classification{
 				Strength:   StrengthIntrusive,
 				Distance:   DistanceCrossDeployUnit,
@@ -157,11 +173,22 @@ func TestBalanceResult(t *testing.T) {
 			expected: SeverityCritical,
 		},
 		{
-			// intrusive + same-owner falls through to the formula: high+low → XOR none.
-			name: "intrusive same-owner falls through to XOR none",
+			// S=10,D=4,V=10 → |10-4|=6, 10-10=0 → max(6,0)+1=7 → low
+			name: "intrusive same-owner high_vol returns low",
 			c: Classification{
 				Strength:   StrengthIntrusive,
 				Distance:   DistanceCrossModuleSameOwner,
+				Volatility: VolatilityHigh,
+			},
+			expected: SeverityLow,
+		},
+
+		// --- Abstention: unknown strength/distance → SeverityNone ---
+		{
+			name: "unknown strength abstains → none",
+			c: Classification{
+				Strength:   StrengthUnknown,
+				Distance:   DistanceCrossModuleDiffOwner,
 				Volatility: VolatilityHigh,
 			},
 			expected: SeverityNone,
@@ -170,9 +197,11 @@ func TestBalanceResult(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := BalanceResult(tt.c)
+			got := scoreClassification(tt.c)
 			if got != tt.expected {
-				t.Errorf("BalanceResult(%+v) = %q, want %q", tt.c, got, tt.expected)
+				s := BookScorer{}.Score(tt.c)
+				t.Errorf("BookScorer.Score(%+v).Band = %q, want %q (balance=%d scored=%v)",
+					tt.c, got, tt.expected, s.Balance, s.Scored)
 			}
 		})
 	}

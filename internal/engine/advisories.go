@@ -110,7 +110,7 @@ const bcAdvisoryRollupCap = 8
 //
 // Status is part of the key so a baseline-suppressed or excepted edge is never folded
 // into a "new" rollup's count. Cohesion (high strength + low distance) never reaches
-// this pass — coupling.BalanceResult returns SeverityNone for it — so a rollup, like an
+// this pass — cohesion scores SeverityNone via the book formula — so a rollup, like an
 // individual advisory, never flags cohesion ("the good coupling") as a problem.
 func groupBCAdvisories(advisories []finding.Finding) []finding.Finding {
 	type groupKey struct {
@@ -255,8 +255,8 @@ func bcAdvisoryWhy(cl coupling.Classification) string {
 // is local high-strength coupling to a volatile target: its cascade is cheap (one
 // owner, one binary), so it is named as such, NOT as a distributed monolith —
 // recommending "introduce a contract" there would be cargo-cult. Cohesion (high
-// strength + low distance, balanced) never reaches here — BalanceResult returns
-// SeverityNone for it.
+// strength + low distance, balanced) never reaches here — the book formula scores
+// it SeverityNone.
 func bcRiskClause(cl coupling.Classification) string {
 	switch cl.Severity {
 	case coupling.SeverityCritical:

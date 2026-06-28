@@ -63,10 +63,15 @@ func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 
 	for _, e := range g.Edges() {
 		cl := classify(e, mm, c, degenerateExplicit, degenerateOwners, effectiveVol)
-		// Attach a continuous score for cross-boundary edges that have a severity.
+		// Score cross-boundary edges that are not distance-unknown.
 		// Same-module and unknown-distance edges are not scored (zero EdgeScore).
+		// Severity is derived from cl.Score.Band so the book formula and the
+		// advisory severity are always identical — the single source of truth.
 		if cl.Distance != coupling.DistanceSameModule && cl.Distance != coupling.DistanceUnknown {
 			cl.Score = scorer.Score(cl)
+			// Set Severity from the book score band. Abstained edges (Scored=false,
+			// Band="") remain SeverityNone — abstain-not-fake is preserved.
+			cl.Severity = cl.Score.Band
 		}
 		idx[edgeKey(e)] = cl
 	}
@@ -213,8 +218,8 @@ func matchesAnyGlob(path string, globs []string) bool {
 // classify computes a Classification for a single edge.
 //
 // ExplicitnessHint on the edge overrides the config-glob-derived explicitness
-// when non-empty ("explicit" or "implicit"). BalanceResult is then called to
-// derive advisory Severity for cross-boundary edges.
+// when non-empty ("explicit" or "implicit"). Severity is set in Run after the
+// book score is computed (cl.Score.Band → cl.Severity).
 func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility) coupling.Classification {
 	modules := c.Modules
 	fromPath := pathFromID(e.From)
@@ -280,8 +285,8 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 	// into the modules it wires by design — that fan-out is cohesion, not high-
 	// distance coupling — so its outbound edges must never be scored as unbalanced.
 	// Cap the source's outbound distance below the high-distance threshold; this
-	// single point flows to Severity (BalanceResult below), the continuous Score,
-	// and every distance-reading metric (unbalanced_edge, encapsulation, …).
+	// single point flows to the continuous Score (and hence Severity) and every
+	// distance-reading metric (unbalanced_edge, encapsulation, …).
 	// The basis stays as-is: it reflects what drove the original signal, not the cap.
 	if fromMod, ok := mi.moduleFor(fromPath); ok && cohesiveRole(modules[fromMod].Role) {
 		dist = capDistanceForRole(dist)
@@ -320,11 +325,11 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 		DistanceBasis:       distBasis,
 	}
 
-	// --- Severity + Connascence ---
-	// Both are only meaningful for cross-boundary edges.
+	// --- Connascence ---
+	// Report-only descriptive vocabulary — never scored, never gates.
+	// Only meaningful for cross-boundary edges (same-module and unknown-distance
+	// edges carry no connascence). Severity is set in Run after scoring.
 	if dist != coupling.DistanceSameModule && dist != coupling.DistanceUnknown {
-		cl.Severity = coupling.BalanceResult(cl)
-		// Connascence is report-only descriptive vocabulary — never scored, never gates.
 		if fromMod, okF := mi.moduleFor(fromPath); okF {
 			if toMod, okT := mi.moduleFor(toPath); okT {
 				cl.Connascence = classifyConnascence(e, str, fromMod, toMod, c)

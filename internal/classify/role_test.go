@@ -29,12 +29,19 @@ func roleModules(srcRole config.ModuleRole) map[string]config.ModuleDef {
 }
 
 // TestRun_RoleSuppressesOutboundImbalance verifies that a cohesive-role source
-// (composition_root/generated/test) has its high-distance fan-out downgraded to
-// cohesion — no BC advisory severity — while ordinary roles (adapter/core/
-// shared_model/none) keep an intrusive diff-owner high-volatility edge flagged.
+// (composition_root/generated/test) has its high-distance fan-out capped to
+// cross_module_same_owner while ordinary roles (adapter/core/shared_model/none)
+// keep the full cross_module_diff_owner distance.
+//
+// With the book formula (bc_score.v3) the severity for capped edges is no longer
+// forced to SeverityNone: intrusive+same_owner+high_vol (S=10,D=4,V=10) →
+// max(|10-4|=6, 10-10=0)+1=7 → SeverityLow. This is correct — the distance cap
+// moves the edge out of the distributed-monolith zone, but the intrusive+volatile
+// coupling is still a local advisory finding.
 func TestRun_RoleSuppressesOutboundImbalance(t *testing.T) {
 	// Intrusive (target hits dst's internal glob), cross-module, different owner,
-	// high volatility. Base classification (no role) is SeverityHigh.
+	// high volatility. Base classification (no role): intrusive+diff_owner+high_vol
+	// (S=10,D=7,V=10) → max(3,0)+1=4 → SeverityHigh.
 	edge := graph.Edge{
 		From: "file:src/main.go", To: "file:dst/internal/db.go",
 		Kind: graph.EdgeKindImports, Language: "go",
@@ -46,9 +53,11 @@ func TestRun_RoleSuppressesOutboundImbalance(t *testing.T) {
 		wantSeverity coupling.Severity
 		wantDistance coupling.Distance
 	}{
-		{"composition_root → suppressed", config.RoleCompositionRoot, coupling.SeverityNone, coupling.DistanceCrossModuleSameOwner},
-		{"generated → suppressed", config.RoleGenerated, coupling.SeverityNone, coupling.DistanceCrossModuleSameOwner},
-		{"test → suppressed", config.RoleTest, coupling.SeverityNone, coupling.DistanceCrossModuleSameOwner},
+		// Capped to same_owner: S=10,D=4,V=10 → max(6,0)+1=7 → low (not none).
+		{"composition_root → distance capped, severity low", config.RoleCompositionRoot, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
+		{"generated → distance capped, severity low", config.RoleGenerated, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
+		{"test → distance capped, severity low", config.RoleTest, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
+		// Uncapped: S=10,D=7,V=10 → max(3,0)+1=4 → high.
 		{"adapter → still flagged", config.RoleAdapter, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
 		{"core → still flagged", config.RoleCore, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
 		{"shared_model → still flagged", config.RoleSharedModel, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},

@@ -555,6 +555,41 @@ func TestRun_Explain_BackCompatNoRoot(t *testing.T) {
 	}
 }
 
+// TestRun_Explain_SeverityMatchesCheck verifies that explain reports the same
+// severity for a finding as check does. This is the regression guard for the
+// P3 fix: before Task 4 check derived Severity from BalanceResult while explain
+// rendered cl.Score.Band, so they could diverge on symmetric-strength edges.
+func TestRun_Explain_SeverityMatchesCheck(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeViolatingRepo(t)
+
+	// Get the finding ID and severity from check.
+	var checkBuf bytes.Buffer
+	if code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &checkBuf); code == 3 {
+		t.Fatalf("check exited 3 (config error)\noutput:\n%s", checkBuf.String())
+	}
+	var checkDiag struct {
+		Findings []struct {
+			ID       string `json:"id"`
+			Severity string `json:"severity"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(checkBuf.Bytes(), &checkDiag); err != nil || len(checkDiag.Findings) == 0 {
+		t.Skipf("no findings from check (nothing to verify): err=%v", err)
+	}
+
+	f := checkDiag.Findings[0]
+	var explainBuf bytes.Buffer
+	if code := Run([]string{cmdExplain, f.ID[:8], "-c", cfgPath}, &explainBuf); code != 0 {
+		t.Fatalf("explain exit = %d, want 0\noutput:\n%s", code, explainBuf.String())
+	}
+	out := explainBuf.String()
+	wantLine := "severity:   " + f.Severity
+	if !strings.Contains(out, wantLine) {
+		t.Errorf("explain severity mismatch:\ncheck reported %q\nexplain output:\n%s", f.Severity, out)
+	}
+}
+
 // TestRun_Check_AgentTasksPopulated verifies the spec §13 repair block: an
 // active gate finding yields one agent task with goal, files, and a
 // validation command matching the invocation.

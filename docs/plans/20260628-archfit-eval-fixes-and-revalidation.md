@@ -110,13 +110,13 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 4: P3 — derive `Severity` from the book formula (retire `BalanceResult` as severity source)
 
-- [ ] `internal/classify/classify.go:326`: set `cl.Severity = coupling.ScoreBand(cl.Score.Balance)` (confirm `cl.Score` from `BookScorer.Score()` is populated before line 326; compute/move if not)
-- [ ] keep `coupling.BalanceResult` only if used elsewhere; otherwise delete it and its now-dead tests (`internal/model/coupling/coupling.go:174`)
-- [ ] verify Case A (S=9 symmetric, SameOwner, V=high) now emits a `Medium` advisory where it previously emitted none, and Case B (S=9, DiffOwner, V=high) emits `High` not `Critical`; ensure these stay advisory unless a rule gates them
-- [ ] write table-driven severity tests over (S,D,V) incl `StrengthSymmetric`: assert `Severity == ScoreBand(balance)` for both divergence cases
-- [ ] write test: `explain` and `check` report identical severity for the same fingerprint (closes ccgram `2c5200c6` mismatch)
-- [ ] `make build && make archfit`; restamp `.archfit-baseline.json`; confirm `TestGolden` determinism still passes
-- [ ] run `go test ./internal/...` + `make archfit` — must pass before Task 5
+- [x] `internal/classify/classify.go`: moved `cl.Severity = cl.Score.Band` into `Run` after scorer runs (not `ScoreBand(cl.Score.Balance)` which would stamp 0-balance edges as Critical); removed `BalanceResult` call from `classify()`
+- [x] keep `coupling.BalanceResult` only if used elsewhere; otherwise delete it and its now-dead tests — deleted `BalanceResult` + `strengthIsHigh` (dead after deletion); deleted `TestBalanceResult`
+- [x] verify Case A (S=9 symmetric, SameOwner, V=high) now emits a `Medium` advisory where it previously emitted none, and Case B (S=9, DiffOwner, V=high) emits `High` not `Critical`; ensure these stay advisory unless a rule gates them
+- [x] write table-driven severity tests over (S,D,V) incl `StrengthSymmetric`: assert `Severity == ScoreBand(balance)` for both divergence cases — `TestScoreBand_Severity` in `coupling_test.go`
+- [x] write test: `explain` and `check` report identical severity for the same fingerprint (closes ccgram `2c5200c6` mismatch) — `TestRun_Explain_SeverityMatchesCheck` in `main_test.go`
+- [x] `make build && make archfit`; restamp `.archfit-baseline.json`; confirm `TestGolden` determinism still passes — baseline has 0 findings before and after; no restamp needed; `TestGolden` double-run passes
+- [x] run `go test ./internal/...` + `make archfit` — must pass before Task 5
 
 ### Task 5: Shared `FileClass` classifier (auto-detect + config override)
 

@@ -411,8 +411,8 @@ func TestRun_ExplicitnessHintOverridesGlob(t *testing.T) {
 	}
 }
 
-// TestRun_Severity verifies that BalanceResult-derived severity is stored on
-// the Classification for cross-boundary edges.
+// TestRun_Severity verifies that book-formula severity (cl.Score.Band) is stored
+// on the Classification for cross-boundary edges.
 func TestRun_Severity(t *testing.T) {
 	// Modules:
 	//   "a": paths=services/a/**, owner=team-x, deploy=svc-a, subdomain=core (high volatility)
@@ -458,22 +458,29 @@ func TestRun_Severity(t *testing.T) {
 		wantSeverity coupling.Severity
 	}{
 		{
-			// contract + cross_deploy_unit → low+high → XOR modular quadrant → none (BC-correct).
-			name:         "contract cross-deploy low-vol → none (XOR loose quadrant)",
+			// contract (S=1) + cross_deploy_unit (D=9) + supporting/medium (V=6):
+			// max(|1-9|=8, 10-6=4)+1=9 → none (loose XOR quadrant, book-correct).
+			name:         "contract cross-deploy medium-vol → none (XOR loose quadrant)",
 			edge:         importEdge("services/a/impl.go", "services/b/api/client.go"),
 			wantSeverity: coupling.SeverityNone,
 		},
 		{
-			// intrusive + cross_deploy_unit → critical
-			name:         "intrusive cross-deploy → critical",
+			// intrusive (S=10) + cross_deploy_unit (D=9) + supporting/low (V=3, book Table 9.1):
+			// max(|10-9|=1, 10-3=7)+1=8 → low.
+			// (BalanceResult returned critical; book formula correctly scores low —
+			// stable/low-volatility target neutralizes even a tight cross-deploy edge.)
+			name:         "intrusive cross-deploy low-vol → low (book formula)",
 			edge:         importEdge("services/a/impl.go", "services/b/internal/secret.go"),
-			wantSeverity: coupling.SeverityCritical,
+			wantSeverity: coupling.SeverityLow,
 		},
 		{
-			// contract + cross_module_same_owner + low vol → strength=low, distance=low → balanced → none
-			name:         "balanced contract cross-module-same-owner low-vol → none",
+			// contract (S=1) + cross_module_same_owner (D=4) + generic/low (V=3):
+			// max(|1-4|=3, 10-3=7)+1=8 → low.
+			// (BalanceResult returned none; book formula correctly scores low — volatile
+			// seam even across a near boundary.)
+			name:         "contract cross-module-same-owner low-vol → low (book formula)",
 			edge:         importEdge("services/a/impl.go", "services/c/api/client.go"),
-			wantSeverity: coupling.SeverityNone,
+			wantSeverity: coupling.SeverityLow,
 		},
 		{
 			// same-module edge: no severity computed
