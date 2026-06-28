@@ -14,6 +14,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/symbol"
@@ -144,9 +145,12 @@ type SymbolSignals struct {
 	SymbolDependants map[string]int // file -> distinct dependant-file count (SCIP-derived)
 }
 
-// SizeSignals carries per-file line counts (tests excluded). Empty when absent.
+// SizeSignals carries per-file line counts (tests excluded) and the full
+// file-class index covering ALL visited source files (including test and
+// generated). Empty when absent.
 type SizeSignals struct {
-	FileLOC map[string]int
+	FileLOC        map[string]int
+	FileClassIndex map[string]fileclass.FileClass // repo-relative slash path → FileClass; nil when loc walk did not run
 }
 
 // ComplexitySignals carries per-function cyclomatic complexity from the external
@@ -193,10 +197,13 @@ type FitnessInput struct {
 
 // DuplicationInput is CommonInput plus the clone clusters; it also carries the
 // history signals because functional_candidates joins clones with co-change.
+// Size carries the FileClassIndex so the metric can filter test/generated
+// clone pairs without re-reading files.
 type DuplicationInput struct {
 	CommonInput
 	Duplication DuplicationSignals
 	History     HistorySignals
+	Size        SizeSignals
 }
 
 // CollectedSignals is the engine's producer-side bag of everything gathered for
@@ -242,5 +249,5 @@ func (s CollectedSignals) AsFitness() FitnessInput {
 
 // AsDuplication projects to the duplication-family input.
 func (s CollectedSignals) AsDuplication() DuplicationInput {
-	return DuplicationInput{CommonInput: s.Common, Duplication: s.Duplication, History: s.History}
+	return DuplicationInput{CommonInput: s.Common, Duplication: s.Duplication, History: s.History, Size: s.Size}
 }

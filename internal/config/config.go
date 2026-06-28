@@ -32,6 +32,7 @@ type Config struct {
 	RustIncludeDevDeps       bool                 `yaml:"rust_include_dev_deps"`      // include dev-dependencies as crate edges
 	BCAdvisoryMinSeverity    string               `yaml:"bc_advisory_min_severity"`   // minimum severity to emit BC coupling advisories: low|medium|high|critical (default: low)
 	VolatilityCascadeEnabled bool                 `yaml:"volatility_cascade_enabled"` // propagate high volatility across strongly-coupled module pairs (book Ch9)
+	FileClass                FileClassDef         `yaml:"file_class"`                 // optional: custom patterns for test/generated/mock classification
 
 	// explicitOwners records which modules had a hand-authored `owner:` in YAML,
 	// populated by Load before any resolver fill. Distinguishes a user's explicit

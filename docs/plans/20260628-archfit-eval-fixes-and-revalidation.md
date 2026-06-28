@@ -120,28 +120,28 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 5: Shared `FileClass` classifier (auto-detect + config override)
 
-- [ ] add `internal/syntax/fileclass` (or extend `internal/syntax`): `Classify(lang, path string, header []byte) FileClass` returning `Production | Test | Generated | Vendor`
-- [ ] Generated detection: `// Code generated .* DO NOT EDIT` header regex (covers moq + Go stdlib), `*.pb.go`, `*_gen.go`/`*.gen.*`, `_pb2.py`; mock heuristics `mock_*.go`/`*_mock.go`/`mocks/` → Generated. Test detection: reuse/extend `syntax.IsTestFile` (`internal/syntax/testfile.go:17`) per language (+ Rust `tests/`, best-effort `#[cfg(test)]`)
-- [ ] config override: new typed view `tools.file_class` (e.g. `generated_globs`, `test_globs`, `mock_frameworks`) parsed once; auto-detection runs first, config patterns extend/override it (per decision: auto + manual fine-tuning for custom mock frameworks)
-- [ ] stamp the result onto facts so metrics filter without re-reading: add `Class FileClass` to `FileFacts` and populate it in the `loc` walk (`internal/extract/loc/loc.go` already opens every file — sniff the header there); expose a `path → FileClass` lookup on the diagnostic
-- [ ] write table-driven tests per language for each class incl moq header-sniff; config override adds a custom mock pattern and reclassifies a file
-- [ ] run `go test ./internal/syntax/... ./internal/extract/loc/...` — must pass before Task 6
+- [x] add `internal/syntax/fileclass` (or extend `internal/syntax`): `Classify(lang, path string, header []byte) FileClass` returning `Production | Test | Generated | Vendor` — implemented as `syntax.ClassifyFile` in `internal/syntax/fileclass.go`; type in new `internal/model/fileclass` package
+- [x] Generated detection: `// Code generated .* DO NOT EDIT` header regex (covers moq + Go stdlib), `*.pb.go`, `*_gen.go`/`*.gen.*`, `_pb2.py`; mock heuristics `mock_*.go`/`*_mock.go`/`mocks/` → Generated. Test detection: reuse/extend `syntax.IsTestFile` (`internal/syntax/testfile.go:17`) per language (+ Rust `tests/`, best-effort `#[cfg(test)]`)
+- [x] config override: new top-level `file_class:` key (`FileClassDef`) with `generated_globs`, `test_globs`, `mock_frameworks`; projected via `Config.ForFileClass()` → `FileClassView`; auto-detection runs first, config patterns extend it. Note: plan said `tools.file_class` but `ToolsConfig` is `map[string]ToolConfig` — used top-level key instead (correct design).
+- [x] stamp the result onto facts so metrics filter without re-reading: `loc.Run` now returns a parallel `map[string]fileclass.FileClass` covering ALL source files (including test/generated); stored in `SizeSignals.FileClassIndex`; `syntax.LookupFileClass` provides path→FileClass lookup with fallback for paths not in the index (e.g. files in loc's `skipDirs`). Note: `FileFact.Class` is per-module, not per-file — delivering per-file map is the correct grain for tasks 6-9.
+- [x] write table-driven tests per language for each class incl moq header-sniff; config override adds a custom mock pattern and reclassifies a file
+- [x] run `go test ./internal/syntax/... ./internal/extract/loc/...` — must pass before Task 6
 
 ### Task 6: `panic_density` — exclude Generated/Mock, segregate the count
 
-- [ ] `internal/metrics/modularity/panic_density.go:43`: filter on `FileClass` (skip `Test` AND `Generated`) instead of only `syntax.IsTestFile`; tally excluded panics
-- [ ] surface the excluded count in the metric evidence string ("N panics in test/generated excluded") so nothing is hidden
-- [ ] write test: a fixture with `mock_*.go` panic sites → production `panic_density` excludes them, excluded count reported (reproduces pumba 208→~0 production)
-- [ ] write test: a real production panic is still counted
-- [ ] run `go test ./internal/metrics/...` — must pass before Task 7
+- [x] `internal/metrics/modularity/panic_density.go:43`: filter on `FileClass` (skip `Test` AND `Generated`) instead of only `syntax.IsTestFile`; tally excluded panics
+- [x] surface the excluded count in the metric evidence string ("N panics in test/generated excluded") so nothing is hidden
+- [x] write test: a fixture with `mock_*.go` panic sites → production `panic_density` excludes them, excluded count reported (reproduces pumba 208→~0 production)
+- [x] write test: a real production panic is still counted
+- [x] run `go test ./internal/metrics/...` — must pass before Task 7
 
 ### Task 7: `functional_candidates` / jscpd — drop test/generated clone pairs
 
-- [ ] post-filter `clone.ModulePairs` (`internal/model/clone/clone.go:24`) / `functional_candidates.go:38` to drop pairs where either file's `FileClass` is `Test`/`Generated` (source of truth)
-- [ ] also pass coarse `--ignore` globs (`*_test.*`, `mock_*`, `*.pb.go`, generated dirs) to the jscpd invocation (`internal/extract/clones/clones.go:107-109`) for scan-time speed
-- [ ] write test: clone pairs among `_test.go`/`mock_*.go` are excluded; a genuine production cross-module clone is retained (reproduces pumba 13→1)
-- [ ] write test: `cohesion_modularity` no longer drops from test/mock clone noise
-- [ ] run `go test ./internal/...` — must pass before Task 8
+- [x] post-filter `clone.ModulePairs` (`internal/model/clone/clone.go:24`) / `functional_candidates.go:38` to drop pairs where either file's `FileClass` is `Test`/`Generated` (source of truth)
+- [x] also pass coarse `--ignore` globs (`*_test.*`, `mock_*`, `*.pb.go`, generated dirs) to the jscpd invocation (`internal/extract/clones/clones.go:107-109`) for scan-time speed
+- [x] write test: clone pairs among `_test.go`/`mock_*.go` are excluded; a genuine production cross-module clone is retained (reproduces pumba 13→1)
+- [x] write test: `cohesion_modularity` no longer drops from test/mock clone noise — cohesion score reads from `functional_candidates` value which is now filtered; no independent re-derivation
+- [x] run `go test ./internal/...` — must pass before Task 8
 
 ### Task 8: `structural_weight` & `complexity` — exclude Generated consistently
 

@@ -33,6 +33,22 @@ import (
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
+// cloneTestGenGlobs are coarse jscpd --ignore patterns that skip test and
+// generated files at scan time. These are additive speed hints; the post-filter
+// in functional_candidates.go is the authoritative correctness gate.
+var cloneTestGenGlobs = []string{
+	"**/*_test.go",
+	"**/*_test.ts",
+	"**/*_test.py",
+	"**/mock_*.go",
+	"**/*_mock.go",
+	"**/*_moq.go",
+	"**/*.pb.go",
+	"**/*_gen.go",
+	"**/mocks/**",
+	"**/__mocks__/**",
+}
+
 // gitResolver adapts internal/history/git to scope.Resolver. The concrete
 // git dependency lives here in the composition root — scope itself stays
 // free of process and tool dependencies.
@@ -154,7 +170,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// ExtraCoverage order: loc, complexity, clones.
 	var locCov diagnostic.Coverage
 	var toolErr error
-	change.Size.FileLOC, locCov, toolErr = loc.Run(s.Root)
+	change.Size.FileLOC, change.Size.FileClassIndex, locCov, toolErr = loc.Run(s.Root)
 	noteToolErr("loc", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, locCov)
 
@@ -221,8 +237,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 
 	// Clone detection — opt-in (tools.clones.enabled: on). Run returns empty+absent
 	// when disabled or the tool is missing; the metric reports n/a in that case.
+	// Append coarse test/generated globs to the exclusions so jscpd skips those
+	// files at scan time (speed). The post-filter in functional_candidates.go is
+	// the source-of-truth for correctness; these globs are additive.
+	clonesExcl := make([]string, len(cfg.Exclusions), len(cfg.Exclusions)+len(cloneTestGenGlobs))
+	copy(clonesExcl, cfg.Exclusions)
+	clonesExcl = append(clonesExcl, cloneTestGenGlobs...)
 	var clonesCov diagnostic.Coverage
-	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled(), cfg.ToolTimeout(config.ToolClones), cfg.Exclusions)
+	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled(), cfg.ToolTimeout(config.ToolClones), clonesExcl)
 	noteToolErr("jscpd", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, clonesCov)
 

@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
+	"github.com/alexei-led/archfit/internal/syntax"
 )
 
 // writeFile creates a file with the given content under dir.
@@ -30,7 +32,7 @@ func TestRun_CountsSourceFiles(t *testing.T) {
 	writeFile(t, root, "frontend/app.ts", "export const x = 1\n")            // 1 line
 	writeFile(t, root, "frontend/comp.tsx", "export default () => null\n\n") // 2 lines
 
-	out, cov, err := Run(root)
+	out, _, cov, err := Run(root)
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -78,7 +80,7 @@ func TestRun_ExcludesTestFiles(t *testing.T) {
 	// This should be counted.
 	writeFile(t, root, "pkg/a/a.go", "package a\n\nfunc A() {}\n")
 
-	out, cov, err := Run(root)
+	out, _, cov, err := Run(root)
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -125,7 +127,7 @@ func TestRun_SkipsSkipDirsAndDotDirs(t *testing.T) {
 	// One real source file.
 	writeFile(t, root, "src/main.go", "package main\n")
 
-	out, _, err := Run(root)
+	out, _, _, err := Run(root)
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -146,7 +148,7 @@ func TestRun_CoverageFieldsMatchMapLen(t *testing.T) {
 	writeFile(t, root, "a/a.go", "package a\n")
 	writeFile(t, root, "b/b.go", "package b\n")
 
-	out, cov, err := Run(root)
+	out, _, cov, err := Run(root)
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -163,7 +165,7 @@ func TestRun_CoverageFieldsMatchMapLen(t *testing.T) {
 
 func TestRun_EmptyRoot(t *testing.T) {
 	root := t.TempDir()
-	out, cov, err := Run(root)
+	out, _, cov, err := Run(root)
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -188,7 +190,7 @@ func TestRun_SkipsGoModuleCache(t *testing.T) {
 	writeFile(t, root, "pkg/api/api.go", "package api\n\nfunc A() {}\n")
 	writeFile(t, root, "pkg/models/user.go", "package models\n\ntype User struct{}\n")
 
-	out, _, err := Run(root)
+	out, _, _, err := Run(root)
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -202,5 +204,80 @@ func TestRun_SkipsGoModuleCache(t *testing.T) {
 	}
 	if _, ok := out["pkg/models/user.go"]; !ok {
 		t.Error("pkg/models/user.go must not be over-excluded by the pkg/mod skip")
+	}
+}
+
+// TestRun_FileClassIndex verifies the FileClassIndex parallel map:
+// - production files appear as Production
+// - test/generated files appear in the index with the right class
+// - LOC map only contains production files
+func TestRun_FileClassIndex(t *testing.T) {
+	root := t.TempDir()
+
+	writeFile(t, root, "pkg/core/core.go", "package core\n\nfunc F() {}\n")
+	writeFile(t, root, "pkg/core/core_test.go", "package core_test\n")
+	writeFile(t, root, "pkg/api/api.pb.go", "package api\n")   // generated filename
+	writeFile(t, root, "pkg/gen/wire_gen.go", "package gen\n") // _gen suffix
+
+	locMap, classes, _, err := Run(root)
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+
+	// LOC map must contain only the production file.
+	if _, ok := locMap["pkg/core/core.go"]; !ok {
+		t.Error("production file must be in LOC map")
+	}
+	if _, ok := locMap["pkg/core/core_test.go"]; ok {
+		t.Error("test file must NOT be in LOC map")
+	}
+	if _, ok := locMap["pkg/api/api.pb.go"]; ok {
+		t.Error("generated file must NOT be in LOC map")
+	}
+
+	// FileClassIndex must classify all visited files.
+	if got := classes["pkg/core/core.go"]; got != fileclass.Production {
+		t.Errorf("core.go class = %q, want production", got)
+	}
+	if got := classes["pkg/core/core_test.go"]; got != fileclass.Test {
+		t.Errorf("core_test.go class = %q, want test", got)
+	}
+	if got := classes["pkg/api/api.pb.go"]; got != fileclass.Generated {
+		t.Errorf("api.pb.go class = %q, want generated", got)
+	}
+	if got := classes["pkg/gen/wire_gen.go"]; got != fileclass.Generated {
+		t.Errorf("wire_gen.go class = %q, want generated", got)
+	}
+}
+
+// TestRunWithConfig_CustomMockPattern verifies that a config-supplied mock
+// pattern reclassifies matching files as Generated, reproducing the pumba
+// fixture where mocks/ files inflate panic_density.
+func TestRunWithConfig_CustomMockPattern(t *testing.T) {
+	root := t.TempDir()
+
+	writeFile(t, root, "pkg/core/core.go", "package core\n\nfunc F() {}\n")
+	// fake_ prefix not in built-in patterns; config must extend detection.
+	writeFile(t, root, "pkg/fakes/fake_client.go", "package fakes\n")
+
+	cfg := syntax.FileClassConfig{
+		MockFrameworks: []string{"fake_"},
+	}
+	locMap, classes, _, err := RunWithConfig(root, cfg)
+	if err != nil {
+		t.Fatalf("RunWithConfig error: %v", err)
+	}
+
+	// Custom mock must be Generated, not Production.
+	if got := classes["pkg/fakes/fake_client.go"]; got != fileclass.Generated {
+		t.Errorf("fake_client.go class = %q, want generated", got)
+	}
+	// Must NOT appear in LOC map.
+	if _, ok := locMap["pkg/fakes/fake_client.go"]; ok {
+		t.Error("custom mock file must not be in LOC map")
+	}
+	// Production file unaffected.
+	if got := classes["pkg/core/core.go"]; got != fileclass.Production {
+		t.Errorf("core.go class = %q, want production", got)
 	}
 }

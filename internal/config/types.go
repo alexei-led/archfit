@@ -141,6 +141,26 @@ type PatternDef struct {
 // PatternConfig is the list of pattern definitions passed to a PatternProvider.
 type PatternConfig []PatternDef
 
+// FileClassDef holds optional user-supplied patterns for source-file
+// classification. Auto-detection (generated-header sniff, naming conventions,
+// language test patterns) runs first; these fields extend or fine-tune it for
+// custom mock frameworks and project-specific conventions.
+type FileClassDef struct {
+	// GeneratedGlobs are glob patterns (matched against the repo-relative
+	// slash path) that classify a file as Generated. Supports filepath.Match
+	// single-star semantics and trailing "/" for directory-segment matching.
+	// Example: ["**/generated/**", "*.pb.go"]
+	GeneratedGlobs []string `yaml:"generated_globs,omitempty"`
+	// TestGlobs are glob patterns that classify a file as Test.
+	// Example: ["*_helpers_test.go", "testutil/**"]
+	TestGlobs []string `yaml:"test_globs,omitempty"`
+	// MockFrameworks contains filename prefix/suffix patterns (matched against
+	// the base filename only) that identify mock files as Generated. Used for
+	// custom mock code-generators not covered by built-in naming conventions.
+	// Example: ["fake_", "_double"]
+	MockFrameworks []string `yaml:"mock_frameworks,omitempty"`
+}
+
 // StalenessConfig is the view passed to the staleness check stage.
 type StalenessConfig struct {
 	Enabled   bool
