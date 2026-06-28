@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
 func gitInitFixtureRepo(t *testing.T, dir string) {
@@ -627,6 +629,49 @@ func TestRun_Check_AgentTasksPopulated(t *testing.T) {
 	}
 	if len(task.Validation) != 1 || !strings.Contains(task.Validation[0], "archfit check -c "+cfgPath) {
 		t.Errorf("validation = %v, want exact re-check command", task.Validation)
+	}
+}
+
+// TestRun_Check_MissingBaselineWarning verifies P9: when --base is given but
+// no baseline file exists, check prints a warning to stderr naming the ref and
+// the finding count, and still exits on the real verdict (not a hard error).
+func TestRun_Check_MissingBaselineWarning(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeViolatingRepo(t)
+
+	var stdout, stderr bytes.Buffer
+	cmd := CheckCmd{
+		Config: cfgPath,
+		Base:   "origin/main",
+		Full:   true,
+		Format: []string{"json"},
+	}
+	deps := &appDeps{Runner: toolrun.New(), Stdout: &stdout, Stderr: &stderr}
+	err := cmd.Run(deps)
+
+	// Exit code must be the real verdict (1 = gate violation), not 3.
+	exitCode := 0
+	var ee *exitError
+	if errors.As(err, &ee) {
+		exitCode = ee.code
+	}
+	if exitCode != 1 {
+		t.Fatalf("exit = %d, want 1 (gate violation drives verdict, not missing baseline)\nstdout:\n%s\nstderr:\n%s",
+			exitCode, stdout.String(), stderr.String())
+	}
+
+	// Stderr must contain the warning.
+	warn := stderr.String()
+	if !strings.Contains(warn, "no baseline found at origin/main") {
+		t.Errorf("stderr missing 'no baseline found at origin/main'\nstderr: %q", warn)
+	}
+	if !strings.Contains(warn, "archfit baseline") {
+		t.Errorf("stderr missing 'archfit baseline' hint\nstderr: %q", warn)
+	}
+
+	// The count N in the warning must be a positive integer (we know there's ≥1 finding).
+	if !strings.Contains(warn, "all ") || strings.Contains(warn, "all 0 findings") {
+		t.Errorf("warning should report a non-zero finding count\nstderr: %q", warn)
 	}
 }
 

@@ -207,9 +207,9 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 16: P9 — delta "no baseline found" warning
 
-- [ ] `cmd/archfit/check.go` after `baseline.Load` (`check.go:70`): when `--base` is given and the baseline file is absent/empty (`baseline/baseline.go:70-78`), print to stderr "no baseline found at <ref> — all N findings are untracked; run `archfit baseline` to enable drift detection"
-- [ ] write test: missing-baseline delta run emits the warning and still exits on real verdict only
-- [ ] run `go test ./cmd/...` — must pass before Task 17
+- [x] `cmd/archfit/check.go` after `baseline.Load` (`check.go:70`): when `--base` is given and the baseline file is absent/empty (`baseline/baseline.go:70-78`), print to stderr "no baseline found at <ref> — all N findings are untracked; run `archfit baseline` to enable drift detection"
+- [x] write test: missing-baseline delta run emits the warning and still exits on real verdict only
+- [x] run `go test ./cmd/...` — must pass before Task 17
 
 ### Task 17: P11 — observed-layer vs role divergence finding (new rule)
 

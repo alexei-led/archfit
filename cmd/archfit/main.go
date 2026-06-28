@@ -137,6 +137,15 @@ func (v versionFlag) BeforeReset(ctx *kong.Context) error {
 type appDeps struct {
 	Runner toolrun.Runner
 	Stdout io.Writer
+	Stderr io.Writer // nil → os.Stderr
+}
+
+// stderr returns the configured stderr writer, falling back to os.Stderr.
+func (d *appDeps) stderr() io.Writer {
+	if d.Stderr != nil {
+		return d.Stderr
+	}
+	return os.Stderr
 }
 
 // exitError carries an exit code through the Run return path.

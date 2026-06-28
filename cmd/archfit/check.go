@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"slices"
 
@@ -64,7 +63,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	}
 	// Config-quality lint → stderr (advisory; never gates, never pollutes the
 	// stdout JSON/markdown contract that the determinism double-run diffs).
-	printConfigLint(os.Stderr, cfg.Lint())
+	printConfigLint(deps.stderr(), cfg.Lint())
 
 	configDir := filepath.Dir(c.Config)
 	base, err := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
@@ -92,6 +91,14 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, c.NoConfig, mode, base)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+	}
+
+	// Warn when --base was given but no baseline file exists: every finding
+	// appears "new" without this notice, silently misleading the reader.
+	if c.Base != "" && base.SchemaVersion == "" {
+		_, _ = fmt.Fprintf(deps.stderr(),
+			"no baseline found at %s — all %d findings are untracked; run `archfit baseline` to enable drift detection\n",
+			c.Base, len(diag.Findings))
 	}
 
 	// Resolve the opt-in hard gate before rendering so the output shows the
