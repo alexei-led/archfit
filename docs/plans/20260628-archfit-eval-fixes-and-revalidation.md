@@ -91,12 +91,12 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 2: P2 — canonicalize scan-root & git-root (macOS path-case)
 
-- [ ] add `canonicalPath(p string) string` helper in `internal/scope` using `filepath.EvalSymlinks` with graceful fallback to `filepath.Abs` on error (handles non-existent/edge paths)
-- [ ] apply it to `scanRoot` in `resolveScanRoot` (`internal/scope/scope.go:204-213`) and to `gitRoot` before `subtreePrefix` (`scope.go:217-222`) so both sides are canonical before `filepath.Rel`
-- [ ] defensively `EvalSymlinks` `rootAbs` in `crateRoots()` (`internal/extract/rust/rust.go:345`) so it matches `cargo metadata` canonical `ManifestPath` casing; confirm `s.Root` flowing to SCIP `WorkDir`/`--cwd` (`scip_strength.go:198,366`) is the canonical form
-- [ ] write test: `canonicalPath` resolves a symlinked temp dir to its real path (Linux-testable; documents the macOS case behavior)
-- [ ] write test: `subtreePrefix` returns the correct subtree (not `""`) when given a case/symlink-variant scanRoot under gitRoot
-- [ ] run `go test ./internal/scope/... ./internal/extract/rust/...` — must pass before Task 3
+- [x] add `canonicalPath(p string) string` helper in `internal/scope` using `filepath.EvalSymlinks` with graceful fallback to `filepath.Abs` on error (handles non-existent/edge paths)
+- [x] apply it to `scanRoot` in `resolveScanRoot` (`internal/scope/scope.go:204-213`) and to `gitRoot` before `subtreePrefix` (`scope.go:217-222`) so both sides are canonical before `filepath.Rel`
+- [x] defensively `EvalSymlinks` `rootAbs` in `crateRoots()` (`internal/extract/rust/rust.go:345`) so it matches `cargo metadata` canonical `ManifestPath` casing; confirm `s.Root` flowing to SCIP `WorkDir`/`--cwd` (`scip_strength.go:198,366`) is the canonical form
+- [x] write test: `canonicalPath` resolves a symlinked temp dir to its real path (Linux-testable; documents the macOS case behavior)
+- [x] write test: `subtreePrefix` returns the correct subtree (not `""`) when given a case/symlink-variant scanRoot under gitRoot
+- [x] run `go test ./internal/scope/... ./internal/extract/rust/...` — must pass before Task 3
 
 ### Task 3: P1 — flat single-segment distance → `CrossModuleSameOwner`
 

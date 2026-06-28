@@ -12,6 +12,24 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 )
 
+// canonicalPath returns a case- and symlink-resolved form of p.
+// It calls filepath.EvalSymlinks first (real paths only), then falls back to
+// filepath.Abs on error (handles fake/non-existent paths used in tests), and
+// returns p unchanged if both fail. An empty p is returned as-is so that the
+// GitRoot=="" invariant in non-git full mode is preserved.
+func canonicalPath(p string) string {
+	if p == "" {
+		return ""
+	}
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	if a, err := filepath.Abs(p); err == nil {
+		return a
+	}
+	return p
+}
+
 // DefaultExclusions are tool-artifact, cache, and dependency directories archfit
 // never analyses: measuring them yields non-deterministic or irrelevant facts —
 // a vendored tree's complexity, a generated index, or a report written back into
@@ -140,6 +158,7 @@ func Resolve(ctx context.Context, cfg config.ScopeConfig, r Resolver) (Scope, er
 		if rootErr != nil {
 			gitRoot = ""
 		}
+		gitRoot = canonicalPath(gitRoot)
 		scanRoot := resolveScanRoot(cfg, gitRoot)
 		return Scope{
 			Root:          scanRoot,
@@ -154,6 +173,7 @@ func Resolve(ctx context.Context, cfg config.ScopeConfig, r Resolver) (Scope, er
 		return Scope{}, fmt.Errorf("scope: resolve repo root: %w", rootErr)
 	}
 
+	gitRoot = canonicalPath(gitRoot)
 	head, err := r.HeadRef(ctx)
 	if err != nil {
 		return Scope{}, fmt.Errorf("scope: resolve HEAD: %w", err)
@@ -199,16 +219,18 @@ func rebaseChangedFiles(prefix string, files []string) []string {
 
 // resolveScanRoot determines the analysis boundary from the config and resolved
 // git root. Priority: explicit cfg.Root → gitRoot → cfg.WorkDir.
+// cfg.Root and cfg.WorkDir are canonicalized via EvalSymlinks so their case and
+// symlink form matches the gitRoot (already canonical) before subtreePrefix computes.
 // When cfg.Root is empty and gitRoot is non-empty the result equals gitRoot,
 // so --root-absent runs are byte-identical to before this change.
 func resolveScanRoot(cfg config.ScopeConfig, gitRoot string) string {
 	if cfg.Root != "" {
-		return cfg.Root
+		return canonicalPath(cfg.Root)
 	}
 	if gitRoot != "" {
 		return gitRoot
 	}
-	return cfg.WorkDir
+	return canonicalPath(cfg.WorkDir)
 }
 
 // subtreePrefix returns the gitRoot-relative path from gitRoot to scanRoot.
