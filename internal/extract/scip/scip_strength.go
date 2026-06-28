@@ -81,6 +81,14 @@ func (a *Adapter) Strengths(ctx context.Context, s scope.Scope) (map[string]stri
 	if perr != nil {
 		return nil, partial, nil
 	}
+	if len(m) == 0 {
+		return m, diagnostic.Coverage{
+			Tool:    toolName,
+			Version: ro.indexer,
+			Status:  diagnostic.StatusPartial,
+			Reason:  "empty index (0 occurrences) — check path case / indexer version",
+		}, nil
+	}
 	return m, diagnostic.Coverage{
 		Tool:            toolName,
 		Version:         ro.indexer,

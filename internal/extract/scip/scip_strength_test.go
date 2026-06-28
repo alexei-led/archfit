@@ -500,6 +500,69 @@ func TestStrengths_PythonAbsent(t *testing.T) {
 	}
 }
 
+// TestStrengths_EmptyIndex verifies that when the SCIP pipeline succeeds but the
+// reader emits zero edges, Strengths() returns StatusPartial (not StatusOK) with
+// an actionable reason. This prevents a silent ok when the index was built but
+// contained no cross-module occurrences (path-case mismatch, wrong indexer, etc.).
+func TestStrengths_EmptyIndex(t *testing.T) {
+	dir := t.TempDir()
+	// Minimal Python project so detectIndexer picks scip-python.
+	if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\nname = \"myapp\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pkgDir := filepath.Join(dir, "myapp")
+	if err := os.MkdirAll(pkgDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, pyInitFile), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reader returns an empty edges array — simulates a built but vacuous index.
+	const emptyJSON = `{"edges":[],"symbols":[],"symbol_refs":[],"intra_refs":[]}`
+
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == indexerPython || tool == "uv" {
+				return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/" + tool}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			switch cmd.Name {
+			case indexerPython:
+				// Create the index file so os.Stat succeeds.
+				for i, arg := range cmd.Args {
+					if arg == flagOutput && i+1 < len(cmd.Args) {
+						if err := os.WriteFile(cmd.Args[i+1], []byte("scip-fake"), 0o600); err != nil {
+							return toolrun.Output{}, err
+						}
+					}
+				}
+				return toolrun.Output{ExitCode: 0}, nil
+			case "uv":
+				return toolrun.Output{Stdout: []byte(emptyJSON), ExitCode: 0}, nil
+			}
+			return toolrun.Output{}, nil
+		},
+	}
+
+	a := New(runner, 0)
+	m, cov, err := a.Strengths(context.Background(), scope.Scope{Root: dir})
+	if err != nil {
+		t.Fatalf("Strengths: unexpected error: %v", err)
+	}
+	if cov.Status != diagnostic.StatusPartial {
+		t.Errorf("cov.Status = %q, want %q (empty index must be partial, not ok)", cov.Status, diagnostic.StatusPartial)
+	}
+	if !strings.Contains(cov.Reason, "empty index") {
+		t.Errorf("cov.Reason = %q, want it to mention \"empty index\"", cov.Reason)
+	}
+	if len(m) != 0 {
+		t.Errorf("strength map non-empty for empty index: %v", m)
+	}
+}
+
 // TestCargoWorkspaceMembers_TimeoutMapsToStatusTimedOut verifies that when cargo
 // metadata returns context.DeadlineExceeded (inner cap fired before outer watchdog),
 // Strengths returns StatusTimedOut — not StatusAbsent — so operators know to raise

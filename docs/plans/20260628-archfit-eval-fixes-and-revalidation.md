@@ -159,9 +159,9 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 10: P6 — SCIP empty index → warn, not `ok`
 
-- [ ] `internal/extract/scip/scip_strength.go:84-89`: when resolved edges `len(m)==0` (or index file size < ~1KB), set `Coverage.Status = StatusPartial` with reason "empty index (0 occurrences) — check path case / indexer version"
-- [ ] write test: an empty-index run yields `scip: warn` coverage (not `ok`) and lowers confidence visibly
-- [ ] run `go test ./internal/extract/scip/...` — must pass before Task 11
+- [x] `internal/extract/scip/scip_strength.go:84-89`: when resolved edges `len(m)==0` (or index file size < ~1KB), set `Coverage.Status = StatusPartial` with reason "empty index (0 occurrences) — check path case / indexer version"
+- [x] write test: an empty-index run yields `scip: warn` coverage (not `ok`) and lowers confidence visibly
+- [x] run `go test ./internal/extract/scip/...` — must pass before Task 11
 
 ### Task 11: P7 — jscpd clusters empty for Rust
 
