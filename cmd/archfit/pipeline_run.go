@@ -230,8 +230,11 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// Cyclomatic complexity — opt-in (tools.complexity.enabled: on).
 	// Backend: auto (default) = gocyclo(Go) + ast-grep proxy(TS/Py/Rust); lizard =
 	// exact multi-language CCN (re-pins Python). Coverage carries zero file counts.
+	// Config excludes + scope defaults are forwarded to lizard's -x flags so it
+	// skips the same paths that all other extractors skip.
+	complexityExcl := scope.MergeExclusions(cfg.Exclusions)
 	var complexityCov diagnostic.Coverage
-	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled(), cfg.ComplexityBackend(), cfg.ToolTimeout(config.ToolComplexity))
+	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled(), cfg.ComplexityBackend(), cfg.ToolTimeout(config.ToolComplexity), complexityExcl)
 	noteToolErr("complexity", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, complexityCov)
 
@@ -259,17 +262,32 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// SCIP symbol-level strength is opt-in (tools.scip.enabled: on): the indexer is
 	// whole-repo and slow, so it must not run on the default check path, and the
 	// decision must live in config (not PATH presence) to keep metrics deterministic.
+	// When skipped, append an explicit disabled coverage row so tool_coverage reads
+	// "disabled" (not absent/missing) and no spurious install-gap is raised.
 	var resolver ports.SymbolResolver = ports.NopSymbolResolver{}
 	if cfg.ScipEnabled() {
 		resolver = scip.New(deps.Runner, cfg.ToolTimeout(config.ToolScip))
+	} else {
+		change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
+			Tool:   toolScip,
+			Status: diagnostic.StatusDisabled,
+			Reason: reasonScipDisabled,
+		})
 	}
 
 	// Syntax facts (ast-grep syntax rules) are opt-in (tools.syntax.enabled: on):
 	// language-specific rules add overhead and the result is report-only.
+	// When skipped, append an explicit disabled coverage row for the same reason.
 	syntaxCfg := cfg.ForSyntax()
 	var syntaxProvider ports.SyntaxProvider = ports.NopSyntaxProvider{}
 	if syntaxCfg.Enabled {
 		syntaxProvider = astgrep.New(deps.Runner)
+	} else {
+		change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
+			Tool:   toolAstGrepSyntax,
+			Status: diagnostic.StatusDisabled,
+			Reason: reasonSyntaxDisabled,
+		})
 	}
 
 	// Config hash for reproducibility — empty when --no-config ignored the file.

@@ -45,8 +45,9 @@ const (
 
 	// Absent-coverage reasons: why complexity is n/a and the enable step.
 	reasonDisabled       = "complexity is opt-in — set `tools.complexity.enabled: true` in .archfit.yaml"
-	reasonNotInstalled   = "no complexity tool found — install gocyclo (`go install github.com/fzipp/gocyclo/cmd/gocyclo@latest`) or have `sg` (ast-grep) available for the proxy"
+	reasonNotInstalled   = "no complexity tool found — install `sg` (ast-grep) for the Go/TS/Py/Rust proxy (`cargo install ast-grep` / `brew install ast-grep`); optionally add `gocyclo` for exact Go CCN (`go install github.com/fzipp/gocyclo/cmd/gocyclo@latest`)"
 	reasonLizardMissing  = "lizard not found — install it (`pip install lizard`, or have `uvx` available) to enable complexity"
+	reasonLizardNotCfg   = "lizard backend not configured — set `tools.complexity.backend: lizard` to enable exact multi-language CCN (requires `pip install lizard` / `uvx`)"
 	reasonRunFailed      = "complexity tool run failed — check the install and rerun"
 	reasonSGNotInstalled = "sg (ast-grep) not found — install ast-grep to enable the complexity proxy for TS/Py/Rust"
 	reasonTimedOut       = "complexity analysis timed out — increase tools.complexity.timeout or reduce the scope"
@@ -71,11 +72,13 @@ var lizardLanguages = []string{langGo, langPython, "javascript", langTypeScript,
 // Run invokes the complexity backend and returns per-function CCN records.
 // timeout is the per-analyzer outer watchdog; 0 uses defaultTimeout. backend
 // selects the implementation: "" or "auto" → gocyclo+proxy; "lizard" → exact
-// lizard. When enabled is false an absent coverage record is returned. A nil
-// result on tool absence is always returned without error — callers treat
-// absent coverage as n/a. On watchdog timeout StatusTimedOut is returned with
-// nil error so the overall run continues.
-func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, backend string, timeout time.Duration) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+// lizard. excludes is an additive set of glob patterns forwarded to lizard's
+// -x flag (config exclusions + scope defaults); nil is safe. When enabled is
+// false an absent coverage record is returned. A nil result on tool absence is
+// always returned without error — callers treat absent coverage as n/a. On
+// watchdog timeout StatusTimedOut is returned with nil error so the overall
+// run continues.
+func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, backend string, timeout time.Duration, excludes []string) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
 	if !enabled {
 		return nil, absentCov(reasonDisabled), nil
 	}
@@ -88,7 +91,7 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 	var cov diagnostic.Coverage
 	var subErr error
 	if backend == BackendLizard {
-		funcs, cov, subErr = runLizard(ctx, runner, root, timeout)
+		funcs, cov, subErr = runLizard(ctx, runner, root, excludes, timeout)
 	} else {
 		funcs, cov, subErr = runAuto(ctx, runner, root, timeout)
 	}
@@ -140,18 +143,24 @@ func runAuto(ctx context.Context, runner toolrun.Runner, root string, timeout ti
 	case proxyCov.Status == statusOK:
 		return all, proxyCov, nil
 	default:
-		return nil, absentCov(reasonNotInstalled), nil
+		// Neither gocyclo nor the ast-grep proxy is available. Report the
+		// coverage under the ast-grep tool name (the primary install target
+		// for the auto backend) so the gap hint in pipeline_coverage.go
+		// directs the user to install sg rather than lizard.
+		return nil, diagnostic.Coverage{Tool: proxyTool, Status: statusAbsent, Reason: reasonNotInstalled}, nil
 	}
 }
 
 // runLizard invokes lizard (directly or via uvx) and returns per-function CCN.
-// Only called when backend=lizard. timeout governs the inner subprocess cap when
-// non-zero (so a configured tools.complexity.timeout can extend beyond the
-// built-in lizardTimeout); zero falls back to the lizardTimeout constant.
+// Only called when backend=lizard. extraExcludes are config- and scope-derived
+// glob patterns forwarded as additional -x flags (additive with lizardExcludes).
+// timeout governs the inner subprocess cap when non-zero (so a configured
+// tools.complexity.timeout can extend beyond the built-in lizardTimeout); zero
+// falls back to the lizardTimeout constant.
 // Returns a non-nil error only when the inner per-subprocess deadline fires
 // (context.DeadlineExceeded) so the caller can surface StatusTimedOut.
 // Other failures degrade to absent coverage.
-func runLizard(ctx context.Context, runner toolrun.Runner, root string, timeout time.Duration) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+func runLizard(ctx context.Context, runner toolrun.Runner, root string, extraExcludes []string, timeout time.Duration) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
 	name, pre := lizardCommand(ctx, runner)
 	if name == "" {
 		return nil, absentCov(reasonLizardMissing), nil
@@ -162,6 +171,9 @@ func runLizard(ctx context.Context, runner toolrun.Runner, root string, timeout 
 		args = append(args, "-l", l)
 	}
 	for _, x := range lizardExcludes {
+		args = append(args, "-x", x)
+	}
+	for _, x := range extraExcludes {
 		args = append(args, "-x", x)
 	}
 	innerTimeout := lizardTimeout

@@ -31,6 +31,10 @@ var rustCCNRules string
 
 const proxyTimeout = 2 * time.Minute
 
+// proxyTool is the coverage tool-name string for the ast-grep proxy backend.
+// Used here and in complexity.go for the absent-both-tools path.
+const proxyTool = "ast-grep"
+
 // Language identifier constants used as keys in proxyLangRules.
 const (
 	langGo         = "go"
@@ -106,7 +110,7 @@ func runProxy(ctx context.Context, runner toolrun.Runner, root string, langs []s
 	if anyMatch {
 		status = statusOK
 	}
-	cov := diagnostic.Coverage{Tool: "ast-grep", Status: status}
+	cov := diagnostic.Coverage{Tool: proxyTool, Status: status}
 	return all, cov, nil
 }
 

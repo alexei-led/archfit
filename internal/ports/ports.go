@@ -103,9 +103,11 @@ var _ SyntaxProvider = NopSyntaxProvider{}
 // Name returns "nop-syntax".
 func (NopSyntaxProvider) Name() string { return "nop-syntax" }
 
-// Syntax returns empty facts and an absent coverage record.
+// Syntax returns empty facts and a zero coverage record. The pipeline appends
+// an explicit StatusDisabled row when syntax is off (opt-in: tools.syntax.enabled),
+// so the Nop must not also emit an absent row — that would double-count.
 func (NopSyntaxProvider) Syntax(_ context.Context, _ scope.Scope, _ []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
-	return nil, diagnostic.Coverage{Tool: "ast-grep", Status: diagnostic.StatusAbsent}, nil
+	return nil, diagnostic.Coverage{}, nil
 }
 
 // NopPatternProvider is a no-op PatternProvider used when no Phase 3 tools are
@@ -136,14 +138,16 @@ func (NopSymbolResolver) Resolve(_ context.Context, _, toPath string) (string, s
 	return toPath, "high"
 }
 
-// Strengths returns an empty map and an absent coverage record.
+// Strengths returns an empty map and a zero coverage record. The pipeline
+// appends an explicit StatusDisabled row when SCIP is off (opt-in:
+// tools.scip.enabled), so the Nop must not also emit an absent row.
 func (NopSymbolResolver) Strengths(_ context.Context, _ scope.Scope) (map[string]string, diagnostic.Coverage, error) {
-	return nil, diagnostic.Coverage{Tool: "scip", Status: diagnostic.StatusAbsent}, nil
+	return nil, diagnostic.Coverage{}, nil
 }
 
-// Symbols returns an empty Graph and an absent coverage record.
+// Symbols returns an empty Graph and a zero coverage record (same reason as Strengths).
 func (NopSymbolResolver) Symbols(_ context.Context, _ scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
-	return symbol.Graph{}, diagnostic.Coverage{Tool: "scip-symbols", Status: diagnostic.StatusAbsent}, nil
+	return symbol.Graph{}, diagnostic.Coverage{}, nil
 }
 
 // Renderer is the port that output adapters satisfy.

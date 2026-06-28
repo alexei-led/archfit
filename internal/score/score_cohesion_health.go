@@ -264,7 +264,10 @@ func analysisConfidence(d diagnostic.Diagnostic, mi metricIndex, dims []Dimensio
 	absent := 0
 	for _, tool := range semanticTools {
 		st := statuses[tool]
-		if st != diagnostic.StatusOK {
+		// StatusDisabled means the tool is deliberately off (opt-in not set) — a
+		// conscious choice, not a coverage gap. Don't penalise analysis_confidence
+		// for it; treat it like a neutral/unknown status for confidence purposes.
+		if st != diagnostic.StatusOK && st != diagnostic.StatusDisabled {
 			absent++
 		}
 		dim.Evidence = append(dim.Evidence, fmt.Sprintf("%s: %s", tool, orAbsent(st)))

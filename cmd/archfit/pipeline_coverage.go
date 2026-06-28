@@ -29,6 +29,7 @@ var coverageToolConfigKey = buildCoverageToolConfigKey()
 func buildCoverageToolConfigKey() map[string]string {
 	m := map[string]string{
 		toolLizard:       config.ToolComplexity,
+		toolAstGrep:      config.ToolComplexity, // auto backend absent-both path
 		toolJscpd:        config.ToolClones,
 		toolCargoModules: config.ToolCargoModules,
 	}
@@ -60,6 +61,7 @@ var toolAffectedMetrics = buildToolAffectedMetrics()
 func buildToolAffectedMetrics() map[string]affectedMetrics {
 	m := map[string]affectedMetrics{
 		toolLizard:       {"uv tool install lizard / pip install lizard", []string{"complexity"}},
+		toolAstGrep:      {"cargo install ast-grep / brew install ast-grep (then optionally: go install github.com/fzipp/gocyclo/cmd/gocyclo@latest for exact Go CCN)", []string{"complexity"}},
 		toolJscpd:        {"npm install -g jscpd", []string{"functional_candidates"}},
 		toolCargoModules: {"cargo install cargo-modules (tools.cargo-modules.enabled: on)", []string{"cycle", "blast_radius", "cohesion", "encapsulation"}},
 	}

@@ -172,12 +172,12 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 12: Tool-coverage honesty (P12, #17, #18, #23)
 
-- [ ] add explicit `Coverage{Status: StatusDisabled, Reason:"opt-in: tools.syntax.enabled"}` rows when syntax/scip passes are skipped (`cmd/archfit/pipeline_run.go:241-250`) so they read "skipped", not absent/missing
-- [ ] #18: feed config `exclude:` globs + `scope.DefaultExclusions` into `lizardExcludes` (`complexity.go:57-60`) instead of the hardcoded-only slice
-- [ ] #17: rewrite the "install gocyclo" message (`complexity.go:48`) to state the ast-grep proxy already covers Go when gocyclo is absent
-- [ ] #23: surface `lizard: not configured` vs `lizard: absent` distinctly in tool_coverage / review `analysis_confidence` (`complexity.go:47-49`, `pipeline_coverage.go`)
-- [ ] write tests: skipped-pass coverage row present; config exclusions reach lizard; messages updated
-- [ ] run `go test ./internal/... ./cmd/...` — must pass before Task 13
+- [x] add explicit `Coverage{Status: StatusDisabled, Reason:"opt-in: tools.syntax.enabled"}` rows when syntax/scip passes are skipped (`cmd/archfit/pipeline_run.go:241-250`) so they read "skipped", not absent/missing
+- [x] #18: feed config `exclude:` globs + `scope.DefaultExclusions` into `lizardExcludes` (`complexity.go:57-60`) instead of the hardcoded-only slice
+- [x] #17: rewrite the "install gocyclo" message (`complexity.go:48`) to state the ast-grep proxy already covers Go when gocyclo is absent
+- [x] #23: surface `lizard: not configured` vs `lizard: absent` distinctly in tool_coverage / review `analysis_confidence` (`complexity.go:47-49`, `pipeline_coverage.go`)
+- [x] write tests: skipped-pass coverage row present; config exclusions reach lizard; messages updated
+- [x] run `go test ./internal/... ./cmd/...` — must pass before Task 13
 
 ### Task 13: `file_extraction_coverage`>1.0, `cohesion_lcom` TS wiring, `change_locality` n/a
 

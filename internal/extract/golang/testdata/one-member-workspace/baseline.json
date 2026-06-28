@@ -369,22 +369,6 @@
   },
   "tool_coverage": [
     {
-      "files_applicable": 0,
-      "files_seen": 0,
-      "status": "absent",
-      "tool": "scip",
-      "unresolved": 0,
-      "version": ""
-    },
-    {
-      "files_applicable": 0,
-      "files_seen": 0,
-      "status": "absent",
-      "tool": "scip-symbols",
-      "unresolved": 0,
-      "version": ""
-    },
-    {
       "files_applicable": 2,
       "files_seen": 2,
       "status": "ok",
@@ -439,6 +423,24 @@
       "reason": "clone detection disabled by config — set `tools.clones.enabled: on` in .archfit.yaml to enable",
       "status": "disabled",
       "tool": "jscpd",
+      "unresolved": 0,
+      "version": ""
+    },
+    {
+      "files_applicable": 0,
+      "files_seen": 0,
+      "reason": "opt-in: tools.scip.enabled",
+      "status": "disabled",
+      "tool": "scip",
+      "unresolved": 0,
+      "version": ""
+    },
+    {
+      "files_applicable": 0,
+      "files_seen": 0,
+      "reason": "opt-in: tools.syntax.enabled",
+      "status": "disabled",
+      "tool": "ast-grep/syntax",
       "unresolved": 0,
       "version": ""
     },
