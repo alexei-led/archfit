@@ -1,7 +1,7 @@
 // Package rules defines the Rule interface and the built-in rule
 // implementations: ForbiddenDependency, PublicAPIOnly, ForbiddenLayerDirection,
 // InternalAPIAccess, NewCrossModuleDependency, CycleRule, ForbiddenRoleDependency,
-// PublicAPIMax, PublicAPIChange.
+// PublicAPIMax, PublicAPIChange, LayerRoleDivergence.
 package rules
 
 import (
@@ -47,6 +47,11 @@ type Rule interface {
 	Check(g *graph.Graph, ev Evidence) []finding.Finding
 }
 
+// defaultLayerRoleDivergenceThreshold is the default rank-delta threshold for
+// the layer_role_divergence rule. Modules whose scaled observed topological rank
+// differs from their declared layer rank by more than this value emit a finding.
+const defaultLayerRoleDivergenceThreshold = 3
+
 // New constructs the slice of Rule values declared in cfg.
 // Config type strings (snake_case per spec §9):
 //
@@ -59,6 +64,7 @@ type Rule interface {
 //	"forbidden_role_dependency"   → forbiddenRoleDependency
 //	"public_api_max"              → publicAPIMax
 //	"public_api_change"           → publicAPIChange
+//	"layer_role_divergence"       → layerRoleDivergence
 //
 // Unknown type strings are a config error.
 func New(cfg config.RuleConfig) ([]Rule, error) {
@@ -103,6 +109,17 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 				return nil, err
 			}
 			inner = &structFieldMax{def: def, mm: cfg.ModuleMap, max: *def.Max}
+		case "layer_role_divergence":
+			threshold := defaultLayerRoleDivergenceThreshold
+			if def.Threshold != nil {
+				threshold = *def.Threshold
+			}
+			inner = &layerRoleDivergence{
+				def:       def,
+				layers:    cfg.Layers,
+				mm:        cfg.ModuleMap,
+				threshold: threshold,
+			}
 		default:
 			return nil, fmt.Errorf("rules: unknown rule type %q (id=%q)", def.Type, def.ID)
 		}
@@ -122,7 +139,8 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 // test_in_production default to "warn" (advisory drift signal).
 func defaultGateForType(ruleType string) string {
 	switch ruleType {
-	case "public_api_change", "test_in_production", "struct_field_max", "public_api_type_leak":
+	case "public_api_change", "test_in_production", "struct_field_max", "public_api_type_leak",
+		"layer_role_divergence":
 		return "warn"
 	}
 	return ""

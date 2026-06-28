@@ -213,11 +213,11 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 ### Task 17: P11 — observed-layer vs role divergence finding (new rule)
 
-- [ ] add rule type `layer_role_divergence` (`internal/rules/rules.go:73`): compute each module's observed topological rank from the import DAG, compare to the rank implied by its declared `role`/`layer`, emit a `warn` finding when the delta exceeds a threshold (default 3)
-- [ ] reuse `layerRank` (`rules.go:179-186`) / `ModuleMap.LayerFor` (`config/modules.go:154-163`); add config knobs (enabled, threshold) parsed into the rule view
-- [ ] write test: a config module placed at a high observed layer (yazi `yazi-config` at rank 11) emits the finding; an aligned module does not
-- [ ] `make build && make archfit`; restamp baseline if self-config triggers it
-- [ ] run `go test ./internal/rules/...` + `make archfit` — must pass before Task 18
+- [x] add rule type `layer_role_divergence` (`internal/rules/rules.go:73`): compute each module's observed topological rank from the import DAG, compare to the rank implied by its declared `role`/`layer`, emit a `warn` finding when the delta exceeds a threshold (default 3)
+- [x] reuse `layerRank` (`rules.go:179-186`) / `ModuleMap.LayerFor` (`config/modules.go:154-163`); add config knobs (enabled, threshold) parsed into the rule view
+- [x] write test: a config module placed at a high observed layer (yazi `yazi-config` at rank 11) emits the finding; an aligned module does not
+- [x] `make build && make archfit`; restamp baseline if self-config triggers it
+- [x] run `go test ./internal/rules/...` + `make archfit` — must pass before Task 18
 
 ### Task 18: P8 — native `archfit diff <ref>` scorecard comparison
 

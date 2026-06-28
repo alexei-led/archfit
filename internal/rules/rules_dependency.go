@@ -301,3 +301,189 @@ func cycleFingerprintID(ruleID string, scc []string) string {
 	h := sha256.Sum256([]byte(ruleID + "\x00" + strings.Join(scc, "\x00")))
 	return hex.EncodeToString(h[:16])
 }
+
+// ---------------------------------------------------------------------------
+// LayerRoleDivergence
+// ---------------------------------------------------------------------------
+
+// layerRoleDivergence detects modules whose observed topological rank in the
+// import DAG diverges from the rank implied by their declared layer in config.
+//
+// Rank convention (matches forbidden_layer_direction):
+//
+//	layers: [domain, application, infrastructure]
+//	         rank 0  rank 1        rank 2
+//
+// domain (rank 0) is imported-by-many; infrastructure (rank 2) imports many.
+// Observed topological rank (longest-path depth from sources): a module that
+// imports many others has a higher observed rank. A module imported by many
+// others (inner, domain-like) has a low observed rank.
+//
+// Divergence = |observedRank - declaredRank|. Fires when > threshold (default 3).
+// Cyclic nodes are skipped (abstain-not-fake, matches cycle rule convention).
+type layerRoleDivergence struct {
+	def       config.RuleDef
+	layers    []string
+	mm        config.ModuleMap
+	threshold int
+}
+
+func (r *layerRoleDivergence) ID() string { return r.def.ID }
+
+func (r *layerRoleDivergence) Check(g *graph.Graph, _ Evidence) []finding.Finding {
+	nodes := g.Nodes()
+	if len(nodes) == 0 {
+		return nil
+	}
+
+	// Build module-level DAG: collapse file nodes to modules, drop self/external.
+	// inDegree tracks how many other modules import each module.
+	// successors[m] = set of modules that m imports.
+	inDegree := map[string]int{}
+	successors := map[string]map[string]struct{}{}
+	moduleSet := map[string]struct{}{}
+
+	for _, e := range g.Edges() {
+		fromPath := graph.NodePath(e.From)
+		toPath := graph.NodePath(e.To)
+		fromMod, fromOK := r.mm.ModuleFor(fromPath)
+		toMod, toOK := r.mm.ModuleFor(toPath)
+		if !fromOK || !toOK || fromMod == toMod {
+			continue
+		}
+		moduleSet[fromMod] = struct{}{}
+		moduleSet[toMod] = struct{}{}
+		if _, exists := successors[fromMod]; !exists {
+			successors[fromMod] = map[string]struct{}{}
+		}
+		if _, added := successors[fromMod][toMod]; !added {
+			successors[fromMod][toMod] = struct{}{}
+			inDegree[toMod]++
+		}
+	}
+	// Ensure every module node exists in inDegree even if never imported.
+	for m := range moduleSet {
+		if _, ok := inDegree[m]; !ok {
+			inDegree[m] = 0
+		}
+	}
+
+	// Kahn's BFS for longest-path depth (topological rank).
+	// Only ranks modules that are in a DAG; cyclic nodes are left unranked.
+	rank := map[string]int{}
+	queue := []string{}
+	remaining := map[string]int{}
+	for m, d := range inDegree {
+		remaining[m] = d
+		if d == 0 {
+			rank[m] = 0
+			queue = append(queue, m)
+		}
+	}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for succ := range successors[cur] {
+			if rank[cur]+1 > rank[succ] {
+				rank[succ] = rank[cur] + 1
+			}
+			remaining[succ]--
+			if remaining[succ] == 0 {
+				queue = append(queue, succ)
+			}
+		}
+	}
+
+	// Scale observed ranks and compare to declared layer ranks.
+	//
+	// Direction convention (matches forbidden_layer_direction):
+	//   layers: [domain(0), app(1), infra(2)]
+	//   domain = inner/sink  → imported by many, high observed DAG rank
+	//   infra  = outer/source → imports many, low observed DAG rank (near 0)
+	//
+	// So declared rank and observed rank are inversely related in a healthy arch.
+	// We compare scaledObs against (layerCount-1 - declaredRank) so that a
+	// well-layered module has delta ≈ 0. A module that behaves like an inner
+	// module but is declared outer (or vice-versa) has a large delta.
+	maxObserved := 0
+	for _, v := range rank {
+		if v > maxObserved {
+			maxObserved = v
+		}
+	}
+
+	var out []finding.Finding
+	layerCount := len(r.layers)
+
+	for mod := range moduleSet {
+		obsRank, ranked := rank[mod]
+		if !ranked {
+			// Cyclic node — abstain.
+			continue
+		}
+		layer, ok := r.mm.LayerForName(mod)
+		if !ok {
+			continue
+		}
+		declaredRank := layerRank(layer, r.layers)
+		if declaredRank < 0 {
+			// Layer not in config layers list.
+			continue
+		}
+
+		// Scale observed rank to [0, layerCount-1].
+		scaledObs := obsRank
+		if maxObserved > 0 && layerCount > 1 {
+			scaledObs = (obsRank * (layerCount - 1)) / maxObserved
+		}
+
+		// Expected: outer layers (high declaredRank) → low scaledObs (sources).
+		// Expected: inner layers (low declaredRank) → high scaledObs (sinks).
+		// So expected scaledObs = (layerCount - 1) - declaredRank.
+		expectedObs := (layerCount - 1) - declaredRank
+
+		delta := scaledObs - expectedObs
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta <= r.threshold {
+			continue
+		}
+
+		id := layerRoleDivergenceFingerprintID(r.def.ID, mod)
+		f := finding.Finding{
+			ID:       id,
+			Kind:     kindGate,
+			RuleID:   r.def.ID,
+			Status:   finding.StatusNew,
+			Severity: finding.SeverityMedium,
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Path: mod},
+				To:   finding.Endpoint{Path: mod},
+				Kind: string(graph.EdgeKindImports),
+			},
+			MatchedBy: map[string]string{
+				"module":         mod,
+				"declared_layer": layer,
+				"declared_rank":  strconv.Itoa(declaredRank),
+				"observed_rank":  strconv.Itoa(scaledObs),
+				"expected_rank":  strconv.Itoa(expectedObs),
+				"delta":          strconv.Itoa(delta),
+			},
+			Why: fmt.Sprintf(
+				"Module %q declared in layer %q (rank %d, expected observed rank %d) but observed at topological rank %d (delta %d > threshold %d)",
+				mod, layer, declaredRank, expectedObs, scaledObs, delta, r.threshold,
+			),
+			Constraint: "Move the module to a layer that reflects its actual position in the dependency DAG, or restructure its imports",
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// layerRoleDivergenceFingerprintID computes a stable 32-char hex ID for a
+// layer_role_divergence finding from the rule ID and module name.
+func layerRoleDivergenceFingerprintID(ruleID, mod string) string {
+	h := sha256.Sum256([]byte(ruleID + "\x00" + mod))
+	return hex.EncodeToString(h[:16])
+}

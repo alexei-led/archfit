@@ -1825,3 +1825,176 @@ func TestPublicAPITypeLeak(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// LayerRoleDivergence
+// ---------------------------------------------------------------------------
+
+// Constants for TestLayerRoleDivergence.
+const (
+	typeLayerRoleDivergence = "layer_role_divergence"
+	moduleDomain            = "domain"
+	moduleApp               = "app"
+	// moduleInfra already declared above.
+	moduleConfigCore      = "config-core"
+	pathSvcDomainGlob     = "svc/domain/**"
+	pathSvcAppGlob        = "svc/app/**"
+	pathSvcInfraGlob      = "svc/infra/**"
+	pathSvcConfigCoreGlob = "svc/config-core/**"
+	nodeSvcInfraRepo      = "file:svc/infra/repo.go"
+	nodeSvcAppSvc         = "file:svc/app/service.go"
+	nodeSvcDomainModel    = "file:svc/domain/model.go"
+	nodeSvcConfigCore     = "file:svc/config-core/config.go"
+)
+
+// TestLayerRoleDivergence verifies the layer_role_divergence rule.
+//
+// Direction convention (matches forbidden_layer_direction):
+//
+//	layers: [domain(0), app(1), infra(2)]
+//	infra  = outer/source: imports many → low observed DAG rank (near 0)
+//	domain = inner/sink:   imported by many → high observed DAG rank (near max)
+//
+// Expected observed rank = (layerCount-1) - declaredRank.
+// A well-layered chain has delta=0 for every module; divergence fires when delta > threshold.
+func TestLayerRoleDivergence(t *testing.T) {
+	// Base chain: infra → app → domain (outer imports inner — correct direction).
+	// Observed ranks from BFS: infra=0 (source), app=1, domain=2 (sink). maxObs=2.
+	// layers=[domain(0),app(1),infra(2)], layerCount=3.
+	// scaledObs = obsRank * (3-1) / 2 = obsRank.
+	// expectedObs[infra]  = (3-1)-2 = 0. scaledObs=0. delta=0. ✓ aligned
+	// expectedObs[app]    = (3-1)-1 = 1. scaledObs=1. delta=0. ✓ aligned
+	// expectedObs[domain] = (3-1)-0 = 2. scaledObs=2. delta=0. ✓ aligned
+	baseModules := map[string]config.ModuleDef{
+		moduleDomain: {Paths: []string{pathSvcDomainGlob}, Layer: layerDomain},
+		moduleApp:    {Paths: []string{pathSvcAppGlob}, Layer: layerApplication},
+		moduleInfra:  {Paths: []string{pathSvcInfraGlob}, Layer: layerInfrastructure},
+	}
+	baseEdges := []graph.Edge{
+		{From: nodeSvcInfraRepo, To: nodeSvcAppSvc, Kind: graph.EdgeKindImports},
+		{From: nodeSvcAppSvc, To: nodeSvcDomainModel, Kind: graph.EdgeKindImports},
+	}
+	baseNodes := []graph.Node{
+		{Kind: graph.NodeKindFile, Path: "svc/infra/repo.go"},
+		{Kind: graph.NodeKindFile, Path: "svc/app/service.go"},
+		{Kind: graph.NodeKindFile, Path: "svc/domain/model.go"},
+	}
+
+	t.Run("aligned chain emits no findings", func(t *testing.T) {
+		cfg := config.Config{
+			Version: 1,
+			Layers:  []string{layerDomain, layerApplication, layerInfrastructure},
+			Modules: baseModules,
+			Rules:   []config.RuleDef{{ID: "lrd", Type: typeLayerRoleDivergence}},
+		}
+		rs, err := rules.New(cfg.ForRules())
+		if err != nil {
+			t.Fatalf("rules.New: %v", err)
+		}
+		g := graph.Build([]graph.Facts{{Nodes: baseNodes, Edges: baseEdges, Language: "go"}})
+		findings := rs[0].Check(g, rules.Evidence{})
+		if len(findings) != 0 {
+			t.Fatalf("aligned chain: want 0 findings, got %d: %+v", len(findings), findings)
+		}
+	})
+
+	t.Run("source module declared inner emits finding", func(t *testing.T) {
+		// Add "config-core" declared as domain (inner, rank 0) but it is a source
+		// (imports infra, app, and domain; nothing imports it).
+		// Chain: config-core→infra→app→domain; ranks 0,1,2,3; maxObs=3.
+		// scaledObs(config-core) = 0*2/3 = 0.
+		// expectedObs(domain rank 0) = (3-1)-0 = 2. delta=|0-2|=2 > threshold=1 → fires.
+		modules := map[string]config.ModuleDef{
+			moduleDomain:     {Paths: []string{pathSvcDomainGlob}, Layer: layerDomain},
+			moduleApp:        {Paths: []string{pathSvcAppGlob}, Layer: layerApplication},
+			moduleInfra:      {Paths: []string{pathSvcInfraGlob}, Layer: layerInfrastructure},
+			moduleConfigCore: {Paths: []string{pathSvcConfigCoreGlob}, Layer: layerDomain}, // declared inner, acts outer
+		}
+		threshold := 1
+		cfg := config.Config{
+			Version: 1,
+			Layers:  []string{layerDomain, layerApplication, layerInfrastructure},
+			Modules: modules,
+			Rules: []config.RuleDef{{
+				ID:        "lrd",
+				Type:      typeLayerRoleDivergence,
+				Gate:      "warn",
+				Threshold: &threshold,
+			}},
+		}
+		rs, err := rules.New(cfg.ForRules())
+		if err != nil {
+			t.Fatalf("rules.New: %v", err)
+		}
+		nodes := make([]graph.Node, len(baseNodes)+1)
+		copy(nodes, baseNodes)
+		nodes[len(baseNodes)] = graph.Node{Kind: graph.NodeKindFile, Path: "svc/config-core/config.go"}
+		edges := make([]graph.Edge, len(baseEdges), len(baseEdges)+3)
+		copy(edges, baseEdges)
+		edges = append(edges,
+			graph.Edge{From: nodeSvcConfigCore, To: nodeSvcInfraRepo, Kind: graph.EdgeKindImports},
+			graph.Edge{From: nodeSvcConfigCore, To: nodeSvcAppSvc, Kind: graph.EdgeKindImports},
+			graph.Edge{From: nodeSvcConfigCore, To: nodeSvcDomainModel, Kind: graph.EdgeKindImports},
+		)
+		g := graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges, Language: "go"}})
+		findings := rs[0].Check(g, rules.Evidence{})
+
+		found := false
+		for _, f := range findings {
+			if f.MatchedBy["module"] == moduleConfigCore {
+				found = true
+				if f.Kind != kindAdvisory {
+					t.Errorf("gate=warn: want kind=%q, got %q", kindAdvisory, f.Kind)
+				}
+				if !strings.Contains(f.Why, moduleConfigCore) {
+					t.Errorf("Why does not mention module: %s", f.Why)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("want finding for %s, got %d findings: %+v", moduleConfigCore, len(findings), findings)
+		}
+	})
+
+	t.Run("default gate is warn", func(t *testing.T) {
+		// Omitting gate on layer_role_divergence should default to "warn" → advisory.
+		modules := map[string]config.ModuleDef{
+			moduleDomain:     {Paths: []string{pathSvcDomainGlob}, Layer: layerDomain},
+			moduleApp:        {Paths: []string{pathSvcAppGlob}, Layer: layerApplication},
+			moduleInfra:      {Paths: []string{pathSvcInfraGlob}, Layer: layerInfrastructure},
+			moduleConfigCore: {Paths: []string{pathSvcConfigCoreGlob}, Layer: layerDomain},
+		}
+		threshold := 1
+		cfg := config.Config{
+			Version: 1,
+			Layers:  []string{layerDomain, layerApplication, layerInfrastructure},
+			Modules: modules,
+			Rules: []config.RuleDef{{
+				ID:        "lrd-default",
+				Type:      typeLayerRoleDivergence,
+				Threshold: &threshold,
+				// Gate omitted: should default to "warn".
+			}},
+		}
+		rs, err := rules.New(cfg.ForRules())
+		if err != nil {
+			t.Fatalf("rules.New: %v", err)
+		}
+		nodes := make([]graph.Node, len(baseNodes)+1)
+		copy(nodes, baseNodes)
+		nodes[len(baseNodes)] = graph.Node{Kind: graph.NodeKindFile, Path: "svc/config-core/config.go"}
+		edges := make([]graph.Edge, len(baseEdges), len(baseEdges)+2)
+		copy(edges, baseEdges)
+		edges = append(edges,
+			graph.Edge{From: nodeSvcConfigCore, To: nodeSvcInfraRepo, Kind: graph.EdgeKindImports},
+			graph.Edge{From: nodeSvcConfigCore, To: nodeSvcAppSvc, Kind: graph.EdgeKindImports},
+		)
+		g := graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges, Language: "go"}})
+		findings := rs[0].Check(g, rules.Evidence{})
+		for _, f := range findings {
+			if f.MatchedBy["module"] == moduleConfigCore && f.Kind != kindAdvisory {
+				t.Errorf("default gate: want kind=%q, got %q", kindAdvisory, f.Kind)
+			}
+		}
+	})
+}
