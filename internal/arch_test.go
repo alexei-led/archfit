@@ -250,15 +250,27 @@ func isForbiddenForCore(imp string) bool {
 	return false
 }
 
-// isForbiddenForCoreIn is isForbiddenForCore with a per-package carve-out:
-// internal/scope may import "os" for path-identity checks (os.Stat/os.SameFile
-// in snapScanRoot — same class of I/O as filepath.EvalSymlinks already used
-// there). os/exec and YAML remain forbidden for scope.
+// coreRingStdlibAllowlist maps a core-ring package prefix to stdlib imports that
+// are explicitly allowed despite being forbidden for the rest of the ring.
+// Use sparingly — each entry needs a justification comment.
+var coreRingStdlibAllowlist = map[string]map[string]bool{
+	// scope performs path-identity checks (os.Stat/os.SameFile in snapScanRoot)
+	// — same class of I/O as filepath.EvalSymlinks already used there.
+	// os/exec and YAML remain forbidden.
+	modulePrefix + "internal/scope": {"os": true},
+}
+
+// isForbiddenForCoreIn is isForbiddenForCore with per-package allowlist support.
 func isForbiddenForCoreIn(pkgPath, imp string) bool {
-	if imp == "os" && strings.HasPrefix(pkgPath, modulePrefix+"internal/scope") {
+	if !isForbiddenForCore(imp) {
 		return false
 	}
-	return isForbiddenForCore(imp)
+	for prefix, allowed := range coreRingStdlibAllowlist {
+		if (pkgPath == prefix || strings.HasPrefix(pkgPath, prefix+"/")) && allowed[imp] {
+			return false
+		}
+	}
+	return true
 }
 
 // isStdlib reports whether imp is a standard library package.
