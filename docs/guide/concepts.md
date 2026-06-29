@@ -105,6 +105,12 @@ position) is the always-available baseline and distinguishes close from far modu
 regardless of owner count. See the
 [configuration reference](configuration-reference.md) for the exact composite order.
 
+**Deviation from the book:** Khononov also counts _runtime coupling_ (synchronous
+vs asynchronous integration) and lifecycle coupling as part of distance. `archfit`
+deliberately does **not** fold runtime/async coupling into distance — detected
+async bridges are recorded as report-only `runtime_async` evidence, never a scored
+distance factor (see the [release notes](release-notes.md) for the rationale).
+
 ### 3. Volatility — how likely it is to change at all
 
 Volatility is the probability that a component needs to change. A strong, distant
@@ -114,7 +120,8 @@ weekly is a recurring tax.
 > The higher the volatility, the more acute and "painful" design issues will be.
 > — <https://coupling.dev/posts/dimensions-of-coupling/volatility/>
 
-Volatility comes primarily from **DDD subdomains**, not from the codebase itself:
+Volatility comes primarily from **DDD subdomains**, not from the codebase itself.
+Declaring `subdomain:` on a module maps to a book-anchored volatility:
 
 | Subdomain    | Book anchor | Ordinal (V) | Why                                                   |
 | ------------ | ----------- | ----------- | ----------------------------------------------------- |
@@ -122,9 +129,22 @@ Volatility comes primarily from **DDD subdomains**, not from the codebase itself
 | `supporting` | supporting  | 3           | Custom but not differentiating; changes occasionally. |
 | `generic`    | generic     | 3           | Solved problem / off-the-shelf; rarely changes.       |
 
-The book also describes a `frozen/legacy` anchor (V=1) for genuinely stable,
-never-changing modules. Support for explicit frozen/legacy volatility is planned
-but not yet a named constant in the codebase.
+You can also set `volatility:` directly. The book (Ch10) defines only three
+numeric anchors — 1, 3, 10 — so `medium` (V=6) is an **archfit interpolation**
+with no book anchor:
+
+| `volatility:`       | Ordinal (V) | Book anchor                                |
+| ------------------- | ----------- | ------------------------------------------ |
+| `high`              | 10          | core subdomain                             |
+| `medium`            | 6           | — (archfit interpolation; not in the book) |
+| `low`               | 3           | supporting / generic subdomain             |
+| `frozen` / `legacy` | 1           | legacy system that is not being evolved    |
+
+A module that resolves but declares neither `volatility:` nor `subdomain:` (and
+matches no path heuristic) is treated as **undeclared → V=10** — a conservative
+worst case that is also archfit-defined, not a book ordinal. The scorer then
+advises you to _declare_ the module's volatility rather than silently assuming it
+is stable.
 
 In `archfit` you set volatility per module (`volatility:` or `subdomain:` in
 `.archfit.yaml`). Git churn fills in a value only for modules with no declared
