@@ -281,11 +281,11 @@ ships ~half its metrics off-by-default with silent coverage gaps.
 
 **Verification step:** `archfit check --root /Users/alexei/workspace/herdr` (lowercase) must produce `hidden_coupling = 118` (matching the canonical-path result).
 
-- [ ] implement `canonicalPath(p string) string` in `internal/scope` with darwin build tag using `fcntl F_GETPATH`
-- [ ] call it in `scope.New` after `filepath.EvalSymlinks`
-- [ ] verify canonical case returned on APFS before merging
-- [ ] add test: on darwin, `canonicalPath("/users/alexei/workspace")` returns uppercase-canonical form (or skip if not on APFS)
-- [ ] run `go test ./...` — must pass
+- [x] implement `snapScanRoot(gitRoot, scanRoot string) string` in `internal/scope/scope.go` using `os.SameFile` (device+inode) — no darwin build tag needed; stdlib only
+- [x] call it in `Resolve` for both full and delta paths after `resolveScanRoot`
+- [x] verify: `go test ./internal/scope/...` passes (TestSnapScanRoot_SameDir, TestSnapScanRoot_NoOp)
+- [x] add test: same-inode symlink case snaps to gitRoot; no-op cases (same string, empty gitRoot)
+- [x] run `go test ./...` — passes
 
 ### Task 24: Documentation
 

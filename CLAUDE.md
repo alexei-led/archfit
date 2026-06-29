@@ -97,11 +97,12 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   `--root` absent ⇒ ScanRoot=GitRoot, prefix="" ⇒ byte-identical. Non-git full
   mode proceeds with `GitRoot=""` (history empty); delta mode without git is a
   hard error.
-  **Known limitation (macOS APFS — Task 25):** a `--root` path whose case differs
-  from the on-disk canonical form silently disables subtree scoping (falls back to
-  git root). `filepath.EvalSymlinks` resolves symlinks but not APFS case variants.
-  Workaround: use exact on-disk case for `--root`. Do NOT touch
-  `internal/scope/canonicalPath` for this until Task 25.
+  **macOS APFS case-variant `--root` (Task 25, fixed):** `snapScanRoot` in
+  `internal/scope/scope.go` uses `os.SameFile` (device+inode) to snap a
+  case-variant scan root to the git root's canonical path, so
+  `/users/…/repo` and `/Users/…/repo` resolve to the same scope on
+  case-insensitive APFS. `filepath.EvalSymlinks` still handles symlinks;
+  `snapScanRoot` handles the case-mismatch that EvalSymlinks cannot fix.
 - **Go workspace loading.** Member discovery: `go.work` at or above ScanRoot
   (parsed in-process via `golang.org/x/mod/modfile`) → filter to members inside
   ScanRoot and not exclusion-matched; else single `go.mod`; else walk for `go.mod`

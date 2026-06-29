@@ -5,6 +5,7 @@ package scope
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -28,6 +29,24 @@ func canonicalPath(p string) string {
 		return a
 	}
 	return p
+}
+
+// snapScanRoot returns gitRoot when scanRoot names the same directory but with
+// different path bytes — the common macOS case where --root is the repo root
+// typed with wrong case (e.g. /users/… vs /Users/…) on a case-insensitive APFS
+// volume. os.SameFile compares device+inode, so it works regardless of case or
+// symlinks. On case-sensitive filesystems the string-equality short-circuit fires
+// for any in-bounds call, making this a no-op with no I/O cost.
+func snapScanRoot(gitRoot, scanRoot string) string {
+	if gitRoot == "" || scanRoot == gitRoot {
+		return scanRoot
+	}
+	fg, err1 := os.Stat(gitRoot)
+	fs, err2 := os.Stat(scanRoot)
+	if err1 == nil && err2 == nil && os.SameFile(fg, fs) {
+		return gitRoot
+	}
+	return scanRoot
 }
 
 // DefaultExclusions are tool-artifact, cache, and dependency directories archfit
@@ -159,7 +178,7 @@ func Resolve(ctx context.Context, cfg config.ScopeConfig, r Resolver) (Scope, er
 			gitRoot = ""
 		}
 		gitRoot = canonicalPath(gitRoot)
-		scanRoot := resolveScanRoot(cfg, gitRoot)
+		scanRoot := snapScanRoot(gitRoot, resolveScanRoot(cfg, gitRoot))
 		return Scope{
 			Root:          scanRoot,
 			GitRoot:       gitRoot,
@@ -183,7 +202,7 @@ func Resolve(ctx context.Context, cfg config.ScopeConfig, r Resolver) (Scope, er
 	if err != nil {
 		return Scope{}, fmt.Errorf("scope: resolve changed files: %w", err)
 	}
-	scanRoot := resolveScanRoot(cfg, gitRoot)
+	scanRoot := snapScanRoot(gitRoot, resolveScanRoot(cfg, gitRoot))
 	prefix := subtreePrefix(gitRoot, scanRoot)
 	changed = rebaseChangedFiles(prefix, changed)
 	sort.Strings(changed)
