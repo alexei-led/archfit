@@ -11,10 +11,10 @@ final config and approved labels.
 ```yaml
 analyzers:
   scip:
-    enabled: true   # enrich needs symbol-level strength hints
+    enabled: true # enrich needs symbol-level strength hints
 
 ai:
-  provider: anthropic   # anthropic | openai | ollama
+  provider: anthropic # anthropic | openai | ollama
   model: claude-opus-4-8
   # base_url: http://localhost:11434/v1   # ollama only
 ```
@@ -120,7 +120,7 @@ These modes draft module metadata the structural metrics depend on.
   overwrites a live field.
 
 Filling these makes distance and encapsulation metrics more honest; without them,
-`boundary_integrity` and `coupling_balance` may stay partly `n/a`. Never auto-pin
+`encapsulation` and `coupling_balance` may stay partly `n/a`. Never auto-pin
 without review.
 
 ## autopilot — full config draft (review-only)

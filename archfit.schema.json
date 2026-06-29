@@ -416,7 +416,7 @@
         },
         "threshold": {
           "type": "integer",
-          "description": "layer_role_divergence: max tolerated rank delta (default 1)"
+          "description": "reserved: per-rule integer threshold"
         },
         "patterns": {
           "items": {

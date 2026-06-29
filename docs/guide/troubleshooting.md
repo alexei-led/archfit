@@ -44,10 +44,6 @@ Some commands have name collisions:
 - **`sg`** must be ast-grep. Verify with `sg --version`; it should print
   `ast-grep ...`. Linux systems may have util-linux `sg` at `/usr/bin/sg`, which
   is not usable by archfit.
-- **`lizard`** must be the PyPI complexity analyzer. `brew install lizard` installs
-  a compression tool with the same command name. Use
-  `uv tool install 'lizard==1.23.0'`, then ensure `uv tool dir --bin` appears
-  before Homebrew in PATH if both exist.
 - **`node`/`npm`** can come from Homebrew, a distro package, nvm/fnm, or another
   version manager. Use one Node source per shell profile and keep Node `22+` for
   the optional npm tools.
@@ -80,8 +76,8 @@ gap. To make CI block on a missing tool instead, opt in with `--require-tools` o
 These now appear as a `## Config warnings` section (md) and `config_warnings[]`
 (json), not just stderr. Most clear once modules declare `owner`, `subdomain`, and
 `volatility` — draft them with `archfit enrich --owner`/`--volatility` or
-`archfit autopilot`, review, then pin. Filling them also makes `encapsulation`
-measurable, so `boundary_integrity` and `coupling_balance` leave `n/a`.
+`archfit autopilot`, review, then pin. Filling them also makes `encapsulation` measurable and lets `coupling_balance`
+move out of `n/a`.
 
 ## False-positive coupling advisories on a wiring/`cmd` package
 

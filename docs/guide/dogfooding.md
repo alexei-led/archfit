@@ -14,18 +14,17 @@ sets the exit code. Violations are the deterministic contract: the same code and
 config always produce the same verdict, and CI fails when a new one appears.
 
 A **signal** is report-only. Metrics and Balanced Coupling advisories describe the
-shape of the architecture — coupling risk, blast radius, complexity hot spots,
-change locality — but they never fail the build on their own. They are there to
-inform a human or an AI agent, and to feed `archfit analyze --format scorecard`
-and `archfit analyze --llm`.
+shape of the architecture — coupling risk, blast radius, cycle count — but they
+never fail the build on their own. They are there to inform a human or an AI
+agent, and to feed `archfit analyze --llm`.
 
-| Aspect       | Violation                             | Signal                                  |
-| ------------ | ------------------------------------- | --------------------------------------- |
-| Source       | `rules` with `gate: fail`/`warn`      | `metrics`, BC advisories                |
-| Effect       | sets exit code; fails CI              | report-only; never gates                |
-| Determinism  | byte-identical, gate-grade            | deterministic, but advisory             |
-| Examples     | forbidden dependency, cycle, API leak | `risk_hub`, `blast_radius`, BC rollups  |
-| Acting on it | must fix or baseline/except           | judgement call; prioritize, don't block |
+| Aspect       | Violation                             | Signal                                                    |
+| ------------ | ------------------------------------- | --------------------------------------------------------- |
+| Source       | `rules` with `gate: fail`/`warn`      | `metrics`, BC advisories                                  |
+| Effect       | sets exit code; fails CI              | report-only; never gates                                  |
+| Determinism  | byte-identical, gate-grade            | deterministic, but advisory                               |
+| Examples     | forbidden dependency, cycle, API leak | `blast_radius`, `coupling_balance` advisories, BC rollups |
+| Acting on it | must fix or baseline/except           | judgement call; prioritize, don't block                   |
 
 A new signal is **not** a build break. Treat a rising signal as a prompt to look,
 not as a failure. Only promote a signal to a gate (give a metric a `gate`, or add
@@ -52,29 +51,31 @@ build breaks.
 
 ## What archfit only reports on itself (signals)
 
-The self-config turns several report-only metrics on so the project dogfoods its
-own newest capabilities:
+The self-config enables several analyzers so the project dogfoods its own
+capabilities:
 
-- `risk_hub` — cross-module symbol surface-breadth × explicit volatility (needs
-  `analyzers.scip`).
-- `architecture_fitness` — archfit enforces its own architecture
-  (`internal/arch_test.go` plus an arch-linter in CI), so this scores a real,
-  high enforcement signal.
-- `functional_candidates` — surfaced on; clone detection (`analyzers.clones`) is
-  enabled in archfit's self-config. When `jscpd` is installed, this metric reports
-  real cross-module clone pairs. When `jscpd` is absent, it reports `n/a` with an
-  install hint. A disabled-by-config tool produces no coverage gap at all.
+- **`coupling_balance` advisories** — the balance formula runs over all
+  cross-module edges. With every module declaring `owner`, `subdomain`, and
+  `volatility`, advisories are well-classified and display real strength/distance/
+  volatility breakdowns (needs `analyzers.scip` for strength hints).
+- **`blast_radius`** — fan-in reach for each module, highlighting the high-fan-in
+  shared domain types (`Diagnostic`, graph nodes, coupling constants).
+- **`cycle`** and **`encapsulation`** — reported per module; `encapsulation`
+  becomes measurable once `public:`/`internal:` globs are declared.
+- **Clone detection** (`analyzers.clones`, `jscpd`) — enabled in the self-config.
+  When `jscpd` is installed, cross-module clone pairs are found and their edges are
+  upgraded to `symmetric` strength in the coupling-balance scorer. When `jscpd` is
+  absent, the metric reports `n/a` with an install hint. A disabled-by-config tool
+  produces no coverage gap at all.
 
-None of these can fail the build. They show up in `archfit analyze --markdown`,
-`archfit analyze --format scorecard`, and the JSON bundle that
-`archfit analyze --llm` narrates.
+None of these can fail the build. They show up in `archfit analyze --markdown` and
+the JSON bundle that `archfit analyze --llm` narrates.
 
 ## See it yourself
 
 ```sh
-archfit analyze --gate --config .archfit.yaml --full             # gates only: the verdict
-archfit analyze --markdown --config .archfit.yaml --full         # gates + signals, as Markdown
-archfit analyze --format scorecard --config .archfit.yaml --full # the banded 7-dimension scorecard
+archfit analyze --gate --config .archfit.yaml --full     # gates only: the verdict
+archfit analyze --markdown --config .archfit.yaml --full # gates + signals, as Markdown
 ```
 
 The expected result on a clean checkout is **pass with signals** — no violations,

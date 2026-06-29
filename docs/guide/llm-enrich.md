@@ -73,8 +73,7 @@ calls.
 Beyond coupling labels, `enrich` drafts two module metadata fields that the
 structural metrics depend on. Filling them is the through-line that makes distance
 classification work: ownership contributes to distance for modules in repos with
-genuine multi-team ownership, and `boundary_integrity` and `coupling_balance` stop
-being `n/a`.
+genuine multi-team ownership, and `coupling_balance` stops being `n/a`.
 
 > **Note on encapsulation:** `encapsulation` scores the ratio of contract/intrusive
 > edges to total cross-module edges. It becomes measurable when modules have

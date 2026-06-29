@@ -83,7 +83,7 @@ intent and a Balanced-Coupling model.
 The output is shaped for both CI and AI-agent repair:
 
 - deterministic gates for boundaries, layers, public APIs, cycles, and thresholds;
-- scored architecture dimensions instead of only pass/fail text;
+- `coupling_balance` band and complementary metrics (`blast_radius`, `cycle`, `encapsulation`, `coverage`);
 - coupling advisories that explain strength, distance, and volatility;
 - `agent_tasks` that tell an AI agent what to fix, which constraints to preserve,
   and how to prove the repair;

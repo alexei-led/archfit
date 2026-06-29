@@ -53,7 +53,7 @@ One-line version:
 - Explicit architecture rules.
 - Baseline support.
 - Accepted exceptions.
-- Legible architecture metrics: encapsulation ratio, unbalanced-edge counts, cycles, change-locality indicators, and coverage/confidence.
+- Legible architecture metrics: encapsulation ratio, unbalanced-edge counts, cycles, blast-radius indicators, and coverage/confidence.
 - Balanced Coupling classification for findings: strength, distance, volatility, and explicitness.
 - Agent-first JSON output with evidence and repair constraints.
 - Console and Markdown output for humans.
@@ -346,7 +346,7 @@ These tools are worth supporting early because they directly improve architectur
 - Python: `import-linter` / `grimp` for import graphs and Python architecture contracts.
 - Structural patterns: `ast-grep` for targeted rules such as direct database access, framework leakage, provider DTO leakage, or forbidden imports when simple path rules are not
   enough.
-- Git history: `git log` first; GitNexus adapter later if available and useful for co-change/change-locality calibration.
+- Git history: `git log` first; GitNexus adapter later if available and useful for co-change/blast-radius calibration.
 
 Optional adapters must never be silent. If applicable but missing, record a coverage gap and lower confidence for metrics that depend on that evidence.
 
@@ -452,10 +452,6 @@ metrics:
     enabled: true
     gate: fail
     max_new: 0
-
-  change_locality:
-    enabled: true
-    gate: warn
 
   coverage:
     enabled: true
@@ -859,8 +855,7 @@ What it measures:
 
 - afferent coupling: incoming dependencies;
 - efferent coupling: outgoing dependencies;
-- fan-in/fan-out;
-- instability: `Ce / (Ca + Ce)`.
+- fan-in/fan-out.
 
 How to use:
 
@@ -870,9 +865,9 @@ How to use:
 
 A single intrusive outgoing dependency can matter more than many stable contract consumers.
 
-#### Change locality measurement
+#### Blast radius measurement
 
-What it measures: how predictable the change scope appears.
+What it measures: the graph reach from a changed set of modules.
 
 V1 inputs:
 
@@ -1014,18 +1009,18 @@ Gate shape:
 fail on new cycles when configured
 ```
 
-#### Change locality indicator
+#### Blast radius
 
 Definition:
 
 ```text
-changed_modules, new_cross_module_edges, graph_reach_from_changed_nodes
+graph_reach_from_changed_nodes — modules reachable from a changed set
 ```
 
 Gate shape:
 
 ```text
-warn on expansion of change blast radius
+report-only in --full; delta mode (--base) surfaces newly-added cross-module reach
 ```
 
 This is a predictor of future agent token burn and human change cost. It needs calibration against real tasks.
@@ -1082,7 +1077,7 @@ Promote these only after primitive measurements are reliable:
 - **Semantic/model coupling:** shared domain terms, shared models, primitive meaning coupling.
 - **Temporal coupling:** required execution order and timing constraints.
 - **Runtime/lifecycle coupling:** sync calls, deploy coupling, resilience gaps.
-- **Centrality/instability:** afferent/efferent graph context for volatile hubs.
+- **Centrality:** afferent/efferent graph context for volatile hubs.
 - **Architecture fitness coverage:** how much intended architecture is enforced by executable rules.
 - **Agent cost correlation:** token usage, context size, repair iterations, and task failure rate versus graph risk.
 
@@ -1564,7 +1559,7 @@ Use these references to calibrate concepts, metric formulas, tool adapters, and 
 - `dependency-cruiser` — TypeScript/JavaScript dependency graph and boundary-rule adapter candidate.
 - `import-linter` and `grimp` — Python import graph and architecture-contract adapter candidates.
 - `ast-grep` — targeted structural pattern checks when path/import rules need syntax evidence.
-- `git` / `git log` — baseline diff, changed files, churn, and simple change-locality evidence.
+- `git` / `git log` — baseline diff, changed files, churn, and simple blast-radius evidence.
 - GitNexus — optional calibration adapter for co-change, churn hotspots, and historical blast radius.
 - Tree-sitter — later syntax fallback if native scanners and adapters do not provide enough structural evidence.
 - SCIP — later symbol graph format when file/package-level dependency facts are insufficient.

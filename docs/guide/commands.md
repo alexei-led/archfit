@@ -55,11 +55,11 @@ audit report. Bare `archfit` (no subcommand) runs `analyze` in report-only mode.
 
 Output formats for `analyze`: `text` (default), `json`, `markdown`/`md`, `sarif`
 (SARIF 2.1.0 for CI code-scanning annotations), `scorecard` (the banded
-7-dimension synthesis). Shorthands: `--json`, `--markdown`, `--sarif` (mutually
+coupling_balance scorecard). Shorthands: `--json`, `--markdown`, `--sarif` (mutually
 exclusive). `--format` is repeatable for multiple outputs.
 
-For wiring archfit into an AI coding agent's loop (`agent_tasks`, SARIF,
-`change_locality`), see [agent-feedback.md](agent-feedback.md).
+For wiring archfit into an AI coding agent's loop (`agent_tasks`, SARIF),
+see [agent-feedback.md](agent-feedback.md).
 
 ## Finding status
 
@@ -119,11 +119,9 @@ Two distinct `n/a` reasons appear in coverage and metric output:
 
 - **`n/a (no history)`** — the subtree (after `--root` scoping) has fewer than 2
   commits visible to `git log`, or `--root` points at a non-git directory.
-  History-fed dimensions (`change_amplification`, `hidden_coupling`,
-  `change_coupling`, `change_locality`) report `n/a` rather than fabricating a
-  number from a 1-commit checkout artifact. For shallow clones: add `git fetch
---unshallow` in CI or use a full clone. For non-git trees: history dimensions
-  are always `n/a`; all other metrics still run.
+  Delta mode (`--base`) requires git history; without it, the before/after
+  comparison is skipped. For shallow clones: add `git fetch --unshallow` in CI
+  or use a full clone. For non-git trees: all other metrics still run.
 - **`n/a (timed out)`** — a per-analyzer watchdog fired before the subprocess
   finished. The tool result is dropped cleanly; the run continues and exits with
   the verdict from the remaining analyzers. Increase the per-tool timeout or
@@ -163,15 +161,20 @@ The default text output leads with a **Decision** block:
 
 ```
 ARCHFIT RESULT
-==============
-Decision: HEALTHY                     (or ACCEPTABLE WITH WATCH ITEMS / NEEDS ATTENTION / FAIL)
-Gate:     PASS  (0 blocking findings)
-Score:    82/100  [serviceable]
+
+Decision   HEALTHY
+Gate       PASS  ·  0 blocking
+Warnings   0 advisory
+Score      82 / 100  serviceable
 
 RECOMMENDATIONS
-  MUST FIX   ...
-  SHOULD FIX ...
-  WATCH      ...
+
+  MUST FIX
+    none
+  SHOULD FIX
+    none
+  WATCH
+    ...
 ```
 
 Live progress lines (`[1/5] extracting Go packages …`) print to **stderr** while
@@ -183,8 +186,7 @@ environments, or with `--quiet`. This keeps `archfit --json | jq` clean.
 - `-c` / `--config` — config file (default `.archfit.yaml`).
 - `--root` — analysis root (default: config directory).
 - `--base <ref>` — also score a git ref and show a before/after scorecard delta
-  in the text/markdown report, and compute the `change_locality` metric for the
-  diff against `<ref>`. JSON/SARIF stay the normal HEAD diagnostic.
+  in the text/markdown report. JSON/SARIF stay the normal HEAD diagnostic.
 - `--gate` — enable CI exit codes (0/1/2/3); without it the run is report-only
   (always exits `0` on success, `3` on config or tool error).
 - `--json` — output JSON (shorthand for `--format json`).
@@ -206,7 +208,7 @@ environments, or with `--quiet`. This keeps `archfit --json | jq` clean.
 `--root` (on `analyze` and `enrich`) sets the **analysis
 boundary** — the directory tree that extractors walk, coverage counts against, and
 file-based metrics scope to. All tool calls (go/packages, dependency-cruiser,
-grimp, loc, complexity, clones, fitness) operate inside this tree.
+grimp, loc, clones, fitness) operate inside this tree.
 
 `--root` is decoupled from the git topmost directory. archfit resolves `git
 rev-parse --show-toplevel` separately (stored as the internal `GitRoot`); git
@@ -242,21 +244,22 @@ case-insensitive APFS. `filepath.EvalSymlinks` still handles symlinks; the
 
 ## Scorecard view
 
-The banded **7-dimension scorecard** is one of `analyze`'s output formats:
+The banded **coupling_balance scorecard** is one of `analyze`'s output formats:
 
 ```sh
 # whole-repo scorecard
 archfit analyze --format scorecard --config .archfit.yaml
 
-# with a base ref: enables the change_locality dimension (delta mode)
+# with a base ref: shows a delta section
 archfit analyze --format scorecard --config .archfit.yaml --base main
 ```
 
-Dimensions: `boundary_integrity`, `coupling_balance`, `dependency_graph_health`,
-`cohesion_modularity`, `change_locality`, `architecture_fitness`, and the meta
-dimension `analysis_confidence`. Each carries a 0–100 value, a band (critical /
-poor / mixed / serviceable / strong), a confidence, and evidence refs; the overall
-is the mean of the six non-meta dimensions.
+The scorecard shows one scored dimension: `coupling_balance`. It carries a 0–100
+value, a band (critical / poor / mixed / serviceable / strong), a confidence, and
+evidence references. The overall is the coupling_balance value. This is not a
+composite of multiple dimensions — coupling_balance is the single architecture
+fitness measure; structural rules (forbidden deps, layering, cycles, encapsulation)
+are pass/fail gates reported separately.
 
 Output is deterministic — byte-identical across a double-run. The scorecard is
 **off-gate**: it never changes the exit code.
@@ -301,22 +304,9 @@ Dynamic/lazy imports (detected by TypeScript and Python extractors as
 `dynamic_imports`) are included in the review prompt as a hidden-coupling risk
 section so the narrative can flag coupling the static dependency graph misses.
 
-**Judgment on report-only facts (Cat 6/7/8/12 residue):** the report-only
-syntax-facts metrics (`unsafe_density`, `panic_density`, `struct_field_density`,
-`test_density`) surface candidates deterministically. `analyze --llm` and `enrich`
-are the designed home for the _soundness and acceptability_ judgments those facts
-require:
-
-- **Unsafe/panic soundness (Cat 6, Cat 8):** detection tells you _where_ `unsafe`
-  blocks and production `unwrap`/`panic!` calls are; whether each is acceptable
-  needs context. Feed `archfit analyze --llm` — it narrates the findings with risk
-  context.
-- **Semantic intent (Cat 12):** deep questions (key-format agreement, data-vs-behavior
-  in config, naming contracts) cannot be answered deterministically. `analyze --llm`
-  and `archfit enrich` are the designed path.
-- **Layer intent (Cat 10 residue):** when layers are declared, `forbidden_layer_direction`
-  gates deterministically. When they are not, `archfit enrich` can propose a layer
-  structure; see [configuration-reference.md → layers](configuration-reference.md#layers).
+**Layer intent:** when layers are declared, `forbidden_layer_direction` gates
+deterministically. When they are not, `archfit enrich` can propose a layer
+structure; see [configuration-reference.md → layers](configuration-reference.md#layers).
 
 Requirements:
 

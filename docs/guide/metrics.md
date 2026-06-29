@@ -5,16 +5,13 @@ exists, how it is scored, and whether it can affect the verdict. For the theory
 behind the strength / distance / volatility vocabulary used throughout, read
 [Concepts](concepts.md) first.
 
-`archfit` ships **27 metrics**. They split into two roles:
+`archfit` measures **Balanced Coupling** (`coupling_balance`) plus a minimal set of
+complementary metrics. They split into two roles:
 
-- **Verdict-affecting** (4): scored 0–10, can `warn` the run when they regress.
-- **Report-only** (23): band `info`; surface facts for humans and agents, never
-  change the verdict.
-
-A metric absent from the config is enabled by default; only an explicit
-`metrics.<name>.enabled: false` disables it. The
-[scorecard](#scorecard-dimensions) synthesizes these metrics (plus gates) into
-the architect's seven banded dimensions.
+- **Verdict-affecting (2):** `coupling_balance` (scored 0–10, the headline), and
+  `unbalanced_edge` (companion count).
+- **Report-only (4):** `cycle`, `blast_radius`, `encapsulation`, `coverage`. Band
+  `info`; surface facts for humans and agents, never change the verdict.
 
 No metric ever fails the build on its own. Only explicit **gate rules**
 (forbidden dependency, public-API-only, layer direction, cycle-as-fail, expired
@@ -41,7 +38,7 @@ default; use `--report` to never exit non-zero on these), `3` tool/config error.
 
 ## Scoring model
 
-Every scored (non-`info`) metric produces a 0–10 value, a band, and a confidence.
+The verdict-affecting metrics produce a 0–10 value, a band, and a confidence.
 
 ### Bands
 
@@ -82,34 +79,37 @@ the tool over-claim.
 When a committed baseline exists (`.archfit-baseline.json`, written by `archfit
 baseline`), each scored metric is compared with that snapshot; a negative delta
 (the metric got worse) sets the run to `warn`. Report-only metrics carry no delta
-and never warn. This baseline-file delta is separate from the `--base <ref>`
-scorecard delta, which compares overall dimension scores against a git ref.
+and never warn. The `--base <ref>` flag compares `coupling_balance` and metric
+scores against a git ref.
 
 ---
 
 ## Verdict-affecting metrics
 
-### `encapsulation` (headline metric)
+### `coupling_balance` (headline metric)
 
-- **Represents:** of the cross-boundary edges that take a stance on boundary
-  respect, the fraction that go through a declared contract instead of reaching
-  into internals.
-- **Computed:** `contract_cross / (contract_cross + intrusive_cross)`, counting
-  only edges classified `contract` or `intrusive` at a real cross-boundary
-  distance. `functional` and `model` (normal public coupling) and `unknown`
-  (no evidence) are excluded from the denominator, not counted against the score.
-- **Why this denominator:** counting every public function call as a strike would
-  crush the ratio for any normal codebase and manufacture a false `critical` once
-  symbol-level strength lands. The metric asks one question — _when code crosses a
-  boundary, does it use the front door?_ — and ignores edges that are neither a
-  contract nor a leak.
-- **Scored:** `value × 10` → band. No cross-boundary edges → `1.0` (vacuously
-  encapsulated). Cross-boundary edges exist but none is contract/intrusive →
-  `n/a`. Contract-only with zero intrusive on a compiler that forces exported
-  access (Go/TS) → `n/a`, because 100% there is not _earned_. Confidence scales
-  with the classified fraction of cross-boundary edges.
-- **Affects verdict:** `warn` when encapsulation drops vs baseline.
-- **Balanced Coupling:** strength (`contract` vs `intrusive`), filtered by distance.
+> **Scorer version:** `bc_score.v3` — Khononov Ch10 book formula.
+
+- **Represents:** how well the distribution of coupling across module boundaries
+  respects the strength × distance × volatility balance rule. High score means
+  most edges carry low maintenance cost; low score means expensive, high-risk
+  couplings dominate.
+- **Formula:** for each scored internal edge,
+  `balance = max(|S − D|, 10 − V) + 1` where `S` = strength ordinal, `D` =
+  distance ordinal, `V` = volatility ordinal (Khononov Ch10 verbatim). Ordinals
+  are frozen named constants — changing any is a breaking metric change.
+- **Abstain-not-fake:** when strength OR distance is `unknown`, the edge is
+  unscored (`EdgeScore.Scored = false`). No invented ordinals. Genuine internal
+  edges with unknown strength stay in the `abstained` bucket (lowers confidence).
+  External/library edges (`DistanceUnknown`) are excluded from the denominator
+  entirely and counted in `classified_edges.external`.
+- **Scored:** the distribution of balance values across scored edges → band.
+  Confidence scales with the fraction of classified edges; empty edges with low
+  coverage → low confidence, band capped at `mixed`.
+- **Affects verdict:** `warn` when `coupling_balance` drops vs baseline.
+- **Opt-in cascade:** `coupling.volatility_cascade: true` enables a single-hop
+  propagation pass (book Ch9) that raises effective volatility to `high` for
+  modules strongly coupled to a `core` module.
 
 ### `unbalanced_edge`
 
@@ -131,44 +131,21 @@ scorecard delta, which compares overall dimension scores against a git ref.
 - **Balanced Coupling:** the most direct encoding of the model — all three
   dimensions at their high settings.
 
-### `cycle`
-
-- **Represents:** number of import cycles among modules/packages.
-- **Computed:** Tarjan strongly-connected components; each SCC of size > 1 is one
-  cycle.
-- **Scored:** `0` → `strong`; any → `critical`. Confidence always `high` (cycles
-  are a fact, not an inference).
-- **Affects verdict:** `warn` on a new cycle vs baseline; the `cycle` rule with
-  `gate: fail` makes new cycles a hard failure.
-- **Balanced Coupling:** none — a graph-topology fact, not a strength/distance call.
-
-### `coverage`
-
-- **Represents:** the fraction of applicable files the extractors actually
-  processed — the trust signal for every other metric.
-- **Computed:** `extracted / applicable` across all tool-coverage records. Zero
-  applicable (extractors ran, nothing matched) → `1.0`. **No extractor ran at
-  all** (no coverage record) → `n/a`, not `1.0` — absence of evidence is never
-  scored as full coverage. This is the load-bearing fix that stops an unanalysed
-  repo from scoring `strong`.
-- **Scored:** `value × 10`. Confidence from the unresolved ratio (≤5% → high,
-  ≤20% → medium, else low).
-- **Affects verdict:** `warn` when coverage drops. More importantly, low coverage
-  caps the band of every metric that depends on the missing evidence. When
-  coverage is `n/a`, `analysis_confidence` starts at 60 and loses 15 per absent
-  primary extractor (go/packages, dependency-cruiser, grimp), so an all-absent
-  repo lands ≈ 0/critical rather than reporting confident health.
-- **Balanced Coupling:** none — it modulates confidence system-wide.
-
 ---
 
 ## Report-only metrics
 
 These always report band `info`. They never set a delta and never change the
-verdict. They exist because the most expensive coupling is often the kind a
-pass/fail gate cannot honestly judge: a stable hub is fine, a god-module might be
-intentional, hidden coupling needs a human to confirm. Reporting beats gating
-here.
+verdict.
+
+### `cycle`
+
+- **Represents:** number of import cycles among modules/packages.
+- **Computed:** Tarjan strongly-connected components; each SCC of size > 1 is one
+  cycle.
+- **Band:** always `info`. Confidence always `high` (cycles are a fact, not an
+  inference). The `cycle` rule with `gate: fail` makes new cycles a hard failure.
+- **Balanced Coupling:** none — a graph-topology fact, not a strength/distance call.
 
 ### `blast_radius`
 
@@ -181,281 +158,38 @@ here.
   is good design. The number tells you _where_ a change ripples, not that anything
   is wrong.
 
-### `change_amplification`
+### `encapsulation`
 
-- **Represents:** expected change cost — blast radius weighted by how often the
-  module actually changes (accidental volatility).
-- **Computed:** `(blast_share) × (churn / max_churn)` per module; hub when
-  ≥ **0.15**. Uses git churn, mapped to modules per language.
-- **Why it matters:** blast radius says a change _could_ ripple; this says it
-  _both_ ripples _and_ happens often — the modules where imbalance is paid down
-  repeatedly. This is the one metric built on churn-derived volatility.
+- **Represents:** of the cross-boundary edges that take a stance on boundary
+  respect, the fraction that go through a declared contract instead of reaching
+  into internals.
+- **Computed:** `contract_cross / (contract_cross + intrusive_cross)`, counting
+  only edges classified `contract` or `intrusive` at a real cross-boundary
+  distance. `functional` and `model` (normal public coupling) and `unknown`
+  (no evidence) are excluded from the denominator, not counted against the score.
+- **Why this denominator:** counting every public function call as a strike would
+  crush the ratio for any normal codebase. The metric asks one question — _when
+  code crosses a boundary, does it use the front door?_ — and ignores edges that
+  are neither a contract nor a leak.
+- **Band:** always `info`. No cross-boundary edges → ratio `1.0`. Cross-boundary
+  edges exist but none is contract/intrusive → `n/a`. Contract-only with zero
+  intrusive on a compiler that forces exported access (Go/TS) → `n/a`, because
+  100% there is not _earned_. Confidence scales with the classified fraction of
+  cross-boundary edges.
+- **Balanced Coupling:** strength (`contract` vs `intrusive`), filtered by distance.
 
-### `hidden_coupling`
+### `coverage`
 
-- **Represents:** module pairs that change together in git history but have **no**
-  static import edge — coupling the dependency graph cannot see (shared implicit
-  contracts, temporal coupling, mediated state).
-- **Computed:** for each unlinked pair, `co_change / min(churn_a, churn_b)`;
-  counted when co-change ≥ **4** and that logical-coupling ratio ≥ **0.50**.
-- **Why report-only:** this is the operational hint for `functional` / `model`
-  coupling that imports miss. It surfaces candidates for human or LLM review, not
-  verdicts.
-
-### `structural_weight`
-
-- **Represents:** size skew — modules far larger than the codebase median
-  (god-module smell).
-- **Computed:** flagged when module LOC ≥ `max(median × 4, 400)`. Generated
-  files (`*.pb.go`, `*_gen.*`, header-detected `// Code generated`) are excluded
-  from the LOC count so auto-generated code does not inflate the module size.
-- **Why LOC:** LCOM4 and "vocabulary mixing" were prototyped and dropped — they
-  misranked (data registries scored worst, real god-files scored best). Raw size
-  is the honest proxy. Known blind spot: a god-module split across many small
-  files is not flagged.
-
-### `complexity`
-
-- **Represents:** functions whose cyclomatic complexity exceeds a threshold — the
-  intra-module risk that module-size metrics cannot see.
-- **Computed:** count of functions with CCN > **15**. Shows the top 5 hotspots
-  with file and line. Generated and test files are excluded from hotspot
-  reporting across all backends.
-- **Backend (`analyzers.complexity.backend`):**
-  - `auto` (default) — `gocyclo` for exact Go CCN; ast-grep decision-point proxy
-    for TypeScript, Python, and Rust. When `gocyclo` is absent, the ast-grep
-    proxy also covers Go (slightly coarser CCN proxy). When `sg` (ast-grep) is
-    absent, complexity reports `n/a` with an install hint.
-  - `lizard` — exact per-function CCN for all four languages (`pip install lizard`).
-- **Requires:** `analyzers.complexity.enabled: true` (opt-in; config-driven for
-  determinism, not PATH presence).
-
-### `risk_hub`
-
-- **Represents:** symbol-level risk hubs — modules with the widest externally-used
-  symbol surface, weighted by _declared_ volatility.
-- **Computed:** `breadth × volatility_multiplier`, where breadth is the count of a
-  module's own symbols referenced from other modules' symbols, and the multiplier
-  is `high 1.0 / medium 0.66 / low 0.33 / unset 1.0`. An optional SCIP-derived
-  dependant-count factor (1.0–2.0) refines but cannot dominate.
-- **Distinct from `blast_radius`:** blast radius counts _how many modules depend on
-  M_; risk*hub counts \_how many of M's own symbols are used externally*. A state
-  store with 73 externally-read fields outranks a utility with one widely-called
-  function.
-- **Distinct from `change_amplification`:** risk_hub uses only hand-authored
-  volatility (captured before churn is applied), so the two never double-count.
-- **Requires:** a SCIP index (`analyzers.scip.enabled: true`; `scip-go`,
-  `scip-typescript`, `scip-python`).
-
-### `architecture_fitness`
-
-- **Represents:** how much of the architecture intent is _actively enforced_, not
-  just documented.
-- **Computed:** fraction of three enforcement signals present — (1) arch test
-  files, (2) import-linter config, (3) an arch-linter in CI. Display shows
-  `present/3 × 10` with the matched evidence paths. Detection skips
-  `<root>/pkg/mod/**` (the Go module cache) and `**/testdata/**`, so a vendored
-  module-cache `_test.go` is never miscounted as an architecture test.
-- **Scoring note:** the display carries a 0–10 number for legibility, but the band
-  is always `info` — it never gates. As a **scorecard dimension** it distinguishes
-  "scan didn't run" from "ran and found nothing": `n/a` → poor (≈40/low), not
-  critical; `critical` is reserved for a real 0/3 on a repo that was analysed. A
-  genuine 0/3 (no enforcement signals) on a small healthy repo is correct, not a
-  false positive.
-- **Why it matters:** an architecture that is enforced by executable checks resists
-  drift; one that lives only in a wiki rots. This metric measures the enforcement
-  posture itself.
-
-### `functional_candidates`
-
-- **Represents:** cross-module pairs with duplicated logic (copy-paste of business
-  rules) — a proxy for `functional` coupling.
-- **Computed:** count of cross-module pairs sharing ≥1 duplicated code block (clone
-  detector, e.g. `jscpd`), annotated with how many also co-change. Test and
-  generated files are excluded from the clone scope so test-fixture duplication
-  and generated stubs do not inflate the count.
-- **Distinct from `hidden_coupling`:** hidden*coupling is co-change \_without* an
-  import edge; functional*candidates is \_duplication*, whether or not the modules
-  import each other. A pair can appear in both.
-- **Requires:** `analyzers.clones.enabled: true` (opt-in).
-
-### `change_locality`
-
-> **Breaking change (v0.3.0):** `metric_version` bumped to `change_locality.v2` — the
-> distance composite (code-structure + deploy-unit + degenerate-owner suppression) and
-> the removal of git-churn from gate volatility changed the metric's input semantics.
-> Re-run `archfit baseline` if you have a pinned baseline from v0.2.x or earlier.
-
-- **Represents:** per-change drift — how far a change reaches beyond the modules it
-  touches.
-- **Computed:** count of cross-module edges originating from changed files, plus
-  the forward graph reach (distinct files reachable from the changed set). Always
-  `n/a` in full mode (no diff) — never a false zero.
-- **Why it matters:** this is the bridge to agent cost. A change that stays local
-  is cheap to make and to verify; one that reaches across many modules predicts
-  larger token burn and more repair iterations. The `new_cross_module_dependency`
-  _rule_ is the gate equivalent; this metric quantifies the blast surface for the
-  agent loop. See [Agent feedback loop](agent-feedback.md).
-
-### `cohesion_lcom`
-
-- **Represents:** lack-of-cohesion within a module — whether its definition
-  symbols form one connected unit or split into several unrelated clusters
-  (LCOM4 / connected-components proxy).
-- **Computed:** over the SCIP symbol graph, per measurable module, the undirected
-  graph of definition symbols connected by same-module references; counts
-  connected components (1 = cohesive, >1 = fragmented).
-- **Caveat (load-bearing):** SCIP indexers do not populate `enclosing_range`, so
-  reference attribution is document-scoped. The proxy trusts only cross-document
-  structure and measures only modules spanning ≥2 documents (and ≥4 symbols).
-  For `scip-python` / `scip-typescript` a "module" is keyed per source file, so
-  almost every module is single-document → **`n/a`, never a false verdict**. Go
-  packages span multiple files and are measurable.
-- **Status:** report-only, and **disabled in archfit's own config**. It failed
-  its eval (blind for single-file Python/TS modules — exactly where the LOC-skew
-  proxy already diverged from expert judgment); kept because the Go-package
-  fragmentation signal is honest where it applies. See
-  [`gap-closure-task20-cohesion-eval.md`](../plans/completed/gap-closure-task20-cohesion-eval.md).
-
-### Beyond Balanced Coupling (supporting / non-BC)
-
-These are standard structural metrics that complement, but are not part of, the
-Balanced Coupling model. They are clearly labelled non-BC, always report-only,
-and never re-use BC vocabulary. They exclude external / unresolved nodes (node
-builtins, uninstalled packages) so they never flag third-party names.
-
-- **`instability`** — per-module Martin instability `I = Ce / (Ca + Ce)`: the
-  fraction of a module's couplings that are outgoing. High `I` = depends on many,
-  depended on by few.
-- **`abstractness`** — per-module Martin abstractness
-  `A = abstract_inbound / (abstract + concrete_inbound)`: the fraction of inbound
-  edges targeting an interface/protocol (SCIP strength hint).
-- **`martin_distance`** — distance from the main sequence `Dms = |A + I − 1|`;
-  `> 0.5` is the "zone of pain" (too concrete + stable) or "uselessness" (too
-  abstract + unstable). When confidence is low (proxy-derived without SCIP type
-  kinds) it is footnoted, not headlined, in the human report — full values stay
-  in JSON.
-- **`propagation_cost`** — `PC = reachable_pairs / (n·(n−1))`: the fraction of
-  ordered module pairs `(i, j)` where `j` is transitively reachable from `i`;
-  reported system-wide and per-module.
-- **`change_coupling`** — CodeScene's temporal-coupling formula: module pairs that
-  co-change in ≥ **65%** of commits touching either (min support applies),
-  whether or not they share a static import edge. Complements `hidden_coupling`
-  (which filters out importing pairs).
-
-### File classification (FileClass)
-
-Production-health metrics (`panic_density`, `functional_candidates`,
-`structural_weight`, `complexity`) need to distinguish production code from
-test, generated, and vendor code. archfit uses a single `FileClass` facility
-(`Production | Test | Generated | Vendor`) computed once during the LOC walk and
-stamped on every source file.
-
-**Auto-detection rules (applied in order; first match wins):**
-
-| Class        | Detection signals                                                                                                                                                                    |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Generated`  | `// Code generated .* DO NOT EDIT` header; moq-style header; `*.pb.go`, `*_gen.go`, `*.gen.*`, `_pb2.py` filename patterns; mock heuristics (`mock_*.go`, `*_mock.go`, `mocks/` dir) |
-| `Test`       | Language test conventions: `*_test.go` (Go), `*.test.ts/tsx` / `*.spec.ts/tsx` (TS/JS), `test_*.py` / `*_test.py` (Python), `tests/` dir (Rust)                                      |
-| `Vendor`     | `vendor/`, `node_modules/`, `pkg/mod/` directory prefix                                                                                                                              |
-| `Production` | Everything else                                                                                                                                                                      |
-
-**Policy — segregate, not hide:** production-health metrics score only
-`Production` files but the evidence string always reports the count of
-`Test`+`Generated` files that were excluded, so reviewers can verify the
-classification is correct. `test_density` deliberately counts test functions and
-is unaffected by this policy.
-
-**Config override** (`file_class:` top-level key): `generated_globs`,
-`test_globs`, and `mock_frameworks` extend the auto-detection rules for custom
-mock frameworks or unconventionally-named generated files.
-
-```yaml
-file_class:
-  generated_globs:
-    - "codegen/**" # all files under any codegen/ directory
-    - "**/generated/*.go" # Go files in any generated/ directory (** supported)
-  test_globs:
-    - "testutil/**" # shared test helpers treated as Test, not Production
-  mock_frameworks:
-    - "fake_" # files whose basename starts with fake_ → Generated
-```
-
-### Syntax-surface metrics (ast-grep facts)
-
-These metrics are derived from `analyzers.syntax` (ast-grep) facts.
-All are report-only (`info`); none changes the verdict.
-They require `analyzers.syntax.enabled: true` — **this pass is opt-in**; when
-absent the metric reports `n/a` and `tool_coverage` emits a
-`syntax-pass: skipped (analyzers.syntax.enabled absent)` row so the gap is
-visible. (`ast-grep: ok` alone only means the binary is present, not that the
-pass ran.)
-
-- **`unsafe_density`** — count of unsafe operations per module (Rust): `unsafe {}`
-  blocks, `UnsafeCell`, `transmute`, and raw-pointer casts (`as *mut`/`as *const`).
-  A high count surfaces candidate modules for manual soundness review; `archfit` does
-  not judge acceptability — route to `archfit analyze --llm` or a human for that.
-- **`global_state_density`** — count of global mutable state sites per module
-  (Rust): `static mut` variables, `Atomic*` singletons, and `OnceLock`/`OnceCell`
-  statics. Extracted by ast-grep. Does not exclude test files (like `unsafe_density`).
-  Report-only; never gates. Route high counts to `archfit analyze --llm` or a human to
-  assess whether the concurrency strategy is intentional.
-- **`panic_density`** — count of panic/unwrap operations per module in production
-  code. Counts `unwrap()`/`expect()` (Rust) and `panic(` (Go). Both test files
-  and generated/mock files (detected via `FileClass`) are excluded — the evidence
-  string reports how many panics were found in excluded files so nothing is hidden.
-  The production-only count is materially lower than the naive module-wide total
-  (e.g. a repo with 200+ panics in mock/generated code reports a realistic ~0
-  production count).
-- **`struct_field_density`** — per-module count of struct definitions with ≥1 field
-  (Go and Rust). High field counts surface god-struct candidates; the opt-in
-  `struct_field_max` rule lets a project gate on a ceiling.
-- **`test_density`** — per-module count of test functions (`func Test…` in Go,
-  `#[test]` in Rust, `def test_*` in Python). A proxy for test coverage presence;
-  real coverage percentages need a dedicated coverage tool and stay in the LLM/human
-  review path.
-
-### `layer_role_divergence` (rule)
-
-Fires when a module's observed topological rank in the import DAG diverges from
-the rank implied by its declared `layer:` in config. Rank is computed via Kahn's
-BFS longest-path depth: a module imported by many others (domain-like) gets a high
-rank; a module that imports many others (infrastructure-like) gets a low rank.
-Cyclic nodes are skipped (abstain-not-fake — no spurious findings on cyclic graphs).
-
-**Default gate:** `warn` (advisory, non-blocking).
-**Default threshold:** `1` (rank delta before a finding fires).
-
-Config knobs:
-
-```yaml
-rules:
-  - id: lrd
-    type: layer_role_divergence
-    threshold: 1 # optional; default 1
-    gate: warn # optional; default warn
-```
-
-### public_api_type_leak (rule)
-
-Fires when a public API exposes a type from an external framework package directly in a function or method signature. Requires `analyzers.syntax.enabled: true`.
-
-Defaults to `gate: warn` when unset (advisory, non-blocking). Fires once per unique module+type combination.
-
-**Limitation:** only fires on repos with Go-style dotted external package nodes in the dependency graph. Rust/TypeScript/Python repos may have type_leak facts but no matching external nodes — see [configuration reference](configuration-reference.md#rules).
-
-### Manifest and graph metrics
-
-- **`deprecated_dep_count`** — count of locally-declared deprecation/retraction
-  markers found in manifest files: `retract` directives in `go.mod`, `deprecated`
-  fields in `package.json`. Report-only; never gates. Live-version EOL checking
-  (registry queries) is out of scope — route that to `archfit enrich`.
-- **`file_mutual_import`** — count of file pairs that mutually import each other
-  (file-level bidirectional cycles not caught by the module-level `cycle` metric).
-  Detected by running Tarjan SCC over the file-node projection of the dependency
-  graph. Currently only TypeScript has file→file edges; Go and Python produce
-  file→package or module→module edges, which yield no false positives here.
-  Report-only; never gates.
+- **Represents:** the fraction of applicable files the extractors actually
+  processed — the trust signal for every other metric.
+- **Computed:** `extracted / applicable` across all tool-coverage records. Zero
+  applicable (extractors ran, nothing matched) → `1.0`. **No extractor ran at
+  all** (no coverage record) → `n/a`, not `1.0` — absence of evidence is never
+  scored as full coverage. This is the load-bearing distinction that stops an
+  unanalysed repo from reporting confident health.
+- **Band:** always `info`. Confidence from the unresolved ratio (≤5% → high,
+  ≤20% → medium, else low). Low coverage caps the band of every metric that
+  depends on the missing evidence.
 
 ---
 
@@ -479,35 +213,30 @@ For the full severity table and the reasoning, see
 
 ---
 
-## Scorecard dimensions
+## Rules reference
 
-`archfit analyze --format scorecard` synthesizes the metrics
-above plus the gate findings into the **seven-dimension architect rubric**. The
-synthesis is a pure, deterministic decision over the already-computed evidence —
-no tools, no I/O, no LLM. Each dimension carries a 0–100 value, a band, a
-confidence, and evidence refs; the overall is the mean of the six non-meta
-dimensions.
+Gate rules are the only mechanism that produces a `fail`. Metrics inform; rules
+gate. Rules with `gate: warn` are advisory (non-blocking); rules with `gate: fail`
+block the build. An unknown `type` value is a config error.
 
-| Dimension                 | Derived from                                                                                                                                                                                                                                      |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `boundary_integrity`      | gate-violation count over classified cross-boundary edges (low confidence when none classified; an explicit note when `encapsulation` is `n/a` rather than a fabricated value)                                                                    |
-| `coupling_balance`        | strictly the BC advisory rollups — strength × distance × volatility maintenance-effort distribution + worst-case (high/high/high) count. Empty edges with low coverage → 50/low (not a blanket 90); the evidence states the classified-edge count |
-| `dependency_graph_health` | cycles, blast-radius hubs, instability/abstractness shape                                                                                                                                                                                         |
-| `cohesion_modularity`     | god-modules, hidden coupling, duplication — **high-strength + low-distance cohesion is never penalised**                                                                                                                                          |
-| `change_locality`         | the `change_locality` metric; computes with `--base`, else `n/a`                                                                                                                                                                                  |
-| `architecture_fitness`    | the `architecture_fitness` enforcement metric (`n/a` → poor, not critical)                                                                                                                                                                        |
-| `analysis_confidence`     | meta dimension — how much evidence backed the review (coverage, classified fraction, semantic tools present); drops to critical when the primary extractors are absent                                                                            |
+Rules kept in this release:
 
-Band thresholds match the rubric: critical 0–20, poor 21–40, mixed 41–60,
-serviceable 61–80, strong 81–100. Band-matches-value, evidence-per-score, and
-low-confidence caps are enforced and covered by a stored golden. The scorecard is
-**off-gate** — it never changes the gate verdict.
+| Rule                          | Default gate | Notes                                                                                                                                                                                                                     |
+| ----------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `forbidden_dependency`        | `fail`       | Blocks explicit banned import pairs.                                                                                                                                                                                      |
+| `forbidden_layer_direction`   | `fail`       | Enforces layer ordering (lower layers must not import higher).                                                                                                                                                            |
+| `public_api_only`             | `fail`       | Enforces that cross-module callers use only declared public API.                                                                                                                                                          |
+| `internal_api_access`         | `fail`       | Blocks access to internal API from outside the declared boundary.                                                                                                                                                         |
+| `new_cross_module_dependency` | `fail`       | Fires on cross-module edges; baseline suppresses known ones so only new edges fire.                                                                                                                                       |
+| `cycle`                       | `fail`       | New import cycles. Demote to `warn` with `gate: warn` if desired.                                                                                                                                                         |
+| `public_api_change`           | `warn`       | Detects breaking changes in declared public API; defaults to `warn` when unset.                                                                                                                                           |
+| `public_api_type_leak`        | `warn`       | Fires when a public API exposes a type from an external framework package in a signature. Defaults to `warn`. Requires `analyzers.syntax.enabled: true`. Only fires on repos with Go-style dotted external package nodes. |
+| `public_api_max`              | `fail`       | Caps the number of public symbols on a module.                                                                                                                                                                            |
 
-**Fail-loud, not false-green.** None of these dimensions report `strong` from
-absence of evidence. A repo no extractor analysed scores `n/a`/critical with a
-coverage gap, not a confident pass — see
-[commands.md](commands.md#coverage-gaps-and-required-tools) and the
-[coverage-gate design doc](../archived/design/coverage-gate-and-autopilot-v0.1.md).
+For full rule configuration syntax and examples, see
+[Configuration reference](configuration-reference.md#rules).
+
+---
 
 ## Per-language behavior
 
@@ -517,29 +246,21 @@ Coverage and the optional metrics differ by language; when a tool is missing the
 dependent metric reports `n/a` **with the reason and enable step** — never a
 false failure.
 
-| Signal                              | Go            | TypeScript / JS                          | Python                                                   |
-| ----------------------------------- | ------------- | ---------------------------------------- | -------------------------------------------------------- |
-| Dependency graph + gates            | `go/packages` | dependency-cruiser                       | `grimp` (dotted modules)                                 |
-| Node-ID scheme                      | `file:`       | `file:`                                  | `module:` (incl. `src/` layout)                          |
-| `complexity` (lizard)               | yes           | yes                                      | yes                                                      |
-| `risk_hub` / `cohesion_lcom` (SCIP) | `scip-go`     | `scip-typescript` (needs `node_modules`) | `scip-python` (per-file modules → cohesion mostly `n/a`) |
-| type-only vs runtime edges          | n/a           | tagged (→ Contract strength)             | n/a                                                      |
-| Dynamic / lazy import signal        | n/a           | `require()` / dynamic `import()`         | in-function / `importlib` / `__import__`                 |
+| Signal                       | Go            | TypeScript / JS                          | Python                                   |
+| ---------------------------- | ------------- | ---------------------------------------- | ---------------------------------------- |
+| Dependency graph + gates     | `go/packages` | dependency-cruiser                       | `grimp` (dotted modules)                 |
+| Node-ID scheme               | `file:`       | `file:`                                  | `module:` (incl. `src/` layout)          |
+| SCIP edge strength           | `scip-go`     | `scip-typescript` (needs `node_modules`) | `scip-python`                            |
+| type-only vs runtime edges   | n/a           | tagged (→ Contract strength)             | n/a                                      |
+| Dynamic / lazy import signal | n/a           | `require()` / dynamic `import()`         | in-function / `importlib` / `__import__` |
 
-Key behaviors fixed in the v0.x gap-closure program (see
-[the gap-closure result](../archived/notes/v0.x-tool-vs-expert-gap-closure.md)):
-
-- `change_locality` matches changed files across all node-ID schemes — no more
-  Python false-0.
-- Beyond-BC graph metrics exclude external/unresolved nodes — TS martin no longer
-  flags node builtins (`fs`, `crypto`, `commander`).
-- BC advisories are grouped into scored rollups; the dynamic-import signal points
-  at cycles the static graph cannot see (the lazy-import class common in Python
-  and TS).
-
-For the install matrix and per-language tool setup, see
+SCIP refines edge strength feeding `coupling_balance` and `encapsulation` — it is
+not needed for gate rules, which work from the built-in extractor graph. For
+install matrix and per-language tool setup, see
 [Language support → optional analyzers](languages.md#optional-analyzers-per-language)
 and [Tooling reference](tooling.md).
+
+---
 
 ## Tool requirements
 
@@ -547,17 +268,12 @@ Most metrics work from the built-in extractors and `git`. A few need an opt-in
 tool and report `n/a` (with a coverage note) when it is absent — never a false
 failure.
 
-| Metric(s)                                                                                                               | Needs                                                               |
-| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| encapsulation, unbalanced_edge, cycle, coverage, blast_radius, structural_weight, architecture_fitness, change_locality | built-in extractors + `git`                                         |
-| change_amplification, hidden_coupling, change_coupling                                                                  | `git` history (churn / co-change)                                   |
-| instability, abstractness, martin_distance, propagation_cost                                                            | built-in extractors (SCIP refines abstractness)                     |
-| risk_hub, cohesion_lcom                                                                                                 | SCIP index (`analyzers.scip.enabled: true`)                         |
-| complexity                                                                                                              | `lizard` (`analyzers.complexity.enabled: true`)                     |
-| functional_candidates                                                                                                   | clone detector (`analyzers.clones.enabled: true`)                   |
-| unsafe_density, global_state_density, panic_density, struct_field_density, test_density                                 | `sg` (ast-grep); `analyzers.syntax.enabled: true`                   |
-| deprecated_dep_count                                                                                                    | manifest files (`go.mod`, `package.json`) — built-in; no extra tool |
-| file_mutual_import                                                                                                      | built-in (TS file→file graph); no extra tool                        |
+| Metric(s)                                                                       | Needs                                             |
+| ------------------------------------------------------------------------------- | ------------------------------------------------- |
+| coupling_balance, unbalanced_edge, cycle, blast_radius, encapsulation, coverage | built-in extractors + `git`                       |
+| coupling_balance (strength refinement)                                          | SCIP index (`analyzers.scip.enabled: true`)       |
+| coupling_balance (clone → symmetric strength)                                   | clone detector (`analyzers.clones.enabled: true`) |
+| public_api_max, public_api_change, public_api_type_leak (rules)                 | `sg` (ast-grep); `analyzers.syntax.enabled: true` |
 
 The `llm` tool is used only by `archfit enrich`, `archfit explain --llm`,
 `archfit analyze --llm`, `archfit autopilot`, `archfit init --llm`, and
@@ -567,24 +283,26 @@ gate verdicts and metric values stay deterministic. See
 
 ---
 
-## Dropped and rejected metrics
+## Design rationale: what archfit does not measure
 
-`archfit` deliberately omits some popular metrics. Recording why is part of being
+`archfit` deliberately omits some popular signals. Recording why is part of being
 honest about what the numbers mean.
 
-- **No single blended architecture score.** Martin's I/A/D are now reported as
-  separate report-only metrics (`instability`, `abstractness`, `martin_distance`),
-  but `archfit` never blends them — or any metrics — into one verdict number. A
-  composite hides detected edges, declared volatility, inferred distance, missing
-  coverage, and accepted exceptions behind one figure. The
-  [scorecard](#scorecard-dimensions) bands each dimension separately for exactly
-  this reason.
-- **`cohesion_spread` and `shared_state_hub`.** Prototyped, then removed — they did
-  not rank real problems better than the metrics that shipped. The later
-  `cohesion_lcom` (connected-components LCOM4 proxy) also failed its eval but is
-  retained report-only and disabled by default; see its entry above.
-- **LCOM4 / "vocabulary mixing"** for `structural_weight`. Prototyped and dropped
-  for misranking; raw LOC is the honest proxy (see `structural_weight` above).
+- **No composite architecture score.** A blended 0–100 score hides detected edges,
+  declared volatility, inferred distance, missing coverage, and accepted exceptions
+  behind one figure. False precision is an anti-pattern. archfit reports
+  `coupling_balance` as a band, lists every advisory edge, and lets the gate rules
+  produce binary pass/fail. Each signal stands on its own evidence.
+- **Code-quality concerns are delegated to linters by design.** Cyclomatic
+  complexity, duplication, panic/unsafe/global-state density, god-struct counts,
+  and test density are better served by purpose-built linters (golangci-lint,
+  clippy, flake8, eslint). archfit focuses on inter-module coupling structure, not
+  intra-module code quality.
+- **Volatility comes from DDD subdomain classification, never git churn.** Git
+  churn is accidental volatility; essential volatility is determined by business
+  domain. Mixing them produces a metric that punishes active development, not
+  structural risk.
+- **`cohesion_spread`, `shared_state_hub`.** Prototyped, then removed — they did
+  not rank real problems better than the metrics that shipped.
 
-See [Concepts](concepts.md) for the model these metrics serve, and
-`docs/spec/arch-fitness-spec-v0.4.md` §10 for the original measurement design.
+See [Concepts](concepts.md) for the model these metrics serve.

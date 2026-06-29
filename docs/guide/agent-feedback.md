@@ -48,27 +48,16 @@ locations and stable `archfit/v1` fingerprints. Metrics and the verdict ride
 in `runs[0].properties`. Pipe it to GitHub code scanning to get findings as
 inline PR annotations.
 
-## change_locality — the drift number
-
-`change_locality` quantifies a change's blast surface: cross-module edges
-originating in changed files plus the forward graph reach. It is report-only and
-computes with `archfit analyze --base <ref>` — the changed-file set comes from
-the git diff against `<ref>`. A plain full scan has no change to measure, so it
-reports `n/a`. The `new_cross_module_dependency` rule is the actual gate an agent
-watches.
-
 ## The dimensions an agent sees
 
 - **Gate findings** — boundary violations (forbidden deps, internal access,
   layer inversions, cycles, unreviewed new cross-module deps).
 - **BC advisories** — Balanced Coupling imbalances (strength × distance ×
   volatility) at or above the configured severity.
-- **Metrics (13)** — boundary health (encapsulation, unbalanced_edge, cycle,
-  coverage), modularity (blast_radius, change_amplification, hidden_coupling,
-  structural_weight, complexity), structural risk (risk_hub,
-  architecture_fitness, functional_candidates), drift (change_locality).
-- **Structural facts** — neutral per-module evidence (fan-in, fan-out, LOC,
-  co-change, symbol dependant count) for downstream judgment.
+- **Metrics** — `coupling_balance` (scored), plus complementary report-only:
+  `blast_radius`, `cycle`, `encapsulation`, `coverage`.
+- **Structural facts** — neutral per-module evidence (fan-in, fan-out, LOC)
+  for downstream judgment.
 
 ## Lifecycle the agent must respect
 

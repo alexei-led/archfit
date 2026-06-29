@@ -192,10 +192,10 @@ DistanceUnknown`) are **excluded from** the `coupling_balance` scored/abstained
 distribution. They are NOT abstained internal edges — they are external imports
 (stdlib, third-party packages, undeclared internal packages treated as external).
 
-External dependency coupling is a `dependency_graph_health` concern, not a
-`coupling_balance` measurement. Mixing them artificially deflated the scored
-fraction and lowered confidence on what is actually a well-classified internal
-graph.
+External dependency coupling is outside the `coupling_balance` measurement
+boundary — it belongs in linter and dependency-hygiene tooling. Mixing them
+artificially deflated the scored fraction and lowered confidence on what is
+actually a well-classified internal graph.
 
 The count is surfaced transparently in `classified_edges.external` (JSON) and in
 the `coupling_balance` evidence string. Language-agnostic: keys on
@@ -261,7 +261,6 @@ After the full book-model alignment (Tasks 1–15):
 | Dimension        | Score | Band        | Confidence |
 | ---------------- | ----- | ----------- | ---------- |
 | coupling_balance | 78    | serviceable | high       |
-| Overall          | 60    | mixed       | —          |
 
 Edge distribution (89 scored internal cross-boundary edges):
 
@@ -270,18 +269,6 @@ Edge distribution (89 scored internal cross-boundary edges):
   baseline applies).
 - Volatility: all `low` (supporting/generic subdomains).
 - Severity: 84 `none`, 5 `low` (symmetric clone edges). No criticals.
-
-Honestly-low dimensions:
-
-- `cohesion_modularity: 5/100 / critical / high confidence` — 5 god modules
-  (`cmd/archfit` 4158 LOC, `internal/initcfg` 2698 LOC, etc.), 75 hidden-coupling
-  pairs, 18 clone-duplicated cross-module pairs. Pre-existing structural debt, not
-  caused by the book-model change. Warrants a separate refactoring effort.
-- `boundary_integrity: 50/100 / mixed / low confidence` — low confidence because
-  SCIP Go provides limited coverage (9% call-graph coverage ceiling on import edges).
-  This is a structural limitation of the SCIP Go extractor, not a measurement error.
-- `analysis_confidence: 90/100 / strong` — improved from 80 after external-edge
-  exclusion removed false abstains from the internal scored fraction.
 
 ---
 

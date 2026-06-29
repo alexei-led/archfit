@@ -275,17 +275,17 @@ scorecard treats such a degenerate (<2-node) graph honestly — it never scores 
 on it.
 
 For finer resolution, two opt-in passes add the **intra-crate module graph** so
-single-crate repos get real cycle, blast-radius, cohesion, and god-file signal:
+single-crate repos get real cycle, blast-radius, and encapsulation signal:
 
 - `analyzers.cargo_modules.enabled: true` runs `cargo-modules` to emit
   `<crate>::<mod>` nodes and aggregated `uses` edges.
 - `analyzers.scip.enabled: true` runs `rust-analyzer scip` for symbol-level
-  integration strength on those module edges.
+  integration strength on those module edges, improving `coupling_balance`
+  precision.
 
-With either on, per-file LOC and git churn also resolve to module granularity (via the
-crate roots cargo metadata provides), so `structural_weight` flags god _files/modules_ by
-size and the change-history metrics measure inside a single crate — not just across
-crates. See [Optional analyzers](#optional-analyzers-per-language) below.
+With either on, per-file LOC also resolves to module granularity (via the
+crate roots cargo metadata provides), so size-based metrics cover individual
+modules rather than entire crates. See [Optional analyzers](#optional-analyzers-per-language) below.
 
 Optional config:
 
@@ -330,8 +330,8 @@ For Rust, module paths and rule filters are crate-name globs (the crate name fro
 ## File classification per language
 
 archfit classifies every source file as `Production`, `Test`, `Generated`, or
-`Vendor` before computing production-health metrics. The per-language detection
-patterns are:
+`Vendor`. Classification drives vendor/generated exclusion in the LOC walk and
+in structural metrics. The per-language detection patterns are:
 
 | Language      | Test patterns                                        | Generated patterns                                                                                       |
 | ------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -344,53 +344,47 @@ patterns are:
 
 Auto-detection runs first; the `file_class:` config key (`generated_globs`,
 `test_globs`, `mock_frameworks`) adds project-specific patterns on top. See
-[Metrics reference → File classification](metrics.md#file-classification-fileclass)
-for the policy and the config override syntax.
+[Configuration reference → file_class](configuration-reference.md#file_class)
+for the config override syntax.
 
 ## Optional analyzers per language
 
-The deterministic gates need only the language adapter above. The report-only
-metrics need extra tools, and several are language-specific. When a tool is
-missing the dependent metric reports `n/a` **with the reason and enable step** —
-the run never fails — but the metric stays blind until you install it.
+The deterministic gates need only the language adapter above. The optional tools
+improve `coupling_balance` precision or add complementary metrics. When a tool is
+missing, dependent metrics report `n/a` **with the reason and enable step** — the
+run never fails.
 
-| Tool                | Powers                          | Go  | TS/JS | Python | Rust | Setup                                                                                    |
-| ------------------- | ------------------------------- | --- | ----- | ------ | ---- | ---------------------------------------------------------------------------------------- |
-| `lizard`            | `complexity`                    | yes | yes   | yes    | yes  | `analyzers.complexity.enabled: true`; `uv tool install 'lizard==1.23.0'`                |
-| SCIP indexer + `uv` | `risk_hub`                      | yes | yes   | yes    | yes  | `analyzers.scip.enabled: true`; see notes below                                          |
-| clone detector      | `functional_candidates`         | yes | yes   | yes    | yes  | `analyzers.clones.enabled: true`; `npm install -g jscpd@5.0.11`                          |
-| `cargo-modules`     | intra-crate module graph (Rust) | —   | —     | —      | yes  | `analyzers.cargo_modules.enabled: true`; `cargo install cargo-modules --version 0.26.0` |
+| Tool                | Powers                                               | Go  | TS/JS | Python | Rust | Setup                                                                                   |
+| ------------------- | ---------------------------------------------------- | --- | ----- | ------ | ---- | --------------------------------------------------------------------------------------- |
+| SCIP indexer + `uv` | `coupling_balance` edge-strength precision           | yes | yes   | yes    | yes  | `analyzers.scip.enabled: true`; see notes below                                         |
+| clone detector      | `coupling_balance` symmetric-coupling signal (jscpd) | yes | yes   | yes    | yes  | `analyzers.clones.enabled: true`; `npm install -g jscpd@5.0.11`                         |
+| `cargo-modules`     | intra-crate module graph (Rust)                      | —   | —     | —      | yes  | `analyzers.cargo_modules.enabled: true`; `cargo install cargo-modules --version 0.26.0` |
 
 Notes that bite most often:
 
-- **Complexity needs PyPI `lizard` and `analyzers.complexity.enabled: true`.** Without
-  both, `complexity` is `n/a` for every language. lizard supports Go, Python,
-  TypeScript, TSX, and Rust. Install it with `uv tool install 'lizard==1.23.0'` and
-  set the config flag, then re-run. Do **not** use `brew install lizard`; that is
-  a compression tool with the same command name.
 - **SCIP indexers are language-specific.** Use `go install github.com/sourcegraph/scip-go/cmd/scip-go@v0.2.7`,
   `npm install -g @sourcegraph/scip-typescript@0.4.0`,
   `npm install -g @sourcegraph/scip-python@0.6.6`, or
   `rustup component add rust-analyzer`, plus `uv` for archfit's embedded SCIP reader.
 - **SCIP for TypeScript needs `node_modules`.** `scip-typescript` resolves
   imports through installed dependencies, so run `npm ci` (or `bun install`)
-  before the run. If `node_modules` is absent, archfit reports `risk_hub` as
-  `n/a` with exactly that reason instead of silently skipping it.
+  before the run. If `node_modules` is absent, archfit reports the edge-strength
+  pass as `n/a` with exactly that reason instead of silently skipping it.
 - **SCIP for Rust uses `rust-analyzer`.** With `analyzers.scip.enabled: true` and
   `rust-analyzer` on `PATH`, archfit runs `rust-analyzer scip` to add symbol-level
   strength on top of the crate-level `cargo metadata` graph. When the binary is
-  absent the pass no-ops cleanly — no error, `risk_hub` stays `n/a` with the
-  reason.
+  absent the pass no-ops cleanly — no error, `coupling_balance` confidence stays
+  at whatever the type-info heuristic provides.
 - **Rust module depth needs `cargo-modules`.** A single crate is one node at crate
-  level, so cycle/blast-radius/cohesion go `n/a`. `analyzers.cargo_modules.enabled: true`
-  (with `cargo install cargo-modules --version 0.26.0`) adds the `<crate>::<mod>` graph; archfit then
-  maps per-file LOC/churn to module keys so `structural_weight` flags god _files_ and
-  the change-history metrics measure within the crate. On a workspace, crates whose
-  `cargo-modules` run fails (proc-macro/codegen) are named in the coverage reason and
-  the structural dimensions drop to medium confidence — partial, never silent.
+  level, so cycle/blast-radius/encapsulation go `n/a`. `analyzers.cargo_modules.enabled: true`
+  (with `cargo install cargo-modules --version 0.26.0`) adds the `<crate>::<mod>` graph;
+  archfit then maps per-file LOC to module keys so size metrics cover individual
+  modules rather than entire crates. On a workspace, crates whose `cargo-modules`
+  run fails (proc-macro/codegen) are named in the coverage reason and confidence
+  drops to medium — partial, never silent.
 - **Clone detection is opt-in.** `analyzers.clones.enabled: true` plus `jscpd`
-  (`npm install -g jscpd@5.0.11`) turns `functional_candidates` on. `false` or
-  absent → `n/a`.
+  (`npm install -g jscpd@5.0.11`) upgrades cross-module clone pairs to
+  `StrengthSymmetric` (S=9) in the BC scorer. `false` or absent → no upgrade.
 
 See [Install → optional analysis tools](install.md#optional-analysis-tools) for
 quick setup and [Tooling reference](tooling.md) for platform-specific package

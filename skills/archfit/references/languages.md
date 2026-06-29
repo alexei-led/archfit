@@ -53,7 +53,8 @@ Guidance:
 - Prefer a pinned repo-local `dependency-cruiser` install.
 - Config paths and rule filters are repo-relative file globs.
 - For higher-fidelity symbol evidence, SCIP needs installed dependencies
-  (`node_modules`). If they are absent, `risk_hub` stays `n/a`.
+  (`node_modules`). If they are absent, edge strength classification falls back
+  to heuristics and `coupling_balance` confidence drops.
 - If Node/Bun or dependency-cruiser is missing, treat TS/JS architecture results
   as partial only.
 
@@ -106,9 +107,11 @@ Guidance:
 
 ## Optional analyzers that often explain `n/a`
 
-- `analyzers.complexity.enabled: true` + `lizard` → `complexity`
-- `analyzers.scip.enabled: true` + language SCIP indexer / `rust-analyzer` → `risk_hub`
-- `analyzers.clones.enabled: true` + clone detector → `functional_candidates`
-- `analyzers.cargo_modules.enabled: true` + `cargo-modules` → Rust intra-crate depth
+- `analyzers.scip.enabled: true` + language SCIP indexer / `rust-analyzer` →
+  edge strength precision; raises `coupling_balance` confidence
+- `analyzers.clones.enabled: true` + jscpd → clone-detected `symmetric` edges
+  (S=9 upgrade); affects `coupling_balance` distribution
+- `analyzers.cargo_modules.enabled: true` + `cargo-modules` → Rust intra-crate
+  module depth for `encapsulation` and `cycle` signal
 
 When one is missing, say so explicitly. `n/a` means unmeasured, not strong.

@@ -1,7 +1,7 @@
 // Package syntax classifies each source file into a FileClass
 // (Production/Test/Generated/Vendor) and exposes file-level helpers
-// (LookupFileClass, IsTestFile) consumed by production-health metrics and the
-// test_in_production rule. It is part of the core ring: it decides over
+// (LookupFileClass, IsTestFile) used by the LOC walk and by metrics that
+// filter on Production files. It is part of the core ring: it decides over
 // already-gathered facts and runs no subprocess.
 package syntax
 

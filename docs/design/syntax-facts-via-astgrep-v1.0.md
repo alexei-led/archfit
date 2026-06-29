@@ -13,9 +13,13 @@ Plan: `docs/plans/20260624-syntax-facts-via-astgrep.md`.
 > rule, the `from_role`/`to_role`/`min_confidence` fields, and the
 > `role`/`role_confidence`/`role_evidence` output fields. The syntax-facts layer
 > still ships: declarations, exported surface, and framework routes — feeding
-> `public_api_max`, `public_api_change`, `public_api_type_leak`,
-> `struct_field_max`, and `test_in_production`. Sections below that describe role
-> derivation are historical.
+> `public_api_max`, `public_api_change`, and `public_api_type_leak`. Sections
+> below that describe role derivation are historical.
+>
+> **Amendment (Phase 6):** `struct_field_max` and `test_in_production` rules were
+> removed. Code-quality concerns are delegated to linters by design. Only the
+> public-API rules (`public_api_max`, `public_api_change`, `public_api_type_leak`)
+> remain active.
 
 ---
 
@@ -223,10 +227,10 @@ stage** so roles are in `Evidence`. New types added to the `rules.New` switch:
 New `RuleDef` fields: `FromRole`, `ToRole`, `Max`, `MinConfidence`
 (`FromLayer`/`ToLayer` are already-unused precedent for adding fields).
 
-### 7.3 Scorecard
+### 7.3 Gate verdict
 
-`gate`-kind findings feed `boundary_integrity` automatically (existing
-`activeGateFindings` path). Advisory findings do not affect the verdict.
+`gate`-kind findings contribute to the gate verdict (blocking on `StatusNew`).
+Advisory findings (`gate: warn`) do not affect the verdict.
 
 ### 7.4 Unknown rule type = error
 

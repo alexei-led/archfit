@@ -16,7 +16,7 @@ archfit analyze --config .archfit.yaml --full
 version         — required; must be 1
 exclude         — path globs to skip during scanning
 languages       — per-language extractor settings (go/typescript/python/rust)
-analyzers       — opt-in deeper analysis backends (syntax/scip/complexity/clones/cargo_modules)
+analyzers       — opt-in deeper analysis backends (syntax/scip/clones/cargo_modules)
 ai              — off-gate LLM provider for enrich/explain/analyze --llm
 coupling        — Balanced-Coupling advisory tuning
 layers          — ordered architecture layers, inner to outer
@@ -133,7 +133,7 @@ exclude:
 
 archfit also ships a built-in default exclusion set — tool-artifact, cache,
 dependency directories, and test fixtures it never analyses, because measuring them
-yields non-deterministic or irrelevant facts (a vendored tree's complexity, a
+yields non-deterministic or irrelevant facts (a vendored tree's size metrics, a
 generated index, a report written back into the scanned repo, or a fixture repo
 inside `testdata/` distorting coverage signals):
 
@@ -179,11 +179,11 @@ must be analyzed.
 ```yaml
 languages:
   go:
-    enabled: auto   # true | false | auto
-    gate: warn      # off | warn (default) | fail
+    enabled: auto # true | false | auto
+    gate: warn # off | warn (default) | fail
     modules:
-      include: []   # ScanRoot-relative globs; empty = all in-scope members
-      exclude: []   # drop members matching these (applied after include)
+      include: [] # ScanRoot-relative globs; empty = all in-scope members
+      exclude: [] # drop members matching these (applied after include)
 ```
 
 `gate` controls the CI posture when the Go extractor is absent. `warn` (default)
@@ -228,7 +228,7 @@ languages:
   python:
     enabled: auto
     gate: warn
-    package: myapp   # top-level Python package; required when it differs from the repo name or uses src/ layout
+    package: myapp # top-level Python package; required when it differs from the repo name or uses src/ layout
 ```
 
 `package` replaces the old top-level `python_package` key.
@@ -240,9 +240,9 @@ languages:
   rust:
     enabled: auto
     gate: warn
-    manifest: ""             # path to a non-root Cargo.toml; empty = auto (root manifest)
-    features: []             # cargo features to activate for the metadata run
-    include_dev_deps: false  # include dev-dependencies as crate edges
+    manifest: "" # path to a non-root Cargo.toml; empty = auto (root manifest)
+    features: [] # cargo features to activate for the metadata run
+    include_dev_deps: false # include dev-dependencies as crate edges
 ```
 
 See [Language support](languages.md) for per-language setup and
@@ -260,19 +260,15 @@ dependent metrics report `n/a (timed out)` — the run continues.
 ```yaml
 analyzers:
   syntax:
-    enabled: auto      # structural declaration facts (ast-grep)
+    enabled: auto # structural declaration facts (ast-grep)
   scip:
-    enabled: auto      # symbol-level strength (SCIP indexers)
+    enabled: auto # symbol-level strength (SCIP indexers)
     timeout: 10m
-  complexity:
-    enabled: auto      # cyclomatic complexity (gocyclo / lizard)
-    timeout: 3m
-    backend: auto      # auto | lizard
   clones:
-    enabled: auto      # clone detection (jscpd)
+    enabled: auto # clone detection (jscpd)
     timeout: 5m
   cargo_modules:
-    enabled: auto      # Rust intra-crate module graph
+    enabled: auto # Rust intra-crate module graph
 ```
 
 ### `analyzers.syntax`
@@ -310,36 +306,23 @@ on PATH; `archfit doctor` checks it.
 ```yaml
 analyzers:
   scip:
-    enabled: true      # symbol-level analysis; powers risk_hub
+    enabled: true # symbol-level edge strength (SCIP indexers)
     timeout: 10m
   clones:
-    enabled: true      # clone detection (jscpd); powers functional_candidates
+    enabled: true # clone detection (jscpd)
     timeout: 5m
 ```
 
 - `scip` — runs a SCIP indexer (`scip-go`/`scip-python`/`scip-typescript`) plus
-  `uv` to build the symbol graph. Required for `risk_hub`; without it `risk_hub`
-  is `n/a`. Also upgrades edge strength for TypeScript/Python/Rust.
-- `clones` — runs `jscpd` to find duplicated logic. Required for
-  `functional_candidates`; without it that metric is `n/a`.
+  `uv` to build the symbol graph. Upgrades edge strength for TypeScript/Python/Rust.
+  For Go, SCIP is supplementary — Go type-info from `go/packages` is the primary
+  strength source.
+- `clones` — runs `jscpd` to find cross-module duplicated logic. When a clone pair
+  spans two modules, their shared edge strength is upgraded to `symmetric` in the
+  `coupling_balance` scorer, reflecting undeclared hidden coupling.
 
 `scip` and `clones` are opt-in: `auto` and `false` (and absent) all disable them;
-the dependent metric then reports `n/a` without ever failing the run.
-
-### `analyzers.complexity`
-
-```yaml
-analyzers:
-  complexity:
-    enabled: true
-    timeout: 3m
-    backend: auto   # auto | lizard
-```
-
-`backend: auto` (default) = gocyclo for exact Go CCN + an ast-grep
-decision-point proxy for TS/Py/Rust. `backend: lizard` opts into exact
-per-function CCN for all languages. When neither gocyclo nor `sg` is installed,
-complexity reports `n/a` with an explicit install hint.
+the run continues without them and the gate verdict is unaffected.
 
 ### `analyzers.cargo_modules`
 
@@ -382,11 +365,9 @@ without editing config.
 
 ### `analyzers.<x>.timeout`
 
-Per-analyzer watchdog for subprocess analyzers: `analyzers.scip`,
-`analyzers.clones`, and `analyzers.complexity`. When the subprocess exceeds the
-timeout, the result is dropped cleanly and the dependent metrics report
-`n/a (timed out)` — the run continues and exits on the verdict from the remaining
-analyzers.
+Per-analyzer watchdog for subprocess analyzers: `analyzers.scip` and
+`analyzers.clones`. When the subprocess exceeds the timeout, the result is dropped
+cleanly and the gate verdict is determined by the remaining analyzers.
 
 ```yaml
 analyzers:
@@ -396,14 +377,10 @@ analyzers:
   clones:
     enabled: true
     timeout: 5m
-  complexity:
-    enabled: true
-    timeout: 3m
 ```
 
 Zero or absent means the built-in package default (`scip`: 20 minutes, `clones`:
-5 minutes, `complexity`: 5 minutes). Set an explicit timeout when a generated or
-very large file causes a hang.
+5 minutes). Set an explicit timeout when a generated or very large file causes a hang.
 
 ## `ai`
 
@@ -412,9 +389,9 @@ Off-gate LLM provider configuration. Consumed only by `enrich`, `explain --llm`,
 
 ```yaml
 ai:
-  provider: anthropic   # anthropic | openai | ollama
+  provider: anthropic # anthropic | openai | ollama
   model: claude-opus-4-8
-  base_url: ""          # ollama only; default http://localhost:11434/v1
+  base_url: "" # ollama only; default http://localhost:11434/v1
 ```
 
 API keys come from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` env vars — never from
@@ -429,7 +406,7 @@ Balanced-Coupling advisory tuning.
 
 ```yaml
 coupling:
-  min_severity: medium   # low | medium (default) | high | critical
+  min_severity: medium # low | medium (default) | high | critical
   volatility_cascade: false
 ```
 
@@ -532,10 +509,10 @@ Fields:
 `layer` and `subdomain` are complementary — they capture different dimensions:
 
 - **`layer`** — topological position in the dependency DAG (domain, application,
-  adapter, …). Controls `forbidden_layer_direction` and `layer_role_divergence`.
+  adapter, …). Controls `forbidden_layer_direction`.
 - **`subdomain`** — DDD subdomain classification (`core`, `supporting`, `generic`).
   Controls the volatility ordinal used by the Balanced Coupling scorer.
-- **`role`** — optional architectural *function* within a layer. Lets archfit
+- **`role`** — optional architectural _function_ within a layer. Lets archfit
   adjust coupling scoring for modules that are _supposed_ to fan out.
 
 `role` refines Balanced-Coupling distance classification for modules that are
@@ -562,9 +539,9 @@ Accepted `role` values:
 
 For a `composition_root`, `generated`, or `test` source module, archfit
 downgrades its outbound cross-deploy / different-owner edges to
-cross-module-same-owner, so the advisory severity, the continuous score, and
-every distance-reading metric read cohesion. A `core -> core` unbalanced edge is
-**still** flagged, and inbound edges to a wiring module are unaffected.
+cross-module-same-owner, so the advisory severity reads cohesion. A `core -> core`
+unbalanced edge is **still** flagged, and inbound edges to a wiring module are
+unaffected.
 
 ### Volatility and subdomain
 
@@ -578,17 +555,18 @@ Declare intent explicitly:
 ```yaml
 modules:
   domain:
-    subdomain: core        # → volatility ordinal high (10)
+    subdomain: core # → volatility ordinal high (10)
   infra:
-    subdomain: supporting  # → volatility ordinal low (3)
+    subdomain: supporting # → volatility ordinal low (3)
   utils:
-    subdomain: generic     # → volatility ordinal low (3)
+    subdomain: generic # → volatility ordinal low (3)
   config:
     subdomain: supporting
-    volatility: medium     # explicit override; medium only via direct declaration
+    volatility: medium # explicit override; medium only via direct declaration
 ```
 
 Methodology (Khononov book):
+
 - `core` → `high` volatility (ordinal 10)
 - `supporting` → `low` volatility (ordinal 3)
 - `generic` → `low` volatility (ordinal 3)
@@ -654,18 +632,17 @@ rules:
 
 ### Rule field reference
 
-| Field           | Applies to                                | Description                                                                                 |
-| --------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `id`            | all                                       | Stable ID used in findings, baselines, and waivers.                                         |
-| `type`          | all                                       | Built-in rule type (see below). Unknown type is a config error.                             |
-| `gate`          | all                                       | `fail` (or absent for most types), `warn`, or `off`. `public_api_change` defaults to `warn`.|
-| `from`          | most                                      | Source module or path glob.                                                                 |
-| `to`            | most                                      | Target module or path glob.                                                                 |
-| `from_layer`    | `forbidden_layer_direction`               | Source layer name.                                                                          |
-| `to_layer`      | `forbidden_layer_direction`               | Target layer name.                                                                          |
-| `max`           | `public_api_max`, `struct_field_max`      | Integer ceiling.                                                                            |
-| `threshold`     | `layer_role_divergence`                   | Max tolerated rank delta (default 1).                                                       |
-| `patterns`      | structural rules                          | Optional ast-grep patterns for structural evidence.                                         |
+| Field        | Applies to                  | Description                                                                                  |
+| ------------ | --------------------------- | -------------------------------------------------------------------------------------------- |
+| `id`         | all                         | Stable ID used in findings, baselines, and waivers.                                          |
+| `type`       | all                         | Built-in rule type (see below). Unknown type is a config error.                              |
+| `gate`       | all                         | `fail` (or absent for most types), `warn`, or `off`. `public_api_change` defaults to `warn`. |
+| `from`       | most                        | Source module or path glob.                                                                  |
+| `to`         | most                        | Target module or path glob.                                                                  |
+| `from_layer` | `forbidden_layer_direction` | Source layer name.                                                                           |
+| `to_layer`   | `forbidden_layer_direction` | Target layer name.                                                                           |
+| `max`        | `public_api_max`            | Integer ceiling.                                                                             |
+| `patterns`   | structural rules            | Optional ast-grep patterns for structural evidence.                                          |
 
 `gate` controls how the rule blocks the run:
 
@@ -693,20 +670,14 @@ rules:
 - `public_api_change` — emits one finding per exported declaration; baseline
   suppresses known ones so only newly-added surface shows as `new`. Defaults to
   `gate: warn`. Requires `analyzers.syntax.enabled: true`.
-- `struct_field_max` — fires when any module's struct definition has more fields
-  than `max` (Go and Rust; requires `analyzers.syntax.enabled: true`). Surfaces
-  god-struct candidates. Defaults to `gate: warn`.
 - `public_api_type_leak` — fires when an exported struct field or function return
   type names a type from an external (non-first-party) package (Go only; requires
   `analyzers.syntax.enabled: true`). Flags API surface that couples callers to a
   transitive dependency. Defaults to `gate: warn`.
-- `layer_role_divergence` — fires when a module's observed topological rank (from
-  the import DAG) diverges from the rank implied by its declared `role`/`layer`
-  by more than `threshold` (default 1). Uses `gate: warn` by default.
 
 **Note:** when `analyzers.syntax.enabled` is not `true`, the rule types
-`public_api_max`, `public_api_change`, `struct_field_max`, and
-`public_api_type_leak` emit zero findings silently — they are not errors.
+`public_api_max`, `public_api_change`, and `public_api_type_leak` emit zero
+findings silently — they are not errors.
 
 Example syntax-facts rule:
 
@@ -721,12 +692,6 @@ rules:
   # Surface newly-added public API (baseline suppresses known surface).
   - id: track_public_api
     type: public_api_change
-    gate: warn
-
-  # Warn on structs with more than 30 fields (god-struct candidate).
-  - id: no_god_struct
-    type: struct_field_max
-    max: 30
     gate: warn
 
   # Warn when exported API leaks an external type to callers.
@@ -778,31 +743,6 @@ Report-only metrics (band `info`; they never gate the verdict):
 
 - `blast_radius` — modules whose transitive reverse-dependency reach is a large
   share of the codebase.
-- `change_amplification` — blast radius weighted by recent churn.
-- `hidden_coupling` — module pairs that co-change without a static import edge.
-- `structural_weight` — size-skew god-modules (LOC far above the median).
-- `complexity` — functions over a cyclomatic-complexity threshold (needs
-  `analyzers.complexity.enabled: true`).
-- `risk_hub` — cross-module symbol surface-breadth × explicit config volatility.
-  Requires `analyzers.scip.enabled: true`; reports `n/a` otherwise.
-- `architecture_fitness` — presence of architecture enforcement signals (arch
-  tests, import-linter config, arch-linter in CI). Score 0–10.
-- `functional_candidates` — module pairs sharing duplicated logic (clone clusters),
-  cross-referenced with co-change. Requires `analyzers.clones.enabled: true`.
-- `change_locality` — per-change drift: how far a change reaches beyond its own
-  modules (computes with `analyze --base <ref>`; `n/a` otherwise).
-- `unsafe_density` — count of unsafe operations per module (Rust; needs
-  `analyzers.syntax.enabled: true`).
-- `panic_density` — count of production panic/unwrap operations per module
-  (Rust/Go; excludes test files; needs `analyzers.syntax.enabled: true`).
-- `struct_field_density` — per-module count of struct definitions (Go/Rust;
-  needs `analyzers.syntax.enabled: true`).
-- `test_density` — per-module count of test functions (Go/Rust/Python proxy;
-  needs `analyzers.syntax.enabled: true`).
-- `deprecated_dep_count` — count of locally-declared deprecation/retraction
-  markers in manifest files (`go.mod retract`, `package.json deprecated`).
-- `file_mutual_import` — count of file pairs that mutually import each other
-  (TypeScript file→file cycles; no extra tool required).
 
 Metric entry fields:
 
@@ -976,5 +916,4 @@ External/library edges (`Distance == DistanceUnknown`, i.e. stdlib,
 third-party packages, undeclared imports) are excluded from
 `coupling_balance` entirely — they are not internal coupling seams. Their
 count is visible in `classified_edges.external` and the `coupling_balance`
-evidence string. External dependency hygiene is a `dependency_graph_health`
-concern, not a `coupling_balance` concern.
+evidence string.

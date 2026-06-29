@@ -26,7 +26,7 @@ small references while configuring a repo.
 - [Commands](commands.md) — common commands, formats, and exit codes.
 - [CI](ci.md) — basic CI and pull-request usage.
 - [Agent feedback loop](agent-feedback.md) — the AI-agent loop: `agent_tasks`,
-  SARIF, `change_locality`.
+  SARIF, `--base` delta mode.
 - [LLM enrichment](llm-enrich.md) — off-gate LLM enrichment: `enrich`, pinned
   labels, `explain --llm`.
 - [Troubleshooting](troubleshooting.md) — common setup and config issues.

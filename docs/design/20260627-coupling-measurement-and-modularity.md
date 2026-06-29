@@ -4,6 +4,11 @@ Status: approved (scope confirmed by user 2026-06-27) · review-driven remediati
 Source: `reports/architecture-review-2026-06-27.md` (Findings F1–F5)
 Implements on branch `fix/coupling-measurement-modularity`.
 
+> **Phase 6 note:** F3 (`boundary_integrity` dimension) and F4 (`change_amplification`
+> metric) reference dimensions and metrics removed in Phase 6. Those sections are
+> preserved as historical record. The shipped codebase no longer has
+> `boundary_integrity`, `change_amplification`, `risk_hub`, or a composite scorecard.
+
 ## Follow-up — F2 shipped via accurate strength hint (branch `fix/coupling-accurate-strength`)
 
 F2 was held in the first PR because the SCIP-on hint was coarse. **Resolved:**
@@ -17,9 +22,9 @@ Result on archfit-self (SCIP on): `by_strength` now diverse —
 concrete domain types like `Diagnostic`/`Graph`/`Finding` — is now visible, not
 flattened). `coupling_balance` reads **36/poor, 139 critical edges**: model
 coupling (s=3) into the high-volatility core (v=10) at d=4 → balance 2, the book's
-verbatim complexity-zone verdict. This is honest and corroborated (risk_hub #1 =
-`Diagnostic`; blast_radius model/\* 59–71%) — NOT a calibration artifact: the same
-36/poor holds with or without SCIP once the hint is accurate.
+verbatim complexity-zone verdict. This is honest and corroborated (blast_radius
+model/\* 59–71%) — NOT a calibration artifact: the same 36/poor holds with or
+without SCIP once the hint is accurate.
 
 ### Editorial fix — distributed-monolith label is now distance-gated
 
@@ -60,8 +65,9 @@ a legitimate distance component per the book, so both readings are defensible.
 ## source_inputs
 
 - Architecture review (this repo, 2026-06-27): F1 catch-all module shadowing,
-  F2 strength-invariant coupling_balance, F3 boundary_integrity Go n/a ceiling,
-  F4 change_amplification churn, F5 god files.
+  F2 strength-invariant coupling_balance, F3 boundary_integrity Go n/a ceiling
+  (dimension removed in Phase 6), F4 change_amplification churn (metric removed
+  in Phase 6), F5 god files.
 - Verified empirically: removing the catch-all stanza moves coupling_balance
   78→40 and surfaces 257 high-volatility edges; layer rule is currently inert
   (0 findings) because every path resolves to the catch-all (`support` layer).
@@ -148,20 +154,27 @@ cohesion = balanced. The value of the fix is _sensitivity_ — the metric will n
 move if a future change raises distance (e.g. split deployment) while keeping the
 shared model.
 
-## Contract 3 — boundary_integrity scoring (F3)
+## Contract 3 — boundary_integrity scoring (F3) — removed in Phase 6
 
-**Problem.** `encapsulation` is structurally n/a for Go (no intrusive edges
-possible across package boundaries; `intrusiveCross==0`). The
-`boundary_integrity` dimension treats this as "unconfirmed" and caps at
+> **Removed.** The `boundary_integrity` composite dimension was removed in Phase 6.
+> `encapsulation` is now a direct report-only metric; rules (`forbidden_dependency`,
+> `forbidden_layer_direction`, `cycle`) gate directly — there is no dimension
+> aggregating them. Historical contract preserved below.
+
+**Problem (historical).** `encapsulation` is structurally n/a for Go (no intrusive
+edges possible across package boundaries; `intrusiveCross==0`). The
+`boundary_integrity` dimension treated this as "unconfirmed" and capped at
 50/mixed/low — a permanent ceiling for every Go project.
 
-**Target contract.** When `encapsulation` is n/a _and_ boundary gates exist
-(`forbidden_dependency` / `forbidden_layer_direction` present and passing) and
-cycles are 0, `boundary_integrity` scores from the **gate signal** (violations,
-cycles) at the gates' confidence, instead of capping on the missing metric. n/a
-encapsulation with no gates → unchanged (genuinely unmeasured).
+**Target contract (historical).** When `encapsulation` is n/a _and_ boundary gates
+exist (`forbidden_dependency` / `forbidden_layer_direction` present and passing) and
+cycles are 0, `boundary_integrity` scored from the **gate signal** (violations,
+cycles) at the gates' confidence, instead of capping on the missing metric.
 
-## F4 — change_amplification churn (verify-then-fix)
+## F4 — change_amplification churn — removed in Phase 6
+
+> **Removed.** `change_amplification` was removed in Phase 6. `blast_radius` is
+> retained as a complementary report-only metric. Historical finding preserved below.
 
 `change_amplification = blast_radius × churn`. Confirm churn is read in `--full`
 (`model/*` are blast hubs the config calls volatile, yet amplification=0). If
@@ -191,9 +204,8 @@ internal/model/**}`, assert `ModuleFor("internal/model/x.go") == "internal/model
 - **Strength kind (F2):** with a public-glob target and a struct-typed Go hint,
   assert strength == `model`; interface hint → `contract`; func → `functional`;
   `internal:`-glob → `intrusive`; no hint → `contract`.
-- **Boundary fallback (F3):** encapsulation n/a + passing gates + 0 cycles →
-  `boundary_integrity` band above mixed at gate confidence; n/a + no gates →
-  unchanged.
+- **Boundary fallback (F3):** removed in Phase 6 — no `boundary_integrity`
+  dimension remains; rule gates and `encapsulation` metric are independent.
 - **Determinism:** `TestGolden_DoubleRun` must stay byte-identical (most-specific
   loop must be order-independent — guaranteed by sorted-name strict-greater
   tiebreak).
@@ -243,7 +255,7 @@ Investigated the scorer to settle the F2/calibration question. Conclusions:
   `max(|3−4|, 0)+1 = 2` = critical: the book's complexity zone (strength≈distance,
   high volatility — a shared domain model that changes often, used across a
   boundary). archfit's `Diagnostic`/`graph`/`coupling` hub is exactly that
-  (corroborated by risk_hub #1 and blast_radius). The honest remedy is the book's:
+  (corroborated by blast_radius). The honest remedy is the book's:
   lower the core's volatility or wrap it in a contract — NOT suppress the metric.
 
 - **F2's real defect was the strength INPUT, not the formula.** With SCIP on, the

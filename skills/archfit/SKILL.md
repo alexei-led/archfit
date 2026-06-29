@@ -23,6 +23,13 @@ Detailed behavior lives in `references/`, loaded on demand.
 **Do not use** for generic software-architecture advice unrelated to `archfit`,
 or to decide whether to adopt `archfit` — use web research for that.
 
+archfit measures **Balanced Coupling** (`coupling_balance` band, Khononov S×D×V
+formula) plus standard structural architecture rules (forbidden deps, layering,
+cycles, public-API) and a minimal set of complementary report-only metrics
+(`cycle`, `blast_radius`, `encapsulation`, `coverage`). It is not a 0-100
+composite architecture report card — code-quality concerns (complexity,
+duplication, panic/unsafe/god-struct density) are delegated to linters by design.
+
 ## Routing
 
 - Stay in this skill for deterministic `archfit` setup, config review, CI wiring,
@@ -46,7 +53,7 @@ Read the one the task needs:
   (labels, `--subdomains`, `--owner`, `--volatility`), `autopilot`, `.env`,
   and `explain --llm`.
 - `references/agent-loop.md` — autonomous repair contract (`agent_tasks`, SARIF,
-  `change_locality`), and how coverage gaps read in the loop.
+  `blast_radius`), and how coverage gaps read in the loop.
 
 `archfit --help` and `archfit <cmd> --help` confirm flags. When a reference and
 the binary disagree, trust the binary, say which reference was stale, and update

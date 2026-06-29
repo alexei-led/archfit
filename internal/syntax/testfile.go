@@ -6,7 +6,7 @@ import (
 )
 
 // IsTestFile reports whether path is a test file by language convention.
-// Used by the test_in_production rule to exclude expected test-framework imports.
+// Used by ClassifyFile (FileClass=Test) and by metrics that exclude test files.
 //
 // Go:         *_test.go
 // Python:     test_*.py, *_test.py, or any path containing a /tests/ segment

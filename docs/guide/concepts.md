@@ -147,9 +147,10 @@ advises you to _declare_ the module's volatility rather than silently assuming i
 is stable.
 
 In `archfit` you set volatility per module (`volatility:` or `subdomain:` in
-`.archfit.yaml`). Git churn fills in a value only for modules with no declared
-volatility and only for report-only metrics — it never overrides a human declaration
-and never drives the coupling-balance gate.
+`.archfit.yaml`). Git churn is never used as a volatility source — it measures
+observed change, a mix of essential and accidental factors, and `archfit` cannot
+separate them automatically. Declared subdomain volatility is the only input to
+the coupling-balance gate.
 
 **Inferred-volatility cascade (opt-in, book Ch9):** when
 `coupling.volatility_cascade: true` is set in `.archfit.yaml`, a single-hop
@@ -162,7 +163,7 @@ manually annotated.
 #### Essential vs accidental volatility
 
 Khononov splits volatility in two, and the distinction is why `archfit` does not
-trust churn:
+use churn:
 
 - **Essential volatility** comes from the business domain. A core subdomain is
   volatile because the business keeps improving it. This is the signal you want.
@@ -171,12 +172,8 @@ trust churn:
   The inverse also happens: code looks stable only because it is too risky to
   touch.
 
-Git churn measures observed change — a mix of both. So `archfit` uses
-human-declared subdomain volatility as the primary input and treats churn as
-supporting evidence only. Churn-derived volatility feeds the report-only
-`change_amplification` metric (which is _about_ accidental volatility) but is
-deliberately kept out of the `risk_hub` metric, which uses declared volatility
-only.
+Git churn measures observed change — a mix of both. `archfit` uses human-declared
+subdomain volatility and does not infer volatility from churn.
 
 ### Explicitness — the fourth lens
 
