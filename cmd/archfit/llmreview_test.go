@@ -146,6 +146,44 @@ func TestRun_Analyze_LLM_DeterministicFirst(t *testing.T) {
 	}
 }
 
+// failingProvider always errors at call time — simulates an LLM outage or
+// backend reached but unavailable.
+type failingProvider struct{ name string }
+
+func (p *failingProvider) Name() string { return p.name }
+func (p *failingProvider) Complete(context.Context, llm.Request) (llm.Response, error) {
+	return llm.Response{}, errors.New("simulated LLM backend failure")
+}
+
+// TestRun_Analyze_GateLLM_FailureDoesNotMaskVerdict is the regression guard for
+// the off-gate LLM contract: when `analyze --gate --llm` hits a gate violation
+// AND the LLM narration fails, the exit code must reflect the gate verdict (1),
+// never the LLM error (3). The LLM is advisory — its failure must not mask or
+// change the gate result.
+func TestRun_Analyze_GateLLM_FailureDoesNotMaskVerdict(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeViolatingRepo(t)
+	appendLLMConfig(t, cfgPath)
+
+	var buf bytes.Buffer
+	deps := &appDeps{Runner: toolrun.New(), Stdout: &buf}
+	cmd := AnalyzeCmd{
+		Config:           cfgPath,
+		Full:             true,
+		Gate:             true,
+		LLM:              true,
+		Quiet:            true,
+		Format:           []string{formatText},
+		providerOverride: &failingProvider{name: reviewProviderName},
+	}
+	err := cmd.Run(deps)
+
+	var ee *exitError
+	if !errors.As(err, &ee) || ee.code != 1 {
+		t.Fatalf("want exitError{code:1} (gate verdict survives LLM failure), got %v\noutput:\n%s", err, buf.String())
+	}
+}
+
 // TestReviewCmd_Run_SchemaValidation drives ReviewCmd end-to-end with a fake
 // provider returning valid JSON and asserts all required output sections appear.
 func TestReviewCmd_Run_SchemaValidation(t *testing.T) {

@@ -211,10 +211,14 @@ func (c *AnalyzeCmd) runScan(ctx context.Context, deps *appDeps, formats []strin
 	}
 
 	// With --llm: append the off-gate LLM narrative after the deterministic output.
+	// The LLM is advisory and off-gate: a narration failure must never change the
+	// exit code or mask the gate verdict (a failing policy must still exit 1, not
+	// the LLM error's 3). The deterministic report is already rendered above; warn
+	// to stderr and fall through to the gate decision.
 	if c.LLM {
 		rep.advance("Asking LLM for interpretation")
 		if err := c.appendLLMNarrative(ctx, deps, cfg, configDir, diag, sc); err != nil {
-			return err
+			_, _ = fmt.Fprintf(deps.stderr(), "archfit: LLM narration unavailable (off-gate, ignored): %v\n", err)
 		}
 	}
 
