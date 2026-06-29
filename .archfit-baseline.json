@@ -3,20 +3,8 @@
   "accepted": [],
   "metrics": {
     "blast_radius": {
-      "value": 4,
+      "value": 7,
       "version": "blast_radius.v1"
-    },
-    "change_amplification": {
-      "value": 0,
-      "version": "change_amplification.v1"
-    },
-    "change_locality": {
-      "value": 0,
-      "version": "change_locality.v2"
-    },
-    "complexity": {
-      "value": 12,
-      "version": "complexity.v1"
     },
     "coverage": {
       "value": 1,
@@ -29,14 +17,6 @@
     "encapsulation": {
       "value": 0,
       "version": "encapsulation.v1"
-    },
-    "hidden_coupling": {
-      "value": 65,
-      "version": "hidden_coupling.v1"
-    },
-    "structural_weight": {
-      "value": 1,
-      "version": "structural_weight.v1"
     },
     "unbalanced_edge": {
       "value": 0,
