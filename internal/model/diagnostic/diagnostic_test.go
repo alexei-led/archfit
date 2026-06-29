@@ -253,7 +253,7 @@ func TestCoverageGap_JSONFieldNames(t *testing.T) {
 func TestDiagnostic_CoverageGapsRoundTrip(t *testing.T) {
 	d := diagnostic.New()
 	d.CoverageGaps = []diagnostic.CoverageGap{
-		{Tool: "lizard", InstallCmd: "pip install lizard", AffectedMetrics: []string{"complexity"}, Gate: gateWarn},
+		{Tool: "jscpd", InstallCmd: "npm install -g jscpd", AffectedMetrics: []string{"blast_radius"}, Gate: gateWarn},
 	}
 	d.ConfigWarnings = []string{`module "internal/a" omits owner`}
 
@@ -267,10 +267,10 @@ func TestDiagnostic_CoverageGapsRoundTrip(t *testing.T) {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
 
-	if len(got.CoverageGaps) != 1 || got.CoverageGaps[0].Tool != "lizard" {
+	if len(got.CoverageGaps) != 1 || got.CoverageGaps[0].Tool != "jscpd" {
 		t.Errorf("CoverageGaps round-trip = %+v", got.CoverageGaps)
 	}
-	if got.CoverageGaps[0].AffectedMetrics[0] != "complexity" {
+	if got.CoverageGaps[0].AffectedMetrics[0] != "blast_radius" {
 		t.Errorf("AffectedMetrics round-trip = %v", got.CoverageGaps[0].AffectedMetrics)
 	}
 	if len(got.ConfigWarnings) != 1 || got.ConfigWarnings[0] != `module "internal/a" omits owner` {

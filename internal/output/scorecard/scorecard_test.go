@@ -28,14 +28,6 @@ func goldenDiagnostic() diagnostic.Diagnostic {
 		{Name: "coverage", Value: 1.0, Display: "1.00", Band: bandStrong, Confidence: confHigh},
 		{Name: "cycle", Value: 0, Display: "0", Band: bandStrong, Confidence: confHigh},
 		{Name: "blast_radius", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
-		{Name: "instability", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
-		{Name: "propagation_cost", Value: 0.05, Display: "0.05", Band: bandInfo, Confidence: confHigh},
-		{Name: "structural_weight", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
-		{Name: "hidden_coupling", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
-		{Name: "functional_candidates", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
-		{Name: "change_coupling", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
-		{Name: "change_amplification", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
-		{Name: "architecture_fitness", Value: 1.0, Display: "3/3", Band: bandInfo, Confidence: confHigh},
 	}
 	d.Findings = []finding.Finding{
 		{
@@ -51,7 +43,7 @@ func goldenDiagnostic() diagnostic.Diagnostic {
 	d.ToolCoverage = []diagnostic.Coverage{
 		{Tool: "go/packages", Status: "ok"},
 		{Tool: "scip", Status: "ok"},
-		{Tool: "lizard", Status: "ok"},
+		{Tool: "ast-grep", Status: "ok"},
 		{Tool: "jscpd", Status: "ok"},
 	}
 	return d

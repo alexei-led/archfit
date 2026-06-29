@@ -759,7 +759,7 @@ func TestNewToolInvalidMode(t *testing.T) {
 
 // TestLoad_SelfConfig verifies that the project's own .archfit.yaml — the realistic
 // config we run locally and in CI — loads cleanly and is well-formed. It deliberately
-// does NOT pin opt-in toggles (risk_hub, …): those are operational choices,
+// does NOT pin opt-in toggles (scip, cargo_modules, …): those are operational choices,
 // not invariants, and pinning them broke this test on every legitimate config change.
 // Toggle-accessor behavior is covered against synthetic configs by TestForMetric,
 // TestNewToolsDefaultOff, and the testdata fixture tests above.

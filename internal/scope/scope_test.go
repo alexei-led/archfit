@@ -73,7 +73,7 @@ func TestResolve_Full(t *testing.T) {
 }
 
 func TestResolve_FullWithBase(t *testing.T) {
-	// Full scan + a base ref: Changed is computed (so change_locality can measure)
+	// Full scan + a base ref: Changed is computed (so diff mode can measure deltas)
 	// but the mode stays full — a full scorecard scan, no finding-delta. Resolve
 	// sorts the changed list.
 	r := fakeResolver{root: fakeRoot, changed: []string{"two.go", "one.go"}}
@@ -419,8 +419,8 @@ func TestMergeExclusions(t *testing.T) {
 
 	t.Run("go module cache excluded by default", func(t *testing.T) {
 		// Regression: a Go module cache (pkg/mod) inside a non-Go repo must not be
-		// walked — its 18k-LOC stdlib files otherwise pollute file_structural_weight
-		// and complexity. The glob must match at the root and nested, and must NOT
+		// walked — its 18k-LOC stdlib files otherwise pollute LOC counts and metrics.
+		// The glob must match at the root and nested, and must NOT
 		// over-match a legitimately-named source dir like pkg/models.
 		const pkgModGlob = "**/pkg/mod/**"
 		if !slices.Contains(scope.MergeExclusions(nil), pkgModGlob) {

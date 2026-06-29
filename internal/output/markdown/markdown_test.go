@@ -19,14 +19,14 @@ const (
 	secBeyondBC     = "Supporting structural metrics (beyond Balanced Coupling)"
 	secDistanceConf = "Distance confidence"
 
-	// New info-metric names.
-	metricRiskHub              = "risk_hub"
-	metricArchFitness          = "architecture_fitness"
-	metricFunctionalCandidates = "functional_candidates"
-	metricCycle                = "cycle"
-	metricBlastRadius          = "blast_radius"
-	metricAbstractness         = "abstractness"
-	metricMartinDistance       = "martin_distance"
+	// Kept tool names.
+	toolJscpd = "jscpd"
+
+	// Kept info-metric names.
+	metricCycle       = "cycle"
+	metricBlastRadius = "blast_radius"
+	metricUnbalanced  = "unbalanced_edge"
+	metricEncap       = "encapsulation"
 
 	// Band / confidence / status literals used in multiple tests.
 	bandInfo       = "info"
@@ -36,7 +36,6 @@ const (
 	confidenceLow  = "low"
 	statusAbsent   = "absent"
 	gateWarn       = "warn"
-	metricComplex  = "complexity"
 
 	// MatchedBy keys reused across BC advisory tests.
 	mbStrength   = "strength"
@@ -251,7 +250,7 @@ func TestRenderer_Render_CoverageGaps(t *testing.T) {
 	d.Verdict = diagnostic.VerdictPass
 	d.CoverageGaps = []diagnostic.CoverageGap{
 		{Tool: "go/packages", InstallCmd: "https://go.dev/dl", AffectedMetrics: []string{"coverage", "coupling_balance"}, Gate: gateWarn},
-		{Tool: "lizard", InstallCmd: "pip install lizard", AffectedMetrics: []string{metricComplex}, Gate: gateWarn},
+		{Tool: toolJscpd, InstallCmd: "npm install -g jscpd", AffectedMetrics: []string{metricBlastRadius}, Gate: gateWarn},
 	}
 
 	var buf bytes.Buffer
@@ -266,8 +265,8 @@ func TestRenderer_Render_CoverageGaps(t *testing.T) {
 	for _, want := range []string{
 		"**go/packages** [gate: warn] — affects coverage, coupling_balance",
 		"install: `https://go.dev/dl`",
-		"**lizard** [gate: warn] — affects complexity",
-		"install: `pip install lizard`",
+		"**" + toolJscpd + "** [gate: warn] — affects blast_radius",
+		"install: `npm install -g jscpd`",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)
@@ -295,7 +294,7 @@ func TestRenderer_Render_ConfigWarnings(t *testing.T) {
 	d.Verdict = diagnostic.VerdictPass
 	d.ConfigWarnings = []string{
 		`module "internal/a" omits owner`,
-		"lizard: tool crashed mid-parse",
+		"jscpd: tool crashed mid-parse",
 	}
 
 	var buf bytes.Buffer
@@ -309,7 +308,7 @@ func TestRenderer_Render_ConfigWarnings(t *testing.T) {
 	}
 	for _, want := range []string{
 		`module "internal/a" omits owner`,
-		"lizard: tool crashed mid-parse",
+		"jscpd: tool crashed mid-parse",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)
@@ -530,72 +529,51 @@ func TestRenderer_Render_OutputIsValidText(t *testing.T) {
 }
 
 func TestRenderer_Render_NewInfoMetrics(t *testing.T) {
-	// Confirm risk_hub, architecture_fitness, functional_candidates render their
-	// display string and band in the Metrics section.
+	// Confirm kept info-metrics render their display string and band in the Metrics section.
 	tests := []struct {
 		name    string
 		metric  diagnostic.MetricResult
 		wantSub []string
 	}{
 		{
-			name: "risk_hub present",
+			name: "cycle present",
 			metric: diagnostic.MetricResult{
-				Name:       metricRiskHub,
-				Display:    "2 risk hub(s): pkg/store [breadth 3, ×1.00→3.00]",
+				Name:       metricCycle,
+				Display:    "3 cycle(s)",
 				Band:       bandInfo,
 				Confidence: confidenceHigh,
 			},
-			wantSub: []string{metricRiskHub, "2 risk hub(s)", bandInfo},
+			wantSub: []string{metricCycle, "3 cycle(s)", bandInfo},
 		},
 		{
-			name: "architecture_fitness present",
+			name: "unbalanced_edge present",
 			metric: diagnostic.MetricResult{
-				Name:       metricArchFitness,
-				Display:    "6.7/10 (2/3 signals)",
+				Name:       metricUnbalanced,
+				Display:    "5 unbalanced edge(s)",
 				Band:       bandInfo,
 				Confidence: confidenceHigh,
 			},
-			wantSub: []string{metricArchFitness, "6.7/10", bandInfo},
+			wantSub: []string{metricUnbalanced, "5 unbalanced", bandInfo},
 		},
 		{
-			name: "functional_candidates present",
+			name: "cycle n/a",
 			metric: diagnostic.MetricResult{
-				Name:       metricFunctionalCandidates,
-				Display:    "3 clone-duplicated cross-module pair(s)",
-				Band:       bandInfo,
-				Confidence: confidenceHigh,
-			},
-			wantSub: []string{metricFunctionalCandidates, "3 clone-duplicated", bandInfo},
-		},
-		{
-			name: "risk_hub n/a",
-			metric: diagnostic.MetricResult{
-				Name:       metricRiskHub,
+				Name:       metricCycle,
 				Display:    bandNA,
 				Band:       bandNA,
 				Confidence: confidenceLow,
 			},
-			wantSub: []string{metricRiskHub, bandNA},
+			wantSub: []string{metricCycle, bandNA},
 		},
 		{
-			name: "architecture_fitness n/a",
+			name: "unbalanced_edge n/a",
 			metric: diagnostic.MetricResult{
-				Name:       metricArchFitness,
+				Name:       metricUnbalanced,
 				Display:    bandNA,
 				Band:       bandNA,
 				Confidence: confidenceLow,
 			},
-			wantSub: []string{metricArchFitness, bandNA},
-		},
-		{
-			name: "functional_candidates n/a",
-			metric: diagnostic.MetricResult{
-				Name:       metricFunctionalCandidates,
-				Display:    bandNA,
-				Band:       bandNA,
-				Confidence: confidenceLow,
-			},
-			wantSub: []string{metricFunctionalCandidates, bandNA},
+			wantSub: []string{metricUnbalanced, bandNA},
 		},
 	}
 
@@ -890,11 +868,10 @@ func TestRenderer_Render_BeyondBCMetrics(t *testing.T) {
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
 	d.Metrics = []diagnostic.MetricResult{
-		{Name: "encapsulation", Display: "0.85", Band: bandGood, Confidence: confidenceHigh},
-		{Name: "cycle", Display: "0", Band: "none", Confidence: confidenceHigh},
+		{Name: metricEncap, Display: "0.85", Band: bandGood, Confidence: confidenceHigh},
+		{Name: metricCycle, Display: "0", Band: "none", Confidence: confidenceHigh},
 		{Name: metricBlastRadius, Display: "0.12", Band: "low", Confidence: confidenceHigh},
-		{Name: "risk_hub", Display: bandNA, Band: bandNA, Confidence: confidenceLow},
-		{Name: "complexity", Display: bandNA, Band: bandNA, Confidence: confidenceLow},
+		{Name: metricUnbalanced, Display: bandNA, Band: bandNA, Confidence: confidenceLow},
 	}
 
 	var buf bytes.Buffer
@@ -907,7 +884,7 @@ func TestRenderer_Render_BeyondBCMetrics(t *testing.T) {
 	if !strings.Contains(out, "## Metrics") {
 		t.Errorf("output missing primary Metrics section\nfull output:\n%s", out)
 	}
-	if !strings.Contains(out, "encapsulation") {
+	if !strings.Contains(out, metricEncap) {
 		t.Errorf("encapsulation missing from output\nfull output:\n%s", out)
 	}
 
@@ -915,7 +892,7 @@ func TestRenderer_Render_BeyondBCMetrics(t *testing.T) {
 	if !strings.Contains(out, secBeyondBC) {
 		t.Errorf("output missing %q section\nfull output:\n%s", secBeyondBC, out)
 	}
-	for _, name := range []string{"cycle", metricBlastRadius, "risk_hub", "complexity"} {
+	for _, name := range []string{metricCycle, metricBlastRadius, metricUnbalanced} {
 		if !strings.Contains(out, name) {
 			t.Errorf("beyond-BC metric %q missing from output\nfull output:\n%s", name, out)
 		}
@@ -962,14 +939,14 @@ func TestRenderer_Render_BeyondBCLowConfidence(t *testing.T) {
 	}
 }
 
-// TestRenderer_Render_ProxyHeadlineWhenHighConfidence verifies a proxy metric is
+// TestRenderer_Render_ProxyHeadlineWhenHighConfidence verifies a beyond-BC metric is
 // NOT footnoted when its confidence is high — only low-confidence proxies demote.
 func TestRenderer_Render_ProxyHeadlineWhenHighConfidence(t *testing.T) {
 	r := markdown.New()
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
 	d.Metrics = []diagnostic.MetricResult{
-		{Name: metricAbstractness, Display: "0.30", Band: bandGood, Confidence: confidenceHigh},
+		{Name: metricUnbalanced, Display: "0", Band: bandInfo, Confidence: confidenceHigh},
 	}
 
 	var buf bytes.Buffer
@@ -978,8 +955,8 @@ func TestRenderer_Render_ProxyHeadlineWhenHighConfidence(t *testing.T) {
 	}
 	out := buf.String()
 
-	if !strings.Contains(out, "- **abstractness**: 0.30 — good") {
-		t.Errorf("high-confidence proxy should stay a headline bullet\nfull output:\n%s", out)
+	if !strings.Contains(out, "- **unbalanced_edge**: 0 — info") {
+		t.Errorf("high-confidence metric should stay a headline bullet\nfull output:\n%s", out)
 	}
 	if strings.Contains(out, "Low-confidence proxies (footnote") {
 		t.Errorf("no footnote expected when all proxies are high confidence\nfull output:\n%s", out)

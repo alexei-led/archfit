@@ -65,7 +65,7 @@ func richDiagnostic() diagnostic.Diagnostic {
 		bcAdv("a", "b", "functional", "cross_module_same_owner", "medium", 5, "medium", "medium", 3),
 	}
 	d.ToolCoverage = []diagnostic.Coverage{
-		okCov("go/packages"), okCov("scip"), okCov("lizard"), okCov("jscpd"),
+		okCov("go/packages"), okCov("scip"), okCov("ast-grep"), okCov("jscpd"),
 	}
 	return d
 }
@@ -269,8 +269,7 @@ func TestDegenerateGraph_NoFalseGreen(t *testing.T) {
 	d := diagnostic.New()
 	d.Metrics = []diagnostic.MetricResult{
 		metric("cycle", 0, "strong", "high"),
-		metric("propagation_cost", 0.05, "info", "high"),
-		// no blast_radius, no instability → degenerate graph
+		// no blast_radius → degenerate graph
 	}
 	sc := Synthesize(d)
 	dim := couplingBalanceDim(t, sc)

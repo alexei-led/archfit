@@ -782,8 +782,8 @@ func TestRun_Check_ScipDisabledCoverageRow(t *testing.T) {
 // creates a repo with a custom-named generated file that would NOT be detected
 // by built-in heuristics, configures it via file_class: generated_globs, and
 // verifies the loc tool_coverage reflects a successful walk (status ok).
-// The structural_weight metric will exclude the custom generated file, so the
-// overall pipeline must not error or miscategorise it.
+// The file_class config will exclude the custom generated file from production
+// metrics, so the overall pipeline must not error or miscategorise it.
 func TestRun_Check_FileClassConfigWiredToPipeline(t *testing.T) {
 	t.Parallel()
 

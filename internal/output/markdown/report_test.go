@@ -18,7 +18,7 @@ func TestRenderReport_DecisionSummary(t *testing.T) {
 		OverallBand: score.BandMixed,
 		Dimensions: []decision.DimReport{
 			{Name: "coupling_balance", Value: 36, Band: score.BandPoor, Why: "375 unbalanced edges", WhatMoves: "Add stable contracts."},
-			{Name: "boundary_integrity", Value: 90, Band: score.BandStrong},
+			{Name: "encapsulation", Value: 90, Band: score.BandStrong},
 		},
 		Recommendations: decision.Recommendations{
 			MustFix:   []decision.Rec{},
@@ -56,7 +56,7 @@ func TestRenderReport_DecisionSummary(t *testing.T) {
 		}
 	}
 	// Serviceable+ dimension must not appear in the why-low section.
-	if strings.Contains(out, "boundary_integrity** (90") {
+	if strings.Contains(out, "encapsulation** (90") {
 		t.Errorf("healthy dimension leaked into why-low:\n%s", out)
 	}
 }
