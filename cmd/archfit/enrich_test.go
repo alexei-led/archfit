@@ -319,7 +319,7 @@ func TestRun_Explain_LLMNarrative(t *testing.T) {
 
 	// Find the finding fingerprint.
 	var buf bytes.Buffer
-	Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &buf)
+	Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 	var diag struct {
 		Findings []struct {
 			ID string `json:"id"`
@@ -352,7 +352,7 @@ func TestRun_Explain_LLMUnconfigured(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 	var buf bytes.Buffer
-	Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &buf)
+	Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 	var diag struct {
 		Findings []struct {
 			ID string `json:"id"`

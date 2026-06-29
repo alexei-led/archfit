@@ -34,8 +34,8 @@ func gitCommitAll(t *testing.T, dir, msg string) {
 }
 
 const (
-	cmdDiff     = "diff"
 	diffBaseRef = "HEAD~1"
+	flagBase    = "--base"
 )
 
 // makeDiffFixtureRepo creates a minimal git repo with two commits and returns
@@ -82,39 +82,43 @@ func TestDiffCmd_EmitsDeltaTable(t *testing.T) {
 	_, cfgPath := makeDiffFixtureRepo(t)
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdDiff, diffBaseRef, "-c", cfgPath}, &buf)
+	code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath}, &buf)
 	out := buf.String()
 
 	if code != 0 {
 		t.Fatalf("diff HEAD~1: exit=%d, want 0\noutput:\n%s", code, out)
 	}
-	if !strings.Contains(out, "HEAD") {
-		t.Errorf("diff output missing 'HEAD': %s", out)
+	if !strings.Contains(out, "ARCHFIT RESULT") {
+		t.Errorf("--base text should render the decision report: %s", out)
 	}
-	if !strings.Contains(out, "Overall") {
-		t.Errorf("diff output missing 'Overall': %s", out)
+	if !strings.Contains(out, "CHANGE VS BASE") {
+		t.Errorf("--base text missing the delta section: %s", out)
 	}
 }
 
-// TestDiffCmd_JSONFormat verifies that --format json produces valid JSON with
-// the expected top-level fields.
+// TestDiffCmd_JSONFormat verifies --base --json emits the SAME diagnostic schema
+// as a normal --json run — a consistent machine contract, not a separate delta
+// schema. (Regression guard for the old asymmetric diffResult output.)
 func TestDiffCmd_JSONFormat(t *testing.T) {
 	t.Parallel()
 
 	_, cfgPath := makeDiffFixtureRepo(t)
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdDiff, diffBaseRef, "-c", cfgPath, "--format=json"}, &buf)
+	code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath, "--format=json"}, &buf)
 	if code != 0 {
-		t.Fatalf("diff --format=json: exit=%d\noutput:\n%s", code, buf.String())
+		t.Fatalf("--base --json: exit=%d\noutput:\n%s", code, buf.String())
 	}
 
-	var res diffResult
-	if err := json.Unmarshal(buf.Bytes(), &res); err != nil {
+	var diag struct {
+		SchemaVersion string `json:"schema_version"`
+		Verdict       string `json:"verdict"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
 	}
-	if res.BaseRef != diffBaseRef {
-		t.Errorf("base_ref = %q, want HEAD~1", res.BaseRef)
+	if diag.SchemaVersion == "" || diag.Verdict == "" {
+		t.Errorf("--base --json must be the standard diagnostic schema (schema_version + verdict), got: %s", buf.String())
 	}
 }
 
@@ -126,7 +130,7 @@ func TestDiffCmd_WorktreeCleanup(t *testing.T) {
 	repoDir, cfgPath := makeDiffFixtureRepo(t)
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdDiff, diffBaseRef, "-c", cfgPath}, &buf)
+	code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath}, &buf)
 	if code != 0 {
 		t.Fatalf("diff HEAD~1: exit=%d\noutput:\n%s", code, buf.String())
 	}
@@ -155,7 +159,7 @@ func TestDiffCmd_NonGitRoot(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdDiff, diffBaseRef, "-c", cfgPath}, &buf)
+	code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath}, &buf)
 	if code != 3 {
 		t.Fatalf("non-git dir: exit=%d, want 3\noutput:\n%s", code, buf.String())
 	}
@@ -172,7 +176,7 @@ func TestDiffCmd_BadRef(t *testing.T) {
 	_, cfgPath := makeDiffFixtureRepo(t)
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdDiff, "refs/does-not-exist-xyz", "-c", cfgPath}, &buf)
+	code := Run([]string{cmdAnalyze, flagBase, "refs/does-not-exist-xyz", "-c", cfgPath}, &buf)
 	if code != 3 {
 		t.Fatalf("bad ref: exit=%d, want 3\noutput:\n%s", code, buf.String())
 	}
@@ -189,17 +193,16 @@ func TestDiffCmd_MarkdownFormat(t *testing.T) {
 	_, cfgPath := makeDiffFixtureRepo(t)
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdDiff, diffBaseRef, "-c", cfgPath, "--format=markdown"}, &buf)
+	code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath, "--format=markdown"}, &buf)
 	out := buf.String()
 	if code != 0 {
 		t.Fatalf("diff --format=markdown: exit=%d\noutput:\n%s", code, out)
 	}
-	// A markdown table has pipe-delimited columns.
-	if !strings.Contains(out, "|") {
-		t.Errorf("markdown output missing pipe separator: %s", out)
+	if !strings.Contains(out, "# archfit — decision") {
+		t.Errorf("--base --markdown should lead with the decision summary: %s", out)
 	}
-	if !strings.Contains(out, "Overall") {
-		t.Errorf("markdown output missing 'Overall' row: %s", out)
+	if !strings.Contains(out, "Change vs base") {
+		t.Errorf("--base --markdown should include the delta section: %s", out)
 	}
 }
 
@@ -222,7 +225,7 @@ func TestDiffCmd_SubdirRoot(t *testing.T) {
 	gitCommitAll(t, repoDir, "add pkg subdir")
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdDiff, "HEAD~1", "-c", cfgPath, flagRoot, subDir}, &buf)
+	code := Run([]string{cmdAnalyze, flagBase, "HEAD~1", "-c", cfgPath, flagRoot, subDir}, &buf)
 	if code != 0 {
 		t.Fatalf("diff --root subdir: exit=%d\noutput:\n%s", code, buf.String())
 	}
@@ -299,15 +302,15 @@ func TestDiffCmd_ConfigInSubdir(t *testing.T) {
 	// Pre-fix this would call runScoreSide with root=cfgDir for both sides,
 	// causing a mismatch with check/score on the same repo.
 	var buf bytes.Buffer
-	code := Run([]string{cmdDiff, "HEAD~1", "-c", cfgPath}, &buf)
+	code := Run([]string{cmdAnalyze, flagBase, "HEAD~1", "-c", cfgPath}, &buf)
 	if code != 0 {
 		t.Fatalf("diff config-in-subdir (--root omitted): exit=%d\noutput:\n%s", code, buf.String())
 	}
 
-	// Verify the output looks like a real scorecard delta (not a crash or skip).
+	// Verify the output is the decision report with a delta section (not a crash/skip).
 	out := buf.String()
-	if !strings.Contains(out, "Overall") {
-		t.Errorf("diff output missing 'Overall' row: %s", out)
+	if !strings.Contains(out, "CHANGE VS BASE") {
+		t.Errorf("--base output missing the delta section: %s", out)
 	}
 }
 
@@ -323,7 +326,7 @@ func TestDiffCmd_SubtreeAboveGitRoot(t *testing.T) {
 	outsideDir := filepath.Dir(filepath.Dir(cfgPath))
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdDiff, diffBaseRef, "-c", cfgPath, flagRoot, outsideDir}, &buf)
+	code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath, flagRoot, outsideDir}, &buf)
 	if code != 3 {
 		t.Fatalf("--root above gitRoot: exit=%d, want 3\noutput:\n%s", code, buf.String())
 	}

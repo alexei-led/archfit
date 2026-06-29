@@ -107,6 +107,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	sc.Root = root
 	sc.Base = mode.Base
 	sc.Full = mode.Full
+	deps.reportPhase("Discovering project")
 	s, err := scope.Resolve(ctx, sc, gitResolver{workDir: scanDir, runner: deps.Runner})
 	if err != nil {
 		return diagnostic.Diagnostic{}, err
@@ -156,6 +157,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// Run history at the git toplevel (GitRoot) scoped to the analysis subtree
 	// (SubtreePrefix), so returned paths are ScanRoot-relative. Falls back to
 	// s.Root when GitRoot is empty (non-git run: History returns absent).
+	deps.reportPhase("Collecting facts")
 	change := signal.RunSignals{}
 	histWorkDir := s.GitRoot
 	if histWorkDir == "" {
@@ -185,7 +187,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 
 	// Manifest deprecation markers (go.mod retract, package.json deprecated).
 	// Report-only — never modifies the graph, metric verdict, or gate.
-	// Ceiling: cargo yanked and live EOL are not locally declarable — use archfit review/enrich.
+	// Ceiling: cargo yanked and live EOL are not locally declarable — use archfit analyze --llm / enrich.
 	change.DeprecatedDeps = manifest.Scan(s.Root)
 
 	// Runtime async-bridge detection (deterministic FS scan + optional ast-grep).
@@ -300,6 +302,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	configHash := effectiveConfigHash(configPath, noConfig)
 
 	patternCfg := cfg.ForPatterns()
+	deps.reportPhase("Analyzing dependencies")
 	diag, err := engine.Run(ctx, engine.RunInput{
 		Mode:        mode,
 		Scope:       s,
@@ -341,7 +344,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 			modulePublic[name] = def.Public
 		}
 	}
-	validate := "archfit check -c " + configPath
+	validate := "archfit analyze --gate -c " + configPath
 	if mode.Full {
 		validate += " --full"
 	}

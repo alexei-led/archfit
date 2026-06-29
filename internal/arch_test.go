@@ -33,6 +33,9 @@ var coreRingPkgs = []string{
 	// score synthesises the banded scorecard from an already-computed
 	// Diagnostic — a pure decision over collected facts, no tools or I/O.
 	modulePrefix + "internal/score",
+	// decision converts a Diagnostic + Scorecard into a human-decision view-model —
+	// pure synthesis, no I/O, no subprocess, no YAML.
+	modulePrefix + "internal/decision",
 	// scope resolves the analysis boundary from config + git; it uses os.Stat
 	// and filepath.EvalSymlinks for path canonicalization (justified I/O — no
 	// subprocess, no YAML, no adapter). Excluded from the os-forbidden check.
@@ -57,6 +60,7 @@ var coreRingPrefixes = []string{
 	modulePrefix + "internal/score",
 	modulePrefix + "internal/scope",
 	modulePrefix + "internal/syntax",
+	modulePrefix + "internal/decision",
 }
 
 // inCoreRing reports whether pkgPath is a core-ring package: an exact prefix

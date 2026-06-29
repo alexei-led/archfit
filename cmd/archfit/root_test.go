@@ -50,7 +50,7 @@ func TestRun_Check_Root_ScopesLocCount(t *testing.T) {
 	// --root sub: loc must see exactly 1 file (sub/service.go); other/other.go
 	// is outside the subtree and must not appear.
 	var buf bytes.Buffer
-	code := Run([]string{cmdCheck, flagRoot, subDir, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+	code := Run([]string{cmdAnalyze, flagRoot, subDir, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 	if code != 0 && code != 1 {
 		t.Fatalf("check --root sub: exit = %d, want 0 or 1\n%s", code, buf.String())
 	}
@@ -68,7 +68,7 @@ func TestRun_Check_Root_ScopesLocCount(t *testing.T) {
 	// arm that proves the sub-only scan is a real scope reduction and not just
 	// an instrument error (both files missing).
 	buf.Reset()
-	code = Run([]string{cmdCheck, flagRoot, repoDir, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+	code = Run([]string{cmdAnalyze, flagRoot, repoDir, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 	if code != 0 && code != 1 {
 		t.Fatalf("check --root repo: exit = %d, want 0 or 1\n%s", code, buf.String())
 	}
@@ -117,7 +117,7 @@ func TestRun_Check_Root_NonGitFullMode(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+	code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 	if code == 3 {
 		t.Fatalf("non-git full mode: exit = 3 (want 0 or 1 — should produce a scorecard)\n%s", buf.String())
 	}
@@ -165,7 +165,7 @@ func TestRun_Check_Root_OutputWarningUsesRoot(t *testing.T) {
 	gitInitFixtureRepo(t, repoDir)
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdCheck, flagRoot, subDir, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+	code := Run([]string{cmdAnalyze, flagRoot, subDir, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 	if code == 3 {
 		t.Fatalf("unexpected exit 3: %s", buf.String())
 	}

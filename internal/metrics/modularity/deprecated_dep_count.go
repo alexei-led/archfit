@@ -26,7 +26,7 @@ func (m DeprecatedDepCountMetric) Version() string { return "deprecated_dep_coun
 
 const deprecatedDepDef = "locally-declared deprecation/retraction markers in manifest files " +
 	"(go.mod retract, package.json deprecated) — report-only; " +
-	"cargo yanked and live EOL require external registry queries (use archfit review/enrich)"
+	"cargo yanked and live EOL require external registry queries (use archfit analyze --llm / enrich)"
 
 // Calculate counts DeprecatedDep entries and returns a BandInformational result.
 // Returns value 0 (not n/a) when no markers are present so the metric is always

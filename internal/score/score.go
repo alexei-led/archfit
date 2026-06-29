@@ -330,6 +330,26 @@ func bandFor(v int) Band {
 	}
 }
 
+// BandRank returns b's ordinal (0=critical … 4=strong, -1=unknown) for band
+// ≥/≤ comparisons. The canonical band ordering lives here so other packages
+// (e.g. internal/decision) order bands consistently.
+func BandRank(b Band) int {
+	switch b {
+	case BandCritical:
+		return 0
+	case BandPoor:
+		return 1
+	case BandMixed:
+		return 2
+	case BandServiceable:
+		return 3
+	case BandStrong:
+		return 4
+	default:
+		return -1
+	}
+}
+
 // meanValue returns the rounded mean of the dimension values.
 func meanValue(dims []Dimension) int {
 	if len(dims) == 0 {

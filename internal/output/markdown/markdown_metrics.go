@@ -324,7 +324,7 @@ func writeDeprecatedDeps(b *strings.Builder, deps []diagnostic.DeprecatedDep) {
 	}
 	b.WriteString("\n## Manifest deprecation markers (report-only)\n\n")
 	b.WriteString("Locally-declared deprecation/retraction markers found in checked-in manifest files.\n")
-	b.WriteString("Report-only evidence — never gates. Cargo yanked and live EOL require archfit review/enrich.\n\n")
+	b.WriteString("Report-only evidence — never gates. Cargo yanked and live EOL require archfit analyze --llm / enrich.\n\n")
 	fmt.Fprintf(b, "| file | kind | subject | note |\n")
 	fmt.Fprintf(b, "|------|------|---------|------|\n")
 	for _, d := range deps {

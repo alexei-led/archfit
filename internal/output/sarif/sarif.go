@@ -190,10 +190,10 @@ func toResult(f finding.Finding, ruleIdx int) result {
 // levelFor maps finding kind+status to a SARIF level: active gate findings are
 // errors, advisories are warnings, everything resolved/accepted is a note.
 func levelFor(f finding.Finding) string {
-	if f.Kind == "gate" && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept) {
+	if f.Kind == finding.KindGate && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept) {
 		return "error"
 	}
-	if f.Kind == "advisory" && f.Status == finding.StatusNew {
+	if f.Kind == finding.KindAdvisory && f.Status == finding.StatusNew {
 		return "warning"
 	}
 	return "note"

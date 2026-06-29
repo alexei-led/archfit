@@ -146,7 +146,7 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 func splitFindings(fs []finding.Finding) (gate, advisories []finding.Finding) {
 	for _, f := range fs {
-		if f.Kind == "gate" {
+		if f.Kind == finding.KindGate {
 			gate = append(gate, f)
 		} else {
 			advisories = append(advisories, f)

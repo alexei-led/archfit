@@ -10,7 +10,7 @@
 //
 // Detection ceiling (named residue — not implemented here):
 //   - cargo yanked: registry-side only, not locally declarable; requires
-//     crates.io API queries → routed to archfit review/enrich (LLM path).
+//     crates.io API queries → routed to the LLM path (archfit analyze --llm / enrich).
 //   - Live EOL / version-staleness (e.g. urfave/cli v1): irreducible LLM/human
 //     residue; no static manifest marker to detect → LLM path.
 package manifest

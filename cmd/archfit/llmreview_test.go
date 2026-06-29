@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/baseline"
+	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
@@ -85,19 +87,63 @@ func appendLLMConfig(t *testing.T, cfgPath string) {
 	}
 }
 
-// runReviewCmd runs ReviewCmd directly with a real runner (matching the
-// appDeps that the top-level Run() function provides) and the given provider override.
+// runReviewCmd exercises runLLMReview end-to-end using a real runner (matching
+// the appDeps that the top-level Run() function provides) and the given provider
+// override. It loads config + runs the pipeline, then delegates to runLLMReview —
+// mirrors the old ReviewCmd.Run flow without the now-deleted ReviewCmd struct.
 func runReviewCmd(t *testing.T, cfgPath string, provider llm.Provider) (string, error) {
 	t.Helper()
+	ctx := context.Background()
 	var buf bytes.Buffer
-	cmd := ReviewCmd{
-		Config:           cfgPath,
-		NoCache:          true,
-		providerOverride: provider,
-	}
 	deps := &appDeps{Runner: toolrun.New(), Stdout: &buf}
-	err := cmd.Run(deps)
+
+	cfg, err := loadConfig(ctx, cfgPath, false)
+	if err != nil {
+		return "", &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+	}
+	configDir := filepath.Dir(cfgPath)
+	base, _ := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
+	diag, err := runPipeline(ctx, deps, cfg, cfgPath, "", false,
+		engine.Mode{Full: true, Advisory: true, ReportOnly: true}, base)
+	if err != nil {
+		return "", &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+	}
+	sc := score.Synthesize(diag)
+	err = runLLMReview(ctx, deps, cfg, configDir, true, provider, diag, sc)
 	return buf.String(), err
+}
+
+// TestRun_Analyze_LLM_DeterministicFirst verifies the analyze --llm integration
+// through the provider seam: the deterministic decision report (ARCHFIT RESULT)
+// renders BEFORE the off-gate LLM narrative section.
+func TestRun_Analyze_LLM_DeterministicFirst(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeViolatingRepo(t)
+	appendLLMConfig(t, cfgPath)
+
+	var buf bytes.Buffer
+	deps := &appDeps{Runner: toolrun.New(), Stdout: &buf}
+	cmd := AnalyzeCmd{
+		Config:           cfgPath,
+		Full:             true,
+		LLM:              true,
+		Quiet:            true,
+		Format:           []string{formatText},
+		providerOverride: &fixedProvider{text: validReviewJSON, name: reviewProviderName},
+	}
+	_ = cmd.Run(deps)
+	out := buf.String()
+
+	det := strings.Index(out, "ARCHFIT RESULT")
+	llmIdx := strings.Index(out, "Architecture Review")
+	switch {
+	case det < 0:
+		t.Fatalf("deterministic decision report missing:\n%s", out)
+	case llmIdx < 0:
+		t.Fatalf("LLM narrative section missing:\n%s", out)
+	case det > llmIdx:
+		t.Errorf("deterministic report must precede the LLM section:\n%s", out)
+	}
 }
 
 // TestReviewCmd_Run_SchemaValidation drives ReviewCmd end-to-end with a fake
@@ -240,7 +286,7 @@ func TestBuildReviewPrompt_RespectsCaps(t *testing.T) {
 	for i := 0; i < findingsN; i++ {
 		diag.Findings = append(diag.Findings, finding.Finding{
 			ID:       fmt.Sprintf("id%d", i),
-			Kind:     findingKindGate,
+			Kind:     finding.KindGate,
 			RuleID:   fmt.Sprintf("rule%d", i),
 			Severity: finding.SeverityHigh,
 			Status:   finding.StatusNew,
@@ -347,14 +393,19 @@ func TestReviewCmd_Run_NoLLMConfig(t *testing.T) {
 	// writeViolatingRepo produces a config without tools.llm.
 	cfgPath := writeViolatingRepo(t)
 
+	ctx := context.Background()
 	var buf bytes.Buffer
-	cmd := ReviewCmd{
-		Config:  cfgPath,
-		NoCache: true,
-		// providerOverride absent — config check fires first.
-	}
 	deps := &appDeps{Runner: toolrun.New(), Stdout: &buf}
-	err := cmd.Run(deps)
+
+	cfg, loadErr := loadConfig(ctx, cfgPath, false)
+	if loadErr != nil {
+		t.Fatalf("loadConfig: %v", loadErr)
+	}
+	configDir := filepath.Dir(cfgPath)
+	// runLLMReview fires the "tools.llm not configured" check before touching
+	// the provider, so we can pass a nil diag+scorecard — they are never reached.
+	err := runLLMReview(ctx, deps, cfg, configDir, true, nil,
+		diagnostic.Diagnostic{}, score.Scorecard{})
 
 	var ee *exitError
 	if !errors.As(err, &ee) || ee.code != 3 {

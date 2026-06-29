@@ -184,7 +184,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	}
 
 	// --- Stage 5: Status ---
-	taggedFindings := status.Assign(rawFindings, in.Accepted, in.Exceptions, in.Now, "gate")
+	taggedFindings := status.Assign(rawFindings, in.Accepted, in.Exceptions, in.Now, finding.KindGate)
 
 	// --- Stage 6: Metrics ---
 	// Compute per-file dependant counts from the SCIP symbol graph once; feeds
@@ -229,7 +229,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	var baseFindings []finding.Finding
 	var ruleAdvisoryFindings []finding.Finding
 	for _, f := range ev.resolvedFindings {
-		if f.Kind == "advisory" {
+		if f.Kind == finding.KindAdvisory {
 			ruleAdvisoryFindings = append(ruleAdvisoryFindings, f)
 			advisoryFindings = append(advisoryFindings, f)
 		} else {
@@ -240,7 +240,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Gate findings: kind=="gate" and not fixed.
 	var gateFindings []finding.Finding
 	for _, f := range baseFindings {
-		if f.Kind == "gate" && f.Status != finding.StatusFixed {
+		if f.Kind == finding.KindGate && f.Status != finding.StatusFixed {
 			gateFindings = append(gateFindings, f)
 		}
 	}

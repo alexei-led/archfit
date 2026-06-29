@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -164,5 +165,20 @@ func verdictToError(v diagnostic.Verdict) error {
 		return &exitError{code: 2}
 	default:
 		return nil
+	}
+}
+
+// printConfigLint writes config-quality warnings to w (stderr). It is silent
+// when there are none. The header explains why under-specified modules matter,
+// then one line per module names the omitted fields. Deterministic; advisory.
+func printConfigLint(w io.Writer, warnings []config.LintWarning) {
+	if len(warnings) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "config-quality: %d module(s) under-specified — "+
+		"degrades distance/volatility classification (can cause BC advisory floods):\n",
+		len(warnings))
+	for _, warn := range warnings {
+		_, _ = fmt.Fprintf(w, "  - %s\n", warn.String())
 	}
 }

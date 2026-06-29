@@ -30,6 +30,13 @@ const (
 	SeverityLow      Severity = "low"
 )
 
+// Kind classifies a finding: a blocking gate violation vs a non-blocking
+// advisory. Stored in the string field Finding.Kind.
+const (
+	KindGate     = "gate"
+	KindAdvisory = "advisory"
+)
+
 // Endpoint identifies one side of a finding edge (resolved at diagnostic assembly).
 type Endpoint struct {
 	Module string `json:"module"`
@@ -74,7 +81,7 @@ func New(ruleID string, e graph.Edge, locs []graph.Location) Finding {
 	id := fingerprint(ruleID, e.From, e.To, string(e.Kind))
 	return Finding{
 		ID:     id,
-		Kind:   "gate",
+		Kind:   KindGate,
 		RuleID: ruleID,
 		Status: StatusNew,
 		Edge: EdgeEvidence{

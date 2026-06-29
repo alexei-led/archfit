@@ -54,7 +54,7 @@ func (c Config) CargoModulesEnabled() bool {
 // ScipEnabled reports whether the SCIP strength provider is explicitly enabled
 // (tools.scip.enabled: on). It is opt-in only — auto/off/absent all disable it —
 // because running a SCIP indexer is whole-repo and slow, which must not happen on
-// the fast `archfit check` path by default. Keeping the decision in config (not in
+// the fast `archfit analyze --gate` path by default. Keeping the decision in config (not in
 // PATH tool presence) also preserves the same-config→same-metrics guarantee.
 func (c Config) ScipEnabled() bool {
 	return c.Tools[ToolScip].Enabled == ModeOn

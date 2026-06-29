@@ -23,9 +23,9 @@ func (*BaselineCmd) Help() string {
 	return `Use baseline after reviewing current findings so CI can block only new architecture drift.
 
 Typical calibration:
-  archfit check --config .archfit.yaml --full
+  archfit --gate --config .archfit.yaml --full
   archfit baseline --config .archfit.yaml --full
-  archfit check --config .archfit.yaml --base origin/main`
+  archfit --gate --config .archfit.yaml --base origin/main`
 }
 
 func (c *BaselineCmd) Run(deps *appDeps) error {

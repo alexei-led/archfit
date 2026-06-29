@@ -1,0 +1,197 @@
+// Package main — worktree helper for `analyze --base`.
+//
+// scoreBaseRef checks <base-ref> out into a clean detached git worktree, scores
+// it with the full pipeline, and returns the base Scorecard. analyze attaches
+// the resulting before/after delta as a section of the HEAD decision report, so
+// --base renders through the SAME pipeline and output format as a normal run
+// (consistent JSON schema, honoured --gate / --advisory / --require-tools).
+//
+// Invariants:
+//   - The user's working tree is never mutated.
+//   - Cleanup runs even on error paths (deferred).
+//   - Non-git directory or missing/bad ref → exit 3.
+//   - The base side uses the current --config (isolates code drift from config
+//     drift; the base ref may predate the config file).
+//   - All git subprocesses go through deps.Runner (toolrun) — no os/exec here.
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/alexei-led/archfit/internal/baseline"
+	"github.com/alexei-led/archfit/internal/engine"
+	"github.com/alexei-led/archfit/internal/history/git"
+	"github.com/alexei-led/archfit/internal/score"
+	"github.com/alexei-led/archfit/internal/toolrun"
+)
+
+// git command + subcommand names used by the worktree helpers.
+const (
+	gitBinary   = "git"
+	gitWorktree = "worktree"
+)
+
+// gitEnvVars lists environment variables that redirect git's internal state.
+// When archfit is invoked by a CI system or git hook that sets these, inheriting
+// them into worktree add/remove commands would make git operate on the wrong
+// repository. Scrub all of them from the subprocess environment.
+var gitEnvVars = []string{
+	"GIT_DIR",
+	"GIT_WORK_TREE",
+	"GIT_INDEX_FILE",
+	"GIT_COMMON_DIR",
+	"GIT_OBJECT_DIRECTORY",
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+}
+
+// cleanGitEnv returns os.Environ() with git-redirect variables removed.
+func cleanGitEnv() []string {
+	env := os.Environ()
+	out := make([]string, 0, len(env))
+	scrub := make(map[string]bool, len(gitEnvVars))
+	for _, k := range gitEnvVars {
+		scrub[k] = true
+	}
+	for _, kv := range env {
+		key, _, _ := strings.Cut(kv, "=")
+		if !scrub[key] {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
+// scoreBaseRef checks baseRef out into a temporary detached worktree, scores it
+// with the full pipeline (advisory per the caller), and returns the base
+// Scorecard. The worktree is always removed. advisory mirrors the HEAD side so
+// the delta compares like with like.
+func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, configDir, root string, noConfig, advisory bool) (score.Scorecard, error) {
+	// Resolve the git root. Use --root when given (absolutized); otherwise the
+	// config directory — both are inside the repo and yield the same gitRoot.
+	gitAnchor := root
+	if gitAnchor == "" {
+		gitAnchor = configDir
+	}
+	if abs, aerr := filepath.Abs(gitAnchor); aerr == nil {
+		gitAnchor = abs
+	}
+	gitRoot, err := git.RepoRoot(ctx, gitAnchor, deps.Runner)
+	if err != nil {
+		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: --base requires a git repository: %v", err)}
+	}
+
+	// HEAD-side analysis boundary: --root when given, else the whole repo.
+	headScanRoot := root
+	if headScanRoot == "" {
+		headScanRoot = gitRoot
+	} else if abs, aerr := filepath.Abs(headScanRoot); aerr == nil {
+		headScanRoot = abs
+	}
+	// Canonicalize symlinks so filepath.Rel works on macOS (/var vs /private/var).
+	if canon, cerr := filepath.EvalSymlinks(headScanRoot); cerr == nil {
+		headScanRoot = canon
+	}
+
+	tmpBase, err := os.MkdirTemp("", "archfit-base-*")
+	if err != nil {
+		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: create temp dir: %v", err)}
+	}
+	wtDir := filepath.Join(tmpBase, "wt")
+	defer func() {
+		removeWorktree(ctx, deps.Runner, gitRoot, wtDir)
+		_ = os.RemoveAll(tmpBase)
+	}()
+
+	if aerr := addWorktree(ctx, deps.Runner, gitRoot, wtDir, baseRef); aerr != nil {
+		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: cannot create worktree for ref %q: %v", baseRef, aerr)}
+	}
+	wtCanon, err := filepath.EvalSymlinks(wtDir)
+	if err != nil {
+		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: eval worktree symlinks: %v", err)}
+	}
+	baseRoot, err := subtreeInWorktree(gitRoot, headScanRoot, wtCanon)
+	if err != nil {
+		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: map subtree into worktree: %v", err)}
+	}
+
+	sc, err := runScoreSide(ctx, deps, configPath, baseRoot, noConfig, advisory)
+	if err != nil {
+		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: score base (%s): %v", baseRef, err)}
+	}
+	return sc, nil
+}
+
+// runScoreSide loads config, runs the full pipeline on root, and returns the
+// synthesised Scorecard. advisory mirrors the caller's --advisory so the base
+// and HEAD sides are scored identically.
+func runScoreSide(ctx context.Context, deps *appDeps, configPath, root string, noConfig, advisory bool) (score.Scorecard, error) {
+	cfg, err := loadConfig(ctx, configPath, noConfig)
+	if err != nil {
+		return score.Scorecard{}, err
+	}
+	mode := engine.Mode{Full: true, Advisory: advisory, ReportOnly: true}
+	diag, err := runPipeline(ctx, deps, cfg, configPath, root, noConfig, mode, baseline.Baseline{})
+	if err != nil {
+		return score.Scorecard{}, err
+	}
+	return score.Synthesize(diag), nil
+}
+
+// subtreeInWorktree maps headRoot (absolute, inside gitRoot) to its mirror
+// inside wtDir. When headRoot == gitRoot the result is wtDir itself.
+// Returns an error when headRoot is not under gitRoot (e.g. a ../ path).
+func subtreeInWorktree(gitRoot, headRoot, wtDir string) (string, error) {
+	rel, err := filepath.Rel(gitRoot, headRoot)
+	if err != nil {
+		return "", fmt.Errorf("rel(%s, %s): %w", gitRoot, headRoot, err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("--root %s is not under git root %s", headRoot, gitRoot)
+	}
+	if rel == "." {
+		return wtDir, nil
+	}
+	return filepath.Join(wtDir, rel), nil
+}
+
+// addWorktree runs `git worktree add --detach <dir> <ref>` from gitRoot via the
+// Runner. GIT_DIR/GIT_WORK_TREE/etc. are scrubbed so CI/hook-set vars do not
+// redirect the command to the wrong repository.
+func addWorktree(ctx context.Context, runner toolrun.Runner, gitRoot, dir, ref string) error {
+	out, err := runner.Run(ctx, toolrun.ToolCmd{
+		Name:    gitBinary,
+		Args:    []string{gitWorktree, "add", "--detach", dir, ref},
+		Env:     cleanGitEnv(),
+		WorkDir: gitRoot,
+	})
+	if err != nil {
+		return err
+	}
+	if out.ExitCode != 0 {
+		if msg := strings.TrimSpace(string(out.Stderr)); msg != "" {
+			return fmt.Errorf("git worktree add: %s", msg)
+		}
+		return fmt.Errorf("git worktree add exited %d", out.ExitCode)
+	}
+	return nil
+}
+
+// removeWorktree removes the worktree registration cleanly via the Runner.
+// Best-effort — errors are ignored; os.RemoveAll on the temp dir follows in the
+// caller's defer.
+func removeWorktree(ctx context.Context, runner toolrun.Runner, gitRoot, dir string) {
+	env := cleanGitEnv()
+	_, _ = runner.Run(ctx, toolrun.ToolCmd{
+		Name: gitBinary, Args: []string{"worktree", "remove", "--force", dir},
+		Env: env, WorkDir: gitRoot,
+	})
+	// Prune in case RemoveAll ran before the remove command.
+	_, _ = runner.Run(ctx, toolrun.ToolCmd{
+		Name: gitBinary, Args: []string{"worktree", "prune"},
+		Env: env, WorkDir: gitRoot,
+	})
+}

@@ -302,7 +302,7 @@ func bcEdges(fs []finding.Finding) []bcEdge {
 		if f.RuleID != "bc/imbalanced_coupling" {
 			continue
 		}
-		if f.Status != finding.StatusNew && f.Status != finding.StatusExpiredExcept {
+		if !IsActiveGateFinding(f) {
 			continue
 		}
 		e := bcEdge{
@@ -327,15 +327,19 @@ func bcEdges(fs []finding.Finding) []bcEdge {
 func activeGateFindings(fs []finding.Finding) []finding.Finding {
 	var out []finding.Finding
 	for _, f := range fs {
-		if f.Kind != "gate" {
-			continue
-		}
-		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept {
+		if f.Kind == finding.KindGate && IsActiveGateFinding(f) {
 			out = append(out, f)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+// IsActiveGateFinding reports whether f is an active gate finding — one that
+// counts against the verdict (status new or expired_exception). Shared with
+// internal/decision so the recommendation buckets match the gate verdict.
+func IsActiveGateFinding(f finding.Finding) bool {
+	return f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept
 }
 
 // effortFromSeverity approximates a 0-10 maintenance-effort score for a BC edge

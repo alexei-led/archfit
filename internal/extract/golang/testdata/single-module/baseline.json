@@ -12,7 +12,7 @@
       "goal": "Remove the forbidden dependency from pkg/a/a.go on pkg/b; depend on b's public API or move the shared code to an allowed location.",
       "rule_id": "no_direct_b_dependency",
       "validation": [
-        "archfit check -c \u003cROOT\u003e/.archfit.yaml --full"
+        "archfit analyze --gate -c \u003cROOT\u003e/.archfit.yaml --full"
       ]
     }
   ],
@@ -80,6 +80,45 @@
       "severity": "medium",
       "status": "new",
       "why": "Import from pkg/a/** to pkg/b/** is explicitly forbidden"
+    },
+    {
+      "confidence": "",
+      "constraint": "",
+      "edge": {
+        "from": {
+          "module": "a",
+          "path": "pkg/a/a.go"
+        },
+        "kind": "imports",
+        "to": {
+          "module": "b",
+          "path": "pkg/b"
+        }
+      },
+      "id": "07af466df8bfd6e77ee485ac01c50a17",
+      "kind": "advisory",
+      "locations": [
+        {
+          "file": "pkg/a/a.go",
+          "line": 3
+        }
+      ],
+      "matched_by": {
+        "distance": "cross_module_different_owner",
+        "distance_basis": "ownership",
+        "group_count": "1",
+        "group_members": "07af466df8bfd6e77ee485ac01c50a17",
+        "score": "book",
+        "score_band": "low",
+        "score_value": "8",
+        "score_version": "bc_score.v3",
+        "strength": "functional",
+        "volatility": "low"
+      },
+      "rule_id": "bc/imbalanced_coupling",
+      "severity": "low",
+      "status": "new",
+      "why": "balanced coupling: functional integration strength × cross_module_different_owner distance × low volatility → low severity (unbalanced coupling → elevated maintenance effort)"
     }
   ],
   "head": "",
@@ -237,7 +276,7 @@
     {
       "band": "info",
       "confidence": "high",
-      "definition": "locally-declared deprecation/retraction markers in manifest files (go.mod retract, package.json deprecated) — report-only; cargo yanked and live EOL require external registry queries (use archfit review/enrich)",
+      "definition": "locally-declared deprecation/retraction markers in manifest files (go.mod retract, package.json deprecated) — report-only; cargo yanked and live EOL require external registry queries (use archfit analyze --llm / enrich)",
       "display": "0 declared deprecation markers",
       "metric_version": "deprecated_dep_count.v1",
       "mode": "count",
@@ -365,7 +404,7 @@
   "summary": {
     "exceptions_used": 0,
     "gate_findings": 1,
-    "warnings": 0
+    "warnings": 1
   },
   "tool_coverage": [
     {

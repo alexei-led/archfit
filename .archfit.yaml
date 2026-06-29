@@ -448,6 +448,17 @@ modules:
     layer: core
     subdomain: core
     volatility: medium
+  internal/decision:
+    owner: alexei-led
+    paths:
+      - internal/decision/**
+    public:
+      - internal/decision
+    # Synthesises the human-decision view-model (band, recommendations) from an
+    # already-computed Diagnostic + Scorecard — core ring, depends on score.
+    layer: core
+    subdomain: core
+    volatility: medium
   internal/extract:
     owner: alexei-led
     paths:

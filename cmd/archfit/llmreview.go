@@ -1,6 +1,6 @@
-// review: off-gate LLM holistic narrative review. Lives in cmd by design —
-// the arch ring rule forbids internal packages from importing the LLM layer,
-// so the deterministic check gate stays LLM-free while this command adds judgment.
+// llmreview: off-gate LLM holistic narrative review helper. Lives in cmd by
+// design — the arch ring rule forbids internal packages from importing the LLM
+// layer, so the deterministic gate stays LLM-free while this helper adds judgment.
 package main
 
 import (
@@ -13,8 +13,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/baseline"
-	"github.com/alexei-led/archfit/internal/engine"
+	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -35,9 +34,6 @@ const (
 	// written under the cache dir before parsing so truncation/parse failures
 	// are diagnosable after the fact.
 	rawReviewFile = "last-review.txt"
-
-	// findingKindGate is the finding.Kind for gate violations (vs advisories).
-	findingKindGate = "gate"
 )
 
 // persistRawReview writes the raw LLM response to <cacheDir>/last-review.txt
@@ -50,52 +46,24 @@ func persistRawReview(cacheDir, text string) {
 	_ = os.WriteFile(filepath.Join(cacheDir, rawReviewFile), []byte(text), 0o600)
 }
 
-// ReviewCmd runs the full pipeline, synthesises a Scorecard, and feeds both to
-// the LLM for a holistic narrative review. The LLM output is advisory only and
-// never affects the check gate.
-type ReviewCmd struct {
-	Config  string `short:"c" default:".archfit.yaml"`
-	Root    string `help:"Repository root to analyze (default: directory of --config). Decouples the scanned repo from where the config lives." type:"path"`
-	NoCache bool   `name:"no-cache" help:"Bypass the LLM response cache."`
-
-	// providerOverride is a test seam — set directly on the struct to inject a fake provider.
-	providerOverride llm.Provider
-}
-
-func (c *ReviewCmd) Run(deps *appDeps) error {
-	ctx := context.Background()
-
-	cfg, err := loadConfig(ctx, c.Config, false)
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-	// Config-quality lint → stderr, same as check/score: review narrates over the
-	// same evidence, so under-specified modules degrade what it can say.
-	printConfigLint(deps.stderr(), cfg.Lint())
-
+// runLLMReview is the reusable LLM narrative review helper. It receives an
+// already-loaded config, configDir, and pre-computed diagnostic + scorecard so
+// it does NOT call loadConfig or runPipeline — those are the caller's job.
+//
+// providerOverride is a test seam: pass a non-nil fake to skip the real provider
+// construction (mirrors the old ReviewCmd.providerOverride field).
+// Pass nil in production to build the provider from cfg.LLM().
+func runLLMReview(ctx context.Context, deps *appDeps, cfg config.Config, configDir string, noCache bool, providerOverride llm.Provider, diag diagnostic.Diagnostic, sc score.Scorecard) error {
 	llmCfg, configured := cfg.LLM()
 	if !configured {
-		return &exitError{code: 3, msg: "error: archfit review needs tools.llm configured (provider + model); see docs/guide/llm-enrich.md"}
+		return &exitError{code: 3, msg: "error: --llm requires tools.llm configured (provider + model); see docs/guide/llm-enrich.md"}
 	}
 
-	configDir := filepath.Dir(c.Config)
 	cacheDir := llmCacheDir(configDir)
-	provider, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
+	provider, err := buildCachedProvider(providerOverride, llmCfg, cacheDir, noCache)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
 	}
-
-	existingBase, err := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-
-	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, engine.Mode{Full: true, Advisory: true}, existingBase)
-	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
-	}
-
-	sc := score.Synthesize(diag)
 
 	userPrompt := buildReviewPrompt(diag, sc)
 	resp, err := provider.Complete(ctx, llm.Request{
@@ -484,7 +452,7 @@ func printReview(deps *appDeps, providerName string, rev reviewResponse) {
 
 	_, _ = fmt.Fprintln(w, "---")
 	_, _ = fmt.Fprintln(w, "_Review generated from deterministic archfit evidence. LLM narratives are advisory")
-	_, _ = fmt.Fprintln(w, "and never affect the `check` gate._")
+	_, _ = fmt.Fprintln(w, "and never affect the `analyze --gate` gate._")
 }
 
 func writeFindingGroups(b *strings.Builder, findings []finding.Finding) {
@@ -532,7 +500,7 @@ func writeFindingExamples(b *strings.Builder, findings []finding.Finding) {
 
 func reviewFindingSortKey(f finding.Finding) string {
 	kindRank := "1"
-	if f.Kind == findingKindGate {
+	if f.Kind == finding.KindGate {
 		kindRank = "0"
 	}
 	severityRank := 9 - reviewSeverityRank(f.Severity)
@@ -599,7 +567,7 @@ func buildReviewPrompt(diag diagnostic.Diagnostic, sc score.Scorecard) string {
 	// push the model into long, truncated JSON responses.
 	var gateFindings, advisories int
 	for _, f := range diag.Findings {
-		if f.Kind == findingKindGate {
+		if f.Kind == finding.KindGate {
 			gateFindings++
 		} else {
 			advisories++

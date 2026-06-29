@@ -48,20 +48,16 @@ const (
 
 // cli is the top-level kong command struct.
 type cli struct {
+	Analyze  AnalyzeCmd  `cmd:"" default:"withargs" help:"Analyze architecture: decision, score, findings (default command)."`
 	Doctor   DoctorCmd   `cmd:"" group:"core" help:"Check analyzer/tool availability."`
 	Init     InitCmd     `cmd:"" group:"core" help:"Create a starter architecture config."`
-	Check    CheckCmd    `cmd:"" group:"core" help:"Run the architecture drift gate."`
 	Baseline BaselineCmd `cmd:"" group:"core" help:"Accept current findings as the baseline."`
 
-	Score   ScoreCmd   `cmd:"" group:"reports" help:"Print the banded architecture scorecard."`
-	Diff    DiffCmd    `cmd:"" group:"reports" help:"Compare scorecard between a git ref and HEAD."`
-	Scan    ScanCmd    `cmd:"" group:"reports" help:"Write a full Markdown architecture audit report."`
 	Explain ExplainCmd `cmd:"" group:"reports" help:"Explain one finding by fingerprint prefix."`
 
 	Install InstallCmd `cmd:"" group:"setup" help:"Install optional analyzer tools."`
 	Update  UpdateCmd  `cmd:"" group:"setup" help:"Sync .archfit.yaml with current project structure."`
 
-	Review    ReviewCmd    `cmd:"" group:"llm" help:"Off-gate LLM narrative review of collected evidence."`
 	Enrich    EnrichCmd    `cmd:"" group:"llm" help:"Draft human-reviewed LLM coupling labels and metadata."`
 	Autopilot AutopilotCmd `cmd:"" group:"llm" help:"Draft a full review-only config via LLM."`
 
@@ -75,13 +71,13 @@ func (cli) Help() string {
 First run:
   archfit doctor
   archfit init --root .
-  archfit check --config .archfit.yaml --full
+  archfit --gate --config .archfit.yaml --full
   archfit baseline --config .archfit.yaml --full
 
 CI / agent loop:
-  archfit check --config .archfit.yaml --base origin/main --format json
+  archfit --gate --config .archfit.yaml --base origin/main --format json
   # on exit 1, read agent_tasks[] and rerun the validation command
-  archfit scan --config .archfit.yaml > archfit-report.md
+  archfit --markdown --config .archfit.yaml > archfit-report.md
 
 Docs:
   ` + docsURL + `
@@ -139,6 +135,11 @@ type appDeps struct {
 	Runner toolrun.Runner
 	Stdout io.Writer
 	Stderr io.Writer // nil → os.Stderr
+
+	// progress, when non-nil, is invoked at pipeline phase boundaries so a long
+	// analyze run reports progress to stderr. Set by AnalyzeCmd; nil (no-op) for
+	// every other command.
+	progress func(stage string)
 }
 
 // stderr returns the configured stderr writer, falling back to os.Stderr.
@@ -147,6 +148,14 @@ func (d *appDeps) stderr() io.Writer {
 		return d.Stderr
 	}
 	return os.Stderr
+}
+
+// reportPhase advances the attached progress reporter, if any (no-op otherwise).
+// The pipeline calls this at phase boundaries; only AnalyzeCmd attaches a reporter.
+func (d *appDeps) reportPhase(stage string) {
+	if d.progress != nil {
+		d.progress(stage)
+	}
 }
 
 // exitError carries an exit code through the Run return path.
@@ -173,10 +182,6 @@ type exitCode int
 
 // Run parses args, runs the selected command, and returns the process exit code.
 func Run(args []string, stdout io.Writer) (exitStatus int) {
-	if len(args) == 0 {
-		args = []string{flagHelp}
-	}
-
 	// Capture controlled exits (--version, --help) via panic+recover.
 	defer func() {
 		if r := recover(); r != nil {

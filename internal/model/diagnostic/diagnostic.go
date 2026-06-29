@@ -177,7 +177,7 @@ type RuntimeAsyncModule struct {
 // in a manifest file. Report-only evidence — never consumed by verdict or gate
 // logic, never alters the dependency graph or any metric.
 // Ceiling: cargo yanked and live-version EOL require external registry queries
-// and are routed to the LLM review path (archfit review/enrich), not this detector.
+// and are routed to the LLM path (archfit analyze --llm / enrich), not this detector.
 type DeprecatedDep struct {
 	File    string `json:"file"`           // repo-relative manifest file path
 	Kind    string `json:"kind"`           // "retract" | "deprecated"
@@ -315,7 +315,7 @@ const (
 // ignore unknown fields — do not decode a v1 payload with DisallowUnknownFields.
 const SchemaVersion = "archfit.diagnostic.v2"
 
-// Diagnostic is the top-level output contract for archfit check (spec §12).
+// Diagnostic is the top-level output contract for archfit analyze (spec §12).
 // JSON tags match spec §12 field names exactly.
 type Diagnostic struct {
 	SchemaVersion string  `json:"schema_version"`
@@ -345,7 +345,7 @@ type Diagnostic struct {
 	// marker block. Evidence only — never consumed by verdict or gate logic, never
 	// alters the dependency graph or any metric. Omitted when no markers were found.
 	// Ceiling: cargo yanked and live-version EOL require external registry queries
-	// and are routed to the LLM review path (archfit review/enrich), not here.
+	// and are routed to the LLM path (archfit analyze --llm / enrich), not here.
 	DeprecatedDeps []DeprecatedDep `json:"deprecated_deps,omitempty"`
 	// SyntaxFacts is the report-only syntactic declaration/route block extracted
 	// by ast-grep (design §3). Neutral, off-gate evidence — never consumed by
