@@ -38,7 +38,6 @@ const (
 const (
 	ToolSyntax       = "syntax"
 	ToolScip         = "scip"
-	ToolComplexity   = "complexity"
 	ToolClones       = "clones"
 	ToolCargoModules = "cargo-modules"
 	// ToolLLM is the id for the off-gate AI provider used by enrich and explain.
@@ -117,23 +116,12 @@ type TimedAnalyzer struct {
 	Timeout string   `yaml:"timeout,omitempty"`
 }
 
-// ComplexityAnalyzer configures the cyclomatic-complexity analyzer
-// (`analyzers.complexity`). Backend: "" or "auto" (default) = gocyclo for Go +
-// an ast-grep decision-point proxy elsewhere; "lizard" = exact per-function CCN.
-type ComplexityAnalyzer struct {
-	Enabled ToolMode `yaml:"enabled"`
-	Gate    GateMode `yaml:"gate,omitempty"`
-	Timeout string   `yaml:"timeout,omitempty"`
-	Backend string   `yaml:"backend,omitempty"`
-}
-
 // AnalyzersConfig groups the opt-in analyzer settings (`analyzers:`).
 type AnalyzersConfig struct {
-	Syntax       Analyzer           `yaml:"syntax,omitempty"`
-	Scip         TimedAnalyzer      `yaml:"scip,omitempty"`
-	Complexity   ComplexityAnalyzer `yaml:"complexity,omitempty"`
-	Clones       TimedAnalyzer      `yaml:"clones,omitempty"`
-	CargoModules Analyzer           `yaml:"cargo_modules,omitempty"`
+	Syntax       Analyzer      `yaml:"syntax,omitempty"`
+	Scip         TimedAnalyzer `yaml:"scip,omitempty"`
+	Clones       TimedAnalyzer `yaml:"clones,omitempty"`
+	CargoModules Analyzer      `yaml:"cargo_modules,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -181,10 +169,6 @@ func (c Config) SyntaxEnabled() bool { return c.Analyzers.Syntax.Enabled == Mode
 // Config-driven (not PATH presence) preserves same-config→same-metrics.
 func (c Config) ScipEnabled() bool { return c.Analyzers.Scip.Enabled == ModeOn }
 
-// ComplexityEnabled reports whether the external complexity analyzer is
-// explicitly enabled (analyzers.complexity.enabled: true). Opt-in only.
-func (c Config) ComplexityEnabled() bool { return c.Analyzers.Complexity.Enabled == ModeOn }
-
 // ClonesEnabled reports whether the clone-detection analyzer is explicitly
 // enabled (analyzers.clones.enabled: true). Opt-in only.
 func (c Config) ClonesEnabled() bool { return c.Analyzers.Clones.Enabled == ModeOn }
@@ -194,19 +178,9 @@ func (c Config) ClonesEnabled() bool { return c.Analyzers.Clones.Enabled == Mode
 // only — it compiles the crate (minutes).
 func (c Config) CargoModulesEnabled() bool { return c.Analyzers.CargoModules.Enabled == ModeOn }
 
-// ComplexityBackend returns the selected complexity backend for the run.
-// "" or "auto" (default) → gocyclo(Go)+ast-grep proxy; "lizard" → exact lizard.
-// An empty/missing value is normalised to "auto".
-func (c Config) ComplexityBackend() string {
-	if b := c.Analyzers.Complexity.Backend; b != "" {
-		return b
-	}
-	return "auto"
-}
-
 // ToolTimeout returns the configured per-analyzer subprocess timeout for the
-// given analyzer id (ToolScip, ToolClones, ToolComplexity). Returns 0 when not
-// set or unparseable (callers use their built-in default).
+// given analyzer id (ToolScip, ToolClones). Returns 0 when not set or unparseable
+// (callers use their built-in default).
 func (c Config) ToolTimeout(id string) time.Duration {
 	var s string
 	switch id {
@@ -214,8 +188,6 @@ func (c Config) ToolTimeout(id string) time.Duration {
 		s = c.Analyzers.Scip.Timeout
 	case ToolClones:
 		s = c.Analyzers.Clones.Timeout
-	case ToolComplexity:
-		s = c.Analyzers.Complexity.Timeout
 	}
 	if s == "" {
 		return 0
@@ -245,8 +217,6 @@ func (c Config) ToolMode(id string) ToolMode {
 		return c.Analyzers.Syntax.Enabled
 	case ToolScip:
 		return c.Analyzers.Scip.Enabled
-	case ToolComplexity:
-		return c.Analyzers.Complexity.Enabled
 	case ToolClones:
 		return c.Analyzers.Clones.Enabled
 	case ToolCargoModules:
@@ -272,8 +242,6 @@ func (c Config) ToolGate(id string) GateMode {
 		return c.Analyzers.Syntax.Gate
 	case ToolScip:
 		return c.Analyzers.Scip.Gate
-	case ToolComplexity:
-		return c.Analyzers.Complexity.Gate
 	case ToolClones:
 		return c.Analyzers.Clones.Gate
 	case ToolCargoModules:
@@ -299,8 +267,6 @@ func (c *Config) SetToolMode(id string, mode ToolMode) {
 		c.Analyzers.Syntax.Enabled = mode
 	case ToolScip:
 		c.Analyzers.Scip.Enabled = mode
-	case ToolComplexity:
-		c.Analyzers.Complexity.Enabled = mode
 	case ToolClones:
 		c.Analyzers.Clones.Enabled = mode
 	case ToolCargoModules:

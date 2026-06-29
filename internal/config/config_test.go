@@ -800,7 +800,6 @@ func TestSelfConfig_ExtractModuleMap(t *testing.T) {
 		"internal/extract/runtime",
 		"internal/extract/dynimports",
 		"internal/extract/clones",
-		"internal/extract/complexity",
 		"internal/extract/loc",
 	}
 

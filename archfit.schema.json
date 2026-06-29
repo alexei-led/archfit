@@ -56,9 +56,6 @@
         "scip": {
           "$ref": "#/$defs/TimedAnalyzer"
         },
-        "complexity": {
-          "$ref": "#/$defs/ComplexityAnalyzer"
-        },
         "clones": {
           "$ref": "#/$defs/TimedAnalyzer"
         },
@@ -69,42 +66,6 @@
       "additionalProperties": false,
       "type": "object",
       "description": "AnalyzersConfig groups the opt-in analyzer settings (`analyzers:`)."
-    },
-    "ComplexityAnalyzer": {
-      "properties": {
-        "enabled": {
-          "oneOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "const": "auto"
-            }
-          ],
-          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
-        },
-        "gate": {
-          "type": "string",
-          "enum": [
-            "off",
-            "warn",
-            "fail"
-          ],
-          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
-        },
-        "timeout": {
-          "type": "string"
-        },
-        "backend": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "enabled"
-      ],
-      "description": "ComplexityAnalyzer configures the cyclomatic-complexity analyzer (`analyzers.complexity`)."
     },
     "CouplingConfig": {
       "properties": {

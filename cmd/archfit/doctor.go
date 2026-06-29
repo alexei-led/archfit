@@ -22,7 +22,6 @@ func (c *DoctorCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kon
 		{"uv", "uv", "https://docs.astral.sh/uv/getting-started/installation"},
 		{"sg (ast-grep)", "sg", "cargo install ast-grep / brew install ast-grep"},
 		// Semantic depth tools — their absence lowers analysis_confidence.
-		{toolLizard, toolLizard, "uv tool install lizard / pip install lizard"},
 		{toolJscpd, toolJscpd, "npm install -g jscpd"},
 	}
 	for _, lang := range languageRegistry {

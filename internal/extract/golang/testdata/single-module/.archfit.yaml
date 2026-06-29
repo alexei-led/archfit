@@ -28,8 +28,6 @@ languages:
 analyzers:
   scip:
     enabled: false
-  complexity:
-    enabled: false
   clones:
     enabled: false
   syntax:

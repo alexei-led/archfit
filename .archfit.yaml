@@ -318,16 +318,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: low
-  internal/extract/complexity:
-    owner: alexei-led
-    paths:
-      - internal/extract/complexity/**
-    public:
-      - internal/extract/complexity
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: low
   internal/extract/loc:
     owner: alexei-led
     paths:
@@ -372,15 +362,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
-  internal/fitness:
-    owner: alexei-led
-    paths:
-      - internal/fitness/**
-    public:
-      - internal/fitness
-    layer: adapter
-    subdomain: supporting
-    volatility: low
   internal/ownership:
     owner: alexei-led
     paths:
@@ -613,8 +594,6 @@ analyzers:
   syntax:
     enabled: true
   scip:
-    enabled: true
-  complexity:
     enabled: true
   clones:
     enabled: true

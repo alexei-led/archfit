@@ -254,7 +254,6 @@ func (c Config) toolEntries() []toolEntry {
 		{"languages.rust", c.Languages.Rust.Gate, ""},
 		{"analyzers.syntax", c.Analyzers.Syntax.Gate, ""},
 		{"analyzers.scip", c.Analyzers.Scip.Gate, c.Analyzers.Scip.Timeout},
-		{"analyzers.complexity", c.Analyzers.Complexity.Gate, c.Analyzers.Complexity.Timeout},
 		{"analyzers.clones", c.Analyzers.Clones.Gate, c.Analyzers.Clones.Timeout},
 		{"analyzers.cargo_modules", c.Analyzers.CargoModules.Gate, ""},
 	}
