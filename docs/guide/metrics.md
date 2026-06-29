@@ -313,7 +313,7 @@ here.
   its eval (blind for single-file Python/TS modules — exactly where the LOC-skew
   proxy already diverged from expert judgment); kept because the Go-package
   fragmentation signal is honest where it applies. See
-  [`gap-closure-task20-cohesion-eval.md`](../plans/notes/gap-closure-task20-cohesion-eval.md).
+  [`gap-closure-task20-cohesion-eval.md`](../plans/completed/gap-closure-task20-cohesion-eval.md).
 
 ### Beyond Balanced Coupling (supporting / non-BC)
 
@@ -504,7 +504,7 @@ low-confidence caps are enforced and covered by a stored golden. The scorecard i
 absence of evidence. A repo no extractor analysed scores `n/a`/critical with a
 coverage gap, not a confident pass — see
 [commands.md](commands.md#coverage-gaps-and-required-tools) and the
-[coverage-gate design doc](../design/coverage-gate-and-autopilot-v0.1.md).
+[coverage-gate design doc](../archived/design/coverage-gate-and-autopilot-v0.1.md).
 
 ## Per-language behavior
 
@@ -524,7 +524,7 @@ false failure.
 | Dynamic / lazy import signal        | n/a           | `require()` / dynamic `import()`         | in-function / `importlib` / `__import__`                 |
 
 Key behaviors fixed in the v0.x gap-closure program (see
-[the gap-closure result](../notes/v0.x-tool-vs-expert-gap-closure.md)):
+[the gap-closure result](../archived/notes/v0.x-tool-vs-expert-gap-closure.md)):
 
 - `change_locality` matches changed files across all node-ID schemes — no more
   Python false-0.

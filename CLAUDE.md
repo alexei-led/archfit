@@ -217,9 +217,14 @@ convention (accepted ceiling: `#[path]`, inline `mod {}`, `include!` diverge fro
 rust-analyzer's semantic tree; SCIP is the precision upgrade). The meta dimension
 `analysis_confidence` is also capped by the share of n/a/low-confidence dimensions, so a
 fully-tooled run no longer reads 100 when (by Rust design) encapsulation is n/a. See
-`docs/plans/completed/20260621-archfit-rust-depth-and-calibration.md`.
+`docs/archived/plans/completed/20260621-archfit-rust-depth-and-calibration.md`.
 
 ## Layout
 
 `cmd/archfit` (kong CLI) · `internal/` decision core + adapters · `docs/design`
-(decisions) · `docs/guide` (user docs) · `docs/plans`.
+(current decisions — 3 files) · `docs/guide` (user docs) · `docs/spec` (spec) ·
+`docs/plans` (open plans only; currently empty).
+
+**Skip `docs/archived/`** — superseded design docs, completed plans, plan notes,
+research artifacts, and analysis notes. Only read when explicitly debugging
+history or looking up a completed plan by name.
