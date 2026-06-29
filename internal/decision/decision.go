@@ -38,7 +38,7 @@ type Report struct {
 	Blocking int
 	// Advisory is the count of advisory findings (diag.Summary.Warnings).
 	Advisory int
-	// Overall is the mean of the six non-meta dimension values (0-100).
+	// Overall is the coupling_balance value (0-100).
 	Overall int
 	// OverallBand is the qualitative label for Overall.
 	OverallBand score.Band
@@ -173,14 +173,8 @@ func headlineFor(b Band) string {
 // ---------------------------------------------------------------------------
 
 // whatMovesTable is the static per-dimension remediation guidance.
-// Meta dimension (analysis_confidence) is omitted — it has no WhatMoves.
 var whatMovesTable = map[string]string{
-	score.DimBoundaryIntegrity:     "Resolve forbidden-dependency and layer-direction violations at the seam.",
-	score.DimCouplingBalance:       "Reduce high-fan-in functional edges across module boundaries or introduce stable contracts.",
-	score.DimDependencyGraphHealth: "Break true static cycles; mark lazy-import cycles as recognized/advisory.",
-	score.DimCohesionModularity:    "Reduce cross-module duplication; exclude generated/static assets from clone scoring.",
-	score.DimChangeLocality:        "Keep changes inside module boundaries; split files that change for many reasons.",
-	score.DimArchitectureFitness:   "Add/repair executable fitness checks so the intended boundary stays enforced.",
+	score.DimCouplingBalance: "Reduce high-fan-in functional edges across module boundaries or introduce stable contracts.",
 }
 
 // evidenceCap is the maximum number of evidence strings joined into Why.

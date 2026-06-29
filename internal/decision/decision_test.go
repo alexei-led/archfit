@@ -39,27 +39,20 @@ func bandForValue(v int) score.Band {
 	}
 }
 
-func makeDim(name string, value int, conf score.Confidence, meta bool) score.Dimension {
+func makeDim(value int, conf score.Confidence) score.Dimension {
 	return score.Dimension{
-		Name:       name,
+		Name:       score.DimCouplingBalance,
 		Value:      value,
 		Band:       bandForValue(value),
 		Confidence: conf,
-		Evidence:   []string{"evidence for " + name},
-		Summary:    "summary of " + name,
-		Meta:       meta,
+		Evidence:   []string{"evidence for " + score.DimCouplingBalance},
+		Summary:    "summary of " + score.DimCouplingBalance,
 	}
 }
 
 func healthyDims() []score.Dimension {
 	return []score.Dimension{
-		makeDim(score.DimBoundaryIntegrity, 75, score.ConfidenceHigh, false),
-		makeDim(score.DimCouplingBalance, 70, score.ConfidenceHigh, false),
-		makeDim(score.DimDependencyGraphHealth, 72, score.ConfidenceHigh, false),
-		makeDim(score.DimCohesionModularity, 68, score.ConfidenceHigh, false),
-		makeDim(score.DimChangeLocality, 80, score.ConfidenceHigh, false),
-		makeDim(score.DimArchitectureFitness, 75, score.ConfidenceHigh, false),
-		makeDim(score.DimAnalysisConfidence, 90, score.ConfidenceHigh, true),
+		makeDim(70, score.ConfidenceHigh),
 	}
 }
 
@@ -120,21 +113,6 @@ func TestBuild_BandFail_HardGate(t *testing.T) {
 	}
 }
 
-func TestBuild_CriticalHighDim_DoesNotEscalate(t *testing.T) {
-	// A single critical-at-high-confidence dimension must NOT escalate the
-	// decision past the overall band — soft/advisory criticals (e.g. cohesion
-	// clone-scoring) are calibration-sensitive. Mirrors archfit's own shape
-	// (mixed overall, 0 blockers, a critical advisory dim) → ACCEPTABLE, per the brief.
-	dims := healthyDims()
-	dims[0] = makeDim(score.DimBoundaryIntegrity, 10, score.ConfidenceHigh, false)
-	sc := makeScorecard(58, dims) // mixed overall
-	diag := makeDiag(diagnostic.VerdictPass, 0, 12)
-	r := decision.Build(diag, sc, nil, false)
-	if r.Band != decision.BandAcceptable {
-		t.Errorf("critical dim with mixed overall must stay ACCEPTABLE, got %q", r.Band)
-	}
-}
-
 func TestBuild_BandNeedsAttention_OverallPoor(t *testing.T) {
 	dims := make([]score.Dimension, len(healthyDims()))
 	copy(dims, healthyDims())
@@ -149,8 +127,9 @@ func TestBuild_BandNeedsAttention_OverallPoor(t *testing.T) {
 func TestBuild_BandNeedsAttention_CriticalLowConfidence_NotTriggered(t *testing.T) {
 	// Critical dim but low confidence → should NOT trigger NEEDS_ATTENTION from
 	// the critical-high-dim rule; may still fall back to ACCEPTABLE.
-	dims := healthyDims()
-	dims[0] = makeDim(score.DimBoundaryIntegrity, 10, score.ConfidenceLow, false)
+	dims := []score.Dimension{
+		makeDim(10, score.ConfidenceLow),
+	}
 	sc := makeScorecard(65, dims) // serviceable overall, warnings=0, pass verdict
 	diag := makeDiag(diagnostic.VerdictPass, 0, 0)
 	r := decision.Build(diag, sc, nil, false)
@@ -230,9 +209,13 @@ func TestBuild_NeverEmptyBand(t *testing.T) {
 			for _, warnings := range warningCounts {
 				for _, hg := range hardGates {
 					for _, withCritical := range hasCriticalHighDimOptions {
-						dims := healthyDims()
+						var dims []score.Dimension
 						if withCritical {
-							dims[0] = makeDim(score.DimBoundaryIntegrity, 10, score.ConfidenceHigh, false)
+							dims = []score.Dimension{
+								makeDim(10, score.ConfidenceHigh),
+							}
+						} else {
+							dims = healthyDims()
 						}
 						sc := makeScorecard(overall, dims)
 						diag := makeDiag(verdict, 0, warnings)
@@ -452,22 +435,21 @@ func TestBuild_Delta_OverallChange(t *testing.T) {
 
 func TestBuild_Delta_NegativeChange(t *testing.T) {
 	diag := makeDiag(diagnostic.VerdictPass, 0, 0)
-	baseDims := healthyDims()
-	curDims := healthyDims()
-	curDims[0] = makeDim(score.DimBoundaryIntegrity, 40, score.ConfidenceHigh, false) // dropped from 75 to 40
+	baseDims := []score.Dimension{makeDim(75, score.ConfidenceHigh)}
+	curDims := []score.Dimension{makeDim(40, score.ConfidenceHigh)}
 	base := makeScorecard(75, baseDims)
-	current := makeScorecard(60, curDims)
+	current := makeScorecard(40, curDims)
 	r := decision.Build(diag, current, &base, false)
 	if r.Delta == nil {
 		t.Fatal("Delta must be non-nil when base provided")
 	}
-	if r.Delta.Overall != -15 {
-		t.Errorf("Delta.Overall: want -15, got %d", r.Delta.Overall)
+	if r.Delta.Overall != -35 {
+		t.Errorf("Delta.Overall: want -35, got %d", r.Delta.Overall)
 	}
-	// Find the boundary_integrity dim delta.
+	// Find the coupling_balance dim delta.
 	var found bool
 	for _, dd := range r.Delta.Dimensions {
-		if dd.Name == score.DimBoundaryIntegrity {
+		if dd.Name == score.DimCouplingBalance {
 			found = true
 			if dd.Before != 75 {
 				t.Errorf("DimDelta.Before: want 75, got %d", dd.Before)
@@ -481,7 +463,7 @@ func TestBuild_Delta_NegativeChange(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("DimDelta for boundary_integrity not found")
+		t.Error("DimDelta for coupling_balance not found")
 	}
 }
 

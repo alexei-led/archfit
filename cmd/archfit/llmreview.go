@@ -159,7 +159,7 @@ You MUST:
 - Only narrate, prioritize, and contextualise findings already present in the evidence supplied.
 - Only classify volatility/subdomain for modules that appear in the evidence.
 - Only propose dimension bands for dimensions named in the evidence.
-- Return at most 7 dimensions, at most 3 top_risks, and at most 5 subdomain_suggestions.
+- Return at most 1 dimension (coupling_balance only), at most 3 top_risks, and at most 5 subdomain_suggestions.
 - Keep every narrative under 450 characters.
 
 You MUST NOT:
@@ -226,13 +226,7 @@ type reviewSubdomainSuggest struct {
 
 // validDimNames is the set of known scorecard dimension names.
 var validDimNames = map[string]struct{}{
-	score.DimBoundaryIntegrity:     {},
-	score.DimCouplingBalance:       {},
-	score.DimDependencyGraphHealth: {},
-	score.DimCohesionModularity:    {},
-	score.DimChangeLocality:        {},
-	score.DimArchitectureFitness:   {},
-	score.DimAnalysisConfidence:    {},
+	score.DimCouplingBalance: {},
 }
 
 // validBands is the scorecard band vocabulary the review must use (scorecard.yaml).

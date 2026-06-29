@@ -1,24 +1,20 @@
 // Package score synthesises an already-computed Diagnostic into the architect
-// skill's seven-dimension banded scorecard (boundary_integrity, coupling_balance,
-// dependency_graph_health, cohesion_modularity, change_locality,
-// architecture_fitness, analysis_confidence), each with a 0-100 value, a band, a
-// confidence level, and at least one evidence reference.
+// skill's single-dimension banded scorecard (coupling_balance), with a 0-100
+// value, a band, a confidence level, and at least one evidence reference.
 //
 // It is a pure decision over collected facts: it reads the Diagnostic's metrics,
-// gate findings, Balanced-Coupling advisories, and tool coverage — it never runs
-// a tool, an LLM, or touches the filesystem. coupling_balance is derived strictly
-// from Vlad Khononov's balance rule over the BC edges (integration strength ×
-// distance × volatility maintenance-effort distribution, plus the worst-case
-// high/high/high count), NOT a generic metric average; cohesion_modularity treats
-// high-strength + low-distance coupling as healthy cohesion and never penalises it.
+// gate findings, and Balanced-Coupling advisories — it never runs a tool, an
+// LLM, or touches the filesystem. coupling_balance is derived strictly from Vlad
+// Khononov's balance rule over the BC edges (integration strength × distance ×
+// volatility maintenance-effort distribution, plus the worst-case
+// high/high/high count), NOT a generic metric average.
 //
 // Bands and rules mirror the architect scorecard contract (scorecard.yaml,
 // rubric_version 1): band must match value; serviceable/strong require at least
-// medium confidence; every non-meta dimension carries at least one evidence ref.
+// medium confidence; every dimension carries at least one evidence ref.
 package score
 
 import (
-	"math"
 	"strconv"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -53,13 +49,7 @@ const (
 
 // Dimension names (scorecard.yaml dimensions).
 const (
-	DimBoundaryIntegrity     = "boundary_integrity"
-	DimCouplingBalance       = "coupling_balance"
-	DimDependencyGraphHealth = "dependency_graph_health"
-	DimCohesionModularity    = "cohesion_modularity"
-	DimChangeLocality        = "change_locality"
-	DimArchitectureFitness   = "architecture_fitness"
-	DimAnalysisConfidence    = "analysis_confidence"
+	DimCouplingBalance = "coupling_balance"
 )
 
 // Dimension is one scored axis of the architecture.
@@ -81,74 +71,46 @@ type Dimension struct {
 	Meta bool `json:"meta,omitempty"`
 }
 
-// Scorecard is the synthesised banded assessment across all seven dimensions.
+// Scorecard is the synthesised banded assessment across all dimensions.
 type Scorecard struct {
 	RubricVersion int `json:"rubric_version"`
-	// Overall is the mean of the six non-meta dimension values.
+	// Overall is the coupling_balance value.
 	Overall     int         `json:"overall"`
 	OverallBand Band        `json:"overall_band"`
 	Dimensions  []Dimension `json:"dimensions"`
 }
 
-// Synthesize derives the seven-dimension scorecard from a computed Diagnostic.
+// Synthesize derives the scorecard from a computed Diagnostic.
 // The Diagnostic must include Balanced-Coupling advisories (run with advisory
-// mode on) for coupling_balance to see the BC edges; without them that dimension
+// mode on) for coupling_balance to see the BC edges; without them the dimension
 // reports "no unbalanced coupling detected" at medium confidence.
 func Synthesize(d diagnostic.Diagnostic) Scorecard {
 	mi := indexMetrics(d.Metrics)
 	edges := bcEdges(d.Findings)
-	gate := activeGateFindings(d.Findings)
-	base := coverageConfidence(d, mi)
 
-	dims := []Dimension{
-		boundaryIntegrity(mi, gate, base),
-		couplingBalance(edges, mi, d.ClassifiedEdges),
-		dependencyGraphHealth(mi, base),
-		cohesionModularity(mi, base),
-		changeLocality(mi, base),
-		architectureFitness(mi, base),
-	}
-	for i := range dims {
-		dims[i] = finalize(dims[i])
-	}
+	cb := finalize(couplingBalance(edges, mi, d.ClassifiedEdges))
 
 	// A partial Rust module graph (some crates' cargo-modules failed) means the
-	// structural dimensions were computed over an incomplete graph — and the surviving
-	// nodes can defeat the degenerate-graph guard. Don't present those dims at high
-	// confidence; cap to medium so partial coverage cannot read as a confident verdict.
-	if cargoModulesPartial(d) {
-		for i := range dims {
-			// Every graph-derived dimension is built over the same incomplete module
-			// graph when cargo-modules only partially succeeded — coupling and boundary
-			// included, not just dep-graph/cohesion. Cap them all to medium so partial
-			// coverage never reads as a confident verdict.
-			if structuralDimensions[dims[i].Name] && dims[i].Confidence == ConfidenceHigh {
-				dims[i].Confidence = ConfidenceMedium
-				dims[i].Evidence = append(dims[i].Evidence,
-					"module graph partial (some crates failed cargo-modules) — confidence capped to medium")
-			}
-		}
+	// graph was incomplete when coupling was computed. Cap to medium so partial
+	// coverage cannot read as a confident verdict.
+	if cargoModulesPartial(d) && cb.Confidence == ConfidenceHigh {
+		cb.Confidence = ConfidenceMedium
+		cb.Evidence = append(cb.Evidence,
+			"module graph partial (some crates failed cargo-modules) — confidence capped to medium")
 	}
-
-	meta := finalizeMeta(analysisConfidence(d, mi, dims))
-
-	overall := meanValue(dims)
-	all := make([]Dimension, 0, len(dims)+1)
-	all = append(all, dims...)
-	all = append(all, meta)
 
 	return Scorecard{
 		RubricVersion: RubricVersion,
-		Overall:       overall,
-		OverallBand:   bandFor(overall),
-		Dimensions:    all,
+		Overall:       cb.Value,
+		OverallBand:   bandFor(cb.Value),
+		Dimensions:    []Dimension{cb},
 	}
 }
 
-// finalize enforces the scorecard rules on a non-meta dimension: low confidence
-// caps the value at mixed (serviceable/strong require ≥ medium confidence), the
-// band is always recomputed from the final value (band_matches_value), and a
-// dimension with no evidence gets a placeholder so score_requires_evidence holds.
+// finalize enforces the scorecard rules on a dimension: low confidence caps the
+// value at mixed (serviceable/strong require ≥ medium confidence), the band is
+// always recomputed from the final value (band_matches_value), and a dimension
+// with no evidence gets a placeholder so score_requires_evidence holds.
 func finalize(dim Dimension) Dimension {
 	dim.Value = clamp(dim.Value)
 	if dim.Confidence == ConfidenceLow && dim.Value > 60 {
@@ -159,33 +121,6 @@ func finalize(dim Dimension) Dimension {
 		dim.Evidence = []string{"no signal available for this dimension"}
 	}
 	return dim
-}
-
-// finalizeMeta finalises the analysis_confidence dimension. It is exempt from the
-// evidence requirement and the confidence cap (it scores the review itself), but
-// its band must still match its value.
-func finalizeMeta(dim Dimension) Dimension {
-	dim.Meta = true
-	dim.Value = clamp(dim.Value)
-	dim.Band = bandFor(dim.Value)
-	return dim
-}
-
-// naDimensionPenalty is the meta-confidence points deducted per unmeasured structural
-// dimension. Set so all four structural dimensions blind lands at 60 — the same ceiling
-// the degenerate-graph guard applies — while one design-driven n/a (e.g. Rust's
-// encapsulation) degrades gently to 90.
-const naDimensionPenalty = 10
-
-// structuralDimensions are the graph-derived dimensions whose n/a state means the graph
-// was too sparse to measure architecture (a fidelity gap), as opposed to change_locality
-// and architecture_fitness, whose n/a is a deliberate scope choice (no --base / no
-// enforcement signals) and must not lower review confidence.
-var structuralDimensions = map[string]bool{
-	DimBoundaryIntegrity:     true,
-	DimCouplingBalance:       true,
-	DimDependencyGraphHealth: true,
-	DimCohesionModularity:    true,
 }
 
 // ---------------------------------------------------------------------------
@@ -209,14 +144,11 @@ func (mi metricIndex) get(name string) (diagnostic.MetricResult, bool) {
 	return m, ok
 }
 
-// measured returns the metric only when it ran AND produced a real value (not
+// measured reports whether the named metric ran AND produced a real value (not
 // the n/a band, which means "no evidence").
-func (mi metricIndex) measured(name string) (diagnostic.MetricResult, bool) {
+func (mi metricIndex) measured(name string) bool {
 	m, ok := mi[name]
-	if !ok || m.Band == "n/a" {
-		return diagnostic.MetricResult{}, false
-	}
-	return m, true
+	return ok && m.Band != "n/a"
 }
 
 // cargoModulesPartial reports whether the Rust module-graph tool ran but only
@@ -240,9 +172,7 @@ func cargoModulesPartial(d diagnostic.Diagnostic) bool {
 // canonical case is a single-crate Rust binary, which archfit's crate-level model
 // sees as one node (see internal/extract/rust).
 func degenerateGraph(mi metricIndex) bool {
-	_, br := mi.measured("blast_radius")
-	_, inst := mi.measured("instability")
-	return !br && !inst
+	return !mi.measured("blast_radius") && !mi.measured("instability")
 }
 
 // coverageConfidence derives the baseline confidence level shared by the
@@ -350,21 +280,6 @@ func BandRank(b Band) int {
 	}
 }
 
-// meanValue returns the rounded mean of the dimension values.
-func meanValue(dims []Dimension) int {
-	if len(dims) == 0 {
-		return 0
-	}
-	sum := 0
-	for _, d := range dims {
-		sum += d.Value
-	}
-	return int(math.Round(float64(sum) / float64(len(dims))))
-}
-
-// pct maps a [0,1] fraction to a rounded 0-100 percentage.
-func pct(f float64) int { return int(math.Round(f * 100)) }
-
 // clamp bounds v to [0,100].
 func clamp(v int) int {
 	if v < 0 {
@@ -397,12 +312,4 @@ func atoiDefault(s string, def int) int {
 		return def
 	}
 	return n
-}
-
-// orAbsent returns the status string or "absent" when empty (tool never reported).
-func orAbsent(s string) string {
-	if s == "" {
-		return diagnostic.StatusAbsent
-	}
-	return s
 }

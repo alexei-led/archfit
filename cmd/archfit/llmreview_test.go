@@ -21,7 +21,7 @@ import (
 
 const (
 	reviewProviderName  = "test/fixed"
-	reviewDimBoundary   = "boundary_integrity"
+	reviewDimBoundary   = "coupling_balance"
 	reviewBandMixed     = "mixed"
 	reviewModReal       = "real_module"
 	reviewModLazy       = "lazy_mod"
@@ -39,9 +39,9 @@ const validReviewJSON = `{
   "overall_band": "mixed",
   "dimensions": [
     {
-      "name": "boundary_integrity",
+      "name": "coupling_balance",
       "band": "poor",
-      "narrative": "The boundary between a and b is breached by an intrusive dependency, raising maintenance effort and cascading change risk."
+      "narrative": "The coupling between a and b is intrusive, raising maintenance effort and cascading change risk."
     }
   ],
   "top_risks": [
@@ -223,7 +223,7 @@ func TestReviewCmd_Run_EntityPostCheck(t *testing.T) {
 	// "a" is a valid module from writeViolatingRepo; "nonexistent_module" must be dropped.
 	jsonWithBadModule := `{
   "overall_band": "poor",
-  "dimensions": [{"name": "boundary_integrity", "band": "poor", "narrative": "Boundary breached."}],
+  "dimensions": [{"name": "coupling_balance", "band": "poor", "narrative": "Coupling is elevated."}],
   "top_risks": [
     {
       "title": "Mixed modules risk",
