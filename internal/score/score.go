@@ -164,15 +164,14 @@ func cargoModulesPartial(d diagnostic.Diagnostic) bool {
 }
 
 // degenerateGraph reports whether the dependency graph is too small to assess
-// structure — fewer than two connected first-party modules. blast_radius and
-// instability both go n/a exactly in that case (they need ≥2 modules joined by an
-// edge), so their joint absence is the proxy. On such a graph cycle=0,
-// propagation≈0, and "0 hidden-coupling pairs" are trivially true and carry no
+// structure — fewer than two connected first-party modules. blast_radius goes n/a
+// exactly in that case (it needs ≥2 modules joined by an edge), so its absence is
+// the proxy. On such a graph cycle=0 and coverage is trivially true, carrying no
 // signal: the graph-shape dimensions must report n/a, not a vacuous strong. The
 // canonical case is a single-crate Rust binary, which archfit's crate-level model
 // sees as one node (see internal/extract/rust).
 func degenerateGraph(mi metricIndex) bool {
-	return !mi.measured("blast_radius") && !mi.measured("instability")
+	return !mi.measured("blast_radius")
 }
 
 // coverageConfidence derives the baseline confidence level shared by the

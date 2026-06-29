@@ -13,8 +13,8 @@ import (
 // FirstPartyModules returns the set of module keys for the nodes archfit actually
 // parsed, excluding external nodes (NodeKindExternal: unresolved npm packages,
 // uninstalled third-party deps, node builtins an extractor could not tag as core).
-// External dependencies must never be treated as owned modules, or coupling
-// metrics (instability/abstractness/martin, blast radius) flag them as first-party.
+// External dependencies must never be treated as owned modules, or the
+// blast-radius metric flags them as first-party.
 func FirstPartyModules(g *graph.Graph) map[string]struct{} {
 	fp := make(map[string]struct{})
 	for _, n := range g.Nodes() {

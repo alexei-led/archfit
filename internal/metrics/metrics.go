@@ -3,9 +3,7 @@ package metrics
 import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/metrics/boundary"
-	"github.com/alexei-led/archfit/internal/metrics/intramodule"
 	"github.com/alexei-led/archfit/internal/metrics/modularity"
-	"github.com/alexei-led/archfit/internal/metrics/risk"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
@@ -49,13 +47,9 @@ func adapt[In any](c Calculator[In], project func(signal.CollectedSignals) In) M
 	return wrapped[In]{c: c, project: project}
 }
 
-// New returns all Phase 1 metrics in a fixed order — the order the engine reports
-// them, which golden output depends on. Each metric is adapted from its typed
+// New returns all metrics in a fixed order — the order the engine reports them,
+// which golden output depends on. Each metric is adapted from its typed
 // Calculator to the uniform Metric via its family projection.
-//
-// Volatility for the risk_hub metric is captured here (risk.NewMetric) from
-// explicit config only; git-churn volatility is never computed, so it cannot
-// contaminate the signal (that would double-count with change_amplification).
 func New(cfg config.Config) []Metric {
 	all := []Metric{
 		adapt(boundary.EncapsulationMetric{}, signal.CollectedSignals.AsCommon),
@@ -63,39 +57,6 @@ func New(cfg config.Config) []Metric {
 		adapt(boundary.CycleMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(boundary.CoverageMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(modularity.BlastRadiusMetric{}, signal.CollectedSignals.AsCommon),
-		adapt(modularity.ChangeAmplificationMetric{}, signal.CollectedSignals.AsHistory),
-		// cohesion_lcom: report-only LCOM edge-density proxy over the SCIP symbol
-		// graph. Kept report-only and disabled in archfit's own .archfit.yaml — it
-		// failed its eval (document-scoped attribution leaves it blind for
-		// single-file Python/TS modules). See gap-closure-task20-cohesion-eval.md.
-		adapt(modularity.CohesionMetric{}, signal.CollectedSignals.AsSymbol),
-		adapt(modularity.HiddenCouplingMetric{}, signal.CollectedSignals.AsHistory),
-		adapt(modularity.StructuralWeightMetric{}, signal.CollectedSignals.AsSize),
-		adapt(modularity.FileStructuralWeightMetric{}, signal.CollectedSignals.AsSize),
-		adapt(modularity.UnsafeDensityMetric{}, signal.CollectedSignals.AsCommon),
-		adapt(modularity.GlobalStateDensityMetric{}, signal.CollectedSignals.AsCommon),
-		adapt(modularity.PanicDensityMetric{}, signal.CollectedSignals.AsSize),
-		adapt(modularity.TestDensityMetric{}, signal.CollectedSignals.AsCommon),
-		adapt(modularity.StructFieldDensityMetric{}, signal.CollectedSignals.AsCommon),
-		// Manifest deprecation markers (go.mod retract, package.json deprecated).
-		// Report-only — BandInformational, never gates.
-		adapt(modularity.DeprecatedDepCountMetric{}, signal.CollectedSignals.AsCommon),
-		// File-level mutual imports (TypeScript file→file cycles not caught by module-level cycle metric).
-		// Report-only — BandInformational, never gates.
-		adapt(modularity.FileMutualImportMetric{}, signal.CollectedSignals.AsCommon),
-		adapt(intramodule.ComplexityMetric{}, signal.CollectedSignals.AsComplexity),
-		adapt(risk.NewMetric(cfg), signal.CollectedSignals.AsSymbol),
-		adapt(intramodule.ArchitectureFitnessMetric{}, signal.CollectedSignals.AsFitness),
-		adapt(modularity.FunctionalCandidatesMetric{}, signal.CollectedSignals.AsDuplication),
-		adapt(boundary.ChangeLocalityMetric{}, signal.CollectedSignals.AsCommon),
-		// Beyond Balanced Coupling — Martin metrics (report-only, never gate).
-		adapt(modularity.InstabilityMetric{}, signal.CollectedSignals.AsCommon),
-		adapt(modularity.AbstractnessMetric{}, signal.CollectedSignals.AsCommon),
-		adapt(modularity.MartinDistanceMetric{}, signal.CollectedSignals.AsCommon),
-		// Beyond Balanced Coupling — Propagation Cost (report-only, never gate).
-		adapt(modularity.PropagationCostMetric{}, signal.CollectedSignals.AsCommon),
-		// Beyond Balanced Coupling — Change Coupling (report-only, never gate).
-		adapt(modularity.ChangeCouplingMetric{}, signal.CollectedSignals.AsHistory),
 	}
 
 	// Honor explicit `metrics.<name>.enabled: false` config: metrics absent

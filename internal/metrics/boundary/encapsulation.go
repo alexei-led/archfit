@@ -1,5 +1,5 @@
-// Package boundary implements the five boundary-health metrics:
-// encapsulation, unbalanced_edge, cycle, coverage, and change_locality.
+// Package boundary implements the boundary-health metrics:
+// encapsulation, unbalanced_edge, cycle, and coverage.
 // Every metric is a pure function of signal.CommonInput; absent inputs
 // yield n/a, never a false zero.
 package boundary

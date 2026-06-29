@@ -24,8 +24,6 @@ var coreRingPkgs = []string{
 	// metrics is split into family sub-packages; assert they all load.
 	modulePrefix + "internal/metrics/boundary",
 	modulePrefix + "internal/metrics/modularity",
-	modulePrefix + "internal/metrics/risk",
-	modulePrefix + "internal/metrics/intramodule",
 	modulePrefix + "internal/metrics/internal/result",
 	modulePrefix + "internal/status",
 	modulePrefix + "internal/staleness",
@@ -47,9 +45,9 @@ var coreRingPkgs = []string{
 
 // coreRingPrefixes are path prefixes whose packages — and ALL their
 // sub-packages — must obey the core-ring import rules. internal/metrics is split
-// into family sub-packages (boundary, modularity, risk, intramodule,
-// internal/result, metricstest), so a prefix match keeps every current and
-// future sub-package covered without editing this list.
+// into family sub-packages (boundary, modularity, internal/result, metricstest),
+// so a prefix match keeps every current and future sub-package covered without
+// editing this list.
 var coreRingPrefixes = []string{
 	modulePrefix + "internal/classify",
 	modulePrefix + "internal/rules",

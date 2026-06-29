@@ -13,8 +13,8 @@ import (
 
 // BlastRadiusMetric reports change-impact concentration: how many modules are
 // "hubs" whose change forces a wide transitive rebuild, and which ones. It is a
-// factual finding (report-only), not a quality verdict — a stable hub is fine; the
-// volatile-hub judgement belongs to change_amplification.
+// factual finding (report-only), not a quality verdict — a stable hub is fine.
+// Volatility is the book's coupling_balance concern, not this metric's.
 type BlastRadiusMetric struct{}
 
 // Name returns "blast_radius".

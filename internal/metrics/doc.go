@@ -1,12 +1,9 @@
 // Package metrics defines the Metric interface, the generic Calculator[In]
-// adapter, and the New() registry. The 13 deterministic metric implementations
+// adapter, and the New() registry. The deterministic metric implementations
 // live in family sub-packages:
 //
-//	boundary     encapsulation, unbalanced_edge, cycle, coverage, change_locality
-//	modularity   blast_radius, change_amplification, hidden_coupling,
-//	             structural_weight, file_structural_weight, functional_candidates
-//	risk         risk_hub
-//	intramodule  complexity, architecture_fitness
+//	boundary     encapsulation, unbalanced_edge, cycle, coverage
+//	modularity   blast_radius
 //
 // Each metric implements Calculator[In] for exactly one per-family input
 // (signal.CommonInput, signal.HistoryInput, …) and is adapted to the uniform

@@ -12,7 +12,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Distance rank for ordered comparison (shared by unbalanced_edge + change_locality)
+// Distance rank for ordered comparison (used by unbalanced_edge)
 // ---------------------------------------------------------------------------
 
 // distanceRank maps a Distance to a numeric rank for >= comparisons.
