@@ -1,9 +1,10 @@
 # archfit LLM modes (off-gate)
 
-archfit's gate is deterministic — `check` never calls a model. LLM features are
-opt-in and off-gate: `review`, `init`/`update` classification, `enrich` labels
-and metadata, `autopilot`, and `explain --llm`. `check` only reads the final
-config and approved labels.
+archfit's gate is deterministic — the deterministic gate (`analyze` without
+`--llm`) never calls a model. LLM features are opt-in and off-gate: `analyze
+--llm`, `init`/`update` classification, `enrich` labels and metadata,
+`autopilot`, and `explain --llm`. The gate (`analyze --gate`) only reads the
+final config and approved labels.
 
 ## Configuration
 
@@ -24,15 +25,16 @@ setting a key only when it is currently unset (real env / CI secrets win); keep
 status. Responses are cached at `.archfit-cache/llm/`; `--no-cache` forces fresh
 calls.
 
-## review
+## analyze --llm
 
-`archfit review` is an off-gate LLM narrative over deterministic evidence. It can
-prioritize and explain existing findings, but it does not create new gate facts
-and it does not change `check`.
+`archfit analyze --llm` is an off-gate LLM narrative over deterministic evidence.
+It appends a holistic LLM interpretation section after the deterministic output.
+It can prioritize and explain existing findings, but it does not create new gate
+facts and it does not change the gate verdict.
 
 - Requires `tools.llm` configured and the matching API key.
-- Use it for explanation and prioritization after `check` / `score`, not instead
-  of them.
+- Use it for explanation and prioritization after a regular `analyze` run, not
+  instead of it.
 - If LLM config is missing, it exits `3`; that is a setup problem, not a gate
   failure.
 
@@ -92,7 +94,7 @@ most edges `functional`.
 1. `archfit enrich` drafts into `.archfit-labels.yaml` (`status: draft` — inert).
 2. A human reviews each draft: flip `status: approved` to pin, delete to reject.
    Never auto-approve drafts.
-3. `check` consumes approved labels only and stays LLM-free.
+3. `analyze --gate` consumes approved labels only and stays LLM-free.
 
 Labels file (`.archfit-labels.yaml`) notes:
 
@@ -100,9 +102,9 @@ Labels file (`.archfit-labels.yaml`) notes:
 - Precedence: config `public`/`internal` globs > approved labels > SCIP hint.
 - A label pins all edges of the ordered module pair (`from` → `to`).
 - `evidence_hash` fingerprints the pair's edges at enrich time; on full runs
-  `check` recomputes it. A mismatch raises a `labels/stale` advisory and the
-  label is ignored until re-reviewed. Hand-authored labels may omit the hash.
-- A malformed labels file fails `check` loudly (exit 3) — it never silently
+  `analyze --gate` recomputes it. A mismatch raises a `labels/stale` advisory and
+  the label is ignored until re-reviewed. Hand-authored labels may omit the hash.
+- A malformed labels file fails `analyze` loudly (exit 3) — it never silently
   alters the gate.
 
 ## enrich --subdomains / --owner / --volatility (draft → review → pin)

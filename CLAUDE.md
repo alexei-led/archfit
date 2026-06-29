@@ -11,9 +11,9 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, gocyclo.
 - `make test` — `go test -race -coverprofile=coverage.out ./...`
 - `make lint` — `golangci-lint run -c .golangci.yaml ./...` (pinned v2.1.6)
 - `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit`
-- `make archfit` — dogfood architecture-drift gate: `.bin/archfit check --config .archfit.yaml --full`
+- `make archfit` — dogfood architecture-drift gate: `.bin/archfit analyze --gate --config .archfit.yaml --full`
 - `make arch-lint` — architecture drift linter (alias for `make archfit`); wired into the pre-push hook
-- `make archfit-report` — write `reports/archfit-report.md` via `archfit scan`
+- `make archfit-report` — write `reports/archfit-report.md` via `archfit analyze --markdown`
 - `make mock` — regenerate moq fakes (`go generate ./...`)
 - `make test-fast` — `go test -race -short ./...` (skips slow subprocess/ast-grep integration tests; for inner-loop speed)
 - `make all` — fmt → lint → test → archfit

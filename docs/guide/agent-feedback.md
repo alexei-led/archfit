@@ -8,7 +8,7 @@ is deterministic — same repo + same config = byte-identical output.
 
 ```text
 agent edits code
-  → archfit check [--base main] --format json
+  → archfit analyze --gate [--base main] --json
   → exit 0?  done.
   → exit 1?  read agent_tasks[] — goal, constraints, files, validation
   → fix within the constraints
@@ -31,7 +31,7 @@ Every ACTIVE gate finding produces one structured repair task:
     "public surface of module \"b\": [pkg/b/api/**]"
   ],
   "files": ["pkg/a/a.go", "pkg/b/internal/impl.go"],
-  "validation": ["archfit check -c .archfit.yaml --full"]
+  "validation": ["archfit analyze --gate -c .archfit.yaml --full"]
 }
 ```
 
@@ -50,10 +50,12 @@ inline PR annotations.
 
 ## change_locality — the drift number
 
-In delta mode (`--base <ref>`), the `change_locality` metric quantifies the
-change's blast surface: cross-module edges originating in changed files plus
-the forward graph reach. Report-only — the `new_cross_module_dependency` rule
-is the gate; the metric is the trend an agent (or reviewer) watches.
+`change_locality` quantifies a change's blast surface: cross-module edges
+originating in changed files plus the forward graph reach. It is report-only and
+computes with `archfit analyze --base <ref>` — the changed-file set comes from
+the git diff against `<ref>`. A plain full scan has no change to measure, so it
+reports `n/a`. The `new_cross_module_dependency` rule is the actual gate an agent
+watches.
 
 ## The dimensions an agent sees
 

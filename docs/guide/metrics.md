@@ -79,9 +79,11 @@ the tool over-claim.
 
 ### Deltas
 
-In delta mode (`check --base <ref>`) each scored metric is compared with the
-baseline snapshot. A negative delta (the metric got worse) sets the run to
-`warn`. Report-only metrics carry no delta and never warn.
+When a committed baseline exists (`.archfit-baseline.json`, written by `archfit
+baseline`), each scored metric is compared with that snapshot; a negative delta
+(the metric got worse) sets the run to `warn`. Report-only metrics carry no delta
+and never warn. This baseline-file delta is separate from the `--base <ref>`
+scorecard delta, which compares overall dimension scores against a git ref.
 
 ---
 
@@ -391,11 +393,11 @@ the metric reports `n/a` and `tool_coverage` emits a
 - **`unsafe_density`** — count of unsafe operations per module (Rust): `unsafe {}`
   blocks, `UnsafeCell`, `transmute`, and raw-pointer casts (`as *mut`/`as *const`).
   A high count surfaces candidate modules for manual soundness review; `archfit` does
-  not judge acceptability — route to `archfit review` or a human for that.
+  not judge acceptability — route to `archfit analyze --llm` or a human for that.
 - **`global_state_density`** — count of global mutable state sites per module
   (Rust): `static mut` variables, `Atomic*` singletons, and `OnceLock`/`OnceCell`
   statics. Extracted by ast-grep. Does not exclude test files (like `unsafe_density`).
-  Report-only; never gates. Route high counts to `archfit review` or a human to
+  Report-only; never gates. Route high counts to `archfit analyze --llm` or a human to
   assess whether the concurrency strategy is intentional.
 - **`panic_density`** — count of panic/unwrap operations per module in production
   code. Counts `unwrap()`/`expect()` (Rust) and `panic(` (Go). Both test files
@@ -478,7 +480,7 @@ For the full severity table and the reasoning, see
 
 ## Scorecard dimensions
 
-`archfit score` (and `archfit check --format scorecard`) synthesizes the metrics
+`archfit analyze --format scorecard` synthesizes the metrics
 above plus the gate findings into the **seven-dimension architect rubric**. The
 synthesis is a pure, deterministic decision over the already-computed evidence —
 no tools, no I/O, no LLM. Each dimension carries a 0–100 value, a band, a
@@ -491,14 +493,14 @@ dimensions.
 | `coupling_balance`        | strictly the BC advisory rollups — strength × distance × volatility maintenance-effort distribution + worst-case (high/high/high) count. Empty edges with low coverage → 50/low (not a blanket 90); the evidence states the classified-edge count |
 | `dependency_graph_health` | cycles, blast-radius hubs, instability/abstractness shape                                                                                                                                                                                         |
 | `cohesion_modularity`     | god-modules, hidden coupling, duplication — **high-strength + low-distance cohesion is never penalised**                                                                                                                                          |
-| `change_locality`         | the `change_locality` metric (delta mode); `n/a` in full mode                                                                                                                                                                                     |
+| `change_locality`         | the `change_locality` metric; computes with `--base`, else `n/a`                                                                                                                                                                                  |
 | `architecture_fitness`    | the `architecture_fitness` enforcement metric (`n/a` → poor, not critical)                                                                                                                                                                        |
 | `analysis_confidence`     | meta dimension — how much evidence backed the review (coverage, classified fraction, semantic tools present); drops to critical when the primary extractors are absent                                                                            |
 
 Band thresholds match the rubric: critical 0–20, poor 21–40, mixed 41–60,
 serviceable 61–80, strong 81–100. Band-matches-value, evidence-per-score, and
 low-confidence caps are enforced and covered by a stored golden. The scorecard is
-**off-gate** — it never changes the `check` verdict.
+**off-gate** — it never changes the gate verdict.
 
 **Fail-loud, not false-green.** None of these dimensions report `strong` from
 absence of evidence. A repo no extractor analysed scores `n/a`/critical with a
@@ -557,9 +559,10 @@ failure.
 | file_mutual_import                                                                                                      | built-in (TS file→file graph); no extra tool                        |
 
 The `llm` tool is used only by `archfit enrich`, `archfit explain --llm`,
-`archfit review`, `archfit autopilot`, `archfit init --llm`, and
-`archfit update --llm`. It is **never** consumed by `check` — gate verdicts and
-metric values stay deterministic. See [LLM enrichment](llm-enrich.md).
+`archfit analyze --llm`, `archfit autopilot`, `archfit init --llm`, and
+`archfit update --llm`. It is **never** consumed by the deterministic gate path —
+gate verdicts and metric values stay deterministic. See
+[LLM enrichment](llm-enrich.md).
 
 ---
 

@@ -16,7 +16,8 @@ config always produce the same verdict, and CI fails when a new one appears.
 A **signal** is report-only. Metrics and Balanced Coupling advisories describe the
 shape of the architecture — coupling risk, blast radius, complexity hot spots,
 change locality — but they never fail the build on their own. They are there to
-inform a human or an AI agent, and to feed `archfit score` and `archfit review`.
+inform a human or an AI agent, and to feed `archfit analyze --format scorecard`
+and `archfit analyze --llm`.
 
 | Aspect       | Violation                             | Signal                                  |
 | ------------ | ------------------------------------- | --------------------------------------- |
@@ -38,7 +39,8 @@ From the project `.archfit.yaml` and the structural gates in `CLAUDE.md`:
   `go test ./internal/ -run TestArchImports`) — the decision core
   (`classify`, `rules`, `metrics`, `status`, `staleness`, `facts`, `scope`,
   `score`) must not import `os`, `os/exec`, a YAML library, or adapter packages;
-  LLM SDKs are reachable only from `enrich`/`explain`/`review`, never `check`.
+  LLM SDKs are reachable only from `enrich`/`explain`/`analyze --llm`, never the
+  deterministic gate path.
 - **Forbidden dependencies and layer direction** declared as `rules` in the
   config (e.g. the historical engine→scope inversion guard, gated `warn`).
 - **Golden output** (`go test ./internal/engine/ -run TestGolden`) — emitted
@@ -63,15 +65,16 @@ own newest capabilities:
   real cross-module clone pairs. When `jscpd` is absent, it reports `n/a` with an
   install hint. A disabled-by-config tool produces no coverage gap at all.
 
-None of these can fail the build. They show up in `archfit scan`,
-`archfit score`, and the JSON bundle that `archfit review` narrates.
+None of these can fail the build. They show up in `archfit analyze --markdown`,
+`archfit analyze --format scorecard`, and the JSON bundle that
+`archfit analyze --llm` narrates.
 
 ## See it yourself
 
 ```sh
-archfit check --config .archfit.yaml --full      # gates only: the verdict
-archfit scan  --config .archfit.yaml --full      # gates + signals, as Markdown
-archfit score --config .archfit.yaml --full      # the banded 7-dimension scorecard
+archfit analyze --gate --config .archfit.yaml --full             # gates only: the verdict
+archfit analyze --markdown --config .archfit.yaml --full         # gates + signals, as Markdown
+archfit analyze --format scorecard --config .archfit.yaml --full # the banded 7-dimension scorecard
 ```
 
 The expected result on a clean checkout is **pass with signals** — no violations,

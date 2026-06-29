@@ -13,7 +13,7 @@ The workflow is **draft → review → pin**:
 ```text
 archfit enrich        # LLM drafts → .archfit-labels.yaml (status: draft)
 $EDITOR .archfit-labels.yaml   # review: approve or delete each draft
-archfit check         # consumes APPROVED labels only — still LLM-free
+archfit analyze       # consumes APPROVED labels only — still LLM-free
 ```
 
 ## Configuration

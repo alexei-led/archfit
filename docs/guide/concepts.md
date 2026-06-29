@@ -231,7 +231,7 @@ tasks. See the [configuration reference](configuration-reference.md) for the
 abstain rule and decision-task behavior.
 
 These balance scores drive the `bc/imbalanced_coupling` advisories (see
-[`archfit scan`](commands.md)) and the `unbalanced_edge` metric. `ScoreVersion`
+[`archfit analyze`](commands.md)) and the `unbalanced_edge` metric. `ScoreVersion`
 is `bc_score.v3`.
 
 ---
@@ -260,9 +260,9 @@ and makes only the legible parts executable. Three design rules follow from that
    [LLM enrichment](llm-enrich.md).
 
 The result is the loop tests and linters already taught agents to run: change
-code → `archfit check` → get a deterministic finding or metric delta with the
-strength / distance / volatility / explicitness vocabulary attached → repair
-within the stated constraint → rerun.
+code → `archfit analyze --gate` → get a deterministic finding or metric delta
+with the strength / distance / volatility / explicitness vocabulary attached →
+repair within the stated constraint → rerun.
 
 ---
 

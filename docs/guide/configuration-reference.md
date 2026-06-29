@@ -7,7 +7,7 @@ The config parser is strict. Unknown YAML fields are errors. Start with
 
 ```sh
 archfit init --root . --output .archfit.yaml
-archfit check --config .archfit.yaml --full
+archfit analyze --config .archfit.yaml --full
 ```
 
 ## Top-level fields
@@ -615,7 +615,7 @@ Report-only metrics (band `info`; they never gate the verdict):
 - `functional_candidates` — module pairs sharing duplicated logic (clone clusters),
   cross-referenced with co-change. Requires `tools.clones.enabled: on`.
 - `change_locality` — per-change drift: how far a change reaches beyond its own
-  modules (delta mode only; `n/a` in full mode).
+  modules (computes with `analyze --base <ref>`; `n/a` otherwise).
 - `unsafe_density` — count of unsafe operations per module (Rust; needs
   `tools.syntax.enabled: on`).
 - `panic_density` — count of production panic/unwrap operations per module
@@ -686,15 +686,15 @@ The config accepts these fields. The current CLI selects output with command-lin
 flags:
 
 ```sh
-archfit check --format text
-archfit check --format json
-archfit check --format markdown
-archfit check --format sarif
+archfit analyze --format text
+archfit analyze --format json
+archfit analyze --format markdown
+archfit analyze --format sarif
 ```
 
 `--format` is repeatable: `--format json --format sarif` writes both to stdout.
-
-`scan` is the Markdown report shortcut.
+Shorthands `--json`, `--markdown`, and `--sarif` are mutually exclusive
+alternatives to `--format`.
 
 ## `exclusions` and built-in defaults
 
@@ -763,7 +763,8 @@ would produce noise until `subdomain` fields are complete.
 ## tools.llm (off-gate)
 
 Used by `archfit init --llm`, `archfit update --llm`, `archfit enrich`,
-`archfit autopilot`, `archfit review`, and `archfit explain --llm`; never by `check`.
+`archfit autopilot`, `archfit analyze --llm`, and `archfit explain --llm`; never
+by the deterministic gate path.
 
 ```yaml
 tools:

@@ -42,7 +42,7 @@ Read the one the task needs:
   statuses, exit codes, coverage gaps, and the `--require-tools` hard gate.
 - `references/languages.md` — Go, TypeScript/JavaScript, Python, and Rust tool
   setup, config shape, path semantics, and common coverage gaps.
-- `references/llm-modes.md` — `review`, `init`/`update --llm`, `enrich`
+- `references/llm-modes.md` — `analyze --llm`, `init`/`update --llm`, `enrich`
   (labels, `--subdomains`, `--owner`, `--volatility`), `autopilot`, `.env`,
   and `explain --llm`.
 - `references/agent-loop.md` — autonomous repair contract (`agent_tasks`, SARIF,
@@ -59,8 +59,9 @@ state that verification was skipped, and lower confidence.
 ## Safe defaults
 
 - Inspect existing config, baseline, CI, and package files before proposing edits.
-- Prefer read-only commands first: `archfit --help`, `archfit doctor`, `archfit check`,
-  `archfit score`, `archfit scan`.
+- Prefer non-failing commands first: `archfit --help`, `archfit doctor`, and
+  report-only `archfit analyze` (no `--gate` → always exit 0 on success; add
+  `--format scorecard` or `--markdown` for those views).
 - Prefer stdout or a temp path for reports and SARIF during review. Treat
   `.archfit-cache/`, `.archfit-*.yaml`, `archfit.sarif`, and Markdown reports as
   generated artifacts; do not leave them in the repo unless the task calls for it.
@@ -80,10 +81,10 @@ Install, configure, add CI, baseline, add an exception, or fix findings.
 5. Prefer code fixes over exceptions; use expiring exceptions only for
    intentional temporary drift.
 6. Baseline only accepted existing debt — never to make a new finding green.
-7. Validate: `archfit check --config .archfit.yaml --full` (add `--format json`
+7. Validate: `archfit analyze --gate --config .archfit.yaml --full` (add `--json`
    for agent loops, `--require-tools` only when missing-tool coverage should gate).
 
-`review`, `init`/`update --llm`, `enrich` (labels / `--subdomains` / `--owner` /
+`analyze --llm`, `init`/`update --llm`, `enrich` (labels / `--subdomains` / `--owner` /
 `--volatility`), `autopilot`, and `explain --llm` are all off-gate and
 draft-first: detail and guardrails are in `references/llm-modes.md`. Never write
 LLM classifications (`--apply`/`--pin`) or approve drafts without reviewing them
@@ -92,7 +93,7 @@ first. `autopilot` only ever writes a review file — it refuses to touch
 
 ## Agent repair loop
 
-Fixing findings autonomously: run `archfit check --format json`; exit 0 means
+Fixing findings autonomously: run `archfit analyze --gate --json`; exit 0 means
 done. Each `agent_tasks[]` entry has `goal`, `constraints`, `files`, and a
 `validation` command — fix within the constraints, touch only the listed files
 where possible, then re-run `validation` verbatim. Never "fix" `baseline` or

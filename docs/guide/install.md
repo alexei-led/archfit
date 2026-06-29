@@ -208,7 +208,7 @@ analysis tools on the host:
 
 ```sh
 docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.6.1 \
-  check --config /repo/.archfit.yaml --full
+  analyze --config /repo/.archfit.yaml --full
 ```
 
 The image bundles the `archfit` binary plus the full non-Rust analysis toolchain:

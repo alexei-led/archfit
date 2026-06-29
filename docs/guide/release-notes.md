@@ -1,5 +1,9 @@
 # Release notes
 
+> **Note:** This file was last updated at v0.8.0. Versions v0.9.0 through v0.14.0
+> are not documented here. See the [GitHub releases page](https://github.com/alexei-led/archfit/releases)
+> for the canonical changelog. This file should be retired or backfilled.
+
 ## v0.8.0 — Book-verbatim scorer (bc_score.v3)
 
 Replaces archfit's homegrown multiplicative scorer with Vlad Khononov's

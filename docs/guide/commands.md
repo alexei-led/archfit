@@ -8,16 +8,15 @@ archfit init --root . --output .archfit.yaml
 archfit init --llm --root .
 archfit update --config .archfit.yaml
 archfit update --config .archfit.yaml --apply
-archfit check --config .archfit.yaml --full
-archfit check --config .archfit.yaml --base main
-archfit check --config .archfit.yaml --full --require-tools
-archfit check --root ../repo --config .archfit.yaml --full
-archfit check --config .archfit.yaml --format json
-archfit check --config .archfit.yaml --format scorecard
-archfit score --config .archfit.yaml --full
-archfit score --config .archfit.yaml --base main
-archfit review --config .archfit.yaml
-archfit scan --config .archfit.yaml > archfit-report.md
+archfit                                                      # report-only, default text output
+archfit analyze --gate --config .archfit.yaml --full         # CI gate
+archfit analyze --gate --config .archfit.yaml --base main    # PR delta gate
+archfit analyze --gate --config .archfit.yaml --full --require-tools
+archfit analyze --gate --root ../repo --config .archfit.yaml --full
+archfit analyze --gate --config .archfit.yaml --json
+archfit analyze --format scorecard --config .archfit.yaml --full
+archfit analyze --markdown --config .archfit.yaml > archfit-report.md
+archfit analyze --llm --config .archfit.yaml
 archfit baseline --full --config .archfit.yaml
 archfit explain <finding-id-prefix> --config .archfit.yaml
 archfit enrich --config .archfit.yaml
@@ -25,21 +24,21 @@ archfit enrich --owner --config .archfit.yaml
 archfit enrich --volatility --config .archfit.yaml
 archfit autopilot --root . --output .archfit-autopilot.yaml
 archfit explain <finding-id-prefix> --llm
-archfit check --format sarif > archfit.sarif
+archfit analyze --gate --sarif > archfit.sarif
 ```
 
-Use `check` for gates. Use `scan` for a human-readable audit report.
+Use `analyze --gate` for CI gates. Use `analyze --markdown` for a human-readable
+audit report. Bare `archfit` (no subcommand) runs `analyze` in report-only mode.
 
 ## Command summary
 
 - `archfit doctor` — check available local toolchain.
 - `archfit init` — generate a starter `.archfit.yaml`.
 - `archfit update` — sync `.archfit.yaml` with the current project structure.
-- `archfit check` — run architecture gates and metrics.
-- `archfit score` — emit the banded 7-dimension scorecard (off-gate; see below).
-- `archfit review` — off-gate LLM holistic narrative over the deterministic
-  evidence (needs `tools.llm`; see below).
-- `archfit scan` — produce a full Markdown audit report.
+- `archfit analyze` — run architecture analysis (default command; also runs as
+  bare `archfit`). Without `--gate` it is report-only (always exits `0` on
+  success, `3` on config/tool error). With `--gate` it enforces rules and emits
+  CI exit codes. See `analyze` below.
 - `archfit baseline` — record accepted current findings.
 - `archfit explain <id>` — explain one finding by fingerprint prefix
   (`--llm` appends an off-gate narrative; needs `tools.llm`).
@@ -52,12 +51,12 @@ Use `check` for gates. Use `scan` for a human-readable audit report.
   [llm-enrich.md](llm-enrich.md).
 - `archfit install` — install or print commands for the common analyzer tools it
   can bootstrap; see [Tooling reference](tooling.md) for the full platform matrix.
-- `archfit diff <ref>` — compare the architecture scorecard between `<ref>` and
-  the current working tree; see `archfit diff` below.
+- `archfit calibrate` — calibrate scoring thresholds against observed data.
 
-Output formats for `check`: `text`, `json`, `markdown`/`md`, `sarif`
+Output formats for `analyze`: `text` (default), `json`, `markdown`/`md`, `sarif`
 (SARIF 2.1.0 for CI code-scanning annotations), `scorecard` (the banded
-7-dimension synthesis — same output as `archfit score`).
+7-dimension synthesis). Shorthands: `--json`, `--markdown`, `--sarif` (mutually
+exclusive). `--format` is repeatable for multiple outputs.
 
 For wiring archfit into an AI coding agent's loop (`agent_tasks`, SARIF,
 `change_locality`), see [agent-feedback.md](agent-feedback.md).
@@ -99,8 +98,8 @@ a deliberate opt-out, not a gap to resolve.
 
 Coverage gaps for absent tools appear in every format:
 
-- markdown / `scan` — a `## Coverage gaps (N)` section before findings;
-- `scorecard` / `score` — a `## Required tools missing (N)` section;
+- markdown (`--markdown` / `--format markdown`) — a `## Coverage gaps (N)` section before findings;
+- scorecard (`--format scorecard`) — a `## Required tools missing (N)` section;
 - `--format json` — a `coverage_gaps[]` array (`tool`, `install_cmd`,
   `affected_metrics`, `gate`) plus `config_warnings[]`;
 - stderr — one warn-loud line per gap.
@@ -131,9 +130,80 @@ Two distinct `n/a` reasons appear in coverage and metric output:
   reduce the scope via `tools.go.modules` / `--root`. See
   [configuration-reference.md → tools.&lt;x&gt;.timeout](configuration-reference.md#toolsxtimeout).
 
+## analyze
+
+`archfit analyze` is the single analysis command. It is also the **default
+command** — bare `archfit` (with no subcommand) runs it.
+
+```sh
+# report-only: always exits 0 on success; decision band printed to terminal
+archfit
+archfit analyze --config .archfit.yaml
+
+# CI gate: exits 0/1/2/3 per exit-code table below
+archfit analyze --gate --config .archfit.yaml --full
+
+# PR delta: compare to base branch
+archfit analyze --gate --config .archfit.yaml --base origin/main --json
+
+# Markdown audit report
+archfit analyze --markdown --config .archfit.yaml > archfit-report.md
+
+# Scorecard view
+archfit analyze --format scorecard --config .archfit.yaml
+
+# LLM holistic narrative appended (off-gate; needs tools.llm)
+archfit analyze --llm --config .archfit.yaml
+
+# SARIF for GitHub code-scanning
+archfit analyze --gate --sarif > archfit.sarif
+```
+
+The default text output leads with a **Decision** block:
+
+```
+ARCHFIT RESULT
+==============
+Decision: HEALTHY                     (or ACCEPTABLE WITH WATCH ITEMS / NEEDS ATTENTION / FAIL)
+Gate:     PASS  (0 blocking findings)
+Score:    82/100  [serviceable]
+
+RECOMMENDATIONS
+  MUST FIX   ...
+  SHOULD FIX ...
+  WATCH      ...
+```
+
+Live progress lines (`[1/5] extracting Go packages …`) print to **stderr** while
+analyzing. They are TTY-gated: suppressed when stdout is piped, under CI
+environments, or with `--quiet`. This keeps `archfit --json | jq` clean.
+
+### analyze flags
+
+- `-c` / `--config` — config file (default `.archfit.yaml`).
+- `--root` — analysis root (default: config directory).
+- `--base <ref>` — also score a git ref and show a before/after scorecard delta
+  in the text/markdown report, and compute the `change_locality` metric for the
+  diff against `<ref>`. JSON/SARIF stay the normal HEAD diagnostic.
+- `--gate` — enable CI exit codes (0/1/2/3); without it the run is report-only
+  (always exits `0` on success, `3` on config or tool error).
+- `--json` — output JSON (shorthand for `--format json`).
+- `--markdown` — output Markdown audit report (shorthand for `--format markdown`).
+- `--sarif` — output SARIF 2.1.0 (shorthand for `--format sarif`).
+- `--format <fmt>` — repeatable: `text` (default), `json`, `markdown`/`md`,
+  `sarif`, `scorecard`. Shorthands and `--format` are mutually exclusive.
+- `--llm` — append an off-gate LLM advisory interpretation after the
+  deterministic output (needs `tools.llm` configured).
+- `--full` — scan all files (default true).
+- `--advisory` — include Balanced Coupling advisories (default true).
+- `--severity`, `--lang`, `--no-config`, `--require-tools` — same as the
+  former `check` command.
+- `--progress auto|plain|none` — progress output mode (default `auto`).
+- `--quiet` / `-q` — suppress progress and non-essential output.
+
 ## --root: analysis boundary
 
-`--root` (on `check`, `scan`, `score`, and `enrich`) sets the **analysis
+`--root` (on `analyze` and `enrich`) sets the **analysis
 boundary** — the directory tree that extractors walk, coverage counts against, and
 file-based metrics scope to. All tool calls (go/packages, dependency-cruiser,
 grimp, loc, complexity, clones, fitness) operate inside this tree.
@@ -144,13 +214,13 @@ history and changed-file diffs run there and are then re-based to the subtree.
 This lets a config in a CI repo point at a subdir of a monorepo:
 
 ```sh
-archfit check --root ./server/shared --config ./policies/.archfit.yaml --full
+archfit analyze --gate --root ./server/shared --config ./policies/.archfit.yaml --full
 ```
 
 or let you analyze a monorepo subproject without touching any config:
 
 ```sh
-archfit check --root ~/workspace/omni/server/shared --full
+archfit analyze --gate --root ~/workspace/omni/server/shared --full
 ```
 
 When `--root` is absent, the scan root equals `GitRoot` (or the config directory
@@ -163,68 +233,45 @@ at the repo root includes everything.
 **Baseline, labels, and config-hash** stay config-adjacent — only the scanned
 tree moves.
 
-**Known limitation (macOS APFS — Task 25):** on case-insensitive APFS volumes,
-passing a `--root` path whose case differs from the on-disk canonical form (e.g.
-`/Users/alice/Workspace/MyRepo` vs `/Users/alice/workspace/myrepo`) silently
-disables subtree scoping — the scan falls back to the git root. Workaround: use
-the exact on-disk case for `--root`. A proper fix is deferred to Task 25.
+**macOS APFS case-insensitive volumes:** `--root` paths whose case differs from
+the on-disk canonical form (e.g. `/Users/alice/workspace/myrepo` vs
+`/Users/alice/Workspace/MyRepo`) are resolved to the canonical path via
+`os.SameFile` (device+inode comparison), so subtree scoping works correctly on
+case-insensitive APFS. `filepath.EvalSymlinks` still handles symlinks; the
+`os.SameFile` pass handles case mismatches that `EvalSymlinks` cannot fix.
 
-## Delta buckets
+## Scorecard view
 
-A delta run (`--base <ref>`) groups findings into mutually exclusive buckets so a
-reviewer reads what changed apart from what was already there (a `## Delta`
-section; additive `omitempty` JSON):
-
-- **New** — introduced by this change;
-- **Severity changed** — a baseline finding whose severity differs from the
-  baseline record;
-- **Touched by this change** — a pre-existing finding on a changed file;
-- **Pre-existing** — untouched pre-existing findings;
-- **Resolved** — a baseline finding no longer detected.
-
-## archfit score
-
-`archfit score` emits the banded **7-dimension scorecard** aligned to the
-architect rubric: `boundary_integrity`, `coupling_balance`,
-`dependency_graph_health`, `cohesion_modularity`, `change_locality`,
-`architecture_fitness`, and the meta dimension `analysis_confidence`. Each
-dimension carries a 0–100 value, a band (critical / poor / mixed / serviceable /
-strong), a confidence, and evidence refs; the overall is the mean of the six
-non-meta dimensions.
+The banded **7-dimension scorecard** is one of `analyze`'s output formats:
 
 ```sh
 # whole-repo scorecard
-archfit score --config .archfit.yaml
+archfit analyze --format scorecard --config .archfit.yaml
 
 # with a base ref: enables the change_locality dimension (delta mode)
-archfit score --config .archfit.yaml --base main
+archfit analyze --format scorecard --config .archfit.yaml --base main
 ```
 
-`score` is a convenience wrapper over `check`: always advisory (so
-`coupling_balance` sees the Balanced-Coupling edges), always report-only (a
-scorecard informs, it never gates), and renders the `scorecard` format. The same
-output is available as `archfit check --format scorecard`. Output is
-deterministic — byte-identical across a double-run. The scorecard is **off-gate**:
-it never changes the `check` verdict or exit code.
+Dimensions: `boundary_integrity`, `coupling_balance`, `dependency_graph_health`,
+`cohesion_modularity`, `change_locality`, `architecture_fitness`, and the meta
+dimension `analysis_confidence`. Each carries a 0–100 value, a band (critical /
+poor / mixed / serviceable / strong), a confidence, and evidence refs; the overall
+is the mean of the six non-meta dimensions.
 
-Flags:
+Output is deterministic — byte-identical across a double-run. The scorecard is
+**off-gate**: it never changes the exit code.
 
-- `--config` / `-c` — config file path (default: `.archfit.yaml`).
-- `--root` — repository root to analyze (default: directory of `--config`).
-- `--base` — git ref to compare against; enables the `change_locality` dimension.
-- `--full` — scan all files, not just files changed since `--base` (implied when
-  `--base` is absent).
+## LLM narrative (analyze --llm)
 
-## archfit review
-
-`archfit review` runs the full deterministic pipeline, synthesizes the scorecard,
-and feeds **both** to the LLM for a holistic narrative. It is **off-gate**: the
-narrative is advisory only and never affects `check` (enforced by the LLM-off-gate
-invariant in `internal/arch_test.go`).
+`archfit analyze --llm` runs the full deterministic pipeline, synthesizes the
+scorecard, and feeds **both** to the LLM for a holistic narrative appended after
+the deterministic output. It is **off-gate**: the narrative is advisory only and
+never affects the gate verdict (enforced by the LLM-off-gate invariant in
+`internal/arch_test.go`).
 
 ```sh
-archfit review --config .archfit.yaml
-archfit review --config .archfit.yaml --no-cache
+archfit analyze --llm --config .archfit.yaml
+archfit analyze --llm --no-cache --config .archfit.yaml
 ```
 
 The model is constrained by a Balanced-Coupling-grounded system prompt and a
@@ -254,17 +301,18 @@ Dynamic/lazy imports (detected by TypeScript and Python extractors as
 `dynamic_imports`) are included in the review prompt as a hidden-coupling risk
 section so the narrative can flag coupling the static dependency graph misses.
 
-**Judgment on report-only facts (Cat 6/7/8/12 residue):** the new report-only
+**Judgment on report-only facts (Cat 6/7/8/12 residue):** the report-only
 syntax-facts metrics (`unsafe_density`, `panic_density`, `struct_field_density`,
-`test_density`) surface candidates deterministically. `review` and `enrich` are
-the designed home for the _soundness and acceptability_ judgments those facts
+`test_density`) surface candidates deterministically. `analyze --llm` and `enrich`
+are the designed home for the _soundness and acceptability_ judgments those facts
 require:
 
 - **Unsafe/panic soundness (Cat 6, Cat 8):** detection tells you _where_ `unsafe`
   blocks and production `unwrap`/`panic!` calls are; whether each is acceptable
-  needs context. Feed `archfit review` — it narrates the findings with risk context.
+  needs context. Feed `archfit analyze --llm` — it narrates the findings with risk
+  context.
 - **Semantic intent (Cat 12):** deep questions (key-format agreement, data-vs-behavior
-  in config, naming contracts) cannot be answered deterministically. `archfit review`
+  in config, naming contracts) cannot be answered deterministically. `analyze --llm`
   and `archfit enrich` are the designed path.
 - **Layer intent (Cat 10 residue):** when layers are declared, `forbidden_layer_direction`
   gates deterministically. When they are not, `archfit enrich` can propose a layer
@@ -273,12 +321,11 @@ require:
 Requirements:
 
 - `tools.llm` configured (provider + model) and the provider's API key set.
-  Without it, `review` exits `3` with an actionable message and touches nothing.
+  Without it, `--llm` exits `3` with an actionable message and touches nothing.
   See [LLM enrichment](llm-enrich.md) and `archfit doctor`.
 
-Flags:
+Flags (in addition to the standard `analyze` flags):
 
-- `--config` / `-c` — config file path (default: `.archfit.yaml`).
 - `--no-cache` — bypass the LLM response cache at `.archfit-cache/llm/`.
 
 ## archfit autopilot
@@ -402,35 +449,23 @@ Flags:
 - `--root` / `-r` — project root for discovery (default: directory of `--config`).
 - `--llm`, `--llm-provider`, `--llm-model`, `--no-cache` — same as `init --llm`.
 
-## archfit diff
+## Scorecard delta (analyze --base)
 
-`archfit diff <ref>` compares the banded scorecard between a git ref and the
-current working tree. It creates a clean detached worktree at `<ref>`, scores
-both sides with the full advisory pipeline, and prints a dimension-by-dimension
-delta table.
+`archfit analyze --base <ref>` scores a git ref in addition to HEAD and shows a
+before/after scorecard delta. It checks `<ref>` out into a clean detached
+worktree, scores it with the same pipeline, and adds a **CHANGE VS BASE** section
+to the text report (a "Change vs base" block under `--markdown`). The HEAD side is
+a normal full analysis, so `--json`/`--sarif` are the standard HEAD diagnostic
+(no separate delta schema) and `--gate` / `--require-tools` apply exactly as
+without `--base`.
 
 ```sh
-archfit diff main
-archfit diff HEAD~1 --format json
-archfit diff v1.0.0 --root ./services/api --format markdown
+archfit analyze --base main                            # decision + before/after delta
+archfit analyze --gate --base origin/main              # gate HEAD and show the delta
+archfit analyze --base v1.0.0 --root ./services/api --markdown
 ```
 
 **Both sides use the current `--config`** — this isolates code drift from config
-drift. The base ref may predate the config file.
-
-`archfit diff` is **off-gate and report-only**: it exits `0` on success and `3`
-on config or git errors. It never gates (no exit `1` or `2`). Use it to answer
-"did this branch improve or regress the architecture scorecard?"
-
-Flags:
-
-- `<ref>` (positional) — git ref to compare against (branch, tag, `HEAD~N`, commit SHA).
-- `--config` / `-c` — config file (default: `.archfit.yaml`).
-- `--root` — repository root to analyze (default: directory of `--config`).
-- `--format` — output format: `text` (default), `json`, `markdown`.
-- `--no-config` — skip the config file and use built-in defaults.
-
-**Difference from `--base <ref>` delta mode:** `archfit check --base <ref>`
-groups findings into new/resolved/severity-changed buckets for the _gate_ workflow.
-`archfit diff <ref>` compares the whole scorecard _side-by-side_ without running
-gates — use it for trend tracking and release notes, not for CI blocking.
+drift; the base ref may predate the config file. A non-git directory or an
+unknown ref exits `3`. Use it to answer "did this branch improve or regress the
+architecture scorecard?"

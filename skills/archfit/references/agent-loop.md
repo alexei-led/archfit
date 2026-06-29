@@ -8,7 +8,7 @@ repo + same config = byte-identical output.
 
 ```text
 agent edits code
-  → archfit check [--base main] --format json
+  → archfit analyze --gate --json
   → exit 0?  done.
   → exit 1?  read agent_tasks[] — goal, constraints, files, validation
   → fix within the constraints, touching only the listed files where possible
@@ -30,7 +30,7 @@ Every ACTIVE gate finding produces one structured repair task:
     "public surface of module \"b\": [pkg/b/api/**]"
   ],
   "files": ["pkg/a/a.go", "pkg/b/internal/impl.go"],
-  "validation": ["archfit check -c .archfit.yaml --full"]
+  "validation": ["archfit analyze --gate -c .archfit.yaml --full"]
 }
 ```
 
@@ -41,6 +41,9 @@ Every ACTIVE gate finding produces one structured repair task:
 - `validation` — the exact command that must pass.
 
 Advisory findings never produce tasks — they are signals, not orders.
+
+`agent_tasks[]` only appear when `--gate` is active (exit 1 requires `--gate`).
+Without `--gate`, `analyze` is report-only and produces no tasks even on findings.
 
 ## Status lifecycle the agent must respect
 
@@ -55,17 +58,18 @@ expiry dates.
 
 ## SARIF — the CI annotation channel
 
-`--format sarif` emits SARIF 2.1.0 (schema-validated): active gate findings as
+`--sarif` emits SARIF 2.1.0 (schema-validated): active gate findings as
 `error`, advisories as `warning`, resolved/baselined as `note`, with file+line
 locations and stable `archfit/v1` fingerprints. Metrics and the verdict ride in
 `runs[0].properties`. Pipe it to GitHub code scanning for inline PR annotations.
 
-## change_locality — the drift number
+## Scorecard delta (--base)
 
-In delta mode (`--base <ref>`), `change_locality` quantifies the change's blast
-surface: cross-module edges originating in changed files plus the forward graph
-reach. Report-only — the `new_cross_module_dependency` rule is the gate; the
-metric is the trend an agent or reviewer watches.
+`archfit analyze --base <ref>` scores a git ref in addition to HEAD and shows a
+before/after scorecard delta. Text/markdown output adds a "CHANGE VS BASE"
+section. JSON/SARIF stay the normal HEAD diagnostic — there is no separate delta
+schema and no finding-delta bucket output. `--gate` and `--require-tools` apply
+exactly as without `--base`.
 
 ## Coverage gaps — missing evidence is loud, not green
 
@@ -74,8 +78,9 @@ did not run — archfit refuses to score absence as health, it does not fail.
 Each gap carries `tool`, `install_cmd`, `affected_metrics`, and `gate`; the
 `config_warnings[]` array carries under-specified-module advisories. An agent
 treats a gap as "install this tool / fill this config", not as a passing gate.
-Coverage gaps do **not** produce `agent_tasks` and do not fail `check` unless the
-run opted in with `--require-tools` (or `tools.<x>.gate: fail`), which exits `1`.
+Coverage gaps do **not** produce `agent_tasks` and do not fail `analyze` unless
+the run opted in with `--require-tools` (or `tools.<x>.gate: fail`), which exits
+`1`.
 
 ## What an agent sees
 
@@ -85,6 +90,4 @@ run opted in with `--require-tools` (or `tools.<x>.gate: fail`), which exits `1`
 - Metrics (13) — boundary health, modularity, structural risk, and drift;
   honestly `n/a` when the evidence is missing.
 - Coverage gaps + config warnings — missing tools and under-specified modules.
-- Delta buckets (`--base`) — findings grouped New / Severity changed / Touched by
-  this change / Pre-existing / Resolved.
 - Structural facts — neutral per-module evidence (fan-in/out, LOC, co-change).

@@ -1,7 +1,7 @@
 # archfit command reference
 
 Portable, self-contained subset of the `archfit` CLI surface for normal agent
-work. Run `archfit --help` or `archfit <cmd> --help` to confirm flags against
+work. Run `archfit --help` or `archfit analyze --help` to confirm flags against
 the installed version. Maintainer-only `calibrate` is intentionally omitted here.
 
 ## Commands
@@ -11,12 +11,9 @@ the installed version. Maintainer-only `calibrate` is intentionally omitted here
 - `archfit init` — generate a starter `.archfit.yaml` from discovered structure.
 - `archfit update` — sync `.archfit.yaml` with current structure (see
   `llm-modes.md`).
-- `archfit check` — run architecture gates and metrics (the CI/agent gate).
-- `archfit score` — print the banded scorecard (`check --format scorecard`
-  packaged as a read-only command).
-- `archfit review` — off-gate LLM narrative over deterministic evidence (see
-  `llm-modes.md`).
-- `archfit scan` — produce a full Markdown audit report.
+- `archfit analyze` — run architecture analysis (also the bare `archfit` default).
+  Without `--gate` it is report-only (always exits `0` on success, `3` on
+  config/tool error). With `--gate` it enforces rules and emits CI exit codes.
 - `archfit baseline` — record accepted current findings as the baseline.
 - `archfit explain <id>` — explain one finding by fingerprint prefix (`--llm`
   appends an off-gate narrative; see `llm-modes.md`).
@@ -36,15 +33,14 @@ archfit doctor
 archfit install --lang go --lang ts --lang py --lang rust --dry-run
 archfit init --root . --output .archfit.yaml
 archfit update --config .archfit.yaml
-archfit check --config .archfit.yaml --full
-archfit check --config .archfit.yaml --base origin/main
-archfit check --config .archfit.yaml --full --format json
-archfit check --config .archfit.yaml --full --format scorecard
-archfit check --config .archfit.yaml --full --require-tools
-archfit score --config .archfit.yaml --full
-archfit review --config .archfit.yaml
-archfit scan --config .archfit.yaml > /tmp/archfit-report.md
-archfit check --config .archfit.yaml --format sarif > /tmp/archfit.sarif
+archfit                                                      # report-only, default text
+archfit analyze --gate --config .archfit.yaml --full         # CI gate
+archfit analyze --gate --config .archfit.yaml --base origin/main --json
+archfit analyze --gate --config .archfit.yaml --full --require-tools
+archfit analyze --format scorecard --config .archfit.yaml --full
+archfit analyze --markdown --config .archfit.yaml > /tmp/archfit-report.md
+archfit analyze --llm --config .archfit.yaml
+archfit analyze --gate --sarif > /tmp/archfit.sarif
 archfit baseline --full --config .archfit.yaml
 archfit explain <finding-id-prefix> --config .archfit.yaml
 archfit explain <finding-id-prefix> --config .archfit.yaml --llm
@@ -55,8 +51,9 @@ archfit enrich --volatility --config .archfit.yaml
 archfit autopilot --root . --output .archfit-autopilot.yaml
 ```
 
-Use `check` for gates. Use `score` for the banded summary. Use `scan` for a
-human-readable audit report.
+Use `analyze --gate` for CI gates. Use `analyze --markdown` for a human-readable
+audit report. Use `analyze --format scorecard` for the banded summary. Bare
+`archfit` runs `analyze` in report-only mode.
 
 Prefer stdout or a temp path while reviewing. SARIF, Markdown reports,
 `.archfit-cache/`, and `.archfit-*.yaml` drafts are generated artifacts.
@@ -65,22 +62,29 @@ Prefer stdout or a temp path while reviewing. SARIF, Markdown reports,
 
 - `--config` / `-c` — config path (default `.archfit.yaml`).
 - `--root` — repository root to analyze (default: the config's directory).
-  Decouples the scanned repo from where the config lives. On `init`/`update` it
-  is the discovery root (`-r`).
-- `--full` — run the complete analysis instead of the fast subset (also on
-  `score`, where it is implied when `--base` is absent).
-- `--base <ref>` — delta mode: compare against a git ref.
+  Decouples the scanned repo from where the config lives.
+- `--gate` — enable CI exit codes (0/1/2/3); without it the run is report-only
+  (always exits `0` on success, `3` on config or tool error).
+- `--full` — run the complete analysis instead of the fast subset.
+- `--base <ref>` — score a git ref in addition to HEAD; text/markdown show a
+  "CHANGE VS BASE" section. JSON/SARIF are the normal HEAD diagnostic.
 - `--format` — `text` (default), `json`, `markdown`/`md`, `sarif`, or
-  `scorecard`. `check` accepts repeatable `--format`.
-- `--require-tools` — opt-in hard gate (`check` / `scan`): exit `1` if any
-  required analyzer tool is missing.
-- `--advisory` — include informational Balanced Coupling advisories in output.
-- `--report` — render findings but never fail for architecture violations.
+  `scorecard`. Repeatable.
+- `--json` / `--markdown` / `--sarif` — shorthands for `--format json/markdown/sarif`
+  (mutually exclusive with each other and with `--format`).
+- `--llm` — append an off-gate LLM advisory narrative after the deterministic
+  output (needs `tools.llm` configured).
+- `--require-tools` — opt-in hard gate: exit `1` if any required analyzer tool
+  is missing.
+- `--advisory` — include informational Balanced Coupling advisories in output
+  (default true for `analyze`).
 - `--no-config` — skip `.archfit.yaml` and use built-in defaults for an ad-hoc
   scan.
 - `--severity <level>` — minimum advisory severity to show (`low`, `medium`,
   `high`, `critical`).
-- `--lang <name>` — force an analyzer on (`install` / `check --no-config`).
+- `--lang <name>` — force an analyzer on (`install` / `analyze --no-config`).
+- `--progress auto|plain|none` — progress output mode (default `auto`).
+- `--quiet` / `-q` — suppress progress and non-essential output.
 
 ## Coverage gaps and the hard gate
 
@@ -96,13 +100,13 @@ the tool to close the gap, not to disable the gate.
 
 ## Output formats
 
-- `text` — human summary.
+- `text` — human decision report (decision band: HEALTHY / ACCEPTABLE WITH WATCH
+  ITEMS / NEEDS ATTENTION / FAIL).
 - `json` — machine-actionable; carries `agent_tasks[]`, metrics, coverage gaps,
   config warnings, and structural facts (see `agent-loop.md`).
 - `markdown` / `md` — human-readable findings plus coverage/config sections.
 - `sarif` — SARIF 2.1.0 for code-scanning annotations.
-- `scorecard` — the banded deterministic score summary (same output family as
-  `archfit score`).
+- `scorecard` — the banded deterministic score summary.
 
 ## Finding status lifecycle
 
@@ -116,7 +120,8 @@ the tool to close the gap, not to disable the gate.
 
 - `0` — pass.
 - `1` — fail: an active gate finding, **or** a missing required tool under
-  `--require-tools` / `tools.<x>.gate: fail` (a policy violation).
+  `--require-tools` / `tools.<x>.gate: fail` (a policy violation). Requires
+  `--gate` (or `--require-tools`) to trigger.
 - `2` — warn.
 - `3` — usage, config, or runtime error (includes malformed labels or missing
   required LLM config for off-gate LLM commands).

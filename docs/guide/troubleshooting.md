@@ -63,8 +63,8 @@ upstream install path from [Tooling reference](tooling.md) instead of mixing ran
 fallbacks.
 
 For CI, pin exact npm/cargo/go/uv tool versions in setup commands, then run
-`archfit doctor` for diagnostics and `archfit check --require-tools` when missing
-analyzers should fail the build.
+`archfit doctor` for diagnostics and `archfit analyze --gate --require-tools`
+when missing analyzers should fail the build.
 
 ## Metrics show `n/a` / a "Coverage gaps" section
 
