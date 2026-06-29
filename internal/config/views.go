@@ -17,7 +17,7 @@ const (
 	lintFieldOwner = "owner"
 	// lintFieldVolatility marks a module with neither `subdomain:` nor `volatility:`.
 	// Volatility is then undeclared, so coupling advice cannot recommend lowering
-	// volatility; declaring either closes the gap (core→high, supporting→medium,
+	// volatility; declaring either closes the gap (core→high, supporting→low,
 	// generic→low).
 	lintFieldVolatility = "subdomain/volatility"
 )
@@ -73,7 +73,7 @@ func (c Config) Lint() []LintWarning {
 // ForScope returns the ScopeConfig view.
 func (c Config) ForScope() ScopeConfig {
 	return ScopeConfig{
-		Exclusions: c.Exclusions,
+		Exclusions: c.Exclude,
 	}
 }
 
@@ -82,7 +82,7 @@ func (c Config) ForScope() ScopeConfig {
 func (c Config) ForExtract(lang string) ExtractConfig {
 	ec := ExtractConfig{
 		Src:        ".",
-		Exclusions: c.Exclusions,
+		Exclusions: c.Exclude,
 	}
 
 	// Collect all module paths and internal globs.
@@ -102,29 +102,27 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 
 	// Go-specific fields.
 	if lang == LangGo {
-		if tc, ok := c.Tools[LangGo]; ok {
-			ec.GoModuleInclude = tc.Modules.Include
-			ec.GoModuleExclude = tc.Modules.Exclude
-		}
+		ec.GoModuleInclude = c.Languages.Go.Modules.Include
+		ec.GoModuleExclude = c.Languages.Go.Modules.Exclude
 	}
 
 	// Python-specific fields.
 	if lang == LangPython {
-		ec.PyPackage = c.PythonPackage
+		ec.PyPackage = c.Languages.Python.Package
 	}
 
 	// Rust-specific fields.
 	if lang == LangRust {
-		ec.CargoManifest = c.RustManifest
-		ec.CargoFeatures = c.RustFeatures
-		ec.IncludeDevDeps = c.RustIncludeDevDeps
+		ec.CargoManifest = c.Languages.Rust.Manifest
+		ec.CargoFeatures = c.Languages.Rust.Features
+		ec.IncludeDevDeps = c.Languages.Rust.IncludeDevDeps
 		ec.ModuleGraph = c.CargoModulesEnabled()
 	}
 
-	// Derive Mode from the Tools map. The key is the language name itself.
-	if tc, ok := c.Tools[lang]; ok {
-		ec.Mode = tc.Enabled
-	} else {
+	// Derive Mode from the language's enabled state. An unset (empty) mode
+	// defaults to auto — the same default the old absent-tool-key path produced.
+	ec.Mode = c.ToolMode(lang)
+	if ec.Mode == "" {
 		ec.Mode = ModeAuto
 	}
 
@@ -140,9 +138,9 @@ func (c Config) ForClassify() ClassifyConfig {
 		Modules:                  c.Modules,
 		Layers:                   c.Layers,
 		ModuleMap:                buildModuleMap(c.Modules),
-		BCAdvisoryMinSeverity:    c.BCAdvisoryMinSeverity,
+		BCAdvisoryMinSeverity:    c.Coupling.MinSeverity,
 		ExplicitOwners:           c.explicitOwners,
-		VolatilityCascadeEnabled: c.VolatilityCascadeEnabled,
+		VolatilityCascadeEnabled: c.Coupling.VolatilityCascade,
 	}
 }
 
@@ -164,9 +162,9 @@ func (c Config) ForMetric(name string) MetricConfig {
 	return c.Metrics[name]
 }
 
-// ForStatus returns the ExceptionSet view.
-func (c Config) ForStatus() ExceptionSet {
-	return ExceptionSet{Exceptions: c.Exceptions}
+// ForWaivers returns the WaiverSet view consumed by the status stage.
+func (c Config) ForWaivers() WaiverSet {
+	return WaiverSet{Waivers: c.Waivers}
 }
 
 // ForOutput returns the OutputConfig view.
@@ -194,9 +192,9 @@ func (c Config) ForPatterns() PatternConfig {
 }
 
 // SyntaxConfig is the view passed to the syntax-facts provider.
-// Enabled reflects tools.syntax.enabled: on (opt-in only).
+// Enabled reflects analyzers.syntax.enabled: true (opt-in only).
 // Languages is the list of language keys whose extractor is not explicitly
-// off — derived from the Tools map so the engine need not re-read config.
+// off — derived from languages: so the engine need not re-read config.
 // An empty Languages slice means "all four known languages" (the provider falls
 // back to its built-in set when Languages is empty).
 type SyntaxConfig struct {
@@ -206,13 +204,13 @@ type SyntaxConfig struct {
 
 // ForSyntax returns the SyntaxConfig view.
 // Languages is derived from the four known language keys (go, typescript, python,
-// rust): a language is included when its extractor mode is not ModeOff. Languages
-// absent from the Tools map default to ModeAuto, which is included.
+// rust): a language is included when its extractor mode is not explicitly off.
+// An unset (empty) mode is not off, so it is included.
 func (c Config) ForSyntax() SyntaxConfig {
 	enabled := c.SyntaxEnabled()
 	var langs []string
 	for _, lang := range []string{LangGo, LangTypeScript, LangPython, LangRust} {
-		if tc, ok := c.Tools[lang]; ok && tc.Enabled == ModeOff {
+		if c.ToolMode(lang) == ModeOff {
 			continue
 		}
 		langs = append(langs, lang)
@@ -238,16 +236,16 @@ func (c Config) ForFileClass() syntax.FileClassConfig {
 // ForStaleness returns the StalenessConfig view.
 func (c Config) ForStaleness() StalenessConfig {
 	var threshold time.Duration
-	if c.MapReview.StaleAfter != "" {
-		if d, err := time.ParseDuration(c.MapReview.StaleAfter); err == nil {
+	if c.ModuleReview.StaleAfter != "" {
+		if d, err := time.ParseDuration(c.ModuleReview.StaleAfter); err == nil {
 			threshold = d
 		}
 	}
-	// gate: off explicitly disables map review, matching gate semantics
+	// gate: off explicitly disables module review, matching gate semantics
 	// everywhere else (off = disabled). Any other configured signal —
 	// stale_after, or a warn/fail gate — enables the advisory pass.
-	gate := c.MapReview.Gate
-	enabled := gate != string(ModeOff) && (c.MapReview.StaleAfter != "" || gate != "")
+	gate := c.ModuleReview.Gate
+	enabled := gate != string(ModeOff) && (c.ModuleReview.StaleAfter != "" || gate != "")
 	return StalenessConfig{
 		Enabled:   enabled,
 		Threshold: threshold,

@@ -1,0 +1,712 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.schema.json",
+  "$defs": {
+    "AIConfig": {
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "base_url": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "AIConfig configures the off-gate LLM provider (`ai:`)."
+    },
+    "Analyzer": {
+      "properties": {
+        "enabled": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
+        },
+        "gate": {
+          "type": "string",
+          "enum": [
+            "off",
+            "warn",
+            "fail"
+          ],
+          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "description": "Analyzer is the common enable/gate shape for analyzers with no extra knobs (`analyzers.syntax`, `analyzers.cargo_modules`)."
+    },
+    "AnalyzersConfig": {
+      "properties": {
+        "syntax": {
+          "$ref": "#/$defs/Analyzer"
+        },
+        "scip": {
+          "$ref": "#/$defs/TimedAnalyzer"
+        },
+        "complexity": {
+          "$ref": "#/$defs/ComplexityAnalyzer"
+        },
+        "clones": {
+          "$ref": "#/$defs/TimedAnalyzer"
+        },
+        "cargo_modules": {
+          "$ref": "#/$defs/Analyzer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "AnalyzersConfig groups the opt-in analyzer settings (`analyzers:`)."
+    },
+    "ComplexityAnalyzer": {
+      "properties": {
+        "enabled": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
+        },
+        "gate": {
+          "type": "string",
+          "enum": [
+            "off",
+            "warn",
+            "fail"
+          ],
+          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+        },
+        "timeout": {
+          "type": "string"
+        },
+        "backend": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "description": "ComplexityAnalyzer configures the cyclomatic-complexity analyzer (`analyzers.complexity`)."
+    },
+    "CouplingConfig": {
+      "properties": {
+        "min_severity": {
+          "type": "string",
+          "description": "MinSeverity is the minimum severity for a coupling advisory to appear:\nlow | medium | high | critical (default medium). low is noisy on\nwell-designed codebases; high/critical surface only intrusive/functional\ncoupling across large boundaries."
+        },
+        "volatility_cascade": {
+          "type": "boolean",
+          "description": "VolatilityCascade enables the book Ch9 single-hop propagation pass: a\nmodule strongly coupled to a high-volatility module inherits raised\neffective volatility. Config-declared volatility always takes precedence."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "CouplingConfig tunes the Balanced-Coupling advisory pass (`coupling:`)."
+    },
+    "FileClassDef": {
+      "properties": {
+        "generated_globs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "GeneratedGlobs are glob patterns (matched against the repo-relative\nslash path) that classify a file as Generated. Supports doublestar (`**`)\nsemantics (github.com/bmatcuk/doublestar); `**` matches across path\nseparators. Example: [\"**/generated/**\", \"*.pb.go\"]"
+        },
+        "test_globs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "TestGlobs are glob patterns that classify a file as Test.\nExample: [\"*_helpers_test.go\", \"testutil/**\"]"
+        },
+        "mock_frameworks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "MockFrameworks contains filename prefix/suffix patterns (matched against\nthe base filename only) that identify mock files as Generated. Used for\ncustom mock code-generators not covered by built-in naming conventions.\nExample: [\"fake_\", \"_double\"]"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "FileClassDef holds optional user-supplied patterns for source-file classification."
+    },
+    "GoLanguage": {
+      "properties": {
+        "enabled": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
+        },
+        "gate": {
+          "type": "string",
+          "enum": [
+            "off",
+            "warn",
+            "fail"
+          ],
+          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+        },
+        "modules": {
+          "$ref": "#/$defs/GoModuleFilter"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "description": "GoLanguage configures the Go extractor (`languages.go`)."
+    },
+    "GoModuleFilter": {
+      "properties": {
+        "include": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "keep only members matching these globs; empty = all"
+        },
+        "exclude": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "drop members matching these globs; applied after include"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "GoModuleFilter restricts Go workspace analysis to a subset of go.work members (`languages.go.modules`)."
+    },
+    "LanguagesConfig": {
+      "properties": {
+        "go": {
+          "$ref": "#/$defs/GoLanguage"
+        },
+        "typescript": {
+          "$ref": "#/$defs/TypeScriptLanguage"
+        },
+        "python": {
+          "$ref": "#/$defs/PythonLanguage"
+        },
+        "rust": {
+          "$ref": "#/$defs/RustLanguage"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "LanguagesConfig groups the per-language extractor settings (`languages:`)."
+    },
+    "MetricEntry": {
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "gate": {
+          "type": "string",
+          "enum": [
+            "off",
+            "warn",
+            "fail"
+          ],
+          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+        },
+        "min_delta": {
+          "type": "number"
+        },
+        "max_new_high": {
+          "type": "integer"
+        },
+        "max_new": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "enabled",
+        "gate",
+        "min_delta",
+        "max_new_high",
+        "max_new"
+      ],
+      "description": "MetricEntry holds the settings for a single metric inside the metrics map."
+    },
+    "MetricsConfig": {
+      "additionalProperties": {
+        "$ref": "#/$defs/MetricEntry"
+      },
+      "type": "object",
+      "description": "MetricsConfig holds settings for all metrics, keyed by metric name."
+    },
+    "ModuleDef": {
+      "properties": {
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "public": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "internal": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "layer": {
+          "type": "string"
+        },
+        "subdomain": {
+          "type": "string"
+        },
+        "volatility": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "deploy_unit": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "reviewed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reviewed_by": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "paths",
+        "public",
+        "internal",
+        "layer",
+        "subdomain",
+        "volatility",
+        "owner",
+        "deploy_unit",
+        "reviewed_by"
+      ],
+      "description": "ModuleDef defines a module's path ownership and metadata."
+    },
+    "ModuleReviewConfig": {
+      "properties": {
+        "stale_after": {
+          "type": "string"
+        },
+        "gate": {
+          "type": "string",
+          "enum": [
+            "off",
+            "warn",
+            "fail"
+          ],
+          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "ModuleReviewConfig configures staleness gating of the module declarations: archfit warns (or fails) when a module's `reviewed_at` is older than stale_after, nudging a periodic re-check of the architecture map."
+    },
+    "OutputsConfig": {
+      "properties": {
+        "json": {
+          "type": "boolean"
+        },
+        "markdown": {
+          "type": "boolean"
+        },
+        "sarif": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "json",
+        "markdown",
+        "sarif"
+      ],
+      "description": "OutputsConfig controls which output formats are produced."
+    },
+    "PatternDef": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "lang": {
+          "type": "string"
+        },
+        "rule": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "lang",
+        "rule"
+      ],
+      "description": "PatternDef defines a single structural pattern rule for ast-grep."
+    },
+    "PythonLanguage": {
+      "properties": {
+        "enabled": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
+        },
+        "gate": {
+          "type": "string",
+          "enum": [
+            "off",
+            "warn",
+            "fail"
+          ],
+          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+        },
+        "package": {
+          "type": "string",
+          "description": "Package is the top-level importable package name passed to grimp\n(e.g. \"myapp\"). Empty = auto-detect from the project layout."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "description": "PythonLanguage configures the Python extractor (`languages.python`)."
+    },
+    "RuleDef": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "gate": {
+          "type": "string",
+          "enum": [
+            "off",
+            "warn",
+            "fail"
+          ],
+          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "from_layer": {
+          "type": "string"
+        },
+        "to_layer": {
+          "type": "string"
+        },
+        "from_role": {
+          "type": "string"
+        },
+        "to_role": {
+          "type": "string"
+        },
+        "min_confidence": {
+          "type": "string"
+        },
+        "max": {
+          "type": "integer",
+          "description": "public_api_max: exported-declaration ceiling per module"
+        },
+        "threshold": {
+          "type": "integer",
+          "description": "layer_role_divergence: max tolerated rank delta (default 1)"
+        },
+        "patterns": {
+          "items": {
+            "$ref": "#/$defs/PatternDef"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "gate",
+        "from",
+        "to",
+        "from_layer",
+        "to_layer",
+        "from_role",
+        "to_role",
+        "min_confidence"
+      ],
+      "description": "RuleDef declares a single architecture rule."
+    },
+    "RustLanguage": {
+      "properties": {
+        "enabled": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
+        },
+        "gate": {
+          "type": "string",
+          "enum": [
+            "off",
+            "warn",
+            "fail"
+          ],
+          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+        },
+        "manifest": {
+          "type": "string",
+          "description": "Manifest is the path to Cargo.toml. Empty = auto (the root manifest)."
+        },
+        "features": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Features are the cargo features to activate for `cargo metadata`."
+        },
+        "include_dev_deps": {
+          "type": "boolean",
+          "description": "IncludeDevDeps adds dev-dependencies as crate edges."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "description": "RustLanguage configures the Rust extractor (`languages.rust`)."
+    },
+    "TimedAnalyzer": {
+      "properties": {
+        "enabled": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
+        },
+        "gate": {
+          "type": "string",
+          "enum": [
+            "off",
+            "warn",
+            "fail"
+          ],
+          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+        },
+        "timeout": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "description": "TimedAnalyzer adds a per-run subprocess timeout (`analyzers.scip`, `analyzers.clones`)."
+    },
+    "TypeScriptLanguage": {
+      "properties": {
+        "enabled": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Enable state: true | false | \"auto\" (on/off are not accepted)"
+        },
+        "gate": {
+          "type": "string",
+          "enum": [
+            "off",
+            "warn",
+            "fail"
+          ],
+          "description": "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "description": "TypeScriptLanguage configures the TypeScript extractor (`languages.typescript`)."
+    },
+    "WaiverDef": {
+      "properties": {
+        "rule": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "approved_by": {
+          "type": "string"
+        },
+        "expires": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "rule",
+        "from",
+        "to",
+        "reason",
+        "approved_by",
+        "expires"
+      ],
+      "description": "WaiverDef grants an approved, time-boxed deviation from a rule (`waivers:`)."
+    }
+  },
+  "properties": {
+    "version": {
+      "type": "integer"
+    },
+    "exclude": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "languages": {
+      "$ref": "#/$defs/LanguagesConfig"
+    },
+    "analyzers": {
+      "$ref": "#/$defs/AnalyzersConfig"
+    },
+    "ai": {
+      "$ref": "#/$defs/AIConfig"
+    },
+    "coupling": {
+      "$ref": "#/$defs/CouplingConfig"
+    },
+    "layers": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "modules": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ModuleDef"
+      },
+      "type": "object"
+    },
+    "rules": {
+      "items": {
+        "$ref": "#/$defs/RuleDef"
+      },
+      "type": "array"
+    },
+    "waivers": {
+      "items": {
+        "$ref": "#/$defs/WaiverDef"
+      },
+      "type": "array"
+    },
+    "metrics": {
+      "$ref": "#/$defs/MetricsConfig"
+    },
+    "module_review": {
+      "$ref": "#/$defs/ModuleReviewConfig"
+    },
+    "file_class": {
+      "$ref": "#/$defs/FileClassDef"
+    },
+    "outputs": {
+      "$ref": "#/$defs/OutputsConfig"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "version",
+    "exclude",
+    "languages",
+    "analyzers",
+    "ai",
+    "coupling",
+    "layers",
+    "modules",
+    "rules",
+    "waivers",
+    "metrics",
+    "module_review",
+    "file_class",
+    "outputs"
+  ],
+  "description": "Config is the parsed and validated content of an archfit.yaml file."
+}

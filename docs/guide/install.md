@@ -144,14 +144,14 @@ the official rustup installer from <https://rust-lang.org/tools/install/>.
 tools add intra-crate module depth (important for single-crate repos, which are one
 node at crate level):
 
-- **`cargo-modules`** (`tools.cargo-modules.enabled: on`) builds the intra-crate
+- **`cargo-modules`** (`analyzers.cargo_modules.enabled: true`) builds the intra-crate
   module graph (`<crate>::<mod>` nodes + `uses` edges):
 
   ```sh
   cargo install cargo-modules --version 0.26.0
   ```
 
-- **`rust-analyzer`** (`tools.scip.enabled: on`) adds symbol-level integration
+- **`rust-analyzer`** (`analyzers.scip.enabled: true`) adds symbol-level integration
   strength via `rust-analyzer scip`:
 
   ```sh
@@ -165,7 +165,7 @@ history metrics measure inside a single crate.
 ## Optional analysis tools
 
 These power report-only metrics and are off by default. Install them only when you
-enable the matching `tools.*` key in `.archfit.yaml`.
+enable the matching key in `.archfit.yaml` (`analyzers.*` or `languages.*`).
 
 - **SCIP** (powers `risk_hub` and symbol facts) — install the indexer for your
   language plus `uv` for the embedded SCIP reader:
@@ -177,7 +177,7 @@ enable the matching `tools.*` key in `.archfit.yaml`.
   rustup component add rust-analyzer
   ```
 
-  Enable with `tools.scip.enabled: on`. TypeScript also needs project dependencies
+  Enable with `analyzers.scip.enabled: true`. TypeScript also needs project dependencies
   installed (`npm ci` or `bun install`).
 
 - **Clone detection** (powers `functional_candidates`) — current extractor probes
@@ -187,7 +187,7 @@ enable the matching `tools.*` key in `.archfit.yaml`.
   npm install -g jscpd@5.0.11
   ```
 
-  Enable with `tools.clones.enabled: on`.
+  Enable with `analyzers.clones.enabled: true`.
 
 - **Complexity** (powers `complexity`) — use the PyPI lizard complexity analyzer:
 
@@ -195,11 +195,11 @@ enable the matching `tools.*` key in `.archfit.yaml`.
   uv tool install 'lizard==1.23.0'
   ```
 
-  Enable with `tools.complexity.enabled: on`. Do **not** use `brew install lizard`;
+  Enable with `analyzers.complexity.enabled: true`. Do **not** use `brew install lizard`;
   Homebrew's `lizard` formula is a compression tool with the same command name.
 
 When a tool is absent, the dependent metric reports `n/a` — the run never fails
-unless you opt in with `--require-tools` or `tools.<x>.gate: fail`.
+unless you opt in with `--require-tools` or `analyzers.<x>.gate: fail`.
 
 ## Docker
 

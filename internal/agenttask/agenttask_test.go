@@ -42,7 +42,7 @@ func gateFinding(id, ruleID string, status finding.Status) finding.Finding {
 func TestBuild_ActiveGateFindingsOnly(t *testing.T) {
 	findings := []finding.Finding{
 		gateFinding("f-new", ruleForbidden, finding.StatusNew),
-		gateFinding("f-expired", ruleForbidden, finding.StatusExpiredExcept),
+		gateFinding("f-expired", ruleForbidden, finding.StatusExpiredWaiver),
 		gateFinding("f-baselined", ruleForbidden, finding.StatusBaseline),
 		gateFinding("f-fixed", ruleForbidden, finding.StatusFixed),
 		func() finding.Finding {

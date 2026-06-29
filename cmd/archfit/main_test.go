@@ -205,7 +205,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		t.Parallel()
 		// go is disabled so go/packages reports absent (a gap) deterministically,
 		// regardless of whether a Go toolchain happens to half-load a non-Go tree.
-		cfg := "version: 1\ntools:\n  go:\n    enabled: off\n    gate: fail\n"
+		cfg := "version: 1\nlanguages:\n  go:\n    enabled: false\n    gate: fail\n"
 		cfgPath := writeNonGoRepo(t, cfg)
 		var buf bytes.Buffer
 		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
@@ -729,7 +729,7 @@ func TestRun_Check_NoBaselineWarningAbsent(t *testing.T) {
 	}
 }
 
-// TestRun_Check_ScipDisabledCoverageRow verifies T7: when tools.scip.enabled is
+// TestRun_Check_ScipDisabledCoverageRow verifies T7: when analyzers.scip.enabled is
 // absent (defaults off), the pipeline injects a StatusDisabled coverage row for
 // "scip" so that tool_coverage in JSON output reports "disabled" rather than
 // leaving the entry absent.

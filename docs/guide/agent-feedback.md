@@ -73,6 +73,6 @@ watches.
 ## Lifecycle the agent must respect
 
 Findings carry status: `new` (gates), `baseline` (accepted — do not "fix"
-unprompted), `excepted` (time-boxed waiver), `expired_exception` (gates
+unprompted), `waived` (time-boxed waiver), `expired_waiver` (gates
 again), `fixed` (gone since baseline). `archfit baseline` accepts the current
-state; exceptions live in config with expiry dates.
+state; waivers live in config with expiry dates.

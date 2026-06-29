@@ -19,7 +19,7 @@ import (
 type InitCmd struct {
 	Root        string `short:"r" help:"Project root directory." default:"."`
 	Output      string `short:"o" help:"Output file (use '-' for stdout)." default:".archfit.yaml"`
-	LLM         bool   `name:"llm"          help:"Run LLM classification pass (off-gate; requires tools.llm or --llm-provider)."`
+	LLM         bool   `name:"llm"          help:"Run LLM classification pass (off-gate; requires ai or --llm-provider)."`
 	Apply       bool   `name:"apply"        help:"Write LLM classifications live into .archfit.yaml (requires --llm; LLM judgment written directly — review before using as a gate)."`
 	LLMProvider string `name:"llm-provider" help:"LLM provider override (anthropic|openai|ollama)."  default:"anthropic"`
 	LLMModel    string `name:"llm-model"    help:"LLM model override."                                default:"claude-opus-4-8"`

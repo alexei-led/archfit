@@ -117,17 +117,14 @@ func loadConfig(ctx context.Context, path string, noConfig bool) (config.Config,
 // whatever the config file (or Default) provided.
 func applyFlagOverrides(cfg *config.Config, severity string, lang []string) error {
 	if severity != "" {
-		cfg.BCAdvisoryMinSeverity = severity
+		cfg.Coupling.MinSeverity = severity
 	}
 	for _, key := range lang {
 		canonical := languageByAlias(key)
 		if canonical == "" {
 			return fmt.Errorf("--lang: unknown analyzer %q; see %s", key, languagesDocsURL)
 		}
-		if cfg.Tools == nil {
-			cfg.Tools = make(map[string]config.ToolConfig)
-		}
-		cfg.Tools[canonical] = config.ToolConfig{Enabled: config.ModeOn}
+		cfg.SetToolMode(canonical, config.ModeOn)
 	}
 	return nil
 }

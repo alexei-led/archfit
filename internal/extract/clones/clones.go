@@ -1,5 +1,5 @@
 // Package clones provides a clone-detection runner that identifies duplicated
-// code blocks across files. It is opt-in and gated by tools.clones.enabled in
+// code blocks across files. It is opt-in and gated by analyzers.clones.enabled in
 // the archfit config.
 //
 // Supported detector: jscpd — a multi-language clone detector that supports
@@ -32,7 +32,7 @@ const (
 	clonesTimeout = 3 * time.Minute
 
 	// defaultTimeout is the per-analyzer outer watchdog applied when no
-	// tools.clones.timeout is configured. It is intentionally generous (well
+	// analyzers.clones.timeout is configured. It is intentionally generous (well
 	// above the per-subprocess clonesTimeout) to guard only against pathological
 	// hangs — not normal runs.
 	defaultTimeout = 5 * time.Minute
@@ -43,18 +43,18 @@ const (
 
 	// Coverage reasons: why functional-candidate (clone) detection is n/a.
 	// Static strings so a double-run stays byte-stable.
-	// reasonDisabled is used when tools.clones.enabled is off — the tool may be
+	// reasonDisabled is used when analyzers.clones.enabled is off — the tool may be
 	// installed, but the user deliberately opted out. The action is to enable it
 	// in config, NOT to install it. reasonNotInstalled is used when the tool is
 	// genuinely absent from the environment.
-	reasonDisabled     = "clone detection disabled by config — set `tools.clones.enabled: on` in .archfit.yaml to enable"
+	reasonDisabled     = "clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable"
 	reasonNotInstalled = "jscpd not found — install it (`npm install -g jscpd`) to enable clone detection"
 	reasonRunFailed    = "jscpd run failed or its report was unreadable"
-	reasonTimedOut     = "clone detection timed out — increase tools.clones.timeout or reduce the scope"
+	reasonTimedOut     = "clone detection timed out — increase analyzers.clones.timeout or reduce the scope"
 )
 
 // effectiveTimeout returns configured when it is non-zero, else fallback.
-// This lets a configured tools.clones.timeout extend or shorten the inner
+// This lets a configured analyzers.clones.timeout extend or shorten the inner
 // per-subprocess cap (not just the outer watchdog).
 func effectiveTimeout(configured, fallback time.Duration) time.Duration {
 	if configured > 0 {

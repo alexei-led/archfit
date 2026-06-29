@@ -29,7 +29,7 @@ After all metrics run, the run gets one verdict
 (`internal/engine/engine.go`, `computeVerdict`):
 
 ```text
-fail  → any gate finding with status "new" or "expired_exception"
+fail  → any gate finding with status "new" or "expired_waiver"
 warn  → otherwise, any metric whose delta vs baseline is negative
 pass  → otherwise
 ```
@@ -221,13 +221,13 @@ here.
 - **Computed:** count of functions with CCN > **15**. Shows the top 5 hotspots
   with file and line. Generated and test files are excluded from hotspot
   reporting across all backends.
-- **Backend (`tools.complexity.backend`):**
+- **Backend (`analyzers.complexity.backend`):**
   - `auto` (default) — `gocyclo` for exact Go CCN; ast-grep decision-point proxy
     for TypeScript, Python, and Rust. When `gocyclo` is absent, the ast-grep
     proxy also covers Go (slightly coarser CCN proxy). When `sg` (ast-grep) is
     absent, complexity reports `n/a` with an install hint.
   - `lizard` — exact per-function CCN for all four languages (`pip install lizard`).
-- **Requires:** `tools.complexity.enabled: on` (opt-in; config-driven for
+- **Requires:** `analyzers.complexity.enabled: true` (opt-in; config-driven for
   determinism, not PATH presence).
 
 ### `risk_hub`
@@ -244,7 +244,7 @@ here.
   function.
 - **Distinct from `change_amplification`:** risk_hub uses only hand-authored
   volatility (captured before churn is applied), so the two never double-count.
-- **Requires:** a SCIP index (`tools.scip.enabled: on`; `scip-go`,
+- **Requires:** a SCIP index (`analyzers.scip.enabled: true`; `scip-go`,
   `scip-typescript`, `scip-python`).
 
 ### `architecture_fitness`
@@ -277,7 +277,7 @@ here.
 - **Distinct from `hidden_coupling`:** hidden*coupling is co-change \_without* an
   import edge; functional*candidates is \_duplication*, whether or not the modules
   import each other. A pair can appear in both.
-- **Requires:** `tools.clones.enabled: on` (opt-in).
+- **Requires:** `analyzers.clones.enabled: true` (opt-in).
 
 ### `change_locality`
 
@@ -383,12 +383,13 @@ file_class:
 
 ### Syntax-surface metrics (ast-grep facts)
 
-These metrics are derived from `tools.syntax` (ast-grep) facts.
+These metrics are derived from `analyzers.syntax` (ast-grep) facts.
 All are report-only (`info`); none changes the verdict.
-They require `tools.syntax.enabled: on` — **this pass is opt-in**; when absent
-the metric reports `n/a` and `tool_coverage` emits a
-`syntax-pass: skipped (tools.syntax.enabled absent)` row so the gap is visible.
-(`ast-grep: ok` alone only means the binary is present, not that the pass ran.)
+They require `analyzers.syntax.enabled: true` — **this pass is opt-in**; when
+absent the metric reports `n/a` and `tool_coverage` emits a
+`syntax-pass: skipped (analyzers.syntax.enabled absent)` row so the gap is
+visible. (`ast-grep: ok` alone only means the binary is present, not that the
+pass ran.)
 
 - **`unsafe_density`** — count of unsafe operations per module (Rust): `unsafe {}`
   blocks, `UnsafeCell`, `transmute`, and raw-pointer casts (`as *mut`/`as *const`).
@@ -437,7 +438,7 @@ rules:
 
 ### public_api_type_leak (rule)
 
-Fires when a public API exposes a type from an external framework package directly in a function or method signature. Requires `tools.syntax.enabled: on`.
+Fires when a public API exposes a type from an external framework package directly in a function or method signature. Requires `analyzers.syntax.enabled: true`.
 
 Defaults to `gate: warn` when unset (advisory, non-blocking). Fires once per unique module+type combination.
 
@@ -465,13 +466,13 @@ Every cross-boundary edge is classified on the four lenses below
 `bc/imbalanced_coupling` advisories and feed `encapsulation` and
 `unbalanced_edge`.
 
-| Lens         | Values (ordered)                                                                                              | Derived from                                                                                                     |
-| ------------ | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Strength     | `contract` < `model` < `functional` < `intrusive` (+`unknown`)                                                | public/internal globs, visibility, SCIP symbol kind, pinned labels                                               |
-| Distance     | `same_module` < `cross_module_same_owner` < `cross_module_different_owner` < `cross_deploy_unit` (+`unknown`) | module map, `owner`, `deploy_unit`                                                                               |
-| Volatility   | `low` < `medium` < `high` (+`undeclared`, `unknown`)                                                          | explicit `volatility:`, then `subdomain:`, then a deterministic path heuristic; else `undeclared` (no git churn) |
-| Explicitness | `explicit`, `implicit` (+`unknown`)                                                                           | strength (contract→explicit, intrusive→implicit) or AST hint                                                     |
-| Severity     | (none) < `low` < `medium` < `high` < `critical`                                                               | the balance rule over the four above                                                                             |
+| Lens         | Values (ordered)                                                                                              | Derived from                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Strength     | `contract` < `model` < `functional` < `intrusive` (+`unknown`)                                                | public/internal globs, visibility, SCIP symbol kind, pinned labels                                 |
+| Distance     | `same_module` < `cross_module_same_owner` < `cross_module_different_owner` < `cross_deploy_unit` (+`unknown`) | module map, `owner`, `deploy_unit`                                                                 |
+| Volatility   | `low` < `medium` < `high` (+`undeclared`, `unknown`)                                                          | explicit `volatility:`, then `subdomain:`; else `undeclared` (no path/name guessing, no git churn) |
+| Explicitness | `explicit`, `implicit` (+`unknown`)                                                                           | strength (contract→explicit, intrusive→implicit) or AST hint                                       |
+| Severity     | (none) < `low` < `medium` < `high` < `critical`                                                               | the balance rule over the four above                                                               |
 
 For the full severity table and the reasoning, see
 [Concepts → The balance rule](concepts.md#the-balance-rule).
@@ -551,10 +552,10 @@ failure.
 | encapsulation, unbalanced_edge, cycle, coverage, blast_radius, structural_weight, architecture_fitness, change_locality | built-in extractors + `git`                                         |
 | change_amplification, hidden_coupling, change_coupling                                                                  | `git` history (churn / co-change)                                   |
 | instability, abstractness, martin_distance, propagation_cost                                                            | built-in extractors (SCIP refines abstractness)                     |
-| risk_hub, cohesion_lcom                                                                                                 | SCIP index (`tools.scip.enabled: on`)                               |
-| complexity                                                                                                              | `lizard` (`tools.complexity.enabled: on`)                           |
-| functional_candidates                                                                                                   | clone detector (`tools.clones.enabled: on`)                         |
-| unsafe_density, global_state_density, panic_density, struct_field_density, test_density                                 | `sg` (ast-grep); `tools.syntax.enabled: on`                         |
+| risk_hub, cohesion_lcom                                                                                                 | SCIP index (`analyzers.scip.enabled: true`)                         |
+| complexity                                                                                                              | `lizard` (`analyzers.complexity.enabled: true`)                     |
+| functional_candidates                                                                                                   | clone detector (`analyzers.clones.enabled: true`)                   |
+| unsafe_density, global_state_density, panic_density, struct_field_density, test_density                                 | `sg` (ast-grep); `analyzers.syntax.enabled: true`                   |
 | deprecated_dep_count                                                                                                    | manifest files (`go.mod`, `package.json`) — built-in; no extra tool |
 | file_mutual_import                                                                                                      | built-in (TS file→file graph); no extra tool                        |
 

@@ -566,7 +566,7 @@ func TestStrengths_EmptyIndex(t *testing.T) {
 // TestCargoWorkspaceMembers_TimeoutMapsToStatusTimedOut verifies that when cargo
 // metadata returns context.DeadlineExceeded (inner cap fired before outer watchdog),
 // Strengths returns StatusTimedOut — not StatusAbsent — so operators know to raise
-// tools.scip.timeout rather than thinking Rust SCIP is simply unsupported.
+// analyzers.scip.timeout rather than thinking Rust SCIP is simply unsupported.
 func TestCargoWorkspaceMembers_TimeoutMapsToStatusTimedOut(t *testing.T) {
 	dir := t.TempDir()
 	// Virtual workspace (no [package]) so detectIndexer calls cargoWorkspaceMembers.

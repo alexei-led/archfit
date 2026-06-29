@@ -67,10 +67,11 @@ is unchanged.
 
 ### Inferred-volatility cascade (Task 5)
 
-New opt-in config field `volatility_cascade_enabled: true` (book Ch9). When
-enabled, a single-hop propagation pass before scoring raises a module's effective
-volatility to `high` when it is strongly coupled (`functional` or `intrusive`)
-to a `core` module. Disabled by default; archfit's own self-config enables it.
+New opt-in config field `coupling.volatility_cascade: true` (book Ch9, formerly
+`volatility_cascade_enabled`). When enabled, a single-hop propagation pass before
+scoring raises a module's effective volatility to `high` when it is strongly
+coupled (`functional` or `intrusive`) to a `core` module. Disabled by default;
+archfit's own self-config enables it.
 
 ### Label confidence and provenance (Task 6)
 
@@ -364,9 +365,9 @@ metric names.
   metrics miss.
 
 - **`coupling_balance` score: only active findings counted.** `bcEdges` (the
-  coupling scorer's input) now filters to `new` and `expired_exception` findings
+  coupling scorer's input) now filters to `new` and `expired_waiver` findings
   only, matching the filter the gate verdict and `activeGateFindings` use.
-  Baseline-accepted and excepted edges are operator-suppressed debt; counting them
+  Baseline-accepted and waived edges are operator-suppressed debt; counting them
   deflated `coupling_balance` for repos that had triaged their coupling.
 
 - **`dependency_graph_health` score: `instability` and `propagation_cost` mark

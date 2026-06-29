@@ -18,10 +18,25 @@ type MetricEntry struct {
 // MetricsConfig holds settings for all metrics, keyed by metric name.
 type MetricsConfig map[string]MetricEntry
 
-// MapReviewConfig configures architecture-map staleness gating.
-type MapReviewConfig struct {
-	StaleAfter string `yaml:"stale_after"`
-	Gate       string `yaml:"gate"`
+// ModuleReviewConfig configures staleness gating of the module declarations:
+// archfit warns (or fails) when a module's `reviewed_at` is older than
+// stale_after, nudging a periodic re-check of the architecture map.
+type ModuleReviewConfig struct {
+	StaleAfter string `yaml:"stale_after,omitempty"`
+	Gate       string `yaml:"gate,omitempty"`
+}
+
+// CouplingConfig tunes the Balanced-Coupling advisory pass (`coupling:`).
+type CouplingConfig struct {
+	// MinSeverity is the minimum severity for a coupling advisory to appear:
+	// low | medium | high | critical (default medium). low is noisy on
+	// well-designed codebases; high/critical surface only intrusive/functional
+	// coupling across large boundaries.
+	MinSeverity string `yaml:"min_severity,omitempty"`
+	// VolatilityCascade enables the book Ch9 single-hop propagation pass: a
+	// module strongly coupled to a high-volatility module inherits raised
+	// effective volatility. Config-declared volatility always takes precedence.
+	VolatilityCascade bool `yaml:"volatility_cascade,omitempty"`
 }
 
 // OutputsConfig controls which output formats are produced.
@@ -119,9 +134,10 @@ type RuleConfig struct {
 // MetricConfig is the per-metric view returned by ForMetric.
 type MetricConfig = MetricEntry
 
-// ExceptionSet is the view passed to the status stage.
-type ExceptionSet struct {
-	Exceptions []ExceptionDef
+// WaiverSet is the view passed to the status stage: the approved rule deviations
+// (`waivers:`) that suppress matching gate findings until they expire.
+type WaiverSet struct {
+	Waivers []WaiverDef
 }
 
 // OutputConfig is the view passed to the output stage.

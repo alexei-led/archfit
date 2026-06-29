@@ -39,7 +39,7 @@ type AnalyzeCmd struct {
 	Base   string `help:"Git ref to compare against for scorecard delta (e.g. main, HEAD~1). When set, runs a before/after delta table instead of a single-run render."`
 
 	Gate bool `help:"CI exit behavior: 0=clean, 1=architecture violation, 2=warnings, 3=config/tool error. Without --gate the command is always report-only (exit 0 on success)."`
-	LLM  bool `help:"Append an off-gate LLM narrative review after the normal render. Requires tools.llm configured in the config file."`
+	LLM  bool `help:"Append an off-gate LLM narrative review after the normal render. Requires ai configured in the config file."`
 
 	// Format shorthand flags — mutually exclusive; error if more than one set.
 	// These map onto Format below.
@@ -268,7 +268,7 @@ func analyzeRender(deps *appDeps, diag diagnostic.Diagnostic, sc score.Scorecard
 }
 
 // appendLLMNarrative appends the off-gate LLM narrative to stdout, after the
-// deterministic report. runLLMReview owns the tools.llm check and provider
+// deterministic report. runLLMReview owns the ai check and provider
 // build (exit 3 when unconfigured); we only thread the test-seam override.
 func (c *AnalyzeCmd) appendLLMNarrative(ctx context.Context, deps *appDeps, cfg config.Config, configDir string, diag diagnostic.Diagnostic, sc score.Scorecard) error {
 	return runLLMReview(ctx, deps, cfg, configDir, false, c.providerOverride, diag, sc)

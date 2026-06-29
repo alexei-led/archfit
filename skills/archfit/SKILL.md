@@ -97,7 +97,7 @@ Fixing findings autonomously: run `archfit analyze --gate --json`; exit 0 means
 done. Each `agent_tasks[]` entry has `goal`, `constraints`, `files`, and a
 `validation` command — fix within the constraints, touch only the listed files
 where possible, then re-run `validation` verbatim. Never "fix" `baseline` or
-`excepted` findings unprompted. Full contract: `references/agent-loop.md`.
+`waived` findings unprompted. Full contract: `references/agent-loop.md`.
 
 ## Coverage gaps and gate promotion
 
@@ -108,8 +108,8 @@ Read the gap's `affected_metrics` and `install_cmd`; close it by installing the
 tool (`archfit doctor` lists them) or filling the config, not by ignoring it.
 
 - Default is warn-loud (exit 0). To make CI block on a missing tool, promote with
-  `--require-tools` or per-tool `tools.<x>.gate: fail` (exits 1 — a policy
-  decision, distinct from exit 3 errors).
+  `--require-tools` or per-tool `languages.<x>.gate: fail` / `analyzers.<x>.gate: fail`
+  (exits 1 — a policy decision, distinct from exit 3 errors).
 - Promote rules to `gate: fail` only when high-confidence (cycles,
   forbidden-dependency, layer-direction); keep noisy ones at `warn`.
 - Separate `tool missing`, `tool failed`, `tool disabled`, and `config

@@ -176,9 +176,9 @@ func TestMetricResult_DeltaOmitEmpty(t *testing.T) {
 
 func TestSummary_JSONFieldNames(t *testing.T) {
 	s := diagnostic.Summary{
-		GateFindings:   3,
-		Warnings:       1,
-		ExceptionsUsed: 2,
+		GateFindings: 3,
+		Warnings:     1,
+		WaiversUsed:  2,
 	}
 
 	data, err := json.Marshal(s)
@@ -191,7 +191,7 @@ func TestSummary_JSONFieldNames(t *testing.T) {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
 
-	for _, f := range []string{"gate_findings", "warnings", "exceptions_used"} {
+	for _, f := range []string{"gate_findings", "warnings", "waivers_used"} {
 		if _, ok := m[f]; !ok {
 			t.Errorf("Summary JSON field %q missing", f)
 		}
@@ -412,7 +412,7 @@ func TestDiagnostic_SyntaxFactsOmitWhenEmpty(t *testing.T) {
 	}
 
 	if _, ok := m["syntax_facts"]; ok {
-		t.Error("syntax_facts must be omitted when nil (sg absent / tools.syntax off)")
+		t.Error("syntax_facts must be omitted when nil (sg absent / analyzers.syntax off)")
 	}
 }
 

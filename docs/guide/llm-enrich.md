@@ -19,13 +19,14 @@ archfit analyze       # consumes APPROVED labels only — still LLM-free
 ## Configuration
 
 ```yaml
-tools:
+analyzers:
   scip:
-    enabled: "on" # enrich needs the symbol-level strength hints
-  llm:
-    provider: anthropic # anthropic | openai | ollama
-    model: claude-opus-4-8
-    # base_url: http://localhost:11434/v1   # ollama only
+    enabled: true # enrich needs the symbol-level strength hints
+
+ai:
+  provider: anthropic # anthropic | openai | ollama
+  model: claude-opus-4-8
+  # base_url: http://localhost:11434/v1   # ollama only
 ```
 
 API keys come from the standard env vars only — `ANTHROPIC_API_KEY` /

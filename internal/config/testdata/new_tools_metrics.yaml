@@ -1,7 +1,7 @@
 version: 1
-tools:
+analyzers:
   clones:
-    enabled: "on"
+    enabled: true
 metrics:
   risk_hub:
     enabled: false

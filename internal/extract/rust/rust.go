@@ -136,7 +136,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	// size/cohesion metrics — the crate name is not derivable from a path alone.
 	facts.CrateRoots = crateRoots(s.Root, members)
 
-	// Opt-in intra-crate module graph via cargo-modules (tools.cargo-modules.enabled: on).
+	// Opt-in intra-crate module graph via cargo-modules (analyzers.cargo_modules.enabled: true).
 	// When enabled, module-level nodes and edges are merged into facts alongside the
 	// crate-level nodes from parseAndNormalize, giving metrics (cycle, blast_radius,
 	// cohesion) module granularity and preventing the degenerate-graph guard from

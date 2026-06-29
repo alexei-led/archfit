@@ -75,8 +75,8 @@ archfit analyze --gate --config .archfit.yaml --full --require-tools
 
 `--require-tools` raises every coverage gap to `fail` and exits `1` (a policy
 violation, distinct from exit `3` tool errors). For per-tool control, set
-`tools.<x>.gate: fail` in config instead — see
-[configuration-reference.md](configuration-reference.md#toolsxgate-coverage-gate).
+`analyzers.<x>.gate: fail` in config instead — see
+[configuration-reference.md](configuration-reference.md#analyzersx-coverage-gate).
 Install the missing tools (`archfit doctor` lists them) to close the gap rather
 than disabling the gate.
 

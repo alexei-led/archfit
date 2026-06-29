@@ -85,7 +85,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   to `StatusPartial` with reason
   `"empty index (0 occurrences) — check path case / indexer version"`. Previously
   this reported `ok`, silently hiding a SCIP indexer failure.
-- **Complexity backend is configurable** (`tools.complexity.backend`): `auto`
+- **Complexity backend is configurable** (`analyzers.complexity.backend`): `auto`
   (default) = gocyclo for exact Go CCN + an ast-grep decision-point proxy for
   TS/Py/Rust (no default Python pin); when gocyclo is absent the proxy also covers
   Go. `lizard` opts into exact per-function CCN for all languages. When neither gocyclo nor `sg` is
@@ -112,8 +112,8 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   module path (byte-identical). `classify.AugmentGoWorkspaceModules` auto-registers
   each member as a synthetic module when **≥2** members were loaded and the
   member's `RelDir != "."` and no config module already covers it — mirrors the
-  Rust `::` gate. `tools.go.modules.include/exclude` scopes which members load.
-- **Per-analyzer timeout.** `tools.<x>.timeout` (Go duration string, e.g. `"5m"`)
+  Rust `::` gate. `languages.go.modules.include/exclude` scopes which members load.
+- **Per-analyzer timeout.** `analyzers.<x>.timeout` (Go duration string, e.g. `"5m"`)
   caps `scip`, `clones` (jscpd), and `complexity` subprocess runs. On timeout the
   result is dropped; dependent metrics report `n/a (timed out)`; the run
   continues on the verdict from the remaining analyzers.
@@ -153,7 +153,7 @@ declared module are NOT internal coupling seams. Their count surfaces in
 `classified_edges.external` and the `coupling_balance` evidence string.
 `dependency_graph_health` is where external-dependency concerns live.
 
-**Symmetric from clones:** when `tools.clones` detects a cross-module clone
+**Symmetric from clones:** when `analyzers.clones` detects a cross-module clone
 pair, the edge strength is upgraded to `StrengthSymmetric` (S=9) unless a
 config-authoritative `contract`/`intrusive` or an approved pinned label already
 applies.
@@ -162,7 +162,7 @@ applies.
 `provenance: llm` and `confidence` below `high` lower `coupling_balance`
 confidence by one band. `provenance: human` and `provenance: tool` do not.
 
-**Opt-in volatility cascade:** `volatility_cascade_enabled: true` in
+**Opt-in volatility cascade:** `coupling.volatility_cascade: true` in
 `.archfit.yaml` enables a single-hop propagation pass (book Ch9) that raises
 effective volatility to `high` for modules strongly coupled to a `core` module.
 archfit's own self-config has this enabled.
@@ -193,10 +193,10 @@ amd64 in CI, not local emulation.
 Rust crate facts are **crate-level**: `cargo metadata` makes one graph node per
 workspace member. The scorecard caps a **degenerate graph** (<2 connected modules,
 e.g. a single crate) at `mixed` — it never scores `strong` on a one-node graph (see
-`internal/score`, `degenerateGraph`). Opt-in `tools.cargo-modules.enabled` adds an
-**intra-crate module graph** (`<crate>::<mod>` nodes + aggregated `uses` edges), so
-single-crate projects get real cycle/blast-radius/cohesion signal. Opt-in
-`tools.scip.enabled` runs rust-analyzer SCIP, which produces a correct
+`internal/score`, `degenerateGraph`). Opt-in `analyzers.cargo_modules.enabled`
+adds an **intra-crate module graph** (`<crate>::<mod>` nodes + aggregated `uses`
+edges), so single-crate projects get real cycle/blast-radius/cohesion signal.
+Opt-in `analyzers.scip.enabled` runs rust-analyzer SCIP, which produces a correct
 `<crate>::<mod>` strength map and attaches `StrengthHint` to those module edges. The
 engine then registers auto-discovered module nodes as modules
 (`classify.AugmentModulesFromGraph`, gated on the `::` separator so Go/TS/Python are
@@ -204,8 +204,8 @@ untouched) so distance/volatility classify and the strength is consumed — veri
 herdr: `coupling_balance` and `cohesion_lcom` measure (were n/a). `encapsulation`
 stays `n/a` for typical Rust by design: it scores only contract/intrusive edges, and
 Rust's module privacy makes cross-module _intrusive_ edges rare. With all three on
-(`tools.rust` + `tools.cargo-modules` + `tools.scip`) a single-crate Rust project gets
-full module-level coupling analysis.
+(`languages.rust` + `analyzers.cargo_modules` + `analyzers.scip`) a single-crate
+Rust project gets full module-level coupling analysis.
 
 Per-file size/history metrics resolve to **module granularity** too: the extractor carries
 crate roots (`graph.CrateRoot`, repo-relative src dir + crate name from cargo metadata) on

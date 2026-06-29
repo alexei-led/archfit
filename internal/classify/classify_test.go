@@ -417,7 +417,7 @@ func TestRun_Severity(t *testing.T) {
 	// Modules:
 	//   "a": paths=services/a/**, owner=team-x, deploy=svc-a, subdomain=core (high volatility)
 	//   "b": paths=services/b/**, public=services/b/api/**, internal=services/b/internal/**,
-	//        owner=team-y, deploy=svc-b, subdomain=supporting (medium volatility)
+	//        owner=team-y, deploy=svc-b, subdomain=supporting (low volatility)
 	//   "c": paths=services/c/**, public=services/c/api/**, owner=team-x, deploy=svc-a, subdomain=generic (low vol)
 	modules := map[string]config.ModuleDef{
 		"a": {
@@ -458,7 +458,7 @@ func TestRun_Severity(t *testing.T) {
 		wantSeverity coupling.Severity
 	}{
 		{
-			// contract (S=1) + cross_deploy_unit (D=9) + supporting/medium (V=6):
+			// contract (S=1) + cross_deploy_unit (D=9) + supporting/low (V=3):
 			// max(|1-9|=8, 10-6=4)+1=9 → none (loose XOR quadrant, book-correct).
 			name:         "contract cross-deploy medium-vol → none (XOR loose quadrant)",
 			edge:         importEdge("services/a/impl.go", "services/b/api/client.go"),
@@ -763,7 +763,8 @@ func TestRun_ContractRecommended(t *testing.T) {
 			DeployUnit: deployUnitB,
 			Subdomain:  subdomainSupporting,
 		},
-		// Module with no explicit subdomain but a heuristic-generic path.
+		// Module with no explicit subdomain — must NOT be inferred as generic
+		// from its path name (the path heuristic was removed; no guessing).
 		"util": {
 			Paths:      []string{"util/**"},
 			Owner:      ownerTeamX,
@@ -812,14 +813,15 @@ func TestRun_ContractRecommended(t *testing.T) {
 			wantContractRecomm: false,
 		},
 		{
-			// Heuristic-generic path (util/) with no explicit subdomain: advisory fires.
-			name:               "functional to heuristic-generic util/ → contract recommended",
+			// Undeclared subdomain (util/, no subdomain): NOT inferred as generic
+			// from the path name — no path guessing, so no advisory fires.
+			name:               "functional to undeclared util/ → no advisory (no path guessing)",
 			e:                  edge("services/core/impl.go", "util/parser.go", "functional"),
-			wantContractRecomm: true,
+			wantContractRecomm: false,
 		},
 		{
-			// Contract to heuristic-generic: no advisory.
-			name:               "contract to heuristic-generic util/ api → no advisory",
+			// Contract to undeclared util/: no advisory either way.
+			name:               "contract to undeclared util/ → no advisory",
 			e:                  edge("services/core/impl.go", "util/parser.go", "contract"),
 			wantContractRecomm: false,
 		},

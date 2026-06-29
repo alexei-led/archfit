@@ -9,13 +9,14 @@ final config and approved labels.
 ## Configuration
 
 ```yaml
-tools:
+analyzers:
   scip:
-    enabled: "on" # enrich needs symbol-level strength hints
-  llm:
-    provider: anthropic # anthropic | openai | ollama
-    model: claude-opus-4-8
-    # base_url: http://localhost:11434/v1   # ollama only
+    enabled: true   # enrich needs symbol-level strength hints
+
+ai:
+  provider: anthropic   # anthropic | openai | ollama
+  model: claude-opus-4-8
+  # base_url: http://localhost:11434/v1   # ollama only
 ```
 
 API keys come from env only — `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` — never
@@ -32,7 +33,7 @@ It appends a holistic LLM interpretation section after the deterministic output.
 It can prioritize and explain existing findings, but it does not create new gate
 facts and it does not change the gate verdict.
 
-- Requires `tools.llm` configured and the matching API key.
+- Requires `ai:` configured and the matching API key.
 - Use it for explanation and prioritization after a regular `analyze` run, not
   instead of it.
 - If LLM config is missing, it exits `3`; that is a setup problem, not a gate

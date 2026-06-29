@@ -161,7 +161,7 @@ idx := syntax.BuildNodeRoleIndex(g, syntaxFacts, moduleViews)
 
 `forbidden_role_dependency` then iterates edges and asks
 `idx.RolesFor(e.From)` / `idx.RolesFor(e.To)`. Verification during
-implementation: run `archfit scan --json` on one repo per language and assert the
+implementation: run `archfit analyze --json` on one repo per language and assert the
 node IDs resolve. This join — not extraction — is the real risk; it gets explicit
 tests per language.
 
@@ -239,7 +239,7 @@ When `sg` is absent, all three behave as today (no regression, no false green).
 
 ## 9. Self-config / dogfood
 
-- Enable `tools.syntax` (facts) in `.archfit.yaml` for dogfooding — **facts only,
+- Enable `analyzers.syntax` (facts) in `.archfit.yaml` for dogfooding — **facts only,
   off-gate**.
 - Do **not** enable `public_api_max`/`forbidden_role_dependency` as `gate: fail`
   on archfit itself (or set generous `gate: warn`) — otherwise `make archfit`
@@ -267,7 +267,7 @@ When `sg` is absent, all three behave as today (no regression, no false green).
   in new core pkg `internal/syntax` (**add to core-ring allow-list**); rules in
   `internal/rules` (core) may import `model/diagnostic` (already imports model
   pkgs). No ring violations.
-- **Config:** `tools.syntax` mirrors `tools.scip`; new `RuleDef` fields validated.
+- **Config:** `analyzers.syntax` mirrors `analyzers.scip`; new `RuleDef` fields validated.
 - **No false green:** absent `sg` → `n/a`, never invented facts.
 
 ---

@@ -440,9 +440,9 @@ func TestRenderer_Render_ExceptionInventory(t *testing.T) {
 	r := markdown.New()
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
-	d.Summary.ExceptionsUsed = 1
-	excepted := makeGateFinding("forbidden_dep", finding.SeverityLow, finding.StatusExcepted)
-	d.Findings = []finding.Finding{excepted}
+	d.Summary.WaiversUsed = 1
+	waived := makeGateFinding("forbidden_dep", finding.SeverityLow, finding.StatusWaived)
+	d.Findings = []finding.Finding{waived}
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {

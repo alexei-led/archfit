@@ -44,8 +44,8 @@ const (
 // by the pipeline when an opt-in pass is skipped. Three occurrences each (pipeline_run.go
 // + pipeline_test.go x2) so goconst requires constants.
 const (
-	reasonScipDisabled   = "opt-in: tools.scip.enabled"
-	reasonSyntaxDisabled = "opt-in: tools.syntax.enabled"
+	reasonScipDisabled   = "opt-in: analyzers.scip.enabled"
+	reasonSyntaxDisabled = "opt-in: analyzers.syntax.enabled"
 )
 
 // Primary dependency-graph analyzer coverage names (as they appear in

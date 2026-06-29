@@ -4,17 +4,17 @@
 # advisories flood. This template is fully specified — every module declares an
 # owner and a subdomain/volatility — so distance and volatility classify cleanly.
 # Replace the module paths and owners with your own, then run:
-#   archfit check  --config .archfit.yaml --full
-#   archfit score  --config .archfit.yaml --full
+#   archfit analyze --config .archfit.yaml --full
 version: 1
-bc_advisory_min_severity: medium
-tools:
+coupling:
+  min_severity: medium
+languages:
   go:
-    enabled: "on"
+    enabled: true
   typescript:
-    enabled: "off"
+    enabled: false
   python:
-    enabled: "off"
+    enabled: false
 # Inner -> outer. forbidden_layer_direction flags any inner->outer dependency.
 layers:
   - domain
@@ -46,7 +46,7 @@ modules:
     public:
       - internal/adapter
     layer: adapter
-    subdomain: supporting # supporting -> medium volatility
+    subdomain: supporting # supporting -> low volatility
     owner: team-platform
   cmd:
     paths:

@@ -43,15 +43,15 @@ type AcceptedSet interface {
 //
 // Algorithm per finding f:
 //  1. Fingerprint in base.Accepted → StatusBaseline
-//  2. Matches an exception (rule, from glob, to glob) and not expired → StatusExcepted
-//  3. Matches an exception but expiry has passed → StatusExpiredException
+//  2. Matches a waiver (rule, from glob, to glob) and not expired → StatusWaived
+//  3. Matches a waiver but expiry has passed → StatusExpiredWaiver
 //  4. No match → StatusNew (default)
 //
 // now is the reference time for expiry checks; pass time.Now() in production.
 func Assign(
 	findings []finding.Finding,
 	accepted AcceptedSet,
-	exceptions config.ExceptionSet,
+	waivers config.WaiverSet,
 	now time.Time,
 	forKind string,
 ) []finding.Finding {
@@ -66,7 +66,7 @@ func Assign(
 	copy(out, findings)
 
 	for i := range out {
-		out[i].Status = assignOne(&out[i], accepted, exceptions, now)
+		out[i].Status = assignOne(&out[i], accepted, waivers, now)
 	}
 
 	// Emit fixed findings only for accepted entries whose kind matches this pass.
@@ -97,7 +97,7 @@ func Assign(
 func assignOne(
 	f *finding.Finding,
 	accepted AcceptedSet,
-	exceptions config.ExceptionSet,
+	waivers config.WaiverSet,
 	now time.Time,
 ) finding.Status {
 	// 1. Accepted-set check.
@@ -105,40 +105,40 @@ func assignOne(
 		return finding.StatusBaseline
 	}
 
-	// 2–3. Exception check.
-	for _, exc := range exceptions.Exceptions {
-		if !matchException(exc, f) {
+	// 2–3. Waiver check.
+	for _, w := range waivers.Waivers {
+		if !matchWaiver(w, f) {
 			continue
 		}
-		if isExpired(exc, now) {
-			return finding.StatusExpiredExcept
+		if isExpired(w, now) {
+			return finding.StatusExpiredWaiver
 		}
-		return finding.StatusExcepted
+		return finding.StatusWaived
 	}
 
 	// 4. Default.
 	return finding.StatusNew
 }
 
-// matchException reports whether exc applies to f, regardless of expiry.
+// matchWaiver reports whether w applies to f, regardless of expiry.
 // An empty Rule, From, or To field matches any value.
-func matchException(exc config.ExceptionDef, f *finding.Finding) bool {
+func matchWaiver(w config.WaiverDef, f *finding.Finding) bool {
 	// Rule ID match.
-	if exc.Rule != "" && exc.Rule != f.RuleID {
+	if w.Rule != "" && w.Rule != f.RuleID {
 		return false
 	}
 
 	// From glob match against Edge.From.Path.
-	if exc.From != "" {
-		matched, _ := doublestar.Match(exc.From, f.Edge.From.Path)
+	if w.From != "" {
+		matched, _ := doublestar.Match(w.From, f.Edge.From.Path)
 		if !matched {
 			return false
 		}
 	}
 
 	// To glob match against Edge.To.Path.
-	if exc.To != "" {
-		matched, _ := doublestar.Match(exc.To, f.Edge.To.Path)
+	if w.To != "" {
+		matched, _ := doublestar.Match(w.To, f.Edge.To.Path)
 		if !matched {
 			return false
 		}
@@ -147,19 +147,19 @@ func matchException(exc config.ExceptionDef, f *finding.Finding) bool {
 	return true
 }
 
-// isExpired reports whether exc has an expiry date that has passed relative to now.
+// isExpired reports whether w has an expiry date that has passed relative to now.
 // An empty Expires field is never expired.
-func isExpired(exc config.ExceptionDef, now time.Time) bool {
-	if exc.Expires == "" {
+func isExpired(w config.WaiverDef, now time.Time) bool {
+	if w.Expires == "" {
 		return false
 	}
-	expiry, err := time.Parse("2006-01-02", exc.Expires)
+	expiry, err := time.Parse("2006-01-02", w.Expires)
 	if err != nil {
-		// Malformed date — treat as expired so the exception does not silently
+		// Malformed date — treat as expired so the waiver does not silently
 		// suppress findings with an unenforceable expiry.
 		return true
 	}
-	// Expiry is end-of-day: the exception is valid on the expiry date itself,
+	// Expiry is end-of-day: the waiver is valid on the expiry date itself,
 	// expired the day after. Add 24 hours so "expires: 2025-01-31" covers all of Jan 31.
 	return now.After(expiry.Add(24 * time.Hour))
 }

@@ -74,14 +74,14 @@ func (p *fixedProvider) Complete(_ context.Context, req llm.Request) (llm.Respon
 	return llm.Response{Text: p.text}, nil
 }
 
-// appendLLMConfig appends a minimal tools.llm block to an existing config file.
+// appendLLMConfig appends a minimal ai block to an existing config file.
 func appendLLMConfig(t *testing.T, cfgPath string) {
 	t.Helper()
 	raw, err := os.ReadFile(cfgPath) //nolint:gosec // test fixture
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw = append(raw, []byte("tools:\n  llm:\n    provider: ollama\n    model: test-model\n    base_url: http://127.0.0.1:0\n")...)
+	raw = append(raw, []byte("ai:\n  provider: ollama\n  model: test-model\n  base_url: http://127.0.0.1:0\n")...)
 	if err := os.WriteFile(cfgPath, raw, 0o600); err != nil { //nolint:gosec // test fixture
 		t.Fatal(err)
 	}
@@ -424,11 +424,11 @@ func TestReviewCmd_Run_UsesReviewTokenBudget(t *testing.T) {
 	}
 }
 
-// TestReviewCmd_Run_NoLLMConfig asserts exit code 3 with a tools.llm hint
+// TestReviewCmd_Run_NoLLMConfig asserts exit code 3 with a ai hint
 // when the config has no LLM provider configured.
 func TestReviewCmd_Run_NoLLMConfig(t *testing.T) {
 	t.Parallel()
-	// writeViolatingRepo produces a config without tools.llm.
+	// writeViolatingRepo produces a config without ai.
 	cfgPath := writeViolatingRepo(t)
 
 	ctx := context.Background()
@@ -440,7 +440,7 @@ func TestReviewCmd_Run_NoLLMConfig(t *testing.T) {
 		t.Fatalf("loadConfig: %v", loadErr)
 	}
 	configDir := filepath.Dir(cfgPath)
-	// runLLMReview fires the "tools.llm not configured" check before touching
+	// runLLMReview fires the "ai not configured" check before touching
 	// the provider, so we can pass a nil diag+scorecard — they are never reached.
 	err := runLLMReview(ctx, deps, cfg, configDir, true, nil,
 		diagnostic.Diagnostic{}, score.Scorecard{})
@@ -449,8 +449,8 @@ func TestReviewCmd_Run_NoLLMConfig(t *testing.T) {
 	if !errors.As(err, &ee) || ee.code != 3 {
 		t.Fatalf("want exitError{code:3}, got %v", err)
 	}
-	if !strings.Contains(ee.msg, "tools.llm") {
-		t.Errorf("want tools.llm hint in message, got: %s", ee.msg)
+	if !strings.Contains(ee.msg, "ai") {
+		t.Errorf("want ai hint in message, got: %s", ee.msg)
 	}
 }
 

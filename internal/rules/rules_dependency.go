@@ -208,7 +208,7 @@ func (r *internalAPIAccess) Check(g *graph.Graph, _ Evidence) []finding.Finding 
 // "New" semantics are deliberately NOT implemented here: the rule emits every
 // cross-module edge, and the status stage (status.Assign) marks edges whose
 // fingerprint is in the baseline as StatusBaseline — only StatusNew /
-// StatusExpiredException findings gate. Filtering inside the rule would break
+// StatusExpiredWaiver findings gate. Filtering inside the rule would break
 // fixed-finding detection (a suppressed finding's fingerprint would vanish
 // from the current set and be falsely reported as fixed). Bootstrap behavior:
 // with no baseline every cross-module edge fires — run `archfit baseline` to

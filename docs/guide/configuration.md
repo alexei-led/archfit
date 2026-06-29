@@ -20,8 +20,9 @@ Important sections:
 - `layers` — architecture layers, ordered from inner to outer.
 - `modules` — owned path groups with optional public APIs and metadata.
 - `rules` — executable constraints such as dependencies or layer direction.
-- `exceptions` — approved temporary exceptions with reasons and expiry dates.
-- `tools` — language adapter enablement: `auto`, `on`, or `off`.
+- `waivers` — approved temporary deviations with reasons and expiry dates.
+- `languages` — language adapter enablement: `auto`, `true`, or `false`.
+- `analyzers` — opt-in deeper analysis backends.
 - `metrics` — metric gates and delta thresholds.
 
 Small example:
@@ -49,7 +50,7 @@ rules:
   - id: layer_direction
     type: forbidden_layer_direction
     gate: fail
-tools:
+languages:
   go:
     enabled: auto
   typescript:

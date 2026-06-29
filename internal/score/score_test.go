@@ -244,7 +244,7 @@ func TestCouplingBalance(t *testing.T) {
 		}
 	})
 
-	t.Run("excepted and baseline edges do not count", func(t *testing.T) {
+	t.Run("waived and baseline edges do not count", func(t *testing.T) {
 		withStatus := func(f finding.Finding, s finding.Status) finding.Finding {
 			f.Status = s
 			return f
@@ -252,15 +252,15 @@ func TestCouplingBalance(t *testing.T) {
 		worst := func(from, to string) finding.Finding {
 			return bcAdv(from, to, "intrusive", "cross_deploy_unit", "high", 10, "critical", "critical", 10)
 		}
-		// Two worst-case edges, both operator-suppressed (excepted / baseline). They
+		// Two worst-case edges, both operator-suppressed (waived / baseline). They
 		// must not penalise the dimension — same view the gate verdict takes. With no
 		// counted edges left, the dimension is unconfirmed (mixed), never poor.
 		got := cb(
-			withStatus(worst("a", "b"), finding.StatusExcepted),
+			withStatus(worst("a", "b"), finding.StatusWaived),
 			withStatus(worst("c", "d"), finding.StatusBaseline),
 		)
 		if got.Value <= 40 {
-			t.Errorf("suppressed edges value = %d, want > poor (>40); excepted/baseline must not penalise", got.Value)
+			t.Errorf("suppressed edges value = %d, want > poor (>40); waived/baseline must not penalise", got.Value)
 		}
 		if got.Value > 60 {
 			t.Errorf("suppressed edges value = %d, want ≤60 (no counted edges = unconfirmed, not strong)", got.Value)

@@ -16,8 +16,8 @@ import (
 // tools produce no gap.
 func TestBuildCoverageGaps(t *testing.T) {
 	t.Parallel()
-	cfgFailGo := config.Config{Tools: config.ToolsConfig{
-		config.LangGo: {Gate: config.GateFail},
+	cfgFailGo := config.Config{Languages: config.LanguagesConfig{
+		Go: config.GoLanguage{Gate: config.GateFail},
 	}}
 	cfgWarn := config.Config{}
 
@@ -120,11 +120,11 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 	}
 
 	cfgDefault := config.Config{}
-	cfgRustGate := config.Config{Tools: config.ToolsConfig{
-		config.LangRust: {Gate: config.GateFail},
+	cfgRustGate := config.Config{Languages: config.LanguagesConfig{
+		Rust: config.RustLanguage{Gate: config.GateFail},
 	}}
-	cfgCargoModulesGate := config.Config{Tools: config.ToolsConfig{
-		config.ToolCargoModules: {Gate: config.GateFail},
+	cfgCargoModulesGate := config.Config{Analyzers: config.AnalyzersConfig{
+		CargoModules: config.Analyzer{Gate: config.GateFail},
 	}}
 
 	allRustAbsent := []diagnostic.Coverage{
@@ -307,10 +307,10 @@ func TestEffectiveConfigHash(t *testing.T) {
 // the mapped key (e.g. tools.go.gate for go/packages) is surfaced verbatim.
 func TestConfigToolGate(t *testing.T) {
 	t.Parallel()
-	cfg := config.Config{Tools: config.ToolsConfig{
-		config.LangGo:         {Gate: config.GateFail},
-		config.LangTypeScript: {Gate: config.GateOff},
-		config.LangPython:     {}, // unset → warn
+	cfg := config.Config{Languages: config.LanguagesConfig{
+		Go:         config.GoLanguage{Gate: config.GateFail},
+		TypeScript: config.TypeScriptLanguage{Gate: config.GateOff},
+		Python:     config.PythonLanguage{}, // unset → warn
 	}}
 	cases := []struct {
 		tool string

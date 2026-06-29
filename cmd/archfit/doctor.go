@@ -57,7 +57,7 @@ func (c *DoctorCmd) Run(deps *appDeps) error { //nolint:unparam // satisfies kon
 			_, _ = fmt.Fprintf(deps.Stdout, "  cache: %d entries in .archfit-cache/llm\n", len(entries))
 		}
 	} else {
-		_, _ = fmt.Fprintln(deps.Stdout, "  not configured (set tools.llm provider + model to enable enrich)")
+		_, _ = fmt.Fprintln(deps.Stdout, "  not configured (set ai provider + model to enable enrich)")
 	}
 
 	return nil

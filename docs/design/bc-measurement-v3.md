@@ -115,7 +115,7 @@ labels cannot override them.
 
 #### 4.1 Symmetric from clone detection
 
-When the clone detector (`tools.clones.enabled: on`) finds a clone pair that
+When the clone detector (`analyzers.clones.enabled: true`) finds a clone pair that
 crosses a module boundary, any edge between those modules whose deterministic
 strength is `functional` or `unknown` is upgraded to `StrengthSymmetric` (S=9).
 Config-authoritative `contract` or `intrusive` assignments, and approved pinned
@@ -145,14 +145,15 @@ score or gate verdict.** Report-only by design (Task 4 decision).
 
 ### Volatility mapping
 
-`subdomain` or explicit `volatility` in config → book anchor (table in §3).
-When neither is declared, the path-pattern heuristic fills in a domain guess
-(vendor/lib/util → low→3; infra/platform/db → medium→6). When nothing resolves:
-the volatility rescue term (`10 − V`) is computed with V=10 (conservative, cannot
-confirm low volatility) and an `agent_task` is emitted asking the human to declare
-the subdomain.
+`subdomain` or explicit `volatility` in config → book anchor (table in §3):
+core → high, supporting → low, generic → low (medium is reachable only via an
+explicit `volatility: medium` override). There is NO path/name guessing — volatility
+is never inferred from a directory name. When neither `subdomain` nor `volatility`
+is declared, the module is `undeclared`: the volatility rescue term (`10 − V`) is
+computed with V=10 (conservative, cannot confirm low volatility) and an `agent_task`
+is emitted asking the human to declare the subdomain.
 
-The inferred-volatility cascade (opt-in, `volatility_cascade_enabled: true`, book
+The inferred-volatility cascade (opt-in, `coupling.volatility_cascade: true`, book
 Ch9) propagates high volatility one hop across strongly-coupled edges before scoring.
 
 ### Repo rollup

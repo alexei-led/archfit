@@ -41,7 +41,7 @@ audit report. Bare `archfit` (no subcommand) runs `analyze` in report-only mode.
   CI exit codes. See `analyze` below.
 - `archfit baseline` — record accepted current findings.
 - `archfit explain <id>` — explain one finding by fingerprint prefix
-  (`--llm` appends an off-gate narrative; needs `tools.llm`).
+  (`--llm` appends an off-gate narrative; needs `ai:` configured).
 - `archfit enrich` — draft LLM coupling-label refinements for human review
   (off-gate; writes `.archfit-labels.yaml` drafts). `--owner` / `--volatility`
   draft those module fields; `--pin` writes approved entries into the config. See
@@ -68,14 +68,14 @@ Findings have a lifecycle status:
 - `new` — active finding not present in the baseline;
 - `baseline` — accepted finding already recorded;
 - `fixed` — previously baselined finding that is no longer detected;
-- `excepted` — active finding covered by an approved exception;
-- `expired_exception` — active finding whose exception has expired.
+- `waived` — active finding covered by an approved waiver;
+- `expired_waiver` — active finding whose waiver has expired.
 
 ## Exit codes
 
 - `0` — pass;
 - `1` — fail (active gate finding, **or** a missing required tool under
-  `--require-tools` / `tools.<x>.gate: fail` — a policy violation);
+  `--require-tools` / `languages.<x>.gate: fail` / `analyzers.<x>.gate: fail` — a policy violation);
 - `2` — warn;
 - `3` — usage, config, or runtime error.
 
@@ -92,9 +92,9 @@ When an analyzer is **absent** (tool not installed or not detected), archfit doe
 (no evidence — never `strong`), and a machine-readable **coverage gap** lists the
 tool, the metrics its absence leaves unmeasured, and a one-line install hint.
 
-When an analyzer is **disabled by config** (`enabled: off`), it is simply skipped
-— no coverage gap is emitted and no install prompt appears. Disabled-by-config is
-a deliberate opt-out, not a gap to resolve.
+When an analyzer is **disabled by config** (`enabled: false`), it is simply
+skipped — no coverage gap is emitted and no install prompt appears.
+Disabled-by-config is a deliberate opt-out, not a gap to resolve.
 
 Coverage gaps for absent tools appear in every format:
 
@@ -106,8 +106,8 @@ Coverage gaps for absent tools appear in every format:
 
 Default posture is **warn-loud, exit 0**. To make CI block on a missing tool, opt
 in with `--require-tools` (raises every gap to `fail` for that run) or
-`tools.<x>.gate: fail` per tool (see
-[configuration-reference.md](configuration-reference.md#toolsxgate-coverage-gate)).
+`languages.<x>.gate: fail` / `analyzers.<x>.gate: fail` per tool (see
+[configuration-reference.md](configuration-reference.md#analyzersx-gate-coverage-gate)).
 
 Config-quality warnings (e.g. "N modules under-specified") now reach md/json too,
 as a `## Config warnings` section and the `config_warnings[]` JSON field — they
@@ -127,8 +127,8 @@ Two distinct `n/a` reasons appear in coverage and metric output:
 - **`n/a (timed out)`** — a per-analyzer watchdog fired before the subprocess
   finished. The tool result is dropped cleanly; the run continues and exits with
   the verdict from the remaining analyzers. Increase the per-tool timeout or
-  reduce the scope via `tools.go.modules` / `--root`. See
-  [configuration-reference.md → tools.&lt;x&gt;.timeout](configuration-reference.md#toolsxtimeout).
+  reduce the scope via `languages.go.modules` / `--root`. See
+  [configuration-reference.md → analyzers.&lt;x&gt;.timeout](configuration-reference.md#analyzersx-timeout).
 
 ## analyze
 
@@ -152,7 +152,7 @@ archfit analyze --markdown --config .archfit.yaml > archfit-report.md
 # Scorecard view
 archfit analyze --format scorecard --config .archfit.yaml
 
-# LLM holistic narrative appended (off-gate; needs tools.llm)
+# LLM holistic narrative appended (off-gate; needs ai: configured)
 archfit analyze --llm --config .archfit.yaml
 
 # SARIF for GitHub code-scanning
@@ -193,7 +193,7 @@ environments, or with `--quiet`. This keeps `archfit --json | jq` clean.
 - `--format <fmt>` — repeatable: `text` (default), `json`, `markdown`/`md`,
   `sarif`, `scorecard`. Shorthands and `--format` are mutually exclusive.
 - `--llm` — append an off-gate LLM advisory interpretation after the
-  deterministic output (needs `tools.llm` configured).
+  deterministic output (needs `ai:` configured in `.archfit.yaml`).
 - `--full` — scan all files (default true).
 - `--advisory` — include Balanced Coupling advisories (default true).
 - `--severity`, `--lang`, `--no-config`, `--require-tools` — same as the
@@ -320,7 +320,7 @@ require:
 
 Requirements:
 
-- `tools.llm` configured (provider + model) and the provider's API key set.
+- `ai:` configured (provider + model) and the provider's API key set.
   Without it, `--llm` exits `3` with an actionable message and touches nothing.
   See [LLM enrichment](llm-enrich.md) and `archfit doctor`.
 
@@ -344,13 +344,13 @@ archfit autopilot --root . -o -      # stream the draft to stdout
 It is **off-gate and review-only**: the draft lands in a separate file
 (`.archfit-autopilot.yaml` by default) and autopilot **refuses** to write
 `.archfit.yaml` directly (exit 3). Review the draft, then move approved fields
-into the live config deliberately. Needs `tools.llm` configured (provider +
+into the live config deliberately. Needs `ai:` configured (provider +
 model) and the provider's API key — see [LLM enrichment](llm-enrich.md).
 
 Flags:
 
 - `--root` / `-r` — project root (default: `.`).
-- `--config` / `-c` — existing config to read `tools.llm` from (default:
+- `--config` / `-c` — existing config to read `ai:` from (default:
   `.archfit.yaml`).
 - `--output` / `-o` — draft output file; `-` for stdout. Never `.archfit.yaml`.
 - `--llm-provider`, `--llm-model`, `--no-cache` — same as `init --llm`.

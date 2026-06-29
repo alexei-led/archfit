@@ -81,8 +81,8 @@ func insertionPoint(pf parsedFile) int {
 	switch {
 	case pf.layersKeyLine > 0:
 		return pf.layersEndLine
-	case pf.toolsKeyLine > 0:
-		return pf.toolsEndLine
+	case pf.analysisKeyLine > 0:
+		return pf.analysisEndLine
 	case pf.rulesKeyLine > 0:
 		return pf.rulesKeyLine
 	default:

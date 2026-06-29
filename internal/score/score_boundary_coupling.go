@@ -291,9 +291,9 @@ func (e bcEdge) worstCase() bool {
 
 // bcEdges extracts the active Balanced-Coupling advisory edges from the findings,
 // parsing the strength/distance/volatility/score fields the engine stamped into
-// MatchedBy. Only active advisories (status new or expired_exception) count —
+// MatchedBy. Only active advisories (status new or expired_waiver) count —
 // the same filter activeGateFindings and the gate verdict use. Baseline-accepted
-// and excepted edges are operator-suppressed debt; counting them would deflate
+// and waived edges are operator-suppressed debt; counting them would deflate
 // coupling_balance for a repo that has triaged its coupling, diverging from the
 // gate's own view. Fixed (resolved) advisories are skipped too.
 func bcEdges(fs []finding.Finding) []bcEdge {
@@ -323,7 +323,7 @@ func bcEdges(fs []finding.Finding) []bcEdge {
 }
 
 // activeGateFindings returns gate findings that still count against the verdict
-// (status new or expired_exception), sorted by ID for deterministic sampling.
+// (status new or expired_waiver), sorted by ID for deterministic sampling.
 func activeGateFindings(fs []finding.Finding) []finding.Finding {
 	var out []finding.Finding
 	for _, f := range fs {
@@ -336,10 +336,10 @@ func activeGateFindings(fs []finding.Finding) []finding.Finding {
 }
 
 // IsActiveGateFinding reports whether f is an active gate finding — one that
-// counts against the verdict (status new or expired_exception). Shared with
+// counts against the verdict (status new or expired_waiver). Shared with
 // internal/decision so the recommendation buckets match the gate verdict.
 func IsActiveGateFinding(f finding.Finding) bool {
-	return f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept
+	return f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver
 }
 
 // effortFromSeverity approximates a 0-10 maintenance-effort score for a BC edge

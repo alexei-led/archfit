@@ -23,7 +23,7 @@ import (
 // commented suggestions (plan mode).
 type AutopilotCmd struct {
 	Root        string `short:"r" help:"Project root directory." default:"."`
-	Config      string `short:"c" help:"Existing config to read tools.llm from (optional)." default:".archfit.yaml"`
+	Config      string `short:"c" help:"Existing config to read ai from (optional)." default:".archfit.yaml"`
 	Output      string `short:"o" help:"Draft output file (review-only; use '-' for stdout). Never .archfit.yaml." default:".archfit-autopilot.yaml"`
 	LLMProvider string `name:"llm-provider" help:"LLM provider override (anthropic|openai|ollama)." default:"anthropic"`
 	LLMModel    string `name:"llm-model"    help:"LLM model override."                              default:"claude-opus-4-8"`
@@ -54,7 +54,7 @@ func (c *AutopilotCmd) Run(deps *appDeps) error {
 		return fmt.Errorf("discovering project structure: %w", err)
 	}
 
-	// LLM config: existing tools.llm (best-effort) overridden by flags.
+	// LLM config: existing ai (best-effort) overridden by flags.
 	var llmCfg config.LLMConfig
 	if existingCfg, cfgErr := config.Load(ctx, c.Config); cfgErr == nil {
 		if lc, ok := existingCfg.LLM(); ok {

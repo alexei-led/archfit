@@ -56,7 +56,7 @@ change-propagating — the coupling. Four levels, strongest to weakest
 | Level        | Ordinal | Meaning                                                                                           | `archfit` signal                                                              |
 | ------------ | ------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `intrusive`  | 10      | Depends on private interfaces / implementation details not meant to be shared.                    | `internal:` globs, Go `internal/`, `_private.py`, SCIP "private" symbol kind. |
-| `symmetric`  | 9       | Duplicated functionality — both sides must change together (DRY violation across a boundary).     | Cross-module clone pair detected by the clone detector (`tools.clones`).      |
+| `symmetric`  | 9       | Duplicated functionality — both sides must change together (DRY violation across a boundary).     | Cross-module clone pair detected by the clone detector (`analyzers.clones`).  |
 | `functional` | 8       | Shares knowledge of business requirements; the two must change together when requirements change. | Config-declared or SCIP function/method-level reference.                      |
 | `model`      | 3       | Shares a domain model / schema that must be updated in both when the model changes.               | Shared exported type, SCIP concrete-class symbol kind.                        |
 | `contract`   | 1       | Integrates through an explicit, intention-revealing contract that hides implementation.           | `public:` globs, SCIP Protocol/ABC/interface symbol kind.                     |
@@ -140,8 +140,8 @@ with no book anchor:
 | `low`               | 3           | supporting / generic subdomain             |
 | `frozen` / `legacy` | 1           | legacy system that is not being evolved    |
 
-A module that resolves but declares neither `volatility:` nor `subdomain:` (and
-matches no path heuristic) is treated as **undeclared → V=10** — a conservative
+A module that resolves but declares neither `volatility:` nor `subdomain:` is
+treated as **undeclared → V=10** (no path/name guessing) — a conservative
 worst case that is also archfit-defined, not a book ordinal. The scorer then
 advises you to _declare_ the module's volatility rather than silently assuming it
 is stable.
@@ -152,7 +152,7 @@ volatility and only for report-only metrics — it never overrides a human decla
 and never drives the coupling-balance gate.
 
 **Inferred-volatility cascade (opt-in, book Ch9):** when
-`volatility_cascade_enabled: true` is set in `.archfit.yaml`, a single-hop
+`coupling.volatility_cascade: true` is set in `.archfit.yaml`, a single-hop
 propagation pass runs before scoring. If a module is strongly coupled
 (`functional` or `intrusive`) to a `core` module, its effective volatility
 is raised to `high` for scoring purposes. This lets archfit surface coupling

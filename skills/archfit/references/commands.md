@@ -73,7 +73,7 @@ Prefer stdout or a temp path while reviewing. SARIF, Markdown reports,
 - `--json` / `--markdown` / `--sarif` — shorthands for `--format json/markdown/sarif`
   (mutually exclusive with each other and with `--format`).
 - `--llm` — append an off-gate LLM advisory narrative after the deterministic
-  output (needs `tools.llm` configured).
+  output (needs `ai:` configured in `.archfit.yaml`).
 - `--require-tools` — opt-in hard gate: exit `1` if any required analyzer tool
   is missing.
 - `--advisory` — include informational Balanced Coupling advisories in output
@@ -94,9 +94,10 @@ absence leaves unmeasured, and an install hint. Gaps surface everywhere:
 `## Coverage gaps` (md), `## Required tools missing` (scorecard),
 `coverage_gaps[]` + `config_warnings[]` (json), and stderr.
 
-Default is warn-loud (exit 0). `--require-tools` or `tools.<x>.gate: fail` makes
-it block (exit 1, a policy decision distinct from exit 3). Tell users to install
-the tool to close the gap, not to disable the gate.
+Default is warn-loud (exit 0). `--require-tools` or `languages.<x>.gate: fail` /
+`analyzers.<x>.gate: fail` makes it block (exit 1, a policy decision distinct
+from exit 3). Tell users to install the tool to close the gap, not to disable
+the gate.
 
 ## Output formats
 
@@ -113,14 +114,14 @@ the tool to close the gap, not to disable the gate.
 - `new` — active finding, not in the baseline.
 - `baseline` — accepted finding already recorded; not an error.
 - `fixed` — previously baselined finding no longer detected.
-- `excepted` — active finding covered by an unexpired exception.
-- `expired_exception` — active finding whose exception lapsed (gates again).
+- `waived` — active finding covered by an unexpired waiver.
+- `expired_waiver` — active finding whose waiver lapsed (gates again).
 
 ## Exit codes
 
 - `0` — pass.
 - `1` — fail: an active gate finding, **or** a missing required tool under
-  `--require-tools` / `tools.<x>.gate: fail` (a policy violation). Requires
+  `--require-tools` / `analyzers.<x>.gate: fail` (a policy violation). Requires
   `--gate` (or `--require-tools`) to trigger.
 - `2` — warn.
 - `3` — usage, config, or runtime error (includes malformed labels or missing

@@ -543,21 +543,24 @@ func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map
 	return maxDistance(codeStructureDistance(fromMod, toMod, lang), deploy), coupling.DistanceBasisStructure
 }
 
-// classifyVolatility derives domain volatility for the to-module using three
-// sources in priority order, per Khononov's volatility-from-subdomain mapping
-// (core→high, supporting→low, generic→low) with an explicit per-module
-// override:
+// classifyVolatility derives domain volatility for the to-module from declared
+// metadata only, per Khononov's volatility-from-subdomain mapping (core→high,
+// supporting→low, generic→low) with an explicit per-module override:
 //
 //  1. Explicit `volatility` field on the module definition (hand-authored override).
-//  2. Subdomain heuristic: core→high, supporting→medium, generic→low.
-//  3. Path-pattern heuristic (domainVolatilityFromPath) — deterministic,
-//     never guesses core/high.
+//  2. Subdomain mapping: core→high, supporting→low, generic→low.
+//
+// There is NO path/name guessing: archfit does not infer volatility from a
+// directory name (a fragile, surprising heuristic). A module that declares
+// neither is reported as VolatilityUndeclared so the result is honest and the
+// user is nudged to declare it.
 //
 // Resolution outcomes are deliberately three-valued:
 //   - to-module unresolved → VolatilityUnknown (genuinely indeterminate).
-//   - to-module resolved but no volatility/subdomain/path match → VolatilityUndeclared
-//     (a config gap the user can close; the scorer advises "declare", not "lower").
-//   - otherwise → high/medium/low.
+//   - to-module resolved but neither volatility nor subdomain declared →
+//     VolatilityUndeclared (a config gap; the scorer advises "declare", not "lower",
+//     and Lint() surfaces it).
+//   - otherwise → high/medium/low/frozen.
 //
 // No churn or git history is consulted here. Implementation volatility (git
 // churn) feeds only report-only metrics (change_amplification, hidden_coupling).
@@ -581,7 +584,7 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 		return coupling.VolatilityFrozen
 	}
 
-	// Priority 2: subdomain heuristic.
+	// Priority 2: subdomain mapping.
 	switch strings.ToLower(def.Subdomain) {
 	case subdomainCore:
 		return coupling.VolatilityHigh
@@ -591,19 +594,13 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 		return coupling.VolatilityLow
 	}
 
-	// Priority 3: path-pattern heuristic (never guesses core/high).
-	if v := domainVolatilityFromPath(toPath); v != coupling.VolatilityUnknown {
-		return v
-	}
-
-	// Module is known, but nothing declares its volatility — a closable config gap.
+	// Nothing declared — a closable config gap, reported honestly (no guessing).
 	return coupling.VolatilityUndeclared
 }
 
 // isGenericSubdomain reports whether the to-module is classified as a generic
-// subdomain. Returns true when the module definition's Subdomain is "generic",
-// or when the subdomain is absent but the path-pattern heuristic resolves to
-// VolatilityLow (generic-indicator paths such as vendor/, lib/, util/).
+// subdomain — true only when the module explicitly declares `subdomain: generic`.
+// (No path/name guessing: archfit does not infer "generic" from a directory name.)
 //
 // This is used to trigger the contract-recommended advisory when a generic
 // target is reached via non-contract strength (BC's anti-corruption-layer guidance).
@@ -612,15 +609,7 @@ func isGenericSubdomain(toPath string, mi moduleIndex, modules map[string]config
 	if !ok {
 		return false
 	}
-	def := modules[toMod]
-	if strings.ToLower(def.Subdomain) == subdomainGeneric {
-		return true
-	}
-	// Treat heuristic-generic paths the same way when no explicit subdomain is set.
-	if def.Subdomain == "" && domainVolatilityFromPath(toPath) == coupling.VolatilityLow {
-		return true
-	}
-	return false
+	return strings.ToLower(modules[toMod].Subdomain) == subdomainGeneric
 }
 
 // computeEffectiveVolatility computes per-module effective volatility after a
@@ -717,14 +706,7 @@ func classifyVolatilityEffective(toPath string, mi moduleIndex, modules map[stri
 	}
 	if effectiveVol != nil {
 		if v, found := effectiveVol[toMod]; found {
-			// Undeclared: fall through to the path heuristic (same as classifyVolatility priority 3).
-			if v != coupling.VolatilityUndeclared {
-				return v
-			}
-			if pv := domainVolatilityFromPath(toPath); pv != coupling.VolatilityUnknown {
-				return pv
-			}
-			return coupling.VolatilityUndeclared
+			return v
 		}
 	}
 	return classifyVolatility(toPath, mi, modules)

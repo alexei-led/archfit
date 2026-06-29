@@ -73,7 +73,7 @@ type Rec struct {
 
 // Recommendations groups findings by urgency tier.
 type Recommendations struct {
-	// MustFix: active gate findings (new or expired_exception), grouped by RuleID.
+	// MustFix: active gate findings (new or expired_waiver), grouped by RuleID.
 	MustFix []Rec
 	// ShouldFix: advisory findings with critical or high severity, grouped by RuleID.
 	ShouldFix []Rec

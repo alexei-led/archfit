@@ -36,7 +36,7 @@
     "scored": 1,
     "total": 1
   },
-  "config_hash": "567356243611691816a2dd1f07fa277c5026d92e1e07b22534c3c95d96dca9d9",
+  "config_hash": "b6262e74e6777834a6574d9816c8f43f170df0e957fc00ce79493f985ee7c8f7",
   "coverage_gaps": [
     {
       "affected_metrics": [
@@ -402,8 +402,8 @@
   ],
   "schema_version": "archfit.diagnostic.v2",
   "summary": {
-    "exceptions_used": 0,
     "gate_findings": 1,
+    "waivers_used": 0,
     "warnings": 1
   },
   "tool_coverage": [
@@ -450,7 +450,7 @@
     {
       "files_applicable": 0,
       "files_seen": 0,
-      "reason": "complexity is opt-in — set `tools.complexity.enabled: true` in .archfit.yaml",
+      "reason": "complexity is opt-in — set `analyzers.complexity.enabled: true` in .archfit.yaml",
       "status": "absent",
       "tool": "lizard",
       "unresolved": 0,
@@ -459,7 +459,7 @@
     {
       "files_applicable": 0,
       "files_seen": 0,
-      "reason": "clone detection disabled by config — set `tools.clones.enabled: on` in .archfit.yaml to enable",
+      "reason": "clone detection disabled by config — set `analyzers.clones.enabled: true` in .archfit.yaml to enable",
       "status": "disabled",
       "tool": "jscpd",
       "unresolved": 0,
@@ -468,7 +468,7 @@
     {
       "files_applicable": 0,
       "files_seen": 0,
-      "reason": "opt-in: tools.scip.enabled",
+      "reason": "opt-in: analyzers.scip.enabled",
       "status": "disabled",
       "tool": "scip",
       "unresolved": 0,
@@ -477,7 +477,7 @@
     {
       "files_applicable": 0,
       "files_seen": 0,
-      "reason": "opt-in: tools.syntax.enabled",
+      "reason": "opt-in: analyzers.syntax.enabled",
       "status": "disabled",
       "tool": "ast-grep/syntax",
       "unresolved": 0,

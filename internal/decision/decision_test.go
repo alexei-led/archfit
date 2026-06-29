@@ -320,15 +320,15 @@ func TestBuild_Recommendations_MustFix(t *testing.T) {
 	diag := makeDiag(diagnostic.VerdictFail, 2, 0)
 	diag.Findings = []finding.Finding{
 		gateFinding("forbidden_dep", finding.StatusNew),
-		gateFinding("layer_violation", finding.StatusExpiredExcept),
-		gateFinding("already_fixed", finding.StatusFixed),    // must NOT appear
-		gateFinding("excepted_rule", finding.StatusExcepted), // must NOT appear
+		gateFinding("layer_violation", finding.StatusExpiredWaiver),
+		gateFinding("already_fixed", finding.StatusFixed),  // must NOT appear
+		gateFinding("excepted_rule", finding.StatusWaived), // must NOT appear
 	}
 	sc := makeScorecard(30, healthyDims())
 	r := decision.Build(diag, sc, nil, false)
 
 	if len(r.Recommendations.MustFix) != 2 {
-		t.Errorf("MustFix: want 2 (new+expired_exception), got %d", len(r.Recommendations.MustFix))
+		t.Errorf("MustFix: want 2 (new+expired_waiver), got %d", len(r.Recommendations.MustFix))
 	}
 	ruleIDs := make(map[string]bool)
 	for _, rec := range r.Recommendations.MustFix {

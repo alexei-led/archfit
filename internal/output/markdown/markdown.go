@@ -68,7 +68,7 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 	b.WriteString("\n## Summary\n\n")
 	fmt.Fprintf(&b, "- gate findings: %d\n", d.Summary.GateFindings)
 	fmt.Fprintf(&b, "- warnings: %d\n", d.Summary.Warnings)
-	fmt.Fprintf(&b, "- exceptions used: %d\n", d.Summary.ExceptionsUsed)
+	fmt.Fprintf(&b, "- waivers used: %d\n", d.Summary.WaiversUsed)
 
 	writeDelta(&b, d)
 

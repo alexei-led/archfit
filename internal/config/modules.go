@@ -63,8 +63,10 @@ type RuleDef struct {
 	Patterns      []PatternDef `yaml:"patterns,omitempty"`
 }
 
-// ExceptionDef grants a temporary exception to a rule.
-type ExceptionDef struct {
+// WaiverDef grants an approved, time-boxed deviation from a rule (`waivers:`).
+// A finding matching a waiver is suppressed until `expires` passes, after which
+// it gates again. reason/approved_by record the governance trail.
+type WaiverDef struct {
 	Rule       string `yaml:"rule"`
 	From       string `yaml:"from"`
 	To         string `yaml:"to"`

@@ -10,42 +10,45 @@ archfit init --root . --output .archfit.yaml
 archfit analyze --config .archfit.yaml --full
 ```
 
-## Top-level fields
+## Top-level layout
 
-- `version` — required positive integer. Current schema version is `1`.
-- `bc_advisory_min_severity` — minimum Balanced Coupling advisory severity to
-  show: `low`, `medium`, `high`, or `critical`. Default is `medium` when no
-  config exists.
-- `python_package` — Python top-level package passed to the Python extractor.
-- `tools` — language adapter modes.
-- `layers` — ordered architecture layers, inner to outer.
-- `modules` — path ownership map.
-- `rules` — executable architecture constraints.
-- `exclusions` — repo-relative globs to skip during extraction.
-- `exceptions` — temporary accepted rule findings.
-- `metrics` — metric policy settings.
-- `map_review` — architecture map staleness advisories.
-- `outputs` — parsed output preferences. CLI `--format` is the current output
-  selector.
+```
+version         — required; must be 1
+exclude         — path globs to skip during scanning
+languages       — per-language extractor settings (go/typescript/python/rust)
+analyzers       — opt-in deeper analysis backends (syntax/scip/complexity/clones/cargo_modules)
+ai              — off-gate LLM provider for enrich/explain/analyze --llm
+coupling        — Balanced-Coupling advisory tuning
+layers          — ordered architecture layers, inner to outer
+modules         — path ownership map
+rules           — executable architecture constraints
+waivers         — approved temporary deviations from rules
+metrics         — metric policy settings
+module_review   — staleness gating of the module declarations
+file_class      — file-class override patterns
+outputs         — output format preferences
+```
 
 ## Complete small example
 
 ```yaml
 version: 1
-bc_advisory_min_severity: medium
-python_package: myapp
 
-exclusions:
+exclude:
   - "**/generated/**"
   - "**/*.pb.go"
 
-tools:
+languages:
   go:
     enabled: auto
   typescript:
-    enabled: off
+    enabled: false
   python:
-    enabled: on
+    enabled: true
+    package: myapp
+
+coupling:
+  min_severity: medium
 
 layers:
   - domain
@@ -74,7 +77,6 @@ modules:
       - internal/http
     layer: adapter
     subdomain: supporting
-    volatility: medium
     owner: team-platform
     deploy_unit: api
 
@@ -91,7 +93,7 @@ rules:
     type: public_api_only
     gate: fail
 
-exceptions:
+waivers:
   - rule: domain_no_http
     from: internal/domain/legacy/**
     to: internal/http
@@ -99,7 +101,7 @@ exceptions:
     approved_by: "@lead"
     expires: "2026-12-01"
 
-map_review:
+module_review:
   stale_after: 2160h
   gate: warn
 
@@ -119,66 +121,173 @@ outputs:
   sarif: false
 ```
 
-## `tools`
+## `exclude`
 
-Use one key per supported language:
+`exclude` is a list of repo-relative globs skipped during extraction:
 
 ```yaml
-tools:
-  go:
-    enabled: auto
-  typescript:
-    enabled: auto
-  python:
-    enabled: auto
+exclude:
+  - "**/generated/**"
+  - "**/*.pb.go"
 ```
 
-`enabled` accepts `auto`, `on`, `off`, `true`, or `false`.
+archfit also ships a built-in default exclusion set — tool-artifact, cache,
+dependency directories, and test fixtures it never analyses, because measuring them
+yields non-deterministic or irrelevant facts (a vendored tree's complexity, a
+generated index, a report written back into the scanned repo, or a fixture repo
+inside `testdata/` distorting coverage signals):
 
-- `auto` — use the adapter when project markers and tools are found.
-- `on` — require the adapter; missing markers or tools are errors.
-- `off` — skip the adapter.
-- `true` means `on`; `false` means `off`.
+```text
+.archfit-cache/  .archfit-baseline.json  .gitnexus/  .codegraph/  reports/
+.venv/  node_modules/  vendor/  dist/  build/  **/testdata/**
+```
+
+`**/testdata/**` is excluded by default because test fixture repos are not
+production architecture: analysing them creates false coverage gaps and phantom
+language detections. Re-include intentionally with `!testdata` or
+`!**/testdata/**` in your `exclude` list.
+
+The built-ins are **merged with** your config `exclude`, not replaced. To
+re-include one of them, prefix it with `!`:
+
+```yaml
+exclude:
+  - "!reports" # analyse reports/ despite the default
+```
+
+archfit also warns (a config warning + stderr line) when an output/report path
+resolves **inside** the analyzed root — write reports outside `--root`, or exclude
+their directory, to keep scans deterministic.
+
+## `languages`
+
+Per-language extractor settings. Each language has `enabled` and `gate`; some
+have extra fields.
+
+`enabled` accepts three values only — `true`, `false`, or `auto`. The legacy
+string spellings `"on"` and `"off"` are a **hard error** in this schema.
+
+- `true` — require the adapter; missing project markers or tools are errors.
+- `false` — skip the adapter entirely.
+- `auto` — use the adapter when project markers and tools are found (default).
+
+Use `auto` for mixed repos while calibrating. Use `true` in CI when a language
+must be analyzed.
+
+### `languages.go`
+
+```yaml
+languages:
+  go:
+    enabled: auto   # true | false | auto
+    gate: warn      # off | warn (default) | fail
+    modules:
+      include: []   # ScanRoot-relative globs; empty = all in-scope members
+      exclude: []   # drop members matching these (applied after include)
+```
+
+`gate` controls the CI posture when the Go extractor is absent. `warn` (default)
+surfaces the gap but exits 0. `fail` makes CI exit 1 on a missing extractor.
+
+`languages.go.modules` restricts Go workspace analysis to a subset of `go.work`
+members. Useful when the workspace has many members (hundreds) and you want a fast
+focused run, or when the workspace root run times out:
+
+```yaml
+languages:
+  go:
+    enabled: true
+    modules:
+      include:
+        - server/shared/** # keep only members whose RelDir matches
+        - server/auth/**
+      exclude:
+        - "**/testdata/**" # drop members matching these after include
+```
+
+When the resulting member set is empty the Go extractor reports `absent`.
+
+**Scale note:** a full `NeedTypesInfo` load of 100+ members takes 1–2 minutes
+wall-clock on a warm build cache. Use `languages.go.modules` to scope the load;
+also set a timeout (see [analyzers timeouts](#analyzersxtimeout)) as a watchdog
+for pathological cases.
+
+### `languages.typescript`
+
+```yaml
+languages:
+  typescript:
+    enabled: auto
+    gate: warn
+```
+
+### `languages.python`
+
+```yaml
+languages:
+  python:
+    enabled: auto
+    gate: warn
+    package: myapp   # top-level Python package; required when it differs from the repo name or uses src/ layout
+```
+
+`package` replaces the old top-level `python_package` key.
+
+### `languages.rust`
+
+```yaml
+languages:
+  rust:
+    enabled: auto
+    gate: warn
+    manifest: ""             # path to a non-root Cargo.toml; empty = auto (root manifest)
+    features: []             # cargo features to activate for the metadata run
+    include_dev_deps: false  # include dev-dependencies as crate edges
+```
 
 See [Language support](languages.md) for per-language setup and
 [Tooling reference](tooling.md) for platform-specific install commands, versions,
 home pages, and PATH checks.
 
-### Opt-in analysis tools
+## `analyzers`
 
-Three additional tools are **off by default** and feed the report-only metrics. They
-are opt-in because they are slower and/or need extra binaries:
+Opt-in deeper analysis backends. They produce extra facts; gates live in `rules:`.
+
+Each analyzer has `enabled` and `gate`; timed analyzers add `timeout` (a Go
+duration string, e.g. `"5m"`). On timeout the result is dropped cleanly and
+dependent metrics report `n/a (timed out)` — the run continues.
 
 ```yaml
-tools:
+analyzers:
+  syntax:
+    enabled: auto      # structural declaration facts (ast-grep)
   scip:
-    enabled: on # symbol-level analysis (SCIP indexers + uv); powers risk_hub
+    enabled: auto      # symbol-level strength (SCIP indexers)
+    timeout: 10m
+  complexity:
+    enabled: auto      # cyclomatic complexity (gocyclo / lizard)
+    timeout: 3m
+    backend: auto      # auto | lizard
   clones:
-    enabled: on # clone detection (jscpd); powers functional_candidates
+    enabled: auto      # clone detection (jscpd)
+    timeout: 5m
+  cargo_modules:
+    enabled: auto      # Rust intra-crate module graph
 ```
 
-- `scip` — runs a SCIP indexer (`scip-go`/`scip-python`/`scip-typescript`) plus `uv`
-  to build the symbol graph. Required for `risk_hub`; without it `risk_hub` is `n/a`.
-- `clones` — runs `jscpd` to find duplicated logic. Required for
-  `functional_candidates`; without it that metric is `n/a`.
+### `analyzers.syntax`
 
-`scip` and `clones` are opt-in: each enables only with `on`.
-`auto`, `off`, or absent all disable it, and the dependent metric then reports
-`n/a` without ever failing the run.
+Runs the ast-grep adapter to extract declaration-level facts for Go, TypeScript,
+Python, and Rust. Unlike the dependency extractors, which answer _who imports
+whom_, `analyzers.syntax` answers _what declarations exist_ — exported names,
+kinds, framework routes, and architectural roles.
 
-### `tools.syntax` (syntax-facts provider)
-
-`tools.syntax` runs the ast-grep adapter to extract declaration-level facts for
-Go, TypeScript, Python, and Rust. Unlike the dependency extractors, which answer
-_who imports whom_, `tools.syntax` answers _what declarations exist_ — exported
-names, kinds, framework routes, and architectural roles.
-
-Opt-in only: `auto` and `off` (and absent) all disable it. Enable with `on`:
+Enable with `true`:
 
 ```yaml
-tools:
+analyzers:
   syntax:
-    enabled: on
+    enabled: true
 ```
 
 **What it does:**
@@ -199,83 +308,70 @@ tools:
 **Supported languages:** Go, TypeScript, Python, Rust. Requires `sg` (ast-grep)
 on PATH; `archfit doctor` checks it.
 
-**No new binary dependency:** `sg` is already required for ast-grep pattern rules
-and is bundled in the runtime image. No CGO; the static binary is unchanged.
-
-### `tools.go.modules`
-
-Restricts Go workspace analysis to a subset of `go.work` members. Useful when the
-workspace has many members (hundreds) and you want a fast focused run, or when the
-workspace root run times out.
+### `analyzers.scip` and `analyzers.clones`
 
 ```yaml
-tools:
-  go:
-    enabled: on
-    modules:
-      include:
-        - server/shared/** # keep only members whose RelDir matches
-        - server/auth/**
-      exclude:
-        - "**/testdata/**" # drop members matching these after include
-```
-
-- `include` — list of ScanRoot-relative globs; only members whose `RelDir` (the
-  path from ScanRoot to the member's directory) matches at least one glob are
-  loaded. Empty or absent means all in-scope members.
-- `exclude` — list of ScanRoot-relative globs; members matching any glob are
-  dropped (applied after `include`).
-
-When the resulting member set is empty, the Go extractor reports `absent`. The
-default (both absent) loads all members that survive the top-level `exclusions`
-filter.
-
-**Scale note:** a full `NeedTypesInfo` load of 100+ members takes 1–2 minutes
-wall-clock on a warm build cache. Use `tools.go.modules` to scope the load; also
-set a `timeout` (see below) as a watchdog for pathological cases.
-
-### `tools.<x>.timeout`
-
-Per-analyzer watchdog timeout for subprocess analyzers: `scip`, `clones`
-(jscpd), and `complexity` (gocyclo/lizard). When the subprocess exceeds the
-timeout, the result is dropped cleanly and the dependent metrics report
-`n/a (timed out)` — the run continues and exits on the verdict from the remaining
-analyzers.
-
-```yaml
-tools:
+analyzers:
   scip:
-    enabled: on
-    timeout: 10m # Go duration string; e.g. "5m", "10m30s"
+    enabled: true      # symbol-level analysis; powers risk_hub
+    timeout: 10m
   clones:
-    enabled: on
+    enabled: true      # clone detection (jscpd); powers functional_candidates
     timeout: 5m
-  complexity:
-    enabled: on
-    timeout: 3m
 ```
 
-Zero or absent means the built-in package default (`scip`: 20 minutes, `clones`:
-5 minutes, `complexity`: 5 minutes). Set an explicit timeout when a generated or
-very large file causes a hang.
+- `scip` — runs a SCIP indexer (`scip-go`/`scip-python`/`scip-typescript`) plus
+  `uv` to build the symbol graph. Required for `risk_hub`; without it `risk_hub`
+  is `n/a`. Also upgrades edge strength for TypeScript/Python/Rust.
+- `clones` — runs `jscpd` to find duplicated logic. Required for
+  `functional_candidates`; without it that metric is `n/a`.
 
-### `tools.<x>.gate` (coverage gate)
+`scip` and `clones` are opt-in: `auto` and `false` (and absent) all disable them;
+the dependent metric then reports `n/a` without ever failing the run.
 
-When an analyzer is **absent** (tool not installed or not found), its metrics drop
-to `n/a` and a coverage gap is reported with an install hint
-(see [commands](commands.md#coverage-gaps-and-required-tools)). By default this is
-**warn-loud** — surfaced, but exit 0. Set a per-tool `gate` to make CI block on
-the missing tool:
-
-When an analyzer is **disabled by config** (`enabled: off`), it is simply skipped
-— no coverage gap is emitted and no install prompt is shown. Disabled-by-config
-is distinct from absent: a tool you deliberately turned off should not appear as
-a gap to resolve.
+### `analyzers.complexity`
 
 ```yaml
-tools:
+analyzers:
+  complexity:
+    enabled: true
+    timeout: 3m
+    backend: auto   # auto | lizard
+```
+
+`backend: auto` (default) = gocyclo for exact Go CCN + an ast-grep
+decision-point proxy for TS/Py/Rust. `backend: lizard` opts into exact
+per-function CCN for all languages. When neither gocyclo nor `sg` is installed,
+complexity reports `n/a` with an explicit install hint.
+
+### `analyzers.cargo_modules`
+
+```yaml
+analyzers:
+  cargo_modules:
+    enabled: true
+```
+
+Runs `cargo-modules` to emit `<crate>::<mod>` nodes and aggregated `uses` edges,
+providing intra-crate module depth for Rust repos.
+
+### `analyzers.<x>.gate` (coverage gate)
+
+When an analyzer is **absent** (tool not installed or not found), its metrics
+drop to `n/a` and a coverage gap is reported with an install hint
+(see [commands](commands.md#coverage-gaps-and-required-tools)). By default this is
+**warn-loud** — surfaced, but exit 0. Set a per-analyzer `gate` to make CI block
+on the missing tool:
+
+When an analyzer is **disabled by config** (`enabled: false`), it is simply
+skipped — no coverage gap is emitted and no install prompt is shown.
+Disabled-by-config is distinct from absent: a tool you deliberately turned off
+should not appear as a gap to resolve.
+
+```yaml
+languages:
   go:
-    enabled: on
+    enabled: true
     gate: fail # block CI when the go/packages analyzer is missing
   python:
     enabled: auto
@@ -283,11 +379,72 @@ tools:
 ```
 
 `gate` accepts `off`, `warn` (default), or `fail`. A `fail` gate exits `1` (a
-policy violation, distinct from exit `3` tool errors). The tool key governs the
-analyzer behind it: `go` → go/packages, `typescript` → dependency-cruiser,
-`python` → grimp, `complexity` → lizard, `clones` → jscpd.
-The `--require-tools` flag on `check`/`scan` is the run-level shortcut — it raises
-**every** gap to `fail` without editing config.
+policy violation, distinct from exit `3` tool errors). The `--require-tools` flag
+on `analyze` is the run-level shortcut — it raises **every** gap to `fail`
+without editing config.
+
+### `analyzers.<x>.timeout`
+
+Per-analyzer watchdog for subprocess analyzers: `analyzers.scip`,
+`analyzers.clones`, and `analyzers.complexity`. When the subprocess exceeds the
+timeout, the result is dropped cleanly and the dependent metrics report
+`n/a (timed out)` — the run continues and exits on the verdict from the remaining
+analyzers.
+
+```yaml
+analyzers:
+  scip:
+    enabled: true
+    timeout: 10m # Go duration string; e.g. "5m", "10m30s"
+  clones:
+    enabled: true
+    timeout: 5m
+  complexity:
+    enabled: true
+    timeout: 3m
+```
+
+Zero or absent means the built-in package default (`scip`: 20 minutes, `clones`:
+5 minutes, `complexity`: 5 minutes). Set an explicit timeout when a generated or
+very large file causes a hang.
+
+## `ai`
+
+Off-gate LLM provider configuration. Consumed only by `enrich`, `explain --llm`,
+`analyze --llm`, `init --llm`, and `autopilot` — never by the deterministic gate.
+
+```yaml
+ai:
+  provider: anthropic   # anthropic | openai | ollama
+  model: claude-opus-4-8
+  base_url: ""          # ollama only; default http://localhost:11434/v1
+```
+
+API keys come from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` env vars — never from
+config. archfit also best-effort loads a local `.env` (cwd) at startup, but only
+sets a key that is currently **unset** — real environment variables and CI secrets
+always win. Keep `.env` out of version control (it is gitignored by default). The
+LLM response cache lives at `.archfit-cache/llm/`.
+
+## `coupling`
+
+Balanced-Coupling advisory tuning.
+
+```yaml
+coupling:
+  min_severity: medium   # low | medium (default) | high | critical
+  volatility_cascade: false
+```
+
+- `min_severity` — minimum advisory severity to show: `low` (all cross-module
+  deps, noisy), `medium` (default, over-decoupled volatile seams and tight
+  cross-boundary coupling), `high` or `critical` (intrusive/functional coupling
+  across large boundaries only).
+- `volatility_cascade` — opt-in book Ch9 single-hop propagation: when `true`, a
+  module strongly coupled (`functional` or `intrusive` strength) to a `core`
+  module inherits raised effective volatility (`high`). Config-declared volatility
+  always takes precedence. Disabled by default; safe to enable once `subdomain`
+  fields are complete.
 
 ## `layers`
 
@@ -301,7 +458,7 @@ The `forbidden_layer_direction` rule treats dependencies from an earlier layer t
 a later layer as violations. With the example above, `domain -> adapter` is a
 violation, while `adapter -> domain` is allowed.
 
-### Worked example: closing a layer-direction gap (Cat 10)
+### Worked example: closing a layer-direction gap
 
 Repos like yazi (Rust) have clear architectural layers (`yazi-core`, `yazi-adapter`,
 `yazi-plugin`) but no declared `layers:` or `forbidden_layer_direction` rule in
@@ -332,13 +489,11 @@ rules:
 ```
 
 With this in place, any `yazi-core` → `yazi-adapter` import becomes a finding.
-Without the rule, archfit has no way to know the intent — `forbidden_layer_direction`
-fires only on _declared_ rules.
 
 **How to get there without authoring manually:** `archfit enrich` can propose a
 layer structure and `forbidden_layer_direction` rules from the module graph; draft
 the output, review, then move approved entries into `.archfit.yaml`. See
-[LLM enrichment](llm-enrich.md).
+[llm-enrich.md](llm-enrich.md).
 
 ## `modules`
 
@@ -365,24 +520,92 @@ Fields:
 - `internal` — private surface. Matching targets are classified as intrusive
   coupling or internal API access when the extractor emits that edge kind.
 - `layer` — one of the names from `layers`.
-- `subdomain` — `core`, `supporting`, or `generic`. Controls the volatility
-  ordinal used by the book scorer: `core`→10, `supporting`/`generic`→3.
-- `volatility` — optional explicit override: `high` (=10), `medium` (=6), or
-  `low` (=3). Overrides the subdomain-derived value. Use `subdomain` unless you
-  need a different number than the DDD default.
+- `subdomain` — DDD subdomain classification: `core`, `supporting`, or `generic`.
+  Determines the volatility ordinal when no explicit `volatility` is set.
+- `volatility` — explicit override: `high` (=10), `medium` (=6), or `low` (=3).
+  Use `subdomain` unless you need a specific value that differs from the DDD default.
 - `owner` — team or person responsible for the module.
 - `deploy_unit` — deployable/runtime unit used for distance classification.
-- `role` — optional architectural role:
-  `composition_root`, `adapter`, `core`, `shared_model`, `generated`, or `test`.
-  See [module roles](#module-role) below.
+- `role` — optional architectural role. See [Module role vs layer](#module-role-vs-layer).
 - `reviewed_at` — date of last architecture-map review.
 - `reviewed_by` — reviewer identity.
 
-Balanced Coupling classification uses this metadata:
+### Module role vs layer
 
-- target `public` match -> `contract` strength;
-- target `internal` match -> `intrusive` strength;
-- `volatility` or `subdomain` -> target volatility.
+`layer` and `subdomain` are complementary — they capture different dimensions:
+
+- **`layer`** — topological position in the dependency DAG (domain, application,
+  adapter, …). Controls `forbidden_layer_direction` and `layer_role_divergence`.
+- **`subdomain`** — DDD subdomain classification (`core`, `supporting`, `generic`).
+  Controls the volatility ordinal used by the Balanced Coupling scorer.
+- **`role`** — optional architectural *function* within a layer. Lets archfit
+  adjust coupling scoring for modules that are _supposed_ to fan out.
+
+`role` refines Balanced-Coupling distance classification for modules that are
+legitimately wide. In a one-binary CLI, the `cmd` package wires every adapter
+together — that is composition-root cohesion, not high-distance coupling. Without
+a role, archfit scores those outbound edges as unbalanced and emits
+false-positive advisories.
+
+```yaml
+modules:
+  cli:
+    paths: [cmd/archfit/**]
+    role: composition_root
+```
+
+Accepted `role` values:
+
+- `composition_root` — wiring/entrypoint that legitimately depends on many
+  modules (e.g. `cmd`, `main`).
+- `generated` — generated code (its fan-out is mechanical, not designed).
+- `test` — test-support code.
+- `adapter`, `core`, `shared_model` — descriptive; reserved for future
+  refinement.
+
+For a `composition_root`, `generated`, or `test` source module, archfit
+downgrades its outbound cross-deploy / different-owner edges to
+cross-module-same-owner, so the advisory severity, the continuous score, and
+every distance-reading metric read cohesion. A `core -> core` unbalanced edge is
+**still** flagged, and inbound edges to a wiring module are unaffected.
+
+### Volatility and subdomain
+
+Volatility is **not** guessed from directory names. The old path-heuristic
+(`db/`, `infra/`, `lib/` → volatility) is removed. A module that declares neither
+`subdomain` nor `volatility` resolves to `"undeclared"` — archfit reports it and
+emits agent tasks asking for a declaration.
+
+Declare intent explicitly:
+
+```yaml
+modules:
+  domain:
+    subdomain: core        # → volatility ordinal high (10)
+  infra:
+    subdomain: supporting  # → volatility ordinal low (3)
+  utils:
+    subdomain: generic     # → volatility ordinal low (3)
+  config:
+    subdomain: supporting
+    volatility: medium     # explicit override; medium only via direct declaration
+```
+
+Methodology (Khononov book):
+- `core` → `high` volatility (ordinal 10)
+- `supporting` → `low` volatility (ordinal 3)
+- `generic` → `low` volatility (ordinal 3)
+
+`medium` volatility (ordinal 6) is only reachable via explicit `volatility: medium`.
+Declaring `subdomain: supporting` never implies medium — it implies low.
+
+### Distance classification
+
+Balanced Coupling classification uses module metadata:
+
+- target `public` match → `contract` strength;
+- target `internal` match → `intrusive` strength;
+- `volatility` or `subdomain` → target volatility.
 
 Distance is a **composite** of three signals, not a single-winner precedence chain:
 
@@ -412,42 +635,12 @@ A detected runtime async bridge is recorded as report-only evidence in the
 affect distance or score, and does not change the gate verdict.
 
 The `distance_basis` field on each advisory edge (`code_structure`, `ownership`,
-or `deploy_unit`) shows which signal drove the composite, so the result is auditable.
+or `deploy_unit`) shows which signal drove the composite, so the result is
+auditable.
 
 > **Small-OSS note:** a repo with one maintainer is not a flat distance space.
 > Code structure is the baseline and still distinguishes close vs far modules.
 > Ownership only contributes when there are genuinely distinct owners to compare.
-
-### Module role
-
-`role` refines Balanced-Coupling distance classification for modules that are
-_supposed_ to fan out. In a one-binary CLI, the `cmd` package wires every adapter
-together — that is composition-root cohesion, not high-distance coupling. Without
-a role, archfit scores those outbound edges as unbalanced and emits
-false-positive advisories.
-
-```yaml
-modules:
-  cli:
-    paths: [cmd/archfit/**]
-    role: composition_root
-```
-
-Accepted values:
-
-- `composition_root` — wiring/entrypoint that legitimately depends on many
-  modules (e.g. `cmd`, `main`).
-- `generated` — generated code (its fan-out is mechanical, not designed).
-- `test` — test-support code.
-- `adapter`, `core`, `shared_model` — descriptive; reserved for future
-  refinement.
-
-For a `composition_root`, `generated`, or `test` source module, archfit downgrades
-its outbound cross-deploy / different-owner edges to cross-module-same-owner, so
-the advisory severity, the continuous score, and every distance-reading metric
-read cohesion. A `core -> core` unbalanced edge is **still** flagged, and inbound
-edges to a wiring module are unaffected. `init --llm` and `autopilot` suggest a
-role per module; review before pinning.
 
 ## `rules`
 
@@ -462,72 +655,69 @@ rules:
     gate: fail
 ```
 
-Rule fields:
+### Rule field reference
 
-- `id` — stable ID used in findings, baselines, and exceptions.
-- `type` — built-in rule type. An unrecognised type is a config error.
-- `from` — optional source glob.
-- `to` — optional target glob.
-- `from_layer`, `to_layer` — layer names for `forbidden_layer_direction`.
-- `from_role`, `to_role` — role names for `forbidden_role_dependency`.
-- `min_confidence` — minimum role confidence to match (`high` by default;
-  set to `medium` to relax). Applies to `forbidden_role_dependency`.
-- `max` — integer ceiling for `public_api_max`.
-- `gate` — controls how the rule blocks the run:
-  - `fail` (or absent) — finding blocks CI; exit 1. **Exception:** `public_api_change` defaults to `warn` when `gate` is absent (see below).
-  - `warn` — finding is advisory; surfaced but exit 0.
-  - `off` — rule is skipped entirely; no findings emitted.
-- `patterns` — optional ast-grep patterns for structural evidence.
+| Field           | Applies to                                | Description                                                                                 |
+| --------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `id`            | all                                       | Stable ID used in findings, baselines, and waivers.                                         |
+| `type`          | all                                       | Built-in rule type (see below). Unknown type is a config error.                             |
+| `gate`          | all                                       | `fail` (or absent for most types), `warn`, or `off`. `public_api_change` defaults to `warn`.|
+| `from`          | most                                      | Source module or path glob.                                                                 |
+| `to`            | most                                      | Target module or path glob.                                                                 |
+| `from_layer`    | `forbidden_layer_direction`               | Source layer name.                                                                          |
+| `to_layer`      | `forbidden_layer_direction`               | Target layer name.                                                                          |
+| `from_role`     | `forbidden_role_dependency`               | Source architectural role (requires `analyzers.syntax`).                                    |
+| `to_role`       | `forbidden_role_dependency`               | Target architectural role (requires `analyzers.syntax`).                                    |
+| `min_confidence`| `forbidden_role_dependency`               | Minimum role confidence to match: `high` (default) or `medium`.                            |
+| `max`           | `public_api_max`, `struct_field_max`      | Integer ceiling.                                                                            |
+| `threshold`     | `layer_role_divergence`                   | Max tolerated rank delta (default 1).                                                       |
+| `patterns`      | structural rules                          | Optional ast-grep patterns for structural evidence.                                         |
 
-Built-in rule types:
+`gate` controls how the rule blocks the run:
 
-- `forbidden_dependency` — fires when `from` and `to` match an edge.
+- `fail` (or absent) — finding blocks CI; exit 1. **Exception:** `public_api_change`
+  defaults to `warn` when `gate` is absent.
+- `warn` — finding is advisory; surfaced but exit 0.
+- `off` — rule is skipped entirely; no findings emitted.
+
+`gate:` is wired for **all rule types**. An unknown `type` value is a config error.
+
+### Built-in rule types
+
+- `forbidden_dependency` — fires when an edge matches both `from` and `to` globs.
 - `public_api_only` — fires on internal-access edges, optionally filtered by
   `from` and `to`.
-- `internal_api_access` — same internal-access signal, with separate rule ID.
-- `forbidden_layer_direction` — fires when dependency direction violates the
+- `internal_api_access` — same internal-access signal, with a separate rule ID.
+- `forbidden_layer_direction` — fires when a dependency direction violates the
   ordered `layers` list.
 - `new_cross_module_dependency` — fires on cross-module edges. Baseline status
   separates known from new findings.
 - `cycle` — fires once per detected import cycle.
 - `forbidden_role_dependency` — fires when an edge goes from a node with
-  `from_role` to a node with `to_role` (requires `tools.syntax.enabled: on`).
+  `from_role` to a node with `to_role` (requires `analyzers.syntax.enabled: true`).
   Only matches edges where both roles are assigned at or above `min_confidence`
   (default `high`). Example: handlers must not call repositories directly.
 - `public_api_max` — fires when any module's exported declaration count exceeds
-  `max` (requires `tools.syntax.enabled: on`). Scoped per module using the
-  module path map. No baseline — static ceiling.
+  `max` (requires `analyzers.syntax.enabled: true`). Scoped per module. No baseline
+  — static ceiling.
 - `public_api_change` — emits one finding per exported declaration; baseline
-  suppresses known ones so only newly-added surface shows as `StatusNew`.
-  Defaults to `gate: warn` (advisory drift signal). Requires
-  `tools.syntax.enabled: on`.
+  suppresses known ones so only newly-added surface shows as `new`. Defaults to
+  `gate: warn`. Requires `analyzers.syntax.enabled: true`.
 - `struct_field_max` — fires when any module's struct definition has more fields
-  than `max` (Go and Rust; requires `tools.syntax.enabled: on`). Surfaces
-  god-struct candidates. `max` is required. Defaults to `gate: warn`.
+  than `max` (Go and Rust; requires `analyzers.syntax.enabled: true`). Surfaces
+  god-struct candidates. Defaults to `gate: warn`.
 - `public_api_type_leak` — fires when an exported struct field or function return
-  type names a type from an external (non-first-party) package (Go only;
-  requires `tools.syntax.enabled: on`). Flags API surface that couples callers to
-  a transitive dependency. Defaults to `gate: warn`. TypeScript and Rust type-leak
-  patterns require different grammar rules — extend in a future task.
+  type names a type from an external (non-first-party) package (Go only; requires
+  `analyzers.syntax.enabled: true`). Flags API surface that couples callers to a
+  transitive dependency. Defaults to `gate: warn`.
+- `layer_role_divergence` — fires when a module's observed topological rank (from
+  the import DAG) diverges from the rank implied by its declared `role`/`layer`
+  by more than `threshold` (default 1). Uses `gate: warn` by default.
 
-  **Struct field ceiling:** covers direct (`pkg.Type`) and pointer (`*pkg.Type`)
-  field types. Does not match slice (`[]pkg.Type`), map, generic (`pkg.Type[T]`), or
-  embedded (`pkg.Type` without a name) forms — these are structurally complex in the
-  Go tree-sitter grammar and represent a smaller share of real cases. The LLM/human
-  path covers the residue.
-
-  **Function return ceiling:** covers single-return, pointer-return, and the common
-  multi-result tuple (`(pkg.Type, error)`, `(*pkg.Type, error)`). Does not match
-  slice/map/generic returns inside a multi-result tuple. This is an accepted
-  ast-grep structural precision ceiling for a candidate-surfacer (bias toward false
-  positives, never false negatives).
-
-**Note:** When `tools.syntax.enabled` is not `on`, the rule types `forbidden_role_dependency`, `public_api_max`, `public_api_change`, `struct_field_max`, and `public_api_type_leak` emit zero findings silently — they are not errors.
-
-**`gate:` is now wired for all rule types.** Previously `gate:` was stored but
-not applied — that latent bug is fixed. Every rule respects `off`/`warn`/`fail`
-regardless of type. An unknown `type` value is now a config error (not silently
-ignored).
+**Note:** when `analyzers.syntax.enabled` is not `true`, the rule types
+`forbidden_role_dependency`, `public_api_max`, `public_api_change`,
+`struct_field_max`, and `public_api_type_leak` emit zero findings silently — they
+are not errors.
 
 Example syntax-facts rules:
 
@@ -563,12 +753,12 @@ rules:
     gate: warn
 ```
 
-## `exceptions`
+## `waivers`
 
-Exceptions accept a finding temporarily without deleting the rule.
+Waivers accept a finding temporarily without deleting the rule.
 
 ```yaml
-exceptions:
+waivers:
   - rule: no_domain_to_http
     from: internal/domain/legacy/**
     to: internal/http/**
@@ -582,11 +772,13 @@ Fields:
 - `rule` — rule ID.
 - `from` — source glob.
 - `to` — target glob.
-- `reason` — why the exception exists.
+- `reason` — why the waiver exists.
 - `approved_by` — reviewer or owner.
 - `expires` — expiry date.
 
-Expired exceptions are reported as `expired_exception`.
+Expired waivers are reported as `expired_waiver`. Active waivers show finding
+status `waived`. Waivers require a reason, approver, and expiry — they are
+deliberate human friction, not a quiet ignore list.
 
 ## `metrics`
 
@@ -607,23 +799,24 @@ Report-only metrics (band `info`; they never gate the verdict):
 - `change_amplification` — blast radius weighted by recent churn.
 - `hidden_coupling` — module pairs that co-change without a static import edge.
 - `structural_weight` — size-skew god-modules (LOC far above the median).
-- `complexity` — functions over a cyclomatic-complexity threshold (needs `lizard`).
+- `complexity` — functions over a cyclomatic-complexity threshold (needs
+  `analyzers.complexity.enabled: true`).
 - `risk_hub` — cross-module symbol surface-breadth × explicit config volatility.
-  Requires `tools.scip.enabled: on`; reports `n/a` otherwise.
+  Requires `analyzers.scip.enabled: true`; reports `n/a` otherwise.
 - `architecture_fitness` — presence of architecture enforcement signals (arch
   tests, import-linter config, arch-linter in CI). Score 0–10.
 - `functional_candidates` — module pairs sharing duplicated logic (clone clusters),
-  cross-referenced with co-change. Requires `tools.clones.enabled: on`.
+  cross-referenced with co-change. Requires `analyzers.clones.enabled: true`.
 - `change_locality` — per-change drift: how far a change reaches beyond its own
   modules (computes with `analyze --base <ref>`; `n/a` otherwise).
 - `unsafe_density` — count of unsafe operations per module (Rust; needs
-  `tools.syntax.enabled: on`).
+  `analyzers.syntax.enabled: true`).
 - `panic_density` — count of production panic/unwrap operations per module
-  (Rust/Go; excludes test files; needs `tools.syntax.enabled: on`).
+  (Rust/Go; excludes test files; needs `analyzers.syntax.enabled: true`).
 - `struct_field_density` — per-module count of struct definitions (Go/Rust;
-  needs `tools.syntax.enabled: on`).
+  needs `analyzers.syntax.enabled: true`).
 - `test_density` — per-module count of test functions (Go/Rust/Python proxy;
-  needs `tools.syntax.enabled: on`).
+  needs `analyzers.syntax.enabled: true`).
 - `deprecated_dep_count` — count of locally-declared deprecation/retraction
   markers in manifest files (`go.mod retract`, `package.json deprecated`).
 - `file_mutual_import` — count of file pairs that mutually import each other
@@ -651,16 +844,12 @@ metrics:
     min_delta: 0
 ```
 
-Current behavior note: the CLI reports the built-in metrics every run. Baseline
-metric deltas can produce a warning verdict. The per-metric policy fields are
-parsed and kept in config, but detailed threshold gating is still limited.
+## `module_review`
 
-## `map_review`
-
-`map_review` enables advisories about architecture-map quality:
+`module_review` enables staleness gating of the module declarations:
 
 ```yaml
-map_review:
+module_review:
   stale_after: 2160h
   gate: warn
 ```
@@ -672,6 +861,26 @@ Checks include:
 - modules whose `reviewed_at` is older than `stale_after`.
 
 `stale_after` uses Go duration syntax. Use `2160h` for 90 days.
+
+## `file_class`
+
+Overrides per-project file classification patterns for `Production`, `Test`,
+`Generated`, and `Vendor`. Auto-detection runs first; `file_class` adds
+project-specific patterns on top.
+
+```yaml
+file_class:
+  generated_globs:
+    - "**/gen/**"
+    - "**/*.generated.go"
+  test_globs:
+    - "**/*_test.go"
+  mock_frameworks:
+    - "moq"
+```
+
+See [Language support → File classification](languages.md#file-classification-per-language)
+for the full policy and per-language defaults.
 
 ## `outputs`
 
@@ -696,89 +905,34 @@ archfit analyze --format sarif
 Shorthands `--json`, `--markdown`, and `--sarif` are mutually exclusive
 alternatives to `--format`.
 
-## `exclusions` and built-in defaults
-
-`exclusions` is a list of repo-relative globs skipped during extraction:
-
-```yaml
-exclusions:
-  - "**/generated/**"
-  - "**/*.pb.go"
-```
-
-archfit also ships a built-in default exclusion set — tool-artifact, cache,
-dependency directories, and test fixtures it never analyses, because measuring them
-yields non-deterministic or irrelevant facts (a vendored tree's complexity, a
-generated index, a report written back into the scanned repo, or a fixture repo
-inside `testdata/` distorting coverage signals):
-
-```text
-.archfit-cache/  .archfit-baseline.json  .gitnexus/  .codegraph/  reports/
-.venv/  node_modules/  vendor/  dist/  build/  **/testdata/**
-```
-
-`**/testdata/**` is excluded by default because test fixture repos are not
-production architecture: analysing them creates false coverage gaps and phantom
-language detections. Re-include intentionally with `!testdata` or
-`!**/testdata/**` in your `exclusions` list.
-
-The built-ins are **merged with** your config `exclusions`, not replaced. To
-re-include one of them, prefix it with `!`:
-
-```yaml
-exclusions:
-  - "!reports" # analyse reports/ despite the default
-```
-
-archfit also warns (a config warning + stderr line) when an output/report path
-resolves **inside** the analyzed root — write reports outside `--root`, or exclude
-their directory, to keep scans deterministic.
-
 ## Glob tips
 
 - Use repo-relative paths.
 - Prefer explicit `**` globs, such as `internal/domain/**`.
-- Keep module names stable; baselines and exceptions refer to rule IDs and
+- Keep module names stable; baselines and waivers refer to rule IDs and
   finding fingerprints.
 - For Python, see [Language support](languages.md#python) before writing globs.
 
-## `volatility_cascade_enabled`
+## Editor support
 
-Top-level boolean (default `false`). When `true`, enables the inferred-volatility
-cascade from Khononov Ch9: after classifying each module's volatility from
-`subdomain`/`volatility` config, a single-hop propagation pass raises a
-module's effective volatility to `high` when it is strongly coupled
-(`functional` or `intrusive` strength) to a `core` module. The cascade runs
-before scoring, so the raised volatility is visible in advisory output.
+A JSON schema (`archfit.schema.json`) ships at the repository root for YAML
+editor autocomplete and validation. Point your editor at it with a YAML language
+server comment:
 
 ```yaml
-volatility_cascade_enabled: true
+# yaml-language-server: $schema=./archfit.schema.json
+version: 1
 ```
 
-Use when you want archfit to dogfood the full book model and surface coupling
-chains that inherit core volatility transitively. Set it to `false` (or omit)
-to use only declared per-module volatility — safer for repos where the cascade
-would produce noise until `subdomain` fields are complete.
+VS Code users can configure the schema in `.vscode/settings.json`:
 
-## tools.llm (off-gate)
-
-Used by `archfit init --llm`, `archfit update --llm`, `archfit enrich`,
-`archfit autopilot`, `archfit analyze --llm`, and `archfit explain --llm`; never
-by the deterministic gate path.
-
-```yaml
-tools:
-  llm:
-    provider: anthropic # anthropic | openai | ollama
-    model: claude-opus-4-8
-    base_url: "" # ollama only; default http://localhost:11434/v1
+```json
+{
+  "yaml.schemas": {
+    "./archfit.schema.json": ".archfit.yaml"
+  }
+}
 ```
-
-API keys come from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` env vars — never from
-config. archfit also best-effort loads a local `.env` (cwd) at startup, but only
-sets a key that is currently **unset** — real environment variables and CI secrets
-always win. Keep `.env` out of version control (it is gitignored by default). The
-LLM response cache lives at `.archfit-cache/llm/`.
 
 ## Draft and pin files
 
@@ -786,7 +940,7 @@ The LLM authoring commands write proposals to review files, never to
 `.archfit.yaml` directly:
 
 - `.archfit-labels.yaml` — pinned coupling-strength labels (`archfit enrich`).
-  `check` consumes `status: approved` entries with precedence: config
+  `analyze` consumes `status: approved` entries with precedence: config
   public/internal globs > approved labels > extractor hint.
 - `.archfit-owners.yaml` — owner drafts (`archfit enrich --owner`).
 - `.archfit-volatility.yaml` — volatility drafts (`archfit enrich --volatility`).
@@ -823,7 +977,7 @@ band. Rationale: LLM drafts have been human-reviewed, but they are not as
 certain as a config-glob or SCIP symbol-kind classification. `provenance:
 human` and `provenance: tool` do not lower confidence.
 
-`check` reads only `status: approved` labels. Draft labels (no `status` or
+`analyze` reads only `status: approved` labels. Draft labels (no `status` or
 `status: draft`) are never consumed by the gate.
 
 ### Abstain and decision tasks

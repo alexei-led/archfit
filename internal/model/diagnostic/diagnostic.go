@@ -79,9 +79,9 @@ type MetricSnapshot map[string]struct {
 
 // Summary holds the gate/warning/exception counts for the top-level summary block (spec §12).
 type Summary struct {
-	GateFindings   int `json:"gate_findings"`
-	Warnings       int `json:"warnings"`
-	ExceptionsUsed int `json:"exceptions_used"`
+	GateFindings int `json:"gate_findings"`
+	Warnings     int `json:"warnings"`
+	WaiversUsed  int `json:"waivers_used"`
 }
 
 // Coverage records what a single tool extracted (spec §12 tool_coverage entry).
@@ -100,7 +100,7 @@ type Coverage struct {
 }
 
 // AgentTask is the structured repair-task block (spec §13): one per ACTIVE gate
-// finding (status new/expired_exception), derived deterministically from the
+// finding (status new/expired_waiver), derived deterministically from the
 // finding + rule configuration — no fabrication. It tells a coding agent what
 // to achieve, within which constraints, where, and how to verify.
 type AgentTask struct {
@@ -119,7 +119,7 @@ type AgentTask struct {
 	Validation []string `json:"validation"`
 	// Declarations holds the syntax declarations found in the referenced files
 	// (name, kind, exported, role, file:line). Populated only when syntax facts
-	// are present (tools.syntax.enabled: on); absent otherwise — no empty slice,
+	// are present (analyzers.syntax.enabled: true); absent otherwise — no empty slice,
 	// no JSON key emitted (omitempty ensures byte-for-byte parity with prior runs).
 	Declarations []SyntaxFact `json:"declarations,omitempty"`
 }
@@ -349,7 +349,7 @@ type Diagnostic struct {
 	DeprecatedDeps []DeprecatedDep `json:"deprecated_deps,omitempty"`
 	// SyntaxFacts is the report-only syntactic declaration/route block extracted
 	// by ast-grep (design §3). Neutral, off-gate evidence — never consumed by
-	// verdict or gate logic. Omitted (omitempty) when tools.syntax is off or sg
+	// verdict or gate logic. Omitted (omitempty) when analyzers.syntax is off or sg
 	// is absent, so absent sg never emits a null/empty block (no false green).
 	SyntaxFacts  []SyntaxFact `json:"syntax_facts,omitempty"`
 	AgentTasks   []AgentTask  `json:"agent_tasks"`

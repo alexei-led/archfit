@@ -56,11 +56,11 @@ The self-config turns several report-only metrics on so the project dogfoods its
 own newest capabilities:
 
 - `risk_hub` — cross-module symbol surface-breadth × explicit volatility (needs
-  `tools.scip`).
+  `analyzers.scip`).
 - `architecture_fitness` — archfit enforces its own architecture
   (`internal/arch_test.go` plus an arch-linter in CI), so this scores a real,
   high enforcement signal.
-- `functional_candidates` — surfaced on; clone detection (`tools.clones`) is
+- `functional_candidates` — surfaced on; clone detection (`analyzers.clones`) is
   enabled in archfit's self-config. When `jscpd` is installed, this metric reports
   real cross-module clone pairs. When `jscpd` is absent, it reports `n/a` with an
   install hint. A disabled-by-config tool produces no coverage gap at all.

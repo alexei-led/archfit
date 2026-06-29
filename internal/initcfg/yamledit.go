@@ -78,12 +78,14 @@ type parsedFile struct {
 	modulesEndLine int // 1-based exclusive end of the modules: block
 	modules        []parsedModule
 
-	// positions of other top-level keys (1-based), for insertion-location logic
-	layersKeyLine int
-	layersEndLine int
-	toolsKeyLine  int
-	toolsEndLine  int
-	rulesKeyLine  int
+	// positions of other top-level keys (1-based), for insertion-location logic.
+	// analysis* tracks the LAST of the pre-modules config sections (coupling /
+	// languages / analyzers / ai) so a new modules: block lands right after them.
+	layersKeyLine   int
+	layersEndLine   int
+	analysisKeyLine int
+	analysisEndLine int
+	rulesKeyLine    int
 }
 
 type parsedModule struct {

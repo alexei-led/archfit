@@ -107,7 +107,7 @@ func (c *EnrichCmd) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	}
 	llmCfg, configured := cfg.LLM()
 	if !configured {
-		return &exitError{code: 3, msg: "error: enrich needs tools.llm configured (provider + model); see docs/guide/llm-enrich.md"}
+		return &exitError{code: 3, msg: "error: enrich needs ai configured (provider + model); see docs/guide/llm-enrich.md"}
 	}
 	// SCIP is no longer required. Without it, functional/model edges are selected
 	// as before; additionally, unknown-strength cross-module edges are always
@@ -183,7 +183,7 @@ func (c *EnrichCmd) runSubdomainDraft(ctx context.Context, deps *appDeps) error 
 	}
 	llmCfg, configured := cfg.LLM()
 	if !configured {
-		return &exitError{code: 3, msg: "error: enrich --subdomains needs tools.llm configured (provider + model); see docs/guide/llm-enrich.md"}
+		return &exitError{code: 3, msg: "error: enrich --subdomains needs ai configured (provider + model); see docs/guide/llm-enrich.md"}
 	}
 
 	configDir := filepath.Dir(c.Config)

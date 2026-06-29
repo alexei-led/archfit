@@ -80,6 +80,12 @@ fmt: ## format Go source with gofmt and goimports
 	gofmt -s -w .
 	goimports -w -local $(MODULE) .
 
+## schema: regenerate archfit.schema.json from internal/config structs
+.PHONY: schema
+schema: ## regenerate archfit.schema.json (run when config structs change)
+	ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
+	go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
+
 ## mock: regenerate moq mocks via go generate
 .PHONY: mock
 mock: ## regenerate moq mocks via go generate

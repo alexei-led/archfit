@@ -425,18 +425,16 @@ rules:
     to_layer: infrastructure
     gate: fail
 
-exclusions:
+exclude:
   - "**/generated/**"
   - "**/*.pb.go"
 
-tools:
-  git:
-    enabled: true
-  dependency_cruiser:
+languages:
+  go:
     enabled: auto
-  import_linter:
+  typescript:
     enabled: auto
-  ast_grep:
+  python:
     enabled: auto
 
 metrics:
@@ -463,11 +461,11 @@ metrics:
     enabled: true
     gate: warn
 
-map_review:
-  stale_after: 90d
+module_review:
+  stale_after: 2160h
   gate: warn
 
-exceptions:
+waivers:
   - rule: checkout-no-pricing-internals
     from: "services/checkout/legacy/**"
     to: "services/pricing/internal/**"
@@ -834,17 +832,24 @@ What it measures: probability that a component will need meaningful change.
 Primary input is human-defined architecture intent:
 
 ```text
-core       -> high volatility
-supporting -> low or medium volatility
-generic    -> low functional volatility, configurable implementation volatility
-unknown    -> low risk, lower confidence
+core       -> high volatility (ordinal 10)
+supporting -> low volatility (ordinal 3)
+generic    -> low volatility (ordinal 3)
+unknown    -> undeclared — reported, never guessed
 ```
+
+`medium` volatility (ordinal 6) is only reachable via an explicit
+`volatility: medium` declaration — it is never inferred from subdomain or
+directory name.
+
+Volatility is **not** guessed from directory names. A module that declares
+neither `subdomain` nor `volatility` resolves to `"undeclared"` — archfit
+reports it and emits agent tasks requesting a declaration.
 
 Supporting inputs:
 
-- explicit `volatility` in `archfit.yaml`;
-- git churn as supporting evidence only;
-- roadmap or known migration tags later.
+- explicit `volatility` in `archfit.yaml` (always wins over subdomain default);
+- git churn as supporting evidence only.
 
 Churn alone must not decide business volatility. It can indicate accidental volatility caused by poor design, or accidental involatility caused by fear of change.
 
@@ -983,8 +988,8 @@ Report counts by severity and status:
 new_high
 new_medium
 baseline_high
-excepted_high
-expired_exception
+waived_high
+expired_waiver
 ```
 
 Gate shape:
@@ -1041,7 +1046,7 @@ This metric does not judge architecture. It tells agents and humans how much to 
 Definition:
 
 ```text
-now - reviewed_at for modules, rules, subdomains, and exceptions
+now - reviewed_at for modules, rules, subdomains, and waivers
 ```
 
 Why it matters: `archfit.yaml` is a social artifact. The domain can drift even when code conforms to the old map. Stale architecture intent should be visible.
@@ -1049,8 +1054,8 @@ Why it matters: `archfit.yaml` is a social artifact. The domain can drift even w
 Gate shape:
 
 ```text
-warn when map_review.stale_after is exceeded
-fail only for expired exceptions or explicitly required reviews
+warn when module_review.stale_after is exceeded
+fail only for expired waivers or explicitly required reviews
 ```
 
 ### 10.5 Semantic advisory research track
@@ -1102,8 +1107,8 @@ Finding status values:
 ```text
 new
 baseline
-excepted
-expired_exception
+waived
+expired_waiver
 fixed
 ```
 
@@ -1124,16 +1129,16 @@ expires: date
 
 Rules:
 
-- exceptions require a reason, approver, and expiry;
-- expired exceptions fail if the matching rule is `gate: fail`;
-- `scan` reports exception inventory and age;
-- agents may suggest an exception only as a last resort, never create or approve one silently.
+- waivers require a reason, approver, and expiry;
+- expired waivers fail if the matching rule is `gate: fail`;
+- `scan` reports waiver inventory and age;
+- agents may suggest a waiver only as a last resort, never create or approve one silently.
 
 ### Architecture map review
 
 `archfit.yaml` can drift from domain reality. A green check only means code conforms to the current map, not that the map is still correct.
 
-Use `reviewed_at`, `reviewed_by`, and `map_review.stale_after` to surface stale modules, subdomains, volatility tags, and rules. Staleness is usually a warning, but it is a strong
+Use `reviewed_at`, `reviewed_by`, and `module_review.stale_after` to surface stale modules, subdomains, volatility tags, and rules. Staleness is usually a warning, but it is a strong
 signal for consulting, architecture review, or map-refresh work.
 
 ---
@@ -1161,7 +1166,7 @@ Top-level shape:
   "summary": {
     "gate_findings": 1,
     "warnings": 2,
-    "exceptions_used": 1
+    "waivers_used": 1
   }
 }
 ```
@@ -1170,7 +1175,7 @@ Every finding that affects the gate or a metric should include:
 
 - stable id;
 - finding kind: `gate` or `advisory`;
-- status: `new`, `baseline`, `excepted`, `expired_exception`, or `fixed`;
+- status: `new`, `baseline`, `waived`, `expired_waiver`, or `fixed`;
 - rule or metric id;
 - severity and confidence;
 - graph edge evidence;

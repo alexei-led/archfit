@@ -5,7 +5,7 @@
 //     ast-grep decision-point proxy for TypeScript/Python/Rust.
 //   - lizard: the multi-language lizard tool — exact per-function CCN but
 //     requires a Python runtime. Only invoked when backend=lizard.
-//   - off: complexity disabled (tools.complexity.enabled: false).
+//   - off: complexity disabled (analyzers.complexity.enabled: false).
 //
 // When the tools are absent, disabled, or a non-fatal failure occurs the
 // runner returns an empty result with absent/disabled coverage — never an error.
@@ -28,7 +28,7 @@ import (
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
-// Backend selector constants for tools.complexity.backend.
+// Backend selector constants for analyzers.complexity.backend.
 const (
 	BackendAuto   = "auto"   // gocyclo(Go) + ast-grep proxy(TS/Py/Rust) — default
 	BackendLizard = "lizard" // exact lizard; re-pins Python runtime
@@ -40,18 +40,18 @@ const (
 	statusAbsent  = "absent"
 	lizardTimeout = 2 * time.Minute
 
-	// defaultTimeout is the per-analyzer outer watchdog when tools.complexity.timeout
+	// defaultTimeout is the per-analyzer outer watchdog when analyzers.complexity.timeout
 	// is not configured. Generous relative to per-subprocess timeouts so it guards
 	// only pathological hangs (e.g. a 122k-LOC generated file).
 	defaultTimeout = 5 * time.Minute
 
 	// Absent-coverage reasons: why complexity is n/a and the enable step.
-	reasonDisabled       = "complexity is opt-in — set `tools.complexity.enabled: true` in .archfit.yaml"
+	reasonDisabled       = "complexity is opt-in — set `analyzers.complexity.enabled: true` in .archfit.yaml"
 	reasonNotInstalled   = "no complexity tool found — install `sg` (ast-grep) for the Go/TS/Py/Rust proxy (`cargo install ast-grep` / `brew install ast-grep`); optionally add `gocyclo` for exact Go CCN (`go install github.com/fzipp/gocyclo/cmd/gocyclo@latest`)"
 	reasonLizardMissing  = "lizard not found — install it (`pip install lizard`, or have `uvx` available) to enable complexity"
 	reasonRunFailed      = "complexity tool run failed — check the install and rerun"
 	reasonSGNotInstalled = "sg (ast-grep) not found — install ast-grep to enable the complexity proxy for TS/Py/Rust"
-	reasonTimedOut       = "complexity analysis timed out — increase tools.complexity.timeout or reduce the scope"
+	reasonTimedOut       = "complexity analysis timed out — increase analyzers.complexity.timeout or reduce the scope"
 )
 
 // lizardExcludes keep tests, mocks, vendored, and generated trees out of the
@@ -168,7 +168,7 @@ func runAuto(ctx context.Context, runner toolrun.Runner, root string, timeout ti
 // Only called when backend=lizard. extraExcludes are config- and scope-derived
 // glob patterns forwarded as additional -x flags (additive with lizardExcludes).
 // timeout governs the inner subprocess cap when non-zero (so a configured
-// tools.complexity.timeout can extend beyond the built-in lizardTimeout); zero
+// analyzers.complexity.timeout can extend beyond the built-in lizardTimeout); zero
 // falls back to the lizardTimeout constant. fileCfg carries the user-supplied
 // file_class globs so lizard output is filtered the same way runAuto is (C5).
 // Returns a non-nil error only when the inner per-subprocess deadline fires

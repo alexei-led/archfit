@@ -23,15 +23,17 @@ version: 1
 # re-weight the metric. The frozen book ordinals are adopted verbatim and must not
 # be tuned to flatter this repo's own score.
 # -----------------------------------------------------------------------------
-# Minimum severity for BC coupling advisories to appear in scan output.
-# low: all cross-module deps (noisy for well-designed codebases)
-# medium: only over-decoupled volatile seams and tight cross-boundary coupling
-# high/critical: only intrusive or functional coupling across large boundaries
-bc_advisory_min_severity: medium
-# Enable book Ch9 inferred-volatility cascade: a module strongly coupled
-# (strength ≥ functional) to a high-volatility module inherits raised effective
-# volatility. Config-declared volatility always takes precedence and is never lowered.
-volatility_cascade_enabled: true
+# Balanced-Coupling advisory tuning.
+coupling:
+  # Minimum severity for a coupling advisory to appear in output.
+  # low: all cross-module deps (noisy for well-designed codebases)
+  # medium: only over-decoupled volatile seams and tight cross-boundary coupling
+  # high/critical: only intrusive or functional coupling across large boundaries
+  min_severity: medium
+  # Book Ch9 inferred-volatility cascade: a module strongly coupled (strength ≥
+  # functional) to a high-volatility module inherits raised effective volatility.
+  # Config-declared volatility always takes precedence and is never lowered.
+  volatility_cascade: true
 # Architecture layers — innermost to outermost.
 # forbidden_layer_direction fires when fromRank < toRank (inner imports outer).
 layers:
@@ -614,30 +616,31 @@ rules:
   - id: arch_public_api_type_leak
     type: public_api_type_leak
     gate: warn
-map_review:
+module_review:
   stale_after: 2160h # 90 days
   gate: warn
-tools:
+languages:
   go:
-    enabled: "on"
+    enabled: true
   typescript:
-    enabled: "off"
+    enabled: false
   python:
-    enabled: "off"
+    enabled: false
+analyzers:
   # Syntax-facts provider (ast-grep). Enabled for dogfooding — produces
   # syntax_facts (declarations, exported surface, roles, routes) visible in
-  # scan/review/agent_tasks output. Off-gate by itself; gate rules below.
+  # analyze/agent_tasks output. Off-gate by itself; gate rules below.
   syntax:
-    enabled: "on"
+    enabled: true
   scip:
-    enabled: "on"
+    enabled: true
   complexity:
-    enabled: "on"
-  llm:
-    provider: anthropic
-    model: claude-opus-4-8
+    enabled: true
   clones:
-    enabled: "on"
+    enabled: true
+ai:
+  provider: anthropic
+  model: claude-opus-4-8
 metrics:
   risk_hub:
     enabled: true
@@ -645,7 +648,7 @@ metrics:
   # surfaces a real architecture_fitness signal — dogfooding the metric.
   architecture_fitness:
     enabled: true
-  # Clone detection enabled (tools.clones.enabled: on). Reports n/a when jscpd
+  # Clone detection enabled (analyzers.clones.enabled: true). Reports n/a when jscpd
   # is not installed (install: npm install -g jscpd); yields functional-extraction
   # candidates when jscpd is present and finds cross-module duplicates.
   functional_candidates:

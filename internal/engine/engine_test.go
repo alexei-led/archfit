@@ -196,7 +196,7 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
@@ -273,7 +273,7 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
@@ -296,7 +296,7 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 
 	// No new gate findings.
 	for _, f := range d.Findings {
-		if f.Kind == kindGate && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept) {
+		if f.Kind == kindGate && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver) {
 			t.Errorf("unexpected new gate finding: %+v", f)
 		}
 	}
@@ -326,7 +326,7 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
@@ -391,7 +391,7 @@ func TestRun_PrimaryExtractorTools_Forwarded(t *testing.T) {
 			Mode:                  engine.Mode{},
 			Scope:                 scope.Scope{Root: "."},
 			Classify:              classifyCfg,
-			Exceptions:            config.ExceptionSet{},
+			Waivers:               config.WaiverSet{},
 			Extractors:            []ports.Extractor{ex},
 			Patterns:              ports.NopPatternProvider{},
 			Resolver:              ports.NopSymbolResolver{},
@@ -445,7 +445,7 @@ func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
@@ -496,7 +496,7 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
@@ -560,7 +560,7 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
@@ -641,7 +641,7 @@ func TestRun_Advisory_DistanceBasisInMatchedBy(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
@@ -726,7 +726,7 @@ func TestRun_Advisory_GroupedRollups(t *testing.T) {
 			Scope:       scope.Scope{Root: "."},
 			Classify:    classifyCfg,
 			Staleness:   config.StalenessConfig{},
-			Exceptions:  config.ExceptionSet{},
+			Waivers:     config.WaiverSet{},
 			Extractors:  []ports.Extractor{ex},
 			Patterns:    ports.NopPatternProvider{},
 			Resolver:    ports.NopSymbolResolver{},
@@ -814,7 +814,7 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
@@ -888,7 +888,7 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    pp,
 		Resolver:    ports.NopSymbolResolver{},
@@ -956,7 +956,7 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    pp,
 		Resolver:    ports.NopSymbolResolver{},
@@ -1040,7 +1040,7 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    sr,
@@ -1091,7 +1091,7 @@ func TestRun_SymbolGraph_EmptyWhenNopResolver(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
@@ -1157,7 +1157,7 @@ func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    sr,
@@ -1210,7 +1210,7 @@ func TestRun_FileFacts_EmptyWhenNopResolver(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
@@ -1272,7 +1272,7 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 			Scope:       scope.Scope{Root: "."},
 			Classify:    classifyCfg,
 			Staleness:   config.StalenessConfig{},
-			Exceptions:  config.ExceptionSet{},
+			Waivers:     config.WaiverSet{},
 			Extractors:  []ports.Extractor{ex},
 			Patterns:    ports.NopPatternProvider{},
 			Resolver:    ports.NopSymbolResolver{},
@@ -1368,7 +1368,7 @@ func TestRun_PinnedLabels(t *testing.T) {
 			Scope:       scope.Scope{Root: "."},
 			Classify:    cfg.ForClassify(),
 			Staleness:   config.StalenessConfig{},
-			Exceptions:  config.ExceptionSet{},
+			Waivers:     config.WaiverSet{},
 			Extractors:  []ports.Extractor{ex},
 			Patterns:    ports.NopPatternProvider{},
 			Resolver:    ports.NopSymbolResolver{},
@@ -1473,7 +1473,7 @@ func dynImportRun(t *testing.T, sites []diagnostic.DynamicImportSite) diagnostic
 	base := baseline.Baseline{}
 	in := engine.RunInput{
 		Mode: engine.Mode{Head: headRef}, Scope: scope.Scope{Root: "."},
-		Classify: classifyCfg, Staleness: config.StalenessConfig{}, Exceptions: config.ExceptionSet{},
+		Classify: classifyCfg, Staleness: config.StalenessConfig{}, Waivers: config.WaiverSet{},
 		Extractors: []ports.Extractor{ex}, Patterns: ports.NopPatternProvider{}, Resolver: ports.NopSymbolResolver{},
 		PatternCfg: config.PatternConfig{}, Rules: rs, Metrics: metrics.New(config.Config{Version: 1}),
 		Accepted: base, BaseMetrics: base.Metrics,
@@ -1631,7 +1631,7 @@ func TestRun_GoWorkspace_ModuleMapRebuild(t *testing.T) {
 	base := baseline.Baseline{}
 	in := engine.RunInput{
 		Mode: engine.Mode{Head: headRef}, Scope: scope.Scope{Root: "."},
-		Classify: classifyCfg, Staleness: config.StalenessConfig{}, Exceptions: config.ExceptionSet{},
+		Classify: classifyCfg, Staleness: config.StalenessConfig{}, Waivers: config.WaiverSet{},
 		Extractors: []ports.Extractor{ex}, Patterns: ports.NopPatternProvider{}, Resolver: ports.NopSymbolResolver{},
 		PatternCfg: config.PatternConfig{}, Rules: rs, Metrics: metrics.New(config.Config{Version: 1}),
 		Accepted: base, BaseMetrics: base.Metrics,
@@ -1675,7 +1675,7 @@ func runtimeAsyncRun(t *testing.T, sites []diagnostic.RuntimeAsyncSite, confiden
 	base := baseline.Baseline{}
 	in := engine.RunInput{
 		Mode: engine.Mode{Head: headRef}, Scope: scope.Scope{Root: "."},
-		Classify: classifyCfg, Staleness: config.StalenessConfig{}, Exceptions: config.ExceptionSet{},
+		Classify: classifyCfg, Staleness: config.StalenessConfig{}, Waivers: config.WaiverSet{},
 		Extractors: []ports.Extractor{ex}, Patterns: ports.NopPatternProvider{}, Resolver: ports.NopSymbolResolver{},
 		PatternCfg: config.PatternConfig{}, Rules: rs, Metrics: metrics.New(config.Config{Version: 1}),
 		Accepted: base, BaseMetrics: base.Metrics,
@@ -1827,7 +1827,7 @@ func bookExampleFacts(fromFile, toFile, strengthHint string) graph.Facts {
 //	true  → both get deploy_unit="svc-shared" → distance stays at cross_module_diff_owner or same_module
 //
 // sameOwner=true sets both modules to "team-shared" → cross_module_same_owner (D=4) when in the same deploy unit.
-// targetSubdomain controls the dst module's domain volatility ("core"→V=10, "supporting"→V=6, "generic"→V=3).
+// targetSubdomain controls the dst module's domain volatility ("core"→V=10, "supporting"→V=3, "generic"→V=3).
 func bookExampleConfig(fromGlob, toGlob string, sameDeployUnit, sameOwner bool, targetSubdomain string) (config.ClassifyConfig, []rules.Rule) {
 	srcUnit := "svc-src"
 	dstUnit := "svc-dst"
@@ -1901,7 +1901,7 @@ func TestRun_BookExamples_Ch10(t *testing.T) {
 		strengthHint    string // StrengthHint on the edge
 		sameDeployUnit  bool   // false → cross_deploy_unit (D=9), true → same-deploy-unit distance
 		sameOwner       bool   // true → cross_module_same_owner (D=4); false → cross_module_diff_owner (D=7)
-		targetSubdomain string // dst module subdomain ("core"→high V=10, "supporting"→medium V=6, "generic"→low V=3)
+		targetSubdomain string // dst module subdomain ("core"→high V=10, "supporting"→low V=3, "generic"→low V=3)
 		usesSameModule  bool   // true → fromFile and toFile are in the same module (same_module guard)
 		wantBalance     int    // expected balance score_value
 		wantBand        string // expected score_band
@@ -1997,7 +1997,7 @@ func TestRun_BookExamples_Ch10(t *testing.T) {
 				Scope:       scope.Scope{Root: "."},
 				Classify:    classifyCfg,
 				Staleness:   config.StalenessConfig{},
-				Exceptions:  config.ExceptionSet{},
+				Waivers:     config.WaiverSet{},
 				Extractors:  []ports.Extractor{ex},
 				Patterns:    ports.NopPatternProvider{},
 				Resolver:    ports.NopSymbolResolver{},
@@ -2085,7 +2085,7 @@ func TestRun_SyntaxFacts_Populated(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
@@ -2176,7 +2176,7 @@ func TestRun_SyntaxFacts_ModuleBackfill(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
@@ -2274,7 +2274,7 @@ func TestRun_SyntaxFacts_DisabledNoCallNoCoverage(t *testing.T) {
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
-		Exceptions:  config.ExceptionSet{},
+		Waivers:     config.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
@@ -2361,7 +2361,7 @@ func TestRun_WarnRule_ProducesVerdictWarn(t *testing.T) {
 			Scope:       scope.Scope{Root: "."},
 			Classify:    cfg.ForClassify(),
 			Staleness:   config.StalenessConfig{},
-			Exceptions:  config.ExceptionSet{},
+			Waivers:     config.WaiverSet{},
 			Extractors:  []ports.Extractor{makeEx()},
 			Patterns:    ports.NopPatternProvider{},
 			Resolver:    ports.NopSymbolResolver{},
@@ -2387,7 +2387,7 @@ func TestRun_WarnRule_ProducesVerdictWarn(t *testing.T) {
 		t.Errorf("verdict=%q, want %q", d.Verdict, diagnostic.VerdictWarn)
 	}
 	for _, f := range d.Findings {
-		if f.Kind == kindGate && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept) {
+		if f.Kind == kindGate && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver) {
 			t.Errorf("unexpected gate finding for warn rule: %+v", f)
 		}
 	}

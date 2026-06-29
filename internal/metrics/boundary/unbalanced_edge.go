@@ -161,9 +161,9 @@ func statusPriority(s finding.Status) int {
 	switch s {
 	case finding.StatusNew:
 		return 4
-	case finding.StatusExpiredExcept:
+	case finding.StatusExpiredWaiver:
 		return 3
-	case finding.StatusExcepted:
+	case finding.StatusWaived:
 		return 2
 	case finding.StatusBaseline:
 		return 1

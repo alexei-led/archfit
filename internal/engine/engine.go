@@ -40,7 +40,7 @@ type RunInput struct {
 	Scope       scope.Scope
 	Classify    config.ClassifyConfig
 	Staleness   config.StalenessConfig
-	Exceptions  config.ExceptionSet
+	Waivers     config.WaiverSet
 	Extractors  []ports.Extractor
 	Patterns    ports.PatternProvider
 	PatternCfg  config.PatternConfig
@@ -184,7 +184,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	}
 
 	// --- Stage 5: Status ---
-	taggedFindings := status.Assign(rawFindings, in.Accepted, in.Exceptions, in.Now, finding.KindGate)
+	taggedFindings := status.Assign(rawFindings, in.Accepted, in.Waivers, in.Now, finding.KindGate)
 
 	// --- Stage 6: Metrics ---
 	// Compute per-file dependant counts from the SCIP symbol graph once; feeds
@@ -246,15 +246,15 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	}
 
 	// Summary counts.
-	var exceptionsUsed int
+	var waiversUsed int
 	for _, f := range baseFindings {
-		if f.Status == finding.StatusExcepted {
-			exceptionsUsed++
+		if f.Status == finding.StatusWaived {
+			waiversUsed++
 		}
 	}
 	gateNew := 0
 	for _, f := range gateFindings {
-		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept {
+		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver {
 			gateNew++
 		}
 	}
@@ -324,9 +324,9 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		ClassifiedEdges:       classifiedEdges,
 		Delta:                 delta,
 		Summary: diagnostic.Summary{
-			GateFindings:   gateNew,
-			Warnings:       warnings,
-			ExceptionsUsed: exceptionsUsed,
+			GateFindings: gateNew,
+			Warnings:     warnings,
+			WaiversUsed:  waiversUsed,
 		},
 	}
 
@@ -429,7 +429,7 @@ func resolveEvidence(
 
 // computeVerdict derives the overall verdict from gate findings, metric results,
 // and active rule-advisory findings (gate: warn).
-//   - Any gate finding with status new or expired_exception → fail
+//   - Any gate finding with status new or expired_waiver → fail
 //   - Any metric with delta != nil && *delta < 0 → warn (if not already fail)
 //   - Any active rule-advisory finding (activeRuleAdvisories > 0) → warn (if not already fail)
 //   - Otherwise → pass
@@ -438,7 +438,7 @@ func resolveEvidence(
 // must not flip the verdict.
 func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult, activeRuleAdvisories int) diagnostic.Verdict {
 	for _, f := range gateFindings {
-		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept {
+		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver {
 			return diagnostic.VerdictFail
 		}
 	}

@@ -5,18 +5,25 @@ import (
 	"time"
 )
 
-// ToolMode represents the enabled state of an external tool.
-// It accepts true/false (bool) or "auto"/"on"/"off" (string) in YAML.
+// ToolMode is the enable state of a language extractor or analyzer.
+//
+// Canonical YAML values are: true (force on), false (force off), and auto (run
+// only when the backing tool is detected on PATH). Only "auto" is written as a
+// string; true/false are native YAML booleans. The legacy "on"/"off" spellings
+// are no longer accepted — they are a hard error so configs speak one vocabulary.
 type ToolMode string
 
-// ToolMode constants for the enabled field of a tool config entry.
+// ToolMode internal states. ModeOn/ModeOff are the resolved forms of the YAML
+// booleans true/false; ModeAuto is detect-on-PATH.
 const (
 	ModeAuto ToolMode = "auto"
 	ModeOn   ToolMode = "on"
 	ModeOff  ToolMode = "off"
 )
 
-// Language tool key constants used in the Tools map and ForExtract.
+// Language id constants. These are the YAML keys under `languages:` and the
+// extractor ids used by the language registry and the ToolMode/ToolGate/
+// SetToolMode accessors.
 const (
 	LangGo         = "go"
 	LangTypeScript = "typescript"
@@ -24,72 +31,125 @@ const (
 	LangRust       = "rust"
 )
 
-// ToolScip is the Tools map key for the SCIP symbol-level strength provider.
-const ToolScip = "scip"
+// Analyzer id constants. These are internal string ids used by cmd coverage /
+// registry code and by the ToolMode/ToolGate accessors. They are decoupled from
+// the YAML keys (which come from the struct tags on AnalyzersConfig), so an
+// internal id may differ from its YAML key (e.g. ToolCargoModules vs cargo_modules).
+const (
+	ToolSyntax       = "syntax"
+	ToolScip         = "scip"
+	ToolComplexity   = "complexity"
+	ToolClones       = "clones"
+	ToolCargoModules = "cargo-modules"
+	// ToolLLM is the id for the off-gate AI provider used by enrich and explain.
+	// NEVER consumed by analyze's gate path — the arch ring test forbids internal
+	// packages from importing the LLM layer, so the LLM commands live in cmd.
+	ToolLLM = "llm"
+)
 
-// ToolSyntax is the Tools map key for the ast-grep syntax-facts provider.
-// Off by default — running ast-grep over the full repo adds cost to the check
-// path; opt-in via tools.syntax.enabled: on. Config-driven (not PATH presence)
-// for same-config→same-metrics determinism.
-const ToolSyntax = "syntax"
+// ---------------------------------------------------------------------------
+// Languages — one block per language under `languages:`. Each carries only the
+// fields that language actually uses, so a reader (and the JSON schema) never
+// sees an inapplicable knob.
+// ---------------------------------------------------------------------------
 
-// SyntaxEnabled reports whether the syntax-facts provider is explicitly enabled
-// (tools.syntax.enabled: on). Opt-in only — auto/off/absent all disable it.
-func (c Config) SyntaxEnabled() bool {
-	return c.Tools[ToolSyntax].Enabled == ModeOn
+// GoLanguage configures the Go extractor (`languages.go`).
+type GoLanguage struct {
+	Enabled ToolMode       `yaml:"enabled"`
+	Gate    GateMode       `yaml:"gate,omitempty"`
+	Modules GoModuleFilter `yaml:"modules,omitempty"`
 }
 
-// ToolCargoModules is the Tools map key for the cargo-modules intra-crate module
-// graph provider. Off by default — it compiles the crate (minutes); opt-in via
-// tools.cargo-modules.enabled: on.
-const ToolCargoModules = "cargo-modules"
-
-// CargoModulesEnabled reports whether the cargo-modules module-graph provider is
-// explicitly enabled (tools.cargo-modules.enabled: on). Opt-in only — it requires
-// a full crate compile. Auto/off/absent all disable it.
-func (c Config) CargoModulesEnabled() bool {
-	return c.Tools[ToolCargoModules].Enabled == ModeOn
+// TypeScriptLanguage configures the TypeScript extractor (`languages.typescript`).
+type TypeScriptLanguage struct {
+	Enabled ToolMode `yaml:"enabled"`
+	Gate    GateMode `yaml:"gate,omitempty"`
 }
 
-// ScipEnabled reports whether the SCIP strength provider is explicitly enabled
-// (tools.scip.enabled: on). It is opt-in only — auto/off/absent all disable it —
-// because running a SCIP indexer is whole-repo and slow, which must not happen on
-// the fast `archfit analyze --gate` path by default. Keeping the decision in config (not in
-// PATH tool presence) also preserves the same-config→same-metrics guarantee.
-func (c Config) ScipEnabled() bool {
-	return c.Tools[ToolScip].Enabled == ModeOn
+// PythonLanguage configures the Python extractor (`languages.python`).
+type PythonLanguage struct {
+	Enabled ToolMode `yaml:"enabled"`
+	Gate    GateMode `yaml:"gate,omitempty"`
+	// Package is the top-level importable package name passed to grimp
+	// (e.g. "myapp"). Empty = auto-detect from the project layout.
+	Package string `yaml:"package,omitempty"`
 }
 
-// ToolComplexity is the Tools map key for the external cyclomatic-complexity tool.
-const ToolComplexity = "complexity"
-
-// ComplexityEnabled reports whether the external complexity tool is explicitly
-// enabled (tools.complexity.enabled: on). Opt-in only — like SCIP it shells out
-// to an external tool and adds cost to the check path, so it stays off unless
-// asked for. Config-driven (not PATH presence) for deterministic metrics.
-func (c Config) ComplexityEnabled() bool {
-	return c.Tools[ToolComplexity].Enabled == ModeOn
+// RustLanguage configures the Rust extractor (`languages.rust`).
+type RustLanguage struct {
+	Enabled ToolMode `yaml:"enabled"`
+	Gate    GateMode `yaml:"gate,omitempty"`
+	// Manifest is the path to Cargo.toml. Empty = auto (the root manifest).
+	Manifest string `yaml:"manifest,omitempty"`
+	// Features are the cargo features to activate for `cargo metadata`.
+	Features []string `yaml:"features,omitempty"`
+	// IncludeDevDeps adds dev-dependencies as crate edges.
+	IncludeDevDeps bool `yaml:"include_dev_deps,omitempty"`
 }
 
-// ComplexityBackend returns the selected complexity backend for the run.
-// Accepted values: "" or "auto" (default) → gocyclo(Go)+ast-grep proxy(TS/Py/Rust);
-// "lizard" → exact lizard (re-pins Python runtime).
-// An empty/missing value is normalised to "auto" so callers can compare against
-// the complexity.BackendAuto / complexity.BackendLizard constants.
-func (c Config) ComplexityBackend() string {
-	b := c.Tools[ToolComplexity].Backend
-	if b == "" {
-		return "auto"
-	}
-	return b
+// LanguagesConfig groups the per-language extractor settings (`languages:`).
+type LanguagesConfig struct {
+	Go         GoLanguage         `yaml:"go,omitempty"`
+	TypeScript TypeScriptLanguage `yaml:"typescript,omitempty"`
+	Python     PythonLanguage     `yaml:"python,omitempty"`
+	Rust       RustLanguage       `yaml:"rust,omitempty"`
 }
 
-// ToolLLM is the Tools map key for the off-gate LLM provider used by the
-// enrich and explain commands. NEVER consumed by check — the arch ring test
-// forbids internal packages from importing the LLM layer.
-const ToolLLM = "llm"
+// ---------------------------------------------------------------------------
+// Analyzers — opt-in deeper analysis backends under `analyzers:`. They produce
+// extra facts (not gate rules); the gates live in `rules:`. Each carries only
+// the fields it uses.
+// ---------------------------------------------------------------------------
 
-// LLMProviders are the accepted tools.llm.provider values.
+// Analyzer is the common enable/gate shape for analyzers with no extra knobs
+// (`analyzers.syntax`, `analyzers.cargo_modules`).
+type Analyzer struct {
+	Enabled ToolMode `yaml:"enabled"`
+	Gate    GateMode `yaml:"gate,omitempty"`
+}
+
+// TimedAnalyzer adds a per-run subprocess timeout (`analyzers.scip`,
+// `analyzers.clones`). On timeout the result is dropped and dependent metrics
+// report n/a; the run continues. Timeout is a Go duration string (e.g. "5m").
+type TimedAnalyzer struct {
+	Enabled ToolMode `yaml:"enabled"`
+	Gate    GateMode `yaml:"gate,omitempty"`
+	Timeout string   `yaml:"timeout,omitempty"`
+}
+
+// ComplexityAnalyzer configures the cyclomatic-complexity analyzer
+// (`analyzers.complexity`). Backend: "" or "auto" (default) = gocyclo for Go +
+// an ast-grep decision-point proxy elsewhere; "lizard" = exact per-function CCN.
+type ComplexityAnalyzer struct {
+	Enabled ToolMode `yaml:"enabled"`
+	Gate    GateMode `yaml:"gate,omitempty"`
+	Timeout string   `yaml:"timeout,omitempty"`
+	Backend string   `yaml:"backend,omitempty"`
+}
+
+// AnalyzersConfig groups the opt-in analyzer settings (`analyzers:`).
+type AnalyzersConfig struct {
+	Syntax       Analyzer           `yaml:"syntax,omitempty"`
+	Scip         TimedAnalyzer      `yaml:"scip,omitempty"`
+	Complexity   ComplexityAnalyzer `yaml:"complexity,omitempty"`
+	Clones       TimedAnalyzer      `yaml:"clones,omitempty"`
+	CargoModules Analyzer           `yaml:"cargo_modules,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// AI — off-gate LLM provider for enrich/explain (`ai:`). Presence of provider
+// and model is what makes it usable; there is no enable flag.
+// ---------------------------------------------------------------------------
+
+// AIConfig configures the off-gate LLM provider (`ai:`). Consumed only by enrich
+// and explain — never by analyze's gate path.
+type AIConfig struct {
+	Provider string `yaml:"provider,omitempty"`
+	Model    string `yaml:"model,omitempty"`
+	BaseURL  string `yaml:"base_url,omitempty"`
+}
+
+// LLMProviders are the accepted ai.provider values.
 var LLMProviders = map[string]struct{}{"anthropic": {}, "openai": {}, "ollama": {}}
 
 // LLMConfig is the resolved off-gate LLM settings.
@@ -99,103 +159,64 @@ type LLMConfig struct {
 	BaseURL  string
 }
 
-// LLM returns the tools.llm settings and whether they are usable
-// (provider and model both set).
+// LLM returns the ai: settings and whether they are usable (provider and model
+// both set).
 func (c Config) LLM() (LLMConfig, bool) {
-	t := c.Tools[ToolLLM]
-	cfg := LLMConfig{Provider: t.Provider, Model: t.Model, BaseURL: t.BaseURL}
-	return cfg, t.Provider != "" && t.Model != ""
+	cfg := LLMConfig{Provider: c.AI.Provider, Model: c.AI.Model, BaseURL: c.AI.BaseURL}
+	return cfg, c.AI.Provider != "" && c.AI.Model != ""
 }
 
-// ToolClones is the Tools map key for the optional clone-detection provider.
-const ToolClones = "clones"
+// ---------------------------------------------------------------------------
+// Enable-state accessors. Signatures are stable across the schema rewrite so
+// call sites outside this package are unaffected; only the bodies moved.
+// ---------------------------------------------------------------------------
 
-// ClonesEnabled reports whether the clone-detection tool is explicitly enabled
-// (tools.clones.enabled: on). Opt-in only — running a clone detector is expensive
-// and must not happen by default. Config-driven for deterministic metrics.
-func (c Config) ClonesEnabled() bool {
-	return c.Tools[ToolClones].Enabled == ModeOn
-}
+// SyntaxEnabled reports whether the syntax-facts provider is explicitly enabled
+// (analyzers.syntax.enabled: true). Opt-in only — auto/false/absent all disable it.
+func (c Config) SyntaxEnabled() bool { return c.Analyzers.Syntax.Enabled == ModeOn }
 
-// UnmarshalYAML handles both bool (true→on, false→off) and string ("auto"/"on"/"off") values.
-func (m *ToolMode) UnmarshalYAML(unmarshal func(any) error) error {
-	// Try bool first (YAML parses bare true/false as bool).
-	var b bool
-	if err := unmarshal(&b); err == nil {
-		if b {
-			*m = ModeOn
-		} else {
-			*m = ModeOff
-		}
-		return nil
+// ScipEnabled reports whether the SCIP strength provider is explicitly enabled
+// (analyzers.scip.enabled: true). Opt-in only — running a SCIP indexer is
+// whole-repo and slow, so it must not run on the fast gate path by default.
+// Config-driven (not PATH presence) preserves same-config→same-metrics.
+func (c Config) ScipEnabled() bool { return c.Analyzers.Scip.Enabled == ModeOn }
+
+// ComplexityEnabled reports whether the external complexity analyzer is
+// explicitly enabled (analyzers.complexity.enabled: true). Opt-in only.
+func (c Config) ComplexityEnabled() bool { return c.Analyzers.Complexity.Enabled == ModeOn }
+
+// ClonesEnabled reports whether the clone-detection analyzer is explicitly
+// enabled (analyzers.clones.enabled: true). Opt-in only.
+func (c Config) ClonesEnabled() bool { return c.Analyzers.Clones.Enabled == ModeOn }
+
+// CargoModulesEnabled reports whether the cargo-modules intra-crate module-graph
+// analyzer is explicitly enabled (analyzers.cargo_modules.enabled: true). Opt-in
+// only — it compiles the crate (minutes).
+func (c Config) CargoModulesEnabled() bool { return c.Analyzers.CargoModules.Enabled == ModeOn }
+
+// ComplexityBackend returns the selected complexity backend for the run.
+// "" or "auto" (default) → gocyclo(Go)+ast-grep proxy; "lizard" → exact lizard.
+// An empty/missing value is normalised to "auto".
+func (c Config) ComplexityBackend() string {
+	if b := c.Analyzers.Complexity.Backend; b != "" {
+		return b
 	}
-	// Fall back to string.
+	return "auto"
+}
+
+// ToolTimeout returns the configured per-analyzer subprocess timeout for the
+// given analyzer id (ToolScip, ToolClones, ToolComplexity). Returns 0 when not
+// set or unparseable (callers use their built-in default).
+func (c Config) ToolTimeout(id string) time.Duration {
 	var s string
-	if err := unmarshal(&s); err != nil {
-		return fmt.Errorf("tool mode must be true, false, or \"auto\": %w", err)
+	switch id {
+	case ToolScip:
+		s = c.Analyzers.Scip.Timeout
+	case ToolClones:
+		s = c.Analyzers.Clones.Timeout
+	case ToolComplexity:
+		s = c.Analyzers.Complexity.Timeout
 	}
-	switch s {
-	case "auto":
-		*m = ModeAuto
-	case "on", "true":
-		*m = ModeOn
-	case "off", "false":
-		*m = ModeOff
-	default:
-		return fmt.Errorf("tool mode %q is not one of: true, false, auto", s)
-	}
-	return nil
-}
-
-// GateMode is the coverage-gate posture for one tool: how its absence affects the
-// exit code. It is distinct from ToolMode (which controls whether a tool runs).
-//   - off  — report the coverage gap but never fail.
-//   - warn — (default, empty) report the gap, exit 0 (warn-loud).
-//   - fail — a missing tool fails the build (opt-in hard gate).
-//
-// Empty means "use the default (warn)". The exit decision lives in cmd/; the core
-// ring never reads it. See also --require-tools, which raises every gap to fail.
-type GateMode string
-
-// GateMode constants for the tools.<x>.gate field. Values match the rule/metric
-// gate vocabulary (off|warn|fail) so the whole config speaks one gate language.
-const (
-	GateOff  GateMode = "off"
-	GateWarn GateMode = "warn"
-	GateFail GateMode = "fail"
-)
-
-// GoModuleFilter restricts Go workspace analysis to a subset of go.work members.
-// It is only meaningful for the "go" tool key (tools.go.modules).
-// Globs are matched against each member's path relative to ScanRoot using
-// doublestar semantics (same matcher as scope exclusions).
-type GoModuleFilter struct {
-	Include []string `yaml:"include,omitempty"` // keep only members matching these globs; empty = all
-	Exclude []string `yaml:"exclude,omitempty"` // drop members matching these globs; applied after include
-}
-
-// ToolConfig holds the settings for a single external tool.
-// Provider/Model/BaseURL apply to the "llm" key only (see Config.LLM).
-// Backend applies to the "complexity" key only (see Config.ComplexityBackend).
-// Modules applies to the "go" key only (see GoModuleFilter).
-// Timeout applies to subprocess analyzers (scip, clones, complexity): a per-analyzer
-// watchdog that caps the total run time. Parsed as a Go duration string (e.g. "5m").
-// Zero or absent means "use the built-in package default".
-type ToolConfig struct {
-	Enabled  ToolMode       `yaml:"enabled"`
-	Gate     GateMode       `yaml:"gate,omitempty"`
-	Backend  string         `yaml:"backend,omitempty"`
-	Provider string         `yaml:"provider,omitempty"`
-	Model    string         `yaml:"model,omitempty"`
-	BaseURL  string         `yaml:"base_url,omitempty"`
-	Modules  GoModuleFilter `yaml:"modules,omitempty"`
-	Timeout  string         `yaml:"timeout,omitempty"` // e.g. "5m", "10m30s"; 0/absent = built-in default
-}
-
-// ToolTimeout returns the configured per-analyzer timeout for the given tool key.
-// Returns 0 when not set or the value cannot be parsed (callers use their built-in default).
-func (c Config) ToolTimeout(key string) time.Duration {
-	s := c.Tools[key].Timeout
 	if s == "" {
 		return 0
 	}
@@ -206,5 +227,133 @@ func (c Config) ToolTimeout(key string) time.Duration {
 	return d
 }
 
-// ToolsConfig holds settings for all known external tools, keyed by language name.
-type ToolsConfig map[string]ToolConfig
+// ToolMode returns the enable mode for a language or analyzer addressed by its
+// internal id (LangGo…LangRust, ToolSyntax…ToolCargoModules). Unknown ids return
+// ModeAuto. Lets cmd coverage code resolve a tool's posture without knowing which
+// config section holds it.
+func (c Config) ToolMode(id string) ToolMode {
+	switch id {
+	case LangGo:
+		return c.Languages.Go.Enabled
+	case LangTypeScript:
+		return c.Languages.TypeScript.Enabled
+	case LangPython:
+		return c.Languages.Python.Enabled
+	case LangRust:
+		return c.Languages.Rust.Enabled
+	case ToolSyntax:
+		return c.Analyzers.Syntax.Enabled
+	case ToolScip:
+		return c.Analyzers.Scip.Enabled
+	case ToolComplexity:
+		return c.Analyzers.Complexity.Enabled
+	case ToolClones:
+		return c.Analyzers.Clones.Enabled
+	case ToolCargoModules:
+		return c.Analyzers.CargoModules.Enabled
+	default:
+		return ModeAuto
+	}
+}
+
+// ToolGate returns the coverage-gate posture for a language or analyzer addressed
+// by its internal id. Unknown ids return the empty gate ("" = default warn).
+func (c Config) ToolGate(id string) GateMode {
+	switch id {
+	case LangGo:
+		return c.Languages.Go.Gate
+	case LangTypeScript:
+		return c.Languages.TypeScript.Gate
+	case LangPython:
+		return c.Languages.Python.Gate
+	case LangRust:
+		return c.Languages.Rust.Gate
+	case ToolSyntax:
+		return c.Analyzers.Syntax.Gate
+	case ToolScip:
+		return c.Analyzers.Scip.Gate
+	case ToolComplexity:
+		return c.Analyzers.Complexity.Gate
+	case ToolClones:
+		return c.Analyzers.Clones.Gate
+	case ToolCargoModules:
+		return c.Analyzers.CargoModules.Gate
+	default:
+		return ""
+	}
+}
+
+// SetToolMode forces the enable mode for a language or analyzer addressed by its
+// internal id. Used by --lang flag overrides. Unknown ids are a no-op.
+func (c *Config) SetToolMode(id string, mode ToolMode) {
+	switch id {
+	case LangGo:
+		c.Languages.Go.Enabled = mode
+	case LangTypeScript:
+		c.Languages.TypeScript.Enabled = mode
+	case LangPython:
+		c.Languages.Python.Enabled = mode
+	case LangRust:
+		c.Languages.Rust.Enabled = mode
+	case ToolSyntax:
+		c.Analyzers.Syntax.Enabled = mode
+	case ToolScip:
+		c.Analyzers.Scip.Enabled = mode
+	case ToolComplexity:
+		c.Analyzers.Complexity.Enabled = mode
+	case ToolClones:
+		c.Analyzers.Clones.Enabled = mode
+	case ToolCargoModules:
+		c.Analyzers.CargoModules.Enabled = mode
+	}
+}
+
+// UnmarshalYAML accepts a native YAML boolean (true→on, false→off) or the string
+// "auto". The legacy "on"/"off" string spellings are rejected with a clear error
+// so the config speaks a single enable vocabulary.
+func (m *ToolMode) UnmarshalYAML(unmarshal func(any) error) error {
+	var b bool
+	if err := unmarshal(&b); err == nil {
+		if b {
+			*m = ModeOn
+		} else {
+			*m = ModeOff
+		}
+		return nil
+	}
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return fmt.Errorf("enabled must be true, false, or auto: %w", err)
+	}
+	if s == "auto" {
+		*m = ModeAuto
+		return nil
+	}
+	return fmt.Errorf("enabled %q is not one of: true, false, auto", s)
+}
+
+// GateMode is the coverage-gate posture for one tool: how its absence affects the
+// exit code. Distinct from ToolMode (which controls whether a tool runs).
+//   - off  — report the coverage gap but never fail.
+//   - warn — (default, empty) report the gap, exit 0.
+//   - fail — a missing tool fails the build (opt-in hard gate).
+//
+// Empty means "use the default (warn)". The exit decision lives in cmd/; the core
+// ring never reads it. See also --require-tools, which raises every gap to fail.
+type GateMode string
+
+// GateMode constants for the gate: field. Values match the rule/metric gate
+// vocabulary (off|warn|fail) so the whole config speaks one gate language.
+const (
+	GateOff  GateMode = "off"
+	GateWarn GateMode = "warn"
+	GateFail GateMode = "fail"
+)
+
+// GoModuleFilter restricts Go workspace analysis to a subset of go.work members
+// (`languages.go.modules`). Globs match each member's path relative to ScanRoot
+// using doublestar semantics (the same matcher as scope exclusions).
+type GoModuleFilter struct {
+	Include []string `yaml:"include,omitempty"` // keep only members matching these globs; empty = all
+	Exclude []string `yaml:"exclude,omitempty"` // drop members matching these globs; applied after include
+}

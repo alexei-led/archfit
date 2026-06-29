@@ -49,11 +49,11 @@ Without `--gate`, `analyze` is report-only and produces no tasks even on finding
 
 - `new` — active gate finding.
 - `baseline` — accepted; do not "fix" unprompted.
-- `excepted` — time-boxed waiver.
-- `expired_exception` — gates again.
+- `waived` — time-boxed waiver.
+- `expired_waiver` — gates again.
 - `fixed` — gone since baseline.
 
-`archfit baseline` accepts the current state; exceptions live in config with
+`archfit baseline` accepts the current state; waivers live in config with
 expiry dates.
 
 ## SARIF — the CI annotation channel
@@ -79,7 +79,7 @@ Each gap carries `tool`, `install_cmd`, `affected_metrics`, and `gate`; the
 `config_warnings[]` array carries under-specified-module advisories. An agent
 treats a gap as "install this tool / fill this config", not as a passing gate.
 Coverage gaps do **not** produce `agent_tasks` and do not fail `analyze` unless
-the run opted in with `--require-tools` (or `tools.<x>.gate: fail`), which exits
+the run opted in with `--require-tools` (or `analyzers.<x>.gate: fail`), which exits
 `1`.
 
 ## What an agent sees

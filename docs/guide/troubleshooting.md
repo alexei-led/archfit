@@ -4,10 +4,10 @@ Run `archfit doctor` first when extraction looks incomplete.
 
 Common fixes:
 
-- Use `tools.<language>.enabled: off` to disable an adapter while calibrating.
+- Use `languages.<language>.enabled: false` or `analyzers.<x>.enabled: false` to disable an adapter while calibrating.
 - Use `--format json` when an AI agent or script needs structured output.
 - Narrow module paths if generated config is noisy.
-- Prefer an expiring exception over deleting a rule for intentional findings.
+- Prefer an expiring waiver over deleting a rule for intentional findings.
 - Check that optional analyzer tools are installed before enabling them.
 - Re-run `archfit baseline --full` only after reviewing accepted findings.
 
@@ -73,7 +73,7 @@ section) means an analyzer did not run — archfit is refusing to score absence 
 health, not failing. Each gap lists the tool, the metrics it unlocks, and an
 install hint; `archfit doctor` lists the same tools. Install the tool to close the
 gap. To make CI block on a missing tool instead, opt in with `--require-tools` or
-`tools.<x>.gate: fail` (exit `1`, a policy violation distinct from exit `3`).
+`analyzers.<x>.gate: fail` (exit `1`, a policy violation distinct from exit `3`).
 
 ## Config-quality warnings ("N modules under-specified")
 

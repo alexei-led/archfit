@@ -39,15 +39,16 @@ rules:
     from_layer: domain
     to_layer: infrastructure
     gate: fail
-exclusions:
+exclude:
   - '**/generated/**'
   - '**/*.pb.go'
-tools:
-  git:
+languages:
+  go:
     enabled: true
-  dependency_cruiser:
+  typescript:
     enabled: auto
-  import_linter:
+analyzers:
+  clones:
     enabled: auto
 metrics:
   encapsulation:
@@ -58,10 +59,10 @@ metrics:
     enabled: true
     gate: fail
     max_new: 0
-map_review:
+module_review:
   stale_after: 2160h # 90 days (Go duration syntax)
   gate: warn
-exceptions:
+waivers:
   - rule: checkout-no-pricing-internals
     from: services/checkout/legacy/**
     to: services/pricing/internal/**

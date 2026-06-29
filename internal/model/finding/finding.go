@@ -14,8 +14,8 @@ type Status string
 const (
 	StatusNew           Status = "new"
 	StatusBaseline      Status = "baseline"
-	StatusExcepted      Status = "excepted"
-	StatusExpiredExcept Status = "expired_exception"
+	StatusWaived        Status = "waived"
+	StatusExpiredWaiver Status = "expired_waiver"
 	StatusFixed         Status = "fixed"
 )
 
