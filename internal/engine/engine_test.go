@@ -364,9 +364,10 @@ func TestRun_DiagnosticShape(t *testing.T) {
 	if d.ToolCoverage == nil {
 		t.Errorf("tool_coverage is nil, want typed empty slice")
 	}
-	// Metrics should contain all registered metrics.
-	if len(d.Metrics) != 27 {
-		t.Errorf("len(metrics)=%d, want 27", len(d.Metrics))
+	// Metrics should contain all registered metrics (the book + structural-canon
+	// keep set: encapsulation, unbalanced_edge, cycle, coverage, blast_radius).
+	if len(d.Metrics) != 5 {
+		t.Errorf("len(metrics)=%d, want 5", len(d.Metrics))
 	}
 }
 
