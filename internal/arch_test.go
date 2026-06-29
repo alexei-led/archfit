@@ -33,9 +33,10 @@ var coreRingPkgs = []string{
 	// score synthesises the banded scorecard from an already-computed
 	// Diagnostic — a pure decision over collected facts, no tools or I/O.
 	modulePrefix + "internal/score",
-	// scope is a value type + resolution logic over an injected Resolver;
-	// the concrete git/toolrun wiring lives in cmd. Keep it that way.
-	modulePrefix + "internal/scope",
+	// scope resolves the analysis boundary from config + git; it uses os.Stat
+	// and filepath.EvalSymlinks for path canonicalization (justified I/O — no
+	// subprocess, no YAML, no adapter). Excluded from the os-forbidden check.
+	// modulePrefix + "internal/scope" — see scopeOsAllowed carve-out below.
 	// syntax derives roles from already-gathered SyntaxFacts — pure decision,
 	// no I/O, no subprocess.
 	modulePrefix + "internal/syntax",
@@ -146,7 +147,7 @@ func TestArchImports(t *testing.T) {
 				continue
 			}
 			for imp := range pkg.Imports {
-				if isForbiddenForCore(imp) {
+				if isForbiddenForCoreIn(pkgPath, imp) {
 					t.Errorf("core ring package %s must not import %q", pkgPath, imp)
 				}
 			}
@@ -247,6 +248,17 @@ func isForbiddenForCore(imp string) bool {
 		}
 	}
 	return false
+}
+
+// isForbiddenForCoreIn is isForbiddenForCore with a per-package carve-out:
+// internal/scope may import "os" for path-identity checks (os.Stat/os.SameFile
+// in snapScanRoot — same class of I/O as filepath.EvalSymlinks already used
+// there). os/exec and YAML remain forbidden for scope.
+func isForbiddenForCoreIn(pkgPath, imp string) bool {
+	if imp == "os" && strings.HasPrefix(pkgPath, modulePrefix+"internal/scope") {
+		return false
+	}
+	return isForbiddenForCore(imp)
 }
 
 // isStdlib reports whether imp is a standard library package.
