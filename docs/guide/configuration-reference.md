@@ -291,7 +291,7 @@ analyzers:
 - Emits a `syntax_facts` block in the diagnostic (neutral, off-gate, omitted
   when empty).
 - Each fact records: `language`, `file`, `kind` (function/method/class/struct/
-  interface/trait/enum/type_alias/annotation/route/unsafe_op/struct_field/panic_op/global_state/type_leak/lazy_import/test_fn), `name`, `exported`,
+  interface/trait/enum/type_alias/annotation/route/type_leak/lazy_import), `name`, `exported`,
   `framework`, `start_line`, `end_line`.
 - The analyze output gains a **Syntax surface** section listing declaration counts,
   detected routes, and public API totals per module.

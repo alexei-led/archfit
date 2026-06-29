@@ -33,23 +33,17 @@ var rustRules string
 
 // SyntaxFact Kind constants for Go and TypeScript declarations and routes.
 const (
-	kindFunction    = "function"
-	kindMethod      = "method"
-	kindStruct      = "struct"
-	kindInterface   = "interface"
-	kindTypeAlias   = "type_alias"
-	kindRoute       = "route"
-	kindClass       = "class"
-	kindEnum        = "enum"
-	kindAnnotation  = "annotation"
-	kindTestImport  = "test_import"
-	kindUnsafeOp    = "unsafe_op"
-	kindStructField = "struct_field"
-	kindPanicOp     = "panic_op"
-	kindGlobalState = "global_state"
-	kindTypeLeak    = "type_leak"
-	kindLazyImport  = "lazy_import"
-	kindTestFn      = "test_fn"
+	kindFunction   = "function"
+	kindMethod     = "method"
+	kindStruct     = "struct"
+	kindInterface  = "interface"
+	kindTypeAlias  = "type_alias"
+	kindRoute      = "route"
+	kindClass      = "class"
+	kindEnum       = "enum"
+	kindAnnotation = "annotation"
+	kindTypeLeak   = "type_leak"
+	kindLazyImport = "lazy_import"
 )
 
 // Language identifier constants used as keys in embeddedRules and langRuleKinds.
@@ -83,35 +77,20 @@ type kindInfo struct {
 // signal rule confirms that the file imports that group. Groups are strings so
 // new frameworks need no code change beyond the YAML + kindInfo entry.
 const (
-	fwGroupNetHTTP = "net/http"    // net/http + gorilla/mux (gorilla always imports net/http too)
-	fwGroupGin     = "gin"         // gin
-	fwGroupEcho    = "echo"        // echo
-	fwGroupChi     = "chi"         // chi
-	fwGroupFiber   = "fiber"       // fiber
-	fwGroupGorilla = "gorilla/mux" // gorilla/mux (confirmed via go-import-gorilla)
-	fwGroupExpress = "express"     // express/koa/fastify
-	fwGroupNest    = "nest"        // NestJS
-	fwGroupFastAPI = "fastapi"     // fastapi/flask/starlette/aiohttp/sanic
-	fwGroupDjango  = "django"      // django
-	fwGroupActix   = "actix"       // actix-web/rocket
-	fwGroupAxum    = "axum"        // axum/warp
-	// Test-framework groups (used by test_import rules).
-	fwGroupTestifyMock   = "testify/mock"
-	fwGroupTestifyAssert = "testify/assert"
-	fwGroupTestifyRequir = "testify/require"
-	fwGroupTestifySuite  = "testify/suite"
-	fwGroupGomockUber    = "gomock/uber"
-	fwGroupGomockGolang  = "gomock/golang"
-	fwGroupSQLMock       = "go-sqlmock"
-	fwGroupJest          = "jest"
-	fwGroupVitest        = "vitest"
-	fwGroupMocha         = "mocha"
-	fwGroupSinon         = "sinon"
-	fwGroupPytest        = "pytest"
-	fwGroupUnittest      = "unittest"
-	fwGroupMock          = "mock"
-	fwGroupMockall       = "mockall"
-	fwGroupProptest      = "proptest"
+	fwGroupNetHTTP  = "net/http"    // net/http + gorilla/mux (gorilla always imports net/http too)
+	fwGroupGin      = "gin"         // gin
+	fwGroupEcho     = "echo"        // echo
+	fwGroupChi      = "chi"         // chi
+	fwGroupFiber    = "fiber"       // fiber
+	fwGroupGorilla  = "gorilla/mux" // gorilla/mux (confirmed via go-import-gorilla)
+	fwGroupExpress  = "express"     // express/koa/fastify
+	fwGroupNest     = "nest"        // NestJS
+	fwGroupFastAPI  = "fastapi"     // fastapi/flask/starlette/aiohttp/sanic
+	fwGroupDjango   = "django"      // django
+	fwGroupActix    = "actix"       // actix-web/rocket
+	fwGroupAxum     = "axum"        // axum/warp
+	fwGroupMockall  = "mockall"
+	fwGroupProptest = "proptest"
 )
 
 // goRuleKinds maps each go.yml ruleId to its Kind and Framework.
@@ -137,24 +116,10 @@ var goRuleKinds = map[string]kindInfo{
 	"go-import-chi":      {Framework: fwGroupChi, IsSignal: true},
 	"go-import-fiber":    {Framework: fwGroupFiber, IsSignal: true},
 	"go-import-gorilla":  {Framework: fwGroupGorilla, IsSignal: true},
-	// Struct-field rules: one fact per exported struct; Count = estimated field count.
-	"go-struct-field": {Kind: kindStructField},
-	// Panic-operation rules: report-only, never gates.
-	"go-panic": {Kind: kindPanicOp},
 	// Type-leak rules: exported struct fields or function/method return types with
 	// qualified external-package types. report-only (Cat 5); consumed by public_api_type_leak rule.
 	ruleGoTypeLeak:     {Kind: kindTypeLeak},
 	ruleGoFuncTypeLeak: {Kind: kindTypeLeak},
-	// Test-function detection: emit test_fn facts for Go test functions (^Test prefix).
-	"go-test-fn": {Kind: kindTestFn},
-	// Test-import rules: emit test_import facts for production Go files.
-	"go-test-import-testify-mock":    {Kind: kindTestImport, Framework: fwGroupTestifyMock},
-	"go-test-import-testify-assert":  {Kind: kindTestImport, Framework: fwGroupTestifyAssert},
-	"go-test-import-testify-require": {Kind: kindTestImport, Framework: fwGroupTestifyRequir},
-	"go-test-import-testify-suite":   {Kind: kindTestImport, Framework: fwGroupTestifySuite},
-	"go-test-import-gomock-uber":     {Kind: kindTestImport, Framework: fwGroupGomockUber},
-	"go-test-import-gomock-golang":   {Kind: kindTestImport, Framework: fwGroupGomockGolang},
-	"go-test-import-sqlmock":         {Kind: kindTestImport, Framework: fwGroupSQLMock},
 }
 
 // tsRuleKinds maps each typescript.yml ruleId to its Kind and Framework.
@@ -175,13 +140,6 @@ var tsRuleKinds = map[string]kindInfo{
 	// Import-signal rules (IsSignal=true): confirm framework import per file.
 	"ts-import-express": {Framework: fwGroupExpress, IsSignal: true},
 	"ts-import-nest":    {Framework: fwGroupNest, IsSignal: true},
-	// Test-function detection: emit test_fn facts for TS test cases (it()/test() calls).
-	"ts-test-fn": {Kind: kindTestFn},
-	// Test-import rules: emit test_import facts for production TS files.
-	"ts-test-import-jest":   {Kind: kindTestImport, Framework: fwGroupJest},
-	"ts-test-import-vitest": {Kind: kindTestImport, Framework: fwGroupVitest},
-	"ts-test-import-mocha":  {Kind: kindTestImport, Framework: fwGroupMocha},
-	"ts-test-import-sinon":  {Kind: kindTestImport, Framework: fwGroupSinon},
 }
 
 // pyRuleKinds maps each python.yml ruleId to its Kind and Framework.
@@ -199,12 +157,6 @@ var pyRuleKinds = map[string]kindInfo{
 	// Import-signal rules (IsSignal=true): confirm framework import per file.
 	"py-import-fastapi": {Framework: fwGroupFastAPI, IsSignal: true},
 	"py-import-django":  {Framework: fwGroupDjango, IsSignal: true},
-	// Test-function detection: emit test_fn facts for Python test functions (^test_ prefix).
-	"py-test-fn": {Kind: kindTestFn},
-	// Test-import rules: emit test_import facts for production Python files.
-	"py-test-import-pytest":   {Kind: kindTestImport, Framework: fwGroupPytest},
-	"py-test-import-unittest": {Kind: kindTestImport, Framework: fwGroupUnittest},
-	"py-test-import-mock":     {Kind: kindTestImport, Framework: fwGroupMock},
 	// Lazy-import rules: emit lazy_import facts for in-function import statements.
 	// py-lazy-import-module: `import X` inside a function body.
 	// py-lazy-import-from:   `from X import Y` inside a function body.
@@ -230,29 +182,6 @@ var rustRuleKinds = map[string]kindInfo{
 	// Import-signal rules (IsSignal=true): confirm framework import per file.
 	"rs-import-actix": {Framework: fwGroupActix, IsSignal: true},
 	"rs-import-axum":  {Framework: fwGroupAxum, IsSignal: true},
-	// Test-function detection: emit test_fn facts for Rust test functions (^test_ name prefix).
-	// Ceiling: misses #[test] fn check_foo() where name doesn't start with test_.
-	// Practical proxy for test density; use SCIP for semantic precision.
-	"rs-test-fn": {Kind: kindTestFn},
-	// Test-import rules: emit test_import facts for production Rust files.
-	"rs-test-import-mockall":  {Kind: kindTestImport, Framework: fwGroupMockall},
-	"rs-test-import-proptest": {Kind: kindTestImport, Framework: fwGroupProptest},
-	// Safety-operation rules: report-only, never gates.
-	"rs-unsafe-block": {Kind: kindUnsafeOp},
-	"rs-unsafe-cell":  {Kind: kindUnsafeOp},
-	"rs-raw-cast":     {Kind: kindUnsafeOp},
-	"rs-transmute":    {Kind: kindUnsafeOp},
-	// Struct-field rules: one fact per pub struct with named fields; Count = estimated field count.
-	"rs-struct-field": {Kind: kindStructField},
-	// Panic-operation rules: report-only, never gates.
-	"rs-unwrap": {Kind: kindPanicOp},
-	"rs-expect": {Kind: kindPanicOp},
-	"rs-panic":  {Kind: kindPanicOp},
-	// Global-state rules: static mut, Atomic*, OnceLock — report-only, never gates.
-	// AtomicU32/Bool/etc. ID-generators are idiomatic Rust; these are info signal only.
-	"rs-static-mut":      {Kind: kindGlobalState},
-	"rs-static-atomic":   {Kind: kindGlobalState},
-	"rs-static-oncelock": {Kind: kindGlobalState},
 }
 
 // langRuleKinds maps a language identifier to its ruleId→kindInfo table.
@@ -370,22 +299,6 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 			}
 
 			name := nameFromMatch(m)
-			// test_import rules use pattern forms (e.g. bare import, $$$ multi-metavar,
-			// regex) that don't populate $NAME/$PATH. Use the framework label as the
-			// name — it is non-empty for all test_import entries in kindInfo maps.
-			if name == "" && ki.Kind == kindTestImport {
-				name = ki.Framework
-			}
-			// unsafe_op rules have no $NAME metavar. Use the ruleId (minus the "rs-"
-			// prefix) as the name so the fact is identifiable in displays and tests.
-			if name == "" && ki.Kind == kindUnsafeOp {
-				name = strings.TrimPrefix(m.RuleID, "rs-")
-			}
-			// panic_op rules have no $NAME metavar. Use the ruleId (minus the
-			// language prefix) as the name so the fact is identifiable in displays.
-			if name == "" && ki.Kind == kindPanicOp {
-				name = strings.TrimPrefix(strings.TrimPrefix(m.RuleID, "rs-"), "go-")
-			}
 			if name == "" {
 				continue
 			}
@@ -400,17 +313,6 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 
 			exported := isExported(lang, m.RuleID, name)
 
-			// For struct_field facts, estimate the field count from the line range.
-			// count = endLine - startLine - 1 (opening and closing brace lines excluded).
-			// Negative results (single-line structs) clamp to 0.
-			count := 0
-			if ki.Kind == kindStructField {
-				count = m.Range.End.Line - m.Range.Start.Line - 1
-				if count < 0 {
-					count = 0
-				}
-			}
-
 			facts = append(facts, diagnostic.SyntaxFact{
 				Language:           lang,
 				File:               m.File,
@@ -421,7 +323,6 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 				EndLine:            m.Range.End.Line + 1,
 				Framework:          ki.Framework,
 				FrameworkConfirmed: ki.Kind == kindRoute && ki.Framework != "",
-				Count:              count,
 			})
 		}
 	}
@@ -502,34 +403,25 @@ func nameFromMatch(m sgSyntaxMatch) string {
 // facts rather than exported API surface entries.
 func isNonExportedGoRule(ruleID string) bool {
 	return strings.HasPrefix(ruleID, "go-route-") || strings.HasPrefix(ruleID, "go-import-") ||
-		strings.HasPrefix(ruleID, "go-test-import-") || ruleID == "go-struct-field" ||
-		ruleID == ruleGoTypeLeak || ruleID == ruleGoFuncTypeLeak || ruleID == "go-test-fn"
+		ruleID == ruleGoTypeLeak || ruleID == ruleGoFuncTypeLeak
 }
 
 // isNonExportedTSRule returns true for TypeScript ruleIds that are never exported.
 func isNonExportedTSRule(ruleID string) bool {
 	return strings.HasPrefix(ruleID, "ts-route-") || strings.HasPrefix(ruleID, "ts-import-") ||
-		ruleID == "ts-decorator" || strings.HasPrefix(ruleID, "ts-test-import-") || ruleID == "ts-test-fn"
+		ruleID == "ts-decorator"
 }
 
 // isNonExportedPyRule returns true for Python ruleIds that are never exported.
 func isNonExportedPyRule(ruleID string) bool {
 	return strings.HasPrefix(ruleID, "py-route-") || strings.HasPrefix(ruleID, "py-import-") ||
-		ruleID == "py-decorator" || strings.HasPrefix(ruleID, "py-test-import-") ||
-		strings.HasPrefix(ruleID, "py-lazy-import-") || ruleID == "py-test-fn"
+		ruleID == "py-decorator" || strings.HasPrefix(ruleID, "py-lazy-import-")
 }
 
 // isNonExportedRustRule returns true for Rust ruleIds that are never exported.
-// struct-field facts represent whole structs with field counts, not API surface.
-// global-state facts are module-level statics; visibility is not the relevant signal.
-// panic-op facts (rs-unwrap/rs-expect/rs-panic) are call-site occurrences, not
-// exported declarations — must not be counted as public API surface.
 func isNonExportedRustRule(ruleID string) bool {
 	return strings.HasPrefix(ruleID, "rs-route-") || strings.HasPrefix(ruleID, "rs-import-") ||
-		ruleID == "rs-attribute" || strings.HasPrefix(ruleID, "rs-test-import-") ||
-		strings.HasPrefix(ruleID, "rs-unsafe-") || ruleID == "rs-raw-cast" || ruleID == "rs-transmute" ||
-		ruleID == "rs-struct-field" || strings.HasPrefix(ruleID, "rs-static-") || ruleID == "rs-test-fn" ||
-		ruleID == "rs-unwrap" || ruleID == "rs-expect" || ruleID == "rs-panic"
+		ruleID == "rs-attribute" || strings.HasPrefix(ruleID, "rs-test-import-")
 }
 
 // isExported returns true if the fact represents an exported identifier.

@@ -965,102 +965,6 @@ func TestSyntax_Confirmed_Route_Emitted(t *testing.T) {
 	}
 }
 
-func TestSyntax_Rust_GlobalState_Facts(t *testing.T) {
-	// global_state facts use $NAME metavar; they are never exported.
-	// Three kinds: static mut (rs-static-mut), Atomic* (rs-static-atomic), OnceLock (rs-static-oncelock).
-	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntryWithName("rs-static-mut", fileSvcRs, "GLOBAL_COUNTER", 5, 5),
-		syntaxEntryWithName("rs-static-atomic", fileSvcRs, "ID_GENERATOR", 6, 6),
-		syntaxEntryWithName("rs-static-oncelock", fileSvcRs, "REGISTRY", 7, 7),
-	})
-
-	a := astgrep.New(presentRunner(entries))
-	facts, cov, err := a.Syntax(context.Background(), syntaxScope, []string{langRustStr})
-	if err != nil {
-		t.Fatalf("Syntax: %v", err)
-	}
-	if cov.Status != "ok" {
-		t.Errorf("cov.Status = %q, want ok", cov.Status)
-	}
-	if len(facts) != 3 {
-		t.Fatalf("len(facts) = %d, want 3", len(facts))
-	}
-	for i, f := range facts {
-		if f.Kind != kindGlobalStateStr {
-			t.Errorf("facts[%d].Kind = %q, want %q", i, f.Kind, kindGlobalStateStr)
-		}
-		if f.Exported {
-			t.Errorf("facts[%d] global_state should not be exported", i)
-		}
-		if f.Name == "" {
-			t.Errorf("facts[%d] should have a non-empty Name ($NAME from field)", i)
-		}
-		if f.Language != langRustStr {
-			t.Errorf("facts[%d].Language = %q, want rust", i, f.Language)
-		}
-	}
-	// Verify specific names are preserved.
-	wantNames := []string{"GLOBAL_COUNTER", "ID_GENERATOR", "REGISTRY"}
-	for i, want := range wantNames {
-		if facts[i].Name != want {
-			t.Errorf("facts[%d].Name = %q, want %q", i, facts[i].Name, want)
-		}
-	}
-}
-
-func TestSyntax_Rust_GlobalState_Empty(t *testing.T) {
-	// No global-state entries → no global_state facts; other kinds still work.
-	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntryWithName("rs-func", fileSvcRs, "new_service", 1, 5),
-	})
-
-	a := astgrep.New(presentRunner(entries))
-	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langRustStr})
-	if err != nil {
-		t.Fatalf("Syntax: %v", err)
-	}
-	for _, f := range facts {
-		if f.Kind == kindGlobalStateStr {
-			t.Errorf("unexpected global_state fact when none were injected: %+v", f)
-		}
-	}
-}
-
-func TestSyntax_Rust_UnsafeOp_Facts(t *testing.T) {
-	// unsafe_op facts use ruleId as name fallback; they are never exported.
-	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntry("rs-unsafe-block", fileSvcRs, "unsafe { ... }", 10, 12),
-		syntaxEntry("rs-raw-cast", fileSvcRs, "ptr as *mut u8", 20, 20),
-		syntaxEntry("rs-unsafe-cell", fileSvcRs, "UnsafeCell", 25, 25),
-	})
-
-	a := astgrep.New(presentRunner(entries))
-	facts, cov, err := a.Syntax(context.Background(), syntaxScope, []string{langRustStr})
-	if err != nil {
-		t.Fatalf("Syntax: %v", err)
-	}
-	if cov.Status != "ok" {
-		t.Errorf("cov.Status = %q, want ok", cov.Status)
-	}
-	if len(facts) != 3 {
-		t.Fatalf("len(facts) = %d, want 3", len(facts))
-	}
-	for i, f := range facts {
-		if f.Kind != kindUnsafeOpStr {
-			t.Errorf("facts[%d].Kind = %q, want %q", i, f.Kind, kindUnsafeOpStr)
-		}
-		if f.Exported {
-			t.Errorf("facts[%d] unsafe_op should not be exported", i)
-		}
-		if f.Name == "" {
-			t.Errorf("facts[%d] should have a non-empty Name (ruleId fallback)", i)
-		}
-		if f.Language != langRustStr {
-			t.Errorf("facts[%d].Language = %q, want rust", i, f.Language)
-		}
-	}
-}
-
 func TestSyntax_Py_LazyImport_Facts(t *testing.T) {
 	// lazy_import facts use $NAME from the import statement; they are never exported.
 	// py-lazy-import-module: `import X` inside a function → Name is module name.
@@ -1118,36 +1022,6 @@ func TestSyntax_Py_LazyImport_Empty(t *testing.T) {
 	for _, f := range facts {
 		if f.Kind == kindLazyImportStr {
 			t.Errorf("unexpected lazy_import fact when none were injected: %+v", f)
-		}
-	}
-}
-
-// TestSyntax_Rust_PanicOp_ExportedFalse verifies that panic-op facts (rs-unwrap,
-// rs-expect, rs-panic) are never marked Exported=true. They are call-site
-// occurrences, not exported declarations, and must not contribute to public API
-// surface analysis.
-func TestSyntax_Rust_PanicOp_ExportedFalse(t *testing.T) {
-	// panic_op rules have no NAME metavar — the name is derived from the ruleId.
-	entries := marshalSyntaxEntries(t, []map[string]any{
-		syntaxEntry("rs-unwrap", "src/lib.rs", "unwrap", 5, 5),
-		syntaxEntry("rs-expect", "src/lib.rs", "expect", 10, 10),
-		syntaxEntry("rs-panic", "src/lib.rs", "panic", 15, 15),
-	})
-
-	a := astgrep.New(presentRunner(entries))
-	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{langRustStr})
-	if err != nil {
-		t.Fatalf("Syntax: %v", err)
-	}
-	if len(facts) == 0 {
-		t.Fatal("expected at least 1 panic_op fact, got none")
-	}
-	for _, f := range facts {
-		if f.Kind != kindPanicOpStr {
-			continue
-		}
-		if f.Exported {
-			t.Errorf("panic_op fact %q (file %s) must have Exported=false, got true", f.Name, f.File)
 		}
 	}
 }

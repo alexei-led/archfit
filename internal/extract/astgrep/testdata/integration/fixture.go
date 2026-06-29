@@ -17,18 +17,3 @@ type Widget struct {
 type Renderer interface {
 	Render() string
 }
-
-// BigStruct is an exported multi-field struct — exercises go-struct-field (struct_field kind).
-type BigStruct struct {
-	FieldA string
-	FieldB int
-	FieldC float64
-}
-
-// PanicFixture exercises go-panic.
-func PanicFixture(v interface{}) string {
-	if v == nil {
-		panic("nil input") // go-panic
-	}
-	return ""
-}
