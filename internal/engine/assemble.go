@@ -153,9 +153,9 @@ func pathDir(p string) string {
 // from the Scored/Abstained distribution and counted in External instead.
 // This is language-agnostic: classifyDistance sets DistanceUnknown for all
 // languages (Go stdlib/3p, Rust dependency crates, TS node_modules, Python
-// external imports). External dependency hygiene is a dependency_graph_health
-// concern, not a coupling_balance concern — the book measures coupling among
-// YOUR components, not your libraries.
+// external imports). External dependency hygiene is tracked separately and does
+// not affect coupling_balance — the book measures coupling among YOUR components,
+// not your libraries.
 //
 // Genuine internal coupling with known distance but unknown strength is still
 // counted as Abstained — it stays in the denominator and honestly lowers

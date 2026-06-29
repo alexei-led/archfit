@@ -171,8 +171,8 @@ func (c *AnalyzeCmd) runScan(ctx context.Context, deps *appDeps, formats []strin
 		advisory = true
 	}
 
-	// --base passes the ref so the HEAD scan also computes change_locality (the
-	// per-change drift metric). Mode stays full, so the scorecard is a full scan
+	// --base passes the ref so the HEAD scan also computes the changed-file set
+	// for per-change metrics. Mode stays full, so the scorecard is a full scan
 	// and no finding-delta buckets are produced (deltaReport gates on delta mode);
 	// the before/after scorecard delta is computed separately by scoreBaseRef.
 	mode := engine.Mode{

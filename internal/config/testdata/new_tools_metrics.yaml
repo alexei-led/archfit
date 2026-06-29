@@ -3,10 +3,10 @@ analyzers:
   clones:
     enabled: true
 metrics:
-  risk_hub:
+  blast_radius:
     enabled: false
-  architecture_fitness:
+  encapsulation:
     enabled: true
     gate: warn
-  functional_candidates:
+  coverage:
     enabled: false

@@ -120,8 +120,7 @@ func buildClonePairSet(clusters []clone.Cluster, mm config.ModuleMap, index map[
 }
 
 // clusterHasTestOrGenerated reports whether any file in the cluster is not a
-// production file (test, generated, or vendor). Mirrors
-// functional_candidates.isTestOrGeneratedCluster; kept here to avoid an
+// production file (test, generated, or vendor). Kept in engine/ to avoid an
 // engine → metrics/modularity import (wrong dependency direction).
 func clusterHasTestOrGenerated(files []string, index map[string]fileclass.FileClass, cfg syntax.FileClassConfig) bool {
 	for _, f := range files {

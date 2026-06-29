@@ -56,7 +56,7 @@ type DimReport struct {
 	Value      int
 	Band       score.Band
 	Confidence score.Confidence
-	// Meta marks analysis_confidence — it scores the review, not the architecture.
+	// Meta marks a meta-dimension that scores the review process, not the architecture.
 	Meta bool
 	// Why combines Dimension.Summary with condensed Evidence references.
 	Why string

@@ -562,8 +562,7 @@ func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map
 //     and Lint() surfaces it).
 //   - otherwise → high/medium/low/frozen.
 //
-// No churn or git history is consulted here. Implementation volatility (git
-// churn) feeds only report-only metrics (change_amplification, hidden_coupling).
+// No churn or git history is consulted here — volatility is config-declared only.
 func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config.ModuleDef) coupling.Volatility {
 	toMod, ok := mi.moduleFor(toPath)
 	if !ok {

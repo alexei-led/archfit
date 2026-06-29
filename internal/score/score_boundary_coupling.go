@@ -50,8 +50,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 	// --- Distribution path (preferred): use the full classified-edge summary ---
 	if summary != nil {
 		// Internal cross-boundary edges only (external/library edges excluded from
-		// coupling_balance — they are a dependency_graph_health concern, not a
-		// coupling_balance concern; the book scores YOUR components only).
+		// coupling_balance — the book scores YOUR components only, not your libraries).
 		crossBoundary := summary.Scored + summary.Abstained
 
 		// Zero internal cross-boundary edges (or zero scored): unanalyzed sentinel.
@@ -64,7 +63,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			}
 			if summary.External > 0 {
 				dim.Evidence = append(dim.Evidence,
-					fmt.Sprintf("%d external/library edges excluded — see dependency_graph_health", summary.External))
+					fmt.Sprintf("%d external/library edges excluded (external deps are not internal coupling seams)", summary.External))
 			}
 			dim.Summary = "coupling balance unconfirmed: no scored cross-boundary edges"
 			return dim
@@ -122,7 +121,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		}
 		if summary.External > 0 {
 			dim.Evidence = append(dim.Evidence,
-				fmt.Sprintf("%d external/library edges excluded — see dependency_graph_health", summary.External))
+				fmt.Sprintf("%d external/library edges excluded (external deps are not internal coupling seams)", summary.External))
 		}
 		if llmConfLowered {
 			dim.Evidence = append(dim.Evidence,

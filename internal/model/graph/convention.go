@@ -145,7 +145,7 @@ func pythonFileToModuleKey(file string) string {
 }
 
 // pythonModuleFileCandidates maps a dotted Python module path to its candidate
-// source files (exact copy of change_locality's module-node branch).
+// source files (mirrors the module-node convention used by the graph extractor).
 func pythonModuleFileCandidates(modulePath string) []string {
 	slashed := strings.ReplaceAll(modulePath, ".", "/")
 	return []string{slashed + ".py", slashed + ".pyi", slashed + "/__init__.py"}

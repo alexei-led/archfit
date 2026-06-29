@@ -23,19 +23,9 @@ const confidenceHigh = "high"
 // These are report-only and never gate. Everything else appears in the
 // primary Metrics section (coupling_balance, encapsulation, etc.).
 var beyondBCMetrics = map[string]bool{
-	"cycle":                true,
-	"blast_radius":         true,
-	"propagation_cost":     true,
-	"instability":          true,
-	"abstractness":         true,
-	"martin_distance":      true,
-	"change_coupling":      true,
-	"change_amplification": true,
-	"hidden_coupling":      true,
-	"structural_weight":    true,
-	"complexity":           true,
-	"risk_hub":             true,
-	"coverage":             true,
+	"cycle":        true,
+	"blast_radius": true,
+	"coverage":     true,
 }
 
 // Renderer formats a Diagnostic as BC-aligned Markdown. Satisfies engine.Renderer.

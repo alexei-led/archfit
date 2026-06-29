@@ -698,25 +698,25 @@ func TestLoad_NewToolsAndMetrics(t *testing.T) {
 		t.Error("ClonesEnabled() = false, want true when enabled")
 	}
 
-	// metrics.risk_hub: enabled false
-	rh := cfg.ForMetric("risk_hub")
+	// metrics.blast_radius: enabled false
+	rh := cfg.ForMetric("blast_radius")
 	if rh.Enabled {
-		t.Error("ForMetric(risk_hub).Enabled = true, want false")
+		t.Error("ForMetric(blast_radius).Enabled = true, want false")
 	}
 
-	// metrics.architecture_fitness: enabled true, gate warn
-	af := cfg.ForMetric("architecture_fitness")
+	// metrics.encapsulation: enabled true, gate warn
+	af := cfg.ForMetric("encapsulation")
 	if !af.Enabled {
-		t.Error("ForMetric(architecture_fitness).Enabled = false, want true")
+		t.Error("ForMetric(encapsulation).Enabled = false, want true")
 	}
 	if af.Gate != "warn" {
-		t.Errorf("ForMetric(architecture_fitness).Gate = %q, want warn", af.Gate)
+		t.Errorf("ForMetric(encapsulation).Gate = %q, want warn", af.Gate)
 	}
 
-	// metrics.functional_candidates: enabled false
-	fc := cfg.ForMetric("functional_candidates")
+	// metrics.coverage: enabled false
+	fc := cfg.ForMetric("coverage")
 	if fc.Enabled {
-		t.Error("ForMetric(functional_candidates).Enabled = true, want false")
+		t.Error("ForMetric(coverage).Enabled = true, want false")
 	}
 }
 
@@ -733,7 +733,7 @@ func TestNewToolsDefaultOff(t *testing.T) {
 // a zero MetricEntry (Enabled=false, Gate=""), consistent with ForMetric contract.
 func TestNewMetricsDefaultZero(t *testing.T) {
 	cfg := config.Config{Version: 1}
-	for _, name := range []string{"risk_hub", "architecture_fitness", "functional_candidates"} {
+	for _, name := range []string{"blast_radius", "encapsulation", "coverage"} {
 		mc := cfg.ForMetric(name)
 		if mc.Enabled {
 			t.Errorf("ForMetric(%q).Enabled = true on empty config, want false", name)

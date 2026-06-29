@@ -1,7 +1,7 @@
 // Package signal defines the carrier types that flow between signal producers
-// and the metrics layer: the per-family metric inputs (CommonInput,
-// DuplicationInput), the CollectedSignals bag the engine assembles and projects
-// per family, and the RunSignals bundle the cmd layer produces.
+// and the metrics layer: the per-family metric input (CommonInput), the
+// CollectedSignals bag the engine assembles and projects per family, and the
+// RunSignals bundle the cmd layer produces.
 //
 // Keeping these types here — rather than in internal/metrics — means adding a
 // new signal only churns the new producer package and this package. The package
@@ -99,12 +99,12 @@ type CommonInput struct {
 	ToolCoverage    []diagnostic.Coverage
 	ChangedFiles    []string
 	// SyntaxFacts carries the ast-grep syntax facts produced by the syntax provider.
-	// Empty when syntax is disabled or sg is absent. Report-only metrics (e.g.
-	// unsafe_density) consume this to produce informational counts.
+	// Empty when syntax is disabled or sg is absent. The syntax surface renderer
+	// and coverage metrics consume this to produce informational counts.
 	SyntaxFacts []diagnostic.SyntaxFact
 	// DeprecatedDeps carries the locally-declared deprecation/retraction markers
-	// detected by the manifest adapter. Empty when none were found. Report-only
-	// metrics (e.g. deprecated_dep_count) consume this to produce informational counts.
+	// detected by the manifest adapter. Empty when none were found. The deprecated-
+	// deps renderer consumes this to produce informational counts.
 	DeprecatedDeps []diagnostic.DeprecatedDep
 }
 

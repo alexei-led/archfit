@@ -32,8 +32,8 @@ import (
 )
 
 // cloneTestGenGlobs are coarse jscpd --ignore patterns that skip test and
-// generated files at scan time. These are additive speed hints; the post-filter
-// in functional_candidates.go is the authoritative correctness gate.
+// generated files at scan time. These are additive speed hints; correctness
+// is enforced by the clone post-filter in the classify stage.
 var cloneTestGenGlobs = []string{
 	"**/*_test.go",
 	"**/*_test.ts",
@@ -212,8 +212,8 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// Clone detection — opt-in (analyzers.clones.enabled: true). Run returns empty+absent
 	// when disabled or the tool is missing; the metric reports n/a in that case.
 	// Append coarse test/generated globs to the exclusions so jscpd skips those
-	// files at scan time (speed). The post-filter in functional_candidates.go is
-	// the source-of-truth for correctness; these globs are additive.
+	// files at scan time (speed); correctness is enforced by the clone post-filter
+	// in the classify stage. These globs are additive to cfg.Exclude.
 	clonesExcl := make([]string, len(cfg.Exclude), len(cfg.Exclude)+len(cloneTestGenGlobs))
 	copy(clonesExcl, cfg.Exclude)
 	clonesExcl = append(clonesExcl, cloneTestGenGlobs...)

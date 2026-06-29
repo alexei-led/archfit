@@ -61,8 +61,8 @@ func Build(
 			continue
 		}
 		// scip-go indexes test binaries as "<pkg>.test" modules. Exclude them
-		// from inbound fan-in so the count matches blast_radius/instability,
-		// which use the go/packages import graph loaded without Tests:true.
+		// from inbound fan-in so the count matches blast_radius, which uses the
+		// go/packages import graph loaded without Tests:true.
 		isTestMod := strings.HasSuffix(fromMod, ".test")
 		for to := range tos {
 			if from == to {

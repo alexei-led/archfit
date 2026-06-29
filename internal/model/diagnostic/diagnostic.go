@@ -209,7 +209,7 @@ type DynamicImportSite struct {
 // It is the warn-loud counterpart to a Coverage{Status:"absent"} entry: it
 // turns "this tool is missing" into "here is what you lose and how to fix it".
 type CoverageGap struct {
-	// Tool is the absent analyzer's coverage name (e.g. "go/packages", "lizard").
+	// Tool is the absent analyzer's coverage name (e.g. "go/packages", "scip").
 	Tool string `json:"tool"`
 	// InstallCmd is a one-line install hint for the tool.
 	InstallCmd string `json:"install_cmd"`
@@ -279,7 +279,7 @@ type ClassifiedEdgeSummary struct {
 	// module (Distance == unknown: stdlib, third-party, undeclared packages). These
 	// are EXCLUDED from the Scored/Abstained distribution that drives coupling_balance
 	// — the book measures coupling among YOUR components, not your libraries.
-	// External dependency hygiene is a dependency_graph_health concern.
+	// External dependency hygiene is tracked separately and does not affect coupling_balance.
 	// This field is language-agnostic: it keys on DistanceUnknown, which classifyDistance
 	// sets for all languages (Go stdlib/3p, Rust dependency crates, TS node_modules,
 	// Python external imports). Zero means no external edges were detected.
@@ -351,10 +351,9 @@ type Diagnostic struct {
 	CoverageGaps []CoverageGap `json:"coverage_gaps,omitempty"`
 	// PrimaryExtractorTools names the per-language file extractors whose coverage
 	// the scorecard treats as load-bearing: their absence (when coverage is n/a)
-	// means the repo was not analysed at all and drives analysis_confidence toward
-	// critical. Injected by the composition root from the language registry so the
-	// score package holds no hardcoded tool list. Omitted when empty; score then
-	// falls back to its built-in default set.
+	// means the repo was not analysed at all. Injected by the composition root from
+	// the language registry so the score package holds no hardcoded tool list.
+	// Omitted when empty; score then falls back to its built-in default set.
 	PrimaryExtractorTools []string `json:"primary_extractor_tools,omitempty"`
 	// ConfigWarnings carries advisory config-quality messages (under-specified
 	// modules, swallowed optional-tool errors) so they reach md/json/CI instead

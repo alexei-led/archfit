@@ -58,7 +58,7 @@ var toolAffectedMetrics = buildToolAffectedMetrics()
 
 func buildToolAffectedMetrics() map[string]affectedMetrics {
 	m := map[string]affectedMetrics{
-		toolJscpd:        {"npm install -g jscpd", []string{"functional_candidates"}},
+		toolJscpd:        {"npm install -g jscpd", []string{"coupling_balance"}},
 		toolCargoModules: {"cargo install cargo-modules (analyzers.cargo_modules.enabled: true)", []string{"cycle", "blast_radius", "cohesion", "encapsulation"}},
 	}
 	for _, lang := range languageRegistry {

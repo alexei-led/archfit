@@ -922,19 +922,15 @@ func TestRenderer_Render_BeyondBCMetrics(t *testing.T) {
 	}
 }
 
-// TestRenderer_Render_LowConfidenceFootnote verifies that proxy metrics
-// (abstractness, martin_distance) are demoted from the headline beyond-BC list to
-// a footnote when their confidence is low — while still being present in the
-// markdown footnote and retained in full by the JSON renderer.
-func TestRenderer_Render_LowConfidenceFootnote(t *testing.T) {
+// TestRenderer_Render_BeyondBCLowConfidence verifies that beyond-BC metrics with
+// low confidence render with a confidence qualifier in the dedicated section and
+// that no footnote block is emitted (the proxy-footnote mechanism was removed).
+func TestRenderer_Render_BeyondBCLowConfidence(t *testing.T) {
 	r := markdown.New()
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
 	d.Metrics = []diagnostic.MetricResult{
-		// Demoted: proxy metrics with low confidence.
-		{Name: metricAbstractness, Display: "0.62", Band: "warn", Confidence: confidenceLow},
-		{Name: metricMartinDistance, Display: "0.55", Band: "warn", Confidence: confidenceLow},
-		// Not demoted: a beyond-BC metric not in the footnote set, even at low confidence.
+		// Beyond-BC metric at low confidence: qualifier appended to band label.
 		{Name: metricBlastRadius, Display: "0.12", Band: "low", Confidence: confidenceLow},
 	}
 
@@ -944,34 +940,22 @@ func TestRenderer_Render_LowConfidenceFootnote(t *testing.T) {
 	}
 	out := buf.String()
 
-	// Proxy metrics must NOT appear as headline bullets ("- **name**: ...").
-	for _, name := range []string{metricAbstractness, metricMartinDistance} {
-		if strings.Contains(out, "- **"+name+"**") {
-			t.Errorf("%q should be footnoted, not a headline bullet\nfull output:\n%s", name, out)
-		}
+	// blast_radius must appear as a headline bullet with the confidence qualifier.
+	if !strings.Contains(out, "- **blast_radius**: 0.12 — low (low confidence)") {
+		t.Errorf("blast_radius headline with confidence qualifier missing\nfull output:\n%s", out)
 	}
-	// They must appear in the footnote block, flagged low confidence.
-	for _, want := range []string{
-		"Low-confidence proxies (footnote",
-		"> - abstractness: 0.62 — warn (low confidence)",
-		"> - martin_distance: 0.55 — warn (low confidence)",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("footnote missing %q\nfull output:\n%s", want, out)
-		}
-	}
-	// A beyond-BC metric outside the footnote set stays a headline bullet.
-	if !strings.Contains(out, "- **blast_radius**") {
-		t.Errorf("blast_radius should remain a headline bullet\nfull output:\n%s", out)
+	// No footnote block should be emitted.
+	if strings.Contains(out, "Low-confidence proxies (footnote") {
+		t.Errorf("unexpected footnote block in output\nfull output:\n%s", out)
 	}
 
-	// JSON renderer retains every metric in full, including the demoted proxies.
+	// JSON renderer retains every metric in full.
 	var jbuf bytes.Buffer
 	if err := jsonout.New().Render(d, &jbuf); err != nil {
 		t.Fatalf("json Render() error = %v", err)
 	}
 	jout := jbuf.String()
-	for _, want := range []string{`"name":"abstractness"`, `"name":"martin_distance"`, `"confidence":"low"`} {
+	for _, want := range []string{`"name":"blast_radius"`, `"confidence":"low"`} {
 		if !strings.Contains(jout, want) {
 			t.Errorf("JSON output missing %q\nfull output:\n%s", want, jout)
 		}

@@ -66,7 +66,7 @@ type Dimension struct {
 	Evidence []string `json:"evidence"`
 	// Summary is a one-line, Balanced-Coupling-aware explanation.
 	Summary string `json:"summary"`
-	// Meta marks analysis_confidence — it scores the review, not the architecture,
+	// Meta marks a meta-dimension that scores the review process, not the architecture,
 	// and is exempt from the evidence requirement.
 	Meta bool `json:"meta,omitempty"`
 }
