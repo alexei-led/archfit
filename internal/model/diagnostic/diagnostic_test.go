@@ -336,9 +336,6 @@ func TestSyntaxFact_JSONFieldNames(t *testing.T) {
 		Exported:  true,
 		StartLine: 10,
 		EndLine:   25,
-		Role:      "handler",
-		RoleConf:  "high",
-		Evidence:  "signature http.ResponseWriter",
 		Framework: "net/http",
 	}
 
@@ -354,8 +351,7 @@ func TestSyntaxFact_JSONFieldNames(t *testing.T) {
 
 	required := []string{
 		"language", "file", "kind", "name",
-		"exported", "start_line", "end_line",
-		"role", "role_confidence", "role_evidence", "framework",
+		"exported", "start_line", "end_line", "framework",
 	}
 	for _, f := range required {
 		if _, ok := m[f]; !ok {

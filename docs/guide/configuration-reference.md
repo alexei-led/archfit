@@ -280,7 +280,7 @@ analyzers:
 Runs the ast-grep adapter to extract declaration-level facts for Go, TypeScript,
 Python, and Rust. Unlike the dependency extractors, which answer _who imports
 whom_, `analyzers.syntax` answers _what declarations exist_ — exported names,
-kinds, framework routes, and architectural roles.
+kinds, and framework routes.
 
 Enable with `true`:
 
@@ -295,13 +295,10 @@ analyzers:
 - Emits a `syntax_facts` block in the diagnostic (neutral, off-gate, omitted
   when empty).
 - Each fact records: `language`, `file`, `kind` (function/method/class/struct/
-  interface/trait/enum/type_alias/annotation/route/unsafe_op/struct_field/panic_op/global_state/type_leak/lazy_import/test_fn), `name`, `exported`, `role`
-  (handler/service/repository/domain), `role_confidence` (high/medium/low),
-  `role_evidence`, `framework`, `start_line`, `end_line`.
-- Role derivation (`internal/syntax`) runs heuristics on name patterns,
-  annotations, and framework evidence.
-- The `scan` output gains a **Syntax surface** section listing declaration counts,
-  roles, and public API totals per module.
+  interface/trait/enum/type_alias/annotation/route/unsafe_op/struct_field/panic_op/global_state/type_leak/lazy_import/test_fn), `name`, `exported`,
+  `framework`, `start_line`, `end_line`.
+- The analyze output gains a **Syntax surface** section listing declaration counts,
+  detected routes, and public API totals per module.
 - `agent_tasks` evidence is enriched with per-node declaration counts when
   syntax facts are present.
 
@@ -666,9 +663,6 @@ rules:
 | `to`            | most                                      | Target module or path glob.                                                                 |
 | `from_layer`    | `forbidden_layer_direction`               | Source layer name.                                                                          |
 | `to_layer`      | `forbidden_layer_direction`               | Target layer name.                                                                          |
-| `from_role`     | `forbidden_role_dependency`               | Source architectural role (requires `analyzers.syntax`).                                    |
-| `to_role`       | `forbidden_role_dependency`               | Target architectural role (requires `analyzers.syntax`).                                    |
-| `min_confidence`| `forbidden_role_dependency`               | Minimum role confidence to match: `high` (default) or `medium`.                            |
 | `max`           | `public_api_max`, `struct_field_max`      | Integer ceiling.                                                                            |
 | `threshold`     | `layer_role_divergence`                   | Max tolerated rank delta (default 1).                                                       |
 | `patterns`      | structural rules                          | Optional ast-grep patterns for structural evidence.                                         |
@@ -693,10 +687,6 @@ rules:
 - `new_cross_module_dependency` — fires on cross-module edges. Baseline status
   separates known from new findings.
 - `cycle` — fires once per detected import cycle.
-- `forbidden_role_dependency` — fires when an edge goes from a node with
-  `from_role` to a node with `to_role` (requires `analyzers.syntax.enabled: true`).
-  Only matches edges where both roles are assigned at or above `min_confidence`
-  (default `high`). Example: handlers must not call repositories directly.
 - `public_api_max` — fires when any module's exported declaration count exceeds
   `max` (requires `analyzers.syntax.enabled: true`). Scoped per module. No baseline
   — static ceiling.
@@ -715,21 +705,13 @@ rules:
   by more than `threshold` (default 1). Uses `gate: warn` by default.
 
 **Note:** when `analyzers.syntax.enabled` is not `true`, the rule types
-`forbidden_role_dependency`, `public_api_max`, `public_api_change`,
-`struct_field_max`, and `public_api_type_leak` emit zero findings silently — they
-are not errors.
+`public_api_max`, `public_api_change`, `struct_field_max`, and
+`public_api_type_leak` emit zero findings silently — they are not errors.
 
-Example syntax-facts rules:
+Example syntax-facts rule:
 
 ```yaml
 rules:
-  # Handlers must not call repositories directly.
-  - id: no_handler_to_repo
-    type: forbidden_role_dependency
-    from_role: handler
-    to_role: repository
-    gate: warn # advisory; set to fail once roles are stable
-
   # Warn when any module's exported API exceeds the ceiling.
   - id: api_size_ceiling
     type: public_api_max

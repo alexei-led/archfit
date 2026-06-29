@@ -20,7 +20,6 @@ import (
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/status"
-	"github.com/alexei-led/archfit/internal/syntax"
 )
 
 // Mode controls how the engine run behaves.
@@ -111,11 +110,10 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	ex.coverages = append(ex.coverages, ppCov)
 
 	// --- Stage 2b: Syntax facts ---
-	// Collect syntactic declarations and route registrations (ast-grep rules).
-	// Derive roles, build NodeRoleIndex for rule consumption — all before the
-	// rules stage. Off-gate: facts populate the report but never affect the verdict.
+	// Collect syntactic declarations and route registrations (ast-grep rules)
+	// before the rules stage. Off-gate: facts populate the report (consumed by
+	// public_api_*/struct_field_max/test_in_production) but never affect the verdict.
 	var syntaxFacts []diagnostic.SyntaxFact
-	var nodeRoleIndex *syntax.NodeRoleIndex
 	if in.SyntaxCfg.Enabled {
 		if in.Syntax == nil {
 			return diagnostic.New(), errors.New("engine: SyntaxCfg.Enabled=true but no Syntax provider")
@@ -124,14 +122,13 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		if synErr != nil {
 			return diagnostic.New(), synErr
 		}
-		syntaxFacts = syntax.DeriveRoles(sf)
+		syntaxFacts = sf
 		// Backfill Module from ModuleMap — uniform across all languages,
 		// no per-language branching. Files outside declared modules get an
 		// empty Module (legitimate: a script in the repo root, for example).
 		for i := range syntaxFacts {
 			syntaxFacts[i].Module, _ = in.Classify.ModuleMap.ModuleFor(syntaxFacts[i].File)
 		}
-		nodeRoleIndex = syntax.BuildNodeRoleIndex(ex.g, syntaxFacts)
 		ex.coverages = append(ex.coverages, synCov)
 	}
 
@@ -178,7 +175,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Call each rule once with the full evidence set. Rules iterate edges internally;
 	// the Evidence carries all pattern matches so each rule can filter by edge's from-file.
 	var rawFindings []finding.Finding
-	allPatternMatches := rules.Evidence{PatternMatches: patternMatches, Roles: nodeRoleIndex, SyntaxFacts: syntaxFacts}
+	allPatternMatches := rules.Evidence{PatternMatches: patternMatches, SyntaxFacts: syntaxFacts}
 	for _, r := range in.Rules {
 		rawFindings = append(rawFindings, r.Check(ex.g, allPatternMatches)...)
 	}

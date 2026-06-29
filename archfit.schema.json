@@ -449,15 +449,6 @@
         "to_layer": {
           "type": "string"
         },
-        "from_role": {
-          "type": "string"
-        },
-        "to_role": {
-          "type": "string"
-        },
-        "min_confidence": {
-          "type": "string"
-        },
         "max": {
           "type": "integer",
           "description": "public_api_max: exported-declaration ceiling per module"
@@ -482,10 +473,7 @@
         "from",
         "to",
         "from_layer",
-        "to_layer",
-        "from_role",
-        "to_role",
-        "min_confidence"
+        "to_layer"
       ],
       "description": "RuleDef declares a single architecture rule."
     },

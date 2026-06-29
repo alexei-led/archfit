@@ -2107,17 +2107,6 @@ func TestRun_SyntaxFacts_Populated(t *testing.T) {
 	if len(d.SyntaxFacts) == 0 {
 		t.Fatal("SyntaxFacts should be populated when syntax is enabled")
 	}
-	// DeriveRoles assigns Role for function_declaration via name-suffix heuristic (FooHandler → handler).
-	var foundRole bool
-	for _, sf := range d.SyntaxFacts {
-		if sf.Role != "" {
-			foundRole = true
-			break
-		}
-	}
-	if !foundRole {
-		t.Error("DeriveRoles: no SyntaxFact has a Role set")
-	}
 	// Coverage must include the syntax coverage entry.
 	var foundSynCov bool
 	for _, c := range d.ToolCoverage {

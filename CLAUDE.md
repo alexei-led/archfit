@@ -39,8 +39,9 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   `facts`, `score`, `scope`, `syntax`) must not import `os`, `os/exec`, any YAML
   lib, or adapter packages — it decides over already-gathered facts. `score`
   synthesises the banded scorecard from an already-computed `Diagnostic`.
-  `syntax` derives architectural roles (handler/service/repository/domain) and
-  builds the `NodeRoleIndex` used by `forbidden_role_dependency`.
+  `syntax` classifies each source file (Production/Test/Generated/Vendor) and
+  exposes `LookupFileClass`/`IsTestFile` used by production-health metrics and the
+  `test_in_production` rule.
 - `internal/model/*` imports stdlib only.
 - Every subprocess call goes through `toolrun.Runner` (interface in `internal/ports`);
   extractors in `internal/extract/{go,ts,py,rust}` are out-of-process adapters. No

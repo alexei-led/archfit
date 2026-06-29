@@ -226,41 +226,24 @@ func writeSyntaxSurface(b *strings.Builder, facts []diagnostic.SyntaxFact) {
 				}
 			}
 			line := fmt.Sprintf("- `%s` (%s)", f.Name, f.Kind)
-			if f.Role != "" {
-				line += " — role: " + f.Role
-				if f.Framework != "" {
-					line += " [" + f.Framework + "]"
-				}
+			if f.Framework != "" {
+				line += " [" + f.Framework + "]"
 			}
 			b.WriteString(line + "\n")
 			printed++
 		}
 	}
 
-	// Roles / routes summary.
-	roleCounts := make(map[string]int)
+	// Routes summary.
 	routeCount := 0
 	for _, f := range facts {
-		if f.Role != "" {
-			roleCounts[f.Role]++
-		}
 		if f.Kind == "route" {
 			routeCount++
 		}
 	}
-	if len(roleCounts) > 0 || routeCount > 0 {
-		b.WriteString("\n### Detected roles\n\n")
-		roles := make([]string, 0, len(roleCounts))
-		for r := range roleCounts {
-			roles = append(roles, r)
-		}
-		sort.Strings(roles)
-		for _, r := range roles {
-			fmt.Fprintf(b, "- %s: %d declaration(s)\n", r, roleCounts[r])
-		}
-		if routeCount > 0 {
-			fmt.Fprintf(b, "- route: %d registration(s)\n", routeCount)
-		}
+	if routeCount > 0 {
+		b.WriteString("\n### Detected routes\n\n")
+		fmt.Fprintf(b, "- route: %d registration(s)\n", routeCount)
 	}
 }
 

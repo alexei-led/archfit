@@ -1059,11 +1059,11 @@ func TestRenderer_Render_SyntaxSurface_Present(t *testing.T) {
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
 	d.SyntaxFacts = []diagnostic.SyntaxFact{
-		{Language: "go", File: fileAPIHandler, Kind: kindFunction, Name: "HandleRequest", Exported: true, StartLine: 10, Role: roleHandler},
+		{Language: "go", File: fileAPIHandler, Kind: kindFunction, Name: "HandleRequest", Exported: true, StartLine: 10},
 		{Language: "go", File: fileAPIHandler, Kind: kindFunction, Name: "internalHelper", Exported: false, StartLine: 30},
-		{Language: "go", File: fileAPIHandler, Kind: "route", Name: "GET /health", Exported: false, StartLine: 50, Framework: "gin", Role: roleHandler},
-		{Language: "go", File: "pkg/repo/store.go", Kind: "struct", Name: "Store", Exported: true, StartLine: 5, Role: "repository"},
-		{Language: "go", File: "pkg/repo/store.go", Kind: kindFunction, Name: "FindByID", Exported: true, StartLine: 20, Role: "repository"},
+		{Language: "go", File: fileAPIHandler, Kind: "route", Name: "GET /health", Exported: false, StartLine: 50, Framework: "gin"},
+		{Language: "go", File: "pkg/repo/store.go", Kind: "struct", Name: "Store", Exported: true, StartLine: 5},
+		{Language: "go", File: "pkg/repo/store.go", Kind: kindFunction, Name: "FindByID", Exported: true, StartLine: 20},
 	}
 
 	var buf bytes.Buffer
@@ -1104,19 +1104,13 @@ func TestRenderer_Render_SyntaxSurface_Present(t *testing.T) {
 	if !strings.Contains(out, "`HandleRequest` (function)") {
 		t.Errorf("missing exported decl HandleRequest\nfull output:\n%s", out)
 	}
-	// Role annotation on exported declaration.
-	if !strings.Contains(out, "role: handler") {
-		t.Errorf("missing role annotation on exported decl\nfull output:\n%s", out)
-	}
 
-	// Detected roles section.
-	if !strings.Contains(out, "### Detected roles") {
-		t.Fatalf("missing Detected roles subsection\nfull output:\n%s", out)
+	// Detected routes section.
+	if !strings.Contains(out, "### Detected routes") {
+		t.Fatalf("missing Detected routes subsection\nfull output:\n%s", out)
 	}
-	for _, want := range []string{"- handler:", "- repository:", "- route: 1 registration(s)"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing roles entry %q\nfull output:\n%s", want, out)
-		}
+	if !strings.Contains(out, "- route: 1 registration(s)") {
+		t.Errorf("output missing route registration count\nfull output:\n%s", out)
 	}
 
 	// Non-exported declarations must NOT appear in the Public API list.
@@ -1191,7 +1185,7 @@ func TestRenderer_Render_SyntaxSurface_RouteFramework(t *testing.T) {
 	d.Verdict = diagnostic.VerdictPass
 	d.SyntaxFacts = []diagnostic.SyntaxFact{
 		{Language: "go", File: "cmd/server/routes.go", Kind: "route", Name: "GET /ping",
-			Exported: true, StartLine: 1, Role: "handler", Framework: "gin"},
+			Exported: true, StartLine: 1, Framework: "gin"},
 	}
 
 	var buf bytes.Buffer

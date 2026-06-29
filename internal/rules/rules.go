@@ -1,20 +1,17 @@
 // Package rules defines the Rule interface and the built-in rule
 // implementations: ForbiddenDependency, PublicAPIOnly, ForbiddenLayerDirection,
-// InternalAPIAccess, NewCrossModuleDependency, CycleRule, ForbiddenRoleDependency,
+// InternalAPIAccess, NewCrossModuleDependency, CycleRule,
 // PublicAPIMax, PublicAPIChange, LayerRoleDivergence.
 package rules
 
 import (
 	"fmt"
-	"slices"
-	"strings"
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/pattern"
-	"github.com/alexei-led/archfit/internal/syntax"
 )
 
 // kindGate and kindAdvisory are the two Finding.Kind values emitted by rules.
@@ -37,7 +34,6 @@ const matchedByFile = "file"
 // rules run, by status.Assign against the baseline.
 type Evidence struct {
 	PatternMatches []pattern.Match
-	Roles          *syntax.NodeRoleIndex   // nil when syntax is off; consumed by forbidden_role_dependency
 	SyntaxFacts    []diagnostic.SyntaxFact // nil/empty when syntax is off; consumed by public_api_max
 }
 
@@ -66,7 +62,6 @@ const defaultLayerRoleDivergenceThreshold = 1
 //	"internal_api_access"         → internalAPIAccess
 //	"new_cross_module_dependency" → newCrossModuleDependency
 //	"cycle"                       → cycleRule
-//	"forbidden_role_dependency"   → forbiddenRoleDependency
 //	"public_api_max"              → publicAPIMax
 //	"public_api_change"           → publicAPIChange
 //	"layer_role_divergence"       → layerRoleDivergence
@@ -93,11 +88,6 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 			inner = &newCrossModuleDependency{def: def, mm: cfg.ModuleMap}
 		case "cycle":
 			inner = &cycleRule{def: def}
-		case "forbidden_role_dependency":
-			if err := validateRoleDependencyDef(def); err != nil {
-				return nil, err
-			}
-			inner = &forbiddenRoleDependency{def: def}
 		case "public_api_max":
 			if err := validatePublicAPIMaxDef(def); err != nil {
 				return nil, err
@@ -149,24 +139,6 @@ func defaultGateForType(ruleType string) string {
 		return "warn"
 	}
 	return ""
-}
-
-// validateRoleDependencyDef validates a RuleDef for the forbidden_role_dependency
-// rule type. Returns an error describing any invalid field.
-func validateRoleDependencyDef(def config.RuleDef) error {
-	if def.FromRole == "" || def.ToRole == "" {
-		return fmt.Errorf("rules: forbidden_role_dependency %q requires both from_role and to_role", def.ID)
-	}
-	if !slices.Contains(syntax.KnownRoles, def.FromRole) {
-		return fmt.Errorf("rules: forbidden_role_dependency %q: unknown from_role %q (known: %s)", def.ID, def.FromRole, strings.Join(syntax.KnownRoles, ", "))
-	}
-	if !slices.Contains(syntax.KnownRoles, def.ToRole) {
-		return fmt.Errorf("rules: forbidden_role_dependency %q: unknown to_role %q (known: %s)", def.ID, def.ToRole, strings.Join(syntax.KnownRoles, ", "))
-	}
-	if def.MinConfidence != "" && !slices.Contains(syntax.KnownConfidences, def.MinConfidence) {
-		return fmt.Errorf("rules: forbidden_role_dependency %q: unknown min_confidence %q (known: %s)", def.ID, def.MinConfidence, strings.Join(syntax.KnownConfidences, ", "))
-	}
-	return nil
 }
 
 // gatedRule wraps a Rule and applies gate semantics to its findings:

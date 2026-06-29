@@ -6,6 +6,17 @@ that scoped only Go+TS and deferred Python/Rust + gate rules).
 Research basis: `docs/archived/research/tree-sitter-for-archfit.md`.
 Plan: `docs/plans/20260624-syntax-facts-via-astgrep.md`.
 
+> **Amendment (later):** the **architectural-role** part of this design was
+> **removed** to reduce entropy — roles (handler/service/repository/domain) were
+> guessed from names, not part of the Balanced-Coupling book, and fed no metric.
+> Deleted: `syntax.DeriveRoles`, `NodeRoleIndex`, the `forbidden_role_dependency`
+> rule, the `from_role`/`to_role`/`min_confidence` fields, and the
+> `role`/`role_confidence`/`role_evidence` output fields. The syntax-facts layer
+> still ships: declarations, exported surface, and framework routes — feeding
+> `public_api_max`, `public_api_change`, `public_api_type_leak`,
+> `struct_field_max`, and `test_in_production`. Sections below that describe role
+> derivation are historical.
+
 ---
 
 ## 1. What this adds and why
