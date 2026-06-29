@@ -65,6 +65,3 @@ rules:
   - id: no_cycles
     type: cycle
     gate: fail
-metrics:
-  architecture_fitness:
-    enabled: true

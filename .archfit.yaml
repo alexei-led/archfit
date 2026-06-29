@@ -18,7 +18,7 @@ version: 1
 # core at V=high (10) and distance fixed at 4, coupling INTO the core scores in the
 # mixed/high band regardless of strength — this is the honest signal that the
 # shared domain model (`Diagnostic`/`graph`/`coupling`) is a high-volatility,
-# high-fan-in hub (see risk_hub, blast_radius). The book's lever to improve it is
+# high-fan-in hub (see blast_radius). The book's lever to improve it is
 # to lower the CORE's volatility or wrap it in a contract (reduce strength), NOT to
 # re-weight the metric. The frozen book ordinals are adopted verbatim and must not
 # be tuned to flatter this repo's own score.
@@ -600,23 +600,3 @@ analyzers:
 ai:
   provider: anthropic
   model: claude-opus-4-8
-metrics:
-  risk_hub:
-    enabled: true
-  # archfit enforces its own architecture (internal/arch_test.go + CI), so this
-  # surfaces a real architecture_fitness signal — dogfooding the metric.
-  architecture_fitness:
-    enabled: true
-  # Clone detection enabled (analyzers.clones.enabled: true). Reports n/a when jscpd
-  # is not installed (install: npm install -g jscpd); yields functional-extraction
-  # candidates when jscpd is present and finds cross-module duplicates.
-  functional_candidates:
-    enabled: true
-  # cohesion_lcom (Task 20): report-only LCOM edge-density proxy over the SCIP
-  # symbol graph. Disabled here because it failed its eval — document-scoped
-  # SCIP attribution (no enclosing_range) leaves it blind for single-file
-  # Python/TS modules and unable to credit internal sub-package cohesion. Kept
-  # registered and report-only for repos that want the Go-package signal.
-  # See docs/plans/notes/gap-closure-task20-cohesion-eval.md.
-  cohesion_lcom:
-    enabled: false
