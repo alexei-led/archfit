@@ -1,7 +1,7 @@
 // Package facts assembles per-module structural facts from already-collected
-// data (symbol graph, file LOC, co-change history, optional SCIP dependant count).
-// The output is a neutral evidence block — no risk labels, no rankings, no
-// gates. Ranking and judgment are the Tranche-2 LLM's job.
+// data (symbol graph, file LOC). The output is a neutral evidence block — no
+// risk labels, no rankings, no gates. Ranking and judgment are the
+// Tranche-2 LLM's job.
 package facts
 
 import (
@@ -12,30 +12,19 @@ import (
 	"github.com/alexei-led/archfit/internal/model/symbol"
 )
 
-// maxCoChangePartners is the maximum number of co-change partners kept per module.
-const maxCoChangePartners = 5
-
 // Build assembles one diagnostic.FileFact per distinct module in g.
 //
 // Inbound module fan-in and outbound distinct-destination counts come from
-// g.Refs + g.Module. File attribution (Files, LOC, CoChangePartners) joins
-// exactly through g.Path — the repo-relative defining-document path per symbol —
-// against the file-keyed fileLOC and coChange maps. When g.Path is absent the
-// file-derived facts stay empty (no heuristic prefix joins, no fabrication).
-//
-// symbolDependants (repo-relative file path → distinct dependant-file count,
-// derived from the SCIP symbol graph) enriches matching facts when non-empty:
-// a module's count is the MAX over its defining files' counts. Uncovered
-// modules keep a nil SymbolDependants.
+// g.Refs + g.Module. File attribution (Files, LOC) joins exactly through
+// g.Path — the repo-relative defining-document path per symbol — against the
+// file-keyed fileLOC map. When g.Path is absent the file-derived facts stay
+// empty (no heuristic prefix joins, no fabrication).
 //
 // Returns an empty slice (never nil) when g is empty — no panic, no false
-// zeros. The result is sorted by Module; all nested lists carry a total order
-// (Files ascending; CoChangePartners by count descending then path ascending).
+// zeros. The result is sorted by Module; the Files list is sorted ascending.
 func Build(
 	g symbol.Graph,
 	fileLOC map[string]int,
-	coChange map[[2]string]int,
-	symbolDependants map[string]int,
 ) []diagnostic.FileFact {
 	if g.Empty() {
 		return []diagnostic.FileFact{}
@@ -97,37 +86,6 @@ func Build(
 		}
 	}
 
-	// Owner index: defining file path → module. Exact keys, no prefix logic.
-	fileOwner := make(map[string]string)
-	for mod, files := range moduleFiles {
-		for f := range files {
-			fileOwner[f] = mod
-		}
-	}
-
-	// Co-change partners: for each module, count commits shared with files
-	// OUTSIDE the module (an own-file partner is trivially co-changed and
-	// carries no cross-module signal).
-	rawPartners := make(map[string]map[string]int)
-	addPartner := func(mod, partner string, count int) {
-		if fileOwner[partner] == mod {
-			return
-		}
-		if rawPartners[mod] == nil {
-			rawPartners[mod] = make(map[string]int)
-		}
-		rawPartners[mod][partner] += count
-	}
-	for pair, count := range coChange {
-		a, b := pair[0], pair[1]
-		if mod := fileOwner[a]; mod != "" {
-			addPartner(mod, b, count)
-		}
-		if mod := fileOwner[b]; mod != "" {
-			addPartner(mod, a, count)
-		}
-	}
-
 	// Assemble one FileFact per module key.
 	out := make([]diagnostic.FileFact, 0, len(moduleSet))
 	for mod := range moduleSet {
@@ -136,23 +94,9 @@ func Build(
 			Files:                sortedKeys(moduleFiles[mod]),
 			InboundModuleFanIn:   len(inboundSources[mod]),
 			OutboundDestinations: len(outboundDests[mod]),
-			CoChangePartners:     topPartners(rawPartners[mod]),
 		}
 		for _, f := range ff.Files {
 			ff.LOC += fileLOC[f]
-		}
-		covered := false
-		impact := 0
-		for _, f := range ff.Files {
-			if v, ok := symbolDependants[f]; ok {
-				covered = true
-				if v > impact {
-					impact = v
-				}
-			}
-		}
-		if covered {
-			ff.SymbolDependants = &impact
 		}
 		out = append(out, ff)
 	}
@@ -170,32 +114,4 @@ func sortedKeys(set map[string]struct{}) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-// topPartners returns up to maxCoChangePartners partner paths sorted by commit
-// count descending, then path ascending. Empty (non-nil) slice when partners
-// is empty.
-func topPartners(partners map[string]int) []string {
-	type partnerCount struct {
-		path  string
-		count int
-	}
-	pcs := make([]partnerCount, 0, len(partners))
-	for path, cnt := range partners {
-		pcs = append(pcs, partnerCount{path: path, count: cnt})
-	}
-	sort.Slice(pcs, func(i, j int) bool {
-		if pcs[i].count != pcs[j].count {
-			return pcs[i].count > pcs[j].count
-		}
-		return pcs[i].path < pcs[j].path
-	})
-	if len(pcs) > maxCoChangePartners {
-		pcs = pcs[:maxCoChangePartners]
-	}
-	names := make([]string, len(pcs))
-	for i, pc := range pcs {
-		names[i] = pc.path
-	}
-	return names
 }

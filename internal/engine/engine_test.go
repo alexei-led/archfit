@@ -1149,8 +1149,7 @@ func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
 	classifyCfg, rs := cannedConfig()
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 	change := signal.RunSignals{
-		Size:    signal.SizeSignals{FileLOC: map[string]int{pathFileA: 100, pathFileB: 40}},
-		History: signal.HistorySignals{CoChange: map[[2]string]int{{pathFileA, pathFileB}: 5}},
+		Size: signal.SizeSignals{FileLOC: map[string]int{pathFileA: 100, pathFileB: 40}},
 	}
 
 	d, err := engine.Run(ctx, engine.RunInput{
@@ -1185,9 +1184,6 @@ func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
 	b := d.FileFacts[1]
 	if b.Module != "b" || b.InboundModuleFanIn != 1 || b.LOC != 40 {
 		t.Errorf("facts[1] = %+v, want module b, inbound 1, LOC 40", b)
-	}
-	if len(a.CoChangePartners) != 1 || a.CoChangePartners[0] != pathFileB {
-		t.Errorf("facts[0].CoChangePartners = %v, want [pkg/b/b.go]", a.CoChangePartners)
 	}
 }
 

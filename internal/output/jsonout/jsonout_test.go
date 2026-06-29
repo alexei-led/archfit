@@ -189,9 +189,8 @@ func TestJSONRenderer_Render(t *testing.T) {
 }
 
 // TestJSONRenderer_Render_FileFacts verifies the full facts block round-trips
-// through JSON with snake_case keys and omits symbol_dependants when nil.
+// through JSON with snake_case keys.
 func TestJSONRenderer_Render_FileFacts(t *testing.T) {
-	impact := 41
 	d := diagnostic.New()
 	d.FileFacts = []diagnostic.FileFact{
 		{
@@ -200,13 +199,10 @@ func TestJSONRenderer_Render_FileFacts(t *testing.T) {
 			InboundModuleFanIn:   23,
 			OutboundDestinations: 2,
 			LOC:                  310,
-			CoChangePartners:     []string{"src/tui/app.py"},
-			SymbolDependants:     &impact,
 		},
 		{
-			Module:           "config",
-			Files:            []string{},
-			CoChangePartners: []string{},
+			Module: "config",
+			Files:  []string{},
 		},
 	}
 
@@ -232,20 +228,12 @@ func TestJSONRenderer_Render_FileFacts(t *testing.T) {
 	if first["inbound_module_fanin"] != float64(23) {
 		t.Errorf("inbound_module_fanin = %v, want 23", first["inbound_module_fanin"])
 	}
-	if first["symbol_dependants"] != float64(41) {
-		t.Errorf("symbol_dependants = %v, want 41", first["symbol_dependants"])
-	}
-
-	second := raw.FileFacts[1]
-	if _, present := second["symbol_dependants"]; present {
-		t.Error("symbol_dependants should be omitted when nil")
-	}
 
 	var got diagnostic.Diagnostic
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("cannot unmarshal back into Diagnostic: %v", err)
 	}
-	if got.FileFacts[0].SymbolDependants == nil || *got.FileFacts[0].SymbolDependants != 41 {
-		t.Errorf("round-trip SymbolDependants = %v, want 41", got.FileFacts[0].SymbolDependants)
+	if got.FileFacts[0].LOC != 310 {
+		t.Errorf("round-trip LOC = %d, want 310", got.FileFacts[0].LOC)
 	}
 }

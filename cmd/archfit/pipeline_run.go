@@ -13,14 +13,12 @@ import (
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/extract/astgrep"
 	"github.com/alexei-led/archfit/internal/extract/clones"
-	"github.com/alexei-led/archfit/internal/extract/complexity"
 	"github.com/alexei-led/archfit/internal/extract/deployunit"
 	"github.com/alexei-led/archfit/internal/extract/dynimports"
 	"github.com/alexei-led/archfit/internal/extract/loc"
 	"github.com/alexei-led/archfit/internal/extract/manifest"
 	runtimedetect "github.com/alexei-led/archfit/internal/extract/runtime"
 	"github.com/alexei-led/archfit/internal/extract/scip"
-	"github.com/alexei-led/archfit/internal/fitness"
 	"github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/metrics"
@@ -119,7 +117,6 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	if err != nil {
 		return diagnostic.Diagnostic{}, err
 	}
-	// risk_hub reads hand-authored volatility only (never git churn).
 	ms := append(metrics.New(cfg), extraMetrics...)
 
 	// toolWarnings collects the exceptional, non-nil errors from the optional
@@ -150,35 +147,17 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		}
 	}
 
-	// Recent git history (cheap; runs by default): per-file churn drives module
-	// volatility (unbalanced_edge, BC severity) and the modularity metrics
-	// (change_amplification, hidden_coupling). Hand-authored volatility/subdomain
-	// config always wins; a non-git repo leaves these signals empty.
-	// Run history at the git toplevel (GitRoot) scoped to the analysis subtree
-	// (SubtreePrefix), so returned paths are ScanRoot-relative. Falls back to
-	// s.Root when GitRoot is empty (non-git run: History returns absent).
 	deps.reportPhase("Collecting facts")
 	change := signal.RunSignals{}
-	histWorkDir := s.GitRoot
-	if histWorkDir == "" {
-		histWorkDir = s.Root
-	}
-	if churn, coChange, commitCount, _, herr := git.History(ctx, histWorkDir, s.SubtreePrefix, deps.Runner); herr == nil {
-		change.History.FileChurn, change.History.CoChange = churn, coChange
-		change.History.CommitCount = commitCount
-	}
 
 	// LOC walk — repo-relative path→line-count map + coverage record.
-	// ExtraCoverage order: loc, complexity, clones.
+	// ExtraCoverage order: loc, clones.
 	var locCov diagnostic.Coverage
 	var toolErr error
 	fileCfg := cfg.ForFileClass()
 	change.Size.FileLOC, change.Size.FileClassIndex, locCov, toolErr = loc.RunWithConfig(s.Root, fileCfg)
 	noteToolErr("loc", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, locCov)
-
-	// Architecture-fitness enforcement signals (deterministic FS scan; always runs).
-	change.Fitness = fitness.Detect(s.Root)
 
 	// Dynamic/lazy import detection (deterministic FS scan; always runs): Python
 	// non-top-level imports + importlib/__import__, TS require()/dynamic import().
@@ -229,22 +208,6 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// equals the path). Config-authored deploy_unit always wins.
 	duModules := cfg.ModuleMapView()
 	cfg.FillMissingDeployUnits(deployunit.KeyByModule(deployunit.Detect(ctx, s.Root, duModules, deps.Runner), duModules))
-
-	// Cyclomatic complexity — opt-in (analyzers.complexity.enabled: true).
-	// Backend: auto (default) = gocyclo(Go) + ast-grep proxy(TS/Py/Rust); lizard =
-	// exact multi-language CCN (re-pins Python). Coverage carries zero file counts.
-	// Config excludes + scope defaults are forwarded to lizard's -x flags so it
-	// skips the same paths that all other extractors skip.
-	// cfg.Exclude was already merged (scope.MergeExclusions) at the top of this
-	// function — do NOT call MergeExclusions again here. A second call re-seeds
-	// from DefaultExclusions on the already-merged list (which no longer contains
-	// the user's !-prefixed re-include markers), silently re-adding defaults the
-	// user intentionally negated (e.g. !testdata, !reports).
-	complexityExcl := cfg.Exclude
-	var complexityCov diagnostic.Coverage
-	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled(), cfg.ComplexityBackend(), cfg.ToolTimeout(config.ToolComplexity), complexityExcl, fileCfg, change.Size.FileClassIndex)
-	noteToolErr("complexity", toolErr)
-	change.ExtraCoverage = append(change.ExtraCoverage, complexityCov)
 
 	// Clone detection — opt-in (analyzers.clones.enabled: true). Run returns empty+absent
 	// when disabled or the tool is missing; the metric reports n/a in that case.
@@ -353,7 +316,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// cargo-modules module-graph coverage: opt-in (analyzers.cargo_modules.enabled: true).
 	// The Rust extractor runs cargo-modules during its Extract call (inside engine.Run
 	// above) and caches the coverage record. Append it here so it appears in
-	// ToolCoverage and the CoverageGap block — mirrors the complexity/clones pattern.
+	// ToolCoverage and the CoverageGap block — mirrors the clones pattern.
 	if rustEx := rustExtractor(extractors); rustEx != nil {
 		diag.ToolCoverage = append(diag.ToolCoverage, rustEx.LastModuleGraphCoverage())
 	}

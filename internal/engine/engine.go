@@ -184,9 +184,6 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	taggedFindings := status.Assign(rawFindings, in.Accepted, in.Waivers, in.Now, finding.KindGate)
 
 	// --- Stage 6: Metrics ---
-	// Compute per-file dependant counts from the SCIP symbol graph once; feeds
-	// both risk_hub (via SymbolSignals) and the structural-facts block below.
-	symbolDependants := symbol.DependantsFromSymbolGraph(ex.scipSymbols)
 	collected := signal.CollectedSignals{
 		Common: signal.CommonInput{
 			Graph:           ex.g,
@@ -198,11 +195,8 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 			SyntaxFacts:     syntaxFacts,
 			DeprecatedDeps:  in.Signals.DeprecatedDeps,
 		},
-		History:     in.Signals.History,
-		Symbol:      signal.SymbolSignals{Graph: ex.scipSymbols, SymbolDependants: symbolDependants},
+		Symbol:      signal.SymbolSignals{Graph: ex.scipSymbols},
 		Size:        in.Signals.Size,
-		Complexity:  in.Signals.Complexity,
-		Fitness:     in.Signals.Fitness,
 		Duplication: in.Signals.Duplication,
 	}
 	metricResults := make([]diagnostic.MetricResult, 0, len(in.Metrics))
@@ -284,9 +278,9 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	}
 
 	// Neutral structural-facts block (Tranche 1.5): assembled from the symbol
-	// graph + change history, attached as report-only evidence. Never read by
+	// graph and file LOC, attached as report-only evidence. Never read by
 	// computeVerdict or any gate logic. Empty when SCIP is off/absent.
-	fileFacts := facts.Build(ex.scipSymbols, in.Signals.Size.FileLOC, in.Signals.History.CoChange, symbolDependants)
+	fileFacts := facts.Build(ex.scipSymbols, in.Signals.Size.FileLOC)
 
 	// Dynamic/lazy-import risk (Task 9): report-only evidence rolled up per module.
 	// Dynamic imports are invisible to the static graph, so they hide cycles and

@@ -121,8 +121,8 @@ type AgentTask struct {
 	Declarations []SyntaxFact `json:"declarations,omitempty"`
 }
 
-// FileFact holds neutral per-module structural facts assembled from collected
-// data (symbol graph, file LOC, co-change history, optional SCIP dependant count).
+// FileFact holds neutral per-module structural facts assembled from the symbol
+// graph and file LOC.
 //
 // The facts block is report-only evidence for the Tranche-2 LLM: it carries no
 // band, no score, no risk label, never sets delta, and never enters the verdict
@@ -142,12 +142,6 @@ type FileFact struct {
 	OutboundDestinations int `json:"outbound_destinations"`
 	// LOC is the summed line count of Files (exact join against FileLOC keys).
 	LOC int `json:"loc"`
-	// CoChangePartners lists files outside this module most frequently committed
-	// together with this module's files, count descending, capped.
-	CoChangePartners []string `json:"cochange_partners"`
-	// SymbolDependants is the SCIP-derived distinct-dependant-file count for this
-	// module (max over its defining files); nil when SCIP is off or uncovered.
-	SymbolDependants *int `json:"symbol_dependants,omitempty"`
 }
 
 // RuntimeAsyncSite is one detected async integration pattern location.

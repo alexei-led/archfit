@@ -22,7 +22,6 @@ const (
 	fileHubPy      = "src/hub/state.py"
 	fileHubExtra   = "src/hub/extra.py"
 	fileSprawlPy   = "src/sprawl/s.py"
-	fileCorePy     = "src/core/core.py"
 	fileSpotinfoGo = "cmd/spotinfo/main.go"
 )
 
@@ -79,7 +78,7 @@ func threeModuleGraph() symbol.Graph {
 // TestBuild_HighInboundFanIn verifies that a module referenced by many distinct
 // other modules accumulates the correct InboundModuleFanIn count.
 func TestBuild_HighInboundFanIn(t *testing.T) {
-	got := facts.Build(threeModuleGraph(), nil, nil, nil)
+	got := facts.Build(threeModuleGraph(), nil)
 
 	hub := findFact(t, got, modHub)
 	if hub.InboundModuleFanIn != 6 {
@@ -93,7 +92,7 @@ func TestBuild_HighInboundFanIn(t *testing.T) {
 // TestBuild_HighOutboundDestinations verifies that a module referencing many
 // distinct destination modules accumulates the correct OutboundDestinations count.
 func TestBuild_HighOutboundDestinations(t *testing.T) {
-	got := facts.Build(threeModuleGraph(), nil, nil, nil)
+	got := facts.Build(threeModuleGraph(), nil)
 
 	sprawl := findFact(t, got, modSprawl)
 	if sprawl.OutboundDestinations != 3 {
@@ -115,7 +114,7 @@ func TestBuild_FilesAndLOC(t *testing.T) {
 		"src/hub/orphan.py": 999, // defines no symbol — not attributed
 		fileSprawlPy:        120,
 	}
-	got := facts.Build(g, fileLOC, nil, nil)
+	got := facts.Build(g, fileLOC)
 
 	hub := findFact(t, got, modHub)
 	wantFiles := []string{fileHubExtra, fileHubPy}
@@ -138,79 +137,10 @@ func TestBuild_FilesAndLOC(t *testing.T) {
 	}
 }
 
-// TestBuild_CoChangePartners verifies partner resolution through the file-path
-// join, ordering (count desc, path asc tie-break), the cap at 5, and the
-// exclusion of own-module files.
-func TestBuild_CoChangePartners(t *testing.T) {
-	g := symbol.Graph{
-		Module: map[string]string{"core.C1": "core", "core.C2": "core"},
-		Path: map[string]string{
-			"core.C1": fileCorePy,
-			"core.C2": "src/core/util.py",
-		},
-	}
-	coChange := map[[2]string]int{
-		{fileCorePy, "src/other/a.py"}:       10,
-		{fileCorePy, "src/other/b.py"}:       7,
-		{fileCorePy, "src/other/c.py"}:       5,
-		{"src/other/d.py", fileCorePy}:       5, // same count as c — alpha tie-break
-		{fileCorePy, "src/other/e.py"}:       3,
-		{fileCorePy, "src/other/f.py"}:       1, // 6th — dropped by the cap
-		{fileCorePy, "src/core/util.py"}:     9, // own-module partner — excluded
-		{"src/other/g.py", "src/other/h.py"}: 8, // unrelated — must not appear
-	}
-	got := facts.Build(g, nil, coChange, nil)
-
-	core := findFact(t, got, "core")
-	want := []string{
-		"src/other/a.py",
-		"src/other/b.py",
-		"src/other/c.py",
-		"src/other/d.py",
-		"src/other/e.py",
-	}
-	if !reflect.DeepEqual(core.CoChangePartners, want) {
-		t.Errorf("partners = %v, want %v", core.CoChangePartners, want)
-	}
-}
-
-// TestBuild_SymbolDependants verifies enrichment when the dependant map is present
-// and nil SymbolDependants when absent or uncovered.
-func TestBuild_SymbolDependants(t *testing.T) {
-	g := threeModuleGraph()
-
-	t.Run("absent map leaves all nil", func(t *testing.T) {
-		for _, ff := range facts.Build(g, nil, nil, nil) {
-			if ff.SymbolDependants != nil {
-				t.Errorf("module %q SymbolDependants = %d, want nil", ff.Module, *ff.SymbolDependants)
-			}
-		}
-	})
-
-	t.Run("present map enriches covered modules only", func(t *testing.T) {
-		// File-keyed counts; hub has two files — module count is the MAX.
-		impact := map[string]int{fileHubPy: 41, fileHubExtra: 7, fileSprawlPy: 13}
-		got := facts.Build(g, nil, nil, impact)
-
-		hub := findFact(t, got, modHub)
-		if hub.SymbolDependants == nil || *hub.SymbolDependants != 41 {
-			t.Errorf("hub SymbolDependants = %v, want 41 (max over files)", hub.SymbolDependants)
-		}
-		sprawl := findFact(t, got, modSprawl)
-		if sprawl.SymbolDependants == nil || *sprawl.SymbolDependants != 13 {
-			t.Errorf("sprawl SymbolDependants = %v, want 13", sprawl.SymbolDependants)
-		}
-		leaf := findFact(t, got, "leaf")
-		if leaf.SymbolDependants != nil {
-			t.Errorf("leaf SymbolDependants = %d, want nil (not covered)", *leaf.SymbolDependants)
-		}
-	})
-}
-
 // TestBuild_EmptyGraph confirms an empty symbol graph returns an empty (non-nil)
 // slice without panicking.
 func TestBuild_EmptyGraph(t *testing.T) {
-	got := facts.Build(symbol.Graph{}, nil, nil, nil)
+	got := facts.Build(symbol.Graph{}, nil)
 	if got == nil {
 		t.Fatal("expected non-nil slice for empty graph, got nil")
 	}
@@ -228,13 +158,9 @@ func TestBuild_Determinism(t *testing.T) {
 		fileSprawlPy:       200,
 		"src/leaf/leaf.py": 50,
 	}
-	coChange := map[[2]string]int{
-		{fileHubPy, fileSprawlPy}: 3,
-	}
-	impact := map[string]int{modHub: 7}
 
-	first := facts.Build(g, fileLOC, coChange, impact)
-	second := facts.Build(g, fileLOC, coChange, impact)
+	first := facts.Build(g, fileLOC)
+	second := facts.Build(g, fileLOC)
 
 	if !reflect.DeepEqual(first, second) {
 		t.Errorf("two calls produced different results:\nfirst:  %+v\nsecond: %+v", first, second)
@@ -253,8 +179,7 @@ func TestBuild_Determinism(t *testing.T) {
 func TestBuild_NeutralNoLabels(t *testing.T) {
 	allowed := map[string]struct{}{
 		"Module": {}, "Files": {}, "InboundModuleFanIn": {},
-		"OutboundDestinations": {}, "LOC": {}, "CoChangePartners": {},
-		"SymbolDependants": {},
+		"OutboundDestinations": {}, "LOC": {},
 	}
 	for field := range reflect.TypeFor[diagnostic.FileFact]().Fields() {
 		if _, ok := allowed[field.Name]; !ok {
@@ -262,9 +187,9 @@ func TestBuild_NeutralNoLabels(t *testing.T) {
 		}
 	}
 
-	for _, ff := range facts.Build(threeModuleGraph(), nil, nil, nil) {
-		if ff.CoChangePartners == nil || ff.Files == nil {
-			t.Errorf("module %q: nested slices must be empty, not nil", ff.Module)
+	for _, ff := range facts.Build(threeModuleGraph(), nil) {
+		if ff.Files == nil {
+			t.Errorf("module %q: Files must be empty slice, not nil", ff.Module)
 		}
 	}
 }
@@ -292,18 +217,11 @@ func TestBuild_InboundFanIn_ExcludesTestModules(t *testing.T) {
 		},
 	}
 
-	got := facts.Build(g, nil, nil, nil)
+	got := facts.Build(g, nil)
 
 	spot := findFact(t, got, modSpotinfo)
 	if spot.InboundModuleFanIn != 2 {
 		t.Errorf("InboundModuleFanIn = %d, want 2 (test module excluded)", spot.InboundModuleFanIn)
-	}
-
-	// The .test module's reference must not contribute to any toMod's inbound count.
-	// Verify by checking cmd/spotinfo is not listed as an inbound source of itself
-	// (the .test module references spotinfo, but spotinfo's fan-in must stay 2).
-	if spot.InboundModuleFanIn != 2 {
-		t.Errorf("re-check: InboundModuleFanIn = %d after second assertion, want 2", spot.InboundModuleFanIn)
 	}
 }
 

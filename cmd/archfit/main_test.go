@@ -123,10 +123,7 @@ const (
 )
 
 // writeNonGoRepo creates a git repo with no analyzable source (README only) and
-// the given archfit config body, returning the config path. The optional analyzers
-// (dependency-cruiser, grimp, lizard, jscpd) are absent on such a tree,
-// so every run yields a stable, non-empty CoverageGaps block — the input the
-// opt-in hard tool-gate acts on.
+// the given archfit config body, returning the config path.
 func writeNonGoRepo(t *testing.T, cfgBody string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -141,6 +138,17 @@ func writeNonGoRepo(t *testing.T, cfgBody string) string {
 	}
 	gitInitFixtureRepo(t, dir)
 	return filepath.Join(dir, ".archfit.yaml")
+}
+
+// writeGapRepo creates a git repo with no analyzable source and an archfit
+// config that forces a go/packages gap via an explicit gate (overrides the
+// project-marker suppression). Used to test the warn-loud / --require-tools path.
+func writeGapRepo(t *testing.T, extraCfg string) string {
+	t.Helper()
+	// An explicit languages.go.gate bypasses the "no go.mod → suppress gap" logic
+	// in buildCoverageGaps, making the go/packages absence a deterministic gap.
+	cfg := "version: 1\nlanguages:\n  go:\n    gate: warn\n" + extraCfg
+	return writeNonGoRepo(t, cfg)
 }
 
 // TestRun_Check_RequireToolsHardGate verifies the opt-in hard tool-gate (Task 4):
@@ -159,7 +167,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 
 	t.Run("default is warn-loud: exit 0 with a gaps block", func(t *testing.T) {
 		t.Parallel()
-		cfgPath := writeNonGoRepo(t, "version: 1\n")
+		cfgPath := writeGapRepo(t, "")
 		var buf bytes.Buffer
 		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 		if code != 0 {
@@ -181,7 +189,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 
 	t.Run("--require-tools fails: every gap becomes a fail gate, exit 1", func(t *testing.T) {
 		t.Parallel()
-		cfgPath := writeNonGoRepo(t, "version: 1\n")
+		cfgPath := writeGapRepo(t, "")
 		var buf bytes.Buffer
 		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, "--require-tools", fmtJSON}, &buf)
 		if code != 1 {
@@ -231,7 +239,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 
 	t.Run("--require-tools is not suppressed by --report", func(t *testing.T) {
 		t.Parallel()
-		cfgPath := writeNonGoRepo(t, "version: 1\n")
+		cfgPath := writeGapRepo(t, "")
 		var buf bytes.Buffer
 		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, "--require-tools"}, &buf)
 		if code != 1 {
