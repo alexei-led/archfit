@@ -301,3 +301,265 @@ func cycleFingerprintID(ruleID string, scc []string) string {
 	h := sha256.Sum256([]byte(ruleID + "\x00" + strings.Join(scc, "\x00")))
 	return hex.EncodeToString(h[:16])
 }
+
+// ---------------------------------------------------------------------------
+// LayerRoleDivergence
+// ---------------------------------------------------------------------------
+
+// layerRoleDivergence detects modules whose observed topological rank in the
+// import DAG diverges from the rank implied by their declared layer in config.
+//
+// Rank convention (matches forbidden_layer_direction):
+//
+//	layers: [domain, application, infrastructure]
+//	         rank 0  rank 1        rank 2
+//
+// domain (rank 0) is imported-by-many; infrastructure (rank 2) imports many.
+// Observed topological rank (longest-path depth from sources): a module that
+// imports many others has a higher observed rank. A module imported by many
+// others (inner, domain-like) has a low observed rank.
+//
+// Divergence = |observedRank - declaredRank|. Fires when > threshold (default 1).
+// Cyclic nodes are skipped (abstain-not-fake, matches cycle rule convention).
+type layerRoleDivergence struct {
+	def       config.RuleDef
+	layers    []string
+	mm        config.ModuleMap
+	threshold int
+}
+
+func (r *layerRoleDivergence) ID() string { return r.def.ID }
+
+func (r *layerRoleDivergence) Check(g *graph.Graph, _ Evidence) []finding.Finding {
+	if len(g.Nodes()) == 0 {
+		return nil
+	}
+
+	// Build module-level DAG: collapse file nodes to modules, drop self/external.
+	// successors[m] = set of modules that m imports.
+	moduleSet, successors := lrdBuildDAG(g, r.mm)
+
+	// Kahn's BFS for longest-path depth (topological rank).
+	// ranked[m] is only true for modules dequeued (all predecessors resolved).
+	// Cyclic nodes accumulate a speculative rank but are never marked ranked.
+	rank, ranked := lrdTopoRank(moduleSet, successors)
+
+	// Per-WCC max rank: prevents a deep component from inflating the scaling
+	// denominator for a shallower disconnected component (false-positive guard).
+	componentOf, compMax := lrdWCCMaxRank(moduleSet, successors, rank, ranked)
+
+	// Direction convention (matches forbidden_layer_direction):
+	//   layers: [domain(0), app(1), infra(2)]
+	//   domain = inner/sink  → imported by many, high observed DAG rank
+	//   infra  = outer/source → imports many, low observed DAG rank (near 0)
+	//
+	// So declared rank and observed rank are inversely related in a healthy arch.
+	// We compare scaledObs against (layerCount-1 - declaredRank) so that a
+	// well-layered module has delta ≈ 0.
+	var out []finding.Finding
+	layerCount := len(r.layers)
+
+	for mod := range moduleSet {
+		if !ranked[mod] {
+			// Cyclic node — abstain.
+			continue
+		}
+		obsRank := rank[mod]
+		layer, ok := r.mm.LayerForName(mod)
+		if !ok {
+			continue
+		}
+		declaredRank := layerRank(layer, r.layers)
+		if declaredRank < 0 {
+			// Layer not in config layers list.
+			continue
+		}
+
+		// Scale observed rank to [0, layerCount-1] within the module's WCC.
+		// Using per-component max prevents a deeper disconnected component from
+		// inflating the denominator and compressing this component's ranks.
+		scaledObs := obsRank
+		if cm := compMax[componentOf[mod]]; cm > 0 && layerCount > 1 {
+			scaledObs = (obsRank * (layerCount - 1)) / cm
+		}
+
+		// Expected: outer layers (high declaredRank) → low scaledObs (sources).
+		// Expected: inner layers (low declaredRank) → high scaledObs (sinks).
+		expectedObs := (layerCount - 1) - declaredRank
+
+		delta := scaledObs - expectedObs
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta <= r.threshold {
+			continue
+		}
+
+		id := layerRoleDivergenceFingerprintID(r.def.ID, mod)
+		f := finding.Finding{
+			ID:       id,
+			Kind:     kindGate,
+			RuleID:   r.def.ID,
+			Status:   finding.StatusNew,
+			Severity: finding.SeverityMedium,
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Path: mod},
+				To:   finding.Endpoint{Path: mod},
+				Kind: string(graph.EdgeKindImports),
+			},
+			MatchedBy: map[string]string{
+				"module":         mod,
+				"declared_layer": layer,
+				"declared_rank":  strconv.Itoa(declaredRank),
+				"observed_rank":  strconv.Itoa(scaledObs),
+				"expected_rank":  strconv.Itoa(expectedObs),
+				"delta":          strconv.Itoa(delta),
+			},
+			Why: fmt.Sprintf(
+				"Module %q declared in layer %q (rank %d, expected observed rank %d) but observed at topological rank %d (delta %d > threshold %d)",
+				mod, layer, declaredRank, expectedObs, scaledObs, delta, r.threshold,
+			),
+			Constraint: "Move the module to a layer that reflects its actual position in the dependency DAG, or restructure its imports",
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// lrdBuildDAG collapses file-level graph edges to module-level, dropping
+// self-edges and edges to/from unknown modules.
+func lrdBuildDAG(g *graph.Graph, mm config.ModuleMap) (moduleSet map[string]struct{}, successors map[string]map[string]struct{}) {
+	inDegree := map[string]int{}
+	successors = map[string]map[string]struct{}{}
+	moduleSet = map[string]struct{}{}
+
+	for _, e := range g.Edges() {
+		fromMod, fromOK := mm.ModuleFor(graph.NodePath(e.From))
+		toMod, toOK := mm.ModuleFor(graph.NodePath(e.To))
+		if !fromOK || !toOK || fromMod == toMod {
+			continue
+		}
+		moduleSet[fromMod] = struct{}{}
+		moduleSet[toMod] = struct{}{}
+		if _, exists := successors[fromMod]; !exists {
+			successors[fromMod] = map[string]struct{}{}
+		}
+		if _, added := successors[fromMod][toMod]; !added {
+			successors[fromMod][toMod] = struct{}{}
+			inDegree[toMod]++
+		}
+	}
+	// Ensure every module exists in inDegree even if never imported.
+	for m := range moduleSet {
+		if _, ok := inDegree[m]; !ok {
+			inDegree[m] = 0
+		}
+	}
+	_ = inDegree // consumed below; returned via closure-free design
+	return moduleSet, successors
+}
+
+// lrdTopoRank runs Kahn's BFS longest-path depth over the module DAG.
+// rank[m] is the longest-path depth from any source. ranked[m] is true only
+// for modules fully processed (all predecessors resolved); cyclic nodes are
+// never marked ranked (abstain-not-fake).
+func lrdTopoRank(moduleSet map[string]struct{}, successors map[string]map[string]struct{}) (rank map[string]int, ranked map[string]bool) {
+	inDegree := map[string]int{}
+	for m := range moduleSet {
+		inDegree[m] = 0
+	}
+	for _, succs := range successors {
+		for to := range succs {
+			inDegree[to]++
+		}
+	}
+
+	rank = map[string]int{}
+	ranked = map[string]bool{}
+	remaining := map[string]int{}
+	var queue []string
+	for m, d := range inDegree {
+		remaining[m] = d
+		if d == 0 {
+			rank[m] = 0
+			ranked[m] = true
+			queue = append(queue, m)
+		}
+	}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for succ := range successors[cur] {
+			if rank[cur]+1 > rank[succ] {
+				rank[succ] = rank[cur] + 1
+			}
+			remaining[succ]--
+			if remaining[succ] == 0 {
+				ranked[succ] = true
+				queue = append(queue, succ)
+			}
+		}
+	}
+	return rank, ranked
+}
+
+// lrdWCCMaxRank labels each module with a weakly-connected component ID and
+// returns the maximum ranked rank within each component. Using per-component
+// max prevents an unrelated deep component from inflating the scaling
+// denominator and compressing a correctly-layered shallow component's ranks.
+func lrdWCCMaxRank(
+	moduleSet map[string]struct{},
+	successors map[string]map[string]struct{},
+	rank map[string]int,
+	ranked map[string]bool,
+) (componentOf map[string]int, compMax map[int]int) {
+	// Build undirected adjacency from directed successors.
+	undirNeighbors := make(map[string]map[string]struct{}, len(moduleSet))
+	for m := range moduleSet {
+		undirNeighbors[m] = map[string]struct{}{}
+	}
+	for from, succs := range successors {
+		for to := range succs {
+			undirNeighbors[from][to] = struct{}{}
+			undirNeighbors[to][from] = struct{}{}
+		}
+	}
+
+	componentOf = make(map[string]int, len(moduleSet))
+	nextComp := 0
+	for seed := range moduleSet {
+		if _, visited := componentOf[seed]; visited {
+			continue
+		}
+		compID := nextComp
+		nextComp++
+		bfsQ := []string{seed}
+		componentOf[seed] = compID
+		for len(bfsQ) > 0 {
+			cur := bfsQ[0]
+			bfsQ = bfsQ[1:]
+			for nb := range undirNeighbors[cur] {
+				if _, visited := componentOf[nb]; !visited {
+					componentOf[nb] = compID
+					bfsQ = append(bfsQ, nb)
+				}
+			}
+		}
+	}
+
+	// Per-component max observed rank (ranked nodes only).
+	compMax = map[int]int{}
+	for m, v := range rank {
+		if ranked[m] && v > compMax[componentOf[m]] {
+			compMax[componentOf[m]] = v
+		}
+	}
+	return componentOf, compMax
+}
+
+// layerRoleDivergenceFingerprintID computes a stable 32-char hex ID for a
+// layer_role_divergence finding from the rule ID and module name.
+func layerRoleDivergenceFingerprintID(ruleID, mod string) string {
+	h := sha256.Sum256([]byte(ruleID + "\x00" + mod))
+	return hex.EncodeToString(h[:16])
+}

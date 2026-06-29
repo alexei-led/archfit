@@ -102,7 +102,7 @@ const (
 // Classification holds the Balanced Coupling assessment for one graph edge.
 // Strength and Distance are populated with high confidence;
 // Volatility and Explicitness are derived from config subdomain/public globs.
-// Severity is set by classify.Run for cross-boundary edges via BalanceResult.
+// Severity is set by classify.Run for cross-boundary edges from cl.Score.Band.
 // ContractRecommended is set when the target is a generic subdomain reached via
 // non-contract strength — BC's anti-corruption-layer advisory signal.
 // Score holds the continuous numeric risk score when a Scorer has been applied;
@@ -143,13 +143,6 @@ const (
 	SeverityCritical Severity = "critical"
 )
 
-// strengthIsHigh returns true for strengths that represent high coupling intensity.
-// Contract and model are low-coupling (explicit, stable API surface).
-// Functional and intrusive are high-coupling (implementation-level dependency).
-func strengthIsHigh(s Strength) bool {
-	return s == StrengthFunctional || s == StrengthSymmetric || s == StrengthIntrusive
-}
-
 // DistanceIsHigh returns true for distances that represent a large socio-technical
 // gap — a different owner or a separate deployment unit. These are the only
 // distances at which tight coupling is a genuine "distributed monolith"; coupling
@@ -157,63 +150,4 @@ func strengthIsHigh(s Strength) bool {
 // cheap, so it must not be framed as distributed-monolith risk.
 func DistanceIsHigh(d Distance) bool {
 	return d == DistanceCrossModuleDiffOwner || d == DistanceCrossDeployUnit
-}
-
-// BalanceResult applies the Khononov balance formula to a Classification and returns
-// the advisory Severity for the edge. SeverityNone means the edge is balanced (no finding).
-//
-// Severity table (Balanced Coupling model, Khononov):
-//   - Intrusive: always surfaced, severity driven by distance/volatility.
-//   - high strength + high distance + high volatility → critical.
-//   - high strength + high distance + medium/undeclared/unknown volatility → medium.
-//   - high strength + high distance + low volatility → low (BC: stable target neutralizes).
-//   - low strength + low distance + high volatility → medium (over-decoupled volatile seam).
-//   - high strength + low distance → none (cohesive — XOR modular quadrant).
-//   - low strength + high distance → none (loose — XOR modular quadrant).
-//   - low strength + low distance + low/unknown volatility → none (balanced).
-func BalanceResult(c Classification) Severity {
-	// Intrusive strength: always advisory, severity driven by distance.
-	if c.Strength == StrengthIntrusive {
-		if c.Distance == DistanceCrossDeployUnit {
-			return SeverityCritical
-		}
-		if c.Distance == DistanceCrossModuleDiffOwner {
-			if c.Volatility == VolatilityHigh {
-				return SeverityHigh
-			}
-			return SeverityMedium
-		}
-		// intrusive + same-module or cross-module-same-owner: fall through to formula.
-	}
-
-	sHigh := strengthIsHigh(c.Strength)
-	dHigh := DistanceIsHigh(c.Distance)
-
-	if sHigh == dHigh {
-		if sHigh {
-			// high strength + high distance: tight coupling across a large boundary.
-			// Volatility modulates per BC: a low-volatility (stable) target neutralizes
-			// the imbalance — the cascade rarely fires — so it drops to an advisory low;
-			// high volatility amplifies it to critical.
-			switch c.Volatility {
-			case VolatilityHigh:
-				return SeverityCritical
-			case VolatilityLow:
-				return SeverityLow
-			default: // medium, unknown — conservative
-				return SeverityMedium
-			}
-		}
-		// low strength + low distance: over-decoupled volatile seam.
-		if c.Volatility == VolatilityHigh {
-			return SeverityMedium
-		}
-		return SeverityNone
-	}
-
-	// Asymmetric (XOR modular quadrants):
-	//   high strength + low distance → cohesive (co-located tight coupling, acceptable).
-	//   low strength + high distance → loose (contract across a large boundary, acceptable).
-	// Both are BC-modular: no finding.
-	return SeverityNone
 }

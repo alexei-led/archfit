@@ -63,10 +63,15 @@ func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 
 	for _, e := range g.Edges() {
 		cl := classify(e, mm, c, degenerateExplicit, degenerateOwners, effectiveVol)
-		// Attach a continuous score for cross-boundary edges that have a severity.
+		// Score cross-boundary edges that are not distance-unknown.
 		// Same-module and unknown-distance edges are not scored (zero EdgeScore).
+		// Severity is derived from cl.Score.Band so the book formula and the
+		// advisory severity are always identical — the single source of truth.
 		if cl.Distance != coupling.DistanceSameModule && cl.Distance != coupling.DistanceUnknown {
 			cl.Score = scorer.Score(cl)
+			// Set Severity from the book score band. Abstained edges (Scored=false,
+			// Band="") remain SeverityNone — abstain-not-fake is preserved.
+			cl.Severity = cl.Score.Band
 		}
 		idx[edgeKey(e)] = cl
 	}
@@ -148,7 +153,7 @@ func AugmentModulesFromGraph(g *graph.Graph, modules map[string]config.ModuleDef
 			cloned = true
 		}
 		if _, exists := out[path]; !exists {
-			out[path] = config.ModuleDef{Paths: []string{path}}
+			out[path] = config.ModuleDef{Paths: []string{path}, Owner: ancestorOwner(path, modules)}
 		}
 	}
 	return out
@@ -194,10 +199,69 @@ func AugmentGoWorkspaceModules(g *graph.Graph, modules map[string]config.ModuleD
 			cloned = true
 		}
 		if _, exists := out[m.Path]; !exists {
-			out[m.Path] = config.ModuleDef{Paths: []string{m.RelDir + "/**"}}
+			// Inherit owner from the nearest config-declared ancestor module.
+			// For Go workspace members the "already covered" check above uses
+			// mi.moduleFor(m.RelDir+"/x") — if there were a covering ancestor
+			// we'd have skipped this member. Instead we do a direct prefix scan
+			// on the member's RelDir so partial ancestors (e.g. a module whose
+			// glob covers a parent dir) can still donate their owner.
+			owner := ancestorOwnerByPath(m.RelDir, modules)
+			out[m.Path] = config.ModuleDef{Paths: []string{m.RelDir + "/**"}, Owner: owner}
 		}
 	}
 	return out
+}
+
+// ancestorOwner finds the owner of the nearest config-declared ancestor of a
+// Rust module-graph node (key uses "::" separator). It returns the Owner of the
+// config module whose key is the longest "::"-prefix of path, or "" if none.
+func ancestorOwner(path string, modules map[string]config.ModuleDef) string {
+	best := ""
+	bestLen := 0
+	for name, def := range modules {
+		if def.Owner == "" {
+			continue
+		}
+		// A module is an ancestor when path starts with name+"::" or equals name.
+		prefix := name + "::"
+		if path == name || strings.HasPrefix(path, prefix) {
+			if len(name) > bestLen {
+				bestLen = len(name)
+				best = def.Owner
+			}
+		}
+	}
+	return best
+}
+
+// ancestorOwnerByPath finds the owner of the nearest config-declared ancestor
+// for a Go workspace member, matching by directory path prefix. It returns the
+// Owner of the config module whose glob paths share the longest directory prefix
+// with relDir, or "" if none. This is a fallback for the case where no module
+// glob fully covers the member (otherwise AugmentGoWorkspaceModules would have
+// skipped it), but a parent-directory module may still donate its owner.
+func ancestorOwnerByPath(relDir string, modules map[string]config.ModuleDef) string {
+	best := ""
+	bestLen := 0
+	for _, def := range modules {
+		if def.Owner == "" {
+			continue
+		}
+		for _, p := range def.Paths {
+			// Strip trailing glob suffixes to get the directory root.
+			dir := strings.TrimRight(strings.TrimSuffix(strings.TrimSuffix(p, "**"), "/"), "/")
+			if dir == "" {
+				continue
+			}
+			if relDir == dir || strings.HasPrefix(relDir, dir+"/") {
+				if len(dir) > bestLen {
+					bestLen = len(dir)
+					best = def.Owner
+				}
+			}
+		}
+	}
+	return best
 }
 
 // matchesAnyGlob reports whether path matches any of the given glob patterns.
@@ -213,8 +277,8 @@ func matchesAnyGlob(path string, globs []string) bool {
 // classify computes a Classification for a single edge.
 //
 // ExplicitnessHint on the edge overrides the config-glob-derived explicitness
-// when non-empty ("explicit" or "implicit"). BalanceResult is then called to
-// derive advisory Severity for cross-boundary edges.
+// when non-empty ("explicit" or "implicit"). Severity is set in Run after the
+// book score is computed (cl.Score.Band → cl.Severity).
 func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility) coupling.Classification {
 	modules := c.Modules
 	fromPath := pathFromID(e.From)
@@ -280,8 +344,8 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 	// into the modules it wires by design — that fan-out is cohesion, not high-
 	// distance coupling — so its outbound edges must never be scored as unbalanced.
 	// Cap the source's outbound distance below the high-distance threshold; this
-	// single point flows to Severity (BalanceResult below), the continuous Score,
-	// and every distance-reading metric (unbalanced_edge, encapsulation, …).
+	// single point flows to the continuous Score (and hence Severity) and every
+	// distance-reading metric (unbalanced_edge, encapsulation, …).
 	// The basis stays as-is: it reflects what drove the original signal, not the cap.
 	if fromMod, ok := mi.moduleFor(fromPath); ok && cohesiveRole(modules[fromMod].Role) {
 		dist = capDistanceForRole(dist)
@@ -320,11 +384,11 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 		DistanceBasis:       distBasis,
 	}
 
-	// --- Severity + Connascence ---
-	// Both are only meaningful for cross-boundary edges.
+	// --- Connascence ---
+	// Report-only descriptive vocabulary — never scored, never gates.
+	// Only meaningful for cross-boundary edges (same-module and unknown-distance
+	// edges carry no connascence). Severity is set in Run after scoring.
 	if dist != coupling.DistanceSameModule && dist != coupling.DistanceUnknown {
-		cl.Severity = coupling.BalanceResult(cl)
-		// Connascence is report-only descriptive vocabulary — never scored, never gates.
 		if fromMod, okF := mi.moduleFor(fromPath); okF {
 			if toMod, okT := mi.moduleFor(toPath); okT {
 				cl.Connascence = classifyConnascence(e, str, fromMod, toMod, c)

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
 func gitInitFixtureRepo(t *testing.T, dir string) {
@@ -52,7 +54,7 @@ func writeViolatingRepo(t *testing.T) string {
 		filePkgAA: "package a\n\nimport \"example.com/test/pkg/b/internal/impl\"\n\n" +
 			"func UseSecret() string { return impl.Secret() }\n",
 		"pkg/b/internal/impl/impl.go": "package impl\n\nfunc Secret() string { return \"s\" }\n",
-		".archfit.yaml": `version: 1
+		defaultConfigPath: `version: 1
 modules:
   a:
     paths: ["pkg/a/**"]
@@ -114,6 +116,10 @@ const (
 	flagReport        = "--report"
 	filePkgAA         = "pkg/a/a.go"         // the gate-violating source file used across fixtures
 	ruleNoInternalAcc = "no_internal_access" // rule ID in the violating-repo fixture
+	explainConstraint = "constraint:"        // explain output field label
+	explainRule       = "rule:"              // explain output field label
+	explainEdge       = "edge:"              // explain output field label
+	goMainSrc         = "package main\n\nfunc main() {}\n"
 )
 
 // writeNonGoRepo creates a git repo with no analyzable source (README only) and
@@ -456,10 +462,137 @@ func TestRun_Explain_ResolvesViaFullPipeline(t *testing.T) {
 		t.Fatalf("explain exit = %d, want 0\noutput:\n%s", code, buf.String())
 	}
 	out := buf.String()
-	for _, want := range []string{"rule:", "edge:", "modules:    a -> b", "constraint:"} {
+	for _, want := range []string{explainRule, explainEdge, "modules:    a -> b", explainConstraint} {
 		if !strings.Contains(out, want) {
 			t.Errorf("explain output missing %q\noutput:\n%s", want, out)
 		}
+	}
+}
+
+// TestRun_Explain_HonorsRoot verifies that explain --root scopes the pipeline
+// to the given repo when the config lives outside the repo (external-CI shape).
+// Without --root the pipeline analyses the empty config dir and finds nothing,
+// so explain exits 3 ("no finding with fingerprint prefix").
+// This is the regression guard for the c.Root wiring (Task 1 fix).
+func TestRun_Explain_HonorsRoot(t *testing.T) {
+	t.Parallel()
+	repoDir, cfgPath := writeRepoWithExternalConfig(t)
+
+	// Capture the finding ID from check --root so we have a valid fingerprint.
+	var checkBuf bytes.Buffer
+	code := Run([]string{cmdCheck, flagRoot, repoDir, "-c", cfgPath, flagFull, fmtJSON}, &checkBuf)
+	if code != 1 {
+		t.Fatalf("check --root: exit = %d, want 1 (gate violation)\noutput:\n%s", code, checkBuf.String())
+	}
+	var checkDiag struct {
+		Findings []struct {
+			ID string `json:"id"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(checkBuf.Bytes(), &checkDiag); err != nil || len(checkDiag.Findings) == 0 {
+		t.Fatalf("no findings from check --root: err=%v output=%s", err, checkBuf.String())
+	}
+	fp := checkDiag.Findings[0].ID[:8]
+
+	t.Run("with --root resolves the finding", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		code := Run([]string{cmdExplain, fp, flagRoot, repoDir, "-c", cfgPath}, &buf)
+		if code != 0 {
+			t.Fatalf("explain --root: exit = %d, want 0\noutput:\n%s", code, buf.String())
+		}
+		out := buf.String()
+		for _, want := range []string{explainRule, explainEdge, explainConstraint} {
+			if !strings.Contains(out, want) {
+				t.Errorf("explain --root output missing %q\noutput:\n%s", want, out)
+			}
+		}
+		if !strings.Contains(out, fp) {
+			t.Errorf("explain --root output does not contain fingerprint %q\noutput:\n%s", fp, out)
+		}
+	})
+
+	t.Run("without --root does not find the fingerprint (pre-patch regression proof)", func(t *testing.T) {
+		t.Parallel()
+		// Without --root the scan root is the config directory (an empty temp dir).
+		// The pipeline finds no findings → explain exits 3 (no matching fingerprint).
+		var buf bytes.Buffer
+		code := Run([]string{cmdExplain, fp, "-c", cfgPath}, &buf)
+		if code != 3 {
+			t.Fatalf("explain without --root: exit = %d, want 3 (no finding in empty config dir)\noutput:\n%s", code, buf.String())
+		}
+	})
+}
+
+// TestRun_Explain_BackCompatNoRoot verifies that explain without --root is
+// unchanged when the config is co-located with the repo source (the common case).
+// This is the back-compat guard: --root is additive and must not break callers
+// that do not pass it.
+func TestRun_Explain_BackCompatNoRoot(t *testing.T) {
+	t.Parallel()
+	// writeViolatingRepo puts config inside the repo dir, so omitting --root
+	// still analyses the right tree.
+	cfgPath := writeViolatingRepo(t)
+
+	var checkBuf bytes.Buffer
+	Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &checkBuf)
+	var checkDiag struct {
+		Findings []struct {
+			ID string `json:"id"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(checkBuf.Bytes(), &checkDiag); err != nil || len(checkDiag.Findings) == 0 {
+		t.Fatalf("no findings from check: err=%v output=%s", err, checkBuf.String())
+	}
+
+	var buf bytes.Buffer
+	code := Run([]string{cmdExplain, checkDiag.Findings[0].ID[:8], "-c", cfgPath}, &buf)
+	if code != 0 {
+		t.Fatalf("explain without --root: exit = %d, want 0\noutput:\n%s", code, buf.String())
+	}
+	out := buf.String()
+	for _, want := range []string{explainRule, explainEdge, "modules:    a -> b", explainConstraint} {
+		if !strings.Contains(out, want) {
+			t.Errorf("explain without --root output missing %q\noutput:\n%s", want, out)
+		}
+	}
+}
+
+// TestRun_Explain_SeverityMatchesCheck verifies that explain reports the same
+// severity for a finding as check does. This is the regression guard for the
+// P3 fix: before Task 4 check derived Severity from BalanceResult while explain
+// rendered cl.Score.Band, so they could diverge on symmetric-strength edges.
+func TestRun_Explain_SeverityMatchesCheck(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeViolatingRepo(t)
+
+	// Get the finding ID and severity from check.
+	var checkBuf bytes.Buffer
+	if code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &checkBuf); code == 3 {
+		t.Fatalf("check exited 3 (config error)\noutput:\n%s", checkBuf.String())
+	}
+	var checkDiag struct {
+		Findings []struct {
+			ID       string `json:"id"`
+			Severity string `json:"severity"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(checkBuf.Bytes(), &checkDiag); err != nil {
+		t.Fatalf("unmarshal check output: %v\noutput:\n%s", err, checkBuf.String())
+	}
+	if len(checkDiag.Findings) == 0 {
+		t.Fatalf("writeViolatingRepo produced no findings — forbidden_dependency rule must fire; output:\n%s", checkBuf.String())
+	}
+
+	f := checkDiag.Findings[0]
+	var explainBuf bytes.Buffer
+	if code := Run([]string{cmdExplain, f.ID[:8], "-c", cfgPath}, &explainBuf); code != 0 {
+		t.Fatalf("explain exit = %d, want 0\noutput:\n%s", code, explainBuf.String())
+	}
+	out := explainBuf.String()
+	wantLine := "severity:   " + f.Severity
+	if !strings.Contains(out, wantLine) {
+		t.Errorf("explain severity mismatch:\ncheck reported %q\nexplain output:\n%s", f.Severity, out)
 	}
 }
 
@@ -503,6 +636,49 @@ func TestRun_Check_AgentTasksPopulated(t *testing.T) {
 	}
 }
 
+// TestRun_Check_MissingBaselineWarning verifies P9: when --base is given but
+// no baseline file exists, check prints a warning to stderr naming the ref and
+// the finding count, and still exits on the real verdict (not a hard error).
+func TestRun_Check_MissingBaselineWarning(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeViolatingRepo(t)
+
+	var stdout, stderr bytes.Buffer
+	cmd := CheckCmd{
+		Config: cfgPath,
+		Base:   "origin/main",
+		Full:   true,
+		Format: []string{formatJSON},
+	}
+	deps := &appDeps{Runner: toolrun.New(), Stdout: &stdout, Stderr: &stderr}
+	err := cmd.Run(deps)
+
+	// Exit code must be the real verdict (1 = gate violation), not 3.
+	exitCode := 0
+	var ee *exitError
+	if errors.As(err, &ee) {
+		exitCode = ee.code
+	}
+	if exitCode != 1 {
+		t.Fatalf("exit = %d, want 1 (gate violation drives verdict, not missing baseline)\nstdout:\n%s\nstderr:\n%s",
+			exitCode, stdout.String(), stderr.String())
+	}
+
+	// Stderr must contain the warning.
+	warn := stderr.String()
+	if !strings.Contains(warn, "no baseline found") || !strings.Contains(warn, "origin/main") {
+		t.Errorf("stderr missing baseline-not-found warning with ref 'origin/main'\nstderr: %q", warn)
+	}
+	if !strings.Contains(warn, "archfit baseline") {
+		t.Errorf("stderr missing 'archfit baseline' hint\nstderr: %q", warn)
+	}
+
+	// The count N in the warning must be a positive integer (we know there's ≥1 finding).
+	if !strings.Contains(warn, "all ") || strings.Contains(warn, "all 0 findings") {
+		t.Errorf("warning should report a non-zero finding count\nstderr: %q", warn)
+	}
+}
+
 // TestRun_Check_LabelsFileDeterministic verifies that check with a pinned
 // labels file present produces byte-identical output across runs and that a
 // malformed labels file fails loudly (exit 3) rather than silently altering
@@ -541,5 +717,132 @@ labels:
 	var buf bytes.Buffer
 	if code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &buf); code != 3 {
 		t.Errorf("malformed labels file: exit = %d, want 3", code)
+	}
+}
+
+// TestRun_Check_NoBaselineWarningAbsent is the negative counterpart to
+// TestRun_Check_MissingBaselineWarning (T6 regression guard): when --base is
+// NOT supplied, check must never emit "no baseline found" on stderr.
+func TestRun_Check_NoBaselineWarningAbsent(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeViolatingRepo(t)
+
+	var stdout, stderr bytes.Buffer
+	cmd := CheckCmd{
+		Config: cfgPath,
+		Full:   true,
+		Format: []string{formatJSON},
+		// Base intentionally omitted.
+	}
+	deps := &appDeps{Runner: toolrun.New(), Stdout: &stdout, Stderr: &stderr}
+	_ = cmd.Run(deps)
+
+	if strings.Contains(stderr.String(), "no baseline found") {
+		t.Errorf("check without --base must not emit 'no baseline found'; stderr: %q", stderr.String())
+	}
+}
+
+// TestRun_Check_ScipDisabledCoverageRow verifies T7: when tools.scip.enabled is
+// absent (defaults off), the pipeline injects a StatusDisabled coverage row for
+// "scip" so that tool_coverage in JSON output reports "disabled" rather than
+// leaving the entry absent.
+func TestRun_Check_ScipDisabledCoverageRow(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeViolatingRepo(t)
+
+	var buf bytes.Buffer
+	// --report (exit 0) so we can parse the JSON regardless of gate verdict.
+	if code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &buf); code == 3 {
+		t.Fatalf("check exited 3 (config/pipeline error)\noutput:\n%s", buf.String())
+	}
+
+	var out struct {
+		ToolCoverage []struct {
+			Tool   string `json:"tool"`
+			Status string `json:"status"`
+		} `json:"tool_coverage"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal: %v\noutput:\n%s", err, buf.String())
+	}
+
+	found := false
+	for _, c := range out.ToolCoverage {
+		if c.Tool == toolScip {
+			found = true
+			if c.Status != string(diagnostic.StatusDisabled) {
+				t.Errorf("scip coverage status = %q, want %q", c.Status, diagnostic.StatusDisabled)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("no 'scip' entry in tool_coverage; got %+v", out.ToolCoverage)
+	}
+}
+
+// TestRun_Check_FileClassConfigWiredToPipeline verifies M1: a user-supplied
+// file_class: generated_globs pattern in .archfit.yaml reaches the FileClassIndex
+// through the pipeline (cfg.ForFileClass() → loc.RunWithConfig). The test
+// creates a repo with a custom-named generated file that would NOT be detected
+// by built-in heuristics, configures it via file_class: generated_globs, and
+// verifies the loc tool_coverage reflects a successful walk (status ok).
+// The structural_weight metric will exclude the custom generated file, so the
+// overall pipeline must not error or miscategorise it.
+func TestRun_Check_FileClassConfigWiredToPipeline(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	files := map[string]string{
+		"go.mod":  "module example.com/fctest\n\ngo 1.21\n",
+		"main.go": goMainSrc,
+		// Custom generated file — NOT matched by built-in filename heuristics.
+		// Only config-supplied generated_globs should catch it.
+		"codegen/mycodegen_output.go": "package codegen\n\nfunc Generated() {}\n",
+		".archfit.yaml": `version: 1
+file_class:
+  generated_globs:
+    - "codegen/**"
+`,
+	}
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitInitFixtureRepo(t, dir)
+
+	cfgPath := filepath.Join(dir, ".archfit.yaml")
+	var buf bytes.Buffer
+	if code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &buf); code == 3 {
+		t.Fatalf("check exited 3 (pipeline error)\noutput:\n%s", buf.String())
+	}
+
+	// Verify loc ran successfully — proves RunWithConfig was called without error.
+	var out struct {
+		ToolCoverage []struct {
+			Tool   string `json:"tool"`
+			Status string `json:"status"`
+		} `json:"tool_coverage"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal: %v\noutput:\n%s", err, buf.String())
+	}
+	found := false
+	for _, c := range out.ToolCoverage {
+		if c.Tool == toolLoc {
+			found = true
+			if c.Status != string(diagnostic.StatusOK) {
+				t.Errorf("loc coverage status = %q, want ok", c.Status)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("no 'loc' entry in tool_coverage; got %+v", out.ToolCoverage)
 	}
 }

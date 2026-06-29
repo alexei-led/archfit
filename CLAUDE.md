@@ -50,16 +50,59 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   graph (`symbol.DependantsFromSymbolGraph`) — both are `n/a` unless SCIP is enabled.
   The `.gitnexus`/`.codegraph` index dirs are still excluded from file walks
   (`scope.go`), but archfit no longer runs the tool.
+- **Severity source is `cl.Score.Band`** (`classify.go`, `Run`). `cl.Severity =
+cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
+  old discrete severity table and is no longer called anywhere. Do not re-introduce
+  it; the book formula (`ScoreVersion = "bc_score.v3"`) is the single severity source.
+- **FileClass facility** (`internal/model/fileclass`, `internal/syntax/fileclass`).
+  Every source file is classified as `Production | Test | Generated | Vendor` once
+  during the LOC walk; the result is stored in `SizeSignals.FileClassIndex`. Use
+  `syntax.LookupFileClass` for path→class lookup with fallback. Production-health
+  metrics (`panic_density`, `functional_candidates`, `complexity`) filter on
+  `Production` only and report the excluded count. `structural_weight` skips only
+  `Generated` (not Test) and does not emit an excluded count — FileLOC is already
+  production-only from the loc walk; structural_weight re-excludes via the index
+  only for the index-override path.
+  `test_density` counts all test files. Config override: top-level `file_class:`
+  key (`FileClassDef`), projected via `Config.ForFileClass()` → `syntax.FileClassConfig`.
+- **`archfit diff <ref>`** subcommand (`cmd/archfit/diff.go`). Creates a clean
+  detached temp worktree at `<ref>`, scores both sides with the full advisory
+  pipeline, and emits a dimension-by-dimension delta table. Off-gate, report-only
+  (exit 0 on success, exit 3 on git/config error). Both sides use the current
+  `--config`. Formats: `text` (default), `json`, `markdown`.
+- **`layer_role_divergence` rule** (`internal/rules/rules.go`). For each module,
+  computes observed topological rank from the import DAG and compares to the rank
+  implied by its declared `role`/`layer`; emits a `warn` finding when the delta
+  exceeds the configured threshold (default 1). Uses existing `layerRank` /
+  `ModuleMap.LayerFor`. Config knob: `threshold` (disable via `gate: off`).
+- **Owner inheritance for auto-registered synthetic submodules**
+  (`classify.AugmentModulesFromGraph`, `AugmentGoWorkspaceModules`): propagates
+  `owner` from the nearest config-declared ancestor module to each synthetic module.
+  Fixes inter-submodule edges defaulting to `cross_module_different_owner` (D=10)
+  on single-team repos with many cargo-modules or Go workspace members.
+- **SCIP empty-index reports `partial`/`warn`** (`internal/extract/scip/scip_strength.go`).
+  When the resolved edge map is empty (`len(m)==0`), `Coverage.Status` is set
+  to `StatusPartial` with reason
+  `"empty index (0 occurrences) — check path case / indexer version"`. Previously
+  this reported `ok`, silently hiding a SCIP indexer failure.
 - **Complexity backend is configurable** (`tools.complexity.backend`): `auto`
   (default) = gocyclo for exact Go CCN + an ast-grep decision-point proxy for
-  TS/Py/Rust (no default Python pin); `lizard` opts back into exact per-function CCN.
-  Report-only hotspot metric (over-flagging is the safe direction).
+  TS/Py/Rust (no default Python pin); when gocyclo is absent the proxy also covers
+  Go. `lizard` opts into exact per-function CCN for all languages. When neither gocyclo nor `sg` is
+  installed, complexity reports `n/a` with an explicit install hint (not a silent
+  zero). Report-only hotspot metric (over-flagging is the safe direction).
 - **scanRoot vs gitRoot decoupling.** `Scope.Root` = ScanRoot (the analysis
   boundary; all extractors walk this tree). `Scope.GitRoot` = `git rev-parse
 --show-toplevel` (git ops only). `Scope.SubtreePrefix = rel(GitRoot, Root)`.
   `--root` absent ⇒ ScanRoot=GitRoot, prefix="" ⇒ byte-identical. Non-git full
   mode proceeds with `GitRoot=""` (history empty); delta mode without git is a
   hard error.
+  **macOS APFS case-variant `--root` (Task 25, fixed):** `snapScanRoot` in
+  `internal/scope/scope.go` uses `os.SameFile` (device+inode) to snap a
+  case-variant scan root to the git root's canonical path, so
+  `/users/…/repo` and `/Users/…/repo` resolve to the same scope on
+  case-insensitive APFS. `filepath.EvalSymlinks` still handles symlinks;
+  `snapScanRoot` handles the case-mismatch that EvalSymlinks cannot fix.
 - **Go workspace loading.** Member discovery: `go.work` at or above ScanRoot
   (parsed in-process via `golang.org/x/mod/modfile`) → filter to members inside
   ScanRoot and not exclusion-matched; else single `go.mod`; else walk for `go.mod`
@@ -174,9 +217,14 @@ convention (accepted ceiling: `#[path]`, inline `mod {}`, `include!` diverge fro
 rust-analyzer's semantic tree; SCIP is the precision upgrade). The meta dimension
 `analysis_confidence` is also capped by the share of n/a/low-confidence dimensions, so a
 fully-tooled run no longer reads 100 when (by Rust design) encapsulation is n/a. See
-`docs/plans/completed/20260621-archfit-rust-depth-and-calibration.md`.
+`docs/archived/plans/completed/20260621-archfit-rust-depth-and-calibration.md`.
 
 ## Layout
 
 `cmd/archfit` (kong CLI) · `internal/` decision core + adapters · `docs/design`
-(decisions) · `docs/guide` (user docs) · `docs/plans`.
+(current decisions — 3 files) · `docs/guide` (user docs) · `docs/spec` (spec) ·
+`docs/plans` (open plans only; currently empty).
+
+**Skip `docs/archived/`** — superseded design docs, completed plans, plan notes,
+research artifacts, and analysis notes. Only read when explicitly debugging
+history or looking up a completed plan by name.

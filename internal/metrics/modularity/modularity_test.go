@@ -251,3 +251,75 @@ func TestFileStructuralWeight_DeterministicSort(t *testing.T) {
 		t.Errorf("a/file.go must appear before z/file.go (path tiebreaker); display=%q", res.Display)
 	}
 }
+
+// TestStructuralWeight_GeneratedExcluded verifies that a *.pb.go god-file is
+// excluded from the module-level god-module count, while a real god-file still
+// gets flagged.
+func TestStructuralWeight_GeneratedExcluded(t *testing.T) {
+	// Four modules so the median stays low and internal/core clearly exceeds 4×.
+	nodes := []graph.Node{
+		{Kind: graph.NodeKindPackage, Path: "internal/api"},
+		{Kind: graph.NodeKindPackage, Path: "internal/core"},
+		{Kind: graph.NodeKindPackage, Path: "internal/util"},
+		{Kind: graph.NodeKindPackage, Path: "internal/config"},
+	}
+	g := metricstest.BuildGraph(nodes, nil)
+	fileLOC := map[string]int{
+		// Generated god-file — must NOT count toward internal/api's LOC.
+		"internal/api/api.pb.go": 5000,
+		// Real god-file in internal/core — must be flagged.
+		"internal/core/engine.go": 2000,
+		// Small production files to keep the median low.
+		"internal/api/handler.go":   100,
+		"internal/util/util.go":     90,
+		"internal/config/config.go": 80,
+	}
+
+	res := modularity.StructuralWeightMetric{}.Calculate(signal.SizeInput{
+		CommonInput: signal.CommonInput{Graph: g},
+		Size:        signal.SizeSignals{FileLOC: fileLOC},
+	})
+	// After pb.go exclusion: api=100, core=2000, util=90, config=80.
+	// Sorted LOC: [80,90,100,2000]; median=locs[2]=100.
+	// threshold=max(4*100=400, 400)=400. core(2000)>=400 → god.
+	if res.Value != 1 {
+		t.Errorf("expected 1 god-module (internal/core only), got %v; display=%q", res.Value, res.Display)
+	}
+	// The display must contain engine.go (the large file key resolved from internal/core).
+	if !strings.Contains(res.Display, "engine") {
+		t.Errorf("engine.go god-module must be flagged; display=%q", res.Display)
+	}
+	// api.pb.go was excluded — api must not appear as a god-module.
+	if strings.Contains(res.Display, "api.pb") {
+		t.Errorf("api.pb.go must not be flagged (generated); display=%q", res.Display)
+	}
+}
+
+// TestFileStructuralWeight_GeneratedExcluded verifies that a *.pb.go god-file is
+// excluded from the file-level god-file count, while a real god-file still gets flagged.
+func TestFileStructuralWeight_GeneratedExcluded(t *testing.T) {
+	fileLOC := map[string]int{
+		// Generated god-file — must NOT be flagged.
+		"internal/api/api.pb.go": 5000,
+		// Real god-file — must be flagged.
+		"internal/core/engine.go": 2000,
+		// Small production files.
+		"internal/a/a.go": 100,
+		"internal/b/b.go": 90,
+		"internal/c/c.go": 80,
+	}
+
+	res := modularity.FileStructuralWeightMetric{}.Calculate(signal.SizeInput{
+		Size: signal.SizeSignals{FileLOC: fileLOC},
+	})
+	// Only engine.go should be a god-file; api.pb.go excluded.
+	if res.Value != 1 {
+		t.Errorf("expected 1 god-file (engine.go only), got %v; display=%q", res.Value, res.Display)
+	}
+	if !strings.Contains(res.Display, "engine.go") {
+		t.Errorf("engine.go must be flagged; display=%q", res.Display)
+	}
+	if strings.Contains(res.Display, "pb.go") {
+		t.Errorf("api.pb.go must not be flagged (generated); display=%q", res.Display)
+	}
+}

@@ -22,7 +22,9 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/signal"
+	"github.com/alexei-led/archfit/internal/syntax"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -45,7 +47,7 @@ const (
 
 	// Absent-coverage reasons: why complexity is n/a and the enable step.
 	reasonDisabled       = "complexity is opt-in — set `tools.complexity.enabled: true` in .archfit.yaml"
-	reasonNotInstalled   = "no complexity tool found — install gocyclo (`go install github.com/fzipp/gocyclo/cmd/gocyclo@latest`) or have `sg` (ast-grep) available for the proxy"
+	reasonNotInstalled   = "no complexity tool found — install `sg` (ast-grep) for the Go/TS/Py/Rust proxy (`cargo install ast-grep` / `brew install ast-grep`); optionally add `gocyclo` for exact Go CCN (`go install github.com/fzipp/gocyclo/cmd/gocyclo@latest`)"
 	reasonLizardMissing  = "lizard not found — install it (`pip install lizard`, or have `uvx` available) to enable complexity"
 	reasonRunFailed      = "complexity tool run failed — check the install and rerun"
 	reasonSGNotInstalled = "sg (ast-grep) not found — install ast-grep to enable the complexity proxy for TS/Py/Rust"
@@ -71,11 +73,17 @@ var lizardLanguages = []string{langGo, langPython, "javascript", langTypeScript,
 // Run invokes the complexity backend and returns per-function CCN records.
 // timeout is the per-analyzer outer watchdog; 0 uses defaultTimeout. backend
 // selects the implementation: "" or "auto" → gocyclo+proxy; "lizard" → exact
-// lizard. When enabled is false an absent coverage record is returned. A nil
-// result on tool absence is always returned without error — callers treat
-// absent coverage as n/a. On watchdog timeout StatusTimedOut is returned with
-// nil error so the overall run continues.
-func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, backend string, timeout time.Duration) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+// lizard. excludes is an additive set of glob patterns forwarded to lizard's
+// -x flag (config exclusions + scope defaults); nil is safe. fileCfg carries
+// the user-supplied file_class globs so gocyclo and the ast-grep proxy honor
+// user-defined generated_globs/test_globs (same config that loc uses).
+// classIndex is the FileClassIndex built by the loc walk (may be nil); when
+// non-nil it provides header-sniff results (e.g. "// Code generated") that
+// pure filename classification misses. When enabled is false an absent coverage
+// record is returned. A nil result on tool absence is always returned without
+// error — callers treat absent coverage as n/a. On watchdog timeout
+// StatusTimedOut is returned with nil error so the overall run continues.
+func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, backend string, timeout time.Duration, excludes []string, fileCfg syntax.FileClassConfig, classIndex map[string]fileclass.FileClass) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
 	if !enabled {
 		return nil, absentCov(reasonDisabled), nil
 	}
@@ -88,16 +96,23 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 	var cov diagnostic.Coverage
 	var subErr error
 	if backend == BackendLizard {
-		funcs, cov, subErr = runLizard(ctx, runner, root, timeout)
+		funcs, cov, subErr = runLizard(ctx, runner, root, excludes, timeout, fileCfg, classIndex)
 	} else {
-		funcs, cov, subErr = runAuto(ctx, runner, root, timeout)
+		funcs, cov, subErr = runAuto(ctx, runner, root, timeout, fileCfg, classIndex)
 	}
 
 	// Check both the inner per-subprocess deadline (subErr) and the outer
 	// watchdog (ctx.Err()). When an inner timeout fires, runner.Run returns
 	// context.DeadlineExceeded as subErr but ctx.Err() is still nil.
 	if errors.Is(subErr, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}, nil
+		// Use the backend-specific tool name so the coverage record correctly
+		// identifies what timed out. Auto mode may run gocyclo+ast-grep; report
+		// neutrally rather than falsely claiming lizard timed out.
+		timedOutTool := toolName // "lizard" for the lizard backend
+		if backend != BackendLizard {
+			timedOutTool = "complexity"
+		}
+		return nil, diagnostic.Coverage{Tool: timedOutTool, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}, nil
 	}
 	return funcs, cov, nil
 }
@@ -106,10 +121,11 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 // proxy for TS/Py/Rust. When gocyclo is absent the proxy also covers Go.
 // timeout is the configured per-analyzer cap (0 → each sub uses its built-in
 // constant, which keeps the no-config path byte-identical).
+// fileCfg carries the user-supplied file_class globs used to filter output.
 // Returns a non-nil error only when an inner per-subprocess deadline fires so
 // the caller can surface StatusTimedOut. Other failures degrade to absent coverage.
-func runAuto(ctx context.Context, runner toolrun.Runner, root string, timeout time.Duration) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
-	gocycloFuncs, gocycloOK, err := runGocyclo(ctx, runner, root, timeout)
+func runAuto(ctx context.Context, runner toolrun.Runner, root string, timeout time.Duration, fileCfg syntax.FileClassConfig, classIndex map[string]fileclass.FileClass) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+	gocycloFuncs, gocycloOK, err := runGocyclo(ctx, runner, root, timeout, fileCfg, classIndex)
 	if err != nil {
 		return nil, absentCov(reasonRunFailed), err
 	}
@@ -119,7 +135,7 @@ func runAuto(ctx context.Context, runner toolrun.Runner, root string, timeout ti
 	if !gocycloOK {
 		proxyLangs = append([]string{langGo}, proxyLangs...)
 	}
-	proxyFuncs, proxyCov, err := runProxy(ctx, runner, root, proxyLangs, timeout)
+	proxyFuncs, proxyCov, err := runProxy(ctx, runner, root, proxyLangs, timeout, fileCfg, classIndex)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, absentCov(reasonRunFailed), err
@@ -140,18 +156,25 @@ func runAuto(ctx context.Context, runner toolrun.Runner, root string, timeout ti
 	case proxyCov.Status == statusOK:
 		return all, proxyCov, nil
 	default:
-		return nil, absentCov(reasonNotInstalled), nil
+		// Neither gocyclo nor the ast-grep proxy is available. Report the
+		// coverage under the ast-grep tool name (the primary install target
+		// for the auto backend) so the gap hint in pipeline_coverage.go
+		// directs the user to install sg rather than lizard.
+		return nil, diagnostic.Coverage{Tool: proxyTool, Status: statusAbsent, Reason: reasonNotInstalled}, nil
 	}
 }
 
 // runLizard invokes lizard (directly or via uvx) and returns per-function CCN.
-// Only called when backend=lizard. timeout governs the inner subprocess cap when
-// non-zero (so a configured tools.complexity.timeout can extend beyond the
-// built-in lizardTimeout); zero falls back to the lizardTimeout constant.
+// Only called when backend=lizard. extraExcludes are config- and scope-derived
+// glob patterns forwarded as additional -x flags (additive with lizardExcludes).
+// timeout governs the inner subprocess cap when non-zero (so a configured
+// tools.complexity.timeout can extend beyond the built-in lizardTimeout); zero
+// falls back to the lizardTimeout constant. fileCfg carries the user-supplied
+// file_class globs so lizard output is filtered the same way runAuto is (C5).
 // Returns a non-nil error only when the inner per-subprocess deadline fires
 // (context.DeadlineExceeded) so the caller can surface StatusTimedOut.
 // Other failures degrade to absent coverage.
-func runLizard(ctx context.Context, runner toolrun.Runner, root string, timeout time.Duration) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+func runLizard(ctx context.Context, runner toolrun.Runner, root string, extraExcludes []string, timeout time.Duration, fileCfg syntax.FileClassConfig, classIndex map[string]fileclass.FileClass) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
 	name, pre := lizardCommand(ctx, runner)
 	if name == "" {
 		return nil, absentCov(reasonLizardMissing), nil
@@ -162,6 +185,9 @@ func runLizard(ctx context.Context, runner toolrun.Runner, root string, timeout 
 		args = append(args, "-l", l)
 	}
 	for _, x := range lizardExcludes {
+		args = append(args, "-x", x)
+	}
+	for _, x := range extraExcludes {
 		args = append(args, "-x", x)
 	}
 	innerTimeout := lizardTimeout
@@ -185,6 +211,12 @@ func runLizard(ctx context.Context, runner toolrun.Runner, root string, timeout 
 	if out.ExitCode != 0 && len(funcs) == 0 {
 		return nil, absentCov(reasonRunFailed), nil
 	}
+
+	// Post-filter: drop test/generated functions using the same FileClassConfig
+	// that runAuto uses. lizardExcludes already removes common test dirs, but
+	// user-supplied file_class.generated_globs / test_globs are not forwarded as
+	// -x flags, so this pass honors them (C5).
+	funcs = filterLizardFuncs(funcs, fileCfg, classIndex)
 
 	cov := diagnostic.Coverage{Tool: toolName, Status: statusOK}
 	return funcs, cov, nil
@@ -236,4 +268,40 @@ func parseLizardCSV(data []byte, root string) []signal.ComplexityFunc {
 		})
 	}
 	return out
+}
+
+// filterLizardFuncs removes non-production functions (test, generated, vendor)
+// from lizard output using LookupFileClass. classIndex (from the loc walk) is
+// consulted first —
+// it includes header-sniff results ("// Code generated … DO NOT EDIT") that
+// pure filename patterns miss. When classIndex is nil or a path is absent from
+// it, classification falls back to built-in patterns plus fileCfg globs.
+func filterLizardFuncs(funcs []signal.ComplexityFunc, fileCfg syntax.FileClassConfig, classIndex map[string]fileclass.FileClass) []signal.ComplexityFunc {
+	out := funcs[:0:len(funcs)]
+	for _, f := range funcs {
+		ext := filepath.Ext(f.File)
+		lang := lizardLangFromExt(ext)
+		fc := syntax.LookupFileClass(f.File, classIndex, lang, fileCfg)
+		if !fileclass.IsProduction(fc) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// lizardLangFromExt maps a file extension to a language tag for LookupFileClass.
+func lizardLangFromExt(ext string) string {
+	switch ext {
+	case ".go":
+		return langGo
+	case ".ts", ".tsx":
+		return langTypeScript
+	case ".py":
+		return langPython
+	case ".rs":
+		return langRust
+	default:
+		return ""
+	}
 }

@@ -24,6 +24,18 @@ func (a *Adapter) Symbols(ctx context.Context, s scope.Scope) (symbol.Graph, dia
 	if perr != nil {
 		return empty, partial, nil
 	}
+	if len(g.Module) == 0 {
+		// The indexer ran but produced no symbols — common when scip-python is
+		// used against a Python version it does not yet support (e.g. 3.14).
+		// Return StatusPartial so coverage.go does not count this as "0/0 ok"
+		// and callers can surface an actionable note.
+		return empty, diagnostic.Coverage{
+			Tool:    toolNameSymbols,
+			Version: ro.indexer,
+			Status:  diagnostic.StatusPartial,
+			Reason:  "scip indexer produced an empty symbol index — if this is a Python project, scip-python may not support the current Python version; try Python 3.12 or 3.13",
+		}, nil
+	}
 	return g, diagnostic.Coverage{
 		Tool:            toolNameSymbols,
 		Version:         ro.indexer,

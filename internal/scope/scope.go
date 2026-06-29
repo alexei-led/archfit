@@ -5,12 +5,49 @@ package scope
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/config"
 )
+
+// canonicalPath returns a case- and symlink-resolved form of p.
+// It calls filepath.EvalSymlinks first (real paths only), then falls back to
+// filepath.Abs on error (handles fake/non-existent paths used in tests), and
+// returns p unchanged if both fail. An empty p is returned as-is so that the
+// GitRoot=="" invariant in non-git full mode is preserved.
+func canonicalPath(p string) string {
+	if p == "" {
+		return ""
+	}
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	if a, err := filepath.Abs(p); err == nil {
+		return a
+	}
+	return p
+}
+
+// snapScanRoot returns gitRoot when scanRoot names the same directory but with
+// different path bytes — the common macOS case where --root is the repo root
+// typed with wrong case (e.g. /users/… vs /Users/…) on a case-insensitive APFS
+// volume. os.SameFile compares device+inode, so it works regardless of case or
+// symlinks. On case-sensitive filesystems the string-equality short-circuit fires
+// for any in-bounds call, making this a no-op with no I/O cost.
+func snapScanRoot(gitRoot, scanRoot string) string {
+	if gitRoot == "" || scanRoot == gitRoot {
+		return scanRoot
+	}
+	fg, err1 := os.Stat(gitRoot)
+	fs, err2 := os.Stat(scanRoot)
+	if err1 == nil && err2 == nil && os.SameFile(fg, fs) {
+		return gitRoot
+	}
+	return scanRoot
+}
 
 // DefaultExclusions are tool-artifact, cache, and dependency directories archfit
 // never analyses: measuring them yields non-deterministic or irrelevant facts —
@@ -140,7 +177,8 @@ func Resolve(ctx context.Context, cfg config.ScopeConfig, r Resolver) (Scope, er
 		if rootErr != nil {
 			gitRoot = ""
 		}
-		scanRoot := resolveScanRoot(cfg, gitRoot)
+		gitRoot = canonicalPath(gitRoot)
+		scanRoot := snapScanRoot(gitRoot, resolveScanRoot(cfg, gitRoot))
 		return Scope{
 			Root:          scanRoot,
 			GitRoot:       gitRoot,
@@ -154,6 +192,7 @@ func Resolve(ctx context.Context, cfg config.ScopeConfig, r Resolver) (Scope, er
 		return Scope{}, fmt.Errorf("scope: resolve repo root: %w", rootErr)
 	}
 
+	gitRoot = canonicalPath(gitRoot)
 	head, err := r.HeadRef(ctx)
 	if err != nil {
 		return Scope{}, fmt.Errorf("scope: resolve HEAD: %w", err)
@@ -163,7 +202,7 @@ func Resolve(ctx context.Context, cfg config.ScopeConfig, r Resolver) (Scope, er
 	if err != nil {
 		return Scope{}, fmt.Errorf("scope: resolve changed files: %w", err)
 	}
-	scanRoot := resolveScanRoot(cfg, gitRoot)
+	scanRoot := snapScanRoot(gitRoot, resolveScanRoot(cfg, gitRoot))
 	prefix := subtreePrefix(gitRoot, scanRoot)
 	changed = rebaseChangedFiles(prefix, changed)
 	sort.Strings(changed)
@@ -199,16 +238,18 @@ func rebaseChangedFiles(prefix string, files []string) []string {
 
 // resolveScanRoot determines the analysis boundary from the config and resolved
 // git root. Priority: explicit cfg.Root → gitRoot → cfg.WorkDir.
+// cfg.Root and cfg.WorkDir are canonicalized via EvalSymlinks so their case and
+// symlink form matches the gitRoot (already canonical) before subtreePrefix computes.
 // When cfg.Root is empty and gitRoot is non-empty the result equals gitRoot,
 // so --root-absent runs are byte-identical to before this change.
 func resolveScanRoot(cfg config.ScopeConfig, gitRoot string) string {
 	if cfg.Root != "" {
-		return cfg.Root
+		return canonicalPath(cfg.Root)
 	}
 	if gitRoot != "" {
 		return gitRoot
 	}
-	return cfg.WorkDir
+	return canonicalPath(cfg.WorkDir)
 }
 
 // subtreePrefix returns the gitRoot-relative path from gitRoot to scanRoot.

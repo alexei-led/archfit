@@ -3,7 +3,7 @@
 Date: 2026-06-24. Status: SHIPPED. This is the complete implementation — all
 four languages and gate control, no phases (it replaces an earlier phased draft
 that scoped only Go+TS and deferred Python/Rust + gate rules).
-Research basis: `docs/research/tree-sitter-for-archfit.md`.
+Research basis: `docs/archived/research/tree-sitter-for-archfit.md`.
 Plan: `docs/plans/20260624-syntax-facts-via-astgrep.md`.
 
 ---
@@ -274,7 +274,7 @@ When `sg` is absent, all three behave as today (no regression, no false green).
 
 ## 12. Rejected alternatives
 
-See `docs/research/tree-sitter-for-archfit.md` §"Rejected alternatives"
+See `docs/archived/research/tree-sitter-for-archfit.md` §"Rejected alternatives"
 (in-process bindings, zig-cc CGO cross toolchain, purego + per-arch shared libs,
 wazero, raw tree-sitter CLI). All cost more than reusing the bundled ast-grep
 subprocess for the same facts.

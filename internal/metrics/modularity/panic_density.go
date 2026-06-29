@@ -7,15 +7,18 @@ import (
 
 	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/syntax"
 )
 
 // PanicDensityMetric reports the total count of production panic/unwrap/expect
-// call sites extracted by ast-grep, grouped by module. Test files (Go: *_test.go;
-// Rust: files under /tests/) are excluded from the count — this is a production-
-// code signal only. Report-only — Band: BandInformational, never gates.
-// n/a when no panic_op syntax facts survive test-file exclusion.
+// call sites extracted by ast-grep, grouped by module. Test files and generated
+// files (mock_*.go, *.pb.go, files with the standard generated header, etc.) are
+// excluded from the count — this is a production-code signal only. The excluded
+// count is surfaced in the evidence string so nothing is hidden.
+// Report-only — Band: BandInformational, never gates.
+// n/a when no panic_op syntax facts exist at all.
 type PanicDensityMetric struct{}
 
 // Name returns "panic_density".
@@ -29,18 +32,30 @@ type panicModule struct {
 	count int
 }
 
-// Calculate counts panic_op facts per module (excluding test files) and returns
-// the total count with a human-readable summary of the top modules. n/a when no
-// such facts remain after test-file exclusion.
-func (m PanicDensityMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
-	const def = "production panic/unwrap/expect call sites (Rust: unwrap/expect/panic!, Go: panic) — excludes test files, report-only"
+// Calculate counts panic_op facts per module (excluding test and generated files)
+// and returns the total production count. The count of excluded facts is appended
+// to the evidence string. n/a when no panic_op facts exist at all.
+//
+// FileClassIndex keys and SyntaxFact.File values must both be repo-relative slash
+// paths for the index lookup to hit. When the index is nil (loc walk did not run),
+// LookupFileClass falls back to built-in filename/path patterns only.
+func (m PanicDensityMetric) Calculate(in signal.SizeInput) diagnostic.MetricResult {
+	const def = "production panic/unwrap/expect call sites (Rust: unwrap/expect/panic!, Go: panic) — excludes test/generated/vendor files, report-only"
 	modCounts := make(map[string]int)
 	total := 0
+	excluded := 0
+	// FileClassConfig{} is intentional: index files already incorporate the
+	// user's config patterns (applied at loc-walk time); the skipDir fallback
+	// path loses custom patterns, but built-in filename heuristics cover the
+	// common cases (mock_*.go, *.pb.go, generated header, etc.).
+	cfg := syntax.FileClassConfig{}
 	for _, f := range in.SyntaxFacts {
 		if f.Kind != "panic_op" {
 			continue
 		}
-		if syntax.IsTestFile(f.Language, f.File) {
+		fc := syntax.LookupFileClass(f.File, in.Size.FileClassIndex, f.Language, cfg)
+		if !fileclass.IsProduction(fc) {
+			excluded++
 			continue
 		}
 		key := f.Module
@@ -50,7 +65,7 @@ func (m PanicDensityMetric) Calculate(in signal.CommonInput) diagnostic.MetricRe
 		modCounts[key]++
 		total++
 	}
-	if total == 0 {
+	if total == 0 && excluded == 0 {
 		return result.NACount(m.Name(), m.Version(), def)
 	}
 
@@ -72,7 +87,7 @@ func (m PanicDensityMetric) Calculate(in signal.CommonInput) diagnostic.MetricRe
 	return diagnostic.MetricResult{
 		Name:       m.Name(),
 		Value:      float64(total),
-		Display:    panicDisplay(mods, total),
+		Display:    panicDisplay(mods, total, excluded),
 		Band:       result.BandInformational,
 		Confidence: confidence,
 		Version:    m.Version(),
@@ -81,21 +96,25 @@ func (m PanicDensityMetric) Calculate(in signal.CommonInput) diagnostic.MetricRe
 	}
 }
 
-func panicDisplay(mods []panicModule, total int) string {
-	if len(mods) == 0 {
-		return "0 panic/unwrap site(s)"
-	}
+func panicDisplay(mods []panicModule, total, excluded int) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d panic/unwrap site(s) across %d module(s): ", total, len(mods))
-	for i, mo := range mods {
-		if i == 5 {
-			fmt.Fprintf(&b, "+%d more", len(mods)-5)
-			break
+	if len(mods) == 0 {
+		fmt.Fprintf(&b, "0 production panic/unwrap site(s)")
+	} else {
+		fmt.Fprintf(&b, "%d panic/unwrap site(s) across %d module(s): ", total, len(mods))
+		for i, mo := range mods {
+			if i == 5 {
+				fmt.Fprintf(&b, "+%d more", len(mods)-5)
+				break
+			}
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			fmt.Fprintf(&b, "%s (%d)", mo.key, mo.count)
 		}
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		fmt.Fprintf(&b, "%s (%d)", mo.key, mo.count)
+	}
+	if excluded > 0 {
+		fmt.Fprintf(&b, " (%d in test/generated/vendor excluded)", excluded)
 	}
 	return b.String()
 }

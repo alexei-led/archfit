@@ -54,6 +54,7 @@ type cli struct {
 	Baseline BaselineCmd `cmd:"" group:"core" help:"Accept current findings as the baseline."`
 
 	Score   ScoreCmd   `cmd:"" group:"reports" help:"Print the banded architecture scorecard."`
+	Diff    DiffCmd    `cmd:"" group:"reports" help:"Compare scorecard between a git ref and HEAD."`
 	Scan    ScanCmd    `cmd:"" group:"reports" help:"Write a full Markdown architecture audit report."`
 	Explain ExplainCmd `cmd:"" group:"reports" help:"Explain one finding by fingerprint prefix."`
 
@@ -137,6 +138,15 @@ func (v versionFlag) BeforeReset(ctx *kong.Context) error {
 type appDeps struct {
 	Runner toolrun.Runner
 	Stdout io.Writer
+	Stderr io.Writer // nil → os.Stderr
+}
+
+// stderr returns the configured stderr writer, falling back to os.Stderr.
+func (d *appDeps) stderr() io.Writer {
+	if d.Stderr != nil {
+		return d.Stderr
+	}
+	return os.Stderr
 }
 
 // exitError carries an exit code through the Run return path.

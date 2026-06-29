@@ -342,9 +342,15 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 // cannot be made relative to it, are skipped (best-effort — never fails extraction).
 // A member at the root itself yields Dir "".
 func crateRoots(root string, members []cargoPackage) []graph.CrateRoot {
-	rootAbs, err := filepath.Abs(root)
+	// EvalSymlinks resolves case variants and symlinks so rootAbs matches the
+	// canonical ManifestPath reported by cargo (macOS case-insensitive FS).
+	// Falls back to Abs if the path does not exist yet (e.g. tests with fake paths).
+	rootAbs, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return nil
+		rootAbs, err = filepath.Abs(root)
+		if err != nil {
+			return nil
+		}
 	}
 	out := make([]graph.CrateRoot, 0, len(members))
 	for _, m := range members {

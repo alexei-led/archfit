@@ -1,11 +1,13 @@
 package modularity_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/metrics/metricstest"
 	"github.com/alexei-led/archfit/internal/metrics/modularity"
 	"github.com/alexei-led/archfit/internal/model/clone"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
@@ -168,4 +170,121 @@ func TestFunctionalCandidates_Calculate(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestFunctionalCandidates_TestGenExclusion reproduces the pumba 13→1 case:
+// clusters involving test/mock/generated files are dropped; a genuine
+// production cross-module clone is still counted.
+func TestFunctionalCandidates_TestGenExclusion(t *testing.T) {
+	m := modularity.FunctionalCandidatesMetric{}
+
+	// Production paths.
+	prodA := "pkg/a/service.go"
+	prodB := "pkg/b/handler.go"
+
+	// Test/generated paths — these should be excluded.
+	testFile := "pkg/a/service_test.go"
+	mockFile := "pkg/b/mock_handler.go"
+	pbFile := "pkg/c/types.pb.go"
+
+	g := metricstest.BuildGraph(
+		[]graph.Node{
+			{Kind: graph.NodeKindFile, Path: prodA},
+			{Kind: graph.NodeKindFile, Path: prodB},
+		},
+		[]graph.Edge{
+			{From: "file:" + prodA, To: "file:" + prodB, Kind: graph.EdgeKindImports, Language: "go"},
+		},
+	)
+
+	t.Run("test file in cluster → excluded, production clone retained", func(t *testing.T) {
+		clusters := []clone.Cluster{
+			// Production: should count.
+			{Files: []string{prodA, prodB}, Lines: 20},
+			// Test: should be excluded.
+			{Files: []string{testFile, prodB}, Lines: 15},
+			// Mock (basename mock_*.go): should be excluded.
+			{Files: []string{mockFile, prodA}, Lines: 12},
+			// Proto generated (*.pb.go): should be excluded.
+			{Files: []string{pbFile, prodA}, Lines: 8},
+		}
+		in := signal.DuplicationInput{
+			CommonInput: signal.CommonInput{Graph: g},
+			Duplication: signal.DuplicationSignals{Clusters: clusters},
+		}
+		got := m.Calculate(in)
+		if got.Band != bandInfo {
+			t.Errorf("band=%q want %q", got.Band, bandInfo)
+		}
+		// Only the production cluster (prodA↔prodB) survives.
+		if got.Value != 1 {
+			t.Errorf("value=%v want 1 (only production pair; 3 test/generated excluded)", got.Value)
+		}
+		if !strings.Contains(got.Display, "3 test/generated/vendor excluded") {
+			t.Errorf("display=%q missing excluded count", got.Display)
+		}
+	})
+
+	t.Run("fallback path: mock file not in index still excluded", func(t *testing.T) {
+		// FileClassIndex is nil — LookupFileClass must fall back to filename heuristics.
+		clusters := []clone.Cluster{
+			{Files: []string{prodA, prodB}, Lines: 20},
+			{Files: []string{mockFile, prodA}, Lines: 12},
+		}
+		in := signal.DuplicationInput{
+			CommonInput: signal.CommonInput{Graph: g},
+			Duplication: signal.DuplicationSignals{Clusters: clusters},
+			// Size.FileClassIndex deliberately nil.
+		}
+		got := m.Calculate(in)
+		if got.Value != 1 {
+			t.Errorf("value=%v want 1 (mock excluded via basename fallback)", got.Value)
+		}
+	})
+
+	t.Run("index override: file marked Generated in index is excluded", func(t *testing.T) {
+		// A file that would not be detected by basename heuristics is explicitly
+		// marked Generated in the FileClassIndex.
+		weirdGenFile := "pkg/c/weird_generated_file.go"
+		gWithC := metricstest.BuildGraph(
+			[]graph.Node{
+				{Kind: graph.NodeKindFile, Path: prodA},
+				{Kind: graph.NodeKindFile, Path: prodB},
+				{Kind: graph.NodeKindFile, Path: weirdGenFile},
+			},
+			[]graph.Edge{
+				{From: "file:" + prodA, To: "file:" + prodB, Kind: graph.EdgeKindImports, Language: "go"},
+			},
+		)
+		clusters := []clone.Cluster{
+			{Files: []string{prodA, prodB}, Lines: 20},
+			{Files: []string{weirdGenFile, prodA}, Lines: 10},
+		}
+		idx := map[string]fileclass.FileClass{
+			weirdGenFile: fileclass.Generated,
+		}
+		in := signal.DuplicationInput{
+			CommonInput: signal.CommonInput{Graph: gWithC},
+			Duplication: signal.DuplicationSignals{Clusters: clusters},
+			Size:        signal.SizeSignals{FileClassIndex: idx},
+		}
+		got := m.Calculate(in)
+		if got.Value != 1 {
+			t.Errorf("value=%v want 1 (index-overridden generated file excluded)", got.Value)
+		}
+	})
+
+	t.Run("all clusters test/generated → n/a", func(t *testing.T) {
+		clusters := []clone.Cluster{
+			{Files: []string{testFile, mockFile}, Lines: 10},
+		}
+		in := signal.DuplicationInput{
+			CommonInput: signal.CommonInput{Graph: g},
+			Duplication: signal.DuplicationSignals{Clusters: clusters},
+		}
+		got := m.Calculate(in)
+		if got.Band != bandNAStr {
+			t.Errorf("band=%q want %q (all clusters excluded)", got.Band, bandNAStr)
+		}
+	})
 }

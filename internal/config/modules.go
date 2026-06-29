@@ -58,7 +58,8 @@ type RuleDef struct {
 	FromRole      string       `yaml:"from_role"`
 	ToRole        string       `yaml:"to_role"`
 	MinConfidence string       `yaml:"min_confidence"`
-	Max           *int         `yaml:"max,omitempty"` // public_api_max: exported-declaration ceiling per module
+	Max           *int         `yaml:"max,omitempty"`       // public_api_max: exported-declaration ceiling per module
+	Threshold     *int         `yaml:"threshold,omitempty"` // layer_role_divergence: max tolerated rank delta (default 1)
 	Patterns      []PatternDef `yaml:"patterns,omitempty"`
 }
 
@@ -160,6 +161,18 @@ func (mm ModuleMap) LayerFor(path string) (string, bool) {
 	}
 	def := mm.modules[name]
 	if def.Layer == "" {
+		return "", false
+	}
+	return def.Layer, true
+}
+
+// LayerForName returns the layer name for a module looked up by its exact name
+// (map key). Returns ("", false) if the name is not found or the module has no
+// layer set. Use LayerFor when you have a file path; use LayerForName when you
+// already hold a module name from ModuleFor.
+func (mm ModuleMap) LayerForName(name string) (string, bool) {
+	def, ok := mm.modules[name]
+	if !ok || def.Layer == "" {
 		return "", false
 	}
 	return def.Layer, true

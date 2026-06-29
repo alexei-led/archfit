@@ -48,6 +48,7 @@ const (
 	typeTestInProduction        = "test_in_production"
 	kindGate                    = "gate"
 	kindAdvisory                = "advisory"
+	gateWarn                    = "warn"
 	ruleIDNoDep                 = "no-dep"
 	ruleIDRoleDep               = "no-handler-to-repo"
 	globServicesA               = "services/a/**"
@@ -441,7 +442,7 @@ func TestGateSemantics(t *testing.T) {
 	t.Run("warn_produces_advisory", func(t *testing.T) {
 		cfg := config.RuleConfig{
 			Rules: []config.RuleDef{
-				{ID: ruleIDNoDep, Type: typeForbiddenDependency, From: globServicesA, To: globServicesB, Gate: "warn"},
+				{ID: ruleIDNoDep, Type: typeForbiddenDependency, From: globServicesA, To: globServicesB, Gate: gateWarn},
 			},
 		}
 		rs, err := rules.New(cfg)
@@ -668,7 +669,7 @@ func TestForbiddenRoleDependency(t *testing.T) {
 			}
 		})
 		t.Run("warn_produces_advisory", func(t *testing.T) {
-			rs, _ := rules.New(config.RuleConfig{Rules: []config.RuleDef{roleDef("", "warn")}})
+			rs, _ := rules.New(config.RuleConfig{Rules: []config.RuleDef{roleDef("", gateWarn)}})
 			findings := rs[0].Check(g, rules.Evidence{Roles: idx})
 			if len(findings) != 1 {
 				t.Fatalf("gate:warn: got %d findings, want 1", len(findings))
@@ -1027,7 +1028,7 @@ func TestPublicAPIMax(t *testing.T) {
 			}
 		})
 		t.Run("warn_produces_advisory", func(t *testing.T) {
-			rs, _ := rules.New(makePublicAPIMaxConfig(2, "warn"))
+			rs, _ := rules.New(makePublicAPIMaxConfig(2, gateWarn))
 			findings := rs[0].Check(emptyGraph, ev(overFacts))
 			if len(findings) != 1 {
 				t.Fatalf("gate:warn: want 1 finding, got %d", len(findings))
@@ -1250,7 +1251,7 @@ func TestPublicAPIChange(t *testing.T) {
 			}
 		})
 		t.Run("warn_produces_advisory", func(t *testing.T) {
-			rs, _ := rules.New(makePublicAPIChangeConfig("warn"))
+			rs, _ := rules.New(makePublicAPIChangeConfig(gateWarn))
 			findings := rs[0].Check(emptyGraph, ev(oneFact))
 			if len(findings) != 1 {
 				t.Fatalf("gate:warn: want 1 finding, got %d", len(findings))
@@ -1449,7 +1450,7 @@ func TestTestInProduction(t *testing.T) {
 			}
 		})
 		t.Run("warn_produces_advisory", func(t *testing.T) {
-			rs, _ := rules.New(makeTIPConfig("warn"))
+			rs, _ := rules.New(makeTIPConfig(gateWarn))
 			findings := rs[0].Check(emptyGraph, ev(facts))
 			if len(findings) != 1 {
 				t.Fatalf("gate:warn: want 1, got %d", len(findings))
@@ -1822,6 +1823,414 @@ func TestPublicAPITypeLeak(t *testing.T) {
 		findings := r.Check(g, ev)
 		if len(findings) != 1 {
 			t.Fatalf("want 1 finding: external leak fires even when edge-target basename collides with first-party package, got %d: %+v", len(findings), findings)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// LayerRoleDivergence
+// ---------------------------------------------------------------------------
+
+// Constants for TestLayerRoleDivergence.
+const (
+	typeLayerRoleDivergence = "layer_role_divergence"
+	moduleDomain            = "domain"
+	moduleApp               = "app"
+	// moduleInfra already declared above.
+	moduleConfigCore        = "config-core"
+	pathSvcDomainGlob       = "svc/domain/**"
+	pathSvcAppGlob          = "svc/app/**"
+	pathSvcInfraGlob        = "svc/infra/**"
+	pathSvcConfigCoreGlob   = "svc/config-core/**"
+	nodeSvcInfraRepo        = "file:svc/infra/repo.go"
+	nodeSvcAppSvc           = "file:svc/app/service.go"
+	nodeSvcDomainModel      = "file:svc/domain/model.go"
+	nodeSvcConfigCore       = "file:svc/config-core/config.go"
+	pathSvcConfigCoreConfig = "svc/config-core/config.go"
+)
+
+// TestLayerRoleDivergence verifies the layer_role_divergence rule.
+//
+// Direction convention (matches forbidden_layer_direction):
+//
+//	layers: [domain(0), app(1), infra(2)]
+//	infra  = outer/source: imports many → low observed DAG rank (near 0)
+//	domain = inner/sink:   imported by many → high observed DAG rank (near max)
+//
+// Expected observed rank = (layerCount-1) - declaredRank.
+// A well-layered chain has delta=0 for every module; divergence fires when delta > threshold.
+func TestLayerRoleDivergence(t *testing.T) {
+	// Base chain: infra → app → domain (outer imports inner — correct direction).
+	// Observed ranks from BFS: infra=0 (source), app=1, domain=2 (sink). maxObs=2.
+	// layers=[domain(0),app(1),infra(2)], layerCount=3.
+	// scaledObs = obsRank * (3-1) / 2 = obsRank.
+	// expectedObs[infra]  = (3-1)-2 = 0. scaledObs=0. delta=0. ✓ aligned
+	// expectedObs[app]    = (3-1)-1 = 1. scaledObs=1. delta=0. ✓ aligned
+	// expectedObs[domain] = (3-1)-0 = 2. scaledObs=2. delta=0. ✓ aligned
+	baseModules := map[string]config.ModuleDef{
+		moduleDomain: {Paths: []string{pathSvcDomainGlob}, Layer: layerDomain},
+		moduleApp:    {Paths: []string{pathSvcAppGlob}, Layer: layerApplication},
+		moduleInfra:  {Paths: []string{pathSvcInfraGlob}, Layer: layerInfrastructure},
+	}
+	baseEdges := []graph.Edge{
+		{From: nodeSvcInfraRepo, To: nodeSvcAppSvc, Kind: graph.EdgeKindImports},
+		{From: nodeSvcAppSvc, To: nodeSvcDomainModel, Kind: graph.EdgeKindImports},
+	}
+	baseNodes := []graph.Node{
+		{Kind: graph.NodeKindFile, Path: "svc/infra/repo.go"},
+		{Kind: graph.NodeKindFile, Path: "svc/app/service.go"},
+		{Kind: graph.NodeKindFile, Path: "svc/domain/model.go"},
+	}
+
+	t.Run("aligned chain emits no findings", func(t *testing.T) {
+		cfg := config.Config{
+			Version: 1,
+			Layers:  []string{layerDomain, layerApplication, layerInfrastructure},
+			Modules: baseModules,
+			Rules:   []config.RuleDef{{ID: "lrd", Type: typeLayerRoleDivergence}},
+		}
+		rs, err := rules.New(cfg.ForRules())
+		if err != nil {
+			t.Fatalf("rules.New: %v", err)
+		}
+		g := graph.Build([]graph.Facts{{Nodes: baseNodes, Edges: baseEdges, Language: "go"}})
+		findings := rs[0].Check(g, rules.Evidence{})
+		if len(findings) != 0 {
+			t.Fatalf("aligned chain: want 0 findings, got %d: %+v", len(findings), findings)
+		}
+	})
+
+	// T_default: the default threshold (1) must fire on a fully-inverted module
+	// in a 3-layer config. Without an explicit Threshold field the constructor
+	// uses defaultLayerRoleDivergenceThreshold. A config-core module declared
+	// domain (inner, rank 0) but observed as a source (rank 0 in BFS, expected 2)
+	// has delta=2 > 1 → must emit. The aligned base chain (delta=0) must not.
+	t.Run("default threshold fires on fully-inverted 3-layer module", func(t *testing.T) {
+		modules := map[string]config.ModuleDef{
+			moduleDomain:     {Paths: []string{pathSvcDomainGlob}, Layer: layerDomain},
+			moduleApp:        {Paths: []string{pathSvcAppGlob}, Layer: layerApplication},
+			moduleInfra:      {Paths: []string{pathSvcInfraGlob}, Layer: layerInfrastructure},
+			moduleConfigCore: {Paths: []string{pathSvcConfigCoreGlob}, Layer: layerDomain}, // declared inner, acts outer
+		}
+		// No Threshold set — uses defaultLayerRoleDivergenceThreshold=1.
+		cfg := config.Config{
+			Version: 1,
+			Layers:  []string{layerDomain, layerApplication, layerInfrastructure},
+			Modules: modules,
+			Rules:   []config.RuleDef{{ID: "lrd-default-threshold", Type: typeLayerRoleDivergence, Gate: gateWarn}},
+		}
+		rs, err := rules.New(cfg.ForRules())
+		if err != nil {
+			t.Fatalf("rules.New: %v", err)
+		}
+		nodes := make([]graph.Node, len(baseNodes)+1)
+		copy(nodes, baseNodes)
+		nodes[len(baseNodes)] = graph.Node{Kind: graph.NodeKindFile, Path: pathSvcConfigCoreConfig}
+		edges := make([]graph.Edge, len(baseEdges), len(baseEdges)+3)
+		copy(edges, baseEdges)
+		edges = append(edges,
+			graph.Edge{From: nodeSvcConfigCore, To: nodeSvcInfraRepo, Kind: graph.EdgeKindImports},
+			graph.Edge{From: nodeSvcConfigCore, To: nodeSvcAppSvc, Kind: graph.EdgeKindImports},
+			graph.Edge{From: nodeSvcConfigCore, To: nodeSvcDomainModel, Kind: graph.EdgeKindImports},
+		)
+		g := graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges, Language: "go"}})
+		findings := rs[0].Check(g, rules.Evidence{})
+
+		found := false
+		for _, f := range findings {
+			if f.MatchedBy["module"] == moduleConfigCore {
+				found = true
+			}
+			// The aligned base modules (domain/app/infra) must NOT fire.
+			if f.MatchedBy["module"] == moduleDomain || f.MatchedBy["module"] == moduleApp || f.MatchedBy["module"] == moduleInfra {
+				t.Errorf("default threshold: aligned module %q must not fire, got finding: %+v", f.MatchedBy["module"], f)
+			}
+		}
+		if !found {
+			t.Fatalf("default threshold: want finding for fully-inverted %q, got %d findings: %+v", moduleConfigCore, len(findings), findings)
+		}
+	})
+
+	t.Run("source module declared inner emits finding", func(t *testing.T) {
+		// Add "config-core" declared as domain (inner, rank 0) but it is a source
+		// (imports infra, app, and domain; nothing imports it).
+		// Chain: config-core→infra→app→domain; ranks 0,1,2,3; maxObs=3.
+		// scaledObs(config-core) = 0*2/3 = 0.
+		// expectedObs(domain rank 0) = (3-1)-0 = 2. delta=|0-2|=2 > threshold=1 → fires.
+		modules := map[string]config.ModuleDef{
+			moduleDomain:     {Paths: []string{pathSvcDomainGlob}, Layer: layerDomain},
+			moduleApp:        {Paths: []string{pathSvcAppGlob}, Layer: layerApplication},
+			moduleInfra:      {Paths: []string{pathSvcInfraGlob}, Layer: layerInfrastructure},
+			moduleConfigCore: {Paths: []string{pathSvcConfigCoreGlob}, Layer: layerDomain}, // declared inner, acts outer
+		}
+		threshold := 1
+		cfg := config.Config{
+			Version: 1,
+			Layers:  []string{layerDomain, layerApplication, layerInfrastructure},
+			Modules: modules,
+			Rules: []config.RuleDef{{
+				ID:        "lrd",
+				Type:      typeLayerRoleDivergence,
+				Gate:      gateWarn,
+				Threshold: &threshold,
+			}},
+		}
+		rs, err := rules.New(cfg.ForRules())
+		if err != nil {
+			t.Fatalf("rules.New: %v", err)
+		}
+		nodes := make([]graph.Node, len(baseNodes)+1)
+		copy(nodes, baseNodes)
+		nodes[len(baseNodes)] = graph.Node{Kind: graph.NodeKindFile, Path: pathSvcConfigCoreConfig}
+		edges := make([]graph.Edge, len(baseEdges), len(baseEdges)+3)
+		copy(edges, baseEdges)
+		edges = append(edges,
+			graph.Edge{From: nodeSvcConfigCore, To: nodeSvcInfraRepo, Kind: graph.EdgeKindImports},
+			graph.Edge{From: nodeSvcConfigCore, To: nodeSvcAppSvc, Kind: graph.EdgeKindImports},
+			graph.Edge{From: nodeSvcConfigCore, To: nodeSvcDomainModel, Kind: graph.EdgeKindImports},
+		)
+		g := graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges, Language: "go"}})
+		findings := rs[0].Check(g, rules.Evidence{})
+
+		found := false
+		for _, f := range findings {
+			if f.MatchedBy["module"] == moduleConfigCore {
+				found = true
+				if f.Kind != kindAdvisory {
+					t.Errorf("gate=warn: want kind=%q, got %q", kindAdvisory, f.Kind)
+				}
+				if !strings.Contains(f.Why, moduleConfigCore) {
+					t.Errorf("Why does not mention module: %s", f.Why)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("want finding for %s, got %d findings: %+v", moduleConfigCore, len(findings), findings)
+		}
+	})
+
+	t.Run("default gate is warn", func(t *testing.T) {
+		// Omitting gate on layer_role_divergence should default to "warn" → advisory.
+		modules := map[string]config.ModuleDef{
+			moduleDomain:     {Paths: []string{pathSvcDomainGlob}, Layer: layerDomain},
+			moduleApp:        {Paths: []string{pathSvcAppGlob}, Layer: layerApplication},
+			moduleInfra:      {Paths: []string{pathSvcInfraGlob}, Layer: layerInfrastructure},
+			moduleConfigCore: {Paths: []string{pathSvcConfigCoreGlob}, Layer: layerDomain},
+		}
+		threshold := 1
+		cfg := config.Config{
+			Version: 1,
+			Layers:  []string{layerDomain, layerApplication, layerInfrastructure},
+			Modules: modules,
+			Rules: []config.RuleDef{{
+				ID:        "lrd-default",
+				Type:      typeLayerRoleDivergence,
+				Threshold: &threshold,
+				// Gate omitted: should default to "warn".
+			}},
+		}
+		rs, err := rules.New(cfg.ForRules())
+		if err != nil {
+			t.Fatalf("rules.New: %v", err)
+		}
+		nodes := make([]graph.Node, len(baseNodes)+1)
+		copy(nodes, baseNodes)
+		nodes[len(baseNodes)] = graph.Node{Kind: graph.NodeKindFile, Path: pathSvcConfigCoreConfig}
+		edges := make([]graph.Edge, len(baseEdges), len(baseEdges)+2)
+		copy(edges, baseEdges)
+		edges = append(edges,
+			graph.Edge{From: nodeSvcConfigCore, To: nodeSvcInfraRepo, Kind: graph.EdgeKindImports},
+			graph.Edge{From: nodeSvcConfigCore, To: nodeSvcAppSvc, Kind: graph.EdgeKindImports},
+		)
+		g := graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges, Language: "go"}})
+		findings := rs[0].Check(g, rules.Evidence{})
+		for _, f := range findings {
+			if f.MatchedBy["module"] == moduleConfigCore && f.Kind != kindAdvisory {
+				t.Errorf("default gate: want kind=%q, got %q", kindAdvisory, f.Kind)
+			}
+		}
+	})
+
+	// T3: cyclic nodes are left unranked (abstain-not-fake) — the rule must
+	// emit zero findings when every module participates in a cycle, rather
+	// than inventing a false rank and firing on the delta.
+	t.Run("cyclic graph produces zero findings", func(t *testing.T) {
+		modules := map[string]config.ModuleDef{
+			moduleDomain: {Paths: []string{pathSvcDomainGlob}, Layer: layerDomain},
+			moduleApp:    {Paths: []string{pathSvcAppGlob}, Layer: layerApplication},
+		}
+		cfg := config.Config{
+			Version: 1,
+			Layers:  []string{layerDomain, layerApplication},
+			Modules: modules,
+			Rules: []config.RuleDef{{
+				ID:   "lrd-cyclic",
+				Type: typeLayerRoleDivergence,
+			}},
+		}
+		rs, err := rules.New(cfg.ForRules())
+		if err != nil {
+			t.Fatalf("rules.New: %v", err)
+		}
+		// Cycle: domain ↔ app (mutual imports — both nodes are unrankable).
+		cyclicEdges := []graph.Edge{
+			{From: nodeSvcDomainModel, To: nodeSvcAppSvc, Kind: graph.EdgeKindImports},
+			{From: nodeSvcAppSvc, To: nodeSvcDomainModel, Kind: graph.EdgeKindImports},
+		}
+		g := graph.Build([]graph.Facts{{Nodes: baseNodes[:2], Edges: cyclicEdges, Language: "go"}})
+		findings := rs[0].Check(g, rules.Evidence{})
+		if len(findings) != 0 {
+			t.Errorf("cyclic graph: want 0 findings (abstain-not-fake), got %d: %+v", len(findings), findings)
+		}
+	})
+
+	// T4: mixed acyclic+cyclic graph — the acyclic node A may write a speculative
+	// rank entry for its successor B during BFS edge-relaxation even though B is
+	// in a cycle and never gets enqueued. The rule must abstain for B and C.
+	//
+	// Topology: infra→app, app→domain, domain→app (app and domain form a cycle).
+	// inDegree: infra=0, app=2 (from infra + domain), domain=1 (from app).
+	// BFS enqueues infra only; processes infra→app: rank[app]=1 written speculatively,
+	// remaining[app] 2→1 — not enqueued; queue drains. domain never reached.
+	// rank map = {infra:0, app:1}. app IS in the map (ok=true), domain is NOT.
+	//
+	// With threshold=1: for app — scaledObs=(1*2)/1=2, expectedObs=(3-1)-1=1,
+	// delta=1 which equals threshold → does NOT fire (delta<=threshold skips).
+	// But if the abstain check were the only guard and threshold were 0, app
+	// would fire falsely. The test uses threshold=1 to verify the boundary:
+	// infra (delta=0) never fires; app (delta=1, on the boundary) skips;
+	// domain (not in rank) abstains.
+	t.Run("acyclic node does not make cyclic successors ranked", func(t *testing.T) {
+		threshold := 1
+		modules := map[string]config.ModuleDef{
+			moduleDomain: {Paths: []string{pathSvcDomainGlob}, Layer: layerDomain},
+			moduleApp:    {Paths: []string{pathSvcAppGlob}, Layer: layerApplication},
+			moduleInfra:  {Paths: []string{pathSvcInfraGlob}, Layer: layerInfrastructure},
+		}
+		cfg := config.Config{
+			Version: 1,
+			Layers:  []string{layerDomain, layerApplication, layerInfrastructure},
+			Modules: modules,
+			Rules: []config.RuleDef{{
+				ID:        "lrd-mixed",
+				Type:      typeLayerRoleDivergence,
+				Threshold: &threshold,
+			}},
+		}
+		rs, err := rules.New(cfg.ForRules())
+		if err != nil {
+			t.Fatalf("rules.New: %v", err)
+		}
+		// infra→app→domain, domain→app (cycle between app and domain).
+		mixedEdges := []graph.Edge{
+			{From: nodeSvcInfraRepo, To: nodeSvcAppSvc, Kind: graph.EdgeKindImports},
+			{From: nodeSvcAppSvc, To: nodeSvcDomainModel, Kind: graph.EdgeKindImports},
+			{From: nodeSvcDomainModel, To: nodeSvcAppSvc, Kind: graph.EdgeKindImports}, // cycle
+		}
+		g := graph.Build([]graph.Facts{{Nodes: baseNodes, Edges: mixedEdges, Language: "go"}})
+		findings := rs[0].Check(g, rules.Evidence{})
+
+		// app and domain are in the cycle — neither must appear in findings.
+		for _, f := range findings {
+			mod := f.MatchedBy["module"]
+			if mod == moduleApp || mod == moduleDomain {
+				t.Errorf("cyclic module %q must not emit finding (abstain-not-fake), got: %+v", mod, f)
+			}
+		}
+	})
+
+	// T5: two disconnected components — deep WCC must not cause false positives
+	// in the shallow WCC.
+	//
+	// layers: [domain(0), app(1), infra(2)], layerCount=3.
+	//
+	// Shallow component (compMax=2): infra→app→domain, ranks 0,1,2.
+	//   Per-WCC: scaledObs = rank*2/2 = rank. expectedObs = 2-declaredRank.
+	//   All delta=0. ✓
+	//
+	// Deep component (compMax=3): deep-core(infra)→deep-infra(infra)→deep-app(app)→deep-domain(domain),
+	//   ranks 0,1,2,3.
+	//   deep-core:   scaledObs=0*2/3=0, expected=0, delta=0 ✓
+	//   deep-infra:  scaledObs=1*2/3=0, expected=0, delta=0 ✓
+	//   deep-app:    scaledObs=2*2/3=1, expected=1, delta=0 ✓
+	//   deep-domain: scaledObs=3*2/3=2, expected=2, delta=0 ✓
+	//
+	// Old global maxObserved=3 applied to shallow domain:
+	//   scaledObs=2*2/3=1 (int), expectedObs=2, delta=1 > threshold=0 → false positive.
+	// Per-WCC fix: shallow domain uses compMax=2 → scaledObs=2, delta=0 → no finding.
+	//
+	// threshold=0 is required to expose the regression: threshold=1 would suppress
+	// the delta=1 false positive even on the old code.
+	t.Run("two disconnected components: deep WCC must not cause false positive in shallow WCC", func(t *testing.T) {
+		zero := 0
+		const (
+			moduleDeepDomain = "deep-domain"
+			moduleDeepApp    = "deep-app"
+			moduleDeepInfra  = "deep-infra"
+			moduleDeepCore   = "deep-core"
+		)
+		// Both deep-core and deep-infra are in the infra layer (both are outer
+		// modules; two modules per layer is valid). deep-core is the source at
+		// rank 0 and also maps to infra (declaredRank=2, expectedObs=0) — aligned.
+		modules := map[string]config.ModuleDef{
+			// Shallow component.
+			moduleDomain: {Paths: []string{pathSvcDomainGlob}, Layer: layerDomain},
+			moduleApp:    {Paths: []string{pathSvcAppGlob}, Layer: layerApplication},
+			moduleInfra:  {Paths: []string{pathSvcInfraGlob}, Layer: layerInfrastructure},
+			// Deep component — separate globs, no edges connecting to shallow.
+			moduleDeepDomain: {Paths: []string{"deep/domain/**"}, Layer: layerDomain},
+			moduleDeepApp:    {Paths: []string{"deep/app/**"}, Layer: layerApplication},
+			moduleDeepInfra:  {Paths: []string{"deep/infra/**"}, Layer: layerInfrastructure},
+			moduleDeepCore:   {Paths: []string{"deep/core/**"}, Layer: layerInfrastructure},
+		}
+		cfg := config.Config{
+			Version: 1,
+			Layers:  []string{layerDomain, layerApplication, layerInfrastructure},
+			Modules: modules,
+			Rules: []config.RuleDef{{
+				ID:        "lrd-wcc",
+				Type:      typeLayerRoleDivergence,
+				Threshold: &zero,
+			}},
+		}
+		rs, err := rules.New(cfg.ForRules())
+		if err != nil {
+			t.Fatalf("rules.New: %v", err)
+		}
+
+		nodes := []graph.Node{
+			// Shallow component.
+			{Kind: graph.NodeKindFile, Path: "svc/infra/repo.go"},
+			{Kind: graph.NodeKindFile, Path: "svc/app/service.go"},
+			{Kind: graph.NodeKindFile, Path: "svc/domain/model.go"},
+			// Deep component.
+			{Kind: graph.NodeKindFile, Path: "deep/core/main.go"},
+			{Kind: graph.NodeKindFile, Path: "deep/infra/repo.go"},
+			{Kind: graph.NodeKindFile, Path: "deep/app/service.go"},
+			{Kind: graph.NodeKindFile, Path: "deep/domain/model.go"},
+		}
+		edges := []graph.Edge{
+			// Shallow: infra→app→domain (correct, ranks 0,1,2, compMax=2).
+			{From: "file:svc/infra/repo.go", To: "file:svc/app/service.go", Kind: graph.EdgeKindImports},
+			{From: "file:svc/app/service.go", To: "file:svc/domain/model.go", Kind: graph.EdgeKindImports},
+			// Deep: deep-core→deep-infra→deep-app→deep-domain (correct, ranks 0,1,2,3, compMax=3).
+			{From: "file:deep/core/main.go", To: "file:deep/infra/repo.go", Kind: graph.EdgeKindImports},
+			{From: "file:deep/infra/repo.go", To: "file:deep/app/service.go", Kind: graph.EdgeKindImports},
+			{From: "file:deep/app/service.go", To: "file:deep/domain/model.go", Kind: graph.EdgeKindImports},
+		}
+		g := graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges, Language: "go"}})
+		findings := rs[0].Check(g, rules.Evidence{})
+
+		// All modules are correctly layered within their own WCC — no findings expected.
+		shallowMods := map[string]bool{moduleDomain: true, moduleApp: true, moduleInfra: true}
+		for _, f := range findings {
+			mod := f.MatchedBy["module"]
+			if shallowMods[mod] {
+				t.Errorf("shallow WCC module %q must not fire (old global max would cause false positive), got: %+v", mod, f)
+			}
+		}
+		if len(findings) != 0 {
+			t.Errorf("all modules correctly layered: want 0 findings, got %d: %+v", len(findings), findings)
 		}
 	})
 }

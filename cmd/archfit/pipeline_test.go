@@ -319,7 +319,7 @@ func TestConfigToolGate(t *testing.T) {
 		{toolGoPackages, gateFail},               // tools.go.gate: fail
 		{toolDepCruiser, string(config.GateOff)}, // tools.typescript.gate: off
 		{toolGrimp, gateWarn},                    // tools.python unset → default
-		{"loc", gateWarn},                        // unmapped tool → default
+		{toolLoc, gateWarn},                      // unmapped tool → default
 	}
 	for _, tc := range cases {
 		if got := configToolGate(cfg, tc.tool); got != tc.want {
@@ -546,5 +546,84 @@ func TestOutputInsideRootWarning(t *testing.T) {
 				t.Errorf("outputInsideRootWarning(%q, %q) = %q, wantMsg=%v", root, tc.dir, got, tc.wantMsg)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CB1: skipped-pass coverage rows (P12 — syntax/scip opt-in honesty)
+// ---------------------------------------------------------------------------
+
+// TestSkippedPassCoverageRows_ScipDisabled asserts that when SCIP is not
+// enabled the pipeline injects an explicit StatusDisabled coverage row for
+// "scip" so tool_coverage reads "disabled" rather than absent/missing. This is
+// the regression for P12: the skipped pass was silently absent from the output.
+func TestSkippedPassCoverageRows_ScipDisabled(t *testing.T) {
+	t.Parallel()
+	// StatusDisabled must not produce a gap (deliberate opt-out, not a missing tool).
+	cov := []diagnostic.Coverage{
+		{Tool: toolScip, Status: diagnostic.StatusDisabled, Reason: reasonScipDisabled},
+	}
+	gaps := buildCoverageGaps(cov, config.Config{}, "")
+	if len(gaps) != 0 {
+		t.Errorf("StatusDisabled scip must not produce a gap; got %+v", gaps)
+	}
+}
+
+// TestSkippedPassCoverageRows_SyntaxDisabled asserts that when syntax is not
+// enabled the pipeline injects an explicit StatusDisabled row for "ast-grep/syntax".
+func TestSkippedPassCoverageRows_SyntaxDisabled(t *testing.T) {
+	t.Parallel()
+	cov := []diagnostic.Coverage{
+		{Tool: toolAstGrepSyntax, Status: diagnostic.StatusDisabled, Reason: reasonSyntaxDisabled},
+	}
+	gaps := buildCoverageGaps(cov, config.Config{}, "")
+	if len(gaps) != 0 {
+		t.Errorf("StatusDisabled ast-grep/syntax must not produce a gap; got %+v", gaps)
+	}
+}
+
+// TestSkippedPassCoverageRows_ReasonContent asserts the disabled coverage
+// reasons are distinct and non-empty, making it clear which opt-in flag to set.
+func TestSkippedPassCoverageRows_ReasonContent(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		tool   string
+		reason string
+		wantIn string
+	}{
+		{toolScip, reasonScipDisabled, "scip"},
+		{toolAstGrepSyntax, reasonSyntaxDisabled, "syntax"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.tool, func(t *testing.T) {
+			t.Parallel()
+			if tc.reason == "" {
+				t.Error("reason must not be empty")
+			}
+			if !strings.Contains(tc.reason, tc.wantIn) {
+				t.Errorf("reason %q does not mention %q", tc.reason, tc.wantIn)
+			}
+		})
+	}
+}
+
+// TestAstGrepAbsentComplexityGap asserts that when the auto complexity backend
+// finds neither gocyclo nor sg, the resulting gap names "ast-grep" (not "lizard")
+// so the install hint points to the correct tool. This is the regression for #23.
+func TestAstGrepAbsentComplexityGap(t *testing.T) {
+	t.Parallel()
+	// The auto backend absent-both path emits Tool="ast-grep" (via proxyTool).
+	cov := []diagnostic.Coverage{
+		{Tool: toolAstGrep, Status: diagnostic.StatusAbsent},
+	}
+	gaps := buildCoverageGaps(cov, config.Config{}, "")
+	if len(gaps) != 1 {
+		t.Fatalf("expected 1 gap for absent ast-grep, got %d: %+v", len(gaps), gaps)
+	}
+	if gaps[0].Tool != toolAstGrep {
+		t.Errorf("gap.Tool = %q, want %q", gaps[0].Tool, toolAstGrep)
+	}
+	if !strings.Contains(gaps[0].InstallCmd, "ast-grep") {
+		t.Errorf("gap.InstallCmd should mention ast-grep; got %q", gaps[0].InstallCmd)
 	}
 }

@@ -33,10 +33,12 @@ func TestCodeStructureDistance(t *testing.T) {
 		{name: "empty to", from: modInternalFoo, to: "", lang: graph.LangGo, want: coupling.DistanceUnknown},
 		{name: "both empty", from: "", to: "", lang: graph.LangGo, want: coupling.DistanceUnknown},
 
-		// Two flat single-segment names share no tree structure → DiffOwner.
-		// (Explicit same-owner config is resolved upstream in classifyDistance.)
-		{name: "flat a vs b", from: "a", to: "b", lang: graph.LangGo, want: coupling.DistanceCrossModuleDiffOwner},
-		{name: "flat alpha vs beta", from: "alpha", to: "beta", lang: graph.LangGo, want: coupling.DistanceCrossModuleDiffOwner},
+		// Two flat single-segment names carry no tree signal; return the honest
+		// floor (SameOwner) rather than fabricating DiffOwner from absent data.
+		// codeStructureDistance is only reached when ownership is degenerate/absent,
+		// so the modules already share — or have unknown — team context (P1 fix).
+		{name: "flat a vs b", from: "a", to: "b", lang: graph.LangGo, want: coupling.DistanceCrossModuleSameOwner},
+		{name: "flat alpha vs beta", from: "alpha", to: "beta", lang: graph.LangGo, want: coupling.DistanceCrossModuleSameOwner},
 
 		// Siblings (same parent, different last segment).
 		{name: "sibling metrics packages", from: modInternalMetricsBoundary, to: "internal/metrics/modularity", lang: graph.LangGo, want: coupling.DistanceCrossModuleSameOwner},
@@ -66,7 +68,8 @@ func TestCodeStructureDistance(t *testing.T) {
 		{name: "py dotted parent-child", from: "pkg.metrics", to: "pkg.metrics.boundary", lang: graph.LangPython, want: coupling.DistanceCrossModuleSameOwner},
 		{name: "py dotted distant trees", from: "pkg.api.routes", to: "pkg.store.db", lang: graph.LangPython, want: coupling.DistanceCrossModuleDiffOwner},
 		{name: "py dotted distant deep trees", from: "a.b.c.d", to: "a.x.y.z", lang: graph.LangPython, want: coupling.DistanceCrossModuleDiffOwner},
-		{name: "py flat single names unchanged", from: "core", to: "api", lang: graph.LangPython, want: coupling.DistanceCrossModuleDiffOwner},
+		// Flat Python names: same rationale as Go flat names — SameOwner floor.
+		{name: "py flat single names", from: "core", to: "api", lang: graph.LangPython, want: coupling.DistanceCrossModuleSameOwner},
 
 		// TS module names are slash-separated, so two files in one dir keep their
 		// two-segment shape and stay siblings — never split on the ".ts" suffix.
@@ -106,22 +109,23 @@ func TestClassifyDistance_Precedence(t *testing.T) {
 		wantBasis coupling.DistanceBasis
 	}{
 		{
-			name:      "ownerless flat names → code structure (DiffOwner)",
+			// Ownerless flat names: reach code structure; no tree signal → SameOwner
+			// floor (honest: no evidence of different teams). P1 fix.
+			name:      "ownerless flat names → code structure (SameOwner)",
 			modules:   mods("", "", "", ""),
-			want:      coupling.DistanceCrossModuleDiffOwner,
+			want:      coupling.DistanceCrossModuleSameOwner,
 			wantBasis: coupling.DistanceBasisStructure,
 		},
 		{
 			// Both modules have the same explicit owner (team-x/team-x): the
 			// explicit-owner sub-map is degenerate (1 distinct owner) → Step 2
-			// falls through to code structure. Flat names "core" and "api" have no
-			// shared tree prefix → DiffOwner. This is the archfit self-scan fix:
-			// a single-team repo with owner: on every module must not collapse all
-			// distances to SameOwner via the explicit-owner branch.
-			name:      "explicit same owner (degenerate) → falls through to code structure (DiffOwner)",
+			// falls through to code structure. Flat names "core" and "api" carry
+			// no tree signal → SameOwner floor (P1 fix). The old DiffOwner here
+			// produced false tight-coupling on every single-team flat-named repo.
+			name:      "explicit same owner (degenerate) → falls through to code structure (SameOwner)",
 			modules:   mods(distOwnerTeamX, distOwnerTeamX, "", ""),
 			explicit:  both,
-			want:      coupling.DistanceCrossModuleDiffOwner,
+			want:      coupling.DistanceCrossModuleSameOwner,
 			wantBasis: coupling.DistanceBasisStructure,
 		},
 		{
@@ -135,20 +139,21 @@ func TestClassifyDistance_Precedence(t *testing.T) {
 		{
 			// One-sided explicit owner with same owner on both sides: explicit sub-map
 			// has 1 distinct owner (team-x) → degenerate → falls through to code structure.
-			name:      "one-sided explicit owner, same (degenerate) → code structure (DiffOwner)",
+			// Flat names carry no tree signal → SameOwner floor (P1 fix).
+			name:      "one-sided explicit owner, same (degenerate) → code structure (SameOwner)",
 			modules:   mods(distOwnerTeamX, distOwnerTeamX, "", ""),
 			explicit:  map[string]bool{distModCore: true},
-			want:      coupling.DistanceCrossModuleDiffOwner,
+			want:      coupling.DistanceCrossModuleSameOwner,
 			wantBasis: coupling.DistanceBasisStructure,
 		},
 		{
 			// One-sided explicit owner; the other endpoint is ownerless. The explicit
 			// sub-map contains only {distModCore: "team-x"} → 1 distinct owner →
-			// degenerate → falls through to code structure. Flat names → DiffOwner.
-			name:      "one-sided explicit owner, other ownerless (degenerate) → code structure (DiffOwner)",
+			// degenerate → falls through to code structure. Flat names → SameOwner (P1 fix).
+			name:      "one-sided explicit owner, other ownerless (degenerate) → code structure (SameOwner)",
 			modules:   mods(distOwnerTeamX, "", "", ""),
 			explicit:  map[string]bool{distModCore: true},
-			want:      coupling.DistanceCrossModuleDiffOwner,
+			want:      coupling.DistanceCrossModuleSameOwner,
 			wantBasis: coupling.DistanceBasisStructure,
 		},
 		{
@@ -282,14 +287,15 @@ func TestClassifyDistance_MultiOwnerPrecomputed(t *testing.T) {
 		t.Errorf("second call returned different result: dist=%q basis=%q", got2, gotBasis2)
 	}
 
-	// Same-owner pair in the same config → SameOwner via ownership basis.
+	// Same-owner pair in the same config → degenerate (1 distinct owner) →
+	// falls through to code structure. Flat names → SameOwner floor (P1 fix).
 	modulesSame := map[string]config.ModuleDef{
 		distModCore: {Paths: []string{distModCore + "/**"}, Owner: distOwnerTeamX},
 		distModAPI:  {Paths: []string{distModAPI + "/**"}, Owner: distOwnerTeamX},
 	}
 	explicitSameMap := map[string]string{distModCore: distOwnerTeamX, distModAPI: distOwnerTeamX}
 	degSame := isDegenerateOwnerMap(explicitSameMap)
-	// Single owner → degenerate → falls through to code structure (flat names → DiffOwner).
+	// Single owner → degenerate → falls through to code structure.
 	if !degSame {
 		t.Fatal("single-owner explicit map must be degenerate")
 	}
@@ -297,9 +303,10 @@ func TestClassifyDistance_MultiOwnerPrecomputed(t *testing.T) {
 	fullSame := map[string]string{distModCore: distOwnerTeamX, distModAPI: distOwnerTeamX}
 	degFullSame := isDegenerateOwnerMap(fullSame)
 	gotSame, gotBasisSame := classifyDistance(fromPath, toPath, "go", miSame, modulesSame, explicit, degSame, degFullSame)
-	// Flat names "core" and "api" with degenerate owner → code structure → DiffOwner.
-	if gotSame != coupling.DistanceCrossModuleDiffOwner {
-		t.Errorf("degenerate same-owner: distance = %q, want cross_module_diff_owner", gotSame)
+	// Flat names "core" and "api" with degenerate owner → code structure → SameOwner (P1 fix).
+	// Previously returned DiffOwner, causing false tight-coupling on single-team flat-named repos.
+	if gotSame != coupling.DistanceCrossModuleSameOwner {
+		t.Errorf("degenerate same-owner: distance = %q, want cross_module_same_owner", gotSame)
 	}
 	if gotBasisSame != coupling.DistanceBasisStructure {
 		t.Errorf("degenerate same-owner: basis = %q, want structure", gotBasisSame)

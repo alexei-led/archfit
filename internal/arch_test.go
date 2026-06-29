@@ -33,9 +33,10 @@ var coreRingPkgs = []string{
 	// score synthesises the banded scorecard from an already-computed
 	// Diagnostic — a pure decision over collected facts, no tools or I/O.
 	modulePrefix + "internal/score",
-	// scope is a value type + resolution logic over an injected Resolver;
-	// the concrete git/toolrun wiring lives in cmd. Keep it that way.
-	modulePrefix + "internal/scope",
+	// scope resolves the analysis boundary from config + git; it uses os.Stat
+	// and filepath.EvalSymlinks for path canonicalization (justified I/O — no
+	// subprocess, no YAML, no adapter). Excluded from the os-forbidden check.
+	// modulePrefix + "internal/scope" — see scopeOsAllowed carve-out below.
 	// syntax derives roles from already-gathered SyntaxFacts — pure decision,
 	// no I/O, no subprocess.
 	modulePrefix + "internal/syntax",
@@ -76,6 +77,7 @@ var modelPkgs = []string{
 	modulePrefix + "internal/model/finding",
 	modulePrefix + "internal/model/coupling",
 	modulePrefix + "internal/model/diagnostic",
+	modulePrefix + "internal/model/fileclass",
 	modulePrefix + "internal/model/symbol",
 	modulePrefix + "internal/model/clone",
 	modulePrefix + "internal/model/pattern",
@@ -145,7 +147,7 @@ func TestArchImports(t *testing.T) {
 				continue
 			}
 			for imp := range pkg.Imports {
-				if isForbiddenForCore(imp) {
+				if isForbiddenForCoreIn(pkgPath, imp) {
 					t.Errorf("core ring package %s must not import %q", pkgPath, imp)
 				}
 			}
@@ -246,6 +248,29 @@ func isForbiddenForCore(imp string) bool {
 		}
 	}
 	return false
+}
+
+// coreRingStdlibAllowlist maps a core-ring package prefix to stdlib imports that
+// are explicitly allowed despite being forbidden for the rest of the ring.
+// Use sparingly — each entry needs a justification comment.
+var coreRingStdlibAllowlist = map[string]map[string]bool{
+	// scope performs path-identity checks (os.Stat/os.SameFile in snapScanRoot)
+	// — same class of I/O as filepath.EvalSymlinks already used there.
+	// os/exec and YAML remain forbidden.
+	modulePrefix + "internal/scope": {"os": true},
+}
+
+// isForbiddenForCoreIn is isForbiddenForCore with per-package allowlist support.
+func isForbiddenForCoreIn(pkgPath, imp string) bool {
+	if !isForbiddenForCore(imp) {
+		return false
+	}
+	for prefix, allowed := range coreRingStdlibAllowlist {
+		if (pkgPath == prefix || strings.HasPrefix(pkgPath, prefix+"/")) && allowed[imp] {
+			return false
+		}
+	}
+	return true
 }
 
 // isStdlib reports whether imp is a standard library package.

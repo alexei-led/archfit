@@ -10,6 +10,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 )
@@ -17,6 +18,7 @@ import (
 // ExplainCmd re-runs the engine and prints the details of a single finding.
 type ExplainCmd struct {
 	Config      string `short:"c" default:".archfit.yaml"`
+	Root        string `help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
 	Fingerprint string `arg:"" help:"Finding fingerprint prefix."`
 	LLM         bool   `name:"llm" help:"Append an LLM narrative (off-gate; needs tools.llm configured)."`
 	NoCache     bool   `name:"no-cache" help:"Bypass the LLM response cache."`
@@ -38,7 +40,7 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 
 	// Same pipeline as check/scan: explain must resolve the finding from the
 	// same evidence (providers, change history) that produced it.
-	diag, err := runPipeline(ctx, deps, cfg, c.Config, "", false, engine.Mode{Full: true, Advisory: true}, existingBase)
+	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, engine.Mode{Full: true, Advisory: true}, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -95,23 +97,39 @@ func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, con
 		provider = llm.NewCache(provider, llmCacheDir(filepath.Dir(configPath)))
 	}
 
-	var b strings.Builder
-	fmt.Fprintf(&b, "Finding:\n  rule: %s\n  severity: %s\n  status: %s\n  edge: %s -> %s (%s)\n  modules: %s -> %s\n  why: %s\n  constraint: %s\n",
-		f.RuleID, f.Severity, f.Status, f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind,
-		f.Edge.From.Module, f.Edge.To.Module, f.Why, f.Constraint)
-	if strength, ok := f.MatchedBy["strength"]; ok {
-		fmt.Fprintf(&b, "  strength: %s  distance: %s\n", strength, f.MatchedBy["distance"])
-	}
-	for _, mod := range []string{f.Edge.From.Module, f.Edge.To.Module} {
-		fmt.Fprintf(&b, "%s", moduleFactLine(diag, mod))
-	}
-
-	resp, err := provider.Complete(ctx, llm.Request{System: explainSystemPrompt, User: b.String()})
+	resp, err := provider.Complete(ctx, llm.Request{System: explainSystemPrompt, User: buildExplainPrompt(f, diag)})
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 	_, _ = fmt.Fprintf(deps.Stdout, "\nnarrative (%s, off-gate):\n%s\n", provider.Name(), strings.TrimSpace(resp.Text))
 	return nil
+}
+
+// buildExplainPrompt serialises one finding and its module facts as the LLM
+// user turn. Separated from explainNarrative so it can be unit-tested without
+// a live provider.
+//
+// distance_basis is included so the LLM knows whether distance was derived from
+// ownership boundaries or the code-structure fallback (single-owner repos).
+// When the fallback was used, a (degenerate_owner_map) qualifier is appended
+// to prevent cross-team framing on single-owner codebases.
+func buildExplainPrompt(f finding.Finding, diag diagnostic.Diagnostic) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Finding:\n  rule: %s\n  severity: %s\n  status: %s\n  edge: %s -> %s (%s)\n  modules: %s -> %s\n  why: %s\n  constraint: %s\n",
+		f.RuleID, f.Severity, f.Status, f.Edge.From.Path, f.Edge.To.Path, f.Edge.Kind,
+		f.Edge.From.Module, f.Edge.To.Module, f.Why, f.Constraint)
+	if strength, ok := f.MatchedBy["strength"]; ok {
+		distanceBasis := f.MatchedBy["distance_basis"]
+		distanceLabel := f.MatchedBy["distance"]
+		if distanceBasis == string(coupling.DistanceBasisStructure) {
+			distanceLabel += " (degenerate_owner_map)"
+		}
+		fmt.Fprintf(&b, "  strength: %s  distance: %s  distance_basis: %s\n", strength, distanceLabel, distanceBasis)
+	}
+	for _, mod := range []string{f.Edge.From.Module, f.Edge.To.Module} {
+		fmt.Fprintf(&b, "%s", moduleFactLine(diag, mod))
+	}
+	return b.String()
 }
 
 // moduleFactLine renders the structural facts of one module when present.

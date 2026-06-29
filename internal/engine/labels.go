@@ -1,11 +1,15 @@
 package engine
 
 import (
+	"path/filepath"
+
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/model/clone"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/syntax"
 )
 
 // applyPinnedLabels validates pinned labels and injects the approved ones into
@@ -86,8 +90,21 @@ func PairEvidence(g *graph.Graph, mm config.ModuleMap, wanted map[string]struct{
 // buildClonePairSet converts clone clusters to a canonical module-pair key set
 // for CoA (connascence of algorithm) tagging in classify.
 // Keys are "[a]\x00[b]" with a≤b (canonical sorted pair, from clone.ModulePairs).
-func buildClonePairSet(clusters []clone.Cluster, mm config.ModuleMap) map[string]struct{} {
-	pairs := clone.ModulePairs(clusters, func(f string) string {
+//
+// Clusters where any file is Test or Generated are excluded — test/mock duplication
+// must not trigger a StrengthSymmetric upgrade on production coupling edges (C4).
+// index is the FileClassIndex from the loc walk (nil is safe — falls back to
+// built-in filename heuristics: mock_*.go, _test.go, *.pb.go, etc.).
+func buildClonePairSet(clusters []clone.Cluster, mm config.ModuleMap, index map[string]fileclass.FileClass) map[string]struct{} {
+	prodClusters := make([]clone.Cluster, 0, len(clusters))
+	cfg := syntax.FileClassConfig{} // empty: index already encodes user config patterns; fallback uses built-ins
+	for _, c := range clusters {
+		if clusterHasTestOrGenerated(c.Files, index, cfg) {
+			continue
+		}
+		prodClusters = append(prodClusters, c)
+	}
+	pairs := clone.ModulePairs(prodClusters, func(f string) string {
 		mod, ok := mm.ModuleFor(f)
 		if !ok {
 			return ""
@@ -100,4 +117,38 @@ func buildClonePairSet(clusters []clone.Cluster, mm config.ModuleMap) map[string
 		set[p[0]+"\x00"+p[1]] = struct{}{}
 	}
 	return set
+}
+
+// clusterHasTestOrGenerated reports whether any file in the cluster is not a
+// production file (test, generated, or vendor). Mirrors
+// functional_candidates.isTestOrGeneratedCluster; kept here to avoid an
+// engine → metrics/modularity import (wrong dependency direction).
+func clusterHasTestOrGenerated(files []string, index map[string]fileclass.FileClass, cfg syntax.FileClassConfig) bool {
+	for _, f := range files {
+		lang := cloneLangFromExt(filepath.Ext(f))
+		fc := syntax.LookupFileClass(filepath.ToSlash(f), index, lang, cfg)
+		if !fileclass.IsProduction(fc) {
+			return true
+		}
+	}
+	return false
+}
+
+// cloneLangFromExt maps a file extension to a language tag for LookupFileClass.
+// Only the languages supported by archfit's extractors need coverage here.
+func cloneLangFromExt(ext string) string {
+	switch ext {
+	case ".go":
+		return "go"
+	case ".ts", ".tsx":
+		return "typescript"
+	case ".js", ".jsx", ".mjs", ".cjs":
+		return "javascript"
+	case ".py":
+		return "python"
+	case ".rs":
+		return "rust"
+	default:
+		return ""
+	}
 }

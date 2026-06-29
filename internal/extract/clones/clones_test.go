@@ -446,3 +446,115 @@ func TestParseJscpdReport_Malformed(t *testing.T) {
 		t.Error("expected error for malformed JSON, got nil")
 	}
 }
+
+// exitOneWithReportRunner simulates old npm jscpd (≤3.x) behavior: exits with
+// code 1 when duplicates are found, but writes a valid JSON report to disk
+// before exiting. archfit must NOT discard the report on non-zero exit.
+func exitOneWithReportRunner(reportJSON string) *toolrun.RunnerMock {
+	return &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == toolName {
+				return toolrun.ToolInfo{Name: tool, Path: "/usr/bin/" + tool}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			// Write the report (like real jscpd does) then return exit code 1.
+			for i, arg := range cmd.Args {
+				if arg == flagOutput && i+1 < len(cmd.Args) {
+					outDir := cmd.Args[i+1]
+					dest := filepath.Join(outDir, reportFile)
+					_ = os.WriteFile(dest, []byte(reportJSON), 0o600)
+					break
+				}
+			}
+			return toolrun.Output{ExitCode: 1}, nil
+		},
+	}
+}
+
+// TestRun_NonZeroExitWithValidReport is the regression test for the old npm
+// jscpd behavior: exit code 1 + valid report on disk → clusters must be
+// non-empty. Before the fix, archfit discarded the report on ExitCode != 0.
+func TestRun_NonZeroExitWithValidReport(t *testing.T) {
+	const rustReport = `{
+		"duplicates": [
+			{
+				"firstFile":  {"name": "src/module_a/lib.rs"},
+				"secondFile": {"name": "src/module_b/lib.rs"},
+				"lines": 12
+			}
+		],
+		"statistics": {"total": {"sources": 2}}
+	}`
+	clusters, cov, err := Run(context.Background(), exitOneWithReportRunner(rustReport), t.TempDir(), true, 0, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cov.Status != diagnostic.StatusOK {
+		t.Errorf("coverage status = %q, want %q (report on disk must not be discarded on exit 1)", cov.Status, diagnostic.StatusOK)
+	}
+	if len(clusters) != 1 {
+		t.Fatalf("clusters len = %d, want 1 (exit 1 + valid report should yield clusters)", len(clusters))
+	}
+	if clusters[0].Files[0] != "src/module_a/lib.rs" || clusters[0].Files[1] != "src/module_b/lib.rs" {
+		t.Errorf("cluster files = %v, want [src/module_a/lib.rs src/module_b/lib.rs]", clusters[0].Files)
+	}
+	if clusters[0].Lines != 12 {
+		t.Errorf("cluster lines = %d, want 12", clusters[0].Lines)
+	}
+	if cov.FilesSeen != 2 {
+		t.Errorf("files seen = %d, want 2", cov.FilesSeen)
+	}
+}
+
+// TestRun_RealTool_RustClones runs jscpd against a tiny Rust fixture with an
+// identical block in two files and asserts non-empty clusters. Skipped under
+// -short so CI can opt out when jscpd is not installed.
+func TestRun_RealTool_RustClones(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping real-tool test under -short")
+	}
+
+	// Build a minimal Rust fixture: two files sharing an identical 8-line function.
+	root := t.TempDir()
+	modA := filepath.Join(root, "src", "module_a")
+	modB := filepath.Join(root, "src", "module_b")
+	if err := os.MkdirAll(modA, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(modB, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	sharedBlock := `pub fn process_items(items: &[String]) -> Vec<String> {
+    let mut result = Vec::new();
+    for item in items {
+        if item.len() > 3 {
+            result.push(item.clone());
+        }
+    }
+    result
+}
+`
+	if err := os.WriteFile(filepath.Join(modA, "lib.rs"), []byte(sharedBlock+"\npub fn unique_a() -> i32 { 1 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modB, "lib.rs"), []byte(sharedBlock+"\npub fn unique_b() -> i32 { 2 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := toolrun.New()
+	clusters, cov, err := Run(context.Background(), runner, root, true, 0, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cov.Status == diagnostic.StatusAbsent {
+		t.Skip("jscpd not installed — skipping real-tool test")
+	}
+	if cov.Status != diagnostic.StatusOK {
+		t.Fatalf("coverage status = %q (reason: %s), want %q", cov.Status, cov.Reason, diagnostic.StatusOK)
+	}
+	if len(clusters) == 0 {
+		t.Error("expected at least one clone cluster for identical Rust blocks, got 0")
+	}
+}

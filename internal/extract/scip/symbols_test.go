@@ -193,6 +193,30 @@ func TestAdapter_Symbols_Success(t *testing.T) {
 	}
 }
 
+// TestAdapter_Symbols_EmptyIndex verifies that when the SCIP pipeline succeeds
+// but the reader emits zero symbols, Symbols() returns StatusPartial (not
+// StatusOK) with an actionable reason. This fires when scip-python runs against
+// a Python version it does not yet support (e.g. 3.14), producing a tiny index
+// with no definitions.
+func TestAdapter_Symbols_EmptyIndex(t *testing.T) {
+	root := makeGoRoot(t)
+	a := New(indexCreatingRunner(readerJSONEmpty), 0)
+
+	graph, cov, err := a.Symbols(context.Background(), scope.Scope{Root: root})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cov.Status != diagnostic.StatusPartial {
+		t.Errorf("cov.Status = %q, want %q (empty index must be partial, not ok)", cov.Status, diagnostic.StatusPartial)
+	}
+	if cov.Reason == "" {
+		t.Error("cov.Reason is empty, want an actionable message")
+	}
+	if len(graph.Module) != 0 {
+		t.Error("expected empty graph for empty index")
+	}
+}
+
 func TestAdapter_Symbols_MalformedOutput(t *testing.T) {
 	root := makeGoRoot(t)
 	a := New(indexCreatingRunner("not json at all"), 0)

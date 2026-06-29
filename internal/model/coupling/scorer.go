@@ -2,7 +2,7 @@ package coupling
 
 // Scorer computes a numeric risk score for a classified coupling edge.
 // Implementations are deterministic and pure — no I/O, no global state.
-// The score augments, never replaces, the existing BalanceResult severity bands.
+// Score() is the single source of severity via ScoreBand(Balance) → cl.Score.Band.
 type Scorer interface {
 	Score(c Classification) EdgeScore
 }

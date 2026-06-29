@@ -22,7 +22,7 @@ func (c *ScoreCmd) Run(deps *appDeps) error {
 		Full:     c.Full || c.Base == "",
 		Advisory: true,
 		Report:   true,
-		Format:   []string{"scorecard"},
+		Format:   []string{formatScorecard},
 		NoConfig: c.NoConfig,
 	}
 	return check.Run(deps)

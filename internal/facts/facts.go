@@ -6,6 +6,7 @@ package facts
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/symbol"
@@ -70,6 +71,10 @@ func Build(
 		if fromMod == "" {
 			continue
 		}
+		// scip-go indexes test binaries as "<pkg>.test" modules. Exclude them
+		// from inbound fan-in so the count matches blast_radius/instability,
+		// which use the go/packages import graph loaded without Tests:true.
+		isTestMod := strings.HasSuffix(fromMod, ".test")
 		for to := range tos {
 			if from == to {
 				continue
@@ -78,15 +83,17 @@ func Build(
 			if toMod == "" || toMod == fromMod {
 				continue
 			}
-			if outboundDests[fromMod] == nil {
-				outboundDests[fromMod] = make(map[string]struct{})
-			}
-			outboundDests[fromMod][toMod] = struct{}{}
+			if !isTestMod {
+				if outboundDests[fromMod] == nil {
+					outboundDests[fromMod] = make(map[string]struct{})
+				}
+				outboundDests[fromMod][toMod] = struct{}{}
 
-			if inboundSources[toMod] == nil {
-				inboundSources[toMod] = make(map[string]struct{})
+				if inboundSources[toMod] == nil {
+					inboundSources[toMod] = make(map[string]struct{})
+				}
+				inboundSources[toMod][fromMod] = struct{}{}
 			}
-			inboundSources[toMod][fromMod] = struct{}{}
 		}
 	}
 

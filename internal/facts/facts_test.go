@@ -11,16 +11,19 @@ import (
 
 // Repeated fixture strings extracted as constants to satisfy goconst.
 const (
-	symHub1      = "hub.Hub1"
-	symHub2      = "hub.Hub2"
-	symSprawl1   = "sprawl.S1"
-	symLeaf1     = "leaf.L1"
-	modHub       = "hub"
-	modSprawl    = "sprawl"
-	fileHubPy    = "src/hub/state.py"
-	fileHubExtra = "src/hub/extra.py"
-	fileSprawlPy = "src/sprawl/s.py"
-	fileCorePy   = "src/core/core.py"
+	symHub1        = "hub.Hub1"
+	symHub2        = "hub.Hub2"
+	symSprawl1     = "sprawl.S1"
+	symLeaf1       = "leaf.L1"
+	symSpotinfo    = "spotinfo.S1"
+	modHub         = "hub"
+	modSprawl      = "sprawl"
+	modSpotinfo    = "cmd/spotinfo"
+	fileHubPy      = "src/hub/state.py"
+	fileHubExtra   = "src/hub/extra.py"
+	fileSprawlPy   = "src/sprawl/s.py"
+	fileCorePy     = "src/core/core.py"
+	fileSpotinfoGo = "cmd/spotinfo/main.go"
 )
 
 // threeModuleGraph builds a symbol.Graph with dotted Python-style module keys
@@ -263,6 +266,44 @@ func TestBuild_NeutralNoLabels(t *testing.T) {
 		if ff.CoChangePartners == nil || ff.Files == nil {
 			t.Errorf("module %q: nested slices must be empty, not nil", ff.Module)
 		}
+	}
+}
+
+// TestBuild_InboundFanIn_ExcludesTestModules verifies that a referencing module
+// whose name ends in ".test" (scip-go test-binary convention) is NOT counted in
+// inbound_module_fanin, reproducing the spotinfo 3→2 eval finding.
+func TestBuild_InboundFanIn_ExcludesTestModules(t *testing.T) {
+	// "cmd/spotinfo" is referenced by two real modules and one ".test" module.
+	// fan-in must be 2, not 3.
+	g := symbol.Graph{
+		Module: map[string]string{
+			symSpotinfo:        modSpotinfo,
+			"caller1.C1":       "pkg/caller1",
+			"caller2.C2":       "pkg/caller2",
+			"spotinfo.test.T1": modSpotinfo + ".test",
+		},
+		Path: map[string]string{
+			symSpotinfo: fileSpotinfoGo,
+		},
+		Refs: map[string]map[string]struct{}{
+			"caller1.C1":       {symSpotinfo: {}},
+			"caller2.C2":       {symSpotinfo: {}},
+			"spotinfo.test.T1": {symSpotinfo: {}}, // test binary — must be excluded
+		},
+	}
+
+	got := facts.Build(g, nil, nil, nil)
+
+	spot := findFact(t, got, modSpotinfo)
+	if spot.InboundModuleFanIn != 2 {
+		t.Errorf("InboundModuleFanIn = %d, want 2 (test module excluded)", spot.InboundModuleFanIn)
+	}
+
+	// The .test module's reference must not contribute to any toMod's inbound count.
+	// Verify by checking cmd/spotinfo is not listed as an inbound source of itself
+	// (the .test module references spotinfo, but spotinfo's fan-in must stay 2).
+	if spot.InboundModuleFanIn != 2 {
+		t.Errorf("re-check: InboundModuleFanIn = %d after second assertion, want 2", spot.InboundModuleFanIn)
 	}
 }
 

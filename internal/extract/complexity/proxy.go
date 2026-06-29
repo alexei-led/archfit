@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/signal"
+	"github.com/alexei-led/archfit/internal/syntax"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -28,6 +30,10 @@ var pythonCCNRules string
 var rustCCNRules string
 
 const proxyTimeout = 2 * time.Minute
+
+// proxyTool is the coverage tool-name string for the ast-grep proxy backend.
+// Used here and in complexity.go for the absent-both-tools path.
+const proxyTool = "ast-grep"
 
 // Language identifier constants used as keys in proxyLangRules.
 const (
@@ -77,8 +83,9 @@ func isCCNFuncRule(ruleID string) bool {
 // returns per-function complexity records with CCN = 1 + decision points.
 // timeout is the configured per-analyzer cap; 0 falls back to proxyTimeout
 // (keeps the no-config path byte-identical).
+// fileCfg carries the user-supplied file_class globs used to filter output.
 // Returns (nil, absent coverage, nil) when sg is not on PATH.
-func runProxy(ctx context.Context, runner toolrun.Runner, root string, langs []string, timeout time.Duration) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
+func runProxy(ctx context.Context, runner toolrun.Runner, root string, langs []string, timeout time.Duration, fileCfg syntax.FileClassConfig, classIndex map[string]fileclass.FileClass) ([]signal.ComplexityFunc, diagnostic.Coverage, error) {
 	if _, ok := runner.Detect(ctx, "sg"); !ok {
 		return nil, absentCov(reasonSGNotInstalled), nil
 	}
@@ -90,7 +97,7 @@ func runProxy(ctx context.Context, runner toolrun.Runner, root string, langs []s
 		if !ok {
 			continue
 		}
-		funcs, matched, err := runProxyForLang(ctx, runner, root, lang, rules, timeout)
+		funcs, matched, err := runProxyForLang(ctx, runner, root, lang, rules, timeout, fileCfg, classIndex)
 		if err != nil {
 			return nil, diagnostic.Coverage{}, err
 		}
@@ -104,14 +111,15 @@ func runProxy(ctx context.Context, runner toolrun.Runner, root string, langs []s
 	if anyMatch {
 		status = statusOK
 	}
-	cov := diagnostic.Coverage{Tool: "ast-grep", Status: status}
+	cov := diagnostic.Coverage{Tool: proxyTool, Status: status}
 	return all, cov, nil
 }
 
 // runProxyForLang runs one language's CCN rules via sg scan and returns the
 // per-function complexity records. matched=true when sg produced output.
 // timeout is the configured per-analyzer cap; 0 falls back to proxyTimeout.
-func runProxyForLang(ctx context.Context, runner toolrun.Runner, root, lang, rules string, timeout time.Duration) ([]signal.ComplexityFunc, bool, error) {
+// fileCfg carries the user-supplied file_class globs used to filter output.
+func runProxyForLang(ctx context.Context, runner toolrun.Runner, root, lang, rules string, timeout time.Duration, fileCfg syntax.FileClassConfig, classIndex map[string]fileclass.FileClass) ([]signal.ComplexityFunc, bool, error) {
 	inner := proxyTimeout
 	if timeout > 0 {
 		inner = timeout
@@ -138,7 +146,25 @@ func runProxyForLang(ctx context.Context, runner toolrun.Runner, root, lang, rul
 	if len(raw) == 0 {
 		return nil, false, nil
 	}
-	return assignDecisionPoints(raw), true, nil
+	funcs := assignDecisionPoints(raw)
+	// Drop test and generated files from the complexity hotspot signal —
+	// production-code metric only. nil index: filename heuristics + user-supplied
+	// fileCfg globs cover classification without needing the LOC-walk index
+	// (proxy runs independently of the loc extractor).
+	prod := funcs[:0]
+	for _, f := range funcs {
+		// ast-grep versions differ on path format: some emit "internal/foo.ts",
+		// others emit "./internal/foo.ts". Strip the "./" prefix so that
+		// doublestar.Match and the index key lookup work correctly for both.
+		// The raw f.File is still used inside assignDecisionPoints (above) where
+		// all matches share the same format, so self-consistency is preserved.
+		relPath := strings.TrimPrefix(f.File, "./")
+		fc := syntax.LookupFileClass(relPath, classIndex, lang, fileCfg)
+		if fileclass.IsProduction(fc) {
+			prod = append(prod, f)
+		}
+	}
+	return prod, true, nil
 }
 
 // decodeCCNStream decodes a sg --json=compact array from r element-by-element.

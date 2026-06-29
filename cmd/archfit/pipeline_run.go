@@ -33,6 +33,22 @@ import (
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
+// cloneTestGenGlobs are coarse jscpd --ignore patterns that skip test and
+// generated files at scan time. These are additive speed hints; the post-filter
+// in functional_candidates.go is the authoritative correctness gate.
+var cloneTestGenGlobs = []string{
+	"**/*_test.go",
+	"**/*_test.ts",
+	"**/*_test.py",
+	"**/mock_*.go",
+	"**/*_mock.go",
+	"**/*_moq.go",
+	"**/*.pb.go",
+	"**/*_gen.go",
+	"**/mocks/**",
+	"**/__mocks__/**",
+}
+
 // gitResolver adapts internal/history/git to scope.Resolver. The concrete
 // git dependency lives here in the composition root — scope itself stays
 // free of process and tool dependencies.
@@ -154,7 +170,8 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// ExtraCoverage order: loc, complexity, clones.
 	var locCov diagnostic.Coverage
 	var toolErr error
-	change.Size.FileLOC, locCov, toolErr = loc.Run(s.Root)
+	fileCfg := cfg.ForFileClass()
+	change.Size.FileLOC, change.Size.FileClassIndex, locCov, toolErr = loc.RunWithConfig(s.Root, fileCfg)
 	noteToolErr("loc", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, locCov)
 
@@ -214,15 +231,29 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// Cyclomatic complexity — opt-in (tools.complexity.enabled: on).
 	// Backend: auto (default) = gocyclo(Go) + ast-grep proxy(TS/Py/Rust); lizard =
 	// exact multi-language CCN (re-pins Python). Coverage carries zero file counts.
+	// Config excludes + scope defaults are forwarded to lizard's -x flags so it
+	// skips the same paths that all other extractors skip.
+	// cfg.Exclusions was already merged (scope.MergeExclusions) at the top of this
+	// function — do NOT call MergeExclusions again here. A second call re-seeds
+	// from DefaultExclusions on the already-merged list (which no longer contains
+	// the user's !-prefixed re-include markers), silently re-adding defaults the
+	// user intentionally negated (e.g. !testdata, !reports).
+	complexityExcl := cfg.Exclusions
 	var complexityCov diagnostic.Coverage
-	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled(), cfg.ComplexityBackend(), cfg.ToolTimeout(config.ToolComplexity))
+	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled(), cfg.ComplexityBackend(), cfg.ToolTimeout(config.ToolComplexity), complexityExcl, fileCfg, change.Size.FileClassIndex)
 	noteToolErr("complexity", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, complexityCov)
 
 	// Clone detection — opt-in (tools.clones.enabled: on). Run returns empty+absent
 	// when disabled or the tool is missing; the metric reports n/a in that case.
+	// Append coarse test/generated globs to the exclusions so jscpd skips those
+	// files at scan time (speed). The post-filter in functional_candidates.go is
+	// the source-of-truth for correctness; these globs are additive.
+	clonesExcl := make([]string, len(cfg.Exclusions), len(cfg.Exclusions)+len(cloneTestGenGlobs))
+	copy(clonesExcl, cfg.Exclusions)
+	clonesExcl = append(clonesExcl, cloneTestGenGlobs...)
 	var clonesCov diagnostic.Coverage
-	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled(), cfg.ToolTimeout(config.ToolClones), cfg.Exclusions)
+	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled(), cfg.ToolTimeout(config.ToolClones), clonesExcl)
 	noteToolErr("jscpd", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, clonesCov)
 
@@ -237,17 +268,32 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// SCIP symbol-level strength is opt-in (tools.scip.enabled: on): the indexer is
 	// whole-repo and slow, so it must not run on the default check path, and the
 	// decision must live in config (not PATH presence) to keep metrics deterministic.
+	// When skipped, append an explicit disabled coverage row so tool_coverage reads
+	// "disabled" (not absent/missing) and no spurious install-gap is raised.
 	var resolver ports.SymbolResolver = ports.NopSymbolResolver{}
 	if cfg.ScipEnabled() {
 		resolver = scip.New(deps.Runner, cfg.ToolTimeout(config.ToolScip))
+	} else {
+		change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
+			Tool:   toolScip,
+			Status: diagnostic.StatusDisabled,
+			Reason: reasonScipDisabled,
+		})
 	}
 
 	// Syntax facts (ast-grep syntax rules) are opt-in (tools.syntax.enabled: on):
 	// language-specific rules add overhead and the result is report-only.
+	// When skipped, append an explicit disabled coverage row for the same reason.
 	syntaxCfg := cfg.ForSyntax()
 	var syntaxProvider ports.SyntaxProvider = ports.NopSyntaxProvider{}
 	if syntaxCfg.Enabled {
 		syntaxProvider = astgrep.New(deps.Runner)
+	} else {
+		change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
+			Tool:   toolAstGrepSyntax,
+			Status: diagnostic.StatusDisabled,
+			Reason: reasonSyntaxDisabled,
+		})
 	}
 
 	// Config hash for reproducibility — empty when --no-config ignored the file.

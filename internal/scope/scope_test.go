@@ -414,4 +414,33 @@ func TestMergeExclusions(t *testing.T) {
 			t.Error("pkg/mod glob must not over-match pkg/models/")
 		}
 	})
+
+	t.Run("double-merge is lossy — negated re-includes must not be merged twice", func(t *testing.T) {
+		// Documents and guards against the double-MergeExclusions pipeline bug.
+		//
+		// MergeExclusions consumes !-prefixed negations: it removes the matching
+		// default and strips the negation marker from its output. So if the result
+		// is fed back as input (a second call), the negation is gone — the default
+		// gets re-seeded and the user's re-include is silently lost.
+		//
+		// pipeline_run.go MUST call MergeExclusions exactly once (at setup) and pass
+		// the merged slice directly to subsequent extractors (complexity.Run, etc.).
+		// Never call MergeExclusions on an already-merged slice.
+		original := []string{"!**/testdata/**"}
+		onceMerged := scope.MergeExclusions(original)
+		twiceMerged := scope.MergeExclusions(onceMerged)
+
+		// Single merge: testdata re-include is honoured — default is gone.
+		if slices.Contains(onceMerged, "**/testdata/**") {
+			t.Fatalf("single merge: !**/testdata/** should remove the default; got %v", onceMerged)
+		}
+		// Double merge: the negation is gone from onceMerged, so defaults are
+		// re-seeded — testdata re-appears. This confirms MergeExclusions is NOT
+		// idempotent when the input contained negations. Callers must not call it twice.
+		if !slices.Contains(twiceMerged, "**/testdata/**") {
+			t.Errorf("expected double-merge to re-add **/testdata/** (demonstrating lossiness), "+
+				"but it was absent — either DefaultExclusions changed or the logic changed; "+
+				"review whether the once-only invariant in pipeline_run.go still holds; got %v", twiceMerged)
+		}
+	})
 }

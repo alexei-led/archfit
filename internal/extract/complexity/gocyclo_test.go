@@ -5,12 +5,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/syntax"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
 const gocycloPath = "/usr/local/bin/gocyclo"
 
-// gocycloRunner builds a mock that detects gocyclo and returns canned output.
+// gocycloRunnerWithOutput builds a mock that detects gocyclo and returns canned output.
 func gocycloRunnerWithOutput(output string) *toolrun.RunnerMock {
 	return &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
@@ -86,7 +87,7 @@ func TestParseGocycloLine_TableDriven(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			f, ok := parseGocycloLine(tc.line, root)
+			f, ok := parseGocycloLine(tc.line, root, noCfg, nil)
 			if ok != tc.wantOK {
 				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
 			}
@@ -123,7 +124,7 @@ func TestParseGocycloOutput_MultiLine(t *testing.T) {
 			"bad line\n" +
 			"3 pkg B /repo/b.go:5:1\n",
 	)
-	funcs := parseGocycloOutput(data, root)
+	funcs := parseGocycloOutput(data, root, noCfg, nil)
 	if len(funcs) != 2 {
 		t.Fatalf("got %d funcs, want 2", len(funcs))
 	}
@@ -136,7 +137,7 @@ func TestParseGocycloOutput_MultiLine(t *testing.T) {
 }
 
 func TestParseGocycloOutput_Empty(t *testing.T) {
-	funcs := parseGocycloOutput([]byte(""), "/repo")
+	funcs := parseGocycloOutput([]byte(""), "/repo", noCfg, nil)
 	if len(funcs) != 0 {
 		t.Errorf("expected empty, got %d", len(funcs))
 	}
@@ -144,7 +145,7 @@ func TestParseGocycloOutput_Empty(t *testing.T) {
 
 func TestParseGocycloOutput_AllMalformed(t *testing.T) {
 	data := []byte("bad\nalso bad\n")
-	funcs := parseGocycloOutput(data, "/repo")
+	funcs := parseGocycloOutput(data, "/repo", noCfg, nil)
 	if len(funcs) != 0 {
 		t.Errorf("expected empty for all-malformed output, got %d", len(funcs))
 	}
@@ -153,7 +154,7 @@ func TestParseGocycloOutput_AllMalformed(t *testing.T) {
 func TestParseGocycloOutput_PathNormalised(t *testing.T) {
 	root := "/my/repo"
 	data := []byte("7 pkg Fn /my/repo/sub/file.go:3:1\n")
-	funcs := parseGocycloOutput(data, root)
+	funcs := parseGocycloOutput(data, root, noCfg, nil)
 	if len(funcs) != 1 {
 		t.Fatalf("got %d funcs, want 1", len(funcs))
 	}
@@ -169,11 +170,11 @@ func TestParseGocycloOutput_PathNormalised(t *testing.T) {
 func TestParseGocycloLine_SkipsModuleCache(t *testing.T) {
 	root := testRoot
 	cache := root + "/pkg/mod/golang.org/x/tools@v0.42.0/interp/ops.go:340:1"
-	if _, ok := parseGocycloLine("214 interp binop "+cache, root); ok {
+	if _, ok := parseGocycloLine("214 interp binop "+cache, root, noCfg, nil); ok {
 		t.Error("parseGocycloLine must return ok=false for a pkg/mod cache path")
 	}
 	models := root + "/pkg/models/user.go:5:1"
-	f, ok := parseGocycloLine("3 models GetUser "+models, root)
+	f, ok := parseGocycloLine("3 models GetUser "+models, root, noCfg, nil)
 	if !ok {
 		t.Fatal("parseGocycloLine must return ok=true for pkg/models (not a cache path)")
 	}
@@ -187,7 +188,7 @@ func TestParseGocycloLine_SkipsModuleCache(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunGocyclo_Absent(t *testing.T) {
-	funcs, ok, err := runGocyclo(context.Background(), absentRunner(), t.TempDir(), 0)
+	funcs, ok, err := runGocyclo(context.Background(), absentRunner(), t.TempDir(), 0, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -201,7 +202,7 @@ func TestRunGocyclo_Absent(t *testing.T) {
 
 func TestRunGocyclo_Present(t *testing.T) {
 	output := "16 pkg HotFunc /tmp/repo/svc.go:10:1\n3 pkg CoolFunc /tmp/repo/svc.go:50:1\n"
-	funcs, ok, err := runGocyclo(context.Background(), gocycloRunnerWithOutput(output), "/tmp/repo", 0)
+	funcs, ok, err := runGocyclo(context.Background(), gocycloRunnerWithOutput(output), "/tmp/repo", 0, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -229,7 +230,7 @@ func TestRunGocyclo_NonZeroExitStillReturnsData(t *testing.T) {
 			return toolrun.Output{ExitCode: 2, Stdout: []byte("20 pkg Big /tmp/r/x.go:1:1\n")}, nil
 		},
 	}
-	funcs, ok, err := runGocyclo(context.Background(), runner, "/tmp/r", 0)
+	funcs, ok, err := runGocyclo(context.Background(), runner, "/tmp/r", 0, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -238,6 +239,27 @@ func TestRunGocyclo_NonZeroExitStillReturnsData(t *testing.T) {
 	}
 	if len(funcs) != 1 || funcs[0].CCN != 20 {
 		t.Errorf("expected one func with CCN=20, got %+v", funcs)
+	}
+}
+
+// TestParseGocycloOutput_SkipsGeneratedAndTest asserts that *.pb.go (generated)
+// and *_test.go (test) functions are excluded from the hotspot signal.
+func TestParseGocycloOutput_SkipsGeneratedAndTest(t *testing.T) {
+	root := "/repo"
+	data := []byte(
+		// Generated — must be dropped.
+		"20 pkg BigProto /repo/pkg/api.pb.go:1:1\n" +
+			// Test — must be dropped.
+			"15 pkg TestFoo /repo/pkg/foo_test.go:10:1\n" +
+			// Real production function — must be kept.
+			"12 pkg " + realFuncName + " /repo/pkg/engine.go:5:1\n",
+	)
+	funcs := parseGocycloOutput(data, root, noCfg, nil)
+	if len(funcs) != 1 {
+		t.Fatalf("expected 1 func (generated and test dropped), got %d: %+v", len(funcs), funcs)
+	}
+	if funcs[0].Name != realFuncName {
+		t.Errorf("expected %s, got %q", realFuncName, funcs[0].Name)
 	}
 }
 
@@ -259,7 +281,7 @@ func TestRunGocyclo_TimeoutParam(t *testing.T) {
 		},
 	}
 	// Zero → built-in constant (byte-identical guard).
-	if _, _, err := runGocyclo(context.Background(), runner, t.TempDir(), 0); err != nil {
+	if _, _, err := runGocyclo(context.Background(), runner, t.TempDir(), 0, noCfg, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if capturedTimeout != gocycloTimeout {
@@ -267,10 +289,21 @@ func TestRunGocyclo_TimeoutParam(t *testing.T) {
 	}
 	// Configured value → used directly.
 	configured := 5 * time.Minute
-	if _, _, err := runGocyclo(context.Background(), runner, t.TempDir(), configured); err != nil {
+	if _, _, err := runGocyclo(context.Background(), runner, t.TempDir(), configured, noCfg, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if capturedTimeout != configured {
 		t.Errorf("timeout(configured) = %v, want %v", capturedTimeout, configured)
+	}
+}
+
+// TestParseGocycloLine_HonorsGeneratedGlob asserts that a file matched only by
+// a user-supplied generated_glob is excluded (built-in heuristics don't cover it).
+func TestParseGocycloLine_HonorsGeneratedGlob(t *testing.T) {
+	root := "/repo"
+	cfg := syntax.FileClassConfig{GeneratedGlobs: []string{codegenGlob}}
+	line := "8 pkg GenFunc /repo/codegen/foo.go:5:1"
+	if _, ok := parseGocycloLine(line, root, cfg, nil); ok {
+		t.Error("parseGocycloLine must return ok=false for a file matched by generated_glob")
 	}
 }

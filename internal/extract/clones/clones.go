@@ -108,19 +108,23 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 	}
 	args = append(args, root)
 
-	out, err := runner.Run(ctx, toolrun.ToolCmd{
+	_, err = runner.Run(ctx, toolrun.ToolCmd{
 		Name:    toolName,
 		Args:    args,
 		WorkDir: root,
 		Timeout: effectiveTimeout(timeout, clonesTimeout),
 	})
-	if err != nil || out.ExitCode != 0 {
-		// Check both the inner per-subprocess deadline (err) and the outer watchdog
-		// (ctx.Err()). When the inner timeout fires, runner.Run returns
-		// context.DeadlineExceeded as err but ctx.Err() is nil.
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}, nil
-		}
+	// Check both the inner per-subprocess deadline (err) and the outer watchdog
+	// (ctx.Err()). When the inner timeout fires, runner.Run returns
+	// context.DeadlineExceeded as err but ctx.Err() is nil.
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}, nil
+	}
+	// jscpd (npm ≤3.x) exits 1 when it finds duplicates — a non-zero exit is NOT
+	// a fatal failure. Always try to read the report from disk; only treat as
+	// partial when the report is missing or unparseable. Hard errors (exec
+	// failures, deadline) are handled above. We ignore ExitCode intentionally.
+	if err != nil {
 		return nil, partial, nil
 	}
 

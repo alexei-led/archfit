@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"slices"
 
@@ -64,7 +63,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	}
 	// Config-quality lint → stderr (advisory; never gates, never pollutes the
 	// stdout JSON/markdown contract that the determinism double-run diffs).
-	printConfigLint(os.Stderr, cfg.Lint())
+	printConfigLint(deps.stderr(), cfg.Lint())
 
 	configDir := filepath.Dir(c.Config)
 	base, err := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
@@ -77,7 +76,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	// edges reach the synthesis (advisory is additive — other formats are
 	// unaffected except for the extra advisory findings they already opt into).
 	advisory := c.Advisory
-	if slices.Contains(c.Format, "scorecard") {
+	if slices.Contains(c.Format, formatScorecard) {
 		advisory = true
 	}
 
@@ -94,6 +93,14 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
+	// Warn when --base was given but no baseline file exists: every finding
+	// appears "new" without this notice, silently misleading the reader.
+	if c.Base != "" && base.SchemaVersion == "" {
+		_, _ = fmt.Fprintf(deps.stderr(),
+			"no baseline found (ref: %s, file: .archfit-baseline.json) — all %d findings are untracked; run `archfit baseline` to enable drift detection\n",
+			c.Base, len(diag.Findings))
+	}
+
 	// Resolve the opt-in hard gate before rendering so the output shows the
 	// effective gate per coverage gap. A tripped gate is a policy failure (exit 1),
 	// distinct from a tool/config error (exit 3), and is NOT suppressed by --report:
@@ -104,15 +111,15 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 	for _, format := range c.Format {
 		var renderErr error
 		switch format {
-		case "json":
+		case formatJSON:
 			renderErr = jsonout.New().Render(diag, deps.Stdout)
-		case "text":
+		case formatText:
 			renderErr = console.New().Render(diag, deps.Stdout)
-		case "md", "markdown":
+		case formatMD, formatMarkdown:
 			renderErr = markdown.New().Render(diag, deps.Stdout)
-		case "sarif":
+		case formatSarif:
 			renderErr = sarif.New().Render(diag, deps.Stdout)
-		case "scorecard":
+		case formatScorecard:
 			renderErr = scorecard.New().Render(diag, deps.Stdout)
 		}
 		if renderErr != nil {
@@ -164,7 +171,7 @@ func (c *ScanCmd) Run(deps *appDeps) error {
 		Full:         true,
 		Advisory:     true,
 		Report:       true,
-		Format:       []string{"markdown"},
+		Format:       []string{formatMarkdown},
 		RequireTools: c.RequireTools,
 	}
 	return check.Run(deps)

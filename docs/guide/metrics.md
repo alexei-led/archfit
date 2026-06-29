@@ -204,7 +204,9 @@ here.
 
 - **Represents:** size skew — modules far larger than the codebase median
   (god-module smell).
-- **Computed:** flagged when module LOC ≥ `max(median × 4, 400)`.
+- **Computed:** flagged when module LOC ≥ `max(median × 4, 400)`. Generated
+  files (`*.pb.go`, `*_gen.*`, header-detected `// Code generated`) are excluded
+  from the LOC count so auto-generated code does not inflate the module size.
 - **Why LOC:** LCOM4 and "vocabulary mixing" were prototyped and dropped — they
   misranked (data registries scored worst, real god-files scored best). Raw size
   is the honest proxy. Known blind spot: a god-module split across many small
@@ -214,8 +216,15 @@ here.
 
 - **Represents:** functions whose cyclomatic complexity exceeds a threshold — the
   intra-module risk that module-size metrics cannot see.
-- **Computed:** count of functions with CCN > **15**, via the `lizard` tool. Shows
-  the top 5 hotspots with file and line.
+- **Computed:** count of functions with CCN > **15**. Shows the top 5 hotspots
+  with file and line. Generated and test files are excluded from hotspot
+  reporting across all backends.
+- **Backend (`tools.complexity.backend`):**
+  - `auto` (default) — `gocyclo` for exact Go CCN; ast-grep decision-point proxy
+    for TypeScript, Python, and Rust. When `gocyclo` is absent, the ast-grep
+    proxy also covers Go (slightly coarser CCN proxy). When `sg` (ast-grep) is
+    absent, complexity reports `n/a` with an install hint.
+  - `lizard` — exact per-function CCN for all four languages (`pip install lizard`).
 - **Requires:** `tools.complexity.enabled: on` (opt-in; config-driven for
   determinism, not PATH presence).
 
@@ -260,7 +269,9 @@ here.
 - **Represents:** cross-module pairs with duplicated logic (copy-paste of business
   rules) — a proxy for `functional` coupling.
 - **Computed:** count of cross-module pairs sharing ≥1 duplicated code block (clone
-  detector, e.g. `jscpd`), annotated with how many also co-change.
+  detector, e.g. `jscpd`), annotated with how many also co-change. Test and
+  generated files are excluded from the clone scope so test-fixture duplication
+  and generated stubs do not inflate the count.
 - **Distinct from `hidden_coupling`:** hidden*coupling is co-change \_without* an
   import edge; functional*candidates is \_duplication*, whether or not the modules
   import each other. A pair can appear in both.
@@ -302,7 +313,7 @@ here.
   its eval (blind for single-file Python/TS modules — exactly where the LOC-skew
   proxy already diverged from expert judgment); kept because the Go-package
   fragmentation signal is honest where it applies. See
-  [`gap-closure-task20-cohesion-eval.md`](../plans/notes/gap-closure-task20-cohesion-eval.md).
+  [`gap-closure-task20-cohesion-eval.md`](../plans/completed/gap-closure-task20-cohesion-eval.md).
 
 ### Beyond Balanced Coupling (supporting / non-BC)
 
@@ -330,11 +341,52 @@ builtins, uninstalled packages) so they never flag third-party names.
   whether or not they share a static import edge. Complements `hidden_coupling`
   (which filters out importing pairs).
 
+### File classification (FileClass)
+
+Production-health metrics (`panic_density`, `functional_candidates`,
+`structural_weight`, `complexity`) need to distinguish production code from
+test, generated, and vendor code. archfit uses a single `FileClass` facility
+(`Production | Test | Generated | Vendor`) computed once during the LOC walk and
+stamped on every source file.
+
+**Auto-detection rules (applied in order; first match wins):**
+
+| Class        | Detection signals                                                                                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Generated`  | `// Code generated .* DO NOT EDIT` header; moq-style header; `*.pb.go`, `*_gen.go`, `*.gen.*`, `_pb2.py` filename patterns; mock heuristics (`mock_*.go`, `*_mock.go`, `mocks/` dir) |
+| `Test`       | Language test conventions: `*_test.go` (Go), `*.test.ts/tsx` / `*.spec.ts/tsx` (TS/JS), `test_*.py` / `*_test.py` (Python), `tests/` dir (Rust)                                      |
+| `Vendor`     | `vendor/`, `node_modules/`, `pkg/mod/` directory prefix                                                                                                                              |
+| `Production` | Everything else                                                                                                                                                                      |
+
+**Policy — segregate, not hide:** production-health metrics score only
+`Production` files but the evidence string always reports the count of
+`Test`+`Generated` files that were excluded, so reviewers can verify the
+classification is correct. `test_density` deliberately counts test functions and
+is unaffected by this policy.
+
+**Config override** (`file_class:` top-level key): `generated_globs`,
+`test_globs`, and `mock_frameworks` extend the auto-detection rules for custom
+mock frameworks or unconventionally-named generated files.
+
+```yaml
+file_class:
+  generated_globs:
+    - "codegen/**" # all files under any codegen/ directory
+    - "**/generated/*.go" # Go files in any generated/ directory (** supported)
+  test_globs:
+    - "testutil/**" # shared test helpers treated as Test, not Production
+  mock_frameworks:
+    - "fake_" # files whose basename starts with fake_ → Generated
+```
+
 ### Syntax-surface metrics (ast-grep facts)
 
 These metrics are derived from `tools.syntax` (ast-grep) facts.
 All are report-only (`info`); none changes the verdict.
-They require `tools.syntax.enabled: on`; when absent the metric reports `n/a`.
+They require `tools.syntax.enabled: on` — **this pass is opt-in**; when absent
+the metric reports `n/a` and `tool_coverage` emits a
+`syntax-pass: skipped (tools.syntax.enabled absent)` row so the gap is visible.
+(`ast-grep: ok` alone only means the binary is present, not that the pass ran.)
 
 - **`unsafe_density`** — count of unsafe operations per module (Rust): `unsafe {}`
   blocks, `UnsafeCell`, `transmute`, and raw-pointer casts (`as *mut`/`as *const`).
@@ -346,9 +398,12 @@ They require `tools.syntax.enabled: on`; when absent the metric reports `n/a`.
   Report-only; never gates. Route high counts to `archfit review` or a human to
   assess whether the concurrency strategy is intentional.
 - **`panic_density`** — count of panic/unwrap operations per module in production
-  code. Counts `unwrap()`/`expect()` (Rust) and `panic(` (Go). Test files are
-  excluded using the same heuristic as `test_in_production` — the production-only
-  count is materially lower than the naive module-wide total.
+  code. Counts `unwrap()`/`expect()` (Rust) and `panic(` (Go). Both test files
+  and generated/mock files (detected via `FileClass`) are excluded — the evidence
+  string reports how many panics were found in excluded files so nothing is hidden.
+  The production-only count is materially lower than the naive module-wide total
+  (e.g. a repo with 200+ panics in mock/generated code reports a realistic ~0
+  production count).
 - **`struct_field_density`** — per-module count of struct definitions with ≥1 field
   (Go and Rust). High field counts surface god-struct candidates; the opt-in
   `struct_field_max` rule lets a project gate on a ceiling.
@@ -356,6 +411,27 @@ They require `tools.syntax.enabled: on`; when absent the metric reports `n/a`.
   `#[test]` in Rust, `def test_*` in Python). A proxy for test coverage presence;
   real coverage percentages need a dedicated coverage tool and stay in the LLM/human
   review path.
+
+### `layer_role_divergence` (rule)
+
+Fires when a module's observed topological rank in the import DAG diverges from
+the rank implied by its declared `layer:` in config. Rank is computed via Kahn's
+BFS longest-path depth: a module imported by many others (domain-like) gets a high
+rank; a module that imports many others (infrastructure-like) gets a low rank.
+Cyclic nodes are skipped (abstain-not-fake — no spurious findings on cyclic graphs).
+
+**Default gate:** `warn` (advisory, non-blocking).
+**Default threshold:** `1` (rank delta before a finding fires).
+
+Config knobs:
+
+```yaml
+rules:
+  - id: lrd
+    type: layer_role_divergence
+    threshold: 1 # optional; default 1
+    gate: warn # optional; default warn
+```
 
 ### public_api_type_leak (rule)
 
@@ -428,7 +504,7 @@ low-confidence caps are enforced and covered by a stored golden. The scorecard i
 absence of evidence. A repo no extractor analysed scores `n/a`/critical with a
 coverage gap, not a confident pass — see
 [commands.md](commands.md#coverage-gaps-and-required-tools) and the
-[coverage-gate design doc](../design/coverage-gate-and-autopilot-v0.1.md).
+[coverage-gate design doc](../archived/design/coverage-gate-and-autopilot-v0.1.md).
 
 ## Per-language behavior
 
@@ -448,7 +524,7 @@ false failure.
 | Dynamic / lazy import signal        | n/a           | `require()` / dynamic `import()`         | in-function / `importlib` / `__import__`                 |
 
 Key behaviors fixed in the v0.x gap-closure program (see
-[the gap-closure result](../notes/v0.x-tool-vs-expert-gap-closure.md)):
+[the gap-closure result](../archived/notes/v0.x-tool-vs-expert-gap-closure.md)):
 
 - `change_locality` matches changed files across all node-ID schemes — no more
   Python false-0.

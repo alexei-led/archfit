@@ -74,7 +74,7 @@ func New(cfg config.Config) []Metric {
 		adapt(modularity.FileStructuralWeightMetric{}, signal.CollectedSignals.AsSize),
 		adapt(modularity.UnsafeDensityMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(modularity.GlobalStateDensityMetric{}, signal.CollectedSignals.AsCommon),
-		adapt(modularity.PanicDensityMetric{}, signal.CollectedSignals.AsCommon),
+		adapt(modularity.PanicDensityMetric{}, signal.CollectedSignals.AsSize),
 		adapt(modularity.TestDensityMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(modularity.StructFieldDensityMetric{}, signal.CollectedSignals.AsCommon),
 		// Manifest deprecation markers (go.mod retract, package.json deprecated).

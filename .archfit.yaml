@@ -1,11 +1,13 @@
 version: 1
 # --- Design rationale (Balanced Coupling, Khononov) --------------------------
 # archfit is a SOLE-OWNER, single-binary modular monolith. Every module declares
-# `owner: alexei-led`, so the BC distance classifier resolves all internal
-# coupling to `cross_module_same_owner` — book ordinal 4, the LOWEST cross-module
-# distance (Ch8: distance is socio-technical; a single owner is the minimum-
-# coordination, minimum-distance case). There is no lower cross-module band to
-# claim; same-owner IS the floor.
+# `owner: alexei-led`, making the owner map degenerate (all same owner). The BC
+# distance classifier falls through to code-structure distance (Step 4), and
+# archfit's modules are all hierarchical (nested paths), so siblings and
+# parent-child pairs resolve to `cross_module_same_owner` — book ordinal 4, the
+# LOWEST cross-module distance. There is no lower cross-module band to claim;
+# same-owner IS the floor. Flat single-segment names also resolve to
+# cross_module_same_owner in the degenerate-owner path (P1 fix).
 #
 # Volatility is essential/domain-based (Ch9), never churn: the analysis core
 # (`internal/model/*`, classify, rules, metrics, score) is `subdomain: core` →

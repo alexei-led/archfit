@@ -7,6 +7,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/syntax"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -221,7 +222,7 @@ func sgProxyRunner(matches []ccnMatch) *toolrun.RunnerMock {
 	return &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
 			if tool == "sg" {
-				return toolrun.ToolInfo{Name: "sg", Path: "/usr/bin/sg"}, true
+				return toolrun.ToolInfo{Name: "sg", Path: sgPath}, true
 			}
 			return toolrun.ToolInfo{}, false
 		},
@@ -235,7 +236,7 @@ func sgProxyRunner(matches []ccnMatch) *toolrun.RunnerMock {
 }
 
 func TestRunProxy_SGAbsent(t *testing.T) {
-	funcs, cov, err := runProxy(context.Background(), absentRunner(), t.TempDir(), []string{langTypeScript}, 0)
+	funcs, cov, err := runProxy(context.Background(), absentRunner(), t.TempDir(), []string{langTypeScript}, 0, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -253,7 +254,7 @@ func TestRunProxy_WithMatches(t *testing.T) {
 		buildCCNMatch("ts-ccn-dp", "src/app.ts", 2, 2, ""),
 		buildCCNMatch("ts-ccn-dp", "src/app.ts", 5, 5, ""),
 	}
-	funcs, cov, err := runProxy(context.Background(), sgProxyRunner(matches), t.TempDir(), []string{langTypeScript}, 0)
+	funcs, cov, err := runProxy(context.Background(), sgProxyRunner(matches), t.TempDir(), []string{langTypeScript}, 0, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -276,7 +277,7 @@ func TestRunProxy_EmptyOutput(t *testing.T) {
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
 			if tool == "sg" {
-				return toolrun.ToolInfo{Name: "sg", Path: "/usr/bin/sg"}, true
+				return toolrun.ToolInfo{Name: "sg", Path: sgPath}, true
 			}
 			return toolrun.ToolInfo{}, false
 		},
@@ -285,7 +286,7 @@ func TestRunProxy_EmptyOutput(t *testing.T) {
 			return toolrun.Output{ExitCode: 0}, nil
 		},
 	}
-	funcs, cov, err := runProxy(context.Background(), runner, t.TempDir(), []string{langPython}, 0)
+	funcs, cov, err := runProxy(context.Background(), runner, t.TempDir(), []string{langPython}, 0, noCfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -293,6 +294,64 @@ func TestRunProxy_EmptyOutput(t *testing.T) {
 		t.Errorf("expected no funcs for empty output, got %d", len(funcs))
 	}
 	_ = cov // status absent is expected when no matches
+}
+
+// TestRunProxy_SkipsGeneratedAndTestFiles asserts that *.gen.ts (generated) and
+// *.test.ts (test) functions are excluded from the proxy hotspot signal, while
+// a real production function in a plain .ts file is kept.
+func TestRunProxy_SkipsGeneratedAndTestFiles(t *testing.T) {
+	matches := []ccnMatch{
+		// Generated TypeScript file — must be dropped.
+		buildCCNMatch("ts-ccn-func", "src/api.gen.ts", 0, 10, "GenFunc"),
+		buildCCNMatch("ts-ccn-dp", "src/api.gen.ts", 3, 3, ""),
+		// Test TypeScript file — must be dropped.
+		buildCCNMatch("ts-ccn-func", "src/app.test.ts", 0, 10, "TestFunc"),
+		buildCCNMatch("ts-ccn-dp", "src/app.test.ts", 5, 5, ""),
+		// Real production function — must be kept.
+		buildCCNMatch("ts-ccn-func", "src/engine.ts", 0, 15, realFuncName),
+		buildCCNMatch("ts-ccn-dp", "src/engine.ts", 4, 4, ""),
+		buildCCNMatch("ts-ccn-dp", "src/engine.ts", 9, 9, ""),
+	}
+	funcs, _, err := runProxy(context.Background(), sgProxyRunner(matches), t.TempDir(), []string{langTypeScript}, 0, noCfg, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(funcs) != 1 {
+		t.Fatalf("expected 1 func (generated and test dropped), got %d: %+v", len(funcs), funcs)
+	}
+	if funcs[0].Name != realFuncName {
+		t.Errorf("expected RealFunc, got %q", funcs[0].Name)
+	}
+	if funcs[0].CCN != 3 { // 1 + 2 DPs
+		t.Errorf("RealFunc CCN = %d, want 3", funcs[0].CCN)
+	}
+}
+
+// TestRunProxy_HonorsGeneratedGlobWithDotSlash checks that a file path emitted
+// by ast-grep WITH a "./" prefix (e.g. "./codegen/foo.ts") is still matched by
+// user-supplied GeneratedGlobs and excluded from the proxy hotspot output.
+// Regression for: some ast-grep versions emit "./" prefixes which cause
+// doublestar.Match("codegen/**", "./codegen/foo.ts") to return false.
+func TestRunProxy_HonorsGeneratedGlobWithDotSlash(t *testing.T) {
+	// File path WITH "./" prefix — the problematic format from some sg versions.
+	matches := []ccnMatch{
+		buildCCNMatch("ts-ccn-func", "./codegen/foo.ts", 0, 10, "GenFunc"),
+		buildCCNMatch("ts-ccn-dp", "./codegen/foo.ts", 3, 3, ""),
+		// Production file (no prefix) — must be kept.
+		buildCCNMatch("ts-ccn-func", "src/engine.ts", 0, 15, realFuncName),
+		buildCCNMatch("ts-ccn-dp", "src/engine.ts", 4, 4, ""),
+	}
+	cfg := syntax.FileClassConfig{GeneratedGlobs: []string{"codegen/**"}}
+	funcs, _, err := runProxyForLang(context.Background(), sgProxyRunner(matches), t.TempDir(), langTypeScript, proxyLangRules[langTypeScript], 0, cfg, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(funcs) != 1 {
+		t.Fatalf("expected 1 func (codegen excluded), got %d: %+v", len(funcs), funcs)
+	}
+	if funcs[0].Name != realFuncName {
+		t.Errorf("expected RealFunc, got %q", funcs[0].Name)
+	}
 }
 
 func TestRunProxy_KnownLanguageCCN(t *testing.T) {
@@ -315,7 +374,7 @@ func TestRunProxy_KnownLanguageCCN(t *testing.T) {
 				buildCCNMatch(tc.ruleDP, "src/x."+tc.lang, 8, 8, ""),
 				buildCCNMatch(tc.ruleDP, "src/x."+tc.lang, 12, 12, ""),
 			}
-			funcs, _, err := runProxy(context.Background(), sgProxyRunner(matches), t.TempDir(), []string{tc.lang}, 0)
+			funcs, _, err := runProxy(context.Background(), sgProxyRunner(matches), t.TempDir(), []string{tc.lang}, 0, noCfg, nil)
 			if err != nil {
 				t.Fatalf("%s: unexpected error: %v", tc.lang, err)
 			}

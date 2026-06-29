@@ -165,7 +165,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Placed after the ModuleMap rebuild so auto-registered members participate
 	// in cross-module clone-pair detection.
 	if len(in.Signals.Duplication.Clusters) > 0 {
-		classifyCfg.CrossModuleClonePairs = buildClonePairSet(in.Signals.Duplication.Clusters, classifyCfg.ModuleMap)
+		classifyCfg.CrossModuleClonePairs = buildClonePairSet(in.Signals.Duplication.Clusters, classifyCfg.ModuleMap, in.Signals.Size.FileClassIndex)
 	}
 
 	// Runtime async evidence: build per-module rollup for the diagnostic.
@@ -340,14 +340,20 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 
 	// Symbol-level integration strength (SCIP), keyed by "fromPath\x00toPath".
 	// Best-effort: an empty map when no indexer is available leaves edges to the
-	// config-glob and extractor-hint strength classification.
+	// config-glob and extractor-hint strength classification. A zero-Tool coverage
+	// (from NopSymbolResolver when SCIP is disabled) is dropped — the pipeline
+	// appends an explicit StatusDisabled row via ExtraCoverage instead.
 	scipStrength, scipCov, _ := in.Resolver.Strengths(ctx, in.Scope)
-	coverages = append(coverages, scipCov)
+	if scipCov.Tool != "" {
+		coverages = append(coverages, scipCov)
+	}
 
 	// Symbol graph (SCIP) — per-symbol ownership, fan-in, and cross-module refs.
 	// Empty when SCIP is off/absent; metrics that need it report n/a in that case.
 	scipSymbols, scipSymCov, _ := in.Resolver.Symbols(ctx, in.Scope)
-	coverages = append(coverages, scipSymCov)
+	if scipSymCov.Tool != "" {
+		coverages = append(coverages, scipSymCov)
+	}
 
 	var allFacts []graph.Facts
 	for _, ex := range in.Extractors {
