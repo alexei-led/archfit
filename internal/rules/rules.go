@@ -1,7 +1,7 @@
 // Package rules defines the Rule interface and the built-in rule
 // implementations: ForbiddenDependency, PublicAPIOnly, ForbiddenLayerDirection,
 // InternalAPIAccess, NewCrossModuleDependency, CycleRule,
-// PublicAPIMax, PublicAPIChange, LayerRoleDivergence.
+// PublicAPIMax, PublicAPIChange, PublicAPITypeLeak.
 package rules
 
 import (
@@ -22,11 +22,11 @@ const (
 )
 
 // matchedByModule is the MatchedBy key for the owning module path, shared
-// across publicAPIMax, publicAPIChange, structFieldMax, and publicAPITypeLeak.
+// across publicAPIMax, publicAPIChange, and publicAPITypeLeak.
 const matchedByModule = "module"
 
 // matchedByFile is the MatchedBy key for the source file path, shared
-// across publicAPIChange, testInProduction, and publicAPITypeLeak.
+// across publicAPIChange and publicAPITypeLeak.
 const matchedByFile = "file"
 
 // Evidence carries supplemental evidence provided to a rule's Check method.
@@ -43,16 +43,6 @@ type Rule interface {
 	Check(g *graph.Graph, ev Evidence) []finding.Finding
 }
 
-// defaultLayerRoleDivergenceThreshold is the default rank-delta threshold for
-// the layer_role_divergence rule. Modules whose scaled observed topological rank
-// differs from their declared layer rank by more than this value emit a finding.
-//
-// Value 1: tolerates one-step adjacency/rounding errors (delta=1 skips) while
-// ensuring that a fully-inverted module in a 3-layer config (max delta=2) fires.
-// Threshold=3 was dead-on-arrival for typical 3- or 4-layer configs where the
-// maximum possible delta is layerCount-1 = 2 or 3.
-const defaultLayerRoleDivergenceThreshold = 1
-
 // New constructs the slice of Rule values declared in cfg.
 // Config type strings (snake_case per spec §9):
 //
@@ -64,7 +54,7 @@ const defaultLayerRoleDivergenceThreshold = 1
 //	"cycle"                       → cycleRule
 //	"public_api_max"              → publicAPIMax
 //	"public_api_change"           → publicAPIChange
-//	"layer_role_divergence"       → layerRoleDivergence
+//	"public_api_type_leak"        → publicAPITypeLeak
 //
 // Unknown type strings are a config error.
 func New(cfg config.RuleConfig) ([]Rule, error) {
@@ -95,26 +85,8 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 			inner = &publicAPIMax{def: def, mm: cfg.ModuleMap, max: *def.Max}
 		case "public_api_change":
 			inner = &publicAPIChange{def: def, mm: cfg.ModuleMap}
-		case "test_in_production":
-			inner = &testInProduction{def: def, mm: cfg.ModuleMap}
 		case "public_api_type_leak":
 			inner = &publicAPITypeLeak{def: def, mm: cfg.ModuleMap}
-		case "struct_field_max":
-			if err := validateStructFieldMaxDef(def); err != nil {
-				return nil, err
-			}
-			inner = &structFieldMax{def: def, mm: cfg.ModuleMap, max: *def.Max}
-		case "layer_role_divergence":
-			threshold := defaultLayerRoleDivergenceThreshold
-			if def.Threshold != nil {
-				threshold = *def.Threshold
-			}
-			inner = &layerRoleDivergence{
-				def:       def,
-				layers:    cfg.Layers,
-				mm:        cfg.ModuleMap,
-				threshold: threshold,
-			}
 		default:
 			return nil, fmt.Errorf("rules: unknown rule type %q (id=%q)", def.Type, def.ID)
 		}
@@ -131,11 +103,10 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 
 // defaultGateForType returns the per-type gate default for types that diverge
 // from the global default of "" (= fail). public_api_change and
-// test_in_production default to "warn" (advisory drift signal).
+// public_api_type_leak default to "warn" (advisory drift signal).
 func defaultGateForType(ruleType string) string {
 	switch ruleType {
-	case "public_api_change", "test_in_production", "struct_field_max", "public_api_type_leak",
-		"layer_role_divergence":
+	case "public_api_change", "public_api_type_leak":
 		return "warn"
 	}
 	return ""

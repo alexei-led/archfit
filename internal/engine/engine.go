@@ -112,7 +112,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// --- Stage 2b: Syntax facts ---
 	// Collect syntactic declarations and route registrations (ast-grep rules)
 	// before the rules stage. Off-gate: facts populate the report (consumed by
-	// public_api_*/struct_field_max/test_in_production) but never affect the verdict.
+	// public_api_*) but never affect the verdict.
 	var syntaxFacts []diagnostic.SyntaxFact
 	if in.SyntaxCfg.Enabled {
 		if in.Syntax == nil {

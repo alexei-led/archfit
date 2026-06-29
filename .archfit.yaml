@@ -588,18 +588,6 @@ rules:
     type: public_api_max
     max: 1600
     gate: warn
-  # --- Architecture-drift prevention rules (dogfooding this branch's detectors) ---
-  # God-struct ceiling. NOTE: the Go struct_field count is a body-line-span
-  # heuristic (endLine-startLine-1), so per-field doc comments inflate it well
-  # above the true field count — it is a "struct body size" guard, not an exact
-  # field count. Current max in this repo: Diagnostic = 61 body lines (20 fields,
-  # one doc-comment per field). Diagnostic is the core value object that grows
-  # with every feature, so the ceiling is generous: 90 blocks a genuinely
-  # egregious god-struct while leaving the documented core aggregate headroom.
-  - id: arch_struct_field_max
-    type: struct_field_max
-    max: 90
-    gate: fail
   # Public-API framework-type-leak — advisory dogfooding. Fires when an exported
   # field or function return type names an external (non-first-party) package.
   # archfit's adapter/cmd layers legitimately expose external types (kong, SDKs),
