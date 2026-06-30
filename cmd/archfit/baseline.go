@@ -14,6 +14,7 @@ import (
 // BaselineCmd runs the engine and saves findings as the new baseline.
 type BaselineCmd struct {
 	Config   string `short:"c" help:"Config file." default:".archfit.yaml"`
+	Root     string `short:"r" help:"Repository root to analyze (default: directory of --config)." type:"path"`
 	Full     bool   `help:"Scan all files before saving the accepted baseline."`
 	Advisory bool   `help:"Include advisory findings in the baseline."`
 	Base     string `help:"Git ref to compare against when baselining a delta run."`
@@ -46,7 +47,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	// pattern provider, and SCIP resolver): snapshot values recorded from
 	// different inputs would surface as phantom deltas on the next check.
 	mode := engine.Mode{Full: c.Full, Advisory: c.Advisory, Base: c.Base}
-	diag, err := runPipeline(ctx, deps, cfg, c.Config, "", false, mode, existingBase)
+	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, mode, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}

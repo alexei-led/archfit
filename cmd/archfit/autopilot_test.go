@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,85 +39,49 @@ func (autopilotProvider) Complete(_ context.Context, req llm.Request) (llm.Respo
 	return llm.Response{Text: "[" + strings.Join(parts, ",") + "]"}, nil
 }
 
-func runAutopilot(t *testing.T, cmd *AutopilotCmd) (string, error) {
-	t.Helper()
-	var buf bytes.Buffer
-	runner := &toolrun.RunnerMock{
-		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) { return toolrun.ToolInfo{}, false },
-		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
-			return toolrun.Output{Stdout: goListJSON("example.com/test", "example.com/test/internal/mymod")}, nil
-		},
-	}
-	err := cmd.Run(&appDeps{Runner: runner, Stdout: &buf})
-	return buf.String(), err
-}
-
-func TestAutopilot_WritesDraftAppliesNothing(t *testing.T) {
+// TestInit_LLMDraft_OwnerCommentWritten verifies the owner-draft pass that was
+// folded from the former `autopilot` command into `config init --llm`: when
+// Apply is false, the owner suggestion must appear as a commented annotation.
+// The subdomain/volatility side is covered by TestInitCmd_LLM_CommentedSuggestions.
+func TestInit_LLMDraft_OwnerCommentWritten(t *testing.T) {
 	t.Parallel()
 	root := minimalRoot(t)
 	if err := os.MkdirAll(filepath.Join(root, "internal", "mymod"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	outPath := filepath.Join(root, defaultAutopilotPath)
-	livePath := filepath.Join(root, defaultConfigPath)
+	outPath := filepath.Join(root, defaultConfigPath)
+	const modPath = "example.com/test"
 
-	cmd := &AutopilotCmd{
+	cmd := &InitCmd{
 		Root:             root,
-		Config:           livePath,
 		Output:           outPath,
+		LLM:              true,
+		Apply:            false,
 		LLMProvider:      providerAnthropic,
 		LLMModel:         defaultLLMModel,
 		providerOverride: autopilotProvider{},
 	}
-	out, err := runAutopilot(t, cmd)
+	_, err := runInitCmdWithRunner(t, cmd, func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+		return toolrun.Output{Stdout: goListJSON(modPath, modPath+"/internal/mymod")}, nil
+	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !strings.Contains(out, "draft written") {
-		t.Errorf("expected draft message, got: %s", out)
-	}
 
-	// The draft file exists and carries commented (plan-mode) suggestions, never live fields.
 	data, err := os.ReadFile(outPath) //nolint:gosec // test temp path
 	if err != nil {
-		t.Fatalf("draft not written: %v", err)
+		t.Fatalf("config not written: %v", err)
 	}
-	draft := string(data)
-	if !strings.Contains(draft, "# subdomain:") {
-		t.Errorf("draft missing commented subdomain suggestion:\n%s", draft)
+	got := string(data)
+	// Owner draft pass must write a commented annotation (plan mode = never live).
+	if !strings.Contains(got, "# owner:") {
+		t.Errorf("init --llm plan mode missing commented owner suggestion:\n%s", got)
 	}
-	if !strings.Contains(draft, "# owner:") {
-		t.Errorf("draft missing commented owner suggestion:\n%s", draft)
-	}
-	// Plan mode: LLM suggestions must stay commented — no uncommented live
-	// subdomain/owner field may leak into the draft (the core safety guarantee).
-	for _, line := range strings.Split(draft, "\n") {
+	// Verify no uncommented live owner field leaked through.
+	for _, line := range strings.Split(got, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "subdomain:") || strings.HasPrefix(trimmed, "owner:") {
-			t.Errorf("plan-mode draft leaked a live field %q:\n%s", trimmed, draft)
+		if strings.HasPrefix(trimmed, "owner:") {
+			t.Errorf("plan-mode leaked a live owner field %q:\n%s", trimmed, got)
 		}
-	}
-
-	// Applies nothing: the live config must not have been created.
-	if _, statErr := os.Stat(livePath); statErr == nil {
-		t.Error("autopilot must not write .archfit.yaml")
-	}
-}
-
-func TestAutopilot_RefusesToWriteLiveConfig(t *testing.T) {
-	t.Parallel()
-	root := minimalRoot(t)
-	cmd := &AutopilotCmd{
-		Root:             root,
-		Output:           filepath.Join(root, defaultConfigPath), // pointed at the live config
-		providerOverride: autopilotProvider{},
-	}
-	_, err := runAutopilot(t, cmd)
-	if err == nil {
-		t.Fatal("expected refusal when --output is .archfit.yaml")
-	}
-	var ee *exitError
-	if !errors.As(err, &ee) || ee.code != 3 {
-		t.Errorf("want exitError code 3, got: %v", err)
 	}
 }

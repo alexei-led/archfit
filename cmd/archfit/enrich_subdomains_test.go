@@ -78,11 +78,8 @@ func TestEnrichSubdomainDraft(t *testing.T) {
 	cfgPath, dir := writeEnrichSubdomainFixture(t)
 	subdomainsPath := filepath.Join(dir, defaultSubdomainsPath)
 
-	cmd := &EnrichCmd{
-		Config:           cfgPath,
-		Subdomains:       true,
-		Pin:              false,
-		providerOverride: provider,
+	cmd := &EnrichSubdomainCmd{
+		enrichFlags: enrichFlags{Config: cfgPath, providerOverride: provider},
 	}
 
 	var buf bytes.Buffer
@@ -139,10 +136,8 @@ ai:
 		t.Fatal(err)
 	}
 
-	cmd := &EnrichCmd{
-		Config:           cfgPath,
-		Subdomains:       true,
-		providerOverride: &scriptedProvider{responses: []string{}},
+	cmd := &EnrichSubdomainCmd{
+		enrichFlags: enrichFlags{Config: cfgPath, providerOverride: &scriptedProvider{responses: []string{}}},
 	}
 
 	var buf bytes.Buffer
@@ -176,11 +171,10 @@ func TestEnrichSubdomainPin(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := &EnrichCmd{
-		Config:     cfgPath,
-		Subdomains: true,
-		Pin:        true,
-		ReviewedBy: "alice",
+	cmd := &EnrichSubdomainCmd{
+		enrichFlags: enrichFlags{Config: cfgPath},
+		Apply:       true,
+		ReviewedBy:  "alice",
 	}
 
 	var buf bytes.Buffer
@@ -236,10 +230,9 @@ func TestEnrichSubdomainPin_NoApproved(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := &EnrichCmd{
-		Config:     cfgPath,
-		Subdomains: true,
-		Pin:        true,
+	cmd := &EnrichSubdomainCmd{
+		enrichFlags: enrichFlags{Config: cfgPath},
+		Apply:       true,
 	}
 
 	var buf bytes.Buffer
@@ -260,10 +253,9 @@ func TestEnrichSubdomainPin_NoDraftFile(t *testing.T) {
 	t.Parallel()
 	cfgPath, _ := writeEnrichSubdomainFixture(t)
 
-	cmd := &EnrichCmd{
-		Config:     cfgPath,
-		Subdomains: true,
-		Pin:        true,
+	cmd := &EnrichSubdomainCmd{
+		enrichFlags: enrichFlags{Config: cfgPath},
+		Apply:       true,
 	}
 
 	var buf bytes.Buffer
@@ -295,7 +287,7 @@ modules:
 	}
 
 	var buf bytes.Buffer
-	code := Run([]string{"enrich", "--subdomains", "-c", cfgPath}, &buf)
+	code := Run([]string{cmdConfig, cmdEnrich, "subdomain", "-c", cfgPath}, &buf)
 	if code != 3 {
 		t.Errorf("exit = %d, want 3 (llm not configured)\noutput: %s", code, buf.String())
 	}

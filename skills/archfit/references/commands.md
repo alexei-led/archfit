@@ -7,9 +7,14 @@ the installed version. Maintainer-only `calibrate` is intentionally omitted here
 ## Commands
 
 - `archfit doctor` — check the local toolchain (Go, TS/JS, Python, Rust,
-  optional analyzers, LLM key, cache).
-- `archfit init` — generate a starter `.archfit.yaml` from discovered structure.
-- `archfit update` — sync `.archfit.yaml` with current structure (see
+  optional analyzers, LLM key, cache). `--fix` installs missing tools;
+  `--fix --dry-run` previews the install commands; `--lang <x>` scopes to one
+  language.
+- `archfit config init` — generate a starter `.archfit.yaml` from discovered
+  structure. `--llm` suggests `subdomain`/`volatility`/`layer`/`role` as
+  commented-inert YAML (safe to review); `--llm --apply` writes them live.
+  Use `-o` to redirect output to a draft file. See `llm-modes.md`.
+- `archfit config update` — sync `.archfit.yaml` with current structure (see
   `llm-modes.md`).
 - `archfit analyze` — run architecture analysis (also the bare `archfit` default).
   Without `--gate` it is report-only (always exits `0` on success, `3` on
@@ -17,22 +22,19 @@ the installed version. Maintainer-only `calibrate` is intentionally omitted here
 - `archfit baseline` — record accepted current findings as the baseline.
 - `archfit explain <id>` — explain one finding by fingerprint prefix (`--llm`
   appends an off-gate narrative; see `llm-modes.md`).
-- `archfit enrich` — draft off-gate human-reviewed labels and metadata;
-  `--subdomains`, `--owner`, and `--volatility` draft module metadata,
-  `--pin` writes approved entries into the config (see `llm-modes.md`).
-- `archfit autopilot` — one-shot off-gate LLM draft of a full `.archfit.yaml`
-  (review-only; never applies — writes `.archfit-autopilot.yaml`; see
-  `llm-modes.md`).
-- `archfit install` — install or print install commands for optional language
-  tools.
+- `archfit config enrich labels` — draft off-gate human-reviewed edge labels
+  into `.archfit-labels.yaml` (see `llm-modes.md`).
+- `archfit config enrich subdomain / owner / volatility` — draft module metadata;
+  `--apply` writes only `status: approved` entries into `modules.<name>` and never
+  overwrites a live field (see `llm-modes.md`).
 
 ## Common invocations
 
 ```sh
 archfit doctor
-archfit install --lang go --lang ts --lang py --lang rust --dry-run
-archfit init --root . --output .archfit.yaml
-archfit update --config .archfit.yaml
+archfit doctor --fix --lang go --lang ts --lang py --lang rust --dry-run
+archfit config init --root . --output .archfit.yaml
+archfit config update --config .archfit.yaml
 archfit                                                      # report-only, default text
 archfit analyze --gate --config .archfit.yaml --full         # CI gate
 archfit analyze --gate --config .archfit.yaml --base origin/main --json
@@ -44,11 +46,11 @@ archfit analyze --gate --sarif > /tmp/archfit.sarif
 archfit baseline --full --config .archfit.yaml
 archfit explain <finding-id-prefix> --config .archfit.yaml
 archfit explain <finding-id-prefix> --config .archfit.yaml --llm
-archfit enrich --config .archfit.yaml
-archfit enrich --subdomains --config .archfit.yaml
-archfit enrich --owner --config .archfit.yaml
-archfit enrich --volatility --config .archfit.yaml
-archfit autopilot --root . --output .archfit-autopilot.yaml
+archfit config enrich labels --config .archfit.yaml
+archfit config enrich subdomain --config .archfit.yaml
+archfit config enrich owner --config .archfit.yaml
+archfit config enrich volatility --config .archfit.yaml
+archfit config init --llm --root . -o .archfit-draft.yaml
 ```
 
 Use `analyze --gate` for CI gates. Use `analyze --markdown` for a human-readable
@@ -82,7 +84,7 @@ Prefer stdout or a temp path while reviewing. SARIF, Markdown reports,
   scan.
 - `--severity <level>` — minimum advisory severity to show (`low`, `medium`,
   `high`, `critical`).
-- `--lang <name>` — force an analyzer on (`install` / `analyze --no-config`).
+- `--lang <name>` — force an analyzer on (`doctor --fix` / `analyze --no-config`).
 - `--progress auto|plain|none` — progress output mode (default `auto`).
 - `--quiet` / `-q` — suppress progress and non-essential output.
 

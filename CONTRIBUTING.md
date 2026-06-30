@@ -2,7 +2,7 @@
 
 Thanks for improving `archfit`.
 
-Keep changes small, deterministic, and documented. `archfit check` is a gate:
+Keep changes small, deterministic, and documented. `archfit analyze` is a gate:
 it must stay reproducible and must not require network access or an LLM. Optional
 LLM features belong behind explicit commands or config and stay off the gate.
 
@@ -81,7 +81,7 @@ make mock
 The CLI can print or install known language tools:
 
 ```sh
-go run ./cmd/archfit install --lang go --lang ts --lang py --dry-run
+go run ./cmd/archfit doctor --fix --lang go --lang ts --lang py --dry-run
 ```
 
 For deterministic CI, prefer explicit setup in the workflow over implicit local

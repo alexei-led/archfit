@@ -1,4 +1,4 @@
-# LLM enrichment (off-gate): enrich, labels, explain --llm
+# LLM enrichment (off-gate): config enrich, labels, explain --llm
 
 archfit's verdict is deterministic — `analyze` never calls a model. The LLM
 layer refines the one thing deterministic analysis cannot judge: whether a
@@ -8,12 +8,12 @@ cross-module dependency's integration strength is really `functional`
 deterministic heuristic blanket-labels most call edges `functional`; the
 spike that validated this design measured ~91% of edges landing there.
 
-The workflow is **draft → review → pin**:
+The workflow is **draft → review → apply**:
 
 ```text
-archfit enrich        # LLM drafts → .archfit-labels.yaml (status: draft)
+archfit config enrich labels   # LLM drafts → .archfit-labels.yaml (status: draft)
 $EDITOR .archfit-labels.yaml   # review: approve or delete each draft
-archfit analyze       # consumes APPROVED labels only — still LLM-free
+archfit analyze                # consumes APPROVED labels only — still LLM-free
 ```
 
 ## Configuration
@@ -68,9 +68,9 @@ Enrich itself is replayable through the content-addressed response cache at
 byte-identical enrich replay across machines). `--no-cache` forces fresh
 calls.
 
-## enrich --owner / --volatility (draft → review → pin)
+## config enrich — owner, volatility, subdomain (draft → review → apply)
 
-Beyond coupling labels, `enrich` drafts two module metadata fields that the
+Beyond coupling labels, `config enrich` drafts module metadata fields that the
 structural metrics depend on. Filling them is the through-line that makes distance
 classification work: ownership contributes to distance for modules in repos with
 genuine multi-team ownership, and `coupling_balance` stops being `n/a`.
@@ -78,40 +78,43 @@ genuine multi-team ownership, and `coupling_balance` stops being `n/a`.
 > **Note on encapsulation:** `encapsulation` scores the ratio of contract/intrusive
 > edges to total cross-module edges. It becomes measurable when modules have
 > explicit `public:` / `internal:` globs that let archfit classify edge kinds —
-> not from owner pinning alone. Pinning `--owner` improves distance classification
+> not from owner pinning alone. Pinning `owner` improves distance classification
 > but does not by itself make encapsulation measurable.
 
 ```sh
-archfit enrich --owner         # drafts owner per module → .archfit-owners.yaml
-archfit enrich --volatility    # drafts volatility (low/medium/high) → .archfit-volatility.yaml
-$EDITOR .archfit-owners.yaml   # review: set status: approved on the keepers
-archfit enrich --owner --pin   # writes approved entries into modules.<name>
+archfit config enrich owner        # drafts owner per module → .archfit-owners.yaml
+archfit config enrich volatility   # drafts volatility (low/medium/high) → .archfit-volatility.yaml
+$EDITOR .archfit-owners.yaml       # review: set status: approved on the keepers
+archfit config enrich owner --apply  # writes approved entries into modules.<name>
 ```
 
-- `--owner` reads `CODEOWNERS` (when present) plus the module's paths/files to
+- `owner` reads `CODEOWNERS` (when present) plus the module's paths/files to
   suggest a responsible owner; the draft lands in `.archfit-owners.yaml`.
-- `--volatility` infers `low` / `medium` / `high` from module structure into
+- `volatility` infers `low` / `medium` / `high` from module structure into
   `.archfit-volatility.yaml`.
-- `--pin` writes only `status: approved` entries into `modules.<name>` and
+- `subdomain` suggests `core` / `supporting` / `generic` per module into
+  `.archfit-subdomains.yaml`.
+- `--apply` writes only `status: approved` entries into `modules.<name>` and
   **never overwrites a live field** — drafts for already-set fields are skipped.
-- These never touch coupling strength (that is the default `enrich`) and never
+- These never touch coupling strength (that is the `labels` subcommand) and never
   affect `analyze`.
 
-## autopilot — full config draft (review-only)
+## config init --llm — full config draft (review-only)
 
-`archfit autopilot` drafts an entire `.archfit.yaml` in one shot: it discovers
+`archfit config init --llm` drafts an entire `.archfit.yaml` in one shot: it discovers
 structure, classifies every module (subdomain, volatility, layer, and `role`),
 drafts an owner per module, and renders the whole config in plan mode — every
-field commented.
+suggested field commented.
 
 ```sh
-archfit autopilot --root . --output .archfit-autopilot.yaml
-archfit autopilot --root . -o -        # stream to stdout
+archfit config init --llm --root . -o .archfit-autopilot.yaml
+archfit config init --llm --root . -o -   # stream to stdout
 ```
 
-It **never** writes `.archfit.yaml` (refuses `--output .archfit.yaml`, exit 3).
-Review the draft, then move approved fields into the live config. Same provider,
-cache, and key handling as the other LLM commands.
+Direct it to a side file with `-o` to keep it review-only: review the draft,
+then move approved fields into the live config deliberately, or re-run with
+`--apply` to write approved values live. Same provider, cache, and key handling
+as the other LLM commands.
 
 ## explain --llm
 
@@ -124,11 +127,12 @@ is fully offline.
 
 Every LLM feature is off-gate and draft-first.
 
-`archfit init --llm`, `archfit update --llm`, and `archfit autopilot` suggest
-`subdomain`, `volatility`, `layer`, and `role` for discovered modules; `enrich`
-drafts coupling labels plus `--owner`/`--volatility`. None of them gate. Without
-`--apply`/`--pin` the suggestions are commented or held in a draft file and
-require human review before they become live fields. With `--apply`/`--pin`,
-approved values are written directly — treat them as a starting point and review
-before running gates. Existing field values are never overwritten. `analyze` is
-unaffected by these flags; it only reads the final config.
+`archfit config init --llm`, `archfit config update --llm`, and
+`archfit config init --llm -o <draft>` suggest `subdomain`, `volatility`, `layer`,
+and `role` for discovered modules; `config enrich` drafts coupling labels plus the
+`owner`, `volatility`, and `subdomain` subcommands. None of them gate. Without
+`--apply` the suggestions are commented or held in a draft file and require human
+review before they become live fields. With `--apply`, approved values are written
+directly — treat them as a starting point and review before running gates. Existing
+field values are never overwritten. `analyze` is unaffected by these flags; it only
+reads the final config.

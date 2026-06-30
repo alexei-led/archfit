@@ -3,10 +3,10 @@
 `archfit` reads `.archfit.yaml` from the repository root by default.
 
 The config parser is strict. Unknown YAML fields are errors. Start with
-`archfit init`, then edit the generated file.
+`archfit config init`, then edit the generated file.
 
 ```sh
-archfit init --root . --output .archfit.yaml
+archfit config init --root . --output .archfit.yaml
 archfit analyze --config .archfit.yaml --full
 ```
 
@@ -464,7 +464,7 @@ rules:
 
 With this in place, any `yazi-core` → `yazi-adapter` import becomes a finding.
 
-**How to get there without authoring manually:** `archfit enrich` can propose a
+**How to get there without authoring manually:** `archfit config enrich` can propose a
 layer structure and `forbidden_layer_direction` rules from the module graph; draft
 the output, review, then move approved entries into `.archfit.yaml`. See
 [llm-enrich.md](llm-enrich.md).
@@ -861,15 +861,15 @@ VS Code users can configure the schema in `.vscode/settings.json`:
 The LLM authoring commands write proposals to review files, never to
 `.archfit.yaml` directly:
 
-- `.archfit-labels.yaml` — pinned coupling-strength labels (`archfit enrich`).
+- `.archfit-labels.yaml` — pinned coupling-strength labels (`archfit config enrich labels`).
   `analyze` consumes `status: approved` entries with precedence: config
   public/internal globs > approved labels > extractor hint.
-- `.archfit-owners.yaml` — owner drafts (`archfit enrich --owner`).
-- `.archfit-volatility.yaml` — volatility drafts (`archfit enrich --volatility`).
-- `.archfit-subdomains.yaml` — subdomain drafts (`archfit enrich --subdomains`).
-- `.archfit-autopilot.yaml` — a full commented config draft (`archfit autopilot`).
+- `.archfit-owners.yaml` — owner drafts (`archfit config enrich owner`).
+- `.archfit-volatility.yaml` — volatility drafts (`archfit config enrich volatility`).
+- `.archfit-subdomains.yaml` — subdomain drafts (`archfit config enrich subdomain`).
+- `.archfit-autopilot.yaml` — a full commented config draft (`archfit config init --llm -o <file>`).
 
-Review each, then `enrich --<field> --pin` (or move the field manually) to write
+Review each, then `config enrich <field> --apply` (or move the field manually) to write
 approved values into `modules.<name>`. Pinning never overwrites a live field. See
 [llm-enrich.md](llm-enrich.md).
 
@@ -889,7 +889,7 @@ Each label entry in `.archfit-labels.yaml` may carry two optional fields:
 ```
 
 - `provenance` — source of the strength judgment: `human` (direct human
-  decision), `llm` (drafted by `archfit enrich`, then human-approved), or
+  decision), `llm` (drafted by `archfit config enrich`, then human-approved), or
   `tool` (deterministic extractor hint).
 - `confidence` — how certain the judgment is: `high`, `medium`, or `low`.
 
@@ -910,7 +910,7 @@ from the `coupling_balance` scored distribution (honest denominator) and an
 `agent_task` is emitted in JSON/SARIF output prompting the operator to add a
 label. The same happens for modules with no declared `subdomain` or
 `volatility`: an `agent_task` asks for a declaration or suggests
-`archfit enrich --subdomains`.
+`archfit config enrich subdomain`.
 
 External/library edges (`Distance == DistanceUnknown`, i.e. stdlib,
 third-party packages, undeclared imports) are excluded from

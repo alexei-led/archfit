@@ -49,8 +49,8 @@ Read the one the task needs:
   statuses, exit codes, coverage gaps, and the `--require-tools` hard gate.
 - `references/languages.md` — Go, TypeScript/JavaScript, Python, and Rust tool
   setup, config shape, path semantics, and common coverage gaps.
-- `references/llm-modes.md` — `analyze --llm`, `init`/`update --llm`, `enrich`
-  (labels, `--subdomains`, `--owner`, `--volatility`), `autopilot`, `.env`,
+- `references/llm-modes.md` — `analyze --llm`, `config init`/`config update --llm`,
+  `config enrich` (labels, subdomain, owner, volatility), `.env`,
   and `explain --llm`.
 - `references/agent-loop.md` — autonomous repair contract (`agent_tasks`, SARIF,
   `blast_radius`), and how coverage gaps read in the loop.
@@ -84,19 +84,19 @@ Install, configure, add CI, baseline, add an exception, or fix findings.
    scope before suggesting tool setup or config globs.
 3. Check the surface: `archfit --help`, `archfit doctor`.
 4. No config? Generate and review before editing:
-   `archfit init --root . --output .archfit.yaml`.
+   `archfit config init --root . --output .archfit.yaml`.
 5. Prefer code fixes over exceptions; use expiring exceptions only for
    intentional temporary drift.
 6. Baseline only accepted existing debt — never to make a new finding green.
 7. Validate: `archfit analyze --gate --config .archfit.yaml --full` (add `--json`
    for agent loops, `--require-tools` only when missing-tool coverage should gate).
 
-`analyze --llm`, `init`/`update --llm`, `enrich` (labels / `--subdomains` / `--owner` /
-`--volatility`), `autopilot`, and `explain --llm` are all off-gate and
+`analyze --llm`, `config init`/`config update --llm`, `config enrich` (labels /
+`subdomain` / `owner` / `volatility`), and `explain --llm` are all off-gate and
 draft-first: detail and guardrails are in `references/llm-modes.md`. Never write
-LLM classifications (`--apply`/`--pin`) or approve drafts without reviewing them
-first. `autopilot` only ever writes a review file — it refuses to touch
-`.archfit.yaml`.
+LLM classifications (`--apply`) or approve drafts without reviewing them first.
+`config init --llm` without `--apply` is review-only (writes commented-inert
+suggestions; use `-o` to redirect to a draft file instead of `.archfit.yaml`).
 
 ## Agent repair loop
 
@@ -124,8 +124,9 @@ under-specified`. They have different fixes.
 - If a gap cannot be closed now, say which metrics are unmeasured, lower
   confidence, and avoid treating the run as clean just because it stayed exit 0.
 - Under-specified-module warnings usually clear once modules declare `owner` /
-  `subdomain` / `volatility`. Draft them with `enrich --subdomains` / `--owner` /
-  `--volatility` or `autopilot`, **review**, then pin — never auto-apply.
+  `subdomain` / `volatility`. Draft them with `config enrich subdomain` /
+  `config enrich owner` / `config enrich volatility` or `config init --llm`,
+  **review**, then `--apply` — never auto-apply.
   Filling them also makes `encapsulation` measurable. A wiring/`cmd` package
   flagged for fan-out wants a `role:` (e.g. `composition_root`), not an exception.
 

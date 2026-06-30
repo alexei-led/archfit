@@ -61,7 +61,7 @@ change-propagating — the coupling. Four levels, strongest to weakest
 visibility. `symmetric` is assigned when clone detection finds duplicated logic
 crossing a module boundary. `model` and `functional` are inferred from symbol
 kinds (SCIP) or config-declared, and refined under human review by
-`archfit enrich` (see [LLM enrichment](llm-enrich.md)). When nothing classifies
+`archfit config enrich` (see [LLM enrichment](llm-enrich.md)). When nothing classifies
 an edge, its strength is `unknown` — the edge is **abstained** (excluded from
 scoring), never assigned an invented ordinal.
 
@@ -284,7 +284,7 @@ and makes only the legible parts executable. Three design rules follow from that
    produces a false failure.
 
 3. **LLM is off the gate.** Strength inference and explanations can use an LLM
-   (`archfit enrich`, `archfit explain --llm`), but gate verdicts and metric
+   (`archfit config enrich`, `archfit explain --llm`), but gate verdicts and metric
    values are computed by deterministic code only. The model finds candidates;
    humans pin labels; the gate stays reproducible. See
    [LLM enrichment](llm-enrich.md).

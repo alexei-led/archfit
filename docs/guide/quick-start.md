@@ -3,14 +3,14 @@
 From the root of a repository:
 
 ```sh
-archfit init --root .
+archfit config init --root .
 $EDITOR .archfit.yaml
 archfit analyze --config .archfit.yaml --full
 ```
 
 Recommended first-run workflow:
 
-1. Generate `.archfit.yaml` with `archfit init`.
+1. Generate `.archfit.yaml` with `archfit config init`.
 2. Review modules, layers, public APIs, and generated rules.
 3. Run `archfit analyze --full` to see current findings (report-only, no gate).
 4. Keep early rules narrow while calibrating.

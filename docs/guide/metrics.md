@@ -250,9 +250,9 @@ failure.
 | coupling_balance (clone → symmetric strength)                                   | clone detector (`analyzers.clones.enabled: true`) |
 | public_api_max, public_api_change, public_api_type_leak (rules)                 | `sg` (ast-grep); `analyzers.syntax.enabled: true` |
 
-The `llm` tool is used only by `archfit enrich`, `archfit explain --llm`,
-`archfit analyze --llm`, `archfit autopilot`, `archfit init --llm`, and
-`archfit update --llm`. It is **never** consumed by the deterministic gate path —
+The `llm` tool is used only by `archfit config enrich`, `archfit explain --llm`,
+`archfit analyze --llm`, `archfit config init --llm`, and
+`archfit config update --llm`. It is **never** consumed by the deterministic gate path —
 gate verdicts and metric values stay deterministic. See
 [LLM enrichment](llm-enrich.md).
 

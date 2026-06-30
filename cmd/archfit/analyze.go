@@ -41,6 +41,8 @@ type AnalyzeCmd struct {
 	Gate bool `help:"CI exit behavior: 0=clean, 1=architecture violation, 2=warnings, 3=config/tool error. Without --gate the command is always report-only (exit 0 on success)."`
 	LLM  bool `help:"Append an off-gate LLM narrative review after the normal render. Requires ai configured in the config file."`
 
+	NoCache bool `name:"no-cache" help:"With --llm: bypass the LLM response cache."`
+
 	// Format shorthand flags — mutually exclusive; error if more than one set.
 	// These map onto Format below.
 	JSON     bool `name:"json"     help:"Output format: JSON (shorthand for --format json)."`
@@ -271,7 +273,7 @@ func analyzeRender(deps *appDeps, diag diagnostic.Diagnostic, sc score.Scorecard
 // deterministic report. runLLMReview owns the ai check and provider
 // build (exit 3 when unconfigured); we only thread the test-seam override.
 func (c *AnalyzeCmd) appendLLMNarrative(ctx context.Context, deps *appDeps, cfg config.Config, configDir string, diag diagnostic.Diagnostic, sc score.Scorecard) error {
-	return runLLMReview(ctx, deps, cfg, configDir, false, c.providerOverride, diag, sc)
+	return runLLMReview(ctx, deps, cfg, configDir, c.NoCache, c.providerOverride, diag, sc)
 }
 
 // analyzePhaseTotal returns the number of progress phases for this run. Base

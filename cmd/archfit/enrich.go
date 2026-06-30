@@ -32,24 +32,79 @@ import (
 // enrichBatchSize bounds how many module pairs go into one LLM request.
 const enrichBatchSize = 30
 
-// EnrichCmd drafts model-vs-functional strength refinements for cross-module
-// edges. Drafts land in .archfit-labels.yaml with status: draft; a human
-// reviews, flips approved entries, and the deterministic gate consumes them.
-//
-// With --subdomains: drafts subdomain (core/supporting/generic) per module via
-// LLM into .archfit-subdomains.yaml; --pin applies approved entries into .archfit.yaml.
-type EnrichCmd struct {
-	Config     string `short:"c" default:".archfit.yaml"`
-	Root       string `help:"Repository root to analyze (default: directory of --config). Decouples the scanned repo from where the config lives." type:"path"`
-	Subdomains bool   `name:"subdomains" help:"Draft subdomain (core/supporting/generic) per module via LLM, then pin approved values into .archfit.yaml."`
-	Owner      bool   `name:"owner"      help:"Draft module owner per module via LLM (uses CODEOWNERS context) into .archfit-owners.yaml, then pin approved values into .archfit.yaml."`
-	Volatility bool   `name:"volatility" help:"Draft module volatility (low/medium/high) per module via LLM into .archfit-volatility.yaml, then pin approved values into .archfit.yaml."`
-	Pin        bool   `name:"pin"        help:"With --subdomains/--owner/--volatility: read approved entries from the draft file and write them into .archfit.yaml."`
-	ReviewedBy string `name:"reviewed-by" help:"Human reviewer identity stamped on pinned entries." default:""`
-	NoCache    bool   `name:"no-cache" help:"Bypass the LLM response cache."`
+// enrichFlags are the flags shared by every `config enrich` subcommand. Kong
+// flattens the embedded struct, so each subcommand gets identical -c/--config,
+// -r/--root, and --no-cache flags.
+type enrichFlags struct {
+	Config  string `short:"c" name:"config" help:"Config file." default:".archfit.yaml"`
+	Root    string `short:"r" name:"root" type:"path" help:"Repository root to analyze (default: directory of --config). Decouples the scanned repo from where the config lives."`
+	NoCache bool   `name:"no-cache" help:"Bypass the LLM response cache."`
 
 	// providerOverride is a test seam — set directly on the struct to inject a fake provider.
 	providerOverride llm.Provider
+}
+
+// EnrichCmd groups the off-gate LLM annotation drafters. Each subcommand drafts
+// one dimension into a review file; a human reviews and --apply writes approved
+// entries into .archfit.yaml. Lives in cmd by design — internal packages may
+// never import the LLM layer (arch ring rule), so the gate stays deterministic.
+type EnrichCmd struct {
+	Labels     EnrichLabelsCmd     `cmd:"" default:"withargs" help:"Draft coupling-strength labels (contract/functional/model/intrusive) for cross-module edges."`
+	Owner      EnrichOwnerCmd      `cmd:"" help:"Draft a module owner per module (uses CODEOWNERS context)."`
+	Volatility EnrichVolatilityCmd `cmd:"" help:"Draft module volatility (low/medium/high)."`
+	Subdomain  EnrichSubdomainCmd  `cmd:"" help:"Draft module subdomain (core/supporting/generic)."`
+}
+
+// EnrichLabelsCmd drafts coupling-strength label refinements into
+// .archfit-labels.yaml (status: draft); the gate consumes approved entries.
+type EnrichLabelsCmd struct {
+	enrichFlags
+}
+
+func (c *EnrichLabelsCmd) Run(deps *appDeps) error {
+	return c.runLabelEnrich(context.Background(), deps)
+}
+
+// EnrichOwnerCmd drafts a module owner per module; --apply writes approved entries.
+type EnrichOwnerCmd struct {
+	enrichFlags
+	Apply      bool   `name:"apply" help:"Read approved entries from the draft file and write them into .archfit.yaml."`
+	ReviewedBy string `name:"reviewed-by" help:"Human reviewer identity stamped on applied entries." default:""`
+}
+
+func (c *EnrichOwnerCmd) Run(deps *appDeps) error {
+	if c.Apply {
+		return c.runValuePin(context.Background(), deps, ownerSpec, c.ReviewedBy)
+	}
+	return c.runValueDraft(context.Background(), deps, ownerSpec)
+}
+
+// EnrichVolatilityCmd drafts module volatility; --apply writes approved entries.
+type EnrichVolatilityCmd struct {
+	enrichFlags
+	Apply      bool   `name:"apply" help:"Read approved entries from the draft file and write them into .archfit.yaml."`
+	ReviewedBy string `name:"reviewed-by" help:"Human reviewer identity stamped on applied entries." default:""`
+}
+
+func (c *EnrichVolatilityCmd) Run(deps *appDeps) error {
+	if c.Apply {
+		return c.runValuePin(context.Background(), deps, volatilitySpec, c.ReviewedBy)
+	}
+	return c.runValueDraft(context.Background(), deps, volatilitySpec)
+}
+
+// EnrichSubdomainCmd drafts module subdomain; --apply writes approved entries.
+type EnrichSubdomainCmd struct {
+	enrichFlags
+	Apply      bool   `name:"apply" help:"Read approved entries from the draft file and write them into .archfit.yaml."`
+	ReviewedBy string `name:"reviewed-by" help:"Human reviewer identity stamped on applied entries." default:""`
+}
+
+func (c *EnrichSubdomainCmd) Run(deps *appDeps) error {
+	if c.Apply {
+		return c.runSubdomainPin(context.Background(), deps, c.ReviewedBy)
+	}
+	return c.runSubdomainDraft(context.Background(), deps)
 }
 
 // captureMetric records the common pipeline evidence (graph, classifications) so
@@ -64,43 +119,8 @@ func (m *captureMetric) Calculate(in signal.CollectedSignals) diagnostic.MetricR
 	return diagnostic.MetricResult{Name: m.Name(), Band: "info", Display: "internal capture"}
 }
 
-func (c *EnrichCmd) Run(deps *appDeps) error {
-	ctx := context.Background()
-
-	// The three draft modes each write their own review file; combining them
-	// previously ran only one and silently dropped the rest. Reject it.
-	modes := 0
-	for _, on := range []bool{c.Subdomains, c.Owner, c.Volatility} {
-		if on {
-			modes++
-		}
-	}
-	if modes > 1 {
-		return &exitError{code: 3, msg: "error: --subdomains, --owner, and --volatility are mutually exclusive; run one at a time"}
-	}
-
-	// Route to the appropriate workflow.
-	if c.Subdomains && c.Pin {
-		return c.runSubdomainPin(ctx, deps)
-	}
-	if c.Subdomains {
-		return c.runSubdomainDraft(ctx, deps)
-	}
-	if c.Owner || c.Volatility {
-		spec := ownerSpec
-		if c.Volatility {
-			spec = volatilitySpec
-		}
-		if c.Pin {
-			return c.runValuePin(ctx, deps, spec)
-		}
-		return c.runValueDraft(ctx, deps, spec)
-	}
-	return c.runLabelEnrich(ctx, deps)
-}
-
 // runLabelEnrich is the original coupling-strength label draft workflow.
-func (c *EnrichCmd) runLabelEnrich(ctx context.Context, deps *appDeps) error {
+func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	cfg, err := loadConfig(ctx, c.Config, false)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
@@ -176,14 +196,14 @@ func (c *EnrichCmd) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 
 // runSubdomainDraft calls the LLM to classify unclassified modules and writes
 // draft entries into .archfit-subdomains.yaml for human review.
-func (c *EnrichCmd) runSubdomainDraft(ctx context.Context, deps *appDeps) error {
+func (c *enrichFlags) runSubdomainDraft(ctx context.Context, deps *appDeps) error {
 	cfg, err := loadConfig(ctx, c.Config, false)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 	llmCfg, configured := cfg.LLM()
 	if !configured {
-		return &exitError{code: 3, msg: "error: enrich --subdomains needs ai configured (provider + model); see docs/guide/llm-enrich.md"}
+		return &exitError{code: 3, msg: "error: config enrich subdomain needs ai configured (provider + model); see docs/guide/llm-enrich.md"}
 	}
 
 	configDir := filepath.Dir(c.Config)
@@ -208,7 +228,7 @@ func (c *EnrichCmd) runSubdomainDraft(ctx context.Context, deps *appDeps) error 
 	sort.Slice(toClassify, func(i, j int) bool { return toClassify[i].Name < toClassify[j].Name })
 
 	if len(toClassify) == 0 {
-		_, _ = fmt.Fprintln(deps.Stdout, "enrich --subdomains: all modules already have subdomain set — nothing to draft")
+		_, _ = fmt.Fprintln(deps.Stdout, "config enrich subdomain: all modules already have subdomain set — nothing to draft")
 		return nil
 	}
 
@@ -250,14 +270,14 @@ func (c *EnrichCmd) runSubdomainDraft(ctx context.Context, deps *appDeps) error 
 	}
 
 	_, _ = fmt.Fprintf(deps.Stdout,
-		"enrich: %d draft subdomain(s) written to %s — review, set status: approved, then run enrich --subdomains --pin\n",
+		"enrich: %d draft subdomain(s) written to %s — review, set status: approved, then run config enrich subdomain --apply\n",
 		len(newDrafts), subdomainsPath)
 	return nil
 }
 
 // runSubdomainPin reads approved entries from .archfit-subdomains.yaml and
 // applies them into .archfit.yaml.
-func (c *EnrichCmd) runSubdomainPin(ctx context.Context, deps *appDeps) error {
+func (c *enrichFlags) runSubdomainPin(ctx context.Context, deps *appDeps, reviewedBy string) error {
 	configDir := filepath.Dir(c.Config)
 	subdomainsPath := filepath.Join(configDir, defaultSubdomainsPath)
 
@@ -294,9 +314,8 @@ func (c *EnrichCmd) runSubdomainPin(ctx context.Context, deps *appDeps) error {
 	}
 
 	// Build pins from approved drafts.
-	reviewedBy := c.ReviewedBy
 	if reviewedBy == "" {
-		reviewedBy = "enrich --subdomains"
+		reviewedBy = "config enrich subdomain"
 	}
 	reviewedAt := time.Now().UTC()
 	pins := make([]initcfg.SubdomainPin, 0, len(approved))

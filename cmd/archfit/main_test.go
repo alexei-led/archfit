@@ -111,6 +111,8 @@ const (
 	flagFull          = "--full"
 	flagRoot          = "--root"
 	cmdAnalyze        = "analyze"
+	cmdConfig         = "config" // config subcommand group (config init / config enrich …)
+	cmdEnrich         = "enrich" // config enrich subcommand (config enrich owner / subdomain / …)
 	cmdExplain        = "explain"
 	fmtJSON           = "--format=json"
 	flagGate          = "--gate"
@@ -429,7 +431,7 @@ func TestRun_Doctor(t *testing.T) {
 	}
 }
 
-func TestRun_Help_ShowsScan(t *testing.T) {
+func TestRun_Help_ShowsCommands(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	code := Run([]string{flagHelp}, &buf)
@@ -437,7 +439,7 @@ func TestRun_Help_ShowsScan(t *testing.T) {
 		t.Fatalf("expected exit 0 for --help, got %d", code)
 	}
 	out := buf.String()
-	for _, want := range []string{"Core feedback loop", "analyze", docsURL, ciDocsURL} {
+	for _, want := range []string{"Analysis", "Setup & config", "analyze", docsURL, ciDocsURL} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--help output missing %q; got:\n%s", want, out)
 		}

@@ -2,8 +2,8 @@
 
 archfit's gate is deterministic — the deterministic gate (`analyze` without
 `--llm`) never calls a model. LLM features are opt-in and off-gate: `analyze
---llm`, `init`/`update` classification, `enrich` labels and metadata,
-`autopilot`, and `explain --llm`. The gate (`analyze --gate`) only reads the
+--llm`, `config init`/`config update` classification, `config enrich` labels
+and metadata, and `explain --llm`. The gate (`analyze --gate`) only reads the
 final config and approved labels.
 
 ## Configuration
@@ -39,28 +39,30 @@ facts and it does not change the gate verdict.
 - If LLM config is missing, it exits `3`; that is a setup problem, not a gate
   failure.
 
-## init / update classification (subdomain, volatility, layer)
+## config init / config update classification (subdomain, volatility, layer)
 
-`init --llm` and `update --llm` suggest `subdomain`, `volatility`, `layer`, and
-`role` for discovered modules, plus a module-name improvement. They never touch
-coupling strength — that is `enrich`. (`role` declares a module's architectural
-role — `composition_root`, `adapter`, `core`, `shared_model`, `generated`, `test`
-— so a wiring/`cmd` package's fan-out reads as cohesion, not unbalanced coupling.)
+`config init --llm` and `config update --llm` suggest `subdomain`, `volatility`,
+`layer`, and `role` for discovered modules, plus a module-name improvement. They
+never touch coupling strength — that is `config enrich`. (`role` declares a
+module's architectural role — `composition_root`, `adapter`, `core`,
+`shared_model`, `generated`, `test` — so a wiring/`cmd` package's fan-out reads
+as cohesion, not unbalanced coupling.)
 
 Mode behavior:
 
-- `init` — structural scaffold only.
-- `init --llm` — suggestions emitted as commented-inert YAML
+- `config init` — structural scaffold only.
+- `config init --llm` — suggestions emitted as commented-inert YAML
   (`# subdomain: core  # llm-suggested — review and uncomment`); safe to gate on.
-- `init --llm --apply` — `subdomain`/`volatility`/`layer` written live; a name
-  suggestion stays a comment.
-- `update` — drift report, writes nothing.
-- `update --apply` — structural drift written live (added / path-drifted /
+- `config init --llm --apply` — `subdomain`/`volatility`/`layer` written live; a
+  name suggestion stays a comment.
+- `config update` — drift report, writes nothing.
+- `config update --apply` — structural drift written live (added / path-drifted /
   removed modules).
-- `update --llm` — drift report plus classification of unclassified modules.
-- `update --llm --apply` — structural drift + classification written live.
+- `config update --llm` — drift report plus classification of unclassified modules.
+- `config update --llm --apply` — structural drift + classification written live.
 
-`init --apply` requires `--llm`; `--apply` alone is valid only for `update`.
+`config init --apply` requires `--llm`; `--apply` alone is valid only for
+`config update`.
 
 ## Apply guardrails
 
@@ -92,7 +94,7 @@ re-run with `--apply`. Treat applied classifications as a reviewed starting poin
 `intrusive` (reaches into internals). The deterministic heuristic blanket-labels
 most edges `functional`.
 
-1. `archfit enrich` drafts into `.archfit-labels.yaml` (`status: draft` — inert).
+1. `archfit config enrich labels` drafts into `.archfit-labels.yaml` (`status: draft` — inert).
 2. A human reviews each draft: flip `status: approved` to pin, delete to reject.
    Never auto-approve drafts.
 3. `analyze --gate` consumes approved labels only and stays LLM-free.
@@ -108,30 +110,35 @@ Labels file (`.archfit-labels.yaml`) notes:
 - A malformed labels file fails `analyze` loudly (exit 3) — it never silently
   alters the gate.
 
-## enrich --subdomains / --owner / --volatility (draft → review → pin)
+## config enrich subdomain / owner / volatility (draft → review → apply)
 
 These modes draft module metadata the structural metrics depend on.
 
-- `enrich --subdomains` drafts `core` / `supporting` / `generic` into
+- `config enrich subdomain` drafts `core` / `supporting` / `generic` into
   `.archfit-subdomains.yaml`.
-- `enrich --owner` reads `CODEOWNERS` plus module paths into `.archfit-owners.yaml`.
-- `enrich --volatility` infers low / medium / high into `.archfit-volatility.yaml`.
-- `--pin` writes only `status: approved` entries into `modules.<name>` and never
+- `config enrich owner` reads `CODEOWNERS` plus module paths into `.archfit-owners.yaml`.
+- `config enrich volatility` infers low / medium / high into `.archfit-volatility.yaml`.
+- `--apply` writes only `status: approved` entries into `modules.<name>` and never
   overwrites a live field.
 
 Filling these makes distance and encapsulation metrics more honest; without them,
 `encapsulation` and `coupling_balance` may stay partly `n/a`. Never auto-pin
 without review.
 
-## autopilot — full config draft (review-only)
+## config init --llm — full config draft workflow
 
-`archfit autopilot` drafts an entire `.archfit.yaml` in one shot (structure,
-subdomain/volatility/layer/role, and a per-module owner), rendered in plan mode —
-every field commented. It writes a review file (`.archfit-autopilot.yaml`) and
-**refuses** to write `.archfit.yaml` directly (exit 3). Flags: `--root`/`-r`,
-`--config`/`-c`, `--output`/`-o` (`-` for stdout), `--llm-provider`,
-`--llm-model`, `--no-cache`. Review the draft, then move approved fields into the
-live config — autopilot applies nothing.
+For a one-shot full-config draft (structure + subdomain/volatility/layer/role +
+owner), redirect output to a review file:
+
+```sh
+archfit config init --llm --root . -o .archfit-draft.yaml
+```
+
+Without `--apply`, suggestions are written as commented-inert YAML — every field
+inert until you uncomment it. Review the draft, then either copy approved fields
+into the live config manually or re-run with `--apply` to write them live. Flags:
+`--root`/`-r`, `--output`/`-o` (`-` for stdout), `--llm-provider`, `--llm-model`,
+`--no-cache`.
 
 ## explain --llm
 
@@ -147,7 +154,6 @@ LLM modes can write repo-local drafts or cache:
 - `.archfit-subdomains.yaml`
 - `.archfit-owners.yaml`
 - `.archfit-volatility.yaml`
-- `.archfit-autopilot.yaml`
 - `.archfit-cache/llm/`
 
 Treat them as generated state. Review them before committing; prefer stdout or a
