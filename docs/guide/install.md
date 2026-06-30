@@ -32,8 +32,8 @@ archfit doctor
 - Rust analysis: `cargo` (normally from rustup) extracts the crate graph with
   `cargo metadata`.
 - Structural patterns: `sg` must be the ast-grep binary, not the util-linux `sg`.
-- Optional depth tools: SCIP indexers, `lizard`, `jscpd`, and `cargo-modules`
-  feed report-only metrics and lower `analysis_confidence` when absent.
+- Optional depth tools: SCIP indexers, `jscpd`, and `cargo-modules`
+  feed report-only metrics and coupling-balance edge-strength precision.
 
 ## Platform setup quick start
 
@@ -144,31 +144,31 @@ the official rustup installer from <https://rust-lang.org/tools/install/>.
 tools add intra-crate module depth (important for single-crate repos, which are one
 node at crate level):
 
-- **`cargo-modules`** (`tools.cargo-modules.enabled: on`) builds the intra-crate
+- **`cargo-modules`** (`analyzers.cargo_modules.enabled: true`) builds the intra-crate
   module graph (`<crate>::<mod>` nodes + `uses` edges):
 
   ```sh
   cargo install cargo-modules --version 0.26.0
   ```
 
-- **`rust-analyzer`** (`tools.scip.enabled: on`) adds symbol-level integration
+- **`rust-analyzer`** (`analyzers.scip.enabled: true`) adds symbol-level integration
   strength via `rust-analyzer scip`:
 
   ```sh
   rustup component add rust-analyzer
   ```
 
-With either on, per-file LOC/churn resolves to module granularity, so
-`structural_weight` flags god _files/modules_ (not just god crates) and the
-history metrics measure inside a single crate.
+With either on, per-file LOC resolves to module granularity, so size-based
+metrics cover individual modules rather than entire crates.
 
 ## Optional analysis tools
 
 These power report-only metrics and are off by default. Install them only when you
-enable the matching `tools.*` key in `.archfit.yaml`.
+enable the matching key in `.archfit.yaml` (`analyzers.*` or `languages.*`).
 
-- **SCIP** (powers `risk_hub` and symbol facts) — install the indexer for your
-  language plus `uv` for the embedded SCIP reader:
+- **SCIP** (improves `coupling_balance` edge-strength precision for TS/Py/Rust;
+  adds Rust module-level strength) — install the indexer for your language plus
+  `uv` for the embedded SCIP reader:
 
   ```sh
   go install github.com/sourcegraph/scip-go/cmd/scip-go@v0.2.7
@@ -177,29 +177,20 @@ enable the matching `tools.*` key in `.archfit.yaml`.
   rustup component add rust-analyzer
   ```
 
-  Enable with `tools.scip.enabled: on`. TypeScript also needs project dependencies
+  Enable with `analyzers.scip.enabled: true`. TypeScript also needs project dependencies
   installed (`npm ci` or `bun install`).
 
-- **Clone detection** (powers `functional_candidates`) — current extractor probes
-  `jscpd`:
+- **Clone detection** (`coupling_balance` symmetric-coupling signal) — current
+  extractor probes `jscpd`:
 
   ```sh
   npm install -g jscpd@5.0.11
   ```
 
-  Enable with `tools.clones.enabled: on`.
-
-- **Complexity** (powers `complexity`) — use the PyPI lizard complexity analyzer:
-
-  ```sh
-  uv tool install 'lizard==1.23.0'
-  ```
-
-  Enable with `tools.complexity.enabled: on`. Do **not** use `brew install lizard`;
-  Homebrew's `lizard` formula is a compression tool with the same command name.
+  Enable with `analyzers.clones.enabled: true`.
 
 When a tool is absent, the dependent metric reports `n/a` — the run never fails
-unless you opt in with `--require-tools` or `tools.<x>.gate: fail`.
+unless you opt in with `--require-tools` or `analyzers.<x>.gate: fail`.
 
 ## Docker
 
@@ -208,7 +199,7 @@ analysis tools on the host:
 
 ```sh
 docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.6.1 \
-  check --config /repo/.archfit.yaml --full
+  analyze --config /repo/.archfit.yaml --full
 ```
 
 The image bundles the `archfit` binary plus the full non-Rust analysis toolchain:

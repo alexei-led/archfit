@@ -13,8 +13,8 @@ import (
 
 // BlastRadiusMetric reports change-impact concentration: how many modules are
 // "hubs" whose change forces a wide transitive rebuild, and which ones. It is a
-// factual finding (report-only), not a quality verdict — a stable hub is fine; the
-// volatile-hub judgement belongs to change_amplification.
+// factual finding (report-only), not a quality verdict — a stable hub is fine.
+// Volatility is the book's coupling_balance concern, not this metric's.
 type BlastRadiusMetric struct{}
 
 // Name returns "blast_radius".
@@ -88,7 +88,10 @@ func blastDisplay(hubs []hubInfo, n int) string {
 		return fmt.Sprintf("0 change-impact hubs (%d modules)", n)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d change-impact hub(s): ", len(hubs))
+	// Report the count as a fraction of all modules so dilution is self-evident:
+	// "85 of 100 modules" reads as a structural property, not 85 distinct problems
+	// (a fixed 30% threshold flags many modules on large hierarchical graphs, F11).
+	fmt.Fprintf(&b, "%d of %d modules are change-impact hubs: ", len(hubs), n)
 	for i, h := range hubs {
 		if i == 5 {
 			fmt.Fprintf(&b, "+%d more", len(hubs)-5)

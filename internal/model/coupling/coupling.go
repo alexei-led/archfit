@@ -32,7 +32,7 @@ const (
 
 // Volatility classifies how likely a module's API is to change.
 // Per Khononov, volatility is derived from the DDD subdomain (core→high,
-// supporting→medium, generic→low) with an explicit per-module override.
+// supporting→low, generic→low) with an explicit per-module override.
 type Volatility string
 
 // Volatility constants derived from subdomain classification.

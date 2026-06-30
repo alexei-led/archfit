@@ -5,22 +5,22 @@ From the root of a repository:
 ```sh
 archfit init --root .
 $EDITOR .archfit.yaml
-archfit check --config .archfit.yaml --full
+archfit analyze --config .archfit.yaml --full
 ```
 
 Recommended first-run workflow:
 
 1. Generate `.archfit.yaml` with `archfit init`.
 2. Review modules, layers, public APIs, and generated rules.
-3. Run `archfit check --full` to see current findings.
+3. Run `archfit analyze --full` to see current findings (report-only, no gate).
 4. Keep early rules narrow while calibrating.
 5. Save accepted current findings with `archfit baseline --full`.
-6. Keep `gate` values aligned with the intended CI policy.
+6. Add `--gate` once you want CI to block on violations.
 
 Create a Markdown audit report:
 
 ```sh
-archfit scan --config .archfit.yaml > archfit-report.md
+archfit analyze --markdown --config .archfit.yaml > archfit-report.md
 ```
 
 If the current findings are accepted technical debt, save a baseline:

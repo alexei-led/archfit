@@ -359,9 +359,9 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 
 	for _, mod := range dc.Modules {
 		// A node builtin (fs, path, crypto, …) is never a first-party source
-		// file: skip its module entry entirely so it cannot leak into
-		// instability/abstractness/martin as a zone-of-pain module. Its inbound
-		// edges are already dropped on the dependency side (dep.CoreModule).
+		// file: skip its module entry entirely so it is not treated as a first-party
+		// module. Its inbound edges are already dropped on the dependency side
+		// (dep.CoreModule).
 		if mod.CoreModule {
 			continue
 		}
@@ -403,8 +403,8 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 			// uninstalled npm package, a path depcruise could not resolve, or a
 			// node builtin it failed to tag as core (common when node_modules is
 			// absent). Emit it as an external node so first-party metrics
-			// (martin instability/abstractness, blast radius) exclude it, while
-			// keeping the edge so dependency/fan-out counts stay complete.
+			// (blast_radius, coupling_balance) exclude it, while keeping the edge
+			// so dependency/fan-out counts stay complete.
 			nodeKind := graph.NodeKindFile
 			if dep.CouldNotResolve {
 				nodeKind = graph.NodeKindExternal

@@ -176,9 +176,9 @@ func TestMetricResult_DeltaOmitEmpty(t *testing.T) {
 
 func TestSummary_JSONFieldNames(t *testing.T) {
 	s := diagnostic.Summary{
-		GateFindings:   3,
-		Warnings:       1,
-		ExceptionsUsed: 2,
+		GateFindings: 3,
+		Warnings:     1,
+		WaiversUsed:  2,
 	}
 
 	data, err := json.Marshal(s)
@@ -191,7 +191,7 @@ func TestSummary_JSONFieldNames(t *testing.T) {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
 
-	for _, f := range []string{"gate_findings", "warnings", "exceptions_used"} {
+	for _, f := range []string{"gate_findings", "warnings", "waivers_used"} {
 		if _, ok := m[f]; !ok {
 			t.Errorf("Summary JSON field %q missing", f)
 		}
@@ -253,7 +253,7 @@ func TestCoverageGap_JSONFieldNames(t *testing.T) {
 func TestDiagnostic_CoverageGapsRoundTrip(t *testing.T) {
 	d := diagnostic.New()
 	d.CoverageGaps = []diagnostic.CoverageGap{
-		{Tool: "lizard", InstallCmd: "pip install lizard", AffectedMetrics: []string{"complexity"}, Gate: gateWarn},
+		{Tool: "jscpd", InstallCmd: "npm install -g jscpd", AffectedMetrics: []string{"blast_radius"}, Gate: gateWarn},
 	}
 	d.ConfigWarnings = []string{`module "internal/a" omits owner`}
 
@@ -267,10 +267,10 @@ func TestDiagnostic_CoverageGapsRoundTrip(t *testing.T) {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
 
-	if len(got.CoverageGaps) != 1 || got.CoverageGaps[0].Tool != "lizard" {
+	if len(got.CoverageGaps) != 1 || got.CoverageGaps[0].Tool != "jscpd" {
 		t.Errorf("CoverageGaps round-trip = %+v", got.CoverageGaps)
 	}
-	if got.CoverageGaps[0].AffectedMetrics[0] != "complexity" {
+	if got.CoverageGaps[0].AffectedMetrics[0] != "blast_radius" {
 		t.Errorf("AffectedMetrics round-trip = %v", got.CoverageGaps[0].AffectedMetrics)
 	}
 	if len(got.ConfigWarnings) != 1 || got.ConfigWarnings[0] != `module "internal/a" omits owner` {
@@ -336,9 +336,6 @@ func TestSyntaxFact_JSONFieldNames(t *testing.T) {
 		Exported:  true,
 		StartLine: 10,
 		EndLine:   25,
-		Role:      "handler",
-		RoleConf:  "high",
-		Evidence:  "signature http.ResponseWriter",
 		Framework: "net/http",
 	}
 
@@ -354,8 +351,7 @@ func TestSyntaxFact_JSONFieldNames(t *testing.T) {
 
 	required := []string{
 		"language", "file", "kind", "name",
-		"exported", "start_line", "end_line",
-		"role", "role_confidence", "role_evidence", "framework",
+		"exported", "start_line", "end_line", "framework",
 	}
 	for _, f := range required {
 		if _, ok := m[f]; !ok {
@@ -412,7 +408,7 @@ func TestDiagnostic_SyntaxFactsOmitWhenEmpty(t *testing.T) {
 	}
 
 	if _, ok := m["syntax_facts"]; ok {
-		t.Error("syntax_facts must be omitted when nil (sg absent / tools.syntax off)")
+		t.Error("syntax_facts must be omitted when nil (sg absent / analyzers.syntax off)")
 	}
 }
 

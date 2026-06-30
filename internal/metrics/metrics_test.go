@@ -12,20 +12,20 @@ import (
 // ---------------------------------------------------------------------------
 
 const (
-	metricChangeLocality = "change_locality"
-	metricRiskHub        = "risk_hub"
+	metricBlastRadius = "blast_radius"
+	metricCoverage    = "coverage"
 )
 
 func TestNew_ReturnsAllMetrics(t *testing.T) {
 	ms := metrics.New(config.Config{})
-	if len(ms) != 27 {
-		t.Errorf("expected 27 metrics got %d", len(ms))
+	if len(ms) != 5 {
+		t.Errorf("expected 5 metrics got %d", len(ms))
 	}
 	names := make(map[string]bool)
 	for _, m := range ms {
 		names[m.Name()] = true
 	}
-	for _, want := range []string{"encapsulation", "unbalanced_edge", "cycle", "coverage", "blast_radius", "cohesion_lcom", "change_amplification", "hidden_coupling", "structural_weight", "file_structural_weight", "unsafe_density", "global_state_density", "panic_density", "test_density", "struct_field_density", "complexity", metricRiskHub, "architecture_fitness", "functional_candidates", metricChangeLocality, "instability", "abstractness", "martin_distance", "propagation_cost", "change_coupling", "deprecated_dep_count", "file_mutual_import"} {
+	for _, want := range []string{"encapsulation", "unbalanced_edge", "cycle", metricCoverage, metricBlastRadius} {
 		if !names[want] {
 			t.Errorf("missing metric %q", want)
 		}
@@ -36,16 +36,16 @@ func TestNew_ReturnsAllMetrics(t *testing.T) {
 // removes the metric while unconfigured metrics stay enabled.
 func TestNew_ExplicitDisableHonored(t *testing.T) {
 	cfg := config.Config{Metrics: map[string]config.MetricEntry{
-		"risk_hub":           {Enabled: false},
-		metricChangeLocality: {Enabled: false},
-		"cycle":              {Enabled: true},
+		"blast_radius": {Enabled: false},
+		"coverage":     {Enabled: false},
+		"cycle":        {Enabled: true},
 	}}
 	ms := metrics.New(cfg)
-	if len(ms) != 25 {
-		t.Fatalf("expected 25 metrics (27 - 2 disabled), got %d", len(ms))
+	if len(ms) != 3 {
+		t.Fatalf("expected 3 metrics (5 - 2 disabled), got %d", len(ms))
 	}
 	for _, m := range ms {
-		if m.Name() == metricRiskHub || m.Name() == metricChangeLocality {
+		if m.Name() == "blast_radius" || m.Name() == "coverage" {
 			t.Errorf("disabled metric %q still registered", m.Name())
 		}
 	}

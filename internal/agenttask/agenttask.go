@@ -13,7 +13,7 @@ import (
 )
 
 // Build returns one AgentTask per active gate finding (status new or
-// expired_exception). Advisory findings never produce tasks — they are
+// expired_waiver). Advisory findings never produce tasks — they are
 // signals, not orders.
 //
 // ruleTypes maps rule ID → rule type (drives the goal template).
@@ -48,7 +48,7 @@ func Build(
 		if f.Kind != "gate" {
 			continue
 		}
-		if f.Status != finding.StatusNew && f.Status != finding.StatusExpiredExcept {
+		if f.Status != finding.StatusNew && f.Status != finding.StatusExpiredWaiver {
 			continue
 		}
 		files := filesFor(f)

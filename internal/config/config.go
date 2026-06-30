@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -16,24 +17,32 @@ import (
 )
 
 // Config is the parsed and validated content of an archfit.yaml file.
+//
+// Top-level layout (see docs/guide/configuration-reference.md):
+//   - exclude        — path globs to skip during scanning
+//   - languages      — per-language extractor settings (go/typescript/python/rust)
+//   - analyzers      — opt-in deeper analysis backends (syntax/scip/complexity/…)
+//   - ai             — off-gate LLM provider for enrich/explain
+//   - coupling       — Balanced-Coupling advisory tuning
+//   - layers/modules — the architecture map
+//   - rules/waivers  — gates and their approved deviations
+//   - module_review  — staleness gating of the module declarations
+//   - file_class / outputs — classification overrides and output formats
 type Config struct {
-	Version                  int                  `yaml:"version"`
-	Modules                  map[string]ModuleDef `yaml:"modules"`
-	Layers                   []string             `yaml:"layers"`
-	Rules                    []RuleDef            `yaml:"rules"`
-	Exclusions               []string             `yaml:"exclusions"`
-	Tools                    ToolsConfig          `yaml:"tools"`
-	Metrics                  MetricsConfig        `yaml:"metrics"`
-	Exceptions               []ExceptionDef       `yaml:"exceptions"`
-	MapReview                MapReviewConfig      `yaml:"map_review"`
-	Outputs                  OutputsConfig        `yaml:"outputs"`
-	PythonPackage            string               `yaml:"python_package"`             // top-level Python package name for grimp
-	RustManifest             string               `yaml:"rust_manifest"`              // path to Cargo.toml (empty = auto, root manifest)
-	RustFeatures             []string             `yaml:"rust_features"`              // cargo features to activate for metadata
-	RustIncludeDevDeps       bool                 `yaml:"rust_include_dev_deps"`      // include dev-dependencies as crate edges
-	BCAdvisoryMinSeverity    string               `yaml:"bc_advisory_min_severity"`   // minimum severity to emit BC coupling advisories: low|medium|high|critical (default: low)
-	VolatilityCascadeEnabled bool                 `yaml:"volatility_cascade_enabled"` // propagate high volatility across strongly-coupled module pairs (book Ch9)
-	FileClass                FileClassDef         `yaml:"file_class"`                 // optional: custom patterns for test/generated/mock classification
+	Version      int                  `yaml:"version"`
+	Exclude      []string             `yaml:"exclude"`
+	Languages    LanguagesConfig      `yaml:"languages"`
+	Analyzers    AnalyzersConfig      `yaml:"analyzers"`
+	AI           AIConfig             `yaml:"ai"`
+	Coupling     CouplingConfig       `yaml:"coupling"`
+	Layers       []string             `yaml:"layers"`
+	Modules      map[string]ModuleDef `yaml:"modules"`
+	Rules        []RuleDef            `yaml:"rules"`
+	Waivers      []WaiverDef          `yaml:"waivers"`
+	Metrics      MetricsConfig        `yaml:"metrics"`
+	ModuleReview ModuleReviewConfig   `yaml:"module_review"`
+	FileClass    FileClassDef         `yaml:"file_class"`
+	Outputs      OutputsConfig        `yaml:"outputs"`
 
 	// explicitOwners records which modules had a hand-authored `owner:` in YAML,
 	// populated by Load before any resolver fill. Distinguishes a user's explicit
@@ -53,7 +62,7 @@ func Load(_ context.Context, path string) (Config, error) {
 	var cfg Config
 	dec := yaml.NewDecoder(bytes.NewReader(data), yaml.DisallowUnknownField())
 	if err := dec.Decode(&cfg); err != nil {
-		return Config{}, fmt.Errorf("config: decode %q: %w", path, err)
+		return Config{}, fmt.Errorf("config: decode %q: %w", path, deprecatedConfigHint(err))
 	}
 
 	if err := validate(cfg); err != nil {
@@ -70,6 +79,24 @@ func Load(_ context.Context, path string) (Config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+// deprecatedConfigHint augments a strict-decode failure with v0.x→v1.0 migration
+// guidance when the unknown field is a key renamed or removed before v1.0. The raw
+// "unknown field" error is kept (it quotes the line); the hint tells the user what
+// to change. Removed `metrics` map keys are caught later in validate() instead,
+// since a map key is not an "unknown field" at decode time.
+func deprecatedConfigHint(err error) error {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, `unknown field "tools"`):
+		return fmt.Errorf("%w\nhint: `tools:` was renamed to `analyzers:` in v1.0 (and `analyzers.complexity` was removed); see docs/guide/migration.md", err)
+	case strings.Contains(msg, `unknown field "complexity"`):
+		return fmt.Errorf("%w\nhint: `analyzers.complexity` was removed in v1.0 (gocyclo/lizard backends dropped); see docs/guide/migration.md", err)
+	case strings.Contains(msg, `unknown field "gitnexus"`):
+		return fmt.Errorf("%w\nhint: gitnexus integration was removed in v1.0; remove the key (see docs/guide/migration.md)", err)
+	}
+	return err
 }
 
 // WithExplicitOwners marks the named modules as having hand-authored owners and
@@ -91,31 +118,51 @@ func (c Config) WithExplicitOwners(modules ...string) Config {
 	return c
 }
 
-// bcSeverities are the accepted bc_advisory_min_severity values (low→critical).
+// bcSeverities are the accepted coupling.min_severity values (low→critical).
 var bcSeverities = map[string]struct{}{"low": {}, "medium": {}, "high": {}, "critical": {}}
 
 // gateValues are the accepted gate policy markers (spec §rules: off | warn | fail),
-// shared by rule, metric, and map_review gates. Empty means "use the default".
+// shared by rule, metric, and module_review gates. Empty means "use the default".
 var gateValues = map[string]struct{}{"off": {}, "warn": {}, "fail": {}}
 
+// knownMetrics is the set of metric keys archfit implements. `metrics` is a map,
+// so unknown keys escape DisallowUnknownField — validate() rejects them so a typo
+// or a removed metric is a loud config error, not a silent no-op (consistency with
+// the strict `analyzers` struct).
+var knownMetrics = map[string]struct{}{
+	"encapsulation": {}, "unbalanced_edge": {}, "cycle": {}, "coverage": {}, "blast_radius": {},
+}
+
+// removedConfigKeys maps config keys removed before v1.0 to a short reason, so a
+// stale config gets an actionable error pointing at the migration guide rather than
+// a generic "unknown metric". Top-level renames (tools→analyzers) and removed
+// struct fields (analyzers.complexity) are caught at decode time by
+// deprecatedConfigHint instead.
+var removedConfigKeys = map[string]string{
+	"risk_hub":              "removed in v1.0",
+	"functional_candidates": "removed in v1.0",
+	"complexity":            "removed in v1.0 (gocyclo/lizard backends dropped)",
+	"gitnexus":              "removed in v1.0 (gitnexus integration dropped)",
+}
+
 // validate checks required config fields. An invalid enum is a hard error rather
-// than a silent skip: a typo in bc_advisory_min_severity or a gate must not
+// than a silent skip: a typo in coupling.min_severity or a gate must not
 // quietly disable the check it was meant to configure.
 func validate(cfg Config) error {
 	if cfg.Version <= 0 {
 		return fmt.Errorf("version must be > 0 (got %d)", cfg.Version)
 	}
-	if t, ok := cfg.Tools[ToolLLM]; ok && t.Provider != "" {
-		if _, valid := LLMProviders[t.Provider]; !valid {
-			return fmt.Errorf("tools.llm.provider %q is not one of: anthropic, openai, ollama", t.Provider)
+	if cfg.AI.Provider != "" {
+		if _, valid := LLMProviders[cfg.AI.Provider]; !valid {
+			return fmt.Errorf("ai.provider %q is not one of: anthropic, openai, ollama", cfg.AI.Provider)
 		}
-		if t.Model == "" {
-			return errors.New("tools.llm.model is required when tools.llm.provider is set")
+		if cfg.AI.Model == "" {
+			return errors.New("ai.model is required when ai.provider is set")
 		}
 	}
-	if s := cfg.BCAdvisoryMinSeverity; s != "" {
+	if s := cfg.Coupling.MinSeverity; s != "" {
 		if _, ok := bcSeverities[s]; !ok {
-			return fmt.Errorf("bc_advisory_min_severity %q is not one of: low, medium, high, critical", s)
+			return fmt.Errorf("coupling.min_severity %q is not one of: low, medium, high, critical", s)
 		}
 	}
 	for _, name := range sortedKeys(cfg.Modules) {
@@ -135,28 +182,32 @@ func validate(cfg Config) error {
 		}
 	}
 	for _, name := range sortedMetricKeys(cfg.Metrics) {
+		if reason, removed := removedConfigKeys[name]; removed {
+			return fmt.Errorf("metrics.%s was %s — remove it (see docs/guide/migration.md)", name, reason)
+		}
+		if _, ok := knownMetrics[name]; !ok {
+			return fmt.Errorf("metrics.%s is not a known metric (known: blast_radius, coverage, cycle, encapsulation, unbalanced_edge); see docs/guide/migration.md", name)
+		}
 		if err := validateGate("metrics."+name, cfg.Metrics[name].Gate); err != nil {
 			return err
 		}
 	}
-	for _, name := range sortedToolKeys(cfg.Tools) {
-		if err := validateGate("tools."+name, string(cfg.Tools[name].Gate)); err != nil {
+	for _, t := range cfg.toolEntries() {
+		if err := validateGate(t.path, string(t.gate)); err != nil {
 			return err
 		}
-	}
-	if s := cfg.MapReview.StaleAfter; s != "" {
-		if _, err := time.ParseDuration(s); err != nil {
-			return fmt.Errorf("map_review.stale_after %q is not a valid Go duration (e.g. 720h, 30m): %w", s, err)
-		}
-	}
-	for _, name := range sortedToolKeys(cfg.Tools) {
-		if s := cfg.Tools[name].Timeout; s != "" {
-			if _, err := time.ParseDuration(s); err != nil {
-				return fmt.Errorf("tools.%s.timeout %q is not a valid Go duration (e.g. 5m, 10m30s): %w", name, s, err)
+		if t.timeout != "" {
+			if _, err := time.ParseDuration(t.timeout); err != nil {
+				return fmt.Errorf("%s.timeout %q is not a valid Go duration (e.g. 5m, 10m30s): %w", t.path, t.timeout, err)
 			}
 		}
 	}
-	if err := validateGate("map_review", cfg.MapReview.Gate); err != nil {
+	if s := cfg.ModuleReview.StaleAfter; s != "" {
+		if _, err := time.ParseDuration(s); err != nil {
+			return fmt.Errorf("module_review.stale_after %q is not a valid Go duration (e.g. 720h, 30m): %w", s, err)
+		}
+	}
+	if err := validateGate("module_review", cfg.ModuleReview.Gate); err != nil {
 		return err
 	}
 	return validateFileClass(cfg.FileClass)
@@ -214,30 +265,42 @@ func sortedMetricKeys(m MetricsConfig) []string {
 	return keys
 }
 
-// sortedToolKeys returns tool names in sorted order so gate validation reports a
-// deterministic first offender when multiple tools carry an invalid gate.
-func sortedToolKeys(m ToolsConfig) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // Default returns a Config suitable for use when no archfit.yaml is present.
-// All tool modes are auto, BC advisory minimum severity is medium, and no
-// modules, layers, or rules are defined — only metric checks run.
+// All language modes are auto, coupling advisory minimum severity is medium, and
+// no modules, layers, or rules are defined — only metric checks run.
 func Default() Config {
 	return Config{
-		Version:               1,
-		BCAdvisoryMinSeverity: "medium",
-		Tools: map[string]ToolConfig{
-			LangGo:         {Enabled: ModeAuto},
-			LangTypeScript: {Enabled: ModeAuto},
-			LangPython:     {Enabled: ModeAuto},
-			LangRust:       {Enabled: ModeAuto},
+		Version:  1,
+		Coupling: CouplingConfig{MinSeverity: "medium"},
+		Languages: LanguagesConfig{
+			Go:         GoLanguage{Enabled: ModeAuto},
+			TypeScript: TypeScriptLanguage{Enabled: ModeAuto},
+			Python:     PythonLanguage{Enabled: ModeAuto},
+			Rust:       RustLanguage{Enabled: ModeAuto},
 		},
+	}
+}
+
+// toolEntry is one language/analyzer entry for validation: its dotted YAML path,
+// coverage gate, and optional subprocess timeout (empty when not applicable).
+type toolEntry struct {
+	path    string
+	gate    GateMode
+	timeout string
+}
+
+// toolEntries lists every language and analyzer in deterministic order so gate
+// and timeout validation report a stable first offender.
+func (c Config) toolEntries() []toolEntry {
+	return []toolEntry{
+		{"languages.go", c.Languages.Go.Gate, ""},
+		{"languages.typescript", c.Languages.TypeScript.Gate, ""},
+		{"languages.python", c.Languages.Python.Gate, ""},
+		{"languages.rust", c.Languages.Rust.Gate, ""},
+		{"analyzers.syntax", c.Analyzers.Syntax.Gate, ""},
+		{"analyzers.scip", c.Analyzers.Scip.Gate, c.Analyzers.Scip.Timeout},
+		{"analyzers.clones", c.Analyzers.Clones.Gate, c.Analyzers.Clones.Timeout},
+		{"analyzers.cargo_modules", c.Analyzers.CargoModules.Gate, ""},
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -116,17 +117,14 @@ func loadConfig(ctx context.Context, path string, noConfig bool) (config.Config,
 // whatever the config file (or Default) provided.
 func applyFlagOverrides(cfg *config.Config, severity string, lang []string) error {
 	if severity != "" {
-		cfg.BCAdvisoryMinSeverity = severity
+		cfg.Coupling.MinSeverity = severity
 	}
 	for _, key := range lang {
 		canonical := languageByAlias(key)
 		if canonical == "" {
 			return fmt.Errorf("--lang: unknown analyzer %q; see %s", key, languagesDocsURL)
 		}
-		if cfg.Tools == nil {
-			cfg.Tools = make(map[string]config.ToolConfig)
-		}
-		cfg.Tools[canonical] = config.ToolConfig{Enabled: config.ModeOn}
+		cfg.SetToolMode(canonical, config.ModeOn)
 	}
 	return nil
 }
@@ -164,5 +162,20 @@ func verdictToError(v diagnostic.Verdict) error {
 		return &exitError{code: 2}
 	default:
 		return nil
+	}
+}
+
+// printConfigLint writes config-quality warnings to w (stderr). It is silent
+// when there are none. The header explains why under-specified modules matter,
+// then one line per module names the omitted fields. Deterministic; advisory.
+func printConfigLint(w io.Writer, warnings []config.LintWarning) {
+	if len(warnings) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "config-quality: %d module(s) under-specified — "+
+		"degrades distance/volatility classification (can cause BC advisory floods):\n",
+		len(warnings))
+	for _, warn := range warnings {
+		_, _ = fmt.Fprintf(w, "  - %s\n", warn.String())
 	}
 }

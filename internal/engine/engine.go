@@ -20,7 +20,6 @@ import (
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/status"
-	"github.com/alexei-led/archfit/internal/syntax"
 )
 
 // Mode controls how the engine run behaves.
@@ -40,7 +39,7 @@ type RunInput struct {
 	Scope       scope.Scope
 	Classify    config.ClassifyConfig
 	Staleness   config.StalenessConfig
-	Exceptions  config.ExceptionSet
+	Waivers     config.WaiverSet
 	Extractors  []ports.Extractor
 	Patterns    ports.PatternProvider
 	PatternCfg  config.PatternConfig
@@ -111,11 +110,10 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	ex.coverages = append(ex.coverages, ppCov)
 
 	// --- Stage 2b: Syntax facts ---
-	// Collect syntactic declarations and route registrations (ast-grep rules).
-	// Derive roles, build NodeRoleIndex for rule consumption — all before the
-	// rules stage. Off-gate: facts populate the report but never affect the verdict.
+	// Collect syntactic declarations and route registrations (ast-grep rules)
+	// before the rules stage. Off-gate: facts populate the report (consumed by
+	// public_api_*) but never affect the verdict.
 	var syntaxFacts []diagnostic.SyntaxFact
-	var nodeRoleIndex *syntax.NodeRoleIndex
 	if in.SyntaxCfg.Enabled {
 		if in.Syntax == nil {
 			return diagnostic.New(), errors.New("engine: SyntaxCfg.Enabled=true but no Syntax provider")
@@ -124,14 +122,13 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		if synErr != nil {
 			return diagnostic.New(), synErr
 		}
-		syntaxFacts = syntax.DeriveRoles(sf)
+		syntaxFacts = sf
 		// Backfill Module from ModuleMap — uniform across all languages,
 		// no per-language branching. Files outside declared modules get an
 		// empty Module (legitimate: a script in the repo root, for example).
 		for i := range syntaxFacts {
 			syntaxFacts[i].Module, _ = in.Classify.ModuleMap.ModuleFor(syntaxFacts[i].File)
 		}
-		nodeRoleIndex = syntax.BuildNodeRoleIndex(ex.g, syntaxFacts)
 		ex.coverages = append(ex.coverages, synCov)
 	}
 
@@ -178,18 +175,15 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Call each rule once with the full evidence set. Rules iterate edges internally;
 	// the Evidence carries all pattern matches so each rule can filter by edge's from-file.
 	var rawFindings []finding.Finding
-	allPatternMatches := rules.Evidence{PatternMatches: patternMatches, Roles: nodeRoleIndex, SyntaxFacts: syntaxFacts}
+	allPatternMatches := rules.Evidence{PatternMatches: patternMatches, SyntaxFacts: syntaxFacts}
 	for _, r := range in.Rules {
 		rawFindings = append(rawFindings, r.Check(ex.g, allPatternMatches)...)
 	}
 
 	// --- Stage 5: Status ---
-	taggedFindings := status.Assign(rawFindings, in.Accepted, in.Exceptions, in.Now, "gate")
+	taggedFindings := status.Assign(rawFindings, in.Accepted, in.Waivers, in.Now, finding.KindGate)
 
 	// --- Stage 6: Metrics ---
-	// Compute per-file dependant counts from the SCIP symbol graph once; feeds
-	// both risk_hub (via SymbolSignals) and the structural-facts block below.
-	symbolDependants := symbol.DependantsFromSymbolGraph(ex.scipSymbols)
 	collected := signal.CollectedSignals{
 		Common: signal.CommonInput{
 			Graph:           ex.g,
@@ -201,11 +195,8 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 			SyntaxFacts:     syntaxFacts,
 			DeprecatedDeps:  in.Signals.DeprecatedDeps,
 		},
-		History:     in.Signals.History,
-		Symbol:      signal.SymbolSignals{Graph: ex.scipSymbols, SymbolDependants: symbolDependants},
+		Symbol:      signal.SymbolSignals{Graph: ex.scipSymbols},
 		Size:        in.Signals.Size,
-		Complexity:  in.Signals.Complexity,
-		Fitness:     in.Signals.Fitness,
 		Duplication: in.Signals.Duplication,
 	}
 	metricResults := make([]diagnostic.MetricResult, 0, len(in.Metrics))
@@ -229,7 +220,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	var baseFindings []finding.Finding
 	var ruleAdvisoryFindings []finding.Finding
 	for _, f := range ev.resolvedFindings {
-		if f.Kind == "advisory" {
+		if f.Kind == finding.KindAdvisory {
 			ruleAdvisoryFindings = append(ruleAdvisoryFindings, f)
 			advisoryFindings = append(advisoryFindings, f)
 		} else {
@@ -240,21 +231,21 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Gate findings: kind=="gate" and not fixed.
 	var gateFindings []finding.Finding
 	for _, f := range baseFindings {
-		if f.Kind == "gate" && f.Status != finding.StatusFixed {
+		if f.Kind == finding.KindGate && f.Status != finding.StatusFixed {
 			gateFindings = append(gateFindings, f)
 		}
 	}
 
 	// Summary counts.
-	var exceptionsUsed int
+	var waiversUsed int
 	for _, f := range baseFindings {
-		if f.Status == finding.StatusExcepted {
-			exceptionsUsed++
+		if f.Status == finding.StatusWaived {
+			waiversUsed++
 		}
 	}
 	gateNew := 0
 	for _, f := range gateFindings {
-		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept {
+		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver {
 			gateNew++
 		}
 	}
@@ -287,9 +278,9 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	}
 
 	// Neutral structural-facts block (Tranche 1.5): assembled from the symbol
-	// graph + change history, attached as report-only evidence. Never read by
+	// graph and file LOC, attached as report-only evidence. Never read by
 	// computeVerdict or any gate logic. Empty when SCIP is off/absent.
-	fileFacts := facts.Build(ex.scipSymbols, in.Signals.Size.FileLOC, in.Signals.History.CoChange, symbolDependants)
+	fileFacts := facts.Build(ex.scipSymbols, in.Signals.Size.FileLOC)
 
 	// Dynamic/lazy-import risk (Task 9): report-only evidence rolled up per module.
 	// Dynamic imports are invisible to the static graph, so they hide cycles and
@@ -324,9 +315,9 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		ClassifiedEdges:       classifiedEdges,
 		Delta:                 delta,
 		Summary: diagnostic.Summary{
-			GateFindings:   gateNew,
-			Warnings:       warnings,
-			ExceptionsUsed: exceptionsUsed,
+			GateFindings: gateNew,
+			Warnings:     warnings,
+			WaiversUsed:  waiversUsed,
 		},
 	}
 
@@ -429,7 +420,7 @@ func resolveEvidence(
 
 // computeVerdict derives the overall verdict from gate findings, metric results,
 // and active rule-advisory findings (gate: warn).
-//   - Any gate finding with status new or expired_exception → fail
+//   - Any gate finding with status new or expired_waiver → fail
 //   - Any metric with delta != nil && *delta < 0 → warn (if not already fail)
 //   - Any active rule-advisory finding (activeRuleAdvisories > 0) → warn (if not already fail)
 //   - Otherwise → pass
@@ -438,7 +429,7 @@ func resolveEvidence(
 // must not flip the verdict.
 func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult, activeRuleAdvisories int) diagnostic.Verdict {
 	for _, f := range gateFindings {
-		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept {
+		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver {
 			return diagnostic.VerdictFail
 		}
 	}

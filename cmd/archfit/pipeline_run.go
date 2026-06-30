@@ -13,14 +13,12 @@ import (
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/extract/astgrep"
 	"github.com/alexei-led/archfit/internal/extract/clones"
-	"github.com/alexei-led/archfit/internal/extract/complexity"
 	"github.com/alexei-led/archfit/internal/extract/deployunit"
 	"github.com/alexei-led/archfit/internal/extract/dynimports"
 	"github.com/alexei-led/archfit/internal/extract/loc"
 	"github.com/alexei-led/archfit/internal/extract/manifest"
 	runtimedetect "github.com/alexei-led/archfit/internal/extract/runtime"
 	"github.com/alexei-led/archfit/internal/extract/scip"
-	"github.com/alexei-led/archfit/internal/fitness"
 	"github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/metrics"
@@ -34,8 +32,8 @@ import (
 )
 
 // cloneTestGenGlobs are coarse jscpd --ignore patterns that skip test and
-// generated files at scan time. These are additive speed hints; the post-filter
-// in functional_candidates.go is the authoritative correctness gate.
+// generated files at scan time. These are additive speed hints; correctness
+// is enforced by the clone post-filter in the classify stage.
 var cloneTestGenGlobs = []string{
 	"**/*_test.go",
 	"**/*_test.ts",
@@ -95,7 +93,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// (additive — see scope.MergeExclusions) before projecting any view, so every
 	// extractor inherits them. Keeps archfit from measuring its own tool outputs
 	// (.gitnexus, reports, .archfit-cache) or vendored/dependency trees.
-	cfg.Exclusions = scope.MergeExclusions(cfg.Exclusions)
+	cfg.Exclude = scope.MergeExclusions(cfg.Exclude)
 	sc := cfg.ForScope()
 	sc.WorkDir = scanDir
 	// Wire the explicit --root argument so scope.Resolve uses it as the
@@ -107,6 +105,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	sc.Root = root
 	sc.Base = mode.Base
 	sc.Full = mode.Full
+	deps.reportPhase("Discovering project")
 	s, err := scope.Resolve(ctx, sc, gitResolver{workDir: scanDir, runner: deps.Runner})
 	if err != nil {
 		return diagnostic.Diagnostic{}, err
@@ -118,7 +117,6 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	if err != nil {
 		return diagnostic.Diagnostic{}, err
 	}
-	// risk_hub reads hand-authored volatility only (never git churn).
 	ms := append(metrics.New(cfg), extraMetrics...)
 
 	// toolWarnings collects the exceptional, non-nil errors from the optional
@@ -149,34 +147,17 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		}
 	}
 
-	// Recent git history (cheap; runs by default): per-file churn drives module
-	// volatility (unbalanced_edge, BC severity) and the modularity metrics
-	// (change_amplification, hidden_coupling). Hand-authored volatility/subdomain
-	// config always wins; a non-git repo leaves these signals empty.
-	// Run history at the git toplevel (GitRoot) scoped to the analysis subtree
-	// (SubtreePrefix), so returned paths are ScanRoot-relative. Falls back to
-	// s.Root when GitRoot is empty (non-git run: History returns absent).
+	deps.reportPhase("Collecting facts")
 	change := signal.RunSignals{}
-	histWorkDir := s.GitRoot
-	if histWorkDir == "" {
-		histWorkDir = s.Root
-	}
-	if churn, coChange, commitCount, _, herr := git.History(ctx, histWorkDir, s.SubtreePrefix, deps.Runner); herr == nil {
-		change.History.FileChurn, change.History.CoChange = churn, coChange
-		change.History.CommitCount = commitCount
-	}
 
 	// LOC walk — repo-relative path→line-count map + coverage record.
-	// ExtraCoverage order: loc, complexity, clones.
+	// ExtraCoverage order: loc, clones.
 	var locCov diagnostic.Coverage
 	var toolErr error
 	fileCfg := cfg.ForFileClass()
 	change.Size.FileLOC, change.Size.FileClassIndex, locCov, toolErr = loc.RunWithConfig(s.Root, fileCfg)
 	noteToolErr("loc", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, locCov)
-
-	// Architecture-fitness enforcement signals (deterministic FS scan; always runs).
-	change.Fitness = fitness.Detect(s.Root)
 
 	// Dynamic/lazy import detection (deterministic FS scan; always runs): Python
 	// non-top-level imports + importlib/__import__, TS require()/dynamic import().
@@ -185,7 +166,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 
 	// Manifest deprecation markers (go.mod retract, package.json deprecated).
 	// Report-only — never modifies the graph, metric verdict, or gate.
-	// Ceiling: cargo yanked and live EOL are not locally declarable — use archfit review/enrich.
+	// Ceiling: cargo yanked and live EOL are not locally declarable — use archfit analyze --llm / enrich.
 	change.DeprecatedDeps = manifest.Scan(s.Root)
 
 	// Runtime async-bridge detection (deterministic FS scan + optional ast-grep).
@@ -215,8 +196,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 			break
 		}
 	}
+	// ownerSource records where owners came from for the diagnostic's owner_source
+	// (distance-confidence signal). "config" = every path-owning module declared an
+	// owner, so no resolution was needed.
+	ownerSource := "config"
 	if needsOwnerResolution {
-		cfg.FillMissingOwners(ownership.Resolve(ctx, s.Root, cfg.ModuleMapView(), deps.Runner))
+		resolved, src := ownership.Resolve(ctx, s.Root, s.GitRoot, s.SubtreePrefix, cfg.ModuleMapView(), deps.Runner)
+		cfg.FillMissingOwners(resolved)
+		ownerSource = string(src)
 	}
 
 	// Deploy-unit detection: fills module deploy_unit gaps from static repo
@@ -228,29 +215,13 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	duModules := cfg.ModuleMapView()
 	cfg.FillMissingDeployUnits(deployunit.KeyByModule(deployunit.Detect(ctx, s.Root, duModules, deps.Runner), duModules))
 
-	// Cyclomatic complexity — opt-in (tools.complexity.enabled: on).
-	// Backend: auto (default) = gocyclo(Go) + ast-grep proxy(TS/Py/Rust); lizard =
-	// exact multi-language CCN (re-pins Python). Coverage carries zero file counts.
-	// Config excludes + scope defaults are forwarded to lizard's -x flags so it
-	// skips the same paths that all other extractors skip.
-	// cfg.Exclusions was already merged (scope.MergeExclusions) at the top of this
-	// function — do NOT call MergeExclusions again here. A second call re-seeds
-	// from DefaultExclusions on the already-merged list (which no longer contains
-	// the user's !-prefixed re-include markers), silently re-adding defaults the
-	// user intentionally negated (e.g. !testdata, !reports).
-	complexityExcl := cfg.Exclusions
-	var complexityCov diagnostic.Coverage
-	change.Complexity.Funcs, complexityCov, toolErr = complexity.Run(ctx, deps.Runner, s.Root, cfg.ComplexityEnabled(), cfg.ComplexityBackend(), cfg.ToolTimeout(config.ToolComplexity), complexityExcl, fileCfg, change.Size.FileClassIndex)
-	noteToolErr("complexity", toolErr)
-	change.ExtraCoverage = append(change.ExtraCoverage, complexityCov)
-
-	// Clone detection — opt-in (tools.clones.enabled: on). Run returns empty+absent
+	// Clone detection — opt-in (analyzers.clones.enabled: true). Run returns empty+absent
 	// when disabled or the tool is missing; the metric reports n/a in that case.
 	// Append coarse test/generated globs to the exclusions so jscpd skips those
-	// files at scan time (speed). The post-filter in functional_candidates.go is
-	// the source-of-truth for correctness; these globs are additive.
-	clonesExcl := make([]string, len(cfg.Exclusions), len(cfg.Exclusions)+len(cloneTestGenGlobs))
-	copy(clonesExcl, cfg.Exclusions)
+	// files at scan time (speed); correctness is enforced by the clone post-filter
+	// in the classify stage. These globs are additive to cfg.Exclude.
+	clonesExcl := make([]string, len(cfg.Exclude), len(cfg.Exclude)+len(cloneTestGenGlobs))
+	copy(clonesExcl, cfg.Exclude)
 	clonesExcl = append(clonesExcl, cloneTestGenGlobs...)
 	var clonesCov diagnostic.Coverage
 	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled(), cfg.ToolTimeout(config.ToolClones), clonesExcl)
@@ -265,7 +236,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		return diagnostic.Diagnostic{}, err
 	}
 
-	// SCIP symbol-level strength is opt-in (tools.scip.enabled: on): the indexer is
+	// SCIP symbol-level strength is opt-in (analyzers.scip.enabled: true): the indexer is
 	// whole-repo and slow, so it must not run on the default check path, and the
 	// decision must live in config (not PATH presence) to keep metrics deterministic.
 	// When skipped, append an explicit disabled coverage row so tool_coverage reads
@@ -281,7 +252,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		})
 	}
 
-	// Syntax facts (ast-grep syntax rules) are opt-in (tools.syntax.enabled: on):
+	// Syntax facts (ast-grep syntax rules) are opt-in (analyzers.syntax.enabled: true):
 	// language-specific rules add overhead and the result is report-only.
 	// When skipped, append an explicit disabled coverage row for the same reason.
 	syntaxCfg := cfg.ForSyntax()
@@ -300,12 +271,13 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	configHash := effectiveConfigHash(configPath, noConfig)
 
 	patternCfg := cfg.ForPatterns()
+	deps.reportPhase("Analyzing dependencies")
 	diag, err := engine.Run(ctx, engine.RunInput{
 		Mode:        mode,
 		Scope:       s,
 		Classify:    cfg.ForClassify(),
 		Staleness:   cfg.ForStaleness(),
-		Exceptions:  cfg.ForStatus(),
+		Waivers:     cfg.ForWaivers(),
 		Extractors:  extractors,
 		Patterns:    astgrep.New(deps.Runner),
 		Resolver:    resolver,
@@ -327,6 +299,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	if err != nil {
 		return diag, err
 	}
+	diag.OwnerSource = ownerSource
 
 	// Attach the structured repair-task block (spec §13) for active gate
 	// findings. Deterministic: rule-type templates + module public surfaces +
@@ -341,16 +314,16 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 			modulePublic[name] = def.Public
 		}
 	}
-	validate := "archfit check -c " + configPath
+	validate := "archfit analyze --gate -c " + configPath
 	if mode.Full {
 		validate += " --full"
 	}
 	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate}, diag.SyntaxFacts)
 
-	// cargo-modules module-graph coverage: opt-in (tools.cargo-modules.enabled: on).
+	// cargo-modules module-graph coverage: opt-in (analyzers.cargo_modules.enabled: true).
 	// The Rust extractor runs cargo-modules during its Extract call (inside engine.Run
 	// above) and caches the coverage record. Append it here so it appears in
-	// ToolCoverage and the CoverageGap block — mirrors the complexity/clones pattern.
+	// ToolCoverage and the CoverageGap block — mirrors the clones pattern.
 	if rustEx := rustExtractor(extractors); rustEx != nil {
 		diag.ToolCoverage = append(diag.ToolCoverage, rustEx.LastModuleGraphCoverage())
 	}

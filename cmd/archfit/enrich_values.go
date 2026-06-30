@@ -78,7 +78,7 @@ func (c *EnrichCmd) runValueDraft(ctx context.Context, deps *appDeps, spec value
 	}
 	llmCfg, configured := cfg.LLM()
 	if !configured {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: enrich --%s needs tools.llm configured (provider + model); see docs/guide/llm-enrich.md", spec.name)}
+		return &exitError{code: 3, msg: fmt.Sprintf("error: enrich --%s needs ai configured (provider + model); see docs/guide/llm-enrich.md", spec.name)}
 	}
 
 	configDir := filepath.Dir(c.Config)

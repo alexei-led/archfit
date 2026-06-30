@@ -55,7 +55,7 @@ func TestAssign_NewFinding(t *testing.T) {
 	result := status.Assign(
 		[]finding.Finding{f},
 		fakeAccepted{},
-		config.ExceptionSet{},
+		config.WaiverSet{},
 		time.Now(),
 		kindGate,
 	)
@@ -78,7 +78,7 @@ func TestAssign_BaselineFinding(t *testing.T) {
 	result := status.Assign(
 		[]finding.Finding{f},
 		base,
-		config.ExceptionSet{},
+		config.WaiverSet{},
 		time.Now(),
 		kindGate,
 	)
@@ -96,8 +96,8 @@ func TestAssign_ActiveException(t *testing.T) {
 
 	// Expires 1 year from now — active (not expired).
 	future := time.Now().AddDate(1, 0, 0).Format("2006-01-02")
-	exceptions := config.ExceptionSet{
-		Exceptions: []config.ExceptionDef{
+	exceptions := config.WaiverSet{
+		Waivers: []config.WaiverDef{
 			{
 				Rule:    testRuleID,
 				From:    testFrom,
@@ -118,8 +118,8 @@ func TestAssign_ActiveException(t *testing.T) {
 	if len(result) != 1 {
 		t.Fatalf("want 1 finding, got %d", len(result))
 	}
-	if result[0].Status != finding.StatusExcepted {
-		t.Errorf("want status %q, got %q", finding.StatusExcepted, result[0].Status)
+	if result[0].Status != finding.StatusWaived {
+		t.Errorf("want status %q, got %q", finding.StatusWaived, result[0].Status)
 	}
 }
 
@@ -128,8 +128,8 @@ func TestAssign_ExpiredException(t *testing.T) {
 
 	// Expired 1 year ago.
 	past := time.Now().AddDate(-1, 0, 0).Format("2006-01-02")
-	exceptions := config.ExceptionSet{
-		Exceptions: []config.ExceptionDef{
+	exceptions := config.WaiverSet{
+		Waivers: []config.WaiverDef{
 			{
 				Rule:    testRuleID,
 				From:    testFrom,
@@ -150,8 +150,8 @@ func TestAssign_ExpiredException(t *testing.T) {
 	if len(result) != 1 {
 		t.Fatalf("want 1 finding, got %d", len(result))
 	}
-	if result[0].Status != finding.StatusExpiredExcept {
-		t.Errorf("want status %q, got %q", finding.StatusExpiredExcept, result[0].Status)
+	if result[0].Status != finding.StatusExpiredWaiver {
+		t.Errorf("want status %q, got %q", finding.StatusExpiredWaiver, result[0].Status)
 	}
 }
 
@@ -165,7 +165,7 @@ func TestAssign_FixedFinding(t *testing.T) {
 	result := status.Assign(
 		[]finding.Finding{},
 		base,
-		config.ExceptionSet{},
+		config.WaiverSet{},
 		time.Now(),
 		kindGate,
 	)
@@ -192,12 +192,12 @@ func TestAssign_FixedFindingKindFilter(t *testing.T) {
 		{Fingerprint: "aabbccddaabbccddaabbccddaabbccdd", RuleID: "bc/imbalanced_coupling", Kind: kindAdvisory},
 	}
 
-	gateResult := status.Assign([]finding.Finding{}, base, config.ExceptionSet{}, time.Now(), kindGate)
+	gateResult := status.Assign([]finding.Finding{}, base, config.WaiverSet{}, time.Now(), kindGate)
 	if len(gateResult) != 1 || gateResult[0].Kind != kindGate {
 		t.Errorf("gate pass: want 1 gate fixed finding, got %v", gateResult)
 	}
 
-	advResult := status.Assign([]finding.Finding{}, base, config.ExceptionSet{}, time.Now(), kindAdvisory)
+	advResult := status.Assign([]finding.Finding{}, base, config.WaiverSet{}, time.Now(), kindAdvisory)
 	if len(advResult) != 1 || advResult[0].Kind != kindAdvisory {
 		t.Errorf("advisory pass: want 1 advisory fixed finding, got %v", advResult)
 	}
@@ -214,8 +214,8 @@ func TestAssign_ExpiryBoundary(t *testing.T) {
 	expiryDate := "2025-06-01"
 	endOfExpiryDay := time.Date(2025, 6, 2, 0, 0, 0, 0, time.UTC) // expiry + 24h
 
-	exceptions := config.ExceptionSet{
-		Exceptions: []config.ExceptionDef{
+	exceptions := config.WaiverSet{
+		Waivers: []config.WaiverDef{
 			{
 				Rule:    testRuleID,
 				From:    testFrom,
@@ -233,12 +233,12 @@ func TestAssign_ExpiryBoundary(t *testing.T) {
 		{
 			name:       "just before expiry boundary",
 			now:        endOfExpiryDay.Add(-time.Second), // 2025-06-01 23:59:59 UTC
-			wantStatus: finding.StatusExcepted,
+			wantStatus: finding.StatusWaived,
 		},
 		{
 			name:       "just after expiry boundary",
 			now:        endOfExpiryDay.Add(time.Second), // 2025-06-02 00:00:01 UTC
-			wantStatus: finding.StatusExpiredExcept,
+			wantStatus: finding.StatusExpiredWaiver,
 		},
 	}
 

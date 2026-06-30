@@ -2,10 +2,10 @@
 
 This page is the canonical list of currently supported language adapters.
 `archfit` can analyze Go, TypeScript/JavaScript, Python, and Rust in the same run.
-Enable languages in `.archfit.yaml` with `tools.<language>.enabled`.
+Enable languages in `.archfit.yaml` under `languages.<language>.enabled`.
 
 ```yaml
-tools:
+languages:
   go:
     enabled: auto
   typescript:
@@ -16,14 +16,9 @@ tools:
     enabled: auto
 ```
 
-Tool modes:
-
-- `auto` — use the adapter when project markers and tools are found.
-- `on` — require the adapter; missing project markers or tools are errors.
-- `off` — skip the adapter.
-
-Use `auto` for mixed repos while calibrating. Use `on` in CI when a language must
-be analyzed.
+`enabled` accepts `auto` (run when project markers and tools are found), `true`
+(require; missing tools are errors), or `false` (skip); legacy `"on"`/`"off"` are
+a hard error. See [configuration reference](configuration-reference.md) for details.
 
 ## Go
 
@@ -58,9 +53,9 @@ without its own `go.mod` has no module identity and archfit treats it as a loade
 entry point only. Single surviving members collapse to the existing single-module
 path with no change in output.
 
-**go.work member scoping:** use `tools.go.modules` to restrict which workspace
+**go.work member scoping:** use `languages.go.modules` to restrict which workspace
 members are loaded (see
-[configuration reference](configuration-reference.md#toolsgomodules)).
+[configuration reference](configuration-reference.md#languagesgomodules)).
 
 Install/check:
 
@@ -72,13 +67,13 @@ archfit doctor
 Example config:
 
 ```yaml
-tools:
+languages:
   go:
-    enabled: on
+    enabled: true
   typescript:
-    enabled: off
+    enabled: false
   python:
-    enabled: off
+    enabled: false
 
 layers: [model, core, adapter, cmd]
 modules:
@@ -131,13 +126,13 @@ How extraction works:
 Example config:
 
 ```yaml
-tools:
+languages:
   go:
-    enabled: off
+    enabled: false
   typescript:
-    enabled: on
+    enabled: true
   python:
-    enabled: off
+    enabled: false
 
 layers: [domain, app, ui]
 modules:
@@ -169,7 +164,7 @@ For TypeScript, module paths and rule filters are repo-relative file path globs.
 
 Requirements:
 
-- `pyproject.toml`, `setup.py`, or configured `python_package`;
+- `pyproject.toml`, `setup.py`, or configured `languages.python.package`;
 - `uv` (preferred), or Python `3.12+` with `grimp` installed.
 
 Recommended install:
@@ -186,27 +181,27 @@ How extraction works:
 - without `uv`, runs Python 3.12+ and expects a pinned `grimp` to be installed;
 - emits dotted module-to-module import edges, such as `myapp.service`.
 
-Set `python_package` when the top-level package is not the repository directory
-name, or when the repo uses `src/` layout.
+Set `languages.python.package` when the top-level package is not the repository
+directory name, or when the repo uses `src/` layout.
 
 ```yaml
-python_package: myapp
-tools:
+languages:
   go:
-    enabled: off
+    enabled: false
   typescript:
-    enabled: off
+    enabled: false
   python:
-    enabled: on
+    enabled: true
+    package: myapp
 ```
 
 Example config:
 
 ```yaml
-python_package: myapp
-tools:
+languages:
   python:
-    enabled: on
+    enabled: true
+    package: myapp
 
 layers: [domain, app, adapter]
 modules:
@@ -266,7 +261,7 @@ How extraction works:
 - emits one `package:<crate>` node per workspace member;
 - emits an `external:<crate>` node for each registry dependency;
 - emits `depends_on` edges located at `Cargo.toml`;
-- skips dev-dependencies unless `rust_include_dev_deps: true`.
+- skips dev-dependencies unless `languages.rust.include_dev_deps: true`.
 
 Granularity is **crate-level by default**: each workspace member is one node, so a
 single-crate repo yields exactly one `package:` node and no intra-workspace edges. The
@@ -274,36 +269,36 @@ scorecard treats such a degenerate (<2-node) graph honestly — it never scores 
 on it.
 
 For finer resolution, two opt-in passes add the **intra-crate module graph** so
-single-crate repos get real cycle, blast-radius, cohesion, and god-file signal:
+single-crate repos get real cycle, blast-radius, and encapsulation signal:
 
-- `tools.cargo-modules.enabled: on` runs `cargo-modules` to emit `<crate>::<mod>` nodes
-  and aggregated `uses` edges.
-- `tools.scip.enabled: on` runs `rust-analyzer scip` for symbol-level integration
-  strength on those module edges.
+- `analyzers.cargo_modules.enabled: true` runs `cargo-modules` to emit
+  `<crate>::<mod>` nodes and aggregated `uses` edges.
+- `analyzers.scip.enabled: true` runs `rust-analyzer scip` for symbol-level
+  integration strength on those module edges, improving `coupling_balance`
+  precision.
 
-With either on, per-file LOC and git churn also resolve to module granularity (via the
-crate roots cargo metadata provides), so `structural_weight` flags god _files/modules_ by
-size and the change-history metrics measure inside a single crate — not just across
-crates. See [Optional analyzers](#optional-analyzers-per-language) below.
+With either on, per-file LOC also resolves to module granularity (via the
+crate roots cargo metadata provides), so size-based metrics cover individual
+modules rather than entire crates. See [Optional analyzers](#optional-analyzers-per-language) below.
 
 Optional config:
 
-- `rust_manifest` — path to a non-root `Cargo.toml` (empty = auto, root manifest);
-- `rust_features` — cargo features to activate for the metadata run;
-- `rust_include_dev_deps` — include dev-dependencies as crate edges.
+- `languages.rust.manifest` — path to a non-root `Cargo.toml` (empty = auto, root manifest);
+- `languages.rust.features` — cargo features to activate for the metadata run;
+- `languages.rust.include_dev_deps` — include dev-dependencies as crate edges.
 
 Example config (multi-crate workspace):
 
 ```yaml
-tools:
+languages:
   go:
-    enabled: off
+    enabled: false
   typescript:
-    enabled: off
+    enabled: false
   python:
-    enabled: off
+    enabled: false
   rust:
-    enabled: on
+    enabled: true
 
 layers: [core, cli]
 modules:
@@ -329,8 +324,8 @@ For Rust, module paths and rule filters are crate-name globs (the crate name fro
 ## File classification per language
 
 archfit classifies every source file as `Production`, `Test`, `Generated`, or
-`Vendor` before computing production-health metrics. The per-language detection
-patterns are:
+`Vendor`. Classification drives vendor/generated exclusion in the LOC walk and
+in structural metrics. The per-language detection patterns are:
 
 | Language      | Test patterns                                        | Generated patterns                                                                                       |
 | ------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -343,53 +338,47 @@ patterns are:
 
 Auto-detection runs first; the `file_class:` config key (`generated_globs`,
 `test_globs`, `mock_frameworks`) adds project-specific patterns on top. See
-[Metrics reference → File classification](metrics.md#file-classification-fileclass)
-for the policy and the config override syntax.
+[Configuration reference → file_class](configuration-reference.md#file_class)
+for the config override syntax.
 
 ## Optional analyzers per language
 
-The deterministic gates need only the language adapter above. The report-only
-metrics need extra tools, and several are language-specific. When a tool is
-missing the dependent metric reports `n/a` **with the reason and enable step** —
-the run never fails — but the metric stays blind until you install it.
+The deterministic gates need only the language adapter above. The optional tools
+improve `coupling_balance` precision or add complementary metrics. When a tool is
+missing, dependent metrics report `n/a` **with the reason and enable step** — the
+run never fails.
 
-| Tool                | Powers                          | Go  | TS/JS | Python | Rust | Setup                                                                             |
-| ------------------- | ------------------------------- | --- | ----- | ------ | ---- | --------------------------------------------------------------------------------- |
-| `lizard`            | `complexity`                    | yes | yes   | yes    | yes  | `tools.complexity.enabled: on`; `uv tool install 'lizard==1.23.0'`                |
-| SCIP indexer + `uv` | `risk_hub`                      | yes | yes   | yes    | yes  | `tools.scip.enabled: on`; see notes below                                         |
-| clone detector      | `functional_candidates`         | yes | yes   | yes    | yes  | `tools.clones.enabled: on`; `npm install -g jscpd@5.0.11`                         |
-| `cargo-modules`     | intra-crate module graph (Rust) | —   | —     | —      | yes  | `tools.cargo-modules.enabled: on`; `cargo install cargo-modules --version 0.26.0` |
+| Tool                | Powers                                               | Go  | TS/JS | Python | Rust | Setup                                                                                   |
+| ------------------- | ---------------------------------------------------- | --- | ----- | ------ | ---- | --------------------------------------------------------------------------------------- |
+| SCIP indexer + `uv` | `coupling_balance` edge-strength precision           | yes | yes   | yes    | yes  | `analyzers.scip.enabled: true`; see notes below                                         |
+| clone detector      | `coupling_balance` symmetric-coupling signal (jscpd) | yes | yes   | yes    | yes  | `analyzers.clones.enabled: true`; `npm install -g jscpd@5.0.11`                         |
+| `cargo-modules`     | intra-crate module graph (Rust)                      | —   | —     | —      | yes  | `analyzers.cargo_modules.enabled: true`; `cargo install cargo-modules --version 0.26.0` |
 
 Notes that bite most often:
 
-- **Complexity needs PyPI `lizard` and `tools.complexity.enabled: on`.** Without
-  both, `complexity` is `n/a` for every language. lizard supports Go, Python,
-  TypeScript, TSX, and Rust. Install it with `uv tool install 'lizard==1.23.0'` and
-  set the config flag, then re-run. Do **not** use `brew install lizard`; that is
-  a compression tool with the same command name.
 - **SCIP indexers are language-specific.** Use `go install github.com/sourcegraph/scip-go/cmd/scip-go@v0.2.7`,
   `npm install -g @sourcegraph/scip-typescript@0.4.0`,
   `npm install -g @sourcegraph/scip-python@0.6.6`, or
   `rustup component add rust-analyzer`, plus `uv` for archfit's embedded SCIP reader.
 - **SCIP for TypeScript needs `node_modules`.** `scip-typescript` resolves
   imports through installed dependencies, so run `npm ci` (or `bun install`)
-  before the run. If `node_modules` is absent, archfit reports `risk_hub` as
-  `n/a` with exactly that reason instead of silently skipping it.
-- **SCIP for Rust uses `rust-analyzer`.** With `tools.scip.enabled: on` and
+  before the run. If `node_modules` is absent, archfit reports the edge-strength
+  pass as `n/a` with exactly that reason instead of silently skipping it.
+- **SCIP for Rust uses `rust-analyzer`.** With `analyzers.scip.enabled: true` and
   `rust-analyzer` on `PATH`, archfit runs `rust-analyzer scip` to add symbol-level
   strength on top of the crate-level `cargo metadata` graph. When the binary is
-  absent the pass no-ops cleanly — no error, `risk_hub` stays `n/a` with the
-  reason.
+  absent the pass no-ops cleanly — no error, `coupling_balance` confidence stays
+  at whatever the type-info heuristic provides.
 - **Rust module depth needs `cargo-modules`.** A single crate is one node at crate
-  level, so cycle/blast-radius/cohesion go `n/a`. `tools.cargo-modules.enabled: on`
-  (with `cargo install cargo-modules --version 0.26.0`) adds the `<crate>::<mod>` graph; archfit then
-  maps per-file LOC/churn to module keys so `structural_weight` flags god _files_ and
-  the change-history metrics measure within the crate. On a workspace, crates whose
-  `cargo-modules` run fails (proc-macro/codegen) are named in the coverage reason and
-  the structural dimensions drop to medium confidence — partial, never silent.
-- **Clone detection is opt-in.** `tools.clones.enabled: on` plus `jscpd`
-  (`npm install -g jscpd@5.0.11`) turns `functional_candidates` on. Off or absent
-  → `n/a`.
+  level, so cycle/blast-radius/encapsulation go `n/a`. `analyzers.cargo_modules.enabled: true`
+  (with `cargo install cargo-modules --version 0.26.0`) adds the `<crate>::<mod>` graph;
+  archfit then maps per-file LOC to module keys so size metrics cover individual
+  modules rather than entire crates. On a workspace, crates whose `cargo-modules`
+  run fails (proc-macro/codegen) are named in the coverage reason and confidence
+  drops to medium — partial, never silent.
+- **Clone detection is opt-in.** `analyzers.clones.enabled: true` plus `jscpd`
+  (`npm install -g jscpd@5.0.11`) upgrades cross-module clone pairs to
+  `StrengthSymmetric` (S=9) in the BC scorer. `false` or absent → no upgrade.
 
 See [Install → optional analysis tools](install.md#optional-analysis-tools) for
 quick setup and [Tooling reference](tooling.md) for platform-specific package
@@ -401,7 +390,7 @@ For a repo with more than one language, keep each language's paths in distinct
 modules where possible:
 
 ```yaml
-tools:
+languages:
   go:
     enabled: auto
   typescript:

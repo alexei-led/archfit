@@ -4,10 +4,10 @@ Run `archfit doctor` first when extraction looks incomplete.
 
 Common fixes:
 
-- Use `tools.<language>.enabled: off` to disable an adapter while calibrating.
+- Use `languages.<language>.enabled: false` or `analyzers.<x>.enabled: false` to disable an adapter while calibrating.
 - Use `--format json` when an AI agent or script needs structured output.
 - Narrow module paths if generated config is noisy.
-- Prefer an expiring exception over deleting a rule for intentional findings.
+- Prefer an expiring waiver over deleting a rule for intentional findings.
 - Check that optional analyzer tools are installed before enabling them.
 - Re-run `archfit baseline --full` only after reviewing accepted findings.
 
@@ -44,10 +44,6 @@ Some commands have name collisions:
 - **`sg`** must be ast-grep. Verify with `sg --version`; it should print
   `ast-grep ...`. Linux systems may have util-linux `sg` at `/usr/bin/sg`, which
   is not usable by archfit.
-- **`lizard`** must be the PyPI complexity analyzer. `brew install lizard` installs
-  a compression tool with the same command name. Use
-  `uv tool install 'lizard==1.23.0'`, then ensure `uv tool dir --bin` appears
-  before Homebrew in PATH if both exist.
 - **`node`/`npm`** can come from Homebrew, a distro package, nvm/fnm, or another
   version manager. Use one Node source per shell profile and keep Node `22+` for
   the optional npm tools.
@@ -63,8 +59,8 @@ upstream install path from [Tooling reference](tooling.md) instead of mixing ran
 fallbacks.
 
 For CI, pin exact npm/cargo/go/uv tool versions in setup commands, then run
-`archfit doctor` for diagnostics and `archfit check --require-tools` when missing
-analyzers should fail the build.
+`archfit doctor` for diagnostics and `archfit analyze --gate --require-tools`
+when missing analyzers should fail the build.
 
 ## Metrics show `n/a` / a "Coverage gaps" section
 
@@ -73,15 +69,15 @@ section) means an analyzer did not run — archfit is refusing to score absence 
 health, not failing. Each gap lists the tool, the metrics it unlocks, and an
 install hint; `archfit doctor` lists the same tools. Install the tool to close the
 gap. To make CI block on a missing tool instead, opt in with `--require-tools` or
-`tools.<x>.gate: fail` (exit `1`, a policy violation distinct from exit `3`).
+`analyzers.<x>.gate: fail` (exit `1`, a policy violation distinct from exit `3`).
 
 ## Config-quality warnings ("N modules under-specified")
 
 These now appear as a `## Config warnings` section (md) and `config_warnings[]`
 (json), not just stderr. Most clear once modules declare `owner`, `subdomain`, and
 `volatility` — draft them with `archfit enrich --owner`/`--volatility` or
-`archfit autopilot`, review, then pin. Filling them also makes `encapsulation`
-measurable, so `boundary_integrity` and `coupling_balance` leave `n/a`.
+`archfit autopilot`, review, then pin. Filling them also makes `encapsulation` measurable and lets `coupling_balance`
+move out of `n/a`.
 
 ## False-positive coupling advisories on a wiring/`cmd` package
 

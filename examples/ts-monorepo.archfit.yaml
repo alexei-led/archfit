@@ -4,17 +4,18 @@
 # rule from/to use file-path globs. Each workspace package is a module; cross-
 # package imports must go through the package entry point (public), not deep
 # internal files. Install dependency-cruiser and, for semantic strength
-# (risk_hub via scip), run `npm ci` so node_modules exists.
-#   archfit check --config .archfit.yaml --full
+# (SCIP coupling-strength hints), run `npm ci` so node_modules exists.
+#   archfit analyze --config .archfit.yaml --full
 version: 1
-bc_advisory_min_severity: medium
-tools:
+coupling:
+  min_severity: medium
+languages:
   go:
-    enabled: "off"
+    enabled: false
   typescript:
-    enabled: "on"
+    enabled: true
   python:
-    enabled: "off"
+    enabled: false
 layers:
   - core
   - feature
@@ -63,9 +64,6 @@ rules:
   - id: no_cycles
     type: cycle
     gate: fail
-exclusions:
+exclude:
   - '**/dist/**'
   - '**/*.d.ts'
-metrics:
-  architecture_fitness:
-    enabled: true

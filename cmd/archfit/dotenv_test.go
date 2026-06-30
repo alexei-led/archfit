@@ -6,6 +6,38 @@ import (
 	"testing"
 )
 
+func TestEnvSearchDirs(t *testing.T) {
+	t.Parallel()
+	const repo = "/repo"
+	cases := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{"root space form", []string{cmdAnalyze, flagRoot, repo}, []string{repo}},
+		{"root equals form", []string{cmdAnalyze, flagRoot + "=" + repo}, []string{repo}},
+		{"root short", []string{"init", "-r", repo}, []string{repo}},
+		{"config dir space form", []string{cmdAnalyze, "--config", "/x/cfg.yaml"}, []string{"/x"}},
+		{"config short equals", []string{"-c=/x/y/cfg.yaml"}, []string{"/x/y"}},
+		{"both root and config", []string{flagRoot, repo, "-c", "/cfg/.archfit.yaml"}, []string{repo, "/cfg"}},
+		{"none", []string{cmdAnalyze, "--json"}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := envSearchDirs(tc.args)
+			if len(got) != len(tc.want) {
+				t.Fatalf("args %v: got %v, want %v", tc.args, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("args %v: got[%d]=%q, want %q", tc.args, i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestLoadDotEnv(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")

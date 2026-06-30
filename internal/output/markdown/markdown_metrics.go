@@ -8,55 +8,18 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 )
 
-// confidenceLow is the confidence value that demotes a proxy metric to a footnote.
-const confidenceLow = "low"
-
-// lowConfidenceFootnote lists beyond-BC metrics that are proxy-derived (no SCIP
-// type kinds) and, when their confidence is low, are demoted from the headline
-// list to a footnote so they do not read as authoritative. Full values always
-// remain in `--format json`; only the human headline is decluttered.
-var lowConfidenceFootnote = map[string]bool{
-	"abstractness":    true,
-	"martin_distance": true,
-}
-
 // writeBeyondBCMetrics renders the "Supporting structural metrics (beyond Balanced
 // Coupling)" section. These are report-only and never gate.
 func writeBeyondBCMetrics(b *strings.Builder, metrics []diagnostic.MetricResult) {
 	b.WriteString("\n## Supporting structural metrics (beyond Balanced Coupling)\n\n")
 	b.WriteString("Report-only. These metrics support Balanced Coupling reasoning but never gate.\n\n")
 
-	// Proxy metrics (abstractness/martin_distance) with low confidence are demoted
-	// to a footnote so the headline list is not read as authoritative; full values
-	// stay in JSON. Input order is already deterministic, so each partition keeps it.
-	var footnoted []diagnostic.MetricResult
 	for _, m := range metrics {
-		if lowConfidenceFootnote[m.Name] && m.Confidence == confidenceLow {
-			footnoted = append(footnoted, m)
-			continue
-		}
 		band := m.Band
 		if m.Confidence != "" && m.Confidence != confidenceHigh {
 			band = fmt.Sprintf("%s (%s confidence)", band, m.Confidence)
 		}
 		fmt.Fprintf(b, "- **%s**: %s — %s\n", m.Name, m.Display, band)
-	}
-
-	writeLowConfidenceFootnote(b, footnoted)
-}
-
-// writeLowConfidenceFootnote renders proxy-derived, low-confidence beyond-BC metrics
-// as a footnote rather than a headline bullet: they stay visible (and fully in JSON)
-// but are flagged as not authoritative so a reader does not treat a proxy as a
-// headline finding. No-op when nothing was demoted.
-func writeLowConfidenceFootnote(b *strings.Builder, metrics []diagnostic.MetricResult) {
-	if len(metrics) == 0 {
-		return
-	}
-	b.WriteString("\n> Low-confidence proxies (footnote — full values in `--format json`).\n")
-	b.WriteString("> Derived without SCIP type kinds; do not read as authoritative.\n")
-	for _, m := range metrics {
-		fmt.Fprintf(b, "> - %s: %s — %s (low confidence)\n", m.Name, m.Display, m.Band)
 	}
 }
 
@@ -65,15 +28,13 @@ func writeLowConfidenceFootnote(b *strings.Builder, metrics []diagnostic.MetricR
 // code_structure is always-on; ownership and deploy_unit come from tool coverage.
 // Unresolved modules are counted from extractor coverage records.
 func writeDistanceConfidence(b *strings.Builder, d diagnostic.Diagnostic) {
-	// Collect distance-signal sources from tool coverage entries.
-	ownerSrc := ""
+	// owner_source is a first-class diagnostic field (config|codeowners|git|none).
+	ownerSrc := d.OwnerSource
+	// Collect remaining distance-signal sources from tool coverage entries.
 	deployUnitSrc := ""
 	unresolved := 0
 	for _, cov := range d.ToolCoverage {
-		switch cov.Tool {
-		case "ownership":
-			ownerSrc = cov.Status
-		case "deploy-unit":
+		if cov.Tool == "deploy-unit" {
 			deployUnitSrc = cov.Status
 		}
 		unresolved += cov.Unresolved
@@ -226,41 +187,24 @@ func writeSyntaxSurface(b *strings.Builder, facts []diagnostic.SyntaxFact) {
 				}
 			}
 			line := fmt.Sprintf("- `%s` (%s)", f.Name, f.Kind)
-			if f.Role != "" {
-				line += " — role: " + f.Role
-				if f.Framework != "" {
-					line += " [" + f.Framework + "]"
-				}
+			if f.Framework != "" {
+				line += " [" + f.Framework + "]"
 			}
 			b.WriteString(line + "\n")
 			printed++
 		}
 	}
 
-	// Roles / routes summary.
-	roleCounts := make(map[string]int)
+	// Routes summary.
 	routeCount := 0
 	for _, f := range facts {
-		if f.Role != "" {
-			roleCounts[f.Role]++
-		}
 		if f.Kind == "route" {
 			routeCount++
 		}
 	}
-	if len(roleCounts) > 0 || routeCount > 0 {
-		b.WriteString("\n### Detected roles\n\n")
-		roles := make([]string, 0, len(roleCounts))
-		for r := range roleCounts {
-			roles = append(roles, r)
-		}
-		sort.Strings(roles)
-		for _, r := range roles {
-			fmt.Fprintf(b, "- %s: %d declaration(s)\n", r, roleCounts[r])
-		}
-		if routeCount > 0 {
-			fmt.Fprintf(b, "- route: %d registration(s)\n", routeCount)
-		}
+	if routeCount > 0 {
+		b.WriteString("\n### Detected routes\n\n")
+		fmt.Fprintf(b, "- route: %d registration(s)\n", routeCount)
 	}
 }
 
@@ -324,7 +268,7 @@ func writeDeprecatedDeps(b *strings.Builder, deps []diagnostic.DeprecatedDep) {
 	}
 	b.WriteString("\n## Manifest deprecation markers (report-only)\n\n")
 	b.WriteString("Locally-declared deprecation/retraction markers found in checked-in manifest files.\n")
-	b.WriteString("Report-only evidence — never gates. Cargo yanked and live EOL require archfit review/enrich.\n\n")
+	b.WriteString("Report-only evidence — never gates. Cargo yanked and live EOL require archfit analyze --llm / enrich.\n\n")
 	fmt.Fprintf(b, "| file | kind | subject | note |\n")
 	fmt.Fprintf(b, "|------|------|---------|------|\n")
 	for _, d := range deps {

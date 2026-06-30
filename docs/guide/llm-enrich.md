@@ -1,6 +1,6 @@
 # LLM enrichment (off-gate): enrich, labels, explain --llm
 
-archfit's verdict is deterministic — `check` never calls a model. The LLM
+archfit's verdict is deterministic — `analyze` never calls a model. The LLM
 layer refines the one thing deterministic analysis cannot judge: whether a
 cross-module dependency's integration strength is really `functional`
 (invokes behavior), `model` (types cross the boundary), `contract`
@@ -13,19 +13,20 @@ The workflow is **draft → review → pin**:
 ```text
 archfit enrich        # LLM drafts → .archfit-labels.yaml (status: draft)
 $EDITOR .archfit-labels.yaml   # review: approve or delete each draft
-archfit check         # consumes APPROVED labels only — still LLM-free
+archfit analyze       # consumes APPROVED labels only — still LLM-free
 ```
 
 ## Configuration
 
 ```yaml
-tools:
+analyzers:
   scip:
-    enabled: "on" # enrich needs the symbol-level strength hints
-  llm:
-    provider: anthropic # anthropic | openai | ollama
-    model: claude-opus-4-8
-    # base_url: http://localhost:11434/v1   # ollama only
+    enabled: true # enrich needs the symbol-level strength hints
+
+ai:
+  provider: anthropic # anthropic | openai | ollama
+  model: claude-opus-4-8
+  # base_url: http://localhost:11434/v1   # ollama only
 ```
 
 API keys come from the standard env vars only — `ANTHROPIC_API_KEY` /
@@ -43,7 +44,7 @@ labels:
     to: window_state
     strength: model
     rationale: "WindowState dataclasses cross the boundary"
-    evidence_hash: 4f1c… # written by enrich; verified by check
+    evidence_hash: 4f1c… # written by enrich; verified by analyze
     status: draft # ← flip to approved to pin
 ```
 
@@ -51,10 +52,10 @@ labels:
 - Precedence: config `public`/`internal` globs > approved labels > SCIP hint.
 - A label pins all edges of the ordered module pair (`from` → `to`).
 - `evidence_hash` fingerprints the pair's import-graph edges at enrich time.
-  On full runs, `check` recomputes it: a mismatch means the dependency surface
+  On full runs, `analyze` recomputes it: a mismatch means the dependency surface
   changed since review — the label is ignored and a `labels/stale` advisory
   tells you to re-run enrich. Hand-authored labels may omit the hash.
-- A malformed labels file fails `check` loudly (exit 3) — a half-read file
+- A malformed labels file fails `analyze` loudly (exit 3) — a half-read file
   must never silently alter the gate.
 
 ## Determinism
@@ -72,8 +73,7 @@ calls.
 Beyond coupling labels, `enrich` drafts two module metadata fields that the
 structural metrics depend on. Filling them is the through-line that makes distance
 classification work: ownership contributes to distance for modules in repos with
-genuine multi-team ownership, and `boundary_integrity` and `coupling_balance` stop
-being `n/a`.
+genuine multi-team ownership, and `coupling_balance` stops being `n/a`.
 
 > **Note on encapsulation:** `encapsulation` scores the ratio of contract/intrusive
 > edges to total cross-module edges. It becomes measurable when modules have
@@ -95,7 +95,7 @@ archfit enrich --owner --pin   # writes approved entries into modules.<name>
 - `--pin` writes only `status: approved` entries into `modules.<name>` and
   **never overwrites a live field** — drafts for already-set fields are skipped.
 - These never touch coupling strength (that is the default `enrich`) and never
-  affect `check`.
+  affect `analyze`.
 
 ## autopilot — full config draft (review-only)
 
@@ -130,5 +130,5 @@ drafts coupling labels plus `--owner`/`--volatility`. None of them gate. Without
 `--apply`/`--pin` the suggestions are commented or held in a draft file and
 require human review before they become live fields. With `--apply`/`--pin`,
 approved values are written directly — treat them as a starting point and review
-before running gates. Existing field values are never overwritten. `check` is
+before running gates. Existing field values are never overwritten. `analyze` is
 unaffected by these flags; it only reads the final config.

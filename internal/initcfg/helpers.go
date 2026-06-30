@@ -16,6 +16,10 @@ const (
 	layerCmd     = "cmd"
 )
 
+// langPython is the Python language key, reused in Render's language loop and
+// the package-name special case.
+const langPython = "python"
+
 // disambiguateNames ensures every ModuleDef in mods has a unique Name.
 // Non-colliding names are returned unchanged.
 // See Discover for the full two-pass algorithm.

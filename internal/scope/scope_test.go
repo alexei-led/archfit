@@ -72,6 +72,27 @@ func TestResolve_Full(t *testing.T) {
 	}
 }
 
+func TestResolve_FullWithBase(t *testing.T) {
+	// Full scan + a base ref: Changed is computed (so diff mode can measure deltas)
+	// but the mode stays full — a full scorecard scan, no finding-delta. Resolve
+	// sorts the changed list.
+	r := fakeResolver{root: fakeRoot, changed: []string{"two.go", "one.go"}}
+
+	s, err := scope.Resolve(context.Background(), config.ScopeConfig{Full: true, Base: baseBranch}, r)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s.Mode != scope.ModeFull {
+		t.Errorf("mode: got %q, want %q (full scan, not delta)", s.Mode, scope.ModeFull)
+	}
+	if got := s.Changed; len(got) != 2 || got[0] != "one.go" || got[1] != "two.go" {
+		t.Errorf("changed: got %v, want sorted [one.go two.go]", got)
+	}
+	if s.Base != baseBranch {
+		t.Errorf("base: got %q, want %q", s.Base, baseBranch)
+	}
+}
+
 func TestResolve_Delta(t *testing.T) {
 	// Changed files arrive unsorted: Resolve must sort them — the
 	// determinism contract does not depend on resolver discipline.
@@ -398,8 +419,8 @@ func TestMergeExclusions(t *testing.T) {
 
 	t.Run("go module cache excluded by default", func(t *testing.T) {
 		// Regression: a Go module cache (pkg/mod) inside a non-Go repo must not be
-		// walked — its 18k-LOC stdlib files otherwise pollute file_structural_weight
-		// and complexity. The glob must match at the root and nested, and must NOT
+		// walked — its 18k-LOC stdlib files otherwise pollute LOC counts and metrics.
+		// The glob must match at the root and nested, and must NOT
 		// over-match a legitimately-named source dir like pkg/models.
 		const pkgModGlob = "**/pkg/mod/**"
 		if !slices.Contains(scope.MergeExclusions(nil), pkgModGlob) {

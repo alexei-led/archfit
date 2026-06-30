@@ -6,17 +6,18 @@
 # module; contexts integrate through a published contract (public surface), never
 # through each other's internals (which would be intrusive coupling across a
 # context boundary -> a flag).
-#   archfit check --config .archfit.yaml --full
-#   archfit score --config .archfit.yaml --full
+#   archfit analyze --config .archfit.yaml --full
+#   archfit analyze --score --config .archfit.yaml --full
 version: 1
-bc_advisory_min_severity: medium
-tools:
+coupling:
+  min_severity: medium
+languages:
   go:
-    enabled: "on"
+    enabled: true
   typescript:
-    enabled: "off"
+    enabled: false
   python:
-    enabled: "off"
+    enabled: false
 layers:
   - domain
   - application
@@ -43,7 +44,7 @@ modules:
     layer: domain
     subdomain: core
     owner: team-ordering
-  # Supporting subdomain: necessary, less differentiating (medium volatility).
+  # Supporting subdomain: necessary, less differentiating (low volatility).
   catalog:
     paths:
       - internal/catalog/**
@@ -78,6 +79,3 @@ rules:
   - id: no_cycles
     type: cycle
     gate: fail
-metrics:
-  architecture_fitness:
-    enabled: true

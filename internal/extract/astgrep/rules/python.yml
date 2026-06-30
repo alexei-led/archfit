@@ -116,30 +116,6 @@ rule:
     - pattern: from django.conf.urls import $$$
     - pattern: import django
 ---
-# Test-framework import rules: emit test_import facts for production Python files.
-# ruleId → Kind=test_import (see syntax.go pyRuleKinds).
-id: py-test-import-pytest
-language: Python
-rule:
-  any:
-    - pattern: import pytest
-    - pattern: from pytest import $$$
----
-id: py-test-import-unittest
-language: Python
-rule:
-  any:
-    - pattern: import unittest
-    - pattern: from unittest import $$$
-    - pattern: from unittest.mock import $$$
----
-id: py-test-import-mock
-language: Python
-rule:
-  any:
-    - pattern: import mock
-    - pattern: from mock import $$$
----
 # Lazy-import rules: detect import statements inside function bodies (Cat 9).
 # In-function imports defer module loading, hide dependencies from the top-level
 # import graph, and can create hidden circular-import cycles. Surfaced as
@@ -178,14 +154,3 @@ rule:
   has:
     field: module_name
     pattern: $NAME
----
-# py-test-fn: matches Python test functions (def test_xxx(...)).
-# Emits test_fn facts consumed by the test_density report-only metric.
-id: py-test-fn
-language: Python
-rule:
-  kind: function_definition
-  has:
-    field: name
-    pattern: $NAME
-    regex: ^test_

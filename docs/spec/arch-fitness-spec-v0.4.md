@@ -1,6 +1,8 @@
+# Archfit CLI — Build Spec
+
 <!-- markdownlint-configure-file { "MD013": { "line_length": 180, "code_blocks": false, "tables": false } } -->
 
-# Archfit CLI — Build Spec
+> **Historical spec (v0.4).** Commands have since been unified under `archfit analyze`; see [docs/guide/commands.md](../guide/commands.md).
 
 **Version:** 0.4 draft
 **Date:** 2026-06-06
@@ -53,7 +55,7 @@ One-line version:
 - Explicit architecture rules.
 - Baseline support.
 - Accepted exceptions.
-- Legible architecture metrics: encapsulation ratio, unbalanced-edge counts, cycles, change-locality indicators, and coverage/confidence.
+- Legible architecture metrics: encapsulation ratio, unbalanced-edge counts, cycles, blast-radius indicators, and coverage/confidence.
 - Balanced Coupling classification for findings: strength, distance, volatility, and explicitness.
 - Agent-first JSON output with evidence and repair constraints.
 - Console and Markdown output for humans.
@@ -346,7 +348,7 @@ These tools are worth supporting early because they directly improve architectur
 - Python: `import-linter` / `grimp` for import graphs and Python architecture contracts.
 - Structural patterns: `ast-grep` for targeted rules such as direct database access, framework leakage, provider DTO leakage, or forbidden imports when simple path rules are not
   enough.
-- Git history: `git log` first; GitNexus adapter later if available and useful for co-change/change-locality calibration.
+- Git history: `git log` first; GitNexus adapter later if available and useful for co-change/blast-radius calibration.
 
 Optional adapters must never be silent. If applicable but missing, record a coverage gap and lower confidence for metrics that depend on that evidence.
 
@@ -425,18 +427,16 @@ rules:
     to_layer: infrastructure
     gate: fail
 
-exclusions:
+exclude:
   - "**/generated/**"
   - "**/*.pb.go"
 
-tools:
-  git:
-    enabled: true
-  dependency_cruiser:
+languages:
+  go:
     enabled: auto
-  import_linter:
+  typescript:
     enabled: auto
-  ast_grep:
+  python:
     enabled: auto
 
 metrics:
@@ -455,19 +455,15 @@ metrics:
     gate: fail
     max_new: 0
 
-  change_locality:
-    enabled: true
-    gate: warn
-
   coverage:
     enabled: true
     gate: warn
 
-map_review:
-  stale_after: 90d
+module_review:
+  stale_after: 2160h
   gate: warn
 
-exceptions:
+waivers:
   - rule: checkout-no-pricing-internals
     from: "services/checkout/legacy/**"
     to: "services/pricing/internal/**"
@@ -834,17 +830,24 @@ What it measures: probability that a component will need meaningful change.
 Primary input is human-defined architecture intent:
 
 ```text
-core       -> high volatility
-supporting -> low or medium volatility
-generic    -> low functional volatility, configurable implementation volatility
-unknown    -> low risk, lower confidence
+core       -> high volatility (ordinal 10)
+supporting -> low volatility (ordinal 3)
+generic    -> low volatility (ordinal 3)
+unknown    -> undeclared — reported, never guessed
 ```
+
+`medium` volatility (ordinal 6) is only reachable via an explicit
+`volatility: medium` declaration — it is never inferred from subdomain or
+directory name.
+
+Volatility is **not** guessed from directory names. A module that declares
+neither `subdomain` nor `volatility` resolves to `"undeclared"` — archfit
+reports it and emits agent tasks requesting a declaration.
 
 Supporting inputs:
 
-- explicit `volatility` in `archfit.yaml`;
-- git churn as supporting evidence only;
-- roadmap or known migration tags later.
+- explicit `volatility` in `archfit.yaml` (always wins over subdomain default);
+- git churn as supporting evidence only.
 
 Churn alone must not decide business volatility. It can indicate accidental volatility caused by poor design, or accidental involatility caused by fear of change.
 
@@ -854,8 +857,7 @@ What it measures:
 
 - afferent coupling: incoming dependencies;
 - efferent coupling: outgoing dependencies;
-- fan-in/fan-out;
-- instability: `Ce / (Ca + Ce)`.
+- fan-in/fan-out.
 
 How to use:
 
@@ -865,9 +867,9 @@ How to use:
 
 A single intrusive outgoing dependency can matter more than many stable contract consumers.
 
-#### Change locality measurement
+#### Blast radius measurement
 
-What it measures: how predictable the change scope appears.
+What it measures: the graph reach from a changed set of modules.
 
 V1 inputs:
 
@@ -983,8 +985,8 @@ Report counts by severity and status:
 new_high
 new_medium
 baseline_high
-excepted_high
-expired_exception
+waived_high
+expired_waiver
 ```
 
 Gate shape:
@@ -1009,18 +1011,18 @@ Gate shape:
 fail on new cycles when configured
 ```
 
-#### Change locality indicator
+#### Blast radius
 
 Definition:
 
 ```text
-changed_modules, new_cross_module_edges, graph_reach_from_changed_nodes
+graph_reach_from_changed_nodes — modules reachable from a changed set
 ```
 
 Gate shape:
 
 ```text
-warn on expansion of change blast radius
+report-only in --full; delta mode (--base) surfaces newly-added cross-module reach
 ```
 
 This is a predictor of future agent token burn and human change cost. It needs calibration against real tasks.
@@ -1041,7 +1043,7 @@ This metric does not judge architecture. It tells agents and humans how much to 
 Definition:
 
 ```text
-now - reviewed_at for modules, rules, subdomains, and exceptions
+now - reviewed_at for modules, rules, subdomains, and waivers
 ```
 
 Why it matters: `archfit.yaml` is a social artifact. The domain can drift even when code conforms to the old map. Stale architecture intent should be visible.
@@ -1049,8 +1051,8 @@ Why it matters: `archfit.yaml` is a social artifact. The domain can drift even w
 Gate shape:
 
 ```text
-warn when map_review.stale_after is exceeded
-fail only for expired exceptions or explicitly required reviews
+warn when module_review.stale_after is exceeded
+fail only for expired waivers or explicitly required reviews
 ```
 
 ### 10.5 Semantic advisory research track
@@ -1077,7 +1079,7 @@ Promote these only after primitive measurements are reliable:
 - **Semantic/model coupling:** shared domain terms, shared models, primitive meaning coupling.
 - **Temporal coupling:** required execution order and timing constraints.
 - **Runtime/lifecycle coupling:** sync calls, deploy coupling, resilience gaps.
-- **Centrality/instability:** afferent/efferent graph context for volatile hubs.
+- **Centrality:** afferent/efferent graph context for volatile hubs.
 - **Architecture fitness coverage:** how much intended architecture is enforced by executable rules.
 - **Agent cost correlation:** token usage, context size, repair iterations, and task failure rate versus graph risk.
 
@@ -1102,8 +1104,8 @@ Finding status values:
 ```text
 new
 baseline
-excepted
-expired_exception
+waived
+expired_waiver
 fixed
 ```
 
@@ -1124,16 +1126,16 @@ expires: date
 
 Rules:
 
-- exceptions require a reason, approver, and expiry;
-- expired exceptions fail if the matching rule is `gate: fail`;
-- `scan` reports exception inventory and age;
-- agents may suggest an exception only as a last resort, never create or approve one silently.
+- waivers require a reason, approver, and expiry;
+- expired waivers fail if the matching rule is `gate: fail`;
+- `scan` reports waiver inventory and age;
+- agents may suggest a waiver only as a last resort, never create or approve one silently.
 
 ### Architecture map review
 
 `archfit.yaml` can drift from domain reality. A green check only means code conforms to the current map, not that the map is still correct.
 
-Use `reviewed_at`, `reviewed_by`, and `map_review.stale_after` to surface stale modules, subdomains, volatility tags, and rules. Staleness is usually a warning, but it is a strong
+Use `reviewed_at`, `reviewed_by`, and `module_review.stale_after` to surface stale modules, subdomains, volatility tags, and rules. Staleness is usually a warning, but it is a strong
 signal for consulting, architecture review, or map-refresh work.
 
 ---
@@ -1161,7 +1163,7 @@ Top-level shape:
   "summary": {
     "gate_findings": 1,
     "warnings": 2,
-    "exceptions_used": 1
+    "waivers_used": 1
   }
 }
 ```
@@ -1170,7 +1172,7 @@ Every finding that affects the gate or a metric should include:
 
 - stable id;
 - finding kind: `gate` or `advisory`;
-- status: `new`, `baseline`, `excepted`, `expired_exception`, or `fixed`;
+- status: `new`, `baseline`, `waived`, `expired_waiver`, or `fixed`;
 - rule or metric id;
 - severity and confidence;
 - graph edge evidence;
@@ -1559,7 +1561,7 @@ Use these references to calibrate concepts, metric formulas, tool adapters, and 
 - `dependency-cruiser` — TypeScript/JavaScript dependency graph and boundary-rule adapter candidate.
 - `import-linter` and `grimp` — Python import graph and architecture-contract adapter candidates.
 - `ast-grep` — targeted structural pattern checks when path/import rules need syntax evidence.
-- `git` / `git log` — baseline diff, changed files, churn, and simple change-locality evidence.
+- `git` / `git log` — baseline diff, changed files, churn, and simple blast-radius evidence.
 - GitNexus — optional calibration adapter for co-change, churn hotspots, and historical blast radius.
 - Tree-sitter — later syntax fallback if native scanners and adapters do not provide enough structural evidence.
 - SCIP — later symbol graph format when file/package-level dependency facts are insufficient.

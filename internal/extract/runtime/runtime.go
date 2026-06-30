@@ -171,7 +171,7 @@ func (d *detector) detectTS(ctx context.Context) []AsyncSignal {
 	signals = append(signals, d.scanImports(ctx, ".ts", "typescript", tsLibs, `'`, `"`)...)
 	signals = append(signals, d.scanImports(ctx, ".tsx", "typescript", tsLibs, `'`, `"`)...)
 	// NestJS decorators: @MessagePattern / @EventPattern → async_task
-	signals = append(signals, d.scanDecorators(ctx, "typescript", []string{".ts", ".tsx"}, []string{"@MessagePattern", "@EventPattern"}, KindAsyncTask)...)
+	signals = append(signals, d.scanLineMatches(ctx, "typescript", []string{".ts", ".tsx"}, []string{"@MessagePattern", "@EventPattern"}, KindAsyncTask)...)
 	return signals
 }
 
@@ -187,7 +187,7 @@ func (d *detector) detectPython(ctx context.Context) []AsyncSignal {
 	var signals []AsyncSignal //nolint:prealloc // two variable-size sources appended
 	signals = append(signals, d.scanImports(ctx, ".py", "python", pyLibs, "")...)
 	// asyncio itself signals async patterns even without a MQ lib.
-	signals = append(signals, d.scanKeywords(ctx, "python", []string{".py"}, []string{"import asyncio", "from asyncio"}, KindAsyncTask)...)
+	signals = append(signals, d.scanLineMatches(ctx, "python", []string{".py"}, []string{"import asyncio", "from asyncio"}, KindAsyncTask)...)
 	return signals
 }
 
@@ -244,8 +244,9 @@ func (d *detector) scanImports(_ context.Context, ext, lang string, libs map[str
 	return signals
 }
 
-// scanDecorators scans for decorator-style patterns (@Name) in source files.
-func (d *detector) scanDecorators(_ context.Context, lang string, exts, decorators []string, kind IntegrationKind) []AsyncSignal {
+// scanLineMatches walks source files with matching extensions and returns an
+// AsyncSignal for every line that contains one of the needle strings.
+func (d *detector) scanLineMatches(_ context.Context, lang string, exts, needles []string, kind IntegrationKind) []AsyncSignal {
 	var signals []AsyncSignal
 	_ = filepath.Walk(d.root, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
@@ -275,60 +276,12 @@ func (d *detector) scanDecorators(_ context.Context, lang string, exts, decorato
 		rel := relPath(d.root, path)
 		for i, rawLine := range strings.Split(string(data), "\n") {
 			line := strings.TrimSpace(rawLine)
-			for _, dec := range decorators {
-				if strings.Contains(line, dec) {
+			for _, needle := range needles {
+				if strings.Contains(line, needle) {
 					signals = append(signals, AsyncSignal{
 						File:            rel,
 						Line:            i + 1,
-						Library:         dec,
-						IntegrationKind: kind,
-						Language:        lang,
-					})
-				}
-			}
-		}
-		return nil
-	})
-	return signals
-}
-
-// scanKeywords scans for specific keyword strings in source files.
-func (d *detector) scanKeywords(_ context.Context, lang string, exts, keywords []string, kind IntegrationKind) []AsyncSignal {
-	var signals []AsyncSignal
-	_ = filepath.Walk(d.root, func(path string, fi os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if fi.IsDir() {
-			if skipDir(fi.Name()) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		ext := filepath.Ext(path)
-		matched := false
-		for _, e := range exts {
-			if ext == e {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return nil
-		}
-		data, err := os.ReadFile(path) //nolint:gosec // path from Walk under repo root
-		if err != nil {
-			return nil
-		}
-		rel := relPath(d.root, path)
-		for i, rawLine := range strings.Split(string(data), "\n") {
-			line := strings.TrimSpace(rawLine)
-			for _, kw := range keywords {
-				if strings.Contains(line, kw) {
-					signals = append(signals, AsyncSignal{
-						File:            rel,
-						Line:            i + 1,
-						Library:         kw,
+						Library:         needle,
 						IntegrationKind: kind,
 						Language:        lang,
 					})

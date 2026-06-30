@@ -24,8 +24,6 @@ var coreRingPkgs = []string{
 	// metrics is split into family sub-packages; assert they all load.
 	modulePrefix + "internal/metrics/boundary",
 	modulePrefix + "internal/metrics/modularity",
-	modulePrefix + "internal/metrics/risk",
-	modulePrefix + "internal/metrics/intramodule",
 	modulePrefix + "internal/metrics/internal/result",
 	modulePrefix + "internal/status",
 	modulePrefix + "internal/staleness",
@@ -33,6 +31,9 @@ var coreRingPkgs = []string{
 	// score synthesises the banded scorecard from an already-computed
 	// Diagnostic — a pure decision over collected facts, no tools or I/O.
 	modulePrefix + "internal/score",
+	// decision converts a Diagnostic + Scorecard into a human-decision view-model —
+	// pure synthesis, no I/O, no subprocess, no YAML.
+	modulePrefix + "internal/decision",
 	// scope resolves the analysis boundary from config + git; it uses os.Stat
 	// and filepath.EvalSymlinks for path canonicalization (justified I/O — no
 	// subprocess, no YAML, no adapter). Excluded from the os-forbidden check.
@@ -44,9 +45,9 @@ var coreRingPkgs = []string{
 
 // coreRingPrefixes are path prefixes whose packages — and ALL their
 // sub-packages — must obey the core-ring import rules. internal/metrics is split
-// into family sub-packages (boundary, modularity, risk, intramodule,
-// internal/result, metricstest), so a prefix match keeps every current and
-// future sub-package covered without editing this list.
+// into family sub-packages (boundary, modularity, internal/result, metricstest),
+// so a prefix match keeps every current and future sub-package covered without
+// editing this list.
 var coreRingPrefixes = []string{
 	modulePrefix + "internal/classify",
 	modulePrefix + "internal/rules",
@@ -57,6 +58,7 @@ var coreRingPrefixes = []string{
 	modulePrefix + "internal/score",
 	modulePrefix + "internal/scope",
 	modulePrefix + "internal/syntax",
+	modulePrefix + "internal/decision",
 }
 
 // inCoreRing reports whether pkgPath is a core-ring package: an exact prefix

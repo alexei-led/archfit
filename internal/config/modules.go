@@ -48,23 +48,22 @@ type ModuleDef struct {
 
 // RuleDef declares a single architecture rule.
 type RuleDef struct {
-	ID            string       `yaml:"id"`
-	Type          string       `yaml:"type"`
-	Gate          string       `yaml:"gate"`
-	From          string       `yaml:"from"`
-	To            string       `yaml:"to"`
-	FromLayer     string       `yaml:"from_layer"`
-	ToLayer       string       `yaml:"to_layer"`
-	FromRole      string       `yaml:"from_role"`
-	ToRole        string       `yaml:"to_role"`
-	MinConfidence string       `yaml:"min_confidence"`
-	Max           *int         `yaml:"max,omitempty"`       // public_api_max: exported-declaration ceiling per module
-	Threshold     *int         `yaml:"threshold,omitempty"` // layer_role_divergence: max tolerated rank delta (default 1)
-	Patterns      []PatternDef `yaml:"patterns,omitempty"`
+	ID        string       `yaml:"id"`
+	Type      string       `yaml:"type"`
+	Gate      string       `yaml:"gate"`
+	From      string       `yaml:"from"`
+	To        string       `yaml:"to"`
+	FromLayer string       `yaml:"from_layer"`
+	ToLayer   string       `yaml:"to_layer"`
+	Max       *int         `yaml:"max,omitempty"`       // public_api_max: exported-declaration ceiling per module
+	Threshold *int         `yaml:"threshold,omitempty"` // reserved: per-rule integer threshold
+	Patterns  []PatternDef `yaml:"patterns,omitempty"`
 }
 
-// ExceptionDef grants a temporary exception to a rule.
-type ExceptionDef struct {
+// WaiverDef grants an approved, time-boxed deviation from a rule (`waivers:`).
+// A finding matching a waiver is suppressed until `expires` passes, after which
+// it gates again. reason/approved_by record the governance trail.
+type WaiverDef struct {
 	Rule       string `yaml:"rule"`
 	From       string `yaml:"from"`
 	To         string `yaml:"to"`

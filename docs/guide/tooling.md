@@ -18,7 +18,7 @@ predictable:
    - Fedora/RHEL-like: `dnf`.
 2. Use the language package manager for language-specific CLIs.
    - npm for Node CLIs (`dependency-cruiser`, `jscpd`, SCIP JS/Python indexers).
-   - `uv tool` for Python CLIs (`lizard`).
+   - `uv tool` for Python CLIs.
    - `go install` for Go CLIs (`scip-go`).
    - `cargo install` for Rust CLIs (`cargo-modules`, `ast-grep` when Homebrew is
      unavailable).
@@ -27,8 +27,7 @@ predictable:
 3. Use remote installer scripts only when they are the upstream documented path
    and you have reviewed the command. Do not hide `curl | sh` inside automation.
 4. Do not mix installers for the same toolchain unless you understand PATH order
-   (`brew node` + `nvm`, distro Rust + `rustup`, Homebrew `lizard` + PyPI
-   `lizard`, etc.).
+   (`brew node` + `nvm`, distro Rust + `rustup`, etc.).
 
 `archfit doctor` is read-only. `archfit install` is intentionally conservative and
 only bootstraps a few common tools. Use this matrix for the complete setup.
@@ -92,18 +91,17 @@ when the distro package lags the matrix.
 
 ## Analyzer and optional tool matrix
 
-| Tool                               | Powers                               | Version                                           | Preferred install                                                                                                            | Homepage / docs                                              | Notes                                                                                       |
-| ---------------------------------- | ------------------------------------ | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `dependency-cruiser` (`depcruise`) | TS/JS dependency graph               | `17.4.3`                                          | `npm install --save-dev dependency-cruiser@17.4.3`                                                                           | <https://github.com/sverweij/dependency-cruiser>             | Prefer project-local dev dependency; `archfit` invokes it through `bunx` or `npx`.          |
-| `grimp`                            | Python import graph                  | `3.14`                                            | no global install with `uv`; direct fallback: `python3.12 -m pip install 'grimp==3.14'`                                      | <https://pypi.org/project/grimp/>                            | `archfit` normally runs `uv run --with grimp`.                                              |
-| `sg` / ast-grep                    | structural patterns                  | `0.44.0`                                          | macOS: `brew install ast-grep`; otherwise `cargo install ast-grep --version 0.44.0` or `npm install -g @ast-grep/cli@0.44.0` | <https://ast-grep.github.io/guide/quick-start.html>          | Verify `sg --version` says `ast-grep`; Linux can have util-linux `sg`.                      |
-| `lizard`                           | `complexity`                         | PyPI `1.23.0`                                     | `uv tool install 'lizard==1.23.0'`                                                                                           | <http://www.lizard.ws/> / <https://pypi.org/project/lizard/> | Do **not** use `brew install lizard`; that is a compression tool with the same binary name. |
-| `jscpd`                            | `functional_candidates` clone signal | `5.0.11`                                          | `npm install -g jscpd@5.0.11`                                                                                                | <https://jscpd.dev/>                                         | Current extractor probes `jscpd`. PMD/CPD is only a manual alternative.                     |
-| `scip-go`                          | Go `risk_hub` / symbol facts         | `v0.2.7`                                          | `go install github.com/sourcegraph/scip-go/cmd/scip-go@v0.2.7`                                                               | <https://github.com/sourcegraph/scip-go>                     | Ensure `$(go env GOPATH)/bin` or `GOBIN` is on `PATH`.                                      |
-| `scip-typescript`                  | TS/JS `risk_hub` / symbol facts      | `0.4.0`                                           | `npm install -g @sourcegraph/scip-typescript@0.4.0`                                                                          | <https://github.com/sourcegraph/scip-typescript>             | Run `npm ci` / `bun install` first; it needs `node_modules` to resolve imports.             |
-| `scip-python`                      | Python `risk_hub` / symbol facts     | `0.6.6`                                           | `npm install -g @sourcegraph/scip-python@0.6.6`                                                                              | <https://github.com/sourcegraph/scip-python>                 | Despite the name, the published CLI is npm-based and requires Node.                         |
-| `rust-analyzer`                    | Rust SCIP symbol facts               | rustup component / Homebrew snapshot `2026-06-22` | `rustup component add rust-analyzer`; macOS alternative: `brew install rust-analyzer`                                        | <https://rust-analyzer.github.io/book/installation.html>     | If using rustup, the component keeps it aligned with the toolchain.                         |
-| `cargo-modules`                    | Rust intra-crate module graph        | `0.26.0`                                          | `cargo install cargo-modules --version 0.26.0`                                                                               | <https://docs.rs/crate/cargo-modules/>                       | Installs a cargo plugin; `archfit` probes `cargo-modules`.                                  |
+| Tool                               | Powers                                                       | Version                                           | Preferred install                                                                                                            | Homepage / docs                                          | Notes                                                                              |
+| ---------------------------------- | ------------------------------------------------------------ | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `dependency-cruiser` (`depcruise`) | TS/JS dependency graph                                       | `17.4.3`                                          | `npm install --save-dev dependency-cruiser@17.4.3`                                                                           | <https://github.com/sverweij/dependency-cruiser>         | Prefer project-local dev dependency; `archfit` invokes it through `bunx` or `npx`. |
+| `grimp`                            | Python import graph                                          | `3.14`                                            | no global install with `uv`; direct fallback: `python3.12 -m pip install 'grimp==3.14'`                                      | <https://pypi.org/project/grimp/>                        | `archfit` normally runs `uv run --with grimp`.                                     |
+| `sg` / ast-grep                    | structural patterns                                          | `0.44.0`                                          | macOS: `brew install ast-grep`; otherwise `cargo install ast-grep --version 0.44.0` or `npm install -g @ast-grep/cli@0.44.0` | <https://ast-grep.github.io/guide/quick-start.html>      | Verify `sg --version` says `ast-grep`; Linux can have util-linux `sg`.             |
+| `jscpd`                            | `coupling_balance` edge-strength (symmetric-coupling signal) | `5.0.11`                                          | `npm install -g jscpd@5.0.11`                                                                                                | <https://jscpd.dev/>                                     | Current extractor probes `jscpd`. PMD/CPD is only a manual alternative.            |
+| `scip-go`                          | Go edge-strength precision for `coupling_balance`            | `v0.2.7`                                          | `go install github.com/sourcegraph/scip-go/cmd/scip-go@v0.2.7`                                                               | <https://github.com/sourcegraph/scip-go>                 | Ensure `$(go env GOPATH)/bin` or `GOBIN` is on `PATH`.                             |
+| `scip-typescript`                  | TS/JS edge-strength precision for `coupling_balance`         | `0.4.0`                                           | `npm install -g @sourcegraph/scip-typescript@0.4.0`                                                                          | <https://github.com/sourcegraph/scip-typescript>         | Run `npm ci` / `bun install` first; it needs `node_modules` to resolve imports.    |
+| `scip-python`                      | Python edge-strength precision for `coupling_balance`        | `0.6.6`                                           | `npm install -g @sourcegraph/scip-python@0.6.6`                                                                              | <https://github.com/sourcegraph/scip-python>             | Despite the name, the published CLI is npm-based and requires Node.                |
+| `rust-analyzer`                    | Rust SCIP symbol facts; edge-strength for `coupling_balance` | rustup component / Homebrew snapshot `2026-06-22` | `rustup component add rust-analyzer`; macOS alternative: `brew install rust-analyzer`                                        | <https://rust-analyzer.github.io/book/installation.html> | If using rustup, the component keeps it aligned with the toolchain.                |
+| `cargo-modules`                    | Rust intra-crate module graph                                | `0.26.0`                                          | `cargo install cargo-modules --version 0.26.0`                                                                               | <https://docs.rs/crate/cargo-modules/>                   | Installs a cargo plugin; `archfit` probes `cargo-modules`.                         |
 
 ## PATH checks
 
@@ -154,9 +152,9 @@ one Rust toolchain, and one Python tool installer per shell profile.
 
 - Pin npm/cargo/go/uv tool versions in CI commands.
 - Prefer project-local `dependency-cruiser` so repository analysis is reproducible.
-- Run `archfit doctor` in CI as a diagnostic step, but use `archfit check
---require-tools` or `tools.<x>.gate: fail` when missing tools must fail the
-  build.
+- Run `archfit doctor` in CI as a diagnostic step, but use
+  `archfit analyze --gate --require-tools` or per-tool `gate: fail` (under
+  `languages.<x>` or `analyzers.<x>`) when missing tools must fail the build.
 - The official Docker image bundles the archfit binary, Go SDK, Node, npm,
   dependency-cruiser, ast-grep, uv, and Python. It intentionally does not bundle
   the Rust toolchain; extend the image or run Rust repos on a host with

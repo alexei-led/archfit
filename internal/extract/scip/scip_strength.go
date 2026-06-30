@@ -20,7 +20,7 @@ const (
 	pyInitFile    = "__init__.py"
 	pySrcDir      = "src"
 
-	// defaultTimeout is the per-analyzer outer watchdog when tools.scip.timeout
+	// defaultTimeout is the per-analyzer outer watchdog when analyzers.scip.timeout
 	// is not configured. Generous relative to per-subprocess timeouts (index 10m +
 	// reader 5m = 15m sum) to guard only against pathological hangs.
 	defaultTimeout = 20 * time.Minute
@@ -40,7 +40,7 @@ const (
 	reasonScipNoIndexer   = "no SCIP indexer found — install scip-go, scip-typescript, scip-python, or rust-analyzer for semantic integration strength"
 	reasonScipNoUv        = "uv not found — install uv (https://astral.sh/uv) so archfit can read the SCIP index"
 	reasonTSNoNodeModules = "install JS/TS dependencies (e.g. `npm install`) for semantic strength — scip-typescript needs node_modules to resolve cross-package imports"
-	reasonTimedOut        = "SCIP analysis timed out — increase tools.scip.timeout or reduce the scope"
+	reasonTimedOut        = "SCIP analysis timed out — increase analyzers.scip.timeout or reduce the scope"
 )
 
 // readerOutput mirrors the JSON emitted by scip_reader.py.
@@ -205,7 +205,7 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 	partial := diagnostic.Coverage{Version: indexer, Status: diagnostic.StatusPartial}
 
 	// innerTimeout returns the configured per-analyzer timeout when set, else
-	// the built-in constant. This lets tools.scip.timeout extend the per-phase
+	// the built-in constant. This lets analyzers.scip.timeout extend the per-phase
 	// inner cap beyond the fixed default (e.g. 10m index, 5m reader).
 	innerTimeout := func(builtin time.Duration) time.Duration {
 		if a.timeout > 0 {
@@ -330,7 +330,7 @@ func (a *Adapter) detectIndexer(ctx context.Context, root string) (indexer, pkg,
 // and returns the names of all workspace member packages. Returns nil on any failure.
 // Returns context.DeadlineExceeded when the inner cap fires (so detectIndexer can
 // propagate StatusTimedOut rather than silently degrading to StatusAbsent).
-// The inner cap honours tools.scip.timeout when set; floor is 60 s.
+// The inner cap honours analyzers.scip.timeout when set; floor is 60 s.
 // Used for virtual workspaces (no [package] in root Cargo.toml) so detectIndexer
 // can build a comma-separated package list for the SCIP reader.
 func (a *Adapter) cargoWorkspaceMembers(ctx context.Context, root string) ([]string, error) {

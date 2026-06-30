@@ -32,9 +32,8 @@ const (
 
 // Optional-analyzer tool names shared by doctor and the coverage-gap table.
 const (
-	toolLoc           = "loc" // always-on LOC walk; used in test assertions
-	toolLizard        = "lizard"
-	toolAstGrep       = "ast-grep"        // auto-backend complexity proxy; also pattern pass
+	toolLoc           = "loc"             // always-on LOC walk; used in test assertions
+	toolAstGrep       = "ast-grep"        // pattern pass (encapsulation + public_api rules via SyntaxFacts)
 	toolAstGrepSyntax = "ast-grep/syntax" // syntax opt-in pass (distinct from pattern pass)
 	toolScip          = "scip"
 	toolJscpd         = "jscpd"
@@ -44,8 +43,8 @@ const (
 // by the pipeline when an opt-in pass is skipped. Three occurrences each (pipeline_run.go
 // + pipeline_test.go x2) so goconst requires constants.
 const (
-	reasonScipDisabled   = "opt-in: tools.scip.enabled"
-	reasonSyntaxDisabled = "opt-in: tools.syntax.enabled"
+	reasonScipDisabled   = "opt-in: analyzers.scip.enabled"
+	reasonSyntaxDisabled = "opt-in: analyzers.syntax.enabled"
 )
 
 // Primary dependency-graph analyzer coverage names (as they appear in

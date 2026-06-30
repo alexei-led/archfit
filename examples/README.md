@@ -12,8 +12,7 @@ and owners, then run:
 ```sh
 cp examples/go-monolith.archfit.yaml .archfit.yaml
 $EDITOR .archfit.yaml
-archfit check --config .archfit.yaml --full
-archfit score --config .archfit.yaml --full
+archfit analyze --config .archfit.yaml --full
 ```
 
 | Template                                      | Shape                                                 |

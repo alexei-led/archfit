@@ -22,7 +22,7 @@ const (
 // ---------------------------------------------------------------------------
 
 // writeEnrichSubdomainFixture creates a minimal .archfit.yaml with two modules
-// (no subdomain set) plus a tools.llm stanza using the ollama provider.
+// (no subdomain set) plus a ai stanza using the ollama provider.
 // Returns the config file path and the temp directory.
 func writeEnrichSubdomainFixture(t *testing.T) (cfgPath, dir string) {
 	t.Helper()
@@ -41,11 +41,10 @@ modules:
     paths:
       - "internal/notify/**"
     layer: adapter
-tools:
-  llm:
-    provider: ollama
-    model: test-model
-    base_url: "http://unused"
+ai:
+  provider: ollama
+  model: test-model
+  base_url: "http://unused"
 `
 	if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -131,11 +130,10 @@ modules:
     paths:
       - "internal/auth/**"
     subdomain: core
-tools:
-  llm:
-    provider: ollama
-    model: test-model
-    base_url: "http://unused"
+ai:
+  provider: ollama
+  model: test-model
+  base_url: "http://unused"
 `
 	if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -279,7 +277,7 @@ func TestEnrichSubdomainPin_NoDraftFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// TestEnrichSubdomains_LLMUnconfigured — --subdomains without tools.llm → exit 3
+// TestEnrichSubdomains_LLMUnconfigured — --subdomains without ai → exit 3
 // ---------------------------------------------------------------------------
 
 func TestEnrichSubdomains_LLMUnconfigured(t *testing.T) {

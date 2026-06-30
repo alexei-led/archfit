@@ -85,7 +85,7 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 	// Apply baseline and exception status to advisory findings.
 	// status.Assign also emits fixed gate findings; suppress those for the advisory pass
 	// by discarding any synthetic kind=="gate" entries it appends.
-	tagged := status.Assign(advisoryFindings, in.Accepted, in.Exceptions, in.Now, "advisory")
+	tagged := status.Assign(advisoryFindings, in.Accepted, in.Waivers, in.Now, "advisory")
 	advisoryFindings = advisoryFindings[:0]
 	for _, f := range tagged {
 		if f.Kind == kindAdvisory {
@@ -108,7 +108,7 @@ const bcAdvisoryRollupCap = 8
 // (staleness, labels/stale) pass through unchanged. Ordering is deterministic: rollups
 // are emitted in sorted key order, then the untouched non-BC advisories in input order.
 //
-// Status is part of the key so a baseline-suppressed or excepted edge is never folded
+// Status is part of the key so a baseline-suppressed or waived edge is never folded
 // into a "new" rollup's count. Cohesion (high strength + low distance) never reaches
 // this pass — cohesion scores SeverityNone via the book formula — so a rollup, like an
 // individual advisory, never flags cohesion ("the good coupling") as a problem.

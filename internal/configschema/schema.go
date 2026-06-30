@@ -1,0 +1,107 @@
+// Package configschema generates a JSON Schema for archfit's .archfit.yaml configuration file.
+// The schema is derived from the Go structs in internal/config, using yaml struct tags as keys.
+//
+// Use Generate to produce the schema bytes; the repo-committed schema at
+// archfit.schema.json must stay in sync — enforced by the no-drift test and
+// the `make schema` target.
+package configschema
+
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/invopop/jsonschema"
+
+	"github.com/alexei-led/archfit/internal/config"
+)
+
+const (
+	schemaID    = "https://raw.githubusercontent.com/alexei-led/archfit/main/archfit.schema.json"
+	schemaDraft = "https://json-schema.org/draft/2020-12/schema"
+	typeString  = "string" // JSON Schema scalar type, reused across patches
+)
+
+// toolModeSchema is the union that replaces the inlined {type: string} for any
+// struct field named "enabled" that carries ToolMode. It mirrors what the YAML
+// config actually accepts: a native boolean (true/false) or the string "auto".
+// The legacy "on"/"off" spellings are rejected by config.ToolMode.UnmarshalYAML.
+var toolModeSchema = &jsonschema.Schema{
+	Description: "Enable state: true | false | \"auto\" (on/off are not accepted)",
+	OneOf: []*jsonschema.Schema{
+		{Type: "boolean"},
+		{Const: "auto"},
+	},
+}
+
+// gateModeSchema tightens the inlined {type: string} for the "gate" field to
+// only the three accepted values.
+var gateModeSchema = &jsonschema.Schema{
+	Type:        typeString,
+	Enum:        []any{"off", "warn", "fail"},
+	Description: "Gate posture: off (advisory, never fails) | warn (default, exit 0) | fail (hard gate)",
+}
+
+// Generate produces the JSON Schema bytes for config.Config.
+//
+// srcDir is the filesystem path to internal/config (the package directory)
+// so that AddGoComments can parse doc-comments into schema descriptions.
+// Callers in tests pass "../config"; cmd-level callers pass the absolute path.
+//
+// The output is deterministically formatted with 2-space indentation.
+func Generate(srcDir string) ([]byte, error) {
+	r := &jsonschema.Reflector{
+		// Use yaml struct tags as property names instead of json tags.
+		FieldNameTag: "yaml",
+		// Inline Config's own fields into the root schema object rather than
+		// wrapping them in a $ref, so editors see properties at the top level.
+		ExpandedStruct: true,
+	}
+
+	// Pull doc-comments from the source so each property gets a description.
+	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/config", srcDir); err != nil {
+		return nil, fmt.Errorf("configschema: AddGoComments: %w", err)
+	}
+
+	schema := r.Reflect(&config.Config{})
+
+	// Stable identity headers.
+	schema.ID = jsonschema.ID(schemaID)
+	schema.Version = schemaDraft
+
+	// Post-process: ToolMode and GateMode are inlined by invopop as {type: string}
+	// because they are named string types. Patch every struct definition to replace
+	// the inlined schemas with the correct union/enum shapes.
+	patchDefinitions(schema)
+
+	// Marshal with stable 2-space indentation.
+	buf, err := json.MarshalIndent(schema, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("configschema: marshal: %w", err)
+	}
+
+	// Append a trailing newline for POSIX-correct text files.
+	buf = append(buf, '\n')
+	return buf, nil
+}
+
+// patchDefinitions walks all named definitions in the schema and replaces
+// inlined ToolMode ("enabled" property, {type:string}) and GateMode
+// ("gate" property, {type:string}) with the correct union/enum schemas.
+func patchDefinitions(schema *jsonschema.Schema) {
+	for _, def := range schema.Definitions {
+		if def.Properties == nil {
+			continue
+		}
+		if enabled, ok := def.Properties.Get("enabled"); ok {
+			if enabled.Type == typeString {
+				// Replace in place: copy the union schema's fields.
+				*enabled = *toolModeSchema
+			}
+		}
+		if gate, ok := def.Properties.Get("gate"); ok {
+			if gate.Type == typeString && gate.Enum == nil {
+				*gate = *gateModeSchema
+			}
+		}
+	}
+}

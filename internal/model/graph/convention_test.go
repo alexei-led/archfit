@@ -12,7 +12,6 @@ const langRuby = "ruby"
 const (
 	crateGrep   = "grep"
 	crateYaziFs = "yazi-fs"
-	crateHerdr  = "herdr"
 	fileSrcMain = "src/main.rs"
 )
 
@@ -96,45 +95,6 @@ func TestNodeConventionFileToModuleKey(t *testing.T) {
 			got := BuiltinConventions.Lookup(tt.lang).FileToModuleKey(tt.file)
 			if got != tt.want {
 				t.Errorf("FileToModuleKey(%q) lang=%q = %q, want %q", tt.file, tt.lang, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestRustFileToModuleKey(t *testing.T) {
-	rootCrate := []CrateRoot{{Dir: "", Name: crateHerdr}}
-	workspace := []CrateRoot{{Dir: "crates/grep", Name: crateGrep}, {Dir: "crates/fm", Name: "yazi-fm"}}
-	rootLevel := []CrateRoot{{Dir: crateYaziFs, Name: crateYaziFs}}
-	nested := []CrateRoot{{Dir: "", Name: "root"}, {Dir: "crates/sub", Name: "sub"}}
-
-	tests := []struct {
-		name   string
-		file   string
-		crates []CrateRoot
-		want   string
-	}{
-		{"root crate nested module", "src/server/headless.rs", rootCrate, "herdr::server::headless"},
-		{"root crate lib root", "src/lib.rs", rootCrate, crateHerdr},
-		{"root crate main root", fileSrcMain, rootCrate, crateHerdr},
-		{"root crate single segment", "src/api.rs", rootCrate, "herdr::api"},
-		{"root crate mod.rs collapses", "src/api/mod.rs", rootCrate, "herdr::api"},
-		{"root crate tests namespaced", "tests/integration/mod.rs", rootCrate, "herdr::tests::integration"},
-		{"root crate build script", "build.rs", rootCrate, crateHerdr},
-		{"root crate non-rs", "README.md", rootCrate, ""},
-		{"workspace crate module", "crates/grep/src/matcher.rs", workspace, "grep::matcher"},
-		{"workspace crate lib root", "crates/grep/src/lib.rs", workspace, crateGrep},
-		{"crate name differs from dir", "crates/fm/src/app/run.rs", workspace, "yazi-fm::app::run"},
-		{"root-level member", "yazi-fs/src/cha/type.rs", rootLevel, "yazi-fs::cha::type"},
-		{"nested member wins over root", "crates/sub/src/x.rs", nested, "sub::x"},
-		{"root matches when no member does", "src/x.rs", nested, "root::x"},
-		{"file outside any crate", "other/x.rs", workspace, ""},
-		{"non-rs under crate", "crates/grep/src/build.toml", workspace, ""},
-		{"no crate roots", fileSrcMain, nil, ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := RustFileToModuleKey(tt.file, tt.crates); got != tt.want {
-				t.Errorf("RustFileToModuleKey(%q) = %q, want %q", tt.file, got, tt.want)
 			}
 		})
 	}

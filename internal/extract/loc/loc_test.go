@@ -182,7 +182,7 @@ func TestRun_EmptyRoot(t *testing.T) {
 
 // TestRun_SkipsGoModuleCache is the bug-1 regression: a Go module cache
 // (<root>/pkg/mod) inside a repo must not be counted as first-party source (its
-// 18k-LOC stdlib files otherwise dominate file_structural_weight), while
+// 18k-LOC stdlib files otherwise dominate LOC counts), while
 // similarly-named sibling dirs (pkg/api, pkg/models) must still be counted.
 func TestRun_SkipsGoModuleCache(t *testing.T) {
 	root := t.TempDir()
@@ -320,7 +320,7 @@ func TestRunWithConfig_PathGlobTest(t *testing.T) {
 
 // TestRunWithConfig_CustomMockPattern verifies that a config-supplied mock
 // pattern reclassifies matching files as Generated, reproducing the pumba
-// fixture where mocks/ files inflate panic_density.
+// fixture where mocks/ files inflate production file counts.
 func TestRunWithConfig_CustomMockPattern(t *testing.T) {
 	root := t.TempDir()
 

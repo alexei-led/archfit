@@ -40,8 +40,8 @@ The cost is not cosmetic:
 - **Cascading bugs.** A fix in one place breaks behavior in another because the
   dependency graph no longer matches the design.
 - **Harder debugging.** Engineers need more context to explain one failure.
-- **Higher AI cost.** Agents need more tokens and more retries to understand the
-  blast radius, then often add more shortcuts while trying to fix the cascade.
+- **Higher AI cost.** A larger change blast radius requires more context to
+  understand, which raises token consumption and repair iteration count.
 - **Lost ownership.** Humans remain responsible for maintenance, incidents, and
   complexity even when an agent wrote the patch.
 
@@ -83,7 +83,7 @@ intent and a Balanced-Coupling model.
 The output is shaped for both CI and AI-agent repair:
 
 - deterministic gates for boundaries, layers, public APIs, cycles, and thresholds;
-- scored architecture dimensions instead of only pass/fail text;
+- `coupling_balance` band and complementary metrics (`blast_radius`, `cycle`, `encapsulation`, `coverage`);
 - coupling advisories that explain strength, distance, and volatility;
 - `agent_tasks` that tell an AI agent what to fix, which constraints to preserve,
   and how to prove the repair;

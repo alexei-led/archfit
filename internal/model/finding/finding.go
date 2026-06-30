@@ -14,8 +14,8 @@ type Status string
 const (
 	StatusNew           Status = "new"
 	StatusBaseline      Status = "baseline"
-	StatusExcepted      Status = "excepted"
-	StatusExpiredExcept Status = "expired_exception"
+	StatusWaived        Status = "waived"
+	StatusExpiredWaiver Status = "expired_waiver"
 	StatusFixed         Status = "fixed"
 )
 
@@ -28,6 +28,13 @@ const (
 	SeverityHigh     Severity = "high"
 	SeverityMedium   Severity = "medium"
 	SeverityLow      Severity = "low"
+)
+
+// Kind classifies a finding: a blocking gate violation vs a non-blocking
+// advisory. Stored in the string field Finding.Kind.
+const (
+	KindGate     = "gate"
+	KindAdvisory = "advisory"
 )
 
 // Endpoint identifies one side of a finding edge (resolved at diagnostic assembly).
@@ -74,7 +81,7 @@ func New(ruleID string, e graph.Edge, locs []graph.Location) Finding {
 	id := fingerprint(ruleID, e.From, e.To, string(e.Kind))
 	return Finding{
 		ID:     id,
-		Kind:   "gate",
+		Kind:   KindGate,
 		RuleID: ruleID,
 		Status: StatusNew,
 		Edge: EdgeEvidence{

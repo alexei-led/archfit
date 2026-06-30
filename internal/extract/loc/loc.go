@@ -1,7 +1,8 @@
-// Package loc counts source-file line counts for the structural_weight metric.
-// It walks the repository root, skips test files, generated/dependency
-// directories, and dot-dirs, and returns a repo-relative slash-normalised map
-// of path → line count together with a diagnostic coverage record.
+// Package loc counts source-file line counts for FileLOC facts (used by SCIP
+// file-facts and the coverage metric). It walks the repository root, skips
+// test files, generated/dependency directories, and dot-dirs, and returns a
+// repo-relative slash-normalised map of path → line count together with a
+// diagnostic coverage record.
 //
 // Run also produces a FileClassIndex — a parallel map[string]FileClass covering
 // ALL source files (including test and generated) so downstream metrics can
@@ -28,7 +29,7 @@ const toolName = "loc"
 // across Go, Python, and TypeScript generators.
 const headerReadSize = 512
 
-// sourceExts are the file extensions counted for the structural_weight metric.
+// sourceExts are the file extensions counted for FileLOC facts.
 var sourceExts = map[string]bool{
 	".go": true, ".py": true, ".ts": true, ".tsx": true, ".js": true, ".jsx": true,
 	".rs": true,

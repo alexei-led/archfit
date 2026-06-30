@@ -29,25 +29,22 @@ func TestLoad_Valid(t *testing.T) {
 	if len(cfg.Rules) != 2 {
 		t.Errorf("len(Rules) = %d, want 2", len(cfg.Rules))
 	}
-	if len(cfg.Exclusions) != 2 {
-		t.Errorf("len(Exclusions) = %d, want 2", len(cfg.Exclusions))
+	if len(cfg.Exclude) != 2 {
+		t.Errorf("len(Exclude) = %d, want 2", len(cfg.Exclude))
 	}
-	if len(cfg.Exceptions) != 1 {
-		t.Errorf("len(Exceptions) = %d, want 1", len(cfg.Exceptions))
+	if len(cfg.Waivers) != 1 {
+		t.Errorf("len(Waivers) = %d, want 1", len(cfg.Waivers))
 	}
 
-	// Verify tool modes.
-	git, ok := cfg.Tools["git"]
-	if !ok {
-		t.Error("tools.git not found")
-	} else if git.Enabled != config.ModeOn {
-		t.Errorf("tools.git.enabled = %q, want %q", git.Enabled, config.ModeOn)
+	// Verify language/analyzer modes (true→on, auto stays auto).
+	if got := cfg.Languages.Go.Enabled; got != config.ModeOn {
+		t.Errorf("languages.go.enabled = %q, want %q", got, config.ModeOn)
 	}
-	dc, ok := cfg.Tools["dependency_cruiser"]
-	if !ok {
-		t.Error("tools.dependency_cruiser not found")
-	} else if dc.Enabled != config.ModeAuto {
-		t.Errorf("tools.dependency_cruiser.enabled = %q, want %q", dc.Enabled, config.ModeAuto)
+	if got := cfg.Languages.TypeScript.Enabled; got != config.ModeAuto {
+		t.Errorf("languages.typescript.enabled = %q, want %q", got, config.ModeAuto)
+	}
+	if got := cfg.Analyzers.Clones.Enabled; got != config.ModeAuto {
+		t.Errorf("analyzers.clones.enabled = %q, want %q", got, config.ModeAuto)
 	}
 
 	// Verify module details.
@@ -200,8 +197,8 @@ func TestForScope(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	sc := cfg.ForScope()
-	if len(sc.Exclusions) != len(cfg.Exclusions) {
-		t.Errorf("ForScope().Exclusions len=%d, want %d", len(sc.Exclusions), len(cfg.Exclusions))
+	if len(sc.Exclusions) != len(cfg.Exclude) {
+		t.Errorf("ForScope().Exclusions len=%d, want %d", len(sc.Exclusions), len(cfg.Exclude))
 	}
 }
 
@@ -218,11 +215,11 @@ func TestForExtract(t *testing.T) {
 		}
 	})
 
-	t.Run("go_mode_default_auto", func(t *testing.T) {
-		// go tool not in testdata/valid.yaml → defaults to auto
+	t.Run("go_mode_on", func(t *testing.T) {
+		// testdata/valid.yaml sets languages.go.enabled: true → ModeOn
 		ec := cfg.ForExtract("go")
-		if ec.Mode != config.ModeAuto {
-			t.Errorf("ForExtract(go).Mode = %q, want auto", ec.Mode)
+		if ec.Mode != config.ModeOn {
+			t.Errorf("ForExtract(go).Mode = %q, want on", ec.Mode)
 		}
 	})
 
@@ -251,10 +248,12 @@ func TestForExtract(t *testing.T) {
 
 	t.Run("rust_fields_populated", func(t *testing.T) {
 		rc := config.Config{
-			Version:            1,
-			RustManifest:       rustManifestPath,
-			RustFeatures:       rustFeatures,
-			RustIncludeDevDeps: true,
+			Version: 1,
+			Languages: config.LanguagesConfig{Rust: config.RustLanguage{
+				Manifest:       rustManifestPath,
+				Features:       rustFeatures,
+				IncludeDevDeps: true,
+			}},
 		}
 		ec := rc.ForExtract("rust")
 		if ec.CargoManifest != rustManifestPath {
@@ -270,7 +269,7 @@ func TestForExtract(t *testing.T) {
 
 	t.Run("rust_fields_absent_for_non_rust", func(t *testing.T) {
 		// A non-rust language must not pick up the Cargo fields.
-		rc := config.Config{Version: 1, RustManifest: "Cargo.toml", RustIncludeDevDeps: true}
+		rc := config.Config{Version: 1, Languages: config.LanguagesConfig{Rust: config.RustLanguage{Manifest: "Cargo.toml", IncludeDevDeps: true}}}
 		ec := rc.ForExtract("go")
 		if ec.CargoManifest != "" || ec.CargoFeatures != nil || ec.IncludeDevDeps {
 			t.Errorf("non-rust lang leaked rust fields: %+v", ec)
@@ -281,15 +280,13 @@ func TestForExtract(t *testing.T) {
 		// tools.go.modules.include/exclude must surface in ForExtract("go").
 		gc := config.Config{
 			Version: 1,
-			Tools: map[string]config.ToolConfig{
-				config.LangGo: {
-					Enabled: config.ModeAuto,
-					Modules: config.GoModuleFilter{
-						Include: []string{globSvcAll},
-						Exclude: []string{"svc/legacy"},
-					},
+			Languages: config.LanguagesConfig{Go: config.GoLanguage{
+				Enabled: config.ModeAuto,
+				Modules: config.GoModuleFilter{
+					Include: []string{globSvcAll},
+					Exclude: []string{"svc/legacy"},
 				},
-			},
+			}},
 		}
 		ec := gc.ForExtract("go")
 		if !slices.Equal(ec.GoModuleInclude, []string{globSvcAll}) {
@@ -304,11 +301,9 @@ func TestForExtract(t *testing.T) {
 		// tools.go.modules must not leak into other language extractors.
 		gc := config.Config{
 			Version: 1,
-			Tools: map[string]config.ToolConfig{
-				config.LangGo: {
-					Modules: config.GoModuleFilter{Include: []string{globSvcAll}},
-				},
-			},
+			Languages: config.LanguagesConfig{Go: config.GoLanguage{
+				Modules: config.GoModuleFilter{Include: []string{globSvcAll}},
+			}},
 		}
 		ec := gc.ForExtract("typescript")
 		if ec.GoModuleInclude != nil || ec.GoModuleExclude != nil {
@@ -319,12 +314,8 @@ func TestForExtract(t *testing.T) {
 
 func TestDefaultIncludesRust(t *testing.T) {
 	cfg := config.Default()
-	rust, ok := cfg.Tools[config.LangRust]
-	if !ok {
-		t.Fatal("Default().Tools missing rust entry")
-	}
-	if rust.Enabled != config.ModeAuto {
-		t.Errorf("Default rust mode = %q, want auto", rust.Enabled)
+	if got := cfg.Languages.Rust.Enabled; got != config.ModeAuto {
+		t.Errorf("Default rust mode = %q, want auto", got)
 	}
 }
 
@@ -338,9 +329,11 @@ var rustFeatures = []string{"serde", "tokio"}
 
 func TestLoadRustFields(t *testing.T) {
 	yaml := "version: 1\n" +
-		"rust_manifest: " + rustManifestPath + "\n" +
-		"rust_features: [serde, tokio]\n" +
-		"rust_include_dev_deps: true\n"
+		"languages:\n" +
+		"  rust:\n" +
+		"    manifest: " + rustManifestPath + "\n" +
+		"    features: [serde, tokio]\n" +
+		"    include_dev_deps: true\n"
 	path := filepath.Join(t.TempDir(), "rust.yaml")
 	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -462,19 +455,19 @@ func TestForStaleness_GateOffDisables(t *testing.T) {
 	const gateOff, gateWarn, gateFail = "off", "warn", "fail"
 	tests := []struct {
 		name        string
-		mapReview   config.MapReviewConfig
+		mapReview   config.ModuleReviewConfig
 		wantEnabled bool
 	}{
-		{"gate off disables", config.MapReviewConfig{Gate: gateOff}, false},
-		{"gate off overrides stale_after", config.MapReviewConfig{Gate: gateOff, StaleAfter: "720h"}, false},
-		{"gate warn enables", config.MapReviewConfig{Gate: gateWarn}, true},
-		{"gate fail enables", config.MapReviewConfig{Gate: gateFail}, true},
-		{"stale_after enables", config.MapReviewConfig{StaleAfter: "720h"}, true},
-		{"nothing set stays disabled", config.MapReviewConfig{}, false},
+		{"gate off disables", config.ModuleReviewConfig{Gate: gateOff}, false},
+		{"gate off overrides stale_after", config.ModuleReviewConfig{Gate: gateOff, StaleAfter: "720h"}, false},
+		{"gate warn enables", config.ModuleReviewConfig{Gate: gateWarn}, true},
+		{"gate fail enables", config.ModuleReviewConfig{Gate: gateFail}, true},
+		{"stale_after enables", config.ModuleReviewConfig{StaleAfter: "720h"}, true},
+		{"nothing set stays disabled", config.ModuleReviewConfig{}, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := config.Config{MapReview: tc.mapReview}
+			cfg := config.Config{ModuleReview: tc.mapReview}
 			if got := cfg.ForStaleness().Enabled; got != tc.wantEnabled {
 				t.Errorf("ForStaleness().Enabled = %v, want %v", got, tc.wantEnabled)
 			}
@@ -487,9 +480,9 @@ func TestForStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	es := cfg.ForStatus()
-	if len(es.Exceptions) != len(cfg.Exceptions) {
-		t.Errorf("ForStatus().Exceptions len=%d, want %d", len(es.Exceptions), len(cfg.Exceptions))
+	es := cfg.ForWaivers()
+	if len(es.Waivers) != len(cfg.Waivers) {
+		t.Errorf("ForWaivers().Waivers len=%d, want %d", len(es.Waivers), len(cfg.Waivers))
 	}
 }
 
@@ -515,12 +508,14 @@ func TestToolMode_UnmarshalYAML(t *testing.T) {
 		wantErr bool
 		want    config.ToolMode
 	}{
-		{"bool_true", "version: 1\ntools:\n  git:\n    enabled: true\n", false, config.ModeOn},
-		{"bool_false", "version: 1\ntools:\n  git:\n    enabled: false\n", false, config.ModeOff},
-		{"string_auto", "version: 1\ntools:\n  git:\n    enabled: auto\n", false, config.ModeAuto},
-		{"string_on", "version: 1\ntools:\n  git:\n    enabled: on\n", false, config.ModeOn},
-		{"string_off", "version: 1\ntools:\n  git:\n    enabled: off\n", false, config.ModeOff},
-		{"invalid", "version: 1\ntools:\n  git:\n    enabled: maybe\n", true, ""},
+		{"bool_true", "version: 1\nanalyzers:\n  clones:\n    enabled: true\n", false, config.ModeOn},
+		{"bool_false", "version: 1\nanalyzers:\n  clones:\n    enabled: false\n", false, config.ModeOff},
+		{"string_auto", "version: 1\nanalyzers:\n  clones:\n    enabled: auto\n", false, config.ModeAuto},
+		// on/off are no longer accepted — canonical vocabulary is true|false|auto.
+		{"bare_on_rejected", "version: 1\nanalyzers:\n  clones:\n    enabled: on\n", true, ""},
+		{"quoted_on_rejected", "version: 1\nanalyzers:\n  clones:\n    enabled: \"on\"\n", true, ""},
+		{"quoted_off_rejected", "version: 1\nanalyzers:\n  clones:\n    enabled: \"off\"\n", true, ""},
+		{"invalid", "version: 1\nanalyzers:\n  clones:\n    enabled: maybe\n", true, ""},
 	}
 
 	for _, tc := range tests {
@@ -540,7 +535,7 @@ func TestToolMode_UnmarshalYAML(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load: %v", err)
 			}
-			got := cfg.Tools["git"].Enabled
+			got := cfg.Analyzers.Clones.Enabled
 			if got != tc.want {
 				t.Errorf("Enabled = %q, want %q", got, tc.want)
 			}
@@ -669,6 +664,41 @@ func TestForPatterns(t *testing.T) {
 	}
 }
 
+// loadInline writes body to a temp config file and loads it, returning the error.
+func loadInline(t *testing.T, body string) error {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, ".archfit.yaml")
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := config.Load(context.Background(), p)
+	return err
+}
+
+func TestLoad_UnknownMetricKey_IsError(t *testing.T) {
+	err := loadInline(t, "version: 1\nmetrics:\n  bogus:\n    enabled: true\n")
+	if err == nil || !strings.Contains(err.Error(), "metrics.bogus is not a known metric") {
+		t.Errorf("unknown metric: got %v, want 'not a known metric' error", err)
+	}
+}
+
+func TestLoad_RemovedMetricKey_IsActionableError(t *testing.T) {
+	for _, key := range []string{"risk_hub", "functional_candidates"} {
+		err := loadInline(t, "version: 1\nmetrics:\n  "+key+":\n    enabled: true\n")
+		if err == nil || !strings.Contains(err.Error(), "removed in v1.0") || !strings.Contains(err.Error(), "migration.md") {
+			t.Errorf("removed metric %q: got %v, want 'removed in v1.0 ... migration.md'", key, err)
+		}
+	}
+}
+
+func TestLoad_DeprecatedToolsKey_IsActionableError(t *testing.T) {
+	err := loadInline(t, "version: 1\ntools:\n  scip:\n    enabled: true\n")
+	if err == nil || !strings.Contains(err.Error(), "renamed to `analyzers:`") {
+		t.Errorf("tools key: got %v, want 'renamed to analyzers:' hint", err)
+	}
+}
+
 func TestLoad_ExistingConfigUnchanged(t *testing.T) {
 	// Existing configs without patterns: must still load cleanly.
 	cfg, err := config.Load(context.Background(), "testdata/valid.yaml")
@@ -695,36 +725,33 @@ func TestLoad_NewToolsAndMetrics(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	// tools.clones.enabled: on
-	clones, ok := cfg.Tools[config.ToolClones]
-	if !ok {
-		t.Error("tools.clones not found")
-	} else if clones.Enabled != config.ModeOn {
-		t.Errorf("tools.clones.enabled = %q, want on", clones.Enabled)
+	// analyzers.clones.enabled: true
+	if got := cfg.Analyzers.Clones.Enabled; got != config.ModeOn {
+		t.Errorf("analyzers.clones.enabled = %q, want on", got)
 	}
 	if !cfg.ClonesEnabled() {
-		t.Error("ClonesEnabled() = false, want true when on")
+		t.Error("ClonesEnabled() = false, want true when enabled")
 	}
 
-	// metrics.risk_hub: enabled false
-	rh := cfg.ForMetric("risk_hub")
+	// metrics.blast_radius: enabled false
+	rh := cfg.ForMetric("blast_radius")
 	if rh.Enabled {
-		t.Error("ForMetric(risk_hub).Enabled = true, want false")
+		t.Error("ForMetric(blast_radius).Enabled = true, want false")
 	}
 
-	// metrics.architecture_fitness: enabled true, gate warn
-	af := cfg.ForMetric("architecture_fitness")
+	// metrics.encapsulation: enabled true, gate warn
+	af := cfg.ForMetric("encapsulation")
 	if !af.Enabled {
-		t.Error("ForMetric(architecture_fitness).Enabled = false, want true")
+		t.Error("ForMetric(encapsulation).Enabled = false, want true")
 	}
 	if af.Gate != "warn" {
-		t.Errorf("ForMetric(architecture_fitness).Gate = %q, want warn", af.Gate)
+		t.Errorf("ForMetric(encapsulation).Gate = %q, want warn", af.Gate)
 	}
 
-	// metrics.functional_candidates: enabled false
-	fc := cfg.ForMetric("functional_candidates")
+	// metrics.coverage: enabled false
+	fc := cfg.ForMetric("coverage")
 	if fc.Enabled {
-		t.Error("ForMetric(functional_candidates).Enabled = true, want false")
+		t.Error("ForMetric(coverage).Enabled = true, want false")
 	}
 }
 
@@ -741,7 +768,7 @@ func TestNewToolsDefaultOff(t *testing.T) {
 // a zero MetricEntry (Enabled=false, Gate=""), consistent with ForMetric contract.
 func TestNewMetricsDefaultZero(t *testing.T) {
 	cfg := config.Config{Version: 1}
-	for _, name := range []string{"risk_hub", "architecture_fitness", "functional_candidates"} {
+	for _, name := range []string{"blast_radius", "encapsulation", "coverage"} {
 		mc := cfg.ForMetric(name)
 		if mc.Enabled {
 			t.Errorf("ForMetric(%q).Enabled = true on empty config, want false", name)
@@ -752,9 +779,9 @@ func TestNewMetricsDefaultZero(t *testing.T) {
 	}
 }
 
-// TestNewToolInvalidMode verifies that an invalid mode value for a tool key is rejected.
+// TestNewToolInvalidMode verifies that an invalid mode value for an analyzer key is rejected.
 func TestNewToolInvalidMode(t *testing.T) {
-	yaml := "version: 1\ntools:\n  clones:\n    enabled: maybe\n"
+	yaml := "version: 1\nanalyzers:\n  clones:\n    enabled: maybe\n"
 	tmp := t.TempDir() + "/cfg.yaml"
 	if err := writeFile(tmp, yaml); err != nil {
 		t.Fatalf("write temp: %v", err)
@@ -767,7 +794,7 @@ func TestNewToolInvalidMode(t *testing.T) {
 
 // TestLoad_SelfConfig verifies that the project's own .archfit.yaml — the realistic
 // config we run locally and in CI — loads cleanly and is well-formed. It deliberately
-// does NOT pin opt-in toggles (risk_hub, …): those are operational choices,
+// does NOT pin opt-in toggles (scip, cargo_modules, …): those are operational choices,
 // not invariants, and pinning them broke this test on every legitimate config change.
 // Toggle-accessor behavior is covered against synthetic configs by TestForMetric,
 // TestNewToolsDefaultOff, and the testdata fixture tests above.
@@ -808,7 +835,6 @@ func TestSelfConfig_ExtractModuleMap(t *testing.T) {
 		"internal/extract/runtime",
 		"internal/extract/dynimports",
 		"internal/extract/clones",
-		"internal/extract/complexity",
 		"internal/extract/loc",
 	}
 
@@ -1026,7 +1052,7 @@ func TestFillMissingOwners(t *testing.T) {
 	}
 }
 
-// TestLoad_ValidateEnums checks that bad bc_advisory_min_severity and gate values
+// TestLoad_ValidateEnums checks that bad coupling.min_severity and gate values
 // are rejected at load with a descriptive error, not silently accepted (which would
 // disable the check the field was meant to configure), while valid values load clean.
 func TestLoad_ValidateEnums(t *testing.T) {
@@ -1037,7 +1063,7 @@ func TestLoad_ValidateEnums(t *testing.T) {
 	}{
 		{
 			name:    "valid bc severity",
-			yaml:    "version: 1\nbc_advisory_min_severity: critical\n",
+			yaml:    "version: 1\ncoupling:\n  min_severity: critical\n",
 			wantErr: "",
 		},
 		{
@@ -1047,8 +1073,8 @@ func TestLoad_ValidateEnums(t *testing.T) {
 		},
 		{
 			name:    "invalid bc severity",
-			yaml:    "version: 1\nbc_advisory_min_severity: severe\n",
-			wantErr: "bc_advisory_min_severity",
+			yaml:    "version: 1\ncoupling:\n  min_severity: severe\n",
+			wantErr: "coupling.min_severity",
 		},
 		{
 			name:    "valid rule gates",
@@ -1076,48 +1102,48 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			wantErr: "metrics.cycle",
 		},
 		{
-			name:    "invalid map_review gate",
-			yaml:    "version: 1\nmap_review:\n  gate: maybe\n",
-			wantErr: "map_review",
+			name:    "invalid module_review gate",
+			yaml:    "version: 1\nmodule_review:\n  gate: maybe\n",
+			wantErr: "module_review",
 		},
 		{
-			name:    "valid tool gate",
-			yaml:    "version: 1\ntools:\n  go:\n    enabled: auto\n    gate: fail\n",
+			name:    "valid language gate",
+			yaml:    "version: 1\nlanguages:\n  go:\n    enabled: auto\n    gate: fail\n",
 			wantErr: "",
 		},
 		{
-			name:    "empty tool gate is allowed",
-			yaml:    "version: 1\ntools:\n  go:\n    enabled: auto\n",
+			name:    "empty language gate is allowed",
+			yaml:    "version: 1\nlanguages:\n  go:\n    enabled: auto\n",
 			wantErr: "",
 		},
 		{
-			name:    "invalid tool gate names the tool",
-			yaml:    "version: 1\ntools:\n  go:\n    enabled: auto\n    gate: block\n",
-			wantErr: "tools.go",
+			name:    "invalid language gate names the language",
+			yaml:    "version: 1\nlanguages:\n  go:\n    enabled: auto\n    gate: block\n",
+			wantErr: "languages.go",
 		},
 		{
 			name:    "off is a valid gate",
-			yaml:    "version: 1\nmap_review:\n  gate: off\n",
+			yaml:    "version: 1\nmodule_review:\n  gate: off\n",
 			wantErr: "",
 		},
 		{
 			name:    "invalid stale_after duration",
-			yaml:    "version: 1\nmap_review:\n  stale_after: \"180 days\"\n",
-			wantErr: "map_review.stale_after",
+			yaml:    "version: 1\nmodule_review:\n  stale_after: \"180 days\"\n",
+			wantErr: "module_review.stale_after",
 		},
 		{
 			name:    "valid stale_after duration",
-			yaml:    "version: 1\nmap_review:\n  stale_after: 720h\n",
+			yaml:    "version: 1\nmodule_review:\n  stale_after: 720h\n",
 			wantErr: "",
 		},
 		{
-			name:    "invalid tool timeout rejected",
-			yaml:    "version: 1\ntools:\n  scip:\n    timeout: \"5min\"\n",
-			wantErr: "tools.scip.timeout",
+			name:    "invalid analyzer timeout rejected",
+			yaml:    "version: 1\nanalyzers:\n  scip:\n    timeout: \"5min\"\n",
+			wantErr: "analyzers.scip.timeout",
 		},
 		{
-			name:    "valid tool timeout accepted",
-			yaml:    "version: 1\ntools:\n  scip:\n    timeout: \"5m\"\n",
+			name:    "valid analyzer timeout accepted",
+			yaml:    "version: 1\nanalyzers:\n  scip:\n    timeout: \"5m\"\n",
 			wantErr: "",
 		},
 		{
@@ -1160,12 +1186,12 @@ func TestLoad_ValidateEnums(t *testing.T) {
 	}
 }
 
-// TestLoad_ToolGate verifies the tools.<x>.gate field parses into the typed
+// TestLoad_ToolGate verifies the languages.<x>.gate field parses into the typed
 // GateMode and that an omitted gate is the empty value (callers default it to warn).
 func TestLoad_ToolGate(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "cfg.yaml")
 	yaml := "version: 1\n" +
-		"tools:\n" +
+		"languages:\n" +
 		"  go:\n" +
 		"    enabled: auto\n" +
 		"    gate: fail\n" +
@@ -1178,11 +1204,11 @@ func TestLoad_ToolGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got := cfg.Tools["go"].Gate; got != config.GateFail {
-		t.Errorf("tools.go.gate = %q, want %q", got, config.GateFail)
+	if got := cfg.ToolGate("go"); got != config.GateFail {
+		t.Errorf("languages.go.gate = %q, want %q", got, config.GateFail)
 	}
-	if got := cfg.Tools["typescript"].Gate; got != "" {
-		t.Errorf("tools.typescript.gate = %q, want \"\" (unset)", got)
+	if got := cfg.ToolGate("typescript"); got != "" {
+		t.Errorf("languages.typescript.gate = %q, want \"\" (unset)", got)
 	}
 }
 
@@ -1310,7 +1336,7 @@ func TestLintWarning_String(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// tools.syntax — SyntaxEnabled + ForSyntax
+// analyzers.syntax — SyntaxEnabled + ForSyntax
 // ---------------------------------------------------------------------------
 
 func TestSyntaxEnabled(t *testing.T) {
@@ -1319,9 +1345,7 @@ func TestSyntaxEnabled(t *testing.T) {
 		mode string
 		want bool
 	}{
-		{"on enables", "on", true},
 		{"true enables", "true", true},
-		{"off disables", "off", false},
 		{"false disables", "false", false},
 		{"auto disables (opt-in only)", "auto", false},
 		{"absent disables", "", false},
@@ -1332,7 +1356,7 @@ func TestSyntaxEnabled(t *testing.T) {
 			if tc.mode == "" {
 				yamlBody = "version: 1\n"
 			} else {
-				yamlBody = "version: 1\ntools:\n  syntax:\n    enabled: " + tc.mode + "\n"
+				yamlBody = "version: 1\nanalyzers:\n  syntax:\n    enabled: " + tc.mode + "\n"
 			}
 			dir := t.TempDir()
 			path := filepath.Join(dir, ".archfit.yaml")
@@ -1357,18 +1381,18 @@ func TestForSyntax_Mode(t *testing.T) {
 		enabled bool
 	}{
 		{
-			name:    "enabled when on",
-			yaml:    "version: 1\ntools:\n  syntax:\n    enabled: on\n",
+			name:    "enabled when true",
+			yaml:    "version: 1\nanalyzers:\n  syntax:\n    enabled: true\n",
 			enabled: true,
 		},
 		{
 			name:    "disabled when auto",
-			yaml:    "version: 1\ntools:\n  syntax:\n    enabled: auto\n",
+			yaml:    "version: 1\nanalyzers:\n  syntax:\n    enabled: auto\n",
 			enabled: false,
 		},
 		{
-			name:    "disabled when off",
-			yaml:    "version: 1\ntools:\n  syntax:\n    enabled: off\n",
+			name:    "disabled when false",
+			yaml:    "version: 1\nanalyzers:\n  syntax:\n    enabled: false\n",
 			enabled: false,
 		},
 		{
@@ -1413,7 +1437,7 @@ func TestForSyntax_Languages(t *testing.T) {
 	})
 
 	t.Run("excludes language set to off", func(t *testing.T) {
-		yaml := "version: 1\ntools:\n  rust:\n    enabled: off\n"
+		yaml := "version: 1\nlanguages:\n  rust:\n    enabled: false\n"
 		dir := t.TempDir()
 		path := filepath.Join(dir, ".archfit.yaml")
 		if err := writeFile(path, yaml); err != nil {
@@ -1428,7 +1452,7 @@ func TestForSyntax_Languages(t *testing.T) {
 	})
 
 	t.Run("includes language set to auto", func(t *testing.T) {
-		yaml := "version: 1\ntools:\n  python:\n    enabled: auto\n"
+		yaml := "version: 1\nlanguages:\n  python:\n    enabled: auto\n"
 		dir := t.TempDir()
 		path := filepath.Join(dir, ".archfit.yaml")
 		if err := writeFile(path, yaml); err != nil {
@@ -1442,7 +1466,7 @@ func TestForSyntax_Languages(t *testing.T) {
 	})
 
 	t.Run("all off yields empty languages", func(t *testing.T) {
-		yaml := "version: 1\ntools:\n  go:\n    enabled: off\n  typescript:\n    enabled: off\n  python:\n    enabled: off\n  rust:\n    enabled: off\n"
+		yaml := "version: 1\nlanguages:\n  go:\n    enabled: false\n  typescript:\n    enabled: false\n  python:\n    enabled: false\n  rust:\n    enabled: false\n"
 		dir := t.TempDir()
 		path := filepath.Join(dir, ".archfit.yaml")
 		if err := writeFile(path, yaml); err != nil {

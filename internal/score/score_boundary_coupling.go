@@ -3,94 +3,11 @@ package score
 import (
 	"fmt"
 	"math"
-	"sort"
-	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 )
-
-// boundary_integrity baselines used when encapsulation is structurally n/a
-// (compiler-enforced package boundaries) and the import-cycle signal stands in.
-// Held at medium confidence in that path, so boundaryCleanNoCycles reads
-// "serviceable" (not "strong" — contract discipline stays unverified) and
-// boundaryWithCycles reads "poor".
-const (
-	boundaryCleanNoCycles = 75 // 0 cycles + 0 gate violations: clean structural boundary
-	boundaryWithCycles    = 40 // import cycles cross intended boundaries
-)
-
-// boundaryIntegrity scores whether code respects intended module/layer/ownership
-// boundaries. Encapsulation (contract / (contract+intrusive) cross-boundary
-// edges) sets the baseline; each active gate violation (a forbidden dependency
-// that crossed a boundary) is a measured breach and subtracts a fixed penalty.
-func boundaryIntegrity(mi metricIndex, gate []finding.Finding, base Confidence) Dimension {
-	dim := Dimension{Name: DimBoundaryIntegrity, Confidence: base}
-	// On a <2-module graph the encapsulation metric reports a vacuous 1.0 ("no
-	// cross-boundary edges, so nothing leaks"). That is absence of evidence, not
-	// earned encapsulation, so don't let it produce a strong band. Gate findings,
-	// if any, are still real boundary breaches and take the normal path below.
-	if degenerateGraph(mi) && len(gate) == 0 {
-		return Dimension{
-			Name: DimBoundaryIntegrity, Value: 50, Confidence: ConfidenceLow,
-			Evidence: []string{"encapsulation vacuous: no cross-module boundaries on a graph with fewer than two connected modules"},
-			Summary:  "boundary integrity unconfirmed: no internal module boundaries to assess",
-		}
-	}
-	var value int
-	// baselineMeasured: a real boundary baseline was established (from
-	// encapsulation, or — when that is structurally n/a — from the import-cycle
-	// signal), so 0 gate violations means "boundaries hold", not "unconfirmed".
-	baselineMeasured := true
-	if enc, ok := mi.measured("encapsulation"); ok {
-		value = pct(enc.Value)
-		dim.Evidence = append(dim.Evidence, fmt.Sprintf("encapsulation %.2f (%s)", enc.Value, enc.Band))
-		dim.Confidence = minConf(base, metricConf(enc.Confidence))
-	} else if cyc, ok := mi.measured("cycle"); ok {
-		// Encapsulation is structurally unmeasurable in the common compiler-enforced
-		// case (Go/TS: every cross-package reference goes through an exported API, so
-		// there are no intrusive edges to form the contract/(contract+intrusive)
-		// ratio). Rather than cap at a neutral, unconfirmed 50, assess the boundary
-		// from the signal that IS measurable here: import cycles. Circular
-		// dependencies are boundary breaks; their absence is a real (if partial)
-		// boundary-health signal. Confidence is held at medium — contract discipline
-		// (no model leakage through public types) stays unverified.
-		if cyc.Value == 0 {
-			value = boundaryCleanNoCycles
-			dim.Evidence = append(dim.Evidence,
-				"encapsulation n/a (compiler-enforced package boundary: no intrusive edges to score); 0 import cycles")
-		} else {
-			value = boundaryWithCycles
-			dim.Evidence = append(dim.Evidence,
-				fmt.Sprintf("encapsulation n/a; %d import cycle(s) cross intended boundaries", int(cyc.Value)))
-		}
-		dim.Confidence = minConf(base, ConfidenceMedium)
-	} else {
-		// Neither encapsulation nor cycles measurable — no boundary signal at all.
-		baselineMeasured = false
-		value = 50
-		dim.Evidence = append(dim.Evidence,
-			"encapsulation and import cycles both n/a — boundary baseline unmeasured")
-		dim.Confidence = ConfidenceLow
-	}
-
-	if n := len(gate); n > 0 {
-		pen := capInt(n*15, 70)
-		value -= pen
-		dim.Evidence = append(dim.Evidence, fmt.Sprintf("%d active gate violation(s): %s", n, sampleIDs(gate)))
-		dim.Summary = "boundary violations present: forbidden dependencies cross intended boundaries"
-	} else {
-		dim.Evidence = append(dim.Evidence, "0 active gate violations")
-		if baselineMeasured {
-			dim.Summary = "no gate-level boundary violations; intended boundaries hold"
-		} else {
-			dim.Summary = "no gate-level boundary violations; encapsulation unmeasured, so boundary integrity is unconfirmed"
-		}
-	}
-	dim.Value = value
-	return dim
-}
 
 // couplingBalance scores integration strength vs distance vs volatility using
 // Vlad Khononov's balance formula from _Balancing Coupling in Software Design_ Ch10.
@@ -133,8 +50,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 	// --- Distribution path (preferred): use the full classified-edge summary ---
 	if summary != nil {
 		// Internal cross-boundary edges only (external/library edges excluded from
-		// coupling_balance — they are a dependency_graph_health concern, not a
-		// coupling_balance concern; the book scores YOUR components only).
+		// coupling_balance — the book scores YOUR components only, not your libraries).
 		crossBoundary := summary.Scored + summary.Abstained
 
 		// Zero internal cross-boundary edges (or zero scored): unanalyzed sentinel.
@@ -147,7 +63,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			}
 			if summary.External > 0 {
 				dim.Evidence = append(dim.Evidence,
-					fmt.Sprintf("%d external/library edges excluded — see dependency_graph_health", summary.External))
+					fmt.Sprintf("%d external/library edges excluded (external deps are not internal coupling seams)", summary.External))
 			}
 			dim.Summary = "coupling balance unconfirmed: no scored cross-boundary edges"
 			return dim
@@ -205,7 +121,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		}
 		if summary.External > 0 {
 			dim.Evidence = append(dim.Evidence,
-				fmt.Sprintf("%d external/library edges excluded — see dependency_graph_health", summary.External))
+				fmt.Sprintf("%d external/library edges excluded (external deps are not internal coupling seams)", summary.External))
 		}
 		if llmConfLowered {
 			dim.Evidence = append(dim.Evidence,
@@ -230,7 +146,6 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 	// This path is unreachable from engine.go — the engine always populates
 	// ClassifiedEdges. It exists for calibration test suites that construct
 	// a bare Diagnostic without a ClassifiedEdges summary.
-	// --- Legacy fallback: advisory-edge path (summary == nil) ---
 	if len(edges) == 0 {
 		dim.Confidence = ConfidenceLow
 		dim.Value = 60
@@ -291,9 +206,9 @@ func (e bcEdge) worstCase() bool {
 
 // bcEdges extracts the active Balanced-Coupling advisory edges from the findings,
 // parsing the strength/distance/volatility/score fields the engine stamped into
-// MatchedBy. Only active advisories (status new or expired_exception) count —
-// the same filter activeGateFindings and the gate verdict use. Baseline-accepted
-// and excepted edges are operator-suppressed debt; counting them would deflate
+// MatchedBy. Only active advisories (status new or expired_waiver) count —
+// the same filter IsActiveGateFinding and the gate verdict use. Baseline-accepted
+// and waived edges are operator-suppressed debt; counting them would deflate
 // coupling_balance for a repo that has triaged its coupling, diverging from the
 // gate's own view. Fixed (resolved) advisories are skipped too.
 func bcEdges(fs []finding.Finding) []bcEdge {
@@ -302,7 +217,7 @@ func bcEdges(fs []finding.Finding) []bcEdge {
 		if f.RuleID != "bc/imbalanced_coupling" {
 			continue
 		}
-		if f.Status != finding.StatusNew && f.Status != finding.StatusExpiredExcept {
+		if !IsActiveGateFinding(f) {
 			continue
 		}
 		e := bcEdge{
@@ -322,20 +237,11 @@ func bcEdges(fs []finding.Finding) []bcEdge {
 	return out
 }
 
-// activeGateFindings returns gate findings that still count against the verdict
-// (status new or expired_exception), sorted by ID for deterministic sampling.
-func activeGateFindings(fs []finding.Finding) []finding.Finding {
-	var out []finding.Finding
-	for _, f := range fs {
-		if f.Kind != "gate" {
-			continue
-		}
-		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept {
-			out = append(out, f)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+// IsActiveGateFinding reports whether f is an active gate finding — one that
+// counts against the verdict (status new or expired_waiver). Shared with
+// internal/decision so the recommendation buckets match the gate verdict.
+func IsActiveGateFinding(f finding.Finding) bool {
+	return f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver
 }
 
 // effortFromSeverity approximates a 0-10 maintenance-effort score for a BC edge
@@ -353,22 +259,4 @@ func effortFromSeverity(sev string) int {
 	default:
 		return 5
 	}
-}
-
-// sampleIDs renders up to three short finding IDs for evidence.
-func sampleIDs(fs []finding.Finding) string {
-	const maxIDs = 3
-	ids := make([]string, 0, maxIDs+1)
-	for i, f := range fs {
-		if i == maxIDs {
-			ids = append(ids, "...")
-			break
-		}
-		id := f.ID
-		if len(id) > 8 {
-			id = id[:8]
-		}
-		ids = append(ids, id)
-	}
-	return strings.Join(ids, ", ")
 }

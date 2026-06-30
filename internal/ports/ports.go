@@ -94,7 +94,7 @@ type SyntaxProvider interface {
 	Syntax(ctx context.Context, s scope.Scope, langs []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error)
 }
 
-// NopSyntaxProvider is a no-op SyntaxProvider used when tools.syntax is off or
+// NopSyntaxProvider is a no-op SyntaxProvider used when analyzers.syntax is off or
 // sg is absent. Syntax returns empty facts and a coverage record with status="absent".
 type NopSyntaxProvider struct{}
 
@@ -104,7 +104,7 @@ var _ SyntaxProvider = NopSyntaxProvider{}
 func (NopSyntaxProvider) Name() string { return "nop-syntax" }
 
 // Syntax returns empty facts and a zero coverage record. The pipeline appends
-// an explicit StatusDisabled row when syntax is off (opt-in: tools.syntax.enabled),
+// an explicit StatusDisabled row when syntax is off (opt-in: analyzers.syntax.enabled),
 // so the Nop must not also emit an absent row — that would double-count.
 func (NopSyntaxProvider) Syntax(_ context.Context, _ scope.Scope, _ []string) ([]diagnostic.SyntaxFact, diagnostic.Coverage, error) {
 	return nil, diagnostic.Coverage{}, nil
@@ -140,7 +140,7 @@ func (NopSymbolResolver) Resolve(_ context.Context, _, toPath string) (string, s
 
 // Strengths returns an empty map and a zero coverage record. The pipeline
 // appends an explicit StatusDisabled row when SCIP is off (opt-in:
-// tools.scip.enabled), so the Nop must not also emit an absent row.
+// analyzers.scip.enabled), so the Nop must not also emit an absent row.
 func (NopSymbolResolver) Strengths(_ context.Context, _ scope.Scope) (map[string]string, diagnostic.Coverage, error) {
 	return nil, diagnostic.Coverage{}, nil
 }

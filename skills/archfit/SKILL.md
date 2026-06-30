@@ -23,6 +23,13 @@ Detailed behavior lives in `references/`, loaded on demand.
 **Do not use** for generic software-architecture advice unrelated to `archfit`,
 or to decide whether to adopt `archfit` — use web research for that.
 
+archfit measures **Balanced Coupling** (`coupling_balance` band, Khononov S×D×V
+formula) plus standard structural architecture rules (forbidden deps, layering,
+cycles, public-API) and a minimal set of complementary report-only metrics
+(`cycle`, `blast_radius`, `encapsulation`, `coverage`). It is not a 0-100
+composite architecture report card — code-quality concerns (complexity,
+duplication, panic/unsafe/god-struct density) are delegated to linters by design.
+
 ## Routing
 
 - Stay in this skill for deterministic `archfit` setup, config review, CI wiring,
@@ -42,11 +49,11 @@ Read the one the task needs:
   statuses, exit codes, coverage gaps, and the `--require-tools` hard gate.
 - `references/languages.md` — Go, TypeScript/JavaScript, Python, and Rust tool
   setup, config shape, path semantics, and common coverage gaps.
-- `references/llm-modes.md` — `review`, `init`/`update --llm`, `enrich`
+- `references/llm-modes.md` — `analyze --llm`, `init`/`update --llm`, `enrich`
   (labels, `--subdomains`, `--owner`, `--volatility`), `autopilot`, `.env`,
   and `explain --llm`.
 - `references/agent-loop.md` — autonomous repair contract (`agent_tasks`, SARIF,
-  `change_locality`), and how coverage gaps read in the loop.
+  `blast_radius`), and how coverage gaps read in the loop.
 
 `archfit --help` and `archfit <cmd> --help` confirm flags. When a reference and
 the binary disagree, trust the binary, say which reference was stale, and update
@@ -59,8 +66,9 @@ state that verification was skipped, and lower confidence.
 ## Safe defaults
 
 - Inspect existing config, baseline, CI, and package files before proposing edits.
-- Prefer read-only commands first: `archfit --help`, `archfit doctor`, `archfit check`,
-  `archfit score`, `archfit scan`.
+- Prefer non-failing commands first: `archfit --help`, `archfit doctor`, and
+  report-only `archfit analyze` (no `--gate` → always exit 0 on success; add
+  `--format scorecard` or `--markdown` for those views).
 - Prefer stdout or a temp path for reports and SARIF during review. Treat
   `.archfit-cache/`, `.archfit-*.yaml`, `archfit.sarif`, and Markdown reports as
   generated artifacts; do not leave them in the repo unless the task calls for it.
@@ -80,10 +88,10 @@ Install, configure, add CI, baseline, add an exception, or fix findings.
 5. Prefer code fixes over exceptions; use expiring exceptions only for
    intentional temporary drift.
 6. Baseline only accepted existing debt — never to make a new finding green.
-7. Validate: `archfit check --config .archfit.yaml --full` (add `--format json`
+7. Validate: `archfit analyze --gate --config .archfit.yaml --full` (add `--json`
    for agent loops, `--require-tools` only when missing-tool coverage should gate).
 
-`review`, `init`/`update --llm`, `enrich` (labels / `--subdomains` / `--owner` /
+`analyze --llm`, `init`/`update --llm`, `enrich` (labels / `--subdomains` / `--owner` /
 `--volatility`), `autopilot`, and `explain --llm` are all off-gate and
 draft-first: detail and guardrails are in `references/llm-modes.md`. Never write
 LLM classifications (`--apply`/`--pin`) or approve drafts without reviewing them
@@ -92,11 +100,11 @@ first. `autopilot` only ever writes a review file — it refuses to touch
 
 ## Agent repair loop
 
-Fixing findings autonomously: run `archfit check --format json`; exit 0 means
+Fixing findings autonomously: run `archfit analyze --gate --json`; exit 0 means
 done. Each `agent_tasks[]` entry has `goal`, `constraints`, `files`, and a
 `validation` command — fix within the constraints, touch only the listed files
 where possible, then re-run `validation` verbatim. Never "fix" `baseline` or
-`excepted` findings unprompted. Full contract: `references/agent-loop.md`.
+`waived` findings unprompted. Full contract: `references/agent-loop.md`.
 
 ## Coverage gaps and gate promotion
 
@@ -107,8 +115,8 @@ Read the gap's `affected_metrics` and `install_cmd`; close it by installing the
 tool (`archfit doctor` lists them) or filling the config, not by ignoring it.
 
 - Default is warn-loud (exit 0). To make CI block on a missing tool, promote with
-  `--require-tools` or per-tool `tools.<x>.gate: fail` (exits 1 — a policy
-  decision, distinct from exit 3 errors).
+  `--require-tools` or per-tool `languages.<x>.gate: fail` / `analyzers.<x>.gate: fail`
+  (exits 1 — a policy decision, distinct from exit 3 errors).
 - Promote rules to `gate: fail` only when high-confidence (cycles,
   forbidden-dependency, layer-direction); keep noisy ones at `warn`.
 - Separate `tool missing`, `tool failed`, `tool disabled`, and `config

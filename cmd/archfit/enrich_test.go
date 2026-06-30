@@ -312,14 +312,14 @@ func TestRun_Explain_LLMNarrative(t *testing.T) {
 	cfgPath := writeViolatingRepo(t)
 	// Append the llm tool config to the fixture.
 	cfgRaw, _ := os.ReadFile(cfgPath) //nolint:gosec // test fixture path from t.TempDir
-	cfgRaw = append(cfgRaw, []byte("tools:\n  llm:\n    provider: ollama\n    model: test-model\n    base_url: "+srv.URL+"\n")...)
+	cfgRaw = append(cfgRaw, []byte("ai:\n  provider: ollama\n  model: test-model\n  base_url: "+srv.URL+"\n")...)
 	if err := os.WriteFile(cfgPath, cfgRaw, 0o600); err != nil { //nolint:gosec // test fixture path from t.TempDir
 		t.Fatal(err)
 	}
 
 	// Find the finding fingerprint.
 	var buf bytes.Buffer
-	Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &buf)
+	Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 	var diag struct {
 		Findings []struct {
 			ID string `json:"id"`
@@ -347,12 +347,12 @@ func TestRun_Explain_LLMNarrative(t *testing.T) {
 	}
 }
 
-// TestRun_Explain_LLMUnconfigured verifies the setup hint when tools.llm is absent.
+// TestRun_Explain_LLMUnconfigured verifies the setup hint when ai is absent.
 func TestRun_Explain_LLMUnconfigured(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 	var buf bytes.Buffer
-	Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &buf)
+	Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 	var diag struct {
 		Findings []struct {
 			ID string `json:"id"`

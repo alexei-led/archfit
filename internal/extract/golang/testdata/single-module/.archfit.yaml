@@ -20,16 +20,15 @@ rules:
     to: pkg/b/**
 # All optional/subprocess tools are disabled so the baseline is
 # machine-independent: go/packages (in-process) + loc are the only analyzers.
-tools:
+languages:
   typescript:
-    enabled: "off"
+    enabled: false
   python:
-    enabled: "off"
+    enabled: false
+analyzers:
   scip:
-    enabled: "off"
-  complexity:
-    enabled: "off"
+    enabled: false
   clones:
-    enabled: "off"
+    enabled: false
   syntax:
-    enabled: "off"
+    enabled: false

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/alecthomas/kong"
 
@@ -48,20 +49,16 @@ const (
 
 // cli is the top-level kong command struct.
 type cli struct {
+	Analyze  AnalyzeCmd  `cmd:"" default:"withargs" help:"Analyze architecture: decision, score, findings (default command)."`
 	Doctor   DoctorCmd   `cmd:"" group:"core" help:"Check analyzer/tool availability."`
 	Init     InitCmd     `cmd:"" group:"core" help:"Create a starter architecture config."`
-	Check    CheckCmd    `cmd:"" group:"core" help:"Run the architecture drift gate."`
 	Baseline BaselineCmd `cmd:"" group:"core" help:"Accept current findings as the baseline."`
 
-	Score   ScoreCmd   `cmd:"" group:"reports" help:"Print the banded architecture scorecard."`
-	Diff    DiffCmd    `cmd:"" group:"reports" help:"Compare scorecard between a git ref and HEAD."`
-	Scan    ScanCmd    `cmd:"" group:"reports" help:"Write a full Markdown architecture audit report."`
 	Explain ExplainCmd `cmd:"" group:"reports" help:"Explain one finding by fingerprint prefix."`
 
 	Install InstallCmd `cmd:"" group:"setup" help:"Install optional analyzer tools."`
 	Update  UpdateCmd  `cmd:"" group:"setup" help:"Sync .archfit.yaml with current project structure."`
 
-	Review    ReviewCmd    `cmd:"" group:"llm" help:"Off-gate LLM narrative review of collected evidence."`
 	Enrich    EnrichCmd    `cmd:"" group:"llm" help:"Draft human-reviewed LLM coupling labels and metadata."`
 	Autopilot AutopilotCmd `cmd:"" group:"llm" help:"Draft a full review-only config via LLM."`
 
@@ -75,13 +72,13 @@ func (cli) Help() string {
 First run:
   archfit doctor
   archfit init --root .
-  archfit check --config .archfit.yaml --full
+  archfit --gate --config .archfit.yaml --full
   archfit baseline --config .archfit.yaml --full
 
 CI / agent loop:
-  archfit check --config .archfit.yaml --base origin/main --format json
+  archfit --gate --config .archfit.yaml --base origin/main --format json
   # on exit 1, read agent_tasks[] and rerun the validation command
-  archfit scan --config .archfit.yaml > archfit-report.md
+  archfit --markdown --config .archfit.yaml > archfit-report.md
 
 Docs:
   ` + docsURL + `
@@ -139,6 +136,11 @@ type appDeps struct {
 	Runner toolrun.Runner
 	Stdout io.Writer
 	Stderr io.Writer // nil → os.Stderr
+
+	// progress, when non-nil, is invoked at pipeline phase boundaries so a long
+	// analyze run reports progress to stderr. Set by AnalyzeCmd; nil (no-op) for
+	// every other command.
+	progress func(stage string)
 }
 
 // stderr returns the configured stderr writer, falling back to os.Stderr.
@@ -147,6 +149,14 @@ func (d *appDeps) stderr() io.Writer {
 		return d.Stderr
 	}
 	return os.Stderr
+}
+
+// reportPhase advances the attached progress reporter, if any (no-op otherwise).
+// The pipeline calls this at phase boundaries; only AnalyzeCmd attaches a reporter.
+func (d *appDeps) reportPhase(stage string) {
+	if d.progress != nil {
+		d.progress(stage)
+	}
 }
 
 // exitError carries an exit code through the Run return path.
@@ -172,11 +182,17 @@ type exitCode int
 // ---------------------------------------------------------------------------
 
 // Run parses args, runs the selected command, and returns the process exit code.
-func Run(args []string, stdout io.Writer) (exitStatus int) {
-	if len(args) == 0 {
-		args = []string{flagHelp}
-	}
+// Errors and parser diagnostics go to os.Stderr; normal output to stdout. Tests
+// that need to capture stderr use RunWithStderr.
+func Run(args []string, stdout io.Writer) int {
+	return RunWithStderr(args, stdout, os.Stderr)
+}
 
+// RunWithStderr is Run with an explicit stderr writer. Diagnostics — config/tool
+// errors, parser errors, and exitError messages — are written to stderr (not
+// stdout) so `archfit --json 2>/dev/null` yields clean JSON and CI logs separate
+// data from errors.
+func RunWithStderr(args []string, stdout, stderr io.Writer) (exitStatus int) {
 	// Capture controlled exits (--version, --help) via panic+recover.
 	defer func() {
 		if r := recover(); r != nil {
@@ -188,7 +204,7 @@ func Run(args []string, stdout io.Writer) (exitStatus int) {
 		}
 	}()
 
-	deps := &appDeps{Runner: toolrun.New(), Stdout: stdout}
+	deps := &appDeps{Runner: toolrun.New(), Stdout: stdout, Stderr: stderr}
 
 	var c cli
 	parser, err := kong.New(&c,
@@ -196,12 +212,13 @@ func Run(args []string, stdout io.Writer) (exitStatus int) {
 		kong.Description("Architecture drift feedback for CI and AI agents."),
 		kong.ExplicitGroups(commandGroups()),
 		kong.ConfigureHelp(kong.HelpOptions{FlagsLast: true, WrapUpperBound: 100}),
-		kong.Writers(stdout, stdout),
+		// Help → stdout; usage/errors → stderr (kong's two-writer convention).
+		kong.Writers(stdout, stderr),
 		kong.Exit(func(code int) { panic(exitCode(code)) }),
 		kong.Bind(deps),
 	)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdout, "error: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
 		return 3
 	}
 
@@ -209,7 +226,7 @@ func Run(args []string, stdout io.Writer) (exitStatus int) {
 	if err != nil {
 		// Manual parser.Parse (unlike the kong.Parse helper) does not print the
 		// error itself, so surface it — otherwise a bad flag exits 3 silently.
-		_, _ = fmt.Fprintf(stdout, "archfit: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "archfit: %v\n", err)
 		return 3
 	}
 
@@ -221,18 +238,23 @@ func Run(args []string, stdout io.Writer) (exitStatus int) {
 	var ee *exitError
 	if errors.As(runErr, &ee) {
 		if ee.msg != "" {
-			_, _ = fmt.Fprintln(stdout, ee.msg)
+			_, _ = fmt.Fprintln(stderr, ee.msg)
 		}
 		return ee.ExitCode()
 	}
 
-	_, _ = fmt.Fprintf(stdout, "error: %v\n", runErr)
+	_, _ = fmt.Fprintf(stderr, "error: %v\n", runErr)
 	return 3
 }
 
 func main() {
 	// Best-effort .env autoload at startup so the LLM commands pick up a key from
 	// a local .env without polluting the shell. Real env / CI secrets always win.
+	// CWD first, then the analyzed repo (--root) and the config's directory, so a
+	// key kept alongside the target repo or config is found too (F3).
 	loadDotEnv(".env")
+	for _, dir := range envSearchDirs(os.Args[1:]) {
+		loadDotEnv(filepath.Join(dir, ".env"))
+	}
 	os.Exit(Run(os.Args[1:], os.Stdout))
 }

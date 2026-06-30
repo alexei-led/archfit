@@ -20,7 +20,7 @@ type ExplainCmd struct {
 	Config      string `short:"c" default:".archfit.yaml"`
 	Root        string `help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
 	Fingerprint string `arg:"" help:"Finding fingerprint prefix."`
-	LLM         bool   `name:"llm" help:"Append an LLM narrative (off-gate; needs tools.llm configured)."`
+	LLM         bool   `name:"llm" help:"Append an LLM narrative (off-gate; needs ai configured)."`
 	NoCache     bool   `name:"no-cache" help:"Bypass the LLM response cache."`
 }
 
@@ -87,7 +87,7 @@ Plain prose, no headings, no lists, no code fences.`
 func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, noCache bool, f finding.Finding, diag diagnostic.Diagnostic) error {
 	llmCfg, configured := cfg.LLM()
 	if !configured {
-		return &exitError{code: 3, msg: "error: --llm needs tools.llm configured (provider + model); see docs/guide/llm-enrich.md"}
+		return &exitError{code: 3, msg: "error: --llm needs ai configured (provider + model); see docs/guide/llm-enrich.md"}
 	}
 	provider, err := buildProvider(llmCfg)
 	if err != nil {

@@ -100,7 +100,7 @@ func TestGolden_DoubleRun(t *testing.T) {
 				Scope:       s,
 				Classify:    classifyCfg,
 				Staleness:   config.StalenessConfig{},
-				Exceptions:  config.ExceptionSet{},
+				Waivers:     config.WaiverSet{},
 				Extractors:  []ports.Extractor{extractor},
 				Patterns:    ports.NopPatternProvider{},
 				Resolver:    ports.NopSymbolResolver{},

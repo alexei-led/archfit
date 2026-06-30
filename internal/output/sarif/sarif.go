@@ -5,7 +5,7 @@
 // Mapping:
 //   - one run; one driver rule per distinct finding RuleID;
 //   - one result per finding — level: error (active gate), warning (advisory),
-//     note (baselined/excepted/fixed);
+//     note (baselined/waived/fixed);
 //   - metric results and the verdict ride in run.properties (SARIF has no
 //     metric concept);
 //   - byte-deterministic: stable ordering, no timestamps; base/head refs go in
@@ -190,10 +190,10 @@ func toResult(f finding.Finding, ruleIdx int) result {
 // levelFor maps finding kind+status to a SARIF level: active gate findings are
 // errors, advisories are warnings, everything resolved/accepted is a note.
 func levelFor(f finding.Finding) string {
-	if f.Kind == "gate" && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredExcept) {
+	if f.Kind == finding.KindGate && (f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver) {
 		return "error"
 	}
-	if f.Kind == "advisory" && f.Status == finding.StatusNew {
+	if f.Kind == finding.KindAdvisory && f.Status == finding.StatusNew {
 		return "warning"
 	}
 	return "note"

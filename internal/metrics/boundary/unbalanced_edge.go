@@ -12,7 +12,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Distance rank for ordered comparison (shared by unbalanced_edge + change_locality)
+// Distance rank for ordered comparison (used by unbalanced_edge)
 // ---------------------------------------------------------------------------
 
 // distanceRank maps a Distance to a numeric rank for >= comparisons.
@@ -161,9 +161,9 @@ func statusPriority(s finding.Status) int {
 	switch s {
 	case finding.StatusNew:
 		return 4
-	case finding.StatusExpiredExcept:
+	case finding.StatusExpiredWaiver:
 		return 3
-	case finding.StatusExcepted:
+	case finding.StatusWaived:
 		return 2
 	case finding.StatusBaseline:
 		return 1

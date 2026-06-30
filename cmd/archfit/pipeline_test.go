@@ -16,8 +16,8 @@ import (
 // tools produce no gap.
 func TestBuildCoverageGaps(t *testing.T) {
 	t.Parallel()
-	cfgFailGo := config.Config{Tools: config.ToolsConfig{
-		config.LangGo: {Gate: config.GateFail},
+	cfgFailGo := config.Config{Languages: config.LanguagesConfig{
+		Go: config.GoLanguage{Gate: config.GateFail},
 	}}
 	cfgWarn := config.Config{}
 
@@ -120,11 +120,11 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 	}
 
 	cfgDefault := config.Config{}
-	cfgRustGate := config.Config{Tools: config.ToolsConfig{
-		config.LangRust: {Gate: config.GateFail},
+	cfgRustGate := config.Config{Languages: config.LanguagesConfig{
+		Rust: config.RustLanguage{Gate: config.GateFail},
 	}}
-	cfgCargoModulesGate := config.Config{Tools: config.ToolsConfig{
-		config.ToolCargoModules: {Gate: config.GateFail},
+	cfgCargoModulesGate := config.Config{Analyzers: config.AnalyzersConfig{
+		CargoModules: config.Analyzer{Gate: config.GateFail},
 	}}
 
 	allRustAbsent := []diagnostic.Coverage{
@@ -238,7 +238,7 @@ func TestBuildConfigWarnings(t *testing.T) {
 				"orphan": {Paths: []string{"pkg/orphan/**"}},
 			},
 		}
-		toolErrs := []string{"lizard: exit status 1"}
+		toolErrs := []string{"jscpd: exit status 1"}
 		got := buildConfigWarnings(cfg, toolErrs)
 		if len(got) == 0 {
 			t.Fatal("want at least one warning, got none")
@@ -246,7 +246,7 @@ func TestBuildConfigWarnings(t *testing.T) {
 		// Tool error must appear somewhere in the output.
 		found := false
 		for _, w := range got {
-			if w == "lizard: exit status 1" {
+			if w == "jscpd: exit status 1" {
 				found = true
 			}
 		}
@@ -307,10 +307,10 @@ func TestEffectiveConfigHash(t *testing.T) {
 // the mapped key (e.g. tools.go.gate for go/packages) is surfaced verbatim.
 func TestConfigToolGate(t *testing.T) {
 	t.Parallel()
-	cfg := config.Config{Tools: config.ToolsConfig{
-		config.LangGo:         {Gate: config.GateFail},
-		config.LangTypeScript: {Gate: config.GateOff},
-		config.LangPython:     {}, // unset → warn
+	cfg := config.Config{Languages: config.LanguagesConfig{
+		Go:         config.GoLanguage{Gate: config.GateFail},
+		TypeScript: config.TypeScriptLanguage{Gate: config.GateOff},
+		Python:     config.PythonLanguage{}, // unset → warn
 	}}
 	cases := []struct {
 		tool string
@@ -339,7 +339,7 @@ func TestApplyToolGate(t *testing.T) {
 			Verdict: diagnostic.VerdictPass,
 			CoverageGaps: []diagnostic.CoverageGap{
 				{Tool: toolGrimp, Gate: gateWarn},
-				{Tool: toolLizard, Gate: gateWarn},
+				{Tool: toolJscpd, Gate: gateWarn},
 			},
 		}
 		if !applyToolGate(&diag, true) {
@@ -604,26 +604,5 @@ func TestSkippedPassCoverageRows_ReasonContent(t *testing.T) {
 				t.Errorf("reason %q does not mention %q", tc.reason, tc.wantIn)
 			}
 		})
-	}
-}
-
-// TestAstGrepAbsentComplexityGap asserts that when the auto complexity backend
-// finds neither gocyclo nor sg, the resulting gap names "ast-grep" (not "lizard")
-// so the install hint points to the correct tool. This is the regression for #23.
-func TestAstGrepAbsentComplexityGap(t *testing.T) {
-	t.Parallel()
-	// The auto backend absent-both path emits Tool="ast-grep" (via proxyTool).
-	cov := []diagnostic.Coverage{
-		{Tool: toolAstGrep, Status: diagnostic.StatusAbsent},
-	}
-	gaps := buildCoverageGaps(cov, config.Config{}, "")
-	if len(gaps) != 1 {
-		t.Fatalf("expected 1 gap for absent ast-grep, got %d: %+v", len(gaps), gaps)
-	}
-	if gaps[0].Tool != toolAstGrep {
-		t.Errorf("gap.Tool = %q, want %q", gaps[0].Tool, toolAstGrep)
-	}
-	if !strings.Contains(gaps[0].InstallCmd, "ast-grep") {
-		t.Errorf("gap.InstallCmd should mention ast-grep; got %q", gaps[0].InstallCmd)
 	}
 }

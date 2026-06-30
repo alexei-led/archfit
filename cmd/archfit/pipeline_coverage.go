@@ -28,8 +28,6 @@ var coverageToolConfigKey = buildCoverageToolConfigKey()
 
 func buildCoverageToolConfigKey() map[string]string {
 	m := map[string]string{
-		toolLizard:       config.ToolComplexity,
-		toolAstGrep:      config.ToolComplexity, // auto backend absent-both path
 		toolJscpd:        config.ToolClones,
 		toolCargoModules: config.ToolCargoModules,
 	}
@@ -60,10 +58,8 @@ var toolAffectedMetrics = buildToolAffectedMetrics()
 
 func buildToolAffectedMetrics() map[string]affectedMetrics {
 	m := map[string]affectedMetrics{
-		toolLizard:       {"uv tool install lizard / pip install lizard", []string{"complexity"}},
-		toolAstGrep:      {"cargo install ast-grep / brew install ast-grep (then optionally: go install github.com/fzipp/gocyclo/cmd/gocyclo@latest for exact Go CCN)", []string{"complexity"}},
-		toolJscpd:        {"npm install -g jscpd", []string{"functional_candidates"}},
-		toolCargoModules: {"cargo install cargo-modules (tools.cargo-modules.enabled: on)", []string{"cycle", "blast_radius", "cohesion", "encapsulation"}},
+		toolJscpd:        {"npm install -g jscpd", []string{"coupling_balance"}},
+		toolCargoModules: {"cargo install cargo-modules (analyzers.cargo_modules.enabled: true)", []string{"cycle", "blast_radius", "cohesion", "encapsulation"}},
 	}
 	for _, lang := range languageRegistry {
 		m[lang.PrimaryTool] = affectedMetrics{lang.InstallHint, primaryGraphMetrics}
@@ -143,7 +139,7 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string
 		// An explicit gate on that tool (tools.<lang>.gate) is an intentional
 		// "require it anyway" override and is preserved.
 		if lang, isPrimary := primaryToolLanguage[c.Tool]; isPrimary &&
-			cfg.Tools[lang].Enabled == config.ModeOff && cfg.Tools[lang].Gate == "" {
+			cfg.ToolMode(lang) == config.ModeOff && cfg.ToolGate(lang) == "" {
 			continue
 		}
 		// Suppress the gap when the language's project marker is absent from the
@@ -161,7 +157,7 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string
 			default:
 				if markers, ok := primaryToolProjectMarkers[c.Tool]; ok {
 					lang := primaryToolLanguage[c.Tool]
-					if cfg.Tools[lang].Gate == "" && !projectMarkerPresent(root, markers) {
+					if cfg.ToolGate(lang) == "" && !projectMarkerPresent(root, markers) {
 						continue
 					}
 				}
@@ -189,7 +185,7 @@ func configToolGate(cfg config.Config, tool string) string {
 	if !ok {
 		return gateWarn
 	}
-	if g := cfg.Tools[key].Gate; g != "" {
+	if g := cfg.ToolGate(key); g != "" {
 		return string(g)
 	}
 	return gateWarn

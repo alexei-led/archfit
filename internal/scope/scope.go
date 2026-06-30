@@ -179,10 +179,27 @@ func Resolve(ctx context.Context, cfg config.ScopeConfig, r Resolver) (Scope, er
 		}
 		gitRoot = canonicalPath(gitRoot)
 		scanRoot := snapScanRoot(gitRoot, resolveScanRoot(cfg, gitRoot))
+		prefix := subtreePrefix(gitRoot, scanRoot)
+		// When a base ref is given (analyze --base), compute the changed-file set
+		// for per-change metrics, while still scanning the full tree. Mode stays
+		// ModeFull, so no finding-delta is produced (deltaReport gates on ModeDelta).
+		// Best-effort: a git failure here leaves Changed empty rather than aborting
+		// the full scan.
+		var changed []string
+		if cfg.Base != "" && gitRoot != "" {
+			if head, herr := r.HeadRef(ctx); herr == nil {
+				if c, cerr := r.Changed(ctx, cfg.Base, head); cerr == nil {
+					changed = rebaseChangedFiles(prefix, c)
+					sort.Strings(changed)
+				}
+			}
+		}
 		return Scope{
 			Root:          scanRoot,
 			GitRoot:       gitRoot,
-			SubtreePrefix: subtreePrefix(gitRoot, scanRoot),
+			SubtreePrefix: prefix,
+			Base:          cfg.Base,
+			Changed:       changed,
 			Mode:          ModeFull,
 		}, nil
 	}

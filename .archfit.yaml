@@ -18,20 +18,22 @@ version: 1
 # core at V=high (10) and distance fixed at 4, coupling INTO the core scores in the
 # mixed/high band regardless of strength — this is the honest signal that the
 # shared domain model (`Diagnostic`/`graph`/`coupling`) is a high-volatility,
-# high-fan-in hub (see risk_hub, blast_radius). The book's lever to improve it is
+# high-fan-in hub (see blast_radius). The book's lever to improve it is
 # to lower the CORE's volatility or wrap it in a contract (reduce strength), NOT to
 # re-weight the metric. The frozen book ordinals are adopted verbatim and must not
 # be tuned to flatter this repo's own score.
 # -----------------------------------------------------------------------------
-# Minimum severity for BC coupling advisories to appear in scan output.
-# low: all cross-module deps (noisy for well-designed codebases)
-# medium: only over-decoupled volatile seams and tight cross-boundary coupling
-# high/critical: only intrusive or functional coupling across large boundaries
-bc_advisory_min_severity: medium
-# Enable book Ch9 inferred-volatility cascade: a module strongly coupled
-# (strength ≥ functional) to a high-volatility module inherits raised effective
-# volatility. Config-declared volatility always takes precedence and is never lowered.
-volatility_cascade_enabled: true
+# Balanced-Coupling advisory tuning.
+coupling:
+  # Minimum severity for a coupling advisory to appear in output.
+  # low: all cross-module deps (noisy for well-designed codebases)
+  # medium: only over-decoupled volatile seams and tight cross-boundary coupling
+  # high/critical: only intrusive or functional coupling across large boundaries
+  min_severity: medium
+  # Book Ch9 inferred-volatility cascade: a module strongly coupled (strength ≥
+  # functional) to a high-volatility module inherits raised effective volatility.
+  # Config-declared volatility always takes precedence and is never lowered.
+  volatility_cascade: true
 # Architecture layers — innermost to outermost.
 # forbidden_layer_direction fires when fromRank < toRank (inner imports outer).
 layers:
@@ -316,16 +318,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: low
-  internal/extract/complexity:
-    owner: alexei-led
-    paths:
-      - internal/extract/complexity/**
-    public:
-      - internal/extract/complexity
-    role: adapter
-    layer: adapter
-    subdomain: supporting
-    volatility: low
   internal/extract/loc:
     owner: alexei-led
     paths:
@@ -370,15 +362,6 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: medium
-  internal/fitness:
-    owner: alexei-led
-    paths:
-      - internal/fitness/**
-    public:
-      - internal/fitness
-    layer: adapter
-    subdomain: supporting
-    volatility: low
   internal/ownership:
     owner: alexei-led
     paths:
@@ -445,6 +428,17 @@ modules:
     public:
       - internal/score
     # Pure decision over already-computed Diagnostic facts — core ring.
+    layer: core
+    subdomain: core
+    volatility: medium
+  internal/decision:
+    owner: alexei-led
+    paths:
+      - internal/decision/**
+    public:
+      - internal/decision
+    # Synthesises the human-decision view-model (band, recommendations) from an
+    # already-computed Diagnostic + Scorecard — core ring, depends on score.
     layer: core
     subdomain: core
     volatility: medium
@@ -563,15 +557,7 @@ rules:
   - id: layer_inversion
     type: forbidden_layer_direction
     gate: fail
-  # --- Syntax-facts example rules (gate: warn = advisory, non-blocking) ---
-  # Example: handlers must not call repositories directly.
-  # archfit is a CLI tool with no web handlers, so this is inert for this repo;
-  # included to document the pattern for projects that do have handler/repository roles.
-  - id: syntax_no_handler_to_repo
-    type: forbidden_role_dependency
-    from_role: handler
-    to_role: repository
-    gate: warn
+  # --- Syntax-facts example rule (gate: warn = advisory, non-blocking) ---
   # Example: warn when any module's exported API exceeds a generous ceiling.
   # public_api_max is global (no per-module scoping); the threshold must exceed
   # the largest module count. archfit's catch-all "internal" module currently
@@ -583,18 +569,6 @@ rules:
     type: public_api_max
     max: 1600
     gate: warn
-  # --- Architecture-drift prevention rules (dogfooding this branch's detectors) ---
-  # God-struct ceiling. NOTE: the Go struct_field count is a body-line-span
-  # heuristic (endLine-startLine-1), so per-field doc comments inflate it well
-  # above the true field count — it is a "struct body size" guard, not an exact
-  # field count. Current max in this repo: Diagnostic = 61 body lines (20 fields,
-  # one doc-comment per field). Diagnostic is the core value object that grows
-  # with every feature, so the ceiling is generous: 90 blocks a genuinely
-  # egregious god-struct while leaving the documented core aggregate headroom.
-  - id: arch_struct_field_max
-    type: struct_field_max
-    max: 90
-    gate: fail
   # Public-API framework-type-leak — advisory dogfooding. Fires when an exported
   # field or function return type names an external (non-first-party) package.
   # archfit's adapter/cmd layers legitimately expose external types (kong, SDKs),
@@ -603,47 +577,26 @@ rules:
   - id: arch_public_api_type_leak
     type: public_api_type_leak
     gate: warn
-map_review:
+module_review:
   stale_after: 2160h # 90 days
   gate: warn
-tools:
+languages:
   go:
-    enabled: "on"
+    enabled: true
   typescript:
-    enabled: "off"
+    enabled: false
   python:
-    enabled: "off"
+    enabled: false
+analyzers:
   # Syntax-facts provider (ast-grep). Enabled for dogfooding — produces
   # syntax_facts (declarations, exported surface, roles, routes) visible in
-  # scan/review/agent_tasks output. Off-gate by itself; gate rules below.
+  # analyze/agent_tasks output. Off-gate by itself; gate rules below.
   syntax:
-    enabled: "on"
+    enabled: true
   scip:
-    enabled: "on"
-  complexity:
-    enabled: "on"
-  llm:
-    provider: anthropic
-    model: claude-opus-4-8
+    enabled: true
   clones:
-    enabled: "on"
-metrics:
-  risk_hub:
     enabled: true
-  # archfit enforces its own architecture (internal/arch_test.go + CI), so this
-  # surfaces a real architecture_fitness signal — dogfooding the metric.
-  architecture_fitness:
-    enabled: true
-  # Clone detection enabled (tools.clones.enabled: on). Reports n/a when jscpd
-  # is not installed (install: npm install -g jscpd); yields functional-extraction
-  # candidates when jscpd is present and finds cross-module duplicates.
-  functional_candidates:
-    enabled: true
-  # cohesion_lcom (Task 20): report-only LCOM edge-density proxy over the SCIP
-  # symbol graph. Disabled here because it failed its eval — document-scoped
-  # SCIP attribution (no enclosing_range) leaves it blind for single-file
-  # Python/TS modules and unable to credit internal sub-package cohesion. Kept
-  # registered and report-only for repos that want the Go-package signal.
-  # See docs/plans/notes/gap-closure-task20-cohesion-eval.md.
-  cohesion_lcom:
-    enabled: false
+ai:
+  provider: anthropic
+  model: claude-opus-4-8

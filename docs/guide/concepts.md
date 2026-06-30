@@ -1,9 +1,5 @@
 # Concepts: Balanced Coupling and modularity
 
-This page is the theory behind `archfit`: what it measures, why those things
-matter, and the model it makes executable. The other guide pages tell you how to
-run the tool; this one tells you what the output means.
-
 `archfit` is a deterministic implementation of Vlad Khononov's **Balanced
 Coupling** model. It does not invent its own architecture theory. It turns the
 parts of that model that can be read from code, config, and git history into
@@ -56,7 +52,7 @@ change-propagating — the coupling. Four levels, strongest to weakest
 | Level        | Ordinal | Meaning                                                                                           | `archfit` signal                                                              |
 | ------------ | ------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `intrusive`  | 10      | Depends on private interfaces / implementation details not meant to be shared.                    | `internal:` globs, Go `internal/`, `_private.py`, SCIP "private" symbol kind. |
-| `symmetric`  | 9       | Duplicated functionality — both sides must change together (DRY violation across a boundary).     | Cross-module clone pair detected by the clone detector (`tools.clones`).      |
+| `symmetric`  | 9       | Duplicated functionality — both sides must change together (DRY violation across a boundary).     | Cross-module clone pair detected by the clone detector (`analyzers.clones`).  |
 | `functional` | 8       | Shares knowledge of business requirements; the two must change together when requirements change. | Config-declared or SCIP function/method-level reference.                      |
 | `model`      | 3       | Shares a domain model / schema that must be updated in both when the model changes.               | Shared exported type, SCIP concrete-class symbol kind.                        |
 | `contract`   | 1       | Integrates through an explicit, intention-revealing contract that hides implementation.           | `public:` globs, SCIP Protocol/ABC/interface symbol kind.                     |
@@ -105,6 +101,29 @@ position) is the always-available baseline and distinguishes close from far modu
 regardless of owner count. See the
 [configuration reference](configuration-reference.md) for the exact composite order.
 
+**Owner resolution is single-dominant-owner per module** (the value declared in
+config, or the most-frequent owner from CODEOWNERS / git-author history). Two
+consequences to know when reading `cross_module_different_owner`:
+
+- A CODEOWNERS that lists a **common team first on most lines** (e.g. a
+  `* @org/maintainers` catch-all, or a maintainers team co-listed on every rule)
+  resolves nearly every module to that one owner, so cross-team distance
+  under-reports. archfit keeps the first owner per line, not the owner set.
+- A CODEOWNERS that **does not cover the analyzed source** (only `/docs`, or the
+  backend package has no rule) resolves to a single or empty owner → owner
+  distance is neutral and the score falls back to code-structure distance.
+
+Both are faithful reflections of the repo's declared ownership, not bugs — but if
+you want cross-team coupling to register, declare `owner:` per module explicitly.
+The `owner_source` field (`config` | `codeowners` | `git` | `none`) in JSON and the
+markdown "Distance confidence" section tells you which path produced the owners.
+
+**Deviation from the book:** Khononov also counts _runtime coupling_ (synchronous
+vs asynchronous integration) and lifecycle coupling as part of distance. `archfit`
+deliberately does **not** fold runtime/async coupling into distance — detected
+async bridges are recorded as report-only `runtime_async` evidence, never a scored
+distance factor (see [bc-measurement-v3.md §9](../design/bc-measurement-v3.md#9-non-goals-and-rejected-designs) for the rationale).
+
 ### 3. Volatility — how likely it is to change at all
 
 Volatility is the probability that a component needs to change. A strong, distant
@@ -114,7 +133,8 @@ weekly is a recurring tax.
 > The higher the volatility, the more acute and "painful" design issues will be.
 > — <https://coupling.dev/posts/dimensions-of-coupling/volatility/>
 
-Volatility comes primarily from **DDD subdomains**, not from the codebase itself:
+Volatility comes primarily from **DDD subdomains**, not from the codebase itself.
+Declaring `subdomain:` on a module maps to a book-anchored volatility:
 
 | Subdomain    | Book anchor | Ordinal (V) | Why                                                   |
 | ------------ | ----------- | ----------- | ----------------------------------------------------- |
@@ -122,17 +142,31 @@ Volatility comes primarily from **DDD subdomains**, not from the codebase itself
 | `supporting` | supporting  | 3           | Custom but not differentiating; changes occasionally. |
 | `generic`    | generic     | 3           | Solved problem / off-the-shelf; rarely changes.       |
 
-The book also describes a `frozen/legacy` anchor (V=1) for genuinely stable,
-never-changing modules. Support for explicit frozen/legacy volatility is planned
-but not yet a named constant in the codebase.
+You can also set `volatility:` directly. The book (Ch10) defines only three
+numeric anchors — 1, 3, 10 — so `medium` (V=6) is an **archfit interpolation**
+with no book anchor:
+
+| `volatility:`       | Ordinal (V) | Book anchor                                |
+| ------------------- | ----------- | ------------------------------------------ |
+| `high`              | 10          | core subdomain                             |
+| `medium`            | 6           | — (archfit interpolation; not in the book) |
+| `low`               | 3           | supporting / generic subdomain             |
+| `frozen` / `legacy` | 1           | legacy system that is not being evolved    |
+
+A module that resolves but declares neither `volatility:` nor `subdomain:` is
+treated as **undeclared → V=10** (no path/name guessing) — a conservative
+worst case that is also archfit-defined, not a book ordinal. The scorer then
+advises you to _declare_ the module's volatility rather than silently assuming it
+is stable.
 
 In `archfit` you set volatility per module (`volatility:` or `subdomain:` in
-`.archfit.yaml`). Git churn fills in a value only for modules with no declared
-volatility and only for report-only metrics — it never overrides a human declaration
-and never drives the coupling-balance gate.
+`.archfit.yaml`). Git churn is never used as a volatility source — it measures
+observed change, a mix of essential and accidental factors, and `archfit` cannot
+separate them automatically. Declared subdomain volatility is the only input to
+the coupling-balance gate.
 
 **Inferred-volatility cascade (opt-in, book Ch9):** when
-`volatility_cascade_enabled: true` is set in `.archfit.yaml`, a single-hop
+`coupling.volatility_cascade: true` is set in `.archfit.yaml`, a single-hop
 propagation pass runs before scoring. If a module is strongly coupled
 (`functional` or `intrusive`) to a `core` module, its effective volatility
 is raised to `high` for scoring purposes. This lets archfit surface coupling
@@ -142,7 +176,7 @@ manually annotated.
 #### Essential vs accidental volatility
 
 Khononov splits volatility in two, and the distinction is why `archfit` does not
-trust churn:
+use churn:
 
 - **Essential volatility** comes from the business domain. A core subdomain is
   volatile because the business keeps improving it. This is the signal you want.
@@ -151,12 +185,8 @@ trust churn:
   The inverse also happens: code looks stable only because it is too risky to
   touch.
 
-Git churn measures observed change — a mix of both. So `archfit` uses
-human-declared subdomain volatility as the primary input and treats churn as
-supporting evidence only. Churn-derived volatility feeds the report-only
-`change_amplification` metric (which is _about_ accidental volatility) but is
-deliberately kept out of the `risk_hub` metric, which uses declared volatility
-only.
+Git churn measures observed change — a mix of both. `archfit` uses human-declared
+subdomain volatility and does not infer volatility from churn.
 
 ### Explicitness — the fourth lens
 
@@ -231,7 +261,7 @@ tasks. See the [configuration reference](configuration-reference.md) for the
 abstain rule and decision-task behavior.
 
 These balance scores drive the `bc/imbalanced_coupling` advisories (see
-[`archfit scan`](commands.md)) and the `unbalanced_edge` metric. `ScoreVersion`
+[`archfit analyze`](commands.md)) and the `unbalanced_edge` metric. `ScoreVersion`
 is `bc_score.v3`.
 
 ---
@@ -259,10 +289,9 @@ and makes only the legible parts executable. Three design rules follow from that
    humans pin labels; the gate stays reproducible. See
    [LLM enrichment](llm-enrich.md).
 
-The result is the loop tests and linters already taught agents to run: change
-code → `archfit check` → get a deterministic finding or metric delta with the
-strength / distance / volatility / explicitness vocabulary attached → repair
-within the stated constraint → rerun.
+The workflow: change code → `archfit analyze --gate` → deterministic finding or
+metric delta with strength / distance / volatility vocabulary → repair within the
+stated constraint → rerun.
 
 ---
 

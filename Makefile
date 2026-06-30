@@ -52,8 +52,8 @@ test-coverage: test ## open HTML coverage report
 
 ## archfit: run architecture drift gate on this repo
 .PHONY: archfit
-archfit: build ## run archfit check --full against this repo's architecture policy
-	$(BIN_DIR)/$(BINARY) check --config $(ARCHFIT_CONFIG) --full
+archfit: build ## run archfit analyze --gate --full against this repo's architecture policy
+	$(BIN_DIR)/$(BINARY) analyze --gate --config $(ARCHFIT_CONFIG) --full
 
 ## arch-lint: architecture drift linter — fails on any blocking architecture
 ## violation (forbidden dependency, layer inversion, god-struct ceiling). Alias
@@ -66,7 +66,7 @@ arch-lint: archfit ## architecture drift linter (alias for the archfit dogfood g
 .PHONY: archfit-report
 archfit-report: build ## write reports/archfit-report.md for human review
 	@mkdir -p $(dir $(ARCHFIT_REPORT))
-	$(BIN_DIR)/$(BINARY) scan --config $(ARCHFIT_CONFIG) > $(ARCHFIT_REPORT)
+	$(BIN_DIR)/$(BINARY) analyze --markdown --config $(ARCHFIT_CONFIG) > $(ARCHFIT_REPORT)
 	@echo "archfit report written to $(ARCHFIT_REPORT)"
 
 ## lint: run golangci-lint
@@ -79,6 +79,12 @@ lint: ## run golangci-lint
 fmt: ## format Go source with gofmt and goimports
 	gofmt -s -w .
 	goimports -w -local $(MODULE) .
+
+## schema: regenerate archfit.schema.json from internal/config structs
+.PHONY: schema
+schema: ## regenerate archfit.schema.json (run when config structs change)
+	ARCHFIT_UPDATE_SCHEMA=1 go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
+	go test ./internal/configschema/ -run TestSchemaNoDrift -count=1
 
 ## mock: regenerate moq mocks via go generate
 .PHONY: mock

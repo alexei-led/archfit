@@ -23,19 +23,9 @@ const confidenceHigh = "high"
 // These are report-only and never gate. Everything else appears in the
 // primary Metrics section (coupling_balance, encapsulation, etc.).
 var beyondBCMetrics = map[string]bool{
-	"cycle":                true,
-	"blast_radius":         true,
-	"propagation_cost":     true,
-	"instability":          true,
-	"abstractness":         true,
-	"martin_distance":      true,
-	"change_coupling":      true,
-	"change_amplification": true,
-	"hidden_coupling":      true,
-	"structural_weight":    true,
-	"complexity":           true,
-	"risk_hub":             true,
-	"coverage":             true,
+	"cycle":        true,
+	"blast_radius": true,
+	"coverage":     true,
 }
 
 // Renderer formats a Diagnostic as BC-aligned Markdown. Satisfies engine.Renderer.
@@ -68,7 +58,7 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 	b.WriteString("\n## Summary\n\n")
 	fmt.Fprintf(&b, "- gate findings: %d\n", d.Summary.GateFindings)
 	fmt.Fprintf(&b, "- warnings: %d\n", d.Summary.Warnings)
-	fmt.Fprintf(&b, "- exceptions used: %d\n", d.Summary.ExceptionsUsed)
+	fmt.Fprintf(&b, "- waivers used: %d\n", d.Summary.WaiversUsed)
 
 	writeDelta(&b, d)
 
@@ -146,7 +136,7 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 func splitFindings(fs []finding.Finding) (gate, advisories []finding.Finding) {
 	for _, f := range fs {
-		if f.Kind == "gate" {
+		if f.Kind == finding.KindGate {
 			gate = append(gate, f)
 		} else {
 			advisories = append(advisories, f)

@@ -13,8 +13,8 @@ import (
 // FirstPartyModules returns the set of module keys for the nodes archfit actually
 // parsed, excluding external nodes (NodeKindExternal: unresolved npm packages,
 // uninstalled third-party deps, node builtins an extractor could not tag as core).
-// External dependencies must never be treated as owned modules, or coupling
-// metrics (instability/abstractness/martin, blast radius) flag them as first-party.
+// External dependencies must never be treated as owned modules, or the
+// blast-radius metric flags them as first-party.
 func FirstPartyModules(g *graph.Graph) map[string]struct{} {
 	fp := make(map[string]struct{})
 	for _, n := range g.Nodes() {
@@ -40,67 +40,6 @@ func ModuleKey(nodeID string) string {
 		}
 	}
 	return path
-}
-
-// DominantLanguage returns the language of most edges (drives file→module mapping).
-func DominantLanguage(g *graph.Graph) string {
-	cnt := map[string]int{}
-	for _, e := range g.Edges() {
-		cnt[e.Language]++
-	}
-	best, bn := "", 0
-	for l, n := range cnt {
-		if n > bn {
-			best, bn = l, n
-		}
-	}
-	return best
-}
-
-// FileToModuleKey maps a git file path to the same module unit as ModuleKey, so
-// per-file churn/co-change aggregates onto graph nodes. The per-language mapping
-// lives in the NodeConvention registry (model ring): Go collapses to the package
-// directory, Python to the dotted module, and TS/JS (or any unknown language)
-// passes the file through unchanged.
-func FileToModuleKey(file, lang string) string {
-	return graph.BuiltinConventions.Lookup(lang).FileToModuleKey(file)
-}
-
-// ModuleKeyResolver returns a file→module-key mapper bound to this graph, computing
-// the language (and, for Rust, the crate roots) once instead of per file. For a
-// Rust-dominant graph carrying crate roots it resolves to module granularity
-// ("<crate>::<mod>") so per-file LOC/churn aggregates onto module nodes rather than
-// collapsing to the crate; every other case uses the language convention. The crate
-// roots are honoured only when Rust is the dominant language (or the graph has no
-// edges to judge), so a stray Cargo.toml in a Go/TS repo never flips the mapping.
-func ModuleKeyResolver(g *graph.Graph) func(string) string {
-	lang := DominantLanguage(g)
-	if crates := g.CrateRoots(); len(crates) > 0 && (lang == graph.LangRust || lang == "") {
-		return func(f string) string { return graph.RustFileToModuleKey(f, crates) }
-	}
-	return func(f string) string { return FileToModuleKey(f, lang) }
-}
-
-// ModuleChurn aggregates per-file churn onto module keys using the graph-bound
-// resolver, so Rust files resolve to module granularity when crate roots are present
-// (identical to the per-language convention otherwise).
-func ModuleChurn(g *graph.Graph, fileChurn map[string]int) map[string]int {
-	resolve := ModuleKeyResolver(g)
-	mc := map[string]int{}
-	for f, c := range fileChurn {
-		if k := resolve(f); k != "" {
-			mc[k] += c
-		}
-	}
-	return mc
-}
-
-// OrderedPair returns a canonical [2]string pair with a <= b.
-func OrderedPair(a, b string) [2]string {
-	if a <= b {
-		return [2]string{a, b}
-	}
-	return [2]string{b, a}
 }
 
 // BlastRadius returns, per first-party module, the number of other first-party

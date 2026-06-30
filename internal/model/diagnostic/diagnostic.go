@@ -19,12 +19,9 @@ type SyntaxFact struct {
 	Exported           bool   `json:"exported,omitempty"`
 	StartLine          int    `json:"start_line"`
 	EndLine            int    `json:"end_line,omitempty"`
-	Count              int    `json:"count,omitempty"`           // for kindStructField: estimated field count from line range (endLine - startLine - 1)
-	Role               string `json:"role,omitempty"`            // handler|service|repository|domain (derived)
-	RoleConf           string `json:"role_confidence,omitempty"` // high|medium|low
-	Evidence           string `json:"role_evidence,omitempty"`   // e.g. "decorator @Controller", "path contains repository"
-	Framework          string `json:"framework,omitempty"`       // for routes: gin|fastapi|express|axum|…
-	FrameworkConfirmed bool   `json:"-"`                         // true when the file imports the route framework; set by the adapter, never serialised
+	Count              int    `json:"count,omitempty"`     // for kindStructField: estimated field count from line range (endLine - startLine - 1)
+	Framework          string `json:"framework,omitempty"` // for routes: gin|fastapi|express|axum|…
+	FrameworkConfirmed bool   `json:"-"`                   // true when the file imports the route framework; set by the adapter, never serialised
 }
 
 // SortSyntaxFacts sorts in place by (File, StartLine, Kind, Name).
@@ -79,9 +76,9 @@ type MetricSnapshot map[string]struct {
 
 // Summary holds the gate/warning/exception counts for the top-level summary block (spec §12).
 type Summary struct {
-	GateFindings   int `json:"gate_findings"`
-	Warnings       int `json:"warnings"`
-	ExceptionsUsed int `json:"exceptions_used"`
+	GateFindings int `json:"gate_findings"`
+	Warnings     int `json:"warnings"`
+	WaiversUsed  int `json:"waivers_used"`
 }
 
 // Coverage records what a single tool extracted (spec §12 tool_coverage entry).
@@ -100,7 +97,7 @@ type Coverage struct {
 }
 
 // AgentTask is the structured repair-task block (spec §13): one per ACTIVE gate
-// finding (status new/expired_exception), derived deterministically from the
+// finding (status new/expired_waiver), derived deterministically from the
 // finding + rule configuration — no fabrication. It tells a coding agent what
 // to achieve, within which constraints, where, and how to verify.
 type AgentTask struct {
@@ -119,13 +116,13 @@ type AgentTask struct {
 	Validation []string `json:"validation"`
 	// Declarations holds the syntax declarations found in the referenced files
 	// (name, kind, exported, role, file:line). Populated only when syntax facts
-	// are present (tools.syntax.enabled: on); absent otherwise — no empty slice,
+	// are present (analyzers.syntax.enabled: true); absent otherwise — no empty slice,
 	// no JSON key emitted (omitempty ensures byte-for-byte parity with prior runs).
 	Declarations []SyntaxFact `json:"declarations,omitempty"`
 }
 
-// FileFact holds neutral per-module structural facts assembled from collected
-// data (symbol graph, file LOC, co-change history, optional SCIP dependant count).
+// FileFact holds neutral per-module structural facts assembled from the symbol
+// graph and file LOC.
 //
 // The facts block is report-only evidence for the Tranche-2 LLM: it carries no
 // band, no score, no risk label, never sets delta, and never enters the verdict
@@ -145,12 +142,6 @@ type FileFact struct {
 	OutboundDestinations int `json:"outbound_destinations"`
 	// LOC is the summed line count of Files (exact join against FileLOC keys).
 	LOC int `json:"loc"`
-	// CoChangePartners lists files outside this module most frequently committed
-	// together with this module's files, count descending, capped.
-	CoChangePartners []string `json:"cochange_partners"`
-	// SymbolDependants is the SCIP-derived distinct-dependant-file count for this
-	// module (max over its defining files); nil when SCIP is off or uncovered.
-	SymbolDependants *int `json:"symbol_dependants,omitempty"`
 }
 
 // RuntimeAsyncSite is one detected async integration pattern location.
@@ -177,7 +168,7 @@ type RuntimeAsyncModule struct {
 // in a manifest file. Report-only evidence — never consumed by verdict or gate
 // logic, never alters the dependency graph or any metric.
 // Ceiling: cargo yanked and live-version EOL require external registry queries
-// and are routed to the LLM review path (archfit review/enrich), not this detector.
+// and are routed to the LLM path (archfit analyze --llm / enrich), not this detector.
 type DeprecatedDep struct {
 	File    string `json:"file"`           // repo-relative manifest file path
 	Kind    string `json:"kind"`           // "retract" | "deprecated"
@@ -218,7 +209,7 @@ type DynamicImportSite struct {
 // It is the warn-loud counterpart to a Coverage{Status:"absent"} entry: it
 // turns "this tool is missing" into "here is what you lose and how to fix it".
 type CoverageGap struct {
-	// Tool is the absent analyzer's coverage name (e.g. "go/packages", "lizard").
+	// Tool is the absent analyzer's coverage name (e.g. "go/packages", "scip").
 	Tool string `json:"tool"`
 	// InstallCmd is a one-line install hint for the tool.
 	InstallCmd string `json:"install_cmd"`
@@ -288,7 +279,7 @@ type ClassifiedEdgeSummary struct {
 	// module (Distance == unknown: stdlib, third-party, undeclared packages). These
 	// are EXCLUDED from the Scored/Abstained distribution that drives coupling_balance
 	// — the book measures coupling among YOUR components, not your libraries.
-	// External dependency hygiene is a dependency_graph_health concern.
+	// External dependency hygiene is tracked separately and does not affect coupling_balance.
 	// This field is language-agnostic: it keys on DistanceUnknown, which classifyDistance
 	// sets for all languages (Go stdlib/3p, Rust dependency crates, TS node_modules,
 	// Python external imports). Zero means no external edges were detected.
@@ -315,7 +306,7 @@ const (
 // ignore unknown fields — do not decode a v1 payload with DisallowUnknownFields.
 const SchemaVersion = "archfit.diagnostic.v2"
 
-// Diagnostic is the top-level output contract for archfit check (spec §12).
+// Diagnostic is the top-level output contract for archfit analyze (spec §12).
 // JSON tags match spec §12 field names exactly.
 type Diagnostic struct {
 	SchemaVersion string  `json:"schema_version"`
@@ -345,11 +336,11 @@ type Diagnostic struct {
 	// marker block. Evidence only — never consumed by verdict or gate logic, never
 	// alters the dependency graph or any metric. Omitted when no markers were found.
 	// Ceiling: cargo yanked and live-version EOL require external registry queries
-	// and are routed to the LLM review path (archfit review/enrich), not here.
+	// and are routed to the LLM path (archfit analyze --llm / enrich), not here.
 	DeprecatedDeps []DeprecatedDep `json:"deprecated_deps,omitempty"`
 	// SyntaxFacts is the report-only syntactic declaration/route block extracted
 	// by ast-grep (design §3). Neutral, off-gate evidence — never consumed by
-	// verdict or gate logic. Omitted (omitempty) when tools.syntax is off or sg
+	// verdict or gate logic. Omitted (omitempty) when analyzers.syntax is off or sg
 	// is absent, so absent sg never emits a null/empty block (no false green).
 	SyntaxFacts  []SyntaxFact `json:"syntax_facts,omitempty"`
 	AgentTasks   []AgentTask  `json:"agent_tasks"`
@@ -358,12 +349,16 @@ type Diagnostic struct {
 	// leaves unmeasured, and how to install them (warn-loud coverage reporting).
 	// Omitted when every required tool ran. Populated in cmd/, never the core ring.
 	CoverageGaps []CoverageGap `json:"coverage_gaps,omitempty"`
+	// OwnerSource records where module owners came from for the owner-distance
+	// signal: "config" (declared in .archfit.yaml), "codeowners", "git" (author
+	// history), or "none" (no owner signal — owner-distance falls back to
+	// code-structure). Populated in cmd/. Omitted when empty.
+	OwnerSource string `json:"owner_source,omitempty"`
 	// PrimaryExtractorTools names the per-language file extractors whose coverage
 	// the scorecard treats as load-bearing: their absence (when coverage is n/a)
-	// means the repo was not analysed at all and drives analysis_confidence toward
-	// critical. Injected by the composition root from the language registry so the
-	// score package holds no hardcoded tool list. Omitted when empty; score then
-	// falls back to its built-in default set.
+	// means the repo was not analysed at all. Injected by the composition root from
+	// the language registry so the score package holds no hardcoded tool list.
+	// Omitted when empty; score then falls back to its built-in default set.
 	PrimaryExtractorTools []string `json:"primary_extractor_tools,omitempty"`
 	// ConfigWarnings carries advisory config-quality messages (under-specified
 	// modules, swallowed optional-tool errors) so they reach md/json/CI instead

@@ -18,8 +18,9 @@ import (
 // InitCmd discovers project structure and writes a starter archfit.yaml.
 type InitCmd struct {
 	Root        string `short:"r" help:"Project root directory." default:"."`
-	Output      string `short:"o" help:"Output file (use '-' for stdout)." default:".archfit.yaml"`
-	LLM         bool   `name:"llm"          help:"Run LLM classification pass (off-gate; requires tools.llm or --llm-provider)."`
+	Output      string `short:"o" help:"Output file (relative paths resolve against --root; use '-' for stdout)." default:".archfit.yaml"`
+	Force       bool   `name:"force" help:"Overwrite an existing config (a timestamped backup is kept). Without it, init leaves an existing config untouched."`
+	LLM         bool   `name:"llm"          help:"Run LLM classification pass (off-gate; requires ai or --llm-provider)."`
 	Apply       bool   `name:"apply"        help:"Write LLM classifications live into .archfit.yaml (requires --llm; LLM judgment written directly — review before using as a gate)."`
 	LLMProvider string `name:"llm-provider" help:"LLM provider override (anthropic|openai|ollama)."  default:"anthropic"`
 	LLMModel    string `name:"llm-model"    help:"LLM model override."                                default:"claude-opus-4-8"`
@@ -43,6 +44,12 @@ func (c *InitCmd) Run(deps *appDeps) error {
 			return fmt.Errorf("resolving root: %w", err)
 		}
 	}
+	// Resolve the output path against --root so `init --root <dir>` writes into
+	// <dir>, not the process CWD. Absolute paths and "-" (stdout) are kept as-is.
+	out := c.Output
+	if out != "-" && !filepath.IsAbs(out) {
+		out = filepath.Join(root, out)
+	}
 	ctx := context.Background()
 	cfg, err := initcfg.Discover(ctx, root, deps.Runner)
 	if err != nil {
@@ -54,8 +61,8 @@ func (c *InitCmd) Run(deps *appDeps) error {
 		// Best-effort read of an existing config — tolerate failure.
 		// Skip when writing to stdout: "-" is not a file path.
 		var llmCfg config.LLMConfig
-		if c.Output != "-" {
-			existingCfg, cfgErr := config.Load(ctx, c.Output)
+		if out != "-" {
+			existingCfg, cfgErr := config.Load(ctx, out)
 			if cfgErr == nil {
 				if lc, ok := existingCfg.LLM(); ok {
 					llmCfg = lc
@@ -81,16 +88,29 @@ func (c *InitCmd) Run(deps *appDeps) error {
 	}
 
 	rendered := initcfg.Render(cfg, ann, c.Apply)
-	if c.Output == "-" {
+	if out == "-" {
 		_, _ = fmt.Fprint(deps.Stdout, rendered)
 		return nil
 	}
 
 	var original []byte
-	if data, readErr := os.ReadFile(c.Output); readErr == nil {
+	if data, readErr := os.ReadFile(out); readErr == nil { //#nosec G304 — user-supplied output path
 		original = data
 	}
-	return safeWriteConfig(ctx, deps, c.Output, []byte(rendered), original)
+	// No-clobber guard: don't overwrite an existing config unless --force. An
+	// existing config may carry architect-authored module mapping; init should not
+	// silently replace it. This is a deliberate no-op (exit 0), not an error.
+	if original != nil && !c.Force {
+		if _, loadErr := config.Load(ctx, out); loadErr == nil {
+			_, _ = fmt.Fprintf(deps.Stdout, "%s already exists and is valid — leaving it unchanged.\n"+
+				"Re-run with --force to overwrite (a timestamped backup is kept).\n", out)
+		} else {
+			_, _ = fmt.Fprintf(deps.Stdout, "%s already exists but failed to load: %v\n"+
+				"Re-run with --force to overwrite it (a timestamped backup is kept).\n", out, loadErr)
+		}
+		return nil
+	}
+	return safeWriteConfig(ctx, deps, out, []byte(rendered), original)
 }
 
 // initClassifySystemPrompt instructs the LLM to act as a domain modeler and

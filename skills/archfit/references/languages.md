@@ -53,7 +53,8 @@ Guidance:
 - Prefer a pinned repo-local `dependency-cruiser` install.
 - Config paths and rule filters are repo-relative file globs.
 - For higher-fidelity symbol evidence, SCIP needs installed dependencies
-  (`node_modules`). If they are absent, `risk_hub` stays `n/a`.
+  (`node_modules`). If they are absent, edge strength classification falls back
+  to heuristics and `coupling_balance` confidence drops.
 - If Node/Bun or dependency-cruiser is missing, treat TS/JS architecture results
   as partial only.
 
@@ -72,8 +73,8 @@ archfit install --lang py --dry-run
 Guidance:
 
 - Prefer `uv`; without it, use Python 3.12+ with pinned `grimp`.
-- Set `python_package` when the import root is not the repo name or the repo uses
-  `src/` layout.
+- Set `languages.python.package` when the import root is not the repo name or
+  the repo uses `src/` layout.
 - Config paths and rule filters use dotted module globs (`myapp.domain**`).
 - Keep slash-style `internal` globs too when you want `_internal` package access
   to show up as intrusive/internal-access edges.
@@ -98,17 +99,19 @@ Guidance:
 - Config paths and rule filters are crate-name globs from `Cargo.toml`, not file
   paths.
 - Single-crate repos are structurally shallow at crate level. For real module
-  depth, enable `tools.cargo-modules.enabled: on`; for symbol-level strength,
-  enable `tools.scip.enabled: on` with `rust-analyzer` available.
+  depth, enable `analyzers.cargo_modules.enabled: true`; for symbol-level
+  strength, enable `analyzers.scip.enabled: true` with `rust-analyzer` available.
 - If `cargo` is missing, Rust metrics stay `n/a`; do not treat that as a pass.
 - If `cargo-modules` or `rust-analyzer` is absent, call out the exact dimensions
   that remain coarse or unmeasured.
 
 ## Optional analyzers that often explain `n/a`
 
-- `tools.complexity.enabled: on` + `lizard` → `complexity`
-- `tools.scip.enabled: on` + language SCIP indexer / `rust-analyzer` → `risk_hub`
-- `tools.clones.enabled: on` + clone detector → `functional_candidates`
-- `tools.cargo-modules.enabled: on` + `cargo-modules` → Rust intra-crate depth
+- `analyzers.scip.enabled: true` + language SCIP indexer / `rust-analyzer` →
+  edge strength precision; raises `coupling_balance` confidence
+- `analyzers.clones.enabled: true` + jscpd → clone-detected `symmetric` edges
+  (S=9 upgrade); affects `coupling_balance` distribution
+- `analyzers.cargo_modules.enabled: true` + `cargo-modules` → Rust intra-crate
+  module depth for `encapsulation` and `cycle` signal
 
 When one is missing, say so explicitly. `n/a` means unmeasured, not strong.

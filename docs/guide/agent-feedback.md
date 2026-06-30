@@ -8,7 +8,7 @@ is deterministic — same repo + same config = byte-identical output.
 
 ```text
 agent edits code
-  → archfit check [--base main] --format json
+  → archfit analyze --gate [--base main] --json
   → exit 0?  done.
   → exit 1?  read agent_tasks[] — goal, constraints, files, validation
   → fix within the constraints
@@ -31,7 +31,7 @@ Every ACTIVE gate finding produces one structured repair task:
     "public surface of module \"b\": [pkg/b/api/**]"
   ],
   "files": ["pkg/a/a.go", "pkg/b/internal/impl.go"],
-  "validation": ["archfit check -c .archfit.yaml --full"]
+  "validation": ["archfit analyze --gate -c .archfit.yaml --full"]
 }
 ```
 
@@ -48,29 +48,20 @@ locations and stable `archfit/v1` fingerprints. Metrics and the verdict ride
 in `runs[0].properties`. Pipe it to GitHub code scanning to get findings as
 inline PR annotations.
 
-## change_locality — the drift number
-
-In delta mode (`--base <ref>`), the `change_locality` metric quantifies the
-change's blast surface: cross-module edges originating in changed files plus
-the forward graph reach. Report-only — the `new_cross_module_dependency` rule
-is the gate; the metric is the trend an agent (or reviewer) watches.
-
 ## The dimensions an agent sees
 
 - **Gate findings** — boundary violations (forbidden deps, internal access,
   layer inversions, cycles, unreviewed new cross-module deps).
 - **BC advisories** — Balanced Coupling imbalances (strength × distance ×
   volatility) at or above the configured severity.
-- **Metrics (13)** — boundary health (encapsulation, unbalanced_edge, cycle,
-  coverage), modularity (blast_radius, change_amplification, hidden_coupling,
-  structural_weight, complexity), structural risk (risk_hub,
-  architecture_fitness, functional_candidates), drift (change_locality).
-- **Structural facts** — neutral per-module evidence (fan-in, fan-out, LOC,
-  co-change, symbol dependant count) for downstream judgment.
+- **Metrics** — `coupling_balance` (scored), plus complementary report-only:
+  `blast_radius`, `cycle`, `encapsulation`, `coverage`.
+- **Structural facts** — neutral per-module evidence (fan-in, fan-out, LOC)
+  for downstream judgment.
 
 ## Lifecycle the agent must respect
 
 Findings carry status: `new` (gates), `baseline` (accepted — do not "fix"
-unprompted), `excepted` (time-boxed waiver), `expired_exception` (gates
+unprompted), `waived` (time-boxed waiver), `expired_waiver` (gates
 again), `fixed` (gone since baseline). `archfit baseline` accepts the current
-state; exceptions live in config with expiry dates.
+state; waivers live in config with expiry dates.

@@ -59,9 +59,11 @@ func parseFile(src []byte, lines [][]byte) (parsedFile, error) {
 			pf.layersEndLine = endLineOf(keyLine)
 			pf.allowedLayers = readLayersSeq(mv.Value)
 
-		case "tools":
-			pf.toolsKeyLine = keyLine
-			pf.toolsEndLine = endLineOf(keyLine)
+		case "coupling", "languages", "analyzers", "ai":
+			// Pre-modules config sections appear in document order; keep the last
+			// one as the anchor so a new modules: block lands right after it.
+			pf.analysisKeyLine = keyLine
+			pf.analysisEndLine = endLineOf(keyLine)
 
 		case "rules":
 			pf.rulesKeyLine = keyLine

@@ -28,14 +28,6 @@ func goldenDiagnostic() diagnostic.Diagnostic {
 		{Name: "coverage", Value: 1.0, Display: "1.00", Band: bandStrong, Confidence: confHigh},
 		{Name: "cycle", Value: 0, Display: "0", Band: bandStrong, Confidence: confHigh},
 		{Name: "blast_radius", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
-		{Name: "instability", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
-		{Name: "propagation_cost", Value: 0.05, Display: "0.05", Band: bandInfo, Confidence: confHigh},
-		{Name: "structural_weight", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
-		{Name: "hidden_coupling", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
-		{Name: "functional_candidates", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
-		{Name: "change_coupling", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
-		{Name: "change_amplification", Value: 0, Display: "0", Band: bandInfo, Confidence: confHigh},
-		{Name: "architecture_fitness", Value: 1.0, Display: "3/3", Band: bandInfo, Confidence: confHigh},
 	}
 	d.Findings = []finding.Finding{
 		{
@@ -51,7 +43,7 @@ func goldenDiagnostic() diagnostic.Diagnostic {
 	d.ToolCoverage = []diagnostic.Coverage{
 		{Tool: "go/packages", Status: "ok"},
 		{Tool: "scip", Status: "ok"},
-		{Tool: "lizard", Status: "ok"},
+		{Tool: "ast-grep", Status: "ok"},
 		{Tool: "jscpd", Status: "ok"},
 	}
 	return d
@@ -60,49 +52,15 @@ func goldenDiagnostic() diagnostic.Diagnostic {
 const golden = `# archfit scorecard
 
 **Rubric version:** 1
-**Overall:** 92/100 (strong)
+**Overall:** 50/100 (mixed)
 **Config hash:** ` + "`abc123`" + `
 
 ## Dimensions
-
-### boundary_integrity — 100/100 (strong) · confidence: high
-no gate-level boundary violations; intended boundaries hold
-- encapsulation 1.00 (strong)
-- 0 active gate violations
 
 ### coupling_balance — 50/100 (mixed) · confidence: high
 coupling carries elevated maintenance effort but no distributed-monolith edges
 - 2 BC edges (1 rollups); weighted mean maintenance-effort 5.0/10
 - worst-case high/high/high (distributed-monolith) edges: 0
-
-### dependency_graph_health — 99/100 (strong) · confidence: high
-internal dependency-graph shape: cycles, blast-radius hubs, instability, and propagation cost (not external dependency hygiene)
-- import cycles: 0
-- blast-radius hubs: 0
-- unstable modules (I>0.7): 0
-- propagation cost: 0.05
-
-### cohesion_modularity — 100/100 (strong) · confidence: high
-cohesion: god modules, hidden coupling, and duplication (cohesion = high strength + low distance is healthy, not penalised)
-- god modules (LOC skew): 0
-- hidden-coupling pairs: 0
-- cross-module duplication pairs: 0
-
-### change_locality — 100/100 (strong) · confidence: high
-change locality: how much change crosses intended module boundaries
-- co-changing module pairs: 0
-- change-amplifying hubs: 0
-
-### architecture_fitness — 100/100 (strong) · confidence: high
-architecture intent enforced by executable fitness checks
-- enforcement signals present: 3/3
-
-### analysis_confidence — 100/100 (strong) · confidence: high · meta (scores the review, not the architecture)
-review trustworthiness given tool coverage and evidence depth
-- file extraction coverage 1.00
-- scip: ok
-- lizard: ok
-- jscpd: ok
 `
 
 // TestRenderer_Golden asserts the exact rendered scorecard for a fixed Diagnostic.
@@ -214,20 +172,14 @@ func TestRenderer_RequiredToolsMissingAbsentWhenEmpty(t *testing.T) {
 }
 
 // TestRenderer_EmptyDiagnostic asserts the renderer never panics on a near-empty
-// Diagnostic and still emits all seven dimension headers.
+// Diagnostic and still emits the coupling_balance dimension header.
 func TestRenderer_EmptyDiagnostic(t *testing.T) {
 	var buf bytes.Buffer
 	if err := New().Render(diagnostic.New(), &buf); err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 	out := buf.String()
-	for _, dim := range []string{
-		"boundary_integrity", "coupling_balance", "dependency_graph_health",
-		"cohesion_modularity", "change_locality", "architecture_fitness",
-		"analysis_confidence",
-	} {
-		if !strings.Contains(out, "### "+dim+" ") {
-			t.Errorf("missing dimension header for %q in:\n%s", dim, out)
-		}
+	if !strings.Contains(out, "### coupling_balance ") {
+		t.Errorf("missing coupling_balance dimension header in:\n%s", out)
 	}
 }

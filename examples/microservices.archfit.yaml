@@ -6,17 +6,18 @@
 # coupling (sharing internals/DB across services) = distributed-monolith risk —
 # exactly what archfit flags first. Declaring deploy_unit + owner per service is
 # what makes that distinction reliable.
-#   archfit check --config .archfit.yaml --full
-#   archfit score --config .archfit.yaml --full
+#   archfit analyze --config .archfit.yaml --full
+#   archfit analyze --score --config .archfit.yaml --full
 version: 1
-bc_advisory_min_severity: medium
-tools:
+coupling:
+  min_severity: medium
+languages:
   go:
-    enabled: "on"
+    enabled: true
   typescript:
-    enabled: "off"
+    enabled: false
   python:
-    enabled: "off"
+    enabled: false
 layers:
   - domain
   - transport
@@ -73,6 +74,3 @@ rules:
   - id: no_cycles
     type: cycle
     gate: fail
-metrics:
-  architecture_fitness:
-    enabled: true

@@ -100,7 +100,7 @@ var languageRegistry = []LanguageDescriptor{
 		DoctorTools: []doctorTool{
 			{toolCargo, toolCargo, "https://rustup.rs"},
 			{scipRust, scipRust, "rustup component add rust-analyzer"},
-			{toolCargoModules, toolCargoModules, "cargo install cargo-modules (opt-in: tools.cargo-modules.enabled: on)"},
+			{toolCargoModules, toolCargoModules, "cargo install cargo-modules (opt-in: analyzers.cargo_modules.enabled: true)"},
 		},
 	},
 }

@@ -42,7 +42,7 @@ func gateFinding(id, ruleID string, status finding.Status) finding.Finding {
 func TestBuild_ActiveGateFindingsOnly(t *testing.T) {
 	findings := []finding.Finding{
 		gateFinding("f-new", ruleForbidden, finding.StatusNew),
-		gateFinding("f-expired", ruleForbidden, finding.StatusExpiredExcept),
+		gateFinding("f-expired", ruleForbidden, finding.StatusExpiredWaiver),
 		gateFinding("f-baselined", ruleForbidden, finding.StatusBaseline),
 		gateFinding("f-fixed", ruleForbidden, finding.StatusFixed),
 		func() finding.Finding {
@@ -155,7 +155,7 @@ func TestBuild_EmptyAndDeterministic(t *testing.T) {
 // are provided, each task's Declarations field contains the facts for its files.
 func TestBuild_DeclarationsEnrichedWhenSyntaxPresent(t *testing.T) {
 	sf := []diagnostic.SyntaxFact{
-		{File: fileFrom, Kind: kindFunction, Name: "CallB", Exported: true, StartLine: 3, Role: "service", RoleConf: "medium"},
+		{File: fileFrom, Kind: kindFunction, Name: "CallB", Exported: true, StartLine: 3},
 		{File: fileTo, Kind: kindFunction, Name: "internalImpl", Exported: false, StartLine: 10},
 		{File: "pkg/other/other.go", Kind: kindFunction, Name: "Unrelated", Exported: true, StartLine: 1},
 	}
@@ -181,9 +181,9 @@ func TestBuild_DeclarationsEnrichedWhenSyntaxPresent(t *testing.T) {
 	if decls[1].Name != "internalImpl" || decls[1].File != fileTo {
 		t.Errorf("decls[1] = %+v, want internalImpl in %s", decls[1], fileTo)
 	}
-	// Role and file:line are preserved.
-	if decls[0].Role != "service" || decls[0].StartLine != 3 {
-		t.Errorf("decls[0] role/line = %q/%d, want service/3", decls[0].Role, decls[0].StartLine)
+	// file:line is preserved.
+	if decls[0].StartLine != 3 {
+		t.Errorf("decls[0] line = %d, want 3", decls[0].StartLine)
 	}
 }
 

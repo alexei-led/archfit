@@ -95,7 +95,7 @@ func runByteIdenticalTest(t *testing.T, fixtureRelPath string) {
 	// valid analysis results. 2/3 indicate a config or runtime error.
 	cfgPath := filepath.Join(root, ".archfit.yaml")
 	var buf bytes.Buffer
-	code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+	code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 	if code != 0 && code != 1 {
 		t.Fatalf("archfit exited %d (want 0 or 1):\n%s", code, buf.String())
 	}

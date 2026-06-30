@@ -85,35 +85,35 @@ rules:
 	return filepath.Join(dir, ".archfit.yaml")
 }
 
-// TestRun_Check_ReportSuppressesFailureExit verifies the --report contract:
-// the same violating repo exits 1 without --report and 0 with it.
-func TestRun_Check_ReportSuppressesFailureExit(t *testing.T) {
+// TestRun_Analyze_GateVsReportOnly verifies the --gate contract:
+// the same violating repo exits 1 with --gate and 0 without it (report-only default).
+func TestRun_Analyze_GateVsReportOnly(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdCheck, "-c", cfgPath, flagFull}, &buf)
+	code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, flagGate}, &buf)
 	if code != 1 {
-		t.Fatalf("check without --report: exit = %d, want 1 (gate violation)\noutput:\n%s", code, buf.String())
+		t.Fatalf("analyze --gate: exit = %d, want 1 (gate violation)\noutput:\n%s", code, buf.String())
 	}
 
 	buf.Reset()
-	code = Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport}, &buf)
+	code = Run([]string{cmdAnalyze, "-c", cfgPath, flagFull}, &buf)
 	if code != 0 {
-		t.Fatalf("check with --report: exit = %d, want 0\noutput:\n%s", code, buf.String())
+		t.Fatalf("analyze without --gate: exit = %d, want 0 (report-only)\noutput:\n%s", code, buf.String())
 	}
 	if !strings.Contains(strings.ToLower(buf.String()), "fail") {
-		t.Errorf("--report must still render the fail verdict\noutput:\n%s", buf.String())
+		t.Errorf("report-only must still render the fail verdict\noutput:\n%s", buf.String())
 	}
 }
 
 const (
 	flagFull          = "--full"
 	flagRoot          = "--root"
-	cmdCheck          = "check"
+	cmdAnalyze        = "analyze"
 	cmdExplain        = "explain"
 	fmtJSON           = "--format=json"
-	flagReport        = "--report"
+	flagGate          = "--gate"
 	filePkgAA         = "pkg/a/a.go"         // the gate-violating source file used across fixtures
 	ruleNoInternalAcc = "no_internal_access" // rule ID in the violating-repo fixture
 	explainConstraint = "constraint:"        // explain output field label
@@ -123,10 +123,7 @@ const (
 )
 
 // writeNonGoRepo creates a git repo with no analyzable source (README only) and
-// the given archfit config body, returning the config path. The optional analyzers
-// (dependency-cruiser, grimp, lizard, jscpd) are absent on such a tree,
-// so every run yields a stable, non-empty CoverageGaps block — the input the
-// opt-in hard tool-gate acts on.
+// the given archfit config body, returning the config path.
 func writeNonGoRepo(t *testing.T, cfgBody string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -141,6 +138,17 @@ func writeNonGoRepo(t *testing.T, cfgBody string) string {
 	}
 	gitInitFixtureRepo(t, dir)
 	return filepath.Join(dir, ".archfit.yaml")
+}
+
+// writeGapRepo creates a git repo with no analyzable source and an archfit
+// config that forces a go/packages gap via an explicit gate (overrides the
+// project-marker suppression). Used to test the warn-loud / --require-tools path.
+func writeGapRepo(t *testing.T, extraCfg string) string {
+	t.Helper()
+	// An explicit languages.go.gate bypasses the "no go.mod → suppress gap" logic
+	// in buildCoverageGaps, making the go/packages absence a deterministic gap.
+	cfg := "version: 1\nlanguages:\n  go:\n    gate: warn\n" + extraCfg
+	return writeNonGoRepo(t, cfg)
 }
 
 // TestRun_Check_RequireToolsHardGate verifies the opt-in hard tool-gate (Task 4):
@@ -159,9 +167,9 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 
 	t.Run("default is warn-loud: exit 0 with a gaps block", func(t *testing.T) {
 		t.Parallel()
-		cfgPath := writeNonGoRepo(t, "version: 1\n")
+		cfgPath := writeGapRepo(t, "")
 		var buf bytes.Buffer
-		code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 		if code != 0 {
 			t.Fatalf("default check: exit = %d, want 0\noutput:\n%s", code, buf.String())
 		}
@@ -181,9 +189,9 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 
 	t.Run("--require-tools fails: every gap becomes a fail gate, exit 1", func(t *testing.T) {
 		t.Parallel()
-		cfgPath := writeNonGoRepo(t, "version: 1\n")
+		cfgPath := writeGapRepo(t, "")
 		var buf bytes.Buffer
-		code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, "--require-tools", fmtJSON}, &buf)
+		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, "--require-tools", fmtJSON}, &buf)
 		if code != 1 {
 			t.Fatalf("check --require-tools: exit = %d, want 1\noutput:\n%s", code, buf.String())
 		}
@@ -205,10 +213,10 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		t.Parallel()
 		// go is disabled so go/packages reports absent (a gap) deterministically,
 		// regardless of whether a Go toolchain happens to half-load a non-Go tree.
-		cfg := "version: 1\ntools:\n  go:\n    enabled: off\n    gate: fail\n"
+		cfg := "version: 1\nlanguages:\n  go:\n    enabled: false\n    gate: fail\n"
 		cfgPath := writeNonGoRepo(t, cfg)
 		var buf bytes.Buffer
-		code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 		if code != 1 {
 			t.Fatalf("tools.go.gate: fail → exit = %d, want 1\noutput:\n%s", code, buf.String())
 		}
@@ -231,11 +239,11 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 
 	t.Run("--require-tools is not suppressed by --report", func(t *testing.T) {
 		t.Parallel()
-		cfgPath := writeNonGoRepo(t, "version: 1\n")
+		cfgPath := writeGapRepo(t, "")
 		var buf bytes.Buffer
-		code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, "--require-tools"}, &buf)
+		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, "--require-tools"}, &buf)
 		if code != 1 {
-			t.Fatalf("check --report --require-tools: exit = %d, want 1 (hard gate beats --report)\noutput:\n%s", code, buf.String())
+			t.Fatalf("analyze --require-tools: exit = %d, want 1 (hard gate)\noutput:\n%s", code, buf.String())
 		}
 	})
 }
@@ -301,9 +309,9 @@ func TestRun_Check_RootDecoupledFromConfig(t *testing.T) {
 	t.Run("--root scans the repo via an external config", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
-		code := Run([]string{cmdCheck, flagRoot, repoDir, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+		code := Run([]string{cmdAnalyze, flagGate, flagRoot, repoDir, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 		if code != 1 {
-			t.Fatalf("check --root: exit = %d, want 1 (forbidden-dependency gate)\noutput:\n%s", code, buf.String())
+			t.Fatalf("analyze --gate --root: exit = %d, want 1 (forbidden-dependency gate)\noutput:\n%s", code, buf.String())
 		}
 		var diag struct {
 			Findings []struct {
@@ -331,7 +339,7 @@ func TestRun_Check_RootDecoupledFromConfig(t *testing.T) {
 		// violations (the config dir has no source code). This confirms --root is
 		// required to scan the actual repo — without it, nothing is analysed.
 		var buf bytes.Buffer
-		code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 		if code != 0 {
 			t.Fatalf("check without --root on an external config: exit = %d, want 0 (empty config dir → pass)\noutput:\n%s", code, buf.String())
 		}
@@ -367,12 +375,13 @@ func TestRun_Version(t *testing.T) {
 func TestRun_NoArgs(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
+	// Bare invocation routes to analyze (default command). It runs report-only
+	// against the current directory: exits 0 (clean or report-only) or 1 (gate
+	// violation — but --gate is not set so always exits 0 on success). Exit 3
+	// (config/tool error) is the only bad outcome.
 	code := Run(nil, &buf)
-	if code != 0 {
-		t.Fatalf("expected exit 0 for no args, got %d (output: %q)", code, buf.String())
-	}
-	if !strings.Contains(buf.String(), "First run:") {
-		t.Fatalf("no-args help missing quick-start guidance; output:\n%s", buf.String())
+	if code == 3 {
+		t.Fatalf("bare invocation exited 3 (config/tool error); output:\n%s", buf.String())
 	}
 }
 
@@ -381,12 +390,27 @@ func TestRun_NoArgs(t *testing.T) {
 func TestRun_UnknownFlag_NotSilent(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	code := Run([]string{cmdCheck, "--definitely-not-a-flag"}, &buf)
+	code := RunWithStderr([]string{cmdAnalyze, "--definitely-not-a-flag"}, &buf, &buf)
 	if code != 3 {
 		t.Fatalf("unknown flag: exit = %d, want 3", code)
 	}
 	if strings.TrimSpace(buf.String()) == "" {
 		t.Errorf("unknown flag produced no output; want a printed error")
+	}
+}
+
+func TestRunWithStderr_ErrorsGoToStderrNotStdout(t *testing.T) {
+	t.Parallel()
+	var out, errOut bytes.Buffer
+	code := RunWithStderr([]string{cmdAnalyze, "--definitely-not-a-flag"}, &out, &errOut)
+	if code != 3 {
+		t.Fatalf("exit = %d, want 3", code)
+	}
+	if strings.TrimSpace(out.String()) != "" {
+		t.Errorf("errors must not pollute stdout; got stdout: %q", out.String())
+	}
+	if strings.TrimSpace(errOut.String()) == "" {
+		t.Error("error message should be written to stderr; got empty stderr")
 	}
 }
 
@@ -413,7 +437,7 @@ func TestRun_Help_ShowsScan(t *testing.T) {
 		t.Fatalf("expected exit 0 for --help, got %d", code)
 	}
 	out := buf.String()
-	for _, want := range []string{"Core feedback loop", "scan", docsURL, ciDocsURL} {
+	for _, want := range []string{"Core feedback loop", "analyze", docsURL, ciDocsURL} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--help output missing %q; got:\n%s", want, out)
 		}
@@ -423,7 +447,7 @@ func TestRun_Help_ShowsScan(t *testing.T) {
 func TestRun_CheckHelp_ShowsAgentLoop(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	code := Run([]string{cmdCheck, flagHelp}, &buf)
+	code := Run([]string{cmdAnalyze, flagHelp}, &buf)
 	if code != 0 {
 		t.Fatalf("expected exit 0 for check --help, got %d", code)
 	}
@@ -446,7 +470,7 @@ func TestRun_Explain_ResolvesViaFullPipeline(t *testing.T) {
 
 	// Get the finding fingerprint from a check run.
 	var buf bytes.Buffer
-	Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+	Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 	var diag struct {
 		Findings []struct {
 			ID string `json:"id"`
@@ -480,9 +504,9 @@ func TestRun_Explain_HonorsRoot(t *testing.T) {
 
 	// Capture the finding ID from check --root so we have a valid fingerprint.
 	var checkBuf bytes.Buffer
-	code := Run([]string{cmdCheck, flagRoot, repoDir, "-c", cfgPath, flagFull, fmtJSON}, &checkBuf)
+	code := Run([]string{cmdAnalyze, flagGate, flagRoot, repoDir, "-c", cfgPath, flagFull, fmtJSON}, &checkBuf)
 	if code != 1 {
-		t.Fatalf("check --root: exit = %d, want 1 (gate violation)\noutput:\n%s", code, checkBuf.String())
+		t.Fatalf("analyze --gate --root: exit = %d, want 1 (gate violation)\noutput:\n%s", code, checkBuf.String())
 	}
 	var checkDiag struct {
 		Findings []struct {
@@ -535,7 +559,7 @@ func TestRun_Explain_BackCompatNoRoot(t *testing.T) {
 	cfgPath := writeViolatingRepo(t)
 
 	var checkBuf bytes.Buffer
-	Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &checkBuf)
+	Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &checkBuf)
 	var checkDiag struct {
 		Findings []struct {
 			ID string `json:"id"`
@@ -568,7 +592,7 @@ func TestRun_Explain_SeverityMatchesCheck(t *testing.T) {
 
 	// Get the finding ID and severity from check.
 	var checkBuf bytes.Buffer
-	if code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &checkBuf); code == 3 {
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &checkBuf); code == 3 {
 		t.Fatalf("check exited 3 (config error)\noutput:\n%s", checkBuf.String())
 	}
 	var checkDiag struct {
@@ -604,7 +628,7 @@ func TestRun_Check_AgentTasksPopulated(t *testing.T) {
 	cfgPath := writeViolatingRepo(t)
 
 	var buf bytes.Buffer
-	Run([]string{cmdCheck, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+	Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
 
 	var diag struct {
 		AgentTasks []struct {
@@ -631,23 +655,23 @@ func TestRun_Check_AgentTasksPopulated(t *testing.T) {
 	if len(task.Files) == 0 {
 		t.Error("files is empty")
 	}
-	if len(task.Validation) != 1 || !strings.Contains(task.Validation[0], "archfit check -c "+cfgPath) {
+	if len(task.Validation) != 1 || !strings.Contains(task.Validation[0], "archfit analyze --gate -c "+cfgPath) {
 		t.Errorf("validation = %v, want exact re-check command", task.Validation)
 	}
 }
 
-// TestRun_Check_MissingBaselineWarning verifies P9: when --base is given but
-// no baseline file exists, check prints a warning to stderr naming the ref and
-// the finding count, and still exits on the real verdict (not a hard error).
-func TestRun_Check_MissingBaselineWarning(t *testing.T) {
+// TestRun_Check_MissingBaselineFile verifies that when no .archfit-baseline.json
+// exists, analyze --gate exits on the real verdict (exit 1 for violations), not
+// a hard error (exit 3). The baseline file is optional; its absence is not an error.
+func TestRun_Check_MissingBaselineFile(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 
 	var stdout, stderr bytes.Buffer
-	cmd := CheckCmd{
+	cmd := AnalyzeCmd{
 		Config: cfgPath,
-		Base:   "origin/main",
 		Full:   true,
+		Gate:   true,
 		Format: []string{formatJSON},
 	}
 	deps := &appDeps{Runner: toolrun.New(), Stdout: &stdout, Stderr: &stderr}
@@ -660,22 +684,8 @@ func TestRun_Check_MissingBaselineWarning(t *testing.T) {
 		exitCode = ee.code
 	}
 	if exitCode != 1 {
-		t.Fatalf("exit = %d, want 1 (gate violation drives verdict, not missing baseline)\nstdout:\n%s\nstderr:\n%s",
+		t.Fatalf("exit = %d, want 1 (gate violation drives verdict, missing baseline file is not a hard error)\nstdout:\n%s\nstderr:\n%s",
 			exitCode, stdout.String(), stderr.String())
-	}
-
-	// Stderr must contain the warning.
-	warn := stderr.String()
-	if !strings.Contains(warn, "no baseline found") || !strings.Contains(warn, "origin/main") {
-		t.Errorf("stderr missing baseline-not-found warning with ref 'origin/main'\nstderr: %q", warn)
-	}
-	if !strings.Contains(warn, "archfit baseline") {
-		t.Errorf("stderr missing 'archfit baseline' hint\nstderr: %q", warn)
-	}
-
-	// The count N in the warning must be a positive integer (we know there's ≥1 finding).
-	if !strings.Contains(warn, "all ") || strings.Contains(warn, "all 0 findings") {
-		t.Errorf("warning should report a non-zero finding count\nstderr: %q", warn)
 	}
 }
 
@@ -701,8 +711,8 @@ labels:
 	}
 
 	var run1, run2 bytes.Buffer
-	c1 := Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &run1)
-	c2 := Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &run2)
+	c1 := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &run1)
+	c2 := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &run2)
 	if c1 != 0 || c2 != 0 {
 		t.Fatalf("exits = %d/%d, want 0/0", c1, c2)
 	}
@@ -715,22 +725,22 @@ labels:
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &buf); code != 3 {
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf); code != 3 {
 		t.Errorf("malformed labels file: exit = %d, want 3", code)
 	}
 }
 
-// TestRun_Check_NoBaselineWarningAbsent is the negative counterpart to
-// TestRun_Check_MissingBaselineWarning (T6 regression guard): when --base is
-// NOT supplied, check must never emit "no baseline found" on stderr.
+// TestRun_Check_NoBaselineWarningAbsent verifies (T6 regression guard) that
+// analyze must never emit "no baseline found" on stderr.
 func TestRun_Check_NoBaselineWarningAbsent(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 
 	var stdout, stderr bytes.Buffer
-	cmd := CheckCmd{
+	cmd := AnalyzeCmd{
 		Config: cfgPath,
 		Full:   true,
+		Gate:   true,
 		Format: []string{formatJSON},
 		// Base intentionally omitted.
 	}
@@ -742,7 +752,7 @@ func TestRun_Check_NoBaselineWarningAbsent(t *testing.T) {
 	}
 }
 
-// TestRun_Check_ScipDisabledCoverageRow verifies T7: when tools.scip.enabled is
+// TestRun_Check_ScipDisabledCoverageRow verifies T7: when analyzers.scip.enabled is
 // absent (defaults off), the pipeline injects a StatusDisabled coverage row for
 // "scip" so that tool_coverage in JSON output reports "disabled" rather than
 // leaving the entry absent.
@@ -752,7 +762,7 @@ func TestRun_Check_ScipDisabledCoverageRow(t *testing.T) {
 
 	var buf bytes.Buffer
 	// --report (exit 0) so we can parse the JSON regardless of gate verdict.
-	if code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &buf); code == 3 {
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf); code == 3 {
 		t.Fatalf("check exited 3 (config/pipeline error)\noutput:\n%s", buf.String())
 	}
 
@@ -787,8 +797,8 @@ func TestRun_Check_ScipDisabledCoverageRow(t *testing.T) {
 // creates a repo with a custom-named generated file that would NOT be detected
 // by built-in heuristics, configures it via file_class: generated_globs, and
 // verifies the loc tool_coverage reflects a successful walk (status ok).
-// The structural_weight metric will exclude the custom generated file, so the
-// overall pipeline must not error or miscategorise it.
+// The file_class config will exclude the custom generated file from production
+// metrics, so the overall pipeline must not error or miscategorise it.
 func TestRun_Check_FileClassConfigWiredToPipeline(t *testing.T) {
 	t.Parallel()
 
@@ -818,7 +828,7 @@ file_class:
 
 	cfgPath := filepath.Join(dir, ".archfit.yaml")
 	var buf bytes.Buffer
-	if code := Run([]string{cmdCheck, "-c", cfgPath, flagFull, flagReport, fmtJSON}, &buf); code == 3 {
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf); code == 3 {
 		t.Fatalf("check exited 3 (pipeline error)\noutput:\n%s", buf.String())
 	}
 
