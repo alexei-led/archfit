@@ -1,6 +1,8 @@
+# Archfit CLI — Build Spec
+
 <!-- markdownlint-configure-file { "MD013": { "line_length": 180, "code_blocks": false, "tables": false } } -->
 
-# Archfit CLI — Build Spec
+> **Historical spec (v0.4).** Commands have since been unified under `archfit analyze`; see [docs/guide/commands.md](../guide/commands.md).
 
 **Version:** 0.4 draft
 **Date:** 2026-06-06

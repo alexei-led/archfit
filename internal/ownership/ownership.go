@@ -21,7 +21,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -243,7 +242,6 @@ func resolveFromGitAuthor(ctx context.Context, root string, modules config.Modul
 			continue
 		}
 		// Lines from --format=%ae are author emails; file paths follow.
-		// A line with "@" (or no "/" and not a path) is treated as an author.
 		if isAuthorLine(line) {
 			currentAuthor = line
 			continue
@@ -266,7 +264,6 @@ func resolveFromGitAuthor(ctx context.Context, root string, modules config.Modul
 }
 
 // isAuthorLine heuristically identifies an author-email line in git log output.
-// Email addresses contain "@"; file paths do not (in practice).
 func isAuthorLine(line string) bool {
 	return strings.Contains(line, "@")
 }
@@ -305,22 +302,4 @@ func dominant(counts map[string]int) string {
 		return ""
 	}
 	return entries[0].key
-}
-
-// FormatOwnerMap formats a module→owner map as a multi-line string for display.
-// Used for diagnostics only.
-func FormatOwnerMap(owners map[string]string) string {
-	if len(owners) == 0 {
-		return "(no ownership data)"
-	}
-	keys := make([]string, 0, len(owners))
-	for k := range owners {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var sb strings.Builder
-	for _, k := range keys {
-		fmt.Fprintf(&sb, "%s: %s\n", k, owners[k])
-	}
-	return sb.String()
 }

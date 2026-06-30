@@ -4,11 +4,6 @@ Status: approved (scope confirmed by user 2026-06-27) · review-driven remediati
 Source: `reports/architecture-review-2026-06-27.md` (Findings F1–F5)
 Implements on branch `fix/coupling-measurement-modularity`.
 
-> **Phase 6 note:** F3 (`boundary_integrity` dimension) and F4 (`change_amplification`
-> metric) reference dimensions and metrics removed in Phase 6. Those sections are
-> preserved as historical record. The shipped codebase no longer has
-> `boundary_integrity`, `change_amplification`, `risk_hub`, or a composite scorecard.
-
 ## Follow-up — F2 shipped via accurate strength hint (branch `fix/coupling-accurate-strength`)
 
 F2 was held in the first PR because the SCIP-on hint was coarse. **Resolved:**
@@ -65,9 +60,7 @@ a legitimate distance component per the book, so both readings are defensible.
 ## source_inputs
 
 - Architecture review (this repo, 2026-06-27): F1 catch-all module shadowing,
-  F2 strength-invariant coupling_balance, F3 boundary_integrity Go n/a ceiling
-  (dimension removed in Phase 6), F4 change_amplification churn (metric removed
-  in Phase 6), F5 god files.
+  F2 strength-invariant coupling_balance, F5 god files.
 - Verified empirically: removing the catch-all stanza moves coupling_balance
   78→40 and surfaces 257 high-volatility edges; layer rule is currently inert
   (0 findings) because every path resolves to the catch-all (`support` layer).
@@ -110,76 +103,6 @@ absorbs only unmatched root files (`internal/arch_test.go`) — exactly the
 documented intent. **The `layer_inversion` gate stops being inert** and begins
 checking real layer ranks (see Risks).
 
-## Contract 2 — integration strength classification (F2) — HELD, NOT SHIPPED
-
-> **Status: implemented then reverted.** The refinement below works mechanically,
-> but on archfit's own (sole-owner, single-binary) graph it banded same-owner
-> functional coupling as `critical` / "distributed-monolith risk" (37 edges) and
-> dropped coupling_balance to 35/poor. That is a category error: per Khononov,
-> distance is socio-technical and a **sole owner is the minimum-distance case**, so
-> high strength + low distance is **high cohesion (the good quadrant)**, not tight
-> coupling. The metric was also fed a coarse hint (SCIP-on resolves Go imports to a
-> blanket `functional`; the diverse contract/model/functional split only appears
-> with the Go type-info hint). Shipping it would mislabel every modular monolith.
-> Held pending (a) an accurate, non-coarse strength hint and (b) a scorer rule that
-> critical/"distributed-monolith" banding requires genuine distance
-> (`cross_deploy_unit`/`cross_owner`), never `cross_module_same_owner` — a frozen-
-> ordinal change that is the maintainer's decision. Tracked with the .archfit.yaml
-> redesign. F1's honest, conservative coupling_balance (44/mixed, 0 critical) ships
-> instead.
-
-**Problem.** `classifyStrength` (classify.go:363) maps any `public:`-glob match to
-`contract` and runs _before_ the symbol hint (line 230 vs fallback line 242), so
-strength is glob-driven, not knowledge-driven. coupling_balance is invariant to
-real strength (verified: contract/symmetric/functional all → mean_balance 8).
-
-**Target contract.** A `public:`-glob match establishes a **floor**: the edge is
-_public_ coupling (not `intrusive`). _Which kind_ of public coupling
-(`contract` | `model` | `functional`) is set by the symbol-level hint when one is
-present; absent a hint, fall back to `contract` (today's behavior, conservative).
-An `internal:`-glob match still means `intrusive` (authoritative). Config-pinned
-labels and the clone→symmetric upgrade keep their current precedence.
-
-**Hint source caveat (from review testing).** With SCIP on, the enriched hint is
-coarse (drove the all-`symmetric` artifact via the clone upgrade). The Go
-type-info hint (`goObjectStrength`: interface→contract, struct→model,
-func→functional) carries real diversity (5/82/2). So consume the type-info hint
-for kind; treat SCIP enrichment as authoritative only where it is itself
-diverse. Worked acceptance example: `engine → model/diagnostic` must classify as
-`model` (shares the concrete `Diagnostic` struct), not `contract`.
-
-**Balance interpretation.** This is the honest BC reading: archfit is
-predominantly functional/model coupling at low distance (one binary) = high
-cohesion = balanced. The value of the fix is _sensitivity_ — the metric will now
-move if a future change raises distance (e.g. split deployment) while keeping the
-shared model.
-
-## Contract 3 — boundary_integrity scoring (F3) — removed in Phase 6
-
-> **Removed.** The `boundary_integrity` composite dimension was removed in Phase 6.
-> `encapsulation` is now a direct report-only metric; rules (`forbidden_dependency`,
-> `forbidden_layer_direction`, `cycle`) gate directly — there is no dimension
-> aggregating them. Historical contract preserved below.
-
-**Problem (historical).** `encapsulation` is structurally n/a for Go (no intrusive
-edges possible across package boundaries; `intrusiveCross==0`). The
-`boundary_integrity` dimension treated this as "unconfirmed" and capped at
-50/mixed/low — a permanent ceiling for every Go project.
-
-**Target contract (historical).** When `encapsulation` is n/a _and_ boundary gates
-exist (`forbidden_dependency` / `forbidden_layer_direction` present and passing) and
-cycles are 0, `boundary_integrity` scored from the **gate signal** (violations,
-cycles) at the gates' confidence, instead of capping on the missing metric.
-
-## F4 — change_amplification churn — removed in Phase 6
-
-> **Removed.** `change_amplification` was removed in Phase 6. `blast_radius` is
-> retained as a complementary report-only metric. Historical finding preserved below.
-
-`change_amplification = blast_radius × churn`. Confirm churn is read in `--full`
-(`model/*` are blast hubs the config calls volatile, yet amplification=0). If
-churn is wired and the zero is real, document it; if not wired, fix the input.
-
 ## module_map delta (F5 — archfit's own cohesion)
 
 Behavior-preserving file splits within existing packages (no API/boundary
@@ -204,8 +127,6 @@ internal/model/**}`, assert `ModuleFor("internal/model/x.go") == "internal/model
 - **Strength kind (F2):** with a public-glob target and a struct-typed Go hint,
   assert strength == `model`; interface hint → `contract`; func → `functional`;
   `internal:`-glob → `intrusive`; no hint → `contract`.
-- **Boundary fallback (F3):** removed in Phase 6 — no `boundary_integrity`
-  dimension remains; rule gates and `encapsulation` metric are independent.
 - **Determinism:** `TestGolden_DoubleRun` must stay byte-identical (most-specific
   loop must be order-independent — guaranteed by sorted-name strict-greater
   tiebreak).
@@ -235,7 +156,6 @@ archfit` fails (gate: fail). Mitigation: run `make archfit` immediately after
 3. **F2 score churn (significant).** coupling_balance changes for all repos.
    Acceptance is the `engine→model/diagnostic == model` example + the strength
    table test, not a fixed score.
-4. **F5 ordering (low).** Split `score.go` only after F2/F3 land.
 
 ## Task #36 resolution — config redesign + scorer-calibration decision
 
@@ -274,10 +194,3 @@ Investigated the scorer to settle the F2/calibration question. Conclusions:
   stanza comment (verified: zero production graph nodes resolve to it post-F1). No
   structural classification changes were needed — the subdomain/volatility/layer/
   owner assignments audit as correct per the book.
-
-## handoff
-
-Implementation proceeds on this branch in order F1 → F4 → F3 → F2 → F5, each
-gated by `make test` + `make archfit`. Final: `make all` + self-review + PR to
-protected `main`. Next skill after merge: `architecture-review` re-run to confirm
-coupling_balance reports its honest value and the layer gate is enforcing.

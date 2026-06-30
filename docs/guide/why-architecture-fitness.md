@@ -40,8 +40,8 @@ The cost is not cosmetic:
 - **Cascading bugs.** A fix in one place breaks behavior in another because the
   dependency graph no longer matches the design.
 - **Harder debugging.** Engineers need more context to explain one failure.
-- **Higher AI cost.** Agents need more tokens and more retries to understand the
-  blast radius, then often add more shortcuts while trying to fix the cascade.
+- **Higher AI cost.** A larger change blast radius requires more context to
+  understand, which raises token consumption and repair iteration count.
 - **Lost ownership.** Humans remain responsible for maintenance, incidents, and
   complexity even when an agent wrote the patch.
 

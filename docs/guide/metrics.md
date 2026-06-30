@@ -94,22 +94,11 @@ scores against a git ref.
   respects the strength × distance × volatility balance rule. High score means
   most edges carry low maintenance cost; low score means expensive, high-risk
   couplings dominate.
-- **Formula:** for each scored internal edge,
-  `balance = max(|S − D|, 10 − V) + 1` where `S` = strength ordinal, `D` =
-  distance ordinal, `V` = volatility ordinal (Khononov Ch10 verbatim). Ordinals
-  are frozen named constants — changing any is a breaking metric change.
-- **Abstain-not-fake:** when strength OR distance is `unknown`, the edge is
-  unscored (`EdgeScore.Scored = false`). No invented ordinals. Genuine internal
-  edges with unknown strength stay in the `abstained` bucket (lowers confidence).
-  External/library edges (`DistanceUnknown`) are excluded from the denominator
-  entirely and counted in `classified_edges.external`.
-- **Scored:** the distribution of balance values across scored edges → band.
-  Confidence scales with the fraction of classified edges; empty edges with low
-  coverage → low confidence, band capped at `mixed`.
+- **Formula:** `balance = max(|S − D|, 10 − V) + 1` (Khononov Ch10 verbatim);
+  see [Concepts → The balance rule](concepts.md#the-balance-rule) for ordinals,
+  abstain semantics, and confidence. `coupling.volatility_cascade: true` enables
+  single-hop cascade (book Ch9).
 - **Affects verdict:** `warn` when `coupling_balance` drops vs baseline.
-- **Opt-in cascade:** `coupling.volatility_cascade: true` enables a single-hop
-  propagation pass (book Ch9) that raises effective volatility to `high` for
-  modules strongly coupled to a `core` module.
 
 ### `unbalanced_edge`
 
@@ -219,22 +208,8 @@ Gate rules are the only mechanism that produces a `fail`. Metrics inform; rules
 gate. Rules with `gate: warn` are advisory (non-blocking); rules with `gate: fail`
 block the build. An unknown `type` value is a config error.
 
-Rules kept in this release:
-
-| Rule                          | Default gate | Notes                                                                                                                                                                                                                     |
-| ----------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `forbidden_dependency`        | `fail`       | Blocks explicit banned import pairs.                                                                                                                                                                                      |
-| `forbidden_layer_direction`   | `fail`       | Enforces layer ordering (lower layers must not import higher).                                                                                                                                                            |
-| `public_api_only`             | `fail`       | Enforces that cross-module callers use only declared public API.                                                                                                                                                          |
-| `internal_api_access`         | `fail`       | Blocks access to internal API from outside the declared boundary.                                                                                                                                                         |
-| `new_cross_module_dependency` | `fail`       | Fires on cross-module edges; baseline suppresses known ones so only new edges fire.                                                                                                                                       |
-| `cycle`                       | `fail`       | New import cycles. Demote to `warn` with `gate: warn` if desired.                                                                                                                                                         |
-| `public_api_change`           | `warn`       | Detects breaking changes in declared public API; defaults to `warn` when unset.                                                                                                                                           |
-| `public_api_type_leak`        | `warn`       | Fires when a public API exposes a type from an external framework package in a signature. Defaults to `warn`. Requires `analyzers.syntax.enabled: true`. Only fires on repos with Go-style dotted external package nodes. |
-| `public_api_max`              | `fail`       | Caps the number of public symbols on a module.                                                                                                                                                                            |
-
-For full rule configuration syntax and examples, see
-[Configuration reference](configuration-reference.md#rules).
+For the full rule list, default gates, and configuration syntax, see
+[Configuration reference → rules](configuration-reference.md#rules).
 
 ---
 

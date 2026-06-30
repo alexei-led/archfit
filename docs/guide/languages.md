@@ -16,15 +16,9 @@ languages:
     enabled: auto
 ```
 
-`enabled` accepts `true`, `false`, or `auto`. The legacy `"on"` and `"off"` string
-spellings are a **hard error** — use `true` and `false` instead.
-
-- `auto` — use the adapter when project markers and tools are found.
-- `true` — require the adapter; missing project markers or tools are errors.
-- `false` — skip the adapter.
-
-Use `auto` for mixed repos while calibrating. Use `true` in CI when a language
-must be analyzed.
+`enabled` accepts `auto` (run when project markers and tools are found), `true`
+(require; missing tools are errors), or `false` (skip); legacy `"on"`/`"off"` are
+a hard error. See [configuration reference](configuration-reference.md) for details.
 
 ## Go
 

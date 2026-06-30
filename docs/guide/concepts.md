@@ -1,9 +1,5 @@
 # Concepts: Balanced Coupling and modularity
 
-This page is the theory behind `archfit`: what it measures, why those things
-matter, and the model it makes executable. The other guide pages tell you how to
-run the tool; this one tells you what the output means.
-
 `archfit` is a deterministic implementation of Vlad Khononov's **Balanced
 Coupling** model. It does not invent its own architecture theory. It turns the
 parts of that model that can be read from code, config, and git history into
@@ -109,7 +105,7 @@ regardless of owner count. See the
 vs asynchronous integration) and lifecycle coupling as part of distance. `archfit`
 deliberately does **not** fold runtime/async coupling into distance — detected
 async bridges are recorded as report-only `runtime_async` evidence, never a scored
-distance factor (see the [release notes](release-notes.md) for the rationale).
+distance factor (see [bc-measurement-v3.md §9](../design/bc-measurement-v3.md#9-non-goals-and-rejected-designs) for the rationale).
 
 ### 3. Volatility — how likely it is to change at all
 
@@ -276,10 +272,9 @@ and makes only the legible parts executable. Three design rules follow from that
    humans pin labels; the gate stays reproducible. See
    [LLM enrichment](llm-enrich.md).
 
-The result is the loop tests and linters already taught agents to run: change
-code → `archfit analyze --gate` → get a deterministic finding or metric delta
-with the strength / distance / volatility / explicitness vocabulary attached →
-repair within the stated constraint → rerun.
+The workflow: change code → `archfit analyze --gate` → deterministic finding or
+metric delta with strength / distance / volatility vocabulary → repair within the
+stated constraint → rerun.
 
 ---
 

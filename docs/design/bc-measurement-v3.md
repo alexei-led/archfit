@@ -210,11 +210,11 @@ scored fraction → `high` confidence, value 78/100).
 
 | Stage                      | LLM?          | Role                                                        |
 | -------------------------- | ------------- | ----------------------------------------------------------- |
-| `check` (gate)             | **never**     | reads pinned config + tool facts only                       |
-| `enrich` (strength labels) | yes, off-gate | draft → human review → approved → `check` consumes          |
+| `analyze --gate`           | **never**     | reads pinned config + tool facts only                       |
+| `enrich` (strength labels) | yes, off-gate | draft → human review → approved → `analyze` consumes        |
 | `enrich --subdomains`      | yes, off-gate | draft subdomain/volatility → human review → pin into config |
 | `explain <fingerprint>`    | yes, off-gate | narrate finding in prose                                    |
-| `review`                   | yes, off-gate | LLM architecture narrative from gathered evidence           |
+| `analyze --llm`            | yes, off-gate | LLM architecture narrative from gathered evidence           |
 
 `arch_test.go` structurally forbids any `internal/*` package from importing
 `internal/llm`, so LLM code is confined to `cmd/archfit`.

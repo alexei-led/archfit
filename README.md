@@ -16,8 +16,8 @@ ast-grep, grimp), checks it against the architecture you declared in
 `.archfit.yaml`, and gives you a clear verdict: a decision, a CI gate, a banded
 scorecard, and — when an AI agent breaks a boundary — a structured repair task.
 
-It's built for the loop where most code is now written: **AI agents and CI**.
-The output is deterministic, pipe-friendly, and leads with what to do.
+Built for **AI agent and CI** workflows: deterministic output, pipe-friendly,
+leads with what to do.
 
 ```text
 $ archfit

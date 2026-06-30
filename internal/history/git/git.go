@@ -73,40 +73,32 @@ func rebaseToSubtree(prefix string, paths []string) []string {
 	return out
 }
 
-// HeadRef returns the SHA of HEAD.
-// It runs: git rev-parse HEAD
-func HeadRef(ctx context.Context, workDir string, runner toolrun.Runner) (string, error) {
+// runGitRevParse runs "git rev-parse <args>" in workDir and returns the
+// trimmed stdout. desc is used verbatim in error messages.
+func runGitRevParse(ctx context.Context, workDir string, runner toolrun.Runner, args []string, desc string) (string, error) {
 	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    gitTool,
-		Args:    []string{"rev-parse", "HEAD"},
+		Args:    append([]string{"rev-parse"}, args...),
 		Timeout: gitTimeout,
 		WorkDir: workDir,
 	})
 	if err != nil {
-		return "", fmt.Errorf("git rev-parse HEAD: %w", err)
+		return "", fmt.Errorf("git %s: %w", desc, err)
 	}
 	if out.ExitCode != 0 {
-		return "", fmt.Errorf("git rev-parse HEAD exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+		return "", fmt.Errorf("git %s exited %d: %s", desc, out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 	}
-
 	return strings.TrimSpace(string(out.Stdout)), nil
+}
+
+// HeadRef returns the SHA of HEAD.
+// It runs: git rev-parse HEAD
+func HeadRef(ctx context.Context, workDir string, runner toolrun.Runner) (string, error) {
+	return runGitRevParse(ctx, workDir, runner, []string{"HEAD"}, "rev-parse HEAD")
 }
 
 // RepoRoot returns the absolute path to the repository root.
 // It runs: git rev-parse --show-toplevel
 func RepoRoot(ctx context.Context, workDir string, runner toolrun.Runner) (string, error) {
-	out, err := runner.Run(ctx, toolrun.ToolCmd{
-		Name:    gitTool,
-		Args:    []string{"rev-parse", "--show-toplevel"},
-		Timeout: gitTimeout,
-		WorkDir: workDir,
-	})
-	if err != nil {
-		return "", fmt.Errorf("git rev-parse --show-toplevel: %w", err)
-	}
-	if out.ExitCode != 0 {
-		return "", fmt.Errorf("git rev-parse --show-toplevel exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
-	}
-
-	return strings.TrimSpace(string(out.Stdout)), nil
+	return runGitRevParse(ctx, workDir, runner, []string{"--show-toplevel"}, "rev-parse --show-toplevel")
 }

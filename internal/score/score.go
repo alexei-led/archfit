@@ -1,17 +1,6 @@
-// Package score synthesises an already-computed Diagnostic into the architect
-// skill's single-dimension banded scorecard (coupling_balance), with a 0-100
-// value, a band, a confidence level, and at least one evidence reference.
-//
-// It is a pure decision over collected facts: it reads the Diagnostic's metrics,
-// gate findings, and Balanced-Coupling advisories — it never runs a tool, an
-// LLM, or touches the filesystem. coupling_balance is derived strictly from Vlad
-// Khononov's balance rule over the BC edges (integration strength × distance ×
-// volatility maintenance-effort distribution, plus the worst-case
-// high/high/high count), NOT a generic metric average.
-//
-// Bands and rules mirror the architect scorecard contract (scorecard.yaml,
-// rubric_version 1): band must match value; serviceable/strong require at least
-// medium confidence; every dimension carries at least one evidence ref.
+// Package score turns a Diagnostic into the banded scorecard.
+// It is a pure, deterministic decision over collected facts.
+// coupling_balance follows the scorecard contract and stays LLM-free.
 package score
 
 import (
@@ -138,12 +127,6 @@ func indexMetrics(ms []diagnostic.MetricResult) metricIndex {
 	return mi
 }
 
-// get returns the metric result for name, present=false when not run.
-func (mi metricIndex) get(name string) (diagnostic.MetricResult, bool) {
-	m, ok := mi[name]
-	return m, ok
-}
-
 // measured reports whether the named metric ran AND produced a real value (not
 // the n/a band, which means "no evidence").
 func (mi metricIndex) measured(name string) bool {
@@ -172,63 +155,6 @@ func cargoModulesPartial(d diagnostic.Diagnostic) bool {
 // sees as one node (see internal/extract/rust).
 func degenerateGraph(mi metricIndex) bool {
 	return !mi.measured("blast_radius")
-}
-
-// coverageConfidence derives the baseline confidence level shared by the
-// structural dimensions from file-extraction coverage: high ≥0.8, medium ≥0.5,
-// else low. Defaults to medium when the coverage metric did not run.
-func coverageConfidence(_ diagnostic.Diagnostic, mi metricIndex) Confidence {
-	cov, ok := mi.get("coverage")
-	if !ok {
-		return ConfidenceMedium
-	}
-	var byValue Confidence
-	switch {
-	case cov.Value >= 0.8:
-		byValue = ConfidenceHigh
-	case cov.Value >= 0.5:
-		byValue = ConfidenceMedium
-	default:
-		byValue = ConfidenceLow
-	}
-	// The coverage metric also carries its own confidence, derived from the
-	// unresolved-import ratio: extraction can be 100% (value 1.0) while many
-	// edges stayed unresolved (confidence low). Take the lower of the two so
-	// unresolved imports cap the scorecard baseline rather than slipping through.
-	return minConf(byValue, metricConf(cov.Confidence))
-}
-
-// metricConf maps a metric confidence string to a Confidence, defaulting empty
-// (unqualified) to high — the same convention the markdown renderer uses.
-func metricConf(s string) Confidence {
-	switch s {
-	case string(ConfidenceLow):
-		return ConfidenceLow
-	case string(ConfidenceMedium):
-		return ConfidenceMedium
-	default:
-		return ConfidenceHigh
-	}
-}
-
-// confRank ranks confidence levels for comparison (higher = more trustworthy).
-func confRank(c Confidence) int {
-	switch c {
-	case ConfidenceHigh:
-		return 2
-	case ConfidenceMedium:
-		return 1
-	default:
-		return 0
-	}
-}
-
-// minConf returns the lower (less trustworthy) of two confidence levels.
-func minConf(a, b Confidence) Confidence {
-	if confRank(a) <= confRank(b) {
-		return a
-	}
-	return b
 }
 
 // lowerConf drops a confidence level by one band (high→medium, medium→low, low→low).

@@ -87,46 +87,14 @@ architecture review and refactoring, not as automatic pass/fail rules.
 
 ## Coverage gaps and required tools
 
-When an analyzer is **absent** (tool not installed or not detected), archfit does
-**not** silently score the repo as healthy. The dependent metrics drop to `n/a`
-(no evidence — never `strong`), and a machine-readable **coverage gap** lists the
-tool, the metrics its absence leaves unmeasured, and a one-line install hint.
+A missing analyzer drops dependent metrics to `n/a` (never a false green) and
+emits a machine-readable coverage gap in every output format. A disabled analyzer
+(`enabled: false`) is a deliberate opt-out — no gap is emitted.
 
-When an analyzer is **disabled by config** (`enabled: false`), it is simply
-skipped — no coverage gap is emitted and no install prompt appears.
-Disabled-by-config is a deliberate opt-out, not a gap to resolve.
-
-Coverage gaps for absent tools appear in every format:
-
-- markdown (`--markdown` / `--format markdown`) — a `## Coverage gaps (N)` section before findings;
-- scorecard (`--format scorecard`) — a `## Required tools missing (N)` section;
-- `--format json` — a `coverage_gaps[]` array (`tool`, `install_cmd`,
-  `affected_metrics`, `gate`) plus `config_warnings[]`;
-- stderr — one warn-loud line per gap.
-
-Default posture is **warn-loud, exit 0**. To make CI block on a missing tool, opt
-in with `--require-tools` (raises every gap to `fail` for that run) or
-`languages.<x>.gate: fail` / `analyzers.<x>.gate: fail` per tool (see
-[configuration-reference.md](configuration-reference.md#analyzersx-gate-coverage-gate)).
-
-Config-quality warnings (e.g. "N modules under-specified") now reach md/json too,
-as a `## Config warnings` section and the `config_warnings[]` JSON field — they
-are no longer stderr-only.
-
-### n/a coverage semantics
-
-Two distinct `n/a` reasons appear in coverage and metric output:
-
-- **`n/a (no history)`** — the subtree (after `--root` scoping) has fewer than 2
-  commits visible to `git log`, or `--root` points at a non-git directory.
-  Delta mode (`--base`) requires git history; without it, the before/after
-  comparison is skipped. For shallow clones: add `git fetch --unshallow` in CI
-  or use a full clone. For non-git trees: all other metrics still run.
-- **`n/a (timed out)`** — a per-analyzer watchdog fired before the subprocess
-  finished. The tool result is dropped cleanly; the run continues and exits with
-  the verdict from the remaining analyzers. Increase the per-tool timeout or
-  reduce the scope via `languages.go.modules` / `--root`. See
-  [configuration-reference.md → analyzers.&lt;x&gt;.timeout](configuration-reference.md#analyzersx-timeout).
+Default posture is warn-loud, exit 0. To gate on a missing tool use `--require-tools`
+or `languages.<x>.gate: fail` / `analyzers.<x>.gate: fail`. For the full gap format,
+`n/a` semantics, and timeout behavior see
+[configuration reference → analyzers](configuration-reference.md#analyzersx-gate-coverage-gate).
 
 ## analyze
 

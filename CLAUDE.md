@@ -59,8 +59,8 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   filter on Production files use this index and report the excluded count.
   Config override: top-level `file_class:` key (`FileClassDef`), projected via
   `Config.ForFileClass()` → `syntax.FileClassConfig`.
-- **`archfit diff <ref>`** subcommand (`cmd/archfit/diff.go`). Creates a clean
-  detached temp worktree at `<ref>`, scores both sides with the full advisory
+- **`archfit analyze --base <ref>`** flag (`cmd/archfit/worktree.go`). Creates a
+  clean detached temp worktree at `<ref>`, scores both sides with the full advisory
   pipeline, and emits a dimension-by-dimension delta table. Off-gate, report-only
   (exit 0 on success, exit 3 on git/config error). Both sides use the current
   `--config`. Formats: `text` (default), `json`, `markdown`.
@@ -190,11 +190,10 @@ Rust's module privacy makes cross-module _intrusive_ edges rare. With all three 
 Rust project gets full module-level coupling analysis.
 
 The extractor carries crate roots (`graph.CrateRoot`, repo-relative src dir + crate
-name from cargo metadata) on the graph, and `modgraph.ModuleKeyResolver` maps a
-`.rs` file to its module key (`crate/src/a/b.rs → crate::a::b`) so per-file metrics
-resolve to module granularity instead of collapsing every file to the crate. It is
-filesystem convention (accepted ceiling: `#[path]`, inline `mod {}`, `include!`
-diverge from rust-analyzer's semantic tree; SCIP is the precision upgrade).
+name from cargo metadata) on the graph. Rust facts remain crate-level for per-file
+metrics (size, churn); the per-file module-key resolver (`RustFileToModuleKey`,
+`modgraph.ModuleKeyResolver`) was removed as dead code — it was built but never
+wired to any metric.
 
 ## Layout
 
