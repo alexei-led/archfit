@@ -90,11 +90,11 @@ func deprecatedConfigHint(err error) error {
 	msg := err.Error()
 	switch {
 	case strings.Contains(msg, `unknown field "tools"`):
-		return fmt.Errorf("%w\nhint: `tools:` was renamed to `analyzers:` in v1.0 (and `analyzers.complexity` was removed); see docs/guide/migration.md", err)
+		return fmt.Errorf("%w\nhint: `tools:` was renamed to `analyzers:` in v1.0 (and `analyzers.complexity` was removed)", err)
 	case strings.Contains(msg, `unknown field "complexity"`):
-		return fmt.Errorf("%w\nhint: `analyzers.complexity` was removed in v1.0 (gocyclo/lizard backends dropped); see docs/guide/migration.md", err)
+		return fmt.Errorf("%w\nhint: `analyzers.complexity` was removed in v1.0 (gocyclo/lizard backends dropped)", err)
 	case strings.Contains(msg, `unknown field "gitnexus"`):
-		return fmt.Errorf("%w\nhint: gitnexus integration was removed in v1.0; remove the key (see docs/guide/migration.md)", err)
+		return fmt.Errorf("%w\nhint: gitnexus integration was removed in v1.0; remove the key", err)
 	}
 	return err
 }
@@ -134,8 +134,8 @@ var knownMetrics = map[string]struct{}{
 }
 
 // removedConfigKeys maps config keys removed before v1.0 to a short reason, so a
-// stale config gets an actionable error pointing at the migration guide rather than
-// a generic "unknown metric". Top-level renames (tools→analyzers) and removed
+// stale config gets an actionable error naming the removed key rather than a
+// generic "unknown metric". Top-level renames (tools→analyzers) and removed
 // struct fields (analyzers.complexity) are caught at decode time by
 // deprecatedConfigHint instead.
 var removedConfigKeys = map[string]string{
@@ -183,10 +183,10 @@ func validate(cfg Config) error {
 	}
 	for _, name := range sortedMetricKeys(cfg.Metrics) {
 		if reason, removed := removedConfigKeys[name]; removed {
-			return fmt.Errorf("metrics.%s was %s — remove it (see docs/guide/migration.md)", name, reason)
+			return fmt.Errorf("metrics.%s was %s — remove it", name, reason)
 		}
 		if _, ok := knownMetrics[name]; !ok {
-			return fmt.Errorf("metrics.%s is not a known metric (known: blast_radius, coverage, cycle, encapsulation, unbalanced_edge); see docs/guide/migration.md", name)
+			return fmt.Errorf("metrics.%s is not a known metric (known: blast_radius, coverage, cycle, encapsulation, unbalanced_edge)", name)
 		}
 		if err := validateGate("metrics."+name, cfg.Metrics[name].Gate); err != nil {
 			return err
