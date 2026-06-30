@@ -29,8 +29,8 @@ predictable:
 4. Do not mix installers for the same toolchain unless you understand PATH order
    (`brew node` + `nvm`, distro Rust + `rustup`, etc.).
 
-`archfit doctor` is read-only. `archfit install` is intentionally conservative and
-only bootstraps a few common tools. Use this matrix for the complete setup.
+`archfit doctor` is read-only by default; `archfit doctor --fix` bootstraps a few
+common tools (use `--dry-run` to preview). Use this matrix for the complete setup.
 
 ## Platform setup
 

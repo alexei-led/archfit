@@ -64,12 +64,12 @@ linked from [Tooling reference](tooling.md).
 
 ## Install helper
 
-`archfit install` checks or installs the common external tools it knows how to
+`archfit doctor --fix` installs the common external tools it knows how to
 bootstrap. It is intentionally conservative and not a complete installer for every
 optional analyzer. Use `--dry-run` first:
 
 ```sh
-archfit install --lang go --lang ts --lang py --lang rust --dry-run
+archfit doctor --fix --lang go --lang ts --lang py --lang rust --dry-run
 ```
 
 Current behavior:

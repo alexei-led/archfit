@@ -4,10 +4,10 @@ Common commands:
 
 ```sh
 archfit doctor
-archfit init --root . --output .archfit.yaml
-archfit init --llm --root .
-archfit update --config .archfit.yaml
-archfit update --config .archfit.yaml --apply
+archfit config init --root . --output .archfit.yaml
+archfit config init --llm --root .
+archfit config update --config .archfit.yaml
+archfit config update --config .archfit.yaml --apply
 archfit                                                      # report-only, default text output
 archfit analyze --gate --config .archfit.yaml --full         # CI gate
 archfit analyze --gate --config .archfit.yaml --base main    # PR delta gate
@@ -19,10 +19,10 @@ archfit analyze --markdown --config .archfit.yaml > archfit-report.md
 archfit analyze --llm --config .archfit.yaml
 archfit baseline --full --config .archfit.yaml
 archfit explain <finding-id-prefix> --config .archfit.yaml
-archfit enrich --config .archfit.yaml
-archfit enrich --owner --config .archfit.yaml
-archfit enrich --volatility --config .archfit.yaml
-archfit autopilot --root . --output .archfit-autopilot.yaml
+archfit config enrich labels --config .archfit.yaml
+archfit config enrich owner --config .archfit.yaml
+archfit config enrich volatility --config .archfit.yaml
+archfit config init --llm --root . -o .archfit-autopilot.yaml
 archfit explain <finding-id-prefix> --llm
 archfit analyze --gate --sarif > archfit.sarif
 ```
@@ -32,9 +32,11 @@ audit report. Bare `archfit` (no subcommand) runs `analyze` in report-only mode.
 
 ## Command summary
 
-- `archfit doctor` — check available local toolchain.
-- `archfit init` — generate a starter `.archfit.yaml`.
-- `archfit update` — sync `.archfit.yaml` with the current project structure.
+- `archfit doctor` — check available local toolchain; `--fix` installs missing
+  tools (`--dry-run` previews without installing).
+- `archfit config init` — generate a starter `.archfit.yaml`; `--llm` adds an
+  off-gate classification pass (subdomain, volatility, layer, role per module).
+- `archfit config update` — sync `.archfit.yaml` with the current project structure.
 - `archfit analyze` — run architecture analysis (default command; also runs as
   bare `archfit`). Without `--gate` it is report-only (always exits `0` on
   success, `3` on config/tool error). With `--gate` it enforces rules and emits
@@ -42,16 +44,10 @@ audit report. Bare `archfit` (no subcommand) runs `analyze` in report-only mode.
 - `archfit baseline` — record accepted current findings.
 - `archfit explain <id>` — explain one finding by fingerprint prefix
   (`--llm` appends an off-gate narrative; needs `ai:` configured).
-- `archfit enrich` — draft LLM coupling-label refinements for human review
-  (off-gate; writes `.archfit-labels.yaml` drafts). `--owner` / `--volatility`
-  draft those module fields; `--pin` writes approved entries into the config. See
-  [llm-enrich.md](llm-enrich.md).
-- `archfit autopilot` — one-shot LLM drafter for a full `.archfit.yaml` (off-gate,
-  review-only; never applies — writes `.archfit-autopilot.yaml`). See
-  [llm-enrich.md](llm-enrich.md).
-- `archfit install` — install or print commands for the common analyzer tools it
-  can bootstrap; see [Tooling reference](tooling.md) for the full platform matrix.
-- `archfit calibrate` — calibrate scoring thresholds against observed data.
+- `archfit config enrich` — draft LLM refinements for human review (off-gate).
+  Subcommands: `labels` (coupling-label drafts → `.archfit-labels.yaml`), `owner`,
+  `volatility`, `subdomain` (module-field drafts → separate draft files); `--apply`
+  writes approved entries into the config. See [llm-enrich.md](llm-enrich.md).
 
 Output formats for `analyze`: `text` (default), `json`, `markdown`/`md`, `sarif`
 (SARIF 2.1.0 for CI code-scanning annotations), `scorecard` (the banded
@@ -166,14 +162,13 @@ environments, or with `--quiet`. This keeps `archfit --json | jq` clean.
   deterministic output (needs `ai:` configured in `.archfit.yaml`).
 - `--full` — scan all files (default true).
 - `--advisory` — include Balanced Coupling advisories (default true).
-- `--severity`, `--lang`, `--no-config`, `--require-tools` — same as the
-  former `check` command.
+- `--severity`, `--lang`, `--no-config`, `--require-tools` — standard analyze flags.
 - `--progress auto|plain|none` — progress output mode (default `auto`).
 - `--quiet` / `-q` — suppress progress and non-essential output.
 
 ## --root: analysis boundary
 
-`--root` (on `analyze` and `enrich`) sets the **analysis
+`--root` (on `analyze` and `config enrich`) sets the **analysis
 boundary** — the directory tree that extractors walk, coverage counts against, and
 file-based metrics scope to. All tool calls (go/packages, dependency-cruiser,
 grimp, loc, clones, fitness) operate inside this tree.
@@ -273,7 +268,7 @@ Dynamic/lazy imports (detected by TypeScript and Python extractors as
 section so the narrative can flag coupling the static dependency graph misses.
 
 **Layer intent:** when layers are declared, `forbidden_layer_direction` gates
-deterministically. When they are not, `archfit enrich` can propose a layer
+deterministically. When they are not, `archfit config enrich` can propose a layer
 structure; see [configuration-reference.md → layers](configuration-reference.md#layers).
 
 Requirements:
@@ -286,54 +281,53 @@ Flags (in addition to the standard `analyze` flags):
 
 - `--no-cache` — bypass the LLM response cache at `.archfit-cache/llm/`.
 
-## archfit autopilot
+## archfit config init --llm (full draft)
 
-`archfit autopilot` is a one-shot LLM drafter for a whole `.archfit.yaml`. It
+`archfit config init --llm` is a one-shot LLM drafter for a whole `.archfit.yaml`. It
 discovers project structure, classifies every module (subdomain, volatility,
 layer, and `role`), drafts an owner per module from CODEOWNERS context, and
 renders the entire config in **plan mode** — every suggestion is a commented YAML
 line, nothing is applied.
 
 ```sh
-archfit autopilot --root . --output .archfit-autopilot.yaml
-archfit autopilot --root . -o -      # stream the draft to stdout
+archfit config init --llm --root . -o .archfit-autopilot.yaml
+archfit config init --llm --root . -o -   # stream the draft to stdout
 ```
 
-It is **off-gate and review-only**: the draft lands in a separate file
-(`.archfit-autopilot.yaml` by default) and autopilot **refuses** to write
-`.archfit.yaml` directly (exit 3). Review the draft, then move approved fields
-into the live config deliberately. Needs `ai:` configured (provider +
-model) and the provider's API key — see [LLM enrichment](llm-enrich.md).
+Direct it to a side file with `-o` to keep it review-only: review the draft, then
+move approved fields into the live config deliberately, or re-run with `--apply` to
+write approved values live. Needs `ai:` configured (provider + model) and the
+provider's API key — see [LLM enrichment](llm-enrich.md).
 
 Flags:
 
 - `--root` / `-r` — project root (default: `.`).
 - `--config` / `-c` — existing config to read `ai:` from (default:
   `.archfit.yaml`).
-- `--output` / `-o` — draft output file; `-` for stdout. Never `.archfit.yaml`.
-- `--llm-provider`, `--llm-model`, `--no-cache` — same as `init --llm`.
+- `--output` / `-o` — draft output file; `-` for stdout.
+- `--llm-provider`, `--llm-model`, `--no-cache` — see `archfit config init` below.
 
-## archfit init --llm
+## archfit config init
 
-`archfit init` discovers project structure and writes a starter `.archfit.yaml`.
+`archfit config init` discovers project structure and writes a starter `.archfit.yaml`.
 With `--llm` it adds an off-gate classification pass that suggests `subdomain`,
 `volatility`, `layer`, and a module-name improvement for each discovered module.
 
-The output path is resolved against `--root`, so `archfit init --root <dir>` writes
-`<dir>/.archfit.yaml` (not the current directory). **By default `init` will not
+The output path is resolved against `--root`, so `archfit config init --root <dir>` writes
+`<dir>/.archfit.yaml` (not the current directory). **By default `config init` will not
 overwrite an existing config** — if a valid `.archfit.yaml` is already present it
 leaves it untouched (architect-authored module mapping is not clobbered) and exits 0
 with a note. Pass `--force` to overwrite it; a timestamped backup is kept.
 
 ```sh
 # plan mode (default): suggestions are commented-inert in the output
-archfit init --llm --root .
+archfit config init --llm --root .
 
 # apply mode: LLM classifications written live into the file
-archfit init --llm --apply --root .
+archfit config init --llm --apply --root .
 
 # stream to stdout (no file written) — useful for inspection
-archfit init --llm -o -
+archfit config init --llm -o -
 ```
 
 Mode behaviour:
@@ -356,34 +350,34 @@ Flags:
 See [LLM enrichment](llm-enrich.md) for provider and API key setup. `archfit doctor`
 shows key and cache status.
 
-## archfit update
+## archfit config update
 
-`archfit update` keeps `.archfit.yaml` in sync as the codebase evolves. It re-runs
+`archfit config update` keeps `.archfit.yaml` in sync as the codebase evolves. It re-runs
 discovery, compares the results to the existing config, and reports or applies the
 diff.
 
 ```sh
 # plan mode (default): prints a drift report, writes nothing
-archfit update --config .archfit.yaml
+archfit config update --config .archfit.yaml
 
 # apply mode: writes structural changes live
-archfit update --config .archfit.yaml --apply
+archfit config update --config .archfit.yaml --apply
 
 # with LLM: adds classification of unclassified modules to the report
-archfit update --config .archfit.yaml --llm
+archfit config update --config .archfit.yaml --llm
 
 # with LLM + apply: structural + classification written live
-archfit update --config .archfit.yaml --llm --apply
+archfit config update --config .archfit.yaml --llm --apply
 ```
 
 Mode matrix:
 
-| Command                | Effect                                             |
-| ---------------------- | -------------------------------------------------- |
-| `update`               | Drift report only; writes nothing.                 |
-| `update --apply`       | Structural drift written live (add/path/comment).  |
-| `update --llm`         | Drift report + LLM classification of unclassified. |
-| `update --llm --apply` | Structural + LLM classification written live.      |
+| Command                       | Effect                                             |
+| ----------------------------- | -------------------------------------------------- |
+| `config update`               | Drift report only; writes nothing.                 |
+| `config update --apply`       | Structural drift written live (add/path/comment).  |
+| `config update --llm`         | Drift report + LLM classification of unclassified. |
+| `config update --llm --apply` | Structural + LLM classification written live.      |
 
 What "structural drift" means:
 
@@ -397,7 +391,7 @@ before deleting`).
 
 Guardrails:
 
-- Plan mode (`update` without `--apply`) never writes `.archfit.yaml`.
+- Plan mode (`config update` without `--apply`) never writes `.archfit.yaml`.
 - `--apply` backs up the existing file before writing (`.archfit.yaml.bak` or
   timestamped if a backup already exists).
 - Existing field values (`subdomain`, `volatility`, `layer`) are never
@@ -411,7 +405,7 @@ Flags:
 
 - `--config` / `-c` — config file path (default: `.archfit.yaml`).
 - `--root` / `-r` — project root for discovery (default: directory of `--config`).
-- `--llm`, `--llm-provider`, `--llm-model`, `--no-cache` — same as `init --llm`.
+- `--llm`, `--llm-provider`, `--llm-model`, `--no-cache` — same as `config init --llm`.
 
 ## Scorecard delta (analyze --base)
 

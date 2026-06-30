@@ -3,7 +3,7 @@
 Configuration lives in `.archfit.yaml`. Generate a starter file:
 
 ```sh
-archfit init --root . --output .archfit.yaml
+archfit config init --root . --output .archfit.yaml
 ```
 
 Then review the generated modules, layers, and rules before using it as a gate.

@@ -75,8 +75,8 @@ gap. To make CI block on a missing tool instead, opt in with `--require-tools` o
 
 These now appear as a `## Config warnings` section (md) and `config_warnings[]`
 (json), not just stderr. Most clear once modules declare `owner`, `subdomain`, and
-`volatility` — draft them with `archfit enrich --owner`/`--volatility` or
-`archfit autopilot`, review, then pin. Filling them also makes `encapsulation` measurable and lets `coupling_balance`
+`volatility` — draft them with `archfit config enrich owner`/`config enrich volatility` or
+`archfit config init --llm -o draft.yaml`, review, then apply. Filling them also makes `encapsulation` measurable and lets `coupling_balance`
 move out of `n/a`.
 
 ## False-positive coupling advisories on a wiring/`cmd` package

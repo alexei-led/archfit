@@ -208,13 +208,13 @@ scored fraction → `high` confidence, value 78/100).
 
 ## 7. LLM placement (unchanged from v2, now enforced structurally)
 
-| Stage                      | LLM?          | Role                                                        |
-| -------------------------- | ------------- | ----------------------------------------------------------- |
-| `analyze --gate`           | **never**     | reads pinned config + tool facts only                       |
-| `enrich` (strength labels) | yes, off-gate | draft → human review → approved → `analyze` consumes        |
-| `enrich --subdomains`      | yes, off-gate | draft subdomain/volatility → human review → pin into config |
-| `explain <fingerprint>`    | yes, off-gate | narrate finding in prose                                    |
-| `analyze --llm`            | yes, off-gate | LLM architecture narrative from gathered evidence           |
+| Stage                     | LLM?          | Role                                                          |
+| ------------------------- | ------------- | ------------------------------------------------------------- |
+| `analyze --gate`          | **never**     | reads pinned config + tool facts only                         |
+| `config enrich labels`    | yes, off-gate | draft → human review → approved → `analyze` consumes          |
+| `config enrich subdomain` | yes, off-gate | draft subdomain/volatility → human review → apply into config |
+| `explain <fingerprint>`   | yes, off-gate | narrate finding in prose                                      |
+| `analyze --llm`           | yes, off-gate | LLM architecture narrative from gathered evidence             |
 
 `arch_test.go` structurally forbids any `internal/*` package from importing
 `internal/llm`, so LLM code is confined to `cmd/archfit`.
@@ -239,7 +239,7 @@ Labels in `.archfit-labels.yaml` carry two new fields (added in Task 6):
   Rationale: LLM judgment has been human-reviewed but is not as certain as a
   config-glob or SCIP symbol-kind classification.
 - `provenance: human` or `provenance: tool` does not lower confidence.
-- `check` consumes only `status: approved` labels. Draft labels are never read
+- `analyze` consumes only `status: approved` labels. Draft labels are never read
   by the gate.
 
 ### Decision tasks (abstain → agent_task)
@@ -250,7 +250,7 @@ add a label in `.archfit-labels.yaml`. This surfaces classification gaps to the
 human or LLM operator without blocking the gate.
 
 Similarly, undeclared subdomain/volatility modules emit a decision task prompting
-`subdomain:` declaration or `archfit enrich --subdomains`.
+`subdomain:` declaration or `archfit config enrich subdomain`.
 
 ---
 

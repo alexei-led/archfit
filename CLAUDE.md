@@ -112,10 +112,11 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   whose kind the hint refines (classify.go); an internal-glob match is
   authoritative intrusive.
 - Parse config once into typed views; pass a package its view, not the whole config.
-- LLM SDKs (`anthropic-sdk-go`, `openai-go`) are off-gate: only `enrich`,
-  `autopilot`, `explain`, and `review` touch them, never `check`. Enforced
-  structurally — `arch_test.go` forbids any `internal/*` package from importing
-  `internal/llm`, so the LLM commands live in `cmd`.
+- LLM SDKs (`anthropic-sdk-go`, `openai-go`) are off-gate: only `config enrich`,
+  `config init --llm`, `config update --llm`, `analyze --llm`, and `explain --llm`
+  touch them, never the gate. Enforced structurally — `arch_test.go` forbids any
+  `internal/*` package from importing `internal/llm`, so the LLM commands live in
+  `cmd`.
 - `gate:` is wired for **all rule types** (`off` skips, `warn` is advisory/non-blocking,
   `fail`/unset is blocking; exception: `public_api_change` defaults to `warn` when unset). An unknown `type` value is a config error.
 

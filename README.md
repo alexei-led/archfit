@@ -98,7 +98,7 @@ Goal, constraints, the files to touch, and the command that proves the fix.
 go install github.com/alexei-led/archfit/cmd/archfit@latest
 
 archfit doctor                      # which analyzers are available
-archfit init --root .               # generate a starter .archfit.yaml
+archfit config init --root .        # generate a starter .archfit.yaml
 archfit                             # human review: the decision report above
 archfit --gate --full               # CI gate: exit 0 clean / 1 violation / 2 warn / 3 error
 ```
@@ -129,7 +129,7 @@ Full setup — Docker, CI, optional analyzers, platform packages — is in the
   (integration strength × distance × volatility).
 - **Honest coverage** — a missing analyzer degrades the affected metric to `n/a`
   with the install step, never a false green.
-- **Off-gate LLM narration** (`analyze --llm`, `enrich`, `autopilot`) that may
+- **Off-gate LLM narration** (`analyze --llm`, `config enrich`, `config init --llm`) that may
   only explain and prioritize collected evidence — it never decides the gate.
 - **Multi-language** — Go, TypeScript/JavaScript, Python, Rust
   ([details](docs/guide/languages.md)).
@@ -153,7 +153,7 @@ flowchart TB
         CL --> ME[metrics] --> SC[score] --> DE[decision]
     end
     core --> OUT["text · JSON · SARIF · Markdown<br/>agent_tasks · scorecard"]
-    OUT -. off-gate · advisory only .-> LLM["analyze --llm · enrich · autopilot"]
+    OUT -. off-gate · advisory only .-> LLM["analyze --llm · config enrich · config init --llm"]
     classDef side fill:#f3f0ff,stroke:#7048e8,color:#000;
     class LLM side;
     style core fill:#e7f5ff,stroke:#1971c2,color:#000;
