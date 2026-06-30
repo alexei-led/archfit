@@ -228,7 +228,6 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 	}
 	if gateFinding == nil {
 		t.Fatalf("no gate finding with rule_id=public_api_only found; findings=%+v", d.Findings)
-		return
 	}
 	if gateFinding.Status != finding.StatusNew {
 		t.Errorf("finding status=%q, want %q", gateFinding.Status, finding.StatusNew)
@@ -588,7 +587,6 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 	}
 	if adv == nil {
 		t.Fatalf("no bc/imbalanced_coupling advisory present; findings=%+v", d.Findings)
-		return
 	}
 
 	// score = scorer name (default is BookScorer as of bc_score.v3).
@@ -670,7 +668,6 @@ func TestRun_Advisory_DistanceBasisInMatchedBy(t *testing.T) {
 	}
 	if adv == nil {
 		t.Fatalf("no bc/imbalanced_coupling advisory; findings=%+v", d.Findings)
-		return
 	}
 
 	// cannedConfig uses distinct owners (team-a / team-b) → ownership basis.

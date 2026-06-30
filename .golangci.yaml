@@ -25,6 +25,15 @@ linters:
     paths:
       - mocks
       - testdata
+    rules:
+      # SA5011 false-positives in tests: `if x == nil { t.Fatalf(...) }` guards are
+      # safe (t.Fatalf terminates the goroutine), but staticcheck does not always
+      # treat t.Fatalf as no-return, so it warns about the following deref. A nil
+      # deref in a test panics and fails the test anyway, so exclude it there.
+      - path: _test\.go
+        linters:
+          - staticcheck
+        text: SA5011
 formatters:
   enable:
     - gofmt
