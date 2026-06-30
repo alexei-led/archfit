@@ -8,6 +8,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
+	"github.com/alexei-led/archfit/internal/score"
 )
 
 // TestJSONRenderer_AdvisoryScoreFields asserts the numeric BC score fields
@@ -27,7 +28,7 @@ func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
 	}}
 
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(d, &buf); err != nil {
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
@@ -55,7 +56,7 @@ func TestJSONRenderer_Delta(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(d, &buf); err != nil {
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
@@ -89,7 +90,7 @@ func TestJSONRenderer_Delta(t *testing.T) {
 	// Omitted entirely when nil.
 	plain := diagnostic.New()
 	var pbuf bytes.Buffer
-	if err := jsonout.New().Render(plain, &pbuf); err != nil {
+	if err := jsonout.New().Render(plain, score.Scorecard{}, nil, &pbuf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 	if bytes.Contains(pbuf.Bytes(), []byte("\"delta\"")) {
@@ -132,7 +133,7 @@ func TestJSONRenderer_Render(t *testing.T) {
 			r := jsonout.New()
 			var buf bytes.Buffer
 
-			if err := r.Render(tt.diag, &buf); err != nil {
+			if err := r.Render(tt.diag, score.Scorecard{}, nil, &buf); err != nil {
 				t.Fatalf("Render() error = %v", err)
 			}
 
@@ -207,7 +208,7 @@ func TestJSONRenderer_Render_FileFacts(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := jsonout.New().Render(d, &buf); err != nil {
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 

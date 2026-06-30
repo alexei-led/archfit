@@ -37,6 +37,18 @@
     "total": 1
   },
   "config_hash": "e686c0a4ca1ab9671d3ddc6d48da64e60ff9d2fd49d1cf9573c7e4c15850d826",
+  "coupling_balance": {
+    "band": "serviceable",
+    "confidence": "high",
+    "evidence": [
+      "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
+      "scored fraction: 100% (1 scored, 0 abstained, internal only)",
+      "critical-band edges: 0 (0 distributed-monolith: critical at high distance)"
+    ],
+    "name": "coupling_balance",
+    "summary": "mean book balance 8.0/10 across 1 scored internal cross-boundary edges",
+    "value": 78
+  },
   "dynamic_imports": [],
   "file_facts": [],
   "findings": [
@@ -157,13 +169,14 @@
       "band": "info",
       "confidence": "low",
       "definition": "modules whose transitive reverse-dependencies exceed 30% of the codebase (change-impact hubs)",
-      "display": "1 change-impact hub(s): pkg/b (100%, 1 deps)",
+      "display": "1 of 2 modules are change-impact hubs: pkg/b (100%, 1 deps)",
       "metric_version": "blast_radius.v1",
       "mode": "count",
       "name": "blast_radius",
       "value": 1
     }
   ],
+  "owner_source": "config",
   "primary_extractor_tools": [
     "go/packages",
     "dependency-cruiser",
@@ -171,6 +184,25 @@
     "cargo"
   ],
   "schema_version": "archfit.diagnostic.v2",
+  "score": {
+    "dimensions": [
+      {
+        "band": "serviceable",
+        "confidence": "high",
+        "evidence": [
+          "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
+          "scored fraction: 100% (1 scored, 0 abstained, internal only)",
+          "critical-band edges: 0 (0 distributed-monolith: critical at high distance)"
+        ],
+        "name": "coupling_balance",
+        "summary": "mean book balance 8.0/10 across 1 scored internal cross-boundary edges",
+        "value": 78
+      }
+    ],
+    "overall": 78,
+    "overall_band": "serviceable",
+    "rubric_version": 1
+  },
   "summary": {
     "gate_findings": 1,
     "waivers_used": 0,

@@ -101,6 +101,23 @@ position) is the always-available baseline and distinguishes close from far modu
 regardless of owner count. See the
 [configuration reference](configuration-reference.md) for the exact composite order.
 
+**Owner resolution is single-dominant-owner per module** (the value declared in
+config, or the most-frequent owner from CODEOWNERS / git-author history). Two
+consequences to know when reading `cross_module_different_owner`:
+
+- A CODEOWNERS that lists a **common team first on most lines** (e.g. a
+  `* @org/maintainers` catch-all, or a maintainers team co-listed on every rule)
+  resolves nearly every module to that one owner, so cross-team distance
+  under-reports. archfit keeps the first owner per line, not the owner set.
+- A CODEOWNERS that **does not cover the analyzed source** (only `/docs`, or the
+  backend package has no rule) resolves to a single or empty owner → owner
+  distance is neutral and the score falls back to code-structure distance.
+
+Both are faithful reflections of the repo's declared ownership, not bugs — but if
+you want cross-team coupling to register, declare `owner:` per module explicitly.
+The `owner_source` field (`config` | `codeowners` | `git` | `none`) in JSON and the
+markdown "Distance confidence" section tells you which path produced the owners.
+
 **Deviation from the book:** Khononov also counts _runtime coupling_ (synchronous
 vs asynchronous integration) and lifecycle coupling as part of distance. `archfit`
 deliberately does **not** fold runtime/async coupling into distance — detected

@@ -196,8 +196,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 			break
 		}
 	}
+	// ownerSource records where owners came from for the diagnostic's owner_source
+	// (distance-confidence signal). "config" = every path-owning module declared an
+	// owner, so no resolution was needed.
+	ownerSource := "config"
 	if needsOwnerResolution {
-		cfg.FillMissingOwners(ownership.Resolve(ctx, s.Root, cfg.ModuleMapView(), deps.Runner))
+		resolved, src := ownership.Resolve(ctx, s.Root, s.GitRoot, s.SubtreePrefix, cfg.ModuleMapView(), deps.Runner)
+		cfg.FillMissingOwners(resolved)
+		ownerSource = string(src)
 	}
 
 	// Deploy-unit detection: fills module deploy_unit gaps from static repo
@@ -293,6 +299,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	if err != nil {
 		return diag, err
 	}
+	diag.OwnerSource = ownerSource
 
 	// Attach the structured repair-task block (spec §13) for active gate
 	// findings. Deterministic: rule-type templates + module public surfaces +

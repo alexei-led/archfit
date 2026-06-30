@@ -390,12 +390,27 @@ func TestRun_NoArgs(t *testing.T) {
 func TestRun_UnknownFlag_NotSilent(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, "--definitely-not-a-flag"}, &buf)
+	code := RunWithStderr([]string{cmdAnalyze, "--definitely-not-a-flag"}, &buf, &buf)
 	if code != 3 {
 		t.Fatalf("unknown flag: exit = %d, want 3", code)
 	}
 	if strings.TrimSpace(buf.String()) == "" {
 		t.Errorf("unknown flag produced no output; want a printed error")
+	}
+}
+
+func TestRunWithStderr_ErrorsGoToStderrNotStdout(t *testing.T) {
+	t.Parallel()
+	var out, errOut bytes.Buffer
+	code := RunWithStderr([]string{cmdAnalyze, "--definitely-not-a-flag"}, &out, &errOut)
+	if code != 3 {
+		t.Fatalf("exit = %d, want 3", code)
+	}
+	if strings.TrimSpace(out.String()) != "" {
+		t.Errorf("errors must not pollute stdout; got stdout: %q", out.String())
+	}
+	if strings.TrimSpace(errOut.String()) == "" {
+		t.Error("error message should be written to stderr; got empty stderr")
 	}
 }
 

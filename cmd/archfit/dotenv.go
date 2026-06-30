@@ -3,8 +3,47 @@ package main
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"strings"
 )
+
+// envSearchDirs extracts directories from CLI args whose .env should be autoloaded
+// in addition to CWD: the analyzed repo (--root/-r) and the config's directory
+// (--config/-c). Both "--flag=val" and "--flag val" forms are handled. This lets a
+// key kept alongside the target repo or config be picked up without --env-file;
+// CWD and real env still win because loadDotEnv never overrides an already-set var.
+func envSearchDirs(args []string) []string {
+	var dirs []string
+	flagVal := func(i *int, long, short string) (string, bool) {
+		a := args[*i]
+		if a == long || (short != "" && a == short) {
+			if *i+1 < len(args) {
+				*i++
+				return args[*i], true
+			}
+			return "", false
+		}
+		if v, ok := strings.CutPrefix(a, long+"="); ok {
+			return v, true
+		}
+		if short != "" {
+			if v, ok := strings.CutPrefix(a, short+"="); ok {
+				return v, true
+			}
+		}
+		return "", false
+	}
+	for i := 0; i < len(args); i++ {
+		if v, ok := flagVal(&i, "--root", "-r"); ok && v != "" {
+			dirs = append(dirs, v)
+			continue
+		}
+		if v, ok := flagVal(&i, "--config", "-c"); ok && v != "" {
+			dirs = append(dirs, filepath.Dir(v))
+		}
+	}
+	return dirs
+}
 
 // loadDotEnv reads simple KEY=VALUE lines from path and sets each in the process
 // environment ONLY when the key is currently unset — real environment variables

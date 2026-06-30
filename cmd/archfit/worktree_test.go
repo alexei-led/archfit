@@ -159,7 +159,7 @@ func TestDiffCmd_NonGitRoot(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath}, &buf)
+	code := RunWithStderr([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath}, &buf, &buf)
 	if code != 3 {
 		t.Fatalf("non-git dir: exit=%d, want 3\noutput:\n%s", code, buf.String())
 	}
@@ -176,7 +176,7 @@ func TestDiffCmd_BadRef(t *testing.T) {
 	_, cfgPath := makeDiffFixtureRepo(t)
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, flagBase, "refs/does-not-exist-xyz", "-c", cfgPath}, &buf)
+	code := RunWithStderr([]string{cmdAnalyze, flagBase, "refs/does-not-exist-xyz", "-c", cfgPath}, &buf, &buf)
 	if code != 3 {
 		t.Fatalf("bad ref: exit=%d, want 3\noutput:\n%s", code, buf.String())
 	}
@@ -325,8 +325,10 @@ func TestDiffCmd_SubtreeAboveGitRoot(t *testing.T) {
 	// Use a path that is definitely outside the fixture repo (parent of t.TempDir).
 	outsideDir := filepath.Dir(filepath.Dir(cfgPath))
 
+	// Errors go to stderr; capture both streams in one buffer (this is an exit-3
+	// path with no stdout output to corrupt).
 	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath, flagRoot, outsideDir}, &buf)
+	code := RunWithStderr([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath, flagRoot, outsideDir}, &buf, &buf)
 	if code != 3 {
 		t.Fatalf("--root above gitRoot: exit=%d, want 3\noutput:\n%s", code, buf.String())
 	}

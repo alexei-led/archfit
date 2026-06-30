@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -61,7 +62,7 @@ func Load(_ context.Context, path string) (Config, error) {
 	var cfg Config
 	dec := yaml.NewDecoder(bytes.NewReader(data), yaml.DisallowUnknownField())
 	if err := dec.Decode(&cfg); err != nil {
-		return Config{}, fmt.Errorf("config: decode %q: %w", path, err)
+		return Config{}, fmt.Errorf("config: decode %q: %w", path, deprecatedConfigHint(err))
 	}
 
 	if err := validate(cfg); err != nil {
@@ -78,6 +79,24 @@ func Load(_ context.Context, path string) (Config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+// deprecatedConfigHint augments a strict-decode failure with v0.x→v1.0 migration
+// guidance when the unknown field is a key renamed or removed before v1.0. The raw
+// "unknown field" error is kept (it quotes the line); the hint tells the user what
+// to change. Removed `metrics` map keys are caught later in validate() instead,
+// since a map key is not an "unknown field" at decode time.
+func deprecatedConfigHint(err error) error {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, `unknown field "tools"`):
+		return fmt.Errorf("%w\nhint: `tools:` was renamed to `analyzers:` in v1.0 (and `analyzers.complexity` was removed); see docs/guide/migration.md", err)
+	case strings.Contains(msg, `unknown field "complexity"`):
+		return fmt.Errorf("%w\nhint: `analyzers.complexity` was removed in v1.0 (gocyclo/lizard backends dropped); see docs/guide/migration.md", err)
+	case strings.Contains(msg, `unknown field "gitnexus"`):
+		return fmt.Errorf("%w\nhint: gitnexus integration was removed in v1.0; remove the key (see docs/guide/migration.md)", err)
+	}
+	return err
 }
 
 // WithExplicitOwners marks the named modules as having hand-authored owners and
@@ -105,6 +124,26 @@ var bcSeverities = map[string]struct{}{"low": {}, "medium": {}, "high": {}, "cri
 // gateValues are the accepted gate policy markers (spec §rules: off | warn | fail),
 // shared by rule, metric, and module_review gates. Empty means "use the default".
 var gateValues = map[string]struct{}{"off": {}, "warn": {}, "fail": {}}
+
+// knownMetrics is the set of metric keys archfit implements. `metrics` is a map,
+// so unknown keys escape DisallowUnknownField — validate() rejects them so a typo
+// or a removed metric is a loud config error, not a silent no-op (consistency with
+// the strict `analyzers` struct).
+var knownMetrics = map[string]struct{}{
+	"encapsulation": {}, "unbalanced_edge": {}, "cycle": {}, "coverage": {}, "blast_radius": {},
+}
+
+// removedConfigKeys maps config keys removed before v1.0 to a short reason, so a
+// stale config gets an actionable error pointing at the migration guide rather than
+// a generic "unknown metric". Top-level renames (tools→analyzers) and removed
+// struct fields (analyzers.complexity) are caught at decode time by
+// deprecatedConfigHint instead.
+var removedConfigKeys = map[string]string{
+	"risk_hub":              "removed in v1.0",
+	"functional_candidates": "removed in v1.0",
+	"complexity":            "removed in v1.0 (gocyclo/lizard backends dropped)",
+	"gitnexus":              "removed in v1.0 (gitnexus integration dropped)",
+}
 
 // validate checks required config fields. An invalid enum is a hard error rather
 // than a silent skip: a typo in coupling.min_severity or a gate must not
@@ -143,6 +182,12 @@ func validate(cfg Config) error {
 		}
 	}
 	for _, name := range sortedMetricKeys(cfg.Metrics) {
+		if reason, removed := removedConfigKeys[name]; removed {
+			return fmt.Errorf("metrics.%s was %s — remove it (see docs/guide/migration.md)", name, reason)
+		}
+		if _, ok := knownMetrics[name]; !ok {
+			return fmt.Errorf("metrics.%s is not a known metric (known: blast_radius, coverage, cycle, encapsulation, unbalanced_edge); see docs/guide/migration.md", name)
+		}
 		if err := validateGate("metrics."+name, cfg.Metrics[name].Gate); err != nil {
 			return err
 		}

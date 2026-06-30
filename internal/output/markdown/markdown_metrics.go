@@ -28,15 +28,13 @@ func writeBeyondBCMetrics(b *strings.Builder, metrics []diagnostic.MetricResult)
 // code_structure is always-on; ownership and deploy_unit come from tool coverage.
 // Unresolved modules are counted from extractor coverage records.
 func writeDistanceConfidence(b *strings.Builder, d diagnostic.Diagnostic) {
-	// Collect distance-signal sources from tool coverage entries.
-	ownerSrc := ""
+	// owner_source is a first-class diagnostic field (config|codeowners|git|none).
+	ownerSrc := d.OwnerSource
+	// Collect remaining distance-signal sources from tool coverage entries.
 	deployUnitSrc := ""
 	unresolved := 0
 	for _, cov := range d.ToolCoverage {
-		switch cov.Tool {
-		case "ownership":
-			ownerSrc = cov.Status
-		case "deploy-unit":
+		if cov.Tool == "deploy-unit" {
 			deployUnitSrc = cov.Status
 		}
 		unresolved += cov.Unresolved

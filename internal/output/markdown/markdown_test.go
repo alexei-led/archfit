@@ -10,6 +10,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
 	"github.com/alexei-led/archfit/internal/output/markdown"
+	"github.com/alexei-led/archfit/internal/score"
 )
 
 const (
@@ -928,7 +929,7 @@ func TestRenderer_Render_BeyondBCLowConfidence(t *testing.T) {
 
 	// JSON renderer retains every metric in full.
 	var jbuf bytes.Buffer
-	if err := jsonout.New().Render(d, &jbuf); err != nil {
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &jbuf); err != nil {
 		t.Fatalf("json Render() error = %v", err)
 	}
 	jout := jbuf.String()

@@ -32,11 +32,15 @@ func (m CycleMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 
 	value := float64(cycles)
 	confidence := result.ConfidenceHigh
+	// allRust: every cycle is built solely from Rust edges → intra-crate module
+	// cycles (cargo forbids crate cycles), language-permitted. Computed once and
+	// reused for the band and the display.
+	allRust := cycles > 0 && cyclesAllRust(in.Graph)
 	var band string
 	switch {
 	case cycles == 0:
 		band = result.BandStrong
-	case cyclesAllRust(in.Graph):
+	case allRust:
 		// cargo forbids crate cycles, so a cycle built only from Rust edges is
 		// module-level — language-permitted, commonly just mutual type references
 		// (cargo-modules `uses` edges). Treat as a real but mild signal (poor), not the
@@ -49,7 +53,13 @@ func (m CycleMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 	}
 	band = result.ApplyConfidenceCap(band, confidence)
 
+	// Convey WHY the band differs from the raw count: N Rust module cycles band
+	// `poor` while fewer real import cycles band `critical`, which reads as inverted
+	// if the display shows only the count (F8).
 	display := fmt.Sprintf("%d import cycles", cycles)
+	if allRust {
+		display = fmt.Sprintf("%d intra-crate module cycles (Rust — language-permitted, not import cycles)", cycles)
+	}
 	delta := result.ComputeDelta(value, in.Baseline, m.Name(), m.Version())
 
 	return diagnostic.MetricResult{

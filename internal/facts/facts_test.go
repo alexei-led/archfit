@@ -2,6 +2,7 @@ package facts_test
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/facts"
@@ -222,6 +223,12 @@ func TestBuild_InboundFanIn_ExcludesTestModules(t *testing.T) {
 	spot := findFact(t, got, modSpotinfo)
 	if spot.InboundModuleFanIn != 2 {
 		t.Errorf("InboundModuleFanIn = %d, want 2 (test module excluded)", spot.InboundModuleFanIn)
+	}
+	// The ".test" pseudo-module must not appear as a FileFact at all (F10).
+	for _, f := range got {
+		if strings.HasSuffix(f.Module, ".test") {
+			t.Errorf("test-binary pseudo-module %q leaked into file_facts (F10)", f.Module)
+		}
 	}
 }
 

@@ -122,6 +122,67 @@ func TestInitCmd_NoLLM_WritesFile(t *testing.T) {
 	}
 }
 
+func TestInitCmd_RootRelativeOutput_WritesUnderRoot(t *testing.T) {
+	t.Parallel()
+	root := minimalRoot(t)
+	// Relative --output (the default) must resolve against --root, not CWD.
+	cmd := &InitCmd{
+		Root:   root,
+		Output: defaultConfigPath,
+	}
+	if _, err := runInitCmd(t, cmd); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, ".archfit.yaml")); statErr != nil {
+		t.Errorf("expected .archfit.yaml under --root, not found: %v", statErr)
+	}
+}
+
+func TestInitCmd_NoClobber_ExistingValid_LeavesUnchanged(t *testing.T) {
+	t.Parallel()
+	root := minimalRoot(t)
+	outPath := filepath.Join(root, ".archfit.yaml")
+	const sentinel = "version: 1\n# architect-authored — do not clobber\n"
+	if err := os.WriteFile(outPath, []byte(sentinel), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := &InitCmd{Root: root, Output: outPath} // Force defaults false
+	out, err := runInitCmd(t, cmd)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "already exists and is valid") {
+		t.Errorf("expected no-clobber message, got: %q", out)
+	}
+	data, _ := os.ReadFile(outPath) //nolint:gosec
+	if string(data) != sentinel {
+		t.Errorf("existing config was modified; content: %q", string(data))
+	}
+}
+
+func TestInitCmd_Force_Overwrites(t *testing.T) {
+	t.Parallel()
+	root := minimalRoot(t)
+	outPath := filepath.Join(root, ".archfit.yaml")
+	const sentinel = "version: 1\n# old config\n"
+	if err := os.WriteFile(outPath, []byte(sentinel), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := &InitCmd{Root: root, Output: outPath, Force: true}
+	if _, err := runInitCmd(t, cmd); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	data, _ := os.ReadFile(outPath) //nolint:gosec
+	if string(data) == sentinel {
+		t.Error("--force did not overwrite the existing config")
+	}
+	// A backup must be kept.
+	matches, _ := filepath.Glob(outPath + "*.bak")
+	if len(matches) == 0 {
+		t.Error("--force overwrote without keeping a backup")
+	}
+}
+
 func TestInitCmd_LLM_CommentedSuggestions(t *testing.T) {
 	t.Parallel()
 	root := minimalRoot(t)

@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -49,22 +50,65 @@ type ownerRule struct {
 	owner   string // first owner on the line; empty lines and comments are skipped
 }
 
-// Resolve returns a map from config module name to owner string.
+// Source identifies where resolved owners came from, surfaced as owner_source in
+// the diagnostic so consumers can judge distance confidence.
+type Source string
+
+const (
+	// SourceCodeowners means owners were resolved from a CODEOWNERS file.
+	SourceCodeowners Source = "codeowners"
+	// SourceGit means owners were resolved from git-author history (no CODEOWNERS).
+	SourceGit Source = "git"
+	// SourceNone means no owner signal — neither source produced any owner.
+	SourceNone Source = "none"
+)
+
+// Resolve returns a map from config module name to owner string, plus the Source
+// that produced it.
 //
-// root is the repository root (absolute path). modules is the config module map
-// used to aggregate file paths to module names. runner is used only for the
-// git-author fallback path.
+// scanRoot is the analysis boundary (absolute path) — the subtree archfit walks,
+// and the root that module path globs are relative to. gitRoot is the git
+// repository toplevel (absolute path), or "" when not a git repo; CODEOWNERS is
+// located here and git-log paths are relative to it. subtreePrefix is the
+// gitRoot-relative path to scanRoot (filepath.Rel(gitRoot, scanRoot)), empty when
+// scanRoot == gitRoot or gitRoot is "".
+//
+// When scanRoot is a subtree of a larger monorepo, CODEOWNERS lives at gitRoot
+// (not the subtree) and its patterns are gitRoot-relative, while module globs are
+// scanRoot-relative — so file paths are matched against CODEOWNERS using their
+// gitRoot-relative form (subtreePrefix + scanRel) but mapped to modules using
+// their scanRoot-relative form. subtreePrefix=="" makes this byte-identical to a
+// whole-repo scan.
+//
+// modules is the config module map used to aggregate file paths to module names.
+// runner is used only for the git-author fallback path.
 //
 // Never returns an error — tool/file absence yields an empty map.
-func Resolve(ctx context.Context, root string, modules config.ModuleMap, runner toolrun.Runner) map[string]string {
+func Resolve(ctx context.Context, scanRoot, gitRoot, subtreePrefix string, modules config.ModuleMap, runner toolrun.Runner) (map[string]string, Source) {
+	// CODEOWNERS lives at the git repository root (the monorepo root), not the
+	// analyzed subtree. Fall back to scanRoot when gitRoot is unknown (non-git).
+	coRoot := gitRoot
+	if coRoot == "" {
+		coRoot = scanRoot
+	}
+
 	// Try CODEOWNERS first.
-	rules, found := loadCodeowners(root)
+	rules, found := loadCodeowners(coRoot)
 	if found {
-		return resolveFromCodeowners(rules, root, modules)
+		m := resolveFromCodeowners(rules, scanRoot, subtreePrefix, modules)
+		if len(m) == 0 {
+			// CODEOWNERS present but no rule mapped to a configured module.
+			return m, SourceNone
+		}
+		return m, SourceCodeowners
 	}
 
 	// Fall back to git-author only when no CODEOWNERS exists at all.
-	return resolveFromGitAuthor(ctx, root, modules, runner)
+	m := resolveFromGitAuthor(ctx, scanRoot, gitRoot, subtreePrefix, modules, runner)
+	if len(m) == 0 {
+		return m, SourceNone
+	}
+	return m, SourceGit
 }
 
 // ---------------------------------------------------------------------------
@@ -144,16 +188,14 @@ func codeownersMatch(pattern, repoPath string) bool {
 
 	if anchored {
 		// Root-anchored: match against the full path.
-		ok, _ := filepath.Match(p, repoPath)
-		return ok
+		return matchPathPattern(p, repoPath)
 	}
 
 	// Unanchored: match last component or full path.
 	// A pattern containing "/" is treated as a path relative to root when not
 	// anchored (GitHub CODEOWNERS behaviour).
 	if strings.Contains(p, "/") {
-		ok, _ := filepath.Match(p, repoPath)
-		return ok
+		return matchPathPattern(p, repoPath)
 	}
 
 	// No "/" — match against every path component (basename).
@@ -167,13 +209,38 @@ func codeownersMatch(pattern, repoPath string) bool {
 	return ok
 }
 
+// matchPathPattern matches a slash-bearing CODEOWNERS path pattern (leading slash
+// already stripped) against a repo-relative path, applying gitignore/CODEOWNERS
+// directory semantics: a pattern WITHOUT a trailing slash matches the named path
+// AND, when it names a directory, everything beneath it. It does so by testing
+// the pattern against repoPath and each of its ancestor directories. filepath.Match
+// handles "*" segment globs, so this also covers wildcard directory patterns —
+// e.g. "crates/ty*" matches "crates/ty_project/foo.rs" via the ancestor
+// "crates/ty_project", and "svc/api" matches "svc/api/handler/v1.go" via "svc/api".
+func matchPathPattern(p, repoPath string) bool {
+	for d := repoPath; d != "" && d != "." && d != "/"; d = path.Dir(d) {
+		if d == p {
+			return true
+		}
+		if ok, _ := filepath.Match(p, d); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveFromCodeowners builds a module→owner map from CODEOWNERS rules by
-// scanning all files under root and mapping matched files to config modules.
-func resolveFromCodeowners(rules []ownerRule, root string, modules config.ModuleMap) map[string]string {
+// scanning all files under scanRoot and mapping matched files to config modules.
+//
+// CODEOWNERS patterns are gitRoot-relative, so each file is matched against its
+// gitRoot-relative path (subtreePrefix + scanRoot-relative path); modules are
+// keyed on the scanRoot-relative path. subtreePrefix=="" collapses both to the
+// same value (whole-repo scan).
+func resolveFromCodeowners(rules []ownerRule, scanRoot, subtreePrefix string, modules config.ModuleMap) map[string]string {
 	// module name → map[owner]count
 	ownerCount := make(map[string]map[string]int)
 
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(scanRoot, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil // skip unreadable entries
 		}
@@ -185,18 +252,20 @@ func resolveFromCodeowners(rules []ownerRule, root string, modules config.Module
 			}
 			return nil
 		}
-		rel, err := filepath.Rel(root, path)
+		scanRel, err := filepath.Rel(scanRoot, p)
 		if err != nil {
 			return nil
 		}
-		rel = filepath.ToSlash(rel)
+		scanRel = filepath.ToSlash(scanRel)
+		// repoRel is the gitRoot-relative path CODEOWNERS patterns match against.
+		repoRel := path.Join(subtreePrefix, scanRel)
 
-		owner, ok := matchCodeowners(rules, rel)
+		owner, ok := matchCodeowners(rules, repoRel)
 		if !ok {
 			return nil
 		}
 
-		mod, ok := modules.ModuleFor(rel)
+		mod, ok := modules.ModuleFor(scanRel)
 		if !ok {
 			return nil
 		}
@@ -221,12 +290,26 @@ func resolveFromCodeowners(rules []ownerRule, root string, modules config.Module
 // resolveFromGitAuthor runs a single git log pass and aggregates author emails
 // per file to produce a module→owner map. Non-git dirs and git failures produce
 // an empty map, never an error.
-func resolveFromGitAuthor(ctx context.Context, root string, modules config.ModuleMap, runner toolrun.Runner) map[string]string {
+//
+// git log emits gitRoot-relative paths regardless of the working directory, so
+// when scanRoot is a subtree the run is scoped with a subtreePrefix pathspec and
+// each path is stripped back to its scanRoot-relative form before module mapping
+// (module globs are scanRoot-relative). gitRoot=="" (non-git) runs from scanRoot.
+func resolveFromGitAuthor(ctx context.Context, scanRoot, gitRoot, subtreePrefix string, modules config.ModuleMap, runner toolrun.Runner) map[string]string {
+	workDir := gitRoot
+	if workDir == "" {
+		workDir = scanRoot
+	}
+	args := []string{"log", "--format=%ae", "--name-only"}
+	if subtreePrefix != "" {
+		// Scope history to the analyzed subtree.
+		args = append(args, "--", subtreePrefix)
+	}
 	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    gitTool,
-		Args:    []string{"log", "--format=%ae", "--name-only"},
+		Args:    args,
 		Timeout: gitTimeout,
-		WorkDir: root,
+		WorkDir: workDir,
 	})
 	if err != nil || out.ExitCode != 0 {
 		return map[string]string{}
@@ -249,8 +332,17 @@ func resolveFromGitAuthor(ctx context.Context, root string, modules config.Modul
 		if currentAuthor == "" {
 			continue
 		}
-		rel := filepath.ToSlash(line)
-		mod, ok := modules.ModuleFor(rel)
+		gitRel := filepath.ToSlash(line)
+		// git paths are gitRoot-relative; map to the scanRoot-relative form.
+		scanRel := gitRel
+		if subtreePrefix != "" {
+			trimmed := strings.TrimPrefix(gitRel, subtreePrefix+"/")
+			if trimmed == gitRel {
+				continue // file outside the analyzed subtree
+			}
+			scanRel = trimmed
+		}
+		mod, ok := modules.ModuleFor(scanRel)
 		if !ok {
 			continue
 		}

@@ -86,8 +86,13 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		}
 	}
 	if _, err := os.Stat(marker); err != nil {
-		if e.cfg.Mode == config.ModeOn {
-			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/rust: %s not found", marker)
+		// An explicitly configured rust_manifest that is missing is a
+		// misconfiguration → error in on mode. But a missing DEFAULT root
+		// Cargo.toml just means "not a Rust project at this root": degrade to an
+		// n/a coverage record (warn-loud), never exit 3, even when rust is enabled
+		// — a multi-language repo or a manifest-less subtree must not fail the run (E3).
+		if e.cfg.Mode == config.ModeOn && e.cfg.CargoManifest != "" {
+			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/rust: configured rust_manifest %s not found", marker)
 		}
 		return graph.Facts{}, absentCoverage(""), nil
 	}

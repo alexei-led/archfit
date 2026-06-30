@@ -34,7 +34,11 @@ func Build(
 	moduleSet := make(map[string]struct{}, len(g.Module))
 	moduleFiles := make(map[string]map[string]struct{})
 	for sym, mod := range g.Module {
-		if mod == "" {
+		// Skip empty and scip-go test-binary pseudo-modules ("<pkg>.test"): they
+		// carry loc 0 and a single file pointing into the go-build cache (outside
+		// the repo), so they only pollute file_facts (F10). Their fan-in is already
+		// excluded below.
+		if mod == "" || strings.HasSuffix(mod, ".test") {
 			continue
 		}
 		moduleSet[mod] = struct{}{}

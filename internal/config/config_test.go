@@ -664,6 +664,41 @@ func TestForPatterns(t *testing.T) {
 	}
 }
 
+// loadInline writes body to a temp config file and loads it, returning the error.
+func loadInline(t *testing.T, body string) error {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, ".archfit.yaml")
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := config.Load(context.Background(), p)
+	return err
+}
+
+func TestLoad_UnknownMetricKey_IsError(t *testing.T) {
+	err := loadInline(t, "version: 1\nmetrics:\n  bogus:\n    enabled: true\n")
+	if err == nil || !strings.Contains(err.Error(), "metrics.bogus is not a known metric") {
+		t.Errorf("unknown metric: got %v, want 'not a known metric' error", err)
+	}
+}
+
+func TestLoad_RemovedMetricKey_IsActionableError(t *testing.T) {
+	for _, key := range []string{"risk_hub", "functional_candidates"} {
+		err := loadInline(t, "version: 1\nmetrics:\n  "+key+":\n    enabled: true\n")
+		if err == nil || !strings.Contains(err.Error(), "removed in v1.0") || !strings.Contains(err.Error(), "migration.md") {
+			t.Errorf("removed metric %q: got %v, want 'removed in v1.0 ... migration.md'", key, err)
+		}
+	}
+}
+
+func TestLoad_DeprecatedToolsKey_IsActionableError(t *testing.T) {
+	err := loadInline(t, "version: 1\ntools:\n  scip:\n    enabled: true\n")
+	if err == nil || !strings.Contains(err.Error(), "renamed to `analyzers:`") {
+		t.Errorf("tools key: got %v, want 'renamed to analyzers:' hint", err)
+	}
+}
+
 func TestLoad_ExistingConfigUnchanged(t *testing.T) {
 	// Existing configs without patterns: must still load cleanly.
 	cfg, err := config.Load(context.Background(), "testdata/valid.yaml")

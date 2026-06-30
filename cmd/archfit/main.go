@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/alecthomas/kong"
 
@@ -181,7 +182,17 @@ type exitCode int
 // ---------------------------------------------------------------------------
 
 // Run parses args, runs the selected command, and returns the process exit code.
-func Run(args []string, stdout io.Writer) (exitStatus int) {
+// Errors and parser diagnostics go to os.Stderr; normal output to stdout. Tests
+// that need to capture stderr use RunWithStderr.
+func Run(args []string, stdout io.Writer) int {
+	return RunWithStderr(args, stdout, os.Stderr)
+}
+
+// RunWithStderr is Run with an explicit stderr writer. Diagnostics — config/tool
+// errors, parser errors, and exitError messages — are written to stderr (not
+// stdout) so `archfit --json 2>/dev/null` yields clean JSON and CI logs separate
+// data from errors.
+func RunWithStderr(args []string, stdout, stderr io.Writer) (exitStatus int) {
 	// Capture controlled exits (--version, --help) via panic+recover.
 	defer func() {
 		if r := recover(); r != nil {
@@ -193,7 +204,7 @@ func Run(args []string, stdout io.Writer) (exitStatus int) {
 		}
 	}()
 
-	deps := &appDeps{Runner: toolrun.New(), Stdout: stdout}
+	deps := &appDeps{Runner: toolrun.New(), Stdout: stdout, Stderr: stderr}
 
 	var c cli
 	parser, err := kong.New(&c,
@@ -201,12 +212,13 @@ func Run(args []string, stdout io.Writer) (exitStatus int) {
 		kong.Description("Architecture drift feedback for CI and AI agents."),
 		kong.ExplicitGroups(commandGroups()),
 		kong.ConfigureHelp(kong.HelpOptions{FlagsLast: true, WrapUpperBound: 100}),
-		kong.Writers(stdout, stdout),
+		// Help → stdout; usage/errors → stderr (kong's two-writer convention).
+		kong.Writers(stdout, stderr),
 		kong.Exit(func(code int) { panic(exitCode(code)) }),
 		kong.Bind(deps),
 	)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdout, "error: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
 		return 3
 	}
 
@@ -214,7 +226,7 @@ func Run(args []string, stdout io.Writer) (exitStatus int) {
 	if err != nil {
 		// Manual parser.Parse (unlike the kong.Parse helper) does not print the
 		// error itself, so surface it — otherwise a bad flag exits 3 silently.
-		_, _ = fmt.Fprintf(stdout, "archfit: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "archfit: %v\n", err)
 		return 3
 	}
 
@@ -226,18 +238,23 @@ func Run(args []string, stdout io.Writer) (exitStatus int) {
 	var ee *exitError
 	if errors.As(runErr, &ee) {
 		if ee.msg != "" {
-			_, _ = fmt.Fprintln(stdout, ee.msg)
+			_, _ = fmt.Fprintln(stderr, ee.msg)
 		}
 		return ee.ExitCode()
 	}
 
-	_, _ = fmt.Fprintf(stdout, "error: %v\n", runErr)
+	_, _ = fmt.Fprintf(stderr, "error: %v\n", runErr)
 	return 3
 }
 
 func main() {
 	// Best-effort .env autoload at startup so the LLM commands pick up a key from
 	// a local .env without polluting the shell. Real env / CI secrets always win.
+	// CWD first, then the analyzed repo (--root) and the config's directory, so a
+	// key kept alongside the target repo or config is found too (F3).
 	loadDotEnv(".env")
+	for _, dir := range envSearchDirs(os.Args[1:]) {
+		loadDotEnv(filepath.Join(dir, ".env"))
+	}
 	os.Exit(Run(os.Args[1:], os.Stdout))
 }

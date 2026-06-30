@@ -315,10 +315,20 @@ func TestExtract_NoMarker(t *testing.T) {
 		}
 	})
 
-	t.Run("on returns error", func(t *testing.T) {
+	t.Run("on degrades to absent without a default Cargo.toml", func(t *testing.T) {
+		// A missing DEFAULT root Cargo.toml means "not a Rust project here": even in
+		// on mode it must degrade to n/a coverage, not exit 3 (E3). An explicitly
+		// configured-but-missing rust_manifest still errors (covered elsewhere).
 		e := rust.New(runner, config.ExtractConfig{Mode: config.ModeOn})
-		if _, _, err := e.Extract(context.Background(), scope.Scope{Root: empty}); err == nil {
-			t.Error("expected error without Cargo.toml in on mode")
+		facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: empty})
+		if err != nil {
+			t.Fatalf("expected n/a (not error) without a default Cargo.toml in on mode, got %v", err)
+		}
+		if len(facts.Nodes) != 0 {
+			t.Errorf("expected empty facts, got %d nodes", len(facts.Nodes))
+		}
+		if cov.Status != statusAbsent {
+			t.Errorf("cov.Status = %q, want absent", cov.Status)
 		}
 	})
 }

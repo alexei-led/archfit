@@ -245,7 +245,7 @@ func analyzeRender(deps *appDeps, diag diagnostic.Diagnostic, sc score.Scorecard
 		var renderErr error
 		switch format {
 		case formatJSON:
-			renderErr = jsonout.New().Render(diag, deps.Stdout)
+			renderErr = jsonout.New().Render(diag, sc, base, deps.Stdout)
 		case formatText:
 			renderErr = console.RenderReport(decision.Build(diag, sc, base, hardGate), deps.Stdout)
 		case formatMD, formatMarkdown:

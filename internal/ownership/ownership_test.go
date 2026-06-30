@@ -45,7 +45,7 @@ func TestResolve_CodeownersPrecedence(t *testing.T) {
 		"core": {"internal/**"},
 	})
 
-	got := ownership.Resolve(context.Background(), root, mm, nilRunner())
+	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner())
 	if want := "@last-owner"; got["core"] != want {
 		t.Errorf("CODEOWNERS last-match-wins: got %q, want %q", got["core"], want)
 	}
@@ -63,7 +63,7 @@ func TestResolve_CodeownersLastMatchWins_ExplicitOrder(t *testing.T) {
 		"service": {"internal/service/**"},
 	})
 
-	got := ownership.Resolve(context.Background(), root, mm, nilRunner())
+	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner())
 	if want := "@service-owner"; got["service"] != want {
 		t.Errorf("last rule wins: got %q, want %q", got["service"], want)
 	}
@@ -88,7 +88,7 @@ func TestResolve_CodeownersMissingFile_NoGitFallback(t *testing.T) {
 		},
 	}
 
-	got := ownership.Resolve(context.Background(), root, mm, runner)
+	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, runner)
 	if called {
 		t.Error("git runner was called even though CODEOWNERS exists — must not fall back per-file")
 	}
@@ -107,7 +107,7 @@ func TestResolve_CodeownersRootLocation(t *testing.T) {
 		"app": {"src/**"},
 	})
 
-	got := ownership.Resolve(context.Background(), root, mm, nilRunner())
+	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner())
 	if want := "@src-owner"; got["app"] != want {
 		t.Errorf("CODEOWNERS at root: got %q, want %q", got["app"], want)
 	}
@@ -123,9 +123,69 @@ func TestResolve_CodeownersDocsLocation(t *testing.T) {
 		"lib": {"lib/**"},
 	})
 
-	got := ownership.Resolve(context.Background(), root, mm, nilRunner())
+	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner())
 	if want := "@lib-owner"; got["lib"] != want {
 		t.Errorf("CODEOWNERS in docs/: got %q, want %q", got["lib"], want)
+	}
+}
+
+func TestResolve_CodeownersDirNoTrailingSlash(t *testing.T) {
+	// GitHub/gitignore semantics: an anchored path pattern WITHOUT a trailing
+	// slash owns that directory and everything beneath it — not just an exact
+	// file of that name. (Real-world CODEOWNERS, e.g. omni, write dir patterns
+	// this way far more often than with a trailing slash.)
+	root := t.TempDir()
+	writeFile(t, root, ".github/CODEOWNERS", "/svc/api @api-team\n")
+	writeFile(t, root, "svc/api/handler/v1.go", "")
+
+	mm := buildModuleMap(t, map[string][]string{
+		"api": {"svc/api/**"},
+	})
+
+	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner())
+	if want := "@api-team"; got["api"] != want {
+		t.Errorf("dir pattern without trailing slash: got %q, want %q", got["api"], want)
+	}
+}
+
+func TestResolve_CodeownersWildcardDir(t *testing.T) {
+	// Wildcard directory pattern (ruff-style "/crates/ty*"): the "*" segment
+	// matches a directory name, and contents beneath it are owned too.
+	root := t.TempDir()
+	writeFile(t, root, ".github/CODEOWNERS", "/crates/ty* @ty-team\n/crates/ruff_db/ @db-team\n")
+	writeFile(t, root, "crates/ty_project/src/lib.rs", "")
+	writeFile(t, root, "crates/ruff_db/src/lib.rs", "")
+
+	mm := buildModuleMap(t, map[string][]string{
+		"ty":      {"crates/ty_project/**"},
+		"ruff_db": {"crates/ruff_db/**"},
+	})
+
+	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner())
+	if want := "@ty-team"; got["ty"] != want {
+		t.Errorf("wildcard dir pattern: got %q, want %q", got["ty"], want)
+	}
+	if want := "@db-team"; got["ruff_db"] != want {
+		t.Errorf("trailing-slash dir pattern: got %q, want %q", got["ruff_db"], want)
+	}
+}
+
+func TestResolve_CodeownersSubtree(t *testing.T) {
+	// F2 regression: --root is a monorepo subtree. CODEOWNERS lives at the git
+	// root and its patterns are gitRoot-relative; module globs are subtree-
+	// relative. The owner must still resolve.
+	gitRoot := t.TempDir()
+	writeFile(t, gitRoot, ".github/CODEOWNERS", "/services/sched/ @sched-team\n")
+	writeFile(t, gitRoot, "services/sched/run/job.go", "")
+	scanRoot := filepath.Join(gitRoot, "services", "sched")
+
+	mm := buildModuleMap(t, map[string][]string{
+		"run": {"run/**"}, // subtree-relative glob
+	})
+
+	got, _ := ownership.Resolve(context.Background(), scanRoot, gitRoot, "services/sched", mm, nilRunner())
+	if want := "@sched-team"; got["run"] != want {
+		t.Errorf("subtree CODEOWNERS: got %q, want %q", got["run"], want)
 	}
 }
 
@@ -149,7 +209,7 @@ func TestResolve_GitAuthorFallback(t *testing.T) {
 		},
 	}
 
-	got := ownership.Resolve(context.Background(), root, mm, runner)
+	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, runner)
 	// bob@example.com has 2 touches, alice has 1 → dominant is bob.
 	if want := "bob@example.com"; got[modCmd] != want {
 		t.Errorf("git-author dominant: got %q, want %q", got[modCmd], want)
@@ -172,7 +232,7 @@ func TestResolve_GitAuthorFallback_Tie_AlphaFirst(t *testing.T) {
 		},
 	}
 
-	got := ownership.Resolve(context.Background(), root, mm, runner)
+	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, runner)
 	if want := "alpha@example.com"; got[modPkg] != want {
 		t.Errorf("tie → alpha-first: got %q, want %q", got[modPkg], want)
 	}
@@ -192,9 +252,37 @@ func TestResolve_GitAuthorFallback_GitFailure_EmptyMap(t *testing.T) {
 		},
 	}
 
-	got := ownership.Resolve(context.Background(), root, mm, runner)
+	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, runner)
 	if len(got) != 0 {
 		t.Errorf("git failure: expected empty map, got %v", got)
+	}
+}
+
+func TestResolve_GitAuthorFallback_Subtree(t *testing.T) {
+	// F2 regression: no CODEOWNERS, --root is a subtree. git log emits
+	// gitRoot-relative paths; they must be stripped to the subtree-relative form
+	// before module mapping. Files outside the subtree are ignored.
+	gitRoot := t.TempDir()
+	scanRoot := filepath.Join(gitRoot, "services", "sched")
+	writeFile(t, gitRoot, "services/sched/run/job.go", "")
+
+	mm := buildModuleMap(t, map[string][]string{
+		"run": {"run/**"}, // subtree-relative glob
+	})
+
+	// git emits gitRoot-relative paths even when scoped to the subtree; an
+	// out-of-subtree path must not leak into a module.
+	gitLog := "carol@x.com\nservices/sched/run/job.go\nservices/sched/run/job.go\n\n" +
+		"dave@x.com\nother/area/x.go\n"
+	runner := &toolrun.RunnerMock{
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			return toolrun.Output{Stdout: []byte(gitLog), ExitCode: 0}, nil
+		},
+	}
+
+	got, _ := ownership.Resolve(context.Background(), scanRoot, gitRoot, "services/sched", mm, runner)
+	if want := "carol@x.com"; got["run"] != want {
+		t.Errorf("subtree git-author: got %q, want %q", got["run"], want)
 	}
 }
 
@@ -216,7 +304,7 @@ func TestResolve_NeitherSource_EmptyMap(t *testing.T) {
 		},
 	}
 
-	got := ownership.Resolve(context.Background(), root, mm, runner)
+	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, runner)
 	if len(got) != 0 {
 		t.Errorf("no source: expected empty map, got %v", got)
 	}
@@ -230,7 +318,7 @@ func TestResolve_NoModuleMap_EmptyMap(t *testing.T) {
 
 	mm := buildModuleMap(t, map[string][]string{}) // empty module map
 
-	got := ownership.Resolve(context.Background(), root, mm, nilRunner())
+	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner())
 	if len(got) != 0 {
 		t.Errorf("no modules: expected empty map, got %v", got)
 	}
@@ -252,7 +340,7 @@ func TestResolve_CodeownersCatchAll(t *testing.T) {
 		modCmd: {modCmd + "/**"},
 	})
 
-	got := ownership.Resolve(context.Background(), root, mm, nilRunner())
+	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner())
 	for _, mod := range []string{modPkg, modCmd} {
 		if got[mod] != "@everyone" {
 			t.Errorf("catch-all: %s got %q, want @everyone", mod, got[mod])
@@ -270,10 +358,45 @@ func TestResolve_CodeownersComment_Skipped(t *testing.T) {
 		modPkg: {modPkg + "/**"},
 	})
 
-	got := ownership.Resolve(context.Background(), root, mm, nilRunner())
+	got, _ := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner())
 	if want := "@real-owner"; got[modPkg] != want {
 		t.Errorf("comment skipped: got %q, want %q", got[modPkg], want)
 	}
+}
+
+func TestResolve_ReportsSource(t *testing.T) {
+	mm := buildModuleMap(t, map[string][]string{"app": {"src/**"}})
+
+	t.Run("codeowners", func(t *testing.T) {
+		root := t.TempDir()
+		writeFile(t, root, ".github/CODEOWNERS", "src/ @team\n")
+		writeFile(t, root, "src/a.go", "")
+		if _, src := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner()); src != ownership.SourceCodeowners {
+			t.Errorf("got %q, want codeowners", src)
+		}
+	})
+
+	t.Run("none when codeowners matches nothing", func(t *testing.T) {
+		root := t.TempDir()
+		writeFile(t, root, ".github/CODEOWNERS", "docs/ @team\n")
+		writeFile(t, root, "src/a.go", "")
+		if _, src := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner()); src != ownership.SourceNone {
+			t.Errorf("got %q, want none", src)
+		}
+	})
+
+	t.Run("git fallback", func(t *testing.T) {
+		root := t.TempDir()
+		writeFile(t, root, "src/a.go", "")
+		runner := &toolrun.RunnerMock{
+			RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+				return toolrun.Output{Stdout: []byte("a@x.com\nsrc/a.go\n"), ExitCode: 0}, nil
+			},
+		}
+		if _, src := ownership.Resolve(context.Background(), root, root, "", mm, runner); src != ownership.SourceGit {
+			t.Errorf("got %q, want git", src)
+		}
+	})
 }
 
 // -----------------------------------------------------------------------

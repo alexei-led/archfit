@@ -319,6 +319,12 @@ Flags:
 With `--llm` it adds an off-gate classification pass that suggests `subdomain`,
 `volatility`, `layer`, and a module-name improvement for each discovered module.
 
+The output path is resolved against `--root`, so `archfit init --root <dir>` writes
+`<dir>/.archfit.yaml` (not the current directory). **By default `init` will not
+overwrite an existing config** — if a valid `.archfit.yaml` is already present it
+leaves it untouched (architect-authored module mapping is not clobbered) and exits 0
+with a note. Pass `--force` to overwrite it; a timestamped backup is kept.
+
 ```sh
 # plan mode (default): suggestions are commented-inert in the output
 archfit init --llm --root .

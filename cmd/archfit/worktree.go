@@ -95,6 +95,10 @@ func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, confi
 	if canon, cerr := filepath.EvalSymlinks(headScanRoot); cerr == nil {
 		headScanRoot = canon
 	}
+	// Snap a case-variant --root to gitRoot's canonical casing so the subtree
+	// mapping (filepath.Rel) works on case-insensitive filesystems — the main scan
+	// path does this via scope.snapScanRoot/os.SameFile; the delta path must too (F4).
+	headScanRoot = snapToGitRoot(gitRoot, headScanRoot)
 
 	tmpBase, err := os.MkdirTemp("", "archfit-base-*")
 	if err != nil {
@@ -133,12 +137,41 @@ func runScoreSide(ctx context.Context, deps *appDeps, configPath, root string, n
 	if err != nil {
 		return score.Scorecard{}, err
 	}
+	// Silence phase progress for the base sub-scan: the head run already announced
+	// "Comparing against base", and re-emitting discover/facts/analyze through the
+	// same reporter overflows the head phase counter (e.g. [7/6], F6).
+	quiet := *deps
+	quiet.progress = nil
 	mode := engine.Mode{Full: true, Advisory: advisory, ReportOnly: true}
-	diag, err := runPipeline(ctx, deps, cfg, configPath, root, noConfig, mode, baseline.Baseline{})
+	diag, err := runPipeline(ctx, &quiet, cfg, configPath, root, noConfig, mode, baseline.Baseline{})
 	if err != nil {
 		return score.Scorecard{}, err
 	}
 	return score.Synthesize(diag), nil
+}
+
+// snapToGitRoot rewrites headRoot so its gitRoot prefix uses gitRoot's canonical
+// casing, so filepath.Rel works on case-insensitive filesystems (macOS APFS),
+// mirroring scope.snapScanRoot. It walks headRoot upward and, when an ancestor is
+// the same directory as gitRoot (device+inode via os.SameFile), rebuilds gitRoot
+// plus the collected suffix. Returns headRoot unchanged when no ancestor matches.
+func snapToGitRoot(gitRoot, headRoot string) string {
+	gitInfo, err := os.Stat(gitRoot)
+	if err != nil {
+		return headRoot
+	}
+	suffix := ""
+	for cur := headRoot; ; {
+		if info, statErr := os.Stat(cur); statErr == nil && os.SameFile(gitInfo, info) {
+			return filepath.Join(gitRoot, suffix)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return headRoot // reached filesystem root without matching gitRoot
+		}
+		suffix = filepath.Join(filepath.Base(cur), suffix)
+		cur = parent
+	}
 }
 
 // subtreeInWorktree maps headRoot (absolute, inside gitRoot) to its mirror

@@ -349,6 +349,11 @@ type Diagnostic struct {
 	// leaves unmeasured, and how to install them (warn-loud coverage reporting).
 	// Omitted when every required tool ran. Populated in cmd/, never the core ring.
 	CoverageGaps []CoverageGap `json:"coverage_gaps,omitempty"`
+	// OwnerSource records where module owners came from for the owner-distance
+	// signal: "config" (declared in .archfit.yaml), "codeowners", "git" (author
+	// history), or "none" (no owner signal — owner-distance falls back to
+	// code-structure). Populated in cmd/. Omitted when empty.
+	OwnerSource string `json:"owner_source,omitempty"`
 	// PrimaryExtractorTools names the per-language file extractors whose coverage
 	// the scorecard treats as load-bearing: their absence (when coverage is n/a)
 	// means the repo was not analysed at all. Injected by the composition root from

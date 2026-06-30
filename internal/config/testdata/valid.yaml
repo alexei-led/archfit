@@ -55,7 +55,7 @@ metrics:
     enabled: true
     gate: warn
     min_delta: 0
-  cycles:
+  cycle:
     enabled: true
     gate: fail
     max_new: 0
