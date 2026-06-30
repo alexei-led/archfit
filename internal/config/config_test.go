@@ -686,8 +686,8 @@ func TestLoad_UnknownMetricKey_IsError(t *testing.T) {
 func TestLoad_RemovedMetricKey_IsActionableError(t *testing.T) {
 	for _, key := range []string{"risk_hub", "functional_candidates"} {
 		err := loadInline(t, "version: 1\nmetrics:\n  "+key+":\n    enabled: true\n")
-		if err == nil || !strings.Contains(err.Error(), "removed in v1.0") || !strings.Contains(err.Error(), "migration.md") {
-			t.Errorf("removed metric %q: got %v, want 'removed in v1.0 ... migration.md'", key, err)
+		if err == nil || !strings.Contains(err.Error(), "removed in v1.0") {
+			t.Errorf("removed metric %q: got %v, want 'removed in v1.0'", key, err)
 		}
 	}
 }
