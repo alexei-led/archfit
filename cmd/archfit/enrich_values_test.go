@@ -11,6 +11,9 @@ import (
 	"github.com/alexei-led/archfit/internal/initcfg"
 )
 
+// ownerField is the YAML field / draft-file kind identifier used by the owner drafter.
+const ownerField = "owner"
+
 // valueJSONFor builds a scripted provider response assigning each module the
 // given value, in the {"module","value","rationale"} shape the value drafters expect.
 func valueJSONFor(pairs map[string]string) string {
@@ -29,7 +32,7 @@ func TestEnrichOwnerDraft(t *testing.T) {
 	cfgPath, dir := writeEnrichSubdomainFixture(t)
 	ownersPath := filepath.Join(dir, defaultOwnersPath)
 
-	cmd := &EnrichCmd{Config: cfgPath, Owner: true, providerOverride: provider}
+	cmd := &EnrichOwnerCmd{enrichFlags: enrichFlags{Config: cfgPath, providerOverride: provider}}
 	var buf bytes.Buffer
 	if err := cmd.Run(&appDeps{Stdout: &buf}); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -38,7 +41,7 @@ func TestEnrichOwnerDraft(t *testing.T) {
 		t.Errorf("expected draft owner message, got: %s", buf.String())
 	}
 
-	df, err := initcfg.LoadValueDrafts(ownersPath, "owner")
+	df, err := initcfg.LoadValueDrafts(ownersPath, ownerField)
 	if err != nil {
 		t.Fatalf("load owner drafts: %v", err)
 	}
@@ -57,7 +60,7 @@ func TestEnrichOwnerPin(t *testing.T) {
 	cfgPath, dir := writeEnrichSubdomainFixture(t)
 	ownersPath := filepath.Join(dir, defaultOwnersPath)
 
-	df := initcfg.ValueDraftFile{Version: 1, Field: "owner", Drafts: []initcfg.ValueDraft{
+	df := initcfg.ValueDraftFile{Version: 1, Field: ownerField, Drafts: []initcfg.ValueDraft{
 		{Module: enrichModAuth, Value: "@team-auth", Status: initcfg.DraftStatusApproved},
 		{Module: enrichModNotify, Value: "@team-notify", Status: initcfg.DraftStatusDraft}, // not approved → skipped
 	}}
@@ -65,7 +68,7 @@ func TestEnrichOwnerPin(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := &EnrichCmd{Config: cfgPath, Owner: true, Pin: true, ReviewedBy: "rev"}
+	cmd := &EnrichOwnerCmd{enrichFlags: enrichFlags{Config: cfgPath}, Apply: true, ReviewedBy: "rev"}
 	var buf bytes.Buffer
 	if err := cmd.Run(&appDeps{Stdout: &buf}); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -99,7 +102,7 @@ func TestEnrichVolatilityDraftAndPin(t *testing.T) {
 	volPath := filepath.Join(dir, defaultVolatilityPath)
 
 	// Draft.
-	draftCmd := &EnrichCmd{Config: cfgPath, Volatility: true, providerOverride: provider}
+	draftCmd := &EnrichVolatilityCmd{enrichFlags: enrichFlags{Config: cfgPath, providerOverride: provider}}
 	var buf bytes.Buffer
 	if err := draftCmd.Run(&appDeps{Stdout: &buf}); err != nil {
 		t.Fatalf("draft Run: %v", err)
@@ -119,7 +122,7 @@ func TestEnrichVolatilityDraftAndPin(t *testing.T) {
 	if err := initcfg.WriteValueDrafts(volPath, df); err != nil {
 		t.Fatal(err)
 	}
-	pinCmd := &EnrichCmd{Config: cfgPath, Volatility: true, Pin: true, ReviewedBy: "rev"}
+	pinCmd := &EnrichVolatilityCmd{enrichFlags: enrichFlags{Config: cfgPath}, Apply: true, ReviewedBy: "rev"}
 	buf.Reset()
 	if err := pinCmd.Run(&appDeps{Stdout: &buf}); err != nil {
 		t.Fatalf("pin Run: %v", err)
@@ -142,7 +145,7 @@ func TestEnrichVolatilityDraft_RejectsInvalidValue(t *testing.T) {
 	cfgPath, dir := writeEnrichSubdomainFixture(t)
 	volPath := filepath.Join(dir, defaultVolatilityPath)
 
-	cmd := &EnrichCmd{Config: cfgPath, Volatility: true, providerOverride: provider}
+	cmd := &EnrichVolatilityCmd{enrichFlags: enrichFlags{Config: cfgPath, providerOverride: provider}}
 	var buf bytes.Buffer
 	if err := cmd.Run(&appDeps{Stdout: &buf}); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -165,7 +168,7 @@ func TestEnrichOwner_LLMUnconfigured(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if code := Run([]string{"enrich", "--owner", "-c", cfgPath}, &buf); code != 3 {
+	if code := Run([]string{cmdConfig, cmdEnrich, ownerField, "-c", cfgPath}, &buf); code != 3 {
 		t.Errorf("exit = %d, want 3 (llm not configured)\noutput: %s", code, buf.String())
 	}
 }

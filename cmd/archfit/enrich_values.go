@@ -71,7 +71,7 @@ Include every module exactly once.`,
 
 // runValueDraft drafts spec.field for every module that does not yet have it set,
 // writing the suggestions to spec.draftPath for human review.
-func (c *EnrichCmd) runValueDraft(ctx context.Context, deps *appDeps, spec valueSpec) error {
+func (c *enrichFlags) runValueDraft(ctx context.Context, deps *appDeps, spec valueSpec) error {
 	cfg, err := loadConfig(ctx, c.Config, false)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
@@ -128,14 +128,14 @@ func (c *EnrichCmd) runValueDraft(ctx context.Context, deps *appDeps, spec value
 	}
 
 	_, _ = fmt.Fprintf(deps.Stdout,
-		"enrich: %d draft %s(s) written to %s — review, set status: approved, then run enrich --%s --pin\n",
+		"enrich: %d draft %s(s) written to %s — review, set status: approved, then run config enrich %s --apply\n",
 		len(drafts), spec.name, draftPath, spec.name)
 	return nil
 }
 
 // runValuePin reads approved entries from spec.draftPath and writes them into
 // .archfit.yaml, never removing or overwriting existing fields.
-func (c *EnrichCmd) runValuePin(ctx context.Context, deps *appDeps, spec valueSpec) error {
+func (c *enrichFlags) runValuePin(ctx context.Context, deps *appDeps, spec valueSpec, reviewedBy string) error {
 	configDir := filepath.Dir(c.Config)
 	draftPath := filepath.Join(configDir, spec.draftPath)
 
@@ -169,9 +169,8 @@ func (c *EnrichCmd) runValuePin(ctx context.Context, deps *appDeps, spec valueSp
 		current[name] = spec.current(mod)
 	}
 
-	reviewedBy := c.ReviewedBy
 	if reviewedBy == "" {
-		reviewedBy = "enrich --" + spec.name
+		reviewedBy = "config enrich " + spec.name
 	}
 	reviewedAt := time.Now().UTC()
 	pins := make([]initcfg.ValuePin, 0, len(approved))

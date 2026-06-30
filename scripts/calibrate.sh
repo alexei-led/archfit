@@ -19,12 +19,12 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BIN="$REPO_ROOT/.bin/archfit"
+BIN="$REPO_ROOT/.bin/calibrate"
 CALIBRATE_REPOS_DIR="${CALIBRATE_REPOS_DIR:-${HOME}/tmp/calibration-repos}"
 CALIBRATE_OUTPUT="${CALIBRATE_OUTPUT:-calibration-report.json}"
 
 if [ ! -x "$BIN" ]; then
-	echo "error: binary not found at $BIN — run 'make build' first" >&2
+	echo "error: binary not found at $BIN — run 'make build-calibrate' first" >&2
 	exit 1
 fi
 
@@ -43,4 +43,4 @@ for repo in $repos; do
 done
 
 # shellcheck disable=SC2086
-"$BIN" calibrate $repo_flags --output "$CALIBRATE_OUTPUT"
+"$BIN" $repo_flags --output "$CALIBRATE_OUTPUT"

@@ -85,6 +85,19 @@ func (c *InitCmd) Run(deps *appDeps) error {
 			return &exitError{code: 3, msg: fmt.Sprintf("error: classify failed: %v", err)}
 		}
 		warnPartialClassify(deps.Stdout, targets, ann)
+
+		// Owner-draft pass (folded from the former `autopilot` command): suggest an
+		// owner per module so a full LLM draft (init --llm) carries owners too, not
+		// just subdomain/volatility/layer. Off-gate, review-only unless --apply.
+		ownerDrafts, derr := draftModuleValues(ctx, p, ownerSpec, targets, readCodeowners(root))
+		if derr != nil {
+			return &exitError{code: 3, msg: fmt.Sprintf("error: draft owners failed: %v", derr)}
+		}
+		for _, d := range ownerDrafts {
+			a := ann[d.Module]
+			a.Owner = d.Value
+			ann[d.Module] = a
+		}
 	}
 
 	rendered := initcfg.Render(cfg, ann, c.Apply)

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -161,27 +160,6 @@ func TestMergeDrafts(t *testing.T) {
 	// Deterministic order.
 	if merged[0].From > merged[1].From || merged[1].From > merged[2].From {
 		t.Errorf("not sorted: %+v", merged)
-	}
-}
-
-// TestEnrich_DraftModesMutuallyExclusive verifies that combining draft modes is
-// rejected before any work runs, instead of silently running just one.
-func TestEnrich_DraftModesMutuallyExclusive(t *testing.T) {
-	t.Parallel()
-	combos := []EnrichCmd{
-		{Owner: true, Volatility: true},
-		{Subdomains: true, Owner: true},
-		{Subdomains: true, Volatility: true},
-		{Subdomains: true, Owner: true, Volatility: true},
-	}
-	for _, c := range combos {
-		var buf bytes.Buffer
-		err := c.Run(&appDeps{Stdout: &buf})
-		var ee *exitError
-		if !errors.As(err, &ee) || ee.code != 3 {
-			t.Errorf("Owner=%v Subdomains=%v Volatility=%v: want exitError code 3, got %v",
-				c.Owner, c.Subdomains, c.Volatility, err)
-		}
 	}
 }
 

@@ -143,9 +143,15 @@ docker-push: ## push multi-arch image to ghcr.io (run: docker login ghcr.io firs
 docker-run: ## run archfit --help from the GHCR image (smoke test)
 	docker run --rm ghcr.io/alexei-led/$(BINARY):$(VERSION) --help
 
+## build-calibrate: compile the calibrate scorer-comparison binary
+.PHONY: build-calibrate
+build-calibrate: ## compile the calibrate dev tool binary to .bin/calibrate
+	@mkdir -p $(BIN_DIR)
+	CGO_ENABLED=0 go build -o $(BIN_DIR)/calibrate ./cmd/calibrate
+
 ## calibrate: compare AdditiveScorer vs MultiplicativeScorer on archfit (informational dev tool)
 .PHONY: calibrate
-calibrate: build ## compare scorers on archfit; emits calibration-report.json (informational only)
+calibrate: build-calibrate ## compare scorers on archfit; emits calibration-report.json (informational only)
 	@bash scripts/calibrate.sh .
 
 ## clean: remove build artefacts

@@ -26,10 +26,9 @@ const (
 	defaultConfigPath     = ".archfit.yaml"            // fallback to config.Default() when absent
 	defaultBaselinePath   = ".archfit-baseline.json"   // on-disk path for the baseline file
 	defaultLabelsPath     = ".archfit-labels.yaml"     // pinned coupling labels (enrich output)
-	defaultSubdomainsPath = ".archfit-subdomains.yaml" // subdomain draft/pin file (enrich --subdomains)
-	defaultOwnersPath     = ".archfit-owners.yaml"     // owner draft/pin file (enrich --owner)
-	defaultVolatilityPath = ".archfit-volatility.yaml" // volatility draft/pin file (enrich --volatility)
-	defaultAutopilotPath  = ".archfit-autopilot.yaml"  // full-config draft (autopilot, review-only)
+	defaultSubdomainsPath = ".archfit-subdomains.yaml" // subdomain draft/apply file (config enrich subdomain)
+	defaultOwnersPath     = ".archfit-owners.yaml"     // owner draft/apply file (config enrich owner)
+	defaultVolatilityPath = ".archfit-volatility.yaml" // volatility draft/apply file (config enrich volatility)
 )
 
 const (
@@ -40,45 +39,51 @@ const (
 )
 
 const (
-	commandGroupCore        = "core"
-	commandGroupReports     = "reports"
-	commandGroupSetup       = "setup"
-	commandGroupLLM         = "llm"
-	commandGroupMaintenance = "maintenance"
+	commandGroupAnalysis = "analysis"
+	commandGroupSetup    = "setup"
 )
 
-// cli is the top-level kong command struct.
+// cli is the top-level kong command struct. Config-consuming commands
+// (analyze/baseline/explain) stay flat at the top level; config-authoring
+// commands live under `config`; `doctor` both checks and (with --fix) installs
+// analyzer tools.
 type cli struct {
-	Analyze  AnalyzeCmd  `cmd:"" default:"withargs" help:"Analyze architecture: decision, score, findings (default command)."`
-	Doctor   DoctorCmd   `cmd:"" group:"core" help:"Check analyzer/tool availability."`
-	Init     InitCmd     `cmd:"" group:"core" help:"Create a starter architecture config."`
-	Baseline BaselineCmd `cmd:"" group:"core" help:"Accept current findings as the baseline."`
+	Analyze  AnalyzeCmd  `cmd:"" default:"withargs" group:"analysis" help:"Analyze architecture: decision, score, findings (default command)."`
+	Baseline BaselineCmd `cmd:"" group:"analysis" help:"Accept current findings as the gate baseline."`
+	Explain  ExplainCmd  `cmd:"" group:"analysis" help:"Explain one finding by fingerprint prefix."`
 
-	Explain ExplainCmd `cmd:"" group:"reports" help:"Explain one finding by fingerprint prefix."`
+	Doctor DoctorCmd `cmd:"" group:"setup" help:"Check analyzer/tool availability (use --fix to install missing tools)."`
+	Config ConfigCmd `cmd:"" group:"setup" help:"Create, sync, and enrich the .archfit.yaml config."`
 
-	Install InstallCmd `cmd:"" group:"setup" help:"Install optional analyzer tools."`
-	Update  UpdateCmd  `cmd:"" group:"setup" help:"Sync .archfit.yaml with current project structure."`
+	Version versionFlag `short:"v" help:"Print version and exit."`
+}
 
-	Enrich    EnrichCmd    `cmd:"" group:"llm" help:"Draft human-reviewed LLM coupling labels and metadata."`
-	Autopilot AutopilotCmd `cmd:"" group:"llm" help:"Draft a full review-only config via LLM."`
-
-	Calibrate CalibrateCmd `cmd:"" group:"maintenance" help:"Compare scorers over real repos (dev tool; off-gate)."`
-	Version   versionFlag  `short:"v" help:"Print version and exit."`
+// ConfigCmd groups the config-authoring subcommands. init scaffolds a config (or,
+// with --llm, drafts a full LLM-classified config); update syncs the config with
+// the project structure; enrich drafts per-dimension LLM annotations for review.
+type ConfigCmd struct {
+	Init   InitCmd   `cmd:"" help:"Create a starter config (use --llm for an LLM-classified draft)."`
+	Update UpdateCmd `cmd:"" help:"Sync the config with current project structure."`
+	Enrich EnrichCmd `cmd:"" help:"Draft LLM annotations (labels/owner/volatility/subdomain) for review."`
 }
 
 func (cli) Help() string {
 	return `archfit keeps code changes aligned with the architecture you intended. It turns dependency facts into deterministic gates, scorecards, SARIF, and agent repair tasks so CI can catch architecture drift before review.
 
 First run:
-  archfit doctor
-  archfit init --root .
-  archfit --gate --config .archfit.yaml --full
-  archfit baseline --config .archfit.yaml --full
+  archfit doctor                                   # check analyzers (doctor --fix installs them)
+  archfit config init --root .                      # scaffold .archfit.yaml (config init --llm to draft via LLM)
+  archfit --gate --config .archfit.yaml --full      # the gate
+  archfit baseline --config .archfit.yaml --full    # accept current findings as the baseline
 
 CI / agent loop:
   archfit --gate --config .archfit.yaml --base origin/main --format json
   # on exit 1, read agent_tasks[] and rerun the validation command
   archfit --markdown --config .archfit.yaml > archfit-report.md
+
+Off-gate LLM (review-only; never affects the gate):
+  archfit config enrich owner                       # draft → review → config enrich owner --apply
+  archfit config init --llm -o draft.yaml           # full LLM-classified config draft for review
 
 Docs:
   ` + docsURL + `
@@ -92,29 +97,14 @@ Optional LLM commands are review-only. They never decide whether the gate passes
 func commandGroups() []kong.Group {
 	return []kong.Group{
 		{
-			Key:         commandGroupCore,
-			Title:       "Core feedback loop",
+			Key:         commandGroupAnalysis,
+			Title:       "Analysis",
 			Description: "Run these locally, in CI, and in AI-agent validation steps.",
 		},
 		{
-			Key:         commandGroupReports,
-			Title:       "Reports and explanations",
-			Description: "Use these to inspect evidence without changing the gate verdict.",
-		},
-		{
 			Key:         commandGroupSetup,
-			Title:       "Setup and config maintenance",
-			Description: "Create configs and keep analyzer coverage honest as the repo changes.",
-		},
-		{
-			Key:         commandGroupLLM,
-			Title:       "Off-gate LLM helpers",
-			Description: "Draft reviews and labels for humans. The deterministic gate ignores LLM judgment.",
-		},
-		{
-			Key:         commandGroupMaintenance,
-			Title:       "Maintainer tools",
-			Description: "Project development helpers; not part of normal CI policy.",
+			Title:       "Setup & config",
+			Description: "Create configs (config init), sync structure (config update), install analyzers (doctor --fix), and draft off-gate LLM annotations (config enrich).",
 		},
 	}
 }

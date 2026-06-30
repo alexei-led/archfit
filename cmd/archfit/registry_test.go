@@ -22,30 +22,29 @@ func TestBuiltinConventionsCoverage(t *testing.T) {
 	}
 }
 
-// TestLangAliasesInInstallEnum guards that every value the install command's
-// kong enum accepts resolves through the registry — install must never accept a
-// language it cannot dispatch.
+// TestLangAliasesInInstallEnum guards that every language value the doctor
+// command's --lang flag accepts resolves through the registry.
 func TestLangAliasesInInstallEnum(t *testing.T) {
 	t.Parallel()
 	enum := installEnumTag(t)
 	if len(enum) == 0 {
-		t.Fatal("InstallCmd.Lang has no enum tag values")
+		t.Fatal("DoctorCmd.Lang has no enum tag values")
 	}
 	for _, v := range enum {
 		if languageByAlias(v) == "" {
-			t.Errorf("install enum value %q does not resolve via languageByAlias", v)
+			t.Errorf("doctor --lang enum value %q does not resolve via languageByAlias", v)
 		}
 	}
 }
 
 // installEnumTag reads the comma-separated kong `enum` struct tag off
-// InstallCmd.Lang via reflection so the test tracks the tag without duplicating
+// DoctorCmd.Lang via reflection so the test tracks the tag without duplicating
 // its literal.
 func installEnumTag(t *testing.T) []string {
 	t.Helper()
-	f, ok := reflect.TypeOf(InstallCmd{}).FieldByName("Lang")
+	f, ok := reflect.TypeOf(DoctorCmd{}).FieldByName("Lang")
 	if !ok {
-		t.Fatal("InstallCmd has no Lang field")
+		t.Fatal("DoctorCmd has no Lang field")
 	}
 	tag := f.Tag.Get("enum")
 	if tag == "" {

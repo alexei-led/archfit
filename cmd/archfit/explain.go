@@ -18,7 +18,7 @@ import (
 // ExplainCmd re-runs the engine and prints the details of a single finding.
 type ExplainCmd struct {
 	Config      string `short:"c" default:".archfit.yaml"`
-	Root        string `help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
+	Root        string `short:"r" help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
 	Fingerprint string `arg:"" help:"Finding fingerprint prefix."`
 	LLM         bool   `name:"llm" help:"Append an LLM narrative (off-gate; needs ai configured)."`
 	NoCache     bool   `name:"no-cache" help:"Bypass the LLM response cache."`

@@ -408,7 +408,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 		t.Parallel()
 		cfg := config.Config{
 			Modules: map[string]config.ModuleDef{
-				"app.core": {Paths: []string{"internal/core/**"}, Subdomain: commandGroupCore},
+				"app.core": {Paths: []string{"internal/core/**"}, Subdomain: subdomainCore},
 				"app.util": {Paths: []string{"internal/util/**"}}, // no subdomain, no volatility
 			},
 		}
