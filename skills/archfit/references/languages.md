@@ -9,7 +9,7 @@ tells you what "good" looks like.
 - Detect repo markers first: `go.mod`, `package.json`, `pyproject.toml` /
   `setup.py`, `Cargo.toml`.
 - Prefer repo-local, pinned analyzers over mutable global installs.
-- Use `archfit install --dry-run --lang <x>` to see the helper's expected setup.
+- Use `archfit doctor --fix --dry-run --lang <x>` to see the helper's expected setup.
 - Missing tools are coverage gaps, not healthy signal. Name the affected metrics,
   lower confidence, and avoid calling the run clean on exit 0 alone.
 - For mixed repos, keep each language's modules distinct where possible.
@@ -23,7 +23,7 @@ Checks:
 ```sh
 go version
 archfit doctor
-archfit install --lang go --dry-run
+archfit doctor --fix --lang go --dry-run
 ```
 
 Guidance:
@@ -44,7 +44,7 @@ Checks:
 ```sh
 node --version || bun --version
 archfit doctor
-archfit install --lang ts --dry-run
+archfit doctor --fix --lang ts --dry-run
 ```
 
 Guidance:
@@ -67,7 +67,7 @@ Checks:
 ```sh
 uv --version || python3 --version
 archfit doctor
-archfit install --lang py --dry-run
+archfit doctor --fix --lang py --dry-run
 ```
 
 Guidance:
@@ -90,7 +90,7 @@ Checks:
 ```sh
 cargo --version
 archfit doctor
-archfit install --lang rust --dry-run
+archfit doctor --fix --lang rust --dry-run
 ```
 
 Guidance:
