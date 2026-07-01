@@ -580,8 +580,68 @@ func TestExtract_TSConfigSubdir(t *testing.T) {
 	if idx == -1 || idx+1 >= len(gotArgs) {
 		t.Fatalf("expected --ts-config in args %v", gotArgs)
 	}
-	// Path must be relative to gitRoot (workDir), not to pkg.
-	want := "packages/pkg-a/tsconfig.json"
+	// Path must be absolute: dependency-cruiser resolves a relative --ts-config's
+	// include/exclude globs against the process CWD (workDir=gitRoot here), not
+	// against the tsconfig's own directory, so a gitRoot-relative path would make
+	// TypeScript search the wrong tree and report TS18003 "no inputs found" even
+	// though pkg/tsconfig.json's matching files exist (reproduced against
+	// storybookjs/storybook).
+	want := filepath.Join(pkg, tsconfigName)
+	if got := gotArgs[idx+1]; got != want {
+		t.Errorf("--ts-config = %q, want %q", got, want)
+	}
+}
+
+// TestExtract_TSConfigSubdir_RootFallback covers the subtree branch where
+// scanRoot has no tsconfig but GitRoot does (a root-level tsconfig covering all
+// workspace packages, e.g. storybookjs/storybook's monorepo layout). This must
+// also resolve to an absolute path for the same reason as TestExtract_TSConfigSubdir.
+func TestExtract_TSConfigSubdir_RootFallback(t *testing.T) {
+	gitRoot := t.TempDir()
+	pkg := filepath.Join(gitRoot, "packages", "pkg-a")
+	if err := os.MkdirAll(pkg, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkg, "package.json"), []byte(`{"name":"pkg-a"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitRoot, tsconfigName), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotArgs []string
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == "bunx" {
+				return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--version") {
+				return toolrun.Output{Stdout: []byte("14.0.0\n")}, nil
+			}
+			gotArgs = cmd.Args
+			return toolrun.Output{Stdout: []byte(`{"modules":[]}`)}, nil
+		},
+	}
+
+	extractor := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
+	s := scope.Scope{
+		Root:          pkg,
+		GitRoot:       gitRoot,
+		SubtreePrefix: "packages/pkg-a",
+		Mode:          modeFull,
+	}
+	if _, _, err := extractor.Extract(context.Background(), s); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	idx := slices.Index(gotArgs, "--ts-config")
+	if idx == -1 || idx+1 >= len(gotArgs) {
+		t.Fatalf("expected --ts-config in args %v", gotArgs)
+	}
+	want := filepath.Join(gitRoot, tsconfigName)
 	if got := gotArgs[idx+1]; got != want {
 		t.Errorf("--ts-config = %q, want %q", got, want)
 	}
@@ -692,4 +752,91 @@ func TestExtract_SourceDirMissing(t *testing.T) {
 			t.Error("ModeOn must hard-error on depcruise non-zero exit")
 		}
 	})
+}
+
+// TestExtract_SrcDotIsLiteral locks Config.ForExtract's Src="." default (the
+// analysis root itself) to depcruise's actual scan argument, instead of being
+// silently rewritten to "src" — a repo whose TS sources live directly under
+// the root with no src/ subdir (e.g. storybookjs/storybook's "code/" layout)
+// would otherwise scan a directory that does not exist.
+func TestExtract_SrcDotIsLiteral(t *testing.T) {
+	var gotArgs []string
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == launcherBunx {
+				return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--version") {
+				return toolrun.Output{Stdout: []byte("16.0.0\n")}, nil
+			}
+			gotArgs = cmd.Args
+			return toolrun.Output{Stdout: []byte(`{"modules":[]}`)}, nil
+		},
+	}
+	s := scope.Scope{Root: fixtureDir}
+	_, _, err := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto, Src: "."}).Extract(context.Background(), s)
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if slices.Contains(gotArgs, "src") {
+		t.Errorf("Src=%q was rewritten to \"src\"; depcruise args = %v", ".", gotArgs)
+	}
+	if !slices.Contains(gotArgs, ".") {
+		t.Errorf("Src=%q was not passed through literally; depcruise args = %v", ".", gotArgs)
+	}
+}
+
+// TestExtract_PackagePinned locks that both launchers are told the explicit
+// npm package name for depcruise, not just the bare CLI subcommand. Without
+// this, a launcher that finds no local "depcruise" binary resolves "depcruise"
+// as if it were itself an installable package name -- which on the npm
+// registry belongs to an unrelated dependency-confusion placeholder, not
+// dependency-cruiser (reproduced via plain `npx depcruise` on a repo with no
+// local install: silent exit 0, garbage non-JSON output).
+func TestExtract_PackagePinned(t *testing.T) {
+	tests := []struct {
+		launcher string
+		wantArgs []string // must appear, in order, before the "depcruise" subcommand
+	}{
+		{launcher: launcherBunx, wantArgs: []string{"-p", "dependency-cruiser"}},
+		{launcher: "npx", wantArgs: []string{"--package=dependency-cruiser", "--"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.launcher, func(t *testing.T) {
+			var gotArgs []string
+			runner := &toolrun.RunnerMock{
+				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+					if tool == tt.launcher {
+						return toolrun.ToolInfo{Name: tt.launcher, Path: "/usr/bin/" + tt.launcher}, true
+					}
+					return toolrun.ToolInfo{}, false
+				},
+				RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+					if slices.Contains(cmd.Args, "--version") {
+						return toolrun.Output{Stdout: []byte("16.0.0\n")}, nil
+					}
+					gotArgs = cmd.Args
+					return toolrun.Output{Stdout: []byte(`{"modules":[]}`)}, nil
+				},
+			}
+
+			extractor := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
+			if _, _, err := extractor.Extract(context.Background(), scope.Scope{Root: fixtureDir}); err != nil {
+				t.Fatalf("Extract: %v", err)
+			}
+
+			depIdx := slices.Index(gotArgs, "depcruise")
+			if depIdx == -1 {
+				t.Fatalf("expected \"depcruise\" subcommand in args %v", gotArgs)
+			}
+			gotPin := gotArgs[:depIdx]
+			if !slices.Equal(gotPin, tt.wantArgs) {
+				t.Errorf("package-pin args before \"depcruise\" = %v, want %v (full args %v)", gotPin, tt.wantArgs, gotArgs)
+			}
+		})
+	}
 }

@@ -23,6 +23,14 @@ const (
 	subdomainCore       = "core"
 	subdomainSupporting = "supporting"
 	subdomainGeneric    = "generic"
+
+	langRust = "rust"
+
+	// Go workspace member module paths reused across multiple test cases.
+	goModuleA = "example.com/a"
+	goModuleB = "example.com/b"
+	relDirA   = "services/a"
+	relDirB   = "services/b"
 )
 
 // makeGraph builds a minimal sealed Graph from a slice of edges.
@@ -257,7 +265,7 @@ func TestRun_RegistersRustModuleGraphNodes(t *testing.T) {
 		From:         "package:demo::a",
 		To:           "package:demo::b",
 		Kind:         graph.EdgeKindDependsOn,
-		Language:     "rust",
+		Language:     langRust,
 		StrengthHint: "functional",
 	}
 	g := makeGraph([]graph.Edge{e})
@@ -1430,8 +1438,8 @@ func TestAugmentGoWorkspaceModules_TwoMembersAutoRegister(t *testing.T) {
 		StrengthHint: "functional",
 	}
 	goMods := []graph.GoModule{
-		{Path: "example.com/a", RelDir: "services/a"},
-		{Path: "example.com/b", RelDir: "services/b"},
+		{Path: goModuleA, RelDir: relDirA},
+		{Path: goModuleB, RelDir: relDirB},
 	}
 	g := buildGoWorkspaceGraph(goMods, []graph.Edge{e})
 
@@ -1489,8 +1497,8 @@ func TestAugmentGoWorkspaceModules_OneMemberNoOp(t *testing.T) {
 // module covering a member's directory takes precedence over auto-registration.
 func TestAugmentGoWorkspaceModules_ConfigGlobWins(t *testing.T) {
 	goMods := []graph.GoModule{
-		{Path: "example.com/a", RelDir: "services/a"},
-		{Path: "example.com/b", RelDir: "services/b"},
+		{Path: goModuleA, RelDir: relDirA},
+		{Path: goModuleB, RelDir: relDirB},
 	}
 	g := buildGoWorkspaceGraph(goMods, nil)
 	// Both member directories already covered by explicit config modules.
@@ -1521,7 +1529,7 @@ func TestAugmentModulesFromGraph_OwnerInheritance(t *testing.T) {
 		From:         "package:mycrate::a",
 		To:           "package:mycrate::b",
 		Kind:         graph.EdgeKindDependsOn,
-		Language:     "rust",
+		Language:     langRust,
 		StrengthHint: hintFunctional,
 	}
 	g := makeGraph([]graph.Edge{e})
@@ -1548,4 +1556,172 @@ func TestAugmentModulesFromGraph_OwnerInheritance(t *testing.T) {
 	if cl.Distance != coupling.DistanceCrossModuleSameOwner {
 		t.Errorf("Distance = %q, want cross_module_same_owner (submodules share inherited owner)", cl.Distance)
 	}
+}
+
+// TestAugmentCargoCrateNodes_LeavesGoUntouched guards Fix group 0 Task 0.1
+// (reproduces A1): AugmentCargoCrateNodes gates on
+// "n.Kind != graph.NodeKindPackage", but graph.NodeKindPackage is emitted by
+// the Go extractor too — nothing in the gate is Rust-specific. On a Go-only
+// graph (no "::" module-graph nodes, no CrateRoots) with package nodes not
+// covered by any configured module glob, the function must be a no-op: it
+// must never register a synthetic module for a Go package. Today it does
+// (the omni bug: a phantom "assets/dal"-style module gets registered with no
+// owner), so this test is RED until Fix group 2 adds an explicit
+// Rust-language gate.
+func TestAugmentCargoCrateNodes_LeavesGoUntouched(t *testing.T) {
+	const (
+		goPkgUncovered1 = "internal/assets/dal"
+		goPkgUncovered2 = "internal/assets/pkg"
+	)
+	g := graph.Build([]graph.Facts{{
+		Nodes: []graph.Node{
+			{Kind: graph.NodeKindPackage, Path: goPkgUncovered1},
+			{Kind: graph.NodeKindPackage, Path: goPkgUncovered2},
+		},
+		Language: "go",
+		// No CrateRoots: this is a pure Go graph, never a Rust one.
+	}})
+	// One declared module that does NOT cover either uncovered package —
+	// mirrors omni's "intentionally-partial module coverage" shape.
+	in := map[string]config.ModuleDef{
+		"declared": {Paths: []string{"cmd/**"}, Owner: ownerTeamX},
+	}
+
+	out := classify.AugmentCargoCrateNodes(g, in)
+
+	if len(out) != len(in) {
+		t.Fatalf("Go-only graph: want modules map unchanged (len %d), got len %d: %v", len(in), len(out), out)
+	}
+	for _, uncovered := range []string{goPkgUncovered1, goPkgUncovered2} {
+		if _, exists := out[uncovered]; exists {
+			t.Errorf("Go package %q must not be registered as a synthetic Rust crate module; out = %v", uncovered, out)
+		}
+	}
+}
+
+// wantInherited lists the ModuleDef fields a synthetic module must inherit
+// from its nearest config-declared ancestor. Deliberately explicit (not
+// reflect-based) so a future new ModuleDef field must be added here by a
+// reviewer, rather than silently passing without coverage.
+type wantInherited struct {
+	Owner      string
+	Volatility string
+	Subdomain  string
+	Layer      string
+	DeployUnit string
+}
+
+// assertInherited fails t for every field of got that does not match want,
+// so a single run reports every dropped attribute at once.
+func assertInherited(t *testing.T, label string, got config.ModuleDef, want wantInherited) {
+	t.Helper()
+	if got.Owner != want.Owner {
+		t.Errorf("%s: Owner = %q, want %q (ancestor inheritance)", label, got.Owner, want.Owner)
+	}
+	if got.Volatility != want.Volatility {
+		t.Errorf("%s: Volatility = %q, want %q (ancestor inheritance)", label, got.Volatility, want.Volatility)
+	}
+	if got.Subdomain != want.Subdomain {
+		t.Errorf("%s: Subdomain = %q, want %q (ancestor inheritance)", label, got.Subdomain, want.Subdomain)
+	}
+	if got.Layer != want.Layer {
+		t.Errorf("%s: Layer = %q, want %q (ancestor inheritance)", label, got.Layer, want.Layer)
+	}
+	if got.DeployUnit != want.DeployUnit {
+		t.Errorf("%s: DeployUnit = %q, want %q (ancestor inheritance)", label, got.DeployUnit, want.DeployUnit)
+	}
+}
+
+// TestAugmentFunctions_InheritAllAncestorAttributes guards Fix group 0 Task
+// 0.4 (reproduces B3): every Augment* function that registers a synthetic
+// module hand-writes its own ancestor lookup, and every one of them copies
+// only Owner — Volatility, Subdomain, Layer, and DeployUnit are dropped for
+// every synthetic module, in all three functions. Undeclared Volatility
+// scores the conservative worst case (V=10), which is the root cause of
+// tokio's 917-finding flood. RED today for Volatility/Subdomain/Layer/
+// DeployUnit on all three functions.
+func TestAugmentFunctions_InheritAllAncestorAttributes(t *testing.T) {
+	want := wantInherited{
+		Owner:      "team-inherit",
+		Volatility: "low",
+		Subdomain:  "supporting",
+		Layer:      "domain",
+		DeployUnit: "svc-inherit",
+	}
+	parent := config.ModuleDef{
+		Owner:      want.Owner,
+		Volatility: want.Volatility,
+		Subdomain:  want.Subdomain,
+		Layer:      want.Layer,
+		DeployUnit: want.DeployUnit,
+	}
+
+	t.Run("AugmentModulesFromGraph (Rust submodule)", func(t *testing.T) {
+		// Config declares only the crate-level module "mycrate"; the
+		// cargo-modules graph produces submodule node "mycrate::child" that
+		// is not in config and must be synthesised as a child of "mycrate".
+		configMods := map[string]config.ModuleDef{"mycrate": parent}
+		e := graph.Edge{
+			From: "package:mycrate", To: "package:mycrate::child",
+			Kind: graph.EdgeKindDependsOn, Language: langRust, StrengthHint: hintFunctional,
+		}
+		g := makeGraph([]graph.Edge{e})
+
+		out := classify.AugmentModulesFromGraph(g, configMods)
+		child, ok := out["mycrate::child"]
+		if !ok {
+			t.Fatalf("synthetic module %q not registered", "mycrate::child")
+		}
+		assertInherited(t, "mycrate::child", child, want)
+	})
+
+	t.Run("AugmentGoWorkspaceModules (workspace member)", func(t *testing.T) {
+		// Parent config module uses a literal (non-wildcard) path so it does
+		// NOT fully cover the member directory via ModuleFor (so the member
+		// still gets auto-registered), but its stripped directory IS a path
+		// prefix of the member's RelDir, so ancestorOwnerByPath can donate —
+		// mirrors the documented "partial ancestor donates owner" fallback.
+		configMods := map[string]config.ModuleDef{"parent": {
+			Paths: []string{"services"}, Owner: want.Owner, Volatility: want.Volatility,
+			Subdomain: want.Subdomain, Layer: want.Layer, DeployUnit: want.DeployUnit,
+		}}
+		goMods := []graph.GoModule{
+			{Path: goModuleA, RelDir: relDirA},
+			{Path: goModuleB, RelDir: relDirB},
+		}
+		g := buildGoWorkspaceGraph(goMods, nil)
+
+		out := classify.AugmentGoWorkspaceModules(g, configMods)
+		member, ok := out[goModuleA]
+		if !ok {
+			t.Fatalf("synthetic module for member %q not registered; out = %v", goModuleA, out)
+		}
+		assertInherited(t, goModuleA, member, want)
+	})
+
+	t.Run("AugmentCargoCrateNodes (uncovered crate)", func(t *testing.T) {
+		// Same literal-parent-path trick as above: "crates" is a directory
+		// prefix of the crate's root ("crates/extra") but does not itself
+		// cover "crates/extra/x" via ModuleFor, so the crate falls through to
+		// synthetic registration and donation via ancestorOwnerByPath.
+		configMods := map[string]config.ModuleDef{"parent": {
+			Paths: []string{"crates"}, Owner: want.Owner, Volatility: want.Volatility,
+			Subdomain: want.Subdomain, Layer: want.Layer, DeployUnit: want.DeployUnit,
+		}}
+		g := graph.Build([]graph.Facts{{
+			Nodes: []graph.Node{
+				{Kind: graph.NodeKindPackage, Path: "extra"},
+				{Kind: graph.NodeKindPackage, Path: "other"},
+			},
+			Language:   langRust,
+			CrateRoots: []graph.CrateRoot{{Dir: "crates/extra", Name: "extra"}},
+		}})
+
+		out := classify.AugmentCargoCrateNodes(g, configMods)
+		crateMod, ok := out["extra"]
+		if !ok {
+			t.Fatalf("synthetic module for crate %q not registered; out = %v", "extra", out)
+		}
+		assertInherited(t, "extra", crateMod, want)
+	})
 }

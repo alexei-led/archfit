@@ -163,6 +163,78 @@ func TestModuleFor_PythonDottedGlobs(t *testing.T) {
 	}
 }
 
+// TestModuleFor_ConsumerConsistency guards Fix group 0 Task 0.2 / Fix group 4
+// Task 4.1 (reproduces and closes A2): edge-based consumers
+// (internal/classify/classify.go, via pathFromID) resolve a Python edge
+// endpoint's DOTTED node ID through ModuleFor — that entry point is
+// unchanged. File-path-based consumers (internal/ownership CODEOWNERS
+// resolution, internal/rules public_api_* attribution, internal/engine
+// clone-pairing) resolve the SAME underlying source file's real
+// repo-relative path through ModuleForFile, which normalizes the file into
+// the language's node-key form (dotted for Python) before delegating to
+// ModuleFor. For a config to work end-to-end, both entry points must resolve
+// to the same module. Previously they didn't: ModuleFor alone is one generic
+// glob matcher shared by both key spaces, so a config declared in dotted form
+// (the CLAUDE.md-mandated Python convention, mirroring
+// testdata/fixture-py/.archfit.yaml) silently failed to match the real file
+// path that file-based consumers look up.
+func TestModuleFor_ConsumerConsistency(t *testing.T) {
+	// Mirrors testdata/fixture-py/.archfit.yaml's module "b".
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"b": {Paths: []string{"fixture_py.b", "fixture_py.b.**"}},
+		},
+	}
+	mm := cfg.ModuleMapView()
+
+	const (
+		dottedNode = "fixture_py.b.mod"    // grimp-style edge endpoint node ID
+		realPath   = "fixture_py/b/mod.py" // same file's real repo-relative path
+	)
+
+	edgeModule, ok := mm.ModuleFor(dottedNode)
+	if !ok {
+		t.Fatalf("edge-consumer lookup: ModuleFor(%q) = (_, false), want module found", dottedNode)
+	}
+
+	fileModule, ok := mm.ModuleForFile(realPath)
+	if !ok || fileModule != edgeModule {
+		t.Errorf("file-consumer lookup: ModuleForFile(%q) = (%q, %v), want (%q, true) — "+
+			"the same source file must resolve to the same module as its dotted edge "+
+			"node ID %q did (%q)", realPath, fileModule, ok, edgeModule, dottedNode, edgeModule)
+	}
+}
+
+func TestModuleMap_IsModuleRoot(t *testing.T) {
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"promqltest": {Paths: []string{"promql/promqltest/**"}},
+			"literal":    {Paths: []string{"cmd/tool"}}, // no wildcard: pattern is itself a literal path
+		},
+	}
+	mm := cfg.ModuleMapView()
+
+	tests := []struct {
+		name string
+		dir  string
+		want bool
+	}{
+		{"module's own root", "promql/promqltest", true},
+		{"nested subdirectory, not root", "promql/promqltest/cmd/migrate", false},
+		{"literal (no-wildcard) pattern matches itself", "cmd/tool", true},
+		{"unconfigured directory", "unrelated/dir", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mm.IsModuleRoot(tt.dir); got != tt.want {
+				t.Errorf("IsModuleRoot(%q) = %v, want %v", tt.dir, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestModuleFor_Deterministic(t *testing.T) {
 	// Two modules whose globs could overlap — same path must always return the
 	// same (alphabetically-first) module name.
@@ -344,6 +416,49 @@ func TestForExtract(t *testing.T) {
 			t.Errorf("go module filter leaked into typescript extractor: %+v", ec)
 		}
 	})
+}
+
+// TestForExtract_SrcNotModuleDerived guards against a regression where
+// ForExtract("typescript").Src was derived from the alphabetically-first
+// module's Paths[0] — a classification glob (e.g. "addons/**"), not a real
+// filesystem directory. Under --root subtree rewriting that nonsense path was
+// re-prefixed and handed to dependency-cruiser, which found no files and
+// aborted with a fatal TS18003 (docs/plans/20260701-multilang-reliability-fixes.md
+// Task 4.3). Two configs below declare the same two modules with different
+// alphabetically-first names; Src must be identical across both and must
+// never equal a module's Paths[0].
+func TestForExtract_SrcNotModuleDerived(t *testing.T) {
+	const webGlob = "packages/web/**"
+
+	cfgAddonsFirst := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"addons": {Paths: []string{"addons/**"}},
+			"web":    {Paths: []string{webGlob}},
+		},
+	}
+	cfgWebFirst := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"web": {Paths: []string{webGlob}},
+			"zzz": {Paths: []string{"zzz/**"}},
+		},
+	}
+
+	srcAddonsFirst := cfgAddonsFirst.ForExtract("typescript").Src
+	srcWebFirst := cfgWebFirst.ForExtract("typescript").Src
+
+	if srcAddonsFirst != srcWebFirst {
+		t.Errorf("Src depends on module glob order: %q (addons-first config) != %q (web-first config)", srcAddonsFirst, srcWebFirst)
+	}
+	for _, bad := range []string{"addons/**", webGlob, "zzz/**"} {
+		if srcAddonsFirst == bad {
+			t.Errorf("Src = %q, derived from a module Paths glob (must be a filesystem root, not a classification glob)", srcAddonsFirst)
+		}
+	}
+	if srcAddonsFirst != "." {
+		t.Errorf("Src = %q, want %q (the extractor-agnostic default; TS falls back to \"src\")", srcAddonsFirst, ".")
+	}
 }
 
 func TestDefaultIncludesRust(t *testing.T) {

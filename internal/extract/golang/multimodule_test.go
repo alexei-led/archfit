@@ -233,8 +233,8 @@ import _ "example.com/broken/notexist"
 	}
 
 	// With a missing local import the package is ill-typed → unresolved>0 → "partial".
-	if cov.Status != "partial" {
-		t.Errorf("status = %q, want %q (files were seen but type-checking failed)", cov.Status, "partial")
+	if cov.Status != statusPartial {
+		t.Errorf("status = %q, want %q (files were seen but type-checking failed)", cov.Status, statusPartial)
 	}
 }
 

@@ -1,5 +1,7 @@
 package coupling
 
+import "github.com/alexei-led/archfit/internal/model/graph"
+
 // Strength classifies how a dependency is expressed at the API boundary.
 type Strength string
 
@@ -124,6 +126,14 @@ type Classification struct {
 	// DistanceBasis records which signal drove the composite distance.
 	// Report-only — not fed into severity or scoring.
 	DistanceBasis DistanceBasis `json:"distance_basis,omitempty"`
+	// CloneLocations carries the real duplicated-code file:line locations (both
+	// sides) that drove a Symmetric-strength upgrade from cross-module clone
+	// detection. Populated only when the upgrade actually fired from a clone
+	// pair (classify.go); empty for edges whose Symmetric strength came from any
+	// other source, including an extractor's Symmetric StrengthHint. Report-only
+	// — appended onto the finding's Locations downstream (engine/advisories.go),
+	// never fed into distance/volatility/scoring.
+	CloneLocations []graph.Location `json:"clone_locations,omitempty"`
 }
 
 // Index maps each edge's canonical key (from + "\x00" + to + "\x00" + kind)

@@ -19,6 +19,9 @@ import (
 // kindAdvisory is the finding kind for non-gating advisory findings.
 const kindAdvisory = "advisory"
 
+// ruleIDBCImbalanced is the rule ID for a Balanced-Coupling advisory finding.
+const ruleIDBCImbalanced = "bc/imbalanced_coupling"
+
 // collectAdvisories runs stage 8: coupling advisories, staleness advisories,
 // stale label advisories, and the advisory status pass.
 // staleLabelFnds is the slice produced by stage 3 (applyPinnedLabels).
@@ -62,7 +65,7 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 		af := finding.Finding{
 			ID:       id,
 			Kind:     kindAdvisory,
-			RuleID:   "bc/imbalanced_coupling",
+			RuleID:   ruleIDBCImbalanced,
 			Status:   finding.StatusNew,
 			Severity: finding.Severity(cl.Severity),
 			Edge: finding.EdgeEvidence{
@@ -70,7 +73,7 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 				To:   finding.Endpoint{Module: toModule, Path: toPath},
 				Kind: string(e.Kind),
 			},
-			Locations: e.Locations,
+			Locations: withCloneLocations(e.Locations, cl.CloneLocations),
 			Why:       bcAdvisoryWhy(cl),
 			MatchedBy: matched,
 		}
@@ -191,6 +194,41 @@ func rollupFinding(members []finding.Finding) finding.Finding {
 	rep.MatchedBy = matched
 	rep.Locations = mergeLocations(members)
 	return rep
+}
+
+// withCloneLocations appends cloneLocations onto base — the edge's baseline
+// Locations plus the real duplicated-code file:line pairs a Symmetric-strength
+// clone upgrade contributed (classify.go) — deduplicated and sorted, so a
+// Rust crate edge's Cargo.toml:0 baseline is joined by the actual clone site
+// instead of standing alone as the only evidence. base is returned unchanged
+// (no allocation) when cloneLocations is empty — the common case.
+func withCloneLocations(base, cloneLocations []graph.Location) []graph.Location {
+	if len(cloneLocations) == 0 {
+		return base
+	}
+	seen := make(map[graph.Location]struct{}, len(base)+len(cloneLocations))
+	locs := make([]graph.Location, 0, len(base)+len(cloneLocations))
+	for _, l := range base {
+		if _, ok := seen[l]; ok {
+			continue
+		}
+		seen[l] = struct{}{}
+		locs = append(locs, l)
+	}
+	for _, l := range cloneLocations {
+		if _, ok := seen[l]; ok {
+			continue
+		}
+		seen[l] = struct{}{}
+		locs = append(locs, l)
+	}
+	sort.Slice(locs, func(i, j int) bool {
+		if locs[i].File != locs[j].File {
+			return locs[i].File < locs[j].File
+		}
+		return locs[i].Line < locs[j].Line
+	})
+	return locs
 }
 
 // mergeLocations returns the deduplicated, sorted union of all members' locations.

@@ -145,7 +145,14 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		})
 	}
 	if err := eg.Wait(); err != nil {
-		return graph.Facts{}, diagnostic.Coverage{}, err
+		// go/packages.Load failed for at least one workspace member — e.g. a broken
+		// go.mod or an unresolvable build constraint. This is a coverage gap, not a
+		// run-level failure (the "warn-loud, don't block" contract); only an
+		// explicitly required analyzer (ModeOn) hard-errors.
+		if e.cfg.Mode == config.ModeOn {
+			return graph.Facts{}, diagnostic.Coverage{}, err
+		}
+		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: "partial", Reason: err.Error()}, nil
 	}
 
 	// Build the module map from pkg.Module — same path family as pkg.Fset file
@@ -315,7 +322,7 @@ func (e *GoExtractor) collectNodesEdges(
 
 		pkgPath := stripImportPath(pkg.PkgPath)
 		if pkgPath != "" {
-			emitNode(graph.Node{Kind: graph.NodeKindPackage, Path: pkgPath})
+			emitNode(graph.Node{Kind: graph.NodeKindPackage, Path: pkgPath, Language: graph.LangGo})
 		}
 
 		for _, f := range pkg.Syntax {
@@ -329,7 +336,7 @@ func (e *GoExtractor) collectNodesEdges(
 				continue
 			}
 			filesSeen++
-			emitNode(graph.Node{Kind: graph.NodeKindFile, Path: relFile})
+			emitNode(graph.Node{Kind: graph.NodeKindFile, Path: relFile, Language: graph.LangGo})
 
 			for _, imp := range f.Imports {
 				pos := pkg.Fset.Position(imp.Pos())

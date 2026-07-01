@@ -125,6 +125,30 @@ func TestDetect_GoMain_ModuleNamePreferred(t *testing.T) {
 	}
 }
 
+// TestDetect_GoMain_NestedInModule_NotDeployUnit is the B5 regression: a main.go
+// nested somewhere inside a module's tree (a migration/dev-tool CLI helper, not
+// the module's own entry point) must not tag the whole module as a deploy unit.
+// Reproduces the prometheus finding where promql/promqltest/cmd/migrate/main.go
+// (3 directories inside the promqltest module) caused a false cross_deploy_unit
+// distance against every other module in the repo.
+func TestDetect_GoMain_NestedInModule_NotDeployUnit(t *testing.T) {
+	root := t.TempDir()
+	mainDir := filepath.Join(root, "promql", "promqltest", "cmd", "migrate")
+	mustMkdir(t, mainDir)
+
+	runner := goRunner([]string{mainDir})
+	mm := singleModuleMap("promqltest", "promql/promqltest/**")
+
+	result := deployunit.Detect(context.Background(), root, mm, runner)
+
+	if unit, ok := result["promql/promqltest/cmd/migrate"]; ok {
+		t.Errorf("nested main.go registered as its own deploy unit (%q); want no entry", unit)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected no deploy units from a nested main.go alone, got %v", result)
+	}
+}
+
 // TestDetect_GoMain_ToolAbsent verifies that when `go` is not on PATH,
 // no Go main units are detected.
 func TestDetect_GoMain_ToolAbsent(t *testing.T) {

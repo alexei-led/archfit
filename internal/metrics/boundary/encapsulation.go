@@ -120,7 +120,7 @@ func (m EncapsulationMetric) Calculate(in signal.CommonInput) diagnostic.MetricR
 	}
 
 	value := float64(contractCross) / float64(classifiedCross)
-	return m.encResult(value, classificationConfidence(classifiedCross, allCross), in.Baseline)
+	return m.encResult(value, classificationConfidence(classifiedCross, allCross), in.Baseline, contractCross, intrusiveCross)
 }
 
 // isClassifiedStrength reports whether a strength takes a stance on boundary
@@ -155,10 +155,26 @@ func classificationConfidence(classified, all int) string {
 	}
 }
 
-func (m EncapsulationMetric) encResult(value float64, confidence string, baseline diagnostic.MetricSnapshot) diagnostic.MetricResult {
+func (m EncapsulationMetric) encResult(value float64, confidence string, baseline diagnostic.MetricSnapshot, contractCross, intrusiveCross int) diagnostic.MetricResult {
 	score := value * 10.0
 	band := result.ApplyConfidenceCap(result.BandScore(score), confidence)
 	delta := result.ComputeDelta(value, baseline, m.Name(), m.Version())
+	definition := "contract / (contract + intrusive) cross-boundary edges (functional, model, unknown excluded)"
+	// 0 contract with real intrusive evidence reads as "no interface discipline
+	// anywhere," which can misread as under-configuration (no public:/internal:
+	// globs declared). It usually is not: intrusive has a structural, config-
+	// independent signal in every extractor (Python PEP 8-private imports, Go
+	// concrete-vs-interface type info, SCIP private-symbol resolution), while
+	// contract requires either a declared public: glob or (Go/TS only) a
+	// structural interface/type-only signal — for a Python module with no
+	// public: glob, contract can ONLY ever be 0 (grimp resolves imports to the
+	// defining submodule; a public-API signal cannot be established from
+	// structure alone). Attach the raw counts so a reader doesn't dismiss a real
+	// 0.0 measurement as missing data.
+	if contractCross == 0 && intrusiveCross > 0 {
+		definition += fmt.Sprintf("; 0 contract / %d intrusive here is a real measurement on the evidence available, "+
+			"not necessarily a config gap", intrusiveCross)
+	}
 	return diagnostic.MetricResult{
 		Name:       m.Name(),
 		Value:      value,
@@ -167,7 +183,7 @@ func (m EncapsulationMetric) encResult(value float64, confidence string, baselin
 		Confidence: confidence,
 		Version:    m.Version(),
 		Mode:       result.ModeRatio,
-		Definition: "contract / (contract + intrusive) cross-boundary edges (functional, model, unknown excluded)",
+		Definition: definition,
 		Delta:      delta,
 	}
 }

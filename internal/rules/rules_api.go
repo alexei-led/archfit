@@ -53,7 +53,7 @@ func (r *publicAPIMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 		if !f.Exported {
 			continue
 		}
-		mod, ok := r.mm.ModuleFor(f.File)
+		mod, ok := r.mm.ModuleForFile(f.File)
 		if !ok {
 			continue // file not owned by any declared module — skip
 		}
@@ -139,7 +139,7 @@ func (r *publicAPIChange) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 		if !f.Exported {
 			continue
 		}
-		mod, ok := r.mm.ModuleFor(f.File)
+		mod, ok := r.mm.ModuleForFile(f.File)
 		if !ok {
 			continue // file not owned by any declared module — skip
 		}
@@ -292,7 +292,7 @@ func (r *publicAPITypeLeak) Check(g *graph.Graph, ev Evidence) []finding.Finding
 		if _, isExternal := extPkgs[pkg]; !isExternal {
 			continue
 		}
-		mod, modOK := r.mm.ModuleFor(f.File)
+		mod, modOK := r.mm.ModuleForFile(f.File)
 		if !modOK {
 			mod = f.File // fall back to file path when module is unowned
 		}

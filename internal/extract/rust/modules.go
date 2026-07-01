@@ -199,7 +199,7 @@ func parseDOT(data []byte) ([]graph.Node, []graph.Edge) {
 
 	nodes := make([]graph.Node, 0, len(moduleNodes))
 	for path := range moduleNodes {
-		nodes = append(nodes, graph.Node{Kind: graph.NodeKindPackage, Path: path})
+		nodes = append(nodes, graph.Node{Kind: graph.NodeKindPackage, Path: path, Language: graph.LangRust})
 	}
 
 	seen := make(map[string]struct{})

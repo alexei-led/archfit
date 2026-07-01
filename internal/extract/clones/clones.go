@@ -169,13 +169,19 @@ type jscpdDuplicate struct {
 	Lines      int       `json:"lines"`
 }
 
+// jscpdFile mirrors one side (firstFile/secondFile) of a jscpd duplicate entry.
+// Start/End are the 1-based line numbers bounding the duplicated fragment
+// within this file, as reported by jscpd's JSON reporter.
 type jscpdFile struct {
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
 }
 
 // parseJscpdReport parses jscpd JSON report data into Cluster values and the
 // number of source files jscpd scanned (statistics.total.sources). Each duplicate
-// entry becomes one Cluster with two files and the line count.
+// entry becomes one Cluster with two files, their line-location ranges, and the
+// duplicated line count.
 func parseJscpdReport(data []byte) ([]clone.Cluster, int, error) {
 	var report jscpdReport
 	if err := json.Unmarshal(data, &report); err != nil {
@@ -189,6 +195,10 @@ func parseJscpdReport(data []byte) ([]clone.Cluster, int, error) {
 		clusters = append(clusters, clone.Cluster{
 			Files: []string{d.FirstFile.Name, d.SecondFile.Name},
 			Lines: d.Lines,
+			Locations: []clone.LineRange{
+				{StartLine: d.FirstFile.Start, EndLine: d.FirstFile.End},
+				{StartLine: d.SecondFile.Start, EndLine: d.SecondFile.End},
+			},
 		})
 	}
 	return clusters, report.Statistics.Total.Sources, nil

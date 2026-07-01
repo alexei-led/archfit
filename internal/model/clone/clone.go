@@ -6,12 +6,25 @@ package clone
 
 import "sort"
 
+// LineRange is the start/end line span of one file's side of a duplicated code
+// block, as reported by the clone detector. The zero value ({0,0}) means the
+// source report carried no line-location data for this file.
+type LineRange struct {
+	StartLine int
+	EndLine   int
+}
+
 // Cluster represents a group of files that share a duplicated code block.
 type Cluster struct {
 	// Files contains the repo-relative (or absolute) paths involved in the clone.
 	Files []string
 	// Lines is the number of duplicated lines in the block.
 	Lines int
+	// Locations holds the line-location range for each file in Files, at the
+	// same index (Locations[i] describes Files[i]). Nil, or shorter than Files,
+	// when the source report carried no line-location data — callers must
+	// bounds-check before indexing.
+	Locations []LineRange
 }
 
 // ModulePairs converts a slice of Clusters to canonical cross-module pairs

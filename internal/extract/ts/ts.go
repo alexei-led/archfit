@@ -82,9 +82,14 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	// Get dependency-cruiser version.
 	version := e.detectVersion(ctx, launcher)
 
-	// Build the depcruise command arguments.
+	// Build the depcruise command arguments. "." means "scan the analysis root
+	// itself" (Config.ForExtract's default since the Src-derivation fix) and is
+	// used literally — only a genuinely empty value falls back to the "src"
+	// convention, since silently rewriting "." to "src" broke repos whose
+	// TypeScript sources live directly under the root with no src/ subdir
+	// (e.g. storybookjs/storybook's "code/" layout).
 	src := e.cfg.Src
-	if src == "" || src == "." {
+	if src == "" {
 		src = "src"
 	}
 
@@ -107,7 +112,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		srcArg = filepath.ToSlash(filepath.Join(s.SubtreePrefix, src))
 	}
 
-	args := []string{toolName, srcArg, "--output-type", "json", "--exclude", "^node_modules"}
+	args := append(packagePinArgs(launcher), toolName, srcArg, "--output-type", "json", "--exclude", "^node_modules")
 	// Scope depcruise to the analysis subtree when running from the git root.
 	// --include-only uses a JS regex against the git-root-relative module paths.
 	// Omitted when SubtreePrefix is empty to preserve byte-identical output on
@@ -175,6 +180,30 @@ func (e *Extractor) detectLauncher(ctx context.Context) (string, string, bool) {
 	return "", "", false
 }
 
+// packagePinArgs returns launcher flags that pin depcruise's npm package name
+// explicitly. Without this, a launcher that finds no local "depcruise" binary
+// (dependency-cruiser not yet installed as a project dependency, the common
+// case for an archfit target repo) falls back to resolving "depcruise" as if
+// it were itself an installable package name. On the npm registry that name
+// belongs to an unrelated dependency-confusion placeholder package, not
+// dependency-cruiser -- confirmed via `npx depcruise` on a repo with no local
+// install: it silently installs the decoy, exits 0, and prints a warning
+// banner instead of JSON, which would otherwise surface as a silent coverage
+// gap indistinguishable from any other TS extraction miss. bunx (tried first
+// by detectLauncher) does not hit this because its package cache resolves
+// "depcruise" correctly, but pinning both launchers removes the ambiguity
+// instead of relying on that being permanently true.
+func packagePinArgs(launcher string) []string {
+	switch launcher {
+	case "bunx":
+		return []string{"-p", coverageTool}
+	case "npx":
+		return []string{"--package=" + coverageTool, "--"}
+	default:
+		return nil
+	}
+}
+
 // tsConfigNames are the conventional tsconfig file names archfit auto-detects at
 // the project root when no explicit TSConfig is configured. Ordered by preference:
 // a concrete tsconfig.json before a base-only tsconfig.base.json.
@@ -183,35 +212,45 @@ var tsConfigNames = []string{"tsconfig.json", "tsconfig.base.json"}
 // resolveTSConfig returns the tsconfig path to pass to dependency-cruiser: the
 // explicitly configured path if set, otherwise the first conventional tsconfig
 // found at scanRoot (so `paths`/`baseUrl` aliases resolve). Returns "" when none
-// is configured or present. The returned path is relative to workDir (the
-// depcruise run directory) so dependency-cruiser resolves it correctly whether
-// running from scanRoot (no-subtree) or the git root (subtree).
+// is configured or present.
+//
+// In no-subtree mode (workDir == scanRoot) the path is returned relative to
+// workDir, byte-identical to prior behaviour. In subtree mode (workDir ==
+// GitRoot, scanRoot nested below it) the path is returned absolute: dependency-
+// cruiser resolves a relative --ts-config's include/exclude globs against the
+// process CWD (workDir), not against the tsconfig file's own directory, so a
+// GitRoot-relative path like "code/tsconfig.json" makes TypeScript search the
+// wrong tree and report TS18003 "no inputs found" even though matching files
+// exist under scanRoot. Verified against storybookjs/storybook (a subtree scan
+// of "code/" within a larger git root): a relative path reproducibly fails with
+// TS18003, an absolute path reproducibly succeeds (3669 modules resolved).
 func (e *Extractor) resolveTSConfig(scanRoot, workDir string) string {
 	if e.cfg.TSConfig != "" {
 		return e.cfg.TSConfig
 	}
+	subtree := workDir != scanRoot
 	for _, name := range tsConfigNames {
 		full := filepath.Join(scanRoot, name)
-		if _, err := os.Stat(full); err == nil {
-			rel, err := filepath.Rel(workDir, full)
-			if err == nil {
-				return filepath.ToSlash(rel)
-			}
-			return full // absolute fallback
+		if _, err := os.Stat(full); err != nil {
+			continue
 		}
+		if subtree {
+			return full
+		}
+		rel, err := filepath.Rel(workDir, full)
+		if err == nil {
+			return filepath.ToSlash(rel)
+		}
+		return full // absolute fallback
 	}
 	// Subtree mode: workDir is the git root, which may hold a root-level tsconfig
 	// that covers all packages. Fall back to searching workDir so path-alias edges
 	// (tsconfig.paths/baseUrl) are not silently dropped from coupling_balance.
-	if workDir != scanRoot {
+	if subtree {
 		for _, name := range tsConfigNames {
 			full := filepath.Join(workDir, name)
 			if _, err := os.Stat(full); err == nil {
-				rel, err := filepath.Rel(workDir, full)
-				if err == nil {
-					return filepath.ToSlash(rel)
-				}
-				return full // absolute fallback
+				return full // already absolute; dir == workDir so no ambiguity either way.
 			}
 		}
 	}
@@ -236,7 +275,7 @@ func hasDepcruiseConfig(root string) bool {
 func (e *Extractor) detectVersion(ctx context.Context, launcher string) string {
 	out, err := e.runner.Run(ctx, toolrun.ToolCmd{
 		Name:    launcher,
-		Args:    []string{toolName, "--version"},
+		Args:    append(packagePinArgs(launcher), toolName, "--version"),
 		Timeout: 30 * time.Second,
 	})
 	if err != nil || out.ExitCode != 0 {
@@ -374,12 +413,12 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 		// double-count the same package.
 		srcPath := normPath(mod.Source)
 		if mod.CouldNotResolve {
-			emitNode(graph.Node{Kind: graph.NodeKindExternal, Path: srcPath})
+			emitNode(graph.Node{Kind: graph.NodeKindExternal, Path: srcPath, Language: graph.LangTypeScript})
 			continue
 		}
 
 		fromID := "file:" + srcPath
-		emitNode(graph.Node{Kind: graph.NodeKindFile, Path: srcPath})
+		emitNode(graph.Node{Kind: graph.NodeKindFile, Path: srcPath, Language: graph.LangTypeScript})
 		filesSeen++
 
 		// Merge dependencies and deps (alternate key).
@@ -410,7 +449,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 				nodeKind = graph.NodeKindExternal
 			}
 			toID := string(nodeKind) + ":" + toPath
-			emitNode(graph.Node{Kind: nodeKind, Path: toPath})
+			emitNode(graph.Node{Kind: nodeKind, Path: toPath, Language: graph.LangTypeScript})
 
 			// Determine edge kind. External targets are never internal.
 			edgeKind := graph.EdgeKindImports

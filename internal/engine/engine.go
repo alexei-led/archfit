@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/classify"
@@ -127,7 +128,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		// no per-language branching. Files outside declared modules get an
 		// empty Module (legitimate: a script in the repo root, for example).
 		for i := range syntaxFacts {
-			syntaxFacts[i].Module, _ = in.Classify.ModuleMap.ModuleFor(syntaxFacts[i].File)
+			syntaxFacts[i].Module, _ = in.Classify.ModuleMap.ModuleForFile(syntaxFacts[i].File)
 		}
 		ex.coverages = append(ex.coverages, synCov)
 	}
@@ -167,7 +168,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Placed after the ModuleMap rebuild so auto-registered members participate
 	// in cross-module clone-pair detection.
 	if len(in.Signals.Duplication.Clusters) > 0 {
-		classifyCfg.CrossModuleClonePairs = buildClonePairSet(in.Signals.Duplication.Clusters, classifyCfg.ModuleMap, in.Signals.Size.FileClassIndex)
+		classifyCfg.CrossModuleClonePairs, classifyCfg.CloneEvidence = buildClonePairSet(in.Signals.Duplication.Clusters, classifyCfg.ModuleMap, in.Signals.Size.FileClassIndex)
 	}
 
 	// Runtime async evidence: build per-module rollup for the diagnostic.
@@ -352,14 +353,30 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 	}
 
 	var allFacts []graph.Facts
+	var extractErrs []error
 	for _, ex := range in.Extractors {
 		f, cov, err := ex.Extract(ctx, in.Scope)
 		if err != nil {
-			return extractResult{}, err
+			// One extractor's failure must not discard facts already produced
+			// (or still to be produced) by the others — record it as a coverage
+			// gap and keep going, mirroring the empty-SCIP-index StatusPartial
+			// pattern (internal/extract/scip/scip_strength.go) instead of
+			// aborting the whole run. Only the degenerate case where every
+			// extractor fails (nothing to preserve) is still fatal, below.
+			coverages = append(coverages, diagnostic.Coverage{
+				Tool:   ex.Name(),
+				Status: diagnostic.StatusPartial,
+				Reason: err.Error(),
+			})
+			extractErrs = append(extractErrs, err)
+			continue
 		}
 		enrichEdges(ctx, in.Resolver, scipStrength, f)
 		allFacts = append(allFacts, f)
 		coverages = append(coverages, cov)
+	}
+	if len(in.Extractors) > 0 && len(extractErrs) == len(in.Extractors) {
+		return extractResult{}, fmt.Errorf("engine: all %d extractor(s) failed: %w", len(in.Extractors), errors.Join(extractErrs...))
 	}
 	g := graph.Build(allFacts)
 
