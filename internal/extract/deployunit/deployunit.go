@@ -44,15 +44,15 @@ func Detect(ctx context.Context, root string, mm config.ModuleMap, runner toolru
 // directly: auto-detected units are silently dropped unless a module's map key
 // happens to equal the detected path.
 //
-// Each detected path is resolved to its owning module via mm.ModuleFor. When
-// ModuleFor finds no match, the path is kept only if it is itself a module key
+// Each detected path is resolved to its owning module via mm.ModuleForFile. When
+// ModuleForFile finds no match, the path is kept only if it is itself a module key
 // (mm.Has) — that exact-key case was fillable under the old path-keyed wiring
 // (e.g. a module keyed "cmd/tool" whose glob "cmd/tool/*.go" does not match the
 // bare directory), so this keeps KeyByModule a strict superset and never drops
 // what the old code filled. Paths matching neither are dropped (no module to
 // attach the unit to). When several detected paths resolve to the same module,
 // the alphabetically-first path wins (deterministic). A deploy-unit directory
-// containing several modules fills only the module ModuleFor selects for that
+// containing several modules fills only the module ModuleForFile selects for that
 // path; filling every nested module is a separate enhancement (deploy-unit
 // membership), not done here.
 func KeyByModule(detected map[string]string, mm config.ModuleMap) map[string]string {
@@ -63,7 +63,7 @@ func KeyByModule(detected map[string]string, mm config.ModuleMap) map[string]str
 	}
 	sort.Strings(paths)
 	for _, p := range paths {
-		mod, ok := mm.ModuleFor(p)
+		mod, ok := mm.ModuleForFile(p)
 		if !ok {
 			if !mm.Has(p) {
 				continue // no glob match and not an exact module key — nothing to fill
@@ -157,7 +157,7 @@ func (d *detector) detectGoMain(ctx context.Context, result map[string]string) {
 		}
 		// Prefer module name from ModuleMap; fall back to directory base name.
 		name := dirName(rel)
-		if modName, ok := d.mm.ModuleFor(rel); ok {
+		if modName, ok := d.mm.ModuleForFile(rel); ok {
 			name = modName
 		}
 		set(result, rel, name)

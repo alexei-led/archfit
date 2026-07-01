@@ -265,7 +265,7 @@ func resolveFromCodeowners(rules []ownerRule, scanRoot, subtreePrefix string, mo
 			return nil
 		}
 
-		mod, ok := modules.ModuleFor(scanRel)
+		mod, ok := modules.ModuleForFile(scanRel)
 		if !ok {
 			return nil
 		}

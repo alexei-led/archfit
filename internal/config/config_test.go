@@ -163,20 +163,21 @@ func TestModuleFor_PythonDottedGlobs(t *testing.T) {
 	}
 }
 
-// TestModuleFor_ConsumerConsistency guards Fix group 0 Task 0.2 (reproduces
-// A2): edge-based consumers (internal/classify/classify.go, via pathFromID)
-// resolve a Python edge endpoint's DOTTED node ID through ModuleFor.
-// File-path-based consumers (internal/ownership CODEOWNERS resolution,
-// internal/rules public_api_* attribution, internal/engine clone-pairing)
-// resolve the SAME underlying source file's real repo-relative path through
-// the identical ModuleFor — there is no other lookup path. For a config to
-// work end-to-end, both must resolve to the same module. Today they don't:
-// ModuleFor is one generic glob matcher shared by both key spaces, so a
-// config declared in dotted form (the CLAUDE.md-mandated Python convention,
-// mirroring testdata/fixture-py/.archfit.yaml) silently fails to match the
-// real file path that file-based consumers look up. RED today — the
-// slash-path lookup returns not-found because the config only has dotted
-// globs.
+// TestModuleFor_ConsumerConsistency guards Fix group 0 Task 0.2 / Fix group 4
+// Task 4.1 (reproduces and closes A2): edge-based consumers
+// (internal/classify/classify.go, via pathFromID) resolve a Python edge
+// endpoint's DOTTED node ID through ModuleFor — that entry point is
+// unchanged. File-path-based consumers (internal/ownership CODEOWNERS
+// resolution, internal/rules public_api_* attribution, internal/engine
+// clone-pairing) resolve the SAME underlying source file's real
+// repo-relative path through ModuleForFile, which normalizes the file into
+// the language's node-key form (dotted for Python) before delegating to
+// ModuleFor. For a config to work end-to-end, both entry points must resolve
+// to the same module. Previously they didn't: ModuleFor alone is one generic
+// glob matcher shared by both key spaces, so a config declared in dotted form
+// (the CLAUDE.md-mandated Python convention, mirroring
+// testdata/fixture-py/.archfit.yaml) silently failed to match the real file
+// path that file-based consumers look up.
 func TestModuleFor_ConsumerConsistency(t *testing.T) {
 	// Mirrors testdata/fixture-py/.archfit.yaml's module "b".
 	cfg := config.Config{
@@ -197,9 +198,9 @@ func TestModuleFor_ConsumerConsistency(t *testing.T) {
 		t.Fatalf("edge-consumer lookup: ModuleFor(%q) = (_, false), want module found", dottedNode)
 	}
 
-	fileModule, ok := mm.ModuleFor(realPath)
+	fileModule, ok := mm.ModuleForFile(realPath)
 	if !ok || fileModule != edgeModule {
-		t.Errorf("file-consumer lookup: ModuleFor(%q) = (%q, %v), want (%q, true) — "+
+		t.Errorf("file-consumer lookup: ModuleForFile(%q) = (%q, %v), want (%q, true) — "+
 			"the same source file must resolve to the same module as its dotted edge "+
 			"node ID %q did (%q)", realPath, fileModule, ok, edgeModule, dottedNode, edgeModule)
 	}

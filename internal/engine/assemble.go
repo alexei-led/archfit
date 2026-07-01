@@ -56,7 +56,7 @@ const dynamicImportSiteCap = 5
 func buildDynamicImports(sites []diagnostic.DynamicImportSite, mm config.ModuleMap) []diagnostic.DynamicImport {
 	byModule := make(map[string][]diagnostic.DynamicImportSite)
 	for _, s := range sites {
-		mod, ok := mm.ModuleFor(s.File)
+		mod, ok := mm.ModuleForFile(s.File)
 		if !ok || mod == "" {
 			mod = pathDir(s.File)
 		}
@@ -91,7 +91,7 @@ func buildDynamicImports(sites []diagnostic.DynamicImportSite, mm config.ModuleM
 func buildRuntimeAsync(sites []diagnostic.RuntimeAsyncSite, confidence string, mm config.ModuleMap) []diagnostic.RuntimeAsyncModule {
 	byModule := make(map[string][]diagnostic.RuntimeAsyncSite)
 	for _, s := range sites {
-		mod, ok := mm.ModuleFor(s.File)
+		mod, ok := mm.ModuleForFile(s.File)
 		if !ok || mod == "" {
 			mod = pathDir(s.File)
 		}

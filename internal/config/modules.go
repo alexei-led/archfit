@@ -1,10 +1,13 @@
 package config
 
 import (
+	gopath "path"
 	"sort"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
+
+	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
 // ModuleRole declares a module's architectural role. It refines Balanced-Coupling
@@ -149,6 +152,58 @@ func globSpecificity(pattern string) int {
 		}
 	}
 	return len(pattern)
+}
+
+// extToLang maps a source-file extension (including the leading dot, e.g.
+// ".py") to the canonical language id that claims it, built once from
+// graph.BuiltinConventions[*].FileExtensions. Each extension is claimed by
+// exactly one language, so map-iteration order during construction is
+// immaterial.
+var extToLang = buildExtToLang()
+
+func buildExtToLang() map[string]string {
+	idx := make(map[string]string)
+	for lang, conv := range graph.BuiltinConventions {
+		for _, ext := range conv.FileExtensions {
+			idx[ext] = lang
+		}
+	}
+	return idx
+}
+
+// ModuleForFile returns the module name owning file, a repo-relative REAL
+// source file path (as opposed to ModuleFor's graph-node-ID space, which is
+// dotted for Python and crate-relative for Rust). It tries the raw file path
+// against ModuleFor first — that is exactly today's ModuleFor behavior, and
+// for Go/TS/Rust configs (directory- or file-path-style globs) it already
+// matches, most-specific-glob semantics and all. Only when the raw path
+// matches nothing does it derive file's language from its extension and
+// retry with the path normalized into that language's node-key form via
+// graph.BuiltinConventions[lang].FileToModuleKey (e.g. a Python file becomes
+// its dotted module path) — a genuine second chance for configs declared in
+// node-key form (the mandated convention, e.g. Python dotted globs), which
+// the raw slash path can never match.
+//
+// Raw-first, not normalize-first: normalizing unconditionally would collapse
+// a real file path to a coarser key (e.g. a Rust file to its bare crate name)
+// even when the raw path itself would have matched a more specific or
+// differently-shaped glob, silently downgrading or losing the match. Trying
+// the raw path first preserves ModuleFor's existing, tested resolution for
+// every language whose configs are already glob-compatible with real file
+// paths, and only reaches for language-specific normalization as a fallback.
+func (mm ModuleMap) ModuleForFile(file string) (string, bool) {
+	if mod, ok := mm.ModuleFor(file); ok {
+		return mod, true
+	}
+	lang, ok := extToLang[gopath.Ext(file)]
+	if !ok {
+		return "", false
+	}
+	key := graph.BuiltinConventions.Lookup(lang).FileToModuleKey(file)
+	if key == "" || key == file {
+		return "", false
+	}
+	return mm.ModuleFor(key)
 }
 
 // LayerFor returns the layer name for the module that owns the given repo-relative

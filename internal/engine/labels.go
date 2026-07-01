@@ -105,7 +105,7 @@ func buildClonePairSet(clusters []clone.Cluster, mm config.ModuleMap, index map[
 		prodClusters = append(prodClusters, c)
 	}
 	pairs := clone.ModulePairs(prodClusters, func(f string) string {
-		mod, ok := mm.ModuleFor(f)
+		mod, ok := mm.ModuleForFile(f)
 		if !ok {
 			return ""
 		}

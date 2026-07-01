@@ -127,7 +127,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		// no per-language branching. Files outside declared modules get an
 		// empty Module (legitimate: a script in the repo root, for example).
 		for i := range syntaxFacts {
-			syntaxFacts[i].Module, _ = in.Classify.ModuleMap.ModuleFor(syntaxFacts[i].File)
+			syntaxFacts[i].Module, _ = in.Classify.ModuleMap.ModuleForFile(syntaxFacts[i].File)
 		}
 		ex.coverages = append(ex.coverages, synCov)
 	}
