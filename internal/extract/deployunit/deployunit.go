@@ -158,6 +158,19 @@ func (d *detector) detectGoMain(ctx context.Context, result map[string]string) {
 		// Prefer module name from ModuleMap; fall back to directory base name.
 		name := dirName(rel)
 		if modName, ok := d.mm.ModuleForFile(rel); ok {
+			// A main.go nested somewhere inside a module's tree (a migration/
+			// dev-tool CLI helper, e.g. "promql/promqltest/cmd/migrate") is not
+			// itself a deploy-unit boundary — only a main.go at the owning
+			// module's own root is. Otherwise the whole module gets tagged as
+			// its own deploy unit because of one incidental nested binary,
+			// producing a false cross_deploy_unit distance against every other
+			// module (confirmed on prometheus: promql/promqltest tagged solely
+			// because of promql/promqltest/cmd/migrate/main.go, 3 directories
+			// deep, while 13 sibling promtool imports into the same tree
+			// correctly resolved cross_module_same_owner).
+			if !d.mm.IsModuleRoot(rel) {
+				continue
+			}
 			name = modName
 		}
 		set(result, rel, name)

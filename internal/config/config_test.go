@@ -206,6 +206,35 @@ func TestModuleFor_ConsumerConsistency(t *testing.T) {
 	}
 }
 
+func TestModuleMap_IsModuleRoot(t *testing.T) {
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"promqltest": {Paths: []string{"promql/promqltest/**"}},
+			"literal":    {Paths: []string{"cmd/tool"}}, // no wildcard: pattern is itself a literal path
+		},
+	}
+	mm := cfg.ModuleMapView()
+
+	tests := []struct {
+		name string
+		dir  string
+		want bool
+	}{
+		{"module's own root", "promql/promqltest", true},
+		{"nested subdirectory, not root", "promql/promqltest/cmd/migrate", false},
+		{"literal (no-wildcard) pattern matches itself", "cmd/tool", true},
+		{"unconfigured directory", "unrelated/dir", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mm.IsModuleRoot(tt.dir); got != tt.want {
+				t.Errorf("IsModuleRoot(%q) = %v, want %v", tt.dir, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestModuleFor_Deterministic(t *testing.T) {
 	// Two modules whose globs could overlap — same path must always return the
 	// same (alphabetically-first) module name.

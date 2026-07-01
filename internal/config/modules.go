@@ -3,6 +3,7 @@ package config
 import (
 	gopath "path"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -204,6 +205,43 @@ func (mm ModuleMap) ModuleForFile(file string) (string, bool) {
 		return "", false
 	}
 	return mm.ModuleFor(key)
+}
+
+// IsModuleRoot reports whether dir is the literal root directory of the module
+// that owns it (the wildcard-free prefix of one of its declared Paths globs),
+// as opposed to an arbitrary subdirectory nested deeper within a larger
+// module's tree. Returns false if dir does not resolve to any module.
+//
+// Used to distinguish a genuine deploy-unit boundary (a main.go at a module's
+// own root) from an incidental one (a dev-tool/migration-helper main.go
+// buried a few directories inside a much larger module) — the book's distance
+// ladder (Methods → Objects → Namespaces/Packages → (Micro)Services → Systems)
+// treats a package entry point and a genuinely separate deployable as
+// different tiers; tagging every main.go as its own deploy unit regardless of
+// depth conflates them.
+func (mm ModuleMap) IsModuleRoot(dir string) bool {
+	name, ok := mm.ModuleForFile(dir)
+	if !ok {
+		return false
+	}
+	for _, pattern := range mm.modules[name].Paths {
+		if globRoot(pattern) == dir {
+			return true
+		}
+	}
+	return false
+}
+
+// globRoot returns the literal (wildcard-free) directory prefix of a glob
+// pattern — the part before the first "*"/"?"/"[" meta-character, with any
+// trailing path separator trimmed. A pattern with no meta-character is
+// returned unchanged (it is itself a literal path).
+func globRoot(pattern string) string {
+	idx := strings.IndexAny(pattern, "*?[")
+	if idx == -1 {
+		return pattern
+	}
+	return strings.TrimSuffix(pattern[:idx], "/")
 }
 
 // LayerFor returns the layer name for the module that owns the given repo-relative
