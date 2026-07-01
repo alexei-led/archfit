@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -303,6 +304,99 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 
 	if d.Summary.GateFindings != 0 {
 		t.Errorf("summary.gate_findings=%d, want 0", d.Summary.GateFindings)
+	}
+}
+
+// TestRun_PerExtractorFailureIsolation guards Fix group 0 Task 0.3
+// (reproduces H2's shared root cause): engine.go's extract loop
+// (internal/engine/engine.go extract, the `for _, ex := range in.Extractors`
+// loop) returns the FIRST extractor error and discards every already-built
+// graph.Facts from any extractor that already succeeded — one flaky
+// subprocess in one language currently zeroes out every other language's
+// results too. In a 2-language config where one extractor's subprocess
+// fails (non-zero exit / error) and the other succeeds, the run must still
+// produce output for the surviving extractor (here: the public_api_only
+// gate finding derived from the Go extractor's facts), with the failed
+// extractor only producing a coverage gap — not a total abort. RED today:
+// Run returns the raw extractor error and an empty diagnostic.Diagnostic{},
+// discarding the Go extractor's already-extracted facts.
+func TestRun_PerExtractorFailureIsolation(t *testing.T) {
+	ctx := context.Background()
+	facts := violationFacts()
+
+	const failedTool = "python"
+	extractErr := errors.New("python extractor: ast-grep exited with status 1")
+
+	failingEx := &ports.ExtractorMock{
+		NameFunc: func() string { return failedTool },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return graph.Facts{}, diagnostic.Coverage{}, extractErr
+		},
+	}
+	healthyEx := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return facts, diagnostic.Coverage{Tool: "go", Status: diagnostic.StatusOK, FilesSeen: 2, FilesApplicable: 2}, nil
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Waivers:     config.WaiverSet{},
+		Extractors:  []ports.Extractor{failingEx, healthyEx},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Signals:     signal.RunSignals{},
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v — one failed extractor must not abort the whole run; want the healthy extractor's (go) result preserved", err)
+	}
+
+	// The Go extractor's facts must still have flowed through: the
+	// public_api_only gate finding derived from violationFacts() must be
+	// present, exactly as it is in TestRun_GateFinding_VerdictFail with a
+	// single healthy extractor.
+	var gateFinding *finding.Finding
+	for i := range d.Findings {
+		f := &d.Findings[i]
+		if f.RuleID == rulePublicAPIOnly && f.Kind == kindGate {
+			gateFinding = f
+			break
+		}
+	}
+	if gateFinding == nil {
+		t.Fatalf("no gate finding with rule_id=%s found — healthy extractor's facts were discarded; findings=%+v", rulePublicAPIOnly, d.Findings)
+	}
+
+	// The failed extractor must surface as a coverage gap, not silent
+	// disappearance: a tool_coverage entry for it must exist and must not
+	// report ok.
+	var failedCov *diagnostic.Coverage
+	for i := range d.ToolCoverage {
+		if d.ToolCoverage[i].Tool == failedTool {
+			failedCov = &d.ToolCoverage[i]
+			break
+		}
+	}
+	if failedCov == nil {
+		t.Errorf("no tool_coverage entry for failed extractor %q — failure must surface, not vanish silently", failedTool)
+	} else if failedCov.Status == diagnostic.StatusOK {
+		t.Errorf("tool_coverage for %q reports status=ok, want a non-ok coverage gap", failedTool)
 	}
 }
 
