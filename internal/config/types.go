@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
+	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
 // MetricEntry holds the settings for a single metric inside the metrics map.
@@ -112,6 +113,15 @@ type ClassifyConfig struct {
 	// algorithm) on cross-module edges. Empty when clone detection is
 	// disabled or produced no results.
 	CrossModuleClonePairs map[string]struct{}
+	// CloneEvidence maps each canonical module-pair key (same keying as
+	// CrossModuleClonePairs) to the real duplicated-code locations — both sides,
+	// as reported by the clone detector — that produced the pairing. classify
+	// attaches these onto a Classification when it performs the Symmetric-strength
+	// upgrade for that pair, so the downstream finding can cite the actual
+	// duplicated file:line instead of only the edge's baseline provenance (e.g. a
+	// Rust crate's Cargo.toml:0). Empty when clone detection produced no
+	// line-location data, or is disabled.
+	CloneEvidence map[string][]graph.Location
 	// ExplicitOwners marks modules whose `owner:` was hand-authored in YAML.
 	// classifyDistance treats explicit ownership as authoritative, so an explicit
 	// `owner: same-team` is not overridden by the code-structure fallback even in

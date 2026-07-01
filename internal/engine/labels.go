@@ -2,6 +2,7 @@ package engine
 
 import (
 	"path/filepath"
+	"sort"
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/labels"
@@ -88,14 +89,15 @@ func PairEvidence(g *graph.Graph, mm config.ModuleMap, wanted map[string]struct{
 }
 
 // buildClonePairSet converts clone clusters to a canonical module-pair key set
-// for CoA (connascence of algorithm) tagging in classify.
+// for CoA (connascence of algorithm) tagging in classify, plus the real
+// duplicated-code locations backing each pair (see clonePairEvidence).
 // Keys are "[a]\x00[b]" with a≤b (canonical sorted pair, from clone.ModulePairs).
 //
 // Clusters where any file is Test or Generated are excluded — test/mock duplication
 // must not trigger a StrengthSymmetric upgrade on production coupling edges (C4).
 // index is the FileClassIndex from the loc walk (nil is safe — falls back to
 // built-in filename heuristics: mock_*.go, _test.go, *.pb.go, etc.).
-func buildClonePairSet(clusters []clone.Cluster, mm config.ModuleMap, index map[string]fileclass.FileClass) map[string]struct{} {
+func buildClonePairSet(clusters []clone.Cluster, mm config.ModuleMap, index map[string]fileclass.FileClass) (map[string]struct{}, map[string][]graph.Location) {
 	prodClusters := make([]clone.Cluster, 0, len(clusters))
 	cfg := syntax.FileClassConfig{} // empty: index already encodes user config patterns; fallback uses built-ins
 	for _, c := range clusters {
@@ -104,19 +106,84 @@ func buildClonePairSet(clusters []clone.Cluster, mm config.ModuleMap, index map[
 		}
 		prodClusters = append(prodClusters, c)
 	}
-	pairs := clone.ModulePairs(prodClusters, func(f string) string {
+	moduleFor := func(f string) string {
 		mod, ok := mm.ModuleForFile(f)
 		if !ok {
 			return ""
 		}
 		return mod
-	})
+	}
+	pairs := clone.ModulePairs(prodClusters, moduleFor)
 	set := make(map[string]struct{}, len(pairs))
 	for _, p := range pairs {
 		// clone.ModulePairs already returns sorted pairs [a,b] with a≤b.
 		set[p[0]+"\x00"+p[1]] = struct{}{}
 	}
-	return set
+	return set, clonePairEvidence(prodClusters, moduleFor)
+}
+
+// clonePairEvidence maps each canonical module-pair key to the real
+// duplicated-code locations (both sides) that produced the pairing, so a
+// Symmetric-strength finding (classify.go) can cite jscpd's actual file:line
+// instead of only the edge's baseline provenance (e.g. a Rust crate's
+// Cargo.toml:0). Built from the same production-only clusters as
+// buildClonePairSet; deterministic (sorted, deduped) per key. A cluster whose
+// report carried no start-line data still contributes a Location with Line: 0 —
+// the file path alone is still more specific than the baseline provenance.
+func clonePairEvidence(clusters []clone.Cluster, moduleFor func(string) string) map[string][]graph.Location {
+	out := make(map[string][]graph.Location)
+	for _, c := range clusters {
+		for i := 0; i < len(c.Files); i++ {
+			modI := moduleFor(c.Files[i])
+			if modI == "" {
+				continue
+			}
+			for j := i + 1; j < len(c.Files); j++ {
+				modJ := moduleFor(c.Files[j])
+				if modJ == "" || modJ == modI {
+					continue
+				}
+				a, b := modI, modJ
+				if a > b {
+					a, b = b, a
+				}
+				key := a + "\x00" + b
+				out[key] = appendUniqueLocation(out[key], c.Files[i], cloneStartLine(c, i))
+				out[key] = appendUniqueLocation(out[key], c.Files[j], cloneStartLine(c, j))
+			}
+		}
+	}
+	for k, locs := range out {
+		sort.Slice(locs, func(i, j int) bool {
+			if locs[i].File != locs[j].File {
+				return locs[i].File < locs[j].File
+			}
+			return locs[i].Line < locs[j].Line
+		})
+		out[k] = locs
+	}
+	return out
+}
+
+// cloneStartLine returns the start line jscpd reported for Files[i] in c, or 0
+// when the cluster carries no per-file location data.
+func cloneStartLine(c clone.Cluster, i int) int {
+	if i < len(c.Locations) {
+		return c.Locations[i].StartLine
+	}
+	return 0
+}
+
+// appendUniqueLocation appends loc to locs unless an identical entry is
+// already present.
+func appendUniqueLocation(locs []graph.Location, file string, line int) []graph.Location {
+	loc := graph.Location{File: file, Line: line}
+	for _, l := range locs {
+		if l == loc {
+			return locs
+		}
+	}
+	return append(locs, loc)
 }
 
 // clusterHasTestOrGenerated reports whether any file in the cluster is not a

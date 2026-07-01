@@ -1,6 +1,7 @@
 package classify_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/classify"
@@ -201,5 +202,68 @@ func TestSymmetricDistributedMonolithDetected(t *testing.T) {
 	}
 	if cl.Score.Band != coupling.SeverityCritical {
 		t.Errorf("Score.Band = %q, want %q", cl.Score.Band, coupling.SeverityCritical)
+	}
+}
+
+// TestSymmetricUpgradeCarriesCloneLocations verifies that when a cross-module
+// clone pair upgrades an edge's strength to Symmetric, the real duplicated-code
+// locations (both sides) supplied via ClassifyConfig.CloneEvidence are attached
+// to the resulting Classification — not just the module-pair boolean. This is
+// what lets the downstream finding cite jscpd's actual file:line instead of
+// only the edge's baseline provenance (e.g. a Rust crate's Cargo.toml:0) (B6).
+func TestSymmetricUpgradeCarriesCloneLocations(t *testing.T) {
+	t.Parallel()
+
+	edge := graph.Edge{
+		From:         fileFromA,
+		To:           fileToB,
+		Kind:         graph.EdgeKindImports,
+		StrengthHint: hintFunctional,
+		// Baseline location — mimics a Rust crate's Cargo.toml:0 provenance.
+		Locations: []graph.Location{{File: "crate_a/Cargo.toml", Line: 0}},
+	}
+
+	wantLocs := []graph.Location{
+		{File: "crate_a/src/lib.rs", Line: 12},
+		{File: "crate_b/src/lib.rs", Line: 40},
+	}
+	cfg := config.ClassifyConfig{
+		Modules: map[string]config.ModuleDef{
+			modNameA: {Paths: []string{pathsA}},
+			modNameB: {Paths: []string{pathsB}},
+		},
+		CrossModuleClonePairs: modABClonePair,
+		CloneEvidence: map[string][]graph.Location{
+			modABKey: wantLocs,
+		},
+	}
+
+	g := makeGraph([]graph.Edge{edge})
+	idx := classify.Run(g, cfg)
+	key := edgeKey(edge)
+	cl, ok := idx[key]
+	if !ok {
+		t.Fatalf("edge key %q not in index", key)
+	}
+	if cl.Strength != coupling.StrengthSymmetric {
+		t.Fatalf("Strength = %q, want %q (clone upgrade did not fire)", cl.Strength, coupling.StrengthSymmetric)
+	}
+	if !slices.Equal(cl.CloneLocations, wantLocs) {
+		t.Errorf("CloneLocations = %v, want %v", cl.CloneLocations, wantLocs)
+	}
+
+	// A pair with no CloneEvidence entry (e.g. an older jscpd report with no
+	// line-location data) must not synthesize a location — CloneLocations stays
+	// nil, and the finding falls back to the edge's baseline Locations only.
+	cfgNoEvidence := config.ClassifyConfig{
+		Modules:               cfg.Modules,
+		CrossModuleClonePairs: modABClonePair,
+	}
+	clNoEvidence := classify.Run(g, cfgNoEvidence)[key]
+	if clNoEvidence.Strength != coupling.StrengthSymmetric {
+		t.Fatalf("Strength = %q, want %q (clone upgrade did not fire)", clNoEvidence.Strength, coupling.StrengthSymmetric)
+	}
+	if len(clNoEvidence.CloneLocations) != 0 {
+		t.Errorf("CloneLocations = %v, want empty (no CloneEvidence configured)", clNoEvidence.CloneLocations)
 	}
 }
