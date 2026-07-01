@@ -287,6 +287,141 @@ func TestResolve_GitAuthorFallback_Subtree(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
+// Bounded-by-commit-count + timeout distinguishability (Task 6.1)
+// -----------------------------------------------------------------------
+
+func TestResolve_GitAuthorFallback_BoundedByCommitCount(t *testing.T) {
+	// The git-author walk must be bounded by commit count (-n), not calendar
+	// time — a regression here would reintroduce the unbounded, margin-zero
+	// 15s walk this task exists to close.
+	root := t.TempDir()
+	writeFile(t, root, modCmd+"/main.go", "")
+
+	mm := buildModuleMap(t, map[string][]string{
+		modCmd: {modCmd + "/**"},
+	})
+
+	var sawBound bool
+	runner := &toolrun.RunnerMock{
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			for _, a := range cmd.Args {
+				if a == "-n" {
+					sawBound = true
+				}
+			}
+			return toolrun.Output{Stdout: []byte("alice@example.com\ncmd/main.go\n"), ExitCode: 0}, nil
+		},
+	}
+
+	got, src := ownership.Resolve(context.Background(), root, root, "", mm, runner)
+	if !sawBound {
+		t.Error("expected the first git-author run to pass a -n commit-count bound")
+	}
+	if want := "alice@example.com"; got[modCmd] != want {
+		t.Errorf("bounded run: got %q, want %q", got[modCmd], want)
+	}
+	if src != ownership.SourceGit {
+		t.Errorf("got source %q, want %q", src, ownership.SourceGit)
+	}
+}
+
+func TestResolve_GitAuthorFallback_Timeout_DistinctFromEmpty(t *testing.T) {
+	// A timed-out git-log subprocess must surface as SourceGitTimeout, not the
+	// same SourceNone a repo with genuinely no git history produces — and the
+	// fallback (unbounded) attempt must NOT be made after a bounded-run timeout
+	// (a slower unbounded walk after a timeout would likely time out too).
+	root := t.TempDir()
+
+	mm := buildModuleMap(t, map[string][]string{
+		modPkg: {modPkg + "/**"},
+	})
+
+	calls := 0
+	runner := &toolrun.RunnerMock{
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			calls++
+			return toolrun.Output{}, context.DeadlineExceeded
+		},
+	}
+
+	got, src := ownership.Resolve(context.Background(), root, root, "", mm, runner)
+	if src != ownership.SourceGitTimeout {
+		t.Errorf("got source %q, want %q", src, ownership.SourceGitTimeout)
+	}
+	if len(got) != 0 {
+		t.Errorf("timeout: expected empty map, got %v", got)
+	}
+	if calls != 1 {
+		t.Errorf("expected exactly 1 git-log invocation on a bounded-run timeout (no unbounded fallback), got %d", calls)
+	}
+}
+
+func TestResolve_GitAuthorFallback_GenericFailure_NotTimeout(t *testing.T) {
+	// A non-timeout git failure (e.g. not a git repo) must still resolve to
+	// SourceNone, not SourceGitTimeout — only an actual deadline counts.
+	root := t.TempDir()
+
+	mm := buildModuleMap(t, map[string][]string{
+		modPkg: {modPkg + "/**"},
+	})
+
+	runner := &toolrun.RunnerMock{
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			return toolrun.Output{ExitCode: 128, Stderr: []byte("fatal: not a git repo")}, nil
+		},
+	}
+
+	got, src := ownership.Resolve(context.Background(), root, root, "", mm, runner)
+	if src != ownership.SourceNone {
+		t.Errorf("got source %q, want %q", src, ownership.SourceNone)
+	}
+	if len(got) != 0 {
+		t.Errorf("generic failure: expected empty map, got %v", got)
+	}
+}
+
+func TestResolve_GitAuthorFallback_EmptyBoundedResult_FallsBackUnbounded(t *testing.T) {
+	// When the bounded pass resolves zero modules (but does not time out), a
+	// second, unbounded pass must be tried before giving up — the safety net
+	// for a stable module whose only touching commit falls outside the bound.
+	root := t.TempDir()
+
+	mm := buildModuleMap(t, map[string][]string{
+		modPkg: {modPkg + "/**"},
+	})
+
+	calls := 0
+	runner := &toolrun.RunnerMock{
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			calls++
+			bounded := false
+			for _, a := range cmd.Args {
+				if a == "-n" {
+					bounded = true
+				}
+			}
+			if bounded {
+				// Bounded pass: clean run, nothing usable.
+				return toolrun.Output{Stdout: []byte(""), ExitCode: 0}, nil
+			}
+			// Unbounded fallback: real data further back in history.
+			return toolrun.Output{Stdout: []byte("carol@example.com\npkg/a.go\n"), ExitCode: 0}, nil
+		},
+	}
+
+	got, src := ownership.Resolve(context.Background(), root, root, "", mm, runner)
+	if calls != 2 {
+		t.Fatalf("expected exactly 2 git-log invocations (bounded then unbounded fallback), got %d", calls)
+	}
+	if want := "carol@example.com"; got[modPkg] != want {
+		t.Errorf("unbounded fallback: got %q, want %q", got[modPkg], want)
+	}
+	if src != ownership.SourceGit {
+		t.Errorf("got source %q, want %q", src, ownership.SourceGit)
+	}
+}
+
+// -----------------------------------------------------------------------
 // Neither source present
 // -----------------------------------------------------------------------
 

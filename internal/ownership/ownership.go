@@ -6,12 +6,17 @@
 //  1. CODEOWNERS — searched at .github/CODEOWNERS, CODEOWNERS, docs/CODEOWNERS.
 //     If any of these files exists, it is the sole source. Files not matched by
 //     any rule get no owner. git-author is NOT consulted for individual misses.
-//  2. git-author — used ONLY when no CODEOWNERS file exists anywhere. A single
-//     git log pass aggregates authors per file; the dominant author becomes the
-//     module owner.
+//  2. git-author — used ONLY when no CODEOWNERS file exists anywhere. A git log
+//     pass bounded to the most recent maxCommitsGitAuthor commits aggregates
+//     authors per file; the dominant author becomes the module owner. When that
+//     bounded pass resolves zero modules, a second, unbounded pass is tried
+//     before giving up (see resolveFromGitAuthor).
 //
-// When neither source exists, Resolve returns an empty map — ownership is never
-// fabricated.
+// When neither source exists, Resolve returns an empty map with SourceNone —
+// ownership is never fabricated. A git-log run that hits its timeout (gitTimeout)
+// without resolving any data is reported as SourceGitTimeout instead, so
+// downstream diagnostics can tell "the walk didn't finish" from "ran clean, found
+// nothing."
 //
 // The returned map is keyed by config module name (from the ModuleMap). Paths
 // that do not match any configured module are silently skipped.
@@ -21,10 +26,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,6 +42,15 @@ import (
 const (
 	gitTool    = "git"
 	gitTimeout = 15 * time.Second
+
+	// maxCommitsGitAuthor bounds the git-author history walk by COMMIT COUNT,
+	// not calendar time. A --since=N-months window would reintroduce the exact
+	// silent-none failure mode this bound closes: a stable, low-churn module
+	// with no commits inside the window would resolve to no owner. A count-based
+	// bound keeps the walk fast regardless of repo age/size while covering
+	// realistic per-repo history depth; see resolveFromGitAuthor for the
+	// unbounded fallback used when the bounded walk resolves nothing.
+	maxCommitsGitAuthor = 5000
 )
 
 // codeownersLocations are the candidate paths for CODEOWNERS, searched in order.
@@ -59,8 +75,15 @@ const (
 	SourceCodeowners Source = "codeowners"
 	// SourceGit means owners were resolved from git-author history (no CODEOWNERS).
 	SourceGit Source = "git"
-	// SourceNone means no owner signal — neither source produced any owner.
+	// SourceNone means no owner signal — neither source produced any owner. This
+	// is a clean result: the source ran (or there was nothing to run) and
+	// genuinely found no data to attribute.
 	SourceNone Source = "none"
+	// SourceGitTimeout means the git-author history walk hit its timeout
+	// (gitTimeout) without resolving any owner data. Distinct from SourceNone —
+	// this is "the walk didn't finish," not "ran clean, found nothing" — so
+	// downstream diagnostics don't read a timeout as a genuinely-unattributed repo.
+	SourceGitTimeout Source = "git_timeout"
 )
 
 // Resolve returns a map from config module name to owner string, plus the Source
@@ -104,7 +127,13 @@ func Resolve(ctx context.Context, scanRoot, gitRoot, subtreePrefix string, modul
 	}
 
 	// Fall back to git-author only when no CODEOWNERS exists at all.
-	m := resolveFromGitAuthor(ctx, scanRoot, gitRoot, subtreePrefix, modules, runner)
+	m, timedOut := resolveFromGitAuthor(ctx, scanRoot, gitRoot, subtreePrefix, modules, runner)
+	if timedOut {
+		// The walk did not finish — distinct from a clean run that found
+		// nothing, so downstream diagnostics don't mistake "unknown" for
+		// "genuinely unattributed."
+		return map[string]string{}, SourceGitTimeout
+	}
 	if len(m) == 0 {
 		return m, SourceNone
 	}
@@ -287,20 +316,49 @@ func resolveFromCodeowners(rules []ownerRule, scanRoot, subtreePrefix string, mo
 // git-author fallback path
 // ---------------------------------------------------------------------------
 
-// resolveFromGitAuthor runs a single git log pass and aggregates author emails
-// per file to produce a module→owner map. Non-git dirs and git failures produce
-// an empty map, never an error.
+// resolveFromGitAuthor runs a git log pass bounded to the most recent
+// maxCommitsGitAuthor commits and aggregates author emails per file to produce
+// a module→owner map. When that bounded pass resolves zero modules (e.g. a
+// stable module whose only touching commits fall outside the bounded window),
+// a second, unbounded pass is tried before giving up — that pathological case
+// is the one scenario where paying the full-history cost is worth it. Non-git
+// dirs and git failures produce an empty map, never an error.
+//
+// The second return is true only when a git-log subprocess itself hit its
+// timeout (gitTimeout) — distinct from a clean run that legitimately found no
+// data. On a bounded-pass timeout the unbounded fallback is skipped: a slower,
+// unbounded walk after a bounded one already timed out would almost certainly
+// time out too, at greater cost.
 //
 // git log emits gitRoot-relative paths regardless of the working directory, so
 // when scanRoot is a subtree the run is scoped with a subtreePrefix pathspec and
 // each path is stripped back to its scanRoot-relative form before module mapping
 // (module globs are scanRoot-relative). gitRoot=="" (non-git) runs from scanRoot.
-func resolveFromGitAuthor(ctx context.Context, scanRoot, gitRoot, subtreePrefix string, modules config.ModuleMap, runner toolrun.Runner) map[string]string {
+func resolveFromGitAuthor(ctx context.Context, scanRoot, gitRoot, subtreePrefix string, modules config.ModuleMap, runner toolrun.Runner) (map[string]string, bool) {
 	workDir := gitRoot
 	if workDir == "" {
 		workDir = scanRoot
 	}
+
+	m, timedOut := runGitAuthorLog(ctx, workDir, subtreePrefix, modules, runner, maxCommitsGitAuthor)
+	if timedOut || len(m) > 0 {
+		return m, timedOut
+	}
+
+	// Bounded walk found nothing usable — fall back to the full history.
+	return runGitAuthorLog(ctx, workDir, subtreePrefix, modules, runner, 0)
+}
+
+// runGitAuthorLog runs one `git log --format=%ae --name-only` pass, bounded to
+// maxCommits (0 means unbounded — full history), and aggregates author emails
+// per file into a module→owner map. The second return is true only when the
+// subprocess itself hit gitTimeout; any other failure (non-git dir, git error)
+// returns an empty map with false, matching Resolve's "never an error" contract.
+func runGitAuthorLog(ctx context.Context, workDir, subtreePrefix string, modules config.ModuleMap, runner toolrun.Runner, maxCommits int) (map[string]string, bool) {
 	args := []string{"log", "--format=%ae", "--name-only"}
+	if maxCommits > 0 {
+		args = append(args, "-n", strconv.Itoa(maxCommits))
+	}
 	if subtreePrefix != "" {
 		// Scope history to the analyzed subtree.
 		args = append(args, "--", subtreePrefix)
@@ -311,8 +369,11 @@ func resolveFromGitAuthor(ctx context.Context, scanRoot, gitRoot, subtreePrefix 
 		Timeout: gitTimeout,
 		WorkDir: workDir,
 	})
+	if errors.Is(err, context.DeadlineExceeded) {
+		return map[string]string{}, true
+	}
 	if err != nil || out.ExitCode != 0 {
-		return map[string]string{}
+		return map[string]string{}, false
 	}
 
 	// module name → map[author]count
@@ -352,7 +413,7 @@ func resolveFromGitAuthor(ctx context.Context, scanRoot, gitRoot, subtreePrefix 
 		ownerCount[mod][currentAuthor]++
 	}
 
-	return dominantOwners(ownerCount)
+	return dominantOwners(ownerCount), false
 }
 
 // isAuthorLine heuristically identifies an author-email line in git log output.
