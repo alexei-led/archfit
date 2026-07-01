@@ -59,7 +59,7 @@ func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 	}
 	degenerateOwners := isDegenerateOwnerMap(fullOwnerMap)
 
-	effectiveVol := computeEffectiveVolatility(g, mm, c.Modules, c.VolatilityCascadeEnabled)
+	effectiveVol := computeEffectiveVolatility(g, mm, c.Modules, c.VolatilityCascadeEnabled, c.CrossModuleClonePairs)
 
 	for _, e := range g.Edges() {
 		cl := classify(e, mm, c, degenerateExplicit, degenerateOwners, effectiveVol)
@@ -722,8 +722,15 @@ func isGenericSubdomain(toPath string, mi moduleIndex, modules map[string]config
 // The cascade reads only the BASE volatility of the to-module — not the
 // propagated value — making the result order-independent (single hop, no fixpoint).
 //
-// Strong strength set for propagation: Functional, Symmetric, Intrusive.
-func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, modules map[string]config.ModuleDef, cascadeEnabled bool) map[string]coupling.Volatility {
+// Strong strength set for propagation: Functional, Symmetric, Intrusive. An edge
+// between a module pair in clonePairs is excluded even if it otherwise qualifies:
+// a detected clone is accidental coupling (duplicated code, not a deliberate
+// integration point), and the book's volatility model is about a component's
+// essential rate of change — an incidental clone match between two modules says
+// nothing about either module's real volatility, so it must not flip a whole
+// module's effective volatility to high (see "Balancing Coupling in Software
+// Design" ch.9, "Essential vs. Accidental (In)Volatility").
+func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, modules map[string]config.ModuleDef, cascadeEnabled bool, clonePairs map[string]struct{}) map[string]coupling.Volatility {
 	// Seed effective map from config-declared volatility.
 	effective := make(map[string]coupling.Volatility, len(modules))
 	for name, def := range modules {
@@ -748,6 +755,9 @@ func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, modules map[stri
 		toMod, okTo := mi.moduleFor(toPath)
 		if !okFrom || !okTo || fromMod == toMod {
 			continue
+		}
+		if _, isClonePair := clonePairs[connascencePairKey(fromMod, toMod)]; isClonePair {
+			continue // accidental coupling — must not trigger the cascade
 		}
 		// Read the BASE volatility of the to-module (order-independent).
 		if base[toMod] != coupling.VolatilityHigh {

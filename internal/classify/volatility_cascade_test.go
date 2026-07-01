@@ -20,6 +20,7 @@ const (
 	cascadeFilePayment       = "payment/svc.go"
 	cascadeFileNotifications = "notifications/svc.go"
 	cascadeFileGateway       = "gateway/svc.go"
+	cascadeProbeFile         = "probe/x.go"
 )
 
 // buildGraph constructs a Graph from a slice of (from, to, strengthHint) triples.
@@ -49,9 +50,10 @@ func buildGraph(edges [][3]string) *graph.Graph {
 	return graph.Build([]graph.Facts{{Nodes: nodes, Edges: gedges}})
 }
 
-// probeKey returns the coupling.Index key for a probe edge.
-func probeKey(from, to string) string {
-	return "file:" + from + "\x00" + "file:" + to + "\x00" + string(graph.EdgeKindImports)
+// probeKey returns the coupling.Index key for a probe→to edge (probe is always
+// cascadeProbeFile across these tests).
+func probeKey(to string) string {
+	return "file:" + cascadeProbeFile + "\x00" + "file:" + to + "\x00" + string(graph.EdgeKindImports)
 }
 
 // cascadeModules is the module map used across TestVolatilityCascade cases.
@@ -163,7 +165,7 @@ func TestVolatilityCascade(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			probe := "probe/x.go"
+			probe := cascadeProbeFile
 			g := buildGraph([][3]string{
 				{tc.from, tc.to, tc.hint},
 				{probe, tc.probeTarget, ""},
@@ -173,7 +175,7 @@ func TestVolatilityCascade(t *testing.T) {
 				VolatilityCascadeEnabled: tc.cascadeEnabled,
 			}
 			idx := classify.Run(g, c)
-			key := probeKey(probe, tc.probeTarget)
+			key := probeKey(tc.probeTarget)
 			cl, ok := idx[key]
 			if !ok {
 				t.Fatalf("probe edge %q not in index", key)
@@ -182,6 +184,39 @@ func TestVolatilityCascade(t *testing.T) {
 				t.Errorf("volatility = %q, want %q", cl.Volatility, tc.wantVol)
 			}
 		})
+	}
+}
+
+// TestVolatilityCascade_ClonePairExcluded is the B4 regression: a detected
+// cross-module clone is accidental coupling (duplicated code, not a deliberate
+// integration point) and must not trigger the cascade, even though its strength
+// hint otherwise qualifies as strong. Reproduces the prometheus finding where a
+// single clone-detected edge flipped an entire unrelated module's effective
+// volatility to high.
+func TestVolatilityCascade_ClonePairExcluded(t *testing.T) {
+	probe := cascadeProbeFile
+	g := buildGraph([][3]string{
+		{cascadeFileNotifications, cascadeFilePayment, string(coupling.StrengthFunctional)},
+		{probe, cascadeFileNotifications, ""},
+	})
+	c := config.ClassifyConfig{
+		Modules:                  cascadeModules,
+		VolatilityCascadeEnabled: true,
+		CrossModuleClonePairs: map[string]struct{}{
+			// connascencePairKey's format: sorted module names joined by "\x00".
+			"notifications\x00payment": {},
+		},
+	}
+	idx := classify.Run(g, c)
+	cl, ok := idx[probeKey(cascadeFileNotifications)]
+	if !ok {
+		t.Fatalf("probe edge not in index")
+	}
+	// Without the clone-pair exclusion this would be VolatilityHigh (same setup
+	// as "enabled functional: supporting raised to high" above) — the pair being
+	// clone-detected must suppress the cascade despite the strong strength hint.
+	if cl.Volatility != coupling.VolatilityLow {
+		t.Errorf("volatility = %q, want %q (clone pair must not trigger cascade)", cl.Volatility, coupling.VolatilityLow)
 	}
 }
 
@@ -197,7 +232,7 @@ func TestVolatilityCascade_SingleHop(t *testing.T) {
 		modNameB: {Paths: []string{"b/**"}, Subdomain: subdomainCore},       // high base
 		"modC":   {Paths: []string{"c/**"}, Subdomain: subdomainSupporting}, // low base (book Table 9.1)
 	}
-	probe := "probe/x.go"
+	probe := cascadeProbeFile
 	g := buildGraph([][3]string{
 		{"a/x.go", "b/x.go", string(coupling.StrengthFunctional)}, // A→B: A raised
 		{"b/x.go", "c/x.go", string(coupling.StrengthFunctional)}, // B→C: C not raised (base[C]=medium)
@@ -210,8 +245,8 @@ func TestVolatilityCascade_SingleHop(t *testing.T) {
 	}
 	idx := classify.Run(g, c)
 
-	clA, okA := idx[probeKey(probe, "a/x.go")]
-	clC, okC := idx[probeKey(probe, "c/x.go")]
+	clA, okA := idx[probeKey("a/x.go")]
+	clC, okC := idx[probeKey("c/x.go")]
 	if !okA || !okC {
 		t.Fatalf("probe edges missing from index")
 	}
