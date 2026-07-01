@@ -128,7 +128,15 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/rust: run cargo metadata: %w", err)
 	}
 	if out.ExitCode != 0 {
-		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/rust: cargo metadata exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+		// cargo metadata exited non-zero — e.g. a malformed manifest or an
+		// unresolvable dependency graph. This is a coverage gap, not a run-level
+		// failure (the "warn-loud, don't block" contract); only an explicitly
+		// required analyzer (ModeOn) hard-errors.
+		reason := fmt.Sprintf("cargo metadata exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+		if e.cfg.Mode == config.ModeOn {
+			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/rust: %s", reason)
+		}
+		return graph.Facts{}, diagnostic.Coverage{Tool: toolCargo, Version: version, Status: statusPartial, Reason: reason}, nil
 	}
 
 	facts, members, cov, err := e.parseAndNormalize(out.Stdout, version)
@@ -291,7 +299,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 	}
 
 	for _, m := range members {
-		fromNode := graph.Node{Kind: graph.NodeKindPackage, Path: m.Name}
+		fromNode := graph.Node{Kind: graph.NodeKindPackage, Path: m.Name, Language: graph.LangRust}
 		emitNode(fromNode)
 
 		for _, dep := range m.Dependencies {
@@ -303,7 +311,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 			if _, ok := memberNames[dep.Name]; ok {
 				kind = graph.NodeKindPackage
 			}
-			toNode := graph.Node{Kind: kind, Path: dep.Name}
+			toNode := graph.Node{Kind: kind, Path: dep.Name, Language: graph.LangRust}
 			emitNode(toNode)
 
 			edgeKey := fromNode.ID() + "\x00" + toNode.ID()

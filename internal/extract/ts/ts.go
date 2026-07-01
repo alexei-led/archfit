@@ -374,12 +374,12 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 		// double-count the same package.
 		srcPath := normPath(mod.Source)
 		if mod.CouldNotResolve {
-			emitNode(graph.Node{Kind: graph.NodeKindExternal, Path: srcPath})
+			emitNode(graph.Node{Kind: graph.NodeKindExternal, Path: srcPath, Language: graph.LangTypeScript})
 			continue
 		}
 
 		fromID := "file:" + srcPath
-		emitNode(graph.Node{Kind: graph.NodeKindFile, Path: srcPath})
+		emitNode(graph.Node{Kind: graph.NodeKindFile, Path: srcPath, Language: graph.LangTypeScript})
 		filesSeen++
 
 		// Merge dependencies and deps (alternate key).
@@ -410,7 +410,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 				nodeKind = graph.NodeKindExternal
 			}
 			toID := string(nodeKind) + ":" + toPath
-			emitNode(graph.Node{Kind: nodeKind, Path: toPath})
+			emitNode(graph.Node{Kind: nodeKind, Path: toPath, Language: graph.LangTypeScript})
 
 			// Determine edge kind. External targets are never internal.
 			edgeKind := graph.EdgeKindImports

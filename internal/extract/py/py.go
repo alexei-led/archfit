@@ -139,11 +139,18 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	if out.ExitCode != 0 {
 		// The helper writes error JSON to stdout; surface that over the raw stderr
 		// (which typically contains uv progress lines, not the real error).
+		reason := fmt.Sprintf("helper exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
 		var h helperOutput
 		if je := json.Unmarshal(out.Stdout, &h); je == nil && h.Error != "" {
-			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/py: %s", h.Error)
+			reason = h.Error
 		}
-		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/py: helper exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
+		// A helper crash is a coverage gap, not a run-level failure (the "warn-loud,
+		// don't block" contract); only an explicitly required analyzer (ModeOn)
+		// hard-errors.
+		if e.cfg.Mode == config.ModeOn {
+			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/py: %s", reason)
+		}
+		return graph.Facts{}, diagnostic.Coverage{Tool: toolGrimp, Version: version, Status: statusPartial, Reason: reason}, nil
 	}
 
 	facts, cov, err := e.parseAndNormalize(out.Stdout, version)
@@ -293,7 +300,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 		id := "module:" + dotted
 		if _, ok := seenNodes[id]; !ok {
 			seenNodes[id] = struct{}{}
-			nodes = append(nodes, graph.Node{Kind: graph.NodeKindModule, Path: dotted})
+			nodes = append(nodes, graph.Node{Kind: graph.NodeKindModule, Path: dotted, Language: graph.LangPython})
 		}
 	}
 

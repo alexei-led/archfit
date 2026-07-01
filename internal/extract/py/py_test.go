@@ -256,6 +256,50 @@ func TestExtract_ToolAbsentAuto(t *testing.T) {
 	}
 }
 
+// TestExtract_NonZeroExit: when the grimp helper exits non-zero (e.g. an import
+// error inside the target project), auto mode degrades to a partial coverage gap
+// instead of failing the whole run; ModeOn still hard-errors so a required
+// analyzer surfaces the problem.
+func TestExtract_NonZeroExit(t *testing.T) {
+	mock := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == "uv" {
+				return toolrun.ToolInfo{Name: "uv"}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--version") {
+				return toolrun.Output{Stdout: []byte("uv 0.4.0"), ExitCode: 0}, nil
+			}
+			return toolrun.Output{ExitCode: 1, Stderr: []byte("ModuleNotFoundError: no module named 'myapp'")}, nil
+		},
+	}
+
+	t.Run("auto degrades to partial coverage", func(t *testing.T) {
+		cfg := config.ExtractConfig{PyPackage: testPkgName, Mode: config.ModeAuto}
+		e := py.New(mock, cfg)
+		facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
+		if err != nil {
+			t.Fatalf("auto mode must not error on grimp helper non-zero exit; got %v", err)
+		}
+		if cov.Status != "partial" {
+			t.Errorf("Status = %q, want %q", cov.Status, "partial")
+		}
+		if len(facts.Nodes) != 0 || len(facts.Edges) != 0 {
+			t.Errorf("expected no nodes/edges on degraded run; got %d nodes, %d edges", len(facts.Nodes), len(facts.Edges))
+		}
+	})
+
+	t.Run("on hard-errors", func(t *testing.T) {
+		cfg := config.ExtractConfig{PyPackage: testPkgName, Mode: config.ModeOn}
+		e := py.New(mock, cfg)
+		if _, _, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode}); err == nil {
+			t.Error("ModeOn must hard-error on grimp helper non-zero exit")
+		}
+	})
+}
+
 // TestExtract_MultiPackageArgs verifies that when multiple top-level Python packages
 // are discovered under ScanRoot, all names are passed to the grimp helper via
 // --packages pkg1 pkg2 … (grimp.build_graph is variadic).

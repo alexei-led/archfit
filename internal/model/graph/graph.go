@@ -38,8 +38,9 @@ type Location struct {
 
 // Node is a vertex in the dependency graph. Its identity is Kind + ":" + Path.
 type Node struct {
-	Kind NodeKind `json:"kind"`
-	Path string   `json:"path"`
+	Kind     NodeKind `json:"kind"`
+	Path     string   `json:"path"`
+	Language string   `json:"language"`
 }
 
 // ID returns the canonical node identity: "<kind>:<path>" (e.g. "file:pkg/a/a.go").
