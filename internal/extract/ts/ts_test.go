@@ -788,3 +788,55 @@ func TestExtract_SrcDotIsLiteral(t *testing.T) {
 		t.Errorf("Src=%q was not passed through literally; depcruise args = %v", ".", gotArgs)
 	}
 }
+
+// TestExtract_PackagePinned locks that both launchers are told the explicit
+// npm package name for depcruise, not just the bare CLI subcommand. Without
+// this, a launcher that finds no local "depcruise" binary resolves "depcruise"
+// as if it were itself an installable package name -- which on the npm
+// registry belongs to an unrelated dependency-confusion placeholder, not
+// dependency-cruiser (reproduced via plain `npx depcruise` on a repo with no
+// local install: silent exit 0, garbage non-JSON output).
+func TestExtract_PackagePinned(t *testing.T) {
+	tests := []struct {
+		launcher string
+		wantArgs []string // must appear, in order, before the "depcruise" subcommand
+	}{
+		{launcher: launcherBunx, wantArgs: []string{"-p", "dependency-cruiser"}},
+		{launcher: "npx", wantArgs: []string{"--package=dependency-cruiser", "--"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.launcher, func(t *testing.T) {
+			var gotArgs []string
+			runner := &toolrun.RunnerMock{
+				DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+					if tool == tt.launcher {
+						return toolrun.ToolInfo{Name: tt.launcher, Path: "/usr/bin/" + tt.launcher}, true
+					}
+					return toolrun.ToolInfo{}, false
+				},
+				RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+					if slices.Contains(cmd.Args, "--version") {
+						return toolrun.Output{Stdout: []byte("16.0.0\n")}, nil
+					}
+					gotArgs = cmd.Args
+					return toolrun.Output{Stdout: []byte(`{"modules":[]}`)}, nil
+				},
+			}
+
+			extractor := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
+			if _, _, err := extractor.Extract(context.Background(), scope.Scope{Root: fixtureDir}); err != nil {
+				t.Fatalf("Extract: %v", err)
+			}
+
+			depIdx := slices.Index(gotArgs, "depcruise")
+			if depIdx == -1 {
+				t.Fatalf("expected \"depcruise\" subcommand in args %v", gotArgs)
+			}
+			gotPin := gotArgs[:depIdx]
+			if !slices.Equal(gotPin, tt.wantArgs) {
+				t.Errorf("package-pin args before \"depcruise\" = %v, want %v (full args %v)", gotPin, tt.wantArgs, gotArgs)
+			}
+		})
+	}
+}

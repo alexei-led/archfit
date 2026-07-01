@@ -112,7 +112,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		srcArg = filepath.ToSlash(filepath.Join(s.SubtreePrefix, src))
 	}
 
-	args := []string{toolName, srcArg, "--output-type", "json", "--exclude", "^node_modules"}
+	args := append(packagePinArgs(launcher), toolName, srcArg, "--output-type", "json", "--exclude", "^node_modules")
 	// Scope depcruise to the analysis subtree when running from the git root.
 	// --include-only uses a JS regex against the git-root-relative module paths.
 	// Omitted when SubtreePrefix is empty to preserve byte-identical output on
@@ -178,6 +178,30 @@ func (e *Extractor) detectLauncher(ctx context.Context) (string, string, bool) {
 		}
 	}
 	return "", "", false
+}
+
+// packagePinArgs returns launcher flags that pin depcruise's npm package name
+// explicitly. Without this, a launcher that finds no local "depcruise" binary
+// (dependency-cruiser not yet installed as a project dependency, the common
+// case for an archfit target repo) falls back to resolving "depcruise" as if
+// it were itself an installable package name. On the npm registry that name
+// belongs to an unrelated dependency-confusion placeholder package, not
+// dependency-cruiser -- confirmed via `npx depcruise` on a repo with no local
+// install: it silently installs the decoy, exits 0, and prints a warning
+// banner instead of JSON, which would otherwise surface as a silent coverage
+// gap indistinguishable from any other TS extraction miss. bunx (tried first
+// by detectLauncher) does not hit this because its package cache resolves
+// "depcruise" correctly, but pinning both launchers removes the ambiguity
+// instead of relying on that being permanently true.
+func packagePinArgs(launcher string) []string {
+	switch launcher {
+	case "bunx":
+		return []string{"-p", coverageTool}
+	case "npx":
+		return []string{"--package=" + coverageTool, "--"}
+	default:
+		return nil
+	}
 }
 
 // tsConfigNames are the conventional tsconfig file names archfit auto-detects at
@@ -251,7 +275,7 @@ func hasDepcruiseConfig(root string) bool {
 func (e *Extractor) detectVersion(ctx context.Context, launcher string) string {
 	out, err := e.runner.Run(ctx, toolrun.ToolCmd{
 		Name:    launcher,
-		Args:    []string{toolName, "--version"},
+		Args:    append(packagePinArgs(launcher), toolName, "--version"),
 		Timeout: 30 * time.Second,
 	})
 	if err != nil || out.ExitCode != 0 {
