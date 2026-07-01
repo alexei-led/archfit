@@ -168,7 +168,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// Placed after the ModuleMap rebuild so auto-registered members participate
 	// in cross-module clone-pair detection.
 	if len(in.Signals.Duplication.Clusters) > 0 {
-		classifyCfg.CrossModuleClonePairs = buildClonePairSet(in.Signals.Duplication.Clusters, classifyCfg.ModuleMap, in.Signals.Size.FileClassIndex)
+		classifyCfg.CrossModuleClonePairs, classifyCfg.CloneEvidence = buildClonePairSet(in.Signals.Duplication.Clusters, classifyCfg.ModuleMap, in.Signals.Size.FileClassIndex)
 	}
 
 	// Runtime async evidence: build per-module rollup for the diagnostic.

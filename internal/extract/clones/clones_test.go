@@ -18,12 +18,14 @@ const (
 )
 
 // jscpdSuccessJSON is a canned jscpd JSON report with two duplicate entries over
-// a 12-file scan (statistics.total.sources).
+// a 12-file scan (statistics.total.sources). The first entry's start/end mirror
+// jscpd's real reporter output (verified against a live jscpd run); the second
+// omits them to cover reports from older jscpd versions with no line data.
 const jscpdSuccessJSON = `{
 	"duplicates": [
 		{
-			"firstFile":  {"name": "internal/a/a.go"},
-			"secondFile": {"name": "internal/b/b.go"},
+			"firstFile":  {"name": "internal/a/a.go", "start": 3, "end": 12},
+			"secondFile": {"name": "internal/b/b.go", "start": 8, "end": 17},
 			"lines": 25
 		},
 		{
@@ -131,6 +133,18 @@ func TestRun_Success(t *testing.T) {
 	}
 	if clusters[0].Lines != 25 {
 		t.Errorf("cluster[0].Lines = %d, want 25", clusters[0].Lines)
+	}
+	// B6: jscpd's real per-side start/end lines must survive JSON parsing into
+	// clone.Cluster.Locations instead of being silently dropped.
+	wantLocs := []clone.LineRange{{StartLine: 3, EndLine: 12}, {StartLine: 8, EndLine: 17}}
+	if len(clusters[0].Locations) != 2 || clusters[0].Locations[0] != wantLocs[0] || clusters[0].Locations[1] != wantLocs[1] {
+		t.Errorf("cluster[0].Locations = %v, want %v", clusters[0].Locations, wantLocs)
+	}
+	// The second duplicate carries no start/end in the fixture (older jscpd
+	// report) — Locations must degrade to the zero value, not panic or omit
+	// the slice entirely.
+	if len(clusters[1].Locations) != 2 || clusters[1].Locations[0] != (clone.LineRange{}) {
+		t.Errorf("cluster[1].Locations = %v, want two zero-value entries", clusters[1].Locations)
 	}
 }
 
