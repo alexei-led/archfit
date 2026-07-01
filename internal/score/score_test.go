@@ -216,10 +216,10 @@ func TestCouplingBalance_EmptyEdges(t *testing.T) {
 		}
 	})
 
-	t.Run("degenerate graph + no edges → 50/low", func(t *testing.T) {
+	t.Run("degenerate graph + no edges → n/a (single-module: no cross-module coupling to measure)", func(t *testing.T) {
 		got := couplingBalance(nil, metricIndex{}, nil)
-		if got.Value != 50 || got.Confidence != ConfidenceLow {
-			t.Errorf("value/conf = %d/%q, want 50/low", got.Value, got.Confidence)
+		if got.Band != BandNA {
+			t.Errorf("band = %q, want n/a (degenerate graph is unmeasured, not a fabricated 50)", got.Band)
 		}
 	})
 
@@ -284,18 +284,18 @@ func TestCouplingBalance_Distribution(t *testing.T) {
 			wantMaxVal: 60,
 		},
 		{
-			name:       "zero scored with abstained → 60/mixed/low",
+			name:       "zero scored with abstained → n/a (unmeasured, not fabricated mixed)",
 			sum:        summary(0, 5, 0.0, nil),
-			wantMinVal: 60, wantMaxVal: 60,
+			wantMinVal: 0, wantMaxVal: 0,
 			wantConf: ConfidenceLow,
-			wantBand: BandMixed,
+			wantBand: BandNA,
 		},
 		{
-			name:       "zero cross-boundary → 60/mixed/low",
+			name:       "zero cross-boundary → n/a (unmeasured, not fabricated mixed)",
 			sum:        summary(0, 0, 0.0, nil),
-			wantMinVal: 60, wantMaxVal: 60,
+			wantMinVal: 0, wantMaxVal: 0,
 			wantConf: ConfidenceLow,
-			wantBand: BandMixed,
+			wantBand: BandNA,
 		},
 		{
 			name:       "critical edge caps at 60",
@@ -343,7 +343,7 @@ func TestCouplingBalance_Distribution(t *testing.T) {
 			if tc.wantMaxVal > 0 && got.Value > tc.wantMaxVal {
 				t.Errorf("value = %d, want ≤%d", got.Value, tc.wantMaxVal)
 			}
-			if got.Band != bandFor(got.Value) {
+			if !got.Band.Unmeasured() && got.Band != bandFor(got.Value) {
 				t.Errorf("band %q does not match value %d (want %q)", got.Band, got.Value, bandFor(got.Value))
 			}
 			if (got.Band == BandServiceable || got.Band == BandStrong) && got.Confidence == ConfidenceLow {
@@ -500,7 +500,7 @@ func TestCouplingBalance_ExternalEdgesExcluded(t *testing.T) {
 		}
 	})
 
-	t.Run("zero internal scored edges + many external → 60/mixed/low with external in evidence", func(t *testing.T) {
+	t.Run("zero internal scored edges + many external → n/a with external in evidence", func(t *testing.T) {
 		sum := &diagnostic.ClassifiedEdgeSummary{
 			Total:     300,
 			Scored:    0,
@@ -509,11 +509,11 @@ func TestCouplingBalance_ExternalEdgesExcluded(t *testing.T) {
 		}
 		got := finalize(couplingBalance(nil, nonDegen, sum))
 
-		if got.Value != 60 {
-			t.Errorf("value = %d, want 60 (zero-internal sentinel)", got.Value)
+		if got.Value != 0 {
+			t.Errorf("value = %d, want 0 (unmeasured: all edges external)", got.Value)
 		}
-		if got.Band != BandMixed {
-			t.Errorf("band = %q, want mixed", got.Band)
+		if got.Band != BandNA {
+			t.Errorf("band = %q, want n/a (coupling unmeasured, not fabricated mixed)", got.Band)
 		}
 		if got.Confidence != ConfidenceLow {
 			t.Errorf("confidence = %q, want low", got.Confidence)

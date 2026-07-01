@@ -141,7 +141,10 @@ func decideBand(diag diagnostic.Diagnostic, sc score.Scorecard, hardGate bool) B
 	//    cohesion clone-scoring) are calibration-sensitive and belong in WATCH +
 	//    "why the score is low", not the headline verdict. Genuine hard problems
 	//    surface as gate findings (→ FAIL). The decision keys off overall health.
-	if score.BandRank(sc.OverallBand) <= score.BandRank(score.BandPoor) {
+	// An n/a overall (coupling could not be measured) is "unknown", not "poor" —
+	// it must not escalate to NEEDS_ATTENTION as if the architecture were bad.
+	// BandRank(BandNA) is -1, which would otherwise satisfy this check.
+	if !sc.OverallBand.Unmeasured() && score.BandRank(sc.OverallBand) <= score.BandRank(score.BandPoor) {
 		return BandNeedsAttention
 	}
 	// 3. HEALTHY: overall is serviceable or strong AND no advisory warnings AND verdict is not warn.
@@ -287,16 +290,26 @@ func buildDelta(base, current score.Scorecard) *Delta {
 	dimDeltas := make([]DimDelta, 0, len(current.Dimensions))
 	for _, cur := range current.Dimensions {
 		if b, ok := baseIdx[cur.Name]; ok {
+			change := cur.Value - b.Value
+			// An n/a side (coupling unmeasured) has no real value — suppress the
+			// numeric delta so it does not read as a phantom regression/improvement.
+			if cur.Band.Unmeasured() || b.Band.Unmeasured() {
+				change = 0
+			}
 			dimDeltas = append(dimDeltas, DimDelta{
 				Name:   cur.Name,
 				Before: b.Value,
 				After:  cur.Value,
-				Change: cur.Value - b.Value,
+				Change: change,
 			})
 		}
 	}
+	overall := current.Overall - base.Overall
+	if current.OverallBand.Unmeasured() || base.OverallBand.Unmeasured() {
+		overall = 0
+	}
 	return &Delta{
-		Overall:    current.Overall - base.Overall,
+		Overall:    overall,
 		Dimensions: dimDeltas,
 	}
 }

@@ -77,19 +77,29 @@ func dimensionByName(sc score.Scorecard, name string) *score.Dimension {
 
 // buildDelta pairs head and base dimensions by name and computes value deltas.
 func buildDelta(head, base score.Scorecard) *scoreDelta {
-	baseVal := make(map[string]int, len(base.Dimensions))
+	baseDim := make(map[string]score.Dimension, len(base.Dimensions))
 	for _, d := range base.Dimensions {
-		baseVal[d.Name] = d.Value
+		baseDim[d.Name] = d
 	}
 	dims := make([]dimensionDelta, 0, len(head.Dimensions))
 	for _, d := range head.Dimensions {
-		b := baseVal[d.Name]
-		dims = append(dims, dimensionDelta{Name: d.Name, Base: b, Head: d.Value, Delta: d.Value - b})
+		b := baseDim[d.Name]
+		delta := d.Value - b.Value
+		// An n/a side (coupling unmeasured) has no real value — suppress the numeric
+		// delta so a measurement-status change is not reported as a score regression.
+		if d.Band.Unmeasured() || b.Band.Unmeasured() {
+			delta = 0
+		}
+		dims = append(dims, dimensionDelta{Name: d.Name, Base: b.Value, Head: d.Value, Delta: delta})
+	}
+	overallDelta := head.Overall - base.Overall
+	if head.OverallBand.Unmeasured() || base.OverallBand.Unmeasured() {
+		overallDelta = 0
 	}
 	return &scoreDelta{
 		BaseOverall:  base.Overall,
 		HeadOverall:  head.Overall,
-		OverallDelta: head.Overall - base.Overall,
+		OverallDelta: overallDelta,
 		Dimensions:   dims,
 	}
 }

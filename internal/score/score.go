@@ -23,7 +23,14 @@ const (
 	BandMixed       Band = "mixed"       // 41-60
 	BandServiceable Band = "serviceable" // 61-80
 	BandStrong      Band = "strong"      // 81-100
+	// BandNA marks a dimension that could not be measured (no scored evidence) —
+	// e.g. zero scored cross-boundary edges or a degenerate graph. It is NOT a
+	// 0-100 value: the tool abstains rather than fabricating a mid-band number.
+	BandNA Band = "n/a"
 )
+
+// Unmeasured reports whether b is the n/a band (coupling could not be measured).
+func (b Band) Unmeasured() bool { return b == BandNA }
 
 // Confidence describes how trustworthy a dimension assessment is, independent of
 // the value itself (scorecard.yaml confidence_levels).
@@ -91,8 +98,11 @@ func Synthesize(d diagnostic.Diagnostic) Scorecard {
 	return Scorecard{
 		RubricVersion: RubricVersion,
 		Overall:       cb.Value,
-		OverallBand:   bandFor(cb.Value),
-		Dimensions:    []Dimension{cb},
+		// cb.Band is bandFor(cb.Value) for a measured dimension (finalize sets it)
+		// and BandNA when coupling could not be measured — propagate it verbatim so
+		// the overall does not fabricate a band from the n/a sentinel value.
+		OverallBand: cb.Band,
+		Dimensions:  []Dimension{cb},
 	}
 }
 
@@ -101,6 +111,15 @@ func Synthesize(d diagnostic.Diagnostic) Scorecard {
 // always recomputed from the final value (band_matches_value), and a dimension
 // with no evidence gets a placeholder so score_requires_evidence holds.
 func finalize(dim Dimension) Dimension {
+	// n/a dimension: coupling could not be measured. Bypass the value clamp, the
+	// low-confidence cap, and the bandFor overwrite — those would turn the n/a
+	// sentinel (value 0) into a fabricated "critical" band. Keep Band = BandNA.
+	if dim.Band == BandNA {
+		if len(dim.Evidence) == 0 {
+			dim.Evidence = []string{"no signal available for this dimension"}
+		}
+		return dim
+	}
 	dim.Value = clamp(dim.Value)
 	if dim.Confidence == ConfidenceLow && dim.Value > 60 {
 		dim.Value = 60 // cannot present serviceable/strong on thin evidence

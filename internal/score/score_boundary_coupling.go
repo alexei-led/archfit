@@ -32,8 +32,9 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 
 	// Degenerate graph: <2 connected modules — coupling unmeasurable regardless of summary.
 	if degenerateGraph(mi) {
+		dim.Band = BandNA
 		dim.Confidence = ConfidenceLow
-		dim.Value = 50
+		dim.Value = 0
 		dim.Evidence = []string{"no classified coupling edges on a graph with fewer than two connected modules — coupling unmeasurable"}
 		dim.Summary = "coupling balance unmeasured: no internal module structure"
 		return dim
@@ -53,10 +54,14 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		// coupling_balance — the book scores YOUR components only, not your libraries).
 		crossBoundary := summary.Scored + summary.Abstained
 
-		// Zero internal cross-boundary edges (or zero scored): unanalyzed sentinel.
+		// Zero scored internal cross-boundary edges: coupling could not be measured.
+		// Report n/a — do NOT fabricate a mid-band number. The cause is upstream
+		// (no module map, file-path globs that never match dotted/crate node names,
+		// an empty SCIP index, or a single-node graph); the evidence names it.
 		if summary.Scored == 0 {
+			dim.Band = BandNA
 			dim.Confidence = ConfidenceLow
-			dim.Value = 60
+			dim.Value = 0
 			dim.Evidence = []string{
 				"0 scored internal cross-boundary edges — coupling balance unconfirmed (edge classification absent or all edges abstained)",
 				fmt.Sprintf("worst-case (critical band) edges: %d", worst),
@@ -147,6 +152,11 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 	// ClassifiedEdges. It exists for calibration test suites that construct
 	// a bare Diagnostic without a ClassifiedEdges summary.
 	if len(edges) == 0 {
+		// Legacy path only (summary == nil): unreachable from engine.go, which always
+		// populates ClassifiedEdges. Calibration suites construct bare diagnostics and
+		// rely on this returning a non-penalising sentinel (e.g. all advisory edges
+		// waived/baselined → triaged, not unmeasured). The n/a honesty fix applies to
+		// the production summary path (Scored == 0) and the degenerate-graph path above.
 		dim.Confidence = ConfidenceLow
 		dim.Value = 60
 		dim.Evidence = []string{"no classified coupling edges — coupling balance unconfirmed (edge classification absent, e.g. SCIP not run, or all edges balanced)"}

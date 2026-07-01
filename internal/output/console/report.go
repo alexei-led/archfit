@@ -55,7 +55,11 @@ func writeResultHeader(b *strings.Builder, r decision.Report) {
 	rkv(b, "Decision", decisionLabel(r.Band))
 	rkv(b, "Gate", fmt.Sprintf("%s  ·  %d blocking", gate, r.Blocking))
 	rkv(b, "Warnings", fmt.Sprintf("%d advisory", r.Advisory))
-	rkv(b, "Score", fmt.Sprintf("%d / 100  %s", r.Overall, r.OverallBand))
+	if r.OverallBand.Unmeasured() {
+		rkv(b, "Score", "n/a  ·  coupling unmeasured (no scored cross-boundary edges)")
+	} else {
+		rkv(b, "Score", fmt.Sprintf("%d / 100  %s", r.Overall, r.OverallBand))
+	}
 }
 
 // rkv writes one aligned "Key   value" header line.

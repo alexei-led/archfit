@@ -1,6 +1,7 @@
 package classify_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/classify"
@@ -1289,6 +1290,102 @@ func TestRun_VolatilityUnknownWhenModuleUnresolved(t *testing.T) {
 
 // buildGoWorkspaceGraph builds a Graph with the given GoModules and edges, suitable
 // for testing AugmentGoWorkspaceModules.
+// buildCrateGraph builds a Rust crate-level graph (package:<crate> nodes) plus
+// the CrateRoots that map each crate to its repo-relative directory.
+func buildCrateGraph(crateRoots []graph.CrateRoot, edges []graph.Edge) *graph.Graph {
+	seen := make(map[string]bool)
+	var nodes []graph.Node
+	for _, e := range edges {
+		for _, id := range []string{e.From, e.To} {
+			if !seen[id] {
+				seen[id] = true
+				nodes = append(nodes, graph.Node{Kind: graph.NodeKindPackage, Path: graph.NodePath(id)})
+			}
+		}
+	}
+	return graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges, Language: graph.LangRust, CrateRoots: crateRoots}})
+}
+
+// TestAugmentCargoCrateNodes covers the three cases of Rust crate-node binding:
+// a directory-path config (ruff-like) binds the bare-name node to the dir-covering
+// module while preserving its attributes; a bare-name config (tokio/yazi-like) is a
+// no-op; and a single-crate graph is left untouched by the ≥2 gate.
+func TestAugmentCargoCrateNodes(t *testing.T) {
+	const (
+		crateAst   = "ruff_python_ast"
+		crateTokio = "tokio"
+		crateUtil  = "tokio-util"
+		crateSolo  = "solo"
+	)
+	crateEdge := func(from, to string) graph.Edge {
+		return graph.Edge{
+			From: "package:" + from, To: "package:" + to,
+			Kind: graph.EdgeKindImports, Language: graph.LangRust, StrengthHint: hintFunctional,
+		}
+	}
+
+	t.Run("path-glob config binds crate node and preserves attributes (ruff-like)", func(t *testing.T) {
+		e := crateEdge("ruff_linter", crateAst)
+		g := buildCrateGraph([]graph.CrateRoot{
+			{Dir: "crates/ruff_linter", Name: "ruff_linter"},
+			{Dir: "crates/ruff_python_ast", Name: crateAst},
+		}, []graph.Edge{e})
+		cfg := map[string]config.ModuleDef{
+			"ruff_linter": {Paths: []string{"crates/ruff_linter/**"}, Volatility: "high", Subdomain: subdomainCore},
+			crateAst:      {Paths: []string{"crates/ruff_python_ast/**"}, Volatility: "medium", Subdomain: "generic"},
+		}
+		mods := classify.AugmentCargoCrateNodes(g, cfg)
+		// Bare crate name appended to the dir-covering module, attributes preserved.
+		if !slices.Contains(mods[crateAst].Paths, crateAst) {
+			t.Errorf("bare crate glob not bound: %v", mods[crateAst].Paths)
+		}
+		if mods[crateAst].Volatility != "medium" || mods[crateAst].Subdomain != "generic" {
+			t.Errorf("module attributes lost: vol=%q sub=%q", mods[crateAst].Volatility, mods[crateAst].Subdomain)
+		}
+		// The cross-crate edge now classifies with a real Distance (was Unknown → external).
+		idx := classify.Run(g, config.ClassifyConfig{Modules: mods})
+		cl, ok := idx[edgeKey(e)]
+		if !ok {
+			t.Fatal("cross-crate edge missing from coupling index")
+		}
+		if cl.Distance == coupling.DistanceUnknown {
+			t.Error("cross-crate edge still distance-unknown after augmentation")
+		}
+	})
+
+	t.Run("bare-name config is a no-op (tokio/yazi-like)", func(t *testing.T) {
+		e := crateEdge(crateTokio, crateUtil)
+		g := buildCrateGraph([]graph.CrateRoot{
+			{Dir: crateTokio, Name: crateTokio},
+			{Dir: crateUtil, Name: crateUtil},
+		}, []graph.Edge{e})
+		cfg := map[string]config.ModuleDef{
+			crateTokio: {Paths: []string{crateTokio}},
+			crateUtil:  {Paths: []string{crateUtil}},
+		}
+		mods := classify.AugmentCargoCrateNodes(g, cfg)
+		if len(mods) != len(cfg) {
+			t.Errorf("bare-name config not a no-op: module count %d→%d", len(cfg), len(mods))
+		}
+		if len(mods[crateTokio].Paths) != 1 {
+			t.Errorf("tokio paths mutated: %v", mods[crateTokio].Paths)
+		}
+	})
+
+	t.Run("single crate untouched (degenerate gate)", func(t *testing.T) {
+		g := graph.Build([]graph.Facts{{
+			Nodes:      []graph.Node{{Kind: graph.NodeKindPackage, Path: crateSolo}},
+			Language:   graph.LangRust,
+			CrateRoots: []graph.CrateRoot{{Dir: "crates/solo", Name: crateSolo}},
+		}})
+		cfg := map[string]config.ModuleDef{crateSolo: {Paths: []string{"crates/solo/**"}}}
+		mods := classify.AugmentCargoCrateNodes(g, cfg)
+		if len(mods[crateSolo].Paths) != 1 || mods[crateSolo].Paths[0] != "crates/solo/**" {
+			t.Errorf("single-crate repo should be untouched, got %v", mods[crateSolo].Paths)
+		}
+	})
+}
+
 func buildGoWorkspaceGraph(goMods []graph.GoModule, edges []graph.Edge) *graph.Graph {
 	seen := make(map[string]bool)
 	var nodes []graph.Node
