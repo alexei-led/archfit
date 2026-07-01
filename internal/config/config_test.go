@@ -346,6 +346,49 @@ func TestForExtract(t *testing.T) {
 	})
 }
 
+// TestForExtract_SrcNotModuleDerived guards against a regression where
+// ForExtract("typescript").Src was derived from the alphabetically-first
+// module's Paths[0] — a classification glob (e.g. "addons/**"), not a real
+// filesystem directory. Under --root subtree rewriting that nonsense path was
+// re-prefixed and handed to dependency-cruiser, which found no files and
+// aborted with a fatal TS18003 (docs/plans/20260701-multilang-reliability-fixes.md
+// Task 4.3). Two configs below declare the same two modules with different
+// alphabetically-first names; Src must be identical across both and must
+// never equal a module's Paths[0].
+func TestForExtract_SrcNotModuleDerived(t *testing.T) {
+	const webGlob = "packages/web/**"
+
+	cfgAddonsFirst := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"addons": {Paths: []string{"addons/**"}},
+			"web":    {Paths: []string{webGlob}},
+		},
+	}
+	cfgWebFirst := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"web": {Paths: []string{webGlob}},
+			"zzz": {Paths: []string{"zzz/**"}},
+		},
+	}
+
+	srcAddonsFirst := cfgAddonsFirst.ForExtract("typescript").Src
+	srcWebFirst := cfgWebFirst.ForExtract("typescript").Src
+
+	if srcAddonsFirst != srcWebFirst {
+		t.Errorf("Src depends on module glob order: %q (addons-first config) != %q (web-first config)", srcAddonsFirst, srcWebFirst)
+	}
+	for _, bad := range []string{"addons/**", webGlob, "zzz/**"} {
+		if srcAddonsFirst == bad {
+			t.Errorf("Src = %q, derived from a module Paths glob (must be a filesystem root, not a classification glob)", srcAddonsFirst)
+		}
+	}
+	if srcAddonsFirst != "." {
+		t.Errorf("Src = %q, want %q (the extractor-agnostic default; TS falls back to \"src\")", srcAddonsFirst, ".")
+	}
+}
+
 func TestDefaultIncludesRust(t *testing.T) {
 	cfg := config.Default()
 	if got := cfg.Languages.Rust.Enabled; got != config.ModeAuto {
