@@ -580,8 +580,68 @@ func TestExtract_TSConfigSubdir(t *testing.T) {
 	if idx == -1 || idx+1 >= len(gotArgs) {
 		t.Fatalf("expected --ts-config in args %v", gotArgs)
 	}
-	// Path must be relative to gitRoot (workDir), not to pkg.
-	want := "packages/pkg-a/tsconfig.json"
+	// Path must be absolute: dependency-cruiser resolves a relative --ts-config's
+	// include/exclude globs against the process CWD (workDir=gitRoot here), not
+	// against the tsconfig's own directory, so a gitRoot-relative path would make
+	// TypeScript search the wrong tree and report TS18003 "no inputs found" even
+	// though pkg/tsconfig.json's matching files exist (reproduced against
+	// storybookjs/storybook).
+	want := filepath.Join(pkg, tsconfigName)
+	if got := gotArgs[idx+1]; got != want {
+		t.Errorf("--ts-config = %q, want %q", got, want)
+	}
+}
+
+// TestExtract_TSConfigSubdir_RootFallback covers the subtree branch where
+// scanRoot has no tsconfig but GitRoot does (a root-level tsconfig covering all
+// workspace packages, e.g. storybookjs/storybook's monorepo layout). This must
+// also resolve to an absolute path for the same reason as TestExtract_TSConfigSubdir.
+func TestExtract_TSConfigSubdir_RootFallback(t *testing.T) {
+	gitRoot := t.TempDir()
+	pkg := filepath.Join(gitRoot, "packages", "pkg-a")
+	if err := os.MkdirAll(pkg, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkg, "package.json"), []byte(`{"name":"pkg-a"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitRoot, tsconfigName), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotArgs []string
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == "bunx" {
+				return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--version") {
+				return toolrun.Output{Stdout: []byte("14.0.0\n")}, nil
+			}
+			gotArgs = cmd.Args
+			return toolrun.Output{Stdout: []byte(`{"modules":[]}`)}, nil
+		},
+	}
+
+	extractor := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
+	s := scope.Scope{
+		Root:          pkg,
+		GitRoot:       gitRoot,
+		SubtreePrefix: "packages/pkg-a",
+		Mode:          modeFull,
+	}
+	if _, _, err := extractor.Extract(context.Background(), s); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	idx := slices.Index(gotArgs, "--ts-config")
+	if idx == -1 || idx+1 >= len(gotArgs) {
+		t.Fatalf("expected --ts-config in args %v", gotArgs)
+	}
+	want := filepath.Join(gitRoot, tsconfigName)
 	if got := gotArgs[idx+1]; got != want {
 		t.Errorf("--ts-config = %q, want %q", got, want)
 	}

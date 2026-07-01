@@ -188,35 +188,45 @@ var tsConfigNames = []string{"tsconfig.json", "tsconfig.base.json"}
 // resolveTSConfig returns the tsconfig path to pass to dependency-cruiser: the
 // explicitly configured path if set, otherwise the first conventional tsconfig
 // found at scanRoot (so `paths`/`baseUrl` aliases resolve). Returns "" when none
-// is configured or present. The returned path is relative to workDir (the
-// depcruise run directory) so dependency-cruiser resolves it correctly whether
-// running from scanRoot (no-subtree) or the git root (subtree).
+// is configured or present.
+//
+// In no-subtree mode (workDir == scanRoot) the path is returned relative to
+// workDir, byte-identical to prior behaviour. In subtree mode (workDir ==
+// GitRoot, scanRoot nested below it) the path is returned absolute: dependency-
+// cruiser resolves a relative --ts-config's include/exclude globs against the
+// process CWD (workDir), not against the tsconfig file's own directory, so a
+// GitRoot-relative path like "code/tsconfig.json" makes TypeScript search the
+// wrong tree and report TS18003 "no inputs found" even though matching files
+// exist under scanRoot. Verified against storybookjs/storybook (a subtree scan
+// of "code/" within a larger git root): a relative path reproducibly fails with
+// TS18003, an absolute path reproducibly succeeds (3669 modules resolved).
 func (e *Extractor) resolveTSConfig(scanRoot, workDir string) string {
 	if e.cfg.TSConfig != "" {
 		return e.cfg.TSConfig
 	}
+	subtree := workDir != scanRoot
 	for _, name := range tsConfigNames {
 		full := filepath.Join(scanRoot, name)
-		if _, err := os.Stat(full); err == nil {
-			rel, err := filepath.Rel(workDir, full)
-			if err == nil {
-				return filepath.ToSlash(rel)
-			}
-			return full // absolute fallback
+		if _, err := os.Stat(full); err != nil {
+			continue
 		}
+		if subtree {
+			return full
+		}
+		rel, err := filepath.Rel(workDir, full)
+		if err == nil {
+			return filepath.ToSlash(rel)
+		}
+		return full // absolute fallback
 	}
 	// Subtree mode: workDir is the git root, which may hold a root-level tsconfig
 	// that covers all packages. Fall back to searching workDir so path-alias edges
 	// (tsconfig.paths/baseUrl) are not silently dropped from coupling_balance.
-	if workDir != scanRoot {
+	if subtree {
 		for _, name := range tsConfigNames {
 			full := filepath.Join(workDir, name)
 			if _, err := os.Stat(full); err == nil {
-				rel, err := filepath.Rel(workDir, full)
-				if err == nil {
-					return filepath.ToSlash(rel)
-				}
-				return full // absolute fallback
+				return full // already absolute; dir == workDir so no ambiguity either way.
 			}
 		}
 	}
