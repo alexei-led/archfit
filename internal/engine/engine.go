@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/classify"
@@ -352,14 +353,30 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 	}
 
 	var allFacts []graph.Facts
+	var extractErrs []error
 	for _, ex := range in.Extractors {
 		f, cov, err := ex.Extract(ctx, in.Scope)
 		if err != nil {
-			return extractResult{}, err
+			// One extractor's failure must not discard facts already produced
+			// (or still to be produced) by the others — record it as a coverage
+			// gap and keep going, mirroring the empty-SCIP-index StatusPartial
+			// pattern (internal/extract/scip/scip_strength.go) instead of
+			// aborting the whole run. Only the degenerate case where every
+			// extractor fails (nothing to preserve) is still fatal, below.
+			coverages = append(coverages, diagnostic.Coverage{
+				Tool:   ex.Name(),
+				Status: diagnostic.StatusPartial,
+				Reason: err.Error(),
+			})
+			extractErrs = append(extractErrs, err)
+			continue
 		}
 		enrichEdges(ctx, in.Resolver, scipStrength, f)
 		allFacts = append(allFacts, f)
 		coverages = append(coverages, cov)
+	}
+	if len(in.Extractors) > 0 && len(extractErrs) == len(in.Extractors) {
+		return extractResult{}, fmt.Errorf("engine: all %d extractor(s) failed: %w", len(in.Extractors), errors.Join(extractErrs...))
 	}
 	g := graph.Build(allFacts)
 

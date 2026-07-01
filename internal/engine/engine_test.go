@@ -400,6 +400,55 @@ func TestRun_PerExtractorFailureIsolation(t *testing.T) {
 	}
 }
 
+// TestRun_AllExtractorsFail_StillFatal guards the boundary of the
+// per-extractor isolation added for Task 1.1: degrading one failed
+// extractor to a coverage gap must not silently turn the degenerate case —
+// every extractor failing, nothing left to preserve — into a successful
+// empty run. That must still error out.
+func TestRun_AllExtractorsFail_StillFatal(t *testing.T) {
+	ctx := context.Background()
+
+	failingA := &ports.ExtractorMock{
+		NameFunc: func() string { return "python" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return graph.Facts{}, diagnostic.Coverage{}, errors.New("python extractor: ast-grep exited with status 1")
+		},
+	}
+	failingB := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return graph.Facts{}, diagnostic.Coverage{}, errors.New("go extractor: go list exited with status 1")
+		},
+	}
+
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	_, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Waivers:     config.WaiverSet{},
+		Extractors:  []ports.Extractor{failingA, failingB},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Signals:     signal.RunSignals{},
+		Now:         now,
+	})
+	if err == nil {
+		t.Fatal("Run: got nil error, want an error — every extractor failed, there is nothing to preserve")
+	}
+}
+
 func TestRun_DiagnosticShape(t *testing.T) {
 	ctx := context.Background()
 
