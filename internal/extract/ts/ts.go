@@ -82,9 +82,14 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	// Get dependency-cruiser version.
 	version := e.detectVersion(ctx, launcher)
 
-	// Build the depcruise command arguments.
+	// Build the depcruise command arguments. "." means "scan the analysis root
+	// itself" (Config.ForExtract's default since the Src-derivation fix) and is
+	// used literally — only a genuinely empty value falls back to the "src"
+	// convention, since silently rewriting "." to "src" broke repos whose
+	// TypeScript sources live directly under the root with no src/ subdir
+	// (e.g. storybookjs/storybook's "code/" layout).
 	src := e.cfg.Src
-	if src == "" || src == "." {
+	if src == "" {
 		src = "src"
 	}
 

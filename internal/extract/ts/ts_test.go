@@ -693,3 +693,38 @@ func TestExtract_SourceDirMissing(t *testing.T) {
 		}
 	})
 }
+
+// TestExtract_SrcDotIsLiteral locks Config.ForExtract's Src="." default (the
+// analysis root itself) to depcruise's actual scan argument, instead of being
+// silently rewritten to "src" — a repo whose TS sources live directly under
+// the root with no src/ subdir (e.g. storybookjs/storybook's "code/" layout)
+// would otherwise scan a directory that does not exist.
+func TestExtract_SrcDotIsLiteral(t *testing.T) {
+	var gotArgs []string
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == launcherBunx {
+				return toolrun.ToolInfo{Name: launcherBunx, Path: launcherBunxPath}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--version") {
+				return toolrun.Output{Stdout: []byte("16.0.0\n")}, nil
+			}
+			gotArgs = cmd.Args
+			return toolrun.Output{Stdout: []byte(`{"modules":[]}`)}, nil
+		},
+	}
+	s := scope.Scope{Root: fixtureDir}
+	_, _, err := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto, Src: "."}).Extract(context.Background(), s)
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if slices.Contains(gotArgs, "src") {
+		t.Errorf("Src=%q was rewritten to \"src\"; depcruise args = %v", ".", gotArgs)
+	}
+	if !slices.Contains(gotArgs, ".") {
+		t.Errorf("Src=%q was not passed through literally; depcruise args = %v", ".", gotArgs)
+	}
+}
