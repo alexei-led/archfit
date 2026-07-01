@@ -156,6 +156,13 @@ func Build(facts []Facts) *Graph {
 	var nodes []Node
 	for _, f := range facts {
 		for _, n := range f.Nodes {
+			// Extractors stamp Language on every emitted node; backfill from the
+			// enclosing Facts for callers that build Node values directly (e.g.
+			// hand-rolled test graphs), so a Node's Language is never silently
+			// empty when its source Facts declares one.
+			if n.Language == "" {
+				n.Language = f.Language
+			}
 			id := n.ID()
 			if _, ok := seen[id]; !ok {
 				seen[id] = struct{}{}

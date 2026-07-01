@@ -153,7 +153,7 @@ func AugmentModulesFromGraph(g *graph.Graph, modules map[string]config.ModuleDef
 			cloned = true
 		}
 		if _, exists := out[path]; !exists {
-			out[path] = config.ModuleDef{Paths: []string{path}, Owner: ancestorOwner(path, modules)}
+			out[path] = inheritAncestorAttrs(ancestorByKey(path, modules), []string{path})
 		}
 	}
 	return out
@@ -199,14 +199,13 @@ func AugmentGoWorkspaceModules(g *graph.Graph, modules map[string]config.ModuleD
 			cloned = true
 		}
 		if _, exists := out[m.Path]; !exists {
-			// Inherit owner from the nearest config-declared ancestor module.
+			// Inherit attributes from the nearest config-declared ancestor module.
 			// For Go workspace members the "already covered" check above uses
 			// mi.moduleFor(m.RelDir+"/x") — if there were a covering ancestor
 			// we'd have skipped this member. Instead we do a direct prefix scan
 			// on the member's RelDir so partial ancestors (e.g. a module whose
-			// glob covers a parent dir) can still donate their owner.
-			owner := ancestorOwnerByPath(m.RelDir, modules)
-			out[m.Path] = config.ModuleDef{Paths: []string{m.RelDir + "/**"}, Owner: owner}
+			// glob covers a parent dir) can still donate their attributes.
+			out[m.Path] = inheritAncestorAttrs(ancestorByPath(m.RelDir, modules), []string{m.RelDir + "/**"})
 		}
 	}
 	return out
@@ -236,8 +235,8 @@ func AugmentCargoCrateNodes(g *graph.Graph, modules map[string]config.ModuleDef)
 	}
 	crateNodes := make([]string, 0)
 	for _, n := range g.Nodes() {
-		if n.Kind != graph.NodeKindPackage || strings.Contains(n.Path, "::") {
-			continue // external dep, or intra-crate module node (handled elsewhere)
+		if n.Kind != graph.NodeKindPackage || n.Language != graph.LangRust || strings.Contains(n.Path, "::") {
+			continue // non-package, non-Rust (e.g. Go), or intra-crate module node (handled elsewhere)
 		}
 		crateNodes = append(crateNodes, n.Path)
 	}
@@ -277,17 +276,19 @@ func AugmentCargoCrateNodes(g *graph.Graph, modules map[string]config.ModuleDef)
 		// No configured module covers the crate: register a synthetic one.
 		ensureClone()
 		if _, exists := out[name]; !exists {
-			out[name] = config.ModuleDef{Paths: []string{name}, Owner: ancestorOwnerByPath(dir, modules)}
+			out[name] = inheritAncestorAttrs(ancestorByPath(dir, modules), []string{name})
 		}
 	}
 	return out
 }
 
-// ancestorOwner finds the owner of the nearest config-declared ancestor of a
-// Rust module-graph node (key uses "::" separator). It returns the Owner of the
-// config module whose key is the longest "::"-prefix of path, or "" if none.
-func ancestorOwner(path string, modules map[string]config.ModuleDef) string {
-	best := ""
+// ancestorByKey finds the nearest config-declared ancestor of a Rust
+// module-graph node (key uses "::" separator). It returns the ModuleDef of the
+// config module whose key is the longest "::"-prefix of path, or the zero
+// ModuleDef if none. Only modules that declare an Owner are considered
+// ancestor candidates — an owner-less module carries no inheritable identity.
+func ancestorByKey(path string, modules map[string]config.ModuleDef) config.ModuleDef {
+	var best config.ModuleDef
 	bestLen := 0
 	for name, def := range modules {
 		if def.Owner == "" {
@@ -298,21 +299,23 @@ func ancestorOwner(path string, modules map[string]config.ModuleDef) string {
 		if path == name || strings.HasPrefix(path, prefix) {
 			if len(name) > bestLen {
 				bestLen = len(name)
-				best = def.Owner
+				best = def
 			}
 		}
 	}
 	return best
 }
 
-// ancestorOwnerByPath finds the owner of the nearest config-declared ancestor
-// for a Go workspace member, matching by directory path prefix. It returns the
-// Owner of the config module whose glob paths share the longest directory prefix
-// with relDir, or "" if none. This is a fallback for the case where no module
-// glob fully covers the member (otherwise AugmentGoWorkspaceModules would have
-// skipped it), but a parent-directory module may still donate its owner.
-func ancestorOwnerByPath(relDir string, modules map[string]config.ModuleDef) string {
-	best := ""
+// ancestorByPath finds the nearest config-declared ancestor for a Go workspace
+// member or Rust crate directory, matching by directory path prefix. It
+// returns the ModuleDef of the config module whose glob paths share the
+// longest directory prefix with relDir, or the zero ModuleDef if none. This is
+// a fallback for the case where no module glob fully covers the child
+// (otherwise the caller would have skipped it as already-covered), but a
+// parent-directory module may still donate its attributes. Only modules that
+// declare an Owner are considered ancestor candidates.
+func ancestorByPath(relDir string, modules map[string]config.ModuleDef) config.ModuleDef {
+	var best config.ModuleDef
 	bestLen := 0
 	for _, def := range modules {
 		if def.Owner == "" {
@@ -327,12 +330,30 @@ func ancestorOwnerByPath(relDir string, modules map[string]config.ModuleDef) str
 			if relDir == dir || strings.HasPrefix(relDir, dir+"/") {
 				if len(dir) > bestLen {
 					bestLen = len(dir)
-					best = def.Owner
+					best = def
 				}
 			}
 		}
 	}
 	return best
+}
+
+// inheritAncestorAttrs builds a synthetic ModuleDef for a newly registered
+// module, carrying paths plus every inheritable attribute — Owner, Volatility,
+// Subdomain, Layer, DeployUnit — from the nearest config-declared ancestor.
+// The single shared helper for all three Augment* functions, so a synthetic
+// module never silently drops Volatility/Subdomain/Layer/DeployUnit the way an
+// Owner-only copy would (undeclared Volatility scores the conservative worst
+// case, V=10 — the root cause of the tokio finding flood).
+func inheritAncestorAttrs(ancestor config.ModuleDef, paths []string) config.ModuleDef {
+	return config.ModuleDef{
+		Paths:      paths,
+		Owner:      ancestor.Owner,
+		Volatility: ancestor.Volatility,
+		Subdomain:  ancestor.Subdomain,
+		Layer:      ancestor.Layer,
+		DeployUnit: ancestor.DeployUnit,
+	}
 }
 
 // matchesAnyGlob reports whether path matches any of the given glob patterns.
