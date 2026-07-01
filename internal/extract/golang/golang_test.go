@@ -20,6 +20,8 @@ const (
 	hintFunctional = "functional"
 
 	pkgB = "pkg/b" // repo-relative path of the test helper package
+
+	statusPartial = "partial"
 )
 
 // testdataRoot returns the absolute path to testdata/golang.
@@ -75,6 +77,40 @@ func TestExtract_NonGoDir_Absent(t *testing.T) {
 	if cov.FilesSeen != 0 {
 		t.Errorf("non-Go dir: FilesSeen = %d, want 0", cov.FilesSeen)
 	}
+}
+
+// TestExtract_MemberLoadFailure: when go/packages.Load fails for a workspace
+// member (e.g. a go.work "use" directive pointing at a directory that no longer
+// exists), auto mode degrades to a partial coverage gap instead of failing the
+// whole run; ModeOn still hard-errors so a required analyzer surfaces the problem.
+func TestExtract_MemberLoadFailure(t *testing.T) {
+	dir := t.TempDir()
+	goWork := "go 1.21\n\nuse ./missing\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.work"), []byte(goWork), 0o600); err != nil {
+		t.Fatalf("write go.work: %v", err)
+	}
+	s := scope.Scope{Root: dir, Mode: scope.ModeFull}
+
+	t.Run("auto degrades to partial coverage", func(t *testing.T) {
+		ext := goextract.New(config.ExtractConfig{Mode: config.ModeAuto})
+		facts, cov, err := ext.Extract(context.Background(), s)
+		if err != nil {
+			t.Fatalf("auto mode must not error on member load failure; got %v", err)
+		}
+		if cov.Status != statusPartial {
+			t.Errorf("Status = %q, want %q", cov.Status, statusPartial)
+		}
+		if len(facts.Nodes) != 0 || len(facts.Edges) != 0 {
+			t.Errorf("expected no nodes/edges on degraded run; got %d nodes, %d edges", len(facts.Nodes), len(facts.Edges))
+		}
+	})
+
+	t.Run("on hard-errors", func(t *testing.T) {
+		ext := goextract.New(config.ExtractConfig{Mode: config.ModeOn})
+		if _, _, err := ext.Extract(context.Background(), s); err == nil {
+			t.Error("ModeOn must hard-error on member load failure")
+		}
+	})
 }
 
 func TestExtract_SimpleImport(t *testing.T) {
@@ -248,7 +284,7 @@ func TestExtract_MissingPackage(t *testing.T) {
 		t.Fatalf("Extract returned unexpected error: %v", err)
 	}
 	// Coverage status should be "ok" for a well-formed module.
-	if cov.Status != "ok" && cov.Status != "partial" {
+	if cov.Status != "ok" && cov.Status != statusPartial {
 		t.Errorf("unexpected coverage status: %q", cov.Status)
 	}
 	// Unresolved in facts and coverage should agree.

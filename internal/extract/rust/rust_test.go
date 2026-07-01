@@ -333,6 +333,9 @@ func TestExtract_NoMarker(t *testing.T) {
 	})
 }
 
+// TestExtract_NonZeroExit: when cargo metadata exits non-zero (e.g. a malformed
+// manifest), auto mode degrades to a partial coverage gap instead of failing the
+// whole run; ModeOn still hard-errors so a required analyzer surfaces the problem.
 func TestExtract_NonZeroExit(t *testing.T) {
 	runner := &toolrun.RunnerMock{
 		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
@@ -345,11 +348,27 @@ func TestExtract_NonZeroExit(t *testing.T) {
 			return toolrun.Output{ExitCode: 101, Stderr: []byte("error: failed to load manifest")}, nil
 		},
 	}
-	e := rust.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
 
-	if _, _, err := e.Extract(context.Background(), scope.Scope{Root: fixtureDir}); err == nil {
-		t.Error("expected error when cargo metadata exits non-zero")
-	}
+	t.Run("auto degrades to partial coverage", func(t *testing.T) {
+		e := rust.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
+		facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: fixtureDir})
+		if err != nil {
+			t.Fatalf("auto mode must not error on cargo metadata non-zero exit; got %v", err)
+		}
+		if cov.Status != "partial" {
+			t.Errorf("Status = %q, want %q", cov.Status, "partial")
+		}
+		if len(facts.Nodes) != 0 || len(facts.Edges) != 0 {
+			t.Errorf("expected no nodes/edges on degraded run; got %d nodes, %d edges", len(facts.Nodes), len(facts.Edges))
+		}
+	})
+
+	t.Run("on hard-errors", func(t *testing.T) {
+		e := rust.New(runner, config.ExtractConfig{Mode: config.ModeOn})
+		if _, _, err := e.Extract(context.Background(), scope.Scope{Root: fixtureDir}); err == nil {
+			t.Error("ModeOn must hard-error on cargo metadata non-zero exit")
+		}
+	})
 }
 
 // lastMetadataArgs returns the args of the most recent non-version cargo call.
