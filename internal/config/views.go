@@ -85,17 +85,18 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 		Exclusions: c.Exclude,
 	}
 
-	// Collect all module paths and internal globs.
+	// Collect all module paths and internal globs. Src is deliberately NOT
+	// derived from Modules: a module's Paths glob classifies graph nodes (it
+	// can be a dotted Python id or a Rust crate name), not a filesystem
+	// directory the TypeScript extractor can scan — see
+	// docs/plans/20260701-multilang-reliability-fixes.md Task 4.3. Src stays
+	// at the "." default set above; the TS extractor falls back to "src"
+	// when it sees "." (internal/extract/ts/ts.go).
 	var paths, internal []string
-	first := true
 	for _, name := range sortedKeys(c.Modules) {
 		def := c.Modules[name]
 		paths = append(paths, def.Paths...)
 		internal = append(internal, def.Internal...)
-		if first && len(def.Paths) > 0 {
-			ec.Src = def.Paths[0]
-			first = false
-		}
 	}
 	ec.Paths = paths
 	ec.Internal = internal

@@ -67,7 +67,7 @@ type ScopeConfig struct {
 // Built via ForExtract(lang); holds only what the extractor needs.
 type ExtractConfig struct {
 	// Common fields.
-	Src        string   // source root (first path of first module, or ".")
+	Src        string   // scan-root for extractors that need one (TS); always "." — never derived from Modules paths, which are classification globs, not filesystem dirs
 	Paths      []string // all module paths
 	Exclusions []string
 	Internal   []string // all internal globs across modules
