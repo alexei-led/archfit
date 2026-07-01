@@ -2,6 +2,7 @@ package boundary_test
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/metrics/boundary"
@@ -116,6 +117,40 @@ func TestEncapsulation_KnownRatio(t *testing.T) {
 	// Score 5.0 → band "mixed"
 	if result.Band != bandMixed {
 		t.Errorf("expected band mixed got %q", result.Band)
+	}
+}
+
+// TestEncapsulation_ZeroContractIsRealNotNA is the 6.3 regression: an
+// all-intrusive, zero-contract boundary (reproduces prefect's real 0
+// contract / 126 intrusive result) must score numerically — not fall back to
+// n/a — since it has real structural evidence (intrusiveCross > 0), and the
+// definition string must say so explicitly rather than leaving a 0.0/critical
+// result to be misread as an unmeasured config gap.
+func TestEncapsulation_ZeroContractIsRealNotNA(t *testing.T) {
+	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
+	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
+
+	edgeAB := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
+	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB}, []graph.Edge{edgeAB})
+
+	idx := coupling.Index{
+		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): coupling.Classification{
+			Strength: coupling.StrengthIntrusive,
+			Distance: coupling.DistanceCrossModuleDiffOwner,
+		},
+	}
+
+	m := boundary.EncapsulationMetric{}
+	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+
+	if result.Band == bandNAStr {
+		t.Fatalf("expected a real numeric band, got n/a — real intrusive evidence must not be suppressed")
+	}
+	if !metricstest.ApproxEqual(result.Value, 0.0) {
+		t.Errorf("expected value 0.0 (0 contract / 1 intrusive) got %v", result.Value)
+	}
+	if !strings.Contains(result.Definition, "not necessarily a config gap") {
+		t.Errorf("Definition = %q, want it to clarify 0 contract is a real measurement here", result.Definition)
 	}
 }
 
