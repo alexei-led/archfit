@@ -148,6 +148,11 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// cross-member edges classify with a real Distance for coupling_balance. No-op for
 	// single-module repos and archfit's own self-scan (1 surviving member after exclusion).
 	classifyCfg.Modules = classify.AugmentGoWorkspaceModules(ex.g, classifyCfg.Modules)
+	// Bind crate-level Rust nodes (bare `package:<crate>` names) to the module whose
+	// path glob covers the crate's directory, so multi-crate workspaces configured with
+	// "crates/<crate>/**" globs measure coupling instead of classifying every cross-crate
+	// edge as external. No-op for bare-name configs (tokio/yazi) and single-crate repos.
+	classifyCfg.Modules = classify.AugmentCargoCrateNodes(ex.g, classifyCfg.Modules)
 
 	// Rebuild the ModuleMap from the augmented Modules slice so that all
 	// secondary consumers (buildRuntimeAsync, buildDynamicImports, diagnostic

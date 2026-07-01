@@ -30,7 +30,11 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 	var b strings.Builder
 	b.WriteString("# archfit scorecard\n\n")
 	fmt.Fprintf(&b, "**Rubric version:** %d\n", sc.RubricVersion)
-	fmt.Fprintf(&b, "**Overall:** %d/100 (%s)\n", sc.Overall, sc.OverallBand)
+	if sc.OverallBand.Unmeasured() {
+		fmt.Fprintf(&b, "**Overall:** n/a — coupling unmeasured (no scored cross-boundary edges)\n")
+	} else {
+		fmt.Fprintf(&b, "**Overall:** %d/100 (%s)\n", sc.Overall, sc.OverallBand)
+	}
 	if d.ConfigHash != "" {
 		fmt.Fprintf(&b, "**Config hash:** `%s`\n", d.ConfigHash)
 	}
@@ -41,8 +45,13 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 		if dim.Meta {
 			meta = " · meta (scores the review, not the architecture)"
 		}
-		fmt.Fprintf(&b, "\n### %s — %d/100 (%s) · confidence: %s%s\n",
-			dim.Name, dim.Value, dim.Band, dim.Confidence, meta)
+		if dim.Band.Unmeasured() {
+			fmt.Fprintf(&b, "\n### %s — n/a (unmeasured) · confidence: %s%s\n",
+				dim.Name, dim.Confidence, meta)
+		} else {
+			fmt.Fprintf(&b, "\n### %s — %d/100 (%s) · confidence: %s%s\n",
+				dim.Name, dim.Value, dim.Band, dim.Confidence, meta)
+		}
 		if dim.Summary != "" {
 			fmt.Fprintf(&b, "%s\n", dim.Summary)
 		}

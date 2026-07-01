@@ -111,6 +111,19 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   `unknown` (abstain-not-fake). A public-glob match is a not-intrusive _floor_
   whose kind the hint refines (classify.go); an internal-glob match is
   authoritative intrusive.
+- **Python module globs are DOTTED, not file paths.** grimp emits dotted node IDs
+  (`prefect.states`); `paths:`/`public:`/`internal:` and rule `from:`/`to:` all match the
+  dotted node ID via `doublestar.Match`. Write `prefect.**`, NOT `src/prefect/**` — a slash
+  glob silently matches nothing → every Python edge classifies external → 0 scored →
+  `coupling_balance` n/a. Locked by `config_test.go:TestModuleFor_PythonDottedGlobs`.
+- **`coupling_balance` reports `n/a` (band `score.BandNA`) when unmeasured — never a
+  fabricated number.** Zero scored cross-boundary edges (empty module map, non-matching
+  globs, empty SCIP index, all-external) or a degenerate (<2 connected modules, e.g.
+  single-crate Rust) graph → overall score renders `n/a`, not a mid-band 50/60 sentinel
+  (`score.go` `finalize`/`Synthesize`, `score_boundary_coupling.go`). `finalize` early-returns
+  for `BandNA` (skips clamp/cap/`bandFor`); delta builders and `decideBand` treat an n/a side
+  as unknown (no phantom delta, not NEEDS_ATTENTION). The legacy nil-summary path keeps the
+  non-penalising 60 (calibration-only, unreachable from engine.go).
 - Parse config once into typed views; pass a package its view, not the whole config.
 - LLM SDKs (`anthropic-sdk-go`, `openai-go`) are off-gate: only `config enrich`,
   `config init --llm`, `config update --llm`, `analyze --llm`, and `explain --llm`

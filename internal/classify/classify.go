@@ -212,6 +212,77 @@ func AugmentGoWorkspaceModules(g *graph.Graph, modules map[string]config.ModuleD
 	return out
 }
 
+// AugmentCargoCrateNodes binds crate-level Rust nodes (a `package:<crate>` node
+// whose path is the bare crate name, no "::") to a declared module when the config
+// used a directory-path glob (e.g. "crates/ruff_python_ast/**") that matches the
+// crate's source dir but NOT the bare crate-name node the cargo-metadata extractor
+// emits. Without this, such edges classify distance-unknown → external → 0 scored,
+// and coupling_balance reports n/a even though the architect declared the crates.
+//
+// For each crate node not already covered by a configured glob: if a configured
+// module covers the crate's repo-relative directory (from graph CrateRoots), the
+// bare crate name is appended to THAT module's Paths so the node binds while keeping
+// the module's owner/subdomain/volatility/layer. If no module covers the dir, a
+// synthetic module is registered (bare name, ancestor-inherited owner).
+//
+// Gate: ≥2 first-party crate nodes — a single-crate repo is a degenerate graph
+// (coupling unmeasurable → n/a) and is left untouched. Configs that already use
+// bare crate-name globs (tokio, yazi) bind on the first check and are no-ops.
+// Intra-crate "<crate>::<mod>" nodes are handled by AugmentModulesFromGraph.
+// The input map is not mutated; a copy is returned only if something is added.
+func AugmentCargoCrateNodes(g *graph.Graph, modules map[string]config.ModuleDef) map[string]config.ModuleDef {
+	if g == nil {
+		return modules
+	}
+	crateNodes := make([]string, 0)
+	for _, n := range g.Nodes() {
+		if n.Kind != graph.NodeKindPackage || strings.Contains(n.Path, "::") {
+			continue // external dep, or intra-crate module node (handled elsewhere)
+		}
+		crateNodes = append(crateNodes, n.Path)
+	}
+	if len(crateNodes) < 2 {
+		return modules // <2 crates: degenerate graph → coupling unmeasurable (n/a)
+	}
+	dirByName := make(map[string]string, len(crateNodes))
+	for _, cr := range g.CrateRoots() {
+		dirByName[cr.Name] = cr.Dir
+	}
+	mi := buildModuleIndex(modules)
+	out := modules
+	cloned := false
+	ensureClone := func() {
+		if !cloned {
+			out = make(map[string]config.ModuleDef, len(modules)+len(crateNodes))
+			maps.Copy(out, modules)
+			cloned = true
+		}
+	}
+	for _, name := range crateNodes {
+		if _, ok := mi.moduleFor(name); ok {
+			continue // already bound by a bare crate-name glob (e.g. tokio, yazi)
+		}
+		dir := dirByName[name]
+		if dir != "" {
+			if modName, ok := mi.moduleFor(dir + "/x"); ok {
+				// A configured module covers the crate dir but not its bare-name node;
+				// bind the node to it, preserving owner/subdomain/volatility/layer.
+				ensureClone()
+				def := out[modName]
+				def.Paths = append(append([]string{}, def.Paths...), name)
+				out[modName] = def
+				continue
+			}
+		}
+		// No configured module covers the crate: register a synthetic one.
+		ensureClone()
+		if _, exists := out[name]; !exists {
+			out[name] = config.ModuleDef{Paths: []string{name}, Owner: ancestorOwnerByPath(dir, modules)}
+		}
+	}
+	return out
+}
+
 // ancestorOwner finds the owner of the nearest config-declared ancestor of a
 // Rust module-graph node (key uses "::" separator). It returns the Owner of the
 // config module whose key is the longest "::"-prefix of path, or "" if none.

@@ -25,7 +25,11 @@ func RenderReport(r decision.Report, w io.Writer) error {
 	}
 	fmt.Fprintf(&b, "- **Gate:** %s — %d blocking\n", gate, r.Blocking)
 	fmt.Fprintf(&b, "- **Warnings:** %d advisory\n", r.Advisory)
-	fmt.Fprintf(&b, "- **Score:** %d / 100 (%s)\n", r.Overall, r.OverallBand)
+	if r.OverallBand.Unmeasured() {
+		fmt.Fprintf(&b, "- **Score:** n/a — coupling unmeasured (no scored cross-boundary edges)\n")
+	} else {
+		fmt.Fprintf(&b, "- **Score:** %d / 100 (%s)\n", r.Overall, r.OverallBand)
+	}
 	if r.Headline != "" {
 		fmt.Fprintf(&b, "\n%s\n", r.Headline)
 	}

@@ -168,9 +168,17 @@ func (e *Extractor) isApplicable(root string) bool {
 	return false
 }
 
-// discoverPackages returns the sorted list of top-level Python package names
-// found directly under root — directories that contain an __init__.py file.
-// Used when no explicit PyPackage is configured.
+// discoverPackages returns the sorted list of importable Python package names
+// found for root — directories that contain an __init__.py file. Used when no
+// explicit PyPackage is configured.
+//
+// SRC-LAYOUT (PEP 517/518): when root/src/ contains packages, those are returned
+// in preference to top-level ones. A src-layout project (e.g. prefect: the package
+// lives at src/prefect/) has NO package dir directly under root — a top-level
+// __init__.py dir there is typically a stray (tests/, scripts/, benches/), not the
+// source. Analysing the stray package instead of the real one silently yields a
+// near-empty import graph. The grimp helper adds root/src to sys.path
+// (see grimp_helper._ensure_importable), so these names resolve at import time.
 //
 // SHARED-VENV CONSTRAINT: all discovered packages are passed to a single
 // grimp.build_graph call and must therefore be co-importable from one Python
@@ -179,7 +187,17 @@ func (e *Extractor) isApplicable(root string) bool {
 // in one run. This is a grimp limitation; archfit does not promise
 // cross-service Python analysis in that setup.
 func discoverPackages(root string) []string {
-	entries, err := os.ReadDir(root)
+	if srcPkgs := packagesUnder(filepath.Join(root, "src")); len(srcPkgs) > 0 {
+		return srcPkgs // src-layout: prefer the real source packages over top-level strays
+	}
+	return packagesUnder(root)
+}
+
+// packagesUnder returns the sorted names of immediate subdirectories of dir that
+// contain an __init__.py (i.e. importable Python packages). Returns nil if dir is
+// unreadable or absent.
+func packagesUnder(dir string) []string {
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
 	}
@@ -188,7 +206,7 @@ func discoverPackages(root string) []string {
 		if !entry.IsDir() {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(root, entry.Name(), "__init__.py")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, entry.Name(), "__init__.py")); err == nil {
 			pkgs = append(pkgs, entry.Name())
 		}
 	}

@@ -129,6 +129,40 @@ func TestModuleFor(t *testing.T) {
 	}
 }
 
+// TestModuleFor_PythonDottedGlobs locks the Python module-resolution invariant:
+// the grimp extractor emits DOTTED module node IDs ("prefect.states"), so Python
+// module globs (paths:/public:/internal:, and rule from:/to:, which share this
+// matcher) MUST be written in dotted form ("prefect.**") — NOT file-path form
+// ("src/prefect/**"). Slash globs silently fail to match the dotted node IDs, so
+// every Python edge classifies as external → 0 scored → coupling_balance n/a.
+// This was the prefect eval miss: file-path globs that never bound.
+func TestModuleFor_PythonDottedGlobs(t *testing.T) {
+	const node = "prefect.states" // grimp-style dotted node ID (graph.NodePath form)
+	const mod = "states"
+
+	dottedCfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			mod: {Paths: []string{"prefect.states", "prefect.states.**"}},
+		},
+	}
+	dotted := dottedCfg.ModuleMapView()
+	if got, ok := dotted.ModuleFor(node); !ok || got != mod {
+		t.Errorf("dotted glob: ModuleFor(%q) = (%q,%v), want (%s,true)", node, got, ok, mod)
+	}
+
+	slashCfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			mod: {Paths: []string{"src/prefect/states/**", "src/prefect/states.py"}},
+		},
+	}
+	slash := slashCfg.ModuleMapView()
+	if got, ok := slash.ModuleFor(node); ok {
+		t.Errorf("slash glob: ModuleFor(%q) = (%q,true), want no-match — Python globs must be dotted module form, not file paths", node, got)
+	}
+}
+
 func TestModuleFor_Deterministic(t *testing.T) {
 	// Two modules whose globs could overlap — same path must always return the
 	// same (alphabetically-first) module name.
