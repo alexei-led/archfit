@@ -27,10 +27,10 @@ Three verified defects make archfit's out-of-box experience wrong, which matters
 
 ### Task 1: Four-language init fixtures
 
-- [ ] create minimal fixture projects under `internal/initcfg/testdata/`: `gofixture/` (two packages with a layer back-edge), `tsfixture/` (two dirs + tsconfig), `pyfixture/` (small package, dotted imports), `rustfixture/` (single crate, two modules) — each just large enough for `config init` to infer modules
-- [ ] add `TestConfigInit_PerLanguage` that runs init against each fixture and asserts: generated YAML parses under strict config; every generated rule has a `type:` recognized by `internal/rules`
-- [ ] the Go fixture test additionally runs the full analyze gate over the fixture with the generated config and asserts the layer rule CAN fire when the back-edge exists (this is the V4 repro — expect it to fail until Task 2)
-- [ ] run `make test-fast` — commit harness (V4 case marked TODO(wave2) per partial-implementation rule)
+- [x] create minimal fixture projects under `internal/initcfg/testdata/`: `gofixture/` (two packages with a layer back-edge), `tsfixture/` (two dirs + tsconfig), `pyfixture/` (small package, dotted imports), `rustfixture/` (single crate, two modules) — each just large enough for `config init` to infer modules
+- [x] add `TestConfigInit_PerLanguage` that runs init against each fixture and asserts: generated YAML parses under strict config; every generated rule has a `type:` recognized by `internal/rules`
+- [x] the Go fixture test additionally runs the full analyze gate over the fixture with the generated config and asserts the layer rule CAN fire when the back-edge exists (this is the V4 repro — expect it to fail until Task 2)
+- [x] run `make test-fast` — commit harness (V4 case marked TODO(wave2) per partial-implementation rule)
 
 ### Task 2: Fix config init rule generation (V4)
 
