@@ -33,10 +33,10 @@ After this wave: a metric regression in the correct direction gates, the documen
 
 ### Task 1: TestComputeVerdict harness capturing today's bugs
 
-- [ ] add `internal/engine/verdict_test.go` with a table-driven `TestComputeVerdict` over constructed `Diagnostic`/metric-result inputs (computeVerdict is pure — no fixtures needed)
-- [ ] cases (initially expected-fail, marked with TODO(wave1) until Task 2): new cycle (count metric Delta=+1) must WARN/FAIL; fixed cycle (Delta=−1) must PASS; encapsulation drop (ratio Delta=−0.1) must WARN; encapsulation rise must PASS; unchanged metrics must PASS
-- [ ] cases for n/a: metric absent on either side → no delta contribution (no phantom WARN — this is the historical re-baseline gotcha)
-- [ ] run `make test-fast` — new tests fail for the inverted cases, pass for the rest; commit the harness with expected-current-behavior assertions inverted via TODO markers per ralphex partial-implementation rule
+- [x] add `internal/engine/verdict_test.go` with a table-driven `TestComputeVerdict` over constructed `Diagnostic`/metric-result inputs (computeVerdict is pure — no fixtures needed)
+- [x] cases (initially expected-fail, marked with TODO(wave1) until Task 2): new cycle (count metric Delta=+1) must WARN/FAIL; fixed cycle (Delta=−1) must PASS; encapsulation drop (ratio Delta=−0.1) must WARN; encapsulation rise must PASS; unchanged metrics must PASS
+- [x] cases for n/a: metric absent on either side → no delta contribution (no phantom WARN — this is the historical re-baseline gotcha)
+- [x] run `make test-fast` — new tests fail for the inverted cases, pass for the rest; commit the harness with expected-current-behavior assertions inverted via TODO markers per ralphex partial-implementation rule
 
 ### Task 2: Per-metric delta direction (V1)
 
