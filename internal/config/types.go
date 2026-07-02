@@ -14,7 +14,10 @@ import (
 // (count metrics) is the allowed increase. Both default to 0 (any worsening
 // move trips). validate() rejects a knob on a metric of the wrong kind.
 type MetricEntry struct {
-	Enabled  bool    `yaml:"enabled"`
+	// Metrics run by default: a knob-only entry (e.g. only `gate: warn`)
+	// stays enabled, and only an explicit `enabled: false` disables the
+	// metric. (Pointer so absent and false decode differently.)
+	Enabled  *bool   `yaml:"enabled"`
 	Gate     string  `yaml:"gate"`
 	MinDelta float64 `yaml:"min_delta"`
 	MaxNew   int     `yaml:"max_new"`

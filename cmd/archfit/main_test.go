@@ -83,6 +83,7 @@ const (
 	flagFull          = "--full"
 	flagRoot          = "--root"
 	cmdAnalyze        = "analyze"
+	cmdBaseline       = "baseline"
 	cmdConfig         = "config" // config subcommand group (config init / config enrich …)
 	cmdEnrich         = "enrich" // config enrich subcommand (config enrich owner / subdomain / …)
 	cmdExplain        = "explain"

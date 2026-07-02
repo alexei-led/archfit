@@ -11,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/score"
 )
 
@@ -188,7 +189,7 @@ func TestRun_Baseline_WritesScoreSnapshot(t *testing.T) {
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg)
 
 	var buf bytes.Buffer
-	if code := Run([]string{"baseline", "-c", cfgPath, flagFull}, &buf); code != 0 {
+	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagFull}, &buf); code != 0 {
 		t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
 	}
 
@@ -204,5 +205,142 @@ func TestRun_Baseline_WritesScoreSnapshot(t *testing.T) {
 	}
 	if got := b.CouplingScore(); got == nil || *got != b.Score.CouplingBalance {
 		t.Fatalf("CouplingScore() = %v, want %d", got, b.Score.CouplingBalance)
+	}
+}
+
+// TestApplyCouplingGate_PromotionScope pins the promotion filter: a tripped
+// gate re-kinds only ACTIVE Balanced-Coupling advisories — baselined BC edges
+// stay triaged as advisories, non-BC findings are untouched — and the summary
+// counters move with the promoted findings.
+func TestApplyCouplingGate_PromotionScope(t *testing.T) {
+	t.Parallel()
+	newDiag := func() diagnostic.Diagnostic {
+		return diagnostic.Diagnostic{
+			Verdict: diagnostic.VerdictPass,
+			Findings: []finding.Finding{
+				{ID: "bc-active", RuleID: ruleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusNew},
+				{ID: "bc-baselined", RuleID: ruleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusBaseline},
+				{ID: "rule-gate", RuleID: "no-cycles", Kind: finding.KindGate, Status: finding.StatusNew},
+			},
+			Summary: diagnostic.Summary{GateFindings: 1, Warnings: 2},
+		}
+	}
+	card := score.Scorecard{Overall: 25, OverallBand: score.BandPoor}
+
+	t.Run("tripped gate promotes only active BC advisories", func(t *testing.T) {
+		t.Parallel()
+		diag := newDiag()
+		applyCouplingGate(&diag, card, score.CouplingGate{Enabled: true, MinBand: score.BandMixed}, baseline.Baseline{})
+		if diag.Verdict != diagnostic.VerdictFail {
+			t.Errorf("verdict = %q, want fail", diag.Verdict)
+		}
+		if got := diag.Findings[0].Kind; got != finding.KindGate {
+			t.Errorf("active BC advisory kind = %q, want gate", got)
+		}
+		if got := diag.Findings[1].Kind; got != finding.KindAdvisory {
+			t.Errorf("baselined BC advisory kind = %q, want advisory (triaged edges must not be promoted)", got)
+		}
+		if got := diag.Findings[2].Kind; got != finding.KindGate {
+			t.Errorf("non-BC gate finding kind = %q, want gate (untouched)", got)
+		}
+		if diag.Summary.GateFindings != 2 || diag.Summary.Warnings != 1 {
+			t.Errorf("summary after promotion = %+v, want GateFindings=2 Warnings=1", diag.Summary)
+		}
+	})
+
+	t.Run("disabled gate is a no-op", func(t *testing.T) {
+		t.Parallel()
+		diag := newDiag()
+		applyCouplingGate(&diag, card, score.CouplingGate{}, baseline.Baseline{})
+		if diag.Verdict != diagnostic.VerdictPass ||
+			diag.Findings[0].Kind != finding.KindAdvisory ||
+			diag.Summary != (diagnostic.Summary{GateFindings: 1, Warnings: 2}) {
+			t.Errorf("disabled gate mutated the diagnostic: verdict=%q findings[0].Kind=%q summary=%+v",
+				diag.Verdict, diag.Findings[0].Kind, diag.Summary)
+		}
+	})
+}
+
+// TestRun_Baseline_KeepsNativeAdvisoryKind guards the finding-lifecycle
+// contract: `archfit baseline --advisory` under a tripped coupling.gate must
+// persist BC findings with their native advisory kind, not the per-run gate
+// promotion — a stored "gate" kind orphans the entry (status.Assign matches
+// stored kind against the pass kind, so the edge would surface as a phantom
+// "fixed" gate finding and never resolve on the advisory side).
+func TestRun_Baseline_KeepsNativeAdvisoryKind(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
+
+	var buf bytes.Buffer
+	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagFull, "--advisory"}, &buf); code != 0 {
+		t.Fatalf("baseline --advisory: exit = %d\noutput:\n%s", code, buf.String())
+	}
+	b, err := baseline.Load(context.Background(), filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sawBC := false
+	for _, a := range b.Accepted {
+		if a.RuleID != ruleIDBCImbalanced {
+			continue
+		}
+		sawBC = true
+		if a.Kind != finding.KindAdvisory {
+			t.Errorf("baselined BC finding %s kind = %q, want %q", a.Fingerprint, a.Kind, finding.KindAdvisory)
+		}
+	}
+	if !sawBC {
+		t.Fatal("fixture regression: baseline --advisory persisted no BC advisory")
+	}
+}
+
+// TestRun_Analyze_MetricGate_ExitCodes exercises the metrics.<name> gate knob
+// end to end (config → cfg.Metrics → computeVerdict → CLI exit): an
+// encapsulation drop against the stored baseline blocks by default,
+// downgrades with gate: warn, and is ignored with gate: off. The knob-only
+// entries ({gate: warn}) double as a regression test for the enabled-pointer
+// decode: they must not disable the metric.
+func TestRun_Analyze_MetricGate_ExitCodes(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		cfgExtra string
+		wantCode int
+	}{
+		{"unset gate blocks on regression", "", 1},
+		{"warn gate downgrades to warning", "metrics:\n  encapsulation:\n    gate: warn\n", 2},
+		{"off gate ignores the regression", "metrics:\n  encapsulation:\n    gate: off\n", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfgPath := writeCoupledRepo(t, coupledModulesCfg+tc.cfgExtra)
+
+			var buf bytes.Buffer
+			if code := Run([]string{cmdBaseline, "-c", cfgPath, flagFull}, &buf); code != 0 {
+				t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
+			}
+			bPath := filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath)
+			b, err := baseline.Load(context.Background(), bPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entry, ok := b.Metrics["encapsulation"]
+			if !ok {
+				t.Fatalf("fixture regression: no encapsulation snapshot in %+v", b.Metrics)
+			}
+			// Raise the snapshot so the unchanged current run reads as a
+			// 1.0 ratio drop (higher_is_better) past the default min_delta 0.
+			entry.Value++
+			b.Metrics["encapsulation"] = entry
+			if err := baseline.Save(context.Background(), bPath, b); err != nil {
+				t.Fatal(err)
+			}
+
+			buf.Reset()
+			if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, flagGate}, &buf); code != tc.wantCode {
+				t.Fatalf("analyze --gate: exit = %d, want %d\noutput:\n%s", code, tc.wantCode, buf.String())
+			}
+		})
 	}
 }

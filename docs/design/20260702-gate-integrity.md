@@ -59,6 +59,14 @@ construction.
   `bc/imbalanced_coupling` advisories are promoted to `Kind: "gate"` so they
   pass the unchanged `agenttask` filter into `agent_tasks[]`. Baselined and
   waived advisories stay triaged.
+- The stderr echo happens in `analyze` only (re-evaluating the pure gate
+  decision), not inside the shared `runPipeline` — baseline/enrich/explain and
+  `--base` scoring must not print enforcement-sounding lines they don't act on.
+- `archfit baseline` persists BC findings with their native advisory kind: the
+  promotion is per-run output state, and a stored `"gate"` kind would orphan
+  the baseline entry (`status.Assign` matches stored kind against the pass
+  kind, yielding a phantom "fixed" gate finding and no advisory-side
+  resolution).
 
 ## 4. BandNA never gates
 

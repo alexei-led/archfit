@@ -57,10 +57,19 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 		if f.Status == finding.StatusFixed {
 			continue // fixed = no longer detected; don't carry into new baseline
 		}
+		// Persist the finding's native kind, not the per-run coupling-gate
+		// promotion: the engine regenerates BC findings as advisories every
+		// run, and status.Assign matches stored kind against the pass kind —
+		// a stored "gate" kind would orphan the entry (phantom "fixed" gate
+		// finding, no advisory-side resolution when the edge is fixed).
+		kind := f.Kind
+		if f.RuleID == ruleIDBCImbalanced {
+			kind = finding.KindAdvisory
+		}
 		newBase.Accepted = append(newBase.Accepted, baseline.AcceptedFinding{
 			Fingerprint: f.ID,
 			RuleID:      f.RuleID,
-			Kind:        f.Kind,
+			Kind:        kind,
 			Severity:    string(f.Severity),
 		})
 	}

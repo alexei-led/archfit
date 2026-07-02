@@ -193,6 +193,15 @@ func (c *AnalyzeCmd) runScan(ctx context.Context, deps *appDeps, formats []strin
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
+	// Echo coupling-gate trip reasons from analyze only: runPipeline is shared
+	// with baseline/enrich/explain/--base scoring, where an enforcement-sounding
+	// stderr line is noise (and --base would print it twice). The gate decision
+	// is pure, so re-evaluating here reproduces exactly what applyCouplingGate
+	// applied to the verdict inside the pipeline.
+	for _, r := range score.EvaluateCouplingGate(sc, couplingGateView(cfg), base.CouplingScore()).Reasons {
+		_, _ = fmt.Fprintln(deps.stderr(), "coupling gate: "+r)
+	}
+
 	// Apply the opt-in hard gate before rendering so the output shows the
 	// effective gate per coverage gap.
 	hardGate := applyToolGate(&diag, c.RequireTools)

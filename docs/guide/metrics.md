@@ -6,17 +6,23 @@ behind the strength / distance / volatility vocabulary used throughout, read
 [Concepts](concepts.md) first.
 
 `archfit` measures **Balanced Coupling** (`coupling_balance`) plus a minimal set of
-complementary metrics. They split into two roles:
+complementary metrics. They split into three roles:
 
-- **Verdict-affecting (2):** `coupling_balance` (scored 0–10, the headline), and
-  `unbalanced_edge` (companion count).
-- **Report-only (4):** `cycle`, `blast_radius`, `encapsulation`, `coverage`. Band
-  `info`; surface facts for humans and agents, never change the verdict.
+- **Headline (1):** `coupling_balance` (scored 0–10). Report-only unless you
+  configure the opt-in [`coupling.gate`](configuration-reference.md#couplinggate)
+  block, which fails the build on a band floor or a score drop.
+- **Baseline-delta gated (4):** `unbalanced_edge`, `cycle`, `encapsulation`,
+  `coverage`. Each is compared against the committed baseline; a worsening
+  delta **fails the build by default** (`metrics.<name>.gate` unset = `fail`;
+  downgrade with `warn`, disable with `off`).
+- **Report-only (1):** `blast_radius`. Carries no delta and never changes the
+  verdict.
 
-No metric ever fails the build on its own. Only explicit **gate rules**
-(forbidden dependency, public-API-only, layer direction, cycle-as-fail, expired
-exception) produce a `fail`. Metrics inform; rules gate. This separation is
-deliberate — see [Concepts → How archfit operationalizes the model](concepts.md#how-archfit-operationalizes-the-model).
+A metric's **absolute value** never fails the build — only a _regression_
+against the baseline you accepted (or a tripped `coupling.gate`) does. Gate
+rules (forbidden dependency, public-API-only, layer direction, cycle-as-fail,
+expired exception) remain the only checks that fail on current structure alone.
+See [Concepts → How archfit operationalizes the model](concepts.md#how-archfit-operationalizes-the-model).
 
 ---
 
@@ -85,10 +91,11 @@ the tool over-claim.
 ### Deltas
 
 When a committed baseline exists (`.archfit-baseline.json`, written by `archfit
-baseline`), each scored metric is compared with that snapshot; a negative delta
-(the metric got worse) sets the run to `warn`. Report-only metrics carry no delta
-and never warn. The `--base <ref>` flag compares `coupling_balance` and metric
-scores against a git ref.
+baseline`), each metric is compared with that snapshot. A worsening delta —
+direction-aware, past the metric's threshold knob — sets the run to `fail`
+unless that metric's `gate` says `warn` or `off`. `blast_radius` carries no
+delta and never gates. The `--base <ref>` flag compares `coupling_balance` and
+metric scores against a git ref.
 
 ---
 
@@ -106,7 +113,10 @@ scores against a git ref.
   see [Concepts → The balance rule](concepts.md#the-balance-rule) for ordinals,
   abstain semantics, and confidence. `coupling.volatility_cascade: true` enables
   single-hop cascade (book Ch9).
-- **Affects verdict:** `warn` when `coupling_balance` drops vs baseline.
+- **Affects verdict:** only through the opt-in
+  [`coupling.gate`](configuration-reference.md#couplinggate) block — `min_band`
+  (band floor) and `max_drop` (points below the baselined score) fail the run.
+  No block ⇒ report-only. Band `n/a` never trips (abstain ≠ fail).
 
 ### `unbalanced_edge`
 
@@ -123,17 +133,19 @@ scores against a git ref.
 - **Scored:** `0` qualifying edges → `strong`; any → `critical`. If intrusive
   cross-module candidates exist but none has known volatility → `n/a` (honest
   indeterminate, not a clean zero).
-- **Affects verdict:** `warn` when the count rises vs baseline. Can be promoted to
-  a hard gate by configuring `gate: fail` on the rule.
+- **Affects verdict:** a count rise past `max_new` vs baseline **fails by
+  default**; set `metrics.unbalanced_edge.gate: warn` (or `off`) to downgrade.
 - **Balanced Coupling:** the most direct encoding of the model — all three
   dimensions at their high settings.
 
 ---
 
-## Report-only metrics
+## Info-band metrics
 
-These always report band `info`. They never set a delta and never change the
-verdict.
+These always report band `info` — they assert no quality band on their own.
+`cycle`, `encapsulation`, and `coverage` still carry a baseline delta, and a
+worsening delta gates like any other metric (fail unless downgraded per metric);
+`blast_radius` carries no delta and never affects the verdict.
 
 ### `cycle`
 
@@ -141,7 +153,9 @@ verdict.
 - **Computed:** Tarjan strongly-connected components; each SCC of size > 1 is one
   cycle.
 - **Band:** always `info`. Confidence always `high` (cycles are a fact, not an
-  inference). The `cycle` rule with `gate: fail` makes new cycles a hard failure.
+  inference). A cycle-count rise vs baseline fails by default via the metric
+  delta (`metrics.cycle.gate`); the `cycle` rule with `gate: fail` makes new
+  cycles a hard failure.
 - **Balanced Coupling:** none — a graph-topology fact, not a strength/distance call.
 
 ### `blast_radius`
@@ -212,9 +226,10 @@ For the full severity table and the reasoning, see
 
 ## Rules reference
 
-Gate rules are the only mechanism that produces a `fail`. Metrics inform; rules
-gate. Rules with `gate: warn` are advisory (non-blocking); rules with `gate: fail`
-block the build. An unknown `type` value is a config error.
+Gate rules fail on current structure; metric deltas and `coupling.gate` fail on
+regression vs baseline (see [The verdict](#the-verdict)). Rules with `gate: warn`
+are advisory (non-blocking); rules with `gate: fail` block the build. An unknown
+`type` value is a config error.
 
 For the full rule list, default gates, and configuration syntax, see
 [Configuration reference → rules](configuration-reference.md#rules).

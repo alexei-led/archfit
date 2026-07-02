@@ -7,28 +7,37 @@ example.
 
 The key distinction when reading any archfit run is **violations vs. signals**.
 
-## Violations gate. Signals inform.
+## Violations and regressions gate. Signals inform.
 
 A **violation** is a gate finding. It has a `gate` of `fail` (or `warn`) and it
 sets the exit code. Violations are the deterministic contract: the same code and
 config always produce the same verdict, and CI fails when a new one appears.
 
-A **signal** is report-only. Metrics and Balanced Coupling advisories describe the
-shape of the architecture — coupling risk, blast radius, cycle count — but they
-never fail the build on their own. They are there to inform a human or an AI
-agent, and to feed `archfit analyze --llm`.
+A **regression** is a metric delta that worsens past its threshold against the
+committed baseline. Regressions gate by default (`metrics.<name>.gate` unset =
+`fail`) — a new cycle or an encapsulation drop fails the dogfood run even though
+the metric's absolute value never does. Downgrade a metric with `gate: warn`/`off`
+if you decide its regressions are not enforceable.
 
-| Aspect       | Violation                             | Signal                                                    |
-| ------------ | ------------------------------------- | --------------------------------------------------------- |
-| Source       | `rules` with `gate: fail`/`warn`      | `metrics`, BC advisories                                  |
-| Effect       | sets exit code; fails CI              | report-only; never gates                                  |
-| Determinism  | byte-identical, gate-grade            | deterministic, but advisory                               |
-| Examples     | forbidden dependency, cycle, API leak | `blast_radius`, `coupling_balance` advisories, BC rollups |
-| Acting on it | must fix or baseline/except           | judgement call; prioritize, don't block                   |
+A **signal** is report-only. Metric absolute values, `blast_radius`, and Balanced
+Coupling advisories describe the shape of the architecture — coupling risk,
+blast radius, cycle count — but they never fail the build on their own. They are
+there to inform a human or an AI agent, and to feed `archfit analyze --llm`. One
+signal is promotable: the synthesised `coupling_balance` score gates when a
+`coupling.gate` block is configured (archfit's own config has none, so the score
+stays report-only here).
 
-A new signal is **not** a build break. Treat a rising signal as a prompt to look,
-not as a failure. Only promote a signal to a gate (give a metric a `gate`, or add
-a `rule`) once you have decided it is a real, enforceable boundary.
+| Aspect       | Violation                             | Regression                                   | Signal                                                    |
+| ------------ | ------------------------------------- | -------------------------------------------- | --------------------------------------------------------- |
+| Source       | `rules` with `gate: fail`/`warn`      | `metrics` delta vs baseline, `coupling.gate` | metric absolute values, BC advisories                     |
+| Effect       | sets exit code; fails CI              | fails CI unless downgraded per metric        | report-only; never gates                                  |
+| Determinism  | byte-identical, gate-grade            | byte-identical, gate-grade                   | deterministic, but advisory                               |
+| Examples     | forbidden dependency, cycle, API leak | new cycle, encapsulation drop, coverage drop | `blast_radius`, `coupling_balance` advisories, BC rollups |
+| Acting on it | must fix or baseline/except           | fix, or re-baseline to accept the new level  | judgement call; prioritize, don't block                   |
+
+A rising signal is **not** a build break — treat it as a prompt to look. A
+regression **is** a build break by default: either fix it or deliberately accept
+the new level with `archfit baseline`.
 
 ## What archfit enforces on itself (violations)
 

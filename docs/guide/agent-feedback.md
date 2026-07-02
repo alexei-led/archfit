@@ -38,7 +38,10 @@ Every ACTIVE gate finding produces one structured repair task:
 Goals are deterministic templates per rule type; constraints join the rule's
 configured constraint text, allowed alternatives, and the target module's
 public globs; validation is the exact command that must pass. Advisory
-findings never produce tasks — they are signals, not orders.
+findings normally produce no tasks — they are signals, not orders. The one
+exception: a tripped [`coupling.gate`](configuration-reference.md#couplinggate)
+promotes the active Balanced-Coupling advisories to gate kind, so the edges
+behind the failing score arrive in `agent_tasks[]` with file evidence.
 
 ## SARIF — the CI annotation channel
 
@@ -54,8 +57,9 @@ inline PR annotations.
   layer inversions, cycles, unreviewed new cross-module deps).
 - **BC advisories** — Balanced Coupling imbalances (strength × distance ×
   volatility) at or above the configured severity.
-- **Metrics** — `coupling_balance` (scored), plus complementary report-only:
-  `blast_radius`, `cycle`, `encapsulation`, `coverage`.
+- **Metrics** — `coupling_balance` (scored; gates via the opt-in
+  `coupling.gate`), the baseline-delta gated `unbalanced_edge`, `cycle`,
+  `encapsulation`, `coverage`, and report-only `blast_radius`.
 - **Structural facts** — neutral per-module evidence (fan-in, fan-out, LOC)
   for downstream judgment.
 

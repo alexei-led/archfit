@@ -124,13 +124,6 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 	ms := append(metrics.New(cfg), extraMetrics...)
 
-	// Per-metric gate posture/thresholds (metrics.<name> in config), consumed
-	// by the verdict. Built here so the engine receives a view, not the Config.
-	metricGates := make(map[string]config.MetricConfig, len(ms))
-	for _, m := range ms {
-		metricGates[m.Name()] = cfg.ForMetric(m.Name())
-	}
-
 	// toolWarnings collects the exceptional, non-nil errors from the optional
 	// extractors below. They normally degrade gracefully — encoding absence in
 	// their Coverage record (surfaced as a CoverageGap), not an error — so this
@@ -300,7 +293,10 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		Metrics:     ms,
 		Accepted:    base,
 		BaseMetrics: base.Metrics,
-		MetricGates: metricGates,
+		// Per-metric gate posture/thresholds: cfg.Metrics is already the
+		// name→entry view the verdict wants; missing names read as zero
+		// entries (the gate defaults) on lookup.
+		MetricGates: cfg.Metrics,
 		Labels:      lbls,
 		Signals:     change,
 		Now:         time.Now(),
@@ -395,6 +391,9 @@ func couplingGateView(cfg config.Config) score.CouplingGate {
 // (internal/agenttask) and into the MustFix bucket; baselined/waived edges stay
 // triaged and are not promoted. An unmeasured score (band n/a) never trips —
 // score.EvaluateCouplingGate owns that rule. No coupling.gate config ⇒ no-op.
+// Trip reasons are NOT printed here: runPipeline is shared with baseline,
+// enrich, explain, and --base scoring, where an enforcement-sounding stderr
+// line is noise — analyze.go re-evaluates the pure gate and echoes them.
 //
 // With advisory mode off the diagnostic carries no BC findings, so only the
 // verdict flips; `archfit analyze` defaults advisory on.
@@ -402,9 +401,6 @@ func applyCouplingGate(diag *diagnostic.Diagnostic, card score.Scorecard, gate s
 	trip := score.EvaluateCouplingGate(card, gate, base.CouplingScore())
 	if !trip.Tripped {
 		return
-	}
-	for _, r := range trip.Reasons {
-		_, _ = fmt.Fprintln(os.Stderr, "coupling gate: "+r)
 	}
 	diag.Verdict = diagnostic.VerdictFail
 	promoted := 0

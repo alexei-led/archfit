@@ -52,9 +52,9 @@ type RunInput struct {
 	Accepted    status.AcceptedSet
 	BaseMetrics diagnostic.MetricSnapshot // baseline metric snapshot; nil = no baseline
 	// MetricGates maps metric name → its metrics.<name> config entry (gate
-	// posture off|warn|fail plus max_new/min_delta thresholds), built by the
-	// caller via Config.ForMetric. nil/missing entries mean the defaults:
-	// blocking gate, zero tolerated regression.
+	// posture off|warn|fail plus max_new/min_delta thresholds); the caller
+	// passes cfg.Metrics. nil/missing entries mean the defaults: blocking
+	// gate, zero tolerated regression.
 	MetricGates map[string]config.MetricConfig
 	Labels      []labels.Label // pinned coupling labels; nil = none
 	Signals     signal.RunSignals

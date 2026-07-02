@@ -799,7 +799,8 @@ metrics:
 ```
 
 - `enabled` — `false` removes the metric from the run. Metrics absent from the
-  config default to enabled.
+  config default to enabled, as do knob-only entries (e.g. just `gate: warn`) —
+  only an explicit `enabled: false` disables.
 - `gate` — what a baseline regression does to the verdict: `off` skips the
   check, `warn` caps at WARN (exit 2), `fail` or unset blocks (exit 1) — the
   same convention as rule gates.

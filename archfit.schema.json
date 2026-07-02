@@ -205,7 +205,8 @@
     "MetricEntry": {
       "properties": {
         "enabled": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Metrics run by default: a knob-only entry (e.g. only `gate: warn`)\nstays enabled, and only an explicit `enabled: false` disables the\nmetric. (Pointer so absent and false decode differently.)"
         },
         "gate": {
           "type": "string",

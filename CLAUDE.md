@@ -60,7 +60,12 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   `agent_tasks[]` through the unchanged agenttask filter). `min_band` is a band
   floor; `max_drop` compares against the score snapshot `archfit baseline`
   stores (`baseline.ScoreSnapshot`, omitted when unmeasured). BandNA never
-  gates (abstain ≠ fail). The `couplingGateView` projection lives in cmd, NOT
+  gates (abstain ≠ fail). Trip reasons print to stderr from `analyze` ONLY
+  (re-evaluated there via the pure `score.EvaluateCouplingGate`) — never from
+  baseline/enrich/explain/`--base` scoring, which share `runPipeline`.
+  `archfit baseline` persists BC findings with their NATIVE advisory kind
+  (promotion is per-run; a stored "gate" kind orphans the entry for
+  `status.Assign`). The `couplingGateView` projection lives in cmd, NOT
   on `Config` — config (support layer) must not import score (core layer); the
   dogfood gate catches that inversion.
 - **FileClass facility** (`internal/model/fileclass`, `internal/syntax/fileclass`).
@@ -143,8 +148,11 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   `cmd`.
 - `gate:` is wired for **all rule types** (`off` skips, `warn` is advisory/non-blocking,
   `fail`/unset is blocking; exception: `public_api_change` defaults to `warn` when unset). An unknown `type` value is a config error.
-  `coupling_balance` gates via the `coupling.gate:` block, not `metrics:` — see
-  the coupling-gate invariant above.
+  `metrics.<name>.gate` follows the same convention: a worsening baseline delta
+  blocks when `gate` is unset. `MetricEntry.Enabled` is a `*bool` so a knob-only
+  entry (`{gate: warn}`) stays enabled — only explicit `enabled: false` disables
+  the metric (`metrics.New`). `coupling_balance` gates via the `coupling.gate:`
+  block, not `metrics:` — see the coupling-gate invariant above.
 
 ## Coupling scorer — key design facts
 

@@ -584,8 +584,8 @@ func TestForMetric(t *testing.T) {
 
 	t.Run("known_metric", func(t *testing.T) {
 		mc := cfg.ForMetric("encapsulation")
-		if !mc.Enabled {
-			t.Error("ForMetric(encapsulation).Enabled = false, want true")
+		if mc.Enabled == nil || !*mc.Enabled {
+			t.Error("ForMetric(encapsulation).Enabled != true, want explicit true")
 		}
 		if mc.Gate != "warn" {
 			t.Errorf("ForMetric(encapsulation).Gate = %q, want warn", mc.Gate)
@@ -594,8 +594,8 @@ func TestForMetric(t *testing.T) {
 
 	t.Run("unknown_metric_zero_value", func(t *testing.T) {
 		mc := cfg.ForMetric("nonexistent")
-		if mc.Enabled {
-			t.Error("ForMetric(nonexistent).Enabled = true, want false")
+		if mc.Enabled != nil {
+			t.Errorf("ForMetric(nonexistent).Enabled = %v, want nil (absent)", *mc.Enabled)
 		}
 	})
 }
@@ -884,14 +884,14 @@ func TestLoad_NewToolsAndMetrics(t *testing.T) {
 
 	// metrics.blast_radius: enabled false
 	rh := cfg.ForMetric("blast_radius")
-	if rh.Enabled {
-		t.Error("ForMetric(blast_radius).Enabled = true, want false")
+	if rh.Enabled == nil || *rh.Enabled {
+		t.Error("ForMetric(blast_radius).Enabled != false, want explicit false")
 	}
 
 	// metrics.encapsulation: enabled true, gate warn
 	af := cfg.ForMetric("encapsulation")
-	if !af.Enabled {
-		t.Error("ForMetric(encapsulation).Enabled = false, want true")
+	if af.Enabled == nil || !*af.Enabled {
+		t.Error("ForMetric(encapsulation).Enabled != true, want explicit true")
 	}
 	if af.Gate != "warn" {
 		t.Errorf("ForMetric(encapsulation).Gate = %q, want warn", af.Gate)
@@ -899,8 +899,8 @@ func TestLoad_NewToolsAndMetrics(t *testing.T) {
 
 	// metrics.coverage: enabled false
 	fc := cfg.ForMetric("coverage")
-	if fc.Enabled {
-		t.Error("ForMetric(coverage).Enabled = true, want false")
+	if fc.Enabled == nil || *fc.Enabled {
+		t.Error("ForMetric(coverage).Enabled != false, want explicit false")
 	}
 }
 
@@ -914,13 +914,13 @@ func TestNewToolsDefaultOff(t *testing.T) {
 }
 
 // TestNewMetricsDefaultZero verifies that absent Tranche-1 metric entries return
-// a zero MetricEntry (Enabled=false, Gate=""), consistent with ForMetric contract.
+// a zero MetricEntry (Enabled=nil, Gate=""), consistent with ForMetric contract.
 func TestNewMetricsDefaultZero(t *testing.T) {
 	cfg := config.Config{Version: 1}
 	for _, name := range []string{"blast_radius", "encapsulation", "coverage"} {
 		mc := cfg.ForMetric(name)
-		if mc.Enabled {
-			t.Errorf("ForMetric(%q).Enabled = true on empty config, want false", name)
+		if mc.Enabled != nil {
+			t.Errorf("ForMetric(%q).Enabled = %v on empty config, want nil (absent)", name, *mc.Enabled)
 		}
 		if mc.Gate != "" {
 			t.Errorf("ForMetric(%q).Gate = %q on empty config, want empty", name, mc.Gate)

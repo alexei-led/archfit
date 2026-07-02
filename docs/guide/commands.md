@@ -70,8 +70,11 @@ Findings have a lifecycle status:
 ## Exit codes
 
 - `0` — pass;
-- `1` — fail (active gate finding, **or** a missing required tool under
-  `--require-tools` / `languages.<x>.gate: fail` / `analyzers.<x>.gate: fail` — a policy violation);
+- `1` — fail (active gate finding, a metric delta that worsens past its
+  `metrics.<name>` threshold with `gate` fail/unset, a tripped
+  [`coupling.gate`](configuration-reference.md#couplinggate), **or** a missing
+  required tool under `--require-tools` / `languages.<x>.gate: fail` /
+  `analyzers.<x>.gate: fail` — a policy violation);
 - `2` — warn;
 - `3` — usage, config, or runtime error.
 
@@ -79,7 +82,9 @@ Exit `1` (policy) is deliberately distinct from exit `3` (tool/config error): a
 missing required tool is a _gate_ decision you opted into, not a crash.
 
 Balanced Coupling advisories are informational by default. Use them to prioritize
-architecture review and refactoring, not as automatic pass/fail rules.
+architecture review and refactoring, not as automatic pass/fail rules. The
+synthesised `coupling_balance` score built from those advisories _can_ fail the
+build, but only through the opt-in `coupling.gate` block.
 
 ## Coverage gaps and required tools
 
@@ -225,7 +230,9 @@ fitness measure; structural rules (forbidden deps, layering, cycles, encapsulati
 are pass/fail gates reported separately.
 
 Output is deterministic — byte-identical across a double-run. The scorecard is
-**off-gate**: it never changes the exit code.
+report-only by default; the opt-in
+[`coupling.gate`](configuration-reference.md#couplinggate) block makes the
+synthesised score fail the run (exit 1) on a band floor or score drop.
 
 ## LLM narrative (analyze --llm)
 

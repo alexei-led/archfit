@@ -3,8 +3,9 @@ package score
 import "fmt"
 
 // CouplingGate is the projected `coupling.gate:` config view (built by
-// config.ForCouplingGate). Enabled is true when the block is present; MinBand
-// and MaxDrop are independent knobs — either may be unset.
+// couplingGateView in cmd — config sits below score in the layer order, so
+// this projection cannot be a Config method). Enabled is true when the block
+// is present; MinBand and MaxDrop are independent knobs — either may be unset.
 type CouplingGate struct {
 	Enabled bool
 	// MinBand is the band floor: the gate trips when the current

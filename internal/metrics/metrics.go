@@ -59,11 +59,12 @@ func New(cfg config.Config) []Metric {
 		adapt(modularity.BlastRadiusMetric{}, signal.CollectedSignals.AsCommon),
 	}
 
-	// Honor explicit `metrics.<name>.enabled: false` config: metrics absent
-	// from the config default to enabled; only an explicit entry can disable.
+	// Honor explicit `metrics.<name>.enabled: false` config: metrics default
+	// to enabled — absent entries and knob-only entries ({gate: warn}) both
+	// run; only an explicit false disables.
 	out := make([]Metric, 0, len(all))
 	for _, m := range all {
-		if entry, configured := cfg.Metrics[m.Name()]; configured && !entry.Enabled {
+		if entry, configured := cfg.Metrics[m.Name()]; configured && entry.Enabled != nil && !*entry.Enabled {
 			continue
 		}
 		out = append(out, m)
