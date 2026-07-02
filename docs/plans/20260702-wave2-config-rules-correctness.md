@@ -50,11 +50,11 @@ Three verified defects make archfit's out-of-box experience wrong, which matters
 
 ### Task 4: Case-safe CODEOWNERS subtree + owner degradation warning
 
-- [ ] failing test first: temp git repo with CODEOWNERS, analyze with a case-variant `--root` (guard: skip unless the filesystem is case-insensitive — probe by creating `a`/`A` in t.TempDir()); assert `owner_source` stays `codeowners` and SubtreePrefix is correct
-- [ ] apply the `os.SameFile` canonicalization used by `snapScanRoot` to the path used for `SubtreePrefix`/CODEOWNERS resolution in `internal/scope/scope.go`
-- [ ] disclosure rule: whenever owner resolution degrades (`codeowners→git→none`), emit a stderr warning naming the cause, and surface `owner_source` in the JSON evidence — silent degradation is the defect, not just the wrong prefix
-- [ ] test the warning path (force a degradation, assert stderr + JSON field)
-- [ ] run `make test && make lint && make archfit`; commit
+- [x] failing test first: temp git repo with CODEOWNERS, analyze with a case-variant `--root` (guard: skip unless the filesystem is case-insensitive — probe by creating `a`/`A` in t.TempDir()); assert `owner_source` stays `codeowners` and SubtreePrefix is correct
+- [x] apply the `os.SameFile` canonicalization used by `snapScanRoot` to the path used for `SubtreePrefix`/CODEOWNERS resolution in `internal/scope/scope.go`
+- [x] disclosure rule: whenever owner resolution degrades (`codeowners→git→none`), emit a stderr warning naming the cause, and surface `owner_source` in the JSON evidence — silent degradation is the defect, not just the wrong prefix
+- [x] test the warning path (force a degradation, assert stderr + JSON field)
+- [x] run `make test && make lint && make archfit`; commit
 
 ### Task 5: Corpus verification (four languages)
 

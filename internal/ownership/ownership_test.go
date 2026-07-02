@@ -511,12 +511,15 @@ func TestResolve_ReportsSource(t *testing.T) {
 		}
 	})
 
-	t.Run("none when codeowners matches nothing", func(t *testing.T) {
+	t.Run("codeowners_no_match when codeowners matches nothing", func(t *testing.T) {
+		// A CODEOWNERS file existing but resolving zero owners is distinct from
+		// SourceNone: it is far more often a subtree/path-prefix or module-glob
+		// mismatch than a genuinely unattributed repo.
 		root := t.TempDir()
 		writeFile(t, root, ".github/CODEOWNERS", "docs/ @team\n")
 		writeFile(t, root, "src/a.go", "")
-		if _, src := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner()); src != ownership.SourceNone {
-			t.Errorf("got %q, want none", src)
+		if _, src := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner()); src != ownership.SourceCodeownersNoMatch {
+			t.Errorf("got %q, want codeowners_no_match", src)
 		}
 	})
 

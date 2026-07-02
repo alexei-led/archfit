@@ -119,3 +119,74 @@ func TestSnapScanRoot_NoOp(t *testing.T) {
 		t.Errorf("empty gitRoot: got %q; want %q", got, dir)
 	}
 }
+
+// isCaseInsensitiveFS probes whether dir's filesystem treats "a" and "A" as
+// the same file — the precondition for the case-variant --root bug (macOS
+// APFS default, some Linux mounts). Probe, don't assume by GOOS: Linux can
+// mount case-insensitive volumes and macOS can be case-sensitive.
+func isCaseInsensitiveFS(t *testing.T, dir string) bool {
+	t.Helper()
+	lower := filepath.Join(dir, "archfit-case-probe")
+	if err := os.WriteFile(lower, []byte("x"), 0o600); err != nil {
+		t.Fatalf("case probe write: %v", err)
+	}
+	upper := filepath.Join(dir, "ARCHFIT-CASE-PROBE")
+	_, err := os.Stat(upper)
+	return err == nil
+}
+
+// TestSubtreePrefix_CaseVariantAncestor is the Wave 2 Task 4 case-bug repro:
+// scanRoot's shared ancestor with gitRoot is cased differently from gitRoot
+// itself (the omni corpus repro — see
+// reports/eval-2026-07-02-v1.1.2/corpus-experiments.md, "lowercase --root
+// .../workspace/omni/... (case-variant of git root)"). Before the fix,
+// filepath.Rel compares "Repo" vs "repo" as different strings, produces a
+// "../…" relative path, and subtreePrefix's ".." guard collapses a genuine
+// subtree to "" — which in turn drops SubtreePrefix, corrupting CODEOWNERS
+// gitRoot-relative matching downstream (ownership.Resolve degrades to
+// SourceNone/SourceCodeownersNoMatch with zero warning).
+func TestSubtreePrefix_CaseVariantAncestor(t *testing.T) {
+	if runtime.GOOS == osWindows {
+		t.Skip("case-variant path test skipped on Windows")
+	}
+
+	parent := t.TempDir()
+	if !isCaseInsensitiveFS(t, parent) {
+		t.Skip("case-sensitive filesystem — case-variant ancestor cannot alias gitRoot here")
+	}
+
+	gitRoot := filepath.Join(parent, "Repo")
+	subDir := filepath.Join(gitRoot, "services", "api")
+	if err := os.MkdirAll(subDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	// Case-variant ancestor: lowercase "repo" aliases the real "Repo" dir on a
+	// case-insensitive filesystem; "services/api" below it keeps its real case,
+	// matching the corpus repro shape (only the gitRoot-shared prefix is wrong).
+	caseVariantScanRoot := filepath.Join(parent, "repo", "services", "api")
+
+	got := filepath.ToSlash(subtreePrefix(gitRoot, caseVariantScanRoot))
+	const want = "services/api"
+	if got != want {
+		t.Errorf("subtreePrefix(%q, %q) = %q; want %q (case-variant ancestor must still resolve the real subtree)",
+			gitRoot, caseVariantScanRoot, got, want)
+	}
+}
+
+// TestSubtreePrefix_CaseVariant_NotUnderGitRoot verifies the case-insensitive
+// fallback still returns "" for a path genuinely outside gitRoot — it must not
+// turn every stat-failure/divergence into a false positive.
+func TestSubtreePrefix_CaseVariant_NotUnderGitRoot(t *testing.T) {
+	if runtime.GOOS == osWindows {
+		t.Skip("path test skipped on Windows")
+	}
+
+	gitRoot := t.TempDir()
+	outside := t.TempDir() // a sibling temp dir, not nested under gitRoot
+
+	got := subtreePrefix(gitRoot, outside)
+	if got != "" {
+		t.Errorf("subtreePrefix(%q, %q) = %q; want empty (outside must not fall back to a spurious prefix)", gitRoot, outside, got)
+	}
+}

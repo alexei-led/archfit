@@ -210,6 +210,10 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		resolved, src := ownership.Resolve(ctx, s.Root, s.GitRoot, s.SubtreePrefix, cfg.ModuleMapView(), deps.Runner)
 		cfg.FillMissingOwners(resolved)
 		ownerSource = string(src)
+		if w := ownerDegradationWarning(src); w != "" {
+			toolWarnings = append(toolWarnings, w)
+			_, _ = fmt.Fprintln(os.Stderr, "warning: "+w)
+		}
 	}
 
 	// Deploy-unit detection: fills module deploy_unit gaps from static repo

@@ -15,6 +15,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/ownership"
 )
 
 // buildConfigWarnings assembles the advisory ConfigWarnings block: under-specified
@@ -93,6 +94,30 @@ func outputInsideRootWarning(root, dir string) string {
 	}
 	return "output written inside analyzed root (" + rel + ") — exclude it or " +
 		"use a path outside --root to keep scans deterministic"
+}
+
+// ownerDegradationWarning returns a disclosure message when ownership
+// resolution did not produce usable module owners despite a signal that it
+// should have — a CODEOWNERS file existed but matched none of the configured
+// modules, or the git-author history walk timed out before finishing. Both
+// cases silently degrade coupling distance to code_structure without ever
+// telling the caller. Plain SourceNone (no CODEOWNERS, no git data) is
+// deliberately excluded — the ownership package documents that as a clean
+// "nothing to attribute" result, not a degradation, and SourceGit (the
+// designed CODEOWNERS→git fallback) is expected behaviour, not a defect.
+// Returns "" when src needs no disclosure.
+func ownerDegradationWarning(src ownership.Source) string {
+	switch src {
+	case ownership.SourceCodeownersNoMatch:
+		return "owner resolution: a CODEOWNERS file was found but matched none of the configured " +
+			"modules (owner_source=codeowners_no_match) — check --root/subtree case and module path " +
+			"globs; coupling distance falls back to code_structure"
+	case ownership.SourceGitTimeout:
+		return "owner resolution: the git-author history walk timed out before resolving any owner " +
+			"(owner_source=git_timeout) — coupling distance falls back to code_structure"
+	default:
+		return ""
+	}
 }
 
 // loadConfig loads the config file at path. When path equals the default

@@ -84,6 +84,14 @@ const (
 	// this is "the walk didn't finish," not "ran clean, found nothing" — so
 	// downstream diagnostics don't read a timeout as a genuinely-unattributed repo.
 	SourceGitTimeout Source = "git_timeout"
+	// SourceCodeownersNoMatch means a CODEOWNERS file was found but none of its
+	// rules matched any path belonging to a configured module. Distinct from
+	// SourceNone — a CODEOWNERS file existing but resolving zero owners is far
+	// more often a subtree/path-prefix or module-glob mismatch (e.g. the
+	// case-variant --root bug) than a genuinely unattributed repo, so callers
+	// surface it as a disclosure-worthy degradation rather than silently
+	// collapsing to SourceNone.
+	SourceCodeownersNoMatch Source = "codeowners_no_match"
 )
 
 // Resolve returns a map from config module name to owner string, plus the Source
@@ -120,8 +128,10 @@ func Resolve(ctx context.Context, scanRoot, gitRoot, subtreePrefix string, modul
 	if found {
 		m := resolveFromCodeowners(rules, scanRoot, subtreePrefix, modules)
 		if len(m) == 0 {
-			// CODEOWNERS present but no rule mapped to a configured module.
-			return m, SourceNone
+			// CODEOWNERS present but no rule mapped to a configured module —
+			// a suspicious combination (see SourceCodeownersNoMatch), not the
+			// benign "nothing to attribute" case.
+			return m, SourceCodeownersNoMatch
 		}
 		return m, SourceCodeowners
 	}
