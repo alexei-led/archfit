@@ -444,7 +444,11 @@ abstention is not failure, so partial-coverage runs cannot flip CI red.
 When the gate trips, the verdict becomes FAIL (exit 1), the trip reasons print
 to stderr, and the active `bc/imbalanced_coupling` advisories are promoted to
 blocking findings — they then flow into `agent_tasks[]` like any other gate
-finding. Baselined and waived advisories stay triaged.
+finding. Baselined and waived advisories stay triaged. When no advisory is
+available to promote (advisory output disabled, or `coupling.min_severity`
+filtering every active edge), the run emits one synthetic `bc/coupling_gate`
+finding carrying the trip reasons instead, so the report and `agent_tasks[]`
+always explain the failure.
 
 `coupling_balance` is not a `metrics:` entry; a `metrics.coupling_balance:`
 key is a config error that points here.

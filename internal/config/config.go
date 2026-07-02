@@ -29,7 +29,7 @@ import (
 //   - module_review  — staleness gating of the module declarations
 //   - file_class / outputs — classification overrides and output formats
 type Config struct {
-	Version      int                  `yaml:"version"`
+	Version      int                  `yaml:"version" jsonschema:"required"`
 	Exclude      []string             `yaml:"exclude"`
 	Languages    LanguagesConfig      `yaml:"languages"`
 	Analyzers    AnalyzersConfig      `yaml:"analyzers"`
@@ -302,23 +302,23 @@ func validateMetricEntry(name string, knob metricKnob, e MetricEntry) error {
 	if err := validateGate("metrics."+name, e.Gate); err != nil {
 		return err
 	}
-	if e.MinDelta < 0 {
-		return fmt.Errorf("metrics.%s.min_delta must be >= 0 (a tolerated drop, got %v)", name, e.MinDelta)
+	if e.MinDelta != nil && *e.MinDelta < 0 {
+		return fmt.Errorf("metrics.%s.min_delta must be >= 0 (a tolerated drop, got %v)", name, *e.MinDelta)
 	}
-	if e.MaxNew < 0 {
-		return fmt.Errorf("metrics.%s.max_new must be >= 0 (an allowed increase, got %d)", name, e.MaxNew)
+	if e.MaxNew != nil && *e.MaxNew < 0 {
+		return fmt.Errorf("metrics.%s.max_new must be >= 0 (an allowed increase, got %d)", name, *e.MaxNew)
 	}
 	switch knob {
 	case knobRatio:
-		if e.MaxNew != 0 {
+		if e.MaxNew != nil {
 			return fmt.Errorf("metrics.%s.max_new applies only to count metrics (cycle, unbalanced_edge) — use min_delta", name)
 		}
 	case knobCount:
-		if e.MinDelta != 0 {
+		if e.MinDelta != nil {
 			return fmt.Errorf("metrics.%s.min_delta applies only to ratio metrics (encapsulation, coverage) — use max_new", name)
 		}
 	case knobNone:
-		if e.Gate != "" || e.MinDelta != 0 || e.MaxNew != 0 {
+		if e.Gate != "" || e.MinDelta != nil || e.MaxNew != nil {
 			return fmt.Errorf("metrics.%s is informational and never gates — only `enabled` applies", name)
 		}
 	}

@@ -259,6 +259,92 @@ func TestApplyCouplingGate_PromotionScope(t *testing.T) {
 				diag.Verdict, diag.Findings[0].Kind, diag.Summary)
 		}
 	})
+
+	t.Run("tripped gate with no promotable advisory synthesizes a gate finding", func(t *testing.T) {
+		t.Parallel()
+		// Advisory output off (or coupling.min_severity filtered everything):
+		// the score still trips — it is computed from ClassifiedEdges, not from
+		// the advisory findings — so the fail verdict must carry its own evidence.
+		diag := diagnostic.Diagnostic{
+			Verdict: diagnostic.VerdictPass,
+			Findings: []finding.Finding{
+				{ID: "bc-baselined", RuleID: ruleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusBaseline},
+			},
+		}
+		applyCouplingGate(&diag, card, score.CouplingGate{Enabled: true, MinBand: score.BandMixed}, baseline.Baseline{})
+		if diag.Verdict != diagnostic.VerdictFail {
+			t.Errorf("verdict = %q, want fail", diag.Verdict)
+		}
+		if len(diag.Findings) != 2 {
+			t.Fatalf("findings = %d, want 2 (baselined advisory + synthetic gate finding)", len(diag.Findings))
+		}
+		if got := diag.Findings[0].Kind; got != finding.KindAdvisory {
+			t.Errorf("baselined BC advisory kind = %q, want advisory", got)
+		}
+		syn := diag.Findings[1]
+		if syn.RuleID != ruleIDBCCouplingGate || syn.Kind != finding.KindGate || syn.Status != finding.StatusNew {
+			t.Errorf("synthetic finding = %+v, want rule %s kind gate status new", syn, ruleIDBCCouplingGate)
+		}
+		if syn.Why == "" {
+			t.Error("synthetic finding carries no trip reason")
+		}
+		if diag.Summary.GateFindings != 1 {
+			t.Errorf("summary.GateFindings = %d, want 1", diag.Summary.GateFindings)
+		}
+	})
+}
+
+// TestRun_Analyze_CouplingGate_TripWithoutAdvisories verifies that a tripped
+// coupling gate stays self-describing when no BC advisory is available to
+// promote (--advisory=false; same shape as coupling.min_severity filtering
+// every active edge): the run still fails, and the diagnostic carries a
+// synthetic bc/coupling_gate gate finding with an agent task — never a fail
+// verdict with zero gate findings.
+func TestRun_Analyze_CouplingGate_TripWithoutAdvisories(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
+
+	var buf bytes.Buffer
+	code := Run([]string{cmdAnalyze, fmtJSON, "-c", cfgPath, flagFull, flagGate, "--advisory=false"}, &buf)
+	if code != 1 {
+		t.Fatalf("analyze --gate --advisory=false with tripped coupling gate: exit = %d, want 1\noutput:\n%s", code, buf.String())
+	}
+
+	var diag diagnostic.Diagnostic
+	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
+		t.Fatalf("unmarshal JSON output: %v", err)
+	}
+	if diag.Verdict != diagnostic.VerdictFail {
+		t.Fatalf("verdict = %q, want fail", diag.Verdict)
+	}
+	var syn *finding.Finding
+	for i := range diag.Findings {
+		if diag.Findings[i].RuleID == ruleIDBCCouplingGate {
+			syn = &diag.Findings[i]
+			break
+		}
+	}
+	if syn == nil {
+		t.Fatalf("tripped gate left no %s finding: %+v", ruleIDBCCouplingGate, diag.Findings)
+	}
+	if syn.Kind != finding.KindGate || syn.Why == "" {
+		t.Errorf("synthetic finding = %+v, want kind gate with a trip reason", *syn)
+	}
+	if diag.Summary.GateFindings == 0 {
+		t.Error("summary.gate_findings = 0 on a fail verdict")
+	}
+	found := false
+	for _, task := range diag.AgentTasks {
+		if task.RuleID == ruleIDBCCouplingGate {
+			found = true
+			if task.Goal == "" {
+				t.Errorf("coupling-gate agent task has no goal: %+v", task)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("agent_tasks carries no %s task: %+v", ruleIDBCCouplingGate, diag.AgentTasks)
+	}
 }
 
 // TestRun_Baseline_KeepsNativeAdvisoryKind guards the finding-lifecycle
@@ -291,6 +377,30 @@ func TestRun_Baseline_KeepsNativeAdvisoryKind(t *testing.T) {
 	}
 	if !sawBC {
 		t.Fatal("fixture regression: baseline --advisory persisted no BC advisory")
+	}
+}
+
+// TestRun_Baseline_SkipsSyntheticCouplingGateFinding: `archfit baseline`
+// without --advisory under a tripped coupling.gate synthesizes the
+// bc/coupling_gate trip finding (no BC advisory exists to promote), but must
+// not persist it — the engine never regenerates its fingerprint, so a stored
+// entry would orphan and surface as a phantom "fixed" finding on later runs.
+func TestRun_Baseline_SkipsSyntheticCouplingGateFinding(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
+
+	var buf bytes.Buffer
+	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagFull}, &buf); code != 0 {
+		t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
+	}
+	b, err := baseline.Load(context.Background(), filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range b.Accepted {
+		if a.RuleID == ruleIDBCCouplingGate {
+			t.Errorf("baseline persisted the synthetic coupling-gate finding: %+v", a)
+		}
 	}
 }
 

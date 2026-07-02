@@ -63,9 +63,14 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   gates (abstain ≠ fail). Trip reasons print to stderr from `analyze` ONLY
   (re-evaluated there via the pure `score.EvaluateCouplingGate`) — never from
   baseline/enrich/explain/`--base` scoring, which share `runPipeline`.
+  The score comes from `ClassifiedEdges` (pre-advisory-filter), so a trip with
+  no promotable advisory (advisory off, or `coupling.min_severity` above every
+  active edge) emits one synthetic `bc/coupling_gate` gate finding carrying
+  the trip reasons — a FAIL verdict never ships with 0 gate findings.
   `archfit baseline` persists BC findings with their NATIVE advisory kind
   (promotion is per-run; a stored "gate" kind orphans the entry for
-  `status.Assign`). The `couplingGateView` projection lives in cmd, NOT
+  `status.Assign`) and skips the synthetic trip finding entirely. The
+  `couplingGateView` projection lives in cmd, NOT
   on `Config` — config (support layer) must not import score (core layer); the
   dogfood gate catches that inversion.
 - **FileClass facility** (`internal/model/fileclass`, `internal/syntax/fileclass`).

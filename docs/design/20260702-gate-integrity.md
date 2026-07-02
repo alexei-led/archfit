@@ -59,6 +59,13 @@ construction.
   `bc/imbalanced_coupling` advisories are promoted to `Kind: "gate"` so they
   pass the unchanged `agenttask` filter into `agent_tasks[]`. Baselined and
   waived advisories stay triaged.
+- The score is synthesised from `ClassifiedEdges` (before advisory
+  filtering), so a trip can find no promotable advisory — advisory output
+  off, or `coupling.min_severity` above every active edge. That case emits
+  one synthetic `bc/coupling_gate` gate finding carrying the trip reasons, so
+  `summary.gate_findings` and `agent_tasks[]` never contradict a FAIL
+  verdict. `archfit baseline` skips it (per-run trip state, not a triageable
+  edge).
 - The stderr echo happens in `analyze` only (re-evaluating the pure gate
   decision), not inside the shared `runPipeline` — baseline/enrich/explain and
   `--base` scoring must not print enforcement-sounding lines they don't act on.

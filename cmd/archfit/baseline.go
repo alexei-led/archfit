@@ -57,6 +57,12 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 		if f.Status == finding.StatusFixed {
 			continue // fixed = no longer detected; don't carry into new baseline
 		}
+		// The synthetic coupling-gate trip finding is per-run state, not a
+		// triageable edge: the engine never regenerates its fingerprint, so a
+		// persisted entry would orphan and surface as a phantom "fixed" finding.
+		if f.RuleID == ruleIDBCCouplingGate {
+			continue
+		}
 		// Persist the finding's native kind, not the per-run coupling-gate
 		// promotion: the engine regenerates BC findings as advisories every
 		// run, and status.Assign matches stored kind against the pass kind —

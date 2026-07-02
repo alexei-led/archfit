@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/agenttask"
@@ -366,6 +367,12 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 // advisory findings (internal/engine/advisories.go keeps the source constant).
 const ruleIDBCImbalanced = "bc/imbalanced_coupling"
 
+// ruleIDBCCouplingGate is stamped on the synthetic summary finding that
+// applyCouplingGate emits when the gate trips with no promotable BC advisory
+// (advisory output off, or coupling.min_severity above every active edge).
+// Per-run trip state, never a triageable edge: `archfit baseline` skips it.
+const ruleIDBCCouplingGate = "bc/coupling_gate"
+
 // couplingGateView projects the coupling.gate config block into the score
 // package's gate view. It lives here in the composition root — config sits
 // below score in the layer order, so unlike the other config views this
@@ -395,8 +402,15 @@ func couplingGateView(cfg config.Config) score.CouplingGate {
 // enrich, explain, and --base scoring, where an enforcement-sounding stderr
 // line is noise — analyze.go re-evaluates the pure gate and echoes them.
 //
-// With advisory mode off the diagnostic carries no BC findings, so only the
-// verdict flips; `archfit analyze` defaults advisory on.
+// The score is synthesised from ClassifiedEdges (before advisory filtering),
+// so the gate can trip while no BC advisory exists to promote — advisory
+// output off, or coupling.min_severity above every active edge. A fail
+// verdict must still carry evidence in the diagnostic itself, so that case
+// emits one synthetic summary gate finding (rule bc/coupling_gate) with the
+// trip reasons as Why: summary.gate_findings and agent_tasks[] stay
+// consistent with the verdict. `archfit baseline` never persists it — the
+// trip is per-run state, and a stored fingerprint the engine never
+// regenerates would surface as a phantom "fixed" finding.
 func applyCouplingGate(diag *diagnostic.Diagnostic, card score.Scorecard, gate score.CouplingGate, base baseline.Baseline) {
 	trip := score.EvaluateCouplingGate(card, gate, base.CouplingScore())
 	if !trip.Tripped {
@@ -416,4 +430,15 @@ func applyCouplingGate(diag *diagnostic.Diagnostic, card score.Scorecard, gate s
 	// promoted advisories now count as blocking, not as warnings.
 	diag.Summary.GateFindings += promoted
 	diag.Summary.Warnings = max(0, diag.Summary.Warnings-promoted)
+	if promoted == 0 {
+		diag.Findings = append(diag.Findings, finding.Finding{
+			ID:       "coupling-gate",
+			Kind:     finding.KindGate,
+			RuleID:   ruleIDBCCouplingGate,
+			Status:   finding.StatusNew,
+			Severity: finding.SeverityHigh,
+			Why:      strings.Join(trip.Reasons, "; "),
+		})
+		diag.Summary.GateFindings++
+	}
 }

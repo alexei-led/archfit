@@ -450,8 +450,9 @@ func resolveEvidence(
 //   - Any gate finding with status new or expired_waiver → fail
 //   - Any metric whose delta breaches its threshold in the worsening direction
 //     trips its gate: DirectionHigherIsWorse breaches on *delta > max_new,
-//     everything else (including the unset zero value) breaches on
-//     *delta < -min_delta (ratio semantics). The gate posture then decides:
+//     everything else (including the unset zero Direction) breaches on
+//     *delta < -min_delta (ratio semantics). Unset knobs default to 0 — any
+//     worsening move trips. The gate posture then decides:
 //     off skips the check, warn caps at warn, fail/unset fails — the same
 //     convention as rule gates (unset = blocking).
 //   - Any active rule-advisory finding (activeRuleAdvisories > 0) → warn (if not already fail)
@@ -474,9 +475,17 @@ func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult
 		if mc.Gate == string(config.GateOff) {
 			continue
 		}
-		breached := *m.Delta < -mc.MinDelta
+		var minDelta float64
+		if mc.MinDelta != nil {
+			minDelta = *mc.MinDelta
+		}
+		breached := *m.Delta < -minDelta
 		if m.Direction == diagnostic.DirectionHigherIsWorse {
-			breached = *m.Delta > float64(mc.MaxNew)
+			var maxNew int
+			if mc.MaxNew != nil {
+				maxNew = *mc.MaxNew
+			}
+			breached = *m.Delta > float64(maxNew)
 		}
 		if !breached {
 			continue

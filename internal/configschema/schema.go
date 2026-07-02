@@ -55,6 +55,13 @@ func Generate(srcDir string) ([]byte, error) {
 		// Inline Config's own fields into the root schema object rather than
 		// wrapping them in a $ref, so editors see properties at the top level.
 		ExpandedStruct: true,
+		// Almost every key in .archfit.yaml is optional — validate() enforces
+		// enums and ranges only when a key is present. Without this flag the
+		// reflector marks every field lacking a yaml `omitempty` as required,
+		// so valid configs (knob-only metric entries, rules without both
+		// module and layer selectors) fail schema validation in editors. Only
+		// fields tagged `jsonschema:"required"` (Config.Version) are required.
+		RequiredFromJSONSchemaTags: true,
 	}
 
 	// Pull doc-comments from the source so each property gets a description.

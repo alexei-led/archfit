@@ -1321,8 +1321,23 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			wantErr: "metrics.cycle.min_delta applies only to ratio metrics",
 		},
 		{
+			name:    "zero max_new on a ratio metric still rejected",
+			yaml:    "version: 1\nmetrics:\n  encapsulation:\n    enabled: true\n    max_new: 0\n",
+			wantErr: "metrics.encapsulation.max_new applies only to count metrics",
+		},
+		{
+			name:    "zero min_delta on a count metric still rejected",
+			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    min_delta: 0\n",
+			wantErr: "metrics.cycle.min_delta applies only to ratio metrics",
+		},
+		{
 			name:    "gate on informational blast_radius rejected",
 			yaml:    "version: 1\nmetrics:\n  blast_radius:\n    enabled: true\n    gate: warn\n",
+			wantErr: "metrics.blast_radius is informational and never gates",
+		},
+		{
+			name:    "zero threshold on informational blast_radius rejected",
+			yaml:    "version: 1\nmetrics:\n  blast_radius:\n    enabled: true\n    max_new: 0\n",
 			wantErr: "metrics.blast_radius is informational and never gates",
 		},
 		{

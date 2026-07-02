@@ -43,9 +43,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "enabled"
-      ],
       "description": "Analyzer is the common enable/gate shape for analyzers with no extra knobs (`analyzers.syntax`, `analyzers.cargo_modules`)."
     },
     "AnalyzersConfig": {
@@ -157,9 +154,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "enabled"
-      ],
       "description": "GoLanguage configures the Go extractor (`languages.go`)."
     },
     "GoModuleFilter": {
@@ -226,12 +220,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "enabled",
-        "gate",
-        "min_delta",
-        "max_new"
-      ],
       "description": "MetricEntry holds the settings for a single metric inside the metrics map."
     },
     "MetricsConfig": {
@@ -289,17 +277,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "paths",
-        "public",
-        "internal",
-        "layer",
-        "subdomain",
-        "volatility",
-        "owner",
-        "deploy_unit",
-        "reviewed_by"
-      ],
       "description": "ModuleDef defines a module's path ownership and metadata."
     },
     "ModuleReviewConfig": {
@@ -335,11 +312,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "json",
-        "markdown",
-        "sarif"
-      ],
       "description": "OutputsConfig controls which output formats are produced."
     },
     "PatternDef": {
@@ -356,11 +328,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "id",
-        "lang",
-        "rule"
-      ],
       "description": "PatternDef defines a single structural pattern rule for ast-grep."
     },
     "PythonLanguage": {
@@ -392,9 +359,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "enabled"
-      ],
       "description": "PythonLanguage configures the Python extractor (`languages.python`)."
     },
     "RuleDef": {
@@ -443,15 +407,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "id",
-        "type",
-        "gate",
-        "from",
-        "to",
-        "from_layer",
-        "to_layer"
-      ],
       "description": "RuleDef declares a single architecture rule."
     },
     "RustLanguage": {
@@ -494,9 +449,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "enabled"
-      ],
       "description": "RustLanguage configures the Rust extractor (`languages.rust`)."
     },
     "TimedAnalyzer": {
@@ -527,9 +479,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "enabled"
-      ],
       "description": "TimedAnalyzer adds a per-run subprocess timeout (`analyzers.scip`, `analyzers.clones`)."
     },
     "TypeScriptLanguage": {
@@ -557,9 +506,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "enabled"
-      ],
       "description": "TypeScriptLanguage configures the TypeScript extractor (`languages.typescript`)."
     },
     "WaiverDef": {
@@ -585,14 +531,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "rule",
-        "from",
-        "to",
-        "reason",
-        "approved_by",
-        "expires"
-      ],
       "description": "WaiverDef grants an approved, time-boxed deviation from a rule (`waivers:`)."
     }
   },
@@ -658,20 +596,7 @@
   "additionalProperties": false,
   "type": "object",
   "required": [
-    "version",
-    "exclude",
-    "languages",
-    "analyzers",
-    "ai",
-    "coupling",
-    "layers",
-    "modules",
-    "rules",
-    "waivers",
-    "metrics",
-    "module_review",
-    "file_class",
-    "outputs"
+    "version"
   ],
   "description": "Config is the parsed and validated content of an archfit.yaml file."
 }

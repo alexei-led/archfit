@@ -177,7 +177,7 @@ func TestComputeVerdict(t *testing.T) {
 				{Name: metricCycle, Delta: new(2.0), Direction: diagnostic.DirectionHigherIsWorse},
 			},
 			gates: map[string]config.MetricConfig{
-				metricCycle: {Gate: string(config.GateFail), MaxNew: 2},
+				metricCycle: {Gate: string(config.GateFail), MaxNew: new(2)},
 			},
 			want: diagnostic.VerdictPass,
 		},
@@ -187,7 +187,7 @@ func TestComputeVerdict(t *testing.T) {
 				{Name: metricCycle, Delta: new(3.0), Direction: diagnostic.DirectionHigherIsWorse},
 			},
 			gates: map[string]config.MetricConfig{
-				metricCycle: {Gate: string(config.GateWarn), MaxNew: 2},
+				metricCycle: {Gate: string(config.GateWarn), MaxNew: new(2)},
 			},
 			want: diagnostic.VerdictWarn,
 		},
@@ -197,7 +197,7 @@ func TestComputeVerdict(t *testing.T) {
 				{Name: metricEncapsulation, Delta: new(-0.05), Direction: diagnostic.DirectionHigherIsBetter},
 			},
 			gates: map[string]config.MetricConfig{
-				metricEncapsulation: {Gate: string(config.GateFail), MinDelta: 0.05},
+				metricEncapsulation: {Gate: string(config.GateFail), MinDelta: new(0.05)},
 			},
 			want: diagnostic.VerdictPass,
 		},
@@ -207,7 +207,7 @@ func TestComputeVerdict(t *testing.T) {
 				{Name: metricEncapsulation, Delta: new(-0.06), Direction: diagnostic.DirectionHigherIsBetter},
 			},
 			gates: map[string]config.MetricConfig{
-				metricEncapsulation: {MinDelta: 0.05},
+				metricEncapsulation: {MinDelta: new(0.05)},
 			},
 			want: diagnostic.VerdictFail,
 		},
