@@ -65,12 +65,12 @@ After this wave: a metric regression in the correct direction gates, the documen
 
 ### Task 5: Four-language corpus verification
 
-- [ ] build: `make build`; run the gate per language with the saved eval configs (`reports/eval-2026-07-02-v1.1.2/` and each repo's own `.archfit.yaml`):
-- [ ] Go — archfit self (`make archfit`): with a temporary `coupling.gate.min_band: mixed` the run must FAIL (self scores 39/poor); without the block, PASS as today
-- [ ] Python — `~/workspace/ccgram`: analyze exits consistently; cycle-delta direction sane (introduce a scratch cross-module cycle in a throwaway copy, verify WARN/FAIL, not PASS)
-- [ ] Rust — `~/workspace/herdr` (25/poor, 97% scored): `min_band: mixed` must FAIL; verify agent_tasks non-empty and files exist on disk
-- [ ] TypeScript — `~/workspace/storybook` (partial coverage): coupling gate must NOT trip on low-confidence/BandNA; exit 0
-- [ ] restore all corpus repos to clean `git status`; run `make all`; open PR
+- [x] build: `make build`; run the gate per language with the saved eval configs (`reports/eval-2026-06-30-corpus/configs/` — the v1.1.2 report dir holds only findings, the configs live in the 06-30 corpus dir — and each repo's own `.archfit.yaml`)
+- [x] Go — archfit self: temporary `coupling.gate.min_band: mixed` → exit 1, stderr `coupling gate: coupling_balance band "poor" (score 39) is below the configured floor "mixed"`; config restored → `make archfit` exit 0
+- [x] Python — `~/workspace/ccgram`: two consecutive `--gate` runs both exit 2 (consistent; the WARN is the repo's intentional advisory-severity gate, same as the eval). Cycle direction in a throwaway APFS clone: fresh baseline (cycle=2) → injected `tts↔whisper` mutual imports → cycle=3, JSON shows `delta: 1, direction: higher_is_worse` → Decision FAIL exit 1 (pre-V1-fix this was a silent PASS); copy deleted. Observation for the backlog: the TEXT renderer prints `Decision FAIL` yet `Gate PASS · 0 blocking` with no metric-delta line — the tripping delta is only visible in JSON
+- [x] Rust — `~/workspace/herdr`: `min_band: mixed` → exit 1, `band "poor" (score 25) below floor "mixed"`; `agent_tasks` non-empty (630 bc tasks, each with goal + validation command). Caveat: task `files` are cargo-modules module IDs (`herdr::detect`), not disk paths — they map to real `src/` modules but an agent must resolve them; known crate/module-granularity limitation (per-file resolver was removed as dead code), not a gate defect. Config restored from backup
+- [x] TypeScript — `~/workspace/storybook` (partial coverage, no node_modules): eval config + `min_band: mixed` → measures 48/mixed (matches eval), gate does not trip, exit 0. Explicit BandNA probe (module globs matching nothing + strictest `min_band: strong`) → `coupling_balance` band `n/a`, gate does not trip, exit 0 — abstain ≠ fail verified on a real TS repo
+- [x] restore all corpus repos to clean `git status` — restored everything this task touched (herdr config from backup, archfit config via git checkout, throwaway copy deleted); ccgram's pre-existing uncommitted `.archfit.yaml` schema migration and herdr's pre-existing untracked eval artifacts predate this task and were deliberately left as found; `make all` green; PR opened
 
 ### Task 6: [Final] Documentation
 
