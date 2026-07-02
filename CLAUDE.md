@@ -107,6 +107,12 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   `/users/…/repo` and `/Users/…/repo` resolve to the same scope on
   case-insensitive APFS. `filepath.EvalSymlinks` still handles symlinks;
   `snapScanRoot` handles the case-mismatch that EvalSymlinks cannot fix.
+  `caseInsensitiveSubtreePrefix` (same file) extends the fix to a case-variant
+  _ancestor_ when `--root` is a subtree below gitRoot (walks scanRoot's
+  ancestors via `os.SameFile` to locate gitRoot), so CODEOWNERS
+  `SubtreePrefix` derivation survives a lowercase `--root` path. Degraded
+  owner resolution (`owner_source=codeowners_no_match` or `git_timeout`) is
+  disclosed on stderr via `ownerDegradationWarning` — never a silent fallback.
 - **Go workspace loading.** Member discovery: `go.work` at or above ScanRoot
   (parsed in-process via `golang.org/x/mod/modfile`) → filter to members inside
   ScanRoot and not exclusion-matched; else single `go.mod`; else walk for `go.mod`
@@ -239,7 +245,7 @@ wired to any metric.
 
 `cmd/archfit` (kong CLI) · `internal/` decision core + adapters · `docs/design`
 (current decisions — 3 files) · `docs/guide` (user docs) · `docs/spec` (spec) ·
-`docs/plans` (open plans only; currently empty).
+`docs/plans` (open plans only; shipped plans move to `docs/plans/completed/`).
 
 **Skip `docs/archived/`** — superseded design docs, completed plans, plan notes,
 research artifacts, and analysis notes. Only read when explicitly debugging

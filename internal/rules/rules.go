@@ -73,7 +73,7 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 				mm:     cfg.ModuleMap,
 			}
 		case "internal_api_access":
-			inner = &internalAPIAccess{def: def}
+			inner = &internalAPIAccess{def: def, mm: cfg.ModuleMap}
 		case "new_cross_module_dependency":
 			inner = &newCrossModuleDependency{def: def, mm: cfg.ModuleMap}
 		case "cycle":

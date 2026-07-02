@@ -115,8 +115,12 @@ consequences to know when reading `cross_module_different_owner`:
 
 Both are faithful reflections of the repo's declared ownership, not bugs — but if
 you want cross-team coupling to register, declare `owner:` per module explicitly.
-The `owner_source` field (`config` | `codeowners` | `git` | `none`) in JSON and the
-markdown "Distance confidence" section tells you which path produced the owners.
+The `owner_source` field (`config` | `codeowners` | `git` | `git_timeout` |
+`codeowners_no_match` | `none`) in JSON and the markdown "Distance confidence"
+section tells you which path produced the owners. The two degraded sources — a
+CODEOWNERS file that matched none of the configured modules, or a git-author
+history walk that timed out — also emit a stderr warning instead of silently
+falling back to code-structure distance.
 
 **Deviation from the book:** Khononov also counts _runtime coupling_ (synchronous
 vs asynchronous integration) and lifecycle coupling as part of distance. `archfit`

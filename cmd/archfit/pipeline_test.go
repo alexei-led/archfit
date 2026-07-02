@@ -9,6 +9,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/ownership"
 )
 
 // TestBuildCoverageGaps verifies the coverage-gap table derivation:
@@ -544,6 +545,39 @@ func TestOutputInsideRootWarning(t *testing.T) {
 			got := outputInsideRootWarning(root, tc.dir)
 			if (got != "") != tc.wantMsg {
 				t.Errorf("outputInsideRootWarning(%q, %q) = %q, wantMsg=%v", root, tc.dir, got, tc.wantMsg)
+			}
+		})
+	}
+}
+
+// TestOwnerDegradationWarning pins which ownership sources are disclosed as
+// degradations: codeowners_no_match and git_timeout warn (naming the source),
+// everything else — including plain "none" and the designed git fallback — is
+// silent.
+func TestOwnerDegradationWarning(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		src      ownership.Source
+		wantName string // "" = no warning
+	}{
+		{ownership.SourceCodeownersNoMatch, "codeowners_no_match"},
+		{ownership.SourceGitTimeout, "git_timeout"},
+		{ownership.SourceCodeowners, ""},
+		{ownership.SourceGit, ""},
+		{ownership.SourceNone, ""},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.src), func(t *testing.T) {
+			t.Parallel()
+			got := ownerDegradationWarning(tc.src)
+			if tc.wantName == "" {
+				if got != "" {
+					t.Errorf("ownerDegradationWarning(%q) = %q, want no warning", tc.src, got)
+				}
+				return
+			}
+			if !strings.Contains(got, tc.wantName) {
+				t.Errorf("ownerDegradationWarning(%q) = %q, want it to name %q", tc.src, got, tc.wantName)
 			}
 		})
 	}

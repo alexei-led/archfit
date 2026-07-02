@@ -353,15 +353,15 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	// forbidden_layer_direction is checked by forbiddenLayerDirection.Check,
 	// which derives layer ordering from cfg.Layers and endpoint layers from the
 	// module map (config.ModuleMap.LayerFor) — it never reads a per-rule
-	// from_layer/to_layer, so those keys are not emitted here.
+	// from_layer/to_layer, so those keys are not emitted here. Because the check
+	// is global (every rule instance re-detects every back-edge in the graph),
+	// exactly ONE rule is emitted: a second instance would duplicate each
+	// violation under a different rule ID.
 	b.WriteString("rules:\n")
-	layerRules := inferLayerRules(cfg)
-	if len(layerRules) > 0 {
-		for _, r := range layerRules {
-			fmt.Fprintf(&b, "  - id: %s\n", r.id)
-			b.WriteString("    type: forbidden_layer_direction\n")
-			fmt.Fprintf(&b, "    gate: warn\n")
-		}
+	if hasCrossLayerEdge(cfg) {
+		b.WriteString("  - id: no-layer-back-edges\n")
+		b.WriteString("    type: forbidden_layer_direction\n")
+		b.WriteString("    gate: warn\n")
 	} else {
 		// No dependency graph was available: emit a generic placeholder and note
 		// that without layers: and per-module layer: assignments, only metrics
@@ -377,32 +377,13 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	return b.String()
 }
 
-// layerRule is an inferred forbidden_dependency rule between two layers.
-type layerRule struct {
-	id        string
-	fromLayer string // the higher-tier (dependent) layer
-	toLayer   string // the lower-tier (dependency) layer — back-edges go this direction
-}
-
-// inferLayerRules derives forbidden_dependency rules from cfg.Layers.
-//
-// One rule is emitted per consecutive layer pair (layers[i], layers[i+1]):
-// "no module in layers[i] may import a module in layers[i+1]". This flags
-// back-edges (lower-tier importing a higher-tier) with a minimal, non-explosive
-// rule set — O(n) in the number of layers rather than O(n²) in cross-tier pairs.
-//
-// cfg.Edges is used only to confirm that at least one cross-layer edge exists;
-// if no edges are present the function returns nil so Render falls back to the
-// generic placeholder with a comment.
-func inferLayerRules(cfg DiscoveredConfig) []layerRule {
+// hasCrossLayerEdge reports whether the discovered graph gives the generated
+// forbidden_layer_direction rule anything to check: at least two layers and at
+// least one edge between modules in different layers. When false, Render falls
+// back to the generic placeholder with an explanatory comment.
+func hasCrossLayerEdge(cfg DiscoveredConfig) bool {
 	if len(cfg.Edges) == 0 || len(cfg.Layers) < 2 {
-		return nil
-	}
-
-	// layerIndex maps layer name → position in cfg.Layers.
-	layerIndex := make(map[string]int, len(cfg.Layers))
-	for i, l := range cfg.Layers {
-		layerIndex[l] = i
+		return false
 	}
 
 	// moduleLayer maps module name → layer name.
@@ -413,37 +394,14 @@ func inferLayerRules(cfg DiscoveredConfig) []layerRule {
 		}
 	}
 
-	// Confirm at least one cross-layer edge exists; without that the layers are
-	// all isolated and rules would have nothing to fire on.
-	hasEdge := false
 	for _, e := range cfg.Edges {
 		fl := moduleLayer[e.From]
 		tl := moduleLayer[e.To]
 		if fl != "" && tl != "" && fl != tl {
-			hasEdge = true
-			break
+			return true
 		}
 	}
-	if !hasEdge {
-		return nil
-	}
-
-	// Emit one rule per consecutive layer pair: forbid layers[i] → layers[i+1].
-	// layers[0] is the innermost (foundation); layers[N-1] is the outermost.
-	// A back-edge is a lower-tier module importing a higher-tier one, i.e.
-	// layers[i] imports layers[i+1], so the rule "from_layer: layers[i],
-	// to_layer: layers[i+1]" flags exactly that direction.
-	rules := make([]layerRule, 0, len(cfg.Layers)-1)
-	for i := 0; i < len(cfg.Layers)-1; i++ {
-		lo := cfg.Layers[i]
-		hi := cfg.Layers[i+1]
-		rules = append(rules, layerRule{
-			id:        "no-" + lo + "-imports-" + hi,
-			fromLayer: lo,
-			toLayer:   hi,
-		})
-	}
-	return rules
+	return false
 }
 
 // yamlKey sanitizes a module name for use as a YAML mapping key.

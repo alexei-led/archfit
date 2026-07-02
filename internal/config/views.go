@@ -155,7 +155,9 @@ func (c Config) ForRules() RuleConfig {
 }
 
 // ForMetric returns the MetricConfig for the named metric.
-// Returns a zero MetricConfig (Enabled=false) if the metric is not configured.
+// Returns a zero MetricConfig (all knobs unset) if the metric is not
+// configured — the metric stays enabled; only an explicit `enabled: false`
+// disables it (Enabled is *bool, nil means default-on; see metrics.New).
 func (c Config) ForMetric(name string) MetricConfig {
 	if c.Metrics == nil {
 		return MetricConfig{}

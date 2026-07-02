@@ -678,7 +678,9 @@ rules:
 `forbidden_layer_direction` takes no `from`/`to` (or `from_layer`/`to_layer`)
 keys — it derives layer ordering from `layers:` and each endpoint's layer from
 the `modules:` map's `layer:` field, for every module pair in the graph. A rule
-of this type needs only `id`, `type`, and `gate`.
+of this type needs only `id`, `type`, and `gate`. Declare **at most one** rule
+of this type: the check is global, so a second instance re-reports every
+violation under its own rule ID (`archfit config init` generates exactly one).
 
 `gate` controls how the rule blocks the run:
 
@@ -702,6 +704,8 @@ of this type needs only `id`, `type`, and `gate`.
   either endpoint isn't covered by the module map, the edge still fires
   (module-blind fallback).
 - `internal_api_access` — same internal-access signal, with a separate rule ID.
+  Applies the same module-map same-module skip and module-blind fallback as
+  `public_api_only`.
 - `forbidden_layer_direction` — fires when a dependency direction violates the
   ordered `layers` list.
 - `new_cross_module_dependency` — fires on cross-module edges. Baseline status

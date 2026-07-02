@@ -171,11 +171,12 @@ func (r *forbiddenLayerDirection) Check(g *graph.Graph, _ Evidence) []finding.Fi
 // ---------------------------------------------------------------------------
 
 // internalAPIAccess fires on edges with kind == uses_internal, optionally
-// filtered by from/to glob. Supports the same from/to glob semantics as
-// publicAPIOnly but is a distinct rule type so teams can configure them
-// independently with different IDs, severities, and exceptions.
+// filtered by from/to glob. Supports the same from/to glob and module-map
+// semantics as publicAPIOnly but is a distinct rule type so teams can
+// configure them independently with different IDs, severities, and exceptions.
 type internalAPIAccess struct {
 	def config.RuleDef
+	mm  config.ModuleMap
 }
 
 func (r *internalAPIAccess) ID() string { return r.def.ID }
@@ -198,6 +199,16 @@ func (r *internalAPIAccess) Check(g *graph.Graph, _ Evidence) []finding.Finding 
 			if matched, _ := doublestar.Match(r.def.To, toPath); !matched {
 				continue
 			}
+		}
+
+		// Same-module self-access is idiomatic, not a violation — the same
+		// module-map skip as publicAPIOnly (V5). When either endpoint isn't
+		// covered by the module map, we can't rule out same-module, so the
+		// edge still fires (module-blind fallback).
+		fromModule, fromOK := r.mm.ModuleFor(fromPath)
+		toModule, toOK := r.mm.ModuleFor(toPath)
+		if fromOK && toOK && fromModule == toModule {
+			continue
 		}
 
 		f := finding.New(r.def.ID, e, e.Locations)

@@ -126,7 +126,8 @@ Full setup — Docker, CI, optional analyzers, platform packages — is in the
   JSON, safe for CI.
 - **`agent_tasks` repair blocks** so an AI agent gets the fix, not just the error.
 - **A banded 7-dimension scorecard** built on [Balanced Coupling](docs/guide/concepts.md)
-  (integration strength × distance × volatility).
+  (integration strength × distance × volatility) — optionally gates the build via
+  `coupling.gate` (band floor / max score drop).
 - **Honest coverage** — a missing analyzer degrades the affected metric to `n/a`
   with the install step, never a false green.
 - **Off-gate LLM narration** (`analyze --llm`, `config enrich`, `config init --llm`) that may

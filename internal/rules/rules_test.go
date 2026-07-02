@@ -49,6 +49,7 @@ const (
 	ruleIDNoDep             = "no-dep"
 	ruleIDNoInternalAccess  = "no-internal-access"
 	typePublicAPIOnly       = "public_api_only"
+	typeInternalAPIAccess   = "internal_api_access"
 	globServicesA           = "services/a/**"
 	globServicesB           = "services/b/**"
 	// publicAPIMax / publicAPIChange test constants
@@ -335,6 +336,60 @@ func TestPublicAPIOnly_ModuleMap(t *testing.T) {
 			t.Errorf("Why = %q, must not claim Cross-module when the module map can't confirm it", findings[0].Why)
 		}
 	})
+}
+
+// TestInternalAPIAccess_ModuleMap mirrors TestPublicAPIOnly_ModuleMap for the
+// internal_api_access rule: same-module self-access must not fire (the V5
+// module-map skip applies to both uses_internal rules), cross-module and
+// module-blind edges still fire.
+func TestInternalAPIAccess_ModuleMap(t *testing.T) {
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"domain":  {Paths: []string{pathDomainGlob}},
+			"moduleA": {Paths: []string{globServicesA}},
+			"moduleB": {Paths: []string{globServicesB}},
+		},
+		Rules: []config.RuleDef{
+			{ID: ruleIDNoInternalAccess, Type: typeInternalAPIAccess},
+		},
+	}
+	ruleSet, err := rules.New(cfg.ForRules())
+	if err != nil {
+		t.Fatalf("New: unexpected error: %v", err)
+	}
+	r := ruleSet[0]
+	ev := rules.Evidence{}
+
+	tests := []struct {
+		name string
+		edge graph.Edge
+		want int
+	}{
+		{
+			name: "same_module_self_access_no_finding",
+			edge: graph.Edge{From: "file:domain/domain.go", To: "file:domain/internal/helper.go", Kind: graph.EdgeKindUsesInternal},
+			want: 0,
+		},
+		{
+			name: "cross_module_internal_access_fires",
+			edge: graph.Edge{From: nodeAFoo, To: nodeBIntBar, Kind: graph.EdgeKindUsesInternal},
+			want: 1,
+		},
+		{
+			name: "unresolved_endpoints_module_blind_fallback_fires",
+			edge: graph.Edge{From: nodeCFoo, To: nodeDIntY, Kind: graph.EdgeKindUsesInternal},
+			want: 1,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			findings := r.Check(makeGraph([]graph.Edge{tc.edge}), ev)
+			if len(findings) != tc.want {
+				t.Fatalf("got %d findings, want %d: %+v", len(findings), tc.want, findings)
+			}
+		})
+	}
 }
 
 // TestPublicAPIOnly_PerLanguage documents that publicAPIOnly keys off

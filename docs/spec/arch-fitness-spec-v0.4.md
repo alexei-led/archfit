@@ -967,8 +967,8 @@ of leaking through internal details.
 Gate shape:
 
 ```text
-warn if encapsulation decreases in check mode
-warn or fail only after human calibration of absolute thresholds
+fail on a worsening baseline delta when `metrics.encapsulation.gate` is unset (the default); `warn`/`off` configurable
+absolute thresholds still need human calibration
 ```
 
 #### Unbalanced-edge count
@@ -992,7 +992,7 @@ expired_waiver
 Gate shape:
 
 ```text
-fail or warn on new high-severity unbalanced edges, depending on policy
+fail on a worsening baseline delta (or `max_new` breach) when `metrics.unbalanced_edge.gate` is unset (the default); `warn`/`off` configurable
 ```
 
 Balanced Coupling is most useful here: it explains why a relationship is risky and how to rebalance it. It is classification and severity, not a single opaque score.
@@ -1008,7 +1008,7 @@ cycles among modules or configured layers
 Gate shape:
 
 ```text
-fail on new cycles when configured
+fail on a new cycle (worsening delta) when `metrics.cycle.gate` is unset (the default); `warn`/`off` configurable
 ```
 
 #### Blast radius

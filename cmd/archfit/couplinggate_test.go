@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/baseline"
@@ -80,10 +81,15 @@ func TestRun_Analyze_CouplingGate_MinBandTrips(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
 
-	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, fmtJSON, "-c", cfgPath, flagFull, flagGate}, &buf)
+	var buf, errBuf bytes.Buffer
+	code := RunWithStderr([]string{cmdAnalyze, fmtJSON, "-c", cfgPath, flagFull, flagGate}, &buf, &errBuf)
 	if code != 1 {
 		t.Fatalf("analyze --gate with tripped coupling gate: exit = %d, want 1\noutput:\n%s", code, buf.String())
+	}
+	// Trip reasons are an analyze-only stderr contract (see analyze.go): they
+	// must be disclosed on stderr and must not pollute the JSON on stdout.
+	if !strings.Contains(errBuf.String(), "coupling gate: ") {
+		t.Errorf("stderr carries no coupling-gate trip reason:\n%s", errBuf.String())
 	}
 
 	var diag diagnostic.Diagnostic
@@ -108,6 +114,24 @@ func TestRun_Analyze_CouplingGate_MinBandTrips(t *testing.T) {
 	}
 	if bcTask.Goal == "" {
 		t.Errorf("promoted coupling task has no goal: %+v", *bcTask)
+	}
+}
+
+// TestRun_Baseline_NoTripReasonOnStderr pins the analyze-only half of the
+// stderr contract: baseline shares runPipeline with analyze, but a tripped
+// coupling gate must not echo "coupling gate:" trip reasons from baseline —
+// there the stderr line is noise (see the comment in analyze.go).
+func TestRun_Baseline_NoTripReasonOnStderr(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
+
+	var buf, errBuf bytes.Buffer
+	code := RunWithStderr([]string{cmdBaseline, "-c", cfgPath, flagFull}, &buf, &errBuf)
+	if code != 0 {
+		t.Fatalf("baseline: exit = %d, want 0\nstderr:\n%s", code, errBuf.String())
+	}
+	if strings.Contains(errBuf.String(), "coupling gate: ") {
+		t.Errorf("baseline echoed coupling-gate trip reasons to stderr (analyze-only contract):\n%s", errBuf.String())
 	}
 }
 

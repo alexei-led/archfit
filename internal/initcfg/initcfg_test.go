@@ -429,9 +429,13 @@ func TestRender_LayeredRules_FromEdges(t *testing.T) {
 		t.Errorf("gate: warn missing in output:\n%s", out)
 	}
 
-	// The rule ID must name the back-edge direction: model→core inversion.
-	if !strings.Contains(out, "id: no-"+layerModel+"-imports-"+layerCore) {
-		t.Errorf("expected rule flagging %s importing %s:\n%s", layerModel, layerCore, out)
+	// Exactly ONE rule: forbiddenLayerDirection.Check is global (each instance
+	// re-detects every back-edge), so a second rule would duplicate findings.
+	if !strings.Contains(out, "id: no-layer-back-edges") {
+		t.Errorf("expected the single no-layer-back-edges rule:\n%s", out)
+	}
+	if n := strings.Count(out, "type: forbidden_layer_direction"); n != 1 {
+		t.Errorf("got %d forbidden_layer_direction rules, want exactly 1:\n%s", n, out)
 	}
 }
 
@@ -463,8 +467,11 @@ func TestRender_LayeredRules_RoundTripsConfigLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.Load rejected layered init YAML: %v\n---\n%s", err, rendered)
 	}
-	if len(loaded.Rules) == 0 {
-		t.Error("no rules after round-trip")
+	// Regression for the 3+-layer duplicate-findings bug: the checker is global,
+	// so init must emit exactly one forbidden_layer_direction rule even when
+	// four layers are discovered — N rules would report every violation N times.
+	if len(loaded.Rules) != 1 {
+		t.Errorf("got %d rules after round-trip, want exactly 1: %+v", len(loaded.Rules), loaded.Rules)
 	}
 	for _, r := range loaded.Rules {
 		if r.Type != "forbidden_layer_direction" {
