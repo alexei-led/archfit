@@ -18,7 +18,7 @@ exclude         — path globs to skip during scanning
 languages       — per-language extractor settings (go/typescript/python/rust)
 analyzers       — opt-in deeper analysis backends (syntax/scip/clones/cargo_modules)
 ai              — off-gate LLM provider for enrich/explain/analyze --llm
-coupling        — Balanced-Coupling advisory tuning
+coupling        — Balanced-Coupling advisory tuning + coupling_balance gate
 layers          — ordered architecture layers, inner to outer
 modules         — path ownership map
 rules           — executable architecture constraints
@@ -402,12 +402,15 @@ LLM response cache lives at `.archfit-cache/llm/`.
 
 ## `coupling`
 
-Balanced-Coupling advisory tuning.
+Balanced-Coupling advisory tuning and the `coupling_balance` gate.
 
 ```yaml
 coupling:
   min_severity: medium # low | medium (default) | high | critical
   volatility_cascade: false
+  gate:
+    min_band: mixed # band floor: poor | mixed | serviceable | strong
+    max_drop: 5 # tolerated coupling_balance point drop vs the baseline snapshot
 ```
 
 - `min_severity` — minimum advisory severity to show: `low` (all cross-module
@@ -419,6 +422,32 @@ coupling:
   module inherits raised effective volatility (`high`). Config-declared volatility
   always takes precedence. Disabled by default; safe to enable once `subdomain`
   fields are complete.
+
+### `coupling.gate`
+
+Makes the synthesised `coupling_balance` score able to fail the run. Without
+this block the score is report-only — the default, and backward compatible.
+The block requires `min_band` and/or `max_drop`; an empty `gate:` is a config
+error (it would gate nothing).
+
+- `min_band` — band floor. Trips when the overall `coupling_balance` band
+  ranks below the floor: one of `poor`, `mixed`, `serviceable`, `strong`.
+  `critical` is rejected — no band ranks below it, so it could never trip.
+- `max_drop` — tolerated point drop of the `coupling_balance` value against
+  the score snapshot stored by `archfit baseline`. `0` means any drop trips.
+  A baseline written before the snapshot existed, or while the score was
+  unmeasured, carries no anchor — the drop check is skipped, never guessed.
+
+An unmeasured score (band `n/a`) never trips the gate, whatever the knobs say:
+abstention is not failure, so partial-coverage runs cannot flip CI red.
+
+When the gate trips, the verdict becomes FAIL (exit 1), the trip reasons print
+to stderr, and the active `bc/imbalanced_coupling` advisories are promoted to
+blocking findings — they then flow into `agent_tasks[]` like any other gate
+finding. Baselined and waived advisories stay triaged.
+
+`coupling_balance` is not a `metrics:` entry; a `metrics.coupling_balance:`
+key is a config error that points here.
 
 ## `layers`
 
@@ -743,6 +772,9 @@ Report-only metrics (band `info`; they never gate the verdict):
 
 - `blast_radius` — modules whose transitive reverse-dependency reach is a large
   share of the codebase.
+
+`coupling_balance` is not a `metrics:` entry — the synthesised score gates
+through the [`coupling.gate`](#couplinggate) block.
 
 Metric entry fields:
 
