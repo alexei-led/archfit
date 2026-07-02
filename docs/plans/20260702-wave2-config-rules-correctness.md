@@ -67,8 +67,8 @@ Three verified defects make archfit's out-of-box experience wrong, which matters
 
 ### Task 6: [Final] Documentation
 
-- [ ] `docs/guide/configuration-reference.md`: correct the layer-rule example (`configuration-reference.md:60-70` area) and document the doctor dead-rule check
-- [ ] mark V4/V5 + omni case bug fixed in the findings backlog with commit refs
+- [x] `docs/guide/configuration-reference.md`: correct the layer-rule example (`configuration-reference.md:60-70` area) and document the doctor dead-rule check
+- [x] mark V4/V5 + omni case bug fixed in the findings backlog with commit refs
 
 ## Technical Details
 

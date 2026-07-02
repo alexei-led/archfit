@@ -665,17 +665,20 @@ rules:
 
 ### Rule field reference
 
-| Field        | Applies to                  | Description                                                                                  |
-| ------------ | --------------------------- | -------------------------------------------------------------------------------------------- |
-| `id`         | all                         | Stable ID used in findings, baselines, and waivers.                                          |
-| `type`       | all                         | Built-in rule type (see below). Unknown type is a config error.                              |
-| `gate`       | all                         | `fail` (or absent for most types), `warn`, or `off`. `public_api_change` defaults to `warn`. |
-| `from`       | most                        | Source module or path glob.                                                                  |
-| `to`         | most                        | Target module or path glob.                                                                  |
-| `from_layer` | `forbidden_layer_direction` | Source layer name.                                                                           |
-| `to_layer`   | `forbidden_layer_direction` | Target layer name.                                                                           |
-| `max`        | `public_api_max`            | Integer ceiling.                                                                             |
-| `patterns`   | structural rules            | Optional ast-grep patterns for structural evidence.                                          |
+| Field      | Applies to       | Description                                                                                  |
+| ---------- | ---------------- | -------------------------------------------------------------------------------------------- |
+| `id`       | all              | Stable ID used in findings, baselines, and waivers.                                          |
+| `type`     | all              | Built-in rule type (see below). Unknown type is a config error.                              |
+| `gate`     | all              | `fail` (or absent for most types), `warn`, or `off`. `public_api_change` defaults to `warn`. |
+| `from`     | most             | Source module or path glob.                                                                  |
+| `to`       | most             | Target module or path glob.                                                                  |
+| `max`      | `public_api_max` | Integer ceiling.                                                                             |
+| `patterns` | structural rules | Optional ast-grep patterns for structural evidence.                                          |
+
+`forbidden_layer_direction` takes no `from`/`to` (or `from_layer`/`to_layer`)
+keys — it derives layer ordering from `layers:` and each endpoint's layer from
+the `modules:` map's `layer:` field, for every module pair in the graph. A rule
+of this type needs only `id`, `type`, and `gate`.
 
 `gate` controls how the rule blocks the run:
 
@@ -688,9 +691,16 @@ rules:
 
 ### Built-in rule types
 
-- `forbidden_dependency` — fires when an edge matches both `from` and `to` globs.
+- `forbidden_dependency` — fires when an edge matches both `from` and `to`
+  globs. A rule with **both** globs empty matches nothing, ever
+  (`doublestar.Match("", path)` is always false) — `archfit doctor` flags any
+  such rule as dead by construction.
 - `public_api_only` — fires on internal-access edges, optionally filtered by
-  `from` and `to`.
+  `from` and `to`. Consults the `modules:` map: an edge where both endpoints
+  resolve to the same module (e.g. `domain` importing its own
+  `domain/internal`) is idiomatic same-module access and never fires. When
+  either endpoint isn't covered by the module map, the edge still fires
+  (module-blind fallback).
 - `internal_api_access` — same internal-access signal, with a separate rule ID.
 - `forbidden_layer_direction` — fires when a dependency direction violates the
   ordered `layers` list.
