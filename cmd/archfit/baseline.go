@@ -47,7 +47,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	// pattern provider, and SCIP resolver): snapshot values recorded from
 	// different inputs would surface as phantom deltas on the next check.
 	mode := engine.Mode{Full: c.Full, Advisory: c.Advisory, Base: c.Base}
-	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, mode, existingBase)
+	diag, sc, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, mode, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -70,6 +70,12 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 			Value   float64 `json:"value"`
 			Version string  `json:"version"`
 		}{Value: m.Value, Version: m.Version}
+	}
+	// Persist the coupling_balance synthesis so coupling.gate.max_drop has an
+	// anchor on later runs. An unmeasured score (band n/a) stores nothing —
+	// it must never anchor a phantom drop.
+	if !sc.OverallBand.Unmeasured() {
+		newBase.Score = &baseline.ScoreSnapshot{CouplingBalance: sc.Overall, Band: string(sc.OverallBand)}
 	}
 
 	bPath := filepath.Join(configDir, defaultBaselinePath)

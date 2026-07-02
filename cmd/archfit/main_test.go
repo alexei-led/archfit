@@ -48,41 +48,13 @@ func scrubGitFixtureEnv(env []string) []string {
 // fails on it. Returns the config path.
 func writeViolatingRepo(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	files := map[string]string{
-		markerGoMod: "module example.com/test\n\ngo 1.21\n",
-		filePkgAA: "package a\n\nimport \"example.com/test/pkg/b/internal/impl\"\n\n" +
-			"func UseSecret() string { return impl.Secret() }\n",
-		"pkg/b/internal/impl/impl.go": "package impl\n\nfunc Secret() string { return \"s\" }\n",
-		defaultConfigPath: `version: 1
-modules:
-  a:
-    paths: ["pkg/a/**"]
-    owner: team-a
-  b:
-    paths: ["pkg/b/**"]
-    internal: ["pkg/b/internal/**"]
-    owner: team-b
-rules:
+	return writeCoupledRepo(t, coupledModulesCfg+`rules:
   - id: no_internal_access
     type: forbidden_dependency
     gate: fail
     from: pkg/a/**
     to: pkg/b/internal/**
-`,
-	}
-	for name, content := range files {
-		path := filepath.Join(dir, name)
-		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// Scope resolution requires a git repo root.
-	gitInitFixtureRepo(t, dir)
-	return filepath.Join(dir, ".archfit.yaml")
+`)
 }
 
 // TestRun_Analyze_GateVsReportOnly verifies the --gate contract:

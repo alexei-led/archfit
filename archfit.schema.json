@@ -76,11 +76,30 @@
         "volatility_cascade": {
           "type": "boolean",
           "description": "VolatilityCascade enables the book Ch9 single-hop propagation pass: a\nmodule strongly coupled to a high-volatility module inherits raised\neffective volatility. Config-declared volatility always takes precedence."
+        },
+        "gate": {
+          "$ref": "#/$defs/CouplingGateDef",
+          "description": "Gate makes the synthesised coupling_balance score gate the verdict.\nAbsent (nil) = coupling stays advisory, today's behavior. An unmeasured\nscore (band n/a) never trips the gate regardless of these knobs."
         }
       },
       "additionalProperties": false,
       "type": "object",
       "description": "CouplingConfig tunes the Balanced-Coupling advisory pass (`coupling:`)."
+    },
+    "CouplingGateDef": {
+      "properties": {
+        "min_band": {
+          "type": "string",
+          "description": "MinBand is the band floor: poor | mixed | serviceable | strong. The\nverdict fails when the current coupling_balance band ranks below it.\ncritical is rejected — no band ranks below it, so it could never trip."
+        },
+        "max_drop": {
+          "type": "integer",
+          "description": "MaxDrop is the tolerated point drop of the coupling_balance value against\nthe score stored in .archfit-baseline.json. Unset = no drop check;\n0 = any drop fails. Skipped when the baseline carries no stored score."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "CouplingGateDef configures the coupling_balance verdict gate (`coupling.gate:`)."
     },
     "FileClassDef": {
       "properties": {

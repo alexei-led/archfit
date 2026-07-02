@@ -31,11 +31,32 @@ type AcceptedFinding struct {
 	Severity string `json:"severity,omitempty"`
 }
 
+// ScoreSnapshot records the synthesised coupling_balance score at baseline
+// time, anchoring the coupling.gate.max_drop check on later runs. Written only
+// when the score was measured — an n/a (unmeasured) synthesis stores nothing,
+// so it can never anchor a phantom drop.
+type ScoreSnapshot struct {
+	CouplingBalance int    `json:"coupling_balance"`
+	Band            string `json:"band"`
+}
+
 // Baseline is the on-disk baseline file structure.
 type Baseline struct {
 	SchemaVersion string                    `json:"schema_version"`
 	Accepted      []AcceptedFinding         `json:"accepted"`
 	Metrics       diagnostic.MetricSnapshot `json:"metrics"`
+	// Score is the coupling_balance snapshot; omitted in baselines written
+	// before score tracking or while the score was unmeasured.
+	Score *ScoreSnapshot `json:"score,omitempty"`
+}
+
+// CouplingScore returns the stored coupling_balance value, or nil when the
+// baseline carries no score snapshot.
+func (b Baseline) CouplingScore() *int {
+	if b.Score == nil {
+		return nil
+	}
+	return &b.Score.CouplingBalance
 }
 
 // HasFingerprint reports whether the given fingerprint exists in the baseline's

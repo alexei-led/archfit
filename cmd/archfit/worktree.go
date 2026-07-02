@@ -143,11 +143,11 @@ func runScoreSide(ctx context.Context, deps *appDeps, configPath, root string, n
 	quiet := *deps
 	quiet.progress = nil
 	mode := engine.Mode{Full: true, Advisory: advisory, ReportOnly: true}
-	diag, err := runPipeline(ctx, &quiet, cfg, configPath, root, noConfig, mode, baseline.Baseline{})
+	_, sc, err := runPipeline(ctx, &quiet, cfg, configPath, root, noConfig, mode, baseline.Baseline{})
 	if err != nil {
 		return score.Scorecard{}, err
 	}
-	return score.Synthesize(diag), nil
+	return sc, nil
 }
 
 // snapToGitRoot rewrites headRoot so its gitRoot prefix uses gitRoot's canonical

@@ -103,12 +103,11 @@ func runReviewCmd(t *testing.T, cfgPath string, provider llm.Provider) (string, 
 	}
 	configDir := filepath.Dir(cfgPath)
 	base, _ := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
-	diag, err := runPipeline(ctx, deps, cfg, cfgPath, "", false,
+	diag, sc, err := runPipeline(ctx, deps, cfg, cfgPath, "", false,
 		engine.Mode{Full: true, Advisory: true, ReportOnly: true}, base)
 	if err != nil {
 		return "", &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	sc := score.Synthesize(diag)
 	err = runLLMReview(ctx, deps, cfg, configDir, true, provider, diag, sc)
 	return buf.String(), err
 }

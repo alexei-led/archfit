@@ -52,6 +52,17 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
 cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   old discrete severity table and is no longer called anywhere. Do not re-introduce
   it; the book formula (`ScoreVersion = "bc_score.v3"`) is the single severity source.
+- **Coupling gate** (`coupling.gate: {min_band, max_drop}`). The synthesised
+  coupling_balance score can fail the verdict: `score.Synthesize` +
+  `applyCouplingGate` run INSIDE `runPipeline` (`cmd/archfit/pipeline_run.go`),
+  before `agenttask.Build`, so a tripped gate escalates `diag.Verdict` and
+  promotes the active BC advisories to `Kind: "gate"` (they flow into
+  `agent_tasks[]` through the unchanged agenttask filter). `min_band` is a band
+  floor; `max_drop` compares against the score snapshot `archfit baseline`
+  stores (`baseline.ScoreSnapshot`, omitted when unmeasured). BandNA never
+  gates (abstain ≠ fail). The `couplingGateView` projection lives in cmd, NOT
+  on `Config` — config (support layer) must not import score (core layer); the
+  dogfood gate catches that inversion.
 - **FileClass facility** (`internal/model/fileclass`, `internal/syntax/fileclass`).
   Every source file is classified as `Production | Test | Generated | Vendor` once
   during the LOC walk; the result is stored in `SizeSignals.FileClassIndex`. Use
@@ -132,6 +143,8 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   `cmd`.
 - `gate:` is wired for **all rule types** (`off` skips, `warn` is advisory/non-blocking,
   `fail`/unset is blocking; exception: `public_api_change` defaults to `warn` when unset). An unknown `type` value is a config error.
+  `coupling_balance` gates via the `coupling.gate:` block, not `metrics:` — see
+  the coupling-gate invariant above.
 
 ## Coupling scorer — key design facts
 

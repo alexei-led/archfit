@@ -42,6 +42,24 @@ type CouplingConfig struct {
 	// module strongly coupled to a high-volatility module inherits raised
 	// effective volatility. Config-declared volatility always takes precedence.
 	VolatilityCascade bool `yaml:"volatility_cascade,omitempty"`
+	// Gate makes the synthesised coupling_balance score gate the verdict.
+	// Absent (nil) = coupling stays advisory, today's behavior. An unmeasured
+	// score (band n/a) never trips the gate regardless of these knobs.
+	Gate *CouplingGateDef `yaml:"gate,omitempty"`
+}
+
+// CouplingGateDef configures the coupling_balance verdict gate
+// (`coupling.gate:`). At least one knob must be set; validate() rejects an
+// empty block.
+type CouplingGateDef struct {
+	// MinBand is the band floor: poor | mixed | serviceable | strong. The
+	// verdict fails when the current coupling_balance band ranks below it.
+	// critical is rejected — no band ranks below it, so it could never trip.
+	MinBand string `yaml:"min_band,omitempty"`
+	// MaxDrop is the tolerated point drop of the coupling_balance value against
+	// the score stored in .archfit-baseline.json. Unset = no drop check;
+	// 0 = any drop fails. Skipped when the baseline carries no stored score.
+	MaxDrop *int `yaml:"max_drop,omitempty"`
 }
 
 // OutputsConfig controls which output formats are produced.

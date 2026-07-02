@@ -185,7 +185,10 @@ func (c *AnalyzeCmd) runScan(ctx context.Context, deps *appDeps, formats []strin
 		Formats:    formats,
 	}
 
-	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, c.NoConfig, mode, base)
+	// runPipeline synthesises the scorecard and applies the coupling gate
+	// internally (before the verdict and agent_tasks freeze — V2 fix); the
+	// "Scoring architecture" phase is reported from inside the pipeline.
+	diag, sc, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, c.NoConfig, mode, base)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -193,9 +196,6 @@ func (c *AnalyzeCmd) runScan(ctx context.Context, deps *appDeps, formats []strin
 	// Apply the opt-in hard gate before rendering so the output shows the
 	// effective gate per coverage gap.
 	hardGate := applyToolGate(&diag, c.RequireTools)
-
-	rep.advance("Scoring architecture")
-	sc := score.Synthesize(diag)
 
 	// --base: score the ref in a worktree and attach a before/after delta.
 	var baseSC *score.Scorecard

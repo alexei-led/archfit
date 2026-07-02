@@ -23,11 +23,13 @@ import (
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/internal/score"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -76,9 +78,12 @@ func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, 
 // explain, and baseline all run through this single path: baseline snapshots
 // must be computed from exactly the same inputs as check verdicts, or every
 // post-baseline check reports phantom metric regressions and unmatched finding
-// fingerprints. After the engine returns, the agent_tasks repair block is
-// attached from the active gate findings (deterministic; spec §13).
-func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, noConfig bool, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, error) {
+// fingerprints. After the engine returns, the scorecard is synthesised and the
+// coupling gate applied — INSIDE the pipeline, so an escalated verdict and
+// promoted findings are visible to agenttask.Build below and to every renderer
+// — then the agent_tasks repair block is attached from the active gate
+// findings (deterministic; spec §13).
+func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, noConfig bool, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, score.Scorecard, error) {
 	configDir := filepath.Dir(configPath)
 	// scanDir anchors scope/git resolution. An explicit --root decouples the
 	// analyzed repo from where the config lives (external-CI use case); when it is
@@ -108,14 +113,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	deps.reportPhase("Discovering project")
 	s, err := scope.Resolve(ctx, sc, gitResolver{workDir: scanDir, runner: deps.Runner})
 	if err != nil {
-		return diagnostic.Diagnostic{}, err
+		return diagnostic.Diagnostic{}, score.Scorecard{}, err
 	}
 
 	extractors := buildExtractors(deps.Runner, cfg)
 
 	rs, err := rules.New(cfg.ForRules())
 	if err != nil {
-		return diagnostic.Diagnostic{}, err
+		return diagnostic.Diagnostic{}, score.Scorecard{}, err
 	}
 	ms := append(metrics.New(cfg), extraMetrics...)
 
@@ -240,7 +245,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// labels file must never silently alter the gate.
 	lbls, err := labelsio.Load(filepath.Join(configDir, defaultLabelsPath))
 	if err != nil {
-		return diagnostic.Diagnostic{}, err
+		return diagnostic.Diagnostic{}, score.Scorecard{}, err
 	}
 
 	// SCIP symbol-level strength is opt-in (analyzers.scip.enabled: true): the indexer is
@@ -305,13 +310,30 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		PrimaryExtractorTools: primaryExtractorTools(),
 	})
 	if err != nil {
-		return diag, err
+		return diag, score.Scorecard{}, err
 	}
 	diag.OwnerSource = ownerSource
 
+	// cargo-modules module-graph coverage: opt-in (analyzers.cargo_modules.enabled: true).
+	// The Rust extractor runs cargo-modules during its Extract call (inside engine.Run
+	// above) and caches the coverage record. Append it here — BEFORE the scorecard
+	// synthesis, which reads ToolCoverage for the partial-module-graph confidence cap —
+	// so it appears in ToolCoverage and the CoverageGap block (mirrors the clones pattern).
+	if rustEx := rustExtractor(extractors); rustEx != nil {
+		diag.ToolCoverage = append(diag.ToolCoverage, rustEx.LastModuleGraphCoverage())
+	}
+
+	// Synthesise the scorecard inside the pipeline (not after it, as before) so
+	// the coupling gate below can escalate the verdict and promote findings
+	// while agenttask.Build and every renderer still see the result.
+	deps.reportPhase("Scoring architecture")
+	card := score.Synthesize(diag)
+	applyCouplingGate(&diag, card, couplingGateView(cfg), base)
+
 	// Attach the structured repair-task block (spec §13) for active gate
 	// findings. Deterministic: rule-type templates + module public surfaces +
-	// the exact command that re-verifies the gate.
+	// the exact command that re-verifies the gate. Runs after the coupling gate
+	// so promoted Balanced-Coupling findings produce repair tasks too.
 	ruleTypes := make(map[string]string, len(cfg.Rules))
 	for _, def := range cfg.Rules {
 		ruleTypes[def.ID] = def.Type
@@ -328,14 +350,6 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate}, diag.SyntaxFacts)
 
-	// cargo-modules module-graph coverage: opt-in (analyzers.cargo_modules.enabled: true).
-	// The Rust extractor runs cargo-modules during its Extract call (inside engine.Run
-	// above) and caches the coverage record. Append it here so it appears in
-	// ToolCoverage and the CoverageGap block — mirrors the clones pattern.
-	if rustEx := rustExtractor(extractors); rustEx != nil {
-		diag.ToolCoverage = append(diag.ToolCoverage, rustEx.LastModuleGraphCoverage())
-	}
-
 	// Warn-loud coverage reporting: turn the absent tool-coverage records into a
 	// machine-readable CoverageGaps block (tool → unlocked metrics → install cmd)
 	// and surface config-quality lint plus any swallowed optional-tool errors in
@@ -349,5 +363,61 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	diag.ConfigWarnings = append(diag.ConfigWarnings,
 		buildJudgmentDecisionTasks(cfg, lbls, configPath)...)
 
-	return diag, nil
+	return diag, card, nil
+}
+
+// ruleIDBCImbalanced is the rule ID the engine stamps on Balanced-Coupling
+// advisory findings (internal/engine/advisories.go keeps the source constant).
+const ruleIDBCImbalanced = "bc/imbalanced_coupling"
+
+// couplingGateView projects the coupling.gate config block into the score
+// package's gate view. It lives here in the composition root — config sits
+// below score in the layer order, so unlike the other config views this
+// projection cannot be a Config method. A nil block is Enabled=false:
+// coupling stays advisory-only, byte-identical to pre-gate behavior.
+func couplingGateView(cfg config.Config) score.CouplingGate {
+	g := cfg.Coupling.Gate
+	if g == nil {
+		return score.CouplingGate{}
+	}
+	return score.CouplingGate{
+		Enabled: true,
+		MinBand: score.Band(g.MinBand),
+		MaxDrop: g.MaxDrop,
+	}
+}
+
+// applyCouplingGate escalates the verdict to fail when the synthesised
+// coupling_balance score trips the configured coupling.gate (V2 fix: the
+// flagship metric can now block CI). The active Balanced-Coupling advisories —
+// the findings whose edges the tripped score aggregates — are promoted to gate
+// kind so they flow into agent_tasks through the existing kind filter
+// (internal/agenttask) and into the MustFix bucket; baselined/waived edges stay
+// triaged and are not promoted. An unmeasured score (band n/a) never trips —
+// score.EvaluateCouplingGate owns that rule. No coupling.gate config ⇒ no-op.
+//
+// With advisory mode off the diagnostic carries no BC findings, so only the
+// verdict flips; `archfit analyze` defaults advisory on.
+func applyCouplingGate(diag *diagnostic.Diagnostic, card score.Scorecard, gate score.CouplingGate, base baseline.Baseline) {
+	trip := score.EvaluateCouplingGate(card, gate, base.CouplingScore())
+	if !trip.Tripped {
+		return
+	}
+	for _, r := range trip.Reasons {
+		_, _ = fmt.Fprintln(os.Stderr, "coupling gate: "+r)
+	}
+	diag.Verdict = diagnostic.VerdictFail
+	promoted := 0
+	for i := range diag.Findings {
+		f := &diag.Findings[i]
+		if f.RuleID != ruleIDBCImbalanced || f.Kind != finding.KindAdvisory || !score.IsActiveGateFinding(*f) {
+			continue
+		}
+		f.Kind = finding.KindGate
+		promoted++
+	}
+	// Keep the summary counters consistent with the re-kinded findings: the
+	// promoted advisories now count as blocking, not as warnings.
+	diag.Summary.GateFindings += promoted
+	diag.Summary.Warnings = max(0, diag.Summary.Warnings-promoted)
 }

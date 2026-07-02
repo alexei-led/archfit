@@ -183,6 +183,9 @@ func validate(cfg Config) error {
 			return fmt.Errorf("coupling.min_severity %q is not one of: low, medium, high, critical", s)
 		}
 	}
+	if err := validateCouplingGate(cfg.Coupling.Gate); err != nil {
+		return err
+	}
 	for _, name := range sortedKeys(cfg.Modules) {
 		if r := cfg.Modules[name].Role; r != "" {
 			if _, ok := moduleRoles[r]; !ok {
@@ -205,6 +208,9 @@ func validate(cfg Config) error {
 		}
 		knob, ok := knownMetrics[name]
 		if !ok {
+			if name == "coupling_balance" {
+				return errors.New("metrics.coupling_balance is not a metric — the synthesised coupling score gates via the coupling.gate block (min_band / max_drop)")
+			}
 			return fmt.Errorf("metrics.%s is not a known metric (known: blast_radius, coverage, cycle, encapsulation, unbalanced_edge)", name)
 		}
 		if err := validateMetricEntry(name, knob, cfg.Metrics[name]); err != nil {
@@ -230,6 +236,33 @@ func validate(cfg Config) error {
 		return err
 	}
 	return validateFileClass(cfg.FileClass)
+}
+
+// couplingGateBands are the accepted coupling.gate.min_band floors. critical is
+// deliberately absent: no band ranks below it, so a critical floor could never
+// trip — a config that looks like a gate but is inert by construction.
+var couplingGateBands = map[string]struct{}{"poor": {}, "mixed": {}, "serviceable": {}, "strong": {}}
+
+// validateCouplingGate checks the coupling.gate block: a present block must
+// configure at least one knob (an empty block is a gate that never trips — the
+// validated-but-inert disease), min_band must be a real floor, and max_drop is
+// a tolerated drop, never negative.
+func validateCouplingGate(g *CouplingGateDef) error {
+	if g == nil {
+		return nil
+	}
+	if g.MinBand == "" && g.MaxDrop == nil {
+		return errors.New("coupling.gate requires min_band and/or max_drop — an empty block gates nothing")
+	}
+	if g.MinBand != "" {
+		if _, ok := couplingGateBands[g.MinBand]; !ok {
+			return fmt.Errorf("coupling.gate.min_band %q is not one of: poor, mixed, serviceable, strong", g.MinBand)
+		}
+	}
+	if g.MaxDrop != nil && *g.MaxDrop < 0 {
+		return fmt.Errorf("coupling.gate.max_drop must be >= 0 (a tolerated score drop, got %d)", *g.MaxDrop)
+	}
+	return nil
 }
 
 // validateFileClass checks file_class glob patterns and mock framework entries.

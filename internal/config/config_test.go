@@ -1226,6 +1226,51 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			wantErr: "coupling.min_severity",
 		},
 		{
+			name:    "coupling.gate with min_band loads clean",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: mixed\n",
+			wantErr: "",
+		},
+		{
+			name:    "coupling.gate with max_drop only loads clean",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    max_drop: 5\n",
+			wantErr: "",
+		},
+		{
+			name:    "coupling.gate with both knobs loads clean",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: poor\n    max_drop: 0\n",
+			wantErr: "",
+		},
+		{
+			name:    "empty coupling.gate block rejected",
+			yaml:    "version: 1\ncoupling:\n  gate: {}\n",
+			wantErr: "coupling.gate requires min_band and/or max_drop",
+		},
+		{
+			name:    "invalid coupling.gate.min_band rejected",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: great\n",
+			wantErr: "coupling.gate.min_band",
+		},
+		{
+			name:    "critical coupling.gate.min_band rejected as inert",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: critical\n",
+			wantErr: "coupling.gate.min_band",
+		},
+		{
+			name:    "negative coupling.gate.max_drop rejected",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    max_drop: -1\n",
+			wantErr: "coupling.gate.max_drop must be >= 0",
+		},
+		{
+			name:    "unknown coupling.gate key rejected at decode",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    band_floor: mixed\n",
+			wantErr: "band_floor",
+		},
+		{
+			name:    "metrics.coupling_balance points at coupling.gate",
+			yaml:    "version: 1\nmetrics:\n  coupling_balance:\n    enabled: true\n",
+			wantErr: "coupling.gate",
+		},
+		{
 			name:    "valid rule gates",
 			yaml:    "version: 1\nrules:\n  - id: r1\n    type: cycle\n    gate: fail\n  - id: r2\n    type: cycle\n    gate: warn\n",
 			wantErr: "",
