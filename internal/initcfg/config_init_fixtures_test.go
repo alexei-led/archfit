@@ -17,6 +17,7 @@ import (
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
@@ -102,6 +103,112 @@ func TestConfigInit_PerLanguage(t *testing.T) {
 
 			if _, err := rules.New(cfg.ForRules()); err != nil {
 				t.Errorf("generated rule type not recognized by internal/rules: %v\n\nrendered:\n%s", err, rendered)
+			}
+		})
+	}
+}
+
+// fixtureGraph builds a two-node module graph with a single uses_internal
+// edge from "module:"+from to "module:"+to.
+func fixtureGraph(from, to string) *graph.Graph {
+	nodes := []graph.Node{
+		{Kind: graph.NodeKindModule, Path: from},
+		{Kind: graph.NodeKindModule, Path: to},
+	}
+	edges := []graph.Edge{
+		{From: "module:" + from, To: "module:" + to, Kind: graph.EdgeKindUsesInternal},
+	}
+	return graph.Build([]graph.Facts{{Nodes: nodes, Edges: edges, Language: "go"}})
+}
+
+// TestPublicAPIOnly_Task1Fixtures documents public_api_only's (V5) behavior on
+// the Wave 2 Task 1 per-language fixtures, using each fixture's real
+// Discover-derived module paths:
+//
+//   - Discover never populates ModuleDef.Internal for any language (config
+//     init has no "internal:" inference), so on a freshly generated config,
+//     dependency-cruiser/grimp/cargo never tag an edge EdgeKindUsesInternal
+//     and public_api_only is structurally inert — no spurious findings.
+//   - If a user later hand-adds "internal:" globs (the documented pattern in
+//     configuration-reference.md), the V5 module-map fix still does the right
+//     thing on these fixtures' real module shapes: same-module access is not
+//     flagged, genuine cross-module access still is.
+func TestPublicAPIOnly_Task1Fixtures(t *testing.T) {
+	tests := []struct {
+		name   string
+		root   string
+		runner toolrun.Runner
+	}{
+		{name: "typescript", root: "tsfixture", runner: &toolrun.RunnerMock{}},
+		{name: "python", root: "pyfixture", runner: &toolrun.RunnerMock{}},
+		{name: "rust", root: "rustfixture", runner: rustFixtureRunner()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := initFixtureRoot(t, tt.root)
+			discovered, err := initcfg.Discover(context.Background(), root, tt.runner)
+			if err != nil {
+				t.Fatalf("Discover: %v", err)
+			}
+			for _, m := range discovered.Modules {
+				if len(m.Internal) != 0 {
+					t.Fatalf("module %q: Discover set Internal=%v, want empty (config init never infers internal: globs)", m.Name, m.Internal)
+				}
+			}
+			if len(discovered.Modules) < 2 {
+				// rustfixture is a single crate: no second module to build a
+				// cross-module edge against. The Internal-empty assertion above
+				// already covers the inertness claim for this fixture.
+				return
+			}
+
+			modules := make(map[string]config.ModuleDef, len(discovered.Modules))
+			for _, m := range discovered.Modules {
+				modules[m.Name] = config.ModuleDef{Paths: m.Paths}
+			}
+			cfg := config.Config{
+				Version: 1,
+				Modules: modules,
+				Rules: []config.RuleDef{
+					{ID: "no-internal-access", Type: "public_api_only"},
+				},
+			}
+			rs, err := rules.New(cfg.ForRules())
+			if err != nil {
+				t.Fatalf("rules.New: %v", err)
+			}
+
+			// Build a same-module and a cross-module uses_internal edge from the
+			// fixture's own module glob patterns. Python modules use dotted globs
+			// (e.g. "pyfixture.core.*"), Go/TS use slash path globs (e.g.
+			// "src/core/**") — pick "." or "/" as the descendant separator to match.
+			pathIn := func(glob string) string {
+				sep := "/"
+				if !strings.Contains(glob, "/") {
+					sep = "."
+				}
+				base := strings.TrimSuffix(strings.TrimSuffix(glob, "**"), "*")
+				base = strings.TrimSuffix(base, sep)
+				return base + sep + "x"
+			}
+			apiPath, corePath := pathIn(discovered.Modules[0].Paths[0]), pathIn(discovered.Modules[1].Paths[0])
+			nested := func(base string) string {
+				sep := "/"
+				if !strings.Contains(base, "/") {
+					sep = "."
+				}
+				return base + sep + "inner"
+			}
+
+			g := fixtureGraph(corePath, nested(corePath))
+			if findings := rs[0].Check(g, rules.Evidence{}); len(findings) != 0 {
+				t.Errorf("same-module uses_internal edge: got %d findings, want 0: %+v", len(findings), findings)
+			}
+
+			g = fixtureGraph(apiPath, nested(corePath))
+			if findings := rs[0].Check(g, rules.Evidence{}); len(findings) != 1 {
+				t.Errorf("cross-module uses_internal edge: got %d findings, want 1: %+v", len(findings), findings)
 			}
 		})
 	}

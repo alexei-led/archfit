@@ -65,7 +65,7 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 		case "forbidden_dependency":
 			inner = &forbiddenDependency{def: def}
 		case "public_api_only":
-			inner = &publicAPIOnly{def: def}
+			inner = &publicAPIOnly{def: def, mm: cfg.ModuleMap}
 		case "forbidden_layer_direction":
 			inner = &forbiddenLayerDirection{
 				def:    def,

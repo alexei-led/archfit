@@ -55,6 +55,7 @@ func (r *forbiddenDependency) Check(g *graph.Graph, _ Evidence) []finding.Findin
 
 type publicAPIOnly struct {
 	def config.RuleDef
+	mm  config.ModuleMap
 }
 
 func (r *publicAPIOnly) ID() string { return r.def.ID }
@@ -80,13 +81,28 @@ func (r *publicAPIOnly) Check(g *graph.Graph, _ Evidence) []finding.Finding {
 			}
 		}
 
+		// A module reaching into its own internal path (e.g. domain importing
+		// domain/internal) is idiomatic, not a violation — only cross-module
+		// access to another module's internal surface is. When either endpoint
+		// isn't covered by the module map, we can't rule out same-module, so the
+		// edge still fires (module-blind fallback, same as pre-fix behavior).
+		fromModule, fromOK := r.mm.ModuleFor(fromPath)
+		toModule, toOK := r.mm.ModuleFor(toPath)
+		if fromOK && toOK && fromModule == toModule {
+			continue
+		}
+
 		f := finding.New(r.def.ID, e, e.Locations)
 		f.Severity = finding.SeverityHigh
 		f.MatchedBy = map[string]string{
 			"edge_kind": string(e.Kind),
 			"to_path":   toPath,
 		}
-		f.Why = "Cross-module access to internal path " + toPath
+		why := "Access to internal path " + toPath
+		if fromOK && toOK {
+			why = fmt.Sprintf("Cross-module access from %q (%s) to internal path %q (%s)", fromPath, fromModule, toPath, toModule)
+		}
+		f.Why = why
 		f.Constraint = "Only import from the module's public API"
 		out = append(out, f)
 	}

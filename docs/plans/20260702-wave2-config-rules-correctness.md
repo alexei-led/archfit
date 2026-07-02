@@ -42,11 +42,11 @@ Three verified defects make archfit's out-of-box experience wrong, which matters
 
 ### Task 3: public_api_only consults the module map (V5)
 
-- [ ] failing test first: fixture module `domain` with nested `domain/internal`, `domain.go` importing it, docs-example config — currently produces a blocking finding; assert zero findings expected
-- [ ] `rules_dependency.go:63-92`: resolve both endpoints through the module map; skip when `from.module == to.module`; keep firing for genuine cross-module internal access (add a positive-case test: `moduleA` importing `moduleB/internal/...` must still fire)
-- [ ] make the `Why` text conditional — never claim "Cross-module" for an edge the module map calls same-module
-- [ ] language check: the rule keys off `EdgeKindUsesInternal`, which only Go's extractor assigns lexically — add per-language tests documenting behavior for TS/Python/Rust edges (no `EdgeKindUsesInternal` → rule inert there; assert no spurious findings on the Wave 2 Task 1 fixtures)
-- [ ] run `make test && make lint && make archfit`; regen goldens if output changed; commit
+- [x] failing test first: fixture module `domain` with nested `domain/internal`, `domain.go` importing it, docs-example config — currently produces a blocking finding; assert zero findings expected
+- [x] `rules_dependency.go:63-92`: resolve both endpoints through the module map; skip when `from.module == to.module`; keep firing for genuine cross-module internal access (add a positive-case test: `moduleA` importing `moduleB/internal/...` must still fire)
+- [x] make the `Why` text conditional — never claim "Cross-module" for an edge the module map calls same-module
+- [x] language check: the rule keys off `EdgeKindUsesInternal`, which only Go's extractor assigns lexically — add per-language tests documenting behavior for TS/Python/Rust edges (no `EdgeKindUsesInternal` → rule inert there; assert no spurious findings on the Wave 2 Task 1 fixtures)
+- [x] run `make test && make lint && make archfit`; regen goldens if output changed; commit
 
 ### Task 4: Case-safe CODEOWNERS subtree + owner degradation warning
 

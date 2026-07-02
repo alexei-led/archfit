@@ -47,6 +47,8 @@ const (
 	kindAdvisory            = "advisory"
 	gateWarn                = "warn"
 	ruleIDNoDep             = "no-dep"
+	ruleIDNoInternalAccess  = "no-internal-access"
+	typePublicAPIOnly       = "public_api_only"
 	globServicesA           = "services/a/**"
 	globServicesB           = "services/b/**"
 	// publicAPIMax / publicAPIChange test constants
@@ -182,7 +184,7 @@ func TestForbiddenDependency(t *testing.T) {
 func TestPublicAPIOnly(t *testing.T) {
 	cfg := config.RuleConfig{
 		Rules: []config.RuleDef{
-			{ID: "no-internal-access", Type: "public_api_only"},
+			{ID: ruleIDNoInternalAccess, Type: typePublicAPIOnly},
 		},
 	}
 	ruleSet, err := rules.New(cfg)
@@ -239,8 +241,8 @@ func TestPublicAPIOnly(t *testing.T) {
 				t.Fatalf("Check: got %d findings, want %d", len(findings), tc.wantCount)
 			}
 			for _, f := range findings {
-				if f.RuleID != "no-internal-access" {
-					t.Errorf("finding.RuleID = %q, want %q", f.RuleID, "no-internal-access")
+				if f.RuleID != ruleIDNoInternalAccess {
+					t.Errorf("finding.RuleID = %q, want %q", f.RuleID, ruleIDNoInternalAccess)
 				}
 				if f.MatchedBy["edge_kind"] != "uses_internal" {
 					t.Errorf("matched_by.edge_kind = %q, want %q", f.MatchedBy["edge_kind"], "uses_internal")
@@ -257,6 +259,122 @@ func TestPublicAPIOnly(t *testing.T) {
 				if f.Edge.To.Path == "" {
 					t.Error("finding.Edge.To.Path is empty")
 				}
+			}
+		})
+	}
+}
+
+// TestPublicAPIOnly_ModuleMap covers V5: publicAPIOnly must not fire when the
+// module map says both endpoints of a uses_internal edge belong to the same
+// module (idiomatic self-access, e.g. domain importing domain/internal), but
+// must still fire on genuine cross-module internal access.
+func TestPublicAPIOnly_ModuleMap(t *testing.T) {
+	const (
+		moduleDomain = "domain"
+		moduleB      = "moduleB"
+		moduleA      = "moduleA"
+	)
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			moduleDomain: {Paths: []string{"domain/**"}},
+			moduleA:      {Paths: []string{"services/a/**"}},
+			moduleB:      {Paths: []string{"services/b/**"}},
+		},
+		Rules: []config.RuleDef{
+			{ID: ruleIDNoInternalAccess, Type: typePublicAPIOnly},
+		},
+	}
+	rc := cfg.ForRules()
+	ruleSet, err := rules.New(rc)
+	if err != nil {
+		t.Fatalf("New: unexpected error: %v", err)
+	}
+	r := ruleSet[0]
+	ev := rules.Evidence{}
+
+	t.Run("same_module_self_access_no_finding", func(t *testing.T) {
+		g := makeGraph([]graph.Edge{
+			{From: "file:domain/domain.go", To: "file:domain/internal/helper.go", Kind: graph.EdgeKindUsesInternal},
+		})
+		findings := r.Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("same-module self-access: got %d findings, want 0: %+v", len(findings), findings)
+		}
+	})
+
+	t.Run("cross_module_internal_access_still_fires", func(t *testing.T) {
+		g := makeGraph([]graph.Edge{
+			{From: nodeAFoo, To: nodeBIntBar, Kind: graph.EdgeKindUsesInternal},
+		})
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("cross-module access: got %d findings, want 1", len(findings))
+		}
+		f := findings[0]
+		if !strings.Contains(f.Why, "Cross-module") {
+			t.Errorf("Why = %q, want it to mention Cross-module for a genuine cross-module edge", f.Why)
+		}
+		if !strings.Contains(f.Why, moduleA) || !strings.Contains(f.Why, moduleB) {
+			t.Errorf("Why = %q, want it to name both modules %q and %q", f.Why, moduleA, moduleB)
+		}
+	})
+
+	t.Run("unresolved_endpoint_why_does_not_claim_cross_module", func(t *testing.T) {
+		// Neither endpoint is covered by the module map — the rule can't tell
+		// same-module from cross-module, so it fires (module-blind fallback) but
+		// must not falsely claim "Cross-module" it cannot substantiate.
+		g := makeGraph([]graph.Edge{
+			{From: nodeCFoo, To: nodeDIntY, Kind: graph.EdgeKindUsesInternal},
+		})
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("unresolved endpoints: got %d findings, want 1", len(findings))
+		}
+		if strings.Contains(findings[0].Why, "Cross-module") {
+			t.Errorf("Why = %q, must not claim Cross-module when the module map can't confirm it", findings[0].Why)
+		}
+	})
+}
+
+// TestPublicAPIOnly_PerLanguage documents that publicAPIOnly keys off
+// graph.EdgeKindUsesInternal, which the Go extractor assigns lexically
+// (import path contains "/internal/") but the TS and Python extractors only
+// assign when a module declares an `internal:` glob (matchesInternal) — and
+// the Rust extractor never assigns it at all. On a plain import edge (no
+// internal:-glob configured, as in the Wave 2 Task 1 fixtures) the rule is
+// inert for every non-Go language: no EdgeKindUsesInternal edge, no finding.
+func TestPublicAPIOnly_PerLanguage(t *testing.T) {
+	cfg := config.RuleConfig{
+		Rules: []config.RuleDef{
+			{ID: ruleIDNoInternalAccess, Type: typePublicAPIOnly},
+		},
+	}
+	ruleSet, err := rules.New(cfg)
+	if err != nil {
+		t.Fatalf("New: unexpected error: %v", err)
+	}
+	r := ruleSet[0]
+	ev := rules.Evidence{}
+
+	tests := []struct {
+		name     string
+		language string
+	}{
+		{name: "typescript", language: "typescript"},
+		{name: "python", language: "python"},
+		{name: "rust", language: "rust"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Plain import edge, as extractors emit when no internal: glob
+			// matches (TS/Python) or unconditionally (Rust never sets uses_internal).
+			g := makeGraph([]graph.Edge{
+				{From: nodeAFoo, To: nodeBIntBar, Kind: graph.EdgeKindImports, Language: tc.language},
+			})
+			findings := r.Check(g, ev)
+			if len(findings) != 0 {
+				t.Fatalf("%s import edge: got %d findings, want 0 (rule is inert without uses_internal): %+v", tc.language, len(findings), findings)
 			}
 		})
 	}
