@@ -273,10 +273,12 @@ and makes only the legible parts executable. Three design rules follow from that
 
 1. **Two channels, never blended.** A deterministic **gate** (pass/fail) enforces
    explicit rules you declared — forbidden dependencies, public-API-only, layer
-   direction, cycles. A **metric** channel reports legible deltas (encapsulation,
-   unbalanced edges, …) that _warn_ on regression but do not fail the build by
-   default. Classification language explains findings; it is never a single
-   blended "architecture score". See [Metrics reference](metrics.md).
+   direction, cycles. A **metric** channel tracks legible deltas (encapsulation,
+   unbalanced edges, …) whose direction-aware regressions trip a per-metric gate:
+   `metrics.<name>.gate` unset blocks, `warn` caps at WARN, `off` skips, with
+   `max_new`/`min_delta` thresholds for tolerated movement. Classification
+   language explains findings; it is never a single blended "architecture
+   score". See [Metrics reference](metrics.md).
 
 2. **Honest about evidence.** Every metric reports its coverage and confidence.
    Low confidence caps the band it can claim. Absent signal is reported as `n/a`,

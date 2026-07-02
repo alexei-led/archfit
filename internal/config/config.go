@@ -125,12 +125,30 @@ var bcSeverities = map[string]struct{}{"low": {}, "medium": {}, "high": {}, "cri
 // shared by rule, metric, and module_review gates. Empty means "use the default".
 var gateValues = map[string]struct{}{"off": {}, "warn": {}, "fail": {}}
 
-// knownMetrics is the set of metric keys archfit implements. `metrics` is a map,
-// so unknown keys escape DisallowUnknownField — validate() rejects them so a typo
-// or a removed metric is a loud config error, not a silent no-op (consistency with
-// the strict `analyzers` struct).
-var knownMetrics = map[string]struct{}{
-	"encapsulation": {}, "unbalanced_edge": {}, "cycle": {}, "coverage": {}, "blast_radius": {},
+// metricKnob classifies which delta-threshold knob a metric's gate accepts.
+// A metric's polarity is definitional (stamped as Direction on its result),
+// not a user choice — the knob kind follows it: count metrics (higher is
+// worse) accept max_new, ratio metrics (higher is better) accept min_delta,
+// informational metrics accept neither because they never carry a baseline
+// delta and never gate.
+type metricKnob int
+
+const (
+	knobRatio metricKnob = iota // min_delta applies (higher is better)
+	knobCount                   // max_new applies (higher is worse)
+	knobNone                    // informational: no gate, no thresholds
+)
+
+// knownMetrics maps each metric key archfit implements to its threshold-knob
+// kind. `metrics` is a map, so unknown keys escape DisallowUnknownField —
+// validate() rejects them so a typo or a removed metric is a loud config
+// error, not a silent no-op (consistency with the strict `analyzers` struct).
+var knownMetrics = map[string]metricKnob{
+	"encapsulation":   knobRatio,
+	"coverage":        knobRatio,
+	"unbalanced_edge": knobCount,
+	"cycle":           knobCount,
+	"blast_radius":    knobNone,
 }
 
 // removedConfigKeys maps config keys removed before v1.0 to a short reason, so a
@@ -185,10 +203,11 @@ func validate(cfg Config) error {
 		if reason, removed := removedConfigKeys[name]; removed {
 			return fmt.Errorf("metrics.%s was %s — remove it", name, reason)
 		}
-		if _, ok := knownMetrics[name]; !ok {
+		knob, ok := knownMetrics[name]
+		if !ok {
 			return fmt.Errorf("metrics.%s is not a known metric (known: blast_radius, coverage, cycle, encapsulation, unbalanced_edge)", name)
 		}
-		if err := validateGate("metrics."+name, cfg.Metrics[name].Gate); err != nil {
+		if err := validateMetricEntry(name, knob, cfg.Metrics[name]); err != nil {
 			return err
 		}
 	}
@@ -237,6 +256,37 @@ func validateFileClass(fc FileClassDef) error {
 	for i, mf := range fc.MockFrameworks {
 		if mf == "" {
 			return fmt.Errorf("file_class.mock_frameworks[%d] must not be empty", i)
+		}
+	}
+	return nil
+}
+
+// validateMetricEntry checks one metrics.<name> entry: a valid gate value and
+// threshold knobs that actually apply to the metric's kind. A knob on a metric
+// of the wrong kind is a hard error, not a silent no-op — a validated-but-inert
+// setting hides the exact misconfiguration it was meant to express.
+func validateMetricEntry(name string, knob metricKnob, e MetricEntry) error {
+	if err := validateGate("metrics."+name, e.Gate); err != nil {
+		return err
+	}
+	if e.MinDelta < 0 {
+		return fmt.Errorf("metrics.%s.min_delta must be >= 0 (a tolerated drop, got %v)", name, e.MinDelta)
+	}
+	if e.MaxNew < 0 {
+		return fmt.Errorf("metrics.%s.max_new must be >= 0 (an allowed increase, got %d)", name, e.MaxNew)
+	}
+	switch knob {
+	case knobRatio:
+		if e.MaxNew != 0 {
+			return fmt.Errorf("metrics.%s.max_new applies only to count metrics (cycle, unbalanced_edge) — use min_delta", name)
+		}
+	case knobCount:
+		if e.MinDelta != 0 {
+			return fmt.Errorf("metrics.%s.min_delta applies only to ratio metrics (encapsulation, coverage) — use max_new", name)
+		}
+	case knobNone:
+		if e.Gate != "" || e.MinDelta != 0 || e.MaxNew != 0 {
+			return fmt.Errorf("metrics.%s is informational and never gates — only `enabled` applies", name)
 		}
 	}
 	return nil

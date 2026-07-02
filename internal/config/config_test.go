@@ -1251,6 +1251,46 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			wantErr: "metrics.cycle",
 		},
 		{
+			name:    "metric knobs matching the metric kind load clean",
+			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    gate: fail\n    max_new: 2\n  encapsulation:\n    enabled: true\n    gate: warn\n    min_delta: 0.05\n",
+			wantErr: "",
+		},
+		{
+			name:    "negative min_delta rejected",
+			yaml:    "version: 1\nmetrics:\n  encapsulation:\n    enabled: true\n    min_delta: -0.1\n",
+			wantErr: "metrics.encapsulation.min_delta must be >= 0",
+		},
+		{
+			name:    "negative max_new rejected",
+			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    max_new: -1\n",
+			wantErr: "metrics.cycle.max_new must be >= 0",
+		},
+		{
+			name:    "max_new on a ratio metric rejected",
+			yaml:    "version: 1\nmetrics:\n  encapsulation:\n    enabled: true\n    max_new: 1\n",
+			wantErr: "metrics.encapsulation.max_new applies only to count metrics",
+		},
+		{
+			name:    "min_delta on a count metric rejected",
+			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    min_delta: 0.1\n",
+			wantErr: "metrics.cycle.min_delta applies only to ratio metrics",
+		},
+		{
+			name:    "gate on informational blast_radius rejected",
+			yaml:    "version: 1\nmetrics:\n  blast_radius:\n    enabled: true\n    gate: warn\n",
+			wantErr: "metrics.blast_radius is informational and never gates",
+		},
+		{
+			name:    "enabled toggle on blast_radius is allowed",
+			yaml:    "version: 1\nmetrics:\n  blast_radius:\n    enabled: false\n",
+			wantErr: "",
+		},
+		{
+			name:    "removed max_new_high field rejected at decode",
+			yaml:    "version: 1\nmetrics:\n  unbalanced_edge:\n    enabled: true\n    max_new_high: 0\n",
+			wantErr: "max_new_high",
+		},
+		{
 			name:    "invalid module_review gate",
 			yaml:    "version: 1\nmodule_review:\n  gate: maybe\n",
 			wantErr: "module_review",

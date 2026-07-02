@@ -8,12 +8,16 @@ import (
 )
 
 // MetricEntry holds the settings for a single metric inside the metrics map.
+// Gate sets what a baseline regression does to the verdict: off skips the
+// check, warn caps at WARN, fail/unset blocks — the rule-gate convention.
+// MinDelta (ratio metrics) is the tolerated drop below the baseline; MaxNew
+// (count metrics) is the allowed increase. Both default to 0 (any worsening
+// move trips). validate() rejects a knob on a metric of the wrong kind.
 type MetricEntry struct {
-	Enabled    bool    `yaml:"enabled"`
-	Gate       string  `yaml:"gate"`
-	MinDelta   float64 `yaml:"min_delta"`
-	MaxNewHigh int     `yaml:"max_new_high"`
-	MaxNew     int     `yaml:"max_new"`
+	Enabled  bool    `yaml:"enabled"`
+	Gate     string  `yaml:"gate"`
+	MinDelta float64 `yaml:"min_delta"`
+	MaxNew   int     `yaml:"max_new"`
 }
 
 // MetricsConfig holds settings for all metrics, keyed by metric name.

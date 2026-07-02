@@ -26,13 +26,21 @@ After all metrics run, the run gets one verdict
 (`internal/engine/engine.go`, `computeVerdict`):
 
 ```text
-fail  → any gate finding with status "new" or "expired_waiver"
-warn  → otherwise, any metric whose delta vs baseline is negative
+fail  → any gate finding with status "new" or "expired_waiver", or any metric
+        delta that worsens past its threshold with gate fail/unset
+warn  → otherwise, any worsening metric delta capped by gate: warn, or any
+        active gate:warn rule advisory
 pass  → otherwise
 ```
 
-Exit codes: `0` pass, `1` gate failed, `2` warnings/regressions (non-blocking by
-default; use `--report` to never exit non-zero on these), `3` tool/config error.
+"Worsens" is direction-aware: count metrics (`cycle`, `unbalanced_edge`) worsen
+upward (delta > `max_new`), ratio metrics (`encapsulation`, `coverage`) worsen
+downward (drop > `min_delta`). Per-metric `gate`/threshold knobs are documented
+in the [configuration reference](configuration-reference.md#metrics).
+
+Exit codes: `0` pass, `1` gate failed, `2` warnings/regressions, `3` tool/config
+error. Without `--gate`, `archfit analyze` is report-only and exits `0` on any
+verdict.
 
 ---
 

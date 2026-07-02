@@ -445,12 +445,12 @@ metrics:
     gate: warn
     min_delta: 0
 
-  unbalanced_edges:
+  unbalanced_edge:
     enabled: true
     gate: warn
-    max_new_high: 0
+    max_new: 0
 
-  cycles:
+  cycle:
     enabled: true
     gate: fail
     max_new: 0

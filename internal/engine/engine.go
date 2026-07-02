@@ -51,7 +51,12 @@ type RunInput struct {
 	Metrics     []metrics.Metric
 	Accepted    status.AcceptedSet
 	BaseMetrics diagnostic.MetricSnapshot // baseline metric snapshot; nil = no baseline
-	Labels      []labels.Label            // pinned coupling labels; nil = none
+	// MetricGates maps metric name → its metrics.<name> config entry (gate
+	// posture off|warn|fail plus max_new/min_delta thresholds), built by the
+	// caller via Config.ForMetric. nil/missing entries mean the defaults:
+	// blocking gate, zero tolerated regression.
+	MetricGates map[string]config.MetricConfig
+	Labels      []labels.Label // pinned coupling labels; nil = none
 	Signals     signal.RunSignals
 	Now         time.Time
 	// PrimaryExtractorTools names the per-language file extractors whose coverage
@@ -258,7 +263,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 
 	// Pass only rule-advisory count to computeVerdict — coupling advisories must
 	// not flip verdict regardless of mode.Advisory.
-	verdict := computeVerdict(gateFindings, metricResults, countActive(ruleAdvisoryFindings))
+	verdict := computeVerdict(gateFindings, metricResults, in.MetricGates, countActive(ruleAdvisoryFindings))
 
 	// --- Stage 9: Assemble Diagnostic ---
 	// Include advisory findings in Findings only when mode.Advisory is set.
@@ -441,38 +446,51 @@ func resolveEvidence(
 }
 
 // computeVerdict derives the overall verdict from gate findings, metric results,
-// and active rule-advisory findings (gate: warn).
+// per-metric gate config, and active rule-advisory findings (gate: warn).
 //   - Any gate finding with status new or expired_waiver → fail
-//   - Any metric whose delta moves against its Direction → warn (if not already
-//     fail): DirectionHigherIsWorse regresses on *delta > 0, everything else
-//     (including the unset zero value) regresses on *delta < 0 (ratio semantics)
+//   - Any metric whose delta breaches its threshold in the worsening direction
+//     trips its gate: DirectionHigherIsWorse breaches on *delta > max_new,
+//     everything else (including the unset zero value) breaches on
+//     *delta < -min_delta (ratio semantics). The gate posture then decides:
+//     off skips the check, warn caps at warn, fail/unset fails — the same
+//     convention as rule gates (unset = blocking).
 //   - Any active rule-advisory finding (activeRuleAdvisories > 0) → warn (if not already fail)
 //   - Otherwise → pass
 //
 // Coupling advisories are intentionally excluded from activeRuleAdvisories — they
 // must not flip the verdict.
-func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult, activeRuleAdvisories int) diagnostic.Verdict {
+func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult, gates map[string]config.MetricConfig, activeRuleAdvisories int) diagnostic.Verdict {
 	for _, f := range gateFindings {
 		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver {
 			return diagnostic.VerdictFail
 		}
 	}
+	verdict := diagnostic.VerdictPass
 	for _, m := range ms {
 		if m.Delta == nil {
 			continue
 		}
-		regressed := *m.Delta < 0
+		mc := gates[m.Name]
+		if mc.Gate == string(config.GateOff) {
+			continue
+		}
+		breached := *m.Delta < -mc.MinDelta
 		if m.Direction == diagnostic.DirectionHigherIsWorse {
-			regressed = *m.Delta > 0
+			breached = *m.Delta > float64(mc.MaxNew)
 		}
-		if regressed {
-			return diagnostic.VerdictWarn
+		if !breached {
+			continue
 		}
+		if mc.Gate == string(config.GateWarn) {
+			verdict = diagnostic.VerdictWarn
+			continue
+		}
+		return diagnostic.VerdictFail
 	}
-	if activeRuleAdvisories > 0 {
+	if verdict == diagnostic.VerdictPass && activeRuleAdvisories > 0 {
 		return diagnostic.VerdictWarn
 	}
-	return diagnostic.VerdictPass
+	return verdict
 }
 
 // enrichEdges applies symbol resolution and SCIP integration strength to an

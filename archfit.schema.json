@@ -200,9 +200,6 @@
         "min_delta": {
           "type": "number"
         },
-        "max_new_high": {
-          "type": "integer"
-        },
         "max_new": {
           "type": "integer"
         }
@@ -213,7 +210,6 @@
         "enabled",
         "gate",
         "min_delta",
-        "max_new_high",
         "max_new"
       ],
       "description": "MetricEntry holds the settings for a single metric inside the metrics map."

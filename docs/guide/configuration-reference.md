@@ -755,7 +755,7 @@ metrics:
   unbalanced_edge:
     enabled: true
     gate: fail
-    max_new_high: 0
+    max_new: 0
   cycle:
     enabled: true
     gate: fail
@@ -765,6 +765,24 @@ metrics:
     gate: warn
     min_delta: 0
 ```
+
+- `enabled` — `false` removes the metric from the run. Metrics absent from the
+  config default to enabled.
+- `gate` — what a baseline regression does to the verdict: `off` skips the
+  check, `warn` caps at WARN (exit 2), `fail` or unset blocks (exit 1) — the
+  same convention as rule gates.
+- `max_new` — count metrics only (`cycle`, `unbalanced_edge`): the allowed
+  increase over the baseline value before the gate trips. Default 0: any new
+  occurrence trips.
+- `min_delta` — ratio metrics only (`encapsulation`, `coverage`): the tolerated
+  drop below the baseline value before the gate trips. Default 0: any drop
+  trips.
+
+Setting a knob on a metric of the wrong kind (e.g. `min_delta` on `cycle`) is
+a config error, not a silent no-op. `blast_radius` is informational and never
+gates — it accepts only `enabled`. Metric gates fire only against a baseline
+(`.archfit-baseline.json`); without a stored value for the metric there is no
+delta and nothing to trip.
 
 ## `module_review`
 

@@ -119,6 +119,13 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 	ms := append(metrics.New(cfg), extraMetrics...)
 
+	// Per-metric gate posture/thresholds (metrics.<name> in config), consumed
+	// by the verdict. Built here so the engine receives a view, not the Config.
+	metricGates := make(map[string]config.MetricConfig, len(ms))
+	for _, m := range ms {
+		metricGates[m.Name()] = cfg.ForMetric(m.Name())
+	}
+
 	// toolWarnings collects the exceptional, non-nil errors from the optional
 	// extractors below. They normally degrade gracefully — encoding absence in
 	// their Coverage record (surfaced as a CoverageGap), not an error — so this
@@ -288,6 +295,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		Metrics:     ms,
 		Accepted:    base,
 		BaseMetrics: base.Metrics,
+		MetricGates: metricGates,
 		Labels:      lbls,
 		Signals:     change,
 		Now:         time.Now(),

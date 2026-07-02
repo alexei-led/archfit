@@ -48,11 +48,11 @@ After this wave: a metric regression in the correct direction gates, the documen
 
 ### Task 3: Wire metrics.\*.gate / max_new / min_delta (V3)
 
-- [ ] consume `Config.ForMetric()` (`views.go:157-163`) in the verdict path: per-metric `gate: off` skips that metric's delta check; `warn` caps at WARN; `fail`/unset may FAIL per existing severity conventions
-- [ ] `max_new: N` — for count metrics, allowed increase before the gate trips (default 0); `min_delta` — for ratio metrics, tolerated drop; `max_new_high` — decide: wire against high-severity finding counts if a consumer is natural, otherwise DELETE the field from schema and docs (dead knobs are worse than absent knobs — do not leave it validated-but-inert)
-- [ ] verify semantics match what `docs/guide/configuration-reference.md:108-114,750-766` already promises; fix docs where behavior legitimately differs
-- [ ] table tests: each knob exercised (off/warn/fail × count/ratio × within/over threshold)
-- [ ] run `make test && make lint && make archfit`; regen goldens only if output changed; commit
+- [x] consume `Config.ForMetric()` (`views.go:157-163`) in the verdict path: per-metric `gate: off` skips that metric's delta check; `warn` caps at WARN; `fail`/unset FAILs (rule-gate convention) — wired as `RunInput.MetricGates` built in `cmd/archfit/pipeline_run.go` via `cfg.ForMetric(m.Name())` per registered metric, consumed by `computeVerdict`
+- [x] `max_new: N` — count metrics, breach when delta > N (default 0); `min_delta` — ratio metrics, breach when drop exceeds it (default 0); `max_new_high` — DELETED from schema (strict decode now rejects it loudly), docs, and spec: no natural consumer — `MetricResult` carries no severity partition, and high-severity finding counts already gate through rule gates. Bonus: `validate()` now rejects a knob on a metric of the wrong kind and any gate/threshold on informational `blast_radius` (validated-but-inert knobs were the V3 disease)
+- [x] verified doc semantics; fixed `configuration-reference.md` (knob prose + max_new_high removal), `metrics.md` (stale verdict pseudo-code + dead `--report` flag), `concepts.md` (warn-only claim), `arch-fitness-spec-v0.4.md` (max_new_high + wrong metric names `cycles`/`unbalanced_edges`); regenerated `archfit.schema.json` (`make schema`)
+- [x] table tests: each knob exercised (off/warn/fail × count/ratio × within/over threshold) in `TestComputeVerdict`; config validation table extended (negative/mismatched knobs, blast_radius, max_new_high decode rejection)
+- [x] run `make test && make lint && make archfit` — all green; golden output unchanged (no regen needed); commit
 
 ### Task 4: coupling_balance gate path (V2)
 
