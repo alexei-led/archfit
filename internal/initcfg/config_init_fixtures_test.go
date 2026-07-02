@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
@@ -104,32 +107,13 @@ func TestConfigInit_PerLanguage(t *testing.T) {
 	}
 }
 
-// TestConfigInit_GoFixture_LayerRuleBackEdge runs the full analyze gate over
-// the Go fixture with the config `config init` generates for it. The fixture
-// has a genuine layer back-edge (internal/model imports internal/engine —
-// the innermost layer reaching into the outermost one).
-//
-// TODO(wave2): this asserts TODAY's behavior — the generated rule can never
-// fire (V4 in reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md: Render emits
-// `type: forbidden_dependency` with `from_layer`/`to_layer`, but
-// forbiddenDependency.Check reads `From`/`To`, which are empty). Task 2
-// switches Render to emit `type: forbidden_layer_direction`; once that lands,
-// flip the assertion below to expect exactly one finding for the back-edge.
-func TestConfigInit_GoFixture_LayerRuleBackEdge(t *testing.T) {
-	root := initFixtureRoot(t, "gofixture")
-	discovered, err := initcfg.Discover(context.Background(), root, toolrun.New())
-	if err != nil {
-		t.Fatalf("Discover: %v", err)
-	}
-	if len(discovered.Layers) < 2 {
-		t.Fatalf("fixture must discover >=2 layers (back-edge needs a layer pair), got %v", discovered.Layers)
-	}
-
-	rendered := initcfg.Render(discovered, nil, false)
+// runRenderedAnalyze strict-loads rendered as .archfit.yaml and runs the full
+// analyze pipeline (rules + metrics) over root's Go sources. Mode.Advisory is
+// always on so gate:warn rule findings (Kind=advisory) surface in
+// diag.Findings, mirroring how `archfit analyze` renders warn-gated rules.
+func runRenderedAnalyze(t *testing.T, root, rendered string) diagnostic.Diagnostic {
+	t.Helper()
 	cfg := loadRendered(t, rendered)
-	if len(cfg.Rules) == 0 {
-		t.Fatalf("generated config has no rules:\n%s", rendered)
-	}
 
 	classifyCfg := cfg.ForClassify()
 	rs, err := rules.New(cfg.ForRules())
@@ -144,7 +128,7 @@ func TestConfigInit_GoFixture_LayerRuleBackEdge(t *testing.T) {
 	s := scope.Scope{Root: root, Mode: scope.ModeFull}
 
 	diag, err := engine.Run(context.Background(), engine.RunInput{
-		Mode:        engine.Mode{Full: true},
+		Mode:        engine.Mode{Full: true, Advisory: true},
 		Scope:       s,
 		Classify:    classifyCfg,
 		Staleness:   config.StalenessConfig{},
@@ -164,10 +148,125 @@ func TestConfigInit_GoFixture_LayerRuleBackEdge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("engine.Run: %v", err)
 	}
+	return diag
+}
 
-	// TODO(wave2): should be 1 (the back-edge) once Task 2 lands — see doc
-	// comment above.
-	if got := len(diag.Findings); got != 0 {
-		t.Errorf("layer back-edge findings = %d, want 0 (today's V4 bug — generated rule cannot fire); flip this once Task 2 lands: %+v", got, diag.Findings)
+// TestConfigInit_GoFixture_LayerRuleBackEdge runs the full analyze gate over
+// the Go fixture with the config `config init` generates for it. The fixture
+// has a genuine layer back-edge (internal/model imports internal/engine —
+// the innermost layer reaching into the outermost one).
+//
+// V4 (reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md) was that Render emitted
+// `type: forbidden_dependency` with `from_layer`/`to_layer`, but
+// forbiddenDependency.Check reads `From`/`To`, which were always empty — the
+// generated rule could never fire. Render now emits
+// `type: forbidden_layer_direction`, which derives layer ordering from
+// cfg.Layers and the module map, so the back-edge below is caught.
+func TestConfigInit_GoFixture_LayerRuleBackEdge(t *testing.T) {
+	root := initFixtureRoot(t, "gofixture")
+	discovered, err := initcfg.Discover(context.Background(), root, toolrun.New())
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(discovered.Layers) < 2 {
+		t.Fatalf("fixture must discover >=2 layers (back-edge needs a layer pair), got %v", discovered.Layers)
+	}
+
+	rendered := initcfg.Render(discovered, nil, false)
+	cfg := loadRendered(t, rendered)
+	if len(cfg.Rules) == 0 {
+		t.Fatalf("generated config has no rules:\n%s", rendered)
+	}
+
+	diag := runRenderedAnalyze(t, root, rendered)
+
+	wantRuleID := cfg.Rules[0].ID // the single generated forbidden_layer_direction rule
+	var layerFindings []finding.Finding
+	for _, f := range diag.Findings {
+		if f.RuleID == wantRuleID {
+			layerFindings = append(layerFindings, f)
+		}
+	}
+	if got := len(layerFindings); got != 1 {
+		t.Fatalf("findings for rule %q = %d, want 1 (the back-edge): %+v", wantRuleID, got, diag.Findings)
+	}
+	if got := layerFindings[0].Kind; got != finding.KindAdvisory {
+		t.Errorf("finding kind = %q, want %q (rule is gate: warn)", got, finding.KindAdvisory)
+	}
+}
+
+// TestConfigInit_GoFixture_LayerRuleBackEdge_PromotedToFail simulates the
+// shipped TODO comment ("review and promote gate: warn to gate: fail"): once
+// promoted, the same back-edge must block the verdict, not just advise.
+func TestConfigInit_GoFixture_LayerRuleBackEdge_PromotedToFail(t *testing.T) {
+	root := initFixtureRoot(t, "gofixture")
+	discovered, err := initcfg.Discover(context.Background(), root, toolrun.New())
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	rendered := initcfg.Render(discovered, nil, false)
+	promoted := strings.Replace(rendered, "    gate: warn\n", "    gate: fail\n", 1)
+	if promoted == rendered {
+		t.Fatalf("expected exactly one rule-level gate: warn to promote:\n%s", rendered)
+	}
+
+	diag := runRenderedAnalyze(t, root, promoted)
+	if diag.Verdict != diagnostic.VerdictFail {
+		t.Errorf("verdict = %q, want %q (back-edge under gate: fail): %+v", diag.Verdict, diagnostic.VerdictFail, diag.Findings)
+	}
+}
+
+// TestConfigInit_GoFixture_NoBackEdge_GatePasses is the mirror of
+// TestConfigInit_GoFixture_LayerRuleBackEdge: the same two-layer shape, but
+// the dependency runs the allowed direction (outer imports inner). The
+// generated forbidden_layer_direction rule must not fire.
+func TestConfigInit_GoFixture_NoBackEdge_GatePasses(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, "go.mod", "module example.com/gofixtureok\n\ngo 1.21\n")
+	writeFixtureFile(t, root, "internal/model/model.go", `// Package model is the innermost layer; it has no dependency on engine.
+package model
+
+// Describe is model's public surface.
+func Describe() string { return "model" }
+`)
+	writeFixtureFile(t, root, "internal/engine/engine.go", `// Package engine is the outermost layer. It imports model — outer
+// depending on inner is the allowed direction, not a back-edge.
+package engine
+
+import "example.com/gofixtureok/internal/model"
+
+// Run reaches into the model layer.
+func Run() string { return model.Describe() }
+`)
+
+	discovered, err := initcfg.Discover(context.Background(), root, toolrun.New())
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(discovered.Layers) < 2 {
+		t.Fatalf("fixture must discover >=2 layers, got %v", discovered.Layers)
+	}
+	rendered := initcfg.Render(discovered, nil, false)
+
+	diag := runRenderedAnalyze(t, root, rendered)
+	if diag.Verdict != diagnostic.VerdictPass {
+		t.Errorf("verdict = %q, want %q (no back-edge): %+v", diag.Verdict, diagnostic.VerdictPass, diag.Findings)
+	}
+	for _, f := range diag.Findings {
+		if strings.HasPrefix(f.RuleID, "no-") {
+			t.Errorf("unexpected layer-rule finding with no back-edge: %+v", f)
+		}
+	}
+}
+
+// writeFixtureFile writes content to root/relPath, creating parent dirs.
+func writeFixtureFile(t *testing.T, root, relPath, content string) {
+	t.Helper()
+	full := filepath.Join(root, relPath)
+	if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(full), err)
+	}
+	if err := os.WriteFile(full, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", full, err)
 	}
 }

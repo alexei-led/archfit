@@ -371,7 +371,7 @@ func TestRender_ContainsRequiredSections(t *testing.T) {
 		{"engine module", layerEngine + ":"},
 		{"model module", layerModel + ":"},
 		{"rules section", "rules:"},
-		{"forbidden_dependency type", "type: forbidden_dependency"},
+		{"forbidden_layer_direction type", "type: forbidden_layer_direction"},
 		{"gate warn", "gate: warn"},
 	}
 	for _, c := range checks {
@@ -415,27 +415,23 @@ func TestRender_LayeredRules_FromEdges(t *testing.T) {
 		t.Fatalf("expected both layers in output:\n%s", out)
 	}
 
-	// Must contain at least one forbidden_dependency rule with from_layer/to_layer.
-	if !strings.Contains(out, "type: forbidden_dependency") {
-		t.Errorf("no forbidden_dependency rule in output:\n%s", out)
+	// Must contain at least one forbidden_layer_direction rule. from_layer/to_layer
+	// are not emitted — forbiddenLayerDirection.Check derives layer ordering from
+	// cfg.Layers and endpoint layers from the module map, never from a per-rule
+	// from_layer/to_layer (see internal/rules/rules_dependency.go).
+	if !strings.Contains(out, "type: forbidden_layer_direction") {
+		t.Errorf("no forbidden_layer_direction rule in output:\n%s", out)
 	}
-	if !strings.Contains(out, "from_layer:") {
-		t.Errorf("no from_layer in rules (expected layer-aware rule):\n%s", out)
-	}
-	if !strings.Contains(out, "to_layer:") {
-		t.Errorf("no to_layer in rules (expected layer-aware rule):\n%s", out)
+	if strings.Contains(out, "from_layer:") || strings.Contains(out, "to_layer:") {
+		t.Errorf("from_layer/to_layer should not be emitted (checker never reads them):\n%s", out)
 	}
 	if !strings.Contains(out, "gate: warn") {
 		t.Errorf("gate: warn missing in output:\n%s", out)
 	}
 
-	// The rule must flag the back-edge direction: model→core inversion means
-	// from_layer: model, to_layer: core.
-	if !strings.Contains(out, "from_layer: "+layerModel) {
+	// The rule ID must name the back-edge direction: model→core inversion.
+	if !strings.Contains(out, "id: no-"+layerModel+"-imports-"+layerCore) {
 		t.Errorf("expected rule flagging %s importing %s:\n%s", layerModel, layerCore, out)
-	}
-	if !strings.Contains(out, "to_layer: "+layerCore) {
-		t.Errorf("expected rule flagging imports into %s:\n%s", layerCore, out)
 	}
 }
 
@@ -471,11 +467,13 @@ func TestRender_LayeredRules_RoundTripsConfigLoad(t *testing.T) {
 		t.Error("no rules after round-trip")
 	}
 	for _, r := range loaded.Rules {
-		if r.Type != "forbidden_dependency" {
+		if r.Type != "forbidden_layer_direction" {
 			t.Errorf("unexpected rule type %q", r.Type)
 		}
-		if r.FromLayer == "" || r.ToLayer == "" {
-			t.Errorf("rule %q missing from_layer/to_layer", r.ID)
+		// from_layer/to_layer are deliberately not emitted (see Render): the checker
+		// derives layer ordering from cfg.Layers and the module map, not per-rule.
+		if r.FromLayer != "" || r.ToLayer != "" {
+			t.Errorf("rule %q should not have from_layer/to_layer set: %+v", r.ID, r)
 		}
 	}
 }
@@ -493,8 +491,8 @@ func TestRender_NoEdges_FallbackComment(t *testing.T) {
 	if !strings.Contains(out, "only metrics") {
 		t.Errorf("expected fallback comment about no gates when no edges:\n%s", out)
 	}
-	if !strings.Contains(out, "type: forbidden_dependency") {
-		t.Errorf("expected generic forbidden_dependency rule:\n%s", out)
+	if !strings.Contains(out, "type: forbidden_layer_direction") {
+		t.Errorf("expected generic forbidden_layer_direction rule:\n%s", out)
 	}
 }
 

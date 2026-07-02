@@ -34,11 +34,11 @@ Three verified defects make archfit's out-of-box experience wrong, which matters
 
 ### Task 2: Fix config init rule generation (V4)
 
-- [ ] `initcfg.go:352-370`: emit `type: forbidden_layer_direction`; drop the vestigial `from_layer:`/`to_layer:` keys (the checker derives layers from the module map)
-- [ ] fix the `no-forbidden-deps` placeholder branch the same way; keep `gate: warn` as the shipped default, and keep the promote-to-fail TODO comment — it is now honest
-- [ ] flip the TODO(wave2) fixture assertion: generated config on the Go fixture now fails the gate when promoted to `fail`, passes when the back-edge is removed
-- [ ] add a migration note: existing users with generated-vacuous rules get a `doctor` check (extend `doctor` to flag `forbidden_dependency` rules that have neither `from:` nor `to:` — they are dead by construction)
-- [ ] run `make test && make lint && make archfit`; commit
+- [x] `initcfg.go:352-370`: emit `type: forbidden_layer_direction`; drop the vestigial `from_layer:`/`to_layer:` keys (the checker derives layers from the module map)
+- [x] fix the `no-forbidden-deps` placeholder branch the same way; keep `gate: warn` as the shipped default, and keep the promote-to-fail TODO comment — it is now honest
+- [x] flip the TODO(wave2) fixture assertion: generated config on the Go fixture now fails the gate when promoted to `fail`, passes when the back-edge is removed
+- [x] add a migration note: existing users with generated-vacuous rules get a `doctor` check (extend `doctor` to flag `forbidden_dependency` rules that have neither `from:` nor `to:` — they are dead by construction)
+- [x] run `make test && make lint && make archfit`; commit
 
 ### Task 3: public_api_only consults the module map (V5)
 

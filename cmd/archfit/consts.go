@@ -30,6 +30,11 @@ const (
 	volatilityHigh   = "high"
 )
 
+// Rule type strings referenced outside internal/rules (doctor's dead-rule check).
+const (
+	ruleTypeForbiddenDependency = "forbidden_dependency"
+)
+
 // Optional-analyzer tool names shared by doctor and the coverage-gap table.
 const (
 	toolLoc           = "loc"             // always-on LOC walk; used in test assertions
