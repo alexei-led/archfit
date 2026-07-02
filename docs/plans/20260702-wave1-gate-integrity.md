@@ -40,11 +40,11 @@ After this wave: a metric regression in the correct direction gates, the documen
 
 ### Task 2: Per-metric delta direction (V1)
 
-- [ ] add an explicit direction to metric results: each metric declares `HigherIsBetter` (encapsulation, coverage) or `HigherIsWorse` (cycle, unbalanced_edge, blast_radius — check blast_radius mode in `internal/metrics/modularity/blast_radius.go` before assuming) in its result (`internal/metrics/internal/result/result.go`)
-- [ ] rewrite the delta clause in `computeVerdict` (`engine.go:452-467`) to use the direction; regression = worsening move only
-- [ ] flip the TODO(wave1) assertions in `TestComputeVerdict` to book-correct expectations; all cases green
-- [ ] regenerate goldens if output changed; inspect diff; commit (single behavior change)
-- [ ] run `make test && make lint && make archfit` — must pass before Task 3
+- [x] add an explicit direction to metric results: each metric declares `HigherIsBetter` (encapsulation, coverage) or `HigherIsWorse` (cycle, unbalanced_edge, blast_radius — check blast_radius mode in `internal/metrics/modularity/blast_radius.go` before assuming) in its result (`internal/metrics/internal/result/result.go`)
+- [x] rewrite the delta clause in `computeVerdict` (`engine.go:452-467`) to use the direction; regression = worsening move only
+- [x] flip the TODO(wave1) assertions in `TestComputeVerdict` to book-correct expectations; all cases green
+- [x] regenerate goldens if output changed; inspect diff; commit (single behavior change) — `TestGolden` output unchanged; `cmd/archfit` byte-identical fixtures (`internal/extract/golang/testdata/{single-module,one-member-workspace}/baseline.json`) gained the 5 new `direction` fields (diff inspected: exactly encapsulation/coverage=`higher_is_better`, unbalanced_edge/cycle/blast_radius=`higher_is_worse`, nothing else)
+- [x] run `make test && make lint && make archfit` — must pass before Task 3 — all green (`make archfit` exits 0, unchanged from before: self-config has no `coupling.gate` block yet)
 
 ### Task 3: Wire metrics.\*.gate / max_new / min_delta (V3)
 

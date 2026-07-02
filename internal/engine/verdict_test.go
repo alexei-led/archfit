@@ -25,12 +25,12 @@ func newTestFinding(status finding.Status) finding.Finding {
 
 // TestComputeVerdict exercises computeVerdict (engine.go) in isolation — it is
 // a pure function over constructed Diagnostic/finding inputs, no fixtures
-// needed. See V1 in reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md: today
-// computeVerdict treats any Delta < 0 as a regression regardless of whether
-// the metric is a ratio (higher is better) or a count (higher is worse). The
-// cycle-metric cases below assert TODAY's inverted behavior (marked
-// TODO(wave1)); Task 2 flips them to the book-correct expectation once
-// direction-aware deltas land.
+// needed. See V1 in reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md: computeVerdict
+// used to treat any Delta < 0 as a regression regardless of whether the metric
+// is a ratio (higher is better) or a count (higher is worse). Task 2 fixed this
+// by having each metric stamp its own Direction on MetricResult; the
+// cycle-metric cases below set Direction explicitly to mirror what the real
+// cycle metric (internal/metrics/boundary/cycle.go) produces.
 func TestComputeVerdict(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -55,41 +55,50 @@ func TestComputeVerdict(t *testing.T) {
 			want:         diagnostic.VerdictPass,
 		},
 		{
-			// TODO(wave1): a new cycle is a count-metric regression (more
-			// cycles is worse) and must WARN/FAIL. computeVerdict only checks
-			// Delta < 0, so a positive count delta is silently ignored today.
-			// Flip `want` to VerdictWarn once Task 2's direction fix lands.
-			name: "new cycle (count metric, Delta=+1) currently silently PASSes (V1 bug)",
+			// A new cycle is a count-metric regression (more cycles is
+			// worse) and must WARN — this was the V1 bug: computeVerdict only
+			// checked Delta < 0, so a positive count delta was silently
+			// ignored.
+			name: "new cycle (count metric, Delta=+1) warns",
 			metrics: []diagnostic.MetricResult{
-				{Name: metricCycle, Delta: new(1.0)},
-			},
-			want: diagnostic.VerdictPass,
-		},
-		{
-			// TODO(wave1): fixing a cycle (fewer cycles, Delta=-1) is an
-			// improvement and must PASS. computeVerdict flags any negative
-			// delta as a regression regardless of metric direction, producing
-			// a false WARN today. Flip `want` to VerdictPass once Task 2's
-			// direction fix lands.
-			name: "fixed cycle (count metric, Delta=-1) currently false-WARNs (V1 bug)",
-			metrics: []diagnostic.MetricResult{
-				{Name: metricCycle, Delta: new(-1.0)},
+				{Name: metricCycle, Delta: new(1.0), Direction: diagnostic.DirectionHigherIsWorse},
 			},
 			want: diagnostic.VerdictWarn,
 		},
 		{
+			// Fixing a cycle (fewer cycles, Delta=-1) is an improvement and
+			// must PASS — this was the V1 bug: computeVerdict flagged any
+			// negative delta as a regression regardless of metric direction,
+			// producing a false WARN.
+			name: "fixed cycle (count metric, Delta=-1) passes",
+			metrics: []diagnostic.MetricResult{
+				{Name: metricCycle, Delta: new(-1.0), Direction: diagnostic.DirectionHigherIsWorse},
+			},
+			want: diagnostic.VerdictPass,
+		},
+		{
 			name: "encapsulation drop (ratio metric, Delta=-0.1) warns",
 			metrics: []diagnostic.MetricResult{
-				{Name: metricEncapsulation, Delta: new(-0.1)},
+				{Name: metricEncapsulation, Delta: new(-0.1), Direction: diagnostic.DirectionHigherIsBetter},
 			},
 			want: diagnostic.VerdictWarn,
 		},
 		{
 			name: "encapsulation rise (ratio metric, Delta=+0.1) passes",
 			metrics: []diagnostic.MetricResult{
-				{Name: metricEncapsulation, Delta: new(0.1)},
+				{Name: metricEncapsulation, Delta: new(0.1), Direction: diagnostic.DirectionHigherIsBetter},
 			},
 			want: diagnostic.VerdictPass,
+		},
+		{
+			// Direction unset (zero value) must still behave as ratio
+			// semantics (regress on negative delta) — the safe default for
+			// any MetricResult that predates or omits Direction.
+			name: "unset Direction defaults to ratio semantics (Delta=-0.1) warns",
+			metrics: []diagnostic.MetricResult{
+				{Name: metricEncapsulation, Delta: new(-0.1)},
+			},
+			want: diagnostic.VerdictWarn,
 		},
 		{
 			name: "unchanged metrics pass",

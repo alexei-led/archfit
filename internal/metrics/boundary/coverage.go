@@ -74,6 +74,7 @@ func (m CoverageMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult
 		Mode:       result.ModeRatio,
 		Definition: "extracted_files / applicable_files",
 		Delta:      delta,
+		Direction:  diagnostic.DirectionHigherIsBetter,
 	}
 }
 

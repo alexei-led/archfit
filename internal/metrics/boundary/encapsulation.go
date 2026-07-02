@@ -185,6 +185,7 @@ func (m EncapsulationMetric) encResult(value float64, confidence string, baselin
 		Mode:       result.ModeRatio,
 		Definition: definition,
 		Delta:      delta,
+		Direction:  diagnostic.DirectionHigherIsBetter,
 	}
 }
 
@@ -203,5 +204,6 @@ func (m EncapsulationMetric) naResult(_ diagnostic.MetricSnapshot) diagnostic.Me
 		Mode:       result.ModeRatio,
 		Definition: "contract / (contract + intrusive) cross-boundary edges (functional, model, unknown excluded)",
 		Delta:      nil,
+		Direction:  diagnostic.DirectionHigherIsBetter,
 	}
 }

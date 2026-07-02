@@ -443,7 +443,9 @@ func resolveEvidence(
 // computeVerdict derives the overall verdict from gate findings, metric results,
 // and active rule-advisory findings (gate: warn).
 //   - Any gate finding with status new or expired_waiver → fail
-//   - Any metric with delta != nil && *delta < 0 → warn (if not already fail)
+//   - Any metric whose delta moves against its Direction → warn (if not already
+//     fail): DirectionHigherIsWorse regresses on *delta > 0, everything else
+//     (including the unset zero value) regresses on *delta < 0 (ratio semantics)
 //   - Any active rule-advisory finding (activeRuleAdvisories > 0) → warn (if not already fail)
 //   - Otherwise → pass
 //
@@ -456,7 +458,14 @@ func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult
 		}
 	}
 	for _, m := range ms {
-		if m.Delta != nil && *m.Delta < 0 {
+		if m.Delta == nil {
+			continue
+		}
+		regressed := *m.Delta < 0
+		if m.Direction == diagnostic.DirectionHigherIsWorse {
+			regressed = *m.Delta > 0
+		}
+		if regressed {
 			return diagnostic.VerdictWarn
 		}
 	}

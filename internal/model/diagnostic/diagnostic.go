@@ -53,18 +53,33 @@ const (
 	VerdictWarn Verdict = "warn"
 )
 
+// Direction records whether a rising metric value is an improvement or a
+// regression. It is a property of the metric's definition, not a user choice
+// (Technical Details, docs/plans/20260702-wave1-gate-integrity.md): the metric
+// that produces a MetricResult stamps its own Direction, and computeVerdict
+// reads it to interpret Delta's sign instead of assuming ratio semantics for
+// every metric.
+type Direction string
+
+// Direction constants.
+const (
+	DirectionHigherIsBetter Direction = "higher_is_better"
+	DirectionHigherIsWorse  Direction = "higher_is_worse"
+)
+
 // MetricResult holds the computed value and metadata for a single metric (spec §10).
 // JSON tags match spec §10 field names exactly.
 type MetricResult struct {
-	Name       string   `json:"name"`
-	Value      float64  `json:"value"`
-	Display    string   `json:"display"`
-	Band       string   `json:"band"`
-	Confidence string   `json:"confidence"`
-	Version    string   `json:"metric_version"`
-	Mode       string   `json:"mode"`
-	Definition string   `json:"definition"`
-	Delta      *float64 `json:"delta,omitempty"`
+	Name       string    `json:"name"`
+	Value      float64   `json:"value"`
+	Display    string    `json:"display"`
+	Band       string    `json:"band"`
+	Confidence string    `json:"confidence"`
+	Version    string    `json:"metric_version"`
+	Mode       string    `json:"mode"`
+	Definition string    `json:"definition"`
+	Delta      *float64  `json:"delta,omitempty"`
+	Direction  Direction `json:"direction,omitempty"`
 }
 
 // MetricSnapshot is the baseline snapshot of metric values keyed by metric name.

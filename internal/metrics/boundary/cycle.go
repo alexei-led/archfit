@@ -72,6 +72,7 @@ func (m CycleMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult {
 		Mode:       result.ModeCount,
 		Definition: "number of import cycles",
 		Delta:      delta,
+		Direction:  diagnostic.DirectionHigherIsWorse,
 	}
 }
 
