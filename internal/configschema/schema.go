@@ -120,6 +120,9 @@ func patchDefinitions(schema *jsonschema.Schema) {
 			if minBand, ok := def.Properties.Get("min_band"); ok && minBand.Type == typeString {
 				minBand.Enum = []any{"poor", "mixed", "serviceable", "strong"}
 			}
+			if maxDrop, ok := def.Properties.Get("max_drop"); ok {
+				maxDrop.Minimum = "0" // validateCouplingGate rejects a negative drop
+			}
 			def.AnyOf = []*jsonschema.Schema{
 				{Required: []string{"min_band"}},
 				{Required: []string{"max_drop"}},

@@ -109,6 +109,7 @@
         },
         "max_drop": {
           "type": "integer",
+          "minimum": 0,
           "description": "MaxDrop is the tolerated point drop of the coupling_balance value against\nthe score stored in .archfit-baseline.json. Unset = no drop check;\n0 = any drop fails. Skipped when the baseline carries no stored score."
         }
       },
