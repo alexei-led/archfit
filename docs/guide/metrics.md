@@ -88,6 +88,18 @@ So a metric cannot claim `strong` on thin evidence. This is why low extraction
 coverage quietly pulls every dependent metric's ceiling down instead of letting
 the tool over-claim.
 
+Two inputs feed `coupling_balance`'s confidence specifically: the scored
+fraction of classified edges, and — for TypeScript — the dependency-cruiser
+unresolved-specifier ratio. A `dependency-cruiser` `partial` status whose
+unresolved-specifier ratio exceeds **10%** (`tsUnresolvedRatioCeiling`,
+`internal/score/score.go`) caps confidence to `medium`: unresolved specifiers
+(missing tsconfig path/baseUrl alias, uninstalled dependency) land in the
+`external` bucket, outside `coupling_balance`'s denominator, so a high-noise
+extraction would otherwise read as confidently measured. The same
+partial-coverage cap already applies to a Rust graph where `cargo-modules`
+failed on some crates. Confidence downgrades (provenance, coverage, per-language
+partial extraction) compose by taking the minimum band — they never stack.
+
 ### Deltas
 
 When a committed baseline exists (`.archfit-baseline.json`, written by `archfit
@@ -201,6 +213,10 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 - **Band:** always `info`. Confidence from the unresolved ratio (≤5% → high,
   ≤20% → medium, else low). Low coverage caps the band of every metric that
   depends on the missing evidence.
+- **`partial` always carries a reason.** A tool-coverage record with
+  `status: partial` names the cause in its `reason` field (e.g. TypeScript's
+  unresolved-specifier count/ratio) and, for TS, `archfit analyze` also emits a
+  matching stderr warning — never a silent partial with no explanation.
 
 ---
 

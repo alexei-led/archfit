@@ -43,6 +43,24 @@ exception: a tripped [`coupling.gate`](configuration-reference.md#couplinggate)
 promotes the active Balanced-Coupling advisories to gate kind, so the edges
 behind the failing score arrive in `agent_tasks[]` with file evidence.
 
+**`files[]` existence guarantee.** Every entry is a repo-relative path that
+exists on disk — this is the field an agent trusts blindly to open the right
+file. Config module keys (Go), dotted module IDs (Python), and `crate::mod`
+keys (Rust) are resolved against the extractors' own file/crate-root facts
+before being emitted; an entry that cannot be resolved is dropped rather than
+emitted as a bare key or ID. If dropping empties the set, `files` falls back to
+the target module's config `paths:` root directory; if even that isn't
+resolvable, `files` is legitimately empty — never a fabricated string
+(`internal/agenttask/agenttask.go`, `filesFor`).
+
+**`edge.path` group semantics.** For a rolled-up finding (`group_count > 1`),
+`edge.from.path`/`edge.to.path` are taken from whichever member edge owns
+`locations[0]` — never an arbitrary hash-ordered representative. Both paths
+are omitted when no member's own location matches `locations[0]`
+(`internal/engine/advisories.go`, `groupEdgePaths`). An agent can rely on
+`edge.from.path`/`edge.to.path`, when present, naming a file that literally
+appears in `locations[]`.
+
 ## SARIF — the CI annotation channel
 
 `--format sarif` emits SARIF 2.1.0 (schema-validated): active gate findings as

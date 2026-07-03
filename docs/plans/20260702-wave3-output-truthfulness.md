@@ -65,8 +65,8 @@ Verified defects:
 
 ### Task 6: [Final] Documentation
 
-- [ ] JSON output reference: document `edge.path` group semantics, `files[]` existence guarantee, confidence inputs (scored fraction + unresolved ratio)
-- [ ] mark the four defects fixed in the findings backlog with commit refs
+- [x] JSON output reference: document `edge.path` group semantics, `files[]` existence guarantee, confidence inputs (scored fraction + unresolved ratio)
+- [x] mark the four defects fixed in the findings backlog with commit refs
 
 ## Technical Details
 
