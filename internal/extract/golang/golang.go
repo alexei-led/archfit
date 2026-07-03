@@ -372,13 +372,12 @@ func (e *GoExtractor) collectNodesEdges(
 }
 
 // buildStrengthHints derives per-(relFile, importedPkgRelPath) BC integration-strength
-// hints from pkg.TypesInfo.Uses, mirroring the SCIP reader's classify_symbol mapping
-// applied to Go:
+// hints from pkg.TypesInfo.Uses:
 //
 //   - *types.TypeName with interface underlying → "contract"  (rank 1, weakest)
 //   - *types.TypeName with concrete type         → "model"     (rank 2)
+//   - *types.Var, *types.Const (pure data read)  → "model"     (rank 2, book Ch7)
 //   - *types.Func (function or method)           → "functional" (rank 3)
-//   - *types.Var, *types.Const, …               → "functional" (rank 3)
 //
 // Go cross-package references are always to exported symbols, so "intrusive"
 // (private-symbol access) never occurs. Each (fromFile, toPkg) pair accumulates
@@ -441,8 +440,7 @@ func buildStrengthHints(
 	return hints
 }
 
-// goObjectStrength maps a go/types Object to its BC integration-strength label,
-// following the same logic as the SCIP reader's classify_symbol for Go symbols.
+// goObjectStrength maps a go/types Object to its BC integration-strength label.
 func goObjectStrength(obj types.Object) string {
 	switch tn := obj.(type) {
 	case *types.TypeName:
@@ -450,10 +448,12 @@ func goObjectStrength(obj types.Object) string {
 			return strengthContract
 		}
 		return strengthModel
-	case *types.Func:
-		return strengthFunctional
+	case *types.Var, *types.Const:
+		// Pure data sharing (book Ch7): reading another module's exported
+		// const/var/field couples on its data model, not its behavior.
+		return strengthModel
 	default:
-		// *types.Var (field/variable), *types.Const → functional.
+		// *types.Func (function or method) and anything unforeseen → functional.
 		return strengthFunctional
 	}
 }

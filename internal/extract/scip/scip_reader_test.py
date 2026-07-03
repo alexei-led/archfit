@@ -27,6 +27,12 @@ RUST_TYPE = "rust-analyzer cargo mycrate 0.1.0 crate/api/Server#"         # modu
 RUST_FN   = "rust-analyzer cargo mycrate 0.1.0 crate/server/run()."        # module: mycrate::server
 RUST_ROOT = "rust-analyzer cargo mycrate 0.1.0 crate/"                     # crate root: mycrate
 RUST_EXT  = "rust-analyzer cargo serde 1.0.0 crate/Serialize#"             # external dep
+RUST_CONST = "rust-analyzer cargo mycrate 0.1.0 crate/config/MAX_RETRIES." # term: const/static
+
+# Term symbols per language for the _classify table (const/var/field reads).
+GO_TERM = "scip-go gomod spotinfo v2.3.1 `spotinfo/internal/spot`/MaxAge."
+PY_TERM = "scip-python python ccgram 0.1.0 `src.ccgram.config`/MAX_SIZE."
+TS_TERM = "scip-typescript npm @colbymchenry/codegraph 0.9.9 src/db/`sqlite-adapter.ts`/pool."
 
 failures = []
 
@@ -76,6 +82,23 @@ check("rust external (workspace)", r._is_internal(RUST_EXT,  {"mycrate", "other"
 # _suffix: descriptor kind drives strength.
 check("suffix type", r._suffix(GO_TYPE), "type")
 check("suffix method", r._suffix(GO_FUNC), "method")
+check("suffix term (const/static/field)", r._suffix(RUST_CONST), "term")
+check("suffix other (namespace)", r._suffix(RUST_ROOT), "other")
+
+# _classify: type → model everywhere; rust terms are const/static/field — pure
+# data sharing (book Ch7) → model. TS/Py terms can bind callables (arrow-function
+# exports, module-level partials) and scip-go never overrides the Go extractor's
+# type-info hints, so non-rust terms stay functional (documented current behavior).
+NO_CONTRACT: set = set()
+check("classify rust const → model", r._classify(RUST_CONST, "rust", NO_CONTRACT), "model")
+check("classify rust fn → functional", r._classify(RUST_FN, "rust", NO_CONTRACT), "functional")
+check("classify rust type → model", r._classify(RUST_TYPE, "rust", NO_CONTRACT), "model")
+check("classify rust namespace → functional", r._classify(RUST_ROOT, "rust", NO_CONTRACT), "functional")
+check("classify go term → functional (unchanged)", r._classify(GO_TERM, "go", NO_CONTRACT), "functional")
+check("classify py term → functional (unchanged)", r._classify(PY_TERM, "python", NO_CONTRACT), "functional")
+check("classify ts term → functional (unchanged)", r._classify(TS_TERM, "typescript", NO_CONTRACT), "functional")
+check("classify private wins", r._classify(PY_PRIV, "python", NO_CONTRACT), "intrusive")
+check("classify contract-set wins", r._classify(RUST_CONST, "rust", {RUST_CONST}), "contract")
 
 if failures:
     print("FAIL:")

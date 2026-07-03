@@ -45,10 +45,34 @@ Task 1 attribution baseline (bc_score.v4 label, pre-Task-2 — classification st
 
 ### Task 2: const/var → Model (book Ch7 pure-data sharing)
 
-- [ ] failing table test in the Go extractor: resolved object kind `const`/`var` (pure data reference) must yield strength hint `model`, not `functional`; func stays `functional`; interface stays `contract`; concrete type stays `model`
-- [ ] fix the kind mapping (`golang.go:444-459`); check whether TS/Py/Rust hint sources have an equivalent misclassification: grimp has no object kinds (Python abstains — assert unchanged), dependency-cruiser heuristics (check `internal/extract/ts/`), rust-analyzer SCIP strength map (check `internal/extract/scip/scip_strength.go` kind table) — fix only where the same pure-data case is provably mapped to functional; otherwise add a documenting test of current behavior per language
-- [ ] regen goldens; run corpus attribution; append the before/after table to this plan
-- [ ] `make test && make lint && make archfit`; commit
+- [x] failing table test in the Go extractor: resolved object kind `const`/`var` (pure data reference) must yield strength hint `model`, not `functional`; func stays `functional`; interface stays `contract`; concrete type stays `model`
+- [x] fix the kind mapping (`golang.go:444-459`); check whether TS/Py/Rust hint sources have an equivalent misclassification: grimp has no object kinds (Python abstains — assert unchanged), dependency-cruiser heuristics (check `internal/extract/ts/`), rust-analyzer SCIP strength map (check `internal/extract/scip/scip_strength.go` kind table) — fix only where the same pure-data case is provably mapped to functional; otherwise add a documenting test of current behavior per language
+- [x] regen goldens; run corpus attribution; append the before/after table to this plan
+- [x] `make test && make lint && make archfit`; commit
+
+Task 2 findings and attribution:
+
+- The SCIP kind table lives in `scip_reader.py` (`_classify`, extracted from the
+  former `classify` closure), not `scip_strength.go`. Fixed for **rust only**:
+  rust-analyzer terms (`X.`) are const/static/field — provably pure data. TS/Py
+  SCIP terms stay `functional` (they can bind callables: arrow-function exports,
+  module-level partials) and scip-go never overrides Go type-info hints —
+  documented in `scip_reader_test.py`. `_suffix` now separates real terms (`X.`)
+  from namespaces/macros so only true data reads move.
+- Python (grimp): abstains, unchanged — pinned by the new
+  `const import → abstained` case in `py_test.go`. TS (dependency-cruiser):
+  const-only module import stays `functional` (object kinds invisible at import
+  granularity) — pinned in `ts_test.go` `TestExtract_EdgeTypes`.
+- No stored goldens exist to regenerate: `TestGolden_DoubleRun` is a determinism
+  gate over the live `testdata/golang` fixture and passes with the new
+  const/var fixture files.
+
+| repo      | score | band  | scored | abstained | external | Δ vs Task 1 baseline                                              |
+| --------- | ----- | ----- | ------ | --------- | -------- | ----------------------------------------------------------------- |
+| archfit   | 40    | poor  | 290    | 0         | 510      | +1 — Go const/var reads → model                                   |
+| ccgram    | 55    | mixed | 497    | 18        | 0        | none — grimp abstains (documented)                                |
+| herdr     | 29    | poor  | 630    | 16        | 21       | +4 — rust-analyzer SCIP terms (const/static/field) → model        |
+| storybook | 48    | mixed | 310    | 0         | 181      | none — depcruise heuristic + TS SCIP terms unchanged (documented) |
 
 ### Task 3: DTO reaches Contract in Go
 

@@ -213,6 +213,10 @@ func TestExtract_StrengthHint(t *testing.T) {
 		{"interface type → contract", "pkg/a/contract_cons.go", pkgB, graph.EdgeKindImports, hintContract},
 		// model_cons.go only returns b.Config{} (concrete TypeName, no field access) → model.
 		{"concrete type → model", "pkg/a/model_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// const_cons.go only reads b.MaxRetries — pure data sharing (book Ch7) → model, not functional.
+		{"const reference → model", "pkg/a/const_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// var_cons.go only reads b.DefaultName — pure data sharing (book Ch7) → model, not functional.
+		{"var reference → model", "pkg/a/var_cons.go", pkgB, graph.EdgeKindImports, hintModel},
 		// max_cons.go uses b.Greeter (contract, rank 1) AND b.Hello() (functional, rank 3) → functional wins.
 		{"max rank wins", "pkg/a/max_cons.go", pkgB, graph.EdgeKindImports, hintFunctional},
 	}

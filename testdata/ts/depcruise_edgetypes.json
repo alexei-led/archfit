@@ -36,6 +36,17 @@
           "dynamic": true,
           "couldNotResolve": false,
           "coreModule": false
+        },
+        {
+          "resolved": "src/consts.ts",
+          "module": "./consts",
+          "dependencyTypes": [
+            "local",
+            "es6"
+          ],
+          "dynamic": false,
+          "couldNotResolve": false,
+          "coreModule": false
         }
       ]
     },
@@ -49,6 +60,10 @@
     },
     {
       "source": "src/lazy.ts",
+      "dependencies": []
+    },
+    {
+      "source": "src/consts.ts",
       "dependencies": []
     }
   ]
