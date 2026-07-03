@@ -88,6 +88,7 @@ const (
 	distanceOrdinalUnknown              = 2
 	distanceOrdinalCrossModuleDiffOwner = 3
 	distanceOrdinalCrossDeployUnit      = 5
+	distanceOrdinalExternal             = 6 // declared external system: farthest rung (legacy calibration scorers only)
 )
 
 const (
@@ -124,6 +125,7 @@ var distanceOrdinal = map[Distance]int{
 	DistanceUnknown:              distanceOrdinalUnknown,
 	DistanceCrossModuleDiffOwner: distanceOrdinalCrossModuleDiffOwner,
 	DistanceCrossDeployUnit:      distanceOrdinalCrossDeployUnit,
+	DistanceExternal:             distanceOrdinalExternal,
 }
 
 // volatilityDiscount maps Volatility to a discount subtracted from the raw score

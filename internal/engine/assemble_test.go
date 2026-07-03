@@ -341,6 +341,60 @@ func TestBuildClassifiedEdgeSummary(t *testing.T) {
 	})
 }
 
+// TestBuildClassifiedEdgeSummary_DeclaredExternal pins the D=10 rung's summary
+// arithmetic: declared external edges enter the scored distribution and count
+// in DeclaredExternal, while the undeclared remainder keeps the External exclusion.
+func TestBuildClassifiedEdgeSummary_DeclaredExternal(t *testing.T) {
+	key := func(from, to, kind string) string { return from + "\x00" + to + "\x00" + kind }
+	// 1 internal scored edge, 1 declared-external scored edge (D=10),
+	// 1 declared-external abstained edge (unknown strength — abstain-not-fake
+	// holds at the new rung), 1 undeclared external (excluded as before).
+	idx := coupling.Index{
+		key("internal/a", "internal/b", "import"): {
+			Distance: coupling.DistanceCrossModuleSameOwner,
+			Strength: coupling.StrengthContract,
+			Score:    coupling.EdgeScore{Scored: true, Balance: 9, Band: coupling.SeverityNone},
+		},
+		key("internal/a", "github.com/aws/aws-sdk-go-v2/service/s3", "import"): {
+			Distance: coupling.DistanceExternal,
+			Strength: coupling.StrengthFunctional,
+			Score:    coupling.EdgeScore{Scored: true, Balance: 8, Band: coupling.SeverityLow},
+		},
+		key("internal/a", "github.com/aws/aws-sdk-go-v2/service/sqs", "import"): {
+			Distance: coupling.DistanceExternal,
+			Strength: coupling.StrengthUnknown,
+			Score:    coupling.EdgeScore{Scored: false},
+		},
+		key("internal/a", "fmt", "import"): {
+			Distance: coupling.DistanceUnknown,
+			Strength: coupling.StrengthFunctional,
+			Score:    coupling.EdgeScore{Scored: false},
+		},
+	}
+
+	s := buildClassifiedEdgeSummary(idx)
+
+	if s.DeclaredExternal != 2 {
+		t.Errorf("DeclaredExternal = %d, want 2", s.DeclaredExternal)
+	}
+	if s.External != 1 {
+		t.Errorf("External = %d, want 1 (undeclared only)", s.External)
+	}
+	// Declared external edges enter the Scored/Abstained distribution.
+	if s.Scored != 2 {
+		t.Errorf("Scored = %d, want 2 (internal + declared external)", s.Scored)
+	}
+	if s.Abstained != 1 {
+		t.Errorf("Abstained = %d, want 1 (declared external with unknown strength)", s.Abstained)
+	}
+	if wantMean := (9.0 + 8.0) / 2.0; s.MeanBalance != wantMean {
+		t.Errorf("MeanBalance = %v, want %v", s.MeanBalance, wantMean)
+	}
+	if s.ByDistance[string(coupling.DistanceExternal)] != 2 {
+		t.Errorf("ByDistance[declared_external] = %d, want 2", s.ByDistance[string(coupling.DistanceExternal)])
+	}
+}
+
 // TestGroupEdgePaths pins the honest-edge-path contract for rolled-up BC
 // advisories: the (from, to) pair comes from whichever member owns the first
 // merged location; with no locations (TS edges carry none) or no owning

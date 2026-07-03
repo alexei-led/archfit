@@ -142,6 +142,7 @@ func (c Config) ForClassify() ClassifyConfig {
 		BCAdvisoryMinSeverity:    c.Coupling.MinSeverity,
 		ExplicitOwners:           c.explicitOwners,
 		VolatilityCascadeEnabled: c.Coupling.VolatilityCascade,
+		ExternalSystems:          c.ExternalSystems,
 	}
 }
 

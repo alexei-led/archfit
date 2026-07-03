@@ -124,6 +124,10 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			fmt.Sprintf("critical-band edges: %d (%d distributed-monolith: critical at high distance)",
 				criticalCount, dmCount),
 		}
+		if summary.DeclaredExternal > 0 {
+			dim.Evidence = append(dim.Evidence,
+				fmt.Sprintf("%d declared external-system edges scored at D=10 (external_systems)", summary.DeclaredExternal))
+		}
 		if summary.External > 0 {
 			dim.Evidence = append(dim.Evidence,
 				fmt.Sprintf("%d external/library edges excluded (external deps are not internal coupling seams)", summary.External))

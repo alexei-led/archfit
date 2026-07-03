@@ -21,6 +21,7 @@ ai              — off-gate LLM provider for enrich/explain/analyze --llm
 coupling        — Balanced-Coupling advisory tuning + coupling_balance gate
 layers          — ordered architecture layers, inner to outer
 modules         — path ownership map
+external_systems — declared external integration seams scored at D=10
 rules           — executable architecture constraints
 waivers         — approved temporary deviations from rules
 metrics         — metric policy settings
@@ -652,6 +653,51 @@ auditable.
 > **Small-OSS note:** a repo with one maintainer is not a flat distance space.
 > Code structure is the baseline and still distinguishes close vs far modules.
 > Ownership only contributes when there are genuinely distinct owners to compare.
+
+## `external_systems`
+
+Declares external integration seams that enter `coupling_balance` scoring at the
+distance ladder's far end — `declared_external`, D=10.
+
+```yaml
+external_systems:
+  aws:
+    targets: ["github.com/aws/aws-sdk-go-v2/**"]
+    # volatility defaults to low
+  payment-gateway:
+    targets: ["node_modules/@stripe/**", "stripe"]
+    volatility: medium
+```
+
+**Why declared, not automatic.** The book's Ch10 Example 1 — a cross-vendor
+integration — sits at the maximum distance: different codebase, different
+company, no shared governance. But scoring **every** library import at D=10
+would flood the metric with vendor noise (`fmt`, `lodash`, `serde`, …).
+An external system is a _declared integration seam_: a vendor SDK, a payment
+gateway client, a generated API stub — a dependency the architect chose to
+treat as an architectural boundary worth measuring. Everything undeclared keeps
+today's disclosed exclusion: counted in `classified_edges.external`, never
+scored, never fabricated.
+
+Field reference:
+
+- `targets` (required, ≥1) — globs matched against the classified edge target,
+  in the form the language extractor emits: a Go import path
+  (`github.com/aws/aws-sdk-go-v2/**`), a TypeScript resolved package path
+  (`node_modules/@aws-sdk/**`) or unresolved bare specifier, a Python dotted
+  module (`boto3.**`), or a Rust crate name (`aws_sdk_s3`). The match is
+  language-independent.
+- `volatility` (optional) — `high | medium | low | frozen`. Defaults to `low`,
+  per the book's generic-subdomain guidance: an external vendor system is a
+  generic capability, presumed stable unless you declare otherwise. Declare
+  `high` for an API that churns under you — combined with D=10, strong coupling
+  to it scores toward the critical band (the vendor-lock distributed monolith).
+
+Matched edges carry `distance_basis: declared_external` on their advisories and
+count in `classified_edges.declared_external`; strength still comes from the
+usual sources, and an edge with unknown strength still abstains (abstain rules
+are unchanged). When nothing is declared, behavior is identical to previous
+versions.
 
 ## `rules`
 

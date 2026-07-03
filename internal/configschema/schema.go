@@ -111,6 +111,19 @@ func patchDefinitions(schema *jsonschema.Schema) {
 				*gate = *gateModeSchema
 			}
 		}
+		if name == "ExternalSystemDef" {
+			// Mirror validateExternalSystem (internal/config): at least one
+			// targets glob (an empty entry declares nothing) and a real
+			// volatility level when one is set.
+			if targets, ok := def.Properties.Get("targets"); ok {
+				one := uint64(1)
+				targets.MinItems = &one
+			}
+			if vol, ok := def.Properties.Get("volatility"); ok && vol.Type == typeString {
+				vol.Enum = []any{"high", "medium", "low", "frozen"}
+			}
+			def.Required = []string{"targets"}
+		}
 		if name == "CouplingGateDef" {
 			// Mirror validateCouplingGate (internal/config): min_band is one of
 			// the four band floors (critical rejected — could never trip), and

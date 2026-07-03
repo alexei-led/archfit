@@ -304,6 +304,13 @@ type ClassifiedEdgeSummary struct {
 	// sets for all languages (Go stdlib/3p, Rust dependency crates, TS node_modules,
 	// Python external imports). Zero means no external edges were detected.
 	External int `json:"external,omitempty"`
+	// DeclaredExternal is the count of edges whose target matched a config-declared
+	// `external_systems:` entry (Distance == declared_external, D=10 — book Ch10
+	// Example 1). Unlike External, these edges ENTER the Scored/Abstained
+	// distribution: the architect declared the seam, so it is measured. The count
+	// keeps the disclosed-exclusion arithmetic honest — External covers only the
+	// UNDECLARED remainder.
+	DeclaredExternal int `json:"declared_external,omitempty"`
 	// LLMApproved is the count of approved cross-boundary labels whose provenance
 	// is "llm" and confidence is not "high". These lower the coupling_balance
 	// dimension confidence by one band — they are human-approved but not human-judged.

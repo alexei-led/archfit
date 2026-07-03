@@ -863,6 +863,58 @@ func loadInline(t *testing.T, body string) error {
 	return err
 }
 
+func TestLoad_ExternalSystems(t *testing.T) {
+	t.Run("valid entry decodes and projects into ClassifyConfig", func(t *testing.T) {
+		p := filepath.Join(t.TempDir(), ".archfit.yaml")
+		body := "version: 1\nexternal_systems:\n  aws:\n    targets: [\"github.com/aws/aws-sdk-go-v2/**\"]\n    volatility: medium\n  payment-gateway:\n    targets: [\"node_modules/@stripe/**\", \"stripe\"]\n"
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := config.Load(context.Background(), p)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		aws := cfg.ExternalSystems["aws"]
+		if len(aws.Targets) != 1 || aws.Volatility != "medium" {
+			t.Errorf("aws = %+v, want 1 target + medium volatility", aws)
+		}
+		if pg := cfg.ExternalSystems["payment-gateway"]; len(pg.Targets) != 2 || pg.Volatility != "" {
+			t.Errorf("payment-gateway = %+v, want 2 targets + unset volatility (defaults to low in classify)", pg)
+		}
+		if got := cfg.ForClassify().ExternalSystems; len(got) != 2 {
+			t.Errorf("ForClassify().ExternalSystems len = %d, want 2", len(got))
+		}
+	})
+
+	t.Run("entry without targets is rejected", func(t *testing.T) {
+		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    volatility: low\n")
+		if err == nil || !strings.Contains(err.Error(), "external_systems.aws requires at least one targets glob") {
+			t.Errorf("got %v, want 'requires at least one targets glob' error", err)
+		}
+	})
+
+	t.Run("invalid volatility is rejected", func(t *testing.T) {
+		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    targets: [\"github.com/aws/**\"]\n    volatility: sometimes\n")
+		if err == nil || !strings.Contains(err.Error(), `external_systems.aws.volatility "sometimes"`) {
+			t.Errorf("got %v, want volatility enum error", err)
+		}
+	})
+
+	t.Run("empty target glob is rejected", func(t *testing.T) {
+		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    targets: [\"\"]\n")
+		if err == nil || !strings.Contains(err.Error(), "external_systems.aws.targets[0] must not be empty") {
+			t.Errorf("got %v, want empty-target error", err)
+		}
+	})
+
+	t.Run("malformed glob is rejected", func(t *testing.T) {
+		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    targets: [\"github.com/[aws/**\"]\n")
+		if err == nil || !strings.Contains(err.Error(), "is not a valid glob pattern") {
+			t.Errorf("got %v, want invalid-glob error", err)
+		}
+	})
+}
+
 func TestLoad_UnknownMetricKey_IsError(t *testing.T) {
 	err := loadInline(t, "version: 1\nmetrics:\n  bogus:\n    enabled: true\n")
 	if err == nil || !strings.Contains(err.Error(), "metrics.bogus is not a known metric") {

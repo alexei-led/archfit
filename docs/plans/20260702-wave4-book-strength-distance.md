@@ -116,12 +116,46 @@ Task 3 findings and attribution:
 
 ### Task 4: D=10 rung for declared external systems
 
-- [ ] design decision (documented in the code and guide): scoring EVERY library import at D=10 would flood the metric with vendor noise — the book's Example 1 is a _declared integration seam_. Add config `external_systems:` — named entries with target globs (e.g. a vendor SDK package, a generated client) and optional `volatility:` (default low, per book's generic-subdomain guidance)
-- [ ] edges matching a declared external system get `DistanceExternal = 10` (new frozen named constant) and ENTER scoring; undeclared external edges keep today's disclosed exclusion (`classified_edges.external`) — the deviation shrinks to the undeclared case and is documented as such
-- [ ] failing tests: declared external edge scored at D=10 with the book formula; undeclared unchanged; BandNA logic unaffected when nothing is declared
-- [ ] four-language check: the match happens on the classified edge target (language-independent); add one fixture edge per language exercising the glob match (Go import path, TS package specifier, Python dotted target, Rust crate name)
-- [ ] docs: `configuration-reference.md` new section with the Ch10 Example 1 rationale
-- [ ] regen goldens; corpus attribution (expect no movement — nobody has `external_systems:` declared yet); `make test && make lint && make archfit`; commit
+- [x] design decision (documented in the code and guide): scoring EVERY library import at D=10 would flood the metric with vendor noise — the book's Example 1 is a _declared integration seam_. Add config `external_systems:` — named entries with target globs (e.g. a vendor SDK package, a generated client) and optional `volatility:` (default low, per book's generic-subdomain guidance)
+- [x] edges matching a declared external system get `DistanceExternal = 10` (new frozen named constant) and ENTER scoring; undeclared external edges keep today's disclosed exclusion (`classified_edges.external`) — the deviation shrinks to the undeclared case and is documented as such
+- [x] failing tests: declared external edge scored at D=10 with the book formula; undeclared unchanged; BandNA logic unaffected when nothing is declared
+- [x] four-language check: the match happens on the classified edge target (language-independent); add one fixture edge per language exercising the glob match (Go import path, TS package specifier, Python dotted target, Rust crate name)
+- [x] docs: `configuration-reference.md` new section with the Ch10 Example 1 rationale
+- [x] regen goldens; corpus attribution (expect no movement — nobody has `external_systems:` declared yet); `make test && make lint && make archfit`; commit
+
+Task 4 findings and attribution:
+
+- Design shipped: top-level `external_systems:` map — named entries with
+  `targets:` globs matched against the classified edge target
+  (language-independent: Go import path, TS resolved package path or bare
+  specifier, Python dotted module, Rust crate name) and optional `volatility:`
+  (default low, book generic-subdomain guidance; validated enum
+  high|medium|low|frozen, ≥1 valid target glob required). The match runs only
+  when the target resolves to NO module (module resolution always wins) and
+  upgrades DistanceUnknown to the new frozen book ordinal
+  `bookDistanceExternal = 10` (`Distance = "declared_external"`,
+  `distance_basis: declared_external`). Undeclared external edges keep the
+  disclosed exclusion; unknown strength still abstains (pinned in tests).
+- `classified_edges` gains `declared_external` (edges that ENTERED scoring);
+  `external` now counts only the undeclared remainder; couplingBalance evidence
+  discloses the declared count. `DistanceIsHigh` includes the new rung
+  (critical at D=10 = vendor-lock distributed monolith). encapsulation and
+  unbalanced_edge (frozen v2) deliberately exclude declared-external edges;
+  legacy calibration scorers get `distanceOrdinalExternal = 6`. JSON schema
+  regenerated (`make schema`) with minItems/enum mirroring validate().
+- Four-language fixture edges pinned in `classify/external_systems_test.go`;
+  book-formula values pinned in `TestBookScorer_DeclaredExternal`
+  (contract/low → 10 none — the book's Example 1 shape; functional/low → 8;
+  intrusive/high → 1 critical vendor lock).
+- No stored goldens to regenerate (same as Tasks 2–3); engine goldens pass
+  unchanged — no corpus repo declares `external_systems:`.
+
+| repo      | score | band  | scored | abstained | external | Δ vs Task 3                                                                                                                                                      |
+| --------- | ----- | ----- | ------ | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| archfit   | 40    | poor  | 292    | 0         | 513      | +2 scored (model) / +2 external — archfit's own new source files (external_systems.go + tests), verified by stash A/B (HEAD = 290/511); no classification change |
+| ccgram    | 55    | mixed | 497    | 18        | 0        | none — nothing declared                                                                                                                                          |
+| herdr     | 29    | poor  | 630    | 16        | 21       | none — nothing declared                                                                                                                                          |
+| storybook | 48    | mixed | 310    | 0         | 181      | none — nothing declared                                                                                                                                          |
 
 ### Task 5: Corpus verification & re-baseline
 

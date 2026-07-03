@@ -29,20 +29,23 @@ import (
 //   - module_review  — staleness gating of the module declarations
 //   - file_class / outputs — classification overrides and output formats
 type Config struct {
-	Version      int                  `yaml:"version" jsonschema:"required"`
-	Exclude      []string             `yaml:"exclude"`
-	Languages    LanguagesConfig      `yaml:"languages"`
-	Analyzers    AnalyzersConfig      `yaml:"analyzers"`
-	AI           AIConfig             `yaml:"ai"`
-	Coupling     CouplingConfig       `yaml:"coupling"`
-	Layers       []string             `yaml:"layers"`
-	Modules      map[string]ModuleDef `yaml:"modules"`
-	Rules        []RuleDef            `yaml:"rules"`
-	Waivers      []WaiverDef          `yaml:"waivers"`
-	Metrics      MetricsConfig        `yaml:"metrics"`
-	ModuleReview ModuleReviewConfig   `yaml:"module_review"`
-	FileClass    FileClassDef         `yaml:"file_class"`
-	Outputs      OutputsConfig        `yaml:"outputs"`
+	Version   int                  `yaml:"version" jsonschema:"required"`
+	Exclude   []string             `yaml:"exclude"`
+	Languages LanguagesConfig      `yaml:"languages"`
+	Analyzers AnalyzersConfig      `yaml:"analyzers"`
+	AI        AIConfig             `yaml:"ai"`
+	Coupling  CouplingConfig       `yaml:"coupling"`
+	Layers    []string             `yaml:"layers"`
+	Modules   map[string]ModuleDef `yaml:"modules"`
+	// ExternalSystems declares external integration seams (book Ch10 Example 1)
+	// whose edges enter coupling_balance scoring at declared_external (D=10).
+	ExternalSystems map[string]ExternalSystemDef `yaml:"external_systems,omitempty"`
+	Rules           []RuleDef                    `yaml:"rules"`
+	Waivers         []WaiverDef                  `yaml:"waivers"`
+	Metrics         MetricsConfig                `yaml:"metrics"`
+	ModuleReview    ModuleReviewConfig           `yaml:"module_review"`
+	FileClass       FileClassDef                 `yaml:"file_class"`
+	Outputs         OutputsConfig                `yaml:"outputs"`
 
 	// explicitOwners records which modules had a hand-authored `owner:` in YAML,
 	// populated by Load before any resolver fill. Distinguishes a user's explicit
@@ -118,8 +121,15 @@ func (c Config) WithExplicitOwners(modules ...string) Config {
 	return c
 }
 
+// Level literals shared by bcSeverities, externalVolatilities, and Default().
+const (
+	levelLow    = "low"
+	levelMedium = "medium"
+	levelHigh   = "high"
+)
+
 // bcSeverities are the accepted coupling.min_severity values (low→critical).
-var bcSeverities = map[string]struct{}{"low": {}, "medium": {}, "high": {}, "critical": {}}
+var bcSeverities = map[string]struct{}{levelLow: {}, levelMedium: {}, levelHigh: {}, "critical": {}}
 
 // gateValues are the accepted gate policy markers (spec §rules: off | warn | fail),
 // shared by rule, metric, and module_review gates. Empty means "use the default".
@@ -193,6 +203,11 @@ func validate(cfg Config) error {
 			}
 		}
 	}
+	for _, name := range sortedKeys(cfg.ExternalSystems) {
+		if err := validateExternalSystem(name, cfg.ExternalSystems[name]); err != nil {
+			return err
+		}
+	}
 	for i, r := range cfg.Rules {
 		id := r.ID
 		if id == "" {
@@ -261,6 +276,33 @@ func validateCouplingGate(g *CouplingGateDef) error {
 	}
 	if g.MaxDrop != nil && *g.MaxDrop < 0 {
 		return fmt.Errorf("coupling.gate.max_drop must be >= 0 (a tolerated score drop, got %d)", *g.MaxDrop)
+	}
+	return nil
+}
+
+// externalVolatilities are the accepted external_systems.<name>.volatility
+// values. Empty (unset) defaults to low — the book's generic-subdomain guidance.
+var externalVolatilities = map[string]struct{}{levelHigh: {}, levelMedium: {}, levelLow: {}, "frozen": {}}
+
+// validateExternalSystem checks one external_systems.<name> entry: at least one
+// target glob (an entry that matches nothing declares nothing), valid glob
+// syntax, and a real volatility level when one is set.
+func validateExternalSystem(name string, def ExternalSystemDef) error {
+	if len(def.Targets) == 0 {
+		return fmt.Errorf("external_systems.%s requires at least one targets glob — an empty entry declares nothing", name)
+	}
+	for i, pat := range def.Targets {
+		if pat == "" {
+			return fmt.Errorf("external_systems.%s.targets[%d] must not be empty", name, i)
+		}
+		if !doublestar.ValidatePattern(pat) {
+			return fmt.Errorf("external_systems.%s.targets[%d] %q is not a valid glob pattern", name, i, pat)
+		}
+	}
+	if v := def.Volatility; v != "" {
+		if _, ok := externalVolatilities[v]; !ok {
+			return fmt.Errorf("external_systems.%s.volatility %q is not one of: high, medium, low, frozen", name, v)
+		}
 	}
 	return nil
 }
@@ -354,7 +396,7 @@ func sortedMetricKeys(m MetricsConfig) []string {
 func Default() Config {
 	return Config{
 		Version:  1,
-		Coupling: CouplingConfig{MinSeverity: "medium"},
+		Coupling: CouplingConfig{MinSeverity: levelMedium},
 		Languages: LanguagesConfig{
 			Go:         GoLanguage{Enabled: ModeAuto},
 			TypeScript: TypeScriptLanguage{Enabled: ModeAuto},
@@ -426,7 +468,7 @@ func (c Config) FillMissingDeployUnits(resolved map[string]string) {
 }
 
 // sortedKeys returns a sorted slice of keys from a map[string]ModuleDef.
-func sortedKeys(m map[string]ModuleDef) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

@@ -23,11 +23,14 @@ const (
 )
 
 // Distance ordinals (Ch8): lower = closer/safer.
+// bookDistanceExternal is the ladder's far end (book Ch10 Example 1,
+// cross-vendor integration) — reserved for config-declared external systems.
 const (
 	bookDistanceSameModule           = 2
 	bookDistanceCrossModuleSameOwner = 4
 	bookDistanceCrossModuleDiffOwner = 7
 	bookDistanceCrossDeployUnit      = 9
+	bookDistanceExternal             = 10
 )
 
 // Volatility ordinals (Ch9): lower = more stable = safer.
@@ -57,6 +60,7 @@ var bookDistanceOrdinal = map[Distance]int{
 	DistanceCrossModuleSameOwner: bookDistanceCrossModuleSameOwner,
 	DistanceCrossModuleDiffOwner: bookDistanceCrossModuleDiffOwner,
 	DistanceCrossDeployUnit:      bookDistanceCrossDeployUnit,
+	DistanceExternal:             bookDistanceExternal,
 }
 
 // bookVolatilityFrozen is V=1 for frozen/legacy systems (most stable).
@@ -186,6 +190,8 @@ func bookLowerStrength(s Strength) (Strength, bool) {
 // discard any "reduce_distance" suggestion for that step.
 func bookLowerDistance(d Distance) (Distance, bool) {
 	switch d {
+	case DistanceExternal:
+		return DistanceCrossDeployUnit, true // bring the seam in-house
 	case DistanceCrossDeployUnit:
 		return DistanceCrossModuleDiffOwner, true
 	case DistanceCrossModuleDiffOwner:

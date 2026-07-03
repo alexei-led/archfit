@@ -187,6 +187,10 @@ var distanceLevelOrdinal = map[coupling.Distance]int{
 	coupling.DistanceUnknown:              2,
 	coupling.DistanceCrossModuleDiffOwner: 3,
 	coupling.DistanceCrossDeployUnit:      5,
+	// DistanceExternal is assigned after the composite (declared external_systems
+	// match on an unknown-distance edge), so it never enters maxDistance today;
+	// ranked highest so a future combination cannot silently demote it.
+	coupling.DistanceExternal: 6,
 }
 
 // maxDistance returns the highest-ordinal Distance among the given values.

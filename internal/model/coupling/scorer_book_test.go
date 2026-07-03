@@ -225,6 +225,67 @@ func TestBookScorer_Abstain(t *testing.T) {
 	}
 }
 
+// TestBookScorer_DeclaredExternal verifies the D=10 rung (book Ch10 Example 1,
+// cross-vendor integration): a declared external system scores with the book
+// formula at the distance ladder's far end instead of abstaining.
+func TestBookScorer_DeclaredExternal(t *testing.T) {
+	s := BookScorer{}
+	tests := []struct {
+		name        string
+		c           Classification
+		wantBalance int
+		wantBand    Severity
+	}{
+		// Book Example 1 shape: contract to a stable vendor system.
+		// S=1, D=10, V=3: |1-10|=9, 10-3=7, max(9,7)+1=10 → none.
+		{
+			name:        "contract to stable vendor: contract/declared_external/low",
+			c:           Classification{Strength: StrengthContract, Distance: DistanceExternal, Volatility: VolatilityLow},
+			wantBalance: 10,
+			wantBand:    SeverityNone,
+		},
+		// Functional call into a stable vendor SDK.
+		// S=8, D=10, V=3: |8-10|=2, 10-3=7, max(2,7)+1=8 → low.
+		{
+			name:        "functional to stable vendor: functional/declared_external/low",
+			c:           Classification{Strength: StrengthFunctional, Distance: DistanceExternal, Volatility: VolatilityLow},
+			wantBalance: 8,
+			wantBand:    SeverityLow,
+		},
+		// Vendor lock: intrusive coupling to a volatile external system.
+		// S=10, D=10, V=10: |10-10|=0, 10-10=0, max(0,0)+1=1 → critical.
+		{
+			name:        "vendor lock: intrusive/declared_external/high",
+			c:           Classification{Strength: StrengthIntrusive, Distance: DistanceExternal, Volatility: VolatilityHigh},
+			wantBalance: 1,
+			wantBand:    SeverityCritical,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := s.Score(tt.c)
+			if !got.Scored {
+				t.Fatalf("expected Scored=true for declared external, got abstain")
+			}
+			if got.Breakdown.DistanceVal != 10 {
+				t.Errorf("Breakdown.DistanceVal = %d, want 10", got.Breakdown.DistanceVal)
+			}
+			if got.Balance != tt.wantBalance {
+				t.Errorf("Balance = %d, want %d", got.Balance, tt.wantBalance)
+			}
+			if got.Band != tt.wantBand {
+				t.Errorf("Band = %q, want %q", got.Band, tt.wantBand)
+			}
+		})
+	}
+
+	// Unknown strength still abstains at declared-external distance —
+	// abstain-not-fake is unchanged by the new rung.
+	if got := s.Score(Classification{Strength: StrengthUnknown, Distance: DistanceExternal, Volatility: VolatilityLow}); got.Scored {
+		t.Errorf("unknown strength at declared_external must abstain, got balance=%d", got.Balance)
+	}
+}
+
 // TestBookScorer_VolatilityConservative checks that undeclared and unknown
 // volatility both score conservatively (treated as V=10, worst case).
 func TestBookScorer_VolatilityConservative(t *testing.T) {
@@ -253,7 +314,7 @@ func TestBookScorer_VolatilityConservative(t *testing.T) {
 func TestBookScorer_BalanceRange(t *testing.T) {
 	s := BookScorer{}
 	strengths := []Strength{StrengthContract, StrengthModel, StrengthFunctional, StrengthSymmetric, StrengthIntrusive}
-	distances := []Distance{DistanceSameModule, DistanceCrossModuleSameOwner, DistanceCrossModuleDiffOwner, DistanceCrossDeployUnit}
+	distances := []Distance{DistanceSameModule, DistanceCrossModuleSameOwner, DistanceCrossModuleDiffOwner, DistanceCrossDeployUnit, DistanceExternal}
 	vols := []Volatility{VolatilityFrozen, VolatilityLow, VolatilityMedium, VolatilityHigh, VolatilityUndeclared, VolatilityUnknown}
 
 	for _, str := range strengths {

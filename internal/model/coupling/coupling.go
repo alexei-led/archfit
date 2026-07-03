@@ -24,11 +24,18 @@ const (
 type Distance string
 
 // Distance constants (spec §18).
+// DistanceExternal is a config-declared external integration seam
+// (`external_systems:`) — book Ch10 Example 1, cross-vendor integration, the
+// far end of the distance ladder (D=10). Only DECLARED external targets get
+// it; undeclared external edges stay DistanceUnknown and are excluded from
+// coupling_balance (scoring every library import at D=10 would flood the
+// metric with vendor noise).
 const (
 	DistanceSameModule           Distance = "same_module"
 	DistanceCrossModuleSameOwner Distance = "cross_module_same_owner"
 	DistanceCrossModuleDiffOwner Distance = "cross_module_different_owner"
 	DistanceCrossDeployUnit      Distance = "cross_deploy_unit"
+	DistanceExternal             Distance = "declared_external"
 	DistanceUnknown              Distance = "unknown"
 )
 
@@ -84,10 +91,11 @@ type DistanceBasis string
 // DistanceBasis signal constants. DistanceBasisUnknown (empty string) is used for
 // same_module and unknown-distance edges and omits from JSON output via omitempty.
 const (
-	DistanceBasisUnknown    DistanceBasis = ""               // same_module or unknown distance
-	DistanceBasisStructure  DistanceBasis = "code_structure" // structural tree-distance fallback
-	DistanceBasisOwnership  DistanceBasis = "ownership"      // explicit or multi-owner signal
-	DistanceBasisDeployUnit DistanceBasis = "deploy_unit"    // differing deploy units (absolute)
+	DistanceBasisUnknown    DistanceBasis = ""                  // same_module or unknown distance
+	DistanceBasisStructure  DistanceBasis = "code_structure"    // structural tree-distance fallback
+	DistanceBasisOwnership  DistanceBasis = "ownership"         // explicit or multi-owner signal
+	DistanceBasisDeployUnit DistanceBasis = "deploy_unit"       // differing deploy units (absolute)
+	DistanceBasisExternal   DistanceBasis = "declared_external" // target matched an external_systems entry
 )
 
 // Connascence is the degree of connascence detected on a cross-module edge.
@@ -154,10 +162,11 @@ const (
 )
 
 // DistanceIsHigh returns true for distances that represent a large socio-technical
-// gap — a different owner or a separate deployment unit. These are the only
-// distances at which tight coupling is a genuine "distributed monolith"; coupling
-// at cross_module_same_owner (a single owner/binary) is local, and its cascade is
+// gap — a different owner, a separate deployment unit, or a declared external
+// system (a different vendor entirely). These are the only distances at which
+// tight coupling is a genuine "distributed monolith"; coupling at
+// cross_module_same_owner (a single owner/binary) is local, and its cascade is
 // cheap, so it must not be framed as distributed-monolith risk.
 func DistanceIsHigh(d Distance) bool {
-	return d == DistanceCrossModuleDiffOwner || d == DistanceCrossDeployUnit
+	return d == DistanceCrossModuleDiffOwner || d == DistanceCrossDeployUnit || d == DistanceExternal
 }

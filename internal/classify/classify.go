@@ -22,6 +22,16 @@ const (
 	subdomainGeneric    = "generic"
 )
 
+// volatility level literals accepted in config (`volatility:` on modules and
+// external_systems entries; "legacy" is a module-only alias for frozen).
+const (
+	volatilityHigh   = "high"
+	volatilityMedium = "medium"
+	volatilityLow    = "low"
+	volatilityFrozen = "frozen"
+	volatilityLegacy = "legacy"
+)
+
 // Run classifies every edge in g and returns a coupling.Index keyed by the
 // edge canonical key (from + "\x00" + to + "\x00" + kind).
 //
@@ -60,9 +70,10 @@ func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 	degenerateOwners := isDegenerateOwnerMap(fullOwnerMap)
 
 	effectiveVol := computeEffectiveVolatility(g, mm, c.Modules, c.VolatilityCascadeEnabled, c.CrossModuleClonePairs)
+	extSystems := buildExternalSystemIndex(c.ExternalSystems)
 
 	for _, e := range g.Edges() {
-		cl := classify(e, mm, c, degenerateExplicit, degenerateOwners, effectiveVol)
+		cl := classify(e, mm, c, degenerateExplicit, degenerateOwners, effectiveVol, extSystems)
 		// Score cross-boundary edges that are not distance-unknown.
 		// Same-module and unknown-distance edges are not scored (zero EdgeScore).
 		// Severity is derived from cl.Score.Band so the book formula and the
@@ -371,7 +382,7 @@ func matchesAnyGlob(path string, globs []string) bool {
 // ExplicitnessHint on the edge overrides the config-glob-derived explicitness
 // when non-empty ("explicit" or "implicit"). Severity is set in Run after the
 // book score is computed (cl.Score.Band → cl.Severity).
-func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility) coupling.Classification {
+func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility, extSystems externalSystemIndex) coupling.Classification {
 	modules := c.Modules
 	fromPath := pathFromID(e.From)
 	toPath := pathFromID(e.To)
@@ -438,21 +449,8 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 		}
 	}
 
-	// --- Distance ---
-	dist, distBasis := classifyDistance(fromPath, toPath, e.Language, mi, modules, c.ExplicitOwners, degenerateExplicit, degenerateOwners)
-	// Role-aware downgrade: a composition root (or a generated/test module) reaches
-	// into the modules it wires by design — that fan-out is cohesion, not high-
-	// distance coupling — so its outbound edges must never be scored as unbalanced.
-	// Cap the source's outbound distance below the high-distance threshold; this
-	// single point flows to the continuous Score (and hence Severity) and every
-	// distance-reading metric (unbalanced_edge, encapsulation, …).
-	// The basis stays as-is: it reflects what drove the original signal, not the cap.
-	if fromMod, ok := mi.moduleFor(fromPath); ok && cohesiveRole(modules[fromMod].Role) {
-		dist = capDistanceForRole(dist)
-	}
-
-	// --- Volatility ---
-	vol := classifyVolatilityEffective(toPath, mi, modules, effectiveVol)
+	// --- Distance & volatility ---
+	dist, distBasis, vol := resolveDistanceVolatility(fromPath, toPath, e.Language, mi, c, degenerateExplicit, degenerateOwners, effectiveVol, extSystems)
 
 	// --- Explicitness ---
 	// ExplicitnessHint from the extractor (AST signal) takes precedence over the
@@ -498,6 +496,39 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 	}
 
 	return cl
+}
+
+// resolveDistanceVolatility computes the composite distance (with the role cap
+// and the declared-external upgrade) and the effective volatility for an edge.
+//
+// Role-aware downgrade: a composition root (or a generated/test module) reaches
+// into the modules it wires by design — that fan-out is cohesion, not high-
+// distance coupling — so its outbound edges must never be scored as unbalanced.
+// Cap the source's outbound distance below the high-distance threshold; this
+// single point flows to the continuous Score (and hence Severity) and every
+// distance-reading metric (unbalanced_edge, encapsulation, …).
+// The basis stays as-is: it reflects what drove the original signal, not the cap.
+//
+// Declared external system (`external_systems:`), book Ch10 Example 1: a
+// declared cross-vendor integration seam sits at the distance ladder's far end
+// and ENTERS scoring, carrying the declared volatility (default low). Only a
+// DECLARED external target gets D=10; an undeclared external edge keeps the
+// disclosed exclusion (DistanceUnknown → classified_edges.external) — scoring
+// every library import at D=10 would flood the metric with vendor noise. The
+// match runs after the role cap deliberately: a composition root's edge to an
+// external vendor system is a real integration seam, not its own cohesive wiring.
+func resolveDistanceVolatility(fromPath, toPath, lang string, mi moduleIndex, c config.ClassifyConfig, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility, extSystems externalSystemIndex) (coupling.Distance, coupling.DistanceBasis, coupling.Volatility) {
+	modules := c.Modules
+	dist, distBasis := classifyDistance(fromPath, toPath, lang, mi, modules, c.ExplicitOwners, degenerateExplicit, degenerateOwners)
+	if fromMod, ok := mi.moduleFor(fromPath); ok && cohesiveRole(modules[fromMod].Role) {
+		dist = capDistanceForRole(dist)
+	}
+	if dist == coupling.DistanceUnknown {
+		if v, ok := extSystems.match(toPath); ok {
+			return coupling.DistanceExternal, coupling.DistanceBasisExternal, v
+		}
+	}
+	return dist, distBasis, classifyVolatilityEffective(toPath, mi, modules, effectiveVol)
 }
 
 // classifyConnascence derives the connascence degree for a cross-module edge.
@@ -681,13 +712,13 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 	// Priority 1: explicit Volatility field.
 	// Accepted values: high, medium, low, frozen, legacy.
 	switch strings.ToLower(def.Volatility) {
-	case "high":
+	case volatilityHigh:
 		return coupling.VolatilityHigh
-	case "medium":
+	case volatilityMedium:
 		return coupling.VolatilityMedium
-	case "low":
+	case volatilityLow:
 		return coupling.VolatilityLow
-	case "frozen", "legacy":
+	case volatilityFrozen, volatilityLegacy:
 		return coupling.VolatilityFrozen
 	}
 
@@ -785,13 +816,13 @@ func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, modules map[stri
 // module is already resolved; we want the config-declared level only).
 func volatilityFromDef(def config.ModuleDef) coupling.Volatility {
 	switch strings.ToLower(def.Volatility) {
-	case "high":
+	case volatilityHigh:
 		return coupling.VolatilityHigh
-	case "medium":
+	case volatilityMedium:
 		return coupling.VolatilityMedium
-	case "low":
+	case volatilityLow:
 		return coupling.VolatilityLow
-	case "frozen", "legacy":
+	case volatilityFrozen, volatilityLegacy:
 		return coupling.VolatilityFrozen
 	}
 	switch strings.ToLower(def.Subdomain) {

@@ -27,7 +27,7 @@ func distanceRank(d coupling.Distance) int {
 		return 2
 	case coupling.DistanceCrossDeployUnit:
 		return 3
-	default: // DistanceUnknown
+	default: // DistanceUnknown, DistanceExternal (declared seams stay out of this frozen v2 metric)
 		return -1
 	}
 }
