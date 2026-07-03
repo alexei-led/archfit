@@ -33,9 +33,9 @@ Verified defects:
 
 ### Task 2: Grouped finding edge.path honesty
 
-- [ ] failing test: build a grouped finding (group_count > 1) whose representative edge file differs from `locations[0]`; assert emitted `edge.*.path` ∈ `locations[]`
-- [ ] fix: for grouped findings set `edge.from.path`/`edge.to.path` from the first location on each side (or omit the field for groups if sides are heterogeneous — prefer omission over a wrong value; document the choice in the JSON schema doc)
-- [ ] regen goldens; commit
+- [x] failing test: build a grouped finding (group_count > 1) whose representative edge file differs from `locations[0]`; assert emitted `edge.*.path` ∈ `locations[]`
+- [x] fix: for grouped findings set `edge.from.path`/`edge.to.path` from the first location on each side (or omit the field for groups if sides are heterogeneous — prefer omission over a wrong value; document the choice in the JSON schema doc)
+- [x] regen goldens; commit
 
 ### Task 3: agent_tasks files[] must exist on disk
 

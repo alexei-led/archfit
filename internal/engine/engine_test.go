@@ -937,6 +937,91 @@ func TestRun_Advisory_GroupedRollups(t *testing.T) {
 	}
 }
 
+// TestRun_Advisory_GroupedRollup_EdgePathHonesty asserts that a rolled-up BC
+// advisory's edge.from.path/edge.to.path name a real underlying member edge
+// that is also present in the rollup's own locations[] — never an arbitrary
+// hash-ID-ordered representative that can point at a completely different
+// file than locations[0] (Task 2, wave3-output-truthfulness).
+func TestRun_Advisory_GroupedRollup_EdgePathHonesty(t *testing.T) {
+	ctx := context.Background()
+	const edges = 5
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return bcFloodFacts(edges), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef, Advisory: true},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Waivers:     config.WaiverSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Signals:     signal.RunSignals{},
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var rollup finding.Finding
+	found := false
+	for _, f := range d.Findings {
+		if f.RuleID == ruleIDBCImbalanced {
+			rollup = f
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("no grouped BC advisory found")
+	}
+	if got := rollup.MatchedBy["group_count"]; got != strconv.Itoa(edges) {
+		t.Fatalf("group_count=%q, want %d", got, edges)
+	}
+	if len(rollup.Locations) == 0 {
+		t.Fatalf("rollup has no locations")
+	}
+
+	// bcFloodFacts wires pkg/a/aN.go -> pkg/b/internal/implN.go; locations are
+	// sorted by (File, Line), so "pkg/a/a0.go" sorts first among a0..a4.
+	wantFrom := "pkg/a/a0.go"
+	wantTo := "pkg/b/internal/impl0.go"
+	if rollup.Locations[0].File != wantFrom {
+		t.Fatalf("test setup: locations[0].File=%q, want %q", rollup.Locations[0].File, wantFrom)
+	}
+	if rollup.Edge.From.Path != wantFrom {
+		t.Errorf("edge.from.path=%q, want %q (locations[0].File)", rollup.Edge.From.Path, wantFrom)
+	}
+	if rollup.Edge.To.Path != wantTo {
+		t.Errorf("edge.to.path=%q, want %q (the real target of edge.from.path, not an unrelated member)", rollup.Edge.To.Path, wantTo)
+	}
+	foundInLocs := false
+	for _, l := range rollup.Locations {
+		if l.File == rollup.Edge.From.Path {
+			foundInLocs = true
+			break
+		}
+	}
+	if !foundInLocs {
+		t.Errorf("edge.from.path=%q not present in locations[] %v", rollup.Edge.From.Path, rollup.Locations)
+	}
+}
+
 // TestRun_Advisory_VerdictUnchanged asserts that advisory findings do NOT change
 // a fail verdict: a gate violation still fails even when advisories are present.
 func TestRun_Advisory_VerdictUnchanged(t *testing.T) {

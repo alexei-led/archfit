@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -193,7 +194,28 @@ func rollupFinding(members []finding.Finding) finding.Finding {
 
 	rep.MatchedBy = matched
 	rep.Locations = mergeLocations(members)
+	rep.Edge.From.Path, rep.Edge.To.Path = groupEdgePaths(members, rep.Locations)
 	return rep
+}
+
+// groupEdgePaths returns honest edge.from.path/edge.to.path for a rolled-up
+// finding: the (from, to) pair belonging to whichever member owns the first
+// (sorted) merged location, so edge.from.path always names a file literally
+// present in locations[] — never an arbitrary hash-ID-ordered representative
+// that can point at a different member's file than locations[0] does. Both
+// paths are omitted ("") when no member's own location matches (locations
+// empty) rather than emit a value with no evidence behind it.
+func groupEdgePaths(members []finding.Finding, locs []graph.Location) (fromPath, toPath string) {
+	if len(locs) == 0 {
+		return "", ""
+	}
+	first := locs[0]
+	for _, m := range members {
+		if slices.Contains(m.Locations, first) {
+			return m.Edge.From.Path, m.Edge.To.Path
+		}
+	}
+	return "", ""
 }
 
 // withCloneLocations appends cloneLocations onto base — the edge's baseline
