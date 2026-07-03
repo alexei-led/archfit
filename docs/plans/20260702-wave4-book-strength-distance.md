@@ -159,10 +159,30 @@ Task 4 findings and attribution:
 
 ### Task 5: Corpus verification & re-baseline
 
-- [ ] full four-repo attribution table complete (Tasks 2–4 rows); sanity-check every movement is explained by the change that caused it — unexplained movement blocks the PR
-- [ ] re-run `make archfit` on self: if the self-score moved bands, update `.archfit-baseline.json` deliberately IN ITS OWN COMMIT (re-baseline gotcha: verify no phantom deltas — Wave 1's n/a-aware tests should hold)
-- [ ] run the herdr/yazi Rust checks: scores move only per Task 2/3 attribution; `encapsulation` stays n/a (correct-by-design for Rust privacy)
-- [ ] `make all`; PR(s)
+- [x] full four-repo attribution table complete (Tasks 2–4 rows); sanity-check every movement is explained by the change that caused it — unexplained movement blocks the PR
+- [x] re-run `make archfit` on self: if the self-score moved bands, update `.archfit-baseline.json` deliberately IN ITS OWN COMMIT (re-baseline gotcha: verify no phantom deltas — Wave 1's n/a-aware tests should hold)
+- [x] run the herdr/yazi Rust checks: scores move only per Task 2/3 attribution; `encapsulation` stays n/a (correct-by-design for Rust privacy)
+- [x] `make all`; PR(s)
+
+Task 5 verification results (2026-07-04, HEAD after Task 4):
+
+- Fresh `make corpus-attrib` re-run reproduces the Task 4 table byte-identical
+  (archfit 40/poor/292/0/513, ccgram 55/mixed/497/18/0, herdr 29/poor/630/16/21,
+  storybook 48/mixed/310/0/181). Full movement chain vs the Task 1 baseline is
+  attributed: archfit 39→40 (Task 2 const/var→model) + 17 model→contract edges
+  (Task 3 DTO, below score granularity) + 290→292/511→513 (Task 4's own new
+  source files, stash-verified); herdr 25→29 (Task 2 rust-analyzer SCIP terms
+  only); ccgram and storybook flat with documented per-language abstentions.
+  No unexplained movement.
+- Self dogfood: coupling_balance 40/poor — band unchanged (pre-wave 39/poor),
+  `make archfit` PASS exit 0, no phantom metric deltas → the conditional
+  re-baseline is NOT triggered; `.archfit-baseline.json` untouched.
+- Rust checks: herdr 29/poor (Task 2 movement only, nothing from Tasks 3–4);
+  yazi 60/mixed low-conf — raw mean 7.0/10 → 67, capped to 60, 66 scored /
+  144 abstained, byte-identical to the v1.1.2 eval baseline (no movement).
+  `encapsulation` reports `n/a` on both (correct-by-design for Rust privacy).
+- `make all` green. PR #25 (branch `fix/wave1-gate-integrity`, open) carries
+  Waves 1–4; this commit is pushed onto it — no separate Wave-4 PR.
 
 ### Task 6: [Final] Documentation
 
