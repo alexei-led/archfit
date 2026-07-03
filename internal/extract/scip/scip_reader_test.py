@@ -100,6 +100,18 @@ check("classify ts term → functional (unchanged)", r._classify(TS_TERM, "types
 check("classify private wins", r._classify(PY_PRIV, "python", NO_CONTRACT), "intrusive")
 check("classify contract-set wins", r._classify(RUST_CONST, "rust", {RUST_CONST}), "contract")
 
+# DTO abstention (Wave 4 Task 3): the Go extractor upgrades a pure-data struct
+# to the "dto" hint using method sets + field visibility from go/types type
+# info. A SCIP index has NEITHER — a type symbol string cannot reveal whether
+# the type has methods or unexported fields — so type symbols stay "model" in
+# every language and the reader never fabricates a dto/contract upgrade
+# (Wave 7 LLM labels are the designed path). scip-go additionally never
+# overrides the Go extractor's type-info hints (see engine enrichEdges).
+check("classify go type → model (never dto: method sets invisible)", r._classify(GO_TYPE, "go", NO_CONTRACT), "model")
+check("classify ts type → model (never dto: field visibility invisible)", r._classify(TS_TYPE, "typescript", NO_CONTRACT), "model")
+check("classify py type → model (never dto)", r._classify(PY_MOD, "python", NO_CONTRACT), "model")
+check("no dto label in SCIP RANK table", "dto" in r.RANK, False)
+
 if failures:
     print("FAIL:")
     for f in failures:

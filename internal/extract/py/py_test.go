@@ -127,7 +127,8 @@ func TestExtract_SymbolLevelStrength(t *testing.T) {
 		`{"importer":"pub","imported":"other","line":2,"line_contents":"from other import thing"},` +
 		`{"importer":"pub","imported":"multi","line":3,"line_contents":"from multi import a, _b, c"},` +
 		`{"importer":"pub","imported":"alias","line":4,"line_contents":"from alias import _hidden as h"},` +
-		`{"importer":"pub","imported":"consts","line":5,"line_contents":"from consts import MAX_SIZE"}` +
+		`{"importer":"pub","imported":"consts","line":5,"line_contents":"from consts import MAX_SIZE"},` +
+		`{"importer":"pub","imported":"dtos","line":6,"line_contents":"from dtos import UserDTO"}` +
 		`],"unresolved":0}`
 
 	mock := &toolrun.RunnerMock{
@@ -170,6 +171,11 @@ func TestExtract_SymbolLevelStrength(t *testing.T) {
 		// Python abstains rather than fabricating a strength (Wave 7 LLM labels are
 		// the designed refinement path).
 		{"const import → abstained (no object kinds)", edgeKey{modPub, "module:consts"}, ""},
+		// Same blindness for DTOs: Go upgrades a pure-data struct to the "dto"
+		// hint (method set + field visibility from type info), but a Python class
+		// import carries no shape at grimp granularity — abstain, never a
+		// fabricated contract upgrade (Wave 7 LLM labels are the designed path).
+		{"DTO-shaped class import → abstained (class shape invisible)", edgeKey{modPub, "module:dtos"}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

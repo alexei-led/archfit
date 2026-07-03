@@ -281,6 +281,14 @@ func TestExtract_EdgeTypes(t *testing.T) {
 		{"value import → functional", "file:src/b/index.ts", string(coupling.StrengthFunctional)},
 		{"dynamic import → functional", "file:src/lazy.ts", string(coupling.StrengthFunctional)},
 		{"const-only module import → functional (object kinds invisible)", "file:src/consts.ts", string(coupling.StrengthFunctional)},
+		// DTO abstention (Wave 4 Task 3): Go upgrades a pure-data struct to the
+		// "dto" hint using method sets + field visibility from type info;
+		// dependency-cruiser sees module imports, not type shapes, so a
+		// value-import of a DTO-only module stays the coarse functional — no
+		// fabricated contract upgrade. (`import type` of a DTO already maps to
+		// contract via the type-only rule above; Wave 7 LLM labels are the
+		// designed refinement path for the value-import case.)
+		{"DTO-only module value import → functional (type shape invisible)", "file:src/dto.ts", string(coupling.StrengthFunctional)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

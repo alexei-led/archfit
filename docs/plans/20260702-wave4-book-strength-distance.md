@@ -76,11 +76,43 @@ Task 2 findings and attribution:
 
 ### Task 3: DTO reaches Contract in Go
 
-- [ ] definition (keep strict, statically decidable): an exported struct with only data fields and an empty method set, referenced across a config-declared `public:` glob boundary, upgrades the public-glob floor from not-intrusive to `contract`; anything with methods or unexported fields stays `model`
-- [ ] failing tests: DTO fixture (pure-data struct via public glob → contract) vs domain-entity fixture (struct with methods → model) vs DTO not via public glob (→ model; the boundary declaration is what makes it a contract, matching the book's "explicit integration contract")
-- [ ] implement using type info already loaded (`NeedTypesInfo`); respect the floor-refinement semantics in `classify.go:387-406` (public glob = floor, hint refines; internal glob stays authoritative-intrusive)
-- [ ] language checks: TS/Py/Rust have no equivalent static signal — document per-language abstention in tests (no fabricated contract upgrades); note that Wave 7's LLM labels are the designed path for those languages
-- [ ] regen goldens; corpus attribution table; `make test && make lint && make archfit`; commit
+- [x] definition (keep strict, statically decidable): an exported struct with only data fields and an empty method set, referenced across a config-declared `public:` glob boundary, upgrades the public-glob floor from not-intrusive to `contract`; anything with methods or unexported fields stays `model`
+- [x] failing tests: DTO fixture (pure-data struct via public glob → contract) vs domain-entity fixture (struct with methods → model) vs DTO not via public glob (→ model; the boundary declaration is what makes it a contract, matching the book's "explicit integration contract")
+- [x] implement using type info already loaded (`NeedTypesInfo`); respect the floor-refinement semantics in `classify.go:387-406` (public glob = floor, hint refines; internal glob stays authoritative-intrusive)
+- [x] language checks: TS/Py/Rust have no equivalent static signal — document per-language abstention in tests (no fabricated contract upgrades); note that Wave 7's LLM labels are the designed path for those languages
+- [x] regen goldens; corpus attribution table; `make test && make lint && make archfit`; commit
+
+Task 3 findings and attribution:
+
+- Definition shipped (strict, statically decidable): exported struct, ≥1 field,
+  every field exported, no func-/chan-typed fields (behavior carriers), EMPTY
+  method set via `typeutil.MethodSetCache` over the pointer type (value +
+  pointer receivers, promoted methods from embedding included). Zero-field
+  marker structs (`struct{}` sentinels) are NOT DTOs — they carry no data model.
+- The extractor emits a context-dependent hint `dto` (`graph.StrengthHintDTO`,
+  rank 2: between contract and model). classify resolves it: public-glob floor
+  stands at `contract`; no glob → `model` (strengthFromHint); internal glob
+  stays authoritative intrusive. A DTO's FIELDS carry the same hint (package-
+  wide pre-pass registry in `buildStrengthHints` — a field `*types.Var` has no
+  owner pointer in go/types), otherwise composite-literal keys (`UserDTO{ID:…}`)
+  and selector reads would outrank the type reference to model and the upgrade
+  would never fire on real consumers.
+- Per-language abstention documented in tests: grimp has no object kinds
+  (`py_test.go` DTO-shaped class import → abstained), dependency-cruiser has no
+  type shapes (`ts_test.go` DTO-only module value import → functional;
+  `import type` already maps to contract via type-only), SCIP indexes carry no
+  method-set/field-visibility info (`scip_reader_test.py`: type symbols → model
+  in every language, no `dto` in RANK; scip-go never overrides Go hints).
+- No stored goldens to regenerate (same as Task 2): engine goldens pass
+  unchanged; `TestGolden_DoubleRun` passes over the extended `testdata/golang`
+  fixture (new DTO/entity/partial/callback consumer files).
+
+| repo      | score | band  | scored | abstained | external | Δ vs Task 2                                                                                                                                                                                                                                                                                |
+| --------- | ----- | ----- | ------ | --------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| archfit   | 40    | poor  | 290    | 0         | 511      | by_strength moved 17 edges model→contract (contract 8→25, model 155→138) — DTO upgrades across self-config public globs; aggregate below score granularity. external +1 is the extractor's own new `x/tools/go/types/typeutil` import (verified by stash A/B), not a classification change |
+| ccgram    | 55    | mixed | 497    | 18        | 0        | none — grimp abstains (documented)                                                                                                                                                                                                                                                         |
+| herdr     | 29    | poor  | 630    | 16        | 21       | none — SCIP carries no method-set/field info, no dto fabrication (documented)                                                                                                                                                                                                              |
+| storybook | 48    | mixed | 310    | 0         | 181      | none — depcruise type shapes invisible (documented)                                                                                                                                                                                                                                        |
 
 ### Task 4: D=10 rung for declared external systems
 

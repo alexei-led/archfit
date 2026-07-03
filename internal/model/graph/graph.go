@@ -76,6 +76,15 @@ type Edge struct {
 	StrengthHint string `json:"strength_hint,omitempty"`
 }
 
+// StrengthHintDTO marks a reference to a pure-data struct: exported, at least
+// one field, only exported data fields, empty method set (Go type-info is the
+// only source today). Unlike the other hint values it is not a
+// coupling.Strength — it is context-dependent: across a config-declared public
+// boundary the edge is the book's canonical integration Contract (the
+// public-glob floor stands); without a declared boundary it is just a shared
+// concrete type (model).
+const StrengthHintDTO = "dto"
+
 // canonicalKey uniquely identifies an edge regardless of source.
 type canonicalKey struct {
 	From string

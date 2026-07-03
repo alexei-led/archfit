@@ -18,6 +18,7 @@ const (
 	hintContract   = "contract"
 	hintModel      = "model"
 	hintFunctional = "functional"
+	hintDTO        = "dto"
 
 	pkgB = "pkg/b" // repo-relative path of the test helper package
 
@@ -217,8 +218,20 @@ func TestExtract_StrengthHint(t *testing.T) {
 		{"const reference → model", "pkg/a/const_cons.go", pkgB, graph.EdgeKindImports, hintModel},
 		// var_cons.go only reads b.DefaultName — pure data sharing (book Ch7) → model, not functional.
 		{"var reference → model", "pkg/a/var_cons.go", pkgB, graph.EdgeKindImports, hintModel},
-		// max_cons.go uses b.Greeter (contract, rank 1) AND b.Hello() (functional, rank 3) → functional wins.
+		// max_cons.go uses b.Greeter (contract, rank 1) AND b.Hello() (functional, rank 4) → functional wins.
 		{"max rank wins", "pkg/a/max_cons.go", pkgB, graph.EdgeKindImports, hintFunctional},
+		// dto_cons.go only references b.UserDTO — exported struct, only exported
+		// data fields, empty method set → dto (the book's canonical Contract when
+		// the edge crosses a declared public boundary; classify resolves which).
+		{"pure-data struct → dto", "pkg/a/dto_cons.go", pkgB, graph.EdgeKindImports, hintDTO},
+		// entity_cons.go references b.Entity — a struct WITH a method → model.
+		{"struct with method → model", "pkg/a/entity_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// partial_cons.go references b.Partial — unexported field → model.
+		{"struct with unexported field → model", "pkg/a/partial_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// callback_cons.go references b.CallbackHolder — func-typed field → model.
+		{"struct with func field → model", "pkg/a/callback_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// dto_rank_cons.go uses b.Greeter (contract, rank 1) AND b.UserDTO (dto, rank 2) → dto wins.
+		{"dto outranks contract", "pkg/a/dto_rank_cons.go", pkgB, graph.EdgeKindImports, hintDTO},
 	}
 
 	for _, tc := range cases {

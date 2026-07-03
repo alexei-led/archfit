@@ -721,6 +721,11 @@ func TestRun_PublicGlobFloorRefinement(t *testing.T) {
 		"a": {Paths: []string{globPkgA}},
 		"b": {Paths: []string{globPkgB}, Internal: []string{globPkgB}},
 	}
+	// No public/internal globs: classifyStrength is unknown, the hint decides.
+	noGlobB := map[string]config.ModuleDef{
+		"a": {Paths: []string{globPkgA}},
+		"b": {Paths: []string{globPkgB}},
+	}
 	cases := []struct {
 		name    string
 		modules map[string]config.ModuleDef
@@ -733,6 +738,14 @@ func TestRun_PublicGlobFloorRefinement(t *testing.T) {
 		{"public + no hint → contract floor", publicB, "", coupling.StrengthContract},
 		{"public + intrusive hint → contract (floor not lowered)", publicB, hintIntrusive, coupling.StrengthContract},
 		{"internal glob → intrusive (authoritative)", internalB, hintFunctional, coupling.StrengthIntrusive},
+		// A pure-data DTO across a declared public boundary IS the book's explicit
+		// integration contract — the floor stands, the hint must not raise it.
+		{"public + dto hint → contract (DTO is the boundary contract)", publicB, graph.StrengthHintDTO, coupling.StrengthContract},
+		// Without the boundary declaration the same DTO is just a shared concrete
+		// type: the declaration is what makes it a contract (book Ch10).
+		{"no glob + dto hint → model (no declared boundary)", noGlobB, graph.StrengthHintDTO, coupling.StrengthModel},
+		// An internal glob stays authoritative regardless of the DTO hint.
+		{"internal + dto hint → intrusive (authoritative)", internalB, graph.StrengthHintDTO, coupling.StrengthIntrusive},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

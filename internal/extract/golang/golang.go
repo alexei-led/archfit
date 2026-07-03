@@ -12,6 +12,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/go/types/typeutil"
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -21,11 +22,14 @@ import (
 
 // BC integration-strength labels used for StrengthHint on Go edges.
 // These match the coupling.Strength constants and the SCIP reader's RANK table.
+// strengthDTO is the exception: a hint-only label (graph.StrengthHintDTO) whose
+// coupling kind classify resolves from the public-boundary declaration.
 const (
 	strengthContract   = "contract"
 	strengthModel      = "model"
 	strengthFunctional = "functional"
 	strengthIntrusive  = "intrusive"
+	strengthDTO        = graph.StrengthHintDTO
 )
 
 const (
@@ -34,14 +38,18 @@ const (
 )
 
 // goStrengthRank maps a BC integration-strength label to its coupling rank.
-// contract (rank 1) is the weakest coupling; intrusive (rank 4) is the strongest.
-// Used to pick the STRONGEST hint seen per (fromFile, toPkg) pair, mirroring the
-// SCIP reader's RANK = {"contract":1, "model":2, "functional":3, "intrusive":4}.
+// contract (rank 1) is the weakest coupling; intrusive (rank 5) is the strongest.
+// Used to pick the STRONGEST hint seen per (fromFile, toPkg) pair. The relative
+// order of the shared labels mirrors the SCIP reader's RANK table; dto (which
+// SCIP cannot detect — it needs method sets and field visibility) slots between
+// contract and model: a concrete DTO reference couples tighter than an
+// interface, but a leaked domain object (model) dominates a DTO.
 var goStrengthRank = map[string]int{
 	strengthContract:   1,
-	strengthModel:      2,
-	strengthFunctional: 3,
-	strengthIntrusive:  4,
+	strengthDTO:        2,
+	strengthModel:      3,
+	strengthFunctional: 4,
+	strengthIntrusive:  5,
 }
 
 // GoExtractor is the native Go import extractor using go/packages.
@@ -375,9 +383,10 @@ func (e *GoExtractor) collectNodesEdges(
 // hints from pkg.TypesInfo.Uses:
 //
 //   - *types.TypeName with interface underlying → "contract"  (rank 1, weakest)
-//   - *types.TypeName with concrete type         → "model"     (rank 2)
-//   - *types.Var, *types.Const (pure data read)  → "model"     (rank 2, book Ch7)
-//   - *types.Func (function or method)           → "functional" (rank 3)
+//   - pure-data DTO type or one of its fields    → "dto"       (rank 2)
+//   - *types.TypeName with concrete type         → "model"     (rank 3)
+//   - *types.Var, *types.Const (pure data read)  → "model"     (rank 3, book Ch7)
+//   - *types.Func (function or method)           → "functional" (rank 4)
 //
 // Go cross-package references are always to exported symbols, so "intrusive"
 // (private-symbol access) never occurs. Each (fromFile, toPkg) pair accumulates
@@ -394,6 +403,23 @@ func buildStrengthHints(
 	isExcluded func(string) bool,
 ) map[string]string {
 	hints := make(map[string]string)
+	dtos := newDTOIndex()
+	// Pre-pass: evaluate every cross-package TypeName once so DTO FIELDS are
+	// recognizable in the classification pass. A field *types.Var carries no
+	// owner pointer in go/types, so a composite-literal key (UserDTO{ID: …}) or
+	// a selector (u.ID) can only be tied back to its DTO through this registry.
+	// Uses map iteration order is random and the field may be classified in a
+	// different package than the one naming the type — hence a full pass first.
+	for _, pkg := range pkgs {
+		if pkg.TypesInfo == nil {
+			continue
+		}
+		for _, obj := range pkg.TypesInfo.Uses {
+			if tn, ok := obj.(*types.TypeName); ok && tn.Pkg() != nil && isInModule(tn.Pkg().Path()) {
+				dtos.isDTOType(tn)
+			}
+		}
+	}
 	for _, pkg := range pkgs {
 		if pkg.TypesInfo == nil {
 			continue
@@ -413,7 +439,7 @@ func buildStrengthHints(
 			}
 
 			// Classify the symbol's BC strength per the SCIP reader mapping.
-			strength := goObjectStrength(obj)
+			strength := goObjectStrength(obj, dtos)
 
 			// Locate the file containing this identifier.
 			tf := pkg.Fset.File(ident.Pos())
@@ -441,21 +467,103 @@ func buildStrengthHints(
 }
 
 // goObjectStrength maps a go/types Object to its BC integration-strength label.
-func goObjectStrength(obj types.Object) string {
+func goObjectStrength(obj types.Object, dtos *dtoIndex) string {
 	switch tn := obj.(type) {
 	case *types.TypeName:
 		if types.IsInterface(tn.Type()) {
 			return strengthContract
 		}
+		if dtos.isDTOType(tn) {
+			return strengthDTO
+		}
 		return strengthModel
-	case *types.Var, *types.Const:
+	case *types.Var:
+		// A field of a pure-data DTO is the DTO's data — reading or setting it
+		// (u.ID, UserDTO{ID: …}) stays dto, not the stronger model; otherwise
+		// every real consumer of a DTO would outrank the dto hint away.
+		if tn.IsField() && dtos.isDTOField(tn) {
+			return strengthDTO
+		}
 		// Pure data sharing (book Ch7): reading another module's exported
-		// const/var/field couples on its data model, not its behavior.
+		// var/field couples on its data model, not its behavior.
+		return strengthModel
+	case *types.Const:
+		// Pure data sharing (book Ch7), same as *types.Var.
 		return strengthModel
 	default:
 		// *types.Func (function or method) and anything unforeseen → functional.
 		return strengthFunctional
 	}
+}
+
+// dtoIndex memoizes pure-data-DTO decisions per named type and records the
+// field objects of every type that qualifies, so a bare field reference can be
+// tied back to its DTO (go/types exposes no owner pointer on a field Var).
+type dtoIndex struct {
+	msets  typeutil.MethodSetCache
+	types  map[*types.TypeName]bool
+	fields map[*types.Var]bool
+}
+
+func newDTOIndex() *dtoIndex {
+	return &dtoIndex{
+		types:  make(map[*types.TypeName]bool),
+		fields: make(map[*types.Var]bool),
+	}
+}
+
+// isDTOType reports whether tn names a pure-data DTO: an exported struct with
+// at least one field, every field exported, no func- or chan-typed fields
+// (behavior carriers, checked one level deep — element types of composites are
+// not recursed into), and an EMPTY method set on both value and pointer
+// receivers (promoted methods from embedding included). Zero-field marker
+// structs (struct{} sentinels, context keys) carry no data model and are NOT
+// DTOs. classify resolves the coupling kind: contract across a declared public
+// boundary, model otherwise.
+func (ix *dtoIndex) isDTOType(tn *types.TypeName) bool {
+	if v, ok := ix.types[tn]; ok {
+		return v
+	}
+	v := ix.computePureData(tn)
+	ix.types[tn] = v
+	return v
+}
+
+// isDTOField reports whether v is a field of a type isDTOType already
+// qualified (the pre-pass in buildStrengthHints populates the registry).
+func (ix *dtoIndex) isDTOField(v *types.Var) bool { return ix.fields[v] }
+
+func (ix *dtoIndex) computePureData(tn *types.TypeName) bool {
+	if !tn.Exported() {
+		return false
+	}
+	named, ok := types.Unalias(tn.Type()).(*types.Named)
+	if !ok {
+		return false
+	}
+	st, ok := named.Underlying().(*types.Struct)
+	if !ok || st.NumFields() == 0 {
+		return false
+	}
+	for i := range st.NumFields() {
+		f := st.Field(i)
+		if !f.Exported() {
+			return false
+		}
+		switch f.Type().Underlying().(type) {
+		case *types.Signature, *types.Chan:
+			return false
+		}
+	}
+	// The pointer method set is a superset of the value method set and includes
+	// promoted methods, so one lookup covers every receiver form.
+	if ix.msets.MethodSet(types.NewPointer(named)).Len() != 0 {
+		return false
+	}
+	for i := range st.NumFields() {
+		ix.fields[st.Field(i)] = true
+	}
+	return true
 }
 
 // isExcluded reports whether path matches any of the configured exclusion globs.

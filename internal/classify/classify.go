@@ -400,8 +400,10 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 	// human label pinned it. This is what makes coupling_balance sensitive to
 	// integration strength instead of reading every public edge as the weakest
 	// (contract) kind. The hint can only raise the kind among the public kinds; it
-	// never lowers a public edge to intrusive (the glob floor).
-	if !fromPin && str == coupling.StrengthContract {
+	// never lowers a public edge to intrusive (the glob floor). Exception: a
+	// pure-data DTO across a declared public boundary IS the book's explicit
+	// integration contract — the floor stands unrefined.
+	if !fromPin && str == coupling.StrengthContract && e.StrengthHint != graph.StrengthHintDTO {
 		if k := strengthFromHint(e.StrengthHint); isPublicKind(k) {
 			str = k
 		}
@@ -573,6 +575,13 @@ func isPublicKind(s coupling.Strength) bool {
 // strengths are accepted; an unrecognized hint stays unknown. Config public/internal
 // globs still take precedence (see classify): the hint is a fallback only.
 func strengthFromHint(hint string) coupling.Strength {
+	// A DTO hint without a declared public boundary is just a shared concrete
+	// type — model. The boundary declaration is what makes a DTO a contract;
+	// that case is handled at the floor-refinement site in classify, which
+	// checks the raw hint before calling this mapping.
+	if hint == graph.StrengthHintDTO {
+		return coupling.StrengthModel
+	}
 	switch coupling.Strength(hint) {
 	case coupling.StrengthContract, coupling.StrengthModel,
 		coupling.StrengthFunctional, coupling.StrengthSymmetric, coupling.StrengthIntrusive:
