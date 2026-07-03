@@ -79,6 +79,16 @@ func TestLoad_UnknownField(t *testing.T) {
 	}
 }
 
+func TestLoad_FromLayerRejected(t *testing.T) {
+	// from_layer/to_layer were removed from RuleDef: no rule ever read them, so
+	// a config carrying them looked configured while the keys were inert. Strict
+	// decoding must now reject them loudly. Do not re-add the fields.
+	_, err := config.Load(context.Background(), "testdata/from_layer_rejected.yaml")
+	if err == nil {
+		t.Fatal("Load: expected error for from_layer/to_layer keys, got nil")
+	}
+}
+
 func TestLoad_MissingVersion(t *testing.T) {
 	_, err := config.Load(context.Background(), "testdata/missing_version.yaml")
 	if err == nil {

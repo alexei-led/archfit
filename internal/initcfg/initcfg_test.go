@@ -477,11 +477,6 @@ func TestRender_LayeredRules_RoundTripsConfigLoad(t *testing.T) {
 		if r.Type != "forbidden_layer_direction" {
 			t.Errorf("unexpected rule type %q", r.Type)
 		}
-		// from_layer/to_layer are deliberately not emitted (see Render): the checker
-		// derives layer ordering from cfg.Layers and the module map, not per-rule.
-		if r.FromLayer != "" || r.ToLayer != "" {
-			t.Errorf("rule %q should not have from_layer/to_layer set: %+v", r.ID, r)
-		}
 	}
 }
 

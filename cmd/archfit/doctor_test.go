@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -30,7 +29,10 @@ func runDoctorCmd(t *testing.T, dir string) string {
 	return buf.String()
 }
 
-func TestDoctorCmd_FlagsDeadForbiddenDependencyRule(t *testing.T) {
+// A forbidden_dependency rule missing from:/to: globs is rejected at config
+// load (rules.New), so doctor surfaces it as a load failure — the old
+// advisory-only "dead by construction" note is gone with the vacuous rule.
+func TestDoctorCmd_VacuousForbiddenDependencyFailsLoad(t *testing.T) {
 	dir := t.TempDir()
 	const yaml = `version: 1
 rules:
@@ -43,15 +45,15 @@ rules:
 	}
 
 	out := runDoctorCmd(t, dir)
-	if !strings.Contains(out, `rule "no-forbidden-deps"`) {
-		t.Errorf("expected doctor output to flag the dead rule, got:\n%s", out)
+	if !strings.Contains(out, ".archfit.yaml failed to load") {
+		t.Errorf("expected doctor to surface the config load error, got:\n%s", out)
 	}
-	if !strings.Contains(out, "dead by construction") {
-		t.Errorf("expected doctor output to explain why, got:\n%s", out)
+	if !strings.Contains(out, "requires both from and to") {
+		t.Errorf("expected the load error to explain the empty globs, got:\n%s", out)
 	}
 }
 
-func TestDoctorCmd_NoWarningForLiveForbiddenDependencyRule(t *testing.T) {
+func TestDoctorCmd_LiveForbiddenDependencyRuleLoadsClean(t *testing.T) {
 	dir := t.TempDir()
 	const yaml = `version: 1
 rules:
@@ -66,8 +68,8 @@ rules:
 	}
 
 	out := runDoctorCmd(t, dir)
-	if strings.Contains(out, "Config checks") {
-		t.Errorf("expected no dead-rule warning for a rule with from:/to: set, got:\n%s", out)
+	if strings.Contains(out, "failed to load") {
+		t.Errorf("expected a rule with from:/to: set to load clean, got:\n%s", out)
 	}
 }
 
@@ -96,31 +98,5 @@ func TestDoctorCmd_BrokenConfigSurfacesError(t *testing.T) {
 	}
 	if strings.Contains(out, "not configured") {
 		t.Errorf("broken config must not read as merely unconfigured, got:\n%s", out)
-	}
-}
-
-func TestDeadForbiddenDependencyRules(t *testing.T) {
-	tests := []struct {
-		name string
-		def  config.RuleDef
-		want bool
-	}{
-		{"both empty", config.RuleDef{ID: "r1", Type: ruleTypeForbiddenDependency}, true},
-		{"from set, to empty", config.RuleDef{ID: "r2", Type: ruleTypeForbiddenDependency, From: "a/**"}, true},
-		{"to set, from empty", config.RuleDef{ID: "r3", Type: ruleTypeForbiddenDependency, To: "b/**"}, true},
-		{"both set", config.RuleDef{ID: "r4", Type: ruleTypeForbiddenDependency, From: "a/**", To: "b/**"}, false},
-		{"different type", config.RuleDef{ID: "r5", Type: "forbidden_layer_direction"}, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := config.Config{Rules: []config.RuleDef{tt.def}}
-			got := deadForbiddenDependencyRules(cfg)
-			if tt.want && len(got) != 1 {
-				t.Errorf("deadForbiddenDependencyRules() = %v, want [%q]", got, tt.def.ID)
-			}
-			if !tt.want && len(got) != 0 {
-				t.Errorf("deadForbiddenDependencyRules() = %v, want empty", got)
-			}
-		})
 	}
 }

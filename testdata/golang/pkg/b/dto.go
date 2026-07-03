@@ -35,5 +35,11 @@ type ChanHolder struct {
 	Events chan int
 }
 
+// IfaceHolder carries behavior through an interface-typed field — not pure
+// data; stays model.
+type IfaceHolder struct {
+	G Greeter
+}
+
 // Marker is a zero-field struct: carries no data model, NOT a DTO.
 type Marker struct{}

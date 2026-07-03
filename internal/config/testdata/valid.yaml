@@ -36,8 +36,6 @@ rules:
     gate: fail
   - id: domain-no-infra
     type: forbidden_layer_direction
-    from_layer: domain
-    to_layer: infrastructure
     gate: fail
 exclude:
   - '**/generated/**'

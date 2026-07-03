@@ -18,6 +18,16 @@ import (
 // ForbiddenDependency
 // ---------------------------------------------------------------------------
 
+// validateForbiddenDependencyDef validates a RuleDef for the
+// forbidden_dependency rule type. An empty from/to glob matches nothing, so
+// the rule would load clean yet never fire — a silently-vacuous gate.
+func validateForbiddenDependencyDef(def config.RuleDef) error {
+	if def.From == "" || def.To == "" {
+		return fmt.Errorf("rules: forbidden_dependency %q requires both from and to globs", def.ID)
+	}
+	return nil
+}
+
 type forbiddenDependency struct {
 	def config.RuleDef
 }

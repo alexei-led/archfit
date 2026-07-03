@@ -586,6 +586,36 @@ func TestNew_UnknownTypeError(t *testing.T) {
 	}
 }
 
+func TestNew_ForbiddenDependencyRequiresFromTo(t *testing.T) {
+	cases := []struct {
+		name    string
+		from    string
+		to      string
+		wantErr bool
+	}{
+		{"both set", pathDomainGlob, "infra/**", false},
+		{"empty from", "", "infra/**", true},
+		{"empty to", pathDomainGlob, "", true},
+		{"both empty", "", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.RuleConfig{
+				Rules: []config.RuleDef{
+					{ID: "fd", Type: "forbidden_dependency", From: tc.from, To: tc.to},
+				},
+			}
+			_, err := rules.New(cfg)
+			if tc.wantErr && err == nil {
+				t.Fatal("New: got nil error, want error for empty from/to glob")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("New: unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestNew_EmptyRules(t *testing.T) {
 	ruleSet, err := rules.New(config.RuleConfig{})
 	if err != nil {

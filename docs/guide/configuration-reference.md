@@ -743,9 +743,9 @@ violation under its own rule ID (`archfit config init` generates exactly one).
 ### Built-in rule types
 
 - `forbidden_dependency` — fires when an edge matches both `from` and `to`
-  globs. A rule with **either** glob empty matches nothing, ever
+  globs. Both globs are **required**: an empty glob matches nothing, ever
   (`doublestar.Match("", path)` is always false; there is no empty-means-match-all
-  special case) — `archfit doctor` flags any such rule as dead by construction.
+  special case), so a rule missing either is rejected as a config error at load.
 - `public_api_only` — fires on internal-access edges, optionally filtered by
   `from` and `to`. Consults the `modules:` map: an edge where both endpoints
   resolve to the same module (e.g. `domain` importing its own

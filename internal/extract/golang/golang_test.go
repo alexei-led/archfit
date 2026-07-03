@@ -242,6 +242,8 @@ func TestExtract_StrengthHint(t *testing.T) {
 		{"var write → model", "pkg/a/var_set_cons.go", pkgB, graph.EdgeKindImports, hintModel},
 		// chan_cons.go references b.ChanHolder — chan-typed field disqualifies the DTO upgrade → model.
 		{"struct with chan field → model", "pkg/a/chan_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// iface_cons.go references b.IfaceHolder — interface-typed field disqualifies the DTO upgrade → model.
+		{"struct with interface field → model", "pkg/a/iface_cons.go", pkgB, graph.EdgeKindImports, hintModel},
 		// marker_cons.go references b.Marker — zero-field structs carry no data model → model, not dto.
 		{"zero-field marker struct → model", "pkg/a/marker_cons.go", pkgB, graph.EdgeKindImports, hintModel},
 	}

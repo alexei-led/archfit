@@ -63,6 +63,9 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 		var inner Rule
 		switch def.Type {
 		case "forbidden_dependency":
+			if err := validateForbiddenDependencyDef(def); err != nil {
+				return nil, err
+			}
 			inner = &forbiddenDependency{def: def}
 		case "public_api_only":
 			inner = &publicAPIOnly{def: def, mm: cfg.ModuleMap}

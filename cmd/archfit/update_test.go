@@ -79,6 +79,8 @@ rules:
   - id: no-bad-deps
     type: forbidden_dependency
     gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
 `
 	// configWithRemovedModule has a module that empty discovery will mark as Removed.
 	configWithRemovedModule = `version: 1
@@ -96,6 +98,8 @@ rules:
   - id: no-bad-deps
     type: forbidden_dependency
     gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
 `
 )
 
@@ -198,6 +202,8 @@ rules:
   - id: no-bad-deps
     type: forbidden_dependency
     gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
 `
 	cfgPath := writeConfig(t, dir, cfg)
 	runner := matchingRunner("internal/mymod")
@@ -293,6 +299,8 @@ rules:
   - id: no-bad-deps
     type: forbidden_dependency
     gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
 `
 	cfgPath := writeConfig(t, dir, cfg)
 	runner := matchingRunner("internal/mymod")
@@ -347,6 +355,8 @@ rules:
   - id: no-bad-deps
     type: forbidden_dependency
     gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
 `
 	cfgPath := writeConfig(t, dir, cfg)
 	runner := matchingRunner("internal/mymod")
@@ -394,6 +404,8 @@ rules:
   - id: no-bad-deps
     type: forbidden_dependency
     gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
 `
 	cfgPath := writeConfig(t, dir, cfg)
 	before, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -514,6 +526,8 @@ rules:
   - id: no-bad-deps
     type: forbidden_dependency
     gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
 `
 	cfgPath := writeConfig(t, dir, cfg)
 	before, err := os.ReadFile(cfgPath) //nolint:gosec

@@ -431,12 +431,6 @@
         "to": {
           "type": "string"
         },
-        "from_layer": {
-          "type": "string"
-        },
-        "to_layer": {
-          "type": "string"
-        },
         "max": {
           "type": "integer",
           "description": "public_api_max: exported-declaration ceiling per module"

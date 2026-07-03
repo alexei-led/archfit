@@ -57,8 +57,6 @@ type RuleDef struct {
 	Gate      string       `yaml:"gate"`
 	From      string       `yaml:"from"`
 	To        string       `yaml:"to"`
-	FromLayer string       `yaml:"from_layer"`
-	ToLayer   string       `yaml:"to_layer"`
 	Max       *int         `yaml:"max,omitempty"`       // public_api_max: exported-declaration ceiling per module
 	Threshold *int         `yaml:"threshold,omitempty"` // reserved: per-rule integer threshold
 	Patterns  []PatternDef `yaml:"patterns,omitempty"`

@@ -80,36 +80,10 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 		_, _ = fmt.Fprintln(deps.Stdout, "  not configured (set ai provider + model to enable enrich)")
 	}
 
-	if cfgErr == nil {
-		if dead := deadForbiddenDependencyRules(cfg); len(dead) > 0 {
-			_, _ = fmt.Fprintf(deps.Stdout, "\nConfig checks (%s):\n", defaultConfigPath)
-			for _, id := range dead {
-				_, _ = fmt.Fprintf(deps.Stdout, "  rule %q: type: forbidden_dependency needs both from: and to: — an empty glob matches 0 edges, ever; dead by construction\n", id)
-			}
-		}
-	}
-
 	if c.Fix {
 		return c.runFix(ctx, deps)
 	}
 	return nil
-}
-
-// deadForbiddenDependencyRules returns the IDs of every forbidden_dependency
-// rule in cfg with an empty from: or to: glob. forbiddenDependency.Check
-// (internal/rules/rules_dependency.go) requires BOTH globs to match an edge
-// and — unlike public_api_only — has no empty-means-match-all special case:
-// doublestar.Match("", path) is always false for a non-empty path. A rule
-// missing either glob is therefore provably inert: it can never fire,
-// matching 0 edges for the life of the config.
-func deadForbiddenDependencyRules(cfg config.Config) []string {
-	var ids []string
-	for _, r := range cfg.Rules {
-		if r.Type == ruleTypeForbiddenDependency && (r.From == "" || r.To == "") {
-			ids = append(ids, r.ID)
-		}
-	}
-	return ids
 }
 
 // keyStatus renders the presence of an API key without leaking it.

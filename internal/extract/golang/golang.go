@@ -488,7 +488,9 @@ func goObjectStrength(obj types.Object, dtos *dtoIndex) string {
 		// A func- or chan-typed var/field is stored behavior, not data:
 		// pkg.DefaultHandler() or holder.OnDone() couples on the callee's
 		// behavior exactly like a *types.Func call (mirrors computePureData's
-		// behavior-carrier exclusion).
+		// behavior-carrier exclusion). Interface-typed vars/fields need no case
+		// here: invoking one resolves the method as a *types.Func (→ functional
+		// via the default case), so the behavioral use is already captured.
 		switch tn.Type().Underlying().(type) {
 		case *types.Signature, *types.Chan:
 			return strengthFunctional
@@ -522,9 +524,9 @@ func newDTOIndex() *dtoIndex {
 }
 
 // isDTOType reports whether tn names a pure-data DTO: an exported struct with
-// at least one field, every field exported, no func- or chan-typed fields
-// (behavior carriers, checked one level deep — element types of composites are
-// not recursed into), and an EMPTY method set on both value and pointer
+// at least one field, every field exported, no func-, chan-, or interface-typed
+// fields (behavior carriers, checked one level deep — element types of
+// composites are not recursed into), and an EMPTY method set on both value and pointer
 // receivers (promoted methods from embedding included). Zero-field marker
 // structs (struct{} sentinels, context keys) carry no data model and are NOT
 // DTOs. classify resolves the coupling kind: contract across a declared public
@@ -560,7 +562,7 @@ func (ix *dtoIndex) computePureData(tn *types.TypeName) bool {
 			return false
 		}
 		switch f.Type().Underlying().(type) {
-		case *types.Signature, *types.Chan:
+		case *types.Signature, *types.Chan, *types.Interface:
 			return false
 		}
 	}
