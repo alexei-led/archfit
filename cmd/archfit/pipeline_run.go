@@ -348,7 +348,26 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	if mode.Full {
 		validate += " --full"
 	}
-	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate}, diag.SyntaxFacts)
+	// PathResolver lets agenttask.Build turn a bare config module key, a Rust
+	// "crate::mod" id, or a Python dotted module id into a path that actually
+	// exists on disk, using facts already gathered above — agenttask itself
+	// never touches the filesystem. A nil FileClassIndex (LOC walk did not
+	// run) disables resolution, matching the pre-resolver behavior.
+	var knownFiles map[string]struct{}
+	if change.Size.FileClassIndex != nil {
+		knownFiles = make(map[string]struct{}, len(change.Size.FileClassIndex))
+		for f := range change.Size.FileClassIndex {
+			knownFiles[f] = struct{}{}
+		}
+	}
+	crateRootDirs := map[string]string{}
+	if rustEx := rustExtractor(extractors); rustEx != nil {
+		for _, cr := range rustEx.LastCrateRoots() {
+			crateRootDirs[cr.Name] = cr.Dir
+		}
+	}
+	pathResolver := agenttask.NewPathResolver(knownFiles, crateRootDirs, config.ModuleRootDirs(cfg.Modules))
+	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate}, diag.SyntaxFacts, pathResolver)
 
 	// Warn-loud coverage reporting: turn the absent tool-coverage records into a
 	// machine-readable CoverageGaps block (tool → unlocked metrics → install cmd)

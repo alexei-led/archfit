@@ -688,6 +688,22 @@ func makePublicAPIMaxConfig(ceiling int, gate string) config.RuleConfig {
 	}.ForRules()
 }
 
+// assertLocationFiles checks that locs carries exactly the given files, in
+// order — agent_tasks files[] trusts finding.Locations, so a rule that only
+// ever sets Edge.From/To.Path to the bare module name must populate real
+// Locations instead.
+func assertLocationFiles(t *testing.T, locs []graph.Location, wantFiles ...string) {
+	t.Helper()
+	if len(locs) != len(wantFiles) {
+		t.Fatalf("locations = %+v, want files %v", locs, wantFiles)
+	}
+	for i, want := range wantFiles {
+		if locs[i].File != want {
+			t.Errorf("locations[%d].File = %q, want %q", i, locs[i].File, want)
+		}
+	}
+}
+
 func TestPublicAPIMax(t *testing.T) {
 	// SyntaxFacts used across subtests: domain has 3 exported, infra has 1 exported.
 	allFacts := make([]diagnostic.SyntaxFact, 0, 5)
@@ -743,6 +759,9 @@ func TestPublicAPIMax(t *testing.T) {
 		if f.Constraint == "" {
 			t.Error("Constraint is empty")
 		}
+		// Locations must carry the real declaring files, never the bare
+		// module name — agent_tasks files[] trusts this list blindly.
+		assertLocationFiles(t, f.Locations, fileDomainA, fileDomainB)
 	})
 
 	t.Run("per_module_scoping_both_over", func(t *testing.T) {
@@ -1027,6 +1046,7 @@ func TestPublicAPIChange(t *testing.T) {
 		if f.MatchedBy["file"] != fileDomainA {
 			t.Errorf("MatchedBy[file]=%q, want %q", f.MatchedBy["file"], fileDomainA)
 		}
+		assertLocationFiles(t, f.Locations, fileDomainA)
 	})
 
 	t.Run("stable_fingerprint_across_runs", func(t *testing.T) {
@@ -1159,6 +1179,7 @@ func TestPublicAPITypeLeak(t *testing.T) {
 		if f.Severity != finding.SeverityMedium {
 			t.Errorf("Severity=%v, want Medium", f.Severity)
 		}
+		assertLocationFiles(t, f.Locations, fileDomain)
 	})
 
 	t.Run("first_party_type_no_finding", func(t *testing.T) {

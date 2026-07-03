@@ -99,6 +99,12 @@ func TestExtract_Workspace(t *testing.T) {
 		t.Errorf("facts.Language = %q, want rust", facts.Language)
 	}
 
+	// LastCrateRoots mirrors facts.CrateRoots — agenttask's PathResolver reads
+	// this (not facts) to resolve a "crate::mod" module key to a real src dir.
+	if !slices.Equal(e.LastCrateRoots(), facts.CrateRoots) {
+		t.Errorf("LastCrateRoots() = %+v, want facts.CrateRoots %+v", e.LastCrateRoots(), facts.CrateRoots)
+	}
+
 	// Nodes: members as package:, registry deps as external:. tempfile is a
 	// dev-dep and must NOT appear (IncludeDevDeps defaults to false).
 	nodes := nodeSet(facts)

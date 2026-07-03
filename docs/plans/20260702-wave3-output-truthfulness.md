@@ -39,11 +39,11 @@ Verified defects:
 
 ### Task 3: agent_tasks files[] must exist on disk
 
-- [ ] failing tests per language for `filesFor` inputs: Go module key (`widget` → `widget/` module root dir listing or the declaring files), Python dotted ID (`myapp.domain` → resolved via probing `myapp/domain.py` / `myapp/domain/__init__.py` against `FileClassIndex`), Rust `crate::mod` (→ `graph.CrateRoot` src dir), TS (already file paths — assert passthrough)
-- [ ] fix producers, not just the consumer: `rules_api.go` findings get real `Locations` (the declaring files counted by the rule — public_api_max already walks declarations; carry the file list) instead of `Endpoint{Path: mod}`
-- [ ] `filesFor` last-resort rule: if an entry cannot be resolved to an existing file or directory, drop it rather than emit it; if that leaves `files` empty, fall back to the module's root dir from config `paths:` — never a bare module key or dotted ID
-- [ ] add an integration assertion helper used in tests: every `agent_tasks[].files[]` entry must `os.Stat` successfully against the fixture root
-- [ ] regen goldens; commit
+- [x] failing tests per language for `filesFor` inputs: Go module key (`widget` → `widget/` module root dir listing or the declaring files), Python dotted ID (`myapp.domain` → resolved via probing `myapp/domain.py` / `myapp/domain/__init__.py` against `FileClassIndex`), Rust `crate::mod` (→ `graph.CrateRoot` src dir), TS (already file paths — assert passthrough)
+- [x] fix producers, not just the consumer: `rules_api.go` findings get real `Locations` (the declaring files counted by the rule — public_api_max already walks declarations; carry the file list) instead of `Endpoint{Path: mod}`
+- [x] `filesFor` last-resort rule: if an entry cannot be resolved to an existing file or directory, drop it rather than emit it; if that leaves `files` empty, fall back to the module's root dir from config `paths:` — never a bare module key or dotted ID
+- [x] add an integration assertion helper used in tests: every `agent_tasks[].files[]` entry must `os.Stat` successfully against the fixture root
+- [x] regen goldens; commit (no golden drift — public_api_* rules aren't in golden fixtures; `TestGolden_DoubleRun` confirmed unchanged)
 
 ### Task 4: TS coverage honesty + tsconfig autodetect
 

@@ -7,10 +7,111 @@ package agenttask
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/graph"
 )
+
+// matchedByModuleKey mirrors internal/rules' unexported matchedByModule
+// MatchedBy key ("module") — the two packages agree on the key by convention,
+// not by import, since agenttask must not depend on the rules package.
+const matchedByModuleKey = "module"
+
+// PathResolver carries the filesystem facts filesFor needs to turn a config
+// module key, a Rust "crate::mod" module key, or a Python dotted module key
+// into a path that actually exists on disk — without agenttask itself ever
+// touching the filesystem. Build it once per run from the LOC walk's
+// FileClassIndex (KnownFiles) and the Rust extractor's crate roots
+// (CrateRootDirs); the composition root (cmd/) owns the I/O.
+//
+// The zero value disables resolution: every candidate passes through
+// unchanged, matching the pre-resolver behavior relied on by existing callers
+// and tests that construct a Finding's Edge/Locations with paths they already
+// know are real.
+type PathResolver struct {
+	knownFiles     map[string]struct{}
+	knownDirs      map[string]struct{}
+	crateRootDirs  map[string]string
+	moduleRootDirs map[string]string
+}
+
+// NewPathResolver builds a PathResolver from already-gathered facts:
+// knownFiles is every repo-relative file path seen by the LOC walk
+// (SizeSignals.FileClassIndex keys); crateRootDirs maps a Rust crate name to
+// its repo-relative directory (from graph.CrateRoot); moduleRootDirs maps a
+// config module name to its declared Paths root dir (config.ModuleRootDirs),
+// the last-resort fallback when nothing else resolves. A nil knownFiles
+// disables resolution (see PathResolver).
+func NewPathResolver(knownFiles map[string]struct{}, crateRootDirs, moduleRootDirs map[string]string) PathResolver {
+	if knownFiles == nil {
+		return PathResolver{crateRootDirs: crateRootDirs, moduleRootDirs: moduleRootDirs}
+	}
+	knownDirs := make(map[string]struct{}, len(knownFiles))
+	for f := range knownFiles {
+		for dir := f; ; {
+			i := strings.LastIndexByte(dir, '/')
+			if i < 0 {
+				break
+			}
+			dir = dir[:i]
+			if _, seen := knownDirs[dir]; seen {
+				break // ancestors already recorded
+			}
+			knownDirs[dir] = struct{}{}
+		}
+	}
+	return PathResolver{
+		knownFiles:     knownFiles,
+		knownDirs:      knownDirs,
+		crateRootDirs:  crateRootDirs,
+		moduleRootDirs: moduleRootDirs,
+	}
+}
+
+// dirExists reports whether dir is a known directory, or resolution is
+// disabled (knownFiles nil), in which case every directory is trusted.
+func (r PathResolver) dirExists(dir string) bool {
+	if r.knownFiles == nil {
+		return true
+	}
+	_, ok := r.knownDirs[dir]
+	return ok
+}
+
+// resolve turns a candidate path/key into one that exists on disk, or reports
+// false when it cannot be resolved. Resolution order: literal file, literal
+// directory, Rust "crate::mod" (via crateRootDirs), Python dotted module (via
+// the shared graph.BuiltinConventions candidate list). Disabled (knownFiles
+// nil) trusts every non-empty candidate, matching pre-resolver behavior.
+func (r PathResolver) resolve(candidate string) (string, bool) {
+	if candidate == "" {
+		return "", false
+	}
+	if r.knownFiles == nil {
+		return candidate, true
+	}
+	if _, ok := r.knownFiles[candidate]; ok {
+		return candidate, true
+	}
+	if _, ok := r.knownDirs[candidate]; ok {
+		return candidate, true
+	}
+	if crate, _, ok := strings.Cut(candidate, "::"); ok {
+		if dir, ok := r.crateRootDirs[crate]; ok && dir != "" && r.dirExists(dir) {
+			return dir, true
+		}
+	}
+	if strings.Contains(candidate, ".") && !strings.Contains(candidate, "/") {
+		for _, cand := range graph.BuiltinConventions.Lookup(graph.LangPython).ModuleFileCandidates(candidate) {
+			if _, ok := r.knownFiles[cand]; ok {
+				return cand, true
+			}
+		}
+	}
+	return "", false
+}
 
 // Build returns one AgentTask per active gate finding (status new or
 // expired_waiver). Advisory findings never produce tasks — they are
@@ -33,6 +134,7 @@ func Build(
 	modulePublic map[string][]string,
 	validation []string,
 	syntaxFacts []diagnostic.SyntaxFact,
+	resolver PathResolver,
 ) []diagnostic.AgentTask {
 	// Build a file→facts index once so the per-task lookup is O(1).
 	var factsByFile map[string][]diagnostic.SyntaxFact
@@ -51,7 +153,7 @@ func Build(
 		if f.Status != finding.StatusNew && f.Status != finding.StatusExpiredWaiver {
 			continue
 		}
-		files := filesFor(f)
+		files := filesFor(f, resolver)
 		task := diagnostic.AgentTask{
 			FindingID:   f.ID,
 			RuleID:      f.RuleID,
@@ -123,21 +225,35 @@ func declarationsFor(files []string, factsByFile map[string][]diagnostic.SyntaxF
 	return out // nil when nothing matched
 }
 
-// filesFor returns the deduplicated, sorted repo-relative files involved:
-// edge endpoints plus every finding location.
-func filesFor(f finding.Finding) []string {
+// filesFor returns the deduplicated, sorted repo-relative files involved: edge
+// endpoints plus every finding location, each resolved to a path that exists
+// on disk. An entry that cannot be resolved (e.g. a bare config module key or
+// a dotted/"::" module id copied verbatim onto Edge.From/To.Path) is dropped
+// rather than emitted — this is the contract agents trust blindly. When
+// dropping leaves the set empty, the finding's module root dir (config
+// paths:) is used as a last resort; if that isn't resolvable either, Files is
+// legitimately empty.
+func filesFor(f finding.Finding, r PathResolver) []string {
 	set := map[string]struct{}{}
-	if f.Edge.From.Path != "" {
-		set[f.Edge.From.Path] = struct{}{}
-	}
-	if f.Edge.To.Path != "" {
-		set[f.Edge.To.Path] = struct{}{}
-	}
-	for _, loc := range f.Locations {
-		if loc.File != "" {
-			set[loc.File] = struct{}{}
+	add := func(candidate string) {
+		if resolved, ok := r.resolve(candidate); ok {
+			set[resolved] = struct{}{}
 		}
 	}
+	add(f.Edge.From.Path)
+	add(f.Edge.To.Path)
+	for _, loc := range f.Locations {
+		add(loc.File)
+	}
+
+	if len(set) == 0 {
+		if mod := f.MatchedBy[matchedByModuleKey]; mod != "" {
+			if root, ok := r.moduleRootDirs[mod]; ok && root != "" && r.dirExists(root) {
+				set[root] = struct{}{}
+			}
+		}
+	}
+
 	files := make([]string, 0, len(set))
 	for p := range set {
 		files = append(files, p)

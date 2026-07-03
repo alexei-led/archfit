@@ -47,8 +47,10 @@ func (r *publicAPIMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 		return nil
 	}
 
-	// Count exported declarations per module.
+	// Count exported declarations per module, tracking every declaring file so
+	// the finding's Locations carry real files — never just the module name.
 	counts := make(map[string]int)
+	filesByModule := make(map[string]map[string]struct{})
 	for _, f := range ev.SyntaxFacts {
 		if !f.Exported {
 			continue
@@ -58,6 +60,10 @@ func (r *publicAPIMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 			continue // file not owned by any declared module — skip
 		}
 		counts[mod]++
+		if filesByModule[mod] == nil {
+			filesByModule[mod] = make(map[string]struct{})
+		}
+		filesByModule[mod][f.File] = struct{}{}
 	}
 
 	if len(counts) == 0 {
@@ -78,6 +84,12 @@ func (r *publicAPIMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 		if count <= r.max {
 			continue
 		}
+		locs := make([]graph.Location, 0, len(filesByModule[mod]))
+		for file := range filesByModule[mod] {
+			locs = append(locs, graph.Location{File: file})
+		}
+		sort.Slice(locs, func(i, j int) bool { return locs[i].File < locs[j].File })
+
 		h := sha256.Sum256([]byte(r.def.ID + "\x00" + mod))
 		f := finding.Finding{
 			ID:       hex.EncodeToString(h[:16]),
@@ -94,6 +106,7 @@ func (r *publicAPIMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 				"count":         strconv.Itoa(count),
 				"max":           strconv.Itoa(r.max),
 			},
+			Locations:  locs,
 			Why:        fmt.Sprintf("Module %q has %d exported declarations, exceeding the limit of %d", mod, count, r.max),
 			Constraint: "Reduce the public API surface or raise the max threshold",
 		}
@@ -166,6 +179,7 @@ func (r *publicAPIChange) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 				"kind":          f.Kind,
 				matchedByFile:   f.File,
 			},
+			Locations:  []graph.Location{{File: f.File, Line: f.StartLine}},
 			Why:        fmt.Sprintf("Exported declaration %q added to module %q (%s in %s)", f.Name, mod, f.Kind, f.File),
 			Constraint: "Review new public API additions; baseline when intentional",
 		}
@@ -318,6 +332,7 @@ func (r *publicAPITypeLeak) Check(g *graph.Graph, ev Evidence) []finding.Finding
 				"type":          f.Name,
 				matchedByFile:   f.File,
 			},
+			Locations:  []graph.Location{{File: f.File, Line: f.StartLine}},
 			Why:        fmt.Sprintf("Module %q leaks external type %q in its public API (file: %s)", mod, f.Name, f.File),
 			Constraint: "Replace the external type with an internal abstraction or alias at the module boundary",
 		}

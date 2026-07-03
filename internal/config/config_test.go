@@ -235,6 +235,44 @@ func TestModuleMap_IsModuleRoot(t *testing.T) {
 	}
 }
 
+// TestModuleRootDirs verifies the agent_tasks files[] last-resort fallback:
+// every module with a Paths glob maps to its literal (wildcard-free) root
+// dir, and modules with no Paths are absent — never a bare dotted/"::" id.
+func TestModuleRootDirs(t *testing.T) {
+	const (
+		modDomain    = "domain"
+		modLiteral   = "literal"
+		modPyDotted  = "myapp.domain"
+		modNoPaths   = "nopaths"
+		literalPath  = "cmd/tool"
+		pyDottedGlob = "myapp.domain.**"
+	)
+	modules := map[string]config.ModuleDef{
+		modDomain:   {Paths: []string{modDomain + "/**"}},
+		modLiteral:  {Paths: []string{literalPath}},
+		modPyDotted: {Paths: []string{pyDottedGlob}}, // Python dotted glob: no "/" wildcard prefix
+		modNoPaths:  {},
+	}
+	got := config.ModuleRootDirs(modules)
+
+	want := map[string]string{
+		modDomain:   modDomain,
+		modLiteral:  literalPath,
+		modPyDotted: "myapp.domain.", // globRoot cuts at the first "*"; no "/" precedes it, so nothing trims
+	}
+	if len(got) != len(want) {
+		t.Fatalf("ModuleRootDirs = %+v, want %+v", got, want)
+	}
+	for name, dir := range want {
+		if got[name] != dir {
+			t.Errorf("ModuleRootDirs[%q] = %q, want %q", name, got[name], dir)
+		}
+	}
+	if _, ok := got[modNoPaths]; ok {
+		t.Error("ModuleRootDirs should omit a module with no Paths")
+	}
+}
+
 func TestModuleFor_Deterministic(t *testing.T) {
 	// Two modules whose globs could overlap — same path must always return the
 	// same (alphabetically-first) module name.

@@ -38,6 +38,7 @@ type Extractor struct {
 	runner             toolrun.Runner
 	cfg                config.ExtractConfig
 	lastModuleGraphCov diagnostic.Coverage // cargo-modules coverage from most recent Extract call
+	lastCrateRoots     []graph.CrateRoot   // crate roots from most recent Extract call
 }
 
 // New returns an Extractor configured with the given runner and config. The
@@ -148,6 +149,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	// core ring can resolve .rs files to module keys ("<crate>::<mod>") for the
 	// size/cohesion metrics — the crate name is not derivable from a path alone.
 	facts.CrateRoots = crateRoots(s.Root, members)
+	e.lastCrateRoots = facts.CrateRoots
 
 	// Opt-in intra-crate module graph via cargo-modules (analyzers.cargo_modules.enabled: true).
 	// When enabled, module-level nodes and edges are merged into facts alongside the
@@ -174,6 +176,15 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 // Returns absent coverage when ModuleGraph is disabled or Extract has not been called.
 func (e *Extractor) LastModuleGraphCoverage() diagnostic.Coverage {
 	return e.lastModuleGraphCov
+}
+
+// LastCrateRoots returns the crate roots (repo-relative crate dir + crate
+// name) from the most recent Extract call. The pipeline uses this to resolve
+// "<crate>::<mod>" module keys (cargo-modules' intra-crate convention) to a
+// real directory for agent_tasks files[]. Nil when Extract has not been
+// called or found no workspace members.
+func (e *Extractor) LastCrateRoots() []graph.CrateRoot {
+	return e.lastCrateRoots
 }
 
 // detectVersion runs `cargo --version` and returns the trimmed version string.

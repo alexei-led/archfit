@@ -244,6 +244,21 @@ func globRoot(pattern string) string {
 	return strings.TrimSuffix(pattern[:idx], "/")
 }
 
+// ModuleRootDirs returns, for every module with at least one Paths glob, the
+// literal (wildcard-free) root directory of its first Paths pattern. Used as
+// the agent_tasks files[] last-resort fallback when no finding location
+// resolves to a real file — never the bare module name or a dotted/"::" id.
+func ModuleRootDirs(modules map[string]ModuleDef) map[string]string {
+	out := make(map[string]string, len(modules))
+	for name, def := range modules {
+		if len(def.Paths) == 0 {
+			continue
+		}
+		out[name] = globRoot(def.Paths[0])
+	}
+	return out
+}
+
 // LayerFor returns the layer name for the module that owns the given repo-relative
 // path. Returns ("", false) if no module matches or the module has no layer set.
 func (mm ModuleMap) LayerFor(path string) (string, bool) {
