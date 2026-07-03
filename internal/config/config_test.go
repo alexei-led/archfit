@@ -258,7 +258,7 @@ func TestModuleRootDirs(t *testing.T) {
 	want := map[string]string{
 		modDomain:   modDomain,
 		modLiteral:  literalPath,
-		modPyDotted: "myapp.domain.", // globRoot cuts at the first "*"; no "/" precedes it, so nothing trims
+		modPyDotted: "myapp.domain", // globRoot cuts at the first "*"; the trailing separator dot is trimmed so the resolver's dotted-module probe can turn it into a real path
 	}
 	if len(got) != len(want) {
 		t.Fatalf("ModuleRootDirs = %+v, want %+v", got, want)

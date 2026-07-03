@@ -216,7 +216,10 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 - **`partial` always carries a reason.** A tool-coverage record with
   `status: partial` names the cause in its `reason` field (e.g. TypeScript's
   unresolved-specifier count/ratio) and, for TS, `archfit analyze` also emits a
-  matching stderr warning — never a silent partial with no explanation.
+  matching stderr warning — never a silent partial with no explanation. For
+  dependency-cruiser the record also carries `specifiers_seen` (total import
+  specifiers examined), the denominator of both the disclosed ratio and the
+  confidence cap — the two can never disagree.
 
 ---
 

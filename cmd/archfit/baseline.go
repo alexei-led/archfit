@@ -69,7 +69,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 		// a stored "gate" kind would orphan the entry (phantom "fixed" gate
 		// finding, no advisory-side resolution when the edge is fixed).
 		kind := f.Kind
-		if f.RuleID == ruleIDBCImbalanced {
+		if f.RuleID == engine.RuleIDBCImbalanced {
 			kind = finding.KindAdvisory
 		}
 		newBase.Accepted = append(newBase.Accepted, baseline.AcceptedFinding{

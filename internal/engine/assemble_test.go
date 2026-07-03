@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
+	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/ports"
 )
@@ -27,6 +28,28 @@ func TestBCRiskClause_DistanceAware(t *testing.T) {
 	}
 	if !strings.Contains(got, "not a distributed monolith") {
 		t.Errorf("low-distance critical: %q, want 'not a distributed monolith' framing", got)
+	}
+
+	// High severity splits on the same distance test: "across a boundary" only
+	// when the distance really is high; a low-distance high edge names its
+	// cascade as contained instead.
+	mkHigh := func(d coupling.Distance) coupling.Classification {
+		return coupling.Classification{Distance: d, Severity: coupling.SeverityHigh}
+	}
+	if got := bcRiskClause(mkHigh(coupling.DistanceCrossDeployUnit)); !strings.Contains(got, "across a boundary") {
+		t.Errorf("high-distance high: %q, want 'across a boundary' framing", got)
+	}
+	gotHigh := bcRiskClause(mkHigh(coupling.DistanceCrossModuleSameOwner))
+	if strings.Contains(gotHigh, "across a boundary") {
+		t.Errorf("low-distance high: %q, must NOT claim a boundary crossing", gotHigh)
+	}
+	if !strings.Contains(gotHigh, "at low distance") {
+		t.Errorf("low-distance high: %q, want 'at low distance' framing", gotHigh)
+	}
+
+	// Below high severity the clause is distance-agnostic by design.
+	if got := bcRiskClause(coupling.Classification{Severity: coupling.SeverityMedium}); !strings.Contains(got, "unbalanced coupling") {
+		t.Errorf("medium severity: %q, want the generic unbalanced-coupling clause", got)
 	}
 }
 
@@ -314,6 +337,48 @@ func TestBuildClassifiedEdgeSummary(t *testing.T) {
 		}
 		if internalCrossTotal != 2 {
 			t.Errorf("ByStrength total = %d, want 2 (internal cross-boundary only)", internalCrossTotal)
+		}
+	})
+}
+
+// TestGroupEdgePaths pins the honest-edge-path contract for rolled-up BC
+// advisories: the (from, to) pair comes from whichever member owns the first
+// merged location; with no locations (or no owning member — a safety branch)
+// both paths stay empty rather than name a file with no evidence behind it.
+func TestGroupEdgePaths(t *testing.T) {
+	member := func(from, to string, locs ...graph.Location) finding.Finding {
+		return finding.Finding{
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Path: from},
+				To:   finding.Endpoint{Path: to},
+			},
+			Locations: locs,
+		}
+	}
+	locA := graph.Location{File: "a/x.go", Line: 3}
+	locB := graph.Location{File: "b/y.go", Line: 7}
+	m1 := member("a/x.go", "shared/z.go", locA)
+	m2 := member("b/y.go", "shared/z.go", locB)
+
+	t.Run("owner of locations[0] wins", func(t *testing.T) {
+		from, to := groupEdgePaths([]finding.Finding{m2, m1}, []graph.Location{locA, locB})
+		if from != "a/x.go" || to != "shared/z.go" {
+			t.Errorf("(from, to) = (%q, %q), want m1's edge (a/x.go, shared/z.go)", from, to)
+		}
+	})
+
+	t.Run("empty locations yields empty paths", func(t *testing.T) {
+		from, to := groupEdgePaths([]finding.Finding{m1, m2}, nil)
+		if from != "" || to != "" {
+			t.Errorf("(from, to) = (%q, %q), want empty", from, to)
+		}
+	})
+
+	t.Run("no member owning locations[0] yields empty paths", func(t *testing.T) {
+		orphan := graph.Location{File: "c/orphan.go", Line: 1}
+		from, to := groupEdgePaths([]finding.Finding{m1, m2}, []graph.Location{orphan})
+		if from != "" || to != "" {
+			t.Errorf("(from, to) = (%q, %q), want empty (no evidence, no path)", from, to)
 		}
 	})
 }

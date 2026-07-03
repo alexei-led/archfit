@@ -118,6 +118,11 @@ func TestEncapsulation_KnownRatio(t *testing.T) {
 	if result.Band != bandMixed {
 		t.Errorf("expected band mixed got %q", result.Band)
 	}
+	// Direction drives computeVerdict's delta-sign handling (V1 fix): a ratio
+	// metric regresses when it FALLS. A wrong stamp silently inverts gating.
+	if result.Direction != diagnostic.DirectionHigherIsBetter {
+		t.Errorf("direction = %q, want %q", result.Direction, diagnostic.DirectionHigherIsBetter)
+	}
 }
 
 // TestEncapsulation_ZeroContractIsRealNotNA is the 6.3 regression: an

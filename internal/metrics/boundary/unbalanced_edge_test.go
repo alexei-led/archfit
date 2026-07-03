@@ -6,6 +6,7 @@ import (
 	"github.com/alexei-led/archfit/internal/metrics/boundary"
 	"github.com/alexei-led/archfit/internal/metrics/metricstest"
 	"github.com/alexei-led/archfit/internal/model/coupling"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
@@ -33,6 +34,11 @@ func TestUnbalancedEdge_Count(t *testing.T) {
 	}
 	if result.Band != bandCritical {
 		t.Errorf("expected band critical got %q", result.Band)
+	}
+	// Direction drives computeVerdict's delta-sign handling (V1 fix): a count
+	// metric regresses when it RISES. A wrong stamp silently inverts gating.
+	if result.Direction != diagnostic.DirectionHigherIsWorse {
+		t.Errorf("direction = %q, want %q", result.Direction, diagnostic.DirectionHigherIsWorse)
 	}
 }
 

@@ -6,10 +6,18 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/agenttask"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 )
 
 const rulePublicAPIMax = "public_api_max"
+
+// Shared fixture paths hoisted for goconst.
+const (
+	fixtureCrateDir = "crates/mycrate"
+	fixtureRealGo   = "pkg/real.go"
+	fixtureCrate    = "mycrate"
+)
 
 // writeFixtureFile creates a real file at root/relPath so the integration
 // assertion below can os.Stat it — filesFor's contract is "exists on disk",
@@ -87,7 +95,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		writeFixtureFile(t, root, "widget/foo.go")
 		knownFiles := buildKnownFiles(t, root)
 
-		resolver := agenttask.NewPathResolver(knownFiles, nil, nil)
+		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("widget")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
@@ -108,7 +116,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		writeFixtureFile(t, root, "myapp/domain.py")
 		knownFiles := buildKnownFiles(t, root)
 
-		resolver := agenttask.NewPathResolver(knownFiles, nil, nil)
+		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("myapp.domain")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
@@ -129,7 +137,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		writeFixtureFile(t, root, "myapp/domain/__init__.py")
 		knownFiles := buildKnownFiles(t, root)
 
-		resolver := agenttask.NewPathResolver(knownFiles, nil, nil)
+		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("myapp.domain")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
@@ -154,7 +162,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		writeFixtureFile(t, root, "src/myapp/domain.py")
 		knownFiles := buildKnownFiles(t, root)
 
-		resolver := agenttask.NewPathResolver(knownFiles, nil, nil)
+		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("myapp.domain")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
@@ -175,7 +183,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		writeFixtureFile(t, root, "crates/mycrate/src/lib.rs")
 		knownFiles := buildKnownFiles(t, root)
 
-		resolver := agenttask.NewPathResolver(knownFiles, map[string]string{"mycrate": "crates/mycrate"}, nil)
+		resolver := agenttask.NewPathResolver(knownFiles, map[string]string{fixtureCrate: fixtureCrateDir}, nil, nil)
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("mycrate::mymod")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
@@ -186,7 +194,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 			t.Fatalf("tasks = %d, want 1", len(tasks))
 		}
 		assertFilesExistOnDisk(t, root, tasks[0].Files)
-		if want := "crates/mycrate"; len(tasks[0].Files) != 1 || tasks[0].Files[0] != want {
+		if want := fixtureCrateDir; len(tasks[0].Files) != 1 || tasks[0].Files[0] != want {
 			t.Errorf("files = %v, want [%q] (the crate's src dir, not the crate::mod id verbatim)", tasks[0].Files, want)
 		}
 	})
@@ -199,7 +207,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		writeFixtureFile(t, root, "src/components/Button.tsx")
 		knownFiles := buildKnownFiles(t, root)
 
-		resolver := agenttask.NewPathResolver(knownFiles, nil, nil)
+		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
 		f := finding.Finding{
 			ID:     "f1",
 			Kind:   finding.KindGate,
@@ -233,7 +241,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		// crate::mod, and its dotted-probe candidates don't exist either. With
 		// no module root dir configured, files[] must come back empty rather
 		// than fabricate the bare module key.
-		resolver := agenttask.NewPathResolver(knownFiles, nil, nil)
+		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("ghost.module")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
@@ -253,7 +261,7 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		writeFixtureFile(t, root, "legacy/pkg/file.go")
 		knownFiles := buildKnownFiles(t, root)
 
-		resolver := agenttask.NewPathResolver(knownFiles, nil, map[string]string{"ghostmod": "legacy/pkg"})
+		resolver := agenttask.NewPathResolver(knownFiles, nil, map[string]string{"ghostmod": "legacy/pkg"}, nil)
 		tasks := agenttask.Build(
 			[]finding.Finding{gateFindingWithModuleEdge("ghostmod")},
 			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
@@ -266,6 +274,161 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		assertFilesExistOnDisk(t, root, tasks[0].Files)
 		if want := "legacy/pkg"; len(tasks[0].Files) != 1 || tasks[0].Files[0] != want {
 			t.Errorf("files = %v, want [%q] (module root dir fallback)", tasks[0].Files, want)
+		}
+	})
+}
+
+// TestFilesFor_RustCrateResolution covers the crate::mod shapes beyond the
+// basic dir fallback: module-file precision when the file is indexed, and the
+// root-crate layout (CrateRoot.Dir "" — a single-crate repo, the common case)
+// which previously could never resolve at all.
+func TestFilesFor_RustCrateResolution(t *testing.T) {
+	build := func(root string, crateDirs map[string]string, modKey string) []diagnostic.AgentTask {
+		knownFiles := buildKnownFiles(t, root)
+		resolver := agenttask.NewPathResolver(knownFiles, crateDirs, nil, nil)
+		return agenttask.Build(
+			[]finding.Finding{gateFindingWithModuleEdge(modKey)},
+			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
+			nil, nil, nil,
+			resolver,
+		)
+	}
+
+	t.Run("module_file_beats_crate_dir_when_indexed", func(t *testing.T) {
+		root := t.TempDir()
+		writeFixtureFile(t, root, "crates/mycrate/src/mymod.rs")
+		tasks := build(root, map[string]string{fixtureCrate: fixtureCrateDir}, "mycrate::mymod")
+		if len(tasks) != 1 {
+			t.Fatalf("tasks = %d, want 1", len(tasks))
+		}
+		assertFilesExistOnDisk(t, root, tasks[0].Files)
+		if want := "crates/mycrate/src/mymod.rs"; len(tasks[0].Files) != 1 || tasks[0].Files[0] != want {
+			t.Errorf("files = %v, want [%q] (the module's own file, not just the crate dir)", tasks[0].Files, want)
+		}
+	})
+
+	t.Run("root_crate_resolves_module_file_under_src", func(t *testing.T) {
+		root := t.TempDir()
+		writeFixtureFile(t, root, "src/mymod.rs")
+		tasks := build(root, map[string]string{fixtureCrate: ""}, "mycrate::mymod")
+		if len(tasks) != 1 {
+			t.Fatalf("tasks = %d, want 1", len(tasks))
+		}
+		assertFilesExistOnDisk(t, root, tasks[0].Files)
+		if want := "src/mymod.rs"; len(tasks[0].Files) != 1 || tasks[0].Files[0] != want {
+			t.Errorf("files = %v, want [%q] (root crate: Dir \"\" must still resolve)", tasks[0].Files, want)
+		}
+	})
+
+	t.Run("root_crate_falls_back_to_src_dir", func(t *testing.T) {
+		root := t.TempDir()
+		writeFixtureFile(t, root, "src/lib.rs")
+		tasks := build(root, map[string]string{fixtureCrate: ""}, "mycrate::other")
+		if len(tasks) != 1 {
+			t.Fatalf("tasks = %d, want 1", len(tasks))
+		}
+		assertFilesExistOnDisk(t, root, tasks[0].Files)
+		if want := "src"; len(tasks[0].Files) != 1 || tasks[0].Files[0] != want {
+			t.Errorf("files = %v, want [%q] (root crate src dir, never the repo root or a drop)", tasks[0].Files, want)
+		}
+	})
+}
+
+// TestFilesFor_OnDiskFallback pins the "exists on disk" contract: the LOC
+// walk's index skips directories (mocks/, target/, venv/) the extractor
+// exclusions do not, so a real file there is index-invisible. The onDisk
+// callback must rescue it; without the callback it is dropped.
+func TestFilesFor_OnDiskFallback(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, fixtureRealGo)
+	writeFixtureFile(t, root, "mocks/fake.go")
+	// Simulate the LOC walk: mocks/ is skipped, so only pkg/real.go is indexed.
+	knownFiles := map[string]struct{}{fixtureRealGo: {}}
+	onDisk := func(rel string) bool {
+		_, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel)))
+		return err == nil
+	}
+
+	f := finding.Finding{
+		ID:     "f1",
+		Kind:   finding.KindGate,
+		RuleID: ruleTypeForbidden,
+		Status: finding.StatusNew,
+		Edge: finding.EdgeEvidence{
+			From: finding.Endpoint{Path: "mocks/fake.go"},
+			To:   finding.Endpoint{Path: fixtureRealGo},
+		},
+	}
+
+	t.Run("with_callback_the_on_disk_file_survives", func(t *testing.T) {
+		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, onDisk)
+		tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleTypeForbidden: ruleTypeForbidden}, nil, nil, nil, resolver)
+		if len(tasks) != 1 {
+			t.Fatalf("tasks = %d, want 1", len(tasks))
+		}
+		assertFilesExistOnDisk(t, root, tasks[0].Files)
+		if len(tasks[0].Files) != 2 {
+			t.Errorf("files = %v, want both endpoints (mocks/fake.go exists on disk)", tasks[0].Files)
+		}
+	})
+
+	t.Run("without_callback_the_index_miss_is_dropped", func(t *testing.T) {
+		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
+		tasks := agenttask.Build([]finding.Finding{f}, map[string]string{ruleTypeForbidden: ruleTypeForbidden}, nil, nil, nil, resolver)
+		if len(tasks) != 1 {
+			t.Fatalf("tasks = %d, want 1", len(tasks))
+		}
+		if want := fixtureRealGo; len(tasks[0].Files) != 1 || tasks[0].Files[0] != want {
+			t.Errorf("files = %v, want [%q] only (index miss, no disk check available)", tasks[0].Files, want)
+		}
+	})
+}
+
+// TestFilesFor_DottedModuleRootFallback pins the Python shape of the module
+// root fallback: config.ModuleRootDirs returns a dotted module-ID prefix
+// ("myapp.domain") for a dotted glob, and filesFor must route it through the
+// full resolver — the dotted-candidate probe — rather than a bare dir check
+// that a dotted string can never pass.
+func TestFilesFor_DottedModuleRootFallback(t *testing.T) {
+	t.Run("dotted_root_resolves_via_file_probe", func(t *testing.T) {
+		root := t.TempDir()
+		writeFixtureFile(t, root, "myapp/domain.py")
+		knownFiles := buildKnownFiles(t, root)
+
+		resolver := agenttask.NewPathResolver(knownFiles, nil, map[string]string{"domain": "myapp.domain"}, nil)
+		tasks := agenttask.Build(
+			[]finding.Finding{gateFindingWithModuleEdge("domain")},
+			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
+			nil, nil, nil,
+			resolver,
+		)
+		if len(tasks) != 1 {
+			t.Fatalf("tasks = %d, want 1", len(tasks))
+		}
+		assertFilesExistOnDisk(t, root, tasks[0].Files)
+		if want := "myapp/domain.py"; len(tasks[0].Files) != 1 || tasks[0].Files[0] != want {
+			t.Errorf("files = %v, want [%q] (dotted module root resolved to its real file)", tasks[0].Files, want)
+		}
+	})
+
+	t.Run("dotted_root_resolves_to_package_dir_without_init", func(t *testing.T) {
+		root := t.TempDir()
+		writeFixtureFile(t, root, "myapp/domain/handlers.py") // namespace package: no __init__.py
+		knownFiles := buildKnownFiles(t, root)
+
+		resolver := agenttask.NewPathResolver(knownFiles, nil, map[string]string{"domain": "myapp.domain"}, nil)
+		tasks := agenttask.Build(
+			[]finding.Finding{gateFindingWithModuleEdge("domain")},
+			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
+			nil, nil, nil,
+			resolver,
+		)
+		if len(tasks) != 1 {
+			t.Fatalf("tasks = %d, want 1", len(tasks))
+		}
+		assertFilesExistOnDisk(t, root, tasks[0].Files)
+		if want := "myapp/domain"; len(tasks[0].Files) != 1 || tasks[0].Files[0] != want {
+			t.Errorf("files = %v, want [%q] (dots-to-slashes package dir)", tasks[0].Files, want)
 		}
 	})
 }

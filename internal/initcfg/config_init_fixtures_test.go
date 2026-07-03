@@ -139,6 +139,9 @@ func TestPublicAPIOnly_Task1Fixtures(t *testing.T) {
 		root   string
 		runner toolrun.Runner
 	}{
+		// go is the one language whose extractor tags EdgeKindUsesInternal
+		// natively, so the V5 same-module fix must hold on its real module shapes.
+		{name: "go", root: "gofixture", runner: toolrun.New()},
 		{name: "typescript", root: "tsfixture", runner: &toolrun.RunnerMock{}},
 		{name: "python", root: "pyfixture", runner: &toolrun.RunnerMock{}},
 		{name: "rust", root: "rustfixture", runner: rustFixtureRunner()},

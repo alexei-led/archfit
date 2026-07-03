@@ -179,25 +179,32 @@ func cargoModulesPartial(d diagnostic.Diagnostic) bool {
 	return false
 }
 
-// tsUnresolvedRatioCeiling is the unresolved/extracted-files ratio above which
-// dependency-cruiser's coverage is noisy enough to cap coupling_balance
-// confidence. Deliberate simplification: 10% is a round ceiling, not a
+// tsUnresolvedRatioCeiling is the unresolved/total-import-specifiers ratio
+// above which dependency-cruiser's coverage is noisy enough to cap
+// coupling_balance confidence — the SAME ratio the coverage Reason string
+// discloses, so the cap and the disclosure can never contradict each other.
+// Deliberate simplification: 10% is a round ceiling, not a
 // calibrated figure — raise it if legitimate repos trip this on ordinary
 // tsconfig-less noise, lower it if a 10%-noisy extraction still reads as
 // confident in practice.
 const tsUnresolvedRatioCeiling = 0.10
 
+// toolDepCruiser is the ToolCoverage name the TypeScript extractor reports under.
+const toolDepCruiser = "dependency-cruiser"
+
 // tsUnresolvedPartial reports whether the TypeScript extractor (dependency-cruiser)
 // reported partial coverage with an unresolved-specifier ratio above
 // tsUnresolvedRatioCeiling — a signal that path-alias or module-resolution
 // failures are dropping internal edges into the external bucket, which
-// coupling_balance excludes from its denominator entirely.
+// coupling_balance excludes from its denominator entirely. SpecifiersSeen 0
+// (an extractor that does not track specifier totals) abstains rather than
+// divide by a proxy denominator.
 func tsUnresolvedPartial(d diagnostic.Diagnostic) bool {
 	for _, c := range d.ToolCoverage {
-		if c.Tool != "dependency-cruiser" || c.Status != diagnostic.StatusPartial || c.FilesSeen == 0 {
+		if c.Tool != toolDepCruiser || c.Status != diagnostic.StatusPartial || c.SpecifiersSeen == 0 {
 			continue
 		}
-		if float64(c.Unresolved)/float64(c.FilesSeen) > tsUnresolvedRatioCeiling {
+		if float64(c.Unresolved)/float64(c.SpecifiersSeen) > tsUnresolvedRatioCeiling {
 			return true
 		}
 	}

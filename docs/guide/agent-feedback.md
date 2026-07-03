@@ -49,14 +49,16 @@ file. Config module keys (Go), dotted module IDs (Python), and `crate::mod`
 keys (Rust) are resolved against the extractors' own file/crate-root facts
 before being emitted; an entry that cannot be resolved is dropped rather than
 emitted as a bare key or ID. If dropping empties the set, `files` falls back to
-the target module's config `paths:` root directory; if even that isn't
-resolvable, `files` is legitimately empty — never a fabricated string
+the target module's config `paths:` root — itself resolved to a real path (a
+Python dotted glob root goes through the module-file probe); if even that
+isn't resolvable, `files` is legitimately empty — never a fabricated string
 (`internal/agenttask/agenttask.go`, `filesFor`).
 
 **`edge.path` group semantics.** For a rolled-up finding (`group_count > 1`),
 `edge.from.path`/`edge.to.path` are taken from whichever member edge owns
 `locations[0]` — never an arbitrary hash-ordered representative. Both paths
-are omitted when no member's own location matches `locations[0]`
+are empty strings (the `path` keys stay present in the JSON) when no member's
+own location matches `locations[0]`
 (`internal/engine/advisories.go`, `groupEdgePaths`). An agent can rely on
 `edge.from.path`/`edge.to.path`, when present, naming a file that literally
 appears in `locations[]`.

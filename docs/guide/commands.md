@@ -32,8 +32,10 @@ audit report. Bare `archfit` (no subcommand) runs `analyze` in report-only mode.
 
 ## Command summary
 
-- `archfit doctor` — check available local toolchain; `--fix` installs missing
-  tools (`--dry-run` previews without installing).
+- `archfit doctor` — check available local toolchain; also flags config-only
+  issues, e.g. a `forbidden_dependency` rule with no `from:`/`to:` glob (dead
+  by construction). `--fix` installs missing tools (`--dry-run` previews
+  without installing).
 - `archfit config init` — generate a starter `.archfit.yaml`; `--llm` adds an
   off-gate classification pass (subdomain, volatility, layer, role per module).
 - `archfit config update` — sync `.archfit.yaml` with the current project structure.

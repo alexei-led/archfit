@@ -6,6 +6,7 @@ package agenttask
 
 import (
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 
@@ -35,16 +36,24 @@ type PathResolver struct {
 	knownDirs      map[string]struct{}
 	crateRootDirs  map[string]string
 	moduleRootDirs map[string]string
+	onDisk         func(string) bool
 }
 
 // NewPathResolver builds a PathResolver from already-gathered facts:
 // knownFiles is every repo-relative file path seen by the LOC walk
 // (SizeSignals.FileClassIndex keys); crateRootDirs maps a Rust crate name to
 // its repo-relative directory (from graph.CrateRoot); moduleRootDirs maps a
-// config module name to its declared Paths root dir (config.ModuleRootDirs),
+// config module name to its declared Paths root (config.ModuleRootDirs),
 // the last-resort fallback when nothing else resolves. A nil knownFiles
 // disables resolution (see PathResolver).
-func NewPathResolver(knownFiles map[string]struct{}, crateRootDirs, moduleRootDirs map[string]string) PathResolver {
+//
+// onDisk (optional, nil-safe) reports whether a repo-relative path exists on
+// disk — the composition root passes an os.Stat closure. It backstops
+// knownFiles misses: the LOC walk skips directories (mocks/, target/, venv/)
+// that the extractor exclusions do not, so a real edge endpoint under one of
+// them is absent from the index yet must not be dropped — the files[]
+// contract is "exists on disk", not "was seen by the LOC walk".
+func NewPathResolver(knownFiles map[string]struct{}, crateRootDirs, moduleRootDirs map[string]string, onDisk func(string) bool) PathResolver {
 	if knownFiles == nil {
 		return PathResolver{crateRootDirs: crateRootDirs, moduleRootDirs: moduleRootDirs}
 	}
@@ -67,24 +76,42 @@ func NewPathResolver(knownFiles map[string]struct{}, crateRootDirs, moduleRootDi
 		knownDirs:      knownDirs,
 		crateRootDirs:  crateRootDirs,
 		moduleRootDirs: moduleRootDirs,
+		onDisk:         onDisk,
 	}
 }
 
-// dirExists reports whether dir is a known directory, or resolution is
-// disabled (knownFiles nil), in which case every directory is trusted.
+// exists reports whether p is in the LOC-walk index (file or ancestor dir) or,
+// failing that, exists on disk per the onDisk callback — the index is a fast
+// under-approximation of the disk (its walk skips mocks/, target/, venv/).
+func (r PathResolver) exists(p string) bool {
+	if _, ok := r.knownFiles[p]; ok {
+		return true
+	}
+	if _, ok := r.knownDirs[p]; ok {
+		return true
+	}
+	return r.onDisk != nil && r.onDisk(p)
+}
+
+// dirExists reports whether dir is a known or on-disk directory, or resolution
+// is disabled (knownFiles nil), in which case every directory is trusted.
 func (r PathResolver) dirExists(dir string) bool {
 	if r.knownFiles == nil {
 		return true
 	}
-	_, ok := r.knownDirs[dir]
-	return ok
+	if _, ok := r.knownDirs[dir]; ok {
+		return true
+	}
+	return r.onDisk != nil && r.onDisk(dir)
 }
 
 // resolve turns a candidate path/key into one that exists on disk, or reports
-// false when it cannot be resolved. Resolution order: literal file, literal
-// directory, Rust "crate::mod" (via crateRootDirs), Python dotted module (via
-// the shared graph.BuiltinConventions candidate list). Disabled (knownFiles
-// nil) trusts every non-empty candidate, matching pre-resolver behavior.
+// false when it cannot be resolved. Resolution order: literal file or
+// directory (index first, then disk), Rust "crate::mod" (module file under
+// the crate's src/, then the crate dir), Python dotted module (the shared
+// graph.BuiltinConventions candidate list, then the dots-to-slashes
+// directory). Disabled (knownFiles nil) trusts every non-empty candidate,
+// matching pre-resolver behavior.
 func (r PathResolver) resolve(candidate string) (string, bool) {
 	if candidate == "" {
 		return "", false
@@ -92,22 +119,37 @@ func (r PathResolver) resolve(candidate string) (string, bool) {
 	if r.knownFiles == nil {
 		return candidate, true
 	}
-	if _, ok := r.knownFiles[candidate]; ok {
+	if r.exists(candidate) {
 		return candidate, true
 	}
-	if _, ok := r.knownDirs[candidate]; ok {
-		return candidate, true
-	}
-	if crate, _, ok := strings.Cut(candidate, "::"); ok {
-		if dir, ok := r.crateRootDirs[crate]; ok && dir != "" && r.dirExists(dir) {
-			return dir, true
+	if crate, modPath, ok := strings.Cut(candidate, "::"); ok {
+		if dir, ok := r.crateRootDirs[crate]; ok {
+			// Root crates carry Dir "" — path.Join drops the empty segment, so
+			// their module files probe as "src/<mod>.rs" and their dir
+			// fallback as "src".
+			rel := strings.ReplaceAll(modPath, "::", "/")
+			base := path.Join(dir, "src", rel)
+			for _, cand := range []string{base + ".rs", path.Join(base, "mod.rs")} {
+				if r.exists(cand) {
+					return cand, true
+				}
+			}
+			if dir != "" && r.dirExists(dir) {
+				return dir, true
+			}
+			if src := path.Join(dir, "src"); r.dirExists(src) {
+				return src, true
+			}
 		}
 	}
 	if strings.Contains(candidate, ".") && !strings.Contains(candidate, "/") {
 		for _, cand := range graph.BuiltinConventions.Lookup(graph.LangPython).ModuleFileCandidates(candidate) {
-			if _, ok := r.knownFiles[cand]; ok {
+			if r.exists(cand) {
 				return cand, true
 			}
+		}
+		if dir := strings.ReplaceAll(candidate, ".", "/"); r.dirExists(dir) {
+			return dir, true
 		}
 	}
 	return "", false
@@ -248,8 +290,13 @@ func filesFor(f finding.Finding, r PathResolver) []string {
 
 	if len(set) == 0 {
 		if mod := f.MatchedBy[matchedByModuleKey]; mod != "" {
-			if root, ok := r.moduleRootDirs[mod]; ok && root != "" && r.dirExists(root) {
-				set[root] = struct{}{}
+			// The root goes through resolve, not a bare dir check: a Python
+			// module's root is a dotted module-ID prefix that only the
+			// dotted-candidate probe can turn into a real path.
+			if root, ok := r.moduleRootDirs[mod]; ok && root != "" {
+				if resolved, rok := r.resolve(root); rok {
+					set[resolved] = struct{}{}
+				}
 			}
 		}
 	}

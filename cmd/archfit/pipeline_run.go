@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -374,7 +375,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 			crateRootDirs[cr.Name] = cr.Dir
 		}
 	}
-	pathResolver := agenttask.NewPathResolver(knownFiles, crateRootDirs, config.ModuleRootDirs(cfg.Modules))
+	// onDisk backstops the LOC-walk index: its walk skips dirs (mocks/,
+	// target/, venv/) that extractor exclusions do not, so a real edge
+	// endpoint there is index-invisible yet must survive resolution.
+	onDisk := func(rel string) bool {
+		_, err := os.Stat(filepath.Join(s.Root, filepath.FromSlash(rel)))
+		return err == nil
+	}
+	pathResolver := agenttask.NewPathResolver(knownFiles, crateRootDirs, config.ModuleRootDirs(cfg.Modules), onDisk)
 	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate}, diag.SyntaxFacts, pathResolver)
 
 	// Warn-loud coverage reporting: turn the absent tool-coverage records into a
@@ -392,10 +400,6 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 
 	return diag, card, nil
 }
-
-// ruleIDBCImbalanced is the rule ID the engine stamps on Balanced-Coupling
-// advisory findings (internal/engine/advisories.go keeps the source constant).
-const ruleIDBCImbalanced = "bc/imbalanced_coupling"
 
 // ruleIDBCCouplingGate is stamped on the synthetic summary finding that
 // applyCouplingGate emits when the gate trips with no promotable BC advisory
@@ -450,7 +454,7 @@ func applyCouplingGate(diag *diagnostic.Diagnostic, card score.Scorecard, gate s
 	promoted := 0
 	for i := range diag.Findings {
 		f := &diag.Findings[i]
-		if f.RuleID != ruleIDBCImbalanced || f.Kind != finding.KindAdvisory || !score.IsActiveGateFinding(*f) {
+		if f.RuleID != engine.RuleIDBCImbalanced || f.Kind != finding.KindAdvisory || !score.IsActiveGateFinding(*f) {
 			continue
 		}
 		f.Kind = finding.KindGate

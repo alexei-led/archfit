@@ -21,6 +21,11 @@ func TestCoverage_Ratio(t *testing.T) {
 	if !metricstest.ApproxEqual(result.Value, 0.8) {
 		t.Errorf("expected value 0.8 got %v", result.Value)
 	}
+	// Direction drives computeVerdict's delta-sign handling (V1 fix): a ratio
+	// metric regresses when it FALLS. A wrong stamp silently inverts gating.
+	if result.Direction != diagnostic.DirectionHigherIsBetter {
+		t.Errorf("direction = %q, want %q", result.Direction, diagnostic.DirectionHigherIsBetter)
+	}
 }
 
 func TestCoverage_NoExtractors(t *testing.T) {

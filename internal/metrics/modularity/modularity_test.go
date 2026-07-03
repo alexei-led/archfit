@@ -6,6 +6,7 @@ import (
 	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/metrics/metricstest"
 	"github.com/alexei-led/archfit/internal/metrics/modularity"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
@@ -33,5 +34,10 @@ func TestBlastRadius_TransitiveReverseDeps(t *testing.T) {
 	// small N -> low confidence (not a quality verdict), never gating.
 	if res.Confidence != result.ConfidenceLow {
 		t.Errorf("expected low confidence for small N, got %q", res.Confidence)
+	}
+	// Direction drives computeVerdict's delta-sign handling (V1 fix): a count
+	// metric regresses when it RISES. A wrong stamp silently inverts gating.
+	if res.Direction != diagnostic.DirectionHigherIsWorse {
+		t.Errorf("direction = %q, want %q", res.Direction, diagnostic.DirectionHigherIsWorse)
 	}
 }

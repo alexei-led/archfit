@@ -499,6 +499,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 		FilesSeen:       filesSeen,
 		FilesApplicable: filesSeen,
 		Unresolved:      unresolved,
+		SpecifiersSeen:  totalSpecifiers,
 		Status:          status,
 		Reason:          reason,
 	}

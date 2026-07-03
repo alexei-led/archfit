@@ -113,14 +113,14 @@ func TestCollectAdvisories_ClonebackedSymmetricFinding_CitesRealLocation(t *test
 	var locs []graph.Location
 	var found bool
 	for _, f := range findings {
-		if f.RuleID != ruleIDBCImbalanced {
+		if f.RuleID != RuleIDBCImbalanced {
 			continue
 		}
 		locs = f.Locations
 		found = true
 	}
 	if !found {
-		t.Fatalf("no %s finding produced: %+v", ruleIDBCImbalanced, findings)
+		t.Fatalf("no %s finding produced: %+v", RuleIDBCImbalanced, findings)
 	}
 
 	if !containsLocation(locs, baselineLoc) {

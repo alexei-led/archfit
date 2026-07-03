@@ -11,6 +11,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/score"
@@ -101,13 +102,13 @@ func TestRun_Analyze_CouplingGate_MinBandTrips(t *testing.T) {
 	}
 	var bcTask *diagnostic.AgentTask
 	for i := range diag.AgentTasks {
-		if diag.AgentTasks[i].RuleID == ruleIDBCImbalanced {
+		if diag.AgentTasks[i].RuleID == engine.RuleIDBCImbalanced {
 			bcTask = &diag.AgentTasks[i]
 			break
 		}
 	}
 	if bcTask == nil {
-		t.Fatalf("agent_tasks carries no %s task: %+v", ruleIDBCImbalanced, diag.AgentTasks)
+		t.Fatalf("agent_tasks carries no %s task: %+v", engine.RuleIDBCImbalanced, diag.AgentTasks)
 	}
 	if len(bcTask.Files) == 0 {
 		t.Errorf("promoted coupling task has no files: %+v", *bcTask)
@@ -152,7 +153,7 @@ func TestRun_Analyze_CouplingGate_OffByDefault(t *testing.T) {
 		t.Fatalf("unmarshal JSON output: %v", err)
 	}
 	for _, task := range diag.AgentTasks {
-		if task.RuleID == ruleIDBCImbalanced {
+		if task.RuleID == engine.RuleIDBCImbalanced {
 			t.Fatalf("coupling advisory produced an agent task without a gate: %+v", task)
 		}
 	}
@@ -242,8 +243,8 @@ func TestApplyCouplingGate_PromotionScope(t *testing.T) {
 		return diagnostic.Diagnostic{
 			Verdict: diagnostic.VerdictPass,
 			Findings: []finding.Finding{
-				{ID: "bc-active", RuleID: ruleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusNew},
-				{ID: "bc-baselined", RuleID: ruleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusBaseline},
+				{ID: "bc-active", RuleID: engine.RuleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusNew},
+				{ID: "bc-baselined", RuleID: engine.RuleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusBaseline},
 				{ID: "rule-gate", RuleID: "no-cycles", Kind: finding.KindGate, Status: finding.StatusNew},
 			},
 			Summary: diagnostic.Summary{GateFindings: 1, Warnings: 2},
@@ -292,7 +293,7 @@ func TestApplyCouplingGate_PromotionScope(t *testing.T) {
 		diag := diagnostic.Diagnostic{
 			Verdict: diagnostic.VerdictPass,
 			Findings: []finding.Finding{
-				{ID: "bc-baselined", RuleID: ruleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusBaseline},
+				{ID: "bc-baselined", RuleID: engine.RuleIDBCImbalanced, Kind: finding.KindAdvisory, Status: finding.StatusBaseline},
 			},
 		}
 		applyCouplingGate(&diag, card, score.CouplingGate{Enabled: true, MinBand: score.BandMixed}, baseline.Baseline{})
@@ -391,7 +392,7 @@ func TestRun_Baseline_KeepsNativeAdvisoryKind(t *testing.T) {
 	}
 	sawBC := false
 	for _, a := range b.Accepted {
-		if a.RuleID != ruleIDBCImbalanced {
+		if a.RuleID != engine.RuleIDBCImbalanced {
 			continue
 		}
 		sawBC = true

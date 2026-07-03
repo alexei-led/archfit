@@ -143,6 +143,23 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   dotted node ID via `doublestar.Match`. Write `prefect.**`, NOT `src/prefect/**` — a slash
   glob silently matches nothing → every Python edge classifies external → 0 scored →
   `coupling_balance` n/a. Locked by `config_test.go:TestModuleFor_PythonDottedGlobs`.
+  `pythonModuleFileCandidates` (`internal/model/graph/convention.go`) emits `src/`-prefixed
+  candidates alongside the flat ones, mirroring `pythonFileToModuleKey`'s `src/`-stripping —
+  keep the two symmetric or src-layout repos silently fail dotted-ID → file resolution.
+- **agent_tasks `files[]` exist on disk (`agenttask.PathResolver`).** Every candidate
+  (edge endpoints, locations, module keys) resolves index-first against the LOC walk's
+  `FileClassIndex` with an injected `onDisk` os.Stat backstop (the LOC walk skips `mocks/`,
+  `target/`, `venv/` which extractor exclusions do not) — resolve-or-drop, never a bare
+  config key or dotted/`::` id. Rust `crate::mod` probes `<dir>/src/<mod>.rs|/mod.rs`
+  then the crate dir (`src` for a root crate whose `CrateRoot.Dir` is `""`); the
+  last-resort module root from `config.ModuleRootDirs` (dotted prefix for Python globs)
+  goes through the same resolver. agenttask itself never touches the filesystem — the
+  composition root (`cmd`) owns the `onDisk` closure.
+- **TS coverage honesty: one unresolved ratio.** `score.tsUnresolvedRatioCeiling` (10%)
+  caps `coupling_balance` confidence using `Unresolved/SpecifiersSeen` — the SAME
+  specifier-denominator ratio the dependency-cruiser `Coverage.Reason` string and the
+  `analyze` stderr warning disclose. Never reintroduce a `FilesSeen` denominator: the
+  cap and the disclosure would contradict each other on the same run.
 - **`coupling_balance` reports `n/a` (band `score.BandNA`) when unmeasured — never a
   fabricated number.** Zero scored cross-boundary edges (empty module map, non-matching
   globs, empty SCIP index, all-external) or a degenerate (<2 connected modules, e.g.

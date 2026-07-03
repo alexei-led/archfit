@@ -103,7 +103,12 @@ type Coverage struct {
 	FilesSeen       int    `json:"files_seen"`
 	FilesApplicable int    `json:"files_applicable"`
 	Unresolved      int    `json:"unresolved"`
-	Status          string `json:"status"`
+	// SpecifiersSeen is the total import-specifier count the extractor
+	// examined — the denominator that makes Unresolved a ratio. Only
+	// specifier-granular extractors (dependency-cruiser) set it; 0 means
+	// "not tracked", never "no specifiers".
+	SpecifiersSeen int    `json:"specifiers_seen,omitempty"`
+	Status         string `json:"status"`
 	// Reason explains why a headline metric is absent or partial — a missing
 	// tool, an opt-in-off setting, or an uninstalled dependency — and how to
 	// enable it (the actionable next step). Empty when status is ok. A static,

@@ -20,8 +20,10 @@ import (
 // kindAdvisory is the finding kind for non-gating advisory findings.
 const kindAdvisory = "advisory"
 
-// ruleIDBCImbalanced is the rule ID for a Balanced-Coupling advisory finding.
-const ruleIDBCImbalanced = "bc/imbalanced_coupling"
+// RuleIDBCImbalanced is the rule ID stamped on a Balanced-Coupling advisory
+// finding. Exported so the composition root (cmd) matches promotable findings
+// against the same constant instead of a drifting duplicate literal.
+const RuleIDBCImbalanced = "bc/imbalanced_coupling"
 
 // collectAdvisories runs stage 8: coupling advisories, staleness advisories,
 // stale label advisories, and the advisory status pass.
@@ -66,7 +68,7 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 		af := finding.Finding{
 			ID:       id,
 			Kind:     kindAdvisory,
-			RuleID:   ruleIDBCImbalanced,
+			RuleID:   RuleIDBCImbalanced,
 			Status:   finding.StatusNew,
 			Severity: finding.Severity(cl.Severity),
 			Edge: finding.EdgeEvidence{
@@ -127,7 +129,7 @@ func groupBCAdvisories(advisories []finding.Finding) []finding.Finding {
 	var passthrough []finding.Finding
 
 	for _, f := range advisories {
-		if f.RuleID != "bc/imbalanced_coupling" {
+		if f.RuleID != RuleIDBCImbalanced {
 			passthrough = append(passthrough, f)
 			continue
 		}
@@ -314,7 +316,9 @@ func bcAdvisoryWhy(cl coupling.Classification) string {
 // volatility worst case). A critical edge at low distance (cross_module_same_owner)
 // is local coupling to a volatile target: its cascade is cheap (one owner, one
 // binary), so it is named as such, NOT as a distributed monolith — recommending
-// "introduce a contract" there would be cargo-cult. Cohesion (high strength + low
+// "introduce a contract" there would be cargo-cult. High severity splits on the
+// same distance test: only a genuinely high-distance edge is "across a boundary";
+// a low-distance one names its cascade as contained. Cohesion (high strength + low
 // distance, balanced) never reaches here — the book formula scores it SeverityNone.
 //
 // The clause names the edge's ACTUAL matched_by.strength and matched_by.volatility —
@@ -331,7 +335,10 @@ func bcRiskClause(cl coupling.Classification) string {
 		}
 		return strengthDesc + " to " + volatilityDesc + " at low distance → local cascade (cheap to change; not a distributed monolith)"
 	case coupling.SeverityHigh:
-		return strengthDesc + " across a boundary to " + volatilityDesc + " → likely cascading changes"
+		if coupling.DistanceIsHigh(cl.Distance) {
+			return strengthDesc + " across a boundary to " + volatilityDesc + " → likely cascading changes"
+		}
+		return strengthDesc + " to " + volatilityDesc + " at low distance → cascading changes contained to one owner"
 	default:
 		return "unbalanced coupling → elevated maintenance effort"
 	}

@@ -71,6 +71,16 @@ rules:
 	}
 }
 
+// TestDoctorCmd_NoConfigFile pins the fresh-repo path (before config init):
+// the absent default config falls back to config.Default(), so doctor must
+// succeed with no Config checks block rather than error out.
+func TestDoctorCmd_NoConfigFile(t *testing.T) {
+	out := runDoctorCmd(t, t.TempDir())
+	if strings.Contains(out, "Config checks") {
+		t.Errorf("expected no config-check output without a config file, got:\n%s", out)
+	}
+}
+
 func TestDeadForbiddenDependencyRules(t *testing.T) {
 	tests := []struct {
 		name string

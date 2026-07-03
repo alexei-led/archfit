@@ -565,7 +565,7 @@ func TestCouplingBalance_ExternalEdgesExcluded(t *testing.T) {
 }
 
 func TestSynthesize_TSUnresolvedPartial_LowersConfidence(t *testing.T) {
-	diagWithTSCoverage := func(unresolved, filesSeen int, status string) diagnostic.Diagnostic {
+	diagWithTSCoverage := func(unresolved, specifiersSeen int, status string) diagnostic.Diagnostic {
 		d := diagnostic.New()
 		d.Metrics = []diagnostic.MetricResult{metric("blast_radius", 3, "info", "high")}
 		d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
@@ -574,7 +574,7 @@ func TestSynthesize_TSUnresolvedPartial_LowersConfidence(t *testing.T) {
 			BySeverity:  map[string]int{sevLow: 50},
 		}
 		d.ToolCoverage = []diagnostic.Coverage{
-			{Tool: "dependency-cruiser", Status: status, FilesSeen: filesSeen, Unresolved: unresolved},
+			{Tool: toolDepCruiser, Status: status, FilesSeen: 10, SpecifiersSeen: specifiersSeen, Unresolved: unresolved},
 		}
 		return d
 	}
@@ -595,6 +595,9 @@ func TestSynthesize_TSUnresolvedPartial_LowersConfidence(t *testing.T) {
 		}
 	})
 
+	// Also the denominator regression guard: 5/100 specifiers is 5% (under the
+	// ceiling) while 5 over the 10 FilesSeen would be 50% — a FilesSeen
+	// denominator would cap here and contradict the disclosed specifier ratio.
 	t.Run("unresolved ratio within ceiling leaves confidence high", func(t *testing.T) {
 		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(5, 100, diagnostic.StatusPartial))) // 5%
 		if cb.Confidence != ConfidenceHigh {
@@ -608,4 +611,33 @@ func TestSynthesize_TSUnresolvedPartial_LowersConfidence(t *testing.T) {
 			t.Errorf("confidence = %q, want high (status ok, not partial)", cb.Confidence)
 		}
 	})
+
+	t.Run("specifiers untracked (0) abstains rather than cap on a proxy ratio", func(t *testing.T) {
+		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 0, diagnostic.StatusPartial)))
+		if cb.Confidence != ConfidenceHigh {
+			t.Errorf("confidence = %q, want high (SpecifiersSeen 0 = untracked, no cap)", cb.Confidence)
+		}
+	})
+}
+
+// TestSynthesize_ConfidenceCapsNeverStack pins the minimum-band rule: two
+// simultaneous cap triggers (cargo-modules partial + TS unresolved ratio over
+// ceiling) land at medium — one step down — never stacked to low.
+func TestSynthesize_ConfidenceCapsNeverStack(t *testing.T) {
+	d := diagnostic.New()
+	d.Metrics = []diagnostic.MetricResult{metric("blast_radius", 3, "info", "high")}
+	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
+		Total: 50, Scored: 50, Abstained: 0,
+		MeanBalance: 9.0,
+		BySeverity:  map[string]int{sevLow: 50},
+	}
+	d.ToolCoverage = []diagnostic.Coverage{
+		{Tool: "cargo-modules", Status: diagnostic.StatusPartial},
+		{Tool: toolDepCruiser, Status: diagnostic.StatusPartial, FilesSeen: 10, SpecifiersSeen: 100, Unresolved: 20},
+	}
+
+	cb := couplingBalanceDim(t, Synthesize(d))
+	if cb.Confidence != ConfidenceMedium {
+		t.Errorf("confidence = %q, want medium (caps are a floor, not cumulative downgrades)", cb.Confidence)
+	}
 }

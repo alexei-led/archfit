@@ -93,6 +93,16 @@ func TestEvaluateCouplingGate(t *testing.T) {
 			wantTrip: false,
 		},
 		{
+			// A stored 0 is a measured (terrible) score, distinct from nil
+			// (unmeasured): the drop check runs — and a current score ≥0 can
+			// never be a drop below 0, so it must not trip.
+			name:      "baseline score zero is measured, not unmeasured",
+			sc:        card(10, BandCritical),
+			gate:      CouplingGate{Enabled: true, MaxDrop: new(0)},
+			baseScore: new(0),
+			wantTrip:  false,
+		},
+		{
 			name:      "floor and drop both tripped yields two reasons",
 			sc:        card(30, BandPoor),
 			gate:      CouplingGate{Enabled: true, MinBand: BandMixed, MaxDrop: new(5)},
