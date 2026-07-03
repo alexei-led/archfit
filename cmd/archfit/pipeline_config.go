@@ -120,6 +120,22 @@ func ownerDegradationWarning(src ownership.Source) string {
 	}
 }
 
+// tsUnresolvedWarning returns a disclosure message when the TypeScript
+// extractor (dependency-cruiser) reported partial coverage with a non-empty
+// Reason — e.g. a high unresolved-import-specifier count from a missing
+// tsconfig path alias or an uninstalled dependency. Those edges silently land
+// in the external bucket, excluded from coupling_balance's denominator, so the
+// gap must not be stderr-silent (mirrors ownerDegradationWarning). Returns ""
+// when no such coverage record is present.
+func tsUnresolvedWarning(cov []diagnostic.Coverage) string {
+	for _, c := range cov {
+		if c.Tool == toolDepCruiser && c.Status == diagnostic.StatusPartial && c.Reason != "" {
+			return toolDepCruiser + ": " + c.Reason
+		}
+	}
+	return ""
+}
+
 // loadConfig loads the config file at path. When path equals the default
 // ".archfit.yaml" and the file is absent, it returns config.Default() so the
 // tool works without a config file. An explicit --config path that is missing

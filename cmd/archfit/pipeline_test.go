@@ -583,6 +583,64 @@ func TestOwnerDegradationWarning(t *testing.T) {
 	}
 }
 
+// TestTSUnresolvedWarning pins the disclosure rule: a dependency-cruiser
+// coverage record only warns when it is partial AND carries a Reason; ok
+// status, other tools, and a partial record with no reason all stay silent.
+func TestTSUnresolvedWarning(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		cov  []diagnostic.Coverage
+		want bool
+	}{
+		{
+			name: "partial with reason warns",
+			cov: []diagnostic.Coverage{
+				{Tool: toolDepCruiser, Status: diagnostic.StatusPartial, Reason: "12 of 40 import specifiers unresolved (30%)"},
+			},
+			want: true,
+		},
+		{
+			name: "ok status stays silent",
+			cov: []diagnostic.Coverage{
+				{Tool: toolDepCruiser, Status: diagnostic.StatusOK},
+			},
+			want: false,
+		},
+		{
+			name: "partial with no reason stays silent",
+			cov: []diagnostic.Coverage{
+				{Tool: toolDepCruiser, Status: diagnostic.StatusPartial},
+			},
+			want: false,
+		},
+		{
+			name: "other tool's partial coverage is not this warning's concern",
+			cov: []diagnostic.Coverage{
+				{Tool: toolCargoModules, Status: diagnostic.StatusPartial, Reason: "some crates failed"},
+			},
+			want: false,
+		},
+		{
+			name: "no coverage records",
+			cov:  nil,
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := tsUnresolvedWarning(tc.cov)
+			if (got != "") != tc.want {
+				t.Errorf("tsUnresolvedWarning(%+v) = %q, want non-empty=%v", tc.cov, got, tc.want)
+			}
+			if tc.want && !strings.Contains(got, toolDepCruiser) {
+				t.Errorf("tsUnresolvedWarning(%+v) = %q, want it to name %q", tc.cov, got, toolDepCruiser)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // CB1: skipped-pass coverage rows (P12 — syntax/scip opt-in honesty)
 // ---------------------------------------------------------------------------

@@ -563,3 +563,49 @@ func TestCouplingBalance_ExternalEdgesExcluded(t *testing.T) {
 		}
 	})
 }
+
+func TestSynthesize_TSUnresolvedPartial_LowersConfidence(t *testing.T) {
+	diagWithTSCoverage := func(unresolved, filesSeen int, status string) diagnostic.Diagnostic {
+		d := diagnostic.New()
+		d.Metrics = []diagnostic.MetricResult{metric("blast_radius", 3, "info", "high")}
+		d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
+			Total: 50, Scored: 50, Abstained: 0,
+			MeanBalance: 9.0,
+			BySeverity:  map[string]int{sevLow: 50},
+		}
+		d.ToolCoverage = []diagnostic.Coverage{
+			{Tool: "dependency-cruiser", Status: status, FilesSeen: filesSeen, Unresolved: unresolved},
+		}
+		return d
+	}
+
+	t.Run("unresolved ratio above ceiling caps confidence to medium", func(t *testing.T) {
+		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 100, diagnostic.StatusPartial))) // 20%
+		if cb.Confidence != ConfidenceMedium {
+			t.Errorf("confidence = %q, want medium", cb.Confidence)
+		}
+		found := false
+		for _, ev := range cb.Evidence {
+			if strings.Contains(ev, "unresolved-specifier ratio") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected unresolved-ratio mention in evidence, got: %v", cb.Evidence)
+		}
+	})
+
+	t.Run("unresolved ratio within ceiling leaves confidence high", func(t *testing.T) {
+		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(5, 100, diagnostic.StatusPartial))) // 5%
+		if cb.Confidence != ConfidenceHigh {
+			t.Errorf("confidence = %q, want high", cb.Confidence)
+		}
+	})
+
+	t.Run("ok status never triggers the cap regardless of ratio", func(t *testing.T) {
+		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 100, diagnostic.StatusOK)))
+		if cb.Confidence != ConfidenceHigh {
+			t.Errorf("confidence = %q, want high (status ok, not partial)", cb.Confidence)
+		}
+	})
+}

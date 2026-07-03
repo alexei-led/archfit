@@ -95,6 +95,20 @@ func Synthesize(d diagnostic.Diagnostic) Scorecard {
 			"module graph partial (some crates failed cargo-modules) — confidence capped to medium")
 	}
 
+	// A TypeScript unresolved-specifier ratio above the ceiling means
+	// dependency-cruiser could not resolve a meaningful fraction of import
+	// specifiers (missing tsconfig path/baseUrl alias, uninstalled dependency) —
+	// those edges silently land in the external bucket instead of coupling_balance's
+	// internal-edge denominator, so the measured balance reads better than reality.
+	// Cap to medium (mirrors the cargo-modules cap above) so a high-noise TS
+	// extraction cannot read as a confident verdict.
+	if tsUnresolvedPartial(d) && cb.Confidence == ConfidenceHigh {
+		cb.Confidence = ConfidenceMedium
+		cb.Evidence = append(cb.Evidence,
+			"TypeScript unresolved-specifier ratio exceeds threshold — confidence capped to medium "+
+				"(path aliases or missing installs may be dropping internal edges as external)")
+	}
+
 	return Scorecard{
 		RubricVersion: RubricVersion,
 		Overall:       cb.Value,
@@ -160,6 +174,31 @@ func cargoModulesPartial(d diagnostic.Diagnostic) bool {
 	for _, c := range d.ToolCoverage {
 		if c.Tool == "cargo-modules" {
 			return c.Status == diagnostic.StatusPartial
+		}
+	}
+	return false
+}
+
+// tsUnresolvedRatioCeiling is the unresolved/extracted-files ratio above which
+// dependency-cruiser's coverage is noisy enough to cap coupling_balance
+// confidence. Deliberate simplification: 10% is a round ceiling, not a
+// calibrated figure — raise it if legitimate repos trip this on ordinary
+// tsconfig-less noise, lower it if a 10%-noisy extraction still reads as
+// confident in practice.
+const tsUnresolvedRatioCeiling = 0.10
+
+// tsUnresolvedPartial reports whether the TypeScript extractor (dependency-cruiser)
+// reported partial coverage with an unresolved-specifier ratio above
+// tsUnresolvedRatioCeiling — a signal that path-alias or module-resolution
+// failures are dropping internal edges into the external bucket, which
+// coupling_balance excludes from its denominator entirely.
+func tsUnresolvedPartial(d diagnostic.Diagnostic) bool {
+	for _, c := range d.ToolCoverage {
+		if c.Tool != "dependency-cruiser" || c.Status != diagnostic.StatusPartial || c.FilesSeen == 0 {
+			continue
+		}
+		if float64(c.Unresolved)/float64(c.FilesSeen) > tsUnresolvedRatioCeiling {
+			return true
 		}
 	}
 	return false

@@ -386,7 +386,8 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 	var edges []graph.Edge
 	seenNodes := make(map[string]struct{})
 	unresolved := 0
-	filesSeen := 0 // first-party source files only (excludes core/unresolved module entries)
+	totalSpecifiers := 0 // non-core import specifiers depcruise attempted to resolve
+	filesSeen := 0       // first-party source files only (excludes core/unresolved module entries)
 
 	emitNode := func(n graph.Node) {
 		id := n.ID()
@@ -430,6 +431,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 			if dep.CoreModule {
 				continue
 			}
+			totalSpecifiers++
 
 			// Resolve the target path: prefer resolved, fall back to module.
 			toPath := dep.Resolved
@@ -476,8 +478,13 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 	}
 
 	status := statusOK
+	var reason string
 	if unresolved > 0 {
 		status = statusPartial
+		pct := 100 * float64(unresolved) / float64(totalSpecifiers)
+		reason = fmt.Sprintf(
+			"%d of %d import specifiers unresolved (%.0f%%) — check tsconfig paths/baseUrl and installed dependencies",
+			unresolved, totalSpecifiers, pct)
 	}
 
 	facts := graph.Facts{
@@ -493,6 +500,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 		FilesApplicable: filesSeen,
 		Unresolved:      unresolved,
 		Status:          status,
+		Reason:          reason,
 	}
 	return facts, cov, nil
 }

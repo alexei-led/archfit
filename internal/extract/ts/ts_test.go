@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
@@ -134,6 +135,9 @@ func TestExtract_CouldNotResolve(t *testing.T) {
 	}
 	if cov.Status != "partial" {
 		t.Errorf("Status = %q, want %q", cov.Status, "partial")
+	}
+	if !strings.Contains(cov.Reason, "1 of 1 import specifiers unresolved") {
+		t.Errorf("Reason = %q, want it to name the unresolved count", cov.Reason)
 	}
 	if facts.Unresolved != 1 {
 		t.Errorf("facts.Unresolved = %d, want 1", facts.Unresolved)

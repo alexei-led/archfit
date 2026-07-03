@@ -314,6 +314,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 	diag.OwnerSource = ownerSource
 
+	// TS coverage honesty: a high unresolved-import-specifier count from
+	// dependency-cruiser must never be a silent gap — surface it on stderr the
+	// same way ownerDegradationWarning discloses degraded owner resolution.
+	if w := tsUnresolvedWarning(diag.ToolCoverage); w != "" {
+		toolWarnings = append(toolWarnings, w)
+		_, _ = fmt.Fprintln(deps.stderr(), "warning: "+w)
+	}
+
 	// cargo-modules module-graph coverage: opt-in (analyzers.cargo_modules.enabled: true).
 	// The Rust extractor runs cargo-modules during its Extract call (inside engine.Run
 	// above) and caches the coverage record. Append it here — BEFORE the scorecard

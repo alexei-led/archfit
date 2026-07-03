@@ -47,10 +47,10 @@ Verified defects:
 
 ### Task 4: TS coverage honesty + tsconfig autodetect
 
-- [ ] failing test: fake depcruise output with high unresolved-specifier count → expect `Coverage.Status: partial` WITH a reason string (count included) and a stderr warning; coupling_balance confidence must downgrade one band when unresolved/total exceeds a threshold (pick and name a constant, e.g. 10% — deliberate-simplification comment with the ceiling)
-- [ ] wire unresolved-ratio into the same confidence mechanism scored-fraction already uses (`internal/score`), not a new ad-hoc path
-- [ ] tsconfig autodetect: stat-probe `tsconfig.json` at ScanRoot (and nearest ancestor up to GitRoot) in `internal/extract/ts/ts.go`, pass to dependency-cruiser when present and not explicitly configured; test with a fixture using a path alias — edge must resolve instead of dropping
-- [ ] run `make test && make lint && make archfit`; regen goldens if needed; commit
+- [x] failing test: fake depcruise output with high unresolved-specifier count → expect `Coverage.Status: partial` WITH a reason string (count included) and a stderr warning; coupling_balance confidence must downgrade one band when unresolved/total exceeds a threshold (pick and name a constant, e.g. 10% — deliberate-simplification comment with the ceiling)
+- [x] wire unresolved-ratio into the same confidence mechanism scored-fraction already uses (`internal/score`), not a new ad-hoc path
+- [x] tsconfig autodetect: stat-probe `tsconfig.json` at ScanRoot (and nearest ancestor up to GitRoot) in `internal/extract/ts/ts.go`, pass to dependency-cruiser when present and not explicitly configured; test with a fixture using a path alias — edge must resolve instead of dropping (already shipped pre-Wave3 in commit b8f0392/038366e; covered by `TestExtract_TSConfigAutoDetect`/`TestExtract_TSConfigSubdir*`, verified passing)
+- [x] run `make test && make lint && make archfit`; regen goldens if needed; commit
 
 ### Task 5: Corpus verification (four languages)
 
