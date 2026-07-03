@@ -22,7 +22,12 @@ const ScoreDefinition = "book balance score — balance = max(|S−D|, 10−V) +
 // delta baseline treats the score as a new measurement.
 // v3: book-verbatim formula (Khononov Ch10) — balance = max(|S-D|, 10-V)+1,
 // new ScoreBand mapping (1-2 critical → 9-10 none), BookScorer as default.
-const ScoreVersion = "bc_score.v3"
+// v4: three classification fixes feeding the unchanged formula (see
+// docs/design/20260702-bc-score-v4.md): Go const/var reads score Model (3)
+// not Functional (8); pure-data DTOs across a declared public boundary reach
+// Contract (1); declared external systems enter scoring at DistanceExternal
+// (10). Scores are NOT comparable across versions.
+const ScoreVersion = "bc_score.v4"
 
 // EdgeScore is the result produced by a Scorer for one graph edge.
 //

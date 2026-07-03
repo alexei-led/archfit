@@ -154,6 +154,11 @@ build-calibrate: ## compile the calibrate dev tool binary to .bin/calibrate
 calibrate: build-calibrate ## compare scorers on archfit; emits calibration-report.json (informational only)
 	@bash scripts/calibrate.sh .
 
+## corpus-attrib: coupling_balance attribution table over the four Wave-4 repos (informational dev tool)
+.PHONY: corpus-attrib
+corpus-attrib: build ## print repo → score/band/scored/abstained/external attribution table
+	@sh scripts/corpus-attrib.sh
+
 ## clean: remove build artefacts
 .PHONY: clean
 clean: ## remove build artefacts

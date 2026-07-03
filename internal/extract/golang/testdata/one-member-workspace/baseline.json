@@ -113,7 +113,7 @@
         "score": "book",
         "score_band": "low",
         "score_value": "8",
-        "score_version": "bc_score.v3",
+        "score_version": "bc_score.v4",
         "strength": "functional",
         "volatility": "low"
       },
@@ -208,6 +208,7 @@
     "overall_band": "serviceable",
     "rubric_version": 1
   },
+  "score_version": "bc_score.v4",
   "summary": {
     "gate_findings": 1,
     "waivers_used": 0,

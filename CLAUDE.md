@@ -51,7 +51,7 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
 - **Severity source is `cl.Score.Band`** (`classify.go`, `Run`). `cl.Severity =
 cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   old discrete severity table and is no longer called anywhere. Do not re-introduce
-  it; the book formula (`ScoreVersion = "bc_score.v3"`) is the single severity source.
+  it; the book formula (`ScoreVersion = "bc_score.v4"`) is the single severity source.
 - **Coupling gate** (`coupling.gate: {min_band, max_drop}`). The synthesised
   coupling_balance score can fail the verdict: `score.Synthesize` +
   `applyCouplingGate` run INSIDE `runPipeline` (`cmd/archfit/pipeline_run.go`),
@@ -184,7 +184,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
 
 ## Coupling scorer — key design facts
 
-`ScoreVersion = "bc_score.v3"` (`internal/model/coupling/scorer.go`).
+`ScoreVersion = "bc_score.v4"` (`internal/model/coupling/scorer.go`).
 Formula: `balance = max(|S−D|, 10−V) + 1` (Khononov Ch10 verbatim).
 Ordinals frozen as named constants — changing any is a breaking metric change.
 

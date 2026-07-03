@@ -29,10 +29,19 @@ The scorer formula is book-verbatim; these three deviations live in the classifi
 
 ### Task 1: ScoreVersion bump + attribution harness
 
-- [ ] bump `ScoreVersion` to `"bc_score.v4"` (`internal/model/coupling/scorer.go` area) with a design note in `docs/design/` listing exactly the three classification changes this version covers
-- [ ] add a small script or make target (`make corpus-attrib`) that runs the built binary over the four attribution repos with their saved configs and prints repo → {score, band, scored, abstained, external} for the before/after table
-- [ ] write test asserting ScoreVersion appears in JSON output (consumers key on it)
-- [ ] run `make test && make lint`; commit
+- [x] bump `ScoreVersion` to `"bc_score.v4"` (`internal/model/coupling/scorer.go` area) with a design note in `docs/design/` listing exactly the three classification changes this version covers (`docs/design/20260702-bc-score-v4.md`)
+- [x] add a small script or make target (`make corpus-attrib`) that runs the built binary over the four attribution repos with their saved configs and prints repo → {score, band, scored, abstained, external} for the before/after table (`scripts/corpus-attrib.sh`)
+- [x] write test asserting ScoreVersion appears in JSON output (consumers key on it) — `score_version` added to the JSON envelope (always present, not only on BC advisories); `TestJSONRenderer_ScoreVersion` pins the literal
+- [x] run `make test && make lint`; commit
+
+Task 1 attribution baseline (bc_score.v4 label, pre-Task-2 — classification still v3-identical):
+
+| repo      | score | band  | scored | abstained | external |
+| --------- | ----- | ----- | ------ | --------- | -------- |
+| archfit   | 39    | poor  | 290    | 0         | 510      |
+| ccgram    | 55    | mixed | 497    | 18        | 0        |
+| herdr     | 25    | poor  | 630    | 16        | 21       |
+| storybook | 48    | mixed | 310    | 0         | 181      |
 
 ### Task 2: const/var → Model (book Ch7 pure-data sharing)
 
