@@ -51,7 +51,10 @@ func TestNodeConventionModuleFileCandidates(t *testing.T) {
 			"python triple",
 			LangPython,
 			"pkg.metrics.boundary",
-			[]string{"pkg/metrics/boundary.py", "pkg/metrics/boundary.pyi", "pkg/metrics/boundary/__init__.py"},
+			[]string{
+				"pkg/metrics/boundary.py", "pkg/metrics/boundary.pyi", "pkg/metrics/boundary/__init__.py",
+				"src/pkg/metrics/boundary.py", "src/pkg/metrics/boundary.pyi", "src/pkg/metrics/boundary/__init__.py",
+			},
 		},
 		{"go nil", LangGo, "internal/metrics", nil},
 		{"ts nil", LangTypeScript, "src/utils", nil},

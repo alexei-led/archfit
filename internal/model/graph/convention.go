@@ -146,9 +146,16 @@ func pythonFileToModuleKey(file string) string {
 
 // pythonModuleFileCandidates maps a dotted Python module path to its candidate
 // source files (mirrors the module-node convention used by the graph extractor).
+// Includes both flat-layout and "src/"-layout candidates — the inverse function
+// (pythonFileToModuleKey) strips a "src/" prefix before dotting, so the forward
+// direction must offer it back or src-layout modules (e.g. ccgram, prefect)
+// never resolve to a real file.
 func pythonModuleFileCandidates(modulePath string) []string {
 	slashed := strings.ReplaceAll(modulePath, ".", "/")
-	return []string{slashed + ".py", slashed + ".pyi", slashed + "/__init__.py"}
+	return []string{
+		slashed + ".py", slashed + ".pyi", slashed + "/__init__.py",
+		"src/" + slashed + ".py", "src/" + slashed + ".pyi", "src/" + slashed + "/__init__.py",
+	}
 }
 
 // rustCrateSubdirs lists the conventional subdirs treated as crate-scoped under

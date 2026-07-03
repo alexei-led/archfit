@@ -145,6 +145,31 @@ func TestFilesFor_PerLanguageResolution(t *testing.T) {
 		}
 	})
 
+	t.Run("python_dotted_module_resolves_under_src_layout", func(t *testing.T) {
+		// pythonFileToModuleKey strips a leading "src/" before dotting a file
+		// into a module key, so the forward direction (module -> candidate
+		// files) must offer the "src/"-prefixed form back, or every src-layout
+		// repo (ccgram, prefect) drops legitimate resolutions.
+		root := t.TempDir()
+		writeFixtureFile(t, root, "src/myapp/domain.py")
+		knownFiles := buildKnownFiles(t, root)
+
+		resolver := agenttask.NewPathResolver(knownFiles, nil, nil)
+		tasks := agenttask.Build(
+			[]finding.Finding{gateFindingWithModuleEdge("myapp.domain")},
+			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
+			nil, nil, nil,
+			resolver,
+		)
+		if len(tasks) != 1 {
+			t.Fatalf("tasks = %d, want 1", len(tasks))
+		}
+		assertFilesExistOnDisk(t, root, tasks[0].Files)
+		if want := "src/myapp/domain.py"; len(tasks[0].Files) != 1 || tasks[0].Files[0] != want {
+			t.Errorf("files = %v, want [%q] (probed via src/myapp/domain.py)", tasks[0].Files, want)
+		}
+	})
+
 	t.Run("rust_crate_mod_key_resolves_via_crate_root", func(t *testing.T) {
 		root := t.TempDir()
 		writeFixtureFile(t, root, "crates/mycrate/src/lib.rs")
