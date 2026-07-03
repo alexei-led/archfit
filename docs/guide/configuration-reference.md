@@ -439,7 +439,10 @@ error (it would gate nothing).
   unmeasured, carries no anchor — the drop check is skipped, never guessed.
 
 An unmeasured score (band `n/a`) never trips the gate, whatever the knobs say:
-abstention is not failure, so partial-coverage runs cannot flip CI red.
+abstention is not failure. Only the unmeasured case is exempt — a run with
+partial tool coverage that still produces a measured score (for example TS
+with some unresolved imports, confidence capped at `medium`) gates like any
+other measured run.
 
 When the gate trips, the verdict becomes FAIL (exit 1), the trip reasons print
 to stderr, and the active `bc/imbalanced_coupling` advisories are promoted to

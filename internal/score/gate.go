@@ -28,7 +28,8 @@ type CouplingGateTrip struct {
 //
 //   - gate disabled (no coupling.gate block) → never trips.
 //   - BandNA never gates: an unmeasured dimension is an abstention, not a
-//     failure — partial-coverage runs must not flip CI red.
+//     failure. Only n/a is exempt — a measured score from a partial-coverage
+//     run (confidence capped, still a number) gates normally.
 //   - MinBand: trips when the overall band ranks below the configured floor.
 //   - MaxDrop: trips when baselineScore − current overall exceeds it.
 //     baselineScore is the coupling_balance value stored at `archfit baseline`

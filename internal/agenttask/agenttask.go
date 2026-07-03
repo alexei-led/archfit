@@ -52,7 +52,10 @@ type PathResolver struct {
 // knownFiles misses: the LOC walk skips directories (mocks/, target/, venv/)
 // that the extractor exclusions do not, so a real edge endpoint under one of
 // them is absent from the index yet must not be dropped — the files[]
-// contract is "exists on disk", not "was seen by the LOC walk".
+// contract is "exists on disk", not "was seen by the LOC walk". The closure
+// must itself reject paths that are absolute or escape the scan root after
+// OS-path conversion (filepath.IsLocal) — the resolver's slash-only guard
+// below cannot see OS-specific separators like `..\` or `C:\`.
 func NewPathResolver(knownFiles map[string]struct{}, crateRootDirs, moduleRootDirs map[string]string, onDisk func(string) bool) PathResolver {
 	if knownFiles == nil {
 		return PathResolver{crateRootDirs: crateRootDirs, moduleRootDirs: moduleRootDirs}
@@ -114,8 +117,9 @@ func (r PathResolver) dirExists(dir string) bool {
 // candidate, matching pre-resolver behavior. Candidates that escape the scan
 // root (absolute, or cleaning to a ".."-prefixed path — e.g. a module Paths
 // glob like "../outside/**" feeding the ModuleRootDirs fallback) are always
-// rejected: the onDisk backstop joins candidates to ScanRoot unchecked, and
-// files[] must never point outside the analyzed tree.
+// rejected: files[] must never point outside the analyzed tree. This slash
+// guard is the platform-independent first line; the onDisk closure owns the
+// OS-aware locality check (see NewPathResolver).
 func (r PathResolver) resolve(candidate string) (string, bool) {
 	if candidate == "" {
 		return "", false
@@ -290,10 +294,22 @@ func filesFor(f finding.Finding, r PathResolver) []string {
 			set[resolved] = struct{}{}
 		}
 	}
-	add(f.Edge.From.Path)
-	add(f.Edge.To.Path)
 	for _, loc := range f.Locations {
 		add(loc.File)
+	}
+	// Module-key endpoints (the public_api_* rules stamp Edge.From/To.Path
+	// with the bare config module key, recorded in MatchedBy) are resolution
+	// hints, not file evidence. Once a Location resolved, skip them: a key
+	// that collides with an unrelated real path (module "docs" owning
+	// src/domain/** next to a real docs/ dir) must not leak into files[] as
+	// false evidence. With no resolved Location they remain the best-effort
+	// probe (dotted Python id, crate::mod, dir named after the module).
+	modKey := f.MatchedBy[matchedByModuleKey]
+	for _, p := range []string{f.Edge.From.Path, f.Edge.To.Path} {
+		if p == modKey && len(set) > 0 {
+			continue
+		}
+		add(p)
 	}
 
 	if len(set) == 0 {

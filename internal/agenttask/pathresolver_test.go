@@ -8,6 +8,7 @@ import (
 	"github.com/alexei-led/archfit/internal/agenttask"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
 const rulePublicAPIMax = "public_api_max"
@@ -429,6 +430,60 @@ func TestFilesFor_DottedModuleRootFallback(t *testing.T) {
 		assertFilesExistOnDisk(t, root, tasks[0].Files)
 		if want := "myapp/domain"; len(tasks[0].Files) != 1 || tasks[0].Files[0] != want {
 			t.Errorf("files = %v, want [%q] (dots-to-slashes package dir)", tasks[0].Files, want)
+		}
+	})
+}
+
+// TestFilesFor_ModuleKeyCollisionSkipped pins the false-evidence guard: once a
+// finding's Locations resolved to real files, the module-key edge endpoints
+// are skipped — a module named "docs" owning src/domain/** must not drag an
+// unrelated real docs/ directory into files[]. When no Location resolves, the
+// key remains the best-effort probe.
+func TestFilesFor_ModuleKeyCollisionSkipped(t *testing.T) {
+	t.Run("resolved_location_suppresses_colliding_module_key", func(t *testing.T) {
+		root := t.TempDir()
+		writeFixtureFile(t, root, "src/domain/api.go")
+		writeFixtureFile(t, root, "docs/readme.md") // unrelated dir named like the module key
+		knownFiles := buildKnownFiles(t, root)
+
+		f := gateFindingWithModuleEdge("docs")
+		f.Locations = []graph.Location{{File: "src/domain/api.go"}}
+		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
+		tasks := agenttask.Build(
+			[]finding.Finding{f},
+			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
+			nil, nil, nil,
+			resolver,
+		)
+		if len(tasks) != 1 {
+			t.Fatalf("tasks = %d, want 1", len(tasks))
+		}
+		assertFilesExistOnDisk(t, root, tasks[0].Files)
+		if want := "src/domain/api.go"; len(tasks[0].Files) != 1 || tasks[0].Files[0] != want {
+			t.Errorf("files = %v, want [%q] only (colliding module key must not leak in)", tasks[0].Files, want)
+		}
+	})
+
+	t.Run("unresolvable_locations_keep_module_key_probe", func(t *testing.T) {
+		root := t.TempDir()
+		writeFixtureFile(t, root, "widget/foo.go")
+		knownFiles := buildKnownFiles(t, root)
+
+		f := gateFindingWithModuleEdge("widget")
+		f.Locations = []graph.Location{{File: "ghost/nope.go"}}
+		resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
+		tasks := agenttask.Build(
+			[]finding.Finding{f},
+			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
+			nil, nil, nil,
+			resolver,
+		)
+		if len(tasks) != 1 {
+			t.Fatalf("tasks = %d, want 1", len(tasks))
+		}
+		assertFilesExistOnDisk(t, root, tasks[0].Files)
+		if want := "widget"; len(tasks[0].Files) != 1 || tasks[0].Files[0] != want {
+			t.Errorf("files = %v, want [%q] (no resolved location — the key probe must still rescue)", tasks[0].Files, want)
 		}
 	})
 }

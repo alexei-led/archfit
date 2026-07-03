@@ -378,11 +378,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// onDisk backstops the LOC-walk index: its walk skips dirs (mocks/,
 	// target/, venv/) that extractor exclusions do not, so a real edge
 	// endpoint there is index-invisible yet must survive resolution.
-	onDisk := func(rel string) bool {
-		_, err := os.Stat(filepath.Join(s.Root, filepath.FromSlash(rel)))
-		return err == nil
-	}
-	pathResolver := agenttask.NewPathResolver(knownFiles, crateRootDirs, config.ModuleRootDirs(cfg.Modules), onDisk)
+	pathResolver := agenttask.NewPathResolver(knownFiles, crateRootDirs, config.ModuleRootDirs(cfg.Modules), onDiskWithin(s.Root))
 	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate}, diag.SyntaxFacts, pathResolver)
 
 	// Warn-loud coverage reporting: turn the absent tool-coverage records into a
@@ -399,6 +395,23 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		buildJudgmentDecisionTasks(cfg, lbls, configPath)...)
 
 	return diag, card, nil
+}
+
+// onDiskWithin returns the PathResolver's onDisk callback: it reports whether
+// the repo-relative slash path rel exists under root. Candidates that are not
+// local after OS-path conversion (Windows `..\x` or `C:/x`, any escaping or
+// absolute path) are rejected before touching the filesystem — the resolver's
+// slash-only guard cannot see OS-specific separators, so files[] containment
+// is enforced here, after filepath.FromSlash.
+func onDiskWithin(root string) func(string) bool {
+	return func(rel string) bool {
+		osRel := filepath.FromSlash(rel)
+		if !filepath.IsLocal(osRel) {
+			return false
+		}
+		_, err := os.Stat(filepath.Join(root, osRel))
+		return err == nil
+	}
 }
 
 // ruleIDBCCouplingGate is stamped on the synthetic summary finding that

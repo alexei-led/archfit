@@ -226,13 +226,36 @@ func DeltaBuckets(findings []finding.Finding, accepted AcceptedSet, changed []st
 	return r
 }
 
-// touchesChanged reports whether either endpoint of f's edge sits on a file in
-// changed. It matches across path granularities: a finding path can be a package
-// directory while changed lists files, so a prefix relation in either direction
-// counts as a touch.
+// matchedByModuleKey mirrors internal/rules' unexported matchedByModule
+// MatchedBy key ("module") — the two packages agree on the key by convention,
+// not by import, since status must not depend on the rules package.
+const matchedByModuleKey = "module"
+
+// touchesChanged reports whether f sits on a file in changed. Locations carry
+// the real file evidence; edge endpoints are checked too, matching across path
+// granularities (a finding path can be a package directory while changed lists
+// files, so a prefix relation in either direction counts as a touch). An
+// endpoint equal to the finding's MatchedBy module key is skipped when a
+// location exists: the public_api_* rules stamp the bare config module key on
+// both endpoints, and a key that collides with an unrelated real path (module
+// "docs" owning src/domain/** next to a real docs/ dir) must not count as a
+// touch. With no locations the endpoints remain the only, best-effort evidence.
 func touchesChanged(f *finding.Finding, changed []string) bool {
+	hasLoc := false
+	for _, loc := range f.Locations {
+		if loc.File == "" {
+			continue
+		}
+		hasLoc = true
+		for _, c := range changed {
+			if pathRelated(loc.File, c) {
+				return true
+			}
+		}
+	}
+	modKey := f.MatchedBy[matchedByModuleKey]
 	for _, p := range []string{f.Edge.From.Path, f.Edge.To.Path} {
-		if p == "" {
+		if p == "" || (hasLoc && p == modKey) {
 			continue
 		}
 		for _, c := range changed {
