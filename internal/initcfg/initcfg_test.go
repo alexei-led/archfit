@@ -486,7 +486,8 @@ func TestRender_LayeredRules_RoundTripsConfigLoad(t *testing.T) {
 }
 
 func TestRender_NoEdges_FallbackComment(t *testing.T) {
-	// No edges → generic placeholder + comment about no gates.
+	// A single inferred layer → the rule has nothing to check; the NOTE must say
+	// layers are missing, not (falsely) that the dependency graph was unavailable.
 	cfg := DiscoveredConfig{
 		ModulePath: testExampleMod,
 		Modules: []ModuleDef{
@@ -495,11 +496,40 @@ func TestRender_NoEdges_FallbackComment(t *testing.T) {
 		Layers: []string{layerCore},
 	}
 	out := Render(cfg, nil, false)
-	if !strings.Contains(out, "only metrics") {
-		t.Errorf("expected fallback comment about no gates when no edges:\n%s", out)
+	if !strings.Contains(out, "fewer than two layers") {
+		t.Errorf("expected fallback comment about missing layers:\n%s", out)
 	}
 	if !strings.Contains(out, "type: forbidden_layer_direction") {
 		t.Errorf("expected generic forbidden_layer_direction rule:\n%s", out)
+	}
+}
+
+func TestRender_LayeredNoEdges_AnalyzeTimeNote(t *testing.T) {
+	// The pure-Python/TS shape: discovery assigns layers but builds no edges.
+	// The NOTE must not claim layers are missing (they are in this same file)
+	// or that only metrics will be produced — the rule gates at analyze time.
+	cfg := DiscoveredConfig{
+		Modules: []ModuleDef{
+			{Name: layerCore, Paths: []string{"pkg.core.**"}, Layer: layerCore},
+			{Name: layerAdapter, Paths: []string{"pkg.adapter.**"}, Layer: layerAdapter},
+		},
+		Layers:    []string{layerCore, layerAdapter},
+		HasPython: true,
+	}
+	out := Render(cfg, nil, false)
+	if !strings.Contains(out, "checks the real dependency graph at analyze time") {
+		t.Errorf("expected analyze-time NOTE for layered no-edges config:\n%s", out)
+	}
+	for _, stale := range []string{"only metrics", "until you add layers"} {
+		if strings.Contains(out, stale) {
+			t.Errorf("NOTE falsely claims %q on a config that already assigns layers:\n%s", stale, out)
+		}
+	}
+	if !strings.Contains(out, "id: no-layer-back-edges") {
+		t.Errorf("expected live no-layer-back-edges rule:\n%s", out)
+	}
+	if !strings.Contains(out, "type: forbidden_layer_direction") {
+		t.Errorf("expected forbidden_layer_direction rule:\n%s", out)
 	}
 }
 

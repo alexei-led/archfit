@@ -358,29 +358,40 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	// exactly ONE rule is emitted: a second instance would duplicate each
 	// violation under a different rule ID.
 	b.WriteString("rules:\n")
-	if hasCrossLayerEdge(cfg) {
-		b.WriteString("  - id: no-layer-back-edges\n")
-		b.WriteString("    type: forbidden_layer_direction\n")
-		b.WriteString("    gate: warn\n")
-	} else {
-		// No dependency graph was available: emit a generic placeholder and note
-		// that without layers: and per-module layer: assignments, only metrics
-		// (no gates) are produced.
-		b.WriteString("  # NOTE: dependency graph not available at init time — only metrics\n")
-		b.WriteString("  # (no gates) will be produced until you add layers: and assign each\n")
-		b.WriteString("  # module a layer: matching one of them.\n")
-		b.WriteString("  - id: no-layer-violations\n")
-		b.WriteString("    type: forbidden_layer_direction\n")
-		b.WriteString("    gate: warn\n")
+	switch {
+	case hasCrossLayerEdge(cfg):
+		writeLayerRule(&b, "no-layer-back-edges")
+	case len(cfg.Layers) >= 2:
+		// Layers are assigned but no cross-layer edge was visible at init
+		// (Python/TypeScript discovery builds no dependency graph). The rule is
+		// live: it checks the real graph at analyze time.
+		b.WriteString("  # NOTE: no cross-layer dependency edge was visible at init time; this\n")
+		b.WriteString("  # rule checks the real dependency graph at analyze time.\n")
+		writeLayerRule(&b, "no-layer-back-edges")
+	default:
+		b.WriteString("  # NOTE: fewer than two layers were inferred — this rule has nothing to\n")
+		b.WriteString("  # check until layers: lists at least two layers and each module is\n")
+		b.WriteString("  # assigned a layer: matching one of them.\n")
+		writeLayerRule(&b, "no-layer-violations")
 	}
 
 	return b.String()
 }
 
-// hasCrossLayerEdge reports whether the discovered graph gives the generated
-// forbidden_layer_direction rule anything to check: at least two layers and at
-// least one edge between modules in different layers. When false, Render falls
-// back to the generic placeholder with an explanatory comment.
+// writeLayerRule emits the single forbidden_layer_direction rule stanza.
+func writeLayerRule(b *strings.Builder, id string) {
+	fmt.Fprintf(b, "  - id: %s\n", id)
+	b.WriteString("    type: forbidden_layer_direction\n")
+	b.WriteString("    gate: warn\n")
+}
+
+// hasCrossLayerEdge reports whether the discovered graph proves the generated
+// forbidden_layer_direction rule already has something to check: at least two
+// layers and at least one edge between modules in different layers. When false,
+// Render picks a NOTE comment by cause: layers assigned but no cross-layer edge
+// visible at init (Python/TypeScript discovery builds no graph — the rule still
+// checks the real graph at analyze time) vs fewer than two inferred layers (the
+// rule has nothing to check until layers are assigned).
 func hasCrossLayerEdge(cfg DiscoveredConfig) bool {
 	if len(cfg.Edges) == 0 || len(cfg.Layers) < 2 {
 		return false
