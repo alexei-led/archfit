@@ -16,6 +16,7 @@ import (
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/ownership"
+	"github.com/alexei-led/archfit/internal/rules"
 )
 
 // buildConfigWarnings assembles the advisory ConfigWarnings block: under-specified
@@ -145,13 +146,26 @@ func loadConfig(ctx context.Context, path string, noConfig bool) (config.Config,
 		return config.Default(), nil
 	}
 	cfg, err := config.Load(ctx, path)
-	if err == nil {
-		return cfg, nil
+	if err != nil {
+		if path == defaultConfigPath && errors.Is(err, os.ErrNotExist) {
+			return config.Default(), nil
+		}
+		return config.Config{}, err
 	}
-	if path == defaultConfigPath && errors.Is(err, os.ErrNotExist) {
-		return config.Default(), nil
+	if err := validateConfigRules(cfg); err != nil {
+		return config.Config{}, err
 	}
-	return config.Config{}, err
+	return cfg, nil
+}
+
+// validateConfigRules constructs the rules block to surface rule-type errors
+// (unknown type:, public_api_max without max:) at load time. config.Load
+// cannot do this itself — config is a support layer and must not import
+// rules — so without this check `doctor` and the init/update revalidation
+// would pass a config that later hard-fails at analyze time.
+func validateConfigRules(cfg config.Config) error {
+	_, err := rules.New(cfg.ForRules())
+	return err
 }
 
 // applyFlagOverrides applies non-empty CLI flag values onto cfg, overriding

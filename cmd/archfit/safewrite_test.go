@@ -38,6 +38,20 @@ func TestSafeWriteConfig_OriginalNil_ConcurrentAppearance(t *testing.T) {
 	}
 }
 
+func TestSafeWriteConfig_RejectsUnknownRuleType(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), ".archfit.yaml")
+	edited := []byte("version: 1\nrules:\n  - id: bad\n    type: bogus_type\n")
+
+	err := safeWriteConfig(context.Background(), newTestDeps(t), path, edited, nil)
+	if err == nil || !strings.Contains(err.Error(), "unknown rule type") {
+		t.Fatalf("want unknown-rule-type validation error, got %v", err)
+	}
+	if _, statErr := os.Stat(path); statErr == nil {
+		t.Error("config file must not be written when validation fails")
+	}
+}
+
 func TestSafeWriteConfig_BackupClobber_TimestampedFallback(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

@@ -114,7 +114,10 @@ func (c *InitCmd) Run(deps *appDeps) error {
 	// existing config may carry architect-authored module mapping; init should not
 	// silently replace it. This is a deliberate no-op (exit 0), not an error.
 	if original != nil && !c.Force {
-		if _, loadErr := config.Load(ctx, out); loadErr == nil {
+		// loadConfig (not bare config.Load) so a rule-type error makes this
+		// report "failed to load", not "valid". out is absolute here, so the
+		// defaultConfigPath missing-file fallback can never trigger.
+		if _, loadErr := loadConfig(ctx, out, false); loadErr == nil {
 			_, _ = fmt.Fprintf(deps.Stdout, "%s already exists and is valid — leaving it unchanged.\n"+
 				"Re-run with --force to overwrite (a timestamped backup is kept).\n", out)
 		} else {
