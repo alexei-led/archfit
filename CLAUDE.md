@@ -261,7 +261,7 @@ wired to any metric.
 ## Layout
 
 `cmd/archfit` (kong CLI) · `internal/` decision core + adapters · `docs/design`
-(current decisions — 3 files) · `docs/guide` (user docs) · `docs/spec` (spec) ·
+(current decisions — 4 files) · `docs/guide` (user docs) · `docs/spec` (spec) ·
 `docs/plans` (open plans only; shipped plans move to `docs/plans/completed/`).
 
 **Skip `docs/archived/`** — superseded design docs, completed plans, plan notes,

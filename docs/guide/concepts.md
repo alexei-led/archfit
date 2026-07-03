@@ -126,7 +126,7 @@ falling back to code-structure distance.
 vs asynchronous integration) and lifecycle coupling as part of distance. `archfit`
 deliberately does **not** fold runtime/async coupling into distance — detected
 async bridges are recorded as report-only `runtime_async` evidence, never a scored
-distance factor (see [bc-measurement-v3.md §9](../design/bc-measurement-v3.md#9-non-goals-and-rejected-designs) for the rationale).
+distance factor (see [bc-measurement-v4.md §9](../design/bc-measurement-v4.md#9-non-goals-and-rejected-designs) for the rationale).
 
 ### 3. Volatility — how likely it is to change at all
 

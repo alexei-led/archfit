@@ -186,8 +186,30 @@ Task 5 verification results (2026-07-04, HEAD after Task 4):
 
 ### Task 6: [Final] Documentation
 
-- [ ] update `docs/design/bc-measurement` doc for v4 semantics; changelog entry: bc_score.v4 with the three-change list and migration note (scores are not comparable across ScoreVersion)
-- [ ] mark findings-report deviations 1–3 fixed with commit refs
+- [x] update `docs/design/bc-measurement` doc for v4 semantics; changelog entry: bc_score.v4 with the three-change list and migration note (scores are not comparable across ScoreVersion)
+- [x] mark findings-report deviations 1–3 fixed with commit refs
+
+Task 6 notes:
+
+- `docs/design/bc-measurement-v4.md` written (v3 archived to
+  `docs/archived/design/`, mirroring the v2→v3 supersede pattern); v4 doc adds
+  the D=10 rung to the frozen distance table, const/var→model and DTO→contract
+  to the strength mapping, the declared/undeclared external split (§6), the
+  Wave-4 self-scorecard (40/poor, 292 scored / 513 external), and — instead of
+  carrying over v3's stale `Scored: true` claim — documents same-module edges
+  as unscored with a pointer to the Wave 5 plan (eval deviation 4).
+  `docs/guide/concepts.md` link retargeted to the v4 doc; CLAUDE.md layout
+  count 3→4 files.
+- Changelog: the repo has no CHANGELOG.md — releases are tag-triggered and the
+  annotated tag message IS the release notes (`release.yaml`). The curated
+  entry (three-change list + not-comparable migration note + top-level
+  `score_version` consumer note) is drafted in
+  `docs/design/20260702-bc-score-v4.md` "Changelog entry" section, ready to
+  paste into the next `git tag -a` message.
+- Findings report `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md`: §1
+  deviations 1–3 marked ✅ FIXED wave 4 (`1cb538b` DTO, `e64b77d` D=10,
+  `25d4e4b` const/var) and §4 P3 backlog items 11–12 marked ✅ DONE with the
+  same refs.
 
 ## Technical Details
 
