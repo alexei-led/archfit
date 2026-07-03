@@ -432,3 +432,45 @@ func TestFilesFor_DottedModuleRootFallback(t *testing.T) {
 		}
 	})
 }
+
+// TestFilesFor_EscapingCandidatesDropped pins the scan-root boundary: a
+// candidate that escapes upward (a module Paths glob like "../outside/**"
+// feeding the ModuleRootDirs fallback) or is absolute must be dropped even
+// when the target really exists on disk — files[] never points outside the
+// analyzed tree.
+func TestFilesFor_EscapingCandidatesDropped(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "repo")
+	writeFixtureFile(t, root, fixtureRealGo)
+	writeFixtureFile(t, base, "outside-repo/secret.txt") // sibling of the scan root
+	knownFiles := buildKnownFiles(t, root)
+	onDisk := func(rel string) bool {
+		_, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel)))
+		return err == nil
+	}
+
+	cases := []struct {
+		name, moduleRoot string
+	}{
+		{"parent_escape", "../outside-repo"},
+		{"nested_parent_escape", "sub/../../outside-repo"},
+		{"absolute_path", "/etc"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resolver := agenttask.NewPathResolver(knownFiles, nil, map[string]string{"leaky": tc.moduleRoot}, onDisk)
+			tasks := agenttask.Build(
+				[]finding.Finding{gateFindingWithModuleEdge("leaky")},
+				map[string]string{rulePublicAPIMax: rulePublicAPIMax},
+				nil, nil, nil,
+				resolver,
+			)
+			if len(tasks) != 1 {
+				t.Fatalf("tasks = %d, want 1", len(tasks))
+			}
+			if len(tasks[0].Files) != 0 {
+				t.Errorf("files = %v, want empty (escaping module root must be dropped, not emitted)", tasks[0].Files)
+			}
+		})
+	}
+}

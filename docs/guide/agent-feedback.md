@@ -56,12 +56,15 @@ isn't resolvable, `files` is legitimately empty — never a fabricated string
 
 **`edge.path` group semantics.** For a rolled-up finding (`group_count > 1`),
 `edge.from.path`/`edge.to.path` are taken from whichever member edge owns
-`locations[0]` — never an arbitrary hash-ordered representative. Both paths
-are empty strings (the `path` keys stay present in the JSON) when no member's
-own location matches `locations[0]`
-(`internal/engine/advisories.go`, `groupEdgePaths`). An agent can rely on
-`edge.from.path`/`edge.to.path`, when present, naming a file that literally
-appears in `locations[]`.
+`locations[0]` — never an arbitrary hash-ordered representative. When no
+member owns `locations[0]` (TypeScript edges carry no locations), the paths
+fall back to the representative member's own edge
+(`internal/engine/advisories.go`, `groupEdgePaths`). Either way the pair
+names one genuine member edge of the group. The path form is the graph
+node's: a repo-relative file for Go and TypeScript, a dotted module ID for
+Python (`myapp.domain`), a crate or `crate::mod` name for Rust — the
+module-graph forms do not literally match the `locations[]` file entries.
+For paths guaranteed to exist on disk, use `agent_tasks[].files[]`.
 
 ## SARIF — the CI annotation channel
 

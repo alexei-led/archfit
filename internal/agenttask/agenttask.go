@@ -110,10 +110,18 @@ func (r PathResolver) dirExists(dir string) bool {
 // directory (index first, then disk), Rust "crate::mod" (module file under
 // the crate's src/, then the crate dir), Python dotted module (the shared
 // graph.BuiltinConventions candidate list, then the dots-to-slashes
-// directory). Disabled (knownFiles nil) trusts every non-empty candidate,
-// matching pre-resolver behavior.
+// directory). Disabled (knownFiles nil) trusts every non-empty, non-escaping
+// candidate, matching pre-resolver behavior. Candidates that escape the scan
+// root (absolute, or cleaning to a ".."-prefixed path — e.g. a module Paths
+// glob like "../outside/**" feeding the ModuleRootDirs fallback) are always
+// rejected: the onDisk backstop joins candidates to ScanRoot unchecked, and
+// files[] must never point outside the analyzed tree.
 func (r PathResolver) resolve(candidate string) (string, bool) {
 	if candidate == "" {
+		return "", false
+	}
+	if clean := path.Clean(candidate); strings.HasPrefix(clean, "/") ||
+		clean == ".." || strings.HasPrefix(clean, "../") {
 		return "", false
 	}
 	if r.knownFiles == nil {

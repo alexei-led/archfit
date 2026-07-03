@@ -42,6 +42,11 @@ func TestCoverage_NoExtractors(t *testing.T) {
 	if result.Value == 1.0 {
 		t.Errorf("no extractors must not yield value 1.0 (false-green)")
 	}
+	// The n/a path must stamp Direction like the measured path does — an unset
+	// Direction silently falls into computeVerdict's ratio-default branch.
+	if result.Direction != diagnostic.DirectionHigherIsBetter {
+		t.Errorf("n/a direction = %q, want %q", result.Direction, diagnostic.DirectionHigherIsBetter)
+	}
 }
 
 func TestCoverage_ZeroApplicable(t *testing.T) {

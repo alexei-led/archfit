@@ -202,22 +202,25 @@ func rollupFinding(members []finding.Finding) finding.Finding {
 
 // groupEdgePaths returns honest edge.from.path/edge.to.path for a rolled-up
 // finding: the (from, to) pair belonging to whichever member owns the first
-// (sorted) merged location, so edge.from.path always names a file literally
-// present in locations[] — never an arbitrary hash-ID-ordered representative
-// that can point at a different member's file than locations[0] does. Both
-// paths are omitted ("") when no member's own location matches (locations
-// empty) rather than emit a value with no evidence behind it.
+// (sorted) merged location — never an arbitrary hash-ID-ordered representative
+// that can point at a different member's file than locations[0] does. When no
+// owner is determinable (locations empty — TS edges carry no Locations), the
+// representative's own pair is kept: it is a genuine member edge of the group,
+// and wiping it to "" would strip the finding's only path evidence. members
+// must arrive sorted by ID (rollupFinding sorts), so members[0] is the
+// representative. Either way the pair names one real member edge; its form is
+// the graph node's — a repo file for Go/TS, a dotted module ID or crate name
+// for Python/Rust module graphs.
 func groupEdgePaths(members []finding.Finding, locs []graph.Location) (fromPath, toPath string) {
-	if len(locs) == 0 {
-		return "", ""
-	}
-	first := locs[0]
-	for _, m := range members {
-		if slices.Contains(m.Locations, first) {
-			return m.Edge.From.Path, m.Edge.To.Path
+	if len(locs) > 0 {
+		first := locs[0]
+		for _, m := range members {
+			if slices.Contains(m.Locations, first) {
+				return m.Edge.From.Path, m.Edge.To.Path
+			}
 		}
 	}
-	return "", ""
+	return members[0].Edge.From.Path, members[0].Edge.To.Path
 }
 
 // withCloneLocations appends cloneLocations onto base — the edge's baseline

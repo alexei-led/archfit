@@ -51,7 +51,9 @@ func (m CoverageMetric) Calculate(in signal.CommonInput) diagnostic.MetricResult
 	// Report n/a (low confidence) — "100% of an empty file set" is the false-green
 	// this gate exists to prevent, not evidence of full coverage.
 	if totalApplicable == 0 {
-		return result.NACount(m.Name(), m.Version(), "extracted_files / applicable_files")
+		res := result.NACount(m.Name(), m.Version(), "extracted_files / applicable_files")
+		res.Direction = diagnostic.DirectionHigherIsBetter
+		return res
 	}
 
 	value := float64(totalExtracted) / float64(totalApplicable)

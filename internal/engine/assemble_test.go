@@ -343,9 +343,14 @@ func TestBuildClassifiedEdgeSummary(t *testing.T) {
 
 // TestGroupEdgePaths pins the honest-edge-path contract for rolled-up BC
 // advisories: the (from, to) pair comes from whichever member owns the first
-// merged location; with no locations (or no owning member — a safety branch)
-// both paths stay empty rather than name a file with no evidence behind it.
+// merged location; with no locations (TS edges carry none) or no owning
+// member, the representative's own pair is kept — a real member edge, never
+// an empty string that strips the finding's only path evidence.
 func TestGroupEdgePaths(t *testing.T) {
+	const (
+		fromA  = "a/x.go"
+		toDest = "shared/z.go"
+	)
 	member := func(from, to string, locs ...graph.Location) finding.Finding {
 		return finding.Finding{
 			Edge: finding.EdgeEvidence{
@@ -355,30 +360,30 @@ func TestGroupEdgePaths(t *testing.T) {
 			Locations: locs,
 		}
 	}
-	locA := graph.Location{File: "a/x.go", Line: 3}
+	locA := graph.Location{File: fromA, Line: 3}
 	locB := graph.Location{File: "b/y.go", Line: 7}
-	m1 := member("a/x.go", "shared/z.go", locA)
-	m2 := member("b/y.go", "shared/z.go", locB)
+	m1 := member(fromA, toDest, locA)
+	m2 := member("b/y.go", toDest, locB)
 
 	t.Run("owner of locations[0] wins", func(t *testing.T) {
 		from, to := groupEdgePaths([]finding.Finding{m2, m1}, []graph.Location{locA, locB})
-		if from != "a/x.go" || to != "shared/z.go" {
-			t.Errorf("(from, to) = (%q, %q), want m1's edge (a/x.go, shared/z.go)", from, to)
+		if from != fromA || to != toDest {
+			t.Errorf("(from, to) = (%q, %q), want m1's edge (%q, %q)", from, to, fromA, toDest)
 		}
 	})
 
-	t.Run("empty locations yields empty paths", func(t *testing.T) {
+	t.Run("empty locations falls back to representative", func(t *testing.T) {
 		from, to := groupEdgePaths([]finding.Finding{m1, m2}, nil)
-		if from != "" || to != "" {
-			t.Errorf("(from, to) = (%q, %q), want empty", from, to)
+		if from != fromA || to != toDest {
+			t.Errorf("(from, to) = (%q, %q), want representative m1's edge (%q, %q)", from, to, fromA, toDest)
 		}
 	})
 
-	t.Run("no member owning locations[0] yields empty paths", func(t *testing.T) {
+	t.Run("no member owning locations[0] falls back to representative", func(t *testing.T) {
 		orphan := graph.Location{File: "c/orphan.go", Line: 1}
 		from, to := groupEdgePaths([]finding.Finding{m1, m2}, []graph.Location{orphan})
-		if from != "" || to != "" {
-			t.Errorf("(from, to) = (%q, %q), want empty (no evidence, no path)", from, to)
+		if from != fromA || to != toDest {
+			t.Errorf("(from, to) = (%q, %q), want representative m1's edge (%q, %q)", from, to, fromA, toDest)
 		}
 	})
 }
