@@ -84,9 +84,27 @@
       "description": "CouplingConfig tunes the Balanced-Coupling advisory pass (`coupling:`)."
     },
     "CouplingGateDef": {
+      "anyOf": [
+        {
+          "required": [
+            "min_band"
+          ]
+        },
+        {
+          "required": [
+            "max_drop"
+          ]
+        }
+      ],
       "properties": {
         "min_band": {
           "type": "string",
+          "enum": [
+            "poor",
+            "mixed",
+            "serviceable",
+            "strong"
+          ],
           "description": "MinBand is the band floor: poor | mixed | serviceable | strong. The\nverdict fails when the current coupling_balance band ranks below it.\ncritical is rejected — no band ranks below it, so it could never trip."
         },
         "max_drop": {

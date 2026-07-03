@@ -93,9 +93,10 @@ func Generate(srcDir string) ([]byte, error) {
 
 // patchDefinitions walks all named definitions in the schema and replaces
 // inlined ToolMode ("enabled" property, {type:string}) and GateMode
-// ("gate" property, {type:string}) with the correct union/enum schemas.
+// ("gate" property, {type:string}) with the correct union/enum schemas, and
+// tightens CouplingGateDef to mirror validateCouplingGate.
 func patchDefinitions(schema *jsonschema.Schema) {
-	for _, def := range schema.Definitions {
+	for name, def := range schema.Definitions {
 		if def.Properties == nil {
 			continue
 		}
@@ -108,6 +109,20 @@ func patchDefinitions(schema *jsonschema.Schema) {
 		if gate, ok := def.Properties.Get("gate"); ok {
 			if gate.Type == typeString && gate.Enum == nil {
 				*gate = *gateModeSchema
+			}
+		}
+		if name == "CouplingGateDef" {
+			// Mirror validateCouplingGate (internal/config): min_band is one of
+			// the four band floors (critical rejected — could never trip), and
+			// an empty gate block gates nothing, so at least one knob is
+			// required. Without this, editors show green on exactly the
+			// validated-but-inert configs the gate was built to prevent.
+			if minBand, ok := def.Properties.Get("min_band"); ok && minBand.Type == typeString {
+				minBand.Enum = []any{"poor", "mixed", "serviceable", "strong"}
+			}
+			def.AnyOf = []*jsonschema.Schema{
+				{Required: []string{"min_band"}},
+				{Required: []string{"max_drop"}},
 			}
 		}
 	}

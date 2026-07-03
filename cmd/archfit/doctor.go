@@ -84,7 +84,7 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 		if dead := deadForbiddenDependencyRules(cfg); len(dead) > 0 {
 			_, _ = fmt.Fprintf(deps.Stdout, "\nConfig checks (%s):\n", defaultConfigPath)
 			for _, id := range dead {
-				_, _ = fmt.Fprintf(deps.Stdout, "  rule %q: type: forbidden_dependency with no from:/to: glob matches 0 edges, ever — dead by construction\n", id)
+				_, _ = fmt.Fprintf(deps.Stdout, "  rule %q: type: forbidden_dependency needs both from: and to: — an empty glob matches 0 edges, ever; dead by construction\n", id)
 			}
 		}
 	}
@@ -96,17 +96,16 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 }
 
 // deadForbiddenDependencyRules returns the IDs of every forbidden_dependency
-// rule in cfg whose from: and to: globs are both empty. forbiddenDependency.Check
-// (internal/rules/rules_dependency.go) requires both to match an edge —
-// doublestar.Match("", path) is always false, so a rule with neither set is
-// provably inert: it can never fire, matching 0 edges for the life of the
-// config. This deliberately does not flag a rule with only one glob set,
-// which is a (possibly intentional, if unusual) partial match, not a
-// zero-match-by-construction rule.
+// rule in cfg with an empty from: or to: glob. forbiddenDependency.Check
+// (internal/rules/rules_dependency.go) requires BOTH globs to match an edge
+// and — unlike public_api_only — has no empty-means-match-all special case:
+// doublestar.Match("", path) is always false for a non-empty path. A rule
+// missing either glob is therefore provably inert: it can never fire,
+// matching 0 edges for the life of the config.
 func deadForbiddenDependencyRules(cfg config.Config) []string {
 	var ids []string
 	for _, r := range cfg.Rules {
-		if r.Type == ruleTypeForbiddenDependency && r.From == "" && r.To == "" {
+		if r.Type == ruleTypeForbiddenDependency && (r.From == "" || r.To == "") {
 			ids = append(ids, r.ID)
 		}
 	}

@@ -106,8 +106,8 @@ func TestDeadForbiddenDependencyRules(t *testing.T) {
 		want bool
 	}{
 		{"both empty", config.RuleDef{ID: "r1", Type: ruleTypeForbiddenDependency}, true},
-		{"from set", config.RuleDef{ID: "r2", Type: ruleTypeForbiddenDependency, From: "a/**"}, false},
-		{"to set", config.RuleDef{ID: "r3", Type: ruleTypeForbiddenDependency, To: "b/**"}, false},
+		{"from set, to empty", config.RuleDef{ID: "r2", Type: ruleTypeForbiddenDependency, From: "a/**"}, true},
+		{"to set, from empty", config.RuleDef{ID: "r3", Type: ruleTypeForbiddenDependency, To: "b/**"}, true},
 		{"both set", config.RuleDef{ID: "r4", Type: ruleTypeForbiddenDependency, From: "a/**", To: "b/**"}, false},
 		{"different type", config.RuleDef{ID: "r5", Type: "forbidden_layer_direction"}, false},
 	}
