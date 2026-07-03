@@ -217,7 +217,7 @@ func validate(cfg Config) error {
 			return err
 		}
 	}
-	for _, name := range sortedMetricKeys(cfg.Metrics) {
+	for _, name := range sortedKeys(cfg.Metrics) {
 		if reason, removed := removedConfigKeys[name]; removed {
 			return fmt.Errorf("metrics.%s was %s — remove it", name, reason)
 		}
@@ -379,17 +379,6 @@ func validateGate(field, gate string) error {
 	return nil
 }
 
-// sortedMetricKeys returns metric names in sorted order so validation reports a
-// deterministic first offender when multiple metrics carry an invalid gate.
-func sortedMetricKeys(m MetricsConfig) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // Default returns a Config suitable for use when no archfit.yaml is present.
 // All language modes are auto, coupling advisory minimum severity is medium, and
 // no modules, layers, or rules are defined — only metric checks run.
@@ -467,7 +456,9 @@ func (c Config) FillMissingDeployUnits(resolved map[string]string) {
 	}
 }
 
-// sortedKeys returns a sorted slice of keys from a map[string]ModuleDef.
+// sortedKeys returns a sorted slice of keys from any string-keyed map, so
+// validation reports a deterministic first offender when multiple entries
+// carry an invalid value.
 func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {

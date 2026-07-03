@@ -160,6 +160,34 @@ func TestInitCmd_NoClobber_ExistingValid_LeavesUnchanged(t *testing.T) {
 	}
 }
 
+func TestInitCmd_NoClobber_BogusRuleType_ReportsLoadFailure(t *testing.T) {
+	t.Parallel()
+	root := minimalRoot(t)
+	outPath := filepath.Join(root, ".archfit.yaml")
+	// Syntactically valid YAML, but rules.New rejects the unknown rule type —
+	// loadConfig (not bare config.Load) must catch this, so init reports a load
+	// failure rather than misreporting the config as valid.
+	const badRuleType = "version: 1\nrules:\n  - id: bad\n    type: bogus_type\n"
+	if err := os.WriteFile(outPath, []byte(badRuleType), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := &InitCmd{Root: root, Output: outPath} // Force defaults false
+	out, err := runInitCmd(t, cmd)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "failed to load") {
+		t.Errorf("expected load-failure message, got: %q", out)
+	}
+	if strings.Contains(out, "already exists and is valid") {
+		t.Errorf("bogus rule type must not report as valid, got: %q", out)
+	}
+	data, _ := os.ReadFile(outPath) //nolint:gosec
+	if string(data) != badRuleType {
+		t.Errorf("existing config was modified; content: %q", string(data))
+	}
+}
+
 func TestInitCmd_Force_Overwrites(t *testing.T) {
 	t.Parallel()
 	root := minimalRoot(t)

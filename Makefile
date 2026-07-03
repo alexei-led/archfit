@@ -39,6 +39,7 @@ build: ## compile the archfit binary
 .PHONY: test
 test: ## run all tests with race detector and coverage
 	go test -race -coverprofile=coverage.out ./...
+	python3 internal/extract/scip/scip_reader_test.py
 
 ## test-fast: run tests with race detector, skipping slow subprocess integration tests (-short)
 .PHONY: test-fast

@@ -523,6 +523,23 @@ func TestResolve_ReportsSource(t *testing.T) {
 		}
 	})
 
+	t.Run("comment-only codeowners is not a degradation", func(t *testing.T) {
+		// A fresh-repo placeholder (comments only, zero rules) carries no
+		// signal: it must fall through to the git-author path, not trigger
+		// the codeowners_no_match degradation warning.
+		root := t.TempDir()
+		writeFile(t, root, ".github/CODEOWNERS", "# TODO: assign owners\n\n")
+		writeFile(t, root, "src/a.go", "")
+		runner := &toolrun.RunnerMock{
+			RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+				return toolrun.Output{Stdout: []byte("a@x.com\nsrc/a.go\n"), ExitCode: 0}, nil
+			},
+		}
+		if _, src := ownership.Resolve(context.Background(), root, root, "", mm, runner); src != ownership.SourceGit {
+			t.Errorf("got %q, want %q (placeholder CODEOWNERS falls through to git-author)", src, ownership.SourceGit)
+		}
+	})
+
 	t.Run("git fallback", func(t *testing.T) {
 		root := t.TempDir()
 		writeFile(t, root, "src/a.go", "")

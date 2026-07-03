@@ -454,6 +454,9 @@
       },
       "additionalProperties": false,
       "type": "object",
+      "required": [
+        "type"
+      ],
       "description": "RuleDef declares a single architecture rule."
     },
     "RustLanguage": {

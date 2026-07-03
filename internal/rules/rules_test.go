@@ -13,22 +13,23 @@ import (
 
 // Node ID constants reused across multiple test cases.
 const (
-	nodeAFoo     = "file:services/a/foo.go"
-	nodeBBar     = "file:services/b/bar.go"
-	nodeCFoo     = "file:services/c/foo.go"
-	nodeABaz     = "file:services/a/baz.go"
-	nodeBQux     = "file:services/b/qux.go"
-	nodeBIntBar  = "file:services/b/internal/bar.go"
-	nodeBAPI     = "file:services/b/api.go"
-	nodeDIntY    = "file:services/d/internal/y.go"
-	nodeCFoo2    = "file:services/c/foo.go"
-	nodeInfraRep = "file:services/infra/repo.go"
-	nodeDomMod   = "file:services/domain/model.go"
-	nodeAppHnd   = "file:services/app/handler.go"
-	nodeAppSvc   = "file:services/app/service.go"
-	nodeDomA     = "file:services/domain/a.go"
-	nodeDomB     = "file:services/domain/b.go"
-	nodeExtFoo   = "file:external/foo.go"
+	nodeAFoo      = "file:services/a/foo.go"
+	nodeBBar      = "file:services/b/bar.go"
+	nodeCFoo      = "file:services/c/foo.go"
+	nodeABaz      = "file:services/a/baz.go"
+	nodeBQux      = "file:services/b/qux.go"
+	nodeBIntBar   = "file:services/b/internal/bar.go"
+	nodeBAPI      = "file:services/b/api.go"
+	nodeDIntY     = "file:services/d/internal/y.go"
+	nodeCFoo2     = "file:services/c/foo.go"
+	nodeInfraRep  = "file:services/infra/repo.go"
+	nodeDomMod    = "file:services/domain/model.go"
+	nodeAppHnd    = "file:services/app/handler.go"
+	nodeAppSvc    = "file:services/app/service.go"
+	nodeDomA      = "file:services/domain/a.go"
+	nodeDomB      = "file:services/domain/b.go"
+	nodeExtFoo    = "file:external/foo.go"
+	nodeDomainFoo = "file:domain/domain.go"
 )
 
 // Layer name constants.
@@ -296,7 +297,7 @@ func TestPublicAPIOnly_ModuleMap(t *testing.T) {
 
 	t.Run("same_module_self_access_no_finding", func(t *testing.T) {
 		g := makeGraph([]graph.Edge{
-			{From: "file:domain/domain.go", To: "file:domain/internal/helper.go", Kind: graph.EdgeKindUsesInternal},
+			{From: nodeDomainFoo, To: "file:domain/internal/helper.go", Kind: graph.EdgeKindUsesInternal},
 		})
 		findings := r.Check(g, ev)
 		if len(findings) != 0 {
@@ -336,6 +337,19 @@ func TestPublicAPIOnly_ModuleMap(t *testing.T) {
 			t.Errorf("Why = %q, must not claim Cross-module when the module map can't confirm it", findings[0].Why)
 		}
 	})
+
+	t.Run("mixed_resolution_one_endpoint_unresolved_still_fires", func(t *testing.T) {
+		// fromPath resolves to "domain" but toPath is outside any configured
+		// module — sameModule requires BOTH endpoints resolved, so this must
+		// not be treated as same-module and must still fire.
+		g := makeGraph([]graph.Edge{
+			{From: nodeDomainFoo, To: "file:services/x/internal/other.go", Kind: graph.EdgeKindUsesInternal},
+		})
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("mixed resolution: got %d findings, want 1: %+v", len(findings), findings)
+		}
+	})
 }
 
 // TestInternalAPIAccess_ModuleMap mirrors TestPublicAPIOnly_ModuleMap for the
@@ -368,7 +382,7 @@ func TestInternalAPIAccess_ModuleMap(t *testing.T) {
 	}{
 		{
 			name: "same_module_self_access_no_finding",
-			edge: graph.Edge{From: "file:domain/domain.go", To: "file:domain/internal/helper.go", Kind: graph.EdgeKindUsesInternal},
+			edge: graph.Edge{From: nodeDomainFoo, To: "file:domain/internal/helper.go", Kind: graph.EdgeKindUsesInternal},
 			want: 0,
 		},
 		{
@@ -379,6 +393,14 @@ func TestInternalAPIAccess_ModuleMap(t *testing.T) {
 		{
 			name: "unresolved_endpoints_module_blind_fallback_fires",
 			edge: graph.Edge{From: nodeCFoo, To: nodeDIntY, Kind: graph.EdgeKindUsesInternal},
+			want: 1,
+		},
+		{
+			// fromPath resolves to "domain" but toPath is outside any
+			// configured module — sameModule requires BOTH endpoints
+			// resolved, so this must still fire.
+			name: "mixed_resolution_one_endpoint_unresolved_fires",
+			edge: graph.Edge{From: nodeDomainFoo, To: "file:services/x/internal/other.go", Kind: graph.EdgeKindUsesInternal},
 			want: 1,
 		},
 	}
@@ -392,13 +414,15 @@ func TestInternalAPIAccess_ModuleMap(t *testing.T) {
 	}
 }
 
-// TestPublicAPIOnly_PerLanguage documents that publicAPIOnly keys off
-// graph.EdgeKindUsesInternal, which the Go extractor assigns lexically
-// (import path contains "/internal/") but the TS and Python extractors only
-// assign when a module declares an `internal:` glob (matchesInternal) — and
-// the Rust extractor never assigns it at all. On a plain import edge (no
-// internal:-glob configured, as in the Wave 2 Task 1 fixtures) the rule is
-// inert for every non-Go language: no EdgeKindUsesInternal edge, no finding.
+// TestPublicAPIOnly_PerLanguage locks publicAPIOnly.Check's EdgeKind gating
+// only: Check never reads Edge.Language, so all three subtests below assert
+// the exact same thing — a plain EdgeKindImports edge produces no finding —
+// regardless of the language label attached to the edge. Per-language
+// differences in WHEN graph.EdgeKindUsesInternal actually gets assigned (Go
+// extractor: lexically, on any "/internal/" import path; TS/Python
+// extractors: only when a module declares an `internal:` glob
+// (matchesInternal); Rust extractor: never) live in the extractors, not in
+// this rule or in this test.
 func TestPublicAPIOnly_PerLanguage(t *testing.T) {
 	cfg := config.RuleConfig{
 		Rules: []config.RuleDef{

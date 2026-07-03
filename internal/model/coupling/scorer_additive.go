@@ -112,6 +112,8 @@ func lowerStrength(s Strength) (Strength, bool) {
 // lowerDistance returns the next-lower Distance ordinal.
 func lowerDistance(d Distance) (Distance, bool) {
 	switch d {
+	case DistanceExternal:
+		return DistanceCrossDeployUnit, true // bring the seam in-house
 	case DistanceCrossDeployUnit:
 		return DistanceCrossModuleDiffOwner, true
 	case DistanceCrossModuleDiffOwner:

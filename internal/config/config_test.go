@@ -508,8 +508,9 @@ func TestDefaultIncludesRust(t *testing.T) {
 
 // Test fixtures factored out to keep goconst quiet about repeated literals.
 const (
-	rustManifestPath = "crates/core/Cargo.toml"
-	globSvcAll       = "svc/**" // tools.go.modules include glob used across subtests
+	rustManifestPath            = "crates/core/Cargo.toml"
+	globSvcAll                  = "svc/**" // tools.go.modules include glob used across subtests
+	errBlastRadiusInformational = "metrics.blast_radius is informational and never gates"
 )
 
 var rustFeatures = []string{"serde", "tokio"}
@@ -1423,12 +1424,17 @@ func TestLoad_ValidateEnums(t *testing.T) {
 		{
 			name:    "gate on informational blast_radius rejected",
 			yaml:    "version: 1\nmetrics:\n  blast_radius:\n    enabled: true\n    gate: warn\n",
-			wantErr: "metrics.blast_radius is informational and never gates",
+			wantErr: errBlastRadiusInformational,
 		},
 		{
 			name:    "zero threshold on informational blast_radius rejected",
 			yaml:    "version: 1\nmetrics:\n  blast_radius:\n    enabled: true\n    max_new: 0\n",
-			wantErr: "metrics.blast_radius is informational and never gates",
+			wantErr: errBlastRadiusInformational,
+		},
+		{
+			name:    "min_delta on informational blast_radius rejected",
+			yaml:    "version: 1\nmetrics:\n  blast_radius:\n    enabled: true\n    min_delta: 0.1\n",
+			wantErr: errBlastRadiusInformational,
 		},
 		{
 			name:    "enabled toggle on blast_radius is allowed",

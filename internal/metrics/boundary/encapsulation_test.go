@@ -306,6 +306,42 @@ func TestEncapsulation_UnknownExcludedFromDenominator(t *testing.T) {
 	}
 }
 
+func TestEncapsulation_DeclaredExternalExcludedFromDenominator(t *testing.T) {
+	// 1 contract + 1 intrusive cross-boundary edge, plus 1 declared-external edge
+	// (DistanceExternal). A vendor seam has no public/internal glob boundary to
+	// honor, so it must not count toward the cross-boundary denominator: value
+	// must stay 1/2 = 0.5, not 2/3 (which would count the external edge as
+	// contract-classified boundary evidence).
+	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
+	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
+	nodeC := graph.Node{Kind: graph.NodeKindFile, Path: pathC}
+	nodeD := graph.Node{Kind: graph.NodeKindFile, Path: pathD}
+
+	edges := []graph.Edge{
+		{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports},
+		{From: nodeA.ID(), To: nodeC.ID(), Kind: graph.EdgeKindImports},
+		{From: nodeA.ID(), To: nodeD.ID(), Kind: graph.EdgeKindImports},
+	}
+	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB, nodeC, nodeD}, edges)
+
+	cross := coupling.DistanceCrossModuleDiffOwner
+	idx := coupling.Index{
+		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): {Strength: coupling.StrengthContract, Distance: cross},
+		metricstest.ImportKey(nodeA.ID(), nodeC.ID()): {Strength: coupling.StrengthIntrusive, Distance: cross},
+		metricstest.ImportKey(nodeA.ID(), nodeD.ID()): {Strength: coupling.StrengthContract, Distance: coupling.DistanceExternal},
+	}
+
+	m := boundary.EncapsulationMetric{}
+	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+
+	if !metricstest.ApproxEqual(result.Value, 0.5) {
+		t.Errorf("expected value 0.5 (declared-external excluded) got %v", result.Value)
+	}
+	if result.Confidence != "high" {
+		t.Errorf("expected confidence high (2 of 2 real cross edges classified) got %q", result.Confidence)
+	}
+}
+
 func TestEncapsulation_FunctionalAndModelExcluded(t *testing.T) {
 	// 1 contract + 1 intrusive + 2 functional + 1 model cross-boundary edges.
 	// Functional and model are normal public coupling, not boundary verdicts, so

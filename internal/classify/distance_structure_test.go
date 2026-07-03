@@ -414,6 +414,17 @@ func TestMaxDistance(t *testing.T) {
 			inputs: []coupling.Distance{coupling.DistanceCrossModuleSameOwner, coupling.DistanceUnknown},
 			want:   coupling.DistanceUnknown,
 		},
+		{
+			// Locks the distanceLevelOrdinal comment: DistanceExternal ranks
+			// highest so a future combination cannot silently demote it.
+			name: "external beats cross_deploy and diff_owner",
+			inputs: []coupling.Distance{
+				coupling.DistanceCrossDeployUnit,
+				coupling.DistanceExternal,
+				coupling.DistanceCrossModuleDiffOwner,
+			},
+			want: coupling.DistanceExternal,
+		},
 	}
 
 	for _, tc := range tests {

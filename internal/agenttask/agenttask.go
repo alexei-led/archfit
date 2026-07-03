@@ -96,18 +96,6 @@ func (r PathResolver) exists(p string) bool {
 	return r.onDisk != nil && r.onDisk(p)
 }
 
-// dirExists reports whether dir is a known or on-disk directory, or resolution
-// is disabled (knownFiles nil), in which case every directory is trusted.
-func (r PathResolver) dirExists(dir string) bool {
-	if r.knownFiles == nil {
-		return true
-	}
-	if _, ok := r.knownDirs[dir]; ok {
-		return true
-	}
-	return r.onDisk != nil && r.onDisk(dir)
-}
-
 // resolve turns a candidate path/key into one that exists on disk, or reports
 // false when it cannot be resolved. Resolution order: literal file or
 // directory (index first, then disk), Rust "crate::mod" (module file under
@@ -146,10 +134,10 @@ func (r PathResolver) resolve(candidate string) (string, bool) {
 					return cand, true
 				}
 			}
-			if dir != "" && r.dirExists(dir) {
+			if dir != "" && r.exists(dir) {
 				return dir, true
 			}
-			if src := path.Join(dir, "src"); r.dirExists(src) {
+			if src := path.Join(dir, "src"); r.exists(src) {
 				return src, true
 			}
 		}
@@ -160,7 +148,7 @@ func (r PathResolver) resolve(candidate string) (string, bool) {
 				return cand, true
 			}
 		}
-		if dir := strings.ReplaceAll(candidate, ".", "/"); r.dirExists(dir) {
+		if dir := strings.ReplaceAll(candidate, ".", "/"); r.exists(dir) {
 			return dir, true
 		}
 	}
@@ -304,9 +292,10 @@ func filesFor(f finding.Finding, r PathResolver) []string {
 	// src/domain/** next to a real docs/ dir) must not leak into files[] as
 	// false evidence. With no resolved Location they remain the best-effort
 	// probe (dotted Python id, crate::mod, dir named after the module).
+	locResolved := len(set) > 0
 	modKey := f.MatchedBy[matchedByModuleKey]
 	for _, p := range []string{f.Edge.From.Path, f.Edge.To.Path} {
-		if p == modKey && len(set) > 0 {
+		if p == modKey && locResolved {
 			continue
 		}
 		add(p)

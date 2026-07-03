@@ -515,6 +515,10 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 // DECLARED external target gets D=10; an undeclared external edge keeps the
 // disclosed exclusion (DistanceUnknown → classified_edges.external) — scoring
 // every library import at D=10 would flood the metric with vendor noise. The
+// match is gated on the TARGET's own resolution, not the composite distance:
+// classifyDistance also returns DistanceUnknown when only the SOURCE is
+// unresolved, and an edge into a real declared module must never be re-labelled
+// external just because an external glob overlaps that module's path space. The
 // match runs after the role cap deliberately: a composition root's edge to an
 // external vendor system is a real integration seam, not its own cohesive wiring.
 func resolveDistanceVolatility(fromPath, toPath, lang string, mi moduleIndex, c config.ClassifyConfig, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility, extSystems externalSystemIndex) (coupling.Distance, coupling.DistanceBasis, coupling.Volatility) {
@@ -524,8 +528,10 @@ func resolveDistanceVolatility(fromPath, toPath, lang string, mi moduleIndex, c 
 		dist = capDistanceForRole(dist)
 	}
 	if dist == coupling.DistanceUnknown {
-		if v, ok := extSystems.match(toPath); ok {
-			return coupling.DistanceExternal, coupling.DistanceBasisExternal, v
+		if _, toOK := mi.moduleFor(toPath); !toOK {
+			if v, ok := extSystems.match(toPath); ok {
+				return coupling.DistanceExternal, coupling.DistanceBasisExternal, v
+			}
 		}
 	}
 	return dist, distBasis, classifyVolatilityEffective(toPath, mi, modules, effectiveVol)

@@ -56,8 +56,6 @@ const (
 	pathFileB          = "pkg/b/b.go"
 	strengthModel      = "model"
 	strengthFunctional = "functional"
-
-	ruleIDBCImbalanced = "bc/imbalanced_coupling"
 )
 
 // cannedConfig builds a ClassifyConfig and RuleConfig for a two-module (a, b)
@@ -723,7 +721,7 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 
 	var adv *finding.Finding
 	for i := range d.Findings {
-		if d.Findings[i].RuleID == ruleIDBCImbalanced {
+		if d.Findings[i].RuleID == engine.RuleIDBCImbalanced {
 			adv = &d.Findings[i]
 			break
 		}
@@ -804,7 +802,7 @@ func TestRun_Advisory_DistanceBasisInMatchedBy(t *testing.T) {
 
 	var adv *finding.Finding
 	for i := range d.Findings {
-		if d.Findings[i].RuleID == ruleIDBCImbalanced {
+		if d.Findings[i].RuleID == engine.RuleIDBCImbalanced {
 			adv = &d.Findings[i]
 			break
 		}
@@ -893,7 +891,7 @@ func TestRun_Advisory_GroupedRollups(t *testing.T) {
 
 	var bc []finding.Finding
 	for _, f := range d.Findings {
-		if f.RuleID == ruleIDBCImbalanced {
+		if f.RuleID == engine.RuleIDBCImbalanced {
 			bc = append(bc, f)
 		}
 	}
@@ -981,7 +979,7 @@ func TestRun_Advisory_GroupedRollup_EdgePathHonesty(t *testing.T) {
 	var rollup finding.Finding
 	found := false
 	for _, f := range d.Findings {
-		if f.RuleID == ruleIDBCImbalanced {
+		if f.RuleID == engine.RuleIDBCImbalanced {
 			rollup = f
 			found = true
 			break
@@ -2242,7 +2240,7 @@ func TestRun_BookExamples_Ch10(t *testing.T) {
 			// Find the bc/imbalanced_coupling advisory (there may be at most one for a single edge).
 			var adv *finding.Finding
 			for i := range d.Findings {
-				if d.Findings[i].RuleID == ruleIDBCImbalanced && d.Findings[i].Kind == kindAdvisory {
+				if d.Findings[i].RuleID == engine.RuleIDBCImbalanced && d.Findings[i].Kind == kindAdvisory {
 					adv = &d.Findings[i]
 					break
 				}

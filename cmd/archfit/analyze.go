@@ -12,6 +12,7 @@ import (
 	"github.com/alexei-led/archfit/internal/decision"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
@@ -198,8 +199,16 @@ func (c *AnalyzeCmd) runScan(ctx context.Context, deps *appDeps, formats []strin
 	// stderr line is noise (and --base would print it twice). The gate decision
 	// is pure, so re-evaluating here reproduces exactly what applyCouplingGate
 	// applied to the verdict inside the pipeline.
-	for _, r := range score.EvaluateCouplingGate(sc, couplingGateView(cfg), base.CouplingScore()).Reasons {
+	gateView := couplingGateView(cfg)
+	for _, r := range score.EvaluateCouplingGate(sc, gateView, base.CouplingScore()).Reasons {
 		_, _ = fmt.Fprintln(deps.stderr(), "coupling gate: "+r)
+	}
+	// A score snapshot from a different scorer version can't anchor max_drop
+	// (CouplingScore returns nil) — disclose the skip instead of gating silent.
+	if gateView.Enabled && gateView.MaxDrop != nil && base.ScoreVersionStale() {
+		_, _ = fmt.Fprintf(deps.stderr(),
+			"coupling gate: max_drop skipped — baseline score was recorded under scorer version %q, current is %q; run `archfit baseline` to re-anchor\n",
+			base.Score.ScoreVersion, coupling.ScoreVersion)
 	}
 
 	// Apply the opt-in hard gate before rendering so the output shows the

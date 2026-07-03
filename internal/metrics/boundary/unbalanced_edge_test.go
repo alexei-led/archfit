@@ -68,6 +68,32 @@ func TestUnbalancedEdge_ZeroCount(t *testing.T) {
 	}
 }
 
+func TestUnbalancedEdge_DeclaredExternalNotCounted(t *testing.T) {
+	// intrusive + high volatility, but distance=declared_external. distanceRank
+	// routes DistanceExternal to the default (excluded) case by design (frozen v2
+	// metric — declared external seams stay out of it), so this must NOT count as
+	// an unbalanced edge even though strength and volatility both qualify.
+	nodeA := graph.Node{Kind: graph.NodeKindFile, Path: pathA}
+	nodeB := graph.Node{Kind: graph.NodeKindFile, Path: pathB}
+	e := graph.Edge{From: nodeA.ID(), To: nodeB.ID(), Kind: graph.EdgeKindImports}
+	g := metricstest.BuildGraph([]graph.Node{nodeA, nodeB}, []graph.Edge{e})
+
+	idx := coupling.Index{
+		metricstest.ImportKey(nodeA.ID(), nodeB.ID()): coupling.Classification{
+			Strength:   coupling.StrengthIntrusive,
+			Distance:   coupling.DistanceExternal,
+			Volatility: coupling.VolatilityHigh,
+		},
+	}
+
+	m := boundary.UnbalancedEdgeMetric{}
+	result := m.Calculate(signal.CommonInput{Graph: g, Classifications: idx})
+
+	if result.Value != 0 {
+		t.Errorf("expected value 0 (declared_external excluded, not counted as unbalanced) got %v", result.Value)
+	}
+}
+
 func TestUnbalancedEdge_UnknownVolatilityIsNA(t *testing.T) {
 	// An intrusive cross-module edge IS a candidate, but its volatility is unknown
 	// (no churn data, no subdomain config). The high-volatility test cannot be

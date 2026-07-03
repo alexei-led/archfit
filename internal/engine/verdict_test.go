@@ -59,6 +59,21 @@ func TestComputeVerdict(t *testing.T) {
 			want:         diagnostic.VerdictPass,
 		},
 		{
+			// Waived findings reach computeVerdict unfiltered in production
+			// (status.Assign stamps them, it does not drop them) — the gate
+			// loop must not treat a waived finding as a breach.
+			name:         "waived gate finding alone passes",
+			gateFindings: []finding.Finding{newTestFinding(finding.StatusWaived)},
+			want:         diagnostic.VerdictPass,
+		},
+		{
+			// Baseline findings likewise reach computeVerdict unfiltered — an
+			// accepted pre-existing finding must not flip the verdict.
+			name:         "baseline gate finding alone passes",
+			gateFindings: []finding.Finding{newTestFinding(finding.StatusBaseline)},
+			want:         diagnostic.VerdictPass,
+		},
+		{
 			// A new cycle is a count-metric regression (more cycles is worse)
 			// and must block — this was the V1 bug: computeVerdict only
 			// checked Delta < 0, so a positive count delta was silently

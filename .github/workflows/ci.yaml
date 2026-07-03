@@ -50,6 +50,8 @@ jobs:
           enable-cache: false
       - name: Run tests
         run: go test -race -coverprofile=coverage.out ./...
+      - name: SCIP reader tests (python)
+        run: python3 internal/extract/scip/scip_reader_test.py
       - name: CI gate — arch imports
         run: go test ./internal/ -run TestArchImports
       - name: CI gate — golden output

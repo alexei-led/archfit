@@ -73,6 +73,15 @@ func hasEdge(facts graph.Facts, from, to string) *graph.Edge {
 	return nil
 }
 
+func TestLastCrateRoots_NilBeforeExtract(t *testing.T) {
+	// LastCrateRoots documents "nil when Extract has not been called" — verify a
+	// freshly constructed Extractor honors that before any Extract call.
+	e := rust.New(mockRunner(nil), config.ExtractConfig{Mode: config.ModeAuto})
+	if e.LastCrateRoots() != nil {
+		t.Errorf("LastCrateRoots() = %+v, want nil before Extract", e.LastCrateRoots())
+	}
+}
+
 func TestExtract_Workspace(t *testing.T) {
 	runner := mockRunner(loadFixture(t, "cargo_workspace.json"))
 	e := rust.New(runner, config.ExtractConfig{Mode: config.ModeAuto})

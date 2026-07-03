@@ -41,3 +41,16 @@ func TestBlastRadius_TransitiveReverseDeps(t *testing.T) {
 		t.Errorf("direction = %q, want %q", res.Direction, diagnostic.DirectionHigherIsWorse)
 	}
 }
+
+// TestBlastRadius_NAResult covers the naResult path (nil graph): the n/a path
+// must stamp Direction like the measured path does — an unset Direction
+// silently falls into computeVerdict's default branch.
+func TestBlastRadius_NAResult(t *testing.T) {
+	res := modularity.BlastRadiusMetric{}.Calculate(signal.CommonInput{Graph: nil})
+	if res.Band != result.BandNA {
+		t.Errorf("expected band %q for nil graph, got %q", result.BandNA, res.Band)
+	}
+	if res.Direction != diagnostic.DirectionHigherIsWorse {
+		t.Errorf("n/a direction = %q, want %q", res.Direction, diagnostic.DirectionHigherIsWorse)
+	}
+}

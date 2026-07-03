@@ -12,7 +12,6 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/go/types/typeutil"
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -385,7 +384,9 @@ func (e *GoExtractor) collectNodesEdges(
 //   - *types.TypeName with interface underlying → "contract"  (rank 1, weakest)
 //   - pure-data DTO type or one of its fields    → "dto"       (rank 2)
 //   - *types.TypeName with concrete type         → "model"     (rank 3)
-//   - *types.Var, *types.Const (pure data read)  → "model"     (rank 3, book Ch7)
+//   - *types.Var, *types.Const (pure data use — reads and writes classify
+//     alike)                                     → "model"     (rank 3, book Ch7)
+//   - *types.Var with func/chan underlying (stored behavior) → "functional"
 //   - *types.Func (function or method)           → "functional" (rank 4)
 //
 // Go cross-package references are always to exported symbols, so "intrusive"
@@ -484,8 +485,17 @@ func goObjectStrength(obj types.Object, dtos *dtoIndex) string {
 		if tn.IsField() && dtos.isDTOField(tn) {
 			return strengthDTO
 		}
-		// Pure data sharing (book Ch7): reading another module's exported
-		// var/field couples on its data model, not its behavior.
+		// A func- or chan-typed var/field is stored behavior, not data:
+		// pkg.DefaultHandler() or holder.OnDone() couples on the callee's
+		// behavior exactly like a *types.Func call (mirrors computePureData's
+		// behavior-carrier exclusion).
+		switch tn.Type().Underlying().(type) {
+		case *types.Signature, *types.Chan:
+			return strengthFunctional
+		}
+		// Pure data sharing (book Ch7): using another module's exported
+		// var/field couples on its data model, not its behavior. Reads and
+		// writes classify alike — assignment position is not inspected.
 		return strengthModel
 	case *types.Const:
 		// Pure data sharing (book Ch7), same as *types.Var.
@@ -500,7 +510,6 @@ func goObjectStrength(obj types.Object, dtos *dtoIndex) string {
 // field objects of every type that qualifies, so a bare field reference can be
 // tied back to its DTO (go/types exposes no owner pointer on a field Var).
 type dtoIndex struct {
-	msets  typeutil.MethodSetCache
 	types  map[*types.TypeName]bool
 	fields map[*types.Var]bool
 }
@@ -556,8 +565,9 @@ func (ix *dtoIndex) computePureData(tn *types.TypeName) bool {
 		}
 	}
 	// The pointer method set is a superset of the value method set and includes
-	// promoted methods, so one lookup covers every receiver form.
-	if ix.msets.MethodSet(types.NewPointer(named)).Len() != 0 {
+	// promoted methods, so one lookup covers every receiver form. computePureData
+	// runs at most once per type (isDTOType memoizes), so no method-set cache.
+	if types.NewMethodSet(types.NewPointer(named)).Len() != 0 {
 		return false
 	}
 	for i := range st.NumFields() {

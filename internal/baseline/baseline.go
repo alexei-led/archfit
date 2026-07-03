@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/status"
 )
@@ -36,8 +37,16 @@ type AcceptedFinding struct {
 // when the score was measured — an n/a (unmeasured) synthesis stores nothing,
 // so it can never anchor a phantom drop.
 type ScoreSnapshot struct {
-	CouplingBalance int    `json:"coupling_balance"`
-	Band            string `json:"band"`
+	CouplingBalance int `json:"coupling_balance"`
+	// Band is disclosure-only, for humans reading the baseline JSON — no code
+	// path reads it back (min_band gates on the current run's band).
+	Band string `json:"band"`
+	// ScoreVersion is the scorer formula version (coupling.ScoreVersion) the
+	// snapshot was computed under. Ordinal reassignment makes scores
+	// incomparable across versions, so CouplingScore refuses to anchor
+	// max_drop on a mismatched snapshot. Empty in baselines written before
+	// version tracking — treated as stale (re-baseline to re-anchor).
+	ScoreVersion string `json:"score_version,omitempty"`
 }
 
 // Baseline is the on-disk baseline file structure.
@@ -51,12 +60,21 @@ type Baseline struct {
 }
 
 // CouplingScore returns the stored coupling_balance value, or nil when the
-// baseline carries no score snapshot.
+// baseline carries no score snapshot or the snapshot was computed under a
+// different scorer version — a cross-version drop is a methodology change,
+// not a regression, so it must never anchor coupling.gate.max_drop.
 func (b Baseline) CouplingScore() *int {
-	if b.Score == nil {
+	if b.Score == nil || b.Score.ScoreVersion != coupling.ScoreVersion {
 		return nil
 	}
 	return &b.Score.CouplingBalance
+}
+
+// ScoreVersionStale reports whether a score snapshot exists but was computed
+// under a different scorer version than the current binary. Callers use it to
+// disclose why max_drop was skipped instead of skipping silent.
+func (b Baseline) ScoreVersionStale() bool {
+	return b.Score != nil && b.Score.ScoreVersion != coupling.ScoreVersion
 }
 
 // HasFingerprint reports whether the given fingerprint exists in the baseline's

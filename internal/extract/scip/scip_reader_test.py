@@ -26,6 +26,7 @@ EXT_PY = "scip-python python python-stdlib 3.12 typing/Protocol#"
 RUST_TYPE = "rust-analyzer cargo mycrate 0.1.0 crate/api/Server#"         # module: mycrate::api
 RUST_FN   = "rust-analyzer cargo mycrate 0.1.0 crate/server/run()."        # module: mycrate::server
 RUST_ROOT = "rust-analyzer cargo mycrate 0.1.0 crate/"                     # crate root: mycrate
+RUST_NESTED = "rust-analyzer cargo mycrate 0.1.0 crate/api/inner/Fn#"      # nested module: mycrate::api::inner
 RUST_EXT  = "rust-analyzer cargo serde 1.0.0 crate/Serialize#"             # external dep
 RUST_CONST = "rust-analyzer cargo mycrate 0.1.0 crate/config/MAX_RETRIES." # term: const/static
 
@@ -50,6 +51,7 @@ check("ts to (ns+backtick file)", r._to_path(TS_TYPE, "typescript"), "src/db/sql
 check("rust to (type in module)",  r._to_path(RUST_TYPE, "rust"), "mycrate::api")
 check("rust to (fn in module)",    r._to_path(RUST_FN,   "rust"), "mycrate::server")
 check("rust to (crate root)",      r._to_path(RUST_ROOT, "rust"), "mycrate")
+check("rust to (nested module)",   r._to_path(RUST_NESTED, "rust"), "mycrate::api::inner")
 
 # _doc_from: source path per language.
 check("py doc (dotted, strip src)", r._doc_from("src/ccgram/handlers/x.py", "python"), "ccgram.handlers.x")

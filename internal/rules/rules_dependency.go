@@ -49,6 +49,18 @@ func (r *forbiddenDependency) Check(g *graph.Graph, _ Evidence) []finding.Findin
 	return out
 }
 
+// sameModule reports whether fromPath and toPath resolve to the same module —
+// a module reaching into its own internal path (e.g. domain importing
+// domain/internal) is idiomatic, not a violation; only cross-module access to
+// another module's internal surface is. When either endpoint isn't covered by
+// the module map, we can't rule out same-module, so callers must treat that
+// as "not same module" (module-blind fallback: the edge still fires).
+func sameModule(mm config.ModuleMap, fromPath, toPath string) bool {
+	fromModule, fromOK := mm.ModuleFor(fromPath)
+	toModule, toOK := mm.ModuleFor(toPath)
+	return fromOK && toOK && fromModule == toModule
+}
+
 // ---------------------------------------------------------------------------
 // PublicAPIOnly
 // ---------------------------------------------------------------------------
@@ -81,14 +93,7 @@ func (r *publicAPIOnly) Check(g *graph.Graph, _ Evidence) []finding.Finding {
 			}
 		}
 
-		// A module reaching into its own internal path (e.g. domain importing
-		// domain/internal) is idiomatic, not a violation — only cross-module
-		// access to another module's internal surface is. When either endpoint
-		// isn't covered by the module map, we can't rule out same-module, so the
-		// edge still fires (module-blind fallback, same as pre-fix behavior).
-		fromModule, fromOK := r.mm.ModuleFor(fromPath)
-		toModule, toOK := r.mm.ModuleFor(toPath)
-		if fromOK && toOK && fromModule == toModule {
+		if sameModule(r.mm, fromPath, toPath) {
 			continue
 		}
 
@@ -99,8 +104,10 @@ func (r *publicAPIOnly) Check(g *graph.Graph, _ Evidence) []finding.Finding {
 			"to_path":   toPath,
 		}
 		why := "Access to internal path " + toPath
-		if fromOK && toOK {
-			why = fmt.Sprintf("Cross-module access from %q (%s) to internal path %q (%s)", fromPath, fromModule, toPath, toModule)
+		if fromModule, fromOK := r.mm.ModuleFor(fromPath); fromOK {
+			if toModule, toOK := r.mm.ModuleFor(toPath); toOK {
+				why = fmt.Sprintf("Cross-module access from %q (%s) to internal path %q (%s)", fromPath, fromModule, toPath, toModule)
+			}
 		}
 		f.Why = why
 		f.Constraint = "Only import from the module's public API"
@@ -201,13 +208,7 @@ func (r *internalAPIAccess) Check(g *graph.Graph, _ Evidence) []finding.Finding 
 			}
 		}
 
-		// Same-module self-access is idiomatic, not a violation — the same
-		// module-map skip as publicAPIOnly (V5). When either endpoint isn't
-		// covered by the module map, we can't rule out same-module, so the
-		// edge still fires (module-blind fallback).
-		fromModule, fromOK := r.mm.ModuleFor(fromPath)
-		toModule, toOK := r.mm.ModuleFor(toPath)
-		if fromOK && toOK && fromModule == toModule {
+		if sameModule(r.mm, fromPath, toPath) {
 			continue
 		}
 

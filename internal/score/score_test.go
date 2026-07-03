@@ -461,6 +461,47 @@ func TestCouplingBalance_LLMProvenance_EvidenceString(t *testing.T) {
 	}
 }
 
+func TestCouplingBalance_DeclaredExternalEvidence(t *testing.T) {
+	nonDegen := nonDegenMetricIndex()
+
+	t.Run("declared-external count surfaced in evidence when present", func(t *testing.T) {
+		sum := &diagnostic.ClassifiedEdgeSummary{
+			Total:            10,
+			Scored:           10,
+			MeanBalance:      9.0,
+			BySeverity:       map[string]int{sevLow: 10},
+			DeclaredExternal: 4,
+		}
+		got := couplingBalance(nil, nonDegen, sum)
+
+		found := false
+		for _, ev := range got.Evidence {
+			if strings.Contains(ev, "4 declared external-system edges scored at D=10 (external_systems)") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected declared-external evidence line, got: %v", got.Evidence)
+		}
+	})
+
+	t.Run("no declared-external mention when count is zero", func(t *testing.T) {
+		sum := &diagnostic.ClassifiedEdgeSummary{
+			Total:       10,
+			Scored:      10,
+			MeanBalance: 9.0,
+			BySeverity:  map[string]int{sevLow: 10},
+		}
+		got := couplingBalance(nil, nonDegen, sum)
+
+		for _, ev := range got.Evidence {
+			if strings.Contains(ev, "declared external-system edges") {
+				t.Errorf("did not expect declared-external evidence line, got: %v", got.Evidence)
+			}
+		}
+	})
+}
+
 func TestCouplingBalance_ExternalEdgesExcluded(t *testing.T) {
 	nonDegen := nonDegenMetricIndex()
 

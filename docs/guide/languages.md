@@ -379,6 +379,14 @@ Notes that bite most often:
 - **Clone detection is opt-in.** `analyzers.clones.enabled: true` plus `jscpd`
   (`npm install -g jscpd@5.0.11`) upgrades cross-module clone pairs to
   `StrengthSymmetric` (S=9) in the BC scorer. `false` or absent → no upgrade.
+- **Strength precision is language-asymmetric (bc_score.v4).** Go classifies
+  `const`/`var` uses as `model` (pure-data sharing) and pure-data DTO structs
+  crossing a declared `public:` boundary as `contract` directly from compiler
+  type info. Rust gets the const/static→model precision only via
+  `analyzers.scip` (rust-analyzer terms). Python (grimp) and TypeScript
+  (dependency-cruiser) cannot see object kinds at extraction granularity, so
+  they keep their heuristic hints and never emit a DTO upgrade — see
+  [Concepts → the balance rule](concepts.md#the-balance-rule).
 
 See [Install → optional analysis tools](install.md#optional-analysis-tools) for
 quick setup and [Tooling reference](tooling.md) for platform-specific package

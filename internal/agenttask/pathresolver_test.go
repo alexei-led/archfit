@@ -18,6 +18,9 @@ const (
 	fixtureCrateDir = "crates/mycrate"
 	fixtureRealGo   = "pkg/real.go"
 	fixtureCrate    = "mycrate"
+	fixturePkgAGo   = "pkg/a.go"
+	fixturePkgBGo   = "pkg/b.go"
+	fixturePkgDir   = "pkg"
 )
 
 // writeFixtureFile creates a real file at root/relPath so the integration
@@ -87,6 +90,76 @@ func gateFindingWithModuleEdge(modKey string) finding.Finding {
 		},
 		MatchedBy: map[string]string{"module": modKey},
 		Why:       "test",
+	}
+}
+
+// TestNewPathResolver_ZeroKnownFilesTrustsEverything mirrors the zero-value
+// PathResolver{} tests (agenttask_test.go) but goes through the constructor:
+// a nil knownFiles map disables resolution, so any non-empty, non-escaping
+// candidate passes through unchanged.
+func TestNewPathResolver_ZeroKnownFilesTrustsEverything(t *testing.T) {
+	resolver := agenttask.NewPathResolver(nil, nil, nil, nil)
+	f := finding.Finding{
+		ID:     "f1",
+		Kind:   finding.KindGate,
+		RuleID: ruleTypeForbidden,
+		Status: finding.StatusNew,
+		Edge: finding.EdgeEvidence{
+			From: finding.Endpoint{Path: fixturePkgAGo},
+			To:   finding.Endpoint{Path: fixturePkgBGo},
+		},
+	}
+	tasks := agenttask.Build(
+		[]finding.Finding{f},
+		map[string]string{ruleTypeForbidden: ruleTypeForbidden},
+		nil, nil, nil,
+		resolver,
+	)
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %d, want 1", len(tasks))
+	}
+	want := []string{fixturePkgAGo, fixturePkgBGo}
+	if len(tasks[0].Files) != len(want) || tasks[0].Files[0] != want[0] || tasks[0].Files[1] != want[1] {
+		t.Errorf("files = %v, want %v (candidates pass through unchanged)", tasks[0].Files, want)
+	}
+}
+
+// TestNewPathResolver_SharedDirectoryAncestorDedup pins the ancestor-dedup
+// break in NewPathResolver's knownDirs build: two files under the same
+// directory make the second file's walk hit an already-recorded ancestor and
+// break early. Both files and the shared directory must still resolve.
+func TestNewPathResolver_SharedDirectoryAncestorDedup(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, root, fixturePkgAGo)
+	writeFixtureFile(t, root, fixturePkgBGo)
+	knownFiles := buildKnownFiles(t, root)
+
+	resolver := agenttask.NewPathResolver(knownFiles, nil, nil, nil)
+	f := finding.Finding{
+		ID:        "f1",
+		Kind:      finding.KindGate,
+		RuleID:    ruleTypeForbidden,
+		Status:    finding.StatusNew,
+		Locations: []graph.Location{{File: fixturePkgAGo}, {File: fixturePkgBGo}, {File: fixturePkgDir}},
+	}
+	tasks := agenttask.Build(
+		[]finding.Finding{f},
+		map[string]string{ruleTypeForbidden: ruleTypeForbidden},
+		nil, nil, nil,
+		resolver,
+	)
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %d, want 1", len(tasks))
+	}
+	assertFilesExistOnDisk(t, root, tasks[0].Files)
+	want := []string{fixturePkgDir, fixturePkgAGo, fixturePkgBGo}
+	if len(tasks[0].Files) != len(want) {
+		t.Fatalf("files = %v, want %v", tasks[0].Files, want)
+	}
+	for i, w := range want {
+		if tasks[0].Files[i] != w {
+			t.Errorf("files = %v, want %v", tasks[0].Files, want)
+		}
 	}
 }
 

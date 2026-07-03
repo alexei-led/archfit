@@ -7,6 +7,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/engine"
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 )
@@ -90,7 +91,11 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	// anchor on later runs. An unmeasured score (band n/a) stores nothing —
 	// it must never anchor a phantom drop.
 	if !sc.OverallBand.Unmeasured() {
-		newBase.Score = &baseline.ScoreSnapshot{CouplingBalance: sc.Overall, Band: string(sc.OverallBand)}
+		newBase.Score = &baseline.ScoreSnapshot{
+			CouplingBalance: sc.Overall,
+			Band:            string(sc.OverallBand),
+			ScoreVersion:    coupling.ScoreVersion,
+		}
 	}
 
 	bPath := filepath.Join(configDir, defaultBaselinePath)

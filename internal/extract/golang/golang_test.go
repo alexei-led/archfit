@@ -232,6 +232,18 @@ func TestExtract_StrengthHint(t *testing.T) {
 		{"struct with func field → model", "pkg/a/callback_cons.go", pkgB, graph.EdgeKindImports, hintModel},
 		// dto_rank_cons.go uses b.Greeter (contract, rank 1) AND b.UserDTO (dto, rank 2) → dto wins.
 		{"dto outranks contract", "pkg/a/dto_rank_cons.go", pkgB, graph.EdgeKindImports, hintDTO},
+		// funcvar_cons.go calls b.DefaultHandler() — a func-typed var is stored behavior → functional.
+		{"func-valued var → functional", "pkg/a/funcvar_cons.go", pkgB, graph.EdgeKindImports, hintFunctional},
+		// callback_fire_cons.go invokes h.OnDone() — a func-typed field call outranks the holder's model hint.
+		{"func-typed field invocation → functional", "pkg/a/callback_fire_cons.go", pkgB, graph.EdgeKindImports, hintFunctional},
+		// dto_read_cons.go reads u.ID via a plain selector — the DTO field stays dto.
+		{"dto field selector read → dto", "pkg/a/dto_read_cons.go", pkgB, graph.EdgeKindImports, hintDTO},
+		// var_set_cons.go WRITES b.DefaultName — reads and writes classify alike → model.
+		{"var write → model", "pkg/a/var_set_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// chan_cons.go references b.ChanHolder — chan-typed field disqualifies the DTO upgrade → model.
+		{"struct with chan field → model", "pkg/a/chan_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// marker_cons.go references b.Marker — zero-field structs carry no data model → model, not dto.
+		{"zero-field marker struct → model", "pkg/a/marker_cons.go", pkgB, graph.EdgeKindImports, hintModel},
 	}
 
 	for _, tc := range cases {

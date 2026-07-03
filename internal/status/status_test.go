@@ -395,6 +395,25 @@ func TestDeltaBuckets_ModuleKeyEndpointNotPathEvidence(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("general two-phase path: location misses, real edge endpoint matches", func(t *testing.T) {
+		// Locations names a file that is NOT in changed (phase 1 misses, but
+		// hasLoc becomes true); an edge endpoint names a real path DISTINCT from
+		// the module key that IS in changed — phase 2 must still match it (the
+		// modKey-equality skip only applies to the module-key value itself).
+		f := mkDeltaFinding("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", finding.StatusBaseline, finding.SeverityMedium,
+			"internal/realmodule/thing.go", "docs")
+		f.MatchedBy = map[string]string{"module": "docs"}
+		f.Locations = []graph.Location{{File: "src/unrelated/file.go"}}
+		accepted := fakeAccepted{{Fingerprint: f.ID, RuleID: testRuleID, Kind: kindGate, Severity: string(finding.SeverityMedium)}}
+
+		changed := []string{"internal/realmodule/thing.go"}
+		r := status.DeltaBuckets([]finding.Finding{f}, accepted, changed)
+
+		if len(r.TouchedByDelta) != 1 {
+			t.Errorf("touched=%v, want true (result %+v)", len(r.TouchedByDelta) == 1, r)
+		}
+	})
 }
 
 func TestDeltaBuckets_Empty(t *testing.T) {

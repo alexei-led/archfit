@@ -128,8 +128,10 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   dropped; dependent metrics report `n/a (timed out)`; the run continues on the
   verdict from the remaining analyzers.
 - **Go edge strength** comes from `go/packages` type info (`NeedTypesInfo`): the
-  resolved object kind (interface→contract, concrete type→model, func→functional)
-  is compiler-grade ground truth, so SCIP does **not** override it — `enrichEdges`
+  resolved object kind (interface→contract, pure-data DTO struct or its
+  fields→dto, concrete type→model, const/var use→model, func or func/chan-valued
+  var→functional) is compiler-grade ground truth, so SCIP does **not** override
+  it — `enrichEdges`
   keeps the Go type-info hint and uses SCIP strength only where type-info is absent
   (empty hint). SCIP-go is a coarser subprocess re-derivation that collapses
   imports to a blanket `functional`; letting it override flattened
@@ -137,7 +139,10 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   SCIP **does** override — it is their precision upgrade. Unclassified edges stay
   `unknown` (abstain-not-fake). A public-glob match is a not-intrusive _floor_
   whose kind the hint refines (classify.go); an internal-glob match is
-  authoritative intrusive.
+  authoritative intrusive. The `dto` hint (rank 2, between contract and model)
+  resolves to Contract only across a config-declared `public:` boundary — it is
+  Go-only; Python/TS extraction can't see object kinds, Rust gets const/static
+  precision via rust-analyzer SCIP terms instead (`docs/design/bc-measurement-v4.md`).
 - **Python module globs are DOTTED, not file paths.** grimp emits dotted node IDs
   (`prefect.states`); `paths:`/`public:`/`internal:` and rule `from:`/`to:` all match the
   dotted node ID via `doublestar.Match`. Write `prefect.**`, NOT `src/prefect/**` — a slash
@@ -194,9 +199,16 @@ edges with unknown strength stay in the `abstained` bucket (lowers
 `coupling_balance` confidence); external/library edges (`DistanceUnknown`) are
 excluded from the denominator entirely (counted in `classified_edges.external`).
 
-**External edges excluded from `coupling_balance`:** edges whose target is not a
-declared module are NOT internal coupling seams. Their count surfaces in
-`classified_edges.external` and the `coupling_balance` evidence string.
+**External edges excluded from `coupling_balance` — unless declared:** edges
+whose target is not a declared module are NOT internal coupling seams; their
+count surfaces in `classified_edges.external` and the `coupling_balance`
+evidence string. Exception (bc_score.v4): a target matching a config-declared
+`external_systems:` entry gets the frozen `DistanceExternal = 10` rung
+(`distance_basis: declared_external`, book Ch10 Example 1) and ENTERS scoring
+with the entry's volatility (default low); those count in
+`classified_edges.declared_external`. The match is gated on the target's own
+module resolution — a module-resolved target is never re-labelled external,
+even when the edge's source is unresolved.
 
 **Symmetric from clones:** when `analyzers.clones` detects a cross-module clone
 pair, the edge strength is upgraded to `StrengthSymmetric` (S=9) unless a

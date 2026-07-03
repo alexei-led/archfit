@@ -109,6 +109,21 @@ func TestEvaluateCouplingGate(t *testing.T) {
 			baseScore: new(60),
 			wantTrip:  true,
 		},
+		{
+			name:     "empty gate block (coupling.gate: {}) never trips",
+			sc:       card(30, BandPoor),
+			gate:     CouplingGate{Enabled: true},
+			wantTrip: false,
+		},
+		// MinBand out-of-enum ("garbage") ranks -1 via BandRank, so the floor
+		// check's rank comparison never fires: defense-in-depth only — upstream
+		// config validation owns rejecting an unknown band name.
+		{
+			name:     "unknown min_band value never trips the floor check",
+			sc:       card(5, BandCritical),
+			gate:     CouplingGate{Enabled: true, MinBand: "garbage"},
+			wantTrip: false,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -124,6 +124,13 @@ func patchDefinitions(schema *jsonschema.Schema) {
 			}
 			def.Required = []string{"targets"}
 		}
+		if name == "RuleDef" {
+			// Mirror rules.New (internal/rules): an empty or unrecognized rule
+			// `type` is a hard load error, so the schema must not show a
+			// typeless rule entry as valid. `id` stays optional — validation
+			// substitutes a positional placeholder.
+			def.Required = []string{"type"}
+		}
 		if name == "CouplingGateDef" {
 			// Mirror validateCouplingGate (internal/config): min_band is one of
 			// the four band floors (critical rejected — could never trip), and

@@ -39,7 +39,7 @@ type DiscoveredConfig struct {
 	ModulePath string
 	// Modules are the discovered candidate modules.
 	Modules []ModuleDef
-	// Layers are the inferred layers in order (outermost to innermost).
+	// Layers are the inferred layers in order (innermost to outermost).
 	Layers []string
 	// Edges are the directed module-level dependency edges, populated when a
 	// dependency graph was available at discovery time (go list Imports, cargo

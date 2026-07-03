@@ -173,6 +173,26 @@ func TestRun_ExternalSystems(t *testing.T) {
 		}
 	})
 
+	t.Run("unresolved source with module-resolved target stays unknown", func(t *testing.T) {
+		// classifyDistance returns DistanceUnknown when EITHER endpoint fails
+		// module resolution. The external match must key on the TARGET's own
+		// resolution: an edge from uncovered glue code into a real module whose
+		// path an external glob overlaps must not be fabricated into D=10.
+		edge := graph.Edge{
+			From: "file:scripts/tool.go", To: "file:services/b/util.go",
+			Kind: graph.EdgeKindImports, Language: "go", StrengthHint: hintFunctional,
+		}
+		g := makeGraph([]graph.Edge{edge})
+		systems := map[string]config.ExternalSystemDef{"greedy": {Targets: []string{"services/**"}}}
+		cl := classify.Run(g, config.ClassifyConfig{Modules: modules, ExternalSystems: systems})[edgeKey(edge)]
+		if cl.Distance != coupling.DistanceUnknown {
+			t.Errorf("Distance = %q, want %q (module-resolved target, unresolved source)", cl.Distance, coupling.DistanceUnknown)
+		}
+		if cl.Score.Scored {
+			t.Error("an edge with an unresolved source must not be scored as declared_external")
+		}
+	})
+
 	t.Run("overlapping entries resolve deterministically by sorted name", func(t *testing.T) {
 		edge := graph.Edge{
 			From: extFromGo, To: extToAwsS3,
@@ -186,6 +206,25 @@ func TestRun_ExternalSystems(t *testing.T) {
 		cl := classify.Run(g, config.ClassifyConfig{Modules: modules, ExternalSystems: systems})[edgeKey(edge)]
 		if cl.Volatility != coupling.VolatilityMedium {
 			t.Errorf("Volatility = %q, want %q (first sorted entry wins)", cl.Volatility, coupling.VolatilityMedium)
+		}
+	})
+
+	t.Run("composition root source still reaches declared external", func(t *testing.T) {
+		// Locks the documented ordering: the external match runs AFTER the
+		// cohesive-role distance cap — a composition root's edge to a declared
+		// vendor system is a real integration seam, not cohesive wiring.
+		rootModules := map[string]config.ModuleDef{
+			"a": {Paths: []string{pathsA}, Owner: ownerTeamX, Subdomain: subdomainCore, Role: config.RoleCompositionRoot},
+		}
+		edge := graph.Edge{
+			From: extFromGo, To: extToAwsS3,
+			Kind: graph.EdgeKindImports, Language: "go", StrengthHint: hintFunctional,
+		}
+		g := makeGraph([]graph.Edge{edge})
+		systems := map[string]config.ExternalSystemDef{extSysAWS: {Targets: []string{extGlobAws}}}
+		cl := classify.Run(g, config.ClassifyConfig{Modules: rootModules, ExternalSystems: systems})[edgeKey(edge)]
+		if cl.Distance != coupling.DistanceExternal {
+			t.Errorf("Distance = %q, want %q (role cap must not swallow the external match)", cl.Distance, coupling.DistanceExternal)
 		}
 	})
 }

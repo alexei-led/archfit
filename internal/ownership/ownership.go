@@ -84,13 +84,15 @@ const (
 	// this is "the walk didn't finish," not "ran clean, found nothing" — so
 	// downstream diagnostics don't read a timeout as a genuinely-unattributed repo.
 	SourceGitTimeout Source = "git_timeout"
-	// SourceCodeownersNoMatch means a CODEOWNERS file was found but none of its
-	// rules matched any path belonging to a configured module. Distinct from
-	// SourceNone — a CODEOWNERS file existing but resolving zero owners is far
-	// more often a subtree/path-prefix or module-glob mismatch (e.g. the
-	// case-variant --root bug) than a genuinely unattributed repo, so callers
-	// surface it as a disclosure-worthy degradation rather than silently
-	// collapsing to SourceNone.
+	// SourceCodeownersNoMatch means a CODEOWNERS file with at least one real
+	// rule was found but none of its rules matched any path belonging to a
+	// configured module. Distinct from SourceNone — real rules resolving zero
+	// owners is far more often a subtree/path-prefix or module-glob mismatch
+	// (e.g. the case-variant --root bug) than a genuinely unattributed repo,
+	// so callers surface it as a disclosure-worthy degradation rather than
+	// silently collapsing to SourceNone. An empty or comment-only CODEOWNERS
+	// (a fresh-repo placeholder) carries no signal and falls through to the
+	// git-author path instead — it must not trigger the degradation warning.
 	SourceCodeownersNoMatch Source = "codeowners_no_match"
 )
 
@@ -123,9 +125,11 @@ func Resolve(ctx context.Context, scanRoot, gitRoot, subtreePrefix string, modul
 		coRoot = scanRoot
 	}
 
-	// Try CODEOWNERS first.
+	// Try CODEOWNERS first. A file that parses to zero rules (empty or
+	// comment-only placeholder) carries no signal — treat it like no
+	// CODEOWNERS at all rather than a suspicious no-match.
 	rules, found := loadCodeowners(coRoot)
-	if found {
+	if found && len(rules) > 0 {
 		m := resolveFromCodeowners(rules, scanRoot, subtreePrefix, modules)
 		if len(m) == 0 {
 			// CODEOWNERS present but no rule mapped to a configured module —

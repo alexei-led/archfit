@@ -97,9 +97,11 @@ def _rust_module_key(symbol: str) -> str | None:
     We map it to "<crate>::<mod_path>" matching cargo-modules' DOT node IDs:
       crate/api/Server# → mycrate::api
       crate/           → mycrate        (crate root)
-      main().          → None           (binary entry — not a module node)
+      main().          → mycrate        (crate-root item — binary entry point)
 
-    Returns None when the descriptor does not resolve to a module node.
+    Returns None only when the symbol fails to parse into crate/descriptor
+    fields (see _fields); every crate-root item, including "main().", resolves
+    to the bare crate name rather than None.
     """
     f = _fields(symbol)
     if f is None:

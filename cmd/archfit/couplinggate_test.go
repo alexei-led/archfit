@@ -12,6 +12,7 @@ import (
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/score"
@@ -183,8 +184,11 @@ func TestRun_Analyze_CouplingGate_MaxDrop(t *testing.T) {
 		score    *baseline.ScoreSnapshot
 		wantCode int
 	}{
-		{"stored score anchors the drop", &baseline.ScoreSnapshot{CouplingBalance: 95, Band: "strong"}, 1},
+		{"stored score anchors the drop", &baseline.ScoreSnapshot{CouplingBalance: 95, Band: "strong", ScoreVersion: coupling.ScoreVersion}, 1},
 		{"no stored score skips the check", nil, 0},
+		// A snapshot from a different scorer version is a methodology change,
+		// not a regression — it must never anchor a drop.
+		{"stale scorer version skips the check", &baseline.ScoreSnapshot{CouplingBalance: 95, Band: "strong", ScoreVersion: "bc_score.v3"}, 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -227,6 +231,9 @@ func TestRun_Baseline_WritesScoreSnapshot(t *testing.T) {
 	}
 	if b.Score.Band == "" || b.Score.Band == "n/a" {
 		t.Fatalf("baseline score band = %q, want a measured band", b.Score.Band)
+	}
+	if b.Score.ScoreVersion != coupling.ScoreVersion {
+		t.Fatalf("baseline score_version = %q, want %q", b.Score.ScoreVersion, coupling.ScoreVersion)
 	}
 	if got := b.CouplingScore(); got == nil || *got != b.Score.CouplingBalance {
 		t.Fatalf("CouplingScore() = %v, want %d", got, b.Score.CouplingBalance)

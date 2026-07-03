@@ -28,3 +28,12 @@ type Partial struct {
 type CallbackHolder struct {
 	OnDone func()
 }
+
+// ChanHolder carries behavior through a chan-typed field — not pure data;
+// stays model.
+type ChanHolder struct {
+	Events chan int
+}
+
+// Marker is a zero-field struct: carries no data model, NOT a DTO.
+type Marker struct{}
