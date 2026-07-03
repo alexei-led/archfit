@@ -290,22 +290,65 @@ func bcAdvisoryWhy(cl coupling.Classification) string {
 // vocabulary. A critical edge is "distributed-monolith risk" ONLY at high distance
 // (different owner / deploy unit — the book's high strength × high distance × high
 // volatility worst case). A critical edge at low distance (cross_module_same_owner)
-// is local high-strength coupling to a volatile target: its cascade is cheap (one
-// owner, one binary), so it is named as such, NOT as a distributed monolith —
-// recommending "introduce a contract" there would be cargo-cult. Cohesion (high
-// strength + low distance, balanced) never reaches here — the book formula scores
-// it SeverityNone.
+// is local coupling to a volatile target: its cascade is cheap (one owner, one
+// binary), so it is named as such, NOT as a distributed monolith — recommending
+// "introduce a contract" there would be cargo-cult. Cohesion (high strength + low
+// distance, balanced) never reaches here — the book formula scores it SeverityNone.
+//
+// The clause names the edge's ACTUAL matched_by.strength and matched_by.volatility —
+// never a fixed severity-level narrative — so an agent reading the prose reaches
+// the same remediation an agent reading matched_by would (verified wrong on ccgram:
+// 15/16 critical edges were StrengthModel, book ordinal 3/10 — low, not "high-strength").
 func bcRiskClause(cl coupling.Classification) string {
+	strengthDesc := strengthClause(cl.Strength)
+	volatilityDesc := volatilityClause(cl.Volatility)
 	switch cl.Severity {
 	case coupling.SeverityCritical:
 		if coupling.DistanceIsHigh(cl.Distance) {
-			return "cascading changes across a high-distance boundary → distributed-monolith risk"
+			return strengthDesc + " across a high-distance boundary to " + volatilityDesc + " → distributed-monolith risk"
 		}
-		return "high-strength coupling to a volatile target at low distance → local cascade (cheap to change; not a distributed monolith)"
+		return strengthDesc + " to " + volatilityDesc + " at low distance → local cascade (cheap to change; not a distributed monolith)"
 	case coupling.SeverityHigh:
-		return "tight coupling across a volatile boundary → likely cascading changes"
+		return strengthDesc + " across a boundary to " + volatilityDesc + " → likely cascading changes"
 	default:
 		return "unbalanced coupling → elevated maintenance effort"
+	}
+}
+
+// strengthClause names the actual integration-strength level of an edge, in
+// Balanced Coupling vocabulary — never a fixed "high-strength" placeholder.
+func strengthClause(s coupling.Strength) string {
+	switch s {
+	case coupling.StrengthIntrusive:
+		return "intrusive (implementation-level) coupling"
+	case coupling.StrengthSymmetric:
+		return "symmetric (bidirectional implementation-level) coupling"
+	case coupling.StrengthFunctional:
+		return "functional coupling"
+	case coupling.StrengthModel:
+		return "model coupling"
+	case coupling.StrengthContract:
+		return "contract coupling"
+	default:
+		return "unclassified-strength coupling"
+	}
+}
+
+// volatilityClause names the actual volatility level of an edge's target.
+func volatilityClause(v coupling.Volatility) string {
+	switch v {
+	case coupling.VolatilityHigh:
+		return "a volatile target"
+	case coupling.VolatilityMedium:
+		return "a moderately volatile target"
+	case coupling.VolatilityLow:
+		return "a low-volatility target"
+	case coupling.VolatilityFrozen:
+		return "a frozen target"
+	case coupling.VolatilityUndeclared:
+		return "a target of undeclared volatility"
+	default:
+		return "a target of unknown volatility"
 	}
 }
 

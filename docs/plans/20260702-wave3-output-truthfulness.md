@@ -27,9 +27,9 @@ Verified defects:
 
 ### Task 1: bcRiskClause derives narrative from matched_by
 
-- [ ] failing test: construct findings with strength model/contract/functional/intrusive × distance bands; assert the clause names the actual strength level (no fixed "high-strength" string)
-- [ ] rewrite `bcRiskClause` to compose from `matched_by.strength`, `matched_by.distance`, `matched_by.volatility` — the three values the scorer already attached; wording per level, no invented severity language
-- [ ] regenerate goldens; inspect that only prose changed, never numbers; commit
+- [x] failing test: construct findings with strength model/contract/functional/intrusive × distance bands; assert the clause names the actual strength level (no fixed "high-strength" string)
+- [x] rewrite `bcRiskClause` to compose from `matched_by.strength`, `matched_by.distance`, `matched_by.volatility` — the three values the scorer already attached; wording per level, no invented severity language
+- [x] regenerate goldens; inspect that only prose changed, never numbers; commit
 
 ### Task 2: Grouped finding edge.path honesty
 

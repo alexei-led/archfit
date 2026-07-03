@@ -30,6 +30,46 @@ func TestBCRiskClause_DistanceAware(t *testing.T) {
 	}
 }
 
+// TestBCRiskClause_NamesActualStrength guards against the hardcoded-narrative bug:
+// bcRiskClause used to assert "high-strength coupling" for every critical edge
+// regardless of matched_by.strength (verified wrong on ccgram: 15/16 critical
+// edges were actually StrengthModel, ordinal 3/10 — low). The clause must name
+// the real strength level and must never claim "high-strength" for a low-ordinal
+// strength.
+func TestBCRiskClause_NamesActualStrength(t *testing.T) {
+	tests := []struct {
+		strength coupling.Strength
+		wantWord string
+	}{
+		{coupling.StrengthContract, "contract"},
+		{coupling.StrengthModel, "model"},
+		{coupling.StrengthFunctional, "functional"},
+		{coupling.StrengthSymmetric, "symmetric"},
+		{coupling.StrengthIntrusive, "intrusive"},
+	}
+	for _, dist := range []coupling.Distance{
+		coupling.DistanceCrossModuleSameOwner,
+		coupling.DistanceCrossModuleDiffOwner,
+		coupling.DistanceCrossDeployUnit,
+	} {
+		for _, tc := range tests {
+			cl := coupling.Classification{
+				Strength:   tc.strength,
+				Distance:   dist,
+				Volatility: coupling.VolatilityHigh,
+				Severity:   coupling.SeverityCritical,
+			}
+			got := bcRiskClause(cl)
+			if !strings.Contains(got, tc.wantWord) {
+				t.Errorf("strength=%s distance=%s: clause %q does not name actual strength %q", tc.strength, dist, got, tc.wantWord)
+			}
+			if tc.strength != coupling.StrengthIntrusive && tc.strength != coupling.StrengthSymmetric && strings.Contains(got, "high-strength") {
+				t.Errorf("strength=%s distance=%s: clause %q falsely claims high-strength", tc.strength, dist, got)
+			}
+		}
+	}
+}
+
 // TestEnrichEdges_GoTypeInfoHintAuthoritative guards the F2 strength-accuracy
 // fix: SCIP strength must NOT override a Go edge's compiler-grade type-info hint
 // (SCIP-go is coarser), but MUST refine non-Go edges and Go edges with no hint.
