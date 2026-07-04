@@ -40,8 +40,9 @@ configured constraint text, allowed alternatives, and the target module's
 public globs; validation is the exact command that must pass. Advisory
 findings normally produce no tasks — they are signals, not orders. The one
 exception: a tripped [`coupling.gate`](configuration-reference.md#couplinggate)
-promotes the active Balanced-Coupling advisories to gate kind, so the edges
-behind the failing score arrive in `agent_tasks[]` with file evidence.
+promotes the active `bc/imbalanced_coupling` advisories to gate kind, so the
+edges behind the failing score arrive in `agent_tasks[]` with file evidence
+(`bc/duplicated_knowledge` stays advisory — it never gates).
 
 **`files[]` existence guarantee.** Every entry is a repo-relative path that
 exists on disk — this is the field an agent trusts blindly to open the right
@@ -79,7 +80,8 @@ inline PR annotations.
 - **Gate findings** — boundary violations (forbidden deps, internal access,
   layer inversions, cycles, unreviewed new cross-module deps).
 - **BC advisories** — Balanced Coupling imbalances (strength × distance ×
-  volatility) at or above the configured severity.
+  volatility) at or above the configured severity, plus report-only
+  `bc/duplicated_knowledge` for cross-module clone pairs with no import edge.
 - **Metrics** — `coupling_balance` (scored; gates via the opt-in
   `coupling.gate`), the baseline-delta gated `unbalanced_edge`, `cycle`,
   `encapsulation`, `coverage`, and report-only `blast_radius`.

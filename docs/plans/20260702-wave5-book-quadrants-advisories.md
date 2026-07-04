@@ -67,8 +67,8 @@ Wave 5 of 7 from `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` (§1 deviations
 
 ### Task 6: [Final] Documentation
 
-- [ ] output reference: `local_coupling` block, `bc/duplicated_knowledge` advisory, volatility provenance counts
-- [ ] mark findings deviations 4–6 + invisible-drift gap fixed with commit refs
+- [x] output reference: `local_coupling` block, `bc/duplicated_knowledge` advisory, volatility provenance counts — metrics.md gains a `## Report-only blocks` section (`local_coupling` fields, fractal-level separation, report-only-by-design), a coupling_balance denominator/provenance-disclosure bullet, a `bc/duplicated_knowledge` tool-requirements row, and the stale `bc_score.v3` header fixed to v4; configuration-reference.md `clones` bullet documents the no-edge advisory (formula-derived severity, label/min_severity suppression, never gate-promoted); concepts.md names the advisory + v4; agent-feedback.md scopes gate promotion to `bc/imbalanced_coupling` and lists the new advisory
+- [x] mark findings deviations 4–6 + invisible-drift gap fixed with commit refs — 00-FINDINGS.md deviations 4/5/6 marked FIXED (`d002ae8`, `db1e95d`), §3 new bug 4 marked FIXED (`bbb5760`, live-verified note), H4 line gains the wave-5 provenance-disclosure note (`ba9d250`, differentiation stays Wave 7), backlog items 13–15 marked DONE (reports/ is gitignored — local update, same as prior waves)
 
 ## Technical Details
 

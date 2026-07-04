@@ -320,7 +320,13 @@ analyzers:
   strength source.
 - `clones` — runs `jscpd` to find cross-module duplicated logic. When a clone pair
   spans two modules, their shared edge strength is upgraded to `symmetric` in the
-  `coupling_balance` scorer, reflecting undeclared hidden coupling.
+  `coupling_balance` scorer, reflecting undeclared hidden coupling. When the two
+  modules share **no** import edge at all, the pair surfaces as a report-only
+  `bc/duplicated_knowledge` advisory instead — duplicated knowledge is functional
+  coupling even without an import (book Ch7). Its severity comes from the standard
+  formula (symmetric strength × module-pair distance × worst-of-pair volatility);
+  `coupling.min_severity` and approved `.archfit-labels.yaml` labels (either
+  direction) suppress it; the [`coupling.gate`](#couplinggate) never promotes it.
 
 `scip` and `clones` are opt-in: `auto` and `false` (and absent) all disable them;
 the run continues without them and the gate verdict is unaffected.

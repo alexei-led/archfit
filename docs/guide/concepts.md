@@ -265,8 +265,9 @@ tasks. See the [configuration reference](configuration-reference.md) for the
 abstain rule and decision-task behavior.
 
 These balance scores drive the `bc/imbalanced_coupling` advisories (see
-[`archfit analyze`](commands.md)) and the `unbalanced_edge` metric. `ScoreVersion`
-is `bc_score.v3`.
+[`archfit analyze`](commands.md)) and the `unbalanced_edge` metric. Cross-module
+clone pairs with no import edge surface as report-only `bc/duplicated_knowledge`
+advisories scored by the same formula. `ScoreVersion` is `bc_score.v4`.
 
 ---
 
