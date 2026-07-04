@@ -390,6 +390,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 	str := resolved.strength
 	fromPin := resolved.fromPin
 	strengthFromLLM := resolved.fromLLM
+	strengthFromNonHighLLM := resolved.fromNonHighLLM
 
 	// --- Symmetric upgrade from clone detection ---
 	// A cross-module clone pair (a DRY violation) signals bidirectional
@@ -441,14 +442,15 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 		isGenericSubdomain(toPath, mi, modules)
 
 	return coupling.Classification{
-		Strength:            str,
-		Distance:            dist,
-		Volatility:          vol,
-		Explicitness:        exp,
-		ContractRecommended: contractRecommended,
-		DistanceBasis:       distBasis,
-		CloneLocations:      cloneLocations,
-		StrengthFromLLM:     strengthFromLLM,
+		Strength:               str,
+		Distance:               dist,
+		Volatility:             vol,
+		Explicitness:           exp,
+		ContractRecommended:    contractRecommended,
+		DistanceBasis:          distBasis,
+		CloneLocations:         cloneLocations,
+		StrengthFromLLM:        strengthFromLLM,
+		StrengthFromNonHighLLM: strengthFromNonHighLLM,
 	}
 }
 
@@ -520,9 +522,10 @@ func classifyStrength(toPath string, mi moduleIndex) coupling.Strength {
 }
 
 type strengthResolution struct {
-	strength coupling.Strength
-	fromPin  bool
-	fromLLM  bool
+	strength       coupling.Strength
+	fromPin        bool
+	fromLLM        bool
+	fromNonHighLLM bool
 }
 
 // resolveStrength applies the shared pre-clone strength precedence for one
@@ -574,18 +577,26 @@ func resolveStrength(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) stre
 	// and the hint — Go type-info, SCIP, or extractor heuristic — resolved
 	// nothing. It never displaces a static classification.
 	strengthFromLLM := false
+	strengthFromNonHighLLM := false
 	if str == coupling.StrengthUnknown && len(c.LLMLabels) > 0 {
 		if fromMod, okF := mi.moduleFor(fromPath); okF {
 			if toMod, okT := mi.moduleFor(toPath); okT {
-				if pinned, ok := c.LLMLabels[fromMod+"\x00"+toMod]; ok {
+				key := fromMod + "\x00" + toMod
+				if pinned, ok := c.LLMLabels[key]; ok {
 					str = coupling.Strength(pinned)
 					fromPin = true
 					strengthFromLLM = true
+					strengthFromNonHighLLM = c.LLMLabelConfidence[key] != "high"
 				}
 			}
 		}
 	}
-	return strengthResolution{strength: str, fromPin: fromPin, fromLLM: strengthFromLLM}
+	return strengthResolution{
+		strength:       str,
+		fromPin:        fromPin,
+		fromLLM:        strengthFromLLM,
+		fromNonHighLLM: strengthFromNonHighLLM,
+	}
 }
 
 // isPublicKind reports whether a strength is one of the public-coupling kinds —

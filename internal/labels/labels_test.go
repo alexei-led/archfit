@@ -206,6 +206,7 @@ func TestApproved_ProvenanceSplit(t *testing.T) {
 	}
 
 	approved, llmApproved, stale := labels.Approved(in, evidence)
+	llmConfidence := labels.LLMConfidenceByKey(in, evidence)
 
 	if len(approved) != 3 {
 		t.Errorf("approved = %v, want the 3 human/tool/unset labels", approved)
@@ -215,6 +216,9 @@ func TestApproved_ProvenanceSplit(t *testing.T) {
 	}
 	if _, inHuman := approved[labels.Key(modD, modE)]; inHuman {
 		t.Error("llm-provenance label must not enter the human-authority map")
+	}
+	if len(llmConfidence) != 1 || llmConfidence[labels.Key(modD, modE)] != labels.ConfidenceMedium {
+		t.Errorf("llmConfidence = %v, want only app.d→app.e medium", llmConfidence)
 	}
 	if len(stale) != 1 || stale[0].From != modF {
 		t.Errorf("stale = %+v, want only the dead-hash llm label (freshness applies to llm labels too)", stale)

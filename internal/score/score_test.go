@@ -403,30 +403,41 @@ func TestCouplingBalance_LLMProvenance_LowersConfidence(t *testing.T) {
 	cases := []struct {
 		name        string
 		scored      int
+		llmEdges    int
 		llmApproved int
 		wantConf    Confidence
 	}{
 		{
-			name:        "no llm labels → confidence unaffected (high)",
-			scored:      10,
-			llmApproved: 0,
-			wantConf:    ConfidenceHigh,
+			name:     "no llm labels → confidence unaffected (high)",
+			scored:   10,
+			llmEdges: 0,
+			wantConf: ConfidenceHigh,
 		},
 		{
-			name:        "llm labels <20% → confidence unaffected",
+			name:        "applied llm edges <20% → confidence unaffected",
 			scored:      10,
+			llmEdges:    1,
 			llmApproved: 1,
 			wantConf:    ConfidenceHigh,
 		},
 		{
-			name:        "llm labels ≥20% → confidence lowered by one band (high→medium)",
+			name:        "one label can apply to enough edges to lower confidence",
 			scored:      10,
-			llmApproved: 2,
+			llmEdges:    2,
+			llmApproved: 1,
 			wantConf:    ConfidenceMedium,
 		},
 		{
-			name:        "llm labels majority → confidence lowered by one band (high→medium)",
+			name:        "raw labels without applied edges do not lower confidence",
 			scored:      10,
+			llmEdges:    0,
+			llmApproved: 2,
+			wantConf:    ConfidenceHigh,
+		},
+		{
+			name:        "llm-filled edge majority → confidence lowered by one band (high→medium)",
+			scored:      10,
+			llmEdges:    8,
 			llmApproved: 8,
 			wantConf:    ConfidenceMedium,
 		},
@@ -435,17 +446,18 @@ func TestCouplingBalance_LLMProvenance_LowersConfidence(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			sum := &diagnostic.ClassifiedEdgeSummary{
-				Total:       tc.scored,
-				Scored:      tc.scored,
-				Abstained:   0,
-				MeanBalance: 9.0,
-				BySeverity:  map[string]int{sevLow: tc.scored},
-				LLMApproved: tc.llmApproved,
+				Total:                 tc.scored,
+				Scored:                tc.scored,
+				Abstained:             0,
+				MeanBalance:           9.0,
+				BySeverity:            map[string]int{sevLow: tc.scored},
+				LLMApproved:           tc.llmApproved,
+				LLMLowConfidenceEdges: tc.llmEdges,
 			}
 			got := couplingBalance(nil, nonDegen, sum)
 			if got.Confidence != tc.wantConf {
-				t.Errorf("confidence = %q, want %q (llmApproved=%d, scored=%d)",
-					got.Confidence, tc.wantConf, tc.llmApproved, tc.scored)
+				t.Errorf("confidence = %q, want %q (llmEdges=%d, llmApproved=%d, scored=%d)",
+					got.Confidence, tc.wantConf, tc.llmEdges, tc.llmApproved, tc.scored)
 			}
 		})
 	}

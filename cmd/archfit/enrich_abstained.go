@@ -89,7 +89,8 @@ func (c *EnrichAbstainedCmd) runAbstainedEnrich(ctx context.Context, deps *appDe
 	}
 
 	mm := cfg.ForClassify().ModuleMap
-	pairs, total := selectAbstainedPairs(captured.Graph, captured.Classifications, mm, existing)
+	labelEvidence := currentLabelEvidence(captured.Graph, mm, existing)
+	pairs, total := selectAbstainedPairs(captured.Graph, captured.Classifications, mm, existing, labelEvidence)
 	if len(pairs) == 0 {
 		_, _ = fmt.Fprintln(deps.Stdout, "enrich abstained: no abstained cross-module edges — nothing to label")
 		return nil
@@ -125,7 +126,7 @@ func (c *EnrichAbstainedCmd) runAbstainedEnrich(ctx context.Context, deps *appDe
 		drafts[i].EvidenceHash = evidence[labels.Key(drafts[i].From, drafts[i].To)]
 	}
 
-	merged := mergeDrafts(existing, drafts)
+	merged := mergeDrafts(existing, drafts, evidence)
 	if err := writeLabels(labelsPath, merged); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -161,21 +162,17 @@ type abstainedPair struct {
 // signal (heuristic, type info, glob, SCIP) are NOT abstained and are excluded
 // — the LLM only fills cells that are unknown after every static source.
 // External/library edges (unknown distance) are missing facts, not ambiguous
-// facts: excluded. Already-approved pairs are skipped.
+// facts: excluded. Fresh approved pairs are skipped; stale approved pairs can
+// be redrafted.
 //
 // At most abstainedEdgeCap edges are included per run (deterministic: the
 // graph's edge order is sorted); total counts every eligible edge so the
 // caller can disclose the cap.
-func selectAbstainedPairs(g *graph.Graph, idx coupling.Index, mm config.ModuleMap, existing []labels.Label) (pairs []abstainedPair, total int) {
+func selectAbstainedPairs(g *graph.Graph, idx coupling.Index, mm config.ModuleMap, existing []labels.Label, evidence map[string]string) (pairs []abstainedPair, total int) {
 	if g == nil {
 		return nil, 0
 	}
-	approved := make(map[string]struct{})
-	for _, l := range existing {
-		if l.Status == labels.StatusApproved {
-			approved[labels.Key(l.From, l.To)] = struct{}{}
-		}
-	}
+	approved := effectiveApprovedPairs(existing, evidence)
 
 	byKey := map[string]*abstainedPair{}
 	included := 0

@@ -403,10 +403,11 @@ func TestBuildClassifiedEdgeSummary_LabeledLLM(t *testing.T) {
 	key := func(from, to, kind string) string { return from + "\x00" + to + "\x00" + kind }
 	idx := coupling.Index{
 		key("internal/a", "internal/b", "import"): {
-			Distance:        coupling.DistanceCrossModuleSameOwner,
-			Strength:        coupling.StrengthModel,
-			StrengthFromLLM: true,
-			Score:           coupling.EdgeScore{Scored: true, Balance: 7, Band: coupling.SeverityNone},
+			Distance:               coupling.DistanceCrossModuleSameOwner,
+			Strength:               coupling.StrengthModel,
+			StrengthFromLLM:        true,
+			StrengthFromNonHighLLM: true,
+			Score:                  coupling.EdgeScore{Scored: true, Balance: 7, Band: coupling.SeverityNone},
 		},
 		key("internal/a", "internal/c", "import"): {
 			Distance: coupling.DistanceCrossModuleSameOwner,
@@ -425,6 +426,9 @@ func TestBuildClassifiedEdgeSummary_LabeledLLM(t *testing.T) {
 
 	if s.LabeledLLM != 1 {
 		t.Errorf("LabeledLLM = %d, want 1 (cross-boundary llm-filled edge only)", s.LabeledLLM)
+	}
+	if s.LLMLowConfidenceEdges != 1 {
+		t.Errorf("LLMLowConfidenceEdges = %d, want 1 (non-high-confidence applied llm fill)", s.LLMLowConfidenceEdges)
 	}
 	if s.Scored != 2 {
 		t.Errorf("Scored = %d, want 2", s.Scored)

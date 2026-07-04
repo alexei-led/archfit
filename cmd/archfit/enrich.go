@@ -159,7 +159,8 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	}
 
 	mm := cfg.ForClassify().ModuleMap
-	pairs := selectRefinablePairs(captured.Graph, captured.Classifications, mm, existing)
+	labelEvidence := currentLabelEvidence(captured.Graph, mm, existing)
+	pairs := selectRefinablePairs(captured.Graph, captured.Classifications, mm, existing, labelEvidence)
 	if len(pairs) == 0 {
 		_, _ = fmt.Fprintln(deps.Stdout, "enrich: no refinable module pairs (no heuristic functional/model cross-module edges, or all pairs already approved)")
 		return nil
@@ -180,7 +181,7 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 		drafts[i].EvidenceHash = evidence[labels.Key(drafts[i].From, drafts[i].To)]
 	}
 
-	merged := mergeDrafts(existing, drafts)
+	merged := mergeDrafts(existing, drafts, evidence)
 	if err := writeLabels(labelsPath, merged); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -416,17 +417,13 @@ type refinablePair struct {
 //   - unknown strength (no heuristic available — LLM judgment needed most here).
 //
 // Contract and intrusive strengths are already decided (glob or SCIP); they are
-// excluded. Already-approved pairs are skipped. Deterministic order (From, To).
-func selectRefinablePairs(g *graph.Graph, idx coupling.Index, mm config.ModuleMap, existing []labels.Label) []refinablePair {
+// excluded. Fresh approved pairs are skipped; stale approved pairs can be
+// redrafted. Deterministic order (From, To).
+func selectRefinablePairs(g *graph.Graph, idx coupling.Index, mm config.ModuleMap, existing []labels.Label, evidence map[string]string) []refinablePair {
 	if g == nil {
 		return nil
 	}
-	approved := make(map[string]struct{})
-	for _, l := range existing {
-		if l.Status == labels.StatusApproved {
-			approved[labels.Key(l.From, l.To)] = struct{}{}
-		}
-	}
+	approved := effectiveApprovedPairs(existing, evidence)
 
 	type agg struct {
 		strength string
@@ -599,17 +596,18 @@ func parseEnrichResponse(text string, batch []refinablePair) ([]labels.Label, er
 	return out, nil
 }
 
-// mergeDrafts merges new drafts into the existing labels: approved entries are
-// untouchable; an existing draft for the same pair is replaced; output is
-// sorted (From, To) for a deterministic file.
-func mergeDrafts(existing, drafts []labels.Label) []labels.Label {
+// mergeDrafts merges new drafts into the existing labels: fresh approved entries
+// are untouchable; stale approved entries and existing drafts for the same pair
+// are replaced; output is sorted (From, To) for a deterministic file.
+func mergeDrafts(existing, drafts []labels.Label, evidence map[string]string) []labels.Label {
 	byKey := map[string]labels.Label{}
+	approved := effectiveApprovedPairs(existing, evidence)
 	for _, l := range existing {
 		byKey[labels.Key(l.From, l.To)] = l
 	}
 	for _, d := range drafts {
 		key := labels.Key(d.From, d.To)
-		if cur, ok := byKey[key]; ok && cur.Status == labels.StatusApproved {
+		if _, ok := approved[key]; ok {
 			continue
 		}
 		byKey[key] = d
@@ -625,6 +623,28 @@ func mergeDrafts(existing, drafts []labels.Label) []labels.Label {
 		}
 		return out[i].To < out[j].To
 	})
+	return out
+}
+
+func currentLabelEvidence(g *graph.Graph, mm config.ModuleMap, existing []labels.Label) map[string]string {
+	wanted := make(map[string]struct{}, len(existing))
+	for _, l := range existing {
+		if l.Status == labels.StatusApproved {
+			wanted[labels.Key(l.From, l.To)] = struct{}{}
+		}
+	}
+	return engine.PairEvidence(g, mm, wanted)
+}
+
+func effectiveApprovedPairs(existing []labels.Label, evidence map[string]string) map[string]struct{} {
+	human, llmApproved, _ := labels.Approved(existing, evidence)
+	out := make(map[string]struct{}, len(human)+len(llmApproved))
+	for key := range human {
+		out[key] = struct{}{}
+	}
+	for key := range llmApproved {
+		out[key] = struct{}{}
+	}
 	return out
 }
 

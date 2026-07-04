@@ -171,3 +171,19 @@ func LLMApprovedCount(lbls []Label, evidence map[string]string) int {
 	}
 	return n
 }
+
+// LLMConfidenceByKey returns confidence values for effective approved
+// llm-provenance labels, keyed by Key(from,to). Draft and stale labels are
+// excluded with the same freshness rules as Approved.
+func LLMConfidenceByKey(lbls []Label, evidence map[string]string) map[string]string {
+	out := map[string]string{}
+	for _, l := range lbls {
+		if !isEffective(l, evidence) {
+			continue
+		}
+		if l.Provenance == ProvenanceLLM {
+			out[Key(l.From, l.To)] = l.Confidence
+		}
+	}
+	return out
+}

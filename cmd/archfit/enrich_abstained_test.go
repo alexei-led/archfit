@@ -78,7 +78,7 @@ func TestSelectAbstainedPairs(t *testing.T) {
 	g, idx, mm := abstainedFixture()
 	existing := []labels.Label{{From: "c", To: modB, Strength: enrichModel, Status: labels.StatusApproved}}
 
-	pairs, total := selectAbstainedPairs(g, idx, mm, existing)
+	pairs, total := selectAbstainedPairs(g, idx, mm, existing, nil)
 	if len(pairs) != 1 {
 		t.Fatalf("pairs = %+v, want exactly a->b", pairs)
 	}
@@ -107,6 +107,31 @@ func TestSelectAbstainedPairs(t *testing.T) {
 	}
 }
 
+func TestSelectAbstainedPairs_StaleApprovedCanBeRedrafted(t *testing.T) {
+	t.Parallel()
+	g, idx, mm := abstainedFixture()
+	key := labels.Key("c", modB)
+	existing := []labels.Label{{
+		From: "c", To: modB, Strength: enrichModel,
+		EvidenceHash: staleEvidence, Status: labels.StatusApproved,
+	}}
+	evidence := map[string]string{key: currentEvidence}
+
+	pairs, total := selectAbstainedPairs(g, idx, mm, existing, evidence)
+	if total != 3 {
+		t.Fatalf("total = %d, want 3 (stale approved pair should be eligible)", total)
+	}
+	found := false
+	for _, p := range pairs {
+		if labels.Key(p.From, p.To) == key {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("stale approved abstained pair %q was not selected: %+v", key, pairs)
+	}
+}
+
 func TestSelectAbstainedPairs_CapRespected(t *testing.T) {
 	t.Parallel()
 	cfg := config.Config{
@@ -130,7 +155,7 @@ func TestSelectAbstainedPairs_CapRespected(t *testing.T) {
 	}
 	g := graph.Build([]graph.Facts{{Language: "go", Nodes: nodes, Edges: edges}})
 
-	pairs, total := selectAbstainedPairs(g, idx, cfg.ForClassify().ModuleMap, nil)
+	pairs, total := selectAbstainedPairs(g, idx, cfg.ForClassify().ModuleMap, nil, nil)
 	if total != eligible {
 		t.Errorf("total = %d, want %d (edges beyond the cap must still be counted)", total, eligible)
 	}

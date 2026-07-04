@@ -6,6 +6,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 )
@@ -727,8 +728,27 @@ func TestRun_LLMLabelPrecedence(t *testing.T) {
 		if !cl.StrengthFromLLM {
 			t.Error("StrengthFromLLM = false, want true (drives classified_edges.labeled_llm)")
 		}
+		if !cl.StrengthFromNonHighLLM {
+			t.Error("StrengthFromNonHighLLM = false, want true for missing confidence")
+		}
 		if !cl.Score.Scored {
 			t.Error("Score.Scored = false, want true (filled edge enters coupling_balance)")
+		}
+	})
+
+	t.Run("high-confidence llm fill does not count as uncertain", func(t *testing.T) {
+		g, key := buildEdge("")
+		idx := classify.Run(g, config.ClassifyConfig{
+			Modules:            modules,
+			LLMLabels:          llmModel,
+			LLMLabelConfidence: map[string]string{labelKeyAB: labels.ConfidenceHigh},
+		})
+		cl := idx[key]
+		if cl.Strength != coupling.StrengthModel || !cl.StrengthFromLLM {
+			t.Fatalf("classification = %+v, want an applied llm model fill", cl)
+		}
+		if cl.StrengthFromNonHighLLM {
+			t.Error("StrengthFromNonHighLLM = true, want false for high-confidence label")
 		}
 	})
 

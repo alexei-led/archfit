@@ -35,6 +35,7 @@ func applyPinnedLabels(g *graph.Graph, classifyCfg *config.ClassifyConfig, mode 
 	approved, llmApproved, stale := labels.Approved(lbls, evidence)
 	classifyCfg.ApprovedLabels = approved
 	classifyCfg.LLMLabels = llmApproved
+	classifyCfg.LLMLabelConfidence = labels.LLMConfidenceByKey(lbls, evidence)
 
 	llmCount := labels.LLMApprovedCount(lbls, evidence)
 

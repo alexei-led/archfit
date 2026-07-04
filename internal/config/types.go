@@ -159,6 +159,10 @@ type ClassifyConfig struct {
 	// never displaces a static classification (compiler-grade beats LLM, the
 	// same rule as SCIP-for-Go).
 	LLMLabels map[string]string
+	// LLMLabelConfidence records the confidence value for entries in LLMLabels,
+	// keyed the same way. Missing or non-"high" values are treated as uncertain
+	// when an LLM label actually fills an edge.
+	LLMLabelConfidence map[string]string
 	// Scorer is the coupling scorer applied to each cross-boundary edge.
 	// When nil, classify.Run uses coupling.DefaultScorer() (MultiplicativeScorer, locked Task 16).
 	Scorer coupling.Scorer

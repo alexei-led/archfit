@@ -130,6 +130,10 @@ type Classification struct {
 	// Report-only — drives the classified_edges.labeled_llm disclosure count,
 	// never scoring.
 	StrengthFromLLM bool `json:"strength_from_llm,omitempty"`
+	// StrengthFromNonHighLLM records that StrengthFromLLM came from a label whose
+	// confidence was not high. Report-only — score confidence consumes the applied
+	// edge count rather than raw approved-label rows.
+	StrengthFromNonHighLLM bool `json:"strength_from_non_high_llm,omitempty"`
 }
 
 // Index maps each edge's canonical key (from + "\x00" + to + "\x00" + kind)

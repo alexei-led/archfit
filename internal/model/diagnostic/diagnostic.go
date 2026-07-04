@@ -322,6 +322,11 @@ type ClassifiedEdgeSummary struct {
 	// the scored-fraction increase to the semantic layer — disclosure only,
 	// never fed into the balance value.
 	LabeledLLM int `json:"labeled_llm,omitempty"`
+	// LLMLowConfidenceEdges counts cross-boundary edges whose strength was filled
+	// by an applied non-high-confidence LLM label. It is intentionally not emitted:
+	// score confidence consumes it while labeled_llm remains the user-facing
+	// attribution bucket.
+	LLMLowConfidenceEdges int `json:"-"`
 	// VolatilityProvenance counts MODULES (not edges) by the source of their
 	// volatility. Nil when no modules were resolved.
 	VolatilityProvenance *VolatilityProvenance `json:"volatility_provenance,omitempty"`

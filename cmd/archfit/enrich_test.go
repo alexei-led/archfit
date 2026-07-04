@@ -23,6 +23,9 @@ const (
 	modB             = "b"
 	enrichModel      = "model"
 	enrichFunctional = "functional"
+	enrichIntrusive  = "intrusive"
+	staleEvidence    = "old"
+	currentEvidence  = "current"
 
 	// fileNodeA and fileNodeB are the file-URI node identifiers used in
 	// enrichFixture and the unknown-strength test.
@@ -79,7 +82,7 @@ func TestSelectRefinablePairs(t *testing.T) {
 	// c→b is already approved — must be excluded.
 	existing := []labels.Label{{From: "c", To: modB, Strength: enrichModel, Status: labels.StatusApproved}}
 
-	pairs := selectRefinablePairs(g, idx, mm, existing)
+	pairs := selectRefinablePairs(g, idx, mm, existing, nil)
 	if len(pairs) != 1 {
 		t.Fatalf("pairs = %+v, want exactly a->b", pairs)
 	}
@@ -95,6 +98,28 @@ func TestSelectRefinablePairs(t *testing.T) {
 	}
 	if len(p.SamplePaths) != 2 || !strings.Contains(p.SamplePaths[0], "pkg/a/") {
 		t.Errorf("samples = %v", p.SamplePaths)
+	}
+}
+
+func TestSelectRefinablePairs_StaleApprovedCanBeRedrafted(t *testing.T) {
+	t.Parallel()
+	g, idx, mm := enrichFixture()
+	key := labels.Key("c", modB)
+	existing := []labels.Label{{
+		From: "c", To: modB, Strength: enrichModel,
+		EvidenceHash: staleEvidence, Status: labels.StatusApproved,
+	}}
+	evidence := map[string]string{key: currentEvidence}
+
+	pairs := selectRefinablePairs(g, idx, mm, existing, evidence)
+	found := false
+	for _, p := range pairs {
+		if labels.Key(p.From, p.To) == key {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("stale approved pair %q was not selected for a replacement draft: %+v", key, pairs)
 	}
 }
 
@@ -144,12 +169,12 @@ func TestMergeDrafts(t *testing.T) {
 		{From: modB, To: modA, Strength: enrichFunctional, Status: labels.StatusDraft},
 	}
 	drafts := []labels.Label{
-		{From: modA, To: modB, Strength: "intrusive", Status: labels.StatusDraft}, // must NOT clobber approved
-		{From: modB, To: modA, Strength: enrichModel, Status: labels.StatusDraft}, // replaces old draft
-		{From: "c", To: modA, Strength: "contract", Status: labels.StatusDraft},   // new
+		{From: modA, To: modB, Strength: enrichIntrusive, Status: labels.StatusDraft}, // must NOT clobber approved
+		{From: modB, To: modA, Strength: enrichModel, Status: labels.StatusDraft},     // replaces old draft
+		{From: "c", To: modA, Strength: "contract", Status: labels.StatusDraft},       // new
 	}
 
-	merged := mergeDrafts(existing, drafts)
+	merged := mergeDrafts(existing, drafts, nil)
 	if len(merged) != 3 {
 		t.Fatalf("merged = %+v, want 3", merged)
 	}
@@ -166,6 +191,27 @@ func TestMergeDrafts(t *testing.T) {
 	// Deterministic order.
 	if merged[0].From > merged[1].From || merged[1].From > merged[2].From {
 		t.Errorf("not sorted: %+v", merged)
+	}
+}
+
+func TestMergeDrafts_ReplacesStaleApproved(t *testing.T) {
+	t.Parallel()
+	key := labels.Key(modA, modB)
+	existing := []labels.Label{{
+		From: modA, To: modB, Strength: enrichModel,
+		EvidenceHash: staleEvidence, Status: labels.StatusApproved,
+	}}
+	drafts := []labels.Label{{
+		From: modA, To: modB, Strength: enrichIntrusive,
+		EvidenceHash: currentEvidence, Status: labels.StatusDraft,
+	}}
+
+	merged := mergeDrafts(existing, drafts, map[string]string{key: currentEvidence})
+	if len(merged) != 1 {
+		t.Fatalf("merged = %+v, want one replacement", merged)
+	}
+	if merged[0].Status != labels.StatusDraft || merged[0].Strength != enrichIntrusive {
+		t.Fatalf("stale approved label was not replaced: %+v", merged[0])
 	}
 }
 
@@ -212,7 +258,7 @@ func TestSelectRefinablePairs_UnknownStrength(t *testing.T) {
 	}
 	mm := cfg.ForClassify().ModuleMap
 
-	pairs := selectRefinablePairs(g, idx, mm, nil)
+	pairs := selectRefinablePairs(g, idx, mm, nil, nil)
 	if len(pairs) != 1 {
 		t.Fatalf("pairs = %+v, want exactly a->b for unknown strength", pairs)
 	}
