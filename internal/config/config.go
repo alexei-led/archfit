@@ -299,8 +299,10 @@ func validateExternalSystem(name string, def ExternalSystemDef) error {
 			return fmt.Errorf("external_systems.%s.targets[%d] %q is not a valid glob pattern", name, i, pat)
 		}
 	}
+	// Case-insensitive, matching classify's externalVolatility consumer and the
+	// module-level volatility convention (classifyVolatility lowercases too).
 	if v := def.Volatility; v != "" {
-		if _, ok := externalVolatilities[v]; !ok {
+		if _, ok := externalVolatilities[strings.ToLower(v)]; !ok {
 			return fmt.Errorf("external_systems.%s.volatility %q is not one of: high, medium, low, frozen", name, v)
 		}
 	}

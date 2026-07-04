@@ -139,9 +139,12 @@ func runScoreSide(ctx context.Context, deps *appDeps, configPath, root string, n
 	}
 	// Silence phase progress for the base sub-scan: the head run already announced
 	// "Comparing against base", and re-emitting discover/facts/analyze through the
-	// same reporter overflows the head phase counter (e.g. [7/6], F6).
+	// same reporter overflows the head phase counter (e.g. [7/6], F6). Label its
+	// stderr warnings so a base-side owner/TS-coverage degradation isn't misread
+	// as a head-side regression on the shared stream.
 	quiet := *deps
 	quiet.progress = nil
+	quiet.warnLabel = "[base] "
 	mode := engine.Mode{Full: true, Advisory: advisory, ReportOnly: true}
 	_, sc, err := runPipeline(ctx, &quiet, cfg, configPath, root, noConfig, mode, baseline.Baseline{})
 	if err != nil {

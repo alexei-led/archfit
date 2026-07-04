@@ -212,7 +212,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		ownerSource = string(src)
 		if w := ownerDegradationWarning(src); w != "" {
 			toolWarnings = append(toolWarnings, w)
-			_, _ = fmt.Fprintln(deps.stderr(), "warning: "+w)
+			deps.warn(w)
 		}
 	}
 
@@ -320,7 +320,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// same way ownerDegradationWarning discloses degraded owner resolution.
 	if w := tsUnresolvedWarning(diag.ToolCoverage); w != "" {
 		toolWarnings = append(toolWarnings, w)
-		_, _ = fmt.Fprintln(deps.stderr(), "warning: "+w)
+		deps.warn(w)
 	}
 
 	// cargo-modules module-graph coverage: opt-in (analyzers.cargo_modules.enabled: true).

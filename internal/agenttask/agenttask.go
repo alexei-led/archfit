@@ -83,10 +83,25 @@ func NewPathResolver(knownFiles map[string]struct{}, crateRootDirs, moduleRootDi
 	}
 }
 
+// escapesScanRoot reports whether p points outside the analyzed tree:
+// absolute, or cleaning to a ".."-prefixed path. This slash guard is the
+// platform-independent first line; the onDisk closure owns the OS-aware
+// locality check (see NewPathResolver).
+func escapesScanRoot(p string) bool {
+	clean := path.Clean(p)
+	return strings.HasPrefix(clean, "/") || clean == ".." || strings.HasPrefix(clean, "../")
+}
+
 // exists reports whether p is in the LOC-walk index (file or ancestor dir) or,
 // failing that, exists on disk per the onDisk callback — the index is a fast
 // under-approximation of the disk (its walk skips mocks/, target/, venv/).
+// The escape guard runs here, not only in resolve, so derived candidates
+// (Rust crate::mod probes built from crateRootDirs) can never leak an
+// out-of-tree path through the onDisk closure.
 func (r PathResolver) exists(p string) bool {
+	if escapesScanRoot(p) {
+		return false
+	}
 	if _, ok := r.knownFiles[p]; ok {
 		return true
 	}
@@ -105,15 +120,13 @@ func (r PathResolver) exists(p string) bool {
 // candidate, matching pre-resolver behavior. Candidates that escape the scan
 // root (absolute, or cleaning to a ".."-prefixed path — e.g. a module Paths
 // glob like "../outside/**" feeding the ModuleRootDirs fallback) are always
-// rejected: files[] must never point outside the analyzed tree. This slash
-// guard is the platform-independent first line; the onDisk closure owns the
-// OS-aware locality check (see NewPathResolver).
+// rejected, both here and on every derived probe in exists (escapesScanRoot):
+// files[] must never point outside the analyzed tree.
 func (r PathResolver) resolve(candidate string) (string, bool) {
 	if candidate == "" {
 		return "", false
 	}
-	if clean := path.Clean(candidate); strings.HasPrefix(clean, "/") ||
-		clean == ".." || strings.HasPrefix(clean, "../") {
+	if escapesScanRoot(candidate) {
 		return "", false
 	}
 	if r.knownFiles == nil {

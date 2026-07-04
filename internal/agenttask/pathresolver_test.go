@@ -601,4 +601,24 @@ func TestFilesFor_EscapingCandidatesDropped(t *testing.T) {
 			}
 		})
 	}
+
+	// Derived crate::mod probes are built from crateRootDirs AFTER resolve's
+	// raw-candidate guard ran, so the escape check inside exists is the only
+	// line of defense for a ".."-bearing crate root.
+	t.Run("escaping_crate_root", func(t *testing.T) {
+		writeFixtureFile(t, base, "outside-repo/src/mymod.rs")
+		resolver := agenttask.NewPathResolver(knownFiles, map[string]string{"leaky": "../outside-repo"}, nil, onDisk)
+		tasks := agenttask.Build(
+			[]finding.Finding{gateFindingWithModuleEdge("leaky::mymod")},
+			map[string]string{rulePublicAPIMax: rulePublicAPIMax},
+			nil, nil, nil,
+			resolver,
+		)
+		if len(tasks) != 1 {
+			t.Fatalf("tasks = %d, want 1", len(tasks))
+		}
+		if len(tasks[0].Files) != 0 {
+			t.Errorf("files = %v, want empty (escaping crate root must be dropped, not emitted)", tasks[0].Files)
+		}
+	})
 }

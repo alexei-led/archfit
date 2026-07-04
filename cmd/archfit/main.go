@@ -131,6 +131,16 @@ type appDeps struct {
 	// analyze run reports progress to stderr. Set by AnalyzeCmd; nil (no-op) for
 	// every other command.
 	progress func(stage string)
+
+	// warnLabel prefixes pipeline stderr warnings. Empty for normal runs; the
+	// --base worktree sub-scan sets "[base] " so its owner/TS-coverage warnings
+	// aren't misread as head-side regressions (both sides share one stderr).
+	warnLabel string
+}
+
+// warn writes a labeled pipeline warning to stderr.
+func (d *appDeps) warn(w string) {
+	_, _ = fmt.Fprintln(d.stderr(), "warning: "+d.warnLabel+w)
 }
 
 // stderr returns the configured stderr writer, falling back to os.Stderr.

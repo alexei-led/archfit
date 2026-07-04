@@ -904,6 +904,13 @@ func TestLoad_ExternalSystems(t *testing.T) {
 		}
 	})
 
+	t.Run("case-variant volatility is accepted", func(t *testing.T) {
+		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    targets: [\"github.com/aws/**\"]\n    volatility: High\n")
+		if err != nil {
+			t.Errorf("got %v, want High accepted (classify matches case-insensitively)", err)
+		}
+	})
+
 	t.Run("invalid volatility is rejected", func(t *testing.T) {
 		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    targets: [\"github.com/aws/**\"]\n    volatility: sometimes\n")
 		if err == nil || !strings.Contains(err.Error(), `external_systems.aws.volatility "sometimes"`) {
