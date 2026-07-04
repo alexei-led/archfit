@@ -9,8 +9,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
+	"time"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/ports"
@@ -24,11 +27,57 @@ const toolName = "ast-grep"
 // Adapter satisfies ports.PatternProvider using the "sg" (ast-grep) binary.
 type Adapter struct {
 	runner toolrun.Runner
+	// Cache is the extractor fact cache; nil disables caching (--no-cache).
+	Cache *factcache.Store
 }
 
 // New returns an Adapter configured with the given runner.
 func New(runner toolrun.Runner) *Adapter {
 	return &Adapter{runner: runner}
+}
+
+// cachedRunner wraps the runner in a fact-cache decorator for the sg
+// invocations of one Find/Syntax call (fact-cache.md D5 seam 1). Returns the
+// plain runner when the cache is off or key material cannot be derived —
+// never fails the run. The rules/patterns ride each command's argv (folded
+// into the entry address), so the Key carries only the sg version, the scan
+// root, and the whole-tree content hash — ast-grep scans every language, so
+// its input scope is the full tree. Timed-out runs are exec-level errors and
+// are never recorded; a non-zero sg exit is not cached either (it means a
+// rejected rule file, which the caller reports as partial).
+func (a *Adapter) cachedRunner(ctx context.Context, root string) toolrun.Runner {
+	if a.Cache == nil {
+		return a.runner
+	}
+	cfgHash, err := factcache.HashJSON(struct{ Root string }{root})
+	if err != nil {
+		return a.runner
+	}
+	files := factcache.ListInputs(root, factcache.MatchAll, nil)
+	treeHash, err := factcache.HashTree(root, files)
+	if err != nil {
+		return a.runner
+	}
+	return &factcache.Runner{
+		Inner:     a.runner,
+		Store:     a.Cache,
+		Analyzer:  "astgrep",
+		Key:       factcache.Key("astgrep", a.sgVersion(ctx), cfgHash, treeHash),
+		Cacheable: func(out toolrun.Output) bool { return out.ExitCode == 0 },
+	}
+}
+
+// sgVersion probes `sg --version`. Best-effort: "" on any failure.
+func (a *Adapter) sgVersion(ctx context.Context) string {
+	out, err := a.runner.Run(ctx, toolrun.ToolCmd{
+		Name:    "sg",
+		Args:    []string{"--version"},
+		Timeout: 30 * time.Second,
+	})
+	if err != nil || out.ExitCode != 0 {
+		return ""
+	}
+	return strings.TrimSpace(string(out.Stdout))
 }
 
 // Name returns the tool identifier.
@@ -69,8 +118,9 @@ func (a *Adapter) Find(ctx context.Context, s scope.Scope, c config.PatternConfi
 	var matches []pattern.Match
 	fileSet := make(map[string]struct{})
 
+	runner := a.cachedRunner(ctx, s.Root)
 	for _, def := range c {
-		out, err := a.runner.Run(ctx, toolrun.ToolCmd{
+		out, err := runner.Run(ctx, toolrun.ToolCmd{
 			Name:    "sg",
 			Args:    []string{"--lang", def.Lang, "--json", "run", "--pattern", def.Rule, "."},
 			WorkDir: s.Root,

@@ -136,6 +136,11 @@ type appDeps struct {
 	// --base worktree sub-scan sets "[base] " so its owner/TS-coverage warnings
 	// aren't misread as head-side regressions (both sides share one stderr).
 	warnLabel string
+
+	// noCache disables the extractor fact cache (fact-cache.md D2: one
+	// --no-cache flag bypasses ALL archfit caches, reads AND writes). Set by
+	// each pipeline command from its --no-cache flag before runPipeline.
+	noCache bool
 }
 
 // warn writes a labeled pipeline warning to stderr.

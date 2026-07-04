@@ -8,6 +8,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/py"
 	"github.com/alexei-led/archfit/internal/extract/rust"
 	"github.com/alexei-led/archfit/internal/extract/ts"
+	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -35,9 +36,10 @@ type LanguageDescriptor struct {
 	// ProjectMarkers are repo-root filenames that signal the language is present
 	// (e.g. go.mod, package.json, Cargo.toml). Used by language discovery.
 	ProjectMarkers []string
-	// NewExtractor builds the language's ports.Extractor from the shared runner
-	// and the language's projected ExtractConfig view.
-	NewExtractor func(toolrun.Runner, config.ExtractConfig) ports.Extractor
+	// NewExtractor builds the language's ports.Extractor from the shared runner,
+	// the language's projected ExtractConfig view, and the fact-cache store
+	// (nil when --no-cache — extractors treat nil as cache-off).
+	NewExtractor func(toolrun.Runner, config.ExtractConfig, *factcache.Store) ports.Extractor
 	// PrimaryTool is the coverage name of the dependency-graph analyzer this
 	// language unlocks (as it appears in ToolCoverage, e.g. "go/packages").
 	PrimaryTool string
@@ -56,9 +58,14 @@ var languageRegistry = []LanguageDescriptor{
 	{
 		ID:             config.LangGo,
 		ProjectMarkers: []string{markerGoMod},
-		NewExtractor:   func(_ toolrun.Runner, cfg config.ExtractConfig) ports.Extractor { return golang.New(cfg) },
-		PrimaryTool:    toolGoPackages,
-		InstallHint:    "https://go.dev/dl (bundled with the Go toolchain)",
+		NewExtractor: func(r toolrun.Runner, cfg config.ExtractConfig, fc *factcache.Store) ports.Extractor {
+			ex := golang.New(cfg)
+			ex.Runner = r // go-toolchain version probe for the fact-cache key
+			ex.Cache = fc
+			return ex
+		},
+		PrimaryTool: toolGoPackages,
+		InstallHint: "https://go.dev/dl (bundled with the Go toolchain)",
 		DoctorTools: []doctorTool{
 			{"go", "go", "https://go.dev/dl"},
 			{scipGo, scipGo, "go install github.com/sourcegraph/scip-go/cmd/scip-go@latest"},
@@ -68,9 +75,13 @@ var languageRegistry = []LanguageDescriptor{
 		ID:             config.LangTypeScript,
 		Aliases:        []string{"ts"},
 		ProjectMarkers: []string{"package.json", "tsconfig.json"},
-		NewExtractor:   func(r toolrun.Runner, cfg config.ExtractConfig) ports.Extractor { return ts.New(r, cfg) },
-		PrimaryTool:    toolDepCruiser,
-		InstallHint:    "npm install -g dependency-cruiser",
+		NewExtractor: func(r toolrun.Runner, cfg config.ExtractConfig, fc *factcache.Store) ports.Extractor {
+			ex := ts.New(r, cfg)
+			ex.Cache = fc
+			return ex
+		},
+		PrimaryTool: toolDepCruiser,
+		InstallHint: "npm install -g dependency-cruiser",
 		DoctorTools: []doctorTool{
 			{"node", "node", "https://nodejs.org"},
 			{"bunx", "bunx", "https://bun.sh"},
@@ -82,9 +93,13 @@ var languageRegistry = []LanguageDescriptor{
 		ID:             config.LangPython,
 		Aliases:        []string{"py"},
 		ProjectMarkers: []string{"pyproject.toml", "setup.py", "setup.cfg"},
-		NewExtractor:   func(r toolrun.Runner, cfg config.ExtractConfig) ports.Extractor { return py.New(r, cfg) },
-		PrimaryTool:    toolGrimp,
-		InstallHint:    "uv tool install grimp / pip install grimp",
+		NewExtractor: func(r toolrun.Runner, cfg config.ExtractConfig, fc *factcache.Store) ports.Extractor {
+			ex := py.New(r, cfg)
+			ex.Cache = fc
+			return ex
+		},
+		PrimaryTool: toolGrimp,
+		InstallHint: "uv tool install grimp / pip install grimp",
 		DoctorTools: []doctorTool{
 			{"python3", "python3", "https://www.python.org/downloads"},
 			{scipPython, scipPython, "npm install -g @sourcegraph/scip-python"},
@@ -94,9 +109,13 @@ var languageRegistry = []LanguageDescriptor{
 		ID:             config.LangRust,
 		Aliases:        []string{"rs"},
 		ProjectMarkers: []string{markerCargoToml},
-		NewExtractor:   func(r toolrun.Runner, cfg config.ExtractConfig) ports.Extractor { return rust.New(r, cfg) },
-		PrimaryTool:    toolCargo,
-		InstallHint:    "https://rustup.rs (rustup installs cargo)",
+		NewExtractor: func(r toolrun.Runner, cfg config.ExtractConfig, fc *factcache.Store) ports.Extractor {
+			ex := rust.New(r, cfg)
+			ex.Cache = fc
+			return ex
+		},
+		PrimaryTool: toolCargo,
+		InstallHint: "https://rustup.rs (rustup installs cargo)",
 		DoctorTools: []doctorTool{
 			{toolCargo, toolCargo, "https://rustup.rs"},
 			{scipRust, scipRust, "rustup component add rust-analyzer"},
@@ -108,10 +127,10 @@ var languageRegistry = []LanguageDescriptor{
 // buildExtractors instantiates the per-language extractors in registry order,
 // each fed its projected ExtractConfig view. The slice order is the graph-merge
 // order the engine golden test pins — registry order is go → ts → py.
-func buildExtractors(runner toolrun.Runner, cfg config.Config) []ports.Extractor {
+func buildExtractors(runner toolrun.Runner, cfg config.Config, facts *factcache.Store) []ports.Extractor {
 	exs := make([]ports.Extractor, 0, len(languageRegistry))
 	for _, lang := range languageRegistry {
-		exs = append(exs, lang.NewExtractor(runner, cfg.ForExtract(lang.ID)))
+		exs = append(exs, lang.NewExtractor(runner, cfg.ForExtract(lang.ID), facts))
 	}
 	return exs
 }

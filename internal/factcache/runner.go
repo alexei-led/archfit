@@ -39,6 +39,11 @@ type Runner struct {
 	// fact-cache.md D3). nil caches every exec-level success, any exit
 	// code: the extractor, not the raw exit code, decides what a fact is.
 	Cacheable func(toolrun.Output) bool
+	// EntryArgs, when non-nil, replaces cmd Name+Args as the entry-address
+	// material — for commands whose argv embeds a nondeterministic temp path
+	// (e.g. the py grimp helper file). The caller must pick EntryArgs so that
+	// Key+EntryArgs still uniquely identify the invocation's inputs.
+	EntryArgs []string
 }
 
 var _ toolrun.Runner = (*Runner)(nil)
@@ -134,10 +139,12 @@ func (r *Runner) record(key string, e cacheEntry, out toolrun.Output) {
 
 // entryKey addresses one command under the runner's Key. Name and Args are
 // folded in so an analyzer that runs several distinct commands under one Key
-// cannot alias entries; WorkDir and Env are excluded (see type doc).
+// cannot alias entries; WorkDir and Env are excluded (see type doc). A non-nil
+// EntryArgs replaces Name+Args (see field doc).
 func (r *Runner) entryKey(cmd toolrun.ToolCmd) string {
-	parts := make([]string, 0, len(cmd.Args)+2)
-	parts = append(parts, r.Key, cmd.Name)
-	parts = append(parts, cmd.Args...)
-	return hashParts(parts...)
+	addr := r.EntryArgs
+	if addr == nil {
+		addr = append(append(make([]string, 0, len(cmd.Args)+1), cmd.Name), cmd.Args...)
+	}
+	return hashParts(append([]string{r.Key}, addr...)...)
 }

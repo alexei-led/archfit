@@ -14,6 +14,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
@@ -37,6 +38,22 @@ const (
 type Extractor struct {
 	runner toolrun.Runner
 	cfg    config.ExtractConfig
+	// Cache is the extractor fact cache; nil disables caching (--no-cache).
+	Cache *factcache.Store
+}
+
+// tsSourceExts are the file extensions in dependency-cruiser's input scope,
+// hashed into the fact-cache key.
+var tsSourceExts = []string{".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}
+
+// tsManifestNames are the resolution-affecting manifests hashed into the
+// fact-cache key alongside the source tree: compiler/aliasing config,
+// package manifests, lockfiles, and depcruise's own config.
+var tsManifestNames = []string{
+	"package.json", "tsconfig.json", "tsconfig.base.json",
+	"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb",
+	".dependency-cruiser.cjs", ".dependency-cruiser.js",
+	".dependency-cruiser.mjs", ".dependency-cruiser.json",
 }
 
 // New returns an Extractor configured with the given runner and config.
@@ -146,7 +163,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		WorkDir: workDir,
 		Timeout: runTimeout,
 	}
-	out, err := e.runner.Run(ctx, cmd)
+	out, err := e.cachedRunner(s, version, e.resolveTSConfig(s.Root, workDir)).Run(ctx, cmd)
 	if err != nil {
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/ts: run dependency-cruiser: %w", err)
 	}
@@ -282,6 +299,84 @@ func (e *Extractor) detectVersion(ctx context.Context, launcher string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out.Stdout))
+}
+
+// cachedRunner wraps the runner in a fact-cache decorator for the depcruise
+// invocation (fact-cache.md D5 seam 1). Returns the plain runner when the
+// cache is off or key material cannot be derived — never fails the run.
+//
+// Key inputs: depcruise version, the ExtractConfig view, the scan root (the
+// blob may embed tree-specific paths, so entries are per-checkout), the
+// resolved tsconfig content (it may live ABOVE s.Root in subtree mode, outside
+// the tree walk), and the content hash of every TS/JS source + manifest file
+// under s.Root. Ceiling: node_modules state is not keyed — installing or
+// removing packages without touching a manifest can leave a stale OK entry;
+// the cacheableDepcruise veto blocks the sticky-degradation direction.
+func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath string) toolrun.Runner {
+	if e.Cache == nil {
+		return e.runner
+	}
+	tsConfigHash := ""
+	if tsConfigPath != "" {
+		full := tsConfigPath
+		if !filepath.IsAbs(full) {
+			full = filepath.Join(s.Root, full)
+		}
+		if data, err := os.ReadFile(full); err == nil { //nolint:gosec // resolved tsconfig path from own discovery
+			h, _ := factcache.HashJSON(string(data))
+			tsConfigHash = h
+		}
+	}
+	cfgHash, err := factcache.HashJSON(struct {
+		Cfg          config.ExtractConfig
+		Root         string
+		TSConfigHash string
+	}{e.cfg, s.Root, tsConfigHash})
+	if err != nil {
+		return e.runner
+	}
+	exclude := append([]string{"**/node_modules/**"}, e.cfg.Exclusions...)
+	files := factcache.ListInputs(s.Root, factcache.MatchExts(tsSourceExts, tsManifestNames), exclude)
+	treeHash, err := factcache.HashTree(s.Root, files)
+	if err != nil {
+		return e.runner
+	}
+	return &factcache.Runner{
+		Inner:     e.runner,
+		Store:     e.Cache,
+		Analyzer:  langTS,
+		Key:       factcache.Key(langTS, version, cfgHash, treeHash),
+		Cacheable: cacheableDepcruise,
+	}
+}
+
+// cacheableDepcruise vetoes caching output the extractor would report as
+// partial (fact-cache.md D3): a non-zero exit or any unresolved import
+// specifier. Unresolved imports usually mean node_modules is missing or
+// stale — state the cache key cannot see — so caching them would make the
+// degradation sticky across an `npm install`.
+func cacheableDepcruise(out toolrun.Output) bool {
+	if out.ExitCode != 0 {
+		return false
+	}
+	var dc dcOutput
+	if json.Unmarshal(out.Stdout, &dc) != nil {
+		return false
+	}
+	for _, mod := range dc.Modules {
+		if mod.CoreModule {
+			continue
+		}
+		if mod.CouldNotResolve {
+			return false
+		}
+		for _, dep := range append(mod.Dependencies, mod.Deps...) {
+			if dep.CouldNotResolve && !dep.CoreModule {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // ---------------------------------------------------------------------------

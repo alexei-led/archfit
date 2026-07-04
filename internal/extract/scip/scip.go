@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -47,6 +48,12 @@ var scipTools = []string{indexerTS, indexerPython, indexerGo, indexerRust}
 type Adapter struct {
 	runner  toolrun.Runner
 	timeout time.Duration // per-analyzer outer watchdog; 0 = defaultTimeout in scip_strength.go
+
+	// Cache is the extractor fact cache; nil disables caching (--no-cache).
+	// The cached fact is the READER output (parsed edge/symbol JSON), not the
+	// raw .scip index — the index is a temp-file intermediate and the reader
+	// JSON is orders of magnitude smaller (fact-cache.md D4 size cap).
+	Cache *factcache.Store
 
 	once      sync.Once
 	toolFound string // empty when no SCIP indexer detected

@@ -38,7 +38,7 @@ const enrichBatchSize = 30
 type enrichFlags struct {
 	Config  string `short:"c" name:"config" help:"Config file." default:".archfit.yaml"`
 	Root    string `short:"r" name:"root" type:"path" help:"Repository root to analyze (default: directory of --config). Decouples the scanned repo from where the config lives."`
-	NoCache bool   `name:"no-cache" help:"Bypass the LLM response cache."`
+	NoCache bool   `name:"no-cache" help:"Bypass archfit caches (extractor facts and LLM responses)."`
 
 	// providerOverride is a test seam — set directly on the struct to inject a fake provider.
 	providerOverride llm.Provider
@@ -152,6 +152,7 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
+	deps.noCache = c.NoCache
 	if _, _, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -381,6 +382,13 @@ func buildCachedProvider(override llm.Provider, cfg config.LLMConfig, cacheDir s
 // (enrich, review, explain, autopilot, init, update) and reported by doctor.
 func llmCacheDir(baseDir string) string {
 	return filepath.Join(baseDir, ".archfit-cache", "llm")
+}
+
+// factsCacheDir returns the extractor fact-cache directory under baseDir —
+// facts/ beside llm/ in the same .archfit-cache root (fact-cache.md D1), so
+// "delete .archfit-cache to reset" stays the single troubleshooting answer.
+func factsCacheDir(baseDir string) string {
+	return filepath.Join(baseDir, ".archfit-cache", "facts")
 }
 
 // refinablePair is one candidate module pair with its evidence summary.

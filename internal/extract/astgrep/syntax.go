@@ -237,6 +237,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 
 	var facts []diagnostic.SyntaxFact
 
+	runner := a.cachedRunner(ctx, s.Root)
 	for _, lang := range langs {
 		rules, hasRules := embeddedRules[lang]
 		if !hasRules {
@@ -250,7 +251,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 		// confirmed[file][framework] before pass 2 can gate routes), so raw is
 		// populated in-order and the passes are unchanged.
 		var raw []sgSyntaxMatch
-		out, err := a.runner.Stream(ctx, toolrun.ToolCmd{
+		out, err := runner.Stream(ctx, toolrun.ToolCmd{
 			Name:    "sg",
 			Args:    []string{"scan", "--inline-rules", rules, "--json=compact", "."},
 			WorkDir: s.Root,

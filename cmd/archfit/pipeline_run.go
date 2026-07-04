@@ -19,6 +19,7 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/manifest"
 	runtimedetect "github.com/alexei-led/archfit/internal/extract/runtime"
 	"github.com/alexei-led/archfit/internal/extract/scip"
+	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/metrics"
@@ -116,7 +117,17 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		return diagnostic.Diagnostic{}, score.Scorecard{}, err
 	}
 
-	extractors := buildExtractors(deps.Runner, cfg)
+	// Extractor fact cache (fact-cache.md D1/D2): facts/ beside the LLM cache
+	// under the config dir. nil when --no-cache — that disables reads AND
+	// writes in every consumer (a bypassed run must not poison or refresh
+	// entries). The cache stores subprocess/loader FACTS keyed by content;
+	// classification and scoring below never consult it.
+	var facts *factcache.Store
+	if !deps.noCache {
+		facts = factcache.NewStore(factsCacheDir(configDir))
+	}
+
+	extractors := buildExtractors(deps.Runner, cfg, facts)
 
 	rs, err := rules.New(cfg.ForRules())
 	if err != nil {
@@ -233,7 +244,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	copy(clonesExcl, cfg.Exclude)
 	clonesExcl = append(clonesExcl, cloneTestGenGlobs...)
 	var clonesCov diagnostic.Coverage
-	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled(), cfg.ToolTimeout(config.ToolClones), clonesExcl)
+	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled(), cfg.ToolTimeout(config.ToolClones), clonesExcl, facts)
 	noteToolErr("jscpd", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, clonesCov)
 
@@ -252,7 +263,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// "disabled" (not absent/missing) and no spurious install-gap is raised.
 	var resolver ports.SymbolResolver = ports.NopSymbolResolver{}
 	if cfg.ScipEnabled() {
-		resolver = scip.New(deps.Runner, cfg.ToolTimeout(config.ToolScip))
+		scipAdapter := scip.New(deps.Runner, cfg.ToolTimeout(config.ToolScip))
+		scipAdapter.Cache = facts
+		resolver = scipAdapter
 	} else {
 		change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
 			Tool:   toolScip,
@@ -267,7 +280,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	syntaxCfg := cfg.ForSyntax()
 	var syntaxProvider ports.SyntaxProvider = ports.NopSyntaxProvider{}
 	if syntaxCfg.Enabled {
-		syntaxProvider = astgrep.New(deps.Runner)
+		syntaxAdapter := astgrep.New(deps.Runner)
+		syntaxAdapter.Cache = facts
+		syntaxProvider = syntaxAdapter
 	} else {
 		change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
 			Tool:   toolAstGrepSyntax,
@@ -280,6 +295,8 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	configHash := effectiveConfigHash(configPath, noConfig)
 
 	patternCfg := cfg.ForPatterns()
+	patternProvider := astgrep.New(deps.Runner)
+	patternProvider.Cache = facts
 	deps.reportPhase("Analyzing dependencies")
 	diag, err := engine.Run(ctx, engine.RunInput{
 		Mode:        mode,
@@ -288,7 +305,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		Staleness:   cfg.ForStaleness(),
 		Waivers:     cfg.ForWaivers(),
 		Extractors:  extractors,
-		Patterns:    astgrep.New(deps.Runner),
+		Patterns:    patternProvider,
 		Resolver:    resolver,
 		Syntax:      syntaxProvider,
 		SyntaxCfg:   syntaxCfg,

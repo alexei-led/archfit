@@ -42,7 +42,7 @@ type AnalyzeCmd struct {
 	Gate bool `help:"CI exit behavior: 0=clean, 1=architecture violation, 2=warnings, 3=config/tool error. Without --gate the command is always report-only (exit 0 on success)."`
 	LLM  bool `help:"Append an off-gate LLM narrative review after the normal render. Requires ai configured in the config file."`
 
-	NoCache bool `name:"no-cache" help:"With --llm: bypass the LLM response cache."`
+	NoCache bool `name:"no-cache" help:"Bypass archfit caches: extractor facts (and LLM responses with --llm)."`
 
 	// Format shorthand flags — mutually exclusive; error if more than one set.
 	// These map onto Format below.
@@ -145,6 +145,7 @@ func (c *AnalyzeCmd) runScan(ctx context.Context, deps *appDeps, formats []strin
 	rep := newProgressReporter(deps.stderr(), analyzePhaseTotal(c.LLM, c.Base != ""), c.Progress, c.Quiet, time.Now())
 	rep.banner("Archfit analyzing " + analyzeTarget(c.Config, c.Root))
 	deps.progress = rep.advance // runPipeline advances the discover/facts/graph phases
+	deps.noCache = c.NoCache    // one flag governs all caches (fact-cache.md D2)
 	defer rep.finish()
 
 	rep.advance("Loading config")

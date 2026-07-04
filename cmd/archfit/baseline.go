@@ -19,6 +19,7 @@ type BaselineCmd struct {
 	Full     bool   `help:"Scan all files before saving the accepted baseline."`
 	Advisory bool   `help:"Include advisory findings in the baseline."`
 	Base     string `help:"Git ref to compare against when baselining a delta run."`
+	NoCache  bool   `name:"no-cache" help:"Bypass archfit caches (extractor facts)."`
 }
 
 func (*BaselineCmd) Help() string {
@@ -48,6 +49,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	// pattern provider, and SCIP resolver): snapshot values recorded from
 	// different inputs would surface as phantom deltas on the next check.
 	mode := engine.Mode{Full: c.Full, Advisory: c.Advisory, Base: c.Base}
+	deps.noCache = c.NoCache
 	diag, sc, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, mode, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}

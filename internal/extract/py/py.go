@@ -2,6 +2,8 @@ package py
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +16,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
@@ -35,6 +38,15 @@ const (
 type Extractor struct {
 	runner toolrun.Runner
 	cfg    config.ExtractConfig
+	// Cache is the extractor fact cache; nil disables caching (--no-cache).
+	Cache *factcache.Store
+}
+
+// pyManifestNames are the resolution-affecting manifests hashed into the
+// fact-cache key alongside the .py tree: project metadata and lockfiles that
+// change what grimp can import.
+var pyManifestNames = []string{
+	"pyproject.toml", "setup.py", "setup.cfg", "uv.lock", "requirements.txt",
 }
 
 // New returns an Extractor configured with the given runner and config.
@@ -132,7 +144,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		}
 	}
 
-	out, err := e.runner.Run(ctx, cmd)
+	out, err := e.cachedRunner(s, tool, version, pkgs).Run(ctx, cmd)
 	if err != nil {
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/py: run helper: %w", err)
 	}
@@ -158,6 +170,64 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/py: parse output: %w", err)
 	}
 	return facts, cov, nil
+}
+
+// cachedRunner wraps the runner in a fact-cache decorator for the grimp
+// helper invocation (fact-cache.md D5 seam 1). Returns the plain runner when
+// the cache is off or key material cannot be derived — never fails the run.
+//
+// The helper command's argv embeds a random temp path (the extracted helper
+// script), so EntryArgs replaces it with the deterministic invocation
+// identity: tool + package list. The helper source itself is key material —
+// editing grimp_helper.py must invalidate — so its hash rides the config
+// slice. Key inputs otherwise: tool version, the ExtractConfig view, the scan
+// root, and the content hash of every .py + manifest file under s.Root.
+// Ceiling: the virtualenv contents are not keyed — installing a dependency
+// without touching a manifest can leave a stale OK entry; the cacheableGrimp
+// veto blocks the sticky-degradation direction.
+func (e *Extractor) cachedRunner(s scope.Scope, tool, version string, pkgs []string) toolrun.Runner {
+	if e.Cache == nil {
+		return e.runner
+	}
+	helperSum := sha256.Sum256(grimpHelperSrc)
+	cfgHash, err := factcache.HashJSON(struct {
+		Cfg        config.ExtractConfig
+		Root       string
+		HelperHash string
+	}{e.cfg, s.Root, hex.EncodeToString(helperSum[:])})
+	if err != nil {
+		return e.runner
+	}
+	exclude := append([]string{"**/.venv/**", "**/venv/**", "**/__pycache__/**"}, e.cfg.Exclusions...)
+	files := factcache.ListInputs(s.Root, factcache.MatchExts([]string{".py"}, pyManifestNames), exclude)
+	treeHash, err := factcache.HashTree(s.Root, files)
+	if err != nil {
+		return e.runner
+	}
+	return &factcache.Runner{
+		Inner:     e.runner,
+		Store:     e.Cache,
+		Analyzer:  langPython,
+		Key:       factcache.Key(langPython, version, cfgHash, treeHash),
+		Cacheable: cacheableGrimp,
+		EntryArgs: append([]string{tool}, pkgs...),
+	}
+}
+
+// cacheableGrimp vetoes caching output the extractor would report as partial
+// (fact-cache.md D3): a non-zero exit, a helper-reported error, or unresolved
+// imports. Unresolved imports usually mean the environment is missing a
+// dependency — state the cache key cannot see — so caching them would make
+// the degradation sticky across a `pip install`.
+func cacheableGrimp(out toolrun.Output) bool {
+	if out.ExitCode != 0 {
+		return false
+	}
+	var h helperOutput
+	if json.Unmarshal(out.Stdout, &h) != nil {
+		return false
+	}
+	return h.Error == "" && h.Unresolved == 0
 }
 
 // isApplicable returns true if s.Root contains a Python project marker.

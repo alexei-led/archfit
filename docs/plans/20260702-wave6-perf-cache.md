@@ -41,12 +41,12 @@ Strategy: cache **extractor facts** (the expensive out-of-process work: `go list
 
 ### Task 3: Per-language wiring + invalidation tests
 
-- [ ] Go: cache `packages.Load` results per workspace member (key includes go.mod/go.sum hashes); test: edit one member file → only that member re-loads (assert via fake Runner call counts)
-- [ ] TypeScript: cache dependency-cruiser output (key includes tsconfig.json + package.json hashes); test invalidation on tsconfig change
-- [ ] Python: cache grimp graph (key includes the package dir tree hash); test invalidation on a .py file change
-- [ ] Rust: cache cargo metadata + cargo-modules + SCIP index outputs (key includes Cargo.toml/Cargo.lock hashes; SCIP blob is large — verify size cap handles it); test invalidation on Cargo.toml change
-- [ ] clones (jscpd) + ast-grep: same treatment; per-analyzer timeout semantics unchanged (a timed-out run must NOT be cached)
-- [ ] `make test && make lint && make archfit`; commit per language if diffs are big
+- [x] Go: cache `packages.Load` results per workspace member (key includes go.mod/go.sum hashes); test: edit one member file → only that member re-loads — asserted via a fake `packages.Load` loader seam, not Runner counts (go/packages never touches toolrun.Runner; D5 seam 2). Serialized per-member facts (`golang/cache.go`); keys include the member's intra-workspace `require` closure, so editing a dependency re-loads its dependents too (`TestFactCache_DependentMemberInvalidates`); partial loads never cached
+- [x] TypeScript: cache dependency-cruiser output (key includes tsconfig.json + package.json + lockfile hashes, resolved tsconfig content, depcruise version); test invalidation on tsconfig change + unresolved-output veto (node_modules state is unkeyed, so partial results are never written)
+- [x] Python: cache grimp graph (key includes .py tree + manifests + helper-source hash); Runner `EntryArgs` override absorbs the random temp helper path; test invalidation on a .py file change + unresolved veto
+- [x] Rust: cache cargo metadata (manifests-only key — a .rs edit must NOT re-run it) + cargo-modules (.rs tree key) + SCIP reader output (edge/symbol JSON, not the raw index blob — orders of magnitude smaller, so the D4 size cap trivially holds); tests: Cargo.toml change invalidates both, .rs change invalidates only cargo-modules; SCIP warm run does zero index/read subprocess work
+- [x] clones (jscpd) + ast-grep: same treatment (clones store-direct — jscpd reports land on disk, not stdout; ast-grep via the Runner decorator incl. Stream); per-analyzer timeout semantics unchanged, timed-out runs NOT cached (`TestFactCache_TimedOutRunNotCached`, astgrep exec-error test)
+- [x] `make test && make lint && make archfit`; commit per language if diffs are big — single commit; also plumbed: `--no-cache` on analyze/baseline/explain/enrich governs the fact store (nil store = off), registry passes the store to extractors, warm vs `--no-cache` verified byte-identical on archfit itself (warm full gate ≈2.9 s vs 5.3–8.2 s cold)
 
 ### Task 4: Incremental --base
 

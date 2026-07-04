@@ -4,19 +4,17 @@ import (
 	"context"
 	"fmt"
 	"go/types"
-	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"golang.org/x/sync/errgroup"
-	"golang.org/x/tools/go/packages"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
 // BC integration-strength labels used for StrengthHint on Go edges.
@@ -56,6 +54,14 @@ var goStrengthRank = map[string]int{
 // structurally: Name() string and Extract(ctx, scope.Scope) (graph.Facts, diagnostic.Coverage, error).
 type GoExtractor struct {
 	cfg config.ExtractConfig
+	// Runner probes the go-toolchain version for the fact-cache key; nil
+	// (tests) yields an empty version component, never an error.
+	Runner toolrun.Runner
+	// Cache is the per-member extractor fact cache; nil disables caching
+	// (--no-cache).
+	Cache *factcache.Store
+	// load is the packages.Load test seam; nil = packages.Load.
+	load loadFunc
 }
 
 // New returns a GoExtractor configured with the given ExtractConfig.
@@ -119,42 +125,10 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
 	}
 
-	// Load packages concurrently — one goroutine per member, bounded by GOMAXPROCS.
-	// Write into results[i] by index so merge order is deterministic regardless of
-	// goroutine completion order.
-	type memberResult struct {
-		pkgs []*packages.Package
-	}
-	results := make([]memberResult, len(memberDirs))
-
-	loadMode := packages.NeedName |
-		packages.NeedFiles |
-		packages.NeedImports |
-		packages.NeedSyntax |
-		packages.NeedTypes |
-		packages.NeedTypesInfo |
-		packages.NeedModule
-
-	eg, egCtx := errgroup.WithContext(ctx)
-	eg.SetLimit(max(1, runtime.GOMAXPROCS(0)))
-	for i, dir := range memberDirs {
-		i, dir := i, dir
-		eg.Go(func() error {
-			cfg := &packages.Config{
-				Mode:       loadMode,
-				Dir:        dir,
-				Context:    egCtx,
-				BuildFlags: e.cfg.BuildFlags,
-			}
-			pkgs, loadErr := packages.Load(cfg, "./...")
-			if loadErr != nil {
-				return fmt.Errorf("extract/golang: load %s: %w", dir, loadErr)
-			}
-			results[i] = memberResult{pkgs: pkgs}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
+	// Load per-member facts — from the fact cache where the member's input
+	// tree is unchanged, via packages.Load otherwise (loadMemberFacts).
+	mfs, err := e.loadMemberFacts(ctx, s.Root, memberDirs)
+	if err != nil {
 		// go/packages.Load failed for at least one workspace member — e.g. a broken
 		// go.mod or an unresolvable build constraint. This is a coverage gap, not a
 		// run-level failure (the "warn-loud, don't block" contract); only an
@@ -165,9 +139,9 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: "partial", Reason: err.Error()}, nil
 	}
 
-	// Build the module map from pkg.Module — same path family as pkg.Fset file
-	// paths, avoiding symlink skew that memberDirs (os.Stat-based) can introduce
-	// on macOS (/tmp → /private/tmp in temp dirs used by tests).
+	// Build the module map from the per-member facts (derived from pkg.Module —
+	// same path family as pkg.Fset file paths, avoiding symlink skew that
+	// memberDirs (os.Stat-based) can introduce on macOS).
 	//
 	// modEntry holds a module path and its ScanRoot-relative dir ("." for root).
 	// Entries are sorted: longest path first (correct longest-prefix matching),
@@ -180,23 +154,14 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	var modEntries []modEntry
 	var goModules []graph.GoModule
 
-	for _, r := range results {
-		for _, pkg := range r.pkgs {
-			if pkg.Module == nil || pkg.Module.Path == "" || pkg.Module.Dir == "" {
+	for _, mf := range mfs {
+		for _, m := range mf.Modules {
+			if _, ok := seenModPath[m.Path]; ok {
 				continue
 			}
-			if _, ok := seenModPath[pkg.Module.Path]; ok {
-				continue
-			}
-			seenModPath[pkg.Module.Path] = struct{}{}
-			rel, relErr := filepath.Rel(s.Root, pkg.Module.Dir)
-			if relErr != nil || strings.HasPrefix(rel, "..") {
-				// Module dir is outside scanRoot — skip (shouldn't happen after DiscoverMembers).
-				continue
-			}
-			relDir := filepath.ToSlash(rel)
-			modEntries = append(modEntries, modEntry{path: pkg.Module.Path, relDir: relDir})
-			goModules = append(goModules, graph.GoModule{Path: pkg.Module.Path, RelDir: relDir})
+			seenModPath[m.Path] = struct{}{}
+			modEntries = append(modEntries, modEntry{path: m.Path, relDir: m.RelDir})
+			goModules = append(goModules, graph.GoModule{Path: m.Path, RelDir: m.RelDir})
 		}
 	}
 
@@ -237,26 +202,39 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		return importPath // external dep — unchanged
 	}
 
-	// Merge all packages from all member loads, deduplicating by PkgPath.
-	// Iterate results in member order (results[i] ↔ memberDirs[i]) for determinism.
+	// Merge all packages from all member facts, deduplicating by PkgPath.
+	// Iterate in member order (mfs[i] ↔ memberDirs[i]) for determinism.
 	seenPkg := make(map[string]struct{})
-	var allPkgs []*packages.Package
-	for _, r := range results {
-		for _, pkg := range r.pkgs {
-			if _, ok := seenPkg[pkg.PkgPath]; !ok {
-				seenPkg[pkg.PkgPath] = struct{}{}
-				allPkgs = append(allPkgs, pkg)
+	var allPkgs []packageFacts
+	for _, mf := range mfs {
+		for _, pf := range mf.Packages {
+			if _, ok := seenPkg[pf.PkgPath]; !ok {
+				seenPkg[pf.PkgPath] = struct{}{}
+				allPkgs = append(allPkgs, pf)
 			}
 		}
 	}
 
-	// Derive per-(relFile, importedPkgRelPath) StrengthHints from type info.
-	// Covers every resolved target — members, stdlib, third-party — so both
-	// cross-member references and declared external systems get real strength.
-	strengthHints := buildStrengthHints(allPkgs, s.Root, stripImportPath, e.isExcluded)
+	// Fold the per-member RAW strength hints (deriveRawHints — every resolved
+	// target: members, stdlib, third-party) into the merged map the edge loop
+	// reads: strip the imported package path (needs the full member set, hence
+	// merge-time), drop excluded files, keep the strongest hint per pair.
+	strengthHints := make(map[string]string)
+	for _, pf := range allPkgs {
+		for k, strength := range pf.Hints {
+			relFile, rawPkg, ok := strings.Cut(k, "\x00")
+			if !ok || e.isExcluded(relFile) {
+				continue
+			}
+			mk := relFile + "\x00" + stripImportPath(rawPkg)
+			if goStrengthRank[strengthHints[mk]] < goStrengthRank[strength] {
+				strengthHints[mk] = strength
+			}
+		}
+	}
 
 	nodes, edges, filesSeen, unresolved := e.collectNodesEdges(
-		allPkgs, s.Root, stripImportPath, strengthHints,
+		allPkgs, stripImportPath, strengthHints,
 	)
 
 	status := "ok"
@@ -289,14 +267,14 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	return facts, cov, nil
 }
 
-// collectNodesEdges iterates loaded packages and emits graph nodes and edges.
-// Extracted from Extract to keep Extract's cyclomatic complexity below the gate.
+// collectNodesEdges iterates the merged per-member package facts and emits
+// graph nodes and edges. Extracted from Extract to keep Extract's cyclomatic
+// complexity below the gate.
 //
-// Synthetic-error packages (Module==nil && Errors non-empty) increment unresolved
-// and are skipped — they represent unresolvable patterns, never fatal.
+// Synthetic-error packages (Module==nil && Errors non-empty at derive time)
+// increment unresolved and are skipped — unresolvable patterns, never fatal.
 func (e *GoExtractor) collectNodesEdges(
-	pkgs []*packages.Package,
-	root string,
+	pkgs []packageFacts,
 	stripImportPath func(string) string,
 	strengthHints map[string]string,
 ) (nodes []graph.Node, edges []graph.Edge, filesSeen, unresolved int) {
@@ -309,37 +287,29 @@ func (e *GoExtractor) collectNodesEdges(
 			nodes = append(nodes, n)
 		}
 	}
-	for _, pkg := range pkgs {
-		if pkg.Module == nil && len(pkg.Errors) > 0 {
+	for _, p := range pkgs {
+		if p.Synthetic {
 			unresolved++
 			continue
 		}
-		if pkg.IllTyped || len(pkg.Errors) > 0 {
+		if p.IllTyped {
 			unresolved++
 		}
 
-		pkgPath := stripImportPath(pkg.PkgPath)
+		pkgPath := stripImportPath(p.PkgPath)
 		if pkgPath != "" {
 			emitNode(graph.Node{Kind: graph.NodeKindPackage, Path: pkgPath, Language: graph.LangGo})
 		}
 
-		for _, f := range pkg.Syntax {
-			absFile := pkg.Fset.File(f.Pos()).Name()
-			relFile, err := filepath.Rel(root, absFile)
-			if err != nil || strings.HasPrefix(relFile, "..") {
-				continue
-			}
-			relFile = filepath.ToSlash(relFile)
-			if e.isExcluded(relFile) {
+		for _, f := range p.Files {
+			if e.isExcluded(f.RelFile) {
 				continue
 			}
 			filesSeen++
-			emitNode(graph.Node{Kind: graph.NodeKindFile, Path: relFile, Language: graph.LangGo})
+			emitNode(graph.Node{Kind: graph.NodeKindFile, Path: f.RelFile, Language: graph.LangGo})
 
 			for _, imp := range f.Imports {
-				pos := pkg.Fset.Position(imp.Pos())
-				rawImportPath := strings.Trim(imp.Path.Value, `"`)
-				importPath := stripImportPath(rawImportPath)
+				importPath := stripImportPath(imp.RawPath)
 				if e.isExcluded(importPath) {
 					continue
 				}
@@ -349,113 +319,19 @@ func (e *GoExtractor) collectNodesEdges(
 					edgeKind = graph.EdgeKindUsesInternal
 				}
 
-				locFile := pos.Filename
-				if rel, relErr := filepath.Rel(root, locFile); relErr == nil && !strings.HasPrefix(rel, "..") {
-					locFile = filepath.ToSlash(rel)
-				}
-
 				edges = append(edges, graph.Edge{
-					From:         graph.Node{Kind: graph.NodeKindFile, Path: relFile}.ID(),
+					From:         graph.Node{Kind: graph.NodeKindFile, Path: f.RelFile}.ID(),
 					To:           graph.Node{Kind: graph.NodeKindPackage, Path: importPath}.ID(),
 					Kind:         edgeKind,
 					Language:     "go",
 					Confidence:   "high",
-					Locations:    []graph.Location{{File: locFile, Line: pos.Line}},
-					StrengthHint: strengthHints[relFile+"\x00"+importPath],
+					Locations:    []graph.Location{{File: imp.LocFile, Line: imp.Line}},
+					StrengthHint: strengthHints[f.RelFile+"\x00"+importPath],
 				})
 			}
 		}
 	}
 	return
-}
-
-// buildStrengthHints derives per-(relFile, importedPkgRelPath) BC integration-strength
-// hints from pkg.TypesInfo.Uses:
-//
-//   - *types.TypeName with interface underlying → "contract"  (rank 1, weakest)
-//   - pure-data DTO type or one of its fields    → "dto"       (rank 2)
-//   - *types.TypeName with concrete type         → "model"     (rank 3)
-//   - *types.Var, *types.Const (pure data use — reads and writes classify
-//     alike)                                     → "model"     (rank 3, book Ch7)
-//   - *types.Var with func/chan underlying (stored behavior) → "functional"
-//   - *types.Func (function or method)           → "functional" (rank 4)
-//
-// Go cross-package references are always to exported symbols, so "intrusive"
-// (private-symbol access) never occurs. Each (fromFile, toPkg) pair accumulates
-// the STRONGEST (highest-rank) hint seen.
-//
-// The returned map key is relFile + "\x00" + importedPkgRelPath.
-// Every resolved target gets a hint — first-party members AND external
-// (stdlib/third-party) packages. External hints are what let a config-declared
-// `external_systems:` seam score at DistanceExternal instead of abstaining on
-// unknown strength; on undeclared external edges the hint is inert (those are
-// excluded from coupling_balance by distance, not strength).
-func buildStrengthHints(
-	pkgs []*packages.Package,
-	root string,
-	stripModPath func(string) string,
-	isExcluded func(string) bool,
-) map[string]string {
-	hints := make(map[string]string)
-	dtos := newDTOIndex()
-	// Pre-pass: evaluate every cross-package TypeName once so DTO FIELDS are
-	// recognizable in the classification pass. A field *types.Var carries no
-	// owner pointer in go/types, so a composite-literal key (UserDTO{ID: …}) or
-	// a selector (u.ID) can only be tied back to its DTO through this registry.
-	// Uses map iteration order is random and the field may be classified in a
-	// different package than the one naming the type — hence a full pass first.
-	// External types register too: without that, an external DTO's hint would
-	// flap between "dto" and "model" with map iteration order.
-	for _, pkg := range pkgs {
-		if pkg.TypesInfo == nil {
-			continue
-		}
-		for _, obj := range pkg.TypesInfo.Uses {
-			if tn, ok := obj.(*types.TypeName); ok && tn.Pkg() != nil {
-				dtos.isDTOType(tn)
-			}
-		}
-	}
-	for _, pkg := range pkgs {
-		if pkg.TypesInfo == nil {
-			continue
-		}
-		for ident, obj := range pkg.TypesInfo.Uses {
-			// Skip same-package refs and universe symbols (builtins, nil, …).
-			if obj.Pkg() == nil || obj.Pkg().Path() == pkg.PkgPath {
-				continue
-			}
-			// Skip package-name references (import alias, not a symbol use).
-			if _, isPkg := obj.(*types.PkgName); isPkg {
-				continue
-			}
-
-			// Classify the symbol's BC strength per the SCIP reader mapping.
-			strength := goObjectStrength(obj, dtos)
-
-			// Locate the file containing this identifier.
-			tf := pkg.Fset.File(ident.Pos())
-			if tf == nil {
-				continue
-			}
-			absFile := tf.Name()
-			relFile, ferr := filepath.Rel(root, absFile)
-			if ferr != nil || strings.HasPrefix(relFile, "..") {
-				continue
-			}
-			relFile = filepath.ToSlash(relFile)
-			if isExcluded(relFile) {
-				continue
-			}
-
-			importedPkg := stripModPath(obj.Pkg().Path())
-			k := relFile + "\x00" + importedPkg
-			if goStrengthRank[hints[k]] < goStrengthRank[strength] {
-				hints[k] = strength
-			}
-		}
-	}
-	return hints
 }
 
 // goObjectStrength maps a go/types Object to its BC integration-strength label.

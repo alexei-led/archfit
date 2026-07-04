@@ -42,8 +42,9 @@ cannot import `internal/llm` (arch_test forbids it), and the LLM cache's key inp
 
 Rooted at the same base dir as the LLM cache (the config dir), so "delete
 `.archfit-cache/` to reset" stays the single troubleshooting answer.
-`<analyzer>` is the analyzer name (`go`, `ts`, `py`, `rust`, `cargo_modules`,
-`scip`, `clones`, `astgrep`); `<key>` is the hex sha256 key from D3. Writes are
+`<analyzer>` is the analyzer name (`go`, `typescript`, `python`, `rust`,
+`cargo_modules`, `scip`, `clones`, `astgrep` — as wired in Task 3);
+`<key>` is the hex sha256 key from D3. Writes are
 atomic (tmp file + rename in the same directory); same key ⇒ same content, so
 concurrent last-writer-wins is safe (plan Technical Details).
 
