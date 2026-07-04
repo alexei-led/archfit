@@ -28,27 +28,33 @@ const (
 	// enrichFixture and the unknown-strength test.
 	fileNodeA = "file:pkg/a/a.go"
 	fileNodeB = "file:pkg/b/b.go"
+	fileNodeC = "file:pkg/c/c.go"
+	filePkgBB = "pkg/b/b.go"
+
+	// globPkgA and globPkgB are the module path globs shared by enrich fixtures.
+	globPkgA = "pkg/a/**"
+	globPkgB = "pkg/b/**"
 )
 
 func enrichFixture() (*graph.Graph, coupling.Index, config.ModuleMap) {
 	cfg := config.Config{
 		Version: 1,
 		Modules: map[string]config.ModuleDef{
-			modA: {Paths: []string{"pkg/a/**"}},
-			modB: {Paths: []string{"pkg/b/**"}},
+			modA: {Paths: []string{globPkgA}},
+			modB: {Paths: []string{globPkgB}},
 			"c":  {Paths: []string{"pkg/c/**"}},
 		},
 	}
 	edges := []graph.Edge{
 		{From: fileNodeA, To: fileNodeB, Kind: graph.EdgeKindImports, Language: "go"},
 		{From: "file:pkg/a/a2.go", To: "file:pkg/b/b2.go", Kind: graph.EdgeKindImports, Language: "go"},
-		{From: fileNodeA, To: "file:pkg/c/c.go", Kind: graph.EdgeKindImports, Language: "go"},
-		{From: "file:pkg/c/c.go", To: fileNodeB, Kind: graph.EdgeKindImports, Language: "go"},
+		{From: fileNodeA, To: fileNodeC, Kind: graph.EdgeKindImports, Language: "go"},
+		{From: fileNodeC, To: fileNodeB, Kind: graph.EdgeKindImports, Language: "go"},
 	}
 	nodes := []graph.Node{
 		{Kind: graph.NodeKindFile, Path: filePkgAA},
 		{Kind: graph.NodeKindFile, Path: "pkg/a/a2.go"},
-		{Kind: graph.NodeKindFile, Path: "pkg/b/b.go"},
+		{Kind: graph.NodeKindFile, Path: filePkgBB},
 		{Kind: graph.NodeKindFile, Path: "pkg/b/b2.go"},
 		{Kind: graph.NodeKindFile, Path: "pkg/c/c.go"},
 	}
@@ -186,8 +192,8 @@ func TestSelectRefinablePairs_UnknownStrength(t *testing.T) {
 	cfg := config.Config{
 		Version: 1,
 		Modules: map[string]config.ModuleDef{
-			modA: {Paths: []string{"pkg/a/**"}},
-			modB: {Paths: []string{"pkg/b/**"}},
+			modA: {Paths: []string{globPkgA}},
+			modB: {Paths: []string{globPkgB}},
 		},
 	}
 	edges := []graph.Edge{
@@ -195,7 +201,7 @@ func TestSelectRefinablePairs_UnknownStrength(t *testing.T) {
 	}
 	nodes := []graph.Node{
 		{Kind: graph.NodeKindFile, Path: filePkgAA},
-		{Kind: graph.NodeKindFile, Path: "pkg/b/b.go"},
+		{Kind: graph.NodeKindFile, Path: filePkgBB},
 	}
 	g := graph.Build([]graph.Facts{{Language: "go", Nodes: nodes, Edges: edges}})
 	idx := coupling.Index{
@@ -308,7 +314,7 @@ func TestRun_Explain_LLMNarrative(t *testing.T) {
 	}
 
 	buf.Reset()
-	code := Run([]string{cmdExplain, diag.Findings[0].ID[:8], "-c", cfgPath, "--llm", "--no-cache"}, &buf)
+	code := Run([]string{cmdExplain, diag.Findings[0].ID[:8], "-c", cfgPath, "--llm", flagNoCache}, &buf)
 	if code != 0 {
 		t.Fatalf("explain --llm exit = %d\n%s", code, buf.String())
 	}

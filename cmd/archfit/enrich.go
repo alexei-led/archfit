@@ -50,6 +50,7 @@ type enrichFlags struct {
 // never import the LLM layer (arch ring rule), so the gate stays deterministic.
 type EnrichCmd struct {
 	Labels     EnrichLabelsCmd     `cmd:"" default:"withargs" help:"Draft coupling-strength labels (contract/functional/model/intrusive) for cross-module edges."`
+	Abstained  EnrichAbstainedCmd  `cmd:"" help:"Draft coupling-strength labels for abstained (unknown-strength) cross-module edges, judged from code snippets."`
 	Owner      EnrichOwnerCmd      `cmd:"" help:"Draft a module owner per module (uses CODEOWNERS context)."`
 	Volatility EnrichVolatilityCmd `cmd:"" help:"Draft module volatility (low/medium/high)."`
 	Subdomain  EnrichSubdomainCmd  `cmd:"" help:"Draft module subdomain (core/supporting/generic)."`
@@ -565,14 +566,10 @@ type enrichResponse struct {
 // (never write a half-understood draft file); unknown pairs/strengths in an
 // otherwise-valid body are skipped.
 func parseEnrichResponse(text string, batch []refinablePair) ([]labels.Label, error) {
-	// Tolerate accidental markdown fencing, nothing else.
-	text = strings.TrimSpace(text)
-	text = strings.TrimPrefix(text, "```json")
-	text = strings.TrimPrefix(text, "```")
-	text = strings.TrimSuffix(text, "```")
+	text = trimJSONFences(text)
 
 	var entries []enrichResponse
-	if err := json.Unmarshal([]byte(strings.TrimSpace(text)), &entries); err != nil {
+	if err := json.Unmarshal([]byte(text), &entries); err != nil {
 		return nil, fmt.Errorf("enrich: model response is not the required JSON array: %w", err)
 	}
 

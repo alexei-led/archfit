@@ -82,6 +82,8 @@ func TestRun_Analyze_GateVsReportOnly(t *testing.T) {
 const (
 	flagFull          = "--full"
 	flagRoot          = "--root"
+	flagNoCache       = "--no-cache"
+	goModStub         = "module example.com/test\n\ngo 1.21\n" // minimal go.mod shared by fixture repos
 	cmdAnalyze        = "analyze"
 	cmdBaseline       = "baseline"
 	cmdConfig         = "config" // config subcommand group (config init / config enrich …)
@@ -232,7 +234,7 @@ func writeRepoWithExternalConfig(t *testing.T) (repoDir, cfgPath string) {
 	t.Helper()
 	repoDir = t.TempDir()
 	srcFiles := map[string]string{
-		markerGoMod: "module example.com/test\n\ngo 1.21\n",
+		markerGoMod: goModStub,
 		filePkgAA: "package a\n\nimport \"example.com/test/pkg/b/internal/impl\"\n\n" +
 			"func UseSecret() string { return impl.Secret() }\n",
 		"pkg/b/internal/impl/impl.go": "package impl\n\nfunc Secret() string { return \"s\" }\n",

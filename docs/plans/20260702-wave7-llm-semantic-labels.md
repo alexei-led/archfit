@@ -32,11 +32,11 @@ Two semantic gaps, both measured on the corpus:
 
 ### Task 1: enrich — strength proposals for abstained edges
 
-- [ ] extend `config enrich` with an abstained-edge pass: batch abstained edges (cap per run, e.g. 100, named constant) with per-edge context — module names, both endpoints, up to N sample usage locations with a few lines of code around each
-- [ ] prompt design: ask for one of contract/model/functional/intrusive + one-sentence rationale + self-reported confidence (high/medium/low), citing the book's level definitions verbatim in the system prompt; require JSON output validated against a schema
-- [ ] write proposals as DRAFT labels (`provenance: llm`, confidence carried through) — never auto-pin; `--apply` pins after human review, same as today's flow
-- [ ] tests: batch construction (cap respected, context complete), JSON validation retry path, draft-not-pinned guarantee, mocked-client end-to-end
-- [ ] `make test && make lint && make archfit`; commit
+- [x] extend `config enrich` with an abstained-edge pass: batch abstained edges (cap per run, e.g. 100, named constant) with per-edge context — module names, both endpoints, up to N sample usage locations with a few lines of code around each
+- [x] prompt design: ask for one of contract/model/functional/intrusive + one-sentence rationale + self-reported confidence (high/medium/low), citing the book's level definitions verbatim in the system prompt; require JSON output validated against a schema
+- [x] write proposals as DRAFT labels (`provenance: llm`, confidence carried through) — never auto-pin; `--apply` pins after human review, same as today's flow
+- [x] tests: batch construction (cap respected, context complete), JSON validation retry path, draft-not-pinned guarantee, mocked-client end-to-end
+- [x] `make test && make lint && make archfit`; commit
 
 ### Task 2: scorer consumption + confidence discipline for llm labels
 
