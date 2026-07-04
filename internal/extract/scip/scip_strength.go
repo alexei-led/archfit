@@ -557,10 +557,10 @@ func npmPackageName(root string) string {
 	return pkg.Name
 }
 
-// detectPyPackage returns the first top-level Python package directory name found
-// at root or root/src (matching initcfg's discovery).
+// detectPyPackage returns the first top-level Python package directory name found.
+// For src-layout projects, root/src wins over top-level stray packages.
 func detectPyPackage(root string) string {
-	for _, dir := range []string{root, filepath.Join(root, pySrcDir)} {
+	for _, dir := range []string{filepath.Join(root, pySrcDir), root} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue

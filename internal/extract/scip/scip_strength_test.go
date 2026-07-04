@@ -325,16 +325,29 @@ func TestStrengths_Timeout(t *testing.T) {
 
 func TestDetectPyPackage(t *testing.T) {
 	dir := t.TempDir()
-	// flat layout: <dir>/mypkg/__init__.py
-	pkgDir := filepath.Join(dir, "mypkg")
+	writePyPackage(t, dir, "mypkg")
+	if got := detectPyPackage(dir); got != "mypkg" {
+		t.Errorf("detectPyPackage = %q, want mypkg", got)
+	}
+}
+
+func TestDetectPyPackage_SrcLayoutPrefersSrc(t *testing.T) {
+	dir := t.TempDir()
+	writePyPackage(t, dir, pySrcDir, "prefect")
+	writePyPackage(t, dir, "tests")
+	if got := detectPyPackage(dir); got != "prefect" {
+		t.Errorf("detectPyPackage = %q, want prefect", got)
+	}
+}
+
+func writePyPackage(t *testing.T, root string, parts ...string) {
+	t.Helper()
+	pkgDir := filepath.Join(append([]string{root}, parts...)...)
 	if err := os.MkdirAll(pkgDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(pkgDir, pyInitFile), nil, 0o600); err != nil {
 		t.Fatal(err)
-	}
-	if got := detectPyPackage(dir); got != "mypkg" {
-		t.Errorf("detectPyPackage = %q, want mypkg", got)
 	}
 }
 
