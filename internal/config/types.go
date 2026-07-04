@@ -156,9 +156,9 @@ type ClassifyConfig struct {
 	Scorer coupling.Scorer
 	// CrossModuleClonePairs is the set of canonical module-pair keys
 	// ("[a]\x00[b]" with a≤b) that share duplicated code blocks, derived
-	// from the clone-detection signal. Used to tag CoA (connascence of
-	// algorithm) on cross-module edges. Empty when clone detection is
-	// disabled or produced no results.
+	// from the clone-detection signal. Consumed by the Symmetric-strength
+	// upgrade, the volatility-cascade clone exclusion, and duplicated-knowledge
+	// pairing. Empty when clone detection is disabled or produced no results.
 	CrossModuleClonePairs map[string]struct{}
 	// CloneEvidence maps each canonical module-pair key (same keying as
 	// CrossModuleClonePairs) to the real duplicated-code locations — both sides,

@@ -19,11 +19,10 @@ func TestSymmetricStrengthUpgrade(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name            string
-		edge            graph.Edge
-		cfg             config.ClassifyConfig
-		wantStrength    coupling.Strength
-		wantConnascence coupling.Connascence
+		name         string
+		edge         graph.Edge
+		cfg          config.ClassifyConfig
+		wantStrength coupling.Strength
 	}{
 		{
 			name: "clone pair + functional hint → symmetric",
@@ -33,9 +32,8 @@ func TestSymmetricStrengthUpgrade(t *testing.T) {
 				Kind:         graph.EdgeKindImports,
 				StrengthHint: hintFunctional,
 			},
-			cfg:             twoModuleConfig(nil, modABClonePair),
-			wantStrength:    coupling.StrengthSymmetric,
-			wantConnascence: coupling.ConnascenceAlgorithm,
+			cfg:          twoModuleConfig(nil, modABClonePair),
+			wantStrength: coupling.StrengthSymmetric,
 		},
 		{
 			name: "clone pair + unknown strength → symmetric",
@@ -45,9 +43,8 @@ func TestSymmetricStrengthUpgrade(t *testing.T) {
 				Kind: graph.EdgeKindImports,
 				// no StrengthHint → unknown
 			},
-			cfg:             twoModuleConfig(nil, modABClonePair),
-			wantStrength:    coupling.StrengthSymmetric,
-			wantConnascence: coupling.ConnascenceAlgorithm,
+			cfg:          twoModuleConfig(nil, modABClonePair),
+			wantStrength: coupling.StrengthSymmetric,
 		},
 		{
 			name: "clone pair + contract glob → contract (not overridden)",
@@ -58,9 +55,8 @@ func TestSymmetricStrengthUpgrade(t *testing.T) {
 				// no StrengthHint — glob match makes it contract
 			},
 			// services/b/api/** is a public (contract) glob; clone pair also present
-			cfg:             twoModuleConfig([]string{publicB}, modABClonePair),
-			wantStrength:    coupling.StrengthContract,
-			wantConnascence: coupling.ConnascenceAlgorithm,
+			cfg:          twoModuleConfig([]string{publicB}, modABClonePair),
+			wantStrength: coupling.StrengthContract,
 		},
 		{
 			name: "clone pair + pinned model label → model (not overridden)",
@@ -82,8 +78,7 @@ func TestSymmetricStrengthUpgrade(t *testing.T) {
 				CrossModuleClonePairs: modABClonePair,
 			},
 			// model is not functional/unknown → upgrade must not fire
-			wantStrength:    coupling.StrengthModel,
-			wantConnascence: coupling.ConnascenceAlgorithm,
+			wantStrength: coupling.StrengthModel,
 		},
 		{
 			name: "no clone pair + functional → functional",
@@ -93,9 +88,8 @@ func TestSymmetricStrengthUpgrade(t *testing.T) {
 				Kind:         graph.EdgeKindImports,
 				StrengthHint: hintFunctional,
 			},
-			cfg:             twoModuleConfig(nil, nil),
-			wantStrength:    coupling.StrengthFunctional,
-			wantConnascence: coupling.ConnascenceNone,
+			cfg:          twoModuleConfig(nil, nil),
+			wantStrength: coupling.StrengthFunctional,
 		},
 		{
 			name: "clone pair + pinned functional label → functional (not overridden)",
@@ -117,10 +111,7 @@ func TestSymmetricStrengthUpgrade(t *testing.T) {
 				CrossModuleClonePairs: modABClonePair,
 			},
 			// functional is a pinned human judgment — clone upgrade must not override it.
-			// Connascence is still CoA: the clone pair signals algorithm-level coupling
-			// regardless of strength (connascence is report-only, not scored).
-			wantStrength:    coupling.StrengthFunctional,
-			wantConnascence: coupling.ConnascenceAlgorithm,
+			wantStrength: coupling.StrengthFunctional,
 		},
 	}
 
@@ -136,9 +127,6 @@ func TestSymmetricStrengthUpgrade(t *testing.T) {
 			}
 			if cl.Strength != tt.wantStrength {
 				t.Errorf("Strength = %q, want %q", cl.Strength, tt.wantStrength)
-			}
-			if cl.Connascence != tt.wantConnascence {
-				t.Errorf("Connascence = %q, want %q", cl.Connascence, tt.wantConnascence)
 			}
 		})
 	}

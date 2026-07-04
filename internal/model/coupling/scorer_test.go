@@ -274,7 +274,7 @@ func TestAdditiveScorer_CheapestMove(t *testing.T) {
 				Distance:   DistanceCrossDeployUnit,
 				Volatility: VolatilityHigh,
 			},
-			wantLabel: "reduce_strength",
+			wantLabel: moveReduceStrength,
 		},
 		// functional+cross_deploy+unknown_vol → raw=5+5-0=10(critical).
 		// lower_volatility(unk→low): 5+5-2=8(high) → drop 1; reduce_strength: 3+5-0=8 → drop 1; tie→prefer strength.
@@ -285,7 +285,7 @@ func TestAdditiveScorer_CheapestMove(t *testing.T) {
 				Distance:   DistanceCrossDeployUnit,
 				Volatility: VolatilityUnknown,
 			},
-			wantLabel: "reduce_strength",
+			wantLabel: moveReduceStrength,
 		},
 	}
 

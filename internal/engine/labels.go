@@ -89,7 +89,8 @@ func PairEvidence(g *graph.Graph, mm config.ModuleMap, wanted map[string]struct{
 }
 
 // buildClonePairSet converts clone clusters to a canonical module-pair key set
-// for CoA (connascence of algorithm) tagging in classify, plus the real
+// for the clone-driven classify paths (Symmetric-strength upgrade, cascade
+// exclusion, duplicated-knowledge pairing), plus the real
 // duplicated-code locations backing each pair (see clonePairEvidence).
 // Keys are "[a]\x00[b]" with a≤b (canonical sorted pair, from clone.ModulePairs).
 //

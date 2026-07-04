@@ -127,7 +127,7 @@ func connectedModulePairs(g *graph.Graph, mi moduleIndex) map[string]struct{} {
 		if !okF || !okT || fromMod == toMod {
 			continue
 		}
-		connected[connascencePairKey(fromMod, toMod)] = struct{}{}
+		connected[modulePairKey(fromMod, toMod)] = struct{}{}
 	}
 	return connected
 }

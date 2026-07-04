@@ -98,17 +98,6 @@ const (
 	DistanceBasisExternal   DistanceBasis = "declared_external" // target matched an external_systems entry
 )
 
-// Connascence is the degree of connascence detected on a cross-module edge.
-// Report-only vocabulary — never scored, never gates.
-type Connascence string
-
-// Connascence degree constants. ConnascenceNone means no connascence detected.
-const (
-	ConnascenceNone      Connascence = ""
-	ConnascenceType      Connascence = "type"      // CoT: struct/interface/field use
-	ConnascenceAlgorithm Connascence = "algorithm" // CoA: clone pair crosses module boundary
-)
-
 // Classification holds the Balanced Coupling assessment for one graph edge.
 // Strength and Distance are populated with high confidence;
 // Volatility and Explicitness are derived from config subdomain/public globs.
@@ -125,12 +114,6 @@ type Classification struct {
 	Severity            Severity
 	ContractRecommended bool      // generic-subdomain target reached via non-contract strength
 	Score               EdgeScore // numeric score; zero when not scored
-	// Connascence is the detected connascence degree for this edge.
-	// CoT (type) when the edge is a cross-module struct/interface/field use,
-	// derivable from model/contract strength with a SCIP hint.
-	// CoA (algorithm) when a clone pair crosses this module boundary.
-	// Report-only — not fed into the scorer or any gate decision.
-	Connascence Connascence `json:"connascence,omitempty"`
 	// DistanceBasis records which signal drove the composite distance.
 	// Report-only — not fed into severity or scoring.
 	DistanceBasis DistanceBasis `json:"distance_basis,omitempty"`

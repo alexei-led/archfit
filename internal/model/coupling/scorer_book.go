@@ -134,7 +134,12 @@ func (BookScorer) Score(c Classification) EdgeScore {
 }
 
 // bookCheapestMove returns the single dimension change that raises balance the
-// most (i.e. drops the severity band the most). Tie-break: strength > distance > volatility.
+// most (i.e. drops the severity band the most). Tie-break: strength > distance.
+//
+// Volatility is never offered as a move: strength and distance are design
+// properties an engineer can change, but volatility comes from the domain
+// (Ch9) — Ch11's remediation levers are reducing strength or distance only.
+// When neither single-rung move drops the band, no move is offered.
 func bookCheapestMove(c Classification, currentBand Severity) string {
 	if currentBand == SeverityNone {
 		return ""
@@ -158,17 +163,12 @@ func bookCheapestMove(c Classification, currentBand Severity) string {
 	if next, ok := bookLowerStrength(c.Strength); ok {
 		mod := c
 		mod.Strength = next
-		tryMove("reduce_strength", mod)
+		tryMove(moveReduceStrength, mod)
 	}
 	if next, ok := bookLowerDistance(c.Distance); ok {
 		mod := c
 		mod.Distance = next
-		tryMove("reduce_distance", mod)
-	}
-	if next, ok := lowerVolatility(c.Volatility); ok {
-		mod := c
-		mod.Volatility = next
-		tryMove(volatilityMoveLabel(c.Volatility), mod)
+		tryMove(moveReduceDistance, mod)
 	}
 
 	return bestLabel

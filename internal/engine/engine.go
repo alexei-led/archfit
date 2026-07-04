@@ -169,7 +169,8 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// resolve to blank module names in the diagnostic.
 	classifyCfg.ModuleMap = config.BuildModuleMap(classifyCfg.Modules)
 
-	// Thread clone pairs for CoA (connascence of algorithm) tagging — report-only.
+	// Thread clone pairs for the clone-driven classify paths: Symmetric-strength
+	// upgrade, volatility-cascade exclusion, duplicated-knowledge pairing.
 	// Placed after the ModuleMap rebuild so auto-registered members participate
 	// in cross-module clone-pair detection.
 	if len(in.Signals.Duplication.Clusters) > 0 {

@@ -70,14 +70,14 @@ func additiveCheapestMove(c Classification, currentBand Severity) string {
 	if next, ok := lowerStrength(c.Strength); ok {
 		mod := c
 		mod.Strength = next
-		tryMove("reduce_strength", mod)
+		tryMove(moveReduceStrength, mod)
 	}
 
 	// Try reducing distance by one level.
 	if next, ok := lowerDistance(c.Distance); ok {
 		mod := c
 		mod.Distance = next
-		tryMove("reduce_distance", mod)
+		tryMove(moveReduceDistance, mod)
 	}
 
 	// Try increasing volatility discount (i.e. lower volatility = more stable).

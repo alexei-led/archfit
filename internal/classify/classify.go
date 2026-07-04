@@ -434,7 +434,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 	}
 
 	// --- Symmetric upgrade from clone detection ---
-	// A cross-module clone pair (CoA / DRY violation) signals bidirectional
+	// A cross-module clone pair (a DRY violation) signals bidirectional
 	// coupling at implementation level — book ordinal 9 (Symmetric), between
 	// Functional (8) and Intrusive (10). Upgrade only when strength is still
 	// functional or unknown; config-authoritative (contract/intrusive) and
@@ -445,7 +445,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 		if len(c.CrossModuleClonePairs) > 0 {
 			if fromMod, okF := mi.moduleFor(fromPath); okF {
 				if toMod, okT := mi.moduleFor(toPath); okT {
-					pairKey := connascencePairKey(fromMod, toMod)
+					pairKey := modulePairKey(fromMod, toMod)
 					if _, hasPair := c.CrossModuleClonePairs[pairKey]; hasPair {
 						str = coupling.StrengthSymmetric
 						// The real duplicated-code locations (both sides), so the
@@ -482,7 +482,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 		dist != coupling.DistanceSameModule &&
 		isGenericSubdomain(toPath, mi, modules)
 
-	cl := coupling.Classification{
+	return coupling.Classification{
 		Strength:            str,
 		Distance:            dist,
 		Volatility:          vol,
@@ -491,20 +491,6 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 		DistanceBasis:       distBasis,
 		CloneLocations:      cloneLocations,
 	}
-
-	// --- Connascence ---
-	// Report-only descriptive vocabulary — never scored, never gates.
-	// Only meaningful for cross-boundary edges (same-module and unknown-distance
-	// edges carry no connascence). Severity is set in Run after scoring.
-	if dist != coupling.DistanceSameModule && dist != coupling.DistanceUnknown {
-		if fromMod, okF := mi.moduleFor(fromPath); okF {
-			if toMod, okT := mi.moduleFor(toPath); okT {
-				cl.Connascence = classifyConnascence(e, str, fromMod, toMod, c)
-			}
-		}
-	}
-
-	return cl
 }
 
 // resolveDistanceVolatility computes the composite distance (with the role cap
@@ -546,31 +532,8 @@ func resolveDistanceVolatility(fromPath, toPath, lang string, mi moduleIndex, c 
 	return dist, distBasis, classifyVolatilityEffective(toPath, mi, modules, effectiveVol)
 }
 
-// classifyConnascence derives the connascence degree for a cross-module edge.
-// CoA takes precedence: a clone pair crossing a module boundary is a stronger
-// signal than type-level coupling. CoT is assigned when the edge carries a
-// SCIP-sourced model or contract strength hint (struct/interface/field use).
-// Report-only — never fed into the scorer or gate.
-func classifyConnascence(e graph.Edge, str coupling.Strength, fromMod, toMod string, c config.ClassifyConfig) coupling.Connascence {
-	// CoA: clone pair crossing this module boundary.
-	if len(c.CrossModuleClonePairs) > 0 {
-		if _, ok := c.CrossModuleClonePairs[connascencePairKey(fromMod, toMod)]; ok {
-			return coupling.ConnascenceAlgorithm
-		}
-	}
-	// CoT: cross-module struct/interface/field use — signalled by a SCIP hint
-	// resolving to model or contract strength, or a direct model/contract label.
-	if e.StrengthHint == string(coupling.StrengthModel) ||
-		e.StrengthHint == string(coupling.StrengthContract) ||
-		str == coupling.StrengthModel ||
-		str == coupling.StrengthContract {
-		return coupling.ConnascenceType
-	}
-	return coupling.ConnascenceNone
-}
-
-// connascencePairKey returns the canonical sorted key for a module pair.
-func connascencePairKey(a, b string) string {
+// modulePairKey returns the canonical sorted key for a module pair.
+func modulePairKey(a, b string) string {
 	if a > b {
 		a, b = b, a
 	}
@@ -722,7 +685,7 @@ func moduleDistance(fromMod, toMod, lang string, modules map[string]config.Modul
 // Resolution outcomes are deliberately three-valued:
 //   - to-module unresolved → VolatilityUnknown (genuinely indeterminate).
 //   - to-module resolved but neither volatility nor subdomain declared →
-//     VolatilityUndeclared (a config gap; the scorer advises "declare", not "lower",
+//     VolatilityUndeclared (a config gap; scored conservatively as worst-case,
 //     and Lint() surfaces it).
 //   - otherwise → high/medium/low/frozen.
 //
@@ -790,11 +753,10 @@ func isGenericSubdomain(toPath string, mi moduleIndex, modules map[string]config
 // Strong strength set for propagation: Functional, Symmetric, Intrusive. An edge
 // between a module pair in clonePairs is excluded even if it otherwise qualifies:
 // a detected clone is accidental coupling (duplicated code, not a deliberate
-// integration point), and the book's volatility model is about a component's
-// essential rate of change — an incidental clone match between two modules says
-// nothing about either module's real volatility, so it must not flip a whole
-// module's effective volatility to high (see "Balancing Coupling in Software
-// Design" ch.9, "Essential vs. Accidental (In)Volatility").
+// integration point), and volatility in the book's model (Ch9) is a component's
+// essential rate of change, driven by its domain role — an incidental clone
+// match between two modules says nothing about either module's real volatility,
+// so it must not flip a whole module's effective volatility to high.
 func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, modules map[string]config.ModuleDef, cascadeEnabled bool, clonePairs map[string]struct{}) map[string]coupling.Volatility {
 	// Seed effective map from config-declared volatility.
 	effective := make(map[string]coupling.Volatility, len(modules))
@@ -821,7 +783,7 @@ func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, modules map[stri
 		if !okFrom || !okTo || fromMod == toMod {
 			continue
 		}
-		if _, isClonePair := clonePairs[connascencePairKey(fromMod, toMod)]; isClonePair {
+		if _, isClonePair := clonePairs[modulePairKey(fromMod, toMod)]; isClonePair {
 			continue // accidental coupling — must not trigger the cascade
 		}
 		// Read the BASE volatility of the to-module (order-independent).

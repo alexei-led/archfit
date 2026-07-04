@@ -203,7 +203,7 @@ func TestVolatilityCascade_ClonePairExcluded(t *testing.T) {
 		Modules:                  cascadeModules,
 		VolatilityCascadeEnabled: true,
 		CrossModuleClonePairs: map[string]struct{}{
-			// connascencePairKey's format: sorted module names joined by "\x00".
+			// modulePairKey's format: sorted module names joined by "\x00".
 			"notifications\x00payment": {},
 		},
 	}

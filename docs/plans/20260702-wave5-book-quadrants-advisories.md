@@ -44,10 +44,10 @@ Wave 5 of 7 from `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` (§1 deviations
 
 ### Task 3: cheapest_move honesty + dead-code removal
 
-- [ ] remove `lower_volatility` from cheapest_move levers (`scorer_book.go:121-160`, advisory wording in `advisories.go:62-64`); remaining levers: reduce strength, reduce distance — per Ch11; failing test first (no advisory may name volatility as the move)
-- [ ] delete the dead ConnascenceAlgorithm tagging (`classify.go:501-522`) — it reaches no output and encodes a book-contradicting inference; delete, do not comment out
-- [ ] fix the fabricated Ch9 citation comment (`classify.go:725-732,759-761`) to describe the actual reasoning without a fake section reference
-- [ ] regen goldens (cheapest_move text changes); commit
+- [x] remove `lower_volatility` from cheapest_move levers (`scorer_book.go:121-160`, advisory wording in `advisories.go:62-64`); remaining levers: reduce strength, reduce distance — per Ch11; failing test first (no advisory may name volatility as the move) — `bookCheapestMove` drops the volatility branch (both `lower_volatility` and `declare_volatility`); advisories copy the scorer label verbatim, so nothing downstream can name volatility; exhaustive `TestBookCheapestMove_NoVolatilityLever` (failed pre-fix on 50+ combos) + `TestBookCheapestMove_Cases`; legacy calibration scorers (additive/multiplicative, cmd/calibrate only) keep their levers
+- [x] delete the dead ConnascenceAlgorithm tagging (`classify.go:501-522`) — it reaches no output and encodes a book-contradicting inference; delete, do not comment out — whole dead Connascence facility removed (field, type, constants, `classifyConnascence`, classifyEdge block); `connascencePairKey` renamed `modulePairKey` (still used by clone upgrade/cascade/duplicated-knowledge); stale CoA comments updated in config/types.go, engine/labels.go, engine/engine.go
+- [x] fix the fabricated Ch9 citation comment (`classify.go:725-732,759-761`) to describe the actual reasoning without a fake section reference — `computeEffectiveVolatility` doc now states the essential-rate-of-change reasoning citing Ch9 generically, no invented section title
+- [x] regen goldens (cheapest_move text changes); commit — no stored golden carries cheapest_move text, so regen is a no-op (TestGolden green, byte-identical); `make test && make lint && make archfit` green, dogfood gate PASS 0 blocking
 
 ### Task 4: Volatility triage disclosure
 

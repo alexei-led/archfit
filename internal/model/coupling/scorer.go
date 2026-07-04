@@ -195,7 +195,16 @@ func clamp(v, lo, hi int) int {
 	return v
 }
 
-// Cheapest-move labels for a volatility change.
+// Cheapest-move labels for a strength or distance change — the two Ch11
+// remediation levers every scorer offers.
+const (
+	moveReduceStrength = "reduce_strength"
+	moveReduceDistance = "reduce_distance"
+)
+
+// Cheapest-move labels for a volatility change. Offered only by the legacy
+// calibration scorers (additive/multiplicative) — BookScorer never names
+// volatility as a move (Ch11 sanctions strength and distance changes only).
 const (
 	// moveDeclareVolatility is surfaced for an undeclared target: the honest move
 	// is to declare the module's subdomain/volatility so the tool can assess it

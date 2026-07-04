@@ -382,6 +382,82 @@ func TestBookScorer_BalanceRange(t *testing.T) {
 	}
 }
 
+// TestBookCheapestMove_NoVolatilityLever locks the Ch11 remediation levers:
+// strength and distance are design properties an engineer can change; volatility
+// comes from the domain, and the book never sanctions "make the domain more
+// stable" as a coupling fix. Sweep every concrete classification — no
+// cheapest_move may name volatility (neither lower_volatility nor
+// declare_volatility).
+func TestBookCheapestMove_NoVolatilityLever(t *testing.T) {
+	s := BookScorer{}
+	strengths := []Strength{StrengthContract, StrengthModel, StrengthFunctional, StrengthSymmetric, StrengthIntrusive}
+	distances := []Distance{DistanceSameModule, DistanceCrossModuleSameOwner, DistanceCrossModuleDiffOwner, DistanceCrossDeployUnit, DistanceExternal}
+	vols := []Volatility{VolatilityFrozen, VolatilityLow, VolatilityMedium, VolatilityHigh, VolatilityUndeclared, VolatilityUnknown}
+
+	for _, str := range strengths {
+		for _, dist := range distances {
+			for _, vol := range vols {
+				got := s.Score(Classification{Strength: str, Distance: dist, Volatility: vol})
+				switch got.CheapestMove {
+				case "", moveReduceStrength, moveReduceDistance:
+				default:
+					t.Errorf("cheapest move %q for %s/%s/%s — only strength/distance are Ch11 levers",
+						got.CheapestMove, str, dist, vol)
+				}
+			}
+		}
+	}
+}
+
+// TestBookCheapestMove_Cases pins representative lever outcomes, including two
+// combinations where the removed volatility lever used to win: they now fall to
+// the best remaining strength/distance move, or to no move at all when neither
+// single-rung change drops the band.
+func TestBookCheapestMove_Cases(t *testing.T) {
+	tests := []struct {
+		name string
+		c    Classification
+		want string
+	}{
+		{
+			// |8-9|=1, V=10 → balance 2 (critical). Strength→model: |3-9|=6 → 7 (low).
+			name: "strength drop wins",
+			c:    Classification{Strength: StrengthFunctional, Distance: DistanceCrossDeployUnit, Volatility: VolatilityHigh},
+			want: moveReduceStrength,
+		},
+		{
+			// |10-7|=3, V=10 → balance 4 (high). Distance→same_owner: |10-4|=6 → 7 (low).
+			name: "distance drop wins",
+			c:    Classification{Strength: StrengthIntrusive, Distance: DistanceCrossModuleDiffOwner, Volatility: VolatilityHigh},
+			want: moveReduceDistance,
+		},
+		{
+			// |8-7|=1, V=6 → balance 5 (medium). One-rung strength/distance moves both
+			// land on balance 5 again; only the (removed) volatility lever dropped the
+			// band. No move offered — honest silence beats an unsanctioned lever.
+			name: "formerly lower_volatility → no move",
+			c:    Classification{Strength: StrengthFunctional, Distance: DistanceCrossModuleDiffOwner, Volatility: VolatilityMedium},
+			want: "",
+		},
+		{
+			// |8-7|=1, V=10 → balance 2 (critical). Formerly declare_volatility (drop 3);
+			// now the best sanctioned move: strength→model → balance 5 (medium, drop 2).
+			name: "formerly declare_volatility → reduce_strength",
+			c:    Classification{Strength: StrengthFunctional, Distance: DistanceCrossModuleDiffOwner, Volatility: VolatilityUndeclared},
+			want: moveReduceStrength,
+		},
+	}
+
+	s := BookScorer{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := s.Score(tt.c).CheapestMove; got != tt.want {
+				t.Errorf("CheapestMove = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestDefaultScorer_IsBook verifies DefaultScorer returns BookScorer.
 func TestDefaultScorer_IsBook(t *testing.T) {
 	s := DefaultScorer()
