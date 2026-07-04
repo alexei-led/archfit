@@ -37,6 +37,9 @@ const (
 	// globPkgA and globPkgB are the module path globs shared by enrich fixtures.
 	globPkgA = "pkg/a/**"
 	globPkgB = "pkg/b/**"
+
+	rustSyntheticFrom = "crate::api"
+	rustSyntheticTo   = "crate::domain"
 )
 
 func enrichFixture() (*graph.Graph, coupling.Index, config.ModuleMap) {
@@ -98,6 +101,41 @@ func TestSelectRefinablePairs(t *testing.T) {
 	}
 	if len(p.SamplePaths) != 2 || !strings.Contains(p.SamplePaths[0], "pkg/a/") {
 		t.Errorf("samples = %v", p.SamplePaths)
+	}
+}
+
+func syntheticRustPairFixture(strength coupling.Strength) (*graph.Graph, coupling.Index, config.ModuleMap, config.ModuleMap) {
+	cfg := config.Config{Version: 1, Modules: map[string]config.ModuleDef{}}
+	from := graph.Node{Kind: graph.NodeKindModule, Path: rustSyntheticFrom, Language: graph.LangRust}
+	to := graph.Node{Kind: graph.NodeKindModule, Path: rustSyntheticTo, Language: graph.LangRust}
+	edge := graph.Edge{From: from.ID(), To: to.ID(), Kind: graph.EdgeKindImports, Language: graph.LangRust}
+	g := graph.Build([]graph.Facts{{
+		Language: graph.LangRust,
+		Nodes:    []graph.Node{from, to},
+		Edges:    []graph.Edge{edge},
+	}})
+	idx := coupling.Index{
+		edge.From + "\x00" + edge.To + "\x00" + string(edge.Kind): {
+			Strength: strength,
+			Distance: coupling.DistanceCrossModuleDiffOwner,
+		},
+	}
+	return g, idx, cfg.ForClassify().ModuleMap, enrichModuleMap(cfg, g)
+}
+
+func TestSelectRefinablePairs_UsesAugmentedSyntheticModules(t *testing.T) {
+	t.Parallel()
+	g, idx, originalMM, augmentedMM := syntheticRustPairFixture(coupling.StrengthFunctional)
+
+	if got := selectRefinablePairs(g, idx, originalMM, nil, nil); len(got) != 0 {
+		t.Fatalf("unaugmented module map selected pairs = %+v, want none", got)
+	}
+	pairs := selectRefinablePairs(g, idx, augmentedMM, nil, nil)
+	if len(pairs) != 1 {
+		t.Fatalf("augmented module map selected pairs = %+v, want synthetic Rust pair", pairs)
+	}
+	if pairs[0].From != rustSyntheticFrom || pairs[0].To != rustSyntheticTo {
+		t.Fatalf("pair = %s->%s, want %s->%s", pairs[0].From, pairs[0].To, rustSyntheticFrom, rustSyntheticTo)
 	}
 }
 

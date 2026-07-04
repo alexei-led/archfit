@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -320,6 +321,64 @@ func TestDiffCmd_ConfigInSubdir(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "CHANGE VS BASE") {
 		t.Errorf("--base output missing the delta section: %s", out)
+	}
+}
+
+func TestBaseWorktreeParent_LocksDeterministicDir(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	runner := &toolrun.RunnerMock{
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if cmd.Name == gitBinary && len(cmd.Args) >= 3 && cmd.Args[0] == "rev-parse" {
+				return toolrun.Output{Stdout: []byte(sha + "\n")}, nil
+			}
+			return toolrun.Output{}, nil
+		},
+	}
+	deps := &appDeps{Runner: runner}
+	dir := t.TempDir()
+
+	first, releaseFirst, err := baseWorktreeParent(context.Background(), deps, dir, diffBaseRef, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstReleased := false
+	t.Cleanup(func() {
+		if !firstReleased {
+			releaseFirst()
+		}
+	})
+	if want := filepath.Join(dir, ".archfit-cache", "worktrees", sha); first != want {
+		t.Fatalf("first worktree parent = %q, want %q", first, want)
+	}
+
+	done := make(chan struct{})
+	var second string
+	var releaseSecond func()
+	var secondErr error
+	go func() {
+		second, releaseSecond, secondErr = baseWorktreeParent(context.Background(), deps, dir, diffBaseRef, dir)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		t.Fatalf("second baseWorktreeParent returned before first lock was released: dir=%q err=%v", second, secondErr)
+	case <-time.After(3 * baseWorktreeLockPoll):
+	}
+
+	releaseFirst()
+	firstReleased = true
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("second baseWorktreeParent did not acquire lock after first release")
+	}
+	if secondErr != nil {
+		t.Fatal(secondErr)
+	}
+	defer releaseSecond()
+	if second != first {
+		t.Fatalf("second worktree parent = %q, want locked deterministic dir %q", second, first)
 	}
 }
 

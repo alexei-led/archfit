@@ -17,10 +17,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/engine"
@@ -106,7 +109,7 @@ func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, confi
 	// path does this via scope.snapScanRoot/os.SameFile; the delta path must too (F4).
 	headScanRoot = snapToGitRoot(gitRoot, headScanRoot)
 
-	tmpBase, err := baseWorktreeParent(ctx, deps, gitRoot, baseRef, filepath.Dir(configPath))
+	tmpBase, releaseWorktreeParent, err := baseWorktreeParent(ctx, deps, gitRoot, baseRef, filepath.Dir(configPath))
 	if err != nil {
 		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: create temp dir: %v", err)}
 	}
@@ -114,6 +117,7 @@ func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, confi
 	defer func() {
 		removeWorktree(ctx, deps.Runner, gitRoot, wtDir)
 		_ = os.RemoveAll(tmpBase)
+		releaseWorktreeParent()
 	}()
 
 	if aerr := addWorktree(ctx, deps.Runner, gitRoot, wtDir, baseRef); aerr != nil {
@@ -161,6 +165,7 @@ func runScoreSide(ctx context.Context, deps *appDeps, configPath, root string, n
 
 // baseWorktreeParent picks the parent directory for the base-side worktree
 // (wt/ is created inside it and the whole directory is removed after the run).
+// The returned release function must be called after cleanup.
 //
 // With the fact cache on, the path is a deterministic function of the resolved
 // base commit SHA: `<configDir>/.archfit-cache/worktrees/<sha>`. The base tree
@@ -169,14 +174,13 @@ func runScoreSide(ctx context.Context, deps *appDeps, configPath, root string, n
 // golang.memberKeys), so a repeat `--base <same-ref>` run reuses the same
 // absolute root and every base-side extractor subprocess becomes a cache hit
 // (Wave 6 Task 4). A leftover checkout from a crashed run is removed and the
-// path reused. `--no-cache`, an unresolvable ref, or any cleanup/mkdir failure
-// falls back to the historical random temp dir — correct, just uncached.
-//
-// Deliberate simplification: two concurrent `--base <same-ref>` runs on the
-// same checkout race on this directory (the second removes the first's live
-// worktree). Ceiling: one archfit process per checkout — the CLI's normal
-// operating mode; upgrade trigger: a reproduced concurrent-run failure.
-func baseWorktreeParent(ctx context.Context, deps *appDeps, gitRoot, baseRef, configDir string) (string, error) {
+// path reused. Concurrent runs for the same SHA take an inter-process lock
+// before removing/recreating the checkout, so one process cannot delete another
+// process's live base tree. `--no-cache`, an unresolvable ref, or any
+// cleanup/mkdir failure falls back to the historical random temp dir — correct,
+// just uncached.
+func baseWorktreeParent(ctx context.Context, deps *appDeps, gitRoot, baseRef, configDir string) (string, func(), error) {
+	releaseNoop := func() {}
 	if !deps.noCache {
 		sha, err := git.ResolveCommit(ctx, gitRoot, baseRef, deps.Runner)
 		// Absolutize against the process CWD — the same anchor loadConfig reads a
@@ -186,15 +190,51 @@ func baseWorktreeParent(ctx context.Context, deps *appDeps, gitRoot, baseRef, co
 		parent, aerr := filepath.Abs(baseWorktreesDir(configDir))
 		if err == nil && aerr == nil {
 			dir := filepath.Join(parent, sha)
-			removeWorktree(ctx, deps.Runner, gitRoot, filepath.Join(dir, "wt"))
-			if rerr := os.RemoveAll(dir); rerr == nil {
-				if merr := os.MkdirAll(dir, 0o750); merr == nil {
-					return dir, nil
+			release, lerr := lockBaseWorktree(ctx, dir+".lock")
+			if lerr == nil {
+				removeWorktree(ctx, deps.Runner, gitRoot, filepath.Join(dir, "wt"))
+				if rerr := os.RemoveAll(dir); rerr == nil {
+					if merr := os.MkdirAll(dir, 0o750); merr == nil {
+						return dir, release, nil
+					}
 				}
+				release()
+			} else if errors.Is(lerr, context.Canceled) || errors.Is(lerr, context.DeadlineExceeded) {
+				return "", releaseNoop, lerr
 			}
 		}
 	}
-	return os.MkdirTemp("", "archfit-base-*")
+	dir, err := os.MkdirTemp("", "archfit-base-*")
+	return dir, releaseNoop, err
+}
+
+const baseWorktreeLockPoll = 50 * time.Millisecond
+
+func lockBaseWorktree(ctx context.Context, lockPath string) (func(), error) {
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o750); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600) //#nosec G304 -- internal cache lock path derived from config dir + resolved commit SHA
+	if err != nil {
+		return nil, err
+	}
+	for {
+		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
+			return func() {
+				_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+				_ = f.Close()
+			}, nil
+		} else if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
+			_ = f.Close()
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			_ = f.Close()
+			return nil, ctx.Err()
+		case <-time.After(baseWorktreeLockPoll):
+		}
+	}
 }
 
 // snapToGitRoot rewrites headRoot so its gitRoot prefix uses gitRoot's canonical

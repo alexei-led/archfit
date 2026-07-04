@@ -107,6 +107,22 @@ func TestSelectAbstainedPairs(t *testing.T) {
 	}
 }
 
+func TestSelectAbstainedPairs_UsesAugmentedSyntheticModules(t *testing.T) {
+	t.Parallel()
+	g, idx, originalMM, augmentedMM := syntheticRustPairFixture(coupling.StrengthUnknown)
+
+	if pairs, total := selectAbstainedPairs(g, idx, originalMM, nil, nil); len(pairs) != 0 || total != 0 {
+		t.Fatalf("unaugmented module map selected pairs = %+v total=%d, want none", pairs, total)
+	}
+	pairs, total := selectAbstainedPairs(g, idx, augmentedMM, nil, nil)
+	if len(pairs) != 1 || total != 1 {
+		t.Fatalf("augmented module map selected pairs = %+v total=%d, want one synthetic Rust pair", pairs, total)
+	}
+	if pairs[0].From != rustSyntheticFrom || pairs[0].To != rustSyntheticTo {
+		t.Fatalf("pair = %s->%s, want %s->%s", pairs[0].From, pairs[0].To, rustSyntheticFrom, rustSyntheticTo)
+	}
+}
+
 func TestSelectAbstainedPairs_StaleApprovedCanBeRedrafted(t *testing.T) {
 	t.Parallel()
 	g, idx, mm := abstainedFixture()
@@ -249,12 +265,15 @@ func TestParseAbstainedResponse(t *testing.T) {
 		}
 	})
 
-	t.Run("unrequested pair skipped without error", func(t *testing.T) {
+	t.Run("unrequested pair skipped when requested pair is present", func(t *testing.T) {
 		t.Parallel()
-		text := `[{"from":"x","to":"y","strength":"model","confidence":"low","rationale":"hallucinated"}]`
+		text := `[
+			{"from":"a","to":"b","strength":"contract","confidence":"high","rationale":"published interface"},
+			{"from":"x","to":"y","strength":"model","confidence":"low","rationale":"hallucinated"}
+		]`
 		got, err := parseAbstainedResponse(text, batch)
-		if err != nil || len(got) != 0 {
-			t.Errorf("(%v, %v), want empty and no error", got, err)
+		if err != nil || len(got) != 1 {
+			t.Errorf("(%v, %v), want one requested draft and no error", got, err)
 		}
 	})
 
@@ -265,6 +284,8 @@ func TestParseAbstainedResponse(t *testing.T) {
 		"symmetric rejected": `[{"from":"a","to":"b","strength":"symmetric","confidence":"low","rationale":"r"}]`,
 		"invalid confidence": `[{"from":"a","to":"b","strength":"model","confidence":"certain","rationale":"r"}]`,
 		"missing rationale":  `[{"from":"a","to":"b","strength":"model","confidence":"low","rationale":" "}]`,
+		"missing requested":  `[{"from":"x","to":"y","strength":"model","confidence":"low","rationale":"hallucinated"}]`,
+		"duplicate request":  `[{"from":"a","to":"b","strength":"model","confidence":"low","rationale":"r"},{"from":"a","to":"b","strength":"functional","confidence":"medium","rationale":"r"}]`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

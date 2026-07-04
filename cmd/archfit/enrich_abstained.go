@@ -88,7 +88,7 @@ func (c *EnrichAbstainedCmd) runAbstainedEnrich(ctx context.Context, deps *appDe
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	mm := cfg.ForClassify().ModuleMap
+	mm := enrichModuleMap(cfg, captured.Graph)
 	labelEvidence := currentLabelEvidence(captured.Graph, mm, existing)
 	pairs, total := selectAbstainedPairs(captured.Graph, captured.Classifications, mm, existing, labelEvidence)
 	if len(pairs) == 0 {
@@ -361,7 +361,8 @@ var abstainedConfidences = map[string]struct{}{
 // schema. Unlike the refinement pass, a schema violation (invalid strength or
 // confidence, missing rationale) is an ERROR, not a silent skip — the caller
 // retries the batch once with the violation quoted back. Entries for pairs
-// that were never requested are hallucinations and are dropped without error.
+// that were never requested are hallucinations and are dropped without error,
+// but every requested pair must appear exactly once.
 func parseAbstainedResponse(text string, batch []abstainedPair) ([]labels.Label, error) {
 	text = trimJSONFences(text)
 
@@ -375,11 +376,17 @@ func parseAbstainedResponse(text string, batch []abstainedPair) ([]labels.Label,
 		requested[labels.Key(p.From, p.To)] = struct{}{}
 	}
 
+	seen := make(map[string]struct{}, len(batch))
 	out := make([]labels.Label, 0, len(entries))
 	for _, e := range entries {
-		if _, ok := requested[labels.Key(e.From, e.To)]; !ok {
+		key := labels.Key(e.From, e.To)
+		if _, ok := requested[key]; !ok {
 			continue
 		}
+		if _, dup := seen[key]; dup {
+			return nil, fmt.Errorf("entry %s->%s: duplicate response for requested pair", e.From, e.To)
+		}
+		seen[key] = struct{}{}
 		if _, ok := abstainedStrengths[e.Strength]; !ok {
 			return nil, fmt.Errorf("entry %s->%s: strength %q is not one of contract|model|functional|intrusive", e.From, e.To, e.Strength)
 		}
@@ -398,6 +405,11 @@ func parseAbstainedResponse(text string, batch []abstainedPair) ([]labels.Label,
 			Provenance: labels.ProvenanceLLM,
 			Confidence: e.Confidence,
 		})
+	}
+	for _, p := range batch {
+		if _, ok := seen[labels.Key(p.From, p.To)]; !ok {
+			return nil, fmt.Errorf("missing response for requested pair %s->%s", p.From, p.To)
+		}
 	}
 	return out, nil
 }

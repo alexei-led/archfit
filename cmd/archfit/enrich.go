@@ -158,7 +158,7 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	mm := cfg.ForClassify().ModuleMap
+	mm := enrichModuleMap(cfg, captured.Graph)
 	labelEvidence := currentLabelEvidence(captured.Graph, mm, existing)
 	pairs := selectRefinablePairs(captured.Graph, captured.Classifications, mm, existing, labelEvidence)
 	if len(pairs) == 0 {
@@ -634,6 +634,10 @@ func currentLabelEvidence(g *graph.Graph, mm config.ModuleMap, existing []labels
 		}
 	}
 	return engine.PairEvidence(g, mm, wanted)
+}
+
+func enrichModuleMap(cfg config.Config, g *graph.Graph) config.ModuleMap {
+	return engine.AugmentClassifyConfig(g, cfg.ForClassify()).ModuleMap
 }
 
 func effectiveApprovedPairs(existing []labels.Label, evidence map[string]string) map[string]struct{} {

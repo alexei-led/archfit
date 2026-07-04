@@ -70,6 +70,33 @@ type RunInput struct {
 	ConfigHash string
 }
 
+// AugmentClassifyConfig returns cfg with the same synthetic-module augmentation
+// and ModuleMap rebuild that Run applies before label freshness, classification,
+// advisories, and diagnostics.
+func AugmentClassifyConfig(g *graph.Graph, cfg config.ClassifyConfig) config.ClassifyConfig {
+	// Register auto-discovered module-graph nodes (Rust "<crate>::<mod>") as modules so
+	// classify can resolve their distance/volatility; otherwise their edges are
+	// distance-unknown and coupling_balance/encapsulation never see them. No-op for
+	// Go/TS/Python (their nodes are already configured; the "::" gate excludes them).
+	cfg.Modules = classify.AugmentModulesFromGraph(g, cfg.Modules)
+	// Register Go workspace members (≥2-member gate) as synthetic modules so
+	// cross-member edges classify with a real Distance for coupling_balance. No-op for
+	// single-module repos and archfit's own self-scan (1 surviving member after exclusion).
+	cfg.Modules = classify.AugmentGoWorkspaceModules(g, cfg.Modules)
+	// Bind crate-level Rust nodes (bare `package:<crate>` names) to the module whose
+	// path glob covers the crate's directory, so multi-crate workspaces configured with
+	// "crates/<crate>/**" globs measure coupling instead of classifying every cross-crate
+	// edge as external. No-op for bare-name configs (tokio/yazi) and single-crate repos.
+	cfg.Modules = classify.AugmentCargoCrateNodes(g, cfg.Modules)
+
+	// Rebuild the ModuleMap from the augmented Modules slice so that all secondary
+	// consumers see auto-registered members. The Augment* calls above mutate
+	// cfg.Modules but NOT cfg.ModuleMap, which was built at config-view construction
+	// time.
+	cfg.ModuleMap = config.BuildModuleMap(cfg.Modules)
+	return cfg
+}
+
 // extractResult holds the outputs of the extract stage.
 type extractResult struct {
 	g           *graph.Graph
@@ -139,30 +166,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	}
 
 	// --- Stage 3: Classify ---
-	classifyCfg := in.Classify
-	// Register auto-discovered module-graph nodes (Rust "<crate>::<mod>") as modules so
-	// classify can resolve their distance/volatility; otherwise their edges are
-	// distance-unknown and coupling_balance/encapsulation never see them. No-op for
-	// Go/TS/Python (their nodes are already configured; the "::" gate excludes them).
-	classifyCfg.Modules = classify.AugmentModulesFromGraph(ex.g, classifyCfg.Modules)
-	// Register Go workspace members (≥2-member gate) as synthetic modules so
-	// cross-member edges classify with a real Distance for coupling_balance. No-op for
-	// single-module repos and archfit's own self-scan (1 surviving member after exclusion).
-	classifyCfg.Modules = classify.AugmentGoWorkspaceModules(ex.g, classifyCfg.Modules)
-	// Bind crate-level Rust nodes (bare `package:<crate>` names) to the module whose
-	// path glob covers the crate's directory, so multi-crate workspaces configured with
-	// "crates/<crate>/**" globs measure coupling instead of classifying every cross-crate
-	// edge as external. No-op for bare-name configs (tokio/yazi) and single-crate repos.
-	classifyCfg.Modules = classify.AugmentCargoCrateNodes(ex.g, classifyCfg.Modules)
-
-	// Rebuild the ModuleMap from the augmented Modules slice so that all
-	// secondary consumers (buildRuntimeAsync, buildDynamicImports, diagnostic
-	// module-label resolution, clone-pair evidence) see auto-registered members.
-	// The two Augment* calls above mutate classifyCfg.Modules but NOT
-	// classifyCfg.ModuleMap (which was built at config-view construction time);
-	// without this rebuild, Go workspace members and Rust sub-modules would
-	// resolve to blank module names in the diagnostic.
-	classifyCfg.ModuleMap = config.BuildModuleMap(classifyCfg.Modules)
+	classifyCfg := AugmentClassifyConfig(ex.g, in.Classify)
 
 	// Pinned coupling labels refine strength classification (human/tool: config
 	// globs > approved labels > extractor hint; llm: fills only cells all static
