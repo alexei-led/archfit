@@ -4,21 +4,23 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
 )
 
 // hashSkipDirs are directory names never part of any extractor's input scope:
-// dependency trees, build output, and interpreter caches. Pruning them by name
-// keeps the input-tree walk fast on large repos; correctness still comes from
-// the caller's exclusion globs, which are matched per file below. Dot-dirs
-// (.git, .archfit-cache, .venv, …) are pruned unconditionally.
+// VCS metadata, archfit's own cache, dependency trees, build output, and
+// interpreter caches. Do not prune every dot-dir here: project dot directories
+// such as .storybook or .cargo can be real analyzer inputs and must invalidate
+// warm fact-cache hits.
 var hashSkipDirs = map[string]struct{}{
-	"node_modules": {},
-	"target":       {},
-	"__pycache__":  {},
-	"venv":         {},
+	".archfit-cache": {},
+	".git":           {},
+	".venv":          {},
+	"node_modules":   {},
+	"target":         {},
+	"__pycache__":    {},
+	"venv":           {},
 }
 
 // ListInputs walks root and returns the sorted slash-relative paths of the
@@ -38,9 +40,6 @@ func ListInputs(root string, match func(rel string) bool, exclude []string) []st
 		if d.IsDir() {
 			if path == root {
 				return nil
-			}
-			if strings.HasPrefix(name, ".") {
-				return filepath.SkipDir
 			}
 			if _, skip := hashSkipDirs[name]; skip {
 				return filepath.SkipDir

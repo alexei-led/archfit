@@ -104,12 +104,11 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			value = capInt(value, 60) // critical-band coupling present (poor balance)
 		}
 
-		// LLM-provenance labels lower confidence by one band when non-high-confidence
-		// LLM fills account for ≥20% of scored edges. Count applied edges, not raw
-		// label rows: one module-pair label can classify many edges, and some approved
-		// LLM labels may be beaten by static precedence.
-		llmConfLowered := summary.LLMLowConfidenceEdges > 0 && summary.Scored > 0 &&
-			summary.LLMLowConfidenceEdges*100/summary.Scored >= 20
+		// LLM-provenance labels lower confidence by one band when a non-high-confidence
+		// LLM label actually filled at least one scored edge. Count applied edges, not
+		// raw label rows: one module-pair label can classify many edges, and some
+		// approved LLM labels may be beaten by static precedence.
+		llmConfLowered := summary.LLMLowConfidenceEdges > 0
 		if llmConfLowered {
 			conf = lowerConf(conf)
 		}

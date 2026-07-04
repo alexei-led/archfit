@@ -295,15 +295,12 @@ func AugmentCargoCrateNodes(g *graph.Graph, modules map[string]config.ModuleDef)
 // ancestorByKey finds the nearest config-declared ancestor of a Rust
 // module-graph node (key uses "::" separator). It returns the ModuleDef of the
 // config module whose key is the longest "::"-prefix of path, or the zero
-// ModuleDef if none. Only modules that declare an Owner are considered
-// ancestor candidates — an owner-less module carries no inheritable identity.
+// ModuleDef if none. Owner is not required: an ownerless parent can still donate
+// volatility, subdomain, layer, and deploy-unit metadata.
 func ancestorByKey(path string, modules map[string]config.ModuleDef) config.ModuleDef {
 	var best config.ModuleDef
 	bestLen := 0
 	for name, def := range modules {
-		if def.Owner == "" {
-			continue
-		}
 		// A module is an ancestor when path starts with name+"::" or equals name.
 		prefix := name + "::"
 		if path == name || strings.HasPrefix(path, prefix) {
@@ -322,15 +319,13 @@ func ancestorByKey(path string, modules map[string]config.ModuleDef) config.Modu
 // longest directory prefix with relDir, or the zero ModuleDef if none. This is
 // a fallback for the case where no module glob fully covers the child
 // (otherwise the caller would have skipped it as already-covered), but a
-// parent-directory module may still donate its attributes. Only modules that
-// declare an Owner are considered ancestor candidates.
+// parent-directory module may still donate its attributes. Owner is not
+// required: an ownerless parent can still donate volatility, subdomain, layer,
+// and deploy-unit metadata.
 func ancestorByPath(relDir string, modules map[string]config.ModuleDef) config.ModuleDef {
 	var best config.ModuleDef
 	bestLen := 0
 	for _, def := range modules {
-		if def.Owner == "" {
-			continue
-		}
 		for _, p := range def.Paths {
 			// Strip trailing glob suffixes to get the directory root.
 			dir := strings.TrimRight(strings.TrimSuffix(strings.TrimSuffix(p, "**"), "/"), "/")

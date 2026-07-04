@@ -414,11 +414,11 @@ func TestCouplingBalance_LLMProvenance_LowersConfidence(t *testing.T) {
 			wantConf: ConfidenceHigh,
 		},
 		{
-			name:        "applied llm edges <20% → confidence unaffected",
+			name:        "single applied non-high llm edge lowers confidence",
 			scored:      10,
 			llmEdges:    1,
 			llmApproved: 1,
-			wantConf:    ConfidenceHigh,
+			wantConf:    ConfidenceMedium,
 		},
 		{
 			name:        "one label can apply to enough edges to lower confidence",

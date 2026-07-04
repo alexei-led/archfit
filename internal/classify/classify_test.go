@@ -32,6 +32,9 @@ const (
 	goModuleB = "example.com/b"
 	relDirA   = "services/a"
 	relDirB   = "services/b"
+
+	parentModuleKey = "parent"
+	rustCrateExtra  = "extra"
 )
 
 // makeGraph builds a minimal sealed Graph from a slice of edges.
@@ -1655,7 +1658,7 @@ func TestAugmentModulesFromGraph_OwnerInheritance(t *testing.T) {
 	// cargo-modules graph produces submodule nodes "mycrate::a" and "mycrate::b"
 	// which are NOT in config — they should be synthesised and inherit owner "team-x".
 	configMods := map[string]config.ModuleDef{
-		"mycrate": {Paths: []string{"mycrate/**"}, Owner: ownerTeamX},
+		crateName: {Paths: []string{crateName + "/**"}, Owner: ownerTeamX},
 	}
 	e := graph.Edge{
 		From:         "package:mycrate::a",
@@ -1811,9 +1814,9 @@ func TestAugmentFunctions_InheritAllAncestorAttributes(t *testing.T) {
 		// Parent config module uses a literal (non-wildcard) path so it does
 		// NOT fully cover the member directory via ModuleFor (so the member
 		// still gets auto-registered), but its stripped directory IS a path
-		// prefix of the member's RelDir, so ancestorOwnerByPath can donate —
+		// prefix of the member's RelDir, so ancestorByPath can donate —
 		// mirrors the documented "partial ancestor donates owner" fallback.
-		configMods := map[string]config.ModuleDef{"parent": {
+		configMods := map[string]config.ModuleDef{parentModuleKey: {
 			Paths: []string{"services"}, Owner: want.Owner, Volatility: want.Volatility,
 			Subdomain: want.Subdomain, Layer: want.Layer, DeployUnit: want.DeployUnit,
 		}}
@@ -1835,26 +1838,104 @@ func TestAugmentFunctions_InheritAllAncestorAttributes(t *testing.T) {
 		// Same literal-parent-path trick as above: "crates" is a directory
 		// prefix of the crate's root ("crates/extra") but does not itself
 		// cover "crates/extra/x" via ModuleFor, so the crate falls through to
-		// synthetic registration and donation via ancestorOwnerByPath.
-		configMods := map[string]config.ModuleDef{"parent": {
+		// synthetic registration and donation via ancestorByPath.
+		configMods := map[string]config.ModuleDef{parentModuleKey: {
 			Paths: []string{"crates"}, Owner: want.Owner, Volatility: want.Volatility,
 			Subdomain: want.Subdomain, Layer: want.Layer, DeployUnit: want.DeployUnit,
 		}}
 		g := graph.Build([]graph.Facts{{
 			Nodes: []graph.Node{
-				{Kind: graph.NodeKindPackage, Path: "extra"},
+				{Kind: graph.NodeKindPackage, Path: rustCrateExtra},
 				{Kind: graph.NodeKindPackage, Path: "other"},
 			},
 			Language:   langRust,
-			CrateRoots: []graph.CrateRoot{{Dir: "crates/extra", Name: "extra"}},
+			CrateRoots: []graph.CrateRoot{{Dir: "crates/extra", Name: rustCrateExtra}},
 		}})
 
 		out := classify.AugmentCargoCrateNodes(g, configMods)
-		crateMod, ok := out["extra"]
+		crateMod, ok := out[rustCrateExtra]
 		if !ok {
-			t.Fatalf("synthetic module for crate %q not registered; out = %v", "extra", out)
+			t.Fatalf("synthetic module for crate %q not registered; out = %v", rustCrateExtra, out)
 		}
-		assertInherited(t, "extra", crateMod, want)
+		assertInherited(t, rustCrateExtra, crateMod, want)
+	})
+}
+
+func TestAugmentFunctions_InheritOwnerlessAncestorAttributes(t *testing.T) {
+	want := wantInherited{
+		Volatility: extVolMedium,
+		Subdomain:  subdomainCore,
+		Layer:      "domain",
+		DeployUnit: "svc-ownerless",
+	}
+	parent := config.ModuleDef{
+		Volatility: want.Volatility,
+		Subdomain:  want.Subdomain,
+		Layer:      want.Layer,
+		DeployUnit: want.DeployUnit,
+	}
+
+	t.Run("AugmentModulesFromGraph (Rust submodule)", func(t *testing.T) {
+		configMods := map[string]config.ModuleDef{crateName: parent}
+		e := graph.Edge{
+			From: "package:" + crateName, To: "package:" + crateName + "::child",
+			Kind: graph.EdgeKindDependsOn, Language: langRust, StrengthHint: hintFunctional,
+		}
+		g := makeGraph([]graph.Edge{e})
+
+		out := classify.AugmentModulesFromGraph(g, configMods)
+		child, ok := out[crateName+"::child"]
+		if !ok {
+			t.Fatalf("synthetic module %q not registered", crateName+"::child")
+		}
+		assertInherited(t, crateName+"::child", child, want)
+	})
+
+	t.Run("AugmentGoWorkspaceModules (workspace member)", func(t *testing.T) {
+		configMods := map[string]config.ModuleDef{parentModuleKey: {
+			Paths:      []string{"services"},
+			Volatility: want.Volatility,
+			Subdomain:  want.Subdomain,
+			Layer:      want.Layer,
+			DeployUnit: want.DeployUnit,
+		}}
+		goMods := []graph.GoModule{
+			{Path: goModuleA, RelDir: relDirA},
+			{Path: goModuleB, RelDir: relDirB},
+		}
+		g := buildGoWorkspaceGraph(goMods, nil)
+
+		out := classify.AugmentGoWorkspaceModules(g, configMods)
+		member, ok := out[goModuleA]
+		if !ok {
+			t.Fatalf("synthetic module for member %q not registered; out = %v", goModuleA, out)
+		}
+		assertInherited(t, goModuleA, member, want)
+	})
+
+	t.Run("AugmentCargoCrateNodes (uncovered crate)", func(t *testing.T) {
+		configMods := map[string]config.ModuleDef{parentModuleKey: {
+			Paths:      []string{"crates"},
+			Volatility: want.Volatility,
+			Subdomain:  want.Subdomain,
+			Layer:      want.Layer,
+			DeployUnit: want.DeployUnit,
+		}}
+		g := graph.Build([]graph.Facts{{
+			Nodes: []graph.Node{
+				{Kind: graph.NodeKindPackage, Path: rustCrateExtra},
+				{Kind: graph.NodeKindPackage, Path: "other"},
+			},
+			Language:   langRust,
+			CrateRoots: []graph.CrateRoot{{Dir: "crates/extra", Name: rustCrateExtra}},
+		}})
+
+		out := classify.AugmentCargoCrateNodes(g, configMods)
+		crateMod, ok := out[rustCrateExtra]
+		if !ok {
+			t.Fatalf("synthetic module for crate %q not registered; out = %v", rustCrateExtra, out)
+		}
+		assertInherited(t, rustCrateExtra, crateMod, want)
 	})
 }
 

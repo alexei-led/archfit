@@ -276,3 +276,31 @@ func TestListInputs_Symlinks(t *testing.T) {
 		t.Error("directory symlink in inputs must veto hashing, not skip")
 	}
 }
+
+func TestListInputs_IncludesProjectDotDirectories(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+
+	write(".storybook/main.ts", "export default {}")
+	write(".cargo/config.toml", "[build]\n")
+	write(".git/config", "[core]\n")
+	write(".archfit-cache/facts/ts/blob.json", "{}")
+	write(".venv/site.py", "cache")
+	write("src/app.ts", "export const app = 1")
+
+	got := ListInputs(root, MatchExts([]string{".ts", ".toml"}, nil), nil)
+	want := []string{".cargo/config.toml", ".storybook/main.ts", "src/app.ts"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("ListInputs = %v, want %v", got, want)
+	}
+}
