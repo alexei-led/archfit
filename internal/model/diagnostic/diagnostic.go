@@ -316,6 +316,35 @@ type ClassifiedEdgeSummary struct {
 	// dimension confidence by one band — they are human-approved but not human-judged.
 	// Zero means no LLM-provenance labels are in effect.
 	LLMApproved int `json:"llm_approved,omitempty"`
+	// VolatilityProvenance counts MODULES (not edges) by the source of their
+	// volatility. Nil when no modules were resolved.
+	VolatilityProvenance *VolatilityProvenance `json:"volatility_provenance,omitempty"`
+}
+
+// VolatilityProvenance counts modules by where their volatility came from:
+// config-declared (an explicit `volatility:` field or subdomain mapping),
+// inherited by an auto-registered synthetic module from its nearest declared
+// ancestor, or raised by the opt-in volatility cascade (an overlay on top of
+// the base source). Undeclared is the honest remainder — no volatility from
+// any source. Disclosure-only: a repo whose edges all carry the same
+// volatility must be visibly uniform-by-inheritance (one declared ancestor
+// fanned out to N synthetic submodules), not mistaken for N measured
+// judgments. Volatility comes from the domain (book Ch9), never from commit
+// history, so archfit never derives differentiation — it discloses where the
+// labels came from. Never consumed by the balance value or the gate.
+type VolatilityProvenance struct {
+	// Declared counts config-declared modules whose volatility comes from their
+	// own `volatility:` field or subdomain mapping.
+	Declared int `json:"declared"`
+	// Inherited counts synthetic (auto-registered) modules whose volatility was
+	// inherited from the nearest config-declared ancestor.
+	Inherited int `json:"inherited"`
+	// Cascade counts modules whose EFFECTIVE volatility the opt-in cascade pass
+	// raised above their base level. Overlays Declared/Inherited/Undeclared.
+	Cascade int `json:"cascade"`
+	// Undeclared counts modules with no volatility from any source (scored
+	// conservatively by the book scorer, never guessed).
+	Undeclared int `json:"undeclared"`
 }
 
 // LocalCouplingModule summarises the scored same-module edges of one module —

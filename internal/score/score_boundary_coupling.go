@@ -132,6 +132,16 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			dim.Evidence = append(dim.Evidence,
 				fmt.Sprintf("%d external/library edges excluded (external deps are not internal coupling seams)", summary.External))
 		}
+		// Volatility triage disclosure: module counts by volatility source, so a
+		// uniform-volatility repo reads as uniform-by-inheritance, not measured.
+		if vp := summary.VolatilityProvenance; vp != nil {
+			line := fmt.Sprintf("volatility provenance (modules): declared: %d, inherited: %d, cascade: %d",
+				vp.Declared, vp.Inherited, vp.Cascade)
+			if vp.Undeclared > 0 {
+				line += fmt.Sprintf(", undeclared: %d", vp.Undeclared)
+			}
+			dim.Evidence = append(dim.Evidence, line)
+		}
 		if llmConfLowered {
 			dim.Evidence = append(dim.Evidence,
 				fmt.Sprintf("llm-provenance labels in effect: %d (confidence lowered)", summary.LLMApproved))

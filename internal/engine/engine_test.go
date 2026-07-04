@@ -510,6 +510,11 @@ func TestRun_DiagnosticShape(t *testing.T) {
 	if len(d.Metrics) != 5 {
 		t.Errorf("len(metrics)=%d, want 5", len(d.Metrics))
 	}
+	// Volatility triage disclosure wiring: modules are configured (cannedConfig),
+	// so the module volatility source counts must reach the summary.
+	if d.ClassifiedEdges == nil || d.ClassifiedEdges.VolatilityProvenance == nil {
+		t.Errorf("classified_edges.volatility_provenance is nil, want module volatility source counts")
+	}
 }
 
 // TestRun_PrimaryExtractorTools_Forwarded asserts the injected primary-extractor

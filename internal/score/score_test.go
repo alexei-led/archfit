@@ -502,6 +502,58 @@ func TestCouplingBalance_DeclaredExternalEvidence(t *testing.T) {
 	})
 }
 
+// TestCouplingBalance_VolatilityProvenanceEvidence: the evidence string must
+// disclose module volatility provenance counts (declared/inherited/cascade) so
+// a uniform-volatility repo is visibly uniform-by-inheritance, not measured.
+func TestCouplingBalance_VolatilityProvenanceEvidence(t *testing.T) {
+	nonDegen := nonDegenMetricIndex()
+	base := func() *diagnostic.ClassifiedEdgeSummary {
+		return &diagnostic.ClassifiedEdgeSummary{
+			Total: 10, Scored: 10, MeanBalance: 9.0,
+			BySeverity: map[string]int{sevLow: 10},
+		}
+	}
+
+	t.Run("provenance counts disclosed in evidence", func(t *testing.T) {
+		sum := base()
+		sum.VolatilityProvenance = &diagnostic.VolatilityProvenance{Declared: 2, Inherited: 179}
+		got := couplingBalance(nil, nonDegen, sum)
+		found := false
+		for _, ev := range got.Evidence {
+			if strings.Contains(ev, "declared: 2, inherited: 179, cascade: 0") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected volatility provenance evidence line, got: %v", got.Evidence)
+		}
+	})
+
+	t.Run("undeclared remainder disclosed when nonzero", func(t *testing.T) {
+		sum := base()
+		sum.VolatilityProvenance = &diagnostic.VolatilityProvenance{Declared: 1, Cascade: 3, Undeclared: 4}
+		got := couplingBalance(nil, nonDegen, sum)
+		found := false
+		for _, ev := range got.Evidence {
+			if strings.Contains(ev, "declared: 1, inherited: 0, cascade: 3, undeclared: 4") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected undeclared count in provenance evidence, got: %v", got.Evidence)
+		}
+	})
+
+	t.Run("no provenance line when counts absent", func(t *testing.T) {
+		got := couplingBalance(nil, nonDegen, base())
+		for _, ev := range got.Evidence {
+			if strings.Contains(ev, "volatility provenance") {
+				t.Errorf("did not expect provenance line, got: %v", got.Evidence)
+			}
+		}
+	})
+}
+
 func TestCouplingBalance_ExternalEdgesExcluded(t *testing.T) {
 	nonDegen := nonDegenMetricIndex()
 

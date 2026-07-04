@@ -34,7 +34,13 @@
     "mean_balance": 8,
     "same_module": 0,
     "scored": 1,
-    "total": 1
+    "total": 1,
+    "volatility_provenance": {
+      "cascade": 0,
+      "declared": 2,
+      "inherited": 0,
+      "undeclared": 0
+    }
   },
   "config_hash": "e686c0a4ca1ab9671d3ddc6d48da64e60ff9d2fd49d1cf9573c7e4c15850d826",
   "coupling_balance": {
@@ -43,7 +49,8 @@
     "evidence": [
       "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
       "scored fraction: 100% (1 scored, 0 abstained, internal only)",
-      "critical-band edges: 0 (0 distributed-monolith: critical at high distance)"
+      "critical-band edges: 0 (0 distributed-monolith: critical at high distance)",
+      "volatility provenance (modules): declared: 2, inherited: 0, cascade: 0"
     ],
     "name": "coupling_balance",
     "summary": "mean book balance 8.0/10 across 1 scored internal cross-boundary edges",
@@ -197,7 +204,8 @@
         "evidence": [
           "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
           "scored fraction: 100% (1 scored, 0 abstained, internal only)",
-          "critical-band edges: 0 (0 distributed-monolith: critical at high distance)"
+          "critical-band edges: 0 (0 distributed-monolith: critical at high distance)",
+          "volatility provenance (modules): declared: 2, inherited: 0, cascade: 0"
         ],
         "name": "coupling_balance",
         "summary": "mean book balance 8.0/10 across 1 scored internal cross-boundary edges",

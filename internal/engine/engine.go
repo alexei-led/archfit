@@ -307,6 +307,11 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 
 	classifiedEdges := buildClassifiedEdgeSummary(couplingIdx)
 	classifiedEdges.LLMApproved = llmApprovedCount
+	// Volatility triage disclosure: count modules by volatility source (declared /
+	// inherited / cascade / undeclared) so coupling_balance can say whether a
+	// uniform-volatility repo is measured or uniform-by-inheritance. in.Classify
+	// still holds the PRE-augmentation module map (Augment* are copy-on-write).
+	classifiedEdges.VolatilityProvenance = classify.ComputeVolatilityProvenance(ex.g, in.Classify.Modules, classifyCfg)
 
 	// Local complexity (book Ch10): per-module rollup of scored same-module
 	// edges. Report-only — never enters coupling_balance or the verdict.

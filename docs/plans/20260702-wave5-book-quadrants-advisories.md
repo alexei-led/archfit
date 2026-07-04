@@ -51,10 +51,10 @@ Wave 5 of 7 from `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` (§1 deviations
 
 ### Task 4: Volatility triage disclosure
 
-- [ ] failing test: coupling_balance evidence string discloses volatility provenance counts — `declared: N, inherited: M, cascade: K` — so a uniform-volatility repo is visibly uniform-by-inheritance, not measured
-- [ ] allow per-module volatility override to reach synthetic modules: config `modules:` entries whose `paths:` glob matches a synthetic module key (e.g. `mycrate::submod`) apply their `volatility:`; test on a herdr-shaped fixture (parent declared high, one submodule overridden low)
-- [ ] do NOT invent differentiation (no churn-derived volatility — book: volatility comes from the domain, not commit history); the LLM-assisted role assignment is Wave 7's job
-- [ ] regen goldens; `make test && make lint && make archfit`; commit
+- [x] failing test: coupling_balance evidence string discloses volatility provenance counts — `declared: N, inherited: M, cascade: K` — so a uniform-volatility repo is visibly uniform-by-inheritance, not measured — `diagnostic.VolatilityProvenance` (module counts, `classified_edges.volatility_provenance`), `classify.ComputeVolatilityProvenance` (pre- vs post-augmentation module maps + cascade overlay recompute), evidence line appends `, undeclared: U` when nonzero; `TestCouplingBalance_VolatilityProvenanceEvidence` (failed pre-fix) + `TestComputeVolatilityProvenance` + wiring assert in `TestRun_DiagnosticShape`
+- [x] allow per-module volatility override to reach synthetic modules: config `modules:` entries whose `paths:` glob matches a synthetic module key (e.g. `mycrate::submod`) apply their `volatility:`; test on a herdr-shaped fixture (parent declared high, one submodule overridden low) — already reachable: an exact `::` glob is maximally specific in `ModuleMap.ModuleFor`, so it pre-empts synthetic registration in `AugmentModulesFromGraph` and wins edge resolution; locked by `TestSyntheticModuleVolatilityOverride_HerdrShape` (override low, sibling keeps inherited high)
+- [x] do NOT invent differentiation (no churn-derived volatility — book: volatility comes from the domain, not commit history); the LLM-assisted role assignment is Wave 7's job — disclosure-only change; constraint stated on the `VolatilityProvenance` doc comment
+- [x] regen goldens; `make test && make lint && make archfit`; commit — only the two byte-identical CLI baselines changed (new `volatility_provenance` block + evidence line; diff inspected); TestGolden double-run green; full suite + lint + dogfood gate PASS 0 blocking; self-scan discloses `declared: 39, inherited: 0, cascade: 14`
 
 ### Task 5: Corpus verification (four languages)
 
