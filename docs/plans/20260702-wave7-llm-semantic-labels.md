@@ -65,8 +65,8 @@ Two semantic gaps, both measured on the corpus:
 
 ### Task 5: [Final] Documentation
 
-- [ ] `docs/guide/`: the semantic-labels workflow (enrich → review → pin → committed labels), cost/token expectations, precedence table (config-authoritative > compiler-grade > SCIP > llm label > heuristic > abstain)
-- [ ] update findings backlog item 7; changelog entry
+- [x] `docs/guide/`: the semantic-labels workflow (enrich → review → pin → committed labels), cost/token expectations, precedence table (config-authoritative > compiler-grade > SCIP > llm label > heuristic > abstain)
+- [x] update findings backlog item 7; changelog entry
 
 ## Technical Details
 

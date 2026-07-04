@@ -7,6 +7,7 @@ archfit doctor
 archfit config init --root . --output .archfit.yaml
 archfit config init --llm --root .
 archfit config update --config .archfit.yaml
+archfit config update --config .archfit.yaml --llm
 archfit config update --config .archfit.yaml --apply
 archfit                                                      # report-only, default text output
 archfit analyze --gate --config .archfit.yaml --full         # CI gate
@@ -20,6 +21,7 @@ archfit analyze --llm --config .archfit.yaml
 archfit baseline --full --config .archfit.yaml
 archfit explain <finding-id-prefix> --config .archfit.yaml
 archfit config enrich labels --config .archfit.yaml
+archfit config enrich abstained --config .archfit.yaml
 archfit config enrich owner --config .archfit.yaml
 archfit config enrich volatility --config .archfit.yaml
 archfit config init --llm --root . -o .archfit-autopilot.yaml
@@ -38,7 +40,8 @@ audit report. Bare `archfit` (no subcommand) runs `analyze` in report-only mode.
   `--fix` installs missing tools (`--dry-run` previews without installing).
 - `archfit config init` — generate a starter `.archfit.yaml`; `--llm` adds an
   off-gate classification pass (subdomain, volatility, layer, role per module).
-- `archfit config update` — sync `.archfit.yaml` with the current project structure.
+- `archfit config update` — sync `.archfit.yaml` with the current project structure;
+  `--llm` adds review-only role and volatility proposals to the drift report.
 - `archfit analyze` — run architecture analysis (default command; also runs as
   bare `archfit`). Without `--gate` it is report-only (always exits `0` on
   success, `3` on config/tool error). With `--gate` it enforces rules and emits
@@ -47,9 +50,11 @@ audit report. Bare `archfit` (no subcommand) runs `analyze` in report-only mode.
 - `archfit explain <id>` — explain one finding by fingerprint prefix
   (`--llm` appends an off-gate narrative; needs `ai:` configured).
 - `archfit config enrich` — draft LLM refinements for human review (off-gate).
-  Subcommands: `labels` (coupling-label drafts → `.archfit-labels.yaml`), `owner`,
-  `volatility`, `subdomain` (module-field drafts → separate draft files); `--apply`
-  writes approved entries into the config. See [llm-enrich.md](llm-enrich.md).
+  Subcommands: `labels` (coupling-label drafts → `.archfit-labels.yaml`),
+  `abstained` (labels for unknown-strength cross-module edges with snippets),
+  `owner`, `volatility`, `subdomain` (module-field drafts → separate draft files);
+  `--apply` writes approved module-field entries into the config. See
+  [llm-enrich.md](llm-enrich.md).
 
 Output formats for `analyze`: `text` (default), `json`, `markdown`/`md`, `sarif`
 (SARIF 2.1.0 for CI code-scanning annotations), `scorecard` (the banded
@@ -376,21 +381,21 @@ archfit config update --config .archfit.yaml
 # apply mode: writes structural changes live
 archfit config update --config .archfit.yaml --apply
 
-# with LLM: adds classification of unclassified modules to the report
+# with LLM: adds review-only role/volatility proposals to the report
 archfit config update --config .archfit.yaml --llm
 
-# with LLM + apply: structural + classification written live
+# with LLM + apply: structural changes written live; LLM proposals stay review-only
 archfit config update --config .archfit.yaml --llm --apply
 ```
 
 Mode matrix:
 
-| Command                       | Effect                                             |
-| ----------------------------- | -------------------------------------------------- |
-| `config update`               | Drift report only; writes nothing.                 |
-| `config update --apply`       | Structural drift written live (add/path/comment).  |
-| `config update --llm`         | Drift report + LLM classification of unclassified. |
-| `config update --llm --apply` | Structural + LLM classification written live.      |
+| Command                       | Effect                                                                |
+| ----------------------------- | --------------------------------------------------------------------- |
+| `config update`               | Drift report only; writes nothing.                                    |
+| `config update --apply`       | Structural drift written live (add/path/comment).                     |
+| `config update --llm`         | Drift report plus review-only role and volatility proposals.          |
+| `config update --llm --apply` | Structural drift written live; LLM role proposals remain review-only. |
 
 What "structural drift" means:
 
@@ -407,9 +412,9 @@ Guardrails:
 - Plan mode (`config update` without `--apply`) never writes `.archfit.yaml`.
 - `--apply` backs up the existing file before writing (`.archfit.yaml.bak` or
   timestamped if a backup already exists).
-- Existing field values (`subdomain`, `volatility`, `layer`) are never
-  overwritten — `--llm --apply` fills only absent fields.
-- `layer` from LLM is written live only when the value is present in `layers:`.
+- Existing field values are never overwritten.
+- LLM role and volatility proposals are report-only. Review and copy accepted
+  values into `.archfit.yaml` deliberately.
 - Module keys are never auto-renamed.
 - If the config has not changed since it was read, `--apply` aborts rather than
   overwriting concurrent edits.
