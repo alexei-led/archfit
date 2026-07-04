@@ -375,3 +375,36 @@ var _ llm.Provider = (*flexFakeProvider)(nil)
 
 // Ensure initcfg import is used (ClassifyTarget referenced here for compile-time check).
 var _ = initcfg.ClassifyTarget{}
+
+func TestInitCmd_CacheGitignoreHint(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		gitignore string // "" = no .gitignore file
+		wantHint  bool
+	}{
+		{name: "no gitignore", gitignore: "", wantHint: true},
+		{name: "gitignore without cache entry", gitignore: "node_modules/\n", wantHint: true},
+		{name: "gitignore already covers cache", gitignore: ".archfit-cache/\n", wantHint: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := minimalRoot(t)
+			if tt.gitignore != "" {
+				if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(tt.gitignore), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cmd := &InitCmd{Root: root, Output: filepath.Join(root, ".archfit.yaml")}
+			out, err := runInitCmd(t, cmd)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			gotHint := strings.Contains(out, "add .archfit-cache/ to .gitignore")
+			if gotHint != tt.wantHint {
+				t.Errorf("hint printed = %v, want %v; output: %q", gotHint, tt.wantHint, out)
+			}
+		})
+	}
+}

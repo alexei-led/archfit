@@ -57,11 +57,11 @@ Strategy: cache **extractor facts** (the expensive out-of-process work: `go list
 
 ### Task 5: Timing verification (four languages)
 
-- [ ] add `make bench-gate`: times cold vs warm gate on the current repo and prints both (reported number, NOT a hard CI assert — machine-dependent)
-- [ ] measure and record in the PR description, cold → warm: Go archfit self (target warm < 5 s), Python ccgram (target < 10 s), Rust herdr (target < 20 s), TypeScript storybook and Python prefect (record; target ≥ 3× speedup warm)
-- [ ] byte-identical corpus check: for archfit + ccgram, diff warm-cached JSON vs `--no-cache` JSON — identical
-- [ ] verify `.archfit-cache/` is in default exclusions for the file walks (scope + loc + gocyclo all three — see project memory `archfit-file-walk-exclusion-fragmentation`) and gitignored in `config init` output
-- [ ] corpus repos left clean apart from their pre-existing cache dirs; `make all`; PR
+- [x] add `make bench-gate`: times cold vs warm gate on the current repo and prints both (reported number, NOT a hard CI assert — machine-dependent) — `scripts/bench-gate.sh`; cold clears ONLY `<configDir>/.archfit-cache/facts`
+- [x] measure and record in the PR description, cold → warm: Go archfit self (target warm < 5 s), Python ccgram (target < 10 s), Rust herdr (target < 20 s), TypeScript storybook and Python prefect (record; target ≥ 3× speedup warm) — PR #25 addendum: archfit 8.8→3.0 s, ccgram 29.8→8.7 s, herdr 49.8→10.9 s, storybook 11.2→3.6 s (all targets met); prefect 773.3→720.3 s (1.07×, MISS — grimp/ast-grep facts hit but jscpd+SCIP end partial/timed-out on prefect and are vetoed from caching by design, so warm re-pays both; targeted follow-up per Post-Completion)
+- [x] byte-identical corpus check: for archfit + ccgram, diff warm-cached JSON vs `--no-cache` JSON — identical (cmp: archfit 455 KB, ccgram 1.7 MB)
+- [x] verify `.archfit-cache/` is in default exclusions for the file walks (scope + loc + gocyclo all three — see project memory `archfit-file-walk-exclusion-fragmentation`) and gitignored in `config init` output — scope glob `internal/scope/scope.go:61`; LOC dot-dir skip pinned by new `loc_test.go` case; gocyclo walker no longer exists (complexity backends removed in v1.0); `config init` prints a gitignore hint when `.gitignore` lacks `.archfit-cache` (table-driven test)
+- [x] corpus repos left clean apart from their pre-existing cache dirs; `make all`; PR — ccgram `.archfit.yaml` diff and herdr untracked artifacts predate this wave; prefect/storybook clean; `make all` green; addendum appended to PR #25
 
 ### Task 6: [Final] Documentation
 

@@ -126,7 +126,23 @@ func (c *InitCmd) Run(deps *appDeps) error {
 		}
 		return nil
 	}
-	return safeWriteConfig(ctx, deps, out, []byte(rendered), original)
+	if err := safeWriteConfig(ctx, deps, out, []byte(rendered), original); err != nil {
+		return err
+	}
+	printCacheGitignoreHint(deps.Stdout, root)
+	return nil
+}
+
+// printCacheGitignoreHint reminds the user to gitignore .archfit-cache/ (the
+// fact-cache + LLM-cache root that analyze creates beside the config) when the
+// root .gitignore does not cover it yet. Substring check only — a commented or
+// negated match is rare enough to tolerate a redundant hint.
+func printCacheGitignoreHint(w io.Writer, root string) {
+	data, err := os.ReadFile(filepath.Join(root, ".gitignore")) //#nosec G304 — user-supplied root
+	if err == nil && strings.Contains(string(data), ".archfit-cache") {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "hint: add .archfit-cache/ to .gitignore — analyze caches extractor facts and LLM responses there (delete the directory to reset)")
 }
 
 // initClassifySystemPrompt instructs the LLM to act as a domain modeler and

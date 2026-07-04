@@ -120,6 +120,7 @@ func TestRun_SkipsSkipDirsAndDotDirs(t *testing.T) {
 		"testdata/fixture.go",
 		".git/COMMIT_EDITMSG",
 		".venv/lib/a.py",
+		".archfit-cache/facts/golang/blob.go", // fact cache must never count as source
 	}
 	for _, rel := range skipDirCases {
 		writeFile(t, root, rel, "content\n")
