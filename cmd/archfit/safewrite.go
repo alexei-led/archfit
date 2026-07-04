@@ -79,6 +79,16 @@ func safeWriteConfig(ctx context.Context, deps *appDeps, path string, edited, or
 		_, _ = fmt.Fprintf(deps.Stdout, "backed up %s → %s\n", filepath.Base(path), filepath.Base(bakPath))
 	}
 
+	// Preserve the target's mode: CreateTemp makes 0600 files, which would
+	// silently narrow a shared config's permissions on every overwrite.
+	mode := os.FileMode(0o644)
+	if fi, statErr := os.Stat(path); statErr == nil {
+		mode = fi.Mode().Perm()
+	}
+	if err := os.Chmod(tmpName, mode); err != nil {
+		return fmt.Errorf("safeWriteConfig: chmod failed: %w", err)
+	}
+
 	// Atomic rename.
 	if err := os.Rename(tmpName, path); err != nil {
 		return fmt.Errorf("safeWriteConfig: rename failed: %w", err)

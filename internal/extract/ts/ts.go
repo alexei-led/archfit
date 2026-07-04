@@ -335,8 +335,11 @@ func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath string) to
 	if err != nil {
 		return e.runner
 	}
-	exclude := append([]string{"**/node_modules/**"}, e.cfg.Exclusions...)
-	files := factcache.ListInputs(s.Root, factcache.MatchExts(tsSourceExts, tsManifestNames), exclude)
+	// Config exclusions deliberately do NOT filter the hash: depcruise skips only
+	// node_modules (ListInputs prunes it), not `exclude:` globs, so editing an
+	// excluded-but-cruised file must still invalidate. Exclusion-config changes
+	// invalidate via cfgHash (e.cfg embeds Exclusions).
+	files := factcache.ListInputs(s.Root, factcache.MatchExts(tsSourceExts, tsManifestNames), nil)
 	treeHash, err := factcache.HashTree(s.Root, files)
 	if err != nil {
 		return e.runner

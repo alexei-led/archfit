@@ -11,9 +11,11 @@ LLM features belong behind explicit commands or config and stay off the gate.
 - Go 1.26+
 - Git
 - `pre-commit`
+- Python 3.12+ — `make test` (and CI) runs `python3
+internal/extract/scip/scip_reader_test.py` unconditionally, regardless of
+  language focus
 - Optional: Node.js 24 LTS or Bun for TypeScript analysis
-- Optional: Python 3.14 recommended / Python 3.12+ minimum and `uv` for Python
-  analysis
+- Optional: `uv` for Python analysis (Python 3.14 recommended)
 
 `archfit doctor` reports which optional tools are available.
 

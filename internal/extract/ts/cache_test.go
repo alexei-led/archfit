@@ -2,6 +2,7 @@ package ts_test
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -31,21 +32,33 @@ func cacheFixtureRunner(depcruiseJSON string, depcruiseCalls *int) *toolrun.Runn
 	}
 }
 
+// writeTSFixture materialises a minimal TS project: package.json, a.ts with
+// the given content, plus any extra files (nested paths allowed).
+func writeTSFixture(t *testing.T, mainTS string, extra map[string]string) string {
+	t.Helper()
+	root := t.TempDir()
+	files := map[string]string{"package.json": `{"name":"fixture"}`, "a.ts": mainTS}
+	maps.Copy(files, extra)
+	for name, content := range files {
+		full := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
 // TestFactCache_HitAndTSConfigInvalidation pins the TS cache contract: a warm
 // Extract on an unchanged tree skips the depcruise subprocess, and a
 // tsconfig.json edit invalidates the entry.
 func TestFactCache_HitAndTSConfigInvalidation(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	for name, content := range map[string]string{
-		"package.json":  `{"name":"fixture"}`,
+	root := writeTSFixture(t, `export const a = 1;`, map[string]string{
 		"tsconfig.json": `{"compilerOptions":{}}`,
-		"a.ts":          `export const a = 1;`,
-	} {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
+	})
 	calls := 0
 	runner := cacheFixtureRunner(`{"modules":[{"source":"a.ts","dependencies":[]}]}`, &calls)
 	ex := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto, Src: "."})
@@ -79,20 +92,47 @@ func TestFactCache_HitAndTSConfigInvalidation(t *testing.T) {
 	}
 }
 
+// TestFactCache_ExcludedFileEditInvalidates pins key faithfulness: depcruise
+// skips only node_modules, not config `exclude:` globs, so editing a file
+// those globs match must still invalidate the entry — the input-tree hash may
+// over-approximate the tool's inputs, never under-approximate.
+func TestFactCache_ExcludedFileEditInvalidates(t *testing.T) {
+	t.Parallel()
+	root := writeTSFixture(t, `export const a = 1;`, map[string]string{
+		"legacy/old.ts": `export const old = 1;`,
+	})
+	calls := 0
+	runner := cacheFixtureRunner(`{"modules":[{"source":"a.ts","dependencies":[]}]}`, &calls)
+	ex := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto, Src: ".", Exclusions: []string{"legacy/**"}})
+	ex.Cache = factcache.NewStore(t.TempDir())
+	ctx := context.Background()
+	s := scope.Scope{Root: root}
+
+	for range 2 {
+		if _, _, err := ex.Extract(ctx, s); err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("warm run: want cache hit (1 call), got %d", calls)
+	}
+	if err := os.WriteFile(filepath.Join(root, "legacy", "old.ts"), []byte(`export const old = 2;`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ex.Extract(ctx, s); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("excluded-file edit must invalidate: want 2 calls, got %d", calls)
+	}
+}
+
 // TestFactCache_UnresolvedNotCached pins the partial-result veto: output with
 // unresolved import specifiers (usually missing node_modules — state the key
 // cannot see) is never written, so the next run re-executes depcruise.
 func TestFactCache_UnresolvedNotCached(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	for name, content := range map[string]string{
-		"package.json": `{"name":"fixture"}`,
-		"a.ts":         `import x from "left-pad";`,
-	} {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
+	root := writeTSFixture(t, `import x from "left-pad";`, nil)
 	calls := 0
 	unresolvedJSON := `{"modules":[{"source":"a.ts","dependencies":[{"module":"left-pad","couldNotResolve":true}]}]}`
 	runner := cacheFixtureRunner(unresolvedJSON, &calls)

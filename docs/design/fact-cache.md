@@ -88,10 +88,14 @@ hex-encoded. `\0` separators prevent boundary ambiguity (same convention as
   sorts map keys, so the encoding is deterministic.
 - **inputTreeHash** — sha256 over the sorted list of `(relpath \0 sha256(content))`
   pairs for every file in that extractor's input scope (source files matching the
-  extractor's language/exclusions, plus its manifest files: `go.mod`/`go.sum`,
+  extractor's language, plus its manifest files: `go.mod`/`go.sum`,
   `tsconfig.json`/`package.json`, `Cargo.toml`/`Cargo.lock`, etc. — per-language
-  detail lands in Task 3). File enumeration reuses the LOC walk's
-  FileClassIndex where possible instead of a second walk. Content hashes, not
+  detail lands in Task 3). The scope must cover the TOOL'S real input set, so
+  config `exclude:` globs never filter it: grimp/depcruise/cargo/`packages.Load`
+  analyze excluded files anyway, and a file the tool reads but the hash skips is
+  a silent-staleness hole (the hash may over-approximate inputs, never
+  under-approximate; jscpd is the exception — it receives the exclusions via
+  `--ignore`, so its hash faithfully applies them). Content hashes, not
   mtimes: mtime invalidation breaks under git checkout/rebase, and hashing a
   whole repo is sub-second next to multi-minute subprocess runs.
 
@@ -113,7 +117,11 @@ Never written to cache: timed-out runs, partial-status results
 be sticky and violate Wave 3 coverage honesty. Legitimate non-zero exits that
 extractors treat as usable output (e.g. dependency-cruiser reporting violations)
 are cacheable because the extractor, not the raw exit code, decides what a fact
-is (see D5).
+is (see D5). A Go member whose build reaches local source no key covers — a
+`replace` to a local directory (in its go.mod, transitively, or in go.work), or
+a `require` satisfied by a go.work member outside the loaded set (excluded or
+`tools.go.modules`-filtered) — is vetoed per-member: it loads fresh every run
+while unaffected siblings still cache (`memberKeys`, `internal/extract/golang/cache.go`).
 
 ### D4 — Eviction: size cap + LRU by mtime
 
@@ -145,15 +153,18 @@ it — Task 2 extends `internal/arch_test.go`). It exposes a small store
 key-builder helpers, consumed at two seams:
 
 1. **Runner-shaped analyzers** (dependency-cruiser, grimp, cargo metadata,
-   cargo-modules, SCIP, jscpd, ast-grep): a caching decorator around
+   cargo-modules, SCIP, ast-grep): a caching decorator around
    `toolrun.Runner` — the single subprocess choke point — where the extractor
    supplies the key material (tool version, config-slice hash, input-tree hash)
    because the Runner alone cannot see it.
-2. **Go**: `packages.Load` never touches `toolrun.Runner` (go/packages shells
-   out internally), so the Go extractor uses the store directly, caching the
-   serialized per-workspace-member fact set (key includes `go.mod`/`go.sum`
-   hashes) — one entry per member, so editing one member re-loads only that
-   member.
+2. **Store-direct consumers**: `packages.Load` (Go) never touches
+   `toolrun.Runner` (go/packages shells out internally), so the Go extractor
+   uses the store directly, caching the serialized per-workspace-member fact
+   set (key includes `go.mod`/`go.sum` hashes) — one entry per member, so
+   editing one member re-loads only that member. jscpd also uses the store
+   directly (as shipped in Task 3): it writes its report to a temp file, not
+   stdout, so the Runner decorator — which caches stdout — cannot see the
+   fact payload (`internal/extract/clones/clones.go`).
 
 In both seams the cache stores extractor FACTS (parsed graph/metadata JSON the
 extractor would otherwise derive from the subprocess), never scores —

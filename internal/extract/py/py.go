@@ -198,8 +198,12 @@ func (e *Extractor) cachedRunner(s scope.Scope, tool, version string, pkgs []str
 	if err != nil {
 		return e.runner
 	}
-	exclude := append([]string{"**/.venv/**", "**/venv/**", "**/__pycache__/**"}, e.cfg.Exclusions...)
-	files := factcache.ListInputs(s.Root, factcache.MatchExts([]string{".py"}, pyManifestNames), exclude)
+	// Config exclusions deliberately do NOT filter the hash: grimp imports the
+	// package regardless of `exclude:` globs, so editing an excluded-but-imported
+	// file must still invalidate. ListInputs prunes venv/__pycache__/dot-dirs,
+	// matching what grimp never reads; exclusion-config changes invalidate via
+	// cfgHash (e.cfg embeds Exclusions).
+	files := factcache.ListInputs(s.Root, factcache.MatchExts([]string{".py"}, pyManifestNames), nil)
 	treeHash, err := factcache.HashTree(s.Root, files)
 	if err != nil {
 		return e.runner

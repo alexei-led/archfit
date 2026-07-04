@@ -114,7 +114,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		return graph.Facts{}, absentCoverage(""), nil
 	}
 
-	version := e.detectVersion(ctx)
+	version := e.toolVersion(ctx, toolCargo)
 
 	// --no-deps limits the package set to first-party workspace members; each
 	// member still lists its direct dependencies, which we resolve to package:/
@@ -232,8 +232,11 @@ func (e *Extractor) cachedRunner(s scope.Scope, analyzer, version string, exts [
 	if err != nil {
 		return e.runner
 	}
-	exclude := append([]string{"**/target/**"}, e.cfg.Exclusions...)
-	files := factcache.ListInputs(s.Root, factcache.MatchExts(exts, rustManifestNames), exclude)
+	// Config exclusions deliberately do NOT filter the hash: cargo reads
+	// manifests and sources regardless of `exclude:` globs (ListInputs prunes
+	// target/ and dot-dirs), so editing an excluded-but-compiled file must
+	// still invalidate. Exclusion-config changes invalidate via cfgHash.
+	files := factcache.ListInputs(s.Root, factcache.MatchExts(exts, rustManifestNames), nil)
 	treeHash, err := factcache.HashTree(s.Root, files)
 	if err != nil {
 		return e.runner
@@ -252,20 +255,6 @@ func (e *Extractor) cachedRunner(s scope.Scope, analyzer, version string, exts [
 func (e *Extractor) toolVersion(ctx context.Context, tool string) string {
 	out, err := e.runner.Run(ctx, toolrun.ToolCmd{
 		Name:    tool,
-		Args:    []string{"--version"},
-		Timeout: 30 * time.Second,
-	})
-	if err != nil || out.ExitCode != 0 {
-		return ""
-	}
-	return strings.TrimSpace(string(out.Stdout))
-}
-
-// detectVersion runs `cargo --version` and returns the trimmed version string.
-// Returns empty string on any failure (non-fatal).
-func (e *Extractor) detectVersion(ctx context.Context) string {
-	out, err := e.runner.Run(ctx, toolrun.ToolCmd{
-		Name:    toolCargo,
 		Args:    []string{"--version"},
 		Timeout: 30 * time.Second,
 	})

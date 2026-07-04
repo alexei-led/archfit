@@ -131,6 +131,108 @@ func TestFactCache_GoModChangeInvalidates(t *testing.T) {
 	}
 }
 
+// TestFactCache_LocalReplaceVetoesMember pins the local-source veto: a member
+// whose go.mod replaces a module with a local directory compiles against
+// source the input-tree hash cannot see, so it is never cached; unaffected
+// siblings still cache.
+func TestFactCache_LocalReplaceVetoesMember(t *testing.T) {
+	t.Parallel()
+	root, dirA, dirB := writeWorkspaceFixture(t)
+	if err := os.WriteFile(filepath.Join(dirB, "go.mod"),
+		[]byte("module example.com/b\n\ngo 1.24\n\nrequire example.com/x v0.0.0\n\nreplace example.com/x => ../x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loader := &fakeLoader{calls: map[string]int{}}
+	ex := New(config.ExtractConfig{})
+	ex.Cache = factcache.NewStore(t.TempDir())
+	ex.load = loader.load
+	ctx := context.Background()
+	s := scope.Scope{Root: root}
+
+	for range 2 {
+		if _, _, err := ex.Extract(ctx, s); err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+	}
+	if loader.calls[dirB] != 2 {
+		t.Errorf("member b (local replace): want uncached (2 loads), got %d", loader.calls[dirB])
+	}
+	if loader.calls[dirA] != 1 {
+		t.Errorf("member a: want cache hit (1 load), got %d", loader.calls[dirA])
+	}
+}
+
+// TestFactCache_FilteredSiblingDependencyVetoesMember pins the unkeyed-sibling
+// veto: when tools.go.modules.exclude drops member a from the load set but
+// member b still requires it, workspace mode compiles b against a's source —
+// which no key covers — so b is never cached.
+func TestFactCache_FilteredSiblingDependencyVetoesMember(t *testing.T) {
+	t.Parallel()
+	root, dirA, dirB := writeWorkspaceFixture(t)
+	if err := os.WriteFile(filepath.Join(dirB, "go.mod"),
+		[]byte("module example.com/b\n\ngo 1.24\n\nrequire example.com/a v0.0.0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loader := &fakeLoader{calls: map[string]int{}}
+	ex := New(config.ExtractConfig{GoModuleExclude: []string{"a"}})
+	ex.Cache = factcache.NewStore(t.TempDir())
+	ex.load = loader.load
+	ctx := context.Background()
+	s := scope.Scope{Root: root}
+
+	for range 2 {
+		if _, _, err := ex.Extract(ctx, s); err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+	}
+	if loader.calls[dirA] != 0 {
+		t.Errorf("member a is config-excluded: want 0 loads, got %d", loader.calls[dirA])
+	}
+	if loader.calls[dirB] != 2 {
+		t.Errorf("member b (requires filtered sibling): want uncached (2 loads), got %d", loader.calls[dirB])
+	}
+}
+
+// TestFactCache_DirtyMemberNotCached pins the D3 partial-result veto at the Go
+// seam: a member whose load reports errors is never written to the cache (a
+// cached degradation would be sticky), so it re-loads every run.
+func TestFactCache_DirtyMemberNotCached(t *testing.T) {
+	t.Parallel()
+	root, dirA, dirB := writeWorkspaceFixture(t)
+	calls := map[string]int{}
+	var mu sync.Mutex
+	ex := New(config.ExtractConfig{})
+	ex.Cache = factcache.NewStore(t.TempDir())
+	ex.load = func(cfg *packages.Config, _ ...string) ([]*packages.Package, error) {
+		mu.Lock()
+		calls[cfg.Dir]++
+		mu.Unlock()
+		name := filepath.Base(cfg.Dir)
+		pkg := &packages.Package{
+			PkgPath: "example.com/" + name,
+			Module:  &packages.Module{Path: "example.com/" + name, Dir: cfg.Dir},
+			// Member a fails type-checking: deriveMemberFacts must report it
+			// non-clean, and loadMemberFacts must skip the cache write.
+			IllTyped: cfg.Dir == dirA,
+		}
+		return []*packages.Package{pkg}, nil
+	}
+	ctx := context.Background()
+	s := scope.Scope{Root: root}
+
+	for range 2 {
+		if _, _, err := ex.Extract(ctx, s); err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+	}
+	if calls[dirA] != 2 {
+		t.Errorf("member a (ill-typed): want uncached (2 loads), got %d", calls[dirA])
+	}
+	if calls[dirB] != 1 {
+		t.Errorf("member b: want cache hit (1 load), got %d", calls[dirB])
+	}
+}
+
 // TestFactCache_DependentMemberInvalidates pins the dependency-closure rule:
 // when member b requires member a, editing a's source invalidates BOTH (b
 // compiles against a's source in workspace mode).

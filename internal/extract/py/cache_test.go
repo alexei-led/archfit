@@ -89,6 +89,39 @@ func TestFactCache_HitAndPyFileInvalidation(t *testing.T) {
 	}
 }
 
+// TestFactCache_ExcludedFileEditInvalidates pins key faithfulness: grimp
+// analyses the package regardless of config `exclude:` globs, so editing a
+// file those globs match must still invalidate the entry — the input-tree
+// hash may over-approximate the tool's inputs, never under-approximate.
+func TestFactCache_ExcludedFileEditInvalidates(t *testing.T) {
+	t.Parallel()
+	root := writePyFixture(t)
+	calls := 0
+	runner := pyCacheRunner(`{"edges":[],"unresolved":0}`, &calls)
+	ex := py.New(runner, config.ExtractConfig{Mode: config.ModeAuto, Exclusions: []string{"pkg/a.py"}})
+	ex.Cache = factcache.NewStore(t.TempDir())
+	ctx := context.Background()
+	s := scope.Scope{Root: root}
+
+	for range 2 {
+		if _, _, err := ex.Extract(ctx, s); err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("warm run: want cache hit (1 call), got %d", calls)
+	}
+	if err := os.WriteFile(filepath.Join(root, "pkg", "a.py"), []byte("import sys\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ex.Extract(ctx, s); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("excluded-file edit must invalidate: want 2 calls, got %d", calls)
+	}
+}
+
 // TestFactCache_UnresolvedNotCached pins the partial-result veto: helper
 // output with unresolved imports is never written to the cache.
 func TestFactCache_UnresolvedNotCached(t *testing.T) {

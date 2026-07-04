@@ -67,7 +67,9 @@ type importFacts struct {
 // loadMemberFacts returns each member's fact set — from the cache where the
 // member's key hits, via packages.Load otherwise (fact-cache.md D5 seam 2).
 // keys == nil ⇒ cache off (nil store, --no-cache, or underivable key
-// material) — every member loads, nothing is read or written. Loads run
+// material) — every member loads, nothing is read or written. keys[i] == ""
+// ⇒ that single member is vetoed (memberKeys: local replace or unkeyed
+// go.work sibling) — it loads fresh and is never read or written. Loads run
 // concurrently, one goroutine per member bounded by GOMAXPROCS, writing
 // mfs[i] by index so merge order is deterministic regardless of goroutine
 // completion order.
@@ -79,6 +81,9 @@ func (e *GoExtractor) loadMemberFacts(ctx context.Context, root string, memberDi
 		keys = e.memberKeys(ctx, root, memberDirs)
 	}
 	for i := 0; keys != nil && i < len(memberDirs); i++ {
+		if keys[i] == "" {
+			continue
+		}
 		if blob, ok := e.Cache.Get(goAnalyzer, keys[i]); ok {
 			var mf memberFacts
 			if json.Unmarshal(blob, &mf) == nil {
@@ -117,7 +122,7 @@ func (e *GoExtractor) loadMemberFacts(ctx context.Context, root string, memberDi
 			// Only clean loads are cached: a member with load errors would pin
 			// its partial facts (fact-cache.md D3). Store.Put is atomic;
 			// concurrent members write distinct keys.
-			if keys != nil && clean {
+			if keys != nil && keys[i] != "" && clean {
 				if blob, merr := json.Marshal(mf); merr == nil {
 					e.Cache.Put(goAnalyzer, keys[i], blob)
 				}
@@ -276,8 +281,23 @@ func deriveRawHints(pkg *packages.Package, dtos *dtoIndex, root string) map[stri
 	return hints
 }
 
+// goListHashExcludes are the input-tree-hash exclusions faithful to
+// `go list ./...` semantics: the go tool never loads packages under testdata
+// or vendor, so edits there cannot affect a member's facts. Config `exclude:`
+// globs are deliberately NOT applied — packages.Load still type-checks files
+// they match (exclusion filtering happens at merge time), so editing an
+// excluded file must still invalidate; exclusion-config changes invalidate
+// via cfgHash (e.cfg embeds Exclusions).
+var goListHashExcludes = []string{"**/testdata/**", "**/vendor/**"}
+
 // memberKeys derives one fact-cache key per member, or nil when key material
-// cannot be derived (cache disabled for this run — never an error).
+// cannot be derived (cache disabled for this run — never an error). A key of
+// "" vetoes caching for that single member: its build reaches local source
+// the input-tree hash cannot see (a replace-to-directory in its go.mod, or a
+// require satisfied by a go.work member outside memberDirs — excluded,
+// config-filtered, or above ScanRoot). Veto, not fold: hashing a foreign tree
+// would need its own walk/rel-path scheme; upgrade trigger is warm-run misses
+// on repos that keep local replaces permanently.
 //
 // Key inputs per member: go-toolchain version, the ExtractConfig view + scan
 // root + go.work content, and the content hash of the member's OWN input tree
@@ -297,9 +317,10 @@ func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDir
 	goVer := e.goVersion(ctx)
 
 	type memberInfo struct {
-		modPath  string
-		requires map[string]struct{}
-		files    []string // scanRoot-relative slash paths
+		modPath      string
+		requires     map[string]struct{}
+		files        []string // scanRoot-relative slash paths
+		localReplace bool     // go.mod replaces a module with a local directory
 	}
 	infos := make([]memberInfo, len(memberDirs))
 	for i, dir := range memberDirs {
@@ -316,10 +337,16 @@ func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDir
 		for _, r := range mod.Require {
 			infos[i].requires[r.Mod.Path] = struct{}{}
 		}
-		infos[i].files = memberInputFiles(scanRoot, dir, memberDirs, e.cfg.Exclusions)
+		infos[i].localReplace = hasLocalReplace(mod.Replace)
+		infos[i].files = memberInputFiles(scanRoot, dir, memberDirs)
+	}
+	unkeyed, workLocalReplace := unkeyedWorkspaceMods(scanRoot, memberDirs)
+	if workLocalReplace {
+		return nil // go.work replaces a module with a local dir no key can see
 	}
 
-	// Transitive closure over intra-workspace requires.
+	// Transitive closure over intra-workspace requires; a member whose closure
+	// touches unkeyed local source gets the "" veto key.
 	modIdx := make(map[string]int, len(infos))
 	for i, inf := range infos {
 		modIdx[inf.modPath] = i
@@ -327,19 +354,28 @@ func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDir
 	keys := make([]string, len(memberDirs))
 	for i := range infos {
 		seen := make(map[int]struct{})
+		veto := false
 		var visit func(int)
 		visit = func(j int) {
 			if _, ok := seen[j]; ok {
 				return
 			}
 			seen[j] = struct{}{}
+			if infos[j].localReplace {
+				veto = true
+			}
 			for req := range infos[j].requires {
 				if k, ok := modIdx[req]; ok {
 					visit(k)
+				} else if _, unk := unkeyed[req]; unk {
+					veto = true
 				}
 			}
 		}
 		visit(i)
+		if veto {
+			continue // keys[i] stays "" — this member runs uncached
+		}
 		var files []string
 		for j := range seen {
 			files = append(files, infos[j].files...)
@@ -353,11 +389,71 @@ func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDir
 	return keys
 }
 
+// hasLocalReplace reports whether any replace directive points at a local
+// directory (modfile convention: a filesystem-path replacement has an empty
+// New.Version). Such a build compiles against source the input-tree hash
+// cannot see.
+func hasLocalReplace(replaces []*modfile.Replace) bool {
+	for _, r := range replaces {
+		if r.New.Version == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// unkeyedWorkspaceMods returns the module paths of go.work members that are
+// NOT in memberDirs (above ScanRoot, exclusion-matched, or filtered by
+// tools.go.modules include/exclude), plus whether go.work itself carries a
+// local-directory replace. packages.Load in workspace mode still compiles
+// against those members' source, which no per-member key covers. Best-effort:
+// a missing/unparsable go.work or member go.mod contributes nothing.
+func unkeyedWorkspaceMods(scanRoot string, memberDirs []string) (map[string]struct{}, bool) {
+	path, found := findGoWork(scanRoot)
+	if !found {
+		return nil, false
+	}
+	data, err := os.ReadFile(path) //nolint:gosec // path from findGoWork
+	if err != nil {
+		return nil, false
+	}
+	wf, err := modfile.ParseWork(path, data, nil)
+	if err != nil {
+		return nil, false
+	}
+	keyed := make(map[string]struct{}, len(memberDirs))
+	for _, d := range memberDirs {
+		keyed[filepath.Clean(d)] = struct{}{}
+	}
+	workDir := filepath.Dir(path)
+	var out map[string]struct{}
+	for _, u := range wf.Use {
+		dir := filepath.Clean(filepath.Join(workDir, filepath.FromSlash(u.Path)))
+		if _, ok := keyed[dir]; ok {
+			continue
+		}
+		modData, rerr := os.ReadFile(filepath.Join(dir, "go.mod"))
+		if rerr != nil {
+			continue
+		}
+		mod, perr := modfile.Parse("go.mod", modData, nil)
+		if perr != nil || mod.Module == nil {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]struct{})
+		}
+		out[mod.Module.Mod.Path] = struct{}{}
+	}
+	return out, hasLocalReplace(wf.Replace)
+}
+
 // memberInputFiles enumerates one member's input tree as scanRoot-relative
 // slash paths: its .go files plus go.mod/go.sum, excluding files owned by a
 // NESTED member (go list ./... stops at nested modules, so those files cannot
-// affect this member's load).
-func memberInputFiles(scanRoot, memberDir string, memberDirs []string, exclusions []string) []string {
+// affect this member's load) and goListHashExcludes (dirs the go tool never
+// loads).
+func memberInputFiles(scanRoot, memberDir string, memberDirs []string) []string {
 	var nested []string
 	for _, other := range memberDirs {
 		if other == memberDir {
@@ -367,7 +463,7 @@ func memberInputFiles(scanRoot, memberDir string, memberDirs []string, exclusion
 			nested = append(nested, filepath.ToSlash(rel)+"/")
 		}
 	}
-	files := factcache.ListInputs(memberDir, factcache.MatchExts([]string{".go"}, []string{"go.mod", "go.sum"}), exclusions)
+	files := factcache.ListInputs(memberDir, factcache.MatchExts([]string{".go"}, []string{"go.mod", "go.sum"}), goListHashExcludes)
 	var out []string
 	for _, f := range files {
 		underNested := false

@@ -130,6 +130,9 @@ Full setup — Docker, CI, optional analyzers, platform packages — is in the
   `coupling.gate` (band floor / max score drop).
 - **Honest coverage** — a missing analyzer degrades the affected metric to `n/a`
   with the install step, never a false green.
+- **Content-addressed fact cache** — warm runs skip unchanged extractor
+  subprocesses (typically 3–5× faster gates), byte-identical to a cold run;
+  `--no-cache` forces a clean control run ([details](docs/guide/caching.md)).
 - **Off-gate LLM narration** (`analyze --llm`, `config enrich`, `config init --llm`) that may
   only explain and prioritize collected evidence — it never decides the gate.
 - **Multi-language** — Go, TypeScript/JavaScript, Python, Rust
@@ -173,7 +176,8 @@ a Balanced-Coupling risk read, score movement, and agent repair tasks.
 - [Concepts](docs/guide/concepts.md) — Balanced Coupling, made executable.
 - [Metrics](docs/guide/metrics.md) — every dimension and how it's scored.
 - [CI](docs/guide/ci.md) · [Agent feedback](docs/guide/agent-feedback.md) ·
-  [Languages](docs/guide/languages.md) · [Configuration](docs/guide/configuration.md)
+  [Languages](docs/guide/languages.md) · [Configuration](docs/guide/configuration.md) ·
+  [Caching](docs/guide/caching.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## License

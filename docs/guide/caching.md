@@ -48,7 +48,12 @@ only when **all** of these are unchanged:
 
 Never cached: timed-out runs, partial-status results, and tool failures — a cached
 degradation would be sticky. A corrupted cache entry is treated as a miss, never an
-error.
+error. A Go workspace member whose build reaches source the key cannot see — a
+`replace` pointing at a local directory, or a dependency on a go.work member
+filtered out by exclusions or `tools.go.modules` — always runs fresh; unaffected
+members still cache. Config `exclude:` globs never shrink the key's input hash:
+the underlying tools analyze excluded files anyway, so their edits still
+invalidate.
 
 ## `--no-cache`
 

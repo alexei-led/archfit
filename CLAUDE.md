@@ -17,6 +17,7 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 - `make mock` — regenerate moq fakes (`go generate ./...`)
 - `make test-fast` — `go test -race -short ./...` (skips slow subprocess/ast-grep integration tests; for inner-loop speed)
 - `make corpus-attrib` — informational dev tool: coupling_balance attribution table over the Wave-4 corpus repos (`scripts/corpus-attrib.sh`)
+- `make bench-gate` — cold vs warm fact-cache gate timing on this repo (reported number, not a CI assert; `scripts/bench-gate.sh`)
 - `make all` — fmt → lint → test → archfit
 - One test: `go test ./internal/<pkg>/ -run TestName`
 
@@ -43,9 +44,21 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   exposes `LookupFileClass`/`IsTestFile` used by the LOC walk and by metrics that
   filter on Production files.
 - `internal/model/*` imports stdlib only.
-- Every subprocess call goes through `toolrun.Runner` (interface in `internal/ports`);
-  extractors in `internal/extract/{go,ts,py,rust}` are out-of-process adapters. No
-  `exec.Command` in core code — fake the `Runner` in tests.
+- Every subprocess call goes through `toolrun.Runner` (interface in
+  `internal/toolrun/toolrun.go`); extractors in `internal/extract/{go,ts,py,rust}`
+  are out-of-process adapters. No `exec.Command` in core code — fake the `Runner`
+  in tests.
+- **Fact cache** (`internal/factcache`, adapter — core ring must not import it;
+  see `docs/design/fact-cache.md`). Content-addressed extractor-fact store under
+  `.archfit-cache/facts/`; stores facts, never scores. Runner-shaped analyzers
+  (depcruise, grimp, cargo, SCIP, ast-grep) wrap `toolrun.Runner` in
+  `factcache.Runner`; Go (`packages.Load`) and jscpd (temp-file output) use the
+  store directly. Keys hash tool version + config slice + input tree; the
+  input-tree hash must cover the TOOL'S real input set — config `exclude:` globs
+  never filter it (the tools don't honor them; over-hash, never under-hash).
+  Partial/timed-out/dirty results are never cached; a Go member whose build
+  reaches source no key covers (local `replace`, unkeyed go.work sibling) is
+  vetoed per-member. `--no-cache` bypasses reads AND writes on all caches.
 - **No gitnexus.** The `.gitnexus`/`.codegraph` index dirs are excluded from file
   walks (`scope.go`), but archfit does not run the tool and does not derive any
   per-module fact from it.
@@ -297,7 +310,7 @@ wired to any metric.
 ## Layout
 
 `cmd/archfit` (kong CLI) · `internal/` decision core + adapters · `docs/design`
-(current decisions — 4 files) · `docs/guide` (user docs) · `docs/spec` (spec) ·
+(current decisions — 5 files) · `docs/guide` (user docs) · `docs/spec` (spec) ·
 `docs/plans` (open plans only; shipped plans move to `docs/plans/completed/`).
 
 **Skip `docs/archived/`** — superseded design docs, completed plans, plan notes,

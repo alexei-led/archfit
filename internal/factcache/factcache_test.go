@@ -91,6 +91,28 @@ func TestStore_EvictOldestByMtime(t *testing.T) {
 	}
 }
 
+// TestStore_GetTouchesMtime pins the LRU read-touch: a hit refreshes the
+// entry's mtime so recently-used entries survive mtime-ordered eviction.
+func TestStore_GetTouchesMtime(t *testing.T) {
+	t.Parallel()
+	s := NewStore(t.TempDir())
+	s.Put("ts", "hot", []byte(`{"fact":1}`))
+	old := time.Now().Add(-24 * time.Hour)
+	if err := os.Chtimes(s.entryPath("ts", "hot"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.Get("ts", "hot"); !ok {
+		t.Fatal("expected hit")
+	}
+	fi, err := os.Stat(s.entryPath("ts", "hot"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.ModTime().Sub(old) < time.Hour {
+		t.Errorf("Get must touch mtime for LRU: still %v", fi.ModTime())
+	}
+}
+
 func TestKey_ComponentChangeInvalidates(t *testing.T) {
 	t.Parallel()
 	base := Key("ts", "v1", "cfg-a", "tree-a")
