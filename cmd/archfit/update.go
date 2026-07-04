@@ -9,9 +9,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/extract/rust"
+	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
+	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/scope"
 )
 
 // UpdateCmd syncs .archfit.yaml with the current project structure.
@@ -55,6 +60,13 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 
 	report := initcfg.DiffModules(existing, freshCfg.Modules)
+	if c.LLM {
+		var synthErr error
+		report, synthErr = c.withRustSyntheticSuggestions(ctx, cfg, root, report, deps)
+		if synthErr != nil {
+			return synthErr
+		}
+	}
 	addedNames := addedSet(report.Added)
 
 	ann, err := c.maybeClassify(ctx, cfg, root, report, addedNames)
@@ -159,6 +171,83 @@ func (c *UpdateCmd) buildLLMProvider(cfg config.Config) (llm.Provider, error) {
 	return p, nil
 }
 
+func (c *UpdateCmd) withRustSyntheticSuggestions(
+	ctx context.Context,
+	cfg config.Config,
+	root string,
+	report initcfg.UpdateReport,
+	deps *appDeps,
+) (initcfg.UpdateReport, error) {
+	extractCfg := cfg.ForExtract(config.LangRust)
+	if extractCfg.Mode == config.ModeOff || !extractCfg.ModuleGraph {
+		return report, nil
+	}
+
+	var facts *factcache.Store
+	if !c.NoCache {
+		facts = factcache.NewStore(factsCacheDir(filepath.Dir(c.Config)))
+	}
+	ex := rust.New(deps.Runner, extractCfg)
+	ex.Cache = facts
+	rustFacts, _, err := ex.Extract(ctx, scope.Scope{Root: root})
+	if err != nil {
+		return report, &exitError{code: 3, msg: fmt.Sprintf("error: discovering Rust synthetic modules: %v", err)}
+	}
+
+	g := graph.Build([]graph.Facts{rustFacts})
+	augmented := classify.AugmentModulesFromGraph(g, cfg.ForClassify().Modules)
+	if len(augmented) == len(cfg.Modules) {
+		return report, nil
+	}
+
+	existingNames := make(map[string]struct{}, len(cfg.Modules)+len(report.Added)+len(report.Suggested))
+	for name := range cfg.Modules {
+		existingNames[name] = struct{}{}
+	}
+	for _, m := range report.Added {
+		existingNames[m.Name] = struct{}{}
+	}
+	for _, m := range report.Suggested {
+		existingNames[m.Name] = struct{}{}
+	}
+
+	var paths []string
+	for path := range augmented {
+		if _, configured := cfg.Modules[path]; configured || !strings.Contains(path, "::") {
+			continue
+		}
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		def := augmented[path]
+		if len(def.Paths) == 0 {
+			def.Paths = []string{path}
+		}
+		report.Suggested = append(report.Suggested, initcfg.ModuleDef{
+			Name:  uniqueSyntheticModuleName(path, existingNames),
+			Paths: def.Paths,
+			Layer: def.Layer,
+		})
+	}
+	return report, nil
+}
+
+func uniqueSyntheticModuleName(path string, used map[string]struct{}) string {
+	base := strings.ReplaceAll(path, "::", "-")
+	if _, exists := used[base]; !exists {
+		used[base] = struct{}{}
+		return base
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d", base, i)
+		if _, exists := used[candidate]; !exists {
+			used[candidate] = struct{}{}
+			return candidate
+		}
+	}
+}
+
 // classifyTargetsForUpdate collects ModuleDefs to classify: Added modules from discovery,
 // plus existing unclassified modules (excluding those already in addedNames).
 func classifyTargetsForUpdate(
@@ -166,8 +255,9 @@ func classifyTargetsForUpdate(
 	report initcfg.UpdateReport,
 	addedNames map[string]struct{},
 ) []initcfg.ModuleDef {
-	targets := make([]initcfg.ModuleDef, 0, len(report.Added)+len(report.Unclassified))
+	targets := make([]initcfg.ModuleDef, 0, len(report.Added)+len(report.Suggested)+len(report.Unclassified))
 	targets = append(targets, report.Added...)
+	targets = append(targets, report.Suggested...)
 	for _, name := range report.Unclassified {
 		if _, isAdded := addedNames[name]; isAdded {
 			continue
@@ -183,7 +273,7 @@ func classifyTargetsForUpdate(
 // LLM role/volatility output is review-only: it is rendered as a diff but never
 // written by config update --apply.
 func hasActionableEdits(report initcfg.UpdateReport) bool {
-	return !report.StructuralInSync
+	return len(report.Added) > 0 || len(report.Removed) > 0 || len(report.PathDrift) > 0
 }
 
 // buildUpdateEdits constructs the ordered Edit slice for an apply pass.

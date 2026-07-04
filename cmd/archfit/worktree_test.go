@@ -345,7 +345,7 @@ func (r *cargoFakeRunner) Detect(ctx context.Context, tool string) (toolrun.Tool
 func (r *cargoFakeRunner) Run(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
 	if cmd.Name == "cargo" && len(cmd.Args) > 0 {
 		switch cmd.Args[0] {
-		case "--version":
+		case flagVersion:
 			return toolrun.Output{Stdout: []byte("cargo 1.75.0\n")}, nil
 		case "metadata":
 			r.mu.Lock()

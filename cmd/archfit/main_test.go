@@ -90,6 +90,7 @@ const (
 	cmdEnrich         = "enrich" // config enrich subcommand (config enrich owner / subdomain / …)
 	cmdExplain        = "explain"
 	fmtJSON           = "--format=json"
+	flagVersion       = "--version"
 	flagGate          = "--gate"
 	filePkgAA         = "pkg/a/a.go"         // the gate-violating source file used across fixtures
 	ruleNoInternalAcc = "no_internal_access" // rule ID in the violating-repo fixture
@@ -339,7 +340,7 @@ func TestRun_Check_RootDecoupledFromConfig(t *testing.T) {
 func TestRun_Version(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	code := Run([]string{"--version"}, &buf)
+	code := Run([]string{flagVersion}, &buf)
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}
