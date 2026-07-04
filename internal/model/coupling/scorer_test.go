@@ -115,6 +115,28 @@ func TestAdditiveScorer_Cube(t *testing.T) {
 			wantBand:  SeverityMedium,
 			wantValue: 5,
 		},
+		// Vendor lock: intrusive+external+high_vol → raw=8+6-0=14→clamp→10 (critical).
+		{
+			name: "intrusive+external+high_vol → critical (clamped)",
+			c: Classification{
+				Strength:   StrengthIntrusive,
+				Distance:   DistanceExternal,
+				Volatility: VolatilityHigh,
+			},
+			wantBand:  SeverityCritical,
+			wantValue: 10,
+		},
+		// Declared external behind a contract: contract+external+low_vol → raw=0+6-2=4 (low).
+		{
+			name: "contract+external+low_vol → low",
+			c: Classification{
+				Strength:   StrengthContract,
+				Distance:   DistanceExternal,
+				Volatility: VolatilityLow,
+			},
+			wantBand:  SeverityLow,
+			wantValue: 4,
+		},
 	}
 
 	for _, tt := range tests {
@@ -217,6 +239,31 @@ func TestMultiplicativeScorer_Cube(t *testing.T) {
 			},
 			wantBand:  SeverityNone,
 			wantValue: 2,
+		},
+		// Vendor lock: intrusive(1.0)+external(min(6/5,1)=1.0)+high_vol(1.0).
+		// D_norm saturates at the ceiling; R_mod=1-|1-1|=1; score=10 → critical.
+		// Locks the clamp: an unclamped 6/5=1.2 would give R_mod=0.8 → 8 (high).
+		{
+			name: "intrusive+external+high_vol → critical (D_norm clamped)",
+			c: Classification{
+				Strength:   StrengthIntrusive,
+				Distance:   DistanceExternal,
+				Volatility: VolatilityHigh,
+			},
+			wantBand:  SeverityCritical,
+			wantValue: 10,
+		},
+		// XOR loose external: functional(0.625)+external(1.0)+high_vol(1.0).
+		// R_mod=1-|0.625-1.0|=0.625; score=round(6.25)=6 → medium (unclamped would be 4).
+		{
+			name: "functional+external+high_vol → medium (D_norm clamped)",
+			c: Classification{
+				Strength:   StrengthFunctional,
+				Distance:   DistanceExternal,
+				Volatility: VolatilityHigh,
+			},
+			wantBand:  SeverityMedium,
+			wantValue: 6,
 		},
 	}
 
