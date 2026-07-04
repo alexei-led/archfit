@@ -50,10 +50,10 @@ Strategy: cache **extractor facts** (the expensive out-of-process work: `go list
 
 ### Task 4: Incremental --base
 
-- [ ] base side facts keyed by commit SHA (+ config-slice + tool versions): immutable ⇒ cache forever; second `--base <same-ref>` run must skip all base-side subprocess work (assert via Runner call counts)
-- [ ] current side uses the Task 2/3 content cache normally
-- [ ] test: `--base` twice in a row → identical delta table, base-side extractors invoked zero times on the second run
-- [ ] `make test && make lint && make archfit`; commit
+- [x] base side facts keyed by commit SHA (+ config-slice + tool versions): immutable ⇒ cache forever; second `--base <same-ref>` run must skip all base-side subprocess work (assert via Runner call counts) — shipped as a deterministic per-SHA worktree path (`baseWorktreeParent`, `<configDir>/.archfit-cache/worktrees/<sha>`), key formula unchanged: several analyzers fold the scan root into their key because cached output embeds absolute paths (cargo `manifest_path`, Go member facts), so a random temp path missed every run; same SHA ⇒ same root ⇒ the existing content keys hit. Fallback to the old random temp dir on `--no-cache`/unresolvable ref/mkdir failure. fact-cache.md D3 updated
+- [x] current side uses the Task 2/3 content cache normally — asserted in the same test (head-side cargo metadata: 0 calls on the warm run)
+- [x] test: `--base` twice in a row → identical delta table, base-side extractors invoked zero times on the second run — `TestDiffCmd_BaseSideFactCacheReuse` (fake cargo Runner counts `cargo metadata` WorkDirs: cold 2 → warm 0 → ref moved 1 base-side re-run; byte-identical stdout; fails against the pre-fix random-path behavior, mutation-checked)
+- [x] `make test && make lint && make archfit`; commit — also smoke-checked on archfit itself: `--base HEAD~1` twice → byte-identical JSON, no stale worktree registrations
 
 ### Task 5: Timing verification (four languages)
 

@@ -391,6 +391,17 @@ func factsCacheDir(baseDir string) string {
 	return filepath.Join(baseDir, ".archfit-cache", "facts")
 }
 
+// baseWorktreesDir returns the --base worktree parent directory under baseDir —
+// worktrees/ beside facts/ and llm/ in the same .archfit-cache root. Each
+// `analyze --base <ref>` checks the base ref out under worktrees/<sha>, a
+// deterministic path, so the per-checkout fact-cache keys (which fold the scan
+// root in because cached subprocess output embeds absolute paths) hit on a
+// repeat run against the same ref. The checkout is removed after each run;
+// only the fact blobs persist.
+func baseWorktreesDir(baseDir string) string {
+	return filepath.Join(baseDir, ".archfit-cache", "worktrees")
+}
+
 // refinablePair is one candidate module pair with its evidence summary.
 type refinablePair struct {
 	From, To    string

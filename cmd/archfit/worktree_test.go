@@ -2,12 +2,19 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
 // gitCommitAll stages all files and creates a commit in dir.
@@ -135,14 +142,16 @@ func TestDiffCmd_WorktreeCleanup(t *testing.T) {
 		t.Fatalf("diff HEAD~1: exit=%d\noutput:\n%s", code, buf.String())
 	}
 
-	// Check that only the main worktree remains (no stale archfit-diff-* entry).
+	// Check that only the main worktree remains — neither a random temp
+	// checkout (archfit-base-*) nor the deterministic per-SHA one
+	// (.archfit-cache/worktrees/<sha>) may stay registered.
 	cmd := exec.Command("git", "worktree", "list", "--porcelain")
 	cmd.Dir = repoDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git worktree list: %v\n%s", err, out)
 	}
-	if strings.Contains(string(out), "archfit-diff-") {
+	if strings.Contains(string(out), "archfit-base-") || strings.Contains(string(out), "worktrees") {
 		t.Errorf("stale worktree entry found after diff:\n%s", out)
 	}
 }
@@ -311,6 +320,145 @@ func TestDiffCmd_ConfigInSubdir(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "CHANGE VS BASE") {
 		t.Errorf("--base output missing the delta section: %s", out)
+	}
+}
+
+// cargoFakeRunner delegates every command to the real runner except cargo:
+// --version returns a pinned version and `cargo metadata` returns a minimal
+// synthesized workspace rooted at the command's WorkDir (cargo embeds absolute
+// paths, which is exactly what the per-checkout fact-cache key must absorb).
+// metadata WorkDirs are recorded so tests can count subprocess invocations.
+type cargoFakeRunner struct {
+	real toolrun.Runner
+
+	mu            sync.Mutex
+	metadataCalls []string
+}
+
+func (r *cargoFakeRunner) Detect(ctx context.Context, tool string) (toolrun.ToolInfo, bool) {
+	if tool == "cargo" {
+		return toolrun.ToolInfo{}, true
+	}
+	return r.real.Detect(ctx, tool)
+}
+
+func (r *cargoFakeRunner) Run(ctx context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+	if cmd.Name == "cargo" && len(cmd.Args) > 0 {
+		switch cmd.Args[0] {
+		case "--version":
+			return toolrun.Output{Stdout: []byte("cargo 1.75.0\n")}, nil
+		case "metadata":
+			r.mu.Lock()
+			r.metadataCalls = append(r.metadataCalls, cmd.WorkDir)
+			r.mu.Unlock()
+			return toolrun.Output{Stdout: fakeCargoMetadata(cmd.WorkDir)}, nil
+		}
+	}
+	return r.real.Run(ctx, cmd)
+}
+
+func (r *cargoFakeRunner) Stream(ctx context.Context, cmd toolrun.ToolCmd, consume func(io.Reader) error) (toolrun.Output, error) {
+	return r.real.Stream(ctx, cmd, consume)
+}
+
+func (r *cargoFakeRunner) metadataWorkDirs() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.metadataCalls)
+}
+
+// fakeCargoMetadata synthesizes a one-crate `cargo metadata --no-deps` result
+// rooted at workDir, mirroring cargo's absolute manifest_path/workspace_root.
+func fakeCargoMetadata(workDir string) []byte {
+	id := "path+file://" + workDir + "#demo@0.1.0"
+	data, err := json.Marshal(map[string]any{
+		"packages": []map[string]any{{
+			"id":            id,
+			"name":          "demo",
+			"manifest_path": filepath.Join(workDir, "Cargo.toml"),
+			"source":        nil,
+			"dependencies":  []any{},
+			"targets":       []map[string]any{{"name": "demo", "kind": []string{"bin"}}},
+		}},
+		"workspace_members": []string{id},
+		"workspace_root":    workDir,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return data
+}
+
+// TestDiffCmd_BaseSideFactCacheReuse pins Wave 6 Task 4: the base worktree
+// path is a deterministic function of the resolved base commit SHA
+// (.archfit-cache/worktrees/<sha>), so a second `--base <same-ref>` run
+// serves both sides' cargo metadata from the fact cache — zero extractor
+// subprocess calls — with byte-identical output. Moving the ref (new base
+// SHA) re-runs the base side: immutability is keyed to the commit, never
+// assumed across refs.
+func TestDiffCmd_BaseSideFactCacheReuse(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	files := map[string]string{
+		"Cargo.toml":      "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+		"src/main.rs":     "fn main() {}\n",
+		defaultConfigPath: minimalValidYAML,
+	}
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitInitFixtureRepo(t, dir)
+	gitCommitAll(t, dir, "initial commit")
+	mainRS := filepath.Join(dir, "src", "main.rs")
+	if err := os.WriteFile(mainRS, []byte("fn main() { let _x = 1; }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitCommitAll(t, dir, "edit main.rs")
+
+	cfgPath := filepath.Join(dir, defaultConfigPath)
+	runBase := func() (string, []string) {
+		t.Helper()
+		fake := &cargoFakeRunner{real: toolrun.New()}
+		var stdout, stderr bytes.Buffer
+		cmd := AnalyzeCmd{Config: cfgPath, Base: diffBaseRef, Format: []string{formatJSON}}
+		err := cmd.Run(&appDeps{Runner: fake, Stdout: &stdout, Stderr: &stderr})
+		var ee *exitError
+		if err != nil && (!errors.As(err, &ee) || ee.code > 1) {
+			t.Fatalf("analyze --base: %v\nstderr:\n%s", err, stderr.String())
+		}
+		return stdout.String(), fake.metadataWorkDirs()
+	}
+
+	out1, calls1 := runBase()
+	if len(calls1) != 2 {
+		t.Fatalf("cold --base run: cargo metadata calls = %d (%v), want 2 (head + base)", len(calls1), calls1)
+	}
+
+	out2, calls2 := runBase()
+	if len(calls2) != 0 {
+		t.Errorf("warm --base run: cargo metadata calls = %v, want none (both sides cached)", calls2)
+	}
+	if out1 != out2 {
+		t.Errorf("warm --base output differs from cold run:\n%s", firstDiffLine(out1, out2))
+	}
+
+	// Move the ref: HEAD~1 now names a different commit, so the base side must
+	// re-run (fresh SHA ⇒ fresh worktree path ⇒ cache miss). The head side's
+	// cargo metadata key is manifests-only, so the .rs edit leaves it cached.
+	if err := os.WriteFile(mainRS, []byte("fn main() { let _x = 2; }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitCommitAll(t, dir, "edit main.rs again")
+	_, calls3 := runBase()
+	if len(calls3) != 1 || !strings.Contains(calls3[0], "worktrees") {
+		t.Errorf("--base after ref moved: cargo metadata calls = %v, want exactly one base-side call under .archfit-cache/worktrees", calls3)
 	}
 }
 

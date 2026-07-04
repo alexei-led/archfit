@@ -100,7 +100,7 @@ func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, confi
 	// path does this via scope.snapScanRoot/os.SameFile; the delta path must too (F4).
 	headScanRoot = snapToGitRoot(gitRoot, headScanRoot)
 
-	tmpBase, err := os.MkdirTemp("", "archfit-base-*")
+	tmpBase, err := baseWorktreeParent(ctx, deps, gitRoot, baseRef, filepath.Dir(configPath))
 	if err != nil {
 		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: create temp dir: %v", err)}
 	}
@@ -151,6 +151,38 @@ func runScoreSide(ctx context.Context, deps *appDeps, configPath, root string, n
 		return score.Scorecard{}, err
 	}
 	return sc, nil
+}
+
+// baseWorktreeParent picks the parent directory for the base-side worktree
+// (wt/ is created inside it and the whole directory is removed after the run).
+//
+// With the fact cache on, the path is a deterministic function of the resolved
+// base commit SHA: `<configDir>/.archfit-cache/worktrees/<sha>`. The base tree
+// is immutable, and the per-checkout fact-cache keys fold the scan-root path in
+// (cached subprocess output embeds absolute paths — see rust.cachedRunner /
+// golang.memberKeys), so a repeat `--base <same-ref>` run reuses the same
+// absolute root and every base-side extractor subprocess becomes a cache hit
+// (Wave 6 Task 4). A leftover checkout from a crashed run is removed and the
+// path reused. `--no-cache`, an unresolvable ref, or any cleanup/mkdir failure
+// falls back to the historical random temp dir — correct, just uncached.
+//
+// Deliberate simplification: two concurrent `--base <same-ref>` runs on the
+// same checkout race on this directory (the second removes the first's live
+// worktree). Ceiling: one archfit process per checkout — the CLI's normal
+// operating mode; upgrade trigger: a reproduced concurrent-run failure.
+func baseWorktreeParent(ctx context.Context, deps *appDeps, gitRoot, baseRef, configDir string) (string, error) {
+	if !deps.noCache {
+		if sha, err := git.ResolveCommit(ctx, gitRoot, baseRef, deps.Runner); err == nil {
+			dir := filepath.Join(baseWorktreesDir(configDir), sha)
+			removeWorktree(ctx, deps.Runner, gitRoot, filepath.Join(dir, "wt"))
+			if rerr := os.RemoveAll(dir); rerr == nil {
+				if merr := os.MkdirAll(dir, 0o750); merr == nil {
+					return dir, nil
+				}
+			}
+		}
+	}
+	return os.MkdirTemp("", "archfit-base-*")
 }
 
 // snapToGitRoot rewrites headRoot so its gitRoot prefix uses gitRoot's canonical

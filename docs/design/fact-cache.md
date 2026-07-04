@@ -95,10 +95,18 @@ hex-encoded. `\0` separators prevent boundary ambiguity (same convention as
   mtimes: mtime invalidation breaks under git checkout/rebase, and hashing a
   whole repo is sub-second next to multi-minute subprocess runs.
 
-`--base <ref>` side (Task 4): the immutable base worktree is keyed by
-`commit SHA + toolVersion + configSliceHash` instead of an input-tree hash —
-the SHA already pins the tree, so the second `--base <same-ref>` run does zero
-base-side subprocess work.
+`--base <ref>` side (Task 4, as shipped): the key formula is UNCHANGED — the
+commit SHA enters through the worktree PATH instead. Several analyzers fold
+the scan-root path into their config-slice hash because the cached subprocess
+output embeds absolute paths (cargo metadata's `manifest_path`, Go member
+facts), so a random temp worktree would miss every run. `scoreBaseRef` now
+checks the base ref out at the deterministic path
+`<configDir>/.archfit-cache/worktrees/<sha>` (`baseWorktreeParent`,
+`cmd/archfit/worktree.go`): same ref ⇒ same SHA ⇒ same absolute root ⇒ the
+existing content keys hit, and the second `--base <same-ref>` run does zero
+base-side subprocess work. The checkout is removed after each run (only fact
+blobs persist); `--no-cache`, an unresolvable ref, or a cleanup/mkdir failure
+falls back to the historical random temp dir — correct, just uncached.
 
 Never written to cache: timed-out runs, partial-status results
 (`Coverage.Status != ok`), and exec-level failures — a cached degradation would
