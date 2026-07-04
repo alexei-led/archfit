@@ -454,6 +454,7 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
+        "id",
         "type"
       ],
       "description": "RuleDef declares a single architecture rule."

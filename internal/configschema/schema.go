@@ -125,11 +125,10 @@ func patchDefinitions(schema *jsonschema.Schema) {
 			def.Required = []string{"targets"}
 		}
 		if name == "RuleDef" {
-			// Mirror rules.New (internal/rules): an empty or unrecognized rule
-			// `type` is a hard load error, so the schema must not show a
-			// typeless rule entry as valid. `id` stays optional — validation
-			// substitutes a positional placeholder.
-			def.Required = []string{"type"}
+			// Mirror validateRules/rules.New: every rule needs a stable id for
+			// finding fingerprints/baseline matching, and an empty or
+			// unrecognized `type` is a hard load error.
+			def.Required = []string{"id", "type"}
 		}
 		if name == "PatternDef" {
 			// Mirror validateRules (internal/config): ast-grep runs

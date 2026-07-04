@@ -30,6 +30,7 @@ import (
 
 const (
 	rulePublicAPIOnly     = "public_api_only"
+	ruleLabelsStale       = "labels/stale"
 	pathFileA             = "pkg/a/a.go"
 	pathFileANode         = "file:pkg/a/a.go"
 	pathFileBInternal     = "pkg/b/internal/impl.go"
@@ -142,7 +143,7 @@ func cleanFacts() graph.Facts {
 				To:         pathFileBAPIServiceNode,
 				Kind:       graph.EdgeKindImports,
 				Language:   "go",
-				Confidence: "high",
+				Confidence: confidenceHigh,
 				Locations:  []graph.Location{{File: pathFileA, Line: 3}},
 			},
 		},
@@ -1643,7 +1644,7 @@ func TestRun_PinnedLabels(t *testing.T) {
 			t.Errorf("strength = %q, want model (pinned)", got)
 		}
 		for _, f := range d.Findings {
-			if f.RuleID == "labels/stale" {
+			if f.RuleID == ruleLabelsStale {
 				t.Errorf("unexpected stale advisory for fresh label: %+v", f)
 			}
 		}
@@ -1659,7 +1660,7 @@ func TestRun_PinnedLabels(t *testing.T) {
 		}
 		found := false
 		for _, f := range d.Findings {
-			if f.RuleID == "labels/stale" && f.Edge.From.Module == "a" && f.Edge.To.Module == "b" {
+			if f.RuleID == ruleLabelsStale && f.Edge.From.Module == "a" && f.Edge.To.Module == "b" {
 				found = true
 			}
 		}
@@ -1942,7 +1943,7 @@ func TestRun_GoWorkspace_ModuleMapRebuild(t *testing.T) {
 		Edges: []graph.Edge{
 			{
 				From: "file:" + fileSvc, To: "file:lib/util.go",
-				Kind: graph.EdgeKindImports, Language: "go", Confidence: "high",
+				Kind: graph.EdgeKindImports, Language: "go", Confidence: confidenceHigh,
 			},
 		},
 		GoModules: []graph.GoModule{
@@ -1992,6 +1993,81 @@ func TestRun_GoWorkspace_ModuleMapRebuild(t *testing.T) {
 	if got != modPathSvc {
 		// Before the fix the stale ModuleMap returned "" and the fallback was "svc".
 		t.Errorf("DynamicImports[0].Module = %q, want %q (rebuilt ModuleMap must resolve auto-registered workspace member)", got, modPathSvc)
+	}
+}
+
+func TestRun_GoWorkspace_StalePinnedLabelUsesAugmentedModuleMap(t *testing.T) {
+	const (
+		modPathSvc = "example.com/svc"
+		modPathLib = "example.com/lib"
+		fileSvc    = "svc/main.go"
+		fileLib    = "lib/util.go"
+	)
+	workspaceFacts := graph.Facts{
+		Language: "go",
+		Nodes: []graph.Node{
+			{Kind: graph.NodeKindFile, Path: fileSvc},
+			{Kind: graph.NodeKindFile, Path: fileLib},
+		},
+		Edges: []graph.Edge{
+			{
+				From: "file:" + fileSvc, To: "file:" + fileLib,
+				Kind: graph.EdgeKindImports, Language: "go", Confidence: confidenceHigh, StrengthHint: strengthFunctional,
+			},
+		},
+		GoModules: []graph.GoModule{
+			{Path: modPathSvc, RelDir: "svc"},
+			{Path: modPathLib, RelDir: "lib"},
+		},
+	}
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return workspaceFacts, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+	cfg := config.Config{Version: 1}
+	rs, err := rules.New(cfg.ForRules())
+	if err != nil {
+		t.Fatalf("rules.New: %v", err)
+	}
+	var captured signal.CollectedSignals
+	spy := &spyMetric{captured: &captured}
+	d, err := engine.Run(context.Background(), engine.RunInput{
+		Mode:       engine.Mode{Head: headRef, Advisory: true},
+		Scope:      scope.Scope{Root: "."},
+		Classify:   cfg.ForClassify(),
+		Staleness:  config.StalenessConfig{},
+		Waivers:    config.WaiverSet{},
+		Extractors: []ports.Extractor{ex},
+		Patterns:   ports.NopPatternProvider{},
+		Resolver:   ports.NopSymbolResolver{},
+		PatternCfg: config.PatternConfig{},
+		Rules:      rs,
+		Metrics:    []metrics.Metric{spy},
+		Accepted:   baseline.Baseline{},
+		Labels: []labels.Label{{
+			From: modPathSvc, To: modPathLib, Strength: strengthModel,
+			EvidenceHash: "deadbeef", Status: labels.StatusApproved,
+		}},
+		Now: time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	key := "file:" + fileSvc + "\x00" + "file:" + fileLib + "\x00" + string(graph.EdgeKindImports)
+	if got := string(captured.Common.Classifications[key].Strength); got != strengthFunctional {
+		t.Errorf("stale synthetic-module label strength = %q, want existing hint %q", got, strengthFunctional)
+	}
+	found := false
+	for _, f := range d.Findings {
+		if f.RuleID == ruleLabelsStale && f.Edge.From.Module == modPathSvc && f.Edge.To.Module == modPathLib {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("labels/stale advisory missing for synthetic module pair; findings = %+v", d.Findings)
 	}
 }
 

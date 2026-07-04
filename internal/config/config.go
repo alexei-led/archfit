@@ -247,7 +247,7 @@ func validate(cfg Config) error {
 	return validateFileClass(cfg.FileClass)
 }
 
-// validateRules checks each rule entry's gate value and its patterns: block.
+// validateRules checks each rule entry's stable id, gate value, and patterns: block.
 // ast-grep runs `sg --lang <lang> --pattern <rule>` per pattern entry and keys
 // findings by id — a partial entry loads clean but fails opaquely (or dedups
 // wrongly) at analyze time inside the subprocess.
@@ -255,7 +255,7 @@ func validateRules(rules []RuleDef) error {
 	for i, r := range rules {
 		id := r.ID
 		if id == "" {
-			id = fmt.Sprintf("#%d", i)
+			return fmt.Errorf("rules[#%d].id is required", i)
 		}
 		if err := validateGate(fmt.Sprintf("rules[%s]", id), r.Gate); err != nil {
 			return err

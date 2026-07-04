@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -180,21 +181,28 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 // script), so EntryArgs replaces it with the deterministic invocation
 // identity: tool + package list. The helper source itself is key material —
 // editing grimp_helper.py must invalidate — so its hash rides the config
-// slice. Key inputs otherwise: tool version, the ExtractConfig view, the scan
-// root, and the content hash of every .py + manifest file under s.Root.
-// Ceiling: the virtualenv contents are not keyed — installing a dependency
-// without touching a manifest can leave a stale OK entry; the cacheableGrimp
-// veto blocks the sticky-degradation direction.
+// slice. Key inputs otherwise: uv version, the ExtractConfig view, the scan
+// root, local virtualenv package metadata when present, and the content hash
+// of every .py + manifest file under s.Root. The python3.12 fallback is left
+// uncached because its global/site environment is outside repo key material.
 func (e *Extractor) cachedRunner(s scope.Scope, tool, version string, pkgs []string) toolrun.Runner {
 	if e.Cache == nil {
 		return e.runner
 	}
+	if tool != "uv" {
+		return e.runner
+	}
 	helperSum := sha256.Sum256(grimpHelperSrc)
+	resolverStateHash, err := pyResolverStateHash(s.Root)
+	if err != nil {
+		return e.runner
+	}
 	cfgHash, err := factcache.HashJSON(struct {
-		Cfg        config.ExtractConfig
-		Root       string
-		HelperHash string
-	}{e.cfg, s.Root, hex.EncodeToString(helperSum[:])})
+		Cfg               config.ExtractConfig
+		Root              string
+		HelperHash        string
+		ResolverStateHash string
+	}{e.cfg, s.Root, hex.EncodeToString(helperSum[:]), resolverStateHash})
 	if err != nil {
 		return e.runner
 	}
@@ -216,6 +224,41 @@ func (e *Extractor) cachedRunner(s scope.Scope, tool, version string, pkgs []str
 		Cacheable: cacheableGrimp,
 		EntryArgs: append([]string{tool}, pkgs...),
 	}
+}
+
+func pyResolverStateHash(root string) (string, error) {
+	files := pyResolverInputs(root)
+	if len(files) == 0 {
+		return "", nil
+	}
+	return factcache.HashTree(root, files)
+}
+
+func pyResolverInputs(root string) []string {
+	var files []string
+	for _, dir := range []string{".venv", "venv"} {
+		base := filepath.Join(root, dir)
+		if _, err := os.Stat(base); err != nil {
+			continue
+		}
+		_ = filepath.WalkDir(base, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return nil
+			}
+			if d.IsDir() {
+				return nil
+			}
+			switch filepath.Base(path) {
+			case "METADATA", "RECORD", "direct_url.json", "pyvenv.cfg":
+				rel, err := filepath.Rel(root, path)
+				if err == nil {
+					files = append(files, filepath.ToSlash(rel))
+				}
+			}
+			return nil
+		})
+	}
+	return files
 }
 
 // cacheableGrimp vetoes caching output the extractor would report as partial

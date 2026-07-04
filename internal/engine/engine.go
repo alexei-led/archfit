@@ -139,13 +139,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	}
 
 	// --- Stage 3: Classify ---
-	// Pinned coupling labels first: approved entries refine strength
-	// classification (human/tool: config globs > approved labels > extractor
-	// hint; llm: fills only cells all static sources left unknown); stale ones
-	// surface as labels/stale advisories.
 	classifyCfg := in.Classify
-	staleLabelFindings, llmApprovedCount := applyPinnedLabels(ex.g, &classifyCfg, in.Mode, in.Labels)
-
 	// Register auto-discovered module-graph nodes (Rust "<crate>::<mod>") as modules so
 	// classify can resolve their distance/volatility; otherwise their edges are
 	// distance-unknown and coupling_balance/encapsulation never see them. No-op for
@@ -169,6 +163,12 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// without this rebuild, Go workspace members and Rust sub-modules would
 	// resolve to blank module names in the diagnostic.
 	classifyCfg.ModuleMap = config.BuildModuleMap(classifyCfg.Modules)
+
+	// Pinned coupling labels refine strength classification (human/tool: config
+	// globs > approved labels > extractor hint; llm: fills only cells all static
+	// sources left unknown). Freshness must use the augmented ModuleMap above, or
+	// labels for synthetic Go/Rust module pairs bypass the stale-evidence check.
+	staleLabelFindings, llmApprovedCount := applyPinnedLabels(ex.g, &classifyCfg, in.Mode, in.Labels)
 
 	// Thread clone pairs for the clone-driven classify paths: Symmetric-strength
 	// upgrade, volatility-cascade exclusion, duplicated-knowledge pairing.

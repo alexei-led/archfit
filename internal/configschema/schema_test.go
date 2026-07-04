@@ -70,8 +70,8 @@ func TestSchemaPatchedDefinitions(t *testing.T) {
 	if !ok {
 		t.Fatal("RuleDef definition missing from generated schema")
 	}
-	if len(ruleDef.Required) != 1 || ruleDef.Required[0] != "type" {
-		t.Errorf("RuleDef.required = %v, want [type] (rules.New hard-errors on a missing type)", ruleDef.Required)
+	if !slices.Equal(ruleDef.Required, []string{"id", "type"}) {
+		t.Errorf("RuleDef.required = %v, want [id type] (rule ids feed stable finding fingerprints)", ruleDef.Required)
 	}
 
 	extDef, ok := schema.Defs["ExternalSystemDef"]

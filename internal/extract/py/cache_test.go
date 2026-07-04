@@ -89,6 +89,43 @@ func TestFactCache_HitAndPyFileInvalidation(t *testing.T) {
 	}
 }
 
+func TestFactCache_VenvMetadataInvalidates(t *testing.T) {
+	t.Parallel()
+	root := writePyFixture(t)
+	metadata := filepath.Join(root, ".venv", "lib", "python3.12", "site-packages", "dep-1.0.dist-info", "METADATA")
+	if err := os.MkdirAll(filepath.Dir(metadata), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(metadata, []byte("Name: dep\nVersion: 1.0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	runner := pyCacheRunner(`{"edges":[{"importer":"pkg","imported":"dep","line":1,"line_contents":"import dep"}],"unresolved":0}`, &calls)
+	ex := py.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
+	ex.Cache = factcache.NewStore(t.TempDir())
+	ctx := context.Background()
+	s := scope.Scope{Root: root}
+
+	for range 2 {
+		if _, _, err := ex.Extract(ctx, s); err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("warm run: want cache hit (1 call), got %d", calls)
+	}
+
+	if err := os.WriteFile(metadata, []byte("Name: dep\nVersion: 1.1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ex.Extract(ctx, s); err != nil {
+		t.Fatalf("Extract after venv metadata edit: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("venv metadata edit must invalidate: want 2 helper calls, got %d", calls)
+	}
+}
+
 // TestFactCache_ExcludedFileEditInvalidates pins key faithfulness: grimp
 // analyses the package regardless of config `exclude:` globs, so editing a
 // file those globs match must still invalidate the entry — the input-tree

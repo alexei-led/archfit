@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -309,10 +310,8 @@ func (e *Extractor) detectVersion(ctx context.Context, launcher string) string {
 // blob may embed tree-specific paths, so entries are per-checkout), the
 // resolved tsconfig content (it may live ABOVE s.Root in subtree mode, outside
 // the tree walk), root-level resolution manifests when depcruise runs from a
-// git root, and the content hash of every TS/JS source + manifest file under
-// s.Root. Ceiling: node_modules state is not keyed — installing or removing
-// packages without touching a manifest can leave a stale OK entry; the
-// cacheableDepcruise veto blocks the sticky-degradation direction.
+// git root, package metadata under node_modules when present, and the content
+// hash of every TS/JS source + manifest file under s.Root.
 func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath, workDir string) toolrun.Runner {
 	if e.Cache == nil {
 		return e.runner
@@ -344,12 +343,17 @@ func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath, workDir s
 			}
 		}
 	}
+	resolverStateHash, err := tsResolverStateHash(s.Root, workDir)
+	if err != nil {
+		return e.runner
+	}
 	cfgHash, err := factcache.HashJSON(struct {
 		Cfg                 config.ExtractConfig
 		Root                string
 		TSConfigHash        string
 		WorkDirManifestHash string
-	}{e.cfg, s.Root, tsConfigHash, workDirManifestHash})
+		ResolverStateHash   string
+	}{e.cfg, s.Root, tsConfigHash, workDirManifestHash, resolverStateHash})
 	if err != nil {
 		return e.runner
 	}
@@ -369,6 +373,66 @@ func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath, workDir s
 		Key:       factcache.Key(langTS, version, cfgHash, treeHash),
 		Cacheable: cacheableDepcruise,
 	}
+}
+
+func tsResolverStateHash(roots ...string) (string, error) {
+	parts := map[string]string{}
+	seen := map[string]struct{}{}
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		abs, err := filepath.Abs(root)
+		if err != nil {
+			return "", err
+		}
+		if _, ok := seen[abs]; ok {
+			continue
+		}
+		seen[abs] = struct{}{}
+		files := nodeResolverInputs(abs)
+		if len(files) == 0 {
+			continue
+		}
+		h, err := factcache.HashTree(abs, files)
+		if err != nil {
+			return "", err
+		}
+		parts[abs] = h
+	}
+	if len(parts) == 0 {
+		return "", nil
+	}
+	return factcache.HashJSON(parts)
+}
+
+func nodeResolverInputs(root string) []string {
+	base := filepath.Join(root, "node_modules")
+	if _, err := os.Stat(base); err != nil {
+		return nil
+	}
+	var files []string
+	_ = filepath.WalkDir(base, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".bin", ".cache":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		switch filepath.Base(path) {
+		case "package.json", ".package-lock.json", ".modules.yaml":
+			rel, err := filepath.Rel(root, path)
+			if err == nil {
+				files = append(files, filepath.ToSlash(rel))
+			}
+		}
+		return nil
+	})
+	return files
 }
 
 // cacheableDepcruise vetoes caching output the extractor would report as

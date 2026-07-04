@@ -92,6 +92,38 @@ func TestFactCache_HitAndTSConfigInvalidation(t *testing.T) {
 	}
 }
 
+func TestFactCache_NodeModulesMetadataInvalidates(t *testing.T) {
+	t.Parallel()
+	root := writeTSFixture(t, `import leftPad from "left-pad";`, map[string]string{
+		"node_modules/left-pad/package.json": `{"name":"left-pad","version":"1.0.0"}`,
+	})
+	calls := 0
+	runner := cacheFixtureRunner(`{"modules":[{"source":"a.ts","dependencies":[{"module":"left-pad","resolved":"node_modules/left-pad/index.js"}]}]}`, &calls)
+	ex := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto, Src: "."})
+	ex.Cache = factcache.NewStore(t.TempDir())
+	ctx := context.Background()
+	s := scope.Scope{Root: root}
+
+	for range 2 {
+		if _, _, err := ex.Extract(ctx, s); err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("warm run: want cache hit (1 call), got %d", calls)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "node_modules", "left-pad", "package.json"), []byte(`{"name":"left-pad","version":"1.0.1"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ex.Extract(ctx, s); err != nil {
+		t.Fatalf("Extract after node_modules metadata edit: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("node_modules metadata edit must invalidate: want 2 calls, got %d", calls)
+	}
+}
+
 // TestFactCache_ExcludedFileEditInvalidates pins key faithfulness: depcruise
 // skips only node_modules, not config `exclude:` globs, so editing a file
 // those globs match must still invalidate the entry — the input-tree hash may

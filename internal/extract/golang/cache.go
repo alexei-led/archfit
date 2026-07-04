@@ -311,12 +311,13 @@ var goListHashExcludes = []string{"**/testdata/**"}
 // Members nobody depends on invalidate alone ("edit one member file → only
 // that member re-loads").
 func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDirs []string) []string {
+	env := e.goCacheEnv(ctx)
 	cfgHash, err := factcache.HashJSON(struct {
 		Cfg    config.ExtractConfig
 		Root   string
 		GoWork string
 		Env    map[string]string
-	}{e.cfg, scanRoot, hashGoWork(scanRoot), e.goCacheEnv(ctx)})
+	}{e.cfg, scanRoot, hashGoWork(scanRoot, env), env})
 	if err != nil {
 		return nil
 	}
@@ -346,7 +347,7 @@ func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDir
 		infos[i].localReplace = hasLocalReplace(mod.Replace)
 		infos[i].files = memberInputFiles(scanRoot, dir, memberDirs)
 	}
-	unkeyed, workLocalReplace := unkeyedWorkspaceMods(scanRoot, memberDirs)
+	unkeyed, workLocalReplace := unkeyedWorkspaceMods(scanRoot, memberDirs, env)
 	if workLocalReplace {
 		return nil // go.work replaces a module with a local dir no key can see
 	}
@@ -414,8 +415,8 @@ func hasLocalReplace(replaces []*modfile.Replace) bool {
 // local-directory replace. packages.Load in workspace mode still compiles
 // against those members' source, which no per-member key covers. Best-effort:
 // a missing/unparsable go.work or member go.mod contributes nothing.
-func unkeyedWorkspaceMods(scanRoot string, memberDirs []string) (map[string]struct{}, bool) {
-	path, found := findGoWork(scanRoot)
+func unkeyedWorkspaceMods(scanRoot string, memberDirs []string, env map[string]string) (map[string]struct{}, bool) {
+	path, found := effectiveGoWorkPath(scanRoot, env)
 	if !found {
 		return nil, false
 	}
@@ -501,11 +502,12 @@ func memberInputFiles(scanRoot, memberDir string, memberDirs []string) []string 
 	return out
 }
 
-// hashGoWork returns the sha256 of the go.work + go.work.sum contents that
-// govern scanRoot, or "" when no go.work exists. The file may live ABOVE
-// scanRoot (findGoWork walks up), so it cannot ride the input-tree hash.
-func hashGoWork(scanRoot string) string {
-	path, found := findGoWork(scanRoot)
+// hashGoWork returns the sha256 of the effective go.work + go.work.sum
+// contents that govern scanRoot, or "" when workspace mode is off or no
+// go.work exists. The file may live ABOVE or outside scanRoot (findGoWork walks
+// up; GOWORK can point elsewhere), so it cannot ride the input-tree hash.
+func hashGoWork(scanRoot string, env map[string]string) string {
+	path, found := effectiveGoWorkPath(scanRoot, env)
 	if !found {
 		return ""
 	}
@@ -517,6 +519,21 @@ func hashGoWork(scanRoot string) string {
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func effectiveGoWorkPath(scanRoot string, env map[string]string) (string, bool) {
+	if p := env["GOWORK"]; p != "" {
+		if p == "off" {
+			return "", false
+		}
+		if !filepath.IsAbs(p) {
+			if abs, err := filepath.Abs(p); err == nil {
+				p = abs
+			}
+		}
+		return filepath.Clean(p), true
+	}
+	return findGoWork(scanRoot)
 }
 
 // goVersion probes the go toolchain version through the injected Runner —

@@ -1399,9 +1399,14 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			wantErr: "rules[nocycle]",
 		},
 		{
-			name:    "invalid rule gate without id falls back to index",
+			name:    "missing rule id rejected",
 			yaml:    "version: 1\nrules:\n  - type: cycle\n    gate: block\n",
-			wantErr: "rules[#0]",
+			wantErr: "rules[#0].id is required",
+		},
+		{
+			name:    "empty rule id rejected",
+			yaml:    "version: 1\nrules:\n  - id: \"\"\n    type: cycle\n",
+			wantErr: "rules[#0].id is required",
 		},
 		{
 			name:    "pattern entry missing rule rejected",

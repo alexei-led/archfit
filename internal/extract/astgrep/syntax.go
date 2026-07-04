@@ -364,6 +364,20 @@ func decodeSyntaxStream(r io.Reader, lang string) ([]sgSyntaxMatch, error) {
 		}
 		matches = append(matches, m)
 	}
+	tok, err = dec.Token()
+	if err != nil {
+		return nil, fmt.Errorf("astgrep: parse syntax output for %q: %w", lang, err)
+	}
+	if delim, ok := tok.(json.Delim); !ok || delim != ']' {
+		return nil, fmt.Errorf("astgrep: parse syntax output for %q: expected JSON array end, got %v", lang, tok)
+	}
+	var extra json.RawMessage
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return nil, fmt.Errorf("astgrep: parse syntax output for %q: trailing data: %w", lang, err)
+		}
+		return nil, fmt.Errorf("astgrep: parse syntax output for %q: unexpected trailing JSON value", lang)
+	}
 	return matches, nil
 }
 

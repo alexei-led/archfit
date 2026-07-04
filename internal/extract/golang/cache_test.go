@@ -358,3 +358,50 @@ func TestFactCache_GoEnvChangeInvalidates(t *testing.T) {
 		t.Errorf("GOFLAGS change must invalidate both members, got %v", loader.calls)
 	}
 }
+
+func TestFactCache_ExplicitGoWorkContentInvalidates(t *testing.T) {
+	root, dirA, dirB := writeWorkspaceFixture(t)
+	workDir := t.TempDir()
+	workPath := filepath.Join(workDir, "go.work")
+	writeWork := func(suffix string) {
+		t.Helper()
+		relA, err := filepath.Rel(workDir, dirA)
+		if err != nil {
+			t.Fatal(err)
+		}
+		relB, err := filepath.Rel(workDir, dirB)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data := "go 1.24\n\nuse (\n\t" + filepath.ToSlash(relA) + "\n\t" + filepath.ToSlash(relB) + "\n)\n" + suffix
+		if err := os.WriteFile(workPath, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeWork("")
+	t.Setenv("GOWORK", workPath)
+
+	loader := &fakeLoader{calls: map[string]int{}}
+	ex := New(config.ExtractConfig{})
+	ex.Cache = factcache.NewStore(t.TempDir())
+	ex.load = loader.load
+	ctx := context.Background()
+	s := scope.Scope{Root: root}
+
+	for range 2 {
+		if _, _, err := ex.Extract(ctx, s); err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+	}
+	if loader.calls[dirA] != 1 || loader.calls[dirB] != 1 {
+		t.Fatalf("warm run: want cache hit, got %v", loader.calls)
+	}
+
+	writeWork("// changed workspace content\n")
+	if _, _, err := ex.Extract(ctx, s); err != nil {
+		t.Fatalf("Extract after GOWORK edit: %v", err)
+	}
+	if loader.calls[dirA] != 2 || loader.calls[dirB] != 2 {
+		t.Errorf("explicit GOWORK content change must invalidate both members, got %v", loader.calls)
+	}
+}
