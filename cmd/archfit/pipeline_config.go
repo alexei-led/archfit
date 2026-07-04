@@ -111,8 +111,9 @@ func ownerDegradationWarning(src ownership.Source) string {
 	switch src {
 	case ownership.SourceCodeownersNoMatch:
 		return "owner resolution: a CODEOWNERS file was found but matched none of the configured " +
-			"modules (owner_source=codeowners_no_match) — check --root/subtree case and module path " +
-			"globs; coupling distance falls back to code_structure"
+			"modules (owner_source=codeowners_no_match) — its rules may simply not cover any module " +
+			"path (benign), or the --root/subtree case or module path globs are wrong; coupling " +
+			"distance falls back to code_structure"
 	case ownership.SourceGitTimeout:
 		return "owner resolution: the git-author history walk timed out before resolving any owner " +
 			"(owner_source=git_timeout) — coupling distance falls back to code_structure"

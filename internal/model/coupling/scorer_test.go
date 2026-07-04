@@ -36,11 +36,9 @@ func TestAdditiveScorer_Cube(t *testing.T) {
 		name      string
 		c         Classification
 		wantBand  Severity
-		wantClamp bool // value must be in [0,10]
+		wantValue int
 	}{
-		// XOR modular quadrants: high strength + low distance → raw = 5+1-0 = 6 (medium)
-		// or 5+1-2 = 4 (low) with low vol — but more importantly value must be ≤ 10.
-		// Key: XOR cohesive (functional+same_owner, low_vol): raw=5+1-2=4 → low.
+		// XOR cohesive (functional+same_owner, low_vol): raw=5+1-2=4 → low.
 		{
 			name: "XOR cohesive functional+same_owner low_vol",
 			c: Classification{
@@ -49,7 +47,7 @@ func TestAdditiveScorer_Cube(t *testing.T) {
 				Volatility: VolatilityLow,
 			},
 			wantBand:  SeverityLow,
-			wantClamp: true,
+			wantValue: 4,
 		},
 		// XOR loose (contract+cross_deploy, low_vol): raw=0+5-2=3 → low.
 		{
@@ -60,7 +58,7 @@ func TestAdditiveScorer_Cube(t *testing.T) {
 				Volatility: VolatilityLow,
 			},
 			wantBand:  SeverityLow,
-			wantClamp: true,
+			wantValue: 3,
 		},
 		// Symmetric bad: intrusive+cross_deploy+high_vol → raw=8+5-0=13→clamp→10 (critical).
 		{
@@ -71,7 +69,7 @@ func TestAdditiveScorer_Cube(t *testing.T) {
 				Volatility: VolatilityHigh,
 			},
 			wantBand:  SeverityCritical,
-			wantClamp: true,
+			wantValue: 10,
 		},
 		// Symmetric good: contract+same_owner+low_vol → raw=0+1-2=clamp(0)→0 (none).
 		{
@@ -82,7 +80,7 @@ func TestAdditiveScorer_Cube(t *testing.T) {
 				Volatility: VolatilityLow,
 			},
 			wantBand:  SeverityNone,
-			wantClamp: true,
+			wantValue: 0,
 		},
 		// functional+cross_deploy+high_vol → raw=5+5-0=10 (critical).
 		{
@@ -93,7 +91,7 @@ func TestAdditiveScorer_Cube(t *testing.T) {
 				Volatility: VolatilityHigh,
 			},
 			wantBand:  SeverityCritical,
-			wantClamp: true,
+			wantValue: 10,
 		},
 		// model+cross_module_diff_owner+medium_vol → raw=2+3-1=4 (low).
 		{
@@ -104,7 +102,7 @@ func TestAdditiveScorer_Cube(t *testing.T) {
 				Volatility: VolatilityMedium,
 			},
 			wantBand:  SeverityLow,
-			wantClamp: true,
+			wantValue: 4,
 		},
 		// unknown strength + unknown distance + unknown vol → raw=3+2-0=5 (medium).
 		{
@@ -115,7 +113,7 @@ func TestAdditiveScorer_Cube(t *testing.T) {
 				Volatility: VolatilityUnknown,
 			},
 			wantBand:  SeverityMedium,
-			wantClamp: true,
+			wantValue: 5,
 		},
 	}
 
@@ -125,8 +123,8 @@ func TestAdditiveScorer_Cube(t *testing.T) {
 			if got.Band != tt.wantBand {
 				t.Errorf("band = %q, want %q (value=%d)", got.Band, tt.wantBand, got.Value)
 			}
-			if tt.wantClamp && (got.Value < 0 || got.Value > 10) {
-				t.Errorf("value %d out of [0,10]", got.Value)
+			if got.Value != tt.wantValue {
+				t.Errorf("value = %d, want %d", got.Value, tt.wantValue)
 			}
 			if got.Reason != "additive" {
 				t.Errorf("reason = %q, want %q", got.Reason, "additive")
@@ -141,11 +139,10 @@ func TestAdditiveScorer_Cube(t *testing.T) {
 func TestMultiplicativeScorer_Cube(t *testing.T) {
 	s := MultiplicativeScorer{}
 	tests := []struct {
-		name     string
-		c        Classification
-		wantBand Severity
-		wantMin  int // inclusive
-		wantMax  int // inclusive
+		name      string
+		c         Classification
+		wantBand  Severity
+		wantValue int
 	}{
 		// XOR cohesive: functional(5/8=0.625) + same_owner(1/5=0.2), high_vol(1.0).
 		// R_mod=1-|0.625-0.2|=0.575; R_edge=0.575*1.0=0.575; score=round(5.75)=6→medium.
@@ -156,8 +153,8 @@ func TestMultiplicativeScorer_Cube(t *testing.T) {
 				Distance:   DistanceCrossModuleSameOwner,
 				Volatility: VolatilityHigh,
 			},
-			wantBand: SeverityMedium,
-			wantMin:  0, wantMax: 10,
+			wantBand:  SeverityMedium,
+			wantValue: 6,
 		},
 		// XOR loose: contract(0/8=0.0) + cross_deploy(5/5=1.0), high_vol(1.0).
 		// R_mod=1-|0-1|=0; R_edge=0*1.0=0; score=0 → none.
@@ -168,8 +165,8 @@ func TestMultiplicativeScorer_Cube(t *testing.T) {
 				Distance:   DistanceCrossDeployUnit,
 				Volatility: VolatilityHigh,
 			},
-			wantBand: SeverityNone,
-			wantMin:  0, wantMax: 10,
+			wantBand:  SeverityNone,
+			wantValue: 0,
 		},
 		// XOR loose low_vol: contract+cross_deploy+low_vol(0.2).
 		// R_mod=0; R_edge=0*0.2=0; score=0 → none.
@@ -180,8 +177,8 @@ func TestMultiplicativeScorer_Cube(t *testing.T) {
 				Distance:   DistanceCrossDeployUnit,
 				Volatility: VolatilityLow,
 			},
-			wantBand: SeverityNone,
-			wantMin:  0, wantMax: 10,
+			wantBand:  SeverityNone,
+			wantValue: 0,
 		},
 		// Tight + volatile: intrusive(8/8=1.0)+cross_deploy(5/5=1.0)+high_vol(1.0).
 		// R_mod=1-|1-1|=1; R_edge=1*1=1; score=round(10)=10 → critical.
@@ -192,8 +189,8 @@ func TestMultiplicativeScorer_Cube(t *testing.T) {
 				Distance:   DistanceCrossDeployUnit,
 				Volatility: VolatilityHigh,
 			},
-			wantBand: SeverityCritical,
-			wantMin:  9, wantMax: 10,
+			wantBand:  SeverityCritical,
+			wantValue: 10,
 		},
 		// Intrusive floor: intrusive+same_owner+low_vol.
 		// intrusive(1.0)+same_owner(1/5=0.2)+low(0.2).
@@ -205,8 +202,8 @@ func TestMultiplicativeScorer_Cube(t *testing.T) {
 				Distance:   DistanceCrossModuleSameOwner,
 				Volatility: VolatilityLow,
 			},
-			wantBand: SeverityLow,
-			wantMin:  3, wantMax: 10,
+			wantBand:  SeverityLow,
+			wantValue: 3,
 		},
 		// Stable balanced: contract+same_owner+low_vol.
 		// contract(0)+same_owner(0.2)+low(0.2).
@@ -218,8 +215,8 @@ func TestMultiplicativeScorer_Cube(t *testing.T) {
 				Distance:   DistanceCrossModuleSameOwner,
 				Volatility: VolatilityLow,
 			},
-			wantBand: SeverityNone,
-			wantMin:  0, wantMax: 10,
+			wantBand:  SeverityNone,
+			wantValue: 2,
 		},
 	}
 
@@ -229,11 +226,8 @@ func TestMultiplicativeScorer_Cube(t *testing.T) {
 			if got.Band != tt.wantBand {
 				t.Errorf("band = %q, want %q (value=%d)", got.Band, tt.wantBand, got.Value)
 			}
-			if got.Value < tt.wantMin || got.Value > tt.wantMax {
-				t.Errorf("value %d not in [%d,%d]", got.Value, tt.wantMin, tt.wantMax)
-			}
-			if got.Value < 0 || got.Value > 10 {
-				t.Errorf("value %d out of [0,10]", got.Value)
+			if got.Value != tt.wantValue {
+				t.Errorf("value = %d, want %d", got.Value, tt.wantValue)
 			}
 			if got.Reason != "multiplicative" {
 				t.Errorf("reason = %q, want %q", got.Reason, "multiplicative")

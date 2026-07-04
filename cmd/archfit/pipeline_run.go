@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,7 +137,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		}
 		msg := tool + ": " + err.Error()
 		toolWarnings = append(toolWarnings, msg)
-		_, _ = fmt.Fprintln(deps.stderr(), "warning: "+msg)
+		deps.warn(msg)
 	}
 
 	// Output-path hygiene: when the config/output directory sits strictly inside
@@ -149,7 +148,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	if absConfigDir, aerr := filepath.Abs(configDir); aerr == nil {
 		if w := outputInsideRootWarning(s.Root, absConfigDir); w != "" {
 			toolWarnings = append(toolWarnings, w)
-			_, _ = fmt.Fprintln(deps.stderr(), "warning: "+w)
+			deps.warn(w)
 		}
 	}
 

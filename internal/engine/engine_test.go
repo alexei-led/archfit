@@ -764,6 +764,15 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 	if got := adv.MatchedBy["score_version"]; got != coupling.ScoreVersion {
 		t.Errorf("MatchedBy[score_version]=%q, want %q", got, coupling.ScoreVersion)
 	}
+
+	// cheapest_move: the edge lands in module b's Internal glob, so classify
+	// upgrades strength to intrusive regardless of the functional hint (S=10,
+	// diff-owner D=7, undeclared V=10 → balance 4, high). Reducing strength one
+	// rung (intrusive→symmetric) does not drop the band, but reducing distance
+	// (diff-owner→same-owner) does — reduce_distance is the only real lever.
+	if got := adv.MatchedBy["cheapest_move"]; got != "reduce_distance" {
+		t.Errorf("MatchedBy[cheapest_move]=%q, want %q", got, "reduce_distance")
+	}
 }
 
 // TestRun_Advisory_DistanceBasisInMatchedBy asserts that advisory findings include

@@ -24,6 +24,7 @@ const (
 
 // Band literals reused across boundary metric tests (deduplicated for goconst).
 const bandCritical = "critical"
+const bandStrong = "strong"
 
 // Band/confidence string constants used across boundary metric tests.
 const (

@@ -698,6 +698,17 @@ func TestSynthesize_TSUnresolvedPartial_LowersConfidence(t *testing.T) {
 		}
 	})
 
+	// Boundary: 10/100 = 0.10, exactly the ceiling. tsUnresolvedPartial's
+	// comparison (score.go) is strict >, so a ratio equal to the ceiling does
+	// not trip the cap — this pins that the boundary itself is inside the
+	// tolerated range, not just "below" it.
+	t.Run("unresolved ratio exactly at the ceiling leaves confidence high", func(t *testing.T) {
+		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(10, 100, diagnostic.StatusPartial))) // 10%
+		if cb.Confidence != ConfidenceHigh {
+			t.Errorf("confidence = %q, want high (ratio == ceiling must not trip the strict > cap)", cb.Confidence)
+		}
+	})
+
 	t.Run("ok status never triggers the cap regardless of ratio", func(t *testing.T) {
 		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 100, diagnostic.StatusOK)))
 		if cb.Confidence != ConfidenceHigh {

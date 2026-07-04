@@ -66,6 +66,9 @@ node's: a repo-relative file for Go and TypeScript, a dotted module ID for
 Python (`myapp.domain`), a crate or `crate::mod` name for Rust — the
 module-graph forms do not literally match the `locations[]` file entries.
 For paths guaranteed to exist on disk, use `agent_tasks[].files[]`.
+Only `bc/imbalanced_coupling` findings are rolled up (cap 8 members per
+group); `bc/duplicated_knowledge` findings pass through individually and
+never carry a `group_count`.
 
 ## SARIF — the CI annotation channel
 

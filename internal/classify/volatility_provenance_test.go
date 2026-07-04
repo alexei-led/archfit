@@ -84,6 +84,45 @@ func TestComputeVolatilityProvenance(t *testing.T) {
 			t.Errorf("ComputeVolatilityProvenance = %+v, want nil for an empty module map", vp)
 		}
 	})
+
+	t.Run("synthetic module with no base volatility counts as undeclared, not inherited", func(t *testing.T) {
+		// A synthetic module (absent from declared) whose own volatility and
+		// subdomain are both unset has base volatility Undeclared. The switch in
+		// ComputeVolatilityProvenance must test base==Undeclared BEFORE
+		// isDeclared, so this module lands in vp.Undeclared even though it is
+		// exactly the "not declared" shape that would otherwise fall to Inherited.
+		declared := map[string]config.ModuleDef{
+			modNameA: {Paths: []string{pathsA}, Owner: ownerTeamX, Volatility: extVolHigh},
+		}
+		modules := map[string]config.ModuleDef{
+			modNameA:    declared[modNameA],
+			"synthetic": {Paths: []string{"synthetic/**"}}, // not in declared, no volatility, no subdomain
+		}
+		vp := classify.ComputeVolatilityProvenance(nil, declared, config.ClassifyConfig{Modules: modules})
+		if vp == nil {
+			t.Fatal("ComputeVolatilityProvenance = nil for a non-empty module map")
+		}
+		if vp.Declared != 1 || vp.Inherited != 0 || vp.Undeclared != 1 {
+			t.Errorf("counts = declared %d, inherited %d, undeclared %d; want 1, 0, 1 (undeclared wins over inherited)",
+				vp.Declared, vp.Inherited, vp.Undeclared)
+		}
+	})
+
+	t.Run("cascade enabled with nil graph does not panic and raises no cascade count", func(t *testing.T) {
+		modules := map[string]config.ModuleDef{
+			modNameA: {Paths: []string{pathsA}, Volatility: extVolHigh},
+		}
+		vp := classify.ComputeVolatilityProvenance(nil, nil, config.ClassifyConfig{
+			Modules:                  modules,
+			VolatilityCascadeEnabled: true,
+		})
+		if vp == nil {
+			t.Fatal("ComputeVolatilityProvenance = nil for a non-empty module map")
+		}
+		if vp.Cascade != 0 {
+			t.Errorf("Cascade = %d, want 0 (nil graph guards the cascade pass)", vp.Cascade)
+		}
+	})
 }
 
 // TestSyntheticModuleVolatilityOverride_HerdrShape locks the per-submodule

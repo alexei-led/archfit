@@ -258,6 +258,12 @@ func TestExtract_StrengthHint(t *testing.T) {
 		// linked_dto_cons.go references b.LinkedNode — a self-referential pure-data
 		// struct: the *LinkedNode cycle is not a behavior carrier → dto.
 		{"self-referential pure data → dto", "pkg/a/linked_dto_cons.go", pkgB, graph.EdgeKindImports, hintDTO},
+		// generic_cons.go references b.GenericBox[int] — TypesInfo.Uses resolves the
+		// generic type identifier to the origin TypeName, whose field type is the bare
+		// type parameter T; T.Underlying() is its constraint interface (any), so
+		// containsBehaviorCarrier's *types.Interface case rejects the DTO upgrade →
+		// model, not dto, for every instantiation.
+		{"generic type-param field → model", "pkg/a/generic_cons.go", pkgB, graph.EdgeKindImports, hintModel},
 		// external_cons.go calls strings.Repeat — an EXTERNAL (stdlib) target must
 		// carry a real type-info hint so a declared external_systems seam can score
 		// at D=10 instead of abstaining (no manual hint injection anywhere here).

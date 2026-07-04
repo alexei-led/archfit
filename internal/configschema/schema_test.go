@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/configschema"
@@ -80,8 +81,9 @@ func TestSchemaPatchedDefinitions(t *testing.T) {
 	if len(extDef.Required) != 1 || extDef.Required[0] != "targets" {
 		t.Errorf("ExternalSystemDef.required = %v, want [targets]", extDef.Required)
 	}
-	if got := len(extDef.Properties["volatility"].Enum); got != 4 {
-		t.Errorf("ExternalSystemDef.volatility enum has %d values, want 4 (high/medium/low/frozen)", got)
+	wantVolatilityEnum := []any{"high", "medium", "low", "frozen"}
+	if got := extDef.Properties["volatility"].Enum; !slices.Equal(got, wantVolatilityEnum) {
+		t.Errorf("ExternalSystemDef.volatility enum = %v, want %v", got, wantVolatilityEnum)
 	}
 
 	gateDef, ok := schema.Defs["CouplingGateDef"]
@@ -94,7 +96,8 @@ func TestSchemaPatchedDefinitions(t *testing.T) {
 	if gateDef.Properties["max_drop"].Minimum != "0" {
 		t.Errorf("CouplingGateDef.max_drop.minimum = %q, want %q (negative drop rejected)", gateDef.Properties["max_drop"].Minimum, "0")
 	}
-	if got := len(gateDef.Properties["min_band"].Enum); got != 4 {
-		t.Errorf("CouplingGateDef.min_band enum has %d values, want 4 (critical excluded — could never trip)", got)
+	wantMinBandEnum := []any{"poor", "mixed", "serviceable", "strong"}
+	if got := gateDef.Properties["min_band"].Enum; !slices.Equal(got, wantMinBandEnum) {
+		t.Errorf("CouplingGateDef.min_band enum = %v, want %v (critical excluded — could never trip)", got, wantMinBandEnum)
 	}
 }

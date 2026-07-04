@@ -68,6 +68,13 @@ const (
 	fileInfraRepo   = "infra/repo.go"
 	pathDomainGlob  = "domain/**"
 	pathInfraGlob   = "infra/**"
+	// cycle / new_cross_module_dependency test constants
+	typeCycle                    = "cycle"
+	typeNewCrossModuleDependency = "new_cross_module_dependency"
+	ruleIDCycle                  = "no-cycles"
+	ruleIDCrossModule            = "cross-module"
+	moduleA                      = "moduleA"
+	moduleB                      = "moduleB"
 )
 
 // ---------------------------------------------------------------------------
@@ -271,11 +278,7 @@ func TestPublicAPIOnly(t *testing.T) {
 // module (idiomatic self-access, e.g. domain importing domain/internal), but
 // must still fire on genuine cross-module internal access.
 func TestPublicAPIOnly_ModuleMap(t *testing.T) {
-	const (
-		moduleDomain = "domain"
-		moduleB      = "moduleB"
-		moduleA      = "moduleA"
-	)
+	const moduleDomain = "domain"
 	cfg := config.Config{
 		Version: 1,
 		Modules: map[string]config.ModuleDef{
@@ -360,9 +363,9 @@ func TestInternalAPIAccess_ModuleMap(t *testing.T) {
 	cfg := config.Config{
 		Version: 1,
 		Modules: map[string]config.ModuleDef{
-			"domain":  {Paths: []string{pathDomainGlob}},
-			"moduleA": {Paths: []string{globServicesA}},
-			"moduleB": {Paths: []string{globServicesB}},
+			"domain": {Paths: []string{pathDomainGlob}},
+			moduleA:  {Paths: []string{globServicesA}},
+			moduleB:  {Paths: []string{globServicesB}},
 		},
 		Rules: []config.RuleDef{
 			{ID: ruleIDNoInternalAccess, Type: typeInternalAPIAccess},
@@ -457,6 +460,173 @@ func TestPublicAPIOnly_PerLanguage(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// CycleRule
+// ---------------------------------------------------------------------------
+
+// newCycleRule builds a single cycleRule (wrapped in the gate default) for
+// the given gate string ("" = unset/default fail).
+func newCycleRule(t *testing.T, gate string) rules.Rule {
+	t.Helper()
+	cfg := config.RuleConfig{
+		Rules: []config.RuleDef{
+			{ID: ruleIDCycle, Type: typeCycle, Gate: gate},
+		},
+	}
+	ruleSet, err := rules.New(cfg)
+	if err != nil {
+		t.Fatalf("New: unexpected error: %v", err)
+	}
+	return ruleSet[0]
+}
+
+func TestCycleRule(t *testing.T) {
+	ev := rules.Evidence{}
+	// A -> B -> A: a 2-node strongly-connected component.
+	cyclicEdges := []graph.Edge{
+		{From: nodeAFoo, To: nodeBBar, Kind: graph.EdgeKindImports},
+		{From: nodeBBar, To: nodeAFoo, Kind: graph.EdgeKindImports},
+	}
+
+	t.Run("cycle_fires_one_finding", func(t *testing.T) {
+		r := newCycleRule(t, "")
+		findings := r.Check(makeGraph(cyclicEdges), ev)
+		if len(findings) != 1 {
+			t.Fatalf("got %d findings, want 1: %+v", len(findings), findings)
+		}
+		f := findings[0]
+		if f.RuleID != ruleIDCycle {
+			t.Errorf("RuleID = %q, want %q", f.RuleID, ruleIDCycle)
+		}
+		if f.Why == "" {
+			t.Error("finding.Why is empty")
+		}
+		if f.Constraint == "" {
+			t.Error("finding.Constraint is empty")
+		}
+	})
+
+	t.Run("no_cycle_no_finding", func(t *testing.T) {
+		r := newCycleRule(t, "")
+		g := makeGraph([]graph.Edge{{From: nodeAFoo, To: nodeBBar, Kind: graph.EdgeKindImports}})
+		findings := r.Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("acyclic graph: got %d findings, want 0: %+v", len(findings), findings)
+		}
+	})
+
+	t.Run("fingerprint_stable_across_checks", func(t *testing.T) {
+		r := newCycleRule(t, "")
+		g := makeGraph(cyclicEdges)
+		first := r.Check(g, ev)
+		second := r.Check(g, ev)
+		if len(first) != 1 || len(second) != 1 {
+			t.Fatalf("got %d and %d findings, want 1 and 1", len(first), len(second))
+		}
+		if first[0].ID != second[0].ID {
+			t.Errorf("finding ID not stable across Check calls: %q vs %q", first[0].ID, second[0].ID)
+		}
+	})
+
+	t.Run("gate_semantics", func(t *testing.T) {
+		t.Run("off_skips_finding", func(t *testing.T) {
+			r := newCycleRule(t, "off")
+			findings := r.Check(makeGraph(cyclicEdges), ev)
+			if len(findings) != 0 {
+				t.Fatalf("gate:off: got %d findings, want 0", len(findings))
+			}
+		})
+		t.Run("warn_produces_advisory", func(t *testing.T) {
+			r := newCycleRule(t, gateWarn)
+			findings := r.Check(makeGraph(cyclicEdges), ev)
+			if len(findings) != 1 {
+				t.Fatalf("gate:warn: got %d findings, want 1", len(findings))
+			}
+			if findings[0].Kind != kindAdvisory {
+				t.Errorf("gate:warn finding.Kind = %q, want advisory", findings[0].Kind)
+			}
+		})
+		t.Run("fail_produces_gate_finding", func(t *testing.T) {
+			r := newCycleRule(t, "fail")
+			findings := r.Check(makeGraph(cyclicEdges), ev)
+			if len(findings) != 1 {
+				t.Fatalf("gate:fail: got %d findings, want 1", len(findings))
+			}
+			if findings[0].Kind != kindGate {
+				t.Errorf("gate:fail finding.Kind = %q, want gate", findings[0].Kind)
+			}
+		})
+		t.Run("unset_gate_produces_gate_finding", func(t *testing.T) {
+			r := newCycleRule(t, "")
+			findings := r.Check(makeGraph(cyclicEdges), ev)
+			if len(findings) != 1 {
+				t.Fatalf("gate unset: got %d findings, want 1", len(findings))
+			}
+			if findings[0].Kind != kindGate {
+				t.Errorf("gate unset finding.Kind = %q, want gate", findings[0].Kind)
+			}
+		})
+	})
+}
+
+// ---------------------------------------------------------------------------
+// NewCrossModuleDependency
+// ---------------------------------------------------------------------------
+
+func TestCrossModuleDependency(t *testing.T) {
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			moduleA: {Paths: []string{globServicesA}},
+			moduleB: {Paths: []string{globServicesB}},
+		},
+		Rules: []config.RuleDef{
+			{ID: ruleIDCrossModule, Type: typeNewCrossModuleDependency},
+		},
+	}
+	ruleSet, err := rules.New(cfg.ForRules())
+	if err != nil {
+		t.Fatalf("New: unexpected error: %v", err)
+	}
+	r := ruleSet[0]
+	ev := rules.Evidence{}
+
+	t.Run("cross_module_edge_fires", func(t *testing.T) {
+		g := makeGraph([]graph.Edge{{From: nodeAFoo, To: nodeBBar, Kind: graph.EdgeKindImports}})
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("got %d findings, want 1: %+v", len(findings), findings)
+		}
+		f := findings[0]
+		if f.MatchedBy["from_module"] != moduleA || f.MatchedBy["to_module"] != moduleB {
+			t.Errorf("matched_by = %+v, want from_module=%s to_module=%s", f.MatchedBy, moduleA, moduleB)
+		}
+		if f.Why == "" {
+			t.Error("finding.Why is empty")
+		}
+	})
+
+	t.Run("same_module_edge_does_not_fire", func(t *testing.T) {
+		g := makeGraph([]graph.Edge{{From: nodeAFoo, To: nodeABaz, Kind: graph.EdgeKindImports}})
+		findings := r.Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("same-module edge: got %d findings, want 0: %+v", len(findings), findings)
+		}
+	})
+
+	t.Run("unresolved_endpoint_is_skipped", func(t *testing.T) {
+		// Neither endpoint is covered by the module map. Unlike sameModule's
+		// module-blind fallback (which fires when it can't confirm same-module),
+		// newCrossModuleDependency requires BOTH endpoints resolved and skips
+		// the edge entirely when either is unowned.
+		g := makeGraph([]graph.Edge{{From: nodeCFoo, To: nodeDIntY, Kind: graph.EdgeKindImports}})
+		findings := r.Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("unresolved endpoint: got %d findings, want 0 (skipped, not module-blind fallback): %+v", len(findings), findings)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------

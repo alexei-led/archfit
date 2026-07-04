@@ -105,6 +105,22 @@ func ownershipDistance(fromOwner, toOwner string) coupling.Distance {
 	return coupling.DistanceCrossModuleDiffOwner
 }
 
+// ownerDegeneracy precomputes the two owner-map degeneracy invariants shared
+// by Run and CloneOnlyPairs: degeneracy of the explicit (CODEOWNERS/config)
+// owner map and of the full module owner map. Both depend only on config,
+// so callers compute them once per run.
+func ownerDegeneracy(c config.ClassifyConfig) (degenerateExplicit, degenerateOwners bool) {
+	explicitOwnerMap := make(map[string]string, len(c.ExplicitOwners))
+	for mod := range c.ExplicitOwners {
+		explicitOwnerMap[mod] = c.Modules[mod].Owner
+	}
+	fullOwnerMap := make(map[string]string, len(c.Modules))
+	for name, def := range c.Modules {
+		fullOwnerMap[name] = def.Owner
+	}
+	return isDegenerateOwnerMap(explicitOwnerMap), isDegenerateOwnerMap(fullOwnerMap)
+}
+
 // isDegenerateOwnerMap reports whether the ownership map is degenerate — i.e.
 // all modules that have a non-empty owner share exactly one distinct owner value.
 // A degenerate map arises from the git-author fallback in a single/few-author

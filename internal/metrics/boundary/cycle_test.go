@@ -27,7 +27,7 @@ func TestCycle_NoCycles(t *testing.T) {
 	if result.Value != 0 {
 		t.Errorf("expected 0 cycles got %v", result.Value)
 	}
-	if result.Band != "strong" {
+	if result.Band != bandStrong {
 		t.Errorf("expected band strong got %q", result.Band)
 	}
 }

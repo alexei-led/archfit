@@ -9,10 +9,10 @@ import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
-// fileFromA / fileToB are the canonical cross-module test node IDs used by
-// clone-pair tests. They live here because this file first introduced them;
-// other classify_test files that need them can reuse these package-level
-// constants directly (same package: classify_test).
+// This file hosts the shared clone-pair test fixtures (fileFromA / fileToB —
+// the canonical cross-module test node IDs — plus twoModuleConfig and
+// modABClonePair) and the tests that first used them. Other classify_test
+// files reuse these package-level constants directly (same package).
 const (
 	fileFromA      = "file:services/a/a.go"
 	fileToB        = "file:services/b/b.go"

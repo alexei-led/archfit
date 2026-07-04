@@ -195,3 +195,23 @@ func TestCloneOnlyPairs_Classification(t *testing.T) {
 		}
 	})
 }
+
+// TestCloneOnlyPairs_NoEvidence verifies a clone pair with NO CloneEvidence
+// entry at all still classifies without panicking: c.CloneEvidence[key] on a
+// missing key returns a nil slice (Go map zero value, not a panic), so
+// pairRepresentativePaths resolves both paths to "" — honest absence, not a
+// fabricated location.
+func TestCloneOnlyPairs_NoEvidence(t *testing.T) {
+	t.Parallel()
+	g := graph.Build(nil)
+	cfg := twoModuleConfig(nil, modABClonePair) // CloneEvidence left unset (nil map)
+
+	pairs := classify.CloneOnlyPairs(g, cfg)
+	if len(pairs) != 1 {
+		t.Fatalf("pairs = %d, want 1 (a clone pair with no evidence still classifies)", len(pairs))
+	}
+	p := pairs[0]
+	if p.FromPath != "" || p.ToPath != "" {
+		t.Errorf("FromPath/ToPath = %q/%q, want both empty (no clone evidence)", p.FromPath, p.ToPath)
+	}
+}

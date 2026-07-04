@@ -51,16 +51,7 @@ func CloneOnlyPairs(g *graph.Graph, c config.ClassifyConfig) []CloneOnlyPair {
 	}
 
 	// Owner-degeneracy precomputes — same invariants as Run.
-	explicitOwnerMap := make(map[string]string, len(c.ExplicitOwners))
-	for mod := range c.ExplicitOwners {
-		explicitOwnerMap[mod] = c.Modules[mod].Owner
-	}
-	degenerateExplicit := isDegenerateOwnerMap(explicitOwnerMap)
-	fullOwnerMap := make(map[string]string, len(c.Modules))
-	for name, def := range c.Modules {
-		fullOwnerMap[name] = def.Owner
-	}
-	degenerateOwners := isDegenerateOwnerMap(fullOwnerMap)
+	degenerateExplicit, degenerateOwners := ownerDegeneracy(c)
 
 	effectiveVol := computeEffectiveVolatility(g, mi, c.Modules, c.VolatilityCascadeEnabled, c.CrossModuleClonePairs)
 	connected := connectedModulePairs(g, mi)
@@ -74,7 +65,12 @@ func CloneOnlyPairs(g *graph.Graph, c config.ClassifyConfig) []CloneOnlyPair {
 	var out []CloneOnlyPair
 	for _, key := range keys {
 		if _, hasEdge := connected[key]; hasEdge {
-			continue // an edge exists — the symmetric-upgrade path owns this pair
+			// An edge exists — the pair is owned by the per-edge path. Ceiling:
+			// the symmetric upgrade only raises functional/unknown strengths, so
+			// a pair whose edges are all contract/model/intrusive or pinned keeps
+			// that strength and the clone evidence surfaces nowhere — deliberate,
+			// config-authoritative and human-pinned labels are never overridden.
+			continue
 		}
 		fromMod, toMod, ok := strings.Cut(key, "\x00")
 		if !ok {

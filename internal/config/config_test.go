@@ -1344,6 +1344,11 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			wantErr: "",
 		},
 		{
+			name:    "coupling.gate with max_drop 0 only (no min_band) loads clean",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    max_drop: 0\n",
+			wantErr: "",
+		},
+		{
 			name:    "coupling.gate with both knobs loads clean",
 			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: poor\n    max_drop: 0\n",
 			wantErr: "",

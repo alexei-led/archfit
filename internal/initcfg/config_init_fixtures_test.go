@@ -25,6 +25,19 @@ import (
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
+// Fixture root directory names, shared across every per-language table test
+// in this file (TestConfigInit_PerLanguage, TestPublicAPIOnly_Task1Fixtures,
+// TestForbiddenLayerDirection_Task1Fixtures).
+const (
+	fixtureRootGo   = "gofixture"
+	fixtureRootTS   = "tsfixture"
+	fixtureRootPy   = "pyfixture"
+	fixtureRootRust = "rustfixture"
+	langTypeScript  = "typescript"
+	langPython      = "python"
+	langRust        = "rust"
+)
+
 // initFixtureRoot returns the absolute path to internal/initcfg/testdata/<name>,
 // one minimal per-language project just large enough for `config init` to infer
 // modules from.
@@ -84,10 +97,10 @@ func TestConfigInit_PerLanguage(t *testing.T) {
 		root   string
 		runner toolrun.Runner
 	}{
-		{name: "go", root: "gofixture", runner: toolrun.New()},
-		{name: "typescript", root: "tsfixture", runner: &toolrun.RunnerMock{}},
-		{name: "python", root: "pyfixture", runner: &toolrun.RunnerMock{}},
-		{name: "rust", root: "rustfixture", runner: rustFixtureRunner()},
+		{name: "go", root: fixtureRootGo, runner: toolrun.New()},
+		{name: langTypeScript, root: fixtureRootTS, runner: &toolrun.RunnerMock{}},
+		{name: langPython, root: fixtureRootPy, runner: &toolrun.RunnerMock{}},
+		{name: langRust, root: fixtureRootRust, runner: rustFixtureRunner()},
 	}
 
 	for _, tt := range tests {
@@ -106,6 +119,21 @@ func TestConfigInit_PerLanguage(t *testing.T) {
 			}
 		})
 	}
+}
+
+// pathIn derives a concrete descendant path inside a module's glob pattern,
+// e.g. "src/core/**" -> "src/core/x", "pyfixture.core.*" -> "pyfixture.core.x".
+// Python modules use dotted globs (e.g. "pyfixture.core.*"), Go/TS use slash
+// path globs (e.g. "src/core/**") — pick "." or "/" as the descendant
+// separator to match.
+func pathIn(glob string) string {
+	sep := "/"
+	if !strings.Contains(glob, "/") {
+		sep = "."
+	}
+	base := strings.TrimSuffix(strings.TrimSuffix(glob, "**"), "*")
+	base = strings.TrimSuffix(base, sep)
+	return base + sep + "x"
 }
 
 // fixtureGraph builds a two-node module graph with a single uses_internal
@@ -141,10 +169,10 @@ func TestPublicAPIOnly_Task1Fixtures(t *testing.T) {
 	}{
 		// go is the one language whose extractor tags EdgeKindUsesInternal
 		// natively, so the V5 same-module fix must hold on its real module shapes.
-		{name: "go", root: "gofixture", runner: toolrun.New()},
-		{name: "typescript", root: "tsfixture", runner: &toolrun.RunnerMock{}},
-		{name: "python", root: "pyfixture", runner: &toolrun.RunnerMock{}},
-		{name: "rust", root: "rustfixture", runner: rustFixtureRunner()},
+		{name: "go", root: fixtureRootGo, runner: toolrun.New()},
+		{name: langTypeScript, root: fixtureRootTS, runner: &toolrun.RunnerMock{}},
+		{name: langPython, root: fixtureRootPy, runner: &toolrun.RunnerMock{}},
+		{name: langRust, root: fixtureRootRust, runner: rustFixtureRunner()},
 	}
 
 	for _, tt := range tests {
@@ -183,18 +211,7 @@ func TestPublicAPIOnly_Task1Fixtures(t *testing.T) {
 			}
 
 			// Build a same-module and a cross-module uses_internal edge from the
-			// fixture's own module glob patterns. Python modules use dotted globs
-			// (e.g. "pyfixture.core.*"), Go/TS use slash path globs (e.g.
-			// "src/core/**") — pick "." or "/" as the descendant separator to match.
-			pathIn := func(glob string) string {
-				sep := "/"
-				if !strings.Contains(glob, "/") {
-					sep = "."
-				}
-				base := strings.TrimSuffix(strings.TrimSuffix(glob, "**"), "*")
-				base = strings.TrimSuffix(base, sep)
-				return base + sep + "x"
-			}
+			// fixture's own module glob patterns.
 			apiPath, corePath := pathIn(discovered.Modules[0].Paths[0]), pathIn(discovered.Modules[1].Paths[0])
 			nested := func(base string) string {
 				sep := "/"
@@ -212,6 +229,91 @@ func TestPublicAPIOnly_Task1Fixtures(t *testing.T) {
 			g = fixtureGraph(apiPath, nested(corePath))
 			if findings := rs[0].Check(g, rules.Evidence{}); len(findings) != 1 {
 				t.Errorf("cross-module uses_internal edge: got %d findings, want 1: %+v", len(findings), findings)
+			}
+		})
+	}
+}
+
+// TestForbiddenLayerDirection_Task1Fixtures is the forbidden_layer_direction
+// mirror of TestPublicAPIOnly_Task1Fixtures: it proves the rule actually FIRES
+// on each language fixture's real Discover-derived layers and module globs,
+// not just that a generated config parses and the rule type is recognized
+// (that weaker proof already exists in TestConfigInit_PerLanguage).
+func TestForbiddenLayerDirection_Task1Fixtures(t *testing.T) {
+	tests := []struct {
+		name   string
+		root   string
+		runner toolrun.Runner
+	}{
+		{name: "go", root: fixtureRootGo, runner: toolrun.New()},
+		{name: langTypeScript, root: fixtureRootTS, runner: &toolrun.RunnerMock{}},
+		{name: langPython, root: fixtureRootPy, runner: &toolrun.RunnerMock{}},
+		{name: langRust, root: fixtureRootRust, runner: rustFixtureRunner()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := initFixtureRoot(t, tt.root)
+			discovered, err := initcfg.Discover(context.Background(), root, tt.runner)
+			if err != nil {
+				t.Fatalf("Discover: %v", err)
+			}
+			if len(discovered.Layers) < 2 {
+				// This fixture's real Discover-derived layer assignment collapses
+				// every module onto a single layer: discoverSubdirs (TS) hardcodes
+				// Layer=layerCore regardless of directory name, and rustfixture is
+				// a single crate with no inter-crate edges to topo-assign distinct
+				// layers from (see discover_ts.go, discover_rust.go). There is no
+				// forbidden direction to construct without inventing a layer split
+				// Discover never produces on these fixtures — mirrors
+				// TestPublicAPIOnly_Task1Fixtures's rustfixture early-return.
+				return
+			}
+
+			modules := make(map[string]config.ModuleDef, len(discovered.Modules))
+			for _, m := range discovered.Modules {
+				modules[m.Name] = config.ModuleDef{Paths: m.Paths, Layer: m.Layer}
+			}
+			cfg := config.Config{
+				Version: 1,
+				Layers:  discovered.Layers,
+				Modules: modules,
+				Rules: []config.RuleDef{
+					{ID: "no-back-edge", Type: "forbidden_layer_direction"},
+				},
+			}
+			rs, err := rules.New(cfg.ForRules())
+			if err != nil {
+				t.Fatalf("rules.New: %v", err)
+			}
+
+			// The forbidden direction is innermost layer (rank 0, Layers[0]) importing
+			// the outermost layer (highest rank, Layers[last]) — see
+			// forbiddenLayerDirection.Check's fromRank < toRank comment.
+			innerLayer := discovered.Layers[0]
+			outerLayer := discovered.Layers[len(discovered.Layers)-1]
+			var innerPath, outerPath string
+			for _, m := range discovered.Modules {
+				if m.Layer == innerLayer && innerPath == "" {
+					innerPath = pathIn(m.Paths[0])
+				}
+				if m.Layer == outerLayer && outerPath == "" {
+					outerPath = pathIn(m.Paths[0])
+				}
+			}
+			if innerPath == "" || outerPath == "" {
+				t.Fatalf("could not find modules for layers %q/%q in %+v", innerLayer, outerLayer, discovered.Modules)
+			}
+
+			g := fixtureGraph(innerPath, outerPath)
+			if findings := rs[0].Check(g, rules.Evidence{}); len(findings) != 1 {
+				t.Errorf("back-edge %s(%s) -> %s(%s): got %d findings, want 1: %+v", innerPath, innerLayer, outerPath, outerLayer, len(findings), findings)
+			}
+
+			// Sanity: the allowed direction (outer imports inner) must not fire.
+			g = fixtureGraph(outerPath, innerPath)
+			if findings := rs[0].Check(g, rules.Evidence{}); len(findings) != 0 {
+				t.Errorf("allowed direction %s(%s) -> %s(%s): got %d findings, want 0: %+v", outerPath, outerLayer, innerPath, innerLayer, len(findings), findings)
 			}
 		})
 	}

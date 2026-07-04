@@ -8,7 +8,7 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 ## Commands (Makefile)
 
 - `make build` — static binary, `CGO_ENABLED=0` → `.bin/archfit`
-- `make test` — `go test -race -coverprofile=coverage.out ./...`
+- `make test` — `go test -race -coverprofile=coverage.out ./...` + `python3 internal/extract/scip/scip_reader_test.py` (CI runs the Python step too)
 - `make lint` — `golangci-lint run -c .golangci.yaml ./...` (pinned v2.1.6)
 - `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit`
 - `make archfit` — dogfood architecture-drift gate: `.bin/archfit analyze --gate --config .archfit.yaml --full`
@@ -16,6 +16,7 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 - `make archfit-report` — write `reports/archfit-report.md` via `archfit analyze --markdown`
 - `make mock` — regenerate moq fakes (`go generate ./...`)
 - `make test-fast` — `go test -race -short ./...` (skips slow subprocess/ast-grep integration tests; for inner-loop speed)
+- `make corpus-attrib` — informational dev tool: coupling_balance attribution table over the Wave-4 corpus repos (`scripts/corpus-attrib.sh`)
 - `make all` — fmt → lint → test → archfit
 - One test: `go test ./internal/<pkg>/ -run TestName`
 
@@ -211,9 +212,32 @@ module resolution — a module-resolved target is never re-labelled external,
 even when the edge's source is unresolved.
 
 **Symmetric from clones:** when `analyzers.clones` detects a cross-module clone
-pair, the edge strength is upgraded to `StrengthSymmetric` (S=9) unless a
-config-authoritative `contract`/`intrusive` or an approved pinned label already
-applies.
+pair, the edge strength is upgraded to `StrengthSymmetric` (S=9) only when the
+edge's strength is still `functional` or `unknown` — config-authoritative
+`contract`/`intrusive`, type-info `model`/`dto`, and approved pinned labels are
+never overridden.
+
+**`bc/duplicated_knowledge` (clone pair without an import edge):**
+`classify.CloneOnlyPairs` scores each cross-module clone pair whose modules
+share NO import edge (StrengthSymmetric, module-pair distance, worst-of-pair
+volatility) and the engine emits it as an advisory. It is never promoted by the
+coupling gate (promotion matches `RuleIDBCImbalanced` only), never rolled up,
+and never enters `coupling_balance`. Ceiling: a pair WITH an edge is owned by
+the symmetric-upgrade path above, so clone evidence on a contract/model/
+intrusive-strength edge surfaces nowhere — deliberate.
+
+**Same-module edges are scored but report-only (`local_coupling`):** classify
+scores same-module edges at the book's D=2 rung; they surface in the
+`local_coupling` JSON block (Ch10 local-complexity quadrant, per-module worst
+offenders) but keep `SeverityNone`, stay out of `coupling_balance`'s
+denominator (`assemble.go` early-continue), and never become advisories or
+gate findings — fractal-level separation.
+
+**Volatility provenance disclosure:** `classified_edges.volatility_provenance`
+counts modules by volatility source (`declared`/`inherited`/`cascade`/
+`undeclared`) and rides the `coupling_balance` evidence line, so a
+uniform-by-inheritance repo (one declared ancestor fanned out to N synthetic
+submodules) is not mistaken for N measured judgments.
 
 **Provenance lowers confidence:** approved labels in `.archfit-labels.yaml` with
 `provenance: llm` and `confidence` below `high` lower `coupling_balance`

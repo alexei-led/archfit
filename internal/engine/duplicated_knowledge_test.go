@@ -93,6 +93,13 @@ func TestDuplicatedKnowledgeAdvisory(t *testing.T) {
 	if got := f.MatchedBy["score_version"]; got != coupling.ScoreVersion {
 		t.Errorf("matched_by.score_version = %q, want %s", got, coupling.ScoreVersion)
 	}
+	// cheapest_move: same_owner is the terminal distance rung (no reduce_distance
+	// offered) and the one-rung strength reduction (symmetric→functional) still
+	// balances to medium (balance 5, same band) — no single-rung move drops the
+	// band, so the book scorer offers none.
+	if got := f.MatchedBy["cheapest_move"]; got != "" {
+		t.Errorf("matched_by.cheapest_move = %q, want \"\" (no single-rung move drops the medium band)", got)
+	}
 	if !strings.Contains(f.Why, "duplicated knowledge") {
 		t.Errorf("Why = %q, want duplicated-knowledge framing", f.Why)
 	}

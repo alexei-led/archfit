@@ -720,7 +720,10 @@ func TestRun_Check_NoBaselineWarningAbsent(t *testing.T) {
 		// Base intentionally omitted.
 	}
 	deps := &appDeps{Runner: toolrun.New(), Stdout: &stdout, Stderr: &stderr}
-	_ = cmd.Run(deps)
+	var ee *exitError
+	if err := cmd.Run(deps); errors.As(err, &ee) && ee.code == 3 {
+		t.Fatalf("analyze exited 3 (config/pipeline error), pipeline never ran; stderr: %q", stderr.String())
+	}
 
 	if strings.Contains(stderr.String(), "no baseline found") {
 		t.Errorf("check without --base must not emit 'no baseline found'; stderr: %q", stderr.String())

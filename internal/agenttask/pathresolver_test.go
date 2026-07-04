@@ -381,6 +381,21 @@ func TestFilesFor_RustCrateResolution(t *testing.T) {
 		}
 	})
 
+	t.Run("mod_rs_beats_crate_dir_when_flat_file_absent", func(t *testing.T) {
+		// Only the mod.rs shape exists (no flat mymod.rs) — the second candidate
+		// in the resolve loop (internal/agenttask/agenttask.go:143-149).
+		root := t.TempDir()
+		writeFixtureFile(t, root, "crates/mycrate/src/mymod/mod.rs")
+		tasks := build(root, map[string]string{fixtureCrate: fixtureCrateDir}, "mycrate::mymod")
+		if len(tasks) != 1 {
+			t.Fatalf("tasks = %d, want 1", len(tasks))
+		}
+		assertFilesExistOnDisk(t, root, tasks[0].Files)
+		if want := "crates/mycrate/src/mymod/mod.rs"; len(tasks[0].Files) != 1 || tasks[0].Files[0] != want {
+			t.Errorf("files = %v, want [%q] (mod.rs shape, not just the crate dir)", tasks[0].Files, want)
+		}
+	})
+
 	t.Run("root_crate_resolves_module_file_under_src", func(t *testing.T) {
 		root := t.TempDir()
 		writeFixtureFile(t, root, "src/mymod.rs")

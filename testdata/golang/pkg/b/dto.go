@@ -74,3 +74,15 @@ type LinkedNode struct {
 
 // Marker is a zero-field struct: carries no data model, NOT a DTO.
 type Marker struct{}
+
+// GenericBox is a generic pure-data-shaped struct: exported, single exported
+// field typed by the type parameter, empty method set. At the generic origin
+// (TypesInfo.Uses resolves a generic type identifier to the origin TypeName,
+// never a per-instantiation object) the field's type is the bare type
+// parameter T, whose Underlying() is its constraint interface (any) —
+// containsBehaviorCarrier's *types.Interface case rejects it as a behavior
+// carrier, so GenericBox never qualifies for the DTO upgrade and stays model
+// regardless of the instantiation (Box[int], Box[func()], ...).
+type GenericBox[T any] struct {
+	Value T
+}

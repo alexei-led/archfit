@@ -176,19 +176,44 @@ func TestRun_Analyze_CouplingGate_BandNANeverTrips(t *testing.T) {
 
 // TestRun_Analyze_CouplingGate_MaxDrop verifies the drop knob: a stored
 // baseline score anchors max_drop (trip on regression beyond it), and a
-// baseline without a score snapshot cannot anchor a drop (no trip).
+// baseline without a score snapshot cannot anchor a drop (no trip). It also
+// pins the stderr disclosure contract per case (see analyze.go): a trip
+// prints the max_drop-specific reason, a stale scorer version prints the
+// "max_drop skipped" disclosure instead of gating silent, and a missing
+// snapshot prints neither.
 func TestRun_Analyze_CouplingGate_MaxDrop(t *testing.T) {
 	t.Parallel()
+	const (
+		tripFragment = "exceeding coupling.gate.max_drop"
+		skipFragment = "max_drop skipped"
+	)
 	cases := []struct {
-		name     string
-		score    *baseline.ScoreSnapshot
-		wantCode int
+		name         string
+		score        *baseline.ScoreSnapshot
+		wantCode     int
+		wantStderr   []string // substrings that must be present
+		wantNoStderr []string // substrings that must be absent
 	}{
-		{"stored score anchors the drop", &baseline.ScoreSnapshot{CouplingBalance: 95, Band: "strong", ScoreVersion: coupling.ScoreVersion}, 1},
-		{"no stored score skips the check", nil, 0},
+		{
+			name:       "stored score anchors the drop",
+			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: "strong", ScoreVersion: coupling.ScoreVersion},
+			wantCode:   1,
+			wantStderr: []string{tripFragment},
+		},
+		{
+			name:         "no stored score skips the check",
+			score:        nil,
+			wantCode:     0,
+			wantNoStderr: []string{tripFragment, skipFragment},
+		},
 		// A snapshot from a different scorer version is a methodology change,
 		// not a regression — it must never anchor a drop.
-		{"stale scorer version skips the check", &baseline.ScoreSnapshot{CouplingBalance: 95, Band: "strong", ScoreVersion: "bc_score.v3"}, 0},
+		{
+			name:       "stale scorer version skips the check",
+			score:      &baseline.ScoreSnapshot{CouplingBalance: 95, Band: "strong", ScoreVersion: "bc_score.v3"},
+			wantCode:   0,
+			wantStderr: []string{skipFragment},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -201,10 +226,20 @@ func TestRun_Analyze_CouplingGate_MaxDrop(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			var buf bytes.Buffer
-			code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, flagGate}, &buf)
+			var buf, errBuf bytes.Buffer
+			code := RunWithStderr([]string{cmdAnalyze, "-c", cfgPath, flagFull, flagGate}, &buf, &errBuf)
 			if code != tc.wantCode {
-				t.Fatalf("analyze --gate: exit = %d, want %d\noutput:\n%s", code, tc.wantCode, buf.String())
+				t.Fatalf("analyze --gate: exit = %d, want %d\noutput:\n%s\nstderr:\n%s", code, tc.wantCode, buf.String(), errBuf.String())
+			}
+			for _, frag := range tc.wantStderr {
+				if !strings.Contains(errBuf.String(), frag) {
+					t.Errorf("stderr missing %q:\n%s", frag, errBuf.String())
+				}
+			}
+			for _, frag := range tc.wantNoStderr {
+				if strings.Contains(errBuf.String(), frag) {
+					t.Errorf("stderr unexpectedly contains %q:\n%s", frag, errBuf.String())
+				}
 			}
 		})
 	}
@@ -475,6 +510,59 @@ func TestRun_Analyze_MetricGate_ExitCodes(t *testing.T) {
 			// 1.0 ratio drop (higher_is_better) past the default min_delta 0.
 			entry.Value++
 			b.Metrics["encapsulation"] = entry
+			if err := baseline.Save(context.Background(), bPath, b); err != nil {
+				t.Fatal(err)
+			}
+
+			buf.Reset()
+			if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, flagGate}, &buf); code != tc.wantCode {
+				t.Fatalf("analyze --gate: exit = %d, want %d\noutput:\n%s", code, tc.wantCode, buf.String())
+			}
+		})
+	}
+}
+
+// TestRun_Analyze_MetricGate_ExitCodes_CountDirection mirrors
+// TestRun_Analyze_MetricGate_ExitCodes for a count-direction metric (cycle,
+// DirectionHigherIsWorse) instead of a ratio metric (encapsulation): gate
+// unset blocks on a regression, gate:warn downgrades, gate:off ignores it.
+// The fixture has no import cycle, so the current cycle count stays 0; the
+// baseline snapshot is tampered DOWN (instead of up, as the ratio case does)
+// so the unchanged current value reads as a delta > max_new 0 past the
+// default higher-is-worse floor.
+func TestRun_Analyze_MetricGate_ExitCodes_CountDirection(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		cfgExtra string
+		wantCode int
+	}{
+		{"unset gate blocks on regression", "", 1},
+		{"warn gate downgrades to warning", "metrics:\n  cycle:\n    gate: warn\n", 2},
+		{"off gate ignores the regression", "metrics:\n  cycle:\n    gate: off\n", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfgPath := writeCoupledRepo(t, coupledModulesCfg+tc.cfgExtra)
+
+			var buf bytes.Buffer
+			if code := Run([]string{cmdBaseline, "-c", cfgPath, flagFull}, &buf); code != 0 {
+				t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
+			}
+			bPath := filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath)
+			b, err := baseline.Load(context.Background(), bPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entry, ok := b.Metrics["cycle"]
+			if !ok {
+				t.Fatalf("fixture regression: no cycle snapshot in %+v", b.Metrics)
+			}
+			// Lower the snapshot so the unchanged current run (no cycle, value 0)
+			// reads as a +1 delta (higher_is_worse) past the default max_new 0.
+			entry.Value--
+			b.Metrics["cycle"] = entry
 			if err := baseline.Save(context.Background(), bPath, b); err != nil {
 				t.Fatal(err)
 			}

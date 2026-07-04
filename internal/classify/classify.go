@@ -59,17 +59,7 @@ func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 
 	// Pre-compute per-run invariants so classifyDistance does not rebuild maps on
 	// every edge. Both results depend only on config (loaded once before Run).
-	explicitOwnerMap := make(map[string]string, len(c.ExplicitOwners))
-	for mod := range c.ExplicitOwners {
-		explicitOwnerMap[mod] = c.Modules[mod].Owner
-	}
-	degenerateExplicit := isDegenerateOwnerMap(explicitOwnerMap)
-
-	fullOwnerMap := make(map[string]string, len(c.Modules))
-	for name, def := range c.Modules {
-		fullOwnerMap[name] = def.Owner
-	}
-	degenerateOwners := isDegenerateOwnerMap(fullOwnerMap)
+	degenerateExplicit, degenerateOwners := ownerDegeneracy(c)
 
 	effectiveVol := computeEffectiveVolatility(g, mm, c.Modules, c.VolatilityCascadeEnabled, c.CrossModuleClonePairs)
 	extSystems := buildExternalSystemIndex(c.ExternalSystems)
