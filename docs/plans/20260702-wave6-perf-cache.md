@@ -25,10 +25,10 @@ Strategy: cache **extractor facts** (the expensive out-of-process work: `go list
 
 ### Task 1: Audit existing cache + design note
 
-- [ ] confirm `.archfit-cache/` holds only the LLM response cache today (`internal/llm/cache.go`); decide the fact-cache layout beside it (`facts/` subdir) and whether `--no-cache` governs both caches or gains a sibling flag (recommend: one flag governs both); write the decision into a short design doc `docs/design/fact-cache.md`
-- [ ] define the cache key: analyzer name + tool version (from `doctor` probes) + config-slice hash (only the fields that analyzer consumes — the typed view, per the existing config-views convention) + input-tree hash (file list + per-file content hash of files matching that extractor's scope; reuse FileClassIndex walk data where possible)
-- [ ] define eviction: size cap + LRU by directory mtime (name the constants; deliberate-simplification comment)
-- [ ] no code behavior change; commit the doc
+- [x] confirm `.archfit-cache/` holds only the LLM response cache today (`internal/llm/cache.go`); decide the fact-cache layout beside it (`facts/` subdir) and whether `--no-cache` governs both caches or gains a sibling flag (recommend: one flag governs both); write the decision into a short design doc `docs/design/fact-cache.md`
+- [x] define the cache key: analyzer name + tool version (from `doctor` probes) + config-slice hash (only the fields that analyzer consumes — the typed view, per the existing config-views convention) + input-tree hash (file list + per-file content hash of files matching that extractor's scope; reuse FileClassIndex walk data where possible) — note: versions come from the extractors' own probes, not `doctor` (`Runner.Detect` leaves Version empty); see fact-cache.md D3
+- [x] define eviction: size cap + LRU by directory mtime (name the constants; deliberate-simplification comment)
+- [x] no code behavior change; commit the doc
 
 ### Task 2: Cache layer at the Runner seam
 
