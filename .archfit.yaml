@@ -218,6 +218,19 @@ modules:
     layer: adapter
     subdomain: supporting
     volatility: low
+  internal/factcache:
+    owner: alexei-led
+    paths:
+      - internal/factcache/**
+    public:
+      - internal/factcache
+    # Extractor-fact cache adapter (os I/O decorating toolrun.Runner) — see
+    # docs/design/fact-cache.md. Never on the decision path: stores facts,
+    # not scores.
+    role: adapter
+    layer: adapter
+    subdomain: supporting
+    volatility: low
   internal/extract/golang:
     owner: alexei-led
     paths:

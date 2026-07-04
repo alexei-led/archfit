@@ -32,12 +32,12 @@ Strategy: cache **extractor facts** (the expensive out-of-process work: `go list
 
 ### Task 2: Cache layer at the Runner seam
 
-- [ ] implement a caching decorator around `toolrun.Runner` (core ring stays pure — the cache is an adapter; verify `internal/arch_test.go` import ring still passes and extend it to forbid cache imports from core)
-- [ ] store: content-addressed JSON fact blobs under `.archfit-cache/facts/<analyzer>/<key>`; atomic write (tmp+rename)
-- [ ] `--no-cache` bypasses read AND write; corrupted/unreadable blob ⇒ treat as miss, log at debug, never fail the run
-- [ ] tests: hit, miss, corrupted blob, config-slice change invalidates, tool-version change invalidates, file-content change invalidates (table-driven)
-- [ ] byte-identical test: run a fixture analyze twice (cold, warm) and diff full JSON output — must be identical; run once with `--no-cache` — identical again
-- [ ] `make test && make lint && make archfit`; commit
+- [x] implement a caching decorator around `toolrun.Runner` (core ring stays pure — the cache is an adapter; verify `internal/arch_test.go` import ring still passes and extend it to forbid cache imports from core) — `internal/factcache.Runner`; entry address = Key + cmd Name/Args digest (WorkDir/Env excluded so --base worktrees can share entries); `Cacheable` veto seam for partial-status results (D3)
+- [x] store: content-addressed JSON fact blobs under `.archfit-cache/facts/<analyzer>/<key>`; atomic write (tmp+rename) — plus D4 LRU eviction (MaxBytes/EvictToBytes) and an adapter-layer stanza in `.archfit.yaml` (catch-all would have classed it support ⇒ layer inversion)
+- [x] `--no-cache` bypasses read AND write; corrupted/unreadable blob ⇒ treat as miss, log at debug, never fail the run — layer contract: nil `*Store` disables reads AND writes (tested); cmd flag plumbing lands with the first consumer (Task 3)
+- [x] tests: hit, miss, corrupted blob, config-slice change invalidates, tool-version change invalidates, file-content change invalidates (table-driven)
+- [x] byte-identical test: run a fixture analyze twice (cold, warm) and diff full JSON output — must be identical; run once with `--no-cache` — identical again (`TestByteIdentical_ColdWarmNoCache`; trivially green until Task 3 wires an analyzer — contract pinned first)
+- [x] `make test && make lint && make archfit`; commit
 
 ### Task 3: Per-language wiring + invalidation tests
 

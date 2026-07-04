@@ -96,6 +96,7 @@ var adapterPrefixes = []string{
 	modulePrefix + "internal/history/",
 	modulePrefix + "internal/output/",
 	modulePrefix + "internal/labels/labelsio", // labels file I/O adapter (os + YAML)
+	modulePrefix + "internal/factcache",       // extractor-fact cache adapter (os I/O)
 }
 
 // TestArchImports verifies the import ring rules for core and model packages.
@@ -320,6 +321,7 @@ func TestIsForbiddenForCore(t *testing.T) {
 		modulePrefix + "internal/engine",
 		modulePrefix + "internal/output/markdown",
 		modulePrefix + "internal/toolrun",
+		modulePrefix + "internal/factcache",
 	}
 	for _, imp := range forbidden {
 		if !isForbiddenForCore(imp) {
