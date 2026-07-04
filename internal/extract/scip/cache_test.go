@@ -99,3 +99,51 @@ func TestFactCache_PipelineHitAndSourceInvalidation(t *testing.T) {
 		t.Errorf("after source edit: want re-index (2/2), got %d/%d", indexRuns, readerRuns)
 	}
 }
+
+// TestCacheKey_LockfileInvalidates pins the over-hash contract for the
+// resolution environment: the indexers resolve symbols against installed
+// dependencies, so a lockfile-only bump (no source edit) must change the key.
+func TestCacheKey_LockfileInvalidates(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		lang     string
+		source   string
+		manifest string
+		lockfile string
+	}{
+		{langTS, "a.ts", manifestPkgJSON, "yarn.lock"},
+		{langTS, "a.ts", manifestPkgJSON, "package-lock.json"},
+		{langPy, "a.py", manifestPyproject, "uv.lock"},
+		{langPy, "a.py", manifestPyproject, "requirements.txt"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.lang+"/"+tc.lockfile, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			for name, content := range map[string]string{
+				tc.source:   "x\n",
+				tc.manifest: "{}\n",
+			} {
+				if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			indexRuns, readerRuns := 0, 0
+			a := New(scipCacheRunner("{}", &indexRuns, &readerRuns), 0)
+			a.Cache = factcache.NewStore(t.TempDir())
+			ctx := context.Background()
+
+			before := a.cacheKey(ctx, root, "indexer", "pkg", tc.lang)
+			if before == "" {
+				t.Fatal("cacheKey returned empty key")
+			}
+			if err := os.WriteFile(filepath.Join(root, tc.lockfile), []byte("dep@2\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			after := a.cacheKey(ctx, root, "indexer", "pkg", tc.lang)
+			if after == before {
+				t.Errorf("key unchanged after %s appeared — lockfile is outside the input hash", tc.lockfile)
+			}
+		})
+	}
+}

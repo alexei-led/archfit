@@ -118,10 +118,14 @@ be sticky and violate Wave 3 coverage honesty. Legitimate non-zero exits that
 extractors treat as usable output (e.g. dependency-cruiser reporting violations)
 are cacheable because the extractor, not the raw exit code, decides what a fact
 is (see D5). A Go member whose build reaches local source no key covers — a
-`replace` to a local directory (in its go.mod, transitively, or in go.work), or
-a `require` satisfied by a go.work member outside the loaded set (excluded or
-`tools.go.modules`-filtered) — is vetoed per-member: it loads fresh every run
-while unaffected siblings still cache (`memberKeys`, `internal/extract/golang/cache.go`).
+`replace` to a local directory (in its go.mod, or transitively via another
+member's go.mod), or a `require` satisfied by a go.work member outside the
+loaded set (excluded or `tools.go.modules`-filtered) — is vetoed per-member:
+it loads fresh every run while unaffected siblings still cache (`memberKeys`,
+`internal/extract/golang/cache.go`). One coarser case: a local `replace` in
+the go.work FILE itself rewrites resolution for every member, so it disables
+the Go cache for the whole run, not per-member
+(`TestFactCache_WorkLevelReplaceDisablesCache`).
 
 ### D4 — Eviction: size cap + LRU by mtime
 

@@ -448,11 +448,20 @@ func unkeyedWorkspaceMods(scanRoot string, memberDirs []string) (map[string]stru
 	return out, hasLocalReplace(wf.Replace)
 }
 
+// goBuildExts are the source extensions the go tool treats as package input:
+// .go plus the cgo/asm/swig companion files (go/build's file-type list). A
+// cgo member's type info depends on its .c/.h sources, so they must be in the
+// key — over-hash, never under-hash.
+var goBuildExts = []string{
+	".go", ".c", ".cc", ".cxx", ".cpp", ".m", ".h", ".hh", ".hpp", ".hxx",
+	".s", ".S", ".sx", ".f", ".F", ".for", ".f90", ".swig", ".swigcxx", ".syso",
+}
+
 // memberInputFiles enumerates one member's input tree as scanRoot-relative
-// slash paths: its .go files plus go.mod/go.sum, excluding files owned by a
-// NESTED member (go list ./... stops at nested modules, so those files cannot
-// affect this member's load) and goListHashExcludes (dirs the go tool never
-// loads).
+// slash paths: its go-build source files plus go.mod/go.sum, excluding files
+// owned by a NESTED member (go list ./... stops at nested modules, so those
+// files cannot affect this member's load) and goListHashExcludes (dirs the go
+// tool never loads).
 func memberInputFiles(scanRoot, memberDir string, memberDirs []string) []string {
 	var nested []string
 	for _, other := range memberDirs {
@@ -463,7 +472,7 @@ func memberInputFiles(scanRoot, memberDir string, memberDirs []string) []string 
 			nested = append(nested, filepath.ToSlash(rel)+"/")
 		}
 	}
-	files := factcache.ListInputs(memberDir, factcache.MatchExts([]string{".go"}, []string{"go.mod", "go.sum"}), goListHashExcludes)
+	files := factcache.ListInputs(memberDir, factcache.MatchExts(goBuildExts, []string{"go.mod", "go.sum"}), goListHashExcludes)
 	var out []string
 	for _, f := range files {
 		underNested := false

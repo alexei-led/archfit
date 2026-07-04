@@ -68,6 +68,9 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 			}
 			inner = &forbiddenDependency{def: def}
 		case "public_api_only":
+			if err := validateScopeGlobs(def); err != nil {
+				return nil, err
+			}
 			inner = &publicAPIOnly{def: def, mm: cfg.ModuleMap}
 		case "forbidden_layer_direction":
 			inner = &forbiddenLayerDirection{
@@ -76,6 +79,9 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 				mm:     cfg.ModuleMap,
 			}
 		case "internal_api_access":
+			if err := validateScopeGlobs(def); err != nil {
+				return nil, err
+			}
 			inner = &internalAPIAccess{def: def, mm: cfg.ModuleMap}
 		case "new_cross_module_dependency":
 			inner = &newCrossModuleDependency{def: def, mm: cfg.ModuleMap}

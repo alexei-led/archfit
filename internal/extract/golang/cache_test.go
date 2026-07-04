@@ -100,6 +100,70 @@ func TestFactCache_PerMemberInvalidation(t *testing.T) {
 	}
 }
 
+// TestFactCache_CgoCompanionFileInvalidates pins the over-hash contract for
+// cgo inputs: a .h edit (compiled into the member via import "C") must
+// invalidate that member even though no .go file changed.
+func TestFactCache_CgoCompanionFileInvalidates(t *testing.T) {
+	t.Parallel()
+	root, dirA, dirB := writeWorkspaceFixture(t)
+	header := filepath.Join(dirA, "native.h")
+	if err := os.WriteFile(header, []byte("#define V 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loader := &fakeLoader{calls: map[string]int{}}
+	ex := New(config.ExtractConfig{})
+	ex.Cache = factcache.NewStore(t.TempDir())
+	ex.load = loader.load
+	ctx := context.Background()
+	s := scope.Scope{Root: root}
+
+	for range 2 {
+		if _, _, err := ex.Extract(ctx, s); err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+	}
+	if err := os.WriteFile(header, []byte("#define V 2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ex.Extract(ctx, s); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if loader.calls[dirA] != 2 {
+		t.Errorf("member a: want re-load after .h edit, got %d loads", loader.calls[dirA])
+	}
+	if loader.calls[dirB] != 1 {
+		t.Errorf("member b: want cache hit, got %d loads", loader.calls[dirB])
+	}
+}
+
+// TestFactCache_WorkLevelReplaceDisablesCache pins the go.work-file-level
+// replace semantics: unlike a member go.mod replace (per-member veto), a
+// local replace in go.work itself disables caching for the WHOLE run — no
+// key covers the replaced source, and membership itself is rewritten.
+func TestFactCache_WorkLevelReplaceDisablesCache(t *testing.T) {
+	t.Parallel()
+	root, dirA, dirB := writeWorkspaceFixture(t)
+	work := "go 1.24\n\nuse (\n\t./a\n\t./b\n)\n\nreplace example.com/dep => ./vendor-dep\n"
+	if err := os.WriteFile(filepath.Join(root, "go.work"), []byte(work), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loader := &fakeLoader{calls: map[string]int{}}
+	ex := New(config.ExtractConfig{})
+	ex.Cache = factcache.NewStore(t.TempDir())
+	ex.load = loader.load
+	ctx := context.Background()
+	s := scope.Scope{Root: root}
+
+	for range 2 {
+		if _, _, err := ex.Extract(ctx, s); err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+	}
+	if loader.calls[dirA] != 2 || loader.calls[dirB] != 2 {
+		t.Errorf("want cache fully disabled (2 loads per member), got %v", loader.calls)
+	}
+}
+
 // TestFactCache_GoModChangeInvalidates covers the manifest component of the
 // key: a go.mod edit invalidates that member.
 func TestFactCache_GoModChangeInvalidates(t *testing.T) {

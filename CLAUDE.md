@@ -57,8 +57,10 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   input-tree hash must cover the TOOL'S real input set — config `exclude:` globs
   never filter it (the tools don't honor them; over-hash, never under-hash).
   Partial/timed-out/dirty results are never cached; a Go member whose build
-  reaches source no key covers (local `replace`, unkeyed go.work sibling) is
-  vetoed per-member. `--no-cache` bypasses reads AND writes on all caches.
+  reaches source no key covers (local `replace` in a member go.mod, unkeyed
+  go.work sibling) is vetoed per-member; a local `replace` in the go.work file
+  itself disables the whole run's Go cache. `--no-cache` bypasses reads AND
+  writes on all caches.
 - **No gitnexus.** The `.gitnexus`/`.codegraph` index dirs are excluded from file
   walks (`scope.go`), but archfit does not run the tool and does not derive any
   per-module fact from it.

@@ -375,6 +375,11 @@
       },
       "additionalProperties": false,
       "type": "object",
+      "required": [
+        "id",
+        "lang",
+        "rule"
+      ],
       "description": "PatternDef defines a single structural pattern rule for ast-grep."
     },
     "PythonLanguage": {

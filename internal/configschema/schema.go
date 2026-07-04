@@ -131,6 +131,12 @@ func patchDefinitions(schema *jsonschema.Schema) {
 			// substitutes a positional placeholder.
 			def.Required = []string{"type"}
 		}
+		if name == "PatternDef" {
+			// Mirror validateRules (internal/config): ast-grep runs
+			// `sg --lang <lang> --pattern <rule>` and keys findings by id, so
+			// a partial pattern entry is a hard load error.
+			def.Required = []string{"id", "lang", "rule"}
+		}
 		if name == "CouplingGateDef" {
 			// Mirror validateCouplingGate (internal/config): min_band is one of
 			// the four band floors (critical rejected — could never trip), and

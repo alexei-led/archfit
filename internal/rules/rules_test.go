@@ -786,6 +786,30 @@ func TestNew_ForbiddenDependencyRequiresFromTo(t *testing.T) {
 	}
 }
 
+// TestNew_MalformedGlobError pins glob validation at load time: a malformed
+// from/to pattern makes doublestar.Match error (discarded in Check), so
+// without this the rule would load clean and silently fire zero findings.
+func TestNew_MalformedGlobError(t *testing.T) {
+	const badGlob = "internal/[" // unclosed character class: doublestar.ErrBadPattern
+	cases := []struct {
+		name string
+		def  config.RuleDef
+	}{
+		{"forbidden_dependency bad from", config.RuleDef{ID: "fd", Type: typeForbiddenDependency, From: badGlob, To: pathInfraGlob}},
+		{"forbidden_dependency bad to", config.RuleDef{ID: "fd", Type: typeForbiddenDependency, From: pathDomainGlob, To: badGlob}},
+		{"public_api_only bad from", config.RuleDef{ID: "pao", Type: "public_api_only", From: badGlob}},
+		{"internal_api_access bad to", config.RuleDef{ID: "iaa", Type: "internal_api_access", To: badGlob}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{tc.def}})
+			if err == nil {
+				t.Fatal("New: got nil error, want error for malformed glob")
+			}
+		})
+	}
+}
+
 func TestNew_EmptyRules(t *testing.T) {
 	ruleSet, err := rules.New(config.RuleConfig{})
 	if err != nil {

@@ -34,10 +34,13 @@ const (
 	indexerRust   = "rust-analyzer"
 	flagOutput    = "--output"
 	langRust      = "rust"
+	langPy        = "python"
 	langTS        = "typescript"
 	toolCargo     = "cargo"
 
-	nodeModulesDir = "node_modules"
+	nodeModulesDir    = "node_modules"
+	manifestPkgJSON   = "package.json"
+	manifestPyproject = "pyproject.toml"
 
 	// Absent-coverage reasons: why semantic strength is unavailable and the
 	// actionable enable step. Static strings so a double-run stays byte-stable.
@@ -303,13 +306,19 @@ func cacheableSCIP(stdout []byte) bool {
 
 // scipLangInputs maps the detected language to its input scope for the
 // fact-cache key: source extensions plus resolution-affecting manifests.
+// The indexers resolve symbols against installed dependencies (node_modules,
+// site-packages), so lockfiles stand in for that environment — a
+// lockfile-only bump must invalidate (over-hash, never under-hash).
 var scipLangInputs = map[string]struct {
 	exts      []string
 	basenames []string
 }{
-	"go":     {[]string{".go"}, []string{"go.mod", "go.sum"}},
-	langTS:   {[]string{".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}, []string{"package.json", "tsconfig.json"}},
-	"python": {[]string{".py"}, []string{"pyproject.toml", "setup.py"}},
+	"go": {[]string{".go"}, []string{"go.mod", "go.sum"}},
+	langTS: {[]string{".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}, []string{
+		manifestPkgJSON, "tsconfig.json", "tsconfig.base.json",
+		"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb",
+	}},
+	langPy:   {[]string{".py"}, []string{manifestPyproject, "setup.py", "setup.cfg", "uv.lock", "requirements.txt"}},
 	langRust: {[]string{".rs"}, []string{"Cargo.toml", "Cargo.lock"}},
 }
 
@@ -388,10 +397,10 @@ func (e errReader) Error() string { return "scip reader: " + string(e) }
 // Returns a non-nil err only when a cargo metadata timeout fires (inner cap or
 // outer ctx), so the caller can surface StatusTimedOut rather than StatusAbsent.
 func (a *Adapter) detectIndexer(ctx context.Context, root string) (indexer, pkg, lang string, ok bool, err error) {
-	if fileExists(filepath.Join(root, "pyproject.toml")) || fileExists(filepath.Join(root, "setup.py")) {
+	if fileExists(filepath.Join(root, manifestPyproject)) || fileExists(filepath.Join(root, "setup.py")) {
 		if _, found := a.runner.Detect(ctx, indexerPython); found {
 			if p := detectPyPackage(root); p != "" {
-				return indexerPython, p, "python", true, nil
+				return indexerPython, p, langPy, true, nil
 			}
 		}
 	}
@@ -402,7 +411,7 @@ func (a *Adapter) detectIndexer(ctx context.Context, root string) (indexer, pkg,
 			}
 		}
 	}
-	if fileExists(filepath.Join(root, "package.json")) {
+	if fileExists(filepath.Join(root, manifestPkgJSON)) {
 		if _, found := a.runner.Detect(ctx, indexerTS); found {
 			if n := npmPackageName(root); n != "" {
 				return indexerTS, n, langTS, true, nil
@@ -535,7 +544,7 @@ func cargoPackageName(root string) string {
 
 // npmPackageName reads the "name" field from package.json.
 func npmPackageName(root string) string {
-	data, err := os.ReadFile(filepath.Join(root, "package.json")) // #nosec G304 -- root is the repository root already chosen by discovery
+	data, err := os.ReadFile(filepath.Join(root, manifestPkgJSON)) // #nosec G304 -- root is the repository root already chosen by discovery
 	if err != nil {
 		return ""
 	}
@@ -584,7 +593,7 @@ func dirExists(path string) bool {
 // detected. A TS project with no installed deps is the dominant, most common
 // blocker (the codegraph baseline); otherwise a generic install-an-indexer hint.
 func scipAbsentReason(root string) string {
-	if fileExists(filepath.Join(root, "package.json")) && !dirExists(filepath.Join(root, nodeModulesDir)) {
+	if fileExists(filepath.Join(root, manifestPkgJSON)) && !dirExists(filepath.Join(root, nodeModulesDir)) {
 		return reasonTSNoNodeModules
 	}
 	return reasonScipNoIndexer

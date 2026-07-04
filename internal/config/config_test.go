@@ -1404,6 +1404,21 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			wantErr: "rules[#0]",
 		},
 		{
+			name:    "pattern entry missing rule rejected",
+			yaml:    "version: 1\nrules:\n  - id: r1\n    type: cycle\n    patterns:\n      - id: p1\n        lang: go\n",
+			wantErr: "rules[r1].patterns[0]",
+		},
+		{
+			name:    "pattern entry missing lang rejected",
+			yaml:    "version: 1\nrules:\n  - id: r1\n    type: cycle\n    patterns:\n      - id: p1\n        rule: unsafe.Pointer($X)\n",
+			wantErr: "rules[r1].patterns[0]",
+		},
+		{
+			name:    "complete pattern entry loads clean",
+			yaml:    "version: 1\nrules:\n  - id: r1\n    type: cycle\n    patterns:\n      - id: p1\n        lang: go\n        rule: unsafe.Pointer($X)\n",
+			wantErr: "",
+		},
+		{
 			name:    "invalid metric gate names the metric",
 			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    gate: nope\n",
 			wantErr: "metrics.cycle",

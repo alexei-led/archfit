@@ -25,6 +25,19 @@ func validateForbiddenDependencyDef(def config.RuleDef) error {
 	if def.From == "" || def.To == "" {
 		return fmt.Errorf("rules: forbidden_dependency %q requires both from and to globs", def.ID)
 	}
+	return validateScopeGlobs(def)
+}
+
+// validateScopeGlobs rejects malformed from/to globs. doublestar.Match
+// returns ErrBadPattern at check time, which Check discards — a malformed
+// glob would make the rule silently fire zero findings forever, the same
+// silently-vacuous-gate failure the emptiness check above guards against.
+func validateScopeGlobs(def config.RuleDef) error {
+	for field, pat := range map[string]string{"from": def.From, "to": def.To} {
+		if pat != "" && !doublestar.ValidatePattern(pat) {
+			return fmt.Errorf("rules: rule %q has a malformed %s glob %q", def.ID, field, pat)
+		}
+	}
 	return nil
 }
 
