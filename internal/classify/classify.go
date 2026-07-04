@@ -664,6 +664,16 @@ func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map
 		return coupling.DistanceSameModule, coupling.DistanceBasisUnknown
 	}
 
+	return moduleDistance(fromMod, toMod, lang, modules, explicitOwners, degenerateExplicit, degenerateOwners)
+}
+
+// moduleDistance computes the composite distance between two RESOLVED, distinct
+// modules — steps 1–4 of the precedence chain documented on classifyDistance.
+// Factored out of classifyDistance so CloneOnlyPairs can compute a module-pair
+// distance from module names alone: clone evidence carries repo file paths,
+// which for Python never match the dotted node-ID globs the path resolution in
+// classifyDistance expects.
+func moduleDistance(fromMod, toMod, lang string, modules map[string]config.ModuleDef, explicitOwners map[string]bool, degenerateExplicit, degenerateOwners bool) (coupling.Distance, coupling.DistanceBasis) {
 	fromDef := modules[fromMod]
 	toDef := modules[toMod]
 

@@ -36,11 +36,11 @@ Wave 5 of 7 from `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` (§1 deviations
 
 ### Task 2: bc/duplicated_knowledge advisory (clone pair without an edge)
 
-- [ ] failing test: two modules with a cross-module jscpd clone pair and NO import edge → new advisory finding `bc/duplicated_knowledge` with both locations, strength labeled symmetric-functional (book Ch7/Ch10 Example 3 framing), report-only, `Kind: advisory`
-- [ ] implement: when clones report a cross-module pair and no graph edge exists between the modules, emit the advisory (do NOT invent a graph edge — the scorer's inputs stay tool-derived facts)
-- [ ] respect existing suppression paths: `.archfit-labels.yaml` approved labels can accept a pair; test the suppression
-- [ ] test the existing behavior is unchanged when an edge DOES exist (symmetric upgrade path, no duplicate advisory)
-- [ ] regen goldens; commit
+- [x] failing test: two modules with a cross-module jscpd clone pair and NO import edge → new advisory finding `bc/duplicated_knowledge` with both locations, strength labeled symmetric-functional (book Ch7/Ch10 Example 3 framing), report-only, `Kind: advisory` (`TestDuplicatedKnowledgeAdvisory`, `TestCloneOnlyPairs`)
+- [x] implement: when clones report a cross-module pair and no graph edge exists between the modules, emit the advisory (do NOT invent a graph edge — the scorer's inputs stay tool-derived facts) — `classify.CloneOnlyPairs` scores the pair (symmetric × module-pair distance × worst-of-pair volatility through the book formula); `engine.duplicatedKnowledgeAdvisories` emits the finding; never promoted (coupling gate matches `RuleIDBCImbalanced` only), baseline persists it with native advisory kind
+- [x] respect existing suppression paths: `.archfit-labels.yaml` approved labels can accept a pair (either direction; mirrors the fromPin guard); tested — plus the `coupling.min_severity` floor and the SeverityNone balanced case (e.g. frozen pair) emit nothing
+- [x] test the existing behavior is unchanged when an edge DOES exist (symmetric upgrade path, no duplicate advisory) — `TestDuplicatedKnowledgeAdvisory_EdgeExists`
+- [x] regen goldens; commit — no stored golden changed (no golden fixture carries clone clusters); `make test && make lint && make archfit` green; self-scan verdict pass with 3 real duplicated-knowledge advisories surfaced (extractor copy-paste pairs with no import edge)
 
 ### Task 3: cheapest_move honesty + dead-code removal
 

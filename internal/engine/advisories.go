@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/finding"
@@ -24,6 +25,17 @@ const kindAdvisory = "advisory"
 // finding. Exported so the composition root (cmd) matches promotable findings
 // against the same constant instead of a drifting duplicate literal.
 const RuleIDBCImbalanced = "bc/imbalanced_coupling"
+
+// RuleIDBCDuplicatedKnowledge is the rule ID for the duplicated-knowledge
+// advisory: a cross-module clone pair with NO import edge between the modules
+// (book Ch7 — functional coupling through shared logic, invisible to the
+// import graph). Report-only: never promoted by the coupling gate, which
+// matches RuleIDBCImbalanced only.
+const RuleIDBCDuplicatedKnowledge = "bc/duplicated_knowledge"
+
+// edgeKindClone marks a duplicated-knowledge finding's edge evidence: the two
+// endpoints are linked by duplicated code, not an import.
+const edgeKindClone = "clone"
 
 // collectAdvisories runs stage 8: coupling advisories, staleness advisories,
 // stale label advisories, and the advisory status pass.
@@ -82,6 +94,12 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 		}
 		advisoryFindings = append(advisoryFindings, af)
 	}
+	// Duplicated knowledge (book Ch7): cross-module clone pairs with NO import
+	// edge. The symmetric-upgrade path only sees pairs that have an edge;
+	// without this pass, copy-paste drift between unconnected modules is
+	// invisible end-to-end. Report-only — never promoted by the coupling gate.
+	advisoryFindings = append(advisoryFindings, duplicatedKnowledgeAdvisories(g, classifyCfg)...)
+
 	// Append staleness advisories.
 	advisoryFindings = append(advisoryFindings, staleness.Check(g, in.Staleness, in.Now)...)
 
@@ -384,10 +402,70 @@ func volatilityClause(v coupling.Volatility) string {
 	}
 }
 
+// duplicatedKnowledgeAdvisories builds one bc/duplicated_knowledge advisory per
+// duplicated-knowledge pair (classify.CloneOnlyPairs): a cross-module clone pair
+// whose modules share no import edge, scored with the standard book formula at
+// symmetric strength. Findings honor the same coupling.min_severity floor as
+// bc/imbalanced_coupling advisories; the pair-level ID is stable across runs so
+// baseline acceptance suppresses it like any other advisory.
+func duplicatedKnowledgeAdvisories(g *graph.Graph, classifyCfg config.ClassifyConfig) []finding.Finding {
+	var out []finding.Finding
+	for _, p := range classify.CloneOnlyPairs(g, classifyCfg) {
+		cl := p.Classification
+		if !severityAtLeast(cl.Severity, classifyCfg.BCAdvisoryMinSeverity) {
+			continue
+		}
+		matched := map[string]string{
+			"strength":   string(cl.Strength),
+			"distance":   string(cl.Distance),
+			"volatility": string(cl.Volatility),
+		}
+		if cl.DistanceBasis != coupling.DistanceBasisUnknown {
+			matched["distance_basis"] = string(cl.DistanceBasis)
+		}
+		if cl.Score.Reason != "" {
+			matched["score"] = cl.Score.Reason
+			matched["score_value"] = strconv.Itoa(cl.Score.Value)
+			matched["score_band"] = string(cl.Score.Band)
+			matched["score_version"] = coupling.ScoreVersion
+		}
+		if cl.Score.CheapestMove != "" {
+			matched["cheapest_move"] = cl.Score.CheapestMove
+		}
+		out = append(out, finding.Finding{
+			ID:       duplicatedKnowledgeID(p.FromModule, p.ToModule),
+			Kind:     kindAdvisory,
+			RuleID:   RuleIDBCDuplicatedKnowledge,
+			Status:   finding.StatusNew,
+			Severity: finding.Severity(cl.Severity),
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Module: p.FromModule, Path: p.FromPath},
+				To:   finding.Endpoint{Module: p.ToModule, Path: p.ToPath},
+				Kind: edgeKindClone,
+			},
+			Locations: p.Locations,
+			Why: "duplicated knowledge: cross-module code clones between " + p.FromModule +
+				" and " + p.ToModule + " with no import edge — symmetric functional coupling; " +
+				"a change to the shared logic must be repeated in both modules. Extract the " +
+				"shared knowledge, or accept the pair with an approved label",
+			MatchedBy: matched,
+		})
+	}
+	return out
+}
+
 // couplingAdvisoryID returns a stable 32-character hex fingerprint for a coupling advisory
 // finding, derived from (from, to, kind) — same scheme as finding.fingerprint.
 func couplingAdvisoryID(from, to, kind string) string {
 	h := sha256.Sum256([]byte("bc/imbalanced_coupling\x00" + from + "\x00" + to + "\x00" + kind))
+	return hex.EncodeToString(h[:16])
+}
+
+// duplicatedKnowledgeID returns a stable fingerprint for a bc/duplicated_knowledge
+// advisory, derived from the canonical module pair — independent of which files
+// carry the clones, so the finding survives clone movement within the modules.
+func duplicatedKnowledgeID(fromModule, toModule string) string {
+	h := sha256.Sum256([]byte(RuleIDBCDuplicatedKnowledge + "\x00" + fromModule + "\x00" + toModule))
 	return hex.EncodeToString(h[:16])
 }
 
