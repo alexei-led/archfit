@@ -160,13 +160,6 @@ func indexMetrics(ms []diagnostic.MetricResult) metricIndex {
 	return mi
 }
 
-// measured reports whether the named metric ran AND produced a real value (not
-// the n/a band, which means "no evidence").
-func (mi metricIndex) measured(name string) bool {
-	m, ok := mi[name]
-	return ok && m.Band != "n/a"
-}
-
 // cargoModulesPartial reports whether the Rust module-graph tool ran but only
 // covered some crates (status "partial") — the structural dimensions are then built
 // over an incomplete graph.
@@ -213,13 +206,20 @@ func tsUnresolvedPartial(d diagnostic.Diagnostic) bool {
 
 // degenerateGraph reports whether the dependency graph is too small to assess
 // structure — fewer than two connected first-party modules. blast_radius goes n/a
-// exactly in that case (it needs ≥2 modules joined by an edge), so its absence is
-// the proxy. On such a graph cycle=0 and coverage is trivially true, carrying no
-// signal: the graph-shape dimensions must report n/a, not a vacuous strong. The
-// canonical case is a single-crate Rust binary, which archfit's crate-level model
-// sees as one node (see internal/extract/rust).
+// exactly in that case (it needs ≥2 modules joined by an edge), so a blast_radius
+// result carrying the n/a band is the proxy. On such a graph cycle=0 and coverage
+// is trivially true, carrying no signal: the graph-shape dimensions must report
+// n/a, not a vacuous strong. The canonical case is a single-crate Rust binary,
+// which archfit's crate-level model sees as one node (see internal/extract/rust).
+//
+// An ABSENT blast_radius (metrics.blast_radius.enabled: false) is not degeneracy
+// evidence — treating it as such would let an unrelated config knob silently
+// force coupling_balance to n/a and defuse coupling.gate. Without the proxy,
+// couplingBalance falls through to the summary path, whose Scored==0 check
+// still reports n/a on genuinely degenerate graphs.
 func degenerateGraph(mi metricIndex) bool {
-	return !mi.measured("blast_radius")
+	m, ok := mi["blast_radius"]
+	return ok && m.Band == "n/a"
 }
 
 // lowerConf drops a confidence level by one band (high→medium, medium→low, low→low).

@@ -3,6 +3,7 @@ package factcache
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -210,5 +211,68 @@ func TestHashTree(t *testing.T) {
 
 	if _, err := HashTree(root, []string{"missing.go"}); err == nil {
 		t.Error("missing file must be an error, not a silent skip")
+	}
+}
+
+// ListInputs must hash THROUGH file symlinks (the tools follow them, so target
+// edits must invalidate) and surface directory symlinks (WalkDir cannot descend
+// them — including the path makes HashTree error and the caller veto caching).
+// Dangling links carry no readable content and are skipped.
+func TestListInputs_Symlinks(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	outside := t.TempDir()
+	write := func(dir, rel, content string) {
+		t.Helper()
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	link := func(target, rel string) {
+		t.Helper()
+		if err := os.Symlink(target, filepath.Join(root, rel)); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+	}
+
+	const plainFile, linkedFile, realFile = "plain.go", "linked.go", "real.go"
+	write(root, plainFile, "package a")
+	write(outside, realFile, "package b")
+	if err := os.MkdirAll(filepath.Join(outside, "pkg"), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	link(filepath.Join(outside, realFile), linkedFile)
+	link(filepath.Join(outside, "pkg"), "linkeddir")
+	link(filepath.Join(outside, "gone.go"), "dangling.go")
+
+	got := ListInputs(root, MatchExts([]string{".go"}, nil), nil)
+	want := []string{linkedFile, "linkeddir", plainFile}
+	if !slices.Equal(got, want) {
+		t.Fatalf("ListInputs = %v, want %v", got, want)
+	}
+
+	// The file symlink hashes its target's content: edits behind the link
+	// must change the tree hash.
+	before, err := HashTree(root, []string{plainFile, linkedFile})
+	if err != nil {
+		t.Fatalf("HashTree: %v", err)
+	}
+	write(outside, realFile, "package b // changed")
+	after, err := HashTree(root, []string{plainFile, linkedFile})
+	if err != nil {
+		t.Fatalf("HashTree: %v", err)
+	}
+	if before == after {
+		t.Error("edit behind a file symlink must change the hash")
+	}
+
+	// A directory symlink in the list must be a HashTree error (cache veto),
+	// never a silent skip.
+	if _, err := HashTree(root, got); err == nil {
+		t.Error("directory symlink in inputs must veto hashing, not skip")
 	}
 }

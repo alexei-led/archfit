@@ -217,9 +217,18 @@ func TestCouplingBalance_EmptyEdges(t *testing.T) {
 	})
 
 	t.Run("degenerate graph + no edges → n/a (single-module: no cross-module coupling to measure)", func(t *testing.T) {
-		got := couplingBalance(nil, metricIndex{}, nil)
+		degen := metricIndex{metricBlastRadius: metric(metricBlastRadius, 0, "n/a", "low")}
+		got := couplingBalance(nil, degen, nil)
 		if got.Band != BandNA {
 			t.Errorf("band = %q, want n/a (degenerate graph is unmeasured, not a fabricated 50)", got.Band)
+		}
+	})
+
+	t.Run("blast_radius disabled by config is NOT degeneracy — scored summary still measures", func(t *testing.T) {
+		summary := &diagnostic.ClassifiedEdgeSummary{Scored: 10, MeanBalance: 8.2}
+		got := couplingBalance(nil, metricIndex{}, summary)
+		if got.Band == BandNA {
+			t.Fatal("band = n/a with 10 scored edges; disabling metrics.blast_radius must not defuse coupling_balance")
 		}
 	})
 

@@ -485,3 +485,21 @@ func TestDiffCmd_SubtreeAboveGitRoot(t *testing.T) {
 		t.Errorf("error message should mention git root or repository; got: %s", out)
 	}
 }
+
+// A leading-dash --base ref must be rejected before reaching git, where it
+// would parse as a flag: `git worktree add --detach <dir> --force` silently
+// checks out HEAD and the delta compares HEAD to itself.
+func TestDiffCmd_DashRef(t *testing.T) {
+	t.Parallel()
+
+	_, cfgPath := makeDiffFixtureRepo(t)
+
+	var buf bytes.Buffer
+	code := RunWithStderr([]string{cmdAnalyze, "--base=--force", "-c", cfgPath}, &buf, &buf)
+	if code != 3 {
+		t.Fatalf("dash ref: exit=%d, want 3\noutput:\n%s", code, buf.String())
+	}
+	if !strings.Contains(buf.String(), "invalid --base ref") {
+		t.Errorf("error should name the invalid ref; got: %s", buf.String())
+	}
+}

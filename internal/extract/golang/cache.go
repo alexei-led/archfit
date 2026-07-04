@@ -282,13 +282,17 @@ func deriveRawHints(pkg *packages.Package, dtos *dtoIndex, root string) map[stri
 }
 
 // goListHashExcludes are the input-tree-hash exclusions faithful to
-// `go list ./...` semantics: the go tool never loads packages under testdata
-// or vendor, so edits there cannot affect a member's facts. Config `exclude:`
-// globs are deliberately NOT applied — packages.Load still type-checks files
-// they match (exclusion filtering happens at merge time), so editing an
-// excluded file must still invalidate; exclusion-config changes invalidate
-// via cfgHash (e.cfg embeds Exclusions).
-var goListHashExcludes = []string{"**/testdata/**", "**/vendor/**"}
+// `go list ./...` semantics: the go tool never loads packages under testdata,
+// so edits there cannot affect a member's facts. vendor/ is deliberately
+// HASHED: with vendor/modules.txt present the build defaults to -mod=vendor
+// and type-checks dependency source from vendor/, so a hand-patched vendored
+// file must invalidate (for -mod=mod repos that is a spurious invalidation —
+// over-hash, never under-hash). Config `exclude:` globs are deliberately NOT
+// applied — packages.Load still type-checks files they match (exclusion
+// filtering happens at merge time), so editing an excluded file must still
+// invalidate; exclusion-config changes invalidate via cfgHash (e.cfg embeds
+// Exclusions).
+var goListHashExcludes = []string{"**/testdata/**"}
 
 // memberKeys derives one fact-cache key per member, or nil when key material
 // cannot be derived (cache disabled for this run — never an error). A key of

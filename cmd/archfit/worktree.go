@@ -70,6 +70,12 @@ func cleanGitEnv() []string {
 // Scorecard. The worktree is always removed. advisory mirrors the HEAD side so
 // the delta compares like with like.
 func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, configDir, root string, noConfig, advisory bool) (score.Scorecard, error) {
+	// A leading-dash ref would be parsed as a flag by rev-parse/worktree-add;
+	// `git worktree add --detach <dir> --force` silently checks out HEAD and the
+	// delta becomes HEAD-vs-HEAD. Reject rather than pass through.
+	if strings.HasPrefix(baseRef, "-") {
+		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: invalid --base ref %q", baseRef)}
+	}
 	// Resolve the git root. Use --root when given (absolutized); otherwise the
 	// config directory — both are inside the repo and yield the same gitRoot.
 	gitAnchor := root
@@ -172,8 +178,14 @@ func runScoreSide(ctx context.Context, deps *appDeps, configPath, root string, n
 // operating mode; upgrade trigger: a reproduced concurrent-run failure.
 func baseWorktreeParent(ctx context.Context, deps *appDeps, gitRoot, baseRef, configDir string) (string, error) {
 	if !deps.noCache {
-		if sha, err := git.ResolveCommit(ctx, gitRoot, baseRef, deps.Runner); err == nil {
-			dir := filepath.Join(baseWorktreesDir(configDir), sha)
+		sha, err := git.ResolveCommit(ctx, gitRoot, baseRef, deps.Runner)
+		// Absolutize against the process CWD — the same anchor loadConfig reads a
+		// relative --config from. The git subprocesses below run with WorkDir set
+		// to gitRoot, so a relative path here would silently split the checkout
+		// (git-created) from the directory the os calls manage (CWD-created).
+		parent, aerr := filepath.Abs(baseWorktreesDir(configDir))
+		if err == nil && aerr == nil {
+			dir := filepath.Join(parent, sha)
 			removeWorktree(ctx, deps.Runner, gitRoot, filepath.Join(dir, "wt"))
 			if rerr := os.RemoveAll(dir); rerr == nil {
 				if merr := os.MkdirAll(dir, 0o750); merr == nil {

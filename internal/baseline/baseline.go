@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -147,7 +148,24 @@ func Save(_ context.Context, path string, b Baseline) error {
 		return fmt.Errorf("baseline: marshal: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	// Temp-file + rename: a crash mid-write must not leave a truncated baseline
+	// that hard-fails every subsequent run's Load.
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".archfit-baseline-*")
+	if err != nil {
+		return fmt.Errorf("baseline: write %s: %w", path, err)
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("baseline: write %s: %w", path, err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("baseline: write %s: %w", path, err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("baseline: write %s: %w", path, err)
 	}
 

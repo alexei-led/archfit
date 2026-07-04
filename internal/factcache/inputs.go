@@ -2,6 +2,7 @@ package factcache
 
 import (
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -46,15 +47,31 @@ func ListInputs(root string, match func(rel string) bool, exclude []string) []st
 			}
 			return nil
 		}
+		isDirLink := false
 		if !d.Type().IsRegular() {
-			return nil
+			if d.Type()&fs.ModeSymlink == 0 {
+				return nil // sockets, devices, … — never tool inputs
+			}
+			info, serr := os.Stat(path) // follow the link
+			if serr != nil {
+				return nil // dangling: no content the tool could read either
+			}
+			// A symlink to a regular file is an input like any other — HashTree's
+			// ReadFile follows it, so target edits invalidate. A symlink to a
+			// directory cannot be descended by WalkDir while the real tool follows
+			// it: include the path so HashTree errors and the caller vetoes
+			// caching — a miss, never a stale hit (over-hash, never under-hash).
+			isDirLink = info.IsDir()
+			if !isDirLink && !info.Mode().IsRegular() {
+				return nil
+			}
 		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return nil
 		}
 		rel = filepath.ToSlash(rel)
-		if !match(rel) || matchesAny(rel, exclude) {
+		if matchesAny(rel, exclude) || (!isDirLink && !match(rel)) {
 			return nil
 		}
 		out = append(out, rel)
