@@ -256,7 +256,7 @@ func (c *enrichFlags) runSubdomainDraft(ctx context.Context, deps *appDeps) erro
 			Module:     t.Name,
 			Subdomain:  a.Subdomain,
 			Volatility: a.Volatility,
-			Rationale:  "", // classifyModules doesn't surface rationale separately
+			Rationale:  a.Rationale,
 			Status:     initcfg.SubdomainStatusDraft,
 		})
 	}

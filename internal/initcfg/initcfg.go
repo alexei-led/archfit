@@ -150,6 +150,7 @@ type ModuleAnnotation struct {
 	Layer         string
 	Role          string
 	SuggestedName string
+	Rationale     string
 }
 
 // sanitizeComment strips or replaces control characters (< 0x20 and DEL 0x7F),

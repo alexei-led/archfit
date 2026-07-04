@@ -15,9 +15,10 @@ import (
 // directory does not exist or when paths are purely dotted with no corresponding
 // directory.
 type ClassifyTarget struct {
-	Name  string
-	Paths []string
-	Files []string
+	Name   string
+	Paths  []string
+	Public []string
+	Files  []string
 }
 
 // maxClassifyFiles caps the number of basenames collected per target.
@@ -39,8 +40,9 @@ func BuildClassifyTargets(root string, mods []ModuleDef) []ClassifyTarget {
 	targets := make([]ClassifyTarget, 0, len(mods))
 	for _, m := range mods {
 		ct := ClassifyTarget{
-			Name:  m.Name,
-			Paths: m.Paths,
+			Name:   m.Name,
+			Paths:  m.Paths,
+			Public: m.Public,
 		}
 		ct.Files = resolveFiles(root, m.Paths)
 		targets = append(targets, ct)

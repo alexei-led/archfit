@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -66,6 +67,47 @@ func writeConfig(t *testing.T, dir, content string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestClassifyTargetsForUpdate_IncludesSyntheticOverridePath(t *testing.T) {
+	t.Parallel()
+	const (
+		syntheticModule = "mycrate-state"
+		syntheticPath   = "mycrate::state"
+	)
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		syntheticModule: {Paths: []string{syntheticPath}},
+	}}
+	report := initcfg.UpdateReport{Unclassified: []string{syntheticModule}}
+
+	got := classifyTargetsForUpdate(cfg, report, nil)
+	if len(got) != 1 {
+		t.Fatalf("targets = %d, want 1: %+v", len(got), got)
+	}
+	if got[0].Name != syntheticModule || len(got[0].Paths) != 1 || got[0].Paths[0] != syntheticPath {
+		t.Fatalf("synthetic override target not preserved: %+v", got[0])
+	}
+}
+
+func TestCollectUpdateRepoEvidence_ReadmeAndDocsHeadings(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Payments\n\n## Settlement\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "docs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "docs", "domain.md"), []byte("# Domain Map\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got := strings.Join(collectUpdateRepoEvidence(dir), "\n")
+	for _, want := range []string{"README.md: Payments", "README.md: Settlement", "docs/domain.md: Domain Map"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("evidence missing %q:\n%s", want, got)
+		}
+	}
 }
 
 const (
@@ -206,6 +248,10 @@ rules:
     to: "internal/b/**"
 `
 	cfgPath := writeConfig(t, dir, cfg)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
 	runner := matchingRunner("internal/mymod")
 
 	cmd := &UpdateCmd{
@@ -217,7 +263,7 @@ rules:
 		LLMModel:         defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: layerCore},
 	}
-	_, err := runUpdateCmd(t, cmd, runner)
+	out, err := runUpdateCmd(t, cmd, runner)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -226,18 +272,13 @@ rules:
 	if err != nil {
 		t.Fatal(err)
 	}
-	content := string(data)
-
-	// layer should now be written.
-	if !strings.Contains(content, "layer: core") {
-		t.Errorf("expected 'layer: core' to be written; content:\n%s", content)
+	if !bytes.Equal(before, data) {
+		t.Error("--llm --apply must not write review-only LLM suggestions")
 	}
-	// Existing fields must not be duplicated.
-	if strings.Count(content, "subdomain:") > 1 {
-		t.Error("subdomain should not be duplicated")
-	}
-	if strings.Count(content, "volatility:") > 1 {
-		t.Error("volatility should not be duplicated")
+	for _, want := range []string{"+ subdomain: core", "+ volatility: low", "+ layer: core", "rationale: test"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("review diff missing %q:\n%s", want, out)
+		}
 	}
 }
 
@@ -276,8 +317,11 @@ func TestUpdateCmd_LLMApply_NoSetFieldsForAddedModule(t *testing.T) {
 		t.Errorf("newmod should appear exactly once, got %d; content:\n%s", count, content)
 	}
 	// No duplicate field blocks (SetModuleFields on AddModule would cause duplicates).
-	if strings.Count(content, "subdomain:") > 1 {
-		t.Errorf("subdomain should appear at most once; content:\n%s", content)
+	if strings.Contains(content, "subdomain:") {
+		t.Errorf("LLM subdomain suggestion must not be written by --apply; content:\n%s", content)
+	}
+	if strings.Contains(content, "volatility:") {
+		t.Errorf("LLM volatility suggestion must not be written by --apply; content:\n%s", content)
 	}
 }
 
@@ -359,6 +403,10 @@ rules:
     to: "internal/b/**"
 `
 	cfgPath := writeConfig(t, dir, cfg)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
 	runner := matchingRunner("internal/mymod")
 
 	cmd := &UpdateCmd{
@@ -370,7 +418,7 @@ rules:
 		LLMModel:         defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: "adapter"},
 	}
-	_, err := runUpdateCmd(t, cmd, runner)
+	out, err := runUpdateCmd(t, cmd, runner)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -379,8 +427,11 @@ rules:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "layer: adapter") {
-		t.Errorf("expected 'layer: adapter' to be written; content:\n%s", string(data))
+	if !bytes.Equal(before, data) {
+		t.Error("--llm --apply must leave missing layer as a review-only suggestion")
+	}
+	if !strings.Contains(out, "+ layer: adapter") {
+		t.Errorf("review diff missing layer suggestion:\n%s", out)
 	}
 }
 
@@ -553,6 +604,11 @@ rules:
 	// Report must mention the module and the LLM-suggested classification.
 	if !strings.Contains(out, "mymod") {
 		t.Errorf("plan report should mention 'mymod'; got:\n%s", out)
+	}
+	for _, want := range []string{"+ subdomain: core", "+ volatility: low", "rationale: test"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("plan report missing %q:\n%s", want, out)
+		}
 	}
 
 	after, err := os.ReadFile(cfgPath) //nolint:gosec

@@ -155,12 +155,12 @@ func printCacheGitignoreHint(w io.Writer, root string) {
 const initClassifySystemPrompt = `You are a domain-driven design expert classifying software modules.
 
 For each module, determine:
-- subdomain: one of "core" (central business capability), "supporting" (enables core, not differentiating), or "generic" (commodity/utility, replaceable)
-- volatility: one of "low" (stable interfaces, rarely changes), "medium" (changes occasionally), or "high" (frequently evolving)
+- subdomain: one of "core" (competitive advantage/changing), "supporting" (boring, stable), or "generic" (solved problem, implementation may churn)
+- volatility: one of "low", "medium", or "high", derived from the subdomain role and the repository evidence
 - layer: choose from the allowed layer set provided in the user prompt; pick the closest semantic match
 - role (optional): one of "composition_root" (wiring/main that fans out to everything), "adapter" (I/O boundary), "core" (domain logic), "shared_model" (cross-cutting types), "generated", or "test" — omit when none fits
 - name: a concise suggested module name (optional improvement; keep original if good)
-- rationale: one sentence explaining the classification
+- rationale: one sentence referencing concrete repository evidence: README/docs headings, module names, paths, public API globs, or listed files
 
 Respond with a JSON ARRAY only — no prose, no markdown fences, no code blocks. Each entry must include a "module" field matching the provided module name exactly:
 [{"module":"<name>","subdomain":"core|supporting|generic","volatility":"low|medium|high","layer":"<from allowed set>","role":"<optional role or empty>","name":"<suggested>","rationale":"<one sentence>"}]`
@@ -169,7 +169,7 @@ Respond with a JSON ARRAY only — no prose, no markdown fences, no code blocks.
 const classifyBatchSize = 25
 
 // classifyUserPrompt renders a batch of classify targets into the user turn.
-func classifyUserPrompt(targets []initcfg.ClassifyTarget, layers []string) string {
+func classifyUserPrompt(targets []initcfg.ClassifyTarget, layers []string, repoEvidence []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Allowed layers: %s\n\nModules to classify:\n", strings.Join(layers, ", "))
 	for _, t := range targets {
@@ -177,8 +177,17 @@ func classifyUserPrompt(targets []initcfg.ClassifyTarget, layers []string) strin
 		if len(t.Paths) > 0 {
 			fmt.Fprintf(&b, "  paths: %s\n", strings.Join(t.Paths, ", "))
 		}
+		if len(t.Public) > 0 {
+			fmt.Fprintf(&b, "  public API globs: %s\n", strings.Join(t.Public, ", "))
+		}
 		if len(t.Files) > 0 {
 			fmt.Fprintf(&b, "  files: %s\n", strings.Join(t.Files, ", "))
+		}
+	}
+	if len(repoEvidence) > 0 {
+		b.WriteString("\nRepository evidence:\n")
+		for _, ev := range repoEvidence {
+			fmt.Fprintf(&b, "- %s\n", ev)
 		}
 	}
 	return b.String()
@@ -216,12 +225,16 @@ var (
 //   - Carry the raw layer string into ann.Layer even if it is not in layers —
 //     the stanza helper / patcher decide validity downstream.
 func classifyModules(ctx context.Context, p llm.Provider, targets []initcfg.ClassifyTarget, layers []string) (map[string]initcfg.ModuleAnnotation, error) {
+	return classifyModulesWithEvidence(ctx, p, targets, layers, nil)
+}
+
+func classifyModulesWithEvidence(ctx context.Context, p llm.Provider, targets []initcfg.ClassifyTarget, layers []string, repoEvidence []string) (map[string]initcfg.ModuleAnnotation, error) {
 	out := make(map[string]initcfg.ModuleAnnotation, len(targets))
 	for start := 0; start < len(targets); start += classifyBatchSize {
 		batch := targets[start:min(start+classifyBatchSize, len(targets))]
 		resp, err := p.Complete(ctx, llm.Request{
 			System: initClassifySystemPrompt,
-			User:   classifyUserPrompt(batch, layers),
+			User:   classifyUserPrompt(batch, layers, repoEvidence),
 		})
 		if err != nil {
 			return nil, err
@@ -263,6 +276,9 @@ func parseClassifyResponse(text string, batch []initcfg.ClassifyTarget, dst map[
 		if !validVolatilities[e.Volatility] {
 			continue // invalid volatility enum — skip
 		}
+		if strings.TrimSpace(e.Rationale) == "" {
+			return fmt.Errorf("classify: entry %q missing rationale", e.Module)
+		}
 		// Layer is carried raw even if out of the allowed set. Role is optional —
 		// keep it only when it is a valid enum value, drop anything else.
 		role := ""
@@ -275,6 +291,7 @@ func parseClassifyResponse(text string, batch []initcfg.ClassifyTarget, dst map[
 			Layer:         e.Layer,
 			Role:          role,
 			SuggestedName: e.Name,
+			Rationale:     e.Rationale,
 		}
 	}
 	return nil

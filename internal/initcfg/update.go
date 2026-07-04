@@ -166,6 +166,9 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 				}
 			}
 			writeModuleStanza(&b, m.Name, m, allowedLayers, moduleAnn, true)
+			if moduleAnn != nil && moduleAnn.Rationale != "" {
+				fmt.Fprintf(&b, "    # rationale: %s\n", sanitizeComment(moduleAnn.Rationale))
+			}
 		}
 	}
 
@@ -191,12 +194,7 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 		for _, name := range r.Unclassified {
 			if ann != nil {
 				if a, ok := ann[name]; ok {
-					fmt.Fprintf(&b, "  - %s: llm suggests subdomain=%s volatility=%s layer=%s\n",
-						name,
-						sanitizeComment(a.Subdomain),
-						sanitizeComment(a.Volatility),
-						sanitizeComment(a.Layer),
-					)
+					writeAnnotationDiff(&b, name, a)
 					continue
 				}
 			}
@@ -209,6 +207,25 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 	}
 
 	return b.String()
+}
+
+func writeAnnotationDiff(b *strings.Builder, name string, a ModuleAnnotation) {
+	fmt.Fprintf(b, "  %s:\n", name)
+	if a.Subdomain != "" {
+		fmt.Fprintf(b, "    + subdomain: %s\n", sanitizeComment(a.Subdomain))
+	}
+	if a.Volatility != "" {
+		fmt.Fprintf(b, "    + volatility: %s\n", sanitizeComment(a.Volatility))
+	}
+	if a.Layer != "" {
+		fmt.Fprintf(b, "    + layer: %s\n", sanitizeComment(a.Layer))
+	}
+	if a.Role != "" {
+		fmt.Fprintf(b, "    + role: %s\n", sanitizeComment(a.Role))
+	}
+	if a.Rationale != "" {
+		fmt.Fprintf(b, "    rationale: %s\n", sanitizeComment(a.Rationale))
+	}
 }
 
 // joinPaths formats a path slice as a compact bracket list for report output.

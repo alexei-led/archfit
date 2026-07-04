@@ -47,11 +47,11 @@ Two semantic gaps, both measured on the corpus:
 
 ### Task 3: config update --llm — subdomain role proposals
 
-- [ ] extend `config update --llm` to propose per-module `role: core|supporting|generic` + derived `volatility:` from repo evidence (README, module names, docs/ headings, public API shape) with per-module rationale — as a config DIFF for human review, never auto-applied
-- [ ] prompt encodes the book's subdomain heuristics (core = competitive advantage/changing; supporting = boring, stable; generic = solved problem, implementation may churn) — quote the definitions, demand rationale referencing repo evidence
-- [ ] synthetic-module coverage: proposals may target synthetic keys (Wave 5 Task 4 override mechanism) so herdr-shaped repos get differentiated volatility
-- [ ] tests: diff generation (no in-place mutation), rationale presence, mocked-client end-to-end
-- [ ] `make test && make lint && make archfit`; commit
+- [x] extend `config update --llm` to propose per-module `role: core|supporting|generic` + derived `volatility:` from repo evidence (README, module names, docs/ headings, public API shape) with per-module rationale — as a config DIFF for human review, never auto-applied
+- [x] prompt encodes the book's subdomain heuristics (core = competitive advantage/changing; supporting = boring, stable; generic = solved problem, implementation may churn) — quote the definitions, demand rationale referencing repo evidence
+- [x] synthetic-module coverage: proposals may target synthetic keys (Wave 5 Task 4 override mechanism) so herdr-shaped repos get differentiated volatility
+- [x] tests: diff generation (no in-place mutation), rationale presence, mocked-client end-to-end
+- [x] `make test && make lint && make archfit`; commit
 
 ### Task 4: Four-language validation on the corpus
 
