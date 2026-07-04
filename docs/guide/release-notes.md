@@ -23,11 +23,12 @@ workflow.
   `provenance: llm` labels with medium/low confidence lower
   `coupling_balance` confidence by one band.
 - Strength precedence is explicit:
-  config-authoritative > compiler-grade > SCIP > approved LLM label >
-  heuristic > abstain. LLM labels fill unknown cells; they do not override
-  static classifications.
-- `archfit config update --llm` proposes review-only module roles
-  (`core|supporting|generic`) and derived volatility, including synthetic
-  module keys, so repos with many generated module declarations can review
-  differentiated domain volatility without putting model calls on the gate.
+  config-authoritative > compiler-grade > SCIP/heuristic static facts >
+  approved LLM label > abstain. LLM labels fill unknown cells; they do not
+  override static classifications.
+- `archfit config update --llm` proposes review-only module subdomains
+  (`core|supporting|generic`), derived volatility, layer suggestions, and
+  optional architectural roles, including synthetic module keys, so repos with
+  many generated module declarations can review differentiated domain
+  volatility without putting model calls on the gate.
 ```

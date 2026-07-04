@@ -61,7 +61,7 @@ func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 	// every edge. Both results depend only on config (loaded once before Run).
 	degenerateExplicit, degenerateOwners := ownerDegeneracy(c)
 
-	effectiveVol := computeEffectiveVolatility(g, mm, c.Modules, c.VolatilityCascadeEnabled, c.CrossModuleClonePairs)
+	effectiveVol := computeEffectiveVolatility(g, mm, c)
 	extSystems := buildExternalSystemIndex(c.ExternalSystems)
 
 	for _, e := range g.Edges() {
@@ -386,63 +386,10 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 	fromPath := pathFromID(e.From)
 	toPath := pathFromID(e.To)
 
-	// An internal-glob match is authoritative intrusive. A public-glob match is a
-	// NOT-INTRUSIVE floor (str == contract): the edge goes through a declared public
-	// surface, but the glob alone cannot say WHICH kind of public coupling it is —
-	// a published interface (contract), a shared concrete type (model), or a function
-	// (functional). For a public (contract) or unknown edge the KIND is resolved by
-	// authority: an approved human label first (a reviewer's verdict beats a tool
-	// guess), then the symbol-level hint, then the contract default. An intrusive or
-	// human-pinned classification is never refined.
-	str := classifyStrength(toPath, mi)
-	fromPin := false
-	if (str == coupling.StrengthContract || str == coupling.StrengthUnknown) && len(c.ApprovedLabels) > 0 {
-		if fromMod, okF := mi.moduleFor(fromPath); okF {
-			if toMod, okT := mi.moduleFor(toPath); okT {
-				if pinned, ok := c.ApprovedLabels[fromMod+"\x00"+toMod]; ok {
-					str = coupling.Strength(pinned)
-					fromPin = true
-				}
-			}
-		}
-	}
-	// Refine a public-glob contract floor to the hint's public-coupling kind when no
-	// human label pinned it. This is what makes coupling_balance sensitive to
-	// integration strength instead of reading every public edge as the weakest
-	// (contract) kind. The hint can only raise the kind among the public kinds; it
-	// never lowers a public edge to intrusive (the glob floor). Exception: a
-	// pure-data DTO across a declared public boundary IS the book's explicit
-	// integration contract — the floor stands unrefined.
-	if !fromPin && str == coupling.StrengthContract && e.StrengthHint != graph.StrengthHintDTO {
-		if k := strengthFromHint(e.StrengthHint); isPublicKind(k) {
-			str = k
-		}
-	}
-	// Unknown (no glob, no label) falls back to the hint.
-	if str == coupling.StrengthUnknown {
-		str = strengthFromHint(e.StrengthHint)
-	}
-
-	// --- LLM label fill ---
-	// An approved llm-provenance label fills ONLY a cell every static source
-	// left unknown: no config glob matched (intrusive/contract handled above)
-	// and the hint — Go type-info, SCIP, or extractor heuristic — resolved
-	// nothing. It never displaces a static classification (compiler-grade
-	// beats LLM, the same rule as SCIP-for-Go in enrichEdges). It counts as a
-	// pin: human-approved, so the clone-Symmetric upgrade below must not
-	// override it.
-	strengthFromLLM := false
-	if str == coupling.StrengthUnknown && len(c.LLMLabels) > 0 {
-		if fromMod, okF := mi.moduleFor(fromPath); okF {
-			if toMod, okT := mi.moduleFor(toPath); okT {
-				if pinned, ok := c.LLMLabels[fromMod+"\x00"+toMod]; ok {
-					str = coupling.Strength(pinned)
-					fromPin = true
-					strengthFromLLM = true
-				}
-			}
-		}
-	}
+	resolved := resolveStrength(e, mi, c)
+	str := resolved.strength
+	fromPin := resolved.fromPin
+	strengthFromLLM := resolved.fromLLM
 
 	// --- Symmetric upgrade from clone detection ---
 	// A cross-module clone pair (a DRY violation) signals bidirectional
@@ -570,6 +517,75 @@ func classifyStrength(toPath string, mi moduleIndex) coupling.Strength {
 		}
 	}
 	return coupling.StrengthUnknown
+}
+
+type strengthResolution struct {
+	strength coupling.Strength
+	fromPin  bool
+	fromLLM  bool
+}
+
+// resolveStrength applies the shared pre-clone strength precedence for one
+// edge. classify adds the clone-derived Symmetric upgrade after this helper;
+// the volatility cascade uses this pre-clone result and excludes clone pairs
+// separately.
+func resolveStrength(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) strengthResolution {
+	fromPath := pathFromID(e.From)
+	toPath := pathFromID(e.To)
+	// An internal-glob match is authoritative intrusive. A public-glob match is a
+	// NOT-INTRUSIVE floor (str == contract): the edge goes through a declared public
+	// surface, but the glob alone cannot say WHICH kind of public coupling it is —
+	// a published interface (contract), a shared concrete type (model), or a function
+	// (functional). For a public (contract) or unknown edge the KIND is resolved by
+	// authority: an approved human label first (a reviewer's verdict beats a tool
+	// guess), then the symbol-level hint, then the contract default. An intrusive or
+	// human-pinned classification is never refined.
+	str := classifyStrength(toPath, mi)
+	fromPin := false
+	if (str == coupling.StrengthContract || str == coupling.StrengthUnknown) && len(c.ApprovedLabels) > 0 {
+		if fromMod, okF := mi.moduleFor(fromPath); okF {
+			if toMod, okT := mi.moduleFor(toPath); okT {
+				if pinned, ok := c.ApprovedLabels[fromMod+"\x00"+toMod]; ok {
+					str = coupling.Strength(pinned)
+					fromPin = true
+				}
+			}
+		}
+	}
+	// Refine a public-glob contract floor to the hint's public-coupling kind when no
+	// human label pinned it. This is what makes coupling_balance sensitive to
+	// integration strength instead of reading every public edge as the weakest
+	// (contract) kind. The hint can only raise the kind among the public kinds; it
+	// never lowers a public edge to intrusive (the glob floor). Exception: a
+	// pure-data DTO across a declared public boundary IS the book's explicit
+	// integration contract — the floor stands unrefined.
+	if !fromPin && str == coupling.StrengthContract && e.StrengthHint != graph.StrengthHintDTO {
+		if k := strengthFromHint(e.StrengthHint); isPublicKind(k) {
+			str = k
+		}
+	}
+	// Unknown (no glob, no label) falls back to the hint.
+	if str == coupling.StrengthUnknown {
+		str = strengthFromHint(e.StrengthHint)
+	}
+
+	// An approved llm-provenance label fills ONLY a cell every static source
+	// left unknown: no config glob matched (intrusive/contract handled above)
+	// and the hint — Go type-info, SCIP, or extractor heuristic — resolved
+	// nothing. It never displaces a static classification.
+	strengthFromLLM := false
+	if str == coupling.StrengthUnknown && len(c.LLMLabels) > 0 {
+		if fromMod, okF := mi.moduleFor(fromPath); okF {
+			if toMod, okT := mi.moduleFor(toPath); okT {
+				if pinned, ok := c.LLMLabels[fromMod+"\x00"+toMod]; ok {
+					str = coupling.Strength(pinned)
+					fromPin = true
+					strengthFromLLM = true
+				}
+			}
+		}
+	}
+	return strengthResolution{strength: str, fromPin: fromPin, fromLLM: strengthFromLLM}
 }
 
 // isPublicKind reports whether a strength is one of the public-coupling kinds —
@@ -769,13 +785,14 @@ func isGenericSubdomain(toPath string, mi moduleIndex, modules map[string]config
 // essential rate of change, driven by its domain role — an incidental clone
 // match between two modules says nothing about either module's real volatility,
 // so it must not flip a whole module's effective volatility to high.
-func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, modules map[string]config.ModuleDef, cascadeEnabled bool, clonePairs map[string]struct{}) map[string]coupling.Volatility {
+func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, c config.ClassifyConfig) map[string]coupling.Volatility {
+	modules := c.Modules
 	// Seed effective map from config-declared volatility.
 	effective := make(map[string]coupling.Volatility, len(modules))
 	for name, def := range modules {
 		effective[name] = volatilityFromDef(def)
 	}
-	if !cascadeEnabled || g == nil {
+	if !c.VolatilityCascadeEnabled || g == nil {
 		return effective
 	}
 	// Snapshot the base volatility before propagation so reads during the pass
@@ -784,8 +801,8 @@ func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, modules map[stri
 	maps.Copy(base, effective)
 	// Propagation pass: iterate edges once, raise effective vol where applicable.
 	for _, e := range g.Edges() {
-		str := strengthFromHint(e.StrengthHint)
-		if !isStrongStrength(str) {
+		resolved := resolveStrength(e, mi, c)
+		if !isStrongStrength(resolved.strength) {
 			continue
 		}
 		fromPath := pathFromID(e.From)
@@ -795,7 +812,7 @@ func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, modules map[stri
 		if !okFrom || !okTo || fromMod == toMod {
 			continue
 		}
-		if _, isClonePair := clonePairs[modulePairKey(fromMod, toMod)]; isClonePair {
+		if _, isClonePair := c.CrossModuleClonePairs[modulePairKey(fromMod, toMod)]; isClonePair {
 			continue // accidental coupling — must not trigger the cascade
 		}
 		// Read the BASE volatility of the to-module (order-independent).

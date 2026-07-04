@@ -148,7 +148,11 @@ func TestSelectAbstainedPairs_CapRespected(t *testing.T) {
 
 func TestLoadSnippet(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	base := t.TempDir()
+	dir := filepath.Join(base, "repo")
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
 	var b strings.Builder
 	for i := 1; i <= 10; i++ {
 		fmt.Fprintf(&b, "line %d\n", i)
@@ -175,6 +179,19 @@ func TestLoadSnippet(t *testing.T) {
 	}
 	if got := loadSnippet(dir, "f.go", 99); got != "" {
 		t.Errorf("out-of-range line: %q, want empty", got)
+	}
+	if err := os.WriteFile(filepath.Join(base, "outside.go"), []byte("secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{"../outside.go", "sub/../../outside.go", filepath.Join(base, "outside.go")} {
+		if got := loadSnippet(dir, file, 1); got != "" {
+			t.Errorf("escaping path %q: %q, want empty", file, got)
+		}
+	}
+	if err := os.Symlink(base, filepath.Join(dir, "link-out")); err == nil {
+		if got := loadSnippet(dir, "link-out/outside.go", 1); got != "" {
+			t.Errorf("symlink escape: %q, want empty", got)
+		}
 	}
 
 	// Pathological line is truncated.

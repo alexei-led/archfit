@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -248,7 +249,32 @@ func attachSnippets(root string, pairs []abstainedPair) {
 // loadSnippet returns numbered source lines within abstainedSnippetRadius of
 // line (1-based). Unreadable files and out-of-range lines return "".
 func loadSnippet(root, file string, line int) string {
-	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(file))) //#nosec G304 -- repo-relative path from the analyzed tree
+	clean := path.Clean(file)
+	if strings.HasPrefix(clean, "/") || clean == ".." || strings.HasPrefix(clean, "../") {
+		return ""
+	}
+	osRel := filepath.FromSlash(clean)
+	if !filepath.IsLocal(osRel) {
+		return ""
+	}
+	full := filepath.Join(root, osRel)
+	info, err := os.Lstat(full) //#nosec G304 -- repo-relative path from the analyzed tree
+	if err != nil || info.Mode()&os.ModeSymlink != 0 {
+		return ""
+	}
+	rootEval, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return ""
+	}
+	fullEval, err := filepath.EvalSymlinks(full)
+	if err != nil {
+		return ""
+	}
+	rel, err := filepath.Rel(rootEval, fullEval)
+	if err != nil || !filepath.IsLocal(rel) {
+		return ""
+	}
+	data, err := os.ReadFile(full) //#nosec G304 -- repo-relative path from the analyzed tree
 	if err != nil {
 		return ""
 	}

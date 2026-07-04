@@ -5,8 +5,13 @@ Covers the per-language reconciliation that silently rots: container/path extrac
 and private/interface detection for scip-python, scip-go, scip-typescript symbols.
 Does not need protobuf (only the pure helpers are exercised).
 """
+import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
+import textwrap
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import scip_reader as r  # noqa: E402
@@ -242,3 +247,114 @@ if failures:
         print("  -", f)
     sys.exit(1)
 print("ok: all _compute_symbols tests passed")
+
+
+def run_cli_integration() -> None:
+    here = os.path.dirname(os.path.abspath(__file__))
+    reader = os.path.join(here, "scip_reader.py")
+    proto = os.path.join(here, "scip.proto")
+    with tempfile.TemporaryDirectory(prefix="scip-reader-test-") as tmp:
+        index = os.path.join(tmp, "index.scip")
+        helper = textwrap.dedent(
+            """
+            import importlib.util
+            import os
+            import sys
+            import tempfile
+
+            from grpc_tools import protoc
+
+            proto, index = sys.argv[1], sys.argv[2]
+            out_dir = tempfile.mkdtemp(prefix="scip_pb2_test_")
+            rc = protoc.main([
+                "protoc",
+                f"-I{os.path.dirname(os.path.abspath(proto))}",
+                f"--python_out={out_dir}",
+                os.path.basename(proto),
+            ])
+            if rc != 0:
+                raise SystemExit(rc)
+            mod_path = os.path.join(out_dir, "scip_pb2.py")
+            spec = importlib.util.spec_from_file_location("scip_pb2", mod_path)
+            mod = importlib.util.module_from_spec(spec)
+            assert spec and spec.loader
+            spec.loader.exec_module(mod)
+
+            sym_client = "scip-go gomod spotinfo v0.0.0 `spotinfo/internal/spot`/Client#"
+            sym_handle = "scip-go gomod spotinfo v0.0.0 `spotinfo/internal/mcp`/handle()."
+            idx = mod.Index()
+            doc_a = idx.documents.add()
+            doc_a.relative_path = "internal/spot/client.go"
+            doc_a.symbols.add().symbol = sym_client
+            occ = doc_a.occurrences.add()
+            occ.symbol = sym_client
+            occ.symbol_roles = 1
+
+            doc_b = idx.documents.add()
+            doc_b.relative_path = "internal/mcp/server.go"
+            doc_b.symbols.add().symbol = sym_handle
+            occ = doc_b.occurrences.add()
+            occ.symbol = sym_handle
+            occ.symbol_roles = 1
+            doc_b.occurrences.add().symbol = sym_client
+
+            with open(index, "wb") as f:
+                f.write(idx.SerializeToString())
+            """
+        )
+        gen = subprocess.run(
+            ["uv", "run", "--with", "grpcio-tools>=1.60", "--with", "protobuf>=4", "python", "-c", helper, proto, index],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        check("cli helper exit", gen.returncode, 0)
+        if gen.returncode != 0:
+            print(gen.stderr)
+            return
+
+        run = subprocess.run(
+            ["uv", "run", reader, "--proto", proto, "--index", index, "--package", "spotinfo", "--lang", "go"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        check("cli exit", run.returncode, 0)
+        if run.returncode == 0:
+            data = json.loads(run.stdout)
+            check(
+                "cli edge output includes cross-module ref",
+                {"from": "internal/mcp/server.go", "to": "internal/spot", "strength": "model"} in data["edges"],
+                True,
+            )
+            check("cli symbol refs", data["symbol_refs"], [
+                {
+                    "from_symbol": "scip-go gomod spotinfo v0.0.0 `spotinfo/internal/mcp`/handle().",
+                    "to_symbol": "scip-go gomod spotinfo v0.0.0 `spotinfo/internal/spot`/Client#",
+                },
+            ])
+        else:
+            print(run.stderr)
+
+        bad_index = os.path.join(tmp, "bad.scip")
+        with open(bad_index, "wb") as f:
+            f.write(b"not a protobuf")
+        bad = subprocess.run(
+            ["uv", "run", reader, "--proto", proto, "--index", bad_index, "--package", "spotinfo", "--lang", "go"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        check("cli invalid index exits nonzero", bad.returncode != 0, True)
+
+
+if shutil.which("uv"):
+    run_cli_integration()
+    if failures:
+        print("FAIL (cli integration):")
+        for f in failures:
+            print("  -", f)
+        sys.exit(1)
+    print("ok: scip_reader CLI integration passed")
+else:
+    print("ok: scip_reader CLI integration skipped (uv not found)")

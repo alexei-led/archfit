@@ -8,7 +8,8 @@ behind the strength / distance / volatility vocabulary used throughout, read
 `archfit` measures **Balanced Coupling** (`coupling_balance`) plus a minimal set of
 complementary metrics. They split into three roles:
 
-- **Headline (1):** `coupling_balance` (scored 0–10). Report-only unless you
+- **Headline (1):** `coupling_balance` (scored 0–100, linearly rescaled from
+  the book's 1–10 per-edge balance). Report-only unless you
   configure the opt-in [`coupling.gate`](configuration-reference.md#couplinggate)
   block, which fails the build on a band floor or a score drop.
 - **Baseline-delta gated (4):** `unbalanced_edge`, `cycle`, `encapsulation`,
@@ -52,19 +53,19 @@ verdict.
 
 ## Scoring model
 
-The verdict-affecting metrics produce a 0–10 value, a band, and a confidence.
+The scorecard dimension produces a 0–100 value, a band, and a confidence.
 
 ### Bands
 
-| Band          | Score    | Meaning                                                                                   |
-| ------------- | -------- | ----------------------------------------------------------------------------------------- |
-| `strong`      | 9.0–10.0 | Healthy.                                                                                  |
-| `serviceable` | 7.0–8.9  | Acceptable.                                                                               |
-| `mixed`       | 5.0–6.9  | Watch.                                                                                    |
-| `poor`        | 3.0–4.9  | Problem.                                                                                  |
-| `critical`    | 0.0–2.9  | Measured and bad.                                                                         |
-| `n/a`         | —        | No signal to measure. Not good, not bad — _no evidence_. Never conflated with `critical`. |
-| `info`        | —        | Report-only fact; asserts no quality verdict.                                             |
+| Band          | Score  | Meaning                                                                                   |
+| ------------- | ------ | ----------------------------------------------------------------------------------------- |
+| `strong`      | 90–100 | Healthy.                                                                                  |
+| `serviceable` | 70–89  | Acceptable.                                                                               |
+| `mixed`       | 50–69  | Watch.                                                                                    |
+| `poor`        | 30–49  | Problem.                                                                                  |
+| `critical`    | 0–29   | Measured and bad.                                                                         |
+| `n/a`         | —      | No signal to measure. Not good, not bad — _no evidence_. Never conflated with `critical`. |
+| `info`        | —      | Report-only fact; asserts no quality verdict.                                             |
 
 The `n/a` vs `critical` distinction is load-bearing. A repo that declares no
 public/internal API surface has nothing to score for encapsulation; that is
@@ -336,7 +337,7 @@ gate verdicts and metric values stay deterministic. See
 `archfit` deliberately omits some popular signals. Recording why is part of being
 honest about what the numbers mean.
 
-- **No composite architecture score.** A blended 0–100 score hides detected edges,
+- **No composite architecture score.** A blended multi-signal score hides detected edges,
   declared volatility, inferred distance, missing coverage, and accepted exceptions
   behind one figure. False precision is an anti-pattern. archfit reports
   `coupling_balance` as a band, lists every advisory edge, and lets the gate rules

@@ -163,7 +163,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		WorkDir: workDir,
 		Timeout: runTimeout,
 	}
-	out, err := e.cachedRunner(s, version, e.resolveTSConfig(s.Root, workDir)).Run(ctx, cmd)
+	out, err := e.cachedRunner(s, version, e.resolveTSConfig(s.Root, workDir), workDir).Run(ctx, cmd)
 	if err != nil {
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/ts: run dependency-cruiser: %w", err)
 	}
@@ -308,11 +308,12 @@ func (e *Extractor) detectVersion(ctx context.Context, launcher string) string {
 // Key inputs: depcruise version, the ExtractConfig view, the scan root (the
 // blob may embed tree-specific paths, so entries are per-checkout), the
 // resolved tsconfig content (it may live ABOVE s.Root in subtree mode, outside
-// the tree walk), and the content hash of every TS/JS source + manifest file
-// under s.Root. Ceiling: node_modules state is not keyed — installing or
-// removing packages without touching a manifest can leave a stale OK entry;
-// the cacheableDepcruise veto blocks the sticky-degradation direction.
-func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath string) toolrun.Runner {
+// the tree walk), root-level resolution manifests when depcruise runs from a
+// git root, and the content hash of every TS/JS source + manifest file under
+// s.Root. Ceiling: node_modules state is not keyed — installing or removing
+// packages without touching a manifest can leave a stale OK entry; the
+// cacheableDepcruise veto blocks the sticky-degradation direction.
+func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath, workDir string) toolrun.Runner {
 	if e.Cache == nil {
 		return e.runner
 	}
@@ -327,11 +328,28 @@ func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath string) to
 			tsConfigHash = h
 		}
 	}
+	workDirManifestHash := ""
+	if s.SubtreePrefix != "" && workDir != "" && workDir != s.Root {
+		var files []string
+		for _, name := range tsManifestNames {
+			if _, err := os.Stat(filepath.Join(workDir, name)); err == nil {
+				files = append(files, name)
+			}
+		}
+		if len(files) > 0 {
+			var herr error
+			workDirManifestHash, herr = factcache.HashTree(workDir, files)
+			if herr != nil {
+				return e.runner
+			}
+		}
+	}
 	cfgHash, err := factcache.HashJSON(struct {
-		Cfg          config.ExtractConfig
-		Root         string
-		TSConfigHash string
-	}{e.cfg, s.Root, tsConfigHash})
+		Cfg                 config.ExtractConfig
+		Root                string
+		TSConfigHash        string
+		WorkDirManifestHash string
+	}{e.cfg, s.Root, tsConfigHash, workDirManifestHash})
 	if err != nil {
 		return e.runner
 	}

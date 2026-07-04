@@ -42,7 +42,7 @@ func ComputeVolatilityProvenance(g *graph.Graph, declared map[string]config.Modu
 	}
 	if c.VolatilityCascadeEnabled && g != nil {
 		mi := buildModuleIndex(c.Modules)
-		effective := computeEffectiveVolatility(g, mi, c.Modules, true, c.CrossModuleClonePairs)
+		effective := computeEffectiveVolatility(g, mi, c)
 		for name, def := range c.Modules {
 			if effective[name] == coupling.VolatilityHigh && volatilityFromDef(def) != coupling.VolatilityHigh {
 				vp.Cascade++

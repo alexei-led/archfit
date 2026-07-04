@@ -369,10 +369,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 			modulePublic[name] = def.Public
 		}
 	}
-	validate := "archfit analyze --gate -c " + configPath
-	if mode.Full {
-		validate += " --full"
-	}
+	validate := validationCommand(configPath, root, noConfig, mode.Full)
 	// PathResolver lets agenttask.Build turn a bare config module key, a Rust
 	// "crate::mod" id, or a Python dotted module id into a path that actually
 	// exists on disk, using facts already gathered above — agenttask itself
@@ -428,6 +425,35 @@ func onDiskWithin(root string) func(string) bool {
 		_, err := os.Stat(filepath.Join(root, osRel))
 		return err == nil
 	}
+}
+
+func validationCommand(configPath, root string, noConfig, full bool) string {
+	args := []string{"archfit", "analyze", "--gate"}
+	if noConfig {
+		args = append(args, "--no-config")
+	} else {
+		args = append(args, "-c", configPath)
+	}
+	if root != "" {
+		args = append(args, "--root", root)
+	}
+	if full {
+		args = append(args, "--full")
+	}
+	for i := range args {
+		args[i] = shellQuoteArg(args[i])
+	}
+	return strings.Join(args, " ")
+}
+
+func shellQuoteArg(arg string) string {
+	if arg == "" {
+		return "''"
+	}
+	if !strings.ContainsAny(arg, " \t\n'\"\\$`!#&;()*<>?[\\]^{|}~") {
+		return arg
+	}
+	return "'" + strings.ReplaceAll(arg, "'", "'\"'\"'") + "'"
 }
 
 // ruleIDBCCouplingGate is stamped on the synthetic summary finding that

@@ -330,3 +330,31 @@ func TestFactCache_DependentMemberInvalidates(t *testing.T) {
 		t.Errorf("member b (requires a): want re-load after a's edit, got %d loads", loader.calls[dirB])
 	}
 }
+
+func TestFactCache_GoEnvChangeInvalidates(t *testing.T) {
+	t.Setenv("GOFLAGS", "")
+	root, dirA, dirB := writeWorkspaceFixture(t)
+	loader := &fakeLoader{calls: map[string]int{}}
+	ex := New(config.ExtractConfig{})
+	ex.Cache = factcache.NewStore(t.TempDir())
+	ex.load = loader.load
+	ctx := context.Background()
+	s := scope.Scope{Root: root}
+
+	for range 2 {
+		if _, _, err := ex.Extract(ctx, s); err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+	}
+	if loader.calls[dirA] != 1 || loader.calls[dirB] != 1 {
+		t.Fatalf("warm run: want cache hit, got %v", loader.calls)
+	}
+
+	t.Setenv("GOFLAGS", "-tags=archfitcachetest")
+	if _, _, err := ex.Extract(ctx, s); err != nil {
+		t.Fatalf("Extract after GOFLAGS change: %v", err)
+	}
+	if loader.calls[dirA] != 2 || loader.calls[dirB] != 2 {
+		t.Errorf("GOFLAGS change must invalidate both members, got %v", loader.calls)
+	}
+}

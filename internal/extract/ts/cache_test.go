@@ -150,3 +150,52 @@ func TestFactCache_UnresolvedNotCached(t *testing.T) {
 		t.Errorf("unresolved output must not be cached: want 2 depcruise calls, got %d", calls)
 	}
 }
+
+func TestFactCache_SubtreeRootManifestInvalidates(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	sub := filepath.Join(repo, "packages", "pkg")
+	files := map[string]string{
+		"package.json":                 `{"name":"workspace"}`,
+		".dependency-cruiser.json":     `{}`,
+		"packages/pkg/package.json":    `{"name":"pkg"}`,
+		"packages/pkg/a.ts":            `export const a = 1;`,
+		"packages/pkg/tsconfig.json":   `{"compilerOptions":{}}`,
+		"packages/other/package.json":  `{"name":"other"}`,
+		"packages/other/irrelevant.ts": `export const x = 1;`,
+	}
+	for name, content := range files {
+		full := filepath.Join(repo, name)
+		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	calls := 0
+	runner := cacheFixtureRunner(`{"modules":[{"source":"packages/pkg/a.ts","dependencies":[]}]}`, &calls)
+	ex := ts.New(runner, config.ExtractConfig{Mode: config.ModeAuto, Src: "."})
+	ex.Cache = factcache.NewStore(t.TempDir())
+	ctx := context.Background()
+	s := scope.Scope{Root: sub, GitRoot: repo, SubtreePrefix: "packages/pkg"}
+
+	for range 2 {
+		if _, _, err := ex.Extract(ctx, s); err != nil {
+			t.Fatalf("Extract: %v", err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("warm subtree run: want cache hit (1 call), got %d", calls)
+	}
+
+	if err := os.WriteFile(filepath.Join(repo, ".dependency-cruiser.json"), []byte(`{"options":{"doNotFollow":{}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ex.Extract(ctx, s); err != nil {
+		t.Fatalf("Extract after root depcruise config edit: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("root depcruise config edit must invalidate subtree cache: want 2 calls, got %d", calls)
+	}
+}

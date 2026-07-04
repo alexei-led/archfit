@@ -162,7 +162,8 @@ environments, or with `--quiet`. This keeps `archfit --json | jq` clean.
 - `-c` / `--config` — config file (default `.archfit.yaml`).
 - `--root` — analysis root (default: config directory).
 - `--base <ref>` — also score a git ref and show a before/after scorecard delta
-  in the text/markdown report. JSON/SARIF stay the normal HEAD diagnostic.
+  in the text/markdown report. JSON also includes `score_delta`; SARIF stays the
+  normal HEAD diagnostic.
 - `--gate` — enable CI exit codes (0/1/2/3); without it the run is report-only
   (always exits `0` on success, `3` on config or tool error).
 - `--json` — output JSON (shorthand for `--format json`).
@@ -320,10 +321,11 @@ provider's API key — see [LLM enrichment](llm-enrich.md).
 Flags:
 
 - `--root` / `-r` — project root (default: `.`).
-- `--config` / `-c` — existing config to read `ai:` from (default:
-  `.archfit.yaml`).
 - `--output` / `-o` — draft output file; `-` for stdout.
-- `--llm-provider`, `--llm-model`, `--no-cache` — see `archfit config init` below.
+- `--llm-provider`, `--llm-model`, `--no-cache` — provider/cache controls.
+
+When `--llm` is used, `config init` reads `ai:` from the target output config
+when that file already exists; otherwise use `--llm-provider` and `--llm-model`.
 
 ## archfit config init
 
@@ -390,12 +392,12 @@ archfit config update --config .archfit.yaml --llm --apply
 
 Mode matrix:
 
-| Command                       | Effect                                                                |
-| ----------------------------- | --------------------------------------------------------------------- |
-| `config update`               | Drift report only; writes nothing.                                    |
-| `config update --apply`       | Structural drift written live (add/path/comment).                     |
-| `config update --llm`         | Drift report plus review-only role and volatility proposals.          |
-| `config update --llm --apply` | Structural drift written live; LLM role proposals remain review-only. |
+| Command                       | Effect                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------- |
+| `config update`               | Drift report only; writes nothing.                                              |
+| `config update --apply`       | Structural drift written live (add/path/comment).                               |
+| `config update --llm`         | Drift report plus review-only subdomain, volatility, layer, and role proposals. |
+| `config update --llm --apply` | Structural drift written live; LLM semantic proposals remain review-only.       |
 
 What "structural drift" means:
 
@@ -413,8 +415,8 @@ Guardrails:
 - `--apply` backs up the existing file before writing (`.archfit.yaml.bak` or
   timestamped if a backup already exists).
 - Existing field values are never overwritten.
-- LLM role and volatility proposals are report-only. Review and copy accepted
-  values into `.archfit.yaml` deliberately.
+- LLM subdomain, volatility, layer, and role proposals are report-only. Review
+  and copy accepted values into `.archfit.yaml` deliberately.
 - Module keys are never auto-renamed.
 - If the config has not changed since it was read, `--apply` aborts rather than
   overwriting concurrent edits.
@@ -431,9 +433,10 @@ Flags:
 before/after scorecard delta. It checks `<ref>` out into a clean detached
 worktree, scores it with the same pipeline, and adds a **CHANGE VS BASE** section
 to the text report (a "Change vs base" block under `--markdown`). The HEAD side is
-a normal full analysis, so `--json`/`--sarif` are the standard HEAD diagnostic
-(no separate delta schema) and `--gate` / `--require-tools` apply exactly as
-without `--base`. Base-side extractor facts are cached by commit SHA, so
+a normal full analysis. JSON includes `score_delta`:
+`base_overall`, `head_overall`, `overall_delta`, and per-dimension
+`base`/`head`/`delta`; SARIF stays the standard HEAD diagnostic. `--gate` /
+`--require-tools` apply exactly as without `--base`. Base-side extractor facts are cached by commit SHA, so
 repeat runs against the same ref skip all base-side subprocess work — see
 [caching.md](caching.md).
 

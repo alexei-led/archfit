@@ -233,7 +233,11 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 // analyzed tree, so only --root can point archfit at the repo.
 func writeRepoWithExternalConfig(t *testing.T) (repoDir, cfgPath string) {
 	t.Helper()
-	repoDir = t.TempDir()
+	base := t.TempDir()
+	repoDir = filepath.Join(base, "repo with spaces")
+	if err := os.MkdirAll(repoDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
 	srcFiles := map[string]string{
 		markerGoMod: goModStub,
 		filePkgAA: "package a\n\nimport \"example.com/test/pkg/b/internal/impl\"\n\n" +
@@ -253,7 +257,10 @@ func writeRepoWithExternalConfig(t *testing.T) (repoDir, cfgPath string) {
 
 	// Config in its own directory, outside the repo. Module path globs are
 	// repo-relative, so they resolve against the --root scan tree, not here.
-	cfgDir := t.TempDir()
+	cfgDir := filepath.Join(base, "config with spaces")
+	if err := os.MkdirAll(cfgDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
 	cfgPath = filepath.Join(cfgDir, ".archfit.yaml")
 	cfgBody := `version: 1
 modules:
@@ -635,6 +642,33 @@ func TestRun_Check_AgentTasksPopulated(t *testing.T) {
 	}
 	if len(task.Validation) != 1 || !strings.Contains(task.Validation[0], "archfit analyze --gate -c "+cfgPath) {
 		t.Errorf("validation = %v, want exact re-check command", task.Validation)
+	}
+}
+
+func TestRun_Check_AgentTaskValidationReplaysRootAndQuotesPaths(t *testing.T) {
+	t.Parallel()
+	repoDir, cfgPath := writeRepoWithExternalConfig(t)
+
+	var buf bytes.Buffer
+	Run([]string{cmdAnalyze, flagRoot, repoDir, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+
+	var diag struct {
+		AgentTasks []struct {
+			Validation []string `json:"validation"`
+		} `json:"agent_tasks"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
+		t.Fatalf("invalid JSON: %v\noutput:\n%s", err, buf.String())
+	}
+	if len(diag.AgentTasks) != 1 || len(diag.AgentTasks[0].Validation) != 1 {
+		t.Fatalf("agent_tasks validation = %+v\noutput:\n%s", diag.AgentTasks, buf.String())
+	}
+	got := diag.AgentTasks[0].Validation[0]
+	if !strings.Contains(got, "-c '"+cfgPath+"'") {
+		t.Errorf("validation = %q, want quoted external config path", got)
+	}
+	if !strings.Contains(got, "--root '"+repoDir+"'") {
+		t.Errorf("validation = %q, want quoted --root path", got)
 	}
 }
 

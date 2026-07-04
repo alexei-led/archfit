@@ -53,7 +53,7 @@ func CloneOnlyPairs(g *graph.Graph, c config.ClassifyConfig) []CloneOnlyPair {
 	// Owner-degeneracy precomputes — same invariants as Run.
 	degenerateExplicit, degenerateOwners := ownerDegeneracy(c)
 
-	effectiveVol := computeEffectiveVolatility(g, mi, c.Modules, c.VolatilityCascadeEnabled, c.CrossModuleClonePairs)
+	effectiveVol := computeEffectiveVolatility(g, mi, c)
 	connected := connectedModulePairs(g, mi)
 
 	keys := make([]string, 0, len(c.CrossModuleClonePairs))

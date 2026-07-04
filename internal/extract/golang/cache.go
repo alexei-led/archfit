@@ -303,18 +303,20 @@ var goListHashExcludes = []string{"**/testdata/**"}
 // would need its own walk/rel-path scheme; upgrade trigger is warm-run misses
 // on repos that keep local replaces permanently.
 //
-// Key inputs per member: go-toolchain version, the ExtractConfig view + scan
-// root + go.work content, and the content hash of the member's OWN input tree
-// UNION the trees of every member it (transitively) requires — a workspace
-// member compiles against its sibling dependencies' source, so their edits
-// must invalidate its facts too. Members nobody depends on invalidate alone
-// ("edit one member file → only that member re-loads").
+// Key inputs per member: go-toolchain version, build-affecting go env, the
+// ExtractConfig view + scan root + go.work content, and the content hash of
+// the member's OWN input tree UNION the trees of every member it
+// (transitively) requires — a workspace member compiles against its sibling
+// dependencies' source, so their edits must invalidate its facts too.
+// Members nobody depends on invalidate alone ("edit one member file → only
+// that member re-loads").
 func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDirs []string) []string {
 	cfgHash, err := factcache.HashJSON(struct {
 		Cfg    config.ExtractConfig
 		Root   string
 		GoWork string
-	}{e.cfg, scanRoot, hashGoWork(scanRoot)})
+		Env    map[string]string
+	}{e.cfg, scanRoot, hashGoWork(scanRoot), e.goCacheEnv(ctx)})
 	if err != nil {
 		return nil
 	}
@@ -534,4 +536,39 @@ func (e *GoExtractor) goVersion(ctx context.Context) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out.Stdout))
+}
+
+var goCacheEnvKeys = []string{
+	"GOOS",
+	"GOARCH",
+	"CGO_ENABLED",
+	"GOFLAGS",
+	"GOWORK",
+	"GOEXPERIMENT",
+	"GO111MODULE",
+	"GOTOOLCHAIN",
+}
+
+func (e *GoExtractor) goCacheEnv(ctx context.Context) map[string]string {
+	if e.Runner != nil {
+		args := append([]string{"env", "-json"}, goCacheEnvKeys...)
+		out, err := e.Runner.Run(ctx, toolrun.ToolCmd{
+			Name:    "go",
+			Args:    args,
+			Timeout: 30 * time.Second,
+		})
+		if err == nil && out.ExitCode == 0 {
+			var env map[string]string
+			if json.Unmarshal(out.Stdout, &env) == nil {
+				return env
+			}
+		}
+	}
+	env := make(map[string]string, len(goCacheEnvKeys))
+	for _, key := range goCacheEnvKeys {
+		env[key] = os.Getenv(key)
+	}
+	env["GOOS"] = runtime.GOOS
+	env["GOARCH"] = runtime.GOARCH
+	return env
 }

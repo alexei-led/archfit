@@ -97,8 +97,8 @@ LLM labels fill gaps. They do not displace stronger static evidence.
 | 1    | Config-authoritative facts | `internal:` / `public:` globs and declared architecture boundaries decide the floor and keep intrusive/public intent explicit.                 |
 | 2    | Compiler-grade facts       | Go type information decides object-kind strength, including interfaces, DTOs, const/var reads, concrete types, and funcs.                      |
 | 3    | SCIP facts                 | Symbol indexes upgrade TypeScript, Python, and Rust where available; SCIP-Go does not override Go type info.                                   |
-| 4    | Approved LLM label         | A `provenance: llm` label applies only when every static source left the strength unknown. It is attributed in `classified_edges.labeled_llm`. |
-| 5    | Heuristic                  | Language extractor fallback, usually `functional` or `model`.                                                                                  |
+| 4    | Heuristic                  | Language extractor fallback, usually `functional` or `model`.                                                                                  |
+| 5    | Approved LLM label         | A `provenance: llm` label applies only when every static source left the strength unknown. It is attributed in `classified_edges.labeled_llm`. |
 | 6    | Abstain                    | Unknown stays unscored. No fabricated ordinal enters `coupling_balance`.                                                                       |
 
 Approved human or tool labels are explicit reviewer overrides and are treated as
@@ -188,13 +188,15 @@ then move approved fields into the live config deliberately, or re-run with
 `--apply` to write approved values live. Same provider, cache, and key handling
 as the other LLM commands.
 
-## config update --llm — role and volatility proposals
+## config update --llm — subdomain and volatility proposals
 
 `archfit config update --llm` adds a semantic review section to the normal config
-drift report. It proposes per-module `role: core|supporting|generic` plus the
-derived volatility it would imply, with rationale tied to README, module names,
-docs headings, and public API shape. The proposal is a diff for human review; it
-does not auto-apply LLM role or volatility judgments into `.archfit.yaml`.
+drift report. It proposes per-module `subdomain: core|supporting|generic`, the
+derived volatility it would imply, layer suggestions, and optional architectural
+`role` values (`composition_root|adapter|core|shared_model|generated|test`),
+with rationale tied to README, module names, docs headings, and public API shape.
+The proposal is a diff for human review; it does not auto-apply LLM semantic
+judgments into `.archfit.yaml`.
 
 Synthetic modules are valid proposal targets, so large Rust crate trees and Go
 workspace members can get differentiated role/volatility review instead of

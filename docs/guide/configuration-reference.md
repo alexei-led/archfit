@@ -1034,10 +1034,12 @@ human` and `provenance: tool` do not lower confidence.
 When an edge's strength cannot be classified (`unknown`) but its distance
 resolves to an internal module, archfit **abstains** — the edge is excluded
 from the `coupling_balance` scored distribution (honest denominator) and an
-`agent_task` is emitted in JSON/SARIF output prompting the operator to add a
-label. The same happens for modules with no declared `subdomain` or
-`volatility`: an `agent_task` asks for a declaration or suggests
-`archfit config enrich subdomain`.
+actionable `config_warnings[]` decision message is emitted in JSON/Markdown
+output prompting the operator to add a label. The same happens for modules with
+no declared `subdomain` or `volatility`: a decision message asks for a
+declaration or suggests `archfit config enrich subdomain`.
+
+`agent_tasks[]` is reserved for active gate findings that need code repair.
 
 External/library edges (`Distance == DistanceUnknown`, i.e. stdlib,
 third-party packages, undeclared imports) are excluded from

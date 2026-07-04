@@ -120,21 +120,24 @@ Full setup — Docker, CI, optional analyzers, platform packages — is in the
   CI exit codes; without it the run is report-only.
 - **A decision, not just a score** — `HEALTHY` / `ACCEPTABLE WITH WATCH ITEMS` /
   `NEEDS ATTENTION` / `FAIL`, with blocking-vs-advisory split, categorized
-  recommendations, and per-dimension "why it's low / what would improve it".
+  recommendations, and evidence for why the score is low / what would improve it.
 - **Deterministic gates** for forbidden dependencies, public-API boundaries,
   layer direction, cycles, and configured thresholds. Same input → byte-identical
   JSON, safe for CI.
 - **`agent_tasks` repair blocks** so an AI agent gets the fix, not just the error.
-- **A banded 7-dimension scorecard** built on [Balanced Coupling](docs/guide/concepts.md)
-  (integration strength × distance × volatility) — optionally gates the build via
+- **A banded `coupling_balance` scorecard** built on
+  [Balanced Coupling](docs/guide/concepts.md) (integration strength × distance ×
+  volatility), reported as a 0–100 score — optionally gates the build via
   `coupling.gate` (band floor / max score drop).
 - **Honest coverage** — a missing analyzer degrades the affected metric to `n/a`
   with the install step, never a false green.
 - **Content-addressed fact cache** — warm runs skip unchanged extractor
   subprocesses (typically 3–5× faster gates), byte-identical to a cold run;
   `--no-cache` forces a clean control run ([details](docs/guide/caching.md)).
-- **Off-gate LLM narration** (`analyze --llm`, `config enrich`, `config init --llm`) that may
-  only explain and prioritize collected evidence — it never decides the gate.
+- **Off-gate LLM enrichment** (`analyze --llm`, `config enrich labels/abstained`,
+  `config init --llm`, `config update --llm`) that may only draft labels,
+  propose review material, explain, and prioritize collected evidence — it never
+  decides the gate.
 - **Multi-language** — Go, TypeScript/JavaScript, Python, Rust
   ([details](docs/guide/languages.md)).
 
