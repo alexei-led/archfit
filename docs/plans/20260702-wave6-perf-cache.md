@@ -65,8 +65,8 @@ Strategy: cache **extractor facts** (the expensive out-of-process work: `go list
 
 ### Task 6: [Final] Documentation
 
-- [ ] `docs/guide/`: cache behavior, key inputs, `--no-cache`, cache location, eviction; troubleshooting entry (delete `.archfit-cache` to reset)
-- [ ] update findings backlog item 9 with commit refs and the measured before/after table
+- [x] `docs/guide/`: cache behavior, key inputs, `--no-cache`, cache location, eviction; troubleshooting entry (delete `.archfit-cache` to reset) — new `docs/guide/caching.md` (byte-identical contract, per-analyzer key table, `--no-cache` read+write bypass, `--base` per-SHA reuse, 1 GiB/768 MiB LRU eviction, reset), linked from the guide README; `commands.md` `--no-cache` help updated to "extractor facts (and LLM responses with --llm)" + flag added to the analyze flag list + `--base` cache note; `troubleshooting.md` "Suspected stale cache" section
+- [x] update findings backlog item 9 with commit refs and the measured before/after table — the wave-6 latency work has no numbered backlog item in 00-FINDINGS.md §4 (items 1–15 are all pre-wave-6; "item 9" there is the wave-3 files[] fix), so recorded as new item 16 under a "Performance (§3 latency, wave 6)" stanza with commit refs `328923e`/`c8fe2d3`/`fbf8179`/`6a8c4eb`/`4299bf4` + the cold→warm table (archfit 8.8→3.0s, ccgram 29.8→8.7s, herdr 49.8→10.9s, storybook 11.2→3.6s, prefect 773.3→720.3s miss); §3 Latency paragraph marked ✅ FIXED and §5 "no cache" answer annotated. reports/ is gitignored — local-only update, same as prior waves
 
 ## Technical Details
 

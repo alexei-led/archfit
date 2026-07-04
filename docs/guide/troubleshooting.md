@@ -94,6 +94,15 @@ directories). Built-in excludes already skip `reports/`, `.archfit-cache/`,
 root is measured back into the scan and triggers a warning. Use `--root` to scan a
 repo from a config that lives elsewhere.
 
+## Suspected stale cache
+
+Extractor facts are cached under `.archfit-cache/` keyed by file content, config
+slice, and tool version, so a stale result should be impossible by construction
+(see [caching.md](caching.md)). To rule the cache out anyway: re-run with
+`--no-cache` (a control run that neither reads nor writes cache entries) and
+compare; to reset, delete the directory — `rm -rf .archfit-cache` — and the next
+run rebuilds it.
+
 If a command fails with exit code `3`, check config syntax, unknown YAML fields,
 missing toolchain, and the exact error printed by `archfit`. Exit `1` is a gate
 result (a finding or an opted-in missing required tool), not an error.

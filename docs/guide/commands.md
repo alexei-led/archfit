@@ -169,6 +169,9 @@ environments, or with `--quiet`. This keeps `archfit --json | jq` clean.
   deterministic output (needs `ai:` configured in `.archfit.yaml`).
 - `--full` — scan all files (default true).
 - `--advisory` — include Balanced Coupling advisories (default true).
+- `--no-cache` — bypass archfit caches: extractor facts (and LLM responses with
+  `--llm`). Reads and writes — a `--no-cache` run neither uses nor refreshes
+  entries. See [caching.md](caching.md).
 - `--severity`, `--lang`, `--no-config`, `--require-tools` — standard analyze flags.
 - `--progress auto|plain|none` — progress output mode (default `auto`).
 - `--quiet` / `-q` — suppress progress and non-essential output.
@@ -288,7 +291,8 @@ Requirements:
 
 Flags (in addition to the standard `analyze` flags):
 
-- `--no-cache` — bypass the LLM response cache at `.archfit-cache/llm/`.
+- `--no-cache` — bypass archfit caches: extractor facts and the LLM response
+  cache at `.archfit-cache/llm/`. See [caching.md](caching.md).
 
 ## archfit config init --llm (full draft)
 
@@ -424,7 +428,9 @@ worktree, scores it with the same pipeline, and adds a **CHANGE VS BASE** sectio
 to the text report (a "Change vs base" block under `--markdown`). The HEAD side is
 a normal full analysis, so `--json`/`--sarif` are the standard HEAD diagnostic
 (no separate delta schema) and `--gate` / `--require-tools` apply exactly as
-without `--base`.
+without `--base`. Base-side extractor facts are cached by commit SHA, so
+repeat runs against the same ref skip all base-side subprocess work — see
+[caching.md](caching.md).
 
 ```sh
 archfit analyze --base main                            # decision + before/after delta
