@@ -84,10 +84,13 @@ func (e *GoExtractor) Name() string {
 // NeedModule is required to strip the module path prefix from import paths so
 // that node IDs are ScanRoot-relative and match the globs in archfit.yaml.)
 //
-// Strength guard: buildStrengthHints uses the member-set predicate (isFirstParty)
-// so cross-member type references also produce StrengthHints. Without this,
-// every Go edge in workspace mode abstains on strength and coupling_balance
-// collapses even when distance is present.
+// Strength coverage: buildStrengthHints derives a hint for EVERY resolved
+// cross-package reference — first-party members, stdlib, and third-party alike.
+// Cross-member hints keep workspace-mode coupling_balance measurable; external
+// hints let a config-declared `external_systems:` seam (DistanceExternal, D=10)
+// score with real compiler-grade strength instead of abstaining. Undeclared
+// external edges are excluded from scoring by distance, so their hints are
+// report-only.
 func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 	if e.cfg.Mode == config.ModeOff {
 		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
@@ -234,18 +237,6 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		return importPath // external dep — unchanged
 	}
 
-	// isFirstParty reports whether importPath belongs to any loaded workspace member.
-	// Replaces the old single-module isInModule predicate; cross-member type
-	// references now produce StrengthHints (the critical strength guard).
-	isFirstParty := func(importPath string) bool {
-		for _, m := range modEntries {
-			if importPath == m.path || strings.HasPrefix(importPath, m.path+"/") {
-				return true
-			}
-		}
-		return false
-	}
-
 	// Merge all packages from all member loads, deduplicating by PkgPath.
 	// Iterate results in member order (results[i] ↔ memberDirs[i]) for determinism.
 	seenPkg := make(map[string]struct{})
@@ -260,9 +251,9 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	}
 
 	// Derive per-(relFile, importedPkgRelPath) StrengthHints from type info.
-	// Uses isFirstParty (member-set predicate) so cross-member type references
-	// also get hints — the critical strength guard for workspace mode.
-	strengthHints := buildStrengthHints(allPkgs, s.Root, stripImportPath, isFirstParty, e.isExcluded)
+	// Covers every resolved target — members, stdlib, third-party — so both
+	// cross-member references and declared external systems get real strength.
+	strengthHints := buildStrengthHints(allPkgs, s.Root, stripImportPath, e.isExcluded)
 
 	nodes, edges, filesSeen, unresolved := e.collectNodesEdges(
 		allPkgs, s.Root, stripImportPath, strengthHints,
@@ -394,13 +385,15 @@ func (e *GoExtractor) collectNodesEdges(
 // the STRONGEST (highest-rank) hint seen.
 //
 // The returned map key is relFile + "\x00" + importedPkgRelPath.
-// Only in-module targets are considered (isInModule guard); external deps are
-// excluded from coupling_balance and adding hints for them is noise.
+// Every resolved target gets a hint — first-party members AND external
+// (stdlib/third-party) packages. External hints are what let a config-declared
+// `external_systems:` seam score at DistanceExternal instead of abstaining on
+// unknown strength; on undeclared external edges the hint is inert (those are
+// excluded from coupling_balance by distance, not strength).
 func buildStrengthHints(
 	pkgs []*packages.Package,
 	root string,
 	stripModPath func(string) string,
-	isInModule func(string) bool,
 	isExcluded func(string) bool,
 ) map[string]string {
 	hints := make(map[string]string)
@@ -411,12 +404,14 @@ func buildStrengthHints(
 	// a selector (u.ID) can only be tied back to its DTO through this registry.
 	// Uses map iteration order is random and the field may be classified in a
 	// different package than the one naming the type — hence a full pass first.
+	// External types register too: without that, an external DTO's hint would
+	// flap between "dto" and "model" with map iteration order.
 	for _, pkg := range pkgs {
 		if pkg.TypesInfo == nil {
 			continue
 		}
 		for _, obj := range pkg.TypesInfo.Uses {
-			if tn, ok := obj.(*types.TypeName); ok && tn.Pkg() != nil && isInModule(tn.Pkg().Path()) {
+			if tn, ok := obj.(*types.TypeName); ok && tn.Pkg() != nil {
 				dtos.isDTOType(tn)
 			}
 		}
@@ -428,10 +423,6 @@ func buildStrengthHints(
 		for ident, obj := range pkg.TypesInfo.Uses {
 			// Skip same-package refs and universe symbols (builtins, nil, …).
 			if obj.Pkg() == nil || obj.Pkg().Path() == pkg.PkgPath {
-				continue
-			}
-			// Only in-module targets.
-			if !isInModule(obj.Pkg().Path()) {
 				continue
 			}
 			// Skip package-name references (import alias, not a symbol use).
@@ -524,13 +515,13 @@ func newDTOIndex() *dtoIndex {
 }
 
 // isDTOType reports whether tn names a pure-data DTO: an exported struct with
-// at least one field, every field exported, no func-, chan-, or interface-typed
-// fields (behavior carriers, checked one level deep — element types of
-// composites are not recursed into), and an EMPTY method set on both value and pointer
-// receivers (promoted methods from embedding included). Zero-field marker
-// structs (struct{} sentinels, context keys) carry no data model and are NOT
-// DTOs. classify resolves the coupling kind: contract across a declared public
-// boundary, model otherwise.
+// at least one field, every field exported, no behavior-carrying fields (func,
+// chan, or interface anywhere in the field's type structure — composite
+// element types and nested struct fields are recursed into), and an EMPTY
+// method set on both value and pointer receivers (promoted methods from
+// embedding included). Zero-field marker structs (struct{} sentinels, context
+// keys) carry no data model and are NOT DTOs. classify resolves the coupling
+// kind: contract across a declared public boundary, model otherwise.
 func (ix *dtoIndex) isDTOType(tn *types.TypeName) bool {
 	if v, ok := ix.types[tn]; ok {
 		return v
@@ -556,13 +547,13 @@ func (ix *dtoIndex) computePureData(tn *types.TypeName) bool {
 	if !ok || st.NumFields() == 0 {
 		return false
 	}
+	seen := make(map[*types.Named]bool)
 	for i := range st.NumFields() {
 		f := st.Field(i)
 		if !f.Exported() {
 			return false
 		}
-		switch f.Type().Underlying().(type) {
-		case *types.Signature, *types.Chan, *types.Interface:
+		if containsBehaviorCarrier(f.Type(), seen) {
 			return false
 		}
 	}
@@ -576,6 +567,40 @@ func (ix *dtoIndex) computePureData(tn *types.TypeName) bool {
 		ix.fields[st.Field(i)] = true
 	}
 	return true
+}
+
+// containsBehaviorCarrier reports whether t carries behavior anywhere in its
+// structure: a func, chan, or interface type, directly or inside composites
+// (pointer, slice, array, map) and nested struct fields. A direct-type check
+// alone would let `[]func()`, `map[string]chan T`, or `*Iface` fields smuggle
+// behavior into a "pure data" DTO. seen breaks cycles through named types
+// (e.g. Node{Next *Node}); a cyclic reference alone is not a carrier.
+func containsBehaviorCarrier(t types.Type, seen map[*types.Named]bool) bool {
+	if n, ok := types.Unalias(t).(*types.Named); ok {
+		if seen[n] {
+			return false
+		}
+		seen[n] = true
+	}
+	switch u := t.Underlying().(type) {
+	case *types.Signature, *types.Chan, *types.Interface:
+		return true
+	case *types.Pointer:
+		return containsBehaviorCarrier(u.Elem(), seen)
+	case *types.Slice:
+		return containsBehaviorCarrier(u.Elem(), seen)
+	case *types.Array:
+		return containsBehaviorCarrier(u.Elem(), seen)
+	case *types.Map:
+		return containsBehaviorCarrier(u.Key(), seen) || containsBehaviorCarrier(u.Elem(), seen)
+	case *types.Struct:
+		for i := range u.NumFields() {
+			if containsBehaviorCarrier(u.Field(i).Type(), seen) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // isExcluded reports whether path matches any of the configured exclusion globs.

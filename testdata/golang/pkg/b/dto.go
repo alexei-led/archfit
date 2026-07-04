@@ -41,5 +41,36 @@ type IfaceHolder struct {
 	G Greeter
 }
 
+// SliceCallbackHolder carries behavior through a []func() field — a composite
+// element type is still a behavior carrier; not pure data, stays model.
+type SliceCallbackHolder struct {
+	Handlers []func()
+}
+
+// ChanMapHolder carries behavior through a map value chan type — not pure
+// data; stays model.
+type ChanMapHolder struct {
+	Streams map[string]chan int
+}
+
+// PtrIfaceHolder carries behavior through a pointer-to-interface field — not
+// pure data; stays model.
+type PtrIfaceHolder struct {
+	G *Greeter
+}
+
+// NestedHolder carries behavior transitively through a nested struct whose
+// field is func-typed — not pure data; stays model.
+type NestedHolder struct {
+	Inner CallbackHolder
+}
+
+// LinkedNode is self-referential pure data: the cycle through *LinkedNode is
+// not a behavior carrier, so it stays a DTO.
+type LinkedNode struct {
+	ID   int
+	Next *LinkedNode
+}
+
 // Marker is a zero-field struct: carries no data model, NOT a DTO.
 type Marker struct{}

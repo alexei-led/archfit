@@ -156,9 +156,11 @@ case is a cross-deploy-unit symmetric edge (S=9, D=9, V=10):
 #### 4.2 Pure-data DTO → Contract (v4, Go only)
 
 Strict, statically decidable definition: an exported struct with at least one
-field, every field exported, no func-/chan-typed fields (behavior carriers),
-and an EMPTY method set (value + pointer receivers, promoted methods from
-embedding included; zero-field marker structs are NOT DTOs). Referenced across
+field, every field exported, no behavior-carrying fields — func, chan, or
+interface anywhere in the field's type structure; composite element types
+(`[]func()`, `map[string]chan T`, `*Iface`) and nested struct fields are
+recursed into — and an EMPTY method set (value + pointer receivers, promoted
+methods from embedding included; zero-field marker structs are NOT DTOs). Referenced across
 a config-declared `public:` glob boundary, it upgrades the public-glob floor
 from not-intrusive to `contract` — the boundary declaration is what makes it a
 contract, matching the book's "explicit integration contract". A DTO not
@@ -265,6 +267,23 @@ Edges whose target does not resolve to a declared module fall in two buckets:
 Language-agnostic: both buckets key on `DistanceUnknown`, which every language
 extractor sets for unresolved targets; the `external_systems:` match runs only
 on those edges.
+
+Strength sourcing for declared seams (abstain-not-fake applies — a declared
+edge whose strength stays `unknown` is counted in `declared_external` and
+`abstained`, lowering confidence, but is never scored with an invented
+ordinal):
+
+- **Go**: type-info strength hints cover external targets too (stdlib and
+  third-party symbols resolve through the same `TypesInfo.Uses` pass as
+  first-party ones), so a declared Go seam scores with compiler-grade strength.
+- **TS**: dependency-cruiser hints apply to every dependency (`import type` →
+  contract, value import → functional), external targets included.
+- **Python**: grimp has no object kinds — declared seams abstain, same as every
+  other Python edge.
+- **Rust**: `cargo metadata` is manifest-granularity; a `Cargo.toml` dependency
+  edge carries no symbol information, so a declared Rust seam abstains on
+  strength. Deriving a hint from real symbol use (rust-analyzer SCIP) is the
+  upgrade path; fabricating a conservative default is not.
 
 Self-scan result (v4, 2026-07-04): 513 external edges excluded (0 declared —
 archfit declares no external systems), 292 internal edges scored.

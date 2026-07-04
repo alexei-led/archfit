@@ -246,6 +246,22 @@ func TestExtract_StrengthHint(t *testing.T) {
 		{"struct with interface field → model", "pkg/a/iface_cons.go", pkgB, graph.EdgeKindImports, hintModel},
 		// marker_cons.go references b.Marker — zero-field structs carry no data model → model, not dto.
 		{"zero-field marker struct → model", "pkg/a/marker_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// composite_carrier_cons.go references b.SliceCallbackHolder — a []func()
+		// field smuggles behavior through a composite element type → model, not dto.
+		{"struct with []func field → model", "pkg/a/composite_carrier_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// chanmap_carrier_cons.go references b.ChanMapHolder — map[string]chan int → model.
+		{"struct with map-of-chan field → model", "pkg/a/chanmap_carrier_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// ptriface_carrier_cons.go references b.PtrIfaceHolder — *Greeter (pointer to interface) → model.
+		{"struct with pointer-to-interface field → model", "pkg/a/ptriface_carrier_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// nested_carrier_cons.go references b.NestedHolder — nested struct holds a func field → model.
+		{"struct with nested behavior carrier → model", "pkg/a/nested_carrier_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// linked_dto_cons.go references b.LinkedNode — a self-referential pure-data
+		// struct: the *LinkedNode cycle is not a behavior carrier → dto.
+		{"self-referential pure data → dto", "pkg/a/linked_dto_cons.go", pkgB, graph.EdgeKindImports, hintDTO},
+		// external_cons.go calls strings.Repeat — an EXTERNAL (stdlib) target must
+		// carry a real type-info hint so a declared external_systems seam can score
+		// at D=10 instead of abstaining (no manual hint injection anywhere here).
+		{"external stdlib function call → functional", "pkg/a/external_cons.go", "strings", graph.EdgeKindImports, hintFunctional},
 	}
 
 	for _, tc := range cases {

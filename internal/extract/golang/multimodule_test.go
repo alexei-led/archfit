@@ -78,8 +78,9 @@ func writeTestFile(t *testing.T, path, content string) {
 
 // TestExtract_MultiModule_CrossModuleStrengthHint is the keystone strength-guard
 // test: a cross-module edge (a/consumer → b/api) must carry a StrengthHint.
-// Without the member-set predicate in buildStrengthHints the hint would be empty
-// because the old isInModule only matched the loading member's own module path.
+// buildStrengthHints derives hints for every resolved target; the original
+// regression was an isInModule predicate that only matched the loading member's
+// own module path, leaving cross-member hints empty.
 func TestExtract_MultiModule_CrossModuleStrengthHint(t *testing.T) {
 	dir := buildWorkspace(t)
 
