@@ -64,18 +64,20 @@ func TestBookScorer_BookExamples(t *testing.T) {
 			wantBand:    SeverityLow,
 			wantScored:  true,
 		},
-		// Transactional cohesion: S=8(functional), D=2(same_module), V=10(high).
-		// same_module is not coupling — BookScorer abstains (Scored=false).
+		// Book Ch10 Example 2 — transactional cohesion:
+		// S=8(functional), D=2(same_module), V=10(high).
+		// |8-2|=6, 10-10=0, max(6,0)+1=7 → low. Strong coupling close together
+		// is cohesion: the worked numbers reproduce through the scorer.
 		{
-			name: "transactional cohesion: functional/same_module/high",
+			name: "Ch10 Example 2 transactional cohesion: functional/same_module/high",
 			c: Classification{
 				Strength:   StrengthFunctional,
 				Distance:   DistanceSameModule,
 				Volatility: VolatilityHigh,
 			},
-			wantBalance: 0,
-			wantBand:    "",
-			wantScored:  false,
+			wantBalance: 7,
+			wantBand:    SeverityLow,
+			wantScored:  true,
 		},
 		// Loose coupling: S=1(contract), D=9(cross_deploy), V=10(high).
 		// |1-9|=8, 10-10=0, max(8,0)+1=9 → none.
@@ -90,12 +92,23 @@ func TestBookScorer_BookExamples(t *testing.T) {
 			wantBand:    SeverityNone,
 			wantScored:  true,
 		},
-		// Ball of mud: S=3(model), D=2(same_module), V=10(high).
-		// same_module guard → balance=10, band=none.
-		// (The book's "ball of mud" example uses S near D at close distance;
-		//  with same_module the cohesion guard fires. Test cross_module_same_owner instead.)
+		// Ball of mud (local complexity quadrant): S=3(model), D=2(same_module),
+		// V=10(high). |3-2|=1, 10-10=0, max(1,0)+1=2 → critical. Low strength
+		// close together is low cohesion — the book's big-ball-of-mud corner.
 		{
-			name: "ball of mud approximation: model/cross_module_same_owner/high",
+			name: "ball of mud: model/same_module/high",
+			c: Classification{
+				Strength:   StrengthModel,
+				Distance:   DistanceSameModule,
+				Volatility: VolatilityHigh,
+			},
+			wantBalance: 2,
+			wantBand:    SeverityCritical,
+			wantScored:  true,
+		},
+		// Same shape one distance rung out: model/cross_module_same_owner/high.
+		{
+			name: "ball of mud at module seam: model/cross_module_same_owner/high",
 			c: Classification{
 				Strength:   StrengthModel,
 				Distance:   DistanceCrossModuleSameOwner,
@@ -151,11 +164,19 @@ func TestBookScorer_FourCorners(t *testing.T) {
 		wantBand    Severity
 		wantScored  bool
 	}{
-		// Same-module cohesion: not coupling — BookScorer abstains (Scored=false).
+		// Cohesion: high strength at same-module distance — balanced.
+		// intrusive/same_module/high: |10-2|=8, max(8,0)+1=9 → none.
 		{
 			name:        "cohesion same_module",
+			c:           Classification{Strength: StrengthIntrusive, Distance: DistanceSameModule, Volatility: VolatilityHigh},
+			wantBalance: 9, wantBand: SeverityNone, wantScored: true,
+		},
+		// Local complexity: low strength at same-module distance — ball of mud.
+		// contract/same_module/high: |1-2|=1, max(1,0)+1=2 → critical.
+		{
+			name:        "local complexity same_module",
 			c:           Classification{Strength: StrengthContract, Distance: DistanceSameModule, Volatility: VolatilityHigh},
-			wantBalance: 0, wantBand: "", wantScored: false,
+			wantBalance: 2, wantBand: SeverityCritical, wantScored: true,
 		},
 		// Distributed monolith: symmetric/cross_deploy/high → 1, critical.
 		{
@@ -189,6 +210,30 @@ func TestBookScorer_FourCorners(t *testing.T) {
 				t.Errorf("Band=%q want %q", got.Band, tt.wantBand)
 			}
 		})
+	}
+}
+
+// TestLocalComplexity verifies the Ch10 local-complexity quadrant membership:
+// low strength (contract/model) at same-module distance only.
+func TestLocalComplexity(t *testing.T) {
+	tests := []struct {
+		strength Strength
+		distance Distance
+		want     bool
+	}{
+		{StrengthContract, DistanceSameModule, true},
+		{StrengthModel, DistanceSameModule, true},
+		{StrengthFunctional, DistanceSameModule, false},
+		{StrengthSymmetric, DistanceSameModule, false},
+		{StrengthIntrusive, DistanceSameModule, false},
+		{StrengthContract, DistanceCrossModuleSameOwner, false},
+		{StrengthModel, DistanceCrossDeployUnit, false},
+	}
+	for _, tt := range tests {
+		cl := Classification{Strength: tt.strength, Distance: tt.distance}
+		if got := LocalComplexity(cl); got != tt.want {
+			t.Errorf("LocalComplexity(%s/%s) = %v, want %v", tt.strength, tt.distance, got, tt.want)
+		}
 	}
 }
 
@@ -309,8 +354,8 @@ func TestBookScorer_VolatilityConservative(t *testing.T) {
 }
 
 // TestBookScorer_BalanceRange verifies balance stays in [1,10] for all
-// concrete cross-boundary strength/distance/volatility combinations, and that
-// same-module edges abstain (not coupling).
+// concrete strength/distance/volatility combinations, including same-module
+// edges (scored at the same-module rung since Wave 5).
 func TestBookScorer_BalanceRange(t *testing.T) {
 	s := BookScorer{}
 	strengths := []Strength{StrengthContract, StrengthModel, StrengthFunctional, StrengthSymmetric, StrengthIntrusive}
@@ -322,13 +367,6 @@ func TestBookScorer_BalanceRange(t *testing.T) {
 			for _, vol := range vols {
 				c := Classification{Strength: str, Distance: dist, Volatility: vol}
 				got := s.Score(c)
-				if dist == DistanceSameModule {
-					// Same-module is cohesion, not coupling — BookScorer must abstain.
-					if got.Scored {
-						t.Errorf("expected abstain for same_module: %s/%s/%s", str, dist, vol)
-					}
-					continue
-				}
 				if !got.Scored {
 					t.Errorf("unexpected abstain: %s/%s/%s", str, dist, vol)
 					continue

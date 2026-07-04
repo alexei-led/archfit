@@ -41,12 +41,19 @@ modularity = |S − D|                          // 0..9
 balance    = max(modularity, 10 − V) + 1      // 1..10
 ```
 
-Same-module edges (`same_module` distance) are cohesion, not cross-boundary
-coupling: `BookScorer.Score` returns them unscored (`Scored: false`), so they
-never enter the distribution. This hides the book's Ch10 "local complexity"
-quadrant (low strength + low distance) — a known deviation (2026-07-02 eval §1
-deviation 4) scheduled for Wave 5
-(`docs/plans/20260702-wave5-book-quadrants-advisories.md`).
+Same-module edges (`same_module` distance) score with the same formula at the
+same-module distance rung (D=2), restoring the book's Ch10 "local complexity"
+quadrant (low strength + low distance = low cohesion — the ball-of-mud corner;
+was eval §1 deviation 4, fixed in Wave 5). High strength close together scores
+high balance (cohesion, Ch10 Example 2: functional/same_module/high → 7); low
+strength close together scores low balance (model/same_module/high → 2).
+Fractal-level separation: same-module scores report in the per-module
+`local_coupling` block ONLY — they never enter `coupling_balance`'s
+scored/abstained denominator, never set edge `Severity` (no
+`bc/imbalanced_coupling` advisory), and never gate. The block is report-only
+in Wave 5; any gate wiring waits for a corpus shakedown. Abstain rules are
+identical at both levels: unknown strength abstains same-module too
+(`abstained_edges` in the block).
 
 Severity bands derived from balance:
 
@@ -177,7 +184,7 @@ designed path for those languages.
 Composite of three signals (first applicable in priority order), applied to
 edges whose target resolves to a declared module:
 
-1. Same module → `same_module` (cohesion — unscored, see §2).
+1. Same module → `same_module` (D=2 — scored into `local_coupling` only, see §2).
 2. Different `deploy_unit` values → `cross_deploy_unit` (D=9).
 3. Ownership is informative (two or more distinct owners) → same owner →
    `cross_module_same_owner` (D=4); different owners → `cross_module_diff_owner` (D=7).

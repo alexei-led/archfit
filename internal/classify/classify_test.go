@@ -1738,3 +1738,55 @@ func TestAugmentFunctions_InheritAllAncestorAttributes(t *testing.T) {
 		assertInherited(t, "extra", crateMod, want)
 	})
 }
+
+// TestRun_SameModuleScoredSeverityNone verifies Wave 5 local-complexity scoring:
+// a same-module edge is scored with the book formula at the same-module rung
+// (D=2) but keeps SeverityNone, so the bc/imbalanced_coupling advisory pipeline
+// (which keys on Severity) never fires for it. Abstain rules are identical:
+// unknown strength still abstains at same-module distance.
+func TestRun_SameModuleScoredSeverityNone(t *testing.T) {
+	modules := map[string]config.ModuleDef{
+		"a": {Paths: []string{pathsA}, Subdomain: subdomainCore},
+	}
+	cfg := config.ClassifyConfig{Modules: modules}
+
+	// Low strength (model) at same-module distance in a volatile (core) module:
+	// |3-2|=1, 10-10=0, max(1,0)+1=2 → critical band — the ball-of-mud quadrant.
+	ballOfMud := graph.Edge{
+		From:         "file:services/a/mud.go",
+		To:           "file:services/a/y.go",
+		Kind:         graph.EdgeKindImports,
+		Language:     "go",
+		StrengthHint: string(coupling.StrengthModel),
+	}
+	// Unknown strength — must abstain even though distance is known.
+	unknownStrength := graph.Edge{
+		From:     "file:services/a/mud.go",
+		To:       "file:services/a/z.go",
+		Kind:     graph.EdgeKindImports,
+		Language: "go",
+	}
+	idx := classify.Run(makeGraph([]graph.Edge{ballOfMud, unknownStrength}), cfg)
+
+	cl := idx[edgeKey(ballOfMud)]
+	if cl.Distance != coupling.DistanceSameModule {
+		t.Fatalf("Distance = %q, want same_module", cl.Distance)
+	}
+	if !cl.Score.Scored {
+		t.Fatal("same-module edge with known strength must be scored (local complexity quadrant)")
+	}
+	if cl.Score.Balance != 2 || cl.Score.Band != coupling.SeverityCritical {
+		t.Errorf("Score = balance %d band %q, want balance 2 band critical", cl.Score.Balance, cl.Score.Band)
+	}
+	if cl.Severity != coupling.SeverityNone {
+		t.Errorf("Severity = %q, want none — same-module edges must not reach the advisory pipeline", cl.Severity)
+	}
+
+	ab := idx[edgeKey(unknownStrength)]
+	if ab.Score.Scored {
+		t.Errorf("unknown-strength same-module edge must abstain, got balance %d", ab.Score.Balance)
+	}
+	if ab.Severity != coupling.SeverityNone {
+		t.Errorf("abstained edge Severity = %q, want none", ab.Severity)
+	}
+}

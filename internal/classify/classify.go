@@ -45,8 +45,10 @@ const (
 //     (core→high, supporting→low, generic→low, ""/"unknown"→unknown).
 //   - Explicitness: explicit when strength=contract; implicit when strength=intrusive;
 //     unknown otherwise.
-//   - Score: continuous EdgeScore from the configured Scorer (default: BookScorer, bc_score.v3).
-//     Applied to cross-boundary edges only (same-module and unknown-distance are zero).
+//   - Score: continuous EdgeScore from the configured Scorer (default: BookScorer).
+//     Applied to every known-distance edge; unknown-distance edges are zero.
+//     Same-module edges are scored (local_coupling report block) but keep
+//     SeverityNone — the advisory pipeline stays cross-boundary.
 func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 	mm := buildModuleIndex(c.Modules)
 	idx := make(coupling.Index)
@@ -74,15 +76,22 @@ func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 
 	for _, e := range g.Edges() {
 		cl := classify(e, mm, c, degenerateExplicit, degenerateOwners, effectiveVol, extSystems)
-		// Score cross-boundary edges that are not distance-unknown.
-		// Same-module and unknown-distance edges are not scored (zero EdgeScore).
+		// Score every edge whose distance is known. Same-module edges score at
+		// the book's same-module rung (D=2) and surface the Ch10 local-complexity
+		// quadrant in the local_coupling report block; unknown-distance edges are
+		// not scored (zero EdgeScore). Abstain rules are identical at both levels.
 		// Severity is derived from cl.Score.Band so the book formula and the
 		// advisory severity are always identical — the single source of truth.
-		if cl.Distance != coupling.DistanceSameModule && cl.Distance != coupling.DistanceUnknown {
+		if cl.Distance != coupling.DistanceUnknown {
 			cl.Score = scorer.Score(cl)
-			// Set Severity from the book score band. Abstained edges (Scored=false,
-			// Band="") remain SeverityNone — abstain-not-fake is preserved.
-			cl.Severity = cl.Score.Band
+			// Set Severity from the book score band for cross-boundary edges only.
+			// Same-module edges keep SeverityNone: the bc/imbalanced_coupling
+			// advisory pipeline and coupling_balance stay cross-module (fractal
+			// level separation); local complexity is report-only. Abstained edges
+			// (Scored=false, Band="") remain SeverityNone — abstain-not-fake.
+			if cl.Distance != coupling.DistanceSameModule {
+				cl.Severity = cl.Score.Band
+			}
 		}
 		idx[edgeKey(e)] = cl
 	}

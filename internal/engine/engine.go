@@ -307,6 +307,10 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	classifiedEdges := buildClassifiedEdgeSummary(couplingIdx)
 	classifiedEdges.LLMApproved = llmApprovedCount
 
+	// Local complexity (book Ch10): per-module rollup of scored same-module
+	// edges. Report-only — never enters coupling_balance or the verdict.
+	localCoupling := buildLocalCoupling(ex.g, couplingIdx, classifyCfg.ModuleMap)
+
 	d := diagnostic.Diagnostic{
 		SchemaVersion:         diagnostic.SchemaVersion,
 		Verdict:               verdict,
@@ -324,6 +328,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		AgentTasks:            []diagnostic.AgentTask{},
 		ToolCoverage:          ex.coverages,
 		ClassifiedEdges:       classifiedEdges,
+		LocalCoupling:         localCoupling,
 		Delta:                 delta,
 		Summary: diagnostic.Summary{
 			GateFindings: gateNew,

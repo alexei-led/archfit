@@ -27,12 +27,12 @@ Wave 5 of 7 from `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` (§1 deviations
 
 ### Task 1: local_coupling report block (Ch10 local-complexity quadrant)
 
-- [ ] design note first (in-code + docs/design): same-module edges are scored with the book formula at the same-module distance rung, but reported in a NEW `local_coupling` block per module — they do NOT enter coupling_balance's denominator (fractal level separation; coupling_balance stays the cross-module number consumers already track)
-- [ ] failing tests: same-module low-strength edge lands in `local_coupling`, not in coupling_balance; Ch10 Example 2's worked numbers reproduce through the scorer (add as a regression test the way Ch10 Examples 1/3/4 already are)
-- [ ] remove the pre-strength drop at `scorer_book.go:79-82`; route same-module scored edges to the new block; abstain rules identical
-- [ ] update the stale design doc (`bc-measurement-v3.md:33-35`) to the actual v4 behavior
-- [ ] four-language check: fixture with a same-module edge per language (Go package-internal import, TS relative import within module glob, Python dotted intra-package, Rust intra-crate `::` module when cargo_modules enabled) — each appears in `local_coupling`, none in coupling_balance
-- [ ] regen goldens; `make test && make lint && make archfit`; commit
+- [x] design note first (in-code + docs/design): same-module edges are scored with the book formula at the same-module distance rung, but reported in a NEW `local_coupling` block per module — they do NOT enter coupling_balance's denominator (fractal level separation; coupling_balance stays the cross-module number consumers already track) — in-code notes on `BookScorer`/`classify.Run`/`buildLocalCoupling`/`LocalCouplingModule`; `bc-measurement-v4.md` §2
+- [x] failing tests: same-module low-strength edge lands in `local_coupling`, not in coupling_balance (`TestBuildLocalCoupling`); Ch10 Example 2's worked numbers reproduce through the scorer (functional/same_module/high → balance 7, `TestBookScorer_BookExamples`)
+- [x] remove the pre-strength drop at `scorer_book.go:79-82`; route same-module scored edges to the new block; abstain rules identical (`Severity` stays `SeverityNone` for same-module — advisory pipeline remains cross-boundary, `TestRun_SameModuleScoredSeverityNone`)
+- [x] update the stale design doc (`bc-measurement-v3.md:33-35`) to the actual v4 behavior — v3 is archived; the live `bc-measurement-v4.md` §2 same-module paragraph and the distance-mapping line updated instead
+- [x] four-language check: fixture with a same-module edge per language (Go package-internal import, TS relative import within module glob, Python dotted intra-package, Rust intra-crate `::` module when cargo_modules enabled) — each appears in `local_coupling`, none in coupling_balance (`TestBuildLocalCoupling_FourLanguages`)
+- [x] regen goldens; `make test && make lint && make archfit`; commit — no stored golden changed (TestGolden is a determinism double-run; byteidentical baselines have no same-module edges); full suite + lint + dogfood gate green, self-scan verdict pass with `local_coupling` populated (3 modules, 19 same-module edges; coupling_balance denominator unchanged at 299)
 
 ### Task 2: bc/duplicated_knowledge advisory (clone pair without an edge)
 

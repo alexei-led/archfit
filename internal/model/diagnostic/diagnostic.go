@@ -318,6 +318,47 @@ type ClassifiedEdgeSummary struct {
 	LLMApproved int `json:"llm_approved,omitempty"`
 }
 
+// LocalCouplingModule summarises the scored same-module edges of one module —
+// the book Ch10 "local complexity" quadrant surface (low strength at low
+// distance = low cohesion). Same-module edges score with the book formula at
+// the same-module distance rung but NEVER enter coupling_balance's
+// Scored/Abstained denominator: cross-module coupling and intra-module
+// cohesion are different fractal levels and stay separate reported numbers.
+// Report-only — never consumed by verdict or gate logic.
+type LocalCouplingModule struct {
+	// Module is the module-map key that owns both edge endpoints.
+	Module string `json:"module"`
+	// ScoredEdges is the count of same-module edges with a concrete book balance.
+	ScoredEdges int `json:"scored_edges"`
+	// AbstainedEdges counts same-module edges the scorer abstained on (unknown
+	// strength) — abstain-not-fake applies at this fractal level too.
+	AbstainedEdges int `json:"abstained_edges,omitempty"`
+	// ComplexityEdges is the count of scored edges in the local-complexity
+	// quadrant (contract/model strength at same-module distance — the
+	// "ball of mud" corner).
+	ComplexityEdges int `json:"complexity_edges"`
+	// ComplexitySharePct is 100×ComplexityEdges/ScoredEdges (0 when unscored).
+	ComplexitySharePct int `json:"complexity_share_pct"`
+	// MeanBalance is the arithmetic mean book balance (1..10) over scored edges.
+	MeanBalance float64 `json:"mean_balance"`
+	// WorstOffenders is a deterministic, capped sample of the lowest-balance
+	// scored edges (band below none), with a representative source location.
+	WorstOffenders []LocalCouplingEdge `json:"worst_offenders,omitempty"`
+}
+
+// LocalCouplingEdge is one same-module edge sampled into WorstOffenders.
+type LocalCouplingEdge struct {
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Strength string `json:"strength"`
+	Balance  int    `json:"balance"`
+	Band     string `json:"band"`
+	// File/Line is the edge's first source location (e.g. the import site).
+	// Omitted when the extractor recorded no location (e.g. TS edges).
+	File string `json:"file,omitempty"`
+	Line int    `json:"line,omitempty"`
+}
+
 // Coverage status constants used across all extractor adapters.
 const (
 	StatusOK       = "ok"
@@ -396,6 +437,12 @@ type Diagnostic struct {
 	// filtering) so coupling_balance sees every edge, not just the noise-controlled
 	// advisory subset. Nil when classification did not run (backward compatible).
 	ClassifiedEdges *ClassifiedEdgeSummary `json:"classified_edges,omitempty"`
+	// LocalCoupling is the report-only per-module summary of scored same-module
+	// edges — the book Ch10 local-complexity quadrant. Same-module edges never
+	// enter coupling_balance's denominator (see LocalCouplingModule). Never
+	// consumed by verdict or gate logic; omitted when no module has a
+	// same-module edge.
+	LocalCoupling []LocalCouplingModule `json:"local_coupling,omitempty"`
 	// Delta groups findings by lifecycle bucket (new/existing/resolved/
 	// severity_changed/touched_by_delta) for a delta run. Nil (omitted) outside
 	// delta mode and when the run produced no findings to bucket.

@@ -6,7 +6,12 @@ package coupling
 // balance = max(|S-D|, 10-V) + 1, range 1..10, higher = better balanced.
 //
 // When strength or distance is unknown, the edge is abstained (Scored=false).
-// Same-module edges return balance=10 (cohesion, not coupling).
+// Same-module edges score at the same-module rung (D=2): high strength close
+// together is cohesion (high balance), low strength close together is the
+// book's Ch10 local-complexity quadrant (low balance — a ball-of-mud signal).
+// classify.Run keeps same-module scores out of the advisory pipeline and
+// coupling_balance; they surface only in the local_coupling report block
+// (cross-module coupling and intra-module cohesion are different fractal levels).
 // Undeclared/unknown volatility is treated conservatively as V=10 (worst case).
 type BookScorer struct{}
 
@@ -78,13 +83,19 @@ var bookVolatilityOrdinal = map[Volatility]int{
 
 const reasonBook = "book"
 
+// LocalComplexity reports whether cl sits in the book Ch10 local-complexity
+// quadrant: low integration strength (contract/model — the low half of the
+// strength ladder) at same-module distance. Components that share little
+// meaning but live together — low cohesion, the "big ball of mud" corner.
+// Consumed by the local_coupling report block only; never by advisories,
+// coupling_balance, or the gate.
+func LocalComplexity(cl Classification) bool {
+	return cl.Distance == DistanceSameModule &&
+		(cl.Strength == StrengthContract || cl.Strength == StrengthModel)
+}
+
 // Score computes the book balance score for c.
 func (BookScorer) Score(c Classification) EdgeScore {
-	// Cohesion: same-module is not cross-boundary coupling — not a coupling edge.
-	if c.Distance == DistanceSameModule {
-		return EdgeScore{Scored: false, Reason: reasonBook}
-	}
-
 	// Abstain when strength or distance is unknown — no book ordinal exists.
 	s, sOK := bookStrengthOrdinal[c.Strength]
 	d, dOK := bookDistanceOrdinal[c.Distance]
@@ -185,9 +196,10 @@ func bookLowerStrength(s Strength) (Strength, bool) {
 // DistanceUnknown causes BookScorer to abstain, so tryMove would silently drop
 // the suggestion; this ladder jumps directly from CrossModuleDiffOwner to CrossModuleSameOwner.
 // DistanceCrossModuleSameOwner is the terminal rung: the next step down is
-// DistanceSameModule, which exits the coupling domain (scored as cohesion, not
-// coupling) and causes BookScorer to return Scored:false — tryMove would silently
-// discard any "reduce_distance" suggestion for that step.
+// DistanceSameModule, which is not a distance reduction but a module merge — a
+// design change that moves the edge out of cross-module coupling entirely (its
+// score would report in local_coupling, not coupling_balance), so it is not
+// offered as a "reduce_distance" remediation.
 func bookLowerDistance(d Distance) (Distance, bool) {
 	switch d {
 	case DistanceExternal:
