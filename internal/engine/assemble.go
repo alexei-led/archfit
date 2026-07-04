@@ -196,6 +196,9 @@ func buildClassifiedEdgeSummary(idx coupling.Index) *diagnostic.ClassifiedEdgeSu
 		s.ByStrength[string(cl.Strength)]++
 		s.ByDistance[string(cl.Distance)]++
 		s.ByVolatility[string(cl.Volatility)]++
+		if cl.StrengthFromLLM {
+			s.LabeledLLM++
+		}
 		if cl.Score.Scored {
 			s.Scored++
 			balanceSum += cl.Score.Balance

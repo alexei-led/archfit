@@ -40,10 +40,10 @@ Two semantic gaps, both measured on the corpus:
 
 ### Task 2: scorer consumption + confidence discipline for llm labels
 
-- [ ] verify (test, likely exists) pinned llm-provenance strength labels feed classification exactly like human labels except the confidence lowering; add a test that an llm label NEVER overrides config-authoritative contract/intrusive or the Go type-info hint (same precedence as SCIP-for-Go: compiler-grade beats LLM)
-- [ ] add `classified_edges` evidence: `labeled_llm: N` bucket so the scored-fraction increase is visibly attributed
-- [ ] determinism test: fixture with committed labels file — two full runs byte-identical; delete labels → abstains return
-- [ ] `make test && make lint && make archfit`; commit
+- [x] verify (test, likely exists) pinned llm-provenance strength labels feed classification exactly like human labels except the confidence lowering; add a test that an llm label NEVER overrides config-authoritative contract/intrusive or the Go type-info hint (same precedence as SCIP-for-Go: compiler-grade beats LLM)
+- [x] add `classified_edges` evidence: `labeled_llm: N` bucket so the scored-fraction increase is visibly attributed
+- [x] determinism test: fixture with committed labels file — two full runs byte-identical; delete labels → abstains return
+- [x] `make test && make lint && make archfit`; commit
 
 ### Task 3: config update --llm — subdomain role proposals
 

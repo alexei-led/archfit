@@ -316,6 +316,12 @@ type ClassifiedEdgeSummary struct {
 	// dimension confidence by one band — they are human-approved but not human-judged.
 	// Zero means no LLM-provenance labels are in effect.
 	LLMApproved int `json:"llm_approved,omitempty"`
+	// LabeledLLM is the count of cross-boundary EDGES whose strength came from
+	// an approved llm-provenance label filling a cell every static source left
+	// unknown (one label covers all edges of its module pair). It attributes
+	// the scored-fraction increase to the semantic layer — disclosure only,
+	// never fed into the balance value.
+	LabeledLLM int `json:"labeled_llm,omitempty"`
 	// VolatilityProvenance counts MODULES (not edges) by the source of their
 	// volatility. Nil when no modules were resolved.
 	VolatilityProvenance *VolatilityProvenance `json:"volatility_provenance,omitempty"`

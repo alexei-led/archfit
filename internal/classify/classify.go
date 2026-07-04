@@ -423,6 +423,27 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 		str = strengthFromHint(e.StrengthHint)
 	}
 
+	// --- LLM label fill ---
+	// An approved llm-provenance label fills ONLY a cell every static source
+	// left unknown: no config glob matched (intrusive/contract handled above)
+	// and the hint — Go type-info, SCIP, or extractor heuristic — resolved
+	// nothing. It never displaces a static classification (compiler-grade
+	// beats LLM, the same rule as SCIP-for-Go in enrichEdges). It counts as a
+	// pin: human-approved, so the clone-Symmetric upgrade below must not
+	// override it.
+	strengthFromLLM := false
+	if str == coupling.StrengthUnknown && len(c.LLMLabels) > 0 {
+		if fromMod, okF := mi.moduleFor(fromPath); okF {
+			if toMod, okT := mi.moduleFor(toPath); okT {
+				if pinned, ok := c.LLMLabels[fromMod+"\x00"+toMod]; ok {
+					str = coupling.Strength(pinned)
+					fromPin = true
+					strengthFromLLM = true
+				}
+			}
+		}
+	}
+
 	// --- Symmetric upgrade from clone detection ---
 	// A cross-module clone pair (a DRY violation) signals bidirectional
 	// coupling at implementation level — book ordinal 9 (Symmetric), between
@@ -480,6 +501,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 		ContractRecommended: contractRecommended,
 		DistanceBasis:       distBasis,
 		CloneLocations:      cloneLocations,
+		StrengthFromLLM:     strengthFromLLM,
 	}
 }
 

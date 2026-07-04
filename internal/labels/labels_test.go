@@ -117,13 +117,18 @@ func TestLLMApprovedCount(t *testing.T) {
 }
 
 const (
-	modStore      = "app.store"
-	modHandlers   = "app.handlers"
-	strengthModel = "model"
-	modA          = "app.a"
-	modB          = "app.b"
-	modC          = "app.c"
-	modD          = "app.d"
+	modStore           = "app.store"
+	modHandlers        = "app.handlers"
+	strengthModel      = "model"
+	strengthFunctional = "functional"
+	strengthContract   = "contract"
+	modA               = "app.a"
+	modB               = "app.b"
+	modC               = "app.c"
+	modD               = "app.d"
+	modE               = "app.e"
+	modF               = "app.f"
+	modG               = "app.g"
 )
 
 func TestHashItems_DeterministicAndChangeSensitive(t *testing.T) {
@@ -151,23 +156,26 @@ func TestApproved(t *testing.T) {
 
 	in := []labels.Label{
 		{From: modHandlers, To: modStore, Strength: strengthModel, EvidenceHash: freshHash, Status: labels.StatusApproved},
-		{From: modHandlers, To: "app.util", Strength: "functional", Status: labels.StatusDraft},                         // draft → inert
+		{From: modHandlers, To: "app.util", Strength: strengthFunctional, Status: labels.StatusDraft},                   // draft → inert
 		{From: modStore, To: modHandlers, Strength: strengthModel, EvidenceHash: "dead", Status: labels.StatusApproved}, // stale: mismatch
-		{From: "app.a", To: "app.b", Strength: "intrusive", Status: labels.StatusApproved},                              // no hash → applies
-		{From: "app.x", To: "app.y", Strength: "contract", EvidenceHash: "ghost", Status: labels.StatusApproved},        // pair has no evidence → applies (moot)
+		{From: modA, To: modB, Strength: "intrusive", Status: labels.StatusApproved},                                    // no hash → applies
+		{From: "app.x", To: "app.y", Strength: strengthContract, EvidenceHash: "ghost", Status: labels.StatusApproved},  // pair has no evidence → applies (moot)
 	}
 
-	approved, stale := labels.Approved(in, evidence)
+	approved, llmApproved, stale := labels.Approved(in, evidence)
 	if len(approved) != 3 {
 		t.Fatalf("approved = %v, want 3 entries", approved)
+	}
+	if len(llmApproved) != 0 {
+		t.Errorf("llmApproved = %v, want empty (no llm-provenance labels)", llmApproved)
 	}
 	if approved[labels.Key(modHandlers, modStore)] != strengthModel {
 		t.Errorf("fresh approved label missing: %v", approved)
 	}
-	if approved[labels.Key("app.a", "app.b")] != "intrusive" {
+	if approved[labels.Key(modA, modB)] != "intrusive" {
 		t.Errorf("hash-less approved label must apply: %v", approved)
 	}
-	if approved[labels.Key("app.x", "app.y")] != "contract" {
+	if approved[labels.Key("app.x", "app.y")] != strengthContract {
 		t.Errorf("no-current-evidence label must apply (moot): %v", approved)
 	}
 	if len(stale) != 1 || stale[0].From != modStore {
@@ -175,8 +183,40 @@ func TestApproved(t *testing.T) {
 	}
 
 	// Nil evidence (delta run): freshness unverifiable → approved labels all apply.
-	approvedNil, staleNil := labels.Approved(in, nil)
+	approvedNil, _, staleNil := labels.Approved(in, nil)
 	if len(approvedNil) != 4 || staleNil != nil {
 		t.Errorf("nil evidence: approved=%v stale=%v, want 4 applied / none stale", approvedNil, staleNil)
+	}
+}
+
+// TestApproved_ProvenanceSplit verifies llm-provenance labels land in the
+// llmApproved map (weaker classify precedence) while human/tool/unset
+// provenance stays in the human-authority map. Freshness rules apply to both.
+func TestApproved_ProvenanceSplit(t *testing.T) {
+	in := []labels.Label{
+		{From: modA, To: modB, Strength: strengthModel, Status: labels.StatusApproved, Provenance: labels.ProvenanceHuman},
+		{From: modB, To: modC, Strength: strengthFunctional, Status: labels.StatusApproved, Provenance: labels.ProvenanceTool},
+		{From: modC, To: modD, Strength: strengthContract, Status: labels.StatusApproved}, // unset → human authority
+		{From: modD, To: modE, Strength: strengthModel, Status: labels.StatusApproved, Provenance: labels.ProvenanceLLM, Confidence: labels.ConfidenceMedium},
+		{From: modE, To: modF, Strength: strengthFunctional, Status: labels.StatusDraft, Provenance: labels.ProvenanceLLM}, // draft → inert
+		{From: modF, To: modG, Strength: strengthModel, Status: labels.StatusApproved, Provenance: labels.ProvenanceLLM, EvidenceHash: "dead"},
+	}
+	evidence := map[string]string{
+		labels.Key(modF, modG): labels.HashItems([]string{"changed"}),
+	}
+
+	approved, llmApproved, stale := labels.Approved(in, evidence)
+
+	if len(approved) != 3 {
+		t.Errorf("approved = %v, want the 3 human/tool/unset labels", approved)
+	}
+	if len(llmApproved) != 1 || llmApproved[labels.Key(modD, modE)] != strengthModel {
+		t.Errorf("llmApproved = %v, want only app.d→app.e model", llmApproved)
+	}
+	if _, inHuman := approved[labels.Key(modD, modE)]; inHuman {
+		t.Error("llm-provenance label must not enter the human-authority map")
+	}
+	if len(stale) != 1 || stale[0].From != modF {
+		t.Errorf("stale = %+v, want only the dead-hash llm label (freshness applies to llm labels too)", stale)
 	}
 }

@@ -602,6 +602,7 @@ const (
 	globPkgA    = "pkg/a/**"
 	globPkgB    = "pkg/b/**"
 	pinnedModel = "model"
+	labelKeyAB  = "a\x00b"
 
 	modKeyPkgA  = "pkg/a"
 	modKeyPkgB  = "pkg/b"
@@ -643,7 +644,7 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 	t.Run("approved label beats hint", func(t *testing.T) {
 		idx := classify.Run(g, config.ClassifyConfig{
 			Modules:        modules,
-			ApprovedLabels: map[string]string{"a\x00b": pinnedModel},
+			ApprovedLabels: map[string]string{labelKeyAB: pinnedModel},
 		})
 		if got := idx[key].Strength; got != coupling.StrengthModel {
 			t.Errorf("strength = %q, want model (pinned label)", got)
@@ -662,7 +663,7 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 		}
 		idx := classify.Run(g, config.ClassifyConfig{
 			Modules:        withGlobs,
-			ApprovedLabels: map[string]string{"a\x00b": pinnedModel},
+			ApprovedLabels: map[string]string{labelKeyAB: pinnedModel},
 		})
 		if got := idx[key].Strength; got != coupling.StrengthModel {
 			t.Errorf("strength = %q, want model (approved label refines public-glob floor)", got)
@@ -689,6 +690,104 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 		})
 		if got := idx[key].Strength; got != coupling.StrengthFunctional {
 			t.Errorf("strength = %q, want functional (label is directional)", got)
+		}
+	})
+}
+
+// TestRun_LLMLabelPrecedence locks the semantic-layer precedence (Wave 7): an
+// approved llm-provenance label fills ONLY a cell every static source left
+// unknown. It never displaces a config glob (authoritative intrusive, public
+// contract floor) or an extractor hint (Go type-info / SCIP / heuristic) —
+// compiler-grade beats LLM, the same rule as SCIP-for-Go — and, being
+// human-approved, it is not overridden by the clone-Symmetric upgrade.
+func TestRun_LLMLabelPrecedence(t *testing.T) {
+	modules := map[string]config.ModuleDef{
+		"a": {Paths: []string{globPkgA}},
+		"b": {Paths: []string{globPkgB}},
+	}
+	llmModel := map[string]string{labelKeyAB: pinnedModel}
+	buildEdge := func(hint string) (*graph.Graph, string) {
+		e := graph.Edge{
+			From:         filePkgAXGo,
+			To:           filePkgBYGo,
+			Kind:         graph.EdgeKindImports,
+			Language:     "go",
+			StrengthHint: hint,
+		}
+		return makeGraph([]graph.Edge{e}), edgeKey(e)
+	}
+
+	t.Run("fills a cell all static sources left unknown", func(t *testing.T) {
+		g, key := buildEdge("")
+		idx := classify.Run(g, config.ClassifyConfig{Modules: modules, LLMLabels: llmModel})
+		cl := idx[key]
+		if cl.Strength != coupling.StrengthModel {
+			t.Errorf("strength = %q, want model (llm label fills the abstained cell)", cl.Strength)
+		}
+		if !cl.StrengthFromLLM {
+			t.Error("StrengthFromLLM = false, want true (drives classified_edges.labeled_llm)")
+		}
+		if !cl.Score.Scored {
+			t.Error("Score.Scored = false, want true (filled edge enters coupling_balance)")
+		}
+	})
+
+	t.Run("never overrides the Go type-info hint", func(t *testing.T) {
+		g, key := buildEdge(hintFunctional)
+		idx := classify.Run(g, config.ClassifyConfig{Modules: modules, LLMLabels: llmModel})
+		cl := idx[key]
+		if cl.Strength != coupling.StrengthFunctional {
+			t.Errorf("strength = %q, want functional (compiler-grade hint beats llm label)", cl.Strength)
+		}
+		if cl.StrengthFromLLM {
+			t.Error("StrengthFromLLM = true, want false (label did not apply)")
+		}
+	})
+
+	t.Run("never refines a config public-glob contract floor", func(t *testing.T) {
+		withPublic := map[string]config.ModuleDef{
+			"a": {Paths: []string{globPkgA}},
+			"b": {Paths: []string{globPkgB}, Public: []string{globPkgB}},
+		}
+		g, key := buildEdge("")
+		idx := classify.Run(g, config.ClassifyConfig{Modules: withPublic, LLMLabels: llmModel})
+		if got := idx[key].Strength; got != coupling.StrengthContract {
+			t.Errorf("strength = %q, want contract (config-authoritative floor stands)", got)
+		}
+	})
+
+	t.Run("never overrides config-authoritative intrusive", func(t *testing.T) {
+		withInternal := map[string]config.ModuleDef{
+			"a": {Paths: []string{globPkgA}},
+			"b": {Paths: []string{globPkgB}, Internal: []string{globPkgB}},
+		}
+		g, key := buildEdge("")
+		idx := classify.Run(g, config.ClassifyConfig{Modules: withInternal, LLMLabels: llmModel})
+		if got := idx[key].Strength; got != coupling.StrengthIntrusive {
+			t.Errorf("strength = %q, want intrusive (internal glob is authoritative)", got)
+		}
+	})
+
+	t.Run("directional: reverse-pair label does not apply", func(t *testing.T) {
+		g, key := buildEdge("")
+		idx := classify.Run(g, config.ClassifyConfig{
+			Modules:   modules,
+			LLMLabels: map[string]string{"b\x00a": pinnedModel},
+		})
+		if got := idx[key].Strength; got != coupling.StrengthUnknown {
+			t.Errorf("strength = %q, want unknown (label is directional)", got)
+		}
+	})
+
+	t.Run("not overridden by the clone-Symmetric upgrade", func(t *testing.T) {
+		g, key := buildEdge("")
+		idx := classify.Run(g, config.ClassifyConfig{
+			Modules:               modules,
+			LLMLabels:             llmModel,
+			CrossModuleClonePairs: map[string]struct{}{labelKeyAB: {}},
+		})
+		if got := idx[key].Strength; got != coupling.StrengthModel {
+			t.Errorf("strength = %q, want model (approved llm label pins the seam)", got)
 		}
 	})
 }

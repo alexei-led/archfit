@@ -125,6 +125,11 @@ type Classification struct {
 	// — appended onto the finding's Locations downstream (engine/advisories.go),
 	// never fed into distance/volatility/scoring.
 	CloneLocations []graph.Location `json:"clone_locations,omitempty"`
+	// StrengthFromLLM records that Strength came from an approved
+	// llm-provenance label filling a cell every static source left unknown.
+	// Report-only — drives the classified_edges.labeled_llm disclosure count,
+	// never scoring.
+	StrengthFromLLM bool `json:"strength_from_llm,omitempty"`
 }
 
 // Index maps each edge's canonical key (from + "\x00" + to + "\x00" + kind)

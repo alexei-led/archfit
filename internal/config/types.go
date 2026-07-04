@@ -147,10 +147,18 @@ type ClassifyConfig struct {
 	ModuleMap             ModuleMap
 	BCAdvisoryMinSeverity string // minimum severity to emit BC coupling advisories
 	// ApprovedLabels pins integration strength per ordered module pair, keyed
-	// by from+"\x00"+to (labels.Key). Human-approved enrich output, validated
-	// for freshness by the engine before injection. Precedence in classify:
-	// config globs > approved labels > extractor hint.
+	// by from+"\x00"+to (labels.Key). Human-approved enrich output with
+	// human/tool provenance, validated for freshness by the engine before
+	// injection. Precedence in classify: config globs > approved labels >
+	// extractor hint.
 	ApprovedLabels map[string]string
+	// LLMLabels pins integration strength for approved labels whose judgment
+	// came from an LLM (provenance: llm), same keying as ApprovedLabels.
+	// Weaker precedence: an llm label only fills a cell every static source
+	// left unknown (no config glob, no extractor/type-info/SCIP hint) — it
+	// never displaces a static classification (compiler-grade beats LLM, the
+	// same rule as SCIP-for-Go).
+	LLMLabels map[string]string
 	// Scorer is the coupling scorer applied to each cross-boundary edge.
 	// When nil, classify.Run uses coupling.DefaultScorer() (MultiplicativeScorer, locked Task 16).
 	Scorer coupling.Scorer

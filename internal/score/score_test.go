@@ -470,6 +470,39 @@ func TestCouplingBalance_LLMProvenance_EvidenceString(t *testing.T) {
 	}
 }
 
+// TestCouplingBalance_LabeledLLM_EvidenceString verifies the labeled_llm
+// bucket is disclosed on the evidence line (attributing the scored-fraction
+// increase to the semantic layer) and stays silent when zero.
+func TestCouplingBalance_LabeledLLM_EvidenceString(t *testing.T) {
+	nonDegen := nonDegenMetricIndex()
+
+	hasLine := func(evidence []string) bool {
+		for _, ev := range evidence {
+			if strings.Contains(ev, "llm-labeled edges: 4") {
+				return true
+			}
+		}
+		return false
+	}
+
+	sum := &diagnostic.ClassifiedEdgeSummary{
+		Total: 10, Scored: 10, MeanBalance: 9.0,
+		BySeverity: map[string]int{sevLow: 10},
+		LabeledLLM: 4,
+	}
+	if got := couplingBalance(nil, nonDegen, sum); !hasLine(got.Evidence) {
+		t.Errorf("expected llm-labeled edge count in evidence, got: %v", got.Evidence)
+	}
+
+	sum.LabeledLLM = 0
+	got := couplingBalance(nil, nonDegen, sum)
+	for _, ev := range got.Evidence {
+		if strings.Contains(ev, "llm-labeled edges") {
+			t.Errorf("labeled_llm evidence line must be omitted when zero, got: %v", got.Evidence)
+		}
+	}
+}
+
 func TestCouplingBalance_DeclaredExternalEvidence(t *testing.T) {
 	nonDegen := nonDegenMetricIndex()
 

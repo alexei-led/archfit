@@ -76,8 +76,9 @@ func CloneOnlyPairs(g *graph.Graph, c config.ClassifyConfig) []CloneOnlyPair {
 		if !ok {
 			continue
 		}
-		if pairLabelApproved(c.ApprovedLabels, fromMod, toMod) {
-			continue // a reviewer accepted this seam — mirrors the fromPin guard
+		if pairLabelApproved(c.ApprovedLabels, fromMod, toMod) ||
+			pairLabelApproved(c.LLMLabels, fromMod, toMod) {
+			continue // a reviewer accepted this seam (any provenance) — mirrors the fromPin guard
 		}
 		locs := c.CloneEvidence[key]
 		fromPath, toPath := pairRepresentativePaths(locs, fromMod, toMod, mi)

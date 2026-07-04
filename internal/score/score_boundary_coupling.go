@@ -142,13 +142,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			}
 			dim.Evidence = append(dim.Evidence, line)
 		}
-		if llmConfLowered {
-			dim.Evidence = append(dim.Evidence,
-				fmt.Sprintf("llm-provenance labels in effect: %d (confidence lowered)", summary.LLMApproved))
-		} else if summary.LLMApproved > 0 {
-			dim.Evidence = append(dim.Evidence,
-				fmt.Sprintf("llm-provenance labels in effect: %d", summary.LLMApproved))
-		}
+		dim.Evidence = appendLLMLabelEvidence(dim.Evidence, summary, llmConfLowered)
 		switch {
 		case dmCount > 0:
 			dim.Summary = "unbalanced coupling: distributed-monolith edges (high strength × high distance × high volatility) present"
@@ -209,6 +203,26 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		dim.Summary = "coupling carries elevated maintenance effort but no distributed-monolith edges"
 	}
 	return dim
+}
+
+// appendLLMLabelEvidence appends the llm-label disclosure lines: the approved
+// llm-provenance label count (with the confidence-lowering note when it
+// applied) and the labeled_llm edge bucket, which attributes the
+// scored-fraction increase to the semantic layer — edges whose strength exists
+// only because an approved llm label filled an otherwise-abstained cell.
+func appendLLMLabelEvidence(evidence []string, summary *diagnostic.ClassifiedEdgeSummary, llmConfLowered bool) []string {
+	if llmConfLowered {
+		evidence = append(evidence,
+			fmt.Sprintf("llm-provenance labels in effect: %d (confidence lowered)", summary.LLMApproved))
+	} else if summary.LLMApproved > 0 {
+		evidence = append(evidence,
+			fmt.Sprintf("llm-provenance labels in effect: %d", summary.LLMApproved))
+	}
+	if summary.LabeledLLM > 0 {
+		evidence = append(evidence,
+			fmt.Sprintf("llm-labeled edges: %d (strength from approved llm-provenance labels)", summary.LabeledLLM))
+	}
+	return evidence
 }
 
 // bcEdge is a parsed Balanced-Coupling advisory edge (a rollup of count

@@ -140,8 +140,9 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 
 	// --- Stage 3: Classify ---
 	// Pinned coupling labels first: approved entries refine strength
-	// classification (precedence: config globs > approved labels > extractor
-	// hint); stale ones surface as labels/stale advisories.
+	// classification (human/tool: config globs > approved labels > extractor
+	// hint; llm: fills only cells all static sources left unknown); stale ones
+	// surface as labels/stale advisories.
 	classifyCfg := in.Classify
 	staleLabelFindings, llmApprovedCount := applyPinnedLabels(ex.g, &classifyCfg, in.Mode, in.Labels)
 

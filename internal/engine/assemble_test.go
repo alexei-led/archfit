@@ -395,6 +395,42 @@ func TestBuildClassifiedEdgeSummary_DeclaredExternal(t *testing.T) {
 	}
 }
 
+// TestBuildClassifiedEdgeSummary_LabeledLLM verifies the labeled_llm bucket
+// counts cross-boundary edges whose strength came from an approved
+// llm-provenance label — and only those (same-module edges are excluded with
+// the rest of the same-module distribution).
+func TestBuildClassifiedEdgeSummary_LabeledLLM(t *testing.T) {
+	key := func(from, to, kind string) string { return from + "\x00" + to + "\x00" + kind }
+	idx := coupling.Index{
+		key("internal/a", "internal/b", "import"): {
+			Distance:        coupling.DistanceCrossModuleSameOwner,
+			Strength:        coupling.StrengthModel,
+			StrengthFromLLM: true,
+			Score:           coupling.EdgeScore{Scored: true, Balance: 7, Band: coupling.SeverityNone},
+		},
+		key("internal/a", "internal/c", "import"): {
+			Distance: coupling.DistanceCrossModuleSameOwner,
+			Strength: coupling.StrengthContract,
+			Score:    coupling.EdgeScore{Scored: true, Balance: 9, Band: coupling.SeverityNone},
+		},
+		key("internal/a", "internal/a/sub", "import"): {
+			Distance:        coupling.DistanceSameModule,
+			Strength:        coupling.StrengthModel,
+			StrengthFromLLM: true, // must not count: same-module edges stay out of the distribution
+			Score:           coupling.EdgeScore{Scored: true, Balance: 3, Band: coupling.SeverityNone},
+		},
+	}
+
+	s := buildClassifiedEdgeSummary(idx)
+
+	if s.LabeledLLM != 1 {
+		t.Errorf("LabeledLLM = %d, want 1 (cross-boundary llm-filled edge only)", s.LabeledLLM)
+	}
+	if s.Scored != 2 {
+		t.Errorf("Scored = %d, want 2", s.Scored)
+	}
+}
+
 // TestGroupEdgePaths pins the honest-edge-path contract for rolled-up BC
 // advisories: the (from, to) pair comes from whichever member owns the first
 // merged location; with no locations (TS edges carry none) or no owning

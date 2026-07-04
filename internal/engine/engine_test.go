@@ -1679,6 +1679,105 @@ func TestRun_PinnedLabels(t *testing.T) {
 	})
 }
 
+// TestRun_LLMLabels_FillDeterminismAndBucket is the Wave 7 Task 2 guard: with a
+// committed llm-provenance label the full pipeline is byte-identical across two
+// runs (the LLM ran at enrich time, never here), the filled edge is attributed
+// in classified_edges.labeled_llm, and removing the label returns the edge to
+// the abstained bucket — no residue of the fill.
+func TestRun_LLMLabels_FillDeterminismAndBucket(t *testing.T) {
+	ctx := context.Background()
+
+	// Modules with paths only and a hint-less edge (cleanFacts): every static
+	// source abstains, so the llm label is the only strength source.
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"a": {Paths: []string{globModuleA}},
+			"b": {Paths: []string{globModuleB}},
+		},
+	}
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+	rs, err := rules.New(cfg.ForRules())
+	if err != nil {
+		t.Fatalf("rules.New: %v", err)
+	}
+	now := time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC)
+	freshHash := labels.HashItems([]string{pathFileA + "\x00" + pathFileBAPIService + "\x00imports"})
+
+	run := func(lbls []labels.Label) (diagnostic.Diagnostic, []byte) {
+		t.Helper()
+		d, runErr := engine.Run(ctx, engine.RunInput{
+			Mode:        engine.Mode{Full: true, Advisory: true},
+			Scope:       scope.Scope{Root: "."},
+			Classify:    cfg.ForClassify(),
+			Staleness:   config.StalenessConfig{},
+			Waivers:     config.WaiverSet{},
+			Extractors:  []ports.Extractor{ex},
+			Patterns:    ports.NopPatternProvider{},
+			Resolver:    ports.NopSymbolResolver{},
+			PatternCfg:  config.PatternConfig{},
+			Rules:       rs,
+			Metrics:     metrics.New(config.Config{Version: 1}),
+			Accepted:    baseline.Baseline{},
+			BaseMetrics: nil,
+			Labels:      lbls,
+			Signals:     signal.RunSignals{},
+			Now:         now,
+		})
+		if runErr != nil {
+			t.Fatalf("Run: %v", runErr)
+		}
+		raw, mErr := json.Marshal(d)
+		if mErr != nil {
+			t.Fatalf("marshal: %v", mErr)
+		}
+		return d, raw
+	}
+
+	llmLabel := []labels.Label{{
+		From: "a", To: "b", Strength: strengthModel,
+		EvidenceHash: freshHash, Status: labels.StatusApproved,
+		Provenance: labels.ProvenanceLLM, Confidence: labels.ConfidenceMedium,
+	}}
+
+	labeled, firstRaw := run(llmLabel)
+	_, secondRaw := run(llmLabel)
+	if !bytes.Equal(firstRaw, secondRaw) {
+		t.Error("two full runs with a committed llm label differ — gate determinism broken")
+	}
+
+	ce := labeled.ClassifiedEdges
+	if ce == nil {
+		t.Fatal("classified_edges missing")
+	}
+	if ce.LabeledLLM != 1 {
+		t.Errorf("labeled_llm = %d, want 1 (fill attributed to the semantic layer)", ce.LabeledLLM)
+	}
+	if ce.Abstained != 0 {
+		t.Errorf("abstained = %d, want 0 (llm label filled the only unknown cell)", ce.Abstained)
+	}
+	if ce.Scored < 1 {
+		t.Errorf("scored = %d, want >= 1", ce.Scored)
+	}
+
+	// Labels removed → the abstain returns.
+	bare, _ := run(nil)
+	if bare.ClassifiedEdges == nil {
+		t.Fatal("classified_edges missing on bare run")
+	}
+	if bare.ClassifiedEdges.LabeledLLM != 0 {
+		t.Errorf("labeled_llm = %d, want 0 without labels", bare.ClassifiedEdges.LabeledLLM)
+	}
+	if bare.ClassifiedEdges.Abstained != 1 {
+		t.Errorf("abstained = %d, want 1 (abstain returns when the label is deleted)", bare.ClassifiedEdges.Abstained)
+	}
+}
+
 // langPyTest / kindLazy are factored out so the dynamic-import test stays under
 // goconst's repeated-literal threshold.
 const (
