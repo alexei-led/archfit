@@ -58,12 +58,12 @@ Wave 5 of 7 from `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` (§1 deviations
 
 ### Task 5: Corpus verification (four languages)
 
-- [ ] Rust — herdr: evidence shows `inherited:` dominance explicitly; overriding one submodule's volatility in a scratch config changes only its edges
-- [ ] Rust — yazi: `local_coupling` block present; coupling_balance value unchanged vs post-Wave-4 baseline (denominator untouched)
-- [ ] Go — archfit self: dogfood gate still PASS; new `bc/duplicated_knowledge` — inject a scratch cross-module copy-paste in a worktree, verify the advisory fires with both locations, then discard
-- [ ] Python — ccgram / prefect: `local_coupling` populated from dotted intra-package edges; no new gate trips
-- [ ] TypeScript — storybook: run completes; advisory counts sane (no clone-pair flood — if jscpd floods on generated code, verify FileClass Production filtering applies to clone facts)
-- [ ] corpus clean; `make all`; PR
+- [x] Rust — herdr: evidence shows `inherited:` dominance explicitly; overriding one submodule's volatility in a scratch config changes only its edges — evidence line reads `volatility provenance (modules): declared: 1, inherited: 178, cascade: 0`; scratch config module keyed `herdr::persist::io` (exact `::` glob, volatility low): exactly 1 of 630 advisories changed (high/score 5/medium → low/score 8/low), 0 added/removed, siblings `::restore`/`::snapshot` keep inherited high, provenance became declared 2/inherited 177
+- [x] Rust — yazi: `local_coupling` block present; coupling_balance value unchanged vs post-Wave-4 baseline (denominator untouched) — shipped config (cargo_modules off) has 0 same-module edges by construction (crate-level graph, block correctly omitted); old-vs-new binary byte-identical (60/mixed, 66 scored, 144 abstained); cargo_modules scratch config with underscore lib-name globs (`yazi_fs::*` — dash package-name globs match nothing) yields 2526 same-module edges, block present, coupling_balance STILL 60/66 scored; all same-module entries abstain on unknown SCIP strength (pre-existing yazi SCIP-strength gap, abstain-not-fake)
+- [x] Go — archfit self: dogfood gate still PASS; new `bc/duplicated_knowledge` — inject a scratch cross-module copy-paste in a worktree, verify the advisory fires with both locations, then discard — staleness helpers copied into `internal/extract/dynimports` (no import edge between the pair, compiles) fired `bc/duplicated_knowledge` `internal/extract/dynimports<->internal/staleness` with both files in `locations[]`; worktree removed
+- [x] Python — ccgram / prefect: `local_coupling` populated from dotted intra-package edges; no new gate trips — ccgram 16 / prefect 15 modules (e.g. `prefect.blocks.abstract→prefect.blocks.core`); 0 gate findings on both; ccgram old-vs-new binary byte-identical (warn/55/497 scored); prefect matches the v1.1.2 eval headline (pass/53/935 scored)
+- [x] TypeScript — storybook: run completes; advisory counts sane (no clone-pair flood — if jscpd floods on generated code, verify FileClass Production filtering applies to clone facts) — exit 0/pass on the code/ subtree; 15 `bc/duplicated_knowledge` + 39 imbalanced advisories, no flood; jscpd ok (3468 files); local_coupling 18 modules; 48/mixed, 310 scored matches the v1.1.2 eval (scip honestly `absent` — no node_modules)
+- [x] corpus clean; `make all`; PR — prefect/storybook left spotless, herdr/yazi untracked files predate these runs (Jun 26 mtimes); make all green (fmt, lint, test, dogfood PASS); branch pushed → PR #25 carries Wave 5
 
 ### Task 6: [Final] Documentation
 
@@ -78,3 +78,5 @@ Wave 5 of 7 from `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` (§1 deviations
 ## Post-Completion
 
 - After a few weeks of corpus/self dogfooding, decide whether `bc/duplicated_knowledge` earns a gate default (`warn`); revisit with real false-positive data.
+- Shakedown observation (Task 5, yazi + cargo_modules): `buildLocalCoupling` emits an entry for every module with same-module edges even when ALL of them abstained — 597 zero-`scored_edges` entries on yazi. Consider omitting zero-scored modules to honor the "small enough not to bloat the JSON" design note.
+- Shakedown observation (Task 5, storybook): `local_coupling` worst-offenders surface test→prod same-module edges (`a11yRunner.test.ts → a11yRunner.ts`); decide whether same-module scoring should filter to Production files like the size metrics do.
