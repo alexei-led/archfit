@@ -359,7 +359,7 @@ func (p *flexFakeProvider) Complete(_ context.Context, req llm.Request) (llm.Res
 		if strings.HasPrefix(line, "- module: ") {
 			name := strings.TrimSpace(strings.TrimPrefix(line, "- module: "))
 			entries = append(entries, fmt.Sprintf(
-				`{"module":%q,"subdomain":%q,"volatility":%q,"layer":%q,"name":"","rationale":"test"}`,
+				`{"module":%q,"subdomain":%q,"volatility":%q,"layer":%q,"name":"","rationale":"test cites diag:test","evidence_refs":["diag:test"],"basis":"semantic_judgment"}`,
 				name, p.subdomain, p.volatility, p.layer,
 			))
 		}

@@ -130,10 +130,7 @@ Evidence IDs use stable prefixes:
 The builder sorts sources deterministically, caps each source type separately,
 truncates each item, skips hidden/vendor/cache directories, and excludes
 secret-like paths such as `.env`, credentials, tokens, keys, certificates, and
-files whose names contain `secret`. Prompts ask models to cite these IDs in
-rationales when the evidence is relevant. Later draft files may promote those IDs
-into structured review metadata, but default plan mode still leaves config
-unchanged.
+files whose names contain `secret`. Prompts require models to cite these IDs in structured `evidence_refs` for every proposed module field, owner, volatility, subdomain, and rule change. Each proposal also carries `basis: deterministic_fact` when it only restates tool/config evidence, or `basis: semantic_judgment` when the model is making an architectural judgment. Draft files and update reports keep that metadata for review, while default plan mode still leaves config unchanged.
 
 ## Cost and token expectations
 
@@ -193,6 +190,9 @@ archfit config enrich owner --apply  # writes approved entries into modules.<nam
   `.archfit-volatility.yaml`.
 - `subdomain` suggests `core` / `supporting` / `generic` per module into
   `.archfit-subdomains.yaml`.
+- Every owner, volatility, and subdomain draft includes `rationale`, `evidence_refs`,
+  and `basis` so reviewers can see what facts were cited and whether the entry is
+  deterministic evidence or semantic judgment.
 - `--apply` writes only `status: approved` entries into `modules.<name>` and
   **never overwrites a live field** — drafts for already-set fields are skipped.
 - These never touch coupling strength (that is the `labels` subcommand) and never
@@ -215,15 +215,23 @@ then move approved fields into the live config deliberately, or re-run with
 `--apply` to write approved values live. Same provider, cache, and key handling
 as the other LLM commands.
 
-## config update --llm — subdomain and volatility proposals
+## config update --llm — cited module and rule proposals
 
 `archfit config update --llm` adds a semantic review section to the normal config
 drift report. It proposes per-module `subdomain: core|supporting|generic`, the
 derived volatility it would imply, layer suggestions, and optional architectural
 `role` values (`composition_root|adapter|core|shared_model|generated|test`),
 with rationale tied to README, module names, docs headings, and public API shape.
+Each module proposal includes `basis` and `evidence_refs`.
+
+The same response may include review-only rule suggestions for deterministic
+config mechanisms only: `forbidden_dependency`, `forbidden_role_dependency`,
+`public_api_max`, `public_api_change`, and `coupling.gate` tuning. Unsupported
+rule types and suggestions missing evidence refs are rejected instead of being
+written as half-understood config.
+
 The proposal is a diff for human review; it does not auto-apply LLM semantic
-judgments into `.archfit.yaml`.
+judgments or rule suggestions into `.archfit.yaml`.
 
 Synthetic modules are valid proposal targets, so large Rust crate trees and Go
 workspace members can get differentiated role/volatility review instead of

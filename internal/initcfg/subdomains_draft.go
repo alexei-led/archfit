@@ -17,11 +17,13 @@ const (
 
 // SubdomainDraft is one LLM-suggested subdomain assignment awaiting human review.
 type SubdomainDraft struct {
-	Module     string `yaml:"module"`
-	Subdomain  string `yaml:"subdomain"`  // llm draft: core|supporting|generic
-	Volatility string `yaml:"volatility"` // llm draft: low|medium|high (may be empty)
-	Rationale  string `yaml:"rationale"`
-	Status     string `yaml:"status"` // SubdomainStatusDraft or SubdomainStatusApproved
+	Module       string   `yaml:"module"`
+	Subdomain    string   `yaml:"subdomain"`  // llm draft: core|supporting|generic
+	Volatility   string   `yaml:"volatility"` // llm draft: low|medium|high (may be empty)
+	Rationale    string   `yaml:"rationale"`
+	EvidenceRefs []string `yaml:"evidence_refs,omitempty"`
+	Basis        string   `yaml:"basis,omitempty"` // deterministic_fact or semantic_judgment
+	Status       string   `yaml:"status"`          // SubdomainStatusDraft or SubdomainStatusApproved
 }
 
 // SubdomainDraftFile is the top-level container for .archfit-subdomains.yaml.

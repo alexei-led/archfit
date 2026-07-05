@@ -257,11 +257,13 @@ func (c *enrichFlags) runSubdomainDraft(ctx context.Context, deps *appDeps) erro
 			continue
 		}
 		newDrafts = append(newDrafts, initcfg.SubdomainDraft{
-			Module:     t.Name,
-			Subdomain:  a.Subdomain,
-			Volatility: a.Volatility,
-			Rationale:  a.Rationale,
-			Status:     initcfg.SubdomainStatusDraft,
+			Module:       t.Name,
+			Subdomain:    a.Subdomain,
+			Volatility:   a.Volatility,
+			Rationale:    a.Rationale,
+			EvidenceRefs: a.EvidenceRefs,
+			Basis:        a.Basis,
+			Status:       initcfg.SubdomainStatusDraft,
 		})
 	}
 

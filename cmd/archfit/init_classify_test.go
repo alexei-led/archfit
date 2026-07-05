@@ -205,6 +205,46 @@ func TestClassifyModules_MissingRationaleError(t *testing.T) {
 	}
 }
 
+func TestClassifyModulesWithEvidence_MissingEvidenceRefsError(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test","basis":"semantic_judgment"}]`
+	p := &fakeClassifyProvider{responses: []string{resp}}
+
+	_, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{"doc:README.md (doc) README.md: Architecture"})
+	if err == nil {
+		t.Fatal("missing evidence_refs must return an error")
+	}
+	if !strings.Contains(err.Error(), "missing evidence_refs") {
+		t.Fatalf("error = %v, want missing evidence_refs", err)
+	}
+}
+
+func TestClassifyModulesWithEvidence_ParsesRuleSuggestions(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment","rule_suggestions":[{"id":"no-mod0-to-adapter","type":"forbidden_dependency","from":"internal/mod0/**","to":"internal/adapter/**","gate":"warn","rationale":"test cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}]}]`
+	p := &fakeClassifyProvider{responses: []string{resp}}
+
+	got, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{"doc:README.md (doc) README.md: Architecture"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ann := got[testMod0]
+	if len(ann.EvidenceRefs) != 1 || ann.Basis != "semantic_judgment" {
+		t.Fatalf("annotation missing metadata: %+v", ann)
+	}
+	if len(ann.RuleSuggestions) != 1 {
+		t.Fatalf("rule suggestions = %+v, want one", ann.RuleSuggestions)
+	}
+	rule := ann.RuleSuggestions[0]
+	if rule.Type != ruleTypeForbiddenDependency || len(rule.EvidenceRefs) != 1 || rule.Basis != initcfg.DraftBasisSemanticJudgment {
+		t.Fatalf("bad rule suggestion: %+v", rule)
+	}
+}
+
 func TestClassifyUserPrompt_IncludesRepoEvidenceAndPublicAPI(t *testing.T) {
 	t.Parallel()
 	targets := []initcfg.ClassifyTarget{{

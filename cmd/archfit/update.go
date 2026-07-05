@@ -73,6 +73,9 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		return err
 	}
 	if c.LLM && ann != nil {
+		report.RuleSuggestions = ruleSuggestionsFromAnnotations(ann)
+	}
+	if c.LLM && ann != nil {
 		warnTargets := initcfg.BuildClassifyTargets(root, classifyTargetsForUpdate(cfg, report, addedNames))
 		warnPartialClassify(deps.Stdout, warnTargets, ann)
 	}
@@ -274,6 +277,37 @@ func classifyTargetsForUpdate(
 // written by config update --apply.
 func hasActionableEdits(report initcfg.UpdateReport) bool {
 	return len(report.Added) > 0 || len(report.Removed) > 0 || len(report.PathDrift) > 0
+}
+
+func ruleSuggestionsFromAnnotations(ann map[string]initcfg.ModuleAnnotation) []initcfg.RuleSuggestion {
+	if len(ann) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]initcfg.RuleSuggestion, 0)
+	for module, a := range ann {
+		for _, suggestion := range a.RuleSuggestions {
+			if suggestion.SourceModule == "" {
+				suggestion.SourceModule = module
+			}
+			key := strings.Join([]string{suggestion.Type, suggestion.ID, suggestion.From, suggestion.To, suggestion.SourceModule}, "\x00")
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, suggestion)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Type != out[j].Type {
+			return out[i].Type < out[j].Type
+		}
+		if out[i].ID != out[j].ID {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].SourceModule < out[j].SourceModule
+	})
+	return out
 }
 
 // buildUpdateEdits constructs the ordered Edit slice for an apply pass.

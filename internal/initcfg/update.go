@@ -29,6 +29,7 @@ type UpdateReport struct {
 	Removed          []ExistingModule
 	PathDrift        []PathDelta
 	Unclassified     []string
+	RuleSuggestions  []RuleSuggestion
 	StructuralInSync bool
 }
 
@@ -153,6 +154,8 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef) UpdateReport {
 //     module paths with the discovered paths and writes a backup.
 //   - UNCLASSIFIED: modules missing classification; shows LLM suggestion from ann when
 //     present, otherwise suggests running with --llm.
+//   - RULE SUGGESTIONS: review-only deterministic rule or coupling.gate proposals
+//     with rationale, basis, and evidence refs; update/apply never writes them.
 //   - When r.StructuralInSync is true, emits a "structurally in sync" line.
 //
 // Output is deterministic. Must not import internal/config or internal/llm.
@@ -169,9 +172,7 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 				}
 			}
 			writeModuleStanza(&b, m.Name, m, allowedLayers, moduleAnn, true)
-			if moduleAnn != nil && moduleAnn.Rationale != "" {
-				fmt.Fprintf(&b, "    # rationale: %s\n", sanitizeComment(moduleAnn.Rationale))
-			}
+			writeModuleAnnotationComments(&b, moduleAnn)
 		}
 	}
 
@@ -185,9 +186,7 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 				}
 			}
 			writeModuleStanza(&b, m.Name, m, allowedLayers, moduleAnn, true)
-			if moduleAnn != nil && moduleAnn.Rationale != "" {
-				fmt.Fprintf(&b, "    # rationale: %s\n", sanitizeComment(moduleAnn.Rationale))
-			}
+			writeModuleAnnotationComments(&b, moduleAnn)
 		}
 	}
 
@@ -221,11 +220,33 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 		}
 	}
 
+	if len(r.RuleSuggestions) > 0 {
+		fmt.Fprintf(&b, "RULE SUGGESTIONS (%d review-only config proposal(s) — apply manually after review):\n", len(r.RuleSuggestions))
+		for _, s := range r.RuleSuggestions {
+			writeRuleSuggestion(&b, s)
+		}
+	}
+
 	if r.StructuralInSync {
 		b.WriteString("structurally in sync — no modules added, removed, or path-drifted\n")
 	}
 
 	return b.String()
+}
+
+func writeModuleAnnotationComments(b *strings.Builder, ann *ModuleAnnotation) {
+	if ann == nil {
+		return
+	}
+	if ann.Basis != "" {
+		fmt.Fprintf(b, "    # basis: %s\n", sanitizeComment(ann.Basis))
+	}
+	if len(ann.EvidenceRefs) > 0 {
+		fmt.Fprintf(b, "    # evidence_refs: %s\n", joinEvidenceRefs(ann.EvidenceRefs))
+	}
+	if ann.Rationale != "" {
+		fmt.Fprintf(b, "    # rationale: %s\n", sanitizeComment(ann.Rationale))
+	}
 }
 
 func writeAnnotationDiff(b *strings.Builder, name string, a ModuleAnnotation) {
@@ -242,9 +263,66 @@ func writeAnnotationDiff(b *strings.Builder, name string, a ModuleAnnotation) {
 	if a.Role != "" {
 		fmt.Fprintf(b, "    + role: %s\n", sanitizeComment(a.Role))
 	}
+	if a.Basis != "" {
+		fmt.Fprintf(b, "    basis: %s\n", sanitizeComment(a.Basis))
+	}
+	if len(a.EvidenceRefs) > 0 {
+		fmt.Fprintf(b, "    evidence_refs: %s\n", joinEvidenceRefs(a.EvidenceRefs))
+	}
 	if a.Rationale != "" {
 		fmt.Fprintf(b, "    rationale: %s\n", sanitizeComment(a.Rationale))
 	}
+}
+
+func writeRuleSuggestion(b *strings.Builder, s RuleSuggestion) {
+	fmt.Fprintf(b, "  - type: %s\n", sanitizeComment(s.Type))
+	if s.ID != "" {
+		fmt.Fprintf(b, "    id: %s\n", sanitizeComment(s.ID))
+	}
+	if s.SourceModule != "" {
+		fmt.Fprintf(b, "    source_module: %s\n", sanitizeComment(s.SourceModule))
+	}
+	if s.Gate != "" {
+		fmt.Fprintf(b, "    gate: %s\n", sanitizeComment(s.Gate))
+	}
+	if s.From != "" {
+		fmt.Fprintf(b, "    from: %s\n", sanitizeComment(s.From))
+	}
+	if s.To != "" {
+		fmt.Fprintf(b, "    to: %s\n", sanitizeComment(s.To))
+	}
+	if s.Max != nil {
+		fmt.Fprintf(b, "    max: %d\n", *s.Max)
+	}
+	if s.MinBand != "" {
+		fmt.Fprintf(b, "    min_band: %s\n", sanitizeComment(s.MinBand))
+	}
+	if s.MaxDrop != nil {
+		fmt.Fprintf(b, "    max_drop: %d\n", *s.MaxDrop)
+	}
+	if s.Basis != "" {
+		fmt.Fprintf(b, "    basis: %s\n", sanitizeComment(s.Basis))
+	}
+	if len(s.EvidenceRefs) > 0 {
+		fmt.Fprintf(b, "    evidence_refs: %s\n", joinEvidenceRefs(s.EvidenceRefs))
+	}
+	if s.Rationale != "" {
+		fmt.Fprintf(b, "    rationale: %s\n", sanitizeComment(s.Rationale))
+	}
+}
+
+func joinEvidenceRefs(refs []string) string {
+	if len(refs) == 0 {
+		return ""
+	}
+	cleaned := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		ref = strings.TrimSpace(ref)
+		if ref != "" {
+			cleaned = append(cleaned, sanitizeComment(ref))
+		}
+	}
+	return strings.Join(cleaned, ", ")
 }
 
 // joinPaths formats a path slice as a compact bracket list for report output.

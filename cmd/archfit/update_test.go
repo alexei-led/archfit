@@ -695,6 +695,62 @@ rules:
 	}
 }
 
+func TestUpdateCmd_LLMPlanMode_RendersCitedRuleSuggestionsAndLeavesFileUnchanged(t *testing.T) {
+	t.Parallel()
+	dir := minimalRoot(t)
+	cfg := `version: 1
+layers:
+  - core
+  - adapter
+modules:
+  mymod:
+    paths:
+      - "internal/mymod/**"
+rules:
+  - id: no-bad-deps
+    type: forbidden_dependency
+    gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
+`
+	cfgPath := writeConfig(t, dir, cfg)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := &UpdateCmd{
+		Config:           cfgPath,
+		Root:             dir,
+		LLM:              true,
+		Apply:            false,
+		LLMProvider:      providerAnthropic,
+		LLMModel:         defaultLLMModel,
+		providerOverride: &ruleSuggestionProvider{},
+	}
+	out, err := runUpdateCmd(t, cmd, matchingRunner("internal/mymod"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{
+		"RULE SUGGESTIONS",
+		"type: forbidden_dependency",
+		"id: no-adapter-to-core",
+		"evidence_refs: doc:README.md",
+		"basis: semantic_judgment",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	after, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("--llm plan mode with rule suggestions must leave config byte-unchanged")
+	}
+}
+
 // TestUpdateCmd_Apply_RoundTripsConfigLoad verifies that after a structural --apply
 // the written config is valid and loadable via config.Load.
 func TestUpdateCmd_Apply_RoundTripsConfigLoad(t *testing.T) {
@@ -747,6 +803,15 @@ func TestUpdateCmd_ChangedSinceReadAborts(t *testing.T) {
 		t.Errorf("error should mention 'changed since read'; got: %v", err)
 	}
 }
+
+type ruleSuggestionProvider struct{}
+
+func (p *ruleSuggestionProvider) Name() string { return "test/rule-suggestion" }
+func (p *ruleSuggestionProvider) Complete(_ context.Context, _ llm.Request) (llm.Response, error) {
+	return llm.Response{Text: `[{"module":"mymod","subdomain":"core","volatility":"low","layer":"core","name":"","rationale":"module classification cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment","rule_suggestions":[{"id":"no-adapter-to-core","type":"forbidden_dependency","gate":"warn","from":"adapter/**","to":"core/**","rationale":"adapter should not call core internals; see doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}]}]`}, nil
+}
+
+var _ llm.Provider = (*ruleSuggestionProvider)(nil)
 
 // TestUpdateCmd_LLM_WarnPartialClassify verifies that when the LLM omits a
 // module from its response, a warning is printed naming the unclassified module,
@@ -808,7 +873,7 @@ func (p *fakeOmitProvider) Complete(_ context.Context, req llm.Request) (llm.Res
 			name := strings.TrimSpace(strings.TrimPrefix(line, "- module: "))
 			if name == p.classifyName {
 				entries = append(entries, fmt.Sprintf(
-					`{"module":%q,"subdomain":"core","volatility":"low","layer":"core","name":"","rationale":"test"}`,
+					`{"module":%q,"subdomain":"core","volatility":"low","layer":"core","name":"","rationale":"test cites diag:test","evidence_refs":["diag:test"],"basis":"semantic_judgment"}`,
 					name,
 				))
 			}
@@ -834,7 +899,7 @@ func (rustSyntheticProvider) Complete(_ context.Context, req llm.Request) (llm.R
 		if strings.HasPrefix(line, "- module: ") {
 			name := strings.TrimSpace(strings.TrimPrefix(line, "- module: "))
 			entries = append(entries, fmt.Sprintf(
-				`{"module":%q,"subdomain":"supporting","volatility":"low","layer":"core","role":"core","name":"","rationale":"synthetic module review"}`,
+				`{"module":%q,"subdomain":"supporting","volatility":"low","layer":"core","role":"core","name":"","rationale":"synthetic module review cites diag:test","evidence_refs":["diag:test"],"basis":"semantic_judgment"}`,
 				name,
 			))
 		}

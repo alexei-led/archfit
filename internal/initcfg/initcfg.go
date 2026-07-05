@@ -140,17 +140,45 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner) (Discover
 	}, nil
 }
 
+// Draft basis values distinguish deterministic facts from semantic judgments in
+// LLM draft metadata.
+const (
+	DraftBasisDeterministicFact = "deterministic_fact"
+	DraftBasisSemanticJudgment  = "semantic_judgment"
+)
+
+// RuleSuggestion is one review-only LLM proposal for a deterministic config rule
+// or coupling gate tuning. It is rendered for humans and never applied by plan or
+// update modes.
+type RuleSuggestion struct {
+	SourceModule string
+	ID           string
+	Type         string
+	Gate         string
+	From         string
+	To           string
+	Max          *int
+	MinBand      string
+	MaxDrop      *int
+	Rationale    string
+	EvidenceRefs []string
+	Basis        string
+}
+
 // ModuleAnnotation carries optional LLM-suggested metadata for a module.
 // Layer holds the raw LLM layer suggestion; whether it is written live vs as a
 // comment is decided in writeModuleStanza based on allowedLayers.
 type ModuleAnnotation struct {
-	Subdomain     string
-	Volatility    string
-	Owner         string
-	Layer         string
-	Role          string
-	SuggestedName string
-	Rationale     string
+	Subdomain       string
+	Volatility      string
+	Owner           string
+	Layer           string
+	Role            string
+	SuggestedName   string
+	Rationale       string
+	EvidenceRefs    []string
+	Basis           string
+	RuleSuggestions []RuleSuggestion
 }
 
 // sanitizeComment strips or replaces control characters (< 0x20 and DEL 0x7F),

@@ -128,11 +128,11 @@ Manual checks:
 
 - Review one draft and confirm each suggestion cites evidence and says whether it is deterministic fact or semantic judgment.
 
-- [ ] Extend LLM response schemas to require evidence refs for every proposed module/subdomain/volatility/owner/rule change.
-- [ ] Add rule suggestions for existing deterministic rule types only, e.g. `forbidden_dependency`, `forbidden_role_dependency`, `public_api_max`, `public_api_change`, and `coupling.gate` tuning.
-- [ ] Add tests that missing evidence refs reject or retry the response.
-- [ ] Add tests that default/plan mode leaves `.archfit.yaml` byte-unchanged.
-- [ ] Update docs for draft-review-apply semantics.
+- [x] Extend LLM response schemas to require evidence refs for every proposed module/subdomain/volatility/owner/rule change.
+- [x] Add rule suggestions for existing deterministic rule types only, e.g. `forbidden_dependency`, `forbidden_role_dependency`, `public_api_max`, `public_api_change`, and `coupling.gate` tuning.
+- [x] Add tests that missing evidence refs reject or retry the response.
+- [x] Add tests that default/plan mode leaves `.archfit.yaml` byte-unchanged.
+- [x] Update docs for draft-review-apply semantics.
 
 ### Task 3: Strengthen `analyze --llm` as an architect review, not a scorer
 

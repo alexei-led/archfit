@@ -47,10 +47,10 @@ var ownerSpec = valueSpec{
 	withCodeowners: true,
 	systemPrompt: `You are assigning a single responsible owner (a team handle or area name) to each software module.
 Use the CODEOWNERS entries (when provided), repository evidence IDs, module paths, and file names to infer the owning team.
-Prefer an existing CODEOWNERS owner whose path globs cover the module; otherwise infer a concise team/area name from the module's purpose. Cite evidence IDs in the rationale when repository evidence is relevant.
+Prefer an existing CODEOWNERS owner whose path globs cover the module; otherwise infer a concise team/area name from the module's purpose. Cite evidence IDs in evidence_refs and rationale when repository evidence is relevant.
 Respond with a STRICT JSON array only — no prose, no markdown fences. One object per module:
-[{"module":"<name>","value":"<owner>","rationale":"<one sentence>"}]
-Include every module exactly once.`,
+[{"module":"<name>","value":"<owner>","rationale":"<one sentence>","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}]
+Use basis "deterministic_fact" only when the value comes directly from CODEOWNERS or another deterministic fact; otherwise use "semantic_judgment". Include every module exactly once.`,
 }
 
 var volatilitySpec = valueSpec{
@@ -64,9 +64,9 @@ For each module pick one of:
 - "low": stable interfaces, rarely changes (foundational types, shared models).
 - "medium": changes occasionally as features land.
 - "high": frequently evolving (active feature work, churny adapters).
-Use repository evidence IDs, module paths, and file names. Cite evidence IDs in the rationale when repository evidence is relevant. Respond with a STRICT JSON array only — no prose, no markdown fences. One object per module:
-[{"module":"<name>","value":"low|medium|high","rationale":"<one sentence>"}]
-Include every module exactly once.`,
+Use repository evidence IDs, module paths, and file names. Cite evidence IDs in evidence_refs and rationale when repository evidence is relevant. Respond with a STRICT JSON array only — no prose, no markdown fences. One object per module:
+[{"module":"<name>","value":"low|medium|high","rationale":"<one sentence>","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}]
+Use basis "deterministic_fact" only when the value directly restates deterministic evidence; otherwise use "semantic_judgment". Include every module exactly once.`,
 }
 
 // runValueDraft drafts spec.field for every module that does not yet have it set,
@@ -202,9 +202,11 @@ func (c *enrichFlags) runValuePin(ctx context.Context, deps *appDeps, spec value
 
 // valueResponse mirrors one element of the model's JSON answer.
 type valueResponse struct {
-	Module    string `json:"module"`
-	Value     string `json:"value"`
-	Rationale string `json:"rationale"`
+	Module       string   `json:"module"`
+	Value        string   `json:"value"`
+	Rationale    string   `json:"rationale"`
+	EvidenceRefs []string `json:"evidence_refs"`
+	Basis        string   `json:"basis"`
 }
 
 // draftModuleValues sends targets to the LLM in batches and returns draft
@@ -220,7 +222,7 @@ func draftModuleValues(ctx context.Context, p llm.Provider, spec valueSpec, targ
 		if err != nil {
 			return nil, err
 		}
-		drafts, err := parseValueResponse(resp.Text, spec, batch)
+		drafts, err := parseValueResponse(resp.Text, spec, batch, len(repoEvidence) > 0)
 		if err != nil {
 			return nil, err
 		}
@@ -242,7 +244,7 @@ func valueUserPrompt(batch []initcfg.ClassifyTarget, codeowners string, repoEvid
 		for _, ev := range repoEvidence {
 			fmt.Fprintf(&b, "- %s\n", ev)
 		}
-		b.WriteString("\n")
+		b.WriteString("\nEvery proposed value must cite repository evidence IDs in evidence_refs and set basis to deterministic_fact or semantic_judgment.\n\n")
 	}
 	b.WriteString("Modules:\n")
 	for _, t := range batch {
@@ -260,7 +262,7 @@ func valueUserPrompt(batch []initcfg.ClassifyTarget, codeowners string, repoEvid
 // parseValueResponse strictly parses the model's JSON and keeps only entries for
 // requested modules with valid values. A malformed body is an error (never write
 // a half-understood draft file); unknown modules / invalid values are skipped.
-func parseValueResponse(text string, spec valueSpec, batch []initcfg.ClassifyTarget) ([]initcfg.ValueDraft, error) {
+func parseValueResponse(text string, spec valueSpec, batch []initcfg.ClassifyTarget, requireEvidence bool) ([]initcfg.ValueDraft, error) {
 	text = strings.TrimSpace(text)
 	text = strings.TrimPrefix(text, "```json")
 	text = strings.TrimPrefix(text, "```")
@@ -288,11 +290,22 @@ func parseValueResponse(text string, spec valueSpec, batch []initcfg.ClassifyTar
 		if spec.valid != nil && !spec.valid(v) {
 			continue
 		}
+		rationale := strings.TrimSpace(e.Rationale)
+		if rationale == "" {
+			return nil, fmt.Errorf("enrich --%s: entry %q missing rationale", spec.name, e.Module)
+		}
+		basis, refs, err := draftMetadata("enrich --"+spec.name+" entry", e.Module, e.Basis, e.EvidenceRefs, requireEvidence)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, initcfg.ValueDraft{
-			Module:    e.Module,
-			Value:     v,
-			Rationale: e.Rationale,
-			Status:    initcfg.DraftStatusDraft,
+			Module:       e.Module,
+			Value:        v,
+			Rationale:    rationale,
+			EvidenceRefs: refs,
+			Basis:        basis,
+			Status:       initcfg.DraftStatusDraft,
+			Provenance:   "llm",
 		})
 	}
 	return out, nil

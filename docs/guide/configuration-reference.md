@@ -1008,8 +1008,27 @@ The LLM authoring commands write proposals to review files, never to
 - `.archfit-autopilot.yaml` — a full commented config draft (`archfit config init --llm -o <file>`).
 
 Review each, then `config enrich <field> --apply` (or move the field manually) to write
-approved values into `modules.<name>`. Pinning never overwrites a live field. See
-[llm-enrich.md](llm-enrich.md).
+approved values into `modules.<name>`. Pinning never overwrites a live field.
+
+Module-field draft entries include review metadata:
+
+```yaml
+- module: payments
+  value: "@team-payments" # or subdomain: core / volatility: high
+  rationale: "doc:README.md describes Payments as the core domain"
+  evidence_refs:
+    - doc:README.md
+    - api:payments
+  basis: semantic_judgment # deterministic_fact | semantic_judgment
+  status: draft
+```
+
+`config update --llm` uses the same metadata in its report and can propose only
+existing deterministic rule mechanisms (`forbidden_dependency`,
+`forbidden_role_dependency`, `public_api_max`, `public_api_change`, and
+`coupling.gate` tuning). These rule suggestions are review-only text; plan/default
+mode never mutates `.archfit.yaml`, and unsupported or uncited suggestions are
+rejected before a draft is written. See [llm-enrich.md](llm-enrich.md).
 
 ### Label `confidence` and `provenance` fields
 

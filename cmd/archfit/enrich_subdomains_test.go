@@ -53,12 +53,12 @@ ai:
 }
 
 // classifyJSONFor builds the scripted provider JSON for a list of module names,
-// assigning fixed subdomain/volatility values.
+// assigning fixed cited subdomain/volatility values.
 func classifyJSONFor(names []string) string {
 	parts := make([]string, 0, len(names))
 	for _, n := range names {
 		parts = append(parts, fmt.Sprintf(
-			`{"module":%q,"subdomain":"core","volatility":"low","layer":"core","name":%q,"rationale":"test"}`,
+			`{"module":%q,"subdomain":"core","volatility":"low","layer":"core","name":%q,"rationale":"test cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}`,
 			n, n,
 		))
 	}
@@ -107,6 +107,9 @@ func TestEnrichSubdomainDraft(t *testing.T) {
 		}
 		if d.Subdomain == "" {
 			t.Errorf("draft %q has empty subdomain", d.Module)
+		}
+		if len(d.EvidenceRefs) == 0 || d.Basis == "" {
+			t.Errorf("draft %q missing evidence metadata: %+v", d.Module, d)
 		}
 	}
 }
