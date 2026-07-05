@@ -206,11 +206,11 @@ Manual checks:
 - Corpus spot checks: Go `archfit`, Python `ccgram` or `prefect`, Rust `herdr` or `yazi`, TypeScript `storybook`.
 - For each language, inspect at least five non-trivial LLM suggestions and record accepted/rejected counts plus reason.
 
-- [ ] Run deterministic corpus attribution before any LLM commands.
-- [ ] Run `config init --llm`, `config update --llm`, and relevant `config enrich` flows on scratch copies or temp output paths.
-- [ ] Confirm deterministic `analyze --gate` output is byte-identical before/after when drafts are not pinned.
-- [ ] Record accepted/rejected samples and key false positives in `docs/plans/notes/wave2-semantic-evidence-validation.md`.
-- [ ] Confirm all corpus worktrees are clean or only contain pre-existing untracked files.
+- [x] Run deterministic corpus attribution before any LLM commands.
+- [x] Run `config init --llm`, `config update --llm`, and relevant `config enrich` flows on scratch copies or temp output paths.
+- [x] Confirm deterministic `analyze --gate` output is byte-identical before/after when drafts are not pinned.
+- [x] Record accepted/rejected samples and key false positives in `docs/plans/notes/wave2-semantic-evidence-validation.md`.
+- [x] Confirm all corpus worktrees are clean or only contain pre-existing untracked files.
 
 ### Task 5: Final docs, examples, and re-review handoff
 
