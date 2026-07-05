@@ -161,6 +161,20 @@ func TestSelectRefinablePairs_StaleApprovedCanBeRedrafted(t *testing.T) {
 	}
 }
 
+func TestEnrichUserPrompt_IncludesRepositoryEvidenceIDs(t *testing.T) {
+	t.Parallel()
+	prompt := enrichUserPrompt(
+		config.Config{},
+		[]refinablePair{{From: modA, To: modB, Strength: enrichFunctional, EdgeCount: 1, SamplePaths: []string{"pkg/a/a.go -> pkg/b/b.go"}}},
+		[]string{"api:a (api) a: exported names: Service"},
+	)
+	for _, want := range []string{repositoryEvidenceHeader, "api:a", "exported names: Service", "from: a"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
 func TestParseEnrichResponse(t *testing.T) {
 	t.Parallel()
 	batch := []refinablePair{{From: modA, To: modB}}

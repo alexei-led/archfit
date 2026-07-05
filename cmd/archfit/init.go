@@ -80,7 +80,12 @@ func (c *InitCmd) Run(deps *appDeps) error {
 		}
 
 		targets := initcfg.BuildClassifyTargets(root, cfg.Modules)
-		ann, err = classifyModules(ctx, p, targets, cfg.Layers)
+		configPath := out
+		if configPath == "-" {
+			configPath = ""
+		}
+		repoEvidence := architectureEvidenceLines(root, cfg.Modules, configPath, discoveredEvidenceDiagnostics(cfg))
+		ann, err = classifyModulesWithEvidence(ctx, p, targets, cfg.Layers, repoEvidence)
 		if err != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("error: classify failed: %v", err)}
 		}
@@ -89,7 +94,7 @@ func (c *InitCmd) Run(deps *appDeps) error {
 		// Owner-draft pass (folded from the former `autopilot` command): suggest an
 		// owner per module so a full LLM draft (init --llm) carries owners too, not
 		// just subdomain/volatility/layer. Off-gate, review-only unless --apply.
-		ownerDrafts, derr := draftModuleValues(ctx, p, ownerSpec, targets, readCodeowners(root))
+		ownerDrafts, derr := draftModuleValues(ctx, p, ownerSpec, targets, readCodeowners(root), repoEvidence)
 		if derr != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("error: draft owners failed: %v", derr)}
 		}
@@ -160,7 +165,7 @@ For each module, determine:
 - layer: choose from the allowed layer set provided in the user prompt; pick the closest semantic match
 - role (optional): one of "composition_root" (wiring/main that fans out to everything), "adapter" (I/O boundary), "core" (domain logic), "shared_model" (cross-cutting types), "generated", or "test" — omit when none fits
 - name: a concise suggested module name (optional improvement; keep original if good)
-- rationale: one sentence referencing concrete repository evidence: README/docs headings, module names, paths, public API globs, or listed files
+- rationale: one sentence referencing concrete repository evidence: cite evidence IDs when provided, plus module names, paths, public API globs, or listed files
 
 Respond with a JSON ARRAY only — no prose, no markdown fences, no code blocks. Each entry must include a "module" field matching the provided module name exactly:
 [{"module":"<name>","subdomain":"core|supporting|generic","volatility":"low|medium|high","layer":"<from allowed set>","role":"<optional role or empty>","name":"<suggested>","rationale":"<one sentence>"}]`

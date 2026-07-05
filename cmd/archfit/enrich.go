@@ -166,7 +166,9 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 		return nil
 	}
 
-	drafts, err := draftLabels(ctx, provider, cfg, pairs)
+	root := scanRootForEvidence(configDir, c.Root)
+	repoEvidence := architectureEvidenceLines(root, configModulesForEvidence(cfg), c.Config, enrichEvidenceDiagnostics("enrich-labels", len(pairs)))
+	drafts, err := draftLabels(ctx, provider, cfg, pairs, repoEvidence)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -240,7 +242,8 @@ func (c *enrichFlags) runSubdomainDraft(ctx context.Context, deps *appDeps) erro
 		root = configDir
 	}
 	targets := initcfg.BuildClassifyTargets(root, toClassify)
-	ann, err := classifyModules(ctx, provider, targets, cfg.Layers)
+	repoEvidence := architectureEvidenceLines(root, toClassify, c.Config, enrichEvidenceDiagnostics("enrich-subdomain", len(targets)))
+	ann, err := classifyModulesWithEvidence(ctx, provider, targets, cfg.Layers, repoEvidence)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: classify failed: %v", err)}
 	}
@@ -490,20 +493,21 @@ For each module pair below, the tool's deterministic heuristic labeled the depen
 - "functional": the consumer invokes the producer's behavior (calls functions, no deep type dependence).
 - "contract": the consumer depends only on a deliberately published, stable interface.
 - "intrusive": the consumer reaches into internals, private state, or implementation details.
-Use the module names, subdomain/volatility context, and sample dependency paths. Respect intended centralization: shared infrastructure or config hubs are not automatically intrusive.
+Use the repository evidence IDs, module names, subdomain/volatility context, and sample dependency paths. Respect intended centralization: shared infrastructure or config hubs are not automatically intrusive. Cite evidence IDs in the rationale when repository evidence is relevant.
 Respond with a STRICT JSON array only — no prose, no markdown fences. One object per pair:
 [{"from":"<module>","to":"<module>","strength":"model|functional|contract|intrusive","rationale":"<one sentence>"}]
 Include every pair exactly once.`
 
 // draftLabels asks the provider to refine each batch of pairs and parses the
 // strict-JSON responses into draft labels.
-func draftLabels(ctx context.Context, p llm.Provider, cfg config.Config, pairs []refinablePair) ([]labels.Label, error) {
+func draftLabels(ctx context.Context, p llm.Provider, cfg config.Config, pairs []refinablePair, repoEvidence ...[]string) ([]labels.Label, error) {
+	evidence := optionalEvidence(repoEvidence)
 	var out []labels.Label
 	for start := 0; start < len(pairs); start += enrichBatchSize {
 		batch := pairs[start:min(start+enrichBatchSize, len(pairs))]
 		resp, err := p.Complete(ctx, llm.Request{
 			System: enrichSystemPrompt,
-			User:   enrichUserPrompt(cfg, batch),
+			User:   enrichUserPrompt(cfg, batch, evidence),
 		})
 		if err != nil {
 			return nil, err
@@ -518,8 +522,15 @@ func draftLabels(ctx context.Context, p llm.Provider, cfg config.Config, pairs [
 }
 
 // enrichUserPrompt renders one batch of pairs as the user turn.
-func enrichUserPrompt(cfg config.Config, batch []refinablePair) string {
+func enrichUserPrompt(cfg config.Config, batch []refinablePair, repoEvidence []string) string {
 	var b strings.Builder
+	if len(repoEvidence) > 0 {
+		b.WriteString(repositoryEvidenceHeader + "\n")
+		for _, ev := range repoEvidence {
+			fmt.Fprintf(&b, "- %s\n", ev)
+		}
+		b.WriteString("\n")
+	}
 	b.WriteString("Module pairs to refine:\n")
 	for _, p := range batch {
 		fmt.Fprintf(&b, "\n- from: %s%s\n  to: %s%s\n  heuristic_strength: %s\n  edge_count: %d\n  sample_dependencies:\n",

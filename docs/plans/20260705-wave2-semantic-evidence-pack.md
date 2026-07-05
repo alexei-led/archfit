@@ -84,11 +84,11 @@ Manual checks:
 - Review the evidence pack for one medium repo. It should include useful intent, not large raw dumps.
 - Confirm secrets and `.env` contents are never included.
 
-- [ ] Add evidence source discovery for README, docs/design, docs/architecture, ADR-like docs, package comments, exported names, config snippets, and deterministic diagnostics.
-- [ ] Assign stable evidence IDs such as `doc:...`, `api:...`, `diag:...`, `comment:...`.
-- [ ] Bound token budget by source type and include deterministic truncation/sorting.
-- [ ] Add tests proving stable output order and no secret file inclusion.
-- [ ] Wire the pack into `init`, `update`, and `enrich` prompt builders without importing `internal/llm` from core packages.
+- [x] Add evidence source discovery for README, docs/design, docs/architecture, ADR-like docs, package comments, exported names, config snippets, and deterministic diagnostics.
+- [x] Assign stable evidence IDs such as `doc:...`, `api:...`, `diag:...`, `comment:...`.
+- [x] Bound token budget by source type and include deterministic truncation/sorting.
+- [x] Add tests proving stable output order and no secret file inclusion.
+- [x] Wire the pack into `init`, `update`, and `enrich` prompt builders without importing `internal/llm` from core packages.
 
 ### Task 2: Require cited structured drafts for config and rule proposals
 

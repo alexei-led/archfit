@@ -111,7 +111,9 @@ func (c *EnrichAbstainedCmd) runAbstainedEnrich(ctx context.Context, deps *appDe
 	}
 	attachSnippets(root, pairs)
 
-	drafts, err := draftAbstainedLabels(ctx, provider, cfg, pairs)
+	rootForEvidence := scanRootForEvidence(configDir, c.Root)
+	repoEvidence := architectureEvidenceLines(rootForEvidence, configModulesForEvidence(cfg), c.Config, enrichEvidenceDiagnostics("enrich-abstained", len(pairs)))
+	drafts, err := draftAbstainedLabels(ctx, provider, cfg, pairs, repoEvidence)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -304,15 +306,22 @@ Each module pair below has ABSTAINED edges: cross-module dependencies where no s
 - model: "Occurs when components share knowledge of a business domain model. If the model changes — due to new domain insights — all coupled components must change accordingly."
 - contract (weakest): "An integration contract encapsulates implementation details, functional requirements, and business models, making integration explicit and stable."
 
-Judge from the module names, edge endpoints, and code snippets. Report confidence honestly: "high" only when the snippets clearly show the coupling kind; "low" when the evidence is thin. Never invent certainty.
+Judge from the repository evidence IDs, module names, edge endpoints, and code snippets. Report confidence honestly: "high" only when the snippets clearly show the coupling kind; "low" when the evidence is thin. Never invent certainty. Cite evidence IDs in the rationale when repository evidence is relevant.
 Respond with a STRICT JSON array only — no prose, no markdown fences. One object per pair:
 [{"from":"<module>","to":"<module>","strength":"contract|model|functional|intrusive","confidence":"high|medium|low","rationale":"<one sentence citing the evidence>"}]
 Include every pair exactly once.`
 
 // abstainedUserPrompt renders one batch of pairs with their sample locations
 // and code snippets as the user turn.
-func abstainedUserPrompt(cfg config.Config, batch []abstainedPair) string {
+func abstainedUserPrompt(cfg config.Config, batch []abstainedPair, repoEvidence []string) string {
 	var b strings.Builder
+	if len(repoEvidence) > 0 {
+		b.WriteString(repositoryEvidenceHeader + "\n")
+		for _, ev := range repoEvidence {
+			fmt.Fprintf(&b, "- %s\n", ev)
+		}
+		b.WriteString("\n")
+	}
 	b.WriteString("Module pairs with abstained edges:\n")
 	for _, p := range batch {
 		fmt.Fprintf(&b, "\n- from: %s%s\n  to: %s%s\n  abstained_edges: %d\n  samples:\n",
@@ -418,11 +427,12 @@ func parseAbstainedResponse(text string, batch []abstainedPair) ([]labels.Label,
 // pairs. A response that fails schema validation is retried once with the
 // violation quoted back; a second failure fails the run — a half-understood
 // draft file is never written.
-func draftAbstainedLabels(ctx context.Context, p llm.Provider, cfg config.Config, pairs []abstainedPair) ([]labels.Label, error) {
+func draftAbstainedLabels(ctx context.Context, p llm.Provider, cfg config.Config, pairs []abstainedPair, repoEvidence ...[]string) ([]labels.Label, error) {
+	evidence := optionalEvidence(repoEvidence)
 	var out []labels.Label
 	for start := 0; start < len(pairs); start += abstainedBatchSize {
 		batch := pairs[start:min(start+abstainedBatchSize, len(pairs))]
-		drafts, err := requestAbstainedBatch(ctx, p, abstainedUserPrompt(cfg, batch), batch)
+		drafts, err := requestAbstainedBatch(ctx, p, abstainedUserPrompt(cfg, batch, evidence), batch)
 		if err != nil {
 			return nil, err
 		}

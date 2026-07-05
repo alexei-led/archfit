@@ -95,15 +95,15 @@ func TestCollectUpdateRepoEvidence_ReadmeAndDocsHeadings(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Payments\n\n## Settlement\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(filepath.Join(dir, "docs"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "docs", "design"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "docs", "domain.md"), []byte("# Domain Map\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "docs", "design", "domain.md"), []byte("# Domain Map\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	got := strings.Join(collectUpdateRepoEvidence(dir), "\n")
-	for _, want := range []string{"README.md: Payments", "README.md: Settlement", "docs/domain.md: Domain Map"} {
+	for _, want := range []string{"doc:README.md", "README.md: Payments Settlement", "doc:docs/design/domain.md", "docs/design/domain.md: Domain Map"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("evidence missing %q:\n%s", want, got)
 		}

@@ -109,6 +109,32 @@ Approved `provenance: llm` labels with `confidence: medium` or `confidence: low`
 lower `coupling_balance` confidence by one band. They can increase the scored
 fraction, but they cannot make the confidence higher than the static baseline.
 
+## Architecture evidence pack
+
+LLM draft commands share a bounded evidence pack so prompts cite the same source
+IDs instead of ad-hoc raw dumps. The pack is off-gate input only; deterministic
+analysis remains authoritative.
+
+Evidence IDs use stable prefixes:
+
+- `doc:<path>` — `README*`, `docs/design/**`, `docs/architecture/**`, ADR-like
+  docs (`docs/adr/**`, `docs/adrs/**`, `docs/decisions/**`, or matching names).
+- `comment:<path>` — package-level Go comments.
+- `api:<module>` — configured `public:` globs and exported Go names found under
+  module paths.
+- `config:<path>` — bounded `.archfit.yaml` snippets with secret-like values
+  redacted.
+- `diag:<source>#<n>` — deterministic command summaries such as discovered
+  language/module counts, update drift counts, or enrich candidate counts.
+
+The builder sorts sources deterministically, caps each source type separately,
+truncates each item, skips hidden/vendor/cache directories, and excludes
+secret-like paths such as `.env`, credentials, tokens, keys, certificates, and
+files whose names contain `secret`. Prompts ask models to cite these IDs in
+rationales when the evidence is relevant. Later draft files may promote those IDs
+into structured review metadata, but default plan mode still leaves config
+unchanged.
+
 ## Cost and token expectations
 
 No CI gate run has LLM cost. After labels and config fields are committed,
@@ -117,12 +143,13 @@ No CI gate run has LLM cost. After labels and config fields are committed,
 First-run enrich cost scales with candidate count and evidence size:
 
 - `config enrich labels` sends up to 30 module pairs per request with module
-  names, current heuristic strength, edge count, and sample dependency paths.
+  names, current heuristic strength, edge count, sample dependency paths, and the
+  shared evidence pack.
 - `config enrich abstained` sends up to 10 module pairs per request, caps a run
-  at 100 abstained edges, and includes up to 3 source snippets per pair. It is
-  more token-heavy than the summary label pass.
+  at 100 abstained edges, includes up to 3 source snippets per pair, and includes
+  the shared evidence pack. It is more token-heavy than the summary label pass.
 - `config init --llm` and `config update --llm` scale mostly with module count
-  and the README/docs/API evidence available for each module.
+  and bounded README/docs/comment/API/config/diagnostic evidence.
 
 Responses are cached by provider, model, system prompt, and user prompt under
 `.archfit-cache/llm/`. Re-running the same command with the same evidence should

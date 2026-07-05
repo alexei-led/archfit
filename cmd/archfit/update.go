@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -147,7 +146,8 @@ func (c *UpdateCmd) maybeClassify(
 		return nil, nil
 	}
 
-	ann, err := classifyModulesWithEvidence(ctx, p, classifyTargets, cfg.Layers, collectUpdateRepoEvidence(root))
+	repoEvidence := architectureEvidenceLines(root, targets, c.Config, updateEvidenceDiagnostics(report))
+	ann, err := classifyModulesWithEvidence(ctx, p, classifyTargets, cfg.Layers, repoEvidence)
 	if err != nil {
 		return nil, &exitError{code: 3, msg: fmt.Sprintf("error: classify failed: %v", err)}
 	}
@@ -295,80 +295,10 @@ func buildUpdateEdits(report initcfg.UpdateReport) []initcfg.Edit {
 	return edits
 }
 
-const maxUpdateRepoEvidence = 20
-
-// collectUpdateRepoEvidence gathers lightweight review evidence for the update
-// LLM prompt. Failures are ignored; module names and paths still carry the prompt.
+// collectUpdateRepoEvidence is kept for older prompt tests; update --llm uses
+// the shared architecture evidence pack directly.
 func collectUpdateRepoEvidence(root string) []string {
-	var evidence []string
-	addHeadings := func(label, path string) {
-		if len(evidence) >= maxUpdateRepoEvidence {
-			return
-		}
-		data, err := os.ReadFile(path) //nolint:gosec // local target repo evidence
-		if err != nil {
-			return
-		}
-		for _, h := range markdownHeadings(string(data), maxUpdateRepoEvidence-len(evidence)) {
-			evidence = append(evidence, label+": "+h)
-		}
-	}
-
-	for _, name := range []string{"README.md", "README"} {
-		addHeadings(name, filepath.Join(root, name))
-		if len(evidence) > 0 {
-			break
-		}
-	}
-
-	docsDir := filepath.Join(root, "docs")
-	_ = filepath.WalkDir(docsDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || len(evidence) >= maxUpdateRepoEvidence {
-			return filepath.SkipAll
-		}
-		if d.IsDir() {
-			if path != docsDir && strings.HasPrefix(d.Name(), ".") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if strings.EqualFold(filepath.Ext(d.Name()), ".md") {
-			rel, relErr := filepath.Rel(root, path)
-			if relErr != nil {
-				rel = path
-			}
-			addHeadings(filepath.ToSlash(rel), path)
-		}
-		return nil
-	})
-
-	sort.Strings(evidence)
-	if len(evidence) > maxUpdateRepoEvidence {
-		evidence = evidence[:maxUpdateRepoEvidence]
-	}
-	return evidence
-}
-
-func markdownHeadings(text string, limit int) []string {
-	if limit <= 0 {
-		return nil
-	}
-	var headings []string
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "#") {
-			continue
-		}
-		heading := strings.TrimSpace(strings.TrimLeft(line, "#"))
-		if heading == "" {
-			continue
-		}
-		headings = append(headings, heading)
-		if len(headings) >= limit {
-			break
-		}
-	}
-	return headings
+	return architectureEvidenceLines(root, nil, "", nil)
 }
 
 // configToExisting projects config.Modules into []initcfg.ExistingModule.

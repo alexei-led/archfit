@@ -55,6 +55,20 @@ func TestEnrichOwnerDraft(t *testing.T) {
 	}
 }
 
+func TestValueUserPrompt_IncludesRepositoryEvidenceIDs(t *testing.T) {
+	t.Parallel()
+	prompt := valueUserPrompt(
+		[]initcfg.ClassifyTarget{{Name: enrichModAuth, Paths: []string{"internal/auth/**"}}},
+		"",
+		[]string{"doc:README.md (doc) README.md: Auth boundary"},
+	)
+	for _, want := range []string{repositoryEvidenceHeader, "doc:README.md", "Auth boundary", "module: auth"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
 func TestEnrichOwnerPin(t *testing.T) {
 	t.Parallel()
 	cfgPath, dir := writeEnrichSubdomainFixture(t)

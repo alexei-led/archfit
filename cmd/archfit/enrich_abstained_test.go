@@ -73,6 +73,20 @@ func abstainedFixture() (*graph.Graph, coupling.Index, config.ModuleMap) {
 	return g, idx, cfg.ForClassify().ModuleMap
 }
 
+func TestAbstainedUserPrompt_IncludesRepositoryEvidenceIDs(t *testing.T) {
+	t.Parallel()
+	prompt := abstainedUserPrompt(
+		config.Config{},
+		[]abstainedPair{{From: modA, To: modB, EdgeCount: 1, Samples: []abstainedSample{{FromPath: fileNodeA, ToPath: fileNodeB}}}},
+		[]string{"doc:docs/architecture/layers.md (doc) docs/architecture/layers.md: Layer intent"},
+	)
+	for _, want := range []string{repositoryEvidenceHeader, "doc:docs/architecture/layers.md", "Layer intent", "from: a"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
 func TestSelectAbstainedPairs(t *testing.T) {
 	t.Parallel()
 	g, idx, mm := abstainedFixture()
