@@ -310,6 +310,68 @@ func writeDynamicImports(b *strings.Builder, dyn []diagnostic.DynamicImport) {
 	}
 }
 
+// runtimeAsyncTopN is the number of module→runtime-target links listed in the
+// runtime async section.
+const runtimeAsyncTopN = 10
+
+// runtimeAsyncSampleN is the number of sample sites shown per runtime edge.
+const runtimeAsyncSampleN = 3
+
+// writeRuntimeAsync prints the report-only runtime async bridge block. The
+// module rollup preserves the historical view; the relationship-level edges add
+// a concrete source-module → runtime-target fact set for future runtime-distance
+// review without changing today's score.
+func writeRuntimeAsync(b *strings.Builder, modules []diagnostic.RuntimeAsyncModule, edges []diagnostic.RuntimeAsyncEdge) {
+	if len(modules) == 0 && len(edges) == 0 {
+		return
+	}
+	total := 0
+	for _, m := range modules {
+		total += m.Count
+	}
+	b.WriteString("\n## Runtime async bridges (report-only)\n\n")
+	b.WriteString("Report-only. Runtime async evidence is grouped by module and by concrete\n")
+	b.WriteString("module→runtime-target relation; it never changes distance, score, or gate verdicts.\n\n")
+	fmt.Fprintf(b, "%d sites across %d modules", total, len(modules))
+	if len(edges) > 0 {
+		fmt.Fprintf(b, " and %d module→target relation(s)", len(edges))
+	}
+	b.WriteString(". Full list in `--format json`.\n\n")
+
+	ranked := make([]diagnostic.RuntimeAsyncEdge, len(edges))
+	copy(ranked, edges)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].Count != ranked[j].Count {
+			return ranked[i].Count > ranked[j].Count
+		}
+		if ranked[i].FromModule != ranked[j].FromModule {
+			return ranked[i].FromModule < ranked[j].FromModule
+		}
+		if ranked[i].Target != ranked[j].Target {
+			return ranked[i].Target < ranked[j].Target
+		}
+		return ranked[i].IntegrationKind < ranked[j].IntegrationKind
+	})
+	for i, e := range ranked {
+		if i == runtimeAsyncTopN {
+			fmt.Fprintf(b, "- ... +%d more relations (use `--format json`)\n", len(ranked)-runtimeAsyncTopN)
+			break
+		}
+		fmt.Fprintf(b, "- **%s** → `%s` [%s]: %d (e.g. %s)\n", e.FromModule, mdTableCell(e.Target), e.IntegrationKind, e.Count, runtimeAsyncSites(e.Sites))
+	}
+}
+
+func runtimeAsyncSites(sites []diagnostic.RuntimeAsyncSite) string {
+	parts := make([]string, 0, runtimeAsyncSampleN)
+	for i, s := range sites {
+		if i == runtimeAsyncSampleN {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s:%d[%s]", s.File, s.Line, s.IntegrationKind))
+	}
+	return strings.Join(parts, ", ")
+}
+
 // writeDeprecatedDeps prints the report-only locally-declared deprecation/
 // mdTableCell escapes pipe characters and collapses newlines in a string so it
 // can be safely embedded in a Markdown table cell without corrupting the table.

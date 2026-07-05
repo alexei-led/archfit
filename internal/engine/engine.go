@@ -182,9 +182,10 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		classifyCfg.CrossModuleClonePairs, classifyCfg.CloneEvidence = buildClonePairSet(in.Signals.Duplication.Clusters, classifyCfg.ModuleMap, in.Signals.Size.FileClassIndex)
 	}
 
-	// Runtime async evidence: build per-module rollup for the diagnostic.
-	// Report-only — never changes the gate verdict.
+	// Runtime async evidence: build per-module and relationship-level rollups for
+	// the diagnostic. Report-only — never changes the graph, score, or verdict.
 	runtimeAsync := buildRuntimeAsync(in.Signals.RuntimeAsync.Sites, in.Signals.RuntimeAsync.Confidence, classifyCfg.ModuleMap)
+	runtimeAsyncEdges := buildRuntimeAsyncEdges(in.Signals.RuntimeAsync.Sites, in.Signals.RuntimeAsync.Confidence, classifyCfg.ModuleMap)
 
 	couplingIdx := classify.Run(ex.g, classifyCfg)
 	cloneOnlyPairs := classify.CloneOnlyPairs(ex.g, classifyCfg)
@@ -338,6 +339,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		DynamicImports:        dynamicImports,
 		Connascence:           connascenceReport,
 		RuntimeAsync:          runtimeAsync,
+		RuntimeAsyncEdges:     runtimeAsyncEdges,
 		DeprecatedDeps:        in.Signals.DeprecatedDeps,
 		AgentTasks:            []diagnostic.AgentTask{},
 		ToolCoverage:          ex.coverages,

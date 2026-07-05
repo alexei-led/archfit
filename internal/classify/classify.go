@@ -822,17 +822,15 @@ func isGenericSubdomain(toPath string, mi moduleIndex, modules map[string]config
 	return strings.ToLower(modules[toMod].Subdomain) == subdomainGeneric
 }
 
-// computeEffectiveVolatility computes per-module effective volatility after a
-// single-hop inferred-volatility cascade (book Ch9). When cascade is disabled,
-// returns the base (config-declared) volatility for each module unchanged.
+// computeEffectiveVolatility computes per-module effective volatility after an
+// inferred-volatility cascade (book Ch9). When cascade is disabled, returns the
+// base (config-declared) volatility for each module unchanged.
 //
-// Propagation rule: for each edge in the graph, if the from-module is strongly
-// coupled (strength ≥ functional) to a to-module with high BASE volatility, the
-// from-module's effective volatility is raised to high. Config-declared volatility
-// always takes precedence and is never lowered.
-//
-// The cascade reads only the BASE volatility of the to-module — not the
-// propagated value — making the result order-independent (single hop, no fixpoint).
+// Propagation rule: if module A is strongly coupled (strength ≥ functional) to
+// module B and B's effective volatility is high, A's effective volatility is
+// raised to high. The pass runs to a deterministic fixpoint, so volatility can
+// propagate across a chain of deliberate strong integrations instead of stopping
+// at one hop. Values are only raised, never lowered.
 //
 // Strong strength set for propagation: Functional, Symmetric, Intrusive. An edge
 // between a module pair in clonePairs is excluded even if it otherwise qualifies:
@@ -851,11 +849,9 @@ func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, c config.Classif
 	if !c.VolatilityCascadeEnabled || g == nil {
 		return effective
 	}
-	// Snapshot the base volatility before propagation so reads during the pass
-	// always reflect config (not yet-written effective values).
-	base := make(map[string]coupling.Volatility, len(effective))
-	maps.Copy(base, effective)
-	// Propagation pass: iterate edges once, raise effective vol where applicable.
+
+	type cascadeEdge struct{ from, to string }
+	edges := make([]cascadeEdge, 0)
 	for _, e := range g.Edges() {
 		resolved := resolveStrength(e, mi, c)
 		if !isStrongStrength(resolved.strength) {
@@ -871,13 +867,17 @@ func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, c config.Classif
 		if _, isClonePair := c.CrossModuleClonePairs[modulePairKey(fromMod, toMod)]; isClonePair {
 			continue // accidental coupling — must not trigger the cascade
 		}
-		// Read the BASE volatility of the to-module (order-independent).
-		if base[toMod] != coupling.VolatilityHigh {
-			continue
-		}
-		// Raise the from-module's effective volatility to high (never lower it).
-		if effective[fromMod] != coupling.VolatilityHigh {
-			effective[fromMod] = coupling.VolatilityHigh
+		edges = append(edges, cascadeEdge{from: fromMod, to: toMod})
+	}
+
+	for changed := true; changed; {
+		changed = false
+		for _, e := range edges {
+			if effective[e.to] != coupling.VolatilityHigh || effective[e.from] == coupling.VolatilityHigh {
+				continue
+			}
+			effective[e.from] = coupling.VolatilityHigh
+			changed = true
 		}
 	}
 	return effective

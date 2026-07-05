@@ -381,13 +381,14 @@ Notes that bite most often:
   `StrengthSymmetric` (S=9) in the BC scorer. Clone-only pairs with no import
   edge enter `coupling_balance` by default under `coupling.duplicated_knowledge: score`.
   `false` or absent → no clone signal.
-- **Strength precision is language-asymmetric (bc_score.v5).** Go classifies
+- **Strength precision is language-asymmetric (bc_score.v6).** Go classifies
   `const`/`var` uses as `model` (pure-data sharing) and pure-data DTO structs
   crossing a declared `public:` boundary as `contract` directly from compiler
-  type info. Rust gets the const/static→model precision only via
-  `analyzers.scip` (rust-analyzer terms). Python (grimp) and TypeScript
-  (dependency-cruiser) cannot see object kinds at extraction granularity, so
-  they keep their heuristic hints and never emit a DTO upgrade — see
+  type info. Rust gets const/static→model precision via `analyzers.scip`
+  (rust-analyzer terms). Python and TypeScript built-in extractors stay
+  conservative, but SCIP symbol-kind metadata can refine interface/protocol/trait
+  references to `contract`, concrete data symbols to `model`, and functions to
+  `functional`. None of the non-Go paths emit a DTO upgrade — see
   [Concepts → the balance rule](concepts.md#the-balance-rule).
 
 See [Install → optional analysis tools](install.md#optional-analysis-tools) for

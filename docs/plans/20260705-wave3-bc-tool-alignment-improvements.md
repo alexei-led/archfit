@@ -49,11 +49,13 @@ Current implementation anchors:
 
 ## Current state snapshot
 
-- Score version: `bc_score.v5`
+- Score version: `bc_score.v6`
 - Current self score: `43 / mixed / high confidence`
 - Distance basis currently implemented: `code_structure`, `ownership`, `deploy_unit`, `declared_external`
 - Distance rungs currently disclosed: `2, 4, 7, 9, 10`
-- `runtime_async` is report-only
+- `runtime_async` and `runtime_async_edges` are report-only
+- non-Go strength refinement uses deterministic SCIP symbol-kind metadata where available; built-in TS/Python extractors stay conservative when object kinds are absent
+- inferred volatility cascade is transitive/fixpoint when `coupling.volatility_cascade: true`
 - `connascence` is partially measured and explicitly discloses unmeasured categories
 - clone-only duplicated knowledge is score-bearing by default
 
@@ -222,10 +224,10 @@ Manual checks:
 - Verify the hybrid runtime-coupling treatment: book-correct conceptually, safe for the current product boundary, and not silently score-changing.
 - Verify that any LLM-derived semantic label is reviewable and not silently admitted into the gate.
 
-- [ ] Keep runtime coupling report-only for current rollups; add edge-level/module-pair runtime facts as the prerequisite for later scoring.
-- [ ] Improve non-Go strength semantics with deterministic evidence first, then `--llm` only if needed.
-- [ ] Improve inferred-volatility propagation if the current single-hop model is too weak.
-- [ ] Fix terminology/docs drift and update tests.
+- [x] Keep runtime coupling report-only for current rollups; add edge-level/module-pair runtime facts as the prerequisite for later scoring.
+- [x] Improve non-Go strength semantics with deterministic evidence first, then `--llm` only if needed.
+- [x] Improve inferred-volatility propagation if the current single-hop model is too weak.
+- [x] Fix terminology/docs drift and update tests.
 
 ### Task 3: Close P2 — distance fidelity, external seams, clone-only handling, tail-risk reporting
 

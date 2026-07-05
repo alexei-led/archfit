@@ -80,7 +80,7 @@
         },
         "volatility_cascade": {
           "type": "boolean",
-          "description": "VolatilityCascade enables the book Ch9 single-hop propagation pass: a\nmodule strongly coupled to a high-volatility module inherits raised\neffective volatility. Config-declared volatility always takes precedence."
+          "description": "VolatilityCascade enables the book Ch9 propagation pass: a module strongly\ncoupled to a high-effective-volatility module inherits raised effective\nvolatility. The pass runs to a deterministic fixpoint and never lowers values."
         },
         "gate": {
           "$ref": "#/$defs/CouplingGateDef",

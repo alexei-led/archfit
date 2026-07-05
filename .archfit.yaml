@@ -34,8 +34,9 @@ coupling:
   # headline coupling_balance by default. Set to advisory to preserve v4 output.
   duplicated_knowledge: score
   # Book Ch9 inferred-volatility cascade: a module strongly coupled (strength ≥
-  # functional) to a high-volatility module inherits raised effective volatility.
-  # Config-declared volatility always takes precedence and is never lowered.
+  # functional) to a high-effective-volatility module inherits raised effective
+  # volatility. The cascade runs to a deterministic fixpoint and never lowers a
+  # configured value.
   volatility_cascade: true
 # Architecture layers — innermost to outermost.
 # forbidden_layer_direction fires when fromRank < toRank (inner imports outer).

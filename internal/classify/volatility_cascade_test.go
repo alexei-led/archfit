@@ -3,9 +3,9 @@ package classify_test
 // Tests for the inferred-volatility cascade (book Ch9).
 //
 // The cascade raises a module's effective volatility to high when it is
-// strongly coupled (strength ≥ functional) to a high-volatility module.
-// Weak coupling (contract/model) does not propagate. The pass is single-hop
-// and config-gated (VolatilityCascadeEnabled).
+// strongly coupled (strength ≥ functional) to a high-effective-volatility module.
+// Weak coupling (contract/model) does not propagate. The pass runs to a
+// deterministic fixpoint and is config-gated (VolatilityCascadeEnabled).
 
 import (
 	"testing"
@@ -275,24 +275,27 @@ func TestVolatilityCascade_UsesResolvedStrength(t *testing.T) {
 	}
 }
 
-// TestVolatilityCascade_SingleHop verifies the cascade is a single read-base-only pass.
-//
-// Setup: A→B (functional, B=core/high), B→C (functional, C=supporting/low).
-// A should be raised (A→B, base[B]=high).
-// C should NOT be raised: edge B→C has base[C]=low — not high — so no raise.
-// The cascade never chains through effective values.
-func TestVolatilityCascade_SingleHop(t *testing.T) {
+// TestVolatilityCascade_TransitiveFixpoint verifies that the cascade propagates
+// through deliberate strong-coupling chains. Setup: A→B→C, where C is core/high
+// and A/B are supporting/low. B is raised by C, then A is raised by B's effective
+// volatility. This is the book Ch9 cascade shape; it used to stop at one hop.
+func TestVolatilityCascade_TransitiveFixpoint(t *testing.T) {
 	modules := map[string]config.ModuleDef{
 		modNameA: {Paths: []string{"a/**"}, Subdomain: subdomainSupporting}, // low base (book Table 9.1)
-		modNameB: {Paths: []string{"b/**"}, Subdomain: subdomainCore},       // high base
-		"modC":   {Paths: []string{"c/**"}, Subdomain: subdomainSupporting}, // low base (book Table 9.1)
+		modNameB: {Paths: []string{"b/**"}, Subdomain: subdomainSupporting}, // low base (book Table 9.1)
+		"modC":   {Paths: []string{"c/**"}, Subdomain: subdomainCore},       // high base
 	}
+	const (
+		fileA = "a/x.go"
+		fileB = "b/x.go"
+		fileC = "c/x.go"
+	)
 	probe := cascadeProbeFile
 	g := buildGraph([][3]string{
-		{"a/x.go", "b/x.go", string(coupling.StrengthFunctional)}, // A→B: A raised
-		{"b/x.go", "c/x.go", string(coupling.StrengthFunctional)}, // B→C: C not raised (base[C]=medium)
-		{probe, "a/x.go", ""},
-		{probe, "c/x.go", ""},
+		{fileA, fileB, string(coupling.StrengthFunctional)}, // A→B: A raised after B is raised
+		{fileB, fileC, string(coupling.StrengthFunctional)}, // B→C: B raised by core C
+		{probe, fileA, ""},
+		{probe, fileB, ""},
 	})
 	c := config.ClassifyConfig{
 		Modules:                  modules,
@@ -300,17 +303,15 @@ func TestVolatilityCascade_SingleHop(t *testing.T) {
 	}
 	idx := classify.Run(g, c)
 
-	clA, okA := idx[probeKey("a/x.go")]
-	clC, okC := idx[probeKey("c/x.go")]
-	if !okA || !okC {
+	clA, okA := idx[probeKey(fileA)]
+	clB, okB := idx[probeKey(fileB)]
+	if !okA || !okB {
 		t.Fatalf("probe edges missing from index")
 	}
-	// A strongly coupled to B (high base) → raised.
-	if clA.Volatility != coupling.VolatilityHigh {
-		t.Errorf("modA: got %q, want high (raised by cascade)", clA.Volatility)
+	if clB.Volatility != coupling.VolatilityHigh {
+		t.Errorf("modB: got %q, want high (raised by direct core coupling)", clB.Volatility)
 	}
-	// C not raised: base[C]=low, so B→C does not trigger propagation.
-	if clC.Volatility != coupling.VolatilityLow {
-		t.Errorf("modC: got %q, want low (single-hop: no chaining)", clC.Volatility)
+	if clA.Volatility != coupling.VolatilityHigh {
+		t.Errorf("modA: got %q, want high (raised by transitive cascade)", clA.Volatility)
 	}
 }

@@ -145,8 +145,9 @@ falling back to code-structure distance.
 **Deviation from the book:** Khononov also counts _runtime coupling_ (synchronous
 vs asynchronous integration) and lifecycle coupling as part of distance. `archfit`
 deliberately does **not** fold runtime/async coupling into distance — detected
-async bridges are recorded as report-only `runtime_async` evidence, never a scored
-distance factor (see [bc-measurement-v4.md §9](../design/bc-measurement-v4.md#9-non-goals-and-rejected-designs) for the rationale).
+async bridges are recorded as report-only `runtime_async` module rollups plus
+`runtime_async_edges` source-module→runtime-target facts, never a scored distance
+factor (see [bc-measurement-v4.md §9](../design/bc-measurement-v4.md#9-non-goals-and-rejected-designs) for the rationale).
 
 ### 3. Volatility — how likely it is to change at all
 
@@ -183,19 +184,22 @@ worst case that is also archfit-defined, not a book ordinal. The scorer then
 advises you to _declare_ the module's volatility rather than silently assuming it
 is stable.
 
-In `archfit` you set volatility per module (`volatility:` or `subdomain:` in
+In `archfit` you set base volatility per module (`volatility:` or `subdomain:` in
 `.archfit.yaml`). Git churn is never used as a volatility source — it measures
 observed change, a mix of essential and accidental factors, and `archfit` cannot
-separate them automatically. Declared subdomain volatility is the only input to
-the coupling-balance gate.
+separate them automatically. Declared subdomain volatility is the primary input;
+when the opt-in cascade below is enabled, deterministic strong-coupling chains can
+raise effective volatility before scoring.
 
 **Inferred-volatility cascade (opt-in, book Ch9):** when
-`coupling.volatility_cascade: true` is set in `.archfit.yaml`, a single-hop
-propagation pass runs before scoring. If a module is strongly coupled
-(`functional` or `intrusive`) to a `core` module, its effective volatility
-is raised to `high` for scoring purposes. This lets archfit surface coupling
-chains that inherit core-domain volatility without requiring every module to be
-manually annotated.
+`coupling.volatility_cascade: true` is set in `.archfit.yaml`, a deterministic
+fixpoint propagation pass runs before scoring. If a module is strongly coupled
+(`functional`, `symmetric`, or `intrusive`) to a high-effective-volatility module,
+its effective volatility is raised to `high` for scoring purposes. This lets
+archfit surface coupling chains that inherit core-domain volatility without
+requiring every module to be manually annotated. Clone-only pairs are excluded
+from the cascade because duplicated code is accidental coupling evidence, not a
+runtime/domain dependency.
 
 #### Essential vs accidental volatility
 
@@ -290,7 +294,7 @@ clone pairs with no import edge are clone-only duplicated knowledge; by default
 (`coupling.duplicated_knowledge: score`) they enter `coupling_balance` as
 symmetric-strength coupling facts and may also surface as `bc/duplicated_knowledge`
 advisories after severity filtering. Set the policy to `advisory` to preserve
-the v4 report-only behavior. `ScoreVersion` is `bc_score.v5`.
+the v4 report-only behavior. `ScoreVersion` is `bc_score.v6`; the v6 change makes the opt-in inferred-volatility cascade transitive instead of one-hop.
 
 ---
 

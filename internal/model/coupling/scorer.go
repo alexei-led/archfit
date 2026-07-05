@@ -31,7 +31,11 @@ const ScoreDefinition = "book balance score — balance = max(|S−D|, 10−V) +
 // edge) enter coupling_balance by default via coupling.duplicated_knowledge:
 // score. The formula and ordinals are unchanged, but the headline denominator
 // now includes the book Ch7 hidden-coupling case.
-const ScoreVersion = "bc_score.v5"
+// v6: inferred volatility propagation runs to a deterministic fixpoint instead
+// of stopping at one hop. The formula and ordinals are unchanged, but edges that
+// depend through a strong-coupling chain to high-volatility modules may now carry
+// higher effective volatility.
+const ScoreVersion = "bc_score.v6"
 
 // EdgeScore is the result produced by a Scorer for one graph edge.
 //

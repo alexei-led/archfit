@@ -436,11 +436,11 @@ coupling:
   clone-only pairs can emit `bc/duplicated_knowledge` advisories but do not move
   the headline score. JSON exposes the policy effect through
   `classified_edges.clone_only_scored` and `classified_edges.clone_only_advisory`.
-- `volatility_cascade` — opt-in book Ch9 single-hop propagation: when `true`, a
-  module strongly coupled (`functional` or `intrusive` strength) to a `core`
-  module inherits raised effective volatility (`high`). Config-declared volatility
-  always takes precedence. Disabled by default; safe to enable once `subdomain`
-  fields are complete.
+- `volatility_cascade` — opt-in book Ch9 propagation: when `true`, a module
+  strongly coupled (`functional`, `symmetric`, or `intrusive` strength) to a
+  high-effective-volatility module inherits raised effective volatility (`high`).
+  The pass runs to a deterministic fixpoint and never lowers configured values.
+  Disabled by default; safe to enable once `subdomain` fields are complete.
 
 ### `coupling.gate`
 
@@ -664,7 +664,8 @@ Composite resolution order (first applicable wins):
    different subtrees or unrelated flat names → `cross_module_different_owner`).
 
 A detected runtime async bridge is recorded as report-only evidence in the
-`runtime_async` JSON field per module; it does not annotate graph edges, does not
+`runtime_async` JSON field per module and the `runtime_async_edges` field per
+source-module→runtime-target relation; it does not annotate graph edges, does not
 affect distance or score, and does not change the gate verdict.
 
 The `distance_basis` field on each advisory edge (`code_structure`, `ownership`,

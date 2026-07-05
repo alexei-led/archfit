@@ -1,11 +1,12 @@
-# Balanced Coupling measurement engine — design v5.0
+# Balanced Coupling measurement engine — design v6.0
 
 Date: 2026-07-05. Status: SHIPPED. Supersedes `bc-measurement-v3.md` (archived
 under `docs/archived/design/`). The v3 doc recorded the move to Khononov's
 published formula; v4 changed classification feeding that formula; v5 changes
-which deterministic coupling facts enter the headline rollup. The formula,
-ordinals, bands, and abstain discipline are unchanged. Delta notes:
-`20260702-bc-score-v4.md` and `20260705-bc-score-v5.md`.
+which deterministic coupling facts enter the headline rollup; v6 makes the
+opt-in inferred-volatility cascade transitive. The formula, ordinals, bands, and
+abstain discipline are unchanged. Delta notes: `20260702-bc-score-v4.md`,
+`20260705-bc-score-v5.md`, and `20260705-bc-score-v6.md`.
 
 Related plans: `docs/plans/20260702-wave4-book-strength-distance.md` (Tasks 1–6),
 `docs/plans/20260705-wave1-deterministic-book-fidelity.md` (Tasks 2–5).
@@ -19,10 +20,11 @@ archfit implements Vlad Khononov's _Balancing Coupling in Software Design_
 archfit owns only the _instrumentation_ — measuring code and placing each edge
 on the book's scale.
 
-`ScoreVersion = "bc_score.v5"` — a breaking metric change: **v5 scores are not
-comparable to v4 scores.** v4 fixed three known-wrong classifications found by
+`ScoreVersion = "bc_score.v6"` — a breaking metric change: **v6 scores are not
+comparable to v5 scores.** v4 fixed three known-wrong classifications found by
 the 2026-07-02 eval (`docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` §1
-deviations 1–3), and v5 closes the clone-only duplicated-knowledge score gap:
+deviations 1–3), v5 closes the clone-only duplicated-knowledge score gap, and v6
+closes the one-hop inferred-volatility cascade gap:
 
 1. Go const/var reads score Model (S=3), not Functional (S=8) — pure data
    sharing per book Ch7. Rust gets the same fix via the rust-analyzer SCIP
@@ -35,6 +37,9 @@ deviations 1–3), and v5 closes the clone-only duplicated-knowledge score gap:
    edge — enters `coupling_balance` by default through
    `coupling.duplicated_knowledge: score`. Set the policy to `advisory` to
    preserve the v4 report-only behavior.
+5. Inferred volatility (`coupling.volatility_cascade: true`) propagates to a
+   deterministic fixpoint across strong deliberate coupling chains instead of
+   stopping at one hop.
 
 ---
 
@@ -229,8 +234,9 @@ against a declared `external_systems:` entry assigns `declared_external`
 external exclusion (§6).
 
 Runtime async bridge: evidence recorded in `runtime_async` JSON field per
-module. **Does not annotate graph edges, does not affect D, does not affect the
-score or gate verdict.** Report-only by design.
+module and `runtime_async_edges` per source-module→runtime-target relation.
+**Does not annotate graph edges, does not affect D, does not affect the score or
+gate verdict.** Report-only by design.
 
 Each classified cross-boundary edge records `distance_basis` when a concrete
 signal selected the rung: `code_structure`, `ownership`, `deploy_unit`, or
@@ -255,7 +261,10 @@ generic-subdomain guidance) and accepts an explicit override
 (high|medium|low|frozen).
 
 The inferred-volatility cascade (opt-in, `coupling.volatility_cascade: true`, book
-Ch9) propagates high volatility one hop across strongly-coupled edges before scoring.
+Ch9) propagates high volatility to a deterministic fixpoint across strongly-coupled
+edges before scoring. It only raises effective volatility and excludes clone-only
+pairs because duplicated code is accidental coupling evidence, not a domain/runtime
+dependency.
 
 ### Repo rollup
 
@@ -396,21 +405,22 @@ Similarly, undeclared subdomain/volatility modules emit a decision task promptin
 | ---------------- | ----: | ----- | ---------- |
 | coupling_balance |    43 | mixed | high       |
 
-350 scored internal cross-boundary edges, 0 abstained, 572 external/library edges
+354 scored internal cross-boundary edges, 0 abstained, 591 external/library edges
 excluded, 11 clone-only pairs scored, and 38 connected modules in the coupling
 sample. Movement from the Wave 1 deterministic baseline is 42 → 43 with no band
-change; the gain comes from `bc_score.v5` clone-only duplicated-knowledge scoring
-plus normal self-code growth during the wave. The v3/v4/v5 score versions are not
-comparable by design; accept v5 by reviewing the attribution table and re-running
-`archfit baseline` only when your configured gates need a new anchor.
+change; v5's gain came from clone-only duplicated-knowledge scoring, and v6 keeps
+the score stable while making inferred volatility transitive. The v3/v4/v5/v6
+score versions are not comparable by design; accept v6 by reviewing the attribution
+table and re-running `archfit baseline` only when your configured gates need a new
+anchor.
 
 ---
 
 ## 9. Non-goals and rejected designs
 
 - **runtime_adjust / +1 async distance:** runtime async detection is
-  report-only. Never modifies distance, never annotates edges, never gates.
-  (`runtime_async` JSON field is evidence only.)
+  report-only. Never modifies distance, never annotates graph edges, never gates.
+  (`runtime_async` and `runtime_async_edges` JSON fields are evidence only.)
 - **Invented ordinals for unknown edges:** abstain instead. No `strengthOrdinalUnknown`
   or `distanceOrdinalUnknown` invented values remain.
 - **Scoring every library import at D=10:** rejected as vendor noise — the

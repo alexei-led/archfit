@@ -85,6 +85,10 @@ func buildDynamicImports(sites []diagnostic.DynamicImportSite, mm config.ModuleM
 	return out
 }
 
+// runtimeAsyncSiteCap bounds the number of concrete sample sites stored per
+// relationship-level runtime edge. Count carries the true total.
+const runtimeAsyncSiteCap = 5
+
 // buildRuntimeAsync groups async-integration sites per module and returns a
 // deterministic per-module rollup for the diagnostic.
 // Returns an empty (non-nil) slice when no sites were found.
@@ -113,6 +117,61 @@ func buildRuntimeAsync(sites []diagnostic.RuntimeAsyncSite, confidence string, m
 			IntegrationKind: kind,
 			Count:           len(ss),
 			Confidence:      confidence,
+		})
+	}
+	return out
+}
+
+// buildRuntimeAsyncEdges groups async-integration sites by source module,
+// runtime target, and integration kind. The result is relationship-level evidence
+// for future runtime-distance scoring, but remains report-only today.
+func buildRuntimeAsyncEdges(sites []diagnostic.RuntimeAsyncSite, confidence string, mm config.ModuleMap) []diagnostic.RuntimeAsyncEdge {
+	type edgeKey struct {
+		fromModule string
+		target     string
+		kind       string
+	}
+	byEdge := make(map[edgeKey][]diagnostic.RuntimeAsyncSite)
+	for _, s := range sites {
+		fromModule, ok := mm.ModuleForFile(s.File)
+		if !ok || fromModule == "" {
+			fromModule = pathDir(s.File)
+		}
+		target := s.Library
+		if target == "" {
+			target = s.IntegrationKind
+		}
+		k := edgeKey{fromModule: fromModule, target: target, kind: s.IntegrationKind}
+		byEdge[k] = append(byEdge[k], s)
+	}
+	keys := make([]edgeKey, 0, len(byEdge))
+	for k := range byEdge {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].fromModule != keys[j].fromModule {
+			return keys[i].fromModule < keys[j].fromModule
+		}
+		if keys[i].target != keys[j].target {
+			return keys[i].target < keys[j].target
+		}
+		return keys[i].kind < keys[j].kind
+	})
+
+	out := make([]diagnostic.RuntimeAsyncEdge, 0, len(keys))
+	for _, k := range keys {
+		ss := byEdge[k]
+		sample := ss
+		if len(sample) > runtimeAsyncSiteCap {
+			sample = sample[:runtimeAsyncSiteCap]
+		}
+		out = append(out, diagnostic.RuntimeAsyncEdge{
+			FromModule:      k.fromModule,
+			Target:          k.target,
+			IntegrationKind: k.kind,
+			Count:           len(ss),
+			Confidence:      confidence,
+			Sites:           sample,
 		})
 	}
 	return out

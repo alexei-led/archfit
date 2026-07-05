@@ -70,9 +70,9 @@ type CouplingConfig struct {
 	// clone pairs with no import edge). "score" (default) includes those pairs in
 	// coupling_balance; "advisory" preserves the v4 report-only behavior.
 	DuplicatedKnowledge DuplicatedKnowledgePolicy `yaml:"duplicated_knowledge,omitempty"`
-	// VolatilityCascade enables the book Ch9 single-hop propagation pass: a
-	// module strongly coupled to a high-volatility module inherits raised
-	// effective volatility. Config-declared volatility always takes precedence.
+	// VolatilityCascade enables the book Ch9 propagation pass: a module strongly
+	// coupled to a high-effective-volatility module inherits raised effective
+	// volatility. The pass runs to a deterministic fixpoint and never lowers values.
 	VolatilityCascade bool `yaml:"volatility_cascade,omitempty"`
 	// Gate makes the synthesised coupling_balance score gate the verdict.
 	// Absent (nil) = coupling stays advisory, today's behavior. An unmeasured
@@ -213,10 +213,10 @@ type ClassifyConfig struct {
 	// `owner: same-team` is not overridden by the code-structure fallback even in
 	// a single-author (degenerate) repo.
 	ExplicitOwners map[string]bool
-	// VolatilityCascadeEnabled enables a single-hop volatility propagation pass:
-	// a module strongly coupled (strength ≥ functional) to a high-volatility
-	// module inherits high effective volatility. Config-declared volatility always
-	// takes precedence over the inferred result.
+	// VolatilityCascadeEnabled enables inferred volatility propagation: a module
+	// strongly coupled (strength ≥ functional) to a high-effective-volatility
+	// module inherits high effective volatility. The cascade runs to a deterministic
+	// fixpoint and only raises volatility; it never lowers configured values.
 	VolatilityCascadeEnabled bool
 	// ExternalSystems are the declared external integration seams
 	// (`external_systems:`). An edge whose target resolves to no module but

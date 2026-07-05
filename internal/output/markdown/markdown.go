@@ -91,6 +91,8 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 	writeDynamicImports(&b, d.DynamicImports)
 
+	writeRuntimeAsync(&b, d.RuntimeAsync, d.RuntimeAsyncEdges)
+
 	writeDeprecatedDeps(&b, d.DeprecatedDeps)
 
 	writeCoverageGaps(&b, d.CoverageGaps)

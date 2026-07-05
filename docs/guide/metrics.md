@@ -127,7 +127,7 @@ metric scores against a git ref.
 
 ### `coupling_balance` (headline metric)
 
-> **Scorer version:** `bc_score.v5` — Khononov Ch10 book formula, with clone-only duplicated knowledge scored by default.
+> **Scorer version:** `bc_score.v6` — Khononov Ch10 book formula, with clone-only duplicated knowledge scored by default and transitive inferred-volatility cascade when enabled.
 
 - **Represents:** how well the distribution of coupling across module boundaries
   respects the strength × distance × volatility balance rule. High score means
@@ -136,7 +136,7 @@ metric scores against a git ref.
 - **Formula:** `balance = max(|S − D|, 10 − V) + 1` (Khononov Ch10 verbatim);
   see [Concepts → The balance rule](concepts.md#the-balance-rule) for ordinals,
   abstain semantics, and confidence. `coupling.volatility_cascade: true` enables
-  single-hop cascade (book Ch9).
+  a deterministic fixpoint cascade (book Ch9).
 - **Affects verdict:** only through the opt-in
   [`coupling.gate`](configuration-reference.md#couplinggate) block — `min_band`
   (band floor) and `max_drop` (points below the baselined score) fail the run.
@@ -276,6 +276,22 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 - **Report-only by design:** never consumed by `coupling_balance`, findings,
   baselines, or gate verdicts.
 
+### `runtime_async` and `runtime_async_edges`
+
+- **Represents:** deterministic async/message-bus/task integration sites. This is
+  runtime/lifecycle coupling evidence for human review, not a scored distance
+  adjustment.
+- **Computed:** the runtime detector scans Go, TypeScript, and Python for known
+  async libraries and high-signal async framework patterns. Missing async evidence
+  never implies synchronous coupling.
+- **Output:** JSON `runtime_async` keeps the historical per-module rollup.
+  JSON `runtime_async_edges` groups the same concrete sites by
+  source module → runtime target (`library`, decorator, or async primitive), with
+  a capped site sample and a true `count`. Markdown renders the relationship-level
+  summary and points to JSON for the full list.
+- **Report-only by design:** neither block annotates graph edges, changes distance,
+  enters `coupling_balance`, affects baselines, or changes the gate verdict.
+
 ### `local_coupling`
 
 - **Represents:** intra-module cohesion — the book's Ch10 "local complexity"
@@ -303,13 +319,13 @@ Every cross-boundary edge is classified on the four lenses below
 `bc/imbalanced_coupling` advisories and feed `encapsulation` and
 `unbalanced_edge`.
 
-| Lens         | Values (ordered)                                                                                                                    | Derived from                                                                                       |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Strength     | `contract` < `model` < `functional` < `intrusive` (+`unknown`)                                                                      | public/internal globs, visibility, SCIP symbol kind, pinned labels                                 |
-| Distance     | `same_module` < `cross_module_same_owner` < `cross_module_different_owner` < `cross_deploy_unit` < `declared_external` (+`unknown`) | module map, `owner`, `deploy_unit`, declared `external_systems` seam                               |
-| Volatility   | `low` < `medium` < `high` (+`undeclared`, `unknown`)                                                                                | explicit `volatility:`, then `subdomain:`; else `undeclared` (no path/name guessing, no git churn) |
-| Explicitness | `explicit`, `implicit` (+`unknown`)                                                                                                 | strength (contract→explicit, intrusive→implicit) or AST hint                                       |
-| Severity     | (none) < `low` < `medium` < `high` < `critical`                                                                                     | the balance rule over the four above                                                               |
+| Lens         | Values (ordered)                                                                                                                    | Derived from                                                                                                                         |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Strength     | `contract` < `model` < `functional` < `intrusive` (+`unknown`)                                                                      | public/internal globs, visibility, SCIP symbol kind, pinned labels                                                                   |
+| Distance     | `same_module` < `cross_module_same_owner` < `cross_module_different_owner` < `cross_deploy_unit` < `declared_external` (+`unknown`) | module map, `owner`, `deploy_unit`, declared `external_systems` seam                                                                 |
+| Volatility   | `low` < `medium` < `high` (+`undeclared`, `unknown`)                                                                                | explicit `volatility:`, then `subdomain:`; optional strong-coupling cascade; else `undeclared` (no path/name guessing, no git churn) |
+| Explicitness | `explicit`, `implicit` (+`unknown`)                                                                                                 | strength (contract→explicit, intrusive→implicit) or AST hint                                                                         |
+| Severity     | (none) < `low` < `medium` < `high` < `critical`                                                                                     | the balance rule over the four above                                                                                                 |
 
 For the full severity table and the reasoning, see
 [Concepts → The balance rule](concepts.md#the-balance-rule).
@@ -336,14 +352,14 @@ Coverage and the optional metrics differ by language; when a tool is missing the
 dependent metric reports `n/a` **with the reason and enable step** — never a
 false failure.
 
-| Signal                       | Go                                          | TypeScript / JS                                    | Python                                    |
-| ---------------------------- | ------------------------------------------- | -------------------------------------------------- | ----------------------------------------- |
-| Dependency graph + gates     | `go/packages`                               | dependency-cruiser                                 | `grimp` (dotted modules)                  |
-| Node-ID scheme               | `file:`                                     | `file:`                                            | `module:` (incl. `src/` layout)           |
-| SCIP edge strength           | `scip-go`                                   | `scip-typescript` (needs `node_modules`)           | `scip-python`                             |
-| type-only vs runtime edges   | n/a                                         | tagged (→ Contract strength)                       | n/a                                       |
-| Connascence evidence         | name/type/meaning/algorithm from `go/types` | name/type from dependency-cruiser; refined by SCIP | name/private import only; refined by SCIP |
-| Dynamic / lazy import signal | n/a                                         | `require()` / dynamic `import()`                   | in-function / `importlib` / `__import__`  |
+| Signal                       | Go                                          | TypeScript / JS                                                    | Python                                                    |
+| ---------------------------- | ------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------- |
+| Dependency graph + gates     | `go/packages`                               | dependency-cruiser                                                 | `grimp` (dotted modules)                                  |
+| Node-ID scheme               | `file:`                                     | `file:`                                                            | `module:` (incl. `src/` layout)                           |
+| SCIP edge strength           | `scip-go`                                   | `scip-typescript` (needs `node_modules`)                           | `scip-python`                                             |
+| type-only vs runtime edges   | n/a                                         | tagged (→ Contract strength)                                       | n/a                                                       |
+| Connascence evidence         | name/type/meaning/algorithm from `go/types` | name/type from dependency-cruiser; symbol-kind refinements by SCIP | name/private import only; symbol-kind refinements by SCIP |
+| Dynamic / lazy import signal | n/a                                         | `require()` / dynamic `import()`                                   | in-function / `importlib` / `__import__`                  |
 
 SCIP refines edge strength feeding `coupling_balance` and `encapsulation` — it is
 not needed for gate rules, which work from the built-in extractor graph. For

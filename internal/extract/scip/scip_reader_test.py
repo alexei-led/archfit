@@ -40,6 +40,10 @@ GO_TERM = "scip-go gomod spotinfo v2.3.1 `spotinfo/internal/spot`/MaxAge."
 PY_TERM = "scip-python python ccgram 0.1.0 `src.ccgram.config`/MAX_SIZE."
 TS_TERM = "scip-typescript npm @colbymchenry/codegraph 0.9.9 src/db/`sqlite-adapter.ts`/pool."
 
+SCIP_KIND_INTERFACE = 21
+SCIP_KIND_CONSTANT = 8
+SCIP_KIND_FUNCTION = 17
+
 failures = []
 
 
@@ -106,6 +110,9 @@ check("classify py term → functional (unchanged)", r._classify(PY_TERM, "pytho
 check("classify ts term → functional (unchanged)", r._classify(TS_TERM, "typescript", NO_CONTRACT), "functional")
 check("classify private wins", r._classify(PY_PRIV, "python", NO_CONTRACT), "intrusive")
 check("classify contract-set wins", r._classify(RUST_CONST, "rust", {RUST_CONST}), "contract")
+check("classify kind interface → contract", r._classify(TS_TYPE, "typescript", NO_CONTRACT, SCIP_KIND_INTERFACE), "contract")
+check("classify kind constant → model", r._classify(TS_TERM, "typescript", NO_CONTRACT, SCIP_KIND_CONSTANT), "model")
+check("classify kind function → functional", r._classify(PY_TERM, "python", NO_CONTRACT, SCIP_KIND_FUNCTION), "functional")
 
 # _connascence_kind: static categories only where symbol facts support them.
 check("connascence private → name", r._connascence_kind(PY_PRIV, "python", NO_CONTRACT), "name")
@@ -114,6 +121,8 @@ check("connascence contract → type", r._connascence_kind(RUST_CONST, "rust", {
 check("connascence rust const → meaning", r._connascence_kind(RUST_CONST, "rust", NO_CONTRACT), "meaning")
 check("connascence function → algorithm", r._connascence_kind(RUST_FN, "rust", NO_CONTRACT), "algorithm")
 check("connascence ts term abstains to name", r._connascence_kind(TS_TERM, "typescript", NO_CONTRACT), "name")
+check("connascence kind interface → type", r._connascence_kind(TS_TYPE, "typescript", NO_CONTRACT, SCIP_KIND_INTERFACE), "type")
+check("connascence kind constant → meaning", r._connascence_kind(TS_TERM, "typescript", NO_CONTRACT, SCIP_KIND_CONSTANT), "meaning")
 
 # DTO abstention (Wave 4 Task 3): the Go extractor upgrades a pure-data struct
 # to the "dto" hint using method sets + field visibility from go/types type

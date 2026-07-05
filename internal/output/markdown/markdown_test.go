@@ -48,6 +48,13 @@ const (
 	kindFunction   = "function"
 	roleHandler    = "handler"
 	fileAPIHandler = "pkg/api/handler.go"
+
+	// Runtime async test literals.
+	modAPI        = "api"
+	kindMQ        = "message_queue"
+	confMedium    = "medium"
+	rabbitMQLib   = "github.com/rabbitmq/amqp091-go"
+	filePublisher = "api/publisher.go"
 )
 
 func TestRenderer_Format(t *testing.T) {
@@ -277,6 +284,58 @@ func TestRenderer_Render_DynamicImportsAbsentWhenEmpty(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "Dynamic / lazy imports") {
 		t.Errorf("dynamic imports section should be omitted when empty\nfull output:\n%s", buf.String())
+	}
+}
+
+func TestRenderer_Render_RuntimeAsync(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.RuntimeAsync = []diagnostic.RuntimeAsyncModule{
+		{Module: modAPI, IntegrationKind: kindMQ, Count: 2, Confidence: confMedium},
+	}
+	d.RuntimeAsyncEdges = []diagnostic.RuntimeAsyncEdge{
+		{
+			FromModule: modAPI, Target: rabbitMQLib, IntegrationKind: kindMQ, Count: 2, Confidence: confMedium,
+			Sites: []diagnostic.RuntimeAsyncSite{
+				{File: filePublisher, Line: 10, Library: rabbitMQLib, IntegrationKind: kindMQ, Language: "go"},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"## Runtime async bridges",
+		"Report-only. Runtime async evidence is grouped by module",
+		"2 sites across 1 modules and 1 module→target relation(s)",
+		"**" + modAPI + "** → `" + rabbitMQLib + "` [" + kindMQ + "]: 2",
+		filePublisher + ":10[" + kindMQ + "]",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "BC-UNBALANCED") {
+		t.Errorf("runtime async must not render as BC advisories\nfull output:\n%s", out)
+	}
+}
+
+func TestRenderer_Render_RuntimeAsyncAbsentWhenEmpty(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if strings.Contains(buf.String(), "Runtime async bridges") {
+		t.Errorf("runtime async section should be omitted when empty\nfull output:\n%s", buf.String())
 	}
 }
 

@@ -207,6 +207,19 @@ type RuntimeAsyncModule struct {
 	Confidence      string `json:"confidence"`       // "low" | "medium"
 }
 
+// RuntimeAsyncEdge is a relationship-level async integration fact from one
+// module to one runtime target (library, decorator, or async primitive).
+// Report-only prerequisite evidence for a future runtime-distance model; never
+// consumed by verdict, gate, classify, score, or baseline logic.
+type RuntimeAsyncEdge struct {
+	FromModule      string             `json:"from_module"`
+	Target          string             `json:"target"`
+	IntegrationKind string             `json:"integration_kind"` // "message_queue" | "event_bus" | "async_task"
+	Count           int                `json:"count"`            // number of detected signals for this module→target relation
+	Confidence      string             `json:"confidence"`       // "low" | "medium"
+	Sites           []RuntimeAsyncSite `json:"sites,omitempty"`  // capped deterministic sample; Count is the true total
+}
+
 // DeprecatedDep is one locally-declared deprecation or retraction marker found
 // in a manifest file. Report-only evidence — never consumed by verdict or gate
 // logic, never alters the dependency graph or any metric.
@@ -501,6 +514,11 @@ type Diagnostic struct {
 	// annotates graph edges and never affects distance, score, or verdict.
 	// Empty when no async patterns were detected.
 	RuntimeAsync []RuntimeAsyncModule `json:"runtime_async,omitempty"`
+	// RuntimeAsyncEdges is the relationship-level async-bridge evidence block.
+	// It groups concrete sites by source module and runtime target so later work
+	// can review runtime distance without re-scanning raw files. Evidence only —
+	// never consumed by classify, score, baseline deltas, or gate verdicts.
+	RuntimeAsyncEdges []RuntimeAsyncEdge `json:"runtime_async_edges,omitempty"`
 	// DeprecatedDeps is the report-only locally-declared deprecation/retraction
 	// marker block. Evidence only — never consumed by verdict or gate logic, never
 	// alters the dependency graph or any metric. Omitted when no markers were found.
