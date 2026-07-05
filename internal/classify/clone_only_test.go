@@ -87,6 +87,14 @@ func TestCloneOnlyPairs(t *testing.T) {
 			want: 0,
 		},
 		{
+			name: "llm label accepts the pair",
+			g:    emptyGraph,
+			cfg: cloneOnlyCfg(func(c *config.ClassifyConfig) {
+				c.LLMLabels = map[string]string{modABKey: hintFunctional}
+			}),
+			want: 0,
+		},
+		{
 			name: "frozen pair scores balanced → no pair",
 			g:    emptyGraph,
 			cfg: cloneOnlyCfg(func(c *config.ClassifyConfig) {
@@ -111,6 +119,20 @@ func TestCloneOnlyPairs(t *testing.T) {
 				t.Fatalf("CloneOnlyPairs returned %d pairs, want %d: %+v", len(got), tt.want, got)
 			}
 		})
+	}
+}
+
+func TestCloneOnlyPairs_ReportOnlyDoesNotInventClassifiedEdges(t *testing.T) {
+	t.Parallel()
+	g := graph.Build(nil)
+	cfg := cloneOnlyCfg(nil)
+
+	pairs := classify.CloneOnlyPairs(g, cfg)
+	if len(pairs) != 1 {
+		t.Fatalf("CloneOnlyPairs returned %d pairs, want 1", len(pairs))
+	}
+	if idx := classify.Run(g, cfg); len(idx) != 0 {
+		t.Fatalf("classify.Run produced %d classified graph edges for clone-only evidence, want 0: %+v", len(idx), idx)
 	}
 }
 

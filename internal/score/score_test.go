@@ -14,6 +14,7 @@ const (
 	metricBlastRadius = "blast_radius"
 	sevCritical       = "critical"
 	sevLow            = "low"
+	sevNone           = "none"
 )
 
 func metric(name string, value float64, band, conf string) diagnostic.MetricResult {
@@ -155,7 +156,7 @@ func TestCouplingBalance(t *testing.T) {
 
 	t.Run("balanced low-effort edges score high", func(t *testing.T) {
 		got := cb(
-			bcAdv("a", "b", "contract", "cross_module_same_owner", "low", 2, "none", "low", 10),
+			bcAdv("a", "b", "contract", "cross_module_same_owner", "low", 2, sevNone, "low", 10),
 		)
 		if got.Value < 61 {
 			t.Errorf("low-effort value = %d, want serviceable+ (≥61)", got.Value)
@@ -164,7 +165,7 @@ func TestCouplingBalance(t *testing.T) {
 
 	t.Run("a single worst-case edge caps at mixed", func(t *testing.T) {
 		got := cb(
-			bcAdv("a", "b", "contract", "cross_module_same_owner", "low", 1, "none", "low", 100),
+			bcAdv("a", "b", "contract", "cross_module_same_owner", "low", 1, sevNone, "low", 100),
 			bcAdv("c", "d", "intrusive", "cross_deploy_unit", "high", 10, "critical", "critical", 1),
 		)
 		if got.Value > 60 {
@@ -174,7 +175,7 @@ func TestCouplingBalance(t *testing.T) {
 
 	t.Run("pervasive worst-case caps at poor", func(t *testing.T) {
 		got := cb(
-			bcAdv("a", "b", "contract", "cross_module_same_owner", "low", 1, "none", "low", 50),
+			bcAdv("a", "b", "contract", "cross_module_same_owner", "low", 1, sevNone, "low", 50),
 			bcAdv("c", "d", "intrusive", "cross_deploy_unit", "high", 10, "critical", "critical", 10),
 		)
 		if got.Value > 40 {
@@ -281,7 +282,7 @@ func TestCouplingBalance_Distribution(t *testing.T) {
 	}{
 		{
 			name:       "all balanced high scored fraction → strong/high",
-			sum:        summary(50, 0, 9.0, map[string]int{"none": 50}),
+			sum:        summary(50, 0, 9.0, map[string]int{sevNone: 50}),
 			wantMinVal: 88, wantMaxVal: 90,
 			wantConf: ConfidenceHigh,
 			wantBand: BandStrong,
@@ -362,13 +363,44 @@ func TestCouplingBalance_Distribution(t *testing.T) {
 	}
 }
 
+func TestCouplingBalance_TinyFullyScoredGraphCurrentlyHighConfidence(t *testing.T) {
+	cases := []struct {
+		name   string
+		scored int
+	}{
+		{name: "one scored edge", scored: 1},
+		{name: "two scored edges", scored: 2},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := diagnostic.New()
+			d.Metrics = []diagnostic.MetricResult{metric(metricBlastRadius, 1, "info", "high")}
+			d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
+				Total:       tc.scored,
+				Scored:      tc.scored,
+				MeanBalance: 10.0,
+				BySeverity:  map[string]int{sevNone: tc.scored},
+			}
+
+			got := couplingBalanceDim(t, Synthesize(d))
+			if got.Confidence != ConfidenceHigh {
+				t.Errorf("confidence = %q, want high for current 100%% scored-fraction policy", got.Confidence)
+			}
+			if got.Band != BandStrong {
+				t.Errorf("band = %q (value %d), want strong under current tiny/full-score behavior", got.Band, got.Value)
+			}
+		})
+	}
+}
+
 func TestCouplingBalance_Distribution_AdvisoryTailIndependent(t *testing.T) {
 	nonDegen := nonDegenMetricIndex()
 
 	sum := &diagnostic.ClassifiedEdgeSummary{
 		Total: 10, Scored: 10, Abstained: 0,
 		MeanBalance: 9.0,
-		BySeverity:  map[string]int{"none": 9, sevCritical: 1},
+		BySeverity:  map[string]int{sevNone: 9, sevCritical: 1},
 	}
 	worstAdvisory := bcAdv("a", "b", "intrusive", "cross_deploy_unit", "high", 1, "critical", "critical", 1)
 

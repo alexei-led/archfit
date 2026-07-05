@@ -54,11 +54,22 @@ func findingsByRule(fnds []finding.Finding, rule string) []finding.Finding {
 // duplicated-code locations.
 func TestDuplicatedKnowledgeAdvisory(t *testing.T) {
 	t.Parallel()
-	fnds := collectAdvisories(graph.Build(nil), coupling.Index{}, dkClassifyCfg(), nil, RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: config.WaiverSet{}})
+	g := graph.Build(nil)
+	cfg := dkClassifyCfg()
+	idx := classify.Run(g, cfg)
+	fnds := collectAdvisories(g, idx, cfg, nil, RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: config.WaiverSet{}})
 
 	dk := findingsByRule(fnds, RuleIDBCDuplicatedKnowledge)
 	if len(dk) != 1 {
 		t.Fatalf("bc/duplicated_knowledge findings = %d, want 1: %+v", len(dk), fnds)
+	}
+	if bc := findingsByRule(fnds, RuleIDBCImbalanced); len(bc) != 0 {
+		t.Fatalf("bc/imbalanced_coupling findings = %d, want 0 for clone-only evidence: %+v", len(bc), bc)
+	}
+	summary := buildClassifiedEdgeSummary(idx)
+	if summary.Total != 0 || summary.Scored != 0 || summary.Abstained != 0 {
+		t.Fatalf("classified_edges = total %d scored %d abstained %d, want all zero for report-only clone-only evidence",
+			summary.Total, summary.Scored, summary.Abstained)
 	}
 	f := dk[0]
 	if f.Kind != finding.KindAdvisory {

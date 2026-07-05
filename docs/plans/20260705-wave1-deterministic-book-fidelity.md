@@ -78,10 +78,10 @@ Manual checks:
 
 - Confirm the baseline note cites `reports/book-alignment-review-2026-07-05/00-REVIEW.md` and records skipped corpus repos, if any.
 
-- [ ] Add failing-or-characterization tests for the current advisory-only clone-only policy.
-- [ ] Add tests showing tiny fully scored graphs currently can appear high confidence.
-- [ ] Record current self/corpus scores in `docs/plans/notes/wave1-deterministic-baseline.md`.
-- [ ] Run the verification commands and paste the result summary into the note.
+- [x] Add failing-or-characterization tests for the current advisory-only clone-only policy.
+- [x] Add tests showing tiny fully scored graphs currently can appear high confidence.
+- [x] Record current self/corpus scores in `docs/plans/notes/wave1-deterministic-baseline.md`.
+- [x] Run the verification commands and paste the result summary into the note.
 
 ### Task 2: Make clone-only duplicated knowledge score policy explicit
 
