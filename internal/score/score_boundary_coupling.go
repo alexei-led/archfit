@@ -36,8 +36,12 @@ const (
 func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.ClassifiedEdgeSummary) Dimension {
 	dim := Dimension{Name: DimCouplingBalance}
 
-	// Degenerate graph: <2 connected modules — coupling unmeasurable regardless of summary.
-	if degenerateGraph(mi) {
+	// Degenerate import graph: <2 modules joined by dependency edges. That is
+	// unmeasurable only when the classified summary has no internal cross-boundary
+	// coupling facts either. Clone-only duplicated knowledge is deliberately a
+	// score-bearing coupling fact without an import edge, so it must be allowed to
+	// reach the summary path.
+	if degenerateGraph(mi) && (summary == nil || summary.Scored+summary.Abstained == 0) {
 		dim.Band = BandNA
 		dim.Confidence = ConfidenceLow
 		dim.Value = 0

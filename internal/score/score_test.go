@@ -225,6 +225,26 @@ func TestCouplingBalance_EmptyEdges(t *testing.T) {
 		}
 	})
 
+	t.Run("degenerate import graph + scored clone-only evidence still measures", func(t *testing.T) {
+		degen := metricIndex{metricBlastRadius: metric(metricBlastRadius, 0, "n/a", "low")}
+		summary := &diagnostic.ClassifiedEdgeSummary{
+			Scored:           1,
+			MeanBalance:      6,
+			CloneOnlyScored:  1,
+			ConnectedModules: 2,
+		}
+		got := couplingBalance(nil, degen, summary)
+		if got.Band == BandNA {
+			t.Fatal("band = n/a with scored clone-only duplicated knowledge; clone-only pairs must enter coupling_balance even without import edges")
+		}
+		if got.Value == 0 {
+			t.Fatal("value = 0 with scored clone-only duplicated knowledge; want measured coupling_balance")
+		}
+		if !evidenceContains(got.Evidence, "clone-only duplicated-knowledge pairs: 1 scored, 0 advisory-only") {
+			t.Errorf("expected clone-only evidence, got: %v", got.Evidence)
+		}
+	})
+
 	t.Run("blast_radius disabled by config is NOT degeneracy — scored summary still measures", func(t *testing.T) {
 		summary := &diagnostic.ClassifiedEdgeSummary{Scored: 10, MeanBalance: 8.2}
 		got := couplingBalance(nil, metricIndex{}, summary)
