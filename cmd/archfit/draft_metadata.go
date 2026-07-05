@@ -40,16 +40,22 @@ type ruleSuggestionResponse struct {
 	Basis        string   `json:"basis"`
 }
 
-func draftMetadata(scope, name, basis string, refs []string, requireEvidence bool) (string, []string, error) {
+func draftMetadata(scope, name, basis string, refs []string, requireEvidence bool, allowedRefs ...map[string]struct{}) (string, []string, error) {
 	basis = strings.TrimSpace(basis)
 	cleaned := cleanEvidenceRefs(refs)
 	if basis != "" && !validDraftBasis(basis) {
 		return "", nil, fmt.Errorf("%s %q has invalid basis %q", scope, name, basis)
 	}
+	knownRefs := firstAllowedEvidenceRefs(allowedRefs)
 	if len(cleaned) > 0 {
 		for _, ref := range cleaned {
 			if !validEvidenceRef(ref) {
 				return "", nil, fmt.Errorf("%s %q has invalid %s %q", scope, name, jsonFieldEvidenceRefs, ref)
+			}
+			if knownRefs != nil {
+				if _, ok := knownRefs[ref]; !ok {
+					return "", nil, fmt.Errorf("%s %q has unsupported %s %q", scope, name, jsonFieldEvidenceRefs, ref)
+				}
 			}
 		}
 	}
@@ -63,6 +69,13 @@ func draftMetadata(scope, name, basis string, refs []string, requireEvidence boo
 		return "", nil, fmt.Errorf("%s %q missing %s", scope, name, jsonFieldEvidenceRefs)
 	}
 	return basis, cleaned, nil
+}
+
+func firstAllowedEvidenceRefs(allowedRefs []map[string]struct{}) map[string]struct{} {
+	if len(allowedRefs) == 0 || len(allowedRefs[0]) == 0 {
+		return nil
+	}
+	return allowedRefs[0]
 }
 
 func validDraftBasis(s string) bool {
@@ -110,7 +123,32 @@ func validEvidenceRef(ref string) bool {
 	return true
 }
 
-func parseRuleSuggestionResponses(module string, entries []ruleSuggestionResponse, requireEvidence bool) ([]initcfg.RuleSuggestion, error) {
+func evidenceRefSet(lines []string) map[string]struct{} {
+	if len(lines) == 0 {
+		return nil
+	}
+	refs := make(map[string]struct{}, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
+		id, _, ok := strings.Cut(line, " (")
+		if !ok {
+			id, _, ok = strings.Cut(line, " ")
+		}
+		if !ok {
+			id = line
+		}
+		id = strings.TrimSpace(id)
+		if validEvidenceRef(id) {
+			refs[id] = struct{}{}
+		}
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+	return refs
+}
+
+func parseRuleSuggestionResponses(module string, entries []ruleSuggestionResponse, requireEvidence bool, allowedRefs ...map[string]struct{}) ([]initcfg.RuleSuggestion, error) {
 	out := make([]initcfg.RuleSuggestion, 0, len(entries))
 	for _, e := range entries {
 		typ := strings.TrimSpace(e.Type)
@@ -126,7 +164,7 @@ func parseRuleSuggestionResponses(module string, entries []ruleSuggestionRespons
 		if rationale == "" {
 			return nil, fmt.Errorf("rule suggestion %q missing rationale", name)
 		}
-		basis, refs, err := draftMetadata("rule suggestion", name, e.Basis, e.EvidenceRefs, requireEvidence)
+		basis, refs, err := draftMetadata("rule suggestion", name, e.Basis, e.EvidenceRefs, requireEvidence, firstAllowedEvidenceRefs(allowedRefs))
 		if err != nil {
 			return nil, err
 		}

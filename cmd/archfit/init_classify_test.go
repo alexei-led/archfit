@@ -238,6 +238,22 @@ func TestClassifyModulesWithEvidence_InvalidEvidenceRefsError(t *testing.T) {
 	}
 }
 
+func TestClassifyModulesWithEvidence_UnsupportedEvidenceRefsError(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test","evidence_refs":["doc:missing.md"],"basis":"semantic_judgment"}]`
+	p := &fakeClassifyProvider{responses: []string{resp}}
+
+	_, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{testRepoEvidence})
+	if err == nil {
+		t.Fatal("unsupported evidence_refs must return an error")
+	}
+	if !strings.Contains(err.Error(), "unsupported evidence_refs") {
+		t.Fatalf("error = %v, want unsupported evidence_refs", err)
+	}
+}
+
 func TestClassifyModulesWithEvidence_ParsesRuleSuggestions(t *testing.T) {
 	t.Parallel()
 	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
@@ -259,6 +275,22 @@ func TestClassifyModulesWithEvidence_ParsesRuleSuggestions(t *testing.T) {
 	rule := ann.RuleSuggestions[0]
 	if rule.Type != ruleTypeForbiddenDependency || len(rule.EvidenceRefs) != 1 || rule.Basis != initcfg.DraftBasisSemanticJudgment {
 		t.Fatalf("bad rule suggestion: %+v", rule)
+	}
+}
+
+func TestClassifyModulesWithEvidence_UnsupportedRuleSuggestionEvidenceRefsError(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment","rule_suggestions":[{"id":"bad-ref","type":"forbidden_dependency","from":"internal/mod0/**","to":"internal/adapter/**","rationale":"bad","evidence_refs":["doc:missing.md"],"basis":"semantic_judgment"}]}]`
+	p := &fakeClassifyProvider{responses: []string{resp}}
+
+	_, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{testRepoEvidence})
+	if err == nil {
+		t.Fatal("unsupported rule suggestion evidence_refs must return an error")
+	}
+	if !strings.Contains(err.Error(), "unsupported evidence_refs") {
+		t.Fatalf("error = %v, want unsupported evidence_refs", err)
 	}
 }
 

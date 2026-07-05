@@ -242,6 +242,7 @@ func classifyModules(ctx context.Context, p llm.Provider, targets []initcfg.Clas
 
 func classifyModulesWithEvidence(ctx context.Context, p llm.Provider, targets []initcfg.ClassifyTarget, layers []string, repoEvidence []string) (map[string]initcfg.ModuleAnnotation, error) {
 	out := make(map[string]initcfg.ModuleAnnotation, len(targets))
+	allowedRefs := evidenceRefSet(repoEvidence)
 	for start := 0; start < len(targets); start += classifyBatchSize {
 		batch := targets[start:min(start+classifyBatchSize, len(targets))]
 		userPrompt := classifyUserPrompt(batch, layers, repoEvidence)
@@ -259,7 +260,7 @@ func classifyModulesWithEvidence(ctx context.Context, p llm.Provider, targets []
 				return nil, err
 			}
 			batchOut = make(map[string]initcfg.ModuleAnnotation, len(batch))
-			parseErr = parseClassifyResponseWithEvidence(resp.Text, batch, batchOut, len(repoEvidence) > 0)
+			parseErr = parseClassifyResponseWithEvidence(resp.Text, batch, batchOut, len(repoEvidence) > 0, allowedRefs)
 			if parseErr == nil {
 				break
 			}
@@ -276,7 +277,7 @@ func classifyModulesWithEvidence(ctx context.Context, p llm.Provider, targets []
 }
 
 // parseClassifyResponse parses one batch response and merges valid entries into dst.
-func parseClassifyResponseWithEvidence(text string, batch []initcfg.ClassifyTarget, dst map[string]initcfg.ModuleAnnotation, requireEvidence bool) error {
+func parseClassifyResponseWithEvidence(text string, batch []initcfg.ClassifyTarget, dst map[string]initcfg.ModuleAnnotation, requireEvidence bool, allowedRefs ...map[string]struct{}) error {
 	// Tolerate accidental markdown fencing, nothing else.
 	text = strings.TrimSpace(text)
 	text = strings.TrimPrefix(text, "```json")
@@ -308,11 +309,11 @@ func parseClassifyResponseWithEvidence(text string, batch []initcfg.ClassifyTarg
 		if strings.TrimSpace(e.Rationale) == "" {
 			return fmt.Errorf("classify: entry %q missing rationale", e.Module)
 		}
-		basis, refs, err := draftMetadata("classify entry", e.Module, e.Basis, e.EvidenceRefs, requireEvidence)
+		basis, refs, err := draftMetadata("classify entry", e.Module, e.Basis, e.EvidenceRefs, requireEvidence, firstAllowedEvidenceRefs(allowedRefs))
 		if err != nil {
 			return err
 		}
-		rules, err := parseRuleSuggestionResponses(e.Module, e.RuleSuggestions, requireEvidence)
+		rules, err := parseRuleSuggestionResponses(e.Module, e.RuleSuggestions, requireEvidence, firstAllowedEvidenceRefs(allowedRefs))
 		if err != nil {
 			return err
 		}

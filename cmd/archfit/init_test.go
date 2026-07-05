@@ -353,14 +353,15 @@ type flexFakeProvider struct {
 func (p *flexFakeProvider) Name() string { return "test/flex" }
 func (p *flexFakeProvider) Complete(_ context.Context, req llm.Request) (llm.Response, error) {
 	// Extract module names from lines like "- module: <name>" in the user prompt.
+	ref := firstEvidenceRefForTest(req.User)
 	var entries []string
 	for _, line := range strings.Split(req.User, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "- module: ") {
 			name := strings.TrimSpace(strings.TrimPrefix(line, "- module: "))
 			entries = append(entries, fmt.Sprintf(
-				`{"module":%q,"subdomain":%q,"volatility":%q,"layer":%q,"name":"","rationale":"test cites diag:test","evidence_refs":["diag:test"],"basis":"semantic_judgment"}`,
-				name, p.subdomain, p.volatility, p.layer,
+				`{"module":%q,"subdomain":%q,"volatility":%q,"layer":%q,"name":"","rationale":"test cites %s","evidence_refs":[%q],"basis":"semantic_judgment"}`,
+				name, p.subdomain, p.volatility, p.layer, ref, ref,
 			))
 		}
 	}

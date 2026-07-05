@@ -735,7 +735,7 @@ rules:
 		"RULE SUGGESTIONS",
 		"type: forbidden_dependency",
 		"id: no-adapter-to-core",
-		"evidence_refs: doc:README.md",
+		"evidence_refs: config:.archfit.yaml",
 		"basis: semantic_judgment",
 	} {
 		if !strings.Contains(out, want) {
@@ -807,8 +807,9 @@ func TestUpdateCmd_ChangedSinceReadAborts(t *testing.T) {
 type ruleSuggestionProvider struct{}
 
 func (p *ruleSuggestionProvider) Name() string { return "test/rule-suggestion" }
-func (p *ruleSuggestionProvider) Complete(_ context.Context, _ llm.Request) (llm.Response, error) {
-	return llm.Response{Text: `[{"module":"mymod","subdomain":"core","volatility":"low","layer":"core","name":"","rationale":"module classification cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment","rule_suggestions":[{"id":"no-adapter-to-core","type":"forbidden_dependency","gate":"warn","from":"adapter/**","to":"core/**","rationale":"adapter should not call core internals; see doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}]}]`}, nil
+func (p *ruleSuggestionProvider) Complete(_ context.Context, req llm.Request) (llm.Response, error) {
+	ref := firstEvidenceRefForTest(req.User)
+	return llm.Response{Text: fmt.Sprintf(`[{"module":"mymod","subdomain":"core","volatility":"low","layer":"core","name":"","rationale":"module classification cites %[1]s","evidence_refs":[%[2]q],"basis":"semantic_judgment","rule_suggestions":[{"id":"no-adapter-to-core","type":"forbidden_dependency","gate":"warn","from":"adapter/**","to":"core/**","rationale":"adapter should not call core internals; see %[1]s","evidence_refs":[%[2]q],"basis":"semantic_judgment"}]}]`, ref, ref)}, nil
 }
 
 var _ llm.Provider = (*ruleSuggestionProvider)(nil)
@@ -866,6 +867,7 @@ type fakeOmitProvider struct {
 
 func (p *fakeOmitProvider) Name() string { return "test/omit" }
 func (p *fakeOmitProvider) Complete(_ context.Context, req llm.Request) (llm.Response, error) {
+	ref := firstEvidenceRefForTest(req.User)
 	var entries []string
 	for _, line := range strings.Split(req.User, "\n") {
 		line = strings.TrimSpace(line)
@@ -873,8 +875,8 @@ func (p *fakeOmitProvider) Complete(_ context.Context, req llm.Request) (llm.Res
 			name := strings.TrimSpace(strings.TrimPrefix(line, "- module: "))
 			if name == p.classifyName {
 				entries = append(entries, fmt.Sprintf(
-					`{"module":%q,"subdomain":"core","volatility":"low","layer":"core","name":"","rationale":"test cites diag:test","evidence_refs":["diag:test"],"basis":"semantic_judgment"}`,
-					name,
+					`{"module":%q,"subdomain":"core","volatility":"low","layer":"core","name":"","rationale":"test cites %s","evidence_refs":[%q],"basis":"semantic_judgment"}`,
+					name, ref, ref,
 				))
 			}
 			// Other modules intentionally omitted to trigger the partial-classify warning.
@@ -893,14 +895,15 @@ type rustSyntheticProvider struct{}
 func (rustSyntheticProvider) Name() string { return "test/rust-synthetic" }
 
 func (rustSyntheticProvider) Complete(_ context.Context, req llm.Request) (llm.Response, error) {
+	ref := firstEvidenceRefForTest(req.User)
 	var entries []string
 	for _, line := range strings.Split(req.User, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "- module: ") {
 			name := strings.TrimSpace(strings.TrimPrefix(line, "- module: "))
 			entries = append(entries, fmt.Sprintf(
-				`{"module":%q,"subdomain":"supporting","volatility":"low","layer":"core","role":"core","name":"","rationale":"synthetic module review cites diag:test","evidence_refs":["diag:test"],"basis":"semantic_judgment"}`,
-				name,
+				`{"module":%q,"subdomain":"supporting","volatility":"low","layer":"core","role":"core","name":"","rationale":"synthetic module review cites %s","evidence_refs":[%q],"basis":"semantic_judgment"}`,
+				name, ref, ref,
 			))
 		}
 	}

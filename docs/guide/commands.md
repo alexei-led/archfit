@@ -178,8 +178,10 @@ environments, or with `--quiet`. This keeps `archfit --json | jq` clean.
 - `--sarif` — output SARIF 2.1.0 (shorthand for `--format sarif`).
 - `--format <fmt>` — repeatable: `text` (default), `json`, `markdown`/`md`,
   `sarif`, `scorecard`. Shorthands and `--format` are mutually exclusive.
-- `--llm` — append an off-gate LLM advisory interpretation after the
-  deterministic output (needs `ai:` configured in `.archfit.yaml`).
+- `--llm` — add an off-gate LLM advisory interpretation after the
+  deterministic output (needs `ai:` configured in `.archfit.yaml`). For `json`,
+  `sarif`, and `scorecard` formats the review is written to stderr so stdout
+  stays parseable.
 - `--full` — scan all files (default true).
 - `--advisory` — include Balanced Coupling advisories (default true).
 - `--no-cache` — bypass archfit caches: extractor facts (and LLM responses with
@@ -256,10 +258,11 @@ synthesised score fail the run (exit 1) on a band floor or score drop.
 
 `archfit analyze --llm` runs the full deterministic pipeline, synthesizes the
 scorecard, builds the shared repository evidence pack, and feeds those cited
-facts to the LLM for an architect review appended after the deterministic output.
-It is **off-gate**: the review is advisory only and never affects the gate
-verdict, findings, metrics, or scorecard (enforced by the LLM-off-gate invariant
-in `internal/arch_test.go`).
+facts to the LLM for an architect review after the deterministic output. Text and
+Markdown runs append the review to stdout; `json`, `sarif`, and `scorecard` runs
+write it to stderr so machine stdout stays parseable. It is **off-gate**: the
+review is advisory only and never affects the gate verdict, findings, metrics, or
+scorecard (enforced by the LLM-off-gate invariant in `internal/arch_test.go`).
 
 ```sh
 archfit analyze --llm --config .archfit.yaml

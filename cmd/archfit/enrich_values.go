@@ -213,6 +213,7 @@ type valueResponse struct {
 // entries. codeowners (may be empty) is appended to every batch's user turn.
 func draftModuleValues(ctx context.Context, p llm.Provider, spec valueSpec, targets []initcfg.ClassifyTarget, codeowners string, repoEvidence []string) ([]initcfg.ValueDraft, error) {
 	var out []initcfg.ValueDraft
+	allowedRefs := evidenceRefSet(repoEvidence)
 	for start := 0; start < len(targets); start += valueBatchSize {
 		batch := targets[start:min(start+valueBatchSize, len(targets))]
 		resp, err := p.Complete(ctx, llm.Request{
@@ -222,7 +223,7 @@ func draftModuleValues(ctx context.Context, p llm.Provider, spec valueSpec, targ
 		if err != nil {
 			return nil, err
 		}
-		drafts, err := parseValueResponse(resp.Text, spec, batch, len(repoEvidence) > 0)
+		drafts, err := parseValueResponse(resp.Text, spec, batch, len(repoEvidence) > 0, allowedRefs)
 		if err != nil {
 			return nil, err
 		}
@@ -262,7 +263,7 @@ func valueUserPrompt(batch []initcfg.ClassifyTarget, codeowners string, repoEvid
 // parseValueResponse strictly parses the model's JSON and keeps only entries for
 // requested modules with valid values. A malformed body is an error (never write
 // a half-understood draft file); unknown modules / invalid values are skipped.
-func parseValueResponse(text string, spec valueSpec, batch []initcfg.ClassifyTarget, requireEvidence bool) ([]initcfg.ValueDraft, error) {
+func parseValueResponse(text string, spec valueSpec, batch []initcfg.ClassifyTarget, requireEvidence bool, allowedRefs ...map[string]struct{}) ([]initcfg.ValueDraft, error) {
 	text = strings.TrimSpace(text)
 	text = strings.TrimPrefix(text, "```json")
 	text = strings.TrimPrefix(text, "```")
@@ -294,7 +295,7 @@ func parseValueResponse(text string, spec valueSpec, batch []initcfg.ClassifyTar
 		if rationale == "" {
 			return nil, fmt.Errorf("enrich --%s: entry %q missing rationale", spec.name, e.Module)
 		}
-		basis, refs, err := draftMetadata("enrich --"+spec.name+" entry", e.Module, e.Basis, e.EvidenceRefs, requireEvidence)
+		basis, refs, err := draftMetadata("enrich --"+spec.name+" entry", e.Module, e.Basis, e.EvidenceRefs, requireEvidence, firstAllowedEvidenceRefs(allowedRefs))
 		if err != nil {
 			return nil, err
 		}

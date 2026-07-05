@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -201,8 +202,14 @@ type analyzeJSONStableSections struct {
 
 func runAnalyzeJSON(t *testing.T, cfgPath string, llmEnabled bool, provider llm.Provider) (string, error) {
 	t.Helper()
-	var buf bytes.Buffer
-	deps := &appDeps{Runner: toolrun.New(), Stdout: &buf}
+	out, _, err := runAnalyzeJSONWithStderr(t, cfgPath, llmEnabled, provider)
+	return out, err
+}
+
+func runAnalyzeJSONWithStderr(t *testing.T, cfgPath string, llmEnabled bool, provider llm.Provider) (string, string, error) {
+	t.Helper()
+	var buf, stderr bytes.Buffer
+	deps := &appDeps{Runner: toolrun.New(), Stdout: &buf, Stderr: &stderr}
 	cmd := AnalyzeCmd{
 		Config:           cfgPath,
 		Full:             true,
@@ -212,7 +219,7 @@ func runAnalyzeJSON(t *testing.T, cfgPath string, llmEnabled bool, provider llm.
 		providerOverride: provider,
 	}
 	err := cmd.Run(deps)
-	return buf.String(), err
+	return buf.String(), stderr.String(), err
 }
 
 func decodeAnalyzeJSONStableSections(t *testing.T, out string) analyzeJSONStableSections {
@@ -221,6 +228,9 @@ func decodeAnalyzeJSONStableSections(t *testing.T, out string) analyzeJSONStable
 	dec := json.NewDecoder(strings.NewReader(out))
 	if err := dec.Decode(&sections); err != nil {
 		t.Fatalf("decode analyze JSON: %v\noutput:\n%s", err, out)
+	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		t.Fatalf("decode analyze JSON: trailing non-JSON content: %v\noutput:\n%s", err, out)
 	}
 	return sections
 }
@@ -252,7 +262,7 @@ func TestRun_Analyze_LLMJSONDeterministicSectionsUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("deterministic analyze: %v\n%s", err, deterministicOut)
 	}
-	llmOut, err := runAnalyzeJSON(t, cfgPath, true, &fixedProvider{text: validReviewJSON, name: reviewProviderName})
+	llmOut, llmErr, err := runAnalyzeJSONWithStderr(t, cfgPath, true, &fixedProvider{text: validReviewJSON, name: reviewProviderName})
 	if err != nil {
 		t.Fatalf("analyze --llm: %v\n%s", err, llmOut)
 	}
@@ -262,8 +272,11 @@ func TestRun_Analyze_LLMJSONDeterministicSectionsUnchanged(t *testing.T) {
 	if !reflect.DeepEqual(deterministic, withLLM) {
 		t.Fatalf("LLM review changed deterministic JSON sections\ndeterministic: %+v\nwith LLM: %+v", deterministic, withLLM)
 	}
-	if !strings.Contains(llmOut, "Architecture Review") {
-		t.Fatalf("analyze --llm JSON output should still append the review section:\n%s", llmOut)
+	if strings.Contains(llmOut, "Architecture Review") {
+		t.Fatalf("analyze --llm JSON stdout must stay valid JSON without appended review markdown:\n%s", llmOut)
+	}
+	if !strings.Contains(llmErr, "Architecture Review") {
+		t.Fatalf("analyze --llm JSON should emit the review section on stderr to keep stdout parseable:\n%s", llmErr)
 	}
 }
 
@@ -613,17 +626,19 @@ func TestPostVerify_DropsUncitedRecommendations(t *testing.T) {
 		OverallBand: reviewBandMixed,
 		TopRisks: []reviewRisk{
 			{Title: "uncited", Modules: []string{reviewModReal}, ClaimType: claimTypeRecommendation, Narrative: reviewNarrativeDrop, BalancingMove: reviewBalancingMove},
+			{Title: "misclassified", Modules: []string{reviewModReal}, ClaimType: claimTypeDeterministicFact, Narrative: reviewNarrativeDrop, BalancingMove: reviewBalancingMove},
 			{Title: "cited", Modules: []string{reviewModReal}, ClaimType: claimTypeRecommendation, MetricIDs: []string{reviewDimBoundary}, Narrative: reviewNarrativeKeep, BalancingMove: reviewBalancingMove},
 		},
 		SubdomainSuggestions: []reviewSubdomainSuggest{
 			{Module: reviewModReal, SuggestedSubdomain: subdomainCore, ClaimType: claimTypeRecommendation, Rationale: reviewNarrativeDrop},
+			{Module: reviewModReal, SuggestedSubdomain: subdomainGeneric, ClaimType: claimTypeSemanticInterpretation, Rationale: reviewNarrativeDrop},
 			{Module: reviewModReal, SuggestedSubdomain: subdomainSupporting, ClaimType: claimTypeRecommendation, MetricIDs: []string{reviewDimBoundary}, Rationale: reviewNarrativeKeep},
 		},
 	}
 
 	result, dropped := postVerify(rev, diag, nil)
-	if dropped < 2 {
-		t.Fatalf("dropped = %d, want uncited recommendation drops", dropped)
+	if dropped < 4 {
+		t.Fatalf("dropped = %d, want uncited and non-recommendation suggestion drops", dropped)
 	}
 	if len(result.TopRisks) != 1 || result.TopRisks[0].Title != "cited" {
 		t.Fatalf("top risks = %+v, want only cited recommendation", result.TopRisks)

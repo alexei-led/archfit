@@ -58,7 +58,7 @@ func classifyJSONFor(names []string) string {
 	parts := make([]string, 0, len(names))
 	for _, n := range names {
 		parts = append(parts, fmt.Sprintf(
-			`{"module":%q,"subdomain":"core","volatility":"low","layer":"core","name":%q,"rationale":"test cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}`,
+			`{"module":%q,"subdomain":"core","volatility":"low","layer":"core","name":%q,"rationale":"test cites config:.archfit.yaml","evidence_refs":["config:.archfit.yaml"],"basis":"semantic_judgment"}`,
 			n, n,
 		))
 	}

@@ -20,7 +20,7 @@ const ownerField = "owner"
 func valueJSONFor(pairs map[string]string) string {
 	parts := make([]string, 0, len(pairs))
 	for mod, val := range pairs {
-		parts = append(parts, fmt.Sprintf(`{"module":%q,"value":%q,"rationale":"test cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}`, mod, val))
+		parts = append(parts, fmt.Sprintf(`{"module":%q,"value":%q,"rationale":"test cites config:.archfit.yaml","evidence_refs":["config:.archfit.yaml"],"basis":"semantic_judgment"}`, mod, val))
 	}
 	return "[" + strings.Join(parts, ",") + "]"
 }
@@ -177,6 +177,20 @@ func TestDraftModuleValues_MissingEvidenceRefsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "missing evidence_refs") {
 		t.Fatalf("error = %v, want missing evidence_refs", err)
+	}
+}
+
+func TestDraftModuleValues_UnsupportedEvidenceRefsError(t *testing.T) {
+	t.Parallel()
+	provider := &scriptedProvider{
+		responses: []string{`[{"module":"auth","value":"@team-auth","rationale":"test","evidence_refs":["doc:missing.md"],"basis":"semantic_judgment"}]`},
+	}
+	_, err := draftModuleValues(context.Background(), provider, ownerSpec, []initcfg.ClassifyTarget{{Name: "auth"}}, "", []string{"doc:README.md (doc) README.md: Auth"})
+	if err == nil {
+		t.Fatal("unsupported evidence_refs must fail")
+	}
+	if !strings.Contains(err.Error(), "unsupported evidence_refs") {
+		t.Fatalf("error = %v, want unsupported evidence_refs", err)
 	}
 }
 

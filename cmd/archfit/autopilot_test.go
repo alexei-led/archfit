@@ -19,6 +19,7 @@ type autopilotProvider struct{}
 func (autopilotProvider) Name() string { return "test/autopilot" }
 func (autopilotProvider) Complete(_ context.Context, req llm.Request) (llm.Response, error) {
 	owner := strings.Contains(req.System, "responsible owner")
+	ref := firstEvidenceRefForTest(req.User)
 	var parts []string
 	for _, line := range strings.Split(req.User, "\n") {
 		line = strings.TrimSpace(line)
@@ -27,10 +28,10 @@ func (autopilotProvider) Complete(_ context.Context, req llm.Request) (llm.Respo
 		}
 		name := strings.TrimSpace(strings.TrimPrefix(line, "- module: "))
 		if owner {
-			parts = append(parts, fmt.Sprintf(`{"module":%q,"value":"@team-%s","rationale":"t cites diag:test","evidence_refs":["diag:test"],"basis":"semantic_judgment"}`, name, name))
+			parts = append(parts, fmt.Sprintf(`{"module":%q,"value":"@team-%s","rationale":"t cites %s","evidence_refs":[%q],"basis":"semantic_judgment"}`, name, name, ref, ref))
 		} else {
 			parts = append(parts, fmt.Sprintf(
-				`{"module":%q,"subdomain":"core","volatility":"low","layer":"core","role":"core","name":"","rationale":"t cites diag:test","evidence_refs":["diag:test"],"basis":"semantic_judgment"}`, name))
+				`{"module":%q,"subdomain":"core","volatility":"low","layer":"core","role":"core","name":"","rationale":"t cites %s","evidence_refs":[%q],"basis":"semantic_judgment"}`, name, ref, ref))
 		}
 	}
 	if len(parts) == 0 {

@@ -178,9 +178,11 @@ replay across machines). `--no-cache` forces fresh calls.
 
 ## analyze --llm — cited architect review
 
-`archfit analyze --llm` keeps the deterministic `analyze` output first, then appends
-an advisory architect review. The review schema requires each dimension, top risk,
-and subdomain suggestion to state a `claim_type`:
+`archfit analyze --llm` keeps the deterministic `analyze` output first, then emits
+an advisory architect review. Text and Markdown runs append the review to stdout;
+`json`, `sarif`, and `scorecard` runs write it to stderr so stdout remains
+parseable. The review schema requires each dimension, top risk, and subdomain
+suggestion to state a `claim_type`:
 
 - `deterministic_fact` — a direct restatement of tool/config evidence.
 - `semantic_interpretation` — architectural judgment over cited evidence.

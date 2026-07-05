@@ -401,7 +401,7 @@ func postVerify(rev reviewResponse, diag diagnostic.Diagnostic, configSubdomains
 	for _, s := range rev.SubdomainSuggestions {
 		s.FindingIDs, s.MetricIDs, s.EvidenceRefs = cleanReviewCitations(s.FindingIDs, s.MetricIDs, s.EvidenceRefs)
 		_, knownMod := validModules[s.Module]
-		if !knownMod || !validSubdomains[s.SuggestedSubdomain] || !validReviewClaimType(s.ClaimType) || !recommendationHasValidCitation(s.ClaimType, s.FindingIDs, s.MetricIDs, s.EvidenceRefs, citations) {
+		if !knownMod || !validSubdomains[s.SuggestedSubdomain] || s.ClaimType != claimTypeRecommendation || !recommendationHasValidCitation(s.ClaimType, s.FindingIDs, s.MetricIDs, s.EvidenceRefs, citations) {
 			dropped++
 			continue
 		}
@@ -487,7 +487,7 @@ func filterRisks(risks []reviewRisk, validModules, presentStrengths map[string]s
 		sort.Strings(validMods)
 		r.Modules = validMods
 
-		if !validReviewClaimType(r.ClaimType) || !recommendationHasValidCitation(r.ClaimType, r.FindingIDs, r.MetricIDs, r.EvidenceRefs, citations) || riskAssertsMissingStrength(r, presentStrengths) {
+		if r.ClaimType != claimTypeRecommendation || !recommendationHasValidCitation(r.ClaimType, r.FindingIDs, r.MetricIDs, r.EvidenceRefs, citations) || riskAssertsMissingStrength(r, presentStrengths) {
 			dropped++
 			continue
 		}
