@@ -22,7 +22,7 @@ import (
 //   - exclude        — path globs to skip during scanning
 //   - languages      — per-language extractor settings (go/typescript/python/rust)
 //   - analyzers      — opt-in deeper analysis backends (syntax/scip/complexity/…)
-//   - ai             — off-gate LLM provider for enrich/explain
+//   - ai             — off-gate LLM provider for init/update/enrich/analyze/explain LLM flows
 //   - coupling       — Balanced-Coupling advisory tuning
 //   - layers/modules — the architecture map
 //   - rules/waivers  — gates and their approved deviations

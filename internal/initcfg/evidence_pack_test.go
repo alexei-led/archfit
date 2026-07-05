@@ -111,7 +111,7 @@ func TestBuildArchitectureEvidencePack_BoundsDocsAndSkipsSecretFiles(t *testing.
 
 func TestBuildArchitectureEvidencePack_RedactsSecretLikeFreeText(t *testing.T) {
 	root := t.TempDir()
-	writeEvidenceFile(t, root, "README.md", "# Service\n\nAPI_TOKEN = hunter2\nAPI key: sk-live\nclient secret = s3cr3t\nArchitecture boundary.\n")
+	writeEvidenceFile(t, root, "README.md", "# Service\n\nAPI_TOKEN = hunter2\nAPI key: sk-live\nclient secret = s3cr3t\nAPI\tkey = tab-secret\nclient.secret: dotted-secret\nArchitecture boundary.\n")
 
 	items := BuildArchitectureEvidencePack(EvidencePackOptions{Root: root})
 	var readme EvidenceItem
@@ -124,13 +124,33 @@ func TestBuildArchitectureEvidencePack_RedactsSecretLikeFreeText(t *testing.T) {
 	if readme.ID == "" {
 		t.Fatalf("README evidence missing: %+v", items)
 	}
-	for _, leaked := range []string{"hunter2", "sk-live", "s3cr3t", "API_TOKEN"} {
+	for _, leaked := range []string{"hunter2", "sk-live", "s3cr3t", "tab-secret", "dotted-secret", "API_TOKEN"} {
 		if strings.Contains(readme.Text, leaked) {
 			t.Fatalf("secret-like free text leaked %q: %q", leaked, readme.Text)
 		}
 	}
-	if strings.Count(readme.Text, "[redacted]") != 3 {
+	if strings.Count(readme.Text, "[redacted]") != 5 {
 		t.Fatalf("redaction markers missing: %q", readme.Text)
+	}
+}
+
+func TestBuildArchitectureEvidencePack_SkipsSymlinkedEvidenceFiles(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	writeEvidenceFile(t, outside, "id_rsa", "-----BEGIN OPENSSH PRIVATE KEY-----\nprivate material\n")
+	linkPath := filepath.Join(root, "docs", "design", "architecture.md")
+	if err := os.MkdirAll(filepath.Dir(linkPath), 0o750); err != nil {
+		t.Fatalf("mkdir link dir: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "id_rsa"), linkPath); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	items := BuildArchitectureEvidencePack(EvidencePackOptions{Root: root})
+	for _, item := range items {
+		if strings.Contains(item.ID+item.Source+item.Text, "PRIVATE KEY") || strings.Contains(item.ID, "architecture.md") {
+			t.Fatalf("symlinked evidence file leaked: %+v (all items: %+v)", item, items)
+		}
 	}
 }
 

@@ -280,6 +280,27 @@ func TestClassifyModulesWithEvidence_ParsesRuleSuggestions(t *testing.T) {
 	}
 }
 
+func TestClassifyModulesWithEvidence_ParsesExternalSystemSuggestions(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment","external_system_suggestions":[{"name":"payments-vendor","targets":["github.com/vendor/sdk/**"],"volatility":"low","rationale":"vendor seam cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}]}]`
+	p := &fakeClassifyProvider{responses: []string{resp}}
+
+	got, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{testRepoEvidence})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ann := got[testMod0]
+	if len(ann.ExternalSystemSuggestions) != 1 {
+		t.Fatalf("external system suggestions = %+v, want one", ann.ExternalSystemSuggestions)
+	}
+	s := ann.ExternalSystemSuggestions[0]
+	if s.Name != "payments-vendor" || len(s.Targets) != 1 || s.Targets[0] != "github.com/vendor/sdk/**" || s.Basis != initcfg.DraftBasisSemanticJudgment {
+		t.Fatalf("bad external system suggestion: %+v", s)
+	}
+}
+
 func TestRuleSuggestionShape_MatchesRuleSchema(t *testing.T) {
 	t.Parallel()
 	maxAPI := 20

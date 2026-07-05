@@ -28,6 +28,7 @@ const (
 	volatilityLow    = "low"
 	volatilityMedium = "medium"
 	volatilityHigh   = "high"
+	volatilityFrozen = "frozen"
 )
 
 // Optional-analyzer tool names shared by doctor and the coverage-gap table.

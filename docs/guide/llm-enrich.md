@@ -134,8 +134,8 @@ files whose names contain `secret`. This is a guardrail, not secret scanning: do
 not run provider-backed LLM commands on a repo whose docs, comments, or public API
 text contain secrets you would not send to that provider. Prompts require models
 to cite these IDs in structured `evidence_refs` for every proposed module field,
-owner, volatility, subdomain, and rule change. Each proposal also carries `basis:
-deterministic_fact` when it only restates tool/config evidence, or `basis:
+owner, volatility, subdomain, `external_systems` entry, and rule change. Each
+proposal also carries `basis: deterministic_fact` when it only restates tool/config evidence, or `basis:
 semantic_judgment` when the model is making an architectural judgment. Draft files
 and update reports keep that metadata for review, while default plan mode still
 leaves config unchanged. `analyze --llm` uses the same pack alongside
@@ -156,7 +156,8 @@ First-run enrich cost scales with candidate count and evidence size:
   at 100 abstained edges, includes up to 3 source snippets per pair, and includes
   the shared evidence pack. It is more token-heavy than the summary label pass.
 - `config init --llm` and `config update --llm` scale mostly with module count
-  and bounded README/docs/comment/API/config/diagnostic evidence.
+  and bounded README/docs/comment/API/config/diagnostic evidence. They may also
+  propose review-only `external_systems` entries when evidence names a vendor seam.
 
 Responses are cached by provider, model, system prompt, and user prompt under
 `.archfit-cache/llm/`. Re-running the same command with the same evidence should

@@ -24,13 +24,14 @@ type PathDelta struct {
 
 // UpdateReport is the result of DiffModules.
 type UpdateReport struct {
-	Added            []ModuleDef
-	Suggested        []ModuleDef
-	Removed          []ExistingModule
-	PathDrift        []PathDelta
-	Unclassified     []string
-	RuleSuggestions  []RuleSuggestion
-	StructuralInSync bool
+	Added                     []ModuleDef
+	Suggested                 []ModuleDef
+	Removed                   []ExistingModule
+	PathDrift                 []PathDelta
+	Unclassified              []string
+	RuleSuggestions           []RuleSuggestion
+	ExternalSystemSuggestions []ExternalSystemSuggestion
+	StructuralInSync          bool
 }
 
 // normalizePaths returns a sorted, deduplicated, non-empty slice copy for comparison.
@@ -156,6 +157,8 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef) UpdateReport {
 //     present, otherwise suggests running with --llm.
 //   - RULE SUGGESTIONS: review-only deterministic rule or coupling.gate proposals
 //     with rationale, basis, and evidence refs; update/apply never writes them.
+//   - EXTERNAL SYSTEM SUGGESTIONS: review-only external_systems proposals with
+//     targets, volatility, rationale, basis, and evidence refs; update/apply never writes them.
 //   - When r.StructuralInSync is true, emits a "structurally in sync" line.
 //
 // Output is deterministic. Must not import internal/config or internal/llm.
@@ -224,6 +227,13 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 		fmt.Fprintf(&b, "RULE SUGGESTIONS (%d review-only config proposal(s) — apply manually after review):\n", len(r.RuleSuggestions))
 		for _, s := range r.RuleSuggestions {
 			writeRuleSuggestion(&b, s)
+		}
+	}
+
+	if len(r.ExternalSystemSuggestions) > 0 {
+		fmt.Fprintf(&b, "EXTERNAL SYSTEM SUGGESTIONS (%d review-only config proposal(s) — apply manually after review):\n", len(r.ExternalSystemSuggestions))
+		for _, s := range r.ExternalSystemSuggestions {
+			writeExternalSystemSuggestion(&b, s)
 		}
 	}
 
@@ -299,6 +309,28 @@ func writeRuleSuggestion(b *strings.Builder, s RuleSuggestion) {
 	}
 	if s.MaxDrop != nil {
 		fmt.Fprintf(b, "    max_drop: %d\n", *s.MaxDrop)
+	}
+	if s.Basis != "" {
+		fmt.Fprintf(b, "    basis: %s\n", sanitizeComment(s.Basis))
+	}
+	if len(s.EvidenceRefs) > 0 {
+		fmt.Fprintf(b, "    evidence_refs: %s\n", joinEvidenceRefs(s.EvidenceRefs))
+	}
+	if s.Rationale != "" {
+		fmt.Fprintf(b, "    rationale: %s\n", sanitizeComment(s.Rationale))
+	}
+}
+
+func writeExternalSystemSuggestion(b *strings.Builder, s ExternalSystemSuggestion) {
+	fmt.Fprintf(b, "  %s:\n", sanitizeComment(yamlKey(s.Name)))
+	if s.SourceModule != "" {
+		fmt.Fprintf(b, "    source_module: %s\n", sanitizeComment(s.SourceModule))
+	}
+	if len(s.Targets) > 0 {
+		fmt.Fprintf(b, "    targets: %s\n", joinPaths(s.Targets))
+	}
+	if s.Volatility != "" {
+		fmt.Fprintf(b, "    volatility: %s\n", sanitizeComment(s.Volatility))
 	}
 	if s.Basis != "" {
 		fmt.Fprintf(b, "    basis: %s\n", sanitizeComment(s.Basis))

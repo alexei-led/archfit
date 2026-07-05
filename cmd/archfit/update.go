@@ -74,6 +74,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 	if c.LLM && ann != nil {
 		report.RuleSuggestions = ruleSuggestionsFromAnnotations(ann)
+		report.ExternalSystemSuggestions = externalSystemSuggestionsFromAnnotations(ann)
 	}
 	if c.LLM && ann != nil {
 		warnTargets := initcfg.BuildClassifyTargets(root, classifyTargetsForUpdate(cfg, report, addedNames))
@@ -304,6 +305,34 @@ func ruleSuggestionsFromAnnotations(ann map[string]initcfg.ModuleAnnotation) []i
 		}
 		if out[i].ID != out[j].ID {
 			return out[i].ID < out[j].ID
+		}
+		return out[i].SourceModule < out[j].SourceModule
+	})
+	return out
+}
+
+func externalSystemSuggestionsFromAnnotations(ann map[string]initcfg.ModuleAnnotation) []initcfg.ExternalSystemSuggestion {
+	if len(ann) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]initcfg.ExternalSystemSuggestion, 0)
+	for module, a := range ann {
+		for _, suggestion := range a.ExternalSystemSuggestions {
+			if suggestion.SourceModule == "" {
+				suggestion.SourceModule = module
+			}
+			key := strings.Join([]string{suggestion.Name, strings.Join(suggestion.Targets, ","), suggestion.SourceModule}, "\x00")
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, suggestion)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
 		}
 		return out[i].SourceModule < out[j].SourceModule
 	})

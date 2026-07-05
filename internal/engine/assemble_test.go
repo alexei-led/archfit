@@ -12,6 +12,8 @@ import (
 	"github.com/alexei-led/archfit/internal/ports"
 )
 
+const toolNameScipTest = "scip"
+
 // TestBCRiskClause_DistanceAware verifies the advisory text only names
 // "distributed-monolith risk" for high-distance critical edges; a low-distance
 // critical edge is framed as local coupling, never distributed-monolith (which
@@ -111,7 +113,7 @@ func TestEnrichEdges_GoTypeInfoHintAuthoritative(t *testing.T) {
 		{From: "file:e.go", To: "pkg:pkg/f", Kind: graph.EdgeKindImports, Language: graph.LangGo, StrengthHint: ""},
 	}}
 	scipConnascence := map[string][]graph.ConnascenceHint{
-		"a.go\x00pkg/b": {{Kind: graph.ConnascenceAlgorithm, Source: "scip", Detail: "symbol reference"}},
+		"a.go\x00pkg/b": {{Kind: graph.ConnascenceAlgorithm, Source: toolNameScipTest, Detail: "symbol reference"}},
 	}
 	enrichEdges(context.Background(), ports.NopSymbolResolver{}, scip, scipConnascence, facts)
 
@@ -136,7 +138,8 @@ func TestBuildConnascenceReport(t *testing.T) {
 		},
 		"c\x00d\x00imports": {
 			Connascence: []coupling.ConnascenceEvidence{
-				{Kind: coupling.ConnascenceAlgorithm, Source: "scip"},
+				{Kind: coupling.ConnascenceAlgorithm, Source: toolNameScipTest},
+				{Kind: coupling.ConnascencePosition, Source: toolNameScipTest},
 			},
 		},
 		"e\x00f\x00imports": {},
@@ -149,17 +152,22 @@ func TestBuildConnascenceReport(t *testing.T) {
 	if r.AbstainedEdges != 1 {
 		t.Errorf("AbstainedEdges = %d, want 1", r.AbstainedEdges)
 	}
-	if r.TotalEvidence != 3 {
-		t.Errorf("TotalEvidence = %d, want 3", r.TotalEvidence)
+	if r.TotalEvidence != 4 {
+		t.Errorf("TotalEvidence = %d, want 4", r.TotalEvidence)
 	}
-	if r.ByKind[string(coupling.ConnascenceName)] != 1 || r.ByKind[string(coupling.ConnascenceType)] != 1 || r.ByKind[string(coupling.ConnascenceAlgorithm)] != 1 {
-		t.Errorf("ByKind = %+v, want name/type/algorithm counts", r.ByKind)
+	if r.ByKind[string(coupling.ConnascenceName)] != 1 || r.ByKind[string(coupling.ConnascenceType)] != 1 || r.ByKind[string(coupling.ConnascenceAlgorithm)] != 1 || r.ByKind[string(coupling.ConnascencePosition)] != 1 {
+		t.Errorf("ByKind = %+v, want name/type/algorithm/position counts", r.ByKind)
 	}
-	if r.BySource["go/types"] != 2 || r.BySource["scip"] != 1 {
-		t.Errorf("BySource = %+v, want go/types=2 scip=1", r.BySource)
+	if r.BySource["go/types"] != 2 || r.BySource[toolNameScipTest] != 2 {
+		t.Errorf("BySource = %+v, want go/types=2 scip=2", r.BySource)
 	}
 	if len(r.Unmeasured) == 0 {
 		t.Fatal("Unmeasured is empty; dynamic categories must be disclosed")
+	}
+	for _, kind := range r.Unmeasured {
+		if kind == string(coupling.ConnascencePosition) {
+			t.Fatalf("position has deterministic evidence and must not be reported unmeasured: %+v", r.Unmeasured)
+		}
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // EvidenceKind identifies the source class for an architecture evidence item.
@@ -264,7 +265,11 @@ func collectCodeEvidence(root string, modules []ModuleDef) ([]EvidenceItem, []Ev
 					continue
 				}
 				fset := token.NewFileSet()
-				file, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+				data, err := readEvidenceFile(filePath)
+				if err != nil {
+					continue
+				}
+				file, err := parser.ParseFile(fset, filePath, data, parser.ParseComments)
 				if err != nil {
 					continue
 				}
@@ -487,6 +492,9 @@ func sortedKeys(m map[string]struct{}) []string {
 }
 
 func readEvidenceFile(path string) ([]byte, error) {
+	if !regularFile(path) {
+		return nil, fs.ErrInvalid
+	}
 	data, err := os.ReadFile(path) //#nosec G304 -- caller restricts to local repo evidence files
 	if err != nil {
 		return nil, err
@@ -512,7 +520,7 @@ func relEvidencePath(root, p string) string {
 }
 
 func regularFile(p string) bool {
-	info, err := os.Stat(p)
+	info, err := os.Lstat(p)
 	return err == nil && info.Mode().IsRegular()
 }
 
@@ -552,8 +560,16 @@ var secretishMarkers = []string{
 }
 
 func normalizedSecretishText(s string) string {
-	replacer := strings.NewReplacer(" ", "_", "-", "_")
-	return replacer.Replace(strings.ToLower(s))
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case unicode.IsSpace(r) || r == '-' || r == '.':
+			b.WriteByte('_')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func secretishName(name string) bool {

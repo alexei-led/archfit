@@ -159,7 +159,7 @@ func TestArchImports(t *testing.T) {
 
 	t.Run("llm_ring_unreachable_from_internal", func(t *testing.T) {
 		// The LLM-off-gate guarantee, enforced structurally: NO internal
-		// package may import internal/llm — only cmd (enrich/explain) may.
+		// package may import internal/llm — only cmd may host explicit LLM flows.
 		// This covers the whole check pipeline: engine, classify, labels,
 		// metrics, renderers can never call a model.
 		const llmPkg = modulePrefix + "internal/llm"

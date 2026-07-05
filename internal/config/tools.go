@@ -125,12 +125,12 @@ type AnalyzersConfig struct {
 }
 
 // ---------------------------------------------------------------------------
-// AI — off-gate LLM provider for enrich/explain (`ai:`). Presence of provider
-// and model is what makes it usable; there is no enable flag.
+// AI — off-gate LLM provider for init/update/enrich/analyze/explain LLM flows (`ai:`).
+// Presence of provider and model is what makes it usable; there is no enable flag.
 // ---------------------------------------------------------------------------
 
-// AIConfig configures the off-gate LLM provider (`ai:`). Consumed only by enrich
-// and explain — never by analyze's gate path.
+// AIConfig configures the off-gate LLM provider (`ai:`). Consumed only by
+// explicit LLM flows — never by analyze's deterministic gate path.
 type AIConfig struct {
 	Provider string `yaml:"provider,omitempty"`
 	Model    string `yaml:"model,omitempty"`

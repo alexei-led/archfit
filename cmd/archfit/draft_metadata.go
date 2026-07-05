@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/bmatcuk/doublestar/v4"
+
 	"github.com/alexei-led/archfit/internal/initcfg"
 )
 
@@ -35,6 +37,15 @@ type ruleSuggestionResponse struct {
 	Max          *int     `json:"max"`
 	MinBand      string   `json:"min_band"`
 	MaxDrop      *int     `json:"max_drop"`
+	Rationale    string   `json:"rationale"`
+	EvidenceRefs []string `json:"evidence_refs"`
+	Basis        string   `json:"basis"`
+}
+
+type externalSystemSuggestionResponse struct {
+	Name         string   `json:"name"`
+	Targets      []string `json:"targets"`
+	Volatility   string   `json:"volatility"`
 	Rationale    string   `json:"rationale"`
 	EvidenceRefs []string `json:"evidence_refs"`
 	Basis        string   `json:"basis"`
@@ -214,4 +225,78 @@ func validateRuleSuggestionShape(s initcfg.RuleSuggestion) error {
 		}
 	}
 	return nil
+}
+
+func parseExternalSystemSuggestionResponses(module string, entries []externalSystemSuggestionResponse, requireEvidence bool, allowedRefs ...map[string]struct{}) ([]initcfg.ExternalSystemSuggestion, error) {
+	out := make([]initcfg.ExternalSystemSuggestion, 0, len(entries))
+	for _, e := range entries {
+		name := strings.TrimSpace(e.Name)
+		if name == "" {
+			return nil, fmt.Errorf("external_systems suggestion for %q missing name", module)
+		}
+		rationale := strings.TrimSpace(e.Rationale)
+		if rationale == "" {
+			return nil, fmt.Errorf("external_systems suggestion %q missing rationale", name)
+		}
+		basis, refs, err := draftMetadata("external_systems suggestion", name, e.Basis, e.EvidenceRefs, requireEvidence, firstAllowedEvidenceRefs(allowedRefs))
+		if err != nil {
+			return nil, err
+		}
+		s := initcfg.ExternalSystemSuggestion{
+			SourceModule: module,
+			Name:         name,
+			Targets:      cleanExternalTargets(e.Targets),
+			Volatility:   strings.TrimSpace(e.Volatility),
+			Rationale:    rationale,
+			EvidenceRefs: refs,
+			Basis:        basis,
+		}
+		if err := validateExternalSystemSuggestionShape(s); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+func cleanExternalTargets(targets []string) []string {
+	seen := make(map[string]struct{}, len(targets))
+	out := make([]string, 0, len(targets))
+	for _, target := range targets {
+		target = strings.TrimSpace(target)
+		if target == "" {
+			continue
+		}
+		if _, ok := seen[target]; ok {
+			continue
+		}
+		seen[target] = struct{}{}
+		out = append(out, target)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func validateExternalSystemSuggestionShape(s initcfg.ExternalSystemSuggestion) error {
+	if len(s.Targets) == 0 {
+		return fmt.Errorf("external_systems suggestion %q requires at least one target", s.Name)
+	}
+	for _, target := range s.Targets {
+		if !doublestar.ValidatePattern(target) {
+			return fmt.Errorf("external_systems suggestion %q target %q is not a valid glob pattern", s.Name, target)
+		}
+	}
+	if s.Volatility != "" && !validExternalSystemSuggestionVolatility(s.Volatility) {
+		return fmt.Errorf("external_systems suggestion %q volatility %q is not one of high|medium|low|frozen", s.Name, s.Volatility)
+	}
+	return nil
+}
+
+func validExternalSystemSuggestionVolatility(v string) bool {
+	switch strings.ToLower(v) {
+	case volatilityHigh, volatilityMedium, volatilityLow, volatilityFrozen:
+		return true
+	default:
+		return false
+	}
 }

@@ -312,16 +312,15 @@ func addClassificationToSummary(s *diagnostic.ClassifiedEdgeSummary, cl coupling
 	return 0
 }
 
-var unmeasuredConnascenceKinds = []string{"position", "execution", "timing", "value", "identity"}
+var connascenceKindsToDiscloseWhenUnmeasured = []string{"position", "execution", "timing", "value", "identity"}
 
 // buildConnascenceReport aggregates deterministic static connascence evidence
 // attached to classifications. It is report-only and intentionally discloses
 // unmeasured semantic/dynamic categories instead of guessing them.
 func buildConnascenceReport(idx coupling.Index) *diagnostic.ConnascenceReport {
 	r := &diagnostic.ConnascenceReport{
-		ByKind:     make(map[string]int),
-		BySource:   make(map[string]int),
-		Unmeasured: append([]string{}, unmeasuredConnascenceKinds...),
+		ByKind:   make(map[string]int),
+		BySource: make(map[string]int),
 	}
 	for _, cl := range idx {
 		if len(cl.Connascence) == 0 {
@@ -335,6 +334,7 @@ func buildConnascenceReport(idx coupling.Index) *diagnostic.ConnascenceReport {
 			r.BySource[ev.Source]++
 		}
 	}
+	r.Unmeasured = unmeasuredConnascenceKinds(r.ByKind)
 	if len(r.ByKind) == 0 {
 		r.ByKind = nil
 	}
@@ -342,6 +342,16 @@ func buildConnascenceReport(idx coupling.Index) *diagnostic.ConnascenceReport {
 		r.BySource = nil
 	}
 	return r
+}
+
+func unmeasuredConnascenceKinds(byKind map[string]int) []string {
+	out := make([]string, 0, len(connascenceKindsToDiscloseWhenUnmeasured))
+	for _, kind := range connascenceKindsToDiscloseWhenUnmeasured {
+		if byKind[kind] == 0 {
+			out = append(out, kind)
+		}
+	}
+	return out
 }
 
 // countActive returns the number of findings whose status is not fixed.

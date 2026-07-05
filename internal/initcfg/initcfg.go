@@ -166,20 +166,34 @@ type RuleSuggestion struct {
 	Basis        string
 }
 
+// ExternalSystemSuggestion is one review-only LLM proposal for an
+// external_systems entry. It is rendered for humans and never applied by plan or
+// update modes.
+type ExternalSystemSuggestion struct {
+	SourceModule string
+	Name         string
+	Targets      []string
+	Volatility   string
+	Rationale    string
+	EvidenceRefs []string
+	Basis        string
+}
+
 // ModuleAnnotation carries optional LLM-suggested metadata for a module.
 // Layer holds the raw LLM layer suggestion; whether it is written live vs as a
 // comment is decided in writeModuleStanza based on allowedLayers.
 type ModuleAnnotation struct {
-	Subdomain       string
-	Volatility      string
-	Owner           string
-	Layer           string
-	Role            string
-	SuggestedName   string
-	Rationale       string
-	EvidenceRefs    []string
-	Basis           string
-	RuleSuggestions []RuleSuggestion
+	Subdomain                 string
+	Volatility                string
+	Owner                     string
+	Layer                     string
+	Role                      string
+	SuggestedName             string
+	Rationale                 string
+	EvidenceRefs              []string
+	Basis                     string
+	RuleSuggestions           []RuleSuggestion
+	ExternalSystemSuggestions []ExternalSystemSuggestion
 }
 
 // sanitizeComment strips or replaces control characters (< 0x20 and DEL 0x7F),
@@ -349,7 +363,7 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	b.WriteString("#   complexity: { enabled: true }   # cyclomatic complexity hotspots\n")
 	b.WriteString("#   clones: { enabled: true }       # cross-module duplication\n")
 	b.WriteString("\n")
-	b.WriteString("# Off-gate LLM for `archfit enrich` / `explain --llm` (never used by analyze).\n")
+	b.WriteString("# Off-gate LLM for `config init/update/enrich`, `analyze --llm`, and `explain --llm` (never used by the deterministic gate).\n")
 	b.WriteString("# ai:\n")
 	b.WriteString("#   provider: anthropic   # anthropic | openai | ollama\n")
 	b.WriteString("#   model: claude-opus-4-8\n")
@@ -380,6 +394,8 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 		}
 		b.WriteString("\n")
 	}
+
+	writeExternalSystemSuggestionComments(&b, ann)
 
 	// rules:
 	//
@@ -417,6 +433,38 @@ func writeLayerRule(b *strings.Builder, id string) {
 	fmt.Fprintf(b, "  - id: %s\n", id)
 	b.WriteString("    type: forbidden_layer_direction\n")
 	b.WriteString("    gate: warn\n")
+}
+
+func writeExternalSystemSuggestionComments(b *strings.Builder, ann map[string]ModuleAnnotation) {
+	suggestions := annotationExternalSystemSuggestions(ann)
+	if len(suggestions) == 0 {
+		return
+	}
+	b.WriteString("# LLM external_systems suggestions (review-only; copy targets/volatility after review):\n")
+	b.WriteString("# external_systems:\n")
+	for _, s := range suggestions {
+		fmt.Fprintf(b, "#   %s:\n", sanitizeComment(yamlKey(s.Name)))
+		if s.SourceModule != "" {
+			fmt.Fprintf(b, "#     source_module: %s\n", sanitizeComment(s.SourceModule))
+		}
+		b.WriteString("#     targets:\n")
+		for _, target := range s.Targets {
+			fmt.Fprintf(b, "#       - %q\n", target)
+		}
+		if s.Volatility != "" {
+			fmt.Fprintf(b, "#     volatility: %s\n", yamlScalar(s.Volatility))
+		}
+		if s.Basis != "" {
+			fmt.Fprintf(b, "#     basis: %s\n", sanitizeComment(s.Basis))
+		}
+		if len(s.EvidenceRefs) > 0 {
+			fmt.Fprintf(b, "#     evidence_refs: %s\n", joinEvidenceRefs(s.EvidenceRefs))
+		}
+		if s.Rationale != "" {
+			fmt.Fprintf(b, "#     rationale: %s\n", sanitizeComment(s.Rationale))
+		}
+	}
+	b.WriteString("\n")
 }
 
 func writeRuleSuggestionComments(b *strings.Builder, ann map[string]ModuleAnnotation) {
@@ -488,6 +536,34 @@ func annotationRuleSuggestions(ann map[string]ModuleAnnotation) []RuleSuggestion
 		}
 		if out[i].ID != out[j].ID {
 			return out[i].ID < out[j].ID
+		}
+		return out[i].SourceModule < out[j].SourceModule
+	})
+	return out
+}
+
+func annotationExternalSystemSuggestions(ann map[string]ModuleAnnotation) []ExternalSystemSuggestion {
+	if len(ann) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var out []ExternalSystemSuggestion
+	for module, a := range ann {
+		for _, s := range a.ExternalSystemSuggestions {
+			if s.SourceModule == "" {
+				s.SourceModule = module
+			}
+			key := strings.Join([]string{s.Name, strings.Join(s.Targets, ","), s.SourceModule}, "\x00")
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, s)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
 		}
 		return out[i].SourceModule < out[j].SourceModule
 	})

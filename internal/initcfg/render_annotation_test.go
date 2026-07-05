@@ -180,6 +180,41 @@ func TestRender_PlanMode_RendersRuleSuggestionsAsComments(t *testing.T) {
 	}
 }
 
+func TestRender_PlanMode_RendersExternalSystemSuggestionsAsComments(t *testing.T) {
+	cfg := annotationBaseCfg()
+	ann := map[string]ModuleAnnotation{
+		testClassify: {
+			ExternalSystemSuggestions: []ExternalSystemSuggestion{{
+				Name:         "payments-vendor",
+				Targets:      []string{"github.com/vendor/sdk/**"},
+				Volatility:   testAnnVolatility,
+				Rationale:    "README names the vendor seam",
+				EvidenceRefs: []string{testEvidenceREADME},
+				Basis:        DraftBasisSemanticJudgment,
+			}},
+		},
+	}
+	out := Render(cfg, ann, false)
+	for _, want := range []string{
+		"# LLM external_systems suggestions",
+		"# external_systems:",
+		"#   payments-vendor:",
+		"#     source_module: classify",
+		"#       - \"github.com/vendor/sdk/**\"",
+		"#     volatility: " + testAnnVolatility,
+		"#     evidence_refs: " + testEvidenceREADME,
+		"#     basis: semantic_judgment",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("external system suggestion output missing %q:\n%s", want, out)
+		}
+	}
+	loaded := roundTrip(t, out)
+	if len(loaded.ExternalSystems) != 0 {
+		t.Fatalf("commented external_systems suggestions must stay inert, loaded external systems = %+v", loaded.ExternalSystems)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // TestRender_ApplyMode_LiveAnnotation
 // ---------------------------------------------------------------------------
