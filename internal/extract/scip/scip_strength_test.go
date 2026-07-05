@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -157,6 +158,28 @@ func TestParseReaderEdges(t *testing.T) {
 				t.Errorf("m[%q] = %q, want %q", tc.wantKey, m[tc.wantKey], tc.wantVal)
 			}
 		})
+	}
+}
+
+func TestParseReaderConnascence(t *testing.T) {
+	const fixture = `{"edges":[` +
+		`{"from":"myapp.a","to":"myapp.types","strength":"model","connascence":["name","type"]},` +
+		`{"from":"myapp.a","to":"myapp.runtime","strength":"functional","connascence":["algorithm","position"]},` +
+		`{"from":"myapp.a","to":"myapp.bad","strength":"functional","connascence":["runtime_value"]}` +
+		`]}`
+
+	m, err := parseReaderConnascence([]byte(fixture))
+	if err != nil {
+		t.Fatalf("parseReaderConnascence: %v", err)
+	}
+	if got := m["myapp.a\x00myapp.types"]; len(got) != 2 || got[0].Kind != graph.ConnascenceName || got[1].Kind != graph.ConnascenceType {
+		t.Fatalf("type edge connascence = %+v, want name + type", got)
+	}
+	if got := m["myapp.a\x00myapp.runtime"]; len(got) != 2 || got[0].Kind != graph.ConnascenceAlgorithm || got[1].Kind != graph.ConnascencePosition {
+		t.Fatalf("runtime edge connascence = %+v, want algorithm + position", got)
+	}
+	if got := m["myapp.a\x00myapp.bad"]; len(got) != 0 {
+		t.Fatalf("unsupported connascence = %+v, want abstention", got)
 	}
 }
 

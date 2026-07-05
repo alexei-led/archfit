@@ -22,6 +22,7 @@ const (
 	launcherBunxPath = "/usr/bin/bunx"
 	tsconfigName     = "tsconfig.json"
 	modeFull         = "full"
+	sourceDepCruise  = "dependency-cruiser"
 )
 
 // fixtureDir is the testdata/ts directory with package.json and JSON fixtures.
@@ -262,15 +263,16 @@ func TestExtract_EdgeTypes(t *testing.T) {
 		t.Fatalf("Extract: %v", err)
 	}
 
-	hintFor := func(to string) string {
+	edgeFor := func(to string) graph.Edge {
 		for _, e := range facts.Edges {
 			if e.From == "file:src/a.ts" && e.To == to {
-				return e.StrengthHint
+				return e
 			}
 		}
 		t.Fatalf("edge file:src/a.ts → %s not found", to)
-		return ""
+		return graph.Edge{}
 	}
+	hintFor := func(to string) string { return edgeFor(to).StrengthHint }
 
 	cases := []struct {
 		name string
@@ -297,6 +299,27 @@ func TestExtract_EdgeTypes(t *testing.T) {
 			}
 		})
 	}
+
+	typeOnly := edgeFor("file:src/types.ts")
+	if !hasConnascenceHint(typeOnly, graph.ConnascenceName) || !hasConnascenceHint(typeOnly, graph.ConnascenceType) {
+		t.Fatalf("type-only connascence = %+v, want name + type", typeOnly.ConnascenceHints)
+	}
+	value := edgeFor("file:src/b/index.ts")
+	if !hasConnascenceHint(value, graph.ConnascenceName) {
+		t.Fatalf("runtime connascence = %+v, want name", value.ConnascenceHints)
+	}
+	if hasConnascenceHint(value, graph.ConnascenceAlgorithm) {
+		t.Fatalf("runtime import connascence = %+v, must not invent algorithm", value.ConnascenceHints)
+	}
+}
+
+func hasConnascenceHint(e graph.Edge, kind string) bool {
+	for _, h := range e.ConnascenceHints {
+		if h.Kind == kind && h.Source == sourceDepCruise {
+			return true
+		}
+	}
+	return false
 }
 
 func TestExtract_ToolAbsentAuto(t *testing.T) {

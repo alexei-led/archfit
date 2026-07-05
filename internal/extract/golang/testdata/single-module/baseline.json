@@ -12,7 +12,7 @@
       "goal": "Remove the forbidden dependency from pkg/a/a.go on pkg/b; depend on b's public API or move the shared code to an allowed location.",
       "rule_id": "no_direct_b_dependency",
       "validation": [
-        "archfit analyze --gate -c <ROOT>/.archfit.yaml --full"
+        "archfit analyze --gate -c \u003cROOT\u003e/.archfit.yaml --full"
       ]
     }
   ],
@@ -43,6 +43,25 @@
     }
   },
   "config_hash": "e686c0a4ca1ab9671d3ddc6d48da64e60ff9d2fd49d1cf9573c7e4c15850d826",
+  "connascence": {
+    "abstained_edges": 0,
+    "by_kind": {
+      "algorithm": 1,
+      "name": 1
+    },
+    "by_source": {
+      "go/types": 2
+    },
+    "edges_with_evidence": 1,
+    "total_evidence": 2,
+    "unmeasured": [
+      "position",
+      "execution",
+      "timing",
+      "value",
+      "identity"
+    ]
+  },
   "coupling_balance": {
     "band": "serviceable",
     "confidence": "high",

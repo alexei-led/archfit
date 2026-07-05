@@ -13,6 +13,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -53,9 +54,10 @@ const (
 // readerOutput mirrors the JSON emitted by scip_reader.py.
 type readerOutput struct {
 	Edges []struct {
-		From     string `json:"from"`
-		To       string `json:"to"`
-		Strength string `json:"strength"`
+		From        string   `json:"from"`
+		To          string   `json:"to"`
+		Strength    string   `json:"strength"`
+		Connascence []string `json:"connascence"`
 	} `json:"edges"`
 	Symbols []struct {
 		Symbol string `json:"symbol"`
@@ -383,6 +385,51 @@ func parseReaderEdges(stdout []byte) (map[string]string, error) {
 		m[e.From+"\x00"+e.To] = e.Strength
 	}
 	return m, nil
+}
+
+// Connascence returns deterministic static connascence hints per SCIP edge,
+// keyed by "<from>\x00<to>". It shares the same index+reader pipeline cache as
+// Strengths and Symbols, so callers may ask for all three without re-indexing.
+func (a *Adapter) Connascence(ctx context.Context, s scope.Scope) (map[string][]graph.ConnascenceHint, diagnostic.Coverage, error) {
+	ro, partial, ok := a.runSCIPPipeline(ctx, s.Root, toolName)
+	if !ok {
+		return nil, partial, nil
+	}
+	m, perr := parseReaderConnascence(ro.raw)
+	if perr != nil {
+		return nil, partial, nil
+	}
+	return m, diagnostic.Coverage{Tool: toolName, Version: ro.indexer, Status: diagnostic.StatusOK}, nil
+}
+
+func parseReaderConnascence(stdout []byte) (map[string][]graph.ConnascenceHint, error) {
+	var ro readerOutput
+	if err := json.Unmarshal(stdout, &ro); err != nil {
+		return nil, err
+	}
+	if ro.Error != "" {
+		return nil, errReader(ro.Error)
+	}
+	m := make(map[string][]graph.ConnascenceHint, len(ro.Edges))
+	for _, e := range ro.Edges {
+		key := e.From + "\x00" + e.To
+		for _, kind := range e.Connascence {
+			if !validConnascenceKind(kind) {
+				continue
+			}
+			m[key] = append(m[key], graph.ConnascenceHint{Kind: kind, Source: toolName, Detail: "symbol reference"})
+		}
+	}
+	return m, nil
+}
+
+func validConnascenceKind(kind string) bool {
+	switch kind {
+	case graph.ConnascenceName, graph.ConnascenceType, graph.ConnascenceMeaning, graph.ConnascenceAlgorithm, graph.ConnascencePosition:
+		return true
+	default:
+		return false
+	}
 }
 
 // errReader is a helper error type carrying the reader's reported message.

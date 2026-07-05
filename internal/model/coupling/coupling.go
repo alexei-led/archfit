@@ -73,6 +73,30 @@ func VolatilityResolved(v Volatility) bool {
 	return v == VolatilityFrozen || v == VolatilityLow || v == VolatilityMedium || v == VolatilityHigh
 }
 
+// ConnascenceKind names the static connascence category evidenced for a coupling
+// edge. These are report-only Ch6 labels and never feed scoring.
+type ConnascenceKind string
+
+// Deterministic static connascence categories from Connascence of Name through
+// Connascence of Position. Not every category is currently measured; unsupported
+// kinds are disclosed as unmeasured in the diagnostic summary.
+const (
+	ConnascenceName      ConnascenceKind = "name"
+	ConnascenceType      ConnascenceKind = "type"
+	ConnascenceMeaning   ConnascenceKind = "meaning"
+	ConnascenceAlgorithm ConnascenceKind = "algorithm"
+	ConnascencePosition  ConnascenceKind = "position"
+)
+
+// ConnascenceEvidence is one deterministic static connascence fact attached to
+// an edge classification. Source names the compiler/tool fact that produced it;
+// Detail is optional context for humans. It is report-only.
+type ConnascenceEvidence struct {
+	Kind   ConnascenceKind `json:"kind"`
+	Source string          `json:"source"`
+	Detail string          `json:"detail,omitempty"`
+}
+
 // Explicitness classifies whether the coupling is via a declared contract.
 type Explicitness string
 
@@ -134,6 +158,10 @@ type Classification struct {
 	// confidence was not high. Report-only — score confidence consumes the applied
 	// edge count rather than raw approved-label rows.
 	StrengthFromNonHighLLM bool `json:"strength_from_non_high_llm,omitempty"`
+	// Connascence carries deterministic static connascence evidence for this edge.
+	// It is disclosed in JSON/Markdown and never affects strength, distance,
+	// volatility, explicitness, score, severity, or gate verdicts.
+	Connascence []ConnascenceEvidence `json:"connascence,omitempty"`
 }
 
 // Index maps each edge's canonical key (from + "\x00" + to + "\x00" + kind)

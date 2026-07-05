@@ -446,6 +446,56 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 		CloneLocations:         cloneLocations,
 		StrengthFromLLM:        strengthFromLLM,
 		StrengthFromNonHighLLM: strengthFromNonHighLLM,
+		Connascence:            connascenceFromHints(e.ConnascenceHints),
+	}
+}
+
+// connascenceFromHints maps extractor edge hints into typed coupling evidence,
+// deduplicated and sorted for deterministic output. Unknown kinds abstain.
+func connascenceFromHints(hints []graph.ConnascenceHint) []coupling.ConnascenceEvidence {
+	if len(hints) == 0 {
+		return nil
+	}
+	seen := make(map[coupling.ConnascenceEvidence]struct{}, len(hints))
+	out := make([]coupling.ConnascenceEvidence, 0, len(hints))
+	for _, h := range hints {
+		kind, ok := connascenceKind(h.Kind)
+		if !ok || h.Source == "" {
+			continue
+		}
+		ev := coupling.ConnascenceEvidence{Kind: kind, Source: h.Source, Detail: h.Detail}
+		if _, exists := seen[ev]; exists {
+			continue
+		}
+		seen[ev] = struct{}{}
+		out = append(out, ev)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		if out[i].Source != out[j].Source {
+			return out[i].Source < out[j].Source
+		}
+		return out[i].Detail < out[j].Detail
+	})
+	return out
+}
+
+func connascenceKind(kind string) (coupling.ConnascenceKind, bool) {
+	switch kind {
+	case graph.ConnascenceName:
+		return coupling.ConnascenceName, true
+	case graph.ConnascenceType:
+		return coupling.ConnascenceType, true
+	case graph.ConnascenceMeaning:
+		return coupling.ConnascenceMeaning, true
+	case graph.ConnascenceAlgorithm:
+		return coupling.ConnascenceAlgorithm, true
+	case graph.ConnascencePosition:
+		return coupling.ConnascencePosition, true
+	default:
+		return "", false
 	}
 }
 

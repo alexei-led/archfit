@@ -72,6 +72,36 @@ func TestJSONRenderer_ScoreVersion(t *testing.T) {
 	}
 }
 
+func TestJSONRenderer_ConnascenceSummary(t *testing.T) {
+	d := diagnostic.New()
+	d.Connascence = &diagnostic.ConnascenceReport{
+		EdgesWithEvidence: 1,
+		AbstainedEdges:    2,
+		TotalEvidence:     2,
+		ByKind:            map[string]int{"name": 1, "type": 1},
+		BySource:          map[string]int{"go/types": 2},
+		Unmeasured:        []string{"position", "execution"},
+	}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var raw struct {
+		Connascence diagnostic.ConnascenceReport `json:"connascence"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if raw.Connascence.EdgesWithEvidence != 1 || raw.Connascence.AbstainedEdges != 2 || raw.Connascence.TotalEvidence != 2 {
+		t.Fatalf("connascence summary = %+v, want counters 1/2/2", raw.Connascence)
+	}
+	if raw.Connascence.ByKind["type"] != 1 || raw.Connascence.BySource["go/types"] != 2 {
+		t.Fatalf("connascence maps = kinds %+v sources %+v", raw.Connascence.ByKind, raw.Connascence.BySource)
+	}
+}
+
 // TestJSONRenderer_Delta verifies the delta block round-trips with snake_case
 // bucket keys, omits empty buckets, and is omitted entirely when nil.
 func TestJSONRenderer_Delta(t *testing.T) {

@@ -46,6 +46,7 @@ import tempfile
 
 RANK = {"contract": 1, "model": 2, "functional": 3, "intrusive": 4}
 ABSTRACT_BASES = ("/Protocol#", "/ABC#")  # python protocol/abc markers
+CONNASCENCE_RANK = {"name": 1, "type": 2, "meaning": 3, "algorithm": 4}
 
 
 def _load_scip_pb2(proto_path: str):
@@ -209,6 +210,29 @@ def _classify(symbol: str, lang: str, contract: set[str]) -> str:
     if sfx == "term" and lang == "rust":
         return "model"
     return "functional"
+
+
+def _connascence_kind(symbol: str, lang: str, contract: set[str]) -> str:
+    """Map one symbol occurrence to a deterministic static connascence kind.
+
+    Private references prove a name-level dependency only. Type descriptors and
+    known contract symbols prove type connascence. Rust term descriptors prove
+    meaning (const/static/field data); TS/Python terms are not precise enough and
+    stay at name. Function/method descriptors prove algorithm. Position and all
+    dynamic connascence categories are intentionally not emitted here.
+    """
+    if _is_private(symbol):
+        return "name"
+    if symbol in contract:
+        return "type"
+    sfx = _suffix(symbol)
+    if sfx == "type":
+        return "type"
+    if sfx == "term" and lang == "rust":
+        return "meaning"
+    if sfx == "method":
+        return "algorithm"
+    return "name"
 
 
 def _doc_from(relative_path: str, lang: str, doc_defs: "set[str] | None" = None) -> str | None:
@@ -397,6 +421,7 @@ def main() -> None:
                     contract.add(r.symbol)
 
     edges: dict[tuple[str, str], str] = {}
+    edge_connascence: dict[tuple[str, str], set[str]] = {}
     refs = {k: 0 for k in RANK}
 
     symbols_out, symbol_refs_out, intra_refs_out = _compute_symbols(idx, root, lang)
@@ -429,9 +454,18 @@ def main() -> None:
             key = (a, b)
             if key not in edges or RANK[st] > RANK[edges[key]]:
                 edges[key] = st
+            edge_connascence.setdefault(key, set()).add(_connascence_kind(occ.symbol, lang, contract))
 
     print(json.dumps({
-        "edges": [{"from": a, "to": b, "strength": st} for (a, b), st in sorted(edges.items())],
+        "edges": [
+            {
+                "from": a,
+                "to": b,
+                "strength": st,
+                "connascence": sorted(edge_connascence.get((a, b), set()), key=lambda k: (CONNASCENCE_RANK.get(k, 99), k)),
+            }
+            for (a, b), st in sorted(edges.items())
+        ],
         "contract_symbols": len(contract),
         "ref_strength_dist": refs,
         "symbols": symbols_out,

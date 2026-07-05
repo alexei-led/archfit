@@ -107,6 +107,14 @@ check("classify ts term → functional (unchanged)", r._classify(TS_TERM, "types
 check("classify private wins", r._classify(PY_PRIV, "python", NO_CONTRACT), "intrusive")
 check("classify contract-set wins", r._classify(RUST_CONST, "rust", {RUST_CONST}), "contract")
 
+# _connascence_kind: static categories only where symbol facts support them.
+check("connascence private → name", r._connascence_kind(PY_PRIV, "python", NO_CONTRACT), "name")
+check("connascence type → type", r._connascence_kind(RUST_TYPE, "rust", NO_CONTRACT), "type")
+check("connascence contract → type", r._connascence_kind(RUST_CONST, "rust", {RUST_CONST}), "type")
+check("connascence rust const → meaning", r._connascence_kind(RUST_CONST, "rust", NO_CONTRACT), "meaning")
+check("connascence function → algorithm", r._connascence_kind(RUST_FN, "rust", NO_CONTRACT), "algorithm")
+check("connascence ts term abstains to name", r._connascence_kind(TS_TERM, "typescript", NO_CONTRACT), "name")
+
 # DTO abstention (Wave 4 Task 3): the Go extractor upgrades a pure-data struct
 # to the "dto" hint using method sets + field visibility from go/types type
 # info. A SCIP index has NEITHER — a type symbol string cannot reveal whether
@@ -324,7 +332,7 @@ def run_cli_integration() -> None:
             data = json.loads(run.stdout)
             check(
                 "cli edge output includes cross-module ref",
-                {"from": "internal/mcp/server.go", "to": "internal/spot", "strength": "model"} in data["edges"],
+                {"from": "internal/mcp/server.go", "to": "internal/spot", "strength": "model", "connascence": ["type"]} in data["edges"],
                 True,
             )
             check("cli symbol refs", data["symbol_refs"], [

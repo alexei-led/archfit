@@ -68,6 +68,26 @@ scoring), never assigned an invented ordinal.
 The ordinals are the book's published values and drive the balance formula
 directly.
 
+#### Connascence evidence — what shared knowledge was seen
+
+Connascence (book Ch6) is a lower-level vocabulary for the same shared knowledge
+that drives integration strength. `archfit` now reports deterministic static
+connascence as evidence, not as another score:
+
+| Connascence kind | Deterministic sources today                                                        |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| Name             | static imports/references from Go, TypeScript, Python, and SCIP                    |
+| Type             | Go type references, TypeScript `import type`, SCIP type/interface/protocol symbols |
+| Meaning          | Go const/var/data references, Rust SCIP const/static/field terms                   |
+| Algorithm        | Go function/method/callable references, SCIP function/method symbols               |
+| Position         | unmeasured unless a future deterministic source proves argument/order coupling     |
+
+Dynamic connascence categories — execution, timing, runtime value, and identity —
+are not guessed. They appear in JSON/Markdown `connascence.unmeasured`, while
+runtime async and dynamic-import detectors stay separate report-only signals.
+This keeps the deterministic gate LLM-free and prevents semantic naming guesses
+from becoming score inputs.
+
 ### 2. Distance — how expensive it is to change them together
 
 Distance is the physical and organizational separation of the two components'

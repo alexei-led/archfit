@@ -32,6 +32,7 @@ const (
 const (
 	statusAbsent   = "absent"
 	toolGoPackages = "go/packages"
+	sourceGoTypes  = "go/types"
 )
 
 // goStrengthRank maps a BC integration-strength label to its coupling rank.
@@ -220,6 +221,7 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	// reads: strip the imported package path (needs the full member set, hence
 	// merge-time), drop excluded files, keep the strongest hint per pair.
 	strengthHints := make(map[string]string)
+	connascenceHints := make(map[string][]graph.ConnascenceHint)
 	for _, pf := range allPkgs {
 		for k, strength := range pf.Hints {
 			relFile, rawPkg, ok := strings.Cut(k, "\x00")
@@ -231,10 +233,18 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 				strengthHints[mk] = strength
 			}
 		}
+		for k, hints := range pf.Connascence {
+			relFile, rawPkg, ok := strings.Cut(k, "\x00")
+			if !ok || e.isExcluded(relFile) {
+				continue
+			}
+			mk := relFile + "\x00" + stripImportPath(rawPkg)
+			connascenceHints[mk] = appendConnascenceHints(connascenceHints[mk], hints...)
+		}
 	}
 
 	nodes, edges, filesSeen, unresolved := e.collectNodesEdges(
-		allPkgs, stripImportPath, strengthHints,
+		allPkgs, stripImportPath, strengthHints, connascenceHints,
 	)
 
 	status := "ok"
@@ -277,6 +287,7 @@ func (e *GoExtractor) collectNodesEdges(
 	pkgs []packageFacts,
 	stripImportPath func(string) string,
 	strengthHints map[string]string,
+	connascenceHints map[string][]graph.ConnascenceHint,
 ) (nodes []graph.Node, edges []graph.Edge, filesSeen, unresolved int) {
 	// seenNodes deduplicates package/file nodes within this extractor.
 	seenNodes := make(map[string]struct{})
@@ -319,14 +330,16 @@ func (e *GoExtractor) collectNodesEdges(
 					edgeKind = graph.EdgeKindUsesInternal
 				}
 
+				key := f.RelFile + "\x00" + importPath
 				edges = append(edges, graph.Edge{
-					From:         graph.Node{Kind: graph.NodeKindFile, Path: f.RelFile}.ID(),
-					To:           graph.Node{Kind: graph.NodeKindPackage, Path: importPath}.ID(),
-					Kind:         edgeKind,
-					Language:     "go",
-					Confidence:   "high",
-					Locations:    []graph.Location{{File: imp.LocFile, Line: imp.Line}},
-					StrengthHint: strengthHints[f.RelFile+"\x00"+importPath],
+					From:             graph.Node{Kind: graph.NodeKindFile, Path: f.RelFile}.ID(),
+					To:               graph.Node{Kind: graph.NodeKindPackage, Path: importPath}.ID(),
+					Kind:             edgeKind,
+					Language:         "go",
+					Confidence:       "high",
+					Locations:        []graph.Location{{File: imp.LocFile, Line: imp.Line}},
+					StrengthHint:     strengthHints[key],
+					ConnascenceHints: connascenceHints[key],
 				})
 			}
 		}
@@ -372,6 +385,28 @@ func goObjectStrength(obj types.Object, dtos *dtoIndex) string {
 	default:
 		// *types.Func (function or method) and anything unforeseen → functional.
 		return strengthFunctional
+	}
+}
+
+func goObjectConnascence(obj types.Object, dtos *dtoIndex) []graph.ConnascenceHint {
+	hints := []graph.ConnascenceHint{{Kind: graph.ConnascenceName, Source: sourceGoTypes, Detail: "resolved symbol"}}
+	switch tn := obj.(type) {
+	case *types.TypeName:
+		return append(hints, graph.ConnascenceHint{Kind: graph.ConnascenceType, Source: sourceGoTypes, Detail: "type name"})
+	case *types.Var:
+		if tn.IsField() && dtos.isDTOField(tn) {
+			return append(hints, graph.ConnascenceHint{Kind: graph.ConnascenceType, Source: sourceGoTypes, Detail: "dto field"})
+		}
+		switch tn.Type().Underlying().(type) {
+		case *types.Signature, *types.Chan:
+			return append(hints, graph.ConnascenceHint{Kind: graph.ConnascenceAlgorithm, Source: sourceGoTypes, Detail: "callable value"})
+		default:
+			return append(hints, graph.ConnascenceHint{Kind: graph.ConnascenceMeaning, Source: sourceGoTypes, Detail: "data value"})
+		}
+	case *types.Const:
+		return append(hints, graph.ConnascenceHint{Kind: graph.ConnascenceMeaning, Source: sourceGoTypes, Detail: "constant"})
+	default:
+		return append(hints, graph.ConnascenceHint{Kind: graph.ConnascenceAlgorithm, Source: sourceGoTypes, Detail: "function or method"})
 	}
 }
 

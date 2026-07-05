@@ -165,10 +165,10 @@ Manual checks:
 
 - Confirm no test or prompt claims timing/execution/value/identity connascence is deterministic unless backed by a concrete source.
 
-- [ ] Define the minimal deterministic connascence model: name/type/meaning/algorithm/position only where facts support it.
-- [ ] Add per-language tests that prove both positive detection and honest abstention.
-- [ ] Render a compact connascence summary in JSON and Markdown.
-- [ ] Update docs with the Ch6 mapping and unmeasured dynamic categories.
+- [x] Define the minimal deterministic connascence model: name/type/meaning/algorithm/position only where facts support it.
+- [x] Add per-language tests that prove both positive detection and honest abstention.
+- [x] Render a compact connascence summary in JSON and Markdown.
+- [x] Update docs with the Ch6 mapping and unmeasured dynamic categories.
 
 ### Task 4: Improve confidence and distance transparency
 

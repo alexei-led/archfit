@@ -164,6 +164,29 @@ type FileFact struct {
 	LOC int `json:"loc"`
 }
 
+// ConnascenceReport summarizes deterministic static connascence evidence from
+// classified dependency edges. It is report-only: never consumed by scoring,
+// rules, baseline deltas, or gate verdicts.
+type ConnascenceReport struct {
+	// EdgesWithEvidence counts classified edges with at least one deterministic
+	// connascence fact.
+	EdgesWithEvidence int `json:"edges_with_evidence"`
+	// AbstainedEdges counts classified edges with no deterministic connascence fact.
+	AbstainedEdges int `json:"abstained_edges"`
+	// TotalEvidence counts individual connascence facts. A single edge may carry
+	// multiple facts, e.g. name + type.
+	TotalEvidence int `json:"total_evidence"`
+	// ByKind counts evidence by Ch6 static category: name, type, meaning,
+	// algorithm, and position when deterministically measured.
+	ByKind map[string]int `json:"by_kind,omitempty"`
+	// BySource counts evidence by deterministic source, such as go/types,
+	// dependency-cruiser, grimp, or scip.
+	BySource map[string]int `json:"by_source,omitempty"`
+	// Unmeasured names book categories not measured by deterministic evidence in
+	// this run. These are disclosed rather than guessed.
+	Unmeasured []string `json:"unmeasured,omitempty"`
+}
+
 // RuntimeAsyncSite is one detected async integration pattern location.
 // Produced by the runtime detector (internal/extract/runtime); translated to this
 // model type in cmd so the core ring never imports an adapter package.
@@ -446,6 +469,10 @@ type Diagnostic struct {
 	// Evidence only — never consumed by verdict or gate logic, never alters the
 	// dependency graph or any metric. Empty when no dynamic imports were found.
 	DynamicImports []DynamicImport `json:"dynamic_imports"`
+	// Connascence summarizes deterministic static connascence evidence. Report-only;
+	// semantic/dynamic categories without a deterministic source are listed as
+	// unmeasured rather than guessed. Omitted only when classification did not run.
+	Connascence *ConnascenceReport `json:"connascence,omitempty"`
 	// RuntimeAsync is the report-only async-bridge detection block.
 	// Evidence only — never consumed by classify, score, or gate logic; never
 	// annotates graph edges and never affects distance, score, or verdict.

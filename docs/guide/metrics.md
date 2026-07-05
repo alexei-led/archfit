@@ -239,6 +239,28 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 
 ## Report-only blocks
 
+### `connascence`
+
+- **Represents:** deterministic, static Ch6 connascence evidence observed on
+  dependency edges. It is explanatory evidence for the strength classification,
+  not a scored metric.
+- **Computed:** extractors attach edge evidence only where the source fact is
+  deterministic. Go `go/types` can report name, type, meaning (const/var/data),
+  and algorithm (function/method/callable value). TypeScript dependency-cruiser
+  reports name for runtime imports and type for `import type`. Python grimp
+  reports dotted/private import name evidence only; it does not invent class,
+  const, or function meaning from names. SCIP reports name/type/meaning/algorithm
+  where symbol descriptors prove them.
+- **Output:** JSON `connascence` contains `edges_with_evidence`,
+  `abstained_edges`, `total_evidence`, `by_kind`, `by_source`, and `unmeasured`.
+  Markdown renders the same compact summary.
+- **Unmeasured by design:** position, execution, timing, runtime value, and
+  identity are disclosed as unmeasured unless a later deterministic source proves
+  them. Dynamic/lazy imports and runtime async bridges remain separate report-only
+  evidence blocks and never become connascence guesses.
+- **Report-only by design:** never consumed by `coupling_balance`, findings,
+  baselines, or gate verdicts.
+
 ### `local_coupling`
 
 - **Represents:** intra-module cohesion — the book's Ch10 "local complexity"
@@ -299,13 +321,14 @@ Coverage and the optional metrics differ by language; when a tool is missing the
 dependent metric reports `n/a` **with the reason and enable step** — never a
 false failure.
 
-| Signal                       | Go            | TypeScript / JS                          | Python                                   |
-| ---------------------------- | ------------- | ---------------------------------------- | ---------------------------------------- |
-| Dependency graph + gates     | `go/packages` | dependency-cruiser                       | `grimp` (dotted modules)                 |
-| Node-ID scheme               | `file:`       | `file:`                                  | `module:` (incl. `src/` layout)          |
-| SCIP edge strength           | `scip-go`     | `scip-typescript` (needs `node_modules`) | `scip-python`                            |
-| type-only vs runtime edges   | n/a           | tagged (→ Contract strength)             | n/a                                      |
-| Dynamic / lazy import signal | n/a           | `require()` / dynamic `import()`         | in-function / `importlib` / `__import__` |
+| Signal                       | Go                                          | TypeScript / JS                                    | Python                                    |
+| ---------------------------- | ------------------------------------------- | -------------------------------------------------- | ----------------------------------------- |
+| Dependency graph + gates     | `go/packages`                               | dependency-cruiser                                 | `grimp` (dotted modules)                  |
+| Node-ID scheme               | `file:`                                     | `file:`                                            | `module:` (incl. `src/` layout)           |
+| SCIP edge strength           | `scip-go`                                   | `scip-typescript` (needs `node_modules`)           | `scip-python`                             |
+| type-only vs runtime edges   | n/a                                         | tagged (→ Contract strength)                       | n/a                                       |
+| Connascence evidence         | name/type/meaning/algorithm from `go/types` | name/type from dependency-cruiser; refined by SCIP | name/private import only; refined by SCIP |
+| Dynamic / lazy import signal | n/a                                         | `require()` / dynamic `import()`                   | in-function / `importlib` / `__import__`  |
 
 SCIP refines edge strength feeding `coupling_balance` and `encapsulation` — it is
 not needed for gate rules, which work from the built-in extractor graph. For

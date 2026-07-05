@@ -313,6 +313,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 
 	classifiedEdges := buildClassifiedEdgeSummaryWithCloneOnly(couplingIdx, cloneOnlyPairs, classifyCfg.DuplicatedKnowledgePolicy)
 	classifiedEdges.LLMApproved = llmApprovedCount
+	connascenceReport := buildConnascenceReport(couplingIdx)
 	// Volatility triage disclosure: count modules by volatility source (declared /
 	// inherited / cascade / undeclared) so coupling_balance can say whether a
 	// uniform-volatility repo is measured or uniform-by-inheritance. in.Classify
@@ -335,6 +336,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		SyntaxFacts:           syntaxFacts,
 		FileFacts:             fileFacts,
 		DynamicImports:        dynamicImports,
+		Connascence:           connascenceReport,
 		RuntimeAsync:          runtimeAsync,
 		DeprecatedDeps:        in.Signals.DeprecatedDeps,
 		AgentTasks:            []diagnostic.AgentTask{},
@@ -352,6 +354,10 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	return d, nil
 }
 
+type connascenceResolver interface {
+	Connascence(context.Context, scope.Scope) (map[string][]graph.ConnascenceHint, diagnostic.Coverage, error)
+}
+
 // extract runs stage 1: symbol resolution, extractor loop, graph build.
 // Returns the import graph, all coverage records, and the SCIP symbol graph.
 func extract(ctx context.Context, in RunInput) (extractResult, error) {
@@ -365,6 +371,13 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 	scipStrength, scipCov, _ := in.Resolver.Strengths(ctx, in.Scope)
 	if scipCov.Tool != "" {
 		coverages = append(coverages, scipCov)
+	}
+
+	// Symbol-level connascence evidence (SCIP), keyed by "from\x00to". Best-effort;
+	// empty when no resolver exposes deterministic connascence facts.
+	var scipConnascence map[string][]graph.ConnascenceHint
+	if cr, ok := in.Resolver.(connascenceResolver); ok {
+		scipConnascence, _, _ = cr.Connascence(ctx, in.Scope)
 	}
 
 	// Symbol graph (SCIP) — per-symbol ownership, fan-in, and cross-module refs.
@@ -393,7 +406,7 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 			extractErrs = append(extractErrs, err)
 			continue
 		}
-		enrichEdges(ctx, in.Resolver, scipStrength, f)
+		enrichEdges(ctx, in.Resolver, scipStrength, scipConnascence, f)
 		allFacts = append(allFacts, f)
 		coverages = append(coverages, cov)
 	}
@@ -524,7 +537,7 @@ func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult
 // backing array, so they are visible to the caller).
 // Resolution rewrites barrel-file targets to real paths; SCIP strength sets a
 // per-edge StrengthHint (config public/internal globs still win in classify).
-func enrichEdges(ctx context.Context, sr ports.SymbolResolver, scipStrength map[string]string, facts graph.Facts) {
+func enrichEdges(ctx context.Context, sr ports.SymbolResolver, scipStrength map[string]string, scipConnascence map[string][]graph.ConnascenceHint, facts graph.Facts) {
 	for i, e := range facts.Edges {
 		fromFile := stripPrefix(e.From)
 		toPath := stripPrefix(e.To)
@@ -541,11 +554,30 @@ func enrichEdges(ctx context.Context, sr ports.SymbolResolver, scipStrength map[
 		// must not overwrite the authoritative hint or coupling_balance loses its
 		// strength signal. SCIP remains the strength source for TS/Py/Rust (whose
 		// extractor hints are heuristics) and for Go edges type-info left unresolved.
+		key := fromFile + "\x00" + toPath
+		if hints := scipConnascence[key]; len(hints) > 0 {
+			facts.Edges[i].ConnascenceHints = appendGraphConnascenceHints(facts.Edges[i].ConnascenceHints, hints...)
+		}
 		if e.Language == graph.LangGo && e.StrengthHint != "" {
 			continue
 		}
-		if st, found := scipStrength[fromFile+"\x00"+toPath]; found {
+		if st, found := scipStrength[key]; found {
 			facts.Edges[i].StrengthHint = st
 		}
 	}
+}
+
+func appendGraphConnascenceHints(dst []graph.ConnascenceHint, hints ...graph.ConnascenceHint) []graph.ConnascenceHint {
+	seen := make(map[graph.ConnascenceHint]struct{}, len(dst)+len(hints))
+	for _, h := range dst {
+		seen[h] = struct{}{}
+	}
+	for _, h := range hints {
+		if _, ok := seen[h]; ok {
+			continue
+		}
+		seen[h] = struct{}{}
+		dst = append(dst, h)
+	}
+	return dst
 }

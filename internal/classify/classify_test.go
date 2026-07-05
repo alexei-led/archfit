@@ -21,6 +21,8 @@ const (
 	pathsA              = "services/a/**"
 	pathsB              = "services/b/**"
 	publicB             = "services/b/api/**"
+	fileServicesBClient = "file:services/b/api/client.go"
+	sourceGoTypes       = "go/types"
 	subdomainCore       = "core"
 	subdomainSupporting = "supporting"
 	subdomainGeneric    = "generic"
@@ -245,6 +247,51 @@ func TestRun(t *testing.T) {
 				t.Errorf("Explicitness = %q, want %q", cl.Explicitness, tc.wantExp)
 			}
 		})
+	}
+}
+
+func TestRun_AttachesDeterministicConnascenceEvidence(t *testing.T) {
+	edge := graph.Edge{
+		From:     extFromGo,
+		To:       fileServicesBClient,
+		Kind:     graph.EdgeKindImports,
+		Language: graph.LangGo,
+		ConnascenceHints: []graph.ConnascenceHint{
+			{Kind: graph.ConnascenceName, Source: sourceGoTypes, Detail: "resolved symbol"},
+			{Kind: graph.ConnascenceType, Source: sourceGoTypes, Detail: "type name"},
+			{Kind: "runtime_value", Source: sourceGoTypes},
+		},
+	}
+	g := makeGraph([]graph.Edge{edge})
+	idx := classify.Run(g, config.ClassifyConfig{Modules: map[string]config.ModuleDef{
+		"a": {Paths: []string{pathsA}},
+		"b": {Paths: []string{pathsB}},
+	}})
+
+	got := idx[edgeKey(edge)].Connascence
+	if len(got) != 2 {
+		t.Fatalf("Connascence len = %d, want 2: %+v", len(got), got)
+	}
+	if got[0].Kind != coupling.ConnascenceName || got[1].Kind != coupling.ConnascenceType {
+		t.Fatalf("Connascence = %+v, want name then type", got)
+	}
+}
+
+func TestRun_ConnascenceAbstainsWithoutExtractorEvidence(t *testing.T) {
+	edge := graph.Edge{
+		From:     extFromGo,
+		To:       fileServicesBClient,
+		Kind:     graph.EdgeKindImports,
+		Language: graph.LangGo,
+	}
+	g := makeGraph([]graph.Edge{edge})
+	idx := classify.Run(g, config.ClassifyConfig{Modules: map[string]config.ModuleDef{
+		"a": {Paths: []string{pathsA}},
+		"b": {Paths: []string{pathsB}},
+	}})
+
+	if got := idx[edgeKey(edge)].Connascence; len(got) != 0 {
+		t.Fatalf("Connascence len = %d, want 0: %+v", len(got), got)
 	}
 }
 

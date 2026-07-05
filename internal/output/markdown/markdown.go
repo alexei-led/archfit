@@ -87,6 +87,8 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 	writeSyntaxSurface(&b, d.SyntaxFacts)
 
+	writeConnascenceSummary(&b, d.Connascence)
+
 	writeDynamicImports(&b, d.DynamicImports)
 
 	writeDeprecatedDeps(&b, d.DeprecatedDeps)

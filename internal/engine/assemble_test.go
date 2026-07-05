@@ -109,13 +109,56 @@ func TestEnrichEdges_GoTypeInfoHintAuthoritative(t *testing.T) {
 		{From: "file:c.ts", To: "pkg:pkg/d", Kind: graph.EdgeKindImports, Language: "typescript", StrengthHint: md},
 		{From: "file:e.go", To: "pkg:pkg/f", Kind: graph.EdgeKindImports, Language: graph.LangGo, StrengthHint: ""},
 	}}
-	enrichEdges(context.Background(), ports.NopSymbolResolver{}, scip, facts)
+	scipConnascence := map[string][]graph.ConnascenceHint{
+		"a.go\x00pkg/b": {{Kind: graph.ConnascenceAlgorithm, Source: "scip", Detail: "symbol reference"}},
+	}
+	enrichEdges(context.Background(), ports.NopSymbolResolver{}, scip, scipConnascence, facts)
 
 	want := []string{md, fn, fn}
 	for i, w := range want {
 		if got := facts.Edges[i].StrengthHint; got != w {
 			t.Errorf("edge %d (%s): StrengthHint = %q, want %q", i, facts.Edges[i].Language, got, w)
 		}
+	}
+	if got := facts.Edges[0].ConnascenceHints; len(got) != 1 || got[0].Kind != graph.ConnascenceAlgorithm {
+		t.Fatalf("Go edge SCIP connascence = %+v, want algorithm hint appended without strength override", got)
+	}
+}
+
+func TestBuildConnascenceReport(t *testing.T) {
+	idx := coupling.Index{
+		"a\x00b\x00imports": {
+			Connascence: []coupling.ConnascenceEvidence{
+				{Kind: coupling.ConnascenceName, Source: "go/types"},
+				{Kind: coupling.ConnascenceType, Source: "go/types"},
+			},
+		},
+		"c\x00d\x00imports": {
+			Connascence: []coupling.ConnascenceEvidence{
+				{Kind: coupling.ConnascenceAlgorithm, Source: "scip"},
+			},
+		},
+		"e\x00f\x00imports": {},
+	}
+
+	r := buildConnascenceReport(idx)
+	if r.EdgesWithEvidence != 2 {
+		t.Errorf("EdgesWithEvidence = %d, want 2", r.EdgesWithEvidence)
+	}
+	if r.AbstainedEdges != 1 {
+		t.Errorf("AbstainedEdges = %d, want 1", r.AbstainedEdges)
+	}
+	if r.TotalEvidence != 3 {
+		t.Errorf("TotalEvidence = %d, want 3", r.TotalEvidence)
+	}
+	if r.ByKind[string(coupling.ConnascenceName)] != 1 || r.ByKind[string(coupling.ConnascenceType)] != 1 || r.ByKind[string(coupling.ConnascenceAlgorithm)] != 1 {
+		t.Errorf("ByKind = %+v, want name/type/algorithm counts", r.ByKind)
+	}
+	if r.BySource["go/types"] != 2 || r.BySource["scip"] != 1 {
+		t.Errorf("BySource = %+v, want go/types=2 scip=1", r.BySource)
+	}
+	if len(r.Unmeasured) == 0 {
+		t.Fatal("Unmeasured is empty; dynamic categories must be disclosed")
 	}
 }
 

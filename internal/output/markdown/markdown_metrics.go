@@ -208,6 +208,42 @@ func writeSyntaxSurface(b *strings.Builder, facts []diagnostic.SyntaxFact) {
 	}
 }
 
+// writeConnascenceSummary prints the report-only deterministic connascence block.
+// It is deliberately compact: counts by kind/source plus explicit unmeasured
+// categories, with no score language.
+func writeConnascenceSummary(b *strings.Builder, r *diagnostic.ConnascenceReport) {
+	if r == nil {
+		return
+	}
+	b.WriteString("\n## Connascence evidence (deterministic)\n\n")
+	b.WriteString("Report-only. Static facts only; semantic and dynamic categories without deterministic evidence stay unmeasured.\n\n")
+	fmt.Fprintf(b, "- edges with evidence: %d\n", r.EdgesWithEvidence)
+	fmt.Fprintf(b, "- abstained edges: %d\n", r.AbstainedEdges)
+	fmt.Fprintf(b, "- total evidence facts: %d\n", r.TotalEvidence)
+	if len(r.ByKind) > 0 {
+		fmt.Fprintf(b, "- by kind: %s\n", formatCounts(r.ByKind))
+	}
+	if len(r.BySource) > 0 {
+		fmt.Fprintf(b, "- by source: %s\n", formatCounts(r.BySource))
+	}
+	if len(r.Unmeasured) > 0 {
+		fmt.Fprintf(b, "- unmeasured: %s\n", strings.Join(r.Unmeasured, ", "))
+	}
+}
+
+func formatCounts(counts map[string]int) string {
+	keys := make([]string, 0, len(counts))
+	for k := range counts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%d", k, counts[k]))
+	}
+	return strings.Join(parts, ", ")
+}
+
 // dynamicImportTopN is the number of modules listed in the dynamic-imports section.
 const dynamicImportTopN = 10
 

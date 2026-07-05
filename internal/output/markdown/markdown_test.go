@@ -19,6 +19,7 @@ const (
 	secBCAdvisories = "Balanced Coupling advisories"
 	secBeyondBC     = "Supporting structural metrics (beyond Balanced Coupling)"
 	secDistanceConf = "Distance confidence"
+	secConnascence  = "Connascence evidence"
 
 	// Kept tool names.
 	toolJscpd = "jscpd"
@@ -186,6 +187,40 @@ func TestRenderer_Render_FileFacts(t *testing.T) {
 	// Zero-valued modules are not listed on that axis (leaf has 0 inbound).
 	if strings.Contains(out, "leaf (0)") {
 		t.Errorf("zero-valued module should not be listed\nfull output:\n%s", out)
+	}
+}
+
+func TestRenderer_Render_ConnascenceSummary(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.Connascence = &diagnostic.ConnascenceReport{
+		EdgesWithEvidence: 2,
+		AbstainedEdges:    1,
+		TotalEvidence:     3,
+		ByKind:            map[string]int{"name": 2, "type": 1},
+		BySource:          map[string]int{"go/types": 2, "scip": 1},
+		Unmeasured:        []string{"position", "execution", "timing", "value", "identity"},
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"## " + secConnascence,
+		"Report-only. Static facts only",
+		"edges with evidence: 2",
+		"abstained edges: 1",
+		"by kind: name=2, type=1",
+		"by source: go/types=2, scip=1",
+		"unmeasured: position, execution, timing, value, identity",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
 	}
 }
 
