@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -375,6 +376,7 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 				}
 			}
 			writeModuleStanza(&b, m.Name, m, cfg.Layers, moduleAnn, apply)
+			writeModuleAnnotationComments(&b, moduleAnn)
 		}
 		b.WriteString("\n")
 	}
@@ -405,6 +407,7 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 		b.WriteString("  # assigned a layer: matching one of them.\n")
 		writeLayerRule(&b, "no-layer-violations")
 	}
+	writeRuleSuggestionComments(&b, ann)
 
 	return b.String()
 }
@@ -414,6 +417,81 @@ func writeLayerRule(b *strings.Builder, id string) {
 	fmt.Fprintf(b, "  - id: %s\n", id)
 	b.WriteString("    type: forbidden_layer_direction\n")
 	b.WriteString("    gate: warn\n")
+}
+
+func writeRuleSuggestionComments(b *strings.Builder, ann map[string]ModuleAnnotation) {
+	suggestions := annotationRuleSuggestions(ann)
+	if len(suggestions) == 0 {
+		return
+	}
+	b.WriteString("  # LLM rule suggestions (review-only; copy into rules/coupling after review):\n")
+	for _, s := range suggestions {
+		fmt.Fprintf(b, "  # - type: %s\n", sanitizeComment(s.Type))
+		if s.ID != "" {
+			fmt.Fprintf(b, "  #   id: %s\n", sanitizeComment(s.ID))
+		}
+		if s.SourceModule != "" {
+			fmt.Fprintf(b, "  #   source_module: %s\n", sanitizeComment(s.SourceModule))
+		}
+		if s.Gate != "" {
+			fmt.Fprintf(b, "  #   gate: %s\n", sanitizeComment(s.Gate))
+		}
+		if s.From != "" {
+			fmt.Fprintf(b, "  #   from: %s\n", sanitizeComment(s.From))
+		}
+		if s.To != "" {
+			fmt.Fprintf(b, "  #   to: %s\n", sanitizeComment(s.To))
+		}
+		if s.Max != nil {
+			fmt.Fprintf(b, "  #   max: %d\n", *s.Max)
+		}
+		if s.MinBand != "" {
+			fmt.Fprintf(b, "  #   min_band: %s\n", sanitizeComment(s.MinBand))
+		}
+		if s.MaxDrop != nil {
+			fmt.Fprintf(b, "  #   max_drop: %d\n", *s.MaxDrop)
+		}
+		if s.Basis != "" {
+			fmt.Fprintf(b, "  #   basis: %s\n", sanitizeComment(s.Basis))
+		}
+		if len(s.EvidenceRefs) > 0 {
+			fmt.Fprintf(b, "  #   evidence_refs: %s\n", joinEvidenceRefs(s.EvidenceRefs))
+		}
+		if s.Rationale != "" {
+			fmt.Fprintf(b, "  #   rationale: %s\n", sanitizeComment(s.Rationale))
+		}
+	}
+}
+
+func annotationRuleSuggestions(ann map[string]ModuleAnnotation) []RuleSuggestion {
+	if len(ann) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var out []RuleSuggestion
+	for module, a := range ann {
+		for _, s := range a.RuleSuggestions {
+			if s.SourceModule == "" {
+				s.SourceModule = module
+			}
+			key := strings.Join([]string{s.Type, s.ID, s.From, s.To, s.SourceModule}, "\x00")
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, s)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Type != out[j].Type {
+			return out[i].Type < out[j].Type
+		}
+		if out[i].ID != out[j].ID {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].SourceModule < out[j].SourceModule
+	})
+	return out
 }
 
 // hasCrossLayerEdge reports whether the discovered graph proves the generated

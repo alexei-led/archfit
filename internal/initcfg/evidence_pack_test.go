@@ -54,7 +54,7 @@ func TestBuildArchitectureEvidencePack_DiscoversSourcesWithStableIDs(t *testing.
 		ids[item.ID] = item
 	}
 	for _, want := range []string{
-		"doc:README.md",
+		testEvidenceREADME,
 		"doc:docs/adr/0001-payments.md",
 		"doc:docs/architecture/layers.md",
 		"doc:docs/design/system.md",
@@ -106,5 +106,28 @@ func TestBuildArchitectureEvidencePack_BoundsDocsAndSkipsSecretFiles(t *testing.
 	want := []string{"doc:docs/design/01-first.md", "doc:docs/design/02-second.md"}
 	if !reflect.DeepEqual(docIDs, want) {
 		t.Fatalf("doc IDs = %v, want %v", docIDs, want)
+	}
+}
+
+func TestBuildArchitectureEvidencePack_RedactsSecretLikeFreeText(t *testing.T) {
+	root := t.TempDir()
+	writeEvidenceFile(t, root, "README.md", "# Service\n\nAPI_TOKEN = hunter2\nArchitecture boundary.\n")
+
+	items := BuildArchitectureEvidencePack(EvidencePackOptions{Root: root})
+	var readme EvidenceItem
+	for _, item := range items {
+		if item.ID == testEvidenceREADME {
+			readme = item
+			break
+		}
+	}
+	if readme.ID == "" {
+		t.Fatalf("README evidence missing: %+v", items)
+	}
+	if strings.Contains(readme.Text, "hunter2") || strings.Contains(readme.Text, "API_TOKEN") {
+		t.Fatalf("secret-like free text was not redacted: %q", readme.Text)
+	}
+	if !strings.Contains(readme.Text, "[redacted]") {
+		t.Fatalf("redaction marker missing: %q", readme.Text)
 	}
 }

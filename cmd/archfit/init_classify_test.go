@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	testLayerDomain = "domain"
-	testMod0        = "mod0"
-	testMod0Path    = "internal/mod0/**"
+	testLayerDomain  = "domain"
+	testMod0         = "mod0"
+	testMod0Path     = "internal/mod0/**"
+	testRepoEvidence = "doc:README.md (doc) README.md: Architecture"
 )
 
 // fakeClassifyProvider returns canned responses per call, tracking call count.
@@ -212,12 +213,28 @@ func TestClassifyModulesWithEvidence_MissingEvidenceRefsError(t *testing.T) {
 	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test","basis":"semantic_judgment"}]`
 	p := &fakeClassifyProvider{responses: []string{resp}}
 
-	_, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{"doc:README.md (doc) README.md: Architecture"})
+	_, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{testRepoEvidence})
 	if err == nil {
 		t.Fatal("missing evidence_refs must return an error")
 	}
 	if !strings.Contains(err.Error(), "missing evidence_refs") {
 		t.Fatalf("error = %v, want missing evidence_refs", err)
+	}
+}
+
+func TestClassifyModulesWithEvidence_InvalidEvidenceRefsError(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test","evidence_refs":["finding:123"],"basis":"semantic_judgment"}]`
+	p := &fakeClassifyProvider{responses: []string{resp}}
+
+	_, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{testRepoEvidence})
+	if err == nil {
+		t.Fatal("invalid evidence_refs must return an error")
+	}
+	if !strings.Contains(err.Error(), "invalid evidence_refs") {
+		t.Fatalf("error = %v, want invalid evidence_refs", err)
 	}
 }
 
@@ -228,7 +245,7 @@ func TestClassifyModulesWithEvidence_ParsesRuleSuggestions(t *testing.T) {
 	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment","rule_suggestions":[{"id":"no-mod0-to-adapter","type":"forbidden_dependency","from":"internal/mod0/**","to":"internal/adapter/**","gate":"warn","rationale":"test cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}]}]`
 	p := &fakeClassifyProvider{responses: []string{resp}}
 
-	got, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{"doc:README.md (doc) README.md: Architecture"})
+	got, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{testRepoEvidence})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

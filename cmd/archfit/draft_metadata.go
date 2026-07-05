@@ -93,7 +93,13 @@ func cleanEvidenceRefs(refs []string) []string {
 }
 
 func validEvidenceRef(ref string) bool {
-	if !strings.Contains(ref, ":") {
+	prefix, rest, ok := strings.Cut(ref, ":")
+	if !ok || rest == "" {
+		return false
+	}
+	switch prefix {
+	case "doc", "api", "comment", "config", "diag":
+	default:
 		return false
 	}
 	for _, r := range ref {

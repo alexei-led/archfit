@@ -431,6 +431,9 @@ func summarizeFreeText(text string) string {
 		if line == "" {
 			continue
 		}
+		if secretishTextLine(line) {
+			line = redactConfigLine(line)
+		}
 		parts = append(parts, line)
 		if len(parts) >= 24 {
 			break
@@ -555,6 +558,24 @@ func secretishName(name string) bool {
 func secretishConfigLine(line string) bool {
 	lower := strings.ToLower(line)
 	return secretishName(lower) || strings.Contains(lower, "authorization:") || strings.Contains(lower, "bearer ")
+}
+
+func secretishTextLine(line string) bool {
+	lower := strings.ToLower(line)
+	if strings.Contains(lower, "authorization:") || strings.Contains(lower, "bearer ") {
+		return true
+	}
+	for _, marker := range []string{"secret", "credential", "password", "token", "private-key", "private_key", "apikey", "api_key"} {
+		idx := strings.Index(lower, marker)
+		if idx < 0 {
+			continue
+		}
+		after := strings.TrimLeft(lower[idx+len(marker):], " \t")
+		if strings.HasPrefix(after, ":") || strings.HasPrefix(after, "=") {
+			return true
+		}
+	}
+	return false
 }
 
 func slugID(s string) string {
