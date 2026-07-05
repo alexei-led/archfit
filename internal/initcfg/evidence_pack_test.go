@@ -133,3 +133,27 @@ func TestBuildArchitectureEvidencePack_RedactsSecretLikeFreeText(t *testing.T) {
 		t.Fatalf("redaction markers missing: %q", readme.Text)
 	}
 }
+
+func TestBuildArchitectureEvidencePack_DoesNotReadModulePathsOutsideRoot(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	writeEvidenceFile(t, outside, "leak/doc.go", "// Package leak should never enter the prompt.\npackage leak\n\nfunc OutsideAPI() {}\n")
+
+	outsideRel, err := filepath.Rel(root, filepath.Join(outside, "leak"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := BuildArchitectureEvidencePack(EvidencePackOptions{
+		Root: root,
+		Modules: []ModuleDef{{
+			Name:  "leak",
+			Paths: []string{filepath.ToSlash(filepath.Join(outsideRel, "**"))},
+		}},
+	})
+
+	for _, item := range items {
+		if strings.Contains(item.ID+item.Source+item.Text, "OutsideAPI") || strings.Contains(item.ID, "comment:") || strings.Contains(item.ID, "api:leak") {
+			t.Fatalf("outside-root module evidence leaked: %+v (all items: %+v)", item, items)
+		}
+	}
+}

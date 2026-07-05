@@ -198,14 +198,16 @@ func validateRuleSuggestionShape(s initcfg.RuleSuggestion) error {
 		subject = s.Type
 	}
 	switch s.Type {
-	case ruleTypeForbiddenDependency, ruleTypeForbiddenRoleDependency, ruleTypePublicAPIChange:
+	case ruleTypeForbiddenDependency, ruleTypeForbiddenRoleDependency:
 		if s.From == "" || s.To == "" {
 			return fmt.Errorf("rule suggestion %q requires from and to", subject)
 		}
 	case ruleTypePublicAPIMax:
-		if s.From == "" || s.Max == nil {
-			return fmt.Errorf("rule suggestion %q requires from and max", subject)
+		if s.Max == nil {
+			return fmt.Errorf("rule suggestion %q requires max", subject)
 		}
+	case ruleTypePublicAPIChange:
+		// No extra shape: public_api_change is global and defaults to gate: warn.
 	case ruleTypeCouplingGate:
 		if s.MinBand == "" && s.MaxDrop == nil {
 			return fmt.Errorf("rule suggestion %q requires min_band or max_drop", subject)

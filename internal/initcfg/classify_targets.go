@@ -102,12 +102,19 @@ func resolveFiles(root string, paths []string) []string {
 //  2. Python dotted path (contains ".", no "/") or bare single-segment package
 //     name (no "/" and no "."): convert dots to slashes and try the candidate
 //     directory under both <root> and <root>/src, returning the first that
-//     exists and is a directory. Degrades to (_, false) when neither exists.
+//     exists and is a directory.
+//
+// Paths that escape root, including through resolved symlinks, are skipped.
+// Degrades to (_, false) when no safe directory can be resolved.
 func resolveDir(root, path string) (string, bool) {
 	if strings.Contains(path, "/") {
 		// Filesystem glob: strip trailing "/**" if present.
 		dir := strings.TrimSuffix(path, "/**")
-		return filepath.Join(root, filepath.FromSlash(dir)), true
+		dir = filepath.Join(root, filepath.FromSlash(dir))
+		if !dirWithinRoot(root, dir) {
+			return "", false
+		}
+		return dir, true
 	}
 
 	// Dotted Python path or bare single-segment package name.
@@ -116,9 +123,31 @@ func resolveDir(root, path string) (string, bool) {
 	for _, base := range []string{root, filepath.Join(root, pySrcDir)} {
 		dir := filepath.Join(base, candidate)
 		info, err := os.Stat(dir)
-		if err == nil && info.IsDir() {
+		if err == nil && info.IsDir() && dirWithinRoot(root, dir) {
 			return dir, true
 		}
 	}
 	return "", false
+}
+
+func dirWithinRoot(root, dir string) bool {
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	dirAbs, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+	if rootEval, err := filepath.EvalSymlinks(rootAbs); err == nil {
+		rootAbs = rootEval
+	}
+	if dirEval, err := filepath.EvalSymlinks(dirAbs); err == nil {
+		dirAbs = dirEval
+	}
+	rel, err := filepath.Rel(rootAbs, dirAbs)
+	if err != nil {
+		return false
+	}
+	return rel == "." || filepath.IsLocal(rel)
 }

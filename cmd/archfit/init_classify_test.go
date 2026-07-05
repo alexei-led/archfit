@@ -11,10 +11,12 @@ import (
 )
 
 const (
-	testLayerDomain  = "domain"
-	testMod0         = "mod0"
-	testMod0Path     = "internal/mod0/**"
-	testRepoEvidence = "doc:README.md (doc) README.md: Architecture"
+	testLayerDomain       = "domain"
+	testMod0              = "mod0"
+	testMod0Path          = "internal/mod0/**"
+	testEvidenceRef       = "doc:README.md"
+	testEvidenceRationale = "cite " + testEvidenceRef
+	testRepoEvidence      = testEvidenceRef + " (doc) README.md: Architecture"
 )
 
 // fakeClassifyProvider returns canned responses per call, tracking call count.
@@ -275,6 +277,31 @@ func TestClassifyModulesWithEvidence_ParsesRuleSuggestions(t *testing.T) {
 	rule := ann.RuleSuggestions[0]
 	if rule.Type != ruleTypeForbiddenDependency || len(rule.EvidenceRefs) != 1 || rule.Basis != initcfg.DraftBasisSemanticJudgment {
 		t.Fatalf("bad rule suggestion: %+v", rule)
+	}
+}
+
+func TestRuleSuggestionShape_MatchesRuleSchema(t *testing.T) {
+	t.Parallel()
+	maxAPI := 20
+	allowed := map[string]struct{}{testEvidenceRef: {}}
+	entries := []ruleSuggestionResponse{
+		{ID: "track-api", Type: ruleTypePublicAPIChange, Gate: "warn", Rationale: testEvidenceRationale, EvidenceRefs: []string{testEvidenceRef}, Basis: initcfg.DraftBasisSemanticJudgment},
+		{ID: "api-max", Type: ruleTypePublicAPIMax, Gate: "warn", Max: &maxAPI, Rationale: testEvidenceRationale, EvidenceRefs: []string{testEvidenceRef}, Basis: initcfg.DraftBasisSemanticJudgment},
+		{ID: "coupling-floor", Type: ruleTypeCouplingGate, Gate: "fail", MinBand: "serviceable", Rationale: testEvidenceRationale, EvidenceRefs: []string{testEvidenceRef}, Basis: initcfg.DraftBasisSemanticJudgment},
+	}
+
+	got, err := parseRuleSuggestionResponses(testMod0, entries, true, allowed)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != len(entries) {
+		t.Fatalf("rule suggestions = %+v, want %d", got, len(entries))
+	}
+	if got[0].Type != ruleTypePublicAPIChange || got[0].From != "" || got[0].To != "" {
+		t.Fatalf("public_api_change should not require from/to: %+v", got[0])
+	}
+	if got[1].Type != ruleTypePublicAPIMax || got[1].Max == nil || *got[1].Max != maxAPI || got[1].From != "" {
+		t.Fatalf("public_api_max should only require max: %+v", got[1])
 	}
 }
 
