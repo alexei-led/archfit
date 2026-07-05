@@ -53,3 +53,33 @@ Self gate snapshot from `make archfit`:
 - Additional local checks:
   - `make lint`: PASS, 0 issues.
   - `make archfit`: PASS, 0 blocking.
+
+## Task 2 post-change attribution (bc_score.v5)
+
+Policy decision: default `coupling.duplicated_knowledge` is `score`, not `advisory`, to close the book-fidelity gap for Ch7 duplicated functional knowledge. Backward compatibility is available with `coupling.duplicated_knowledge: advisory`.
+
+`ATTRIB_REPOS_DIR=${ATTRIB_REPOS_DIR:-$HOME/Workspace} make corpus-attrib` produced:
+
+| repo      | score | band  | scored | abstained | external |
+| --------- | ----: | ----- | -----: | --------: | -------: |
+| archfit   |    43 | mixed |    348 |         0 |      572 |
+| ccgram    |    55 | mixed |    497 |        18 |        0 |
+| herdr     |    29 | poor  |    686 |        18 |       24 |
+| storybook |    49 | mixed |    330 |         0 |      181 |
+
+Movement versus the Task 1 baseline:
+
+| repo      | baseline score/band/scored | task 2 score/band/scored | explanation                                                                                                                                                                             |
+| --------- | -------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| archfit   | 42 / mixed / 337           | 43 / mixed / 348         | +1 score, +11 scored facts. V5 raw JSON shows 10 clone-only pairs scored; band unchanged. The remaining scored-count delta comes from this task's code/config surface in the self-scan. |
+| ccgram    | 55 / mixed / 497           | 55 / mixed / 497         | No score, band, or scored-count movement; no clone-only pairs in raw JSON.                                                                                                              |
+| herdr     | 29 / poor / 686            | 29 / poor / 686          | No score, band, or scored-count movement; no clone-only pairs in raw JSON.                                                                                                              |
+| storybook | 48 / mixed / 310           | 49 / mixed / 330         | +1 score, +20 scored facts. V5 raw JSON shows 20 clone-only pairs scored; band unchanged.                                                                                               |
+
+Validation results:
+
+- `go test ./internal/config/... ./internal/classify/... ./internal/engine/... ./internal/score/...`: PASS.
+- `make schema`: PASS; regenerated `archfit.schema.json`.
+- `make archfit`: PASS, 0 blocking, 80 advisory, score 43 / 100 mixed.
+- `ATTRIB_REPOS_DIR=${ATTRIB_REPOS_DIR:-$HOME/Workspace} make corpus-attrib`: PASS; table above.
+- Additional `make lint`: PASS, 0 issues.

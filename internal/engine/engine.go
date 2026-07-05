@@ -187,6 +187,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	runtimeAsync := buildRuntimeAsync(in.Signals.RuntimeAsync.Sites, in.Signals.RuntimeAsync.Confidence, classifyCfg.ModuleMap)
 
 	couplingIdx := classify.Run(ex.g, classifyCfg)
+	cloneOnlyPairs := classify.CloneOnlyPairs(ex.g, classifyCfg)
 
 	// --- Stage 4: Rules ---
 	// Call each rule once with the full evidence set. Rules iterate edges internally;
@@ -310,7 +311,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// full-repo dump. Report-only; never enters the verdict. Nil outside delta mode.
 	delta := deltaReport(in.Scope.Mode, resolvedFindings, in.Accepted, in.Scope.Changed)
 
-	classifiedEdges := buildClassifiedEdgeSummary(couplingIdx)
+	classifiedEdges := buildClassifiedEdgeSummaryWithCloneOnly(couplingIdx, cloneOnlyPairs, classifyCfg.DuplicatedKnowledgePolicy)
 	classifiedEdges.LLMApproved = llmApprovedCount
 	// Volatility triage disclosure: count modules by volatility source (declared /
 	// inherited / cascade / undeclared) so coupling_balance can say whether a

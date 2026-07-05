@@ -288,7 +288,9 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	b.WriteString("# Balanced-Coupling advisory tuning.\n")
 	b.WriteString("coupling:\n")
 	b.WriteString("  # Minimum severity for a coupling advisory: low|medium|high|critical\n")
-	b.WriteString("  min_severity: medium\n\n")
+	b.WriteString("  min_severity: medium\n")
+	b.WriteString("  # Clone-only duplicated knowledge: score|advisory (default score)\n")
+	b.WriteString("  duplicated_knowledge: score\n\n")
 
 	// languages: section — always emitted so operators can flip modes without
 	// needing to know the YAML shape. enabled is true|false|auto.

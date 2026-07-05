@@ -1,12 +1,14 @@
-# Balanced Coupling measurement engine — design v4.0
+# Balanced Coupling measurement engine — design v5.0
 
-Date: 2026-07-04. Status: SHIPPED. Supersedes `bc-measurement-v3.md` (archived
+Date: 2026-07-05. Status: SHIPPED. Supersedes `bc-measurement-v3.md` (archived
 under `docs/archived/design/`). The v3 doc recorded the move to Khononov's
-published formula; v4 changes ONLY the classification feeding that formula —
-the formula, bands, and abstain discipline are unchanged. Delta note with the
-exact three-change list: `20260702-bc-score-v4.md`.
+published formula; v4 changed classification feeding that formula; v5 changes
+which deterministic coupling facts enter the headline rollup. The formula,
+ordinals, bands, and abstain discipline are unchanged. Delta notes:
+`20260702-bc-score-v4.md` and `20260705-bc-score-v5.md`.
 
-Related plan: `docs/plans/20260702-wave4-book-strength-distance.md` (Tasks 1–6).
+Related plans: `docs/plans/20260702-wave4-book-strength-distance.md` (Tasks 1–6),
+`docs/plans/20260705-wave1-deterministic-book-fidelity.md` (Task 2).
 
 ---
 
@@ -17,18 +19,22 @@ archfit implements Vlad Khononov's _Balancing Coupling in Software Design_
 archfit owns only the _instrumentation_ — measuring code and placing each edge
 on the book's scale.
 
-`ScoreVersion = "bc_score.v4"` — a breaking metric change: **v4 scores are not
-comparable to v3 scores.** v4 fixes three known-wrong classifications found by
+`ScoreVersion = "bc_score.v5"` — a breaking metric change: **v5 scores are not
+comparable to v4 scores.** v4 fixed three known-wrong classifications found by
 the 2026-07-02 eval (`docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` §1
-deviations 1–3):
+deviations 1–3), and v5 closes the clone-only duplicated-knowledge score gap:
 
 1. Go const/var reads score Model (S=3), not Functional (S=8) — pure data
    sharing per book Ch7. Rust gets the same fix via the rust-analyzer SCIP
    term kinds (const/static/field → model).
 2. Pure-data Go DTOs referenced across a declared `public:` glob boundary
    reach Contract (S=1) — the book's canonical Contract example.
-3. New frozen distance rung `DistanceExternal = 10` (book Ch10 Example 1,
+3. Frozen distance rung `DistanceExternal = 10` (book Ch10 Example 1,
    cross-vendor integration) for config-declared `external_systems:` seams.
+4. Clone-only duplicated knowledge — cross-module clone pairs with no import
+   edge — enters `coupling_balance` by default through
+   `coupling.duplicated_knowledge: score`. Set the policy to `advisory` to
+   preserve the v4 report-only behavior.
 
 ---
 
@@ -154,6 +160,22 @@ strength is `functional` or `unknown` is upgraded to `StrengthSymmetric` (S=9).
 Config-authoritative `contract` or `intrusive` assignments, and approved pinned
 labels, are never overridden.
 
+When the clone pair has **no** import edge in either direction, it is clone-only
+duplicated knowledge: the same book Ch7 symmetric functional coupling exists,
+but the import graph cannot carry it. v5 keeps detection pure in
+`classify.CloneOnlyPairs` and lets `coupling.duplicated_knowledge` choose the
+rollup policy:
+
+- `score` (default): include the pair in `classified_edges` and
+  `coupling_balance` as a symmetric-strength coupling fact.
+- `advisory`: preserve v4 behavior; the pair can emit a
+  `bc/duplicated_knowledge` advisory but stays out of the headline score.
+
+JSON exposes the policy effect through `classified_edges.clone_only_scored` and
+`classified_edges.clone_only_advisory`. Advisory filtering still applies
+`coupling.min_severity`, approved labels, baseline status, and waivers. The
+coupling gate promotes only `bc/imbalanced_coupling`, never the advisory.
+
 S=9 with typical D=4 (same-owner) and V=3 (low volatility):
 `max(|9−4|, 10−3) + 1 = max(5, 7) + 1 = 8` → `low` severity. Correct: same-owner
 clone pairs are a DRY smell but not a distributed-monolith crisis. The critical
@@ -221,9 +243,11 @@ Ch9) propagates high volatility one hop across strongly-coupled edges before sco
 ### Repo rollup
 
 `coupling_balance` dimension value = `round(100 × (mean book balance − 1) / 9)`
-over all scored internal cross-boundary edges. Confidence from the internal scored
-fraction (see §5). Worst edges surface as advisories. This is transparent
-aggregation of the book's own per-edge score, not a new coupling model.
+over all scored internal cross-boundary coupling facts: graph edges plus
+clone-only duplicated-knowledge pairs when `coupling.duplicated_knowledge: score`.
+Confidence from the internal scored fraction (see §5). Worst edges surface as
+advisories. This is transparent aggregation of the book's own per-edge score,
+not a new coupling model.
 
 ---
 

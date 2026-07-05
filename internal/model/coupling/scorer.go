@@ -27,7 +27,11 @@ const ScoreDefinition = "book balance score — balance = max(|S−D|, 10−V) +
 // not Functional (8); pure-data DTOs across a declared public boundary reach
 // Contract (1); declared external systems enter scoring at DistanceExternal
 // (10). Scores are NOT comparable across versions.
-const ScoreVersion = "bc_score.v4"
+// v5: clone-only duplicated-knowledge pairs (cross-module clones with no import
+// edge) enter coupling_balance by default via coupling.duplicated_knowledge:
+// score. The formula and ordinals are unchanged, but the headline denominator
+// now includes the book Ch7 hidden-coupling case.
+const ScoreVersion = "bc_score.v5"
 
 // EdgeScore is the result produced by a Scorer for one graph edge.
 //

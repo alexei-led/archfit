@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -144,9 +145,15 @@ func pathDir(p string) string {
 }
 
 // buildClassifiedEdgeSummary aggregates the full coupling.Index into a
-// ClassifiedEdgeSummary for coupling_balance scoring. It counts every edge
+// ClassifiedEdgeSummary for coupling_balance scoring. It counts every graph edge
 // (including same_module), separates cross-boundary scored vs abstained edges,
 // and computes the arithmetic mean book balance over scored edges.
+func buildClassifiedEdgeSummary(idx coupling.Index) *diagnostic.ClassifiedEdgeSummary {
+	return buildClassifiedEdgeSummaryWithCloneOnly(idx, nil, config.DuplicatedKnowledgePolicyAdvisory)
+}
+
+// buildClassifiedEdgeSummaryWithCloneOnly also folds clone-only duplicated
+// knowledge into the summary when the explicit policy is score.
 //
 // Edges whose target is not a declared module (Distance == DistanceUnknown:
 // stdlib, third-party/library dependencies, undeclared packages) are EXCLUDED
@@ -161,11 +168,13 @@ func pathDir(p string) string {
 //
 // Genuine internal coupling with known distance but unknown strength is still
 // counted as Abstained — it stays in the denominator and honestly lowers
-// confidence.
+// confidence. Clone-only duplicated knowledge has known symmetric strength and
+// module-pair distance, so under the score policy it enters the same distribution
+// as a score-bearing coupling fact without inventing a graph edge.
 //
 // The summary uses string keys (not coupling package constants) so it stays
 // usable from diagnostic (stdlib-only) and score packages.
-func buildClassifiedEdgeSummary(idx coupling.Index) *diagnostic.ClassifiedEdgeSummary {
+func buildClassifiedEdgeSummaryWithCloneOnly(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy config.DuplicatedKnowledgePolicy) *diagnostic.ClassifiedEdgeSummary {
 	s := &diagnostic.ClassifiedEdgeSummary{
 		ByStrength:   make(map[string]int),
 		ByDistance:   make(map[string]int),
@@ -174,53 +183,68 @@ func buildClassifiedEdgeSummary(idx coupling.Index) *diagnostic.ClassifiedEdgeSu
 	}
 	balanceSum := 0
 	for _, cl := range idx {
-		s.Total++
-		if cl.Distance == coupling.DistanceSameModule {
-			s.SameModule++
-			continue
-		}
-		// External/library edge: target not a declared module. Excluded from the
-		// coupling_balance denominator — the book scores YOUR components only.
-		// Targets matching a declared external_systems entry are NOT here: they
-		// classify as DistanceExternal and fall through into the scored
-		// distribution below (the architect declared the seam, so it is measured).
-		if cl.Distance == coupling.DistanceUnknown {
-			s.External++
-			continue
-		}
-		if cl.Distance == coupling.DistanceExternal {
-			s.DeclaredExternal++
-		}
-		// Cross-boundary edge: target resolves to a declared module or a declared
-		// external system.
-		s.ByStrength[string(cl.Strength)]++
-		s.ByDistance[string(cl.Distance)]++
-		s.ByVolatility[string(cl.Volatility)]++
-		if cl.StrengthFromLLM {
-			s.LabeledLLM++
-		}
-		if cl.StrengthFromNonHighLLM {
-			s.LLMLowConfidenceEdges++
-		}
-		if cl.Score.Scored {
-			s.Scored++
-			balanceSum += cl.Score.Balance
-			s.BySeverity[string(cl.Score.Band)]++
-			// Genuine distributed-monolith: critical band AND high distance (diff
-			// owner / deploy unit). A critical edge at cross_module_same_owner is
-			// local coupling, not a distributed monolith — see ClassifiedEdgeSummary.
-			if cl.Score.Band == coupling.SeverityCritical && coupling.DistanceIsHigh(cl.Distance) {
-				s.DistributedMonolith++
+		balanceSum += addClassificationToSummary(s, cl)
+	}
+	if len(cloneOnly) > 0 {
+		switch config.NormalizeDuplicatedKnowledgePolicy(policy) {
+		case config.DuplicatedKnowledgePolicyScore:
+			for _, p := range cloneOnly {
+				s.CloneOnlyScored++
+				balanceSum += addClassificationToSummary(s, p.Classification)
 			}
-		} else {
-			s.Abstained++
-			s.BySeverity["abstained"]++
+		default:
+			s.CloneOnlyAdvisory += len(cloneOnly)
 		}
 	}
 	if s.Scored > 0 {
 		s.MeanBalance = float64(balanceSum) / float64(s.Scored)
 	}
 	return s
+}
+
+func addClassificationToSummary(s *diagnostic.ClassifiedEdgeSummary, cl coupling.Classification) int {
+	s.Total++
+	if cl.Distance == coupling.DistanceSameModule {
+		s.SameModule++
+		return 0
+	}
+	// External/library edge: target not a declared module. Excluded from the
+	// coupling_balance denominator — the book scores YOUR components only.
+	// Targets matching a declared external_systems entry are NOT here: they
+	// classify as DistanceExternal and fall through into the scored distribution
+	// below (the architect declared the seam, so it is measured).
+	if cl.Distance == coupling.DistanceUnknown {
+		s.External++
+		return 0
+	}
+	if cl.Distance == coupling.DistanceExternal {
+		s.DeclaredExternal++
+	}
+	// Cross-boundary edge: target resolves to a declared module, a declared
+	// external system, or a score-bearing clone-only duplicated-knowledge pair.
+	s.ByStrength[string(cl.Strength)]++
+	s.ByDistance[string(cl.Distance)]++
+	s.ByVolatility[string(cl.Volatility)]++
+	if cl.StrengthFromLLM {
+		s.LabeledLLM++
+	}
+	if cl.StrengthFromNonHighLLM {
+		s.LLMLowConfidenceEdges++
+	}
+	if cl.Score.Scored {
+		s.Scored++
+		s.BySeverity[string(cl.Score.Band)]++
+		// Genuine distributed-monolith: critical band AND high distance (diff
+		// owner / deploy unit). A critical edge at cross_module_same_owner is
+		// local coupling, not a distributed monolith — see ClassifiedEdgeSummary.
+		if cl.Score.Band == coupling.SeverityCritical && coupling.DistanceIsHigh(cl.Distance) {
+			s.DistributedMonolith++
+		}
+		return cl.Score.Balance
+	}
+	s.Abstained++
+	s.BySeverity["abstained"]++
+	return 0
 }
 
 // countActive returns the number of findings whose status is not fixed.

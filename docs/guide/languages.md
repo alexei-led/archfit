@@ -378,8 +378,10 @@ Notes that bite most often:
   drops to medium — partial, never silent.
 - **Clone detection is opt-in.** `analyzers.clones.enabled: true` plus `jscpd`
   (`npm install -g jscpd@5.0.11`) upgrades cross-module clone pairs to
-  `StrengthSymmetric` (S=9) in the BC scorer. `false` or absent → no upgrade.
-- **Strength precision is language-asymmetric (bc_score.v4).** Go classifies
+  `StrengthSymmetric` (S=9) in the BC scorer. Clone-only pairs with no import
+  edge enter `coupling_balance` by default under `coupling.duplicated_knowledge: score`.
+  `false` or absent → no clone signal.
+- **Strength precision is language-asymmetric (bc_score.v5).** Go classifies
   `const`/`var` uses as `model` (pure-data sharing) and pure-data DTO structs
   crossing a declared `public:` boundary as `contract` directly from compiler
   type info. Rust gets the const/static→model precision only via

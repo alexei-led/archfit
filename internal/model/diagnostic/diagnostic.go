@@ -264,10 +264,13 @@ type DeltaReport struct {
 }
 
 // ClassifiedEdgeSummary holds aggregate distribution counts over the
-// coupling.Index produced by classify.Run. Stdlib-only (no coupling imports).
-// Populated in engine.go; consumed by score.go to drive coupling_balance.
+// coupling.Index produced by classify.Run plus score-bearing clone-only
+// duplicated-knowledge pairs when that policy is enabled. Stdlib-only (no
+// coupling imports). Populated in engine.go; consumed by score.go to drive
+// coupling_balance.
 type ClassifiedEdgeSummary struct {
-	// Total is the total edge count in the coupling.Index (all edges, including same_module).
+	// Total is the total classified coupling fact count (all graph edges,
+	// including same_module, plus scored clone-only pairs when enabled).
 	Total int `json:"total"`
 	// Scored is the count of cross-boundary edges with a concrete book balance
 	// (Scored=true on EdgeScore, i.e. strength and distance both known).
@@ -311,6 +314,14 @@ type ClassifiedEdgeSummary struct {
 	// keeps the disclosed-exclusion arithmetic honest — External covers only the
 	// UNDECLARED remainder.
 	DeclaredExternal int `json:"declared_external,omitempty"`
+	// CloneOnlyScored counts clone-only duplicated-knowledge pairs included in
+	// coupling_balance by coupling.duplicated_knowledge: score. They are
+	// score-bearing coupling facts, not graph import edges.
+	CloneOnlyScored int `json:"clone_only_scored,omitempty"`
+	// CloneOnlyAdvisory counts clone-only duplicated-knowledge pairs held out of
+	// coupling_balance by coupling.duplicated_knowledge: advisory. They may still
+	// emit bc/duplicated_knowledge advisories after severity/status filtering.
+	CloneOnlyAdvisory int `json:"clone_only_advisory,omitempty"`
 	// LLMApproved is the count of approved cross-boundary labels whose provenance
 	// is "llm" and confidence is not "high". These lower the coupling_balance
 	// dimension confidence by one band — they are human-approved but not human-judged.

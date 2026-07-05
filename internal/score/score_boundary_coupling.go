@@ -13,8 +13,9 @@ import (
 // Vlad Khononov's balance formula from _Balancing Coupling in Software Design_ Ch10.
 //
 // When a ClassifiedEdgeSummary is supplied (populated from the full coupling.Index
-// before advisory filtering), the value comes from the mean book balance over all
-// scored cross-boundary edges:
+// before advisory filtering, plus score-bearing clone-only duplicated-knowledge
+// pairs when configured), the value comes from the mean book balance over all
+// scored cross-boundary coupling facts:
 //
 //	value = round(100 × (MeanBalance − 1) / 9)
 //
@@ -65,6 +66,11 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			dim.Evidence = []string{
 				"0 scored internal cross-boundary edges — coupling balance unconfirmed (edge classification absent or all edges abstained)",
 				fmt.Sprintf("worst-case (critical band) edges: %d", worst),
+			}
+			if summary.CloneOnlyScored > 0 || summary.CloneOnlyAdvisory > 0 {
+				dim.Evidence = append(dim.Evidence,
+					fmt.Sprintf("clone-only duplicated-knowledge pairs: %d scored, %d advisory-only",
+						summary.CloneOnlyScored, summary.CloneOnlyAdvisory))
 			}
 			if summary.External > 0 {
 				dim.Evidence = append(dim.Evidence,
@@ -126,6 +132,11 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		if summary.DeclaredExternal > 0 {
 			dim.Evidence = append(dim.Evidence,
 				fmt.Sprintf("%d declared external-system edges scored at D=10 (external_systems)", summary.DeclaredExternal))
+		}
+		if summary.CloneOnlyScored > 0 || summary.CloneOnlyAdvisory > 0 {
+			dim.Evidence = append(dim.Evidence,
+				fmt.Sprintf("clone-only duplicated-knowledge pairs: %d scored, %d advisory-only",
+					summary.CloneOnlyScored, summary.CloneOnlyAdvisory))
 		}
 		if summary.External > 0 {
 			dim.Evidence = append(dim.Evidence,

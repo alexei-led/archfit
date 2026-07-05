@@ -12,9 +12,10 @@ import (
 // Clone evidence file constants for the modA/modB pair, plus config volatility
 // literals shared across classify test files (goconst).
 const (
-	cloneFileA = "services/a/dup.go"
-	cloneFileB = "services/b/dup.go"
-	cfgVolLow  = "low"
+	cloneFileA   = "services/a/dup.go"
+	cloneFileB   = "services/b/dup.go"
+	cfgVolLow    = "low"
+	cfgVolFrozen = "frozen"
 )
 
 // cloneOnlyCfg returns the canonical two-module config with a modA/modB clone
@@ -95,13 +96,13 @@ func TestCloneOnlyPairs(t *testing.T) {
 			want: 0,
 		},
 		{
-			name: "frozen pair scores balanced → no pair",
+			name: "frozen pair still detected for score-policy rollup",
 			g:    emptyGraph,
 			cfg: cloneOnlyCfg(func(c *config.ClassifyConfig) {
-				setModule(c, modNameA, func(d *config.ModuleDef) { d.Volatility = "frozen" })
-				setModule(c, modNameB, func(d *config.ModuleDef) { d.Volatility = "frozen" })
+				setModule(c, modNameA, func(d *config.ModuleDef) { d.Volatility = cfgVolFrozen })
+				setModule(c, modNameB, func(d *config.ModuleDef) { d.Volatility = cfgVolFrozen })
 			}),
-			want: 0,
+			want: 1,
 		},
 		{
 			name: "no clone pairs → nil",
@@ -214,6 +215,25 @@ func TestCloneOnlyPairs_Classification(t *testing.T) {
 		}
 		if cl.Severity != coupling.SeverityHigh {
 			t.Errorf("Severity = %s, want high", cl.Severity)
+		}
+	})
+
+	t.Run("frozen pair stays score-bearing with no advisory severity", func(t *testing.T) {
+		t.Parallel()
+		cfg := cloneOnlyCfg(func(c *config.ClassifyConfig) {
+			setModule(c, modNameA, func(d *config.ModuleDef) { d.Volatility = cfgVolFrozen })
+			setModule(c, modNameB, func(d *config.ModuleDef) { d.Volatility = cfgVolFrozen })
+		})
+		pairs := classify.CloneOnlyPairs(g, cfg)
+		if len(pairs) != 1 {
+			t.Fatalf("pairs = %d, want 1", len(pairs))
+		}
+		cl := pairs[0].Classification
+		if !cl.Score.Scored {
+			t.Fatal("Score.Scored = false, want true")
+		}
+		if cl.Severity != coupling.SeverityNone {
+			t.Errorf("Severity = %q, want none", cl.Severity)
 		}
 	})
 }

@@ -64,8 +64,8 @@ func TestJSONRenderer_ScoreVersion(t *testing.T) {
 	if !ok {
 		t.Fatal("score_version field missing from JSON output")
 	}
-	if got != "bc_score.v4" {
-		t.Errorf("score_version = %q, want %q", got, "bc_score.v4")
+	if got != "bc_score.v5" {
+		t.Errorf("score_version = %q, want %q", got, "bc_score.v5")
 	}
 	if got != coupling.ScoreVersion {
 		t.Errorf("score_version = %q, out of sync with coupling.ScoreVersion %q", got, coupling.ScoreVersion)

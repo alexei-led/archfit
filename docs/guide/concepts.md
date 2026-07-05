@@ -266,8 +266,11 @@ abstain rule and decision-task behavior.
 
 These balance scores drive the `bc/imbalanced_coupling` advisories (see
 [`archfit analyze`](commands.md)) and the `unbalanced_edge` metric. Cross-module
-clone pairs with no import edge surface as report-only `bc/duplicated_knowledge`
-advisories scored by the same formula. `ScoreVersion` is `bc_score.v4`.
+clone pairs with no import edge are clone-only duplicated knowledge; by default
+(`coupling.duplicated_knowledge: score`) they enter `coupling_balance` as
+symmetric-strength coupling facts and may also surface as `bc/duplicated_knowledge`
+advisories after severity filtering. Set the policy to `advisory` to preserve
+the v4 report-only behavior. `ScoreVersion` is `bc_score.v5`.
 
 ---
 

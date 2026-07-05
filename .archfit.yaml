@@ -30,6 +30,9 @@ coupling:
   # medium: only over-decoupled volatile seams and tight cross-boundary coupling
   # high/critical: only intrusive or functional coupling across large boundaries
   min_severity: medium
+  # Book Ch7 duplicated knowledge: score clone-only cross-module pairs in the
+  # headline coupling_balance by default. Set to advisory to preserve v4 output.
+  duplicated_knowledge: score
   # Book Ch9 inferred-volatility cascade: a module strongly coupled (strength ≥
   # functional) to a high-volatility module inherits raised effective volatility.
   # Config-declared volatility always takes precedence and is never lowered.

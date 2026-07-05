@@ -429,6 +429,29 @@ func TestCouplingBalance_Distribution_AdvisoryTailIndependent(t *testing.T) {
 	}
 }
 
+func TestCouplingBalance_CloneOnlyEvidenceString(t *testing.T) {
+	nonDegen := nonDegenMetricIndex()
+	sum := &diagnostic.ClassifiedEdgeSummary{
+		Total:             3,
+		Scored:            3,
+		MeanBalance:       7.0,
+		BySeverity:        map[string]int{sevLow: 3},
+		CloneOnlyScored:   2,
+		CloneOnlyAdvisory: 1,
+	}
+
+	got := couplingBalance(nil, nonDegen, sum)
+	found := false
+	for _, ev := range got.Evidence {
+		if strings.Contains(ev, "clone-only duplicated-knowledge pairs: 2 scored, 1 advisory-only") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected clone-only policy counts in evidence, got: %v", got.Evidence)
+	}
+}
+
 func TestCouplingBalance_LLMProvenance_LowersConfidence(t *testing.T) {
 	nonDegen := nonDegenMetricIndex()
 

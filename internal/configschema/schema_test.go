@@ -86,6 +86,15 @@ func TestSchemaPatchedDefinitions(t *testing.T) {
 		t.Errorf("ExternalSystemDef.volatility enum = %v, want %v", got, wantVolatilityEnum)
 	}
 
+	couplingDef, ok := schema.Defs["CouplingConfig"]
+	if !ok {
+		t.Fatal("CouplingConfig definition missing from generated schema")
+	}
+	wantDKEnum := []any{"score", "advisory"}
+	if got := couplingDef.Properties["duplicated_knowledge"].Enum; !slices.Equal(got, wantDKEnum) {
+		t.Errorf("CouplingConfig.duplicated_knowledge enum = %v, want %v", got, wantDKEnum)
+	}
+
 	gateDef, ok := schema.Defs["CouplingGateDef"]
 	if !ok {
 		t.Fatal("CouplingGateDef definition missing from generated schema")

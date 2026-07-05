@@ -412,13 +412,14 @@ func duplicatedKnowledgeAdvisories(g *graph.Graph, classifyCfg config.ClassifyCo
 	var out []finding.Finding
 	for _, p := range classify.CloneOnlyPairs(g, classifyCfg) {
 		cl := p.Classification
-		if !severityAtLeast(cl.Severity, classifyCfg.BCAdvisoryMinSeverity) {
+		if cl.Severity == coupling.SeverityNone || !severityAtLeast(cl.Severity, classifyCfg.BCAdvisoryMinSeverity) {
 			continue
 		}
 		matched := map[string]string{
-			"strength":   string(cl.Strength),
-			"distance":   string(cl.Distance),
-			"volatility": string(cl.Volatility),
+			"strength":     string(cl.Strength),
+			"distance":     string(cl.Distance),
+			"volatility":   string(cl.Volatility),
+			"score_policy": string(config.NormalizeDuplicatedKnowledgePolicy(classifyCfg.DuplicatedKnowledgePolicy)),
 		}
 		if cl.DistanceBasis != coupling.DistanceBasisUnknown {
 			matched["distance_basis"] = string(cl.DistanceBasis)

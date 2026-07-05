@@ -122,11 +122,11 @@ Manual checks:
 
 - Decide whether the default policy is `score` for book fidelity or `advisory` for backward compatibility. If the default is not `score`, document why this deliberately leaves a flagship-score gap.
 
-- [ ] Add config enum/default validation and schema coverage.
-- [ ] Add summary counters for scored/advisory clone-only pairs.
-- [ ] Wire selected clone-only pairs into `coupling_balance` only through the explicit policy.
-- [ ] Bump score version and update design docs if score semantics change.
-- [ ] Run attribution and explain every score/band movement.
+- [x] Add config enum/default validation and schema coverage.
+- [x] Add summary counters for scored/advisory clone-only pairs.
+- [x] Wire selected clone-only pairs into `coupling_balance` only through the explicit policy.
+- [x] Bump score version and update design docs if score semantics change.
+- [x] Run attribution and explain every score/band movement.
 
 ### Task 3: Add first-class deterministic connascence evidence
 

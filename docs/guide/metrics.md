@@ -116,7 +116,7 @@ metric scores against a git ref.
 
 ### `coupling_balance` (headline metric)
 
-> **Scorer version:** `bc_score.v4` — Khononov Ch10 book formula.
+> **Scorer version:** `bc_score.v5` — Khononov Ch10 book formula, with clone-only duplicated knowledge scored by default.
 
 - **Represents:** how well the distribution of coupling across module boundaries
   respects the strength × distance × volatility balance rule. High score means
@@ -130,11 +130,16 @@ metric scores against a git ref.
   [`coupling.gate`](configuration-reference.md#couplinggate) block — `min_band`
   (band floor) and `max_drop` (points below the baselined score) fail the run.
   No block ⇒ report-only. Band `n/a` never trips (abstain ≠ fail).
-- **Denominator:** cross-module edges only. Same-module edges score into the
-  report-only [`local_coupling`](#local_coupling) block and never enter this
-  metric. The evidence line also discloses volatility provenance —
-  `volatility provenance (modules): declared: N, inherited: M, cascade: K`
-  (plus `undeclared: U` when nonzero; JSON:
+- **Denominator:** cross-module coupling facts only. Same-module edges score into
+  the report-only [`local_coupling`](#local_coupling) block and never enter this
+  metric. Clone-only duplicated-knowledge pairs (cross-module clones with no
+  import edge) enter by default through `coupling.duplicated_knowledge: score`;
+  set `advisory` to hold them out of the headline score. The evidence line
+  discloses `clone-only duplicated-knowledge pairs: S scored, A advisory-only`,
+  and JSON exposes the same counters as `classified_edges.clone_only_scored` and
+  `classified_edges.clone_only_advisory`. The evidence line also discloses
+  volatility provenance — `volatility provenance (modules): declared: N,
+inherited: M, cascade: K` (plus `undeclared: U` when nonzero; JSON:
   `classified_edges.volatility_provenance`) — so a repo whose volatility is
   uniform because synthetic submodules inherited it reads as
   uniform-by-inheritance, not as a measured fact.
@@ -316,13 +321,13 @@ Most metrics work from the built-in extractors and `git`. A few need an opt-in
 tool and report `n/a` (with a coverage note) when it is absent — never a false
 failure.
 
-| Metric(s)                                                                       | Needs                                             |
-| ------------------------------------------------------------------------------- | ------------------------------------------------- |
-| coupling_balance, unbalanced_edge, cycle, blast_radius, encapsulation, coverage | built-in extractors + `git`                       |
-| coupling_balance (strength refinement)                                          | SCIP index (`analyzers.scip.enabled: true`)       |
-| coupling_balance (clone → symmetric strength)                                   | clone detector (`analyzers.clones.enabled: true`) |
-| `bc/duplicated_knowledge` advisory                                              | clone detector (`analyzers.clones.enabled: true`) |
-| public_api_max, public_api_change, public_api_type_leak (rules)                 | `sg` (ast-grep); `analyzers.syntax.enabled: true` |
+| Metric(s)                                                                            | Needs                                             |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| coupling_balance, unbalanced_edge, cycle, blast_radius, encapsulation, coverage      | built-in extractors + `git`                       |
+| coupling_balance (strength refinement)                                               | SCIP index (`analyzers.scip.enabled: true`)       |
+| coupling_balance (clone → symmetric strength, including clone-only pairs by default) | clone detector (`analyzers.clones.enabled: true`) |
+| `bc/duplicated_knowledge` advisory                                                   | clone detector (`analyzers.clones.enabled: true`) |
+| public_api_max, public_api_change, public_api_type_leak (rules)                      | `sg` (ast-grep); `analyzers.syntax.enabled: true` |
 
 The `llm` tool is used only by `archfit config enrich`, `archfit explain --llm`,
 `archfit analyze --llm`, `archfit config init --llm`, and

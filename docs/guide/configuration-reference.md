@@ -50,6 +50,7 @@ languages:
 
 coupling:
   min_severity: medium
+  duplicated_knowledge: score
 
 layers:
   - domain
@@ -321,12 +322,15 @@ analyzers:
 - `clones` — runs `jscpd` to find cross-module duplicated logic. When a clone pair
   spans two modules, their shared edge strength is upgraded to `symmetric` in the
   `coupling_balance` scorer, reflecting undeclared hidden coupling. When the two
-  modules share **no** import edge at all, the pair surfaces as a report-only
-  `bc/duplicated_knowledge` advisory instead — duplicated knowledge is functional
-  coupling even without an import (book Ch7). Its severity comes from the standard
-  formula (symmetric strength × module-pair distance × worst-of-pair volatility);
-  `coupling.min_severity` and approved `.archfit-labels.yaml` labels (either
-  direction) suppress it; the [`coupling.gate`](#couplinggate) never promotes it.
+  modules share **no** import edge at all, the pair is clone-only duplicated
+  knowledge (book Ch7): by default (`coupling.duplicated_knowledge: score`) it
+  enters `coupling_balance` as a symmetric-strength coupling fact and also
+  surfaces as a `bc/duplicated_knowledge` advisory when its severity passes
+  filters. Set `coupling.duplicated_knowledge: advisory` to preserve the v4
+  report-only behavior. Its severity comes from the standard formula (symmetric
+  strength × module-pair distance × worst-of-pair volatility); `coupling.min_severity`
+  and approved `.archfit-labels.yaml` labels (either direction) suppress the
+  advisory; the [`coupling.gate`](#couplinggate) never promotes the advisory.
 
 `scip` and `clones` are opt-in: `auto` and `false` (and absent) all disable them;
 the run continues without them and the gate verdict is unaffected.
@@ -414,6 +418,7 @@ Balanced-Coupling advisory tuning and the `coupling_balance` gate.
 ```yaml
 coupling:
   min_severity: medium # low | medium (default) | high | critical
+  duplicated_knowledge: score # score (default) | advisory
   volatility_cascade: false
   gate:
     min_band: mixed # band floor: poor | mixed | serviceable | strong
@@ -424,6 +429,12 @@ coupling:
   deps, noisy), `medium` (default, over-decoupled volatile seams and tight
   cross-boundary coupling), `high` or `critical` (intrusive/functional coupling
   across large boundaries only).
+- `duplicated_knowledge` — clone-only cross-module duplicated knowledge policy:
+  `score` (default) includes clone-only pairs in `coupling_balance` as
+  symmetric-strength coupling facts; `advisory` preserves the v4 behavior where
+  clone-only pairs can emit `bc/duplicated_knowledge` advisories but do not move
+  the headline score. JSON exposes the policy effect through
+  `classified_edges.clone_only_scored` and `classified_edges.clone_only_advisory`.
 - `volatility_cascade` — opt-in book Ch9 single-hop propagation: when `true`, a
   module strongly coupled (`functional` or `intrusive` strength) to a `core`
   module inherits raised effective volatility (`high`). Config-declared volatility
