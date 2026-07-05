@@ -2,7 +2,7 @@
 
 ## Overview
 
-Wave 7 of 7 from `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` (top-10 item 7). Assumes Waves 1–6 merged. This is the hybrid syntactic+semantic vision: the deterministic core stays the only thing that scores and gates; the LLM fills the two holes static analysis provably cannot — and its output enters ONLY through the existing pinned-label path (`.archfit-labels.yaml`, provenance/confidence already consumed by the scorer).
+Wave 7 of 7 from `docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` (top-10 item 7). Assumes Waves 1–6 merged. This is the hybrid syntactic+semantic vision: the deterministic core stays the only thing that scores and gates; the LLM fills the two holes static analysis provably cannot — and its output enters ONLY through the existing pinned-label path (`.archfit-labels.yaml`, provenance/confidence already consumed by the scorer).
 
 Two semantic gaps, both measured on the corpus:
 

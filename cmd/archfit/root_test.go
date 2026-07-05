@@ -200,7 +200,7 @@ func isCaseInsensitiveFS(t *testing.T, dir string) bool {
 
 // TestRun_Check_Root_CaseVariantSubtree_OwnerSourceCodeowners is the Wave 2
 // Task 4 case-bug repro (the omni corpus finding — see
-// reports/eval-2026-07-02-v1.1.2/corpus-experiments.md): a subtree --root
+// docs/archived/reports/eval-2026-07-02-v1.1.2/corpus-experiments.md): a subtree --root
 // whose shared ancestor with the resolved git root is cased differently (e.g.
 // git resolves to .../Repo while --root is typed .../repo/services/api) must
 // still resolve SubtreePrefix correctly, so CODEOWNERS (which lives at gitRoot

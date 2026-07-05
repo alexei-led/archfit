@@ -304,7 +304,7 @@ coverage for speed. Keep all existing gates green._
 - [x] **measure the baseline first (no silent caps):** time `make test` and `make lint` cold and warm
       (`go test -race ./... -count=1` wall time; `go test -json ... | go-test-report`-style or
       `-v` parse to list the slowest packages/tests); capture the top offenders in
-      `reports/eval/test-speed-baseline.md` so the speedup is evidence-driven, not guesswork
+      `docs/archived/reports/eval/test-speed-baseline.md` so the speedup is evidence-driven, not guesswork
       [RESULT: cold ~23s, warm ~16s; cmd/archfit 4.5s (3.27s serial test time); all others < 0.1s actual test time — binary startup dominates]
 - [x] **parallelize where safe:** add `t.Parallel()` to independent unit tests and their subtests
       (table-driven loops — capture range var if Go <1.22 idiom requires), but NEVER to tests that
@@ -331,7 +331,7 @@ coverage for speed. Keep all existing gates green._
       default `make lint` complete enough to catch real defects locally; document what moved and why
       [RESULT: golangci-lint runs at 1.3s warm — no linter measurably slow. `.golangci.yaml` left unchanged. No CI-only profile created.]
 - [x] **verify nothing regressed:** full `make test` (race, all tests) + `make lint` (full profile) + `TestGolden` + `TestArchImports` + `make archfit` all green; report the before/after wall-clock
-      delta in `reports/eval/test-speed-baseline.md`
+      delta in `docs/archived/reports/eval/test-speed-baseline.md`
       [RESULT: all gates green — 53/53 packages pass, TestGolden pass, TestArchImports pass, lint 0 issues, make archfit verdict:PASS. Before/after: warm ~16s → ~14.7s (−8%); cmd/archfit 4.5s → 2.5s (−44%)]
 
 ### Task 14: [Final] Documentation

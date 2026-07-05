@@ -2,7 +2,7 @@
 
 ## Overview
 
-Wave 4 of 7 from `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` (§1 deviations 1–3) and `book-conformance.md`. Assumes Waves 1–3 merged (gate honest, output honest) — **do not run this wave earlier**: it moves coupling_balance scores on every repo, and score movement is only safe to ship when the gate and baselines around it are trustworthy.
+Wave 4 of 7 from `docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` (§1 deviations 1–3) and `docs/archived/reports/eval-2026-07-02-v1.1.2/book-conformance.md`. Assumes Waves 1–3 merged (gate honest, output honest) — **do not run this wave earlier**: it moves coupling_balance scores on every repo, and score movement is only safe to ship when the gate and baselines around it are trustworthy.
 
 The scorer formula is book-verbatim; these three deviations live in the classification feeding it:
 
@@ -206,7 +206,7 @@ Task 6 notes:
   `score_version` consumer note) is drafted in
   `docs/design/20260702-bc-score-v4.md` "Changelog entry" section, ready to
   paste into the next `git tag -a` message.
-- Findings report `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md`: §1
+- Findings report `docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md`: §1
   deviations 1–3 marked ✅ FIXED wave 4 (`1cb538b` DTO, `e64b77d` D=10,
   `25d4e4b` const/var) and §4 P3 backlog items 11–12 marked ✅ DONE with the
   same refs.

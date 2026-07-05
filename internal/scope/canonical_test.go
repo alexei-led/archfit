@@ -138,7 +138,7 @@ func isCaseInsensitiveFS(t *testing.T, dir string) bool {
 // TestSubtreePrefix_CaseVariantAncestor is the Wave 2 Task 4 case-bug repro:
 // scanRoot's shared ancestor with gitRoot is cased differently from gitRoot
 // itself (the omni corpus repro — see
-// reports/eval-2026-07-02-v1.1.2/corpus-experiments.md, "lowercase --root
+// docs/archived/reports/eval-2026-07-02-v1.1.2/corpus-experiments.md, "lowercase --root
 // .../workspace/omni/... (case-variant of git root)"). Before the fix,
 // filepath.Rel compares "Repo" vs "repo" as different strings, produces a
 // "../…" relative path, and subtreePrefix's ".." guard collapses a genuine

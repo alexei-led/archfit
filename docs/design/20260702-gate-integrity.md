@@ -1,7 +1,7 @@
 # Gate integrity — verdict-path decisions (wave 1)
 
 Date: 2026-07-02. Status: SHIPPED (PR #25, branch `fix/wave1-gate-integrity`).
-Fixes defects V1/V2/V3 from `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md`.
+Fixes defects V1/V2/V3 from `docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md`.
 Related plan: `docs/plans/20260702-wave1-gate-integrity.md`.
 
 ---

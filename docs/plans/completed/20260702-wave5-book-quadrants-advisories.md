@@ -2,7 +2,7 @@
 
 ## Overview
 
-Wave 5 of 7 from `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` (§1 deviations 4–6, §3 new bug 4) and `book-conformance.md`. Assumes Waves 1–4 merged (gate honest, output honest, bc_score.v4 shipped). This wave adds the book's coverage that archfit currently lacks and removes advisory content the book contradicts.
+Wave 5 of 7 from `docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` (§1 deviations 4–6, §3 new bug 4) and `docs/archived/reports/eval-2026-07-02-v1.1.2/book-conformance.md`. Assumes Waves 1–4 merged (gate honest, output honest, bc_score.v4 shipped). This wave adds the book's coverage that archfit currently lacks and removes advisory content the book contradicts.
 
 - **Same-module edges unconditionally unscored.** `scorer_book.go:79-82` drops same-module edges before strength is read, hiding Ch10's "local complexity" quadrant (low strength + low distance = low cohesion / big ball of mud). The design doc `bc-measurement-v3.md:33-35` still documents the OLD `Scored:true` behavior — stale doc plus a real book worked example (Ch10 Example 2) the code cannot reproduce.
 - **Clone-without-import-edge drift is invisible end-to-end.** Cross-module jscpd clone pairs only upgrade strength on an _already existing_ graph edge; duplication between modules with no import relationship changes nothing — no metric, no finding, no score (verified by the drift-injection probe). This is duplicated knowledge, the book's own extreme case of functional coupling (Ch7), and exactly the drift an AI agent doing copy-paste extraction produces.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Wave 2 of 7 from `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md`. Assumes Wave 1 (gate integrity) is merged — verdict tests exist and per-metric gating works.
+Wave 2 of 7 from `docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md`. Assumes Wave 1 (gate integrity) is merged — verdict tests exist and per-metric gating works.
 
 Three verified defects make archfit's out-of-box experience wrong, which matters doubly when an AI agent generates the config unaided:
 
@@ -58,10 +58,10 @@ Three verified defects make archfit's out-of-box experience wrong, which matters
 
 ### Task 5: Corpus verification (four languages)
 
-- [x] Go — omni repro from `reports/eval-2026-07-02-v1.1.2/corpus-experiments.md`: run the exact lowercase `--root` invocation; score must equal the correct-case run (40/poor), `owner_source: codeowners` — verified byte-identical JSON between correct-case and lowercase `--root` runs (using `reports/eval-2026-06-30-corpus/configs/omni.yaml` against `server/services/scheduled-tasks`); both `owner_source: codeowners`, `40/poor`
+- [x] Go — omni repro from `docs/archived/reports/eval-2026-07-02-v1.1.2/corpus-experiments.md`: run the exact lowercase `--root` invocation; score must equal the correct-case run (40/poor), `owner_source: codeowners` — verified byte-identical JSON between correct-case and lowercase `--root` runs (using `reports/eval-2026-06-30-corpus/configs/omni.yaml` against `server/services/scheduled-tasks`); both `owner_source: codeowners`, `40/poor`
 - [x] Go — a throwaway `config init` on a fresh clone (e.g. `~/workspace/spotinfo` copy in scratch): generated rules parse, layer rule fires on an injected back-edge — verified in `/tmp/spotinfo-scratch` (git clone): generated `forbidden_layer_direction` rule, injected a real core→cmd import edge (`go build` clean), gate promoted to `fail` correctly fires (exit 1) with an accurate `matched_by.from_layer/to_layer`
 - [x] TypeScript — `config init` smoke on `~/workspace/storybook` subdir copy: parses strict, analyze exit 0 — verified on a scratch copy of `code/core`; generated config parsed strict, `analyze --gate --full` exit 0
-- [x] Python — `~/workspace/ccgram`: no same-module false positives from public_api_only; analyze exit unchanged vs pre-wave — 0 `public_api_only` findings (rule is inert for Python — no `EdgeKindUsesInternal` edges, as documented in Task 3), exit 2 (warn) matches the pre-wave baseline in `corpus-experiments.md`
+- [x] Python — `~/workspace/ccgram`: no same-module false positives from public_api_only; analyze exit unchanged vs pre-wave — 0 `public_api_only` findings (rule is inert for Python — no `EdgeKindUsesInternal` edges, as documented in Task 3), exit 2 (warn) matches the pre-wave baseline in `docs/archived/reports/eval-2026-07-02-v1.1.2/corpus-experiments.md`
 - [x] Rust — `~/workspace/herdr`: analyze exit unchanged; no new findings from this wave's rules — exit 0/pass, score 25/poor matches pre-wave baseline; only `bc/imbalanced_coupling` findings present (config has no `rules:` block, so V4/V5 rule types don't apply)
 - [x] leave every corpus repo clean (`git status --porcelain` unchanged); run `make all` — all 5 corpus repos (omni, spotinfo, storybook, ccgram, herdr) confirmed unchanged pre/post; scratch clones used under `/tmp` for the throwaway config-init tests, removed after use; `make all` green (0 blocking, 82 advisory, same baseline as prior commits). PR deferred to end of Task 6 per plan structure.
 

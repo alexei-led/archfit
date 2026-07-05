@@ -2,7 +2,7 @@
 
 ## Overview
 
-Wave 3 of 7 from `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md`. Assumes Waves 1–2 merged (verdict gates correctly; rules/init honest). This wave fixes the fields an AI agent actually consumes in a fix loop — a wrong pointer is worse than no pointer because the agent edits the wrong file or picks the wrong remediation.
+Wave 3 of 7 from `docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md`. Assumes Waves 1–2 merged (verdict gates correctly; rules/init honest). This wave fixes the fields an AI agent actually consumes in a fix loop — a wrong pointer is worse than no pointer because the agent edits the wrong file or picks the wrong remediation.
 
 Verified defects:
 

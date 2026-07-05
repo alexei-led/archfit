@@ -19,7 +19,7 @@ on the book's scale.
 
 `ScoreVersion = "bc_score.v4"` — a breaking metric change: **v4 scores are not
 comparable to v3 scores.** v4 fixes three known-wrong classifications found by
-the 2026-07-02 eval (`reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` §1
+the 2026-07-02 eval (`docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` §1
 deviations 1–3):
 
 1. Go const/var reads score Model (S=3), not Functional (S=8) — pure data

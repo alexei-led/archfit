@@ -2,7 +2,7 @@
 
 ## Overview
 
-Wave 6 of 7 from `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` (§3 latency). Assumes Waves 1–5 merged; behaviorally this wave must be a pure no-op on results — same facts, same scores, byte-identical reports — only faster.
+Wave 6 of 7 from `docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` (§3 latency). Assumes Waves 1–5 merged; behaviorally this wave must be a pure no-op on results — same facts, same scores, byte-identical reports — only faster.
 
 Measured on the corpus (v1.1.2): cold ≈ warm on every repo (no gate-level cache); archfit self 5.3–8.2 s, ccgram 27 s, herdr 79 s, prometheus 87 s, prefect 493 s (8 m13 s). `--base` re-runs the full pipeline on BOTH worktree sides (≈2× full-scan cost), so the one delta-shaped flag does not shortcut anything. For the goal "fast feedback loop for AI agents," per-edit use is only viable today on small repos.
 
@@ -13,7 +13,7 @@ Strategy: cache **extractor facts** (the expensive out-of-process work: `go list
 - Every subprocess goes through `toolrun.Runner` (defined in `internal/toolrun`, `toolrun.go:52` — CLAUDE.md's "internal/ports" wording is stale) — the single choke point to instrument; extractors in `internal/extract/{go,ts,py,rust}`.
 - IMPORTANT: `.archfit-cache/` and the `--no-cache` flag today serve ONLY the off-gate LLM response cache (`internal/llm/cache.go`, imported exclusively from `cmd/archfit/*`). There is NO existing extractor-fact cache to extend. The fact cache is NEW code that shares the top-level directory name; do NOT reuse `internal/llm.Cache` — extractors cannot import `internal/llm` (the arch_test import ring forbids it).
 - Scope walking: `internal/scope` (ScanRoot, exclusions); `internal/syntax` FileClassIndex from the LOC walk.
-- Timing evidence: `reports/eval-2026-07-02-v1.1.2/corpus-experiments.md` timing table (cold/warm per repo).
+- Timing evidence: `docs/archived/reports/eval-2026-07-02-v1.1.2/corpus-experiments.md` timing table (cold/warm per repo).
 
 ## Development Approach
 

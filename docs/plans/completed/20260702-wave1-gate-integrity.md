@@ -2,7 +2,7 @@
 
 ## Overview
 
-Wave 1 of 7 from the 2026-07-02 eval (`reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md`). No prior wave required.
+Wave 1 of 7 from the 2026-07-02 eval (`docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md`). No prior wave required.
 
 archfit's exit code is currently untrustworthy in three verified ways (defects V1, V2, V3 in the findings report — all confirmed at root cause with repros):
 
@@ -76,7 +76,7 @@ After this wave: a metric regression in the correct direction gates, the documen
 
 - [x] update `docs/guide/configuration-reference.md` (coupling.gate, per-metric knobs — real semantics only) — added `### coupling.gate` subsection (min_band/max_drop semantics, empty-block/critical rejection, max_drop needs the baseline ScoreSnapshot anchor, BandNA never gates, trip → FAIL + advisory promotion into agent_tasks), updated the top-level key index, and cross-referenced from `## metrics` (`metrics.coupling_balance` is a config error). Per-metric knob docs were already real-semantics from Task 3 — verified, no change needed
 - [x] update `docs/design/` decision note: why direction-aware deltas, why BandNA never gates — new `docs/design/20260702-gate-integrity.md` recording all four wave-1 decisions: polarity lives in the metric result not config; knobs wired + `max_new_high` deleted (validated-but-inert is the disease); coupling.gate evaluated inside runPipeline with the projection in cmd (layer ring); abstain ≠ fail rationale
-- [x] `reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` backlog items V1/V2/V3: mark fixed with commit refs — defects table rows V1/V2/V3 and backlog items 1/2/5 marked ✅ FIXED/DONE with PR #25 + branch commits (`cd1f1e7`+`f12bd22`, `f4f00f6`, `8e6c45e`). Note: `reports/` is git-ignored, so this update is local-only by design
+- [x] `docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` backlog items V1/V2/V3: mark fixed with commit refs — defects table rows V1/V2/V3 and backlog items 1/2/5 marked ✅ FIXED/DONE with PR #25 + branch commits (`cd1f1e7`+`f12bd22`, `f4f00f6`, `8e6c45e`). Note: `reports/` is git-ignored, so this update is local-only by design
 
 ## Technical Details
 
@@ -86,5 +86,5 @@ After this wave: a metric regression in the correct direction gates, the documen
 
 ## Post-Completion
 
-- Re-run the corpus verification (the 12-repo experiment from `reports/eval-2026-07-02-v1.1.2/corpus-experiments.md`) against the merged binary before starting Wave 2.
+- Re-run the corpus verification (the 12-repo experiment from `docs/archived/reports/eval-2026-07-02-v1.1.2/corpus-experiments.md`) against the merged binary before starting Wave 2.
 - Consider a patch release (v1.1.3 or v1.2.0 — coupling.gate is a feature): tag-triggered flow only, never manual release.

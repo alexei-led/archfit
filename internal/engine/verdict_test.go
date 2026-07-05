@@ -26,7 +26,7 @@ func newTestFinding(status finding.Status) finding.Finding {
 
 // TestComputeVerdict exercises computeVerdict (engine.go) in isolation — it is
 // a pure function over constructed Diagnostic/finding inputs, no fixtures
-// needed. See V1/V3 in reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md:
+// needed. See V1/V3 in docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md:
 // computeVerdict used to treat any Delta < 0 as a regression regardless of
 // metric direction (V1, fixed by stamping Direction on MetricResult), and the
 // documented metrics.<name> gate/max_new/min_delta knobs were schema-validated

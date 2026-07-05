@@ -368,7 +368,7 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) diagnostic.Diagnost
 // has a genuine layer back-edge (internal/model imports internal/engine —
 // the innermost layer reaching into the outermost one).
 //
-// V4 (reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md) was that Render emitted
+// V4 (docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md) was that Render emitted
 // `type: forbidden_dependency` with `from_layer`/`to_layer`, but
 // forbiddenDependency.Check reads `From`/`To`, which were always empty — the
 // generated rule could never fire. Render now emits
