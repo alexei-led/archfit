@@ -319,6 +319,18 @@ and makes only the legible parts executable. Three design rules follow from that
    humans pin labels; the gate stays reproducible. See
    [LLM enrichment](llm-enrich.md).
 
+Book concept status in the deterministic gate:
+
+| Book concept                                             | `archfit` status                                                                                                  |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Ch10 strength × distance × volatility formula            | Scored in `coupling_balance` for classified cross-module coupling facts.                                          |
+| Ch7 clone-only duplicated functional knowledge           | Scored by default through `coupling.duplicated_knowledge: score`; advisory-only by explicit config.               |
+| Ch10 same-module local complexity / cohesion             | Report-only in `local_coupling`; never part of `coupling_balance`.                                                |
+| Ch6 deterministic static connascence                     | Report-only evidence explaining shared knowledge; never a score input.                                            |
+| Ch6 dynamic connascence: execution/timing/value/identity | Unmeasured unless a future deterministic source proves it; runtime async evidence stays separate and report-only. |
+| Semantic labels and LLM narratives                       | Semantic-only until a human pins approved config; LLM output never runs in the gate.                              |
+| Middle distance rungs D=3/D=5/D=6/D=8                    | Compressed and disclosed; not invented from names or package taste.                                               |
+
 The workflow: change code → `archfit analyze --gate` → deterministic finding or
 metric delta with strength / distance / volatility vocabulary → repair within the
 stated constraint → rerun.

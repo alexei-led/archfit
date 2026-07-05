@@ -8,7 +8,7 @@ ordinals, bands, and abstain discipline are unchanged. Delta notes:
 `20260702-bc-score-v4.md` and `20260705-bc-score-v5.md`.
 
 Related plans: `docs/plans/20260702-wave4-book-strength-distance.md` (Tasks 1–6),
-`docs/plans/20260705-wave1-deterministic-book-fidelity.md` (Task 2).
+`docs/plans/20260705-wave1-deterministic-book-fidelity.md` (Tasks 2–5).
 
 ---
 
@@ -337,8 +337,8 @@ ordinal):
   strength. Deriving a hint from real symbol use (rust-analyzer SCIP) is the
   upgrade path; fabricating a conservative default is not.
 
-Self-scan result (v4, 2026-07-04): 513 external edges excluded (0 declared —
-archfit declares no external systems), 292 internal edges scored.
+Self-scan result (v5 final validation, 2026-07-05): 572 external edges excluded
+(0 declared — archfit declares no external systems), 350 internal edges scored.
 
 ---
 
@@ -390,19 +390,19 @@ Similarly, undeclared subdomain/volatility modules emit a decision task promptin
 
 ---
 
-## 8. archfit self-scorecard (Wave 4 Task 5, 2026-07-04)
+## 8. archfit self-scorecard (Wave 1 final validation, 2026-07-05)
 
-| Dimension        | Score | Band | Confidence |
-| ---------------- | ----- | ---- | ---------- |
-| coupling_balance | 40    | poor | high       |
+| Dimension        | Score | Band  | Confidence |
+| ---------------- | ----: | ----- | ---------- |
+| coupling_balance |    43 | mixed | high       |
 
-292 scored internal cross-boundary edges, 0 abstained, 513 external excluded.
-The pre-wave value was 39/poor (same band — no re-baseline needed); the +1 is
-Task 2's const/var → model fix, and Task 3's DTO upgrade moved 17 edges
-model → contract (below score granularity). The v3-era 78/serviceable
-self-score predates the opt-in volatility cascade (now enabled in self-config)
-and later classification fixes — v3 and v4 numbers are not comparable by
-design.
+350 scored internal cross-boundary edges, 0 abstained, 572 external/library edges
+excluded, 11 clone-only pairs scored, and 38 connected modules in the coupling
+sample. Movement from the Wave 1 deterministic baseline is 42 → 43 with no band
+change; the gain comes from `bc_score.v5` clone-only duplicated-knowledge scoring
+plus normal self-code growth during the wave. The v3/v4/v5 score versions are not
+comparable by design; accept v5 by reviewing the attribution table and re-running
+`archfit baseline` only when your configured gates need a new anchor.
 
 ---
 

@@ -246,11 +246,11 @@ Manual checks:
 - Check corpus table covers Go, Python, Rust, and TypeScript. If a repo is skipped, record the missing checkout/tool reason.
 - Check docs do not imply LLM output affects gate decisions.
 
-- [ ] Run final whole-plan validation commands.
-- [ ] Write `docs/plans/notes/wave1-deterministic-validation.md` with per-repo score/band/scored/abstained/external movement.
-- [ ] Update user docs and design docs for every output/config change.
-- [ ] Rebaseline self only if score-version or gate behavior changed intentionally.
-- [ ] Record the scoped `architecture-review` follow-up.
+- [x] Run final whole-plan validation commands.
+- [x] Write `docs/plans/notes/wave1-deterministic-validation.md` with per-repo score/band/scored/abstained/external movement.
+- [x] Update user docs and design docs for every output/config change.
+- [x] Rebaseline self only if score-version or gate behavior changed intentionally.
+- [x] Record the scoped `architecture-review` follow-up.
 
 ## Acceptance criteria
 

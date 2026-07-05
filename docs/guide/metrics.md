@@ -16,8 +16,12 @@ complementary metrics. They split into three roles:
   `coverage`. Each is compared against the committed baseline; a worsening
   delta **fails the build by default** (`metrics.<name>.gate` unset = `fail`;
   downgrade with `warn`, disable with `off`).
-- **Report-only (1):** `blast_radius`. Carries no delta and never changes the
-  verdict.
+- **Report-only metric (1):** `blast_radius`. Carries no delta and never
+  changes the verdict.
+
+Separate JSON/Markdown report-only blocks, including `connascence`,
+`local_coupling`, `runtime_async`, and `classified_edges` summaries, explain the
+score inputs. They are evidence, not metrics, and never gate on their own.
 
 A metric's **absolute value** never fails the build — only a _regression_
 against the baseline you accepted (or a tripped `coupling.gate`) does. Gate

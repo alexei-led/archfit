@@ -22,6 +22,9 @@
     "by_distance": {
       "cross_module_different_owner": 1
     },
+    "by_distance_basis": {
+      "ownership": 1
+    },
     "by_severity": {
       "low": 1
     },
@@ -30,6 +33,32 @@
     },
     "by_volatility": {
       "low": 1
+    },
+    "connected_modules": 2,
+    "distance_compression": {
+      "compressed_middle_rungs": true,
+      "deterministic_splits": [
+        "same module =\u003e D=2",
+        "code_structure sibling/parent-child =\u003e D=4; unrelated subtrees =\u003e D=7",
+        "ownership same/different owner =\u003e D=4/D=7 when the owner map is non-degenerate",
+        "different deploy_unit =\u003e D=9",
+        "declared external_systems target =\u003e D=10"
+      ],
+      "implemented_rungs": [
+        2,
+        4,
+        7,
+        9,
+        10
+      ],
+      "omitted_rungs": [
+        1,
+        3,
+        5,
+        6,
+        8
+      ],
+      "rationale": "D=3/D=5/D=6/D=8 remain compressed: current graph/config facts distinguish same module, same owner, different owner, deploy unit, and declared vendor seam, but not finer package/library distance without guessing."
     },
     "mean_balance": 8,
     "same_module": 0,
@@ -64,11 +93,13 @@
   },
   "coupling_balance": {
     "band": "serviceable",
-    "confidence": "high",
+    "confidence": "medium",
     "evidence": [
       "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
       "scored fraction: 100% (1 scored, 0 abstained, internal only)",
       "critical-band edges: 0 (0 distributed-monolith: critical at high distance)",
+      "sample size below high-confidence floor: 1 scored internal cross-boundary edges (need ≥5)",
+      "connected module sample below high-confidence floor: 2 connected modules (need ≥3)",
       "volatility provenance (modules): declared: 2, inherited: 0, cascade: 0"
     ],
     "name": "coupling_balance",
@@ -219,11 +250,13 @@
     "dimensions": [
       {
         "band": "serviceable",
-        "confidence": "high",
+        "confidence": "medium",
         "evidence": [
           "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
           "scored fraction: 100% (1 scored, 0 abstained, internal only)",
           "critical-band edges: 0 (0 distributed-monolith: critical at high distance)",
+          "sample size below high-confidence floor: 1 scored internal cross-boundary edges (need ≥5)",
+          "connected module sample below high-confidence floor: 2 connected modules (need ≥3)",
           "volatility provenance (modules): declared: 2, inherited: 0, cascade: 0"
         ],
         "name": "coupling_balance",
