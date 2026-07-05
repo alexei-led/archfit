@@ -1,4 +1,4 @@
-# LLM enrichment (off-gate): semantic labels, module roles, explain --llm
+# LLM enrichment (off-gate): semantic labels, draft config, analyze/explain --llm
 
 archfit's verdict is deterministic: `analyze` and `analyze --gate` never call a
 model. LLM commands are opt-in, off-gate drafting tools. Their output affects
@@ -130,7 +130,17 @@ Evidence IDs use stable prefixes:
 The builder sorts sources deterministically, caps each source type separately,
 truncates each item, skips hidden/vendor/cache directories, and excludes
 secret-like paths such as `.env`, credentials, tokens, keys, certificates, and
-files whose names contain `secret`. Prompts require models to cite these IDs in structured `evidence_refs` for every proposed module field, owner, volatility, subdomain, and rule change. Each proposal also carries `basis: deterministic_fact` when it only restates tool/config evidence, or `basis: semantic_judgment` when the model is making an architectural judgment. Draft files and update reports keep that metadata for review, while default plan mode still leaves config unchanged. `analyze --llm` uses the same pack alongside deterministic finding IDs and metric IDs so the review can cite exactly what it is interpreting.
+files whose names contain `secret`. This is a guardrail, not secret scanning: do
+not run provider-backed LLM commands on a repo whose docs, comments, or public API
+text contain secrets you would not send to that provider. Prompts require models
+to cite these IDs in structured `evidence_refs` for every proposed module field,
+owner, volatility, subdomain, and rule change. Each proposal also carries `basis:
+deterministic_fact` when it only restates tool/config evidence, or `basis:
+semantic_judgment` when the model is making an architectural judgment. Draft files
+and update reports keep that metadata for review, while default plan mode still
+leaves config unchanged. `analyze --llm` uses the same pack alongside
+deterministic finding IDs and metric IDs so the review can cite exactly what it is
+interpreting.
 
 ## Cost and token expectations
 
@@ -151,8 +161,10 @@ First-run enrich cost scales with candidate count and evidence size:
 Responses are cached by provider, model, system prompt, and user prompt under
 `.archfit-cache/llm/`. Re-running the same command with the same evidence should
 reuse the cache; `--no-cache` bypasses reads and writes and may spend tokens
-again. Provider prices change, so use the current provider price sheet for dollar
-estimates rather than hard-coding costs in CI policy.
+again. The cache stores provider responses, not prompts, but a response can still
+quote repository text. Keep `.archfit-cache/` untracked unless those responses are
+safe to share. Provider prices change, so use the current provider price sheet for
+dollar estimates rather than hard-coding costs in CI policy.
 
 ## Determinism
 
@@ -160,9 +172,9 @@ The gate stays reproducible: labels are plain YAML read deterministically, and
 the arch ring test (`TestArchImports/llm_ring_unreachable_from_internal`)
 proves at CI time that no internal package can even import the LLM layer.
 Enrich itself is replayable through the content-addressed response cache at
-`.archfit-cache/llm/` (ignored by git by default; commit it if you want
-byte-identical enrich replay across machines). `--no-cache` forces fresh
-calls.
+`.archfit-cache/llm/` (ignored by git by default; commit it only when the cached
+responses contain no sensitive repository text and you want byte-identical enrich
+replay across machines). `--no-cache` forces fresh calls.
 
 ## analyze --llm — cited architect review
 
@@ -215,7 +227,7 @@ archfit config enrich owner --apply  # writes approved entries into modules.<nam
 - These never touch coupling strength (that is the `labels` subcommand) and never
   affect `analyze`.
 
-## config init --llm — full config draft (review-only)
+## config init --llm — full config draft or direct apply
 
 `archfit config init --llm` drafts an entire `.archfit.yaml` in one shot: it discovers
 structure, classifies every module (subdomain, volatility, layer, and `role`),
@@ -223,14 +235,15 @@ drafts an owner per module, and renders the whole config in plan mode — every
 suggested field commented.
 
 ```sh
-archfit config init --llm --root . -o .archfit-autopilot.yaml
+archfit config init --llm --root . -o .archfit-init-llm.yaml
 archfit config init --llm --root . -o -   # stream to stdout
 ```
 
 Direct it to a side file with `-o` to keep it review-only: review the draft,
-then move approved fields into the live config deliberately, or re-run with
-`--apply` to write approved values live. Same provider, cache, and key handling
-as the other LLM commands.
+then move approved fields into the live config deliberately. `--apply` skips that
+review handoff and writes the LLM classifications live into the generated config,
+so inspect and edit the file before using it as a gate. Same provider, cache, and
+key handling as the other LLM commands.
 
 ## config update --llm — cited module and rule proposals
 
@@ -265,14 +278,16 @@ is fully offline.
 
 Every LLM feature is off-gate and draft-first.
 
-`archfit config init --llm` suggests `subdomain`, `volatility`, `layer`, and
-`role` for discovered modules; `archfit config update --llm` emits review-only
-role and volatility proposals; `config enrich` drafts coupling labels plus the
-`owner`, `volatility`, and `subdomain` subcommands. None of them gate. Without
+`archfit config init --llm` suggests `subdomain`, `volatility`, `owner`, `layer`,
+and `role` for discovered modules; `archfit config update --llm` emits
+review-only module and rule proposals; `config enrich` drafts coupling labels plus
+the `owner`, `volatility`, and `subdomain` subcommands. None of them gate. Without
 `--apply` the suggestions are commented, printed, or held in a draft file and
-require human review before they become live fields. For `config init` and the
-module-field `config enrich` commands, `--apply` can write reviewed values into
-`.archfit.yaml`; for `config update --llm`, LLM role proposals remain review-only
-even when structural `--apply` is used. Existing field values are never
-overwritten. `analyze` is unaffected by these flags; it only reads the final
-config and approved labels.
+require human review before they become live fields. `config init --llm --apply`
+writes model suggestions live directly into the generated config; treat that file
+as unreviewed until a human checks it. Module-field `config enrich --apply` is
+different: it reads only `status: approved` entries from the draft files and pins
+those reviewed values into `.archfit.yaml`. For `config update --llm`, LLM
+semantic and rule proposals remain review-only even when structural `--apply` is
+used. Existing field values are never overwritten. `analyze` is unaffected by
+these flags; it only reads the final config and approved labels.

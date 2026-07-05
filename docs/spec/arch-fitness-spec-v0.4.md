@@ -1062,20 +1062,22 @@ warn when module_review.stale_after is exceeded
 fail only for expired waivers or explicitly required reviews
 ```
 
-### 10.5 Semantic advisory research track
+### 10.5 Semantic advisory and draft-config track
 
 Static dependency graphs miss high-value implicit coupling: duplicated business rules, parallel validation, shared semantics with no import edge, and accidental reimplementation by
-AI agents.
+AI agents. archfit may use an LLM or another semantic analyzer to draft architecture intent, but the deterministic gate remains authoritative.
 
-V1 should not depend on an LLM for gates or deterministic metrics. A later semantic advisory track may use an LLM or another semantic analyzer to propose findings for
-functional/model coupling. It must follow these rules:
+Current LLM-backed flows must follow these rules:
 
-- never produce gate failures;
-- never change deterministic metric values unless the finding is converted into explicit config or a confirmed rule;
-- include evidence snippets and confidence;
-- label output as `semantic_advisory`;
-- produce repair tasks only when the architectural constraint is clear;
-- be usable in `scan` and CI, not required for deterministic `check`.
+- never produce gate failures directly;
+- never change deterministic metric values unless the suggestion is converted into reviewed config, an approved label, or another explicit deterministic input;
+- build prompts from a bounded, sorted evidence pack with stable IDs for docs, comments, public APIs, config snippets, and deterministic diagnostics;
+- require evidence refs for every proposed module field, owner, volatility, subdomain, rule, label, or review recommendation;
+- distinguish deterministic facts from semantic judgments in draft outputs;
+- keep `config update --llm` and `analyze --llm` review-only even when structural `--apply` is used elsewhere;
+- write only reviewed draft-file entries (`status: approved`) into config for module-field enrich commands;
+- keep provider keys out of config and keep secret-like paths, vendor/cache trees, and large raw files out of evidence packs;
+- produce repair tasks only from deterministic gate findings, not from LLM narrative review.
 
 This preserves the deterministic core while leaving room to find coupling that static import graphs cannot see.
 

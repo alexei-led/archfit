@@ -55,8 +55,8 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 		}
 	}
 
-	// Off-gate LLM setup (enrich / explain --llm): provider config + key + cache.
-	_, _ = fmt.Fprintf(deps.Stdout, "\nLLM (off-gate; enrich/explain only — never used by the gate):\n")
+	// Off-gate LLM setup (config init/update/enrich, analyze/explain --llm): provider config + key + cache.
+	_, _ = fmt.Fprintf(deps.Stdout, "\nLLM (off-gate; config init/update/enrich, analyze/explain --llm — never used by the gate):\n")
 	cfg, cfgErr := loadConfig(ctx, defaultConfigPath, false)
 	// cfgErr is non-nil only when the file exists but fails to load (an absent
 	// default config falls back to config.Default()) — surface it, or doctor
@@ -77,7 +77,7 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 			_, _ = fmt.Fprintf(deps.Stdout, "  cache: %d entries in .archfit-cache/llm\n", len(entries))
 		}
 	} else {
-		_, _ = fmt.Fprintln(deps.Stdout, "  not configured (set ai provider + model to enable enrich)")
+		_, _ = fmt.Fprintln(deps.Stdout, "  not configured (set ai provider + model to enable LLM commands)")
 	}
 
 	if c.Fix {

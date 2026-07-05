@@ -245,10 +245,10 @@ Manual checks:
 
 - Read docs as a new user: it must be clear which commands mutate config, which only draft, and which affect CI.
 
-- [ ] Update docs and examples for every changed LLM command.
-- [ ] Document cost/cache/secret boundaries for evidence packs.
-- [ ] Run final validation commands.
-- [ ] Record the scoped `architecture-review` follow-up.
+- [x] Update docs and examples for every changed LLM command.
+- [x] Document cost/cache/secret boundaries for evidence packs.
+- [x] Run final validation commands.
+- [x] Record the scoped `architecture-review` follow-up.
 
 ## Acceptance criteria
 
@@ -280,3 +280,5 @@ After implementation, run a scoped `architecture-review` on the semantic boundar
 - `internal/arch_test.go`
 
 Acceptance signals for re-review: LLM remains off-gate, evidence refs are useful and bounded, default modes are inert, and deterministic analyze output is unchanged unless humans pin drafts into config/labels.
+
+Recorded handoff (2026-07-05): run scoped `architecture-review` on the files above after this wave lands, using the Task 5 validation as the deterministic baseline (`make all`, `archfit doctor`, and `archfit analyze --gate --full --config .archfit.yaml --base origin/main`).

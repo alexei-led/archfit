@@ -79,6 +79,11 @@ recommendation` entries as suggestions only, and check their `finding_ids`,
 `verdict`, `findings`, `metrics`, `score`, or `agent_tasks[]`; agents should still
 use `agent_tasks[]` as the actionable source of truth.
 
+LLM config drafts are also non-actionable until reviewed. An agent may surface
+`config update --llm` proposals or draft files from `config enrich owner`,
+`volatility`, and `subdomain`, but it must not pin them into `.archfit.yaml` or
+`.archfit-labels.yaml` without explicit human approval.
+
 ## SARIF — the CI annotation channel
 
 `--format sarif` emits SARIF 2.1.0 (schema-validated): active gate findings as

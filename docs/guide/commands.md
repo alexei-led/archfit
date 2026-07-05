@@ -9,6 +9,7 @@ archfit config init --llm --root .
 archfit config update --config .archfit.yaml
 archfit config update --config .archfit.yaml --llm
 archfit config update --config .archfit.yaml --apply
+archfit config update --config .archfit.yaml --llm --apply  # structural apply only; LLM proposals stay review-only
 archfit                                                      # report-only, default text output
 archfit analyze --gate --config .archfit.yaml --full         # CI gate
 archfit analyze --gate --config .archfit.yaml --base main    # PR delta gate
@@ -24,7 +25,10 @@ archfit config enrich labels --config .archfit.yaml
 archfit config enrich abstained --config .archfit.yaml
 archfit config enrich owner --config .archfit.yaml
 archfit config enrich volatility --config .archfit.yaml
-archfit config init --llm --root . -o .archfit-autopilot.yaml
+archfit config enrich subdomain --config .archfit.yaml
+archfit config enrich owner --config .archfit.yaml --apply --reviewed-by @you
+archfit config init --llm --root . -o .archfit-init-llm.yaml
+archfit config init --llm --apply --root .   # writes LLM judgments live; review before using as a gate
 archfit explain <finding-id-prefix> --llm
 archfit analyze --gate --sarif > archfit.sarif
 ```
@@ -39,9 +43,12 @@ audit report. Bare `archfit` (no subcommand) runs `analyze` in report-only mode.
   `from:`/`to:` glob is such an error — it would be dead by construction).
   `--fix` installs missing tools (`--dry-run` previews without installing).
 - `archfit config init` — generate a starter `.archfit.yaml`; `--llm` adds an
-  off-gate classification pass (subdomain, volatility, layer, role per module).
+  off-gate classification pass (subdomain, volatility, layer, role, and owner per
+  module). Default LLM plan mode comments suggestions; `--llm --apply` writes the
+  model judgments live, so review before using the file as a gate.
 - `archfit config update` — sync `.archfit.yaml` with the current project structure;
-  `--llm` adds review-only role and volatility proposals to the drift report.
+  `--llm` adds review-only module and rule proposals to the drift report. Even with
+  `--apply`, only structural drift is written live; LLM proposals stay review-only.
 - `archfit analyze` — run architecture analysis (default command; also runs as
   bare `archfit`). Without `--gate` it is report-only (always exits `0` on
   success, `3` on config/tool error). With `--gate` it enforces rules and emits
@@ -309,7 +316,7 @@ Flags (in addition to the standard `analyze` flags):
 - `--no-cache` — bypass archfit caches: extractor facts and the LLM response
   cache at `.archfit-cache/llm/`. See [caching.md](caching.md).
 
-## archfit config init --llm (full draft)
+## archfit config init --llm (full draft or direct apply)
 
 `archfit config init --llm` is a one-shot LLM drafter for a whole `.archfit.yaml`. It
 discovers project structure, classifies every module (subdomain, volatility,
@@ -318,14 +325,15 @@ renders the entire config in **plan mode** — every suggestion is a commented Y
 line, nothing is applied.
 
 ```sh
-archfit config init --llm --root . -o .archfit-autopilot.yaml
+archfit config init --llm --root . -o .archfit-init-llm.yaml
 archfit config init --llm --root . -o -   # stream the draft to stdout
 ```
 
 Direct it to a side file with `-o` to keep it review-only: review the draft, then
-move approved fields into the live config deliberately, or re-run with `--apply` to
-write approved values live. Needs `ai:` configured (provider + model) and the
-provider's API key — see [LLM enrichment](llm-enrich.md).
+move approved fields into the live config deliberately. `--apply` skips that review
+step and writes the LLM classifications live into the generated config, so inspect
+and edit the file before using it as a gate. Needs `ai:` configured (provider +
+model) and the provider's API key — see [LLM enrichment](llm-enrich.md).
 
 Flags:
 
@@ -364,9 +372,11 @@ Mode behaviour:
 - `--llm` (plan): classification lines are emitted as YAML comments
   (`# subdomain: core  # llm-suggested — review and uncomment`). Uncommenting
   activates them; the file is safe to use as a gate without reviewing them.
-- `--llm --apply`: `subdomain`, `volatility`, and `layer` are written as live
-  fields. `layer` is written only when the value is in `layers:`; otherwise it
-  stays a comment. Module keys are never renamed automatically.
+- `--llm --apply`: `subdomain`, `volatility`, `owner`, and `layer` are written
+  as live fields from the model response. `layer` is written only when the value
+  is in `layers:`; otherwise it stays a comment. Module keys are never renamed
+  automatically. Treat the output as unreviewed until a human checks the cited
+  rationale.
 - `--apply` without `--llm` is an error.
 
 Flags:

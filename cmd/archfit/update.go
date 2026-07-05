@@ -23,7 +23,7 @@ type UpdateCmd struct {
 	Config      string `short:"c" help:"Config file path." default:".archfit.yaml"`
 	Root        string `short:"r" help:"Project root directory (default: directory of --config)."`
 	LLM         bool   `name:"llm"          help:"Run LLM classification for unclassified modules (off-gate)."`
-	Apply       bool   `name:"apply"        help:"Write structural and classification changes live into .archfit.yaml (backup created; existing fields never overwritten)."`
+	Apply       bool   `name:"apply"        help:"Write structural changes live into .archfit.yaml (backup created; LLM semantic proposals remain review-only)."`
 	NoCache     bool   `name:"no-cache"     help:"Bypass the LLM response cache."`
 	LLMProvider string `name:"llm-provider" help:"LLM provider override."  default:"anthropic"`
 	LLMModel    string `name:"llm-model"    help:"LLM model override."     default:"claude-opus-4-8"`

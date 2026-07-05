@@ -395,8 +395,9 @@ Zero or absent means the built-in package default (`scip`: 20 minutes, `clones`:
 
 ## `ai`
 
-Off-gate LLM provider configuration. Consumed only by `enrich`, `explain --llm`,
-`analyze --llm`, `init --llm`, and `autopilot` — never by the deterministic gate.
+Off-gate LLM provider configuration. Consumed only by `config init --llm`,
+`config update --llm`, `config enrich`, `analyze --llm`, and `explain --llm` — never
+by the deterministic gate.
 
 ```yaml
 ai:
@@ -996,8 +997,9 @@ VS Code users can configure the schema in `.vscode/settings.json`:
 
 ## Draft and pin files
 
-The LLM authoring commands write proposals to review files, never to
-`.archfit.yaml` directly:
+LLM authoring commands are draft-first. They write proposals to review files,
+side files, or reports by default; `config init --llm --apply` is the direct-write
+exception and should be reviewed before the generated config is used as a gate.
 
 - `.archfit-labels.yaml` — pinned coupling-strength labels (`archfit config enrich labels`).
   `analyze` consumes `status: approved` entries with precedence: config
@@ -1005,10 +1007,12 @@ The LLM authoring commands write proposals to review files, never to
 - `.archfit-owners.yaml` — owner drafts (`archfit config enrich owner`).
 - `.archfit-volatility.yaml` — volatility drafts (`archfit config enrich volatility`).
 - `.archfit-subdomains.yaml` — subdomain drafts (`archfit config enrich subdomain`).
-- `.archfit-autopilot.yaml` — a full commented config draft (`archfit config init --llm -o <file>`).
+- `.archfit-init-llm.yaml` — a full commented config draft (`archfit config init --llm -o <file>`).
 
-Review each, then `config enrich <field> --apply` (or move the field manually) to write
-approved values into `modules.<name>`. Pinning never overwrites a live field.
+For module-field draft files, review each entry, set keepers to `status: approved`,
+then run `config enrich <field> --apply` to write approved values into
+`modules.<name>`. For a full `config init --llm` side file, copy approved fields
+manually. Pinning never overwrites a live field.
 
 Module-field draft entries include review metadata:
 

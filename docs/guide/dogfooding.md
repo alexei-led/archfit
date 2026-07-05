@@ -47,8 +47,9 @@ From the project `.archfit.yaml` and the structural gates in `CLAUDE.md`:
   `go test ./internal/ -run TestArchImports`) — the decision core
   (`classify`, `rules`, `metrics`, `status`, `staleness`, `facts`, `scope`,
   `score`) must not import `os`, `os/exec`, a YAML library, or adapter packages;
-  LLM SDKs are reachable only from `enrich`/`explain`/`analyze --llm`, never the
-  deterministic gate path.
+  LLM SDKs are reachable only from off-gate command code (`config init --llm`,
+  `config update --llm`, `config enrich`, `analyze --llm`, and `explain --llm`),
+  never the deterministic gate path.
 - **Forbidden dependencies and layer direction** declared as `rules` in the
   config (e.g. the historical engine→scope inversion guard, gated `warn`).
 - **Golden output** (`go test ./internal/engine/ -run TestGolden`) — emitted
