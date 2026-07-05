@@ -82,6 +82,7 @@ CI / agent loop:
   archfit --markdown --config .archfit.yaml > archfit-report.md
 
 Off-gate LLM (review-only; never affects the gate):
+  archfit analyze --llm -c .archfit.yaml            # cited architect review after deterministic output
   archfit config enrich owner                       # draft → review → config enrich owner --apply
   archfit config init --llm -o draft.yaml           # full LLM-classified config draft for review
 

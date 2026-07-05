@@ -70,6 +70,15 @@ Only `bc/imbalanced_coupling` findings are rolled up (cap 8 members per
 group); `bc/duplicated_knowledge` findings pass through individually and
 never carry a `group_count`.
 
+## Optional LLM review
+
+`archfit analyze --llm` is not part of the repair channel. It appends a cited,
+advisory architect review after the deterministic output. Treat `claim_type:
+recommendation` entries as suggestions only, and check their `finding_ids`,
+`metric_ids`, and `evidence_refs` before acting. The LLM review never changes
+`verdict`, `findings`, `metrics`, `score`, or `agent_tasks[]`; agents should still
+use `agent_tasks[]` as the actionable source of truth.
+
 ## SARIF — the CI annotation channel
 
 `--format sarif` emits SARIF 2.1.0 (schema-validated): active gate findings as

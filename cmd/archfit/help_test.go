@@ -17,13 +17,13 @@ func TestRun_Help_TopLevel(t *testing.T) {
 	}
 	out := buf.String()
 
-	for _, want := range []string{cmdAnalyze, cmdBaseline, cmdExplain, "doctor", cmdConfig} {
+	for _, want := range []string{cmdAnalyze, "archfit analyze --llm", cmdBaseline, cmdExplain, "doctor", cmdConfig} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--help missing %q:\n%s", want, out)
 		}
 	}
 	// Commands folded or removed in the CLI restructure must not appear as top-level commands.
-	for _, gone := range []string{"autopilot", "calibrate"} {
+	for _, gone := range []string{"autopilot", "calibrate", "review [flags]"} {
 		if strings.Contains(out, gone) {
 			t.Errorf("--help still shows removed command %q:\n%s", gone, out)
 		}

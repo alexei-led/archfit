@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -26,6 +28,8 @@ const (
 	reviewModReal       = "real_module"
 	reviewModLazy       = "lazy_mod"
 	reviewNarrativeKeep = "keep"
+	reviewNarrativeDrop = "drop"
+	reviewBalancingMove = "fix"
 
 	// matchedByStrength is the MatchedBy key for coupling strength.
 	matchedByStrength = "strength"
@@ -41,6 +45,8 @@ const validReviewJSON = `{
     {
       "name": "coupling_balance",
       "band": "poor",
+      "claim_type": "semantic_interpretation",
+      "metric_ids": ["coupling_balance"],
       "narrative": "The coupling between a and b is intrusive, raising maintenance effort and cascading change risk."
     }
   ],
@@ -48,6 +54,8 @@ const validReviewJSON = `{
     {
       "title": "Intrusive cross-module access",
       "modules": ["a", "b"],
+      "claim_type": "recommendation",
+      "metric_ids": ["coupling_balance"],
       "narrative": "Module a reaches into b internal packages directly. This high-strength cross-module coupling increases co-evolution pressure across knowledge boundaries.",
       "balancing_move": "Expose a stable contract interface from b and have a depend only on that."
     }
@@ -56,6 +64,8 @@ const validReviewJSON = `{
     {
       "module": "a",
       "suggested_subdomain": "supporting",
+      "claim_type": "recommendation",
+      "metric_ids": ["coupling_balance"],
       "rationale": "Module a orchestrates other modules and maps to a supporting subdomain."
     }
   ]
@@ -87,11 +97,11 @@ func appendLLMConfig(t *testing.T, cfgPath string) {
 	}
 }
 
-// runReviewCmd exercises runLLMReview end-to-end using a real runner (matching
+// runLLMReviewForTest exercises runLLMReview end-to-end using a real runner (matching
 // the appDeps that the top-level Run() function provides) and the given provider
 // override. It loads config + runs the pipeline, then delegates to runLLMReview —
-// mirrors the old ReviewCmd.Run flow without the now-deleted ReviewCmd struct.
-func runReviewCmd(t *testing.T, cfgPath string, provider llm.Provider) (string, error) {
+// mirrors AnalyzeCmd with --llm without going through the CLI parser.
+func runLLMReviewForTest(t *testing.T, cfgPath string, provider llm.Provider) (string, error) {
 	t.Helper()
 	ctx := context.Background()
 	var buf bytes.Buffer
@@ -108,7 +118,7 @@ func runReviewCmd(t *testing.T, cfgPath string, provider llm.Provider) (string, 
 	if err != nil {
 		return "", &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	err = runLLMReview(ctx, deps, cfg, configDir, true, provider, diag, sc)
+	err = runLLMReview(ctx, deps, cfg, cfgPath, "", true, provider, diag, sc)
 	return buf.String(), err
 }
 
@@ -183,14 +193,88 @@ func TestRun_Analyze_GateLLM_FailureDoesNotMaskVerdict(t *testing.T) {
 	}
 }
 
-// TestReviewCmd_Run_SchemaValidation drives ReviewCmd end-to-end with a fake
-// provider returning valid JSON and asserts all required output sections appear.
-func TestReviewCmd_Run_SchemaValidation(t *testing.T) {
+type analyzeJSONStableSections struct {
+	Verdict  diagnostic.Verdict `json:"verdict"`
+	Findings []finding.Finding  `json:"findings"`
+	Score    score.Scorecard    `json:"score"`
+}
+
+func runAnalyzeJSON(t *testing.T, cfgPath string, llmEnabled bool, provider llm.Provider) (string, error) {
+	t.Helper()
+	var buf bytes.Buffer
+	deps := &appDeps{Runner: toolrun.New(), Stdout: &buf}
+	cmd := AnalyzeCmd{
+		Config:           cfgPath,
+		Full:             true,
+		LLM:              llmEnabled,
+		Quiet:            true,
+		Format:           []string{formatJSON},
+		providerOverride: provider,
+	}
+	err := cmd.Run(deps)
+	return buf.String(), err
+}
+
+func decodeAnalyzeJSONStableSections(t *testing.T, out string) analyzeJSONStableSections {
+	t.Helper()
+	var sections analyzeJSONStableSections
+	dec := json.NewDecoder(strings.NewReader(out))
+	if err := dec.Decode(&sections); err != nil {
+		t.Fatalf("decode analyze JSON: %v\noutput:\n%s", err, out)
+	}
+	return sections
+}
+
+func TestRun_Analyze_JSONStableSectionsIgnoreAIConfigWithoutLLM(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeViolatingRepo(t)
+
+	before, err := runAnalyzeJSON(t, cfgPath, false, nil)
+	if err != nil {
+		t.Fatalf("analyze before ai config: %v\n%s", err, before)
+	}
+	appendLLMConfig(t, cfgPath)
+	after, err := runAnalyzeJSON(t, cfgPath, false, nil)
+	if err != nil {
+		t.Fatalf("analyze after ai config: %v\n%s", err, after)
+	}
+	if !reflect.DeepEqual(decodeAnalyzeJSONStableSections(t, before), decodeAnalyzeJSONStableSections(t, after)) {
+		t.Fatalf("ai config changed verdict/findings/score without --llm\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestRun_Analyze_LLMJSONDeterministicSectionsUnchanged(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 	appendLLMConfig(t, cfgPath)
 
-	out, err := runReviewCmd(t, cfgPath, &fixedProvider{text: validReviewJSON, name: reviewProviderName})
+	deterministicOut, err := runAnalyzeJSON(t, cfgPath, false, nil)
+	if err != nil {
+		t.Fatalf("deterministic analyze: %v\n%s", err, deterministicOut)
+	}
+	llmOut, err := runAnalyzeJSON(t, cfgPath, true, &fixedProvider{text: validReviewJSON, name: reviewProviderName})
+	if err != nil {
+		t.Fatalf("analyze --llm: %v\n%s", err, llmOut)
+	}
+
+	deterministic := decodeAnalyzeJSONStableSections(t, deterministicOut)
+	withLLM := decodeAnalyzeJSONStableSections(t, llmOut)
+	if !reflect.DeepEqual(deterministic, withLLM) {
+		t.Fatalf("LLM review changed deterministic JSON sections\ndeterministic: %+v\nwith LLM: %+v", deterministic, withLLM)
+	}
+	if !strings.Contains(llmOut, "Architecture Review") {
+		t.Fatalf("analyze --llm JSON output should still append the review section:\n%s", llmOut)
+	}
+}
+
+// TestLLMReview_Run_SchemaValidation drives analyze --llm end-to-end with a fake
+// provider returning valid JSON and asserts all required output sections appear.
+func TestLLMReview_Run_SchemaValidation(t *testing.T) {
+	t.Parallel()
+	cfgPath := writeViolatingRepo(t)
+	appendLLMConfig(t, cfgPath)
+
+	out, err := runLLMReviewForTest(t, cfgPath, &fixedProvider{text: validReviewJSON, name: reviewProviderName})
 	if err != nil {
 		t.Fatalf("Run returned error: %v\noutput:\n%s", err, out)
 	}
@@ -212,9 +296,9 @@ func TestReviewCmd_Run_SchemaValidation(t *testing.T) {
 	}
 }
 
-// TestReviewCmd_Run_EntityPostCheck verifies that invalid module names are
+// TestLLMReview_Run_EntityPostCheck verifies that invalid module names are
 // dropped and valid ones are preserved in the output.
-func TestReviewCmd_Run_EntityPostCheck(t *testing.T) {
+func TestLLMReview_Run_EntityPostCheck(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 	appendLLMConfig(t, cfgPath)
@@ -222,22 +306,24 @@ func TestReviewCmd_Run_EntityPostCheck(t *testing.T) {
 	// "a" is a valid module from writeViolatingRepo; "nonexistent_module" must be dropped.
 	jsonWithBadModule := `{
   "overall_band": "poor",
-  "dimensions": [{"name": "coupling_balance", "band": "poor", "narrative": "Coupling is elevated."}],
+  "dimensions": [{"name": "coupling_balance", "band": "poor", "claim_type": "semantic_interpretation", "metric_ids": ["coupling_balance"], "narrative": "Coupling is elevated."}],
   "top_risks": [
     {
       "title": "Mixed modules risk",
       "modules": ["a", "nonexistent_module"],
+      "claim_type": "recommendation",
+      "metric_ids": ["coupling_balance"],
       "narrative": "Risk narrative.",
       "balancing_move": "Remove the bad reference."
     }
   ],
   "subdomain_suggestions": [
-    {"module": "nonexistent_module", "suggested_subdomain": "core", "rationale": "Should be dropped."},
-    {"module": "a", "suggested_subdomain": "supporting", "rationale": "Valid module."}
+    {"module": "nonexistent_module", "suggested_subdomain": "core", "claim_type": "recommendation", "metric_ids": ["coupling_balance"], "rationale": "Should be dropped."},
+    {"module": "a", "suggested_subdomain": "supporting", "claim_type": "recommendation", "metric_ids": ["coupling_balance"], "rationale": "Valid module."}
   ]
 }`
 
-	out, err := runReviewCmd(t, cfgPath, &fixedProvider{text: jsonWithBadModule, name: reviewProviderName})
+	out, err := runLLMReviewForTest(t, cfgPath, &fixedProvider{text: jsonWithBadModule, name: reviewProviderName})
 	if err != nil {
 		t.Fatalf("Run returned error: %v\noutput:\n%s", err, out)
 	}
@@ -250,14 +336,14 @@ func TestReviewCmd_Run_EntityPostCheck(t *testing.T) {
 	}
 }
 
-// TestReviewCmd_Run_InvalidJSON asserts exit code 3 with a descriptive message
+// TestLLMReview_Run_InvalidJSON asserts exit code 3 with a descriptive message
 // when the LLM returns non-JSON.
-func TestReviewCmd_Run_InvalidJSON(t *testing.T) {
+func TestLLMReview_Run_InvalidJSON(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 	appendLLMConfig(t, cfgPath)
 
-	_, err := runReviewCmd(t, cfgPath, &fixedProvider{text: "not json", name: reviewProviderName})
+	_, err := runLLMReviewForTest(t, cfgPath, &fixedProvider{text: "not json", name: reviewProviderName})
 
 	var ee *exitError
 	if !errors.As(err, &ee) || ee.code != 3 {
@@ -345,7 +431,7 @@ func TestBuildReviewPrompt_RespectsCaps(t *testing.T) {
 		diag.Metrics = append(diag.Metrics, diagnostic.MetricResult{
 			Name:    fmt.Sprintf("metric%d", i),
 			Value:   float64(i),
-			Band:    "poor",
+			Band:    string(score.BandPoor),
 			Display: fmt.Sprintf("%d/10", i),
 		})
 	}
@@ -386,14 +472,14 @@ func TestBuildReviewPrompt_RespectsCaps(t *testing.T) {
 	}
 }
 
-// TestReviewCmd_PersistsRawResponse verifies the raw LLM response is dumped to
+// TestLLMReview_PersistsRawResponse verifies the raw LLM response is dumped to
 // the cache dir before parsing, so truncation/parse failures stay diagnosable.
-func TestReviewCmd_PersistsRawResponse(t *testing.T) {
+func TestLLMReview_PersistsRawResponse(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 	appendLLMConfig(t, cfgPath)
 
-	_, err := runReviewCmd(t, cfgPath, &fixedProvider{text: validReviewJSON, name: reviewProviderName})
+	_, err := runLLMReviewForTest(t, cfgPath, &fixedProvider{text: validReviewJSON, name: reviewProviderName})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
@@ -408,13 +494,13 @@ func TestReviewCmd_PersistsRawResponse(t *testing.T) {
 	}
 }
 
-func TestReviewCmd_Run_UsesReviewTokenBudget(t *testing.T) {
+func TestLLMReview_Run_UsesReviewTokenBudget(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 	appendLLMConfig(t, cfgPath)
 
 	provider := &fixedProvider{text: validReviewJSON, name: reviewProviderName}
-	_, err := runReviewCmd(t, cfgPath, provider)
+	_, err := runLLMReviewForTest(t, cfgPath, provider)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
@@ -423,9 +509,9 @@ func TestReviewCmd_Run_UsesReviewTokenBudget(t *testing.T) {
 	}
 }
 
-// TestReviewCmd_Run_NoLLMConfig asserts exit code 3 with a ai hint
+// TestLLMReview_Run_NoLLMConfig asserts exit code 3 with a ai hint
 // when the config has no LLM provider configured.
-func TestReviewCmd_Run_NoLLMConfig(t *testing.T) {
+func TestLLMReview_Run_NoLLMConfig(t *testing.T) {
 	t.Parallel()
 	// writeViolatingRepo produces a config without ai.
 	cfgPath := writeViolatingRepo(t)
@@ -438,10 +524,9 @@ func TestReviewCmd_Run_NoLLMConfig(t *testing.T) {
 	if loadErr != nil {
 		t.Fatalf("loadConfig: %v", loadErr)
 	}
-	configDir := filepath.Dir(cfgPath)
 	// runLLMReview fires the "ai not configured" check before touching
 	// the provider, so we can pass a nil diag+scorecard — they are never reached.
-	err := runLLMReview(ctx, deps, cfg, configDir, true, nil,
+	err := runLLMReview(ctx, deps, cfg, cfgPath, "", true, nil,
 		diagnostic.Diagnostic{}, score.Scorecard{})
 
 	var ee *exitError
@@ -465,15 +550,15 @@ func TestPostVerify_RejectsInvalidEnums(t *testing.T) {
 	rev := reviewResponse{
 		OverallBand: "excellent", // outside rubric vocabulary → blanked
 		Dimensions: []reviewDimension{
-			{Name: reviewDimBoundary, Band: string(score.BandMixed), Narrative: "ok"},
-			{Name: reviewDimBoundary, Band: "excellent", Narrative: "bad band → dropped"},
+			{Name: reviewDimBoundary, Band: string(score.BandMixed), ClaimType: claimTypeSemanticInterpretation, MetricIDs: []string{reviewDimBoundary}, Narrative: "ok"},
+			{Name: reviewDimBoundary, Band: "excellent", ClaimType: claimTypeSemanticInterpretation, MetricIDs: []string{reviewDimBoundary}, Narrative: "bad band → dropped"},
 		},
 		TopRisks: []reviewRisk{
-			{Title: "lazy", Modules: []string{reviewModLazy}, Narrative: "lazy-import risk", BalancingMove: "x"},
+			{Title: "lazy", Modules: []string{reviewModLazy}, ClaimType: claimTypeRecommendation, MetricIDs: []string{reviewDimBoundary}, Narrative: "lazy-import risk", BalancingMove: "x"},
 		},
 		SubdomainSuggestions: []reviewSubdomainSuggest{
-			{Module: reviewModReal, SuggestedSubdomain: subdomainCore, Rationale: "ok"},
-			{Module: reviewModReal, SuggestedSubdomain: "platform", Rationale: "bad subdomain → dropped"},
+			{Module: reviewModReal, SuggestedSubdomain: subdomainCore, ClaimType: claimTypeRecommendation, MetricIDs: []string{reviewDimBoundary}, Rationale: "ok"},
+			{Module: reviewModReal, SuggestedSubdomain: "platform", ClaimType: claimTypeRecommendation, MetricIDs: []string{reviewDimBoundary}, Rationale: "bad subdomain → dropped"},
 		},
 	}
 
@@ -507,6 +592,65 @@ func TestBuildReviewPrompt_IncludesDynamicImports(t *testing.T) {
 	}
 }
 
+func TestBuildReviewPrompt_IncludesCitationInputs(t *testing.T) {
+	t.Parallel()
+	diag := diagnostic.Diagnostic{
+		Findings: []finding.Finding{{ID: "finding-1", Kind: finding.KindGate, RuleID: "r", Severity: finding.SeverityHigh}},
+		Metrics:  []diagnostic.MetricResult{{Name: "module_fanout", Value: 1, Band: string(score.BandPoor), Display: "1"}},
+	}
+	prompt := buildReviewPrompt(diag, score.Scorecard{Dimensions: []score.Dimension{{Name: reviewDimBoundary}}}, []string{"doc:architecture.md (doc) docs/architecture.md: Architecture intent"})
+	for _, want := range []string{repositoryEvidenceHeader, "doc:architecture.md", "finding_id=finding-1", "metric_id=module_fanout", "metric_id=coupling_balance"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
+func TestPostVerify_DropsUncitedRecommendations(t *testing.T) {
+	t.Parallel()
+	diag := diagnostic.Diagnostic{FileFacts: []diagnostic.FileFact{{Module: reviewModReal}}}
+	rev := reviewResponse{
+		OverallBand: reviewBandMixed,
+		TopRisks: []reviewRisk{
+			{Title: "uncited", Modules: []string{reviewModReal}, ClaimType: claimTypeRecommendation, Narrative: reviewNarrativeDrop, BalancingMove: reviewBalancingMove},
+			{Title: "cited", Modules: []string{reviewModReal}, ClaimType: claimTypeRecommendation, MetricIDs: []string{reviewDimBoundary}, Narrative: reviewNarrativeKeep, BalancingMove: reviewBalancingMove},
+		},
+		SubdomainSuggestions: []reviewSubdomainSuggest{
+			{Module: reviewModReal, SuggestedSubdomain: subdomainCore, ClaimType: claimTypeRecommendation, Rationale: reviewNarrativeDrop},
+			{Module: reviewModReal, SuggestedSubdomain: subdomainSupporting, ClaimType: claimTypeRecommendation, MetricIDs: []string{reviewDimBoundary}, Rationale: reviewNarrativeKeep},
+		},
+	}
+
+	result, dropped := postVerify(rev, diag, nil)
+	if dropped < 2 {
+		t.Fatalf("dropped = %d, want uncited recommendation drops", dropped)
+	}
+	if len(result.TopRisks) != 1 || result.TopRisks[0].Title != "cited" {
+		t.Fatalf("top risks = %+v, want only cited recommendation", result.TopRisks)
+	}
+	if len(result.SubdomainSuggestions) != 1 || result.SubdomainSuggestions[0].SuggestedSubdomain != subdomainSupporting {
+		t.Fatalf("subdomain suggestions = %+v, want only cited recommendation", result.SubdomainSuggestions)
+	}
+}
+
+func TestPostVerify_DropsUnknownCitationRefs(t *testing.T) {
+	t.Parallel()
+	diag := diagnostic.Diagnostic{FileFacts: []diagnostic.FileFact{{Module: reviewModReal}}}
+	rev := reviewResponse{
+		OverallBand: reviewBandMixed,
+		TopRisks: []reviewRisk{
+			{Title: "bad ref", Modules: []string{reviewModReal}, ClaimType: claimTypeRecommendation, EvidenceRefs: []string{"doc:missing.md"}, Narrative: reviewNarrativeDrop, BalancingMove: reviewBalancingMove},
+			{Title: "good ref", Modules: []string{reviewModReal}, ClaimType: claimTypeRecommendation, EvidenceRefs: []string{"doc:architecture.md"}, Narrative: reviewNarrativeKeep, BalancingMove: reviewBalancingMove},
+		},
+	}
+	citations := buildReviewCitationSet(diag, score.Scorecard{}, []string{"doc:architecture.md (doc) docs/architecture.md: Architecture intent"})
+
+	result, _ := postVerify(rev, diag, nil, citations)
+	if len(result.TopRisks) != 1 || result.TopRisks[0].Title != "good ref" {
+		t.Fatalf("top risks = %+v, want only known evidence ref", result.TopRisks)
+	}
+}
+
 // TestPostVerify_DropsUnknownEntities unit-tests postVerify in isolation,
 // covering every drop path without a full pipeline run.
 func TestPostVerify_DropsUnknownEntities(t *testing.T) {
@@ -526,20 +670,20 @@ func TestPostVerify_DropsUnknownEntities(t *testing.T) {
 	rev := reviewResponse{
 		OverallBand: reviewBandMixed,
 		Dimensions: []reviewDimension{
-			{Name: reviewDimBoundary, Band: "poor", Narrative: "ok"},
-			{Name: "fake_dimension", Band: reviewBandMixed, Narrative: "should be dropped"},
+			{Name: reviewDimBoundary, Band: string(score.BandPoor), ClaimType: claimTypeSemanticInterpretation, MetricIDs: []string{reviewDimBoundary}, Narrative: "ok"},
+			{Name: "fake_dimension", Band: reviewBandMixed, ClaimType: claimTypeSemanticInterpretation, MetricIDs: []string{reviewDimBoundary}, Narrative: "should be dropped"},
 		},
 		TopRisks: []reviewRisk{
 			// All modules invalid → whole entry dropped.
-			{Title: "All invalid", Modules: []string{"ghost_module"}, Narrative: "drop me", BalancingMove: "n/a"},
+			{Title: "All invalid", Modules: []string{"ghost_module"}, ClaimType: claimTypeRecommendation, MetricIDs: []string{reviewDimBoundary}, Narrative: "drop me", BalancingMove: "n/a"},
 			// One valid, one invalid → invalid module stripped, entry kept.
-			{Title: "Valid risk", Modules: []string{"a", "ghost_module"}, Narrative: reviewNarrativeKeep, BalancingMove: "fix"},
+			{Title: "Valid risk", Modules: []string{"a", "ghost_module"}, ClaimType: claimTypeRecommendation, MetricIDs: []string{reviewDimBoundary}, Narrative: reviewNarrativeKeep, BalancingMove: reviewBalancingMove},
 			// No modules listed → kept as-is.
-			{Title: "No modules", Modules: nil, Narrative: reviewNarrativeKeep, BalancingMove: "fix"},
+			{Title: "No modules", Modules: nil, ClaimType: claimTypeRecommendation, MetricIDs: []string{reviewDimBoundary}, Narrative: reviewNarrativeKeep, BalancingMove: reviewBalancingMove},
 		},
 		SubdomainSuggestions: []reviewSubdomainSuggest{
-			{Module: reviewModReal, SuggestedSubdomain: subdomainCore, Rationale: reviewNarrativeKeep},
-			{Module: "fake_module", SuggestedSubdomain: subdomainGeneric, Rationale: "drop"},
+			{Module: reviewModReal, SuggestedSubdomain: subdomainCore, ClaimType: claimTypeRecommendation, MetricIDs: []string{reviewDimBoundary}, Rationale: reviewNarrativeKeep},
+			{Module: "fake_module", SuggestedSubdomain: subdomainGeneric, ClaimType: claimTypeRecommendation, MetricIDs: []string{reviewDimBoundary}, Rationale: reviewNarrativeDrop},
 		},
 	}
 
@@ -602,12 +746,16 @@ func TestPostVerify_DropsUnsupportedStrengthClaim(t *testing.T) {
 			{
 				Title:         "Intrusive cross-module access",
 				Modules:       []string{"a", "b"},
+				ClaimType:     claimTypeRecommendation,
+				MetricIDs:     []string{reviewDimBoundary},
 				Narrative:     "Module a uses intrusive access into b internals.",
 				BalancingMove: "Expose a contract.",
 			},
 			{
 				Title:         "Functional coupling",
 				Modules:       []string{"a"},
+				ClaimType:     claimTypeRecommendation,
+				MetricIDs:     []string{reviewDimBoundary},
 				Narrative:     "High functional coupling between a and b.",
 				BalancingMove: "Reduce coupling.",
 			},
@@ -642,7 +790,7 @@ func TestPostVerify_FlagsConfigSubdomainConflict(t *testing.T) {
 		OverallBand: reviewBandMixed,
 		SubdomainSuggestions: []reviewSubdomainSuggest{
 			// LLM says "core"; config says "supporting" → conflict must be flagged.
-			{Module: modPayments, SuggestedSubdomain: subdomainCore, Rationale: "central business logic"},
+			{Module: modPayments, SuggestedSubdomain: subdomainCore, ClaimType: claimTypeRecommendation, MetricIDs: []string{reviewDimBoundary}, Rationale: "central business logic"},
 		},
 	}
 

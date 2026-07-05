@@ -130,7 +130,7 @@ Evidence IDs use stable prefixes:
 The builder sorts sources deterministically, caps each source type separately,
 truncates each item, skips hidden/vendor/cache directories, and excludes
 secret-like paths such as `.env`, credentials, tokens, keys, certificates, and
-files whose names contain `secret`. Prompts require models to cite these IDs in structured `evidence_refs` for every proposed module field, owner, volatility, subdomain, and rule change. Each proposal also carries `basis: deterministic_fact` when it only restates tool/config evidence, or `basis: semantic_judgment` when the model is making an architectural judgment. Draft files and update reports keep that metadata for review, while default plan mode still leaves config unchanged.
+files whose names contain `secret`. Prompts require models to cite these IDs in structured `evidence_refs` for every proposed module field, owner, volatility, subdomain, and rule change. Each proposal also carries `basis: deterministic_fact` when it only restates tool/config evidence, or `basis: semantic_judgment` when the model is making an architectural judgment. Draft files and update reports keep that metadata for review, while default plan mode still leaves config unchanged. `analyze --llm` uses the same pack alongside deterministic finding IDs and metric IDs so the review can cite exactly what it is interpreting.
 
 ## Cost and token expectations
 
@@ -163,6 +163,23 @@ Enrich itself is replayable through the content-addressed response cache at
 `.archfit-cache/llm/` (ignored by git by default; commit it if you want
 byte-identical enrich replay across machines). `--no-cache` forces fresh
 calls.
+
+## analyze --llm — cited architect review
+
+`archfit analyze --llm` keeps the deterministic `analyze` output first, then appends
+an advisory architect review. The review schema requires each dimension, top risk,
+and subdomain suggestion to state a `claim_type`:
+
+- `deterministic_fact` — a direct restatement of tool/config evidence.
+- `semantic_interpretation` — architectural judgment over cited evidence.
+- `recommendation` — suggested action or classification; must cite at least one
+  `finding_id`, `metric_id`, or repository `evidence_ref`.
+- `unknown` — evidence is too weak to classify.
+
+Post-verification drops fabricated module names, unsupported bands/subdomains,
+unknown claim types, unsupported citations, and uncited recommendations. This can
+change only the appended review text; it never mutates verdicts, findings,
+metrics, scores, config, labels, or the gate.
 
 ## config enrich — owner, volatility, subdomain (draft -> review -> apply)
 

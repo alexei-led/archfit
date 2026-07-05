@@ -248,10 +248,11 @@ synthesised score fail the run (exit 1) on a band floor or score drop.
 ## LLM narrative (analyze --llm)
 
 `archfit analyze --llm` runs the full deterministic pipeline, synthesizes the
-scorecard, and feeds **both** to the LLM for a holistic narrative appended after
-the deterministic output. It is **off-gate**: the narrative is advisory only and
-never affects the gate verdict (enforced by the LLM-off-gate invariant in
-`internal/arch_test.go`).
+scorecard, builds the shared repository evidence pack, and feeds those cited
+facts to the LLM for an architect review appended after the deterministic output.
+It is **off-gate**: the review is advisory only and never affects the gate
+verdict, findings, metrics, or scorecard (enforced by the LLM-off-gate invariant
+in `internal/arch_test.go`).
 
 ```sh
 archfit analyze --llm --config .archfit.yaml
@@ -259,12 +260,16 @@ archfit analyze --llm --no-cache --config .archfit.yaml
 ```
 
 The model is constrained by a Balanced-Coupling-grounded system prompt and a
-strict JSON schema. It may only:
+strict JSON schema. Each dimension, risk, and suggestion carries `claim_type`
+(`deterministic_fact`, `semantic_interpretation`, `recommendation`, or
+`unknown`) plus citations via `finding_ids`, `metric_ids`, or `evidence_refs`.
+It may only:
 
 - narrate, prioritize, and contextualize findings **already present** in the
   evidence;
 - classify volatility / subdomain for modules that appear in the evidence;
-- propose dimension bands for dimensions named in the evidence.
+- propose dimension bands for dimensions named in the evidence;
+- cite only supplied finding IDs, metric IDs, and repository evidence IDs.
 
 A post-verify pass enforces the rubric vocabulary and drops fabricated values
 (dropped counts logged to stderr):
@@ -278,8 +283,12 @@ A post-verify pass enforces the rubric vocabulary and drops fabricated values
 - **Module/risk references** — dropped if the module name does not appear in the
   deterministic evidence. Dynamic/lazy-import modules are valid evidence even when
   they carry no static finding.
+- **Claim metadata** — dropped if `claim_type` is outside the fixed vocabulary or
+  if a recommendation lacks at least one supported `finding_id`, `metric_id`, or
+  `evidence_ref`.
 
-The model **cannot** invent gate violations, module names, or band labels.
+The model **cannot** invent gate violations, module names, band labels, finding
+IDs, metric IDs, or evidence refs.
 
 Dynamic/lazy imports (detected by TypeScript and Python extractors as
 `dynamic_imports`) are included in the review prompt as a hidden-coupling risk

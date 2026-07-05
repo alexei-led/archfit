@@ -168,10 +168,10 @@ Manual checks:
 
 - Review one LLM report. It should read like an architect review but cite deterministic facts and source evidence.
 
-- [ ] Add prompt/schema fields for claim type: deterministic fact, semantic interpretation, recommendation, or unknown.
-- [ ] Reject or flag recommendations that lack finding IDs, metric IDs, or evidence refs.
-- [ ] Add tests proving verdict/score/finding JSON is unchanged by LLM review.
-- [ ] Align CLI help/docs around `analyze --llm` instead of any stale `review` command wording.
+- [x] Add prompt/schema fields for claim type: deterministic fact, semantic interpretation, recommendation, or unknown.
+- [x] Reject or flag recommendations that lack finding IDs, metric IDs, or evidence refs.
+- [x] Add tests proving verdict/score/finding JSON is unchanged by LLM review.
+- [x] Align CLI help/docs around `analyze --llm` instead of any stale `review` command wording.
 
 ### Task 4: Corpus validation with real LLM key and deterministic controls
 
