@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
@@ -382,6 +383,59 @@ func TestBuildClassifiedEdgeSummary(t *testing.T) {
 			t.Errorf("ByStrength total = %d, want 2 (internal cross-boundary only)", internalCrossTotal)
 		}
 	})
+}
+
+func TestBuildClassifiedEdgeSummary_DistanceBasisCompressionAndConnectedModules(t *testing.T) {
+	key := func(from, to, kind string) string { return from + "\x00" + to + "\x00" + kind }
+	modules := map[string]config.ModuleDef{
+		"a": {Paths: []string{"a/**"}},
+		"b": {Paths: []string{"b/**"}},
+		"c": {Paths: []string{"c/**"}},
+	}
+	idx := coupling.Index{
+		key("file:a/x.go", "file:b/y.go", "import"): {
+			Distance:      coupling.DistanceCrossModuleSameOwner,
+			DistanceBasis: coupling.DistanceBasisStructure,
+			Strength:      coupling.StrengthContract,
+			Score:         coupling.EdgeScore{Scored: true, Balance: 9, Band: coupling.SeverityNone},
+		},
+		key("file:b/y.go", "file:c/z.go", "import"): {
+			Distance:      coupling.DistanceCrossModuleDiffOwner,
+			DistanceBasis: coupling.DistanceBasisOwnership,
+			Strength:      coupling.StrengthFunctional,
+			Score:         coupling.EdgeScore{Scored: true, Balance: 6, Band: coupling.SeverityMedium},
+		},
+		key("file:a/x.go", "pkg:github.com/acme/api", "import"): {
+			Distance:      coupling.DistanceExternal,
+			DistanceBasis: coupling.DistanceBasisExternal,
+			Strength:      coupling.StrengthFunctional,
+			Score:         coupling.EdgeScore{Scored: true, Balance: 8, Band: coupling.SeverityLow},
+		},
+	}
+
+	s := buildClassifiedEdgeSummaryForRun(idx, nil, config.DuplicatedKnowledgePolicyAdvisory, config.BuildModuleMap(modules))
+
+	if s.ConnectedModules != 3 {
+		t.Errorf("ConnectedModules = %d, want 3", s.ConnectedModules)
+	}
+	if s.ByDistanceBasis[string(coupling.DistanceBasisStructure)] != 1 {
+		t.Errorf("ByDistanceBasis[code_structure] = %d, want 1", s.ByDistanceBasis[string(coupling.DistanceBasisStructure)])
+	}
+	if s.ByDistanceBasis[string(coupling.DistanceBasisOwnership)] != 1 {
+		t.Errorf("ByDistanceBasis[ownership] = %d, want 1", s.ByDistanceBasis[string(coupling.DistanceBasisOwnership)])
+	}
+	if s.ByDistanceBasis[string(coupling.DistanceBasisExternal)] != 1 {
+		t.Errorf("ByDistanceBasis[declared_external] = %d, want 1", s.ByDistanceBasis[string(coupling.DistanceBasisExternal)])
+	}
+	if s.DistanceCompression == nil {
+		t.Fatal("DistanceCompression is nil")
+	}
+	if !s.DistanceCompression.CompressedMiddleRungs {
+		t.Error("CompressedMiddleRungs = false, want true")
+	}
+	if !strings.Contains(s.DistanceCompression.Rationale, "D=3") || !strings.Contains(s.DistanceCompression.Rationale, "D=8") {
+		t.Errorf("Rationale = %q, want D=3 and D=8 compression disclosure", s.DistanceCompression.Rationale)
+	}
 }
 
 // TestBuildClassifiedEdgeSummary_DeclaredExternal pins the D=10 rung's summary

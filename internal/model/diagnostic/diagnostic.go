@@ -310,6 +310,10 @@ type ClassifiedEdgeSummary struct {
 	ByStrength map[string]int `json:"by_strength,omitempty"`
 	// ByDistance counts cross-boundary edges by distance label.
 	ByDistance map[string]int `json:"by_distance,omitempty"`
+	// ByDistanceBasis counts cross-boundary edges by the deterministic signal that
+	// selected their distance rung: code_structure, ownership, deploy_unit, or
+	// declared_external. Unknown/same-module edges have no basis and are omitted.
+	ByDistanceBasis map[string]int `json:"by_distance_basis,omitempty"`
 	// ByVolatility counts cross-boundary edges by volatility label.
 	ByVolatility map[string]int `json:"by_volatility,omitempty"`
 	// BySeverity counts cross-boundary edges by score band (severity label).
@@ -337,6 +341,10 @@ type ClassifiedEdgeSummary struct {
 	// keeps the disclosed-exclusion arithmetic honest — External covers only the
 	// UNDECLARED remainder.
 	DeclaredExternal int `json:"declared_external,omitempty"`
+	// ConnectedModules is the number of distinct first-party modules participating
+	// in scored/abstained cross-boundary coupling facts. It feeds confidence only:
+	// a tiny connected module sample cannot claim high-confidence architecture health.
+	ConnectedModules int `json:"connected_modules,omitempty"`
 	// CloneOnlyScored counts clone-only duplicated-knowledge pairs included in
 	// coupling_balance by coupling.duplicated_knowledge: score. They are
 	// score-bearing coupling facts, not graph import edges.
@@ -364,6 +372,21 @@ type ClassifiedEdgeSummary struct {
 	// VolatilityProvenance counts MODULES (not edges) by the source of their
 	// volatility. Nil when no modules were resolved.
 	VolatilityProvenance *VolatilityProvenance `json:"volatility_provenance,omitempty"`
+	// DistanceCompression discloses which book distance rungs this deterministic
+	// instrumentation implements and which middle rungs remain compressed instead
+	// of being guessed. Report-only; never consumed by scoring or gates.
+	DistanceCompression *DistanceCompressionSummary `json:"distance_compression,omitempty"`
+}
+
+// DistanceCompressionSummary records archfit's deterministic distance-ladder
+// coverage. It makes compressed Ch8 middle rungs visible in JSON/Markdown so a
+// D=4/D=7 result is not mistaken for full book precision.
+type DistanceCompressionSummary struct {
+	CompressedMiddleRungs bool     `json:"compressed_middle_rungs"`
+	ImplementedRungs      []int    `json:"implemented_rungs,omitempty"`
+	OmittedRungs          []int    `json:"omitted_rungs,omitempty"`
+	DeterministicSplits   []string `json:"deterministic_splits,omitempty"`
+	Rationale             string   `json:"rationale,omitempty"`
 }
 
 // VolatilityProvenance counts modules by where their volatility came from:

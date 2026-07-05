@@ -8,6 +8,36 @@ import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
+// DistanceCompressionEvidence records the deterministic distance-ladder rungs
+// archfit can currently distinguish. Middle Ch8 package/library rungs stay
+// compressed unless a stable graph/config fact separates them.
+type DistanceCompressionEvidence struct {
+	CompressedMiddleRungs bool
+	ImplementedRungs      []int
+	OmittedRungs          []int
+	DeterministicSplits   []string
+	Rationale             string
+}
+
+// DistanceCompression returns a deterministic summary of the distance ladder
+// implemented by classifyDistance. It is disclosure-only: the scorer still reads
+// the concrete Distance on each edge, not these strings.
+func DistanceCompression() DistanceCompressionEvidence {
+	return DistanceCompressionEvidence{
+		CompressedMiddleRungs: true,
+		ImplementedRungs:      []int{2, 4, 7, 9, 10},
+		OmittedRungs:          []int{1, 3, 5, 6, 8},
+		DeterministicSplits: []string{
+			"same module => D=2",
+			"code_structure sibling/parent-child => D=4; unrelated subtrees => D=7",
+			"ownership same/different owner => D=4/D=7 when the owner map is non-degenerate",
+			"different deploy_unit => D=9",
+			"declared external_systems target => D=10",
+		},
+		Rationale: "D=3/D=5/D=6/D=8 remain compressed: current graph/config facts distinguish same module, same owner, different owner, deploy unit, and declared vendor seam, but not finer package/library distance without guessing.",
+	}
+}
+
 // codeStructureDistance returns the structural distance between two module names
 // based on their position in the package/directory tree. This is the code-proximity
 // dimension of Vlad Khononov's socio-technical distance — "how many boundaries a

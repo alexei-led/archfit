@@ -89,17 +89,24 @@ So a metric cannot claim `strong` on thin evidence. This is why low extraction
 coverage quietly pulls every dependent metric's ceiling down instead of letting
 the tool over-claim.
 
-Two inputs feed `coupling_balance`'s confidence specifically: the scored
-fraction of classified edges, and — for TypeScript — the dependency-cruiser
-unresolved-specifier ratio. A `dependency-cruiser` `partial` status whose
-unresolved-specifier ratio exceeds **10%** (`tsUnresolvedRatioCeiling`,
-`internal/score/score.go`) caps confidence to `medium`: unresolved specifiers
-(missing tsconfig path/baseUrl alias, uninstalled dependency) land in the
-`external` bucket, outside `coupling_balance`'s denominator, so a high-noise
-extraction would otherwise read as confidently measured. The same
-partial-coverage cap already applies to a Rust graph where `cargo-modules`
-failed on some crates. Confidence downgrades (provenance, coverage, per-language
-partial extraction) compose by taking the minimum band — they never stack.
+`coupling_balance` confidence starts with the scored fraction of classified
+internal cross-boundary facts, then applies evidence caps:
+
+- fewer than **5** scored internal cross-boundary facts ⇒ high confidence is
+  disallowed;
+- fewer than **3** connected modules in the scored/abstained coupling sample ⇒
+  high confidence is disallowed;
+- `dependency-cruiser` `partial` with unresolved-specifier ratio above **10%**
+  (`tsUnresolvedRatioCeiling`, `internal/score/score.go`) ⇒ high confidence is
+  disallowed, because unresolved specifiers land in the `external` bucket,
+  outside `coupling_balance`'s denominator;
+- `cargo-modules` `partial` on Rust ⇒ high confidence is disallowed.
+
+These caps lower `high` to `medium` and append evidence lines. They do not lower
+the numeric score or trip `coupling.gate` by themselves. Existing low confidence
+from a poor scored fraction remains low. Confidence downgrades (provenance,
+coverage, per-language partial extraction, sample size) compose by taking the
+minimum confidence — they never stack.
 
 ### Deltas
 
@@ -142,7 +149,11 @@ metric scores against a git ref.
 inherited: M, cascade: K` (plus `undeclared: U` when nonzero; JSON:
   `classified_edges.volatility_provenance`) — so a repo whose volatility is
   uniform because synthetic submodules inherited it reads as
-  uniform-by-inheritance, not as a measured fact.
+  uniform-by-inheritance, not as a measured fact. JSON also exposes
+  `classified_edges.connected_modules`, `classified_edges.by_distance_basis`, and
+  `classified_edges.distance_compression`; Markdown renders the same in
+  **Distance confidence**. These fields show which deterministic distance signal
+  selected each rung and which middle Ch8 rungs remain compressed.
 
 ### `unbalanced_edge`
 
@@ -288,13 +299,13 @@ Every cross-boundary edge is classified on the four lenses below
 `bc/imbalanced_coupling` advisories and feed `encapsulation` and
 `unbalanced_edge`.
 
-| Lens         | Values (ordered)                                                                                              | Derived from                                                                                       |
-| ------------ | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Strength     | `contract` < `model` < `functional` < `intrusive` (+`unknown`)                                                | public/internal globs, visibility, SCIP symbol kind, pinned labels                                 |
-| Distance     | `same_module` < `cross_module_same_owner` < `cross_module_different_owner` < `cross_deploy_unit` (+`unknown`) | module map, `owner`, `deploy_unit`                                                                 |
-| Volatility   | `low` < `medium` < `high` (+`undeclared`, `unknown`)                                                          | explicit `volatility:`, then `subdomain:`; else `undeclared` (no path/name guessing, no git churn) |
-| Explicitness | `explicit`, `implicit` (+`unknown`)                                                                           | strength (contract→explicit, intrusive→implicit) or AST hint                                       |
-| Severity     | (none) < `low` < `medium` < `high` < `critical`                                                               | the balance rule over the four above                                                               |
+| Lens         | Values (ordered)                                                                                                                    | Derived from                                                                                       |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Strength     | `contract` < `model` < `functional` < `intrusive` (+`unknown`)                                                                      | public/internal globs, visibility, SCIP symbol kind, pinned labels                                 |
+| Distance     | `same_module` < `cross_module_same_owner` < `cross_module_different_owner` < `cross_deploy_unit` < `declared_external` (+`unknown`) | module map, `owner`, `deploy_unit`, declared `external_systems` seam                               |
+| Volatility   | `low` < `medium` < `high` (+`undeclared`, `unknown`)                                                                                | explicit `volatility:`, then `subdomain:`; else `undeclared` (no path/name guessing, no git churn) |
+| Explicitness | `explicit`, `implicit` (+`unknown`)                                                                                                 | strength (contract→explicit, intrusive→implicit) or AST hint                                       |
+| Severity     | (none) < `low` < `medium` < `high` < `critical`                                                                                     | the balance rule over the four above                                                               |
 
 For the full severity table and the reasoning, see
 [Concepts → The balance rule](concepts.md#the-balance-rule).

@@ -104,6 +104,15 @@ DRY violation) — see §4.
 `DistanceExternal` (D=10) is new in v4 and reachable ONLY via a declared
 `external_systems:` config entry — see §6.
 
+The middle Ch8 range is deliberately compressed. archfit currently has stable,
+deterministic facts for same-module (D=2), same-owner/near structure (D=4),
+different-owner/far structure (D=7), deploy-unit boundary (D=9), and declared
+vendor seam (D=10). It does **not** split D=3/D=5/D=6 or add D=8 from names,
+directory taste, or dependency-manager package shape alone. JSON and Markdown
+surface this as `classified_edges.by_distance_basis` plus
+`classified_edges.distance_compression`, so a D=4/D=7 result is not mistaken for
+full book-rung precision.
+
 ### Volatility
 
 | Source                        | Book anchor           | Ordinal (V)       |
@@ -223,6 +232,14 @@ Runtime async bridge: evidence recorded in `runtime_async` JSON field per
 module. **Does not annotate graph edges, does not affect D, does not affect the
 score or gate verdict.** Report-only by design.
 
+Each classified cross-boundary edge records `distance_basis` when a concrete
+signal selected the rung: `code_structure`, `ownership`, `deploy_unit`, or
+`declared_external`. The run summary rolls these into
+`classified_edges.by_distance_basis`. The companion
+`classified_edges.distance_compression` block lists implemented rungs, omitted
+compressed rungs, deterministic split decisions, and the rationale for not
+inventing finer middle/library rungs yet.
+
 ### Volatility mapping
 
 `subdomain` or explicit `volatility` in config → book anchor (table in §3):
@@ -245,9 +262,13 @@ Ch9) propagates high volatility one hop across strongly-coupled edges before sco
 `coupling_balance` dimension value = `round(100 × (mean book balance − 1) / 9)`
 over all scored internal cross-boundary coupling facts: graph edges plus
 clone-only duplicated-knowledge pairs when `coupling.duplicated_knowledge: score`.
-Confidence from the internal scored fraction (see §5). Worst edges surface as
-advisories. This is transparent aggregation of the book's own per-edge score,
-not a new coupling model.
+Confidence starts from the internal scored fraction (see §5), then high
+confidence is disallowed for tiny samples: fewer than 5 scored internal
+cross-boundary facts or fewer than 3 connected modules caps the dimension at
+medium confidence and appends an evidence line. The cap changes confidence only;
+it does not change the numeric score, band, or `coupling.gate` decision. Worst
+edges surface as advisories. This is transparent aggregation of the book's own
+per-edge score, not a new coupling model.
 
 ---
 

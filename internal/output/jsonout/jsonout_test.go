@@ -72,6 +72,43 @@ func TestJSONRenderer_ScoreVersion(t *testing.T) {
 	}
 }
 
+func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
+	d := diagnostic.New()
+	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
+		Scored:           3,
+		ConnectedModules: 2,
+		ByDistanceBasis:  map[string]int{"code_structure": 2, "ownership": 1},
+		DistanceCompression: &diagnostic.DistanceCompressionSummary{
+			CompressedMiddleRungs: true,
+			ImplementedRungs:      []int{2, 4, 7, 9, 10},
+			OmittedRungs:          []int{3, 5, 6, 8},
+			Rationale:             "D=3/D=5/D=6/D=8 remain compressed",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var got diagnostic.Diagnostic
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if got.ClassifiedEdges == nil {
+		t.Fatal("classified_edges missing from JSON output")
+	}
+	if got.ClassifiedEdges.ConnectedModules != 2 {
+		t.Errorf("connected_modules = %d, want 2", got.ClassifiedEdges.ConnectedModules)
+	}
+	if got.ClassifiedEdges.ByDistanceBasis["code_structure"] != 2 {
+		t.Errorf("by_distance_basis.code_structure = %d, want 2", got.ClassifiedEdges.ByDistanceBasis["code_structure"])
+	}
+	if got.ClassifiedEdges.DistanceCompression == nil || !got.ClassifiedEdges.DistanceCompression.CompressedMiddleRungs {
+		t.Fatalf("distance_compression = %+v, want compressed_middle_rungs=true", got.ClassifiedEdges.DistanceCompression)
+	}
+}
+
 func TestJSONRenderer_ConnascenceSummary(t *testing.T) {
 	d := diagnostic.New()
 	d.Connascence = &diagnostic.ConnascenceReport{

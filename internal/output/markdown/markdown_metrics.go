@@ -52,9 +52,34 @@ func writeDistanceConfidence(b *strings.Builder, d diagnostic.Diagnostic) {
 	} else {
 		b.WriteString("- `deploy_unit_source`: not reported (auto-detect or config-authored)\n")
 	}
+	if ce := d.ClassifiedEdges; ce != nil {
+		if ce.ConnectedModules > 0 {
+			fmt.Fprintf(b, "- connected modules in coupling sample: %d\n", ce.ConnectedModules)
+		}
+		if len(ce.ByDistanceBasis) > 0 {
+			fmt.Fprintf(b, "- distance basis: %s\n", formatCounts(ce.ByDistanceBasis))
+		}
+		if dc := ce.DistanceCompression; dc != nil {
+			fmt.Fprintf(b, "- distance rungs implemented: %s; omitted/compressed: %s\n", formatInts(dc.ImplementedRungs), formatInts(dc.OmittedRungs))
+			if dc.Rationale != "" {
+				fmt.Fprintf(b, "- distance compression: %s\n", dc.Rationale)
+			}
+		}
+	}
 	if unresolved > 0 {
 		fmt.Fprintf(b, "- unresolved modules: %d (edges to unknown modules use conservative distance)\n", unresolved)
 	}
+}
+
+func formatInts(values []int) string {
+	if len(values) == 0 {
+		return "-"
+	}
+	parts := make([]string, len(values))
+	for i, v := range values {
+		parts[i] = fmt.Sprintf("D=%d", v)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // fileFactsTopN is the number of modules listed per axis in the structural-facts section.

@@ -9,6 +9,11 @@ import (
 	"github.com/alexei-led/archfit/internal/model/finding"
 )
 
+const (
+	minHighConfidenceScoredEdges      = 5
+	minHighConfidenceConnectedModules = 3
+)
+
 // couplingBalance scores integration strength vs distance vs volatility using
 // Vlad Khononov's balance formula from _Balancing Coupling in Software Design_ Ch10.
 //
@@ -20,11 +25,11 @@ import (
 //	value = round(100 × (MeanBalance − 1) / 9)
 //
 // This is a transparent linear rescale of the book's own 1–10 per-edge score
-// (balance 1→value 0, balance 10→value 100). Confidence scales with the scored
-// fraction (high ≥80%, medium 50–79%, low <50%). Zero scored edges → 60/mixed/low
-// (unanalyzed sentinel). The advisory worst-edge cap (critical band) is still
-// applied on top: any critical edge → cap at 60; pervasive (≥5% of
-// scored+abstained) → cap at 40.
+// (balance 1→value 0, balance 10→value 100). Confidence starts with the scored
+// fraction (high ≥80%, medium 50–79%, low <50%) and high confidence is disallowed
+// on tiny scored-edge or connected-module samples. Zero scored edges → n/a/low.
+// The advisory worst-edge cap (critical band) is still applied on top: any
+// critical edge → cap at 60; pervasive (≥5% of scored+abstained) → cap at 40.
 //
 // When summary is nil (backward compat), the function falls back to the legacy
 // advisory-edge path using the edges []bcEdge slice.
@@ -84,16 +89,9 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		value := int(math.Round(100 * (summary.MeanBalance - 1) / 9))
 
 		// Confidence from internal-only scored fraction (external edges do not count).
-		var conf Confidence
 		scoredPct := 100 * summary.Scored / crossBoundary
-		switch {
-		case scoredPct >= 80:
-			conf = ConfidenceHigh
-		case scoredPct >= 50:
-			conf = ConfidenceMedium
-		default:
-			conf = ConfidenceLow
-		}
+		conf := confidenceFromScoredPct(scoredPct)
+		capReasons := summaryConfidenceCapReasons(summary, conf)
 
 		// Advisory cap. A genuine distributed monolith is the critical band AND high
 		// distance (different owner / deploy unit); pervasive DM caps the value hard.
@@ -118,6 +116,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		if llmConfLowered {
 			conf = lowerConf(conf)
 		}
+		conf = applySummaryConfidenceCap(conf, capReasons)
 
 		dim.Value = value
 		dim.Confidence = conf
@@ -129,6 +128,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			fmt.Sprintf("critical-band edges: %d (%d distributed-monolith: critical at high distance)",
 				criticalCount, dmCount),
 		}
+		dim.Evidence = append(dim.Evidence, capReasons...)
 		if summary.DeclaredExternal > 0 {
 			dim.Evidence = append(dim.Evidence,
 				fmt.Sprintf("%d declared external-system edges scored at D=10 (external_systems)", summary.DeclaredExternal))
@@ -213,6 +213,42 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		dim.Summary = "coupling carries elevated maintenance effort but no distributed-monolith edges"
 	}
 	return dim
+}
+
+func applySummaryConfidenceCap(conf Confidence, capReasons []string) Confidence {
+	if len(capReasons) > 0 && conf == ConfidenceHigh {
+		return ConfidenceMedium
+	}
+	return conf
+}
+
+func confidenceFromScoredPct(scoredPct int) Confidence {
+	switch {
+	case scoredPct >= 80:
+		return ConfidenceHigh
+	case scoredPct >= 50:
+		return ConfidenceMedium
+	default:
+		return ConfidenceLow
+	}
+}
+
+func summaryConfidenceCapReasons(summary *diagnostic.ClassifiedEdgeSummary, conf Confidence) []string {
+	if conf != ConfidenceHigh {
+		return nil
+	}
+	var reasons []string
+	if summary.Scored < minHighConfidenceScoredEdges {
+		reasons = append(reasons,
+			fmt.Sprintf("sample size below high-confidence floor: %d scored internal cross-boundary edges (need ≥%d)",
+				summary.Scored, minHighConfidenceScoredEdges))
+	}
+	if summary.ConnectedModules > 0 && summary.ConnectedModules < minHighConfidenceConnectedModules {
+		reasons = append(reasons,
+			fmt.Sprintf("connected module sample below high-confidence floor: %d connected modules (need ≥%d)",
+				summary.ConnectedModules, minHighConfidenceConnectedModules))
+	}
+	return reasons
 }
 
 // appendLLMLabelEvidence appends the llm-label disclosure lines: the approved

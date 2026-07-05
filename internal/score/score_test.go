@@ -363,13 +363,31 @@ func TestCouplingBalance_Distribution(t *testing.T) {
 	}
 }
 
-func TestCouplingBalance_TinyFullyScoredGraphCurrentlyHighConfidence(t *testing.T) {
+func TestCouplingBalance_TinyFullyScoredGraphCapsConfidence(t *testing.T) {
 	cases := []struct {
-		name   string
-		scored int
+		name             string
+		scored           int
+		connectedModules int
+		wantEvidence     []string
 	}{
-		{name: "one scored edge", scored: 1},
-		{name: "two scored edges", scored: 2},
+		{
+			name:             "one scored edge and two modules",
+			scored:           1,
+			connectedModules: 2,
+			wantEvidence:     []string{"sample size below high-confidence floor", "connected module sample below high-confidence floor"},
+		},
+		{
+			name:             "enough edges but two modules",
+			scored:           6,
+			connectedModules: 2,
+			wantEvidence:     []string{"connected module sample below high-confidence floor"},
+		},
+		{
+			name:             "few edges but enough modules",
+			scored:           4,
+			connectedModules: 4,
+			wantEvidence:     []string{"sample size below high-confidence floor"},
+		},
 	}
 
 	for _, tc := range cases {
@@ -377,21 +395,58 @@ func TestCouplingBalance_TinyFullyScoredGraphCurrentlyHighConfidence(t *testing.
 			d := diagnostic.New()
 			d.Metrics = []diagnostic.MetricResult{metric(metricBlastRadius, 1, "info", "high")}
 			d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
-				Total:       tc.scored,
-				Scored:      tc.scored,
-				MeanBalance: 10.0,
-				BySeverity:  map[string]int{sevNone: tc.scored},
+				Total:            tc.scored,
+				Scored:           tc.scored,
+				ConnectedModules: tc.connectedModules,
+				MeanBalance:      10.0,
+				BySeverity:       map[string]int{sevNone: tc.scored},
 			}
 
 			got := couplingBalanceDim(t, Synthesize(d))
-			if got.Confidence != ConfidenceHigh {
-				t.Errorf("confidence = %q, want high for current 100%% scored-fraction policy", got.Confidence)
+			if got.Confidence != ConfidenceMedium {
+				t.Errorf("confidence = %q, want medium cap for tiny full-score sample", got.Confidence)
 			}
 			if got.Band != BandStrong {
-				t.Errorf("band = %q (value %d), want strong under current tiny/full-score behavior", got.Band, got.Value)
+				t.Errorf("band = %q (value %d), want score/band unchanged by confidence-only cap", got.Band, got.Value)
+			}
+			for _, want := range tc.wantEvidence {
+				if !evidenceContains(got.Evidence, want) {
+					t.Errorf("evidence missing %q: %v", want, got.Evidence)
+				}
 			}
 		})
 	}
+
+	t.Run("sample cap and llm provenance do not stack below medium", func(t *testing.T) {
+		d := diagnostic.New()
+		d.Metrics = []diagnostic.MetricResult{metric(metricBlastRadius, 1, "info", "high")}
+		d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
+			Total:                 2,
+			Scored:                2,
+			ConnectedModules:      2,
+			MeanBalance:           10.0,
+			BySeverity:            map[string]int{sevNone: 2},
+			LLMApproved:           1,
+			LLMLowConfidenceEdges: 1,
+		}
+
+		got := couplingBalanceDim(t, Synthesize(d))
+		if got.Confidence != ConfidenceMedium {
+			t.Errorf("confidence = %q, want medium (caps are floors, not cumulative downgrades)", got.Confidence)
+		}
+		if got.Band != BandStrong {
+			t.Errorf("band = %q (value %d), want score/band unchanged by confidence caps", got.Band, got.Value)
+		}
+	})
+}
+
+func evidenceContains(evidence []string, needle string) bool {
+	for _, ev := range evidence {
+		if strings.Contains(ev, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestCouplingBalance_Distribution_AdvisoryTailIndependent(t *testing.T) {

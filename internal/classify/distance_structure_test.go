@@ -20,6 +20,35 @@ const (
 	distModAPI                 = "api"
 )
 
+func TestDistanceCompression(t *testing.T) {
+	got := DistanceCompression()
+	if !got.CompressedMiddleRungs {
+		t.Fatal("CompressedMiddleRungs = false, want true")
+	}
+	for _, rung := range []int{2, 4, 7, 9, 10} {
+		if !hasInt(got.ImplementedRungs, rung) {
+			t.Errorf("ImplementedRungs = %v, missing %d", got.ImplementedRungs, rung)
+		}
+	}
+	for _, rung := range []int{3, 5, 6, 8} {
+		if !hasInt(got.OmittedRungs, rung) {
+			t.Errorf("OmittedRungs = %v, missing %d", got.OmittedRungs, rung)
+		}
+	}
+	if len(got.DeterministicSplits) == 0 {
+		t.Fatal("DeterministicSplits is empty")
+	}
+}
+
+func hasInt(values []int, want int) bool {
+	for _, v := range values {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestCodeStructureDistance(t *testing.T) {
 	tests := []struct {
 		name string

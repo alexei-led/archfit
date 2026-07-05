@@ -152,6 +152,10 @@ func buildClassifiedEdgeSummary(idx coupling.Index) *diagnostic.ClassifiedEdgeSu
 	return buildClassifiedEdgeSummaryWithCloneOnly(idx, nil, config.DuplicatedKnowledgePolicyAdvisory)
 }
 
+func buildClassifiedEdgeSummaryForRun(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy config.DuplicatedKnowledgePolicy, mm config.ModuleMap) *diagnostic.ClassifiedEdgeSummary {
+	return buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx, cloneOnly, policy, mm)
+}
+
 // buildClassifiedEdgeSummaryWithCloneOnly also folds clone-only duplicated
 // knowledge into the summary when the explicit policy is score.
 //
@@ -175,15 +179,23 @@ func buildClassifiedEdgeSummary(idx coupling.Index) *diagnostic.ClassifiedEdgeSu
 // The summary uses string keys (not coupling package constants) so it stays
 // usable from diagnostic (stdlib-only) and score packages.
 func buildClassifiedEdgeSummaryWithCloneOnly(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy config.DuplicatedKnowledgePolicy) *diagnostic.ClassifiedEdgeSummary {
+	return buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx, cloneOnly, policy, config.ModuleMap{})
+}
+
+func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy config.DuplicatedKnowledgePolicy, mm config.ModuleMap) *diagnostic.ClassifiedEdgeSummary {
 	s := &diagnostic.ClassifiedEdgeSummary{
-		ByStrength:   make(map[string]int),
-		ByDistance:   make(map[string]int),
-		ByVolatility: make(map[string]int),
-		BySeverity:   make(map[string]int),
+		ByStrength:          make(map[string]int),
+		ByDistance:          make(map[string]int),
+		ByDistanceBasis:     make(map[string]int),
+		ByVolatility:        make(map[string]int),
+		BySeverity:          make(map[string]int),
+		DistanceCompression: buildDistanceCompressionSummary(),
 	}
+	connectedModules := make(map[string]struct{})
 	balanceSum := 0
-	for _, cl := range idx {
+	for key, cl := range idx {
 		balanceSum += addClassificationToSummary(s, cl)
+		addConnectedModules(connectedModules, key, cl, mm)
 	}
 	if len(cloneOnly) > 0 {
 		switch config.NormalizeDuplicatedKnowledgePolicy(policy) {
@@ -191,15 +203,65 @@ func buildClassifiedEdgeSummaryWithCloneOnly(idx coupling.Index, cloneOnly []cla
 			for _, p := range cloneOnly {
 				s.CloneOnlyScored++
 				balanceSum += addClassificationToSummary(s, p.Classification)
+				addConnectedModuleName(connectedModules, p.FromModule)
+				addConnectedModuleName(connectedModules, p.ToModule)
 			}
 		default:
 			s.CloneOnlyAdvisory += len(cloneOnly)
 		}
 	}
+	if len(connectedModules) > 0 {
+		s.ConnectedModules = len(connectedModules)
+	}
 	if s.Scored > 0 {
 		s.MeanBalance = float64(balanceSum) / float64(s.Scored)
 	}
 	return s
+}
+
+func buildDistanceCompressionSummary() *diagnostic.DistanceCompressionSummary {
+	ev := classify.DistanceCompression()
+	return &diagnostic.DistanceCompressionSummary{
+		CompressedMiddleRungs: ev.CompressedMiddleRungs,
+		ImplementedRungs:      append([]int(nil), ev.ImplementedRungs...),
+		OmittedRungs:          append([]int(nil), ev.OmittedRungs...),
+		DeterministicSplits:   append([]string(nil), ev.DeterministicSplits...),
+		Rationale:             ev.Rationale,
+	}
+}
+
+func addConnectedModules(modules map[string]struct{}, key string, cl coupling.Classification, mm config.ModuleMap) {
+	if cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown {
+		return
+	}
+	from, to, ok := indexKeyEndpoints(key)
+	if !ok {
+		return
+	}
+	if mod, ok := mm.ModuleFor(stripPrefix(from)); ok {
+		addConnectedModuleName(modules, mod)
+	}
+	if mod, ok := mm.ModuleFor(stripPrefix(to)); ok {
+		addConnectedModuleName(modules, mod)
+	}
+}
+
+func addConnectedModuleName(modules map[string]struct{}, module string) {
+	if module != "" {
+		modules[module] = struct{}{}
+	}
+}
+
+func indexKeyEndpoints(key string) (string, string, bool) {
+	from, rest, ok := strings.Cut(key, "\x00")
+	if !ok {
+		return "", "", false
+	}
+	to, _, ok := strings.Cut(rest, "\x00")
+	if !ok {
+		return "", "", false
+	}
+	return from, to, true
 }
 
 func addClassificationToSummary(s *diagnostic.ClassifiedEdgeSummary, cl coupling.Classification) int {
@@ -219,6 +281,9 @@ func addClassificationToSummary(s *diagnostic.ClassifiedEdgeSummary, cl coupling
 	}
 	if cl.Distance == coupling.DistanceExternal {
 		s.DeclaredExternal++
+	}
+	if cl.DistanceBasis != coupling.DistanceBasisUnknown {
+		s.ByDistanceBasis[string(cl.DistanceBasis)]++
 	}
 	// Cross-boundary edge: target resolves to a declared module, a declared
 	// external system, or a score-bearing clone-only duplicated-knowledge pair.

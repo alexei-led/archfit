@@ -1005,6 +1005,16 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 	r := markdown.New()
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
+	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
+		ConnectedModules: 2,
+		ByDistanceBasis:  map[string]int{"code_structure": 3, "ownership": 1},
+		DistanceCompression: &diagnostic.DistanceCompressionSummary{
+			CompressedMiddleRungs: true,
+			ImplementedRungs:      []int{2, 4, 7, 9, 10},
+			OmittedRungs:          []int{3, 5, 6, 8},
+			Rationale:             "D=3/D=5/D=6/D=8 remain compressed: no stable deterministic facts beyond structure/ownership/deploy_unit.",
+		},
+	}
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -1026,6 +1036,16 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 	}
 	if !strings.Contains(out, "deploy_unit_source") {
 		t.Errorf("output missing deploy_unit_source entry\nfull output:\n%s", out)
+	}
+	for _, want := range []string{
+		"connected modules in coupling sample: 2",
+		"distance basis: code_structure=3, ownership=1",
+		"distance rungs implemented: D=2, D=4, D=7, D=9, D=10; omitted/compressed: D=3, D=5, D=6, D=8",
+		"distance compression: D=3/D=5/D=6/D=8 remain compressed",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
 	}
 }
 

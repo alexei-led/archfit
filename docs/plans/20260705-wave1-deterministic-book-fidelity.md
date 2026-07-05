@@ -206,10 +206,10 @@ Manual checks:
 
 - Review whether any proposed D=3-D=7 split uses facts already in the graph/config. Reject any split based only on naming taste.
 
-- [ ] Add confidence caps for tiny scored-edge counts and tiny connected-module counts.
-- [ ] Add evidence strings for each confidence cap reason.
-- [ ] Add a distance-basis/compression summary to JSON/Markdown.
-- [ ] Either implement deterministic mid-rung split with tests, or document why the current compression remains deliberate.
+- [x] Add confidence caps for tiny scored-edge counts and tiny connected-module counts.
+- [x] Add evidence strings for each confidence cap reason.
+- [x] Add a distance-basis/compression summary to JSON/Markdown.
+- [x] Either implement deterministic mid-rung split with tests, or document why the current compression remains deliberate.
 
 ### Task 5: Corpus validation, docs, and re-review handoff
 

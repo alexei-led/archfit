@@ -311,7 +311,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	// full-repo dump. Report-only; never enters the verdict. Nil outside delta mode.
 	delta := deltaReport(in.Scope.Mode, resolvedFindings, in.Accepted, in.Scope.Changed)
 
-	classifiedEdges := buildClassifiedEdgeSummaryWithCloneOnly(couplingIdx, cloneOnlyPairs, classifyCfg.DuplicatedKnowledgePolicy)
+	classifiedEdges := buildClassifiedEdgeSummaryForRun(couplingIdx, cloneOnlyPairs, classifyCfg.DuplicatedKnowledgePolicy, classifyCfg.ModuleMap)
 	classifiedEdges.LLMApproved = llmApprovedCount
 	connascenceReport := buildConnascenceReport(couplingIdx)
 	// Volatility triage disclosure: count modules by volatility source (declared /
