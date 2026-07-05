@@ -421,10 +421,10 @@ rules:
     to: pricing
     gate: fail
 
-  - id: domain-no-infra
+  # forbidden_layer_direction takes no from/to keys: it derives the allowed
+  # direction globally from the layers: order plus each module's layer.
+  - id: no-layer-back-edges
     type: forbidden_layer_direction
-    from_layer: domain
-    to_layer: infrastructure
     gate: fail
 
 exclude:
@@ -445,12 +445,12 @@ metrics:
     gate: warn
     min_delta: 0
 
-  unbalanced_edges:
+  unbalanced_edge:
     enabled: true
     gate: warn
-    max_new_high: 0
+    max_new: 0
 
-  cycles:
+  cycle:
     enabled: true
     gate: fail
     max_new: 0
@@ -661,9 +661,16 @@ Metric output:
   "metric_version": "encapsulation.v1",
   "mode": "delta",
   "definition": "contract / (contract + intrusive) cross-boundary edges (functional, model, unknown excluded)",
-  "delta": -0.03
+  "delta": -0.03,
+  "direction": "higher_is_better"
 }
 ```
+
+`direction` declares the metric's polarity — `higher_is_better` (ratio metrics
+like encapsulation/coverage; the default when absent) or `higher_is_worse`
+(count metrics like cycle, unbalanced_edge, blast_radius). The verdict uses it
+to decide whether a baseline delta is a regression, so a positive `delta` on a
+count metric blocks while the same sign on a ratio metric is an improvement.
 
 ### 10.1 Bands and thresholds
 
@@ -967,8 +974,8 @@ of leaking through internal details.
 Gate shape:
 
 ```text
-warn if encapsulation decreases in check mode
-warn or fail only after human calibration of absolute thresholds
+fail on a worsening baseline delta when `metrics.encapsulation.gate` is unset (the default); `warn`/`off` configurable
+absolute thresholds still need human calibration
 ```
 
 #### Unbalanced-edge count
@@ -992,7 +999,7 @@ expired_waiver
 Gate shape:
 
 ```text
-fail or warn on new high-severity unbalanced edges, depending on policy
+fail on a worsening baseline delta (or `max_new` breach) when `metrics.unbalanced_edge.gate` is unset (the default); `warn`/`off` configurable
 ```
 
 Balanced Coupling is most useful here: it explains why a relationship is risky and how to rebalance it. It is classification and severity, not a single opaque score.
@@ -1008,7 +1015,7 @@ cycles among modules or configured layers
 Gate shape:
 
 ```text
-fail on new cycles when configured
+fail on a new cycle (worsening delta) when `metrics.cycle.gate` is unset (the default); `warn`/`off` configurable
 ```
 
 #### Blast radius

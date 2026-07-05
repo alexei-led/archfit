@@ -511,12 +511,32 @@ func TestResolve_ReportsSource(t *testing.T) {
 		}
 	})
 
-	t.Run("none when codeowners matches nothing", func(t *testing.T) {
+	t.Run("codeowners_no_match when codeowners matches nothing", func(t *testing.T) {
+		// A CODEOWNERS file existing but resolving zero owners is distinct from
+		// SourceNone: it is far more often a subtree/path-prefix or module-glob
+		// mismatch than a genuinely unattributed repo.
 		root := t.TempDir()
 		writeFile(t, root, ".github/CODEOWNERS", "docs/ @team\n")
 		writeFile(t, root, "src/a.go", "")
-		if _, src := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner()); src != ownership.SourceNone {
-			t.Errorf("got %q, want none", src)
+		if _, src := ownership.Resolve(context.Background(), root, root, "", mm, nilRunner()); src != ownership.SourceCodeownersNoMatch {
+			t.Errorf("got %q, want codeowners_no_match", src)
+		}
+	})
+
+	t.Run("comment-only codeowners is not a degradation", func(t *testing.T) {
+		// A fresh-repo placeholder (comments only, zero rules) carries no
+		// signal: it must fall through to the git-author path, not trigger
+		// the codeowners_no_match degradation warning.
+		root := t.TempDir()
+		writeFile(t, root, ".github/CODEOWNERS", "# TODO: assign owners\n\n")
+		writeFile(t, root, "src/a.go", "")
+		runner := &toolrun.RunnerMock{
+			RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+				return toolrun.Output{Stdout: []byte("a@x.com\nsrc/a.go\n"), ExitCode: 0}, nil
+			},
+		}
+		if _, src := ownership.Resolve(context.Background(), root, root, "", mm, runner); src != ownership.SourceGit {
+			t.Errorf("got %q, want %q (placeholder CODEOWNERS falls through to git-author)", src, ownership.SourceGit)
 		}
 	})
 

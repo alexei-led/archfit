@@ -30,6 +30,7 @@ import (
 
 const (
 	rulePublicAPIOnly     = "public_api_only"
+	ruleLabelsStale       = "labels/stale"
 	pathFileA             = "pkg/a/a.go"
 	pathFileANode         = "file:pkg/a/a.go"
 	pathFileBInternal     = "pkg/b/internal/impl.go"
@@ -56,8 +57,6 @@ const (
 	pathFileB          = "pkg/b/b.go"
 	strengthModel      = "model"
 	strengthFunctional = "functional"
-
-	ruleIDBCImbalanced = "bc/imbalanced_coupling"
 )
 
 // cannedConfig builds a ClassifyConfig and RuleConfig for a two-module (a, b)
@@ -144,7 +143,7 @@ func cleanFacts() graph.Facts {
 				To:         pathFileBAPIServiceNode,
 				Kind:       graph.EdgeKindImports,
 				Language:   "go",
-				Confidence: "high",
+				Confidence: confidenceHigh,
 				Locations:  []graph.Location{{File: pathFileA, Line: 3}},
 			},
 		},
@@ -512,6 +511,11 @@ func TestRun_DiagnosticShape(t *testing.T) {
 	if len(d.Metrics) != 5 {
 		t.Errorf("len(metrics)=%d, want 5", len(d.Metrics))
 	}
+	// Volatility triage disclosure wiring: modules are configured (cannedConfig),
+	// so the module volatility source counts must reach the summary.
+	if d.ClassifiedEdges == nil || d.ClassifiedEdges.VolatilityProvenance == nil {
+		t.Errorf("classified_edges.volatility_provenance is nil, want module volatility source counts")
+	}
 }
 
 // TestRun_PrimaryExtractorTools_Forwarded asserts the injected primary-extractor
@@ -723,7 +727,7 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 
 	var adv *finding.Finding
 	for i := range d.Findings {
-		if d.Findings[i].RuleID == ruleIDBCImbalanced {
+		if d.Findings[i].RuleID == engine.RuleIDBCImbalanced {
 			adv = &d.Findings[i]
 			break
 		}
@@ -760,6 +764,15 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 	// formula change is observable in output.
 	if got := adv.MatchedBy["score_version"]; got != coupling.ScoreVersion {
 		t.Errorf("MatchedBy[score_version]=%q, want %q", got, coupling.ScoreVersion)
+	}
+
+	// cheapest_move: the edge lands in module b's Internal glob, so classify
+	// upgrades strength to intrusive regardless of the functional hint (S=10,
+	// diff-owner D=7, undeclared V=10 → balance 4, high). Reducing strength one
+	// rung (intrusive→symmetric) does not drop the band, but reducing distance
+	// (diff-owner→same-owner) does — reduce_distance is the only real lever.
+	if got := adv.MatchedBy["cheapest_move"]; got != "reduce_distance" {
+		t.Errorf("MatchedBy[cheapest_move]=%q, want %q", got, "reduce_distance")
 	}
 }
 
@@ -804,7 +817,7 @@ func TestRun_Advisory_DistanceBasisInMatchedBy(t *testing.T) {
 
 	var adv *finding.Finding
 	for i := range d.Findings {
-		if d.Findings[i].RuleID == ruleIDBCImbalanced {
+		if d.Findings[i].RuleID == engine.RuleIDBCImbalanced {
 			adv = &d.Findings[i]
 			break
 		}
@@ -893,7 +906,7 @@ func TestRun_Advisory_GroupedRollups(t *testing.T) {
 
 	var bc []finding.Finding
 	for _, f := range d.Findings {
-		if f.RuleID == ruleIDBCImbalanced {
+		if f.RuleID == engine.RuleIDBCImbalanced {
 			bc = append(bc, f)
 		}
 	}
@@ -934,6 +947,91 @@ func TestRun_Advisory_GroupedRollups(t *testing.T) {
 	}
 	if !bytes.Equal(first, second) {
 		t.Errorf("grouped advisory output not deterministic across runs")
+	}
+}
+
+// TestRun_Advisory_GroupedRollup_EdgePathHonesty asserts that a rolled-up BC
+// advisory's edge.from.path/edge.to.path name a real underlying member edge
+// that is also present in the rollup's own locations[] — never an arbitrary
+// hash-ID-ordered representative that can point at a completely different
+// file than locations[0] (Task 2, wave3-output-truthfulness).
+func TestRun_Advisory_GroupedRollup_EdgePathHonesty(t *testing.T) {
+	ctx := context.Background()
+	const edges = 5
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return bcFloodFacts(edges), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+	classifyCfg, rs := cannedConfig()
+	ms := metrics.New(config.Config{Version: 1})
+	base := baseline.Baseline{}
+	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
+
+	d, err := engine.Run(ctx, engine.RunInput{
+		Mode:        engine.Mode{Head: headRef, Advisory: true},
+		Scope:       scope.Scope{Root: "."},
+		Classify:    classifyCfg,
+		Staleness:   config.StalenessConfig{},
+		Waivers:     config.WaiverSet{},
+		Extractors:  []ports.Extractor{ex},
+		Patterns:    ports.NopPatternProvider{},
+		Resolver:    ports.NopSymbolResolver{},
+		PatternCfg:  config.PatternConfig{},
+		Rules:       rs,
+		Metrics:     ms,
+		Accepted:    base,
+		BaseMetrics: base.Metrics,
+		Labels:      nil,
+		Signals:     signal.RunSignals{},
+		Now:         now,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var rollup finding.Finding
+	found := false
+	for _, f := range d.Findings {
+		if f.RuleID == engine.RuleIDBCImbalanced {
+			rollup = f
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("no grouped BC advisory found")
+	}
+	if got := rollup.MatchedBy["group_count"]; got != strconv.Itoa(edges) {
+		t.Fatalf("group_count=%q, want %d", got, edges)
+	}
+	if len(rollup.Locations) == 0 {
+		t.Fatalf("rollup has no locations")
+	}
+
+	// bcFloodFacts wires pkg/a/aN.go -> pkg/b/internal/implN.go; locations are
+	// sorted by (File, Line), so "pkg/a/a0.go" sorts first among a0..a4.
+	wantFrom := "pkg/a/a0.go"
+	wantTo := "pkg/b/internal/impl0.go"
+	if rollup.Locations[0].File != wantFrom {
+		t.Fatalf("test setup: locations[0].File=%q, want %q", rollup.Locations[0].File, wantFrom)
+	}
+	if rollup.Edge.From.Path != wantFrom {
+		t.Errorf("edge.from.path=%q, want %q (locations[0].File)", rollup.Edge.From.Path, wantFrom)
+	}
+	if rollup.Edge.To.Path != wantTo {
+		t.Errorf("edge.to.path=%q, want %q (the real target of edge.from.path, not an unrelated member)", rollup.Edge.To.Path, wantTo)
+	}
+	foundInLocs := false
+	for _, l := range rollup.Locations {
+		if l.File == rollup.Edge.From.Path {
+			foundInLocs = true
+			break
+		}
+	}
+	if !foundInLocs {
+		t.Errorf("edge.from.path=%q not present in locations[] %v", rollup.Edge.From.Path, rollup.Locations)
 	}
 }
 
@@ -1546,7 +1644,7 @@ func TestRun_PinnedLabels(t *testing.T) {
 			t.Errorf("strength = %q, want model (pinned)", got)
 		}
 		for _, f := range d.Findings {
-			if f.RuleID == "labels/stale" {
+			if f.RuleID == ruleLabelsStale {
 				t.Errorf("unexpected stale advisory for fresh label: %+v", f)
 			}
 		}
@@ -1562,7 +1660,7 @@ func TestRun_PinnedLabels(t *testing.T) {
 		}
 		found := false
 		for _, f := range d.Findings {
-			if f.RuleID == "labels/stale" && f.Edge.From.Module == "a" && f.Edge.To.Module == "b" {
+			if f.RuleID == ruleLabelsStale && f.Edge.From.Module == "a" && f.Edge.To.Module == "b" {
 				found = true
 			}
 		}
@@ -1580,6 +1678,105 @@ func TestRun_PinnedLabels(t *testing.T) {
 			t.Error("draft label must never be consumed by the gate")
 		}
 	})
+}
+
+// TestRun_LLMLabels_FillDeterminismAndBucket is the Wave 7 Task 2 guard: with a
+// committed llm-provenance label the full pipeline is byte-identical across two
+// runs (the LLM ran at enrich time, never here), the filled edge is attributed
+// in classified_edges.labeled_llm, and removing the label returns the edge to
+// the abstained bucket — no residue of the fill.
+func TestRun_LLMLabels_FillDeterminismAndBucket(t *testing.T) {
+	ctx := context.Background()
+
+	// Modules with paths only and a hint-less edge (cleanFacts): every static
+	// source abstains, so the llm label is the only strength source.
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"a": {Paths: []string{globModuleA}},
+			"b": {Paths: []string{globModuleB}},
+		},
+	}
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return cleanFacts(), diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+	rs, err := rules.New(cfg.ForRules())
+	if err != nil {
+		t.Fatalf("rules.New: %v", err)
+	}
+	now := time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC)
+	freshHash := labels.HashItems([]string{pathFileA + "\x00" + pathFileBAPIService + "\x00imports"})
+
+	run := func(lbls []labels.Label) (diagnostic.Diagnostic, []byte) {
+		t.Helper()
+		d, runErr := engine.Run(ctx, engine.RunInput{
+			Mode:        engine.Mode{Full: true, Advisory: true},
+			Scope:       scope.Scope{Root: "."},
+			Classify:    cfg.ForClassify(),
+			Staleness:   config.StalenessConfig{},
+			Waivers:     config.WaiverSet{},
+			Extractors:  []ports.Extractor{ex},
+			Patterns:    ports.NopPatternProvider{},
+			Resolver:    ports.NopSymbolResolver{},
+			PatternCfg:  config.PatternConfig{},
+			Rules:       rs,
+			Metrics:     metrics.New(config.Config{Version: 1}),
+			Accepted:    baseline.Baseline{},
+			BaseMetrics: nil,
+			Labels:      lbls,
+			Signals:     signal.RunSignals{},
+			Now:         now,
+		})
+		if runErr != nil {
+			t.Fatalf("Run: %v", runErr)
+		}
+		raw, mErr := json.Marshal(d)
+		if mErr != nil {
+			t.Fatalf("marshal: %v", mErr)
+		}
+		return d, raw
+	}
+
+	llmLabel := []labels.Label{{
+		From: "a", To: "b", Strength: strengthModel,
+		EvidenceHash: freshHash, Status: labels.StatusApproved,
+		Provenance: labels.ProvenanceLLM, Confidence: labels.ConfidenceMedium,
+	}}
+
+	labeled, firstRaw := run(llmLabel)
+	_, secondRaw := run(llmLabel)
+	if !bytes.Equal(firstRaw, secondRaw) {
+		t.Error("two full runs with a committed llm label differ — gate determinism broken")
+	}
+
+	ce := labeled.ClassifiedEdges
+	if ce == nil {
+		t.Fatal("classified_edges missing")
+	}
+	if ce.LabeledLLM != 1 {
+		t.Errorf("labeled_llm = %d, want 1 (fill attributed to the semantic layer)", ce.LabeledLLM)
+	}
+	if ce.Abstained != 0 {
+		t.Errorf("abstained = %d, want 0 (llm label filled the only unknown cell)", ce.Abstained)
+	}
+	if ce.Scored < 1 {
+		t.Errorf("scored = %d, want >= 1", ce.Scored)
+	}
+
+	// Labels removed → the abstain returns.
+	bare, _ := run(nil)
+	if bare.ClassifiedEdges == nil {
+		t.Fatal("classified_edges missing on bare run")
+	}
+	if bare.ClassifiedEdges.LabeledLLM != 0 {
+		t.Errorf("labeled_llm = %d, want 0 without labels", bare.ClassifiedEdges.LabeledLLM)
+	}
+	if bare.ClassifiedEdges.Abstained != 1 {
+		t.Errorf("abstained = %d, want 1 (abstain returns when the label is deleted)", bare.ClassifiedEdges.Abstained)
+	}
 }
 
 // langPyTest / kindLazy are factored out so the dynamic-import test stays under
@@ -1746,7 +1943,7 @@ func TestRun_GoWorkspace_ModuleMapRebuild(t *testing.T) {
 		Edges: []graph.Edge{
 			{
 				From: "file:" + fileSvc, To: "file:lib/util.go",
-				Kind: graph.EdgeKindImports, Language: "go", Confidence: "high",
+				Kind: graph.EdgeKindImports, Language: "go", Confidence: confidenceHigh,
 			},
 		},
 		GoModules: []graph.GoModule{
@@ -1796,6 +1993,81 @@ func TestRun_GoWorkspace_ModuleMapRebuild(t *testing.T) {
 	if got != modPathSvc {
 		// Before the fix the stale ModuleMap returned "" and the fallback was "svc".
 		t.Errorf("DynamicImports[0].Module = %q, want %q (rebuilt ModuleMap must resolve auto-registered workspace member)", got, modPathSvc)
+	}
+}
+
+func TestRun_GoWorkspace_StalePinnedLabelUsesAugmentedModuleMap(t *testing.T) {
+	const (
+		modPathSvc = "example.com/svc"
+		modPathLib = "example.com/lib"
+		fileSvc    = "svc/main.go"
+		fileLib    = "lib/util.go"
+	)
+	workspaceFacts := graph.Facts{
+		Language: "go",
+		Nodes: []graph.Node{
+			{Kind: graph.NodeKindFile, Path: fileSvc},
+			{Kind: graph.NodeKindFile, Path: fileLib},
+		},
+		Edges: []graph.Edge{
+			{
+				From: "file:" + fileSvc, To: "file:" + fileLib,
+				Kind: graph.EdgeKindImports, Language: "go", Confidence: confidenceHigh, StrengthHint: strengthFunctional,
+			},
+		},
+		GoModules: []graph.GoModule{
+			{Path: modPathSvc, RelDir: "svc"},
+			{Path: modPathLib, RelDir: "lib"},
+		},
+	}
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return "go" },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return workspaceFacts, diagnostic.Coverage{Tool: "go", Status: "ok"}, nil
+		},
+	}
+	cfg := config.Config{Version: 1}
+	rs, err := rules.New(cfg.ForRules())
+	if err != nil {
+		t.Fatalf("rules.New: %v", err)
+	}
+	var captured signal.CollectedSignals
+	spy := &spyMetric{captured: &captured}
+	d, err := engine.Run(context.Background(), engine.RunInput{
+		Mode:       engine.Mode{Head: headRef, Advisory: true},
+		Scope:      scope.Scope{Root: "."},
+		Classify:   cfg.ForClassify(),
+		Staleness:  config.StalenessConfig{},
+		Waivers:    config.WaiverSet{},
+		Extractors: []ports.Extractor{ex},
+		Patterns:   ports.NopPatternProvider{},
+		Resolver:   ports.NopSymbolResolver{},
+		PatternCfg: config.PatternConfig{},
+		Rules:      rs,
+		Metrics:    []metrics.Metric{spy},
+		Accepted:   baseline.Baseline{},
+		Labels: []labels.Label{{
+			From: modPathSvc, To: modPathLib, Strength: strengthModel,
+			EvidenceHash: "deadbeef", Status: labels.StatusApproved,
+		}},
+		Now: time.Date(2026, 7, 4, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	key := "file:" + fileSvc + "\x00" + "file:" + fileLib + "\x00" + string(graph.EdgeKindImports)
+	if got := string(captured.Common.Classifications[key].Strength); got != strengthFunctional {
+		t.Errorf("stale synthetic-module label strength = %q, want existing hint %q", got, strengthFunctional)
+	}
+	found := false
+	for _, f := range d.Findings {
+		if f.RuleID == ruleLabelsStale && f.Edge.From.Module == modPathSvc && f.Edge.To.Module == modPathLib {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("labels/stale advisory missing for synthetic module pair; findings = %+v", d.Findings)
 	}
 }
 
@@ -2157,7 +2429,7 @@ func TestRun_BookExamples_Ch10(t *testing.T) {
 			// Find the bc/imbalanced_coupling advisory (there may be at most one for a single edge).
 			var adv *finding.Finding
 			for i := range d.Findings {
-				if d.Findings[i].RuleID == ruleIDBCImbalanced && d.Findings[i].Kind == kindAdvisory {
+				if d.Findings[i].RuleID == engine.RuleIDBCImbalanced && d.Findings[i].Kind == kindAdvisory {
 					adv = &d.Findings[i]
 					break
 				}

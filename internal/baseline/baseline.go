@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/status"
 )
@@ -31,11 +33,49 @@ type AcceptedFinding struct {
 	Severity string `json:"severity,omitempty"`
 }
 
+// ScoreSnapshot records the synthesised coupling_balance score at baseline
+// time, anchoring the coupling.gate.max_drop check on later runs. Written only
+// when the score was measured — an n/a (unmeasured) synthesis stores nothing,
+// so it can never anchor a phantom drop.
+type ScoreSnapshot struct {
+	CouplingBalance int `json:"coupling_balance"`
+	// Band is disclosure-only, for humans reading the baseline JSON — no code
+	// path reads it back (min_band gates on the current run's band).
+	Band string `json:"band"`
+	// ScoreVersion is the scorer formula version (coupling.ScoreVersion) the
+	// snapshot was computed under. Ordinal reassignment makes scores
+	// incomparable across versions, so CouplingScore refuses to anchor
+	// max_drop on a mismatched snapshot. Empty in baselines written before
+	// version tracking — treated as stale (re-baseline to re-anchor).
+	ScoreVersion string `json:"score_version,omitempty"`
+}
+
 // Baseline is the on-disk baseline file structure.
 type Baseline struct {
 	SchemaVersion string                    `json:"schema_version"`
 	Accepted      []AcceptedFinding         `json:"accepted"`
 	Metrics       diagnostic.MetricSnapshot `json:"metrics"`
+	// Score is the coupling_balance snapshot; omitted in baselines written
+	// before score tracking or while the score was unmeasured.
+	Score *ScoreSnapshot `json:"score,omitempty"`
+}
+
+// CouplingScore returns the stored coupling_balance value, or nil when the
+// baseline carries no score snapshot or the snapshot was computed under a
+// different scorer version — a cross-version drop is a methodology change,
+// not a regression, so it must never anchor coupling.gate.max_drop.
+func (b Baseline) CouplingScore() *int {
+	if b.Score == nil || b.Score.ScoreVersion != coupling.ScoreVersion {
+		return nil
+	}
+	return &b.Score.CouplingBalance
+}
+
+// ScoreVersionStale reports whether a score snapshot exists but was computed
+// under a different scorer version than the current binary. Callers use it to
+// disclose why max_drop was skipped instead of skipping silent.
+func (b Baseline) ScoreVersionStale() bool {
+	return b.Score != nil && b.Score.ScoreVersion != coupling.ScoreVersion
 }
 
 // HasFingerprint reports whether the given fingerprint exists in the baseline's
@@ -108,7 +148,24 @@ func Save(_ context.Context, path string, b Baseline) error {
 		return fmt.Errorf("baseline: marshal: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	// Temp-file + rename: a crash mid-write must not leave a truncated baseline
+	// that hard-fails every subsequent run's Load.
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".archfit-baseline-*")
+	if err != nil {
+		return fmt.Errorf("baseline: write %s: %w", path, err)
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("baseline: write %s: %w", path, err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("baseline: write %s: %w", path, err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("baseline: write %s: %w", path, err)
 	}
 

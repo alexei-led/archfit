@@ -13,22 +13,23 @@ import (
 
 // Node ID constants reused across multiple test cases.
 const (
-	nodeAFoo     = "file:services/a/foo.go"
-	nodeBBar     = "file:services/b/bar.go"
-	nodeCFoo     = "file:services/c/foo.go"
-	nodeABaz     = "file:services/a/baz.go"
-	nodeBQux     = "file:services/b/qux.go"
-	nodeBIntBar  = "file:services/b/internal/bar.go"
-	nodeBAPI     = "file:services/b/api.go"
-	nodeDIntY    = "file:services/d/internal/y.go"
-	nodeCFoo2    = "file:services/c/foo.go"
-	nodeInfraRep = "file:services/infra/repo.go"
-	nodeDomMod   = "file:services/domain/model.go"
-	nodeAppHnd   = "file:services/app/handler.go"
-	nodeAppSvc   = "file:services/app/service.go"
-	nodeDomA     = "file:services/domain/a.go"
-	nodeDomB     = "file:services/domain/b.go"
-	nodeExtFoo   = "file:external/foo.go"
+	nodeAFoo      = "file:services/a/foo.go"
+	nodeBBar      = "file:services/b/bar.go"
+	nodeCFoo      = "file:services/c/foo.go"
+	nodeABaz      = "file:services/a/baz.go"
+	nodeBQux      = "file:services/b/qux.go"
+	nodeBIntBar   = "file:services/b/internal/bar.go"
+	nodeBAPI      = "file:services/b/api.go"
+	nodeDIntY     = "file:services/d/internal/y.go"
+	nodeCFoo2     = "file:services/c/foo.go"
+	nodeInfraRep  = "file:services/infra/repo.go"
+	nodeDomMod    = "file:services/domain/model.go"
+	nodeAppHnd    = "file:services/app/handler.go"
+	nodeAppSvc    = "file:services/app/service.go"
+	nodeDomA      = "file:services/domain/a.go"
+	nodeDomB      = "file:services/domain/b.go"
+	nodeExtFoo    = "file:external/foo.go"
+	nodeDomainFoo = "file:domain/domain.go"
 )
 
 // Layer name constants.
@@ -47,6 +48,9 @@ const (
 	kindAdvisory            = "advisory"
 	gateWarn                = "warn"
 	ruleIDNoDep             = "no-dep"
+	ruleIDNoInternalAccess  = "no-internal-access"
+	typePublicAPIOnly       = "public_api_only"
+	typeInternalAPIAccess   = "internal_api_access"
 	globServicesA           = "services/a/**"
 	globServicesB           = "services/b/**"
 	// publicAPIMax / publicAPIChange test constants
@@ -64,6 +68,13 @@ const (
 	fileInfraRepo   = "infra/repo.go"
 	pathDomainGlob  = "domain/**"
 	pathInfraGlob   = "infra/**"
+	// cycle / new_cross_module_dependency test constants
+	typeCycle                    = "cycle"
+	typeNewCrossModuleDependency = "new_cross_module_dependency"
+	ruleIDCycle                  = "no-cycles"
+	ruleIDCrossModule            = "cross-module"
+	moduleA                      = "moduleA"
+	moduleB                      = "moduleB"
 )
 
 // ---------------------------------------------------------------------------
@@ -182,7 +193,7 @@ func TestForbiddenDependency(t *testing.T) {
 func TestPublicAPIOnly(t *testing.T) {
 	cfg := config.RuleConfig{
 		Rules: []config.RuleDef{
-			{ID: "no-internal-access", Type: "public_api_only"},
+			{ID: ruleIDNoInternalAccess, Type: typePublicAPIOnly},
 		},
 	}
 	ruleSet, err := rules.New(cfg)
@@ -239,8 +250,8 @@ func TestPublicAPIOnly(t *testing.T) {
 				t.Fatalf("Check: got %d findings, want %d", len(findings), tc.wantCount)
 			}
 			for _, f := range findings {
-				if f.RuleID != "no-internal-access" {
-					t.Errorf("finding.RuleID = %q, want %q", f.RuleID, "no-internal-access")
+				if f.RuleID != ruleIDNoInternalAccess {
+					t.Errorf("finding.RuleID = %q, want %q", f.RuleID, ruleIDNoInternalAccess)
 				}
 				if f.MatchedBy["edge_kind"] != "uses_internal" {
 					t.Errorf("matched_by.edge_kind = %q, want %q", f.MatchedBy["edge_kind"], "uses_internal")
@@ -260,6 +271,362 @@ func TestPublicAPIOnly(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPublicAPIOnly_ModuleMap covers V5: publicAPIOnly must not fire when the
+// module map says both endpoints of a uses_internal edge belong to the same
+// module (idiomatic self-access, e.g. domain importing domain/internal), but
+// must still fire on genuine cross-module internal access.
+func TestPublicAPIOnly_ModuleMap(t *testing.T) {
+	const moduleDomain = "domain"
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			moduleDomain: {Paths: []string{"domain/**"}},
+			moduleA:      {Paths: []string{"services/a/**"}},
+			moduleB:      {Paths: []string{"services/b/**"}},
+		},
+		Rules: []config.RuleDef{
+			{ID: ruleIDNoInternalAccess, Type: typePublicAPIOnly},
+		},
+	}
+	rc := cfg.ForRules()
+	ruleSet, err := rules.New(rc)
+	if err != nil {
+		t.Fatalf("New: unexpected error: %v", err)
+	}
+	r := ruleSet[0]
+	ev := rules.Evidence{}
+
+	t.Run("same_module_self_access_no_finding", func(t *testing.T) {
+		g := makeGraph([]graph.Edge{
+			{From: nodeDomainFoo, To: "file:domain/internal/helper.go", Kind: graph.EdgeKindUsesInternal},
+		})
+		findings := r.Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("same-module self-access: got %d findings, want 0: %+v", len(findings), findings)
+		}
+	})
+
+	t.Run("cross_module_internal_access_still_fires", func(t *testing.T) {
+		g := makeGraph([]graph.Edge{
+			{From: nodeAFoo, To: nodeBIntBar, Kind: graph.EdgeKindUsesInternal},
+		})
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("cross-module access: got %d findings, want 1", len(findings))
+		}
+		f := findings[0]
+		if !strings.Contains(f.Why, "Cross-module") {
+			t.Errorf("Why = %q, want it to mention Cross-module for a genuine cross-module edge", f.Why)
+		}
+		if !strings.Contains(f.Why, moduleA) || !strings.Contains(f.Why, moduleB) {
+			t.Errorf("Why = %q, want it to name both modules %q and %q", f.Why, moduleA, moduleB)
+		}
+	})
+
+	t.Run("unresolved_endpoint_why_does_not_claim_cross_module", func(t *testing.T) {
+		// Neither endpoint is covered by the module map — the rule can't tell
+		// same-module from cross-module, so it fires (module-blind fallback) but
+		// must not falsely claim "Cross-module" it cannot substantiate.
+		g := makeGraph([]graph.Edge{
+			{From: nodeCFoo, To: nodeDIntY, Kind: graph.EdgeKindUsesInternal},
+		})
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("unresolved endpoints: got %d findings, want 1", len(findings))
+		}
+		if strings.Contains(findings[0].Why, "Cross-module") {
+			t.Errorf("Why = %q, must not claim Cross-module when the module map can't confirm it", findings[0].Why)
+		}
+	})
+
+	t.Run("mixed_resolution_one_endpoint_unresolved_still_fires", func(t *testing.T) {
+		// fromPath resolves to "domain" but toPath is outside any configured
+		// module — sameModule requires BOTH endpoints resolved, so this must
+		// not be treated as same-module and must still fire.
+		g := makeGraph([]graph.Edge{
+			{From: nodeDomainFoo, To: "file:services/x/internal/other.go", Kind: graph.EdgeKindUsesInternal},
+		})
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("mixed resolution: got %d findings, want 1: %+v", len(findings), findings)
+		}
+	})
+}
+
+// TestInternalAPIAccess_ModuleMap mirrors TestPublicAPIOnly_ModuleMap for the
+// internal_api_access rule: same-module self-access must not fire (the V5
+// module-map skip applies to both uses_internal rules), cross-module and
+// module-blind edges still fire.
+func TestInternalAPIAccess_ModuleMap(t *testing.T) {
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			"domain": {Paths: []string{pathDomainGlob}},
+			moduleA:  {Paths: []string{globServicesA}},
+			moduleB:  {Paths: []string{globServicesB}},
+		},
+		Rules: []config.RuleDef{
+			{ID: ruleIDNoInternalAccess, Type: typeInternalAPIAccess},
+		},
+	}
+	ruleSet, err := rules.New(cfg.ForRules())
+	if err != nil {
+		t.Fatalf("New: unexpected error: %v", err)
+	}
+	r := ruleSet[0]
+	ev := rules.Evidence{}
+
+	tests := []struct {
+		name string
+		edge graph.Edge
+		want int
+	}{
+		{
+			name: "same_module_self_access_no_finding",
+			edge: graph.Edge{From: nodeDomainFoo, To: "file:domain/internal/helper.go", Kind: graph.EdgeKindUsesInternal},
+			want: 0,
+		},
+		{
+			name: "cross_module_internal_access_fires",
+			edge: graph.Edge{From: nodeAFoo, To: nodeBIntBar, Kind: graph.EdgeKindUsesInternal},
+			want: 1,
+		},
+		{
+			name: "unresolved_endpoints_module_blind_fallback_fires",
+			edge: graph.Edge{From: nodeCFoo, To: nodeDIntY, Kind: graph.EdgeKindUsesInternal},
+			want: 1,
+		},
+		{
+			// fromPath resolves to "domain" but toPath is outside any
+			// configured module — sameModule requires BOTH endpoints
+			// resolved, so this must still fire.
+			name: "mixed_resolution_one_endpoint_unresolved_fires",
+			edge: graph.Edge{From: nodeDomainFoo, To: "file:services/x/internal/other.go", Kind: graph.EdgeKindUsesInternal},
+			want: 1,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			findings := r.Check(makeGraph([]graph.Edge{tc.edge}), ev)
+			if len(findings) != tc.want {
+				t.Fatalf("got %d findings, want %d: %+v", len(findings), tc.want, findings)
+			}
+		})
+	}
+}
+
+// TestPublicAPIOnly_PerLanguage locks publicAPIOnly.Check's EdgeKind gating
+// only: Check never reads Edge.Language, so all three subtests below assert
+// the exact same thing — a plain EdgeKindImports edge produces no finding —
+// regardless of the language label attached to the edge. Per-language
+// differences in WHEN graph.EdgeKindUsesInternal actually gets assigned (Go
+// extractor: lexically, on any "/internal/" import path; TS/Python
+// extractors: only when a module declares an `internal:` glob
+// (matchesInternal); Rust extractor: never) live in the extractors, not in
+// this rule or in this test.
+func TestPublicAPIOnly_PerLanguage(t *testing.T) {
+	cfg := config.RuleConfig{
+		Rules: []config.RuleDef{
+			{ID: ruleIDNoInternalAccess, Type: typePublicAPIOnly},
+		},
+	}
+	ruleSet, err := rules.New(cfg)
+	if err != nil {
+		t.Fatalf("New: unexpected error: %v", err)
+	}
+	r := ruleSet[0]
+	ev := rules.Evidence{}
+
+	tests := []struct {
+		name     string
+		language string
+	}{
+		{name: "typescript", language: "typescript"},
+		{name: "python", language: "python"},
+		{name: "rust", language: "rust"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Plain import edge, as extractors emit when no internal: glob
+			// matches (TS/Python) or unconditionally (Rust never sets uses_internal).
+			g := makeGraph([]graph.Edge{
+				{From: nodeAFoo, To: nodeBIntBar, Kind: graph.EdgeKindImports, Language: tc.language},
+			})
+			findings := r.Check(g, ev)
+			if len(findings) != 0 {
+				t.Fatalf("%s import edge: got %d findings, want 0 (rule is inert without uses_internal): %+v", tc.language, len(findings), findings)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CycleRule
+// ---------------------------------------------------------------------------
+
+// newCycleRule builds a single cycleRule (wrapped in the gate default) for
+// the given gate string ("" = unset/default fail).
+func newCycleRule(t *testing.T, gate string) rules.Rule {
+	t.Helper()
+	cfg := config.RuleConfig{
+		Rules: []config.RuleDef{
+			{ID: ruleIDCycle, Type: typeCycle, Gate: gate},
+		},
+	}
+	ruleSet, err := rules.New(cfg)
+	if err != nil {
+		t.Fatalf("New: unexpected error: %v", err)
+	}
+	return ruleSet[0]
+}
+
+func TestCycleRule(t *testing.T) {
+	ev := rules.Evidence{}
+	// A -> B -> A: a 2-node strongly-connected component.
+	cyclicEdges := []graph.Edge{
+		{From: nodeAFoo, To: nodeBBar, Kind: graph.EdgeKindImports},
+		{From: nodeBBar, To: nodeAFoo, Kind: graph.EdgeKindImports},
+	}
+
+	t.Run("cycle_fires_one_finding", func(t *testing.T) {
+		r := newCycleRule(t, "")
+		findings := r.Check(makeGraph(cyclicEdges), ev)
+		if len(findings) != 1 {
+			t.Fatalf("got %d findings, want 1: %+v", len(findings), findings)
+		}
+		f := findings[0]
+		if f.RuleID != ruleIDCycle {
+			t.Errorf("RuleID = %q, want %q", f.RuleID, ruleIDCycle)
+		}
+		if f.Why == "" {
+			t.Error("finding.Why is empty")
+		}
+		if f.Constraint == "" {
+			t.Error("finding.Constraint is empty")
+		}
+	})
+
+	t.Run("no_cycle_no_finding", func(t *testing.T) {
+		r := newCycleRule(t, "")
+		g := makeGraph([]graph.Edge{{From: nodeAFoo, To: nodeBBar, Kind: graph.EdgeKindImports}})
+		findings := r.Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("acyclic graph: got %d findings, want 0: %+v", len(findings), findings)
+		}
+	})
+
+	t.Run("fingerprint_stable_across_checks", func(t *testing.T) {
+		r := newCycleRule(t, "")
+		g := makeGraph(cyclicEdges)
+		first := r.Check(g, ev)
+		second := r.Check(g, ev)
+		if len(first) != 1 || len(second) != 1 {
+			t.Fatalf("got %d and %d findings, want 1 and 1", len(first), len(second))
+		}
+		if first[0].ID != second[0].ID {
+			t.Errorf("finding ID not stable across Check calls: %q vs %q", first[0].ID, second[0].ID)
+		}
+	})
+
+	t.Run("gate_semantics", func(t *testing.T) {
+		t.Run("off_skips_finding", func(t *testing.T) {
+			r := newCycleRule(t, "off")
+			findings := r.Check(makeGraph(cyclicEdges), ev)
+			if len(findings) != 0 {
+				t.Fatalf("gate:off: got %d findings, want 0", len(findings))
+			}
+		})
+		t.Run("warn_produces_advisory", func(t *testing.T) {
+			r := newCycleRule(t, gateWarn)
+			findings := r.Check(makeGraph(cyclicEdges), ev)
+			if len(findings) != 1 {
+				t.Fatalf("gate:warn: got %d findings, want 1", len(findings))
+			}
+			if findings[0].Kind != kindAdvisory {
+				t.Errorf("gate:warn finding.Kind = %q, want advisory", findings[0].Kind)
+			}
+		})
+		t.Run("fail_produces_gate_finding", func(t *testing.T) {
+			r := newCycleRule(t, "fail")
+			findings := r.Check(makeGraph(cyclicEdges), ev)
+			if len(findings) != 1 {
+				t.Fatalf("gate:fail: got %d findings, want 1", len(findings))
+			}
+			if findings[0].Kind != kindGate {
+				t.Errorf("gate:fail finding.Kind = %q, want gate", findings[0].Kind)
+			}
+		})
+		t.Run("unset_gate_produces_gate_finding", func(t *testing.T) {
+			r := newCycleRule(t, "")
+			findings := r.Check(makeGraph(cyclicEdges), ev)
+			if len(findings) != 1 {
+				t.Fatalf("gate unset: got %d findings, want 1", len(findings))
+			}
+			if findings[0].Kind != kindGate {
+				t.Errorf("gate unset finding.Kind = %q, want gate", findings[0].Kind)
+			}
+		})
+	})
+}
+
+// ---------------------------------------------------------------------------
+// NewCrossModuleDependency
+// ---------------------------------------------------------------------------
+
+func TestCrossModuleDependency(t *testing.T) {
+	cfg := config.Config{
+		Version: 1,
+		Modules: map[string]config.ModuleDef{
+			moduleA: {Paths: []string{globServicesA}},
+			moduleB: {Paths: []string{globServicesB}},
+		},
+		Rules: []config.RuleDef{
+			{ID: ruleIDCrossModule, Type: typeNewCrossModuleDependency},
+		},
+	}
+	ruleSet, err := rules.New(cfg.ForRules())
+	if err != nil {
+		t.Fatalf("New: unexpected error: %v", err)
+	}
+	r := ruleSet[0]
+	ev := rules.Evidence{}
+
+	t.Run("cross_module_edge_fires", func(t *testing.T) {
+		g := makeGraph([]graph.Edge{{From: nodeAFoo, To: nodeBBar, Kind: graph.EdgeKindImports}})
+		findings := r.Check(g, ev)
+		if len(findings) != 1 {
+			t.Fatalf("got %d findings, want 1: %+v", len(findings), findings)
+		}
+		f := findings[0]
+		if f.MatchedBy["from_module"] != moduleA || f.MatchedBy["to_module"] != moduleB {
+			t.Errorf("matched_by = %+v, want from_module=%s to_module=%s", f.MatchedBy, moduleA, moduleB)
+		}
+		if f.Why == "" {
+			t.Error("finding.Why is empty")
+		}
+	})
+
+	t.Run("same_module_edge_does_not_fire", func(t *testing.T) {
+		g := makeGraph([]graph.Edge{{From: nodeAFoo, To: nodeABaz, Kind: graph.EdgeKindImports}})
+		findings := r.Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("same-module edge: got %d findings, want 0: %+v", len(findings), findings)
+		}
+	})
+
+	t.Run("unresolved_endpoint_is_skipped", func(t *testing.T) {
+		// Neither endpoint is covered by the module map. Unlike sameModule's
+		// module-blind fallback (which fires when it can't confirm same-module),
+		// newCrossModuleDependency requires BOTH endpoints resolved and skips
+		// the edge entirely when either is unowned.
+		g := makeGraph([]graph.Edge{{From: nodeCFoo, To: nodeDIntY, Kind: graph.EdgeKindImports}})
+		findings := r.Check(g, ev)
+		if len(findings) != 0 {
+			t.Fatalf("unresolved endpoint: got %d findings, want 0 (skipped, not module-blind fallback): %+v", len(findings), findings)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -389,6 +756,60 @@ func TestNew_UnknownTypeError(t *testing.T) {
 	}
 }
 
+func TestNew_ForbiddenDependencyRequiresFromTo(t *testing.T) {
+	cases := []struct {
+		name    string
+		from    string
+		to      string
+		wantErr bool
+	}{
+		{"both set", pathDomainGlob, "infra/**", false},
+		{"empty from", "", "infra/**", true},
+		{"empty to", pathDomainGlob, "", true},
+		{"both empty", "", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.RuleConfig{
+				Rules: []config.RuleDef{
+					{ID: "fd", Type: "forbidden_dependency", From: tc.from, To: tc.to},
+				},
+			}
+			_, err := rules.New(cfg)
+			if tc.wantErr && err == nil {
+				t.Fatal("New: got nil error, want error for empty from/to glob")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("New: unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestNew_MalformedGlobError pins glob validation at load time: a malformed
+// from/to pattern makes doublestar.Match error (discarded in Check), so
+// without this the rule would load clean and silently fire zero findings.
+func TestNew_MalformedGlobError(t *testing.T) {
+	const badGlob = "internal/[" // unclosed character class: doublestar.ErrBadPattern
+	cases := []struct {
+		name string
+		def  config.RuleDef
+	}{
+		{"forbidden_dependency bad from", config.RuleDef{ID: "fd", Type: typeForbiddenDependency, From: badGlob, To: pathInfraGlob}},
+		{"forbidden_dependency bad to", config.RuleDef{ID: "fd", Type: typeForbiddenDependency, From: pathDomainGlob, To: badGlob}},
+		{"public_api_only bad from", config.RuleDef{ID: "pao", Type: "public_api_only", From: badGlob}},
+		{"internal_api_access bad to", config.RuleDef{ID: "iaa", Type: "internal_api_access", To: badGlob}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{tc.def}})
+			if err == nil {
+				t.Fatal("New: got nil error, want error for malformed glob")
+			}
+		})
+	}
+}
+
 func TestNew_EmptyRules(t *testing.T) {
 	ruleSet, err := rules.New(config.RuleConfig{})
 	if err != nil {
@@ -515,6 +936,22 @@ func makePublicAPIMaxConfig(ceiling int, gate string) config.RuleConfig {
 	}.ForRules()
 }
 
+// assertLocationFiles checks that locs carries exactly the given files, in
+// order — agent_tasks files[] trusts finding.Locations, so a rule that only
+// ever sets Edge.From/To.Path to the bare module name must populate real
+// Locations instead.
+func assertLocationFiles(t *testing.T, locs []graph.Location, wantFiles ...string) {
+	t.Helper()
+	if len(locs) != len(wantFiles) {
+		t.Fatalf("locations = %+v, want files %v", locs, wantFiles)
+	}
+	for i, want := range wantFiles {
+		if locs[i].File != want {
+			t.Errorf("locations[%d].File = %q, want %q", i, locs[i].File, want)
+		}
+	}
+}
+
 func TestPublicAPIMax(t *testing.T) {
 	// SyntaxFacts used across subtests: domain has 3 exported, infra has 1 exported.
 	allFacts := make([]diagnostic.SyntaxFact, 0, 5)
@@ -570,6 +1007,9 @@ func TestPublicAPIMax(t *testing.T) {
 		if f.Constraint == "" {
 			t.Error("Constraint is empty")
 		}
+		// Locations must carry the real declaring files, never the bare
+		// module name — agent_tasks files[] trusts this list blindly.
+		assertLocationFiles(t, f.Locations, fileDomainA, fileDomainB)
 	})
 
 	t.Run("per_module_scoping_both_over", func(t *testing.T) {
@@ -854,6 +1294,7 @@ func TestPublicAPIChange(t *testing.T) {
 		if f.MatchedBy["file"] != fileDomainA {
 			t.Errorf("MatchedBy[file]=%q, want %q", f.MatchedBy["file"], fileDomainA)
 		}
+		assertLocationFiles(t, f.Locations, fileDomainA)
 	})
 
 	t.Run("stable_fingerprint_across_runs", func(t *testing.T) {
@@ -986,6 +1427,7 @@ func TestPublicAPITypeLeak(t *testing.T) {
 		if f.Severity != finding.SeverityMedium {
 			t.Errorf("Severity=%v, want Medium", f.Severity)
 		}
+		assertLocationFiles(t, f.Locations, fileDomain)
 	})
 
 	t.Run("first_party_type_no_finding", func(t *testing.T) {

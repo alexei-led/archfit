@@ -2,6 +2,8 @@ package scip
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -9,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -31,9 +34,13 @@ const (
 	indexerRust   = "rust-analyzer"
 	flagOutput    = "--output"
 	langRust      = "rust"
+	langPy        = "python"
+	langTS        = "typescript"
 	toolCargo     = "cargo"
 
-	nodeModulesDir = "node_modules"
+	nodeModulesDir    = "node_modules"
+	manifestPkgJSON   = "package.json"
+	manifestPyproject = "pyproject.toml"
 
 	// Absent-coverage reasons: why semantic strength is unavailable and the
 	// actionable enable step. Static strings so a double-run stays byte-stable.
@@ -181,9 +188,25 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 	// scip-typescript resolves imports through node_modules; without installed
 	// deps it indexes nothing useful, so surface the fix instead of silently
 	// returning empty (the codegraph baseline: indexer present, deps absent).
-	if lang == "typescript" && !dirExists(filepath.Join(root, nodeModulesDir)) {
+	if lang == langTS && !dirExists(filepath.Join(root, nodeModulesDir)) {
 		absent.Reason = reasonTSNoNodeModules
 		return ro, absent, false
+	}
+
+	// Fact-cache lookup: the reader output is the durable fact. Placed AFTER
+	// the environment checks above so a degraded toolchain reports identically
+	// warm and cold. Key "" ⇒ cache off or key material underivable. The
+	// returned Coverage matches the miss path's success return (the partial
+	// template — callers construct their own final Coverage from ro).
+	key := a.cacheKey(ctx, root, indexer, pkg, lang)
+	if key != "" {
+		if blob, hit := a.Cache.Get(toolName, key); hit {
+			var ce scipCacheEntry
+			if json.Unmarshal(blob, &ce) == nil && ce.Indexer == indexer {
+				return pipelineResult{raw: ce.Raw, indexer: indexer},
+					diagnostic.Coverage{Version: indexer, Status: diagnostic.StatusPartial}, true
+			}
+		}
 	}
 
 	timedOut := diagnostic.Coverage{Version: indexer, Status: diagnostic.StatusTimedOut, Reason: reasonTimedOut}
@@ -251,7 +274,97 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		return ro, partial, false
 	}
 
+	// Cache the reader output — only a usable index (symbols or edges present,
+	// no reader error): an empty index usually means an indexer/environment
+	// failure, and caching it would pin the degradation (fact-cache.md D3).
+	// Timed-out and non-zero-exit runs returned above and are never cached.
+	if key != "" && cacheableSCIP(rdOut.Stdout) {
+		if blob, merr := json.Marshal(scipCacheEntry{Indexer: indexer, Raw: rdOut.Stdout}); merr == nil {
+			a.Cache.Put(toolName, key, blob)
+		}
+	}
+
 	return pipelineResult{raw: rdOut.Stdout, indexer: indexer}, partial, true
+}
+
+// scipCacheEntry is the stored fact-cache envelope: the reader JSON plus the
+// indexer that produced it (echoed into Coverage.Version on a hit).
+type scipCacheEntry struct {
+	Indexer string `json:"indexer"`
+	Raw     []byte `json:"raw"`
+}
+
+// cacheableSCIP reports whether the reader output is a usable fact worth
+// caching: it parses, reports no error, and indexed something.
+func cacheableSCIP(stdout []byte) bool {
+	var out readerOutput
+	if json.Unmarshal(stdout, &out) != nil || out.Error != "" {
+		return false
+	}
+	return len(out.Symbols) > 0 || len(out.Edges) > 0
+}
+
+// scipLangInputs maps the detected language to its input scope for the
+// fact-cache key: source extensions plus resolution-affecting manifests.
+// The indexers resolve symbols against installed dependencies (node_modules,
+// site-packages), so lockfiles stand in for that environment — a
+// lockfile-only bump must invalidate (over-hash, never under-hash).
+var scipLangInputs = map[string]struct {
+	exts      []string
+	basenames []string
+}{
+	"go": {[]string{".go"}, []string{"go.mod", "go.sum"}},
+	langTS: {[]string{".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}, []string{
+		manifestPkgJSON, "tsconfig.json", "tsconfig.base.json",
+		"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb",
+	}},
+	langPy:   {[]string{".py"}, []string{manifestPyproject, "setup.py", "setup.cfg", "uv.lock", "requirements.txt"}},
+	langRust: {[]string{".rs"}, []string{"Cargo.toml", "Cargo.lock"}},
+}
+
+// cacheKey derives the fact-cache key for one index+read pass, or "" when the
+// cache is off or key material cannot be derived (never an error). Key
+// inputs: indexer name+version probe, the reader/proto sources (editing
+// scip_reader.py must invalidate), the package/lang the reader filtered on,
+// the scan root, and the content hash of the detected language's source tree.
+func (a *Adapter) cacheKey(ctx context.Context, root, indexer, pkg, lang string) string {
+	if a.Cache == nil {
+		return ""
+	}
+	in, ok := scipLangInputs[lang]
+	if !ok {
+		return ""
+	}
+	readerSum := sha256.Sum256(scipReaderSrc)
+	protoSum := sha256.Sum256(scipProtoSrc)
+	cfgHash, err := factcache.HashJSON(struct {
+		Root, Pkg, Lang, Reader, Proto string
+	}{root, pkg, lang, hex.EncodeToString(readerSum[:]), hex.EncodeToString(protoSum[:])})
+	if err != nil {
+		return ""
+	}
+	files := factcache.ListInputs(root, factcache.MatchExts(in.exts, in.basenames), nil)
+	treeHash, err := factcache.HashTree(root, files)
+	if err != nil {
+		return ""
+	}
+	return factcache.Key(toolName, indexer+"\x00"+a.indexerVersion(ctx, indexer), cfgHash, treeHash)
+}
+
+// indexerVersion probes `<indexer> --version`. Best-effort: "" on any failure
+// (some indexers may not support the flag; the indexer NAME is always in the
+// key, so a probe gap only weakens upgrade invalidation, never correctness of
+// content keying).
+func (a *Adapter) indexerVersion(ctx context.Context, indexer string) string {
+	out, err := a.runner.Run(ctx, toolrun.ToolCmd{
+		Name:    indexer,
+		Args:    []string{"--version"},
+		Timeout: 30 * time.Second,
+	})
+	if err != nil || out.ExitCode != 0 {
+		return ""
+	}
+	return strings.TrimSpace(string(out.Stdout))
 }
 
 // parseReaderEdges parses scip_reader.py JSON into a strength map keyed by
@@ -284,10 +397,10 @@ func (e errReader) Error() string { return "scip reader: " + string(e) }
 // Returns a non-nil err only when a cargo metadata timeout fires (inner cap or
 // outer ctx), so the caller can surface StatusTimedOut rather than StatusAbsent.
 func (a *Adapter) detectIndexer(ctx context.Context, root string) (indexer, pkg, lang string, ok bool, err error) {
-	if fileExists(filepath.Join(root, "pyproject.toml")) || fileExists(filepath.Join(root, "setup.py")) {
+	if fileExists(filepath.Join(root, manifestPyproject)) || fileExists(filepath.Join(root, "setup.py")) {
 		if _, found := a.runner.Detect(ctx, indexerPython); found {
 			if p := detectPyPackage(root); p != "" {
-				return indexerPython, p, "python", true, nil
+				return indexerPython, p, langPy, true, nil
 			}
 		}
 	}
@@ -298,10 +411,10 @@ func (a *Adapter) detectIndexer(ctx context.Context, root string) (indexer, pkg,
 			}
 		}
 	}
-	if fileExists(filepath.Join(root, "package.json")) {
+	if fileExists(filepath.Join(root, manifestPkgJSON)) {
 		if _, found := a.runner.Detect(ctx, indexerTS); found {
 			if n := npmPackageName(root); n != "" {
-				return indexerTS, n, "typescript", true, nil
+				return indexerTS, n, langTS, true, nil
 			}
 		}
 	}
@@ -431,7 +544,7 @@ func cargoPackageName(root string) string {
 
 // npmPackageName reads the "name" field from package.json.
 func npmPackageName(root string) string {
-	data, err := os.ReadFile(filepath.Join(root, "package.json")) // #nosec G304 -- root is the repository root already chosen by discovery
+	data, err := os.ReadFile(filepath.Join(root, manifestPkgJSON)) // #nosec G304 -- root is the repository root already chosen by discovery
 	if err != nil {
 		return ""
 	}
@@ -444,10 +557,10 @@ func npmPackageName(root string) string {
 	return pkg.Name
 }
 
-// detectPyPackage returns the first top-level Python package directory name found
-// at root or root/src (matching initcfg's discovery).
+// detectPyPackage returns the first top-level Python package directory name found.
+// For src-layout projects, root/src wins over top-level stray packages.
 func detectPyPackage(root string) string {
-	for _, dir := range []string{root, filepath.Join(root, pySrcDir)} {
+	for _, dir := range []string{filepath.Join(root, pySrcDir), root} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
@@ -480,7 +593,7 @@ func dirExists(path string) bool {
 // detected. A TS project with no installed deps is the dominant, most common
 // blocker (the codegraph baseline); otherwise a generic install-an-indexer hint.
 func scipAbsentReason(root string) string {
-	if fileExists(filepath.Join(root, "package.json")) && !dirExists(filepath.Join(root, nodeModulesDir)) {
+	if fileExists(filepath.Join(root, manifestPkgJSON)) && !dirExists(filepath.Join(root, nodeModulesDir)) {
 		return reasonTSNoNodeModules
 	}
 	return reasonScipNoIndexer

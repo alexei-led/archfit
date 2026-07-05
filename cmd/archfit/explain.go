@@ -21,7 +21,7 @@ type ExplainCmd struct {
 	Root        string `short:"r" help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
 	Fingerprint string `arg:"" help:"Finding fingerprint prefix."`
 	LLM         bool   `name:"llm" help:"Append an LLM narrative (off-gate; needs ai configured)."`
-	NoCache     bool   `name:"no-cache" help:"Bypass the LLM response cache."`
+	NoCache     bool   `name:"no-cache" help:"Bypass archfit caches: extractor facts (and LLM responses with --llm)."`
 }
 
 func (c *ExplainCmd) Run(deps *appDeps) error {
@@ -40,7 +40,8 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 
 	// Same pipeline as check/scan: explain must resolve the finding from the
 	// same evidence (providers, change history) that produced it.
-	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, engine.Mode{Full: true, Advisory: true}, existingBase)
+	deps.noCache = c.NoCache
+	diag, _, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, engine.Mode{Full: true, Advisory: true}, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}

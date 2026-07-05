@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
+	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/ports"
 )
@@ -27,6 +28,68 @@ func TestBCRiskClause_DistanceAware(t *testing.T) {
 	}
 	if !strings.Contains(got, "not a distributed monolith") {
 		t.Errorf("low-distance critical: %q, want 'not a distributed monolith' framing", got)
+	}
+
+	// High severity splits on the same distance test: "across a boundary" only
+	// when the distance really is high; a low-distance high edge names its
+	// cascade as contained instead.
+	mkHigh := func(d coupling.Distance) coupling.Classification {
+		return coupling.Classification{Distance: d, Severity: coupling.SeverityHigh}
+	}
+	if got := bcRiskClause(mkHigh(coupling.DistanceCrossDeployUnit)); !strings.Contains(got, "across a boundary") {
+		t.Errorf("high-distance high: %q, want 'across a boundary' framing", got)
+	}
+	gotHigh := bcRiskClause(mkHigh(coupling.DistanceCrossModuleSameOwner))
+	if strings.Contains(gotHigh, "across a boundary") {
+		t.Errorf("low-distance high: %q, must NOT claim a boundary crossing", gotHigh)
+	}
+	if !strings.Contains(gotHigh, "at low distance") {
+		t.Errorf("low-distance high: %q, want 'at low distance' framing", gotHigh)
+	}
+
+	// Below high severity the clause is distance-agnostic by design.
+	if got := bcRiskClause(coupling.Classification{Severity: coupling.SeverityMedium}); !strings.Contains(got, "unbalanced coupling") {
+		t.Errorf("medium severity: %q, want the generic unbalanced-coupling clause", got)
+	}
+}
+
+// TestBCRiskClause_NamesActualStrength guards against the hardcoded-narrative bug:
+// bcRiskClause used to assert "high-strength coupling" for every critical edge
+// regardless of matched_by.strength (verified wrong on ccgram: 15/16 critical
+// edges were actually StrengthModel, ordinal 3/10 — low). The clause must name
+// the real strength level and must never claim "high-strength" for a low-ordinal
+// strength.
+func TestBCRiskClause_NamesActualStrength(t *testing.T) {
+	tests := []struct {
+		strength coupling.Strength
+		wantWord string
+	}{
+		{coupling.StrengthContract, "contract"},
+		{coupling.StrengthModel, "model"},
+		{coupling.StrengthFunctional, "functional"},
+		{coupling.StrengthSymmetric, "symmetric"},
+		{coupling.StrengthIntrusive, "intrusive"},
+	}
+	for _, dist := range []coupling.Distance{
+		coupling.DistanceCrossModuleSameOwner,
+		coupling.DistanceCrossModuleDiffOwner,
+		coupling.DistanceCrossDeployUnit,
+	} {
+		for _, tc := range tests {
+			cl := coupling.Classification{
+				Strength:   tc.strength,
+				Distance:   dist,
+				Volatility: coupling.VolatilityHigh,
+				Severity:   coupling.SeverityCritical,
+			}
+			got := bcRiskClause(cl)
+			if !strings.Contains(got, tc.wantWord) {
+				t.Errorf("strength=%s distance=%s: clause %q does not name actual strength %q", tc.strength, dist, got, tc.wantWord)
+			}
+			if tc.strength != coupling.StrengthIntrusive && tc.strength != coupling.StrengthSymmetric && strings.Contains(got, "high-strength") {
+				t.Errorf("strength=%s distance=%s: clause %q falsely claims high-strength", tc.strength, dist, got)
+			}
+		}
 	}
 }
 
@@ -274,6 +337,147 @@ func TestBuildClassifiedEdgeSummary(t *testing.T) {
 		}
 		if internalCrossTotal != 2 {
 			t.Errorf("ByStrength total = %d, want 2 (internal cross-boundary only)", internalCrossTotal)
+		}
+	})
+}
+
+// TestBuildClassifiedEdgeSummary_DeclaredExternal pins the D=10 rung's summary
+// arithmetic: declared external edges enter the scored distribution and count
+// in DeclaredExternal, while the undeclared remainder keeps the External exclusion.
+func TestBuildClassifiedEdgeSummary_DeclaredExternal(t *testing.T) {
+	key := func(from, to, kind string) string { return from + "\x00" + to + "\x00" + kind }
+	// 1 internal scored edge, 1 declared-external scored edge (D=10),
+	// 1 declared-external abstained edge (unknown strength — abstain-not-fake
+	// holds at the new rung), 1 undeclared external (excluded as before).
+	idx := coupling.Index{
+		key("internal/a", "internal/b", "import"): {
+			Distance: coupling.DistanceCrossModuleSameOwner,
+			Strength: coupling.StrengthContract,
+			Score:    coupling.EdgeScore{Scored: true, Balance: 9, Band: coupling.SeverityNone},
+		},
+		key("internal/a", "github.com/aws/aws-sdk-go-v2/service/s3", "import"): {
+			Distance: coupling.DistanceExternal,
+			Strength: coupling.StrengthFunctional,
+			Score:    coupling.EdgeScore{Scored: true, Balance: 8, Band: coupling.SeverityLow},
+		},
+		key("internal/a", "github.com/aws/aws-sdk-go-v2/service/sqs", "import"): {
+			Distance: coupling.DistanceExternal,
+			Strength: coupling.StrengthUnknown,
+			Score:    coupling.EdgeScore{Scored: false},
+		},
+		key("internal/a", "fmt", "import"): {
+			Distance: coupling.DistanceUnknown,
+			Strength: coupling.StrengthFunctional,
+			Score:    coupling.EdgeScore{Scored: false},
+		},
+	}
+
+	s := buildClassifiedEdgeSummary(idx)
+
+	if s.DeclaredExternal != 2 {
+		t.Errorf("DeclaredExternal = %d, want 2", s.DeclaredExternal)
+	}
+	if s.External != 1 {
+		t.Errorf("External = %d, want 1 (undeclared only)", s.External)
+	}
+	// Declared external edges enter the Scored/Abstained distribution.
+	if s.Scored != 2 {
+		t.Errorf("Scored = %d, want 2 (internal + declared external)", s.Scored)
+	}
+	if s.Abstained != 1 {
+		t.Errorf("Abstained = %d, want 1 (declared external with unknown strength)", s.Abstained)
+	}
+	if wantMean := (9.0 + 8.0) / 2.0; s.MeanBalance != wantMean {
+		t.Errorf("MeanBalance = %v, want %v", s.MeanBalance, wantMean)
+	}
+	if s.ByDistance[string(coupling.DistanceExternal)] != 2 {
+		t.Errorf("ByDistance[declared_external] = %d, want 2", s.ByDistance[string(coupling.DistanceExternal)])
+	}
+}
+
+// TestBuildClassifiedEdgeSummary_LabeledLLM verifies the labeled_llm bucket
+// counts cross-boundary edges whose strength came from an approved
+// llm-provenance label — and only those (same-module edges are excluded with
+// the rest of the same-module distribution).
+func TestBuildClassifiedEdgeSummary_LabeledLLM(t *testing.T) {
+	key := func(from, to, kind string) string { return from + "\x00" + to + "\x00" + kind }
+	idx := coupling.Index{
+		key("internal/a", "internal/b", "import"): {
+			Distance:               coupling.DistanceCrossModuleSameOwner,
+			Strength:               coupling.StrengthModel,
+			StrengthFromLLM:        true,
+			StrengthFromNonHighLLM: true,
+			Score:                  coupling.EdgeScore{Scored: true, Balance: 7, Band: coupling.SeverityNone},
+		},
+		key("internal/a", "internal/c", "import"): {
+			Distance: coupling.DistanceCrossModuleSameOwner,
+			Strength: coupling.StrengthContract,
+			Score:    coupling.EdgeScore{Scored: true, Balance: 9, Band: coupling.SeverityNone},
+		},
+		key("internal/a", "internal/a/sub", "import"): {
+			Distance:        coupling.DistanceSameModule,
+			Strength:        coupling.StrengthModel,
+			StrengthFromLLM: true, // must not count: same-module edges stay out of the distribution
+			Score:           coupling.EdgeScore{Scored: true, Balance: 3, Band: coupling.SeverityNone},
+		},
+	}
+
+	s := buildClassifiedEdgeSummary(idx)
+
+	if s.LabeledLLM != 1 {
+		t.Errorf("LabeledLLM = %d, want 1 (cross-boundary llm-filled edge only)", s.LabeledLLM)
+	}
+	if s.LLMLowConfidenceEdges != 1 {
+		t.Errorf("LLMLowConfidenceEdges = %d, want 1 (non-high-confidence applied llm fill)", s.LLMLowConfidenceEdges)
+	}
+	if s.Scored != 2 {
+		t.Errorf("Scored = %d, want 2", s.Scored)
+	}
+}
+
+// TestGroupEdgePaths pins the honest-edge-path contract for rolled-up BC
+// advisories: the (from, to) pair comes from whichever member owns the first
+// merged location; with no locations (TS edges carry none) or no owning
+// member, the representative's own pair is kept — a real member edge, never
+// an empty string that strips the finding's only path evidence.
+func TestGroupEdgePaths(t *testing.T) {
+	const (
+		fromA  = "a/x.go"
+		toDest = "shared/z.go"
+	)
+	member := func(from, to string, locs ...graph.Location) finding.Finding {
+		return finding.Finding{
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Path: from},
+				To:   finding.Endpoint{Path: to},
+			},
+			Locations: locs,
+		}
+	}
+	locA := graph.Location{File: fromA, Line: 3}
+	locB := graph.Location{File: "b/y.go", Line: 7}
+	m1 := member(fromA, toDest, locA)
+	m2 := member("b/y.go", toDest, locB)
+
+	t.Run("owner of locations[0] wins", func(t *testing.T) {
+		from, to := groupEdgePaths([]finding.Finding{m2, m1}, []graph.Location{locA, locB})
+		if from != fromA || to != toDest {
+			t.Errorf("(from, to) = (%q, %q), want m1's edge (%q, %q)", from, to, fromA, toDest)
+		}
+	})
+
+	t.Run("empty locations falls back to representative", func(t *testing.T) {
+		from, to := groupEdgePaths([]finding.Finding{m1, m2}, nil)
+		if from != fromA || to != toDest {
+			t.Errorf("(from, to) = (%q, %q), want representative m1's edge (%q, %q)", from, to, fromA, toDest)
+		}
+	})
+
+	t.Run("no member owning locations[0] falls back to representative", func(t *testing.T) {
+		orphan := graph.Location{File: "c/orphan.go", Line: 1}
+		from, to := groupEdgePaths([]finding.Finding{m1, m2}, []graph.Location{orphan})
+		if from != fromA || to != toDest {
+			t.Errorf("(from, to) = (%q, %q), want representative m1's edge (%q, %q)", from, to, fromA, toDest)
 		}
 	})
 }

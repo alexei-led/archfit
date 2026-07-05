@@ -14,7 +14,7 @@ import (
 
 // safeWriteConfig writes edited bytes to path using the strict write protocol:
 //  1. Write to a temp file in the same directory.
-//  2. Validate via config.Load.
+//  2. Validate via config.Load + validateConfigRules.
 //  3. Concurrency guard: if original != nil, re-read path and abort if changed;
 //     if original == nil (new file), abort if path now exists.
 //  4. Back up any existing file (non-clobbering).
@@ -43,8 +43,14 @@ func safeWriteConfig(ctx context.Context, deps *appDeps, path string, edited, or
 		return fmt.Errorf("safeWriteConfig: close temp: %w", err)
 	}
 
-	// Validate: the edited YAML must parse cleanly.
-	if _, err := config.Load(ctx, tmpName); err != nil {
+	// Validate: the edited YAML must parse cleanly and its rules block must
+	// construct — config.Load alone cannot check rule types (see
+	// validateConfigRules).
+	cfg, err := config.Load(ctx, tmpName)
+	if err != nil {
+		return fmt.Errorf("safeWriteConfig: validation failed: %w", err)
+	}
+	if err := validateConfigRules(cfg); err != nil {
 		return fmt.Errorf("safeWriteConfig: validation failed: %w", err)
 	}
 
@@ -71,6 +77,16 @@ func safeWriteConfig(ctx context.Context, deps *appDeps, path string, edited, or
 			return fmt.Errorf("safeWriteConfig: backup failed: %w", err)
 		}
 		_, _ = fmt.Fprintf(deps.Stdout, "backed up %s → %s\n", filepath.Base(path), filepath.Base(bakPath))
+	}
+
+	// Preserve the target's mode: CreateTemp makes 0600 files, which would
+	// silently narrow a shared config's permissions on every overwrite.
+	mode := os.FileMode(0o644)
+	if fi, statErr := os.Stat(path); statErr == nil {
+		mode = fi.Mode().Perm()
+	}
+	if err := os.Chmod(tmpName, mode); err != nil {
+		return fmt.Errorf("safeWriteConfig: chmod failed: %w", err)
 	}
 
 	// Atomic rename.

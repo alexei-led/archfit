@@ -6,17 +6,24 @@ behind the strength / distance / volatility vocabulary used throughout, read
 [Concepts](concepts.md) first.
 
 `archfit` measures **Balanced Coupling** (`coupling_balance`) plus a minimal set of
-complementary metrics. They split into two roles:
+complementary metrics. They split into three roles:
 
-- **Verdict-affecting (2):** `coupling_balance` (scored 0–10, the headline), and
-  `unbalanced_edge` (companion count).
-- **Report-only (4):** `cycle`, `blast_radius`, `encapsulation`, `coverage`. Band
-  `info`; surface facts for humans and agents, never change the verdict.
+- **Headline (1):** `coupling_balance` (scored 0–100, linearly rescaled from
+  the book's 1–10 per-edge balance). Report-only unless you
+  configure the opt-in [`coupling.gate`](configuration-reference.md#couplinggate)
+  block, which fails the build on a band floor or a score drop.
+- **Baseline-delta gated (4):** `unbalanced_edge`, `cycle`, `encapsulation`,
+  `coverage`. Each is compared against the committed baseline; a worsening
+  delta **fails the build by default** (`metrics.<name>.gate` unset = `fail`;
+  downgrade with `warn`, disable with `off`).
+- **Report-only (1):** `blast_radius`. Carries no delta and never changes the
+  verdict.
 
-No metric ever fails the build on its own. Only explicit **gate rules**
-(forbidden dependency, public-API-only, layer direction, cycle-as-fail, expired
-exception) produce a `fail`. Metrics inform; rules gate. This separation is
-deliberate — see [Concepts → How archfit operationalizes the model](concepts.md#how-archfit-operationalizes-the-model).
+A metric's **absolute value** never fails the build — only a _regression_
+against the baseline you accepted (or a tripped `coupling.gate`) does. Gate
+rules (forbidden dependency, public-API-only, layer direction, cycle-as-fail,
+expired exception) remain the only checks that fail on current structure alone.
+See [Concepts → How archfit operationalizes the model](concepts.md#how-archfit-operationalizes-the-model).
 
 ---
 
@@ -26,31 +33,39 @@ After all metrics run, the run gets one verdict
 (`internal/engine/engine.go`, `computeVerdict`):
 
 ```text
-fail  → any gate finding with status "new" or "expired_waiver"
-warn  → otherwise, any metric whose delta vs baseline is negative
+fail  → any gate finding with status "new" or "expired_waiver", or any metric
+        delta that worsens past its threshold with gate fail/unset
+warn  → otherwise, any worsening metric delta capped by gate: warn, or any
+        active gate:warn rule advisory
 pass  → otherwise
 ```
 
-Exit codes: `0` pass, `1` gate failed, `2` warnings/regressions (non-blocking by
-default; use `--report` to never exit non-zero on these), `3` tool/config error.
+"Worsens" is direction-aware: count metrics (`cycle`, `unbalanced_edge`) worsen
+upward (delta > `max_new`), ratio metrics (`encapsulation`, `coverage`) worsen
+downward (drop > `min_delta`). Per-metric `gate`/threshold knobs are documented
+in the [configuration reference](configuration-reference.md#metrics).
+
+Exit codes: `0` pass, `1` gate failed, `2` warnings/regressions, `3` tool/config
+error. Without `--gate`, `archfit analyze` is report-only and exits `0` on any
+verdict.
 
 ---
 
 ## Scoring model
 
-The verdict-affecting metrics produce a 0–10 value, a band, and a confidence.
+The scorecard dimension produces a 0–100 value, a band, and a confidence.
 
 ### Bands
 
-| Band          | Score    | Meaning                                                                                   |
-| ------------- | -------- | ----------------------------------------------------------------------------------------- |
-| `strong`      | 9.0–10.0 | Healthy.                                                                                  |
-| `serviceable` | 7.0–8.9  | Acceptable.                                                                               |
-| `mixed`       | 5.0–6.9  | Watch.                                                                                    |
-| `poor`        | 3.0–4.9  | Problem.                                                                                  |
-| `critical`    | 0.0–2.9  | Measured and bad.                                                                         |
-| `n/a`         | —        | No signal to measure. Not good, not bad — _no evidence_. Never conflated with `critical`. |
-| `info`        | —        | Report-only fact; asserts no quality verdict.                                             |
+| Band          | Score  | Meaning                                                                                   |
+| ------------- | ------ | ----------------------------------------------------------------------------------------- |
+| `strong`      | 90–100 | Healthy.                                                                                  |
+| `serviceable` | 70–89  | Acceptable.                                                                               |
+| `mixed`       | 50–69  | Watch.                                                                                    |
+| `poor`        | 30–49  | Problem.                                                                                  |
+| `critical`    | 0–29   | Measured and bad.                                                                         |
+| `n/a`         | —      | No signal to measure. Not good, not bad — _no evidence_. Never conflated with `critical`. |
+| `info`        | —      | Report-only fact; asserts no quality verdict.                                             |
 
 The `n/a` vs `critical` distinction is load-bearing. A repo that declares no
 public/internal API surface has nothing to score for encapsulation; that is
@@ -74,13 +89,26 @@ So a metric cannot claim `strong` on thin evidence. This is why low extraction
 coverage quietly pulls every dependent metric's ceiling down instead of letting
 the tool over-claim.
 
+Two inputs feed `coupling_balance`'s confidence specifically: the scored
+fraction of classified edges, and — for TypeScript — the dependency-cruiser
+unresolved-specifier ratio. A `dependency-cruiser` `partial` status whose
+unresolved-specifier ratio exceeds **10%** (`tsUnresolvedRatioCeiling`,
+`internal/score/score.go`) caps confidence to `medium`: unresolved specifiers
+(missing tsconfig path/baseUrl alias, uninstalled dependency) land in the
+`external` bucket, outside `coupling_balance`'s denominator, so a high-noise
+extraction would otherwise read as confidently measured. The same
+partial-coverage cap already applies to a Rust graph where `cargo-modules`
+failed on some crates. Confidence downgrades (provenance, coverage, per-language
+partial extraction) compose by taking the minimum band — they never stack.
+
 ### Deltas
 
 When a committed baseline exists (`.archfit-baseline.json`, written by `archfit
-baseline`), each scored metric is compared with that snapshot; a negative delta
-(the metric got worse) sets the run to `warn`. Report-only metrics carry no delta
-and never warn. The `--base <ref>` flag compares `coupling_balance` and metric
-scores against a git ref.
+baseline`), each metric is compared with that snapshot. A worsening delta —
+direction-aware, past the metric's threshold knob — sets the run to `fail`
+unless that metric's `gate` says `warn` or `off`. `blast_radius` carries no
+delta and never gates. The `--base <ref>` flag compares `coupling_balance` and
+metric scores against a git ref.
 
 ---
 
@@ -88,7 +116,7 @@ scores against a git ref.
 
 ### `coupling_balance` (headline metric)
 
-> **Scorer version:** `bc_score.v3` — Khononov Ch10 book formula.
+> **Scorer version:** `bc_score.v4` — Khononov Ch10 book formula.
 
 - **Represents:** how well the distribution of coupling across module boundaries
   respects the strength × distance × volatility balance rule. High score means
@@ -98,7 +126,18 @@ scores against a git ref.
   see [Concepts → The balance rule](concepts.md#the-balance-rule) for ordinals,
   abstain semantics, and confidence. `coupling.volatility_cascade: true` enables
   single-hop cascade (book Ch9).
-- **Affects verdict:** `warn` when `coupling_balance` drops vs baseline.
+- **Affects verdict:** only through the opt-in
+  [`coupling.gate`](configuration-reference.md#couplinggate) block — `min_band`
+  (band floor) and `max_drop` (points below the baselined score) fail the run.
+  No block ⇒ report-only. Band `n/a` never trips (abstain ≠ fail).
+- **Denominator:** cross-module edges only. Same-module edges score into the
+  report-only [`local_coupling`](#local_coupling) block and never enter this
+  metric. The evidence line also discloses volatility provenance —
+  `volatility provenance (modules): declared: N, inherited: M, cascade: K`
+  (plus `undeclared: U` when nonzero; JSON:
+  `classified_edges.volatility_provenance`) — so a repo whose volatility is
+  uniform because synthetic submodules inherited it reads as
+  uniform-by-inheritance, not as a measured fact.
 
 ### `unbalanced_edge`
 
@@ -115,17 +154,19 @@ scores against a git ref.
 - **Scored:** `0` qualifying edges → `strong`; any → `critical`. If intrusive
   cross-module candidates exist but none has known volatility → `n/a` (honest
   indeterminate, not a clean zero).
-- **Affects verdict:** `warn` when the count rises vs baseline. Can be promoted to
-  a hard gate by configuring `gate: fail` on the rule.
+- **Affects verdict:** a count rise past `max_new` vs baseline **fails by
+  default**; set `metrics.unbalanced_edge.gate: warn` (or `off`) to downgrade.
 - **Balanced Coupling:** the most direct encoding of the model — all three
   dimensions at their high settings.
 
 ---
 
-## Report-only metrics
+## Info-band metrics
 
-These always report band `info`. They never set a delta and never change the
-verdict.
+These always report band `info` — they assert no quality band on their own.
+`cycle`, `encapsulation`, and `coverage` still carry a baseline delta, and a
+worsening delta gates like any other metric (fail unless downgraded per metric);
+`blast_radius` carries no delta and never affects the verdict.
 
 ### `cycle`
 
@@ -133,7 +174,9 @@ verdict.
 - **Computed:** Tarjan strongly-connected components; each SCC of size > 1 is one
   cycle.
 - **Band:** always `info`. Confidence always `high` (cycles are a fact, not an
-  inference). The `cycle` rule with `gate: fail` makes new cycles a hard failure.
+  inference). A cycle-count rise vs baseline fails by default via the metric
+  delta (`metrics.cycle.gate`); the `cycle` rule with `gate: fail` makes new
+  cycles a hard failure.
 - **Balanced Coupling:** none — a graph-topology fact, not a strength/distance call.
 
 ### `blast_radius`
@@ -179,6 +222,35 @@ verdict.
 - **Band:** always `info`. Confidence from the unresolved ratio (≤5% → high,
   ≤20% → medium, else low). Low coverage caps the band of every metric that
   depends on the missing evidence.
+- **`partial` always carries a reason.** A tool-coverage record with
+  `status: partial` names the cause in its `reason` field (e.g. TypeScript's
+  unresolved-specifier count/ratio) and, for TS, `archfit analyze` also emits a
+  matching stderr warning — never a silent partial with no explanation. For
+  dependency-cruiser the record also carries `specifiers_seen` (total import
+  specifiers examined), the denominator of both the disclosed ratio and the
+  confidence cap — the two can never disagree.
+
+---
+
+## Report-only blocks
+
+### `local_coupling`
+
+- **Represents:** intra-module cohesion — the book's Ch10 "local complexity"
+  quadrant (low strength at low distance = low cohesion, the "ball of mud"
+  corner). One JSON entry per module that has same-module edges.
+- **Computed:** same-module edges score with the standard book formula at the
+  `same_module` distance rung. Per module: `scored_edges`, `abstained_edges`
+  (unknown strength — abstain-not-fake applies at this level too),
+  `complexity_edges` and `complexity_share_pct` (scored edges in the
+  local-complexity quadrant), `mean_balance`, and a capped, deterministic
+  `worst_offenders` sample with source locations.
+- **Fractal levels:** cross-module coupling and intra-module cohesion are
+  different abstraction levels, so they stay separate reported numbers —
+  same-module edges never enter `coupling_balance`'s denominator, and this
+  block asserts no band.
+- **Report-only by design:** never consumed by the verdict or any gate; a gate
+  path, if one is ever added, comes only after real-world shakedown data.
 
 ---
 
@@ -204,9 +276,10 @@ For the full severity table and the reasoning, see
 
 ## Rules reference
 
-Gate rules are the only mechanism that produces a `fail`. Metrics inform; rules
-gate. Rules with `gate: warn` are advisory (non-blocking); rules with `gate: fail`
-block the build. An unknown `type` value is a config error.
+Gate rules fail on current structure; metric deltas and `coupling.gate` fail on
+regression vs baseline (see [The verdict](#the-verdict)). Rules with `gate: warn`
+are advisory (non-blocking); rules with `gate: fail` block the build. An unknown
+`type` value is a config error.
 
 For the full rule list, default gates, and configuration syntax, see
 [Configuration reference → rules](configuration-reference.md#rules).
@@ -248,6 +321,7 @@ failure.
 | coupling_balance, unbalanced_edge, cycle, blast_radius, encapsulation, coverage | built-in extractors + `git`                       |
 | coupling_balance (strength refinement)                                          | SCIP index (`analyzers.scip.enabled: true`)       |
 | coupling_balance (clone → symmetric strength)                                   | clone detector (`analyzers.clones.enabled: true`) |
+| `bc/duplicated_knowledge` advisory                                              | clone detector (`analyzers.clones.enabled: true`) |
 | public_api_max, public_api_change, public_api_type_leak (rules)                 | `sg` (ast-grep); `analyzers.syntax.enabled: true` |
 
 The `llm` tool is used only by `archfit config enrich`, `archfit explain --llm`,
@@ -263,7 +337,7 @@ gate verdicts and metric values stay deterministic. See
 `archfit` deliberately omits some popular signals. Recording why is part of being
 honest about what the numbers mean.
 
-- **No composite architecture score.** A blended 0–100 score hides detected edges,
+- **No composite architecture score.** A blended multi-signal score hides detected edges,
   declared volatility, inferred distance, missing coverage, and accepted exceptions
   behind one figure. False precision is an anti-pattern. archfit reports
   `coupling_balance` as a band, lists every advisory edge, and lets the gate rules

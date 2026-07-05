@@ -18,6 +18,7 @@ const (
 	hintContract   = "contract"
 	hintModel      = "model"
 	hintFunctional = "functional"
+	hintDTO        = "dto"
 
 	pkgB = "pkg/b" // repo-relative path of the test helper package
 
@@ -213,8 +214,60 @@ func TestExtract_StrengthHint(t *testing.T) {
 		{"interface type → contract", "pkg/a/contract_cons.go", pkgB, graph.EdgeKindImports, hintContract},
 		// model_cons.go only returns b.Config{} (concrete TypeName, no field access) → model.
 		{"concrete type → model", "pkg/a/model_cons.go", pkgB, graph.EdgeKindImports, hintModel},
-		// max_cons.go uses b.Greeter (contract, rank 1) AND b.Hello() (functional, rank 3) → functional wins.
+		// const_cons.go only reads b.MaxRetries — pure data sharing (book Ch7) → model, not functional.
+		{"const reference → model", "pkg/a/const_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// var_cons.go only reads b.DefaultName — pure data sharing (book Ch7) → model, not functional.
+		{"var reference → model", "pkg/a/var_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// max_cons.go uses b.Greeter (contract, rank 1) AND b.Hello() (functional, rank 4) → functional wins.
 		{"max rank wins", "pkg/a/max_cons.go", pkgB, graph.EdgeKindImports, hintFunctional},
+		// dto_cons.go only references b.UserDTO — exported struct, only exported
+		// data fields, empty method set → dto (the book's canonical Contract when
+		// the edge crosses a declared public boundary; classify resolves which).
+		{"pure-data struct → dto", "pkg/a/dto_cons.go", pkgB, graph.EdgeKindImports, hintDTO},
+		// entity_cons.go references b.Entity — a struct WITH a method → model.
+		{"struct with method → model", "pkg/a/entity_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// partial_cons.go references b.Partial — unexported field → model.
+		{"struct with unexported field → model", "pkg/a/partial_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// callback_cons.go references b.CallbackHolder — func-typed field → model.
+		{"struct with func field → model", "pkg/a/callback_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// dto_rank_cons.go uses b.Greeter (contract, rank 1) AND b.UserDTO (dto, rank 2) → dto wins.
+		{"dto outranks contract", "pkg/a/dto_rank_cons.go", pkgB, graph.EdgeKindImports, hintDTO},
+		// funcvar_cons.go calls b.DefaultHandler() — a func-typed var is stored behavior → functional.
+		{"func-valued var → functional", "pkg/a/funcvar_cons.go", pkgB, graph.EdgeKindImports, hintFunctional},
+		// callback_fire_cons.go invokes h.OnDone() — a func-typed field call outranks the holder's model hint.
+		{"func-typed field invocation → functional", "pkg/a/callback_fire_cons.go", pkgB, graph.EdgeKindImports, hintFunctional},
+		// dto_read_cons.go reads u.ID via a plain selector — the DTO field stays dto.
+		{"dto field selector read → dto", "pkg/a/dto_read_cons.go", pkgB, graph.EdgeKindImports, hintDTO},
+		// var_set_cons.go WRITES b.DefaultName — reads and writes classify alike → model.
+		{"var write → model", "pkg/a/var_set_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// chan_cons.go references b.ChanHolder — chan-typed field disqualifies the DTO upgrade → model.
+		{"struct with chan field → model", "pkg/a/chan_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// iface_cons.go references b.IfaceHolder — interface-typed field disqualifies the DTO upgrade → model.
+		{"struct with interface field → model", "pkg/a/iface_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// marker_cons.go references b.Marker — zero-field structs carry no data model → model, not dto.
+		{"zero-field marker struct → model", "pkg/a/marker_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// composite_carrier_cons.go references b.SliceCallbackHolder — a []func()
+		// field smuggles behavior through a composite element type → model, not dto.
+		{"struct with []func field → model", "pkg/a/composite_carrier_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// chanmap_carrier_cons.go references b.ChanMapHolder — map[string]chan int → model.
+		{"struct with map-of-chan field → model", "pkg/a/chanmap_carrier_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// ptriface_carrier_cons.go references b.PtrIfaceHolder — *Greeter (pointer to interface) → model.
+		{"struct with pointer-to-interface field → model", "pkg/a/ptriface_carrier_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// nested_carrier_cons.go references b.NestedHolder — nested struct holds a func field → model.
+		{"struct with nested behavior carrier → model", "pkg/a/nested_carrier_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// linked_dto_cons.go references b.LinkedNode — a self-referential pure-data
+		// struct: the *LinkedNode cycle is not a behavior carrier → dto.
+		{"self-referential pure data → dto", "pkg/a/linked_dto_cons.go", pkgB, graph.EdgeKindImports, hintDTO},
+		// generic_cons.go references b.GenericBox[int] — TypesInfo.Uses resolves the
+		// generic type identifier to the origin TypeName, whose field type is the bare
+		// type parameter T; T.Underlying() is its constraint interface (any), so
+		// containsBehaviorCarrier's *types.Interface case rejects the DTO upgrade →
+		// model, not dto, for every instantiation.
+		{"generic type-param field → model", "pkg/a/generic_cons.go", pkgB, graph.EdgeKindImports, hintModel},
+		// external_cons.go calls strings.Repeat — an EXTERNAL (stdlib) target must
+		// carry a real type-info hint so a declared external_systems seam can score
+		// at D=10 instead of abstaining (no manual hint injection anywhere here).
+		{"external stdlib function call → functional", "pkg/a/external_cons.go", "strings", graph.EdgeKindImports, hintFunctional},
 	}
 
 	for _, tc := range cases {

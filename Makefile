@@ -39,6 +39,7 @@ build: ## compile the archfit binary
 .PHONY: test
 test: ## run all tests with race detector and coverage
 	go test -race -coverprofile=coverage.out ./...
+	python3 internal/extract/scip/scip_reader_test.py
 
 ## test-fast: run tests with race detector, skipping slow subprocess integration tests (-short)
 .PHONY: test-fast
@@ -153,6 +154,16 @@ build-calibrate: ## compile the calibrate dev tool binary to .bin/calibrate
 .PHONY: calibrate
 calibrate: build-calibrate ## compare scorers on archfit; emits calibration-report.json (informational only)
 	@bash scripts/calibrate.sh .
+
+## corpus-attrib: coupling_balance attribution table over the four Wave-4 repos (informational dev tool)
+.PHONY: corpus-attrib
+corpus-attrib: build ## print repo → score/band/scored/abstained/external attribution table
+	@sh scripts/corpus-attrib.sh
+
+## bench-gate: cold vs warm fact-cache gate timing on this repo (reported number, not a CI assert)
+.PHONY: bench-gate
+bench-gate: build ## time analyze --gate --full cold (fact cache cleared) then warm
+	@sh scripts/bench-gate.sh
 
 ## clean: remove build artefacts
 .PHONY: clean

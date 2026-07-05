@@ -113,14 +113,14 @@ func TestCollectAdvisories_ClonebackedSymmetricFinding_CitesRealLocation(t *test
 	var locs []graph.Location
 	var found bool
 	for _, f := range findings {
-		if f.RuleID != ruleIDBCImbalanced {
+		if f.RuleID != RuleIDBCImbalanced {
 			continue
 		}
 		locs = f.Locations
 		found = true
 	}
 	if !found {
-		t.Fatalf("no %s finding produced: %+v", ruleIDBCImbalanced, findings)
+		t.Fatalf("no %s finding produced: %+v", RuleIDBCImbalanced, findings)
 	}
 
 	if !containsLocation(locs, baselineLoc) {
@@ -130,6 +130,32 @@ func TestCollectAdvisories_ClonebackedSymmetricFinding_CitesRealLocation(t *test
 		if !containsLocation(locs, want) {
 			t.Errorf("Locations = %v; missing real clone-derived location %v (regressed to baseline-only)", locs, want)
 		}
+	}
+}
+
+// TestVolatilityClause covers every Volatility value, including the frozen
+// and undeclared cases the advisory prose has to distinguish from a genuinely
+// unresolved (unknown) target.
+func TestVolatilityClause(t *testing.T) {
+	wantUnknown := "a target of unknown volatility"
+	tests := []struct {
+		v    coupling.Volatility
+		want string
+	}{
+		{coupling.VolatilityHigh, "a volatile target"},
+		{coupling.VolatilityMedium, "a moderately volatile target"},
+		{coupling.VolatilityLow, "a low-volatility target"},
+		{coupling.VolatilityFrozen, "a frozen target"},
+		{coupling.VolatilityUndeclared, "a target of undeclared volatility"},
+		{coupling.VolatilityUnknown, wantUnknown},
+		{coupling.Volatility("bogus"), wantUnknown}, // default branch: any other unrecognized value
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.v), func(t *testing.T) {
+			if got := volatilityClause(tt.v); got != tt.want {
+				t.Errorf("volatilityClause(%q) = %q, want %q", tt.v, got, tt.want)
+			}
+		})
 	}
 }
 

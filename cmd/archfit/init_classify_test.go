@@ -10,7 +10,11 @@ import (
 	"github.com/alexei-led/archfit/internal/llm"
 )
 
-const testLayerDomain = "domain"
+const (
+	testLayerDomain = "domain"
+	testMod0        = "mod0"
+	testMod0Path    = "internal/mod0/**"
+)
 
 // fakeClassifyProvider returns canned responses per call, tracking call count.
 type fakeClassifyProvider struct {
@@ -80,6 +84,9 @@ func TestClassifyModules_ValidResponse(t *testing.T) {
 		}
 		if ann.Layer != testLayerDomain {
 			t.Errorf("%s: layer = %q, want %s", t2.Name, ann.Layer, testLayerDomain)
+		}
+		if ann.Rationale == "" {
+			t.Errorf("%s: rationale is empty", t2.Name)
 		}
 	}
 	if p.calls != 1 {
@@ -172,13 +179,45 @@ func TestClassifyModules_OutOfSetLayerCarried(t *testing.T) {
 
 func TestClassifyModules_MalformedBodyError(t *testing.T) {
 	t.Parallel()
-	targets := []initcfg.ClassifyTarget{{Name: "mod0", Paths: []string{"internal/mod0/**"}}}
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
 	layers := []string{testLayerDomain}
 	p := &fakeClassifyProvider{responses: []string{"not a JSON array at all"}}
 
 	_, err := classifyModules(context.Background(), p, targets, layers)
 	if err == nil {
 		t.Error("malformed body must return an error")
+	}
+}
+
+func TestClassifyModules_MissingRationaleError(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":" "}]`
+	p := &fakeClassifyProvider{responses: []string{resp}}
+
+	_, err := classifyModules(context.Background(), p, targets, layers)
+	if err == nil {
+		t.Fatal("missing rationale must return an error")
+	}
+	if !strings.Contains(err.Error(), "missing rationale") {
+		t.Fatalf("error = %v, want missing rationale", err)
+	}
+}
+
+func TestClassifyUserPrompt_IncludesRepoEvidenceAndPublicAPI(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{
+		Name:   "billing",
+		Paths:  []string{"internal/billing/**"},
+		Public: []string{"internal/billing/api.go"},
+		Files:  []string{"api.go"},
+	}}
+	got := classifyUserPrompt(targets, []string{testLayerDomain}, []string{"README.md: Billing"})
+	for _, want := range []string{"public API globs: internal/billing/api.go", "Repository evidence:", "README.md: Billing"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, got)
+		}
 	}
 }
 
@@ -209,7 +248,7 @@ func TestClassifyModules_BatchBoundary(t *testing.T) {
 
 func TestClassifyModules_JSONFenceTolerated(t *testing.T) {
 	t.Parallel()
-	targets := []initcfg.ClassifyTarget{{Name: "mod0", Paths: []string{"internal/mod0/**"}}}
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
 	layers := []string{testLayerDomain}
 	// Wrap valid JSON in markdown fences — should still parse.
 	resp := "```json\n" + validResponse(targets) + "\n```"

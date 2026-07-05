@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/score"
 )
@@ -28,7 +29,12 @@ func (r *JSONRenderer) Format() string {
 // the 0-100 score, its driver, or any delta; only text/markdown carried them (F5).
 type envelope struct {
 	diagnostic.Diagnostic
-	Score           score.Scorecard  `json:"score"`
+	Score score.Scorecard `json:"score"`
+	// ScoreVersion pins the BC score formula version (ordinals, severity
+	// mapping). Consumers key on it: scores are not comparable across
+	// versions. Always present — per-finding matched_by.score_version only
+	// appears when a run produces BC advisories.
+	ScoreVersion    string           `json:"score_version"`
 	CouplingBalance *score.Dimension `json:"coupling_balance,omitempty"`
 	// ScoreDelta is the scorecard delta vs --base. Named distinctly from the
 	// embedded Diagnostic's `delta` (findings lifecycle) to avoid a key collision.
@@ -56,6 +62,7 @@ func (r *JSONRenderer) Render(d diagnostic.Diagnostic, sc score.Scorecard, base 
 	env := envelope{
 		Diagnostic:      d,
 		Score:           sc,
+		ScoreVersion:    coupling.ScoreVersion,
 		CouplingBalance: dimensionByName(sc, score.DimCouplingBalance),
 	}
 	if base != nil {

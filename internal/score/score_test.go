@@ -217,9 +217,18 @@ func TestCouplingBalance_EmptyEdges(t *testing.T) {
 	})
 
 	t.Run("degenerate graph + no edges → n/a (single-module: no cross-module coupling to measure)", func(t *testing.T) {
-		got := couplingBalance(nil, metricIndex{}, nil)
+		degen := metricIndex{metricBlastRadius: metric(metricBlastRadius, 0, "n/a", "low")}
+		got := couplingBalance(nil, degen, nil)
 		if got.Band != BandNA {
 			t.Errorf("band = %q, want n/a (degenerate graph is unmeasured, not a fabricated 50)", got.Band)
+		}
+	})
+
+	t.Run("blast_radius disabled by config is NOT degeneracy — scored summary still measures", func(t *testing.T) {
+		summary := &diagnostic.ClassifiedEdgeSummary{Scored: 10, MeanBalance: 8.2}
+		got := couplingBalance(nil, metricIndex{}, summary)
+		if got.Band == BandNA {
+			t.Fatal("band = n/a with 10 scored edges; disabling metrics.blast_radius must not defuse coupling_balance")
 		}
 	})
 
@@ -394,30 +403,41 @@ func TestCouplingBalance_LLMProvenance_LowersConfidence(t *testing.T) {
 	cases := []struct {
 		name        string
 		scored      int
+		llmEdges    int
 		llmApproved int
 		wantConf    Confidence
 	}{
 		{
-			name:        "no llm labels → confidence unaffected (high)",
-			scored:      10,
-			llmApproved: 0,
-			wantConf:    ConfidenceHigh,
+			name:     "no llm labels → confidence unaffected (high)",
+			scored:   10,
+			llmEdges: 0,
+			wantConf: ConfidenceHigh,
 		},
 		{
-			name:        "llm labels <20% → confidence unaffected",
+			name:        "single applied non-high llm edge lowers confidence",
 			scored:      10,
+			llmEdges:    1,
 			llmApproved: 1,
-			wantConf:    ConfidenceHigh,
-		},
-		{
-			name:        "llm labels ≥20% → confidence lowered by one band (high→medium)",
-			scored:      10,
-			llmApproved: 2,
 			wantConf:    ConfidenceMedium,
 		},
 		{
-			name:        "llm labels majority → confidence lowered by one band (high→medium)",
+			name:        "one label can apply to enough edges to lower confidence",
 			scored:      10,
+			llmEdges:    2,
+			llmApproved: 1,
+			wantConf:    ConfidenceMedium,
+		},
+		{
+			name:        "raw labels without applied edges do not lower confidence",
+			scored:      10,
+			llmEdges:    0,
+			llmApproved: 2,
+			wantConf:    ConfidenceHigh,
+		},
+		{
+			name:        "llm-filled edge majority → confidence lowered by one band (high→medium)",
+			scored:      10,
+			llmEdges:    8,
 			llmApproved: 8,
 			wantConf:    ConfidenceMedium,
 		},
@@ -426,17 +446,18 @@ func TestCouplingBalance_LLMProvenance_LowersConfidence(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			sum := &diagnostic.ClassifiedEdgeSummary{
-				Total:       tc.scored,
-				Scored:      tc.scored,
-				Abstained:   0,
-				MeanBalance: 9.0,
-				BySeverity:  map[string]int{sevLow: tc.scored},
-				LLMApproved: tc.llmApproved,
+				Total:                 tc.scored,
+				Scored:                tc.scored,
+				Abstained:             0,
+				MeanBalance:           9.0,
+				BySeverity:            map[string]int{sevLow: tc.scored},
+				LLMApproved:           tc.llmApproved,
+				LLMLowConfidenceEdges: tc.llmEdges,
 			}
 			got := couplingBalance(nil, nonDegen, sum)
 			if got.Confidence != tc.wantConf {
-				t.Errorf("confidence = %q, want %q (llmApproved=%d, scored=%d)",
-					got.Confidence, tc.wantConf, tc.llmApproved, tc.scored)
+				t.Errorf("confidence = %q, want %q (llmEdges=%d, llmApproved=%d, scored=%d)",
+					got.Confidence, tc.wantConf, tc.llmEdges, tc.llmApproved, tc.scored)
 			}
 		})
 	}
@@ -459,6 +480,132 @@ func TestCouplingBalance_LLMProvenance_EvidenceString(t *testing.T) {
 	if !found {
 		t.Errorf("expected llm-provenance mention in evidence, got: %v", got.Evidence)
 	}
+}
+
+// TestCouplingBalance_LabeledLLM_EvidenceString verifies the labeled_llm
+// bucket is disclosed on the evidence line (attributing the scored-fraction
+// increase to the semantic layer) and stays silent when zero.
+func TestCouplingBalance_LabeledLLM_EvidenceString(t *testing.T) {
+	nonDegen := nonDegenMetricIndex()
+
+	hasLine := func(evidence []string) bool {
+		for _, ev := range evidence {
+			if strings.Contains(ev, "llm-labeled edges: 4") {
+				return true
+			}
+		}
+		return false
+	}
+
+	sum := &diagnostic.ClassifiedEdgeSummary{
+		Total: 10, Scored: 10, MeanBalance: 9.0,
+		BySeverity: map[string]int{sevLow: 10},
+		LabeledLLM: 4,
+	}
+	if got := couplingBalance(nil, nonDegen, sum); !hasLine(got.Evidence) {
+		t.Errorf("expected llm-labeled edge count in evidence, got: %v", got.Evidence)
+	}
+
+	sum.LabeledLLM = 0
+	got := couplingBalance(nil, nonDegen, sum)
+	for _, ev := range got.Evidence {
+		if strings.Contains(ev, "llm-labeled edges") {
+			t.Errorf("labeled_llm evidence line must be omitted when zero, got: %v", got.Evidence)
+		}
+	}
+}
+
+func TestCouplingBalance_DeclaredExternalEvidence(t *testing.T) {
+	nonDegen := nonDegenMetricIndex()
+
+	t.Run("declared-external count surfaced in evidence when present", func(t *testing.T) {
+		sum := &diagnostic.ClassifiedEdgeSummary{
+			Total:            10,
+			Scored:           10,
+			MeanBalance:      9.0,
+			BySeverity:       map[string]int{sevLow: 10},
+			DeclaredExternal: 4,
+		}
+		got := couplingBalance(nil, nonDegen, sum)
+
+		found := false
+		for _, ev := range got.Evidence {
+			if strings.Contains(ev, "4 declared external-system edges scored at D=10 (external_systems)") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected declared-external evidence line, got: %v", got.Evidence)
+		}
+	})
+
+	t.Run("no declared-external mention when count is zero", func(t *testing.T) {
+		sum := &diagnostic.ClassifiedEdgeSummary{
+			Total:       10,
+			Scored:      10,
+			MeanBalance: 9.0,
+			BySeverity:  map[string]int{sevLow: 10},
+		}
+		got := couplingBalance(nil, nonDegen, sum)
+
+		for _, ev := range got.Evidence {
+			if strings.Contains(ev, "declared external-system edges") {
+				t.Errorf("did not expect declared-external evidence line, got: %v", got.Evidence)
+			}
+		}
+	})
+}
+
+// TestCouplingBalance_VolatilityProvenanceEvidence: the evidence string must
+// disclose module volatility provenance counts (declared/inherited/cascade) so
+// a uniform-volatility repo is visibly uniform-by-inheritance, not measured.
+func TestCouplingBalance_VolatilityProvenanceEvidence(t *testing.T) {
+	nonDegen := nonDegenMetricIndex()
+	base := func() *diagnostic.ClassifiedEdgeSummary {
+		return &diagnostic.ClassifiedEdgeSummary{
+			Total: 10, Scored: 10, MeanBalance: 9.0,
+			BySeverity: map[string]int{sevLow: 10},
+		}
+	}
+
+	t.Run("provenance counts disclosed in evidence", func(t *testing.T) {
+		sum := base()
+		sum.VolatilityProvenance = &diagnostic.VolatilityProvenance{Declared: 2, Inherited: 179}
+		got := couplingBalance(nil, nonDegen, sum)
+		found := false
+		for _, ev := range got.Evidence {
+			if strings.Contains(ev, "declared: 2, inherited: 179, cascade: 0") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected volatility provenance evidence line, got: %v", got.Evidence)
+		}
+	})
+
+	t.Run("undeclared remainder disclosed when nonzero", func(t *testing.T) {
+		sum := base()
+		sum.VolatilityProvenance = &diagnostic.VolatilityProvenance{Declared: 1, Cascade: 3, Undeclared: 4}
+		got := couplingBalance(nil, nonDegen, sum)
+		found := false
+		for _, ev := range got.Evidence {
+			if strings.Contains(ev, "declared: 1, inherited: 0, cascade: 3, undeclared: 4") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected undeclared count in provenance evidence, got: %v", got.Evidence)
+		}
+	})
+
+	t.Run("no provenance line when counts absent", func(t *testing.T) {
+		got := couplingBalance(nil, nonDegen, base())
+		for _, ev := range got.Evidence {
+			if strings.Contains(ev, "volatility provenance") {
+				t.Errorf("did not expect provenance line, got: %v", got.Evidence)
+			}
+		}
+	})
 }
 
 func TestCouplingBalance_ExternalEdgesExcluded(t *testing.T) {
@@ -562,4 +709,93 @@ func TestCouplingBalance_ExternalEdgesExcluded(t *testing.T) {
 			t.Errorf("confidence = %q, want high (external edges must not count in scored fraction)", got.Confidence)
 		}
 	})
+}
+
+func TestSynthesize_TSUnresolvedPartial_LowersConfidence(t *testing.T) {
+	diagWithTSCoverage := func(unresolved, specifiersSeen int, status string) diagnostic.Diagnostic {
+		d := diagnostic.New()
+		d.Metrics = []diagnostic.MetricResult{metric("blast_radius", 3, "info", "high")}
+		d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
+			Total: 50, Scored: 50, Abstained: 0,
+			MeanBalance: 9.0,
+			BySeverity:  map[string]int{sevLow: 50},
+		}
+		d.ToolCoverage = []diagnostic.Coverage{
+			{Tool: toolDepCruiser, Status: status, FilesSeen: 10, SpecifiersSeen: specifiersSeen, Unresolved: unresolved},
+		}
+		return d
+	}
+
+	t.Run("unresolved ratio above ceiling caps confidence to medium", func(t *testing.T) {
+		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 100, diagnostic.StatusPartial))) // 20%
+		if cb.Confidence != ConfidenceMedium {
+			t.Errorf("confidence = %q, want medium", cb.Confidence)
+		}
+		found := false
+		for _, ev := range cb.Evidence {
+			if strings.Contains(ev, "unresolved-specifier ratio") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected unresolved-ratio mention in evidence, got: %v", cb.Evidence)
+		}
+	})
+
+	// Also the denominator regression guard: 5/100 specifiers is 5% (under the
+	// ceiling) while 5 over the 10 FilesSeen would be 50% — a FilesSeen
+	// denominator would cap here and contradict the disclosed specifier ratio.
+	t.Run("unresolved ratio within ceiling leaves confidence high", func(t *testing.T) {
+		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(5, 100, diagnostic.StatusPartial))) // 5%
+		if cb.Confidence != ConfidenceHigh {
+			t.Errorf("confidence = %q, want high", cb.Confidence)
+		}
+	})
+
+	// Boundary: 10/100 = 0.10, exactly the ceiling. tsUnresolvedPartial's
+	// comparison (score.go) is strict >, so a ratio equal to the ceiling does
+	// not trip the cap — this pins that the boundary itself is inside the
+	// tolerated range, not just "below" it.
+	t.Run("unresolved ratio exactly at the ceiling leaves confidence high", func(t *testing.T) {
+		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(10, 100, diagnostic.StatusPartial))) // 10%
+		if cb.Confidence != ConfidenceHigh {
+			t.Errorf("confidence = %q, want high (ratio == ceiling must not trip the strict > cap)", cb.Confidence)
+		}
+	})
+
+	t.Run("ok status never triggers the cap regardless of ratio", func(t *testing.T) {
+		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 100, diagnostic.StatusOK)))
+		if cb.Confidence != ConfidenceHigh {
+			t.Errorf("confidence = %q, want high (status ok, not partial)", cb.Confidence)
+		}
+	})
+
+	t.Run("specifiers untracked (0) abstains rather than cap on a proxy ratio", func(t *testing.T) {
+		cb := couplingBalanceDim(t, Synthesize(diagWithTSCoverage(20, 0, diagnostic.StatusPartial)))
+		if cb.Confidence != ConfidenceHigh {
+			t.Errorf("confidence = %q, want high (SpecifiersSeen 0 = untracked, no cap)", cb.Confidence)
+		}
+	})
+}
+
+// TestSynthesize_ConfidenceCapsNeverStack pins the minimum-band rule: two
+// simultaneous cap triggers (cargo-modules partial + TS unresolved ratio over
+// ceiling) land at medium — one step down — never stacked to low.
+func TestSynthesize_ConfidenceCapsNeverStack(t *testing.T) {
+	d := diagnostic.New()
+	d.Metrics = []diagnostic.MetricResult{metric("blast_radius", 3, "info", "high")}
+	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
+		Total: 50, Scored: 50, Abstained: 0,
+		MeanBalance: 9.0,
+		BySeverity:  map[string]int{sevLow: 50},
+	}
+	d.ToolCoverage = []diagnostic.Coverage{
+		{Tool: "cargo-modules", Status: diagnostic.StatusPartial},
+		{Tool: toolDepCruiser, Status: diagnostic.StatusPartial, FilesSeen: 10, SpecifiersSeen: 100, Unresolved: 20},
+	}
+
+	cb := couplingBalanceDim(t, Synthesize(d))
+	if cb.Confidence != ConfidenceMedium {
+		t.Errorf("confidence = %q, want medium (caps are a floor, not cumulative downgrades)", cb.Confidence)
+	}
 }

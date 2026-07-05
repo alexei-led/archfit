@@ -25,7 +25,10 @@ accepts any crate in that set.
 
 Strength (BC, strongest->weakest): intrusive > functional > model > contract.
   private (underscore) -> intrusive; Protocol/ABC/interface -> contract;
-  method/function -> functional; concrete type -> model; else -> functional.
+  method/function -> functional; concrete type -> model; rust term
+  (const/static/field — pure data sharing, book Ch7) -> model; else -> functional.
+  TS/Py terms stay functional: they can bind callables (arrow-function exports,
+  module-level partials), so pure data is not provable from the suffix there.
 Edge strength = strongest among its cross-module references.
 
 Usage: uv run scip_reader.py --proto scip.proto --index index.scip
@@ -94,9 +97,11 @@ def _rust_module_key(symbol: str) -> str | None:
     We map it to "<crate>::<mod_path>" matching cargo-modules' DOT node IDs:
       crate/api/Server# → mycrate::api
       crate/           → mycrate        (crate root)
-      main().          → None           (binary entry — not a module node)
+      main().          → mycrate        (crate-root item — binary entry point)
 
-    Returns None when the descriptor does not resolve to a module node.
+    Returns None only when the symbol fails to parse into crate/descriptor
+    fields (see _fields); every crate-root item, including "main().", resolves
+    to the bare crate name rather than None.
     """
     f = _fields(symbol)
     if f is None:
@@ -181,7 +186,29 @@ def _suffix(symbol: str) -> str:
         return "method"
     if s.endswith("#"):
         return "type"
-    return "term"
+    if s.endswith("."):
+        return "term"
+    return "other"  # namespace "/", macro "!", meta ":", parameter ")" …
+
+
+def _classify(symbol: str, lang: str, contract: set[str]) -> str:
+    """Map one symbol occurrence to a BC integration strength.
+
+    Rust terms (`X.` — const/static/field) are provably pure data sharing
+    (book Ch7) -> model. scip-typescript/scip-python terms can bind callables,
+    and scip-go never overrides the Go extractor's compiler-grade type-info
+    hints, so those languages keep the conservative "functional".
+    """
+    if _is_private(symbol):
+        return "intrusive"
+    if symbol in contract:
+        return "contract"
+    sfx = _suffix(symbol)
+    if sfx == "type":
+        return "model"
+    if sfx == "term" and lang == "rust":
+        return "model"
+    return "functional"
 
 
 def _doc_from(relative_path: str, lang: str, doc_defs: "set[str] | None" = None) -> str | None:
@@ -369,13 +396,6 @@ def main() -> None:
                 if _is_internal(r.symbol, root):
                     contract.add(r.symbol)
 
-    def classify(symbol: str) -> str:
-        if _is_private(symbol):
-            return "intrusive"
-        if symbol in contract:
-            return "contract"
-        return "functional" if _suffix(symbol) != "type" else "model"
-
     edges: dict[tuple[str, str], str] = {}
     refs = {k: 0 for k in RANK}
 
@@ -404,7 +424,7 @@ def main() -> None:
             b = _to_path(occ.symbol, lang)
             if b is None or b == a:
                 continue
-            st = classify(occ.symbol)
+            st = _classify(occ.symbol, lang, contract)
             refs[st] += 1
             key = (a, b)
             if key not in edges or RANK[st] > RANK[edges[key]]:

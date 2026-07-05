@@ -5,8 +5,13 @@ Covers the per-language reconciliation that silently rots: container/path extrac
 and private/interface detection for scip-python, scip-go, scip-typescript symbols.
 Does not need protobuf (only the pure helpers are exercised).
 """
+import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
+import textwrap
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import scip_reader as r  # noqa: E402
@@ -26,7 +31,14 @@ EXT_PY = "scip-python python python-stdlib 3.12 typing/Protocol#"
 RUST_TYPE = "rust-analyzer cargo mycrate 0.1.0 crate/api/Server#"         # module: mycrate::api
 RUST_FN   = "rust-analyzer cargo mycrate 0.1.0 crate/server/run()."        # module: mycrate::server
 RUST_ROOT = "rust-analyzer cargo mycrate 0.1.0 crate/"                     # crate root: mycrate
+RUST_NESTED = "rust-analyzer cargo mycrate 0.1.0 crate/api/inner/Fn#"      # nested module: mycrate::api::inner
 RUST_EXT  = "rust-analyzer cargo serde 1.0.0 crate/Serialize#"             # external dep
+RUST_CONST = "rust-analyzer cargo mycrate 0.1.0 crate/config/MAX_RETRIES." # term: const/static
+
+# Term symbols per language for the _classify table (const/var/field reads).
+GO_TERM = "scip-go gomod spotinfo v2.3.1 `spotinfo/internal/spot`/MaxAge."
+PY_TERM = "scip-python python ccgram 0.1.0 `src.ccgram.config`/MAX_SIZE."
+TS_TERM = "scip-typescript npm @colbymchenry/codegraph 0.9.9 src/db/`sqlite-adapter.ts`/pool."
 
 failures = []
 
@@ -44,6 +56,7 @@ check("ts to (ns+backtick file)", r._to_path(TS_TYPE, "typescript"), "src/db/sql
 check("rust to (type in module)",  r._to_path(RUST_TYPE, "rust"), "mycrate::api")
 check("rust to (fn in module)",    r._to_path(RUST_FN,   "rust"), "mycrate::server")
 check("rust to (crate root)",      r._to_path(RUST_ROOT, "rust"), "mycrate")
+check("rust to (nested module)",   r._to_path(RUST_NESTED, "rust"), "mycrate::api::inner")
 
 # _doc_from: source path per language.
 check("py doc (dotted, strip src)", r._doc_from("src/ccgram/handlers/x.py", "python"), "ccgram.handlers.x")
@@ -76,6 +89,35 @@ check("rust external (workspace)", r._is_internal(RUST_EXT,  {"mycrate", "other"
 # _suffix: descriptor kind drives strength.
 check("suffix type", r._suffix(GO_TYPE), "type")
 check("suffix method", r._suffix(GO_FUNC), "method")
+check("suffix term (const/static/field)", r._suffix(RUST_CONST), "term")
+check("suffix other (namespace)", r._suffix(RUST_ROOT), "other")
+
+# _classify: type → model everywhere; rust terms are const/static/field — pure
+# data sharing (book Ch7) → model. TS/Py terms can bind callables (arrow-function
+# exports, module-level partials) and scip-go never overrides the Go extractor's
+# type-info hints, so non-rust terms stay functional (documented current behavior).
+NO_CONTRACT: set = set()
+check("classify rust const → model", r._classify(RUST_CONST, "rust", NO_CONTRACT), "model")
+check("classify rust fn → functional", r._classify(RUST_FN, "rust", NO_CONTRACT), "functional")
+check("classify rust type → model", r._classify(RUST_TYPE, "rust", NO_CONTRACT), "model")
+check("classify rust namespace → functional", r._classify(RUST_ROOT, "rust", NO_CONTRACT), "functional")
+check("classify go term → functional (unchanged)", r._classify(GO_TERM, "go", NO_CONTRACT), "functional")
+check("classify py term → functional (unchanged)", r._classify(PY_TERM, "python", NO_CONTRACT), "functional")
+check("classify ts term → functional (unchanged)", r._classify(TS_TERM, "typescript", NO_CONTRACT), "functional")
+check("classify private wins", r._classify(PY_PRIV, "python", NO_CONTRACT), "intrusive")
+check("classify contract-set wins", r._classify(RUST_CONST, "rust", {RUST_CONST}), "contract")
+
+# DTO abstention (Wave 4 Task 3): the Go extractor upgrades a pure-data struct
+# to the "dto" hint using method sets + field visibility from go/types type
+# info. A SCIP index has NEITHER — a type symbol string cannot reveal whether
+# the type has methods or unexported fields — so type symbols stay "model" in
+# every language and the reader never fabricates a dto/contract upgrade
+# (Wave 7 LLM labels are the designed path). scip-go additionally never
+# overrides the Go extractor's type-info hints (see engine enrichEdges).
+check("classify go type → model (never dto: method sets invisible)", r._classify(GO_TYPE, "go", NO_CONTRACT), "model")
+check("classify ts type → model (never dto: field visibility invisible)", r._classify(TS_TYPE, "typescript", NO_CONTRACT), "model")
+check("classify py type → model (never dto)", r._classify(PY_MOD, "python", NO_CONTRACT), "model")
+check("no dto label in SCIP RANK table", "dto" in r.RANK, False)
 
 if failures:
     print("FAIL:")
@@ -205,3 +247,114 @@ if failures:
         print("  -", f)
     sys.exit(1)
 print("ok: all _compute_symbols tests passed")
+
+
+def run_cli_integration() -> None:
+    here = os.path.dirname(os.path.abspath(__file__))
+    reader = os.path.join(here, "scip_reader.py")
+    proto = os.path.join(here, "scip.proto")
+    with tempfile.TemporaryDirectory(prefix="scip-reader-test-") as tmp:
+        index = os.path.join(tmp, "index.scip")
+        helper = textwrap.dedent(
+            """
+            import importlib.util
+            import os
+            import sys
+            import tempfile
+
+            from grpc_tools import protoc
+
+            proto, index = sys.argv[1], sys.argv[2]
+            out_dir = tempfile.mkdtemp(prefix="scip_pb2_test_")
+            rc = protoc.main([
+                "protoc",
+                f"-I{os.path.dirname(os.path.abspath(proto))}",
+                f"--python_out={out_dir}",
+                os.path.basename(proto),
+            ])
+            if rc != 0:
+                raise SystemExit(rc)
+            mod_path = os.path.join(out_dir, "scip_pb2.py")
+            spec = importlib.util.spec_from_file_location("scip_pb2", mod_path)
+            mod = importlib.util.module_from_spec(spec)
+            assert spec and spec.loader
+            spec.loader.exec_module(mod)
+
+            sym_client = "scip-go gomod spotinfo v0.0.0 `spotinfo/internal/spot`/Client#"
+            sym_handle = "scip-go gomod spotinfo v0.0.0 `spotinfo/internal/mcp`/handle()."
+            idx = mod.Index()
+            doc_a = idx.documents.add()
+            doc_a.relative_path = "internal/spot/client.go"
+            doc_a.symbols.add().symbol = sym_client
+            occ = doc_a.occurrences.add()
+            occ.symbol = sym_client
+            occ.symbol_roles = 1
+
+            doc_b = idx.documents.add()
+            doc_b.relative_path = "internal/mcp/server.go"
+            doc_b.symbols.add().symbol = sym_handle
+            occ = doc_b.occurrences.add()
+            occ.symbol = sym_handle
+            occ.symbol_roles = 1
+            doc_b.occurrences.add().symbol = sym_client
+
+            with open(index, "wb") as f:
+                f.write(idx.SerializeToString())
+            """
+        )
+        gen = subprocess.run(
+            ["uv", "run", "--with", "grpcio-tools>=1.60", "--with", "protobuf>=4", "python", "-c", helper, proto, index],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        check("cli helper exit", gen.returncode, 0)
+        if gen.returncode != 0:
+            print(gen.stderr)
+            return
+
+        run = subprocess.run(
+            ["uv", "run", reader, "--proto", proto, "--index", index, "--package", "spotinfo", "--lang", "go"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        check("cli exit", run.returncode, 0)
+        if run.returncode == 0:
+            data = json.loads(run.stdout)
+            check(
+                "cli edge output includes cross-module ref",
+                {"from": "internal/mcp/server.go", "to": "internal/spot", "strength": "model"} in data["edges"],
+                True,
+            )
+            check("cli symbol refs", data["symbol_refs"], [
+                {
+                    "from_symbol": "scip-go gomod spotinfo v0.0.0 `spotinfo/internal/mcp`/handle().",
+                    "to_symbol": "scip-go gomod spotinfo v0.0.0 `spotinfo/internal/spot`/Client#",
+                },
+            ])
+        else:
+            print(run.stderr)
+
+        bad_index = os.path.join(tmp, "bad.scip")
+        with open(bad_index, "wb") as f:
+            f.write(b"not a protobuf")
+        bad = subprocess.run(
+            ["uv", "run", reader, "--proto", proto, "--index", bad_index, "--package", "spotinfo", "--lang", "go"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        check("cli invalid index exits nonzero", bad.returncode != 0, True)
+
+
+if shutil.which("uv"):
+    run_cli_integration()
+    if failures:
+        print("FAIL (cli integration):")
+        for f in failures:
+            print("  -", f)
+        sys.exit(1)
+    print("ok: scip_reader CLI integration passed")
+else:
+    print("ok: scip_reader CLI integration skipped (uv not found)")

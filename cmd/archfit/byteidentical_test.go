@@ -60,53 +60,8 @@ func TestByteIdentical_OneMemberWorkspace(t *testing.T) {
 func runByteIdenticalTest(t *testing.T, fixtureRelPath string) {
 	t.Helper()
 
-	// Resolve the fixture path relative to this source file.
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
-	}
-	absFixture, err := filepath.Abs(filepath.Join(filepath.Dir(thisFile), fixtureRelPath))
-	if err != nil {
-		t.Fatalf("resolve fixture path: %v", err)
-	}
-
-	// Copy fixture files into an isolated temp dir. Fixtures must not carry a
-	// .git directory, so we copy and then git-init the copy.
-	// Files with the .go.txt extension (repo convention to bypass golangci-lint
-	// typechecking) are renamed to .go during the copy.
-	root := t.TempDir()
-	if err := copyFixtureIntoDir(absFixture, root); err != nil {
-		t.Fatalf("copy fixture: %v", err)
-	}
-
-	// Rename gowork.txt → go.work (go.work* is gitignored at the repo level,
-	// so workspace fixtures are committed under the .txt name).
-	goworkTxt := filepath.Join(root, "gowork.txt")
-	if _, statErr := os.Stat(goworkTxt); statErr == nil {
-		if err := os.Rename(goworkTxt, filepath.Join(root, "go.work")); err != nil {
-			t.Fatalf("rename gowork.txt → go.work: %v", err)
-		}
-	}
-
-	// scope.Resolve requires a git repo root.
-	gitInitFixtureRepo(t, root)
-
-	// Run archfit in-process. Exit 0 = pass, 1 = gate violation; both are
-	// valid analysis results. 2/3 indicate a config or runtime error.
-	cfgPath := filepath.Join(root, ".archfit.yaml")
-	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
-	if code != 0 && code != 1 {
-		t.Fatalf("archfit exited %d (want 0 or 1):\n%s", code, buf.String())
-	}
-
-	// Normalise volatile fields: replace the temp root path with <ROOT> so the
-	// output is stable across runs, then re-marshal through interface{} for
-	// canonical (alphabetical) key ordering.
-	got, err := normalizeArchfitJSON(buf.Bytes(), root)
-	if err != nil {
-		t.Fatalf("normalise output: %v", err)
-	}
+	absFixture, root := materializeFixtureRepo(t, fixtureRelPath)
+	got := runAnalyzeNormalized(t, root)
 
 	// Read or bootstrap the committed baseline.
 	baselinePath := filepath.Join(absFixture, "baseline.json")
@@ -131,6 +86,90 @@ func runByteIdenticalTest(t *testing.T, fixtureRelPath string) {
 			t.Fatalf("output differs from baseline:\n%s", diff)
 		}
 	}
+}
+
+// TestByteIdentical_ColdWarmNoCache pins the Wave 6 fact-cache correctness
+// gate: on the SAME materialized tree, a second (warm, cache-populated) run
+// and a --no-cache run must produce output byte-identical to the first
+// (cold) run. Trivially green until the per-language cache wiring lands
+// (plan Task 3) — committed first so the contract is pinned before any
+// analyzer consults the cache.
+func TestByteIdentical_ColdWarmNoCache(t *testing.T) {
+	t.Parallel()
+	_, root := materializeFixtureRepo(t, fixtureSingleModule)
+
+	cold := runAnalyzeNormalized(t, root)
+	warm := runAnalyzeNormalized(t, root)
+	noCache := runAnalyzeNormalized(t, root, "--no-cache")
+
+	if !bytes.Equal(warm, cold) {
+		t.Errorf("warm run differs from cold run:\n%s", firstDiffLine(string(cold), string(warm)))
+	}
+	if !bytes.Equal(noCache, cold) {
+		t.Errorf("--no-cache run differs from cold run:\n%s", firstDiffLine(string(cold), string(noCache)))
+	}
+}
+
+// materializeFixtureRepo copies the fixture into an isolated temp dir
+// (renaming .go.txt → .go and gowork.txt → go.work per repo convention) and
+// git-inits the copy — scope.Resolve requires a git repo root. Returns the
+// absolute fixture dir (where baseline.json lives) and the temp repo root.
+func materializeFixtureRepo(t *testing.T, fixtureRelPath string) (absFixture, root string) {
+	t.Helper()
+
+	// Resolve the fixture path relative to this source file.
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	absFixture, err := filepath.Abs(filepath.Join(filepath.Dir(thisFile), fixtureRelPath))
+	if err != nil {
+		t.Fatalf("resolve fixture path: %v", err)
+	}
+
+	// Copy fixture files into an isolated temp dir. Fixtures must not carry a
+	// .git directory, so we copy and then git-init the copy.
+	root = t.TempDir()
+	if err := copyFixtureIntoDir(absFixture, root); err != nil {
+		t.Fatalf("copy fixture: %v", err)
+	}
+
+	// Rename gowork.txt → go.work (go.work* is gitignored at the repo level,
+	// so workspace fixtures are committed under the .txt name).
+	goworkTxt := filepath.Join(root, "gowork.txt")
+	if _, statErr := os.Stat(goworkTxt); statErr == nil {
+		if err := os.Rename(goworkTxt, filepath.Join(root, "go.work")); err != nil {
+			t.Fatalf("rename gowork.txt → go.work: %v", err)
+		}
+	}
+
+	gitInitFixtureRepo(t, root)
+	return absFixture, root
+}
+
+// runAnalyzeNormalized runs archfit analyze --full --format json in-process
+// (plus extraArgs) against the materialized repo at root and returns the
+// normalized JSON output. Exit 0 = pass, 1 = gate violation; both are valid
+// analysis results. 2/3 indicate a config or runtime error.
+func runAnalyzeNormalized(t *testing.T, root string, extraArgs ...string) []byte {
+	t.Helper()
+
+	cfgPath := filepath.Join(root, ".archfit.yaml")
+	args := append([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, extraArgs...)
+	var buf bytes.Buffer
+	code := Run(args, &buf)
+	if code != 0 && code != 1 {
+		t.Fatalf("archfit exited %d (want 0 or 1):\n%s", code, buf.String())
+	}
+
+	// Normalise volatile fields: replace the temp root path with <ROOT> so the
+	// output is stable across runs, then re-marshal through interface{} for
+	// canonical (alphabetical) key ordering.
+	got, err := normalizeArchfitJSON(buf.Bytes(), root)
+	if err != nil {
+		t.Fatalf("normalise output: %v", err)
+	}
+	return got
 }
 
 // normalizeArchfitJSON replaces all occurrences of root (the temp scan root)

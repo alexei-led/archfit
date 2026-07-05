@@ -155,7 +155,9 @@ func pathDir(p string) string {
 // languages (Go stdlib/3p, Rust dependency crates, TS node_modules, Python
 // external imports). External dependency hygiene is tracked separately and does
 // not affect coupling_balance — the book measures coupling among YOUR components,
-// not your libraries.
+// not your libraries. Exception: targets matching a config-declared
+// `external_systems:` entry classify as DistanceExternal (D=10, book Ch10
+// Example 1) and DO enter the scored distribution, counted in DeclaredExternal.
 //
 // Genuine internal coupling with known distance but unknown strength is still
 // counted as Abstained — it stays in the denominator and honestly lowers
@@ -179,14 +181,27 @@ func buildClassifiedEdgeSummary(idx coupling.Index) *diagnostic.ClassifiedEdgeSu
 		}
 		// External/library edge: target not a declared module. Excluded from the
 		// coupling_balance denominator — the book scores YOUR components only.
+		// Targets matching a declared external_systems entry are NOT here: they
+		// classify as DistanceExternal and fall through into the scored
+		// distribution below (the architect declared the seam, so it is measured).
 		if cl.Distance == coupling.DistanceUnknown {
 			s.External++
 			continue
 		}
-		// Internal cross-boundary edge: target resolves to a declared module.
+		if cl.Distance == coupling.DistanceExternal {
+			s.DeclaredExternal++
+		}
+		// Cross-boundary edge: target resolves to a declared module or a declared
+		// external system.
 		s.ByStrength[string(cl.Strength)]++
 		s.ByDistance[string(cl.Distance)]++
 		s.ByVolatility[string(cl.Volatility)]++
+		if cl.StrengthFromLLM {
+			s.LabeledLLM++
+		}
+		if cl.StrengthFromNonHighLLM {
+			s.LLMLowConfidenceEdges++
+		}
 		if cl.Score.Scored {
 			s.Scored++
 			balanceSum += cl.Score.Balance

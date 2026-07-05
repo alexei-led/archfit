@@ -22,6 +22,16 @@ const (
 	subdomainGeneric    = "generic"
 )
 
+// volatility level literals accepted in config (`volatility:` on modules and
+// external_systems entries; "legacy" is a module-only alias for frozen).
+const (
+	volatilityHigh   = "high"
+	volatilityMedium = "medium"
+	volatilityLow    = "low"
+	volatilityFrozen = "frozen"
+	volatilityLegacy = "legacy"
+)
+
 // Run classifies every edge in g and returns a coupling.Index keyed by the
 // edge canonical key (from + "\x00" + to + "\x00" + kind).
 //
@@ -35,8 +45,10 @@ const (
 //     (core→high, supporting→low, generic→low, ""/"unknown"→unknown).
 //   - Explicitness: explicit when strength=contract; implicit when strength=intrusive;
 //     unknown otherwise.
-//   - Score: continuous EdgeScore from the configured Scorer (default: BookScorer, bc_score.v3).
-//     Applied to cross-boundary edges only (same-module and unknown-distance are zero).
+//   - Score: continuous EdgeScore from the configured Scorer (default: BookScorer).
+//     Applied to every known-distance edge; unknown-distance edges are zero.
+//     Same-module edges are scored (local_coupling report block) but keep
+//     SeverityNone — the advisory pipeline stays cross-boundary.
 func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 	mm := buildModuleIndex(c.Modules)
 	idx := make(coupling.Index)
@@ -47,31 +59,29 @@ func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
 
 	// Pre-compute per-run invariants so classifyDistance does not rebuild maps on
 	// every edge. Both results depend only on config (loaded once before Run).
-	explicitOwnerMap := make(map[string]string, len(c.ExplicitOwners))
-	for mod := range c.ExplicitOwners {
-		explicitOwnerMap[mod] = c.Modules[mod].Owner
-	}
-	degenerateExplicit := isDegenerateOwnerMap(explicitOwnerMap)
+	degenerateExplicit, degenerateOwners := ownerDegeneracy(c)
 
-	fullOwnerMap := make(map[string]string, len(c.Modules))
-	for name, def := range c.Modules {
-		fullOwnerMap[name] = def.Owner
-	}
-	degenerateOwners := isDegenerateOwnerMap(fullOwnerMap)
-
-	effectiveVol := computeEffectiveVolatility(g, mm, c.Modules, c.VolatilityCascadeEnabled, c.CrossModuleClonePairs)
+	effectiveVol := computeEffectiveVolatility(g, mm, c)
+	extSystems := buildExternalSystemIndex(c.ExternalSystems)
 
 	for _, e := range g.Edges() {
-		cl := classify(e, mm, c, degenerateExplicit, degenerateOwners, effectiveVol)
-		// Score cross-boundary edges that are not distance-unknown.
-		// Same-module and unknown-distance edges are not scored (zero EdgeScore).
+		cl := classify(e, mm, c, degenerateExplicit, degenerateOwners, effectiveVol, extSystems)
+		// Score every edge whose distance is known. Same-module edges score at
+		// the book's same-module rung (D=2) and surface the Ch10 local-complexity
+		// quadrant in the local_coupling report block; unknown-distance edges are
+		// not scored (zero EdgeScore). Abstain rules are identical at both levels.
 		// Severity is derived from cl.Score.Band so the book formula and the
 		// advisory severity are always identical — the single source of truth.
-		if cl.Distance != coupling.DistanceSameModule && cl.Distance != coupling.DistanceUnknown {
+		if cl.Distance != coupling.DistanceUnknown {
 			cl.Score = scorer.Score(cl)
-			// Set Severity from the book score band. Abstained edges (Scored=false,
-			// Band="") remain SeverityNone — abstain-not-fake is preserved.
-			cl.Severity = cl.Score.Band
+			// Set Severity from the book score band for cross-boundary edges only.
+			// Same-module edges keep SeverityNone: the bc/imbalanced_coupling
+			// advisory pipeline and coupling_balance stay cross-module (fractal
+			// level separation); local complexity is report-only. Abstained edges
+			// (Scored=false, Band="") remain SeverityNone — abstain-not-fake.
+			if cl.Distance != coupling.DistanceSameModule {
+				cl.Severity = cl.Score.Band
+			}
 		}
 		idx[edgeKey(e)] = cl
 	}
@@ -285,15 +295,12 @@ func AugmentCargoCrateNodes(g *graph.Graph, modules map[string]config.ModuleDef)
 // ancestorByKey finds the nearest config-declared ancestor of a Rust
 // module-graph node (key uses "::" separator). It returns the ModuleDef of the
 // config module whose key is the longest "::"-prefix of path, or the zero
-// ModuleDef if none. Only modules that declare an Owner are considered
-// ancestor candidates — an owner-less module carries no inheritable identity.
+// ModuleDef if none. Owner is not required: an ownerless parent can still donate
+// volatility, subdomain, layer, and deploy-unit metadata.
 func ancestorByKey(path string, modules map[string]config.ModuleDef) config.ModuleDef {
 	var best config.ModuleDef
 	bestLen := 0
 	for name, def := range modules {
-		if def.Owner == "" {
-			continue
-		}
 		// A module is an ancestor when path starts with name+"::" or equals name.
 		prefix := name + "::"
 		if path == name || strings.HasPrefix(path, prefix) {
@@ -312,15 +319,13 @@ func ancestorByKey(path string, modules map[string]config.ModuleDef) config.Modu
 // longest directory prefix with relDir, or the zero ModuleDef if none. This is
 // a fallback for the case where no module glob fully covers the child
 // (otherwise the caller would have skipped it as already-covered), but a
-// parent-directory module may still donate its attributes. Only modules that
-// declare an Owner are considered ancestor candidates.
+// parent-directory module may still donate its attributes. Owner is not
+// required: an ownerless parent can still donate volatility, subdomain, layer,
+// and deploy-unit metadata.
 func ancestorByPath(relDir string, modules map[string]config.ModuleDef) config.ModuleDef {
 	var best config.ModuleDef
 	bestLen := 0
 	for _, def := range modules {
-		if def.Owner == "" {
-			continue
-		}
 		for _, p := range def.Paths {
 			// Strip trailing glob suffixes to get the directory root.
 			dir := strings.TrimRight(strings.TrimSuffix(strings.TrimSuffix(p, "**"), "/"), "/")
@@ -371,48 +376,19 @@ func matchesAnyGlob(path string, globs []string) bool {
 // ExplicitnessHint on the edge overrides the config-glob-derived explicitness
 // when non-empty ("explicit" or "implicit"). Severity is set in Run after the
 // book score is computed (cl.Score.Band → cl.Severity).
-func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility) coupling.Classification {
+func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility, extSystems externalSystemIndex) coupling.Classification {
 	modules := c.Modules
 	fromPath := pathFromID(e.From)
 	toPath := pathFromID(e.To)
 
-	// An internal-glob match is authoritative intrusive. A public-glob match is a
-	// NOT-INTRUSIVE floor (str == contract): the edge goes through a declared public
-	// surface, but the glob alone cannot say WHICH kind of public coupling it is —
-	// a published interface (contract), a shared concrete type (model), or a function
-	// (functional). For a public (contract) or unknown edge the KIND is resolved by
-	// authority: an approved human label first (a reviewer's verdict beats a tool
-	// guess), then the symbol-level hint, then the contract default. An intrusive or
-	// human-pinned classification is never refined.
-	str := classifyStrength(toPath, mi)
-	fromPin := false
-	if (str == coupling.StrengthContract || str == coupling.StrengthUnknown) && len(c.ApprovedLabels) > 0 {
-		if fromMod, okF := mi.moduleFor(fromPath); okF {
-			if toMod, okT := mi.moduleFor(toPath); okT {
-				if pinned, ok := c.ApprovedLabels[fromMod+"\x00"+toMod]; ok {
-					str = coupling.Strength(pinned)
-					fromPin = true
-				}
-			}
-		}
-	}
-	// Refine a public-glob contract floor to the hint's public-coupling kind when no
-	// human label pinned it. This is what makes coupling_balance sensitive to
-	// integration strength instead of reading every public edge as the weakest
-	// (contract) kind. The hint can only raise the kind among the public kinds; it
-	// never lowers a public edge to intrusive (the glob floor).
-	if !fromPin && str == coupling.StrengthContract {
-		if k := strengthFromHint(e.StrengthHint); isPublicKind(k) {
-			str = k
-		}
-	}
-	// Unknown (no glob, no label) falls back to the hint.
-	if str == coupling.StrengthUnknown {
-		str = strengthFromHint(e.StrengthHint)
-	}
+	resolved := resolveStrength(e, mi, c)
+	str := resolved.strength
+	fromPin := resolved.fromPin
+	strengthFromLLM := resolved.fromLLM
+	strengthFromNonHighLLM := resolved.fromNonHighLLM
 
 	// --- Symmetric upgrade from clone detection ---
-	// A cross-module clone pair (CoA / DRY violation) signals bidirectional
+	// A cross-module clone pair (a DRY violation) signals bidirectional
 	// coupling at implementation level — book ordinal 9 (Symmetric), between
 	// Functional (8) and Intrusive (10). Upgrade only when strength is still
 	// functional or unknown; config-authoritative (contract/intrusive) and
@@ -423,7 +399,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 		if len(c.CrossModuleClonePairs) > 0 {
 			if fromMod, okF := mi.moduleFor(fromPath); okF {
 				if toMod, okT := mi.moduleFor(toPath); okT {
-					pairKey := connascencePairKey(fromMod, toMod)
+					pairKey := modulePairKey(fromMod, toMod)
 					if _, hasPair := c.CrossModuleClonePairs[pairKey]; hasPair {
 						str = coupling.StrengthSymmetric
 						// The real duplicated-code locations (both sides), so the
@@ -436,21 +412,8 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 		}
 	}
 
-	// --- Distance ---
-	dist, distBasis := classifyDistance(fromPath, toPath, e.Language, mi, modules, c.ExplicitOwners, degenerateExplicit, degenerateOwners)
-	// Role-aware downgrade: a composition root (or a generated/test module) reaches
-	// into the modules it wires by design — that fan-out is cohesion, not high-
-	// distance coupling — so its outbound edges must never be scored as unbalanced.
-	// Cap the source's outbound distance below the high-distance threshold; this
-	// single point flows to the continuous Score (and hence Severity) and every
-	// distance-reading metric (unbalanced_edge, encapsulation, …).
-	// The basis stays as-is: it reflects what drove the original signal, not the cap.
-	if fromMod, ok := mi.moduleFor(fromPath); ok && cohesiveRole(modules[fromMod].Role) {
-		dist = capDistanceForRole(dist)
-	}
-
-	// --- Volatility ---
-	vol := classifyVolatilityEffective(toPath, mi, modules, effectiveVol)
+	// --- Distance & volatility ---
+	dist, distBasis, vol := resolveDistanceVolatility(fromPath, toPath, e.Language, mi, c, degenerateExplicit, degenerateOwners, effectiveVol, extSystems)
 
 	// --- Explicitness ---
 	// ExplicitnessHint from the extractor (AST signal) takes precedence over the
@@ -473,56 +436,60 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 		dist != coupling.DistanceSameModule &&
 		isGenericSubdomain(toPath, mi, modules)
 
-	cl := coupling.Classification{
-		Strength:            str,
-		Distance:            dist,
-		Volatility:          vol,
-		Explicitness:        exp,
-		ContractRecommended: contractRecommended,
-		DistanceBasis:       distBasis,
-		CloneLocations:      cloneLocations,
+	return coupling.Classification{
+		Strength:               str,
+		Distance:               dist,
+		Volatility:             vol,
+		Explicitness:           exp,
+		ContractRecommended:    contractRecommended,
+		DistanceBasis:          distBasis,
+		CloneLocations:         cloneLocations,
+		StrengthFromLLM:        strengthFromLLM,
+		StrengthFromNonHighLLM: strengthFromNonHighLLM,
 	}
+}
 
-	// --- Connascence ---
-	// Report-only descriptive vocabulary — never scored, never gates.
-	// Only meaningful for cross-boundary edges (same-module and unknown-distance
-	// edges carry no connascence). Severity is set in Run after scoring.
-	if dist != coupling.DistanceSameModule && dist != coupling.DistanceUnknown {
-		if fromMod, okF := mi.moduleFor(fromPath); okF {
-			if toMod, okT := mi.moduleFor(toPath); okT {
-				cl.Connascence = classifyConnascence(e, str, fromMod, toMod, c)
+// resolveDistanceVolatility computes the composite distance (with the role cap
+// and the declared-external upgrade) and the effective volatility for an edge.
+//
+// Role-aware downgrade: a composition root (or a generated/test module) reaches
+// into the modules it wires by design — that fan-out is cohesion, not high-
+// distance coupling — so its outbound edges must never be scored as unbalanced.
+// Cap the source's outbound distance below the high-distance threshold; this
+// single point flows to the continuous Score (and hence Severity) and every
+// distance-reading metric (unbalanced_edge, encapsulation, …).
+// The basis stays as-is: it reflects what drove the original signal, not the cap.
+//
+// Declared external system (`external_systems:`), book Ch10 Example 1: a
+// declared cross-vendor integration seam sits at the distance ladder's far end
+// and ENTERS scoring, carrying the declared volatility (default low). Only a
+// DECLARED external target gets D=10; an undeclared external edge keeps the
+// disclosed exclusion (DistanceUnknown → classified_edges.external) — scoring
+// every library import at D=10 would flood the metric with vendor noise. The
+// match is gated on the TARGET's own resolution, not the composite distance:
+// classifyDistance also returns DistanceUnknown when only the SOURCE is
+// unresolved, and an edge into a real declared module must never be re-labelled
+// external just because an external glob overlaps that module's path space. The
+// match runs after the role cap deliberately: a composition root's edge to an
+// external vendor system is a real integration seam, not its own cohesive wiring.
+func resolveDistanceVolatility(fromPath, toPath, lang string, mi moduleIndex, c config.ClassifyConfig, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility, extSystems externalSystemIndex) (coupling.Distance, coupling.DistanceBasis, coupling.Volatility) {
+	modules := c.Modules
+	dist, distBasis := classifyDistance(fromPath, toPath, lang, mi, modules, c.ExplicitOwners, degenerateExplicit, degenerateOwners)
+	if fromMod, ok := mi.moduleFor(fromPath); ok && cohesiveRole(modules[fromMod].Role) {
+		dist = capDistanceForRole(dist)
+	}
+	if dist == coupling.DistanceUnknown {
+		if _, toOK := mi.moduleFor(toPath); !toOK {
+			if v, ok := extSystems.match(toPath); ok {
+				return coupling.DistanceExternal, coupling.DistanceBasisExternal, v
 			}
 		}
 	}
-
-	return cl
+	return dist, distBasis, classifyVolatilityEffective(toPath, mi, modules, effectiveVol)
 }
 
-// classifyConnascence derives the connascence degree for a cross-module edge.
-// CoA takes precedence: a clone pair crossing a module boundary is a stronger
-// signal than type-level coupling. CoT is assigned when the edge carries a
-// SCIP-sourced model or contract strength hint (struct/interface/field use).
-// Report-only — never fed into the scorer or gate.
-func classifyConnascence(e graph.Edge, str coupling.Strength, fromMod, toMod string, c config.ClassifyConfig) coupling.Connascence {
-	// CoA: clone pair crossing this module boundary.
-	if len(c.CrossModuleClonePairs) > 0 {
-		if _, ok := c.CrossModuleClonePairs[connascencePairKey(fromMod, toMod)]; ok {
-			return coupling.ConnascenceAlgorithm
-		}
-	}
-	// CoT: cross-module struct/interface/field use — signalled by a SCIP hint
-	// resolving to model or contract strength, or a direct model/contract label.
-	if e.StrengthHint == string(coupling.StrengthModel) ||
-		e.StrengthHint == string(coupling.StrengthContract) ||
-		str == coupling.StrengthModel ||
-		str == coupling.StrengthContract {
-		return coupling.ConnascenceType
-	}
-	return coupling.ConnascenceNone
-}
-
-// connascencePairKey returns the canonical sorted key for a module pair.
-func connascencePairKey(a, b string) string {
+// modulePairKey returns the canonical sorted key for a module pair.
+func modulePairKey(a, b string) string {
 	if a > b {
 		a, b = b, a
 	}
@@ -549,6 +516,84 @@ func classifyStrength(toPath string, mi moduleIndex) coupling.Strength {
 	return coupling.StrengthUnknown
 }
 
+type strengthResolution struct {
+	strength       coupling.Strength
+	fromPin        bool
+	fromLLM        bool
+	fromNonHighLLM bool
+}
+
+// resolveStrength applies the shared pre-clone strength precedence for one
+// edge. classify adds the clone-derived Symmetric upgrade after this helper;
+// the volatility cascade uses this pre-clone result and excludes clone pairs
+// separately.
+func resolveStrength(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) strengthResolution {
+	fromPath := pathFromID(e.From)
+	toPath := pathFromID(e.To)
+	// An internal-glob match is authoritative intrusive. A public-glob match is a
+	// NOT-INTRUSIVE floor (str == contract): the edge goes through a declared public
+	// surface, but the glob alone cannot say WHICH kind of public coupling it is —
+	// a published interface (contract), a shared concrete type (model), or a function
+	// (functional). For a public (contract) or unknown edge the KIND is resolved by
+	// authority: an approved human label first (a reviewer's verdict beats a tool
+	// guess), then the symbol-level hint, then the contract default. An intrusive or
+	// human-pinned classification is never refined.
+	str := classifyStrength(toPath, mi)
+	fromPin := false
+	if (str == coupling.StrengthContract || str == coupling.StrengthUnknown) && len(c.ApprovedLabels) > 0 {
+		if fromMod, okF := mi.moduleFor(fromPath); okF {
+			if toMod, okT := mi.moduleFor(toPath); okT {
+				if pinned, ok := c.ApprovedLabels[fromMod+"\x00"+toMod]; ok {
+					str = coupling.Strength(pinned)
+					fromPin = true
+				}
+			}
+		}
+	}
+	// Refine a public-glob contract floor to the hint's public-coupling kind when no
+	// human label pinned it. This is what makes coupling_balance sensitive to
+	// integration strength instead of reading every public edge as the weakest
+	// (contract) kind. The hint can only raise the kind among the public kinds; it
+	// never lowers a public edge to intrusive (the glob floor). Exception: a
+	// pure-data DTO across a declared public boundary IS the book's explicit
+	// integration contract — the floor stands unrefined.
+	if !fromPin && str == coupling.StrengthContract && e.StrengthHint != graph.StrengthHintDTO {
+		if k := strengthFromHint(e.StrengthHint); isPublicKind(k) {
+			str = k
+		}
+	}
+	// Unknown (no glob, no label) falls back to the hint.
+	if str == coupling.StrengthUnknown {
+		str = strengthFromHint(e.StrengthHint)
+	}
+
+	// An approved llm-provenance label fills ONLY a cell every static source
+	// left unknown: no config glob matched (intrusive/contract handled above)
+	// and the hint — Go type-info, SCIP, or extractor heuristic — resolved
+	// nothing. It never displaces a static classification.
+	strengthFromLLM := false
+	strengthFromNonHighLLM := false
+	if str == coupling.StrengthUnknown && len(c.LLMLabels) > 0 {
+		if fromMod, okF := mi.moduleFor(fromPath); okF {
+			if toMod, okT := mi.moduleFor(toPath); okT {
+				key := fromMod + "\x00" + toMod
+				if pinned, ok := c.LLMLabels[key]; ok {
+					str = coupling.Strength(pinned)
+					fromPin = true
+					strengthFromLLM = true
+					strengthFromNonHighLLM = c.LLMLabelConfidence[key] != "high"
+				}
+			}
+		}
+	}
+	return strengthResolution{
+		strength:       str,
+		fromPin:        fromPin,
+		fromLLM:        strengthFromLLM,
+		fromNonHighLLM: strengthFromNonHighLLM,
+	}
+}
+
 // isPublicKind reports whether a strength is one of the public-coupling kinds —
 // contract (published interface), model (shared concrete type), or functional
 // (function call). These are the kinds a public-glob edge may legitimately refine
@@ -573,6 +618,13 @@ func isPublicKind(s coupling.Strength) bool {
 // strengths are accepted; an unrecognized hint stays unknown. Config public/internal
 // globs still take precedence (see classify): the hint is a fallback only.
 func strengthFromHint(hint string) coupling.Strength {
+	// A DTO hint without a declared public boundary is just a shared concrete
+	// type — model. The boundary declaration is what makes a DTO a contract;
+	// that case is handled at the floor-refinement site in classify, which
+	// checks the raw hint before calling this mapping.
+	if hint == graph.StrengthHintDTO {
+		return coupling.StrengthModel
+	}
 	switch coupling.Strength(hint) {
 	case coupling.StrengthContract, coupling.StrengthModel,
 		coupling.StrengthFunctional, coupling.StrengthSymmetric, coupling.StrengthIntrusive:
@@ -609,6 +661,16 @@ func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map
 		return coupling.DistanceSameModule, coupling.DistanceBasisUnknown
 	}
 
+	return moduleDistance(fromMod, toMod, lang, modules, explicitOwners, degenerateExplicit, degenerateOwners)
+}
+
+// moduleDistance computes the composite distance between two RESOLVED, distinct
+// modules — steps 1–4 of the precedence chain documented on classifyDistance.
+// Factored out of classifyDistance so CloneOnlyPairs can compute a module-pair
+// distance from module names alone: clone evidence carries repo file paths,
+// which for Python never match the dotted node-ID globs the path resolution in
+// classifyDistance expects.
+func moduleDistance(fromMod, toMod, lang string, modules map[string]config.ModuleDef, explicitOwners map[string]bool, degenerateExplicit, degenerateOwners bool) (coupling.Distance, coupling.DistanceBasis) {
 	fromDef := modules[fromMod]
 	toDef := modules[toMod]
 
@@ -657,7 +719,7 @@ func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map
 // Resolution outcomes are deliberately three-valued:
 //   - to-module unresolved → VolatilityUnknown (genuinely indeterminate).
 //   - to-module resolved but neither volatility nor subdomain declared →
-//     VolatilityUndeclared (a config gap; the scorer advises "declare", not "lower",
+//     VolatilityUndeclared (a config gap; scored conservatively as worst-case,
 //     and Lint() surfaces it).
 //   - otherwise → high/medium/low/frozen.
 //
@@ -672,13 +734,13 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 	// Priority 1: explicit Volatility field.
 	// Accepted values: high, medium, low, frozen, legacy.
 	switch strings.ToLower(def.Volatility) {
-	case "high":
+	case volatilityHigh:
 		return coupling.VolatilityHigh
-	case "medium":
+	case volatilityMedium:
 		return coupling.VolatilityMedium
-	case "low":
+	case volatilityLow:
 		return coupling.VolatilityLow
-	case "frozen", "legacy":
+	case volatilityFrozen, volatilityLegacy:
 		return coupling.VolatilityFrozen
 	}
 
@@ -725,18 +787,18 @@ func isGenericSubdomain(toPath string, mi moduleIndex, modules map[string]config
 // Strong strength set for propagation: Functional, Symmetric, Intrusive. An edge
 // between a module pair in clonePairs is excluded even if it otherwise qualifies:
 // a detected clone is accidental coupling (duplicated code, not a deliberate
-// integration point), and the book's volatility model is about a component's
-// essential rate of change — an incidental clone match between two modules says
-// nothing about either module's real volatility, so it must not flip a whole
-// module's effective volatility to high (see "Balancing Coupling in Software
-// Design" ch.9, "Essential vs. Accidental (In)Volatility").
-func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, modules map[string]config.ModuleDef, cascadeEnabled bool, clonePairs map[string]struct{}) map[string]coupling.Volatility {
+// integration point), and volatility in the book's model (Ch9) is a component's
+// essential rate of change, driven by its domain role — an incidental clone
+// match between two modules says nothing about either module's real volatility,
+// so it must not flip a whole module's effective volatility to high.
+func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, c config.ClassifyConfig) map[string]coupling.Volatility {
+	modules := c.Modules
 	// Seed effective map from config-declared volatility.
 	effective := make(map[string]coupling.Volatility, len(modules))
 	for name, def := range modules {
 		effective[name] = volatilityFromDef(def)
 	}
-	if !cascadeEnabled || g == nil {
+	if !c.VolatilityCascadeEnabled || g == nil {
 		return effective
 	}
 	// Snapshot the base volatility before propagation so reads during the pass
@@ -745,8 +807,8 @@ func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, modules map[stri
 	maps.Copy(base, effective)
 	// Propagation pass: iterate edges once, raise effective vol where applicable.
 	for _, e := range g.Edges() {
-		str := strengthFromHint(e.StrengthHint)
-		if !isStrongStrength(str) {
+		resolved := resolveStrength(e, mi, c)
+		if !isStrongStrength(resolved.strength) {
 			continue
 		}
 		fromPath := pathFromID(e.From)
@@ -756,7 +818,7 @@ func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, modules map[stri
 		if !okFrom || !okTo || fromMod == toMod {
 			continue
 		}
-		if _, isClonePair := clonePairs[connascencePairKey(fromMod, toMod)]; isClonePair {
+		if _, isClonePair := c.CrossModuleClonePairs[modulePairKey(fromMod, toMod)]; isClonePair {
 			continue // accidental coupling — must not trigger the cascade
 		}
 		// Read the BASE volatility of the to-module (order-independent).
@@ -776,13 +838,13 @@ func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, modules map[stri
 // module is already resolved; we want the config-declared level only).
 func volatilityFromDef(def config.ModuleDef) coupling.Volatility {
 	switch strings.ToLower(def.Volatility) {
-	case "high":
+	case volatilityHigh:
 		return coupling.VolatilityHigh
-	case "medium":
+	case volatilityMedium:
 		return coupling.VolatilityMedium
-	case "low":
+	case volatilityLow:
 		return coupling.VolatilityLow
-	case "frozen", "legacy":
+	case volatilityFrozen, volatilityLegacy:
 		return coupling.VolatilityFrozen
 	}
 	switch strings.ToLower(def.Subdomain) {

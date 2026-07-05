@@ -4,28 +4,29 @@ import (
 	"context"
 	"fmt"
 	"go/types"
-	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"golang.org/x/sync/errgroup"
-	"golang.org/x/tools/go/packages"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
 // BC integration-strength labels used for StrengthHint on Go edges.
 // These match the coupling.Strength constants and the SCIP reader's RANK table.
+// strengthDTO is the exception: a hint-only label (graph.StrengthHintDTO) whose
+// coupling kind classify resolves from the public-boundary declaration.
 const (
 	strengthContract   = "contract"
 	strengthModel      = "model"
 	strengthFunctional = "functional"
 	strengthIntrusive  = "intrusive"
+	strengthDTO        = graph.StrengthHintDTO
 )
 
 const (
@@ -34,14 +35,18 @@ const (
 )
 
 // goStrengthRank maps a BC integration-strength label to its coupling rank.
-// contract (rank 1) is the weakest coupling; intrusive (rank 4) is the strongest.
-// Used to pick the STRONGEST hint seen per (fromFile, toPkg) pair, mirroring the
-// SCIP reader's RANK = {"contract":1, "model":2, "functional":3, "intrusive":4}.
+// contract (rank 1) is the weakest coupling; intrusive (rank 5) is the strongest.
+// Used to pick the STRONGEST hint seen per (fromFile, toPkg) pair. The relative
+// order of the shared labels mirrors the SCIP reader's RANK table; dto (which
+// SCIP cannot detect — it needs method sets and field visibility) slots between
+// contract and model: a concrete DTO reference couples tighter than an
+// interface, but a leaked domain object (model) dominates a DTO.
 var goStrengthRank = map[string]int{
 	strengthContract:   1,
-	strengthModel:      2,
-	strengthFunctional: 3,
-	strengthIntrusive:  4,
+	strengthDTO:        2,
+	strengthModel:      3,
+	strengthFunctional: 4,
+	strengthIntrusive:  5,
 }
 
 // GoExtractor is the native Go import extractor using go/packages.
@@ -49,6 +54,14 @@ var goStrengthRank = map[string]int{
 // structurally: Name() string and Extract(ctx, scope.Scope) (graph.Facts, diagnostic.Coverage, error).
 type GoExtractor struct {
 	cfg config.ExtractConfig
+	// Runner probes the go-toolchain version for the fact-cache key; nil
+	// (tests) yields an empty version component, never an error.
+	Runner toolrun.Runner
+	// Cache is the per-member extractor fact cache; nil disables caching
+	// (--no-cache).
+	Cache *factcache.Store
+	// load is the packages.Load test seam; nil = packages.Load.
+	load loadFunc
 }
 
 // New returns a GoExtractor configured with the given ExtractConfig.
@@ -77,10 +90,13 @@ func (e *GoExtractor) Name() string {
 // NeedModule is required to strip the module path prefix from import paths so
 // that node IDs are ScanRoot-relative and match the globs in archfit.yaml.)
 //
-// Strength guard: buildStrengthHints uses the member-set predicate (isFirstParty)
-// so cross-member type references also produce StrengthHints. Without this,
-// every Go edge in workspace mode abstains on strength and coupling_balance
-// collapses even when distance is present.
+// Strength coverage: buildStrengthHints derives a hint for EVERY resolved
+// cross-package reference — first-party members, stdlib, and third-party alike.
+// Cross-member hints keep workspace-mode coupling_balance measurable; external
+// hints let a config-declared `external_systems:` seam (DistanceExternal, D=10)
+// score with real compiler-grade strength instead of abstaining. Undeclared
+// external edges are excluded from scoring by distance, so their hints are
+// report-only.
 func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 	if e.cfg.Mode == config.ModeOff {
 		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
@@ -109,42 +125,10 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
 	}
 
-	// Load packages concurrently — one goroutine per member, bounded by GOMAXPROCS.
-	// Write into results[i] by index so merge order is deterministic regardless of
-	// goroutine completion order.
-	type memberResult struct {
-		pkgs []*packages.Package
-	}
-	results := make([]memberResult, len(memberDirs))
-
-	loadMode := packages.NeedName |
-		packages.NeedFiles |
-		packages.NeedImports |
-		packages.NeedSyntax |
-		packages.NeedTypes |
-		packages.NeedTypesInfo |
-		packages.NeedModule
-
-	eg, egCtx := errgroup.WithContext(ctx)
-	eg.SetLimit(max(1, runtime.GOMAXPROCS(0)))
-	for i, dir := range memberDirs {
-		i, dir := i, dir
-		eg.Go(func() error {
-			cfg := &packages.Config{
-				Mode:       loadMode,
-				Dir:        dir,
-				Context:    egCtx,
-				BuildFlags: e.cfg.BuildFlags,
-			}
-			pkgs, loadErr := packages.Load(cfg, "./...")
-			if loadErr != nil {
-				return fmt.Errorf("extract/golang: load %s: %w", dir, loadErr)
-			}
-			results[i] = memberResult{pkgs: pkgs}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
+	// Load per-member facts — from the fact cache where the member's input
+	// tree is unchanged, via packages.Load otherwise (loadMemberFacts).
+	mfs, err := e.loadMemberFacts(ctx, s.Root, memberDirs)
+	if err != nil {
 		// go/packages.Load failed for at least one workspace member — e.g. a broken
 		// go.mod or an unresolvable build constraint. This is a coverage gap, not a
 		// run-level failure (the "warn-loud, don't block" contract); only an
@@ -155,9 +139,9 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: "partial", Reason: err.Error()}, nil
 	}
 
-	// Build the module map from pkg.Module — same path family as pkg.Fset file
-	// paths, avoiding symlink skew that memberDirs (os.Stat-based) can introduce
-	// on macOS (/tmp → /private/tmp in temp dirs used by tests).
+	// Build the module map from the per-member facts (derived from pkg.Module —
+	// same path family as pkg.Fset file paths, avoiding symlink skew that
+	// memberDirs (os.Stat-based) can introduce on macOS).
 	//
 	// modEntry holds a module path and its ScanRoot-relative dir ("." for root).
 	// Entries are sorted: longest path first (correct longest-prefix matching),
@@ -170,23 +154,14 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	var modEntries []modEntry
 	var goModules []graph.GoModule
 
-	for _, r := range results {
-		for _, pkg := range r.pkgs {
-			if pkg.Module == nil || pkg.Module.Path == "" || pkg.Module.Dir == "" {
+	for _, mf := range mfs {
+		for _, m := range mf.Modules {
+			if _, ok := seenModPath[m.Path]; ok {
 				continue
 			}
-			if _, ok := seenModPath[pkg.Module.Path]; ok {
-				continue
-			}
-			seenModPath[pkg.Module.Path] = struct{}{}
-			rel, relErr := filepath.Rel(s.Root, pkg.Module.Dir)
-			if relErr != nil || strings.HasPrefix(rel, "..") {
-				// Module dir is outside scanRoot — skip (shouldn't happen after DiscoverMembers).
-				continue
-			}
-			relDir := filepath.ToSlash(rel)
-			modEntries = append(modEntries, modEntry{path: pkg.Module.Path, relDir: relDir})
-			goModules = append(goModules, graph.GoModule{Path: pkg.Module.Path, RelDir: relDir})
+			seenModPath[m.Path] = struct{}{}
+			modEntries = append(modEntries, modEntry{path: m.Path, relDir: m.RelDir})
+			goModules = append(goModules, graph.GoModule{Path: m.Path, RelDir: m.RelDir})
 		}
 	}
 
@@ -227,38 +202,39 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		return importPath // external dep — unchanged
 	}
 
-	// isFirstParty reports whether importPath belongs to any loaded workspace member.
-	// Replaces the old single-module isInModule predicate; cross-member type
-	// references now produce StrengthHints (the critical strength guard).
-	isFirstParty := func(importPath string) bool {
-		for _, m := range modEntries {
-			if importPath == m.path || strings.HasPrefix(importPath, m.path+"/") {
-				return true
-			}
-		}
-		return false
-	}
-
-	// Merge all packages from all member loads, deduplicating by PkgPath.
-	// Iterate results in member order (results[i] ↔ memberDirs[i]) for determinism.
+	// Merge all packages from all member facts, deduplicating by PkgPath.
+	// Iterate in member order (mfs[i] ↔ memberDirs[i]) for determinism.
 	seenPkg := make(map[string]struct{})
-	var allPkgs []*packages.Package
-	for _, r := range results {
-		for _, pkg := range r.pkgs {
-			if _, ok := seenPkg[pkg.PkgPath]; !ok {
-				seenPkg[pkg.PkgPath] = struct{}{}
-				allPkgs = append(allPkgs, pkg)
+	var allPkgs []packageFacts
+	for _, mf := range mfs {
+		for _, pf := range mf.Packages {
+			if _, ok := seenPkg[pf.PkgPath]; !ok {
+				seenPkg[pf.PkgPath] = struct{}{}
+				allPkgs = append(allPkgs, pf)
 			}
 		}
 	}
 
-	// Derive per-(relFile, importedPkgRelPath) StrengthHints from type info.
-	// Uses isFirstParty (member-set predicate) so cross-member type references
-	// also get hints — the critical strength guard for workspace mode.
-	strengthHints := buildStrengthHints(allPkgs, s.Root, stripImportPath, isFirstParty, e.isExcluded)
+	// Fold the per-member RAW strength hints (deriveRawHints — every resolved
+	// target: members, stdlib, third-party) into the merged map the edge loop
+	// reads: strip the imported package path (needs the full member set, hence
+	// merge-time), drop excluded files, keep the strongest hint per pair.
+	strengthHints := make(map[string]string)
+	for _, pf := range allPkgs {
+		for k, strength := range pf.Hints {
+			relFile, rawPkg, ok := strings.Cut(k, "\x00")
+			if !ok || e.isExcluded(relFile) {
+				continue
+			}
+			mk := relFile + "\x00" + stripImportPath(rawPkg)
+			if goStrengthRank[strengthHints[mk]] < goStrengthRank[strength] {
+				strengthHints[mk] = strength
+			}
+		}
+	}
 
 	nodes, edges, filesSeen, unresolved := e.collectNodesEdges(
-		allPkgs, s.Root, stripImportPath, strengthHints,
+		allPkgs, stripImportPath, strengthHints,
 	)
 
 	status := "ok"
@@ -291,14 +267,14 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	return facts, cov, nil
 }
 
-// collectNodesEdges iterates loaded packages and emits graph nodes and edges.
-// Extracted from Extract to keep Extract's cyclomatic complexity below the gate.
+// collectNodesEdges iterates the merged per-member package facts and emits
+// graph nodes and edges. Extracted from Extract to keep Extract's cyclomatic
+// complexity below the gate.
 //
-// Synthetic-error packages (Module==nil && Errors non-empty) increment unresolved
-// and are skipped — they represent unresolvable patterns, never fatal.
+// Synthetic-error packages (Module==nil && Errors non-empty at derive time)
+// increment unresolved and are skipped — unresolvable patterns, never fatal.
 func (e *GoExtractor) collectNodesEdges(
-	pkgs []*packages.Package,
-	root string,
+	pkgs []packageFacts,
 	stripImportPath func(string) string,
 	strengthHints map[string]string,
 ) (nodes []graph.Node, edges []graph.Edge, filesSeen, unresolved int) {
@@ -311,37 +287,29 @@ func (e *GoExtractor) collectNodesEdges(
 			nodes = append(nodes, n)
 		}
 	}
-	for _, pkg := range pkgs {
-		if pkg.Module == nil && len(pkg.Errors) > 0 {
+	for _, p := range pkgs {
+		if p.Synthetic {
 			unresolved++
 			continue
 		}
-		if pkg.IllTyped || len(pkg.Errors) > 0 {
+		if p.IllTyped {
 			unresolved++
 		}
 
-		pkgPath := stripImportPath(pkg.PkgPath)
+		pkgPath := stripImportPath(p.PkgPath)
 		if pkgPath != "" {
 			emitNode(graph.Node{Kind: graph.NodeKindPackage, Path: pkgPath, Language: graph.LangGo})
 		}
 
-		for _, f := range pkg.Syntax {
-			absFile := pkg.Fset.File(f.Pos()).Name()
-			relFile, err := filepath.Rel(root, absFile)
-			if err != nil || strings.HasPrefix(relFile, "..") {
-				continue
-			}
-			relFile = filepath.ToSlash(relFile)
-			if e.isExcluded(relFile) {
+		for _, f := range p.Files {
+			if e.isExcluded(f.RelFile) {
 				continue
 			}
 			filesSeen++
-			emitNode(graph.Node{Kind: graph.NodeKindFile, Path: relFile, Language: graph.LangGo})
+			emitNode(graph.Node{Kind: graph.NodeKindFile, Path: f.RelFile, Language: graph.LangGo})
 
 			for _, imp := range f.Imports {
-				pos := pkg.Fset.Position(imp.Pos())
-				rawImportPath := strings.Trim(imp.Path.Value, `"`)
-				importPath := stripImportPath(rawImportPath)
+				importPath := stripImportPath(imp.RawPath)
 				if e.isExcluded(importPath) {
 					continue
 				}
@@ -351,19 +319,14 @@ func (e *GoExtractor) collectNodesEdges(
 					edgeKind = graph.EdgeKindUsesInternal
 				}
 
-				locFile := pos.Filename
-				if rel, relErr := filepath.Rel(root, locFile); relErr == nil && !strings.HasPrefix(rel, "..") {
-					locFile = filepath.ToSlash(rel)
-				}
-
 				edges = append(edges, graph.Edge{
-					From:         graph.Node{Kind: graph.NodeKindFile, Path: relFile}.ID(),
+					From:         graph.Node{Kind: graph.NodeKindFile, Path: f.RelFile}.ID(),
 					To:           graph.Node{Kind: graph.NodeKindPackage, Path: importPath}.ID(),
 					Kind:         edgeKind,
 					Language:     "go",
 					Confidence:   "high",
-					Locations:    []graph.Location{{File: locFile, Line: pos.Line}},
-					StrengthHint: strengthHints[relFile+"\x00"+importPath],
+					Locations:    []graph.Location{{File: imp.LocFile, Line: imp.Line}},
+					StrengthHint: strengthHints[f.RelFile+"\x00"+importPath],
 				})
 			}
 		}
@@ -371,91 +334,149 @@ func (e *GoExtractor) collectNodesEdges(
 	return
 }
 
-// buildStrengthHints derives per-(relFile, importedPkgRelPath) BC integration-strength
-// hints from pkg.TypesInfo.Uses, mirroring the SCIP reader's classify_symbol mapping
-// applied to Go:
-//
-//   - *types.TypeName with interface underlying → "contract"  (rank 1, weakest)
-//   - *types.TypeName with concrete type         → "model"     (rank 2)
-//   - *types.Func (function or method)           → "functional" (rank 3)
-//   - *types.Var, *types.Const, …               → "functional" (rank 3)
-//
-// Go cross-package references are always to exported symbols, so "intrusive"
-// (private-symbol access) never occurs. Each (fromFile, toPkg) pair accumulates
-// the STRONGEST (highest-rank) hint seen.
-//
-// The returned map key is relFile + "\x00" + importedPkgRelPath.
-// Only in-module targets are considered (isInModule guard); external deps are
-// excluded from coupling_balance and adding hints for them is noise.
-func buildStrengthHints(
-	pkgs []*packages.Package,
-	root string,
-	stripModPath func(string) string,
-	isInModule func(string) bool,
-	isExcluded func(string) bool,
-) map[string]string {
-	hints := make(map[string]string)
-	for _, pkg := range pkgs {
-		if pkg.TypesInfo == nil {
-			continue
-		}
-		for ident, obj := range pkg.TypesInfo.Uses {
-			// Skip same-package refs and universe symbols (builtins, nil, …).
-			if obj.Pkg() == nil || obj.Pkg().Path() == pkg.PkgPath {
-				continue
-			}
-			// Only in-module targets.
-			if !isInModule(obj.Pkg().Path()) {
-				continue
-			}
-			// Skip package-name references (import alias, not a symbol use).
-			if _, isPkg := obj.(*types.PkgName); isPkg {
-				continue
-			}
-
-			// Classify the symbol's BC strength per the SCIP reader mapping.
-			strength := goObjectStrength(obj)
-
-			// Locate the file containing this identifier.
-			tf := pkg.Fset.File(ident.Pos())
-			if tf == nil {
-				continue
-			}
-			absFile := tf.Name()
-			relFile, ferr := filepath.Rel(root, absFile)
-			if ferr != nil || strings.HasPrefix(relFile, "..") {
-				continue
-			}
-			relFile = filepath.ToSlash(relFile)
-			if isExcluded(relFile) {
-				continue
-			}
-
-			importedPkg := stripModPath(obj.Pkg().Path())
-			k := relFile + "\x00" + importedPkg
-			if goStrengthRank[hints[k]] < goStrengthRank[strength] {
-				hints[k] = strength
-			}
-		}
-	}
-	return hints
-}
-
-// goObjectStrength maps a go/types Object to its BC integration-strength label,
-// following the same logic as the SCIP reader's classify_symbol for Go symbols.
-func goObjectStrength(obj types.Object) string {
+// goObjectStrength maps a go/types Object to its BC integration-strength label.
+func goObjectStrength(obj types.Object, dtos *dtoIndex) string {
 	switch tn := obj.(type) {
 	case *types.TypeName:
 		if types.IsInterface(tn.Type()) {
 			return strengthContract
 		}
+		if dtos.isDTOType(tn) {
+			return strengthDTO
+		}
 		return strengthModel
-	case *types.Func:
-		return strengthFunctional
+	case *types.Var:
+		// A field of a pure-data DTO is the DTO's data — reading or setting it
+		// (u.ID, UserDTO{ID: …}) stays dto, not the stronger model; otherwise
+		// every real consumer of a DTO would outrank the dto hint away.
+		if tn.IsField() && dtos.isDTOField(tn) {
+			return strengthDTO
+		}
+		// A func- or chan-typed var/field is stored behavior, not data:
+		// pkg.DefaultHandler() or holder.OnDone() couples on the callee's
+		// behavior exactly like a *types.Func call (mirrors computePureData's
+		// behavior-carrier exclusion). Interface-typed vars/fields need no case
+		// here: invoking one resolves the method as a *types.Func (→ functional
+		// via the default case), so the behavioral use is already captured.
+		switch tn.Type().Underlying().(type) {
+		case *types.Signature, *types.Chan:
+			return strengthFunctional
+		}
+		// Pure data sharing (book Ch7): using another module's exported
+		// var/field couples on its data model, not its behavior. Reads and
+		// writes classify alike — assignment position is not inspected.
+		return strengthModel
+	case *types.Const:
+		// Pure data sharing (book Ch7), same as *types.Var.
+		return strengthModel
 	default:
-		// *types.Var (field/variable), *types.Const → functional.
+		// *types.Func (function or method) and anything unforeseen → functional.
 		return strengthFunctional
 	}
+}
+
+// dtoIndex memoizes pure-data-DTO decisions per named type and records the
+// field objects of every type that qualifies, so a bare field reference can be
+// tied back to its DTO (go/types exposes no owner pointer on a field Var).
+type dtoIndex struct {
+	types  map[*types.TypeName]bool
+	fields map[*types.Var]bool
+}
+
+func newDTOIndex() *dtoIndex {
+	return &dtoIndex{
+		types:  make(map[*types.TypeName]bool),
+		fields: make(map[*types.Var]bool),
+	}
+}
+
+// isDTOType reports whether tn names a pure-data DTO: an exported struct with
+// at least one field, every field exported, no behavior-carrying fields (func,
+// chan, or interface anywhere in the field's type structure — composite
+// element types and nested struct fields are recursed into), and an EMPTY
+// method set on both value and pointer receivers (promoted methods from
+// embedding included). Zero-field marker structs (struct{} sentinels, context
+// keys) carry no data model and are NOT DTOs. classify resolves the coupling
+// kind: contract across a declared public boundary, model otherwise.
+func (ix *dtoIndex) isDTOType(tn *types.TypeName) bool {
+	if v, ok := ix.types[tn]; ok {
+		return v
+	}
+	v := ix.computePureData(tn)
+	ix.types[tn] = v
+	return v
+}
+
+// isDTOField reports whether v is a field of a type isDTOType already
+// qualified (the pre-pass in buildStrengthHints populates the registry).
+func (ix *dtoIndex) isDTOField(v *types.Var) bool { return ix.fields[v] }
+
+func (ix *dtoIndex) computePureData(tn *types.TypeName) bool {
+	if !tn.Exported() {
+		return false
+	}
+	named, ok := types.Unalias(tn.Type()).(*types.Named)
+	if !ok {
+		return false
+	}
+	st, ok := named.Underlying().(*types.Struct)
+	if !ok || st.NumFields() == 0 {
+		return false
+	}
+	seen := make(map[*types.Named]bool)
+	for i := range st.NumFields() {
+		f := st.Field(i)
+		if !f.Exported() {
+			return false
+		}
+		if containsBehaviorCarrier(f.Type(), seen) {
+			return false
+		}
+	}
+	// The pointer method set is a superset of the value method set and includes
+	// promoted methods, so one lookup covers every receiver form. computePureData
+	// runs at most once per type (isDTOType memoizes), so no method-set cache.
+	if types.NewMethodSet(types.NewPointer(named)).Len() != 0 {
+		return false
+	}
+	for i := range st.NumFields() {
+		ix.fields[st.Field(i)] = true
+	}
+	return true
+}
+
+// containsBehaviorCarrier reports whether t carries behavior anywhere in its
+// structure: a func, chan, or interface type, directly or inside composites
+// (pointer, slice, array, map) and nested struct fields. A direct-type check
+// alone would let `[]func()`, `map[string]chan T`, or `*Iface` fields smuggle
+// behavior into a "pure data" DTO. seen breaks cycles through named types
+// (e.g. Node{Next *Node}); a cyclic reference alone is not a carrier.
+func containsBehaviorCarrier(t types.Type, seen map[*types.Named]bool) bool {
+	if n, ok := types.Unalias(t).(*types.Named); ok {
+		if seen[n] {
+			return false
+		}
+		seen[n] = true
+	}
+	switch u := t.Underlying().(type) {
+	case *types.Signature, *types.Chan, *types.Interface:
+		return true
+	case *types.Pointer:
+		return containsBehaviorCarrier(u.Elem(), seen)
+	case *types.Slice:
+		return containsBehaviorCarrier(u.Elem(), seen)
+	case *types.Array:
+		return containsBehaviorCarrier(u.Elem(), seen)
+	case *types.Map:
+		return containsBehaviorCarrier(u.Key(), seen) || containsBehaviorCarrier(u.Elem(), seen)
+	case *types.Struct:
+		for i := range u.NumFields() {
+			if containsBehaviorCarrier(u.Field(i).Type(), seen) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // isExcluded reports whether path matches any of the configured exclusion globs.

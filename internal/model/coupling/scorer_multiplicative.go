@@ -13,7 +13,7 @@ import "math"
 // Formula:
 //
 //	S_norm = strength_val / 8.0
-//	D_norm = distance_val / 5.0
+//	D_norm = min(distance_val / 5.0, 1.0)
 //	V_norm = {low:0.2, med:0.6, high:1.0, unk:0.5}
 //	R_mod  = 1 − |S_norm − D_norm|   (continuous XOR: modular quadrants score low)
 //	R_edge = R_mod × V_norm
@@ -39,6 +39,8 @@ const (
 const maxStrengthOrdinal = 8.0
 
 // maxDistanceOrdinal is the normalisation denominator for distance (cross_deploy=5).
+// external (ordinal 6, added post-freeze) saturates at the 1.0 ceiling instead of
+// bumping this denominator — changing it would shift D_norm for every frozen rung.
 const maxDistanceOrdinal = 5.0
 
 // intrusiveFloor is the minimum score for any intrusive-strength edge (band low).
@@ -72,7 +74,7 @@ func (MultiplicativeScorer) Score(c Classification) EdgeScore {
 	vd := volatilityDiscount[c.Volatility] // kept in Breakdown for consistency
 
 	sNorm := float64(sv) / maxStrengthOrdinal
-	dNorm := float64(dv) / maxDistanceOrdinal
+	dNorm := math.Min(float64(dv)/maxDistanceOrdinal, 1.0)
 	vNorm := volatilityNorm[c.Volatility]
 
 	rMod := 1.0 - math.Abs(sNorm-dNorm)
@@ -123,12 +125,12 @@ func multiplicativeCheapestMove(c Classification, currentBand Severity) string {
 	if next, ok := lowerStrength(c.Strength); ok {
 		mod := c
 		mod.Strength = next
-		tryMove("reduce_strength", mod)
+		tryMove(moveReduceStrength, mod)
 	}
 	if next, ok := lowerDistance(c.Distance); ok {
 		mod := c
 		mod.Distance = next
-		tryMove("reduce_distance", mod)
+		tryMove(moveReduceDistance, mod)
 	}
 	if next, ok := lowerVolatility(c.Volatility); ok {
 		mod := c

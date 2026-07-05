@@ -43,9 +43,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "enabled"
-      ],
       "description": "Analyzer is the common enable/gate shape for analyzers with no extra knobs (`analyzers.syntax`, `analyzers.cargo_modules`)."
     },
     "AnalyzersConfig": {
@@ -76,11 +73,77 @@
         "volatility_cascade": {
           "type": "boolean",
           "description": "VolatilityCascade enables the book Ch9 single-hop propagation pass: a\nmodule strongly coupled to a high-volatility module inherits raised\neffective volatility. Config-declared volatility always takes precedence."
+        },
+        "gate": {
+          "$ref": "#/$defs/CouplingGateDef",
+          "description": "Gate makes the synthesised coupling_balance score gate the verdict.\nAbsent (nil) = coupling stays advisory, today's behavior. An unmeasured\nscore (band n/a) never trips the gate regardless of these knobs."
         }
       },
       "additionalProperties": false,
       "type": "object",
       "description": "CouplingConfig tunes the Balanced-Coupling advisory pass (`coupling:`)."
+    },
+    "CouplingGateDef": {
+      "anyOf": [
+        {
+          "required": [
+            "min_band"
+          ]
+        },
+        {
+          "required": [
+            "max_drop"
+          ]
+        }
+      ],
+      "properties": {
+        "min_band": {
+          "type": "string",
+          "enum": [
+            "poor",
+            "mixed",
+            "serviceable",
+            "strong"
+          ],
+          "description": "MinBand is the band floor: poor | mixed | serviceable | strong. The\nverdict fails when the current coupling_balance band ranks below it.\ncritical is rejected — no band ranks below it, so it could never trip."
+        },
+        "max_drop": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "MaxDrop is the tolerated point drop of the coupling_balance value against\nthe score stored in .archfit-baseline.json. Unset = no drop check;\n0 = any drop fails. Skipped when the baseline carries no stored score."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "CouplingGateDef configures the coupling_balance verdict gate (`coupling.gate:`)."
+    },
+    "ExternalSystemDef": {
+      "properties": {
+        "targets": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "minItems": 1,
+          "description": "Targets are glob patterns matched against the classified edge target —\nthe same node identity the language extractor emits: a Go import path\n(\"github.com/aws/aws-sdk-go-v2/**\"), a TS resolved package path\n(\"node_modules/@aws-sdk/**\") or bare specifier, a Python dotted module\n(\"boto3.**\"), or a Rust crate name (\"aws_sdk_s3\")."
+        },
+        "volatility": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low",
+            "frozen"
+          ],
+          "description": "Volatility of the external system: high | medium | low | frozen.\nDefault low — the book's generic-subdomain guidance (an external vendor\nsystem is a generic capability, presumed stable unless declared otherwise)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "targets"
+      ],
+      "description": "ExternalSystemDef declares one external integration seam (`external_systems:`), per book Ch10 Example 1 (cross-vendor integration)."
     },
     "FileClassDef": {
       "properties": {
@@ -138,9 +201,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "enabled"
-      ],
       "description": "GoLanguage configures the Go extractor (`languages.go`)."
     },
     "GoModuleFilter": {
@@ -186,7 +246,8 @@
     "MetricEntry": {
       "properties": {
         "enabled": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Metrics run by default: a knob-only entry (e.g. only `gate: warn`)\nstays enabled, and only an explicit `enabled: false` disables the\nmetric. (Pointer so absent and false decode differently.)"
         },
         "gate": {
           "type": "string",
@@ -200,22 +261,12 @@
         "min_delta": {
           "type": "number"
         },
-        "max_new_high": {
-          "type": "integer"
-        },
         "max_new": {
           "type": "integer"
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "enabled",
-        "gate",
-        "min_delta",
-        "max_new_high",
-        "max_new"
-      ],
       "description": "MetricEntry holds the settings for a single metric inside the metrics map."
     },
     "MetricsConfig": {
@@ -273,17 +324,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "paths",
-        "public",
-        "internal",
-        "layer",
-        "subdomain",
-        "volatility",
-        "owner",
-        "deploy_unit",
-        "reviewed_by"
-      ],
       "description": "ModuleDef defines a module's path ownership and metadata."
     },
     "ModuleReviewConfig": {
@@ -319,11 +359,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "json",
-        "markdown",
-        "sarif"
-      ],
       "description": "OutputsConfig controls which output formats are produced."
     },
     "PatternDef": {
@@ -376,9 +411,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "enabled"
-      ],
       "description": "PythonLanguage configures the Python extractor (`languages.python`)."
     },
     "RuleDef": {
@@ -404,12 +436,6 @@
         "to": {
           "type": "string"
         },
-        "from_layer": {
-          "type": "string"
-        },
-        "to_layer": {
-          "type": "string"
-        },
         "max": {
           "type": "integer",
           "description": "public_api_max: exported-declaration ceiling per module"
@@ -429,12 +455,7 @@
       "type": "object",
       "required": [
         "id",
-        "type",
-        "gate",
-        "from",
-        "to",
-        "from_layer",
-        "to_layer"
+        "type"
       ],
       "description": "RuleDef declares a single architecture rule."
     },
@@ -478,9 +499,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "enabled"
-      ],
       "description": "RustLanguage configures the Rust extractor (`languages.rust`)."
     },
     "TimedAnalyzer": {
@@ -511,9 +529,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "enabled"
-      ],
       "description": "TimedAnalyzer adds a per-run subprocess timeout (`analyzers.scip`, `analyzers.clones`)."
     },
     "TypeScriptLanguage": {
@@ -541,9 +556,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "enabled"
-      ],
       "description": "TypeScriptLanguage configures the TypeScript extractor (`languages.typescript`)."
     },
     "WaiverDef": {
@@ -569,14 +581,6 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "rule",
-        "from",
-        "to",
-        "reason",
-        "approved_by",
-        "expires"
-      ],
       "description": "WaiverDef grants an approved, time-boxed deviation from a rule (`waivers:`)."
     }
   },
@@ -614,6 +618,13 @@
       },
       "type": "object"
     },
+    "external_systems": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ExternalSystemDef"
+      },
+      "type": "object",
+      "description": "ExternalSystems declares external integration seams (book Ch10 Example 1)\nwhose edges enter coupling_balance scoring at declared_external (D=10)."
+    },
     "rules": {
       "items": {
         "$ref": "#/$defs/RuleDef"
@@ -642,20 +653,7 @@
   "additionalProperties": false,
   "type": "object",
   "required": [
-    "version",
-    "exclude",
-    "languages",
-    "analyzers",
-    "ai",
-    "coupling",
-    "layers",
-    "modules",
-    "rules",
-    "waivers",
-    "metrics",
-    "module_review",
-    "file_class",
-    "outputs"
+    "version"
   ],
   "description": "Config is the parsed and validated content of an archfit.yaml file."
 }

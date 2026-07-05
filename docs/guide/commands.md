@@ -7,6 +7,7 @@ archfit doctor
 archfit config init --root . --output .archfit.yaml
 archfit config init --llm --root .
 archfit config update --config .archfit.yaml
+archfit config update --config .archfit.yaml --llm
 archfit config update --config .archfit.yaml --apply
 archfit                                                      # report-only, default text output
 archfit analyze --gate --config .archfit.yaml --full         # CI gate
@@ -20,6 +21,7 @@ archfit analyze --llm --config .archfit.yaml
 archfit baseline --full --config .archfit.yaml
 archfit explain <finding-id-prefix> --config .archfit.yaml
 archfit config enrich labels --config .archfit.yaml
+archfit config enrich abstained --config .archfit.yaml
 archfit config enrich owner --config .archfit.yaml
 archfit config enrich volatility --config .archfit.yaml
 archfit config init --llm --root . -o .archfit-autopilot.yaml
@@ -32,11 +34,14 @@ audit report. Bare `archfit` (no subcommand) runs `analyze` in report-only mode.
 
 ## Command summary
 
-- `archfit doctor` — check available local toolchain; `--fix` installs missing
-  tools (`--dry-run` previews without installing).
+- `archfit doctor` — check available local toolchain; a config that fails to
+  load is reported with the load error (a `forbidden_dependency` rule with no
+  `from:`/`to:` glob is such an error — it would be dead by construction).
+  `--fix` installs missing tools (`--dry-run` previews without installing).
 - `archfit config init` — generate a starter `.archfit.yaml`; `--llm` adds an
   off-gate classification pass (subdomain, volatility, layer, role per module).
-- `archfit config update` — sync `.archfit.yaml` with the current project structure.
+- `archfit config update` — sync `.archfit.yaml` with the current project structure;
+  `--llm` adds review-only role and volatility proposals to the drift report.
 - `archfit analyze` — run architecture analysis (default command; also runs as
   bare `archfit`). Without `--gate` it is report-only (always exits `0` on
   success, `3` on config/tool error). With `--gate` it enforces rules and emits
@@ -45,9 +50,11 @@ audit report. Bare `archfit` (no subcommand) runs `analyze` in report-only mode.
 - `archfit explain <id>` — explain one finding by fingerprint prefix
   (`--llm` appends an off-gate narrative; needs `ai:` configured).
 - `archfit config enrich` — draft LLM refinements for human review (off-gate).
-  Subcommands: `labels` (coupling-label drafts → `.archfit-labels.yaml`), `owner`,
-  `volatility`, `subdomain` (module-field drafts → separate draft files); `--apply`
-  writes approved entries into the config. See [llm-enrich.md](llm-enrich.md).
+  Subcommands: `labels` (coupling-label drafts → `.archfit-labels.yaml`),
+  `abstained` (labels for unknown-strength cross-module edges with snippets),
+  `owner`, `volatility`, `subdomain` (module-field drafts → separate draft files);
+  `--apply` writes approved module-field entries into the config. See
+  [llm-enrich.md](llm-enrich.md).
 
 Output formats for `analyze`: `text` (default), `json`, `markdown`/`md`, `sarif`
 (SARIF 2.1.0 for CI code-scanning annotations), `scorecard` (the banded
@@ -70,8 +77,11 @@ Findings have a lifecycle status:
 ## Exit codes
 
 - `0` — pass;
-- `1` — fail (active gate finding, **or** a missing required tool under
-  `--require-tools` / `languages.<x>.gate: fail` / `analyzers.<x>.gate: fail` — a policy violation);
+- `1` — fail (active gate finding, a metric delta that worsens past its
+  `metrics.<name>` threshold with `gate` fail/unset, a tripped
+  [`coupling.gate`](configuration-reference.md#couplinggate), **or** a missing
+  required tool under `--require-tools` / `languages.<x>.gate: fail` /
+  `analyzers.<x>.gate: fail` — a policy violation);
 - `2` — warn;
 - `3` — usage, config, or runtime error.
 
@@ -79,7 +89,9 @@ Exit `1` (policy) is deliberately distinct from exit `3` (tool/config error): a
 missing required tool is a _gate_ decision you opted into, not a crash.
 
 Balanced Coupling advisories are informational by default. Use them to prioritize
-architecture review and refactoring, not as automatic pass/fail rules.
+architecture review and refactoring, not as automatic pass/fail rules. The
+synthesised `coupling_balance` score built from those advisories _can_ fail the
+build, but only through the opt-in `coupling.gate` block.
 
 ## Coverage gaps and required tools
 
@@ -150,7 +162,8 @@ environments, or with `--quiet`. This keeps `archfit --json | jq` clean.
 - `-c` / `--config` — config file (default `.archfit.yaml`).
 - `--root` — analysis root (default: config directory).
 - `--base <ref>` — also score a git ref and show a before/after scorecard delta
-  in the text/markdown report. JSON/SARIF stay the normal HEAD diagnostic.
+  in the text/markdown report. JSON also includes `score_delta`; SARIF stays the
+  normal HEAD diagnostic.
 - `--gate` — enable CI exit codes (0/1/2/3); without it the run is report-only
   (always exits `0` on success, `3` on config or tool error).
 - `--json` — output JSON (shorthand for `--format json`).
@@ -162,6 +175,9 @@ environments, or with `--quiet`. This keeps `archfit --json | jq` clean.
   deterministic output (needs `ai:` configured in `.archfit.yaml`).
 - `--full` — scan all files (default true).
 - `--advisory` — include Balanced Coupling advisories (default true).
+- `--no-cache` — bypass archfit caches: extractor facts (and LLM responses with
+  `--llm`). Reads and writes — a `--no-cache` run neither uses nor refreshes
+  entries. See [caching.md](caching.md).
 - `--severity`, `--lang`, `--no-config`, `--require-tools` — standard analyze flags.
 - `--progress auto|plain|none` — progress output mode (default `auto`).
 - `--quiet` / `-q` — suppress progress and non-essential output.
@@ -225,7 +241,9 @@ fitness measure; structural rules (forbidden deps, layering, cycles, encapsulati
 are pass/fail gates reported separately.
 
 Output is deterministic — byte-identical across a double-run. The scorecard is
-**off-gate**: it never changes the exit code.
+report-only by default; the opt-in
+[`coupling.gate`](configuration-reference.md#couplinggate) block makes the
+synthesised score fail the run (exit 1) on a band floor or score drop.
 
 ## LLM narrative (analyze --llm)
 
@@ -279,7 +297,8 @@ Requirements:
 
 Flags (in addition to the standard `analyze` flags):
 
-- `--no-cache` — bypass the LLM response cache at `.archfit-cache/llm/`.
+- `--no-cache` — bypass archfit caches: extractor facts and the LLM response
+  cache at `.archfit-cache/llm/`. See [caching.md](caching.md).
 
 ## archfit config init --llm (full draft)
 
@@ -302,10 +321,11 @@ provider's API key — see [LLM enrichment](llm-enrich.md).
 Flags:
 
 - `--root` / `-r` — project root (default: `.`).
-- `--config` / `-c` — existing config to read `ai:` from (default:
-  `.archfit.yaml`).
 - `--output` / `-o` — draft output file; `-` for stdout.
-- `--llm-provider`, `--llm-model`, `--no-cache` — see `archfit config init` below.
+- `--llm-provider`, `--llm-model`, `--no-cache` — provider/cache controls.
+
+When `--llm` is used, `config init` reads `ai:` from the target output config
+when that file already exists; otherwise use `--llm-provider` and `--llm-model`.
 
 ## archfit config init
 
@@ -363,21 +383,21 @@ archfit config update --config .archfit.yaml
 # apply mode: writes structural changes live
 archfit config update --config .archfit.yaml --apply
 
-# with LLM: adds classification of unclassified modules to the report
+# with LLM: adds review-only role/volatility proposals to the report
 archfit config update --config .archfit.yaml --llm
 
-# with LLM + apply: structural + classification written live
+# with LLM + apply: structural changes written live; LLM proposals stay review-only
 archfit config update --config .archfit.yaml --llm --apply
 ```
 
 Mode matrix:
 
-| Command                       | Effect                                             |
-| ----------------------------- | -------------------------------------------------- |
-| `config update`               | Drift report only; writes nothing.                 |
-| `config update --apply`       | Structural drift written live (add/path/comment).  |
-| `config update --llm`         | Drift report + LLM classification of unclassified. |
-| `config update --llm --apply` | Structural + LLM classification written live.      |
+| Command                       | Effect                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------- |
+| `config update`               | Drift report only; writes nothing.                                              |
+| `config update --apply`       | Structural drift written live (add/path/comment).                               |
+| `config update --llm`         | Drift report plus review-only subdomain, volatility, layer, and role proposals. |
+| `config update --llm --apply` | Structural drift written live; LLM semantic proposals remain review-only.       |
 
 What "structural drift" means:
 
@@ -394,9 +414,9 @@ Guardrails:
 - Plan mode (`config update` without `--apply`) never writes `.archfit.yaml`.
 - `--apply` backs up the existing file before writing (`.archfit.yaml.bak` or
   timestamped if a backup already exists).
-- Existing field values (`subdomain`, `volatility`, `layer`) are never
-  overwritten — `--llm --apply` fills only absent fields.
-- `layer` from LLM is written live only when the value is present in `layers:`.
+- Existing field values are never overwritten.
+- LLM subdomain, volatility, layer, and role proposals are report-only. Review
+  and copy accepted values into `.archfit.yaml` deliberately.
 - Module keys are never auto-renamed.
 - If the config has not changed since it was read, `--apply` aborts rather than
   overwriting concurrent edits.
@@ -413,9 +433,12 @@ Flags:
 before/after scorecard delta. It checks `<ref>` out into a clean detached
 worktree, scores it with the same pipeline, and adds a **CHANGE VS BASE** section
 to the text report (a "Change vs base" block under `--markdown`). The HEAD side is
-a normal full analysis, so `--json`/`--sarif` are the standard HEAD diagnostic
-(no separate delta schema) and `--gate` / `--require-tools` apply exactly as
-without `--base`.
+a normal full analysis. JSON includes `score_delta`:
+`base_overall`, `head_overall`, `overall_delta`, and per-dimension
+`base`/`head`/`delta`; SARIF stays the standard HEAD diagnostic. `--gate` /
+`--require-tools` apply exactly as without `--base`. Base-side extractor facts are cached by commit SHA, so
+repeat runs against the same ref skip all base-side subprocess work — see
+[caching.md](caching.md).
 
 ```sh
 archfit analyze --base main                            # decision + before/after delta

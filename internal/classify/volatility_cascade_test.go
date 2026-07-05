@@ -21,6 +21,7 @@ const (
 	cascadeFileNotifications = "notifications/svc.go"
 	cascadeFileGateway       = "gateway/svc.go"
 	cascadeProbeFile         = "probe/x.go"
+	cascadePairNotifPayment  = "notifications\x00payment"
 )
 
 // buildGraph constructs a Graph from a slice of (from, to, strengthHint) triples.
@@ -203,8 +204,8 @@ func TestVolatilityCascade_ClonePairExcluded(t *testing.T) {
 		Modules:                  cascadeModules,
 		VolatilityCascadeEnabled: true,
 		CrossModuleClonePairs: map[string]struct{}{
-			// connascencePairKey's format: sorted module names joined by "\x00".
-			"notifications\x00payment": {},
+			// modulePairKey's format: sorted module names joined by "\x00".
+			cascadePairNotifPayment: {},
 		},
 	}
 	idx := classify.Run(g, c)
@@ -217,6 +218,60 @@ func TestVolatilityCascade_ClonePairExcluded(t *testing.T) {
 	// clone-detected must suppress the cascade despite the strong strength hint.
 	if cl.Volatility != coupling.VolatilityLow {
 		t.Errorf("volatility = %q, want %q (clone pair must not trigger cascade)", cl.Volatility, coupling.VolatilityLow)
+	}
+}
+
+func TestVolatilityCascade_UsesResolvedStrength(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  config.ClassifyConfig
+		to   string
+	}{
+		{
+			name: "config internal glob",
+			cfg: config.ClassifyConfig{
+				Modules: map[string]config.ModuleDef{
+					"payment":       {Paths: []string{"payment/**"}, Internal: []string{"payment/internal/**"}, Subdomain: subdomainCore},
+					"notifications": {Paths: []string{"notifications/**"}, Subdomain: subdomainSupporting},
+				},
+				VolatilityCascadeEnabled: true,
+			},
+			to: "payment/internal/svc.go",
+		},
+		{
+			name: "approved human label",
+			cfg: config.ClassifyConfig{
+				Modules:                  cascadeModules,
+				VolatilityCascadeEnabled: true,
+				ApprovedLabels:           map[string]string{cascadePairNotifPayment: string(coupling.StrengthFunctional)},
+			},
+			to: cascadeFilePayment,
+		},
+		{
+			name: "approved llm label",
+			cfg: config.ClassifyConfig{
+				Modules:                  cascadeModules,
+				VolatilityCascadeEnabled: true,
+				LLMLabels:                map[string]string{cascadePairNotifPayment: string(coupling.StrengthFunctional)},
+			},
+			to: cascadeFilePayment,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := buildGraph([][3]string{
+				{cascadeFileNotifications, tc.to, ""},
+				{cascadeProbeFile, cascadeFileNotifications, ""},
+			})
+			idx := classify.Run(g, tc.cfg)
+			cl, ok := idx[probeKey(cascadeFileNotifications)]
+			if !ok {
+				t.Fatalf("probe edge not in index")
+			}
+			if cl.Volatility != coupling.VolatilityHigh {
+				t.Errorf("volatility = %q, want high", cl.Volatility)
+			}
+		})
 	}
 }
 

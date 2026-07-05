@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/extract/ts"
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -135,6 +137,9 @@ func TestExtract_CouldNotResolve(t *testing.T) {
 	if cov.Status != "partial" {
 		t.Errorf("Status = %q, want %q", cov.Status, "partial")
 	}
+	if !strings.Contains(cov.Reason, "1 of 1 import specifiers unresolved") {
+		t.Errorf("Reason = %q, want it to name the unresolved count", cov.Reason)
+	}
 	if facts.Unresolved != 1 {
 		t.Errorf("facts.Unresolved = %d, want 1", facts.Unresolved)
 	}
@@ -242,7 +247,10 @@ func TestExtract_ExternalNodes(t *testing.T) {
 // Balanced Coupling integration-strength hint: a type-only (`import type`) edge
 // shares only the type shape and vanishes at runtime → Contract (weakest); a
 // value/runtime import and a dynamic `import()` both bind to exported
-// names/signatures → Functional.
+// names/signatures → Functional. That includes an import of pure constants
+// (book Ch7 → model in Go/Rust): dependency-cruiser sees module imports, not
+// object kinds, so a const-only module is indistinguishable from a function
+// module — the coarse Functional stands and SCIP/LLM labels refine it later.
 func TestExtract_EdgeTypes(t *testing.T) {
 	data := loadFixture(t, "depcruise_edgetypes.json")
 	runner := mockRunner(data)
@@ -269,9 +277,18 @@ func TestExtract_EdgeTypes(t *testing.T) {
 		to   string
 		want string
 	}{
-		{"type-only import → contract", "file:src/types.ts", "contract"},
-		{"value import → functional", "file:src/b/index.ts", "functional"},
-		{"dynamic import → functional", "file:src/lazy.ts", "functional"},
+		{"type-only import → contract", "file:src/types.ts", string(coupling.StrengthContract)},
+		{"value import → functional", "file:src/b/index.ts", string(coupling.StrengthFunctional)},
+		{"dynamic import → functional", "file:src/lazy.ts", string(coupling.StrengthFunctional)},
+		{"const-only module import → functional (object kinds invisible)", "file:src/consts.ts", string(coupling.StrengthFunctional)},
+		// DTO abstention (Wave 4 Task 3): Go upgrades a pure-data struct to the
+		// "dto" hint using method sets + field visibility from type info;
+		// dependency-cruiser sees module imports, not type shapes, so a
+		// value-import of a DTO-only module stays the coarse functional — no
+		// fabricated contract upgrade. (`import type` of a DTO already maps to
+		// contract via the type-only rule above; Wave 7 LLM labels are the
+		// designed refinement path for the value-import case.)
+		{"DTO-only module value import → functional (type shape invisible)", "file:src/dto.ts", string(coupling.StrengthFunctional)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

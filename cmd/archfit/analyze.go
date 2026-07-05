@@ -12,6 +12,7 @@ import (
 	"github.com/alexei-led/archfit/internal/decision"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/llm"
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/output/console"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
@@ -41,7 +42,7 @@ type AnalyzeCmd struct {
 	Gate bool `help:"CI exit behavior: 0=clean, 1=architecture violation, 2=warnings, 3=config/tool error. Without --gate the command is always report-only (exit 0 on success)."`
 	LLM  bool `help:"Append an off-gate LLM narrative review after the normal render. Requires ai configured in the config file."`
 
-	NoCache bool `name:"no-cache" help:"With --llm: bypass the LLM response cache."`
+	NoCache bool `name:"no-cache" help:"Bypass archfit caches: extractor facts (and LLM responses with --llm)."`
 
 	// Format shorthand flags — mutually exclusive; error if more than one set.
 	// These map onto Format below.
@@ -144,6 +145,7 @@ func (c *AnalyzeCmd) runScan(ctx context.Context, deps *appDeps, formats []strin
 	rep := newProgressReporter(deps.stderr(), analyzePhaseTotal(c.LLM, c.Base != ""), c.Progress, c.Quiet, time.Now())
 	rep.banner("Archfit analyzing " + analyzeTarget(c.Config, c.Root))
 	deps.progress = rep.advance // runPipeline advances the discover/facts/graph phases
+	deps.noCache = c.NoCache    // one flag governs all caches (fact-cache.md D2)
 	defer rep.finish()
 
 	rep.advance("Loading config")
@@ -185,17 +187,34 @@ func (c *AnalyzeCmd) runScan(ctx context.Context, deps *appDeps, formats []strin
 		Formats:    formats,
 	}
 
-	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, c.NoConfig, mode, base)
+	// runPipeline synthesises the scorecard and applies the coupling gate
+	// internally (before the verdict and agent_tasks freeze — V2 fix); the
+	// "Scoring architecture" phase is reported from inside the pipeline.
+	diag, sc, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, c.NoConfig, mode, base)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+	}
+
+	// Echo coupling-gate trip reasons from analyze only: runPipeline is shared
+	// with baseline/enrich/explain/--base scoring, where an enforcement-sounding
+	// stderr line is noise (and --base would print it twice). The gate decision
+	// is pure, so re-evaluating here reproduces exactly what applyCouplingGate
+	// applied to the verdict inside the pipeline.
+	gateView := couplingGateView(cfg)
+	for _, r := range score.EvaluateCouplingGate(sc, gateView, base.CouplingScore()).Reasons {
+		_, _ = fmt.Fprintln(deps.stderr(), "coupling gate: "+r)
+	}
+	// A score snapshot from a different scorer version can't anchor max_drop
+	// (CouplingScore returns nil) — disclose the skip instead of gating silent.
+	if gateView.Enabled && gateView.MaxDrop != nil && base.ScoreVersionStale() {
+		_, _ = fmt.Fprintf(deps.stderr(),
+			"coupling gate: max_drop skipped — baseline score was recorded under scorer version %q, current is %q; run `archfit baseline` to re-anchor\n",
+			base.Score.ScoreVersion, coupling.ScoreVersion)
 	}
 
 	// Apply the opt-in hard gate before rendering so the output shows the
 	// effective gate per coverage gap.
 	hardGate := applyToolGate(&diag, c.RequireTools)
-
-	rep.advance("Scoring architecture")
-	sc := score.Synthesize(diag)
 
 	// --base: score the ref in a worktree and attach a before/after delta.
 	var baseSC *score.Scorecard

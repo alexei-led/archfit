@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
@@ -38,7 +39,15 @@ type Extractor struct {
 	runner             toolrun.Runner
 	cfg                config.ExtractConfig
 	lastModuleGraphCov diagnostic.Coverage // cargo-modules coverage from most recent Extract call
+	lastCrateRoots     []graph.CrateRoot   // crate roots from most recent Extract call
+	// Cache is the extractor fact cache; nil disables caching (--no-cache).
+	Cache *factcache.Store
 }
+
+// rustManifestNames are the fact-affecting manifests hashed into the cargo
+// metadata fact-cache key: `cargo metadata --no-deps` derives everything from
+// them, so source files stay out of that key (a .rs edit must NOT re-run it).
+var rustManifestNames = []string{"Cargo.toml", "Cargo.lock"}
 
 // New returns an Extractor configured with the given runner and config. The
 // module-graph coverage is seeded to a well-formed absent record so a caller that
@@ -105,7 +114,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		return graph.Facts{}, absentCoverage(""), nil
 	}
 
-	version := e.detectVersion(ctx)
+	version := e.toolVersion(ctx, toolCargo)
 
 	// --no-deps limits the package set to first-party workspace members; each
 	// member still lists its direct dependencies, which we resolve to package:/
@@ -118,7 +127,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		args = append(args, "--manifest-path", e.cfg.CargoManifest)
 	}
 
-	out, err := e.runner.Run(ctx, toolrun.ToolCmd{
+	out, err := e.metadataRunner(s, version).Run(ctx, toolrun.ToolCmd{
 		Name:    toolCargo,
 		Args:    args,
 		WorkDir: s.Root,
@@ -148,6 +157,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	// core ring can resolve .rs files to module keys ("<crate>::<mod>") for the
 	// size/cohesion metrics — the crate name is not derivable from a path alone.
 	facts.CrateRoots = crateRoots(s.Root, members)
+	e.lastCrateRoots = facts.CrateRoots
 
 	// Opt-in intra-crate module graph via cargo-modules (analyzers.cargo_modules.enabled: true).
 	// When enabled, module-level nodes and edges are merged into facts alongside the
@@ -157,7 +167,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	// lastModuleGraphCov so the pipeline can append it to ExtraCoverage (same pattern
 	// as complexity/clones, which also surface coverage outside Extract).
 	if e.cfg.ModuleGraph {
-		modNodes, modEdges, modCov := e.runModuleGraph(ctx, members)
+		modNodes, modEdges, modCov := e.runModuleGraph(ctx, e.moduleGraphRunner(ctx, s, version), members)
 		facts.Nodes = append(facts.Nodes, modNodes...)
 		facts.Edges = append(facts.Edges, modEdges...)
 		e.lastModuleGraphCov = modCov
@@ -176,11 +186,75 @@ func (e *Extractor) LastModuleGraphCoverage() diagnostic.Coverage {
 	return e.lastModuleGraphCov
 }
 
-// detectVersion runs `cargo --version` and returns the trimmed version string.
+// LastCrateRoots returns the crate roots (repo-relative crate dir + crate
+// name) from the most recent Extract call. The pipeline uses this to resolve
+// "<crate>::<mod>" module keys (cargo-modules' intra-crate convention) to a
+// real directory for agent_tasks files[]. Nil when Extract has not been
+// called or found no workspace members.
+func (e *Extractor) LastCrateRoots() []graph.CrateRoot {
+	return e.lastCrateRoots
+}
+
+// metadataRunner wraps the runner in a fact-cache decorator for the cargo
+// metadata invocation (fact-cache.md D5 seam 1). Returns the plain runner
+// when the cache is off or key material cannot be derived — never fails the
+// run. Key inputs: cargo version, the ExtractConfig view, the scan root (the
+// metadata JSON embeds absolute manifest paths, so entries are per-checkout),
+// and the content hash of every Cargo.toml/Cargo.lock under s.Root.
+func (e *Extractor) metadataRunner(s scope.Scope, version string) toolrun.Runner {
+	return e.cachedRunner(s, langRust, version, nil)
+}
+
+// moduleGraphRunner wraps the runner in a fact-cache decorator for the
+// per-crate cargo-modules invocations. cargo-modules reads the source tree,
+// so the key adds every .rs file to the manifest set, plus the cargo-modules
+// version (probed here — best-effort, "" when the binary is absent; Detect in
+// runModuleGraph still reports the tool absent before any Run happens).
+func (e *Extractor) moduleGraphRunner(ctx context.Context, s scope.Scope, cargoVersion string) toolrun.Runner {
+	if e.Cache == nil {
+		return e.runner
+	}
+	ver := cargoVersion + "\x00" + e.toolVersion(ctx, toolCargoModules)
+	return e.cachedRunner(s, "cargo_modules", ver, []string{".rs"})
+}
+
+// cachedRunner builds the fact-cache decorator shared by the two cargo seams:
+// the input scope is the manifest set (rustManifestNames) plus any extra
+// extensions the analyzer reads (.rs for cargo-modules, none for metadata).
+func (e *Extractor) cachedRunner(s scope.Scope, analyzer, version string, exts []string) toolrun.Runner {
+	if e.Cache == nil {
+		return e.runner
+	}
+	cfgHash, err := factcache.HashJSON(struct {
+		Cfg  config.ExtractConfig
+		Root string
+	}{e.cfg, s.Root})
+	if err != nil {
+		return e.runner
+	}
+	// Config exclusions deliberately do NOT filter the hash: cargo reads
+	// manifests and sources regardless of `exclude:` globs (ListInputs prunes
+	// target/ and known non-input cache directories), so editing an excluded-but-compiled file must
+	// still invalidate. Exclusion-config changes invalidate via cfgHash.
+	files := factcache.ListInputs(s.Root, factcache.MatchExts(exts, rustManifestNames), nil)
+	treeHash, err := factcache.HashTree(s.Root, files)
+	if err != nil {
+		return e.runner
+	}
+	return &factcache.Runner{
+		Inner:     e.runner,
+		Store:     e.Cache,
+		Analyzer:  analyzer,
+		Key:       factcache.Key(analyzer, version, cfgHash, treeHash),
+		Cacheable: func(out toolrun.Output) bool { return out.ExitCode == 0 },
+	}
+}
+
+// toolVersion runs `<tool> --version` and returns the trimmed version string.
 // Returns empty string on any failure (non-fatal).
-func (e *Extractor) detectVersion(ctx context.Context) string {
+func (e *Extractor) toolVersion(ctx context.Context, tool string) string {
 	out, err := e.runner.Run(ctx, toolrun.ToolCmd{
-		Name:    toolCargo,
+		Name:    tool,
 		Args:    []string{"--version"},
 		Timeout: 30 * time.Second,
 	})

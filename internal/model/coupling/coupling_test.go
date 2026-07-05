@@ -206,3 +206,28 @@ func TestScoreBand_Severity(t *testing.T) {
 		})
 	}
 }
+
+// TestDistanceIsHigh covers every Distance value: only a different owner, a
+// separate deployment unit, or a declared external system represent the
+// large socio-technical gap DistanceIsHigh names — same_module,
+// cross_module_same_owner, and unknown do not.
+func TestDistanceIsHigh(t *testing.T) {
+	tests := []struct {
+		d    Distance
+		want bool
+	}{
+		{DistanceSameModule, false},
+		{DistanceCrossModuleSameOwner, false},
+		{DistanceCrossModuleDiffOwner, true},
+		{DistanceCrossDeployUnit, true},
+		{DistanceExternal, true},
+		{DistanceUnknown, false},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.d), func(t *testing.T) {
+			if got := DistanceIsHigh(tt.d); got != tt.want {
+				t.Errorf("DistanceIsHigh(%q) = %v, want %v", tt.d, got, tt.want)
+			}
+		})
+	}
+}

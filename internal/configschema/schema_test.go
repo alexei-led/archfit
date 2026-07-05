@@ -1,8 +1,10 @@
 package configschema_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/configschema"
@@ -39,5 +41,63 @@ func TestSchemaNoDrift(t *testing.T) {
 	if string(got) != string(want) {
 		t.Errorf("schema drift — run `make schema` to regenerate archfit.schema.json\n"+
 			"got %d bytes, want %d bytes", len(got), len(want))
+	}
+}
+
+// TestSchemaPatchedDefinitions asserts the patchDefinitions semantics directly,
+// so a silently no-op'ed patch (typo'd definition name, library rename) fails
+// here instead of being "fixed" by regenerating the drift snapshot.
+func TestSchemaPatchedDefinitions(t *testing.T) {
+	got, err := configschema.Generate("../config")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	var schema struct {
+		Defs map[string]struct {
+			Required   []string         `json:"required"`
+			AnyOf      []map[string]any `json:"anyOf"`
+			Properties map[string]struct {
+				Enum    []any       `json:"enum"`
+				Minimum json.Number `json:"minimum"`
+			} `json:"properties"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(got, &schema); err != nil {
+		t.Fatalf("unmarshal generated schema: %v", err)
+	}
+
+	ruleDef, ok := schema.Defs["RuleDef"]
+	if !ok {
+		t.Fatal("RuleDef definition missing from generated schema")
+	}
+	if !slices.Equal(ruleDef.Required, []string{"id", "type"}) {
+		t.Errorf("RuleDef.required = %v, want [id type] (rule ids feed stable finding fingerprints)", ruleDef.Required)
+	}
+
+	extDef, ok := schema.Defs["ExternalSystemDef"]
+	if !ok {
+		t.Fatal("ExternalSystemDef definition missing from generated schema")
+	}
+	if len(extDef.Required) != 1 || extDef.Required[0] != "targets" {
+		t.Errorf("ExternalSystemDef.required = %v, want [targets]", extDef.Required)
+	}
+	wantVolatilityEnum := []any{"high", "medium", "low", "frozen"}
+	if got := extDef.Properties["volatility"].Enum; !slices.Equal(got, wantVolatilityEnum) {
+		t.Errorf("ExternalSystemDef.volatility enum = %v, want %v", got, wantVolatilityEnum)
+	}
+
+	gateDef, ok := schema.Defs["CouplingGateDef"]
+	if !ok {
+		t.Fatal("CouplingGateDef definition missing from generated schema")
+	}
+	if len(gateDef.AnyOf) != 2 {
+		t.Errorf("CouplingGateDef.anyOf has %d branches, want 2 (min_band or max_drop required)", len(gateDef.AnyOf))
+	}
+	if gateDef.Properties["max_drop"].Minimum != "0" {
+		t.Errorf("CouplingGateDef.max_drop.minimum = %q, want %q (negative drop rejected)", gateDef.Properties["max_drop"].Minimum, "0")
+	}
+	wantMinBandEnum := []any{"poor", "mixed", "serviceable", "strong"}
+	if got := gateDef.Properties["min_band"].Enum; !slices.Equal(got, wantMinBandEnum) {
+		t.Errorf("CouplingGateDef.min_band enum = %v, want %v (critical excluded — could never trip)", got, wantMinBandEnum)
 	}
 }

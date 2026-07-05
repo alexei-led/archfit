@@ -24,11 +24,18 @@ const (
 type Distance string
 
 // Distance constants (spec §18).
+// DistanceExternal is a config-declared external integration seam
+// (`external_systems:`) — book Ch10 Example 1, cross-vendor integration, the
+// far end of the distance ladder (D=10). Only DECLARED external targets get
+// it; undeclared external edges stay DistanceUnknown and are excluded from
+// coupling_balance (scoring every library import at D=10 would flood the
+// metric with vendor noise).
 const (
 	DistanceSameModule           Distance = "same_module"
 	DistanceCrossModuleSameOwner Distance = "cross_module_same_owner"
 	DistanceCrossModuleDiffOwner Distance = "cross_module_different_owner"
 	DistanceCrossDeployUnit      Distance = "cross_deploy_unit"
+	DistanceExternal             Distance = "declared_external"
 	DistanceUnknown              Distance = "unknown"
 )
 
@@ -84,21 +91,11 @@ type DistanceBasis string
 // DistanceBasis signal constants. DistanceBasisUnknown (empty string) is used for
 // same_module and unknown-distance edges and omits from JSON output via omitempty.
 const (
-	DistanceBasisUnknown    DistanceBasis = ""               // same_module or unknown distance
-	DistanceBasisStructure  DistanceBasis = "code_structure" // structural tree-distance fallback
-	DistanceBasisOwnership  DistanceBasis = "ownership"      // explicit or multi-owner signal
-	DistanceBasisDeployUnit DistanceBasis = "deploy_unit"    // differing deploy units (absolute)
-)
-
-// Connascence is the degree of connascence detected on a cross-module edge.
-// Report-only vocabulary — never scored, never gates.
-type Connascence string
-
-// Connascence degree constants. ConnascenceNone means no connascence detected.
-const (
-	ConnascenceNone      Connascence = ""
-	ConnascenceType      Connascence = "type"      // CoT: struct/interface/field use
-	ConnascenceAlgorithm Connascence = "algorithm" // CoA: clone pair crosses module boundary
+	DistanceBasisUnknown    DistanceBasis = ""                  // same_module or unknown distance
+	DistanceBasisStructure  DistanceBasis = "code_structure"    // structural tree-distance fallback
+	DistanceBasisOwnership  DistanceBasis = "ownership"         // explicit or multi-owner signal
+	DistanceBasisDeployUnit DistanceBasis = "deploy_unit"       // differing deploy units (absolute)
+	DistanceBasisExternal   DistanceBasis = "declared_external" // target matched an external_systems entry
 )
 
 // Classification holds the Balanced Coupling assessment for one graph edge.
@@ -117,12 +114,6 @@ type Classification struct {
 	Severity            Severity
 	ContractRecommended bool      // generic-subdomain target reached via non-contract strength
 	Score               EdgeScore // numeric score; zero when not scored
-	// Connascence is the detected connascence degree for this edge.
-	// CoT (type) when the edge is a cross-module struct/interface/field use,
-	// derivable from model/contract strength with a SCIP hint.
-	// CoA (algorithm) when a clone pair crosses this module boundary.
-	// Report-only — not fed into the scorer or any gate decision.
-	Connascence Connascence `json:"connascence,omitempty"`
 	// DistanceBasis records which signal drove the composite distance.
 	// Report-only — not fed into severity or scoring.
 	DistanceBasis DistanceBasis `json:"distance_basis,omitempty"`
@@ -134,6 +125,15 @@ type Classification struct {
 	// — appended onto the finding's Locations downstream (engine/advisories.go),
 	// never fed into distance/volatility/scoring.
 	CloneLocations []graph.Location `json:"clone_locations,omitempty"`
+	// StrengthFromLLM records that Strength came from an approved
+	// llm-provenance label filling a cell every static source left unknown.
+	// Report-only — drives the classified_edges.labeled_llm disclosure count,
+	// never scoring.
+	StrengthFromLLM bool `json:"strength_from_llm,omitempty"`
+	// StrengthFromNonHighLLM records that StrengthFromLLM came from a label whose
+	// confidence was not high. Report-only — score confidence consumes the applied
+	// edge count rather than raw approved-label rows.
+	StrengthFromNonHighLLM bool `json:"strength_from_non_high_llm,omitempty"`
 }
 
 // Index maps each edge's canonical key (from + "\x00" + to + "\x00" + kind)
@@ -154,10 +154,11 @@ const (
 )
 
 // DistanceIsHigh returns true for distances that represent a large socio-technical
-// gap — a different owner or a separate deployment unit. These are the only
-// distances at which tight coupling is a genuine "distributed monolith"; coupling
-// at cross_module_same_owner (a single owner/binary) is local, and its cascade is
+// gap — a different owner, a separate deployment unit, or a declared external
+// system (a different vendor entirely). These are the only distances at which
+// tight coupling is a genuine "distributed monolith"; coupling at
+// cross_module_same_owner (a single owner/binary) is local, and its cascade is
 // cheap, so it must not be framed as distributed-monolith risk.
 func DistanceIsHigh(d Distance) bool {
-	return d == DistanceCrossModuleDiffOwner || d == DistanceCrossDeployUnit
+	return d == DistanceCrossModuleDiffOwner || d == DistanceCrossDeployUnit || d == DistanceExternal
 }

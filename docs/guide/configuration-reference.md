@@ -18,9 +18,10 @@ exclude         — path globs to skip during scanning
 languages       — per-language extractor settings (go/typescript/python/rust)
 analyzers       — opt-in deeper analysis backends (syntax/scip/clones/cargo_modules)
 ai              — off-gate LLM provider for enrich/explain/analyze --llm
-coupling        — Balanced-Coupling advisory tuning
+coupling        — Balanced-Coupling advisory tuning + coupling_balance gate
 layers          — ordered architecture layers, inner to outer
 modules         — path ownership map
+external_systems — declared external integration seams scored at D=10
 rules           — executable architecture constraints
 waivers         — approved temporary deviations from rules
 metrics         — metric policy settings
@@ -319,7 +320,13 @@ analyzers:
   strength source.
 - `clones` — runs `jscpd` to find cross-module duplicated logic. When a clone pair
   spans two modules, their shared edge strength is upgraded to `symmetric` in the
-  `coupling_balance` scorer, reflecting undeclared hidden coupling.
+  `coupling_balance` scorer, reflecting undeclared hidden coupling. When the two
+  modules share **no** import edge at all, the pair surfaces as a report-only
+  `bc/duplicated_knowledge` advisory instead — duplicated knowledge is functional
+  coupling even without an import (book Ch7). Its severity comes from the standard
+  formula (symmetric strength × module-pair distance × worst-of-pair volatility);
+  `coupling.min_severity` and approved `.archfit-labels.yaml` labels (either
+  direction) suppress it; the [`coupling.gate`](#couplinggate) never promotes it.
 
 `scip` and `clones` are opt-in: `auto` and `false` (and absent) all disable them;
 the run continues without them and the gate verdict is unaffected.
@@ -402,12 +409,15 @@ LLM response cache lives at `.archfit-cache/llm/`.
 
 ## `coupling`
 
-Balanced-Coupling advisory tuning.
+Balanced-Coupling advisory tuning and the `coupling_balance` gate.
 
 ```yaml
 coupling:
   min_severity: medium # low | medium (default) | high | critical
   volatility_cascade: false
+  gate:
+    min_band: mixed # band floor: poor | mixed | serviceable | strong
+    max_drop: 5 # tolerated coupling_balance point drop vs the baseline snapshot
 ```
 
 - `min_severity` — minimum advisory severity to show: `low` (all cross-module
@@ -419,6 +429,42 @@ coupling:
   module inherits raised effective volatility (`high`). Config-declared volatility
   always takes precedence. Disabled by default; safe to enable once `subdomain`
   fields are complete.
+
+### `coupling.gate`
+
+Makes the synthesised `coupling_balance` score able to fail the run. Without
+this block the score is report-only — the default, and backward compatible.
+The block requires `min_band` and/or `max_drop`; an empty `gate:` is a config
+error (it would gate nothing).
+
+- `min_band` — band floor. Trips when the overall `coupling_balance` band
+  ranks below the floor: one of `poor`, `mixed`, `serviceable`, `strong`.
+  `critical` is rejected — no band ranks below it, so it could never trip.
+- `max_drop` — tolerated point drop of the `coupling_balance` value against
+  the score snapshot stored by `archfit baseline`. `0` means any drop trips.
+  A baseline written before the snapshot existed, or while the score was
+  unmeasured, carries no anchor — the drop check is skipped, never guessed.
+  A snapshot recorded under a different scorer version (`score_version`)
+  also carries no anchor: a methodology change is not a regression. The skip
+  is disclosed on stderr — re-run `archfit baseline` to re-anchor.
+
+An unmeasured score (band `n/a`) never trips the gate, whatever the knobs say:
+abstention is not failure. Only the unmeasured case is exempt — a run with
+partial tool coverage that still produces a measured score (for example TS
+with some unresolved imports, confidence capped at `medium`) gates like any
+other measured run.
+
+When the gate trips, the verdict becomes FAIL (exit 1), the trip reasons print
+to stderr, and the active `bc/imbalanced_coupling` advisories are promoted to
+blocking findings — they then flow into `agent_tasks[]` like any other gate
+finding. Baselined and waived advisories stay triaged. When no advisory is
+available to promote (advisory output disabled, or `coupling.min_severity`
+filtering every active edge), the run emits one synthetic `bc/coupling_gate`
+finding carrying the trip reasons instead, so the report and `agent_tasks[]`
+always explain the failure.
+
+`coupling_balance` is not a `metrics:` entry; a `metrics.coupling_balance:`
+key is a config error that points here.
 
 ## `layers`
 
@@ -617,6 +663,51 @@ auditable.
 > Code structure is the baseline and still distinguishes close vs far modules.
 > Ownership only contributes when there are genuinely distinct owners to compare.
 
+## `external_systems`
+
+Declares external integration seams that enter `coupling_balance` scoring at the
+distance ladder's far end — `declared_external`, D=10.
+
+```yaml
+external_systems:
+  aws:
+    targets: ["github.com/aws/aws-sdk-go-v2/**"]
+    # volatility defaults to low
+  payment-gateway:
+    targets: ["node_modules/@stripe/**", "stripe"]
+    volatility: medium
+```
+
+**Why declared, not automatic.** The book's Ch10 Example 1 — a cross-vendor
+integration — sits at the maximum distance: different codebase, different
+company, no shared governance. But scoring **every** library import at D=10
+would flood the metric with vendor noise (`fmt`, `lodash`, `serde`, …).
+An external system is a _declared integration seam_: a vendor SDK, a payment
+gateway client, a generated API stub — a dependency the architect chose to
+treat as an architectural boundary worth measuring. Everything undeclared keeps
+today's disclosed exclusion: counted in `classified_edges.external`, never
+scored, never fabricated.
+
+Field reference:
+
+- `targets` (required, ≥1) — globs matched against the classified edge target,
+  in the form the language extractor emits: a Go import path
+  (`github.com/aws/aws-sdk-go-v2/**`), a TypeScript resolved package path
+  (`node_modules/@aws-sdk/**`) or unresolved bare specifier, a Python dotted
+  module (`boto3.**`), or a Rust crate name (`aws_sdk_s3`). The match is
+  language-independent.
+- `volatility` (optional) — `high | medium | low | frozen`. Defaults to `low`,
+  per the book's generic-subdomain guidance: an external vendor system is a
+  generic capability, presumed stable unless you declare otherwise. Declare
+  `high` for an API that churns under you — combined with D=10, strong coupling
+  to it scores toward the critical band (the vendor-lock distributed monolith).
+
+Matched edges carry `distance_basis: declared_external` on their advisories and
+count in `classified_edges.declared_external`; strength still comes from the
+usual sources, and an edge with unknown strength still abstains (abstain rules
+are unchanged). When nothing is declared, behavior is identical to previous
+versions.
+
 ## `rules`
 
 Each rule needs a stable `id` and a `type`.
@@ -632,17 +723,22 @@ rules:
 
 ### Rule field reference
 
-| Field        | Applies to                  | Description                                                                                  |
-| ------------ | --------------------------- | -------------------------------------------------------------------------------------------- |
-| `id`         | all                         | Stable ID used in findings, baselines, and waivers.                                          |
-| `type`       | all                         | Built-in rule type (see below). Unknown type is a config error.                              |
-| `gate`       | all                         | `fail` (or absent for most types), `warn`, or `off`. `public_api_change` defaults to `warn`. |
-| `from`       | most                        | Source module or path glob.                                                                  |
-| `to`         | most                        | Target module or path glob.                                                                  |
-| `from_layer` | `forbidden_layer_direction` | Source layer name.                                                                           |
-| `to_layer`   | `forbidden_layer_direction` | Target layer name.                                                                           |
-| `max`        | `public_api_max`            | Integer ceiling.                                                                             |
-| `patterns`   | structural rules            | Optional ast-grep patterns for structural evidence.                                          |
+| Field      | Applies to       | Description                                                                                  |
+| ---------- | ---------------- | -------------------------------------------------------------------------------------------- |
+| `id`       | all              | Stable ID used in findings, baselines, and waivers.                                          |
+| `type`     | all              | Built-in rule type (see below). Unknown type is a config error.                              |
+| `gate`     | all              | `fail` (or absent for most types), `warn`, or `off`. `public_api_change` defaults to `warn`. |
+| `from`     | most             | Source module or path glob.                                                                  |
+| `to`       | most             | Target module or path glob.                                                                  |
+| `max`      | `public_api_max` | Integer ceiling.                                                                             |
+| `patterns` | structural rules | Optional ast-grep patterns for structural evidence.                                          |
+
+`forbidden_layer_direction` takes no `from`/`to` (or `from_layer`/`to_layer`)
+keys — it derives layer ordering from `layers:` and each endpoint's layer from
+the `modules:` map's `layer:` field, for every module pair in the graph. A rule
+of this type needs only `id`, `type`, and `gate`. Declare **at most one** rule
+of this type: the check is global, so a second instance re-reports every
+violation under its own rule ID (`archfit config init` generates exactly one).
 
 `gate` controls how the rule blocks the run:
 
@@ -655,10 +751,19 @@ rules:
 
 ### Built-in rule types
 
-- `forbidden_dependency` — fires when an edge matches both `from` and `to` globs.
+- `forbidden_dependency` — fires when an edge matches both `from` and `to`
+  globs. Both globs are **required**: an empty glob matches nothing, ever
+  (`doublestar.Match("", path)` is always false; there is no empty-means-match-all
+  special case), so a rule missing either is rejected as a config error at load.
 - `public_api_only` — fires on internal-access edges, optionally filtered by
-  `from` and `to`.
+  `from` and `to`. Consults the `modules:` map: an edge where both endpoints
+  resolve to the same module (e.g. `domain` importing its own
+  `domain/internal`) is idiomatic same-module access and never fires. When
+  either endpoint isn't covered by the module map, the edge still fires
+  (module-blind fallback).
 - `internal_api_access` — same internal-access signal, with a separate rule ID.
+  Applies the same module-map same-module skip and module-blind fallback as
+  `public_api_only`.
 - `forbidden_layer_direction` — fires when a dependency direction violates the
   ordered `layers` list.
 - `new_cross_module_dependency` — fires on cross-module edges. Baseline status
@@ -744,6 +849,9 @@ Report-only metrics (band `info`; they never gate the verdict):
 - `blast_radius` — modules whose transitive reverse-dependency reach is a large
   share of the codebase.
 
+`coupling_balance` is not a `metrics:` entry — the synthesised score gates
+through the [`coupling.gate`](#couplinggate) block.
+
 Metric entry fields:
 
 ```yaml
@@ -755,7 +863,7 @@ metrics:
   unbalanced_edge:
     enabled: true
     gate: fail
-    max_new_high: 0
+    max_new: 0
   cycle:
     enabled: true
     gate: fail
@@ -765,6 +873,25 @@ metrics:
     gate: warn
     min_delta: 0
 ```
+
+- `enabled` — `false` removes the metric from the run. Metrics absent from the
+  config default to enabled, as do knob-only entries (e.g. just `gate: warn`) —
+  only an explicit `enabled: false` disables.
+- `gate` — what a baseline regression does to the verdict: `off` skips the
+  check, `warn` caps at WARN (exit 2), `fail` or unset blocks (exit 1) — the
+  same convention as rule gates.
+- `max_new` — count metrics only (`cycle`, `unbalanced_edge`): the allowed
+  increase over the baseline value before the gate trips. Default 0: any new
+  occurrence trips.
+- `min_delta` — ratio metrics only (`encapsulation`, `coverage`): the tolerated
+  drop below the baseline value before the gate trips. Default 0: any drop
+  trips.
+
+Setting a knob on a metric of the wrong kind (e.g. `min_delta` on `cycle`) is
+a config error, not a silent no-op. `blast_radius` is informational and never
+gates — it accepts only `enabled`. Metric gates fire only against a baseline
+(`.archfit-baseline.json`); without a stored value for the metric there is no
+delta and nothing to trip.
 
 ## `module_review`
 
@@ -907,10 +1034,12 @@ human` and `provenance: tool` do not lower confidence.
 When an edge's strength cannot be classified (`unknown`) but its distance
 resolves to an internal module, archfit **abstains** — the edge is excluded
 from the `coupling_balance` scored distribution (honest denominator) and an
-`agent_task` is emitted in JSON/SARIF output prompting the operator to add a
-label. The same happens for modules with no declared `subdomain` or
-`volatility`: an `agent_task` asks for a declaration or suggests
-`archfit config enrich subdomain`.
+actionable `config_warnings[]` decision message is emitted in JSON/Markdown
+output prompting the operator to add a label. The same happens for modules with
+no declared `subdomain` or `volatility`: a decision message asks for a
+declaration or suggests `archfit config enrich subdomain`.
+
+`agent_tasks[]` is reserved for active gate findings that need code repair.
 
 External/library edges (`Distance == DistanceUnknown`, i.e. stdlib,
 third-party packages, undeclared imports) are excluded from

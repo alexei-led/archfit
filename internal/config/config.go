@@ -29,20 +29,23 @@ import (
 //   - module_review  — staleness gating of the module declarations
 //   - file_class / outputs — classification overrides and output formats
 type Config struct {
-	Version      int                  `yaml:"version"`
-	Exclude      []string             `yaml:"exclude"`
-	Languages    LanguagesConfig      `yaml:"languages"`
-	Analyzers    AnalyzersConfig      `yaml:"analyzers"`
-	AI           AIConfig             `yaml:"ai"`
-	Coupling     CouplingConfig       `yaml:"coupling"`
-	Layers       []string             `yaml:"layers"`
-	Modules      map[string]ModuleDef `yaml:"modules"`
-	Rules        []RuleDef            `yaml:"rules"`
-	Waivers      []WaiverDef          `yaml:"waivers"`
-	Metrics      MetricsConfig        `yaml:"metrics"`
-	ModuleReview ModuleReviewConfig   `yaml:"module_review"`
-	FileClass    FileClassDef         `yaml:"file_class"`
-	Outputs      OutputsConfig        `yaml:"outputs"`
+	Version   int                  `yaml:"version" jsonschema:"required"`
+	Exclude   []string             `yaml:"exclude"`
+	Languages LanguagesConfig      `yaml:"languages"`
+	Analyzers AnalyzersConfig      `yaml:"analyzers"`
+	AI        AIConfig             `yaml:"ai"`
+	Coupling  CouplingConfig       `yaml:"coupling"`
+	Layers    []string             `yaml:"layers"`
+	Modules   map[string]ModuleDef `yaml:"modules"`
+	// ExternalSystems declares external integration seams (book Ch10 Example 1)
+	// whose edges enter coupling_balance scoring at declared_external (D=10).
+	ExternalSystems map[string]ExternalSystemDef `yaml:"external_systems,omitempty"`
+	Rules           []RuleDef                    `yaml:"rules"`
+	Waivers         []WaiverDef                  `yaml:"waivers"`
+	Metrics         MetricsConfig                `yaml:"metrics"`
+	ModuleReview    ModuleReviewConfig           `yaml:"module_review"`
+	FileClass       FileClassDef                 `yaml:"file_class"`
+	Outputs         OutputsConfig                `yaml:"outputs"`
 
 	// explicitOwners records which modules had a hand-authored `owner:` in YAML,
 	// populated by Load before any resolver fill. Distinguishes a user's explicit
@@ -118,19 +121,44 @@ func (c Config) WithExplicitOwners(modules ...string) Config {
 	return c
 }
 
+// Level literals shared by bcSeverities, externalVolatilities, and Default().
+const (
+	levelLow    = "low"
+	levelMedium = "medium"
+	levelHigh   = "high"
+)
+
 // bcSeverities are the accepted coupling.min_severity values (low→critical).
-var bcSeverities = map[string]struct{}{"low": {}, "medium": {}, "high": {}, "critical": {}}
+var bcSeverities = map[string]struct{}{levelLow: {}, levelMedium: {}, levelHigh: {}, "critical": {}}
 
 // gateValues are the accepted gate policy markers (spec §rules: off | warn | fail),
 // shared by rule, metric, and module_review gates. Empty means "use the default".
 var gateValues = map[string]struct{}{"off": {}, "warn": {}, "fail": {}}
 
-// knownMetrics is the set of metric keys archfit implements. `metrics` is a map,
-// so unknown keys escape DisallowUnknownField — validate() rejects them so a typo
-// or a removed metric is a loud config error, not a silent no-op (consistency with
-// the strict `analyzers` struct).
-var knownMetrics = map[string]struct{}{
-	"encapsulation": {}, "unbalanced_edge": {}, "cycle": {}, "coverage": {}, "blast_radius": {},
+// metricKnob classifies which delta-threshold knob a metric's gate accepts.
+// A metric's polarity is definitional (stamped as Direction on its result),
+// not a user choice — the knob kind follows it: count metrics (higher is
+// worse) accept max_new, ratio metrics (higher is better) accept min_delta,
+// informational metrics accept neither because they never carry a baseline
+// delta and never gate.
+type metricKnob int
+
+const (
+	knobRatio metricKnob = iota // min_delta applies (higher is better)
+	knobCount                   // max_new applies (higher is worse)
+	knobNone                    // informational: no gate, no thresholds
+)
+
+// knownMetrics maps each metric key archfit implements to its threshold-knob
+// kind. `metrics` is a map, so unknown keys escape DisallowUnknownField —
+// validate() rejects them so a typo or a removed metric is a loud config
+// error, not a silent no-op (consistency with the strict `analyzers` struct).
+var knownMetrics = map[string]metricKnob{
+	"encapsulation":   knobRatio,
+	"coverage":        knobRatio,
+	"unbalanced_edge": knobCount,
+	"cycle":           knobCount,
+	"blast_radius":    knobNone,
 }
 
 // removedConfigKeys maps config keys removed before v1.0 to a short reason, so a
@@ -165,6 +193,9 @@ func validate(cfg Config) error {
 			return fmt.Errorf("coupling.min_severity %q is not one of: low, medium, high, critical", s)
 		}
 	}
+	if err := validateCouplingGate(cfg.Coupling.Gate); err != nil {
+		return err
+	}
 	for _, name := range sortedKeys(cfg.Modules) {
 		if r := cfg.Modules[name].Role; r != "" {
 			if _, ok := moduleRoles[r]; !ok {
@@ -172,23 +203,26 @@ func validate(cfg Config) error {
 			}
 		}
 	}
-	for i, r := range cfg.Rules {
-		id := r.ID
-		if id == "" {
-			id = fmt.Sprintf("#%d", i)
-		}
-		if err := validateGate(fmt.Sprintf("rules[%s]", id), r.Gate); err != nil {
+	for _, name := range sortedKeys(cfg.ExternalSystems) {
+		if err := validateExternalSystem(name, cfg.ExternalSystems[name]); err != nil {
 			return err
 		}
 	}
-	for _, name := range sortedMetricKeys(cfg.Metrics) {
+	if err := validateRules(cfg.Rules); err != nil {
+		return err
+	}
+	for _, name := range sortedKeys(cfg.Metrics) {
 		if reason, removed := removedConfigKeys[name]; removed {
 			return fmt.Errorf("metrics.%s was %s — remove it", name, reason)
 		}
-		if _, ok := knownMetrics[name]; !ok {
+		knob, ok := knownMetrics[name]
+		if !ok {
+			if name == "coupling_balance" {
+				return errors.New("metrics.coupling_balance is not a metric — the synthesised coupling score gates via the coupling.gate block (min_band / max_drop)")
+			}
 			return fmt.Errorf("metrics.%s is not a known metric (known: blast_radius, coverage, cycle, encapsulation, unbalanced_edge)", name)
 		}
-		if err := validateGate("metrics."+name, cfg.Metrics[name].Gate); err != nil {
+		if err := validateMetricEntry(name, knob, cfg.Metrics[name]); err != nil {
 			return err
 		}
 	}
@@ -211,6 +245,84 @@ func validate(cfg Config) error {
 		return err
 	}
 	return validateFileClass(cfg.FileClass)
+}
+
+// validateRules checks each rule entry's stable id, gate value, and patterns: block.
+// ast-grep runs `sg --lang <lang> --pattern <rule>` per pattern entry and keys
+// findings by id — a partial entry loads clean but fails opaquely (or dedups
+// wrongly) at analyze time inside the subprocess.
+func validateRules(rules []RuleDef) error {
+	for i, r := range rules {
+		id := r.ID
+		if id == "" {
+			return fmt.Errorf("rules[#%d].id is required", i)
+		}
+		if err := validateGate(fmt.Sprintf("rules[%s]", id), r.Gate); err != nil {
+			return err
+		}
+		for j, p := range r.Patterns {
+			if p.ID == "" || p.Lang == "" || p.Rule == "" {
+				return fmt.Errorf("rules[%s].patterns[%d]: id, lang, and rule are all required", id, j)
+			}
+		}
+	}
+	return nil
+}
+
+// couplingGateBands are the accepted coupling.gate.min_band floors. critical is
+// deliberately absent: no band ranks below it, so a critical floor could never
+// trip — a config that looks like a gate but is inert by construction.
+var couplingGateBands = map[string]struct{}{"poor": {}, "mixed": {}, "serviceable": {}, "strong": {}}
+
+// validateCouplingGate checks the coupling.gate block: a present block must
+// configure at least one knob (an empty block is a gate that never trips — the
+// validated-but-inert disease), min_band must be a real floor, and max_drop is
+// a tolerated drop, never negative.
+func validateCouplingGate(g *CouplingGateDef) error {
+	if g == nil {
+		return nil
+	}
+	if g.MinBand == "" && g.MaxDrop == nil {
+		return errors.New("coupling.gate requires min_band and/or max_drop — an empty block gates nothing")
+	}
+	if g.MinBand != "" {
+		if _, ok := couplingGateBands[g.MinBand]; !ok {
+			return fmt.Errorf("coupling.gate.min_band %q is not one of: poor, mixed, serviceable, strong", g.MinBand)
+		}
+	}
+	if g.MaxDrop != nil && *g.MaxDrop < 0 {
+		return fmt.Errorf("coupling.gate.max_drop must be >= 0 (a tolerated score drop, got %d)", *g.MaxDrop)
+	}
+	return nil
+}
+
+// externalVolatilities are the accepted external_systems.<name>.volatility
+// values. Empty (unset) defaults to low — the book's generic-subdomain guidance.
+var externalVolatilities = map[string]struct{}{levelHigh: {}, levelMedium: {}, levelLow: {}, "frozen": {}}
+
+// validateExternalSystem checks one external_systems.<name> entry: at least one
+// target glob (an entry that matches nothing declares nothing), valid glob
+// syntax, and a real volatility level when one is set.
+func validateExternalSystem(name string, def ExternalSystemDef) error {
+	if len(def.Targets) == 0 {
+		return fmt.Errorf("external_systems.%s requires at least one targets glob — an empty entry declares nothing", name)
+	}
+	for i, pat := range def.Targets {
+		if pat == "" {
+			return fmt.Errorf("external_systems.%s.targets[%d] must not be empty", name, i)
+		}
+		if !doublestar.ValidatePattern(pat) {
+			return fmt.Errorf("external_systems.%s.targets[%d] %q is not a valid glob pattern", name, i, pat)
+		}
+	}
+	// Case-insensitive, matching classify's externalVolatility consumer and the
+	// module-level volatility convention (classifyVolatility lowercases too).
+	if v := def.Volatility; v != "" {
+		if _, ok := externalVolatilities[strings.ToLower(v)]; !ok {
+			return fmt.Errorf("external_systems.%s.volatility %q is not one of: high, medium, low, frozen", name, v)
+		}
+	}
+	return nil
 }
 
 // validateFileClass checks file_class glob patterns and mock framework entries.
@@ -242,6 +354,37 @@ func validateFileClass(fc FileClassDef) error {
 	return nil
 }
 
+// validateMetricEntry checks one metrics.<name> entry: a valid gate value and
+// threshold knobs that actually apply to the metric's kind. A knob on a metric
+// of the wrong kind is a hard error, not a silent no-op — a validated-but-inert
+// setting hides the exact misconfiguration it was meant to express.
+func validateMetricEntry(name string, knob metricKnob, e MetricEntry) error {
+	if err := validateGate("metrics."+name, e.Gate); err != nil {
+		return err
+	}
+	if e.MinDelta != nil && *e.MinDelta < 0 {
+		return fmt.Errorf("metrics.%s.min_delta must be >= 0 (a tolerated drop, got %v)", name, *e.MinDelta)
+	}
+	if e.MaxNew != nil && *e.MaxNew < 0 {
+		return fmt.Errorf("metrics.%s.max_new must be >= 0 (an allowed increase, got %d)", name, *e.MaxNew)
+	}
+	switch knob {
+	case knobRatio:
+		if e.MaxNew != nil {
+			return fmt.Errorf("metrics.%s.max_new applies only to count metrics (cycle, unbalanced_edge) — use min_delta", name)
+		}
+	case knobCount:
+		if e.MinDelta != nil {
+			return fmt.Errorf("metrics.%s.min_delta applies only to ratio metrics (encapsulation, coverage) — use max_new", name)
+		}
+	case knobNone:
+		if e.Gate != "" || e.MinDelta != nil || e.MaxNew != nil {
+			return fmt.Errorf("metrics.%s is informational and never gates — only `enabled` applies", name)
+		}
+	}
+	return nil
+}
+
 // validateGate rejects a non-empty gate that is not one of off|warn|fail.
 // field is the dotted config path used in the error (e.g. "rules[cycle]").
 func validateGate(field, gate string) error {
@@ -254,24 +397,13 @@ func validateGate(field, gate string) error {
 	return nil
 }
 
-// sortedMetricKeys returns metric names in sorted order so validation reports a
-// deterministic first offender when multiple metrics carry an invalid gate.
-func sortedMetricKeys(m MetricsConfig) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // Default returns a Config suitable for use when no archfit.yaml is present.
 // All language modes are auto, coupling advisory minimum severity is medium, and
 // no modules, layers, or rules are defined — only metric checks run.
 func Default() Config {
 	return Config{
 		Version:  1,
-		Coupling: CouplingConfig{MinSeverity: "medium"},
+		Coupling: CouplingConfig{MinSeverity: levelMedium},
 		Languages: LanguagesConfig{
 			Go:         GoLanguage{Enabled: ModeAuto},
 			TypeScript: TypeScriptLanguage{Enabled: ModeAuto},
@@ -342,8 +474,10 @@ func (c Config) FillMissingDeployUnits(resolved map[string]string) {
 	}
 }
 
-// sortedKeys returns a sorted slice of keys from a map[string]ModuleDef.
-func sortedKeys(m map[string]ModuleDef) []string {
+// sortedKeys returns a sorted slice of keys from any string-keyed map, so
+// validation reports a deterministic first offender when multiple entries
+// carry an invalid value.
+func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

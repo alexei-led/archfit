@@ -371,7 +371,7 @@ func TestRender_ContainsRequiredSections(t *testing.T) {
 		{"engine module", layerEngine + ":"},
 		{"model module", layerModel + ":"},
 		{"rules section", "rules:"},
-		{"forbidden_dependency type", "type: forbidden_dependency"},
+		{"forbidden_layer_direction type", "type: forbidden_layer_direction"},
 		{"gate warn", "gate: warn"},
 	}
 	for _, c := range checks {
@@ -415,27 +415,27 @@ func TestRender_LayeredRules_FromEdges(t *testing.T) {
 		t.Fatalf("expected both layers in output:\n%s", out)
 	}
 
-	// Must contain at least one forbidden_dependency rule with from_layer/to_layer.
-	if !strings.Contains(out, "type: forbidden_dependency") {
-		t.Errorf("no forbidden_dependency rule in output:\n%s", out)
+	// Must contain at least one forbidden_layer_direction rule. from_layer/to_layer
+	// are not emitted — forbiddenLayerDirection.Check derives layer ordering from
+	// cfg.Layers and endpoint layers from the module map, never from a per-rule
+	// from_layer/to_layer (see internal/rules/rules_dependency.go).
+	if !strings.Contains(out, "type: forbidden_layer_direction") {
+		t.Errorf("no forbidden_layer_direction rule in output:\n%s", out)
 	}
-	if !strings.Contains(out, "from_layer:") {
-		t.Errorf("no from_layer in rules (expected layer-aware rule):\n%s", out)
-	}
-	if !strings.Contains(out, "to_layer:") {
-		t.Errorf("no to_layer in rules (expected layer-aware rule):\n%s", out)
+	if strings.Contains(out, "from_layer:") || strings.Contains(out, "to_layer:") {
+		t.Errorf("from_layer/to_layer should not be emitted (checker never reads them):\n%s", out)
 	}
 	if !strings.Contains(out, "gate: warn") {
 		t.Errorf("gate: warn missing in output:\n%s", out)
 	}
 
-	// The rule must flag the back-edge direction: model→core inversion means
-	// from_layer: model, to_layer: core.
-	if !strings.Contains(out, "from_layer: "+layerModel) {
-		t.Errorf("expected rule flagging %s importing %s:\n%s", layerModel, layerCore, out)
+	// Exactly ONE rule: forbiddenLayerDirection.Check is global (each instance
+	// re-detects every back-edge), so a second rule would duplicate findings.
+	if !strings.Contains(out, "id: no-layer-back-edges") {
+		t.Errorf("expected the single no-layer-back-edges rule:\n%s", out)
 	}
-	if !strings.Contains(out, "to_layer: "+layerCore) {
-		t.Errorf("expected rule flagging imports into %s:\n%s", layerCore, out)
+	if n := strings.Count(out, "type: forbidden_layer_direction"); n != 1 {
+		t.Errorf("got %d forbidden_layer_direction rules, want exactly 1:\n%s", n, out)
 	}
 }
 
@@ -467,21 +467,22 @@ func TestRender_LayeredRules_RoundTripsConfigLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.Load rejected layered init YAML: %v\n---\n%s", err, rendered)
 	}
-	if len(loaded.Rules) == 0 {
-		t.Error("no rules after round-trip")
+	// Regression for the 3+-layer duplicate-findings bug: the checker is global,
+	// so init must emit exactly one forbidden_layer_direction rule even when
+	// four layers are discovered — N rules would report every violation N times.
+	if len(loaded.Rules) != 1 {
+		t.Errorf("got %d rules after round-trip, want exactly 1: %+v", len(loaded.Rules), loaded.Rules)
 	}
 	for _, r := range loaded.Rules {
-		if r.Type != "forbidden_dependency" {
+		if r.Type != "forbidden_layer_direction" {
 			t.Errorf("unexpected rule type %q", r.Type)
-		}
-		if r.FromLayer == "" || r.ToLayer == "" {
-			t.Errorf("rule %q missing from_layer/to_layer", r.ID)
 		}
 	}
 }
 
 func TestRender_NoEdges_FallbackComment(t *testing.T) {
-	// No edges → generic placeholder + comment about no gates.
+	// A single inferred layer → the rule has nothing to check; the NOTE must say
+	// layers are missing, not (falsely) that the dependency graph was unavailable.
 	cfg := DiscoveredConfig{
 		ModulePath: testExampleMod,
 		Modules: []ModuleDef{
@@ -490,11 +491,40 @@ func TestRender_NoEdges_FallbackComment(t *testing.T) {
 		Layers: []string{layerCore},
 	}
 	out := Render(cfg, nil, false)
-	if !strings.Contains(out, "only metrics") {
-		t.Errorf("expected fallback comment about no gates when no edges:\n%s", out)
+	if !strings.Contains(out, "fewer than two layers") {
+		t.Errorf("expected fallback comment about missing layers:\n%s", out)
 	}
-	if !strings.Contains(out, "type: forbidden_dependency") {
-		t.Errorf("expected generic forbidden_dependency rule:\n%s", out)
+	if !strings.Contains(out, "type: forbidden_layer_direction") {
+		t.Errorf("expected generic forbidden_layer_direction rule:\n%s", out)
+	}
+}
+
+func TestRender_LayeredNoEdges_AnalyzeTimeNote(t *testing.T) {
+	// The pure-Python/TS shape: discovery assigns layers but builds no edges.
+	// The NOTE must not claim layers are missing (they are in this same file)
+	// or that only metrics will be produced — the rule gates at analyze time.
+	cfg := DiscoveredConfig{
+		Modules: []ModuleDef{
+			{Name: layerCore, Paths: []string{"pkg.core.**"}, Layer: layerCore},
+			{Name: layerAdapter, Paths: []string{"pkg.adapter.**"}, Layer: layerAdapter},
+		},
+		Layers:    []string{layerCore, layerAdapter},
+		HasPython: true,
+	}
+	out := Render(cfg, nil, false)
+	if !strings.Contains(out, "checks the real dependency graph at analyze time") {
+		t.Errorf("expected analyze-time NOTE for layered no-edges config:\n%s", out)
+	}
+	for _, stale := range []string{"only metrics", "until you add layers"} {
+		if strings.Contains(out, stale) {
+			t.Errorf("NOTE falsely claims %q on a config that already assigns layers:\n%s", stale, out)
+		}
+	}
+	if !strings.Contains(out, "id: no-layer-back-edges") {
+		t.Errorf("expected live no-layer-back-edges rule:\n%s", out)
+	}
+	if !strings.Contains(out, "type: forbidden_layer_direction") {
+		t.Errorf("expected forbidden_layer_direction rule:\n%s", out)
 	}
 }
 

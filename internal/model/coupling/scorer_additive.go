@@ -70,14 +70,14 @@ func additiveCheapestMove(c Classification, currentBand Severity) string {
 	if next, ok := lowerStrength(c.Strength); ok {
 		mod := c
 		mod.Strength = next
-		tryMove("reduce_strength", mod)
+		tryMove(moveReduceStrength, mod)
 	}
 
 	// Try reducing distance by one level.
 	if next, ok := lowerDistance(c.Distance); ok {
 		mod := c
 		mod.Distance = next
-		tryMove("reduce_distance", mod)
+		tryMove(moveReduceDistance, mod)
 	}
 
 	// Try increasing volatility discount (i.e. lower volatility = more stable).
@@ -112,6 +112,8 @@ func lowerStrength(s Strength) (Strength, bool) {
 // lowerDistance returns the next-lower Distance ordinal.
 func lowerDistance(d Distance) (Distance, bool) {
 	switch d {
+	case DistanceExternal:
+		return DistanceCrossDeployUnit, true // bring the seam in-house
 	case DistanceCrossDeployUnit:
 		return DistanceCrossModuleDiffOwner, true
 	case DistanceCrossModuleDiffOwner:

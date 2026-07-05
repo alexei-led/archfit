@@ -115,14 +115,18 @@ consequences to know when reading `cross_module_different_owner`:
 
 Both are faithful reflections of the repo's declared ownership, not bugs — but if
 you want cross-team coupling to register, declare `owner:` per module explicitly.
-The `owner_source` field (`config` | `codeowners` | `git` | `none`) in JSON and the
-markdown "Distance confidence" section tells you which path produced the owners.
+The `owner_source` field (`config` | `codeowners` | `git` | `git_timeout` |
+`codeowners_no_match` | `none`) in JSON and the markdown "Distance confidence"
+section tells you which path produced the owners. The two degraded sources — a
+CODEOWNERS file that matched none of the configured modules, or a git-author
+history walk that timed out — also emit a stderr warning instead of silently
+falling back to code-structure distance.
 
 **Deviation from the book:** Khononov also counts _runtime coupling_ (synchronous
 vs asynchronous integration) and lifecycle coupling as part of distance. `archfit`
 deliberately does **not** fold runtime/async coupling into distance — detected
 async bridges are recorded as report-only `runtime_async` evidence, never a scored
-distance factor (see [bc-measurement-v3.md §9](../design/bc-measurement-v3.md#9-non-goals-and-rejected-designs) for the rationale).
+distance factor (see [bc-measurement-v4.md §9](../design/bc-measurement-v4.md#9-non-goals-and-rejected-designs) for the rationale).
 
 ### 3. Volatility — how likely it is to change at all
 
@@ -261,8 +265,9 @@ tasks. See the [configuration reference](configuration-reference.md) for the
 abstain rule and decision-task behavior.
 
 These balance scores drive the `bc/imbalanced_coupling` advisories (see
-[`archfit analyze`](commands.md)) and the `unbalanced_edge` metric. `ScoreVersion`
-is `bc_score.v3`.
+[`archfit analyze`](commands.md)) and the `unbalanced_edge` metric. Cross-module
+clone pairs with no import edge surface as report-only `bc/duplicated_knowledge`
+advisories scored by the same formula. `ScoreVersion` is `bc_score.v4`.
 
 ---
 
@@ -273,10 +278,12 @@ and makes only the legible parts executable. Three design rules follow from that
 
 1. **Two channels, never blended.** A deterministic **gate** (pass/fail) enforces
    explicit rules you declared — forbidden dependencies, public-API-only, layer
-   direction, cycles. A **metric** channel reports legible deltas (encapsulation,
-   unbalanced edges, …) that _warn_ on regression but do not fail the build by
-   default. Classification language explains findings; it is never a single
-   blended "architecture score". See [Metrics reference](metrics.md).
+   direction, cycles. A **metric** channel tracks legible deltas (encapsulation,
+   unbalanced edges, …) whose direction-aware regressions trip a per-metric gate:
+   `metrics.<name>.gate` unset blocks, `warn` caps at WARN, `off` skips, with
+   `max_new`/`min_delta` thresholds for tolerated movement. Classification
+   language explains findings; it is never a single blended "architecture
+   score". See [Metrics reference](metrics.md).
 
 2. **Honest about evidence.** Every metric reports its coverage and confidence.
    Low confidence caps the band it can claim. Absent signal is reported as `n/a`,

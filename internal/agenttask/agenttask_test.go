@@ -57,6 +57,7 @@ func TestBuild_ActiveGateFindingsOnly(t *testing.T) {
 		nil,
 		[]string{"archfit check --full"},
 		nil,
+		agenttask.PathResolver{},
 	)
 
 	if len(tasks) != 2 {
@@ -75,6 +76,7 @@ func TestBuild_TaskShape(t *testing.T) {
 		map[string][]string{"b": {"pkg/b/api/**"}},
 		[]string{"archfit check -c .archfit.yaml --full"},
 		nil,
+		agenttask.PathResolver{},
 	)
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d, want 1", len(tasks))
@@ -121,6 +123,7 @@ func TestBuild_GoalTemplates(t *testing.T) {
 				[]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)},
 				map[string]string{ruleForbidden: tc.ruleType},
 				nil, nil, nil,
+				agenttask.PathResolver{},
 			)
 			if len(tasks) != 1 {
 				t.Fatalf("tasks = %d, want 1", len(tasks))
@@ -133,7 +136,7 @@ func TestBuild_GoalTemplates(t *testing.T) {
 }
 
 func TestBuild_EmptyAndDeterministic(t *testing.T) {
-	if got := agenttask.Build(nil, nil, nil, nil, nil); got == nil || len(got) != 0 {
+	if got := agenttask.Build(nil, nil, nil, nil, nil, agenttask.PathResolver{}); got == nil || len(got) != 0 {
 		t.Errorf("nil findings → %v, want empty non-nil slice", got)
 	}
 
@@ -141,8 +144,8 @@ func TestBuild_EmptyAndDeterministic(t *testing.T) {
 		gateFinding("z", ruleForbidden, finding.StatusNew),
 		gateFinding("a", ruleForbidden, finding.StatusNew),
 	}
-	first := agenttask.Build(findings, nil, nil, []string{validateCmd}, nil)
-	second := agenttask.Build(findings, nil, nil, []string{validateCmd}, nil)
+	first := agenttask.Build(findings, nil, nil, []string{validateCmd}, nil, agenttask.PathResolver{})
+	second := agenttask.Build(findings, nil, nil, []string{validateCmd}, nil, agenttask.PathResolver{})
 	if !reflect.DeepEqual(first, second) {
 		t.Error("two builds differ — must be deterministic")
 	}
@@ -166,6 +169,7 @@ func TestBuild_DeclarationsEnrichedWhenSyntaxPresent(t *testing.T) {
 		nil,
 		[]string{validateCmd},
 		sf,
+		agenttask.PathResolver{},
 	)
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d, want 1", len(tasks))
@@ -197,6 +201,7 @@ func TestBuild_DeclarationsAbsentWhenSyntaxEmpty(t *testing.T) {
 		nil,
 		[]string{validateCmd},
 		nil,
+		agenttask.PathResolver{},
 	)
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %d, want 1", len(tasks))

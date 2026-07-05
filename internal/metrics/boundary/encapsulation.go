@@ -72,8 +72,12 @@ func (m EncapsulationMetric) Calculate(in signal.CommonInput) diagnostic.MetricR
 		if !ok {
 			continue
 		}
-		// Cross-boundary: any distance that is not same_module.
-		if cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown {
+		// Cross-boundary: any distance that is not same_module. Declared external
+		// systems are skipped too — encapsulation measures whether access to YOUR
+		// modules goes through their public surface; a vendor seam has no
+		// public/internal glob boundary to honor.
+		if cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown ||
+			cl.Distance == coupling.DistanceExternal {
 			continue
 		}
 		allCross++
@@ -185,6 +189,7 @@ func (m EncapsulationMetric) encResult(value float64, confidence string, baselin
 		Mode:       result.ModeRatio,
 		Definition: definition,
 		Delta:      delta,
+		Direction:  diagnostic.DirectionHigherIsBetter,
 	}
 }
 
@@ -203,5 +208,6 @@ func (m EncapsulationMetric) naResult(_ diagnostic.MetricSnapshot) diagnostic.Me
 		Mode:       result.ModeRatio,
 		Definition: "contract / (contract + intrusive) cross-boundary edges (functional, model, unknown excluded)",
 		Delta:      nil,
+		Direction:  diagnostic.DirectionHigherIsBetter,
 	}
 }

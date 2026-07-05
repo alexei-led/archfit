@@ -32,13 +32,15 @@ const (
 // is on. The degenerate-graph guard in internal/score fires when there are fewer
 // than two connected package: nodes; with module graph on, a single-crate repo
 // has many such nodes, so the guard no longer trips.
-func (e *Extractor) runModuleGraph(ctx context.Context, members []cargoPackage) ([]graph.Node, []graph.Edge, diagnostic.Coverage) {
+// runner is the (possibly fact-cache-decorated) runner for the per-crate
+// invocations; Detect passes through the decorator to the real runner.
+func (e *Extractor) runModuleGraph(ctx context.Context, runner toolrun.Runner, members []cargoPackage) ([]graph.Node, []graph.Edge, diagnostic.Coverage) {
 	if len(members) == 0 {
 		return nil, nil, diagnostic.Coverage{Tool: toolCargoModules, Status: statusAbsent}
 	}
 
 	// Detect cargo-modules binary.
-	if _, ok := e.runner.Detect(ctx, toolCargoModules); !ok {
+	if _, ok := runner.Detect(ctx, toolCargoModules); !ok {
 		return nil, nil, diagnostic.Coverage{Tool: toolCargoModules, Status: statusAbsent}
 	}
 
@@ -65,7 +67,7 @@ func (e *Extractor) runModuleGraph(ctx context.Context, members []cargoPackage) 
 	var failed []string
 	for _, m := range members {
 		crateDir := filepath.Dir(m.ManifestPath)
-		nodes, edges, ok := e.runCargoModulesForCrate(ctx, m, crateDir)
+		nodes, edges, ok := runCargoModulesForCrate(ctx, runner, m, crateDir)
 		if !ok {
 			failed = append(failed, m.Name)
 			continue
@@ -128,7 +130,7 @@ func (p cargoPackage) hasLibTarget() bool {
 
 // runCargoModulesForCrate runs cargo-modules for a single crate and parses the DOT
 // output into graph nodes and edges. Returns ok=false on any failure.
-func (e *Extractor) runCargoModulesForCrate(ctx context.Context, m cargoPackage, crateDir string) ([]graph.Node, []graph.Edge, bool) {
+func runCargoModulesForCrate(ctx context.Context, runner toolrun.Runner, m cargoPackage, crateDir string) ([]graph.Node, []graph.Edge, bool) {
 	// --package is required in a workspace: run from a member dir without it and
 	// cargo-modules errors "Multiple packages present in workspace, please explicitly
 	// select one via --package". Harmless for a single-crate project.
@@ -147,7 +149,7 @@ func (e *Extractor) runCargoModulesForCrate(ctx context.Context, m cargoPackage,
 		args = append(args, "--bin", bin)
 	}
 
-	out, err := e.runner.Run(ctx, toolrun.ToolCmd{
+	out, err := runner.Run(ctx, toolrun.ToolCmd{
 		Name:    toolCargoModules,
 		Args:    args,
 		WorkDir: crateDir,

@@ -102,3 +102,9 @@ func HeadRef(ctx context.Context, workDir string, runner toolrun.Runner) (string
 func RepoRoot(ctx context.Context, workDir string, runner toolrun.Runner) (string, error) {
 	return runGitRevParse(ctx, workDir, runner, []string{"--show-toplevel"}, "rev-parse --show-toplevel")
 }
+
+// ResolveCommit resolves ref to its full commit SHA (peeling tags).
+// It runs: git rev-parse --verify <ref>^{commit}
+func ResolveCommit(ctx context.Context, workDir, ref string, runner toolrun.Runner) (string, error) {
+	return runGitRevParse(ctx, workDir, runner, []string{"--verify", ref + "^{commit}"}, "rev-parse --verify "+ref)
+}

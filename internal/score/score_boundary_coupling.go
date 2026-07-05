@@ -104,12 +104,11 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			value = capInt(value, 60) // critical-band coupling present (poor balance)
 		}
 
-		// LLM-provenance labels lower confidence by one band: the strength
-		// classifications driving the balance came from an LLM judge (human-approved
-		// but not human-judged). Only applied when LLM labels account for ≥20% of
-		// scored edges so a single stray label does not flip a well-measured repo.
-		llmConfLowered := summary.LLMApproved > 0 && summary.Scored > 0 &&
-			summary.LLMApproved*100/summary.Scored >= 20
+		// LLM-provenance labels lower confidence by one band when a non-high-confidence
+		// LLM label actually filled at least one scored edge. Count applied edges, not
+		// raw label rows: one module-pair label can classify many edges, and some
+		// approved LLM labels may be beaten by static precedence.
+		llmConfLowered := summary.LLMLowConfidenceEdges > 0
 		if llmConfLowered {
 			conf = lowerConf(conf)
 		}
@@ -124,17 +123,25 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			fmt.Sprintf("critical-band edges: %d (%d distributed-monolith: critical at high distance)",
 				criticalCount, dmCount),
 		}
+		if summary.DeclaredExternal > 0 {
+			dim.Evidence = append(dim.Evidence,
+				fmt.Sprintf("%d declared external-system edges scored at D=10 (external_systems)", summary.DeclaredExternal))
+		}
 		if summary.External > 0 {
 			dim.Evidence = append(dim.Evidence,
 				fmt.Sprintf("%d external/library edges excluded (external deps are not internal coupling seams)", summary.External))
 		}
-		if llmConfLowered {
-			dim.Evidence = append(dim.Evidence,
-				fmt.Sprintf("llm-provenance labels in effect: %d (confidence lowered)", summary.LLMApproved))
-		} else if summary.LLMApproved > 0 {
-			dim.Evidence = append(dim.Evidence,
-				fmt.Sprintf("llm-provenance labels in effect: %d", summary.LLMApproved))
+		// Volatility triage disclosure: module counts by volatility source, so a
+		// uniform-volatility repo reads as uniform-by-inheritance, not measured.
+		if vp := summary.VolatilityProvenance; vp != nil {
+			line := fmt.Sprintf("volatility provenance (modules): declared: %d, inherited: %d, cascade: %d",
+				vp.Declared, vp.Inherited, vp.Cascade)
+			if vp.Undeclared > 0 {
+				line += fmt.Sprintf(", undeclared: %d", vp.Undeclared)
+			}
+			dim.Evidence = append(dim.Evidence, line)
 		}
+		dim.Evidence = appendLLMLabelEvidence(dim.Evidence, summary, llmConfLowered)
 		switch {
 		case dmCount > 0:
 			dim.Summary = "unbalanced coupling: distributed-monolith edges (high strength × high distance × high volatility) present"
@@ -195,6 +202,26 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 		dim.Summary = "coupling carries elevated maintenance effort but no distributed-monolith edges"
 	}
 	return dim
+}
+
+// appendLLMLabelEvidence appends the llm-label disclosure lines: the approved
+// llm-provenance label count (with the confidence-lowering note when it
+// applied) and the labeled_llm edge bucket, which attributes the
+// scored-fraction increase to the semantic layer — edges whose strength exists
+// only because an approved llm label filled an otherwise-abstained cell.
+func appendLLMLabelEvidence(evidence []string, summary *diagnostic.ClassifiedEdgeSummary, llmConfLowered bool) []string {
+	if llmConfLowered {
+		evidence = append(evidence,
+			fmt.Sprintf("llm-provenance labels in effect: %d (confidence lowered)", summary.LLMApproved))
+	} else if summary.LLMApproved > 0 {
+		evidence = append(evidence,
+			fmt.Sprintf("llm-provenance labels in effect: %d", summary.LLMApproved))
+	}
+	if summary.LabeledLLM > 0 {
+		evidence = append(evidence,
+			fmt.Sprintf("llm-labeled edges: %d (strength from approved llm-provenance labels)", summary.LabeledLLM))
+	}
+	return evidence
 }
 
 // bcEdge is a parsed Balanced-Coupling advisory edge (a rollup of count

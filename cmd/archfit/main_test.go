@@ -48,41 +48,13 @@ func scrubGitFixtureEnv(env []string) []string {
 // fails on it. Returns the config path.
 func writeViolatingRepo(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	files := map[string]string{
-		markerGoMod: "module example.com/test\n\ngo 1.21\n",
-		filePkgAA: "package a\n\nimport \"example.com/test/pkg/b/internal/impl\"\n\n" +
-			"func UseSecret() string { return impl.Secret() }\n",
-		"pkg/b/internal/impl/impl.go": "package impl\n\nfunc Secret() string { return \"s\" }\n",
-		defaultConfigPath: `version: 1
-modules:
-  a:
-    paths: ["pkg/a/**"]
-    owner: team-a
-  b:
-    paths: ["pkg/b/**"]
-    internal: ["pkg/b/internal/**"]
-    owner: team-b
-rules:
+	return writeCoupledRepo(t, coupledModulesCfg+`rules:
   - id: no_internal_access
     type: forbidden_dependency
     gate: fail
     from: pkg/a/**
     to: pkg/b/internal/**
-`,
-	}
-	for name, content := range files {
-		path := filepath.Join(dir, name)
-		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// Scope resolution requires a git repo root.
-	gitInitFixtureRepo(t, dir)
-	return filepath.Join(dir, ".archfit.yaml")
+`)
 }
 
 // TestRun_Analyze_GateVsReportOnly verifies the --gate contract:
@@ -110,11 +82,15 @@ func TestRun_Analyze_GateVsReportOnly(t *testing.T) {
 const (
 	flagFull          = "--full"
 	flagRoot          = "--root"
+	flagNoCache       = "--no-cache"
+	goModStub         = "module example.com/test\n\ngo 1.21\n" // minimal go.mod shared by fixture repos
 	cmdAnalyze        = "analyze"
+	cmdBaseline       = "baseline"
 	cmdConfig         = "config" // config subcommand group (config init / config enrich …)
 	cmdEnrich         = "enrich" // config enrich subcommand (config enrich owner / subdomain / …)
 	cmdExplain        = "explain"
 	fmtJSON           = "--format=json"
+	flagVersion       = "--version"
 	flagGate          = "--gate"
 	filePkgAA         = "pkg/a/a.go"         // the gate-violating source file used across fixtures
 	ruleNoInternalAcc = "no_internal_access" // rule ID in the violating-repo fixture
@@ -257,9 +233,13 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 // analyzed tree, so only --root can point archfit at the repo.
 func writeRepoWithExternalConfig(t *testing.T) (repoDir, cfgPath string) {
 	t.Helper()
-	repoDir = t.TempDir()
+	base := t.TempDir()
+	repoDir = filepath.Join(base, "repo with spaces")
+	if err := os.MkdirAll(repoDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
 	srcFiles := map[string]string{
-		markerGoMod: "module example.com/test\n\ngo 1.21\n",
+		markerGoMod: goModStub,
 		filePkgAA: "package a\n\nimport \"example.com/test/pkg/b/internal/impl\"\n\n" +
 			"func UseSecret() string { return impl.Secret() }\n",
 		"pkg/b/internal/impl/impl.go": "package impl\n\nfunc Secret() string { return \"s\" }\n",
@@ -277,7 +257,10 @@ func writeRepoWithExternalConfig(t *testing.T) (repoDir, cfgPath string) {
 
 	// Config in its own directory, outside the repo. Module path globs are
 	// repo-relative, so they resolve against the --root scan tree, not here.
-	cfgDir := t.TempDir()
+	cfgDir := filepath.Join(base, "config with spaces")
+	if err := os.MkdirAll(cfgDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
 	cfgPath = filepath.Join(cfgDir, ".archfit.yaml")
 	cfgBody := `version: 1
 modules:
@@ -364,7 +347,7 @@ func TestRun_Check_RootDecoupledFromConfig(t *testing.T) {
 func TestRun_Version(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	code := Run([]string{"--version"}, &buf)
+	code := Run([]string{flagVersion}, &buf)
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}
@@ -662,6 +645,33 @@ func TestRun_Check_AgentTasksPopulated(t *testing.T) {
 	}
 }
 
+func TestRun_Check_AgentTaskValidationReplaysRootAndQuotesPaths(t *testing.T) {
+	t.Parallel()
+	repoDir, cfgPath := writeRepoWithExternalConfig(t)
+
+	var buf bytes.Buffer
+	Run([]string{cmdAnalyze, flagRoot, repoDir, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+
+	var diag struct {
+		AgentTasks []struct {
+			Validation []string `json:"validation"`
+		} `json:"agent_tasks"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
+		t.Fatalf("invalid JSON: %v\noutput:\n%s", err, buf.String())
+	}
+	if len(diag.AgentTasks) != 1 || len(diag.AgentTasks[0].Validation) != 1 {
+		t.Fatalf("agent_tasks validation = %+v\noutput:\n%s", diag.AgentTasks, buf.String())
+	}
+	got := diag.AgentTasks[0].Validation[0]
+	if !strings.Contains(got, "-c '"+cfgPath+"'") {
+		t.Errorf("validation = %q, want quoted external config path", got)
+	}
+	if !strings.Contains(got, "--root '"+repoDir+"'") {
+		t.Errorf("validation = %q, want quoted --root path", got)
+	}
+}
+
 // TestRun_Check_MissingBaselineFile verifies that when no .archfit-baseline.json
 // exists, analyze --gate exits on the real verdict (exit 1 for violations), not
 // a hard error (exit 3). The baseline file is optional; its absence is not an error.
@@ -747,7 +757,10 @@ func TestRun_Check_NoBaselineWarningAbsent(t *testing.T) {
 		// Base intentionally omitted.
 	}
 	deps := &appDeps{Runner: toolrun.New(), Stdout: &stdout, Stderr: &stderr}
-	_ = cmd.Run(deps)
+	var ee *exitError
+	if err := cmd.Run(deps); errors.As(err, &ee) && ee.code == 3 {
+		t.Fatalf("analyze exited 3 (config/pipeline error), pipeline never ran; stderr: %q", stderr.String())
+	}
 
 	if strings.Contains(stderr.String(), "no baseline found") {
 		t.Errorf("check without --base must not emit 'no baseline found'; stderr: %q", stderr.String())

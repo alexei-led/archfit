@@ -38,7 +38,7 @@ const enrichBatchSize = 30
 type enrichFlags struct {
 	Config  string `short:"c" name:"config" help:"Config file." default:".archfit.yaml"`
 	Root    string `short:"r" name:"root" type:"path" help:"Repository root to analyze (default: directory of --config). Decouples the scanned repo from where the config lives."`
-	NoCache bool   `name:"no-cache" help:"Bypass the LLM response cache."`
+	NoCache bool   `name:"no-cache" help:"Bypass archfit caches (extractor facts and LLM responses)."`
 
 	// providerOverride is a test seam — set directly on the struct to inject a fake provider.
 	providerOverride llm.Provider
@@ -50,6 +50,7 @@ type enrichFlags struct {
 // never import the LLM layer (arch ring rule), so the gate stays deterministic.
 type EnrichCmd struct {
 	Labels     EnrichLabelsCmd     `cmd:"" default:"withargs" help:"Draft coupling-strength labels (contract/functional/model/intrusive) for cross-module edges."`
+	Abstained  EnrichAbstainedCmd  `cmd:"" help:"Draft coupling-strength labels for abstained (unknown-strength) cross-module edges, judged from code snippets."`
 	Owner      EnrichOwnerCmd      `cmd:"" help:"Draft a module owner per module (uses CODEOWNERS context)."`
 	Volatility EnrichVolatilityCmd `cmd:"" help:"Draft module volatility (low/medium/high)."`
 	Subdomain  EnrichSubdomainCmd  `cmd:"" help:"Draft module subdomain (core/supporting/generic)."`
@@ -152,12 +153,14 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	if _, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
+	deps.noCache = c.NoCache
+	if _, _, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	mm := cfg.ForClassify().ModuleMap
-	pairs := selectRefinablePairs(captured.Graph, captured.Classifications, mm, existing)
+	mm := enrichModuleMap(cfg, captured.Graph)
+	labelEvidence := currentLabelEvidence(captured.Graph, mm, existing)
+	pairs := selectRefinablePairs(captured.Graph, captured.Classifications, mm, existing, labelEvidence)
 	if len(pairs) == 0 {
 		_, _ = fmt.Fprintln(deps.Stdout, "enrich: no refinable module pairs (no heuristic functional/model cross-module edges, or all pairs already approved)")
 		return nil
@@ -178,7 +181,7 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 		drafts[i].EvidenceHash = evidence[labels.Key(drafts[i].From, drafts[i].To)]
 	}
 
-	merged := mergeDrafts(existing, drafts)
+	merged := mergeDrafts(existing, drafts, evidence)
 	if err := writeLabels(labelsPath, merged); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -254,7 +257,7 @@ func (c *enrichFlags) runSubdomainDraft(ctx context.Context, deps *appDeps) erro
 			Module:     t.Name,
 			Subdomain:  a.Subdomain,
 			Volatility: a.Volatility,
-			Rationale:  "", // classifyModules doesn't surface rationale separately
+			Rationale:  a.Rationale,
 			Status:     initcfg.SubdomainStatusDraft,
 		})
 	}
@@ -383,6 +386,24 @@ func llmCacheDir(baseDir string) string {
 	return filepath.Join(baseDir, ".archfit-cache", "llm")
 }
 
+// factsCacheDir returns the extractor fact-cache directory under baseDir —
+// facts/ beside llm/ in the same .archfit-cache root (fact-cache.md D1), so
+// "delete .archfit-cache to reset" stays the single troubleshooting answer.
+func factsCacheDir(baseDir string) string {
+	return filepath.Join(baseDir, ".archfit-cache", "facts")
+}
+
+// baseWorktreesDir returns the --base worktree parent directory under baseDir —
+// worktrees/ beside facts/ and llm/ in the same .archfit-cache root. Each
+// `analyze --base <ref>` checks the base ref out under worktrees/<sha>, a
+// deterministic path, so the per-checkout fact-cache keys (which fold the scan
+// root in because cached subprocess output embeds absolute paths) hit on a
+// repeat run against the same ref. The checkout is removed after each run;
+// only the fact blobs persist.
+func baseWorktreesDir(baseDir string) string {
+	return filepath.Join(baseDir, ".archfit-cache", "worktrees")
+}
+
 // refinablePair is one candidate module pair with its evidence summary.
 type refinablePair struct {
 	From, To    string
@@ -396,17 +417,13 @@ type refinablePair struct {
 //   - unknown strength (no heuristic available — LLM judgment needed most here).
 //
 // Contract and intrusive strengths are already decided (glob or SCIP); they are
-// excluded. Already-approved pairs are skipped. Deterministic order (From, To).
-func selectRefinablePairs(g *graph.Graph, idx coupling.Index, mm config.ModuleMap, existing []labels.Label) []refinablePair {
+// excluded. Fresh approved pairs are skipped; stale approved pairs can be
+// redrafted. Deterministic order (From, To).
+func selectRefinablePairs(g *graph.Graph, idx coupling.Index, mm config.ModuleMap, existing []labels.Label, evidence map[string]string) []refinablePair {
 	if g == nil {
 		return nil
 	}
-	approved := make(map[string]struct{})
-	for _, l := range existing {
-		if l.Status == labels.StatusApproved {
-			approved[labels.Key(l.From, l.To)] = struct{}{}
-		}
-	}
+	approved := effectiveApprovedPairs(existing, evidence)
 
 	type agg struct {
 		strength string
@@ -546,14 +563,10 @@ type enrichResponse struct {
 // (never write a half-understood draft file); unknown pairs/strengths in an
 // otherwise-valid body are skipped.
 func parseEnrichResponse(text string, batch []refinablePair) ([]labels.Label, error) {
-	// Tolerate accidental markdown fencing, nothing else.
-	text = strings.TrimSpace(text)
-	text = strings.TrimPrefix(text, "```json")
-	text = strings.TrimPrefix(text, "```")
-	text = strings.TrimSuffix(text, "```")
+	text = trimJSONFences(text)
 
 	var entries []enrichResponse
-	if err := json.Unmarshal([]byte(strings.TrimSpace(text)), &entries); err != nil {
+	if err := json.Unmarshal([]byte(text), &entries); err != nil {
 		return nil, fmt.Errorf("enrich: model response is not the required JSON array: %w", err)
 	}
 
@@ -583,17 +596,18 @@ func parseEnrichResponse(text string, batch []refinablePair) ([]labels.Label, er
 	return out, nil
 }
 
-// mergeDrafts merges new drafts into the existing labels: approved entries are
-// untouchable; an existing draft for the same pair is replaced; output is
-// sorted (From, To) for a deterministic file.
-func mergeDrafts(existing, drafts []labels.Label) []labels.Label {
+// mergeDrafts merges new drafts into the existing labels: fresh approved entries
+// are untouchable; stale approved entries and existing drafts for the same pair
+// are replaced; output is sorted (From, To) for a deterministic file.
+func mergeDrafts(existing, drafts []labels.Label, evidence map[string]string) []labels.Label {
 	byKey := map[string]labels.Label{}
+	approved := effectiveApprovedPairs(existing, evidence)
 	for _, l := range existing {
 		byKey[labels.Key(l.From, l.To)] = l
 	}
 	for _, d := range drafts {
 		key := labels.Key(d.From, d.To)
-		if cur, ok := byKey[key]; ok && cur.Status == labels.StatusApproved {
+		if _, ok := approved[key]; ok {
 			continue
 		}
 		byKey[key] = d
@@ -609,6 +623,32 @@ func mergeDrafts(existing, drafts []labels.Label) []labels.Label {
 		}
 		return out[i].To < out[j].To
 	})
+	return out
+}
+
+func currentLabelEvidence(g *graph.Graph, mm config.ModuleMap, existing []labels.Label) map[string]string {
+	wanted := make(map[string]struct{}, len(existing))
+	for _, l := range existing {
+		if l.Status == labels.StatusApproved {
+			wanted[labels.Key(l.From, l.To)] = struct{}{}
+		}
+	}
+	return engine.PairEvidence(g, mm, wanted)
+}
+
+func enrichModuleMap(cfg config.Config, g *graph.Graph) config.ModuleMap {
+	return engine.AugmentClassifyConfig(g, cfg.ForClassify()).ModuleMap
+}
+
+func effectiveApprovedPairs(existing []labels.Label, evidence map[string]string) map[string]struct{} {
+	human, llmApproved, _ := labels.Approved(existing, evidence)
+	out := make(map[string]struct{}, len(human)+len(llmApproved))
+	for key := range human {
+		out[key] = struct{}{}
+	}
+	for key := range llmApproved {
+		out[key] = struct{}{}
+	}
 	return out
 }
 

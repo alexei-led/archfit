@@ -1,0 +1,10 @@
+version: 1
+modules:
+  mymod:
+    paths:
+      - pkg/**
+rules:
+  - id: domain-no-infra
+    type: forbidden_layer_direction
+    from_layer: domain
+    to_layer: infrastructure

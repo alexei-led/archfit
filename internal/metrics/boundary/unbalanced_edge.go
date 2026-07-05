@@ -27,7 +27,7 @@ func distanceRank(d coupling.Distance) int {
 		return 2
 	case coupling.DistanceCrossDeployUnit:
 		return 3
-	default: // DistanceUnknown
+	default: // DistanceUnknown, DistanceExternal (declared seams stay out of this frozen v2 metric)
 		return -1
 	}
 }
@@ -136,6 +136,7 @@ func (m UnbalancedEdgeMetric) Calculate(in signal.CommonInput) diagnostic.Metric
 		Mode:       result.ModeCount,
 		Definition: "intrusive edges with cross-module ownership and high volatility",
 		Delta:      delta,
+		Direction:  diagnostic.DirectionHigherIsWorse,
 	}
 }
 
@@ -153,6 +154,7 @@ func (m UnbalancedEdgeMetric) naResult() diagnostic.MetricResult {
 		Mode:       result.ModeCount,
 		Definition: "intrusive edges with cross-module ownership and high volatility",
 		Delta:      nil,
+		Direction:  diagnostic.DirectionHigherIsWorse,
 	}
 }
 

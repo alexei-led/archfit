@@ -33,20 +33,27 @@ func TestNew_ReturnsAllMetrics(t *testing.T) {
 }
 
 // TestNew_ExplicitDisableHonored verifies that metrics.<name>.enabled: false
-// removes the metric while unconfigured metrics stay enabled.
+// removes the metric while unconfigured metrics stay enabled — and that a
+// knob-only entry (gate set, enabled absent) does NOT disable the metric.
 func TestNew_ExplicitDisableHonored(t *testing.T) {
 	cfg := config.Config{Metrics: map[string]config.MetricEntry{
-		"blast_radius": {Enabled: false},
-		"coverage":     {Enabled: false},
-		"cycle":        {Enabled: true},
+		"blast_radius":    {Enabled: new(false)},
+		"coverage":        {Enabled: new(false)},
+		"cycle":           {Enabled: new(true)},
+		"unbalanced_edge": {Gate: "warn"}, // knob-only: stays enabled
 	}}
 	ms := metrics.New(cfg)
 	if len(ms) != 3 {
 		t.Fatalf("expected 3 metrics (5 - 2 disabled), got %d", len(ms))
 	}
+	names := make(map[string]bool, len(ms))
 	for _, m := range ms {
-		if m.Name() == "blast_radius" || m.Name() == "coverage" {
-			t.Errorf("disabled metric %q still registered", m.Name())
-		}
+		names[m.Name()] = true
+	}
+	if names["blast_radius"] || names["coverage"] {
+		t.Errorf("explicitly disabled metric still registered: %v", names)
+	}
+	if !names["unbalanced_edge"] {
+		t.Error("knob-only entry ({gate: warn}) disabled the metric — enabled must default to true")
 	}
 }

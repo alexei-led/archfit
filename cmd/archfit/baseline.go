@@ -7,6 +7,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/engine"
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 )
@@ -18,6 +19,7 @@ type BaselineCmd struct {
 	Full     bool   `help:"Scan all files before saving the accepted baseline."`
 	Advisory bool   `help:"Include advisory findings in the baseline."`
 	Base     string `help:"Git ref to compare against when baselining a delta run."`
+	NoCache  bool   `name:"no-cache" help:"Bypass archfit caches (extractor facts)."`
 }
 
 func (*BaselineCmd) Help() string {
@@ -47,7 +49,8 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	// pattern provider, and SCIP resolver): snapshot values recorded from
 	// different inputs would surface as phantom deltas on the next check.
 	mode := engine.Mode{Full: c.Full, Advisory: c.Advisory, Base: c.Base}
-	diag, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, mode, existingBase)
+	deps.noCache = c.NoCache
+	diag, sc, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, mode, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -57,10 +60,25 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 		if f.Status == finding.StatusFixed {
 			continue // fixed = no longer detected; don't carry into new baseline
 		}
+		// The synthetic coupling-gate trip finding is per-run state, not a
+		// triageable edge: the engine never regenerates its fingerprint, so a
+		// persisted entry would orphan and surface as a phantom "fixed" finding.
+		if f.RuleID == ruleIDBCCouplingGate {
+			continue
+		}
+		// Persist the finding's native kind, not the per-run coupling-gate
+		// promotion: the engine regenerates BC findings as advisories every
+		// run, and status.Assign matches stored kind against the pass kind —
+		// a stored "gate" kind would orphan the entry (phantom "fixed" gate
+		// finding, no advisory-side resolution when the edge is fixed).
+		kind := f.Kind
+		if f.RuleID == engine.RuleIDBCImbalanced {
+			kind = finding.KindAdvisory
+		}
 		newBase.Accepted = append(newBase.Accepted, baseline.AcceptedFinding{
 			Fingerprint: f.ID,
 			RuleID:      f.RuleID,
-			Kind:        f.Kind,
+			Kind:        kind,
 			Severity:    string(f.Severity),
 		})
 	}
@@ -70,6 +88,16 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 			Value   float64 `json:"value"`
 			Version string  `json:"version"`
 		}{Value: m.Value, Version: m.Version}
+	}
+	// Persist the coupling_balance synthesis so coupling.gate.max_drop has an
+	// anchor on later runs. An unmeasured score (band n/a) stores nothing —
+	// it must never anchor a phantom drop.
+	if !sc.OverallBand.Unmeasured() {
+		newBase.Score = &baseline.ScoreSnapshot{
+			CouplingBalance: sc.Overall,
+			Band:            string(sc.OverallBand),
+			ScoreVersion:    coupling.ScoreVersion,
+		}
 	}
 
 	bPath := filepath.Join(configDir, defaultBaselinePath)

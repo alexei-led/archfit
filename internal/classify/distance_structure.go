@@ -105,6 +105,22 @@ func ownershipDistance(fromOwner, toOwner string) coupling.Distance {
 	return coupling.DistanceCrossModuleDiffOwner
 }
 
+// ownerDegeneracy precomputes the two owner-map degeneracy invariants shared
+// by Run and CloneOnlyPairs: degeneracy of the explicit (CODEOWNERS/config)
+// owner map and of the full module owner map. Both depend only on config,
+// so callers compute them once per run.
+func ownerDegeneracy(c config.ClassifyConfig) (degenerateExplicit, degenerateOwners bool) {
+	explicitOwnerMap := make(map[string]string, len(c.ExplicitOwners))
+	for mod := range c.ExplicitOwners {
+		explicitOwnerMap[mod] = c.Modules[mod].Owner
+	}
+	fullOwnerMap := make(map[string]string, len(c.Modules))
+	for name, def := range c.Modules {
+		fullOwnerMap[name] = def.Owner
+	}
+	return isDegenerateOwnerMap(explicitOwnerMap), isDegenerateOwnerMap(fullOwnerMap)
+}
+
 // isDegenerateOwnerMap reports whether the ownership map is degenerate — i.e.
 // all modules that have a non-empty owner share exactly one distinct owner value.
 // A degenerate map arises from the git-author fallback in a single/few-author
@@ -187,6 +203,10 @@ var distanceLevelOrdinal = map[coupling.Distance]int{
 	coupling.DistanceUnknown:              2,
 	coupling.DistanceCrossModuleDiffOwner: 3,
 	coupling.DistanceCrossDeployUnit:      5,
+	// DistanceExternal is assigned after the composite (declared external_systems
+	// match on an unknown-distance edge), so it never enters maxDistance today;
+	// ranked highest so a future combination cannot silently demote it.
+	coupling.DistanceExternal: 6,
 }
 
 // maxDistance returns the highest-ordinal Distance among the given values.

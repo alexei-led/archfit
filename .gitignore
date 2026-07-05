@@ -32,7 +32,10 @@ calibration-report.json
 .codegraph/
 
 # Generated comparison-study output (regenerable; not part of the repo)
-reports/
+reports/*
+!reports/book-alignment-review-2026-07-05/
+reports/book-alignment-review-2026-07-05/*
+!reports/book-alignment-review-2026-07-05/00-REVIEW.md
 
 # local analysis scratch (tooling-reduction plan baselines)
 scratchpad/

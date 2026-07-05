@@ -63,9 +63,15 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 		var inner Rule
 		switch def.Type {
 		case "forbidden_dependency":
+			if err := validateForbiddenDependencyDef(def); err != nil {
+				return nil, err
+			}
 			inner = &forbiddenDependency{def: def}
 		case "public_api_only":
-			inner = &publicAPIOnly{def: def}
+			if err := validateScopeGlobs(def); err != nil {
+				return nil, err
+			}
+			inner = &publicAPIOnly{def: def, mm: cfg.ModuleMap}
 		case "forbidden_layer_direction":
 			inner = &forbiddenLayerDirection{
 				def:    def,
@@ -73,7 +79,10 @@ func New(cfg config.RuleConfig) ([]Rule, error) {
 				mm:     cfg.ModuleMap,
 			}
 		case "internal_api_access":
-			inner = &internalAPIAccess{def: def}
+			if err := validateScopeGlobs(def); err != nil {
+				return nil, err
+			}
+			inner = &internalAPIAccess{def: def, mm: cfg.ModuleMap}
 		case "new_cross_module_dependency":
 			inner = &newCrossModuleDependency{def: def, mm: cfg.ModuleMap}
 		case "cycle":

@@ -8,12 +8,21 @@ import (
 )
 
 // MetricEntry holds the settings for a single metric inside the metrics map.
+// Gate sets what a baseline regression does to the verdict: off skips the
+// check, warn caps at WARN, fail/unset blocks — the rule-gate convention.
+// MinDelta (ratio metrics) is the tolerated drop below the baseline; MaxNew
+// (count metrics) is the allowed increase. Both default to 0 when unset (any
+// worsening move trips). validate() rejects a knob on a metric of the wrong
+// kind — pointers so a zero-valued wrong-kind knob (e.g. `max_new: 0` on a
+// ratio metric) is still seen as present and rejected, not silently inert.
 type MetricEntry struct {
-	Enabled    bool    `yaml:"enabled"`
-	Gate       string  `yaml:"gate"`
-	MinDelta   float64 `yaml:"min_delta"`
-	MaxNewHigh int     `yaml:"max_new_high"`
-	MaxNew     int     `yaml:"max_new"`
+	// Metrics run by default: a knob-only entry (e.g. only `gate: warn`)
+	// stays enabled, and only an explicit `enabled: false` disables the
+	// metric. (Pointer so absent and false decode differently.)
+	Enabled  *bool    `yaml:"enabled"`
+	Gate     string   `yaml:"gate"`
+	MinDelta *float64 `yaml:"min_delta"`
+	MaxNew   *int     `yaml:"max_new"`
 }
 
 // MetricsConfig holds settings for all metrics, keyed by metric name.
@@ -38,6 +47,44 @@ type CouplingConfig struct {
 	// module strongly coupled to a high-volatility module inherits raised
 	// effective volatility. Config-declared volatility always takes precedence.
 	VolatilityCascade bool `yaml:"volatility_cascade,omitempty"`
+	// Gate makes the synthesised coupling_balance score gate the verdict.
+	// Absent (nil) = coupling stays advisory, today's behavior. An unmeasured
+	// score (band n/a) never trips the gate regardless of these knobs.
+	Gate *CouplingGateDef `yaml:"gate,omitempty"`
+}
+
+// ExternalSystemDef declares one external integration seam (`external_systems:`),
+// per book Ch10 Example 1 (cross-vendor integration). Edges whose target matches
+// a Targets glob enter coupling_balance scoring at the distance ladder's far end
+// (declared_external, D=10) instead of the disclosed external exclusion.
+// Scoring EVERY library import at D=10 would flood the metric with vendor noise —
+// only a declared seam (a vendor SDK, a generated client) is an integration the
+// architect chose to measure.
+type ExternalSystemDef struct {
+	// Targets are glob patterns matched against the classified edge target —
+	// the same node identity the language extractor emits: a Go import path
+	// ("github.com/aws/aws-sdk-go-v2/**"), a TS resolved package path
+	// ("node_modules/@aws-sdk/**") or bare specifier, a Python dotted module
+	// ("boto3.**"), or a Rust crate name ("aws_sdk_s3").
+	Targets []string `yaml:"targets"`
+	// Volatility of the external system: high | medium | low | frozen.
+	// Default low — the book's generic-subdomain guidance (an external vendor
+	// system is a generic capability, presumed stable unless declared otherwise).
+	Volatility string `yaml:"volatility,omitempty"`
+}
+
+// CouplingGateDef configures the coupling_balance verdict gate
+// (`coupling.gate:`). At least one knob must be set; validate() rejects an
+// empty block.
+type CouplingGateDef struct {
+	// MinBand is the band floor: poor | mixed | serviceable | strong. The
+	// verdict fails when the current coupling_balance band ranks below it.
+	// critical is rejected — no band ranks below it, so it could never trip.
+	MinBand string `yaml:"min_band,omitempty"`
+	// MaxDrop is the tolerated point drop of the coupling_balance value against
+	// the score stored in .archfit-baseline.json. Unset = no drop check;
+	// 0 = any drop fails. Skipped when the baseline carries no stored score.
+	MaxDrop *int `yaml:"max_drop,omitempty"`
 }
 
 // OutputsConfig controls which output formats are produced.
@@ -100,18 +147,30 @@ type ClassifyConfig struct {
 	ModuleMap             ModuleMap
 	BCAdvisoryMinSeverity string // minimum severity to emit BC coupling advisories
 	// ApprovedLabels pins integration strength per ordered module pair, keyed
-	// by from+"\x00"+to (labels.Key). Human-approved enrich output, validated
-	// for freshness by the engine before injection. Precedence in classify:
-	// config globs > approved labels > extractor hint.
+	// by from+"\x00"+to (labels.Key). Human-approved enrich output with
+	// human/tool provenance, validated for freshness by the engine before
+	// injection. Precedence in classify: config globs > approved labels >
+	// extractor hint.
 	ApprovedLabels map[string]string
+	// LLMLabels pins integration strength for approved labels whose judgment
+	// came from an LLM (provenance: llm), same keying as ApprovedLabels.
+	// Weaker precedence: an llm label only fills a cell every static source
+	// left unknown (no config glob, no extractor/type-info/SCIP hint) — it
+	// never displaces a static classification (compiler-grade beats LLM, the
+	// same rule as SCIP-for-Go).
+	LLMLabels map[string]string
+	// LLMLabelConfidence records the confidence value for entries in LLMLabels,
+	// keyed the same way. Missing or non-"high" values are treated as uncertain
+	// when an LLM label actually fills an edge.
+	LLMLabelConfidence map[string]string
 	// Scorer is the coupling scorer applied to each cross-boundary edge.
 	// When nil, classify.Run uses coupling.DefaultScorer() (MultiplicativeScorer, locked Task 16).
 	Scorer coupling.Scorer
 	// CrossModuleClonePairs is the set of canonical module-pair keys
 	// ("[a]\x00[b]" with a≤b) that share duplicated code blocks, derived
-	// from the clone-detection signal. Used to tag CoA (connascence of
-	// algorithm) on cross-module edges. Empty when clone detection is
-	// disabled or produced no results.
+	// from the clone-detection signal. Consumed by the Symmetric-strength
+	// upgrade, the volatility-cascade clone exclusion, and duplicated-knowledge
+	// pairing. Empty when clone detection is disabled or produced no results.
 	CrossModuleClonePairs map[string]struct{}
 	// CloneEvidence maps each canonical module-pair key (same keying as
 	// CrossModuleClonePairs) to the real duplicated-code locations — both sides,
@@ -132,6 +191,11 @@ type ClassifyConfig struct {
 	// module inherits high effective volatility. Config-declared volatility always
 	// takes precedence over the inferred result.
 	VolatilityCascadeEnabled bool
+	// ExternalSystems are the declared external integration seams
+	// (`external_systems:`). An edge whose target resolves to no module but
+	// matches an entry's target glob classifies at DistanceExternal (D=10)
+	// with the entry's volatility (default low) and enters scoring.
+	ExternalSystems map[string]ExternalSystemDef
 }
 
 // RuleConfig is the view passed to the rules stage.

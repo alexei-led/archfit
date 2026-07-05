@@ -51,7 +51,12 @@ type RunInput struct {
 	Metrics     []metrics.Metric
 	Accepted    status.AcceptedSet
 	BaseMetrics diagnostic.MetricSnapshot // baseline metric snapshot; nil = no baseline
-	Labels      []labels.Label            // pinned coupling labels; nil = none
+	// MetricGates maps metric name → its metrics.<name> config entry (gate
+	// posture off|warn|fail plus max_new/min_delta thresholds); the caller
+	// passes cfg.Metrics. nil/missing entries mean the defaults: blocking
+	// gate, zero tolerated regression.
+	MetricGates map[string]config.MetricConfig
+	Labels      []labels.Label // pinned coupling labels; nil = none
 	Signals     signal.RunSignals
 	Now         time.Time
 	// PrimaryExtractorTools names the per-language file extractors whose coverage
@@ -63,6 +68,33 @@ type RunInput struct {
 	// computed by the caller before parsing. Empty when no config file was loaded.
 	// Attached to the Diagnostic for reproducibility: same config + same repo → same hash.
 	ConfigHash string
+}
+
+// AugmentClassifyConfig returns cfg with the same synthetic-module augmentation
+// and ModuleMap rebuild that Run applies before label freshness, classification,
+// advisories, and diagnostics.
+func AugmentClassifyConfig(g *graph.Graph, cfg config.ClassifyConfig) config.ClassifyConfig {
+	// Register auto-discovered module-graph nodes (Rust "<crate>::<mod>") as modules so
+	// classify can resolve their distance/volatility; otherwise their edges are
+	// distance-unknown and coupling_balance/encapsulation never see them. No-op for
+	// Go/TS/Python (their nodes are already configured; the "::" gate excludes them).
+	cfg.Modules = classify.AugmentModulesFromGraph(g, cfg.Modules)
+	// Register Go workspace members (≥2-member gate) as synthetic modules so
+	// cross-member edges classify with a real Distance for coupling_balance. No-op for
+	// single-module repos and archfit's own self-scan (1 surviving member after exclusion).
+	cfg.Modules = classify.AugmentGoWorkspaceModules(g, cfg.Modules)
+	// Bind crate-level Rust nodes (bare `package:<crate>` names) to the module whose
+	// path glob covers the crate's directory, so multi-crate workspaces configured with
+	// "crates/<crate>/**" globs measure coupling instead of classifying every cross-crate
+	// edge as external. No-op for bare-name configs (tokio/yazi) and single-crate repos.
+	cfg.Modules = classify.AugmentCargoCrateNodes(g, cfg.Modules)
+
+	// Rebuild the ModuleMap from the augmented Modules slice so that all secondary
+	// consumers see auto-registered members. The Augment* calls above mutate
+	// cfg.Modules but NOT cfg.ModuleMap, which was built at config-view construction
+	// time.
+	cfg.ModuleMap = config.BuildModuleMap(cfg.Modules)
+	return cfg
 }
 
 // extractResult holds the outputs of the extract stage.
@@ -134,37 +166,16 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	}
 
 	// --- Stage 3: Classify ---
-	// Pinned coupling labels first: approved entries refine strength
-	// classification (precedence: config globs > approved labels > extractor
-	// hint); stale ones surface as labels/stale advisories.
-	classifyCfg := in.Classify
+	classifyCfg := AugmentClassifyConfig(ex.g, in.Classify)
+
+	// Pinned coupling labels refine strength classification (human/tool: config
+	// globs > approved labels > extractor hint; llm: fills only cells all static
+	// sources left unknown). Freshness must use the augmented ModuleMap above, or
+	// labels for synthetic Go/Rust module pairs bypass the stale-evidence check.
 	staleLabelFindings, llmApprovedCount := applyPinnedLabels(ex.g, &classifyCfg, in.Mode, in.Labels)
 
-	// Register auto-discovered module-graph nodes (Rust "<crate>::<mod>") as modules so
-	// classify can resolve their distance/volatility; otherwise their edges are
-	// distance-unknown and coupling_balance/encapsulation never see them. No-op for
-	// Go/TS/Python (their nodes are already configured; the "::" gate excludes them).
-	classifyCfg.Modules = classify.AugmentModulesFromGraph(ex.g, classifyCfg.Modules)
-	// Register Go workspace members (≥2-member gate) as synthetic modules so
-	// cross-member edges classify with a real Distance for coupling_balance. No-op for
-	// single-module repos and archfit's own self-scan (1 surviving member after exclusion).
-	classifyCfg.Modules = classify.AugmentGoWorkspaceModules(ex.g, classifyCfg.Modules)
-	// Bind crate-level Rust nodes (bare `package:<crate>` names) to the module whose
-	// path glob covers the crate's directory, so multi-crate workspaces configured with
-	// "crates/<crate>/**" globs measure coupling instead of classifying every cross-crate
-	// edge as external. No-op for bare-name configs (tokio/yazi) and single-crate repos.
-	classifyCfg.Modules = classify.AugmentCargoCrateNodes(ex.g, classifyCfg.Modules)
-
-	// Rebuild the ModuleMap from the augmented Modules slice so that all
-	// secondary consumers (buildRuntimeAsync, buildDynamicImports, diagnostic
-	// module-label resolution, clone-pair evidence) see auto-registered members.
-	// The two Augment* calls above mutate classifyCfg.Modules but NOT
-	// classifyCfg.ModuleMap (which was built at config-view construction time);
-	// without this rebuild, Go workspace members and Rust sub-modules would
-	// resolve to blank module names in the diagnostic.
-	classifyCfg.ModuleMap = config.BuildModuleMap(classifyCfg.Modules)
-
-	// Thread clone pairs for CoA (connascence of algorithm) tagging — report-only.
+	// Thread clone pairs for the clone-driven classify paths: Symmetric-strength
+	// upgrade, volatility-cascade exclusion, duplicated-knowledge pairing.
 	// Placed after the ModuleMap rebuild so auto-registered members participate
 	// in cross-module clone-pair detection.
 	if len(in.Signals.Duplication.Clusters) > 0 {
@@ -258,7 +269,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 
 	// Pass only rule-advisory count to computeVerdict — coupling advisories must
 	// not flip verdict regardless of mode.Advisory.
-	verdict := computeVerdict(gateFindings, metricResults, countActive(ruleAdvisoryFindings))
+	verdict := computeVerdict(gateFindings, metricResults, in.MetricGates, countActive(ruleAdvisoryFindings))
 
 	// --- Stage 9: Assemble Diagnostic ---
 	// Include advisory findings in Findings only when mode.Advisory is set.
@@ -301,6 +312,15 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 
 	classifiedEdges := buildClassifiedEdgeSummary(couplingIdx)
 	classifiedEdges.LLMApproved = llmApprovedCount
+	// Volatility triage disclosure: count modules by volatility source (declared /
+	// inherited / cascade / undeclared) so coupling_balance can say whether a
+	// uniform-volatility repo is measured or uniform-by-inheritance. in.Classify
+	// still holds the PRE-augmentation module map (Augment* are copy-on-write).
+	classifiedEdges.VolatilityProvenance = classify.ComputeVolatilityProvenance(ex.g, in.Classify.Modules, classifyCfg)
+
+	// Local complexity (book Ch10): per-module rollup of scored same-module
+	// edges. Report-only — never enters coupling_balance or the verdict.
+	localCoupling := buildLocalCoupling(ex.g, couplingIdx, classifyCfg.ModuleMap)
 
 	d := diagnostic.Diagnostic{
 		SchemaVersion:         diagnostic.SchemaVersion,
@@ -319,6 +339,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		AgentTasks:            []diagnostic.AgentTask{},
 		ToolCoverage:          ex.coverages,
 		ClassifiedEdges:       classifiedEdges,
+		LocalCoupling:         localCoupling,
 		Delta:                 delta,
 		Summary: diagnostic.Summary{
 			GateFindings: gateNew,
@@ -441,29 +462,60 @@ func resolveEvidence(
 }
 
 // computeVerdict derives the overall verdict from gate findings, metric results,
-// and active rule-advisory findings (gate: warn).
+// per-metric gate config, and active rule-advisory findings (gate: warn).
 //   - Any gate finding with status new or expired_waiver → fail
-//   - Any metric with delta != nil && *delta < 0 → warn (if not already fail)
+//   - Any metric whose delta breaches its threshold in the worsening direction
+//     trips its gate: DirectionHigherIsWorse breaches on *delta > max_new,
+//     everything else (including the unset zero Direction) breaches on
+//     *delta < -min_delta (ratio semantics). Unset knobs default to 0 — any
+//     worsening move trips. The gate posture then decides:
+//     off skips the check, warn caps at warn, fail/unset fails — the same
+//     convention as rule gates (unset = blocking).
 //   - Any active rule-advisory finding (activeRuleAdvisories > 0) → warn (if not already fail)
 //   - Otherwise → pass
 //
 // Coupling advisories are intentionally excluded from activeRuleAdvisories — they
 // must not flip the verdict.
-func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult, activeRuleAdvisories int) diagnostic.Verdict {
+func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult, gates map[string]config.MetricConfig, activeRuleAdvisories int) diagnostic.Verdict {
 	for _, f := range gateFindings {
 		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver {
 			return diagnostic.VerdictFail
 		}
 	}
+	verdict := diagnostic.VerdictPass
 	for _, m := range ms {
-		if m.Delta != nil && *m.Delta < 0 {
-			return diagnostic.VerdictWarn
+		if m.Delta == nil {
+			continue
 		}
+		mc := gates[m.Name]
+		if mc.Gate == string(config.GateOff) {
+			continue
+		}
+		var minDelta float64
+		if mc.MinDelta != nil {
+			minDelta = *mc.MinDelta
+		}
+		breached := *m.Delta < -minDelta
+		if m.Direction == diagnostic.DirectionHigherIsWorse {
+			var maxNew int
+			if mc.MaxNew != nil {
+				maxNew = *mc.MaxNew
+			}
+			breached = *m.Delta > float64(maxNew)
+		}
+		if !breached {
+			continue
+		}
+		if mc.Gate == string(config.GateWarn) {
+			verdict = diagnostic.VerdictWarn
+			continue
+		}
+		return diagnostic.VerdictFail
 	}
-	if activeRuleAdvisories > 0 {
+	if verdict == diagnostic.VerdictPass && activeRuleAdvisories > 0 {
 		return diagnostic.VerdictWarn
 	}
-	return diagnostic.VerdictPass
+	return verdict
 }
 
 // enrichEdges applies symbol resolution and SCIP integration strength to an

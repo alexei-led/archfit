@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -30,6 +31,10 @@ import (
 const (
 	toolName      = "jscpd"
 	clonesTimeout = 3 * time.Minute
+
+	// cacheAnalyzer is the fact-cache subdirectory (fact-cache.md D1) — the
+	// analyzer name, not the tool binary name.
+	cacheAnalyzer = "clones"
 
 	// defaultTimeout is the per-analyzer outer watchdog applied when no
 	// analyzers.clones.timeout is configured. It is intentionally generous (well
@@ -73,7 +78,12 @@ func effectiveTimeout(configured, fallback time.Duration) time.Duration {
 // enabled is false, or the tool is absent, or any non-fatal failure occurs, it
 // returns an empty slice with an absent/partial coverage record and a nil error.
 // On timeout it returns StatusTimedOut coverage and a nil error — the run continues.
-func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, timeout time.Duration, exclusions []string) ([]clone.Cluster, diagnostic.Coverage, error) {
+//
+// cache is the extractor fact cache (nil = off). jscpd writes its report to a
+// temp file, not stdout, so the seam is store-direct: the cached fact is the
+// PARSED result (clusters + files-scanned). Only StatusOK results are cached —
+// a timed-out or failed run must re-run next time (fact-cache.md D3).
+func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, timeout time.Duration, exclusions []string, cache *factcache.Store) ([]clone.Cluster, diagnostic.Coverage, error) {
 	if !enabled {
 		// Disabled by config — tool may or may not be installed. Report as
 		// disabled (not absent) so the pipeline does not generate an "install"
@@ -83,6 +93,16 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 
 	if _, found := runner.Detect(ctx, toolName); !found {
 		return nil, diagnostic.Coverage{Tool: toolName, Status: diagnostic.StatusAbsent, Reason: reasonNotInstalled}, nil
+	}
+
+	key := cacheKey(ctx, runner, root, exclusions, cache)
+	if key != "" {
+		if blob, ok := cache.Get(cacheAnalyzer, key); ok {
+			var ce cacheEntry
+			if json.Unmarshal(blob, &ce) == nil {
+				return ce.Clusters, okCoverage(ce.FilesScanned), nil
+			}
+		}
 	}
 
 	// Apply per-analyzer watchdog. The outer timeout caps total clone-detection
@@ -139,16 +159,70 @@ func Run(ctx context.Context, runner toolrun.Runner, root string, enabled bool, 
 		return nil, partial, nil
 	}
 
-	// FilesSeen/FilesApplicable are the source files jscpd scanned (its
-	// statistics.total.sources), not the clone-pair count — a repo with 200
-	// files and 4 clone pairs covered 200 files, not 4.
-	cov := diagnostic.Coverage{
+	if key != "" {
+		if blob, merr := json.Marshal(cacheEntry{Clusters: clusters, FilesScanned: filesScanned}); merr == nil {
+			cache.Put(cacheAnalyzer, key, blob)
+		}
+	}
+	return clusters, okCoverage(filesScanned), nil
+}
+
+// okCoverage builds the StatusOK coverage record shared by the live and
+// cached paths — the two must stay byte-identical.
+// FilesSeen/FilesApplicable are the source files jscpd scanned (its
+// statistics.total.sources), not the clone-pair count — a repo with 200
+// files and 4 clone pairs covered 200 files, not 4.
+func okCoverage(filesScanned int) diagnostic.Coverage {
+	return diagnostic.Coverage{
 		Tool:            toolName,
 		FilesSeen:       filesScanned,
 		FilesApplicable: filesScanned,
 		Status:          diagnostic.StatusOK,
 	}
-	return clusters, cov, nil
+}
+
+// cacheEntry is the stored fact-cache envelope: the parsed jscpd result.
+type cacheEntry struct {
+	Clusters     []clone.Cluster `json:"clusters,omitempty"`
+	FilesScanned int             `json:"files_scanned"`
+}
+
+// cacheKey derives the fact-cache key for one jscpd scan, or "" when the
+// cache is off or key material cannot be derived (never an error). Key
+// inputs: jscpd version probe, the scan root + exclusion set (the report may
+// embed tree-specific paths, and --ignore changes the scan), and the content
+// hash of every non-excluded file under root — jscpd is multi-language, so
+// the input scope is the whole tree.
+func cacheKey(ctx context.Context, runner toolrun.Runner, root string, exclusions []string, cache *factcache.Store) string {
+	if cache == nil {
+		return ""
+	}
+	cfgHash, err := factcache.HashJSON(struct {
+		Root       string
+		Exclusions []string
+	}{root, exclusions})
+	if err != nil {
+		return ""
+	}
+	files := factcache.ListInputs(root, factcache.MatchAll, exclusions)
+	treeHash, err := factcache.HashTree(root, files)
+	if err != nil {
+		return ""
+	}
+	return factcache.Key(cacheAnalyzer, jscpdVersion(ctx, runner), cfgHash, treeHash)
+}
+
+// jscpdVersion probes `jscpd --version`. Best-effort: "" on any failure.
+func jscpdVersion(ctx context.Context, runner toolrun.Runner) string {
+	out, err := runner.Run(ctx, toolrun.ToolCmd{
+		Name:    toolName,
+		Args:    []string{"--version"},
+		Timeout: 30 * time.Second,
+	})
+	if err != nil || out.ExitCode != 0 {
+		return ""
+	}
+	return strings.TrimSpace(string(out.Stdout))
 }
 
 // jscpdReport mirrors the JSON structure emitted by jscpd --reporters json.

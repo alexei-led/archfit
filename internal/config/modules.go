@@ -57,8 +57,6 @@ type RuleDef struct {
 	Gate      string       `yaml:"gate"`
 	From      string       `yaml:"from"`
 	To        string       `yaml:"to"`
-	FromLayer string       `yaml:"from_layer"`
-	ToLayer   string       `yaml:"to_layer"`
 	Max       *int         `yaml:"max,omitempty"`       // public_api_max: exported-declaration ceiling per module
 	Threshold *int         `yaml:"threshold,omitempty"` // reserved: per-rule integer threshold
 	Patterns  []PatternDef `yaml:"patterns,omitempty"`
@@ -242,6 +240,25 @@ func globRoot(pattern string) string {
 		return pattern
 	}
 	return strings.TrimSuffix(pattern[:idx], "/")
+}
+
+// ModuleRootDirs returns, for every module with at least one Paths glob, the
+// literal (wildcard-free) root of its first Paths pattern. Used as the
+// agent_tasks files[] last-resort fallback when no finding location resolves
+// to a real file. For slash globs the root is a directory prefix; for Python's
+// dotted globs (e.g. "myapp.domain.**") it is the dotted module-ID prefix with
+// the trailing separator dot trimmed ("myapp.domain") — the resolver turns it
+// into a real path via the Python file-candidate probe, never emitting the
+// dotted form itself.
+func ModuleRootDirs(modules map[string]ModuleDef) map[string]string {
+	out := make(map[string]string, len(modules))
+	for name, def := range modules {
+		if len(def.Paths) == 0 {
+			continue
+		}
+		out[name] = strings.TrimRight(globRoot(def.Paths[0]), ".")
+	}
+	return out
 }
 
 // LayerFor returns the layer name for the module that owns the given repo-relative

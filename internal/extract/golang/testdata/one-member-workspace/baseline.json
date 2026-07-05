@@ -34,7 +34,13 @@
     "mean_balance": 8,
     "same_module": 0,
     "scored": 1,
-    "total": 1
+    "total": 1,
+    "volatility_provenance": {
+      "cascade": 0,
+      "declared": 2,
+      "inherited": 0,
+      "undeclared": 0
+    }
   },
   "config_hash": "e686c0a4ca1ab9671d3ddc6d48da64e60ff9d2fd49d1cf9573c7e4c15850d826",
   "coupling_balance": {
@@ -43,7 +49,8 @@
     "evidence": [
       "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
       "scored fraction: 100% (1 scored, 0 abstained, internal only)",
-      "critical-band edges: 0 (0 distributed-monolith: critical at high distance)"
+      "critical-band edges: 0 (0 distributed-monolith: critical at high distance)",
+      "volatility provenance (modules): declared: 2, inherited: 0, cascade: 0"
     ],
     "name": "coupling_balance",
     "summary": "mean book balance 8.0/10 across 1 scored internal cross-boundary edges",
@@ -113,7 +120,7 @@
         "score": "book",
         "score_band": "low",
         "score_value": "8",
-        "score_version": "bc_score.v3",
+        "score_version": "bc_score.v4",
         "strength": "functional",
         "volatility": "low"
       },
@@ -129,6 +136,7 @@
       "band": "n/a",
       "confidence": "low",
       "definition": "contract / (contract + intrusive) cross-boundary edges (functional, model, unknown excluded)",
+      "direction": "higher_is_better",
       "display": "n/a",
       "metric_version": "encapsulation.v1",
       "mode": "ratio",
@@ -139,6 +147,7 @@
       "band": "strong",
       "confidence": "high",
       "definition": "intrusive edges with cross-module ownership and high volatility",
+      "direction": "higher_is_worse",
       "display": "0 new high-risk unbalanced edges",
       "metric_version": "unbalanced_edge.v2",
       "mode": "count",
@@ -149,6 +158,7 @@
       "band": "strong",
       "confidence": "high",
       "definition": "number of import cycles",
+      "direction": "higher_is_worse",
       "display": "0 import cycles",
       "metric_version": "cycle.v1",
       "mode": "count",
@@ -159,6 +169,7 @@
       "band": "strong",
       "confidence": "high",
       "definition": "extracted_files / applicable_files",
+      "direction": "higher_is_better",
       "display": "100% coverage",
       "metric_version": "coverage.v1",
       "mode": "ratio",
@@ -169,6 +180,7 @@
       "band": "info",
       "confidence": "low",
       "definition": "modules whose transitive reverse-dependencies exceed 30% of the codebase (change-impact hubs)",
+      "direction": "higher_is_worse",
       "display": "1 of 2 modules are change-impact hubs: pkg/b (100%, 1 deps)",
       "metric_version": "blast_radius.v1",
       "mode": "count",
@@ -192,7 +204,8 @@
         "evidence": [
           "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
           "scored fraction: 100% (1 scored, 0 abstained, internal only)",
-          "critical-band edges: 0 (0 distributed-monolith: critical at high distance)"
+          "critical-band edges: 0 (0 distributed-monolith: critical at high distance)",
+          "volatility provenance (modules): declared: 2, inherited: 0, cascade: 0"
         ],
         "name": "coupling_balance",
         "summary": "mean book balance 8.0/10 across 1 scored internal cross-boundary edges",
@@ -203,6 +216,7 @@
     "overall_band": "serviceable",
     "rubric_version": 1
   },
+  "score_version": "bc_score.v4",
   "summary": {
     "gate_findings": 1,
     "waivers_used": 0,

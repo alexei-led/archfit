@@ -95,6 +95,20 @@ func Synthesize(d diagnostic.Diagnostic) Scorecard {
 			"module graph partial (some crates failed cargo-modules) — confidence capped to medium")
 	}
 
+	// A TypeScript unresolved-specifier ratio above the ceiling means
+	// dependency-cruiser could not resolve a meaningful fraction of import
+	// specifiers (missing tsconfig path/baseUrl alias, uninstalled dependency) —
+	// those edges silently land in the external bucket instead of coupling_balance's
+	// internal-edge denominator, so the measured balance reads better than reality.
+	// Cap to medium (mirrors the cargo-modules cap above) so a high-noise TS
+	// extraction cannot read as a confident verdict.
+	if tsUnresolvedPartial(d) && cb.Confidence == ConfidenceHigh {
+		cb.Confidence = ConfidenceMedium
+		cb.Evidence = append(cb.Evidence,
+			"TypeScript unresolved-specifier ratio exceeds threshold — confidence capped to medium "+
+				"(path aliases or missing installs may be dropping internal edges as external)")
+	}
+
 	return Scorecard{
 		RubricVersion: RubricVersion,
 		Overall:       cb.Value,
@@ -146,13 +160,6 @@ func indexMetrics(ms []diagnostic.MetricResult) metricIndex {
 	return mi
 }
 
-// measured reports whether the named metric ran AND produced a real value (not
-// the n/a band, which means "no evidence").
-func (mi metricIndex) measured(name string) bool {
-	m, ok := mi[name]
-	return ok && m.Band != "n/a"
-}
-
 // cargoModulesPartial reports whether the Rust module-graph tool ran but only
 // covered some crates (status "partial") — the structural dimensions are then built
 // over an incomplete graph.
@@ -165,15 +172,54 @@ func cargoModulesPartial(d diagnostic.Diagnostic) bool {
 	return false
 }
 
+// tsUnresolvedRatioCeiling is the unresolved/total-import-specifiers ratio
+// above which dependency-cruiser's coverage is noisy enough to cap
+// coupling_balance confidence — the SAME ratio the coverage Reason string
+// discloses, so the cap and the disclosure can never contradict each other.
+// Deliberate simplification: 10% is a round ceiling, not a
+// calibrated figure — raise it if legitimate repos trip this on ordinary
+// tsconfig-less noise, lower it if a 10%-noisy extraction still reads as
+// confident in practice.
+const tsUnresolvedRatioCeiling = 0.10
+
+// toolDepCruiser is the ToolCoverage name the TypeScript extractor reports under.
+const toolDepCruiser = "dependency-cruiser"
+
+// tsUnresolvedPartial reports whether the TypeScript extractor (dependency-cruiser)
+// reported partial coverage with an unresolved-specifier ratio above
+// tsUnresolvedRatioCeiling — a signal that path-alias or module-resolution
+// failures are dropping internal edges into the external bucket, which
+// coupling_balance excludes from its denominator entirely. SpecifiersSeen 0
+// (an extractor that does not track specifier totals) abstains rather than
+// divide by a proxy denominator.
+func tsUnresolvedPartial(d diagnostic.Diagnostic) bool {
+	for _, c := range d.ToolCoverage {
+		if c.Tool != toolDepCruiser || c.Status != diagnostic.StatusPartial || c.SpecifiersSeen == 0 {
+			continue
+		}
+		if float64(c.Unresolved)/float64(c.SpecifiersSeen) > tsUnresolvedRatioCeiling {
+			return true
+		}
+	}
+	return false
+}
+
 // degenerateGraph reports whether the dependency graph is too small to assess
 // structure — fewer than two connected first-party modules. blast_radius goes n/a
-// exactly in that case (it needs ≥2 modules joined by an edge), so its absence is
-// the proxy. On such a graph cycle=0 and coverage is trivially true, carrying no
-// signal: the graph-shape dimensions must report n/a, not a vacuous strong. The
-// canonical case is a single-crate Rust binary, which archfit's crate-level model
-// sees as one node (see internal/extract/rust).
+// exactly in that case (it needs ≥2 modules joined by an edge), so a blast_radius
+// result carrying the n/a band is the proxy. On such a graph cycle=0 and coverage
+// is trivially true, carrying no signal: the graph-shape dimensions must report
+// n/a, not a vacuous strong. The canonical case is a single-crate Rust binary,
+// which archfit's crate-level model sees as one node (see internal/extract/rust).
+//
+// An ABSENT blast_radius (metrics.blast_radius.enabled: false) is not degeneracy
+// evidence — treating it as such would let an unrelated config knob silently
+// force coupling_balance to n/a and defuse coupling.gate. Without the proxy,
+// couplingBalance falls through to the summary path, whose Scored==0 check
+// still reports n/a on genuinely degenerate graphs.
 func degenerateGraph(mi metricIndex) bool {
-	return !mi.measured("blast_radius")
+	m, ok := mi["blast_radius"]
+	return ok && m.Band == "n/a"
 }
 
 // lowerConf drops a confidence level by one band (high→medium, medium→low, low→low).

@@ -167,10 +167,10 @@ func TestWorkspaceFixture_NodeIDsScanRootRelative(t *testing.T) {
 // assertion: the cross-module import (a/consumer → b/api) must be classified as
 // first-party AND carry a StrengthHint.
 //
-// The StrengthHint comes from buildStrengthHints using the member-set predicate
-// (isFirstParty). Without this, cross-member type references don't produce hints
-// and coupling_balance collapses even when distance is present (Task 6's critical
-// strength guard).
+// The StrengthHint comes from buildStrengthHints, which derives hints for every
+// resolved target. If cross-member type references stopped producing hints,
+// coupling_balance would collapse even when distance is present (Task 6's
+// critical strength guard).
 func TestWorkspaceFixture_CrossModuleEdgeFirstPartyWithStrengthHint(t *testing.T) {
 	dir := materializeWorkspaceFixture(t)
 

@@ -24,7 +24,7 @@ func TestBuildExplainPrompt_IncludesDistanceBasis(t *testing.T) {
 		Why:        "high strength × high distance",
 		Constraint: "lower strength or shorten distance",
 		MatchedBy: map[string]string{
-			matchedByStrength: "intrusive",
+			matchedByStrength: enrichIntrusive,
 			"distance":        "internal_remote",
 			"distance_basis":  "ownership",
 		},

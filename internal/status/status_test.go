@@ -365,6 +365,57 @@ func TestDeltaBuckets_UnknownSeverityIsNotChanged(t *testing.T) {
 	}
 }
 
+func TestDeltaBuckets_ModuleKeyEndpointNotPathEvidence(t *testing.T) {
+	// public_api_* findings stamp the bare config module key on both edge
+	// endpoints (recorded in MatchedBy); real files live in Locations. A key
+	// that collides with an unrelated real path must not bucket the finding as
+	// touched, while a changed location file must.
+	const locFile = "src/domain/api.go"
+	tests := []struct {
+		name    string
+		locs    []graph.Location
+		changed []string
+		touched bool
+	}{
+		{"module key colliding with unrelated changed path", []graph.Location{{File: locFile}}, []string{"docs/readme.md"}, false},
+		{"changed location file", []graph.Location{{File: locFile}}, []string{locFile}, true},
+		{"no locations keeps endpoint fallback", nil, []string{"docs/readme.md"}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := mkDeltaFinding("dddddddddddddddddddddddddddddddd", finding.StatusBaseline, finding.SeverityMedium, "docs", "docs")
+			f.MatchedBy = map[string]string{"module": "docs"}
+			f.Locations = tc.locs
+			accepted := fakeAccepted{{Fingerprint: f.ID, RuleID: testRuleID, Kind: kindGate, Severity: string(finding.SeverityMedium)}}
+
+			r := status.DeltaBuckets([]finding.Finding{f}, accepted, tc.changed)
+
+			if got := len(r.TouchedByDelta) == 1; got != tc.touched {
+				t.Errorf("touched=%v, want %v (result %+v)", got, tc.touched, r)
+			}
+		})
+	}
+
+	t.Run("general two-phase path: location misses, real edge endpoint matches", func(t *testing.T) {
+		// Locations names a file that is NOT in changed (phase 1 misses, but
+		// hasLoc becomes true); an edge endpoint names a real path DISTINCT from
+		// the module key that IS in changed — phase 2 must still match it (the
+		// modKey-equality skip only applies to the module-key value itself).
+		f := mkDeltaFinding("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", finding.StatusBaseline, finding.SeverityMedium,
+			"internal/realmodule/thing.go", "docs")
+		f.MatchedBy = map[string]string{"module": "docs"}
+		f.Locations = []graph.Location{{File: "src/unrelated/file.go"}}
+		accepted := fakeAccepted{{Fingerprint: f.ID, RuleID: testRuleID, Kind: kindGate, Severity: string(finding.SeverityMedium)}}
+
+		changed := []string{"internal/realmodule/thing.go"}
+		r := status.DeltaBuckets([]finding.Finding{f}, accepted, changed)
+
+		if len(r.TouchedByDelta) != 1 {
+			t.Errorf("touched=%v, want true (result %+v)", len(r.TouchedByDelta) == 1, r)
+		}
+	})
+}
+
 func TestDeltaBuckets_Empty(t *testing.T) {
 	r := status.DeltaBuckets(nil, fakeAccepted{}, nil)
 	if !r.Empty() {

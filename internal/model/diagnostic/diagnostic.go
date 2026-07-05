@@ -53,18 +53,33 @@ const (
 	VerdictWarn Verdict = "warn"
 )
 
+// Direction records whether a rising metric value is an improvement or a
+// regression. It is a property of the metric's definition, not a user choice
+// (Technical Details, docs/plans/20260702-wave1-gate-integrity.md): the metric
+// that produces a MetricResult stamps its own Direction, and computeVerdict
+// reads it to interpret Delta's sign instead of assuming ratio semantics for
+// every metric.
+type Direction string
+
+// Direction constants.
+const (
+	DirectionHigherIsBetter Direction = "higher_is_better"
+	DirectionHigherIsWorse  Direction = "higher_is_worse"
+)
+
 // MetricResult holds the computed value and metadata for a single metric (spec §10).
 // JSON tags match spec §10 field names exactly.
 type MetricResult struct {
-	Name       string   `json:"name"`
-	Value      float64  `json:"value"`
-	Display    string   `json:"display"`
-	Band       string   `json:"band"`
-	Confidence string   `json:"confidence"`
-	Version    string   `json:"metric_version"`
-	Mode       string   `json:"mode"`
-	Definition string   `json:"definition"`
-	Delta      *float64 `json:"delta,omitempty"`
+	Name       string    `json:"name"`
+	Value      float64   `json:"value"`
+	Display    string    `json:"display"`
+	Band       string    `json:"band"`
+	Confidence string    `json:"confidence"`
+	Version    string    `json:"metric_version"`
+	Mode       string    `json:"mode"`
+	Definition string    `json:"definition"`
+	Delta      *float64  `json:"delta,omitempty"`
+	Direction  Direction `json:"direction,omitempty"`
 }
 
 // MetricSnapshot is the baseline snapshot of metric values keyed by metric name.
@@ -88,7 +103,12 @@ type Coverage struct {
 	FilesSeen       int    `json:"files_seen"`
 	FilesApplicable int    `json:"files_applicable"`
 	Unresolved      int    `json:"unresolved"`
-	Status          string `json:"status"`
+	// SpecifiersSeen is the total import-specifier count the extractor
+	// examined — the denominator that makes Unresolved a ratio. Only
+	// specifier-granular extractors (dependency-cruiser) set it; 0 means
+	// "not tracked", never "no specifiers".
+	SpecifiersSeen int    `json:"specifiers_seen,omitempty"`
+	Status         string `json:"status"`
 	// Reason explains why a headline metric is absent or partial — a missing
 	// tool, an opt-in-off setting, or an uninstalled dependency — and how to
 	// enable it (the actionable next step). Empty when status is ok. A static,
@@ -284,11 +304,99 @@ type ClassifiedEdgeSummary struct {
 	// sets for all languages (Go stdlib/3p, Rust dependency crates, TS node_modules,
 	// Python external imports). Zero means no external edges were detected.
 	External int `json:"external,omitempty"`
+	// DeclaredExternal is the count of edges whose target matched a config-declared
+	// `external_systems:` entry (Distance == declared_external, D=10 — book Ch10
+	// Example 1). Unlike External, these edges ENTER the Scored/Abstained
+	// distribution: the architect declared the seam, so it is measured. The count
+	// keeps the disclosed-exclusion arithmetic honest — External covers only the
+	// UNDECLARED remainder.
+	DeclaredExternal int `json:"declared_external,omitempty"`
 	// LLMApproved is the count of approved cross-boundary labels whose provenance
 	// is "llm" and confidence is not "high". These lower the coupling_balance
 	// dimension confidence by one band — they are human-approved but not human-judged.
 	// Zero means no LLM-provenance labels are in effect.
 	LLMApproved int `json:"llm_approved,omitempty"`
+	// LabeledLLM is the count of cross-boundary EDGES whose strength came from
+	// an approved llm-provenance label filling a cell every static source left
+	// unknown (one label covers all edges of its module pair). It attributes
+	// the scored-fraction increase to the semantic layer — disclosure only,
+	// never fed into the balance value.
+	LabeledLLM int `json:"labeled_llm,omitempty"`
+	// LLMLowConfidenceEdges counts cross-boundary edges whose strength was filled
+	// by an applied non-high-confidence LLM label. It is intentionally not emitted:
+	// score confidence consumes it while labeled_llm remains the user-facing
+	// attribution bucket.
+	LLMLowConfidenceEdges int `json:"-"`
+	// VolatilityProvenance counts MODULES (not edges) by the source of their
+	// volatility. Nil when no modules were resolved.
+	VolatilityProvenance *VolatilityProvenance `json:"volatility_provenance,omitempty"`
+}
+
+// VolatilityProvenance counts modules by where their volatility came from:
+// config-declared (an explicit `volatility:` field or subdomain mapping),
+// inherited by an auto-registered synthetic module from its nearest declared
+// ancestor, or raised by the opt-in volatility cascade (an overlay on top of
+// the base source). Undeclared is the honest remainder — no volatility from
+// any source. Disclosure-only: a repo whose edges all carry the same
+// volatility must be visibly uniform-by-inheritance (one declared ancestor
+// fanned out to N synthetic submodules), not mistaken for N measured
+// judgments. Volatility comes from the domain (book Ch9), never from commit
+// history, so archfit never derives differentiation — it discloses where the
+// labels came from. Never consumed by the balance value or the gate.
+type VolatilityProvenance struct {
+	// Declared counts config-declared modules whose volatility comes from their
+	// own `volatility:` field or subdomain mapping.
+	Declared int `json:"declared"`
+	// Inherited counts synthetic (auto-registered) modules whose volatility was
+	// inherited from the nearest config-declared ancestor.
+	Inherited int `json:"inherited"`
+	// Cascade counts modules whose EFFECTIVE volatility the opt-in cascade pass
+	// raised above their base level. Overlays Declared/Inherited/Undeclared.
+	Cascade int `json:"cascade"`
+	// Undeclared counts modules with no volatility from any source (scored
+	// conservatively by the book scorer, never guessed).
+	Undeclared int `json:"undeclared"`
+}
+
+// LocalCouplingModule summarises the scored same-module edges of one module —
+// the book Ch10 "local complexity" quadrant surface (low strength at low
+// distance = low cohesion). Same-module edges score with the book formula at
+// the same-module distance rung but NEVER enter coupling_balance's
+// Scored/Abstained denominator: cross-module coupling and intra-module
+// cohesion are different fractal levels and stay separate reported numbers.
+// Report-only — never consumed by verdict or gate logic.
+type LocalCouplingModule struct {
+	// Module is the module-map key that owns both edge endpoints.
+	Module string `json:"module"`
+	// ScoredEdges is the count of same-module edges with a concrete book balance.
+	ScoredEdges int `json:"scored_edges"`
+	// AbstainedEdges counts same-module edges the scorer abstained on (unknown
+	// strength) — abstain-not-fake applies at this fractal level too.
+	AbstainedEdges int `json:"abstained_edges,omitempty"`
+	// ComplexityEdges is the count of scored edges in the local-complexity
+	// quadrant (contract/model strength at same-module distance — the
+	// "ball of mud" corner).
+	ComplexityEdges int `json:"complexity_edges"`
+	// ComplexitySharePct is 100×ComplexityEdges/ScoredEdges (0 when unscored).
+	ComplexitySharePct int `json:"complexity_share_pct"`
+	// MeanBalance is the arithmetic mean book balance (1..10) over scored edges.
+	MeanBalance float64 `json:"mean_balance"`
+	// WorstOffenders is a deterministic, capped sample of the lowest-balance
+	// scored edges (band below none), with a representative source location.
+	WorstOffenders []LocalCouplingEdge `json:"worst_offenders,omitempty"`
+}
+
+// LocalCouplingEdge is one same-module edge sampled into WorstOffenders.
+type LocalCouplingEdge struct {
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Strength string `json:"strength"`
+	Balance  int    `json:"balance"`
+	Band     string `json:"band"`
+	// File/Line is the edge's first source location (e.g. the import site).
+	// Omitted when the extractor recorded no location (e.g. TS edges).
+	File string `json:"file,omitempty"`
+	Line int    `json:"line,omitempty"`
 }
 
 // Coverage status constants used across all extractor adapters.
@@ -369,6 +477,12 @@ type Diagnostic struct {
 	// filtering) so coupling_balance sees every edge, not just the noise-controlled
 	// advisory subset. Nil when classification did not run (backward compatible).
 	ClassifiedEdges *ClassifiedEdgeSummary `json:"classified_edges,omitempty"`
+	// LocalCoupling is the report-only per-module summary of scored same-module
+	// edges — the book Ch10 local-complexity quadrant. Same-module edges never
+	// enter coupling_balance's denominator (see LocalCouplingModule). Never
+	// consumed by verdict or gate logic; omitted when no module has a
+	// same-module edge.
+	LocalCoupling []LocalCouplingModule `json:"local_coupling,omitempty"`
 	// Delta groups findings by lifecycle bucket (new/existing/resolved/
 	// severity_changed/touched_by_delta) for a delta run. Nil (omitted) outside
 	// delta mode and when the run produced no findings to bucket.

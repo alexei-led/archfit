@@ -39,7 +39,7 @@ type DiscoveredConfig struct {
 	ModulePath string
 	// Modules are the discovered candidate modules.
 	Modules []ModuleDef
-	// Layers are the inferred layers in order (outermost to innermost).
+	// Layers are the inferred layers in order (innermost to outermost).
 	Layers []string
 	// Edges are the directed module-level dependency edges, populated when a
 	// dependency graph was available at discovery time (go list Imports, cargo
@@ -150,6 +150,7 @@ type ModuleAnnotation struct {
 	Layer         string
 	Role          string
 	SuggestedName string
+	Rationale     string
 }
 
 // sanitizeComment strips or replaces control characters (< 0x20 and DEL 0x7F),
@@ -349,55 +350,52 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	}
 
 	// rules:
+	//
+	// forbidden_layer_direction is checked by forbiddenLayerDirection.Check,
+	// which derives layer ordering from cfg.Layers and endpoint layers from the
+	// module map (config.ModuleMap.LayerFor) — it never reads a per-rule
+	// from_layer/to_layer, so those keys are not emitted here. Because the check
+	// is global (every rule instance re-detects every back-edge in the graph),
+	// exactly ONE rule is emitted: a second instance would duplicate each
+	// violation under a different rule ID.
 	b.WriteString("rules:\n")
-	layerRules := inferLayerRules(cfg)
-	if len(layerRules) > 0 {
-		for _, r := range layerRules {
-			fmt.Fprintf(&b, "  - id: %s\n", r.id)
-			b.WriteString("    type: forbidden_dependency\n")
-			fmt.Fprintf(&b, "    gate: warn\n")
-			fmt.Fprintf(&b, "    from_layer: %s\n", r.fromLayer)
-			fmt.Fprintf(&b, "    to_layer: %s\n", r.toLayer)
-		}
-	} else {
-		// No dependency graph was available: emit a generic placeholder and note
-		// that without layer rules only metrics (no gates) are produced.
-		b.WriteString("  # NOTE: dependency graph not available at init time — only metrics\n")
-		b.WriteString("  # (no gates) will be produced until you add from_layer/to_layer rules.\n")
-		b.WriteString("  - id: no-forbidden-deps\n")
-		b.WriteString("    type: forbidden_dependency\n")
-		b.WriteString("    gate: warn\n")
+	switch {
+	case hasCrossLayerEdge(cfg):
+		writeLayerRule(&b, "no-layer-back-edges")
+	case len(cfg.Layers) >= 2:
+		// Layers are assigned but no cross-layer edge was visible at init
+		// (Python/TypeScript discovery builds no dependency graph). The rule is
+		// live: it checks the real graph at analyze time.
+		b.WriteString("  # NOTE: no cross-layer dependency edge was visible at init time; this\n")
+		b.WriteString("  # rule checks the real dependency graph at analyze time.\n")
+		writeLayerRule(&b, "no-layer-back-edges")
+	default:
+		b.WriteString("  # NOTE: fewer than two layers were inferred — this rule has nothing to\n")
+		b.WriteString("  # check until layers: lists at least two layers and each module is\n")
+		b.WriteString("  # assigned a layer: matching one of them.\n")
+		writeLayerRule(&b, "no-layer-violations")
 	}
 
 	return b.String()
 }
 
-// layerRule is an inferred forbidden_dependency rule between two layers.
-type layerRule struct {
-	id        string
-	fromLayer string // the higher-tier (dependent) layer
-	toLayer   string // the lower-tier (dependency) layer — back-edges go this direction
+// writeLayerRule emits the single forbidden_layer_direction rule stanza.
+func writeLayerRule(b *strings.Builder, id string) {
+	fmt.Fprintf(b, "  - id: %s\n", id)
+	b.WriteString("    type: forbidden_layer_direction\n")
+	b.WriteString("    gate: warn\n")
 }
 
-// inferLayerRules derives forbidden_dependency rules from cfg.Layers.
-//
-// One rule is emitted per consecutive layer pair (layers[i], layers[i+1]):
-// "no module in layers[i] may import a module in layers[i+1]". This flags
-// back-edges (lower-tier importing a higher-tier) with a minimal, non-explosive
-// rule set — O(n) in the number of layers rather than O(n²) in cross-tier pairs.
-//
-// cfg.Edges is used only to confirm that at least one cross-layer edge exists;
-// if no edges are present the function returns nil so Render falls back to the
-// generic placeholder with a comment.
-func inferLayerRules(cfg DiscoveredConfig) []layerRule {
+// hasCrossLayerEdge reports whether the discovered graph proves the generated
+// forbidden_layer_direction rule already has something to check: at least two
+// layers and at least one edge between modules in different layers. When false,
+// Render picks a NOTE comment by cause: layers assigned but no cross-layer edge
+// visible at init (Python/TypeScript discovery builds no graph — the rule still
+// checks the real graph at analyze time) vs fewer than two inferred layers (the
+// rule has nothing to check until layers are assigned).
+func hasCrossLayerEdge(cfg DiscoveredConfig) bool {
 	if len(cfg.Edges) == 0 || len(cfg.Layers) < 2 {
-		return nil
-	}
-
-	// layerIndex maps layer name → position in cfg.Layers.
-	layerIndex := make(map[string]int, len(cfg.Layers))
-	for i, l := range cfg.Layers {
-		layerIndex[l] = i
+		return false
 	}
 
 	// moduleLayer maps module name → layer name.
@@ -408,37 +406,14 @@ func inferLayerRules(cfg DiscoveredConfig) []layerRule {
 		}
 	}
 
-	// Confirm at least one cross-layer edge exists; without that the layers are
-	// all isolated and rules would have nothing to fire on.
-	hasEdge := false
 	for _, e := range cfg.Edges {
 		fl := moduleLayer[e.From]
 		tl := moduleLayer[e.To]
 		if fl != "" && tl != "" && fl != tl {
-			hasEdge = true
-			break
+			return true
 		}
 	}
-	if !hasEdge {
-		return nil
-	}
-
-	// Emit one rule per consecutive layer pair: forbid layers[i] → layers[i+1].
-	// layers[0] is the innermost (foundation); layers[N-1] is the outermost.
-	// A back-edge is a lower-tier module importing a higher-tier one, i.e.
-	// layers[i] imports layers[i+1], so the rule "from_layer: layers[i],
-	// to_layer: layers[i+1]" flags exactly that direction.
-	rules := make([]layerRule, 0, len(cfg.Layers)-1)
-	for i := 0; i < len(cfg.Layers)-1; i++ {
-		lo := cfg.Layers[i]
-		hi := cfg.Layers[i+1]
-		rules = append(rules, layerRule{
-			id:        "no-" + lo + "-imports-" + hi,
-			fromLayer: lo,
-			toLayer:   hi,
-		})
-	}
-	return rules
+	return false
 }
 
 // yamlKey sanitizes a module name for use as a YAML mapping key.

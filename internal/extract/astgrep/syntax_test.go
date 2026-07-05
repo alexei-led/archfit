@@ -1,12 +1,16 @@
 package astgrep_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/extract/astgrep"
 	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
 // syntaxEntry builds a minimal sgSyntaxMatch-shaped JSON object for use in
@@ -76,6 +80,38 @@ func TestSyntax_AbsentTool_ReturnsAbsentCoverageNoError(t *testing.T) {
 	}
 	if cov.Tool != "ast-grep" {
 		t.Errorf("cov.Tool = %q, want %q", cov.Tool, "ast-grep")
+	}
+}
+
+func TestSyntax_DrainsStreamToEOF(t *testing.T) {
+	entries := marshalSyntaxEntries(t, []map[string]any{
+		syntaxEntryWithName("go-func", "pkg/svc/svc.go", "NewService", 10, 15),
+	})
+	output := append([]byte{}, entries...)
+	output = append(output, ' ', '\n', '\t')
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, _ string) (toolrun.ToolInfo, bool) {
+			return toolrun.ToolInfo{Name: "sg", Path: "/usr/bin/sg"}, true
+		},
+		StreamFunc: func(_ context.Context, _ toolrun.ToolCmd, consume func(io.Reader) error) (toolrun.Output, error) {
+			r := bytes.NewReader(output)
+			if err := consume(r); err != nil {
+				return toolrun.Output{}, err
+			}
+			if r.Len() != 0 {
+				return toolrun.Output{}, fmt.Errorf("consumer left %d bytes unread", r.Len())
+			}
+			return toolrun.Output{}, nil
+		},
+	}
+	a := astgrep.New(runner)
+
+	facts, _, err := a.Syntax(context.Background(), syntaxScope, []string{"go"})
+	if err != nil {
+		t.Fatalf("Syntax: %v", err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("len(facts) = %d, want 1", len(facts))
 	}
 }
 

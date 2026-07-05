@@ -58,7 +58,12 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 	// Off-gate LLM setup (enrich / explain --llm): provider config + key + cache.
 	_, _ = fmt.Fprintf(deps.Stdout, "\nLLM (off-gate; enrich/explain only — never used by the gate):\n")
 	cfg, cfgErr := loadConfig(ctx, defaultConfigPath, false)
-	if llmCfg, ok := cfg.LLM(); cfgErr == nil && ok {
+	// cfgErr is non-nil only when the file exists but fails to load (an absent
+	// default config falls back to config.Default()) — surface it, or doctor
+	// misreports a broken config as "not configured" and skips config checks.
+	if cfgErr != nil {
+		_, _ = fmt.Fprintf(deps.Stdout, "  %s failed to load: %v (LLM status and config checks skipped)\n", defaultConfigPath, cfgErr)
+	} else if llmCfg, ok := cfg.LLM(); ok {
 		_, _ = fmt.Fprintf(deps.Stdout, "  provider: %s  model: %s\n", llmCfg.Provider, llmCfg.Model)
 		switch llmCfg.Provider {
 		case providerAnthropic:

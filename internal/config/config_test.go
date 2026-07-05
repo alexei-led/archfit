@@ -79,6 +79,16 @@ func TestLoad_UnknownField(t *testing.T) {
 	}
 }
 
+func TestLoad_FromLayerRejected(t *testing.T) {
+	// from_layer/to_layer were removed from RuleDef: no rule ever read them, so
+	// a config carrying them looked configured while the keys were inert. Strict
+	// decoding must now reject them loudly. Do not re-add the fields.
+	_, err := config.Load(context.Background(), "testdata/from_layer_rejected.yaml")
+	if err == nil {
+		t.Fatal("Load: expected error for from_layer/to_layer keys, got nil")
+	}
+}
+
 func TestLoad_MissingVersion(t *testing.T) {
 	_, err := config.Load(context.Background(), "testdata/missing_version.yaml")
 	if err == nil {
@@ -232,6 +242,44 @@ func TestModuleMap_IsModuleRoot(t *testing.T) {
 				t.Errorf("IsModuleRoot(%q) = %v, want %v", tt.dir, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestModuleRootDirs verifies the agent_tasks files[] last-resort fallback:
+// every module with a Paths glob maps to its literal (wildcard-free) root
+// dir, and modules with no Paths are absent — never a bare dotted/"::" id.
+func TestModuleRootDirs(t *testing.T) {
+	const (
+		modDomain    = "domain"
+		modLiteral   = "literal"
+		modPyDotted  = "myapp.domain"
+		modNoPaths   = "nopaths"
+		literalPath  = "cmd/tool"
+		pyDottedGlob = "myapp.domain.**"
+	)
+	modules := map[string]config.ModuleDef{
+		modDomain:   {Paths: []string{modDomain + "/**"}},
+		modLiteral:  {Paths: []string{literalPath}},
+		modPyDotted: {Paths: []string{pyDottedGlob}}, // Python dotted glob: no "/" wildcard prefix
+		modNoPaths:  {},
+	}
+	got := config.ModuleRootDirs(modules)
+
+	want := map[string]string{
+		modDomain:   modDomain,
+		modLiteral:  literalPath,
+		modPyDotted: "myapp.domain", // globRoot cuts at the first "*"; the trailing separator dot is trimmed so the resolver's dotted-module probe can turn it into a real path
+	}
+	if len(got) != len(want) {
+		t.Fatalf("ModuleRootDirs = %+v, want %+v", got, want)
+	}
+	for name, dir := range want {
+		if got[name] != dir {
+			t.Errorf("ModuleRootDirs[%q] = %q, want %q", name, got[name], dir)
+		}
+	}
+	if _, ok := got[modNoPaths]; ok {
+		t.Error("ModuleRootDirs should omit a module with no Paths")
 	}
 }
 
@@ -470,8 +518,9 @@ func TestDefaultIncludesRust(t *testing.T) {
 
 // Test fixtures factored out to keep goconst quiet about repeated literals.
 const (
-	rustManifestPath = "crates/core/Cargo.toml"
-	globSvcAll       = "svc/**" // tools.go.modules include glob used across subtests
+	rustManifestPath            = "crates/core/Cargo.toml"
+	globSvcAll                  = "svc/**" // tools.go.modules include glob used across subtests
+	errBlastRadiusInformational = "metrics.blast_radius is informational and never gates"
 )
 
 var rustFeatures = []string{"serde", "tokio"}
@@ -584,8 +633,8 @@ func TestForMetric(t *testing.T) {
 
 	t.Run("known_metric", func(t *testing.T) {
 		mc := cfg.ForMetric("encapsulation")
-		if !mc.Enabled {
-			t.Error("ForMetric(encapsulation).Enabled = false, want true")
+		if mc.Enabled == nil || !*mc.Enabled {
+			t.Error("ForMetric(encapsulation).Enabled != true, want explicit true")
 		}
 		if mc.Gate != "warn" {
 			t.Errorf("ForMetric(encapsulation).Gate = %q, want warn", mc.Gate)
@@ -594,8 +643,8 @@ func TestForMetric(t *testing.T) {
 
 	t.Run("unknown_metric_zero_value", func(t *testing.T) {
 		mc := cfg.ForMetric("nonexistent")
-		if mc.Enabled {
-			t.Error("ForMetric(nonexistent).Enabled = true, want false")
+		if mc.Enabled != nil {
+			t.Errorf("ForMetric(nonexistent).Enabled = %v, want nil (absent)", *mc.Enabled)
 		}
 	})
 }
@@ -825,6 +874,65 @@ func loadInline(t *testing.T, body string) error {
 	return err
 }
 
+func TestLoad_ExternalSystems(t *testing.T) {
+	t.Run("valid entry decodes and projects into ClassifyConfig", func(t *testing.T) {
+		p := filepath.Join(t.TempDir(), ".archfit.yaml")
+		body := "version: 1\nexternal_systems:\n  aws:\n    targets: [\"github.com/aws/aws-sdk-go-v2/**\"]\n    volatility: medium\n  payment-gateway:\n    targets: [\"node_modules/@stripe/**\", \"stripe\"]\n"
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := config.Load(context.Background(), p)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		aws := cfg.ExternalSystems["aws"]
+		if len(aws.Targets) != 1 || aws.Volatility != "medium" {
+			t.Errorf("aws = %+v, want 1 target + medium volatility", aws)
+		}
+		if pg := cfg.ExternalSystems["payment-gateway"]; len(pg.Targets) != 2 || pg.Volatility != "" {
+			t.Errorf("payment-gateway = %+v, want 2 targets + unset volatility (defaults to low in classify)", pg)
+		}
+		if got := cfg.ForClassify().ExternalSystems; len(got) != 2 {
+			t.Errorf("ForClassify().ExternalSystems len = %d, want 2", len(got))
+		}
+	})
+
+	t.Run("entry without targets is rejected", func(t *testing.T) {
+		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    volatility: low\n")
+		if err == nil || !strings.Contains(err.Error(), "external_systems.aws requires at least one targets glob") {
+			t.Errorf("got %v, want 'requires at least one targets glob' error", err)
+		}
+	})
+
+	t.Run("case-variant volatility is accepted", func(t *testing.T) {
+		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    targets: [\"github.com/aws/**\"]\n    volatility: High\n")
+		if err != nil {
+			t.Errorf("got %v, want High accepted (classify matches case-insensitively)", err)
+		}
+	})
+
+	t.Run("invalid volatility is rejected", func(t *testing.T) {
+		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    targets: [\"github.com/aws/**\"]\n    volatility: sometimes\n")
+		if err == nil || !strings.Contains(err.Error(), `external_systems.aws.volatility "sometimes"`) {
+			t.Errorf("got %v, want volatility enum error", err)
+		}
+	})
+
+	t.Run("empty target glob is rejected", func(t *testing.T) {
+		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    targets: [\"\"]\n")
+		if err == nil || !strings.Contains(err.Error(), "external_systems.aws.targets[0] must not be empty") {
+			t.Errorf("got %v, want empty-target error", err)
+		}
+	})
+
+	t.Run("malformed glob is rejected", func(t *testing.T) {
+		err := loadInline(t, "version: 1\nexternal_systems:\n  aws:\n    targets: [\"github.com/[aws/**\"]\n")
+		if err == nil || !strings.Contains(err.Error(), "is not a valid glob pattern") {
+			t.Errorf("got %v, want invalid-glob error", err)
+		}
+	})
+}
+
 func TestLoad_UnknownMetricKey_IsError(t *testing.T) {
 	err := loadInline(t, "version: 1\nmetrics:\n  bogus:\n    enabled: true\n")
 	if err == nil || !strings.Contains(err.Error(), "metrics.bogus is not a known metric") {
@@ -884,14 +992,14 @@ func TestLoad_NewToolsAndMetrics(t *testing.T) {
 
 	// metrics.blast_radius: enabled false
 	rh := cfg.ForMetric("blast_radius")
-	if rh.Enabled {
-		t.Error("ForMetric(blast_radius).Enabled = true, want false")
+	if rh.Enabled == nil || *rh.Enabled {
+		t.Error("ForMetric(blast_radius).Enabled != false, want explicit false")
 	}
 
 	// metrics.encapsulation: enabled true, gate warn
 	af := cfg.ForMetric("encapsulation")
-	if !af.Enabled {
-		t.Error("ForMetric(encapsulation).Enabled = false, want true")
+	if af.Enabled == nil || !*af.Enabled {
+		t.Error("ForMetric(encapsulation).Enabled != true, want explicit true")
 	}
 	if af.Gate != "warn" {
 		t.Errorf("ForMetric(encapsulation).Gate = %q, want warn", af.Gate)
@@ -899,8 +1007,8 @@ func TestLoad_NewToolsAndMetrics(t *testing.T) {
 
 	// metrics.coverage: enabled false
 	fc := cfg.ForMetric("coverage")
-	if fc.Enabled {
-		t.Error("ForMetric(coverage).Enabled = true, want false")
+	if fc.Enabled == nil || *fc.Enabled {
+		t.Error("ForMetric(coverage).Enabled != false, want explicit false")
 	}
 }
 
@@ -914,13 +1022,13 @@ func TestNewToolsDefaultOff(t *testing.T) {
 }
 
 // TestNewMetricsDefaultZero verifies that absent Tranche-1 metric entries return
-// a zero MetricEntry (Enabled=false, Gate=""), consistent with ForMetric contract.
+// a zero MetricEntry (Enabled=nil, Gate=""), consistent with ForMetric contract.
 func TestNewMetricsDefaultZero(t *testing.T) {
 	cfg := config.Config{Version: 1}
 	for _, name := range []string{"blast_radius", "encapsulation", "coverage"} {
 		mc := cfg.ForMetric(name)
-		if mc.Enabled {
-			t.Errorf("ForMetric(%q).Enabled = true on empty config, want false", name)
+		if mc.Enabled != nil {
+			t.Errorf("ForMetric(%q).Enabled = %v on empty config, want nil (absent)", name, *mc.Enabled)
 		}
 		if mc.Gate != "" {
 			t.Errorf("ForMetric(%q).Gate = %q on empty config, want empty", name, mc.Gate)
@@ -1226,6 +1334,56 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			wantErr: "coupling.min_severity",
 		},
 		{
+			name:    "coupling.gate with min_band loads clean",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: mixed\n",
+			wantErr: "",
+		},
+		{
+			name:    "coupling.gate with max_drop only loads clean",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    max_drop: 5\n",
+			wantErr: "",
+		},
+		{
+			name:    "coupling.gate with max_drop 0 only (no min_band) loads clean",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    max_drop: 0\n",
+			wantErr: "",
+		},
+		{
+			name:    "coupling.gate with both knobs loads clean",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: poor\n    max_drop: 0\n",
+			wantErr: "",
+		},
+		{
+			name:    "empty coupling.gate block rejected",
+			yaml:    "version: 1\ncoupling:\n  gate: {}\n",
+			wantErr: "coupling.gate requires min_band and/or max_drop",
+		},
+		{
+			name:    "invalid coupling.gate.min_band rejected",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: great\n",
+			wantErr: "coupling.gate.min_band",
+		},
+		{
+			name:    "critical coupling.gate.min_band rejected as inert",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: critical\n",
+			wantErr: "coupling.gate.min_band",
+		},
+		{
+			name:    "negative coupling.gate.max_drop rejected",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    max_drop: -1\n",
+			wantErr: "coupling.gate.max_drop must be >= 0",
+		},
+		{
+			name:    "unknown coupling.gate key rejected at decode",
+			yaml:    "version: 1\ncoupling:\n  gate:\n    band_floor: mixed\n",
+			wantErr: "band_floor",
+		},
+		{
+			name:    "metrics.coupling_balance points at coupling.gate",
+			yaml:    "version: 1\nmetrics:\n  coupling_balance:\n    enabled: true\n",
+			wantErr: "coupling.gate",
+		},
+		{
 			name:    "valid rule gates",
 			yaml:    "version: 1\nrules:\n  - id: r1\n    type: cycle\n    gate: fail\n  - id: r2\n    type: cycle\n    gate: warn\n",
 			wantErr: "",
@@ -1241,14 +1399,94 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			wantErr: "rules[nocycle]",
 		},
 		{
-			name:    "invalid rule gate without id falls back to index",
+			name:    "missing rule id rejected",
 			yaml:    "version: 1\nrules:\n  - type: cycle\n    gate: block\n",
-			wantErr: "rules[#0]",
+			wantErr: "rules[#0].id is required",
+		},
+		{
+			name:    "empty rule id rejected",
+			yaml:    "version: 1\nrules:\n  - id: \"\"\n    type: cycle\n",
+			wantErr: "rules[#0].id is required",
+		},
+		{
+			name:    "pattern entry missing rule rejected",
+			yaml:    "version: 1\nrules:\n  - id: r1\n    type: cycle\n    patterns:\n      - id: p1\n        lang: go\n",
+			wantErr: "rules[r1].patterns[0]",
+		},
+		{
+			name:    "pattern entry missing lang rejected",
+			yaml:    "version: 1\nrules:\n  - id: r1\n    type: cycle\n    patterns:\n      - id: p1\n        rule: unsafe.Pointer($X)\n",
+			wantErr: "rules[r1].patterns[0]",
+		},
+		{
+			name:    "complete pattern entry loads clean",
+			yaml:    "version: 1\nrules:\n  - id: r1\n    type: cycle\n    patterns:\n      - id: p1\n        lang: go\n        rule: unsafe.Pointer($X)\n",
+			wantErr: "",
 		},
 		{
 			name:    "invalid metric gate names the metric",
 			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    gate: nope\n",
 			wantErr: "metrics.cycle",
+		},
+		{
+			name:    "metric knobs matching the metric kind load clean",
+			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    gate: fail\n    max_new: 2\n  encapsulation:\n    enabled: true\n    gate: warn\n    min_delta: 0.05\n",
+			wantErr: "",
+		},
+		{
+			name:    "negative min_delta rejected",
+			yaml:    "version: 1\nmetrics:\n  encapsulation:\n    enabled: true\n    min_delta: -0.1\n",
+			wantErr: "metrics.encapsulation.min_delta must be >= 0",
+		},
+		{
+			name:    "negative max_new rejected",
+			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    max_new: -1\n",
+			wantErr: "metrics.cycle.max_new must be >= 0",
+		},
+		{
+			name:    "max_new on a ratio metric rejected",
+			yaml:    "version: 1\nmetrics:\n  encapsulation:\n    enabled: true\n    max_new: 1\n",
+			wantErr: "metrics.encapsulation.max_new applies only to count metrics",
+		},
+		{
+			name:    "min_delta on a count metric rejected",
+			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    min_delta: 0.1\n",
+			wantErr: "metrics.cycle.min_delta applies only to ratio metrics",
+		},
+		{
+			name:    "zero max_new on a ratio metric still rejected",
+			yaml:    "version: 1\nmetrics:\n  encapsulation:\n    enabled: true\n    max_new: 0\n",
+			wantErr: "metrics.encapsulation.max_new applies only to count metrics",
+		},
+		{
+			name:    "zero min_delta on a count metric still rejected",
+			yaml:    "version: 1\nmetrics:\n  cycle:\n    enabled: true\n    min_delta: 0\n",
+			wantErr: "metrics.cycle.min_delta applies only to ratio metrics",
+		},
+		{
+			name:    "gate on informational blast_radius rejected",
+			yaml:    "version: 1\nmetrics:\n  blast_radius:\n    enabled: true\n    gate: warn\n",
+			wantErr: errBlastRadiusInformational,
+		},
+		{
+			name:    "zero threshold on informational blast_radius rejected",
+			yaml:    "version: 1\nmetrics:\n  blast_radius:\n    enabled: true\n    max_new: 0\n",
+			wantErr: errBlastRadiusInformational,
+		},
+		{
+			name:    "min_delta on informational blast_radius rejected",
+			yaml:    "version: 1\nmetrics:\n  blast_radius:\n    enabled: true\n    min_delta: 0.1\n",
+			wantErr: errBlastRadiusInformational,
+		},
+		{
+			name:    "enabled toggle on blast_radius is allowed",
+			yaml:    "version: 1\nmetrics:\n  blast_radius:\n    enabled: false\n",
+			wantErr: "",
+		},
+		{
+			name:    "removed max_new_high field rejected at decode",
+			yaml:    "version: 1\nmetrics:\n  unbalanced_edge:\n    enabled: true\n    max_new_high: 0\n",
+			wantErr: "max_new_high",
 		},
 		{
 			name:    "invalid module_review gate",

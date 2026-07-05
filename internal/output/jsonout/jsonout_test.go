@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/output/jsonout"
@@ -42,6 +43,32 @@ func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
 	}
 	if mb["score_band"] != "high" {
 		t.Errorf("matched_by.score_band = %q, want %q", mb["score_band"], "high")
+	}
+}
+
+// TestJSONRenderer_ScoreVersion asserts the top-level score_version field is
+// always present in JSON output and pins the current version literal —
+// consumers key on it to detect breaking metric changes, and a version bump
+// must be a deliberate, test-visible act.
+func TestJSONRenderer_ScoreVersion(t *testing.T) {
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(diagnostic.New(), score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	got, ok := raw["score_version"]
+	if !ok {
+		t.Fatal("score_version field missing from JSON output")
+	}
+	if got != "bc_score.v4" {
+		t.Errorf("score_version = %q, want %q", got, "bc_score.v4")
+	}
+	if got != coupling.ScoreVersion {
+		t.Errorf("score_version = %q, out of sync with coupling.ScoreVersion %q", got, coupling.ScoreVersion)
 	}
 }
 

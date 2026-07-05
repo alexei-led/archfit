@@ -272,13 +272,65 @@ func resolveScanRoot(cfg config.ScopeConfig, gitRoot string) string {
 // subtreePrefix returns the gitRoot-relative path from gitRoot to scanRoot.
 // Returns "" when they are equal, when gitRoot is empty (non-git), or when
 // scanRoot is not under gitRoot (e.g. a relative escape via "..").
+//
+// The fast path is a pure string comparison and is exact whenever gitRoot and
+// scanRoot were typed/derived with matching case. It falls back to a
+// case-insensitive walk when that fails — see caseInsensitiveSubtreePrefix.
 func subtreePrefix(gitRoot, scanRoot string) string {
 	if gitRoot == "" || gitRoot == scanRoot {
 		return ""
 	}
-	rel, err := filepath.Rel(gitRoot, scanRoot)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+	if rel, err := filepath.Rel(gitRoot, scanRoot); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+		return rel
+	}
+	return caseInsensitiveSubtreePrefix(gitRoot, scanRoot)
+}
+
+// caseInsensitiveSubtreePrefix handles a case-variant ANCESTOR of gitRoot
+// (e.g. --root typed as /users/…/Repo/services/api while git resolves the
+// toplevel as /Users/…/Repo — the omni corpus repro): filepath.Rel compares
+// path components as plain strings, so "Users" != "users" makes it treat a
+// genuine subtree as an out-of-bounds "..", and snapScanRoot only snaps when
+// scanRoot names gitRoot itself, not a deeper descendant. This walks scanRoot's
+// ancestors comparing device+inode via os.SameFile, which is case- and
+// symlink-immune, so it finds gitRoot regardless of how its shared prefix with
+// scanRoot was cased.
+//
+// Ceiling: the returned segments below gitRoot keep scanRoot's own typed case
+// (not re-derived from the directory listing), so a case mismatch WITHIN the
+// subtree itself — not just in the gitRoot-shared ancestor — is not corrected.
+// That is a distinct, unverified scenario from the reported bug; upgrade this
+// to a directory-listing-based canonicalization if it is ever observed.
+//
+// Returns "" when scanRoot does not resolve to a descendant of gitRoot, or on
+// any stat failure — fake/non-existent paths used in unit tests take this path
+// safely and preserve the pre-existing "" result.
+func caseInsensitiveSubtreePrefix(gitRoot, scanRoot string) string {
+	gitInfo, err := os.Stat(gitRoot)
+	if err != nil {
 		return ""
 	}
-	return rel
+	var segments []string
+	for cur := scanRoot; ; {
+		info, err := os.Stat(cur)
+		if err != nil {
+			return ""
+		}
+		if os.SameFile(gitInfo, info) {
+			break
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return "" // reached filesystem root without matching gitRoot
+		}
+		segments = append(segments, filepath.Base(cur))
+		cur = parent
+	}
+	if len(segments) == 0 {
+		return ""
+	}
+	for i, j := 0, len(segments)-1; i < j; i, j = i+1, j-1 {
+		segments[i], segments[j] = segments[j], segments[i]
+	}
+	return filepath.ToSlash(filepath.Join(segments...))
 }

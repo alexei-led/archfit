@@ -22,7 +22,12 @@ const ScoreDefinition = "book balance score — balance = max(|S−D|, 10−V) +
 // delta baseline treats the score as a new measurement.
 // v3: book-verbatim formula (Khononov Ch10) — balance = max(|S-D|, 10-V)+1,
 // new ScoreBand mapping (1-2 critical → 9-10 none), BookScorer as default.
-const ScoreVersion = "bc_score.v3"
+// v4: three classification fixes feeding the unchanged formula (see
+// docs/design/20260702-bc-score-v4.md): Go const/var reads score Model (3)
+// not Functional (8); pure-data DTOs across a declared public boundary reach
+// Contract (1); declared external systems enter scoring at DistanceExternal
+// (10). Scores are NOT comparable across versions.
+const ScoreVersion = "bc_score.v4"
 
 // EdgeScore is the result produced by a Scorer for one graph edge.
 //
@@ -83,6 +88,7 @@ const (
 	distanceOrdinalUnknown              = 2
 	distanceOrdinalCrossModuleDiffOwner = 3
 	distanceOrdinalCrossDeployUnit      = 5
+	distanceOrdinalExternal             = 6 // declared external system: farthest rung (legacy calibration scorers only)
 )
 
 const (
@@ -119,6 +125,7 @@ var distanceOrdinal = map[Distance]int{
 	DistanceUnknown:              distanceOrdinalUnknown,
 	DistanceCrossModuleDiffOwner: distanceOrdinalCrossModuleDiffOwner,
 	DistanceCrossDeployUnit:      distanceOrdinalCrossDeployUnit,
+	DistanceExternal:             distanceOrdinalExternal,
 }
 
 // volatilityDiscount maps Volatility to a discount subtracted from the raw score
@@ -188,7 +195,16 @@ func clamp(v, lo, hi int) int {
 	return v
 }
 
-// Cheapest-move labels for a volatility change.
+// Cheapest-move labels for a strength or distance change — the two Ch11
+// remediation levers every scorer offers.
+const (
+	moveReduceStrength = "reduce_strength"
+	moveReduceDistance = "reduce_distance"
+)
+
+// Cheapest-move labels for a volatility change. Offered only by the legacy
+// calibration scorers (additive/multiplicative) — BookScorer never names
+// volatility as a move (Ch11 sanctions strength and distance changes only).
 const (
 	// moveDeclareVolatility is surfaced for an undeclared target: the honest move
 	// is to declare the module's subdomain/volatility so the tool can assess it

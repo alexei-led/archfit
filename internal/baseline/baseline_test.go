@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/baseline"
+	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/status"
 )
@@ -16,6 +17,8 @@ import (
 const (
 	fpA = "aabbcc"
 	fpB = "ddeeff"
+
+	bandMixed = "mixed"
 )
 
 func TestLoad_MissingFile(t *testing.T) {
@@ -208,5 +211,53 @@ func TestEntries(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("Entries()[%d] = %+v, want %+v", i, got[i], want[i])
 		}
+	}
+}
+
+// TestCouplingScore locks the max_drop anchor contract: only a snapshot
+// recorded under the CURRENT scorer version anchors a drop — no snapshot,
+// a pre-version-tracking snapshot (empty version), or a different version
+// all return nil (a cross-version drop is a methodology change, not a
+// regression).
+func TestCouplingScore(t *testing.T) {
+	tests := []struct {
+		name      string
+		b         baseline.Baseline
+		want      *int
+		wantStale bool
+	}{
+		{
+			name: "no snapshot",
+			b:    baseline.Baseline{},
+		},
+		{
+			name:      "legacy snapshot without score_version is stale",
+			b:         baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed}},
+			wantStale: true,
+		},
+		{
+			name:      "snapshot from a different scorer version is stale",
+			b:         baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: "bc_score.v3"}},
+			wantStale: true,
+		},
+		{
+			name: "current-version snapshot anchors",
+			b:    baseline.Baseline{Score: &baseline.ScoreSnapshot{CouplingBalance: 42, Band: bandMixed, ScoreVersion: coupling.ScoreVersion}},
+			want: func() *int { v := 42; return &v }(),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.b.CouplingScore()
+			switch {
+			case tc.want == nil && got != nil:
+				t.Errorf("CouplingScore() = %d, want nil", *got)
+			case tc.want != nil && (got == nil || *got != *tc.want):
+				t.Errorf("CouplingScore() = %v, want %d", got, *tc.want)
+			}
+			if stale := tc.b.ScoreVersionStale(); stale != tc.wantStale {
+				t.Errorf("ScoreVersionStale() = %v, want %v", stale, tc.wantStale)
+			}
+		})
 	}
 }

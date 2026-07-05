@@ -6,6 +6,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 )
@@ -31,6 +32,9 @@ const (
 	goModuleB = "example.com/b"
 	relDirA   = "services/a"
 	relDirB   = "services/b"
+
+	parentModuleKey = "parent"
+	rustCrateExtra  = "extra"
 )
 
 // makeGraph builds a minimal sealed Graph from a slice of edges.
@@ -602,6 +606,7 @@ const (
 	globPkgA    = "pkg/a/**"
 	globPkgB    = "pkg/b/**"
 	pinnedModel = "model"
+	labelKeyAB  = "a\x00b"
 
 	modKeyPkgA  = "pkg/a"
 	modKeyPkgB  = "pkg/b"
@@ -643,7 +648,7 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 	t.Run("approved label beats hint", func(t *testing.T) {
 		idx := classify.Run(g, config.ClassifyConfig{
 			Modules:        modules,
-			ApprovedLabels: map[string]string{"a\x00b": pinnedModel},
+			ApprovedLabels: map[string]string{labelKeyAB: pinnedModel},
 		})
 		if got := idx[key].Strength; got != coupling.StrengthModel {
 			t.Errorf("strength = %q, want model (pinned label)", got)
@@ -662,7 +667,7 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 		}
 		idx := classify.Run(g, config.ClassifyConfig{
 			Modules:        withGlobs,
-			ApprovedLabels: map[string]string{"a\x00b": pinnedModel},
+			ApprovedLabels: map[string]string{labelKeyAB: pinnedModel},
 		})
 		if got := idx[key].Strength; got != coupling.StrengthModel {
 			t.Errorf("strength = %q, want model (approved label refines public-glob floor)", got)
@@ -689,6 +694,123 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 		})
 		if got := idx[key].Strength; got != coupling.StrengthFunctional {
 			t.Errorf("strength = %q, want functional (label is directional)", got)
+		}
+	})
+}
+
+// TestRun_LLMLabelPrecedence locks the semantic-layer precedence (Wave 7): an
+// approved llm-provenance label fills ONLY a cell every static source left
+// unknown. It never displaces a config glob (authoritative intrusive, public
+// contract floor) or an extractor hint (Go type-info / SCIP / heuristic) —
+// compiler-grade beats LLM, the same rule as SCIP-for-Go — and, being
+// human-approved, it is not overridden by the clone-Symmetric upgrade.
+func TestRun_LLMLabelPrecedence(t *testing.T) {
+	modules := map[string]config.ModuleDef{
+		"a": {Paths: []string{globPkgA}},
+		"b": {Paths: []string{globPkgB}},
+	}
+	llmModel := map[string]string{labelKeyAB: pinnedModel}
+	buildEdge := func(hint string) (*graph.Graph, string) {
+		e := graph.Edge{
+			From:         filePkgAXGo,
+			To:           filePkgBYGo,
+			Kind:         graph.EdgeKindImports,
+			Language:     "go",
+			StrengthHint: hint,
+		}
+		return makeGraph([]graph.Edge{e}), edgeKey(e)
+	}
+
+	t.Run("fills a cell all static sources left unknown", func(t *testing.T) {
+		g, key := buildEdge("")
+		idx := classify.Run(g, config.ClassifyConfig{Modules: modules, LLMLabels: llmModel})
+		cl := idx[key]
+		if cl.Strength != coupling.StrengthModel {
+			t.Errorf("strength = %q, want model (llm label fills the abstained cell)", cl.Strength)
+		}
+		if !cl.StrengthFromLLM {
+			t.Error("StrengthFromLLM = false, want true (drives classified_edges.labeled_llm)")
+		}
+		if !cl.StrengthFromNonHighLLM {
+			t.Error("StrengthFromNonHighLLM = false, want true for missing confidence")
+		}
+		if !cl.Score.Scored {
+			t.Error("Score.Scored = false, want true (filled edge enters coupling_balance)")
+		}
+	})
+
+	t.Run("high-confidence llm fill does not count as uncertain", func(t *testing.T) {
+		g, key := buildEdge("")
+		idx := classify.Run(g, config.ClassifyConfig{
+			Modules:            modules,
+			LLMLabels:          llmModel,
+			LLMLabelConfidence: map[string]string{labelKeyAB: labels.ConfidenceHigh},
+		})
+		cl := idx[key]
+		if cl.Strength != coupling.StrengthModel || !cl.StrengthFromLLM {
+			t.Fatalf("classification = %+v, want an applied llm model fill", cl)
+		}
+		if cl.StrengthFromNonHighLLM {
+			t.Error("StrengthFromNonHighLLM = true, want false for high-confidence label")
+		}
+	})
+
+	t.Run("never overrides the Go type-info hint", func(t *testing.T) {
+		g, key := buildEdge(hintFunctional)
+		idx := classify.Run(g, config.ClassifyConfig{Modules: modules, LLMLabels: llmModel})
+		cl := idx[key]
+		if cl.Strength != coupling.StrengthFunctional {
+			t.Errorf("strength = %q, want functional (compiler-grade hint beats llm label)", cl.Strength)
+		}
+		if cl.StrengthFromLLM {
+			t.Error("StrengthFromLLM = true, want false (label did not apply)")
+		}
+	})
+
+	t.Run("never refines a config public-glob contract floor", func(t *testing.T) {
+		withPublic := map[string]config.ModuleDef{
+			"a": {Paths: []string{globPkgA}},
+			"b": {Paths: []string{globPkgB}, Public: []string{globPkgB}},
+		}
+		g, key := buildEdge("")
+		idx := classify.Run(g, config.ClassifyConfig{Modules: withPublic, LLMLabels: llmModel})
+		if got := idx[key].Strength; got != coupling.StrengthContract {
+			t.Errorf("strength = %q, want contract (config-authoritative floor stands)", got)
+		}
+	})
+
+	t.Run("never overrides config-authoritative intrusive", func(t *testing.T) {
+		withInternal := map[string]config.ModuleDef{
+			"a": {Paths: []string{globPkgA}},
+			"b": {Paths: []string{globPkgB}, Internal: []string{globPkgB}},
+		}
+		g, key := buildEdge("")
+		idx := classify.Run(g, config.ClassifyConfig{Modules: withInternal, LLMLabels: llmModel})
+		if got := idx[key].Strength; got != coupling.StrengthIntrusive {
+			t.Errorf("strength = %q, want intrusive (internal glob is authoritative)", got)
+		}
+	})
+
+	t.Run("directional: reverse-pair label does not apply", func(t *testing.T) {
+		g, key := buildEdge("")
+		idx := classify.Run(g, config.ClassifyConfig{
+			Modules:   modules,
+			LLMLabels: map[string]string{"b\x00a": pinnedModel},
+		})
+		if got := idx[key].Strength; got != coupling.StrengthUnknown {
+			t.Errorf("strength = %q, want unknown (label is directional)", got)
+		}
+	})
+
+	t.Run("not overridden by the clone-Symmetric upgrade", func(t *testing.T) {
+		g, key := buildEdge("")
+		idx := classify.Run(g, config.ClassifyConfig{
+			Modules:               modules,
+			LLMLabels:             llmModel,
+			CrossModuleClonePairs: map[string]struct{}{labelKeyAB: {}},
+		})
+		if got := idx[key].Strength; got != coupling.StrengthModel {
+			t.Errorf("strength = %q, want model (approved llm label pins the seam)", got)
 		}
 	})
 }
@@ -721,6 +843,11 @@ func TestRun_PublicGlobFloorRefinement(t *testing.T) {
 		"a": {Paths: []string{globPkgA}},
 		"b": {Paths: []string{globPkgB}, Internal: []string{globPkgB}},
 	}
+	// No public/internal globs: classifyStrength is unknown, the hint decides.
+	noGlobB := map[string]config.ModuleDef{
+		"a": {Paths: []string{globPkgA}},
+		"b": {Paths: []string{globPkgB}},
+	}
 	cases := []struct {
 		name    string
 		modules map[string]config.ModuleDef
@@ -733,6 +860,14 @@ func TestRun_PublicGlobFloorRefinement(t *testing.T) {
 		{"public + no hint → contract floor", publicB, "", coupling.StrengthContract},
 		{"public + intrusive hint → contract (floor not lowered)", publicB, hintIntrusive, coupling.StrengthContract},
 		{"internal glob → intrusive (authoritative)", internalB, hintFunctional, coupling.StrengthIntrusive},
+		// A pure-data DTO across a declared public boundary IS the book's explicit
+		// integration contract — the floor stands, the hint must not raise it.
+		{"public + dto hint → contract (DTO is the boundary contract)", publicB, graph.StrengthHintDTO, coupling.StrengthContract},
+		// Without the boundary declaration the same DTO is just a shared concrete
+		// type: the declaration is what makes it a contract (book Ch10).
+		{"no glob + dto hint → model (no declared boundary)", noGlobB, graph.StrengthHintDTO, coupling.StrengthModel},
+		// An internal glob stays authoritative regardless of the DTO hint.
+		{"internal + dto hint → intrusive (authoritative)", internalB, graph.StrengthHintDTO, coupling.StrengthIntrusive},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1523,7 +1658,7 @@ func TestAugmentModulesFromGraph_OwnerInheritance(t *testing.T) {
 	// cargo-modules graph produces submodule nodes "mycrate::a" and "mycrate::b"
 	// which are NOT in config — they should be synthesised and inherit owner "team-x".
 	configMods := map[string]config.ModuleDef{
-		"mycrate": {Paths: []string{"mycrate/**"}, Owner: ownerTeamX},
+		crateName: {Paths: []string{crateName + "/**"}, Owner: ownerTeamX},
 	}
 	e := graph.Edge{
 		From:         "package:mycrate::a",
@@ -1679,9 +1814,9 @@ func TestAugmentFunctions_InheritAllAncestorAttributes(t *testing.T) {
 		// Parent config module uses a literal (non-wildcard) path so it does
 		// NOT fully cover the member directory via ModuleFor (so the member
 		// still gets auto-registered), but its stripped directory IS a path
-		// prefix of the member's RelDir, so ancestorOwnerByPath can donate —
+		// prefix of the member's RelDir, so ancestorByPath can donate —
 		// mirrors the documented "partial ancestor donates owner" fallback.
-		configMods := map[string]config.ModuleDef{"parent": {
+		configMods := map[string]config.ModuleDef{parentModuleKey: {
 			Paths: []string{"services"}, Owner: want.Owner, Volatility: want.Volatility,
 			Subdomain: want.Subdomain, Layer: want.Layer, DeployUnit: want.DeployUnit,
 		}}
@@ -1703,25 +1838,155 @@ func TestAugmentFunctions_InheritAllAncestorAttributes(t *testing.T) {
 		// Same literal-parent-path trick as above: "crates" is a directory
 		// prefix of the crate's root ("crates/extra") but does not itself
 		// cover "crates/extra/x" via ModuleFor, so the crate falls through to
-		// synthetic registration and donation via ancestorOwnerByPath.
-		configMods := map[string]config.ModuleDef{"parent": {
+		// synthetic registration and donation via ancestorByPath.
+		configMods := map[string]config.ModuleDef{parentModuleKey: {
 			Paths: []string{"crates"}, Owner: want.Owner, Volatility: want.Volatility,
 			Subdomain: want.Subdomain, Layer: want.Layer, DeployUnit: want.DeployUnit,
 		}}
 		g := graph.Build([]graph.Facts{{
 			Nodes: []graph.Node{
-				{Kind: graph.NodeKindPackage, Path: "extra"},
+				{Kind: graph.NodeKindPackage, Path: rustCrateExtra},
 				{Kind: graph.NodeKindPackage, Path: "other"},
 			},
 			Language:   langRust,
-			CrateRoots: []graph.CrateRoot{{Dir: "crates/extra", Name: "extra"}},
+			CrateRoots: []graph.CrateRoot{{Dir: "crates/extra", Name: rustCrateExtra}},
 		}})
 
 		out := classify.AugmentCargoCrateNodes(g, configMods)
-		crateMod, ok := out["extra"]
+		crateMod, ok := out[rustCrateExtra]
 		if !ok {
-			t.Fatalf("synthetic module for crate %q not registered; out = %v", "extra", out)
+			t.Fatalf("synthetic module for crate %q not registered; out = %v", rustCrateExtra, out)
 		}
-		assertInherited(t, "extra", crateMod, want)
+		assertInherited(t, rustCrateExtra, crateMod, want)
 	})
+}
+
+func TestAugmentFunctions_InheritOwnerlessAncestorAttributes(t *testing.T) {
+	want := wantInherited{
+		Volatility: extVolMedium,
+		Subdomain:  subdomainCore,
+		Layer:      "domain",
+		DeployUnit: "svc-ownerless",
+	}
+	parent := config.ModuleDef{
+		Volatility: want.Volatility,
+		Subdomain:  want.Subdomain,
+		Layer:      want.Layer,
+		DeployUnit: want.DeployUnit,
+	}
+
+	t.Run("AugmentModulesFromGraph (Rust submodule)", func(t *testing.T) {
+		configMods := map[string]config.ModuleDef{crateName: parent}
+		e := graph.Edge{
+			From: "package:" + crateName, To: "package:" + crateName + "::child",
+			Kind: graph.EdgeKindDependsOn, Language: langRust, StrengthHint: hintFunctional,
+		}
+		g := makeGraph([]graph.Edge{e})
+
+		out := classify.AugmentModulesFromGraph(g, configMods)
+		child, ok := out[crateName+"::child"]
+		if !ok {
+			t.Fatalf("synthetic module %q not registered", crateName+"::child")
+		}
+		assertInherited(t, crateName+"::child", child, want)
+	})
+
+	t.Run("AugmentGoWorkspaceModules (workspace member)", func(t *testing.T) {
+		configMods := map[string]config.ModuleDef{parentModuleKey: {
+			Paths:      []string{"services"},
+			Volatility: want.Volatility,
+			Subdomain:  want.Subdomain,
+			Layer:      want.Layer,
+			DeployUnit: want.DeployUnit,
+		}}
+		goMods := []graph.GoModule{
+			{Path: goModuleA, RelDir: relDirA},
+			{Path: goModuleB, RelDir: relDirB},
+		}
+		g := buildGoWorkspaceGraph(goMods, nil)
+
+		out := classify.AugmentGoWorkspaceModules(g, configMods)
+		member, ok := out[goModuleA]
+		if !ok {
+			t.Fatalf("synthetic module for member %q not registered; out = %v", goModuleA, out)
+		}
+		assertInherited(t, goModuleA, member, want)
+	})
+
+	t.Run("AugmentCargoCrateNodes (uncovered crate)", func(t *testing.T) {
+		configMods := map[string]config.ModuleDef{parentModuleKey: {
+			Paths:      []string{"crates"},
+			Volatility: want.Volatility,
+			Subdomain:  want.Subdomain,
+			Layer:      want.Layer,
+			DeployUnit: want.DeployUnit,
+		}}
+		g := graph.Build([]graph.Facts{{
+			Nodes: []graph.Node{
+				{Kind: graph.NodeKindPackage, Path: rustCrateExtra},
+				{Kind: graph.NodeKindPackage, Path: "other"},
+			},
+			Language:   langRust,
+			CrateRoots: []graph.CrateRoot{{Dir: "crates/extra", Name: rustCrateExtra}},
+		}})
+
+		out := classify.AugmentCargoCrateNodes(g, configMods)
+		crateMod, ok := out[rustCrateExtra]
+		if !ok {
+			t.Fatalf("synthetic module for crate %q not registered; out = %v", rustCrateExtra, out)
+		}
+		assertInherited(t, rustCrateExtra, crateMod, want)
+	})
+}
+
+// TestRun_SameModuleScoredSeverityNone verifies Wave 5 local-complexity scoring:
+// a same-module edge is scored with the book formula at the same-module rung
+// (D=2) but keeps SeverityNone, so the bc/imbalanced_coupling advisory pipeline
+// (which keys on Severity) never fires for it. Abstain rules are identical:
+// unknown strength still abstains at same-module distance.
+func TestRun_SameModuleScoredSeverityNone(t *testing.T) {
+	modules := map[string]config.ModuleDef{
+		"a": {Paths: []string{pathsA}, Subdomain: subdomainCore},
+	}
+	cfg := config.ClassifyConfig{Modules: modules}
+
+	// Low strength (model) at same-module distance in a volatile (core) module:
+	// |3-2|=1, 10-10=0, max(1,0)+1=2 → critical band — the ball-of-mud quadrant.
+	ballOfMud := graph.Edge{
+		From:         "file:services/a/mud.go",
+		To:           "file:services/a/y.go",
+		Kind:         graph.EdgeKindImports,
+		Language:     "go",
+		StrengthHint: string(coupling.StrengthModel),
+	}
+	// Unknown strength — must abstain even though distance is known.
+	unknownStrength := graph.Edge{
+		From:     "file:services/a/mud.go",
+		To:       "file:services/a/z.go",
+		Kind:     graph.EdgeKindImports,
+		Language: "go",
+	}
+	idx := classify.Run(makeGraph([]graph.Edge{ballOfMud, unknownStrength}), cfg)
+
+	cl := idx[edgeKey(ballOfMud)]
+	if cl.Distance != coupling.DistanceSameModule {
+		t.Fatalf("Distance = %q, want same_module", cl.Distance)
+	}
+	if !cl.Score.Scored {
+		t.Fatal("same-module edge with known strength must be scored (local complexity quadrant)")
+	}
+	if cl.Score.Balance != 2 || cl.Score.Band != coupling.SeverityCritical {
+		t.Errorf("Score = balance %d band %q, want balance 2 band critical", cl.Score.Balance, cl.Score.Band)
+	}
+	if cl.Severity != coupling.SeverityNone {
+		t.Errorf("Severity = %q, want none — same-module edges must not reach the advisory pipeline", cl.Severity)
+	}
+
+	ab := idx[edgeKey(unknownStrength)]
+	if ab.Score.Scored {
+		t.Errorf("unknown-strength same-module edge must abstain, got balance %d", ab.Score.Balance)
+	}
+	if ab.Severity != coupling.SeverityNone {
+		t.Errorf("abstained edge Severity = %q, want none", ab.Severity)
+	}
 }

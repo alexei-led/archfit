@@ -115,7 +115,7 @@ func malformedRunner() *toolrun.RunnerMock {
 }
 
 func TestRun_Success(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), makeReportRunner(jscpdSuccessJSON), t.TempDir(), true, 0, nil)
+	clusters, cov, err := Run(context.Background(), makeReportRunner(jscpdSuccessJSON), t.TempDir(), true, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestRun_Success(t *testing.T) {
 }
 
 func TestRun_AbsentTool(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true, 0, nil)
+	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), true, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestRun_AbsentTool(t *testing.T) {
 func TestRun_Disabled(t *testing.T) {
 	// enabled=false → disabled status (not absent), no Detect call needed.
 	// The tool may or may not be installed; the user turned it off in config.
-	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), false, 0, nil)
+	clusters, cov, err := Run(context.Background(), absentRunner(), t.TempDir(), false, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestRun_Disabled(t *testing.T) {
 // disabled → StatusDisabled (do not show "install" prompt).
 // not installed but enabled → StatusAbsent (show "install" prompt).
 func TestRun_StatusDistinction(t *testing.T) {
-	_, covDisabled, _ := Run(context.Background(), absentRunner(), t.TempDir(), false, 0, nil)
+	_, covDisabled, _ := Run(context.Background(), absentRunner(), t.TempDir(), false, 0, nil, nil)
 	if covDisabled.Status != diagnostic.StatusDisabled {
 		t.Errorf("disabled status = %q, want %q", covDisabled.Status, diagnostic.StatusDisabled)
 	}
@@ -189,7 +189,7 @@ func TestRun_StatusDistinction(t *testing.T) {
 		t.Errorf("disabled reason = %q, want %q", covDisabled.Reason, reasonDisabled)
 	}
 
-	_, covAbsent, _ := Run(context.Background(), absentRunner(), t.TempDir(), true, 0, nil)
+	_, covAbsent, _ := Run(context.Background(), absentRunner(), t.TempDir(), true, 0, nil, nil)
 	if covAbsent.Status != diagnostic.StatusAbsent {
 		t.Errorf("absent status = %q, want %q", covAbsent.Status, diagnostic.StatusAbsent)
 	}
@@ -199,7 +199,7 @@ func TestRun_StatusDistinction(t *testing.T) {
 }
 
 func TestRun_MalformedOutput(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), malformedRunner(), t.TempDir(), true, 0, nil)
+	clusters, cov, err := Run(context.Background(), malformedRunner(), t.TempDir(), true, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestRun_MalformedOutput(t *testing.T) {
 }
 
 func TestRun_ToolFailure(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true, 0, nil)
+	clusters, cov, err := Run(context.Background(), failRunner(), t.TempDir(), true, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -245,7 +245,7 @@ func blockingRunner() *toolrun.RunnerMock {
 // returns StatusTimedOut coverage, a nil error, and no deadlock.
 // The test must complete quickly (short timeout + blocking runner).
 func TestRun_Timeout(t *testing.T) {
-	clusters, cov, err := Run(context.Background(), blockingRunner(), t.TempDir(), true, 10*time.Millisecond, nil)
+	clusters, cov, err := Run(context.Background(), blockingRunner(), t.TempDir(), true, 10*time.Millisecond, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -397,7 +397,7 @@ func argAfter(args []string, flag string) string {
 func TestRun_ExclusionsPassedAsIgnore(t *testing.T) {
 	excl := []string{"**/vendor/**", "**/testdata/**"}
 	var captured toolrun.ToolCmd
-	_, _, err := Run(context.Background(), capturingRunner(&captured, jscpdEmptyJSON), t.TempDir(), true, 0, excl)
+	_, _, err := Run(context.Background(), capturingRunner(&captured, jscpdEmptyJSON), t.TempDir(), true, 0, excl, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestRun_ExclusionsPassedAsIgnore(t *testing.T) {
 // the jscpd invocation is byte-identical to before this change: no --ignore flag.
 func TestRun_NoExclusions_NoIgnoreFlag(t *testing.T) {
 	var captured toolrun.ToolCmd
-	_, _, err := Run(context.Background(), capturingRunner(&captured, jscpdEmptyJSON), t.TempDir(), true, 0, nil)
+	_, _, err := Run(context.Background(), capturingRunner(&captured, jscpdEmptyJSON), t.TempDir(), true, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -501,7 +501,7 @@ func TestRun_NonZeroExitWithValidReport(t *testing.T) {
 		],
 		"statistics": {"total": {"sources": 2}}
 	}`
-	clusters, cov, err := Run(context.Background(), exitOneWithReportRunner(rustReport), t.TempDir(), true, 0, nil)
+	clusters, cov, err := Run(context.Background(), exitOneWithReportRunner(rustReport), t.TempDir(), true, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -558,7 +558,7 @@ func TestRun_RealTool_RustClones(t *testing.T) {
 	}
 
 	runner := toolrun.New()
-	clusters, cov, err := Run(context.Background(), runner, root, true, 0, nil)
+	clusters, cov, err := Run(context.Background(), runner, root, true, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

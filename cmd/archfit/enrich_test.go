@@ -23,32 +23,44 @@ const (
 	modB             = "b"
 	enrichModel      = "model"
 	enrichFunctional = "functional"
+	enrichIntrusive  = "intrusive"
+	staleEvidence    = "old"
+	currentEvidence  = "current"
 
 	// fileNodeA and fileNodeB are the file-URI node identifiers used in
 	// enrichFixture and the unknown-strength test.
 	fileNodeA = "file:pkg/a/a.go"
 	fileNodeB = "file:pkg/b/b.go"
+	fileNodeC = "file:pkg/c/c.go"
+	filePkgBB = "pkg/b/b.go"
+
+	// globPkgA and globPkgB are the module path globs shared by enrich fixtures.
+	globPkgA = "pkg/a/**"
+	globPkgB = "pkg/b/**"
+
+	rustSyntheticFrom = "crate::api"
+	rustSyntheticTo   = "crate::domain"
 )
 
 func enrichFixture() (*graph.Graph, coupling.Index, config.ModuleMap) {
 	cfg := config.Config{
 		Version: 1,
 		Modules: map[string]config.ModuleDef{
-			modA: {Paths: []string{"pkg/a/**"}},
-			modB: {Paths: []string{"pkg/b/**"}},
+			modA: {Paths: []string{globPkgA}},
+			modB: {Paths: []string{globPkgB}},
 			"c":  {Paths: []string{"pkg/c/**"}},
 		},
 	}
 	edges := []graph.Edge{
 		{From: fileNodeA, To: fileNodeB, Kind: graph.EdgeKindImports, Language: "go"},
 		{From: "file:pkg/a/a2.go", To: "file:pkg/b/b2.go", Kind: graph.EdgeKindImports, Language: "go"},
-		{From: fileNodeA, To: "file:pkg/c/c.go", Kind: graph.EdgeKindImports, Language: "go"},
-		{From: "file:pkg/c/c.go", To: fileNodeB, Kind: graph.EdgeKindImports, Language: "go"},
+		{From: fileNodeA, To: fileNodeC, Kind: graph.EdgeKindImports, Language: "go"},
+		{From: fileNodeC, To: fileNodeB, Kind: graph.EdgeKindImports, Language: "go"},
 	}
 	nodes := []graph.Node{
 		{Kind: graph.NodeKindFile, Path: filePkgAA},
 		{Kind: graph.NodeKindFile, Path: "pkg/a/a2.go"},
-		{Kind: graph.NodeKindFile, Path: "pkg/b/b.go"},
+		{Kind: graph.NodeKindFile, Path: filePkgBB},
 		{Kind: graph.NodeKindFile, Path: "pkg/b/b2.go"},
 		{Kind: graph.NodeKindFile, Path: "pkg/c/c.go"},
 	}
@@ -73,7 +85,7 @@ func TestSelectRefinablePairs(t *testing.T) {
 	// c→b is already approved — must be excluded.
 	existing := []labels.Label{{From: "c", To: modB, Strength: enrichModel, Status: labels.StatusApproved}}
 
-	pairs := selectRefinablePairs(g, idx, mm, existing)
+	pairs := selectRefinablePairs(g, idx, mm, existing, nil)
 	if len(pairs) != 1 {
 		t.Fatalf("pairs = %+v, want exactly a->b", pairs)
 	}
@@ -89,6 +101,63 @@ func TestSelectRefinablePairs(t *testing.T) {
 	}
 	if len(p.SamplePaths) != 2 || !strings.Contains(p.SamplePaths[0], "pkg/a/") {
 		t.Errorf("samples = %v", p.SamplePaths)
+	}
+}
+
+func syntheticRustPairFixture(strength coupling.Strength) (*graph.Graph, coupling.Index, config.ModuleMap, config.ModuleMap) {
+	cfg := config.Config{Version: 1, Modules: map[string]config.ModuleDef{}}
+	from := graph.Node{Kind: graph.NodeKindModule, Path: rustSyntheticFrom, Language: graph.LangRust}
+	to := graph.Node{Kind: graph.NodeKindModule, Path: rustSyntheticTo, Language: graph.LangRust}
+	edge := graph.Edge{From: from.ID(), To: to.ID(), Kind: graph.EdgeKindImports, Language: graph.LangRust}
+	g := graph.Build([]graph.Facts{{
+		Language: graph.LangRust,
+		Nodes:    []graph.Node{from, to},
+		Edges:    []graph.Edge{edge},
+	}})
+	idx := coupling.Index{
+		edge.From + "\x00" + edge.To + "\x00" + string(edge.Kind): {
+			Strength: strength,
+			Distance: coupling.DistanceCrossModuleDiffOwner,
+		},
+	}
+	return g, idx, cfg.ForClassify().ModuleMap, enrichModuleMap(cfg, g)
+}
+
+func TestSelectRefinablePairs_UsesAugmentedSyntheticModules(t *testing.T) {
+	t.Parallel()
+	g, idx, originalMM, augmentedMM := syntheticRustPairFixture(coupling.StrengthFunctional)
+
+	if got := selectRefinablePairs(g, idx, originalMM, nil, nil); len(got) != 0 {
+		t.Fatalf("unaugmented module map selected pairs = %+v, want none", got)
+	}
+	pairs := selectRefinablePairs(g, idx, augmentedMM, nil, nil)
+	if len(pairs) != 1 {
+		t.Fatalf("augmented module map selected pairs = %+v, want synthetic Rust pair", pairs)
+	}
+	if pairs[0].From != rustSyntheticFrom || pairs[0].To != rustSyntheticTo {
+		t.Fatalf("pair = %s->%s, want %s->%s", pairs[0].From, pairs[0].To, rustSyntheticFrom, rustSyntheticTo)
+	}
+}
+
+func TestSelectRefinablePairs_StaleApprovedCanBeRedrafted(t *testing.T) {
+	t.Parallel()
+	g, idx, mm := enrichFixture()
+	key := labels.Key("c", modB)
+	existing := []labels.Label{{
+		From: "c", To: modB, Strength: enrichModel,
+		EvidenceHash: staleEvidence, Status: labels.StatusApproved,
+	}}
+	evidence := map[string]string{key: currentEvidence}
+
+	pairs := selectRefinablePairs(g, idx, mm, existing, evidence)
+	found := false
+	for _, p := range pairs {
+		if labels.Key(p.From, p.To) == key {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("stale approved pair %q was not selected for a replacement draft: %+v", key, pairs)
 	}
 }
 
@@ -138,12 +207,12 @@ func TestMergeDrafts(t *testing.T) {
 		{From: modB, To: modA, Strength: enrichFunctional, Status: labels.StatusDraft},
 	}
 	drafts := []labels.Label{
-		{From: modA, To: modB, Strength: "intrusive", Status: labels.StatusDraft}, // must NOT clobber approved
-		{From: modB, To: modA, Strength: enrichModel, Status: labels.StatusDraft}, // replaces old draft
-		{From: "c", To: modA, Strength: "contract", Status: labels.StatusDraft},   // new
+		{From: modA, To: modB, Strength: enrichIntrusive, Status: labels.StatusDraft}, // must NOT clobber approved
+		{From: modB, To: modA, Strength: enrichModel, Status: labels.StatusDraft},     // replaces old draft
+		{From: "c", To: modA, Strength: "contract", Status: labels.StatusDraft},       // new
 	}
 
-	merged := mergeDrafts(existing, drafts)
+	merged := mergeDrafts(existing, drafts, nil)
 	if len(merged) != 3 {
 		t.Fatalf("merged = %+v, want 3", merged)
 	}
@@ -160,6 +229,27 @@ func TestMergeDrafts(t *testing.T) {
 	// Deterministic order.
 	if merged[0].From > merged[1].From || merged[1].From > merged[2].From {
 		t.Errorf("not sorted: %+v", merged)
+	}
+}
+
+func TestMergeDrafts_ReplacesStaleApproved(t *testing.T) {
+	t.Parallel()
+	key := labels.Key(modA, modB)
+	existing := []labels.Label{{
+		From: modA, To: modB, Strength: enrichModel,
+		EvidenceHash: staleEvidence, Status: labels.StatusApproved,
+	}}
+	drafts := []labels.Label{{
+		From: modA, To: modB, Strength: enrichIntrusive,
+		EvidenceHash: currentEvidence, Status: labels.StatusDraft,
+	}}
+
+	merged := mergeDrafts(existing, drafts, map[string]string{key: currentEvidence})
+	if len(merged) != 1 {
+		t.Fatalf("merged = %+v, want one replacement", merged)
+	}
+	if merged[0].Status != labels.StatusDraft || merged[0].Strength != enrichIntrusive {
+		t.Fatalf("stale approved label was not replaced: %+v", merged[0])
 	}
 }
 
@@ -186,8 +276,8 @@ func TestSelectRefinablePairs_UnknownStrength(t *testing.T) {
 	cfg := config.Config{
 		Version: 1,
 		Modules: map[string]config.ModuleDef{
-			modA: {Paths: []string{"pkg/a/**"}},
-			modB: {Paths: []string{"pkg/b/**"}},
+			modA: {Paths: []string{globPkgA}},
+			modB: {Paths: []string{globPkgB}},
 		},
 	}
 	edges := []graph.Edge{
@@ -195,7 +285,7 @@ func TestSelectRefinablePairs_UnknownStrength(t *testing.T) {
 	}
 	nodes := []graph.Node{
 		{Kind: graph.NodeKindFile, Path: filePkgAA},
-		{Kind: graph.NodeKindFile, Path: "pkg/b/b.go"},
+		{Kind: graph.NodeKindFile, Path: filePkgBB},
 	}
 	g := graph.Build([]graph.Facts{{Language: "go", Nodes: nodes, Edges: edges}})
 	idx := coupling.Index{
@@ -206,7 +296,7 @@ func TestSelectRefinablePairs_UnknownStrength(t *testing.T) {
 	}
 	mm := cfg.ForClassify().ModuleMap
 
-	pairs := selectRefinablePairs(g, idx, mm, nil)
+	pairs := selectRefinablePairs(g, idx, mm, nil, nil)
 	if len(pairs) != 1 {
 		t.Fatalf("pairs = %+v, want exactly a->b for unknown strength", pairs)
 	}
@@ -308,7 +398,7 @@ func TestRun_Explain_LLMNarrative(t *testing.T) {
 	}
 
 	buf.Reset()
-	code := Run([]string{cmdExplain, diag.Findings[0].ID[:8], "-c", cfgPath, "--llm", "--no-cache"}, &buf)
+	code := Run([]string{cmdExplain, diag.Findings[0].ID[:8], "-c", cfgPath, "--llm", flagNoCache}, &buf)
 	if code != 0 {
 		t.Fatalf("explain --llm exit = %d\n%s", code, buf.String())
 	}

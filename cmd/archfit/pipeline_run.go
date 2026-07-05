@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/alexei-led/archfit/internal/agenttask"
@@ -19,15 +19,18 @@ import (
 	"github.com/alexei-led/archfit/internal/extract/manifest"
 	runtimedetect "github.com/alexei-led/archfit/internal/extract/runtime"
 	"github.com/alexei-led/archfit/internal/extract/scip"
+	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/internal/score"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -76,9 +79,12 @@ func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, 
 // explain, and baseline all run through this single path: baseline snapshots
 // must be computed from exactly the same inputs as check verdicts, or every
 // post-baseline check reports phantom metric regressions and unmatched finding
-// fingerprints. After the engine returns, the agent_tasks repair block is
-// attached from the active gate findings (deterministic; spec §13).
-func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, noConfig bool, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, error) {
+// fingerprints. After the engine returns, the scorecard is synthesised and the
+// coupling gate applied — INSIDE the pipeline, so an escalated verdict and
+// promoted findings are visible to agenttask.Build below and to every renderer
+// — then the agent_tasks repair block is attached from the active gate
+// findings (deterministic; spec §13).
+func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, noConfig bool, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, score.Scorecard, error) {
 	configDir := filepath.Dir(configPath)
 	// scanDir anchors scope/git resolution. An explicit --root decouples the
 	// analyzed repo from where the config lives (external-CI use case); when it is
@@ -108,14 +114,24 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	deps.reportPhase("Discovering project")
 	s, err := scope.Resolve(ctx, sc, gitResolver{workDir: scanDir, runner: deps.Runner})
 	if err != nil {
-		return diagnostic.Diagnostic{}, err
+		return diagnostic.Diagnostic{}, score.Scorecard{}, err
 	}
 
-	extractors := buildExtractors(deps.Runner, cfg)
+	// Extractor fact cache (fact-cache.md D1/D2): facts/ beside the LLM cache
+	// under the config dir. nil when --no-cache — that disables reads AND
+	// writes in every consumer (a bypassed run must not poison or refresh
+	// entries). The cache stores subprocess/loader FACTS keyed by content;
+	// classification and scoring below never consult it.
+	var facts *factcache.Store
+	if !deps.noCache {
+		facts = factcache.NewStore(factsCacheDir(configDir))
+	}
+
+	extractors := buildExtractors(deps.Runner, cfg, facts)
 
 	rs, err := rules.New(cfg.ForRules())
 	if err != nil {
-		return diagnostic.Diagnostic{}, err
+		return diagnostic.Diagnostic{}, score.Scorecard{}, err
 	}
 	ms := append(metrics.New(cfg), extraMetrics...)
 
@@ -132,7 +148,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		}
 		msg := tool + ": " + err.Error()
 		toolWarnings = append(toolWarnings, msg)
-		_, _ = fmt.Fprintln(os.Stderr, "warning: "+msg)
+		deps.warn(msg)
 	}
 
 	// Output-path hygiene: when the config/output directory sits strictly inside
@@ -143,7 +159,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	if absConfigDir, aerr := filepath.Abs(configDir); aerr == nil {
 		if w := outputInsideRootWarning(s.Root, absConfigDir); w != "" {
 			toolWarnings = append(toolWarnings, w)
-			_, _ = fmt.Fprintln(os.Stderr, "warning: "+w)
+			deps.warn(w)
 		}
 	}
 
@@ -204,6 +220,10 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		resolved, src := ownership.Resolve(ctx, s.Root, s.GitRoot, s.SubtreePrefix, cfg.ModuleMapView(), deps.Runner)
 		cfg.FillMissingOwners(resolved)
 		ownerSource = string(src)
+		if w := ownerDegradationWarning(src); w != "" {
+			toolWarnings = append(toolWarnings, w)
+			deps.warn(w)
+		}
 	}
 
 	// Deploy-unit detection: fills module deploy_unit gaps from static repo
@@ -224,7 +244,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	copy(clonesExcl, cfg.Exclude)
 	clonesExcl = append(clonesExcl, cloneTestGenGlobs...)
 	var clonesCov diagnostic.Coverage
-	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled(), cfg.ToolTimeout(config.ToolClones), clonesExcl)
+	change.Duplication.Clusters, clonesCov, toolErr = clones.Run(ctx, deps.Runner, s.Root, cfg.ClonesEnabled(), cfg.ToolTimeout(config.ToolClones), clonesExcl, facts)
 	noteToolErr("jscpd", toolErr)
 	change.ExtraCoverage = append(change.ExtraCoverage, clonesCov)
 
@@ -233,7 +253,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// labels file must never silently alter the gate.
 	lbls, err := labelsio.Load(filepath.Join(configDir, defaultLabelsPath))
 	if err != nil {
-		return diagnostic.Diagnostic{}, err
+		return diagnostic.Diagnostic{}, score.Scorecard{}, err
 	}
 
 	// SCIP symbol-level strength is opt-in (analyzers.scip.enabled: true): the indexer is
@@ -243,7 +263,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// "disabled" (not absent/missing) and no spurious install-gap is raised.
 	var resolver ports.SymbolResolver = ports.NopSymbolResolver{}
 	if cfg.ScipEnabled() {
-		resolver = scip.New(deps.Runner, cfg.ToolTimeout(config.ToolScip))
+		scipAdapter := scip.New(deps.Runner, cfg.ToolTimeout(config.ToolScip))
+		scipAdapter.Cache = facts
+		resolver = scipAdapter
 	} else {
 		change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
 			Tool:   toolScip,
@@ -258,7 +280,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	syntaxCfg := cfg.ForSyntax()
 	var syntaxProvider ports.SyntaxProvider = ports.NopSyntaxProvider{}
 	if syntaxCfg.Enabled {
-		syntaxProvider = astgrep.New(deps.Runner)
+		syntaxAdapter := astgrep.New(deps.Runner)
+		syntaxAdapter.Cache = facts
+		syntaxProvider = syntaxAdapter
 	} else {
 		change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
 			Tool:   toolAstGrepSyntax,
@@ -271,6 +295,8 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	configHash := effectiveConfigHash(configPath, noConfig)
 
 	patternCfg := cfg.ForPatterns()
+	patternProvider := astgrep.New(deps.Runner)
+	patternProvider.Cache = facts
 	deps.reportPhase("Analyzing dependencies")
 	diag, err := engine.Run(ctx, engine.RunInput{
 		Mode:        mode,
@@ -279,7 +305,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		Staleness:   cfg.ForStaleness(),
 		Waivers:     cfg.ForWaivers(),
 		Extractors:  extractors,
-		Patterns:    astgrep.New(deps.Runner),
+		Patterns:    patternProvider,
 		Resolver:    resolver,
 		Syntax:      syntaxProvider,
 		SyntaxCfg:   syntaxCfg,
@@ -288,6 +314,10 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		Metrics:     ms,
 		Accepted:    base,
 		BaseMetrics: base.Metrics,
+		// Per-metric gate posture/thresholds: cfg.Metrics is already the
+		// name→entry view the verdict wants; missing names read as zero
+		// entries (the gate defaults) on lookup.
+		MetricGates: cfg.Metrics,
 		Labels:      lbls,
 		Signals:     change,
 		Now:         time.Now(),
@@ -297,13 +327,38 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		PrimaryExtractorTools: primaryExtractorTools(),
 	})
 	if err != nil {
-		return diag, err
+		return diag, score.Scorecard{}, err
 	}
 	diag.OwnerSource = ownerSource
 
+	// TS coverage honesty: a high unresolved-import-specifier count from
+	// dependency-cruiser must never be a silent gap — surface it on stderr the
+	// same way ownerDegradationWarning discloses degraded owner resolution.
+	if w := tsUnresolvedWarning(diag.ToolCoverage); w != "" {
+		toolWarnings = append(toolWarnings, w)
+		deps.warn(w)
+	}
+
+	// cargo-modules module-graph coverage: opt-in (analyzers.cargo_modules.enabled: true).
+	// The Rust extractor runs cargo-modules during its Extract call (inside engine.Run
+	// above) and caches the coverage record. Append it here — BEFORE the scorecard
+	// synthesis, which reads ToolCoverage for the partial-module-graph confidence cap —
+	// so it appears in ToolCoverage and the CoverageGap block (mirrors the clones pattern).
+	if rustEx := rustExtractor(extractors); rustEx != nil {
+		diag.ToolCoverage = append(diag.ToolCoverage, rustEx.LastModuleGraphCoverage())
+	}
+
+	// Synthesise the scorecard inside the pipeline (not after it, as before) so
+	// the coupling gate below can escalate the verdict and promote findings
+	// while agenttask.Build and every renderer still see the result.
+	deps.reportPhase("Scoring architecture")
+	card := score.Synthesize(diag)
+	applyCouplingGate(&diag, card, couplingGateView(cfg), base)
+
 	// Attach the structured repair-task block (spec §13) for active gate
 	// findings. Deterministic: rule-type templates + module public surfaces +
-	// the exact command that re-verifies the gate.
+	// the exact command that re-verifies the gate. Runs after the coupling gate
+	// so promoted Balanced-Coupling findings produce repair tasks too.
 	ruleTypes := make(map[string]string, len(cfg.Rules))
 	for _, def := range cfg.Rules {
 		ruleTypes[def.ID] = def.Type
@@ -314,19 +369,30 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 			modulePublic[name] = def.Public
 		}
 	}
-	validate := "archfit analyze --gate -c " + configPath
-	if mode.Full {
-		validate += " --full"
+	validate := validationCommand(configPath, root, noConfig, mode.Full)
+	// PathResolver lets agenttask.Build turn a bare config module key, a Rust
+	// "crate::mod" id, or a Python dotted module id into a path that actually
+	// exists on disk, using facts already gathered above — agenttask itself
+	// never touches the filesystem. A nil FileClassIndex (LOC walk did not
+	// run) disables resolution, matching the pre-resolver behavior.
+	var knownFiles map[string]struct{}
+	if change.Size.FileClassIndex != nil {
+		knownFiles = make(map[string]struct{}, len(change.Size.FileClassIndex))
+		for f := range change.Size.FileClassIndex {
+			knownFiles[f] = struct{}{}
+		}
 	}
-	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate}, diag.SyntaxFacts)
-
-	// cargo-modules module-graph coverage: opt-in (analyzers.cargo_modules.enabled: true).
-	// The Rust extractor runs cargo-modules during its Extract call (inside engine.Run
-	// above) and caches the coverage record. Append it here so it appears in
-	// ToolCoverage and the CoverageGap block — mirrors the clones pattern.
+	crateRootDirs := map[string]string{}
 	if rustEx := rustExtractor(extractors); rustEx != nil {
-		diag.ToolCoverage = append(diag.ToolCoverage, rustEx.LastModuleGraphCoverage())
+		for _, cr := range rustEx.LastCrateRoots() {
+			crateRootDirs[cr.Name] = cr.Dir
+		}
 	}
+	// onDisk backstops the LOC-walk index: its walk skips dirs (mocks/,
+	// target/, venv/) that extractor exclusions do not, so a real edge
+	// endpoint there is index-invisible yet must survive resolution.
+	pathResolver := agenttask.NewPathResolver(knownFiles, crateRootDirs, config.ModuleRootDirs(cfg.Modules), onDiskWithin(s.Root))
+	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate}, diag.SyntaxFacts, pathResolver)
 
 	// Warn-loud coverage reporting: turn the absent tool-coverage records into a
 	// machine-readable CoverageGaps block (tool → unlocked metrics → install cmd)
@@ -341,5 +407,127 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	diag.ConfigWarnings = append(diag.ConfigWarnings,
 		buildJudgmentDecisionTasks(cfg, lbls, configPath)...)
 
-	return diag, nil
+	return diag, card, nil
+}
+
+// onDiskWithin returns the PathResolver's onDisk callback: it reports whether
+// the repo-relative slash path rel exists under root. Candidates that are not
+// local after OS-path conversion (Windows `..\x` or `C:/x`, any escaping or
+// absolute path) are rejected before touching the filesystem — the resolver's
+// slash-only guard cannot see OS-specific separators, so files[] containment
+// is enforced here, after filepath.FromSlash.
+func onDiskWithin(root string) func(string) bool {
+	return func(rel string) bool {
+		osRel := filepath.FromSlash(rel)
+		if !filepath.IsLocal(osRel) {
+			return false
+		}
+		_, err := os.Stat(filepath.Join(root, osRel))
+		return err == nil
+	}
+}
+
+func validationCommand(configPath, root string, noConfig, full bool) string {
+	args := []string{"archfit", "analyze", "--gate"}
+	if noConfig {
+		args = append(args, "--no-config")
+	} else {
+		args = append(args, "-c", configPath)
+	}
+	if root != "" {
+		args = append(args, "--root", root)
+	}
+	if full {
+		args = append(args, "--full")
+	}
+	for i := range args {
+		args[i] = shellQuoteArg(args[i])
+	}
+	return strings.Join(args, " ")
+}
+
+func shellQuoteArg(arg string) string {
+	if arg == "" {
+		return "''"
+	}
+	if !strings.ContainsAny(arg, " \t\n'\"\\$`!#&;()*<>?[\\]^{|}~") {
+		return arg
+	}
+	return "'" + strings.ReplaceAll(arg, "'", "'\"'\"'") + "'"
+}
+
+// ruleIDBCCouplingGate is stamped on the synthetic summary finding that
+// applyCouplingGate emits when the gate trips with no promotable BC advisory
+// (advisory output off, or coupling.min_severity above every active edge).
+// Per-run trip state, never a triageable edge: `archfit baseline` skips it.
+const ruleIDBCCouplingGate = "bc/coupling_gate"
+
+// couplingGateView projects the coupling.gate config block into the score
+// package's gate view. It lives here in the composition root — config sits
+// below score in the layer order, so unlike the other config views this
+// projection cannot be a Config method. A nil block is Enabled=false:
+// coupling stays advisory-only, byte-identical to pre-gate behavior.
+func couplingGateView(cfg config.Config) score.CouplingGate {
+	g := cfg.Coupling.Gate
+	if g == nil {
+		return score.CouplingGate{}
+	}
+	return score.CouplingGate{
+		Enabled: true,
+		MinBand: score.Band(g.MinBand),
+		MaxDrop: g.MaxDrop,
+	}
+}
+
+// applyCouplingGate escalates the verdict to fail when the synthesised
+// coupling_balance score trips the configured coupling.gate (V2 fix: the
+// flagship metric can now block CI). The active Balanced-Coupling advisories —
+// the findings whose edges the tripped score aggregates — are promoted to gate
+// kind so they flow into agent_tasks through the existing kind filter
+// (internal/agenttask) and into the MustFix bucket; baselined/waived edges stay
+// triaged and are not promoted. An unmeasured score (band n/a) never trips —
+// score.EvaluateCouplingGate owns that rule. No coupling.gate config ⇒ no-op.
+// Trip reasons are NOT printed here: runPipeline is shared with baseline,
+// enrich, explain, and --base scoring, where an enforcement-sounding stderr
+// line is noise — analyze.go re-evaluates the pure gate and echoes them.
+//
+// The score is synthesised from ClassifiedEdges (before advisory filtering),
+// so the gate can trip while no BC advisory exists to promote — advisory
+// output off, or coupling.min_severity above every active edge. A fail
+// verdict must still carry evidence in the diagnostic itself, so that case
+// emits one synthetic summary gate finding (rule bc/coupling_gate) with the
+// trip reasons as Why: summary.gate_findings and agent_tasks[] stay
+// consistent with the verdict. `archfit baseline` never persists it — the
+// trip is per-run state, and a stored fingerprint the engine never
+// regenerates would surface as a phantom "fixed" finding.
+func applyCouplingGate(diag *diagnostic.Diagnostic, card score.Scorecard, gate score.CouplingGate, base baseline.Baseline) {
+	trip := score.EvaluateCouplingGate(card, gate, base.CouplingScore())
+	if !trip.Tripped {
+		return
+	}
+	diag.Verdict = diagnostic.VerdictFail
+	promoted := 0
+	for i := range diag.Findings {
+		f := &diag.Findings[i]
+		if f.RuleID != engine.RuleIDBCImbalanced || f.Kind != finding.KindAdvisory || !score.IsActiveGateFinding(*f) {
+			continue
+		}
+		f.Kind = finding.KindGate
+		promoted++
+	}
+	// Keep the summary counters consistent with the re-kinded findings: the
+	// promoted advisories now count as blocking, not as warnings.
+	diag.Summary.GateFindings += promoted
+	diag.Summary.Warnings = max(0, diag.Summary.Warnings-promoted)
+	if promoted == 0 {
+		diag.Findings = append(diag.Findings, finding.Finding{
+			ID:       "coupling-gate",
+			Kind:     finding.KindGate,
+			RuleID:   ruleIDBCCouplingGate,
+			Status:   finding.StatusNew,
+			Severity: finding.SeverityHigh,
+			Why:      strings.Join(trip.Reasons, "; "),
+		})
+		diag.Summary.GateFindings++
+	}
 }

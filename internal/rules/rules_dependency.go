@@ -18,6 +18,29 @@ import (
 // ForbiddenDependency
 // ---------------------------------------------------------------------------
 
+// validateForbiddenDependencyDef validates a RuleDef for the
+// forbidden_dependency rule type. An empty from/to glob matches nothing, so
+// the rule would load clean yet never fire — a silently-vacuous gate.
+func validateForbiddenDependencyDef(def config.RuleDef) error {
+	if def.From == "" || def.To == "" {
+		return fmt.Errorf("rules: forbidden_dependency %q requires both from and to globs", def.ID)
+	}
+	return validateScopeGlobs(def)
+}
+
+// validateScopeGlobs rejects malformed from/to globs. doublestar.Match
+// returns ErrBadPattern at check time, which Check discards — a malformed
+// glob would make the rule silently fire zero findings forever, the same
+// silently-vacuous-gate failure the emptiness check above guards against.
+func validateScopeGlobs(def config.RuleDef) error {
+	for field, pat := range map[string]string{"from": def.From, "to": def.To} {
+		if pat != "" && !doublestar.ValidatePattern(pat) {
+			return fmt.Errorf("rules: rule %q has a malformed %s glob %q", def.ID, field, pat)
+		}
+	}
+	return nil
+}
+
 type forbiddenDependency struct {
 	def config.RuleDef
 }
@@ -49,12 +72,25 @@ func (r *forbiddenDependency) Check(g *graph.Graph, _ Evidence) []finding.Findin
 	return out
 }
 
+// sameModule reports whether fromPath and toPath resolve to the same module —
+// a module reaching into its own internal path (e.g. domain importing
+// domain/internal) is idiomatic, not a violation; only cross-module access to
+// another module's internal surface is. When either endpoint isn't covered by
+// the module map, we can't rule out same-module, so callers must treat that
+// as "not same module" (module-blind fallback: the edge still fires).
+func sameModule(mm config.ModuleMap, fromPath, toPath string) bool {
+	fromModule, fromOK := mm.ModuleFor(fromPath)
+	toModule, toOK := mm.ModuleFor(toPath)
+	return fromOK && toOK && fromModule == toModule
+}
+
 // ---------------------------------------------------------------------------
 // PublicAPIOnly
 // ---------------------------------------------------------------------------
 
 type publicAPIOnly struct {
 	def config.RuleDef
+	mm  config.ModuleMap
 }
 
 func (r *publicAPIOnly) ID() string { return r.def.ID }
@@ -80,13 +116,23 @@ func (r *publicAPIOnly) Check(g *graph.Graph, _ Evidence) []finding.Finding {
 			}
 		}
 
+		if sameModule(r.mm, fromPath, toPath) {
+			continue
+		}
+
 		f := finding.New(r.def.ID, e, e.Locations)
 		f.Severity = finding.SeverityHigh
 		f.MatchedBy = map[string]string{
 			"edge_kind": string(e.Kind),
 			"to_path":   toPath,
 		}
-		f.Why = "Cross-module access to internal path " + toPath
+		why := "Access to internal path " + toPath
+		if fromModule, fromOK := r.mm.ModuleFor(fromPath); fromOK {
+			if toModule, toOK := r.mm.ModuleFor(toPath); toOK {
+				why = fmt.Sprintf("Cross-module access from %q (%s) to internal path %q (%s)", fromPath, fromModule, toPath, toModule)
+			}
+		}
+		f.Why = why
 		f.Constraint = "Only import from the module's public API"
 		out = append(out, f)
 	}
@@ -155,11 +201,12 @@ func (r *forbiddenLayerDirection) Check(g *graph.Graph, _ Evidence) []finding.Fi
 // ---------------------------------------------------------------------------
 
 // internalAPIAccess fires on edges with kind == uses_internal, optionally
-// filtered by from/to glob. Supports the same from/to glob semantics as
-// publicAPIOnly but is a distinct rule type so teams can configure them
-// independently with different IDs, severities, and exceptions.
+// filtered by from/to glob. Supports the same from/to glob and module-map
+// semantics as publicAPIOnly but is a distinct rule type so teams can
+// configure them independently with different IDs, severities, and exceptions.
 type internalAPIAccess struct {
 	def config.RuleDef
+	mm  config.ModuleMap
 }
 
 func (r *internalAPIAccess) ID() string { return r.def.ID }
@@ -182,6 +229,10 @@ func (r *internalAPIAccess) Check(g *graph.Graph, _ Evidence) []finding.Finding 
 			if matched, _ := doublestar.Match(r.def.To, toPath); !matched {
 				continue
 			}
+		}
+
+		if sameModule(r.mm, fromPath, toPath) {
+			continue
 		}
 
 		f := finding.New(r.def.ID, e, e.Locations)

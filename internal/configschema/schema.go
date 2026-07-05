@@ -55,6 +55,13 @@ func Generate(srcDir string) ([]byte, error) {
 		// Inline Config's own fields into the root schema object rather than
 		// wrapping them in a $ref, so editors see properties at the top level.
 		ExpandedStruct: true,
+		// Almost every key in .archfit.yaml is optional — validate() enforces
+		// enums and ranges only when a key is present. Without this flag the
+		// reflector marks every field lacking a yaml `omitempty` as required,
+		// so valid configs (knob-only metric entries, rules without both
+		// module and layer selectors) fail schema validation in editors. Only
+		// fields tagged `jsonschema:"required"` (Config.Version) are required.
+		RequiredFromJSONSchemaTags: true,
 	}
 
 	// Pull doc-comments from the source so each property gets a description.
@@ -86,9 +93,10 @@ func Generate(srcDir string) ([]byte, error) {
 
 // patchDefinitions walks all named definitions in the schema and replaces
 // inlined ToolMode ("enabled" property, {type:string}) and GateMode
-// ("gate" property, {type:string}) with the correct union/enum schemas.
+// ("gate" property, {type:string}) with the correct union/enum schemas, and
+// tightens CouplingGateDef to mirror validateCouplingGate.
 func patchDefinitions(schema *jsonschema.Schema) {
-	for _, def := range schema.Definitions {
+	for name, def := range schema.Definitions {
 		if def.Properties == nil {
 			continue
 		}
@@ -101,6 +109,48 @@ func patchDefinitions(schema *jsonschema.Schema) {
 		if gate, ok := def.Properties.Get("gate"); ok {
 			if gate.Type == typeString && gate.Enum == nil {
 				*gate = *gateModeSchema
+			}
+		}
+		if name == "ExternalSystemDef" {
+			// Mirror validateExternalSystem (internal/config): at least one
+			// targets glob (an empty entry declares nothing) and a real
+			// volatility level when one is set.
+			if targets, ok := def.Properties.Get("targets"); ok {
+				one := uint64(1)
+				targets.MinItems = &one
+			}
+			if vol, ok := def.Properties.Get("volatility"); ok && vol.Type == typeString {
+				vol.Enum = []any{"high", "medium", "low", "frozen"}
+			}
+			def.Required = []string{"targets"}
+		}
+		if name == "RuleDef" {
+			// Mirror validateRules/rules.New: every rule needs a stable id for
+			// finding fingerprints/baseline matching, and an empty or
+			// unrecognized `type` is a hard load error.
+			def.Required = []string{"id", "type"}
+		}
+		if name == "PatternDef" {
+			// Mirror validateRules (internal/config): ast-grep runs
+			// `sg --lang <lang> --pattern <rule>` and keys findings by id, so
+			// a partial pattern entry is a hard load error.
+			def.Required = []string{"id", "lang", "rule"}
+		}
+		if name == "CouplingGateDef" {
+			// Mirror validateCouplingGate (internal/config): min_band is one of
+			// the four band floors (critical rejected — could never trip), and
+			// an empty gate block gates nothing, so at least one knob is
+			// required. Without this, editors show green on exactly the
+			// validated-but-inert configs the gate was built to prevent.
+			if minBand, ok := def.Properties.Get("min_band"); ok && minBand.Type == typeString {
+				minBand.Enum = []any{"poor", "mixed", "serviceable", "strong"}
+			}
+			if maxDrop, ok := def.Properties.Get("max_drop"); ok {
+				maxDrop.Minimum = "0" // validateCouplingGate rejects a negative drop
+			}
+			def.AnyOf = []*jsonschema.Schema{
+				{Required: []string{"min_band"}},
+				{Required: []string{"max_drop"}},
 			}
 		}
 	}

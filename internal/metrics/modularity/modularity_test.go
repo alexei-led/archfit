@@ -6,6 +6,7 @@ import (
 	"github.com/alexei-led/archfit/internal/metrics/internal/result"
 	"github.com/alexei-led/archfit/internal/metrics/metricstest"
 	"github.com/alexei-led/archfit/internal/metrics/modularity"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
@@ -33,5 +34,23 @@ func TestBlastRadius_TransitiveReverseDeps(t *testing.T) {
 	// small N -> low confidence (not a quality verdict), never gating.
 	if res.Confidence != result.ConfidenceLow {
 		t.Errorf("expected low confidence for small N, got %q", res.Confidence)
+	}
+	// Direction drives computeVerdict's delta-sign handling (V1 fix): a count
+	// metric regresses when it RISES. A wrong stamp silently inverts gating.
+	if res.Direction != diagnostic.DirectionHigherIsWorse {
+		t.Errorf("direction = %q, want %q", res.Direction, diagnostic.DirectionHigherIsWorse)
+	}
+}
+
+// TestBlastRadius_NAResult covers the naResult path (nil graph): the n/a path
+// must stamp Direction like the measured path does — an unset Direction
+// silently falls into computeVerdict's default branch.
+func TestBlastRadius_NAResult(t *testing.T) {
+	res := modularity.BlastRadiusMetric{}.Calculate(signal.CommonInput{Graph: nil})
+	if res.Band != result.BandNA {
+		t.Errorf("expected band %q for nil graph, got %q", result.BandNA, res.Band)
+	}
+	if res.Direction != diagnostic.DirectionHigherIsWorse {
+		t.Errorf("n/a direction = %q, want %q", res.Direction, diagnostic.DirectionHigherIsWorse)
 	}
 }

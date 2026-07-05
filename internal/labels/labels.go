@@ -9,7 +9,10 @@
 // A label refines the integration strength of all edges between one ordered
 // module pair (model-vs-functional is the usual refinement; the deterministic
 // heuristic blanket-labels most call edges "functional"). Precedence in
-// classify: config public/internal globs > approved labels > extractor hint.
+// classify depends on provenance: human/tool labels are a reviewer's verdict
+// (config public/internal globs > approved labels > extractor hint), while
+// llm-provenance labels only fill cells every static source left unknown
+// (globs and hints beat them — compiler-grade beats LLM).
 //
 // Each label carries an evidence hash — a content hash of the import-graph
 // edges between the module pair at enrich time (config-module namespace, so
@@ -116,8 +119,15 @@ func isEffective(l Label, evidence map[string]string) bool {
 	return !ok || l.EvidenceHash == "" || l.EvidenceHash == h
 }
 
-// Approved partitions labels into the consumable map (Key(from,to) → strength)
-// and the stale list. Draft labels are skipped entirely.
+// Approved partitions labels into two consumable maps (Key(from,to) → strength)
+// — human-authority labels (provenance human/tool/unset) and llm-provenance
+// labels — plus the stale list. Draft labels are skipped entirely.
+//
+// The split exists because the two provenances carry different classify
+// precedence: a human label is a reviewer's verdict (beats the extractor hint,
+// refines a public-glob contract floor), while an llm label only fills cells
+// every static source left unknown — it never displaces a static
+// classification (compiler-grade beats LLM, same rule as SCIP-for-Go).
 //
 // evidence maps Key(from,to) → current evidence hash (HashItems over the
 // pair's import-graph edges). Freshness: a label whose EvidenceHash does not
@@ -125,8 +135,9 @@ func isEffective(l Label, evidence map[string]string) bool {
 // EvidenceHash (hand-authored), or whose pair has no current evidence (the
 // edges are gone — the label is moot), or when evidence is nil (delta run:
 // partial graph), applies/passes without the check.
-func Approved(lbls []Label, evidence map[string]string) (approved map[string]string, stale []Label) {
+func Approved(lbls []Label, evidence map[string]string) (approved, llmApproved map[string]string, stale []Label) {
 	approved = map[string]string{}
+	llmApproved = map[string]string{}
 	for _, l := range lbls {
 		if !isEffective(l, evidence) {
 			if l.Status == StatusApproved {
@@ -134,9 +145,13 @@ func Approved(lbls []Label, evidence map[string]string) (approved map[string]str
 			}
 			continue
 		}
+		if l.Provenance == ProvenanceLLM {
+			llmApproved[Key(l.From, l.To)] = l.Strength
+			continue
+		}
 		approved[Key(l.From, l.To)] = l.Strength
 	}
-	return approved, stale
+	return approved, llmApproved, stale
 }
 
 // LLMApprovedCount returns the count of approved labels whose provenance is
@@ -155,4 +170,20 @@ func LLMApprovedCount(lbls []Label, evidence map[string]string) int {
 		}
 	}
 	return n
+}
+
+// LLMConfidenceByKey returns confidence values for effective approved
+// llm-provenance labels, keyed by Key(from,to). Draft and stale labels are
+// excluded with the same freshness rules as Approved.
+func LLMConfidenceByKey(lbls []Label, evidence map[string]string) map[string]string {
+	out := map[string]string{}
+	for _, l := range lbls {
+		if !isEffective(l, evidence) {
+			continue
+		}
+		if l.Provenance == ProvenanceLLM {
+			out[Key(l.From, l.To)] = l.Confidence
+		}
+	}
+	return out
 }

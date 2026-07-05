@@ -14,11 +14,14 @@ import (
 )
 
 // applyPinnedLabels validates pinned labels and injects the approved ones into
-// the classify config (precedence: config globs > approved labels > extractor
-// hint). Freshness is checked against the full import graph — on full runs
-// only (a delta graph is partial and would false-stale every label). Returns
-// one labels/stale advisory per ignored stale label plus the count of approved
-// labels with llm provenance (used to lower coupling_balance confidence).
+// the classify config, split by provenance: human/tool labels keep the
+// reviewer's-verdict precedence (config globs > approved labels > extractor
+// hint), llm-provenance labels only fill cells every static source left
+// unknown (globs and hint beat them — compiler-grade beats LLM). Freshness is
+// checked against the full import graph — on full runs only (a delta graph is
+// partial and would false-stale every label). Returns one labels/stale
+// advisory per ignored stale label plus the count of approved labels with llm
+// provenance (used to lower coupling_balance confidence).
 // Deterministic — the gate never calls an LLM; labels are reviewed YAML.
 func applyPinnedLabels(g *graph.Graph, classifyCfg *config.ClassifyConfig, mode Mode, lbls []labels.Label) ([]finding.Finding, int) {
 	var evidence map[string]string
@@ -29,8 +32,10 @@ func applyPinnedLabels(g *graph.Graph, classifyCfg *config.ClassifyConfig, mode 
 		}
 		evidence = PairEvidence(g, classifyCfg.ModuleMap, wanted)
 	}
-	approved, stale := labels.Approved(lbls, evidence)
+	approved, llmApproved, stale := labels.Approved(lbls, evidence)
 	classifyCfg.ApprovedLabels = approved
+	classifyCfg.LLMLabels = llmApproved
+	classifyCfg.LLMLabelConfidence = labels.LLMConfidenceByKey(lbls, evidence)
 
 	llmCount := labels.LLMApprovedCount(lbls, evidence)
 
@@ -89,7 +94,8 @@ func PairEvidence(g *graph.Graph, mm config.ModuleMap, wanted map[string]struct{
 }
 
 // buildClonePairSet converts clone clusters to a canonical module-pair key set
-// for CoA (connascence of algorithm) tagging in classify, plus the real
+// for the clone-driven classify paths (Symmetric-strength upgrade, cascade
+// exclusion, duplicated-knowledge pairing), plus the real
 // duplicated-code locations backing each pair (see clonePairEvidence).
 // Keys are "[a]\x00[b]" with a≤b (canonical sorted pair, from clone.ModulePairs).
 //

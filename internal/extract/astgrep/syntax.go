@@ -237,6 +237,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 
 	var facts []diagnostic.SyntaxFact
 
+	runner := a.cachedRunner(ctx, s.Root)
 	for _, lang := range langs {
 		rules, hasRules := embeddedRules[lang]
 		if !hasRules {
@@ -250,7 +251,7 @@ func (a *Adapter) Syntax(ctx context.Context, s scope.Scope, langs []string) ([]
 		// confirmed[file][framework] before pass 2 can gate routes), so raw is
 		// populated in-order and the passes are unchanged.
 		var raw []sgSyntaxMatch
-		out, err := a.runner.Stream(ctx, toolrun.ToolCmd{
+		out, err := runner.Stream(ctx, toolrun.ToolCmd{
 			Name:    "sg",
 			Args:    []string{"scan", "--inline-rules", rules, "--json=compact", "."},
 			WorkDir: s.Root,
@@ -362,6 +363,20 @@ func decodeSyntaxStream(r io.Reader, lang string) ([]sgSyntaxMatch, error) {
 			return nil, fmt.Errorf("astgrep: parse syntax output for %q: %w", lang, err)
 		}
 		matches = append(matches, m)
+	}
+	tok, err = dec.Token()
+	if err != nil {
+		return nil, fmt.Errorf("astgrep: parse syntax output for %q: %w", lang, err)
+	}
+	if delim, ok := tok.(json.Delim); !ok || delim != ']' {
+		return nil, fmt.Errorf("astgrep: parse syntax output for %q: expected JSON array end, got %v", lang, tok)
+	}
+	var extra json.RawMessage
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return nil, fmt.Errorf("astgrep: parse syntax output for %q: trailing data: %w", lang, err)
+		}
+		return nil, fmt.Errorf("astgrep: parse syntax output for %q: unexpected trailing JSON value", lang)
 	}
 	return matches, nil
 }

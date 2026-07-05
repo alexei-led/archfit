@@ -25,6 +25,7 @@ type PathDelta struct {
 // UpdateReport is the result of DiffModules.
 type UpdateReport struct {
 	Added            []ModuleDef
+	Suggested        []ModuleDef
 	Removed          []ExistingModule
 	PathDrift        []PathDelta
 	Unclassified     []string
@@ -145,6 +146,8 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef) UpdateReport {
 //
 //   - ADDED: paste-ready YAML stanzas via writeModuleStanza (apply=true so fields are
 //     visible to copy; out-of-set layers still render as comments per writeModuleStanza rules).
+//   - SUGGESTED: paste-ready review-only module override stanzas. These are not
+//     structural discovery results and `config update --apply` never writes them.
 //   - REMOVED: each removed module noted as "not found in discovery — verify or remove".
 //   - PATH DRIFT: config vs discovered paths, with an explicit note that --apply replaces
 //     module paths with the discovered paths and writes a backup.
@@ -166,6 +169,25 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 				}
 			}
 			writeModuleStanza(&b, m.Name, m, allowedLayers, moduleAnn, true)
+			if moduleAnn != nil && moduleAnn.Rationale != "" {
+				fmt.Fprintf(&b, "    # rationale: %s\n", sanitizeComment(moduleAnn.Rationale))
+			}
+		}
+	}
+
+	if len(r.Suggested) > 0 {
+		fmt.Fprintf(&b, "SUGGESTED (%d review-only module override(s) — paste into .archfit.yaml after review):\n", len(r.Suggested))
+		for _, m := range r.Suggested {
+			var moduleAnn *ModuleAnnotation
+			if ann != nil {
+				if a, ok := ann[m.Name]; ok {
+					moduleAnn = &a
+				}
+			}
+			writeModuleStanza(&b, m.Name, m, allowedLayers, moduleAnn, true)
+			if moduleAnn != nil && moduleAnn.Rationale != "" {
+				fmt.Fprintf(&b, "    # rationale: %s\n", sanitizeComment(moduleAnn.Rationale))
+			}
 		}
 	}
 
@@ -191,12 +213,7 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 		for _, name := range r.Unclassified {
 			if ann != nil {
 				if a, ok := ann[name]; ok {
-					fmt.Fprintf(&b, "  - %s: llm suggests subdomain=%s volatility=%s layer=%s\n",
-						name,
-						sanitizeComment(a.Subdomain),
-						sanitizeComment(a.Volatility),
-						sanitizeComment(a.Layer),
-					)
+					writeAnnotationDiff(&b, name, a)
 					continue
 				}
 			}
@@ -209,6 +226,25 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 	}
 
 	return b.String()
+}
+
+func writeAnnotationDiff(b *strings.Builder, name string, a ModuleAnnotation) {
+	fmt.Fprintf(b, "  %s:\n", name)
+	if a.Subdomain != "" {
+		fmt.Fprintf(b, "    + subdomain: %s\n", sanitizeComment(a.Subdomain))
+	}
+	if a.Volatility != "" {
+		fmt.Fprintf(b, "    + volatility: %s\n", sanitizeComment(a.Volatility))
+	}
+	if a.Layer != "" {
+		fmt.Fprintf(b, "    + layer: %s\n", sanitizeComment(a.Layer))
+	}
+	if a.Role != "" {
+		fmt.Fprintf(b, "    + role: %s\n", sanitizeComment(a.Role))
+	}
+	if a.Rationale != "" {
+		fmt.Fprintf(b, "    rationale: %s\n", sanitizeComment(a.Rationale))
+	}
 }
 
 // joinPaths formats a path slice as a compact bracket list for report output.

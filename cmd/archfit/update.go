@@ -3,12 +3,20 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
+	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/extract/rust"
+	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
+	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/scope"
 )
 
 // UpdateCmd syncs .archfit.yaml with the current project structure.
@@ -45,7 +53,6 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 
 	existing := configToExisting(cfg.Modules)
-	existingByName := indexExisting(existing)
 
 	freshCfg, err := initcfg.Discover(ctx, root, deps.Runner)
 	if err != nil {
@@ -53,6 +60,13 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 
 	report := initcfg.DiffModules(existing, freshCfg.Modules)
+	if c.LLM {
+		var synthErr error
+		report, synthErr = c.withRustSyntheticSuggestions(ctx, cfg, root, report, deps)
+		if synthErr != nil {
+			return synthErr
+		}
+	}
 	addedNames := addedSet(report.Added)
 
 	ann, err := c.maybeClassify(ctx, cfg, root, report, addedNames)
@@ -64,7 +78,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		warnPartialClassify(deps.Stdout, warnTargets, ann)
 	}
 
-	hasEdits := hasActionableEdits(report, ann, existingByName, addedNames, cfg.Layers)
+	hasEdits := hasActionableEdits(report)
 
 	if !c.Apply {
 		_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
@@ -72,11 +86,15 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 
 	if !hasEdits {
+		if c.LLM && ann != nil {
+			_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
+			return nil
+		}
 		_, _ = fmt.Fprintln(deps.Stdout, "structurally in sync — no changes to apply")
 		return nil
 	}
 
-	edits := buildUpdateEdits(report, ann, existingByName, cfg.Layers, addedNames)
+	edits := buildUpdateEdits(report)
 	edited, err := initcfg.ApplyEdits(originalBytes, edits)
 	if err != nil {
 		return fmt.Errorf("applying edits: %w", err)
@@ -129,7 +147,7 @@ func (c *UpdateCmd) maybeClassify(
 		return nil, nil
 	}
 
-	ann, err := classifyModules(ctx, p, classifyTargets, cfg.Layers)
+	ann, err := classifyModulesWithEvidence(ctx, p, classifyTargets, cfg.Layers, collectUpdateRepoEvidence(root))
 	if err != nil {
 		return nil, &exitError{code: 3, msg: fmt.Sprintf("error: classify failed: %v", err)}
 	}
@@ -153,6 +171,83 @@ func (c *UpdateCmd) buildLLMProvider(cfg config.Config) (llm.Provider, error) {
 	return p, nil
 }
 
+func (c *UpdateCmd) withRustSyntheticSuggestions(
+	ctx context.Context,
+	cfg config.Config,
+	root string,
+	report initcfg.UpdateReport,
+	deps *appDeps,
+) (initcfg.UpdateReport, error) {
+	extractCfg := cfg.ForExtract(config.LangRust)
+	if extractCfg.Mode == config.ModeOff || !extractCfg.ModuleGraph {
+		return report, nil
+	}
+
+	var facts *factcache.Store
+	if !c.NoCache {
+		facts = factcache.NewStore(factsCacheDir(filepath.Dir(c.Config)))
+	}
+	ex := rust.New(deps.Runner, extractCfg)
+	ex.Cache = facts
+	rustFacts, _, err := ex.Extract(ctx, scope.Scope{Root: root})
+	if err != nil {
+		return report, &exitError{code: 3, msg: fmt.Sprintf("error: discovering Rust synthetic modules: %v", err)}
+	}
+
+	g := graph.Build([]graph.Facts{rustFacts})
+	augmented := classify.AugmentModulesFromGraph(g, cfg.ForClassify().Modules)
+	if len(augmented) == len(cfg.Modules) {
+		return report, nil
+	}
+
+	existingNames := make(map[string]struct{}, len(cfg.Modules)+len(report.Added)+len(report.Suggested))
+	for name := range cfg.Modules {
+		existingNames[name] = struct{}{}
+	}
+	for _, m := range report.Added {
+		existingNames[m.Name] = struct{}{}
+	}
+	for _, m := range report.Suggested {
+		existingNames[m.Name] = struct{}{}
+	}
+
+	var paths []string
+	for path := range augmented {
+		if _, configured := cfg.Modules[path]; configured || !strings.Contains(path, "::") {
+			continue
+		}
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		def := augmented[path]
+		if len(def.Paths) == 0 {
+			def.Paths = []string{path}
+		}
+		report.Suggested = append(report.Suggested, initcfg.ModuleDef{
+			Name:  uniqueSyntheticModuleName(path, existingNames),
+			Paths: def.Paths,
+			Layer: def.Layer,
+		})
+	}
+	return report, nil
+}
+
+func uniqueSyntheticModuleName(path string, used map[string]struct{}) string {
+	base := strings.ReplaceAll(path, "::", "-")
+	if _, exists := used[base]; !exists {
+		used[base] = struct{}{}
+		return base
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d", base, i)
+		if _, exists := used[candidate]; !exists {
+			used[candidate] = struct{}{}
+			return candidate
+		}
+	}
+}
+
 // classifyTargetsForUpdate collects ModuleDefs to classify: Added modules from discovery,
 // plus existing unclassified modules (excluding those already in addedNames).
 func classifyTargetsForUpdate(
@@ -160,77 +255,33 @@ func classifyTargetsForUpdate(
 	report initcfg.UpdateReport,
 	addedNames map[string]struct{},
 ) []initcfg.ModuleDef {
-	targets := make([]initcfg.ModuleDef, 0, len(report.Added)+len(report.Unclassified))
+	targets := make([]initcfg.ModuleDef, 0, len(report.Added)+len(report.Suggested)+len(report.Unclassified))
 	targets = append(targets, report.Added...)
+	targets = append(targets, report.Suggested...)
 	for _, name := range report.Unclassified {
 		if _, isAdded := addedNames[name]; isAdded {
 			continue
 		}
 		if def, ok := cfg.Modules[name]; ok {
-			targets = append(targets, initcfg.ModuleDef{Name: name, Paths: def.Paths})
+			targets = append(targets, initcfg.ModuleDef{Name: name, Paths: def.Paths, Public: def.Public})
 		} // name came from DiffModules over cfg.Modules, so absent is purely defensive
 	}
 	return targets
 }
 
-// hasActionableEdits returns true when there is at least one structural change or
-// a field-fill that survives the absent+valid filter for an existing unclassified module.
-func hasActionableEdits(
-	report initcfg.UpdateReport,
-	ann map[string]initcfg.ModuleAnnotation,
-	existingByName map[string]initcfg.ExistingModule,
-	addedNames map[string]struct{},
-	layers []string,
-) bool {
-	if !report.StructuralInSync {
-		return true
-	}
-	if ann == nil {
-		return false
-	}
-	for _, name := range report.Unclassified {
-		if _, isAdded := addedNames[name]; isAdded {
-			continue
-		}
-		a, ok := ann[name]
-		if !ok {
-			continue
-		}
-		e, eok := existingByName[name]
-		if !eok {
-			continue
-		}
-		if fieldFillSurvives(e, a, layers) {
-			return true
-		}
-	}
-	return false
-}
-
-// fieldFillSurvives reports whether at least one absent field has a valid annotation value.
-func fieldFillSurvives(e initcfg.ExistingModule, a initcfg.ModuleAnnotation, layers []string) bool {
-	return len(absentFields(e, a, layers)) > 0
+// hasActionableEdits returns true when there is at least one structural change.
+// LLM role/volatility output is review-only: it is rendered as a diff but never
+// written by config update --apply.
+func hasActionableEdits(report initcfg.UpdateReport) bool {
+	return len(report.Added) > 0 || len(report.Removed) > 0 || len(report.PathDrift) > 0
 }
 
 // buildUpdateEdits constructs the ordered Edit slice for an apply pass.
-func buildUpdateEdits(
-	report initcfg.UpdateReport,
-	ann map[string]initcfg.ModuleAnnotation,
-	existingByName map[string]initcfg.ExistingModule,
-	layers []string,
-	addedNames map[string]struct{},
-) []initcfg.Edit {
+func buildUpdateEdits(report initcfg.UpdateReport) []initcfg.Edit {
 	edits := make([]initcfg.Edit, 0, len(report.Added)+len(report.PathDrift)+len(report.Removed)+len(report.Unclassified))
 
 	for _, def := range report.Added {
-		var annPtr *initcfg.ModuleAnnotation
-		if ann != nil {
-			if a, ok := ann[def.Name]; ok {
-				a := a
-				annPtr = &a
-			}
-		}
-		edits = append(edits, initcfg.AddModuleEdit{Def: def, Ann: annPtr})
+		edits = append(edits, initcfg.AddModuleEdit{Def: def})
 	}
 
 	for _, d := range report.PathDrift {
@@ -241,57 +292,83 @@ func buildUpdateEdits(
 		edits = append(edits, initcfg.CommentModuleEdit{Module: e.Name, Note: "not found in discovery"})
 	}
 
-	edits = append(edits, buildFieldFillEdits(report.Unclassified, ann, existingByName, layers, addedNames)...)
 	return edits
 }
 
-// buildFieldFillEdits builds SetModuleFields edits for existing unclassified modules.
-func buildFieldFillEdits(
-	unclassified []string,
-	ann map[string]initcfg.ModuleAnnotation,
-	existingByName map[string]initcfg.ExistingModule,
-	layers []string,
-	addedNames map[string]struct{},
-) []initcfg.Edit {
-	if ann == nil {
+const maxUpdateRepoEvidence = 20
+
+// collectUpdateRepoEvidence gathers lightweight review evidence for the update
+// LLM prompt. Failures are ignored; module names and paths still carry the prompt.
+func collectUpdateRepoEvidence(root string) []string {
+	var evidence []string
+	addHeadings := func(label, path string) {
+		if len(evidence) >= maxUpdateRepoEvidence {
+			return
+		}
+		data, err := os.ReadFile(path) //nolint:gosec // local target repo evidence
+		if err != nil {
+			return
+		}
+		for _, h := range markdownHeadings(string(data), maxUpdateRepoEvidence-len(evidence)) {
+			evidence = append(evidence, label+": "+h)
+		}
+	}
+
+	for _, name := range []string{"README.md", "README"} {
+		addHeadings(name, filepath.Join(root, name))
+		if len(evidence) > 0 {
+			break
+		}
+	}
+
+	docsDir := filepath.Join(root, "docs")
+	_ = filepath.WalkDir(docsDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || len(evidence) >= maxUpdateRepoEvidence {
+			return filepath.SkipAll
+		}
+		if d.IsDir() {
+			if path != docsDir && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.EqualFold(filepath.Ext(d.Name()), ".md") {
+			rel, relErr := filepath.Rel(root, path)
+			if relErr != nil {
+				rel = path
+			}
+			addHeadings(filepath.ToSlash(rel), path)
+		}
+		return nil
+	})
+
+	sort.Strings(evidence)
+	if len(evidence) > maxUpdateRepoEvidence {
+		evidence = evidence[:maxUpdateRepoEvidence]
+	}
+	return evidence
+}
+
+func markdownHeadings(text string, limit int) []string {
+	if limit <= 0 {
 		return nil
 	}
-	edits := make([]initcfg.Edit, 0, len(unclassified))
-	for _, name := range unclassified {
-		if _, isAdded := addedNames[name]; isAdded {
+	var headings []string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "#") {
 			continue
 		}
-		a, ok := ann[name]
-		if !ok {
+		heading := strings.TrimSpace(strings.TrimLeft(line, "#"))
+		if heading == "" {
 			continue
 		}
-		e, eok := existingByName[name]
-		if !eok {
-			continue
+		headings = append(headings, heading)
+		if len(headings) >= limit {
+			break
 		}
-		fields := absentFields(e, a, layers)
-		if len(fields) == 0 {
-			continue
-		}
-		edits = append(edits, initcfg.SetModuleFieldsEdit{Module: name, Fields: fields})
 	}
-	return edits
-}
-
-// absentFields returns the field map for SetModuleFieldsEdit, containing only fields
-// that are absent in the existing module and have a valid annotation value.
-func absentFields(e initcfg.ExistingModule, a initcfg.ModuleAnnotation, layers []string) map[initcfg.ModuleField]string {
-	fields := make(map[initcfg.ModuleField]string)
-	if !e.HasSubdomain && a.Subdomain != "" {
-		fields[initcfg.FieldSubdomain] = a.Subdomain
-	}
-	if !e.HasVolatility && a.Volatility != "" {
-		fields[initcfg.FieldVolatility] = a.Volatility
-	}
-	if !e.HasLayer && a.Layer != "" && layerInSet(a.Layer, layers) {
-		fields[initcfg.FieldLayer] = a.Layer
-	}
-	return fields
+	return headings
 }
 
 // configToExisting projects config.Modules into []initcfg.ExistingModule.
@@ -309,15 +386,6 @@ func configToExisting(modules map[string]config.ModuleDef) []initcfg.ExistingMod
 	return out
 }
 
-// indexExisting builds a name→ExistingModule map.
-func indexExisting(existing []initcfg.ExistingModule) map[string]initcfg.ExistingModule {
-	m := make(map[string]initcfg.ExistingModule, len(existing))
-	for _, e := range existing {
-		m[e.Name] = e
-	}
-	return m
-}
-
 // addedSet builds a set of Added module names.
 func addedSet(added []initcfg.ModuleDef) map[string]struct{} {
 	s := make(map[string]struct{}, len(added))
@@ -325,14 +393,4 @@ func addedSet(added []initcfg.ModuleDef) map[string]struct{} {
 		s[a.Name] = struct{}{}
 	}
 	return s
-}
-
-// layerInSet reports whether layer is in the allowed layers slice.
-func layerInSet(layer string, layers []string) bool {
-	for _, l := range layers {
-		if l == layer {
-			return true
-		}
-	}
-	return false
 }

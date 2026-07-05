@@ -71,6 +71,7 @@ func (m BlastRadiusMetric) Calculate(in signal.CommonInput) diagnostic.MetricRes
 		Mode:       result.ModeCount,
 		Definition: "modules whose transitive reverse-dependencies exceed " +
 			fmt.Sprintf("%.0f%%", hubBlastThreshold*100) + " of the codebase (change-impact hubs)",
+		Direction: diagnostic.DirectionHigherIsWorse,
 	}
 }
 
@@ -79,6 +80,7 @@ func (m BlastRadiusMetric) naResult() diagnostic.MetricResult {
 		Name: m.Name(), Value: 0, Display: result.BandNA, Band: result.BandNA,
 		Confidence: result.ConfidenceLow, Version: m.Version(), Mode: result.ModeCount,
 		Definition: "modules whose transitive reverse-dependencies are a large fraction of the codebase",
+		Direction:  diagnostic.DirectionHigherIsWorse,
 	}
 }
 

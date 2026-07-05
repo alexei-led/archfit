@@ -4,10 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/finding"
@@ -19,8 +21,21 @@ import (
 // kindAdvisory is the finding kind for non-gating advisory findings.
 const kindAdvisory = "advisory"
 
-// ruleIDBCImbalanced is the rule ID for a Balanced-Coupling advisory finding.
-const ruleIDBCImbalanced = "bc/imbalanced_coupling"
+// RuleIDBCImbalanced is the rule ID stamped on a Balanced-Coupling advisory
+// finding. Exported so the composition root (cmd) matches promotable findings
+// against the same constant instead of a drifting duplicate literal.
+const RuleIDBCImbalanced = "bc/imbalanced_coupling"
+
+// RuleIDBCDuplicatedKnowledge is the rule ID for the duplicated-knowledge
+// advisory: a cross-module clone pair with NO import edge between the modules
+// (book Ch7 — functional coupling through shared logic, invisible to the
+// import graph). Report-only: never promoted by the coupling gate, which
+// matches RuleIDBCImbalanced only.
+const RuleIDBCDuplicatedKnowledge = "bc/duplicated_knowledge"
+
+// edgeKindClone marks a duplicated-knowledge finding's edge evidence: the two
+// endpoints are linked by duplicated code, not an import.
+const edgeKindClone = "clone"
 
 // collectAdvisories runs stage 8: coupling advisories, staleness advisories,
 // stale label advisories, and the advisory status pass.
@@ -65,7 +80,7 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 		af := finding.Finding{
 			ID:       id,
 			Kind:     kindAdvisory,
-			RuleID:   ruleIDBCImbalanced,
+			RuleID:   RuleIDBCImbalanced,
 			Status:   finding.StatusNew,
 			Severity: finding.Severity(cl.Severity),
 			Edge: finding.EdgeEvidence{
@@ -79,6 +94,12 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 		}
 		advisoryFindings = append(advisoryFindings, af)
 	}
+	// Duplicated knowledge (book Ch7): cross-module clone pairs with NO import
+	// edge. The symmetric-upgrade path only sees pairs that have an edge;
+	// without this pass, copy-paste drift between unconnected modules is
+	// invisible end-to-end. Report-only — never promoted by the coupling gate.
+	advisoryFindings = append(advisoryFindings, duplicatedKnowledgeAdvisories(g, classifyCfg)...)
+
 	// Append staleness advisories.
 	advisoryFindings = append(advisoryFindings, staleness.Check(g, in.Staleness, in.Now)...)
 
@@ -126,7 +147,7 @@ func groupBCAdvisories(advisories []finding.Finding) []finding.Finding {
 	var passthrough []finding.Finding
 
 	for _, f := range advisories {
-		if f.RuleID != "bc/imbalanced_coupling" {
+		if f.RuleID != RuleIDBCImbalanced {
 			passthrough = append(passthrough, f)
 			continue
 		}
@@ -193,7 +214,31 @@ func rollupFinding(members []finding.Finding) finding.Finding {
 
 	rep.MatchedBy = matched
 	rep.Locations = mergeLocations(members)
+	rep.Edge.From.Path, rep.Edge.To.Path = groupEdgePaths(members, rep.Locations)
 	return rep
+}
+
+// groupEdgePaths returns honest edge.from.path/edge.to.path for a rolled-up
+// finding: the (from, to) pair belonging to whichever member owns the first
+// (sorted) merged location — never an arbitrary hash-ID-ordered representative
+// that can point at a different member's file than locations[0] does. When no
+// owner is determinable (locations empty — TS edges carry no Locations), the
+// representative's own pair is kept: it is a genuine member edge of the group,
+// and wiping it to "" would strip the finding's only path evidence. members
+// must arrive sorted by ID (rollupFinding sorts), so members[0] is the
+// representative. Either way the pair names one real member edge; its form is
+// the graph node's — a repo file for Go/TS, a dotted module ID or crate name
+// for Python/Rust module graphs.
+func groupEdgePaths(members []finding.Finding, locs []graph.Location) (fromPath, toPath string) {
+	if len(locs) > 0 {
+		first := locs[0]
+		for _, m := range members {
+			if slices.Contains(m.Locations, first) {
+				return m.Edge.From.Path, m.Edge.To.Path
+			}
+		}
+	}
+	return members[0].Edge.From.Path, members[0].Edge.To.Path
 }
 
 // withCloneLocations appends cloneLocations onto base — the edge's baseline
@@ -290,29 +335,137 @@ func bcAdvisoryWhy(cl coupling.Classification) string {
 // vocabulary. A critical edge is "distributed-monolith risk" ONLY at high distance
 // (different owner / deploy unit — the book's high strength × high distance × high
 // volatility worst case). A critical edge at low distance (cross_module_same_owner)
-// is local high-strength coupling to a volatile target: its cascade is cheap (one
-// owner, one binary), so it is named as such, NOT as a distributed monolith —
-// recommending "introduce a contract" there would be cargo-cult. Cohesion (high
-// strength + low distance, balanced) never reaches here — the book formula scores
-// it SeverityNone.
+// is local coupling to a volatile target: its cascade is cheap (one owner, one
+// binary), so it is named as such, NOT as a distributed monolith — recommending
+// "introduce a contract" there would be cargo-cult. High severity splits on the
+// same distance test: only a genuinely high-distance edge is "across a boundary";
+// a low-distance one names its cascade as contained. Cohesion (high strength + low
+// distance, balanced) never reaches here — the book formula scores it SeverityNone.
+//
+// The clause names the edge's ACTUAL matched_by.strength and matched_by.volatility —
+// never a fixed severity-level narrative — so an agent reading the prose reaches
+// the same remediation an agent reading matched_by would (verified wrong on ccgram:
+// 15/16 critical edges were StrengthModel, book ordinal 3/10 — low, not "high-strength").
 func bcRiskClause(cl coupling.Classification) string {
+	strengthDesc := strengthClause(cl.Strength)
+	volatilityDesc := volatilityClause(cl.Volatility)
 	switch cl.Severity {
 	case coupling.SeverityCritical:
 		if coupling.DistanceIsHigh(cl.Distance) {
-			return "cascading changes across a high-distance boundary → distributed-monolith risk"
+			return strengthDesc + " across a high-distance boundary to " + volatilityDesc + " → distributed-monolith risk"
 		}
-		return "high-strength coupling to a volatile target at low distance → local cascade (cheap to change; not a distributed monolith)"
+		return strengthDesc + " to " + volatilityDesc + " at low distance → local cascade (cheap to change; not a distributed monolith)"
 	case coupling.SeverityHigh:
-		return "tight coupling across a volatile boundary → likely cascading changes"
+		if coupling.DistanceIsHigh(cl.Distance) {
+			return strengthDesc + " across a boundary to " + volatilityDesc + " → likely cascading changes"
+		}
+		return strengthDesc + " to " + volatilityDesc + " at low distance → cascading changes contained to one owner"
 	default:
 		return "unbalanced coupling → elevated maintenance effort"
 	}
+}
+
+// strengthClause names the actual integration-strength level of an edge, in
+// Balanced Coupling vocabulary — never a fixed "high-strength" placeholder.
+func strengthClause(s coupling.Strength) string {
+	switch s {
+	case coupling.StrengthIntrusive:
+		return "intrusive (implementation-level) coupling"
+	case coupling.StrengthSymmetric:
+		return "symmetric (bidirectional implementation-level) coupling"
+	case coupling.StrengthFunctional:
+		return "functional coupling"
+	case coupling.StrengthModel:
+		return "model coupling"
+	case coupling.StrengthContract:
+		return "contract coupling"
+	default:
+		return "unclassified-strength coupling"
+	}
+}
+
+// volatilityClause names the actual volatility level of an edge's target.
+func volatilityClause(v coupling.Volatility) string {
+	switch v {
+	case coupling.VolatilityHigh:
+		return "a volatile target"
+	case coupling.VolatilityMedium:
+		return "a moderately volatile target"
+	case coupling.VolatilityLow:
+		return "a low-volatility target"
+	case coupling.VolatilityFrozen:
+		return "a frozen target"
+	case coupling.VolatilityUndeclared:
+		return "a target of undeclared volatility"
+	default:
+		return "a target of unknown volatility"
+	}
+}
+
+// duplicatedKnowledgeAdvisories builds one bc/duplicated_knowledge advisory per
+// duplicated-knowledge pair (classify.CloneOnlyPairs): a cross-module clone pair
+// whose modules share no import edge, scored with the standard book formula at
+// symmetric strength. Findings honor the same coupling.min_severity floor as
+// bc/imbalanced_coupling advisories; the pair-level ID is stable across runs so
+// baseline acceptance suppresses it like any other advisory.
+func duplicatedKnowledgeAdvisories(g *graph.Graph, classifyCfg config.ClassifyConfig) []finding.Finding {
+	var out []finding.Finding
+	for _, p := range classify.CloneOnlyPairs(g, classifyCfg) {
+		cl := p.Classification
+		if !severityAtLeast(cl.Severity, classifyCfg.BCAdvisoryMinSeverity) {
+			continue
+		}
+		matched := map[string]string{
+			"strength":   string(cl.Strength),
+			"distance":   string(cl.Distance),
+			"volatility": string(cl.Volatility),
+		}
+		if cl.DistanceBasis != coupling.DistanceBasisUnknown {
+			matched["distance_basis"] = string(cl.DistanceBasis)
+		}
+		if cl.Score.Reason != "" {
+			matched["score"] = cl.Score.Reason
+			matched["score_value"] = strconv.Itoa(cl.Score.Value)
+			matched["score_band"] = string(cl.Score.Band)
+			matched["score_version"] = coupling.ScoreVersion
+		}
+		if cl.Score.CheapestMove != "" {
+			matched["cheapest_move"] = cl.Score.CheapestMove
+		}
+		out = append(out, finding.Finding{
+			ID:       duplicatedKnowledgeID(p.FromModule, p.ToModule),
+			Kind:     kindAdvisory,
+			RuleID:   RuleIDBCDuplicatedKnowledge,
+			Status:   finding.StatusNew,
+			Severity: finding.Severity(cl.Severity),
+			Edge: finding.EdgeEvidence{
+				From: finding.Endpoint{Module: p.FromModule, Path: p.FromPath},
+				To:   finding.Endpoint{Module: p.ToModule, Path: p.ToPath},
+				Kind: edgeKindClone,
+			},
+			Locations: p.Locations,
+			Why: "duplicated knowledge: cross-module code clones between " + p.FromModule +
+				" and " + p.ToModule + " with no import edge — symmetric functional coupling; " +
+				"a change to the shared logic must be repeated in both modules. Extract the " +
+				"shared knowledge, or accept the pair with an approved label",
+			MatchedBy: matched,
+		})
+	}
+	return out
 }
 
 // couplingAdvisoryID returns a stable 32-character hex fingerprint for a coupling advisory
 // finding, derived from (from, to, kind) — same scheme as finding.fingerprint.
 func couplingAdvisoryID(from, to, kind string) string {
 	h := sha256.Sum256([]byte("bc/imbalanced_coupling\x00" + from + "\x00" + to + "\x00" + kind))
+	return hex.EncodeToString(h[:16])
+}
+
+// duplicatedKnowledgeID returns a stable fingerprint for a bc/duplicated_knowledge
+// advisory, derived from the canonical module pair — independent of which files
+// carry the clones, so the finding survives clone movement within the modules.
+func duplicatedKnowledgeID(fromModule, toModule string) string {
+	h := sha256.Sum256([]byte(RuleIDBCDuplicatedKnowledge + "\x00" + fromModule + "\x00" + toModule))
 	return hex.EncodeToString(h[:16])
 }
 

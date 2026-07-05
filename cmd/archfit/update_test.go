@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -68,6 +69,119 @@ func writeConfig(t *testing.T, dir, content string) string {
 	return path
 }
 
+func TestClassifyTargetsForUpdate_IncludesSyntheticOverridePath(t *testing.T) {
+	t.Parallel()
+	const (
+		syntheticModule = "mycrate-state"
+		syntheticPath   = "mycrate::state"
+	)
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		syntheticModule: {Paths: []string{syntheticPath}},
+	}}
+	report := initcfg.UpdateReport{Unclassified: []string{syntheticModule}}
+
+	got := classifyTargetsForUpdate(cfg, report, nil)
+	if len(got) != 1 {
+		t.Fatalf("targets = %d, want 1: %+v", len(got), got)
+	}
+	if got[0].Name != syntheticModule || len(got[0].Paths) != 1 || got[0].Paths[0] != syntheticPath {
+		t.Fatalf("synthetic override target not preserved: %+v", got[0])
+	}
+}
+
+func TestCollectUpdateRepoEvidence_ReadmeAndDocsHeadings(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Payments\n\n## Settlement\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "docs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "docs", "domain.md"), []byte("# Domain Map\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got := strings.Join(collectUpdateRepoEvidence(dir), "\n")
+	for _, want := range []string{"README.md: Payments", "README.md: Settlement", "docs/domain.md: Domain Map"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("evidence missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestUpdateCmd_LLMPlanMode_SuggestsRustSyntheticModules(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"herdr\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `version: 1
+layers:
+  - core
+  - service
+modules:
+  herdr:
+    paths:
+      - "herdr"
+    owner: herdr-team
+    layer: service
+    subdomain: core
+    volatility: high
+languages:
+  rust:
+    enabled: true
+analyzers:
+  cargo_modules:
+    enabled: true
+`
+	cfgPath := writeConfig(t, dir, cfg)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &UpdateCmd{
+		Config:           cfgPath,
+		Root:             dir,
+		LLM:              true,
+		NoCache:          true,
+		LLMProvider:      providerAnthropic,
+		LLMModel:         defaultLLMModel,
+		providerOverride: rustSyntheticProvider{},
+	}
+	out, err := runUpdateCmd(t, cmd, rustSyntheticRunner(dir))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{
+		"SUGGESTED (2 review-only module override(s)",
+		"herdr-api:",
+		`- "herdr::api"`,
+		"volatility: low",
+		"role: core",
+		"herdr-ui:",
+		`- "herdr::ui"`,
+		"rationale: synthetic module review",
+		"structurally in sync",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+
+	after, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("--llm synthetic suggestions must leave config unchanged")
+	}
+	if hasActionableEdits(initcfg.UpdateReport{Suggested: []initcfg.ModuleDef{{Name: "herdr-api"}}}) {
+		t.Fatal("review-only synthetic suggestions must not be actionable edits")
+	}
+}
+
 const (
 	// minimalConfigNoModules is a valid config with no modules section.
 	// Structurally in sync with empty discovery (Added=[], Removed=[], Drift=[]).
@@ -79,6 +193,8 @@ rules:
   - id: no-bad-deps
     type: forbidden_dependency
     gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
 `
 	// configWithRemovedModule has a module that empty discovery will mark as Removed.
 	configWithRemovedModule = `version: 1
@@ -96,6 +212,8 @@ rules:
   - id: no-bad-deps
     type: forbidden_dependency
     gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
 `
 )
 
@@ -198,8 +316,14 @@ rules:
   - id: no-bad-deps
     type: forbidden_dependency
     gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
 `
 	cfgPath := writeConfig(t, dir, cfg)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
 	runner := matchingRunner("internal/mymod")
 
 	cmd := &UpdateCmd{
@@ -211,7 +335,7 @@ rules:
 		LLMModel:         defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: layerCore},
 	}
-	_, err := runUpdateCmd(t, cmd, runner)
+	out, err := runUpdateCmd(t, cmd, runner)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -220,18 +344,13 @@ rules:
 	if err != nil {
 		t.Fatal(err)
 	}
-	content := string(data)
-
-	// layer should now be written.
-	if !strings.Contains(content, "layer: core") {
-		t.Errorf("expected 'layer: core' to be written; content:\n%s", content)
+	if !bytes.Equal(before, data) {
+		t.Error("--llm --apply must not write review-only LLM suggestions")
 	}
-	// Existing fields must not be duplicated.
-	if strings.Count(content, "subdomain:") > 1 {
-		t.Error("subdomain should not be duplicated")
-	}
-	if strings.Count(content, "volatility:") > 1 {
-		t.Error("volatility should not be duplicated")
+	for _, want := range []string{"+ subdomain: core", "+ volatility: low", "+ layer: core", "rationale: test"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("review diff missing %q:\n%s", want, out)
+		}
 	}
 }
 
@@ -270,8 +389,11 @@ func TestUpdateCmd_LLMApply_NoSetFieldsForAddedModule(t *testing.T) {
 		t.Errorf("newmod should appear exactly once, got %d; content:\n%s", count, content)
 	}
 	// No duplicate field blocks (SetModuleFields on AddModule would cause duplicates).
-	if strings.Count(content, "subdomain:") > 1 {
-		t.Errorf("subdomain should appear at most once; content:\n%s", content)
+	if strings.Contains(content, "subdomain:") {
+		t.Errorf("LLM subdomain suggestion must not be written by --apply; content:\n%s", content)
+	}
+	if strings.Contains(content, "volatility:") {
+		t.Errorf("LLM volatility suggestion must not be written by --apply; content:\n%s", content)
 	}
 }
 
@@ -293,6 +415,8 @@ rules:
   - id: no-bad-deps
     type: forbidden_dependency
     gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
 `
 	cfgPath := writeConfig(t, dir, cfg)
 	runner := matchingRunner("internal/mymod")
@@ -347,8 +471,14 @@ rules:
   - id: no-bad-deps
     type: forbidden_dependency
     gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
 `
 	cfgPath := writeConfig(t, dir, cfg)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
 	runner := matchingRunner("internal/mymod")
 
 	cmd := &UpdateCmd{
@@ -360,7 +490,7 @@ rules:
 		LLMModel:         defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: "adapter"},
 	}
-	_, err := runUpdateCmd(t, cmd, runner)
+	out, err := runUpdateCmd(t, cmd, runner)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -369,8 +499,11 @@ rules:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "layer: adapter") {
-		t.Errorf("expected 'layer: adapter' to be written; content:\n%s", string(data))
+	if !bytes.Equal(before, data) {
+		t.Error("--llm --apply must leave missing layer as a review-only suggestion")
+	}
+	if !strings.Contains(out, "+ layer: adapter") {
+		t.Errorf("review diff missing layer suggestion:\n%s", out)
 	}
 }
 
@@ -394,6 +527,8 @@ rules:
   - id: no-bad-deps
     type: forbidden_dependency
     gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
 `
 	cfgPath := writeConfig(t, dir, cfg)
 	before, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -514,6 +649,8 @@ rules:
   - id: no-bad-deps
     type: forbidden_dependency
     gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
 `
 	cfgPath := writeConfig(t, dir, cfg)
 	before, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -539,6 +676,11 @@ rules:
 	// Report must mention the module and the LLM-suggested classification.
 	if !strings.Contains(out, "mymod") {
 		t.Errorf("plan report should mention 'mymod'; got:\n%s", out)
+	}
+	for _, want := range []string{"+ subdomain: core", "+ volatility: low", "rationale: test"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("plan report missing %q:\n%s", want, out)
+		}
 	}
 
 	after, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -680,3 +822,64 @@ func (p *fakeOmitProvider) Complete(_ context.Context, req llm.Request) (llm.Res
 }
 
 var _ llm.Provider = (*fakeOmitProvider)(nil)
+
+type rustSyntheticProvider struct{}
+
+func (rustSyntheticProvider) Name() string { return "test/rust-synthetic" }
+
+func (rustSyntheticProvider) Complete(_ context.Context, req llm.Request) (llm.Response, error) {
+	var entries []string
+	for _, line := range strings.Split(req.User, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "- module: ") {
+			name := strings.TrimSpace(strings.TrimPrefix(line, "- module: "))
+			entries = append(entries, fmt.Sprintf(
+				`{"module":%q,"subdomain":"supporting","volatility":"low","layer":"core","role":"core","name":"","rationale":"synthetic module review"}`,
+				name,
+			))
+		}
+	}
+	return llm.Response{Text: "[" + strings.Join(entries, ",") + "]"}, nil
+}
+
+func rustSyntheticRunner(root string) *toolrun.RunnerMock {
+	meta := fmt.Sprintf(`{
+  "packages": [
+    {
+      "id": "id-herdr",
+      "name": "herdr",
+      "manifest_path": %q,
+      "source": null,
+      "dependencies": [],
+      "targets": [{"name": "herdr", "kind": ["lib"]}]
+    }
+  ],
+  "workspace_members": ["id-herdr"],
+  "workspace_root": %q
+}`, filepath.Join(root, "Cargo.toml"), root)
+	dot := `digraph {
+    "herdr" [label="crate|herdr"]; // "crate" node
+    "herdr::api" [label="pub mod|api"]; // "mod" node
+    "herdr::ui" [label="pub mod|ui"]; // "mod" node
+}`
+	return &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, name string) (toolrun.ToolInfo, bool) {
+			return toolrun.ToolInfo{Name: name}, name == toolCargo || name == toolCargoModules
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			switch cmd.Name {
+			case toolCargo:
+				if len(cmd.Args) > 0 && cmd.Args[0] == flagVersion {
+					return toolrun.Output{Stdout: []byte("cargo 1.0.0")}, nil
+				}
+				return toolrun.Output{Stdout: []byte(meta)}, nil
+			case toolCargoModules:
+				return toolrun.Output{Stdout: []byte(dot)}, nil
+			default:
+				return toolrun.Output{ExitCode: 1}, nil
+			}
+		},
+	}
+}
+
+var _ llm.Provider = rustSyntheticProvider{}

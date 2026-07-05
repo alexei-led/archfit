@@ -15,6 +15,8 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/ownership"
+	"github.com/alexei-led/archfit/internal/rules"
 )
 
 // buildConfigWarnings assembles the advisory ConfigWarnings block: under-specified
@@ -95,6 +97,47 @@ func outputInsideRootWarning(root, dir string) string {
 		"use a path outside --root to keep scans deterministic"
 }
 
+// ownerDegradationWarning returns a disclosure message when ownership
+// resolution did not produce usable module owners despite a signal that it
+// should have — a CODEOWNERS file existed but matched none of the configured
+// modules, or the git-author history walk timed out before finishing. Both
+// cases silently degrade coupling distance to code_structure without ever
+// telling the caller. Plain SourceNone (no CODEOWNERS, no git data) is
+// deliberately excluded — the ownership package documents that as a clean
+// "nothing to attribute" result, not a degradation, and SourceGit (the
+// designed CODEOWNERS→git fallback) is expected behaviour, not a defect.
+// Returns "" when src needs no disclosure.
+func ownerDegradationWarning(src ownership.Source) string {
+	switch src {
+	case ownership.SourceCodeownersNoMatch:
+		return "owner resolution: a CODEOWNERS file was found but matched none of the configured " +
+			"modules (owner_source=codeowners_no_match) — its rules may simply not cover any module " +
+			"path (benign), or the --root/subtree case or module path globs are wrong; coupling " +
+			"distance falls back to code_structure"
+	case ownership.SourceGitTimeout:
+		return "owner resolution: the git-author history walk timed out before resolving any owner " +
+			"(owner_source=git_timeout) — coupling distance falls back to code_structure"
+	default:
+		return ""
+	}
+}
+
+// tsUnresolvedWarning returns a disclosure message when the TypeScript
+// extractor (dependency-cruiser) reported partial coverage with a non-empty
+// Reason — e.g. a high unresolved-import-specifier count from a missing
+// tsconfig path alias or an uninstalled dependency. Those edges silently land
+// in the external bucket, excluded from coupling_balance's denominator, so the
+// gap must not be stderr-silent (mirrors ownerDegradationWarning). Returns ""
+// when no such coverage record is present.
+func tsUnresolvedWarning(cov []diagnostic.Coverage) string {
+	for _, c := range cov {
+		if c.Tool == toolDepCruiser && c.Status == diagnostic.StatusPartial && c.Reason != "" {
+			return toolDepCruiser + ": " + c.Reason
+		}
+	}
+	return ""
+}
+
 // loadConfig loads the config file at path. When path equals the default
 // ".archfit.yaml" and the file is absent, it returns config.Default() so the
 // tool works without a config file. An explicit --config path that is missing
@@ -104,13 +147,26 @@ func loadConfig(ctx context.Context, path string, noConfig bool) (config.Config,
 		return config.Default(), nil
 	}
 	cfg, err := config.Load(ctx, path)
-	if err == nil {
-		return cfg, nil
+	if err != nil {
+		if path == defaultConfigPath && errors.Is(err, os.ErrNotExist) {
+			return config.Default(), nil
+		}
+		return config.Config{}, err
 	}
-	if path == defaultConfigPath && errors.Is(err, os.ErrNotExist) {
-		return config.Default(), nil
+	if err := validateConfigRules(cfg); err != nil {
+		return config.Config{}, err
 	}
-	return config.Config{}, err
+	return cfg, nil
+}
+
+// validateConfigRules constructs the rules block to surface rule-type errors
+// (unknown type:, public_api_max without max:) at load time. config.Load
+// cannot do this itself — config is a support layer and must not import
+// rules — so without this check `doctor` and the init/update revalidation
+// would pass a config that later hard-fails at analyze time.
+func validateConfigRules(cfg config.Config) error {
+	_, err := rules.New(cfg.ForRules())
+	return err
 }
 
 // applyFlagOverrides applies non-empty CLI flag values onto cfg, overriding
