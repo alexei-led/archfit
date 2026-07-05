@@ -111,7 +111,7 @@ func TestBuildArchitectureEvidencePack_BoundsDocsAndSkipsSecretFiles(t *testing.
 
 func TestBuildArchitectureEvidencePack_RedactsSecretLikeFreeText(t *testing.T) {
 	root := t.TempDir()
-	writeEvidenceFile(t, root, "README.md", "# Service\n\nAPI_TOKEN = hunter2\nArchitecture boundary.\n")
+	writeEvidenceFile(t, root, "README.md", "# Service\n\nAPI_TOKEN = hunter2\nAPI key: sk-live\nclient secret = s3cr3t\nArchitecture boundary.\n")
 
 	items := BuildArchitectureEvidencePack(EvidencePackOptions{Root: root})
 	var readme EvidenceItem
@@ -124,10 +124,12 @@ func TestBuildArchitectureEvidencePack_RedactsSecretLikeFreeText(t *testing.T) {
 	if readme.ID == "" {
 		t.Fatalf("README evidence missing: %+v", items)
 	}
-	if strings.Contains(readme.Text, "hunter2") || strings.Contains(readme.Text, "API_TOKEN") {
-		t.Fatalf("secret-like free text was not redacted: %q", readme.Text)
+	for _, leaked := range []string{"hunter2", "sk-live", "s3cr3t", "API_TOKEN"} {
+		if strings.Contains(readme.Text, leaked) {
+			t.Fatalf("secret-like free text leaked %q: %q", leaked, readme.Text)
+		}
 	}
-	if !strings.Contains(readme.Text, "[redacted]") {
-		t.Fatalf("redaction marker missing: %q", readme.Text)
+	if strings.Count(readme.Text, "[redacted]") != 3 {
+		t.Fatalf("redaction markers missing: %q", readme.Text)
 	}
 }

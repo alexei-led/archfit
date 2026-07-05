@@ -546,9 +546,20 @@ func secretishEvidencePath(rel string) bool {
 	}
 }
 
+var secretishMarkers = []string{
+	"secret", "secret_key", "credential", "password", "token",
+	"private_key", "apikey", "api_key", "access_key", "client_secret",
+}
+
+func normalizedSecretishText(s string) string {
+	replacer := strings.NewReplacer(" ", "_", "-", "_")
+	return replacer.Replace(strings.ToLower(s))
+}
+
 func secretishName(name string) bool {
-	for _, needle := range []string{"secret", "credential", "password", "token", "private-key", "private_key", "apikey", "api_key"} {
-		if strings.Contains(name, needle) {
+	normalized := normalizedSecretishText(name)
+	for _, needle := range secretishMarkers {
+		if strings.Contains(normalized, needle) {
 			return true
 		}
 	}
@@ -565,12 +576,13 @@ func secretishTextLine(line string) bool {
 	if strings.Contains(lower, "authorization:") || strings.Contains(lower, "bearer ") {
 		return true
 	}
-	for _, marker := range []string{"secret", "credential", "password", "token", "private-key", "private_key", "apikey", "api_key"} {
-		idx := strings.Index(lower, marker)
+	normalized := normalizedSecretishText(line)
+	for _, marker := range secretishMarkers {
+		idx := strings.Index(normalized, marker)
 		if idx < 0 {
 			continue
 		}
-		after := strings.TrimLeft(lower[idx+len(marker):], " \t")
+		after := strings.TrimLeft(normalized[idx+len(marker):], "_\t")
 		if strings.HasPrefix(after, ":") || strings.HasPrefix(after, "=") {
 			return true
 		}
