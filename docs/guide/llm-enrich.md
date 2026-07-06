@@ -279,7 +279,11 @@ is fully offline.
 
 ## Scope guard
 
-Every LLM feature is off-gate and draft-first.
+Every LLM feature is off-gate and draft-first. LLM output may explain
+`connascence.roadmap`, `dynamic_imports`, or `runtime_async_edges`, but those
+blocks remain report-only unless a deterministic extractor later supplies the
+missing fact. A narrative cannot create a connascence category, score input,
+baseline delta, or gate finding.
 
 `archfit config init --llm` suggests `subdomain`, `volatility`, `owner`, `layer`,
 and `role` for discovered modules; `archfit config update --llm` emits

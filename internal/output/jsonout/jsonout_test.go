@@ -12,6 +12,8 @@ import (
 	"github.com/alexei-led/archfit/internal/score"
 )
 
+const connascenceExecutionTest = "execution"
+
 // TestJSONRenderer_AdvisoryScoreFields asserts the numeric BC score fields
 // (score_value + score_band) on an advisory's matched_by survive JSON encoding.
 func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
@@ -138,7 +140,11 @@ func TestJSONRenderer_ConnascenceSummary(t *testing.T) {
 		TotalEvidence:     2,
 		ByKind:            map[string]int{"name": 1, "type": 1},
 		BySource:          map[string]int{"go/types": 2},
-		Unmeasured:        []string{"position", "execution"},
+		Unmeasured:        []string{"position", connascenceExecutionTest},
+		Roadmap: []diagnostic.ConnascenceRoadmapItem{
+			{Kind: "name", CurrentStatus: "deterministic_static", Sources: []string{"go/types"}},
+			{Kind: connascenceExecutionTest, CurrentStatus: "unmeasured_dynamic", RelatedSignals: []string{"runtime_async_edges"}, UpgradeTrigger: "deterministic runtime ordering"},
+		},
 	}
 
 	var buf bytes.Buffer
@@ -157,6 +163,12 @@ func TestJSONRenderer_ConnascenceSummary(t *testing.T) {
 	}
 	if raw.Connascence.ByKind["type"] != 1 || raw.Connascence.BySource["go/types"] != 2 {
 		t.Fatalf("connascence maps = kinds %+v sources %+v", raw.Connascence.ByKind, raw.Connascence.BySource)
+	}
+	if len(raw.Connascence.Roadmap) != 2 {
+		t.Fatalf("connascence roadmap = %+v, want 2 entries", raw.Connascence.Roadmap)
+	}
+	if got := raw.Connascence.Roadmap[1]; got.Kind != connascenceExecutionTest || got.CurrentStatus != "unmeasured_dynamic" || len(got.RelatedSignals) != 1 {
+		t.Fatalf("dynamic roadmap entry = %+v, want execution/unmeasured_dynamic with related signal", got)
 	}
 }
 

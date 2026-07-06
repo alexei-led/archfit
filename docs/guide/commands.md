@@ -303,6 +303,9 @@ IDs, metric IDs, or evidence refs.
 Dynamic/lazy imports (detected by TypeScript and Python extractors as
 `dynamic_imports`) are included in the review prompt as a hidden-coupling risk
 section so the narrative can flag coupling the static dependency graph misses.
+The same is true for `connascence.roadmap` and `runtime_async_edges`: the review
+may explain them or propose follow-up config/docs, but it cannot convert them into
+scored facts, gate findings, or baseline changes.
 
 **Layer intent:** when layers are declared, `forbidden_layer_direction` gates
 deterministically. When they are not, `archfit config enrich` can propose a layer

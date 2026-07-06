@@ -274,6 +274,21 @@ func writeConnascenceSummary(b *strings.Builder, r *diagnostic.ConnascenceReport
 	if len(r.Unmeasured) > 0 {
 		fmt.Fprintf(b, "- unmeasured: %s\n", strings.Join(r.Unmeasured, ", "))
 	}
+	if len(r.Roadmap) > 0 {
+		fmt.Fprintf(b, "- roadmap: %s\n", formatConnascenceRoadmap(r.Roadmap))
+	}
+}
+
+func formatConnascenceRoadmap(items []diagnostic.ConnascenceRoadmapItem) string {
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		part := item.Kind + "=" + item.CurrentStatus
+		if len(item.RelatedSignals) > 0 {
+			part += " (signals " + strings.Join(item.RelatedSignals, "/") + ")"
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func formatCounts(counts map[string]int) string {

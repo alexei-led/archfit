@@ -452,6 +452,17 @@ func addClassificationToSummary(s *diagnostic.ClassifiedEdgeSummary, cl coupling
 
 var connascenceKindsToDiscloseWhenUnmeasured = []string{"position", "execution", "timing", "value", "identity"}
 
+const (
+	connascenceStatusDeterministicStatic = "deterministic_static"
+	connascenceStatusUnmeasuredStatic    = "unmeasured_static"
+	connascenceStatusUnmeasuredDynamic   = "unmeasured_dynamic"
+
+	connascenceSourceGoTypes   = "go/types"
+	connascenceSourceDepCruise = "dependency-cruiser"
+	connascenceSourceGrimp     = "grimp"
+	connascenceSourceSCIP      = "scip"
+)
+
 // buildConnascenceReport aggregates deterministic static connascence evidence
 // attached to classifications. It is report-only and intentionally discloses
 // unmeasured semantic/dynamic categories instead of guessing them.
@@ -473,6 +484,7 @@ func buildConnascenceReport(idx coupling.Index) *diagnostic.ConnascenceReport {
 		}
 	}
 	r.Unmeasured = unmeasuredConnascenceKinds(r.ByKind)
+	r.Roadmap = connascenceRoadmap(r.ByKind)
 	if len(r.ByKind) == 0 {
 		r.ByKind = nil
 	}
@@ -490,6 +502,61 @@ func unmeasuredConnascenceKinds(byKind map[string]int) []string {
 		}
 	}
 	return out
+}
+
+func connascenceRoadmap(byKind map[string]int) []diagnostic.ConnascenceRoadmapItem {
+	items := make([]diagnostic.ConnascenceRoadmapItem, 0, 9)
+	items = append(items,
+		diagnostic.ConnascenceRoadmapItem{
+			Kind:          string(coupling.ConnascenceName),
+			CurrentStatus: connascenceStatusDeterministicStatic,
+			Sources:       []string{connascenceSourceGoTypes, connascenceSourceDepCruise, connascenceSourceGrimp, connascenceSourceSCIP},
+		},
+		diagnostic.ConnascenceRoadmapItem{
+			Kind:          string(coupling.ConnascenceType),
+			CurrentStatus: connascenceStatusDeterministicStatic,
+			Sources:       []string{connascenceSourceGoTypes, connascenceSourceDepCruise, connascenceSourceSCIP},
+		},
+		diagnostic.ConnascenceRoadmapItem{
+			Kind:          string(coupling.ConnascenceMeaning),
+			CurrentStatus: connascenceStatusDeterministicStatic,
+			Sources:       []string{connascenceSourceGoTypes, connascenceSourceSCIP},
+		},
+		diagnostic.ConnascenceRoadmapItem{
+			Kind:          string(coupling.ConnascenceAlgorithm),
+			CurrentStatus: connascenceStatusDeterministicStatic,
+			Sources:       []string{connascenceSourceGoTypes, connascenceSourceSCIP},
+		},
+		diagnostic.ConnascenceRoadmapItem{
+			Kind:           string(coupling.ConnascencePosition),
+			CurrentStatus:  connascencePositionStatus(byKind),
+			Sources:        connascencePositionSources(byKind),
+			UpgradeTrigger: "deterministic argument-order or tuple-position facts from an extractor",
+		},
+	)
+	for _, kind := range []string{"execution", "timing", "value", "identity"} {
+		items = append(items, diagnostic.ConnascenceRoadmapItem{
+			Kind:           kind,
+			CurrentStatus:  connascenceStatusUnmeasuredDynamic,
+			RelatedSignals: []string{"dynamic_imports", "runtime_async_edges"},
+			UpgradeTrigger: "deterministic source-module to runtime-order/value/identity facts; LLM narrative alone is insufficient",
+		})
+	}
+	return items
+}
+
+func connascencePositionStatus(byKind map[string]int) string {
+	if byKind[string(coupling.ConnascencePosition)] > 0 {
+		return connascenceStatusDeterministicStatic
+	}
+	return connascenceStatusUnmeasuredStatic
+}
+
+func connascencePositionSources(byKind map[string]int) []string {
+	if byKind[string(coupling.ConnascencePosition)] == 0 {
+		return nil
+	}
+	return []string{connascenceSourceSCIP}
 }
 
 // countActive returns the number of findings whose status is not fixed.

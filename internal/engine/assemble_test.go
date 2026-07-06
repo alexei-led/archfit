@@ -8,6 +8,7 @@ import (
 	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/ports"
@@ -133,8 +134,8 @@ func TestBuildConnascenceReport(t *testing.T) {
 	idx := coupling.Index{
 		"a\x00b\x00imports": {
 			Connascence: []coupling.ConnascenceEvidence{
-				{Kind: coupling.ConnascenceName, Source: "go/types"},
-				{Kind: coupling.ConnascenceType, Source: "go/types"},
+				{Kind: coupling.ConnascenceName, Source: connascenceSourceGoTypes},
+				{Kind: coupling.ConnascenceType, Source: connascenceSourceGoTypes},
 			},
 		},
 		"c\x00d\x00imports": {
@@ -159,7 +160,7 @@ func TestBuildConnascenceReport(t *testing.T) {
 	if r.ByKind[string(coupling.ConnascenceName)] != 1 || r.ByKind[string(coupling.ConnascenceType)] != 1 || r.ByKind[string(coupling.ConnascenceAlgorithm)] != 1 || r.ByKind[string(coupling.ConnascencePosition)] != 1 {
 		t.Errorf("ByKind = %+v, want name/type/algorithm/position counts", r.ByKind)
 	}
-	if r.BySource["go/types"] != 2 || r.BySource[toolNameScipTest] != 2 {
+	if r.BySource[connascenceSourceGoTypes] != 2 || r.BySource[toolNameScipTest] != 2 {
 		t.Errorf("BySource = %+v, want go/types=2 scip=2", r.BySource)
 	}
 	if len(r.Unmeasured) == 0 {
@@ -170,6 +171,27 @@ func TestBuildConnascenceReport(t *testing.T) {
 			t.Fatalf("position has deterministic evidence and must not be reported unmeasured: %+v", r.Unmeasured)
 		}
 	}
+	roadmap := connascenceRoadmapByKind(r.Roadmap)
+	if got := roadmap[string(coupling.ConnascenceName)].CurrentStatus; got != connascenceStatusDeterministicStatic {
+		t.Fatalf("name roadmap status = %q, want %q", got, connascenceStatusDeterministicStatic)
+	}
+	if got := roadmap[string(coupling.ConnascencePosition)].CurrentStatus; got != connascenceStatusDeterministicStatic {
+		t.Fatalf("position roadmap status = %q, want %q when deterministic evidence appears", got, connascenceStatusDeterministicStatic)
+	}
+	if got := roadmap["execution"].CurrentStatus; got != connascenceStatusUnmeasuredDynamic {
+		t.Fatalf("execution roadmap status = %q, want %q", got, connascenceStatusUnmeasuredDynamic)
+	}
+	if got := roadmap["execution"].RelatedSignals; len(got) != 2 || got[0] != "dynamic_imports" || got[1] != "runtime_async_edges" {
+		t.Fatalf("execution related signals = %+v, want dynamic_imports/runtime_async_edges", got)
+	}
+}
+
+func connascenceRoadmapByKind(items []diagnostic.ConnascenceRoadmapItem) map[string]diagnostic.ConnascenceRoadmapItem {
+	out := make(map[string]diagnostic.ConnascenceRoadmapItem, len(items))
+	for _, item := range items {
+		out[item.Kind] = item
+	}
+	return out
 }
 
 // TestBuildClassifiedEdgeSummary_DistributedMonolith verifies that the DM counter

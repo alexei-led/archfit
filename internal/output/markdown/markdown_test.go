@@ -208,6 +208,10 @@ func TestRenderer_Render_ConnascenceSummary(t *testing.T) {
 		ByKind:            map[string]int{"name": 2, "type": 1},
 		BySource:          map[string]int{"go/types": 2, "scip": 1},
 		Unmeasured:        []string{"position", "execution", "timing", "value", "identity"},
+		Roadmap: []diagnostic.ConnascenceRoadmapItem{
+			{Kind: "name", CurrentStatus: "deterministic_static", Sources: []string{"go/types"}},
+			{Kind: "execution", CurrentStatus: "unmeasured_dynamic", RelatedSignals: []string{"dynamic_imports", "runtime_async_edges"}},
+		},
 	}
 
 	var buf bytes.Buffer
@@ -224,6 +228,7 @@ func TestRenderer_Render_ConnascenceSummary(t *testing.T) {
 		"by kind: name=2, type=1",
 		"by source: go/types=2, scip=1",
 		"unmeasured: position, execution, timing, value, identity",
+		"roadmap: name=deterministic_static, execution=unmeasured_dynamic (signals dynamic_imports/runtime_async_edges)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)

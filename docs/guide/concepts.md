@@ -74,19 +74,24 @@ Connascence (book Ch6) is a lower-level vocabulary for the same shared knowledge
 that drives integration strength. `archfit` now reports deterministic static
 connascence as evidence, not as another score:
 
-| Connascence kind | Deterministic sources today                                                        |
-| ---------------- | ---------------------------------------------------------------------------------- |
-| Name             | static imports/references from Go, TypeScript, Python, and SCIP                    |
-| Type             | Go type references, TypeScript `import type`, SCIP type/interface/protocol symbols |
-| Meaning          | Go const/var/data references, Rust SCIP const/static/field terms                   |
-| Algorithm        | Go function/method/callable references, SCIP function/method symbols               |
-| Position         | unmeasured unless a future deterministic source proves argument/order coupling     |
+| Connascence kind | Status in archfit                                                        |
+| ---------------- | ------------------------------------------------------------------------ |
+| Name             | deterministic static evidence from imports/references and SCIP           |
+| Type             | deterministic static evidence from Go types, TS type imports, and SCIP   |
+| Meaning          | deterministic static evidence from Go const/var/data refs and SCIP terms |
+| Algorithm        | deterministic static evidence from Go callable refs and SCIP functions   |
+| Position         | unmeasured unless deterministic argument/order evidence is supplied      |
+| Execution        | unmeasured dynamic category                                              |
+| Timing           | unmeasured dynamic category                                              |
+| Runtime value    | unmeasured dynamic category                                              |
+| Identity         | unmeasured dynamic category                                              |
 
-Dynamic connascence categories — execution, timing, runtime value, and identity —
-are not guessed. They appear in JSON/Markdown `connascence.unmeasured`, while
-runtime async and dynamic-import detectors stay separate report-only signals.
-This keeps the deterministic gate LLM-free and prevents semantic naming guesses
-from becoming score inputs.
+JSON/Markdown `connascence.roadmap` carries this checklist in machine-readable
+form. Dynamic/lazy imports and runtime async bridges stay separate report-only
+signals (`dynamic_imports`, `runtime_async_edges`). They can inform human review,
+but they are not connascence measurements and never feed the deterministic gate.
+This keeps the gate LLM-free and prevents semantic naming guesses from becoming
+score inputs.
 
 ### 2. Distance — how expensive it is to change them together
 
@@ -323,17 +328,15 @@ and makes only the legible parts executable. Three design rules follow from that
    humans pin labels; the gate stays reproducible. See
    [LLM enrichment](llm-enrich.md).
 
-Book concept status in the deterministic gate:
+Book alignment status in the deterministic gate:
 
-| Book concept                                             | `archfit` status                                                                                                  |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Ch10 strength × distance × volatility formula            | Scored in `coupling_balance` for classified cross-module coupling facts.                                          |
-| Ch7 clone-only duplicated functional knowledge           | Scored by default through `coupling.duplicated_knowledge: score`; advisory-only by explicit config.               |
-| Ch10 same-module local complexity / cohesion             | Report-only in `local_coupling`; never part of `coupling_balance`.                                                |
-| Ch6 deterministic static connascence                     | Report-only evidence explaining shared knowledge; never a score input.                                            |
-| Ch6 dynamic connascence: execution/timing/value/identity | Unmeasured unless a future deterministic source proves it; runtime async evidence stays separate and report-only. |
-| Semantic labels and LLM narratives                       | Semantic-only until a human pins approved config; LLM output never runs in the gate.                              |
-| Middle distance rungs D=3/D=5/D=6/D=8                    | Compressed and disclosed; not invented from names or package taste.                                               |
+| Category         | What falls here                                                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Book-exact       | Ch10 formula, published strength ordinals, scored cross-module `coupling_balance`, and abstain-not-fake for unknown S or D.      |
+| Sound adaptation | Static extractor facts mapped onto book strength/connascence vocabulary; same-module `local_coupling`; transitive Ch9 cascade.   |
+| Policy choice    | Compressed middle distance rungs, declared-only external seams, clone-only score/advisory policy, conservative undeclared V=10.  |
+| Report-only      | `connascence`, `local_coupling`, `runtime_async`, `runtime_async_edges`, `dynamic_imports`, distance compression, and tail risk. |
+| Out of scope     | Dynamic connascence scoring, runtime/lifecycle distance scoring, churn-derived volatility, and LLM-only gate changes.            |
 
 The workflow: change code → `archfit analyze --gate` → deterministic finding or
 metric delta with strength / distance / volatility vocabulary → repair within the

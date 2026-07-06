@@ -339,10 +339,10 @@ Manual checks:
 
 - Read the docs as a new user: it should be obvious what is measured, what is adapted, and what is not measured.
 
-- [ ] Define the dynamic connascence roadmap.
-- [ ] Update the book-alignment framing docs.
-- [ ] Add or update tests for any new report-only fields.
-- [ ] Keep LLM usage clearly off-gate and reviewable.
+- [x] Define the dynamic connascence roadmap.
+- [x] Update the book-alignment framing docs.
+- [x] Add or update tests for any new report-only fields.
+- [x] Keep LLM usage clearly off-gate and reviewable.
 
 ### Task 5: Validate corpus, refresh notes, and hand off
 

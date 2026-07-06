@@ -51,6 +51,28 @@
         9,
         10
       ],
+      "omitted_rung_reasons": [
+        {
+          "reason": "object/member-level distance is not available from module dependency edges",
+          "rung": 1
+        },
+        {
+          "reason": "current facts distinguish same module vs cross-module, but not object/package micro-distance",
+          "rung": 3
+        },
+        {
+          "reason": "package/library middle distance is not split without explicit stable package-boundary metadata",
+          "rung": 5
+        },
+        {
+          "reason": "intermediate ownership/library distance has no deterministic signal beyond owner and tree structure",
+          "rung": 6
+        },
+        {
+          "reason": "library-like seams remain compressed: undeclared libraries stay excluded, while declared external_systems score at D=10",
+          "rung": 8
+        }
+      ],
       "omitted_rungs": [
         1,
         3,
@@ -63,6 +85,14 @@
     "mean_balance": 8,
     "same_module": 0,
     "scored": 1,
+    "tail_risk": {
+      "critical_edges": 0,
+      "distributed_monolith_edges": 0,
+      "high_or_worse_edges": 0,
+      "high_or_worse_share_pct": 0,
+      "lower_decile_balance": 8,
+      "worst_balance": 8
+    },
     "total": 1,
     "volatility_provenance": {
       "cascade": 0,
@@ -82,6 +112,84 @@
       "go/types": 2
     },
     "edges_with_evidence": 1,
+    "roadmap": [
+      {
+        "current_status": "deterministic_static",
+        "kind": "name",
+        "sources": [
+          "go/types",
+          "dependency-cruiser",
+          "grimp",
+          "scip"
+        ]
+      },
+      {
+        "current_status": "deterministic_static",
+        "kind": "type",
+        "sources": [
+          "go/types",
+          "dependency-cruiser",
+          "scip"
+        ]
+      },
+      {
+        "current_status": "deterministic_static",
+        "kind": "meaning",
+        "sources": [
+          "go/types",
+          "scip"
+        ]
+      },
+      {
+        "current_status": "deterministic_static",
+        "kind": "algorithm",
+        "sources": [
+          "go/types",
+          "scip"
+        ]
+      },
+      {
+        "current_status": "unmeasured_static",
+        "kind": "position",
+        "upgrade_trigger": "deterministic argument-order or tuple-position facts from an extractor"
+      },
+      {
+        "current_status": "unmeasured_dynamic",
+        "kind": "execution",
+        "related_signals": [
+          "dynamic_imports",
+          "runtime_async_edges"
+        ],
+        "upgrade_trigger": "deterministic source-module to runtime-order/value/identity facts; LLM narrative alone is insufficient"
+      },
+      {
+        "current_status": "unmeasured_dynamic",
+        "kind": "timing",
+        "related_signals": [
+          "dynamic_imports",
+          "runtime_async_edges"
+        ],
+        "upgrade_trigger": "deterministic source-module to runtime-order/value/identity facts; LLM narrative alone is insufficient"
+      },
+      {
+        "current_status": "unmeasured_dynamic",
+        "kind": "value",
+        "related_signals": [
+          "dynamic_imports",
+          "runtime_async_edges"
+        ],
+        "upgrade_trigger": "deterministic source-module to runtime-order/value/identity facts; LLM narrative alone is insufficient"
+      },
+      {
+        "current_status": "unmeasured_dynamic",
+        "kind": "identity",
+        "related_signals": [
+          "dynamic_imports",
+          "runtime_async_edges"
+        ],
+        "upgrade_trigger": "deterministic source-module to runtime-order/value/identity facts; LLM narrative alone is insufficient"
+      }
+    ],
     "total_evidence": 2,
     "unmeasured": [
       "position",
@@ -98,6 +206,7 @@
       "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
       "scored fraction: 100% (1 scored, 0 abstained, internal only)",
       "critical-band edges: 0 (0 distributed-monolith: critical at high distance)",
+      "tail risk: worst balance 8/10, lower-decile balance 8/10, high-or-worse edges 0/1 (0%), critical 0, distributed-monolith 0",
       "sample size below high-confidence floor: 1 scored internal cross-boundary edges (need ≥5)",
       "connected module sample below high-confidence floor: 2 connected modules (need ≥3)",
       "volatility provenance (modules): declared: 2, inherited: 0, cascade: 0"
@@ -255,6 +364,7 @@
           "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
           "scored fraction: 100% (1 scored, 0 abstained, internal only)",
           "critical-band edges: 0 (0 distributed-monolith: critical at high distance)",
+          "tail risk: worst balance 8/10, lower-decile balance 8/10, high-or-worse edges 0/1 (0%), critical 0, distributed-monolith 0",
           "sample size below high-confidence floor: 1 scored internal cross-boundary edges (need ≥5)",
           "connected module sample below high-confidence floor: 2 connected modules (need ≥3)",
           "volatility provenance (modules): declared: 2, inherited: 0, cascade: 0"

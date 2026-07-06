@@ -43,6 +43,24 @@ closes the one-hop inferred-volatility cascade gap:
 
 ---
 
+### Book alignment frame
+
+Use these labels when changing code or docs:
+
+- **Book-exact:** the Ch10 formula, published ordinal anchors, balance bands,
+  and abstain discipline.
+- **Sound adaptation:** deterministic tool facts mapped onto book vocabulary,
+  such as compiler/object-kind strength hints, static connascence labels,
+  same-module local-coupling reporting, and the fixpoint implementation of the
+  Ch9 volatility-cascade idea.
+- **Policy choice:** conservative defaults and boundaries archfit chooses for
+  reproducibility: compressed D=3/D=5/D=6/D=8, declared-only external seams,
+  clone-only duplicated-knowledge score/advisory policy, and undeclared V=10.
+- **Out of scope:** dynamic connascence scoring, runtime/lifecycle distance
+  scoring, churn-derived volatility, and LLM-only gate changes.
+
+---
+
 ## 2. The book formula (authoritative — do not deviate)
 
 From Khononov, Ch10 (MIN=1, MAX=10, higher = better balanced):
@@ -214,6 +232,22 @@ fields carry the same hint so composite-literal keys and selector reads don't
 outrank the type reference. TS/Py/Rust have no equivalent static signal and
 abstain (no fabricated contract upgrades) — Wave 7's LLM labels are the
 designed path for those languages.
+
+### Connascence roadmap
+
+Connascence is a report-only evidence vocabulary, not a scoring input.
+`connascence.roadmap` makes the current book-alignment boundary explicit:
+
+| Kind                            | Status                                                                                       | Gate effect |
+| ------------------------------- | -------------------------------------------------------------------------------------------- | ----------- |
+| name/type/meaning/algorithm     | deterministic static                                                                         | none        |
+| position                        | unmeasured static gap unless deterministic argument/order evidence appears                   | none        |
+| execution/timing/value/identity | unmeasured dynamic gap; `dynamic_imports` and `runtime_async_edges` are only related signals | none        |
+
+An LLM may explain the roadmap or draft follow-up labels/docs, but it cannot turn
+an unmeasured dynamic category into strength, distance, volatility, score,
+finding, baseline, or verdict input. The upgrade trigger is a deterministic
+source-module→runtime fact precise enough to cite and test.
 
 ### Distance mapping
 

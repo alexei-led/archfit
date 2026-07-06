@@ -164,6 +164,27 @@ type FileFact struct {
 	LOC int `json:"loc"`
 }
 
+// ConnascenceRoadmapItem explains one Ch6 connascence category's measurement
+// posture. It is report-only documentation in the machine output: a stable
+// checklist of what archfit measures deterministically today, what remains
+// unmeasured, and which separate report-only signals may inform human review.
+type ConnascenceRoadmapItem struct {
+	// Kind is a book connascence category: name, type, meaning, algorithm,
+	// position, execution, timing, value, or identity.
+	Kind string `json:"kind"`
+	// CurrentStatus is deterministic_static, unmeasured_static, or
+	// unmeasured_dynamic. It is descriptive only; no scorer or gate consumes it.
+	CurrentStatus string `json:"current_status"`
+	// Sources names deterministic sources that can support this category today.
+	Sources []string `json:"sources,omitempty"`
+	// RelatedSignals names separate report-only blocks that may help a human
+	// review this category but are not connascence measurements.
+	RelatedSignals []string `json:"related_signals,omitempty"`
+	// UpgradeTrigger names the evidence needed before the category can become a
+	// deterministic measurement.
+	UpgradeTrigger string `json:"upgrade_trigger,omitempty"`
+}
+
 // ConnascenceReport summarizes deterministic static connascence evidence from
 // classified dependency edges. It is report-only: never consumed by scoring,
 // rules, baseline deltas, or gate verdicts.
@@ -185,6 +206,10 @@ type ConnascenceReport struct {
 	// Unmeasured names book categories not measured by deterministic evidence in
 	// this run. These are disclosed rather than guessed.
 	Unmeasured []string `json:"unmeasured,omitempty"`
+	// Roadmap is the dynamic connascence roadmap: deterministic static categories,
+	// unmeasured categories, and review-only related signals. It is disclosure
+	// only and never feeds score, findings, baselines, or gates.
+	Roadmap []ConnascenceRoadmapItem `json:"roadmap,omitempty"`
 }
 
 // RuntimeAsyncSite is one detected async integration pattern location.

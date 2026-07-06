@@ -271,12 +271,16 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
   const, or function meaning from names. SCIP reports name/type/meaning/algorithm
   where symbol descriptors prove them.
 - **Output:** JSON `connascence` contains `edges_with_evidence`,
-  `abstained_edges`, `total_evidence`, `by_kind`, `by_source`, and `unmeasured`.
-  Markdown renders the same compact summary.
-- **Unmeasured by design:** position, execution, timing, runtime value, and
-  identity are disclosed as unmeasured unless a later deterministic source proves
-  them. Dynamic/lazy imports and runtime async bridges remain separate report-only
-  evidence blocks and never become connascence guesses.
+  `abstained_edges`, `total_evidence`, `by_kind`, `by_source`, `unmeasured`, and
+  `roadmap`. Markdown renders the same compact summary. `roadmap` is a stable
+  report-only checklist: `name`, `type`, `meaning`, and `algorithm` are
+  deterministic static categories; `position` is unmeasured unless an extractor
+  supplies deterministic argument/order evidence; `execution`, `timing`, runtime
+  `value`, and `identity` are unmeasured dynamic categories.
+- **Unmeasured by design:** dynamic/lazy imports and runtime async bridges remain
+  separate report-only evidence blocks (`dynamic_imports`, `runtime_async_edges`).
+  They can guide a human review, but they never become connascence guesses and
+  never move into scoring without a deterministic source-module→runtime fact.
 - **Report-only by design:** never consumed by `coupling_balance`, findings,
   baselines, or gate verdicts.
 
