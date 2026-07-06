@@ -7,7 +7,7 @@ external architecture linters) plus a **selective, off-gate** LLM layer. This pl
 implements **Tranche 1 in full** (all deterministic features) and **outlines
 Tranche 2** (the LLM layer), which is built only after a validation spike.
 
-Source of truth: `docs/design/hybrid-llm-strength-v0.1.md`.
+Source of truth: `docs/archived/design/hybrid-llm-strength-v0.1.md`.
 
 **Hard constraint (whole plan):** `check` — the CI gate — stays pure deterministic
 and reproducible. No LLM call ever on the gate path. LLM lives only in `init`/`enrich`
@@ -198,7 +198,7 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 
 **Files:**
 
-- Create: `docs/plans/notes/risk_hub-validation.md` (results log)
+- Create: `docs/plans/completed/risk_hub-validation.md` (results log)
 
 - [x] run `archfit scan` (scip on) on ccgram → confirm `window_state_store` surfaces as a top risk_hub (not buried as in `blast_radius`)
 - [x] run on codegraph, pumba, spotinfo → confirm known hubs surface; record top-5 per repo
@@ -323,14 +323,14 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 - [x] **determinism gate:** two `check` runs on the same commit/config produce byte-identical diagnostics (confirmed IDENTICAL after fixing tie-breaking sort in blast_radius and hidden_coupling display); grep `check` path — zero LLM dependencies in Tranche 1 (only comment strings containing "LLM-friendly", no API calls)
 - [x] run full suite: `make test` (or `go test ./...`) — all 31 packages pass; 0 failures
 - [x] run lint: `make lint` (golangci-lint) — 0 issues
-- [x] run `archfit scan` on this repo — no panic, sensible output (5 blast_radius hubs, architecture_fitness 6.7/10, all info-band); 4-repo validation already recorded in docs/plans/notes/risk_hub-validation.md (Task 6)
+- [x] run `archfit scan` on this repo — no panic, sensible output (5 blast_radius hubs, architecture_fitness 6.7/10, all info-band); 4-repo validation already recorded in docs/plans/completed/risk_hub-validation.md (Task 6)
 - [x] confirm baseline/delta still works — computeVerdict gates only on kind==gate findings with new/expired_exception status, or negative metric delta; new info-band metrics never set delta, never appear in gate findings; verdict unchanged by their presence
 
 ### Task 16: Documentation
 
 **Files:**
 
-- Modify: `README.md`, `docs/design/hybrid-llm-strength-v0.1.md` (mark Tranche 1 status), `CLAUDE.md` (new metric/provider patterns)
+- Modify: `README.md`, `docs/archived/design/hybrid-llm-strength-v0.1.md` (mark Tranche 1 status), `CLAUDE.md` (new metric/provider patterns)
 
 - [x] document the new metrics, config keys (`tools.gitnexus`, `tools.clones`), and SCIP-symbol/clone/gitnexus coverage
 - [x] update the design doc status to "Tranche 1 implemented; Tranche 2 spike-gated"
@@ -340,7 +340,7 @@ in `cmd`/engine and is handed in — consistent with the current architecture.
 ## Spike (gate before Tranche 2) — RAN 2026-06-09, SPLIT verdict
 
 Pre-registered blind classification (ground-truth frozen first; two blind subagents;
-ccgram-only). Full record: `docs/plans/notes/llm-spike/{ground-truth.md,result.md}`.
+ccgram-only). Full record: `docs/plans/completed/llm-spike/{ground-truth.md,result.md}`.
 Verdict is per-capability:
 
 - **Coupling model-vs-functional refinement — VALIDATED → build.** The LLM corrected

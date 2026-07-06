@@ -1,6 +1,6 @@
 # Structural-facts spike RE-RUN — Tranche 1.5 acceptance gate
 
-Date: 2026-06-11. Plan: `docs/plans/20260610-archfit-tranche1.5-structural-facts.md` Task 6.
+Date: 2026-06-11. Plan: `docs/plans/completed/20260610-archfit-tranche1.5-structural-facts.md` Task 6.
 
 ## Pre-registered bar (written BEFORE running the classifier)
 

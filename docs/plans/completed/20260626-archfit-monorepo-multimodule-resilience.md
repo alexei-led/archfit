@@ -5,7 +5,7 @@
 Make archfit analyze **sub-projects of a monorepo** and **multi-module Go
 workspaces** (`go.work`, no root `go.mod`), and stop reporting `n/a` on metrics
 when the tools are present. Evidence base: the omni exercise
-(`docs/notes/omni-monorepo-assessment-v0.10.0.md`) — 184 `go.mod` under
+(`docs/archived/notes/omni-monorepo-assessment-v0.10.0.md`) — 184 `go.mod` under
 `go.work`, no root `go.mod`; every structural dimension came back "fewer than two
 connected first-party modules" and `go/packages: absent`, while file metrics
 scanned the **whole** repo regardless of `--root`.
@@ -394,7 +394,7 @@ unclassified and `coupling_balance` reads `n/a`. This task supplies the
 - [x] update `CLAUDE.md` Invariants: scanRoot vs gitRoot; Go workspace loading +
       ≥2-member module auto-registration; per-analyzer timeout
 - [x] re-verify every acceptance criterion (below) on omni; record results in
-      `docs/notes/` — see `docs/notes/omni-monorepo-acceptance-2026-06-27.md`
+      `docs/notes/` — see `docs/archived/notes/omni-monorepo-acceptance-2026-06-27.md`
 - [x] run `make all` (fmt → lint → test → archfit) — all green (PASS, exit 0;
       also updated .archfit-baseline.json and bumped syntax_api_size_ceiling max
       1500→1600 to reflect current internal API surface after Tasks 1-16)

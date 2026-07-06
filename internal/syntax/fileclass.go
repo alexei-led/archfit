@@ -149,9 +149,9 @@ func isGeneratedFilename(base string) bool {
 	case strings.HasPrefix(base, "mock_"), strings.HasSuffix(stem, "_mock"),
 		strings.HasSuffix(stem, "_moq"):
 		return true
-	// TypeScript type-declaration files (*.d.ts) — emitted by tsc, never
-	// hand-authored production logic.
-	case strings.HasSuffix(base, ".d.ts"):
+	// TypeScript type-declaration files (*.d.ts, *.d.mts, *.d.cts) — emitted by
+	// tsc, never hand-authored production logic.
+	case strings.HasSuffix(base, ".d.ts"), strings.HasSuffix(base, ".d.mts"), strings.HasSuffix(base, ".d.cts"):
 		return true
 	// TypeScript/JavaScript generated files.
 	case strings.HasSuffix(stem, ".gen"):

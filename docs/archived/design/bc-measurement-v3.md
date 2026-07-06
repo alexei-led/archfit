@@ -4,7 +4,7 @@ Date: 2026-06-23. Status: SHIPPED. Supersedes `bc-measurement-v2.md` (the v2
 design described the measurement gaps and two prototype scorers; v3 records what
 was actually built and why).
 
-Related plan: `docs/plans/20260623-bc-book-alignment.md` (Tasks 1–16).
+Related plan: `docs/plans/completed/20260623-bc-book-alignment.md` (Tasks 1–16).
 
 ---
 

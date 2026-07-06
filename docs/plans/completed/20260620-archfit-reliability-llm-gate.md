@@ -340,7 +340,7 @@ AffectedMetrics []string, Gate string}` and fields `CoverageGaps []CoverageGap` 
 
 ### Task 8: Docs + shipped skill
 
-- [x] new `docs/design/coverage-gate-and-autopilot-v0.1.md`: fail-loud mechanism, the
+- [x] new `docs/archived/design/coverage-gate-and-autopilot-v0.1.md`: fail-loud mechanism, the
       coverage-gap model, `GateMode` semantics, role-aware modules (Task 5b), default excludes
       (Task 3b), delta bucketing (Task 3c), and autopilot review-only safety
 - [x] update `docs/guide/{commands,configuration-reference,llm-enrich,ci,metrics,troubleshooting}.md`

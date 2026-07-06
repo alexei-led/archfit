@@ -1,6 +1,6 @@
 # New Wave 1: deterministic book-fidelity closure
 
-> **Executable ralphex plan.** Run with `ralphex docs/plans/20260705-wave1-deterministic-book-fidelity.md` from the repo root. ralphex executes one `### Task N:` section at a time. Completed historical waves in `docs/plans/completed/` are context only and do not affect this new wave numbering.
+> **Executable ralphex plan.** Run with `ralphex docs/plans/completed/20260705-wave1-deterministic-book-fidelity.md` from the repo root. ralphex executes one `### Task N:` section at a time. Completed historical waves in `docs/plans/completed/` are context only and do not affect this new wave numbering.
 >
 > This plan is score-sensitive. Keep one behavior change per commit. If a task changes `coupling_balance` semantics, bump `ScoreVersion`, run attribution, and rebaseline deliberately.
 
@@ -55,7 +55,7 @@ Files:
 - `internal/engine/duplicated_knowledge_test.go` — characterize advisory-only current output.
 - `internal/score/score_test.go` — characterize current confidence behavior on tiny/full-score graphs.
 - `internal/engine/golden_test.go` — keep byte-identical output guard current.
-- `docs/plans/notes/wave1-deterministic-baseline.md` — record pre-change corpus table and current artifacts.
+- `docs/plans/completed/wave1-deterministic-baseline.md` — record pre-change corpus table and current artifacts.
 
 Preconditions: repo builds on current `main`; `.bin/archfit` can analyze self with `.archfit.yaml`.
 Postconditions: current clone-only, connascence absence, confidence, and distance evidence are captured before behavior changes.
@@ -80,7 +80,7 @@ Manual checks:
 
 - [x] Add failing-or-characterization tests for the current advisory-only clone-only policy.
 - [x] Add tests showing tiny fully scored graphs currently can appear high confidence.
-- [x] Record current self/corpus scores in `docs/plans/notes/wave1-deterministic-baseline.md`.
+- [x] Record current self/corpus scores in `docs/plans/completed/wave1-deterministic-baseline.md`.
 - [x] Run the verification commands and paste the result summary into the note.
 
 ### Task 2: Make clone-only duplicated knowledge score policy explicit
@@ -217,11 +217,11 @@ Justification: Report §7 did not rerun one representative external corpus repo 
 
 Files:
 
-- `docs/plans/notes/wave1-deterministic-validation.md` — final validation log.
+- `docs/plans/completed/wave1-deterministic-validation.md` — final validation log.
 - `docs/guide/metrics.md` — final output reference.
 - `docs/guide/concepts.md` — book-methodology mapping.
 - `docs/guide/configuration-reference.md` — config changes.
-- `docs/design/bc-measurement-v4.md` or `docs/design/bc-measurement-v5.md` — score-version design update.
+- `docs/design/bc-measurement-v4.md` — score-version design update.
 - `.archfit-baseline.json` — update only if intentional and documented.
 - `.archfit.yaml` — update only for deliberate self-dogfood gate coverage.
 
@@ -247,7 +247,7 @@ Manual checks:
 - Check docs do not imply LLM output affects gate decisions.
 
 - [x] Run final whole-plan validation commands.
-- [x] Write `docs/plans/notes/wave1-deterministic-validation.md` with per-repo score/band/scored/abstained/external movement.
+- [x] Write `docs/plans/completed/wave1-deterministic-validation.md` with per-repo score/band/scored/abstained/external movement.
 - [x] Update user docs and design docs for every output/config change.
 - [x] Rebaseline self only if score-version or gate behavior changed intentionally.
 - [x] Record the scoped `architecture-review` follow-up.

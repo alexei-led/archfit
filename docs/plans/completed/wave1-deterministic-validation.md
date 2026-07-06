@@ -39,7 +39,7 @@ Source review: `docs/archived/reports/book-alignment-review-2026-07-05/00-REVIEW
 
 ## Corpus attribution
 
-Baseline is Task 1 from `docs/plans/notes/wave1-deterministic-baseline.md`.
+Baseline is Task 1 from `docs/plans/completed/wave1-deterministic-baseline.md`.
 Final is the Task 5 retired corpus-attribution helper run.
 
 | repo      | language      | baseline score/band/scored/abstained/external | final score/band/scored/abstained/external | movement                                                                                                                                                                                                  |
@@ -59,7 +59,7 @@ Updated or verified docs:
 - `docs/guide/metrics.md`: documents `bc_score.v5`, clone-only denominator behavior, confidence caps, distance basis/compression fields, and report-only connascence.
 - `docs/guide/concepts.md`: maps scored, report-only, semantic-only, and unmeasured book concepts.
 - `docs/design/bc-measurement-v4.md`: design v5.0 now records clone-only scoring, deterministic distance compression, sample-size confidence caps, and the final self scorecard.
-- `docs/design/20260705-bc-score-v5.md`: records the score-version policy decision and points to this final validation note for the post-wave attribution snapshot.
+- `docs/archived/design/20260705-bc-score-v5.md`: records the score-version policy decision and points to this final validation note for the post-wave attribution snapshot.
 
 Baseline state:
 

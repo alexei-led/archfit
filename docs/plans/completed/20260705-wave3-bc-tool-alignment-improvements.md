@@ -1,6 +1,6 @@
 # New Wave 3: P1-P3 book-alignment tool improvements
 
-> **Executable ralphex plan.** Run with `ralphex docs/plans/20260705-wave3-bc-tool-alignment-improvements.md` from the repo root. ralphex executes one `### Task N:` section at a time. This wave is off-gate by design until a task explicitly changes scoring semantics and the change is validated/rebaselined.
+> **Executable ralphex plan.** Run with `ralphex docs/plans/completed/20260705-wave3-bc-tool-alignment-improvements.md` from the repo root. ralphex executes one `### Task N:` section at a time. This wave is off-gate by design until a task explicitly changes scoring semantics and the change is validated/rebaselined.
 >
 > Deterministic evidence first. Use syntax/search/graph tools first. Use `--llm` only when a gap is semantic and the deterministic tool path cannot close it, and only to draft reviewable labels/config/docs that are pinned before they influence deterministic runs.
 
@@ -45,7 +45,7 @@ Current implementation anchors:
 - `docs/guide/concepts.md`
 - `docs/guide/metrics.md`
 - `docs/design/bc-measurement-v4.md`
-- `docs/design/20260705-bc-score-v5.md`
+- `docs/archived/design/20260705-bc-score-v5.md`
 
 ## Current state snapshot
 
@@ -126,7 +126,7 @@ Files / areas:
 - `docs/guide/concepts.md`
 - `docs/guide/metrics.md`
 - `docs/design/bc-measurement-v4.md`
-- `docs/design/20260705-bc-score-v5.md`
+- `docs/archived/design/20260705-bc-score-v5.md`
 - `internal/classify/*`
 - `internal/model/coupling/*`
 - `internal/score/*`
@@ -165,7 +165,7 @@ Manual checks:
 - [x] Decide where `--llm` is actually needed and what prompt/model shape should be used.
 - [x] Capture any user decisions needed before code changes.
 
-Task 1 note: `docs/plans/notes/20260705-wave3-bc-tool-map.md`.
+Task 1 note: `docs/plans/completed/20260705-wave3-bc-tool-map.md`.
 
 ### Task 2: Close P1 — runtime coupling, strength semantics, volatility propagation, docs drift
 
@@ -194,7 +194,7 @@ Files / areas:
 - `docs/guide/concepts.md`
 - `docs/guide/metrics.md`
 - `docs/design/bc-measurement-v4.md`
-- `docs/design/20260705-bc-score-v5.md`
+- `docs/archived/design/20260705-bc-score-v5.md`
 
 Evidence strategy:
 
@@ -357,7 +357,7 @@ What this task does:
 
 Files / areas:
 
-- `docs/plans/notes/wave1-deterministic-validation.md` or a new wave3 validation note
+- `docs/plans/completed/wave1-deterministic-validation.md` or a new wave3 validation note
 - `docs/guide/*`
 - `docs/design/*`
 - `.archfit-baseline.json` only if an intentional score semantic change requires rebaseline

@@ -1,7 +1,7 @@
 # Tranche 2 acceptance — enrich vs spike ground truth (pre-registered)
 
-Date: 2026-06-11. Plan: `docs/plans/20260611-archfit-tranche2-llm.md` Task 7.
-Ground truth: `docs/plans/notes/llm-spike/ground-truth.md` (frozen 2026-06-09).
+Date: 2026-06-11. Plan: `docs/plans/completed/20260611-archfit-tranche2-llm.md` Task 7.
+Ground truth: `docs/plans/completed/llm-spike/ground-truth.md` (frozen 2026-06-09).
 
 ## Pre-registered bar (written BEFORE running enrich)
 

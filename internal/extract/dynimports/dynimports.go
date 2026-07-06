@@ -27,15 +27,16 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
 // Dynamic-import kind labels. These are coverage/evidence terms, not Balanced
 // Coupling vocabulary — the signal is a supporting risk hint, not a BC verdict.
 const (
-	kindLazyImport    = "lazy_import"    // python non-top-level import / from-import
-	kindImportlib     = "importlib"      // python importlib.import_module / __import__
-	kindRequire       = "require"        // ts/js require(...)
-	kindDynamicImport = "dynamic_import" // ts/js dynamic import(...)
+	kindLazyImport    = diagnostic.DynamicImportKindLazyImport    // python non-top-level import / from-import
+	kindImportlib     = diagnostic.DynamicImportKindImportlib     // python importlib.import_module / __import__
+	kindRequire       = diagnostic.DynamicImportKindRequire       // ts/js require(...)
+	kindDynamicImport = diagnostic.DynamicImportKindDynamicImport // ts/js dynamic import(...)
 
 	langPython     = "python"
 	langTypeScript = "typescript"
@@ -49,6 +50,10 @@ var tsRequire = regexp.MustCompile(`\brequire\s*\(`)
 // `import 'x'` forms are followed by `{`, an identifier, or a quote — never `(` —
 // so this never matches a static import.
 var tsDynImport = regexp.MustCompile(`\bimport\s*\(`)
+
+// tsSourceExtensions is copied once at init time; Detect checks it for every
+// walked file, so avoid calling graph.TypeScriptSourceExtensions() per file.
+var tsSourceExtensions = graph.TypeScriptSourceExtensions()
 
 // pyImportlib matches importlib.import_module(...) or __import__(...) anywhere on
 // a line (these are calls, not statements, so indentation is irrelevant).
@@ -72,8 +77,10 @@ func Detect(root string) []diagnostic.DynamicImportSite {
 		switch filepath.Ext(path) {
 		case ".py":
 			sites = append(sites, scanPython(root, path)...)
-		case ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts":
-			sites = append(sites, scanTS(root, path)...)
+		default:
+			if tsSourceExt(filepath.Ext(path)) {
+				sites = append(sites, scanTS(root, path)...)
+			}
 		}
 		return nil
 	})
@@ -87,6 +94,15 @@ func Detect(root string) []diagnostic.DynamicImportSite {
 		return sites[i].Kind < sites[j].Kind
 	})
 	return sites
+}
+
+func tsSourceExt(ext string) bool {
+	for _, candidate := range tsSourceExtensions {
+		if ext == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 // scanPython flags imports that are NOT at module top-level (sitting inside a

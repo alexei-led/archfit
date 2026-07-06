@@ -46,7 +46,7 @@ Deterministic gate check:
 Default self-check attempts:
 
 - `.bin/archfit config init --llm --root . -o /tmp/archfit-self-init-llm.yaml` failed closed with `classify failed: classify: model response is not the required JSON array: unexpected end of JSON input`.
-- `.bin/archfit config init --llm --llm-provider openai --llm-model gpt-4.1 --root . -o /tmp/archfit-self-init-llm-openai.yaml` failed closed with `classify entry "score" has invalid evidence_refs "docs/design/20260702-bc-score-v4.md"`.
+- `.bin/archfit config init --llm --llm-provider openai --llm-model gpt-4.1 --root . -o /tmp/archfit-self-init-llm-openai.yaml` failed closed with `classify entry "score" has invalid evidence_refs "docs/archived/design/20260702-bc-score-v4.md"`.
 - Both failures are acceptable deterministic controls: no config was mutated and invalid evidence refs were rejected.
 
 Successful scratch/temp runs:
@@ -121,7 +121,7 @@ Rejected TypeScript samples:
 
 ## Key false positives and controls
 
-- Some models emit invalid evidence refs, e.g. bare `docs/design/20260702-bc-score-v4.md` instead of a valid evidence ID. The parser rejected this and left config unchanged.
+- Some models emit invalid evidence refs, e.g. bare `docs/archived/design/20260702-bc-score-v4.md` instead of a valid evidence ID. The parser rejected this and left config unchanged.
 - Rust synthetic module suggestions can overuse config-only evidence and call semantic guesses `deterministic_fact`. These should remain review-only until backed by doc/API/code evidence.
 - Package-level TypeScript suggestions can infer volatility from package kind alone. Require human review before pinning.
 - Truncated rationales should be rejected even when the structural fields look plausible.

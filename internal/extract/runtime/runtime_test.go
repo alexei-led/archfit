@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/extract/runtime"
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -57,7 +58,7 @@ func main() { _ = sarama.NewConfig() }
 	}
 	found := false
 	for _, s := range result.Signals {
-		if s.Language == "go" && s.IntegrationKind == runtime.KindMessageQueue {
+		if s.Language == graph.LangGo && s.IntegrationKind == runtime.KindMessageQueue {
 			found = true
 			break
 		}
@@ -70,27 +71,69 @@ func main() { _ = sarama.NewConfig() }
 	}
 }
 
-func TestDetect_TypeScript_KafkaJS(t *testing.T) {
-	root := t.TempDir()
-	mustWrite(t, filepath.Join(root, "consumer.ts"),
-		`import { Kafka } from 'kafkajs';
+const kafkaJSImport = `import { Kafka } from 'kafkajs';
 const kafka = new Kafka({ brokers: ['localhost:9092'] });
-`)
+`
 
-	result := runtime.Detect(context.Background(), root, noopRunner())
+const nestMessagePattern = `import { Controller } from '@nestjs/common';
+import { MessagePattern } from '@nestjs/microservices';
 
-	if len(result.Signals) == 0 {
-		t.Fatal("expected async signal for kafkajs import, got none")
+@Controller()
+export class AppController {
+  @MessagePattern('order_created')
+  handleOrder(data: any) {}
+}
+`
+
+func TestDetect_TypeScript_KafkaJS(t *testing.T) {
+	tests := []struct {
+		name    string
+		file    string
+		content string
+	}{
+		{
+			name:    "ts import",
+			file:    "consumer.ts",
+			content: kafkaJSImport,
+		},
+		{
+			name:    "mts import",
+			file:    "consumer.mts",
+			content: kafkaJSImport,
+		},
+		{
+			name:    "mjs import",
+			file:    "consumer.mjs",
+			content: kafkaJSImport,
+		},
+		{
+			name:    "cts require",
+			file:    "consumer.cts",
+			content: "require('kafkajs')\n",
+		},
 	}
-	found := false
-	for _, s := range result.Signals {
-		if s.Language == "typescript" && s.Library == "kafkajs" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("no typescript/kafkajs signal; signals=%v", result.Signals)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			mustWrite(t, filepath.Join(root, tt.file), tt.content)
+
+			result := runtime.Detect(context.Background(), root, noopRunner())
+
+			if len(result.Signals) == 0 {
+				t.Fatal("expected async signal for kafkajs import, got none")
+			}
+			found := false
+			for _, s := range result.Signals {
+				if s.Language == graph.LangTypeScript && s.Library == "kafkajs" {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("no typescript/kafkajs signal; signals=%v", result.Signals)
+			}
+		})
 	}
 }
 
@@ -113,7 +156,7 @@ def add(x, y):
 	}
 	found := false
 	for _, s := range result.Signals {
-		if s.Language == "python" && s.Library == "celery" {
+		if s.Language == graph.LangPython && s.Library == "celery" {
 			found = true
 			break
 		}
@@ -124,29 +167,32 @@ def add(x, y):
 }
 
 func TestDetect_NestJS_MessagePattern(t *testing.T) {
-	root := t.TempDir()
-	mustWrite(t, filepath.Join(root, "handler.ts"),
-		`import { Controller } from '@nestjs/common';
-import { MessagePattern } from '@nestjs/microservices';
-
-@Controller()
-export class AppController {
-  @MessagePattern('order_created')
-  handleOrder(data: any) {}
-}
-`)
-
-	result := runtime.Detect(context.Background(), root, noopRunner())
-
-	found := false
-	for _, s := range result.Signals {
-		if s.Language == "typescript" && s.Library == "@MessagePattern" {
-			found = true
-			break
-		}
+	tests := []struct {
+		name string
+		file string
+	}{
+		{name: "ts decorator", file: "handler.ts"},
+		{name: "mts decorator", file: "handler.mts"},
 	}
-	if !found {
-		t.Errorf("no @MessagePattern signal; signals=%v", result.Signals)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			mustWrite(t, filepath.Join(root, tt.file), nestMessagePattern)
+
+			result := runtime.Detect(context.Background(), root, noopRunner())
+
+			found := false
+			for _, s := range result.Signals {
+				if s.Language == graph.LangTypeScript && s.Library == "@MessagePattern" {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("no @MessagePattern signal; signals=%v", result.Signals)
+			}
+		})
 	}
 }
 
@@ -200,7 +246,7 @@ async def main():
 
 	found := false
 	for _, s := range result.Signals {
-		if s.Language == "python" && s.IntegrationKind == runtime.KindAsyncTask {
+		if s.Language == graph.LangPython && s.IntegrationKind == runtime.KindAsyncTask {
 			found = true
 			break
 		}

@@ -27,10 +27,14 @@ func TestRun_CountsSourceFiles(t *testing.T) {
 	root := t.TempDir()
 
 	// Source files that should be counted.
-	writeFile(t, root, "pkg/a/a.go", "package a\n\nfunc A() {}\n")           // 3 lines
-	writeFile(t, root, "pkg/b/b.py", "def b():\n    pass\n")                 // 2 lines
-	writeFile(t, root, "frontend/app.ts", "export const x = 1\n")            // 1 line
-	writeFile(t, root, "frontend/comp.tsx", "export default () => null\n\n") // 2 lines
+	writeFile(t, root, "pkg/a/a.go", "package a\n\nfunc A() {}\n")                // 3 lines
+	writeFile(t, root, "pkg/b/b.py", "def b():\n    pass\n")                      // 2 lines
+	writeFile(t, root, "frontend/app.ts", "export const x = 1\n")                 // 1 line
+	writeFile(t, root, "frontend/comp.tsx", "export default () => null\n\n")      // 2 lines
+	writeFile(t, root, "frontend/module.mts", "export const m = 1\n")             // 1 line
+	writeFile(t, root, "frontend/module.cts", "export const c = 1\n")             // 1 line
+	writeFile(t, root, "frontend/runtime.mjs", "export const r = 1\n")            // 1 line
+	writeFile(t, root, "frontend/runtime.cjs", "module.exports = { value: 1 }\n") // 1 line
 
 	out, _, cov, err := Run(root)
 	if err != nil {
@@ -38,10 +42,14 @@ func TestRun_CountsSourceFiles(t *testing.T) {
 	}
 
 	wantFiles := map[string]int{
-		"pkg/a/a.go":        3,
-		"pkg/b/b.py":        2,
-		"frontend/app.ts":   1,
-		"frontend/comp.tsx": 2,
+		"pkg/a/a.go":           3,
+		"pkg/b/b.py":           2,
+		"frontend/app.ts":      1,
+		"frontend/comp.tsx":    2,
+		"frontend/module.mts":  1,
+		"frontend/module.cts":  1,
+		"frontend/runtime.mjs": 1,
+		"frontend/runtime.cjs": 1,
 	}
 	for rel, wantLines := range wantFiles {
 		if got, ok := out[rel]; !ok {
@@ -75,7 +83,11 @@ func TestRun_ExcludesTestFiles(t *testing.T) {
 	writeFile(t, root, "pkg/c/test_helpers.py", "# helpers\n")
 	writeFile(t, root, "pkg/d/utils_test.py", "# test\n")
 	writeFile(t, root, "frontend/app.spec.ts", "describe('x', () => {})\n")
+	writeFile(t, root, "frontend/app.spec.mts", "describe('x', () => {})\n")
+	writeFile(t, root, "frontend/app.test.mjs", "describe('x', () => {})\n")
 	writeFile(t, root, "frontend/types.d.ts", "export type T = string\n")
+	writeFile(t, root, "frontend/types.d.mts", "export type T = string\n")
+	writeFile(t, root, "frontend/types.d.cts", "export type T = string\n")
 
 	// This should be counted.
 	writeFile(t, root, "pkg/a/a.go", "package a\n\nfunc A() {}\n")
@@ -99,8 +111,20 @@ func TestRun_ExcludesTestFiles(t *testing.T) {
 	if _, ok := out["frontend/app.spec.ts"]; ok {
 		t.Error(".spec. files must be excluded")
 	}
+	if _, ok := out["frontend/app.spec.mts"]; ok {
+		t.Error(".spec.mts files must be excluded")
+	}
+	if _, ok := out["frontend/app.test.mjs"]; ok {
+		t.Error(".test.mjs files must be excluded")
+	}
 	if _, ok := out["frontend/types.d.ts"]; ok {
 		t.Error(".d.ts files must be excluded")
+	}
+	if _, ok := out["frontend/types.d.mts"]; ok {
+		t.Error(".d.mts files must be excluded")
+	}
+	if _, ok := out["frontend/types.d.cts"]; ok {
+		t.Error(".d.cts files must be excluded")
 	}
 	if len(out) != 1 {
 		t.Errorf("expected exactly 1 counted file, got %d: %v", len(out), out)

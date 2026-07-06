@@ -79,7 +79,7 @@ Movement notes:
 
 Updated or verified docs:
 
-- `docs/plans/notes/20260705-wave3-bc-tool-map.md`: records the final P1-P3 disposition and remaining review-only decisions.
+- `docs/plans/completed/20260705-wave3-bc-tool-map.md`: records the final P1-P3 disposition and remaining review-only decisions.
 - `docs/design/20260705-bc-score-v6.md`: records the score-version decision and corpus attribution for the transitive volatility cascade.
 - `docs/design/bc-measurement-v4.md`: describes runtime async evidence, distance compression, tail-risk reporting, connascence roadmap, and the v6 score story.
 - `docs/guide/concepts.md`: separates book-exact facts, sound adaptations, policy choices, report-only data, and out-of-scope gaps.

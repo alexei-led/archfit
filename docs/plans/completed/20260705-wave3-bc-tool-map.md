@@ -9,7 +9,7 @@ Plan: `docs/plans/completed/20260705-wave3-bc-tool-alignment-improvements.md`
 - Book anchors via `ctx_search` over the indexed EPUB extraction for Ch6, Ch7, Ch8, Ch9, Ch10, and Ch11.
 - Existing review: `docs/archived/reports/book-alignment-review-2026-07-05/00-REVIEW.md`.
 - Code paths for strength, distance, volatility, connascence, score synthesis, runtime rollups, clone-only pairs, and LLM label boundaries.
-- Docs: `docs/guide/concepts.md`, `docs/guide/metrics.md`, `docs/design/bc-measurement-v4.md`, `docs/design/20260705-bc-score-v5.md`.
+- Docs: `docs/guide/concepts.md`, `docs/guide/metrics.md`, `docs/design/bc-measurement-v4.md`, `docs/archived/design/20260705-bc-score-v5.md`.
 - GitNexus impact: `classify` was ambiguous until disambiguated to `Function:internal/classify/classify.go:classify`; downstream impact is critical with 27 affected symbols/process hits. `Synthesize` has medium downstream impact with 19 affected symbols. Initial `detect-changes --scope all` reported no tracked symbol changes before this note.
 
 ## Book anchors reread
@@ -77,7 +77,7 @@ Accept only high-confidence, evidence-cited drafts for human approval. Medium/lo
 
 ## Final Task 5 disposition
 
-Validation note: `docs/plans/notes/20260705-wave3-bc-tool-alignment-validation.md`.
+Validation note: `docs/plans/completed/20260705-wave3-bc-tool-alignment-validation.md`.
 
 Implemented in this wave:
 

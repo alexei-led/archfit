@@ -31,7 +31,7 @@ per `archfit doctor`. Numbers are single-host (Apple Silicon, warm OS cache
 unless noted); treat as relative, not absolute CI budgets.
 
 > **Implementation status (2026-06-26) — executed via the plan
-> `docs/plans/20260626-archfit-tooling-reduction.md`; validated lossless on all 7
+> `docs/plans/completed/20260626-archfit-tooling-reduction.md`; validated lossless on all 7
 > repos (0 metric regressions).**
 >
 > | Recommendation                                           | Status                         | Result                                                                                                                                                                              |
@@ -403,7 +403,7 @@ is an equivalent 16 MB path — but **never `bufio.Scanner`** (validated: silent
 truncates at 64 KB, dropping 78% of herdr's matches). A faster JSON lib is the wrong
 fix — go-json/gjson cut CPU but _raise_ peak memory; the parse isn't the bottleneck.
 Full method, table, and the `encoding/json/v2` trajectory:
-**`docs/research/big-json-in-go-2026-06.md`**.
+**`docs/archived/research/big-json-in-go-2026-06.md`**.
 
 **Residual:** the **pattern** path (`astgrep.go:86`, `sg run --pattern`) still
 `json.Unmarshal`s its whole output. That output is far smaller than `sg scan`'s (a

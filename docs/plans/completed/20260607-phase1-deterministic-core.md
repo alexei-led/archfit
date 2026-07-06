@@ -12,7 +12,7 @@ priority: **TypeScript and Python first** (primary audience); Go last (simplest,
 at the end as non-blocking reminders; do not build them until Phase 1 is proven.
 
 Source spec: `docs/spec/arch-fitness-spec-v0.4.md`
-Architecture: `docs/design/arch-fitness-architecture-v0.1.md`
+Architecture: `docs/archived/design/arch-fitness-architecture-v0.1.md`
 
 ---
 

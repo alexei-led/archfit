@@ -19,6 +19,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/syntax"
 )
 
@@ -30,23 +31,34 @@ const toolName = "loc"
 const headerReadSize = 512
 
 // sourceExts are the file extensions counted for FileLOC facts.
-var sourceExts = map[string]bool{
-	".go": true, ".py": true, ".ts": true, ".tsx": true, ".js": true, ".jsx": true,
-	".rs": true,
-}
-
-const langTypeScript = "typescript"
+var sourceExts = buildSourceExts()
 
 // extLang maps source file extensions to the language key used by the
 // classifier so IsTestFile and ClassifyFile get the right language.
-var extLang = map[string]string{
-	".go":  "go",
-	".py":  "python",
-	".ts":  langTypeScript,
-	".tsx": langTypeScript,
-	".js":  langTypeScript, // close enough for test/generated detection
-	".jsx": langTypeScript,
-	".rs":  "rust",
+var extLang = buildExtLang()
+
+func buildSourceExts() map[string]bool {
+	exts := map[string]bool{
+		".go": true,
+		".py": true,
+		".rs": true,
+	}
+	for _, ext := range graph.TypeScriptSourceExtensions() {
+		exts[ext] = true
+	}
+	return exts
+}
+
+func buildExtLang() map[string]string {
+	exts := map[string]string{
+		".go": graph.LangGo,
+		".py": graph.LangPython,
+		".rs": graph.LangRust,
+	}
+	for _, ext := range graph.TypeScriptSourceExtensions() {
+		exts[ext] = graph.LangTypeScript
+	}
+	return exts
 }
 
 // skipDirs are directory names never walked for source LOC. "target" is Cargo's

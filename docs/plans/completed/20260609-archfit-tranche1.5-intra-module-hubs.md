@@ -1,14 +1,14 @@
 # archfit Tranche 1.5 — Intra-module hub signals (deterministic)
 
 > **SUPERSEDED (2026-06-10).** This attempt's two ranking metrics (`cohesion_spread`,
-> `shared_state_hub`) FAILED the 4-repo gate (`docs/plans/notes/intra-module-hub-validation.md`).
+> `shared_state_hub`) FAILED the 4-repo gate (`docs/plans/completed/intra-module-hub-validation.md`).
 > A follow-up signal probe showed deterministic code cannot RANK these hubs and that no reader
 > change recovers `polling_state` from SCIP symbol fan-in. Replaced by the facts-block design in
-> `docs/plans/20260610-archfit-tranche1.5-structural-facts.md`. Kept for the record.
+> `docs/plans/completed/20260610-archfit-tranche1.5-structural-facts.md`. Kept for the record.
 
 ## Overview
 
-The validation spike (`docs/plans/notes/llm-spike/result.md`) showed the planned
+The validation spike (`docs/plans/completed/llm-spike/result.md`) showed the planned
 Tranche-2 LLM coupling layer is **blind to a real class of hubs**: two capable blind
 classifiers both missed ccgram's `polling_state` (a mutable singleton shared among
 sibling polling files) and `directory_callbacks` (one 1086-line file bundling 7 unrelated
@@ -33,7 +33,7 @@ acceptable: the downstream LLM/human judges mutability and intent. The honest ba
 is that the genuinely-risky hubs surface **without the list being drowned by blessed
 centralization** — not that every top entry is a real problem.
 
-Source of truth: `docs/design/hybrid-llm-strength-v0.1.md` §7 (Tranche 1.5).
+Source of truth: `docs/archived/design/hybrid-llm-strength-v0.1.md` §7 (Tranche 1.5).
 
 **Hard constraint (unchanged):** `check` — the CI gate — stays pure deterministic and
 LLM-free. Both new metrics are `band: info` (report-only), never gate, never set delta.
@@ -220,7 +220,7 @@ hot map[string]int)` — per file, max single-symbol `FanIn`, the winning symbol
 
 **Files:**
 
-- Create: `docs/plans/notes/intra-module-hub-validation.md` (results log)
+- Create: `docs/plans/completed/intra-module-hub-validation.md` (results log)
 
 - [x] run `archfit scan` (scip on) on ccgram → confirm `directory_callbacks` is a top
       `cohesion_spread` hub AND `polling_state` is a top `shared_state_hub` hub
@@ -239,8 +239,8 @@ hot map[string]int)` — per file, max single-symbol `FanIn`, the winning symbol
       `polling_state` ranks 16th on shared_state_hub (fan-in=8, top-5 floor=28); shared_state_hub
       top-5 dominated 3/5 by blessed hubs (config/thread_router/tmux_manager); no legitimate
       threshold change can surface either target — signal definitions need reassessment before
-      proceeding (see docs/plans/notes/intra-module-hub-validation.md)
-- [x] write the results log (docs/plans/notes/intra-module-hub-validation.md); ⚠️ GATE: FAIL —
+      proceeding (see docs/plans/completed/intra-module-hub-validation.md)
+- [x] write the results log (docs/plans/completed/intra-module-hub-validation.md); ⚠️ GATE: FAIL —
       directory_callbacks rank 6 (not top-5); polling_state rank 16 (not top-5); shared_state_hub
       top-5 dominated 3/5 by blessed hubs; signal definitions need reassessment
 
@@ -260,7 +260,7 @@ hot map[string]int)` — per file, max single-symbol `FanIn`, the winning symbol
 
 **Files:**
 
-- Modify: `README.md`, `docs/design/hybrid-llm-strength-v0.1.md`
+- Modify: `README.md`, `docs/archived/design/hybrid-llm-strength-v0.1.md`
 
 - [ ] document the two new metrics and their definitions (outbound spread vs inbound breadth;
       single-symbol depth vs surface width)

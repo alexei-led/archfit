@@ -9,7 +9,7 @@ deterministic gate consumes), and the `explain --llm` narrative. Then the final
 documentation + skill pass over everything (this plan + the deterministic
 completion plan).
 
-Source of truth: `docs/design/hybrid-llm-strength-v0.1.md` §7 "Tranche 2
+Source of truth: `docs/archived/design/hybrid-llm-strength-v0.1.md` §7 "Tranche 2
 implementation design (locked 2026-06-11)".
 
 **Hard constraint (the whole point):** `check` stays LLM-free. Enforced
@@ -22,7 +22,7 @@ subdomain/volatility drafting (descoped — inter-judge ≈ chance). No framewor
 
 ## Context (from discovery)
 
-- Spike artifacts: `docs/plans/notes/llm-spike/{ground-truth.md,result.md}` —
+- Spike artifacts: `docs/plans/completed/llm-spike/{ground-truth.md,result.md}` —
   the enrich validation baseline (window_state_store functional→model,
   TelegramClient model→contract, upgrade.py→main intrusive find).
 - archfit's deterministic strength is ~91% blanket-"functional" (call-edge
@@ -108,7 +108,7 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 
 ### Task 0: cheap fixes from the three-way review comparison
 
-**Files:** see `docs/plans/notes/three-way-review-comparison.md` §4 (deterministic/cheap list)
+**Files:** see `docs/plans/completed/three-way-review-comparison.md` §4 (deterministic/cheap list)
 
 - [x] `classifyStrength` iterates the sorted module index (hardening; silences a recurring reviewer false-alarm)
 - [x] SCIP `Resolve()` 3-state confidence (low = no indexer / medium = indexer present, resolution unimplemented / high reserved)
@@ -141,7 +141,7 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 
 - [x] verify current `anthropic-sdk-go` + `openai-go` versions/APIs (docs lookup); pin — anthropic-sdk-go v1.50.1, openai-go v1.12.0, shapes verified against module source
 - [x] Provider interface + adapters, typed errors, env-key handling — DEVIATION: NO temperature on the Anthropic adapter (current Opus-tier models reject sampling params with 400); OpenAI/Ollama pin temperature 0; enrich determinism comes from the cache + reviewed labels
-- [x] Ollama = OpenAI adapter with base URL override (default http://localhost:11434/v1, dummy key)
+- [x] Ollama = OpenAI adapter with base URL override (default `http://localhost:11434/v1`, dummy key)
 - [x] httptest unit tests: request shape (incl. asserting temperature is ABSENT on anthropic) + 401/429/timeout/malformed/empty paths
 - [x] arch test proves `internal/llm` unreachable from ANY internal package (only cmd may import it) — the LLM-off-gate guarantee is now compiler/CI-enforced
 - [x] run tests — green before Task 3
@@ -197,7 +197,7 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 
 **Files:**
 
-- Create: `docs/plans/notes/tranche2-enrich-validation.md`
+- Create: `docs/plans/completed/tranche2-enrich-validation.md`
 
 - [x] PRE-REGISTER: bar written before the run (`notes/tranche2-enrich-validation.md`) — criterion (c) re-scoped pre-run: intrusive-from-code-reading is outside enrich's evidence package (module pairs + paths, not code); it remains the explain/review loop's job
 - [x] run with a real provider (`ollama/qwen3.6:35b` — no frontier key in this environment; note recorded; frontier re-run is one command with the cache absorbing the diff) — 56 drafts: 8 model corrections incl. the load-bearing window_state pairs, 16 contract upgrades on the protocol/ports modules, 0 intrusive misflags
@@ -211,7 +211,7 @@ EvidenceHash, Status}`; `Load(path)`; `EvidenceHash` = sha256 over the sorted
 - Modify: `README.md`, `docs/guide/{commands,configuration,configuration-reference,overview,ci,quick-start,troubleshooting}.md`
 - Create: `docs/guide/llm-enrich.md`, `docs/guide/agent-feedback.md`
 - Modify: `skills/archfit/SKILL.md`, `skills/archfit/references/archfit-docs.md`
-- Modify: `docs/design/hybrid-llm-strength-v0.1.md` (mark Tranche 2 implemented)
+- Modify: `docs/archived/design/hybrid-llm-strength-v0.1.md` (mark Tranche 2 implemented)
 
 - [x] document: enrich workflow (draft→review→approve), labels file, tools.llm, cache; agent_tasks block; SARIF; change_locality; updated metric list (13) — new guides `llm-enrich.md` + `agent-feedback.md`; commands/README/configuration-reference updated
 - [x] SKILL.md teaches an agent the loop: run check → read agent_tasks → fix → run the validation command → re-check; enrich/explain as human-in-the-loop extras (never auto-approve drafts)

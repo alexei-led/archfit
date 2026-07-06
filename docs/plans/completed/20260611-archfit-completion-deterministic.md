@@ -5,8 +5,8 @@
 Close every remaining DETERMINISTIC gap between archfit today and its end state:
 an architecture review and drift-prevention tool an AI coding agent can run on
 every change and act on mechanically. Design:
-`docs/design/agent-feedback-loop-v0.1.md`. The LLM layer is a separate plan
-(`docs/plans/20260611-archfit-tranche2-llm.md`) and depends on nothing here
+`docs/archived/design/agent-feedback-loop-v0.1.md`. The LLM layer is a separate plan
+(`docs/plans/completed/20260611-archfit-tranche2-llm.md`) and depends on nothing here
 except Task 1 ordering hygiene.
 
 Scope: populated `agent_tasks` repair blocks (spec §13), SARIF output (spec §12),
@@ -155,7 +155,7 @@ coverage, not behavior.
 
 **Files:**
 
-- Spike note: `docs/plans/notes/gitnexus-adapter-decision.md`
+- Spike note: `docs/plans/completed/gitnexus-adapter-decision.md`
 - Modify or delete: `internal/extract/gitnexus/*`, config key, `risk_hub` factor, `FileFact.GitnexusImpact`
 
 - [x] spike: enumerate what the installed gitnexus CLI can actually return repo-wide; write the decision note (pre-register: fix only if ONE stable command yields per-module counts) — `gitnexus cypher` qualifies; decision: FIX
@@ -218,7 +218,7 @@ coverage, not behavior.
 
 **Files:**
 
-- Create: `docs/plans/notes/completion-deterministic-validation.md`
+- Create: `docs/plans/completed/completion-deterministic-validation.md`
 
 - [x] build `.bin/archfit`; run full scan + check on ccgram, pumba, spotinfo, codegraph, archfit — no panics; record per-repo verdicts (`notes/completion-deterministic-validation.md`)
 - [x] double-run byte-identical on ALL FIVE repos (scip on for ccgram + archfit)

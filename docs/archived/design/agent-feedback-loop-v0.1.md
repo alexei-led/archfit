@@ -1,7 +1,7 @@
 # archfit as an AI-agent feedback loop — design v0.1
 
 Date: 2026-06-11. Status: APPROVED — implementation plan
-`docs/plans/20260611-archfit-completion-deterministic.md`.
+`docs/plans/completed/20260611-archfit-completion-deterministic.md`.
 
 ## 1. Purpose
 
@@ -22,7 +22,7 @@ The feedback loop has three consumer-facing channels:
    standard format CI surfaces inline on PRs.
 
 Everything in this document is **deterministic** and runs on the `check` gate.
-The LLM layer (Tranche 2, `docs/design/hybrid-llm-strength-v0.1.md`) stays
+The LLM layer (Tranche 2, `docs/archived/design/hybrid-llm-strength-v0.1.md`) stays
 off-gate and is designed separately.
 
 ## 2. agent_tasks — structured repair blocks (spec §13)

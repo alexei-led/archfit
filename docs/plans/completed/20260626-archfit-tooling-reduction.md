@@ -10,7 +10,7 @@
 ## Overview
 
 Apply the lossless-core recommendations from
-`docs/research/tooling-analysis-2026-06.md`: shrink archfit's external-tool
+`docs/archived/research/tooling-analysis-2026-06.md`: shrink archfit's external-tool
 footprint **without losing any metric**, and recover one currently-missing signal
 from a tool already required. Every cut routes its metric to a tool archfit already
 runs (or to in-process code), so coverage is preserved or improved while the
@@ -207,8 +207,8 @@ dependant files)` — exactly the gitnexus cypher semantics, in-process
       `docs/guide/{install,configuration-reference,tooling,languages,metrics,
 troubleshooting,agent-feedback,release-notes}.md` (note the removal; risk_hub /
       `symbol_dependants` are SCIP-derived). **Leave historical records unchanged**:
-      `docs/plans/completed/*`, `docs/plans/notes/*` (incl. `gitnexus-adapter-decision.md`),
-      `docs/design/*`, `docs/notes/*` are history, not current behavior.
+      `docs/plans/completed/*` (incl. `gitnexus-adapter-decision.md`) and
+      `docs/archived/*` are history, not current behavior.
 - [ ] confirm `TestArchImports` green (gitnexus package gone from the ring)
 - [ ] **verification gate**: `grep -rin gitnexus internal/ cmd/ .archfit.yaml
 .archfit-labels.yaml CLAUDE.md README.md docs/guide/` returns **only** the two
@@ -318,7 +318,7 @@ then could cargo-modules become genuinely optional.
 - [ ] run full `make test` (race + coverage); `make lint`; `TestArchImports`;
       regenerate + inspect `TestGolden`; `make archfit` dogfood gate green
 - [ ] verify coverage meets project standard (80%+) for changed packages
-- [ ] update `docs/research/tooling-analysis-2026-06.md`: mark §5.1/§5.2/§5.3/§9.1
+- [ ] update `docs/archived/research/tooling-analysis-2026-06.md`: mark §5.1/§5.2/§5.3/§9.1
       recommendations as implemented, with the Task 10 validation numbers
 
 ### Task 12: [Final] Documentation sync

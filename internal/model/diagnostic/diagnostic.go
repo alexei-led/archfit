@@ -274,8 +274,17 @@ type DynamicImport struct {
 	Sites []DynamicImportSite `json:"sites"`
 }
 
+// Dynamic import kind constants are shared vocabulary for dynamic-import
+// extractors, reports, and eval fixtures.
+const (
+	DynamicImportKindLazyImport    = "lazy_import"
+	DynamicImportKindImportlib     = "importlib"
+	DynamicImportKindRequire       = "require"
+	DynamicImportKindDynamicImport = "dynamic_import"
+)
+
 // DynamicImportSite is one dynamic/lazy import occurrence at a file location.
-// Kind is one of: lazy_import, importlib, require, dynamic_import.
+// Kind is one of the DynamicImportKind* constants.
 type DynamicImportSite struct {
 	File     string `json:"file"`
 	Line     int    `json:"line"`

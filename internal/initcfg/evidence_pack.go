@@ -17,7 +17,8 @@ import (
 type EvidenceKind string
 
 const (
-	// EvidenceKindDoc marks README, architecture, design, and ADR documents.
+	// EvidenceKindDoc marks README, architecture docs, repo maps, and bounded
+	// repository documentation.
 	EvidenceKindDoc EvidenceKind = "doc"
 	// EvidenceKindAPI marks exported names and configured public API globs.
 	EvidenceKindAPI EvidenceKind = "api"
@@ -85,7 +86,7 @@ func BuildArchitectureEvidencePack(opts EvidencePackOptions) []EvidenceItem {
 	}
 	budget := normalizeEvidenceBudget(opts.Budget)
 
-	docs := boundEvidenceItems(collectDocEvidence(root), budget.Docs, budget.MaxTextBytes)
+	docs := collectDocEvidence(root, budget.Docs, budget.MaxTextBytes)
 	comments, apis := collectCodeEvidence(root, opts.Modules)
 	comments = boundEvidenceItems(comments, budget.Comments, budget.MaxTextBytes)
 	apis = boundEvidenceItems(apis, budget.APIs, budget.MaxTextBytes)
@@ -162,11 +163,50 @@ func boundEvidenceText(s string, maxBytes int) string {
 	return strings.TrimSpace(s[:maxBytes]) + "..."
 }
 
-func collectDocEvidence(root string) []EvidenceItem {
+var rootDocBaseNames = map[string]struct{}{
+	"architecture":   {},
+	"design":         {},
+	"system_context": {},
+	"system-context": {},
+	"system_design":  {},
+	"system-design":  {},
+	"components":     {},
+	"boundaries":     {},
+	"adr":            {},
+	"adrs":           {},
+	"decisions":      {},
+}
+
+var docSignalFragments = []string{
+	"architecture", "architectural", "design", "component", "components", "module",
+	"system context", "context diagram", "container diagram", "component diagram",
+	"layer", "layering", "boundary", "bounded context", "adr", "decision",
+	"rationale", "trade-off", "tradeoff", "invariant", "public api",
+	"forbidden dependency", "ports and adapters", "hexagonal", "dependency",
+	"coupling", "volatility", "deployment", "domain model", "overview",
+}
+
+type docCandidate struct {
+	item  EvidenceItem
+	score int
+}
+
+func collectDocEvidence(root string, limit, maxTextBytes int) []EvidenceItem {
 	candidates := map[string]struct{}{}
-	for _, rel := range []string{"README.md", "README.markdown", "README.rst", "README.txt", "README"} {
-		if regularFile(filepath.Join(root, rel)) && !secretishEvidencePath(rel) {
-			candidates[filepath.ToSlash(rel)] = struct{}{}
+
+	add := func(rel string) {
+		if rel == "" || secretishEvidencePath(rel) || !repositoryDocRel(rel) {
+			return
+		}
+		candidates[rel] = struct{}{}
+	}
+
+	if entries, err := os.ReadDir(root); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			add(entry.Name())
 		}
 	}
 
@@ -185,11 +225,7 @@ func collectDocEvidence(root string) []EvidenceItem {
 		if relErr != nil {
 			return nil
 		}
-		rel = filepath.ToSlash(rel)
-		if !architectureDocRel(rel) || secretishEvidencePath(rel) {
-			return nil
-		}
-		candidates[rel] = struct{}{}
+		add(filepath.ToSlash(rel))
 		return nil
 	})
 
@@ -199,33 +235,62 @@ func collectDocEvidence(root string) []EvidenceItem {
 	}
 	sort.Strings(rels)
 
-	items := make([]EvidenceItem, 0, len(rels))
+	scored := make([]docCandidate, 0, len(rels))
 	for _, rel := range rels {
 		data, err := readEvidenceFile(filepath.Join(root, filepath.FromSlash(rel)))
 		if err != nil {
 			continue
 		}
-		text := summarizeFreeText(string(data))
+		text := summarizeDocEvidence(rel, string(data))
 		if text == "" {
 			continue
 		}
-		items = append(items, EvidenceItem{ID: "doc:" + rel, Kind: EvidenceKindDoc, Source: rel, Text: text})
+		scored = append(scored, docCandidate{
+			item:  EvidenceItem{ID: "doc:" + rel, Kind: EvidenceKindDoc, Source: rel, Text: text},
+			score: docCandidateScore(rel, text),
+		})
+	}
+
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		if scored[i].item.ID != scored[j].item.ID {
+			return scored[i].item.ID < scored[j].item.ID
+		}
+		return scored[i].item.Source < scored[j].item.Source
+	})
+	if limit > 0 && len(scored) > limit {
+		scored = scored[:limit]
+	}
+
+	items := make([]EvidenceItem, 0, len(scored))
+	for _, cand := range scored {
+		cand.item.Text = boundEvidenceText(cand.item.Text, maxTextBytes)
+		items = append(items, cand.item)
 	}
 	return items
 }
 
-func architectureDocRel(rel string) bool {
+func repositoryDocRel(rel string) bool {
 	lower := strings.ToLower(filepath.ToSlash(rel))
+	base := path.Base(lower)
+	if lower == "readme" || strings.HasPrefix(base, "readme.") {
+		return true
+	}
+	if isDocMapName(base) {
+		return true
+	}
 	if !evidenceTextExt(path.Ext(lower)) {
 		return false
 	}
-	for _, prefix := range []string{"docs/design/", "docs/architecture/", "docs/adr/", "docs/adrs/", "docs/decisions/"} {
-		if strings.HasPrefix(lower, prefix) {
+	if path.Dir(lower) == "." {
+		stem := strings.TrimSuffix(base, path.Ext(base))
+		if _, ok := rootDocBaseNames[stem]; ok {
 			return true
 		}
 	}
-	base := path.Base(lower)
-	return strings.Contains(base, "adr") || strings.Contains(base, "architecture") || strings.Contains(base, "design")
+	return strings.HasPrefix(lower, "docs/")
 }
 
 func evidenceTextExt(ext string) bool {
@@ -235,6 +300,185 @@ func evidenceTextExt(ext string) bool {
 	default:
 		return false
 	}
+}
+
+func summarizeDocEvidence(rel, text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	lines := strings.Split(text, "\n")
+	mapMode := isDocMapFile(rel)
+	maxLines := 24
+	if mapMode {
+		maxLines = 32
+	}
+	picks := collectDocHighlights(lines, mapMode, maxLines)
+	if len(picks) == 0 {
+		return summarizeFreeText(text)
+	}
+	return oneLine(strings.Join(picks, " "))
+}
+
+func collectDocHighlights(lines []string, mapMode bool, maxLines int) []string {
+	picks := make([]string, 0, maxLines)
+	seen := map[int]struct{}{}
+	for i, raw := range lines {
+		line := cleanDocLine(raw)
+		if line == "" {
+			continue
+		}
+		if !docLineRelevant(line, mapMode) {
+			continue
+		}
+		for _, j := range []int{i, i + 1} {
+			if j < 0 || j >= len(lines) {
+				continue
+			}
+			candidate := cleanDocLine(lines[j])
+			if candidate == "" {
+				continue
+			}
+			if _, ok := seen[j]; ok {
+				continue
+			}
+			seen[j] = struct{}{}
+			picks = append(picks, candidate)
+			if len(picks) >= maxLines {
+				return picks
+			}
+		}
+	}
+	return picks
+}
+
+func cleanDocLine(line string) string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return ""
+	}
+	if strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~") {
+		return ""
+	}
+	if strings.HasPrefix(line, "<!--") || strings.HasPrefix(line, "[![") {
+		return ""
+	}
+	if strings.HasPrefix(line, "#") {
+		line = strings.TrimSpace(strings.TrimLeft(line, "#"))
+	}
+	if line == "" {
+		return ""
+	}
+	if secretishTextLine(line) {
+		line = redactConfigLine(line)
+	}
+	return line
+}
+
+func docLineRelevant(line string, mapMode bool) bool {
+	lower := strings.ToLower(line)
+	if secretishTextLine(line) {
+		return true
+	}
+	if strings.Contains(lower, "](") && !strings.Contains(lower, "://") {
+		return true
+	}
+	if docLineHasSignal(lower) {
+		return true
+	}
+	if mapMode && (strings.HasPrefix(lower, "- ") || strings.HasPrefix(lower, "* ") || strings.HasPrefix(lower, "> ")) {
+		return true
+	}
+	return false
+}
+
+func docLineHasSignal(lower string) bool {
+	for _, needle := range docSignalFragments {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func isDocMapFile(rel string) bool {
+	return isDocMapName(path.Base(strings.ToLower(filepath.ToSlash(rel))))
+}
+
+func isDocMapName(base string) bool {
+	return base == "llm.txt" || base == "llms.txt"
+}
+
+func docCandidateScore(rel, text string) int {
+	return docPathScore(rel) + docTextScore(text)
+}
+
+func docPathScore(rel string) int {
+	lower := strings.ToLower(filepath.ToSlash(rel))
+	base := path.Base(lower)
+	stem := strings.TrimSuffix(base, path.Ext(base))
+	score := 0
+
+	if isDocMapName(base) {
+		return 1200
+	}
+	if lower == "readme" || strings.HasPrefix(base, "readme.") {
+		score += 1000
+	}
+	if path.Dir(lower) == "." {
+		if _, ok := rootDocBaseNames[stem]; ok {
+			score += 960
+		}
+	}
+	switch {
+	case strings.HasPrefix(lower, "docs/architecture/"):
+		score += 980
+	case strings.HasPrefix(lower, "docs/design/"):
+		score += 960
+	case strings.HasPrefix(lower, "docs/adr/") || strings.HasPrefix(lower, "docs/adrs/"):
+		score += 940
+	case strings.HasPrefix(lower, "docs/decisions/"):
+		score += 930
+	case strings.HasPrefix(lower, "docs/spec/"):
+		score += 900
+	case strings.HasPrefix(lower, "docs/guide/"):
+		score += 720
+	case strings.HasPrefix(lower, "docs/runbooks/"):
+		score += 700
+	case strings.HasPrefix(lower, "docs/plans/"):
+		score += 480
+	case strings.HasPrefix(lower, "docs/"):
+		score += 640
+	}
+	if strings.Contains(lower, "/archive/") || strings.Contains(lower, "/archived/") || strings.Contains(lower, "/completed/") || strings.Contains(lower, "/reports/") {
+		score -= 500
+	}
+	for _, bad := range []string{"obsolete", "deprecated", "legacy", "draft", "drafts", "wip", "temp", "tmp"} {
+		if stem == bad || strings.HasPrefix(stem, bad+"-") || strings.HasPrefix(stem, bad+"_") || strings.HasSuffix(stem, "-"+bad) || strings.HasSuffix(stem, "_"+bad) {
+			score -= 300
+		}
+	}
+	return score
+}
+
+func docTextScore(text string) int {
+	lower := strings.ToLower(text)
+	score := 0
+	hits := 0
+	for _, needle := range docSignalFragments {
+		if strings.Contains(lower, needle) {
+			hits++
+		}
+	}
+	score += hits * 20
+	if strings.Contains(lower, "](") && !strings.Contains(lower, "://") {
+		score += 25
+	}
+	if strings.Contains(lower, "architecture decision") || strings.Contains(lower, "bounded context") || strings.Contains(lower, "module boundary") {
+		score += 20
+	}
+	if score > 180 {
+		score = 180
+	}
+	return score
 }
 
 func collectCodeEvidence(root string, modules []ModuleDef) ([]EvidenceItem, []EvidenceItem) {
@@ -532,7 +776,7 @@ func regularDir(p string) bool {
 func skipEvidenceDir(name string) bool {
 	lower := strings.ToLower(name)
 	switch lower {
-	case ".git", ".hg", ".svn", ".archfit-cache", ".gitnexus", ".codegraph", ".pi", "node_modules", "vendor", "target", "dist", "build", "coverage":
+	case ".git", ".hg", ".svn", ".archfit-cache", ".gitnexus", ".codegraph", ".pi", "node_modules", "vendor", "target", "dist", "build", "coverage", "archive", "archived", "completed", "reports", "obsolete", "deprecated", "legacy", "draft", "drafts", "wip", "temp", "tmp":
 		return true
 	default:
 		return strings.HasPrefix(lower, ".") || secretishName(lower)

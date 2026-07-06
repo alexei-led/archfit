@@ -2,7 +2,7 @@
 
 ## Overview
 
-Execute the roadmap in `docs/design/archfit-architect-gap-closure-v1.0.md` past P1 (already
+Execute the roadmap in `docs/archived/design/archfit-architect-gap-closure-v1.0.md` past P1 (already
 shipped: `file_structural_weight`, `test_in_production`). Add the deterministic detectors that
 let archfit _surface candidates_ for the architect-only findings the 6-repo study identified,
 while keeping the judgment layer (LLM/human) where the doc says it belongs.
@@ -30,7 +30,7 @@ while keeping the judgment layer (LLM/human) where the doc says it belongs.
 
 ## Context (from discovery)
 
-- **Design basis:** `docs/design/archfit-architect-gap-closure-v1.0.md` (roadmap P1/P2/P3 + Cat 11
+- **Design basis:** `docs/archived/design/archfit-architect-gap-closure-v1.0.md` (roadmap P1/P2/P3 + Cat 11
   - irreducible residue). This plan moves the doc's P2/P3 status from PROPOSED → implemented.
 - **Ground-truth inputs (currently in main `~/Workspace/archfit/reports/eval/`, copy into this
   branch in Task 1):** `architect-only-inventory.md` (20 enumerated summary-table findings across 13
@@ -256,7 +256,7 @@ while keeping the judgment layer (LLM/human) where the doc says it belongs.
 
 ### Task 11: Cat 10/12 residue — config/LLM routing + acceptance documentation
 
-- [x] document the named irreducible residue in `docs/design/archfit-architect-gap-closure-v1.0.md`
+- [x] document the named irreducible residue in `docs/archived/design/archfit-architect-gap-closure-v1.0.md`
       (flip P2/P3 status to implemented; keep Cat 10 layer-intent, Cat 12 semantic, live-EOL, true
       coverage, unsafe/panic _soundness_ as LLM/human-routed) — this is the doc's thesis, kept honest
 - [x] add a worked `forbidden_layer_direction` example to the docs/guide showing how Cat 10 closes by

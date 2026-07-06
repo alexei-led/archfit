@@ -70,6 +70,31 @@ func TestBuildClonePairSet_CarriesLocationEvidence(t *testing.T) {
 	}
 }
 
+func TestBuildClonePairSet_SkipsTypeScriptFamilyTestsInFallback(t *testing.T) {
+	tests := []struct {
+		name string
+		file string
+	}{
+		{name: "mts spec", file: testCrateA + "/src/widget.spec.mts"},
+		{name: "mjs spec", file: testCrateA + "/src/widget.spec.mjs"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clusters := []clone.Cluster{{
+				Files:     []string{tt.file, testCrateBLib},
+				Lines:     8,
+				Locations: []clone.LineRange{{StartLine: 5, EndLine: 12}, {StartLine: 40, EndLine: 47}},
+			}}
+
+			pairs, evidence := buildClonePairSet(clusters, testTwoCrateModuleMap(), nil)
+			if len(pairs) != 0 {
+				t.Fatalf("expected test clone cluster to be excluded, got pairs=%v evidence=%v", pairs, evidence)
+			}
+		})
+	}
+}
+
 // TestCollectAdvisories_ClonebackedSymmetricFinding_CitesRealLocation is the B6
 // end-to-end guard: a Symmetric-strength finding backed by a cross-module clone
 // pair must cite the REAL duplicated-code location jscpd found, not only the
@@ -88,7 +113,7 @@ func TestCollectAdvisories_ClonebackedSymmetricFinding_CitesRealLocation(t *test
 			{Kind: graph.NodeKindPackage, Path: testCrateB},
 		},
 		Edges:    []graph.Edge{edge},
-		Language: "rust",
+		Language: graph.LangRust,
 	}})
 
 	cloneLocs := []graph.Location{
