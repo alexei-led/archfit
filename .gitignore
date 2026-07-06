@@ -22,12 +22,10 @@ coverage.out
 go.work*
 __pycache__/
 
-# Generated reports and calibration output
+# Generated reports and archived docs
 calibration-report.json
-reports/*
-!reports/book-alignment-review-2026-07-05/
-reports/book-alignment-review-2026-07-05/*
-!reports/book-alignment-review-2026-07-05/00-REVIEW.md
+docs/archived/
+docs/plans/completed/
 
 # Backup files
 *.bak

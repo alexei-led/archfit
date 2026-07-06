@@ -13,10 +13,9 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 - `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit`
 - `make archfit` — dogfood architecture-drift gate: `.bin/archfit analyze --gate --config .archfit.yaml --full`
 - `make arch-lint` — architecture drift linter (alias for `make archfit`); wired into the pre-push hook
-- `make archfit-report` — write `reports/archfit-report.md` via `archfit analyze --markdown`
+- `make archfit-report` — write `docs/reports/archfit-report.md` via `archfit analyze --markdown`
 - `make mock` — regenerate moq fakes (`go generate ./...`)
 - `make test-fast` — `go test -race -short ./...` (skips slow subprocess/ast-grep integration tests; for inner-loop speed)
-- `make corpus-attrib` — informational dev tool: coupling_balance attribution table over the Wave-4 corpus repos (`scripts/corpus-attrib.sh`)
 - `make bench-gate` — cold vs warm fact-cache gate timing on this repo (reported number, not a CI assert; `scripts/bench-gate.sh`)
 - `make all` — fmt → lint → test → archfit
 - One test: `go test ./internal/<pkg>/ -run TestName`

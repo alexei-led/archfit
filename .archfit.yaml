@@ -58,6 +58,7 @@ modules:
       - internal/model/finding
       - internal/model/coupling
       - internal/model/diagnostic
+      - internal/model/fileclass
       - internal/model/clone
       - internal/model/pattern
       - internal/model/signal
@@ -76,6 +77,18 @@ modules:
     layer: support
     subdomain: supporting
     volatility: medium
+  internal/configschema:
+    owner: alexei-led
+    paths:
+      - internal/configschema/**
+    public:
+      - internal/configschema
+    # Build-time JSON Schema generator over config structs. It imports the
+    # config support view plus a schema library, so it is adapter tooling, not
+    # part of the gate decision core.
+    layer: adapter
+    subdomain: supporting
+    volatility: low
   internal/baseline:
     owner: alexei-led
     paths:
@@ -153,6 +166,18 @@ modules:
     layer: support
     subdomain: supporting
     volatility: low
+  internal/syntax:
+    owner: alexei-led
+    paths:
+      - internal/syntax/**
+    public:
+      - internal/syntax
+    # Pure file-class/test-file classifier over already-gathered source bytes.
+    # It is in the core-ring import-hygiene test, but layer-wise it is support:
+    # config projects FileClassDef into syntax.FileClassConfig.
+    layer: support
+    subdomain: supporting
+    volatility: low
   internal/ports:
     owner: alexei-led
     paths:
@@ -169,12 +194,24 @@ modules:
       - internal/labels/**
     public:
       - internal/labels
-      - internal/labels/labelsio
-    # Reviewed coupling-label artifact. Support-tier like config until the
-    # value type and YAML loader split.
+    # Pure label-domain logic: approval, hashes, and strength filtering. The
+    # YAML loader lives in internal/labels/labelsio so the I/O adapter stays
+    # out of the engine's import closure.
     layer: support
     subdomain: supporting
-    volatility: medium
+    volatility: low
+  internal/labels/labelsio:
+    owner: alexei-led
+    paths:
+      - internal/labels/labelsio/**
+    public:
+      - internal/labels/labelsio
+    # Disk/YAML adapter for .archfit-labels.yaml. Adapter layer so the os +
+    # YAML dependency remains off the decision path.
+    role: adapter
+    layer: adapter
+    subdomain: supporting
+    volatility: low
   # archfit: removed module "arch_tests" — verify before deleting (not found in discovery)
   # arch_tests:
   # paths:
@@ -482,6 +519,18 @@ modules:
     layer: cmd
     subdomain: generic
     volatility: medium
+  cmd/calibrate:
+    owner: alexei-led
+    paths:
+      - cmd/calibrate/**
+    public:
+      - cmd/calibrate
+    # Dev-only scorer-calibration binary. It is a composition root over
+    # internal/calibrate plus extract/classify plumbing, not shipped user path.
+    role: composition_root
+    layer: cmd
+    subdomain: generic
+    volatility: low
   scripts/eval/coverage:
     owner: alexei-led
     paths:
@@ -547,10 +596,16 @@ rules:
     from: internal/engine/**
     to: internal/output/**
     gate: fail
-  - id: engine_no_labelsio
+  - id: internal_no_labelsio
     type: forbidden_dependency
-    from: internal/engine/**
+    from: internal/**
     to: internal/labels/labelsio/**
+    gate: fail
+  # LLM provider adapters are off-gate. Only cmd hosts explicit LLM flows.
+  - id: internal_no_llm
+    type: forbidden_dependency
+    from: internal/**
+    to: internal/llm/**
     gate: fail
   # Ring gate 3: model packages are pure value types
   - id: model_no_config
@@ -563,10 +618,11 @@ rules:
     from: internal/model/**
     to: internal/baseline
     gate: fail
-  # Hexagonal boundary: adapters must depend on ports, not the orchestrator.
-  - id: extract_no_engine
+  # Hexagonal boundary: internal packages depend on ports, not the orchestrator.
+  # Only cmd imports internal/engine.
+  - id: internal_no_engine
     type: forbidden_dependency
-    from: internal/extract/**
+    from: internal/**
     to: internal/engine/**
     gate: fail
   # Layer direction guard. The historical engine→scope inversion was
@@ -574,17 +630,14 @@ rules:
   - id: layer_inversion
     type: forbidden_layer_direction
     gate: fail
-  # --- Syntax-facts example rule (gate: warn = advisory, non-blocking) ---
-  # Example: warn when any module's exported API exceeds a generous ceiling.
-  # public_api_max is global (no per-module scoping); the threshold must exceed
-  # the largest module count. archfit's catch-all "internal" module currently
-  # resolves ~1521 exported declarations (verified via `make archfit-report`);
-  # max: 1600 gives headroom above the measured count. Revert to 1500 only after
-  # splitting the catch-all stanza and verifying per-module counts are below it.
-  # In practice, set max per module after splitting the catch-all stanza.
+  # --- Syntax-facts lint rule (gate: warn = advisory, non-blocking) ---
+  # public_api_max is global (no per-module scoping); keep the ceiling above the
+  # largest measured exported surface. Current max is cmd/archfit (~281 exported
+  # declarations); 320 keeps headroom while catching a module that turns into a
+  # dumping ground.
   - id: syntax_api_size_ceiling
     type: public_api_max
-    max: 1600
+    max: 320
     gate: warn
   # Public-API framework-type-leak — advisory dogfooding. Fires when an exported
   # field or function return type names an external (non-first-party) package.

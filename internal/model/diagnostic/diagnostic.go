@@ -55,7 +55,7 @@ const (
 
 // Direction records whether a rising metric value is an improvement or a
 // regression. It is a property of the metric's definition, not a user choice
-// (Technical Details, docs/plans/20260702-wave1-gate-integrity.md): the metric
+// (Technical Details, docs/plans/completed/20260702-wave1-gate-integrity.md): the metric
 // that produces a MetricResult stamps its own Direction, and computeVerdict
 // reads it to interpret Delta's sign instead of assuming ratio semantics for
 // every metric.

@@ -495,9 +495,9 @@ For each module pair below, the tool's deterministic heuristic labeled the depen
 - "functional": the consumer invokes the producer's behavior (calls functions, no deep type dependence).
 - "contract": the consumer depends only on a deliberately published, stable interface.
 - "intrusive": the consumer reaches into internals, private state, or implementation details.
-Use the repository evidence IDs, module names, subdomain/volatility context, and sample dependency paths. Respect intended centralization: shared infrastructure or config hubs are not automatically intrusive. Cite evidence IDs in the rationale when repository evidence is relevant.
+Use the repository evidence IDs, module names, subdomain/volatility context, and sample dependency paths. Respect intended centralization: shared infrastructure or config hubs are not automatically intrusive. Put cited repository evidence IDs in evidence_refs. Use an empty evidence_refs array when the judgment rests only on sample dependency paths.
 Respond with a STRICT JSON array only — no prose, no markdown fences. One object per pair:
-[{"from":"<module>","to":"<module>","strength":"model|functional|contract|intrusive","rationale":"<one sentence>"}]
+[{"from":"<module>","to":"<module>","strength":"model|functional|contract|intrusive","basis":"semantic_judgment","evidence_refs":["doc:<path>"],"rationale":"<one sentence>"}]
 Include every pair exactly once.`
 
 // draftLabels asks the provider to refine each batch of pairs and parses the
@@ -514,7 +514,7 @@ func draftLabels(ctx context.Context, p llm.Provider, cfg config.Config, pairs [
 		if err != nil {
 			return nil, err
 		}
-		drafts, err := parseEnrichResponse(resp.Text, batch)
+		drafts, err := parseEnrichResponse(resp.Text, batch, evidenceRefSet(evidence))
 		if err != nil {
 			return nil, err
 		}
@@ -565,17 +565,19 @@ func moduleContext(cfg config.Config, module string) string {
 
 // enrichResponse mirrors one element of the model's JSON answer.
 type enrichResponse struct {
-	From      string `json:"from"`
-	To        string `json:"to"`
-	Strength  string `json:"strength"`
-	Rationale string `json:"rationale"`
+	From         string   `json:"from"`
+	To           string   `json:"to"`
+	Strength     string   `json:"strength"`
+	Rationale    string   `json:"rationale"`
+	EvidenceRefs []string `json:"evidence_refs"`
+	Basis        string   `json:"basis"`
 }
 
 // parseEnrichResponse strictly parses the model's JSON and keeps only entries
 // matching requested pairs with valid strengths. A malformed body is an error
 // (never write a half-understood draft file); unknown pairs/strengths in an
 // otherwise-valid body are skipped.
-func parseEnrichResponse(text string, batch []refinablePair) ([]labels.Label, error) {
+func parseEnrichResponse(text string, batch []refinablePair, allowedRefs ...map[string]struct{}) ([]labels.Label, error) {
 	text = trimJSONFences(text)
 
 	var entries []enrichResponse
@@ -589,24 +591,43 @@ func parseEnrichResponse(text string, batch []refinablePair) ([]labels.Label, er
 	}
 
 	out := make([]labels.Label, 0, len(entries))
+	knownRefs := firstAllowedEvidenceRefs(allowedRefs)
 	for _, e := range entries {
-		if _, ok := requested[labels.Key(e.From, e.To)]; !ok {
+		key := labels.Key(e.From, e.To)
+		if _, ok := requested[key]; !ok {
 			continue
 		}
 		if !labels.ValidStrength(e.Strength) {
 			continue
 		}
+		basis, refs, err := labelDraftMetadata("label draft", e.From+"->"+e.To, e.Basis, e.EvidenceRefs, knownRefs)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, labels.Label{
-			From:       e.From,
-			To:         e.To,
-			Strength:   e.Strength,
-			Rationale:  e.Rationale,
-			Status:     labels.StatusDraft,
-			Provenance: labels.ProvenanceLLM,
-			Confidence: labels.ConfidenceMedium,
+			From:         e.From,
+			To:           e.To,
+			Strength:     e.Strength,
+			Rationale:    e.Rationale,
+			EvidenceRefs: refs,
+			Basis:        basis,
+			Status:       labels.StatusDraft,
+			Provenance:   labels.ProvenanceLLM,
+			Confidence:   labels.ConfidenceMedium,
 		})
 	}
 	return out, nil
+}
+
+func labelDraftMetadata(scope, name, basis string, refs []string, allowedRefs map[string]struct{}) (string, []string, error) {
+	basis, refs, err := draftMetadata(scope, name, basis, refs, false, allowedRefs)
+	if err != nil {
+		return "", nil, err
+	}
+	if basis == "" {
+		return "", nil, fmt.Errorf("%s %q missing basis", scope, name)
+	}
+	return basis, refs, nil
 }
 
 // mergeDrafts merges new drafts into the existing labels: fresh approved entries

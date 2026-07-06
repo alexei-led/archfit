@@ -8,8 +8,8 @@ opt-in inferred-volatility cascade transitive. The formula, ordinals, bands, and
 abstain discipline are unchanged. Delta notes: `20260702-bc-score-v4.md`,
 `20260705-bc-score-v5.md`, and `20260705-bc-score-v6.md`.
 
-Related plans: `docs/plans/20260702-wave4-book-strength-distance.md` (Tasks 1–6),
-`docs/plans/20260705-wave1-deterministic-book-fidelity.md` (Tasks 2–5).
+Related plans: `docs/plans/completed/20260702-wave4-book-strength-distance.md` (Tasks 1–6),
+`docs/plans/completed/20260705-wave1-deterministic-book-fidelity.md` (Tasks 2–5).
 
 ---
 

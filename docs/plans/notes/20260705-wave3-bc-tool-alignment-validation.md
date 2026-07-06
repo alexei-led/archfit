@@ -1,8 +1,8 @@
 # Wave 3 Balanced Coupling tool-alignment validation
 
 Date: 2026-07-06
-Plan: `docs/plans/20260705-wave3-bc-tool-alignment-improvements.md`
-Source review: `reports/book-alignment-review-2026-07-05/00-REVIEW.md`
+Plan: `docs/plans/completed/20260705-wave3-bc-tool-alignment-improvements.md`
+Source review: `docs/archived/reports/book-alignment-review-2026-07-05/00-REVIEW.md`
 
 ## Scope
 
@@ -23,13 +23,13 @@ Task 5 validates the completed P1-P3 wave:
   - Warnings: 81 advisory.
   - Score: 43/100 mixed.
 - `make archfit-report`: PASS.
-  - Rewrote `reports/archfit-report.md`; no tracked diff remained after generation.
+  - Rewrote `docs/reports/archfit-report.md`; no tracked diff remained after generation.
 - `.bin/archfit analyze --gate --full --config .archfit.yaml --base origin/main`: PASS.
   - Decision: ACCEPTABLE WITH WATCH ITEMS.
   - Gate: PASS, 0 blocking.
   - Warnings: 81 advisory.
   - Score: 43/100 mixed.
-- `ATTRIB_REPOS_DIR=${ATTRIB_REPOS_DIR:-$HOME/Workspace} make corpus-attrib`: PASS.
+- retired corpus-attribution helper: PASS.
   - Corpus covered Go, Python, Rust, and TypeScript/JavaScript.
   - Skipped corpus repos: none.
 
@@ -59,11 +59,7 @@ Task 5 validates the completed P1-P3 wave:
 
 ## Corpus attribution
 
-Final command:
-
-```sh
-ATTRIB_REPOS_DIR=${ATTRIB_REPOS_DIR:-$HOME/Workspace} make corpus-attrib
-```
+Final snapshot source: retired local corpus-attribution helper over external checkouts.
 
 | repo      | language      | final score | final band | scored | abstained | external |
 | --------- | ------------- | ----------: | ---------- | -----: | --------: | -------: |

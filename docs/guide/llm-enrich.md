@@ -70,6 +70,9 @@ labels:
     to: window_state
     strength: model
     rationale: "WindowState dataclasses cross the boundary"
+    evidence_refs:
+      - api:window_state
+    basis: semantic_judgment
     evidence_hash: 4f1c... # written by enrich; verified by analyze
     confidence: medium
     provenance: llm
@@ -81,6 +84,13 @@ labels:
   model's judgment. If a human re-reads the code and takes ownership of the
   classification, set `provenance: human` to restore full confidence.
 - A label pins all edges of the ordered module pair (`from` → `to`).
+- `evidence_refs` lists repository evidence IDs the model cited. It may be
+  empty when the judgment rests only on sample dependency paths or endpoint
+  snippets, because those samples are prompt evidence but do not yet have stable
+  evidence-pack IDs.
+- `basis` is required on new LLM draft labels. Use `semantic_judgment` for
+  coupling-strength judgments; `deterministic_fact` is reserved for entries that
+  only restate tool/config facts.
 - `evidence_hash` fingerprints the pair's import-graph edges at enrich time.
   On full runs, `analyze` recomputes it: a mismatch means the dependency surface
   changed since review — the label is ignored and a `labels/stale` advisory
@@ -130,14 +140,22 @@ Evidence IDs use stable prefixes:
 The builder sorts sources deterministically, caps each source type separately,
 truncates each item, skips hidden/vendor/cache directories, and excludes
 secret-like paths such as `.env`, credentials, tokens, keys, certificates, and
-files whose names contain `secret`. This is a guardrail, not secret scanning: do
+files whose names contain `secret`. Code-derived package comments and exported
+names are Go-only today, plus configured `public:` globs for any language.
+TypeScript, Python, and Rust LLM prompts still get docs, config snippets,
+diagnostics, module names, dependency sample paths, and abstained-edge snippets,
+but those samples do not yet have stable evidence-pack IDs. This is why label
+drafts may have `evidence_refs: []` even when their rationale is based on sample
+paths/snippets. This is a guardrail, not secret scanning: do
 not run provider-backed LLM commands on a repo whose docs, comments, or public API
 text contain secrets you would not send to that provider. Prompts require models
 to cite these IDs in structured `evidence_refs` for every proposed module field,
-owner, volatility, subdomain, `external_systems` entry, and rule change. Each
-proposal also carries `basis: deterministic_fact` when it only restates tool/config evidence, or `basis:
-semantic_judgment` when the model is making an architectural judgment. Draft files
-and update reports keep that metadata for review, while default plan mode still
+label draft, owner, volatility, subdomain, `external_systems` entry, and rule
+change. Label drafts may use `evidence_refs: []` when the prompt's sample paths
+or snippets are the cited evidence. Each proposal also carries
+`basis: deterministic_fact` when it only restates tool/config evidence, or
+`basis: semantic_judgment` when the model is making an architectural judgment.
+Draft files and update reports keep that metadata for review, while default plan mode still
 leaves config unchanged. `analyze --llm` uses the same pack alongside
 deterministic finding IDs and metric IDs so the review can cite exactly what it is
 interpreting.

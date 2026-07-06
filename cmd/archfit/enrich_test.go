@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/coupling"
@@ -38,9 +39,42 @@ const (
 	globPkgA = "pkg/a/**"
 	globPkgB = "pkg/b/**"
 
-	rustSyntheticFrom = "crate::api"
-	rustSyntheticTo   = "crate::domain"
+	rustSyntheticFrom  = "crate::api"
+	rustSyntheticTo    = "crate::domain"
+	enrichEvidenceAPIA = "api:a"
 )
+
+func enrichDraftJSON(from, to, strength, rationale string) string {
+	return fmt.Sprintf(`{"from":%q,"to":%q,"strength":%q,"basis":%q,"evidence_refs":[],"rationale":%q}`,
+		from, to, strength, initcfg.DraftBasisSemanticJudgment, rationale)
+}
+
+func enrichDraftJSONWithRefs(from, to, strength, rationale string, refs ...string) string {
+	data, err := json.Marshal(struct {
+		From         string   `json:"from"`
+		To           string   `json:"to"`
+		Strength     string   `json:"strength"`
+		Basis        string   `json:"basis"`
+		EvidenceRefs []string `json:"evidence_refs"`
+		Rationale    string   `json:"rationale"`
+	}{
+		From:         from,
+		To:           to,
+		Strength:     strength,
+		Basis:        initcfg.DraftBasisSemanticJudgment,
+		EvidenceRefs: refs,
+		Rationale:    rationale,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
+}
+
+func abstainedDraftJSON(from, to, strength, confidence, rationale string) string {
+	return fmt.Sprintf(`{"from":%q,"to":%q,"strength":%q,"confidence":%q,"basis":%q,"evidence_refs":[],"rationale":%q}`,
+		from, to, strength, confidence, initcfg.DraftBasisSemanticJudgment, rationale)
+}
 
 func enrichFixture() (*graph.Graph, coupling.Index, config.ModuleMap) {
 	cfg := config.Config{
@@ -166,9 +200,9 @@ func TestEnrichUserPrompt_IncludesRepositoryEvidenceIDs(t *testing.T) {
 	prompt := enrichUserPrompt(
 		config.Config{},
 		[]refinablePair{{From: modA, To: modB, Strength: enrichFunctional, EdgeCount: 1, SamplePaths: []string{"pkg/a/a.go -> pkg/b/b.go"}}},
-		[]string{"api:a (api) a: exported names: Service"},
+		[]string{enrichEvidenceAPIA + " (api) a: exported names: Service"},
 	)
-	for _, want := range []string{repositoryEvidenceHeader, "api:a", "exported names: Service", "from: a"} {
+	for _, want := range []string{repositoryEvidenceHeader, enrichEvidenceAPIA, "exported names: Service", "from: a"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
@@ -181,22 +215,22 @@ func TestParseEnrichResponse(t *testing.T) {
 
 	t.Run("valid json with fences", func(t *testing.T) {
 		t.Parallel()
-		text := "```json\n[{\"from\":\"a\",\"to\":\"b\",\"strength\":\"model\",\"rationale\":\"types cross\"}]\n```"
-		got, err := parseEnrichResponse(text, batch)
+		text := "```json\n[" + enrichDraftJSONWithRefs(modA, modB, enrichModel, "types cross", enrichEvidenceAPIA) + "]\n```"
+		got, err := parseEnrichResponse(text, batch, map[string]struct{}{enrichEvidenceAPIA: {}})
 		if err != nil || len(got) != 1 {
 			t.Fatalf("(%v, %v)", got, err)
 		}
 		if got[0].Status != labels.StatusDraft || got[0].Strength != enrichModel {
 			t.Errorf("draft = %+v", got[0])
 		}
+		if got[0].Basis != initcfg.DraftBasisSemanticJudgment || len(got[0].EvidenceRefs) != 1 || got[0].EvidenceRefs[0] != enrichEvidenceAPIA {
+			t.Errorf("metadata = basis %q refs %v", got[0].Basis, got[0].EvidenceRefs)
+		}
 	})
 
 	t.Run("unrequested pair and invalid strength skipped", func(t *testing.T) {
 		t.Parallel()
-		text := `[
-			{"from":"x","to":"y","strength":"model","rationale":"hallucinated pair"},
-			{"from":"a","to":"b","strength":"mega","rationale":"invalid strength"}
-		]`
+		text := `[` + enrichDraftJSON("x", "y", enrichModel, "hallucinated pair") + `,` + enrichDraftJSON(modA, modB, "mega", "invalid strength") + `]`
 		got, err := parseEnrichResponse(text, batch)
 		if err != nil {
 			t.Fatal(err)
@@ -212,6 +246,20 @@ func TestParseEnrichResponse(t *testing.T) {
 			t.Error("prose response must be rejected")
 		}
 	})
+
+	for name, text := range map[string]string{
+		"missing basis":   `[{"from":"a","to":"b","strength":"model","evidence_refs":[],"rationale":"types cross"}]`,
+		"invalid basis":   `[{"from":"a","to":"b","strength":"model","basis":"vibes","evidence_refs":[],"rationale":"types cross"}]`,
+		"invalid ref":     `[{"from":"a","to":"b","strength":"model","basis":"semantic_judgment","evidence_refs":["bad ref"],"rationale":"types cross"}]`,
+		"unsupported ref": `[{"from":"a","to":"b","strength":"model","basis":"semantic_judgment","evidence_refs":["api:missing"],"rationale":"types cross"}]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := parseEnrichResponse(text, batch, map[string]struct{}{enrichEvidenceAPIA: {}}); err == nil {
+				t.Error("want schema-validation error")
+			}
+		})
+	}
 }
 
 func TestMergeDrafts(t *testing.T) {
@@ -326,7 +374,7 @@ func TestDraftLabels_ProvenanceAndConfidence(t *testing.T) {
 	pairs := []refinablePair{
 		{From: modA, To: modB, Strength: enrichFunctional},
 	}
-	resp := `[{"from":"a","to":"b","strength":"model","rationale":"types cross"}]`
+	resp := `[` + enrichDraftJSON(modA, modB, enrichModel, "types cross") + `]`
 	p := &scriptedProvider{responses: []string{resp}}
 
 	got, err := draftLabels(context.Background(), p, config.Config{}, pairs)
@@ -346,6 +394,9 @@ func TestDraftLabels_ProvenanceAndConfidence(t *testing.T) {
 	if d.Status != labels.StatusDraft {
 		t.Errorf("status = %q, want %q", d.Status, labels.StatusDraft)
 	}
+	if d.Basis != initcfg.DraftBasisSemanticJudgment {
+		t.Errorf("basis = %q, want %q", d.Basis, initcfg.DraftBasisSemanticJudgment)
+	}
 }
 
 func TestDraftLabels_BatchesAndParses(t *testing.T) {
@@ -360,7 +411,7 @@ func TestDraftLabels_BatchesAndParses(t *testing.T) {
 	build := func(ps []refinablePair) string {
 		parts := make([]string, 0, len(ps))
 		for _, p := range ps {
-			parts = append(parts, `{"from":"`+p.From+`","to":"z","strength":"model","rationale":"r"}`)
+			parts = append(parts, enrichDraftJSON(p.From, "z", enrichModel, "r"))
 		}
 		return "[" + strings.Join(parts, ",") + "]"
 	}

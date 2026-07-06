@@ -50,7 +50,7 @@ func TestByteIdentical_OneMemberWorkspace(t *testing.T) {
 }
 
 // runByteIdenticalTest materialises the fixture into a fresh temp git repo,
-// runs archfit check --full --format json in-process, normalises volatile
+// runs archfit analyze --gate --full --format json in-process, normalises volatile
 // fields (absolute paths), and diffs the result against baseline.json beside
 // the fixture.
 //

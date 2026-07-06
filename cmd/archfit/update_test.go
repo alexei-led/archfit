@@ -183,6 +183,11 @@ analyzers:
 }
 
 const (
+	reviewSuggestSubdomainCore = "+ subdomain: core"
+	reviewSuggestVolatilityLow = "+ volatility: low"
+	reviewSuggestLayerCore     = "+ layer: core"
+	reviewSuggestRationaleTest = "rationale: test"
+
 	// minimalConfigNoModules is a valid config with no modules section.
 	// Structurally in sync with empty discovery (Added=[], Removed=[], Drift=[]).
 	minimalConfigNoModules = `version: 1
@@ -347,7 +352,7 @@ rules:
 	if !bytes.Equal(before, data) {
 		t.Error("--llm --apply must not write review-only LLM suggestions")
 	}
-	for _, want := range []string{"+ subdomain: core", "+ volatility: low", "+ layer: core", "rationale: test"} {
+	for _, want := range []string{reviewSuggestSubdomainCore, reviewSuggestVolatilityLow, reviewSuggestLayerCore, reviewSuggestRationaleTest} {
 		if !strings.Contains(out, want) {
 			t.Errorf("review diff missing %q:\n%s", want, out)
 		}
@@ -394,6 +399,38 @@ func TestUpdateCmd_LLMApply_NoSetFieldsForAddedModule(t *testing.T) {
 	}
 	if strings.Contains(content, "volatility:") {
 		t.Errorf("LLM volatility suggestion must not be written by --apply; content:\n%s", content)
+	}
+}
+
+func TestUpdateCmd_LLMApply_SurfacesReviewOnlySuggestionsAfterStructuralEdit(t *testing.T) {
+	t.Parallel()
+	dir := minimalRoot(t)
+	cfgPath := writeConfig(t, dir, minimalConfigNoModules)
+
+	cmd := &UpdateCmd{
+		Config:           cfgPath,
+		Root:             dir,
+		LLM:              true,
+		Apply:            true,
+		LLMProvider:      providerAnthropic,
+		LLMModel:         defaultLLMModel,
+		providerOverride: &ruleSuggestionProvider{},
+	}
+	out, err := runUpdateCmd(t, cmd, matchingRunner("internal/mymod"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{
+		"LLM MODULE SUGGESTIONS",
+		reviewSuggestSubdomainCore,
+		reviewSuggestVolatilityLow,
+		"RULE SUGGESTIONS",
+		"id: no-adapter-to-core",
+		"evidence_refs:",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
 	}
 }
 
@@ -677,7 +714,7 @@ rules:
 	if !strings.Contains(out, "mymod") {
 		t.Errorf("plan report should mention 'mymod'; got:\n%s", out)
 	}
-	for _, want := range []string{"+ subdomain: core", "+ volatility: low", "rationale: test"} {
+	for _, want := range []string{reviewSuggestSubdomainCore, reviewSuggestVolatilityLow, reviewSuggestRationaleTest} {
 		if !strings.Contains(out, want) {
 			t.Errorf("plan report missing %q:\n%s", want, out)
 		}

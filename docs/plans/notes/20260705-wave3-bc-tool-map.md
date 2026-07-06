@@ -1,13 +1,13 @@
 # Wave 3 Task 1 — Balanced Coupling tool/map gap note
 
 Date: 2026-07-05
-Plan: `docs/plans/20260705-wave3-bc-tool-alignment-improvements.md`
+Plan: `docs/plans/completed/20260705-wave3-bc-tool-alignment-improvements.md`
 
 ## Sources checked
 
 - Plan overview, source artifact, current-state snapshot, tool policy, and Task 1 requirements.
 - Book anchors via `ctx_search` over the indexed EPUB extraction for Ch6, Ch7, Ch8, Ch9, Ch10, and Ch11.
-- Existing review: `reports/book-alignment-review-2026-07-05/00-REVIEW.md`.
+- Existing review: `docs/archived/reports/book-alignment-review-2026-07-05/00-REVIEW.md`.
 - Code paths for strength, distance, volatility, connascence, score synthesis, runtime rollups, clone-only pairs, and LLM label boundaries.
 - Docs: `docs/guide/concepts.md`, `docs/guide/metrics.md`, `docs/design/bc-measurement-v4.md`, `docs/design/20260705-bc-score-v5.md`.
 - GitNexus impact: `classify` was ambiguous until disambiguated to `Function:internal/classify/classify.go:classify`; downstream impact is critical with 27 affected symbols/process hits. `Synthesize` has medium downstream impact with 19 affected symbols. Initial `detect-changes --scope all` reported no tracked symbol changes before this note.

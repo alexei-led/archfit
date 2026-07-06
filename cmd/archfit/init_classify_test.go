@@ -256,6 +256,23 @@ func TestClassifyModulesWithEvidence_UnsupportedEvidenceRefsError(t *testing.T) 
 	}
 }
 
+func TestClassifyModulesWithEvidence_AcceptsAPIEvidenceRefAlias(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test cites api:ownership","evidence_refs":["api:ownership"],"basis":"semantic_judgment"}]`
+	p := &fakeClassifyProvider{responses: []string{resp}}
+
+	got, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{"api:internal-ownership (api) internal/ownership: owner map"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ann := got[testMod0]
+	if len(ann.EvidenceRefs) != 1 || ann.EvidenceRefs[0] != "api:internal-ownership" {
+		t.Fatalf("evidence refs = %+v, want canonical api ref", ann.EvidenceRefs)
+	}
+}
+
 func TestClassifyModulesWithEvidence_ParsesRuleSuggestions(t *testing.T) {
 	t.Parallel()
 	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # gap-closure.sh — run archfit full + delta across all 6 eval repos and write results.
 #
-# Writes to reports/eval/gap-closure/<repo>/{full,delta}.{json,md}
+# Writes to docs/archived/reports/eval/gap-closure/<repo>/{full,delta}.{json,md}
 # Skips repos whose toolchain or config is absent; logs each skip reason.
 #
 # Usage (from repo root):
@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ARCHFIT="${REPO_ROOT}/.bin/archfit"
 WORKSPACE="${HOME}/Workspace"
-OUTPUT_BASE="${REPO_ROOT}/reports/eval/gap-closure"
+OUTPUT_BASE="${REPO_ROOT}/docs/archived/reports/eval/gap-closure"
 REPOS=(archfit pumba codegraph ccgram yazi herdr)
 
 # Toolchain checks per language.
@@ -113,13 +113,13 @@ for repo in "${REPOS[@]}"; do
 	# Create output directory.
 	mkdir -p "${out_dir}"
 
-	# Run full check — JSON (coverage generator reads this).
+	# Run full analyze — JSON (coverage generator reads this).
 	# Exit-code contract (stable): 0 = clean, 1 = gate violations, 3 = config/tool error.
 	# Only 0 and 1 produce valid JSON output. Exit 3 (crash) leaves empty/invalid JSON;
 	# remove it so the coverage generator does not silently process stale or empty output.
-	echo "  full check (json)..."
+	echo "  full analyze (json)..."
 	full_json_exit=0
-	"${ARCHFIT}" check \
+	"${ARCHFIT}" analyze --gate \
 		--config "${config_file}" \
 		--root "${repo_dir}" \
 		--full \
@@ -137,9 +137,9 @@ for repo in "${REPOS[@]}"; do
 		cat "${out_dir}/full.stderr" >&2
 	fi
 
-	# Run full check — Markdown (human-readable report).
-	echo "  full check (md)..."
-	if "${ARCHFIT}" check \
+	# Run full analyze — Markdown (human-readable report).
+	echo "  full analyze (md)..."
+	if "${ARCHFIT}" analyze --gate \
 		--config "${config_file}" \
 		--root "${repo_dir}" \
 		--full \
@@ -152,9 +152,9 @@ for repo in "${REPOS[@]}"; do
 		echo "  full md: archfit exited ${exit_code} (gate violations expected — output still written)"
 	fi
 
-	# Run delta check (smoke: HEAD~1 base) — JSON.
-	echo "  delta check (HEAD~1, json)..."
-	if (cd "${repo_dir}" && "${ARCHFIT}" check \
+	# Run delta analyze (smoke: HEAD~1 base) — JSON.
+	echo "  delta analyze (HEAD~1, json)..."
+	if (cd "${repo_dir}" && "${ARCHFIT}" analyze --gate \
 		--config "${config_file}" \
 		--root "${repo_dir}" \
 		--base HEAD~1 \
@@ -167,9 +167,9 @@ for repo in "${REPOS[@]}"; do
 		echo "  delta json: archfit exited ${exit_code} (expected for gate violations or shallow history)"
 	fi
 
-	# Run delta check — Markdown.
-	echo "  delta check (HEAD~1, md)..."
-	if (cd "${repo_dir}" && "${ARCHFIT}" check \
+	# Run delta analyze — Markdown.
+	echo "  delta analyze (HEAD~1, md)..."
+	if (cd "${repo_dir}" && "${ARCHFIT}" analyze --gate \
 		--config "${config_file}" \
 		--root "${repo_dir}" \
 		--base HEAD~1 \

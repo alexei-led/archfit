@@ -13,6 +13,7 @@ import (
 
 const (
 	jsonFieldEvidenceRefs           = "evidence_refs"
+	evidenceRefTypeAPI              = "api"
 	ruleTypeForbiddenDependency     = "forbidden_dependency"
 	ruleTypeForbiddenRoleDependency = "forbidden_role_dependency"
 	ruleTypePublicAPIMax            = "public_api_max"
@@ -59,16 +60,21 @@ func draftMetadata(scope, name, basis string, refs []string, requireEvidence boo
 	}
 	knownRefs := firstAllowedEvidenceRefs(allowedRefs)
 	if len(cleaned) > 0 {
+		resolved := make([]string, 0, len(cleaned))
 		for _, ref := range cleaned {
 			if !validEvidenceRef(ref) {
 				return "", nil, fmt.Errorf("%s %q has invalid %s %q", scope, name, jsonFieldEvidenceRefs, ref)
 			}
 			if knownRefs != nil {
-				if _, ok := knownRefs[ref]; !ok {
+				canonical, ok := resolveKnownEvidenceRef(ref, knownRefs)
+				if !ok {
 					return "", nil, fmt.Errorf("%s %q has unsupported %s %q", scope, name, jsonFieldEvidenceRefs, ref)
 				}
+				ref = canonical
 			}
+			resolved = append(resolved, ref)
 		}
+		cleaned = cleanEvidenceRefs(resolved)
 	}
 	if !requireEvidence {
 		return basis, cleaned, nil
@@ -122,7 +128,7 @@ func validEvidenceRef(ref string) bool {
 		return false
 	}
 	switch prefix {
-	case "doc", "api", "comment", "config", "diag":
+	case "doc", evidenceRefTypeAPI, "comment", "config", "diag":
 	default:
 		return false
 	}
@@ -132,6 +138,60 @@ func validEvidenceRef(ref string) bool {
 		}
 	}
 	return true
+}
+
+func resolveKnownEvidenceRef(ref string, knownRefs map[string]struct{}) (string, bool) {
+	if knownRefs == nil {
+		return ref, true
+	}
+	if _, ok := knownRefs[ref]; ok {
+		return ref, true
+	}
+	prefix, rest, ok := strings.Cut(ref, ":")
+	if !ok || prefix != evidenceRefTypeAPI {
+		return "", false
+	}
+	want := normalizeEvidenceRefSlug(rest)
+	if want == "" {
+		return "", false
+	}
+	match := ""
+	for known := range knownRefs {
+		knownPrefix, knownRest, ok := strings.Cut(known, ":")
+		if !ok || knownPrefix != evidenceRefTypeAPI {
+			continue
+		}
+		if knownRest != want && !strings.HasSuffix(knownRest, "-"+want) {
+			continue
+		}
+		if match != "" && match != known {
+			return "", false
+		}
+		match = known
+	}
+	if match == "" {
+		return "", false
+	}
+	return match, true
+}
+
+func normalizeEvidenceRefSlug(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range s {
+		ok := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-'
+		if ok {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 func evidenceRefSet(lines []string) map[string]struct{} {

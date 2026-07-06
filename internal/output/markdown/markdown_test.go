@@ -743,7 +743,7 @@ func TestRenderer_Render_AgentTasks(t *testing.T) {
 		Goal:        "Replace the internal-API access from pkg/a/a.go to pkg/b/internal/impl.go with b's public API.",
 		Constraints: []string{"Use only the public API of module b"},
 		Files:       []string{"pkg/a/a.go", "pkg/b/internal/impl.go"},
-		Validation:  []string{"archfit check -c .archfit.yaml --full"},
+		Validation:  []string{"archfit analyze --gate -c .archfit.yaml --full"},
 	}}
 
 	var buf bytes.Buffer
@@ -756,7 +756,7 @@ func TestRenderer_Render_AgentTasks(t *testing.T) {
 		"**no_internal_access** [`abcdef12`]",
 		"files: pkg/a/a.go, pkg/b/internal/impl.go",
 		"constraint: Use only the public API of module b",
-		"validate: `archfit check -c .archfit.yaml --full`",
+		"validate: `archfit analyze --gate -c .archfit.yaml --full`",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)

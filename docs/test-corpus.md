@@ -60,5 +60,5 @@ and are heavier (SCIP on prometheus is slow). Use canonical-case `--root` paths 
 
 ## Related
 
-- Eval findings: `reports/eval-2026-06-30/00-FINDINGS.md`
-- Owner-detection probe across repos: `reports/eval-2026-06-30/owner-detection-probe.md`
+- Eval findings: `docs/archived/reports/eval-2026-06-30/00-FINDINGS.md`
+- Owner-detection probe across repos: `docs/archived/reports/eval-2026-06-30/owner-detection-probe.md`

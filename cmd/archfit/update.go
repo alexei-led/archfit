@@ -108,6 +108,11 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	if len(report.PathDrift) > 0 {
 		_, _ = fmt.Fprintln(deps.Stdout, "note: module paths replaced with discovered paths")
 	}
+	if c.LLM && ann != nil {
+		if rendered := initcfg.RenderAppliedLLMReview(report, ann); rendered != "" {
+			_, _ = fmt.Fprint(deps.Stdout, rendered)
+		}
+	}
 	return nil
 }
 

@@ -6,7 +6,7 @@ CMD            := ./cmd/archfit
 BIN_DIR        := .bin
 MODULE         := github.com/alexei-led/archfit
 ARCHFIT_CONFIG := .archfit.yaml
-ARCHFIT_REPORT := reports/archfit-report.md
+ARCHFIT_REPORT := docs/reports/archfit-report.md
 
 VERSION   := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT    := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
@@ -65,7 +65,7 @@ arch-lint: archfit ## architecture drift linter (alias for the archfit dogfood g
 
 ## archfit-report: write a Markdown architecture audit report
 .PHONY: archfit-report
-archfit-report: build ## write reports/archfit-report.md for human review
+archfit-report: build ## write docs/reports/archfit-report.md for human review
 	@mkdir -p $(dir $(ARCHFIT_REPORT))
 	$(BIN_DIR)/$(BINARY) analyze --markdown --config $(ARCHFIT_CONFIG) > $(ARCHFIT_REPORT)
 	@echo "archfit report written to $(ARCHFIT_REPORT)"
@@ -154,11 +154,6 @@ build-calibrate: ## compile the calibrate dev tool binary to .bin/calibrate
 .PHONY: calibrate
 calibrate: build-calibrate ## compare scorers on archfit; emits calibration-report.json (informational only)
 	@bash scripts/calibrate.sh .
-
-## corpus-attrib: coupling_balance attribution table over the four Wave-4 repos (informational dev tool)
-.PHONY: corpus-attrib
-corpus-attrib: build ## print repo → score/band/scored/abstained/external attribution table
-	@sh scripts/corpus-attrib.sh
 
 ## bench-gate: cold vs warm fact-cache gate timing on this repo (reported number, not a CI assert)
 .PHONY: bench-gate

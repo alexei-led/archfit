@@ -89,7 +89,7 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 	// derived from Modules: a module's Paths glob classifies graph nodes (it
 	// can be a dotted Python id or a Rust crate name), not a filesystem
 	// directory the TypeScript extractor can scan — see
-	// docs/plans/20260701-multilang-reliability-fixes.md Task 4.3. Src stays
+	// docs/plans/completed/20260701-multilang-reliability-fixes.md Task 4.3. Src stays
 	// at the "." default set above; the TS extractor falls back to "src"
 	// when it sees "." (internal/extract/ts/ts.go).
 	var paths, internal []string

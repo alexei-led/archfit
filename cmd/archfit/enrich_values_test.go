@@ -171,7 +171,7 @@ func TestDraftModuleValues_MissingEvidenceRefsError(t *testing.T) {
 	provider := &scriptedProvider{
 		responses: []string{`[{"module":"auth","value":"@team-auth","rationale":"test","basis":"semantic_judgment"}]`},
 	}
-	_, err := draftModuleValues(context.Background(), provider, ownerSpec, []initcfg.ClassifyTarget{{Name: "auth"}}, "", []string{"doc:README.md (doc) README.md: Auth"})
+	_, err := draftModuleValues(context.Background(), provider, ownerSpec, []initcfg.ClassifyTarget{{Name: enrichModAuth}}, "", []string{"doc:README.md (doc) README.md: Auth"})
 	if err == nil {
 		t.Fatal("missing evidence_refs must fail")
 	}
@@ -185,12 +185,26 @@ func TestDraftModuleValues_UnsupportedEvidenceRefsError(t *testing.T) {
 	provider := &scriptedProvider{
 		responses: []string{`[{"module":"auth","value":"@team-auth","rationale":"test","evidence_refs":["doc:missing.md"],"basis":"semantic_judgment"}]`},
 	}
-	_, err := draftModuleValues(context.Background(), provider, ownerSpec, []initcfg.ClassifyTarget{{Name: "auth"}}, "", []string{"doc:README.md (doc) README.md: Auth"})
+	_, err := draftModuleValues(context.Background(), provider, ownerSpec, []initcfg.ClassifyTarget{{Name: enrichModAuth}}, "", []string{"doc:README.md (doc) README.md: Auth"})
 	if err == nil {
 		t.Fatal("unsupported evidence_refs must fail")
 	}
 	if !strings.Contains(err.Error(), "unsupported evidence_refs") {
 		t.Fatalf("error = %v, want unsupported evidence_refs", err)
+	}
+}
+
+func TestDraftModuleValues_AcceptsAPIEvidenceRefAlias(t *testing.T) {
+	t.Parallel()
+	provider := &scriptedProvider{
+		responses: []string{`[{"module":"auth","value":"@team-auth","rationale":"test cites api:ownership","evidence_refs":["api:ownership"],"basis":"semantic_judgment"}]`},
+	}
+	drafts, err := draftModuleValues(context.Background(), provider, ownerSpec, []initcfg.ClassifyTarget{{Name: enrichModAuth}}, "", []string{"api:internal-ownership (api) internal/ownership: owner map"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(drafts) != 1 || len(drafts[0].EvidenceRefs) != 1 || drafts[0].EvidenceRefs[0] != "api:internal-ownership" {
+		t.Fatalf("drafts = %+v, want canonical api ref", drafts)
 	}
 }
 

@@ -306,9 +306,9 @@ Each module pair below has ABSTAINED edges: cross-module dependencies where no s
 - model: "Occurs when components share knowledge of a business domain model. If the model changes — due to new domain insights — all coupled components must change accordingly."
 - contract (weakest): "An integration contract encapsulates implementation details, functional requirements, and business models, making integration explicit and stable."
 
-Judge from the repository evidence IDs, module names, edge endpoints, and code snippets. Report confidence honestly: "high" only when the snippets clearly show the coupling kind; "low" when the evidence is thin. Never invent certainty. Cite evidence IDs in the rationale when repository evidence is relevant.
+Judge from the repository evidence IDs, module names, edge endpoints, and code snippets. Report confidence honestly: "high" only when the snippets clearly show the coupling kind; "low" when the evidence is thin. Never invent certainty. Put cited repository evidence IDs in evidence_refs. Use an empty evidence_refs array when the judgment rests only on endpoint snippets.
 Respond with a STRICT JSON array only — no prose, no markdown fences. One object per pair:
-[{"from":"<module>","to":"<module>","strength":"contract|model|functional|intrusive","confidence":"high|medium|low","rationale":"<one sentence citing the evidence>"}]
+[{"from":"<module>","to":"<module>","strength":"contract|model|functional|intrusive","confidence":"high|medium|low","basis":"semantic_judgment","evidence_refs":["doc:<path>"],"rationale":"<one sentence>"}]
 Include every pair exactly once.`
 
 // abstainedUserPrompt renders one batch of pairs with their sample locations
@@ -345,11 +345,13 @@ func abstainedUserPrompt(cfg config.Config, batch []abstainedPair, repoEvidence 
 
 // abstainedResponse mirrors one element of the model's JSON answer.
 type abstainedResponse struct {
-	From       string `json:"from"`
-	To         string `json:"to"`
-	Strength   string `json:"strength"`
-	Confidence string `json:"confidence"`
-	Rationale  string `json:"rationale"`
+	From         string   `json:"from"`
+	To           string   `json:"to"`
+	Strength     string   `json:"strength"`
+	Confidence   string   `json:"confidence"`
+	Rationale    string   `json:"rationale"`
+	EvidenceRefs []string `json:"evidence_refs"`
+	Basis        string   `json:"basis"`
 }
 
 // abstainedStrengths are the four book levels this pass may propose. Symmetric
@@ -372,7 +374,7 @@ var abstainedConfidences = map[string]struct{}{
 // retries the batch once with the violation quoted back. Entries for pairs
 // that were never requested are hallucinations and are dropped without error,
 // but every requested pair must appear exactly once.
-func parseAbstainedResponse(text string, batch []abstainedPair) ([]labels.Label, error) {
+func parseAbstainedResponse(text string, batch []abstainedPair, allowedRefs ...map[string]struct{}) ([]labels.Label, error) {
 	text = trimJSONFences(text)
 
 	var entries []abstainedResponse
@@ -387,6 +389,7 @@ func parseAbstainedResponse(text string, batch []abstainedPair) ([]labels.Label,
 
 	seen := make(map[string]struct{}, len(batch))
 	out := make([]labels.Label, 0, len(entries))
+	knownRefs := firstAllowedEvidenceRefs(allowedRefs)
 	for _, e := range entries {
 		key := labels.Key(e.From, e.To)
 		if _, ok := requested[key]; !ok {
@@ -405,14 +408,20 @@ func parseAbstainedResponse(text string, batch []abstainedPair) ([]labels.Label,
 		if strings.TrimSpace(e.Rationale) == "" {
 			return nil, fmt.Errorf("entry %s->%s: rationale is required", e.From, e.To)
 		}
+		basis, refs, err := labelDraftMetadata("label draft", e.From+"->"+e.To, e.Basis, e.EvidenceRefs, knownRefs)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, labels.Label{
-			From:       e.From,
-			To:         e.To,
-			Strength:   e.Strength,
-			Rationale:  e.Rationale,
-			Status:     labels.StatusDraft,
-			Provenance: labels.ProvenanceLLM,
-			Confidence: e.Confidence,
+			From:         e.From,
+			To:           e.To,
+			Strength:     e.Strength,
+			Rationale:    e.Rationale,
+			EvidenceRefs: refs,
+			Basis:        basis,
+			Status:       labels.StatusDraft,
+			Provenance:   labels.ProvenanceLLM,
+			Confidence:   e.Confidence,
 		})
 	}
 	for _, p := range batch {
@@ -432,7 +441,7 @@ func draftAbstainedLabels(ctx context.Context, p llm.Provider, cfg config.Config
 	var out []labels.Label
 	for start := 0; start < len(pairs); start += abstainedBatchSize {
 		batch := pairs[start:min(start+abstainedBatchSize, len(pairs))]
-		drafts, err := requestAbstainedBatch(ctx, p, abstainedUserPrompt(cfg, batch, evidence), batch)
+		drafts, err := requestAbstainedBatch(ctx, p, abstainedUserPrompt(cfg, batch, evidence), batch, evidenceRefSet(evidence))
 		if err != nil {
 			return nil, err
 		}
@@ -443,12 +452,12 @@ func draftAbstainedLabels(ctx context.Context, p llm.Provider, cfg config.Config
 
 // requestAbstainedBatch executes one batch request with a single
 // schema-validation retry.
-func requestAbstainedBatch(ctx context.Context, p llm.Provider, user string, batch []abstainedPair) ([]labels.Label, error) {
+func requestAbstainedBatch(ctx context.Context, p llm.Provider, user string, batch []abstainedPair, allowedRefs ...map[string]struct{}) ([]labels.Label, error) {
 	resp, err := p.Complete(ctx, llm.Request{System: abstainedSystemPrompt, User: user})
 	if err != nil {
 		return nil, err
 	}
-	drafts, perr := parseAbstainedResponse(resp.Text, batch)
+	drafts, perr := parseAbstainedResponse(resp.Text, batch, allowedRefs...)
 	if perr == nil {
 		return drafts, nil
 	}
@@ -458,7 +467,7 @@ func requestAbstainedBatch(ctx context.Context, p llm.Provider, user string, bat
 	if err != nil {
 		return nil, err
 	}
-	drafts, perr = parseAbstainedResponse(resp.Text, batch)
+	drafts, perr = parseAbstainedResponse(resp.Text, batch, allowedRefs...)
 	if perr != nil {
 		return nil, fmt.Errorf("enrich abstained: response failed schema validation after retry: %w", perr)
 	}

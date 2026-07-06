@@ -1,7 +1,7 @@
 # Design: coupling-measurement correctness + modularity
 
 Status: approved (scope confirmed by user 2026-06-27) · review-driven remediation
-Source: `reports/architecture-review-2026-06-27.md` (Findings F1–F5)
+Source: `docs/archived/reports/architecture-review-2026-06-27.md` (Findings F1–F5)
 Implements on branch `fix/coupling-measurement-modularity`.
 
 ## Follow-up — F2 shipped via accurate strength hint (branch `fix/coupling-accurate-strength`)

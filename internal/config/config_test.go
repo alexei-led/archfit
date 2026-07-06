@@ -471,7 +471,7 @@ func TestForExtract(t *testing.T) {
 // module's Paths[0] — a classification glob (e.g. "addons/**"), not a real
 // filesystem directory. Under --root subtree rewriting that nonsense path was
 // re-prefixed and handed to dependency-cruiser, which found no files and
-// aborted with a fatal TS18003 (docs/plans/20260701-multilang-reliability-fixes.md
+// aborted with a fatal TS18003 (docs/plans/completed/20260701-multilang-reliability-fixes.md
 // Task 4.3). Two configs below declare the same two modules with different
 // alphabetically-first names; Src must be identical across both and must
 // never equal a module's Paths[0].

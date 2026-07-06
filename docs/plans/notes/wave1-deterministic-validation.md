@@ -1,7 +1,7 @@
 # Wave 1 deterministic validation
 
-Source plan: `docs/plans/20260705-wave1-deterministic-book-fidelity.md`.
-Source review: `reports/book-alignment-review-2026-07-05/00-REVIEW.md`.
+Source plan: `docs/plans/completed/20260705-wave1-deterministic-book-fidelity.md`.
+Source review: `docs/archived/reports/book-alignment-review-2026-07-05/00-REVIEW.md`.
 
 ## Validation commands
 
@@ -16,7 +16,7 @@ Source review: `reports/book-alignment-review-2026-07-05/00-REVIEW.md`.
   - Gate: PASS, 0 blocking.
   - Warnings: 81 advisory.
   - `coupling_balance`: 43/100, mixed.
-- `ATTRIB_REPOS_DIR=${ATTRIB_REPOS_DIR:-$HOME/Workspace} make corpus-attrib`: PASS.
+- retired corpus-attribution helper: PASS.
   - Corpus covered Go, Python, Rust, and TypeScript/JavaScript.
   - Skipped corpus repos: none.
 - `.bin/archfit analyze --full --markdown --config .archfit.yaml > /tmp/archfit-wave1-report.md`: PASS.
@@ -40,7 +40,7 @@ Source review: `reports/book-alignment-review-2026-07-05/00-REVIEW.md`.
 ## Corpus attribution
 
 Baseline is Task 1 from `docs/plans/notes/wave1-deterministic-baseline.md`.
-Final is the Task 5 `make corpus-attrib` run.
+Final is the Task 5 retired corpus-attribution helper run.
 
 | repo      | language      | baseline score/band/scored/abstained/external | final score/band/scored/abstained/external | movement                                                                                                                                                                                                  |
 | --------- | ------------- | --------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

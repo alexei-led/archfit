@@ -32,10 +32,10 @@ The core workflow mirrors tests and linters:
 
 ```text
 agent edits code
-  -> archfit check
+  -> archfit analyze --gate
   -> deterministic finding or metric delta
   -> agent repairs within stated constraints
-  -> archfit check passes
+  -> archfit analyze --gate passes
 ```
 
 One-line version:
@@ -135,7 +135,7 @@ metric regressions warn by default
 The command agents should call is:
 
 ```bash
-archfit check --base <ref> --format json
+archfit analyze --gate --base <ref> --format json
 ```
 
 Deterministic guarantee:
@@ -151,7 +151,7 @@ Agent behavior:
 - preserve the stated architecture constraint;
 - prefer allowed public APIs or configured contracts;
 - do not create or approve exceptions;
-- rerun `archfit check` after changes.
+- rerun `archfit analyze --gate` after changes.
 
 Success condition:
 
@@ -160,7 +160,7 @@ no gate findings
 no configured metric regression
 ```
 
-A green `archfit check` means the change conforms to configured architecture checks. It does not mean the code is correct, secure, performant, simple, or well tested.
+A green `archfit analyze --gate` means the change conforms to configured architecture checks. It does not mean the code is correct, secure, performant, simple, or well tested.
 
 ### AI agent feedback
 
@@ -187,14 +187,16 @@ Human-friendly reports can be generated from the same JSON, or explained later b
 archfit init
 archfit doctor
 archfit baseline
-archfit check                 # the analysis command (gate + report, controlled by flags)
-archfit scan                  # alias: check --full --advisory --report --format markdown
+archfit analyze               # analysis command (report-only unless --gate is set)
+archfit analyze --gate        # CI gate
+archfit analyze --full --advisory --markdown
 archfit explain <finding-id>
 ```
 
-`check` is the only analysis command. There is one engine; delta-vs-full, advisory, and report behavior are flags
-on `check`, following the linter convention (`golangci-lint run --new-from-rev`, `ruff check --diff`, `semgrep
---baseline-commit`). `scan` is a preset alias for the human-audit use case, not a separate code path.
+`analyze` is the analysis command. There is one engine; delta-vs-full, advisory, output format,
+and gate behavior are flags on `analyze`, following the linter convention (`golangci-lint run --new-from-rev`,
+`ruff check --diff`, `semgrep --baseline-commit`). Full-audit output uses
+`archfit analyze --full --advisory --markdown`; there is no separate full-audit command path.
 
 ### `archfit init`
 
@@ -219,29 +221,29 @@ It reports install hints and leaves tool installation to the user or CI setup.
 
 Stores accepted current architecture state in `.archfit/baseline.json`.
 
-Baseline prevents legacy debt from blocking adoption. `archfit check` should report new drift by default.
+Baseline prevents legacy debt from blocking adoption. `archfit analyze --gate` should report new drift by default.
 
-### `archfit check`
+### `archfit analyze`
 
-Main command for the agent and CI loop, and the only analysis command.
+Main command for agents, local review, and CI.
 
-Runs extraction, rules, metric calculation, baseline filtering, exception filtering, and outputs diagnostics. By default it emphasizes architecture facts changed since `--base` or
-the accepted baseline.
+Runs extraction, rules, metric calculation, baseline filtering, exception filtering, and outputs diagnostics.
+Without `--gate` it is report-only. With `--gate` it becomes the CI/merge gate.
 
-Flags select the run shape (no separate analysis subcommand):
+Flags select the run shape:
 
 ```text
---base <ref>              delta scope: emphasize findings new since <ref> (gate default for CI/agents)
+--gate                    fail the command on blocking architecture findings
+--base <ref>              delta scope: emphasize findings new since <ref>
 --full                    full-repo scope: full inventory (baseline debt, exceptions, staleness)
---advisory                enable the semantic advisory channel (advisory only; never gates)
---report                  report-only: do not fail on metric regressions (gate rules still set exit 1)
---format json|markdown|sarif   output renderer(s)
+--advisory                include advisory findings and richer audit output
+--format json|markdown|sarif|scorecard
 ```
 
 Typical use:
 
 ```bash
-archfit check --base main --format json
+archfit analyze --gate --base main --format json
 ```
 
 Exit codes:
@@ -253,19 +255,16 @@ Exit codes:
 3 tool/config error
 ```
 
-### `archfit scan`
+### Full audit output
 
-Preset alias for the human-audit use case (onboarding, calibration, consulting audits, architecture map refreshes):
+Use this for the human-audit/onboarding/calibration case:
 
 ```bash
-archfit scan  ==  archfit check --full --advisory --report --format markdown
+archfit analyze --full --advisory --markdown
 ```
 
-It shows full-repo metrics, baseline debt, accepted exceptions, semantic advisories, stale map areas, and coverage,
-and does not imply CI failure unless explicit rules fail. `scan` is sugar over the same engine — it resolves to the
-flag set above before the engine runs; the engine never learns which verb was typed. If `scan` ever needs something
-`check` cannot express as a flag, that is a design smell (the modes have forked); the fix is a new flag, not a new
-command.
+It shows full-repo metrics, baseline debt, accepted exceptions, semantic advisories, stale map areas, and coverage.
+It is report-oriented output, not a separate command path.
 
 ### `archfit explain <finding-id>`
 
@@ -277,7 +276,7 @@ Prints rationale, violated rule, graph evidence, and repair constraints.
 
 Build the core CLI in Go.
 
-Go is the best fit for the core because `archfit check` must be fast, reliable, easy to install in CI, and easy for AI agents to run repeatedly. TypeScript and Python remain
+Go is the best fit for the core because `archfit analyze --gate` must be fast, reliable, easy to install in CI, and easy for AI agents to run repeatedly. TypeScript and Python remain
 first-class analysis targets, but their ecosystem-native tools should be used through adapters instead of making Node or Python the core runtime.
 
 ### Core language decision
@@ -325,7 +324,7 @@ Keep the binary boring. Avoid TUI frameworks, graph databases, embedded scriptin
 
 #### Tier 0 — required runtime tools
 
-These are expected for normal `archfit check`:
+These are expected for normal `archfit analyze --gate`:
 
 - `archfit` Go binary;
 - `git` for changed files, base/head comparison, baseline support, and optional churn measurements.
@@ -644,7 +643,7 @@ A metric is valid only if it reports:
 - inputs used;
 - coverage/confidence;
 - findings that affected it;
-- whether it came from delta mode (`check --base`) or full mode (`check --full`, aliased `scan`).
+- whether it came from delta mode (`analyze --gate --base`) or full mode (`analyze --gate --full` or `analyze --full --advisory --markdown`).
 
 Avoid one blended architecture score in v1. A composite number can hide too much: detected edges, human-declared domain volatility, inferred distance, missing coverage, and
 accepted exceptions. Report small metrics that measure one thing each.
@@ -1100,7 +1099,7 @@ Promote these only after primitive measurements are reliable:
 
 `.archfit/baseline.json` stores accepted current graph state and findings.
 
-Default `check` behavior:
+Default `analyze --gate` behavior:
 
 ```text
 review new or changed architecture facts since baseline/base ref
@@ -1137,12 +1136,12 @@ Rules:
 
 - waivers require a reason, approver, and expiry;
 - expired waivers fail if the matching rule is `gate: fail`;
-- `scan` reports waiver inventory and age;
+- `archfit analyze --full --advisory --markdown` reports waiver inventory and age;
 - agents may suggest a waiver only as a last resort, never create or approve one silently.
 
 ### Architecture map review
 
-`archfit.yaml` can drift from domain reality. A green check only means code conforms to the current map, not that the map is still correct.
+`archfit.yaml` can drift from domain reality. A green `archfit analyze --gate` run only means code conforms to the current map, not that the map is still correct.
 
 Use `reviewed_at`, `reviewed_by`, and `module_review.stale_after` to surface stale modules, subdomains, volatility tags, and rules. Staleness is usually a warning, but it is a strong
 signal for consulting, architecture review, or map-refresh work.
@@ -1199,7 +1198,7 @@ Short local summary. Console output may be terse, but it must point to the JSON 
 
 ### Markdown
 
-Human report for `archfit scan` and CI artifacts.
+Human report for `archfit analyze --full --advisory --markdown` and CI artifacts.
 
 ### SARIF
 
@@ -1228,7 +1227,7 @@ Example:
       "services/checkout/discounts.ts",
       "services/pricing/internal/rules.ts"
     ],
-    "validation": ["archfit check", "project tests"]
+    "validation": ["archfit analyze --gate", "project tests"]
   }
 }
 ```
@@ -1236,7 +1235,7 @@ Example:
 Do not require an LLM to produce this. The CLI can generate useful repair tasks from rule metadata and graph evidence.
 
 A good repair task avoids architecture interpretation by the agent. It states the allowed design boundary and the validation loop. The agent decides the code edit, then reruns
-`archfit check` like it would rerun tests.
+`archfit analyze --gate` like it would rerun tests.
 
 ---
 
@@ -1372,7 +1371,7 @@ import extractors ship together in v1. Investment priority: **TypeScript and Pyt
 Done when:
 
 - a repo can define modules and rules;
-- `archfit check` fails on a real boundary violation **in any of Go, TS, or Python**, and passes after it is fixed;
+- `archfit analyze --gate` fails on a real boundary violation **in any of Go, TS, or Python**, and passes after it is fixed;
 - the same rule model works across all three languages;
 - a missing optional toolchain (node/dependency-cruiser, python/grimp/uv) yields a coverage record + install hint and lowered confidence — never a false failure or a silent empty result;
 - metric deltas are explainable;
@@ -1391,7 +1390,7 @@ Done when:
 - high-risk coupling examples are surfaced;
 - high-cohesion same-module relationships are not treated as risk;
 - every metric explains its inputs;
-- `scan` is useful as an architecture audit artifact.
+- `archfit analyze --full --advisory --markdown` is useful as an architecture audit artifact.
 
 ### Phase 3 — semantic fidelity and pattern evidence
 
@@ -1420,7 +1419,7 @@ Done when:
 
 Done when:
 
-- an AI agent can read a gate finding, fix the violation, and rerun `archfit check`;
+- an AI agent can read a gate finding, fix the violation, and rerun `archfit analyze --gate`;
 - CI can gate deterministic findings and publish metrics without human interpretation.
 
 ### Parallel calibration track
@@ -1463,7 +1462,7 @@ V1 implementation choices:
 - collect deterministic graph facts from code;
 - make reviewed `archfit.yaml` the source of architecture intent;
 - version every metric formula;
-- separate delta feedback (`check --base`) from full-repo review (`check --full`, aliased `scan`), as flag-derived modes of one engine;
+- separate delta feedback (`analyze --gate --base`) from full-repo review (`analyze --gate --full` or `analyze --full --advisory --markdown`), as flag-derived modes of one engine;
 - preserve baseline findings without blocking new work;
 - require expiry and rationale for exceptions;
 - keep exception approval as a deliberate human action;
@@ -1488,7 +1487,7 @@ V1 implementation choices:
 
 LLMs can explain or repair findings. Optional semantic passes can propose advisory coupling findings. Deterministic code and policy decide gate verdicts and deterministic metrics.
 
-A green `archfit check` means the change conforms to the configured architecture checks. It does not mean the code is correct, secure, performant, simple, or well tested.
+A green `archfit analyze --gate` means the change conforms to the configured architecture checks. It does not mean the code is correct, secure, performant, simple, or well tested.
 
 ---
 
@@ -1500,19 +1499,19 @@ Use this section to track what is known enough to implement and what must be ans
 
 The v1 deterministic core is useful when:
 
-- `archfit check` fails on a deliberate configured boundary violation;
-- `archfit check` passes after the violation is fixed;
+- `archfit analyze --gate` fails on a deliberate configured boundary violation;
+- `archfit analyze --gate` passes after the violation is fixed;
 - encapsulation delta is explained by concrete edge changes;
 - unbalanced-edge findings include strength, distance, volatility, and explicitness;
 - high-cohesion same-module relationships are not reported as drift;
 - unresolved imports reduce confidence instead of creating false failures;
 - missing optional adapters show install hints and confidence impact;
-- an AI agent can use the JSON finding to repair a violation and rerun the check without extra architecture interpretation.
+- an AI agent can use the JSON finding to repair a violation and rerun `archfit analyze --gate` without extra architecture interpretation.
 
 ### Initial implementation decisions
 
-- `check` is the only analysis command; delta-first by default (`--base`).
-- full-repo review is `check --full`, aliased as `scan` (not a separate command).
+- `analyze` is the analysis command; delta-first by default (`--base`).
+- full-repo review is `archfit analyze --full --advisory --markdown`.
 - Go uses native `go/packages` first.
 - TypeScript starts with static imports and path aliases, with dependency-cruiser as the first adapter candidate.
 - Python starts with static AST imports, with import-linter/grimp as the first adapter candidate.

@@ -20,7 +20,7 @@ Commands passed before LLM draft checks:
 
 - `make build`
 - `make archfit`
-- `ATTRIB_REPOS_DIR=${ATTRIB_REPOS_DIR:-$HOME/Workspace} ATTRIB_OUT=/tmp/archfit-wave2-task4-20260705155615/corpus-before make corpus-attrib`
+- retired corpus-attribution helper
 
 Corpus attribution before LLM commands:
 

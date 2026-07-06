@@ -244,6 +244,64 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 	return b.String()
 }
 
+// RenderAppliedLLMReview renders the review-only LLM appendix that still matters
+// after update --apply has written structural drift. Structural edits are already
+// in the file; this output preserves the semantic proposals that are deliberately
+// NOT auto-applied.
+func RenderAppliedLLMReview(r UpdateReport, ann map[string]ModuleAnnotation) string {
+	var b strings.Builder
+
+	if len(ann) > 0 {
+		seen := map[string]struct{}{}
+		names := make([]string, 0, len(r.Added)+len(r.Suggested)+len(r.Unclassified))
+		collect := func(name string) {
+			if _, done := seen[name]; done {
+				return
+			}
+			a, ok := ann[name]
+			if !ok {
+				return
+			}
+			if a.Subdomain == "" && a.Volatility == "" && a.Layer == "" && a.Role == "" && a.Basis == "" && len(a.EvidenceRefs) == 0 && a.Rationale == "" {
+				return
+			}
+			seen[name] = struct{}{}
+			names = append(names, name)
+		}
+		for _, m := range r.Added {
+			collect(m.Name)
+		}
+		for _, m := range r.Suggested {
+			collect(m.Name)
+		}
+		for _, name := range r.Unclassified {
+			collect(name)
+		}
+		if len(names) > 0 {
+			fmt.Fprintf(&b, "LLM MODULE SUGGESTIONS (%d review-only classification proposal(s) — not applied):\n", len(names))
+			for _, name := range names {
+				writeAnnotationDiff(&b, name, ann[name])
+			}
+		}
+	}
+
+	if len(r.RuleSuggestions) > 0 {
+		fmt.Fprintf(&b, "RULE SUGGESTIONS (%d review-only config proposal(s) — not applied):\n", len(r.RuleSuggestions))
+		for _, s := range r.RuleSuggestions {
+			writeRuleSuggestion(&b, s)
+		}
+	}
+
+	if len(r.ExternalSystemSuggestions) > 0 {
+		fmt.Fprintf(&b, "EXTERNAL SYSTEM SUGGESTIONS (%d review-only config proposal(s) — not applied):\n", len(r.ExternalSystemSuggestions))
+		for _, s := range r.ExternalSystemSuggestions {
+			writeExternalSystemSuggestion(&b, s)
+		}
+	}
+
+	return b.String()
+}
+
 func writeModuleAnnotationComments(b *strings.Builder, ann *ModuleAnnotation) {
 	if ann == nil {
 		return

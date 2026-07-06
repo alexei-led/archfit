@@ -1,6 +1,6 @@
 # Wave 1 deterministic baseline
 
-Baseline source: `reports/book-alignment-review-2026-07-05/00-REVIEW.md`, especially the deterministic gaps in review §6 and the short-verdict gap list.
+Baseline source: `docs/archived/reports/book-alignment-review-2026-07-05/00-REVIEW.md`, especially the deterministic gaps in review §6 and the short-verdict gap list.
 
 ## Characterized behavior
 
@@ -15,7 +15,7 @@ Baseline source: `reports/book-alignment-review-2026-07-05/00-REVIEW.md`, especi
 
 ## Current self/corpus scores
 
-`ATTRIB_REPOS_DIR=${ATTRIB_REPOS_DIR:-$HOME/Workspace} make corpus-attrib` produced:
+retired corpus-attribution helper produced:
 
 | repo      | score |  band | scored | abstained | external |
 | --------- | ----- | ----: | -----: | --------: | -------: |
@@ -24,7 +24,7 @@ Baseline source: `reports/book-alignment-review-2026-07-05/00-REVIEW.md`, especi
 | herdr     | 29    |  poor |    686 |        18 |       24 |
 | storybook | 48    | mixed |    310 |         0 |      181 |
 
-Skipped corpus repos: none. All expected corpus inputs were present under `${ATTRIB_REPOS_DIR:-$HOME/Workspace}`.
+Skipped corpus repos: none. All expected corpus inputs were present in the local external-checkout workspace.
 
 Self gate snapshot from `make archfit`:
 
@@ -48,7 +48,7 @@ Self gate snapshot from `make archfit`:
   - `internal/score`: ok.
 - `make build`: PASS.
   - Built `.bin/archfit` with `CGO_ENABLED=0 go build`.
-- `ATTRIB_REPOS_DIR=${ATTRIB_REPOS_DIR:-$HOME/Workspace} make corpus-attrib`: PASS.
+- retired corpus-attribution helper: PASS.
   - Produced the attribution table above.
 - Additional local checks:
   - `make lint`: PASS, 0 issues.
@@ -58,7 +58,7 @@ Self gate snapshot from `make archfit`:
 
 Policy decision: default `coupling.duplicated_knowledge` is `score`, not `advisory`, to close the book-fidelity gap for Ch7 duplicated functional knowledge. Backward compatibility is available with `coupling.duplicated_knowledge: advisory`.
 
-`ATTRIB_REPOS_DIR=${ATTRIB_REPOS_DIR:-$HOME/Workspace} make corpus-attrib` produced:
+retired corpus-attribution helper produced:
 
 | repo      | score | band  | scored | abstained | external |
 | --------- | ----: | ----- | -----: | --------: | -------: |
@@ -81,5 +81,5 @@ Validation results:
 - `go test ./internal/config/... ./internal/classify/... ./internal/engine/... ./internal/score/...`: PASS.
 - `make schema`: PASS; regenerated `archfit.schema.json`.
 - `make archfit`: PASS, 0 blocking, 80 advisory, score 43 / 100 mixed.
-- `ATTRIB_REPOS_DIR=${ATTRIB_REPOS_DIR:-$HOME/Workspace} make corpus-attrib`: PASS; table above.
+- retired corpus-attribution helper: PASS; table above.
 - Additional `make lint`: PASS, 0 issues.
