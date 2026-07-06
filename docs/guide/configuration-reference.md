@@ -50,6 +50,7 @@ languages:
 
 coupling:
   min_severity: medium
+  duplicated_knowledge: score
 
 layers:
   - domain
@@ -321,12 +322,15 @@ analyzers:
 - `clones` — runs `jscpd` to find cross-module duplicated logic. When a clone pair
   spans two modules, their shared edge strength is upgraded to `symmetric` in the
   `coupling_balance` scorer, reflecting undeclared hidden coupling. When the two
-  modules share **no** import edge at all, the pair surfaces as a report-only
-  `bc/duplicated_knowledge` advisory instead — duplicated knowledge is functional
-  coupling even without an import (book Ch7). Its severity comes from the standard
-  formula (symmetric strength × module-pair distance × worst-of-pair volatility);
-  `coupling.min_severity` and approved `.archfit-labels.yaml` labels (either
-  direction) suppress it; the [`coupling.gate`](#couplinggate) never promotes it.
+  modules share **no** import edge at all, the pair is clone-only duplicated
+  knowledge (book Ch7): by default (`coupling.duplicated_knowledge: score`) it
+  enters `coupling_balance` as a symmetric-strength coupling fact and also
+  surfaces as a `bc/duplicated_knowledge` advisory when its severity passes
+  filters. Set `coupling.duplicated_knowledge: advisory` to preserve the v4
+  report-only behavior. Its severity comes from the standard formula (symmetric
+  strength × module-pair distance × worst-of-pair volatility); `coupling.min_severity`
+  and approved `.archfit-labels.yaml` labels (either direction) suppress the
+  advisory; the [`coupling.gate`](#couplinggate) never promotes the advisory.
 
 `scip` and `clones` are opt-in: `auto` and `false` (and absent) all disable them;
 the run continues without them and the gate verdict is unaffected.
@@ -391,8 +395,9 @@ Zero or absent means the built-in package default (`scip`: 20 minutes, `clones`:
 
 ## `ai`
 
-Off-gate LLM provider configuration. Consumed only by `enrich`, `explain --llm`,
-`analyze --llm`, `init --llm`, and `autopilot` — never by the deterministic gate.
+Off-gate LLM provider configuration. Consumed only by `config init --llm`,
+`config update --llm`, `config enrich`, `analyze --llm`, and `explain --llm` — never
+by the deterministic gate.
 
 ```yaml
 ai:
@@ -414,6 +419,7 @@ Balanced-Coupling advisory tuning and the `coupling_balance` gate.
 ```yaml
 coupling:
   min_severity: medium # low | medium (default) | high | critical
+  duplicated_knowledge: score # score (default) | advisory
   volatility_cascade: false
   gate:
     min_band: mixed # band floor: poor | mixed | serviceable | strong
@@ -424,11 +430,17 @@ coupling:
   deps, noisy), `medium` (default, over-decoupled volatile seams and tight
   cross-boundary coupling), `high` or `critical` (intrusive/functional coupling
   across large boundaries only).
-- `volatility_cascade` — opt-in book Ch9 single-hop propagation: when `true`, a
-  module strongly coupled (`functional` or `intrusive` strength) to a `core`
-  module inherits raised effective volatility (`high`). Config-declared volatility
-  always takes precedence. Disabled by default; safe to enable once `subdomain`
-  fields are complete.
+- `duplicated_knowledge` — clone-only cross-module duplicated knowledge policy:
+  `score` (default) includes clone-only pairs in `coupling_balance` as
+  symmetric-strength coupling facts; `advisory` preserves the v4 behavior where
+  clone-only pairs can emit `bc/duplicated_knowledge` advisories but do not move
+  the headline score. JSON exposes the policy effect through
+  `classified_edges.clone_only_scored` and `classified_edges.clone_only_advisory`.
+- `volatility_cascade` — opt-in book Ch9 propagation: when `true`, a module
+  strongly coupled (`functional`, `symmetric`, or `intrusive` strength) to a
+  high-effective-volatility module inherits raised effective volatility (`high`).
+  The pass runs to a deterministic fixpoint and never lowers configured values.
+  Disabled by default; safe to enable once `subdomain` fields are complete.
 
 ### `coupling.gate`
 
@@ -542,8 +554,9 @@ Fields:
 - `layer` — one of the names from `layers`.
 - `subdomain` — DDD subdomain classification: `core`, `supporting`, or `generic`.
   Determines the volatility ordinal when no explicit `volatility` is set.
-- `volatility` — explicit override: `high` (=10), `medium` (=6), or `low` (=3).
-  Use `subdomain` unless you need a specific value that differs from the DDD default.
+- `volatility` — explicit override: `high` (=10), `medium` (=6), `low` (=3),
+  or `frozen` / `legacy` (=1). Use `subdomain` unless you need a specific value
+  that differs from the DDD default.
 - `owner` — team or person responsible for the module.
 - `deploy_unit` — deployable/runtime unit used for distance classification.
 - `role` — optional architectural role. See [Module role vs layer](#module-role-vs-layer).
@@ -609,6 +622,8 @@ modules:
   config:
     subdomain: supporting
     volatility: medium # explicit override; medium only via direct declaration
+  retired-api:
+    volatility: frozen # explicit stable/legacy override (ordinal 1)
 ```
 
 Methodology (Khononov book):
@@ -618,6 +633,7 @@ Methodology (Khononov book):
 - `generic` → `low` volatility (ordinal 3)
 
 `medium` volatility (ordinal 6) is only reachable via explicit `volatility: medium`.
+`frozen` and `legacy` both resolve to the frozen/legacy anchor (ordinal 1).
 Declaring `subdomain: supporting` never implies medium — it implies low.
 
 ### Distance classification
@@ -652,7 +668,8 @@ Composite resolution order (first applicable wins):
    different subtrees or unrelated flat names → `cross_module_different_owner`).
 
 A detected runtime async bridge is recorded as report-only evidence in the
-`runtime_async` JSON field per module; it does not annotate graph edges, does not
+`runtime_async` JSON field per module and the `runtime_async_edges` field per
+source-module→runtime-target relation; it does not annotate graph edges, does not
 affect distance or score, and does not change the gate verdict.
 
 The `distance_basis` field on each advisory edge (`code_structure`, `ownership`,
@@ -985,8 +1002,9 @@ VS Code users can configure the schema in `.vscode/settings.json`:
 
 ## Draft and pin files
 
-The LLM authoring commands write proposals to review files, never to
-`.archfit.yaml` directly:
+LLM authoring commands are draft-first. They write proposals to review files,
+side files, or reports by default; `config init --llm --apply` is the direct-write
+exception and should be reviewed before the generated config is used as a gate.
 
 - `.archfit-labels.yaml` — pinned coupling-strength labels (`archfit config enrich labels`).
   `analyze` consumes `status: approved` entries with precedence: config
@@ -994,11 +1012,32 @@ The LLM authoring commands write proposals to review files, never to
 - `.archfit-owners.yaml` — owner drafts (`archfit config enrich owner`).
 - `.archfit-volatility.yaml` — volatility drafts (`archfit config enrich volatility`).
 - `.archfit-subdomains.yaml` — subdomain drafts (`archfit config enrich subdomain`).
-- `.archfit-autopilot.yaml` — a full commented config draft (`archfit config init --llm -o <file>`).
+- `.archfit-init-llm.yaml` — a full commented config draft (`archfit config init --llm -o <file>`).
 
-Review each, then `config enrich <field> --apply` (or move the field manually) to write
-approved values into `modules.<name>`. Pinning never overwrites a live field. See
-[llm-enrich.md](llm-enrich.md).
+For module-field draft files, review each entry, set keepers to `status: approved`,
+then run `config enrich <field> --apply` to write approved values into
+`modules.<name>`. For a full `config init --llm` side file, copy approved fields
+manually. Pinning never overwrites a live field.
+
+Module-field draft entries include review metadata:
+
+```yaml
+- module: payments
+  value: "@team-payments" # or subdomain: core / volatility: high
+  rationale: "doc:README.md describes Payments as the core domain"
+  evidence_refs:
+    - doc:README.md
+    - api:payments
+  basis: semantic_judgment # deterministic_fact | semantic_judgment
+  status: draft
+```
+
+`config update --llm` uses the same metadata in its report and can propose only
+existing deterministic rule mechanisms (`forbidden_dependency`,
+`forbidden_role_dependency`, `public_api_max`, `public_api_change`, and
+`coupling.gate` tuning). These rule suggestions are review-only text; plan/default
+mode never mutates `.archfit.yaml`, and unsupported or uncited suggestions are
+rejected before a draft is written. See [llm-enrich.md](llm-enrich.md).
 
 ### Label `confidence` and `provenance` fields
 

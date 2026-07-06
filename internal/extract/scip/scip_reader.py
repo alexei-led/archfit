@@ -46,6 +46,16 @@ import tempfile
 
 RANK = {"contract": 1, "model": 2, "functional": 3, "intrusive": 4}
 ABSTRACT_BASES = ("/Protocol#", "/ABC#")  # python protocol/abc markers
+CONNASCENCE_RANK = {"name": 1, "type": 2, "meaning": 3, "algorithm": 4}
+
+# Numeric SymbolInformation.Kind values from the embedded SCIP proto. The reader
+# uses them only when the indexer provides deterministic symbol-kind metadata;
+# otherwise it falls back to descriptor suffixes below.
+KIND_UNSPECIFIED = 0
+CONTRACT_KINDS = {21, 42, 53, 56, 66, 67, 68, 69, 70, 71}  # Interface/Protocol/Trait/abstract methods
+MODEL_TYPE_KINDS = {7, 10, 11, 28, 49, 54, 55, 59}  # class/data family/enum/message/struct/type/union
+MODEL_DATA_KINDS = {8, 12, 15, 77, 79, 81, 82}  # constant/enum member/field/static data/property/variable
+FUNCTIONAL_KINDS = {17, 26, 80}  # function/method/static method
 
 
 def _load_scip_pb2(proto_path: str):
@@ -191,24 +201,58 @@ def _suffix(symbol: str) -> str:
     return "other"  # namespace "/", macro "!", meta ":", parameter ")" …
 
 
-def _classify(symbol: str, lang: str, contract: set[str]) -> str:
+def _classify(symbol: str, lang: str, contract: set[str], kind: int = KIND_UNSPECIFIED) -> str:
     """Map one symbol occurrence to a BC integration strength.
 
-    Rust terms (`X.` — const/static/field) are provably pure data sharing
-    (book Ch7) -> model. scip-typescript/scip-python terms can bind callables,
-    and scip-go never overrides the Go extractor's compiler-grade type-info
-    hints, so those languages keep the conservative "functional".
+    SCIP SymbolInformation.Kind, when present, is more precise than descriptor
+    suffixes: interfaces/protocols/traits are contracts, concrete data types are
+    models, and functions/methods are functional. Rust terms (`X.` — const/static/
+    field) remain a safe model fallback. TS/Py terms without kind metadata can
+    bind callables, so they keep the conservative functional fallback.
     """
     if _is_private(symbol):
         return "intrusive"
-    if symbol in contract:
+    if symbol in contract or kind in CONTRACT_KINDS:
         return "contract"
+    if kind in MODEL_TYPE_KINDS or kind in MODEL_DATA_KINDS:
+        return "model"
+    if kind in FUNCTIONAL_KINDS:
+        return "functional"
     sfx = _suffix(symbol)
     if sfx == "type":
         return "model"
     if sfx == "term" and lang == "rust":
         return "model"
     return "functional"
+
+
+def _connascence_kind(symbol: str, lang: str, contract: set[str], kind: int = KIND_UNSPECIFIED) -> str:
+    """Map one symbol occurrence to a deterministic static connascence kind.
+
+    Private references prove a name-level dependency only. Type descriptors,
+    known contract symbols, and interface/protocol/trait kinds prove type
+    connascence. Data-member kinds prove meaning. Function/method kinds prove
+    algorithm. Position and all dynamic connascence categories are intentionally
+    not emitted here.
+    """
+    if _is_private(symbol):
+        return "name"
+    if symbol in contract or kind in CONTRACT_KINDS:
+        return "type"
+    if kind in MODEL_TYPE_KINDS:
+        return "type"
+    if kind in MODEL_DATA_KINDS:
+        return "meaning"
+    if kind in FUNCTIONAL_KINDS:
+        return "algorithm"
+    sfx = _suffix(symbol)
+    if sfx == "type":
+        return "type"
+    if sfx == "term" and lang == "rust":
+        return "meaning"
+    if sfx == "method":
+        return "algorithm"
+    return "name"
 
 
 def _doc_from(relative_path: str, lang: str, doc_defs: "set[str] | None" = None) -> str | None:
@@ -383,9 +427,17 @@ def main() -> None:
     with open(args.index, "rb") as f:
         idx.ParseFromString(f.read())
 
-    # Contract symbols: python Protocol/ABC subclasses (impl source) + internal
-    # interfaces (impl targets, for Go/TS).
-    contract: set[str] = set()
+    symbol_kinds: dict[str, int] = {}
+    for doc in idx.documents:
+        for s in doc.symbols:
+            symbol_kinds[s.symbol] = int(s.kind)
+    for s in idx.external_symbols:
+        symbol_kinds[s.symbol] = int(s.kind)
+
+    # Contract symbols: SCIP kind metadata (interface/protocol/trait/abstract
+    # method), python Protocol/ABC subclasses (impl source), and internal
+    # implementation targets (for Go/TS/Rust interface-like symbols).
+    contract: set[str] = {sym for sym, kind in symbol_kinds.items() if kind in CONTRACT_KINDS}
     for doc in idx.documents:
         for s in doc.symbols:
             for r in s.relationships:
@@ -397,6 +449,7 @@ def main() -> None:
                     contract.add(r.symbol)
 
     edges: dict[tuple[str, str], str] = {}
+    edge_connascence: dict[tuple[str, str], set[str]] = {}
     refs = {k: 0 for k in RANK}
 
     symbols_out, symbol_refs_out, intra_refs_out = _compute_symbols(idx, root, lang)
@@ -424,14 +477,24 @@ def main() -> None:
             b = _to_path(occ.symbol, lang)
             if b is None or b == a:
                 continue
-            st = _classify(occ.symbol, lang, contract)
+            kind = symbol_kinds.get(occ.symbol, KIND_UNSPECIFIED)
+            st = _classify(occ.symbol, lang, contract, kind)
             refs[st] += 1
             key = (a, b)
             if key not in edges or RANK[st] > RANK[edges[key]]:
                 edges[key] = st
+            edge_connascence.setdefault(key, set()).add(_connascence_kind(occ.symbol, lang, contract, kind))
 
     print(json.dumps({
-        "edges": [{"from": a, "to": b, "strength": st} for (a, b), st in sorted(edges.items())],
+        "edges": [
+            {
+                "from": a,
+                "to": b,
+                "strength": st,
+                "connascence": sorted(edge_connascence.get((a, b), set()), key=lambda k: (CONNASCENCE_RANK.get(k, 99), k)),
+            }
+            for (a, b), st in sorted(edges.items())
+        ],
         "contract_symbols": len(contract),
         "ref_strength_dist": refs,
         "symbols": symbols_out,

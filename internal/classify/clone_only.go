@@ -20,10 +20,10 @@ import (
 //
 // The Classification is scored through the standard book formula with
 // StrengthSymmetric at the module-pair distance and the worst-of-pair
-// volatility — never a hardcoded severity. Report-only: consumed by the
-// bc/duplicated_knowledge advisory (engine), never by coupling_balance or the
-// gate, and no graph edge is invented — the scorer's inputs stay tool-derived
-// facts.
+// volatility — never a hardcoded severity. The engine decides, through
+// coupling.duplicated_knowledge, whether the pair is score-bearing or
+// advisory-only. No graph edge is invented — the scorer's inputs stay
+// tool-derived facts.
 type CloneOnlyPair struct {
 	FromModule string // canonical pair order: FromModule < ToModule
 	ToModule   string
@@ -36,10 +36,10 @@ type CloneOnlyPair struct {
 
 // CloneOnlyPairs returns the scored duplicated-knowledge pairs for g: every
 // cross-module clone pair in c.CrossModuleClonePairs whose modules have no
-// import edge between them, no human-approved label accepting the pair, and a
-// non-balanced book score (SeverityNone pairs — e.g. two frozen modules — are
-// balanced by the formula and emit nothing, same as the per-edge advisory
-// pipeline). Deterministic: pairs are processed in sorted key order.
+// import edge between them and no human-approved label accepting the pair.
+// Advisory filtering (severity none, coupling.min_severity) lives downstream;
+// this detector stays pure and deterministic. Pairs are processed in sorted key
+// order.
 func CloneOnlyPairs(g *graph.Graph, c config.ClassifyConfig) []CloneOnlyPair {
 	if len(c.CrossModuleClonePairs) == 0 {
 		return nil
@@ -96,9 +96,6 @@ func CloneOnlyPairs(g *graph.Graph, c config.ClassifyConfig) []CloneOnlyPair {
 		}
 		cl.Score = scorer.Score(cl)
 		cl.Severity = cl.Score.Band
-		if cl.Severity == coupling.SeverityNone {
-			continue // balanced by the book formula — no finding
-		}
 		out = append(out, CloneOnlyPair{
 			FromModule:     fromMod,
 			ToModule:       toMod,

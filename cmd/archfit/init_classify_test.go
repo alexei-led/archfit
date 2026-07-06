@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -11,9 +12,12 @@ import (
 )
 
 const (
-	testLayerDomain = "domain"
-	testMod0        = "mod0"
-	testMod0Path    = "internal/mod0/**"
+	testLayerDomain       = "domain"
+	testMod0              = "mod0"
+	testMod0Path          = "internal/mod0/**"
+	testEvidenceRef       = "doc:README.md"
+	testEvidenceRationale = "cite " + testEvidenceRef
+	testRepoEvidence      = testEvidenceRef + " (doc) README.md: Architecture"
 )
 
 // fakeClassifyProvider returns canned responses per call, tracking call count.
@@ -22,8 +26,30 @@ type fakeClassifyProvider struct {
 	calls     int
 }
 
+var errClassifyProviderBoom = errors.New("provider boom")
+
+type fakeClassifyProviderWithError struct {
+	responses []string
+	errAt     int
+	calls     int
+}
+
 func (p *fakeClassifyProvider) Name() string { return "test/classify" }
 func (p *fakeClassifyProvider) Complete(_ context.Context, _ llm.Request) (llm.Response, error) {
+	if p.calls >= len(p.responses) {
+		return llm.Response{}, fmt.Errorf("unexpected call %d", p.calls)
+	}
+	r := p.responses[p.calls]
+	p.calls++
+	return llm.Response{Text: r}, nil
+}
+
+func (p *fakeClassifyProviderWithError) Name() string { return "test/classify-error" }
+func (p *fakeClassifyProviderWithError) Complete(_ context.Context, _ llm.Request) (llm.Response, error) {
+	if p.calls == p.errAt {
+		p.calls++
+		return llm.Response{}, errClassifyProviderBoom
+	}
 	if p.calls >= len(p.responses) {
 		return llm.Response{}, fmt.Errorf("unexpected call %d", p.calls)
 	}
@@ -194,7 +220,7 @@ func TestClassifyModules_MissingRationaleError(t *testing.T) {
 	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
 	layers := []string{testLayerDomain}
 	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":" "}]`
-	p := &fakeClassifyProvider{responses: []string{resp}}
+	p := &fakeClassifyProvider{responses: []string{resp, resp}}
 
 	_, err := classifyModules(context.Background(), p, targets, layers)
 	if err == nil {
@@ -202,6 +228,173 @@ func TestClassifyModules_MissingRationaleError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "missing rationale") {
 		t.Fatalf("error = %v, want missing rationale", err)
+	}
+}
+
+func TestClassifyModulesWithEvidence_MissingEvidenceRefsError(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test","basis":"semantic_judgment"}]`
+	p := &fakeClassifyProvider{responses: []string{resp, resp}}
+
+	_, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{testRepoEvidence})
+	if err == nil {
+		t.Fatal("missing evidence_refs must return an error")
+	}
+	if !strings.Contains(err.Error(), "missing evidence_refs") {
+		t.Fatalf("error = %v, want missing evidence_refs", err)
+	}
+}
+
+func TestClassifyModulesWithEvidence_InvalidEvidenceRefsError(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test","evidence_refs":["finding:123"],"basis":"semantic_judgment"}]`
+	p := &fakeClassifyProvider{responses: []string{resp, resp}}
+
+	_, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{testRepoEvidence})
+	if err == nil {
+		t.Fatal("invalid evidence_refs must return an error")
+	}
+	if !strings.Contains(err.Error(), "invalid evidence_refs") {
+		t.Fatalf("error = %v, want invalid evidence_refs", err)
+	}
+}
+
+func TestClassifyModulesWithEvidence_UnsupportedEvidenceRefsError(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test","evidence_refs":["doc:missing.md"],"basis":"semantic_judgment"}]`
+	p := &fakeClassifyProvider{responses: []string{resp, resp}}
+
+	_, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{testRepoEvidence})
+	if err == nil {
+		t.Fatal("unsupported evidence_refs must return an error")
+	}
+	if !strings.Contains(err.Error(), "unsupported evidence_refs") {
+		t.Fatalf("error = %v, want unsupported evidence_refs", err)
+	}
+}
+
+func TestClassifyModulesWithEvidence_SecondAttemptProviderErrorWins(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test","evidence_refs":[],"basis":"semantic_judgment"}]`
+	p := &fakeClassifyProviderWithError{responses: []string{resp}, errAt: 1}
+
+	_, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{testRepoEvidence})
+	if err == nil {
+		t.Fatalf("second-attempt provider error must return an error")
+	}
+	if !strings.Contains(err.Error(), errClassifyProviderBoom.Error()) {
+		t.Fatalf("error = %v, want provider error %q", err, errClassifyProviderBoom)
+	}
+}
+
+func TestClassifyModulesWithEvidence_AcceptsAPIEvidenceRefAlias(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test cites api:ownership","evidence_refs":["api:ownership"],"basis":"semantic_judgment"}]`
+	p := &fakeClassifyProvider{responses: []string{resp}}
+
+	got, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{"api:internal-ownership (api) internal/ownership: owner map"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ann := got[testMod0]
+	if len(ann.EvidenceRefs) != 1 || ann.EvidenceRefs[0] != "api:internal-ownership" {
+		t.Fatalf("evidence refs = %+v, want canonical api ref", ann.EvidenceRefs)
+	}
+}
+
+func TestClassifyModulesWithEvidence_ParsesRuleSuggestions(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment","rule_suggestions":[{"id":"no-mod0-to-adapter","type":"forbidden_dependency","from":"internal/mod0/**","to":"internal/adapter/**","gate":"warn","rationale":"test cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}]}]`
+	p := &fakeClassifyProvider{responses: []string{resp}}
+
+	got, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{testRepoEvidence})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ann := got[testMod0]
+	if len(ann.EvidenceRefs) != 1 || ann.Basis != "semantic_judgment" {
+		t.Fatalf("annotation missing metadata: %+v", ann)
+	}
+	if len(ann.RuleSuggestions) != 1 {
+		t.Fatalf("rule suggestions = %+v, want one", ann.RuleSuggestions)
+	}
+	rule := ann.RuleSuggestions[0]
+	if rule.Type != ruleTypeForbiddenDependency || len(rule.EvidenceRefs) != 1 || rule.Basis != initcfg.DraftBasisSemanticJudgment {
+		t.Fatalf("bad rule suggestion: %+v", rule)
+	}
+}
+
+func TestClassifyModulesWithEvidence_ParsesExternalSystemSuggestions(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment","external_system_suggestions":[{"name":"payments-vendor","targets":["github.com/vendor/sdk/**"],"volatility":"low","rationale":"vendor seam cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}]}]`
+	p := &fakeClassifyProvider{responses: []string{resp}}
+
+	got, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{testRepoEvidence})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ann := got[testMod0]
+	if len(ann.ExternalSystemSuggestions) != 1 {
+		t.Fatalf("external system suggestions = %+v, want one", ann.ExternalSystemSuggestions)
+	}
+	s := ann.ExternalSystemSuggestions[0]
+	if s.Name != "payments-vendor" || len(s.Targets) != 1 || s.Targets[0] != "github.com/vendor/sdk/**" || s.Basis != initcfg.DraftBasisSemanticJudgment {
+		t.Fatalf("bad external system suggestion: %+v", s)
+	}
+}
+
+func TestRuleSuggestionShape_MatchesRuleSchema(t *testing.T) {
+	t.Parallel()
+	maxAPI := 20
+	allowed := map[string]struct{}{testEvidenceRef: {}}
+	entries := []ruleSuggestionResponse{
+		{ID: "track-api", Type: ruleTypePublicAPIChange, Gate: "warn", Rationale: testEvidenceRationale, EvidenceRefs: []string{testEvidenceRef}, Basis: initcfg.DraftBasisSemanticJudgment},
+		{ID: "api-max", Type: ruleTypePublicAPIMax, Gate: "warn", Max: &maxAPI, Rationale: testEvidenceRationale, EvidenceRefs: []string{testEvidenceRef}, Basis: initcfg.DraftBasisSemanticJudgment},
+		{ID: "coupling-floor", Type: ruleTypeCouplingGate, Gate: "fail", MinBand: "serviceable", Rationale: testEvidenceRationale, EvidenceRefs: []string{testEvidenceRef}, Basis: initcfg.DraftBasisSemanticJudgment},
+	}
+
+	got, err := parseRuleSuggestionResponses(testMod0, entries, true, allowed)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != len(entries) {
+		t.Fatalf("rule suggestions = %+v, want %d", got, len(entries))
+	}
+	if got[0].Type != ruleTypePublicAPIChange || got[0].From != "" || got[0].To != "" {
+		t.Fatalf("public_api_change should not require from/to: %+v", got[0])
+	}
+	if got[1].Type != ruleTypePublicAPIMax || got[1].Max == nil || *got[1].Max != maxAPI || got[1].From != "" {
+		t.Fatalf("public_api_max should only require max: %+v", got[1])
+	}
+}
+
+func TestClassifyModulesWithEvidence_UnsupportedRuleSuggestionEvidenceRefsError(t *testing.T) {
+	t.Parallel()
+	targets := []initcfg.ClassifyTarget{{Name: testMod0, Paths: []string{testMod0Path}}}
+	layers := []string{testLayerDomain}
+	resp := `[{"module":"mod0","subdomain":"core","volatility":"low","layer":"domain","name":"","rationale":"test cites doc:README.md","evidence_refs":["doc:README.md"],"basis":"semantic_judgment","rule_suggestions":[{"id":"bad-ref","type":"forbidden_dependency","from":"internal/mod0/**","to":"internal/adapter/**","rationale":"bad","evidence_refs":["doc:missing.md"],"basis":"semantic_judgment"}]}]`
+	p := &fakeClassifyProvider{responses: []string{resp, resp}}
+
+	_, err := classifyModulesWithEvidence(context.Background(), p, targets, layers, []string{testRepoEvidence})
+	if err == nil {
+		t.Fatal("unsupported rule suggestion evidence_refs must return an error")
+	}
+	if !strings.Contains(err.Error(), "unsupported evidence_refs") {
+		t.Fatalf("error = %v, want unsupported evidence_refs", err)
 	}
 }
 

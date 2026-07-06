@@ -16,8 +16,12 @@ complementary metrics. They split into three roles:
   `coverage`. Each is compared against the committed baseline; a worsening
   delta **fails the build by default** (`metrics.<name>.gate` unset = `fail`;
   downgrade with `warn`, disable with `off`).
-- **Report-only (1):** `blast_radius`. Carries no delta and never changes the
-  verdict.
+- **Report-only metric (1):** `blast_radius`. Carries no delta and never
+  changes the verdict.
+
+Separate JSON/Markdown report-only blocks, including `connascence`,
+`local_coupling`, `runtime_async`, and `classified_edges` summaries, explain the
+score inputs. They are evidence, not metrics, and never gate on their own.
 
 A metric's **absolute value** never fails the build — only a _regression_
 against the baseline you accepted (or a tripped `coupling.gate`) does. Gate
@@ -59,11 +63,11 @@ The scorecard dimension produces a 0–100 value, a band, and a confidence.
 
 | Band          | Score  | Meaning                                                                                   |
 | ------------- | ------ | ----------------------------------------------------------------------------------------- |
-| `strong`      | 90–100 | Healthy.                                                                                  |
-| `serviceable` | 70–89  | Acceptable.                                                                               |
-| `mixed`       | 50–69  | Watch.                                                                                    |
-| `poor`        | 30–49  | Problem.                                                                                  |
-| `critical`    | 0–29   | Measured and bad.                                                                         |
+| `strong`      | 81–100 | Healthy.                                                                                  |
+| `serviceable` | 61–80  | Acceptable.                                                                               |
+| `mixed`       | 41–60  | Watch.                                                                                    |
+| `poor`        | 21–40  | Problem.                                                                                  |
+| `critical`    | 0–20   | Measured and bad.                                                                         |
 | `n/a`         | —      | No signal to measure. Not good, not bad — _no evidence_. Never conflated with `critical`. |
 | `info`        | —      | Report-only fact; asserts no quality verdict.                                             |
 
@@ -89,17 +93,24 @@ So a metric cannot claim `strong` on thin evidence. This is why low extraction
 coverage quietly pulls every dependent metric's ceiling down instead of letting
 the tool over-claim.
 
-Two inputs feed `coupling_balance`'s confidence specifically: the scored
-fraction of classified edges, and — for TypeScript — the dependency-cruiser
-unresolved-specifier ratio. A `dependency-cruiser` `partial` status whose
-unresolved-specifier ratio exceeds **10%** (`tsUnresolvedRatioCeiling`,
-`internal/score/score.go`) caps confidence to `medium`: unresolved specifiers
-(missing tsconfig path/baseUrl alias, uninstalled dependency) land in the
-`external` bucket, outside `coupling_balance`'s denominator, so a high-noise
-extraction would otherwise read as confidently measured. The same
-partial-coverage cap already applies to a Rust graph where `cargo-modules`
-failed on some crates. Confidence downgrades (provenance, coverage, per-language
-partial extraction) compose by taking the minimum band — they never stack.
+`coupling_balance` confidence starts with the scored fraction of classified
+internal cross-boundary facts, then applies evidence caps:
+
+- fewer than **5** scored internal cross-boundary facts ⇒ high confidence is
+  disallowed;
+- fewer than **3** connected modules in the scored/abstained coupling sample ⇒
+  high confidence is disallowed;
+- `dependency-cruiser` `partial` with unresolved-specifier ratio above **10%**
+  (`tsUnresolvedRatioCeiling`, `internal/score/score.go`) ⇒ high confidence is
+  disallowed, because unresolved specifiers land in the `external` bucket,
+  outside `coupling_balance`'s denominator;
+- `cargo-modules` `partial` on Rust ⇒ high confidence is disallowed.
+
+These caps lower `high` to `medium` and append evidence lines. They do not lower
+the numeric score or trip `coupling.gate` by themselves. Existing low confidence
+from a poor scored fraction remains low. Confidence downgrades (provenance,
+coverage, per-language partial extraction, sample size) compose by taking the
+minimum confidence — they never stack.
 
 ### Deltas
 
@@ -116,7 +127,7 @@ metric scores against a git ref.
 
 ### `coupling_balance` (headline metric)
 
-> **Scorer version:** `bc_score.v4` — Khononov Ch10 book formula.
+> **Scorer version:** `bc_score.v6` — Khononov Ch10 book formula, with clone-only duplicated knowledge scored by default and transitive inferred-volatility cascade when enabled.
 
 - **Represents:** how well the distribution of coupling across module boundaries
   respects the strength × distance × volatility balance rule. High score means
@@ -125,19 +136,32 @@ metric scores against a git ref.
 - **Formula:** `balance = max(|S − D|, 10 − V) + 1` (Khononov Ch10 verbatim);
   see [Concepts → The balance rule](concepts.md#the-balance-rule) for ordinals,
   abstain semantics, and confidence. `coupling.volatility_cascade: true` enables
-  single-hop cascade (book Ch9).
+  a deterministic fixpoint cascade (book Ch9).
 - **Affects verdict:** only through the opt-in
   [`coupling.gate`](configuration-reference.md#couplinggate) block — `min_band`
   (band floor) and `max_drop` (points below the baselined score) fail the run.
   No block ⇒ report-only. Band `n/a` never trips (abstain ≠ fail).
-- **Denominator:** cross-module edges only. Same-module edges score into the
-  report-only [`local_coupling`](#local_coupling) block and never enter this
-  metric. The evidence line also discloses volatility provenance —
-  `volatility provenance (modules): declared: N, inherited: M, cascade: K`
-  (plus `undeclared: U` when nonzero; JSON:
+- **Denominator:** cross-module coupling facts only. Same-module edges score into
+  the report-only [`local_coupling`](#local_coupling) block and never enter this
+  metric. Clone-only duplicated-knowledge pairs (cross-module clones with no
+  import edge) enter by default through `coupling.duplicated_knowledge: score`;
+  set `advisory` to hold them out of the headline score. The evidence line
+  discloses `clone-only duplicated-knowledge pairs: S scored, A advisory-only`,
+  and JSON exposes the same counters as `classified_edges.clone_only_scored` and
+  `classified_edges.clone_only_advisory`. The evidence line also discloses
+  volatility provenance — `volatility provenance (modules): declared: N,
+inherited: M, cascade: K` (plus `undeclared: U` when nonzero; JSON:
   `classified_edges.volatility_provenance`) — so a repo whose volatility is
   uniform because synthetic submodules inherited it reads as
-  uniform-by-inheritance, not as a measured fact.
+  uniform-by-inheritance, not as a measured fact. JSON also exposes
+  `classified_edges.connected_modules`, `classified_edges.by_distance_basis`,
+  `classified_edges.distance_compression`, and `classified_edges.tail_risk`;
+  Markdown renders the same in **Distance confidence**. These fields show which
+  deterministic distance signal selected each rung, which middle Ch8 rungs
+  remain compressed, and whether the mean hides a lower-tail hot spot. Tail risk
+  reports worst balance, lower-decile balance, high-or-worse share, critical and
+  distributed-monolith counts, plus clone-only subcounts when scored clone-only
+  duplicated knowledge contributes to the tail.
 
 ### `unbalanced_edge`
 
@@ -234,6 +258,48 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 
 ## Report-only blocks
 
+### `connascence`
+
+- **Represents:** deterministic, static Ch6 connascence evidence observed on
+  dependency edges. It is explanatory evidence for the strength classification,
+  not a scored metric.
+- **Computed:** extractors attach edge evidence only where the source fact is
+  deterministic. Go `go/types` can report name, type, meaning (const/var/data),
+  and algorithm (function/method/callable value). TypeScript dependency-cruiser
+  reports name for runtime imports and type for `import type`. Python grimp
+  reports dotted/private import name evidence only; it does not invent class,
+  const, or function meaning from names. SCIP reports name/type/meaning/algorithm
+  where symbol descriptors prove them.
+- **Output:** JSON `connascence` contains `edges_with_evidence`,
+  `abstained_edges`, `total_evidence`, `by_kind`, `by_source`, `unmeasured`, and
+  `roadmap`. Markdown renders the same compact summary. `roadmap` is a stable
+  report-only checklist: `name`, `type`, `meaning`, and `algorithm` are
+  deterministic static categories; `position` is unmeasured unless an extractor
+  supplies deterministic argument/order evidence; `execution`, `timing`, runtime
+  `value`, and `identity` are unmeasured dynamic categories.
+- **Unmeasured by design:** dynamic/lazy imports and runtime async bridges remain
+  separate report-only evidence blocks (`dynamic_imports`, `runtime_async_edges`).
+  They can guide a human review, but they never become connascence guesses and
+  never move into scoring without a deterministic source-module→runtime fact.
+- **Report-only by design:** never consumed by `coupling_balance`, findings,
+  baselines, or gate verdicts.
+
+### `runtime_async` and `runtime_async_edges`
+
+- **Represents:** deterministic async/message-bus/task integration sites. This is
+  runtime/lifecycle coupling evidence for human review, not a scored distance
+  adjustment.
+- **Computed:** the runtime detector scans Go, TypeScript, and Python for known
+  async libraries and high-signal async framework patterns. Missing async evidence
+  never implies synchronous coupling.
+- **Output:** JSON `runtime_async` keeps the historical per-module rollup.
+  JSON `runtime_async_edges` groups the same concrete sites by
+  source module → runtime target (`library`, decorator, or async primitive), with
+  a capped site sample and a true `count`. Markdown renders the relationship-level
+  summary and points to JSON for the full list.
+- **Report-only by design:** neither block annotates graph edges, changes distance,
+  enters `coupling_balance`, affects baselines, or changes the gate verdict.
+
 ### `local_coupling`
 
 - **Represents:** intra-module cohesion — the book's Ch10 "local complexity"
@@ -261,13 +327,13 @@ Every cross-boundary edge is classified on the four lenses below
 `bc/imbalanced_coupling` advisories and feed `encapsulation` and
 `unbalanced_edge`.
 
-| Lens         | Values (ordered)                                                                                              | Derived from                                                                                       |
-| ------------ | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Strength     | `contract` < `model` < `functional` < `intrusive` (+`unknown`)                                                | public/internal globs, visibility, SCIP symbol kind, pinned labels                                 |
-| Distance     | `same_module` < `cross_module_same_owner` < `cross_module_different_owner` < `cross_deploy_unit` (+`unknown`) | module map, `owner`, `deploy_unit`                                                                 |
-| Volatility   | `low` < `medium` < `high` (+`undeclared`, `unknown`)                                                          | explicit `volatility:`, then `subdomain:`; else `undeclared` (no path/name guessing, no git churn) |
-| Explicitness | `explicit`, `implicit` (+`unknown`)                                                                           | strength (contract→explicit, intrusive→implicit) or AST hint                                       |
-| Severity     | (none) < `low` < `medium` < `high` < `critical`                                                               | the balance rule over the four above                                                               |
+| Lens         | Values (ordered)                                                                                                                    | Derived from                                                                                                                         |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Strength     | `contract` < `model` < `functional` < `intrusive` (+`unknown`)                                                                      | public/internal globs, visibility, SCIP symbol kind, pinned labels                                                                   |
+| Distance     | `same_module` < `cross_module_same_owner` < `cross_module_different_owner` < `cross_deploy_unit` < `declared_external` (+`unknown`) | module map, `owner`, `deploy_unit`, declared `external_systems` seam                                                                 |
+| Volatility   | `low` < `medium` < `high` (+`undeclared`, `unknown`)                                                                                | explicit `volatility:`, then `subdomain:`; optional strong-coupling cascade; else `undeclared` (no path/name guessing, no git churn) |
+| Explicitness | `explicit`, `implicit` (+`unknown`)                                                                                                 | strength (contract→explicit, intrusive→implicit) or AST hint                                                                         |
+| Severity     | (none) < `low` < `medium` < `high` < `critical`                                                                                     | the balance rule over the four above                                                                                                 |
 
 For the full severity table and the reasoning, see
 [Concepts → The balance rule](concepts.md#the-balance-rule).
@@ -294,13 +360,14 @@ Coverage and the optional metrics differ by language; when a tool is missing the
 dependent metric reports `n/a` **with the reason and enable step** — never a
 false failure.
 
-| Signal                       | Go            | TypeScript / JS                          | Python                                   |
-| ---------------------------- | ------------- | ---------------------------------------- | ---------------------------------------- |
-| Dependency graph + gates     | `go/packages` | dependency-cruiser                       | `grimp` (dotted modules)                 |
-| Node-ID scheme               | `file:`       | `file:`                                  | `module:` (incl. `src/` layout)          |
-| SCIP edge strength           | `scip-go`     | `scip-typescript` (needs `node_modules`) | `scip-python`                            |
-| type-only vs runtime edges   | n/a           | tagged (→ Contract strength)             | n/a                                      |
-| Dynamic / lazy import signal | n/a           | `require()` / dynamic `import()`         | in-function / `importlib` / `__import__` |
+| Signal                       | Go                                          | TypeScript / JS                                                    | Python                                                    |
+| ---------------------------- | ------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------- |
+| Dependency graph + gates     | `go/packages`                               | dependency-cruiser                                                 | `grimp` (dotted modules)                                  |
+| Node-ID scheme               | `file:`                                     | `file:`                                                            | `module:` (incl. `src/` layout)                           |
+| SCIP edge strength           | `scip-go`                                   | `scip-typescript` (needs `node_modules`)                           | `scip-python`                                             |
+| type-only vs runtime edges   | n/a                                         | tagged (→ Contract strength)                                       | n/a                                                       |
+| Connascence evidence         | name/type/meaning/algorithm from `go/types` | name/type from dependency-cruiser; symbol-kind refinements by SCIP | name/private import only; symbol-kind refinements by SCIP |
+| Dynamic / lazy import signal | n/a                                         | `require()` / dynamic `import()`                                   | in-function / `importlib` / `__import__`                  |
 
 SCIP refines edge strength feeding `coupling_balance` and `encapsulation` — it is
 not needed for gate rules, which work from the built-in extractor graph. For
@@ -316,13 +383,13 @@ Most metrics work from the built-in extractors and `git`. A few need an opt-in
 tool and report `n/a` (with a coverage note) when it is absent — never a false
 failure.
 
-| Metric(s)                                                                       | Needs                                             |
-| ------------------------------------------------------------------------------- | ------------------------------------------------- |
-| coupling_balance, unbalanced_edge, cycle, blast_radius, encapsulation, coverage | built-in extractors + `git`                       |
-| coupling_balance (strength refinement)                                          | SCIP index (`analyzers.scip.enabled: true`)       |
-| coupling_balance (clone → symmetric strength)                                   | clone detector (`analyzers.clones.enabled: true`) |
-| `bc/duplicated_knowledge` advisory                                              | clone detector (`analyzers.clones.enabled: true`) |
-| public_api_max, public_api_change, public_api_type_leak (rules)                 | `sg` (ast-grep); `analyzers.syntax.enabled: true` |
+| Metric(s)                                                                            | Needs                                             |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| coupling_balance, unbalanced_edge, cycle, blast_radius, encapsulation, coverage      | built-in extractors + `git`                       |
+| coupling_balance (strength refinement)                                               | SCIP index (`analyzers.scip.enabled: true`)       |
+| coupling_balance (clone → symmetric strength, including clone-only pairs by default) | clone detector (`analyzers.clones.enabled: true`) |
+| `bc/duplicated_knowledge` advisory                                                   | clone detector (`analyzers.clones.enabled: true`) |
+| public_api_max, public_api_change, public_api_type_leak (rules)                      | `sg` (ast-grep); `analyzers.syntax.enabled: true` |
 
 The `llm` tool is used only by `archfit config enrich`, `archfit explain --llm`,
 `archfit analyze --llm`, `archfit config init --llm`, and

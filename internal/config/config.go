@@ -22,7 +22,7 @@ import (
 //   - exclude        — path globs to skip during scanning
 //   - languages      — per-language extractor settings (go/typescript/python/rust)
 //   - analyzers      — opt-in deeper analysis backends (syntax/scip/complexity/…)
-//   - ai             — off-gate LLM provider for enrich/explain
+//   - ai             — off-gate LLM provider for init/update/enrich/analyze/explain LLM flows
 //   - coupling       — Balanced-Coupling advisory tuning
 //   - layers/modules — the architecture map
 //   - rules/waivers  — gates and their approved deviations
@@ -131,6 +131,12 @@ const (
 // bcSeverities are the accepted coupling.min_severity values (low→critical).
 var bcSeverities = map[string]struct{}{levelLow: {}, levelMedium: {}, levelHigh: {}, "critical": {}}
 
+// duplicatedKnowledgePolicies are the accepted coupling.duplicated_knowledge values.
+var duplicatedKnowledgePolicies = map[DuplicatedKnowledgePolicy]struct{}{
+	DuplicatedKnowledgePolicyScore:    {},
+	DuplicatedKnowledgePolicyAdvisory: {},
+}
+
 // gateValues are the accepted gate policy markers (spec §rules: off | warn | fail),
 // shared by rule, metric, and module_review gates. Empty means "use the default".
 var gateValues = map[string]struct{}{"off": {}, "warn": {}, "fail": {}}
@@ -191,6 +197,11 @@ func validate(cfg Config) error {
 	if s := cfg.Coupling.MinSeverity; s != "" {
 		if _, ok := bcSeverities[s]; !ok {
 			return fmt.Errorf("coupling.min_severity %q is not one of: low, medium, high, critical", s)
+		}
+	}
+	if p := cfg.Coupling.DuplicatedKnowledge; p != "" {
+		if _, ok := duplicatedKnowledgePolicies[p]; !ok {
+			return fmt.Errorf("coupling.duplicated_knowledge %q is not one of: score, advisory", p)
 		}
 	}
 	if err := validateCouplingGate(cfg.Coupling.Gate); err != nil {
@@ -398,12 +409,16 @@ func validateGate(field, gate string) error {
 }
 
 // Default returns a Config suitable for use when no archfit.yaml is present.
-// All language modes are auto, coupling advisory minimum severity is medium, and
-// no modules, layers, or rules are defined — only metric checks run.
+// All language modes are auto, coupling advisory minimum severity is medium,
+// clone-only duplicated knowledge is score-bearing, and no modules, layers, or
+// rules are defined — only metric checks run.
 func Default() Config {
 	return Config{
-		Version:  1,
-		Coupling: CouplingConfig{MinSeverity: levelMedium},
+		Version: 1,
+		Coupling: CouplingConfig{
+			MinSeverity:         levelMedium,
+			DuplicatedKnowledge: DuplicatedKnowledgePolicyScore,
+		},
 		Languages: LanguagesConfig{
 			Go:         GoLanguage{Enabled: ModeAuto},
 			TypeScript: TypeScriptLanguage{Enabled: ModeAuto},

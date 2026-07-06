@@ -471,7 +471,7 @@ func TestForExtract(t *testing.T) {
 // module's Paths[0] — a classification glob (e.g. "addons/**"), not a real
 // filesystem directory. Under --root subtree rewriting that nonsense path was
 // re-prefixed and handed to dependency-cruiser, which found no files and
-// aborted with a fatal TS18003 (docs/plans/20260701-multilang-reliability-fixes.md
+// aborted with a fatal TS18003 (docs/plans/completed/20260701-multilang-reliability-fixes.md
 // Task 4.3). Two configs below declare the same two modules with different
 // alphabetically-first names; Src must be identical across both and must
 // never equal a module's Paths[0].
@@ -513,6 +513,9 @@ func TestDefaultIncludesRust(t *testing.T) {
 	cfg := config.Default()
 	if got := cfg.Languages.Rust.Enabled; got != config.ModeAuto {
 		t.Errorf("Default rust mode = %q, want auto", got)
+	}
+	if got := cfg.ForClassify().DuplicatedKnowledgePolicy; got != config.DuplicatedKnowledgePolicyScore {
+		t.Errorf("Default duplicated knowledge policy = %q, want %q", got, config.DuplicatedKnowledgePolicyScore)
 	}
 }
 
@@ -1334,6 +1337,21 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			wantErr: "coupling.min_severity",
 		},
 		{
+			name:    "duplicated knowledge score policy loads clean",
+			yaml:    "version: 1\ncoupling:\n  duplicated_knowledge: score\n",
+			wantErr: "",
+		},
+		{
+			name:    "duplicated knowledge advisory policy loads clean",
+			yaml:    "version: 1\ncoupling:\n  duplicated_knowledge: advisory\n",
+			wantErr: "",
+		},
+		{
+			name:    "invalid duplicated knowledge policy rejected",
+			yaml:    "version: 1\ncoupling:\n  duplicated_knowledge: maybe\n",
+			wantErr: "coupling.duplicated_knowledge",
+		},
+		{
 			name:    "coupling.gate with min_band loads clean",
 			yaml:    "version: 1\ncoupling:\n  gate:\n    min_band: mixed\n",
 			wantErr: "",
@@ -1568,6 +1586,49 @@ func TestLoad_ValidateEnums(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.wantErr) {
 				t.Errorf("error %q does not mention %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestForClassify_DuplicatedKnowledgePolicy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		yaml string
+		want config.DuplicatedKnowledgePolicy
+	}{
+		{
+			name: "omitted defaults to score",
+			yaml: yamlV1,
+			want: config.DuplicatedKnowledgePolicyScore,
+		},
+		{
+			name: "score preserved",
+			yaml: "version: 1\ncoupling:\n  duplicated_knowledge: score\n",
+			want: config.DuplicatedKnowledgePolicyScore,
+		},
+		{
+			name: "advisory preserved",
+			yaml: "version: 1\ncoupling:\n  duplicated_knowledge: advisory\n",
+			want: config.DuplicatedKnowledgePolicyAdvisory,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "cfg.yaml")
+			if err := writeFile(path, tt.yaml); err != nil {
+				t.Fatalf("write temp: %v", err)
+			}
+			cfg, err := config.Load(context.Background(), path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if got := cfg.ForClassify().DuplicatedKnowledgePolicy; got != tt.want {
+				t.Errorf("ForClassify().DuplicatedKnowledgePolicy = %q, want %q", got, tt.want)
 			}
 		})
 	}

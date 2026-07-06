@@ -1,6 +1,6 @@
 # Extractor fact cache — design
 
-Status: approved design (Wave 6 Task 1, plan `docs/plans/20260702-wave6-perf-cache.md`).
+Status: approved design (Wave 6 Task 1, plan `docs/plans/completed/20260702-wave6-perf-cache.md`).
 Source: `docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` §3 (latency): cold ≈ warm on
 every corpus repo because no gate-level cache exists; prefect full scan is 8m13s and
 `--base` doubles full-scan cost.

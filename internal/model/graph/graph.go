@@ -36,6 +36,25 @@ type Location struct {
 	Line int    `json:"line"`
 }
 
+// Connascence kind literals carried by extractors before classification maps
+// them to the coupling model. These are report-only hints, not score inputs.
+const (
+	ConnascenceName      = "name"
+	ConnascenceType      = "type"
+	ConnascenceMeaning   = "meaning"
+	ConnascenceAlgorithm = "algorithm"
+	ConnascencePosition  = "position"
+)
+
+// ConnascenceHint records one deterministic static connascence fact observed by
+// an extractor. Kind is one of the Connascence* constants; Source names the tool
+// or compiler fact that produced it; Detail is optional human-facing context.
+type ConnascenceHint struct {
+	Kind   string `json:"kind"`
+	Source string `json:"source"`
+	Detail string `json:"detail,omitempty"`
+}
+
 // Node is a vertex in the dependency graph. Its identity is Kind + ":" + Path.
 type Node struct {
 	Kind     NodeKind `json:"kind"`
@@ -74,6 +93,10 @@ type Edge struct {
 	// classify honors it only as a fallback when config public/internal globs do
 	// not decide, so an architect's explicit declaration always wins.
 	StrengthHint string `json:"strength_hint,omitempty"`
+	// ConnascenceHints are deterministic static connascence facts reported by
+	// extractors. They are mapped into coupling.Classification for JSON/Markdown
+	// disclosure and never affect strength, distance, scoring, or the verdict.
+	ConnascenceHints []ConnascenceHint `json:"connascence_hints,omitempty"`
 }
 
 // StrengthHintDTO marks a reference to a pure-data struct: exported, at least
@@ -160,29 +183,41 @@ type Graph struct {
 //   - Edge Locations within each edge are sorted by (file, line).
 //   - Edges are sorted by (from, to, kind, firstLocation.File, firstLocation.Line).
 func Build(facts []Facts) *Graph {
-	// --- Dedup nodes ---
+	nodes := collectNodes(facts)
+	crateRoots := collectCrateRoots(facts)
+	goModules := collectGoModules(facts)
+	edges := collectEdges(facts)
+	return &Graph{nodes: nodes, edges: edges, crateRoots: crateRoots, goModules: goModules}
+}
+
+type edgeCandidate struct {
+	edge     Edge
+	priority int
+}
+
+func collectNodes(facts []Facts) []Node {
 	seen := make(map[string]struct{})
 	var nodes []Node
 	for _, f := range facts {
 		for _, n := range f.Nodes {
-			// Extractors stamp Language on every emitted node; backfill from the
-			// enclosing Facts for callers that build Node values directly (e.g.
-			// hand-rolled test graphs), so a Node's Language is never silently
-			// empty when its source Facts declares one.
 			if n.Language == "" {
 				n.Language = f.Language
 			}
 			id := n.ID()
-			if _, ok := seen[id]; !ok {
-				seen[id] = struct{}{}
-				nodes = append(nodes, n)
+			if _, ok := seen[id]; ok {
+				continue
 			}
+			seen[id] = struct{}{}
+			nodes = append(nodes, n)
 		}
 	}
+	slices.SortFunc(nodes, func(a, b Node) int {
+		return cmp.Compare(a.ID(), b.ID())
+	})
+	return nodes
+}
 
-	// --- Collect crate roots (Rust) ---
-	// Pure carry-through of the Rust extractor's package layout, deduped by Dir.
-	// Sorted by Dir for deterministic longest-prefix matching downstream.
+func collectCrateRoots(facts []Facts) []CrateRoot {
 	var crateRoots []CrateRoot
 	seenCrate := make(map[string]struct{})
 	for _, f := range facts {
@@ -197,10 +232,10 @@ func Build(facts []Facts) *Graph {
 	slices.SortFunc(crateRoots, func(a, b CrateRoot) int {
 		return cmp.Compare(a.Dir, b.Dir)
 	})
+	return crateRoots
+}
 
-	// --- Collect Go modules (workspace members) ---
-	// Pure carry-through of the Go extractor's workspace layout, deduped by Path.
-	// Sorted by Path for determinism; Task 8 consumes this for module auto-registration.
+func collectGoModules(facts []Facts) []GoModule {
 	var goModules []GoModule
 	seenGoMod := make(map[string]struct{})
 	for _, f := range facts {
@@ -215,83 +250,113 @@ func Build(facts []Facts) *Graph {
 	slices.SortFunc(goModules, func(a, b GoModule) int {
 		return cmp.Compare(a.Path, b.Path)
 	})
+	return goModules
+}
 
-	slices.SortFunc(nodes, func(a, b Node) int {
-		return cmp.Compare(a.ID(), b.ID())
-	})
-
-	// --- Dedup edges ---
-	// Two passes: first choose the winning language per key, then merge locations.
-
-	type candidate struct {
-		edge     Edge
-		priority int
+func collectEdges(facts []Facts) []Edge {
+	winners := chooseEdgeWinners(facts)
+	mergeEdgeEvidence(facts, winners)
+	edges := make([]Edge, 0, len(winners))
+	for _, c := range winners {
+		e := c.edge
+		sortEdgeEvidence(&e)
+		edges = append(edges, e)
 	}
-	winners := make(map[canonicalKey]candidate)
+	slices.SortFunc(edges, edgeLess)
+	return edges
+}
 
+func chooseEdgeWinners(facts []Facts) map[canonicalKey]edgeCandidate {
+	winners := make(map[canonicalKey]edgeCandidate)
 	for _, f := range facts {
 		prio := BuiltinConventions.Lookup(f.Language).Priority
 		for _, e := range f.Edges {
 			k := edgeKey(e)
 			existing, ok := winners[k]
 			if !ok || prio < existing.priority {
-				winners[k] = candidate{edge: e, priority: prio}
+				winners[k] = edgeCandidate{edge: e, priority: prio}
 			}
 		}
 	}
+	return winners
+}
 
-	// Merge all locations onto each winner.
+func mergeEdgeEvidence(facts []Facts, winners map[canonicalKey]edgeCandidate) {
 	for _, f := range facts {
 		for _, e := range f.Edges {
 			k := edgeKey(e)
 			c := winners[k]
-			locSeen := make(map[Location]struct{}, len(c.edge.Locations))
-			for _, l := range c.edge.Locations {
-				locSeen[l] = struct{}{}
-			}
-			for _, l := range e.Locations {
-				if _, ok := locSeen[l]; !ok {
-					locSeen[l] = struct{}{}
-					c.edge.Locations = append(c.edge.Locations, l)
-				}
-			}
+			c.edge.Locations = appendLocations(c.edge.Locations, e.Locations...)
+			c.edge.ConnascenceHints = appendConnascenceHints(c.edge.ConnascenceHints, e.ConnascenceHints...)
 			winners[k] = c
 		}
 	}
+}
 
-	// Collect edges, sort their Locations, then sort the edge slice.
-	edges := make([]Edge, 0, len(winners))
-	for _, c := range winners {
-		e := c.edge
-		slices.SortFunc(e.Locations, func(a, b Location) int {
-			if n := cmp.Compare(a.File, b.File); n != 0 {
-				return n
-			}
-			return cmp.Compare(a.Line, b.Line)
-		})
-		edges = append(edges, e)
+func appendLocations(dst []Location, locs ...Location) []Location {
+	seen := make(map[Location]struct{}, len(dst)+len(locs))
+	for _, l := range dst {
+		seen[l] = struct{}{}
 	}
+	for _, l := range locs {
+		if _, ok := seen[l]; ok {
+			continue
+		}
+		seen[l] = struct{}{}
+		dst = append(dst, l)
+	}
+	return dst
+}
 
-	slices.SortFunc(edges, func(a, b Edge) int {
-		if n := cmp.Compare(a.From, b.From); n != 0 {
+func appendConnascenceHints(dst []ConnascenceHint, hints ...ConnascenceHint) []ConnascenceHint {
+	seen := make(map[ConnascenceHint]struct{}, len(dst)+len(hints))
+	for _, h := range dst {
+		seen[h] = struct{}{}
+	}
+	for _, h := range hints {
+		if _, ok := seen[h]; ok {
+			continue
+		}
+		seen[h] = struct{}{}
+		dst = append(dst, h)
+	}
+	return dst
+}
+
+func sortEdgeEvidence(e *Edge) {
+	slices.SortFunc(e.Locations, func(a, b Location) int {
+		if n := cmp.Compare(a.File, b.File); n != 0 {
 			return n
 		}
-		if n := cmp.Compare(a.To, b.To); n != 0 {
-			return n
-		}
-		if n := cmp.Compare(string(a.Kind), string(b.Kind)); n != 0 {
-			return n
-		}
-		// tiebreak on first location (spec conformance)
-		aFile, aLine := firstLoc(a)
-		bFile, bLine := firstLoc(b)
-		if n := cmp.Compare(aFile, bFile); n != 0 {
-			return n
-		}
-		return cmp.Compare(aLine, bLine)
+		return cmp.Compare(a.Line, b.Line)
 	})
+	slices.SortFunc(e.ConnascenceHints, func(a, b ConnascenceHint) int {
+		if n := cmp.Compare(a.Kind, b.Kind); n != 0 {
+			return n
+		}
+		if n := cmp.Compare(a.Source, b.Source); n != 0 {
+			return n
+		}
+		return cmp.Compare(a.Detail, b.Detail)
+	})
+}
 
-	return &Graph{nodes: nodes, edges: edges, crateRoots: crateRoots, goModules: goModules}
+func edgeLess(a, b Edge) int {
+	if n := cmp.Compare(a.From, b.From); n != 0 {
+		return n
+	}
+	if n := cmp.Compare(a.To, b.To); n != 0 {
+		return n
+	}
+	if n := cmp.Compare(string(a.Kind), string(b.Kind)); n != 0 {
+		return n
+	}
+	aFile, aLine := firstLoc(a)
+	bFile, bLine := firstLoc(b)
+	if n := cmp.Compare(aFile, bFile); n != 0 {
+		return n
+	}
+	return cmp.Compare(aLine, bLine)
 }
 
 func firstLoc(e Edge) (string, int) {

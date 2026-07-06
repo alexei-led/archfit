@@ -14,6 +14,28 @@ Common fixes:
 For platform setup, package-manager choices, exact tool versions, home pages, and
 PATH checks, see [Tooling reference](tooling.md).
 
+## LLM command fails, costs too much, or should not send repo text
+
+Provider-backed commands are optional and off-gate. If `config init --llm`,
+`config update --llm`, `config enrich ...`, `analyze --llm`, or `explain --llm`
+fails, rerun the deterministic command without `--llm`; `analyze --gate` and CI do
+not need a model.
+
+Common checks:
+
+- Run `archfit doctor` to confirm the selected provider, model, API-key presence,
+  and `.archfit-cache/` status.
+- Set keys through `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`; do not put keys in
+  `.archfit.yaml`. A local `.env` is best-effort loaded only when the real env var
+  is unset.
+- Use `--no-cache` only for a fresh-provider control run. It bypasses extractor
+  facts and LLM response reads/writes, so repeated runs can spend tokens again.
+- Keep `.archfit-cache/llm/` out of git unless cached provider responses are safe
+  to share. Responses can quote repository text.
+- Evidence packs skip obvious secret-like paths and cache/vendor directories, but
+  they are not a secret scanner. Do not run provider-backed commands on docs,
+  comments, or public APIs that contain secrets you would not send to the provider.
+
 ## Installed but still reported missing
 
 `archfit` finds tools through the current process `PATH`. A package manager can
@@ -76,8 +98,10 @@ gap. To make CI block on a missing tool instead, opt in with `--require-tools` o
 These now appear as a `## Config warnings` section (md) and `config_warnings[]`
 (json), not just stderr. Most clear once modules declare `owner`, `subdomain`, and
 `volatility` — draft them with `archfit config enrich owner`/`config enrich volatility` or
-`archfit config init --llm -o draft.yaml`, review, then apply. Filling them also makes `encapsulation` measurable and lets `coupling_balance`
-move out of `n/a`.
+`archfit config init --llm -o draft.yaml`, review, then apply. Filling them improves
+ownership/volatility distance inputs and can move `coupling_balance` out of `n/a`;
+`encapsulation` also needs explicit `public:` / `internal:` globs so edge kinds are
+measurable.
 
 ## False-positive coupling advisories on a wiring/`cmd` package
 

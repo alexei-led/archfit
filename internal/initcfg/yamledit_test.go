@@ -3,6 +3,7 @@ package initcfg
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -407,7 +408,7 @@ func TestApplyEdits_UpdateModulePaths_ReplacesExisting(t *testing.T) {
 	assertContains(t, out, `"internal/classify/extra/**"`)
 
 	// extract unchanged.
-	assertContains(t, out, `"internal/extract/**"`)
+	assertContains(t, out, fmt.Sprintf("%q", testExtractPath))
 
 	// Comments preserved.
 	assertContains(t, out, "head comment for classify")
@@ -578,7 +579,7 @@ func TestApplyEdits_BottomUpOrdering_MultipleEdits(t *testing.T) {
 		},
 		UpdateModulePathsEdit{
 			Module: adapterExtract,
-			Paths:  []string{"internal/extract/**", "internal/extract/v2/**"},
+			Paths:  []string{testExtractPath, "internal/extract/v2/**"},
 		},
 	}
 	out := mustApply(t, fullFixture, edits...)

@@ -5,11 +5,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/classify"
+	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/ports"
 )
+
+const toolNameScipTest = "scip"
 
 // TestBCRiskClause_DistanceAware verifies the advisory text only names
 // "distributed-monolith risk" for high-distance critical edges; a low-distance
@@ -109,7 +114,10 @@ func TestEnrichEdges_GoTypeInfoHintAuthoritative(t *testing.T) {
 		{From: "file:c.ts", To: "pkg:pkg/d", Kind: graph.EdgeKindImports, Language: "typescript", StrengthHint: md},
 		{From: "file:e.go", To: "pkg:pkg/f", Kind: graph.EdgeKindImports, Language: graph.LangGo, StrengthHint: ""},
 	}}
-	enrichEdges(context.Background(), ports.NopSymbolResolver{}, scip, facts)
+	scipConnascence := map[string][]graph.ConnascenceHint{
+		"a.go\x00pkg/b": {{Kind: graph.ConnascenceAlgorithm, Source: toolNameScipTest, Detail: "symbol reference"}},
+	}
+	enrichEdges(context.Background(), ports.NopSymbolResolver{}, scip, scipConnascence, facts)
 
 	want := []string{md, fn, fn}
 	for i, w := range want {
@@ -117,6 +125,73 @@ func TestEnrichEdges_GoTypeInfoHintAuthoritative(t *testing.T) {
 			t.Errorf("edge %d (%s): StrengthHint = %q, want %q", i, facts.Edges[i].Language, got, w)
 		}
 	}
+	if got := facts.Edges[0].ConnascenceHints; len(got) != 1 || got[0].Kind != graph.ConnascenceAlgorithm {
+		t.Fatalf("Go edge SCIP connascence = %+v, want algorithm hint appended without strength override", got)
+	}
+}
+
+func TestBuildConnascenceReport(t *testing.T) {
+	idx := coupling.Index{
+		"a\x00b\x00imports": {
+			Connascence: []coupling.ConnascenceEvidence{
+				{Kind: coupling.ConnascenceName, Source: connascenceSourceGoTypes},
+				{Kind: coupling.ConnascenceType, Source: connascenceSourceGoTypes},
+			},
+		},
+		"c\x00d\x00imports": {
+			Connascence: []coupling.ConnascenceEvidence{
+				{Kind: coupling.ConnascenceAlgorithm, Source: toolNameScipTest},
+				{Kind: coupling.ConnascencePosition, Source: toolNameScipTest},
+			},
+		},
+		"e\x00f\x00imports": {},
+	}
+
+	r := buildConnascenceReport(idx)
+	if r.EdgesWithEvidence != 2 {
+		t.Errorf("EdgesWithEvidence = %d, want 2", r.EdgesWithEvidence)
+	}
+	if r.AbstainedEdges != 1 {
+		t.Errorf("AbstainedEdges = %d, want 1", r.AbstainedEdges)
+	}
+	if r.TotalEvidence != 4 {
+		t.Errorf("TotalEvidence = %d, want 4", r.TotalEvidence)
+	}
+	if r.ByKind[string(coupling.ConnascenceName)] != 1 || r.ByKind[string(coupling.ConnascenceType)] != 1 || r.ByKind[string(coupling.ConnascenceAlgorithm)] != 1 || r.ByKind[string(coupling.ConnascencePosition)] != 1 {
+		t.Errorf("ByKind = %+v, want name/type/algorithm/position counts", r.ByKind)
+	}
+	if r.BySource[connascenceSourceGoTypes] != 2 || r.BySource[toolNameScipTest] != 2 {
+		t.Errorf("BySource = %+v, want go/types=2 scip=2", r.BySource)
+	}
+	if len(r.Unmeasured) == 0 {
+		t.Fatal("Unmeasured is empty; dynamic categories must be disclosed")
+	}
+	for _, kind := range r.Unmeasured {
+		if kind == string(coupling.ConnascencePosition) {
+			t.Fatalf("position has deterministic evidence and must not be reported unmeasured: %+v", r.Unmeasured)
+		}
+	}
+	roadmap := connascenceRoadmapByKind(r.Roadmap)
+	if got := roadmap[string(coupling.ConnascenceName)].CurrentStatus; got != connascenceStatusDeterministicStatic {
+		t.Fatalf("name roadmap status = %q, want %q", got, connascenceStatusDeterministicStatic)
+	}
+	if got := roadmap[string(coupling.ConnascencePosition)].CurrentStatus; got != connascenceStatusDeterministicStatic {
+		t.Fatalf("position roadmap status = %q, want %q when deterministic evidence appears", got, connascenceStatusDeterministicStatic)
+	}
+	if got := roadmap["execution"].CurrentStatus; got != connascenceStatusUnmeasuredDynamic {
+		t.Fatalf("execution roadmap status = %q, want %q", got, connascenceStatusUnmeasuredDynamic)
+	}
+	if got := roadmap["execution"].RelatedSignals; len(got) != 2 || got[0] != "dynamic_imports" || got[1] != "runtime_async_edges" {
+		t.Fatalf("execution related signals = %+v, want dynamic_imports/runtime_async_edges", got)
+	}
+}
+
+func connascenceRoadmapByKind(items []diagnostic.ConnascenceRoadmapItem) map[string]diagnostic.ConnascenceRoadmapItem {
+	out := make(map[string]diagnostic.ConnascenceRoadmapItem, len(items))
+	for _, item := range items {
+		out[item.Kind] = item
+	}
+	return out
 }
 
 // TestBuildClassifiedEdgeSummary_DistributedMonolith verifies that the DM counter
@@ -339,6 +414,127 @@ func TestBuildClassifiedEdgeSummary(t *testing.T) {
 			t.Errorf("ByStrength total = %d, want 2 (internal cross-boundary only)", internalCrossTotal)
 		}
 	})
+}
+
+func TestBuildClassifiedEdgeSummary_TailRiskIncludesCloneOnlyContribution(t *testing.T) {
+	key := func(from, to, kind string) string { return from + "\x00" + to + "\x00" + kind }
+	idx := coupling.Index{
+		key("a", "b", "import"): {
+			Distance: coupling.DistanceCrossModuleSameOwner,
+			Strength: coupling.StrengthContract,
+			Score:    coupling.EdgeScore{Scored: true, Balance: 10, Band: coupling.SeverityNone},
+		},
+		key("a", "c", "import"): {
+			Distance: coupling.DistanceCrossModuleDiffOwner,
+			Strength: coupling.StrengthFunctional,
+			Score:    coupling.EdgeScore{Scored: true, Balance: 4, Band: coupling.SeverityHigh},
+		},
+		key("a", "d", "import"): {
+			Distance: coupling.DistanceCrossDeployUnit,
+			Strength: coupling.StrengthIntrusive,
+			Score:    coupling.EdgeScore{Scored: true, Balance: 2, Band: coupling.SeverityCritical},
+		},
+	}
+	cloneOnly := []classify.CloneOnlyPair{{
+		FromModule: "clone-a",
+		ToModule:   "clone-b",
+		Classification: coupling.Classification{
+			Distance: coupling.DistanceCrossModuleDiffOwner,
+			Strength: coupling.StrengthSymmetric,
+			Score:    coupling.EdgeScore{Scored: true, Balance: 3, Band: coupling.SeverityHigh},
+		},
+	}}
+
+	s := buildClassifiedEdgeSummaryWithCloneOnly(idx, cloneOnly, config.DuplicatedKnowledgePolicyScore)
+
+	if s.TailRisk == nil {
+		t.Fatal("TailRisk is nil, want scored-edge tail summary")
+	}
+	if s.TailRisk.WorstBalance != 2 {
+		t.Errorf("WorstBalance = %d, want 2", s.TailRisk.WorstBalance)
+	}
+	if s.TailRisk.LowerDecileBalance != 2 {
+		t.Errorf("LowerDecileBalance = %d, want 2", s.TailRisk.LowerDecileBalance)
+	}
+	if s.TailRisk.HighOrWorseEdges != 3 {
+		t.Errorf("HighOrWorseEdges = %d, want 3", s.TailRisk.HighOrWorseEdges)
+	}
+	if s.TailRisk.HighOrWorseSharePct != 75 {
+		t.Errorf("HighOrWorseSharePct = %d, want 75", s.TailRisk.HighOrWorseSharePct)
+	}
+	if s.TailRisk.CriticalEdges != 1 {
+		t.Errorf("CriticalEdges = %d, want 1", s.TailRisk.CriticalEdges)
+	}
+	if s.TailRisk.DistributedMonolithEdges != 1 {
+		t.Errorf("DistributedMonolithEdges = %d, want 1", s.TailRisk.DistributedMonolithEdges)
+	}
+	if s.TailRisk.CloneOnlyScored != 1 {
+		t.Errorf("CloneOnlyScored = %d, want 1", s.TailRisk.CloneOnlyScored)
+	}
+	if s.TailRisk.CloneOnlyHighOrWorseEdges != 1 {
+		t.Errorf("CloneOnlyHighOrWorseEdges = %d, want 1", s.TailRisk.CloneOnlyHighOrWorseEdges)
+	}
+	if s.TailRisk.CloneOnlyWorstBalance != 3 {
+		t.Errorf("CloneOnlyWorstBalance = %d, want 3", s.TailRisk.CloneOnlyWorstBalance)
+	}
+
+	s = buildClassifiedEdgeSummaryWithCloneOnly(idx, cloneOnly, config.DuplicatedKnowledgePolicyAdvisory)
+	if s.TailRisk.CloneOnlyScored != 0 || s.TailRisk.CloneOnlyHighOrWorseEdges != 0 || s.TailRisk.CloneOnlyWorstBalance != 0 {
+		t.Errorf("advisory policy tail risk counted clone-only pair: %+v", s.TailRisk)
+	}
+}
+
+func TestBuildClassifiedEdgeSummary_DistanceBasisCompressionAndConnectedModules(t *testing.T) {
+	key := func(from, to, kind string) string { return from + "\x00" + to + "\x00" + kind }
+	modules := map[string]config.ModuleDef{
+		"a": {Paths: []string{"a/**"}},
+		"b": {Paths: []string{"b/**"}},
+		"c": {Paths: []string{"c/**"}},
+	}
+	idx := coupling.Index{
+		key("file:a/x.go", "file:b/y.go", "import"): {
+			Distance:      coupling.DistanceCrossModuleSameOwner,
+			DistanceBasis: coupling.DistanceBasisStructure,
+			Strength:      coupling.StrengthContract,
+			Score:         coupling.EdgeScore{Scored: true, Balance: 9, Band: coupling.SeverityNone},
+		},
+		key("file:b/y.go", "file:c/z.go", "import"): {
+			Distance:      coupling.DistanceCrossModuleDiffOwner,
+			DistanceBasis: coupling.DistanceBasisOwnership,
+			Strength:      coupling.StrengthFunctional,
+			Score:         coupling.EdgeScore{Scored: true, Balance: 6, Band: coupling.SeverityMedium},
+		},
+		key("file:a/x.go", "pkg:github.com/acme/api", "import"): {
+			Distance:      coupling.DistanceExternal,
+			DistanceBasis: coupling.DistanceBasisExternal,
+			Strength:      coupling.StrengthFunctional,
+			Score:         coupling.EdgeScore{Scored: true, Balance: 8, Band: coupling.SeverityLow},
+		},
+	}
+
+	s := buildClassifiedEdgeSummaryForRun(idx, nil, config.DuplicatedKnowledgePolicyAdvisory, config.BuildModuleMap(modules))
+
+	if s.ConnectedModules != 3 {
+		t.Errorf("ConnectedModules = %d, want 3", s.ConnectedModules)
+	}
+	if s.ByDistanceBasis[string(coupling.DistanceBasisStructure)] != 1 {
+		t.Errorf("ByDistanceBasis[code_structure] = %d, want 1", s.ByDistanceBasis[string(coupling.DistanceBasisStructure)])
+	}
+	if s.ByDistanceBasis[string(coupling.DistanceBasisOwnership)] != 1 {
+		t.Errorf("ByDistanceBasis[ownership] = %d, want 1", s.ByDistanceBasis[string(coupling.DistanceBasisOwnership)])
+	}
+	if s.ByDistanceBasis[string(coupling.DistanceBasisExternal)] != 1 {
+		t.Errorf("ByDistanceBasis[declared_external] = %d, want 1", s.ByDistanceBasis[string(coupling.DistanceBasisExternal)])
+	}
+	if s.DistanceCompression == nil {
+		t.Fatal("DistanceCompression is nil")
+	}
+	if !s.DistanceCompression.CompressedMiddleRungs {
+		t.Error("CompressedMiddleRungs = false, want true")
+	}
+	if !strings.Contains(s.DistanceCompression.Rationale, "D=3") || !strings.Contains(s.DistanceCompression.Rationale, "D=8") {
+		t.Errorf("Rationale = %q, want D=3 and D=8 compression disclosure", s.DistanceCompression.Rationale)
+	}
 }
 
 // TestBuildClassifiedEdgeSummary_DeclaredExternal pins the D=10 rung's summary

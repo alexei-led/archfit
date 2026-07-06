@@ -28,6 +28,7 @@ import (
 const (
 	toolGrimp     = "grimp"
 	langPython    = "python"
+	sourceGrimp   = "grimp"
 	statusOK      = "ok"
 	statusPartial = "partial"
 	statusAbsent  = "absent"
@@ -442,18 +443,25 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 		// Config public/internal globs still take precedence in classify.
 		// We never emit a "contract" hint — grimp resolves imports to the defining
 		// submodule, so a public-API signal cannot be established here.
+		privateImport := isPrivatePythonModule(he.Imported) || hasPrivateSymbolImport(he.LineContents)
 		strengthHint := ""
-		if isPrivatePythonModule(he.Imported) || hasPrivateSymbolImport(he.LineContents) {
+		if privateImport {
 			strengthHint = string(coupling.StrengthIntrusive)
 		}
+		connascenceDetail := "dotted import"
+		if privateImport {
+			connascenceDetail = "private import"
+		}
+		connascenceHints := []graph.ConnascenceHint{{Kind: graph.ConnascenceName, Source: sourceGrimp, Detail: connascenceDetail}}
 
 		edges = append(edges, graph.Edge{
-			From:         "module:" + he.Importer,
-			To:           "module:" + he.Imported,
-			Kind:         edgeKind,
-			Language:     langPython,
-			Confidence:   "high",
-			StrengthHint: strengthHint,
+			From:             "module:" + he.Importer,
+			To:               "module:" + he.Imported,
+			Kind:             edgeKind,
+			Language:         langPython,
+			Confidence:       "high",
+			StrengthHint:     strengthHint,
+			ConnascenceHints: connascenceHints,
 			Locations: []graph.Location{
 				{File: locFile, Line: he.Line},
 			},

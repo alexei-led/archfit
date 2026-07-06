@@ -84,11 +84,11 @@ Manual checks:
 - Review the evidence pack for one medium repo. It should include useful intent, not large raw dumps.
 - Confirm secrets and `.env` contents are never included.
 
-- [ ] Add evidence source discovery for README, docs/design, docs/architecture, ADR-like docs, package comments, exported names, config snippets, and deterministic diagnostics.
-- [ ] Assign stable evidence IDs such as `doc:...`, `api:...`, `diag:...`, `comment:...`.
-- [ ] Bound token budget by source type and include deterministic truncation/sorting.
-- [ ] Add tests proving stable output order and no secret file inclusion.
-- [ ] Wire the pack into `init`, `update`, and `enrich` prompt builders without importing `internal/llm` from core packages.
+- [x] Add evidence source discovery for README, docs/design, docs/architecture, ADR-like docs, package comments, exported names, config snippets, and deterministic diagnostics.
+- [x] Assign stable evidence IDs such as `doc:...`, `api:...`, `diag:...`, `comment:...`.
+- [x] Bound token budget by source type and include deterministic truncation/sorting.
+- [x] Add tests proving stable output order and no secret file inclusion.
+- [x] Wire the pack into `init`, `update`, and `enrich` prompt builders without importing `internal/llm` from core packages.
 
 ### Task 2: Require cited structured drafts for config and rule proposals
 
@@ -128,11 +128,11 @@ Manual checks:
 
 - Review one draft and confirm each suggestion cites evidence and says whether it is deterministic fact or semantic judgment.
 
-- [ ] Extend LLM response schemas to require evidence refs for every proposed module/subdomain/volatility/owner/rule change.
-- [ ] Add rule suggestions for existing deterministic rule types only, e.g. `forbidden_dependency`, `forbidden_role_dependency`, `public_api_max`, `public_api_change`, and `coupling.gate` tuning.
-- [ ] Add tests that missing evidence refs reject or retry the response.
-- [ ] Add tests that default/plan mode leaves `.archfit.yaml` byte-unchanged.
-- [ ] Update docs for draft-review-apply semantics.
+- [x] Extend LLM response schemas to require evidence refs for every proposed module/subdomain/volatility/owner/rule change.
+- [x] Add rule suggestions for existing deterministic rule types only, e.g. `forbidden_dependency`, `forbidden_role_dependency`, `public_api_max`, `public_api_change`, and `coupling.gate` tuning.
+- [x] Add tests that missing evidence refs reject or retry the response.
+- [x] Add tests that default/plan mode leaves `.archfit.yaml` byte-unchanged.
+- [x] Update docs for draft-review-apply semantics.
 
 ### Task 3: Strengthen `analyze --llm` as an architect review, not a scorer
 
@@ -168,10 +168,10 @@ Manual checks:
 
 - Review one LLM report. It should read like an architect review but cite deterministic facts and source evidence.
 
-- [ ] Add prompt/schema fields for claim type: deterministic fact, semantic interpretation, recommendation, or unknown.
-- [ ] Reject or flag recommendations that lack finding IDs, metric IDs, or evidence refs.
-- [ ] Add tests proving verdict/score/finding JSON is unchanged by LLM review.
-- [ ] Align CLI help/docs around `analyze --llm` instead of any stale `review` command wording.
+- [x] Add prompt/schema fields for claim type: deterministic fact, semantic interpretation, recommendation, or unknown.
+- [x] Reject or flag recommendations that lack finding IDs, metric IDs, or evidence refs.
+- [x] Add tests proving verdict/score/finding JSON is unchanged by LLM review.
+- [x] Align CLI help/docs around `analyze --llm` instead of any stale `review` command wording.
 
 ### Task 4: Corpus validation with real LLM key and deterministic controls
 
@@ -206,11 +206,11 @@ Manual checks:
 - Corpus spot checks: Go `archfit`, Python `ccgram` or `prefect`, Rust `herdr` or `yazi`, TypeScript `storybook`.
 - For each language, inspect at least five non-trivial LLM suggestions and record accepted/rejected counts plus reason.
 
-- [ ] Run deterministic corpus attribution before any LLM commands.
-- [ ] Run `config init --llm`, `config update --llm`, and relevant `config enrich` flows on scratch copies or temp output paths.
-- [ ] Confirm deterministic `analyze --gate` output is byte-identical before/after when drafts are not pinned.
-- [ ] Record accepted/rejected samples and key false positives in `docs/plans/notes/wave2-semantic-evidence-validation.md`.
-- [ ] Confirm all corpus worktrees are clean or only contain pre-existing untracked files.
+- [x] Run deterministic corpus attribution before any LLM commands.
+- [x] Run `config init --llm`, `config update --llm`, and relevant `config enrich` flows on scratch copies or temp output paths.
+- [x] Confirm deterministic `analyze --gate` output is byte-identical before/after when drafts are not pinned.
+- [x] Record accepted/rejected samples and key false positives in `docs/plans/notes/wave2-semantic-evidence-validation.md`.
+- [x] Confirm all corpus worktrees are clean or only contain pre-existing untracked files.
 
 ### Task 5: Final docs, examples, and re-review handoff
 
@@ -245,10 +245,10 @@ Manual checks:
 
 - Read docs as a new user: it must be clear which commands mutate config, which only draft, and which affect CI.
 
-- [ ] Update docs and examples for every changed LLM command.
-- [ ] Document cost/cache/secret boundaries for evidence packs.
-- [ ] Run final validation commands.
-- [ ] Record the scoped `architecture-review` follow-up.
+- [x] Update docs and examples for every changed LLM command.
+- [x] Document cost/cache/secret boundaries for evidence packs.
+- [x] Run final validation commands.
+- [x] Record the scoped `architecture-review` follow-up.
 
 ## Acceptance criteria
 
@@ -280,3 +280,5 @@ After implementation, run a scoped `architecture-review` on the semantic boundar
 - `internal/arch_test.go`
 
 Acceptance signals for re-review: LLM remains off-gate, evidence refs are useful and bounded, default modes are inert, and deterministic analyze output is unchanged unless humans pin drafts into config/labels.
+
+Recorded handoff (2026-07-05): run scoped `architecture-review` on the files above after this wave lands, using the Task 5 validation as the deterministic baseline (`make all`, `archfit doctor`, and `archfit analyze --gate --full --config .archfit.yaml --base origin/main`).

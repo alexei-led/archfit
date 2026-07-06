@@ -65,8 +65,8 @@ labels:
     provenance: human
   - from: internal/engine
     to: internal/scope
-    strength: functional
-    rationale: engine uses scope.Resolver to determine which files to analyze; behavior invocation.
+    strength: model
+    rationale: engine carries scope.Scope values and resolver signatures; the resolving behavior itself lives in cmd.
     status: approved
     confidence: high
     provenance: human
@@ -236,13 +236,6 @@ labels:
     status: approved
     confidence: high
     provenance: human
-  - from: internal/extract/complexity
-    to: internal/model
-    strength: model
-    rationale: complexity extractor populates diagnostic value types; data model coupling.
-    status: approved
-    confidence: high
-    provenance: human
   - from: internal/extract/dynimports
     to: internal/model
     strength: model
@@ -283,13 +276,6 @@ labels:
     to: internal/toolrun
     strength: functional
     rationale: clones extractor uses toolrun.Runner to execute clone-detection tool; behavior invocation.
-    status: approved
-    confidence: high
-    provenance: human
-  - from: internal/extract/complexity
-    to: internal/toolrun
-    strength: functional
-    rationale: complexity extractor uses toolrun.Runner to execute lizard/CCN tool; behavior invocation.
     status: approved
     confidence: high
     provenance: human
@@ -353,7 +339,14 @@ labels:
   - from: cmd/archfit
     to: internal/labels
     strength: functional
-    rationale: cmd calls labels.Approved and labelsio.Load to load approved labels; functional invocation at composition root.
+    rationale: cmd calls labels.Approved to filter and apply approved labels; pure label logic at the composition root.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/archfit
+    to: internal/labels/labelsio
+    strength: functional
+    rationale: cmd calls labelsio.Load to read .archfit-labels.yaml from disk; adapter I/O at the composition root.
     status: approved
     confidence: high
     provenance: human
@@ -455,10 +448,46 @@ labels:
     status: approved
     confidence: high
     provenance: human
-  - from: cmd/archfit
-    to: internal/fitness
+  # --- cmd/calibrate → calibration pipeline ---
+  - from: cmd/calibrate
+    to: internal/calibrate
     strength: functional
-    rationale: cmd calls fitness checkers to measure architecture fitness signals; functional invocation.
+    rationale: cmd/calibrate calls calibrate.Compare to compare scorer outputs over extracted facts; functional invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/calibrate
+    to: internal/classify
+    strength: functional
+    rationale: cmd/calibrate calls classify.Run to build the coupling index for calibration; functional invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/calibrate
+    to: internal/config
+    strength: functional
+    rationale: cmd/calibrate loads .archfit.yaml and derives typed config views for extraction and classification.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/calibrate
+    to: internal/extract/golang
+    strength: functional
+    rationale: cmd/calibrate constructs and runs the Go extractor for scorer calibration; functional invocation.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/calibrate
+    to: internal/model
+    strength: model
+    rationale: cmd/calibrate passes graph and coupling value types between extractor, classifier, and scorer comparison.
+    status: approved
+    confidence: high
+    provenance: human
+  - from: cmd/calibrate
+    to: internal/scope
+    strength: model
+    rationale: cmd/calibrate constructs a scope.Scope value for the target repository; data model coupling.
     status: approved
     confidence: high
     provenance: human

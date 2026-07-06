@@ -111,6 +111,13 @@ func patchDefinitions(schema *jsonschema.Schema) {
 				*gate = *gateModeSchema
 			}
 		}
+		if name == "CouplingConfig" {
+			// Mirror validate(): clone-only duplicated knowledge has exactly two
+			// policies. Empty/unset defaults to score in Config.ForClassify.
+			if dk, ok := def.Properties.Get("duplicated_knowledge"); ok && dk.Type == typeString {
+				dk.Enum = []any{"score", "advisory"}
+			}
+		}
 		if name == "ExternalSystemDef" {
 			// Mirror validateExternalSystem (internal/config): at least one
 			// targets glob (an empty entry declares nothing) and a real

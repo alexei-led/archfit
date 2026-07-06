@@ -80,7 +80,12 @@ func (c *InitCmd) Run(deps *appDeps) error {
 		}
 
 		targets := initcfg.BuildClassifyTargets(root, cfg.Modules)
-		ann, err = classifyModules(ctx, p, targets, cfg.Layers)
+		configPath := out
+		if configPath == "-" {
+			configPath = ""
+		}
+		repoEvidence := architectureEvidenceLines(root, cfg.Modules, configPath, discoveredEvidenceDiagnostics(cfg))
+		ann, err = classifyModulesWithEvidence(ctx, p, targets, cfg.Layers, repoEvidence)
 		if err != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("error: classify failed: %v", err)}
 		}
@@ -89,7 +94,7 @@ func (c *InitCmd) Run(deps *appDeps) error {
 		// Owner-draft pass (folded from the former `autopilot` command): suggest an
 		// owner per module so a full LLM draft (init --llm) carries owners too, not
 		// just subdomain/volatility/layer. Off-gate, review-only unless --apply.
-		ownerDrafts, derr := draftModuleValues(ctx, p, ownerSpec, targets, readCodeowners(root))
+		ownerDrafts, derr := draftModuleValues(ctx, p, ownerSpec, targets, readCodeowners(root), repoEvidence)
 		if derr != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("error: draft owners failed: %v", derr)}
 		}
@@ -160,10 +165,14 @@ For each module, determine:
 - layer: choose from the allowed layer set provided in the user prompt; pick the closest semantic match
 - role (optional): one of "composition_root" (wiring/main that fans out to everything), "adapter" (I/O boundary), "core" (domain logic), "shared_model" (cross-cutting types), "generated", or "test" — omit when none fits
 - name: a concise suggested module name (optional improvement; keep original if good)
-- rationale: one sentence referencing concrete repository evidence: README/docs headings, module names, paths, public API globs, or listed files
+- rationale: one sentence referencing concrete repository evidence: cite evidence IDs when provided, plus module names, paths, public API globs, or listed files
+- evidence_refs: a non-empty array of repository evidence IDs supporting the proposed fields
+- basis: "deterministic_fact" when the proposal only restates deterministic evidence, otherwise "semantic_judgment"
+- rule_suggestions (optional): review-only proposals for existing deterministic rules: forbidden_dependency, forbidden_role_dependency, public_api_max, public_api_change, or coupling.gate tuning. Every rule suggestion must include rationale, evidence_refs, and basis.
+- external_system_suggestions (optional): review-only proposals for external_systems entries. Every suggestion must include name, targets, rationale, evidence_refs, and basis; volatility is optional and must be low|medium|high|frozen when set.
 
 Respond with a JSON ARRAY only — no prose, no markdown fences, no code blocks. Each entry must include a "module" field matching the provided module name exactly:
-[{"module":"<name>","subdomain":"core|supporting|generic","volatility":"low|medium|high","layer":"<from allowed set>","role":"<optional role or empty>","name":"<suggested>","rationale":"<one sentence>"}]`
+[{"module":"<name>","subdomain":"core|supporting|generic","volatility":"low|medium|high","layer":"<from allowed set>","role":"<optional role or empty>","name":"<suggested>","rationale":"<one sentence>","evidence_refs":["doc:README.md"],"basis":"semantic_judgment","rule_suggestions":[{"id":"<stable-id>","type":"forbidden_dependency|forbidden_role_dependency|public_api_max|public_api_change|coupling.gate","from":"<selector>","to":"<selector>","max":20,"min_band":"serviceable","max_drop":5,"gate":"warn|fail","rationale":"<one sentence>","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}],"external_system_suggestions":[{"name":"payments-vendor","targets":["github.com/vendor/sdk/**"],"volatility":"low","rationale":"<one sentence>","evidence_refs":["doc:README.md"],"basis":"semantic_judgment"}]}]`
 
 // classifyBatchSize bounds how many modules go into one LLM classify request.
 const classifyBatchSize = 25
@@ -189,19 +198,24 @@ func classifyUserPrompt(targets []initcfg.ClassifyTarget, layers []string, repoE
 		for _, ev := range repoEvidence {
 			fmt.Fprintf(&b, "- %s\n", ev)
 		}
+		b.WriteString("\nEvery proposed field, rule suggestion, and external_systems suggestion must cite repository evidence IDs in evidence_refs and set basis to deterministic_fact or semantic_judgment.\n")
 	}
 	return b.String()
 }
 
 // classifyResponse mirrors one entry in the LLM's JSON array reply.
 type classifyResponse struct {
-	Module     string `json:"module"`
-	Subdomain  string `json:"subdomain"`
-	Volatility string `json:"volatility"`
-	Layer      string `json:"layer"`
-	Role       string `json:"role"`
-	Name       string `json:"name"`
-	Rationale  string `json:"rationale"`
+	Module                    string                             `json:"module"`
+	Subdomain                 string                             `json:"subdomain"`
+	Volatility                string                             `json:"volatility"`
+	Layer                     string                             `json:"layer"`
+	Role                      string                             `json:"role"`
+	Name                      string                             `json:"name"`
+	Rationale                 string                             `json:"rationale"`
+	EvidenceRefs              []string                           `json:"evidence_refs"`
+	Basis                     string                             `json:"basis"`
+	RuleSuggestions           []ruleSuggestionResponse           `json:"rule_suggestions"`
+	ExternalSystemSuggestions []externalSystemSuggestionResponse `json:"external_system_suggestions"`
 }
 
 // validSubdomains, validVolatilities, and validRoles are the allowed enum values.
@@ -230,24 +244,39 @@ func classifyModules(ctx context.Context, p llm.Provider, targets []initcfg.Clas
 
 func classifyModulesWithEvidence(ctx context.Context, p llm.Provider, targets []initcfg.ClassifyTarget, layers []string, repoEvidence []string) (map[string]initcfg.ModuleAnnotation, error) {
 	out := make(map[string]initcfg.ModuleAnnotation, len(targets))
+	allowedRefs := evidenceRefSet(repoEvidence)
 	for start := 0; start < len(targets); start += classifyBatchSize {
 		batch := targets[start:min(start+classifyBatchSize, len(targets))]
-		resp, err := p.Complete(ctx, llm.Request{
-			System: initClassifySystemPrompt,
-			User:   classifyUserPrompt(batch, layers, repoEvidence),
-		})
-		if err != nil {
-			return nil, err
+		userPrompt := classifyUserPrompt(batch, layers, repoEvidence)
+		var parseErr error
+		var batchOut map[string]initcfg.ModuleAnnotation
+		for attempt := 0; attempt < 2; attempt++ {
+			resp, err := p.Complete(ctx, llm.Request{
+				System: initClassifySystemPrompt,
+				User:   userPrompt,
+			})
+			if err != nil {
+				return nil, err
+			}
+			batchOut = make(map[string]initcfg.ModuleAnnotation, len(batch))
+			parseErr = parseClassifyResponseWithEvidence(resp.Text, batch, batchOut, len(repoEvidence) > 0, allowedRefs)
+			if parseErr == nil {
+				break
+			}
+			userPrompt += "\n\nPrevious response was rejected: " + parseErr.Error() + "\nReturn only the required strict JSON array with rationale, evidence_refs, and basis for every proposal."
 		}
-		if err := parseClassifyResponse(resp.Text, batch, out); err != nil {
-			return nil, err
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		for name, annotation := range batchOut {
+			out[name] = annotation
 		}
 	}
 	return out, nil
 }
 
 // parseClassifyResponse parses one batch response and merges valid entries into dst.
-func parseClassifyResponse(text string, batch []initcfg.ClassifyTarget, dst map[string]initcfg.ModuleAnnotation) error {
+func parseClassifyResponseWithEvidence(text string, batch []initcfg.ClassifyTarget, dst map[string]initcfg.ModuleAnnotation, requireEvidence bool, allowedRefs ...map[string]struct{}) error {
 	// Tolerate accidental markdown fencing, nothing else.
 	text = strings.TrimSpace(text)
 	text = strings.TrimPrefix(text, "```json")
@@ -279,6 +308,18 @@ func parseClassifyResponse(text string, batch []initcfg.ClassifyTarget, dst map[
 		if strings.TrimSpace(e.Rationale) == "" {
 			return fmt.Errorf("classify: entry %q missing rationale", e.Module)
 		}
+		basis, refs, err := draftMetadata("classify entry", e.Module, e.Basis, e.EvidenceRefs, requireEvidence, firstAllowedEvidenceRefs(allowedRefs))
+		if err != nil {
+			return err
+		}
+		rules, err := parseRuleSuggestionResponses(e.Module, e.RuleSuggestions, requireEvidence, firstAllowedEvidenceRefs(allowedRefs))
+		if err != nil {
+			return err
+		}
+		externalSystems, err := parseExternalSystemSuggestionResponses(e.Module, e.ExternalSystemSuggestions, requireEvidence, firstAllowedEvidenceRefs(allowedRefs))
+		if err != nil {
+			return err
+		}
 		// Layer is carried raw even if out of the allowed set. Role is optional —
 		// keep it only when it is a valid enum value, drop anything else.
 		role := ""
@@ -286,12 +327,16 @@ func parseClassifyResponse(text string, batch []initcfg.ClassifyTarget, dst map[
 			role = e.Role
 		}
 		dst[e.Module] = initcfg.ModuleAnnotation{
-			Subdomain:     e.Subdomain,
-			Volatility:    e.Volatility,
-			Layer:         e.Layer,
-			Role:          role,
-			SuggestedName: e.Name,
-			Rationale:     e.Rationale,
+			Subdomain:                 e.Subdomain,
+			Volatility:                e.Volatility,
+			Layer:                     e.Layer,
+			Role:                      role,
+			SuggestedName:             e.Name,
+			Rationale:                 strings.TrimSpace(e.Rationale),
+			EvidenceRefs:              refs,
+			Basis:                     basis,
+			RuleSuggestions:           rules,
+			ExternalSystemSuggestions: externalSystems,
 		}
 	}
 	return nil

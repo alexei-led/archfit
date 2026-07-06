@@ -19,6 +19,7 @@ const (
 	hintModel      = "model"
 	hintFunctional = "functional"
 	hintDTO        = "dto"
+	sourceGoTypes  = "go/types"
 
 	pkgB = "pkg/b" // repo-relative path of the test helper package
 
@@ -187,6 +188,21 @@ func edgeStrengthHint(edges []graph.Edge, fromSuffix, toSuffix string, kind grap
 	return ""
 }
 
+func edgeConnascenceKinds(edges []graph.Edge, fromSuffix, toSuffix string, kind graph.EdgeKind) map[string]bool {
+	for _, e := range edges {
+		if containsSuffix(e.From, fromSuffix) && containsSuffix(e.To, toSuffix) && e.Kind == kind {
+			out := make(map[string]bool, len(e.ConnascenceHints))
+			for _, h := range e.ConnascenceHints {
+				if h.Source == sourceGoTypes {
+					out[h.Kind] = true
+				}
+			}
+			return out
+		}
+	}
+	return nil
+}
+
 // TestExtract_StrengthHint verifies that the Go extractor sets StrengthHint on
 // edges using the SCIP reader mapping: interface TypeName → contract, concrete
 // TypeName → model, Func → functional, and that the strongest rank wins when a
@@ -275,6 +291,39 @@ func TestExtract_StrengthHint(t *testing.T) {
 			got := edgeStrengthHint(facts.Edges, tc.from, tc.to, tc.kind)
 			if got != tc.wantHint {
 				t.Errorf("StrengthHint = %q, want %q (edges: %v)", got, tc.wantHint, facts.Edges)
+			}
+		})
+	}
+}
+
+func TestExtract_ConnascenceHints(t *testing.T) {
+	root := testdataRoot(t)
+	ext := goextract.New(config.ExtractConfig{})
+	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: root, Mode: scope.ModeFull})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		from string
+		want string
+	}{
+		{"interface type reference", "pkg/a/contract_cons.go", graph.ConnascenceType},
+		{"constant reference", "pkg/a/const_cons.go", graph.ConnascenceMeaning},
+		{"function call", "pkg/a/a.go", graph.ConnascenceAlgorithm},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := edgeConnascenceKinds(facts.Edges, tt.from, pkgB, graph.EdgeKindImports)
+			if !got[graph.ConnascenceName] {
+				t.Fatalf("connascence kinds = %+v, want name evidence", got)
+			}
+			if !got[tt.want] {
+				t.Fatalf("connascence kinds = %+v, want %s", got, tt.want)
+			}
+			if got[graph.ConnascencePosition] {
+				t.Fatalf("connascence kinds = %+v, position must abstain", got)
 			}
 		})
 	}

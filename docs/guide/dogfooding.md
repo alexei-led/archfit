@@ -7,7 +7,7 @@ example.
 
 The key distinction when reading any archfit run is **violations vs. signals**.
 
-## Violations and regressions gate. Signals inform.
+## Violations and regressions gate; signals inform
 
 A **violation** is a gate finding. It has a `gate` of `fail` (or `warn`) and it
 sets the exit code. Violations are the deterministic contract: the same code and
@@ -47,8 +47,9 @@ From the project `.archfit.yaml` and the structural gates in `CLAUDE.md`:
   `go test ./internal/ -run TestArchImports`) — the decision core
   (`classify`, `rules`, `metrics`, `status`, `staleness`, `facts`, `scope`,
   `score`) must not import `os`, `os/exec`, a YAML library, or adapter packages;
-  LLM SDKs are reachable only from `enrich`/`explain`/`analyze --llm`, never the
-  deterministic gate path.
+  LLM SDKs are reachable only from off-gate command code (`config init --llm`,
+  `config update --llm`, `config enrich`, `analyze --llm`, and `explain --llm`),
+  never the deterministic gate path.
 - **Forbidden dependencies and layer direction** declared as `rules` in the
   config (e.g. the historical engine→scope inversion guard, gated `warn`).
 - **Golden output** (`go test ./internal/engine/ -run TestGolden`) — emitted
@@ -77,8 +78,10 @@ capabilities:
   absent, the metric reports `n/a` with an install hint. A disabled-by-config tool
   produces no coverage gap at all.
 
-None of these can fail the build. They show up in `archfit analyze --markdown` and
-the JSON bundle that `archfit analyze --llm` narrates.
+Their absolute values do not fail the build. Baseline deltas can still gate for
+metrics such as `cycle` and `encapsulation`, and `coupling_balance` can gate when
+`coupling.gate` is configured. The signals show up in `archfit analyze --markdown`
+and the JSON bundle that `archfit analyze --llm` narrates.
 
 ## See it yourself
 
@@ -87,6 +90,6 @@ archfit analyze --gate --config .archfit.yaml --full     # gates only: the verdi
 archfit analyze --markdown --config .archfit.yaml --full # gates + signals, as Markdown
 ```
 
-The expected result on a clean checkout is **pass with signals** — no violations,
-plus a set of report-only metrics describing the current architecture. That is
-the normal steady state: signals are information, not debt to chase to zero.
+The expected result on a clean checkout is **pass with signals** — no violations
+or metric regressions, plus architecture signals for review. That is the normal
+steady state: signals are information, not debt to chase to zero.

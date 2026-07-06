@@ -1,12 +1,15 @@
-# Balanced Coupling measurement engine — design v4.0
+# Balanced Coupling measurement engine — design v6.0
 
-Date: 2026-07-04. Status: SHIPPED. Supersedes `bc-measurement-v3.md` (archived
+Date: 2026-07-05. Status: SHIPPED. Supersedes `bc-measurement-v3.md` (archived
 under `docs/archived/design/`). The v3 doc recorded the move to Khononov's
-published formula; v4 changes ONLY the classification feeding that formula —
-the formula, bands, and abstain discipline are unchanged. Delta note with the
-exact three-change list: `20260702-bc-score-v4.md`.
+published formula; v4 changed classification feeding that formula; v5 changes
+which deterministic coupling facts enter the headline rollup; v6 makes the
+opt-in inferred-volatility cascade transitive. The formula, ordinals, bands, and
+abstain discipline are unchanged. Delta notes: `20260702-bc-score-v4.md`,
+`20260705-bc-score-v5.md`, and `20260705-bc-score-v6.md`.
 
-Related plan: `docs/plans/20260702-wave4-book-strength-distance.md` (Tasks 1–6).
+Related plans: `docs/plans/completed/20260702-wave4-book-strength-distance.md` (Tasks 1–6),
+`docs/plans/completed/20260705-wave1-deterministic-book-fidelity.md` (Tasks 2–5).
 
 ---
 
@@ -17,18 +20,44 @@ archfit implements Vlad Khononov's _Balancing Coupling in Software Design_
 archfit owns only the _instrumentation_ — measuring code and placing each edge
 on the book's scale.
 
-`ScoreVersion = "bc_score.v4"` — a breaking metric change: **v4 scores are not
-comparable to v3 scores.** v4 fixes three known-wrong classifications found by
+`ScoreVersion = "bc_score.v6"` — a breaking metric change: **v6 scores are not
+comparable to v5 scores.** v4 fixed three known-wrong classifications found by
 the 2026-07-02 eval (`docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md` §1
-deviations 1–3):
+deviations 1–3), v5 closes the clone-only duplicated-knowledge score gap, and v6
+closes the one-hop inferred-volatility cascade gap:
 
 1. Go const/var reads score Model (S=3), not Functional (S=8) — pure data
    sharing per book Ch7. Rust gets the same fix via the rust-analyzer SCIP
    term kinds (const/static/field → model).
 2. Pure-data Go DTOs referenced across a declared `public:` glob boundary
    reach Contract (S=1) — the book's canonical Contract example.
-3. New frozen distance rung `DistanceExternal = 10` (book Ch10 Example 1,
+3. Frozen distance rung `DistanceExternal = 10` (book Ch10 Example 1,
    cross-vendor integration) for config-declared `external_systems:` seams.
+4. Clone-only duplicated knowledge — cross-module clone pairs with no import
+   edge — enters `coupling_balance` by default through
+   `coupling.duplicated_knowledge: score`. Set the policy to `advisory` to
+   preserve the v4 report-only behavior.
+5. Inferred volatility (`coupling.volatility_cascade: true`) propagates to a
+   deterministic fixpoint across strong deliberate coupling chains instead of
+   stopping at one hop.
+
+---
+
+### Book alignment frame
+
+Use these labels when changing code or docs:
+
+- **Book-exact:** the Ch10 formula, published ordinal anchors, balance bands,
+  and abstain discipline.
+- **Sound adaptation:** deterministic tool facts mapped onto book vocabulary,
+  such as compiler/object-kind strength hints, static connascence labels,
+  same-module local-coupling reporting, and the fixpoint implementation of the
+  Ch9 volatility-cascade idea.
+- **Policy choice:** conservative defaults and boundaries archfit chooses for
+  reproducibility: compressed D=3/D=5/D=6/D=8, declared-only external seams,
+  clone-only duplicated-knowledge score/advisory policy, and undeclared V=10.
+- **Out of scope:** dynamic connascence scoring, runtime/lifecycle distance
+  scoring, churn-derived volatility, and LLM-only gate changes.
 
 ---
 
@@ -98,6 +127,15 @@ DRY violation) — see §4.
 `DistanceExternal` (D=10) is new in v4 and reachable ONLY via a declared
 `external_systems:` config entry — see §6.
 
+The middle Ch8 range is deliberately compressed. archfit currently has stable,
+deterministic facts for same-module (D=2), same-owner/near structure (D=4),
+different-owner/far structure (D=7), deploy-unit boundary (D=9), and declared
+vendor seam (D=10). It does **not** split D=3/D=5/D=6 or add D=8 from names,
+directory taste, or dependency-manager package shape alone. JSON and Markdown
+surface this as `classified_edges.by_distance_basis` plus
+`classified_edges.distance_compression`, so a D=4/D=7 result is not mistaken for
+full book-rung precision.
+
 ### Volatility
 
 | Source                        | Book anchor           | Ordinal (V)       |
@@ -108,12 +146,13 @@ DRY violation) — see §4.
 | `subdomain: generic`          | generic               | 3                 |
 | explicit `volatility: low`    | supporting/generic    | 3                 |
 | explicit `volatility: medium` | (interpolation)       | 6                 |
-| `frozen` / `legacy` (future)  | frozen/legacy         | 1                 |
+| explicit `volatility: frozen` | frozen/legacy         | 1                 |
+| explicit `volatility: legacy` | alias for `frozen`    | 1                 |
 | undeclared / unknown          | → abstain rescue term | 10 (conservative) |
 
-Note: `VolatilityFrozen` / `VolatilityLegacy` constants do not yet exist in the
-codebase (all archfit modules are actively developed). The table documents the
-mapping for when they are added.
+`VolatilityFrozen` exists in code. `legacy` is a config alias that maps to it;
+add a separate `VolatilityLegacy` constant only if it ever needs distinct
+semantics.
 
 `medium=6` is an interpolation on the acknowledged open 3–10 range in the book.
 
@@ -154,6 +193,22 @@ strength is `functional` or `unknown` is upgraded to `StrengthSymmetric` (S=9).
 Config-authoritative `contract` or `intrusive` assignments, and approved pinned
 labels, are never overridden.
 
+When the clone pair has **no** import edge in either direction, it is clone-only
+duplicated knowledge: the same book Ch7 symmetric functional coupling exists,
+but the import graph cannot carry it. v5 keeps detection pure in
+`classify.CloneOnlyPairs` and lets `coupling.duplicated_knowledge` choose the
+rollup policy:
+
+- `score` (default): include the pair in `classified_edges` and
+  `coupling_balance` as a symmetric-strength coupling fact.
+- `advisory`: preserve v4 behavior; the pair can emit a
+  `bc/duplicated_knowledge` advisory but stays out of the headline score.
+
+JSON exposes the policy effect through `classified_edges.clone_only_scored` and
+`classified_edges.clone_only_advisory`. Advisory filtering still applies
+`coupling.min_severity`, approved labels, baseline status, and waivers. The
+coupling gate promotes only `bc/imbalanced_coupling`, never the advisory.
+
 S=9 with typical D=4 (same-owner) and V=3 (low volatility):
 `max(|9−4|, 10−3) + 1 = max(5, 7) + 1 = 8` → `low` severity. Correct: same-owner
 clone pairs are a DRY smell but not a distributed-monolith crisis. The critical
@@ -179,6 +234,22 @@ outrank the type reference. TS/Py/Rust have no equivalent static signal and
 abstain (no fabricated contract upgrades) — Wave 7's LLM labels are the
 designed path for those languages.
 
+### Connascence roadmap
+
+Connascence is a report-only evidence vocabulary, not a scoring input.
+`connascence.roadmap` makes the current book-alignment boundary explicit:
+
+| Kind                            | Status                                                                                       | Gate effect |
+| ------------------------------- | -------------------------------------------------------------------------------------------- | ----------- |
+| name/type/meaning/algorithm     | deterministic static                                                                         | none        |
+| position                        | unmeasured static gap unless deterministic argument/order evidence appears                   | none        |
+| execution/timing/value/identity | unmeasured dynamic gap; `dynamic_imports` and `runtime_async_edges` are only related signals | none        |
+
+An LLM may explain the roadmap or draft follow-up labels/docs, but it cannot turn
+an unmeasured dynamic category into strength, distance, volatility, score,
+finding, baseline, or verdict input. The upgrade trigger is a deterministic
+source-module→runtime fact precise enough to cite and test.
+
 ### Distance mapping
 
 Composite of three signals (first applicable in priority order), applied to
@@ -198,8 +269,19 @@ against a declared `external_systems:` entry assigns `declared_external`
 external exclusion (§6).
 
 Runtime async bridge: evidence recorded in `runtime_async` JSON field per
-module. **Does not annotate graph edges, does not affect D, does not affect the
-score or gate verdict.** Report-only by design.
+module and `runtime_async_edges` per source-module→runtime-target relation.
+**Does not annotate graph edges, does not affect D, does not affect the score or
+gate verdict.** Report-only by design.
+
+Each classified cross-boundary edge records `distance_basis` when a concrete
+signal selected the rung: `code_structure`, `ownership`, `deploy_unit`, or
+`declared_external`. The run summary rolls these into
+`classified_edges.by_distance_basis`. The companion
+`classified_edges.distance_compression` block lists implemented rungs, omitted
+compressed rungs, deterministic split decisions, and per-rung omission reasons.
+D=8 remains omitted by policy: undeclared library/package imports stay excluded,
+while explicitly declared `external_systems:` seams score at D=10. No D=8
+library seam is invented from package-manager shape alone.
 
 ### Volatility mapping
 
@@ -216,14 +298,30 @@ generic-subdomain guidance) and accepts an explicit override
 (high|medium|low|frozen).
 
 The inferred-volatility cascade (opt-in, `coupling.volatility_cascade: true`, book
-Ch9) propagates high volatility one hop across strongly-coupled edges before scoring.
+Ch9) propagates high volatility to a deterministic fixpoint across strongly-coupled
+edges before scoring. It only raises effective volatility and excludes clone-only
+pairs because duplicated code is accidental coupling evidence, not a domain/runtime
+dependency.
 
 ### Repo rollup
 
 `coupling_balance` dimension value = `round(100 × (mean book balance − 1) / 9)`
-over all scored internal cross-boundary edges. Confidence from the internal scored
-fraction (see §5). Worst edges surface as advisories. This is transparent
-aggregation of the book's own per-edge score, not a new coupling model.
+over all scored internal cross-boundary coupling facts: graph edges plus
+clone-only duplicated-knowledge pairs when `coupling.duplicated_knowledge: score`.
+Confidence starts from the internal scored fraction (see §5), then high
+confidence is disallowed for tiny samples: fewer than 5 scored internal
+cross-boundary facts or fewer than 3 connected modules caps the dimension at
+medium confidence and appends an evidence line. The cap changes confidence only;
+it does not change the numeric score, band, or `coupling.gate` decision.
+
+The mean is paired with `classified_edges.tail_risk`: worst balance,
+lower-decile balance, high-or-worse share, critical count, and
+distributed-monolith count. Clone-only duplicated-knowledge pairs that enter the
+score under `coupling.duplicated_knowledge: score` are counted in the same tail
+summary with clone-only subcounts, so copy-paste evidence is visible without
+inventing graph edges or changing the book formula. Worst edges still surface as
+advisories. This is transparent aggregation of the book's own per-edge score,
+not a new coupling model.
 
 ---
 
@@ -268,8 +366,8 @@ Edges whose target does not resolve to a declared module fall in two buckets:
   as external). Scoring EVERY library import at D=10 would flood the metric
   with vendor noise; the book's example is a _declared integration seam_.
   External dependency hygiene belongs in linter/dependency tooling. The count
-  is surfaced transparently in `classified_edges.external` (JSON) and in the
-  `coupling_balance` evidence string.
+  is surfaced transparently in `classified_edges.external` (JSON), Markdown
+  **Distance confidence**, and the `coupling_balance` evidence string.
 
 Language-agnostic: both buckets key on `DistanceUnknown`, which every language
 extractor sets for unresolved targets; the `external_systems:` match runs only
@@ -292,8 +390,8 @@ ordinal):
   strength. Deriving a hint from real symbol use (rust-analyzer SCIP) is the
   upgrade path; fabricating a conservative default is not.
 
-Self-scan result (v4, 2026-07-04): 513 external edges excluded (0 declared —
-archfit declares no external systems), 292 internal edges scored.
+Self-scan result (v5 final validation, 2026-07-05): 572 external edges excluded
+(0 declared — archfit declares no external systems), 350 internal edges scored.
 
 ---
 
@@ -345,34 +443,35 @@ Similarly, undeclared subdomain/volatility modules emit a decision task promptin
 
 ---
 
-## 8. archfit self-scorecard (Wave 4 Task 5, 2026-07-04)
+## 8. archfit self-scorecard (Wave 1 final validation, 2026-07-05)
 
-| Dimension        | Score | Band | Confidence |
-| ---------------- | ----- | ---- | ---------- |
-| coupling_balance | 40    | poor | high       |
+| Dimension        | Score | Band  | Confidence |
+| ---------------- | ----: | ----- | ---------- |
+| coupling_balance |    43 | mixed | high       |
 
-292 scored internal cross-boundary edges, 0 abstained, 513 external excluded.
-The pre-wave value was 39/poor (same band — no re-baseline needed); the +1 is
-Task 2's const/var → model fix, and Task 3's DTO upgrade moved 17 edges
-model → contract (below score granularity). The v3-era 78/serviceable
-self-score predates the opt-in volatility cascade (now enabled in self-config)
-and later classification fixes — v3 and v4 numbers are not comparable by
-design.
+354 scored internal cross-boundary edges, 0 abstained, 591 external/library edges
+excluded, 11 clone-only pairs scored, and 38 connected modules in the coupling
+sample. Movement from the Wave 1 deterministic baseline is 42 → 43 with no band
+change; v5's gain came from clone-only duplicated-knowledge scoring, and v6 keeps
+the score stable while making inferred volatility transitive. The v3/v4/v5/v6
+score versions are not comparable by design; accept v6 by reviewing the attribution
+table and re-running `archfit baseline` only when your configured gates need a new
+anchor.
 
 ---
 
 ## 9. Non-goals and rejected designs
 
 - **runtime_adjust / +1 async distance:** runtime async detection is
-  report-only. Never modifies distance, never annotates edges, never gates.
-  (`runtime_async` JSON field is evidence only.)
+  report-only. Never modifies distance, never annotates graph edges, never gates.
+  (`runtime_async` and `runtime_async_edges` JSON fields are evidence only.)
 - **Invented ordinals for unknown edges:** abstain instead. No `strengthOrdinalUnknown`
   or `distanceOrdinalUnknown` invented values remain.
 - **Scoring every library import at D=10:** rejected as vendor noise — the
   D=10 rung is reachable only through a declared `external_systems:` entry;
   the undeclared remainder stays a disclosed exclusion.
-- **VolatilityFrozen/VolatilityLegacy in code today:** book anchor=1, but no
-  constant exists yet — all archfit modules are in active development. Add when a
-  genuinely stable module requires it.
+- **Separate VolatilityLegacy constant:** rejected for now. `legacy` is accepted
+  as a config alias for `VolatilityFrozen`; add a separate constant only if it
+  needs distinct scoring or reporting semantics.
 - **gap-6 exemption (composition_root god-module):** explicitly rejected to keep
   the scorer honest. `cmd/archfit` is rightly flagged as a god module.

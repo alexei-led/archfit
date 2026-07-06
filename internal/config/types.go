@@ -36,6 +36,29 @@ type ModuleReviewConfig struct {
 	Gate       string `yaml:"gate,omitempty"`
 }
 
+// DuplicatedKnowledgePolicy controls whether clone-only duplicated knowledge
+// enters the headline coupling_balance score or remains advisory-only.
+type DuplicatedKnowledgePolicy string
+
+const (
+	// DuplicatedKnowledgePolicyScore includes clone-only cross-module pairs in
+	// coupling_balance as symmetric-strength coupling facts. This is the default
+	// v5 policy: the book's Ch7 duplicated-knowledge case affects the flagship score.
+	DuplicatedKnowledgePolicyScore DuplicatedKnowledgePolicy = "score"
+	// DuplicatedKnowledgePolicyAdvisory preserves the v4 behavior: clone-only
+	// pairs emit bc/duplicated_knowledge advisories but stay out of coupling_balance.
+	DuplicatedKnowledgePolicyAdvisory DuplicatedKnowledgePolicy = "advisory"
+)
+
+// NormalizeDuplicatedKnowledgePolicy applies the default policy for omitted YAML
+// and direct ClassifyConfig literals. Empty means score.
+func NormalizeDuplicatedKnowledgePolicy(p DuplicatedKnowledgePolicy) DuplicatedKnowledgePolicy {
+	if p == "" {
+		return DuplicatedKnowledgePolicyScore
+	}
+	return p
+}
+
 // CouplingConfig tunes the Balanced-Coupling advisory pass (`coupling:`).
 type CouplingConfig struct {
 	// MinSeverity is the minimum severity for a coupling advisory to appear:
@@ -43,9 +66,13 @@ type CouplingConfig struct {
 	// well-designed codebases; high/critical surface only intrusive/functional
 	// coupling across large boundaries.
 	MinSeverity string `yaml:"min_severity,omitempty"`
-	// VolatilityCascade enables the book Ch9 single-hop propagation pass: a
-	// module strongly coupled to a high-volatility module inherits raised
-	// effective volatility. Config-declared volatility always takes precedence.
+	// DuplicatedKnowledge controls clone-only duplicated knowledge (cross-module
+	// clone pairs with no import edge). "score" (default) includes those pairs in
+	// coupling_balance; "advisory" preserves the v4 report-only behavior.
+	DuplicatedKnowledge DuplicatedKnowledgePolicy `yaml:"duplicated_knowledge,omitempty"`
+	// VolatilityCascade enables the book Ch9 propagation pass: a module strongly
+	// coupled to a high-effective-volatility module inherits raised effective
+	// volatility. The pass runs to a deterministic fixpoint and never lowers values.
 	VolatilityCascade bool `yaml:"volatility_cascade,omitempty"`
 	// Gate makes the synthesised coupling_balance score gate the verdict.
 	// Absent (nil) = coupling stays advisory, today's behavior. An unmeasured
@@ -186,16 +213,19 @@ type ClassifyConfig struct {
 	// `owner: same-team` is not overridden by the code-structure fallback even in
 	// a single-author (degenerate) repo.
 	ExplicitOwners map[string]bool
-	// VolatilityCascadeEnabled enables a single-hop volatility propagation pass:
-	// a module strongly coupled (strength ≥ functional) to a high-volatility
-	// module inherits high effective volatility. Config-declared volatility always
-	// takes precedence over the inferred result.
+	// VolatilityCascadeEnabled enables inferred volatility propagation: a module
+	// strongly coupled (strength ≥ functional) to a high-effective-volatility
+	// module inherits high effective volatility. The cascade runs to a deterministic
+	// fixpoint and only raises volatility; it never lowers configured values.
 	VolatilityCascadeEnabled bool
 	// ExternalSystems are the declared external integration seams
 	// (`external_systems:`). An edge whose target resolves to no module but
 	// matches an entry's target glob classifies at DistanceExternal (D=10)
 	// with the entry's volatility (default low) and enters scoring.
 	ExternalSystems map[string]ExternalSystemDef
+	// DuplicatedKnowledgePolicy controls whether clone-only duplicated knowledge
+	// is score-bearing or advisory-only.
+	DuplicatedKnowledgePolicy DuplicatedKnowledgePolicy
 }
 
 // RuleConfig is the view passed to the rules stage.

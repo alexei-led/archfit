@@ -68,6 +68,31 @@ scoring), never assigned an invented ordinal.
 The ordinals are the book's published values and drive the balance formula
 directly.
 
+#### Connascence evidence — what shared knowledge was seen
+
+Connascence (book Ch6) is a lower-level vocabulary for the same shared knowledge
+that drives integration strength. `archfit` now reports deterministic static
+connascence as evidence, not as another score:
+
+| Connascence kind | Status in archfit                                                        |
+| ---------------- | ------------------------------------------------------------------------ |
+| Name             | deterministic static evidence from imports/references and SCIP           |
+| Type             | deterministic static evidence from Go types, TS type imports, and SCIP   |
+| Meaning          | deterministic static evidence from Go const/var/data refs and SCIP terms |
+| Algorithm        | deterministic static evidence from Go callable refs and SCIP functions   |
+| Position         | unmeasured unless deterministic argument/order evidence is supplied      |
+| Execution        | unmeasured dynamic category                                              |
+| Timing           | unmeasured dynamic category                                              |
+| Runtime value    | unmeasured dynamic category                                              |
+| Identity         | unmeasured dynamic category                                              |
+
+JSON/Markdown `connascence.roadmap` carries this checklist in machine-readable
+form. Dynamic/lazy imports and runtime async bridges stay separate report-only
+signals (`dynamic_imports`, `runtime_async_edges`). They can inform human review,
+but they are not connascence measurements and never feed the deterministic gate.
+This keeps the gate LLM-free and prevents semantic naming guesses from becoming
+score inputs.
+
 ### 2. Distance — how expensive it is to change them together
 
 Distance is the physical and organizational separation of the two components'
@@ -125,8 +150,9 @@ falling back to code-structure distance.
 **Deviation from the book:** Khononov also counts _runtime coupling_ (synchronous
 vs asynchronous integration) and lifecycle coupling as part of distance. `archfit`
 deliberately does **not** fold runtime/async coupling into distance — detected
-async bridges are recorded as report-only `runtime_async` evidence, never a scored
-distance factor (see [bc-measurement-v4.md §9](../design/bc-measurement-v4.md#9-non-goals-and-rejected-designs) for the rationale).
+async bridges are recorded as report-only `runtime_async` module rollups plus
+`runtime_async_edges` source-module→runtime-target facts, never a scored distance
+factor (see [bc-measurement-v4.md §9](../design/bc-measurement-v4.md#9-non-goals-and-rejected-designs) for the rationale).
 
 ### 3. Volatility — how likely it is to change at all
 
@@ -163,19 +189,22 @@ worst case that is also archfit-defined, not a book ordinal. The scorer then
 advises you to _declare_ the module's volatility rather than silently assuming it
 is stable.
 
-In `archfit` you set volatility per module (`volatility:` or `subdomain:` in
+In `archfit` you set base volatility per module (`volatility:` or `subdomain:` in
 `.archfit.yaml`). Git churn is never used as a volatility source — it measures
 observed change, a mix of essential and accidental factors, and `archfit` cannot
-separate them automatically. Declared subdomain volatility is the only input to
-the coupling-balance gate.
+separate them automatically. Declared subdomain volatility is the primary input;
+when the opt-in cascade below is enabled, deterministic strong-coupling chains can
+raise effective volatility before scoring.
 
 **Inferred-volatility cascade (opt-in, book Ch9):** when
-`coupling.volatility_cascade: true` is set in `.archfit.yaml`, a single-hop
-propagation pass runs before scoring. If a module is strongly coupled
-(`functional` or `intrusive`) to a `core` module, its effective volatility
-is raised to `high` for scoring purposes. This lets archfit surface coupling
-chains that inherit core-domain volatility without requiring every module to be
-manually annotated.
+`coupling.volatility_cascade: true` is set in `.archfit.yaml`, a deterministic
+fixpoint propagation pass runs before scoring. If a module is strongly coupled
+(`functional`, `symmetric`, or `intrusive`) to a high-effective-volatility module,
+its effective volatility is raised to `high` for scoring purposes. This lets
+archfit surface coupling chains that inherit core-domain volatility without
+requiring every module to be manually annotated. Clone-only pairs are excluded
+from the cascade because duplicated code is accidental coupling evidence, not a
+runtime/domain dependency.
 
 #### Essential vs accidental volatility
 
@@ -266,8 +295,11 @@ abstain rule and decision-task behavior.
 
 These balance scores drive the `bc/imbalanced_coupling` advisories (see
 [`archfit analyze`](commands.md)) and the `unbalanced_edge` metric. Cross-module
-clone pairs with no import edge surface as report-only `bc/duplicated_knowledge`
-advisories scored by the same formula. `ScoreVersion` is `bc_score.v4`.
+clone pairs with no import edge are clone-only duplicated knowledge; by default
+(`coupling.duplicated_knowledge: score`) they enter `coupling_balance` as
+symmetric-strength coupling facts and may also surface as `bc/duplicated_knowledge`
+advisories after severity filtering. Set the policy to `advisory` to preserve
+the v4 report-only behavior. `ScoreVersion` is `bc_score.v6`; the v6 change makes the opt-in inferred-volatility cascade transitive instead of one-hop.
 
 ---
 
@@ -295,6 +327,16 @@ and makes only the legible parts executable. Three design rules follow from that
    values are computed by deterministic code only. The model finds candidates;
    humans pin labels; the gate stays reproducible. See
    [LLM enrichment](llm-enrich.md).
+
+Book alignment status in the deterministic gate:
+
+| Category         | What falls here                                                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Book-exact       | Ch10 formula, published strength ordinals, scored cross-module `coupling_balance`, and abstain-not-fake for unknown S or D.      |
+| Sound adaptation | Static extractor facts mapped onto book strength/connascence vocabulary; same-module `local_coupling`; transitive Ch9 cascade.   |
+| Policy choice    | Compressed middle distance rungs, declared-only external seams, clone-only score/advisory policy, conservative undeclared V=10.  |
+| Report-only      | `connascence`, `local_coupling`, `runtime_async`, `runtime_async_edges`, `dynamic_imports`, distance compression, and tail risk. |
+| Out of scope     | Dynamic connascence scoring, runtime/lifecycle distance scoring, churn-derived volatility, and LLM-only gate changes.            |
 
 The workflow: change code → `archfit analyze --gate` → deterministic finding or
 metric delta with strength / distance / volatility vocabulary → repair within the

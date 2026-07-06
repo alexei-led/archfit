@@ -1782,16 +1782,19 @@ func TestRun_LLMLabels_FillDeterminismAndBucket(t *testing.T) {
 // langPyTest / kindLazy are factored out so the dynamic-import test stays under
 // goconst's repeated-literal threshold.
 const (
-	langPyTest   = "python"
-	kindLazy     = "lazy_import"
-	kindFuncDecl = "function_declaration"
-	pathPyA      = "pkg/a/x.py"
+	langPyTest    = "python"
+	kindLazy      = "lazy_import"
+	kindFuncDecl  = "function_declaration"
+	pathPyA       = "pkg/a/x.py"
+	moduleScripts = "scripts"
 
 	// Runtime async test constants.
 	kindMQ        = "message_queue"
 	kindEventBus  = "event_bus"
 	kindAsyncTask = "async_task"
 	libAmqp       = "amqp"
+	libKafka      = "kafka"
+	libCelery     = "celery"
 	confMedium    = "medium"
 )
 
@@ -1847,7 +1850,7 @@ func TestRun_DynamicImports_GroupedPerModule(t *testing.T) {
 	}{
 		{"a", 7, 5},
 		{"b", 1, 1},
-		{"scripts", 1, 1},
+		{moduleScripts, 1, 1},
 	}
 	if len(d.DynamicImports) != len(want) {
 		t.Fatalf("dynamic_imports groups = %d, want %d (%+v)", len(d.DynamicImports), len(want), d.DynamicImports)
@@ -2073,8 +2076,9 @@ func TestRun_GoWorkspace_StalePinnedLabelUsesAugmentedModuleMap(t *testing.T) {
 
 // runtimeAsyncRun executes the engine over cleanFacts with the given runtime-async
 // sites and returns the assembled Diagnostic. The graph is identical regardless of
-// the sites — the sites only feed the report-only RuntimeAsync block; they do not
-// annotate graph edges or affect classify, score, or verdict.
+// the sites — the sites only feed the report-only RuntimeAsync and
+// RuntimeAsyncEdges blocks; they do not annotate graph edges or affect classify,
+// score, or verdict.
 func runtimeAsyncRun(t *testing.T, sites []diagnostic.RuntimeAsyncSite, confidence string) diagnostic.Diagnostic {
 	t.Helper()
 	classifyCfg, rs := cannedConfig()
@@ -2107,8 +2111,8 @@ func TestRun_RuntimeAsync_GroupedPerModule(t *testing.T) {
 	sites := []diagnostic.RuntimeAsyncSite{
 		{File: pathFileA, Line: 1, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"},
 		{File: pathFileA, Line: 2, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"},
-		{File: "pkg/b/b.go", Line: 5, Library: "kafka", IntegrationKind: kindEventBus, Language: "go"},
-		{File: "scripts/worker.py", Line: 3, Library: "celery", IntegrationKind: kindAsyncTask, Language: langPyTest},
+		{File: "pkg/b/b.go", Line: 5, Library: libKafka, IntegrationKind: kindEventBus, Language: "go"},
+		{File: "scripts/worker.py", Line: 3, Library: libCelery, IntegrationKind: kindAsyncTask, Language: langPyTest},
 	}
 	d := runtimeAsyncRun(t, sites, confMedium)
 
@@ -2121,7 +2125,7 @@ func TestRun_RuntimeAsync_GroupedPerModule(t *testing.T) {
 	}{
 		{"a", kindMQ, 2, confMedium},
 		{"b", kindEventBus, 1, confMedium},
-		{"scripts", kindAsyncTask, 1, confMedium},
+		{moduleScripts, kindAsyncTask, 1, confMedium},
 	}
 	if len(d.RuntimeAsync) != len(want) {
 		t.Fatalf("runtime_async groups = %d, want %d (%+v)", len(d.RuntimeAsync), len(want), d.RuntimeAsync)
@@ -2141,6 +2145,32 @@ func TestRun_RuntimeAsync_GroupedPerModule(t *testing.T) {
 			t.Errorf("group[%d].Confidence = %q, want %q", i, got.Confidence, w.conf)
 		}
 	}
+
+	wantEdges := []struct {
+		from   string
+		target string
+		kind   string
+		count  int
+	}{
+		{"a", libAmqp, kindMQ, 2},
+		{"b", libKafka, kindEventBus, 1},
+		{moduleScripts, libCelery, kindAsyncTask, 1},
+	}
+	if len(d.RuntimeAsyncEdges) != len(wantEdges) {
+		t.Fatalf("runtime_async_edges = %d, want %d (%+v)", len(d.RuntimeAsyncEdges), len(wantEdges), d.RuntimeAsyncEdges)
+	}
+	for i, w := range wantEdges {
+		got := d.RuntimeAsyncEdges[i]
+		if got.FromModule != w.from || got.Target != w.target || got.IntegrationKind != w.kind || got.Count != w.count {
+			t.Errorf("edge[%d] = %+v, want from=%q target=%q kind=%q count=%d", i, got, w.from, w.target, w.kind, w.count)
+		}
+		if got.Confidence != confMedium {
+			t.Errorf("edge[%d].Confidence = %q, want %q", i, got.Confidence, confMedium)
+		}
+		if len(got.Sites) == 0 || len(got.Sites) > 5 {
+			t.Errorf("edge[%d].Sites len = %d, want 1..5", i, len(got.Sites))
+		}
+	}
 }
 
 // TestRun_RuntimeAsync_EmptySites asserts that an empty site list produces no
@@ -2149,6 +2179,9 @@ func TestRun_RuntimeAsync_EmptySites(t *testing.T) {
 	d := runtimeAsyncRun(t, nil, "low")
 	if len(d.RuntimeAsync) != 0 {
 		t.Errorf("expected empty runtime_async, got %+v", d.RuntimeAsync)
+	}
+	if len(d.RuntimeAsyncEdges) != 0 {
+		t.Errorf("expected empty runtime_async_edges, got %+v", d.RuntimeAsyncEdges)
 	}
 }
 
@@ -2165,12 +2198,20 @@ func TestRun_RuntimeAsync_StaticGraphUnchanged(t *testing.T) {
 	if len(withSites.RuntimeAsync) == 0 {
 		t.Fatal("expected runtime_async to be populated in the with-sites run")
 	}
+	if len(withSites.RuntimeAsyncEdges) == 0 {
+		t.Fatal("expected runtime_async_edges to be populated in the with-sites run")
+	}
 	if len(withoutSites.RuntimeAsync) != 0 {
 		t.Errorf("expected empty runtime_async in the no-sites run, got %+v", withoutSites.RuntimeAsync)
 	}
+	if len(withoutSites.RuntimeAsyncEdges) != 0 {
+		t.Errorf("expected empty runtime_async_edges in the no-sites run, got %+v", withoutSites.RuntimeAsyncEdges)
+	}
 
 	withSites.RuntimeAsync = nil
+	withSites.RuntimeAsyncEdges = nil
 	withoutSites.RuntimeAsync = nil
+	withoutSites.RuntimeAsyncEdges = nil
 	a, err := json.Marshal(withSites)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -2188,15 +2229,23 @@ func TestRun_RuntimeAsync_StaticGraphUnchanged(t *testing.T) {
 // yields byte-identical diagnostics (no map-order leakage in the rollup).
 func TestRun_RuntimeAsync_Deterministic(t *testing.T) {
 	sites := []diagnostic.RuntimeAsyncSite{
-		{File: "pkg/b/b.go", Line: 1, Library: "kafka", IntegrationKind: kindEventBus, Language: "go"},
+		{File: "pkg/b/b.go", Line: 1, Library: libKafka, IntegrationKind: kindEventBus, Language: "go"},
 		{File: pathFileA, Line: 2, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"},
-		{File: "scripts/z.py", Line: 3, Library: "celery", IntegrationKind: kindAsyncTask, Language: langPyTest},
+		{File: "scripts/z.py", Line: 3, Library: libCelery, IntegrationKind: kindAsyncTask, Language: langPyTest},
 	}
-	first, err := json.Marshal(runtimeAsyncRun(t, sites, confMedium).RuntimeAsync)
+	firstDiag := runtimeAsyncRun(t, sites, confMedium)
+	secondDiag := runtimeAsyncRun(t, sites, confMedium)
+	first, err := json.Marshal(struct {
+		Modules []diagnostic.RuntimeAsyncModule
+		Edges   []diagnostic.RuntimeAsyncEdge
+	}{firstDiag.RuntimeAsync, firstDiag.RuntimeAsyncEdges})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	second, err := json.Marshal(runtimeAsyncRun(t, sites, confMedium).RuntimeAsync)
+	second, err := json.Marshal(struct {
+		Modules []diagnostic.RuntimeAsyncModule
+		Edges   []diagnostic.RuntimeAsyncEdge
+	}{secondDiag.RuntimeAsync, secondDiag.RuntimeAsyncEdges})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}

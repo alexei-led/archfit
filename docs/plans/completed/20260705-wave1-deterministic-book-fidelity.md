@@ -78,10 +78,10 @@ Manual checks:
 
 - Confirm the baseline note cites `reports/book-alignment-review-2026-07-05/00-REVIEW.md` and records skipped corpus repos, if any.
 
-- [ ] Add failing-or-characterization tests for the current advisory-only clone-only policy.
-- [ ] Add tests showing tiny fully scored graphs currently can appear high confidence.
-- [ ] Record current self/corpus scores in `docs/plans/notes/wave1-deterministic-baseline.md`.
-- [ ] Run the verification commands and paste the result summary into the note.
+- [x] Add failing-or-characterization tests for the current advisory-only clone-only policy.
+- [x] Add tests showing tiny fully scored graphs currently can appear high confidence.
+- [x] Record current self/corpus scores in `docs/plans/notes/wave1-deterministic-baseline.md`.
+- [x] Run the verification commands and paste the result summary into the note.
 
 ### Task 2: Make clone-only duplicated knowledge score policy explicit
 
@@ -122,11 +122,11 @@ Manual checks:
 
 - Decide whether the default policy is `score` for book fidelity or `advisory` for backward compatibility. If the default is not `score`, document why this deliberately leaves a flagship-score gap.
 
-- [ ] Add config enum/default validation and schema coverage.
-- [ ] Add summary counters for scored/advisory clone-only pairs.
-- [ ] Wire selected clone-only pairs into `coupling_balance` only through the explicit policy.
-- [ ] Bump score version and update design docs if score semantics change.
-- [ ] Run attribution and explain every score/band movement.
+- [x] Add config enum/default validation and schema coverage.
+- [x] Add summary counters for scored/advisory clone-only pairs.
+- [x] Wire selected clone-only pairs into `coupling_balance` only through the explicit policy.
+- [x] Bump score version and update design docs if score semantics change.
+- [x] Run attribution and explain every score/band movement.
 
 ### Task 3: Add first-class deterministic connascence evidence
 
@@ -165,10 +165,10 @@ Manual checks:
 
 - Confirm no test or prompt claims timing/execution/value/identity connascence is deterministic unless backed by a concrete source.
 
-- [ ] Define the minimal deterministic connascence model: name/type/meaning/algorithm/position only where facts support it.
-- [ ] Add per-language tests that prove both positive detection and honest abstention.
-- [ ] Render a compact connascence summary in JSON and Markdown.
-- [ ] Update docs with the Ch6 mapping and unmeasured dynamic categories.
+- [x] Define the minimal deterministic connascence model: name/type/meaning/algorithm/position only where facts support it.
+- [x] Add per-language tests that prove both positive detection and honest abstention.
+- [x] Render a compact connascence summary in JSON and Markdown.
+- [x] Update docs with the Ch6 mapping and unmeasured dynamic categories.
 
 ### Task 4: Improve confidence and distance transparency
 
@@ -206,10 +206,10 @@ Manual checks:
 
 - Review whether any proposed D=3-D=7 split uses facts already in the graph/config. Reject any split based only on naming taste.
 
-- [ ] Add confidence caps for tiny scored-edge counts and tiny connected-module counts.
-- [ ] Add evidence strings for each confidence cap reason.
-- [ ] Add a distance-basis/compression summary to JSON/Markdown.
-- [ ] Either implement deterministic mid-rung split with tests, or document why the current compression remains deliberate.
+- [x] Add confidence caps for tiny scored-edge counts and tiny connected-module counts.
+- [x] Add evidence strings for each confidence cap reason.
+- [x] Add a distance-basis/compression summary to JSON/Markdown.
+- [x] Either implement deterministic mid-rung split with tests, or document why the current compression remains deliberate.
 
 ### Task 5: Corpus validation, docs, and re-review handoff
 
@@ -246,11 +246,11 @@ Manual checks:
 - Check corpus table covers Go, Python, Rust, and TypeScript. If a repo is skipped, record the missing checkout/tool reason.
 - Check docs do not imply LLM output affects gate decisions.
 
-- [ ] Run final whole-plan validation commands.
-- [ ] Write `docs/plans/notes/wave1-deterministic-validation.md` with per-repo score/band/scored/abstained/external movement.
-- [ ] Update user docs and design docs for every output/config change.
-- [ ] Rebaseline self only if score-version or gate behavior changed intentionally.
-- [ ] Record the scoped `architecture-review` follow-up.
+- [x] Run final whole-plan validation commands.
+- [x] Write `docs/plans/notes/wave1-deterministic-validation.md` with per-repo score/band/scored/abstained/external movement.
+- [x] Update user docs and design docs for every output/config change.
+- [x] Rebaseline self only if score-version or gate behavior changed intentionally.
+- [x] Record the scoped `architecture-review` follow-up.
 
 ## Acceptance criteria
 

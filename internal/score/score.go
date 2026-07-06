@@ -89,10 +89,9 @@ func Synthesize(d diagnostic.Diagnostic) Scorecard {
 	// A partial Rust module graph (some crates' cargo-modules failed) means the
 	// graph was incomplete when coupling was computed. Cap to medium so partial
 	// coverage cannot read as a confident verdict.
-	if cargoModulesPartial(d) && cb.Confidence == ConfidenceHigh {
-		cb.Confidence = ConfidenceMedium
-		cb.Evidence = append(cb.Evidence,
-			"module graph partial (some crates failed cargo-modules) — confidence capped to medium")
+	if cargoModulesPartial(d) {
+		applyMediumConfidenceCap(&cb,
+			"module graph partial (some crates failed cargo-modules) — high confidence disallowed")
 	}
 
 	// A TypeScript unresolved-specifier ratio above the ceiling means
@@ -102,10 +101,9 @@ func Synthesize(d diagnostic.Diagnostic) Scorecard {
 	// internal-edge denominator, so the measured balance reads better than reality.
 	// Cap to medium (mirrors the cargo-modules cap above) so a high-noise TS
 	// extraction cannot read as a confident verdict.
-	if tsUnresolvedPartial(d) && cb.Confidence == ConfidenceHigh {
-		cb.Confidence = ConfidenceMedium
-		cb.Evidence = append(cb.Evidence,
-			"TypeScript unresolved-specifier ratio exceeds threshold — confidence capped to medium "+
+	if tsUnresolvedPartial(d) {
+		applyMediumConfidenceCap(&cb,
+			"TypeScript unresolved-specifier ratio exceeds threshold — high confidence disallowed "+
 				"(path aliases or missing installs may be dropping internal edges as external)")
 	}
 
@@ -148,6 +146,16 @@ func finalize(dim Dimension) Dimension {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+func applyMediumConfidenceCap(dim *Dimension, reason string) {
+	if dim.Band == BandNA {
+		return
+	}
+	if dim.Confidence == ConfidenceHigh {
+		dim.Confidence = ConfidenceMedium
+	}
+	dim.Evidence = append(dim.Evidence, reason)
+}
 
 // metricIndex is metric results keyed by name for O(1) lookup.
 type metricIndex map[string]diagnostic.MetricResult

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,11 +16,11 @@ import (
 const ownerField = "owner"
 
 // valueJSONFor builds a scripted provider response assigning each module the
-// given value, in the {"module","value","rationale"} shape the value drafters expect.
+// given value in the cited shape the value drafters expect.
 func valueJSONFor(pairs map[string]string) string {
 	parts := make([]string, 0, len(pairs))
 	for mod, val := range pairs {
-		parts = append(parts, fmt.Sprintf(`{"module":%q,"value":%q,"rationale":"test"}`, mod, val))
+		parts = append(parts, fmt.Sprintf(`{"module":%q,"value":%q,"rationale":"test cites config:.archfit.yaml","evidence_refs":["config:.archfit.yaml"],"basis":"semantic_judgment"}`, mod, val))
 	}
 	return "[" + strings.Join(parts, ",") + "]"
 }
@@ -31,6 +32,11 @@ func TestEnrichOwnerDraft(t *testing.T) {
 	}
 	cfgPath, dir := writeEnrichSubdomainFixture(t)
 	ownersPath := filepath.Join(dir, defaultOwnersPath)
+
+	before, err := os.ReadFile(cfgPath) //nolint:gosec // test temp path
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	cmd := &EnrichOwnerCmd{enrichFlags: enrichFlags{Config: cfgPath, providerOverride: provider}}
 	var buf bytes.Buffer
@@ -51,6 +57,30 @@ func TestEnrichOwnerDraft(t *testing.T) {
 	for _, d := range df.Drafts {
 		if d.Status != initcfg.DraftStatusDraft || d.Value == "" {
 			t.Errorf("bad draft %+v", d)
+		}
+		if len(d.EvidenceRefs) == 0 || d.Basis == "" {
+			t.Errorf("draft missing evidence metadata %+v", d)
+		}
+	}
+	after, err := os.ReadFile(cfgPath) //nolint:gosec // test temp path
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("owner draft mode must leave .archfit.yaml byte-unchanged")
+	}
+}
+
+func TestValueUserPrompt_IncludesRepositoryEvidenceIDs(t *testing.T) {
+	t.Parallel()
+	prompt := valueUserPrompt(
+		[]initcfg.ClassifyTarget{{Name: enrichModAuth, Paths: []string{"internal/auth/**"}}},
+		"",
+		[]string{"doc:README.md (doc) README.md: Auth boundary"},
+	)
+	for _, want := range []string{repositoryEvidenceHeader, "doc:README.md", "Auth boundary", "module: auth"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
 	}
 }
@@ -133,6 +163,48 @@ func TestEnrichVolatilityDraftAndPin(t *testing.T) {
 	}
 	if !strings.Contains(string(got), "volatility: "+volatilityLow) {
 		t.Errorf("auth volatility not pinned:\n%s", string(got))
+	}
+}
+
+func TestDraftModuleValues_MissingEvidenceRefsError(t *testing.T) {
+	t.Parallel()
+	provider := &scriptedProvider{
+		responses: []string{`[{"module":"auth","value":"@team-auth","rationale":"test","basis":"semantic_judgment"}]`},
+	}
+	_, err := draftModuleValues(context.Background(), provider, ownerSpec, []initcfg.ClassifyTarget{{Name: enrichModAuth}}, "", []string{"doc:README.md (doc) README.md: Auth"})
+	if err == nil {
+		t.Fatal("missing evidence_refs must fail")
+	}
+	if !strings.Contains(err.Error(), "missing evidence_refs") {
+		t.Fatalf("error = %v, want missing evidence_refs", err)
+	}
+}
+
+func TestDraftModuleValues_UnsupportedEvidenceRefsError(t *testing.T) {
+	t.Parallel()
+	provider := &scriptedProvider{
+		responses: []string{`[{"module":"auth","value":"@team-auth","rationale":"test","evidence_refs":["doc:missing.md"],"basis":"semantic_judgment"}]`},
+	}
+	_, err := draftModuleValues(context.Background(), provider, ownerSpec, []initcfg.ClassifyTarget{{Name: enrichModAuth}}, "", []string{"doc:README.md (doc) README.md: Auth"})
+	if err == nil {
+		t.Fatal("unsupported evidence_refs must fail")
+	}
+	if !strings.Contains(err.Error(), "unsupported evidence_refs") {
+		t.Fatalf("error = %v, want unsupported evidence_refs", err)
+	}
+}
+
+func TestDraftModuleValues_AcceptsAPIEvidenceRefAlias(t *testing.T) {
+	t.Parallel()
+	provider := &scriptedProvider{
+		responses: []string{`[{"module":"auth","value":"@team-auth","rationale":"test cites api:ownership","evidence_refs":["api:ownership"],"basis":"semantic_judgment"}]`},
+	}
+	drafts, err := draftModuleValues(context.Background(), provider, ownerSpec, []initcfg.ClassifyTarget{{Name: enrichModAuth}}, "", []string{"api:internal-ownership (api) internal/ownership: owner map"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(drafts) != 1 || len(drafts[0].EvidenceRefs) != 1 || drafts[0].EvidenceRefs[0] != "api:internal-ownership" {
+		t.Fatalf("drafts = %+v, want canonical api ref", drafts)
 	}
 }
 

@@ -1,6 +1,7 @@
 package classify
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
@@ -19,6 +20,52 @@ const (
 	distModCore                = "core"
 	distModAPI                 = "api"
 )
+
+func TestDistanceCompression(t *testing.T) {
+	got := DistanceCompression()
+	if !got.CompressedMiddleRungs {
+		t.Fatal("CompressedMiddleRungs = false, want true")
+	}
+	for _, rung := range []int{2, 4, 7, 9, 10} {
+		if !hasInt(got.ImplementedRungs, rung) {
+			t.Errorf("ImplementedRungs = %v, missing %d", got.ImplementedRungs, rung)
+		}
+	}
+	for _, rung := range []int{3, 5, 6, 8} {
+		if !hasInt(got.OmittedRungs, rung) {
+			t.Errorf("OmittedRungs = %v, missing %d", got.OmittedRungs, rung)
+		}
+	}
+	if len(got.DeterministicSplits) == 0 {
+		t.Fatal("DeterministicSplits is empty")
+	}
+	for _, rung := range []int{3, 5, 6, 8} {
+		if reason := omittedRungReason(got.OmittedRungReasons, rung); reason == "" {
+			t.Errorf("OmittedRungReasons missing D=%d: %+v", rung, got.OmittedRungReasons)
+		}
+	}
+	if reason := omittedRungReason(got.OmittedRungReasons, 8); !strings.Contains(reason, "external_systems") {
+		t.Errorf("D=8 omitted reason = %q, want external_systems decision", reason)
+	}
+}
+
+func omittedRungReason(reasons []DistanceOmittedRungReason, rung int) string {
+	for _, r := range reasons {
+		if r.Rung == rung {
+			return r.Reason
+		}
+	}
+	return ""
+}
+
+func hasInt(values []int, want int) bool {
+	for _, v := range values {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
 
 func TestCodeStructureDistance(t *testing.T) {
 	tests := []struct {

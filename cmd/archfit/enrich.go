@@ -166,7 +166,9 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 		return nil
 	}
 
-	drafts, err := draftLabels(ctx, provider, cfg, pairs)
+	root := scanRootForEvidence(configDir, c.Root)
+	repoEvidence := architectureEvidenceLines(root, configModulesForEvidence(cfg), c.Config, enrichEvidenceDiagnostics("enrich-labels", len(pairs)))
+	drafts, err := draftLabels(ctx, provider, cfg, pairs, repoEvidence)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -240,7 +242,8 @@ func (c *enrichFlags) runSubdomainDraft(ctx context.Context, deps *appDeps) erro
 		root = configDir
 	}
 	targets := initcfg.BuildClassifyTargets(root, toClassify)
-	ann, err := classifyModules(ctx, provider, targets, cfg.Layers)
+	repoEvidence := architectureEvidenceLines(root, toClassify, c.Config, enrichEvidenceDiagnostics("enrich-subdomain", len(targets)))
+	ann, err := classifyModulesWithEvidence(ctx, provider, targets, cfg.Layers, repoEvidence)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: classify failed: %v", err)}
 	}
@@ -254,11 +257,13 @@ func (c *enrichFlags) runSubdomainDraft(ctx context.Context, deps *appDeps) erro
 			continue
 		}
 		newDrafts = append(newDrafts, initcfg.SubdomainDraft{
-			Module:     t.Name,
-			Subdomain:  a.Subdomain,
-			Volatility: a.Volatility,
-			Rationale:  a.Rationale,
-			Status:     initcfg.SubdomainStatusDraft,
+			Module:       t.Name,
+			Subdomain:    a.Subdomain,
+			Volatility:   a.Volatility,
+			Rationale:    a.Rationale,
+			EvidenceRefs: a.EvidenceRefs,
+			Basis:        a.Basis,
+			Status:       initcfg.SubdomainStatusDraft,
 		})
 	}
 
@@ -381,7 +386,7 @@ func buildCachedProvider(override llm.Provider, cfg config.LLMConfig, cacheDir s
 
 // llmCacheDir returns the on-disk LLM response cache directory under baseDir.
 // One definition of the ".archfit-cache/llm" layout shared by every LLM command
-// (enrich, review, explain, autopilot, init, update) and reported by doctor.
+// (config init/update/enrich, analyze --llm, explain --llm) and reported by doctor.
 func llmCacheDir(baseDir string) string {
 	return filepath.Join(baseDir, ".archfit-cache", "llm")
 }
@@ -490,25 +495,26 @@ For each module pair below, the tool's deterministic heuristic labeled the depen
 - "functional": the consumer invokes the producer's behavior (calls functions, no deep type dependence).
 - "contract": the consumer depends only on a deliberately published, stable interface.
 - "intrusive": the consumer reaches into internals, private state, or implementation details.
-Use the module names, subdomain/volatility context, and sample dependency paths. Respect intended centralization: shared infrastructure or config hubs are not automatically intrusive.
+Use the repository evidence IDs, module names, subdomain/volatility context, and sample dependency paths. Respect intended centralization: shared infrastructure or config hubs are not automatically intrusive. Put cited repository evidence IDs in evidence_refs. Use an empty evidence_refs array when the judgment rests only on sample dependency paths.
 Respond with a STRICT JSON array only — no prose, no markdown fences. One object per pair:
-[{"from":"<module>","to":"<module>","strength":"model|functional|contract|intrusive","rationale":"<one sentence>"}]
+[{"from":"<module>","to":"<module>","strength":"model|functional|contract|intrusive","basis":"semantic_judgment","evidence_refs":["doc:<path>"],"rationale":"<one sentence>"}]
 Include every pair exactly once.`
 
 // draftLabels asks the provider to refine each batch of pairs and parses the
 // strict-JSON responses into draft labels.
-func draftLabels(ctx context.Context, p llm.Provider, cfg config.Config, pairs []refinablePair) ([]labels.Label, error) {
+func draftLabels(ctx context.Context, p llm.Provider, cfg config.Config, pairs []refinablePair, repoEvidence ...[]string) ([]labels.Label, error) {
+	evidence := optionalEvidence(repoEvidence)
 	var out []labels.Label
 	for start := 0; start < len(pairs); start += enrichBatchSize {
 		batch := pairs[start:min(start+enrichBatchSize, len(pairs))]
 		resp, err := p.Complete(ctx, llm.Request{
 			System: enrichSystemPrompt,
-			User:   enrichUserPrompt(cfg, batch),
+			User:   enrichUserPrompt(cfg, batch, evidence),
 		})
 		if err != nil {
 			return nil, err
 		}
-		drafts, err := parseEnrichResponse(resp.Text, batch)
+		drafts, err := parseEnrichResponse(resp.Text, batch, evidenceRefSet(evidence))
 		if err != nil {
 			return nil, err
 		}
@@ -518,8 +524,15 @@ func draftLabels(ctx context.Context, p llm.Provider, cfg config.Config, pairs [
 }
 
 // enrichUserPrompt renders one batch of pairs as the user turn.
-func enrichUserPrompt(cfg config.Config, batch []refinablePair) string {
+func enrichUserPrompt(cfg config.Config, batch []refinablePair, repoEvidence []string) string {
 	var b strings.Builder
+	if len(repoEvidence) > 0 {
+		b.WriteString(repositoryEvidenceHeader + "\n")
+		for _, ev := range repoEvidence {
+			fmt.Fprintf(&b, "- %s\n", ev)
+		}
+		b.WriteString("\n")
+	}
 	b.WriteString("Module pairs to refine:\n")
 	for _, p := range batch {
 		fmt.Fprintf(&b, "\n- from: %s%s\n  to: %s%s\n  heuristic_strength: %s\n  edge_count: %d\n  sample_dependencies:\n",
@@ -552,17 +565,19 @@ func moduleContext(cfg config.Config, module string) string {
 
 // enrichResponse mirrors one element of the model's JSON answer.
 type enrichResponse struct {
-	From      string `json:"from"`
-	To        string `json:"to"`
-	Strength  string `json:"strength"`
-	Rationale string `json:"rationale"`
+	From         string   `json:"from"`
+	To           string   `json:"to"`
+	Strength     string   `json:"strength"`
+	Rationale    string   `json:"rationale"`
+	EvidenceRefs []string `json:"evidence_refs"`
+	Basis        string   `json:"basis"`
 }
 
 // parseEnrichResponse strictly parses the model's JSON and keeps only entries
 // matching requested pairs with valid strengths. A malformed body is an error
 // (never write a half-understood draft file); unknown pairs/strengths in an
 // otherwise-valid body are skipped.
-func parseEnrichResponse(text string, batch []refinablePair) ([]labels.Label, error) {
+func parseEnrichResponse(text string, batch []refinablePair, allowedRefs ...map[string]struct{}) ([]labels.Label, error) {
 	text = trimJSONFences(text)
 
 	var entries []enrichResponse
@@ -576,24 +591,43 @@ func parseEnrichResponse(text string, batch []refinablePair) ([]labels.Label, er
 	}
 
 	out := make([]labels.Label, 0, len(entries))
+	knownRefs := firstAllowedEvidenceRefs(allowedRefs)
 	for _, e := range entries {
-		if _, ok := requested[labels.Key(e.From, e.To)]; !ok {
+		key := labels.Key(e.From, e.To)
+		if _, ok := requested[key]; !ok {
 			continue
 		}
 		if !labels.ValidStrength(e.Strength) {
 			continue
 		}
+		basis, refs, err := labelDraftMetadata("label draft", e.From+"->"+e.To, e.Basis, e.EvidenceRefs, knownRefs)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, labels.Label{
-			From:       e.From,
-			To:         e.To,
-			Strength:   e.Strength,
-			Rationale:  e.Rationale,
-			Status:     labels.StatusDraft,
-			Provenance: labels.ProvenanceLLM,
-			Confidence: labels.ConfidenceMedium,
+			From:         e.From,
+			To:           e.To,
+			Strength:     e.Strength,
+			Rationale:    e.Rationale,
+			EvidenceRefs: refs,
+			Basis:        basis,
+			Status:       labels.StatusDraft,
+			Provenance:   labels.ProvenanceLLM,
+			Confidence:   labels.ConfidenceMedium,
 		})
 	}
 	return out, nil
+}
+
+func labelDraftMetadata(scope, name, basis string, refs []string, allowedRefs map[string]struct{}) (string, []string, error) {
+	basis, refs, err := draftMetadata(scope, name, basis, refs, false, allowedRefs)
+	if err != nil {
+		return "", nil, err
+	}
+	if basis == "" {
+		return "", nil, fmt.Errorf("%s %q missing basis", scope, name)
+	}
+	return basis, refs, nil
 }
 
 // mergeDrafts merges new drafts into the existing labels: fresh approved entries

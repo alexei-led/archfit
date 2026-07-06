@@ -95,15 +95,15 @@ func TestCollectUpdateRepoEvidence_ReadmeAndDocsHeadings(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Payments\n\n## Settlement\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(filepath.Join(dir, "docs"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "docs", "design"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "docs", "domain.md"), []byte("# Domain Map\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "docs", "design", "domain.md"), []byte("# Domain Map\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	got := strings.Join(collectUpdateRepoEvidence(dir), "\n")
-	for _, want := range []string{"README.md: Payments", "README.md: Settlement", "docs/domain.md: Domain Map"} {
+	for _, want := range []string{"doc:README.md", "README.md: Payments Settlement", "doc:docs/design/domain.md", "docs/design/domain.md: Domain Map"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("evidence missing %q:\n%s", want, got)
 		}
@@ -183,6 +183,11 @@ analyzers:
 }
 
 const (
+	reviewSuggestSubdomainCore = "+ subdomain: core"
+	reviewSuggestVolatilityLow = "+ volatility: low"
+	reviewSuggestLayerCore     = "+ layer: core"
+	reviewSuggestRationaleTest = "rationale: test"
+
 	// minimalConfigNoModules is a valid config with no modules section.
 	// Structurally in sync with empty discovery (Added=[], Removed=[], Drift=[]).
 	minimalConfigNoModules = `version: 1
@@ -347,7 +352,7 @@ rules:
 	if !bytes.Equal(before, data) {
 		t.Error("--llm --apply must not write review-only LLM suggestions")
 	}
-	for _, want := range []string{"+ subdomain: core", "+ volatility: low", "+ layer: core", "rationale: test"} {
+	for _, want := range []string{reviewSuggestSubdomainCore, reviewSuggestVolatilityLow, reviewSuggestLayerCore, reviewSuggestRationaleTest} {
 		if !strings.Contains(out, want) {
 			t.Errorf("review diff missing %q:\n%s", want, out)
 		}
@@ -394,6 +399,38 @@ func TestUpdateCmd_LLMApply_NoSetFieldsForAddedModule(t *testing.T) {
 	}
 	if strings.Contains(content, "volatility:") {
 		t.Errorf("LLM volatility suggestion must not be written by --apply; content:\n%s", content)
+	}
+}
+
+func TestUpdateCmd_LLMApply_SurfacesReviewOnlySuggestionsAfterStructuralEdit(t *testing.T) {
+	t.Parallel()
+	dir := minimalRoot(t)
+	cfgPath := writeConfig(t, dir, minimalConfigNoModules)
+
+	cmd := &UpdateCmd{
+		Config:           cfgPath,
+		Root:             dir,
+		LLM:              true,
+		Apply:            true,
+		LLMProvider:      providerAnthropic,
+		LLMModel:         defaultLLMModel,
+		providerOverride: &ruleSuggestionProvider{},
+	}
+	out, err := runUpdateCmd(t, cmd, matchingRunner("internal/mymod"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{
+		"LLM MODULE SUGGESTIONS",
+		reviewSuggestSubdomainCore,
+		reviewSuggestVolatilityLow,
+		"RULE SUGGESTIONS",
+		"id: no-adapter-to-core",
+		"evidence_refs:",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
 	}
 }
 
@@ -677,7 +714,7 @@ rules:
 	if !strings.Contains(out, "mymod") {
 		t.Errorf("plan report should mention 'mymod'; got:\n%s", out)
 	}
-	for _, want := range []string{"+ subdomain: core", "+ volatility: low", "rationale: test"} {
+	for _, want := range []string{reviewSuggestSubdomainCore, reviewSuggestVolatilityLow, reviewSuggestRationaleTest} {
 		if !strings.Contains(out, want) {
 			t.Errorf("plan report missing %q:\n%s", want, out)
 		}
@@ -692,6 +729,62 @@ rules:
 	}
 	if _, statErr := os.Stat(cfgPath + ".bak"); statErr == nil {
 		t.Error("--llm plan mode must not create a backup")
+	}
+}
+
+func TestUpdateCmd_LLMPlanMode_RendersCitedRuleSuggestionsAndLeavesFileUnchanged(t *testing.T) {
+	t.Parallel()
+	dir := minimalRoot(t)
+	cfg := `version: 1
+layers:
+  - core
+  - adapter
+modules:
+  mymod:
+    paths:
+      - "internal/mymod/**"
+rules:
+  - id: no-bad-deps
+    type: forbidden_dependency
+    gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
+`
+	cfgPath := writeConfig(t, dir, cfg)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := &UpdateCmd{
+		Config:           cfgPath,
+		Root:             dir,
+		LLM:              true,
+		Apply:            false,
+		LLMProvider:      providerAnthropic,
+		LLMModel:         defaultLLMModel,
+		providerOverride: &ruleSuggestionProvider{},
+	}
+	out, err := runUpdateCmd(t, cmd, matchingRunner("internal/mymod"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{
+		"RULE SUGGESTIONS",
+		"type: forbidden_dependency",
+		"id: no-adapter-to-core",
+		"evidence_refs: config:.archfit.yaml",
+		"basis: semantic_judgment",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	after, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("--llm plan mode with rule suggestions must leave config byte-unchanged")
 	}
 }
 
@@ -748,6 +841,16 @@ func TestUpdateCmd_ChangedSinceReadAborts(t *testing.T) {
 	}
 }
 
+type ruleSuggestionProvider struct{}
+
+func (p *ruleSuggestionProvider) Name() string { return "test/rule-suggestion" }
+func (p *ruleSuggestionProvider) Complete(_ context.Context, req llm.Request) (llm.Response, error) {
+	ref := firstEvidenceRefForTest(req.User)
+	return llm.Response{Text: fmt.Sprintf(`[{"module":"mymod","subdomain":"core","volatility":"low","layer":"core","name":"","rationale":"module classification cites %[1]s","evidence_refs":[%[2]q],"basis":"semantic_judgment","rule_suggestions":[{"id":"no-adapter-to-core","type":"forbidden_dependency","gate":"warn","from":"adapter/**","to":"core/**","rationale":"adapter should not call core internals; see %[1]s","evidence_refs":[%[2]q],"basis":"semantic_judgment"}]}]`, ref, ref)}, nil
+}
+
+var _ llm.Provider = (*ruleSuggestionProvider)(nil)
+
 // TestUpdateCmd_LLM_WarnPartialClassify verifies that when the LLM omits a
 // module from its response, a warning is printed naming the unclassified module,
 // and other modules are still written in --apply mode.
@@ -801,6 +904,7 @@ type fakeOmitProvider struct {
 
 func (p *fakeOmitProvider) Name() string { return "test/omit" }
 func (p *fakeOmitProvider) Complete(_ context.Context, req llm.Request) (llm.Response, error) {
+	ref := firstEvidenceRefForTest(req.User)
 	var entries []string
 	for _, line := range strings.Split(req.User, "\n") {
 		line = strings.TrimSpace(line)
@@ -808,8 +912,8 @@ func (p *fakeOmitProvider) Complete(_ context.Context, req llm.Request) (llm.Res
 			name := strings.TrimSpace(strings.TrimPrefix(line, "- module: "))
 			if name == p.classifyName {
 				entries = append(entries, fmt.Sprintf(
-					`{"module":%q,"subdomain":"core","volatility":"low","layer":"core","name":"","rationale":"test"}`,
-					name,
+					`{"module":%q,"subdomain":"core","volatility":"low","layer":"core","name":"","rationale":"test cites %s","evidence_refs":[%q],"basis":"semantic_judgment"}`,
+					name, ref, ref,
 				))
 			}
 			// Other modules intentionally omitted to trigger the partial-classify warning.
@@ -828,14 +932,15 @@ type rustSyntheticProvider struct{}
 func (rustSyntheticProvider) Name() string { return "test/rust-synthetic" }
 
 func (rustSyntheticProvider) Complete(_ context.Context, req llm.Request) (llm.Response, error) {
+	ref := firstEvidenceRefForTest(req.User)
 	var entries []string
 	for _, line := range strings.Split(req.User, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "- module: ") {
 			name := strings.TrimSpace(strings.TrimPrefix(line, "- module: "))
 			entries = append(entries, fmt.Sprintf(
-				`{"module":%q,"subdomain":"supporting","volatility":"low","layer":"core","role":"core","name":"","rationale":"synthetic module review"}`,
-				name,
+				`{"module":%q,"subdomain":"supporting","volatility":"low","layer":"core","role":"core","name":"","rationale":"synthetic module review cites %s","evidence_refs":[%q],"basis":"semantic_judgment"}`,
+				name, ref, ref,
 			))
 		}
 	}

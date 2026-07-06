@@ -17,7 +17,7 @@ const (
 	fileFrom          = "pkg/a/a.go"
 	fileTo            = "pkg/b/internal/impl.go"
 	ruleTypeForbidden = "forbidden_dependency"
-	validateCmd       = "archfit check"
+	validateCmd       = "archfit analyze --gate"
 	kindFunction      = "function"
 )
 
@@ -55,7 +55,7 @@ func TestBuild_ActiveGateFindingsOnly(t *testing.T) {
 	tasks := agenttask.Build(findings,
 		map[string]string{ruleForbidden: ruleTypeForbidden},
 		nil,
-		[]string{"archfit check --full"},
+		[]string{"archfit analyze --gate --full"},
 		nil,
 		agenttask.PathResolver{},
 	)
@@ -74,7 +74,7 @@ func TestBuild_TaskShape(t *testing.T) {
 		[]finding.Finding{gateFinding("f1", ruleForbidden, finding.StatusNew)},
 		map[string]string{ruleForbidden: "public_api_only"},
 		map[string][]string{"b": {"pkg/b/api/**"}},
-		[]string{"archfit check -c .archfit.yaml --full"},
+		[]string{"archfit analyze --gate -c .archfit.yaml --full"},
 		nil,
 		agenttask.PathResolver{},
 	)
@@ -99,7 +99,7 @@ func TestBuild_TaskShape(t *testing.T) {
 	if !strings.Contains(task.Constraints[2], "pkg/b/api/**") {
 		t.Errorf("constraints[2] = %q, want public surface globs", task.Constraints[2])
 	}
-	if len(task.Validation) != 1 || task.Validation[0] != "archfit check -c .archfit.yaml --full" {
+	if len(task.Validation) != 1 || task.Validation[0] != "archfit analyze --gate -c .archfit.yaml --full" {
 		t.Errorf("validation = %v", task.Validation)
 	}
 }

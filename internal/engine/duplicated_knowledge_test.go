@@ -54,11 +54,22 @@ func findingsByRule(fnds []finding.Finding, rule string) []finding.Finding {
 // duplicated-code locations.
 func TestDuplicatedKnowledgeAdvisory(t *testing.T) {
 	t.Parallel()
-	fnds := collectAdvisories(graph.Build(nil), coupling.Index{}, dkClassifyCfg(), nil, RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: config.WaiverSet{}})
+	g := graph.Build(nil)
+	cfg := dkClassifyCfg()
+	idx := classify.Run(g, cfg)
+	fnds := collectAdvisories(g, idx, cfg, nil, RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: config.WaiverSet{}})
 
 	dk := findingsByRule(fnds, RuleIDBCDuplicatedKnowledge)
 	if len(dk) != 1 {
 		t.Fatalf("bc/duplicated_knowledge findings = %d, want 1: %+v", len(dk), fnds)
+	}
+	if bc := findingsByRule(fnds, RuleIDBCImbalanced); len(bc) != 0 {
+		t.Fatalf("bc/imbalanced_coupling findings = %d, want 0 for clone-only evidence: %+v", len(bc), bc)
+	}
+	summary := buildClassifiedEdgeSummary(idx)
+	if summary.Total != 0 || summary.Scored != 0 || summary.Abstained != 0 {
+		t.Fatalf("classified_edges = total %d scored %d abstained %d, want all zero for report-only clone-only evidence",
+			summary.Total, summary.Scored, summary.Abstained)
 	}
 	f := dk[0]
 	if f.Kind != finding.KindAdvisory {
@@ -93,6 +104,9 @@ func TestDuplicatedKnowledgeAdvisory(t *testing.T) {
 	if got := f.MatchedBy["score_version"]; got != coupling.ScoreVersion {
 		t.Errorf("matched_by.score_version = %q, want %s", got, coupling.ScoreVersion)
 	}
+	if got := f.MatchedBy["score_policy"]; got != string(config.DuplicatedKnowledgePolicyScore) {
+		t.Errorf("matched_by.score_policy = %q, want %q", got, config.DuplicatedKnowledgePolicyScore)
+	}
 	// cheapest_move: same_owner is the terminal distance rung (no reduce_distance
 	// offered) and the one-rung strength reduction (symmetric→functional) still
 	// balances to medium (balance 5, same band) — no single-rung move drops the
@@ -102,6 +116,43 @@ func TestDuplicatedKnowledgeAdvisory(t *testing.T) {
 	}
 	if !strings.Contains(f.Why, "duplicated knowledge") {
 		t.Errorf("Why = %q, want duplicated-knowledge framing", f.Why)
+	}
+}
+
+func TestDuplicatedKnowledgeSummaryPolicy(t *testing.T) {
+	t.Parallel()
+	g := graph.Build(nil)
+	cfg := dkClassifyCfg()
+	pairs := classify.CloneOnlyPairs(g, cfg)
+	if len(pairs) != 1 {
+		t.Fatalf("CloneOnlyPairs = %d, want 1", len(pairs))
+	}
+
+	scored := buildClassifiedEdgeSummaryWithCloneOnly(coupling.Index{}, pairs, config.DuplicatedKnowledgePolicyScore)
+	if scored.CloneOnlyScored != 1 || scored.CloneOnlyAdvisory != 0 {
+		t.Fatalf("score policy counters = scored %d advisory %d, want 1/0", scored.CloneOnlyScored, scored.CloneOnlyAdvisory)
+	}
+	if scored.Total != 1 || scored.Scored != 1 || scored.Abstained != 0 {
+		t.Fatalf("score policy summary = total %d scored %d abstained %d, want 1/1/0",
+			scored.Total, scored.Scored, scored.Abstained)
+	}
+	if scored.MeanBalance != 6.0 {
+		t.Errorf("score policy MeanBalance = %v, want 6.0", scored.MeanBalance)
+	}
+	if got := scored.ByStrength[string(coupling.StrengthSymmetric)]; got != 1 {
+		t.Errorf("score policy symmetric count = %d, want 1", got)
+	}
+	if got := scored.BySeverity[string(coupling.SeverityMedium)]; got != 1 {
+		t.Errorf("score policy medium count = %d, want 1", got)
+	}
+
+	advisory := buildClassifiedEdgeSummaryWithCloneOnly(coupling.Index{}, pairs, config.DuplicatedKnowledgePolicyAdvisory)
+	if advisory.CloneOnlyScored != 0 || advisory.CloneOnlyAdvisory != 1 {
+		t.Fatalf("advisory policy counters = scored %d advisory %d, want 0/1", advisory.CloneOnlyScored, advisory.CloneOnlyAdvisory)
+	}
+	if advisory.Total != 0 || advisory.Scored != 0 || advisory.Abstained != 0 {
+		t.Fatalf("advisory policy summary = total %d scored %d abstained %d, want 0/0/0",
+			advisory.Total, advisory.Scored, advisory.Abstained)
 	}
 }
 

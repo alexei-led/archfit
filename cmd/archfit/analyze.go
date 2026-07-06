@@ -32,8 +32,8 @@ import (
 // With --base <ref> the command runs a scorecard delta (old diff) instead of a
 // single-run render.
 //
-// With --llm the command appends an off-gate LLM narrative section after the
-// normal render (old review).
+// With --llm the command appends an off-gate LLM architect review section after
+// the normal render.
 type AnalyzeCmd struct {
 	Config string `short:"c" help:"Path to config file (optional; built-in defaults used if absent)." default:".archfit.yaml"`
 	Root   string `help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
@@ -67,7 +67,7 @@ type AnalyzeCmd struct {
 	Quiet    bool   `name:"quiet"    short:"q" help:"Suppress progress output."`
 
 	// providerOverride is a test seam — set directly on the struct to inject a
-	// fake LLM provider (mirrors the old ReviewCmd seam). nil in production.
+	// fake LLM provider. nil in production.
 	providerOverride llm.Provider
 }
 
@@ -238,7 +238,7 @@ func (c *AnalyzeCmd) runScan(ctx context.Context, deps *appDeps, formats []strin
 	// to stderr and fall through to the gate decision.
 	if c.LLM {
 		rep.advance("Asking LLM for interpretation")
-		if err := c.appendLLMNarrative(ctx, deps, cfg, configDir, diag, sc); err != nil {
+		if err := c.appendLLMNarrative(ctx, deps, cfg, diag, sc, formats); err != nil {
 			_, _ = fmt.Fprintf(deps.stderr(), "archfit: LLM narration unavailable (off-gate, ignored): %v\n", err)
 		}
 	}
@@ -288,11 +288,29 @@ func analyzeRender(deps *appDeps, diag diagnostic.Diagnostic, sc score.Scorecard
 	return nil
 }
 
-// appendLLMNarrative appends the off-gate LLM narrative to stdout, after the
-// deterministic report. runLLMReview owns the ai check and provider
-// build (exit 3 when unconfigured); we only thread the test-seam override.
-func (c *AnalyzeCmd) appendLLMNarrative(ctx context.Context, deps *appDeps, cfg config.Config, configDir string, diag diagnostic.Diagnostic, sc score.Scorecard) error {
-	return runLLMReview(ctx, deps, cfg, configDir, c.NoCache, c.providerOverride, diag, sc)
+// appendLLMNarrative emits the off-gate LLM narrative after the deterministic
+// report. Text/Markdown runs append to stdout; machine-only formats route the
+// review to stderr so stdout remains parseable JSON/SARIF/scorecard output.
+// runLLMReview owns the ai check and provider build (exit 3 when unconfigured);
+// we only thread the test-seam override.
+func (c *AnalyzeCmd) appendLLMNarrative(ctx context.Context, deps *appDeps, cfg config.Config, diag diagnostic.Diagnostic, sc score.Scorecard, formats []string) error {
+	reviewDeps := deps
+	if !llmReviewCanUseStdout(formats) {
+		copyDeps := *deps
+		copyDeps.Stdout = deps.stderr()
+		reviewDeps = &copyDeps
+	}
+	return runLLMReview(ctx, reviewDeps, cfg, c.Config, c.Root, c.NoCache, c.providerOverride, diag, sc)
+}
+
+func llmReviewCanUseStdout(formats []string) bool {
+	for _, format := range formats {
+		switch format {
+		case formatJSON, formatSarif, formatScorecard:
+			return false
+		}
+	}
+	return true
 }
 
 // analyzePhaseTotal returns the number of progress phases for this run. Base

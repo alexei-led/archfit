@@ -63,12 +63,14 @@ func ValidStrength(s string) bool {
 // Label pins the integration strength for all edges between an ordered module
 // pair. Only Status == approved is consumed by the gate.
 type Label struct {
-	From         string `yaml:"from"`
-	To           string `yaml:"to"`
-	Strength     string `yaml:"strength"`
-	Rationale    string `yaml:"rationale"`
-	EvidenceHash string `yaml:"evidence_hash"`
-	Status       string `yaml:"status"`
+	From         string   `yaml:"from"`
+	To           string   `yaml:"to"`
+	Strength     string   `yaml:"strength"`
+	Rationale    string   `yaml:"rationale"`
+	EvidenceRefs []string `yaml:"evidence_refs,omitempty"`
+	Basis        string   `yaml:"basis,omitempty"`
+	EvidenceHash string   `yaml:"evidence_hash"`
+	Status       string   `yaml:"status"`
 	// Confidence records how trustworthy the strength judgment is (high|medium|low).
 	// Empty means unset (treated as high for approved human labels). Optional — omitted
 	// from YAML when unset so existing files remain valid.

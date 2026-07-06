@@ -55,7 +55,7 @@ const (
 
 // Direction records whether a rising metric value is an improvement or a
 // regression. It is a property of the metric's definition, not a user choice
-// (Technical Details, docs/plans/20260702-wave1-gate-integrity.md): the metric
+// (Technical Details, docs/plans/completed/20260702-wave1-gate-integrity.md): the metric
 // that produces a MetricResult stamps its own Direction, and computeVerdict
 // reads it to interpret Delta's sign instead of assuming ratio semantics for
 // every metric.
@@ -164,6 +164,54 @@ type FileFact struct {
 	LOC int `json:"loc"`
 }
 
+// ConnascenceRoadmapItem explains one Ch6 connascence category's measurement
+// posture. It is report-only documentation in the machine output: a stable
+// checklist of what archfit measures deterministically today, what remains
+// unmeasured, and which separate report-only signals may inform human review.
+type ConnascenceRoadmapItem struct {
+	// Kind is a book connascence category: name, type, meaning, algorithm,
+	// position, execution, timing, value, or identity.
+	Kind string `json:"kind"`
+	// CurrentStatus is deterministic_static, unmeasured_static, or
+	// unmeasured_dynamic. It is descriptive only; no scorer or gate consumes it.
+	CurrentStatus string `json:"current_status"`
+	// Sources names deterministic sources that can support this category today.
+	Sources []string `json:"sources,omitempty"`
+	// RelatedSignals names separate report-only blocks that may help a human
+	// review this category but are not connascence measurements.
+	RelatedSignals []string `json:"related_signals,omitempty"`
+	// UpgradeTrigger names the evidence needed before the category can become a
+	// deterministic measurement.
+	UpgradeTrigger string `json:"upgrade_trigger,omitempty"`
+}
+
+// ConnascenceReport summarizes deterministic static connascence evidence from
+// classified dependency edges. It is report-only: never consumed by scoring,
+// rules, baseline deltas, or gate verdicts.
+type ConnascenceReport struct {
+	// EdgesWithEvidence counts classified edges with at least one deterministic
+	// connascence fact.
+	EdgesWithEvidence int `json:"edges_with_evidence"`
+	// AbstainedEdges counts classified edges with no deterministic connascence fact.
+	AbstainedEdges int `json:"abstained_edges"`
+	// TotalEvidence counts individual connascence facts. A single edge may carry
+	// multiple facts, e.g. name + type.
+	TotalEvidence int `json:"total_evidence"`
+	// ByKind counts evidence by Ch6 static category: name, type, meaning,
+	// algorithm, and position when deterministically measured.
+	ByKind map[string]int `json:"by_kind,omitempty"`
+	// BySource counts evidence by deterministic source, such as go/types,
+	// dependency-cruiser, grimp, or scip.
+	BySource map[string]int `json:"by_source,omitempty"`
+	// Unmeasured names book categories not measured by deterministic evidence in
+	// this run. These are disclosed rather than guessed.
+	Unmeasured []string `json:"unmeasured,omitempty"`
+	// Roadmap is the dynamic connascence roadmap: deterministic static categories,
+	// unmeasured categories, and review-only related signals. It is disclosure
+	// only and never feeds score, findings, baselines, or gates.
+	Roadmap []ConnascenceRoadmapItem `json:"roadmap,omitempty"`
+}
+
 // RuntimeAsyncSite is one detected async integration pattern location.
 // Produced by the runtime detector (internal/extract/runtime); translated to this
 // model type in cmd so the core ring never imports an adapter package.
@@ -182,6 +230,19 @@ type RuntimeAsyncModule struct {
 	IntegrationKind string `json:"integration_kind"` // "message_queue" | "event_bus" | "async_task"
 	Count           int    `json:"count"`            // number of detected signals
 	Confidence      string `json:"confidence"`       // "low" | "medium"
+}
+
+// RuntimeAsyncEdge is a relationship-level async integration fact from one
+// module to one runtime target (library, decorator, or async primitive).
+// Report-only prerequisite evidence for a future runtime-distance model; never
+// consumed by verdict, gate, classify, score, or baseline logic.
+type RuntimeAsyncEdge struct {
+	FromModule      string             `json:"from_module"`
+	Target          string             `json:"target"`
+	IntegrationKind string             `json:"integration_kind"` // "message_queue" | "event_bus" | "async_task"
+	Count           int                `json:"count"`            // number of detected signals for this module→target relation
+	Confidence      string             `json:"confidence"`       // "low" | "medium"
+	Sites           []RuntimeAsyncSite `json:"sites,omitempty"`  // capped deterministic sample; Count is the true total
 }
 
 // DeprecatedDep is one locally-declared deprecation or retraction marker found
@@ -264,10 +325,13 @@ type DeltaReport struct {
 }
 
 // ClassifiedEdgeSummary holds aggregate distribution counts over the
-// coupling.Index produced by classify.Run. Stdlib-only (no coupling imports).
-// Populated in engine.go; consumed by score.go to drive coupling_balance.
+// coupling.Index produced by classify.Run plus score-bearing clone-only
+// duplicated-knowledge pairs when that policy is enabled. Stdlib-only (no
+// coupling imports). Populated in engine.go; consumed by score.go to drive
+// coupling_balance.
 type ClassifiedEdgeSummary struct {
-	// Total is the total edge count in the coupling.Index (all edges, including same_module).
+	// Total is the total classified coupling fact count (all graph edges,
+	// including same_module, plus scored clone-only pairs when enabled).
 	Total int `json:"total"`
 	// Scored is the count of cross-boundary edges with a concrete book balance
 	// (Scored=true on EdgeScore, i.e. strength and distance both known).
@@ -280,10 +344,18 @@ type ClassifiedEdgeSummary struct {
 	// MeanBalance is the arithmetic mean of the book balance (1..10) over scored
 	// cross-boundary edges. 0.0 when Scored == 0.
 	MeanBalance float64 `json:"mean_balance"`
+	// TailRisk summarizes the lower tail of scored cross-boundary coupling facts.
+	// It sits beside MeanBalance so a healthy average cannot hide a concentrated
+	// set of high/critical edges. Nil when no scored cross-boundary facts exist.
+	TailRisk *CouplingTailRiskSummary `json:"tail_risk,omitempty"`
 	// ByStrength counts cross-boundary edges by strength label (string keys, coupling package values).
 	ByStrength map[string]int `json:"by_strength,omitempty"`
 	// ByDistance counts cross-boundary edges by distance label.
 	ByDistance map[string]int `json:"by_distance,omitempty"`
+	// ByDistanceBasis counts cross-boundary edges by the deterministic signal that
+	// selected their distance rung: code_structure, ownership, deploy_unit, or
+	// declared_external. Unknown/same-module edges have no basis and are omitted.
+	ByDistanceBasis map[string]int `json:"by_distance_basis,omitempty"`
 	// ByVolatility counts cross-boundary edges by volatility label.
 	ByVolatility map[string]int `json:"by_volatility,omitempty"`
 	// BySeverity counts cross-boundary edges by score band (severity label).
@@ -311,6 +383,18 @@ type ClassifiedEdgeSummary struct {
 	// keeps the disclosed-exclusion arithmetic honest — External covers only the
 	// UNDECLARED remainder.
 	DeclaredExternal int `json:"declared_external,omitempty"`
+	// ConnectedModules is the number of distinct first-party modules participating
+	// in scored/abstained cross-boundary coupling facts. It feeds confidence only:
+	// a tiny connected module sample cannot claim high-confidence architecture health.
+	ConnectedModules int `json:"connected_modules,omitempty"`
+	// CloneOnlyScored counts clone-only duplicated-knowledge pairs included in
+	// coupling_balance by coupling.duplicated_knowledge: score. They are
+	// score-bearing coupling facts, not graph import edges.
+	CloneOnlyScored int `json:"clone_only_scored,omitempty"`
+	// CloneOnlyAdvisory counts clone-only duplicated-knowledge pairs held out of
+	// coupling_balance by coupling.duplicated_knowledge: advisory. They may still
+	// emit bc/duplicated_knowledge advisories after severity/status filtering.
+	CloneOnlyAdvisory int `json:"clone_only_advisory,omitempty"`
 	// LLMApproved is the count of approved cross-boundary labels whose provenance
 	// is "llm" and confidence is not "high". These lower the coupling_balance
 	// dimension confidence by one band — they are human-approved but not human-judged.
@@ -330,6 +414,43 @@ type ClassifiedEdgeSummary struct {
 	// VolatilityProvenance counts MODULES (not edges) by the source of their
 	// volatility. Nil when no modules were resolved.
 	VolatilityProvenance *VolatilityProvenance `json:"volatility_provenance,omitempty"`
+	// DistanceCompression discloses which book distance rungs this deterministic
+	// instrumentation implements and which middle rungs remain compressed instead
+	// of being guessed. Report-only; never consumed by scoring or gates.
+	DistanceCompression *DistanceCompressionSummary `json:"distance_compression,omitempty"`
+}
+
+// CouplingTailRiskSummary records lower-tail statistics over scored
+// cross-boundary coupling facts. Lower book balance is worse, so WorstBalance
+// and LowerDecileBalance expose concentrated hot spots that MeanBalance can hide.
+type CouplingTailRiskSummary struct {
+	WorstBalance              int `json:"worst_balance"`
+	LowerDecileBalance        int `json:"lower_decile_balance"`
+	HighOrWorseEdges          int `json:"high_or_worse_edges"`
+	HighOrWorseSharePct       int `json:"high_or_worse_share_pct"`
+	CriticalEdges             int `json:"critical_edges"`
+	DistributedMonolithEdges  int `json:"distributed_monolith_edges"`
+	CloneOnlyScored           int `json:"clone_only_scored,omitempty"`
+	CloneOnlyHighOrWorseEdges int `json:"clone_only_high_or_worse_edges,omitempty"`
+	CloneOnlyWorstBalance     int `json:"clone_only_worst_balance,omitempty"`
+}
+
+// DistanceCompressionSummary records archfit's deterministic distance-ladder
+// coverage. It makes compressed Ch8 middle rungs visible in JSON/Markdown so a
+// D=4/D=7 result is not mistaken for full book precision.
+type DistanceCompressionSummary struct {
+	CompressedMiddleRungs bool                        `json:"compressed_middle_rungs"`
+	ImplementedRungs      []int                       `json:"implemented_rungs,omitempty"`
+	OmittedRungs          []int                       `json:"omitted_rungs,omitempty"`
+	OmittedRungReasons    []DistanceOmittedRungReason `json:"omitted_rung_reasons,omitempty"`
+	DeterministicSplits   []string                    `json:"deterministic_splits,omitempty"`
+	Rationale             string                      `json:"rationale,omitempty"`
+}
+
+// DistanceOmittedRungReason explains why a book distance rung remains compressed.
+type DistanceOmittedRungReason struct {
+	Rung   int    `json:"rung"`
+	Reason string `json:"reason"`
 }
 
 // VolatilityProvenance counts modules by where their volatility came from:
@@ -435,11 +556,20 @@ type Diagnostic struct {
 	// Evidence only — never consumed by verdict or gate logic, never alters the
 	// dependency graph or any metric. Empty when no dynamic imports were found.
 	DynamicImports []DynamicImport `json:"dynamic_imports"`
+	// Connascence summarizes deterministic static connascence evidence. Report-only;
+	// semantic/dynamic categories without a deterministic source are listed as
+	// unmeasured rather than guessed. Omitted only when classification did not run.
+	Connascence *ConnascenceReport `json:"connascence,omitempty"`
 	// RuntimeAsync is the report-only async-bridge detection block.
 	// Evidence only — never consumed by classify, score, or gate logic; never
 	// annotates graph edges and never affects distance, score, or verdict.
 	// Empty when no async patterns were detected.
 	RuntimeAsync []RuntimeAsyncModule `json:"runtime_async,omitempty"`
+	// RuntimeAsyncEdges is the relationship-level async-bridge evidence block.
+	// It groups concrete sites by source module and runtime target so later work
+	// can review runtime distance without re-scanning raw files. Evidence only —
+	// never consumed by classify, score, baseline deltas, or gate verdicts.
+	RuntimeAsyncEdges []RuntimeAsyncEdge `json:"runtime_async_edges,omitempty"`
 	// DeprecatedDeps is the report-only locally-declared deprecation/retraction
 	// marker block. Evidence only — never consumed by verdict or gate logic, never
 	// alters the dependency graph or any metric. Omitted when no markers were found.

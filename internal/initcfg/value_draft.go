@@ -20,10 +20,12 @@ const (
 // containing ValueDraftFile.Field records which module field the value targets.
 // This mirrors SubdomainDraft but for fields that carry exactly one scalar.
 type ValueDraft struct {
-	Module    string `yaml:"module"`
-	Value     string `yaml:"value"`
-	Rationale string `yaml:"rationale"`
-	Status    string `yaml:"status"` // DraftStatusDraft or DraftStatusApproved
+	Module       string   `yaml:"module"`
+	Value        string   `yaml:"value"`
+	Rationale    string   `yaml:"rationale"`
+	EvidenceRefs []string `yaml:"evidence_refs,omitempty"`
+	Basis        string   `yaml:"basis,omitempty"` // deterministic_fact or semantic_judgment
+	Status       string   `yaml:"status"`          // DraftStatusDraft or DraftStatusApproved
 	// Confidence records how trustworthy the judgment is (high|medium|low).
 	// Set by the LLM draft path; empty = unset (treated as high for human-approved entries).
 	Confidence string `yaml:"confidence,omitempty"`

@@ -7,8 +7,8 @@
 //
 // Usage:
 //
-//	go run ./scripts/eval/coverage --dir reports/eval/gap-closure > reports/eval/gap-closure/coverage.md
-//	go run ./scripts/eval/coverage --dir ~/Workspace/archfit/reports/eval > reports/eval/gap-closure/coverage.md
+//	go run ./scripts/eval/coverage --dir docs/archived/reports/eval/gap-closure > docs/archived/reports/eval/gap-closure/coverage.md
+//	go run ./scripts/eval/coverage --dir ~/Workspace/archfit/docs/archived/reports/eval > docs/archived/reports/eval/gap-closure/coverage.md
 package main
 
 import (
@@ -451,7 +451,7 @@ func run(dir string) error {
 }
 
 func main() {
-	dir := flag.String("dir", "reports/eval/gap-closure", "directory containing full.json files")
+	dir := flag.String("dir", "docs/archived/reports/eval/gap-closure", "directory containing full.json files")
 	flag.Parse()
 
 	if err := run(*dir); err != nil {

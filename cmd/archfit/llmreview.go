@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -34,6 +35,11 @@ const (
 	// written under the cache dir before parsing so truncation/parse failures
 	// are diagnosable after the fact.
 	rawReviewFile = "last-review.txt"
+
+	claimTypeDeterministicFact      = "deterministic_fact"
+	claimTypeSemanticInterpretation = "semantic_interpretation"
+	claimTypeRecommendation         = "recommendation"
+	claimTypeUnknown                = "unknown"
 )
 
 // persistRawReview writes the raw LLM response to <cacheDir>/last-review.txt
@@ -47,25 +53,28 @@ func persistRawReview(cacheDir, text string) {
 }
 
 // runLLMReview is the reusable LLM narrative review helper. It receives an
-// already-loaded config, configDir, and pre-computed diagnostic + scorecard so
+// already-loaded config, config path/root, and pre-computed diagnostic + scorecard so
 // it does NOT call loadConfig or runPipeline — those are the caller's job.
 //
 // providerOverride is a test seam: pass a non-nil fake to skip the real provider
-// construction (mirrors the old ReviewCmd.providerOverride field).
-// Pass nil in production to build the provider from cfg.LLM().
-func runLLMReview(ctx context.Context, deps *appDeps, cfg config.Config, configDir string, noCache bool, providerOverride llm.Provider, diag diagnostic.Diagnostic, sc score.Scorecard) error {
+// construction through AnalyzeCmd.providerOverride. Pass nil in production to
+// build the provider from cfg.LLM().
+func runLLMReview(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, noCache bool, providerOverride llm.Provider, diag diagnostic.Diagnostic, sc score.Scorecard) error {
 	llmCfg, configured := cfg.LLM()
 	if !configured {
 		return &exitError{code: 3, msg: "error: --llm requires ai configured (provider + model); see docs/guide/llm-enrich.md"}
 	}
 
+	configDir := filepath.Dir(configPath)
 	cacheDir := llmCacheDir(configDir)
 	provider, err := buildCachedProvider(providerOverride, llmCfg, cacheDir, noCache)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
 	}
 
-	userPrompt := buildReviewPrompt(diag, sc)
+	scanRoot := scanRootForEvidence(configDir, root)
+	evidenceLines := architectureEvidenceLines(scanRoot, configModulesForEvidence(cfg), configPath, reviewEvidenceDiagnostics(diag, sc))
+	userPrompt := buildReviewPrompt(diag, sc, evidenceLines)
 	resp, err := provider.Complete(ctx, llm.Request{
 		System:    reviewSystemPrompt,
 		User:      userPrompt,
@@ -93,7 +102,11 @@ func runLLMReview(ctx context.Context, deps *appDeps, cfg config.Config, configD
 		}
 	}
 
-	rev, dropped := postVerify(rev, diag, configSubdomains)
+	citations := buildReviewCitationSet(diag, sc, evidenceLines)
+	for name := range cfg.Modules {
+		citations.Modules[name] = struct{}{}
+	}
+	rev, dropped := postVerify(rev, diag, configSubdomains, citations)
 	if dropped > 0 {
 		_, _ = fmt.Fprintf(deps.stderr(), "review: post-verification dropped %d unsupported claim(s)\n", dropped)
 	}
@@ -159,12 +172,16 @@ You MUST:
 - Only narrate, prioritize, and contextualise findings already present in the evidence supplied.
 - Only classify volatility/subdomain for modules that appear in the evidence.
 - Only propose dimension bands for dimensions named in the evidence.
+- Cite supplied finding_ids, metric_ids, or repository evidence_refs for every claim where possible.
+- Set claim_type on every dimension, top_risk, and subdomain_suggestion: deterministic_fact, semantic_interpretation, recommendation, or unknown.
+- Treat every balancing_move and every subdomain_suggestion as claim_type=recommendation.
+- Give every recommendation at least one finding_id, metric_id, or evidence_ref from the supplied evidence.
 - Return at most 1 dimension (coupling_balance only), at most 3 top_risks, and at most 5 subdomain_suggestions.
 - Keep every narrative under 450 characters.
 
 You MUST NOT:
 - Invent new gate violations or module names not present in the supplied evidence.
-- Fabricate metrics or findings that are not in the input.
+- Fabricate metrics, findings, finding_ids, metric_ids, or evidence_refs that are not in the input.
 - Add prose beyond the JSON schema below.
 
 ## Required output
@@ -177,6 +194,10 @@ Respond with a single strict JSON object — no markdown fences, no prose outsid
     {
       "name": "<dimension_name>",
       "band": "<critical|poor|mixed|serviceable|strong>",
+      "claim_type": "<deterministic_fact|semantic_interpretation|recommendation|unknown>",
+      "finding_ids": ["<optional finding id>"],
+      "metric_ids": ["<optional metric or score dimension id>"],
+      "evidence_refs": ["<optional doc:... api:... comment:... config:... diag:... ref>"],
       "narrative": "<1-3 sentence plain prose using Vlad's vocabulary>"
     }
   ],
@@ -184,6 +205,10 @@ Respond with a single strict JSON object — no markdown fences, no prose outsid
     {
       "title": "<short risk title>",
       "modules": ["<module1>", "<module2>"],
+      "claim_type": "recommendation",
+      "finding_ids": ["<optional finding id>"],
+      "metric_ids": ["<optional metric or score dimension id>"],
+      "evidence_refs": ["<optional doc:... api:... comment:... config:... diag:... ref>"],
       "narrative": "<2-3 sentence plain prose>",
       "balancing_move": "<cheapest single-dimension fix>"
     }
@@ -192,6 +217,10 @@ Respond with a single strict JSON object — no markdown fences, no prose outsid
     {
       "module": "<module>",
       "suggested_subdomain": "<core|supporting|generic>",
+      "claim_type": "recommendation",
+      "finding_ids": ["<optional finding id>"],
+      "metric_ids": ["<optional metric or score dimension id>"],
+      "evidence_refs": ["<optional doc:... api:... comment:... config:... diag:... ref>"],
       "rationale": "<one sentence>"
     }
   ]
@@ -206,22 +235,34 @@ type reviewResponse struct {
 }
 
 type reviewDimension struct {
-	Name      string `json:"name"`
-	Band      string `json:"band"`
-	Narrative string `json:"narrative"`
+	Name         string   `json:"name"`
+	Band         string   `json:"band"`
+	ClaimType    string   `json:"claim_type"`
+	FindingIDs   []string `json:"finding_ids,omitempty"`
+	MetricIDs    []string `json:"metric_ids,omitempty"`
+	EvidenceRefs []string `json:"evidence_refs,omitempty"`
+	Narrative    string   `json:"narrative"`
 }
 
 type reviewRisk struct {
 	Title         string   `json:"title"`
 	Modules       []string `json:"modules"`
+	ClaimType     string   `json:"claim_type"`
+	FindingIDs    []string `json:"finding_ids,omitempty"`
+	MetricIDs     []string `json:"metric_ids,omitempty"`
+	EvidenceRefs  []string `json:"evidence_refs,omitempty"`
 	Narrative     string   `json:"narrative"`
 	BalancingMove string   `json:"balancing_move"`
 }
 
 type reviewSubdomainSuggest struct {
-	Module             string `json:"module"`
-	SuggestedSubdomain string `json:"suggested_subdomain"`
-	Rationale          string `json:"rationale"`
+	Module             string   `json:"module"`
+	SuggestedSubdomain string   `json:"suggested_subdomain"`
+	ClaimType          string   `json:"claim_type"`
+	FindingIDs         []string `json:"finding_ids,omitempty"`
+	MetricIDs          []string `json:"metric_ids,omitempty"`
+	EvidenceRefs       []string `json:"evidence_refs,omitempty"`
+	Rationale          string   `json:"rationale"`
 }
 
 // validDimNames is the set of known scorecard dimension names.
@@ -237,6 +278,69 @@ var validBands = map[string]struct{}{
 	string(score.BandMixed):       {},
 	string(score.BandServiceable): {},
 	string(score.BandStrong):      {},
+}
+
+var validClaimTypes = map[string]struct{}{
+	claimTypeDeterministicFact:      {},
+	claimTypeSemanticInterpretation: {},
+	claimTypeRecommendation:         {},
+	claimTypeUnknown:                {},
+}
+
+type reviewCitationSet struct {
+	FindingIDs   map[string]struct{}
+	MetricIDs    map[string]struct{}
+	EvidenceRefs map[string]struct{}
+	Modules      map[string]struct{}
+}
+
+func reviewEvidenceDiagnostics(diag diagnostic.Diagnostic, sc score.Scorecard) []initcfg.EvidenceDiagnostic {
+	return []initcfg.EvidenceDiagnostic{{
+		Source:  "llm-review",
+		Summary: fmt.Sprintf("verdict=%s findings=%d metrics=%d score=%d band=%s", diag.Verdict, len(diag.Findings), len(diag.Metrics), sc.Overall, sc.OverallBand),
+	}}
+}
+
+func buildReviewCitationSet(diag diagnostic.Diagnostic, sc score.Scorecard, evidenceLines []string) reviewCitationSet {
+	set := reviewCitationSet{
+		FindingIDs:   make(map[string]struct{}),
+		MetricIDs:    make(map[string]struct{}),
+		EvidenceRefs: make(map[string]struct{}),
+		Modules:      make(map[string]struct{}),
+	}
+	for _, f := range diag.Findings {
+		if f.ID != "" {
+			set.FindingIDs[f.ID] = struct{}{}
+		}
+	}
+	for _, m := range diag.Metrics {
+		if m.Name != "" {
+			set.MetricIDs[m.Name] = struct{}{}
+		}
+	}
+	for name := range validDimNames {
+		set.MetricIDs[name] = struct{}{}
+	}
+	for _, d := range sc.Dimensions {
+		if d.Name != "" {
+			set.MetricIDs[d.Name] = struct{}{}
+		}
+	}
+	for _, line := range evidenceLines {
+		line = strings.TrimSpace(line)
+		id, _, ok := strings.Cut(line, " (")
+		if !ok {
+			id, _, ok = strings.Cut(line, " ")
+		}
+		if ok && id != "" {
+			set.EvidenceRefs[id] = struct{}{}
+		}
+	}
+	return set
+}
+
+func defaultReviewCitationSet(diag diagnostic.Diagnostic) reviewCitationSet {
+	return buildReviewCitationSet(diag, score.Scorecard{}, nil)
 }
 
 // strengthWords is the set of coupling-strength words the LLM may assert in
@@ -257,9 +361,16 @@ var strengthWords = map[string]*regexp.Regexp{
 // When a suggestion's SuggestedSubdomain conflicts with the configured value, the
 // suggestion is kept but its Rationale is annotated with a conflict note so the
 // reader knows the LLM disagrees with the explicit config.
-func postVerify(rev reviewResponse, diag diagnostic.Diagnostic, configSubdomains map[string]string) (reviewResponse, int) {
+func postVerify(rev reviewResponse, diag diagnostic.Diagnostic, configSubdomains map[string]string, citationSets ...reviewCitationSet) (reviewResponse, int) {
 	validModules := buildValidModules(diag)
 	presentStrengths := buildPresentStrengths(diag)
+	citations := defaultReviewCitationSet(diag)
+	if len(citationSets) > 0 {
+		citations = citationSets[0]
+	}
+	for module := range citations.Modules {
+		validModules[module] = struct{}{}
+	}
 	dropped := 0
 
 	// Drop an overall band outside the rubric vocabulary so a fabricated label
@@ -269,12 +380,14 @@ func postVerify(rev reviewResponse, diag diagnostic.Diagnostic, configSubdomains
 		dropped++
 	}
 
-	// Filter dimensions to known names AND valid bands.
+	// Filter dimensions to known names, valid bands, valid claim types, and
+	// supported citations.
 	filteredDims := rev.Dimensions[:0]
 	for _, d := range rev.Dimensions {
+		d.FindingIDs, d.MetricIDs, d.EvidenceRefs = cleanReviewCitations(d.FindingIDs, d.MetricIDs, d.EvidenceRefs)
 		_, knownName := validDimNames[d.Name]
 		_, knownBand := validBands[d.Band]
-		if knownName && knownBand {
+		if knownName && knownBand && validReviewClaimType(d.ClaimType) && recommendationHasValidCitation(d.ClaimType, d.FindingIDs, d.MetricIDs, d.EvidenceRefs, citations) {
 			filteredDims = append(filteredDims, d)
 		} else {
 			dropped++
@@ -283,18 +396,21 @@ func postVerify(rev reviewResponse, diag diagnostic.Diagnostic, configSubdomains
 	rev.Dimensions = filteredDims
 
 	// Filter top_risks: drop unknown modules, drop entire risk if no valid
-	// modules remain, and drop risks asserting a strength word absent from evidence.
+	// modules remain, drop risks asserting a strength word absent from evidence,
+	// and drop recommendations without valid citations.
 	var n int
-	rev.TopRisks, n = filterRisks(rev.TopRisks, validModules, presentStrengths)
+	rev.TopRisks, n = filterRisks(rev.TopRisks, validModules, presentStrengths, citations)
 	dropped += n
 
-	// Filter subdomain_suggestions to known modules AND valid subdomains.
-	// When the suggestion conflicts with the explicit config value, keep it but
-	// annotate the rationale with a conflict note.
+	// Filter subdomain_suggestions to known modules, valid subdomains, valid
+	// claim types, and supported citations. When the suggestion conflicts with
+	// the explicit config value, keep it but annotate the rationale with a
+	// conflict note.
 	filteredSug := rev.SubdomainSuggestions[:0]
 	for _, s := range rev.SubdomainSuggestions {
+		s.FindingIDs, s.MetricIDs, s.EvidenceRefs = cleanReviewCitations(s.FindingIDs, s.MetricIDs, s.EvidenceRefs)
 		_, knownMod := validModules[s.Module]
-		if !knownMod || !validSubdomains[s.SuggestedSubdomain] {
+		if !knownMod || !validSubdomains[s.SuggestedSubdomain] || s.ClaimType != claimTypeRecommendation || !recommendationHasValidCitation(s.ClaimType, s.FindingIDs, s.MetricIDs, s.EvidenceRefs, citations) {
 			dropped++
 			continue
 		}
@@ -358,10 +474,12 @@ func buildPresentStrengths(diag diagnostic.Diagnostic) map[string]struct{} {
 //   - Drops the whole entry when all listed modules were invalid.
 //   - Drops the whole entry when its title or narrative asserts a strength word
 //     absent from presentStrengths (prevents hallucinated "intrusive" claims).
-func filterRisks(risks []reviewRisk, validModules, presentStrengths map[string]struct{}) ([]reviewRisk, int) {
+//   - Drops recommendations without at least one supported citation.
+func filterRisks(risks []reviewRisk, validModules, presentStrengths map[string]struct{}, citations reviewCitationSet) ([]reviewRisk, int) {
 	dropped := 0
 	out := risks[:0]
 	for _, r := range risks {
+		r.FindingIDs, r.MetricIDs, r.EvidenceRefs = cleanReviewCitations(r.FindingIDs, r.MetricIDs, r.EvidenceRefs)
 		var validMods []string
 		for _, m := range r.Modules {
 			if _, ok := validModules[m]; ok {
@@ -378,13 +496,61 @@ func filterRisks(risks []reviewRisk, validModules, presentStrengths map[string]s
 		sort.Strings(validMods)
 		r.Modules = validMods
 
-		if riskAssertsMissingStrength(r, presentStrengths) {
+		if r.ClaimType != claimTypeRecommendation || !recommendationHasValidCitation(r.ClaimType, r.FindingIDs, r.MetricIDs, r.EvidenceRefs, citations) || riskAssertsMissingStrength(r, presentStrengths) {
 			dropped++
 			continue
 		}
 		out = append(out, r)
 	}
 	return out, dropped
+}
+
+func validReviewClaimType(claimType string) bool {
+	_, ok := validClaimTypes[claimType]
+	return ok
+}
+
+func recommendationHasValidCitation(claimType string, findingIDs, metricIDs, evidenceRefs []string, citations reviewCitationSet) bool {
+	if !reviewCitationsSupported(findingIDs, metricIDs, evidenceRefs, citations) {
+		return false
+	}
+	if claimType != claimTypeRecommendation {
+		return true
+	}
+	return len(findingIDs)+len(metricIDs)+len(evidenceRefs) > 0
+}
+
+func reviewCitationsSupported(findingIDs, metricIDs, evidenceRefs []string, citations reviewCitationSet) bool {
+	return allKnown(findingIDs, citations.FindingIDs) && allKnown(metricIDs, citations.MetricIDs) && allKnown(evidenceRefs, citations.EvidenceRefs)
+}
+
+func allKnown(values []string, known map[string]struct{}) bool {
+	for _, value := range values {
+		if _, ok := known[value]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func cleanReviewCitations(findingIDs, metricIDs, evidenceRefs []string) ([]string, []string, []string) {
+	return cleanStringSet(findingIDs), cleanStringSet(metricIDs), cleanStringSet(evidenceRefs)
+}
+
+func cleanStringSet(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			seen[value] = struct{}{}
+		}
+	}
+	cleaned := make([]string, 0, len(seen))
+	for value := range seen {
+		cleaned = append(cleaned, value)
+	}
+	sort.Strings(cleaned)
+	return cleaned
 }
 
 // riskAssertsMissingStrength reports whether the risk's title or narrative
@@ -418,19 +584,14 @@ func printReview(deps *appDeps, providerName string, rev reviewResponse) {
 	if len(rev.Dimensions) > 0 {
 		_, _ = fmt.Fprintf(w, "\n### Dimensions\n\n")
 		for _, d := range rev.Dimensions {
-			_, _ = fmt.Fprintf(w, "**%s**: %s\n", d.Name, d.Narrative)
+			_, _ = fmt.Fprintf(w, "**%s**%s: %s\n", d.Name, reviewClaimSuffix(d.ClaimType, d.FindingIDs, d.MetricIDs, d.EvidenceRefs), d.Narrative)
 		}
 	}
 
 	if len(rev.TopRisks) > 0 {
 		_, _ = fmt.Fprintf(w, "\n### Top Risks\n\n")
 		for _, r := range rev.TopRisks {
-			mods := strings.Join(r.Modules, ", ")
-			if mods != "" {
-				_, _ = fmt.Fprintf(w, "**%s** (modules: %s)\n", r.Title, mods)
-			} else {
-				_, _ = fmt.Fprintf(w, "**%s**\n", r.Title)
-			}
+			_, _ = fmt.Fprintf(w, "**%s**%s\n", r.Title, reviewRiskSuffix(r))
 			_, _ = fmt.Fprintf(w, "%s\n", r.Narrative)
 			_, _ = fmt.Fprintf(w, "Balancing move: %s\n\n", r.BalancingMove)
 		}
@@ -439,7 +600,7 @@ func printReview(deps *appDeps, providerName string, rev reviewResponse) {
 	if len(rev.SubdomainSuggestions) > 0 {
 		_, _ = fmt.Fprintf(w, "### Subdomain Suggestions\n\n")
 		for _, s := range rev.SubdomainSuggestions {
-			_, _ = fmt.Fprintf(w, "- %s: %s — %s\n", s.Module, s.SuggestedSubdomain, s.Rationale)
+			_, _ = fmt.Fprintf(w, "- %s: %s%s — %s\n", s.Module, s.SuggestedSubdomain, reviewClaimSuffix(s.ClaimType, s.FindingIDs, s.MetricIDs, s.EvidenceRefs), s.Rationale)
 		}
 		_, _ = fmt.Fprintln(w)
 	}
@@ -447,6 +608,55 @@ func printReview(deps *appDeps, providerName string, rev reviewResponse) {
 	_, _ = fmt.Fprintln(w, "---")
 	_, _ = fmt.Fprintln(w, "_Review generated from deterministic archfit evidence. LLM narratives are advisory")
 	_, _ = fmt.Fprintln(w, "and never affect the `analyze --gate` gate._")
+}
+
+func reviewRiskSuffix(r reviewRisk) string {
+	parts := make([]string, 0, 2)
+	if mods := strings.Join(r.Modules, ", "); mods != "" {
+		parts = append(parts, "modules: "+mods)
+	}
+	claim := reviewClaimMeta(r.ClaimType, r.FindingIDs, r.MetricIDs, r.EvidenceRefs)
+	if claim != "" {
+		parts = append(parts, claim)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, "; ") + ")"
+}
+
+func reviewClaimSuffix(claimType string, findingIDs, metricIDs, evidenceRefs []string) string {
+	claim := reviewClaimMeta(claimType, findingIDs, metricIDs, evidenceRefs)
+	if claim == "" {
+		return ""
+	}
+	return " (" + claim + ")"
+}
+
+func reviewClaimMeta(claimType string, findingIDs, metricIDs, evidenceRefs []string) string {
+	parts := make([]string, 0, 2)
+	if claimType != "" {
+		parts = append(parts, "claim: "+claimType)
+	}
+	refs := reviewCitationLabels(findingIDs, metricIDs, evidenceRefs)
+	if len(refs) > 0 {
+		parts = append(parts, "refs: "+strings.Join(refs, ", "))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func reviewCitationLabels(findingIDs, metricIDs, evidenceRefs []string) []string {
+	labels := make([]string, 0, len(findingIDs)+len(metricIDs)+len(evidenceRefs))
+	for _, id := range findingIDs {
+		labels = append(labels, "finding:"+id)
+	}
+	for _, id := range metricIDs {
+		labels = append(labels, "metric:"+id)
+	}
+	for _, id := range evidenceRefs {
+		labels = append(labels, "evidence:"+id)
+	}
+	return labels
 }
 
 func writeFindingGroups(b *strings.Builder, findings []finding.Finding) {
@@ -487,8 +697,8 @@ func writeFindingExamples(b *strings.Builder, findings []finding.Finding) {
 			fmt.Fprintf(b, "- ... %d more finding(s) omitted\n", len(ordered)-i)
 			break
 		}
-		fmt.Fprintf(b, "- [%s] rule=%s severity=%s status=%s from=%s to=%s\n",
-			f.Kind, f.RuleID, f.Severity, f.Status, f.Edge.From.Module, f.Edge.To.Module)
+		fmt.Fprintf(b, "- [%s] finding_id=%s rule=%s severity=%s status=%s from=%s to=%s\n",
+			f.Kind, f.ID, f.RuleID, f.Severity, f.Status, f.Edge.From.Module, f.Edge.To.Module)
 	}
 }
 
@@ -543,14 +753,23 @@ func minInt(a, b int) int {
 	return b
 }
 
-// buildReviewPrompt serialises the Diagnostic and Scorecard as the user turn.
-func buildReviewPrompt(diag diagnostic.Diagnostic, sc score.Scorecard) string {
+// buildReviewPrompt serialises the Diagnostic, Scorecard, and repository
+// evidence pack as the user turn.
+func buildReviewPrompt(diag diagnostic.Diagnostic, sc score.Scorecard, evidencePacks ...[]string) string {
 	var b strings.Builder
+	evidenceLines := optionalEvidence(evidencePacks)
+	if len(evidenceLines) > 0 {
+		fmt.Fprintf(&b, "## %s\n", repositoryEvidenceHeader)
+		for _, line := range evidenceLines {
+			fmt.Fprintf(&b, "- %s\n", line)
+		}
+		fmt.Fprintln(&b)
+	}
 
 	// Scorecard summary.
 	fmt.Fprintf(&b, "## Scorecard (overall %d, band %s)\n", sc.Overall, sc.OverallBand)
 	for _, d := range sc.Dimensions {
-		fmt.Fprintf(&b, "- %s: value=%d band=%s confidence=%s\n  summary: %s\n",
+		fmt.Fprintf(&b, "- metric_id=%s value=%d band=%s confidence=%s\n  summary: %s\n",
 			d.Name, d.Value, d.Band, d.Confidence, d.Summary)
 		for _, ev := range d.Evidence {
 			fmt.Fprintf(&b, "  evidence: %s\n", ev)
@@ -591,7 +810,7 @@ func buildReviewPrompt(diag diagnostic.Diagnostic, sc score.Scorecard) string {
 		if writtenMetrics >= reviewMaxMetrics {
 			break
 		}
-		fmt.Fprintf(&b, "- %s: value=%.2f band=%s display=%s\n", m.Name, m.Value, m.Band, m.Display)
+		fmt.Fprintf(&b, "- metric_id=%s value=%.2f band=%s display=%s\n", m.Name, m.Value, m.Band, m.Display)
 		writtenMetrics++
 	}
 

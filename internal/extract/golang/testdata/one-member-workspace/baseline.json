@@ -22,6 +22,9 @@
     "by_distance": {
       "cross_module_different_owner": 1
     },
+    "by_distance_basis": {
+      "ownership": 1
+    },
     "by_severity": {
       "low": 1
     },
@@ -31,9 +34,65 @@
     "by_volatility": {
       "low": 1
     },
+    "connected_modules": 2,
+    "distance_compression": {
+      "compressed_middle_rungs": true,
+      "deterministic_splits": [
+        "same module =\u003e D=2",
+        "code_structure sibling/parent-child =\u003e D=4; unrelated subtrees =\u003e D=7",
+        "ownership same/different owner =\u003e D=4/D=7 when the owner map is non-degenerate",
+        "different deploy_unit =\u003e D=9",
+        "declared external_systems target =\u003e D=10"
+      ],
+      "implemented_rungs": [
+        2,
+        4,
+        7,
+        9,
+        10
+      ],
+      "omitted_rung_reasons": [
+        {
+          "reason": "object/member-level distance is not available from module dependency edges",
+          "rung": 1
+        },
+        {
+          "reason": "current facts distinguish same module vs cross-module, but not object/package micro-distance",
+          "rung": 3
+        },
+        {
+          "reason": "package/library middle distance is not split without explicit stable package-boundary metadata",
+          "rung": 5
+        },
+        {
+          "reason": "intermediate ownership/library distance has no deterministic signal beyond owner and tree structure",
+          "rung": 6
+        },
+        {
+          "reason": "library-like seams remain compressed: undeclared libraries stay excluded, while declared external_systems score at D=10",
+          "rung": 8
+        }
+      ],
+      "omitted_rungs": [
+        1,
+        3,
+        5,
+        6,
+        8
+      ],
+      "rationale": "D=3/D=5/D=6/D=8 remain compressed: current graph/config facts distinguish same module, same owner, different owner, deploy unit, and declared vendor seam, but not finer package/library distance without guessing."
+    },
     "mean_balance": 8,
     "same_module": 0,
     "scored": 1,
+    "tail_risk": {
+      "critical_edges": 0,
+      "distributed_monolith_edges": 0,
+      "high_or_worse_edges": 0,
+      "high_or_worse_share_pct": 0,
+      "lower_decile_balance": 8,
+      "worst_balance": 8
+    },
     "total": 1,
     "volatility_provenance": {
       "cascade": 0,
@@ -43,13 +102,113 @@
     }
   },
   "config_hash": "e686c0a4ca1ab9671d3ddc6d48da64e60ff9d2fd49d1cf9573c7e4c15850d826",
+  "connascence": {
+    "abstained_edges": 0,
+    "by_kind": {
+      "algorithm": 1,
+      "name": 1
+    },
+    "by_source": {
+      "go/types": 2
+    },
+    "edges_with_evidence": 1,
+    "roadmap": [
+      {
+        "current_status": "deterministic_static",
+        "kind": "name",
+        "sources": [
+          "go/types",
+          "dependency-cruiser",
+          "grimp",
+          "scip"
+        ]
+      },
+      {
+        "current_status": "deterministic_static",
+        "kind": "type",
+        "sources": [
+          "go/types",
+          "dependency-cruiser",
+          "scip"
+        ]
+      },
+      {
+        "current_status": "deterministic_static",
+        "kind": "meaning",
+        "sources": [
+          "go/types",
+          "scip"
+        ]
+      },
+      {
+        "current_status": "deterministic_static",
+        "kind": "algorithm",
+        "sources": [
+          "go/types",
+          "scip"
+        ]
+      },
+      {
+        "current_status": "unmeasured_static",
+        "kind": "position",
+        "upgrade_trigger": "deterministic argument-order or tuple-position facts from an extractor"
+      },
+      {
+        "current_status": "unmeasured_dynamic",
+        "kind": "execution",
+        "related_signals": [
+          "dynamic_imports",
+          "runtime_async_edges"
+        ],
+        "upgrade_trigger": "deterministic source-module to runtime-order/value/identity facts; LLM narrative alone is insufficient"
+      },
+      {
+        "current_status": "unmeasured_dynamic",
+        "kind": "timing",
+        "related_signals": [
+          "dynamic_imports",
+          "runtime_async_edges"
+        ],
+        "upgrade_trigger": "deterministic source-module to runtime-order/value/identity facts; LLM narrative alone is insufficient"
+      },
+      {
+        "current_status": "unmeasured_dynamic",
+        "kind": "value",
+        "related_signals": [
+          "dynamic_imports",
+          "runtime_async_edges"
+        ],
+        "upgrade_trigger": "deterministic source-module to runtime-order/value/identity facts; LLM narrative alone is insufficient"
+      },
+      {
+        "current_status": "unmeasured_dynamic",
+        "kind": "identity",
+        "related_signals": [
+          "dynamic_imports",
+          "runtime_async_edges"
+        ],
+        "upgrade_trigger": "deterministic source-module to runtime-order/value/identity facts; LLM narrative alone is insufficient"
+      }
+    ],
+    "total_evidence": 2,
+    "unmeasured": [
+      "position",
+      "execution",
+      "timing",
+      "value",
+      "identity"
+    ]
+  },
   "coupling_balance": {
     "band": "serviceable",
-    "confidence": "high",
+    "confidence": "medium",
     "evidence": [
       "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
       "scored fraction: 100% (1 scored, 0 abstained, internal only)",
       "critical-band edges: 0 (0 distributed-monolith: critical at high distance)",
+      "tail risk: worst balance 8/10, lower-decile balance 8/10, high-or-worse edges 0/1 (0%), critical 0, distributed-monolith 0",
+      "sample size below high-confidence floor: 1 scored internal cross-boundary edges (need ≥5)",
+      "connected module sample below high-confidence floor: 2 connected modules (need ≥3)",
       "volatility provenance (modules): declared: 2, inherited: 0, cascade: 0"
     ],
     "name": "coupling_balance",
@@ -120,7 +279,7 @@
         "score": "book",
         "score_band": "low",
         "score_value": "8",
-        "score_version": "bc_score.v4",
+        "score_version": "bc_score.v6",
         "strength": "functional",
         "volatility": "low"
       },
@@ -200,11 +359,14 @@
     "dimensions": [
       {
         "band": "serviceable",
-        "confidence": "high",
+        "confidence": "medium",
         "evidence": [
           "1 scored internal cross-boundary edges; mean book balance 8.0/10 → value 78",
           "scored fraction: 100% (1 scored, 0 abstained, internal only)",
           "critical-band edges: 0 (0 distributed-monolith: critical at high distance)",
+          "tail risk: worst balance 8/10, lower-decile balance 8/10, high-or-worse edges 0/1 (0%), critical 0, distributed-monolith 0",
+          "sample size below high-confidence floor: 1 scored internal cross-boundary edges (need ≥5)",
+          "connected module sample below high-confidence floor: 2 connected modules (need ≥3)",
           "volatility provenance (modules): declared: 2, inherited: 0, cascade: 0"
         ],
         "name": "coupling_balance",
@@ -216,7 +378,7 @@
     "overall_band": "serviceable",
     "rubric_version": 1
   },
-  "score_version": "bc_score.v4",
+  "score_version": "bc_score.v6",
   "summary": {
     "gate_findings": 1,
     "waivers_used": 0,

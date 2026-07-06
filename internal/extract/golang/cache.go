@@ -51,6 +51,9 @@ type packageFacts struct {
 	// Hints maps relFile+"\x00"+rawImportedPkgPath to the strongest BC
 	// integration-strength label seen (buildStrengthHints, pre-strip).
 	Hints map[string]string `json:"hints,omitempty"`
+	// Connascence maps relFile+"\x00"+rawImportedPkgPath to deterministic
+	// go/types connascence facts seen for that import target.
+	Connascence map[string][]graph.ConnascenceHint `json:"connascence,omitempty"`
 }
 
 type fileFacts struct {
@@ -192,7 +195,7 @@ func deriveMemberFacts(pkgs []*packages.Package, root string) (mf memberFacts, c
 		}
 		if !pf.Synthetic {
 			pf.Files = deriveFileFacts(pkg, root)
-			pf.Hints = deriveRawHints(pkg, dtos, root)
+			pf.Hints, pf.Connascence = deriveRawHints(pkg, dtos, root)
 		}
 		mf.Packages = append(mf.Packages, pf)
 	}
@@ -249,11 +252,12 @@ func deriveFileFacts(pkg *packages.Package, root string) []fileFacts {
 // Imported package paths stay RAW and no exclusion filter runs here — module
 // stripping needs the full member set and exclusions are config, so both are
 // applied at merge time in Extract.
-func deriveRawHints(pkg *packages.Package, dtos *dtoIndex, root string) map[string]string {
+func deriveRawHints(pkg *packages.Package, dtos *dtoIndex, root string) (map[string]string, map[string][]graph.ConnascenceHint) {
 	if pkg.TypesInfo == nil {
-		return nil
+		return nil, nil
 	}
 	hints := make(map[string]string)
+	connascence := make(map[string][]graph.ConnascenceHint)
 	for ident, obj := range pkg.TypesInfo.Uses {
 		if obj.Pkg() == nil || obj.Pkg().Path() == pkg.PkgPath {
 			continue
@@ -274,11 +278,30 @@ func deriveRawHints(pkg *packages.Package, dtos *dtoIndex, root string) map[stri
 		if goStrengthRank[hints[k]] < goStrengthRank[strength] {
 			hints[k] = strength
 		}
+		connascence[k] = appendConnascenceHints(connascence[k], goObjectConnascence(obj, dtos)...)
 	}
 	if len(hints) == 0 {
-		return nil
+		hints = nil
 	}
-	return hints
+	if len(connascence) == 0 {
+		connascence = nil
+	}
+	return hints, connascence
+}
+
+func appendConnascenceHints(dst []graph.ConnascenceHint, hints ...graph.ConnascenceHint) []graph.ConnascenceHint {
+	seen := make(map[graph.ConnascenceHint]struct{}, len(dst)+len(hints))
+	for _, h := range dst {
+		seen[h] = struct{}{}
+	}
+	for _, h := range hints {
+		if _, ok := seen[h]; ok {
+			continue
+		}
+		seen[h] = struct{}{}
+		dst = append(dst, h)
+	}
+	return dst
 }
 
 // goListHashExcludes are the input-tree-hash exclusions faithful to

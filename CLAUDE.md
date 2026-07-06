@@ -13,10 +13,9 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 - `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit`
 - `make archfit` — dogfood architecture-drift gate: `.bin/archfit analyze --gate --config .archfit.yaml --full`
 - `make arch-lint` — architecture drift linter (alias for `make archfit`); wired into the pre-push hook
-- `make archfit-report` — write `reports/archfit-report.md` via `archfit analyze --markdown`
+- `make archfit-report` — write `docs/reports/archfit-report.md` via `archfit analyze --markdown`
 - `make mock` — regenerate moq fakes (`go generate ./...`)
 - `make test-fast` — `go test -race -short ./...` (skips slow subprocess/ast-grep integration tests; for inner-loop speed)
-- `make corpus-attrib` — informational dev tool: coupling_balance attribution table over the Wave-4 corpus repos (`scripts/corpus-attrib.sh`)
 - `make bench-gate` — cold vs warm fact-cache gate timing on this repo (reported number, not a CI assert; `scripts/bench-gate.sh`)
 - `make all` — fmt → lint → test → archfit
 - One test: `go test ./internal/<pkg>/ -run TestName`
@@ -67,7 +66,7 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
 - **Severity source is `cl.Score.Band`** (`classify.go`, `Run`). `cl.Severity =
 cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   old discrete severity table and is no longer called anywhere. Do not re-introduce
-  it; the book formula (`ScoreVersion = "bc_score.v4"`) is the single severity source.
+  it; the book formula (`ScoreVersion = "bc_score.v6"`) is the single severity source.
 - **Coupling gate** (`coupling.gate: {min_band, max_drop}`). The synthesised
   coupling_balance score can fail the verdict: `score.Synthesize` +
   `applyCouplingGate` run INSIDE `runPipeline` (`cmd/archfit/pipeline_run.go`),
@@ -78,7 +77,9 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   stores (`baseline.ScoreSnapshot`, omitted when unmeasured). BandNA never
   gates (abstain ≠ fail). Trip reasons print to stderr from `analyze` ONLY
   (re-evaluated there via the pure `score.EvaluateCouplingGate`) — never from
-  baseline/enrich/explain/`--base` scoring, which share `runPipeline`.
+  baseline/enrich/explain/`--base` scoring, which share `runPipeline`. A separate
+  stale-baseline notice can also print from `analyze` when `max_drop` is skipped
+  because the stored score snapshot uses an older `ScoreVersion`.
   The score comes from `ClassifiedEdges` (pre-advisory-filter), so a trip with
   no promotable advisory (advisory off, or `coupling.min_severity` above every
   active edge) emits one synthetic `bc/coupling_gate` gate finding carrying
@@ -205,7 +206,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
 
 ## Coupling scorer — key design facts
 
-`ScoreVersion = "bc_score.v4"` (`internal/model/coupling/scorer.go`).
+`ScoreVersion = "bc_score.v6"` (`internal/model/coupling/scorer.go`).
 Formula: `balance = max(|S−D|, 10−V) + 1` (Khononov Ch10 verbatim).
 Ordinals frozen as named constants — changing any is a breaking metric change.
 
@@ -218,8 +219,8 @@ excluded from the denominator entirely (counted in `classified_edges.external`).
 **External edges excluded from `coupling_balance` — unless declared:** edges
 whose target is not a declared module are NOT internal coupling seams; their
 count surfaces in `classified_edges.external` and the `coupling_balance`
-evidence string. Exception (bc_score.v4): a target matching a config-declared
-`external_systems:` entry gets the frozen `DistanceExternal = 10` rung
+evidence string. Exception (introduced in bc_score.v4): a target matching a
+config-declared `external_systems:` entry gets the frozen `DistanceExternal = 10` rung
 (`distance_basis: declared_external`, book Ch10 Example 1) and ENTERS scoring
 with the entry's volatility (default low); those count in
 `classified_edges.declared_external`. The match is gated on the target's own
@@ -233,12 +234,15 @@ edge's strength is still `functional` or `unknown` — config-authoritative
 never overridden.
 
 **`bc/duplicated_knowledge` (clone pair without an import edge):**
-`classify.CloneOnlyPairs` scores each cross-module clone pair whose modules
-share NO import edge (StrengthSymmetric, module-pair distance, worst-of-pair
-volatility) and the engine emits it as an advisory. It is never promoted by the
-coupling gate (promotion matches `RuleIDBCImbalanced` only), never rolled up,
-and never enters `coupling_balance`. Ceiling: a pair WITH an edge is owned by
-the symmetric-upgrade path above, so clone evidence on a contract/model/
+`classify.CloneOnlyPairs` builds each cross-module clone pair whose modules share
+NO import edge (StrengthSymmetric, module-pair distance, worst-of-pair
+volatility). Default `coupling.duplicated_knowledge: score` includes the pair in
+`ClassifiedEdges` and `coupling_balance` as a score-bearing coupling fact; it
+may also surface as a `bc/duplicated_knowledge` advisory after severity/baseline/
+waiver filtering. `advisory` preserves the v4 behavior: advisory-only, held out
+of the headline score. It is never promoted by the coupling gate (promotion
+matches `RuleIDBCImbalanced` only). Ceiling: a pair WITH an edge is owned by the
+symmetric-upgrade path above, so clone evidence on a contract/model/
 intrusive-strength edge surfaces nowhere — deliberate.
 
 **Same-module edges are scored but report-only (`local_coupling`):** classify
@@ -259,9 +263,11 @@ submodules) is not mistaken for N measured judgments.
 confidence by one band. `provenance: human` and `provenance: tool` do not.
 
 **Opt-in volatility cascade:** `coupling.volatility_cascade: true` in
-`.archfit.yaml` enables a single-hop propagation pass (book Ch9) that raises
-effective volatility to `high` for modules strongly coupled to a `core` module.
-archfit's own self-config has this enabled.
+`.archfit.yaml` enables a deterministic fixpoint propagation pass (book Ch9): a
+module strongly coupled (`functional`/`symmetric`/`intrusive`) to a
+high-effective-volatility module inherits `high`, and that can propagate through
+strong-coupling chains. Clone-only pairs are excluded. archfit's own self-config
+has this enabled.
 
 **Runtime async is report-only:** `runtime_async` JSON field records async-bridge
 evidence per module. Never annotates graph edges, never affects distance or

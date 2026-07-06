@@ -33,7 +33,7 @@ archfit doctor
   `cargo metadata`.
 - Structural patterns: `sg` must be the ast-grep binary, not the util-linux `sg`.
 - Optional depth tools: SCIP indexers, `jscpd`, and `cargo-modules`
-  feed report-only metrics and coupling-balance edge-strength precision.
+  feed report-only blocks/metrics and coupling-balance precision.
 
 ## Platform setup quick start
 
@@ -163,8 +163,9 @@ metrics cover individual modules rather than entire crates.
 
 ## Optional analysis tools
 
-These power report-only metrics and are off by default. Install them only when you
-enable the matching key in `.archfit.yaml` (`analyzers.*` or `languages.*`).
+These power optional depth analysis and are off by default. Install them only
+when you enable the matching key in `.archfit.yaml` (`analyzers.*` or
+`languages.*`).
 
 - **SCIP** (improves `coupling_balance` edge-strength precision for TS/Py/Rust;
   adds Rust module-level strength) — install the indexer for your language plus

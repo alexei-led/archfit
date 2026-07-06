@@ -215,7 +215,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		}
 	})
 
-	t.Run("--require-tools is not suppressed by --report", func(t *testing.T) {
+	t.Run("--require-tools is not suppressed in report-only mode", func(t *testing.T) {
 		t.Parallel()
 		cfgPath := writeGapRepo(t, "")
 		var buf bytes.Buffer
@@ -771,14 +771,14 @@ func TestRun_Check_NoBaselineWarningAbsent(t *testing.T) {
 // absent (defaults off), the pipeline injects a StatusDisabled coverage row for
 // "scip" so that tool_coverage in JSON output reports "disabled" rather than
 // leaving the entry absent.
-func TestRun_Check_ScipDisabledCoverageRow(t *testing.T) {
+func TestRun_Analyze_ScipDisabledCoverageRow(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 
 	var buf bytes.Buffer
-	// --report (exit 0) so we can parse the JSON regardless of gate verdict.
+	// Report-only mode (exit 0) so we can parse the JSON regardless of gate verdict.
 	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf); code == 3 {
-		t.Fatalf("check exited 3 (config/pipeline error)\noutput:\n%s", buf.String())
+		t.Fatalf("analyze exited 3 (config/pipeline error)\noutput:\n%s", buf.String())
 	}
 
 	var out struct {

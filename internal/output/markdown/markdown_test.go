@@ -19,6 +19,7 @@ const (
 	secBCAdvisories = "Balanced Coupling advisories"
 	secBeyondBC     = "Supporting structural metrics (beyond Balanced Coupling)"
 	secDistanceConf = "Distance confidence"
+	secConnascence  = "Connascence evidence"
 
 	// Kept tool names.
 	toolJscpd = "jscpd"
@@ -47,6 +48,13 @@ const (
 	kindFunction   = "function"
 	roleHandler    = "handler"
 	fileAPIHandler = "pkg/api/handler.go"
+
+	// Runtime async test literals.
+	modAPI        = "api"
+	kindMQ        = "message_queue"
+	confMedium    = "medium"
+	rabbitMQLib   = "github.com/rabbitmq/amqp091-go"
+	filePublisher = "api/publisher.go"
 )
 
 func TestRenderer_Format(t *testing.T) {
@@ -189,6 +197,45 @@ func TestRenderer_Render_FileFacts(t *testing.T) {
 	}
 }
 
+func TestRenderer_Render_ConnascenceSummary(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.Connascence = &diagnostic.ConnascenceReport{
+		EdgesWithEvidence: 2,
+		AbstainedEdges:    1,
+		TotalEvidence:     3,
+		ByKind:            map[string]int{"name": 2, "type": 1},
+		BySource:          map[string]int{"go/types": 2, "scip": 1},
+		Unmeasured:        []string{"position", "execution", "timing", "value", "identity"},
+		Roadmap: []diagnostic.ConnascenceRoadmapItem{
+			{Kind: "name", CurrentStatus: "deterministic_static", Sources: []string{"go/types"}},
+			{Kind: "execution", CurrentStatus: "unmeasured_dynamic", RelatedSignals: []string{"dynamic_imports", "runtime_async_edges"}},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"## " + secConnascence,
+		"Report-only. Static facts only",
+		"edges with evidence: 2",
+		"abstained edges: 1",
+		"by kind: name=2, type=1",
+		"by source: go/types=2, scip=1",
+		"unmeasured: position, execution, timing, value, identity",
+		"roadmap: name=deterministic_static, execution=unmeasured_dynamic (signals dynamic_imports/runtime_async_edges)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
 func TestRenderer_Render_DynamicImports(t *testing.T) {
 	r := markdown.New()
 	d := diagnostic.New()
@@ -242,6 +289,58 @@ func TestRenderer_Render_DynamicImportsAbsentWhenEmpty(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "Dynamic / lazy imports") {
 		t.Errorf("dynamic imports section should be omitted when empty\nfull output:\n%s", buf.String())
+	}
+}
+
+func TestRenderer_Render_RuntimeAsync(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.RuntimeAsync = []diagnostic.RuntimeAsyncModule{
+		{Module: modAPI, IntegrationKind: kindMQ, Count: 2, Confidence: confMedium},
+	}
+	d.RuntimeAsyncEdges = []diagnostic.RuntimeAsyncEdge{
+		{
+			FromModule: modAPI, Target: rabbitMQLib, IntegrationKind: kindMQ, Count: 2, Confidence: confMedium,
+			Sites: []diagnostic.RuntimeAsyncSite{
+				{File: filePublisher, Line: 10, Library: rabbitMQLib, IntegrationKind: kindMQ, Language: "go"},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"## Runtime async bridges",
+		"Report-only. Runtime async evidence is grouped by module",
+		"2 sites across 1 modules and 1 module→target relation(s)",
+		"**" + modAPI + "** → `" + rabbitMQLib + "` [" + kindMQ + "]: 2",
+		filePublisher + ":10[" + kindMQ + "]",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "BC-UNBALANCED") {
+		t.Errorf("runtime async must not render as BC advisories\nfull output:\n%s", out)
+	}
+}
+
+func TestRenderer_Render_RuntimeAsyncAbsentWhenEmpty(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if strings.Contains(buf.String(), "Runtime async bridges") {
+		t.Errorf("runtime async section should be omitted when empty\nfull output:\n%s", buf.String())
 	}
 }
 
@@ -644,7 +743,7 @@ func TestRenderer_Render_AgentTasks(t *testing.T) {
 		Goal:        "Replace the internal-API access from pkg/a/a.go to pkg/b/internal/impl.go with b's public API.",
 		Constraints: []string{"Use only the public API of module b"},
 		Files:       []string{"pkg/a/a.go", "pkg/b/internal/impl.go"},
-		Validation:  []string{"archfit check -c .archfit.yaml --full"},
+		Validation:  []string{"archfit analyze --gate -c .archfit.yaml --full"},
 	}}
 
 	var buf bytes.Buffer
@@ -657,7 +756,7 @@ func TestRenderer_Render_AgentTasks(t *testing.T) {
 		"**no_internal_access** [`abcdef12`]",
 		"files: pkg/a/a.go, pkg/b/internal/impl.go",
 		"constraint: Use only the public API of module b",
-		"validate: `archfit check -c .archfit.yaml --full`",
+		"validate: `archfit analyze --gate -c .archfit.yaml --full`",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)
@@ -970,6 +1069,35 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 	r := markdown.New()
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
+	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
+		Scored:            10,
+		ConnectedModules:  2,
+		External:          5,
+		DeclaredExternal:  2,
+		CloneOnlyScored:   3,
+		CloneOnlyAdvisory: 1,
+		ByDistanceBasis:   map[string]int{"code_structure": 3, "ownership": 1},
+		TailRisk: &diagnostic.CouplingTailRiskSummary{
+			WorstBalance:              2,
+			LowerDecileBalance:        4,
+			HighOrWorseEdges:          2,
+			HighOrWorseSharePct:       20,
+			CriticalEdges:             1,
+			DistributedMonolithEdges:  1,
+			CloneOnlyScored:           3,
+			CloneOnlyHighOrWorseEdges: 1,
+			CloneOnlyWorstBalance:     4,
+		},
+		DistanceCompression: &diagnostic.DistanceCompressionSummary{
+			CompressedMiddleRungs: true,
+			ImplementedRungs:      []int{2, 4, 7, 9, 10},
+			OmittedRungs:          []int{3, 5, 6, 8},
+			OmittedRungReasons: []diagnostic.DistanceOmittedRungReason{
+				{Rung: 8, Reason: "declared external_systems use D=10; library-like seams stay compressed"},
+			},
+			Rationale: "D=3/D=5/D=6/D=8 remain compressed: no stable deterministic facts beyond structure/ownership/deploy_unit.",
+		},
+	}
 
 	var buf bytes.Buffer
 	if err := r.Render(d, &buf); err != nil {
@@ -991,6 +1119,22 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 	}
 	if !strings.Contains(out, "deploy_unit_source") {
 		t.Errorf("output missing deploy_unit_source entry\nfull output:\n%s", out)
+	}
+	for _, want := range []string{
+		"connected modules in coupling sample: 2",
+		"distance basis: code_structure=3, ownership=1",
+		"distance rungs implemented: D=2, D=4, D=7, D=9, D=10; omitted/compressed: D=3, D=5, D=6, D=8",
+		"distance compression: D=3/D=5/D=6/D=8 remain compressed",
+		"D=8 compressed: declared external_systems use D=10; library-like seams stay compressed",
+		"declared external-system edges scored at D=10: 2",
+		"undeclared external/library edges excluded: 5",
+		"clone-only duplicated knowledge: 3 scored, 1 advisory-only",
+		"tail risk: worst balance 2/10; lower-decile balance 4/10; high-or-worse edges 2/10 (20%); critical 1; distributed-monolith 1",
+		"clone-only tail: worst balance 4/10; high-or-worse 1/3 scored clone-only pairs",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
 	}
 }
 

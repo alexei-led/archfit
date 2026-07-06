@@ -24,11 +24,12 @@ Detailed behavior lives in `references/`, loaded on demand.
 or to decide whether to adopt `archfit` — use web research for that.
 
 archfit measures **Balanced Coupling** (`coupling_balance` band, Khononov S×D×V
-formula) plus standard structural architecture rules (forbidden deps, layering,
-cycles, public-API) and a minimal set of complementary report-only metrics
-(`cycle`, `blast_radius`, `encapsulation`, `coverage`). It is not a 0-100
-composite architecture report card — code-quality concerns (complexity,
-duplication, panic/unsafe/god-struct density) are delegated to linters by design.
+formula) plus structural architecture rules (forbidden deps, layering, cycles,
+public API) and complementary metrics. `unbalanced_edge`, `cycle`,
+`encapsulation`, and `coverage` can gate on baseline regressions; `blast_radius`
+and absolute metric values are signals. It is not a 0-100 composite architecture
+report card — code-quality concerns (complexity, duplication, panic/unsafe/god-
+struct density) are delegated to linters by design.
 
 ## Routing
 

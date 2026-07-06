@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/labels/labelsio"
 	"github.com/alexei-led/archfit/internal/llm"
@@ -71,6 +72,20 @@ func abstainedFixture() (*graph.Graph, coupling.Index, config.ModuleMap) {
 		"file:pkg/c/c2.go\x00file:vendor/x/x.go\x00imports": {Strength: coupling.StrengthUnknown, Distance: coupling.DistanceUnknown},
 	}
 	return g, idx, cfg.ForClassify().ModuleMap
+}
+
+func TestAbstainedUserPrompt_IncludesRepositoryEvidenceIDs(t *testing.T) {
+	t.Parallel()
+	prompt := abstainedUserPrompt(
+		config.Config{},
+		[]abstainedPair{{From: modA, To: modB, EdgeCount: 1, Samples: []abstainedSample{{FromPath: fileNodeA, ToPath: fileNodeB}}}},
+		[]string{"doc:docs/architecture/layers.md (doc) docs/architecture/layers.md: Layer intent"},
+	)
+	for _, want := range []string{repositoryEvidenceHeader, "doc:docs/architecture/layers.md", "Layer intent", "from: a"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
 }
 
 func TestSelectAbstainedPairs(t *testing.T) {
@@ -251,7 +266,7 @@ func TestParseAbstainedResponse(t *testing.T) {
 
 	t.Run("valid entry carries confidence", func(t *testing.T) {
 		t.Parallel()
-		text := "```json\n[{\"from\":\"a\",\"to\":\"b\",\"strength\":\"contract\",\"confidence\":\"high\",\"rationale\":\"published interface\"}]\n```"
+		text := "```json\n[" + abstainedDraftJSON(modA, modB, "contract", labels.ConfidenceHigh, "published interface") + "]\n```"
 		got, err := parseAbstainedResponse(text, batch)
 		if err != nil || len(got) != 1 {
 			t.Fatalf("(%v, %v)", got, err)
@@ -263,12 +278,14 @@ func TestParseAbstainedResponse(t *testing.T) {
 		if d.Confidence != labels.ConfidenceHigh {
 			t.Errorf("confidence = %q, want self-reported high carried through", d.Confidence)
 		}
+		if d.Basis != initcfg.DraftBasisSemanticJudgment {
+			t.Errorf("basis = %q, want %q", d.Basis, initcfg.DraftBasisSemanticJudgment)
+		}
 	})
 
 	t.Run("unrequested pair skipped when requested pair is present", func(t *testing.T) {
 		t.Parallel()
-		text := `[
-			{"from":"a","to":"b","strength":"contract","confidence":"high","rationale":"published interface"},
+		text := `[` + abstainedDraftJSON(modA, modB, "contract", labels.ConfidenceHigh, "published interface") + `,
 			{"from":"x","to":"y","strength":"model","confidence":"low","rationale":"hallucinated"}
 		]`
 		got, err := parseAbstainedResponse(text, batch)
@@ -285,7 +302,10 @@ func TestParseAbstainedResponse(t *testing.T) {
 		"invalid confidence": `[{"from":"a","to":"b","strength":"model","confidence":"certain","rationale":"r"}]`,
 		"missing rationale":  `[{"from":"a","to":"b","strength":"model","confidence":"low","rationale":" "}]`,
 		"missing requested":  `[{"from":"x","to":"y","strength":"model","confidence":"low","rationale":"hallucinated"}]`,
-		"duplicate request":  `[{"from":"a","to":"b","strength":"model","confidence":"low","rationale":"r"},{"from":"a","to":"b","strength":"functional","confidence":"medium","rationale":"r"}]`,
+		"duplicate request":  `[` + abstainedDraftJSON(modA, modB, enrichModel, labels.ConfidenceLow, "r") + `,` + abstainedDraftJSON(modA, modB, enrichFunctional, labels.ConfidenceMedium, "r") + `]`,
+		"missing basis":      `[{"from":"a","to":"b","strength":"model","confidence":"low","evidence_refs":[],"rationale":"r"}]`,
+		"invalid basis":      `[{"from":"a","to":"b","strength":"model","confidence":"low","basis":"vibes","evidence_refs":[],"rationale":"r"}]`,
+		"invalid ref":        fmt.Sprintf(`[{"from":"a","to":"b","strength":"model","confidence":"low","basis":%q,"evidence_refs":["bad ref"],"rationale":"r"}]`, initcfg.DraftBasisSemanticJudgment),
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -294,6 +314,14 @@ func TestParseAbstainedResponse(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("unsupported ref", func(t *testing.T) {
+		t.Parallel()
+		text := fmt.Sprintf(`[{"from":"a","to":"b","strength":"model","confidence":"low","basis":%q,"evidence_refs":["api:missing"],"rationale":"r"}]`, initcfg.DraftBasisSemanticJudgment)
+		if _, err := parseAbstainedResponse(text, batch, map[string]struct{}{enrichEvidenceAPIA: {}}); err == nil {
+			t.Error("want unsupported-ref validation error")
+		}
+	})
 }
 
 // recordingProvider captures every request and replays canned responses.
@@ -314,7 +342,7 @@ func (p *recordingProvider) Complete(_ context.Context, req llm.Request) (llm.Re
 func TestRequestAbstainedBatch_RetriesOnceOnSchemaViolation(t *testing.T) {
 	t.Parallel()
 	batch := []abstainedPair{{From: modA, To: modB, EdgeCount: 1}}
-	valid := `[{"from":"a","to":"b","strength":"functional","confidence":"medium","rationale":"invokes behavior"}]`
+	valid := `[` + abstainedDraftJSON(modA, modB, enrichFunctional, labels.ConfidenceMedium, "invokes behavior") + `]`
 
 	t.Run("retry succeeds", func(t *testing.T) {
 		t.Parallel()
@@ -356,7 +384,7 @@ func TestDraftAbstainedLabels_Batches(t *testing.T) {
 	build := func(ps []abstainedPair) string {
 		parts := make([]string, 0, len(ps))
 		for _, p := range ps {
-			parts = append(parts, fmt.Sprintf(`{"from":%q,"to":"z","strength":"model","confidence":"low","rationale":"r"}`, p.From))
+			parts = append(parts, abstainedDraftJSON(p.From, "z", enrichModel, labels.ConfidenceLow, "r"))
 		}
 		return "[" + strings.Join(parts, ",") + "]"
 	}
@@ -411,7 +439,7 @@ func writeAbstainedRepo(t *testing.T, aiBody string) (cfgPath, dir string) {
 // untouched.
 func TestRun_EnrichAbstained_E2E(t *testing.T) {
 	t.Parallel()
-	content := `[{"from":"a","to":"b","strength":"functional","confidence":"low","rationale":"side-effect import registers b's init"}]`
+	content := `[` + abstainedDraftJSON(modA, modB, enrichFunctional, labels.ConfidenceLow, "side-effect import registers b's init") + `]`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{

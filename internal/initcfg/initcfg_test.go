@@ -379,6 +379,9 @@ func TestRender_ContainsRequiredSections(t *testing.T) {
 			t.Errorf("Render output missing %s (want %q)\nfull output:\n%s", c.desc, c.want, out)
 		}
 	}
+	if strings.Contains(out, "complexity: { enabled:") {
+		t.Errorf("Render output suggests removed analyzers.complexity key:\n%s", out)
+	}
 }
 
 func TestRender_NoModules_StillValid(t *testing.T) {

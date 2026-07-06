@@ -12,6 +12,8 @@ import (
 	"github.com/alexei-led/archfit/internal/score"
 )
 
+const connascenceExecutionTest = "execution"
+
 // TestJSONRenderer_AdvisoryScoreFields asserts the numeric BC score fields
 // (score_value + score_band) on an advisory's matched_by survive JSON encoding.
 func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
@@ -64,11 +66,109 @@ func TestJSONRenderer_ScoreVersion(t *testing.T) {
 	if !ok {
 		t.Fatal("score_version field missing from JSON output")
 	}
-	if got != "bc_score.v4" {
-		t.Errorf("score_version = %q, want %q", got, "bc_score.v4")
+	if got != "bc_score.v6" {
+		t.Errorf("score_version = %q, want %q", got, "bc_score.v6")
 	}
 	if got != coupling.ScoreVersion {
 		t.Errorf("score_version = %q, out of sync with coupling.ScoreVersion %q", got, coupling.ScoreVersion)
+	}
+}
+
+func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
+	d := diagnostic.New()
+	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
+		Scored:           3,
+		ConnectedModules: 2,
+		ByDistanceBasis:  map[string]int{"code_structure": 2, "ownership": 1},
+		TailRisk: &diagnostic.CouplingTailRiskSummary{
+			WorstBalance:          2,
+			LowerDecileBalance:    2,
+			HighOrWorseEdges:      1,
+			HighOrWorseSharePct:   33,
+			CriticalEdges:         1,
+			CloneOnlyScored:       1,
+			CloneOnlyWorstBalance: 4,
+		},
+		DistanceCompression: &diagnostic.DistanceCompressionSummary{
+			CompressedMiddleRungs: true,
+			ImplementedRungs:      []int{2, 4, 7, 9, 10},
+			OmittedRungs:          []int{3, 5, 6, 8},
+			OmittedRungReasons: []diagnostic.DistanceOmittedRungReason{
+				{Rung: 8, Reason: "declared external_systems use D=10"},
+			},
+			Rationale: "D=3/D=5/D=6/D=8 remain compressed",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var got diagnostic.Diagnostic
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if got.ClassifiedEdges == nil {
+		t.Fatal("classified_edges missing from JSON output")
+	}
+	if got.ClassifiedEdges.ConnectedModules != 2 {
+		t.Errorf("connected_modules = %d, want 2", got.ClassifiedEdges.ConnectedModules)
+	}
+	if got.ClassifiedEdges.ByDistanceBasis["code_structure"] != 2 {
+		t.Errorf("by_distance_basis.code_structure = %d, want 2", got.ClassifiedEdges.ByDistanceBasis["code_structure"])
+	}
+	if got.ClassifiedEdges.DistanceCompression == nil || !got.ClassifiedEdges.DistanceCompression.CompressedMiddleRungs {
+		t.Fatalf("distance_compression = %+v, want compressed_middle_rungs=true", got.ClassifiedEdges.DistanceCompression)
+	}
+	if reasons := got.ClassifiedEdges.DistanceCompression.OmittedRungReasons; len(reasons) != 1 || reasons[0].Rung != 8 {
+		t.Fatalf("omitted_rung_reasons = %+v, want D=8 reason", reasons)
+	}
+	if got.ClassifiedEdges.TailRisk == nil {
+		t.Fatal("tail_risk missing from JSON output")
+	}
+	if got.ClassifiedEdges.TailRisk.WorstBalance != 2 || got.ClassifiedEdges.TailRisk.HighOrWorseEdges != 1 {
+		t.Fatalf("tail_risk = %+v, want worst=2 high_or_worse=1", got.ClassifiedEdges.TailRisk)
+	}
+}
+
+func TestJSONRenderer_ConnascenceSummary(t *testing.T) {
+	d := diagnostic.New()
+	d.Connascence = &diagnostic.ConnascenceReport{
+		EdgesWithEvidence: 1,
+		AbstainedEdges:    2,
+		TotalEvidence:     2,
+		ByKind:            map[string]int{"name": 1, "type": 1},
+		BySource:          map[string]int{"go/types": 2},
+		Unmeasured:        []string{"position", connascenceExecutionTest},
+		Roadmap: []diagnostic.ConnascenceRoadmapItem{
+			{Kind: "name", CurrentStatus: "deterministic_static", Sources: []string{"go/types"}},
+			{Kind: connascenceExecutionTest, CurrentStatus: "unmeasured_dynamic", RelatedSignals: []string{"runtime_async_edges"}, UpgradeTrigger: "deterministic runtime ordering"},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var raw struct {
+		Connascence diagnostic.ConnascenceReport `json:"connascence"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if raw.Connascence.EdgesWithEvidence != 1 || raw.Connascence.AbstainedEdges != 2 || raw.Connascence.TotalEvidence != 2 {
+		t.Fatalf("connascence summary = %+v, want counters 1/2/2", raw.Connascence)
+	}
+	if raw.Connascence.ByKind["type"] != 1 || raw.Connascence.BySource["go/types"] != 2 {
+		t.Fatalf("connascence maps = kinds %+v sources %+v", raw.Connascence.ByKind, raw.Connascence.BySource)
+	}
+	if len(raw.Connascence.Roadmap) != 2 {
+		t.Fatalf("connascence roadmap = %+v, want 2 entries", raw.Connascence.Roadmap)
+	}
+	if got := raw.Connascence.Roadmap[1]; got.Kind != connascenceExecutionTest || got.CurrentStatus != "unmeasured_dynamic" || len(got.RelatedSignals) != 1 {
+		t.Fatalf("dynamic roadmap entry = %+v, want execution/unmeasured_dynamic with related signal", got)
 	}
 }
 

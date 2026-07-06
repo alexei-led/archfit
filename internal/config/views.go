@@ -89,7 +89,7 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 	// derived from Modules: a module's Paths glob classifies graph nodes (it
 	// can be a dotted Python id or a Rust crate name), not a filesystem
 	// directory the TypeScript extractor can scan — see
-	// docs/plans/20260701-multilang-reliability-fixes.md Task 4.3. Src stays
+	// docs/plans/completed/20260701-multilang-reliability-fixes.md Task 4.3. Src stays
 	// at the "." default set above; the TS extractor falls back to "src"
 	// when it sees "." (internal/extract/ts/ts.go).
 	var paths, internal []string
@@ -136,13 +136,14 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 // forbids commit-history volatility on the gate path.
 func (c Config) ForClassify() ClassifyConfig {
 	return ClassifyConfig{
-		Modules:                  c.Modules,
-		Layers:                   c.Layers,
-		ModuleMap:                buildModuleMap(c.Modules),
-		BCAdvisoryMinSeverity:    c.Coupling.MinSeverity,
-		ExplicitOwners:           c.explicitOwners,
-		VolatilityCascadeEnabled: c.Coupling.VolatilityCascade,
-		ExternalSystems:          c.ExternalSystems,
+		Modules:                   c.Modules,
+		Layers:                    c.Layers,
+		ModuleMap:                 buildModuleMap(c.Modules),
+		BCAdvisoryMinSeverity:     c.Coupling.MinSeverity,
+		ExplicitOwners:            c.explicitOwners,
+		VolatilityCascadeEnabled:  c.Coupling.VolatilityCascade,
+		ExternalSystems:           c.ExternalSystems,
+		DuplicatedKnowledgePolicy: NormalizeDuplicatedKnowledgePolicy(c.Coupling.DuplicatedKnowledge),
 	}
 }
 

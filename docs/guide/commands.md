@@ -9,6 +9,7 @@ archfit config init --llm --root .
 archfit config update --config .archfit.yaml
 archfit config update --config .archfit.yaml --llm
 archfit config update --config .archfit.yaml --apply
+archfit config update --config .archfit.yaml --llm --apply  # structural apply only; LLM proposals stay review-only
 archfit                                                      # report-only, default text output
 archfit analyze --gate --config .archfit.yaml --full         # CI gate
 archfit analyze --gate --config .archfit.yaml --base main    # PR delta gate
@@ -24,7 +25,10 @@ archfit config enrich labels --config .archfit.yaml
 archfit config enrich abstained --config .archfit.yaml
 archfit config enrich owner --config .archfit.yaml
 archfit config enrich volatility --config .archfit.yaml
-archfit config init --llm --root . -o .archfit-autopilot.yaml
+archfit config enrich subdomain --config .archfit.yaml
+archfit config enrich owner --config .archfit.yaml --apply --reviewed-by @you
+archfit config init --llm --root . -o .archfit-init-llm.yaml
+archfit config init --llm --apply --root .   # writes LLM judgments live; review before using as a gate
 archfit explain <finding-id-prefix> --llm
 archfit analyze --gate --sarif > archfit.sarif
 ```
@@ -39,9 +43,12 @@ audit report. Bare `archfit` (no subcommand) runs `analyze` in report-only mode.
   `from:`/`to:` glob is such an error — it would be dead by construction).
   `--fix` installs missing tools (`--dry-run` previews without installing).
 - `archfit config init` — generate a starter `.archfit.yaml`; `--llm` adds an
-  off-gate classification pass (subdomain, volatility, layer, role per module).
+  off-gate classification pass (subdomain, volatility, layer, role, and owner per
+  module). Default LLM plan mode comments suggestions; `--llm --apply` writes the
+  model judgments live, so review before using the file as a gate.
 - `archfit config update` — sync `.archfit.yaml` with the current project structure;
-  `--llm` adds review-only role and volatility proposals to the drift report.
+  `--llm` adds review-only module and rule proposals to the drift report. Even with
+  `--apply`, only structural drift is written live; LLM proposals stay review-only.
 - `archfit analyze` — run architecture analysis (default command; also runs as
   bare `archfit`). Without `--gate` it is report-only (always exits `0` on
   success, `3` on config/tool error). With `--gate` it enforces rules and emits
@@ -171,8 +178,10 @@ environments, or with `--quiet`. This keeps `archfit --json | jq` clean.
 - `--sarif` — output SARIF 2.1.0 (shorthand for `--format sarif`).
 - `--format <fmt>` — repeatable: `text` (default), `json`, `markdown`/`md`,
   `sarif`, `scorecard`. Shorthands and `--format` are mutually exclusive.
-- `--llm` — append an off-gate LLM advisory interpretation after the
-  deterministic output (needs `ai:` configured in `.archfit.yaml`).
+- `--llm` — add an off-gate LLM advisory interpretation after the
+  deterministic output (needs `ai:` configured in `.archfit.yaml`). For `json`,
+  `sarif`, and `scorecard` formats the review is written to stderr so stdout
+  stays parseable.
 - `--full` — scan all files (default true).
 - `--advisory` — include Balanced Coupling advisories (default true).
 - `--no-cache` — bypass archfit caches: extractor facts (and LLM responses with
@@ -237,8 +246,9 @@ The scorecard shows one scored dimension: `coupling_balance`. It carries a 0–1
 value, a band (critical / poor / mixed / serviceable / strong), a confidence, and
 evidence references. The overall is the coupling_balance value. This is not a
 composite of multiple dimensions — coupling_balance is the single architecture
-fitness measure; structural rules (forbidden deps, layering, cycles, encapsulation)
-are pass/fail gates reported separately.
+fitness measure. Structural rules (forbidden deps, layering, cycle-as-fail) and
+baseline-delta metrics (`cycle`, `encapsulation`, `coverage`, `unbalanced_edge`)
+are reported and gated separately.
 
 Output is deterministic — byte-identical across a double-run. The scorecard is
 report-only by default; the opt-in
@@ -248,10 +258,12 @@ synthesised score fail the run (exit 1) on a band floor or score drop.
 ## LLM narrative (analyze --llm)
 
 `archfit analyze --llm` runs the full deterministic pipeline, synthesizes the
-scorecard, and feeds **both** to the LLM for a holistic narrative appended after
-the deterministic output. It is **off-gate**: the narrative is advisory only and
-never affects the gate verdict (enforced by the LLM-off-gate invariant in
-`internal/arch_test.go`).
+scorecard, builds the shared repository evidence pack, and feeds those cited
+facts to the LLM for an architect review after the deterministic output. Text and
+Markdown runs append the review to stdout; `json`, `sarif`, and `scorecard` runs
+write it to stderr so machine stdout stays parseable. It is **off-gate**: the
+review is advisory only and never affects the gate verdict, findings, metrics, or
+scorecard (enforced by the LLM-off-gate invariant in `internal/arch_test.go`).
 
 ```sh
 archfit analyze --llm --config .archfit.yaml
@@ -259,12 +271,16 @@ archfit analyze --llm --no-cache --config .archfit.yaml
 ```
 
 The model is constrained by a Balanced-Coupling-grounded system prompt and a
-strict JSON schema. It may only:
+strict JSON schema. Each dimension, risk, and suggestion carries `claim_type`
+(`deterministic_fact`, `semantic_interpretation`, `recommendation`, or
+`unknown`) plus citations via `finding_ids`, `metric_ids`, or `evidence_refs`.
+It may only:
 
 - narrate, prioritize, and contextualize findings **already present** in the
   evidence;
 - classify volatility / subdomain for modules that appear in the evidence;
-- propose dimension bands for dimensions named in the evidence.
+- propose dimension bands for dimensions named in the evidence;
+- cite only supplied finding IDs, metric IDs, and repository evidence IDs.
 
 A post-verify pass enforces the rubric vocabulary and drops fabricated values
 (dropped counts logged to stderr):
@@ -278,12 +294,19 @@ A post-verify pass enforces the rubric vocabulary and drops fabricated values
 - **Module/risk references** — dropped if the module name does not appear in the
   deterministic evidence. Dynamic/lazy-import modules are valid evidence even when
   they carry no static finding.
+- **Claim metadata** — dropped if `claim_type` is outside the fixed vocabulary or
+  if a recommendation lacks at least one supported `finding_id`, `metric_id`, or
+  `evidence_ref`.
 
-The model **cannot** invent gate violations, module names, or band labels.
+The model **cannot** invent gate violations, module names, band labels, finding
+IDs, metric IDs, or evidence refs.
 
 Dynamic/lazy imports (detected by TypeScript and Python extractors as
 `dynamic_imports`) are included in the review prompt as a hidden-coupling risk
 section so the narrative can flag coupling the static dependency graph misses.
+The same is true for `connascence.roadmap` and `runtime_async_edges`: the review
+may explain them or propose follow-up config/docs, but it cannot convert them into
+scored facts, gate findings, or baseline changes.
 
 **Layer intent:** when layers are declared, `forbidden_layer_direction` gates
 deterministically. When they are not, `archfit config enrich` can propose a layer
@@ -300,7 +323,7 @@ Flags (in addition to the standard `analyze` flags):
 - `--no-cache` — bypass archfit caches: extractor facts and the LLM response
   cache at `.archfit-cache/llm/`. See [caching.md](caching.md).
 
-## archfit config init --llm (full draft)
+## archfit config init --llm (full draft or direct apply)
 
 `archfit config init --llm` is a one-shot LLM drafter for a whole `.archfit.yaml`. It
 discovers project structure, classifies every module (subdomain, volatility,
@@ -309,14 +332,15 @@ renders the entire config in **plan mode** — every suggestion is a commented Y
 line, nothing is applied.
 
 ```sh
-archfit config init --llm --root . -o .archfit-autopilot.yaml
+archfit config init --llm --root . -o .archfit-init-llm.yaml
 archfit config init --llm --root . -o -   # stream the draft to stdout
 ```
 
 Direct it to a side file with `-o` to keep it review-only: review the draft, then
-move approved fields into the live config deliberately, or re-run with `--apply` to
-write approved values live. Needs `ai:` configured (provider + model) and the
-provider's API key — see [LLM enrichment](llm-enrich.md).
+move approved fields into the live config deliberately. `--apply` skips that review
+step and writes the LLM classifications live into the generated config, so inspect
+and edit the file before using it as a gate. Needs `ai:` configured (provider +
+model) and the provider's API key — see [LLM enrichment](llm-enrich.md).
 
 Flags:
 
@@ -355,9 +379,11 @@ Mode behaviour:
 - `--llm` (plan): classification lines are emitted as YAML comments
   (`# subdomain: core  # llm-suggested — review and uncomment`). Uncommenting
   activates them; the file is safe to use as a gate without reviewing them.
-- `--llm --apply`: `subdomain`, `volatility`, and `layer` are written as live
-  fields. `layer` is written only when the value is in `layers:`; otherwise it
-  stays a comment. Module keys are never renamed automatically.
+- `--llm --apply`: `subdomain`, `volatility`, `owner`, `role`, and `layer` are written
+  as live fields from the model response. `layer` is written only when the value
+  is in `layers:`; otherwise it stays a comment. Module keys are never renamed
+  automatically. Treat the output as unreviewed until a human checks the cited
+  rationale.
 - `--apply` without `--llm` is an error.
 
 Flags:

@@ -31,7 +31,7 @@ const (
 	// schemaVersion participates in every cache key (fact-cache.md D3);
 	// bump it whenever the serialized fact shape changes so a new binary
 	// never misreads old blobs.
-	schemaVersion = "1"
+	schemaVersion = "2"
 
 	entryExt = ".json"
 )

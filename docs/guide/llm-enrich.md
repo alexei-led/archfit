@@ -1,4 +1,4 @@
-# LLM enrichment (off-gate): semantic labels, module roles, explain --llm
+# LLM enrichment (off-gate): semantic labels, draft config, analyze/explain --llm
 
 archfit's verdict is deterministic: `analyze` and `analyze --gate` never call a
 model. LLM commands are opt-in, off-gate drafting tools. Their output affects
@@ -70,6 +70,9 @@ labels:
     to: window_state
     strength: model
     rationale: "WindowState dataclasses cross the boundary"
+    evidence_refs:
+      - api:window_state
+    basis: semantic_judgment
     evidence_hash: 4f1c... # written by enrich; verified by analyze
     confidence: medium
     provenance: llm
@@ -81,6 +84,13 @@ labels:
   model's judgment. If a human re-reads the code and takes ownership of the
   classification, set `provenance: human` to restore full confidence.
 - A label pins all edges of the ordered module pair (`from` → `to`).
+- `evidence_refs` lists repository evidence IDs the model cited. It may be
+  empty when the judgment rests only on sample dependency paths or endpoint
+  snippets, because those samples are prompt evidence but do not yet have stable
+  evidence-pack IDs.
+- `basis` is required on new LLM draft labels. Use `semantic_judgment` for
+  coupling-strength judgments; `deterministic_fact` is reserved for entries that
+  only restate tool/config facts.
 - `evidence_hash` fingerprints the pair's import-graph edges at enrich time.
   On full runs, `analyze` recomputes it: a mismatch means the dependency surface
   changed since review — the label is ignored and a `labels/stale` advisory
@@ -109,6 +119,47 @@ Approved `provenance: llm` labels with `confidence: medium` or `confidence: low`
 lower `coupling_balance` confidence by one band. They can increase the scored
 fraction, but they cannot make the confidence higher than the static baseline.
 
+## Architecture evidence pack
+
+LLM draft commands share a bounded evidence pack so prompts cite the same source
+IDs instead of ad-hoc raw dumps. The pack is off-gate input only; deterministic
+analysis remains authoritative.
+
+Evidence IDs use stable prefixes:
+
+- `doc:<path>` — `README*`, `docs/design/**`, `docs/architecture/**`, ADR-like
+  docs (`docs/adr/**`, `docs/adrs/**`, `docs/decisions/**`, or matching names).
+- `comment:<path>` — package-level Go comments.
+- `api:<module>` — configured `public:` globs and exported Go names found under
+  module paths.
+- `config:<path>` — bounded `.archfit.yaml` snippets with secret-like values
+  redacted.
+- `diag:<source>#<n>` — deterministic command summaries such as discovered
+  language/module counts, update drift counts, or enrich candidate counts.
+
+The builder sorts sources deterministically, caps each source type separately,
+truncates each item, skips hidden/vendor/cache directories, and excludes
+secret-like paths such as `.env`, credentials, tokens, keys, certificates, and
+files whose names contain `secret`. Code-derived package comments and exported
+names are Go-only today, plus configured `public:` globs for any language.
+TypeScript, Python, and Rust LLM prompts still get docs, config snippets,
+diagnostics, module names, dependency sample paths, and abstained-edge snippets,
+but those samples do not yet have stable evidence-pack IDs. This is why label
+drafts may have `evidence_refs: []` even when their rationale is based on sample
+paths/snippets. This is a guardrail, not secret scanning: do
+not run provider-backed LLM commands on a repo whose docs, comments, or public API
+text contain secrets you would not send to that provider. Prompts require models
+to cite these IDs in structured `evidence_refs` for every proposed module field,
+label draft, owner, volatility, subdomain, `external_systems` entry, and rule
+change. Label drafts may use `evidence_refs: []` when the prompt's sample paths
+or snippets are the cited evidence. Each proposal also carries
+`basis: deterministic_fact` when it only restates tool/config evidence, or
+`basis: semantic_judgment` when the model is making an architectural judgment.
+Draft files and update reports keep that metadata for review, while default plan mode still
+leaves config unchanged. `analyze --llm` uses the same pack alongside
+deterministic finding IDs and metric IDs so the review can cite exactly what it is
+interpreting.
+
 ## Cost and token expectations
 
 No CI gate run has LLM cost. After labels and config fields are committed,
@@ -117,18 +168,22 @@ No CI gate run has LLM cost. After labels and config fields are committed,
 First-run enrich cost scales with candidate count and evidence size:
 
 - `config enrich labels` sends up to 30 module pairs per request with module
-  names, current heuristic strength, edge count, and sample dependency paths.
+  names, current heuristic strength, edge count, sample dependency paths, and the
+  shared evidence pack.
 - `config enrich abstained` sends up to 10 module pairs per request, caps a run
-  at 100 abstained edges, and includes up to 3 source snippets per pair. It is
-  more token-heavy than the summary label pass.
+  at 100 abstained edges, includes up to 3 source snippets per pair, and includes
+  the shared evidence pack. It is more token-heavy than the summary label pass.
 - `config init --llm` and `config update --llm` scale mostly with module count
-  and the README/docs/API evidence available for each module.
+  and bounded README/docs/comment/API/config/diagnostic evidence. They may also
+  propose review-only `external_systems` entries when evidence names a vendor seam.
 
 Responses are cached by provider, model, system prompt, and user prompt under
 `.archfit-cache/llm/`. Re-running the same command with the same evidence should
 reuse the cache; `--no-cache` bypasses reads and writes and may spend tokens
-again. Provider prices change, so use the current provider price sheet for dollar
-estimates rather than hard-coding costs in CI policy.
+again. The cache stores provider responses, not prompts, but a response can still
+quote repository text. Keep `.archfit-cache/` untracked unless those responses are
+safe to share. Provider prices change, so use the current provider price sheet for
+dollar estimates rather than hard-coding costs in CI policy.
 
 ## Determinism
 
@@ -136,9 +191,28 @@ The gate stays reproducible: labels are plain YAML read deterministically, and
 the arch ring test (`TestArchImports/llm_ring_unreachable_from_internal`)
 proves at CI time that no internal package can even import the LLM layer.
 Enrich itself is replayable through the content-addressed response cache at
-`.archfit-cache/llm/` (ignored by git by default; commit it if you want
-byte-identical enrich replay across machines). `--no-cache` forces fresh
-calls.
+`.archfit-cache/llm/` (ignored by git by default; commit it only when the cached
+responses contain no sensitive repository text and you want byte-identical enrich
+replay across machines). `--no-cache` forces fresh calls.
+
+## analyze --llm — cited architect review
+
+`archfit analyze --llm` keeps the deterministic `analyze` output first, then emits
+an advisory architect review. Text and Markdown runs append the review to stdout;
+`json`, `sarif`, and `scorecard` runs write it to stderr so stdout remains
+parseable. The review schema requires each dimension, top risk, and subdomain
+suggestion to state a `claim_type`:
+
+- `deterministic_fact` — a direct restatement of tool/config evidence.
+- `semantic_interpretation` — architectural judgment over cited evidence.
+- `recommendation` — suggested action or classification; must cite at least one
+  `finding_id`, `metric_id`, or repository `evidence_ref`.
+- `unknown` — evidence is too weak to classify.
+
+Post-verification drops fabricated module names, unsupported bands/subdomains,
+unknown claim types, unsupported citations, and uncited recommendations. This can
+change only the appended review text; it never mutates verdicts, findings,
+metrics, scores, config, labels, or the gate.
 
 ## config enrich — owner, volatility, subdomain (draft -> review -> apply)
 
@@ -166,12 +240,15 @@ archfit config enrich owner --apply  # writes approved entries into modules.<nam
   `.archfit-volatility.yaml`.
 - `subdomain` suggests `core` / `supporting` / `generic` per module into
   `.archfit-subdomains.yaml`.
+- Every owner, volatility, and subdomain draft includes `rationale`, `evidence_refs`,
+  and `basis` so reviewers can see what facts were cited and whether the entry is
+  deterministic evidence or semantic judgment.
 - `--apply` writes only `status: approved` entries into `modules.<name>` and
   **never overwrites a live field** — drafts for already-set fields are skipped.
 - These never touch coupling strength (that is the `labels` subcommand) and never
   affect `analyze`.
 
-## config init --llm — full config draft (review-only)
+## config init --llm — full config draft or direct apply
 
 `archfit config init --llm` drafts an entire `.archfit.yaml` in one shot: it discovers
 structure, classifies every module (subdomain, volatility, layer, and `role`),
@@ -179,24 +256,33 @@ drafts an owner per module, and renders the whole config in plan mode — every
 suggested field commented.
 
 ```sh
-archfit config init --llm --root . -o .archfit-autopilot.yaml
+archfit config init --llm --root . -o .archfit-init-llm.yaml
 archfit config init --llm --root . -o -   # stream to stdout
 ```
 
 Direct it to a side file with `-o` to keep it review-only: review the draft,
-then move approved fields into the live config deliberately, or re-run with
-`--apply` to write approved values live. Same provider, cache, and key handling
-as the other LLM commands.
+then move approved fields into the live config deliberately. `--apply` skips that
+review handoff and writes the LLM classifications live into the generated config,
+so inspect and edit the file before using it as a gate. Same provider, cache, and
+key handling as the other LLM commands.
 
-## config update --llm — subdomain and volatility proposals
+## config update --llm — cited module and rule proposals
 
 `archfit config update --llm` adds a semantic review section to the normal config
 drift report. It proposes per-module `subdomain: core|supporting|generic`, the
 derived volatility it would imply, layer suggestions, and optional architectural
 `role` values (`composition_root|adapter|core|shared_model|generated|test`),
 with rationale tied to README, module names, docs headings, and public API shape.
+Each module proposal includes `basis` and `evidence_refs`.
+
+The same response may include review-only rule suggestions for deterministic
+config mechanisms only: `forbidden_dependency`, `forbidden_role_dependency`,
+`public_api_max`, `public_api_change`, and `coupling.gate` tuning. Unsupported
+rule types and suggestions missing evidence refs are rejected instead of being
+written as half-understood config.
+
 The proposal is a diff for human review; it does not auto-apply LLM semantic
-judgments into `.archfit.yaml`.
+judgments or rule suggestions into `.archfit.yaml`.
 
 Synthetic modules are valid proposal targets, so large Rust crate trees and Go
 workspace members can get differentiated role/volatility review instead of
@@ -211,16 +297,22 @@ is fully offline.
 
 ## Scope guard
 
-Every LLM feature is off-gate and draft-first.
+Every LLM feature is off-gate and draft-first. LLM output may explain
+`connascence.roadmap`, `dynamic_imports`, or `runtime_async_edges`, but those
+blocks remain report-only unless a deterministic extractor later supplies the
+missing fact. A narrative cannot create a connascence category, score input,
+baseline delta, or gate finding.
 
-`archfit config init --llm` suggests `subdomain`, `volatility`, `layer`, and
-`role` for discovered modules; `archfit config update --llm` emits review-only
-role and volatility proposals; `config enrich` drafts coupling labels plus the
-`owner`, `volatility`, and `subdomain` subcommands. None of them gate. Without
+`archfit config init --llm` suggests `subdomain`, `volatility`, `owner`, `layer`,
+and `role` for discovered modules; `archfit config update --llm` emits
+review-only module and rule proposals; `config enrich` drafts coupling labels plus
+the `owner`, `volatility`, and `subdomain` subcommands. None of them gate. Without
 `--apply` the suggestions are commented, printed, or held in a draft file and
-require human review before they become live fields. For `config init` and the
-module-field `config enrich` commands, `--apply` can write reviewed values into
-`.archfit.yaml`; for `config update --llm`, LLM role proposals remain review-only
-even when structural `--apply` is used. Existing field values are never
-overwritten. `analyze` is unaffected by these flags; it only reads the final
-config and approved labels.
+require human review before they become live fields. `config init --llm --apply`
+writes model suggestions live directly into the generated config; treat that file
+as unreviewed until a human checks it. Module-field `config enrich --apply` is
+different: it reads only `status: approved` entries from the draft files and pins
+those reviewed values into `.archfit.yaml`. For `config update --llm`, LLM
+semantic and rule proposals remain review-only even when structural `--apply` is
+used. Existing field values are never overwritten. `analyze` is unaffected by
+these flags; it only reads the final config and approved labels.

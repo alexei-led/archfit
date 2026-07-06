@@ -52,9 +52,54 @@ func writeDistanceConfidence(b *strings.Builder, d diagnostic.Diagnostic) {
 	} else {
 		b.WriteString("- `deploy_unit_source`: not reported (auto-detect or config-authored)\n")
 	}
+	if ce := d.ClassifiedEdges; ce != nil {
+		if ce.ConnectedModules > 0 {
+			fmt.Fprintf(b, "- connected modules in coupling sample: %d\n", ce.ConnectedModules)
+		}
+		if len(ce.ByDistanceBasis) > 0 {
+			fmt.Fprintf(b, "- distance basis: %s\n", formatCounts(ce.ByDistanceBasis))
+		}
+		if dc := ce.DistanceCompression; dc != nil {
+			fmt.Fprintf(b, "- distance rungs implemented: %s; omitted/compressed: %s\n", formatInts(dc.ImplementedRungs), formatInts(dc.OmittedRungs))
+			if dc.Rationale != "" {
+				fmt.Fprintf(b, "- distance compression: %s\n", dc.Rationale)
+			}
+			for _, r := range dc.OmittedRungReasons {
+				fmt.Fprintf(b, "- D=%d compressed: %s\n", r.Rung, r.Reason)
+			}
+		}
+		if ce.DeclaredExternal > 0 {
+			fmt.Fprintf(b, "- declared external-system edges scored at D=10: %d\n", ce.DeclaredExternal)
+		}
+		if ce.External > 0 {
+			fmt.Fprintf(b, "- undeclared external/library edges excluded: %d\n", ce.External)
+		}
+		if ce.CloneOnlyScored > 0 || ce.CloneOnlyAdvisory > 0 {
+			fmt.Fprintf(b, "- clone-only duplicated knowledge: %d scored, %d advisory-only\n", ce.CloneOnlyScored, ce.CloneOnlyAdvisory)
+		}
+		if tr := ce.TailRisk; tr != nil {
+			fmt.Fprintf(b, "- tail risk: worst balance %d/10; lower-decile balance %d/10; high-or-worse edges %d/%d (%d%%); critical %d; distributed-monolith %d\n",
+				tr.WorstBalance, tr.LowerDecileBalance, tr.HighOrWorseEdges, ce.Scored, tr.HighOrWorseSharePct, tr.CriticalEdges, tr.DistributedMonolithEdges)
+			if tr.CloneOnlyScored > 0 {
+				fmt.Fprintf(b, "- clone-only tail: worst balance %d/10; high-or-worse %d/%d scored clone-only pairs\n",
+					tr.CloneOnlyWorstBalance, tr.CloneOnlyHighOrWorseEdges, tr.CloneOnlyScored)
+			}
+		}
+	}
 	if unresolved > 0 {
 		fmt.Fprintf(b, "- unresolved modules: %d (edges to unknown modules use conservative distance)\n", unresolved)
 	}
+}
+
+func formatInts(values []int) string {
+	if len(values) == 0 {
+		return "-"
+	}
+	parts := make([]string, len(values))
+	for i, v := range values {
+		parts[i] = fmt.Sprintf("D=%d", v)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // fileFactsTopN is the number of modules listed per axis in the structural-facts section.
@@ -208,6 +253,57 @@ func writeSyntaxSurface(b *strings.Builder, facts []diagnostic.SyntaxFact) {
 	}
 }
 
+// writeConnascenceSummary prints the report-only deterministic connascence block.
+// It is deliberately compact: counts by kind/source plus explicit unmeasured
+// categories, with no score language.
+func writeConnascenceSummary(b *strings.Builder, r *diagnostic.ConnascenceReport) {
+	if r == nil {
+		return
+	}
+	b.WriteString("\n## Connascence evidence (deterministic)\n\n")
+	b.WriteString("Report-only. Static facts only; semantic and dynamic categories without deterministic evidence stay unmeasured.\n\n")
+	fmt.Fprintf(b, "- edges with evidence: %d\n", r.EdgesWithEvidence)
+	fmt.Fprintf(b, "- abstained edges: %d\n", r.AbstainedEdges)
+	fmt.Fprintf(b, "- total evidence facts: %d\n", r.TotalEvidence)
+	if len(r.ByKind) > 0 {
+		fmt.Fprintf(b, "- by kind: %s\n", formatCounts(r.ByKind))
+	}
+	if len(r.BySource) > 0 {
+		fmt.Fprintf(b, "- by source: %s\n", formatCounts(r.BySource))
+	}
+	if len(r.Unmeasured) > 0 {
+		fmt.Fprintf(b, "- unmeasured: %s\n", strings.Join(r.Unmeasured, ", "))
+	}
+	if len(r.Roadmap) > 0 {
+		fmt.Fprintf(b, "- roadmap: %s\n", formatConnascenceRoadmap(r.Roadmap))
+	}
+}
+
+func formatConnascenceRoadmap(items []diagnostic.ConnascenceRoadmapItem) string {
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		part := item.Kind + "=" + item.CurrentStatus
+		if len(item.RelatedSignals) > 0 {
+			part += " (signals " + strings.Join(item.RelatedSignals, "/") + ")"
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func formatCounts(counts map[string]int) string {
+	keys := make([]string, 0, len(counts))
+	for k := range counts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%d", k, counts[k]))
+	}
+	return strings.Join(parts, ", ")
+}
+
 // dynamicImportTopN is the number of modules listed in the dynamic-imports section.
 const dynamicImportTopN = 10
 
@@ -247,6 +343,68 @@ func writeDynamicImports(b *strings.Builder, dyn []diagnostic.DynamicImport) {
 		}
 		fmt.Fprintf(b, "- **%s**: %d (e.g. %s)\n", d.Module, d.Count, sampleSites(d.Sites))
 	}
+}
+
+// runtimeAsyncTopN is the number of module→runtime-target links listed in the
+// runtime async section.
+const runtimeAsyncTopN = 10
+
+// runtimeAsyncSampleN is the number of sample sites shown per runtime edge.
+const runtimeAsyncSampleN = 3
+
+// writeRuntimeAsync prints the report-only runtime async bridge block. The
+// module rollup preserves the historical view; the relationship-level edges add
+// a concrete source-module → runtime-target fact set for future runtime-distance
+// review without changing today's score.
+func writeRuntimeAsync(b *strings.Builder, modules []diagnostic.RuntimeAsyncModule, edges []diagnostic.RuntimeAsyncEdge) {
+	if len(modules) == 0 && len(edges) == 0 {
+		return
+	}
+	total := 0
+	for _, m := range modules {
+		total += m.Count
+	}
+	b.WriteString("\n## Runtime async bridges (report-only)\n\n")
+	b.WriteString("Report-only. Runtime async evidence is grouped by module and by concrete\n")
+	b.WriteString("module→runtime-target relation; it never changes distance, score, or gate verdicts.\n\n")
+	fmt.Fprintf(b, "%d sites across %d modules", total, len(modules))
+	if len(edges) > 0 {
+		fmt.Fprintf(b, " and %d module→target relation(s)", len(edges))
+	}
+	b.WriteString(". Full list in `--format json`.\n\n")
+
+	ranked := make([]diagnostic.RuntimeAsyncEdge, len(edges))
+	copy(ranked, edges)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].Count != ranked[j].Count {
+			return ranked[i].Count > ranked[j].Count
+		}
+		if ranked[i].FromModule != ranked[j].FromModule {
+			return ranked[i].FromModule < ranked[j].FromModule
+		}
+		if ranked[i].Target != ranked[j].Target {
+			return ranked[i].Target < ranked[j].Target
+		}
+		return ranked[i].IntegrationKind < ranked[j].IntegrationKind
+	})
+	for i, e := range ranked {
+		if i == runtimeAsyncTopN {
+			fmt.Fprintf(b, "- ... +%d more relations (use `--format json`)\n", len(ranked)-runtimeAsyncTopN)
+			break
+		}
+		fmt.Fprintf(b, "- **%s** → `%s` [%s]: %d (e.g. %s)\n", e.FromModule, mdTableCell(e.Target), e.IntegrationKind, e.Count, runtimeAsyncSites(e.Sites))
+	}
+}
+
+func runtimeAsyncSites(sites []diagnostic.RuntimeAsyncSite) string {
+	parts := make([]string, 0, runtimeAsyncSampleN)
+	for i, s := range sites {
+		if i == runtimeAsyncSampleN {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s:%d[%s]", s.File, s.Line, s.IntegrationKind))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // writeDeprecatedDeps prints the report-only locally-declared deprecation/

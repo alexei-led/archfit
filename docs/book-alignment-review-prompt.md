@@ -1,30 +1,31 @@
 # archfit book-alignment analysis prompt
 
-Use this prompt from the archfit repo root. It is for updating the current book-alignment
-analysis, not for creating a new report tree.
+Use this prompt from the archfit repo root.
+
+It is self-contained. Do not rely on old reports, old verdicts, or archived artifacts.
+Treat any prior review as stale unless you re-derive the claim from the book and the current code.
 
 ## Prompt
 
 You are an expert software architect auditing **archfit** against Vlad Khononov's
 **_Balancing Coupling in Software Design_**.
 
-Your job is to update this existing report in place:
+Your job is to produce **one self-contained markdown review** of the current repo.
 
-- `reports/book-alignment-review-2026-07-05/00-REVIEW.md`
-
-Do **not** create more analysis documents. If you need scratch output, put only raw,
-regenerable artifacts under the existing `reports/book-alignment-review-2026-07-05/artifacts/`
-directory and cite them from the report. Keep the final output focused in the single report above.
+Do **not** assume any previous `00-REVIEW.md`, archived report tree, or old analysis note is correct.
+Do **not** update or depend on old report files.
+Do **not** create a report directory.
+If you need scratch data, use temporary local files outside the repo or ephemeral command output.
 
 ## Core question
 
-How complete is archfit as a practical tool for applying the book?
+How complete is archfit as a practical tool for applying the book today?
 
-Answer by extracting every book metric, value, scale, formula, and useful adjacent metric, then
-checking one by one whether archfit:
+Answer by extracting the book's metrics, values, scales, formulas, and useful adjacent
+methods, then checking one by one whether current archfit:
 
 1. measures it deterministically from code facts,
-2. can infer or improve it semantically through LLM-assisted review/configuration,
+2. can infer or improve it through reviewable LLM-assisted configuration,
 3. abstains honestly when it cannot know,
 4. keeps the deterministic gate reproducible.
 
@@ -45,30 +46,36 @@ Extract and cite book evidence by chapter/section. Read at least:
 - Ch13 — practical usage
 - appendices — numeric scales, values, or summary tables
 
-Old reports and plans are context only. Do not trust them without re-reading code and the book.
-
 ## Current implementation to inspect
 
 Start with:
 
+- `README.md`
 - `CLAUDE.md`
 - `.archfit.yaml`
+- `cmd/archfit/`
 - `internal/model/coupling/`
 - `internal/classify/`
 - `internal/score/`
 - `internal/metrics/`
 - `internal/rules/`
 - `internal/extract/`
-- `cmd/archfit/`
-- `internal/labels/`, `.archfit-labels.yaml` handling if present
-- LLM/config surfaces: `config init --llm`, `config update --llm`, `config enrich labels`,
-  `config enrich abstained`, `analyze --llm`, `review`, `explain`
+- `internal/labels/`
+- `.archfit-labels.yaml` handling if present
+- LLM/config surfaces:
+  - `config init --llm`
+  - `config update --llm`
+  - `config enrich labels`
+  - `config enrich abstained`
+  - `config enrich owner|subdomain|volatility`
+  - `analyze --llm`
+  - `explain`
 
 Find exact implementation evidence as `file:line`.
 
 ## Required analysis shape
 
-Update `00-REVIEW.md` so it contains these focused sections.
+Produce one markdown review with these sections.
 
 ### 1. Verdict
 
@@ -79,7 +86,7 @@ Short verdict. Include two scores:
 
 ### 2. Book metric inventory
 
-List every extracted book metric, value, formula, scale, or checkable method one by one.
+List every extracted book metric, value, formula, scale, or checkable method.
 
 For each row include:
 
@@ -101,8 +108,7 @@ For each row include:
 - archfit evidence (`file:line`) or explicit absence evidence
 - gap / next action
 
-Do not collapse distinct values. For example, strength levels, distance levels, volatility levels,
-formula terms, connascence degrees, and Ch10 examples should be separate enough to audit.
+Do not collapse distinct values.
 
 ### 3. Current metric and formula implementation
 
@@ -119,49 +125,30 @@ For each archfit metric/formula, list:
 
 ### 4. Per-language extraction matrix
 
-Analyze each language separately: Go, TypeScript/JavaScript, Python, Rust.
+Analyze Go, TypeScript/JavaScript, Python, and Rust separately.
 
-For every book/core or adjacent metric, state:
+For each core or adjacent metric, state:
 
 - whether archfit can extract the needed facts for that language
 - tool used today
-- file paths in `internal/extract/` or related code
+- implementation path in `internal/extract/` or related code
 - confidence level
 - what remains `n/a` or abstained
 - whether a new tool would materially help
 
-Prefer existing tools. Consider a new tool only if it provides deterministic, reproducible facts
-with machine-readable output and fits CI/cache use. If recommending a new tool, state exactly what
-book value it would measure and why existing tools cannot.
+Prefer existing tools. Recommend a new tool only when it adds deterministic,
+reproducible, machine-readable evidence the current stack cannot provide.
 
 ### 5. Deterministic vs semantic split
 
 Separate facts that must stay deterministic from facts that need semantic judgment.
 
-Deterministic/syntactic candidates include things like import edges, call/reference edges, public vs
-internal access, DTO/data-shape detection, const/var/function use, cycles, fan-in/out, clone pairs,
-complexity, and source-location evidence.
-
-Semantic/LLM candidates include things like architectural intent, subdomain role, volatility from
-business context, ownership meaning, ambiguous integration strength, module boundary naming, runtime
-or lifecycle coupling meaning, and config quality.
-
-The LLM may read:
-
-- architecture docs
-- ADR/ARD documents
-- design docs
-- README and guide docs
-- comments and code as text
-- existing config and labels
-
-The LLM may propose config, labels, evidence packs, and explanations. It must not silently change a
-gate result at analysis time. Any semantic result that affects scoring must become reviewable,
-pinned, deterministic input first.
+Any semantic result that affects scoring must become reviewable, pinned,
+deterministic input first.
 
 ### 6. Gap list and next waves
 
-Produce a prioritized gap list. Each gap must include:
+Each gap must include:
 
 - severity: P1/P2/P3
 - book reference
@@ -178,11 +165,13 @@ Run and record:
 make build
 .bin/archfit doctor
 make test
-.bin/archfit analyze --full --json --config .archfit.yaml > reports/book-alignment-review-2026-07-05/artifacts/archfit-current.json
+.bin/archfit analyze --full --json --config .archfit.yaml
+.bin/archfit analyze --gate --full --config .archfit.yaml
 ```
 
-If time permits, run one representative repo per language from the existing corpus and update only
-the empirical appendix in `00-REVIEW.md`. Do not create per-language report docs.
+If time permits, run one representative repo per language from the existing corpus.
+Keep any extra findings inside the same final review.
+Do not create per-language report docs.
 
 ## Evidence rules
 
@@ -195,11 +184,10 @@ the empirical appendix in `00-REVIEW.md`. Do not create per-language report docs
 
 ## Output contract
 
-Modify only:
+Return one self-contained markdown review in your final response.
 
-- `reports/book-alignment-review-2026-07-05/00-REVIEW.md`
-- optional regenerated raw artifacts under `reports/book-alignment-review-2026-07-05/artifacts/`
-
-Do not create new report directories, new analysis markdown files, or broad research notes.
+Do not depend on old report paths.
+Do not write under `docs/archived/reports/`.
+Do not create new analysis directories.
 
 End with a short validation section listing commands run, pass/fail status, and any unverified gaps.

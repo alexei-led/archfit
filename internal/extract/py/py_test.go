@@ -26,6 +26,7 @@ const (
 	modMyappBPrivate = "module:myapp.b._internal.impl"
 	modPub           = "module:pub"
 	hintIntrusive    = "intrusive"
+	sourceGrimp      = "grimp"
 )
 
 func TestExtract_Parse(t *testing.T) {
@@ -76,6 +77,12 @@ func TestExtract_Parse(t *testing.T) {
 	if got := edges[k1].StrengthHint; got != "" {
 		t.Errorf("edge %v: StrengthHint = %q, want empty", k1, got)
 	}
+	if !hasPyConnascence(edges[k1], graph.ConnascenceName) {
+		t.Errorf("edge %v: connascence = %+v, want name", k1, edges[k1].ConnascenceHints)
+	}
+	if hasPyConnascence(edges[k1], graph.ConnascenceType) {
+		t.Errorf("edge %v: connascence = %+v, must not invent type", k1, edges[k1].ConnascenceHints)
+	}
 
 	// Edge myapp.a → myapp.b._internal.impl should be "uses_internal" and carry
 	// an "intrusive" strength hint (PEP 8-private segment "_internal").
@@ -86,6 +93,18 @@ func TestExtract_Parse(t *testing.T) {
 	if got := edges[k2].StrengthHint; got != hintIntrusive {
 		t.Errorf("edge %v: StrengthHint = %q, want %q", k2, got, hintIntrusive)
 	}
+	if !hasPyConnascence(edges[k2], graph.ConnascenceName) {
+		t.Errorf("edge %v: connascence = %+v, want private-name evidence", k2, edges[k2].ConnascenceHints)
+	}
+}
+
+func hasPyConnascence(e graph.Edge, kind string) bool {
+	for _, h := range e.ConnascenceHints {
+		if h.Kind == kind && h.Source == sourceGrimp {
+			return true
+		}
+	}
+	return false
 }
 
 func TestExtract_WithUnresolved(t *testing.T) {

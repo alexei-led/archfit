@@ -10,9 +10,11 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 )
 
-// Test-local constants to satisfy goconst across the annotation test file.
+// Test-local constants to satisfy goconst across initcfg tests.
 const (
 	testAnnVolatility  = "low"
+	testEvidenceREADME = "doc:README.md"
+	testExtractPath    = "internal/extract/**"
 	testSanitizeFooBar = "foo bar"
 )
 
@@ -33,7 +35,7 @@ func annotationBaseCfg() DiscoveredConfig {
 			},
 			{
 				Name:  adapterExtract,
-				Paths: []string{"internal/extract/**"},
+				Paths: []string{testExtractPath},
 				Layer: layerAdapter,
 			},
 		},
@@ -117,6 +119,125 @@ func TestRender_PlanMode_CommentedAnnotation(t *testing.T) {
 	}
 	// Round-trip: comments are inert — config.Load should succeed.
 	roundTrip(t, out)
+}
+
+func TestRender_PlanMode_RendersAnnotationMetadata(t *testing.T) {
+	cfg := annotationBaseCfg()
+	ann := map[string]ModuleAnnotation{
+		testClassify: {
+			Subdomain:    layerCore,
+			Volatility:   testAnnVolatility,
+			Rationale:    "docs describe the classify boundary",
+			EvidenceRefs: []string{testEvidenceREADME},
+			Basis:        DraftBasisSemanticJudgment,
+		},
+	}
+	out := Render(cfg, ann, false)
+	for _, want := range []string{
+		"# basis: semantic_judgment",
+		"# evidence_refs: " + testEvidenceREADME,
+		"# rationale: docs describe the classify boundary",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("plan mode missing metadata %q:\n%s", want, out)
+		}
+	}
+	roundTrip(t, out)
+}
+
+func TestRender_PlanMode_RendersRuleSuggestionsAsComments(t *testing.T) {
+	cfg := annotationBaseCfg()
+	ann := map[string]ModuleAnnotation{
+		testClassify: {
+			RuleSuggestions: []RuleSuggestion{{
+				ID:           "no-classify-to-extract",
+				Type:         "forbidden_dependency",
+				Gate:         "warn",
+				From:         "internal/classify/**",
+				To:           testExtractPath,
+				Rationale:    "classify should stay core",
+				EvidenceRefs: []string{testEvidenceREADME},
+				Basis:        DraftBasisSemanticJudgment,
+			}},
+		},
+	}
+	out := Render(cfg, ann, false)
+	for _, want := range []string{
+		"# LLM rule suggestions",
+		"# - type: forbidden_dependency",
+		"#   id: no-classify-to-extract",
+		"#   source_module: classify",
+		"#   evidence_refs: " + testEvidenceREADME,
+		"#   basis: semantic_judgment",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("rule suggestion output missing %q:\n%s", want, out)
+		}
+	}
+	loaded := roundTrip(t, out)
+	if len(loaded.Rules) != 1 {
+		t.Fatalf("commented rule suggestions must stay inert, loaded rules = %+v", loaded.Rules)
+	}
+}
+
+func TestRenderAppliedLLMReview_PrefixesAnnotationMetadataWithPlus(t *testing.T) {
+	r := UpdateReport{Unclassified: []string{testClassify}}
+	ann := map[string]ModuleAnnotation{
+		testClassify: {
+			Subdomain:    layerCore,
+			Volatility:   testAnnVolatility,
+			Basis:        DraftBasisSemanticJudgment,
+			EvidenceRefs: []string{testEvidenceREADME},
+			Rationale:    "docs describe the classify boundary",
+		},
+	}
+	out := RenderAppliedLLMReview(r, ann)
+	for _, want := range []string{
+		"+ subdomain: " + layerCore,
+		"+ volatility: " + testAnnVolatility,
+		"+ basis: semantic_judgment",
+		"+ evidence_refs: " + testEvidenceREADME,
+		"+ rationale: docs describe the classify boundary",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("review output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRender_PlanMode_RendersExternalSystemSuggestionsAsComments(t *testing.T) {
+	cfg := annotationBaseCfg()
+	ann := map[string]ModuleAnnotation{
+		testClassify: {
+			ExternalSystemSuggestions: []ExternalSystemSuggestion{{
+				Name:         "payments-vendor",
+				Targets:      []string{"github.com/vendor/sdk/**"},
+				Volatility:   testAnnVolatility,
+				Rationale:    "README names the vendor seam",
+				EvidenceRefs: []string{testEvidenceREADME},
+				Basis:        DraftBasisSemanticJudgment,
+			}},
+		},
+	}
+	out := Render(cfg, ann, false)
+	for _, want := range []string{
+		"# LLM external_systems suggestions",
+		"# external_systems:",
+		"#   payments-vendor:",
+		"#     source_module: classify",
+		"#       - \"github.com/vendor/sdk/**\"",
+		"#     volatility: " + testAnnVolatility,
+		"#     evidence_refs: " + testEvidenceREADME,
+		"#     basis: semantic_judgment",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("external system suggestion output missing %q:\n%s", want, out)
+		}
+	}
+	loaded := roundTrip(t, out)
+	if len(loaded.ExternalSystems) != 0 {
+		t.Fatalf("commented external_systems suggestions must stay inert, loaded external systems = %+v", loaded.ExternalSystems)
+	}
 }
 
 // ---------------------------------------------------------------------------

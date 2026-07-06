@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/toolrun"
@@ -140,17 +141,59 @@ func Discover(ctx context.Context, root string, runner toolrun.Runner) (Discover
 	}, nil
 }
 
+// Draft basis values distinguish deterministic facts from semantic judgments in
+// LLM draft metadata.
+const (
+	DraftBasisDeterministicFact = "deterministic_fact"
+	DraftBasisSemanticJudgment  = "semantic_judgment"
+)
+
+// RuleSuggestion is one review-only LLM proposal for a deterministic config rule
+// or coupling gate tuning. It is rendered for humans and never applied by plan or
+// update modes.
+type RuleSuggestion struct {
+	SourceModule string
+	ID           string
+	Type         string
+	Gate         string
+	From         string
+	To           string
+	Max          *int
+	MinBand      string
+	MaxDrop      *int
+	Rationale    string
+	EvidenceRefs []string
+	Basis        string
+}
+
+// ExternalSystemSuggestion is one review-only LLM proposal for an
+// external_systems entry. It is rendered for humans and never applied by plan or
+// update modes.
+type ExternalSystemSuggestion struct {
+	SourceModule string
+	Name         string
+	Targets      []string
+	Volatility   string
+	Rationale    string
+	EvidenceRefs []string
+	Basis        string
+}
+
 // ModuleAnnotation carries optional LLM-suggested metadata for a module.
 // Layer holds the raw LLM layer suggestion; whether it is written live vs as a
 // comment is decided in writeModuleStanza based on allowedLayers.
 type ModuleAnnotation struct {
-	Subdomain     string
-	Volatility    string
-	Owner         string
-	Layer         string
-	Role          string
-	SuggestedName string
-	Rationale     string
+	Subdomain                 string
+	Volatility                string
+	Owner                     string
+	Layer                     string
+	Role                      string
+	SuggestedName             string
+	Rationale                 string
+	EvidenceRefs              []string
+	Basis                     string
+	RuleSuggestions           []RuleSuggestion
+	ExternalSystemSuggestions []ExternalSystemSuggestion
 }
 
 // sanitizeComment strips or replaces control characters (< 0x20 and DEL 0x7F),
@@ -288,7 +331,9 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	b.WriteString("# Balanced-Coupling advisory tuning.\n")
 	b.WriteString("coupling:\n")
 	b.WriteString("  # Minimum severity for a coupling advisory: low|medium|high|critical\n")
-	b.WriteString("  min_severity: medium\n\n")
+	b.WriteString("  min_severity: medium\n")
+	b.WriteString("  # Clone-only duplicated knowledge: score|advisory (default score)\n")
+	b.WriteString("  duplicated_knowledge: score\n\n")
 
 	// languages: section — always emitted so operators can flip modes without
 	// needing to know the YAML shape. enabled is true|false|auto.
@@ -315,10 +360,9 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	b.WriteString("# analyzers:\n")
 	b.WriteString("#   syntax: { enabled: true }       # ast-grep: roles, routes, exported surface\n")
 	b.WriteString("#   scip: { enabled: true }         # symbol-level coupling strength\n")
-	b.WriteString("#   complexity: { enabled: true }   # cyclomatic complexity hotspots\n")
 	b.WriteString("#   clones: { enabled: true }       # cross-module duplication\n")
 	b.WriteString("\n")
-	b.WriteString("# Off-gate LLM for `archfit enrich` / `explain --llm` (never used by analyze).\n")
+	b.WriteString("# Off-gate LLM for `config init/update/enrich`, `analyze --llm`, and `explain --llm` (never used by the deterministic gate).\n")
 	b.WriteString("# ai:\n")
 	b.WriteString("#   provider: anthropic   # anthropic | openai | ollama\n")
 	b.WriteString("#   model: claude-opus-4-8\n")
@@ -345,9 +389,12 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 				}
 			}
 			writeModuleStanza(&b, m.Name, m, cfg.Layers, moduleAnn, apply)
+			writeModuleAnnotationComments(&b, moduleAnn)
 		}
 		b.WriteString("\n")
 	}
+
+	writeExternalSystemSuggestionComments(&b, ann)
 
 	// rules:
 	//
@@ -375,6 +422,7 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 		b.WriteString("  # assigned a layer: matching one of them.\n")
 		writeLayerRule(&b, "no-layer-violations")
 	}
+	writeRuleSuggestionComments(&b, ann)
 
 	return b.String()
 }
@@ -384,6 +432,141 @@ func writeLayerRule(b *strings.Builder, id string) {
 	fmt.Fprintf(b, "  - id: %s\n", id)
 	b.WriteString("    type: forbidden_layer_direction\n")
 	b.WriteString("    gate: warn\n")
+}
+
+func writeExternalSystemSuggestionComments(b *strings.Builder, ann map[string]ModuleAnnotation) {
+	suggestions := annotationExternalSystemSuggestions(ann)
+	if len(suggestions) == 0 {
+		return
+	}
+	b.WriteString("# LLM external_systems suggestions (review-only; copy targets/volatility after review):\n")
+	b.WriteString("# external_systems:\n")
+	for _, s := range suggestions {
+		fmt.Fprintf(b, "#   %s:\n", sanitizeComment(yamlKey(s.Name)))
+		if s.SourceModule != "" {
+			fmt.Fprintf(b, "#     source_module: %s\n", sanitizeComment(s.SourceModule))
+		}
+		b.WriteString("#     targets:\n")
+		for _, target := range s.Targets {
+			fmt.Fprintf(b, "#       - %q\n", target)
+		}
+		if s.Volatility != "" {
+			fmt.Fprintf(b, "#     volatility: %s\n", yamlScalar(s.Volatility))
+		}
+		if s.Basis != "" {
+			fmt.Fprintf(b, "#     basis: %s\n", sanitizeComment(s.Basis))
+		}
+		if len(s.EvidenceRefs) > 0 {
+			fmt.Fprintf(b, "#     evidence_refs: %s\n", joinEvidenceRefs(s.EvidenceRefs))
+		}
+		if s.Rationale != "" {
+			fmt.Fprintf(b, "#     rationale: %s\n", sanitizeComment(s.Rationale))
+		}
+	}
+	b.WriteString("\n")
+}
+
+func writeRuleSuggestionComments(b *strings.Builder, ann map[string]ModuleAnnotation) {
+	suggestions := annotationRuleSuggestions(ann)
+	if len(suggestions) == 0 {
+		return
+	}
+	b.WriteString("  # LLM rule suggestions (review-only; copy into rules/coupling after review):\n")
+	for _, s := range suggestions {
+		fmt.Fprintf(b, "  # - type: %s\n", sanitizeComment(s.Type))
+		if s.ID != "" {
+			fmt.Fprintf(b, "  #   id: %s\n", sanitizeComment(s.ID))
+		}
+		if s.SourceModule != "" {
+			fmt.Fprintf(b, "  #   source_module: %s\n", sanitizeComment(s.SourceModule))
+		}
+		if s.Gate != "" {
+			fmt.Fprintf(b, "  #   gate: %s\n", sanitizeComment(s.Gate))
+		}
+		if s.From != "" {
+			fmt.Fprintf(b, "  #   from: %s\n", sanitizeComment(s.From))
+		}
+		if s.To != "" {
+			fmt.Fprintf(b, "  #   to: %s\n", sanitizeComment(s.To))
+		}
+		if s.Max != nil {
+			fmt.Fprintf(b, "  #   max: %d\n", *s.Max)
+		}
+		if s.MinBand != "" {
+			fmt.Fprintf(b, "  #   min_band: %s\n", sanitizeComment(s.MinBand))
+		}
+		if s.MaxDrop != nil {
+			fmt.Fprintf(b, "  #   max_drop: %d\n", *s.MaxDrop)
+		}
+		if s.Basis != "" {
+			fmt.Fprintf(b, "  #   basis: %s\n", sanitizeComment(s.Basis))
+		}
+		if len(s.EvidenceRefs) > 0 {
+			fmt.Fprintf(b, "  #   evidence_refs: %s\n", joinEvidenceRefs(s.EvidenceRefs))
+		}
+		if s.Rationale != "" {
+			fmt.Fprintf(b, "  #   rationale: %s\n", sanitizeComment(s.Rationale))
+		}
+	}
+}
+
+func annotationRuleSuggestions(ann map[string]ModuleAnnotation) []RuleSuggestion {
+	if len(ann) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var out []RuleSuggestion
+	for module, a := range ann {
+		for _, s := range a.RuleSuggestions {
+			if s.SourceModule == "" {
+				s.SourceModule = module
+			}
+			key := strings.Join([]string{s.Type, s.ID, s.From, s.To, s.SourceModule}, "\x00")
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, s)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Type != out[j].Type {
+			return out[i].Type < out[j].Type
+		}
+		if out[i].ID != out[j].ID {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].SourceModule < out[j].SourceModule
+	})
+	return out
+}
+
+func annotationExternalSystemSuggestions(ann map[string]ModuleAnnotation) []ExternalSystemSuggestion {
+	if len(ann) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var out []ExternalSystemSuggestion
+	for module, a := range ann {
+		for _, s := range a.ExternalSystemSuggestions {
+			if s.SourceModule == "" {
+				s.SourceModule = module
+			}
+			key := strings.Join([]string{s.Name, strings.Join(s.Targets, ","), s.SourceModule}, "\x00")
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, s)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].SourceModule < out[j].SourceModule
+	})
+	return out
 }
 
 // hasCrossLayerEdge reports whether the discovered graph proves the generated

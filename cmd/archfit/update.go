@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -24,7 +23,7 @@ type UpdateCmd struct {
 	Config      string `short:"c" help:"Config file path." default:".archfit.yaml"`
 	Root        string `short:"r" help:"Project root directory (default: directory of --config)."`
 	LLM         bool   `name:"llm"          help:"Run LLM classification for unclassified modules (off-gate)."`
-	Apply       bool   `name:"apply"        help:"Write structural and classification changes live into .archfit.yaml (backup created; existing fields never overwritten)."`
+	Apply       bool   `name:"apply"        help:"Write structural changes live into .archfit.yaml (backup created; LLM semantic proposals remain review-only)."`
 	NoCache     bool   `name:"no-cache"     help:"Bypass the LLM response cache."`
 	LLMProvider string `name:"llm-provider" help:"LLM provider override."  default:"anthropic"`
 	LLMModel    string `name:"llm-model"    help:"LLM model override."     default:"claude-opus-4-8"`
@@ -74,6 +73,10 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		return err
 	}
 	if c.LLM && ann != nil {
+		report.RuleSuggestions = ruleSuggestionsFromAnnotations(ann)
+		report.ExternalSystemSuggestions = externalSystemSuggestionsFromAnnotations(ann)
+	}
+	if c.LLM && ann != nil {
 		warnTargets := initcfg.BuildClassifyTargets(root, classifyTargetsForUpdate(cfg, report, addedNames))
 		warnPartialClassify(deps.Stdout, warnTargets, ann)
 	}
@@ -104,6 +107,11 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 	if len(report.PathDrift) > 0 {
 		_, _ = fmt.Fprintln(deps.Stdout, "note: module paths replaced with discovered paths")
+	}
+	if c.LLM && ann != nil {
+		if rendered := initcfg.RenderAppliedLLMReview(report, ann); rendered != "" {
+			_, _ = fmt.Fprint(deps.Stdout, rendered)
+		}
 	}
 	return nil
 }
@@ -147,7 +155,8 @@ func (c *UpdateCmd) maybeClassify(
 		return nil, nil
 	}
 
-	ann, err := classifyModulesWithEvidence(ctx, p, classifyTargets, cfg.Layers, collectUpdateRepoEvidence(root))
+	repoEvidence := architectureEvidenceLines(root, targets, c.Config, updateEvidenceDiagnostics(report))
+	ann, err := classifyModulesWithEvidence(ctx, p, classifyTargets, cfg.Layers, repoEvidence)
 	if err != nil {
 		return nil, &exitError{code: 3, msg: fmt.Sprintf("error: classify failed: %v", err)}
 	}
@@ -276,6 +285,65 @@ func hasActionableEdits(report initcfg.UpdateReport) bool {
 	return len(report.Added) > 0 || len(report.Removed) > 0 || len(report.PathDrift) > 0
 }
 
+func ruleSuggestionsFromAnnotations(ann map[string]initcfg.ModuleAnnotation) []initcfg.RuleSuggestion {
+	if len(ann) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]initcfg.RuleSuggestion, 0)
+	for module, a := range ann {
+		for _, suggestion := range a.RuleSuggestions {
+			if suggestion.SourceModule == "" {
+				suggestion.SourceModule = module
+			}
+			key := strings.Join([]string{suggestion.Type, suggestion.ID, suggestion.From, suggestion.To, suggestion.SourceModule}, "\x00")
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, suggestion)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Type != out[j].Type {
+			return out[i].Type < out[j].Type
+		}
+		if out[i].ID != out[j].ID {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].SourceModule < out[j].SourceModule
+	})
+	return out
+}
+
+func externalSystemSuggestionsFromAnnotations(ann map[string]initcfg.ModuleAnnotation) []initcfg.ExternalSystemSuggestion {
+	if len(ann) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]initcfg.ExternalSystemSuggestion, 0)
+	for module, a := range ann {
+		for _, suggestion := range a.ExternalSystemSuggestions {
+			if suggestion.SourceModule == "" {
+				suggestion.SourceModule = module
+			}
+			key := strings.Join([]string{suggestion.Name, strings.Join(suggestion.Targets, ","), suggestion.SourceModule}, "\x00")
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, suggestion)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].SourceModule < out[j].SourceModule
+	})
+	return out
+}
+
 // buildUpdateEdits constructs the ordered Edit slice for an apply pass.
 func buildUpdateEdits(report initcfg.UpdateReport) []initcfg.Edit {
 	edits := make([]initcfg.Edit, 0, len(report.Added)+len(report.PathDrift)+len(report.Removed)+len(report.Unclassified))
@@ -295,80 +363,10 @@ func buildUpdateEdits(report initcfg.UpdateReport) []initcfg.Edit {
 	return edits
 }
 
-const maxUpdateRepoEvidence = 20
-
-// collectUpdateRepoEvidence gathers lightweight review evidence for the update
-// LLM prompt. Failures are ignored; module names and paths still carry the prompt.
+// collectUpdateRepoEvidence is kept for older prompt tests; update --llm uses
+// the shared architecture evidence pack directly.
 func collectUpdateRepoEvidence(root string) []string {
-	var evidence []string
-	addHeadings := func(label, path string) {
-		if len(evidence) >= maxUpdateRepoEvidence {
-			return
-		}
-		data, err := os.ReadFile(path) //nolint:gosec // local target repo evidence
-		if err != nil {
-			return
-		}
-		for _, h := range markdownHeadings(string(data), maxUpdateRepoEvidence-len(evidence)) {
-			evidence = append(evidence, label+": "+h)
-		}
-	}
-
-	for _, name := range []string{"README.md", "README"} {
-		addHeadings(name, filepath.Join(root, name))
-		if len(evidence) > 0 {
-			break
-		}
-	}
-
-	docsDir := filepath.Join(root, "docs")
-	_ = filepath.WalkDir(docsDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || len(evidence) >= maxUpdateRepoEvidence {
-			return filepath.SkipAll
-		}
-		if d.IsDir() {
-			if path != docsDir && strings.HasPrefix(d.Name(), ".") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if strings.EqualFold(filepath.Ext(d.Name()), ".md") {
-			rel, relErr := filepath.Rel(root, path)
-			if relErr != nil {
-				rel = path
-			}
-			addHeadings(filepath.ToSlash(rel), path)
-		}
-		return nil
-	})
-
-	sort.Strings(evidence)
-	if len(evidence) > maxUpdateRepoEvidence {
-		evidence = evidence[:maxUpdateRepoEvidence]
-	}
-	return evidence
-}
-
-func markdownHeadings(text string, limit int) []string {
-	if limit <= 0 {
-		return nil
-	}
-	var headings []string
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "#") {
-			continue
-		}
-		heading := strings.TrimSpace(strings.TrimLeft(line, "#"))
-		if heading == "" {
-			continue
-		}
-		headings = append(headings, heading)
-		if len(headings) >= limit {
-			break
-		}
-	}
-	return headings
+	return architectureEvidenceLines(root, nil, "", nil)
 }
 
 // configToExisting projects config.Modules into []initcfg.ExistingModule.

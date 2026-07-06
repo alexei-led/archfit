@@ -14,6 +14,7 @@ const (
 	metricBlastRadius = "blast_radius"
 	sevCritical       = "critical"
 	sevLow            = "low"
+	sevNone           = "none"
 )
 
 func metric(name string, value float64, band, conf string) diagnostic.MetricResult {
@@ -155,7 +156,7 @@ func TestCouplingBalance(t *testing.T) {
 
 	t.Run("balanced low-effort edges score high", func(t *testing.T) {
 		got := cb(
-			bcAdv("a", "b", "contract", "cross_module_same_owner", "low", 2, "none", "low", 10),
+			bcAdv("a", "b", "contract", "cross_module_same_owner", "low", 2, sevNone, "low", 10),
 		)
 		if got.Value < 61 {
 			t.Errorf("low-effort value = %d, want serviceable+ (≥61)", got.Value)
@@ -164,7 +165,7 @@ func TestCouplingBalance(t *testing.T) {
 
 	t.Run("a single worst-case edge caps at mixed", func(t *testing.T) {
 		got := cb(
-			bcAdv("a", "b", "contract", "cross_module_same_owner", "low", 1, "none", "low", 100),
+			bcAdv("a", "b", "contract", "cross_module_same_owner", "low", 1, sevNone, "low", 100),
 			bcAdv("c", "d", "intrusive", "cross_deploy_unit", "high", 10, "critical", "critical", 1),
 		)
 		if got.Value > 60 {
@@ -174,7 +175,7 @@ func TestCouplingBalance(t *testing.T) {
 
 	t.Run("pervasive worst-case caps at poor", func(t *testing.T) {
 		got := cb(
-			bcAdv("a", "b", "contract", "cross_module_same_owner", "low", 1, "none", "low", 50),
+			bcAdv("a", "b", "contract", "cross_module_same_owner", "low", 1, sevNone, "low", 50),
 			bcAdv("c", "d", "intrusive", "cross_deploy_unit", "high", 10, "critical", "critical", 10),
 		)
 		if got.Value > 40 {
@@ -221,6 +222,26 @@ func TestCouplingBalance_EmptyEdges(t *testing.T) {
 		got := couplingBalance(nil, degen, nil)
 		if got.Band != BandNA {
 			t.Errorf("band = %q, want n/a (degenerate graph is unmeasured, not a fabricated 50)", got.Band)
+		}
+	})
+
+	t.Run("degenerate import graph + scored clone-only evidence still measures", func(t *testing.T) {
+		degen := metricIndex{metricBlastRadius: metric(metricBlastRadius, 0, "n/a", "low")}
+		summary := &diagnostic.ClassifiedEdgeSummary{
+			Scored:           1,
+			MeanBalance:      6,
+			CloneOnlyScored:  1,
+			ConnectedModules: 2,
+		}
+		got := couplingBalance(nil, degen, summary)
+		if got.Band == BandNA {
+			t.Fatal("band = n/a with scored clone-only duplicated knowledge; clone-only pairs must enter coupling_balance even without import edges")
+		}
+		if got.Value == 0 {
+			t.Fatal("value = 0 with scored clone-only duplicated knowledge; want measured coupling_balance")
+		}
+		if !evidenceContains(got.Evidence, "clone-only duplicated-knowledge pairs: 1 scored, 0 advisory-only") {
+			t.Errorf("expected clone-only evidence, got: %v", got.Evidence)
 		}
 	})
 
@@ -281,7 +302,7 @@ func TestCouplingBalance_Distribution(t *testing.T) {
 	}{
 		{
 			name:       "all balanced high scored fraction → strong/high",
-			sum:        summary(50, 0, 9.0, map[string]int{"none": 50}),
+			sum:        summary(50, 0, 9.0, map[string]int{sevNone: 50}),
 			wantMinVal: 88, wantMaxVal: 90,
 			wantConf: ConfidenceHigh,
 			wantBand: BandStrong,
@@ -362,13 +383,99 @@ func TestCouplingBalance_Distribution(t *testing.T) {
 	}
 }
 
+func TestCouplingBalance_TinyFullyScoredGraphCapsConfidence(t *testing.T) {
+	cases := []struct {
+		name             string
+		scored           int
+		connectedModules int
+		wantEvidence     []string
+	}{
+		{
+			name:             "one scored edge and two modules",
+			scored:           1,
+			connectedModules: 2,
+			wantEvidence:     []string{"sample size below high-confidence floor", "connected module sample below high-confidence floor"},
+		},
+		{
+			name:             "enough edges but two modules",
+			scored:           6,
+			connectedModules: 2,
+			wantEvidence:     []string{"connected module sample below high-confidence floor"},
+		},
+		{
+			name:             "few edges but enough modules",
+			scored:           4,
+			connectedModules: 4,
+			wantEvidence:     []string{"sample size below high-confidence floor"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := diagnostic.New()
+			d.Metrics = []diagnostic.MetricResult{metric(metricBlastRadius, 1, "info", "high")}
+			d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
+				Total:            tc.scored,
+				Scored:           tc.scored,
+				ConnectedModules: tc.connectedModules,
+				MeanBalance:      10.0,
+				BySeverity:       map[string]int{sevNone: tc.scored},
+			}
+
+			got := couplingBalanceDim(t, Synthesize(d))
+			if got.Confidence != ConfidenceMedium {
+				t.Errorf("confidence = %q, want medium cap for tiny full-score sample", got.Confidence)
+			}
+			if got.Band != BandStrong {
+				t.Errorf("band = %q (value %d), want score/band unchanged by confidence-only cap", got.Band, got.Value)
+			}
+			for _, want := range tc.wantEvidence {
+				if !evidenceContains(got.Evidence, want) {
+					t.Errorf("evidence missing %q: %v", want, got.Evidence)
+				}
+			}
+		})
+	}
+
+	t.Run("sample cap and llm provenance do not stack below medium", func(t *testing.T) {
+		d := diagnostic.New()
+		d.Metrics = []diagnostic.MetricResult{metric(metricBlastRadius, 1, "info", "high")}
+		d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
+			Total:                 2,
+			Scored:                2,
+			ConnectedModules:      2,
+			MeanBalance:           10.0,
+			BySeverity:            map[string]int{sevNone: 2},
+			LLMApproved:           1,
+			LLMLowConfidenceEdges: 1,
+		}
+
+		got := couplingBalanceDim(t, Synthesize(d))
+		if got.Confidence != ConfidenceMedium {
+			t.Errorf("confidence = %q, want medium (caps are floors, not cumulative downgrades)", got.Confidence)
+		}
+		if got.Band != BandStrong {
+			t.Errorf("band = %q (value %d), want score/band unchanged by confidence caps", got.Band, got.Value)
+		}
+	})
+}
+
+func evidenceContains(evidence []string, needle string) bool {
+	for _, ev := range evidence {
+		if strings.Contains(ev, needle) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestCouplingBalance_Distribution_AdvisoryTailIndependent(t *testing.T) {
 	nonDegen := nonDegenMetricIndex()
 
 	sum := &diagnostic.ClassifiedEdgeSummary{
 		Total: 10, Scored: 10, Abstained: 0,
 		MeanBalance: 9.0,
-		BySeverity:  map[string]int{"none": 9, sevCritical: 1},
+		BySeverity:  map[string]int{sevNone: 9, sevCritical: 1},
 	}
 	worstAdvisory := bcAdv("a", "b", "intrusive", "cross_deploy_unit", "high", 1, "critical", "critical", 1)
 
@@ -394,6 +501,60 @@ func TestCouplingBalance_Distribution_AdvisoryTailIndependent(t *testing.T) {
 	}
 	if !foundWorst {
 		t.Errorf("evidence missing critical-band count: %v", got.Evidence)
+	}
+}
+
+func TestCouplingBalance_CloneOnlyEvidenceString(t *testing.T) {
+	nonDegen := nonDegenMetricIndex()
+	sum := &diagnostic.ClassifiedEdgeSummary{
+		Total:             3,
+		Scored:            3,
+		MeanBalance:       7.0,
+		BySeverity:        map[string]int{sevLow: 3},
+		CloneOnlyScored:   2,
+		CloneOnlyAdvisory: 1,
+	}
+
+	got := couplingBalance(nil, nonDegen, sum)
+	found := false
+	for _, ev := range got.Evidence {
+		if strings.Contains(ev, "clone-only duplicated-knowledge pairs: 2 scored, 1 advisory-only") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected clone-only policy counts in evidence, got: %v", got.Evidence)
+	}
+}
+
+func TestCouplingBalance_TailRiskEvidenceString(t *testing.T) {
+	nonDegen := nonDegenMetricIndex()
+	sum := &diagnostic.ClassifiedEdgeSummary{
+		Total:             20,
+		Scored:            20,
+		MeanBalance:       8.5,
+		BySeverity:        map[string]int{sevLow: 18, sevCritical: 2},
+		CloneOnlyScored:   4,
+		CloneOnlyAdvisory: 1,
+		TailRisk: &diagnostic.CouplingTailRiskSummary{
+			WorstBalance:              3,
+			LowerDecileBalance:        5,
+			HighOrWorseEdges:          2,
+			HighOrWorseSharePct:       10,
+			CriticalEdges:             1,
+			DistributedMonolithEdges:  1,
+			CloneOnlyScored:           4,
+			CloneOnlyHighOrWorseEdges: 1,
+			CloneOnlyWorstBalance:     3,
+		},
+	}
+
+	got := couplingBalance(nil, nonDegen, sum)
+	if !evidenceContains(got.Evidence, "tail risk: worst balance 3/10, lower-decile balance 5/10, high-or-worse edges 2/20 (10%), critical 1, distributed-monolith 1") {
+		t.Errorf("expected tail-risk evidence, got: %v", got.Evidence)
+	}
+	if !evidenceContains(got.Evidence, "clone-only tail: worst balance 3/10, high-or-worse 1/4 scored clone-only pairs") {
+		t.Errorf("expected clone-only tail evidence, got: %v", got.Evidence)
 	}
 }
 

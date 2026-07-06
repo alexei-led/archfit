@@ -24,12 +24,13 @@ import (
 )
 
 const (
-	toolName      = "depcruise"
-	coverageTool  = "dependency-cruiser" // Coverage.Tool label (the CLI subcommand is toolName).
-	langTS        = "typescript"
-	statusOK      = "ok"
-	statusPartial = "partial"
-	statusAbsent  = "absent"
+	toolName        = "depcruise"
+	coverageTool    = "dependency-cruiser" // Coverage.Tool label (the CLI subcommand is toolName).
+	langTS          = "typescript"
+	sourceDepCruise = "dependency-cruiser"
+	statusOK        = "ok"
+	statusPartial   = "partial"
+	statusAbsent    = "absent"
 
 	runTimeout = 5 * time.Minute
 )
@@ -534,6 +535,19 @@ func (d dcDep) strengthHint() string {
 	return string(coupling.StrengthFunctional)
 }
 
+func (d dcDep) connascenceHints() []graph.ConnascenceHint {
+	detail := "runtime import"
+	if d.Dynamic {
+		detail = "dynamic import"
+	}
+	hints := []graph.ConnascenceHint{{Kind: graph.ConnascenceName, Source: sourceDepCruise, Detail: detail}}
+	if d.isTypeOnly() {
+		hints[0].Detail = "type-only import"
+		hints = append(hints, graph.ConnascenceHint{Kind: graph.ConnascenceType, Source: sourceDepCruise, Detail: "type-only import"})
+	}
+	return hints
+}
+
 // ---------------------------------------------------------------------------
 // Parse + normalise.
 // ---------------------------------------------------------------------------
@@ -647,12 +661,13 @@ func (e *Extractor) parseAndNormalize(data []byte, version, subtreePrefix string
 			}
 
 			edges = append(edges, graph.Edge{
-				From:         fromID,
-				To:           toID,
-				Kind:         edgeKind,
-				Language:     langTS,
-				Confidence:   confidence,
-				StrengthHint: dep.strengthHint(),
+				From:             fromID,
+				To:               toID,
+				Kind:             edgeKind,
+				Language:         langTS,
+				Confidence:       confidence,
+				StrengthHint:     dep.strengthHint(),
+				ConnascenceHints: dep.connascenceHints(),
 			})
 		}
 	}
