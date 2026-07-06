@@ -554,8 +554,9 @@ Fields:
 - `layer` — one of the names from `layers`.
 - `subdomain` — DDD subdomain classification: `core`, `supporting`, or `generic`.
   Determines the volatility ordinal when no explicit `volatility` is set.
-- `volatility` — explicit override: `high` (=10), `medium` (=6), or `low` (=3).
-  Use `subdomain` unless you need a specific value that differs from the DDD default.
+- `volatility` — explicit override: `high` (=10), `medium` (=6), `low` (=3),
+  or `frozen` / `legacy` (=1). Use `subdomain` unless you need a specific value
+  that differs from the DDD default.
 - `owner` — team or person responsible for the module.
 - `deploy_unit` — deployable/runtime unit used for distance classification.
 - `role` — optional architectural role. See [Module role vs layer](#module-role-vs-layer).
@@ -621,6 +622,8 @@ modules:
   config:
     subdomain: supporting
     volatility: medium # explicit override; medium only via direct declaration
+  retired-api:
+    volatility: frozen # explicit stable/legacy override (ordinal 1)
 ```
 
 Methodology (Khononov book):
@@ -630,6 +633,7 @@ Methodology (Khononov book):
 - `generic` → `low` volatility (ordinal 3)
 
 `medium` volatility (ordinal 6) is only reachable via explicit `volatility: medium`.
+`frozen` and `legacy` both resolve to the frozen/legacy anchor (ordinal 1).
 Declaring `subdomain: supporting` never implies medium — it implies low.
 
 ### Distance classification

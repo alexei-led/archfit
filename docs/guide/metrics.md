@@ -63,11 +63,11 @@ The scorecard dimension produces a 0–100 value, a band, and a confidence.
 
 | Band          | Score  | Meaning                                                                                   |
 | ------------- | ------ | ----------------------------------------------------------------------------------------- |
-| `strong`      | 90–100 | Healthy.                                                                                  |
-| `serviceable` | 70–89  | Acceptable.                                                                               |
-| `mixed`       | 50–69  | Watch.                                                                                    |
-| `poor`        | 30–49  | Problem.                                                                                  |
-| `critical`    | 0–29   | Measured and bad.                                                                         |
+| `strong`      | 81–100 | Healthy.                                                                                  |
+| `serviceable` | 61–80  | Acceptable.                                                                               |
+| `mixed`       | 41–60  | Watch.                                                                                    |
+| `poor`        | 21–40  | Problem.                                                                                  |
+| `critical`    | 0–20   | Measured and bad.                                                                         |
 | `n/a`         | —      | No signal to measure. Not good, not bad — _no evidence_. Never conflated with `critical`. |
 | `info`        | —      | Report-only fact; asserts no quality verdict.                                             |
 

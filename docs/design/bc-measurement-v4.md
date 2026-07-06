@@ -146,12 +146,13 @@ full book-rung precision.
 | `subdomain: generic`          | generic               | 3                 |
 | explicit `volatility: low`    | supporting/generic    | 3                 |
 | explicit `volatility: medium` | (interpolation)       | 6                 |
-| `frozen` / `legacy` (future)  | frozen/legacy         | 1                 |
+| explicit `volatility: frozen` | frozen/legacy         | 1                 |
+| explicit `volatility: legacy` | alias for `frozen`    | 1                 |
 | undeclared / unknown          | → abstain rescue term | 10 (conservative) |
 
-Note: `VolatilityFrozen` / `VolatilityLegacy` constants do not yet exist in the
-codebase (all archfit modules are actively developed). The table documents the
-mapping for when they are added.
+`VolatilityFrozen` exists in code. `legacy` is a config alias that maps to it;
+add a separate `VolatilityLegacy` constant only if it ever needs distinct
+semantics.
 
 `medium=6` is an interpolation on the acknowledged open 3–10 range in the book.
 
@@ -469,8 +470,8 @@ anchor.
 - **Scoring every library import at D=10:** rejected as vendor noise — the
   D=10 rung is reachable only through a declared `external_systems:` entry;
   the undeclared remainder stays a disclosed exclusion.
-- **VolatilityFrozen/VolatilityLegacy in code today:** book anchor=1, but no
-  constant exists yet — all archfit modules are in active development. Add when a
-  genuinely stable module requires it.
+- **Separate VolatilityLegacy constant:** rejected for now. `legacy` is accepted
+  as a config alias for `VolatilityFrozen`; add a separate constant only if it
+  needs distinct scoring or reporting semantics.
 - **gap-6 exemption (composition_root god-module):** explicitly rejected to keep
   the scorer honest. `cmd/archfit` is rightly flagged as a god module.

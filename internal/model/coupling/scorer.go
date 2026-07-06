@@ -68,18 +68,12 @@ type ScoreBreakdown struct {
 }
 
 // ---------------------------------------------------------------------------
-// Frozen ordinal constants — Balanced Coupling (Khononov) §4.1.
+// Legacy calibration ordinals.
 //
-// These ordinals encode Vlad's balance rule, NOT a literal equation he publishes
-// (see ScoreDefinition). They preserve his orderings with extra numeric spread:
-//   - Strength {Contract < Model < Functional < Intrusive} — knowledge shared,
-//     weakest→strongest (Khononov's integration-strength ladder).
-//   - Distance {same_module < cross_module_same_owner < cross_module_diff_owner
-//     < cross_deploy_unit} — socio-technical separation, local→external.
-//   - Volatility discount {high 0, medium 1, low 2} — low volatility neutralises
-//     otherwise-unbalanced coupling; undeclared/unknown get no discount
-//     (conservative: treat as potentially volatile).
-// Changing any of these values is a BREAKING metric change; bump ScoreVersion.
+// BookScorer in scorer_book.go is the production scorer and owns the book-exact
+// ordinals used by coupling_balance. The constants below are kept for the
+// additive/multiplicative calibration scorers only; do not cite them as the
+// current Balanced-Coupling scale.
 // ---------------------------------------------------------------------------
 
 const (
@@ -186,8 +180,9 @@ func legacyScoreBand(score int) Severity {
 }
 
 // DefaultScorer returns the scorer used by classify.Run when the config
-// does not specify one. Changed to BookScorer (bc_score.v3): implements
-// Vlad Khononov's published formula from _Balancing Coupling in Software Design_ Ch10.
+// does not specify one. BookScorer implements Vlad Khononov's published formula
+// from _Balancing Coupling in Software Design_ Ch10; ScoreVersion records later
+// semantic changes in the facts feeding that scorer.
 func DefaultScorer() Scorer {
 	return BookScorer{}
 }

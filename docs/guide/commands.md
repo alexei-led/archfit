@@ -246,8 +246,9 @@ The scorecard shows one scored dimension: `coupling_balance`. It carries a 0–1
 value, a band (critical / poor / mixed / serviceable / strong), a confidence, and
 evidence references. The overall is the coupling_balance value. This is not a
 composite of multiple dimensions — coupling_balance is the single architecture
-fitness measure; structural rules (forbidden deps, layering, cycles, encapsulation)
-are pass/fail gates reported separately.
+fitness measure. Structural rules (forbidden deps, layering, cycle-as-fail) and
+baseline-delta metrics (`cycle`, `encapsulation`, `coverage`, `unbalanced_edge`)
+are reported and gated separately.
 
 Output is deterministic — byte-identical across a double-run. The scorecard is
 report-only by default; the opt-in

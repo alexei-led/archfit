@@ -26,23 +26,35 @@ ARCHFIT RESULT
 
 Decision   ACCEPTABLE WITH WATCH ITEMS
 Gate       PASS  ·  0 blocking
-Warnings   12 advisory
-Score      58 / 100  mixed
+Warnings   55 advisory
+Score      43 / 100  mixed
+
+Acceptable with watch items. Monitor flagged areas.
 
 No blockers. Use this run for architecture-improvement planning,
 not to stop development.
 
 RECOMMENDATIONS
-  MUST FIX     none
-  SHOULD FIX   · coupling_balance — reduce high-fan-in functional edges across boundaries
-  WATCH        · dependency_graph_health — lazy-import cycles; advisory, not blocking
+
+  MUST FIX
+    none
+  SHOULD FIX
+    · bc/imbalanced_coupling — high fan-in into session state
+  WATCH
+    · lazy_cycle — lazy import SCC
 
 WHY THE SCORE IS LOW
-  cohesion_modularity  5/100  [critical]   clone/structural scoring is severe; verify duplication first
-  coupling_balance     36/100 [poor]       unbalanced edges across volatile module boundaries
+
+  coupling_balance  43/100  [mixed]
+    304 warning edges, mostly functional + high volatility.
+
+WHAT WOULD IMPROVE THE SCORE
+
+  coupling_balance
+    Reduce high-fan-in functional edges across module boundaries or introduce stable contracts.
 
 TARGETS
-  Current     58  mixed
+  Current     43  mixed
   Near-term   61-80  serviceable
   Main goal   keep blocking findings at 0
 ```
