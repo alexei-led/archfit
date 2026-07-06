@@ -34,10 +34,15 @@ func TestClassifyFile_BuiltIn(t *testing.T) {
 		{name: "go _gen suffix", lang: "go", path: "pkg/x/wire_gen.go", header: noHeader, want: fileclass.Generated},
 		// --- TypeScript ---
 		{name: "ts production", lang: langTypeScript, path: "src/app.ts", header: noHeader, want: fileclass.Production},
+		{name: "ts mts production", lang: langTypeScript, path: "src/app.mts", header: noHeader, want: fileclass.Production},
 		{name: "ts test", lang: langTypeScript, path: "src/app.test.ts", header: noHeader, want: fileclass.Test},
 		{name: "ts spec", lang: langTypeScript, path: "src/app.spec.ts", header: noHeader, want: fileclass.Test},
+		{name: "ts spec mts", lang: langTypeScript, path: "src/app.spec.mts", header: noHeader, want: fileclass.Test},
+		{name: "ts test mjs", lang: langTypeScript, path: "src/app.test.mjs", header: noHeader, want: fileclass.Test},
 		{name: "ts __tests__", lang: langTypeScript, path: "src/__tests__/app.ts", header: noHeader, want: fileclass.Test},
 		{name: "ts .d.ts declaration", lang: langTypeScript, path: "src/types.d.ts", header: noHeader, want: fileclass.Generated},
+		{name: "ts .d.mts declaration", lang: langTypeScript, path: "src/types.d.mts", header: noHeader, want: fileclass.Generated},
+		{name: "ts .d.cts declaration", lang: langTypeScript, path: "src/types.d.cts", header: noHeader, want: fileclass.Generated},
 		{name: "ts .gen.ts", lang: langTypeScript, path: "src/api.gen.ts", header: noHeader, want: fileclass.Generated},
 		// --- Python ---
 		{name: "python production", lang: langPython, path: "mypackage/core.py", header: noHeader, want: fileclass.Production},

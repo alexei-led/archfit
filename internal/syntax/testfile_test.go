@@ -3,14 +3,15 @@ package syntax_test
 import (
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/syntax"
 )
 
 const (
-	langGo         = "go"
-	langPython     = "python"
-	langTypeScript = "typescript"
-	langRust       = "rust"
+	langGo         = graph.LangGo
+	langPython     = graph.LangPython
+	langTypeScript = graph.LangTypeScript
+	langRust       = graph.LangRust
 )
 
 func TestIsTestFile(t *testing.T) {
@@ -37,8 +38,11 @@ func TestIsTestFile(t *testing.T) {
 		{langTypeScript, "src/service.test.ts", true},
 		{langTypeScript, "src/service.spec.ts", true},
 		{langTypeScript, "src/service.test.tsx", true},
+		{langTypeScript, "src/service.spec.mts", true},
+		{langTypeScript, "src/service.test.mjs", true},
 		{langTypeScript, "src/__tests__/service.ts", true},
 		{langTypeScript, "src/testService.ts", false},
+		{langTypeScript, "src/service.mts", false},
 		// Rust
 		{langRust, "src/lib.rs", false},
 		{langRust, "tests/integration.rs", true},

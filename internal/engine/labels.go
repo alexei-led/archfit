@@ -206,21 +206,25 @@ func clusterHasTestOrGenerated(files []string, index map[string]fileclass.FileCl
 	return false
 }
 
-// cloneLangFromExt maps a file extension to a language tag for LookupFileClass.
-// Only the languages supported by archfit's extractors need coverage here.
+var cloneTypeScriptSourceExts = graph.TypeScriptSourceExtensions()
+
+// cloneLangFromExt maps a file extension to the language tag LookupFileClass
+// expects for built-in test/generated detection. The TS/JS family all routes
+// through the TypeScript classifier because IsTestFile handles .test./.spec.
+// and __tests__ there for both TS and JS extensions.
 func cloneLangFromExt(ext string) string {
 	switch ext {
 	case ".go":
-		return "go"
-	case ".ts", ".tsx":
-		return "typescript"
-	case ".js", ".jsx", ".mjs", ".cjs":
-		return "javascript"
+		return graph.LangGo
 	case ".py":
-		return "python"
+		return graph.LangPython
 	case ".rs":
-		return "rust"
-	default:
-		return ""
+		return graph.LangRust
 	}
+	for _, tsExt := range cloneTypeScriptSourceExts {
+		if ext == tsExt {
+			return graph.LangTypeScript
+		}
+	}
+	return ""
 }

@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -150,28 +151,31 @@ func (d *detector) detect(ctx context.Context) Result {
 // ---------------------------------------------------------------------------
 
 func (d *detector) detectGo(ctx context.Context) []AsyncSignal {
-	goLibs, ok := d.libs["go"]
+	goLibs, ok := d.libs[graph.LangGo]
 	if !ok || len(goLibs) == 0 {
 		return nil
 	}
-	return d.scanImports(ctx, ".go", "go", goLibs, `"`)
+	return d.scanImports(ctx, ".go", graph.LangGo, goLibs, `"`)
 }
 
 // ---------------------------------------------------------------------------
-// TypeScript: scan for MQ library imports in .ts/.tsx/.js files.
+// TypeScript: scan TypeScript/JavaScript source files for MQ library imports.
 // Also detect NestJS @MessagePattern / @EventPattern decorator usage.
 // ---------------------------------------------------------------------------
 
+var tsSourceExts = graph.TypeScriptSourceExtensions()
+
 func (d *detector) detectTS(ctx context.Context) []AsyncSignal {
-	tsLibs, ok := d.libs["typescript"]
+	tsLibs, ok := d.libs[graph.LangTypeScript]
 	if !ok || len(tsLibs) == 0 {
 		return nil
 	}
-	var signals []AsyncSignal //nolint:prealloc // three variable-size sources appended
-	signals = append(signals, d.scanImports(ctx, ".ts", "typescript", tsLibs, `'`, `"`)...)
-	signals = append(signals, d.scanImports(ctx, ".tsx", "typescript", tsLibs, `'`, `"`)...)
+	var signals []AsyncSignal
+	for _, ext := range tsSourceExts {
+		signals = append(signals, d.scanImports(ctx, ext, graph.LangTypeScript, tsLibs, `'`, `"`)...)
+	}
 	// NestJS decorators: @MessagePattern / @EventPattern → async_task
-	signals = append(signals, d.scanLineMatches(ctx, "typescript", []string{".ts", ".tsx"}, []string{"@MessagePattern", "@EventPattern"}, KindAsyncTask)...)
+	signals = append(signals, d.scanLineMatches(ctx, graph.LangTypeScript, tsSourceExts, []string{"@MessagePattern", "@EventPattern"}, KindAsyncTask)...)
 	return signals
 }
 
@@ -180,14 +184,14 @@ func (d *detector) detectTS(ctx context.Context) []AsyncSignal {
 // ---------------------------------------------------------------------------
 
 func (d *detector) detectPython(ctx context.Context) []AsyncSignal {
-	pyLibs, ok := d.libs["python"]
+	pyLibs, ok := d.libs[graph.LangPython]
 	if !ok || len(pyLibs) == 0 {
 		return nil
 	}
 	var signals []AsyncSignal //nolint:prealloc // two variable-size sources appended
-	signals = append(signals, d.scanImports(ctx, ".py", "python", pyLibs, "")...)
+	signals = append(signals, d.scanImports(ctx, ".py", graph.LangPython, pyLibs, "")...)
 	// asyncio itself signals async patterns even without a MQ lib.
-	signals = append(signals, d.scanLineMatches(ctx, "python", []string{".py"}, []string{"import asyncio", "from asyncio"}, KindAsyncTask)...)
+	signals = append(signals, d.scanLineMatches(ctx, graph.LangPython, []string{".py"}, []string{"import asyncio", "from asyncio"}, KindAsyncTask)...)
 	return signals
 }
 
@@ -296,11 +300,11 @@ func (d *detector) scanLineMatches(_ context.Context, lang string, exts, needles
 // isImportLine reports whether line is an import statement for the given language.
 func isImportLine(line, lang string) bool {
 	switch lang {
-	case "go":
+	case graph.LangGo:
 		return strings.HasPrefix(line, `import "`) || strings.HasPrefix(line, `"`)
-	case "typescript":
+	case graph.LangTypeScript:
 		return strings.HasPrefix(line, "import ") || strings.HasPrefix(line, "from ") || strings.HasPrefix(line, "require(")
-	case "python":
+	case graph.LangPython:
 		return strings.HasPrefix(line, "import ") || strings.HasPrefix(line, "from ")
 	}
 	return false
@@ -309,7 +313,7 @@ func isImportLine(line, lang string) bool {
 // extractImportPath extracts the import path/module from a line.
 func extractImportPath(line, lang string, quotes []string) string {
 	switch lang {
-	case "go":
+	case graph.LangGo:
 		// `import "path"` or just `"path"` (inside import block)
 		line = strings.TrimPrefix(line, "import ")
 		for _, q := range quotes {
@@ -320,7 +324,7 @@ func extractImportPath(line, lang string, quotes []string) string {
 				}
 			}
 		}
-	case "typescript":
+	case graph.LangTypeScript:
 		// `import ... from 'path'` or `import 'path'` or `require('path')`
 		switch {
 		case strings.LastIndex(line, "from ") >= 0:
@@ -341,7 +345,7 @@ func extractImportPath(line, lang string, quotes []string) string {
 				}
 			}
 		}
-	case "python":
+	case graph.LangPython:
 		// `import pkg` or `from pkg import ...`
 		if strings.HasPrefix(line, "from ") {
 			line = strings.TrimPrefix(line, "from ")

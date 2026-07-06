@@ -378,12 +378,6 @@ func docLineRelevant(line string, mapMode bool) bool {
 	if secretishTextLine(line) {
 		return true
 	}
-	if strings.HasPrefix(line, "#") {
-		if mapMode {
-			return true
-		}
-		return docLineHasSignal(lower)
-	}
 	if strings.Contains(lower, "](") && !strings.Contains(lower, "://") {
 		return true
 	}
@@ -477,9 +471,6 @@ func docTextScore(text string) int {
 	score += hits * 20
 	if strings.Contains(lower, "](") && !strings.Contains(lower, "://") {
 		score += 25
-	}
-	if strings.Contains(lower, "# ") || strings.Contains(lower, "## ") || strings.Contains(lower, "### ") {
-		score += 10
 	}
 	if strings.Contains(lower, "architecture decision") || strings.Contains(lower, "bounded context") || strings.Contains(lower, "module boundary") {
 		score += 20

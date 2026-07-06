@@ -3,6 +3,8 @@ package syntax
 import (
 	"path/filepath"
 	"strings"
+
+	"github.com/alexei-led/archfit/internal/model/graph"
 )
 
 // IsTestFile reports whether path is a test file by language convention.
@@ -10,25 +12,25 @@ import (
 //
 // Go:         *_test.go
 // Python:     test_*.py, *_test.py, or any path containing a /tests/ segment
-// TypeScript: *.test.ts, *.test.tsx, *.spec.ts, *.spec.tsx, or path containing __tests__/
+// TypeScript/JavaScript: any filename containing .test. or .spec., or a path containing __tests__/
 // Rust:       any path containing a /tests/ path segment
 //
 // Ceiling: Rust inline #[cfg(test)] mod blocks are not detected by path.
 func IsTestFile(lang, path string) bool {
 	base := filepath.Base(path)
 	switch lang {
-	case "go":
+	case graph.LangGo:
 		return strings.HasSuffix(base, "_test.go")
-	case "python":
+	case graph.LangPython:
 		stem := strings.TrimSuffix(base, filepath.Ext(base))
 		return strings.HasPrefix(base, "test_") ||
 			strings.HasSuffix(stem, "_test") ||
 			containsPathSegment(path, "tests")
-	case "typescript":
+	case graph.LangTypeScript:
 		return strings.Contains(base, ".test.") ||
 			strings.Contains(base, ".spec.") ||
 			containsPathSegment(path, "__tests__")
-	case "rust":
+	case graph.LangRust:
 		return containsPathSegment(path, "tests")
 	default:
 		return false
