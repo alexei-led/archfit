@@ -51,6 +51,10 @@ var tsRequire = regexp.MustCompile(`\brequire\s*\(`)
 // so this never matches a static import.
 var tsDynImport = regexp.MustCompile(`\bimport\s*\(`)
 
+// tsSourceExtensions is copied once at init time; Detect checks it for every
+// walked file, so avoid calling graph.TypeScriptSourceExtensions() per file.
+var tsSourceExtensions = graph.TypeScriptSourceExtensions()
+
 // pyImportlib matches importlib.import_module(...) or __import__(...) anywhere on
 // a line (these are calls, not statements, so indentation is irrelevant).
 var pyImportlib = regexp.MustCompile(`\b(?:importlib\.import_module|__import__)\s*\(`)
@@ -93,7 +97,7 @@ func Detect(root string) []diagnostic.DynamicImportSite {
 }
 
 func tsSourceExt(ext string) bool {
-	for _, candidate := range graph.TypeScriptSourceExtensions() {
+	for _, candidate := range tsSourceExtensions {
 		if ext == candidate {
 			return true
 		}

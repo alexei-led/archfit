@@ -481,9 +481,6 @@ func docTextScore(text string) int {
 	if strings.Contains(lower, "# ") || strings.Contains(lower, "## ") || strings.Contains(lower, "### ") {
 		score += 10
 	}
-	if isDocMapName(path.Base(lower)) {
-		score += 20
-	}
 	if strings.Contains(lower, "architecture decision") || strings.Contains(lower, "bounded context") || strings.Contains(lower, "module boundary") {
 		score += 20
 	}
