@@ -102,7 +102,11 @@ func runLLMReview(ctx context.Context, deps *appDeps, cfg config.Config, configP
 		}
 	}
 
-	rev, dropped := postVerify(rev, diag, configSubdomains, buildReviewCitationSet(diag, sc, evidenceLines))
+	citations := buildReviewCitationSet(diag, sc, evidenceLines)
+	for name := range cfg.Modules {
+		citations.Modules[name] = struct{}{}
+	}
+	rev, dropped := postVerify(rev, diag, configSubdomains, citations)
 	if dropped > 0 {
 		_, _ = fmt.Fprintf(deps.stderr(), "review: post-verification dropped %d unsupported claim(s)\n", dropped)
 	}
@@ -287,6 +291,7 @@ type reviewCitationSet struct {
 	FindingIDs   map[string]struct{}
 	MetricIDs    map[string]struct{}
 	EvidenceRefs map[string]struct{}
+	Modules      map[string]struct{}
 }
 
 func reviewEvidenceDiagnostics(diag diagnostic.Diagnostic, sc score.Scorecard) []initcfg.EvidenceDiagnostic {
@@ -301,6 +306,7 @@ func buildReviewCitationSet(diag diagnostic.Diagnostic, sc score.Scorecard, evid
 		FindingIDs:   make(map[string]struct{}),
 		MetricIDs:    make(map[string]struct{}),
 		EvidenceRefs: make(map[string]struct{}),
+		Modules:      make(map[string]struct{}),
 	}
 	for _, f := range diag.Findings {
 		if f.ID != "" {
@@ -361,6 +367,9 @@ func postVerify(rev reviewResponse, diag diagnostic.Diagnostic, configSubdomains
 	citations := defaultReviewCitationSet(diag)
 	if len(citationSets) > 0 {
 		citations = citationSets[0]
+	}
+	for module := range citations.Modules {
+		validModules[module] = struct{}{}
 	}
 	dropped := 0
 

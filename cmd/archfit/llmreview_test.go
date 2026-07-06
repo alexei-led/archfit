@@ -666,6 +666,27 @@ func TestPostVerify_DropsUnknownCitationRefs(t *testing.T) {
 	}
 }
 
+func TestPostVerify_AcceptsConfiguredModulesWithoutRuntimeEvidence(t *testing.T) {
+	t.Parallel()
+	diag := diagnostic.Diagnostic{}
+	citations := buildReviewCitationSet(diag, score.Scorecard{}, nil)
+	citations.Modules[reviewModReal] = struct{}{}
+	rev := reviewResponse{
+		OverallBand: reviewBandMixed,
+		SubdomainSuggestions: []reviewSubdomainSuggest{
+			{Module: reviewModReal, SuggestedSubdomain: subdomainCore, ClaimType: claimTypeRecommendation, MetricIDs: []string{reviewDimBoundary}, Rationale: reviewNarrativeKeep},
+		},
+	}
+
+	result, dropped := postVerify(rev, diag, nil, citations)
+	if dropped != 0 {
+		t.Fatalf("dropped = %d, want no configured-module suggestion drops", dropped)
+	}
+	if len(result.SubdomainSuggestions) != 1 || result.SubdomainSuggestions[0].Module != reviewModReal {
+		t.Fatalf("subdomain suggestions = %+v, want configured module kept", result.SubdomainSuggestions)
+	}
+}
+
 // TestPostVerify_DropsUnknownEntities unit-tests postVerify in isolation,
 // covering every drop path without a full pipeline run.
 func TestPostVerify_DropsUnknownEntities(t *testing.T) {

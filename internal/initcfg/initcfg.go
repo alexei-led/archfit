@@ -360,7 +360,6 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	b.WriteString("# analyzers:\n")
 	b.WriteString("#   syntax: { enabled: true }       # ast-grep: roles, routes, exported surface\n")
 	b.WriteString("#   scip: { enabled: true }         # symbol-level coupling strength\n")
-	b.WriteString("#   complexity: { enabled: true }   # cyclomatic complexity hotspots\n")
 	b.WriteString("#   clones: { enabled: true }       # cross-module duplication\n")
 	b.WriteString("\n")
 	b.WriteString("# Off-gate LLM for `config init/update/enrich`, `analyze --llm`, and `explain --llm` (never used by the deterministic gate).\n")

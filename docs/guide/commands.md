@@ -378,7 +378,7 @@ Mode behaviour:
 - `--llm` (plan): classification lines are emitted as YAML comments
   (`# subdomain: core  # llm-suggested — review and uncomment`). Uncommenting
   activates them; the file is safe to use as a gate without reviewing them.
-- `--llm --apply`: `subdomain`, `volatility`, `owner`, and `layer` are written
+- `--llm --apply`: `subdomain`, `volatility`, `owner`, `role`, and `layer` are written
   as live fields from the model response. `layer` is written only when the value
   is in `layers:`; otherwise it stays a comment. Module keys are never renamed
   automatically. Treat the output as unreviewed until a human checks the cited
