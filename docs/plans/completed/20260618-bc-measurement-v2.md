@@ -6,7 +6,7 @@ is someone else's job.
 
 ## Overview
 
-Implement the approved design `docs/design/bc-measurement-v2.md`: make archfit's
+Implement the approved design `docs/archived/design/bc-measurement-v2.md`: make archfit's
 measurement engine a faithful, deterministic Balanced Coupling implementation across
 Go/TS/Python, close the seven self-analysis gaps, add the standard coupling metrics,
 and align the report with BC vocabulary — without putting an LLM or non-determinism on
@@ -39,7 +39,7 @@ report restructure land last.
 
 ## Source artifact
 
-Approved design: `docs/design/bc-measurement-v2.md`. Tasks cite its sections and the
+Approved design: `docs/archived/design/bc-measurement-v2.md`. Tasks cite its sections and the
 `file:line` evidence it records:
 
 - Gap 1 (distance ignores code structure) — design §3#1, §4.2; `classify.go:198-222`,
@@ -205,7 +205,7 @@ reverse dependencies. Refresh index first with `node .gitnexus/run.cjs analyze -
 ### Task 5: Phase 1 verification and documentation
 
 - Justification: phase gate; lock correctness before adding data sources.
-- Files: `docs/design/bc-measurement-v2.md` (status note); `CHANGELOG`/release notes if
+- Files: `docs/archived/design/bc-measurement-v2.md` (status note); `CHANGELOG`/release notes if
   present.
 - Preconditions: Tasks 1–4 merged.
 - Postconditions: Phase 1 green; design doc annotated with Phase-1-done.
@@ -376,7 +376,7 @@ TestGolden` after deliberate regeneration.
 - Standard metrics (I/A/Dms, PC, change_coupling) present, labeled beyond-BC, non-gating.
 - Runtime async + connascence reported with confidence, non-gating.
 - `internal/arch_test.go` proves `check` imports no LLM/os/exec in the core ring.
-- Report is BC-vocabulary lint messages; `docs/design/bc-measurement-v2.md` and
+- Report is BC-vocabulary lint messages; `docs/archived/design/bc-measurement-v2.md` and
   `archfit-analysis.md` updated.
 
 ## Safety notes
@@ -396,12 +396,12 @@ TestGolden` after deliberate regeneration.
   churn mid-stream.
 - **Execution handoff:** an engineer, mutator agent, or task runner executes this plan
   after approval, one phase per horizon, re-reviewing at each gate. If run by a task
-  runner, use this exact path: `docs/plans/20260618-bc-measurement-v2.md`.
+  runner, use this exact path: `docs/plans/completed/20260618-bc-measurement-v2.md`.
 
 ## Re-review
 
 After Phase 5, run a scoped `architecture-review` over `classify`, `model/coupling`,
 `config`, `extract/deployunit`, `extract/runtime`, and `engine` to verify the
-implementation matches `docs/design/bc-measurement-v2.md` and that determinism + core-ring
+implementation matches `docs/archived/design/bc-measurement-v2.md` and that determinism + core-ring
 purity invariants hold. Re-run `archfit scan` on archfit and confirm the report and
 gradings reflect the new model.

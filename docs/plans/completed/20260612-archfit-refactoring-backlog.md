@@ -3,7 +3,7 @@
 ## Overview
 
 Close the architecture refactoring backlog on archfit itself, derived from the
-three-way review (`docs/plans/notes/three-way-review-comparison.md` §4):
+three-way review (`docs/plans/completed/three-way-review-comparison.md` §4):
 ports extraction (F-01), engine↔metrics un-capture (M1), status→baseline
 inversion (M2), `engine.Run` options struct (F-03), `cmd/archfit/main.go`
 split + collector relocation (F-05, M6), volatility ordering contract (M7),
@@ -89,7 +89,7 @@ CLI determinism tests stay green after every task.
   risk_hub still sees explicit-config volatility only.
 - Task 7: scope tests use a fake resolver (no git); CLI `--base` delta test green.
 - Task 8 + runbook: see Validation tasks below; results recorded in
-  `docs/plans/notes/refactoring-backlog-validation.md`.
+  `docs/plans/completed/refactoring-backlog-validation.md`.
 
 ## Progress Tracking
 
@@ -193,7 +193,7 @@ per-command, never logged).
 
 ### Task 9: validation runbook (gate for the whole plan)
 
-**Files:** create `docs/plans/notes/refactoring-backlog-validation.md`.
+**Files:** create `docs/plans/completed/refactoring-backlog-validation.md`.
 
 - [x] build `.bin/archfit` from the final branch (@7788a53)
 - [x] archfit/ccgram/pumba/codegraph × {double-run byte-identical, exit 0, 0-byte stderr; SARIF schema-valid ×4; baseline→check parity: pass verdict + zero phantom deltas ×4} — see `notes/refactoring-backlog-validation.md`

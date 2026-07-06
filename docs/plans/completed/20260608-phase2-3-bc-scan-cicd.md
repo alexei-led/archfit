@@ -8,8 +8,8 @@ Extends archfit from Phase 1's deterministic gate checker into a full architectu
 - **Phase 3**: `PatternProvider` (ast-grep structural evidence) + `SymbolResolver` (SCIP barrel-file resolution) — fills the previously-empty `Evidence{}` stub
 - **CI/CD**: GitHub Actions lint/test/build/release workflows, cross-platform binary, multi-arch fat Docker image (self-contained with Node 22 + Python 3.12 + uv + dep-cruiser)
 
-Architecture: `docs/design/arch-fitness-architecture-v0.2.md`
-Phase 1 reference: `docs/design/arch-fitness-architecture-v0.1.md`
+Architecture: `docs/archived/design/arch-fitness-architecture-v0.2.md`
+Phase 1 reference: `docs/archived/design/arch-fitness-architecture-v0.1.md`
 
 ---
 
@@ -417,7 +417,7 @@ Docker fat image: `debian:12-slim` + `golang:1.26-bookworm` builder + `python:3.
 **Files:**
 
 - Modify: `README.md`
-- Modify: `docs/plans/20260608-phase2-3-bc-scan-cicd.md` (this file → completed)
+- Modify: `docs/plans/completed/20260608-phase2-3-bc-scan-cicd.md` (this file → completed)
 
 - [x] Run `go build ./...` — no errors
 - [x] Run `go test ./...` — all 26 packages pass

@@ -46,7 +46,7 @@ type Extractor struct {
 
 // tsSourceExts are the file extensions in dependency-cruiser's input scope,
 // hashed into the fact-cache key.
-var tsSourceExts = []string{".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}
+var tsSourceExts = graph.TypeScriptSourceExtensions()
 
 // tsManifestNames are the resolution-affecting manifests hashed into the
 // fact-cache key alongside the source tree: compiler/aliasing config,

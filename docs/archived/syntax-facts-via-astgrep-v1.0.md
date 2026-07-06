@@ -4,7 +4,7 @@ Date: 2026-06-24. Status: SHIPPED. This is the complete implementation — all
 four languages and gate control, no phases (it replaces an earlier phased draft
 that scoped only Go+TS and deferred Python/Rust + gate rules).
 Research basis: `docs/archived/research/tree-sitter-for-archfit.md`.
-Plan: `docs/plans/20260624-syntax-facts-via-astgrep.md`.
+Plan: `docs/plans/completed/20260624-syntax-facts-via-astgrep.md`.
 
 > **Amendment (later):** the **architectural-role** part of this design was
 > **removed** to reduce entropy — roles (handler/service/repository/domain) were

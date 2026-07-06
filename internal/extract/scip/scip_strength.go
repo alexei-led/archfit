@@ -316,7 +316,7 @@ var scipLangInputs = map[string]struct {
 	basenames []string
 }{
 	"go": {[]string{".go"}, []string{"go.mod", "go.sum"}},
-	langTS: {[]string{".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}, []string{
+	langTS: {graph.TypeScriptSourceExtensions(), []string{
 		manifestPkgJSON, "tsconfig.json", "tsconfig.base.json",
 		"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb",
 	}},

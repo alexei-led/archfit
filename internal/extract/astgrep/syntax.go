@@ -43,7 +43,7 @@ const (
 	kindEnum       = "enum"
 	kindAnnotation = "annotation"
 	kindTypeLeak   = "type_leak"
-	kindLazyImport = "lazy_import"
+	kindLazyImport = diagnostic.DynamicImportKindLazyImport
 )
 
 // Language identifier constants used as keys in embeddedRules and langRuleKinds.

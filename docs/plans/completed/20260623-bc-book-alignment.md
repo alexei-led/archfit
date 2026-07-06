@@ -353,7 +353,7 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
       (if any) flagged correctly; no spurious criticals; abstain/decision tasks appear
       only where a judgment input is genuinely undeclared.
 - [x] Write the dogfood scorecard + interpretation to
-      `docs/plans/notes/20260623-bc-book-dogfood.md` (scores, deltas, anything surprising,
+      `docs/plans/completed/20260623-bc-book-dogfood.md` (scores, deltas, anything surprising,
       and any config follow-ups discovered).
 - [x] Gates: `make archfit` (dogfood gate) green; determinism byte-identical double-run;
       commit the report.
@@ -455,7 +455,7 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
       banded scorecard.
       Overall 60/mixed; coupling_balance 78/serviceable/high; analysis_confidence 90/strong/high.
       Edge distribution: 89 scored internal, 0 abstained, 447 external excluded, 238 same-module.
-- [x] Update `docs/plans/notes/20260623-bc-book-dogfood.md` with a before/after table:
+- [x] Update `docs/plans/completed/20260623-bc-book-dogfood.md` with a before/after table:
       scored/abstained edge counts, `coupling_balance` value/band/confidence (should now read
       with higher confidence as the scored fraction rose), and overall-score movement — all
       honestly reported (no forced pass).
@@ -470,11 +470,11 @@ cross_deploy_unit=9`; volatility `frozen=1, supporting=3, generic=3, core=10`,
 
 ### Task 16: [Final] Documentation
 
-- [x] Rewrite `docs/design/bc-measurement-v2.md` (or supersede with a `-v3`): state that
+- [x] Rewrite `docs/archived/design/bc-measurement-v2.md` (or supersede with a `-v3`): state that
       archfit implements Khononov's published formula and ordinal anchors verbatim;
       document the instrumentation mapping (measured signal → book anchor), the abstain
       rule, and the LLM-as-judge-off-gate + human-editable-fallback design.
-      → Created `docs/design/bc-measurement-v3.md` (v2 kept as historical record).
+      → Created `docs/archived/design/bc-measurement-v3.md` (v2 kept as historical record).
 - [x] Update `docs/guide/configuration-reference.md` (new label `confidence`/`provenance`
       fields; frozen/legacy volatility; LLM subdomain draft; abstain → decision tasks),
       `concepts.md`, and `release-notes.md`.

@@ -1,6 +1,6 @@
 # Monorepo acceptance record — 2026-06-27
 
-Plan: `docs/plans/20260626-archfit-monorepo-multimodule-resilience.md` (Tasks 1–16 done).
+Plan: `docs/plans/completed/20260626-archfit-monorepo-multimodule-resilience.md` (Tasks 1–16 done).
 Binary: v0.11.0-dev (commit 76efecd).
 
 ## Acceptance criteria

@@ -17,8 +17,8 @@ Rust**:
 Zero new build/binary cost: no CGO, no new Go module — `sg` is a subprocess.
 Single-phase, complete implementation (no deferred languages or features).
 
-Design: `docs/design/syntax-facts-via-astgrep-v1.0.md`.
-Research basis: `docs/research/tree-sitter-for-archfit.md`.
+Design: `docs/archived/syntax-facts-via-astgrep-v1.0.md`.
+Research basis: `docs/archived/research/tree-sitter-for-archfit.md`.
 
 ## Context (from discovery)
 

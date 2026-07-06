@@ -1,7 +1,7 @@
 # BC Book-Model Dogfood Scorecard
 
 **Date:** 2026-06-23  
-**Plan:** `docs/plans/20260623-bc-book-alignment.md` Tasks 10, 15  
+**Plan:** `docs/plans/completed/20260623-bc-book-alignment.md` Tasks 10, 15
 **Binary (Task 10):** `v0.7.0-10-g5b15405`  
 **Binary (Task 15):** `v0.7.0-17-g2df36b2`  
 **Config hash (Task 15):** `ac84f630b84fa69321258e6129842f6790ded6fe5c820a3b70d652679c41b3eb`

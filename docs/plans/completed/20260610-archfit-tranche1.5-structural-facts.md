@@ -7,9 +7,9 @@ Make the intra-module hubs the validation spike's blind classifier missed
 deterministic per-file **structural facts**, NOT risk rankings.
 
 This supersedes the first Tranche-1.5 attempt
-(`docs/plans/20260609-archfit-tranche1.5-intra-module-hubs.md`), whose two ranking
+(`docs/plans/completed/20260609-archfit-tranche1.5-intra-module-hubs.md`), whose two ranking
 metrics (`cohesion_spread`, `shared_state_hub`) FAILED their 4-repo gate
-(`docs/plans/notes/intra-module-hub-validation.md`). A follow-up signal probe on ccgram
+(`docs/plans/completed/intra-module-hub-validation.md`). A follow-up signal probe on ccgram
 established why and what works:
 
 - **Deterministic code cannot RANK these hubs by risk.** Separating `config` (benign,
@@ -28,7 +28,7 @@ established why and what works:
 discriminating fact already exists in collected data. We assemble a neutral per-file facts
 block and let the Tranche-2 LLM judge.
 
-Source of truth: `docs/design/hybrid-llm-strength-v0.1.md` §7 (Tranche 1.5).
+Source of truth: `docs/archived/design/hybrid-llm-strength-v0.1.md` §7 (Tranche 1.5).
 
 **Hard constraint (unchanged):** `check` — the CI gate — stays pure deterministic and
 LLM-free. The facts block is neutral evidence: no band, no score, never sets delta, never
@@ -221,19 +221,19 @@ follow-up outside this Tranche; the Task-6 gate must therefore pass on SCIP fact
 
 **Files:**
 
-- Create: `docs/plans/notes/structural-facts-spike-rerun.md` (pre-registered bar + result)
+- Create: `docs/plans/completed/structural-facts-spike-rerun.md` (pre-registered bar + result)
 
 - [x] build `.bin/archfit`; run a full scan on ccgram (scip on, gitnexus on if available); capture the facts block (JSON) — gitnexus absent (adapter contract mismatch, see Task 5 WARN); 383 modules captured
 - [x] PRE-REGISTER the bar BEFORE classifying: a blind classifier, fed ONLY the facts block + permission to read ccgram `src/` (firewalled from all `docs/**`, CLAUDE.md, AGENTS.md, llm.txt, the spike notes), must flag `polling_state` (mutable shared-state hub) AND `directory_callbacks` (low-cohesion grab-bag) among its top intra-module risks, judging mutability/cohesion from the code + the neutral facts
 - [x] run the blind classifier; diff vs the pre-registered bar — polling_state ranked #2 (mutable shared-state), directory_callbacks #3 (low-cohesion grab-bag); benign high-scorers (config, providers.base, thread_router) correctly cleared
 - [x] WARN if the targets do NOT surface: STOP — not triggered; both targets surfaced without gitnexus
-- [x] write the result log; mark gate PASS/FAIL — **PASS** (`docs/plans/notes/structural-facts-spike-rerun.md`)
+- [x] write the result log; mark gate PASS/FAIL — **PASS** (`docs/plans/completed/structural-facts-spike-rerun.md`)
 
 ### Task 7: Verify acceptance + determinism + docs
 
 **Files:**
 
-- Modify: `README.md`, `docs/design/hybrid-llm-strength-v0.1.md` (mark Tranche 1.5 implemented)
+- Modify: `README.md`, `docs/archived/design/hybrid-llm-strength-v0.1.md` (mark Tranche 1.5 implemented)
 
 - [x] full suite `go test -count=1 ./...` green; `make lint` 0 issues
 - [x] determinism: two `check` runs byte-identical; grep `check` path — zero LLM deps; confirm verdict unaffected by the facts block — verified byte-identical both with SCIP off and on; no LLM imports anywhere in `internal`/`cmd`; engine test asserts FileFacts attach without changing the verdict, and `computeVerdict` does not read them

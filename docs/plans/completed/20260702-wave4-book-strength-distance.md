@@ -29,7 +29,7 @@ The scorer formula is book-verbatim; these three deviations live in the classifi
 
 ### Task 1: ScoreVersion bump + attribution harness
 
-- [x] bump `ScoreVersion` to `"bc_score.v4"` (`internal/model/coupling/scorer.go` area) with a design note in `docs/design/` listing exactly the three classification changes this version covers (`docs/design/20260702-bc-score-v4.md`)
+- [x] bump `ScoreVersion` to `"bc_score.v4"` (`internal/model/coupling/scorer.go` area) with a design note in `docs/design/` listing exactly the three classification changes this version covers (`docs/archived/design/20260702-bc-score-v4.md`)
 - [x] add a small script or make target (`make corpus-attrib`) that runs the built binary over the four attribution repos with their saved configs and prints repo → {score, band, scored, abstained, external} for the before/after table (`scripts/corpus-attrib.sh`)
 - [x] write test asserting ScoreVersion appears in JSON output (consumers key on it) — `score_version` added to the JSON envelope (always present, not only on BC advisories); `TestJSONRenderer_ScoreVersion` pins the literal
 - [x] run `make test && make lint`; commit
@@ -186,7 +186,7 @@ Task 5 verification results (2026-07-04, HEAD after Task 4):
 
 ### Task 6: [Final] Documentation
 
-- [x] update `docs/design/bc-measurement` doc for v4 semantics; changelog entry: bc_score.v4 with the three-change list and migration note (scores are not comparable across ScoreVersion)
+- [x] update `docs/design/bc-measurement-v4.md` doc for v4 semantics; changelog entry: bc_score.v4 with the three-change list and migration note (scores are not comparable across ScoreVersion)
 - [x] mark findings-report deviations 1–3 fixed with commit refs
 
 Task 6 notes:
@@ -204,7 +204,7 @@ Task 6 notes:
   annotated tag message IS the release notes (`release.yaml`). The curated
   entry (three-change list + not-comparable migration note + top-level
   `score_version` consumer note) is drafted in
-  `docs/design/20260702-bc-score-v4.md` "Changelog entry" section, ready to
+  `docs/archived/design/20260702-bc-score-v4.md` "Changelog entry" section, ready to
   paste into the next `git tag -a` message.
 - Findings report `docs/archived/reports/eval-2026-07-02-v1.1.2/00-FINDINGS.md`: §1
   deviations 1–3 marked ✅ FIXED wave 4 (`1cb538b` DTO, `e64b77d` D=10,

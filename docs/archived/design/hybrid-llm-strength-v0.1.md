@@ -3,7 +3,7 @@
 Status: Tranche 1 implemented (deterministic). Validation spike **RAN 2026-06-09** —
 **split verdict**: LLM coupling refinement validated (build); LLM subdomain/volatility
 drafting descoped. Tranche 2 revised accordingly in §7. Full record:
-`docs/plans/notes/llm-spike/result.md`.
+`docs/plans/completed/llm-spike/result.md`.
 Supersedes nothing; extends `arch-fitness-architecture-v0.2.md` with the LLM-judgment boundary.
 
 ## 1. Goal
@@ -124,7 +124,7 @@ and counts _module-level_ imports, so a symbol-level hub disappears.
   existed); Go builds a `symbol.Graph` and the metric counts externally-referenced
   symbols per module.
   **Why surface-breadth, not transitive reverse-reachability** (the original Task 5
-  design): validated on 4 repos (see `docs/plans/notes/risk_hub-validation.md`).
+  design): validated on 4 repos (see `docs/plans/completed/risk_hub-validation.md`).
   Transitive reachability (a) just reproduces `blast_radius`, (b) is polluted by
   artifacts (`__init__` re-exports, barrel symbols, test symbols) because SCIP refs
   are **doc-scoped** — indexers don't populate `enclosing_range`, and (c) failed the
@@ -223,7 +223,7 @@ classifying; two independent blind subagents (structural-blind = src + archfit J
 then framing-allowed = + README/architecture.md, firewalled by-document from every
 review/modularity doc; transcript-verified zero leakage). ccgram is the only repo with an
 architect review, so the spike is ccgram-only. Record:
-`docs/plans/notes/llm-spike/{ground-truth.md,result.md,ccgram-evidence.json}`.
+`docs/plans/completed/llm-spike/{ground-truth.md,result.md,ccgram-evidence.json}`.
 
 The design's gate rule is **per-capability** (broadly-matches → build; else → rethink), and
 the two LLM jobs land on opposite sides:
@@ -252,15 +252,15 @@ the two LLM jobs land on opposite sides:
 File-level joins (LOC, co-change) are exact via the new `symbol.Graph.Path`
 (per-symbol defining file, parsed from the reader's existing `path` field — no
 `scip_reader.py` change). The acceptance spike re-run **PASSED**
-(`docs/plans/notes/structural-facts-spike-rerun.md`): a firewalled blind classifier
+(`docs/plans/completed/structural-facts-spike-rerun.md`): a firewalled blind classifier
 ranked `polling_state` #2 (mutable shared-state) and `directory_callbacks` #3
 (low-cohesion grab-bag) of 383 ccgram modules, and cleared the benign high-scorers —
 without gitnexus. **Tranche 2 is unblocked.**
 
 Goal: make the intra-module hubs the spike's blind classifier missed (`polling_state`,
 `directory_callbacks`) visible to the Tranche-2 LLM. Plan + evidence:
-`docs/plans/20260610-archfit-tranche1.5-structural-facts.md`,
-`docs/plans/notes/intra-module-hub-validation.md`, and the signal probe notes.
+`docs/plans/completed/20260610-archfit-tranche1.5-structural-facts.md`,
+`docs/plans/completed/intra-module-hub-validation.md`, and the signal probe notes.
 
 **A first attempt (two ranking metrics — `cohesion_spread`, `shared_state_hub`) FAILED its
 4-repo gate**, and a follow-up signal probe on ccgram settled why and what works:
@@ -288,7 +288,7 @@ blind classifier must now surface both hubs from the enriched evidence), not a m
 
 ### Tranche 2 — LLM, off-gate (IMPLEMENTED 2026-06-11; acceptance PASS)
 
-**Status: implemented and accepted** (`docs/plans/notes/tranche2-enrich-validation.md`).
+**Status: implemented and accepted** (`docs/plans/completed/tranche2-enrich-validation.md`).
 Shipped: `internal/llm` provider layer (anthropic/openai/ollama, content-hash
 cache), `internal/labels` pinned-label model with import-graph evidence
 hashing, classify precedence (globs > approved labels > hint), `labels/stale`
@@ -307,7 +307,7 @@ any internal package from importing `internal/llm`.
 
 #### Tranche 2 implementation design (locked 2026-06-11)
 
-Plan: `docs/plans/20260611-archfit-tranche2-llm.md`.
+Plan: `docs/plans/completed/20260611-archfit-tranche2-llm.md`.
 
 - **Package layout:** new `internal/llm` (provider interface + adapters + cache).
   The interface is one method deep: `Complete(ctx, Request) (Response, error)`
@@ -377,7 +377,7 @@ merged: `risk_hub` (SCIP-based symbol surface-breadth), `architecture_fitness`
 provider. All new metrics are info-band (report-only); `check` remains LLM-free.
 
 The validation spike **RAN 2026-06-09** (ccgram-only) with a **split verdict** (see §7 Spike
-and `docs/plans/notes/llm-spike/result.md`): LLM coupling model-vs-functional refinement is
+and `docs/plans/completed/llm-spike/result.md`): LLM coupling model-vs-functional refinement is
 validated (build, off-gate); LLM subdomain/volatility drafting is descoped (inter-judge
 agreement ≈ chance). Next is **Tranche 1.5** (deterministic intra-module cohesion signal),
 which gates the LLM coupling layer; then the revised Tranche 2 (coupling `enrich` + `explain`).

@@ -2,7 +2,7 @@
 
 Date: 2026-06-12. Binary: `.bin/archfit` built from `refactor/architecture-backlog`
 @ 7788a53 (Tasks 1–7 complete). Runbook from
-`docs/plans/20260612-archfit-refactoring-backlog.md` Task 9.
+`docs/plans/completed/20260612-archfit-refactoring-backlog.md` Task 9.
 
 ## Common checks (all four repos)
 

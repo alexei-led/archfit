@@ -333,7 +333,7 @@ Report sections:
   _likelihood_ but lowers _visibility_); chosen conservative (+1), config-overridable,
   report-only in v1.
 - **Open questions — RESOLVED** (2026-06-18, via Perplexity + advisor; see plan
-  `docs/plans/20260618-bc-measurement-v2.md` "Resolved decisions"):
+  `docs/plans/completed/20260618-bc-measurement-v2.md` "Resolved decisions"):
   (1) Calibration repos → TS `redwoodjs/redwood` (api+web deploy units), Py
   `saleor/saleor` (airflow too heavy for repeated indexing); Go archfit.
   (2) §6 metrics → ON by default (report-only, never gate; one-time golden update).

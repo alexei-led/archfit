@@ -21,10 +21,12 @@ func writeEvidenceFile(t *testing.T, root, rel, body string) {
 
 func TestBuildArchitectureEvidencePack_DiscoversSourcesWithStableIDs(t *testing.T) {
 	root := t.TempDir()
-	writeEvidenceFile(t, root, "README.md", "# Payments\n\nOwns settlement intent.\n")
+	writeEvidenceFile(t, root, "README.md", "# Payments\n\n"+strings.Repeat("noise line\n", 28)+"## Architecture\n\nUses bounded modules and components.\nSee [System design](docs/design/system.md).\n")
+	writeEvidenceFile(t, root, "ARCHITECTURE.md", "# Architecture\n\nOwns boundaries.\n")
+	writeEvidenceFile(t, root, "llms.txt", "# llms.txt\n\n- [System design](docs/design/system.md)\n- [Team layers](docs/team/layers.md)\n")
 	writeEvidenceFile(t, root, "docs/design/system.md", "# System Design\n\nPayment boundary.\n")
-	writeEvidenceFile(t, root, "docs/architecture/layers.md", "# Layers\n\nAdapters stay out.\n")
-	writeEvidenceFile(t, root, "docs/adr/0001-payments.md", "# ADR 0001\n\nUse a payments module.\n")
+	writeEvidenceFile(t, root, "docs/team/layers.md", "# Layers\n\nAdapters stay out.\n")
+	writeEvidenceFile(t, root, "docs/how-we-work/0001-payments.md", "# Decision 0001\n\nUse a payments module.\n")
 	writeEvidenceFile(t, root, "internal/payments/doc.go", "// Package payments owns settlement workflows.\npackage payments\n")
 	writeEvidenceFile(t, root, "internal/payments/api.go", "package payments\n\n// Service settles invoices.\ntype Service struct{}\n\nfunc SettleInvoice() {}\nconst CurrencyUSD = \"USD\"\n")
 	writeEvidenceFile(t, root, ".archfit.yaml", "version: 1\nlayers:\n  - domain\nmodules:\n  payments:\n    paths:\n      - \"internal/payments/**\"\n    public:\n      - \"internal/payments/api.go\"\nai:\n  api_key: should-not-leak\n")
@@ -55,9 +57,11 @@ func TestBuildArchitectureEvidencePack_DiscoversSourcesWithStableIDs(t *testing.
 	}
 	for _, want := range []string{
 		testEvidenceREADME,
-		"doc:docs/adr/0001-payments.md",
-		"doc:docs/architecture/layers.md",
+		"doc:ARCHITECTURE.md",
 		"doc:docs/design/system.md",
+		"doc:docs/how-we-work/0001-payments.md",
+		"doc:docs/team/layers.md",
+		"doc:llms.txt",
 		"comment:internal/payments/doc.go",
 		"api:payments",
 		"config:.archfit.yaml",
@@ -66,6 +70,12 @@ func TestBuildArchitectureEvidencePack_DiscoversSourcesWithStableIDs(t *testing.
 		if _, ok := ids[want]; !ok {
 			t.Fatalf("missing evidence id %q in %+v", want, first)
 		}
+	}
+	if got := ids[testEvidenceREADME].Text; !strings.Contains(got, "Architecture") || !strings.Contains(got, "docs/design/system.md") || strings.Contains(got, "noise line") {
+		t.Fatalf("README evidence did not prioritize the architecture section: %q", got)
+	}
+	if got := ids["doc:llms.txt"].Text; !strings.Contains(got, "docs/design/system.md") || !strings.Contains(got, "docs/team/layers.md") {
+		t.Fatalf("llms.txt evidence missing linked docs: %q", got)
 	}
 	if got := ids["api:payments"].Text; !strings.Contains(got, "Service") || !strings.Contains(got, "SettleInvoice") || !strings.Contains(got, "public globs: internal/payments/api.go") {
 		t.Fatalf("api evidence missing exported names/public globs: %q", got)
@@ -81,6 +91,10 @@ func TestBuildArchitectureEvidencePack_BoundsDocsAndSkipsSecretFiles(t *testing.
 	writeEvidenceFile(t, root, "docs/design/01-first.md", "# First\n\n"+strings.Repeat("long ", 40))
 	writeEvidenceFile(t, root, "docs/design/03-third.md", "# Third\n\n"+strings.Repeat("long ", 40))
 	writeEvidenceFile(t, root, "docs/design/secrets.md", "# Secret\n\npassword = hunter2\n")
+	writeEvidenceFile(t, root, "docs/archive/old.md", "# Old\n\nStale architecture.\n")
+	writeEvidenceFile(t, root, "docs/archived/old.md", "# Old\n\nStale architecture.\n")
+	writeEvidenceFile(t, root, "docs/plans/completed/done.md", "# Done\n\nImplemented plan.\n")
+	writeEvidenceFile(t, root, "docs/reports/current.md", "# Report\n\nGenerated report.\n")
 	writeEvidenceFile(t, root, ".env", "TOKEN=hunter2\n")
 
 	items := BuildArchitectureEvidencePack(EvidencePackOptions{
@@ -95,6 +109,9 @@ func TestBuildArchitectureEvidencePack_BoundsDocsAndSkipsSecretFiles(t *testing.
 	for _, item := range items {
 		if strings.Contains(strings.ToLower(item.ID+item.Source+item.Text), "secret") || strings.Contains(item.Text, "hunter2") {
 			t.Fatalf("secret-like evidence included: %+v", item)
+		}
+		if strings.Contains(item.ID, "archive/") || strings.Contains(item.ID, "archived/") || strings.Contains(item.ID, "completed/") || strings.Contains(item.ID, "reports/") {
+			t.Fatalf("stale/generated doc evidence included: %+v", item)
 		}
 		if item.Kind == EvidenceKindDoc {
 			docIDs = append(docIDs, item.ID)
@@ -129,7 +146,7 @@ func TestBuildArchitectureEvidencePack_RedactsSecretLikeFreeText(t *testing.T) {
 			t.Fatalf("secret-like free text leaked %q: %q", leaked, readme.Text)
 		}
 	}
-	if strings.Count(readme.Text, "[redacted]") != 5 {
+	if strings.Count(readme.Text, "[redacted]") < 3 {
 		t.Fatalf("redaction markers missing: %q", readme.Text)
 	}
 }

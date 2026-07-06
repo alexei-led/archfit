@@ -81,6 +81,15 @@ func (r ConventionRegistry) Lookup(lang string) NodeConvention {
 	return NodeConvention{Language: lang, ModuleSegmentSep: "/", Priority: defaultLanguagePriority}
 }
 
+var typeScriptSourceExtensions = []string{".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}
+
+// TypeScriptSourceExtensions returns the TypeScript/JavaScript source-file
+// extensions archfit scans or hashes. Callers get a copy so the shared policy
+// cannot be mutated accidentally.
+func TypeScriptSourceExtensions() []string {
+	return append([]string(nil), typeScriptSourceExtensions...)
+}
+
 // BuiltinConventions holds the conventions for archfit's supported languages.
 // Go/TypeScript/Python entries are exact copies of heuristics that previously
 // lived inline in classify, metrics, and the graph model; rust is new.
@@ -95,7 +104,7 @@ var BuiltinConventions = ConventionRegistry{
 	LangTypeScript: {
 		Language:         LangTypeScript,
 		ModuleSegmentSep: "/",
-		FileExtensions:   []string{".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"},
+		FileExtensions:   TypeScriptSourceExtensions(),
 		Priority:         1,
 		// fileToModuleKeyFn nil → passthrough (file == node), matching the prior
 		// modgraph default branch for TypeScript/JavaScript.

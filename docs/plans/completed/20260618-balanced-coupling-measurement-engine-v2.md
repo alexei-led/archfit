@@ -10,12 +10,12 @@ self-analysis, adds the standard coupling metrics the model leans on, and aligns
 report with Balanced Coupling vocabulary — without ever putting an LLM or
 non-determinism on the gate path.
 
-Adopted from `docs/plans/20260618-bc-measurement-v2.md` (architecture-plan format) and
-the approved design `docs/design/bc-measurement-v2.md`.
+Adopted from `docs/plans/completed/20260618-bc-measurement-v2.md` (architecture-plan format) and
+the approved design `docs/archived/design/bc-measurement-v2.md`.
 
 ## Context
 
-- Source design: `docs/design/bc-measurement-v2.md` (approved 2026-06-18). Gaps and
+- Source design: `docs/archived/design/bc-measurement-v2.md` (approved 2026-06-18). Gaps and
   evidence cited there by `file:line`.
 - Impacted packages (highest blast radius first): `internal/model/coupling`,
   `internal/classify`, `internal/config`, `internal/metrics/*`, `internal/engine`,
@@ -340,7 +340,7 @@ Design §5.
       (Ran `.bin/archfit calibrate --repo . --output /tmp/calibration-report.json`;
       150 edges, 105 agree, rate=0.70; MultiplicativeScorer locked as default;
       ordinal consts frozen with BC-rationale comment; LegacyShim kept but not default.)
-- [x] Record the decision + agreement numbers in `docs/design/bc-measurement-v2.md`.
+- [x] Record the decision + agreement numbers in `docs/archived/design/bc-measurement-v2.md`.
       (Added calibration decision block after §5 step 4.)
 - [x] Write/adjust tests so the locked scorer is the asserted default.
       (TestDefaultScorer passes; no test asserted "legacy" for the default path;
@@ -416,5 +416,5 @@ _Items requiring human judgment or external action — no checkboxes, informatio
 
 **Re-review (full):** after Task 18, run a scoped architecture-review over `classify`,
 `model/coupling`, `config`, `extract/deployunit`, `extract/runtime`, and `engine` to verify
-the implementation matches `docs/design/bc-measurement-v2.md` and that determinism +
+the implementation matches `docs/archived/design/bc-measurement-v2.md` and that determinism +
 core-ring purity hold; re-run `archfit scan` on archfit.

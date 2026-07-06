@@ -1,6 +1,6 @@
 # New Wave 2: semantic architecture evidence pack and draft config/rules
 
-> **Executable ralphex plan.** Run with `ralphex docs/plans/20260705-wave2-semantic-evidence-pack.md` from the repo root. ralphex executes one `### Task N:` section at a time. Completed historical waves in `docs/plans/completed/` are context only and do not affect this new wave numbering.
+> **Executable ralphex plan.** Run with `ralphex docs/plans/completed/20260705-wave2-semantic-evidence-pack.md` from the repo root. ralphex executes one `### Task N:` section at a time. Completed historical waves in `docs/plans/completed/` are context only and do not affect this new wave numbering.
 >
 > This plan is off-gate by design. LLM output may draft labels, config, rules, and review text. It must never directly decide `analyze --gate`.
 
@@ -179,7 +179,7 @@ Justification: Report §7 did not run a fresh external corpus sweep; the user go
 
 Files:
 
-- `docs/plans/notes/wave2-semantic-evidence-validation.md` — validation table and accepted/rejected draft samples.
+- `docs/plans/completed/wave2-semantic-evidence-validation.md` — validation table and accepted/rejected draft samples.
 - `scripts/` optional helper — only if needed to repeat corpus LLM draft checks.
 - `reports/book-alignment-review-2026-07-05/` optional comparison artifacts — only if preserving run outputs is useful.
 
@@ -209,7 +209,7 @@ Manual checks:
 - [x] Run deterministic corpus attribution before any LLM commands.
 - [x] Run `config init --llm`, `config update --llm`, and relevant `config enrich` flows on scratch copies or temp output paths.
 - [x] Confirm deterministic `analyze --gate` output is byte-identical before/after when drafts are not pinned.
-- [x] Record accepted/rejected samples and key false positives in `docs/plans/notes/wave2-semantic-evidence-validation.md`.
+- [x] Record accepted/rejected samples and key false positives in `docs/plans/completed/wave2-semantic-evidence-validation.md`.
 - [x] Confirm all corpus worktrees are clean or only contain pre-existing untracked files.
 
 ### Task 5: Final docs, examples, and re-review handoff
