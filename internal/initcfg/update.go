@@ -332,13 +332,13 @@ func writeAnnotationDiff(b *strings.Builder, name string, a ModuleAnnotation) {
 		fmt.Fprintf(b, "    + role: %s\n", sanitizeComment(a.Role))
 	}
 	if a.Basis != "" {
-		fmt.Fprintf(b, "    basis: %s\n", sanitizeComment(a.Basis))
+		fmt.Fprintf(b, "    + basis: %s\n", sanitizeComment(a.Basis))
 	}
 	if len(a.EvidenceRefs) > 0 {
-		fmt.Fprintf(b, "    evidence_refs: %s\n", joinEvidenceRefs(a.EvidenceRefs))
+		fmt.Fprintf(b, "    + evidence_refs: %s\n", joinEvidenceRefs(a.EvidenceRefs))
 	}
 	if a.Rationale != "" {
-		fmt.Fprintf(b, "    rationale: %s\n", sanitizeComment(a.Rationale))
+		fmt.Fprintf(b, "    + rationale: %s\n", sanitizeComment(a.Rationale))
 	}
 }
 

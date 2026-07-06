@@ -180,6 +180,31 @@ func TestRender_PlanMode_RendersRuleSuggestionsAsComments(t *testing.T) {
 	}
 }
 
+func TestRenderAppliedLLMReview_PrefixesAnnotationMetadataWithPlus(t *testing.T) {
+	r := UpdateReport{Unclassified: []string{testClassify}}
+	ann := map[string]ModuleAnnotation{
+		testClassify: {
+			Subdomain:    layerCore,
+			Volatility:   testAnnVolatility,
+			Basis:        DraftBasisSemanticJudgment,
+			EvidenceRefs: []string{testEvidenceREADME},
+			Rationale:    "docs describe the classify boundary",
+		},
+	}
+	out := RenderAppliedLLMReview(r, ann)
+	for _, want := range []string{
+		"+ subdomain: " + layerCore,
+		"+ volatility: " + testAnnVolatility,
+		"+ basis: semantic_judgment",
+		"+ evidence_refs: " + testEvidenceREADME,
+		"+ rationale: docs describe the classify boundary",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("review output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestRender_PlanMode_RendersExternalSystemSuggestionsAsComments(t *testing.T) {
 	cfg := annotationBaseCfg()
 	ann := map[string]ModuleAnnotation{

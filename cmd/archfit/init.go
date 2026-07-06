@@ -256,9 +256,6 @@ func classifyModulesWithEvidence(ctx context.Context, p llm.Provider, targets []
 				User:   userPrompt,
 			})
 			if err != nil {
-				if parseErr != nil {
-					return nil, parseErr
-				}
 				return nil, err
 			}
 			batchOut = make(map[string]initcfg.ModuleAnnotation, len(batch))
