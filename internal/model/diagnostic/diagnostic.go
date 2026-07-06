@@ -319,6 +319,10 @@ type ClassifiedEdgeSummary struct {
 	// MeanBalance is the arithmetic mean of the book balance (1..10) over scored
 	// cross-boundary edges. 0.0 when Scored == 0.
 	MeanBalance float64 `json:"mean_balance"`
+	// TailRisk summarizes the lower tail of scored cross-boundary coupling facts.
+	// It sits beside MeanBalance so a healthy average cannot hide a concentrated
+	// set of high/critical edges. Nil when no scored cross-boundary facts exist.
+	TailRisk *CouplingTailRiskSummary `json:"tail_risk,omitempty"`
 	// ByStrength counts cross-boundary edges by strength label (string keys, coupling package values).
 	ByStrength map[string]int `json:"by_strength,omitempty"`
 	// ByDistance counts cross-boundary edges by distance label.
@@ -391,15 +395,37 @@ type ClassifiedEdgeSummary struct {
 	DistanceCompression *DistanceCompressionSummary `json:"distance_compression,omitempty"`
 }
 
+// CouplingTailRiskSummary records lower-tail statistics over scored
+// cross-boundary coupling facts. Lower book balance is worse, so WorstBalance
+// and LowerDecileBalance expose concentrated hot spots that MeanBalance can hide.
+type CouplingTailRiskSummary struct {
+	WorstBalance              int `json:"worst_balance"`
+	LowerDecileBalance        int `json:"lower_decile_balance"`
+	HighOrWorseEdges          int `json:"high_or_worse_edges"`
+	HighOrWorseSharePct       int `json:"high_or_worse_share_pct"`
+	CriticalEdges             int `json:"critical_edges"`
+	DistributedMonolithEdges  int `json:"distributed_monolith_edges"`
+	CloneOnlyScored           int `json:"clone_only_scored,omitempty"`
+	CloneOnlyHighOrWorseEdges int `json:"clone_only_high_or_worse_edges,omitempty"`
+	CloneOnlyWorstBalance     int `json:"clone_only_worst_balance,omitempty"`
+}
+
 // DistanceCompressionSummary records archfit's deterministic distance-ladder
 // coverage. It makes compressed Ch8 middle rungs visible in JSON/Markdown so a
 // D=4/D=7 result is not mistaken for full book precision.
 type DistanceCompressionSummary struct {
-	CompressedMiddleRungs bool     `json:"compressed_middle_rungs"`
-	ImplementedRungs      []int    `json:"implemented_rungs,omitempty"`
-	OmittedRungs          []int    `json:"omitted_rungs,omitempty"`
-	DeterministicSplits   []string `json:"deterministic_splits,omitempty"`
-	Rationale             string   `json:"rationale,omitempty"`
+	CompressedMiddleRungs bool                        `json:"compressed_middle_rungs"`
+	ImplementedRungs      []int                       `json:"implemented_rungs,omitempty"`
+	OmittedRungs          []int                       `json:"omitted_rungs,omitempty"`
+	OmittedRungReasons    []DistanceOmittedRungReason `json:"omitted_rung_reasons,omitempty"`
+	DeterministicSplits   []string                    `json:"deterministic_splits,omitempty"`
+	Rationale             string                      `json:"rationale,omitempty"`
+}
+
+// DistanceOmittedRungReason explains why a book distance rung remains compressed.
+type DistanceOmittedRungReason struct {
+	Rung   int    `json:"rung"`
+	Reason string `json:"reason"`
 }
 
 // VolatilityProvenance counts modules by where their volatility came from:

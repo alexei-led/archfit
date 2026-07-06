@@ -1,6 +1,7 @@
 package classify
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
@@ -38,6 +39,23 @@ func TestDistanceCompression(t *testing.T) {
 	if len(got.DeterministicSplits) == 0 {
 		t.Fatal("DeterministicSplits is empty")
 	}
+	for _, rung := range []int{3, 5, 6, 8} {
+		if reason := omittedRungReason(got.OmittedRungReasons, rung); reason == "" {
+			t.Errorf("OmittedRungReasons missing D=%d: %+v", rung, got.OmittedRungReasons)
+		}
+	}
+	if reason := omittedRungReason(got.OmittedRungReasons, 8); !strings.Contains(reason, "external_systems") {
+		t.Errorf("D=8 omitted reason = %q, want external_systems decision", reason)
+	}
+}
+
+func omittedRungReason(reasons []DistanceOmittedRungReason, rung int) string {
+	for _, r := range reasons {
+		if r.Rung == rung {
+			return r.Reason
+		}
+	}
+	return ""
 }
 
 func hasInt(values []int, want int) bool {

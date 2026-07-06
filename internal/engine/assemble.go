@@ -251,9 +251,11 @@ func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, clone
 		DistanceCompression: buildDistanceCompressionSummary(),
 	}
 	connectedModules := make(map[string]struct{})
+	tailRisk := couplingTailRiskAccumulator{}
 	balanceSum := 0
 	for key, cl := range idx {
 		balanceSum += addClassificationToSummary(s, cl)
+		tailRisk.add(cl, false)
 		addConnectedModules(connectedModules, key, cl, mm)
 	}
 	if len(cloneOnly) > 0 {
@@ -262,6 +264,7 @@ func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, clone
 			for _, p := range cloneOnly {
 				s.CloneOnlyScored++
 				balanceSum += addClassificationToSummary(s, p.Classification)
+				tailRisk.add(p.Classification, true)
 				addConnectedModuleName(connectedModules, p.FromModule)
 				addConnectedModuleName(connectedModules, p.ToModule)
 			}
@@ -274,8 +277,72 @@ func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, clone
 	}
 	if s.Scored > 0 {
 		s.MeanBalance = float64(balanceSum) / float64(s.Scored)
+		s.TailRisk = tailRisk.summary(s.Scored)
 	}
 	return s
+}
+
+type couplingTailRiskAccumulator struct {
+	balances                  []int
+	highOrWorseEdges          int
+	criticalEdges             int
+	distributedMonolithEdges  int
+	cloneOnlyScored           int
+	cloneOnlyHighOrWorseEdges int
+	cloneOnlyWorstBalance     int
+}
+
+func (a *couplingTailRiskAccumulator) add(cl coupling.Classification, cloneOnly bool) {
+	if !cl.Score.Scored || cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown {
+		return
+	}
+	balance := cl.Score.Balance
+	if balance <= 0 {
+		return
+	}
+	a.balances = append(a.balances, balance)
+	if cloneOnly {
+		a.cloneOnlyScored++
+		if a.cloneOnlyWorstBalance == 0 || balance < a.cloneOnlyWorstBalance {
+			a.cloneOnlyWorstBalance = balance
+		}
+	}
+	if cl.Score.Band == coupling.SeverityHigh || cl.Score.Band == coupling.SeverityCritical {
+		a.highOrWorseEdges++
+		if cloneOnly {
+			a.cloneOnlyHighOrWorseEdges++
+		}
+	}
+	if cl.Score.Band != coupling.SeverityCritical {
+		return
+	}
+	a.criticalEdges++
+	if coupling.DistanceIsHigh(cl.Distance) {
+		a.distributedMonolithEdges++
+	}
+}
+
+func (a couplingTailRiskAccumulator) summary(totalScored int) *diagnostic.CouplingTailRiskSummary {
+	if len(a.balances) == 0 {
+		return nil
+	}
+	sort.Ints(a.balances)
+	lowerDecileRank := (len(a.balances) + 9) / 10 // nearest-rank lower decile; small samples use the worst edge.
+	sharePct := 0
+	if totalScored > 0 {
+		sharePct = a.highOrWorseEdges * 100 / totalScored
+	}
+	return &diagnostic.CouplingTailRiskSummary{
+		WorstBalance:              a.balances[0],
+		LowerDecileBalance:        a.balances[lowerDecileRank-1],
+		HighOrWorseEdges:          a.highOrWorseEdges,
+		HighOrWorseSharePct:       sharePct,
+		CriticalEdges:             a.criticalEdges,
+		DistributedMonolithEdges:  a.distributedMonolithEdges,
+		CloneOnlyScored:           a.cloneOnlyScored,
+		CloneOnlyHighOrWorseEdges: a.cloneOnlyHighOrWorseEdges,
+		CloneOnlyWorstBalance:     a.cloneOnlyWorstBalance,
+	}
 }
 
 func buildDistanceCompressionSummary() *diagnostic.DistanceCompressionSummary {
@@ -284,9 +351,21 @@ func buildDistanceCompressionSummary() *diagnostic.DistanceCompressionSummary {
 		CompressedMiddleRungs: ev.CompressedMiddleRungs,
 		ImplementedRungs:      append([]int(nil), ev.ImplementedRungs...),
 		OmittedRungs:          append([]int(nil), ev.OmittedRungs...),
+		OmittedRungReasons:    copyDistanceOmittedRungReasons(ev.OmittedRungReasons),
 		DeterministicSplits:   append([]string(nil), ev.DeterministicSplits...),
 		Rationale:             ev.Rationale,
 	}
+}
+
+func copyDistanceOmittedRungReasons(in []classify.DistanceOmittedRungReason) []diagnostic.DistanceOmittedRungReason {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]diagnostic.DistanceOmittedRungReason, len(in))
+	for i, r := range in {
+		out[i] = diagnostic.DistanceOmittedRungReason{Rung: r.Rung, Reason: r.Reason}
+	}
+	return out
 }
 
 func addConnectedModules(modules map[string]struct{}, key string, cl coupling.Classification, mm config.ModuleMap) {

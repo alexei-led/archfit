@@ -15,8 +15,16 @@ type DistanceCompressionEvidence struct {
 	CompressedMiddleRungs bool
 	ImplementedRungs      []int
 	OmittedRungs          []int
+	OmittedRungReasons    []DistanceOmittedRungReason
 	DeterministicSplits   []string
 	Rationale             string
+}
+
+// DistanceOmittedRungReason explains why a book distance rung remains compressed
+// instead of being assigned from unstable naming or package-shape guesses.
+type DistanceOmittedRungReason struct {
+	Rung   int
+	Reason string
 }
 
 // DistanceCompression returns a deterministic summary of the distance ladder
@@ -27,6 +35,13 @@ func DistanceCompression() DistanceCompressionEvidence {
 		CompressedMiddleRungs: true,
 		ImplementedRungs:      []int{2, 4, 7, 9, 10},
 		OmittedRungs:          []int{1, 3, 5, 6, 8},
+		OmittedRungReasons: []DistanceOmittedRungReason{
+			{Rung: 1, Reason: "object/member-level distance is not available from module dependency edges"},
+			{Rung: 3, Reason: "current facts distinguish same module vs cross-module, but not object/package micro-distance"},
+			{Rung: 5, Reason: "package/library middle distance is not split without explicit stable package-boundary metadata"},
+			{Rung: 6, Reason: "intermediate ownership/library distance has no deterministic signal beyond owner and tree structure"},
+			{Rung: 8, Reason: "library-like seams remain compressed: undeclared libraries stay excluded, while declared external_systems score at D=10"},
+		},
 		DeterministicSplits: []string{
 			"same module => D=2",
 			"code_structure sibling/parent-child => D=4; unrelated subtrees => D=7",

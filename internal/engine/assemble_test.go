@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/finding"
@@ -391,6 +392,74 @@ func TestBuildClassifiedEdgeSummary(t *testing.T) {
 			t.Errorf("ByStrength total = %d, want 2 (internal cross-boundary only)", internalCrossTotal)
 		}
 	})
+}
+
+func TestBuildClassifiedEdgeSummary_TailRiskIncludesCloneOnlyContribution(t *testing.T) {
+	key := func(from, to, kind string) string { return from + "\x00" + to + "\x00" + kind }
+	idx := coupling.Index{
+		key("a", "b", "import"): {
+			Distance: coupling.DistanceCrossModuleSameOwner,
+			Strength: coupling.StrengthContract,
+			Score:    coupling.EdgeScore{Scored: true, Balance: 10, Band: coupling.SeverityNone},
+		},
+		key("a", "c", "import"): {
+			Distance: coupling.DistanceCrossModuleDiffOwner,
+			Strength: coupling.StrengthFunctional,
+			Score:    coupling.EdgeScore{Scored: true, Balance: 4, Band: coupling.SeverityHigh},
+		},
+		key("a", "d", "import"): {
+			Distance: coupling.DistanceCrossDeployUnit,
+			Strength: coupling.StrengthIntrusive,
+			Score:    coupling.EdgeScore{Scored: true, Balance: 2, Band: coupling.SeverityCritical},
+		},
+	}
+	cloneOnly := []classify.CloneOnlyPair{{
+		FromModule: "clone-a",
+		ToModule:   "clone-b",
+		Classification: coupling.Classification{
+			Distance: coupling.DistanceCrossModuleDiffOwner,
+			Strength: coupling.StrengthSymmetric,
+			Score:    coupling.EdgeScore{Scored: true, Balance: 3, Band: coupling.SeverityHigh},
+		},
+	}}
+
+	s := buildClassifiedEdgeSummaryWithCloneOnly(idx, cloneOnly, config.DuplicatedKnowledgePolicyScore)
+
+	if s.TailRisk == nil {
+		t.Fatal("TailRisk is nil, want scored-edge tail summary")
+	}
+	if s.TailRisk.WorstBalance != 2 {
+		t.Errorf("WorstBalance = %d, want 2", s.TailRisk.WorstBalance)
+	}
+	if s.TailRisk.LowerDecileBalance != 2 {
+		t.Errorf("LowerDecileBalance = %d, want 2", s.TailRisk.LowerDecileBalance)
+	}
+	if s.TailRisk.HighOrWorseEdges != 3 {
+		t.Errorf("HighOrWorseEdges = %d, want 3", s.TailRisk.HighOrWorseEdges)
+	}
+	if s.TailRisk.HighOrWorseSharePct != 75 {
+		t.Errorf("HighOrWorseSharePct = %d, want 75", s.TailRisk.HighOrWorseSharePct)
+	}
+	if s.TailRisk.CriticalEdges != 1 {
+		t.Errorf("CriticalEdges = %d, want 1", s.TailRisk.CriticalEdges)
+	}
+	if s.TailRisk.DistributedMonolithEdges != 1 {
+		t.Errorf("DistributedMonolithEdges = %d, want 1", s.TailRisk.DistributedMonolithEdges)
+	}
+	if s.TailRisk.CloneOnlyScored != 1 {
+		t.Errorf("CloneOnlyScored = %d, want 1", s.TailRisk.CloneOnlyScored)
+	}
+	if s.TailRisk.CloneOnlyHighOrWorseEdges != 1 {
+		t.Errorf("CloneOnlyHighOrWorseEdges = %d, want 1", s.TailRisk.CloneOnlyHighOrWorseEdges)
+	}
+	if s.TailRisk.CloneOnlyWorstBalance != 3 {
+		t.Errorf("CloneOnlyWorstBalance = %d, want 3", s.TailRisk.CloneOnlyWorstBalance)
+	}
+
+	s = buildClassifiedEdgeSummaryWithCloneOnly(idx, cloneOnly, config.DuplicatedKnowledgePolicyAdvisory)
+	if s.TailRisk.CloneOnlyScored != 0 || s.TailRisk.CloneOnlyHighOrWorseEdges != 0 || s.TailRisk.CloneOnlyWorstBalance != 0 {
+		t.Errorf("advisory policy tail risk counted clone-only pair: %+v", s.TailRisk)
+	}
 }
 
 func TestBuildClassifiedEdgeSummary_DistanceBasisCompressionAndConnectedModules(t *testing.T) {

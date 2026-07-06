@@ -78,11 +78,23 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 		Scored:           3,
 		ConnectedModules: 2,
 		ByDistanceBasis:  map[string]int{"code_structure": 2, "ownership": 1},
+		TailRisk: &diagnostic.CouplingTailRiskSummary{
+			WorstBalance:          2,
+			LowerDecileBalance:    2,
+			HighOrWorseEdges:      1,
+			HighOrWorseSharePct:   33,
+			CriticalEdges:         1,
+			CloneOnlyScored:       1,
+			CloneOnlyWorstBalance: 4,
+		},
 		DistanceCompression: &diagnostic.DistanceCompressionSummary{
 			CompressedMiddleRungs: true,
 			ImplementedRungs:      []int{2, 4, 7, 9, 10},
 			OmittedRungs:          []int{3, 5, 6, 8},
-			Rationale:             "D=3/D=5/D=6/D=8 remain compressed",
+			OmittedRungReasons: []diagnostic.DistanceOmittedRungReason{
+				{Rung: 8, Reason: "declared external_systems use D=10"},
+			},
+			Rationale: "D=3/D=5/D=6/D=8 remain compressed",
 		},
 	}
 
@@ -106,6 +118,15 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 	}
 	if got.ClassifiedEdges.DistanceCompression == nil || !got.ClassifiedEdges.DistanceCompression.CompressedMiddleRungs {
 		t.Fatalf("distance_compression = %+v, want compressed_middle_rungs=true", got.ClassifiedEdges.DistanceCompression)
+	}
+	if reasons := got.ClassifiedEdges.DistanceCompression.OmittedRungReasons; len(reasons) != 1 || reasons[0].Rung != 8 {
+		t.Fatalf("omitted_rung_reasons = %+v, want D=8 reason", reasons)
+	}
+	if got.ClassifiedEdges.TailRisk == nil {
+		t.Fatal("tail_risk missing from JSON output")
+	}
+	if got.ClassifiedEdges.TailRisk.WorstBalance != 2 || got.ClassifiedEdges.TailRisk.HighOrWorseEdges != 1 {
+		t.Fatalf("tail_risk = %+v, want worst=2 high_or_worse=1", got.ClassifiedEdges.TailRisk)
 	}
 }
 

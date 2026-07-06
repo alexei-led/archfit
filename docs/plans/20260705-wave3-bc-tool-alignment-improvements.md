@@ -281,10 +281,10 @@ Manual checks:
 - Ensure no new distance rung is invented from naming taste.
 - Ensure clone-only scoring remains book-credible, not clone-noise-driven.
 
-- [ ] Add finer distance rungs only when a deterministic split exists.
-- [ ] Reconfirm declared external seam handling and reporting.
-- [ ] Tighten clone-only duplicated-knowledge evidence and tail-risk output.
-- [ ] Update tests and docs for the new reporting shape.
+- [x] Add finer distance rungs only when a deterministic split exists.
+- [x] Reconfirm declared external seam handling and reporting.
+- [x] Tighten clone-only duplicated-knowledge evidence and tail-risk output.
+- [x] Update tests and docs for the new reporting shape.
 
 ### Task 4: Close P3 — dynamic connascence roadmap and book-alignment framing
 

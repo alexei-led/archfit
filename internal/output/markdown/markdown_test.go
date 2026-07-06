@@ -1065,13 +1065,32 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
 	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
-		ConnectedModules: 2,
-		ByDistanceBasis:  map[string]int{"code_structure": 3, "ownership": 1},
+		Scored:            10,
+		ConnectedModules:  2,
+		External:          5,
+		DeclaredExternal:  2,
+		CloneOnlyScored:   3,
+		CloneOnlyAdvisory: 1,
+		ByDistanceBasis:   map[string]int{"code_structure": 3, "ownership": 1},
+		TailRisk: &diagnostic.CouplingTailRiskSummary{
+			WorstBalance:              2,
+			LowerDecileBalance:        4,
+			HighOrWorseEdges:          2,
+			HighOrWorseSharePct:       20,
+			CriticalEdges:             1,
+			DistributedMonolithEdges:  1,
+			CloneOnlyScored:           3,
+			CloneOnlyHighOrWorseEdges: 1,
+			CloneOnlyWorstBalance:     4,
+		},
 		DistanceCompression: &diagnostic.DistanceCompressionSummary{
 			CompressedMiddleRungs: true,
 			ImplementedRungs:      []int{2, 4, 7, 9, 10},
 			OmittedRungs:          []int{3, 5, 6, 8},
-			Rationale:             "D=3/D=5/D=6/D=8 remain compressed: no stable deterministic facts beyond structure/ownership/deploy_unit.",
+			OmittedRungReasons: []diagnostic.DistanceOmittedRungReason{
+				{Rung: 8, Reason: "declared external_systems use D=10; library-like seams stay compressed"},
+			},
+			Rationale: "D=3/D=5/D=6/D=8 remain compressed: no stable deterministic facts beyond structure/ownership/deploy_unit.",
 		},
 	}
 
@@ -1101,6 +1120,12 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 		"distance basis: code_structure=3, ownership=1",
 		"distance rungs implemented: D=2, D=4, D=7, D=9, D=10; omitted/compressed: D=3, D=5, D=6, D=8",
 		"distance compression: D=3/D=5/D=6/D=8 remain compressed",
+		"D=8 compressed: declared external_systems use D=10; library-like seams stay compressed",
+		"declared external-system edges scored at D=10: 2",
+		"undeclared external/library edges excluded: 5",
+		"clone-only duplicated knowledge: 3 scored, 1 advisory-only",
+		"tail risk: worst balance 2/10; lower-decile balance 4/10; high-or-worse edges 2/10 (20%); critical 1; distributed-monolith 1",
+		"clone-only tail: worst balance 4/10; high-or-worse 1/3 scored clone-only pairs",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)

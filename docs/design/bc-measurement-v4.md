@@ -243,8 +243,10 @@ signal selected the rung: `code_structure`, `ownership`, `deploy_unit`, or
 `declared_external`. The run summary rolls these into
 `classified_edges.by_distance_basis`. The companion
 `classified_edges.distance_compression` block lists implemented rungs, omitted
-compressed rungs, deterministic split decisions, and the rationale for not
-inventing finer middle/library rungs yet.
+compressed rungs, deterministic split decisions, and per-rung omission reasons.
+D=8 remains omitted by policy: undeclared library/package imports stay excluded,
+while explicitly declared `external_systems:` seams score at D=10. No D=8
+library seam is invented from package-manager shape alone.
 
 ### Volatility mapping
 
@@ -275,9 +277,16 @@ Confidence starts from the internal scored fraction (see §5), then high
 confidence is disallowed for tiny samples: fewer than 5 scored internal
 cross-boundary facts or fewer than 3 connected modules caps the dimension at
 medium confidence and appends an evidence line. The cap changes confidence only;
-it does not change the numeric score, band, or `coupling.gate` decision. Worst
-edges surface as advisories. This is transparent aggregation of the book's own
-per-edge score, not a new coupling model.
+it does not change the numeric score, band, or `coupling.gate` decision.
+
+The mean is paired with `classified_edges.tail_risk`: worst balance,
+lower-decile balance, high-or-worse share, critical count, and
+distributed-monolith count. Clone-only duplicated-knowledge pairs that enter the
+score under `coupling.duplicated_knowledge: score` are counted in the same tail
+summary with clone-only subcounts, so copy-paste evidence is visible without
+inventing graph edges or changing the book formula. Worst edges still surface as
+advisories. This is transparent aggregation of the book's own per-edge score,
+not a new coupling model.
 
 ---
 
@@ -322,8 +331,8 @@ Edges whose target does not resolve to a declared module fall in two buckets:
   as external). Scoring EVERY library import at D=10 would flood the metric
   with vendor noise; the book's example is a _declared integration seam_.
   External dependency hygiene belongs in linter/dependency tooling. The count
-  is surfaced transparently in `classified_edges.external` (JSON) and in the
-  `coupling_balance` evidence string.
+  is surfaced transparently in `classified_edges.external` (JSON), Markdown
+  **Distance confidence**, and the `coupling_balance` evidence string.
 
 Language-agnostic: both buckets key on `DistanceUnknown`, which every language
 extractor sets for unresolved targets; the `external_systems:` match runs only

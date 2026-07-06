@@ -64,6 +64,26 @@ func writeDistanceConfidence(b *strings.Builder, d diagnostic.Diagnostic) {
 			if dc.Rationale != "" {
 				fmt.Fprintf(b, "- distance compression: %s\n", dc.Rationale)
 			}
+			for _, r := range dc.OmittedRungReasons {
+				fmt.Fprintf(b, "- D=%d compressed: %s\n", r.Rung, r.Reason)
+			}
+		}
+		if ce.DeclaredExternal > 0 {
+			fmt.Fprintf(b, "- declared external-system edges scored at D=10: %d\n", ce.DeclaredExternal)
+		}
+		if ce.External > 0 {
+			fmt.Fprintf(b, "- undeclared external/library edges excluded: %d\n", ce.External)
+		}
+		if ce.CloneOnlyScored > 0 || ce.CloneOnlyAdvisory > 0 {
+			fmt.Fprintf(b, "- clone-only duplicated knowledge: %d scored, %d advisory-only\n", ce.CloneOnlyScored, ce.CloneOnlyAdvisory)
+		}
+		if tr := ce.TailRisk; tr != nil {
+			fmt.Fprintf(b, "- tail risk: worst balance %d/10; lower-decile balance %d/10; high-or-worse edges %d/%d (%d%%); critical %d; distributed-monolith %d\n",
+				tr.WorstBalance, tr.LowerDecileBalance, tr.HighOrWorseEdges, ce.Scored, tr.HighOrWorseSharePct, tr.CriticalEdges, tr.DistributedMonolithEdges)
+			if tr.CloneOnlyScored > 0 {
+				fmt.Fprintf(b, "- clone-only tail: worst balance %d/10; high-or-worse %d/%d scored clone-only pairs\n",
+					tr.CloneOnlyWorstBalance, tr.CloneOnlyHighOrWorseEdges, tr.CloneOnlyScored)
+			}
 		}
 	}
 	if unresolved > 0 {

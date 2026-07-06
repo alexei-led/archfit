@@ -527,6 +527,37 @@ func TestCouplingBalance_CloneOnlyEvidenceString(t *testing.T) {
 	}
 }
 
+func TestCouplingBalance_TailRiskEvidenceString(t *testing.T) {
+	nonDegen := nonDegenMetricIndex()
+	sum := &diagnostic.ClassifiedEdgeSummary{
+		Total:             20,
+		Scored:            20,
+		MeanBalance:       8.5,
+		BySeverity:        map[string]int{sevLow: 18, sevCritical: 2},
+		CloneOnlyScored:   4,
+		CloneOnlyAdvisory: 1,
+		TailRisk: &diagnostic.CouplingTailRiskSummary{
+			WorstBalance:              3,
+			LowerDecileBalance:        5,
+			HighOrWorseEdges:          2,
+			HighOrWorseSharePct:       10,
+			CriticalEdges:             1,
+			DistributedMonolithEdges:  1,
+			CloneOnlyScored:           4,
+			CloneOnlyHighOrWorseEdges: 1,
+			CloneOnlyWorstBalance:     3,
+		},
+	}
+
+	got := couplingBalance(nil, nonDegen, sum)
+	if !evidenceContains(got.Evidence, "tail risk: worst balance 3/10, lower-decile balance 5/10, high-or-worse edges 2/20 (10%), critical 1, distributed-monolith 1") {
+		t.Errorf("expected tail-risk evidence, got: %v", got.Evidence)
+	}
+	if !evidenceContains(got.Evidence, "clone-only tail: worst balance 3/10, high-or-worse 1/4 scored clone-only pairs") {
+		t.Errorf("expected clone-only tail evidence, got: %v", got.Evidence)
+	}
+}
+
 func TestCouplingBalance_LLMProvenance_LowersConfidence(t *testing.T) {
 	nonDegen := nonDegenMetricIndex()
 

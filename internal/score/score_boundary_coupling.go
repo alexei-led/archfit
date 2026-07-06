@@ -132,6 +132,7 @@ func couplingBalance(edges []bcEdge, mi metricIndex, summary *diagnostic.Classif
 			fmt.Sprintf("critical-band edges: %d (%d distributed-monolith: critical at high distance)",
 				criticalCount, dmCount),
 		}
+		dim.Evidence = appendTailRiskEvidence(dim.Evidence, summary)
 		dim.Evidence = append(dim.Evidence, capReasons...)
 		if summary.DeclaredExternal > 0 {
 			dim.Evidence = append(dim.Evidence,
@@ -253,6 +254,23 @@ func summaryConfidenceCapReasons(summary *diagnostic.ClassifiedEdgeSummary, conf
 				summary.ConnectedModules, minHighConfidenceConnectedModules))
 	}
 	return reasons
+}
+
+func appendTailRiskEvidence(evidence []string, summary *diagnostic.ClassifiedEdgeSummary) []string {
+	tr := summary.TailRisk
+	if tr == nil {
+		return evidence
+	}
+	evidence = append(evidence,
+		fmt.Sprintf("tail risk: worst balance %d/10, lower-decile balance %d/10, high-or-worse edges %d/%d (%d%%), critical %d, distributed-monolith %d",
+			tr.WorstBalance, tr.LowerDecileBalance, tr.HighOrWorseEdges, summary.Scored,
+			tr.HighOrWorseSharePct, tr.CriticalEdges, tr.DistributedMonolithEdges))
+	if tr.CloneOnlyScored > 0 {
+		evidence = append(evidence,
+			fmt.Sprintf("clone-only tail: worst balance %d/10, high-or-worse %d/%d scored clone-only pairs",
+				tr.CloneOnlyWorstBalance, tr.CloneOnlyHighOrWorseEdges, tr.CloneOnlyScored))
+	}
+	return evidence
 }
 
 // appendLLMLabelEvidence appends the llm-label disclosure lines: the approved

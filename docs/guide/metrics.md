@@ -154,10 +154,14 @@ inherited: M, cascade: K` (plus `undeclared: U` when nonzero; JSON:
   `classified_edges.volatility_provenance`) — so a repo whose volatility is
   uniform because synthetic submodules inherited it reads as
   uniform-by-inheritance, not as a measured fact. JSON also exposes
-  `classified_edges.connected_modules`, `classified_edges.by_distance_basis`, and
-  `classified_edges.distance_compression`; Markdown renders the same in
-  **Distance confidence**. These fields show which deterministic distance signal
-  selected each rung and which middle Ch8 rungs remain compressed.
+  `classified_edges.connected_modules`, `classified_edges.by_distance_basis`,
+  `classified_edges.distance_compression`, and `classified_edges.tail_risk`;
+  Markdown renders the same in **Distance confidence**. These fields show which
+  deterministic distance signal selected each rung, which middle Ch8 rungs
+  remain compressed, and whether the mean hides a lower-tail hot spot. Tail risk
+  reports worst balance, lower-decile balance, high-or-worse share, critical and
+  distributed-monolith counts, plus clone-only subcounts when scored clone-only
+  duplicated knowledge contributes to the tail.
 
 ### `unbalanced_edge`
 
