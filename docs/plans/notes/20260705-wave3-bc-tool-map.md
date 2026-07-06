@@ -75,17 +75,22 @@ needs_user_decision: true | false
 
 Accept only high-confidence, evidence-cited drafts for human approval. Medium/low drafts stay documentation or backlog input.
 
-## User decisions needed before code changes
+## Final Task 5 disposition
 
-1. Runtime distance: current module-level `runtime_async` remains report-only, and Task 2 added `runtime_async_edges` as relationship-level evidence. A future opt-in runtime distance overlay still needs an explicit score policy decision.
+Validation note: `docs/plans/notes/20260705-wave3-bc-tool-alignment-validation.md`.
+
+Implemented in this wave:
+
+1. Runtime coupling: current module-level `runtime_async` remains report-only, and Task 2 added `runtime_async_edges` as relationship-level evidence. A future opt-in runtime distance overlay still needs an explicit score policy decision.
 2. Unpinned semantic labels: uncertain LLM/human drafts stay out of scoring until explicitly approved.
-3. Volatility cascade: Task 2 selected the deterministic transitive fixpoint and versioned it as `bc_score.v6` with tests/docs/validation. Future propagation semantics still need score-version review.
-4. Distance D=8: decide whether archfit needs a declared-library seam distinct from `external_systems` D=10 and undeclared external/library exclusion.
-5. Tail-risk output: choose whether users need worst-N edges, percentile-style tail stats, or both beside the mean balance.
-6. Clone-only default: keep `coupling.duplicated_knowledge: score` as the v5 default unless conservative migrations should recommend `advisory`.
+3. Volatility cascade: Task 2 selected the deterministic transitive fixpoint and versioned it as `bc_score.v6` with tests, docs, and corpus attribution. Future propagation semantics still need score-version review.
+4. Distance fidelity: Task 3 kept D=8 compressed rather than inventing a declared-library seam without deterministic evidence; undeclared libraries stay excluded and declared `external_systems` score at D=10.
+5. Tail-risk output: Task 3 added `classified_edges.tail_risk` beside the mean balance without changing the score formula.
+6. Clone-only default: `coupling.duplicated_knowledge: score` remains the default, with `advisory` available for conservative teams.
+7. Connascence framing: Task 4 added `connascence.roadmap`; static name/type/meaning/algorithm are deterministic, position is unmeasured static, and execution/timing/value/identity are unmeasured dynamic.
 
-## Recommended next implementation order
+Remaining review-only decisions:
 
-1. P2 distance and D=8 decisions remain score-changing candidates; defer until tests, docs, attribution, and explicit decision are ready.
-2. Tail-risk reporting is deterministic and low-risk because it can expose existing scored facts without changing score semantics.
-3. Dynamic connascence should remain report-only until a deterministic runtime/transaction source exists.
+1. Whether to introduce a future opt-in runtime distance overlay, and which deterministic runtime facts qualify.
+2. Whether to add a declared-library D=8 concept if a stable config/schema source is approved later.
+3. Whether conservative migrations should recommend explicitly setting `coupling.duplicated_knowledge: advisory`.

@@ -386,10 +386,10 @@ Manual checks:
 - Confirm there are no undocumented semantic changes left.
 - Confirm the docs read as a tool manual, not as a research note.
 
-- [ ] Run the final validation suite.
-- [ ] Update the validation note and any affected docs.
-- [ ] Rebaseline only if a score/version change is intentional and documented.
-- [ ] Record the scoped re-review handoff.
+- [x] Run the final validation suite.
+- [x] Update the validation note and any affected docs.
+- [x] Rebaseline only if a score/version change is intentional and documented.
+- [x] Record the scoped re-review handoff.
 
 ## Acceptance criteria
 
