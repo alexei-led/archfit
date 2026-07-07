@@ -241,11 +241,12 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 
 - **Represents:** the fraction of applicable files the extractors actually
   processed — the trust signal for every other metric.
-- **Computed:** `extracted / applicable` across all tool-coverage records. Zero
-  applicable (extractors ran, nothing matched) → `1.0`. **No extractor ran at
-  all** (no coverage record) → `n/a`, not `1.0` — absence of evidence is never
-  scored as full coverage. This is the load-bearing distinction that stops an
-  unanalysed repo from reporting confident health.
+- **Computed:** `extracted / applicable` across contributing tool-coverage
+  records. Rows with `files_applicable: 0` are diagnostic-only auxiliary evidence
+  (for example `deploy-unit`) and do not contribute to either side of the ratio.
+  If no row contributes — no extractor ran, every extractor was absent, or only
+  auxiliary rows exist — coverage is `n/a`, not `1.0`; absence of evidence is
+  never scored as full coverage.
 - **Band:** always `info`. Confidence from the unresolved ratio (≤5% → high,
   ≤20% → medium, else low). Low coverage caps the band of every metric that
   depends on the missing evidence.

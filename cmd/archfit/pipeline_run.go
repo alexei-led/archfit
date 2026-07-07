@@ -237,9 +237,11 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	deployUnitsByModule := deployunit.KeyByModule(deployUnitsByPath, duModules)
 	cfg.FillMissingDeployUnits(deployUnitsByModule)
 	change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
-		Tool:            "deploy-unit",
-		FilesSeen:       len(deployUnitsByPath),
-		FilesApplicable: len(deployUnitsByModule),
+		Tool:      toolDeployUnit,
+		FilesSeen: len(deployUnitsByPath),
+		// Deploy-unit detection is auxiliary distance evidence, not file-scope
+		// extractor coverage. Keep the row visible but non-contributing.
+		FilesApplicable: 0,
 		Status:          diagnostic.StatusOK,
 	})
 

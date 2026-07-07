@@ -106,8 +106,8 @@ func writeNonGoRepo(t *testing.T, cfgBody string) string {
 	t.Helper()
 	dir := t.TempDir()
 	files := map[string]string{
-		"README.md":     "# fixture\n",
-		".archfit.yaml": cfgBody,
+		"README.md":       "# fixture\n",
+		defaultConfigPath: cfgBody,
 	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
@@ -115,7 +115,7 @@ func writeNonGoRepo(t *testing.T, cfgBody string) string {
 		}
 	}
 	gitInitFixtureRepo(t, dir)
-	return filepath.Join(dir, ".archfit.yaml")
+	return filepath.Join(dir, defaultConfigPath)
 }
 
 // writeGapRepo creates a git repo with no analyzable source and an archfit
@@ -261,7 +261,7 @@ func writeRepoWithExternalConfig(t *testing.T) (repoDir, cfgPath string) {
 	if err := os.MkdirAll(cfgDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	cfgPath = filepath.Join(cfgDir, ".archfit.yaml")
+	cfgPath = filepath.Join(cfgDir, defaultConfigPath)
 	cfgBody := `version: 1
 modules:
   a:
@@ -806,6 +806,91 @@ func TestRun_Analyze_ScipDisabledCoverageRow(t *testing.T) {
 	}
 }
 
+func TestRun_Analyze_DeployUnitCoverageRowIsDiagnosticOnly(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	files := map[string]string{
+		markerGoMod:       "module example.com/deploycov\n\ngo 1.21\n",
+		"cmd/api/main.go": goMainSrc,
+		defaultConfigPath: `version: 1
+modules:
+  cmd/api:
+    paths: ["cmd/api/**"]
+`,
+	}
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitInitFixtureRepo(t, dir)
+
+	var buf bytes.Buffer
+	cfgPath := filepath.Join(dir, defaultConfigPath)
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf); code == 3 {
+		t.Fatalf("analyze exited 3 (config/pipeline error)\noutput:\n%s", buf.String())
+	}
+
+	var out struct {
+		Metrics []struct {
+			Name  string  `json:"name"`
+			Value float64 `json:"value"`
+		} `json:"metrics"`
+		ToolCoverage []struct {
+			Tool            string `json:"tool"`
+			FilesSeen       int    `json:"files_seen"`
+			FilesApplicable int    `json:"files_applicable"`
+			Status          string `json:"status"`
+		} `json:"tool_coverage"`
+		DistanceContext struct {
+			DeployUnitDetectedModules int `json:"deploy_unit_detected_modules"`
+		} `json:"distance_context"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal: %v\noutput:\n%s", err, buf.String())
+	}
+
+	coverageFound := false
+	for _, m := range out.Metrics {
+		if m.Name == "coverage" {
+			coverageFound = true
+			if m.Value > 1.0 {
+				t.Fatalf("coverage metric = %v, want <= 1.0", m.Value)
+			}
+		}
+	}
+	if !coverageFound {
+		t.Fatalf("coverage metric not found in output")
+	}
+
+	deployCoverageFound := false
+	for _, c := range out.ToolCoverage {
+		if c.Tool == toolDeployUnit {
+			deployCoverageFound = true
+			if c.Status != string(diagnostic.StatusOK) {
+				t.Errorf("deploy-unit coverage status = %q, want %q", c.Status, diagnostic.StatusOK)
+			}
+			if c.FilesSeen == 0 {
+				t.Errorf("deploy-unit files_seen = 0, want detected evidence")
+			}
+			if c.FilesApplicable != 0 {
+				t.Errorf("deploy-unit files_applicable = %d, want 0 so coverage ignores it", c.FilesApplicable)
+			}
+		}
+	}
+	if !deployCoverageFound {
+		t.Fatalf("no deploy-unit entry in tool_coverage: %+v", out.ToolCoverage)
+	}
+	if out.DistanceContext.DeployUnitDetectedModules == 0 {
+		t.Fatalf("distance_context.deploy_unit_detected_modules = 0, want detected evidence")
+	}
+}
+
 // TestRun_Check_FileClassConfigWiredToPipeline verifies M1: a user-supplied
 // file_class: generated_globs pattern in .archfit.yaml reaches the FileClassIndex
 // through the pipeline (cfg.ForFileClass() → loc.RunWithConfig). The test
@@ -819,12 +904,12 @@ func TestRun_Check_FileClassConfigWiredToPipeline(t *testing.T) {
 
 	dir := t.TempDir()
 	files := map[string]string{
-		"go.mod":  "module example.com/fctest\n\ngo 1.21\n",
-		"main.go": goMainSrc,
+		markerGoMod: "module example.com/fctest\n\ngo 1.21\n",
+		"main.go":   goMainSrc,
 		// Custom generated file — NOT matched by built-in filename heuristics.
 		// Only config-supplied generated_globs should catch it.
 		"codegen/mycodegen_output.go": "package codegen\n\nfunc Generated() {}\n",
-		".archfit.yaml": `version: 1
+		defaultConfigPath: `version: 1
 file_class:
   generated_globs:
     - "codegen/**"
@@ -841,7 +926,7 @@ file_class:
 	}
 	gitInitFixtureRepo(t, dir)
 
-	cfgPath := filepath.Join(dir, ".archfit.yaml")
+	cfgPath := filepath.Join(dir, defaultConfigPath)
 	var buf bytes.Buffer
 	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf); code == 3 {
 		t.Fatalf("check exited 3 (pipeline error)\noutput:\n%s", buf.String())

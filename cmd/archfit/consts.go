@@ -35,6 +35,7 @@ const (
 const (
 	toolLoc           = "loc"             // always-on LOC walk; used in test assertions
 	toolAstGrepSyntax = "ast-grep/syntax" // syntax opt-in pass (distinct from the pattern pass "ast-grep")
+	toolDeployUnit    = "deploy-unit"
 	toolScip          = "scip"
 	toolJscpd         = "jscpd"
 )
