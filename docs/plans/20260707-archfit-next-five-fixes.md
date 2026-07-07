@@ -229,12 +229,12 @@ Metrics / evidence to consume:
 
 Task checklist:
 
-- [ ] Add a new report-only advisory-task model/type.
-- [ ] Populate it from grouped BC advisories.
-- [ ] Render it in JSON and Markdown.
-- [ ] Keep `agent_tasks[]` gate-only.
-- [ ] Update the agent-feedback docs so the channel split is explicit.
-- [ ] Verify advisories still do not change verdict or gate status.
+- [x] Add a new report-only advisory-task model/type.
+- [x] Populate it from grouped BC advisories.
+- [x] Render it in JSON and Markdown.
+- [x] Keep `agent_tasks[]` gate-only.
+- [x] Update the agent-feedback docs so the channel split is explicit.
+- [x] Verify advisories still do not change verdict or gate status.
 
 Validation:
 

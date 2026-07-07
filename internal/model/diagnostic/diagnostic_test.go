@@ -37,6 +37,9 @@ func TestNew_ZeroValue(t *testing.T) {
 	if d.AgentTasks == nil {
 		t.Error("AgentTasks must be non-nil (empty slice, not nil)")
 	}
+	if d.AdvisoryTasks == nil {
+		t.Error("AdvisoryTasks must be non-nil (empty slice, not nil)")
+	}
 	if d.ToolCoverage == nil {
 		t.Error("ToolCoverage must be non-nil (empty slice, not nil)")
 	}
@@ -66,6 +69,7 @@ func TestDiagnostic_JSONFieldNames(t *testing.T) {
 		"metrics",
 		"findings",
 		"agent_tasks",
+		"advisory_tasks",
 		"tool_coverage",
 		"summary",
 	}
@@ -89,12 +93,14 @@ func TestAgentTasks_SerializesAsEmptyArray(t *testing.T) {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
 
-	raw, ok := m["agent_tasks"]
-	if !ok {
-		t.Fatal("agent_tasks field missing from JSON")
-	}
-	if string(raw) != "[]" {
-		t.Errorf("agent_tasks = %s; want []", raw)
+	for _, field := range []string{"agent_tasks", "advisory_tasks"} {
+		raw, ok := m[field]
+		if !ok {
+			t.Fatalf("%s field missing from JSON", field)
+		}
+		if string(raw) != "[]" {
+			t.Errorf("%s = %s; want []", field, raw)
+		}
 	}
 }
 

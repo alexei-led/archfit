@@ -57,6 +57,10 @@ const (
 	roleHandler    = "handler"
 	fileAPIHandler = "pkg/api/handler.go"
 
+	// Agent/advisory task test literals.
+	taskFileA = "pkg/a/a.go"
+	taskFileB = "pkg/b/b.go"
+
 	// Runtime async test literals.
 	modAPI        = "api"
 	kindMQ        = "message_queue"
@@ -840,7 +844,7 @@ func TestRenderer_Render_AgentTasks(t *testing.T) {
 		RuleID:      "no_internal_access",
 		Goal:        "Replace the internal-API access from pkg/a/a.go to pkg/b/internal/impl.go with b's public API.",
 		Constraints: []string{"Use only the public API of module b"},
-		Files:       []string{"pkg/a/a.go", "pkg/b/internal/impl.go"},
+		Files:       []string{taskFileA, "pkg/b/internal/impl.go"},
 		Validation:  []string{"archfit analyze --gate -c .archfit.yaml --full"},
 	}}
 
@@ -869,6 +873,48 @@ func TestRenderer_Render_AgentTasks(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "Agent tasks") {
 		t.Error("Agent tasks section must be absent when there are none")
+	}
+}
+
+func TestRenderer_Render_AdvisoryTasks(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.AdvisoryTasks = []diagnostic.AdvisoryTask{{
+		FindingID:    "abcdef1234567890",
+		RuleID:       "bc/imbalanced_coupling",
+		Status:       finding.StatusNew,
+		Severity:     finding.SeverityHigh,
+		GroupCount:   3,
+		GroupMembers: []string{"id1", "id2"},
+		Goal:         "Review grouped advisories.",
+		CheapestMove: "reduce_distance",
+		ScoreValue:   8,
+		TopFiles:     []string{taskFileA, taskFileB},
+		Constraints:  []string{"keep agent_tasks[] reserved for active gate findings"},
+		Validation:   []string{"archfit analyze --gate --full"},
+	}}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"## Advisory tasks (1)",
+		"Report-only rollups from grouped advisories",
+		"**bc/imbalanced_coupling** [`abcdef12`]",
+		"severity: high; status: new; group_count: 3",
+		"group members: id1, id2",
+		"cheapest move: reduce_distance",
+		"score: 8/10",
+		"top files: " + taskFileA + ", " + taskFileB,
+		"constraint: keep agent_tasks[] reserved for active gate findings",
+		"validate: `archfit analyze --gate --full`",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("advisory task output missing %q\nfull output:\n%s", want, out)
+		}
 	}
 }
 

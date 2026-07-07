@@ -56,6 +56,41 @@ func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
 // always present in JSON output and pins the current version literal —
 // consumers key on it to detect breaking metric changes, and a version bump
 // must be a deliberate, test-visible act.
+func TestJSONRenderer_AdvisoryTasks(t *testing.T) {
+	d := diagnostic.New()
+	d.AdvisoryTasks = []diagnostic.AdvisoryTask{{
+		FindingID:    "rollup-1",
+		RuleID:       "bc/imbalanced_coupling",
+		Status:       finding.StatusNew,
+		Severity:     finding.SeverityHigh,
+		GroupCount:   3,
+		GroupMembers: []string{"id1", "id2"},
+		Goal:         "Review grouped advisories.",
+		CheapestMove: "reduce_distance",
+		ScoreValue:   8,
+		TopFiles:     []string{"a.go", "b.go"},
+		Constraints:  []string{"report-only"},
+		Validation:   []string{"archfit analyze --gate --full"},
+	}}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var got diagnostic.Diagnostic
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("cannot unmarshal: %v", err)
+	}
+	if len(got.AdvisoryTasks) != 1 {
+		t.Fatalf("advisory_tasks = %d, want 1", len(got.AdvisoryTasks))
+	}
+	task := got.AdvisoryTasks[0]
+	if task.GroupCount != 3 || task.CheapestMove != "reduce_distance" || task.TopFiles[0] != "a.go" {
+		t.Fatalf("advisory task did not round-trip: %+v", task)
+	}
+}
+
 func TestJSONRenderer_ScoreVersion(t *testing.T) {
 	var buf bytes.Buffer
 	if err := jsonout.New().Render(diagnostic.New(), score.Scorecard{}, nil, &buf); err != nil {

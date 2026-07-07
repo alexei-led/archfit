@@ -96,7 +96,9 @@ Exit `1` (policy) is deliberately distinct from exit `3` (tool/config error): a
 missing required tool is a _gate_ decision you opted into, not a crash.
 
 Balanced Coupling advisories are informational by default. Use them to prioritize
-architecture review and refactoring, not as automatic pass/fail rules. The
+architecture review and refactoring, not as automatic pass/fail rules. Grouped
+`bc/imbalanced_coupling` advisories also appear in `advisory_tasks[]`, a
+report-only rollup channel separate from gate-only `agent_tasks[]`. The
 synthesised `coupling_balance` score built from those advisories _can_ fail the
 build, but only through the opt-in `coupling.gate` block.
 

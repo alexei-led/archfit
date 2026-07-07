@@ -113,6 +113,8 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 	writeAgentTasks(&b, d.AgentTasks)
 
+	writeAdvisoryTasks(&b, d.AdvisoryTasks)
+
 	if len(advisories) > 0 {
 		writeBCAdvisories(&b, advisories)
 	}

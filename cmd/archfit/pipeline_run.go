@@ -404,6 +404,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// endpoint there is index-invisible yet must survive resolution.
 	pathResolver := agenttask.NewPathResolver(knownFiles, crateRootDirs, config.ModuleRootDirs(cfg.Modules), onDiskWithin(s.Root))
 	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate}, diag.SyntaxFacts, pathResolver)
+	diag.AdvisoryTasks = engine.BuildAdvisoryTasks(diag.Findings, []string{validate})
 
 	// Warn-loud coverage reporting: turn the absent tool-coverage records into a
 	// machine-readable CoverageGaps block (tool → unlocked metrics → install cmd)

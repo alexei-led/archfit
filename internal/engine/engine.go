@@ -346,6 +346,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		DeprecatedDeps:            in.Signals.DeprecatedDeps,
 		SemanticStrengthOverlay:   ex.semanticStrengthOverlay,
 		AgentTasks:                []diagnostic.AgentTask{},
+		AdvisoryTasks:             []diagnostic.AdvisoryTask{},
 		ToolCoverage:              ex.coverages,
 		ClassifiedEdges:           classifiedEdges,
 		LocalCoupling:             localCoupling,

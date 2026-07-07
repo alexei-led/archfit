@@ -157,6 +157,33 @@ type AgentTask struct {
 	Declarations []SyntaxFact `json:"declarations,omitempty"`
 }
 
+// AdvisoryTask is a report-only remediation prompt for grouped advisory
+// findings. Unlike AgentTask it never gates and never changes verdict status;
+// it just turns a deterministic rollup into a smaller human/agent work item.
+type AdvisoryTask struct {
+	// FindingID joins the task back to its grouped findings[] advisory.
+	FindingID string           `json:"finding_id"`
+	RuleID    string           `json:"rule_id"`
+	Status    finding.Status   `json:"status"`
+	Severity  finding.Severity `json:"severity"`
+	// GroupCount is the true number of advisory edges represented by the rollup.
+	GroupCount int `json:"group_count"`
+	// GroupMembers is the capped representative member ID list from matched_by.
+	GroupMembers []string `json:"group_members,omitempty"`
+	// Goal is a deterministic advisory objective, not a gate repair order.
+	Goal string `json:"goal"`
+	// CheapestMove carries the scorer's lowest-cost improvement hint when known.
+	CheapestMove string `json:"cheapest_move,omitempty"`
+	// ScoreValue carries the 1-10 Balanced-Coupling effort/risk score when known.
+	ScoreValue int `json:"score_value,omitempty"`
+	// TopFiles are representative repo-relative files from the rolled-up locations.
+	TopFiles []string `json:"top_files"`
+	// Constraints keep the advisory task inside report-only semantics.
+	Constraints []string `json:"constraints"`
+	// Validation are the commands that confirm the report stayed healthy.
+	Validation []string `json:"validation"`
+}
+
 // FileFact holds neutral per-module structural facts assembled from the symbol
 // graph and file LOC.
 //
@@ -659,9 +686,10 @@ type Diagnostic struct {
 	// by ast-grep (design §3). Neutral, off-gate evidence — never consumed by
 	// verdict or gate logic. Omitted (omitempty) when analyzers.syntax is off or sg
 	// is absent, so absent sg never emits a null/empty block (no false green).
-	SyntaxFacts  []SyntaxFact `json:"syntax_facts,omitempty"`
-	AgentTasks   []AgentTask  `json:"agent_tasks"`
-	ToolCoverage []Coverage   `json:"tool_coverage"`
+	SyntaxFacts   []SyntaxFact   `json:"syntax_facts,omitempty"`
+	AgentTasks    []AgentTask    `json:"agent_tasks"`
+	AdvisoryTasks []AdvisoryTask `json:"advisory_tasks"`
+	ToolCoverage  []Coverage     `json:"tool_coverage"`
 	// CoverageGaps lists analyzers that did not run, the metrics their absence
 	// leaves unmeasured, and how to install them (warn-loud coverage reporting).
 	// Omitted when every required tool ran. Populated in cmd/, never the core ring.
@@ -712,6 +740,7 @@ func New() Diagnostic {
 		FileFacts:      []FileFact{},
 		DynamicImports: []DynamicImport{},
 		AgentTasks:     []AgentTask{},
+		AdvisoryTasks:  []AdvisoryTask{},
 		ToolCoverage:   []Coverage{},
 	}
 }
