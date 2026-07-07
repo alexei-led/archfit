@@ -215,6 +215,13 @@
     "summary": "mean book balance 8.0/10 across 1 scored internal cross-boundary edges",
     "value": 78
   },
+  "distance_context": {
+    "distance_basis": {
+      "ownership": 1
+    },
+    "interpretation": "ownership has multiple distinct owners, so owner distance can distinguish same-owner and different-owner module edges",
+    "owner_model": "multi_owner"
+  },
   "dynamic_imports": [],
   "file_facts": [],
   "findings": [
@@ -422,6 +429,14 @@
       "files_seen": 2,
       "status": "ok",
       "tool": "loc",
+      "unresolved": 0,
+      "version": ""
+    },
+    {
+      "files_applicable": 0,
+      "files_seen": 0,
+      "status": "ok",
+      "tool": "deploy-unit",
       "unresolved": 0,
       "version": ""
     },

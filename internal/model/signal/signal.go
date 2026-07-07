@@ -37,6 +37,15 @@ type DuplicationSignals struct {
 	Clusters []clone.Cluster
 }
 
+// DeployUnitSignals carries deterministic deploy-unit detector evidence.
+// ModuleUnits is keyed by config module name after deployunit.KeyByModule.
+// Report-only except that cmd uses the same evidence to fill missing deploy_unit
+// values before classification.
+type DeployUnitSignals struct {
+	PathUnits   map[string]string
+	ModuleUnits map[string]string
+}
+
 // RunSignals is the producer-side bundle the cmd layer gathers and hands to the
 // engine. The engine folds it (plus its own extract outputs) into a
 // CollectedSignals for the metrics — no metric ever sees this type. Each group
@@ -44,6 +53,7 @@ type DuplicationSignals struct {
 type RunSignals struct {
 	Size        SizeSignals
 	Duplication DuplicationSignals
+	DeployUnit  DeployUnitSignals
 	// ExtraCoverage carries tool-coverage records for opt-in tools that run in cmd
 	// (loc, clones) rather than through the engine extractor loop.
 	// The engine appends these to the diagnostic ToolCoverage slice.

@@ -11,6 +11,7 @@ import (
 
 const (
 	modInternalFoo             = "internal/foo"
+	modInternalClassify        = "internal/classify"
 	modInternalMetricsBoundary = "internal/metrics/boundary"
 	modCmdArchfit              = "cmd/archfit"
 	distOwnerTeamX             = "team-x"
@@ -96,7 +97,7 @@ func TestCodeStructureDistance(t *testing.T) {
 		{name: "parent-child internal/metrics", from: "internal/metrics", to: modInternalMetricsBoundary, lang: graph.LangGo, want: coupling.DistanceCrossModuleSameOwner},
 
 		// Different subtrees under the same root.
-		{name: "different subtrees under internal", from: "internal/classify", to: modInternalMetricsBoundary, lang: graph.LangGo, want: coupling.DistanceCrossModuleDiffOwner},
+		{name: "different subtrees under internal", from: modInternalClassify, to: modInternalMetricsBoundary, lang: graph.LangGo, want: coupling.DistanceCrossModuleDiffOwner},
 		{name: "different subtrees deep", from: "internal/extract/go", to: "internal/metrics/modularity", lang: graph.LangGo, want: coupling.DistanceCrossModuleDiffOwner},
 
 		// Different top-level roots (no common prefix segments).
@@ -233,6 +234,24 @@ func TestClassifyDistance_Precedence(t *testing.T) {
 				t.Errorf("DistanceBasis = %q, want %q", gotBasis, tc.wantBasis)
 			}
 		})
+	}
+}
+
+func TestClassifyDistance_SingleOwnerHierarchicalRepoUsesStructure(t *testing.T) {
+	modules := map[string]config.ModuleDef{
+		modInternalClassify: {Paths: []string{modInternalClassify + "/**"}, Owner: distOwnerTeamX},
+		modCmdArchfit:       {Paths: []string{modCmdArchfit + "/**"}, Owner: distOwnerTeamX},
+	}
+	mi := buildModuleIndex(modules)
+	explicit := map[string]bool{modInternalClassify: true, modCmdArchfit: true}
+	degExplicit, degOwners := ownerDegeneracy(config.ClassifyConfig{Modules: modules, ExplicitOwners: explicit})
+
+	got, gotBasis := classifyDistance(modInternalClassify+"/x.go", modCmdArchfit+"/main.go", graph.LangGo, mi, modules, explicit, degExplicit, degOwners)
+	if got != coupling.DistanceCrossModuleDiffOwner {
+		t.Fatalf("distance = %q, want %q from code-structure distance in a single-owner repo", got, coupling.DistanceCrossModuleDiffOwner)
+	}
+	if gotBasis != coupling.DistanceBasisStructure {
+		t.Fatalf("basis = %q, want %q", gotBasis, coupling.DistanceBasisStructure)
 	}
 }
 

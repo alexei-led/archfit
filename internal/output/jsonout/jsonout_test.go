@@ -76,6 +76,13 @@ func TestJSONRenderer_ScoreVersion(t *testing.T) {
 
 func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 	d := diagnostic.New()
+	d.DistanceContext = &diagnostic.DistanceContext{
+		OwnerModel:                "single_owner_degenerate",
+		DistanceBasis:             map[string]int{"code_structure": 2, "ownership": 1},
+		DeployUnitDetectedModules: 1,
+		DeclaredExternalSystems:   1,
+		Interpretation:            "same-owner is the lowest cross-module distance",
+	}
 	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
 		Scored:           3,
 		ConnectedModules: 2,
@@ -108,6 +115,15 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 	var got diagnostic.Diagnostic
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if got.DistanceContext == nil {
+		t.Fatal("distance_context missing from JSON output")
+	}
+	if got.DistanceContext.OwnerModel != "single_owner_degenerate" {
+		t.Fatalf("distance_context.owner_model = %q", got.DistanceContext.OwnerModel)
+	}
+	if got.DistanceContext.DeployUnitDetectedModules != 1 || got.DistanceContext.DeclaredExternalSystems != 1 {
+		t.Fatalf("distance_context evidence counts = %+v", got.DistanceContext)
 	}
 	if got.ClassifiedEdges == nil {
 		t.Fatal("classified_edges missing from JSON output")

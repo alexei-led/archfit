@@ -349,6 +349,18 @@ type DeltaReport struct {
 	TouchedByDelta []string `json:"touched_by_delta,omitempty"`
 }
 
+// DistanceContext explains how distance evidence should be read for this run.
+// It is disclosure-only: the scorer consumes per-edge Distance and DistanceBasis,
+// never this rollup. The block keeps single-owner repositories honest by saying
+// "low socio-technical distance" instead of implying missing evidence.
+type DistanceContext struct {
+	OwnerModel                string         `json:"owner_model"`
+	DistanceBasis             map[string]int `json:"distance_basis,omitempty"`
+	DeployUnitDetectedModules int            `json:"deploy_unit_detected_modules,omitempty"`
+	DeclaredExternalSystems   int            `json:"declared_external_systems,omitempty"`
+	Interpretation            string         `json:"interpretation"`
+}
+
 // ClassifiedEdgeSummary holds aggregate distribution counts over the
 // coupling.Index produced by classify.Run plus score-bearing clone-only
 // duplicated-knowledge pairs when that policy is enabled. Stdlib-only (no
@@ -636,6 +648,9 @@ type Diagnostic struct {
 	// filtering) so coupling_balance sees every edge, not just the noise-controlled
 	// advisory subset. Nil when classification did not run (backward compatible).
 	ClassifiedEdges *ClassifiedEdgeSummary `json:"classified_edges,omitempty"`
+	// DistanceContext is a human-readable rollup of the basis behind the distance
+	// dimension (owner model, basis counts, deploy/external evidence). Report-only.
+	DistanceContext *DistanceContext `json:"distance_context,omitempty"`
 	// LocalCoupling is the report-only per-module summary of scored same-module
 	// edges — the book Ch10 local-complexity quadrant. Same-module edges never
 	// enter coupling_balance's denominator (see LocalCouplingModule). Never

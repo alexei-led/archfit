@@ -69,6 +69,36 @@ func writeConfig(t *testing.T, dir, content string) string {
 	return path
 }
 
+func TestDeployUnitSuggestions_DeterministicHintsOnlyForMissingConfig(t *testing.T) {
+	t.Parallel()
+
+	const webModule = "web"
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "cmd", webModule), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, name string) (toolrun.ToolInfo, bool) {
+			return toolrun.ToolInfo{}, name == "go"
+		},
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			return toolrun.Output{Stdout: []byte(filepath.Join(dir, "cmd", webModule) + "\n")}, nil
+		},
+	}
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		webModule: {Paths: []string{"cmd/web/**"}},
+		"api":     {Paths: []string{"cmd/api/**"}, DeployUnit: "api-service"},
+	}}
+
+	got := deployUnitSuggestions(context.Background(), dir, cfg, &appDeps{Runner: runner})
+	if len(got) != 1 {
+		t.Fatalf("deployUnitSuggestions len = %d, want 1: %+v", len(got), got)
+	}
+	if got[0].Module != webModule || got[0].Unit != webModule || got[0].Source != "cmd/web" {
+		t.Fatalf("deployUnitSuggestions[0] = %+v", got[0])
+	}
+}
+
 func TestClassifyTargetsForUpdate_IncludesSyntheticOverridePath(t *testing.T) {
 	t.Parallel()
 	const (

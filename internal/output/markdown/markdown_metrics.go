@@ -52,11 +52,26 @@ func writeDistanceConfidence(b *strings.Builder, d diagnostic.Diagnostic) {
 	} else {
 		b.WriteString("- `deploy_unit_source`: not reported (auto-detect or config-authored)\n")
 	}
+	if dcx := d.DistanceContext; dcx != nil {
+		fmt.Fprintf(b, "- `owner_model`: %s\n", dcx.OwnerModel)
+		if dcx.DeployUnitDetectedModules > 0 {
+			fmt.Fprintf(b, "- deploy-unit detector mapped modules: %d\n", dcx.DeployUnitDetectedModules)
+		}
+		if dcx.DeclaredExternalSystems > 0 {
+			fmt.Fprintf(b, "- declared external systems: %d\n", dcx.DeclaredExternalSystems)
+		}
+		if len(dcx.DistanceBasis) > 0 {
+			fmt.Fprintf(b, "- distance basis: %s\n", formatCounts(dcx.DistanceBasis))
+		}
+		if dcx.Interpretation != "" {
+			fmt.Fprintf(b, "- interpretation: %s\n", dcx.Interpretation)
+		}
+	}
 	if ce := d.ClassifiedEdges; ce != nil {
 		if ce.ConnectedModules > 0 {
 			fmt.Fprintf(b, "- connected modules in coupling sample: %d\n", ce.ConnectedModules)
 		}
-		if len(ce.ByDistanceBasis) > 0 {
+		if len(ce.ByDistanceBasis) > 0 && d.DistanceContext == nil {
 			fmt.Fprintf(b, "- distance basis: %s\n", formatCounts(ce.ByDistanceBasis))
 		}
 		if dc := ce.DistanceCompression; dc != nil {

@@ -29,9 +29,20 @@ type UpdateReport struct {
 	Removed                   []ExistingModule
 	PathDrift                 []PathDelta
 	Unclassified              []string
+	DeployUnitSuggestions     []DeployUnitSuggestion
 	RuleSuggestions           []RuleSuggestion
 	ExternalSystemSuggestions []ExternalSystemSuggestion
 	StructuralInSync          bool
+}
+
+// DeployUnitSuggestion is one deterministic deploy_unit proposal from checked-in
+// deploy-unit evidence (Go main packages, package manifests, Dockerfiles, or k8s
+// manifests). It is rendered as a human-reviewed config hint; update --apply does
+// not write it automatically because deploy topology is an architecture decision.
+type DeployUnitSuggestion struct {
+	Module string
+	Unit   string
+	Source string
 }
 
 // normalizePaths returns a sorted, deduplicated, non-empty slice copy for comparison.
@@ -155,6 +166,8 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef) UpdateReport {
 //     module paths with the discovered paths and writes a backup.
 //   - UNCLASSIFIED: modules missing classification; shows LLM suggestion from ann when
 //     present, otherwise suggests running with --llm.
+//   - DEPLOY UNIT HINTS: deterministic deploy_unit proposals from checked-in
+//     deploy evidence; review-only because runtime topology is an architecture decision.
 //   - RULE SUGGESTIONS: review-only deterministic rule or coupling.gate proposals
 //     with rationale, basis, and evidence refs; update/apply never writes them.
 //   - EXTERNAL SYSTEM SUGGESTIONS: review-only external_systems proposals with
@@ -223,6 +236,13 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 		}
 	}
 
+	if len(r.DeployUnitSuggestions) > 0 {
+		fmt.Fprintf(&b, "DEPLOY UNIT HINTS (%d deterministic config proposal(s) — apply manually after review):\n", len(r.DeployUnitSuggestions))
+		for _, s := range r.DeployUnitSuggestions {
+			writeDeployUnitSuggestion(&b, s)
+		}
+	}
+
 	if len(r.RuleSuggestions) > 0 {
 		fmt.Fprintf(&b, "RULE SUGGESTIONS (%d review-only config proposal(s) — apply manually after review):\n", len(r.RuleSuggestions))
 		for _, s := range r.RuleSuggestions {
@@ -285,6 +305,13 @@ func RenderAppliedLLMReview(r UpdateReport, ann map[string]ModuleAnnotation) str
 		}
 	}
 
+	if len(r.DeployUnitSuggestions) > 0 {
+		fmt.Fprintf(&b, "DEPLOY UNIT HINTS (%d deterministic config proposal(s) — not applied):\n", len(r.DeployUnitSuggestions))
+		for _, s := range r.DeployUnitSuggestions {
+			writeDeployUnitSuggestion(&b, s)
+		}
+	}
+
 	if len(r.RuleSuggestions) > 0 {
 		fmt.Fprintf(&b, "RULE SUGGESTIONS (%d review-only config proposal(s) — not applied):\n", len(r.RuleSuggestions))
 		for _, s := range r.RuleSuggestions {
@@ -339,6 +366,14 @@ func writeAnnotationDiff(b *strings.Builder, name string, a ModuleAnnotation) {
 	}
 	if a.Rationale != "" {
 		fmt.Fprintf(b, "    + rationale: %s\n", sanitizeComment(a.Rationale))
+	}
+}
+
+func writeDeployUnitSuggestion(b *strings.Builder, s DeployUnitSuggestion) {
+	fmt.Fprintf(b, "  %s:\n", sanitizeComment(yamlKey(s.Module)))
+	fmt.Fprintf(b, "    deploy_unit: %s\n", yamlScalar(s.Unit))
+	if s.Source != "" {
+		fmt.Fprintf(b, "    source: %s\n", sanitizeComment(s.Source))
 	}
 }
 

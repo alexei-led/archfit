@@ -1101,6 +1101,13 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 	r := markdown.New()
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
+	d.DistanceContext = &diagnostic.DistanceContext{
+		OwnerModel:                "single_owner_degenerate",
+		DistanceBasis:             map[string]int{"code_structure": 3, "ownership": 1},
+		DeployUnitDetectedModules: 1,
+		DeclaredExternalSystems:   2,
+		Interpretation:            "same-owner is the lowest cross-module distance; this is a low socio-technical distance signal, not missing ownership",
+	}
 	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
 		Scored:            10,
 		ConnectedModules:  2,
@@ -1153,6 +1160,10 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 		t.Errorf("output missing deploy_unit_source entry\nfull output:\n%s", out)
 	}
 	for _, want := range []string{
+		"owner_model`: single_owner_degenerate",
+		"deploy-unit detector mapped modules: 1",
+		"declared external systems: 2",
+		"interpretation: same-owner is the lowest cross-module distance",
 		"connected modules in coupling sample: 2",
 		"distance basis: code_structure=3, ownership=1",
 		"distance rungs implemented: D=2, D=4, D=7, D=9, D=10; omitted/compressed: D=3, D=5, D=6, D=8",

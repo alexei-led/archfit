@@ -667,8 +667,10 @@ Balanced Coupling classification uses module metadata:
 Distance is a **composite** of three signals, not a single-winner precedence chain:
 
 1. **Code structure** — always-available baseline. Sibling or parent-child packages
-   (shared subtree) → `cross_module_same_owner`; different subtrees or unrelated
-   flat (single-segment) names → `cross_module_different_owner`.
+   (shared subtree) → `cross_module_same_owner`; different subtrees →
+   `cross_module_different_owner`. Two unrelated flat (single-segment) names have
+   no tree evidence of separate teams, so they stay at the honest floor:
+   `cross_module_same_owner`.
 2. **Ownership** — contributes only when ownership is informative. In repos where
    every module has the same owner (single-maintainer or one-team repos), ownership
    becomes **neutral** and does not collapse far-apart modules to "same owner = low
@@ -684,8 +686,8 @@ Composite resolution order (first applicable wins):
 3. ownership is informative (two or more distinct owners in the repo) →
    same owner → `cross_module_same_owner`; different (or one unknown) →
    `cross_module_different_owner`;
-4. otherwise → code structure decides (shared subtree → `cross_module_same_owner`;
-   different subtrees or unrelated flat names → `cross_module_different_owner`).
+4. otherwise → code structure decides (shared subtree or unrelated flat names →
+   `cross_module_same_owner`; different subtrees → `cross_module_different_owner`).
 
 A detected runtime async bridge is recorded as report-only evidence in the
 `runtime_async` JSON field per module and the `runtime_async_edges` field per
@@ -694,11 +696,16 @@ affect distance or score, and does not change the gate verdict.
 
 The `distance_basis` field on each advisory edge (`code_structure`, `ownership`,
 or `deploy_unit`) shows which signal drove the composite, so the result is
-auditable.
+auditable. Analyze output also includes `distance_context`, whose `owner_model`
+identifies `single_owner_degenerate`, `multi_owner`, or `no_owner_signal`; its
+`interpretation` explains when low same-owner distance is an intentional
+socio-technical signal rather than missing ownership.
 
 > **Small-OSS note:** a repo with one maintainer is not a flat distance space.
 > Code structure is the baseline and still distinguishes close vs far modules.
-> Ownership only contributes when there are genuinely distinct owners to compare.
+> Same-owner is the lowest cross-module distance; it is a low socio-technical
+> distance signal. Ownership only contributes when there are genuinely distinct
+> owners to compare.
 
 ## `external_systems`
 

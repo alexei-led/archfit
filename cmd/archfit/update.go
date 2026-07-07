@@ -10,6 +10,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/extract/deployunit"
 	"github.com/alexei-led/archfit/internal/extract/rust"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/initcfg"
@@ -59,6 +60,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 
 	report := initcfg.DiffModules(existing, freshCfg.Modules)
+	report.DeployUnitSuggestions = deployUnitSuggestions(ctx, root, cfg, deps)
 	if c.LLM {
 		var synthErr error
 		report, synthErr = c.withRustSyntheticSuggestions(ctx, cfg, root, report, deps)
@@ -90,7 +92,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 
 	if !hasEdits {
-		if c.LLM && ann != nil {
+		if (c.LLM && ann != nil) || hasReviewOnlySuggestions(report) {
 			_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
 			return nil
 		}
@@ -115,7 +117,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	if len(report.PathDrift) > 0 {
 		_, _ = fmt.Fprintln(deps.Stdout, "note: module paths replaced with discovered paths")
 	}
-	if c.LLM && ann != nil {
+	if (c.LLM && ann != nil) || hasReviewOnlySuggestions(report) {
 		if rendered := initcfg.RenderAppliedLLMReview(report, ann); rendered != "" {
 			_, _ = fmt.Fprint(deps.Stdout, rendered)
 		}
@@ -290,6 +292,44 @@ func classifyTargetsForUpdate(
 // written by config update --apply.
 func hasActionableEdits(report initcfg.UpdateReport) bool {
 	return len(report.Added) > 0 || len(report.Removed) > 0 || len(report.PathDrift) > 0
+}
+
+func hasReviewOnlySuggestions(report initcfg.UpdateReport) bool {
+	return len(report.Suggested) > 0 || len(report.DeployUnitSuggestions) > 0 || len(report.RuleSuggestions) > 0 || len(report.ExternalSystemSuggestions) > 0
+}
+
+func deployUnitSuggestions(ctx context.Context, root string, cfg config.Config, deps *appDeps) []initcfg.DeployUnitSuggestion {
+	mm := cfg.ModuleMapView()
+	detected := deployunit.Detect(ctx, root, mm, deps.Runner)
+	if len(detected) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(detected))
+	for path := range detected {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	seen := make(map[string]struct{}, len(paths))
+	out := make([]initcfg.DeployUnitSuggestion, 0, len(paths))
+	for _, path := range paths {
+		mod, ok := mm.ModuleForFile(path)
+		if !ok {
+			if !mm.Has(path) {
+				continue
+			}
+			mod = path
+		}
+		if _, exists := seen[mod]; exists {
+			continue
+		}
+		def, ok := cfg.Modules[mod]
+		if !ok || def.DeployUnit != "" {
+			continue
+		}
+		seen[mod] = struct{}{}
+		out = append(out, initcfg.DeployUnitSuggestion{Module: mod, Unit: detected[path], Source: path})
+	}
+	return out
 }
 
 func ruleSuggestionsFromAnnotations(ann map[string]initcfg.ModuleAnnotation) []initcfg.RuleSuggestion {

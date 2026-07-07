@@ -233,7 +233,17 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// (without it, auto-detected units are dropped unless a module's map key
 	// equals the path). Config-authored deploy_unit always wins.
 	duModules := cfg.ModuleMapView()
-	cfg.FillMissingDeployUnits(deployunit.KeyByModule(deployunit.Detect(ctx, s.Root, duModules, deps.Runner), duModules))
+	deployUnitsByPath := deployunit.Detect(ctx, s.Root, duModules, deps.Runner)
+	deployUnitsByModule := deployunit.KeyByModule(deployUnitsByPath, duModules)
+	cfg.FillMissingDeployUnits(deployUnitsByModule)
+	change.DeployUnit.PathUnits = deployUnitsByPath
+	change.DeployUnit.ModuleUnits = deployUnitsByModule
+	change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
+		Tool:            "deploy-unit",
+		FilesSeen:       len(deployUnitsByPath),
+		FilesApplicable: len(deployUnitsByModule),
+		Status:          diagnostic.StatusOK,
+	})
 
 	// Clone detection — opt-in (analyzers.clones.enabled: true). Run returns empty+absent
 	// when disabled or the tool is missing; the metric reports n/a in that case.
@@ -330,6 +340,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		return diag, score.Scorecard{}, err
 	}
 	diag.OwnerSource = ownerSource
+	diag.DistanceContext = buildDistanceContext(diag, cfg, len(deployUnitsByModule))
 
 	// TS coverage honesty: a high unresolved-import-specifier count from
 	// dependency-cruiser must never be a silent gap — surface it on stderr the

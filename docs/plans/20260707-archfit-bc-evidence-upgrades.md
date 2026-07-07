@@ -376,14 +376,14 @@ Manual checks:
 - Confirm no ordinal or formula code changed.
 - Confirm external systems remain review/config based, not inferred active config.
 
-- [ ] Add or strengthen owner-degeneracy/distance-basis reporting.
-- [ ] Improve text/markdown explanation for single-owner repositories.
-- [ ] Add deterministic config-update hints for `deploy_unit` when deployunit detector has evidence.
-- [ ] Keep `external_systems` suggestions review-only unless explicitly applied by a human.
-- [ ] Add tests for one-owner repo distance interpretation.
-- [ ] Add tests proving deploy-unit evidence can raise distance only when deterministic.
-- [ ] Run task verification commands.
-- [ ] Mark completed.
+- [x] Add or strengthen owner-degeneracy/distance-basis reporting.
+- [x] Improve text/markdown explanation for single-owner repositories.
+- [x] Add deterministic config-update hints for `deploy_unit` when deployunit detector has evidence.
+- [x] Keep `external_systems` suggestions review-only unless explicitly applied by a human.
+- [x] Add tests for one-owner repo distance interpretation.
+- [x] Add tests proving deploy-unit evidence can raise distance only when deterministic.
+- [x] Run task verification commands.
+- [x] Mark completed.
 
 ### Task 5: Add dynamic connascence signals as report-only evidence
 

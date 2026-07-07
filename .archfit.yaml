@@ -6,8 +6,10 @@ version: 1
 # archfit's modules are all hierarchical (nested paths), so siblings and
 # parent-child pairs resolve to `cross_module_same_owner` — book ordinal 4, the
 # LOWEST cross-module distance. There is no lower cross-module band to claim;
-# same-owner IS the floor. Flat single-segment names also resolve to
-# cross_module_same_owner in the degenerate-owner path (P1 fix).
+# same-owner IS the floor. Analyze exposes this as
+# distance_context.owner_model=single_owner_degenerate plus distance_basis counts.
+# Flat single-segment names also resolve to cross_module_same_owner in the
+# degenerate-owner path (P1 fix).
 #
 # Volatility is essential/domain-based (Ch9), never churn: the analysis core
 # (`internal/model/*`, classify, rules, metrics, score) is `subdomain: core` →

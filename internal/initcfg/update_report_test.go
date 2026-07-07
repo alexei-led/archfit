@@ -335,6 +335,32 @@ func TestRenderUpdateReport_StructurallyInSync(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// TestRenderUpdateReport_DeployUnitHints
+// ---------------------------------------------------------------------------
+
+func TestRenderUpdateReport_DeployUnitHints(t *testing.T) {
+	r := UpdateReport{
+		StructuralInSync: true,
+		DeployUnitSuggestions: []DeployUnitSuggestion{
+			{Module: "web", Unit: "web-service", Source: "cmd/web"},
+		},
+	}
+
+	got := RenderUpdateReport(r, nil, nil)
+	for _, want := range []string{
+		"DEPLOY UNIT HINTS (1 deterministic config proposal(s) — apply manually after review)",
+		"web:",
+		"deploy_unit: web-service",
+		"source: cmd/web",
+		"structurally in sync",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // TestRenderUpdateReport_Deterministic
 // ---------------------------------------------------------------------------
 
