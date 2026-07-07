@@ -177,6 +177,84 @@ func buildRuntimeAsyncEdges(sites []diagnostic.RuntimeAsyncSite, confidence stri
 	return out
 }
 
+const (
+	dynamicConnascenceKindRuntimeAsync  = "runtime_async"
+	dynamicConnascenceKindDynamicImport = "dynamic_import"
+	dynamicConnascenceReportOnlyReason  = "static site evidence only; deterministic runtime ordering/value/identity trace evidence is absent"
+)
+
+var dynamicConnascenceRelated = []string{
+	string(coupling.ConnascenceExecution),
+	string(coupling.ConnascenceTiming),
+}
+
+func buildDynamicConnascenceSignals(dyn []diagnostic.DynamicImport, runtimeEdges []diagnostic.RuntimeAsyncEdge, unmeasured []string) *diagnostic.DynamicConnascenceSignals {
+	if len(dyn) == 0 && len(runtimeEdges) == 0 {
+		return nil
+	}
+	out := &diagnostic.DynamicConnascenceSignals{
+		Signals:          make([]diagnostic.DynamicConnascenceSignal, 0, len(runtimeEdges)+len(dyn)),
+		Unmeasured:       append([]string(nil), unmeasured...),
+		ReportOnlyReason: dynamicConnascenceReportOnlyReason,
+	}
+	for _, e := range runtimeEdges {
+		out.Signals = append(out.Signals, diagnostic.DynamicConnascenceSignal{
+			Kind:               dynamicConnascenceKindRuntimeAsync,
+			RelatedConnascence: append([]string(nil), dynamicConnascenceRelated...),
+			Measured:           false,
+			ReportOnlyReason:   dynamicConnascenceReportOnlyReason,
+			Module:             e.FromModule,
+			Target:             e.Target,
+			IntegrationKind:    e.IntegrationKind,
+			Count:              e.Count,
+			Sites:              runtimeAsyncDynamicConnascenceSites(e.Sites),
+		})
+	}
+	for _, d := range dyn {
+		out.Signals = append(out.Signals, diagnostic.DynamicConnascenceSignal{
+			Kind:               dynamicConnascenceKindDynamicImport,
+			RelatedConnascence: append([]string(nil), dynamicConnascenceRelated...),
+			Measured:           false,
+			ReportOnlyReason:   dynamicConnascenceReportOnlyReason,
+			Module:             d.Module,
+			Count:              d.Count,
+			Sites:              dynamicImportDynamicConnascenceSites(d.Sites),
+		})
+	}
+	return out
+}
+
+func runtimeAsyncDynamicConnascenceSites(sites []diagnostic.RuntimeAsyncSite) []diagnostic.DynamicConnascenceSite {
+	out := make([]diagnostic.DynamicConnascenceSite, 0, len(sites))
+	for _, s := range sites {
+		target := s.Library
+		if target == "" {
+			target = s.IntegrationKind
+		}
+		out = append(out, diagnostic.DynamicConnascenceSite{
+			File:     s.File,
+			Line:     s.Line,
+			Kind:     s.IntegrationKind,
+			Language: s.Language,
+			Target:   target,
+		})
+	}
+	return out
+}
+
+func dynamicImportDynamicConnascenceSites(sites []diagnostic.DynamicImportSite) []diagnostic.DynamicConnascenceSite {
+	out := make([]diagnostic.DynamicConnascenceSite, 0, len(sites))
+	for _, s := range sites {
+		out = append(out, diagnostic.DynamicConnascenceSite{
+			File:     s.File,
+			Line:     s.Line,
+			Kind:     s.Kind,
+			Language: s.Language,
+		})
+	}
+	return out
+}
+
 // dominantKind returns the most frequent IntegrationKind among sites.
 // Ties broken alphabetically for determinism.
 func dominantKind(sites []diagnostic.RuntimeAsyncSite) string {
@@ -450,7 +528,13 @@ func addClassificationToSummary(s *diagnostic.ClassifiedEdgeSummary, cl coupling
 	return 0
 }
 
-var connascenceKindsToDiscloseWhenUnmeasured = []string{"position", "execution", "timing", "value", "identity"}
+var connascenceKindsToDiscloseWhenUnmeasured = []string{
+	string(coupling.ConnascencePosition),
+	string(coupling.ConnascenceExecution),
+	string(coupling.ConnascenceTiming),
+	string(coupling.ConnascenceValue),
+	string(coupling.ConnascenceIdentity),
+}
 
 const (
 	connascenceStatusDeterministicStatic = "deterministic_static"
@@ -534,7 +618,12 @@ func connascenceRoadmap(byKind map[string]int) []diagnostic.ConnascenceRoadmapIt
 			UpgradeTrigger: "deterministic argument-order or tuple-position facts from an extractor",
 		},
 	)
-	for _, kind := range []string{"execution", "timing", "value", "identity"} {
+	for _, kind := range []string{
+		string(coupling.ConnascenceExecution),
+		string(coupling.ConnascenceTiming),
+		string(coupling.ConnascenceValue),
+		string(coupling.ConnascenceIdentity),
+	} {
 		items = append(items, diagnostic.ConnascenceRoadmapItem{
 			Kind:           kind,
 			CurrentStatus:  connascenceStatusUnmeasuredDynamic,

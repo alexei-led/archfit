@@ -89,6 +89,8 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 	writeConnascenceSummary(&b, d.Connascence)
 
+	writeDynamicConnascenceSignals(&b, d.DynamicConnascenceSignals)
+
 	writeSemanticStrengthOverlay(&b, d.SemanticStrengthOverlay)
 
 	writeDynamicImports(&b, d.DynamicImports)

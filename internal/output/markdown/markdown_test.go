@@ -14,12 +14,17 @@ import (
 )
 
 const (
-	secGate         = "Gate findings"
-	secAdvisories   = "Advisories"
-	secBCAdvisories = "Balanced Coupling advisories"
-	secBeyondBC     = "Supporting structural metrics (beyond Balanced Coupling)"
-	secDistanceConf = "Distance confidence"
-	secConnascence  = "Connascence evidence"
+	secGate                   = "Gate findings"
+	secAdvisories             = "Advisories"
+	secBCAdvisories           = "Balanced Coupling advisories"
+	secBeyondBC               = "Supporting structural metrics (beyond Balanced Coupling)"
+	secDistanceConf           = "Distance confidence"
+	secConnascence            = "Connascence evidence"
+	secDynamicConnascence     = "Dynamic connascence signals"
+	connascenceExecutionMd    = "execution"
+	connascenceTimingMd       = "timing"
+	dynamicReportOnlyReasonMd = "runtime trace evidence is absent"
+	langPythonMarkdownTest    = "python"
 
 	// Kept tool names.
 	toolJscpd = "jscpd"
@@ -236,6 +241,65 @@ func TestRenderer_Render_ConnascenceSummary(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)
 		}
+	}
+}
+
+func TestRenderer_Render_DynamicConnascenceSignals(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.DynamicConnascenceSignals = &diagnostic.DynamicConnascenceSignals{
+		ReportOnlyReason: dynamicReportOnlyReasonMd,
+		Unmeasured:       []string{connascenceExecutionMd, connascenceTimingMd, "value", "identity"},
+		Signals: []diagnostic.DynamicConnascenceSignal{
+			{
+				Kind:               "runtime_async",
+				RelatedConnascence: []string{connascenceExecutionMd, connascenceTimingMd},
+				Measured:           false,
+				ReportOnlyReason:   dynamicReportOnlyReasonMd,
+				Module:             modAPI,
+				Target:             rabbitMQLib,
+				IntegrationKind:    kindMQ,
+				Count:              2,
+				Sites: []diagnostic.DynamicConnascenceSite{
+					{File: filePublisher, Line: 10, Kind: kindMQ, Language: "go", Target: rabbitMQLib},
+				},
+			},
+			{
+				Kind:               "dynamic_import",
+				RelatedConnascence: []string{connascenceExecutionMd, connascenceTimingMd},
+				Measured:           false,
+				ReportOnlyReason:   dynamicReportOnlyReasonMd,
+				Module:             "plugins",
+				Count:              1,
+				Sites: []diagnostic.DynamicConnascenceSite{
+					{File: "plugins/load.py", Line: 4, Kind: "importlib", Language: langPythonMarkdownTest},
+				},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"## " + secDynamicConnascence,
+		"Report-only. Static dynamic-import and runtime-async sites",
+		"still unmeasured: execution, timing, value, identity",
+		"reason: " + dynamicReportOnlyReasonMd,
+		"**" + modAPI + "** → `" + rabbitMQLib + "` [runtime_async; related: execution/timing; measured=false]: 2",
+		filePublisher + ":10[" + kindMQ + "]",
+		"**plugins** [dynamic_import; related: execution/timing; measured=false]: 1",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "BC-UNBALANCED") {
+		t.Errorf("dynamic connascence signals must not render as BC advisories\nfull output:\n%s", out)
 	}
 }
 

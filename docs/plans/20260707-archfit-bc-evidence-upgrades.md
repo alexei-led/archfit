@@ -464,14 +464,14 @@ Manual checks:
 - Confirm output does not imply dynamic connascence is fully measured.
 - Confirm dynamic signals do not change `coupling_balance`, verdict, or gate findings.
 
-- [ ] Define a diagnostic model for dynamic connascence signals.
-- [ ] Assemble runtime async and dynamic import facts into the new report-only block.
-- [ ] Preserve `ConnascenceReport.Unmeasured` for execution/timing/value/identity unless true runtime trace evidence exists.
-- [ ] Render the report in JSON.
-- [ ] Render a concise markdown section.
-- [ ] Add non-contamination tests proving score and verdict are unchanged by these report-only facts.
-- [ ] Run task verification commands.
-- [ ] Mark completed.
+- [x] Define a diagnostic model for dynamic connascence signals.
+- [x] Assemble runtime async and dynamic import facts into the new report-only block.
+- [x] Preserve `ConnascenceReport.Unmeasured` for execution/timing/value/identity unless true runtime trace evidence exists.
+- [x] Render the report in JSON.
+- [x] Render a concise markdown section.
+- [x] Add non-contamination tests proving score and verdict are unchanged by these report-only facts.
+- [x] Run task verification commands.
+- [x] Mark completed.
 
 ### Task 6: Final verification, documentation, and re-review
 

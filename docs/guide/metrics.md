@@ -20,7 +20,7 @@ complementary metrics. They split into three roles:
   changes the verdict.
 
 Separate JSON/Markdown report-only blocks, including `connascence`,
-`local_coupling`, `runtime_async`, and `classified_edges` summaries, explain the
+`dynamic_connascence_signals`, `local_coupling`, `runtime_async`, and `classified_edges` summaries, explain the
 score inputs. They are evidence, not metrics, and never gate on their own.
 
 A metric's **absolute value** never fails the build — only a _regression_
@@ -281,11 +281,27 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
   supplies deterministic argument/order evidence; `execution`, `timing`, runtime
   `value`, and `identity` are unmeasured dynamic categories.
 - **Unmeasured by design:** dynamic/lazy imports and runtime async bridges remain
-  separate report-only evidence blocks (`dynamic_imports`, `runtime_async_edges`).
-  They can guide a human review, but they never become connascence guesses and
-  never move into scoring without a deterministic source-module→runtime fact.
+  separate report-only evidence blocks (`dynamic_imports`, `runtime_async_edges`,
+  and `dynamic_connascence_signals`). They can guide a human review, but they
+  never become connascence guesses and never move into scoring without a
+  deterministic source-module→runtime fact.
 - **Report-only by design:** never consumed by `coupling_balance`, findings,
   baselines, or gate verdicts.
+
+### `dynamic_connascence_signals`
+
+- **Represents:** a report-only rollup that maps dynamic/lazy import sites and
+  runtime async module→target relations to the Ch6 dynamic connascence categories
+  they may help a human inspect, currently execution and timing.
+- **Computed:** assembled from JSON `dynamic_imports`, `runtime_async_edges`, and
+  `connascence.unmeasured`. Every signal has `measured: false`, a
+  `report_only_reason`, a source `kind`, related Ch6 categories, module/target
+  context where available, count, and a capped site sample.
+- **Unmeasured by design:** `connascence.unmeasured` still preserves execution,
+  timing, value, and identity unless a future deterministic runtime trace source
+  proves them. The block does not imply dynamic connascence is fully measured.
+- **Report-only by design:** never consumed by `coupling_balance`, findings,
+  baselines, score deltas, or gate verdicts.
 
 ### `runtime_async` and `runtime_async_edges`
 

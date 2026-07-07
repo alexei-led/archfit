@@ -306,6 +306,66 @@ func formatConnascenceRoadmap(items []diagnostic.ConnascenceRoadmapItem) string 
 	return strings.Join(parts, ", ")
 }
 
+func writeDynamicConnascenceSignals(b *strings.Builder, block *diagnostic.DynamicConnascenceSignals) {
+	if block == nil || len(block.Signals) == 0 {
+		return
+	}
+	total := 0
+	for _, s := range block.Signals {
+		total += s.Count
+	}
+	b.WriteString("\n## Dynamic connascence signals (report-only)\n\n")
+	b.WriteString("Report-only. Static dynamic-import and runtime-async sites can guide Ch6 execution/timing review, but they are not runtime measurements and never change score or verdict.\n\n")
+	fmt.Fprintf(b, "- signals: %d across %d module/source group(s)\n", total, len(block.Signals))
+	if len(block.Unmeasured) > 0 {
+		fmt.Fprintf(b, "- still unmeasured: %s\n", strings.Join(block.Unmeasured, ", "))
+	}
+	if block.ReportOnlyReason != "" {
+		fmt.Fprintf(b, "- reason: %s\n", block.ReportOnlyReason)
+	}
+
+	ranked := make([]diagnostic.DynamicConnascenceSignal, len(block.Signals))
+	copy(ranked, block.Signals)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].Count != ranked[j].Count {
+			return ranked[i].Count > ranked[j].Count
+		}
+		if ranked[i].Kind != ranked[j].Kind {
+			return ranked[i].Kind < ranked[j].Kind
+		}
+		if ranked[i].Module != ranked[j].Module {
+			return ranked[i].Module < ranked[j].Module
+		}
+		return ranked[i].Target < ranked[j].Target
+	})
+	for i, s := range ranked {
+		if i == runtimeAsyncTopN {
+			fmt.Fprintf(b, "- ... +%d more signals (use `--format json`)\n", len(ranked)-runtimeAsyncTopN)
+			break
+		}
+		target := ""
+		if s.Target != "" {
+			target = " → `" + mdTableCell(s.Target) + "`"
+		}
+		fmt.Fprintf(b, "- **%s**%s [%s; related: %s; measured=%t]: %d", s.Module, target, s.Kind, strings.Join(s.RelatedConnascence, "/"), s.Measured, s.Count)
+		if len(s.Sites) > 0 {
+			fmt.Fprintf(b, " (e.g. %s)", dynamicConnascenceSites(s.Sites))
+		}
+		b.WriteByte('\n')
+	}
+}
+
+func dynamicConnascenceSites(sites []diagnostic.DynamicConnascenceSite) string {
+	parts := make([]string, 0, runtimeAsyncSampleN)
+	for i, s := range sites {
+		if i == runtimeAsyncSampleN {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s:%d[%s]", s.File, s.Line, s.Kind))
+	}
+	return strings.Join(parts, ", ")
+}
+
 func formatCounts(counts map[string]int) string {
 	keys := make([]string, 0, len(counts))
 	for k := range counts {

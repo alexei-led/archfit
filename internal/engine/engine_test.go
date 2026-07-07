@@ -1890,7 +1890,9 @@ func TestRun_DynamicImports_StaticGraphUnchanged(t *testing.T) {
 	}
 
 	withSites.DynamicImports = nil
+	withSites.DynamicConnascenceSignals = nil
 	withoutSites.DynamicImports = nil
+	withoutSites.DynamicConnascenceSignals = nil
 	a, err := json.Marshal(withSites)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -2213,8 +2215,10 @@ func TestRun_RuntimeAsync_StaticGraphUnchanged(t *testing.T) {
 
 	withSites.RuntimeAsync = nil
 	withSites.RuntimeAsyncEdges = nil
+	withSites.DynamicConnascenceSignals = nil
 	withoutSites.RuntimeAsync = nil
 	withoutSites.RuntimeAsyncEdges = nil
+	withoutSites.DynamicConnascenceSignals = nil
 	a, err := json.Marshal(withSites)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -2276,10 +2280,13 @@ func TestRun_ReportOnlyLocalAndRuntimeFactsDoNotChangeScoreOrVerdict(t *testing.
 	base := run(graph.Facts{Language: graph.LangGo, Edges: []graph.Edge{cross}}, signal.RunSignals{})
 	withReportOnly := run(
 		graph.Facts{Language: graph.LangGo, Edges: []graph.Edge{cross, local}},
-		signal.RunSignals{RuntimeAsync: signal.RuntimeAsyncSignals{
-			Confidence: confMedium,
-			Sites:      []diagnostic.RuntimeAsyncSite{{File: "pkg/a/a.go", Line: 12, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"}},
-		}},
+		signal.RunSignals{
+			DynamicImports: signal.DynamicImportSignals{Sites: []diagnostic.DynamicImportSite{{File: "pkg/a/plugin.py", Line: 7, Kind: diagnostic.DynamicImportKindImportlib, Language: graph.LangPython}}},
+			RuntimeAsync: signal.RuntimeAsyncSignals{
+				Confidence: confMedium,
+				Sites:      []diagnostic.RuntimeAsyncSite{{File: "pkg/a/a.go", Line: 12, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"}},
+			},
+		},
 	)
 
 	if withReportOnly.ClassifiedEdges.SameModule == 0 {
@@ -2290,6 +2297,22 @@ func TestRun_ReportOnlyLocalAndRuntimeFactsDoNotChangeScoreOrVerdict(t *testing.
 	}
 	if len(withReportOnly.RuntimeAsync) == 0 || len(withReportOnly.RuntimeAsyncEdges) == 0 {
 		t.Fatal("expected runtime_async report blocks")
+	}
+	if withReportOnly.DynamicConnascenceSignals == nil || len(withReportOnly.DynamicConnascenceSignals.Signals) != 2 {
+		t.Fatalf("expected two dynamic connascence report-only signals, got %+v", withReportOnly.DynamicConnascenceSignals)
+	}
+	for _, s := range withReportOnly.DynamicConnascenceSignals.Signals {
+		if s.Measured {
+			t.Fatalf("dynamic connascence signal marked measured: %+v", s)
+		}
+	}
+	for _, want := range []string{string(coupling.ConnascenceExecution), string(coupling.ConnascenceTiming), string(coupling.ConnascenceValue), string(coupling.ConnascenceIdentity)} {
+		if !slices.Contains(withReportOnly.Connascence.Unmeasured, want) {
+			t.Fatalf("connascence unmeasured = %+v, missing %q", withReportOnly.Connascence.Unmeasured, want)
+		}
+		if !slices.Contains(withReportOnly.DynamicConnascenceSignals.Unmeasured, want) {
+			t.Fatalf("dynamic connascence unmeasured = %+v, missing %q", withReportOnly.DynamicConnascenceSignals.Unmeasured, want)
+		}
 	}
 
 	baseScore := archscore.Synthesize(base)

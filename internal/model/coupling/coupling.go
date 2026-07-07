@@ -73,19 +73,24 @@ func VolatilityResolved(v Volatility) bool {
 	return v == VolatilityFrozen || v == VolatilityLow || v == VolatilityMedium || v == VolatilityHigh
 }
 
-// ConnascenceKind names the static connascence category evidenced for a coupling
-// edge. These are report-only Ch6 labels and never feed scoring.
+// ConnascenceKind names a book Ch6 connascence category. Static evidence may
+// attach to coupling edges; dynamic categories are disclosed as unmeasured until
+// deterministic runtime-trace evidence exists. These labels never feed scoring.
 type ConnascenceKind string
 
-// Deterministic static connascence categories from Connascence of Name through
-// Connascence of Position. Not every category is currently measured; unsupported
-// kinds are disclosed as unmeasured in the diagnostic summary.
+// Connascence categories from Connascence of Name through Connascence of
+// Identity. Not every category is currently measured; unsupported kinds are
+// disclosed as unmeasured in the diagnostic summary.
 const (
 	ConnascenceName      ConnascenceKind = "name"
 	ConnascenceType      ConnascenceKind = "type"
 	ConnascenceMeaning   ConnascenceKind = "meaning"
 	ConnascenceAlgorithm ConnascenceKind = "algorithm"
 	ConnascencePosition  ConnascenceKind = "position"
+	ConnascenceExecution ConnascenceKind = "execution"
+	ConnascenceTiming    ConnascenceKind = "timing"
+	ConnascenceValue     ConnascenceKind = "value"
+	ConnascenceIdentity  ConnascenceKind = "identity"
 )
 
 // ConnascenceEvidence is one deterministic static connascence fact attached to

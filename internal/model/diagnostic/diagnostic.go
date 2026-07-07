@@ -228,6 +228,40 @@ type ConnascenceReport struct {
 	Roadmap []ConnascenceRoadmapItem `json:"roadmap,omitempty"`
 }
 
+// DynamicConnascenceSignals is a report-only bridge from deterministic static
+// sites (dynamic imports and runtime async integrations) to the Ch6 dynamic
+// connascence categories they may help humans inspect. The signals are not
+// measurements: they never feed coupling_balance, findings, baselines, or gates.
+type DynamicConnascenceSignals struct {
+	Signals          []DynamicConnascenceSignal `json:"signals"`
+	Unmeasured       []string                   `json:"unmeasured,omitempty"`
+	ReportOnlyReason string                     `json:"report_only_reason"`
+}
+
+// DynamicConnascenceSignal is one module/site rollup that points at a possible
+// dynamic connascence review area while explicitly marking it as unmeasured.
+type DynamicConnascenceSignal struct {
+	Kind               string                   `json:"kind"`
+	RelatedConnascence []string                 `json:"related_connascence"`
+	Measured           bool                     `json:"measured"`
+	ReportOnlyReason   string                   `json:"report_only_reason"`
+	Module             string                   `json:"module"`
+	Target             string                   `json:"target,omitempty"`
+	IntegrationKind    string                   `json:"integration_kind,omitempty"`
+	Count              int                      `json:"count"`
+	Sites              []DynamicConnascenceSite `json:"sites,omitempty"`
+}
+
+// DynamicConnascenceSite is a capped sample location behind a dynamic
+// connascence signal. Kind is the dynamic-import kind or runtime integration kind.
+type DynamicConnascenceSite struct {
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+	Kind     string `json:"kind"`
+	Language string `json:"language"`
+	Target   string `json:"target,omitempty"`
+}
+
 // RuntimeAsyncSite is one detected async integration pattern location.
 // Produced by the runtime detector (internal/extract/runtime); translated to this
 // model type in cmd so the core ring never imports an adapter package.
@@ -597,6 +631,10 @@ type Diagnostic struct {
 	// semantic/dynamic categories without a deterministic source are listed as
 	// unmeasured rather than guessed. Omitted only when classification did not run.
 	Connascence *ConnascenceReport `json:"connascence,omitempty"`
+	// DynamicConnascenceSignals maps dynamic/lazy imports and runtime async facts
+	// to possible Ch6 dynamic connascence categories for human review. Report-only;
+	// all entries are measured=false and never change score, findings, or verdicts.
+	DynamicConnascenceSignals *DynamicConnascenceSignals `json:"dynamic_connascence_signals,omitempty"`
 	// RuntimeAsync is the report-only async-bridge detection block.
 	// Evidence only — never consumed by classify, score, or gate logic; never
 	// annotates graph edges and never affects distance, score, or verdict.

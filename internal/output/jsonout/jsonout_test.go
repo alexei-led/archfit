@@ -12,7 +12,10 @@ import (
 	"github.com/alexei-led/archfit/internal/score"
 )
 
-const connascenceExecutionTest = "execution"
+const (
+	connascenceExecutionTest = "execution"
+	dynamicTargetRabbitMQ    = "rabbitmq"
+)
 
 // TestJSONRenderer_AdvisoryScoreFields asserts the numeric BC score fields
 // (score_value + score_band) on an advisory's matched_by survive JSON encoding.
@@ -213,6 +216,52 @@ func TestJSONRenderer_ConnascenceSummary(t *testing.T) {
 	}
 	if got := raw.Connascence.Roadmap[1]; got.Kind != connascenceExecutionTest || got.CurrentStatus != "unmeasured_dynamic" || len(got.RelatedSignals) != 1 {
 		t.Fatalf("dynamic roadmap entry = %+v, want execution/unmeasured_dynamic with related signal", got)
+	}
+}
+
+func TestJSONRenderer_DynamicConnascenceSignals(t *testing.T) {
+	d := diagnostic.New()
+	d.DynamicConnascenceSignals = &diagnostic.DynamicConnascenceSignals{
+		ReportOnlyReason: "runtime trace evidence is absent",
+		Unmeasured:       []string{connascenceExecutionTest, string(coupling.ConnascenceTiming)},
+		Signals: []diagnostic.DynamicConnascenceSignal{{
+			Kind:               "runtime_async",
+			RelatedConnascence: []string{connascenceExecutionTest, string(coupling.ConnascenceTiming)},
+			Measured:           false,
+			ReportOnlyReason:   "runtime trace evidence is absent",
+			Module:             "app",
+			Target:             dynamicTargetRabbitMQ,
+			IntegrationKind:    "message_queue",
+			Count:              2,
+			Sites: []diagnostic.DynamicConnascenceSite{{
+				File: "app/publisher.go", Line: 12, Kind: "message_queue", Language: "go", Target: dynamicTargetRabbitMQ,
+			}},
+		}},
+	}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var raw struct {
+		Dynamic diagnostic.DynamicConnascenceSignals `json:"dynamic_connascence_signals"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if len(raw.Dynamic.Signals) != 1 {
+		t.Fatalf("dynamic connascence signals = %+v, want one", raw.Dynamic.Signals)
+	}
+	got := raw.Dynamic.Signals[0]
+	if got.Kind != "runtime_async" || got.Measured || got.Module != "app" || got.Target != dynamicTargetRabbitMQ || got.Count != 2 {
+		t.Fatalf("dynamic connascence signal = %+v", got)
+	}
+	if len(got.RelatedConnascence) != 2 || got.RelatedConnascence[0] != connascenceExecutionTest {
+		t.Fatalf("related connascence = %+v", got.RelatedConnascence)
+	}
+	if len(raw.Dynamic.Unmeasured) != 2 || raw.Dynamic.Unmeasured[1] != string(coupling.ConnascenceTiming) {
+		t.Fatalf("unmeasured = %+v", raw.Dynamic.Unmeasured)
 	}
 }
 

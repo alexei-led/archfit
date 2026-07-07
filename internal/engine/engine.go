@@ -316,6 +316,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	classifiedEdges := buildClassifiedEdgeSummaryForRun(couplingIdx, cloneOnlyPairs, classifyCfg.DuplicatedKnowledgePolicy, classifyCfg.ModuleMap)
 	classifiedEdges.LLMApproved = llmApprovedCount
 	connascenceReport := buildConnascenceReport(couplingIdx)
+	dynamicConnascenceSignals := buildDynamicConnascenceSignals(dynamicImports, runtimeAsyncEdges, connascenceReport.Unmeasured)
 	// Volatility triage disclosure: count modules by volatility source (declared /
 	// inherited / cascade / undeclared) so coupling_balance can say whether a
 	// uniform-volatility repo is measured or uniform-by-inheritance. in.Classify
@@ -327,27 +328,28 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	localCoupling := buildLocalCoupling(ex.g, couplingIdx, classifyCfg.ModuleMap)
 
 	d := diagnostic.Diagnostic{
-		SchemaVersion:           diagnostic.SchemaVersion,
-		Verdict:                 verdict,
-		Base:                    in.Mode.Base,
-		Head:                    in.Mode.Head,
-		ConfigHash:              in.ConfigHash,
-		PrimaryExtractorTools:   in.PrimaryExtractorTools,
-		Metrics:                 metricResults,
-		Findings:                resolvedFindings,
-		SyntaxFacts:             syntaxFacts,
-		FileFacts:               fileFacts,
-		DynamicImports:          dynamicImports,
-		Connascence:             connascenceReport,
-		RuntimeAsync:            runtimeAsync,
-		RuntimeAsyncEdges:       runtimeAsyncEdges,
-		DeprecatedDeps:          in.Signals.DeprecatedDeps,
-		SemanticStrengthOverlay: ex.semanticStrengthOverlay,
-		AgentTasks:              []diagnostic.AgentTask{},
-		ToolCoverage:            ex.coverages,
-		ClassifiedEdges:         classifiedEdges,
-		LocalCoupling:           localCoupling,
-		Delta:                   delta,
+		SchemaVersion:             diagnostic.SchemaVersion,
+		Verdict:                   verdict,
+		Base:                      in.Mode.Base,
+		Head:                      in.Mode.Head,
+		ConfigHash:                in.ConfigHash,
+		PrimaryExtractorTools:     in.PrimaryExtractorTools,
+		Metrics:                   metricResults,
+		Findings:                  resolvedFindings,
+		SyntaxFacts:               syntaxFacts,
+		FileFacts:                 fileFacts,
+		DynamicImports:            dynamicImports,
+		Connascence:               connascenceReport,
+		DynamicConnascenceSignals: dynamicConnascenceSignals,
+		RuntimeAsync:              runtimeAsync,
+		RuntimeAsyncEdges:         runtimeAsyncEdges,
+		DeprecatedDeps:            in.Signals.DeprecatedDeps,
+		SemanticStrengthOverlay:   ex.semanticStrengthOverlay,
+		AgentTasks:                []diagnostic.AgentTask{},
+		ToolCoverage:              ex.coverages,
+		ClassifiedEdges:           classifiedEdges,
+		LocalCoupling:             localCoupling,
+		Delta:                     delta,
 		Summary: diagnostic.Summary{
 			GateFindings: gateNew,
 			Warnings:     warnings,
