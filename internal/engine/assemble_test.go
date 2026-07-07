@@ -117,7 +117,7 @@ func TestEnrichEdges_GoTypeInfoHintAuthoritative(t *testing.T) {
 	scipConnascence := map[string][]graph.ConnascenceHint{
 		"a.go\x00pkg/b": {{Kind: graph.ConnascenceAlgorithm, Source: toolNameScipTest, Detail: "symbol reference"}},
 	}
-	enrichEdges(context.Background(), ports.NopSymbolResolver{}, scip, scipConnascence, facts)
+	enrichEdges(context.Background(), ports.NopSymbolResolver{}, true, scip, scipConnascence, facts)
 
 	want := []string{md, fn, fn}
 	for i, w := range want {

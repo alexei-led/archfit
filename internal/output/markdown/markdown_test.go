@@ -310,6 +310,7 @@ func TestRenderer_Render_SemanticStrengthOverlay(t *testing.T) {
 	d.SemanticStrengthOverlay = &diagnostic.SemanticStrengthOverlay{
 		ByLanguage: map[string]diagnostic.SemanticStrengthOverlayStats{
 			graph.LangPython:     {CandidateEdges: 1, Applied: 1, Missed: 0, Before: map[string]int{strengthUnknown: 1}, After: map[string]int{strengthIntrusive: 1}},
+			graph.LangRust:       {CandidateEdges: 2, Applied: 0, Missed: 2, Before: map[string]int{strengthUnknown: 2}, After: map[string]int{strengthUnknown: 2}},
 			graph.LangTypeScript: {CandidateEdges: 2, Applied: 1, Missed: 1, Before: map[string]int{strengthUnknown: 2}, After: map[string]int{strengthModel: 1, strengthUnknown: 1}},
 		},
 	}
@@ -324,6 +325,7 @@ func TestRenderer_Render_SemanticStrengthOverlay(t *testing.T) {
 		"## Semantic strength overlay",
 		"Report-only. SCIP refines extractor strength hints",
 		"python: candidates=1, applied=1, missed=0, before: unknown=1, after: intrusive=1",
+		"rust: candidates=2, applied=0, missed=2, before: unknown=2, after: unknown=2",
 		"typescript: candidates=2, applied=1, missed=1, before: unknown=2, after: model=1, unknown=1",
 	} {
 		if !strings.Contains(out, want) {

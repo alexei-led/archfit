@@ -100,6 +100,15 @@ func strengthBucket(strength string) string {
 	return strength
 }
 
+func tracksSemanticStrengthOverlay(cov diagnostic.Coverage) bool {
+	switch cov.Status {
+	case diagnostic.StatusOK, diagnostic.StatusPartial:
+		return true
+	default:
+		return false
+	}
+}
+
 func isSemanticOverlayLanguage(language string) bool {
 	switch language {
 	case graph.LangTypeScript, graph.LangPython, graph.LangRust:

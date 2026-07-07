@@ -378,6 +378,7 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 	if scipCov.Tool != "" {
 		coverages = append(coverages, scipCov)
 	}
+	scipStrengthOverlayRan := tracksSemanticStrengthOverlay(scipCov)
 
 	// Symbol-level connascence evidence (SCIP), keyed by "from\x00to". Best-effort;
 	// empty when no resolver exposes deterministic connascence facts.
@@ -413,7 +414,7 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 			extractErrs = append(extractErrs, err)
 			continue
 		}
-		overlay.merge(enrichEdges(ctx, in.Resolver, scipStrength, scipConnascence, f))
+		overlay.merge(enrichEdges(ctx, in.Resolver, scipStrengthOverlayRan, scipStrength, scipConnascence, f))
 		allFacts = append(allFacts, f)
 		coverages = append(coverages, cov)
 	}
@@ -544,7 +545,7 @@ func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult
 // backing array, so they are visible to the caller).
 // Resolution rewrites barrel-file targets to real paths; SCIP strength sets a
 // per-edge StrengthHint (config public/internal globs still win in classify).
-func enrichEdges(ctx context.Context, sr ports.SymbolResolver, scipStrength map[string]string, scipConnascence map[string][]graph.ConnascenceHint, facts graph.Facts) *semanticStrengthOverlay {
+func enrichEdges(ctx context.Context, sr ports.SymbolResolver, scipStrengthOverlayRan bool, scipStrength map[string]string, scipConnascence map[string][]graph.ConnascenceHint, facts graph.Facts) *semanticStrengthOverlay {
 	overlay := newSemanticStrengthOverlay()
 	for i, e := range facts.Edges {
 		fromFile := stripPrefix(e.From)
@@ -569,7 +570,7 @@ func enrichEdges(ctx context.Context, sr ports.SymbolResolver, scipStrength map[
 		if e.Language == graph.LangGo && e.StrengthHint != "" {
 			continue
 		}
-		trackOverlay := len(scipStrength) > 0 && isSemanticOverlayLanguage(e.Language)
+		trackOverlay := scipStrengthOverlayRan && isSemanticOverlayLanguage(e.Language)
 		if trackOverlay {
 			overlay.addCandidate(e.Language, e.StrengthHint)
 		}

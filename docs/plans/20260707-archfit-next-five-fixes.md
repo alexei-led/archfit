@@ -171,11 +171,11 @@ Metrics / evidence to consume:
 
 Task checklist:
 
-- [ ] Thread SCIP run status into overlay tracking.
-- [ ] Make zero-hit successful SCIP runs produce visible overlay counters.
-- [ ] Add regression coverage for TS, Python, and Rust zero-hit cases.
-- [ ] Keep empty/absent SCIP runs distinct in the rendered output.
-- [ ] Update the metrics docs to match the new visibility rule.
+- [x] Thread SCIP run status into overlay tracking.
+- [x] Make zero-hit successful SCIP runs produce visible overlay counters.
+- [x] Add regression coverage for TS, Python, and Rust zero-hit cases.
+- [x] Keep empty/absent SCIP runs distinct in the rendered output.
+- [x] Update the metrics docs to match the new visibility rule.
 
 Validation:
 

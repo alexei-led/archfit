@@ -15,6 +15,7 @@ import (
 const (
 	connascenceExecutionTest = "execution"
 	dynamicTargetRabbitMQ    = "rabbitmq"
+	semanticUnknownJSON      = "unknown"
 )
 
 // TestJSONRenderer_AdvisoryScoreFields asserts the numeric BC score fields
@@ -155,7 +156,8 @@ func TestJSONRenderer_SemanticStrengthOverlay(t *testing.T) {
 	d := diagnostic.New()
 	d.SemanticStrengthOverlay = &diagnostic.SemanticStrengthOverlay{
 		ByLanguage: map[string]diagnostic.SemanticStrengthOverlayStats{
-			"python": {CandidateEdges: 3, Applied: 2, Missed: 1, Before: map[string]int{"unknown": 3}, After: map[string]int{"intrusive": 2, "unknown": 1}},
+			"python": {CandidateEdges: 3, Applied: 2, Missed: 1, Before: map[string]int{semanticUnknownJSON: 3}, After: map[string]int{"intrusive": 2, semanticUnknownJSON: 1}},
+			"rust":   {CandidateEdges: 2, Applied: 0, Missed: 2, Before: map[string]int{semanticUnknownJSON: 2}, After: map[string]int{semanticUnknownJSON: 2}},
 		},
 	}
 
@@ -174,8 +176,12 @@ func TestJSONRenderer_SemanticStrengthOverlay(t *testing.T) {
 	if got.CandidateEdges != 3 || got.Applied != 2 || got.Missed != 1 {
 		t.Fatalf("Python overlay = %+v, want candidate/applied/missed 3/2/1", got)
 	}
-	if got.Before["unknown"] != 3 || got.After["intrusive"] != 2 {
+	if got.Before[semanticUnknownJSON] != 3 || got.After["intrusive"] != 2 {
 		t.Fatalf("Python overlay distributions = before %+v after %+v", got.Before, got.After)
+	}
+	gotRust := raw.SemanticStrengthOverlay.ByLanguage["rust"]
+	if gotRust.CandidateEdges != 2 || gotRust.Applied != 0 || gotRust.Missed != 2 {
+		t.Fatalf("Rust zero-hit overlay = %+v, want candidate/applied/missed 2/0/2", gotRust)
 	}
 }
 

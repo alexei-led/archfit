@@ -281,10 +281,11 @@ how many heuristic extractor edges SCIP strength actually refined
 are tracked — Go strength is compiler-grade `go/types` and SCIP never overrides
 it, so Go edges are excluded (the `e.Language == graph.LangGo && StrengthHint != ""`
 early-`continue` runs before overlay tracking). Never consumed by
-`coupling_balance`, findings, baselines, or gates. The block is omitted when a
-language has no SCIP strength map; an enabled-but-empty index is disclosed via the
-`scip` tool-coverage row (`StatusPartial`, "empty index"), not here — do not add
-an `scipEnabled` flag to `enrichEdges` to surface it twice.
+`coupling_balance`, findings, baselines, or gates. The block is omitted when SCIP
+is absent/disabled/timed out or when no TS/Python/Rust candidate edges exist. If
+SCIP returns `StatusOK` or `StatusPartial`, candidate languages still appear when
+the strength map is empty: `applied=0`, `missed=candidate_edges`. Use SCIP coverage
+status as the run signal; do not add a duplicate config-derived enable flag.
 
 ## Release (tag-triggered — never release manually)
 
