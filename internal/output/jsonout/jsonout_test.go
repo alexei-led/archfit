@@ -132,6 +132,34 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 	}
 }
 
+func TestJSONRenderer_SemanticStrengthOverlay(t *testing.T) {
+	d := diagnostic.New()
+	d.SemanticStrengthOverlay = &diagnostic.SemanticStrengthOverlay{
+		ByLanguage: map[string]diagnostic.SemanticStrengthOverlayStats{
+			"python": {CandidateEdges: 3, Applied: 2, Missed: 1, Before: map[string]int{"unknown": 3}, After: map[string]int{"intrusive": 2, "unknown": 1}},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var raw struct {
+		SemanticStrengthOverlay diagnostic.SemanticStrengthOverlay `json:"semantic_strength_overlay"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	got := raw.SemanticStrengthOverlay.ByLanguage["python"]
+	if got.CandidateEdges != 3 || got.Applied != 2 || got.Missed != 1 {
+		t.Fatalf("Python overlay = %+v, want candidate/applied/missed 3/2/1", got)
+	}
+	if got.Before["unknown"] != 3 || got.After["intrusive"] != 2 {
+		t.Fatalf("Python overlay distributions = before %+v after %+v", got.Before, got.After)
+	}
+}
+
 func TestJSONRenderer_ConnascenceSummary(t *testing.T) {
 	d := diagnostic.New()
 	d.Connascence = &diagnostic.ConnascenceReport{

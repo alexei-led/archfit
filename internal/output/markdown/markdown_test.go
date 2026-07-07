@@ -31,13 +31,16 @@ const (
 	metricEncap       = "encapsulation"
 
 	// Band / confidence / status literals used in multiple tests.
-	bandInfo       = "info"
-	bandNA         = "n/a"
-	bandGood       = "good"
-	confidenceHigh = "high"
-	confidenceLow  = "low"
-	statusAbsent   = "absent"
-	gateWarn       = "warn"
+	bandInfo          = "info"
+	bandNA            = "n/a"
+	bandGood          = "good"
+	confidenceHigh    = "high"
+	confidenceLow     = "low"
+	statusAbsent      = "absent"
+	gateWarn          = "warn"
+	strengthIntrusive = "intrusive"
+	strengthModel     = "model"
+	strengthUnknown   = "unknown"
 
 	// MatchedBy keys reused across BC advisory tests.
 	mbStrength   = "strength"
@@ -229,6 +232,35 @@ func TestRenderer_Render_ConnascenceSummary(t *testing.T) {
 		"by source: go/types=2, scip=1",
 		"unmeasured: position, execution, timing, value, identity",
 		"roadmap: name=deterministic_static, execution=unmeasured_dynamic (signals dynamic_imports/runtime_async_edges)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestRenderer_Render_SemanticStrengthOverlay(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.SemanticStrengthOverlay = &diagnostic.SemanticStrengthOverlay{
+		ByLanguage: map[string]diagnostic.SemanticStrengthOverlayStats{
+			graph.LangPython:     {CandidateEdges: 1, Applied: 1, Missed: 0, Before: map[string]int{strengthUnknown: 1}, After: map[string]int{strengthIntrusive: 1}},
+			graph.LangTypeScript: {CandidateEdges: 2, Applied: 1, Missed: 1, Before: map[string]int{strengthUnknown: 2}, After: map[string]int{strengthModel: 1, strengthUnknown: 1}},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"## Semantic strength overlay",
+		"Report-only. SCIP refines extractor strength hints",
+		"python: candidates=1, applied=1, missed=0, before: unknown=1, after: intrusive=1",
+		"typescript: candidates=2, applied=1, missed=1, before: unknown=2, after: model=1, unknown=1",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)

@@ -2942,3 +2942,65 @@ func TestRun_WarnRule_ProducesVerdictWarn(t *testing.T) {
 		t.Errorf("summary.warnings=%d, want 1", dAdv.Summary.Warnings)
 	}
 }
+
+func TestRun_ReportsSemanticStrengthOverlay(t *testing.T) {
+	facts := graph.Facts{
+		Language: graph.LangTypeScript,
+		Nodes: []graph.Node{
+			{Kind: graph.NodeKindFile, Path: "src/a.ts", Language: graph.LangTypeScript},
+			{Kind: graph.NodeKindFile, Path: "src/b.ts", Language: graph.LangTypeScript},
+			{Kind: graph.NodeKindFile, Path: "src/c.ts", Language: graph.LangTypeScript},
+		},
+		Edges: []graph.Edge{
+			{From: "file:src/a.ts", To: "file:src/b.ts", Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
+			{From: "file:src/a.ts", To: "file:src/c.ts", Kind: graph.EdgeKindImports, Language: graph.LangTypeScript},
+		},
+	}
+	ex := &ports.ExtractorMock{
+		NameFunc: func() string { return graph.LangTypeScript },
+		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+			return facts, diagnostic.Coverage{Tool: graph.LangTypeScript, Status: diagnostic.StatusOK}, nil
+		},
+	}
+	resolver := &ports.SymbolResolverMock{
+		NameFunc: func() string { return toolNameScip },
+		ResolveFunc: func(_ context.Context, _ string, toPath string) (string, string) {
+			return toPath, confidenceHigh
+		},
+		StrengthsFunc: func(_ context.Context, _ scope.Scope) (map[string]string, diagnostic.Coverage, error) {
+			return map[string]string{
+				"src/a.ts\x00src/b.ts": strengthModel,
+			}, diagnostic.Coverage{Tool: toolNameScip, Status: diagnostic.StatusOK}, nil
+		},
+		SymbolsFunc: func(_ context.Context, _ scope.Scope) (symbol.Graph, diagnostic.Coverage, error) {
+			return symbol.Graph{}, diagnostic.Coverage{}, nil
+		},
+	}
+
+	d, err := engine.Run(context.Background(), engine.RunInput{
+		Mode:       engine.Mode{Head: headRef},
+		Scope:      scope.Scope{Root: "."},
+		Classify:   config.Config{Version: 1}.ForClassify(),
+		Extractors: []ports.Extractor{ex},
+		Patterns:   ports.NopPatternProvider{},
+		Resolver:   resolver,
+		Rules:      nil,
+		Metrics:    nil,
+		Accepted:   baseline.Baseline{},
+		Signals:    signal.RunSignals{},
+		Now:        time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if d.SemanticStrengthOverlay == nil {
+		t.Fatal("semantic strength overlay missing")
+	}
+	got := d.SemanticStrengthOverlay.ByLanguage[graph.LangTypeScript]
+	if got.CandidateEdges != 2 || got.Applied != 1 || got.Missed != 1 {
+		t.Fatalf("TypeScript overlay = %+v, want candidate/applied/missed 2/1/1", got)
+	}
+	if got.Before["unknown"] != 2 || got.After[strengthModel] != 1 || got.After["unknown"] != 1 {
+		t.Fatalf("TypeScript distributions = before %+v after %+v", got.Before, got.After)
+	}
+}

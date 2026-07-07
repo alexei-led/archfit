@@ -304,6 +304,30 @@ func formatCounts(counts map[string]int) string {
 	return strings.Join(parts, ", ")
 }
 
+func writeSemanticStrengthOverlay(b *strings.Builder, overlay *diagnostic.SemanticStrengthOverlay) {
+	if overlay == nil || len(overlay.ByLanguage) == 0 {
+		return
+	}
+	b.WriteString("\n## Semantic strength overlay\n\n")
+	b.WriteString("Report-only. SCIP refines extractor strength hints; these counters never gate directly.\n\n")
+	languages := make([]string, 0, len(overlay.ByLanguage))
+	for language := range overlay.ByLanguage {
+		languages = append(languages, language)
+	}
+	sort.Strings(languages)
+	for _, language := range languages {
+		stats := overlay.ByLanguage[language]
+		fmt.Fprintf(b, "- %s: candidates=%d, applied=%d, missed=%d", language, stats.CandidateEdges, stats.Applied, stats.Missed)
+		if len(stats.Before) > 0 {
+			fmt.Fprintf(b, ", before: %s", formatCounts(stats.Before))
+		}
+		if len(stats.After) > 0 {
+			fmt.Fprintf(b, ", after: %s", formatCounts(stats.After))
+		}
+		b.WriteByte('\n')
+	}
+}
+
 // dynamicImportTopN is the number of modules listed in the dynamic-imports section.
 const dynamicImportTopN = 10
 

@@ -116,6 +116,22 @@ type Coverage struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+// SemanticStrengthOverlay records how often SCIP semantic strength refined
+// extractor edges. It is report-only evidence: gates and scores consume the
+// resulting edge strengths through classification, never these counters.
+type SemanticStrengthOverlay struct {
+	ByLanguage map[string]SemanticStrengthOverlayStats `json:"by_language,omitempty"`
+}
+
+// SemanticStrengthOverlayStats is the per-language SCIP overlay hit/miss summary.
+type SemanticStrengthOverlayStats struct {
+	CandidateEdges int            `json:"candidate_edges"`
+	Applied        int            `json:"applied"`
+	Missed         int            `json:"missed"`
+	Before         map[string]int `json:"before,omitempty"`
+	After          map[string]int `json:"after,omitempty"`
+}
+
 // AgentTask is the structured repair-task block (spec §13): one per ACTIVE gate
 // finding (status new/expired_waiver), derived deterministically from the
 // finding + rule configuration — no fabrication. It tells a coding agent what
@@ -585,6 +601,10 @@ type Diagnostic struct {
 	// Ceiling: cargo yanked and live-version EOL require external registry queries
 	// and are routed to the LLM path (archfit analyze --llm / enrich), not here.
 	DeprecatedDeps []DeprecatedDep `json:"deprecated_deps,omitempty"`
+	// SemanticStrengthOverlay reports SCIP semantic-strength overlay coverage by
+	// language. Report-only visibility for the refinement layer; never consumed by
+	// verdict, gates, score synthesis, or baseline deltas.
+	SemanticStrengthOverlay *SemanticStrengthOverlay `json:"semantic_strength_overlay,omitempty"`
 	// SyntaxFacts is the report-only syntactic declaration/route block extracted
 	// by ast-grep (design §3). Neutral, off-gate evidence — never consumed by
 	// verdict or gate logic. Omitted (omitempty) when analyzers.syntax is off or sg

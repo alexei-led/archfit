@@ -12,8 +12,9 @@ const gateWarn = "warn"
 
 // constants for repeated string literals flagged by goconst.
 const (
-	kindFunction = "function"
-	fileAGo      = "a.go"
+	kindFunction       = "function"
+	fileAGo            = "a.go"
+	languageTypeScript = "typescript"
 )
 
 func TestNew_ZeroValue(t *testing.T) {
@@ -194,6 +195,35 @@ func TestSummary_JSONFieldNames(t *testing.T) {
 	for _, f := range []string{"gate_findings", "warnings", "waivers_used"} {
 		if _, ok := m[f]; !ok {
 			t.Errorf("Summary JSON field %q missing", f)
+		}
+	}
+}
+
+func TestSemanticStrengthOverlay_JSONFieldNames(t *testing.T) {
+	overlay := diagnostic.SemanticStrengthOverlay{
+		ByLanguage: map[string]diagnostic.SemanticStrengthOverlayStats{
+			languageTypeScript: {
+				CandidateEdges: 2,
+				Applied:        1,
+				Missed:         1,
+				Before:         map[string]int{"unknown": 2},
+				After:          map[string]int{"model": 1, "unknown": 1},
+			},
+		},
+	}
+	data, err := json.Marshal(overlay)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var raw map[string]map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	stats := raw["by_language"][languageTypeScript]
+	for _, field := range []string{"candidate_edges", "applied", "missed", "before", "after"} {
+		if _, ok := stats[field]; !ok {
+			t.Errorf("semantic overlay field %q missing", field)
 		}
 	}
 }

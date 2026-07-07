@@ -99,9 +99,10 @@ func AugmentClassifyConfig(g *graph.Graph, cfg config.ClassifyConfig) config.Cla
 
 // extractResult holds the outputs of the extract stage.
 type extractResult struct {
-	g           *graph.Graph
-	coverages   []diagnostic.Coverage
-	scipSymbols symbol.Graph
+	g                       *graph.Graph
+	coverages               []diagnostic.Coverage
+	scipSymbols             symbol.Graph
+	semanticStrengthOverlay *diagnostic.SemanticStrengthOverlay
 }
 
 // evidenceResult holds the outputs of the resolveEvidence stage.
@@ -326,26 +327,27 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	localCoupling := buildLocalCoupling(ex.g, couplingIdx, classifyCfg.ModuleMap)
 
 	d := diagnostic.Diagnostic{
-		SchemaVersion:         diagnostic.SchemaVersion,
-		Verdict:               verdict,
-		Base:                  in.Mode.Base,
-		Head:                  in.Mode.Head,
-		ConfigHash:            in.ConfigHash,
-		PrimaryExtractorTools: in.PrimaryExtractorTools,
-		Metrics:               metricResults,
-		Findings:              resolvedFindings,
-		SyntaxFacts:           syntaxFacts,
-		FileFacts:             fileFacts,
-		DynamicImports:        dynamicImports,
-		Connascence:           connascenceReport,
-		RuntimeAsync:          runtimeAsync,
-		RuntimeAsyncEdges:     runtimeAsyncEdges,
-		DeprecatedDeps:        in.Signals.DeprecatedDeps,
-		AgentTasks:            []diagnostic.AgentTask{},
-		ToolCoverage:          ex.coverages,
-		ClassifiedEdges:       classifiedEdges,
-		LocalCoupling:         localCoupling,
-		Delta:                 delta,
+		SchemaVersion:           diagnostic.SchemaVersion,
+		Verdict:                 verdict,
+		Base:                    in.Mode.Base,
+		Head:                    in.Mode.Head,
+		ConfigHash:              in.ConfigHash,
+		PrimaryExtractorTools:   in.PrimaryExtractorTools,
+		Metrics:                 metricResults,
+		Findings:                resolvedFindings,
+		SyntaxFacts:             syntaxFacts,
+		FileFacts:               fileFacts,
+		DynamicImports:          dynamicImports,
+		Connascence:             connascenceReport,
+		RuntimeAsync:            runtimeAsync,
+		RuntimeAsyncEdges:       runtimeAsyncEdges,
+		DeprecatedDeps:          in.Signals.DeprecatedDeps,
+		SemanticStrengthOverlay: ex.semanticStrengthOverlay,
+		AgentTasks:              []diagnostic.AgentTask{},
+		ToolCoverage:            ex.coverages,
+		ClassifiedEdges:         classifiedEdges,
+		LocalCoupling:           localCoupling,
+		Delta:                   delta,
 		Summary: diagnostic.Summary{
 			GateFindings: gateNew,
 			Warnings:     warnings,
@@ -391,6 +393,7 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 
 	var allFacts []graph.Facts
 	var extractErrs []error
+	overlay := newSemanticStrengthOverlay()
 	for _, ex := range in.Extractors {
 		f, cov, err := ex.Extract(ctx, in.Scope)
 		if err != nil {
@@ -408,7 +411,7 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 			extractErrs = append(extractErrs, err)
 			continue
 		}
-		enrichEdges(ctx, in.Resolver, scipStrength, scipConnascence, f)
+		overlay.merge(enrichEdges(ctx, in.Resolver, scipStrength, scipConnascence, f))
 		allFacts = append(allFacts, f)
 		coverages = append(coverages, cov)
 	}
@@ -421,7 +424,7 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 	// through the extractor loop. These have no path into the diagnostic otherwise.
 	coverages = append(coverages, in.Signals.ExtraCoverage...)
 
-	return extractResult{g: g, coverages: coverages, scipSymbols: scipSymbols}, nil
+	return extractResult{g: g, coverages: coverages, scipSymbols: scipSymbols, semanticStrengthOverlay: overlay.report()}, nil
 }
 
 // resolveEvidence runs stage 7: join module labels and severity onto tagged findings.
@@ -539,7 +542,8 @@ func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult
 // backing array, so they are visible to the caller).
 // Resolution rewrites barrel-file targets to real paths; SCIP strength sets a
 // per-edge StrengthHint (config public/internal globs still win in classify).
-func enrichEdges(ctx context.Context, sr ports.SymbolResolver, scipStrength map[string]string, scipConnascence map[string][]graph.ConnascenceHint, facts graph.Facts) {
+func enrichEdges(ctx context.Context, sr ports.SymbolResolver, scipStrength map[string]string, scipConnascence map[string][]graph.ConnascenceHint, facts graph.Facts) *semanticStrengthOverlay {
+	overlay := newSemanticStrengthOverlay()
 	for i, e := range facts.Edges {
 		fromFile := stripPrefix(e.From)
 		toPath := stripPrefix(e.To)
@@ -563,10 +567,19 @@ func enrichEdges(ctx context.Context, sr ports.SymbolResolver, scipStrength map[
 		if e.Language == graph.LangGo && e.StrengthHint != "" {
 			continue
 		}
-		if st, found := scipStrength[key]; found {
+		trackOverlay := len(scipStrength) > 0 && isSemanticOverlayLanguage(e.Language)
+		if trackOverlay {
+			overlay.addCandidate(e.Language, e.StrengthHint)
+		}
+		st, found := scipStrength[key]
+		if found {
 			facts.Edges[i].StrengthHint = st
 		}
+		if trackOverlay {
+			overlay.finishCandidate(e.Language, facts.Edges[i].StrengthHint, found)
+		}
 	}
+	return overlay
 }
 
 func appendGraphConnascenceHints(dst []graph.ConnascenceHint, hints ...graph.ConnascenceHint) []graph.ConnascenceHint {

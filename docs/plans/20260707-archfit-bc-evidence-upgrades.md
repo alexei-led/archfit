@@ -292,14 +292,14 @@ Manual checks:
 - Confirm unresolved TS imports still cap confidence and remain disclosed.
 - Confirm Python non-private imports still abstain unless SCIP proves a strength.
 
-- [ ] Add per-language SCIP overlay counters in the engine or diagnostic assembly.
-- [ ] Add tests for successful TS overlay key matching.
-- [ ] Add tests for successful Python dotted-module overlay key matching.
-- [ ] Add tests for successful Rust module/crate overlay key matching.
-- [ ] Add tests for missed overlay keys being counted, not silently ignored.
-- [ ] Add output rendering for overlay stats in JSON and markdown.
-- [ ] Run task verification commands.
-- [ ] Mark completed.
+- [x] Add per-language SCIP overlay counters in the engine or diagnostic assembly.
+- [x] Add tests for successful TS overlay key matching.
+- [x] Add tests for successful Python dotted-module overlay key matching.
+- [x] Add tests for successful Rust module/crate overlay key matching.
+- [x] Add tests for missed overlay keys being counted, not silently ignored.
+- [x] Add output rendering for overlay stats in JSON and markdown.
+- [x] Run task verification commands.
+- [x] Mark completed.
 
 ### Task 4: Improve distance meaning without distance inflation
 
