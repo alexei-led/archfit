@@ -381,7 +381,10 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	}
 	b.WriteString("# Optional analyzers (deeper facts; opt in deliberately because they can be slow).\n")
 	if cfg.HasRust {
-		b.WriteString("# analyzers:\n")
+		// A live analyzers: block (cargo_modules + scip) already exists above. Emitting
+		// a second "# analyzers:" header here would trap a user who uncomments it into a
+		// duplicate top-level key (a hard config-load error). Point at the block above.
+		b.WriteString("# Extend the analyzers: block above with:\n")
 	} else {
 		b.WriteString("# analyzers:\n")
 		b.WriteString("#   scip: { enabled: true }         # symbol-level coupling strength\n")

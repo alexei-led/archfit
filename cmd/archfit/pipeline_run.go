@@ -236,8 +236,6 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	deployUnitsByPath := deployunit.Detect(ctx, s.Root, duModules, deps.Runner)
 	deployUnitsByModule := deployunit.KeyByModule(deployUnitsByPath, duModules)
 	cfg.FillMissingDeployUnits(deployUnitsByModule)
-	change.DeployUnit.PathUnits = deployUnitsByPath
-	change.DeployUnit.ModuleUnits = deployUnitsByModule
 	change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{
 		Tool:            "deploy-unit",
 		FilesSeen:       len(deployUnitsByPath),

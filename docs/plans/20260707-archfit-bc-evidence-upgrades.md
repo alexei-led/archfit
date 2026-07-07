@@ -524,12 +524,12 @@ Manual checks:
 - Confirm docs warn about Rust deep-analysis runtime cost.
 - Confirm no report-only block feeds the gate.
 
-- [ ] Run full validation commands.
-- [ ] Update docs for Rust deep analysis, SCIP overlay semantics, distance context, and dynamic connascence signal limits.
-- [ ] Record before/after metric deltas in the final commit message or PR body.
-- [ ] Confirm `git diff --name-only` matches expected files.
-- [ ] Run `ralphex --review docs/plans/20260707-archfit-bc-evidence-upgrades.md` after task completion if full ralphex review was skipped.
-- [ ] Mark completed.
+- [x] Run full validation commands.
+- [x] Update docs for Rust deep analysis, SCIP overlay semantics, distance context, and dynamic connascence signal limits.
+- [x] Record before/after metric deltas in the final commit message or PR body.
+- [x] Confirm `git diff --name-only` matches expected files.
+- [x] Run `ralphex --review docs/plans/20260707-archfit-bc-evidence-upgrades.md` after task completion if full ralphex review was skipped.
+- [x] Mark completed.
 
 ## Acceptance Criteria
 

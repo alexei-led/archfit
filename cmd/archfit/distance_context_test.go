@@ -8,14 +8,19 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 )
 
+const (
+	globA = "a/**"
+	globB = "b/**"
+)
+
 func TestBuildDistanceContext_SingleOwnerDegenerate(t *testing.T) {
 	d := diagnostic.New()
 	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
 		ByDistanceBasis: map[string]int{"code_structure": 3, "deploy_unit": 1},
 	}
 	cfg := config.Config{Modules: map[string]config.ModuleDef{
-		"a": {Paths: []string{"a/**"}, Owner: "team"},
-		"b": {Paths: []string{"b/**"}, Owner: "team"},
+		"a": {Paths: []string{globA}, Owner: "team"},
+		"b": {Paths: []string{globB}, Owner: "team"},
 	}}
 
 	got := buildDistanceContext(d, cfg, 1)
@@ -33,10 +38,48 @@ func TestBuildDistanceContext_SingleOwnerDegenerate(t *testing.T) {
 	}
 }
 
+func TestBuildDistanceContext_NoOwnerSignal(t *testing.T) {
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		"a": {Paths: []string{globA}},
+		"b": {Paths: []string{globB}},
+	}}
+
+	got := buildDistanceContext(diagnostic.New(), cfg, 0)
+	if got.OwnerModel != ownerModelNoOwner {
+		t.Fatalf("owner_model = %q, want %q", got.OwnerModel, ownerModelNoOwner)
+	}
+	if !strings.Contains(got.Interpretation, "ownership is absent or unresolved") {
+		t.Fatalf("interpretation = %q, want absent-ownership explanation", got.Interpretation)
+	}
+	// No deploy-unit or declared-external evidence → no "can still raise distance" suffix.
+	if strings.Contains(got.Interpretation, "can still raise distance") {
+		t.Fatalf("interpretation should omit the evidence suffix with no evidence: %q", got.Interpretation)
+	}
+}
+
+func TestBuildDistanceContext_NoOwnerWithExternalEvidence(t *testing.T) {
+	cfg := config.Config{
+		Modules:         map[string]config.ModuleDef{"a": {Paths: []string{globA}}},
+		ExternalSystems: map[string]config.ExternalSystemDef{"stripe": {Targets: []string{"stripe.**"}}},
+	}
+
+	got := buildDistanceContext(diagnostic.New(), cfg, 0)
+	if got.OwnerModel != ownerModelNoOwner {
+		t.Fatalf("owner_model = %q, want %q", got.OwnerModel, ownerModelNoOwner)
+	}
+	if got.DeclaredExternalSystems != 1 {
+		t.Fatalf("declared_external_systems = %d, want 1", got.DeclaredExternalSystems)
+	}
+	// Declared external systems → suffix disclosing distance can still be raised.
+	if !strings.Contains(got.Interpretation, "can still raise distance") {
+		t.Fatalf("interpretation should include the evidence suffix: %q", got.Interpretation)
+	}
+}
+
 func TestBuildDistanceContext_MultiOwner(t *testing.T) {
 	cfg := config.Config{Modules: map[string]config.ModuleDef{
-		"a": {Paths: []string{"a/**"}, Owner: "team-a"},
-		"b": {Paths: []string{"b/**"}, Owner: "team-b"},
+		"a": {Paths: []string{globA}, Owner: "team-a"},
+		"b": {Paths: []string{globB}, Owner: "team-b"},
 	}}
 
 	got := buildDistanceContext(diagnostic.New(), cfg, 0)

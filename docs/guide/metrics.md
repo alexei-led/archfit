@@ -20,7 +20,7 @@ complementary metrics. They split into three roles:
   changes the verdict.
 
 Separate JSON/Markdown report-only blocks, including `connascence`,
-`dynamic_connascence_signals`, `local_coupling`, `runtime_async`, and `classified_edges` summaries, explain the
+`dynamic_connascence_signals`, `semantic_strength_overlay`, `local_coupling`, `runtime_async`, and `classified_edges` summaries, explain the
 score inputs. They are evidence, not metrics, and never gate on their own.
 
 A metric's **absolute value** never fails the build — only a _regression_
@@ -300,6 +300,23 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 - **Unmeasured by design:** `connascence.unmeasured` still preserves execution,
   timing, value, and identity unless a future deterministic runtime trace source
   proves them. The block does not imply dynamic connascence is fully measured.
+- **Report-only by design:** never consumed by `coupling_balance`, findings,
+  baselines, score deltas, or gate verdicts.
+
+### `semantic_strength_overlay`
+
+- **Represents:** how often SCIP semantic strength actually refined a heuristic
+  extractor edge, per language. Makes SCIP under-application visible instead of
+  silent.
+- **Computed:** JSON `semantic_strength_overlay.by_language` keys each language
+  where SCIP may refine strength (`typescript`, `python`, `rust`) to a
+  `candidate_edges` / `applied` / `missed` count plus `before` and `after`
+  strength-bucket distributions. Go is excluded by design — its edge strength
+  comes from compiler-grade `go/types` info and SCIP never overrides it.
+- **Absent when SCIP produced nothing:** the block is omitted for a language with
+  no SCIP strength map. An enabled-but-empty SCIP index (0 occurrences) is
+  disclosed separately through the `scip` tool-coverage row
+  (`status: partial`, reason "empty index (0 occurrences)"), not here.
 - **Report-only by design:** never consumed by `coupling_balance`, findings,
   baselines, score deltas, or gate verdicts.
 

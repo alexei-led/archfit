@@ -274,6 +274,18 @@ evidence per module. Never annotates graph edges, never affects distance or
 balance score, never gates. This is a deliberate design decision — do not wire
 async detection into distance.
 
+**SCIP semantic overlay is report-only** (`internal/engine/semantic_overlay.go`,
+`enrichEdges`). `semantic_strength_overlay.by_language` counts, per language,
+how many heuristic extractor edges SCIP strength actually refined
+(`candidate_edges`/`applied`/`missed` + before/after buckets). Only TS/Python/Rust
+are tracked — Go strength is compiler-grade `go/types` and SCIP never overrides
+it, so Go edges are excluded (the `e.Language == graph.LangGo && StrengthHint != ""`
+early-`continue` runs before overlay tracking). Never consumed by
+`coupling_balance`, findings, baselines, or gates. The block is omitted when a
+language has no SCIP strength map; an enabled-but-empty index is disclosed via the
+`scip` tool-coverage row (`StatusPartial`, "empty index"), not here — do not add
+an `scipEnabled` flag to `enrichEdges` to surface it twice.
+
 ## Release (tag-triggered — never release manually)
 
 `git tag -a vX.Y.Z -m … && git push origin vX.Y.Z` → `release.yaml` builds binaries +
@@ -308,6 +320,18 @@ stays `n/a` for typical Rust by design: it scores only contract/intrusive edges,
 Rust's module privacy makes cross-module _intrusive_ edges rare. With all three on
 (`languages.rust` + `analyzers.cargo_modules` + `analyzers.scip`) a single-crate
 Rust project gets full module-level coupling analysis.
+
+**Rust deep-analysis config is auto-generated.** For a project with a root
+`Cargo.toml`, `config init` emits the `analyzers.cargo_modules`/`analyzers.scip`
+stanza enabled, and `config update --apply` rewrites an existing config's Rust
+stanza to `languages.rust.enabled: auto` + both analyzers on
+(`cmd/archfit/rust_config_update.go`, `needsRustDeepAnalysisConfig` /
+`ensureRustDeepAnalysisConfig`). Explicit `languages.rust.enabled: false` opts
+out and is preserved. This is a deliberate default (single-crate Rust degenerates
+to one node without it) — the sections above describing cargo_modules/scip as
+manual opt-in still hold for non-generated configs. The line-based editor is used
+here (not `initcfg.ApplyEdits`, whose sealed `Edit` types only cover module
+stanzas, not top-level `languages:`/`analyzers:` sections).
 
 The extractor carries crate roots (`graph.CrateRoot`, repo-relative src dir + crate
 name from cargo metadata) on the graph. Rust facts remain crate-level for per-file

@@ -652,9 +652,6 @@ func TestTSUnresolvedWarning(t *testing.T) {
 func TestSkippedPassCoverageRows_ScipDisabled(t *testing.T) {
 	t.Parallel()
 	cov := diagnostic.Coverage{Tool: toolScip, Status: diagnostic.StatusDisabled, Reason: reasonScipDisabled}
-	if cov.Tool == "" || cov.Status != diagnostic.StatusDisabled || cov.Reason == "" {
-		t.Fatalf("disabled SCIP coverage row is incomplete: %+v", cov)
-	}
 	if cov.Tool != "scip" {
 		t.Fatalf("disabled SCIP coverage tool = %q, want scip", cov.Tool)
 	}
