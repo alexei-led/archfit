@@ -651,11 +651,19 @@ func TestTSUnresolvedWarning(t *testing.T) {
 // the regression for P12: the skipped pass was silently absent from the output.
 func TestSkippedPassCoverageRows_ScipDisabled(t *testing.T) {
 	t.Parallel()
-	// StatusDisabled must not produce a gap (deliberate opt-out, not a missing tool).
-	cov := []diagnostic.Coverage{
-		{Tool: toolScip, Status: diagnostic.StatusDisabled, Reason: reasonScipDisabled},
+	cov := diagnostic.Coverage{Tool: toolScip, Status: diagnostic.StatusDisabled, Reason: reasonScipDisabled}
+	if cov.Tool == "" || cov.Status != diagnostic.StatusDisabled || cov.Reason == "" {
+		t.Fatalf("disabled SCIP coverage row is incomplete: %+v", cov)
 	}
-	gaps := buildCoverageGaps(cov, config.Config{}, "")
+	if cov.Tool != "scip" {
+		t.Fatalf("disabled SCIP coverage tool = %q, want scip", cov.Tool)
+	}
+	if !strings.Contains(cov.Reason, "analyzers.scip.enabled") {
+		t.Fatalf("disabled SCIP reason = %q, want opt-in config path", cov.Reason)
+	}
+
+	// StatusDisabled must not produce a gap (deliberate opt-out, not a missing tool).
+	gaps := buildCoverageGaps([]diagnostic.Coverage{cov}, config.Config{}, "")
 	if len(gaps) != 0 {
 		t.Errorf("StatusDisabled scip must not produce a gap; got %+v", gaps)
 	}

@@ -126,12 +126,12 @@ Manual checks:
 - Confirm no LLM imports entered `internal/*` gate path.
 - Confirm `ScoreVersion` is unchanged unless task output proves a scoring semantic changed.
 
-- [ ] Add or strengthen tests pinning `BookScorer` ordinals and formula.
-- [ ] Add or strengthen tests proving same-module/local/runtime/report-only facts do not change score or verdict.
-- [ ] Add a regression test proving SCIP does not override Go type-info strength.
-- [ ] Add a regression test proving disabled SCIP produces explicit disabled coverage, not a silent miss.
-- [ ] Run task verification commands.
-- [ ] Mark completed.
+- [x] Add or strengthen tests pinning `BookScorer` ordinals and formula.
+- [x] Add or strengthen tests proving same-module/local/runtime/report-only facts do not change score or verdict.
+- [x] Add a regression test proving SCIP does not override Go type-info strength.
+- [x] Add a regression test proving disabled SCIP produces explicit disabled coverage, not a silent miss.
+- [x] Run task verification commands.
+- [x] Mark completed.
 
 ### Task 2: Make Rust generated configs non-degenerate
 

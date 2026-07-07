@@ -26,6 +26,7 @@ import (
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
+	archscore "github.com/alexei-led/archfit/internal/score"
 )
 
 const (
@@ -50,6 +51,8 @@ const (
 
 	// confidenceHigh is the string literal used in Facts and symbol graph tests.
 	confidenceHigh = "high"
+
+	subdomainCore = "core"
 
 	// symbolFoo is the test symbol used in SymbolGraph forwarding tests.
 	symbolFoo          = "pkg/a.Foo"
@@ -2225,6 +2228,80 @@ func TestRun_RuntimeAsync_StaticGraphUnchanged(t *testing.T) {
 	}
 }
 
+func TestRun_ReportOnlyLocalAndRuntimeFactsDoNotChangeScoreOrVerdict(t *testing.T) {
+	modules := map[string]config.ModuleDef{
+		"a": {Paths: []string{"pkg/a/**"}, Owner: "team-a", Subdomain: subdomainCore},
+		"b": {Paths: []string{"pkg/b/**"}, Owner: "team-b", Subdomain: subdomainCore},
+	}
+	cfg := config.Config{Version: 1, Modules: modules}
+	cross := graph.Edge{
+		From: "file:pkg/a/a.go", To: "file:pkg/b/b.go",
+		Kind: graph.EdgeKindImports, Language: graph.LangGo,
+		StrengthHint: string(coupling.StrengthFunctional),
+	}
+	local := graph.Edge{
+		From: "file:pkg/a/local_a.go", To: "file:pkg/a/local_b.go",
+		Kind: graph.EdgeKindImports, Language: graph.LangGo,
+		StrengthHint: string(coupling.StrengthModel),
+	}
+	run := func(facts graph.Facts, signals signal.RunSignals) diagnostic.Diagnostic {
+		t.Helper()
+		ex := &ports.ExtractorMock{
+			NameFunc: func() string { return "go" },
+			ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
+				return facts, diagnostic.Coverage{Tool: "go", Status: diagnostic.StatusOK}, nil
+			},
+		}
+		base := baseline.Baseline{}
+		d, err := engine.Run(context.Background(), engine.RunInput{
+			Mode:        engine.Mode{Head: headRef, Advisory: true},
+			Scope:       scope.Scope{Root: "."},
+			Classify:    cfg.ForClassify(),
+			Extractors:  []ports.Extractor{ex},
+			Patterns:    ports.NopPatternProvider{},
+			Resolver:    ports.NopSymbolResolver{},
+			Rules:       nil,
+			Metrics:     nil,
+			Accepted:    base,
+			BaseMetrics: base.Metrics,
+			Signals:     signals,
+			Now:         time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC),
+		})
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		return d
+	}
+
+	base := run(graph.Facts{Language: graph.LangGo, Edges: []graph.Edge{cross}}, signal.RunSignals{})
+	withReportOnly := run(
+		graph.Facts{Language: graph.LangGo, Edges: []graph.Edge{cross, local}},
+		signal.RunSignals{RuntimeAsync: signal.RuntimeAsyncSignals{
+			Confidence: confMedium,
+			Sites:      []diagnostic.RuntimeAsyncSite{{File: "pkg/a/a.go", Line: 12, Library: libAmqp, IntegrationKind: kindMQ, Language: "go"}},
+		}},
+	)
+
+	if withReportOnly.ClassifiedEdges.SameModule == 0 {
+		t.Fatal("expected same-module edge to be counted as report-only local coupling")
+	}
+	if len(withReportOnly.LocalCoupling) == 0 {
+		t.Fatal("expected local_coupling report block")
+	}
+	if len(withReportOnly.RuntimeAsync) == 0 || len(withReportOnly.RuntimeAsyncEdges) == 0 {
+		t.Fatal("expected runtime_async report blocks")
+	}
+
+	baseScore := archscore.Synthesize(base)
+	reportOnlyScore := archscore.Synthesize(withReportOnly)
+	if baseScore.Overall != reportOnlyScore.Overall || baseScore.OverallBand != reportOnlyScore.OverallBand {
+		t.Errorf("report-only facts changed score: base=%+v with=%+v", baseScore, reportOnlyScore)
+	}
+	if base.Verdict != withReportOnly.Verdict {
+		t.Errorf("report-only facts changed verdict: base=%q with=%q", base.Verdict, withReportOnly.Verdict)
+	}
+}
+
 // TestRun_RuntimeAsync_Deterministic asserts a double run with identical sites
 // yields byte-identical diagnostics (no map-order leakage in the rollup).
 func TestRun_RuntimeAsync_Deterministic(t *testing.T) {
@@ -2377,7 +2454,7 @@ func TestRun_BookExamples_Ch10(t *testing.T) {
 			name:            "distributed_monolith",
 			strengthHint:    "symmetric",
 			sameDeployUnit:  false,
-			targetSubdomain: "core",
+			targetSubdomain: subdomainCore,
 			wantBalance:     1,
 			wantBand:        "critical",
 			wantAdvisory:    true,
@@ -2392,7 +2469,7 @@ func TestRun_BookExamples_Ch10(t *testing.T) {
 			strengthHint:    "model",
 			sameDeployUnit:  true,
 			sameOwner:       true,
-			targetSubdomain: "core",
+			targetSubdomain: subdomainCore,
 			wantBalance:     2,
 			wantBand:        "critical",
 			wantAdvisory:    true,
