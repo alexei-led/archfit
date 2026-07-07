@@ -262,6 +262,9 @@ func TestModuleGraph_ToolAbsent(t *testing.T) {
 	}
 
 	cov := e.LastModuleGraphCoverage()
+	if cov.Tool != toolModules {
+		t.Errorf("module graph coverage tool = %q, want %q", cov.Tool, toolModules)
+	}
 	if cov.Status != statusAbsent {
 		t.Errorf("module graph coverage status = %q, want absent", cov.Status)
 	}

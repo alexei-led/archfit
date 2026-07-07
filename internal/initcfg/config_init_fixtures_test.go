@@ -117,6 +117,14 @@ func TestConfigInit_PerLanguage(t *testing.T) {
 			if _, err := rules.New(cfg.ForRules()); err != nil {
 				t.Errorf("generated rule type not recognized by internal/rules: %v\n\nrendered:\n%s", err, rendered)
 			}
+			if tt.name == langRust {
+				if cfg.Languages.Rust.Enabled != config.ModeAuto {
+					t.Errorf("generated Rust mode = %q, want auto\n\nrendered:\n%s", cfg.Languages.Rust.Enabled, rendered)
+				}
+				if !cfg.CargoModulesEnabled() || !cfg.ScipEnabled() {
+					t.Errorf("generated Rust config should enable cargo_modules and scip\n\nrendered:\n%s", rendered)
+				}
+			}
 		})
 	}
 }

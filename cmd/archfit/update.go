@@ -81,7 +81,8 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		warnPartialClassify(deps.Stdout, warnTargets, ann)
 	}
 
-	hasEdits := hasActionableEdits(report)
+	rustConfigNeeded := needsRustDeepAnalysisConfig(cfg, freshCfg.HasRust)
+	hasEdits := hasActionableEdits(report) || rustConfigNeeded
 
 	if !c.Apply {
 		_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
@@ -97,10 +98,16 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		return nil
 	}
 
-	edits := buildUpdateEdits(report)
-	edited, err := initcfg.ApplyEdits(originalBytes, edits)
-	if err != nil {
-		return fmt.Errorf("applying edits: %w", err)
+	edited := originalBytes
+	if hasActionableEdits(report) {
+		edits := buildUpdateEdits(report)
+		edited, err = initcfg.ApplyEdits(originalBytes, edits)
+		if err != nil {
+			return fmt.Errorf("applying edits: %w", err)
+		}
+	}
+	if rustConfigNeeded {
+		edited = ensureRustDeepAnalysisConfig(edited)
 	}
 	if err := safeWriteConfig(ctx, deps, c.Config, edited, originalBytes); err != nil {
 		return err

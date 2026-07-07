@@ -268,8 +268,20 @@ single-crate repo yields exactly one `package:` node and no intra-workspace edge
 scorecard treats such a degenerate (<2-node) graph honestly — it never scores `strong`
 on it.
 
-For finer resolution, two opt-in passes add the **intra-crate module graph** so
-single-crate repos get real cycle, blast-radius, and encapsulation signal:
+For finer resolution, enable both Rust deep-analysis passes. `archfit config init`
+and `archfit config update --apply` add these stanzas for projects with a root
+`Cargo.toml`:
+
+```yaml
+languages:
+  rust:
+    enabled: auto
+analyzers:
+  cargo_modules:
+    enabled: true
+  scip:
+    enabled: true
+```
 
 - `analyzers.cargo_modules.enabled: true` runs `cargo-modules` to emit
   `<crate>::<mod>` nodes and aggregated `uses` edges.
@@ -277,9 +289,11 @@ single-crate repos get real cycle, blast-radius, and encapsulation signal:
   integration strength on those module edges, improving `coupling_balance`
   precision.
 
-With either on, per-file LOC also resolves to module granularity (via the
-crate roots cargo metadata provides), so size-based metrics cover individual
-modules rather than entire crates. See [Optional analyzers](#optional-analyzers-per-language) below.
+These passes can be slow and require extra tools (`cargo-modules`, `rust-analyzer`,
+and `uv` for SCIP reading). Missing tools are reported as coverage gaps; they do
+not crash the run. With either pass on, per-file LOC also resolves to module
+granularity (via the crate roots cargo metadata provides), so size-based metrics
+cover individual modules rather than entire crates. See [Optional analyzers](#optional-analyzers-per-language) below.
 
 Optional config:
 
@@ -298,6 +312,12 @@ languages:
   python:
     enabled: false
   rust:
+    enabled: auto
+
+analyzers:
+  cargo_modules:
+    enabled: true
+  scip:
     enabled: true
 
 layers: [core, cli]

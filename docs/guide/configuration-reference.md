@@ -273,6 +273,24 @@ analyzers:
     enabled: auto # Rust intra-crate module graph
 ```
 
+For Rust projects with a root `Cargo.toml`, `archfit config init` and
+`archfit config update --apply` emit explicit deep-analysis defaults:
+
+```yaml
+languages:
+  rust:
+    enabled: auto
+analyzers:
+  cargo_modules:
+    enabled: true
+  scip:
+    enabled: true
+```
+
+This avoids single-crate Rust runs collapsing to one crate-level node. It also
+adds cost: `cargo-modules` may compile crates, and SCIP requires `rust-analyzer`
+plus `uv`. Missing tools are reported as coverage gaps, not hard crashes.
+
 ### `analyzers.syntax`
 
 Runs the ast-grep adapter to extract declaration-level facts for Go, TypeScript,
@@ -315,7 +333,7 @@ analyzers:
     timeout: 5m
 ```
 
-- `scip` — runs a SCIP indexer (`scip-go`/`scip-python`/`scip-typescript`) plus
+- `scip` — runs a SCIP indexer (`scip-go`/`scip-python`/`scip-typescript`/`rust-analyzer scip`) plus
   `uv` to build the symbol graph. Upgrades edge strength for TypeScript/Python/Rust.
   For Go, SCIP is supplementary — Go type-info from `go/packages` is the primary
   strength source.
@@ -344,7 +362,9 @@ analyzers:
 ```
 
 Runs `cargo-modules` to emit `<crate>::<mod>` nodes and aggregated `uses` edges,
-providing intra-crate module depth for Rust repos.
+providing intra-crate module depth for Rust repos. Pair it with
+`analyzers.scip.enabled: true` for Rust so those module edges also receive
+symbol-level strength from `rust-analyzer scip`.
 
 ### `analyzers.<x>.gate` (coverage gate)
 

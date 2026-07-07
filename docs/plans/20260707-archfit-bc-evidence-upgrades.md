@@ -206,14 +206,14 @@ Manual checks:
 - Confirm absent `cargo-modules` remains a coverage gap, not a hard crash.
 - Confirm explicitly generated config is deterministic across machines.
 
-- [ ] Add Rust-project detection in config init/update if not already present.
-- [ ] Make Rust init/update emit explicit `cargo_modules` and `scip` analyzer blocks for Rust projects.
-- [ ] Keep no-config/default behavior unchanged.
-- [ ] Add tests for generated Rust config with `Cargo.toml`.
-- [ ] Add tests for missing `cargo-modules` and missing SCIP coverage behavior.
-- [ ] Update language/config docs with Rust deep-analysis recommendation and cost warning.
-- [ ] Run task verification commands.
-- [ ] Mark completed.
+- [x] Add Rust-project detection in config init/update if not already present.
+- [x] Make Rust init/update emit explicit `cargo_modules` and `scip` analyzer blocks for Rust projects.
+- [x] Keep no-config/default behavior unchanged.
+- [x] Add tests for generated Rust config with `Cargo.toml`.
+- [x] Add tests for missing `cargo-modules` and missing SCIP coverage behavior.
+- [x] Update language/config docs with Rust deep-analysis recommendation and cost warning.
+- [x] Run task verification commands.
+- [x] Mark completed.
 
 ### Task 3: Make SCIP semantic-strength overlay reliable and visible for TS/Py/Rust
 

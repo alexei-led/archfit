@@ -67,6 +67,16 @@ func toolModeBool(present bool) string {
 	return "false"
 }
 
+// rustToolMode keeps generated Rust configs non-degenerate without making the
+// base no-config path strict: a Cargo.toml project opts into Rust analysis, but
+// missing cargo still reports a coverage gap instead of hard-failing.
+func rustToolMode(present bool) string {
+	if present {
+		return "auto"
+	}
+	return "false"
+}
+
 // Discover detects Go, Python, and TypeScript modules at root.
 // Go discovery is skipped when no go.mod exists. Python and TypeScript
 // discovery run unconditionally (they guard on their own marker files).
@@ -338,28 +348,45 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	// languages: section — always emitted so operators can flip modes without
 	// needing to know the YAML shape. enabled is true|false|auto.
 	b.WriteString("languages:\n")
-	for _, lang := range []string{"go", langPython, "typescript", "rust"} {
+	for _, lang := range []string{langGo, langPython, langTypeScript, langRust} {
 		var present bool
 		switch lang {
-		case "go":
+		case langGo:
 			present = cfg.HasGo
 		case langPython:
 			present = cfg.HasPython
-		case "typescript":
+		case langTypeScript:
 			present = cfg.HasTS
-		case "rust":
+		case langRust:
 			present = cfg.HasRust
 		}
-		fmt.Fprintf(&b, "  %s:\n    enabled: %s\n", lang, toolModeBool(present))
+		mode := toolModeBool(present)
+		if lang == langRust {
+			mode = rustToolMode(present)
+		}
+		fmt.Fprintf(&b, "  %s:\n    enabled: %s\n", lang, mode)
 		if lang == langPython && cfg.PyPackage != "" {
 			fmt.Fprintf(&b, "    package: %s\n", cfg.PyPackage)
 		}
 	}
 	b.WriteString("\n")
-	b.WriteString("# Opt-in analyzers (deeper facts; off by default). Uncomment to enable.\n")
-	b.WriteString("# analyzers:\n")
+	if cfg.HasRust {
+		b.WriteString("# Rust deep analysis: explicit so single-crate Rust does not degenerate to one crate node.\n")
+		b.WriteString("analyzers:\n")
+		b.WriteString("  cargo_modules:\n")
+		b.WriteString("    enabled: true\n")
+		b.WriteString("  scip:\n")
+		b.WriteString("    enabled: true\n")
+		b.WriteString("\n")
+	}
+	b.WriteString("# Optional analyzers (deeper facts; opt in deliberately because they can be slow).\n")
+	if cfg.HasRust {
+		b.WriteString("# analyzers:\n")
+	} else {
+		b.WriteString("# analyzers:\n")
+		b.WriteString("#   scip: { enabled: true }         # symbol-level coupling strength\n")
+	}
 	b.WriteString("#   syntax: { enabled: true }       # ast-grep: roles, routes, exported surface\n")
-	b.WriteString("#   scip: { enabled: true }         # symbol-level coupling strength\n")
 	b.WriteString("#   clones: { enabled: true }       # cross-module duplication\n")
 	b.WriteString("\n")
 	b.WriteString("# Off-gate LLM for `config init/update/enrich`, `analyze --llm`, and `explain --llm` (never used by the deterministic gate).\n")

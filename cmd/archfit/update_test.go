@@ -110,6 +110,78 @@ func TestCollectUpdateRepoEvidence_ReadmeAndDocsHeadings(t *testing.T) {
 	}
 }
 
+func TestUpdateCmd_Apply_RustProjectEnablesDeepAnalyzers(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := writeConfig(t, dir, `version: 1
+languages:
+  rust:
+    enabled: true
+modules: {}
+rules:
+  - id: no-layer-violations
+    type: forbidden_layer_direction
+    gate: warn
+`)
+
+	cmd := &UpdateCmd{Config: cfgPath, Root: dir, Apply: true}
+	if _, err := runUpdateCmd(t, cmd, emptyRunner()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	gotBytes, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(gotBytes)
+	for _, want := range []string{
+		"rust:\n    enabled: auto",
+		"analyzers:\n  cargo_modules:\n    enabled: true\n  scip:\n    enabled: true",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("updated config missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestUpdateCmd_Apply_RustExplicitOffKeepsDeepAnalyzersDisabled(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `version: 1
+languages:
+  rust:
+    enabled: false
+modules: {}
+rules:
+  - id: no-layer-violations
+    type: forbidden_layer_direction
+    gate: warn
+`
+	cfgPath := writeConfig(t, dir, cfg)
+
+	cmd := &UpdateCmd{Config: cfgPath, Root: dir, Apply: true}
+	out, err := runUpdateCmd(t, cmd, emptyRunner())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "structurally in sync") {
+		t.Fatalf("expected no-op output, got:\n%s", out)
+	}
+	gotBytes, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotBytes) != cfg {
+		t.Fatalf("explicit rust disabled config changed:\n%s", gotBytes)
+	}
+}
+
 func TestUpdateCmd_LLMPlanMode_SuggestsRustSyntheticModules(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
