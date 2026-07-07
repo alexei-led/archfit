@@ -313,9 +313,11 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
   `candidate_edges` / `applied` / `missed` count plus `before` and `after`
   strength-bucket distributions. Go is excluded by design — its edge strength
   comes from compiler-grade `go/types` info and SCIP never overrides it.
-- **Absent when SCIP produced nothing:** the block is omitted for a language with
-  no SCIP strength map. An enabled-but-empty SCIP index (0 occurrences) is
-  disclosed separately through the `scip` tool-coverage row
+- **Absent when SCIP produced no strength evidence at all:** the block is omitted
+  only when the run produced no SCIP strength overlay data. A language can still
+  appear with missed counts when other languages had SCIP data but this language
+  had candidates and no matching refinement. An enabled-but-empty SCIP index (0
+  occurrences) is disclosed separately through the `scip` tool-coverage row
   (`status: partial`, reason "empty index (0 occurrences)"), not here.
 - **Report-only by design:** never consumed by `coupling_balance`, findings,
   baselines, score deltas, or gate verdicts.

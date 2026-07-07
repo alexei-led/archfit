@@ -58,6 +58,13 @@ const (
 	toolCargoModules = "cargo-modules" // opt-in intra-crate module graph; mirrors config.ToolCargoModules
 )
 
+// Reported metric names shared across cmd coverage/output helpers.
+const (
+	metricCycle         = "cycle"
+	metricBlastRadius   = "blast_radius"
+	metricEncapsulation = "encapsulation"
+)
+
 // SCIP indexer binary names shared by the language registry (DoctorTools) and
 // the doctor command.
 const (
