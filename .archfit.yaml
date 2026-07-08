@@ -11,19 +11,19 @@ version: 1
 # Flat single-segment names also resolve to cross_module_same_owner in the
 # degenerate-owner path (P1 fix).
 #
-# Volatility is essential/domain-based (Ch9), never churn: the analysis core
-# (`internal/model/*`, classify, rules, metrics, score) is `subdomain: core` →
-# high volatility because it evolves with every feature; adapters/support/generic
-# are low. This is correct by design, not a gap.
+# Volatility is essential/domain-based (Ch9), never churn. Policy decision
+# (arch-rebalance): `internal/model` is ONE shared-kernel module and a FROZEN
+# published contract — pure value types (layer rank 0, zero outbound deps),
+# `subdomain: generic`, `volatility: low`. Breaking its exported surface requires
+# a deliberate version bump, enforced by the model compat gate (see arch_test.go).
+# Genuine core logic (classify, rules, metrics, score, engine) stays
+# core/high-volatility.
 #
-# How to read coupling_balance: the book formula is `max(|S-D|, 10-V)+1`. With the
-# core at V=high (10) and distance fixed at 4, coupling INTO the core scores in the
-# mixed/high band regardless of strength — this is the honest signal that the
-# shared domain model (`Diagnostic`/`graph`/`coupling`) is a high-volatility,
-# high-fan-in hub (see blast_radius). The book's lever to improve it is
-# to lower the CORE's volatility or wrap it in a contract (reduce strength), NOT to
-# re-weight the metric. The frozen book ordinals are adopted verbatim and must not
-# be tuned to flatter this repo's own score.
+# How to read coupling_balance: the book formula is `max(|S-D|, 10-V)+1`. High
+# fan-in into `internal/model` is expected shared-kernel shape; its edges balance
+# because the kernel is stable (V=low), not because the metric was re-weighted.
+# The frozen book ordinals are adopted verbatim and must not be tuned to flatter
+# this repo's own score.
 # -----------------------------------------------------------------------------
 # Balanced-Coupling advisory tuning.
 coupling:
@@ -50,80 +50,29 @@ layers:
   - adapter # rank 4: baseline, toolrun, extractors, renderers, git
   - cmd # rank 5: composition root
 modules:
-  internal/model/graph:
+  # Shared kernel: one cohesive module of pure value types (graph, finding,
+  # coupling, diagnostic, fileclass, clone, pattern, signal, symbol).
+  # Frozen published contract: generic subdomain, low volatility, enforced by
+  # the model compat gate. Intra-kernel imports are internal cohesion, not
+  # cross-boundary coupling.
+  internal/model:
     owner: alexei-led
     paths:
-      - internal/model/graph/**
+      - internal/model/**
     public:
+      - internal/model
       - internal/model/graph
-    layer: model
-    # Core domain model — graph node and edge facts evolve with each analyzer.
-    subdomain: core
-  internal/model/finding:
-    owner: alexei-led
-    paths:
-      - internal/model/finding/**
-    public:
       - internal/model/finding
-    layer: model
-    subdomain: core
-  internal/model/coupling:
-    owner: alexei-led
-    paths:
-      - internal/model/coupling/**
-    public:
       - internal/model/coupling
-    layer: model
-    subdomain: core
-  internal/model/diagnostic:
-    owner: alexei-led
-    paths:
-      - internal/model/diagnostic/**
-    public:
       - internal/model/diagnostic
-    layer: model
-    # Diagnostic is output contract state; measure it apart from graph/coupling.
-    subdomain: core
-  internal/model/fileclass:
-    owner: alexei-led
-    paths:
-      - internal/model/fileclass/**
-    public:
       - internal/model/fileclass
-    layer: model
-    subdomain: core
-  internal/model/clone:
-    owner: alexei-led
-    paths:
-      - internal/model/clone/**
-    public:
       - internal/model/clone
-    layer: model
-    subdomain: core
-  internal/model/pattern:
-    owner: alexei-led
-    paths:
-      - internal/model/pattern/**
-    public:
       - internal/model/pattern
-    layer: model
-    subdomain: core
-  internal/model/signal:
-    owner: alexei-led
-    paths:
-      - internal/model/signal/**
-    public:
       - internal/model/signal
-    layer: model
-    subdomain: core
-  internal/model/symbol:
-    owner: alexei-led
-    paths:
-      - internal/model/symbol/**
-    public:
       - internal/model/symbol
     layer: model
-    subdomain: core
+    subdomain: generic
+    volatility: low
   internal/config:
     owner: alexei-led
     paths:
