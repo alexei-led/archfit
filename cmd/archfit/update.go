@@ -64,8 +64,9 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 
 	report := initcfg.DiffModules(existing, freshCfg.Modules)
+	candidateCfg := candidateConfigForUpdate(cfg, freshCfg)
 	report.DeployUnitSuggestions = deployUnitSuggestions(ctx, root, cfg, deps)
-	report.DistanceConfigCandidates = distanceConfigCandidates(ctx, root, cfg, deps)
+	report.DistanceConfigCandidates = distanceConfigCandidates(ctx, root, candidateCfg, deps)
 	if c.LLM {
 		var synthErr error
 		report, synthErr = c.withRustSyntheticSuggestions(ctx, cfg, root, report, deps)
@@ -303,6 +304,36 @@ func hasReviewOnlySuggestions(report initcfg.UpdateReport) bool {
 	return len(report.Suggested) > 0 || len(report.DeployUnitSuggestions) > 0 || len(report.DistanceConfigCandidates) > 0 || len(report.RuleSuggestions) > 0 || len(report.ExternalSystemSuggestions) > 0
 }
 
+func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredConfig) config.Config {
+	if len(discovered.Modules) == 0 {
+		return cfg
+	}
+	out := cfg
+	out.Modules = make(map[string]config.ModuleDef, len(discovered.Modules))
+	for _, mod := range discovered.Modules {
+		def := config.ModuleDef{
+			Paths:    append([]string(nil), mod.Paths...),
+			Public:   append([]string(nil), mod.Public...),
+			Internal: append([]string(nil), mod.Internal...),
+			Layer:    mod.Layer,
+		}
+		if existing, ok := cfg.Modules[mod.Name]; ok {
+			def.Public = append([]string(nil), existing.Public...)
+			def.Internal = append([]string(nil), existing.Internal...)
+			def.Layer = existing.Layer
+			def.Subdomain = existing.Subdomain
+			def.Volatility = existing.Volatility
+			def.Owner = existing.Owner
+			def.DeployUnit = existing.DeployUnit
+			def.Role = existing.Role
+			def.ReviewedAt = existing.ReviewedAt
+			def.ReviewedBy = existing.ReviewedBy
+		}
+		out.Modules[mod.Name] = def
+	}
+	return out
+}
+
 func distanceConfigCandidates(ctx context.Context, root string, cfg config.Config, deps *appDeps) []initcfg.DistanceConfigCandidate {
 	mm := cfg.ModuleMapView()
 	dynamicImports := engine.BuildDynamicImports(dynimports.Detect(root), mm)
@@ -319,20 +350,72 @@ func distanceConfigCandidates(ctx context.Context, root string, cfg config.Confi
 	}
 	runtimeEdges := engine.BuildRuntimeAsyncEdges(runtimeSites, runtimeResult.Confidence, mm)
 	dynamicSignals := engine.BuildDynamicConnascenceSignals(dynamicImports, runtimeEdges, nil)
-	candidates := engine.BuildDistanceConfigCandidates(dynamicImports, runtimeEdges, dynamicSignals)
+	candidates := append(
+		staticExternalDistanceConfigCandidates(ctx, root, cfg, deps),
+		engine.BuildDistanceConfigCandidates(dynamicImports, runtimeEdges, dynamicSignals)...,
+	)
 	out := make([]initcfg.DistanceConfigCandidate, 0, len(candidates))
 	for _, c := range candidates {
-		out = append(out, initcfg.DistanceConfigCandidate{
-			SourceBlock:           c.SourceBlock,
-			Module:                c.Module,
-			Target:                c.Target,
-			IntegrationKind:       c.IntegrationKind,
-			Count:                 c.Count,
-			EvidenceRefs:          distanceConfigEvidenceRefs(c.EvidenceSites),
-			SuggestedReviewAction: c.SuggestedReviewAction,
-		})
+		out = append(out, toInitcfgDistanceConfigCandidate(c))
 	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].SourceBlock != out[j].SourceBlock {
+			return out[i].SourceBlock < out[j].SourceBlock
+		}
+		if out[i].Module != out[j].Module {
+			return out[i].Module < out[j].Module
+		}
+		if out[i].Target != out[j].Target {
+			return out[i].Target < out[j].Target
+		}
+		return out[i].IntegrationKind < out[j].IntegrationKind
+	})
 	return out
+}
+
+func staticExternalDistanceConfigCandidates(ctx context.Context, root string, cfg config.Config, deps *appDeps) []diagnostic.DistanceConfigCandidate {
+	g := buildUpdateCandidateGraph(ctx, root, cfg, deps)
+	if g == nil {
+		return nil
+	}
+	return staticExternalDistanceConfigCandidatesFromGraph(g, cfg)
+}
+
+func staticExternalDistanceConfigCandidatesFromGraph(g *graph.Graph, cfg config.Config) []diagnostic.DistanceConfigCandidate {
+	classifyCfg := engine.AugmentClassifyConfig(g, cfg.ForClassify())
+	idx := classify.Run(g, classifyCfg)
+	return engine.BuildStaticExternalDistanceCandidates(g, idx, classifyCfg.ModuleMap)
+}
+
+func buildUpdateCandidateGraph(ctx context.Context, root string, cfg config.Config, deps *appDeps) *graph.Graph {
+	extractors := buildExtractors(deps.Runner, cfg, nil)
+	allFacts := make([]graph.Facts, 0, len(extractors))
+	for _, ex := range extractors {
+		facts, _, err := ex.Extract(ctx, scope.Scope{Root: root})
+		if err != nil {
+			continue
+		}
+		if len(facts.Nodes) == 0 && len(facts.Edges) == 0 {
+			continue
+		}
+		allFacts = append(allFacts, facts)
+	}
+	if len(allFacts) == 0 {
+		return nil
+	}
+	return graph.Build(allFacts)
+}
+
+func toInitcfgDistanceConfigCandidate(c diagnostic.DistanceConfigCandidate) initcfg.DistanceConfigCandidate {
+	return initcfg.DistanceConfigCandidate{
+		SourceBlock:           c.SourceBlock,
+		Module:                c.Module,
+		Target:                c.Target,
+		IntegrationKind:       c.IntegrationKind,
+		Count:                 c.Count,
+		EvidenceRefs:          distanceConfigEvidenceRefs(c.EvidenceSites),
+		SuggestedReviewAction: c.SuggestedReviewAction,
+	}
 }
 
 func distanceConfigEvidenceRefs(sites []diagnostic.DistanceConfigEvidenceSite) []string {

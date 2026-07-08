@@ -21,6 +21,8 @@ const (
 	distanceCandidateKindMessageQ   = "message_queue"
 	distanceCandidatePublisherFile  = "app/publisher.go"
 	distanceCandidateExternalAction = "external_systems"
+	jsonHigh                        = "high"
+	jsonLow                         = "low"
 )
 
 // TestJSONRenderer_AdvisoryScoreFields asserts the numeric BC score fields
@@ -35,7 +37,7 @@ func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
 		MatchedBy: map[string]string{
 			"score":       "multiplicative",
 			"score_value": "7",
-			"score_band":  "high",
+			"score_band":  jsonHigh,
 		},
 	}}
 
@@ -52,8 +54,8 @@ func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
 	if mb["score_value"] != "7" {
 		t.Errorf("matched_by.score_value = %q, want %q", mb["score_value"], "7")
 	}
-	if mb["score_band"] != "high" {
-		t.Errorf("matched_by.score_band = %q, want %q", mb["score_band"], "high")
+	if mb["score_band"] != jsonHigh {
+		t.Errorf("matched_by.score_band = %q, want %q", mb["score_band"], jsonHigh)
 	}
 }
 
@@ -125,7 +127,10 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 		DistanceBasis:             map[string]int{"code_structure": 2, "ownership": 1},
 		DeployUnitDetectedModules: 1,
 		DeclaredExternalSystems:   1,
+		RuntimeAsyncRelations:     2,
+		RuntimeAsyncKinds:         map[string]int{"message_queue": 1, "event_bus": 1},
 		Interpretation:            "same-owner is the lowest cross-module distance",
+		RuntimeInterpretation:     "async runtime bridges reduce lifecycle coupling and therefore increase perceived distance",
 	}
 	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
 		Scored:           3,
@@ -141,9 +146,11 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 			CloneOnlyWorstBalance: 4,
 		},
 		DistanceCompression: &diagnostic.DistanceCompressionSummary{
-			CompressedMiddleRungs: true,
-			ImplementedRungs:      []int{2, 4, 7, 9, 10},
-			OmittedRungs:          []int{3, 5, 6, 8},
+			CompressedMiddleRungs:       true,
+			ImplementedRungs:            []int{2, 4, 7, 9, 10},
+			OmittedRungs:                []int{3, 5, 6, 8},
+			CodeStructureBoundaryCounts: []diagnostic.DistanceCount{{Value: 2, Count: 3}, {Value: 5, Count: 1}},
+			CodeStructureAncestorDepths: []diagnostic.DistanceCount{{Value: 0, Count: 1}, {Value: 1, Count: 3}},
 			OmittedRungReasons: []diagnostic.DistanceOmittedRungReason{
 				{Rung: 8, Reason: "declared external_systems use D=10"},
 			},
@@ -169,6 +176,9 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 	if got.DistanceContext.DeployUnitDetectedModules != 1 || got.DistanceContext.DeclaredExternalSystems != 1 {
 		t.Fatalf("distance_context evidence counts = %+v", got.DistanceContext)
 	}
+	if got.DistanceContext.RuntimeAsyncRelations != 2 || got.DistanceContext.RuntimeAsyncKinds["message_queue"] != 1 {
+		t.Fatalf("distance_context runtime evidence = %+v", got.DistanceContext)
+	}
 	if got.ClassifiedEdges == nil {
 		t.Fatal("classified_edges missing from JSON output")
 	}
@@ -181,6 +191,12 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 	if got.ClassifiedEdges.DistanceCompression == nil || !got.ClassifiedEdges.DistanceCompression.CompressedMiddleRungs {
 		t.Fatalf("distance_compression = %+v, want compressed_middle_rungs=true", got.ClassifiedEdges.DistanceCompression)
 	}
+	if spans := got.ClassifiedEdges.DistanceCompression.CodeStructureBoundaryCounts; len(spans) != 2 || spans[0].Value != 2 || spans[1].Value != 5 {
+		t.Fatalf("boundary counts = %+v, want values 2 and 5", spans)
+	}
+	if depths := got.ClassifiedEdges.DistanceCompression.CodeStructureAncestorDepths; len(depths) != 2 || depths[0].Value != 0 || depths[1].Value != 1 {
+		t.Fatalf("ancestor depths = %+v, want values 0 and 1", depths)
+	}
 	if reasons := got.ClassifiedEdges.DistanceCompression.OmittedRungReasons; len(reasons) != 1 || reasons[0].Rung != 8 {
 		t.Fatalf("omitted_rung_reasons = %+v, want D=8 reason", reasons)
 	}
@@ -189,6 +205,69 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 	}
 	if got.ClassifiedEdges.TailRisk.WorstBalance != 2 || got.ClassifiedEdges.TailRisk.HighOrWorseEdges != 1 {
 		t.Fatalf("tail_risk = %+v, want worst=2 high_or_worse=1", got.ClassifiedEdges.TailRisk)
+	}
+}
+
+func TestJSONRenderer_VolatilityCorroboration(t *testing.T) {
+	d := diagnostic.New()
+	d.VolatilityCorroboration = &diagnostic.VolatilityCorroboration{
+		Source:         "git_history",
+		Status:         "ok",
+		CommitWindow:   500,
+		CommitsScanned: 42,
+		ModulesTouched: 2,
+		TopTouched: []diagnostic.VolatilityTouch{
+			{Module: "cmd/archfit", TouchCommits: 12, DeclaredVolatility: jsonHigh},
+			{Module: "internal/output", TouchCommits: 5, DeclaredVolatility: jsonLow},
+		},
+		Caveat: "Supporting evidence only.",
+	}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var got diagnostic.Diagnostic
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if got.VolatilityCorroboration == nil {
+		t.Fatal("volatility_corroboration missing from JSON output")
+	}
+	if got.VolatilityCorroboration.Status != "ok" || got.VolatilityCorroboration.ModulesTouched != 2 {
+		t.Fatalf("volatility_corroboration = %+v", got.VolatilityCorroboration)
+	}
+	if len(got.VolatilityCorroboration.TopTouched) != 2 || got.VolatilityCorroboration.TopTouched[0].Module != "cmd/archfit" {
+		t.Fatalf("top_touched = %+v", got.VolatilityCorroboration.TopTouched)
+	}
+}
+
+func TestJSONRenderer_ConnascenceStrengthInferred(t *testing.T) {
+	d := diagnostic.New()
+	d.Connascence = &diagnostic.ConnascenceReport{
+		EdgesWithEvidence:     2,
+		AbstainedEdges:        1,
+		TotalEvidence:         3,
+		StrengthInferredEdges: 1,
+		ByKind: map[string]int{
+			string(coupling.ConnascenceAlgorithm): 1,
+			string(coupling.ConnascenceMeaning):   1,
+			string(coupling.ConnascenceName):      1,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var got diagnostic.Diagnostic
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if got.Connascence == nil || got.Connascence.StrengthInferredEdges != 1 {
+		t.Fatalf("connascence = %+v, want strength_inferred_edges=1", got.Connascence)
 	}
 }
 

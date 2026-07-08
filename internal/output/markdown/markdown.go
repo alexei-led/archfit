@@ -99,6 +99,8 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 	writeDistanceConfigCandidates(&b, d.DistanceConfigCandidates)
 
+	writeVolatilityCorroboration(&b, d.VolatilityCorroboration)
+
 	writeDeprecatedDeps(&b, d.DeprecatedDeps)
 
 	writeCoverageGaps(&b, d.CoverageGaps)

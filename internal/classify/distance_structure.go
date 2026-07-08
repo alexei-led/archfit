@@ -3,6 +3,8 @@
 package classify
 
 import (
+	"strings"
+
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
@@ -18,6 +20,16 @@ type DistanceCompressionEvidence struct {
 	OmittedRungReasons    []DistanceOmittedRungReason
 	DeterministicSplits   []string
 	Rationale             string
+}
+
+// ModuleHierarchySpan is the raw structural-distance evidence between two
+// module names: how many module-boundary crossings separate them, and how deep
+// their closest common ancestor sits in the hierarchy. It is report-only book
+// Ch8 evidence for compressed middle rungs; scoring still consumes the coarse
+// Distance enum, not these raw counts.
+type ModuleHierarchySpan struct {
+	BoundaryCrossings int
+	SharedAncestor    int
 }
 
 // DistanceOmittedRungReason explains why a book distance rung remains compressed
@@ -130,6 +142,46 @@ func codeStructureDistance(fromMod, toMod, lang string) coupling.Distance {
 // graph.ConventionRegistry.Lookup). A flat name with no separator is one segment.
 func moduleSegments(mod, lang string) []string {
 	return graph.BuiltinConventions.Lookup(lang).ModuleSegments(mod)
+}
+
+// HierarchySpan estimates structural distance from a module pair's closest
+// common ancestor, as described in book Ch8. The counts are raw evidence, not
+// score inputs: BoundaryCrossings is the number of hierarchy steps that differ
+// across the pair; SharedAncestor is the depth of the closest common ancestor.
+//
+// Language is inferred from the module-name separator for report-only use:
+// Rust uses "::"; slash-based modules (Go/TS paths and file-like module keys)
+// use "/"; dotted names fall back to Python-style "." segmentation.
+func HierarchySpan(fromMod, toMod string) ModuleHierarchySpan {
+	fromParts := hierarchySegments(fromMod)
+	toParts := hierarchySegments(toMod)
+	shared := 0
+	for i := 0; i < len(fromParts) && i < len(toParts); i++ {
+		if fromParts[i] != toParts[i] {
+			break
+		}
+		shared++
+	}
+	return ModuleHierarchySpan{
+		BoundaryCrossings: (len(fromParts) - shared) + (len(toParts) - shared),
+		SharedAncestor:    shared,
+	}
+}
+
+func hierarchySegments(mod string) []string {
+	switch {
+	case strings.Contains(mod, "::"):
+		return strings.Split(mod, "::")
+	case strings.Contains(mod, "/"):
+		return strings.Split(mod, "/")
+	case strings.Contains(mod, "."):
+		return strings.Split(mod, ".")
+	default:
+		if mod == "" {
+			return nil
+		}
+		return []string{mod}
+	}
 }
 
 // ownershipDistance returns the distance contribution from module ownership.

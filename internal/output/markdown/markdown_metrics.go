@@ -60,11 +60,20 @@ func writeDistanceConfidence(b *strings.Builder, d diagnostic.Diagnostic) {
 		if dcx.DeclaredExternalSystems > 0 {
 			fmt.Fprintf(b, "- declared external systems: %d\n", dcx.DeclaredExternalSystems)
 		}
+		if dcx.RuntimeAsyncRelations > 0 {
+			fmt.Fprintf(b, "- runtime async relations: %d\n", dcx.RuntimeAsyncRelations)
+		}
+		if len(dcx.RuntimeAsyncKinds) > 0 {
+			fmt.Fprintf(b, "- runtime async kinds: %s\n", formatCounts(dcx.RuntimeAsyncKinds))
+		}
 		if len(dcx.DistanceBasis) > 0 {
 			fmt.Fprintf(b, "- distance basis: %s\n", formatCounts(dcx.DistanceBasis))
 		}
 		if dcx.Interpretation != "" {
 			fmt.Fprintf(b, "- interpretation: %s\n", dcx.Interpretation)
+		}
+		if dcx.RuntimeInterpretation != "" {
+			fmt.Fprintf(b, "- runtime interpretation: %s\n", dcx.RuntimeInterpretation)
 		}
 	}
 	if ce := d.ClassifiedEdges; ce != nil {
@@ -76,6 +85,12 @@ func writeDistanceConfidence(b *strings.Builder, d diagnostic.Diagnostic) {
 		}
 		if dc := ce.DistanceCompression; dc != nil {
 			fmt.Fprintf(b, "- distance rungs implemented: %s; omitted/compressed: %s\n", formatInts(dc.ImplementedRungs), formatInts(dc.OmittedRungs))
+			if len(dc.CodeStructureBoundaryCounts) > 0 {
+				fmt.Fprintf(b, "- code-structure boundary crossings: %s\n", formatDistanceCounts(dc.CodeStructureBoundaryCounts))
+			}
+			if len(dc.CodeStructureAncestorDepths) > 0 {
+				fmt.Fprintf(b, "- code-structure shared-ancestor depth: %s\n", formatDistanceCounts(dc.CodeStructureAncestorDepths))
+			}
 			if dc.Rationale != "" {
 				fmt.Fprintf(b, "- distance compression: %s\n", dc.Rationale)
 			}
@@ -113,6 +128,17 @@ func formatInts(values []int) string {
 	parts := make([]string, len(values))
 	for i, v := range values {
 		parts[i] = fmt.Sprintf("D=%d", v)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func formatDistanceCounts(values []diagnostic.DistanceCount) string {
+	if len(values) == 0 {
+		return "-"
+	}
+	parts := make([]string, 0, len(values))
+	for _, v := range values {
+		parts = append(parts, fmt.Sprintf("%d→%d", v.Value, v.Count))
 	}
 	return strings.Join(parts, ", ")
 }
@@ -280,6 +306,9 @@ func writeConnascenceSummary(b *strings.Builder, r *diagnostic.ConnascenceReport
 	fmt.Fprintf(b, "- edges with evidence: %d\n", r.EdgesWithEvidence)
 	fmt.Fprintf(b, "- abstained edges: %d\n", r.AbstainedEdges)
 	fmt.Fprintf(b, "- total evidence facts: %d\n", r.TotalEvidence)
+	if r.StrengthInferredEdges > 0 {
+		fmt.Fprintf(b, "- strength inferred from connascence: %d edges\n", r.StrengthInferredEdges)
+	}
 	if len(r.ByKind) > 0 {
 		fmt.Fprintf(b, "- by kind: %s\n", formatCounts(r.ByKind))
 	}
@@ -515,7 +544,7 @@ func writeDistanceConfigCandidates(b *strings.Builder, candidates []diagnostic.D
 		total += c.Count
 	}
 	b.WriteString("\n## Distance config candidates (review-only)\n\n")
-	b.WriteString("Report-only. Runtime and dynamic evidence can suggest `external_systems` or `deploy_unit` review, but these candidates never change distance, score, or gate verdicts.\n\n")
+	b.WriteString("Report-only. Static external, runtime, and dynamic evidence can suggest `external_systems` or `deploy_unit` review, but these candidates never change distance, score, or gate verdicts.\n\n")
 	fmt.Fprintf(b, "%d signal(s) across %d candidate(s):\n\n", total, len(candidates))
 
 	ranked := make([]diagnostic.DistanceConfigCandidate, len(candidates))
@@ -557,6 +586,42 @@ func distanceCandidateSites(sites []diagnostic.DistanceConfigEvidenceSite) strin
 		parts = append(parts, fmt.Sprintf("%s:%d[%s]", s.File, s.Line, s.Kind))
 	}
 	return strings.Join(parts, ", ")
+}
+
+func writeVolatilityCorroboration(b *strings.Builder, block *diagnostic.VolatilityCorroboration) {
+	if block == nil {
+		return
+	}
+	b.WriteString("\n## Volatility corroboration (report-only)\n\n")
+	b.WriteString("Report-only. Source-control touch frequency is supporting evidence for Ch9 volatility judgments and never changes score or gate verdicts.\n\n")
+	fmt.Fprintf(b, "- source: %s\n", block.Source)
+	fmt.Fprintf(b, "- status: %s\n", block.Status)
+	if block.CommitWindow > 0 {
+		fmt.Fprintf(b, "- recent-history window: %d commits\n", block.CommitWindow)
+	}
+	if block.FullHistory {
+		b.WriteString("- history scope: full history fallback\n")
+	}
+	if block.CommitsScanned > 0 {
+		fmt.Fprintf(b, "- commits scanned: %d\n", block.CommitsScanned)
+	}
+	if block.ModulesTouched > 0 {
+		fmt.Fprintf(b, "- modules touched: %d\n", block.ModulesTouched)
+	}
+	if block.Caveat != "" {
+		fmt.Fprintf(b, "- caveat: %s\n", block.Caveat)
+	}
+	if len(block.TopTouched) == 0 {
+		return
+	}
+	b.WriteString("\nTop touched modules:\n\n")
+	for _, item := range block.TopTouched {
+		fmt.Fprintf(b, "- **%s**: %d commit(s)", item.Module, item.TouchCommits)
+		if item.DeclaredVolatility != "" {
+			fmt.Fprintf(b, " [declared volatility=%s]", item.DeclaredVolatility)
+		}
+		b.WriteByte('\n')
+	}
 }
 
 // writeDeprecatedDeps prints the report-only locally-declared deprecation/

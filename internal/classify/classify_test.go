@@ -657,6 +657,10 @@ const (
 
 	modKeyPkgA  = "pkg/a"
 	modKeyPkgB  = "pkg/b"
+	pathPkgAGo  = "pkg/a/a.go"
+	pathPkgBGo  = "pkg/b/b.go"
+	filePkgAAGo = "file:pkg/a/a.go"
+	filePkgBBGo = "file:pkg/b/b.go"
 	filePkgAXGo = "file:pkg/a/x.go"
 	filePkgBYGo = "file:pkg/b/y.go"
 
@@ -670,16 +674,16 @@ func TestRun_ApprovedLabelPrecedence(t *testing.T) {
 		"b": {Paths: []string{globPkgB}},
 	}
 	edge := graph.Edge{
-		From:         "file:pkg/a/a.go",
-		To:           "file:pkg/b/b.go",
+		From:         filePkgAAGo,
+		To:           filePkgBBGo,
 		Kind:         graph.EdgeKindImports,
 		StrengthHint: hintFunctional,
 	}
 	g := graph.Build([]graph.Facts{{
 		Language: "go",
 		Nodes: []graph.Node{
-			{Kind: graph.NodeKindFile, Path: "pkg/a/a.go"},
-			{Kind: graph.NodeKindFile, Path: "pkg/b/b.go"},
+			{Kind: graph.NodeKindFile, Path: pathPkgAGo},
+			{Kind: graph.NodeKindFile, Path: pathPkgBGo},
 		},
 		Edges: []graph.Edge{edge},
 	}})
@@ -869,14 +873,14 @@ func TestRun_LLMLabelPrecedence(t *testing.T) {
 func TestRun_PublicGlobFloorRefinement(t *testing.T) {
 	build := func(hint string) (*graph.Graph, string) {
 		e := graph.Edge{
-			From: "file:pkg/a/a.go", To: "file:pkg/b/b.go",
+			From: filePkgAAGo, To: filePkgBBGo,
 			Kind: graph.EdgeKindImports, StrengthHint: hint,
 		}
 		g := graph.Build([]graph.Facts{{
 			Language: "go",
 			Nodes: []graph.Node{
-				{Kind: graph.NodeKindFile, Path: "pkg/a/a.go"},
-				{Kind: graph.NodeKindFile, Path: "pkg/b/b.go"},
+				{Kind: graph.NodeKindFile, Path: pathPkgAGo},
+				{Kind: graph.NodeKindFile, Path: pathPkgBGo},
 			},
 			Edges: []graph.Edge{e},
 		}})
@@ -931,6 +935,58 @@ func TestRun_PublicGlobFloorRefinement(t *testing.T) {
 // ContractRecommended is set when the to-module is a generic subdomain and the
 // strength is non-contract; it is NOT set when strength is contract, the edge is
 // same-module, or the to-module is not a generic subdomain.
+func TestRun_StrengthFallbackFromConnascence(t *testing.T) {
+	build := func(hints []graph.ConnascenceHint) (*graph.Graph, string) {
+		e := graph.Edge{
+			From: filePkgAAGo, To: filePkgBBGo,
+			Kind: graph.EdgeKindImports, ConnascenceHints: hints,
+		}
+		g := graph.Build([]graph.Facts{{
+			Language: "go",
+			Nodes: []graph.Node{
+				{Kind: graph.NodeKindFile, Path: pathPkgAGo},
+				{Kind: graph.NodeKindFile, Path: pathPkgBGo},
+			},
+			Edges: []graph.Edge{e},
+		}})
+		return g, e.From + "\x00" + e.To + "\x00" + string(e.Kind)
+	}
+	publicB := map[string]config.ModuleDef{
+		"a": {Paths: []string{globPkgA}},
+		"b": {Paths: []string{globPkgB}, Public: []string{globPkgB}},
+	}
+	noGlobB := map[string]config.ModuleDef{
+		"a": {Paths: []string{globPkgA}},
+		"b": {Paths: []string{globPkgB}},
+	}
+	cases := []struct {
+		name         string
+		modules      map[string]config.ModuleDef
+		hints        []graph.ConnascenceHint
+		want         coupling.Strength
+		wantInferred bool
+	}{
+		{"unknown + algorithm connascence → functional", noGlobB, []graph.ConnascenceHint{{Kind: graph.ConnascenceAlgorithm, Source: sourceGoTypes}}, coupling.StrengthFunctional, true},
+		{"unknown + meaning connascence → model", noGlobB, []graph.ConnascenceHint{{Kind: graph.ConnascenceMeaning, Source: sourceGoTypes}}, coupling.StrengthModel, true},
+		{"unknown + type connascence stays unknown", noGlobB, []graph.ConnascenceHint{{Kind: graph.ConnascenceType, Source: sourceGoTypes}}, coupling.StrengthUnknown, false},
+		{"public floor + algorithm connascence → functional", publicB, []graph.ConnascenceHint{{Kind: graph.ConnascenceAlgorithm, Source: sourceGoTypes}}, coupling.StrengthFunctional, true},
+		{"public floor + meaning connascence → model", publicB, []graph.ConnascenceHint{{Kind: graph.ConnascenceMeaning, Source: sourceGoTypes}}, coupling.StrengthModel, true},
+		{"public floor + type connascence stays contract", publicB, []graph.ConnascenceHint{{Kind: graph.ConnascenceType, Source: sourceGoTypes}}, coupling.StrengthContract, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g, key := build(tc.hints)
+			idx := classify.Run(g, config.ClassifyConfig{Modules: tc.modules})
+			if got := idx[key].Strength; got != tc.want {
+				t.Fatalf("strength = %q, want %q", got, tc.want)
+			}
+			if got := idx[key].StrengthFromConnascence; got != tc.wantInferred {
+				t.Fatalf("StrengthFromConnascence = %t, want %t", got, tc.wantInferred)
+			}
+		})
+	}
+}
+
 func TestRun_ContractRecommended(t *testing.T) {
 	modules := map[string]config.ModuleDef{
 		subdomainCore: {

@@ -9,6 +9,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/status"
 )
@@ -274,12 +275,109 @@ func dynamicImportDynamicConnascenceSites(sites []diagnostic.DynamicImportSite) 
 }
 
 const (
+	distanceCandidateSourceStaticExternalEdges      = "classified_external_edges"
 	distanceCandidateSourceRuntimeAsyncEdges        = "runtime_async_edges"
 	distanceCandidateSourceDynamicImports           = "dynamic_imports"
 	distanceCandidateSourceDynamicConnascenceSignal = "dynamic_connascence_signals"
 	distanceCandidateActionExternalSystems          = "external_systems"
 	distanceCandidateActionDeployUnit               = "deploy_unit"
 )
+
+// BuildStaticExternalDistanceCandidates turns today’s disclosed-exclusion bucket
+// (classified DistanceUnknown external/library edges) into review-only
+// external_systems hints. The candidates deliberately do not alter distance,
+// scoring, findings, baselines, or gate verdicts: an external seam enters the
+// BC model only after a human declares it in config.
+func BuildStaticExternalDistanceCandidates(g *graph.Graph, idx coupling.Index, mm config.ModuleMap) []diagnostic.DistanceConfigCandidate {
+	return buildStaticExternalDistanceCandidates(g, idx, mm)
+}
+
+func buildStaticExternalDistanceCandidates(g *graph.Graph, idx coupling.Index, mm config.ModuleMap) []diagnostic.DistanceConfigCandidate {
+	if g == nil || len(idx) == 0 {
+		return nil
+	}
+	goModules := g.GoModules()
+	type candidateKey struct {
+		module string
+		target string
+		kind   string
+	}
+	type candidateGroup struct {
+		count int
+		sites []diagnostic.DistanceConfigEvidenceSite
+		seen  map[diagnostic.DistanceConfigEvidenceSite]struct{}
+	}
+	groups := make(map[candidateKey]*candidateGroup)
+	for _, e := range g.Edges() {
+		cl, ok := idx[indexKeyForEdge(e)]
+		if !ok || cl.Distance != coupling.DistanceUnknown {
+			continue
+		}
+		fromModule, ok := moduleForNodeID(e.From, mm)
+		if !ok || fromModule == "" {
+			continue
+		}
+		if toModule, ok := moduleForNodeID(e.To, mm); ok && toModule != "" {
+			continue
+		}
+		target, rawTarget, ok := normalizeStaticExternalTarget(e.To, e.Language, goModules)
+		if !ok || target == "" {
+			continue
+		}
+		k := candidateKey{module: fromModule, target: target, kind: string(e.Kind)}
+		grp := groups[k]
+		if grp == nil {
+			grp = &candidateGroup{seen: make(map[diagnostic.DistanceConfigEvidenceSite]struct{})}
+			groups[k] = grp
+		}
+		grp.count++
+		for _, loc := range e.Locations {
+			site := diagnostic.DistanceConfigEvidenceSite{
+				File:     loc.File,
+				Line:     loc.Line,
+				Kind:     string(e.Kind),
+				Language: e.Language,
+				Target:   rawTarget,
+			}
+			if _, exists := grp.seen[site]; exists {
+				continue
+			}
+			grp.seen[site] = struct{}{}
+			grp.sites = append(grp.sites, site)
+		}
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	keys := make([]candidateKey, 0, len(groups))
+	for k := range groups {
+		keys = append(keys, k)
+	}
+	sort.SliceStable(keys, func(i, j int) bool {
+		if keys[i].module != keys[j].module {
+			return keys[i].module < keys[j].module
+		}
+		if keys[i].target != keys[j].target {
+			return keys[i].target < keys[j].target
+		}
+		return keys[i].kind < keys[j].kind
+	})
+	out := make([]diagnostic.DistanceConfigCandidate, 0, len(keys))
+	for _, k := range keys {
+		grp := groups[k]
+		out = append(out, diagnostic.DistanceConfigCandidate{
+			SourceBlock:           distanceCandidateSourceStaticExternalEdges,
+			Module:                k.module,
+			Target:                k.target,
+			IntegrationKind:       k.kind,
+			Count:                 grp.count,
+			EvidenceSites:         grp.sites,
+			SuggestedReviewAction: distanceCandidateActionExternalSystems,
+		})
+	}
+	sortDistanceConfigCandidates(out)
+	return out
+}
 
 // BuildDistanceConfigCandidates turns report-only runtime/dynamic evidence into
 // report-only config review hints. The candidates deliberately do not feed
@@ -336,6 +434,11 @@ func BuildDistanceConfigCandidates(
 			})
 		}
 	}
+	sortDistanceConfigCandidates(out)
+	return out
+}
+
+func sortDistanceConfigCandidates(out []diagnostic.DistanceConfigCandidate) {
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].SourceBlock != out[j].SourceBlock {
 			return out[i].SourceBlock < out[j].SourceBlock
@@ -348,7 +451,104 @@ func BuildDistanceConfigCandidates(
 		}
 		return out[i].IntegrationKind < out[j].IntegrationKind
 	})
-	return out
+}
+
+func indexKeyForEdge(e graph.Edge) string {
+	return e.From + "\x00" + e.To + "\x00" + string(e.Kind)
+}
+
+func moduleForNodeID(id string, mm config.ModuleMap) (string, bool) {
+	kind, path, ok := splitNodeID(id)
+	if !ok || path == "" {
+		return "", false
+	}
+	if mod, ok := mm.ModuleFor(path); ok {
+		return mod, true
+	}
+	if kind == string(graph.NodeKindFile) {
+		return mm.ModuleForFile(path)
+	}
+	if mm.Has(path) {
+		return path, true
+	}
+	return "", false
+}
+
+func splitNodeID(id string) (kind, path string, ok bool) {
+	kind, path, ok = strings.Cut(id, ":")
+	return kind, path, ok
+}
+
+func normalizeStaticExternalTarget(id, lang string, goModules []graph.GoModule) (target, raw string, ok bool) {
+	kind, path, ok := splitNodeID(id)
+	if !ok || path == "" {
+		return "", "", false
+	}
+	raw = path
+	switch kind {
+	case string(graph.NodeKindPackage):
+		if lang != graph.LangGo {
+			return "", raw, false
+		}
+		target, ok = normalizeGoExternalTarget(path, goModules)
+		return target, raw, ok
+	case string(graph.NodeKindExternal):
+		switch lang {
+		case graph.LangTypeScript:
+			target, ok = normalizeTypeScriptExternalTarget(path)
+			return target, raw, ok
+		case graph.LangRust:
+			return path, raw, true
+		default:
+			return "", raw, false
+		}
+	default:
+		return "", raw, false
+	}
+}
+
+func normalizeGoExternalTarget(importPath string, goModules []graph.GoModule) (string, bool) {
+	parts := strings.Split(importPath, "/")
+	if len(parts) == 0 || !strings.Contains(parts[0], ".") {
+		return "", false
+	}
+	for _, mod := range goModules {
+		if mod.Path != "" && (importPath == mod.Path || strings.HasPrefix(importPath, mod.Path+"/")) {
+			return "", false
+		}
+	}
+	rootLen := 3
+	if len(parts) < rootLen {
+		rootLen = len(parts)
+	}
+	root := strings.Join(parts[:rootLen], "/")
+	return root + "/**", true
+}
+
+func normalizeTypeScriptExternalTarget(target string) (string, bool) {
+	if !strings.HasPrefix(target, "node_modules/") {
+		return "", false
+	}
+	trimmed := strings.TrimPrefix(target, "node_modules/")
+	root, ok := npmPackageRoot(trimmed)
+	if !ok {
+		return "", false
+	}
+	return "node_modules/" + root + "/**", true
+}
+
+func npmPackageRoot(target string) (string, bool) {
+	parts := strings.Split(target, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return "", false
+	}
+	if strings.HasPrefix(parts[0], "@") {
+		if len(parts) < 2 || parts[0] == "@" {
+			return "", false
+		}
+		return parts[0] + "/" + parts[1], true
+	}
+	return parts[0], true
 }
 
 func runtimeAsyncDistanceSites(sites []diagnostic.RuntimeAsyncSite) []diagnostic.DistanceConfigEvidenceSite {
@@ -479,11 +679,13 @@ func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, clone
 	}
 	connectedModules := make(map[string]struct{})
 	tailRisk := couplingTailRiskAccumulator{}
+	spanAcc := distanceCompressionAccumulator{}
 	balanceSum := 0
 	for key, cl := range idx {
 		balanceSum += addClassificationToSummary(s, cl)
 		tailRisk.add(cl, false)
 		addConnectedModules(connectedModules, key, cl, mm)
+		spanAcc.addEdge(key, cl, mm)
 	}
 	if len(cloneOnly) > 0 {
 		switch config.NormalizeDuplicatedKnowledgePolicy(policy) {
@@ -494,6 +696,7 @@ func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, clone
 				tailRisk.add(p.Classification, true)
 				addConnectedModuleName(connectedModules, p.FromModule)
 				addConnectedModuleName(connectedModules, p.ToModule)
+				spanAcc.addModules(p.FromModule, p.ToModule, p.Classification)
 			}
 		default:
 			s.CloneOnlyAdvisory += len(cloneOnly)
@@ -506,6 +709,7 @@ func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, clone
 		s.MeanBalance = float64(balanceSum) / float64(s.Scored)
 		s.TailRisk = tailRisk.summary(s.Scored)
 	}
+	spanAcc.apply(s.DistanceCompression)
 	return s
 }
 
@@ -582,6 +786,67 @@ func buildDistanceCompressionSummary() *diagnostic.DistanceCompressionSummary {
 		DeterministicSplits:   append([]string(nil), ev.DeterministicSplits...),
 		Rationale:             ev.Rationale,
 	}
+}
+
+type distanceCompressionAccumulator struct {
+	boundaryCounts map[int]int
+	ancestorCounts map[int]int
+}
+
+func (a *distanceCompressionAccumulator) addEdge(key string, cl coupling.Classification, mm config.ModuleMap) {
+	if cl.DistanceBasis != coupling.DistanceBasisStructure || cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown {
+		return
+	}
+	from, to, ok := indexKeyEndpoints(key)
+	if !ok {
+		return
+	}
+	fromMod, okFrom := mm.ModuleFor(stripPrefix(from))
+	toMod, okTo := mm.ModuleFor(stripPrefix(to))
+	if !okFrom || !okTo {
+		return
+	}
+	a.addModules(fromMod, toMod, cl)
+}
+
+func (a *distanceCompressionAccumulator) addModules(fromMod, toMod string, cl coupling.Classification) {
+	if cl.DistanceBasis != coupling.DistanceBasisStructure || cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown {
+		return
+	}
+	span := classify.HierarchySpan(fromMod, toMod)
+	if span.BoundaryCrossings <= 0 {
+		return
+	}
+	if a.boundaryCounts == nil {
+		a.boundaryCounts = make(map[int]int)
+		a.ancestorCounts = make(map[int]int)
+	}
+	a.boundaryCounts[span.BoundaryCrossings]++
+	a.ancestorCounts[span.SharedAncestor]++
+}
+
+func (a *distanceCompressionAccumulator) apply(dst *diagnostic.DistanceCompressionSummary) {
+	if dst == nil {
+		return
+	}
+	dst.CodeStructureBoundaryCounts = sortedDistanceCounts(a.boundaryCounts)
+	dst.CodeStructureAncestorDepths = sortedDistanceCounts(a.ancestorCounts)
+}
+
+func sortedDistanceCounts(in map[int]int) []diagnostic.DistanceCount {
+	if len(in) == 0 {
+		return nil
+	}
+	keys := make([]int, 0, len(in))
+	for k := range in {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	out := make([]diagnostic.DistanceCount, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, diagnostic.DistanceCount{Value: k, Count: in[k]})
+	}
+	return out
 }
 
 func copyDistanceOmittedRungReasons(in []classify.DistanceOmittedRungReason) []diagnostic.DistanceOmittedRungReason {
@@ -710,6 +975,9 @@ func buildConnascenceReport(idx coupling.Index) *diagnostic.ConnascenceReport {
 			continue
 		}
 		r.EdgesWithEvidence++
+		if cl.StrengthFromConnascence {
+			r.StrengthInferredEdges++
+		}
 		for _, ev := range cl.Connascence {
 			r.TotalEvidence++
 			r.ByKind[string(ev.Kind)]++

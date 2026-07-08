@@ -215,12 +215,13 @@ func TestRenderer_Render_ConnascenceSummary(t *testing.T) {
 	d := diagnostic.New()
 	d.Verdict = diagnostic.VerdictPass
 	d.Connascence = &diagnostic.ConnascenceReport{
-		EdgesWithEvidence: 2,
-		AbstainedEdges:    1,
-		TotalEvidence:     3,
-		ByKind:            map[string]int{"name": 2, "type": 1},
-		BySource:          map[string]int{"go/types": 2, "scip": 1},
-		Unmeasured:        []string{"position", "execution", "timing", "value", "identity"},
+		EdgesWithEvidence:     2,
+		AbstainedEdges:        1,
+		TotalEvidence:         3,
+		StrengthInferredEdges: 1,
+		ByKind:                map[string]int{"name": 2, "type": 1},
+		BySource:              map[string]int{"go/types": 2, "scip": 1},
+		Unmeasured:            []string{"position", "execution", "timing", "value", "identity"},
 		Roadmap: []diagnostic.ConnascenceRoadmapItem{
 			{Kind: "name", CurrentStatus: "deterministic_static", Sources: []string{"go/types"}},
 			{Kind: "execution", CurrentStatus: "unmeasured_dynamic", RelatedSignals: []string{"dynamic_imports", "runtime_async_edges"}},
@@ -238,6 +239,7 @@ func TestRenderer_Render_ConnascenceSummary(t *testing.T) {
 		"Report-only. Static facts only",
 		"edges with evidence: 2",
 		"abstained edges: 1",
+		"strength inferred from connascence: 1 edges",
 		"by kind: name=2, type=1",
 		"by source: go/types=2, scip=1",
 		"unmeasured: position, execution, timing, value, identity",
@@ -471,7 +473,7 @@ func TestRenderer_Render_DistanceConfigCandidates(t *testing.T) {
 
 	for _, want := range []string{
 		"## " + secDistanceConfig,
-		"Report-only. Runtime and dynamic evidence can suggest `external_systems` or `deploy_unit` review",
+		"Report-only. Static external, runtime, and dynamic evidence can suggest `external_systems` or `deploy_unit` review",
 		"2 signal(s) across 1 candidate(s)",
 		"**" + modAPI + "** → `" + rabbitMQLib + "` [" + kindMQ + " from runtime_async_edges; action=external_systems]: 2",
 		filePublisher + ":10[" + kindMQ + "]",
@@ -482,6 +484,46 @@ func TestRenderer_Render_DistanceConfigCandidates(t *testing.T) {
 	}
 	if strings.Contains(out, "BC-UNBALANCED") {
 		t.Errorf("distance config candidates must not render as BC advisories\nfull output:\n%s", out)
+	}
+}
+
+func TestRenderer_Render_VolatilityCorroboration(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.VolatilityCorroboration = &diagnostic.VolatilityCorroboration{
+		Source:         "git_history",
+		Status:         "ok",
+		CommitWindow:   500,
+		CommitsScanned: 42,
+		ModulesTouched: 3,
+		TopTouched: []diagnostic.VolatilityTouch{
+			{Module: "cmd/archfit", TouchCommits: 12, DeclaredVolatility: confidenceHigh},
+			{Module: "internal/output", TouchCommits: 5, DeclaredVolatility: confidenceLow},
+		},
+		Caveat: "Supporting evidence only.",
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"## Volatility corroboration (report-only)",
+		"Source-control touch frequency is supporting evidence for Ch9 volatility judgments",
+		"- source: git_history",
+		"- status: ok",
+		"- recent-history window: 500 commits",
+		"- commits scanned: 42",
+		"- modules touched: 3",
+		"- **cmd/archfit**: 12 commit(s) [declared volatility=high]",
+		"- **internal/output**: 5 commit(s) [declared volatility=low]",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
 	}
 }
 
@@ -1257,7 +1299,10 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 		DistanceBasis:             map[string]int{"code_structure": 3, "ownership": 1},
 		DeployUnitDetectedModules: 1,
 		DeclaredExternalSystems:   2,
+		RuntimeAsyncRelations:     4,
+		RuntimeAsyncKinds:         map[string]int{"message_queue": 2, "event_bus": 1, "async_task": 1},
 		Interpretation:            "same-owner is the lowest cross-module distance; this is a low socio-technical distance signal, not missing ownership",
+		RuntimeInterpretation:     "async runtime bridges reduce lifecycle coupling and therefore increase perceived distance (book Ch8), but remain report-only because archfit does not yet measure synchronous first-party runtime peers deterministically",
 	}
 	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
 		Scored:            10,
@@ -1279,9 +1324,11 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 			CloneOnlyWorstBalance:     4,
 		},
 		DistanceCompression: &diagnostic.DistanceCompressionSummary{
-			CompressedMiddleRungs: true,
-			ImplementedRungs:      []int{2, 4, 7, 9, 10},
-			OmittedRungs:          []int{3, 5, 6, 8},
+			CompressedMiddleRungs:       true,
+			ImplementedRungs:            []int{2, 4, 7, 9, 10},
+			OmittedRungs:                []int{3, 5, 6, 8},
+			CodeStructureBoundaryCounts: []diagnostic.DistanceCount{{Value: 2, Count: 3}, {Value: 5, Count: 1}},
+			CodeStructureAncestorDepths: []diagnostic.DistanceCount{{Value: 0, Count: 1}, {Value: 1, Count: 3}},
 			OmittedRungReasons: []diagnostic.DistanceOmittedRungReason{
 				{Rung: 8, Reason: "declared external_systems use D=10; library-like seams stay compressed"},
 			},
@@ -1314,10 +1361,15 @@ func TestRenderer_Render_DistanceConfidence(t *testing.T) {
 		"owner_model`: single_owner_degenerate",
 		"deploy-unit detector mapped modules: 1",
 		"declared external systems: 2",
+		"runtime async relations: 4",
+		"runtime async kinds: async_task=1, event_bus=1, message_queue=2",
 		"interpretation: same-owner is the lowest cross-module distance",
+		"runtime interpretation: async runtime bridges reduce lifecycle coupling and therefore increase perceived distance",
 		"connected modules in coupling sample: 2",
 		"distance basis: code_structure=3, ownership=1",
 		"distance rungs implemented: D=2, D=4, D=7, D=9, D=10; omitted/compressed: D=3, D=5, D=6, D=8",
+		"code-structure boundary crossings: 2→3, 5→1",
+		"code-structure shared-ancestor depth: 0→1, 1→3",
 		"distance compression: D=3/D=5/D=6/D=8 remain compressed",
 		"D=8 compressed: declared external_systems use D=10; library-like seams stay compressed",
 		"declared external-system edges scored at D=10: 2",

@@ -14,7 +14,15 @@ import (
 	"github.com/alexei-led/archfit/internal/ports"
 )
 
-const toolNameScipTest = "scip"
+const (
+	toolNameScipTest  = "scip"
+	testServicesAGlob = "services/a/**"
+	testServicesBGlob = "services/b/**"
+	testGoPathAImpl   = "services/a/impl.go"
+	testTSPathWebApp  = "web/app.ts"
+	testGoFileAImpl   = "file:" + testGoPathAImpl
+	testTSFileWebApp  = "file:" + testTSPathWebApp
+)
 
 // TestBCRiskClause_DistanceAware verifies the advisory text only names
 // "distributed-monolith risk" for high-distance critical edges; a low-distance
@@ -133,6 +141,7 @@ func TestEnrichEdges_GoTypeInfoHintAuthoritative(t *testing.T) {
 func TestBuildConnascenceReport(t *testing.T) {
 	idx := coupling.Index{
 		"a\x00b\x00imports": {
+			StrengthFromConnascence: true,
 			Connascence: []coupling.ConnascenceEvidence{
 				{Kind: coupling.ConnascenceName, Source: connascenceSourceGoTypes},
 				{Kind: coupling.ConnascenceType, Source: connascenceSourceGoTypes},
@@ -156,6 +165,9 @@ func TestBuildConnascenceReport(t *testing.T) {
 	}
 	if r.TotalEvidence != 4 {
 		t.Errorf("TotalEvidence = %d, want 4", r.TotalEvidence)
+	}
+	if r.StrengthInferredEdges != 1 {
+		t.Errorf("StrengthInferredEdges = %d, want 1", r.StrengthInferredEdges)
 	}
 	if r.ByKind[string(coupling.ConnascenceName)] != 1 || r.ByKind[string(coupling.ConnascenceType)] != 1 || r.ByKind[string(coupling.ConnascenceAlgorithm)] != 1 || r.ByKind[string(coupling.ConnascencePosition)] != 1 {
 		t.Errorf("ByKind = %+v, want name/type/algorithm/position counts", r.ByKind)
@@ -194,10 +206,109 @@ func connascenceRoadmapByKind(items []diagnostic.ConnascenceRoadmapItem) map[str
 	return out
 }
 
+func TestBuildStaticExternalDistanceCandidates(t *testing.T) {
+	key := func(e graph.Edge) string { return e.From + "\x00" + e.To + "\x00" + string(e.Kind) }
+	goS3 := graph.Edge{From: testGoFileAImpl, To: "package:github.com/aws/aws-sdk-go-v2/service/s3", Kind: graph.EdgeKindImports, Language: graph.LangGo, Locations: []graph.Location{{File: testGoPathAImpl, Line: 12}}}
+	goConfig := graph.Edge{From: "file:services/a/other.go", To: "package:github.com/aws/aws-sdk-go-v2/config", Kind: graph.EdgeKindImports, Language: graph.LangGo, Locations: []graph.Location{{File: "services/a/other.go", Line: 8}}}
+	goStdlib := graph.Edge{From: testGoFileAImpl, To: "package:fmt", Kind: graph.EdgeKindImports, Language: graph.LangGo, Locations: []graph.Location{{File: testGoPathAImpl, Line: 18}}}
+	goFirstParty := graph.Edge{From: testGoFileAImpl, To: "package:example.com/project/internal/shared", Kind: graph.EdgeKindImports, Language: graph.LangGo, Locations: []graph.Location{{File: testGoPathAImpl, Line: 22}}}
+	tsVendor := graph.Edge{From: testTSFileWebApp, To: "external:node_modules/@aws-sdk/client-s3/dist/index.js", Kind: graph.EdgeKindImports, Language: graph.LangTypeScript, Locations: []graph.Location{{File: testTSPathWebApp, Line: 5}}}
+	tsLocalMiss := graph.Edge{From: testTSFileWebApp, To: "external:src/missing.ts", Kind: graph.EdgeKindImports, Language: graph.LangTypeScript, Locations: []graph.Location{{File: testTSPathWebApp, Line: 9}}}
+	tsAlias := graph.Edge{From: testTSFileWebApp, To: "external:@app/shared", Kind: graph.EdgeKindImports, Language: graph.LangTypeScript, Locations: []graph.Location{{File: testTSPathWebApp, Line: 13}}}
+	tsBareAlias := graph.Edge{From: testTSFileWebApp, To: "external:shared/utils", Kind: graph.EdgeKindImports, Language: graph.LangTypeScript, Locations: []graph.Location{{File: testTSPathWebApp, Line: 15}}}
+	tsBarePackage := graph.Edge{From: testTSFileWebApp, To: "external:stripe", Kind: graph.EdgeKindImports, Language: graph.LangTypeScript, Locations: []graph.Location{{File: testTSPathWebApp, Line: 17}}}
+	rustVendor := graph.Edge{From: "package:crate-a", To: "external:serde", Kind: graph.EdgeKindDependsOn, Language: graph.LangRust, Locations: []graph.Location{{File: "crate-a/Cargo.toml", Line: 7}}}
+	declaredExternal := graph.Edge{From: testTSFileWebApp, To: "external:node_modules/stripe/index.js", Kind: graph.EdgeKindImports, Language: graph.LangTypeScript, Locations: []graph.Location{{File: testTSPathWebApp, Line: 11}}}
+	unresolvedSource := graph.Edge{From: "file:scripts/tool.go", To: "file:services/b/util.go", Kind: graph.EdgeKindImports, Language: graph.LangGo, Locations: []graph.Location{{File: "scripts/tool.go", Line: 3}}}
+	facts := graph.Facts{
+		Language:  graph.LangGo,
+		GoModules: []graph.GoModule{{Path: "example.com/project", RelDir: "."}},
+		Edges:     []graph.Edge{goS3, goConfig, goStdlib, goFirstParty, tsVendor, tsLocalMiss, tsAlias, tsBareAlias, tsBarePackage, rustVendor, declaredExternal, unresolvedSource},
+	}
+	g := graph.Build([]graph.Facts{facts})
+	idx := coupling.Index{
+		key(goS3):             {Distance: coupling.DistanceUnknown},
+		key(goConfig):         {Distance: coupling.DistanceUnknown},
+		key(goStdlib):         {Distance: coupling.DistanceUnknown},
+		key(goFirstParty):     {Distance: coupling.DistanceUnknown},
+		key(tsVendor):         {Distance: coupling.DistanceUnknown},
+		key(tsLocalMiss):      {Distance: coupling.DistanceUnknown},
+		key(tsAlias):          {Distance: coupling.DistanceUnknown},
+		key(tsBareAlias):      {Distance: coupling.DistanceUnknown},
+		key(tsBarePackage):    {Distance: coupling.DistanceUnknown},
+		key(rustVendor):       {Distance: coupling.DistanceUnknown},
+		key(declaredExternal): {Distance: coupling.DistanceExternal},
+		key(unresolvedSource): {Distance: coupling.DistanceUnknown},
+	}
+	mm := config.BuildModuleMap(map[string]config.ModuleDef{
+		"services/a": {Paths: []string{testServicesAGlob}},
+		"services/b": {Paths: []string{testServicesBGlob}},
+		"web":        {Paths: []string{"web/**"}},
+		"crate-a":    {Paths: []string{"crate-a/**"}},
+	})
+
+	got := buildStaticExternalDistanceCandidates(g, idx, mm)
+	if len(got) != 3 {
+		t.Fatalf("buildStaticExternalDistanceCandidates len = %d, want 3: %+v", len(got), got)
+	}
+	if got[0].Module != "crate-a" || got[0].Target != "serde" || got[0].IntegrationKind != string(graph.EdgeKindDependsOn) {
+		t.Fatalf("candidate[0] = %+v", got[0])
+	}
+	if got[1].Module != "services/a" || got[1].Target != "github.com/aws/aws-sdk-go-v2/**" || got[1].Count != 2 {
+		t.Fatalf("candidate[1] = %+v", got[1])
+	}
+	if len(got[1].EvidenceSites) != 2 {
+		t.Fatalf("candidate[1] sites = %+v", got[1].EvidenceSites)
+	}
+	siteTargets := map[string]bool{}
+	for _, site := range got[1].EvidenceSites {
+		siteTargets[site.Target] = true
+	}
+	if !siteTargets["github.com/aws/aws-sdk-go-v2/config"] || !siteTargets["github.com/aws/aws-sdk-go-v2/service/s3"] {
+		t.Fatalf("candidate[1] site targets = %+v", got[1].EvidenceSites)
+	}
+	if got[2].Module != "web" || got[2].Target != "node_modules/@aws-sdk/client-s3/**" || got[2].IntegrationKind != string(graph.EdgeKindImports) {
+		t.Fatalf("candidate[2] = %+v", got[2])
+	}
+	for i, c := range got {
+		if c.SourceBlock != distanceCandidateSourceStaticExternalEdges {
+			t.Fatalf("candidate[%d] SourceBlock = %q, want %q", i, c.SourceBlock, distanceCandidateSourceStaticExternalEdges)
+		}
+		if c.SuggestedReviewAction != distanceCandidateActionExternalSystems {
+			t.Fatalf("candidate[%d] SuggestedReviewAction = %q, want %q", i, c.SuggestedReviewAction, distanceCandidateActionExternalSystems)
+		}
+	}
+}
+
 // TestBuildClassifiedEdgeSummary_DistributedMonolith verifies that the DM counter
 // counts only critical-band edges at HIGH distance (different owner / deploy unit).
 // A critical edge at cross_module_same_owner is local coupling, not a distributed
 // monolith, and must not be counted.
+func TestNormalizeTypeScriptExternalTarget(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		target string
+		want   string
+		ok     bool
+	}{
+		{name: "node_modules package", target: "node_modules/@aws-sdk/client-s3/dist/index.js", want: "node_modules/@aws-sdk/client-s3/**", ok: true},
+		{name: "alias with at prefix", target: "@app/shared", ok: false},
+		{name: "bare alias", target: "shared/utils", ok: false},
+		{name: "bare package", target: "stripe", ok: false},
+		{name: "path miss", target: "src/missing.ts", ok: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := normalizeTypeScriptExternalTarget(tc.target)
+			if ok != tc.ok || got != tc.want {
+				t.Fatalf("normalizeTypeScriptExternalTarget(%q) = (%q,%t), want (%q,%t)", tc.target, got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}
+
 func TestBuildClassifiedEdgeSummary_DistributedMonolith(t *testing.T) {
 	key := func(from, to, kind string) string { return from + "\x00" + to + "\x00" + kind }
 	crit := coupling.EdgeScore{Scored: true, Balance: 2, Band: coupling.SeverityCritical}
@@ -534,6 +645,12 @@ func TestBuildClassifiedEdgeSummary_DistanceBasisCompressionAndConnectedModules(
 	}
 	if !strings.Contains(s.DistanceCompression.Rationale, "D=3") || !strings.Contains(s.DistanceCompression.Rationale, "D=8") {
 		t.Errorf("Rationale = %q, want D=3 and D=8 compression disclosure", s.DistanceCompression.Rationale)
+	}
+	if got := s.DistanceCompression.CodeStructureBoundaryCounts; len(got) != 1 || got[0].Value != 2 || got[0].Count != 1 {
+		t.Fatalf("CodeStructureBoundaryCounts = %+v, want [{2 1}]", got)
+	}
+	if got := s.DistanceCompression.CodeStructureAncestorDepths; len(got) != 1 || got[0].Value != 0 || got[0].Count != 1 {
+		t.Fatalf("CodeStructureAncestorDepths = %+v, want [{0 1}]", got)
 	}
 }
 

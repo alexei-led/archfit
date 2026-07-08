@@ -20,7 +20,7 @@ complementary metrics. They split into three roles:
   changes the verdict.
 
 Separate JSON/Markdown report-only blocks, including `connascence`,
-`dynamic_connascence_signals`, `distance_config_candidates`, `semantic_strength_overlay`, `local_coupling`, `runtime_async`, and `classified_edges` summaries, explain the
+`dynamic_connascence_signals`, `distance_config_candidates`, `semantic_strength_overlay`, `volatility_corroboration`, `local_coupling`, `runtime_async`, and `classified_edges` summaries, explain the
 score inputs. They are evidence, not metrics, and never gate on their own.
 
 A metric's **absolute value** never fails the build — only a _regression_
@@ -265,8 +265,9 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 ### `connascence`
 
 - **Represents:** deterministic, static Ch6 connascence evidence observed on
-  dependency edges. It is explanatory evidence for the strength classification,
-  not a scored metric.
+  dependency edges. It is disclosed as a report block, not a scored metric.
+  Some deterministic meaning/algorithm evidence may also refine an otherwise
+  unresolved or public-floor strength to `model` or `functional`.
 - **Computed:** extractors attach edge evidence only where the source fact is
   deterministic. Go `go/types` can report name, type, meaning (const/var/data),
   and algorithm (function/method/callable value). TypeScript dependency-cruiser
@@ -286,8 +287,10 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
   and `dynamic_connascence_signals`). They can guide a human review, but they
   never become connascence guesses and never move into scoring without a
   deterministic source-module→runtime fact.
-- **Report-only by design:** never consumed by `coupling_balance`, findings,
-  baselines, or gate verdicts.
+- **Report-only summary by design:** the `connascence` block itself never gates.
+  Deterministic connascence facts may refine strength classification before
+  scoring when no direct strength hint resolved the edge, and the block reports
+  how many edges used that fallback.
 
 ### `dynamic_connascence_signals`
 
@@ -308,16 +311,36 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 
 ### `distance_config_candidates`
 
-- **Represents:** review-only hints that runtime or dynamic evidence may justify
-  a config review for `external_systems` or `deploy_unit` entries.
-- **Computed:** assembled from `runtime_async_edges`, `dynamic_imports`, and
-  `dynamic_connascence_signals` after test files and `testdata/` fixtures have
-  been filtered out. Each candidate carries `source_block`, `module`, `target`,
-  `integration_kind`, `count`, capped `evidence_sites`, and
-  `suggested_review_action` (`external_systems` or `deploy_unit`).
+- **Represents:** review-only hints that static external/library edges, runtime,
+  or dynamic evidence may justify a config review for `external_systems` or
+  `deploy_unit` entries.
+- **Computed:** assembled from excluded static external edges
+  (`source_block: classified_external_edges`), `runtime_async_edges`,
+  `dynamic_imports`, and `dynamic_connascence_signals` after test files and
+  `testdata/` fixtures have been filtered out. Each candidate carries
+  `source_block`, `module`, `target`, `integration_kind`, `count`, capped
+  `evidence_sites`, and `suggested_review_action` (`external_systems` or
+  `deploy_unit`).
 - **Review-only by design:** candidates are not written into config by `analyze`
   or `config update --apply`. They do not annotate graph edges, change distance,
   enter `coupling_balance`, affect baselines, or change the gate verdict.
+
+### `volatility_corroboration`
+
+- **Represents:** source-control touch frequency used as the book's Ch9
+  supporting evidence for declared volatility judgments.
+- **Computed:** a git-history pass counts how many commits touched each declared
+  module in the analyzed tree. The bounded recent-history pass uses the most
+  recent 500 commits and falls back to full history only when that window yields
+  no module data. Output is ranked deterministically by commit count, then
+  module name.
+- **Output:** JSON `volatility_corroboration` reports `source`, `status`, the
+  recent-history `commit_window` when the bounded pass succeeded,
+  `full_history` when the fallback ran, `commits_scanned`, `modules_touched`, a
+  capped `top_touched` sample, and a caveat explaining the evidence boundary.
+- **Report-only by design:** git history corroborates volatility declarations;
+  it never sets volatility, never changes `coupling_balance`, findings,
+  baselines, score deltas, or gate verdicts.
 
 ### `semantic_strength_overlay`
 
@@ -354,6 +377,9 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
   summary and points to JSON for the full list.
 - **Report-only by design:** neither block annotates graph edges, changes distance,
   enters `coupling_balance`, affects baselines, or changes the gate verdict.
+  The distance-confidence summary may restate that async bridges increase
+  perceived distance by reducing lifecycle coupling (book Ch8), but that
+  interpretation is explanatory only and does not change scoring.
 
 ### `local_coupling`
 
@@ -469,10 +495,11 @@ honest about what the numbers mean.
   and test density are better served by purpose-built linters (golangci-lint,
   clippy, flake8, eslint). archfit focuses on inter-module coupling structure, not
   intra-module code quality.
-- **Volatility comes from DDD subdomain classification, never git churn.** Git
-  churn is accidental volatility; essential volatility is determined by business
-  domain. Mixing them produces a metric that punishes active development, not
-  structural risk.
+- **Volatility comes from DDD subdomain classification, never git churn as a
+  score input.** Git churn is accidental volatility; essential volatility is
+  determined by business domain. `volatility_corroboration` keeps source-control
+  history as supporting evidence only, so active development does not silently
+  change score or gate verdicts.
 - **`cohesion_spread`, `shared_state_hub`.** Prototyped, then removed — they did
   not rank real problems better than the metrics that shipped.
 

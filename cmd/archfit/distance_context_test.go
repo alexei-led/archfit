@@ -76,10 +76,39 @@ func TestBuildDistanceContext_NoOwnerWithExternalEvidence(t *testing.T) {
 	}
 }
 
-func TestBuildDistanceContext_MultiOwner(t *testing.T) {
+func TestBuildDistanceContext_RuntimeAsyncEvidence(t *testing.T) {
+	d := diagnostic.New()
+	d.RuntimeAsyncEdges = []diagnostic.RuntimeAsyncEdge{
+		{FromModule: "a", Target: "rabbitmq", IntegrationKind: "message_queue", Count: 2},
+		{FromModule: "b", Target: "pubsub", IntegrationKind: "event_bus", Count: 1},
+		{FromModule: "c", Target: "celery", IntegrationKind: "async_task", Count: 1},
+		{FromModule: "a", Target: "kafka", IntegrationKind: "message_queue", Count: 1},
+	}
 	cfg := config.Config{Modules: map[string]config.ModuleDef{
-		"a": {Paths: []string{globA}, Owner: "team-a"},
-		"b": {Paths: []string{globB}, Owner: "team-b"},
+		"a": {Paths: []string{globA}},
+		"b": {Paths: []string{globB}},
+	}}
+
+	got := buildDistanceContext(d, cfg, 0)
+	if got.RuntimeAsyncRelations != 4 {
+		t.Fatalf("runtime_async_relations = %d, want 4", got.RuntimeAsyncRelations)
+	}
+	if got.RuntimeAsyncKinds["message_queue"] != 2 || got.RuntimeAsyncKinds["event_bus"] != 1 || got.RuntimeAsyncKinds["async_task"] != 1 {
+		t.Fatalf("runtime_async_kinds = %+v", got.RuntimeAsyncKinds)
+	}
+	if !strings.Contains(got.RuntimeInterpretation, "reduce lifecycle coupling") {
+		t.Fatalf("runtime_interpretation = %q", got.RuntimeInterpretation)
+	}
+}
+
+func TestBuildDistanceContext_MultiOwner(t *testing.T) {
+	const (
+		ownerTeamA = "team-a"
+		ownerTeamB = "team-b"
+	)
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		"a": {Paths: []string{globA}, Owner: ownerTeamA},
+		"b": {Paths: []string{globB}, Owner: ownerTeamB},
 	}}
 
 	got := buildDistanceContext(diagnostic.New(), cfg, 0)

@@ -2236,7 +2236,7 @@ func TestRun_RuntimeAsync_StaticGraphUnchanged(t *testing.T) {
 	}
 }
 
-func TestRun_ReportOnlyLocalAndRuntimeFactsDoNotChangeScoreOrVerdict(t *testing.T) {
+func TestRun_ReportOnlyLocalRuntimeAndStaticExternalFactsDoNotChangeScoreOrVerdict(t *testing.T) {
 	modules := map[string]config.ModuleDef{
 		"a": {Paths: []string{"pkg/a/**"}, Owner: "team-a", Subdomain: subdomainCore},
 		"b": {Paths: []string{"pkg/b/**"}, Owner: "team-b", Subdomain: subdomainCore},
@@ -2251,6 +2251,12 @@ func TestRun_ReportOnlyLocalAndRuntimeFactsDoNotChangeScoreOrVerdict(t *testing.
 		From: "file:pkg/a/local_a.go", To: "file:pkg/a/local_b.go",
 		Kind: graph.EdgeKindImports, Language: graph.LangGo,
 		StrengthHint: string(coupling.StrengthModel),
+	}
+	external := graph.Edge{
+		From: "file:pkg/a/a.go", To: "package:github.com/aws/aws-sdk-go-v2/service/s3",
+		Kind: graph.EdgeKindImports, Language: graph.LangGo,
+		StrengthHint: string(coupling.StrengthFunctional),
+		Locations:    []graph.Location{{File: "pkg/a/a.go", Line: 20}},
 	}
 	run := func(facts graph.Facts, signals signal.RunSignals) diagnostic.Diagnostic {
 		t.Helper()
@@ -2283,7 +2289,7 @@ func TestRun_ReportOnlyLocalAndRuntimeFactsDoNotChangeScoreOrVerdict(t *testing.
 
 	base := run(graph.Facts{Language: graph.LangGo, Edges: []graph.Edge{cross}}, signal.RunSignals{})
 	withReportOnly := run(
-		graph.Facts{Language: graph.LangGo, Edges: []graph.Edge{cross, local}},
+		graph.Facts{Language: graph.LangGo, Edges: []graph.Edge{cross, local, external}},
 		signal.RunSignals{
 			DynamicImports: signal.DynamicImportSignals{Sites: []diagnostic.DynamicImportSite{{File: "pkg/a/plugin.py", Line: 7, Kind: diagnostic.DynamicImportKindImportlib, Language: graph.LangPython}}},
 			RuntimeAsync: signal.RuntimeAsyncSignals{
@@ -2305,8 +2311,23 @@ func TestRun_ReportOnlyLocalAndRuntimeFactsDoNotChangeScoreOrVerdict(t *testing.
 	if withReportOnly.DynamicConnascenceSignals == nil || len(withReportOnly.DynamicConnascenceSignals.Signals) != 2 {
 		t.Fatalf("expected two dynamic connascence report-only signals, got %+v", withReportOnly.DynamicConnascenceSignals)
 	}
-	if len(withReportOnly.DistanceConfigCandidates) != 4 {
-		t.Fatalf("expected four distance config review candidates, got %+v", withReportOnly.DistanceConfigCandidates)
+	if len(withReportOnly.DistanceConfigCandidates) != 5 {
+		t.Fatalf("expected five distance config review candidates, got %+v", withReportOnly.DistanceConfigCandidates)
+	}
+	if withReportOnly.ClassifiedEdges.External != 1 {
+		t.Fatalf("classified external = %d, want 1", withReportOnly.ClassifiedEdges.External)
+	}
+	foundStaticExternal := false
+	for _, c := range withReportOnly.DistanceConfigCandidates {
+		if c.SourceBlock == "classified_external_edges" {
+			foundStaticExternal = true
+			if c.SuggestedReviewAction != "external_systems" {
+				t.Fatalf("static external candidate = %+v, want external_systems review", c)
+			}
+		}
+	}
+	if !foundStaticExternal {
+		t.Fatalf("distance config candidates = %+v, want a static external candidate", withReportOnly.DistanceConfigCandidates)
 	}
 	for _, s := range withReportOnly.DynamicConnascenceSignals.Signals {
 		if s.Measured {

@@ -10,16 +10,20 @@ import (
 )
 
 const (
-	modInternalFoo             = "internal/foo"
-	modInternalClassify        = "internal/classify"
-	modInternalMetricsBoundary = "internal/metrics/boundary"
-	modCmdArchfit              = "cmd/archfit"
-	distOwnerTeamX             = "team-x"
-	distOwnerTeamY             = "team-y"
-	distDeployUnitA            = "svc-a"
-	distDeployUnitB            = "svc-b"
-	distModCore                = "core"
-	distModAPI                 = "api"
+	modInternalFoo               = "internal/foo"
+	modInternalClassify          = "internal/classify"
+	modInternalMetrics           = "internal/metrics"
+	modInternalMetricsBoundary   = "internal/metrics/boundary"
+	modInternalMetricsModularity = "internal/metrics/modularity"
+	modCmdArchfit                = "cmd/archfit"
+	modPyMetricsBoundary         = "pkg.metrics.boundary"
+	modPyMetricsModularity       = "pkg.metrics.modularity"
+	distOwnerTeamX               = "team-x"
+	distOwnerTeamY               = "team-y"
+	distDeployUnitA              = "svc-a"
+	distDeployUnitB              = "svc-b"
+	distModCore                  = "core"
+	distModAPI                   = "api"
 )
 
 func TestDistanceCompression(t *testing.T) {
@@ -68,6 +72,31 @@ func hasInt(values []int, want int) bool {
 	return false
 }
 
+func TestHierarchySpan(t *testing.T) {
+	tests := []struct {
+		name          string
+		from          string
+		to            string
+		wantCrossings int
+		wantShared    int
+	}{
+		{name: "go siblings", from: modInternalClassify, to: modInternalMetrics, wantCrossings: 2, wantShared: 1},
+		{name: "go parent child", from: modInternalMetrics, to: modInternalMetricsBoundary, wantCrossings: 1, wantShared: 2},
+		{name: "go different roots", from: modCmdArchfit, to: modInternalMetricsBoundary, wantCrossings: 5, wantShared: 0},
+		{name: "python dotted siblings", from: modPyMetricsBoundary, to: modPyMetricsModularity, wantCrossings: 2, wantShared: 2},
+		{name: "rust crate modules", from: "crate::api::handler", to: "crate::core::service", wantCrossings: 4, wantShared: 1},
+		{name: "flat names", from: distModCore, to: distModAPI, wantCrossings: 2, wantShared: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := HierarchySpan(tc.from, tc.to)
+			if got.BoundaryCrossings != tc.wantCrossings || got.SharedAncestor != tc.wantShared {
+				t.Fatalf("HierarchySpan(%q, %q) = %+v, want crossings/shared %d/%d", tc.from, tc.to, got, tc.wantCrossings, tc.wantShared)
+			}
+		})
+	}
+}
+
 func TestCodeStructureDistance(t *testing.T) {
 	tests := []struct {
 		name string
@@ -89,7 +118,7 @@ func TestCodeStructureDistance(t *testing.T) {
 		{name: "flat alpha vs beta", from: "alpha", to: "beta", lang: graph.LangGo, want: coupling.DistanceCrossModuleSameOwner},
 
 		// Siblings (same parent, different last segment).
-		{name: "sibling metrics packages", from: modInternalMetricsBoundary, to: "internal/metrics/modularity", lang: graph.LangGo, want: coupling.DistanceCrossModuleSameOwner},
+		{name: "sibling metrics packages", from: modInternalMetricsBoundary, to: modInternalMetricsModularity, lang: graph.LangGo, want: coupling.DistanceCrossModuleSameOwner},
 		{name: "sibling top-level", from: modCmdArchfit, to: "cmd/other", lang: graph.LangGo, want: coupling.DistanceCrossModuleSameOwner},
 		{name: "sibling two-deep", from: "pkg/a", to: "pkg/b", lang: graph.LangGo, want: coupling.DistanceCrossModuleSameOwner},
 

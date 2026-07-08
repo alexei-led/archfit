@@ -12,12 +12,19 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
 const (
 	testUpdatePluginsModule = "plugins"
 	testUpdateDeployUnit    = "deploy_unit"
+	testUpdateModuleA       = "services/a"
+	testUpdateModuleAGlob   = "services/a/**"
+	testUpdateModuleAFile   = "file:services/a/impl.go"
+	testUpdateModuleAPath   = "services/a/impl.go"
+	testUpdateLayerAdapter  = "adapter"
+	testUpdateOwnerTeamA    = "team-a"
 )
 
 // runUpdateCmd runs UpdateCmd.Run with a fake runner and returns stdout output and error.
@@ -100,6 +107,109 @@ func TestDistanceConfigCandidates_DynamicImportsBecomeReviewOnlyHints(t *testing
 	}
 	if len(got[1].EvidenceRefs) != 1 || got[1].EvidenceRefs[0] != "plugins/loader.py:2" {
 		t.Fatalf("distanceConfigCandidates evidence = %+v", got[1].EvidenceRefs)
+	}
+}
+
+func TestStaticExternalDistanceConfigCandidatesFromGraph_GoThirdPartyHint(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		testUpdateModuleA: {Paths: []string{testUpdateModuleAGlob}},
+	}}
+	g := graph.Build([]graph.Facts{{
+		Language:  graph.LangGo,
+		GoModules: []graph.GoModule{{Path: "example.com/project", RelDir: "."}},
+		Edges: []graph.Edge{
+			{From: testUpdateModuleAFile, To: "package:github.com/aws/aws-sdk-go-v2/service/s3", Kind: graph.EdgeKindImports, Language: graph.LangGo, Locations: []graph.Location{{File: testUpdateModuleAPath, Line: 7}}},
+			{From: testUpdateModuleAFile, To: "package:fmt", Kind: graph.EdgeKindImports, Language: graph.LangGo, Locations: []graph.Location{{File: testUpdateModuleAPath, Line: 8}}},
+		},
+	}})
+
+	raw := staticExternalDistanceConfigCandidatesFromGraph(g, cfg)
+	if len(raw) != 1 {
+		t.Fatalf("staticExternalDistanceConfigCandidatesFromGraph len = %d, want 1: %+v", len(raw), raw)
+	}
+	got := toInitcfgDistanceConfigCandidate(raw[0])
+	if got.SourceBlock != "classified_external_edges" || got.Module != testUpdateModuleA || got.Target != "github.com/aws/aws-sdk-go-v2/**" {
+		t.Fatalf("static external candidate = %+v", got)
+	}
+	if got.SuggestedReviewAction != "external_systems" || got.IntegrationKind != string(graph.EdgeKindImports) {
+		t.Fatalf("static external candidate action/kind = %+v", got)
+	}
+	if len(got.EvidenceRefs) != 1 || got.EvidenceRefs[0] != "services/a/impl.go:7" {
+		t.Fatalf("static external evidence refs = %+v", got.EvidenceRefs)
+	}
+}
+
+func TestCandidateConfigForUpdate_UsesDiscoveredModules(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		testUpdateModuleA: {
+			Paths:      []string{"old/a/**"},
+			Public:     []string{"old/public/**"},
+			Internal:   []string{"old/internal/**"},
+			Layer:      testUpdateLayerAdapter,
+			Owner:      testUpdateOwnerTeamA,
+			Subdomain:  subdomainCore,
+			Volatility: "high",
+			DeployUnit: "svc-a",
+		},
+	}}
+	discovered := initcfg.DiscoveredConfig{Modules: []initcfg.ModuleDef{
+		{Name: testUpdateModuleA, Paths: []string{testUpdateModuleAGlob}, Public: []string{"services/a/api/**"}, Internal: []string{"services/a/internal/**"}, Layer: layerCore},
+		{Name: "web", Paths: []string{"web/**"}, Public: []string{"web/api/**"}, Internal: []string{"web/internal/**"}, Layer: testUpdateLayerAdapter},
+	}}
+
+	got := candidateConfigForUpdate(cfg, discovered)
+	mm := got.ModuleMapView()
+	if mod, ok := mm.ModuleForFile(testUpdateModuleAPath); !ok || mod != testUpdateModuleA {
+		t.Fatalf("ModuleForFile(services/a/impl.go) = (%q,%t), want (services/a,true)", mod, ok)
+	}
+	if mod, ok := mm.ModuleForFile("web/app.ts"); !ok || mod != "web" {
+		t.Fatalf("ModuleForFile(web/app.ts) = (%q,%t), want (web,true)", mod, ok)
+	}
+	if got.Modules[testUpdateModuleA].Owner != testUpdateOwnerTeamA || got.Modules[testUpdateModuleA].DeployUnit != "svc-a" {
+		t.Fatalf("existing metadata not preserved: %+v", got.Modules[testUpdateModuleA])
+	}
+	if len(got.Modules[testUpdateModuleA].Paths) != 1 || got.Modules[testUpdateModuleA].Paths[0] != testUpdateModuleAGlob {
+		t.Fatalf("services/a paths = %+v, want discovered paths", got.Modules[testUpdateModuleA].Paths)
+	}
+	if len(got.Modules[testUpdateModuleA].Public) != 1 || got.Modules[testUpdateModuleA].Public[0] != "old/public/**" {
+		t.Fatalf("services/a public = %+v, want existing public globs preserved", got.Modules[testUpdateModuleA].Public)
+	}
+	if len(got.Modules["web"].Public) != 1 || got.Modules["web"].Public[0] != "web/api/**" {
+		t.Fatalf("web public = %+v, want discovered public globs", got.Modules["web"].Public)
+	}
+}
+
+func TestStaticExternalDistanceConfigCandidatesFromGraph_UsesDiscoveredModuleConfig(t *testing.T) {
+	t.Parallel()
+
+	g := graph.Build([]graph.Facts{{
+		Language:  graph.LangGo,
+		GoModules: []graph.GoModule{{Path: "example.com/project", RelDir: "."}},
+		Edges: []graph.Edge{
+			{From: testUpdateModuleAFile, To: "package:github.com/aws/aws-sdk-go-v2/service/s3", Kind: graph.EdgeKindImports, Language: graph.LangGo, Locations: []graph.Location{{File: testUpdateModuleAPath, Line: 7}}},
+		},
+	}})
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		testUpdateModuleA: {Paths: []string{"old/a/**"}},
+	}}
+	if raw := staticExternalDistanceConfigCandidatesFromGraph(g, cfg); len(raw) != 0 {
+		t.Fatalf("staticExternalDistanceConfigCandidatesFromGraph with stale cfg len = %d, want 0: %+v", len(raw), raw)
+	}
+	discovered := initcfg.DiscoveredConfig{Modules: []initcfg.ModuleDef{{
+		Name:  testUpdateModuleA,
+		Paths: []string{testUpdateModuleAGlob},
+	}}}
+
+	raw := staticExternalDistanceConfigCandidatesFromGraph(g, candidateConfigForUpdate(cfg, discovered))
+	if len(raw) != 1 {
+		t.Fatalf("staticExternalDistanceConfigCandidatesFromGraph len = %d, want 1: %+v", len(raw), raw)
+	}
+	if raw[0].Module != testUpdateModuleA || raw[0].Target != "github.com/aws/aws-sdk-go-v2/**" {
+		t.Fatalf("candidate = %+v", raw[0])
 	}
 }
 

@@ -386,6 +386,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 	fromPin := resolved.fromPin
 	strengthFromLLM := resolved.fromLLM
 	strengthFromNonHighLLM := resolved.fromNonHighLLM
+	strengthFromConnascence := resolved.fromConnascence
 
 	// --- Symmetric upgrade from clone detection ---
 	// A cross-module clone pair (a DRY violation) signals bidirectional
@@ -437,16 +438,17 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 		isGenericSubdomain(toPath, mi, modules)
 
 	return coupling.Classification{
-		Strength:               str,
-		Distance:               dist,
-		Volatility:             vol,
-		Explicitness:           exp,
-		ContractRecommended:    contractRecommended,
-		DistanceBasis:          distBasis,
-		CloneLocations:         cloneLocations,
-		StrengthFromLLM:        strengthFromLLM,
-		StrengthFromNonHighLLM: strengthFromNonHighLLM,
-		Connascence:            connascenceFromHints(e.ConnascenceHints),
+		Strength:                str,
+		Distance:                dist,
+		Volatility:              vol,
+		Explicitness:            exp,
+		ContractRecommended:     contractRecommended,
+		DistanceBasis:           distBasis,
+		CloneLocations:          cloneLocations,
+		StrengthFromLLM:         strengthFromLLM,
+		StrengthFromNonHighLLM:  strengthFromNonHighLLM,
+		StrengthFromConnascence: strengthFromConnascence,
+		Connascence:             connascenceFromHints(e.ConnascenceHints),
 	}
 }
 
@@ -567,10 +569,11 @@ func classifyStrength(toPath string, mi moduleIndex) coupling.Strength {
 }
 
 type strengthResolution struct {
-	strength       coupling.Strength
-	fromPin        bool
-	fromLLM        bool
-	fromNonHighLLM bool
+	strength        coupling.Strength
+	fromPin         bool
+	fromLLM         bool
+	fromNonHighLLM  bool
+	fromConnascence bool
 }
 
 // resolveStrength applies the shared pre-clone strength precedence for one
@@ -612,9 +615,22 @@ func resolveStrength(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) stre
 			str = k
 		}
 	}
-	// Unknown (no glob, no label) falls back to the hint.
+	connascenceStrength := strengthFromConnascenceHints(e.ConnascenceHints)
+	strengthFromConnascence := false
+	if !fromPin && str == coupling.StrengthContract && isPublicKind(connascenceStrength) && connascenceStrength != coupling.StrengthContract {
+		str = connascenceStrength
+		strengthFromConnascence = true
+	}
+	// Unknown (no glob, no label) falls back to the hint, then deterministic
+	// connascence evidence. Connascence meaning proves shared data/model; algorithm
+	// or position proves behavioral coupling. Name/type alone remain insufficient to
+	// distinguish model from contract without a direct symbol-strength fact.
 	if str == coupling.StrengthUnknown {
 		str = strengthFromHint(e.StrengthHint)
+	}
+	if str == coupling.StrengthUnknown && connascenceStrength != coupling.StrengthUnknown {
+		str = connascenceStrength
+		strengthFromConnascence = true
 	}
 
 	// An approved llm-provenance label fills ONLY a cell every static source
@@ -637,10 +653,44 @@ func resolveStrength(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) stre
 		}
 	}
 	return strengthResolution{
-		strength:       str,
-		fromPin:        fromPin,
-		fromLLM:        strengthFromLLM,
-		fromNonHighLLM: strengthFromNonHighLLM,
+		strength:        str,
+		fromPin:         fromPin,
+		fromLLM:         strengthFromLLM,
+		fromNonHighLLM:  strengthFromNonHighLLM,
+		fromConnascence: strengthFromConnascence,
+	}
+}
+
+func strengthFromConnascenceHints(hints []graph.ConnascenceHint) coupling.Strength {
+	best := coupling.StrengthUnknown
+	for _, hint := range hints {
+		candidate := strengthFromConnascenceKind(hint.Kind)
+		if connascenceStrengthRank(candidate) > connascenceStrengthRank(best) {
+			best = candidate
+		}
+	}
+	return best
+}
+
+func strengthFromConnascenceKind(kind string) coupling.Strength {
+	switch kind {
+	case graph.ConnascenceMeaning:
+		return coupling.StrengthModel
+	case graph.ConnascenceAlgorithm, graph.ConnascencePosition:
+		return coupling.StrengthFunctional
+	default:
+		return coupling.StrengthUnknown
+	}
+}
+
+func connascenceStrengthRank(s coupling.Strength) int {
+	switch s {
+	case coupling.StrengthFunctional:
+		return 2
+	case coupling.StrengthModel:
+		return 1
+	default:
+		return 0
 	}
 }
 

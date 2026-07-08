@@ -167,9 +167,14 @@ type Classification struct {
 	// confidence was not high. Report-only — score confidence consumes the applied
 	// edge count rather than raw approved-label rows.
 	StrengthFromNonHighLLM bool `json:"strength_from_non_high_llm,omitempty"`
+	// StrengthFromConnascence records that a deterministic static connascence fact
+	// (meaning/algorithm/position) refined an otherwise unresolved or public-floor
+	// strength to model or functional. Report-only disclosure of a deterministic
+	// fallback path; never affects distance, explicitness, or confidence bands.
+	StrengthFromConnascence bool `json:"strength_from_connascence,omitempty"`
 	// Connascence carries deterministic static connascence evidence for this edge.
-	// It is disclosed in JSON/Markdown and never affects strength, distance,
-	// volatility, explicitness, score, severity, or gate verdicts.
+	// The summary block is report-only; the evidence may also refine an otherwise
+	// unresolved/public-floor strength through StrengthFromConnascence.
 	Connascence []ConnascenceEvidence `json:"connascence,omitempty"`
 }
 

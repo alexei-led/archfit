@@ -430,9 +430,10 @@ Mode matrix:
 Every mode (plan or apply, with or without `--llm`) also reports **DEPLOY UNIT
 HINTS** — deterministic `deploy_unit` proposals for modules the deploy-unit
 detector mapped but the config leaves unset. It also reports **DISTANCE CONFIG
-CANDIDATES** from runtime async and dynamic-import evidence; these are hints to
-review `external_systems` or `deploy_unit` config. Both sections are review-only;
-`--apply` never writes them.
+CANDIDATES** from excluded static external edges, runtime async, and
+dynamic-import evidence; these are hints to review `external_systems` or
+`deploy_unit` config. Both sections are review-only; `--apply` never writes
+them.
 
 What "structural drift" means:
 

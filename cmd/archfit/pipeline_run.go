@@ -341,6 +341,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	}
 	diag.OwnerSource = ownerSource
 	diag.DistanceContext = buildDistanceContext(diag, cfg, len(deployUnitsByModule))
+	diag.VolatilityCorroboration = buildVolatilityCorroboration(ctx, s.GitRoot, s.SubtreePrefix, cfg, deps.Runner)
 
 	// TS coverage honesty: a high unresolved-import-specifier count from
 	// dependency-cruiser must never be a silent gap — surface it on stderr the

@@ -25,10 +25,12 @@ const (
 
 // Volatility enum values used in classify validation and tests.
 const (
-	volatilityLow    = "low"
-	volatilityMedium = "medium"
-	volatilityHigh   = "high"
-	volatilityFrozen = "frozen"
+	volatilityLow        = "low"
+	volatilityMedium     = "medium"
+	volatilityHigh       = "high"
+	volatilityFrozen     = "frozen"
+	volatilityLegacy     = "legacy"
+	volatilityUndeclared = "undeclared"
 )
 
 // Optional-analyzer tool names shared by doctor and the coverage-gap table.

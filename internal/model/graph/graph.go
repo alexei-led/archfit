@@ -95,7 +95,8 @@ type Edge struct {
 	StrengthHint string `json:"strength_hint,omitempty"`
 	// ConnascenceHints are deterministic static connascence facts reported by
 	// extractors. They are mapped into coupling.Classification for JSON/Markdown
-	// disclosure and never affect strength, distance, scoring, or the verdict.
+	// disclosure and may refine an otherwise unresolved/public-floor strength to
+	// model or functional. They never affect distance or any dynamic category.
 	ConnascenceHints []ConnascenceHint `json:"connascence_hints,omitempty"`
 }
 

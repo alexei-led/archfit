@@ -7,6 +7,8 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 )
 
+const runtimeDistanceInterpretation = "async runtime bridges reduce lifecycle coupling and therefore increase perceived distance (book Ch8), but remain report-only because archfit does not yet measure synchronous first-party runtime peers deterministically"
+
 const (
 	ownerModelNoOwner               = "no_owner_signal"
 	ownerModelSingleOwnerDegenerate = "single_owner_degenerate"
@@ -21,6 +23,11 @@ func buildDistanceContext(d diagnostic.Diagnostic, cfg config.Config, deployUnit
 	}
 	if d.ClassifiedEdges != nil && len(d.ClassifiedEdges.ByDistanceBasis) > 0 {
 		ctx.DistanceBasis = maps.Clone(d.ClassifiedEdges.ByDistanceBasis)
+	}
+	if len(d.RuntimeAsyncEdges) > 0 {
+		ctx.RuntimeAsyncRelations = len(d.RuntimeAsyncEdges)
+		ctx.RuntimeAsyncKinds = countRuntimeAsyncKinds(d.RuntimeAsyncEdges)
+		ctx.RuntimeInterpretation = runtimeDistanceInterpretation
 	}
 	ctx.Interpretation = distanceInterpretation(ctx.OwnerModel, deployUnitDetectedModules, len(cfg.ExternalSystems))
 	return ctx
@@ -42,6 +49,20 @@ func ownerModel(cfg config.Config) string {
 	default:
 		return ownerModelMultiOwner
 	}
+}
+
+func countRuntimeAsyncKinds(edges []diagnostic.RuntimeAsyncEdge) map[string]int {
+	kinds := make(map[string]int)
+	for _, edge := range edges {
+		if edge.IntegrationKind == "" {
+			continue
+		}
+		kinds[edge.IntegrationKind]++
+	}
+	if len(kinds) == 0 {
+		return nil
+	}
+	return kinds
 }
 
 func distanceInterpretation(model string, deployUnitDetectedModules, declaredExternalSystems int) string {

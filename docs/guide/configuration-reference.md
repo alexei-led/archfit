@@ -1111,4 +1111,6 @@ External/library edges (`Distance == DistanceUnknown`, i.e. stdlib,
 third-party packages, undeclared imports) are excluded from
 `coupling_balance` entirely — they are not internal coupling seams. Their
 count is visible in `classified_edges.external` and the `coupling_balance`
-evidence string.
+evidence string. Review-only `distance_config_candidates` may also surface
+stable external targets from that excluded bucket so a human can decide whether
+an `external_systems` entry should promote a real seam into the scored model.

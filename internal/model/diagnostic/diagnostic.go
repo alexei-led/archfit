@@ -240,6 +240,9 @@ type ConnascenceReport struct {
 	// TotalEvidence counts individual connascence facts. A single edge may carry
 	// multiple facts, e.g. name + type.
 	TotalEvidence int `json:"total_evidence"`
+	// StrengthInferredEdges counts classified edges whose strength was refined by
+	// deterministic static connascence evidence rather than a direct strength hint.
+	StrengthInferredEdges int `json:"strength_inferred_edges,omitempty"`
 	// ByKind counts evidence by Ch6 static category: name, type, meaning,
 	// algorithm, and position when deterministically measured.
 	ByKind map[string]int `json:"by_kind,omitempty"`
@@ -419,12 +422,15 @@ type DistanceContext struct {
 	DistanceBasis             map[string]int `json:"distance_basis,omitempty"`
 	DeployUnitDetectedModules int            `json:"deploy_unit_detected_modules,omitempty"`
 	DeclaredExternalSystems   int            `json:"declared_external_systems,omitempty"`
+	RuntimeAsyncRelations     int            `json:"runtime_async_relations,omitempty"`
+	RuntimeAsyncKinds         map[string]int `json:"runtime_async_kinds,omitempty"`
 	Interpretation            string         `json:"interpretation"`
+	RuntimeInterpretation     string         `json:"runtime_interpretation,omitempty"`
 }
 
-// DistanceConfigCandidate is a report-only hint that runtime or dynamic evidence
-// may justify reviewing distance config. It never feeds classification, scoring,
-// findings, baselines, or gates.
+// DistanceConfigCandidate is a report-only hint that static external, runtime,
+// or dynamic evidence may justify reviewing distance config. It never feeds
+// classification, scoring, findings, baselines, or gates.
 type DistanceConfigCandidate struct {
 	SourceBlock           string                       `json:"source_block"`
 	Module                string                       `json:"module"`
@@ -443,6 +449,27 @@ type DistanceConfigEvidenceSite struct {
 	Kind     string `json:"kind"`
 	Language string `json:"language"`
 	Target   string `json:"target,omitempty"`
+}
+
+// VolatilityCorroboration reports source-control touch frequency for declared
+// modules. It is supporting evidence only: git history may reflect both domain
+// volatility and accidental design churn, so this block never affects scoring.
+type VolatilityCorroboration struct {
+	Source         string            `json:"source"`
+	Status         string            `json:"status"`
+	CommitWindow   int               `json:"commit_window,omitempty"`
+	FullHistory    bool              `json:"full_history,omitempty"`
+	CommitsScanned int               `json:"commits_scanned,omitempty"`
+	ModulesTouched int               `json:"modules_touched,omitempty"`
+	TopTouched     []VolatilityTouch `json:"top_touched,omitempty"`
+	Caveat         string            `json:"caveat,omitempty"`
+}
+
+// VolatilityTouch is one module's touch frequency sample from git history.
+type VolatilityTouch struct {
+	Module             string `json:"module"`
+	TouchCommits       int    `json:"touch_commits"`
+	DeclaredVolatility string `json:"declared_volatility,omitempty"`
 }
 
 // ClassifiedEdgeSummary holds aggregate distribution counts over the
@@ -560,12 +587,20 @@ type CouplingTailRiskSummary struct {
 // coverage. It makes compressed Ch8 middle rungs visible in JSON/Markdown so a
 // D=4/D=7 result is not mistaken for full book precision.
 type DistanceCompressionSummary struct {
-	CompressedMiddleRungs bool                        `json:"compressed_middle_rungs"`
-	ImplementedRungs      []int                       `json:"implemented_rungs,omitempty"`
-	OmittedRungs          []int                       `json:"omitted_rungs,omitempty"`
-	OmittedRungReasons    []DistanceOmittedRungReason `json:"omitted_rung_reasons,omitempty"`
-	DeterministicSplits   []string                    `json:"deterministic_splits,omitempty"`
-	Rationale             string                      `json:"rationale,omitempty"`
+	CompressedMiddleRungs       bool                        `json:"compressed_middle_rungs"`
+	ImplementedRungs            []int                       `json:"implemented_rungs,omitempty"`
+	OmittedRungs                []int                       `json:"omitted_rungs,omitempty"`
+	OmittedRungReasons          []DistanceOmittedRungReason `json:"omitted_rung_reasons,omitempty"`
+	DeterministicSplits         []string                    `json:"deterministic_splits,omitempty"`
+	CodeStructureBoundaryCounts []DistanceCount             `json:"code_structure_boundary_counts,omitempty"`
+	CodeStructureAncestorDepths []DistanceCount             `json:"code_structure_ancestor_depths,omitempty"`
+	Rationale                   string                      `json:"rationale,omitempty"`
+}
+
+// DistanceCount is one deterministic distance-evidence histogram bucket.
+type DistanceCount struct {
+	Value int `json:"value"`
+	Count int `json:"count"`
 }
 
 // DistanceOmittedRungReason explains why a book distance rung remains compressed.
@@ -740,10 +775,15 @@ type Diagnostic struct {
 	// DistanceContext is a human-readable rollup of the basis behind the distance
 	// dimension (owner model, basis counts, deploy/external evidence). Report-only.
 	DistanceContext *DistanceContext `json:"distance_context,omitempty"`
-	// DistanceConfigCandidates are review-only hints derived from runtime/dynamic
-	// evidence for possible external_systems or deploy_unit config entries. They
-	// never alter distance classification, scoring, or gate verdicts.
+	// DistanceConfigCandidates are review-only hints derived from static external,
+	// runtime, and dynamic evidence for possible external_systems or deploy_unit
+	// config entries. They never alter distance classification, scoring, or gate
+	// verdicts.
 	DistanceConfigCandidates []DistanceConfigCandidate `json:"distance_config_candidates,omitempty"`
+	// VolatilityCorroboration carries source-control touch frequency as book Ch9
+	// supporting evidence for declared volatility. Report-only: never consumed by
+	// scoring, findings, baselines, or gate verdicts.
+	VolatilityCorroboration *VolatilityCorroboration `json:"volatility_corroboration,omitempty"`
 	// LocalCoupling is the report-only per-module summary of scored same-module
 	// edges — the book Ch10 local-complexity quadrant. Same-module edges never
 	// enter coupling_balance's denominator (see LocalCouplingModule). Never
