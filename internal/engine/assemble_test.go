@@ -200,6 +200,31 @@ func TestBuildConnascenceReport(t *testing.T) {
 	}
 }
 
+func TestBuildDynamicConnascenceSignals_FiltersStaticKinds(t *testing.T) {
+	signals := buildDynamicConnascenceSignals(
+		[]diagnostic.DynamicImport{{Module: "plugins", Count: 1}},
+		nil,
+		[]string{string(coupling.ConnascencePosition), string(coupling.ConnascenceExecution), string(coupling.ConnascenceTiming), string(coupling.ConnascenceValue), string(coupling.ConnascenceIdentity)},
+	)
+	if signals == nil {
+		t.Fatal("signals = nil, want report-only dynamic connascence block")
+	}
+	want := []string{string(coupling.ConnascenceExecution), string(coupling.ConnascenceTiming), string(coupling.ConnascenceValue), string(coupling.ConnascenceIdentity)}
+	if len(signals.Unmeasured) != len(want) {
+		t.Fatalf("unmeasured = %+v, want %d kinds", signals.Unmeasured, len(want))
+	}
+	for i, kind := range want {
+		if signals.Unmeasured[i] != kind {
+			t.Fatalf("unmeasured[%d] = %q, want %q (full=%+v)", i, signals.Unmeasured[i], kind, signals.Unmeasured)
+		}
+	}
+	for _, kind := range signals.Unmeasured {
+		if kind == string(coupling.ConnascencePosition) {
+			t.Fatalf("position leaked into dynamic connascence unmeasured: %+v", signals.Unmeasured)
+		}
+	}
+}
+
 func connascenceRoadmapByKind(items []diagnostic.ConnascenceRoadmapItem) map[string]diagnostic.ConnascenceRoadmapItem {
 	out := make(map[string]diagnostic.ConnascenceRoadmapItem, len(items))
 	for _, item := range items {

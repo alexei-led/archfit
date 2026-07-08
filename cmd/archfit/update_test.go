@@ -25,6 +25,8 @@ const (
 	testUpdateModuleAPath   = "services/a/impl.go"
 	testUpdateLayerAdapter  = "adapter"
 	testUpdateOwnerTeamA    = "team-a"
+	testUpdateWebModule     = "web"
+	rustEnabledAuto         = "rust:\n    enabled: auto"
 )
 
 // runUpdateCmd runs UpdateCmd.Run with a fake runner and returns stdout output and error.
@@ -158,7 +160,7 @@ func TestCandidateConfigForUpdate_UsesDiscoveredModules(t *testing.T) {
 	}}
 	discovered := initcfg.DiscoveredConfig{Modules: []initcfg.ModuleDef{
 		{Name: testUpdateModuleA, Paths: []string{testUpdateModuleAGlob}, Public: []string{"services/a/api/**"}, Internal: []string{"services/a/internal/**"}, Layer: layerCore},
-		{Name: "web", Paths: []string{"web/**"}, Public: []string{"web/api/**"}, Internal: []string{"web/internal/**"}, Layer: testUpdateLayerAdapter},
+		{Name: testUpdateWebModule, Paths: []string{"web/**"}, Public: []string{"web/api/**"}, Internal: []string{"web/internal/**"}, Layer: testUpdateLayerAdapter},
 	}}
 
 	got := candidateConfigForUpdate(cfg, discovered)
@@ -166,7 +168,7 @@ func TestCandidateConfigForUpdate_UsesDiscoveredModules(t *testing.T) {
 	if mod, ok := mm.ModuleForFile(testUpdateModuleAPath); !ok || mod != testUpdateModuleA {
 		t.Fatalf("ModuleForFile(services/a/impl.go) = (%q,%t), want (services/a,true)", mod, ok)
 	}
-	if mod, ok := mm.ModuleForFile("web/app.ts"); !ok || mod != "web" {
+	if mod, ok := mm.ModuleForFile(testUpdateWebModule + "/app.ts"); !ok || mod != testUpdateWebModule {
 		t.Fatalf("ModuleForFile(web/app.ts) = (%q,%t), want (web,true)", mod, ok)
 	}
 	if got.Modules[testUpdateModuleA].Owner != testUpdateOwnerTeamA || got.Modules[testUpdateModuleA].DeployUnit != "svc-a" {
@@ -178,8 +180,8 @@ func TestCandidateConfigForUpdate_UsesDiscoveredModules(t *testing.T) {
 	if len(got.Modules[testUpdateModuleA].Public) != 1 || got.Modules[testUpdateModuleA].Public[0] != "old/public/**" {
 		t.Fatalf("services/a public = %+v, want existing public globs preserved", got.Modules[testUpdateModuleA].Public)
 	}
-	if len(got.Modules["web"].Public) != 1 || got.Modules["web"].Public[0] != "web/api/**" {
-		t.Fatalf("web public = %+v, want discovered public globs", got.Modules["web"].Public)
+	if len(got.Modules[testUpdateWebModule].Public) != 1 || got.Modules[testUpdateWebModule].Public[0] != "web/api/**" {
+		t.Fatalf("web public = %+v, want discovered public globs", got.Modules[testUpdateWebModule].Public)
 	}
 }
 
@@ -216,9 +218,8 @@ func TestStaticExternalDistanceConfigCandidatesFromGraph_UsesDiscoveredModuleCon
 func TestDeployUnitSuggestions_DeterministicHintsOnlyForMissingConfig(t *testing.T) {
 	t.Parallel()
 
-	const webModule = "web"
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "cmd", webModule), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "cmd", testUpdateWebModule), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	runner := &toolrun.RunnerMock{
@@ -226,19 +227,46 @@ func TestDeployUnitSuggestions_DeterministicHintsOnlyForMissingConfig(t *testing
 			return toolrun.ToolInfo{}, name == "go"
 		},
 		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
-			return toolrun.Output{Stdout: []byte(filepath.Join(dir, "cmd", webModule) + "\n")}, nil
+			return toolrun.Output{Stdout: []byte(filepath.Join(dir, "cmd", testUpdateWebModule) + "\n")}, nil
 		},
 	}
 	cfg := config.Config{Modules: map[string]config.ModuleDef{
-		webModule: {Paths: []string{"cmd/web/**"}},
-		"api":     {Paths: []string{"cmd/api/**"}, DeployUnit: "api-service"},
+		testUpdateWebModule: {Paths: []string{"cmd/web/**"}},
+		"api":               {Paths: []string{"cmd/api/**"}, DeployUnit: "api-service"},
 	}}
 
 	got := deployUnitSuggestions(context.Background(), dir, cfg, &appDeps{Runner: runner})
 	if len(got) != 1 {
 		t.Fatalf("deployUnitSuggestions len = %d, want 1: %+v", len(got), got)
 	}
-	if got[0].Module != webModule || got[0].Unit != webModule || got[0].Source != "cmd/web" {
+	if got[0].Module != testUpdateWebModule || got[0].Unit != testUpdateWebModule || got[0].Source != "cmd/web" {
+		t.Fatalf("deployUnitSuggestions[0] = %+v", got[0])
+	}
+}
+
+func TestDeployUnitSuggestions_UsesDiscoveredModuleMap(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "cmd", testUpdateWebModule), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, name string) (toolrun.ToolInfo, bool) {
+			return toolrun.ToolInfo{}, name == "go"
+		},
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			return toolrun.Output{Stdout: []byte(filepath.Join(dir, "cmd", testUpdateWebModule) + "\n")}, nil
+		},
+	}
+	cfg := config.Config{}
+	discovered := initcfg.DiscoveredConfig{Modules: []initcfg.ModuleDef{{Name: testUpdateWebModule, Paths: []string{"cmd/web/**"}}}}
+
+	got := deployUnitSuggestions(context.Background(), dir, candidateConfigForUpdate(cfg, discovered), &appDeps{Runner: runner})
+	if len(got) != 1 {
+		t.Fatalf("deployUnitSuggestions len = %d, want 1: %+v", len(got), got)
+	}
+	if got[0].Module != testUpdateWebModule || got[0].Unit != testUpdateWebModule || got[0].Source != "cmd/web" {
 		t.Fatalf("deployUnitSuggestions[0] = %+v", got[0])
 	}
 }
@@ -312,8 +340,127 @@ rules:
 	}
 	got := string(gotBytes)
 	for _, want := range []string{
-		"rust:\n    enabled: auto",
+		rustEnabledAuto,
 		"analyzers:\n  cargo_modules:\n    enabled: true\n  scip:\n    enabled: true",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("updated config missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestEnsureRustDeepAnalysisConfig_IgnoresCommentBoundaries(t *testing.T) {
+	cfg := config.Config{
+		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: config.ModeOn}},
+		Analyzers: config.AnalyzersConfig{
+			CargoModules: config.Analyzer{Enabled: config.ModeAuto},
+			Scip:         config.TimedAnalyzer{Enabled: config.ModeAuto},
+		},
+	}
+	src := []byte(`version: 1
+languages:
+  rust:
+  # note: keep this section
+    enabled: true
+analyzers:
+  cargo_modules:
+  # note: keep this section
+    enabled: auto
+  scip:
+    enabled: auto
+modules: {}
+rules:
+  - id: no-layer-violations
+    type: forbidden_layer_direction
+    gate: warn
+`)
+	got := string(ensureRustDeepAnalysisConfig(src, cfg))
+	for _, want := range []string{
+		"rust:\n  # note: keep this section\n    enabled: auto",
+		"cargo_modules:\n  # note: keep this section\n    enabled: true",
+		"scip:\n    enabled: true",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("updated config missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestEnsureRustDeepAnalysisConfig_PreservesExplicitAnalyzerOff(t *testing.T) {
+	cfg := config.Config{
+		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: config.ModeOn}},
+		Analyzers: config.AnalyzersConfig{
+			CargoModules: config.Analyzer{Enabled: config.ModeOff},
+			Scip:         config.TimedAnalyzer{Enabled: config.ModeOff},
+		},
+	}
+	src := []byte(`version: 1
+languages:
+  rust:
+    enabled: true
+analyzers:
+  cargo_modules:
+    enabled: false
+  scip:
+    enabled: false
+modules: {}
+rules:
+  - id: no-layer-violations
+    type: forbidden_layer_direction
+    gate: warn
+`)
+	got := string(ensureRustDeepAnalysisConfig(src, cfg))
+	for _, want := range []string{
+		rustEnabledAuto,
+		"cargo_modules:\n    enabled: false",
+		"scip:\n    enabled: false",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("updated config missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestUpdateCmd_Apply_RustAnalyzerOptOutsPreserved(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `version: 1
+languages:
+  rust:
+    enabled: true
+modules: {}
+analyzers:
+  cargo_modules:
+    enabled: false
+  scip:
+    enabled: false
+rules:
+  - id: no-layer-violations
+    type: forbidden_layer_direction
+    gate: warn
+`
+	cfgPath := writeConfig(t, dir, cfg)
+
+	cmd := &UpdateCmd{Config: cfgPath, Root: dir, Apply: true}
+	out, err := runUpdateCmd(t, cmd, emptyRunner())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "wrote") {
+		t.Fatalf("expected write output, got:\n%s", out)
+	}
+	gotBytes, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(gotBytes)
+	for _, want := range []string{
+		rustEnabledAuto,
+		"cargo_modules:\n    enabled: false",
+		"scip:\n    enabled: false",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("updated config missing %q:\n%s", want, got)

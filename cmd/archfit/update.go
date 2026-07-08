@@ -65,7 +65,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 
 	report := initcfg.DiffModules(existing, freshCfg.Modules)
 	candidateCfg := candidateConfigForUpdate(cfg, freshCfg)
-	report.DeployUnitSuggestions = deployUnitSuggestions(ctx, root, cfg, deps)
+	report.DeployUnitSuggestions = deployUnitSuggestions(ctx, root, candidateCfg, deps)
 	report.DistanceConfigCandidates = distanceConfigCandidates(ctx, root, candidateCfg, deps)
 	if c.LLM {
 		var synthErr error
@@ -115,7 +115,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		}
 	}
 	if rustConfigNeeded {
-		edited = ensureRustDeepAnalysisConfig(edited)
+		edited = ensureRustDeepAnalysisConfig(edited, cfg)
 	}
 	if err := safeWriteConfig(ctx, deps, c.Config, edited, originalBytes); err != nil {
 		return err

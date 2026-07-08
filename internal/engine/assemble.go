@@ -200,6 +200,33 @@ var dynamicConnascenceRelated = []string{
 	string(coupling.ConnascenceTiming),
 }
 
+var dynamicConnascenceKindsToDiscloseWhenUnmeasured = []string{
+	string(coupling.ConnascenceExecution),
+	string(coupling.ConnascenceTiming),
+	string(coupling.ConnascenceValue),
+	string(coupling.ConnascenceIdentity),
+}
+
+func dynamicConnascenceUnmeasured(unmeasured []string) []string {
+	if len(unmeasured) == 0 {
+		return nil
+	}
+	present := make(map[string]struct{}, len(unmeasured))
+	for _, kind := range unmeasured {
+		present[kind] = struct{}{}
+	}
+	out := make([]string, 0, len(dynamicConnascenceKindsToDiscloseWhenUnmeasured))
+	for _, kind := range dynamicConnascenceKindsToDiscloseWhenUnmeasured {
+		if _, ok := present[kind]; ok {
+			out = append(out, kind)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // BuildDynamicConnascenceSignals maps dynamic/lazy imports and runtime async
 // edges to report-only dynamic connascence review signals. It is exported so
 // config update can derive the same distance-config candidate sources as analyze.
@@ -213,7 +240,7 @@ func buildDynamicConnascenceSignals(dyn []diagnostic.DynamicImport, runtimeEdges
 	}
 	out := &diagnostic.DynamicConnascenceSignals{
 		Signals:          make([]diagnostic.DynamicConnascenceSignal, 0, len(runtimeEdges)+len(dyn)),
-		Unmeasured:       append([]string(nil), unmeasured...),
+		Unmeasured:       dynamicConnascenceUnmeasured(unmeasured),
 		ReportOnlyReason: dynamicConnascenceReportOnlyReason,
 	}
 	for _, e := range runtimeEdges {

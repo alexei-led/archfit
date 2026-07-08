@@ -15,18 +15,20 @@ func needsRustDeepAnalysisConfig(cfg config.Config, hasRust bool) bool {
 	if !hasRust || cfg.Languages.Rust.Enabled == config.ModeOff {
 		return false
 	}
-	return cfg.Languages.Rust.Enabled != config.ModeAuto ||
-		cfg.Analyzers.CargoModules.Enabled != config.ModeOn ||
-		cfg.Analyzers.Scip.Enabled != config.ModeOn
+	if cfg.Languages.Rust.Enabled != config.ModeAuto {
+		return true
+	}
+	return (cfg.Analyzers.CargoModules.Enabled != config.ModeOn && cfg.Analyzers.CargoModules.Enabled != config.ModeOff) ||
+		(cfg.Analyzers.Scip.Enabled != config.ModeOn && cfg.Analyzers.Scip.Enabled != config.ModeOff)
 }
 
-func ensureRustDeepAnalysisConfig(src []byte) []byte {
+func ensureRustDeepAnalysisConfig(src []byte, cfg config.Config) []byte {
 	lines := strings.Split(string(src), "\n")
-	trailingNewline := len(lines) > 0 && lines[len(lines)-1] == ""
+	trailingNewline := len(lines) > 0 && len(lines[len(lines)-1]) == 0
 
-	lines = ensureRustLanguageAuto(lines)
-	lines = ensureAnalyzerEnabled(lines, "cargo_modules")
-	lines = ensureAnalyzerEnabled(lines, "scip")
+	lines = ensureRustLanguageAuto(lines, cfg.Languages.Rust.Enabled)
+	lines = ensureAnalyzerEnabled(lines, "cargo_modules", cfg.Analyzers.CargoModules.Enabled)
+	lines = ensureAnalyzerEnabled(lines, "scip", cfg.Analyzers.Scip.Enabled)
 
 	out := strings.Join(lines, "\n")
 	if trailingNewline && !strings.HasSuffix(out, "\n") {
@@ -35,7 +37,10 @@ func ensureRustDeepAnalysisConfig(src []byte) []byte {
 	return []byte(out)
 }
 
-func ensureRustLanguageAuto(lines []string) []string {
+func ensureRustLanguageAuto(lines []string, mode config.ToolMode) []string {
+	if mode == config.ModeOff {
+		return lines
+	}
 	start, end := topSection(lines, "languages")
 	if start < 0 {
 		return insertLines(lines, topInsertAfter(lines, "coupling"), strings.Split(strings.TrimSuffix(rustDeepLangSection, "\n"), "\n")...)
@@ -53,7 +58,10 @@ func ensureRustLanguageAuto(lines []string) []string {
 	return insertLines(lines, rustStart+1, "    enabled: auto")
 }
 
-func ensureAnalyzerEnabled(lines []string, name string) []string {
+func ensureAnalyzerEnabled(lines []string, name string, mode config.ToolMode) []string {
+	if mode == config.ModeOff || mode == config.ModeOn {
+		return lines
+	}
 	start, end := topSection(lines, "analyzers")
 	if start < 0 {
 		return insertLines(lines, topInsertAfter(lines, "languages"), strings.Split(strings.TrimSuffix(rustDeepAnalyzers, "\n"), "\n")...)
@@ -119,7 +127,11 @@ func childSection(lines []string, start, end, indent int, key string) (int, int)
 	}
 	sectionEnd := end
 	for i := sectionStart + 1; i < end; i++ {
-		if countLeadingSpaces(lines[i]) == indent && strings.Contains(strings.TrimSpace(lines[i]), ":") {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if countLeadingSpaces(lines[i]) == indent && strings.Contains(trimmed, ":") {
 			sectionEnd = i
 			break
 		}
