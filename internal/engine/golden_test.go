@@ -75,7 +75,7 @@ func goldenConfig() (view.ClassifyConfig, []rules.Rule, []metrics.Metric) {
 	if err != nil {
 		panic("goldenConfig: " + err.Error())
 	}
-	ms := metrics.New(cfg)
+	ms := metrics.New(cfg.Metrics)
 	return classifyCfg, rs, ms
 }
 

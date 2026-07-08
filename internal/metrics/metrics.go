@@ -1,11 +1,11 @@
 package metrics
 
 import (
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/metrics/boundary"
 	"github.com/alexei-led/archfit/internal/metrics/modularity"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/signal"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Metric is the uniform interface the engine dispatches on: compute a result
@@ -50,7 +50,7 @@ func adapt[In any](c Calculator[In], project func(signal.CollectedSignals) In) M
 // New returns all metrics in a fixed order — the order the engine reports them,
 // which golden output depends on. Each metric is adapted from its typed
 // Calculator to the uniform Metric via its family projection.
-func New(cfg config.Config) []Metric {
+func New(metricsCfg map[string]view.MetricEntry) []Metric {
 	all := []Metric{
 		adapt(boundary.EncapsulationMetric{}, signal.CollectedSignals.AsCommon),
 		adapt(boundary.UnbalancedEdgeMetric{}, signal.CollectedSignals.AsCommon),
@@ -64,7 +64,7 @@ func New(cfg config.Config) []Metric {
 	// run; only an explicit false disables.
 	out := make([]Metric, 0, len(all))
 	for _, m := range all {
-		if entry, configured := cfg.Metrics[m.Name()]; configured && entry.Enabled != nil && !*entry.Enabled {
+		if entry, configured := metricsCfg[m.Name()]; configured && entry.Enabled != nil && !*entry.Enabled {
 			continue
 		}
 		out = append(out, m)

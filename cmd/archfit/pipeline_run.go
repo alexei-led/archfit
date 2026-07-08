@@ -134,7 +134,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	if err != nil {
 		return diagnostic.Diagnostic{}, score.Scorecard{}, err
 	}
-	ms := append(metrics.New(cfg), extraMetrics...)
+	ms := append(metrics.New(cfg.Metrics), extraMetrics...)
 
 	// toolWarnings collects the exceptional, non-nil errors from the optional
 	// extractors below. They normally degrade gracefully — encoding absence in

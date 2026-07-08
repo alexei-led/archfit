@@ -54,6 +54,8 @@ jobs:
         run: python3 internal/extract/scip/scip_reader_test.py
       - name: CI gate — arch imports
         run: go test ./internal/ -run TestArchImports
+      - name: CI gate — model kernel surface (compat contract)
+        run: go test ./internal/ -run TestModelSurfaceNoDrift
       - name: CI gate — golden output
         run: go test ./internal/engine/ -run TestGolden
       - name: Install jscpd (clone detection for coupling_balance)

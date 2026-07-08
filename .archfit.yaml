@@ -634,6 +634,45 @@ rules:
     from: internal/model/**
     to: internal/baseline
     gate: fail
+  # Stage-contract package stays data-only: view may import only the model kernel.
+  - id: view_no_config
+    type: forbidden_dependency
+    from: internal/view/**
+    to: internal/config
+    gate: fail
+  # Config split (arch-rebalance): stages consume internal/view contracts, not
+  # the volatile config decode/validate package. Only composition roots, the
+  # engine orchestrator, and the schema generator may import internal/config.
+  - id: classify_no_config
+    type: forbidden_dependency
+    from: internal/classify/**
+    to: internal/config
+    gate: fail
+  - id: rules_no_config
+    type: forbidden_dependency
+    from: internal/rules/**
+    to: internal/config
+    gate: fail
+  - id: metrics_no_config
+    type: forbidden_dependency
+    from: internal/metrics/**
+    to: internal/config
+    gate: fail
+  - id: extract_no_config
+    type: forbidden_dependency
+    from: internal/extract/**
+    to: internal/config
+    gate: fail
+  - id: staleness_no_config
+    type: forbidden_dependency
+    from: internal/staleness/**
+    to: internal/config
+    gate: fail
+  - id: scope_no_config
+    type: forbidden_dependency
+    from: internal/scope/**
+    to: internal/config
+    gate: fail
   # Hexagonal boundary: internal packages depend on ports, not the orchestrator.
   # Only cmd imports internal/engine.
   - id: internal_no_engine

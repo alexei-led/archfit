@@ -342,7 +342,7 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) diagnostic.Diagnost
 	if err != nil {
 		t.Fatalf("rules.New: %v", err)
 	}
-	ms := metrics.New(cfg)
+	ms := metrics.New(cfg.Metrics)
 
 	extractor := goextract.New(view.ExtractConfig{})
 	base := baseline.Baseline{SchemaVersion: baseline.SchemaVersion}

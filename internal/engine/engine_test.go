@@ -192,7 +192,7 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -269,7 +269,7 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -345,7 +345,7 @@ func TestRun_PerExtractorFailureIsolation(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -426,7 +426,7 @@ func TestRun_AllExtractorsFail_StillFatal(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -464,7 +464,7 @@ func TestRun_DiagnosticShape(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Now()
 
@@ -536,7 +536,7 @@ func TestRun_PrimaryExtractorTools_Forwarded(t *testing.T) {
 		},
 	}
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 
 	build := func(tools []string) engine.RunInput {
@@ -589,7 +589,7 @@ func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -640,7 +640,7 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -704,7 +704,7 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -794,7 +794,7 @@ func TestRun_Advisory_DistanceBasisInMatchedBy(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -877,7 +877,7 @@ func TestRun_Advisory_GroupedRollups(t *testing.T) {
 		},
 	}
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -970,7 +970,7 @@ func TestRun_Advisory_GroupedRollup_EdgePathHonesty(t *testing.T) {
 		},
 	}
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -1052,7 +1052,7 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -1126,7 +1126,7 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -1194,7 +1194,7 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -1728,7 +1728,7 @@ func TestRun_LLMLabels_FillDeterminismAndBucket(t *testing.T) {
 			Resolver:    ports.NopSymbolResolver{},
 			PatternCfg:  view.PatternConfig{},
 			Rules:       rs,
-			Metrics:     metrics.New(config.Config{Version: 1}),
+			Metrics:     metrics.New(nil),
 			Accepted:    baseline.Baseline{},
 			BaseMetrics: nil,
 			Labels:      lbls,
@@ -1820,7 +1820,7 @@ func dynImportRun(t *testing.T, sites []diagnostic.DynamicImportSite) diagnostic
 		Mode: engine.Mode{Head: headRef}, Scope: scope.Scope{Root: "."},
 		Classify: classifyCfg, Staleness: view.StalenessConfig{}, Waivers: view.WaiverSet{},
 		Extractors: []ports.Extractor{ex}, Patterns: ports.NopPatternProvider{}, Resolver: ports.NopSymbolResolver{},
-		PatternCfg: view.PatternConfig{}, Rules: rs, Metrics: metrics.New(config.Config{Version: 1}),
+		PatternCfg: view.PatternConfig{}, Rules: rs, Metrics: metrics.New(nil),
 		Accepted: base, BaseMetrics: base.Metrics,
 		Signals: signal.RunSignals{DynamicImports: signal.DynamicImportSignals{Sites: sites}},
 		Now:     time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC),
@@ -1982,7 +1982,7 @@ func TestRun_GoWorkspace_ModuleMapRebuild(t *testing.T) {
 		Mode: engine.Mode{Head: headRef}, Scope: scope.Scope{Root: "."},
 		Classify: classifyCfg, Staleness: view.StalenessConfig{}, Waivers: view.WaiverSet{},
 		Extractors: []ports.Extractor{ex}, Patterns: ports.NopPatternProvider{}, Resolver: ports.NopSymbolResolver{},
-		PatternCfg: view.PatternConfig{}, Rules: rs, Metrics: metrics.New(config.Config{Version: 1}),
+		PatternCfg: view.PatternConfig{}, Rules: rs, Metrics: metrics.New(nil),
 		Accepted: base, BaseMetrics: base.Metrics,
 		Signals: signal.RunSignals{
 			DynamicImports: signal.DynamicImportSignals{
@@ -2102,7 +2102,7 @@ func runtimeAsyncRun(t *testing.T, sites []diagnostic.RuntimeAsyncSite, confiden
 		Mode: engine.Mode{Head: headRef}, Scope: scope.Scope{Root: "."},
 		Classify: classifyCfg, Staleness: view.StalenessConfig{}, Waivers: view.WaiverSet{},
 		Extractors: []ports.Extractor{ex}, Patterns: ports.NopPatternProvider{}, Resolver: ports.NopSymbolResolver{},
-		PatternCfg: view.PatternConfig{}, Rules: rs, Metrics: metrics.New(config.Config{Version: 1}),
+		PatternCfg: view.PatternConfig{}, Rules: rs, Metrics: metrics.New(nil),
 		Accepted: base, BaseMetrics: base.Metrics,
 		Signals: signal.RunSignals{RuntimeAsync: signal.RuntimeAsyncSignals{Sites: sites, Confidence: confidence}},
 		Now:     time.Date(2026, 6, 22, 0, 0, 0, 0, time.UTC),
@@ -2580,7 +2580,7 @@ func TestRun_BookExamples_Ch10(t *testing.T) {
 				},
 			}
 
-			ms := metrics.New(config.Config{Version: 1})
+			ms := metrics.New(nil)
 			base := baseline.Baseline{}
 
 			d, err := engine.Run(ctx, engine.RunInput{
@@ -2667,7 +2667,7 @@ func TestRun_SyntaxFacts_Populated(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
 
@@ -2747,7 +2747,7 @@ func TestRun_SyntaxFacts_ModuleBackfill(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)
 
@@ -2803,7 +2803,7 @@ func TestRun_SyntaxEnabled_NilProvider_ReturnsError(t *testing.T) {
 		},
 	}
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
 
@@ -2845,7 +2845,7 @@ func TestRun_SyntaxFacts_DisabledNoCallNoCoverage(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
 
@@ -2930,7 +2930,7 @@ func TestRun_WarnRule_ProducesVerdictWarn(t *testing.T) {
 		}
 	}
 
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
 

@@ -84,6 +84,14 @@ var modelPkgs = []string{
 	modulePrefix + "internal/model/clone",
 	modulePrefix + "internal/model/pattern",
 	modulePrefix + "internal/model/signal",
+	modulePrefix + "internal/model/module",
+}
+
+// modelThirdPartyAllowed lists vetted, pure third-party imports allowed for a
+// specific model package. doublestar is a pure glob matcher (no I/O) used by
+// module path resolution.
+var modelThirdPartyAllowed = map[string]map[string]bool{
+	modulePrefix + "internal/model/module": {"github.com/bmatcuk/doublestar/v4": true},
 }
 
 // adapterPrefixes are packages the core ring must never import — adapters AND
@@ -219,18 +227,45 @@ func TestArchImports(t *testing.T) {
 	})
 
 	t.Run("model_stdlib_only", func(t *testing.T) {
-		for _, pkgPath := range modelPkgs {
-			pkg, ok := loaded[pkgPath]
-			if !ok {
-				continue // already reported in presence check
-			}
-			for imp := range pkg.Imports {
-				if !isStdlib(imp) && !isModelPkg(imp) {
-					t.Errorf("model package %s must not import non-stdlib %q", pkgPath, imp)
-				}
+		checkModelStdlibOnly(t, loaded)
+	})
+
+	t.Run("view_kernel_only", func(t *testing.T) { checkViewKernelOnly(t, loaded) })
+}
+
+// checkModelStdlibOnly asserts every model kernel package imports only the
+// stdlib, sibling model packages, or an explicitly vetted pure third-party
+// dependency (modelThirdPartyAllowed).
+func checkModelStdlibOnly(t *testing.T, loaded map[string]*packages.Package) {
+	t.Helper()
+	for _, pkgPath := range modelPkgs {
+		pkg, ok := loaded[pkgPath]
+		if !ok {
+			continue // already reported in presence check
+		}
+		for imp := range pkg.Imports {
+			if !isStdlib(imp) && !isModelPkg(imp) && !modelThirdPartyAllowed[pkgPath][imp] {
+				t.Errorf("model package %s must not import non-stdlib %q", pkgPath, imp)
 			}
 		}
-	})
+	}
+}
+
+// checkViewKernelOnly asserts internal/view (stage-contract types: data-only
+// projections) imports only the stdlib and the model kernel — never config,
+// engine, adapters, or any behavior-bearing package.
+func checkViewKernelOnly(t *testing.T, loaded map[string]*packages.Package) {
+	t.Helper()
+	const viewPkg = modulePrefix + "internal/view"
+	pkg, ok := loaded[viewPkg]
+	if !ok {
+		t.Fatalf("expected view package not loaded: %s", viewPkg)
+	}
+	for imp := range pkg.Imports {
+		if !isStdlib(imp) && !isModelPkg(imp) {
+			t.Errorf("view package must not import non-kernel %q: stage contracts are data-only", imp)
+		}
+	}
 }
 
 func TestCouplingModelDoesNotImportGraph(t *testing.T) {
