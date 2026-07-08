@@ -1,7 +1,5 @@
 package coupling
 
-import "github.com/alexei-led/archfit/internal/model/graph"
-
 // Strength classifies how a dependency is expressed at the API boundary.
 type Strength string
 
@@ -102,6 +100,12 @@ type ConnascenceEvidence struct {
 	Detail string          `json:"detail,omitempty"`
 }
 
+// Location is a report-only file location attached to coupling evidence.
+type Location struct {
+	File string `json:"file"`
+	Line int    `json:"line,omitempty"`
+}
+
 // Explicitness classifies whether the coupling is via a declared contract.
 type Explicitness string
 
@@ -153,7 +157,7 @@ type Classification struct {
 	// other source, including an extractor's Symmetric StrengthHint. Report-only
 	// — appended onto the finding's Locations downstream (engine/advisories.go),
 	// never fed into distance/volatility/scoring.
-	CloneLocations []graph.Location `json:"clone_locations,omitempty"`
+	CloneLocations []Location `json:"clone_locations,omitempty"`
 	// StrengthFromLLM records that Strength came from an approved
 	// llm-provenance label filling a cell every static source left unknown.
 	// Report-only — drives the classified_edges.labeled_llm disclosure count,

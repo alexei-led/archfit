@@ -390,7 +390,7 @@ func groupEdgePaths(members []finding.Finding, locs []graph.Location) (fromPath,
 // Rust crate edge's Cargo.toml:0 baseline is joined by the actual clone site
 // instead of standing alone as the only evidence. base is returned unchanged
 // (no allocation) when cloneLocations is empty — the common case.
-func withCloneLocations(base, cloneLocations []graph.Location) []graph.Location {
+func withCloneLocations(base []graph.Location, cloneLocations []coupling.Location) []graph.Location {
 	if len(cloneLocations) == 0 {
 		return base
 	}
@@ -404,11 +404,12 @@ func withCloneLocations(base, cloneLocations []graph.Location) []graph.Location 
 		locs = append(locs, l)
 	}
 	for _, l := range cloneLocations {
-		if _, ok := seen[l]; ok {
+		loc := graph.Location{File: l.File, Line: l.Line}
+		if _, ok := seen[loc]; ok {
 			continue
 		}
-		seen[l] = struct{}{}
-		locs = append(locs, l)
+		seen[loc] = struct{}{}
+		locs = append(locs, loc)
 	}
 	sort.Slice(locs, func(i, j int) bool {
 		if locs[i].File != locs[j].File {

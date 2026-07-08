@@ -394,7 +394,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 	// functional or unknown; config-authoritative (contract/intrusive) and
 	// human-approved pinned labels (including functional) are never overridden —
 	// fromPin guards against silently overriding a pinned functional label with Symmetric.
-	var cloneLocations []graph.Location
+	var cloneLocations []coupling.Location
 	if !fromPin && (str == coupling.StrengthFunctional || str == coupling.StrengthUnknown) {
 		if len(c.CrossModuleClonePairs) > 0 {
 			if fromMod, okF := mi.moduleFor(fromPath); okF {
@@ -405,7 +405,7 @@ func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateE
 						// The real duplicated-code locations (both sides), so the
 						// finding downstream can cite them instead of only the
 						// edge's baseline provenance (e.g. Cargo.toml:0).
-						cloneLocations = c.CloneEvidence[pairKey]
+						cloneLocations = couplingLocations(c.CloneEvidence[pairKey])
 					}
 				}
 			}

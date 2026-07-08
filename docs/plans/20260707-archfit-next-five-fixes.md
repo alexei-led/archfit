@@ -291,11 +291,11 @@ Metrics / evidence to consume:
 
 Task checklist:
 
-- [ ] Split the broad `internal/model` measurement surface in config.
-- [ ] Use graph evidence to rank the worst internal/model seam.
-- [ ] Refactor one package at a time behind a narrower contract.
-- [ ] Add or adjust import-boundary tests for the chosen seam.
-- [ ] Re-run the architecture review and confirm the hub is smaller, not just renamed.
+- [x] Split the broad `internal/model` measurement surface in config.
+- [x] Use graph evidence to rank the worst internal/model seam.
+- [x] Refactor one package at a time behind a narrower contract.
+- [x] Add or adjust import-boundary tests for the chosen seam.
+- [x] Re-run the architecture review and confirm the hub is smaller, not just renamed.
 
 Validation:
 

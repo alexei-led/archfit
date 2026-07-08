@@ -215,6 +215,10 @@ func TestSymmetricUpgradeCarriesCloneLocations(t *testing.T) {
 		{File: "crate_a/src/lib.rs", Line: 12},
 		{File: "crate_b/src/lib.rs", Line: 40},
 	}
+	wantCouplingLocs := []coupling.Location{
+		{File: "crate_a/src/lib.rs", Line: 12},
+		{File: "crate_b/src/lib.rs", Line: 40},
+	}
 	cfg := config.ClassifyConfig{
 		Modules: map[string]config.ModuleDef{
 			modNameA: {Paths: []string{pathsA}},
@@ -236,8 +240,8 @@ func TestSymmetricUpgradeCarriesCloneLocations(t *testing.T) {
 	if cl.Strength != coupling.StrengthSymmetric {
 		t.Fatalf("Strength = %q, want %q (clone upgrade did not fire)", cl.Strength, coupling.StrengthSymmetric)
 	}
-	if !slices.Equal(cl.CloneLocations, wantLocs) {
-		t.Errorf("CloneLocations = %v, want %v", cl.CloneLocations, wantLocs)
+	if !slices.Equal(cl.CloneLocations, wantCouplingLocs) {
+		t.Errorf("CloneLocations = %v, want %v", cl.CloneLocations, wantCouplingLocs)
 	}
 
 	// A pair with no CloneEvidence entry (e.g. an older jscpd report with no

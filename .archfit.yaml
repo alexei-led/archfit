@@ -50,25 +50,79 @@ layers:
   - adapter # rank 4: baseline, toolrun, extractors, renderers, git
   - cmd # rank 5: composition root
 modules:
-  internal/model:
+  internal/model/graph:
     owner: alexei-led
     paths:
-      - internal/model/**
-    # public = the package paths themselves (not file paths)
+      - internal/model/graph/**
     public:
       - internal/model/graph
+    layer: model
+    # Core domain model — graph node and edge facts evolve with each analyzer.
+    subdomain: core
+  internal/model/finding:
+    owner: alexei-led
+    paths:
+      - internal/model/finding/**
+    public:
       - internal/model/finding
+    layer: model
+    subdomain: core
+  internal/model/coupling:
+    owner: alexei-led
+    paths:
+      - internal/model/coupling/**
+    public:
       - internal/model/coupling
+    layer: model
+    subdomain: core
+  internal/model/diagnostic:
+    owner: alexei-led
+    paths:
+      - internal/model/diagnostic/**
+    public:
       - internal/model/diagnostic
+    layer: model
+    # Diagnostic is output contract state; measure it apart from graph/coupling.
+    subdomain: core
+  internal/model/fileclass:
+    owner: alexei-led
+    paths:
+      - internal/model/fileclass/**
+    public:
       - internal/model/fileclass
+    layer: model
+    subdomain: core
+  internal/model/clone:
+    owner: alexei-led
+    paths:
+      - internal/model/clone/**
+    public:
       - internal/model/clone
+    layer: model
+    subdomain: core
+  internal/model/pattern:
+    owner: alexei-led
+    paths:
+      - internal/model/pattern/**
+    public:
       - internal/model/pattern
+    layer: model
+    subdomain: core
+  internal/model/signal:
+    owner: alexei-led
+    paths:
+      - internal/model/signal/**
+    public:
       - internal/model/signal
+    layer: model
+    subdomain: core
+  internal/model/symbol:
+    owner: alexei-led
+    paths:
+      - internal/model/symbol/**
+    public:
       - internal/model/symbol
     layer: model
-    # Core domain model — these types evolve with every new feature (new
-    # Diagnostic fields, graph node types, coupling constants). Volatile by
-    # nature; book anchor core→V=10. No explicit volatility override.
     subdomain: core
   internal/config:
     owner: alexei-led
