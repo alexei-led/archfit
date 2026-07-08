@@ -3,10 +3,10 @@ package engine
 import (
 	"sort"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // localCouplingOffenderCap bounds WorstOffenders per module — enough for an
@@ -26,7 +26,7 @@ const localCouplingOffenderCap = 5
 // endpoint when the source does not resolve); edges resolving to no module are
 // skipped — a same-module classification without module coverage carries no
 // actionable module key.
-func buildLocalCoupling(g *graph.Graph, idx coupling.Index, mm config.ModuleMap) []diagnostic.LocalCouplingModule {
+func buildLocalCoupling(g *graph.Graph, idx coupling.Index, mm module.Map) []diagnostic.LocalCouplingModule {
 	type agg struct {
 		scored, abstained, complexity, balanceSum int
 		offenders                                 []diagnostic.LocalCouplingEdge

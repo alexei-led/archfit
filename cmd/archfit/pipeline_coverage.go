@@ -7,6 +7,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // gateWarn / gateFail are the coverage-gap gate strings stamped on each gap.
@@ -142,7 +143,7 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string
 		// don't tell a Rust-only repo to install dependency-cruiser/grimp/go-packages.
 		// Explicit warn/fail gates keep the gap even if the language is absent.
 		if lang, isPrimary := primaryToolLanguage[c.Tool]; isPrimary &&
-			cfg.ToolMode(lang) == config.ModeOff && cfg.ToolGate(lang) == "" {
+			cfg.ToolMode(lang) == view.ModeOff && cfg.ToolGate(lang) == "" {
 			continue
 		}
 		// Suppress the gap when the language's project marker is absent from the

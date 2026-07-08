@@ -14,6 +14,9 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/goccy/go-yaml"
+
+	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Config is the parsed and validated content of an archfit.yaml file.
@@ -29,23 +32,23 @@ import (
 //   - module_review  — staleness gating of the module declarations
 //   - file_class / outputs — classification overrides and output formats
 type Config struct {
-	Version   int                  `yaml:"version" jsonschema:"required"`
-	Exclude   []string             `yaml:"exclude"`
-	Languages LanguagesConfig      `yaml:"languages"`
-	Analyzers AnalyzersConfig      `yaml:"analyzers"`
-	AI        AIConfig             `yaml:"ai"`
-	Coupling  CouplingConfig       `yaml:"coupling"`
-	Layers    []string             `yaml:"layers"`
-	Modules   map[string]ModuleDef `yaml:"modules"`
+	Version   int                         `yaml:"version" jsonschema:"required"`
+	Exclude   []string                    `yaml:"exclude"`
+	Languages LanguagesConfig             `yaml:"languages"`
+	Analyzers AnalyzersConfig             `yaml:"analyzers"`
+	AI        AIConfig                    `yaml:"ai"`
+	Coupling  CouplingConfig              `yaml:"coupling"`
+	Layers    []string                    `yaml:"layers"`
+	Modules   map[string]module.ModuleDef `yaml:"modules"`
 	// ExternalSystems declares external integration seams (book Ch10 Example 1)
 	// whose edges enter coupling_balance scoring at declared_external (D=10).
-	ExternalSystems map[string]ExternalSystemDef `yaml:"external_systems,omitempty"`
-	Rules           []RuleDef                    `yaml:"rules"`
-	Waivers         []WaiverDef                  `yaml:"waivers"`
-	Metrics         MetricsConfig                `yaml:"metrics"`
-	ModuleReview    ModuleReviewConfig           `yaml:"module_review"`
-	FileClass       FileClassDef                 `yaml:"file_class"`
-	Outputs         OutputsConfig                `yaml:"outputs"`
+	ExternalSystems map[string]view.ExternalSystemDef `yaml:"external_systems,omitempty"`
+	Rules           []view.RuleDef                    `yaml:"rules"`
+	Waivers         []view.WaiverDef                  `yaml:"waivers"`
+	Metrics         MetricsConfig                     `yaml:"metrics"`
+	ModuleReview    ModuleReviewConfig                `yaml:"module_review"`
+	FileClass       view.FileClassDef                 `yaml:"file_class"`
+	Outputs         OutputsConfig                     `yaml:"outputs"`
 
 	// explicitOwners records which modules had a hand-authored `owner:` in YAML,
 	// populated by Load before any resolver fill. Distinguishes a user's explicit
@@ -132,9 +135,9 @@ const (
 var bcSeverities = map[string]struct{}{levelLow: {}, levelMedium: {}, levelHigh: {}, "critical": {}}
 
 // duplicatedKnowledgePolicies are the accepted coupling.duplicated_knowledge values.
-var duplicatedKnowledgePolicies = map[DuplicatedKnowledgePolicy]struct{}{
-	DuplicatedKnowledgePolicyScore:    {},
-	DuplicatedKnowledgePolicyAdvisory: {},
+var duplicatedKnowledgePolicies = map[view.DuplicatedKnowledgePolicy]struct{}{
+	view.DuplicatedKnowledgePolicyScore:    {},
+	view.DuplicatedKnowledgePolicyAdvisory: {},
 }
 
 // gateValues are the accepted gate policy markers (spec §rules: off | warn | fail),
@@ -209,7 +212,7 @@ func validate(cfg Config) error {
 	}
 	for _, name := range sortedKeys(cfg.Modules) {
 		if r := cfg.Modules[name].Role; r != "" {
-			if _, ok := moduleRoles[r]; !ok {
+			if !module.ValidRole(r) {
 				return fmt.Errorf("modules.%s.role %q is not one of: composition_root, adapter, core, shared_model, generated, test", name, r)
 			}
 		}
@@ -262,7 +265,7 @@ func validate(cfg Config) error {
 // ast-grep runs `sg --lang <lang> --pattern <rule>` per pattern entry and keys
 // findings by id — a partial entry loads clean but fails opaquely (or dedups
 // wrongly) at analyze time inside the subprocess.
-func validateRules(rules []RuleDef) error {
+func validateRules(rules []view.RuleDef) error {
 	for i, r := range rules {
 		id := r.ID
 		if id == "" {
@@ -314,7 +317,7 @@ var externalVolatilities = map[string]struct{}{levelHigh: {}, levelMedium: {}, l
 // validateExternalSystem checks one external_systems.<name> entry: at least one
 // target glob (an entry that matches nothing declares nothing), valid glob
 // syntax, and a real volatility level when one is set.
-func validateExternalSystem(name string, def ExternalSystemDef) error {
+func validateExternalSystem(name string, def view.ExternalSystemDef) error {
 	if len(def.Targets) == 0 {
 		return fmt.Errorf("external_systems.%s requires at least one targets glob — an empty entry declares nothing", name)
 	}
@@ -340,7 +343,7 @@ func validateExternalSystem(name string, def ExternalSystemDef) error {
 // GeneratedGlobs and TestGlobs are passed to doublestar.Match so they must be
 // valid glob syntax; MockFrameworks are plain prefix/suffix strings — only
 // emptiness is checked.
-func validateFileClass(fc FileClassDef) error {
+func validateFileClass(fc view.FileClassDef) error {
 	for i, pat := range fc.GeneratedGlobs {
 		if pat == "" {
 			return fmt.Errorf("file_class.generated_globs[%d] must not be empty", i)
@@ -369,7 +372,7 @@ func validateFileClass(fc FileClassDef) error {
 // threshold knobs that actually apply to the metric's kind. A knob on a metric
 // of the wrong kind is a hard error, not a silent no-op — a validated-but-inert
 // setting hides the exact misconfiguration it was meant to express.
-func validateMetricEntry(name string, knob metricKnob, e MetricEntry) error {
+func validateMetricEntry(name string, knob metricKnob, e view.MetricEntry) error {
 	if err := validateGate("metrics."+name, e.Gate); err != nil {
 		return err
 	}
@@ -417,13 +420,13 @@ func Default() Config {
 		Version: 1,
 		Coupling: CouplingConfig{
 			MinSeverity:         levelMedium,
-			DuplicatedKnowledge: DuplicatedKnowledgePolicyScore,
+			DuplicatedKnowledge: view.DuplicatedKnowledgePolicyScore,
 		},
 		Languages: LanguagesConfig{
-			Go:         GoLanguage{Enabled: ModeAuto},
-			TypeScript: TypeScriptLanguage{Enabled: ModeAuto},
-			Python:     PythonLanguage{Enabled: ModeAuto},
-			Rust:       RustLanguage{Enabled: ModeAuto},
+			Go:         GoLanguage{Enabled: view.ModeAuto},
+			TypeScript: TypeScriptLanguage{Enabled: view.ModeAuto},
+			Python:     PythonLanguage{Enabled: view.ModeAuto},
+			Rust:       RustLanguage{Enabled: view.ModeAuto},
 		},
 	}
 }

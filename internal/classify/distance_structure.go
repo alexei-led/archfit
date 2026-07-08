@@ -5,9 +5,10 @@ package classify
 import (
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // DistanceCompressionEvidence records the deterministic distance-ladder rungs
@@ -206,7 +207,7 @@ func ownershipDistance(fromOwner, toOwner string) coupling.Distance {
 // by Run and CloneOnlyPairs: degeneracy of the explicit (CODEOWNERS/config)
 // owner map and of the full module owner map. Both depend only on config,
 // so callers compute them once per run.
-func ownerDegeneracy(c config.ClassifyConfig) (degenerateExplicit, degenerateOwners bool) {
+func ownerDegeneracy(c view.ClassifyConfig) (degenerateExplicit, degenerateOwners bool) {
 	explicitOwnerMap := make(map[string]string, len(c.ExplicitOwners))
 	for mod := range c.ExplicitOwners {
 		explicitOwnerMap[mod] = c.Modules[mod].Owner
@@ -256,9 +257,9 @@ func isDegenerateOwnerMap(owners map[string]string) bool {
 // nature. Their outbound edges must not be scored as high-distance/unbalanced.
 // adapter/core/shared_model are ordinary sources — their edges are classified
 // normally so a real core→core imbalance still surfaces.
-func cohesiveRole(r config.ModuleRole) bool {
+func cohesiveRole(r module.Role) bool {
 	switch r {
-	case config.RoleCompositionRoot, config.RoleGenerated, config.RoleTest:
+	case module.RoleCompositionRoot, module.RoleGenerated, module.RoleTest:
 		return true
 	default:
 		return false

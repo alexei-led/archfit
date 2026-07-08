@@ -6,12 +6,13 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/classify"
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/ports"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -267,7 +268,7 @@ func TestBuildStaticExternalDistanceCandidates(t *testing.T) {
 		key(declaredExternal): {Distance: coupling.DistanceExternal},
 		key(unresolvedSource): {Distance: coupling.DistanceUnknown},
 	}
-	mm := config.BuildModuleMap(map[string]config.ModuleDef{
+	mm := module.BuildMap(map[string]module.ModuleDef{
 		"services/a": {Paths: []string{testServicesAGlob}},
 		"services/b": {Paths: []string{testServicesBGlob}},
 		"web":        {Paths: []string{"web/**"}},
@@ -372,7 +373,7 @@ func TestBuildStaticExternalDistanceCandidates_PythonUnresolvedImports(t *testin
 		key(pyRoot):      {Distance: coupling.DistanceUnknown},
 		key(pySubmodule): {Distance: coupling.DistanceUnknown},
 	}
-	mm := config.BuildModuleMap(map[string]config.ModuleDef{
+	mm := module.BuildMap(map[string]module.ModuleDef{
 		"fixture_py": {Paths: []string{"fixture_py.**"}},
 	})
 
@@ -645,7 +646,7 @@ func TestBuildClassifiedEdgeSummary_TailRiskIncludesCloneOnlyContribution(t *tes
 		},
 	}}
 
-	s := buildClassifiedEdgeSummaryWithCloneOnly(idx, cloneOnly, config.DuplicatedKnowledgePolicyScore)
+	s := buildClassifiedEdgeSummaryWithCloneOnly(idx, cloneOnly, view.DuplicatedKnowledgePolicyScore)
 
 	if s.TailRisk == nil {
 		t.Fatal("TailRisk is nil, want scored-edge tail summary")
@@ -678,7 +679,7 @@ func TestBuildClassifiedEdgeSummary_TailRiskIncludesCloneOnlyContribution(t *tes
 		t.Errorf("CloneOnlyWorstBalance = %d, want 3", s.TailRisk.CloneOnlyWorstBalance)
 	}
 
-	s = buildClassifiedEdgeSummaryWithCloneOnly(idx, cloneOnly, config.DuplicatedKnowledgePolicyAdvisory)
+	s = buildClassifiedEdgeSummaryWithCloneOnly(idx, cloneOnly, view.DuplicatedKnowledgePolicyAdvisory)
 	if s.TailRisk.CloneOnlyScored != 0 || s.TailRisk.CloneOnlyHighOrWorseEdges != 0 || s.TailRisk.CloneOnlyWorstBalance != 0 {
 		t.Errorf("advisory policy tail risk counted clone-only pair: %+v", s.TailRisk)
 	}
@@ -686,7 +687,7 @@ func TestBuildClassifiedEdgeSummary_TailRiskIncludesCloneOnlyContribution(t *tes
 
 func TestBuildClassifiedEdgeSummary_DistanceBasisCompressionAndConnectedModules(t *testing.T) {
 	key := func(from, to, kind string) string { return from + "\x00" + to + "\x00" + kind }
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"a": {Paths: []string{"a/**"}},
 		"b": {Paths: []string{"b/**"}},
 		"c": {Paths: []string{"c/**"}},
@@ -712,7 +713,7 @@ func TestBuildClassifiedEdgeSummary_DistanceBasisCompressionAndConnectedModules(
 		},
 	}
 
-	s := buildClassifiedEdgeSummaryForRun(idx, nil, config.DuplicatedKnowledgePolicyAdvisory, config.BuildModuleMap(modules))
+	s := buildClassifiedEdgeSummaryForRun(idx, nil, view.DuplicatedKnowledgePolicyAdvisory, module.BuildMap(modules))
 
 	if s.ConnectedModules != 3 {
 		t.Errorf("ConnectedModules = %d, want 3", s.ConnectedModules)

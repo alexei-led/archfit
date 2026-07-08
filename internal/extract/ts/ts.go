@@ -14,13 +14,13 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -39,7 +39,7 @@ const (
 // It satisfies the engine.Extractor interface structurally.
 type Extractor struct {
 	runner toolrun.Runner
-	cfg    config.ExtractConfig
+	cfg    view.ExtractConfig
 	// Cache is the extractor fact cache; nil disables caching (--no-cache).
 	Cache *factcache.Store
 }
@@ -59,7 +59,7 @@ var tsManifestNames = []string{
 }
 
 // New returns an Extractor configured with the given runner and config.
-func New(runner toolrun.Runner, cfg config.ExtractConfig) *Extractor {
+func New(runner toolrun.Runner, cfg view.ExtractConfig) *Extractor {
 	return &Extractor{runner: runner, cfg: cfg}
 }
 
@@ -76,14 +76,14 @@ func (e *Extractor) Name() string {
 // Extract returns empty Facts and an "absent" Coverage record — never an error.
 // If mode is on and the tool is absent, Extract returns an error.
 func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-	if e.cfg.Mode == config.ModeOff {
+	if e.cfg.Mode == view.ModeOff {
 		return graph.Facts{}, absentCoverage(""), nil
 	}
 
 	// Applicability: requires package.json in the project root.
 	pkgJSON := filepath.Join(s.Root, "package.json")
 	if _, err := os.Stat(pkgJSON); os.IsNotExist(err) {
-		if e.cfg.Mode == config.ModeOn {
+		if e.cfg.Mode == view.ModeOn {
 			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/ts: package.json not found at %s", s.Root)
 		}
 		return graph.Facts{}, absentCoverage(""), nil
@@ -92,7 +92,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	// Detect bunx or npx.
 	launcher, _, found := e.detectLauncher(ctx)
 	if !found {
-		if e.cfg.Mode == config.ModeOn {
+		if e.cfg.Mode == view.ModeOn {
 			return graph.Facts{}, diagnostic.Coverage{}, errors.New("extract/ts: dependency-cruiser not found (bunx/npx unavailable); install Node and run: npm i -D dependency-cruiser")
 		}
 		return graph.Facts{}, absentCoverage(""), nil
@@ -176,7 +176,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		// run-level failure (the "warn-loud, don't block" contract); only an
 		// explicitly required analyzer (ModeOn) hard-errors.
 		reason := fmt.Sprintf("dependency-cruiser exited %d: %s", out.ExitCode, strings.TrimSpace(string(out.Stderr)))
-		if e.cfg.Mode == config.ModeOn {
+		if e.cfg.Mode == view.ModeOn {
 			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/ts: %s", reason)
 		}
 		return graph.Facts{}, diagnostic.Coverage{Tool: coverageTool, Version: version, Status: statusPartial, Reason: reason}, nil
@@ -349,7 +349,7 @@ func (e *Extractor) cachedRunner(s scope.Scope, version, tsConfigPath, workDir s
 		return e.runner
 	}
 	cfgHash, err := factcache.HashJSON(struct {
-		Cfg                 config.ExtractConfig
+		Cfg                 view.ExtractConfig
 		Root                string
 		TSConfigHash        string
 		WorkDirManifestHash string

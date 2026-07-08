@@ -43,7 +43,7 @@ type PathResolver struct {
 // knownFiles is every repo-relative file path seen by the LOC walk
 // (SizeSignals.FileClassIndex keys); crateRootDirs maps a Rust crate name to
 // its repo-relative directory (from graph.CrateRoot); moduleRootDirs maps a
-// config module name to its declared Paths root (config.ModuleRootDirs),
+// config module name to its declared Paths root (module.RootDirs),
 // the last-resort fallback when nothing else resolves. A nil knownFiles
 // disables resolution (see PathResolver).
 //
@@ -119,7 +119,7 @@ func (r PathResolver) exists(p string) bool {
 // directory). Disabled (knownFiles nil) trusts every non-empty, non-escaping
 // candidate, matching pre-resolver behavior. Candidates that escape the scan
 // root (absolute, or cleaning to a ".."-prefixed path — e.g. a module Paths
-// glob like "../outside/**" feeding the ModuleRootDirs fallback) are always
+// glob like "../outside/**" feeding the module.RootDirs fallback) are always
 // rejected, both here and on every derived probe in exists (escapesScanRoot):
 // files[] must never point outside the analyzed tree.
 func (r PathResolver) resolve(candidate string) (string, bool) {

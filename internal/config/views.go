@@ -5,7 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/syntax"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Config-quality lint field tokens, reported in ConfigWarning.Missing.
@@ -71,16 +73,16 @@ func (c Config) Lint() []LintWarning {
 // ---------------------------------------------------------------------------
 
 // ForScope returns the ScopeConfig view.
-func (c Config) ForScope() ScopeConfig {
-	return ScopeConfig{
+func (c Config) ForScope() view.ScopeConfig {
+	return view.ScopeConfig{
 		Exclusions: c.Exclude,
 	}
 }
 
 // ForExtract returns an ExtractConfig for the given language.
 // Mode is derived from the Tools map (defaults to ModeAuto when absent).
-func (c Config) ForExtract(lang string) ExtractConfig {
-	ec := ExtractConfig{
+func (c Config) ForExtract(lang string) view.ExtractConfig {
+	ec := view.ExtractConfig{
 		Src:        ".",
 		Exclusions: c.Exclude,
 	}
@@ -124,7 +126,7 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 	// defaults to auto — the same default the old absent-tool-key path produced.
 	ec.Mode = c.ToolMode(lang)
 	if ec.Mode == "" {
-		ec.Mode = ModeAuto
+		ec.Mode = view.ModeAuto
 	}
 
 	return ec
@@ -134,25 +136,25 @@ func (c Config) ForExtract(lang string) ExtractConfig {
 // hand-authored module definitions — explicit volatility and subdomain fields
 // only. Git-churn-derived volatility is intentionally excluded: Balanced Coupling
 // forbids commit-history volatility on the gate path.
-func (c Config) ForClassify() ClassifyConfig {
-	return ClassifyConfig{
+func (c Config) ForClassify() view.ClassifyConfig {
+	return view.ClassifyConfig{
 		Modules:                   c.Modules,
 		Layers:                    c.Layers,
-		ModuleMap:                 buildModuleMap(c.Modules),
+		ModuleMap:                 module.BuildMap(c.Modules),
 		BCAdvisoryMinSeverity:     c.Coupling.MinSeverity,
 		ExplicitOwners:            c.explicitOwners,
 		VolatilityCascadeEnabled:  c.Coupling.VolatilityCascade,
 		ExternalSystems:           c.ExternalSystems,
-		DuplicatedKnowledgePolicy: NormalizeDuplicatedKnowledgePolicy(c.Coupling.DuplicatedKnowledge),
+		DuplicatedKnowledgePolicy: view.NormalizeDuplicatedKnowledgePolicy(c.Coupling.DuplicatedKnowledge),
 	}
 }
 
 // ForRules returns the RuleConfig view.
-func (c Config) ForRules() RuleConfig {
-	return RuleConfig{
+func (c Config) ForRules() view.RuleConfig {
+	return view.RuleConfig{
 		Rules:     c.Rules,
 		Layers:    c.Layers,
-		ModuleMap: buildModuleMap(c.Modules),
+		ModuleMap: module.BuildMap(c.Modules),
 	}
 }
 
@@ -160,36 +162,36 @@ func (c Config) ForRules() RuleConfig {
 // Returns a zero MetricConfig (all knobs unset) if the metric is not
 // configured — the metric stays enabled; only an explicit `enabled: false`
 // disables it (Enabled is *bool, nil means default-on; see metrics.New).
-func (c Config) ForMetric(name string) MetricConfig {
+func (c Config) ForMetric(name string) view.MetricConfig {
 	if c.Metrics == nil {
-		return MetricConfig{}
+		return view.MetricConfig{}
 	}
 	return c.Metrics[name]
 }
 
 // ForWaivers returns the WaiverSet view consumed by the status stage.
-func (c Config) ForWaivers() WaiverSet {
-	return WaiverSet{Waivers: c.Waivers}
+func (c Config) ForWaivers() view.WaiverSet {
+	return view.WaiverSet{Waivers: c.Waivers}
 }
 
 // ForOutput returns the OutputConfig view.
-func (c Config) ForOutput() OutputConfig {
-	return OutputConfig{
+func (c Config) ForOutput() view.OutputConfig {
+	return view.OutputConfig{
 		JSON:     c.Outputs.JSON,
 		Markdown: c.Outputs.Markdown,
 		SARIF:    c.Outputs.SARIF,
 	}
 }
 
-// ModuleMapView returns a ModuleMap built from this Config's Modules.
-func (c Config) ModuleMapView() ModuleMap {
-	return buildModuleMap(c.Modules)
+// ModuleMapView returns a module.Map built from this Config's Modules.
+func (c Config) ModuleMapView() module.Map {
+	return module.BuildMap(c.Modules)
 }
 
 // ForPatterns returns the PatternConfig view: all PatternDef values collected
 // from rules that declare a patterns: block.
-func (c Config) ForPatterns() PatternConfig {
-	var out PatternConfig
+func (c Config) ForPatterns() view.PatternConfig {
+	var out view.PatternConfig
 	for _, r := range c.Rules {
 		out = append(out, r.Patterns...)
 	}
@@ -215,7 +217,7 @@ func (c Config) ForSyntax() SyntaxConfig {
 	enabled := c.SyntaxEnabled()
 	var langs []string
 	for _, lang := range []string{LangGo, LangTypeScript, LangPython, LangRust} {
-		if c.ToolMode(lang) == ModeOff {
+		if c.ToolMode(lang) == view.ModeOff {
 			continue
 		}
 		langs = append(langs, lang)
@@ -239,7 +241,7 @@ func (c Config) ForFileClass() syntax.FileClassConfig {
 }
 
 // ForStaleness returns the StalenessConfig view.
-func (c Config) ForStaleness() StalenessConfig {
+func (c Config) ForStaleness() view.StalenessConfig {
 	var threshold time.Duration
 	if c.ModuleReview.StaleAfter != "" {
 		if d, err := time.ParseDuration(c.ModuleReview.StaleAfter); err == nil {
@@ -250,8 +252,8 @@ func (c Config) ForStaleness() StalenessConfig {
 	// everywhere else (off = disabled). Any other configured signal —
 	// stale_after, or a warn/fail gate — enables the advisory pass.
 	gate := c.ModuleReview.Gate
-	enabled := gate != string(ModeOff) && (c.ModuleReview.StaleAfter != "" || gate != "")
-	return StalenessConfig{
+	enabled := gate != string(view.ModeOff) && (c.ModuleReview.StaleAfter != "" || gate != "")
+	return view.StalenessConfig{
 		Enabled:   enabled,
 		Threshold: threshold,
 		Modules:   c.Modules,

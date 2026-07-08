@@ -7,10 +7,11 @@ import (
 
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/classify"
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Fixture constants for the duplicated-knowledge advisory tests.
@@ -22,14 +23,14 @@ const (
 
 // dkClassifyCfg returns a two-module config with a cross-module clone pair and
 // its evidence, mirroring what buildClonePairSet produces from jscpd clusters.
-func dkClassifyCfg() config.ClassifyConfig {
-	modules := map[string]config.ModuleDef{
+func dkClassifyCfg() view.ClassifyConfig {
+	modules := map[string]module.ModuleDef{
 		"a": {Paths: []string{testServicesAGlob}},
 		"b": {Paths: []string{testServicesBGlob}},
 	}
-	return config.ClassifyConfig{
+	return view.ClassifyConfig{
 		Modules:               modules,
-		ModuleMap:             config.BuildModuleMap(modules),
+		ModuleMap:             module.BuildMap(modules),
 		CrossModuleClonePairs: map[string]struct{}{dkPairKey: {}},
 		CloneEvidence: map[string][]graph.Location{
 			dkPairKey: {{File: dkFileA, Line: 10}, {File: dkFileB, Line: 20}},
@@ -57,7 +58,7 @@ func TestDuplicatedKnowledgeAdvisory(t *testing.T) {
 	g := graph.Build(nil)
 	cfg := dkClassifyCfg()
 	idx := classify.Run(g, cfg)
-	fnds := collectAdvisories(g, idx, cfg, nil, RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: config.WaiverSet{}})
+	fnds := collectAdvisories(g, idx, cfg, nil, RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: view.WaiverSet{}})
 
 	dk := findingsByRule(fnds, RuleIDBCDuplicatedKnowledge)
 	if len(dk) != 1 {
@@ -104,8 +105,8 @@ func TestDuplicatedKnowledgeAdvisory(t *testing.T) {
 	if got := f.MatchedBy["score_version"]; got != coupling.ScoreVersion {
 		t.Errorf("matched_by.score_version = %q, want %s", got, coupling.ScoreVersion)
 	}
-	if got := f.MatchedBy["score_policy"]; got != string(config.DuplicatedKnowledgePolicyScore) {
-		t.Errorf("matched_by.score_policy = %q, want %q", got, config.DuplicatedKnowledgePolicyScore)
+	if got := f.MatchedBy["score_policy"]; got != string(view.DuplicatedKnowledgePolicyScore) {
+		t.Errorf("matched_by.score_policy = %q, want %q", got, view.DuplicatedKnowledgePolicyScore)
 	}
 	// cheapest_move: same_owner is the terminal distance rung (no reduce_distance
 	// offered) and the one-rung strength reduction (symmetric→functional) still
@@ -128,7 +129,7 @@ func TestDuplicatedKnowledgeSummaryPolicy(t *testing.T) {
 		t.Fatalf("CloneOnlyPairs = %d, want 1", len(pairs))
 	}
 
-	scored := buildClassifiedEdgeSummaryWithCloneOnly(coupling.Index{}, pairs, config.DuplicatedKnowledgePolicyScore)
+	scored := buildClassifiedEdgeSummaryWithCloneOnly(coupling.Index{}, pairs, view.DuplicatedKnowledgePolicyScore)
 	if scored.CloneOnlyScored != 1 || scored.CloneOnlyAdvisory != 0 {
 		t.Fatalf("score policy counters = scored %d advisory %d, want 1/0", scored.CloneOnlyScored, scored.CloneOnlyAdvisory)
 	}
@@ -146,7 +147,7 @@ func TestDuplicatedKnowledgeSummaryPolicy(t *testing.T) {
 		t.Errorf("score policy medium count = %d, want 1", got)
 	}
 
-	advisory := buildClassifiedEdgeSummaryWithCloneOnly(coupling.Index{}, pairs, config.DuplicatedKnowledgePolicyAdvisory)
+	advisory := buildClassifiedEdgeSummaryWithCloneOnly(coupling.Index{}, pairs, view.DuplicatedKnowledgePolicyAdvisory)
 	if advisory.CloneOnlyScored != 0 || advisory.CloneOnlyAdvisory != 1 {
 		t.Fatalf("advisory policy counters = scored %d advisory %d, want 0/1", advisory.CloneOnlyScored, advisory.CloneOnlyAdvisory)
 	}
@@ -171,7 +172,7 @@ func TestDuplicatedKnowledgeAdvisory_EdgeExists(t *testing.T) {
 	}})
 	cfg := dkClassifyCfg()
 	idx := classify.Run(g, cfg)
-	fnds := collectAdvisories(g, idx, cfg, nil, RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: config.WaiverSet{}})
+	fnds := collectAdvisories(g, idx, cfg, nil, RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: view.WaiverSet{}})
 
 	if dk := findingsByRule(fnds, RuleIDBCDuplicatedKnowledge); len(dk) != 0 {
 		t.Fatalf("bc/duplicated_knowledge findings = %d, want 0 when an edge exists: %+v", len(dk), dk)
@@ -193,17 +194,17 @@ func TestDuplicatedKnowledgeAdvisory_Suppression(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		mutate func(*config.ClassifyConfig)
+		mutate func(*view.ClassifyConfig)
 	}{
 		{
 			name: "approved label accepts the pair",
-			mutate: func(c *config.ClassifyConfig) {
+			mutate: func(c *view.ClassifyConfig) {
 				c.ApprovedLabels = map[string]string{dkPairKey: string(coupling.StrengthFunctional)}
 			},
 		},
 		{
 			name: "min_severity above the pair's band filters it",
-			mutate: func(c *config.ClassifyConfig) {
+			mutate: func(c *view.ClassifyConfig) {
 				c.BCAdvisoryMinSeverity = "high" // pair scores medium
 			},
 		},
@@ -214,7 +215,7 @@ func TestDuplicatedKnowledgeAdvisory_Suppression(t *testing.T) {
 			t.Parallel()
 			cfg := dkClassifyCfg()
 			tt.mutate(&cfg)
-			fnds := collectAdvisories(graph.Build(nil), coupling.Index{}, cfg, nil, RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: config.WaiverSet{}})
+			fnds := collectAdvisories(graph.Build(nil), coupling.Index{}, cfg, nil, RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: view.WaiverSet{}})
 			if dk := findingsByRule(fnds, RuleIDBCDuplicatedKnowledge); len(dk) != 0 {
 				t.Fatalf("bc/duplicated_knowledge findings = %d, want 0: %+v", len(dk), dk)
 			}

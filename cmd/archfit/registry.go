@@ -11,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // doctorTool names one external binary archfit can probe, with a one-line
@@ -39,7 +40,7 @@ type LanguageDescriptor struct {
 	// NewExtractor builds the language's ports.Extractor from the shared runner,
 	// the language's projected ExtractConfig view, and the fact-cache store
 	// (nil when --no-cache — extractors treat nil as cache-off).
-	NewExtractor func(toolrun.Runner, config.ExtractConfig, *factcache.Store) ports.Extractor
+	NewExtractor func(toolrun.Runner, view.ExtractConfig, *factcache.Store) ports.Extractor
 	// PrimaryTool is the coverage name of the dependency-graph analyzer this
 	// language unlocks (as it appears in ToolCoverage, e.g. "go/packages").
 	PrimaryTool string
@@ -58,7 +59,7 @@ var languageRegistry = []LanguageDescriptor{
 	{
 		ID:             config.LangGo,
 		ProjectMarkers: []string{markerGoMod},
-		NewExtractor: func(r toolrun.Runner, cfg config.ExtractConfig, fc *factcache.Store) ports.Extractor {
+		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
 			ex := golang.New(cfg)
 			ex.Runner = r // go-toolchain version probe for the fact-cache key
 			ex.Cache = fc
@@ -75,7 +76,7 @@ var languageRegistry = []LanguageDescriptor{
 		ID:             config.LangTypeScript,
 		Aliases:        []string{"ts"},
 		ProjectMarkers: []string{"package.json", "tsconfig.json"},
-		NewExtractor: func(r toolrun.Runner, cfg config.ExtractConfig, fc *factcache.Store) ports.Extractor {
+		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
 			ex := ts.New(r, cfg)
 			ex.Cache = fc
 			return ex
@@ -93,7 +94,7 @@ var languageRegistry = []LanguageDescriptor{
 		ID:             config.LangPython,
 		Aliases:        []string{"py"},
 		ProjectMarkers: []string{"pyproject.toml", "setup.py", "setup.cfg"},
-		NewExtractor: func(r toolrun.Runner, cfg config.ExtractConfig, fc *factcache.Store) ports.Extractor {
+		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
 			ex := py.New(r, cfg)
 			ex.Cache = fc
 			return ex
@@ -109,7 +110,7 @@ var languageRegistry = []LanguageDescriptor{
 		ID:             config.LangRust,
 		Aliases:        []string{"rs"},
 		ProjectMarkers: []string{markerCargoToml},
-		NewExtractor: func(r toolrun.Runner, cfg config.ExtractConfig, fc *factcache.Store) ports.Extractor {
+		NewExtractor: func(r toolrun.Runner, cfg view.ExtractConfig, fc *factcache.Store) ports.Extractor {
 			ex := rust.New(r, cfg)
 			ex.Cache = fc
 			return ex

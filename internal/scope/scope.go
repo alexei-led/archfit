@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // canonicalPath returns a case- and symlink-resolved form of p.
@@ -169,7 +169,7 @@ type Resolver interface {
 // otherwise it falls back to the git root; when both are empty it falls back to
 // cfg.WorkDir. Changed files are sorted here so scope's determinism contract
 // does not depend on resolver discipline.
-func Resolve(ctx context.Context, cfg config.ScopeConfig, r Resolver) (Scope, error) {
+func Resolve(ctx context.Context, cfg view.ScopeConfig, r Resolver) (Scope, error) {
 	gitRoot, rootErr := r.RepoRoot(ctx)
 
 	if cfg.Full {
@@ -259,7 +259,7 @@ func rebaseChangedFiles(prefix string, files []string) []string {
 // symlink form matches the gitRoot (already canonical) before subtreePrefix computes.
 // When cfg.Root is empty and gitRoot is non-empty the result equals gitRoot,
 // so --root-absent runs are byte-identical to before this change.
-func resolveScanRoot(cfg config.ScopeConfig, gitRoot string) string {
+func resolveScanRoot(cfg view.ScopeConfig, gitRoot string) string {
 	if cfg.Root != "" {
 		return canonicalPath(cfg.Root)
 	}

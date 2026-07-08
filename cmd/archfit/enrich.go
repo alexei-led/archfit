@@ -24,6 +24,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/model/signal"
 
 	"github.com/goccy/go-yaml"
@@ -424,7 +425,7 @@ type refinablePair struct {
 // Contract and intrusive strengths are already decided (glob or SCIP); they are
 // excluded. Fresh approved pairs are skipped; stale approved pairs can be
 // redrafted. Deterministic order (From, To).
-func selectRefinablePairs(g *graph.Graph, idx coupling.Index, mm config.ModuleMap, existing []labels.Label, evidence map[string]string) []refinablePair {
+func selectRefinablePairs(g *graph.Graph, idx coupling.Index, mm module.Map, existing []labels.Label, evidence map[string]string) []refinablePair {
 	if g == nil {
 		return nil
 	}
@@ -660,7 +661,7 @@ func mergeDrafts(existing, drafts []labels.Label, evidence map[string]string) []
 	return out
 }
 
-func currentLabelEvidence(g *graph.Graph, mm config.ModuleMap, existing []labels.Label) map[string]string {
+func currentLabelEvidence(g *graph.Graph, mm module.Map, existing []labels.Label) map[string]string {
 	wanted := make(map[string]struct{}, len(existing))
 	for _, l := range existing {
 		if l.Status == labels.StatusApproved {
@@ -670,7 +671,7 @@ func currentLabelEvidence(g *graph.Graph, mm config.ModuleMap, existing []labels
 	return engine.PairEvidence(g, mm, wanted)
 }
 
-func enrichModuleMap(cfg config.Config, g *graph.Graph) config.ModuleMap {
+func enrichModuleMap(cfg config.Config, g *graph.Graph) module.Map {
 	return engine.AugmentClassifyConfig(g, cfg.ForClassify()).ModuleMap
 }
 

@@ -7,11 +7,11 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/extract/astgrep"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // TestFactCache_FindHitAndTimeoutNotCached pins the ast-grep cache contract:
@@ -44,7 +44,7 @@ func TestFactCache_FindHitAndTimeoutNotCached(t *testing.T) {
 	a.Cache = factcache.NewStore(t.TempDir())
 	ctx := context.Background()
 	s := scope.Scope{Root: root}
-	patterns := config.PatternConfig{{ID: "p1", Lang: "go", Rule: "func $F"}}
+	patterns := view.PatternConfig{{ID: "p1", Lang: "go", Rule: "func $F"}}
 
 	find := func() error {
 		_, _, err := a.Find(ctx, s, patterns)

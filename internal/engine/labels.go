@@ -4,13 +4,14 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/syntax"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // applyPinnedLabels validates pinned labels and injects the approved ones into
@@ -23,7 +24,7 @@ import (
 // advisory per ignored stale label plus the count of approved labels with llm
 // provenance (used to lower coupling_balance confidence).
 // Deterministic — the gate never calls an LLM; labels are reviewed YAML.
-func applyPinnedLabels(g *graph.Graph, classifyCfg *config.ClassifyConfig, mode Mode, lbls []labels.Label) ([]finding.Finding, int) {
+func applyPinnedLabels(g *graph.Graph, classifyCfg *view.ClassifyConfig, mode Mode, lbls []labels.Label) ([]finding.Finding, int) {
 	var evidence map[string]string
 	if mode.Full || mode.Base == "" {
 		wanted := make(map[string]struct{}, len(lbls))
@@ -65,7 +66,7 @@ func applyPinnedLabels(g *graph.Graph, classifyCfg *config.ClassifyConfig, mode 
 //
 // Exported because enrich (cmd) must stamp drafts with EXACTLY the hash the
 // engine will later verify — one computation, two callers.
-func PairEvidence(g *graph.Graph, mm config.ModuleMap, wanted map[string]struct{}) map[string]string {
+func PairEvidence(g *graph.Graph, mm module.Map, wanted map[string]struct{}) map[string]string {
 	if len(wanted) == 0 {
 		return nil
 	}
@@ -103,7 +104,7 @@ func PairEvidence(g *graph.Graph, mm config.ModuleMap, wanted map[string]struct{
 // must not trigger a StrengthSymmetric upgrade on production coupling edges (C4).
 // index is the FileClassIndex from the loc walk (nil is safe — falls back to
 // built-in filename heuristics: mock_*.go, _test.go, *.pb.go, etc.).
-func buildClonePairSet(clusters []clone.Cluster, mm config.ModuleMap, index map[string]fileclass.FileClass) (map[string]struct{}, map[string][]graph.Location) {
+func buildClonePairSet(clusters []clone.Cluster, mm module.Map, index map[string]fileclass.FileClass) (map[string]struct{}, map[string][]graph.Location) {
 	prodClusters := make([]clone.Cluster, 0, len(clusters))
 	cfg := syntax.FileClassConfig{} // empty: index already encodes user config patterns; fallback uses built-ins
 	for _, c := range clusters {

@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // externalSystemIndex matches a classified edge target against the declared
@@ -16,11 +16,11 @@ import (
 // (first sorted name wins).
 type externalSystemIndex struct {
 	names []string
-	defs  map[string]config.ExternalSystemDef
+	defs  map[string]view.ExternalSystemDef
 }
 
 // buildExternalSystemIndex builds a sorted index over the external_systems map.
-func buildExternalSystemIndex(defs map[string]config.ExternalSystemDef) externalSystemIndex {
+func buildExternalSystemIndex(defs map[string]view.ExternalSystemDef) externalSystemIndex {
 	names := make([]string, 0, len(defs))
 	for n := range defs {
 		names = append(names, n)

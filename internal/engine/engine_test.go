@@ -20,6 +20,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/model/symbol"
@@ -27,6 +28,7 @@ import (
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 	archscore "github.com/alexei-led/archfit/internal/score"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -67,8 +69,8 @@ const (
 // Module b has a public path (pkg/b/api/**) and an internal path (pkg/b/internal/**).
 // Different owners ensure the composite distance signal reaches cross_module_diff_owner
 // for advisory test cases that require a non-trivial distance.
-func cannedConfig() (config.ClassifyConfig, []rules.Rule) {
-	modules := map[string]config.ModuleDef{
+func cannedConfig() (view.ClassifyConfig, []rules.Rule) {
+	modules := map[string]module.ModuleDef{
 		"a": {
 			Paths:    []string{globModuleA},
 			Public:   []string{globModuleA},
@@ -86,7 +88,7 @@ func cannedConfig() (config.ClassifyConfig, []rules.Rule) {
 	cfg := config.Config{
 		Version: 1,
 		Modules: modules,
-		Rules: []config.RuleDef{
+		Rules: []view.RuleDef{
 			{
 				ID:   rulePublicAPIOnly,
 				Type: rulePublicAPIOnly,
@@ -190,7 +192,7 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -198,12 +200,12 @@ func TestRun_GateFinding_VerdictFail(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -267,7 +269,7 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -275,12 +277,12 @@ func TestRun_CleanGraph_VerdictPass(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -343,7 +345,7 @@ func TestRun_PerExtractorFailureIsolation(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -351,12 +353,12 @@ func TestRun_PerExtractorFailureIsolation(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{failingEx, healthyEx},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -424,7 +426,7 @@ func TestRun_AllExtractorsFail_StillFatal(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -432,12 +434,12 @@ func TestRun_AllExtractorsFail_StillFatal(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{failingA, failingB},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -462,7 +464,7 @@ func TestRun_DiagnosticShape(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Now()
 
@@ -470,12 +472,12 @@ func TestRun_DiagnosticShape(t *testing.T) {
 		Mode:        engine.Mode{Base: "main", Head: "feature"},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -534,7 +536,7 @@ func TestRun_PrimaryExtractorTools_Forwarded(t *testing.T) {
 		},
 	}
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 
 	build := func(tools []string) engine.RunInput {
@@ -542,7 +544,7 @@ func TestRun_PrimaryExtractorTools_Forwarded(t *testing.T) {
 			Mode:                  engine.Mode{},
 			Scope:                 scope.Scope{Root: "."},
 			Classify:              classifyCfg,
-			Waivers:               config.WaiverSet{},
+			Waivers:               view.WaiverSet{},
 			Extractors:            []ports.Extractor{ex},
 			Patterns:              ports.NopPatternProvider{},
 			Resolver:              ports.NopSymbolResolver{},
@@ -587,7 +589,7 @@ func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -595,12 +597,12 @@ func TestRun_Advisory_FilteredWhenDisabled(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef, Advisory: false},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -638,7 +640,7 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -646,12 +648,12 @@ func TestRun_Advisory_PresentWhenEnabled(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef, Advisory: true},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -702,7 +704,7 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -710,12 +712,12 @@ func TestRun_Advisory_NumericScoreFields(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef, Advisory: true},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -792,7 +794,7 @@ func TestRun_Advisory_DistanceBasisInMatchedBy(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -800,12 +802,12 @@ func TestRun_Advisory_DistanceBasisInMatchedBy(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef, Advisory: true},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -875,7 +877,7 @@ func TestRun_Advisory_GroupedRollups(t *testing.T) {
 		},
 	}
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -885,12 +887,12 @@ func TestRun_Advisory_GroupedRollups(t *testing.T) {
 			Mode:        engine.Mode{Head: headRef, Advisory: true},
 			Scope:       scope.Scope{Root: "."},
 			Classify:    classifyCfg,
-			Staleness:   config.StalenessConfig{},
-			Waivers:     config.WaiverSet{},
+			Staleness:   view.StalenessConfig{},
+			Waivers:     view.WaiverSet{},
 			Extractors:  []ports.Extractor{ex},
 			Patterns:    ports.NopPatternProvider{},
 			Resolver:    ports.NopSymbolResolver{},
-			PatternCfg:  config.PatternConfig{},
+			PatternCfg:  view.PatternConfig{},
 			Rules:       rs,
 			Metrics:     ms,
 			Accepted:    base,
@@ -968,7 +970,7 @@ func TestRun_Advisory_GroupedRollup_EdgePathHonesty(t *testing.T) {
 		},
 	}
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -976,12 +978,12 @@ func TestRun_Advisory_GroupedRollup_EdgePathHonesty(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef, Advisory: true},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -1050,7 +1052,7 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -1058,12 +1060,12 @@ func TestRun_Advisory_VerdictUnchanged(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef, Advisory: true},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -1115,7 +1117,7 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 	findCalled := false
 	pp := &ports.PatternProviderMock{
 		NameFunc: func() string { return toolNameAstgrep },
-		FindFunc: func(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
+		FindFunc: func(_ context.Context, _ scope.Scope, _ view.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
 			findCalled = true
 			return []pattern.Match{
 				{File: pathFileA, Pattern: "unsafe-cast", Text: "unsafe.Pointer(x)", Line: 10, Column: 0},
@@ -1124,7 +1126,7 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -1132,12 +1134,12 @@ func TestRun_PatternProvider_MatchesPropagated(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    pp,
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -1183,7 +1185,7 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 	// PatternProvider returns matches — but no rule uses them to produce gate findings.
 	pp := &ports.PatternProviderMock{
 		NameFunc: func() string { return toolNameAstgrep },
-		FindFunc: func(_ context.Context, _ scope.Scope, _ config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
+		FindFunc: func(_ context.Context, _ scope.Scope, _ view.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
 			return []pattern.Match{
 				{File: pathFileA, Pattern: "reflect-unexported", Text: "reflect.ValueOf(x).Field(0)", Line: 5, Column: 4},
 				{File: pathFileBAPIService, Pattern: "reflect-unexported", Text: "reflect.ValueOf(y).Field(1)", Line: 12, Column: 0},
@@ -1192,7 +1194,7 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
 
@@ -1200,12 +1202,12 @@ func TestRun_PatternProvider_DoesNotAffectVerdict(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    pp,
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -1284,12 +1286,12 @@ func TestRun_SymbolGraph_ForwardedToMetricInput(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    sr,
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     []metrics.Metric{spy},
 		Accepted:    baseline.Baseline{},
@@ -1335,12 +1337,12 @@ func TestRun_SymbolGraph_EmptyWhenNopResolver(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     []metrics.Metric{spy},
 		Accepted:    baseline.Baseline{},
@@ -1400,12 +1402,12 @@ func TestRun_FileFacts_AttachedFromSymbolGraph(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    sr,
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     nil,
 		Accepted:    baseline.Baseline{},
@@ -1450,12 +1452,12 @@ func TestRun_FileFacts_EmptyWhenNopResolver(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     nil,
 		Accepted:    baseline.Baseline{},
@@ -1486,11 +1488,11 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 	const crossModRuleID = "review_new_deps"
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"a": {Paths: []string{globModuleA}},
 			"b": {Paths: []string{globModuleB}},
 		},
-		Rules: []config.RuleDef{{ID: crossModRuleID, Type: "new_cross_module_dependency", Gate: gateFail}},
+		Rules: []view.RuleDef{{ID: crossModRuleID, Type: "new_cross_module_dependency", Gate: gateFail}},
 	}
 	classifyCfg := cfg.ForClassify()
 	rs, err := rules.New(cfg.ForRules())
@@ -1512,12 +1514,12 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 			Mode:        engine.Mode{Head: headRef},
 			Scope:       scope.Scope{Root: "."},
 			Classify:    classifyCfg,
-			Staleness:   config.StalenessConfig{},
-			Waivers:     config.WaiverSet{},
+			Staleness:   view.StalenessConfig{},
+			Waivers:     view.WaiverSet{},
 			Extractors:  []ports.Extractor{ex},
 			Patterns:    ports.NopPatternProvider{},
 			Resolver:    ports.NopSymbolResolver{},
-			PatternCfg:  config.PatternConfig{},
+			PatternCfg:  view.PatternConfig{},
 			Rules:       rs,
 			Metrics:     nil,
 			Accepted:    base,
@@ -1580,7 +1582,7 @@ func TestRun_PinnedLabels(t *testing.T) {
 	// glob-undecided and the label decides.
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"a": {Paths: []string{globModuleA}},
 			"b": {Paths: []string{globModuleB}},
 		},
@@ -1608,12 +1610,12 @@ func TestRun_PinnedLabels(t *testing.T) {
 			Mode:        engine.Mode{Head: headRef, Advisory: true},
 			Scope:       scope.Scope{Root: "."},
 			Classify:    cfg.ForClassify(),
-			Staleness:   config.StalenessConfig{},
-			Waivers:     config.WaiverSet{},
+			Staleness:   view.StalenessConfig{},
+			Waivers:     view.WaiverSet{},
 			Extractors:  []ports.Extractor{ex},
 			Patterns:    ports.NopPatternProvider{},
 			Resolver:    ports.NopSymbolResolver{},
-			PatternCfg:  config.PatternConfig{},
+			PatternCfg:  view.PatternConfig{},
 			Rules:       pinnedRules,
 			Metrics:     []metrics.Metric{spy},
 			Accepted:    baseline.Baseline{},
@@ -1695,7 +1697,7 @@ func TestRun_LLMLabels_FillDeterminismAndBucket(t *testing.T) {
 	// source abstains, so the llm label is the only strength source.
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"a": {Paths: []string{globModuleA}},
 			"b": {Paths: []string{globModuleB}},
 		},
@@ -1719,14 +1721,14 @@ func TestRun_LLMLabels_FillDeterminismAndBucket(t *testing.T) {
 			Mode:        engine.Mode{Full: true, Advisory: true},
 			Scope:       scope.Scope{Root: "."},
 			Classify:    cfg.ForClassify(),
-			Staleness:   config.StalenessConfig{},
-			Waivers:     config.WaiverSet{},
+			Staleness:   view.StalenessConfig{},
+			Waivers:     view.WaiverSet{},
 			Extractors:  []ports.Extractor{ex},
 			Patterns:    ports.NopPatternProvider{},
 			Resolver:    ports.NopSymbolResolver{},
-			PatternCfg:  config.PatternConfig{},
+			PatternCfg:  view.PatternConfig{},
 			Rules:       rs,
-			Metrics:     metrics.New(config.Config{Version: 1}),
+			Metrics:     metrics.New(nil),
 			Accepted:    baseline.Baseline{},
 			BaseMetrics: nil,
 			Labels:      lbls,
@@ -1816,9 +1818,9 @@ func dynImportRun(t *testing.T, sites []diagnostic.DynamicImportSite) diagnostic
 	base := baseline.Baseline{}
 	in := engine.RunInput{
 		Mode: engine.Mode{Head: headRef}, Scope: scope.Scope{Root: "."},
-		Classify: classifyCfg, Staleness: config.StalenessConfig{}, Waivers: config.WaiverSet{},
+		Classify: classifyCfg, Staleness: view.StalenessConfig{}, Waivers: view.WaiverSet{},
 		Extractors: []ports.Extractor{ex}, Patterns: ports.NopPatternProvider{}, Resolver: ports.NopSymbolResolver{},
-		PatternCfg: config.PatternConfig{}, Rules: rs, Metrics: metrics.New(config.Config{Version: 1}),
+		PatternCfg: view.PatternConfig{}, Rules: rs, Metrics: metrics.New(nil),
 		Accepted: base, BaseMetrics: base.Metrics,
 		Signals: signal.RunSignals{DynamicImports: signal.DynamicImportSignals{Sites: sites}},
 		Now:     time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC),
@@ -1978,9 +1980,9 @@ func TestRun_GoWorkspace_ModuleMapRebuild(t *testing.T) {
 	base := baseline.Baseline{}
 	in := engine.RunInput{
 		Mode: engine.Mode{Head: headRef}, Scope: scope.Scope{Root: "."},
-		Classify: classifyCfg, Staleness: config.StalenessConfig{}, Waivers: config.WaiverSet{},
+		Classify: classifyCfg, Staleness: view.StalenessConfig{}, Waivers: view.WaiverSet{},
 		Extractors: []ports.Extractor{ex}, Patterns: ports.NopPatternProvider{}, Resolver: ports.NopSymbolResolver{},
-		PatternCfg: config.PatternConfig{}, Rules: rs, Metrics: metrics.New(config.Config{Version: 1}),
+		PatternCfg: view.PatternConfig{}, Rules: rs, Metrics: metrics.New(nil),
 		Accepted: base, BaseMetrics: base.Metrics,
 		Signals: signal.RunSignals{
 			DynamicImports: signal.DynamicImportSignals{
@@ -2047,12 +2049,12 @@ func TestRun_GoWorkspace_StalePinnedLabelUsesAugmentedModuleMap(t *testing.T) {
 		Mode:       engine.Mode{Head: headRef, Advisory: true},
 		Scope:      scope.Scope{Root: "."},
 		Classify:   cfg.ForClassify(),
-		Staleness:  config.StalenessConfig{},
-		Waivers:    config.WaiverSet{},
+		Staleness:  view.StalenessConfig{},
+		Waivers:    view.WaiverSet{},
 		Extractors: []ports.Extractor{ex},
 		Patterns:   ports.NopPatternProvider{},
 		Resolver:   ports.NopSymbolResolver{},
-		PatternCfg: config.PatternConfig{},
+		PatternCfg: view.PatternConfig{},
 		Rules:      rs,
 		Metrics:    []metrics.Metric{spy},
 		Accepted:   baseline.Baseline{},
@@ -2098,9 +2100,9 @@ func runtimeAsyncRun(t *testing.T, sites []diagnostic.RuntimeAsyncSite, confiden
 	base := baseline.Baseline{}
 	in := engine.RunInput{
 		Mode: engine.Mode{Head: headRef}, Scope: scope.Scope{Root: "."},
-		Classify: classifyCfg, Staleness: config.StalenessConfig{}, Waivers: config.WaiverSet{},
+		Classify: classifyCfg, Staleness: view.StalenessConfig{}, Waivers: view.WaiverSet{},
 		Extractors: []ports.Extractor{ex}, Patterns: ports.NopPatternProvider{}, Resolver: ports.NopSymbolResolver{},
-		PatternCfg: config.PatternConfig{}, Rules: rs, Metrics: metrics.New(config.Config{Version: 1}),
+		PatternCfg: view.PatternConfig{}, Rules: rs, Metrics: metrics.New(nil),
 		Accepted: base, BaseMetrics: base.Metrics,
 		Signals: signal.RunSignals{RuntimeAsync: signal.RuntimeAsyncSignals{Sites: sites, Confidence: confidence}},
 		Now:     time.Date(2026, 6, 22, 0, 0, 0, 0, time.UTC),
@@ -2237,7 +2239,7 @@ func TestRun_RuntimeAsync_StaticGraphUnchanged(t *testing.T) {
 }
 
 func TestRun_ReportOnlyLocalRuntimeAndStaticExternalFactsDoNotChangeScoreOrVerdict(t *testing.T) {
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"a": {Paths: []string{"pkg/a/**"}, Owner: "team-a", Subdomain: subdomainCore},
 		"b": {Paths: []string{"pkg/b/**"}, Owner: "team-b", Subdomain: subdomainCore},
 	}
@@ -2417,7 +2419,7 @@ func bookExampleFacts(fromFile, toFile, strengthHint string) graph.Facts {
 //
 // sameOwner=true sets both modules to "team-shared" → cross_module_same_owner (D=4) when in the same deploy unit.
 // targetSubdomain controls the dst module's domain volatility ("core"→V=10, "supporting"→V=3, "generic"→V=3).
-func bookExampleConfig(fromGlob, toGlob string, sameDeployUnit, sameOwner bool, targetSubdomain string) (config.ClassifyConfig, []rules.Rule) {
+func bookExampleConfig(fromGlob, toGlob string, sameDeployUnit, sameOwner bool, targetSubdomain string) (view.ClassifyConfig, []rules.Rule) {
 	srcUnit := "svc-src"
 	dstUnit := "svc-dst"
 	if sameDeployUnit {
@@ -2439,7 +2441,7 @@ func bookExampleConfig(fromGlob, toGlob string, sameDeployUnit, sameOwner bool, 
 	// owner distance signal to fire for the src→dst edge. Without it, both modules
 	// sharing one owner triggers degenerateExplicit suppression and falls through to
 	// code-structure distance, which cannot produce cross_module_same_owner.
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"src": {
 			Paths:      []string{fromGlob},
 			Owner:      srcOwner,
@@ -2559,7 +2561,7 @@ func TestRun_BookExamples_Ch10(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var facts graph.Facts
-			var classifyCfg config.ClassifyConfig
+			var classifyCfg view.ClassifyConfig
 			var rs []rules.Rule
 
 			if tc.usesSameModule {
@@ -2578,19 +2580,19 @@ func TestRun_BookExamples_Ch10(t *testing.T) {
 				},
 			}
 
-			ms := metrics.New(config.Config{Version: 1})
+			ms := metrics.New(nil)
 			base := baseline.Baseline{}
 
 			d, err := engine.Run(ctx, engine.RunInput{
 				Mode:        engine.Mode{Head: headRef, Advisory: true},
 				Scope:       scope.Scope{Root: "."},
 				Classify:    classifyCfg,
-				Staleness:   config.StalenessConfig{},
-				Waivers:     config.WaiverSet{},
+				Staleness:   view.StalenessConfig{},
+				Waivers:     view.WaiverSet{},
 				Extractors:  []ports.Extractor{ex},
 				Patterns:    ports.NopPatternProvider{},
 				Resolver:    ports.NopSymbolResolver{},
-				PatternCfg:  config.PatternConfig{},
+				PatternCfg:  view.PatternConfig{},
 				Rules:       rs,
 				Metrics:     ms,
 				Accepted:    base,
@@ -2665,7 +2667,7 @@ func TestRun_SyntaxFacts_Populated(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
 
@@ -2673,14 +2675,14 @@ func TestRun_SyntaxFacts_Populated(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
 		Syntax:      synMock,
 		SyntaxCfg:   config.SyntaxConfig{Enabled: true, Languages: []string{"go"}},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -2745,7 +2747,7 @@ func TestRun_SyntaxFacts_ModuleBackfill(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC)
 
@@ -2753,14 +2755,14 @@ func TestRun_SyntaxFacts_ModuleBackfill(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
 		Syntax:      synMock,
 		SyntaxCfg:   config.SyntaxConfig{Enabled: true, Languages: []string{"go"}},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -2801,7 +2803,7 @@ func TestRun_SyntaxEnabled_NilProvider_ReturnsError(t *testing.T) {
 		},
 	}
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
 
@@ -2843,7 +2845,7 @@ func TestRun_SyntaxFacts_DisabledNoCallNoCoverage(t *testing.T) {
 	}
 
 	classifyCfg, rs := cannedConfig()
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
 
@@ -2851,14 +2853,14 @@ func TestRun_SyntaxFacts_DisabledNoCallNoCoverage(t *testing.T) {
 		Mode:        engine.Mode{Head: headRef},
 		Scope:       scope.Scope{Root: "."},
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{ex},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
 		Syntax:      synMock,
 		SyntaxCfg:   config.SyntaxConfig{Enabled: false},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,
@@ -2901,11 +2903,11 @@ func TestRun_WarnRule_ProducesVerdictWarn(t *testing.T) {
 
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"a": {Paths: []string{globModuleA}},
 			"b": {Paths: []string{globModuleB}},
 		},
-		Rules: []config.RuleDef{
+		Rules: []view.RuleDef{
 			{
 				ID:   warnRuleID,
 				Type: rulePublicAPIOnly,
@@ -2928,7 +2930,7 @@ func TestRun_WarnRule_ProducesVerdictWarn(t *testing.T) {
 		}
 	}
 
-	ms := metrics.New(config.Config{Version: 1})
+	ms := metrics.New(nil)
 	base := baseline.Baseline{}
 	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
 
@@ -2938,12 +2940,12 @@ func TestRun_WarnRule_ProducesVerdictWarn(t *testing.T) {
 			Mode:        engine.Mode{Head: headRef, Advisory: advisory},
 			Scope:       scope.Scope{Root: "."},
 			Classify:    cfg.ForClassify(),
-			Staleness:   config.StalenessConfig{},
-			Waivers:     config.WaiverSet{},
+			Staleness:   view.StalenessConfig{},
+			Waivers:     view.WaiverSet{},
 			Extractors:  []ports.Extractor{makeEx()},
 			Patterns:    ports.NopPatternProvider{},
 			Resolver:    ports.NopSymbolResolver{},
-			PatternCfg:  config.PatternConfig{},
+			PatternCfg:  view.PatternConfig{},
 			Rules:       rs,
 			Metrics:     ms,
 			Accepted:    base,

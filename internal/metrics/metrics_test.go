@@ -3,8 +3,8 @@ package metrics_test
 import (
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // ---------------------------------------------------------------------------
@@ -17,7 +17,7 @@ const (
 )
 
 func TestNew_ReturnsAllMetrics(t *testing.T) {
-	ms := metrics.New(config.Config{})
+	ms := metrics.New(nil)
 	if len(ms) != 5 {
 		t.Errorf("expected 5 metrics got %d", len(ms))
 	}
@@ -36,12 +36,12 @@ func TestNew_ReturnsAllMetrics(t *testing.T) {
 // removes the metric while unconfigured metrics stay enabled — and that a
 // knob-only entry (gate set, enabled absent) does NOT disable the metric.
 func TestNew_ExplicitDisableHonored(t *testing.T) {
-	cfg := config.Config{Metrics: map[string]config.MetricEntry{
+	cfg := map[string]view.MetricEntry{
 		"blast_radius":    {Enabled: new(false)},
 		"coverage":        {Enabled: new(false)},
 		"cycle":           {Enabled: new(true)},
 		"unbalanced_edge": {Gate: "warn"}, // knob-only: stays enabled
-	}}
+	}
 	ms := metrics.New(cfg)
 	if len(ms) != 3 {
 		t.Fatalf("expected 3 metrics (5 - 2 disabled), got %d", len(ms))

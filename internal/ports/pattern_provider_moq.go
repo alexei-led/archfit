@@ -7,10 +7,10 @@ import (
 	"context"
 	"sync"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Ensure, that PatternProviderMock does implement PatternProvider.
@@ -23,7 +23,7 @@ var _ PatternProvider = &PatternProviderMock{}
 //
 //		// make and configure a mocked PatternProvider
 //		mockedPatternProvider := &PatternProviderMock{
-//			FindFunc: func(ctx context.Context, s scope.Scope, c config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
+//			FindFunc: func(ctx context.Context, s scope.Scope, c view.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
 //				panic("mock out the Find method")
 //			},
 //			NameFunc: func() string {
@@ -37,7 +37,7 @@ var _ PatternProvider = &PatternProviderMock{}
 //	}
 type PatternProviderMock struct {
 	// FindFunc mocks the Find method.
-	FindFunc func(ctx context.Context, s scope.Scope, c config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error)
+	FindFunc func(ctx context.Context, s scope.Scope, c view.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error)
 
 	// NameFunc mocks the Name method.
 	NameFunc func() string
@@ -51,7 +51,7 @@ type PatternProviderMock struct {
 			// S is the s argument value.
 			S scope.Scope
 			// C is the c argument value.
-			C config.PatternConfig
+			C view.PatternConfig
 		}
 		// Name holds details about calls to the Name method.
 		Name []struct {
@@ -62,14 +62,14 @@ type PatternProviderMock struct {
 }
 
 // Find calls FindFunc.
-func (mock *PatternProviderMock) Find(ctx context.Context, s scope.Scope, c config.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
+func (mock *PatternProviderMock) Find(ctx context.Context, s scope.Scope, c view.PatternConfig) ([]pattern.Match, diagnostic.Coverage, error) {
 	if mock.FindFunc == nil {
 		panic("PatternProviderMock.FindFunc: method is nil but PatternProvider.Find was just called")
 	}
 	callInfo := struct {
 		Ctx context.Context
 		S   scope.Scope
-		C   config.PatternConfig
+		C   view.PatternConfig
 	}{
 		Ctx: ctx,
 		S:   s,
@@ -88,12 +88,12 @@ func (mock *PatternProviderMock) Find(ctx context.Context, s scope.Scope, c conf
 func (mock *PatternProviderMock) FindCalls() []struct {
 	Ctx context.Context
 	S   scope.Scope
-	C   config.PatternConfig
+	C   view.PatternConfig
 } {
 	var calls []struct {
 		Ctx context.Context
 		S   scope.Scope
-		C   config.PatternConfig
+		C   view.PatternConfig
 	}
 	mock.lockFind.RLock()
 	calls = mock.calls.Find

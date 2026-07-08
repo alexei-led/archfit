@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/config"
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // buildWorkspace creates a minimal go.work workspace in a temp dir with two
@@ -84,7 +84,7 @@ func writeTestFile(t *testing.T, path, content string) {
 func TestExtract_MultiModule_CrossModuleStrengthHint(t *testing.T) {
 	dir := buildWorkspace(t)
 
-	ext := goextract.New(config.ExtractConfig{})
+	ext := goextract.New(view.ExtractConfig{})
 	facts, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
@@ -124,7 +124,7 @@ func TestExtract_MultiModule_CrossModuleStrengthHint(t *testing.T) {
 func TestExtract_MultiModule_ScanRootRelativeIDs(t *testing.T) {
 	dir := buildWorkspace(t)
 
-	ext := goextract.New(config.ExtractConfig{})
+	ext := goextract.New(view.ExtractConfig{})
 	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
@@ -155,7 +155,7 @@ func TestExtract_MultiModule_ScanRootRelativeIDs(t *testing.T) {
 func TestExtract_MultiModule_GoModulesPopulated(t *testing.T) {
 	dir := buildWorkspace(t)
 
-	ext := goextract.New(config.ExtractConfig{})
+	ext := goextract.New(view.ExtractConfig{})
 	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
@@ -189,7 +189,7 @@ func TestExtract_MultiModule_GoModulesPopulated(t *testing.T) {
 func TestExtract_MultiModule_SortedOutput(t *testing.T) {
 	dir := buildWorkspace(t)
 
-	ext := goextract.New(config.ExtractConfig{})
+	ext := goextract.New(view.ExtractConfig{})
 	s := scope.Scope{Root: dir, Mode: scope.ModeFull}
 
 	facts1, _, err := ext.Extract(context.Background(), s)
@@ -227,7 +227,7 @@ func TestExtract_MultiModule_MissingDep_Partial(t *testing.T) {
 import _ "example.com/broken/notexist"
 `)
 
-	ext := goextract.New(config.ExtractConfig{})
+	ext := goextract.New(view.ExtractConfig{})
 	_, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
 	if err != nil {
 		t.Skipf("Extract returned fatal error (platform-dependent, skip): %v", err)

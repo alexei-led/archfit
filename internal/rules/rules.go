@@ -7,11 +7,11 @@ package rules
 import (
 	"fmt"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/pattern"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // kindGate and kindAdvisory are the two Finding.Kind values emitted by rules.
@@ -57,7 +57,7 @@ type Rule interface {
 //	"public_api_type_leak"        → publicAPITypeLeak
 //
 // Unknown type strings are a config error.
-func New(cfg config.RuleConfig) ([]Rule, error) {
+func New(cfg view.RuleConfig) ([]Rule, error) {
 	rs := make([]Rule, 0, len(cfg.Rules))
 	for _, def := range cfg.Rules {
 		var inner Rule

@@ -4,9 +4,10 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/classify"
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Fixture literals for the external_systems tests.
@@ -27,21 +28,21 @@ const (
 // the glob against the target form its extractor emits: a Go import path, a TS
 // resolved package path, a Python dotted module, and a Rust crate name.
 func TestRun_ExternalSystems(t *testing.T) {
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"a": {Paths: []string{"services/a/**"}, Owner: ownerTeamX, Subdomain: subdomainCore},
 		"b": {Paths: []string{"services/b/**"}, Owner: ownerTeamY, Subdomain: subdomainSupporting},
 	}
 
 	tests := []struct {
 		name        string
-		systems     map[string]config.ExternalSystemDef
+		systems     map[string]view.ExternalSystemDef
 		edge        graph.Edge
 		wantVol     coupling.Volatility
 		wantBalance int
 	}{
 		{
 			name:    "go import path target",
-			systems: map[string]config.ExternalSystemDef{extSysAWS: {Targets: []string{extGlobAws}}},
+			systems: map[string]view.ExternalSystemDef{extSysAWS: {Targets: []string{extGlobAws}}},
 			edge: graph.Edge{
 				From: extFromGo, To: extToAwsS3,
 				Kind: graph.EdgeKindImports, Language: "go", StrengthHint: hintFunctional,
@@ -51,7 +52,7 @@ func TestRun_ExternalSystems(t *testing.T) {
 		},
 		{
 			name:    "typescript resolved package path target",
-			systems: map[string]config.ExternalSystemDef{extSysAWS: {Targets: []string{"node_modules/@aws-sdk/**"}, Volatility: extVolMedium}},
+			systems: map[string]view.ExternalSystemDef{extSysAWS: {Targets: []string{"node_modules/@aws-sdk/**"}, Volatility: extVolMedium}},
 			edge: graph.Edge{
 				From: "file:services/a/impl.ts", To: "external:node_modules/@aws-sdk/client-s3/dist/index.js",
 				Kind: graph.EdgeKindImports, Language: "typescript", StrengthHint: hintFunctional,
@@ -61,7 +62,7 @@ func TestRun_ExternalSystems(t *testing.T) {
 		},
 		{
 			name:    "python dotted module target",
-			systems: map[string]config.ExternalSystemDef{"boto": {Targets: []string{"{boto3,boto3.*}"}}},
+			systems: map[string]view.ExternalSystemDef{"boto": {Targets: []string{"{boto3,boto3.*}"}}},
 			edge: graph.Edge{
 				From: "file:services/a/impl.py", To: "external:boto3.session",
 				Kind: graph.EdgeKindImports, Language: "python", StrengthHint: "model",
@@ -71,7 +72,7 @@ func TestRun_ExternalSystems(t *testing.T) {
 		},
 		{
 			name:    "rust crate name target",
-			systems: map[string]config.ExternalSystemDef{"serde": {Targets: []string{"serde"}, Volatility: extVolHigh}},
+			systems: map[string]view.ExternalSystemDef{"serde": {Targets: []string{"serde"}, Volatility: extVolHigh}},
 			edge: graph.Edge{
 				From: "file:services/a/lib.rs", To: "package:serde",
 				Kind: graph.EdgeKindDependsOn, Language: langRust, StrengthHint: hintFunctional,
@@ -84,7 +85,7 @@ func TestRun_ExternalSystems(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := makeGraph([]graph.Edge{tt.edge})
-			idx := classify.Run(g, config.ClassifyConfig{Modules: modules, ExternalSystems: tt.systems})
+			idx := classify.Run(g, view.ClassifyConfig{Modules: modules, ExternalSystems: tt.systems})
 			cl := idx[edgeKey(tt.edge)]
 
 			if cl.Distance != coupling.DistanceExternal {
@@ -117,8 +118,8 @@ func TestRun_ExternalSystems(t *testing.T) {
 			Kind: graph.EdgeKindImports, Language: "go", StrengthHint: hintFunctional,
 		}
 		g := makeGraph([]graph.Edge{edge})
-		systems := map[string]config.ExternalSystemDef{extSysAWS: {Targets: []string{extGlobAws}}}
-		cl := classify.Run(g, config.ClassifyConfig{Modules: modules, ExternalSystems: systems})[edgeKey(edge)]
+		systems := map[string]view.ExternalSystemDef{extSysAWS: {Targets: []string{extGlobAws}}}
+		cl := classify.Run(g, view.ClassifyConfig{Modules: modules, ExternalSystems: systems})[edgeKey(edge)]
 		if cl.Distance != coupling.DistanceUnknown {
 			t.Errorf("Distance = %q, want %q (undeclared external keeps the disclosed exclusion)", cl.Distance, coupling.DistanceUnknown)
 		}
@@ -133,7 +134,7 @@ func TestRun_ExternalSystems(t *testing.T) {
 			Kind: graph.EdgeKindImports, Language: "go", StrengthHint: hintFunctional,
 		}
 		g := makeGraph([]graph.Edge{edge})
-		cl := classify.Run(g, config.ClassifyConfig{Modules: modules})[edgeKey(edge)]
+		cl := classify.Run(g, view.ClassifyConfig{Modules: modules})[edgeKey(edge)]
 		if cl.Distance != coupling.DistanceUnknown {
 			t.Errorf("Distance = %q, want %q with no external_systems declared", cl.Distance, coupling.DistanceUnknown)
 		}
@@ -148,8 +149,8 @@ func TestRun_ExternalSystems(t *testing.T) {
 			Kind: graph.EdgeKindImports, Language: "go", // no strength hint
 		}
 		g := makeGraph([]graph.Edge{edge})
-		systems := map[string]config.ExternalSystemDef{extSysAWS: {Targets: []string{extGlobAws}}}
-		cl := classify.Run(g, config.ClassifyConfig{Modules: modules, ExternalSystems: systems})[edgeKey(edge)]
+		systems := map[string]view.ExternalSystemDef{extSysAWS: {Targets: []string{extGlobAws}}}
+		cl := classify.Run(g, view.ClassifyConfig{Modules: modules, ExternalSystems: systems})[edgeKey(edge)]
 		if cl.Distance != coupling.DistanceExternal {
 			t.Fatalf("Distance = %q, want %q", cl.Distance, coupling.DistanceExternal)
 		}
@@ -166,8 +167,8 @@ func TestRun_ExternalSystems(t *testing.T) {
 			Kind: graph.EdgeKindImports, Language: "go", StrengthHint: hintFunctional,
 		}
 		g := makeGraph([]graph.Edge{edge})
-		systems := map[string]config.ExternalSystemDef{"greedy": {Targets: []string{"services/**"}}}
-		cl := classify.Run(g, config.ClassifyConfig{Modules: modules, ExternalSystems: systems})[edgeKey(edge)]
+		systems := map[string]view.ExternalSystemDef{"greedy": {Targets: []string{"services/**"}}}
+		cl := classify.Run(g, view.ClassifyConfig{Modules: modules, ExternalSystems: systems})[edgeKey(edge)]
 		if cl.Distance == coupling.DistanceExternal {
 			t.Error("a module-resolved target must keep its module distance, not declared_external")
 		}
@@ -183,8 +184,8 @@ func TestRun_ExternalSystems(t *testing.T) {
 			Kind: graph.EdgeKindImports, Language: "go", StrengthHint: hintFunctional,
 		}
 		g := makeGraph([]graph.Edge{edge})
-		systems := map[string]config.ExternalSystemDef{"greedy": {Targets: []string{"services/**"}}}
-		cl := classify.Run(g, config.ClassifyConfig{Modules: modules, ExternalSystems: systems})[edgeKey(edge)]
+		systems := map[string]view.ExternalSystemDef{"greedy": {Targets: []string{"services/**"}}}
+		cl := classify.Run(g, view.ClassifyConfig{Modules: modules, ExternalSystems: systems})[edgeKey(edge)]
 		if cl.Distance != coupling.DistanceUnknown {
 			t.Errorf("Distance = %q, want %q (module-resolved target, unresolved source)", cl.Distance, coupling.DistanceUnknown)
 		}
@@ -199,11 +200,11 @@ func TestRun_ExternalSystems(t *testing.T) {
 			Kind: graph.EdgeKindImports, Language: "go", StrengthHint: hintFunctional,
 		}
 		g := makeGraph([]graph.Edge{edge})
-		systems := map[string]config.ExternalSystemDef{
+		systems := map[string]view.ExternalSystemDef{
 			"zz-vendor": {Targets: []string{"github.com/aws/**"}, Volatility: extVolHigh},
 			"aa-vendor": {Targets: []string{"github.com/aws/**"}, Volatility: extVolMedium},
 		}
-		cl := classify.Run(g, config.ClassifyConfig{Modules: modules, ExternalSystems: systems})[edgeKey(edge)]
+		cl := classify.Run(g, view.ClassifyConfig{Modules: modules, ExternalSystems: systems})[edgeKey(edge)]
 		if cl.Volatility != coupling.VolatilityMedium {
 			t.Errorf("Volatility = %q, want %q (first sorted entry wins)", cl.Volatility, coupling.VolatilityMedium)
 		}
@@ -213,16 +214,16 @@ func TestRun_ExternalSystems(t *testing.T) {
 		// Locks the documented ordering: the external match runs AFTER the
 		// cohesive-role distance cap — a composition root's edge to a declared
 		// vendor system is a real integration seam, not cohesive wiring.
-		rootModules := map[string]config.ModuleDef{
-			"a": {Paths: []string{pathsA}, Owner: ownerTeamX, Subdomain: subdomainCore, Role: config.RoleCompositionRoot},
+		rootModules := map[string]module.ModuleDef{
+			"a": {Paths: []string{pathsA}, Owner: ownerTeamX, Subdomain: subdomainCore, Role: module.RoleCompositionRoot},
 		}
 		edge := graph.Edge{
 			From: extFromGo, To: extToAwsS3,
 			Kind: graph.EdgeKindImports, Language: "go", StrengthHint: hintFunctional,
 		}
 		g := makeGraph([]graph.Edge{edge})
-		systems := map[string]config.ExternalSystemDef{extSysAWS: {Targets: []string{extGlobAws}}}
-		cl := classify.Run(g, config.ClassifyConfig{Modules: rootModules, ExternalSystems: systems})[edgeKey(edge)]
+		systems := map[string]view.ExternalSystemDef{extSysAWS: {Targets: []string{extGlobAws}}}
+		cl := classify.Run(g, view.ClassifyConfig{Modules: rootModules, ExternalSystems: systems})[edgeKey(edge)]
 		if cl.Distance != coupling.DistanceExternal {
 			t.Errorf("Distance = %q, want %q (role cap must not swallow the external match)", cl.Distance, coupling.DistanceExternal)
 		}

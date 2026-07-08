@@ -9,6 +9,7 @@ package configschema
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	"github.com/invopop/jsonschema"
 
@@ -24,7 +25,7 @@ const (
 // toolModeSchema is the union that replaces the inlined {type: string} for any
 // struct field named "enabled" that carries ToolMode. It mirrors what the YAML
 // config actually accepts: a native boolean (true/false) or the string "auto".
-// The legacy "on"/"off" spellings are rejected by config.ToolMode.UnmarshalYAML.
+// The legacy "on"/"off" spellings are rejected by view.ToolMode.UnmarshalYAML.
 var toolModeSchema = &jsonschema.Schema{
 	Description: "Enable state: true | false | \"auto\" (on/off are not accepted)",
 	OneOf: []*jsonschema.Schema{
@@ -67,6 +68,23 @@ func Generate(srcDir string) ([]byte, error) {
 	// Pull doc-comments from the source so each property gets a description.
 	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/config", srcDir); err != nil {
 		return nil, fmt.Errorf("configschema: AddGoComments: %w", err)
+	}
+	// ModuleDef and friends live in the shared kernel (internal/model/module);
+	// load their doc-comments too so module properties keep descriptions.
+	// AddGoComments keys the map by Join(base, relativeWalkDir); with
+	// moduleDir == srcDir/../model/module the walk dir is "../model/module",
+	// so base must be the parent import path (internal/model) for the join to
+	// resolve to internal/model/module.
+	moduleDir := filepath.Join(srcDir, "..", "model", "module")
+	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/model", moduleDir); err != nil {
+		return nil, fmt.Errorf("configschema: AddGoComments(module): %w", err)
+	}
+	// Stage-contract types (RuleDef, WaiverDef, MetricEntry, …) live in
+	// internal/view; walk dir "../view" joined onto the config base resolves
+	// to internal/view.
+	viewDir := filepath.Join(srcDir, "..", "view")
+	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/config", viewDir); err != nil {
+		return nil, fmt.Errorf("configschema: AddGoComments(view): %w", err)
 	}
 
 	schema := r.Reflect(&config.Config{})

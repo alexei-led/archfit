@@ -25,6 +25,7 @@ import (
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
@@ -170,7 +171,7 @@ type abstainedPair struct {
 // At most abstainedEdgeCap edges are included per run (deterministic: the
 // graph's edge order is sorted); total counts every eligible edge so the
 // caller can disclose the cap.
-func selectAbstainedPairs(g *graph.Graph, idx coupling.Index, mm config.ModuleMap, existing []labels.Label, evidence map[string]string) (pairs []abstainedPair, total int) {
+func selectAbstainedPairs(g *graph.Graph, idx coupling.Index, mm module.Map, existing []labels.Label, evidence map[string]string) (pairs []abstainedPair, total int) {
 	if g == nil {
 		return nil, 0
 	}

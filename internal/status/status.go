@@ -7,8 +7,8 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // AcceptedEntry is one accepted finding from a prior run: the fingerprint that
@@ -51,7 +51,7 @@ type AcceptedSet interface {
 func Assign(
 	findings []finding.Finding,
 	accepted AcceptedSet,
-	waivers config.WaiverSet,
+	waivers view.WaiverSet,
 	now time.Time,
 	forKind string,
 ) []finding.Finding {
@@ -97,7 +97,7 @@ func Assign(
 func assignOne(
 	f *finding.Finding,
 	accepted AcceptedSet,
-	waivers config.WaiverSet,
+	waivers view.WaiverSet,
 	now time.Time,
 ) finding.Status {
 	// 1. Accepted-set check.
@@ -122,7 +122,7 @@ func assignOne(
 
 // matchWaiver reports whether w applies to f, regardless of expiry.
 // An empty Rule, From, or To field matches any value.
-func matchWaiver(w config.WaiverDef, f *finding.Finding) bool {
+func matchWaiver(w view.WaiverDef, f *finding.Finding) bool {
 	// Rule ID match.
 	if w.Rule != "" && w.Rule != f.RuleID {
 		return false
@@ -149,7 +149,7 @@ func matchWaiver(w config.WaiverDef, f *finding.Finding) bool {
 
 // isExpired reports whether w has an expiry date that has passed relative to now.
 // An empty Expires field is never expired.
-func isExpired(w config.WaiverDef, now time.Time) bool {
+func isExpired(w view.WaiverDef, now time.Time) bool {
 	if w.Expires == "" {
 		return false
 	}

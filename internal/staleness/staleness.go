@@ -13,9 +13,10 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // defaultThreshold is the staleness threshold used when cfg.Threshold is zero.
@@ -29,7 +30,7 @@ const defaultThreshold = 90 * 24 * time.Hour
 //   - "map/stale_review": a module's reviewed_at is set and older than threshold.
 //
 // Returns nil when cfg.Enabled is false.
-func Check(g *graph.Graph, cfg config.StalenessConfig, now time.Time) []finding.Finding {
+func Check(g *graph.Graph, cfg view.StalenessConfig, now time.Time) []finding.Finding {
 	if !cfg.Enabled {
 		return nil
 	}
@@ -51,7 +52,7 @@ func Check(g *graph.Graph, cfg config.StalenessConfig, now time.Time) []finding.
 
 // uncoveredPaths returns one advisory finding per package or file node that
 // is not claimed by any module's paths globs.
-func uncoveredPaths(g *graph.Graph, modules map[string]config.ModuleDef) []finding.Finding {
+func uncoveredPaths(g *graph.Graph, modules map[string]module.ModuleDef) []finding.Finding {
 	var findings []finding.Finding
 	for _, n := range g.Nodes() {
 		if n.Kind != graph.NodeKindPackage && n.Kind != graph.NodeKindFile {
@@ -71,7 +72,7 @@ func uncoveredPaths(g *graph.Graph, modules map[string]config.ModuleDef) []findi
 
 // deadRules returns one advisory finding per module paths glob that matches
 // zero nodes in the graph.
-func deadRules(g *graph.Graph, modules map[string]config.ModuleDef) []finding.Finding {
+func deadRules(g *graph.Graph, modules map[string]module.ModuleDef) []finding.Finding {
 	nodes := g.Nodes()
 	names := make([]string, 0, len(modules))
 	for name := range modules {
@@ -97,7 +98,7 @@ func deadRules(g *graph.Graph, modules map[string]config.ModuleDef) []finding.Fi
 
 // staleReviews returns one advisory finding per module whose reviewed_at is
 // set and is older than threshold relative to now.
-func staleReviews(modules map[string]config.ModuleDef, threshold time.Duration, now time.Time) []finding.Finding {
+func staleReviews(modules map[string]module.ModuleDef, threshold time.Duration, now time.Time) []finding.Finding {
 	names := make([]string, 0, len(modules))
 	for name := range modules {
 		names = append(names, name)
@@ -129,7 +130,7 @@ func staleReviews(modules map[string]config.ModuleDef, threshold time.Duration, 
 
 // claimedByAnyModule reports whether path is matched by at least one paths
 // glob across all modules.
-func claimedByAnyModule(path string, modules map[string]config.ModuleDef) bool {
+func claimedByAnyModule(path string, modules map[string]module.ModuleDef) bool {
 	for _, def := range modules {
 		for _, pattern := range def.Paths {
 			if matched, _ := doublestar.Match(pattern, path); matched {

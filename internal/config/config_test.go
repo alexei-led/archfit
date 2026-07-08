@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 func TestLoad_Valid(t *testing.T) {
@@ -37,14 +39,14 @@ func TestLoad_Valid(t *testing.T) {
 	}
 
 	// Verify language/analyzer modes (true→on, auto stays auto).
-	if got := cfg.Languages.Go.Enabled; got != config.ModeOn {
-		t.Errorf("languages.go.enabled = %q, want %q", got, config.ModeOn)
+	if got := cfg.Languages.Go.Enabled; got != view.ModeOn {
+		t.Errorf("languages.go.enabled = %q, want %q", got, view.ModeOn)
 	}
-	if got := cfg.Languages.TypeScript.Enabled; got != config.ModeAuto {
-		t.Errorf("languages.typescript.enabled = %q, want %q", got, config.ModeAuto)
+	if got := cfg.Languages.TypeScript.Enabled; got != view.ModeAuto {
+		t.Errorf("languages.typescript.enabled = %q, want %q", got, view.ModeAuto)
 	}
-	if got := cfg.Analyzers.Clones.Enabled; got != config.ModeAuto {
-		t.Errorf("analyzers.clones.enabled = %q, want %q", got, config.ModeAuto)
+	if got := cfg.Analyzers.Clones.Enabled; got != view.ModeAuto {
+		t.Errorf("analyzers.clones.enabled = %q, want %q", got, view.ModeAuto)
 	}
 
 	// Verify module details.
@@ -152,7 +154,7 @@ func TestModuleFor_PythonDottedGlobs(t *testing.T) {
 
 	dottedCfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			mod: {Paths: []string{"prefect.states", "prefect.states.**"}},
 		},
 	}
@@ -163,7 +165,7 @@ func TestModuleFor_PythonDottedGlobs(t *testing.T) {
 
 	slashCfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			mod: {Paths: []string{"src/prefect/states/**", "src/prefect/states.py"}},
 		},
 	}
@@ -192,7 +194,7 @@ func TestModuleFor_ConsumerConsistency(t *testing.T) {
 	// Mirrors testdata/fixture-py/.archfit.yaml's module "b".
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"b": {Paths: []string{"fixture_py.b", "fixture_py.b.**"}},
 		},
 	}
@@ -219,7 +221,7 @@ func TestModuleFor_ConsumerConsistency(t *testing.T) {
 func TestModuleMap_IsModuleRoot(t *testing.T) {
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"promqltest": {Paths: []string{"promql/promqltest/**"}},
 			"literal":    {Paths: []string{"cmd/tool"}}, // no wildcard: pattern is itself a literal path
 		},
@@ -257,13 +259,13 @@ func TestModuleRootDirs(t *testing.T) {
 		literalPath  = "cmd/tool"
 		pyDottedGlob = "myapp.domain.**"
 	)
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		modDomain:   {Paths: []string{modDomain + "/**"}},
 		modLiteral:  {Paths: []string{literalPath}},
 		modPyDotted: {Paths: []string{pyDottedGlob}}, // Python dotted glob: no "/" wildcard prefix
 		modNoPaths:  {},
 	}
-	got := config.ModuleRootDirs(modules)
+	got := module.RootDirs(modules)
 
 	want := map[string]string{
 		modDomain:   modDomain,
@@ -271,15 +273,15 @@ func TestModuleRootDirs(t *testing.T) {
 		modPyDotted: "myapp.domain", // globRoot cuts at the first "*"; the trailing separator dot is trimmed so the resolver's dotted-module probe can turn it into a real path
 	}
 	if len(got) != len(want) {
-		t.Fatalf("ModuleRootDirs = %+v, want %+v", got, want)
+		t.Fatalf("module.RootDirs = %+v, want %+v", got, want)
 	}
 	for name, dir := range want {
 		if got[name] != dir {
-			t.Errorf("ModuleRootDirs[%q] = %q, want %q", name, got[name], dir)
+			t.Errorf("module.RootDirs[%q] = %q, want %q", name, got[name], dir)
 		}
 	}
 	if _, ok := got[modNoPaths]; ok {
-		t.Error("ModuleRootDirs should omit a module with no Paths")
+		t.Error("module.RootDirs should omit a module with no Paths")
 	}
 }
 
@@ -288,7 +290,7 @@ func TestModuleFor_Deterministic(t *testing.T) {
 	// same (alphabetically-first) module name.
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"beta":  {Paths: []string{"shared/**"}},
 			"alpha": {Paths: []string{"shared/**"}},
 		},
@@ -318,7 +320,7 @@ func TestModuleFor_MostSpecific(t *testing.T) {
 	const catchAll = "internal" // broad fallback stanza; repeated below
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			catchAll:          {Paths: []string{"internal/**"}},
 			"internal/model":  {Paths: []string{"internal/model/**"}},
 			"internal/engine": {Paths: []string{"internal/engine/**"}},
@@ -364,7 +366,7 @@ func TestForExtract(t *testing.T) {
 
 	t.Run("typescript_mode_auto", func(t *testing.T) {
 		ec := cfg.ForExtract("typescript")
-		if ec.Mode != config.ModeAuto {
+		if ec.Mode != view.ModeAuto {
 			t.Errorf("ForExtract(typescript).Mode = %q, want auto", ec.Mode)
 		}
 	})
@@ -372,7 +374,7 @@ func TestForExtract(t *testing.T) {
 	t.Run("go_mode_on", func(t *testing.T) {
 		// testdata/valid.yaml sets languages.go.enabled: true → ModeOn
 		ec := cfg.ForExtract("go")
-		if ec.Mode != config.ModeOn {
+		if ec.Mode != view.ModeOn {
 			t.Errorf("ForExtract(go).Mode = %q, want on", ec.Mode)
 		}
 	})
@@ -395,7 +397,7 @@ func TestForExtract(t *testing.T) {
 	t.Run("rust_mode_default_auto", func(t *testing.T) {
 		// rust tool not in testdata/valid.yaml → defaults to auto
 		ec := cfg.ForExtract("rust")
-		if ec.Mode != config.ModeAuto {
+		if ec.Mode != view.ModeAuto {
 			t.Errorf("ForExtract(rust).Mode = %q, want auto", ec.Mode)
 		}
 	})
@@ -435,7 +437,7 @@ func TestForExtract(t *testing.T) {
 		gc := config.Config{
 			Version: 1,
 			Languages: config.LanguagesConfig{Go: config.GoLanguage{
-				Enabled: config.ModeAuto,
+				Enabled: view.ModeAuto,
 				Modules: config.GoModuleFilter{
 					Include: []string{globSvcAll},
 					Exclude: []string{"svc/legacy"},
@@ -480,14 +482,14 @@ func TestForExtract_SrcNotModuleDerived(t *testing.T) {
 
 	cfgAddonsFirst := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"addons": {Paths: []string{"addons/**"}},
 			"web":    {Paths: []string{webGlob}},
 		},
 	}
 	cfgWebFirst := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"web": {Paths: []string{webGlob}},
 			"zzz": {Paths: []string{"zzz/**"}},
 		},
@@ -511,11 +513,11 @@ func TestForExtract_SrcNotModuleDerived(t *testing.T) {
 
 func TestDefaultIncludesRust(t *testing.T) {
 	cfg := config.Default()
-	if got := cfg.Languages.Rust.Enabled; got != config.ModeAuto {
+	if got := cfg.Languages.Rust.Enabled; got != view.ModeAuto {
 		t.Errorf("Default rust mode = %q, want auto", got)
 	}
-	if got := cfg.ForClassify().DuplicatedKnowledgePolicy; got != config.DuplicatedKnowledgePolicyScore {
-		t.Errorf("Default duplicated knowledge policy = %q, want %q", got, config.DuplicatedKnowledgePolicyScore)
+	if got := cfg.ForClassify().DuplicatedKnowledgePolicy; got != view.DuplicatedKnowledgePolicyScore {
+		t.Errorf("Default duplicated knowledge policy = %q, want %q", got, view.DuplicatedKnowledgePolicyScore)
 	}
 }
 
@@ -575,7 +577,7 @@ func TestForClassify(t *testing.T) {
 func TestWithExplicitOwners(t *testing.T) {
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"a": {Owner: "x"},
 			"b": {Owner: "x"},
 		},
@@ -707,11 +709,11 @@ func TestToolMode_UnmarshalYAML(t *testing.T) {
 		name    string
 		yaml    string
 		wantErr bool
-		want    config.ToolMode
+		want    view.ToolMode
 	}{
-		{"bool_true", "version: 1\nanalyzers:\n  clones:\n    enabled: true\n", false, config.ModeOn},
-		{"bool_false", "version: 1\nanalyzers:\n  clones:\n    enabled: false\n", false, config.ModeOff},
-		{"string_auto", "version: 1\nanalyzers:\n  clones:\n    enabled: auto\n", false, config.ModeAuto},
+		{"bool_true", "version: 1\nanalyzers:\n  clones:\n    enabled: true\n", false, view.ModeOn},
+		{"bool_false", "version: 1\nanalyzers:\n  clones:\n    enabled: false\n", false, view.ModeOff},
+		{"string_auto", "version: 1\nanalyzers:\n  clones:\n    enabled: auto\n", false, view.ModeAuto},
 		// on/off are no longer accepted — canonical vocabulary is true|false|auto.
 		{"bare_on_rejected", "version: 1\nanalyzers:\n  clones:\n    enabled: on\n", true, ""},
 		{"quoted_on_rejected", "version: 1\nanalyzers:\n  clones:\n    enabled: \"on\"\n", true, ""},
@@ -787,7 +789,7 @@ func TestLoad_Patterns(t *testing.T) {
 func TestForPatterns(t *testing.T) {
 	tests := []struct {
 		name    string
-		rules   []config.RuleDef
+		rules   []view.RuleDef
 		wantLen int
 		wantIDs []string
 	}{
@@ -798,7 +800,7 @@ func TestForPatterns(t *testing.T) {
 		},
 		{
 			name: "rules_without_patterns",
-			rules: []config.RuleDef{
+			rules: []view.RuleDef{
 				{ID: "r1", Type: "forbidden_dependency"},
 				{ID: "r2", Type: "public_api_only"},
 			},
@@ -806,11 +808,11 @@ func TestForPatterns(t *testing.T) {
 		},
 		{
 			name: "one_rule_with_patterns",
-			rules: []config.RuleDef{
+			rules: []view.RuleDef{
 				{
 					ID:   "r1",
 					Type: "forbidden_dependency",
-					Patterns: []config.PatternDef{
+					Patterns: []view.PatternDef{
 						{ID: "p1", Lang: "go", Rule: "unsafe.Pointer($X)"},
 						{ID: "p2", Lang: "go", Rule: "reflect.ValueOf($X)"},
 					},
@@ -821,17 +823,17 @@ func TestForPatterns(t *testing.T) {
 		},
 		{
 			name: "multiple_rules_with_patterns",
-			rules: []config.RuleDef{
+			rules: []view.RuleDef{
 				{
 					ID: "r1",
-					Patterns: []config.PatternDef{
+					Patterns: []view.PatternDef{
 						{ID: "p1", Lang: "go", Rule: "foo($X)"},
 					},
 				},
 				{ID: "r2"}, // no patterns
 				{
 					ID: "r3",
-					Patterns: []config.PatternDef{
+					Patterns: []view.PatternDef{
 						{ID: "p2", Lang: langTypeScript, Rule: "bar($X)"},
 						{ID: "p3", Lang: langTypeScript, Rule: "baz($X)"},
 					},
@@ -878,7 +880,7 @@ func loadInline(t *testing.T, body string) error {
 }
 
 func TestLoad_ExternalSystems(t *testing.T) {
-	t.Run("valid entry decodes and projects into ClassifyConfig", func(t *testing.T) {
+	t.Run("valid entry decodes and projects into view.ClassifyConfig", func(t *testing.T) {
 		p := filepath.Join(t.TempDir(), ".archfit.yaml")
 		body := "version: 1\nexternal_systems:\n  aws:\n    targets: [\"github.com/aws/aws-sdk-go-v2/**\"]\n    volatility: medium\n  payment-gateway:\n    targets: [\"node_modules/@stripe/**\", \"stripe\"]\n"
 		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
@@ -986,7 +988,7 @@ func TestLoad_NewToolsAndMetrics(t *testing.T) {
 	}
 
 	// analyzers.clones.enabled: true
-	if got := cfg.Analyzers.Clones.Enabled; got != config.ModeOn {
+	if got := cfg.Analyzers.Clones.Enabled; got != view.ModeOn {
 		t.Errorf("analyzers.clones.enabled = %q, want on", got)
 	}
 	if !cfg.ClonesEnabled() {
@@ -1107,7 +1109,7 @@ func TestSelfConfig_ExtractModuleMap(t *testing.T) {
 			if def.Layer != layerAdapter {
 				t.Errorf("module %q: layer = %q, want adapter", modName, def.Layer)
 			}
-			if def.Role != config.RoleAdapter {
+			if def.Role != module.RoleAdapter {
 				t.Errorf("module %q: role = %q, want adapter", modName, def.Role)
 			}
 		})
@@ -1128,7 +1130,7 @@ func TestSelfConfig_HistoryIsAdapter(t *testing.T) {
 	if def.Layer != layerAdapter {
 		t.Errorf("internal/history: layer = %q, want adapter", def.Layer)
 	}
-	if def.Role != config.RoleAdapter {
+	if def.Role != module.RoleAdapter {
 		t.Errorf("internal/history: role = %q, want adapter", def.Role)
 	}
 }
@@ -1161,7 +1163,7 @@ func TestSelfConfig_CmdIsCompositionRoot(t *testing.T) {
 	if !ok {
 		t.Fatal("module cmd/archfit not found in self-config")
 	}
-	if def.Role != config.RoleCompositionRoot {
+	if def.Role != module.RoleCompositionRoot {
 		t.Errorf("cmd/archfit: role = %q, want composition_root", def.Role)
 	}
 }
@@ -1185,15 +1187,15 @@ func TestSelfConfig_RoleLayerConformance(t *testing.T) {
 	for _, name := range names {
 		def := cfg.Modules[name]
 		switch def.Role {
-		case config.RoleAdapter:
+		case module.RoleAdapter:
 			if def.Layer != layerAdapter {
 				t.Errorf("module %q: role=adapter but layer=%q (want adapter)", name, def.Layer)
 			}
-		case config.RoleCompositionRoot:
+		case module.RoleCompositionRoot:
 			if def.Layer != "cmd" {
 				t.Errorf("module %q: role=composition_root but layer=%q (want cmd)", name, def.Layer)
 			}
-		case config.RoleCore:
+		case module.RoleCore:
 			if def.Layer != layerCore && def.Layer != "engine" {
 				t.Errorf("module %q: role=core but layer=%q (want core or engine)", name, def.Layer)
 			}
@@ -1218,13 +1220,13 @@ func TestFillMissingOwners(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		modules  map[string]config.ModuleDef
+		modules  map[string]module.ModuleDef
 		resolved map[string]string
 		want     map[string]string // module name → expected Owner after call
 	}{
 		{
 			name: "fills modules with no owner",
-			modules: map[string]config.ModuleDef{
+			modules: map[string]module.ModuleDef{
 				"a": {Paths: []string{pathPkgA}},
 				"b": {Paths: []string{pathPkgB}},
 			},
@@ -1239,7 +1241,7 @@ func TestFillMissingOwners(t *testing.T) {
 		},
 		{
 			name: "config owner wins over resolver",
-			modules: map[string]config.ModuleDef{
+			modules: map[string]module.ModuleDef{
 				"a": {Paths: []string{pathPkgA}, Owner: configOwnerX},
 				"b": {Paths: []string{pathPkgB}},
 			},
@@ -1254,7 +1256,7 @@ func TestFillMissingOwners(t *testing.T) {
 		},
 		{
 			name: "module absent from resolved stays unchanged",
-			modules: map[string]config.ModuleDef{
+			modules: map[string]module.ModuleDef{
 				"a": {Paths: []string{pathPkgA}},
 				"b": {Paths: []string{pathPkgB}},
 			},
@@ -1269,7 +1271,7 @@ func TestFillMissingOwners(t *testing.T) {
 		},
 		{
 			name: "empty resolved map — no change",
-			modules: map[string]config.ModuleDef{
+			modules: map[string]module.ModuleDef{
 				"a": {Paths: []string{pathPkgA}},
 			},
 			resolved: map[string]string{},
@@ -1279,7 +1281,7 @@ func TestFillMissingOwners(t *testing.T) {
 		},
 		{
 			name: "empty resolved owner string — no change",
-			modules: map[string]config.ModuleDef{
+			modules: map[string]module.ModuleDef{
 				"a": {Paths: []string{pathPkgA}},
 			},
 			resolved: map[string]string{
@@ -1597,22 +1599,22 @@ func TestForClassify_DuplicatedKnowledgePolicy(t *testing.T) {
 	tests := []struct {
 		name string
 		yaml string
-		want config.DuplicatedKnowledgePolicy
+		want view.DuplicatedKnowledgePolicy
 	}{
 		{
 			name: "omitted defaults to score",
 			yaml: yamlV1,
-			want: config.DuplicatedKnowledgePolicyScore,
+			want: view.DuplicatedKnowledgePolicyScore,
 		},
 		{
 			name: "score preserved",
 			yaml: "version: 1\ncoupling:\n  duplicated_knowledge: score\n",
-			want: config.DuplicatedKnowledgePolicyScore,
+			want: view.DuplicatedKnowledgePolicyScore,
 		},
 		{
 			name: "advisory preserved",
 			yaml: "version: 1\ncoupling:\n  duplicated_knowledge: advisory\n",
-			want: config.DuplicatedKnowledgePolicyAdvisory,
+			want: view.DuplicatedKnowledgePolicyAdvisory,
 		},
 	}
 
@@ -1680,49 +1682,49 @@ const (
 func TestLint(t *testing.T) {
 	tests := []struct {
 		name string
-		mod  config.ModuleDef
+		mod  module.ModuleDef
 		want []string // expected Missing tokens; nil = no warning for this module
 	}{
 		{
 			name: "fully specified",
-			mod:  config.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Subdomain: layerCore, Volatility: "high"},
+			mod:  module.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Subdomain: layerCore, Volatility: "high"},
 			want: nil,
 		},
 		{
 			name: "missing owner only",
-			mod:  config.ModuleDef{Paths: []string{lintPath}, Subdomain: layerCore},
+			mod:  module.ModuleDef{Paths: []string{lintPath}, Subdomain: layerCore},
 			want: []string{lintOwner},
 		},
 		{
 			name: "missing subdomain and volatility only",
-			mod:  config.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam},
+			mod:  module.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam},
 			want: []string{lintVol},
 		},
 		{
 			name: "missing all three",
-			mod:  config.ModuleDef{Paths: []string{lintPath}},
+			mod:  module.ModuleDef{Paths: []string{lintPath}},
 			want: []string{lintOwner, lintVol},
 		},
 		{
 			name: "subdomain alone resolves volatility",
-			mod:  config.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Subdomain: "generic"},
+			mod:  module.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Subdomain: "generic"},
 			want: nil,
 		},
 		{
 			name: "volatility alone resolves volatility",
-			mod:  config.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Volatility: "low"},
+			mod:  module.ModuleDef{Paths: []string{lintPath}, Owner: lintTeam, Volatility: "low"},
 			want: nil,
 		},
 		{
 			name: "pathless module is not linted",
-			mod:  config.ModuleDef{Owner: ""}, // no paths → classifies nothing
+			mod:  module.ModuleDef{Owner: ""}, // no paths → classifies nothing
 			want: nil,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := config.Config{Modules: map[string]config.ModuleDef{"m": tc.mod}}
+			cfg := config.Config{Modules: map[string]module.ModuleDef{"m": tc.mod}}
 			got := cfg.Lint()
 			if tc.want == nil {
 				if len(got) != 0 {
@@ -1745,8 +1747,8 @@ func TestLint(t *testing.T) {
 
 func TestLint_DeterministicModuleOrder(t *testing.T) {
 	// Map iteration is random; Lint must return modules in sorted name order.
-	bare := config.ModuleDef{Paths: []string{"x/**"}}
-	cfg := config.Config{Modules: map[string]config.ModuleDef{
+	bare := module.ModuleDef{Paths: []string{"x/**"}}
+	cfg := config.Config{Modules: map[string]module.ModuleDef{
 		"mod-z": bare,
 		"mod-a": bare,
 		"mod-m": bare,

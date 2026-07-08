@@ -9,6 +9,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/ownership"
 )
 
@@ -280,7 +281,7 @@ func TestBuildConfigWarnings(t *testing.T) {
 		// A module with paths but no rules referencing it produces a lint warning.
 		cfg := config.Config{
 			Version: 1,
-			Modules: map[string]config.ModuleDef{
+			Modules: map[string]module.ModuleDef{
 				"orphan": {Paths: []string{"pkg/orphan/**"}},
 			},
 		}
@@ -453,7 +454,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 	t.Run("module with neither subdomain nor volatility emits decision task", func(t *testing.T) {
 		t.Parallel()
 		cfg := config.Config{
-			Modules: map[string]config.ModuleDef{
+			Modules: map[string]module.ModuleDef{
 				"app.core": {Paths: []string{"internal/core/**"}, Subdomain: subdomainCore},
 				"app.util": {Paths: []string{"internal/util/**"}}, // no subdomain, no volatility
 			},
@@ -479,7 +480,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 	t.Run("module with volatility declared is not flagged", func(t *testing.T) {
 		t.Parallel()
 		cfg := config.Config{
-			Modules: map[string]config.ModuleDef{
+			Modules: map[string]module.ModuleDef{
 				"app.util": {Paths: []string{"internal/util/**"}, Volatility: "low"},
 			},
 		}
@@ -549,7 +550,7 @@ func TestBuildJudgmentDecisionTasks(t *testing.T) {
 	t.Run("output is sorted deterministically", func(t *testing.T) {
 		t.Parallel()
 		cfg := config.Config{
-			Modules: map[string]config.ModuleDef{
+			Modules: map[string]module.ModuleDef{
 				"zz.module": {Paths: []string{"zz/**"}},
 				"aa.module": {Paths: []string{"aa/**"}},
 			},

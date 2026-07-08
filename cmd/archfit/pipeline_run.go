@@ -25,6 +25,7 @@ import (
 	"github.com/alexei-led/archfit/internal/metrics"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/ports"
@@ -133,7 +134,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	if err != nil {
 		return diagnostic.Diagnostic{}, score.Scorecard{}, err
 	}
-	ms := append(metrics.New(cfg), extraMetrics...)
+	ms := append(metrics.New(cfg.Metrics), extraMetrics...)
 
 	// toolWarnings collects the exceptional, non-nil errors from the optional
 	// extractors below. They normally degrade gracefully — encoding absence in
@@ -403,7 +404,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	// onDisk backstops the LOC-walk index: its walk skips dirs (mocks/,
 	// target/, venv/) that extractor exclusions do not, so a real edge
 	// endpoint there is index-invisible yet must survive resolution.
-	pathResolver := agenttask.NewPathResolver(knownFiles, crateRootDirs, config.ModuleRootDirs(cfg.Modules), onDiskWithin(s.Root))
+	pathResolver := agenttask.NewPathResolver(knownFiles, crateRootDirs, module.RootDirs(cfg.Modules), onDiskWithin(s.Root))
 	diag.AgentTasks = agenttask.Build(diag.Findings, ruleTypes, modulePublic, []string{validate}, diag.SyntaxFacts, pathResolver)
 	diag.AdvisoryTasks = engine.BuildAdvisoryTasks(diag.Findings, []string{validate})
 
