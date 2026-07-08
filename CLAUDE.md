@@ -42,7 +42,17 @@ Enforced by `internal/arch_test.go`; extend that test when adding a boundary.
   `syntax` classifies each source file (Production/Test/Generated/Vendor) and
   exposes `LookupFileClass`/`IsTestFile` used by the LOC walk and by metrics that
   filter on Production files.
-- `internal/model/*` imports stdlib only.
+- `internal/model/*` imports stdlib only (exception: `model/module` may use the
+  pure doublestar glob matcher). The kernel plus `internal/view` is a frozen
+  published contract: its exported surface is pinned by
+  `TestModelSurfaceNoDrift` (golden: `internal/testdata/model_surface.golden`);
+  regenerate deliberately with `ARCHFIT_UPDATE_SURFACE=1` and call the contract
+  change out in review.
+- `internal/view` holds the data-only stage contracts (ClassifyConfig,
+  ExtractConfig, RuleDef, …). Stages import `view`, never `internal/config`;
+  only composition roots (`cmd/*`), `internal/engine`, and
+  `internal/configschema` may import `internal/config` (enforced by
+  `*_no_config` rules in `.archfit.yaml`).
 - Every subprocess call goes through `toolrun.Runner` (interface in
   `internal/toolrun/toolrun.go`); extractors in `internal/extract/{go,ts,py,rust}`
   are out-of-process adapters. No `exec.Command` in core code — fake the `Runner`
