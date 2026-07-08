@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/classify"
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Crate/node id constants shared by the provenance and override fixtures
@@ -44,7 +44,7 @@ func TestComputeVolatilityProvenance(t *testing.T) {
 		g := makeGraph([]graph.Edge{e})
 		augmented := classify.AugmentModulesFromGraph(g, declared)
 
-		vp := classify.ComputeVolatilityProvenance(g, declared, config.ClassifyConfig{Modules: augmented})
+		vp := classify.ComputeVolatilityProvenance(g, declared, view.ClassifyConfig{Modules: augmented})
 		if vp == nil {
 			t.Fatal("ComputeVolatilityProvenance = nil for a non-empty module map")
 		}
@@ -67,7 +67,7 @@ func TestComputeVolatilityProvenance(t *testing.T) {
 		}
 		g := makeGraph([]graph.Edge{e})
 
-		vp := classify.ComputeVolatilityProvenance(g, declared, config.ClassifyConfig{
+		vp := classify.ComputeVolatilityProvenance(g, declared, view.ClassifyConfig{
 			Modules:                  declared,
 			VolatilityCascadeEnabled: true,
 		})
@@ -81,7 +81,7 @@ func TestComputeVolatilityProvenance(t *testing.T) {
 	})
 
 	t.Run("empty module map discloses nothing", func(t *testing.T) {
-		if vp := classify.ComputeVolatilityProvenance(nil, nil, config.ClassifyConfig{}); vp != nil {
+		if vp := classify.ComputeVolatilityProvenance(nil, nil, view.ClassifyConfig{}); vp != nil {
 			t.Errorf("ComputeVolatilityProvenance = %+v, want nil for an empty module map", vp)
 		}
 	})
@@ -99,7 +99,7 @@ func TestComputeVolatilityProvenance(t *testing.T) {
 			modNameA:    declared[modNameA],
 			"synthetic": {Paths: []string{"synthetic/**"}}, // not in declared, no volatility, no subdomain
 		}
-		vp := classify.ComputeVolatilityProvenance(nil, declared, config.ClassifyConfig{Modules: modules})
+		vp := classify.ComputeVolatilityProvenance(nil, declared, view.ClassifyConfig{Modules: modules})
 		if vp == nil {
 			t.Fatal("ComputeVolatilityProvenance = nil for a non-empty module map")
 		}
@@ -113,7 +113,7 @@ func TestComputeVolatilityProvenance(t *testing.T) {
 		modules := map[string]module.ModuleDef{
 			modNameA: {Paths: []string{pathsA}, Volatility: extVolHigh},
 		}
-		vp := classify.ComputeVolatilityProvenance(nil, nil, config.ClassifyConfig{
+		vp := classify.ComputeVolatilityProvenance(nil, nil, view.ClassifyConfig{
 			Modules:                  modules,
 			VolatilityCascadeEnabled: true,
 		})
@@ -160,7 +160,7 @@ func TestSyntheticModuleVolatilityOverride_HerdrShape(t *testing.T) {
 		t.Fatal("mycrate::a must still register as a synthetic module")
 	}
 
-	idx := classify.Run(g, config.ClassifyConfig{Modules: augmented})
+	idx := classify.Run(g, view.ClassifyConfig{Modules: augmented})
 	if cl := idx[edgeKey(eToState)]; cl.Volatility != coupling.VolatilityLow {
 		t.Errorf("edge → overridden submodule: Volatility = %q, want low (config override)", cl.Volatility)
 	}

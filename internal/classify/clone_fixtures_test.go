@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/classify"
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // This file hosts the shared clone-pair test fixtures (fileFromA / fileToB —
@@ -25,8 +25,8 @@ const (
 
 // twoModuleConfig returns a ClassifyConfig with two modules (modA: services/a/**,
 // modB: services/b/**) and no public/internal globs unless provided.
-func twoModuleConfig(publicGlobs []string, clonePairs map[string]struct{}) config.ClassifyConfig {
-	return config.ClassifyConfig{
+func twoModuleConfig(publicGlobs []string, clonePairs map[string]struct{}) view.ClassifyConfig {
+	return view.ClassifyConfig{
 		Modules: map[string]module.ModuleDef{
 			modNameA: {Paths: []string{pathsA}},
 			modNameB: {Paths: []string{pathsB}, Public: publicGlobs},
@@ -107,7 +107,7 @@ func TestFlatNameEdgeScoresSameOwnerAfterP1Fix(t *testing.T) {
 		clonePairKey = flatModA + "\x00" + flatModB
 	}
 
-	cfg := config.ClassifyConfig{
+	cfg := view.ClassifyConfig{
 		Modules: map[string]module.ModuleDef{
 			flatModA: {
 				Paths:     []string{flatModA + "/**"},

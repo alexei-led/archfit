@@ -7,11 +7,11 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/extract/rust"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // fixtureDir is the testdata/rust directory; it holds the Cargo.toml marker and
@@ -76,7 +76,7 @@ func hasEdge(facts graph.Facts, from, to string) *graph.Edge {
 func TestLastCrateRoots_NilBeforeExtract(t *testing.T) {
 	// LastCrateRoots documents "nil when Extract has not been called" — verify a
 	// freshly constructed Extractor honors that before any Extract call.
-	e := rust.New(mockRunner(nil), config.ExtractConfig{Mode: config.ModeAuto})
+	e := rust.New(mockRunner(nil), view.ExtractConfig{Mode: view.ModeAuto})
 	if e.LastCrateRoots() != nil {
 		t.Errorf("LastCrateRoots() = %+v, want nil before Extract", e.LastCrateRoots())
 	}
@@ -84,7 +84,7 @@ func TestLastCrateRoots_NilBeforeExtract(t *testing.T) {
 
 func TestExtract_Workspace(t *testing.T) {
 	runner := mockRunner(loadFixture(t, "cargo_workspace.json"))
-	e := rust.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
+	e := rust.New(runner, view.ExtractConfig{Mode: view.ModeAuto})
 
 	facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: fixtureDir})
 	if err != nil {
@@ -177,7 +177,7 @@ func TestExtract_Workspace(t *testing.T) {
 
 func TestExtract_IncludeDevDeps(t *testing.T) {
 	runner := mockRunner(loadFixture(t, "cargo_workspace.json"))
-	e := rust.New(runner, config.ExtractConfig{Mode: config.ModeAuto, IncludeDevDeps: true})
+	e := rust.New(runner, view.ExtractConfig{Mode: view.ModeAuto, IncludeDevDeps: true})
 
 	facts, _, err := e.Extract(context.Background(), scope.Scope{Root: fixtureDir})
 	if err != nil {
@@ -194,7 +194,7 @@ func TestExtract_IncludeDevDeps(t *testing.T) {
 
 func TestExtract_SingleCrate(t *testing.T) {
 	runner := mockRunner(loadFixture(t, "cargo_single.json"))
-	e := rust.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
+	e := rust.New(runner, view.ExtractConfig{Mode: view.ModeAuto})
 
 	facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: fixtureDir})
 	if err != nil {
@@ -216,8 +216,8 @@ func TestExtract_SingleCrate(t *testing.T) {
 
 func TestExtract_FeaturesAndManifest(t *testing.T) {
 	runner := mockRunner(loadFixture(t, "cargo_single.json"))
-	cfg := config.ExtractConfig{
-		Mode:          config.ModeAuto,
+	cfg := view.ExtractConfig{
+		Mode:          view.ModeAuto,
 		CargoFeatures: []string{"foo", "bar"},
 		CargoManifest: "sub/Cargo.toml",
 	}
@@ -247,7 +247,7 @@ func TestExtract_ManifestMarkerNoRoot(t *testing.T) {
 	}
 
 	runner := mockRunner(loadFixture(t, "cargo_single.json"))
-	cfg := config.ExtractConfig{Mode: config.ModeAuto, CargoManifest: "crates/core/Cargo.toml"}
+	cfg := view.ExtractConfig{Mode: view.ModeAuto, CargoManifest: "crates/core/Cargo.toml"}
 	if _, _, err := rust.New(runner, cfg).Extract(context.Background(), scope.Scope{Root: root}); err != nil {
 		t.Fatalf("Extract: expected applicable via rust_manifest, got %v", err)
 	}
@@ -256,7 +256,7 @@ func TestExtract_ManifestMarkerNoRoot(t *testing.T) {
 	}
 
 	// On mode with a configured manifest that does not exist → error, not silent absent.
-	missing := config.ExtractConfig{Mode: config.ModeOn, CargoManifest: "crates/missing/Cargo.toml"}
+	missing := view.ExtractConfig{Mode: view.ModeOn, CargoManifest: "crates/missing/Cargo.toml"}
 	if _, _, err := rust.New(runner, missing).Extract(context.Background(), scope.Scope{Root: root}); err == nil {
 		t.Error("expected error in on mode when configured rust_manifest is absent")
 	}
@@ -269,7 +269,7 @@ func TestExtract_ModeOff(t *testing.T) {
 			return toolrun.ToolInfo{}, false
 		},
 	}
-	e := rust.New(runner, config.ExtractConfig{Mode: config.ModeOff})
+	e := rust.New(runner, view.ExtractConfig{Mode: view.ModeOff})
 
 	facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: fixtureDir})
 	if err != nil {
@@ -291,7 +291,7 @@ func TestExtract_ToolAbsent(t *testing.T) {
 	}
 
 	t.Run("auto returns absent coverage", func(t *testing.T) {
-		e := rust.New(absent, config.ExtractConfig{Mode: config.ModeAuto})
+		e := rust.New(absent, view.ExtractConfig{Mode: view.ModeAuto})
 		facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: fixtureDir})
 		if err != nil {
 			t.Fatalf("Extract: expected nil error for absent cargo in auto mode, got %v", err)
@@ -305,7 +305,7 @@ func TestExtract_ToolAbsent(t *testing.T) {
 	})
 
 	t.Run("on returns error", func(t *testing.T) {
-		e := rust.New(absent, config.ExtractConfig{Mode: config.ModeOn})
+		e := rust.New(absent, view.ExtractConfig{Mode: view.ModeOn})
 		if _, _, err := e.Extract(context.Background(), scope.Scope{Root: fixtureDir}); err == nil {
 			t.Error("expected error for absent cargo in on mode")
 		}
@@ -317,7 +317,7 @@ func TestExtract_NoMarker(t *testing.T) {
 	runner := mockRunner(loadFixture(t, "cargo_single.json"))
 
 	t.Run("auto returns absent coverage", func(t *testing.T) {
-		e := rust.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
+		e := rust.New(runner, view.ExtractConfig{Mode: view.ModeAuto})
 		facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: empty})
 		if err != nil {
 			t.Fatalf("Extract: expected nil error without Cargo.toml in auto mode, got %v", err)
@@ -334,7 +334,7 @@ func TestExtract_NoMarker(t *testing.T) {
 		// A missing DEFAULT root Cargo.toml means "not a Rust project here": even in
 		// on mode it must degrade to n/a coverage, not exit 3 (E3). An explicitly
 		// configured-but-missing rust_manifest still errors (covered elsewhere).
-		e := rust.New(runner, config.ExtractConfig{Mode: config.ModeOn})
+		e := rust.New(runner, view.ExtractConfig{Mode: view.ModeOn})
 		facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: empty})
 		if err != nil {
 			t.Fatalf("expected n/a (not error) without a default Cargo.toml in on mode, got %v", err)
@@ -365,7 +365,7 @@ func TestExtract_NonZeroExit(t *testing.T) {
 	}
 
 	t.Run("auto degrades to partial coverage", func(t *testing.T) {
-		e := rust.New(runner, config.ExtractConfig{Mode: config.ModeAuto})
+		e := rust.New(runner, view.ExtractConfig{Mode: view.ModeAuto})
 		facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: fixtureDir})
 		if err != nil {
 			t.Fatalf("auto mode must not error on cargo metadata non-zero exit; got %v", err)
@@ -379,7 +379,7 @@ func TestExtract_NonZeroExit(t *testing.T) {
 	})
 
 	t.Run("on hard-errors", func(t *testing.T) {
-		e := rust.New(runner, config.ExtractConfig{Mode: config.ModeOn})
+		e := rust.New(runner, view.ExtractConfig{Mode: view.ModeOn})
 		if _, _, err := e.Extract(context.Background(), scope.Scope{Root: fixtureDir}); err == nil {
 			t.Error("ModeOn must hard-error on cargo metadata non-zero exit")
 		}

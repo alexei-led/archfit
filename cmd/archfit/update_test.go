@@ -15,6 +15,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -352,10 +353,10 @@ rules:
 
 func TestEnsureRustDeepAnalysisConfig_IgnoresCommentBoundaries(t *testing.T) {
 	cfg := config.Config{
-		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: config.ModeOn}},
+		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: view.ModeOn}},
 		Analyzers: config.AnalyzersConfig{
-			CargoModules: config.Analyzer{Enabled: config.ModeAuto},
-			Scip:         config.TimedAnalyzer{Enabled: config.ModeAuto},
+			CargoModules: config.Analyzer{Enabled: view.ModeAuto},
+			Scip:         config.TimedAnalyzer{Enabled: view.ModeAuto},
 		},
 	}
 	src := []byte(`version: 1
@@ -389,10 +390,10 @@ rules:
 
 func TestEnsureRustDeepAnalysisConfig_PreservesExplicitAnalyzerOff(t *testing.T) {
 	cfg := config.Config{
-		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: config.ModeOn}},
+		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: view.ModeOn}},
 		Analyzers: config.AnalyzersConfig{
-			CargoModules: config.Analyzer{Enabled: config.ModeOff},
-			Scip:         config.TimedAnalyzer{Enabled: config.ModeOff},
+			CargoModules: config.Analyzer{Enabled: view.ModeOff},
+			Scip:         config.TimedAnalyzer{Enabled: view.ModeOff},
 		},
 	}
 	src := []byte(`version: 1

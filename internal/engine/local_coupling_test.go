@@ -6,10 +6,10 @@ import (
 
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/classify"
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Fixture constants shared by the local_coupling tests.
@@ -26,12 +26,12 @@ const (
 // (none), an abstained same-module edge (unknown strength), plus one
 // cross-module edge into module "b" — the only edge coupling_balance or
 // collectAdvisories may ever report on.
-func localCouplingFixture() (config.ClassifyConfig, *graph.Graph, coupling.Index) {
+func localCouplingFixture() (view.ClassifyConfig, *graph.Graph, coupling.Index) {
 	modules := map[string]module.ModuleDef{
 		"a": {Paths: []string{testServicesAGlob}, Subdomain: lcSubdomainCore},
 		"b": {Paths: []string{testServicesBGlob}, Subdomain: "supporting"},
 	}
-	cfg := config.ClassifyConfig{Modules: modules, ModuleMap: module.BuildMap(modules)}
+	cfg := view.ClassifyConfig{Modules: modules, ModuleMap: module.BuildMap(modules)}
 
 	edges := []graph.Edge{
 		// Ball of mud: model/same_module/high → balance 2, critical → offender,
@@ -134,7 +134,7 @@ func TestBuildLocalCoupling_FourLanguages(t *testing.T) {
 		"pymod":   {Paths: []string{"pkg.**"}, Subdomain: lcSubdomainCore},
 		"rustmod": {Paths: []string{"mycrate", "mycrate::**"}, Subdomain: lcSubdomainCore},
 	}
-	cfg := config.ClassifyConfig{Modules: modules}
+	cfg := view.ClassifyConfig{Modules: modules}
 	model := string(coupling.StrengthModel)
 
 	facts := []graph.Facts{
@@ -193,7 +193,7 @@ func TestBuildLocalCoupling_ContractCountsAsComplexity(t *testing.T) {
 	modules := map[string]module.ModuleDef{
 		"a": {Paths: []string{"pkg/q/**"}, Subdomain: lcSubdomainCore},
 	}
-	cfg := config.ClassifyConfig{Modules: modules}
+	cfg := view.ClassifyConfig{Modules: modules}
 	edges := []graph.Edge{
 		{ // contract/same_module/high → local-complexity quadrant
 			From: "file:pkg/q/x.go", To: "file:pkg/q/y.go",
@@ -231,7 +231,7 @@ func TestBuildLocalCoupling_OffenderCap(t *testing.T) {
 	modules := map[string]module.ModuleDef{
 		"a": {Paths: []string{"pkg/w/**"}, Subdomain: lcSubdomainCore},
 	}
-	cfg := config.ClassifyConfig{Modules: modules}
+	cfg := view.ClassifyConfig{Modules: modules}
 	// Six same-module Model-strength edges: all balance 2 (critical), tied —
 	// From/To decide the cap's cut. n6 sorts last and must be dropped.
 	edges := []graph.Edge{
@@ -271,7 +271,7 @@ func TestBuildLocalCoupling_OffenderCap(t *testing.T) {
 func TestBuildLocalCoupling_SameModuleEdgesProduceNoAdvisory(t *testing.T) {
 	cfg, g, idx := localCouplingFixture()
 
-	fnds := collectAdvisories(g, idx, cfg, nil, RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: config.WaiverSet{}})
+	fnds := collectAdvisories(g, idx, cfg, nil, RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: view.WaiverSet{}})
 	bc := findingsByRule(fnds, RuleIDBCImbalanced)
 	if len(bc) != 1 {
 		t.Fatalf("bc/imbalanced_coupling findings = %d, want 1 (only the cross-module edge; same-module edges must stay SeverityNone): %+v", len(bc), bc)

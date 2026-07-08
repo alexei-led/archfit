@@ -9,10 +9,10 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // subdomain constants are the accepted Khononov subdomain values used throughout
@@ -50,7 +50,7 @@ const (
 //     Applied to every known-distance edge; unknown-distance edges are zero.
 //     Same-module edges are scored (local_coupling report block) but keep
 //     SeverityNone — the advisory pipeline stays cross-boundary.
-func Run(g *graph.Graph, c config.ClassifyConfig) coupling.Index {
+func Run(g *graph.Graph, c view.ClassifyConfig) coupling.Index {
 	mm := buildModuleIndex(c.Modules)
 	idx := make(coupling.Index)
 	scorer := c.Scorer
@@ -377,7 +377,7 @@ func matchesAnyGlob(path string, globs []string) bool {
 // ExplicitnessHint on the edge overrides the config-glob-derived explicitness
 // when non-empty ("explicit" or "implicit"). Severity is set in Run after the
 // book score is computed (cl.Score.Band → cl.Severity).
-func classify(e graph.Edge, mi moduleIndex, c config.ClassifyConfig, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility, extSystems externalSystemIndex) coupling.Classification {
+func classify(e graph.Edge, mi moduleIndex, c view.ClassifyConfig, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility, extSystems externalSystemIndex) coupling.Classification {
 	modules := c.Modules
 	fromPath := pathFromID(e.From)
 	toPath := pathFromID(e.To)
@@ -525,7 +525,7 @@ func connascenceKind(kind string) (coupling.ConnascenceKind, bool) {
 // external just because an external glob overlaps that module's path space. The
 // match runs after the role cap deliberately: a composition root's edge to an
 // external vendor system is a real integration seam, not its own cohesive wiring.
-func resolveDistanceVolatility(fromPath, toPath, lang string, mi moduleIndex, c config.ClassifyConfig, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility, extSystems externalSystemIndex) (coupling.Distance, coupling.DistanceBasis, coupling.Volatility) {
+func resolveDistanceVolatility(fromPath, toPath, lang string, mi moduleIndex, c view.ClassifyConfig, degenerateExplicit, degenerateOwners bool, effectiveVol map[string]coupling.Volatility, extSystems externalSystemIndex) (coupling.Distance, coupling.DistanceBasis, coupling.Volatility) {
 	modules := c.Modules
 	dist, distBasis := classifyDistance(fromPath, toPath, lang, mi, modules, c.ExplicitOwners, degenerateExplicit, degenerateOwners)
 	if fromMod, ok := mi.moduleFor(fromPath); ok && cohesiveRole(modules[fromMod].Role) {
@@ -581,7 +581,7 @@ type strengthResolution struct {
 // edge. classify adds the clone-derived Symmetric upgrade after this helper;
 // the volatility cascade uses this pre-clone result and excludes clone pairs
 // separately.
-func resolveStrength(e graph.Edge, mi moduleIndex, c config.ClassifyConfig) strengthResolution {
+func resolveStrength(e graph.Edge, mi moduleIndex, c view.ClassifyConfig) strengthResolution {
 	fromPath := pathFromID(e.From)
 	toPath := pathFromID(e.To)
 	// An internal-glob match is authoritative intrusive. A public-glob match is a
@@ -890,7 +890,7 @@ func isGenericSubdomain(toPath string, mi moduleIndex, modules map[string]module
 // essential rate of change, driven by its domain role — an incidental clone
 // match between two modules says nothing about either module's real volatility,
 // so it must not flip a whole module's effective volatility to high.
-func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, c config.ClassifyConfig) map[string]coupling.Volatility {
+func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, c view.ClassifyConfig) map[string]coupling.Volatility {
 	modules := c.Modules
 	// Seed effective map from config-declared volatility.
 	effective := make(map[string]coupling.Volatility, len(modules))

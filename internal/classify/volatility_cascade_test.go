@@ -11,10 +11,10 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/classify"
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -172,7 +172,7 @@ func TestVolatilityCascade(t *testing.T) {
 				{tc.from, tc.to, tc.hint},
 				{probe, tc.probeTarget, ""},
 			})
-			c := config.ClassifyConfig{
+			c := view.ClassifyConfig{
 				Modules:                  cascadeModules,
 				VolatilityCascadeEnabled: tc.cascadeEnabled,
 			}
@@ -201,7 +201,7 @@ func TestVolatilityCascade_ClonePairExcluded(t *testing.T) {
 		{cascadeFileNotifications, cascadeFilePayment, string(coupling.StrengthFunctional)},
 		{probe, cascadeFileNotifications, ""},
 	})
-	c := config.ClassifyConfig{
+	c := view.ClassifyConfig{
 		Modules:                  cascadeModules,
 		VolatilityCascadeEnabled: true,
 		CrossModuleClonePairs: map[string]struct{}{
@@ -225,12 +225,12 @@ func TestVolatilityCascade_ClonePairExcluded(t *testing.T) {
 func TestVolatilityCascade_UsesResolvedStrength(t *testing.T) {
 	tests := []struct {
 		name string
-		cfg  config.ClassifyConfig
+		cfg  view.ClassifyConfig
 		to   string
 	}{
 		{
 			name: "config internal glob",
-			cfg: config.ClassifyConfig{
+			cfg: view.ClassifyConfig{
 				Modules: map[string]module.ModuleDef{
 					"payment":       {Paths: []string{"payment/**"}, Internal: []string{"payment/internal/**"}, Subdomain: subdomainCore},
 					"notifications": {Paths: []string{"notifications/**"}, Subdomain: subdomainSupporting},
@@ -241,7 +241,7 @@ func TestVolatilityCascade_UsesResolvedStrength(t *testing.T) {
 		},
 		{
 			name: "approved human label",
-			cfg: config.ClassifyConfig{
+			cfg: view.ClassifyConfig{
 				Modules:                  cascadeModules,
 				VolatilityCascadeEnabled: true,
 				ApprovedLabels:           map[string]string{cascadePairNotifPayment: string(coupling.StrengthFunctional)},
@@ -250,7 +250,7 @@ func TestVolatilityCascade_UsesResolvedStrength(t *testing.T) {
 		},
 		{
 			name: "approved llm label",
-			cfg: config.ClassifyConfig{
+			cfg: view.ClassifyConfig{
 				Modules:                  cascadeModules,
 				VolatilityCascadeEnabled: true,
 				LLMLabels:                map[string]string{cascadePairNotifPayment: string(coupling.StrengthFunctional)},
@@ -298,7 +298,7 @@ func TestVolatilityCascade_TransitiveFixpoint(t *testing.T) {
 		{probe, fileA, ""},
 		{probe, fileB, ""},
 	})
-	c := config.ClassifyConfig{
+	c := view.ClassifyConfig{
 		Modules:                  modules,
 		VolatilityCascadeEnabled: true,
 	}

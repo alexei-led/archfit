@@ -10,6 +10,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 func TestLoad_Valid(t *testing.T) {
@@ -38,14 +39,14 @@ func TestLoad_Valid(t *testing.T) {
 	}
 
 	// Verify language/analyzer modes (true→on, auto stays auto).
-	if got := cfg.Languages.Go.Enabled; got != config.ModeOn {
-		t.Errorf("languages.go.enabled = %q, want %q", got, config.ModeOn)
+	if got := cfg.Languages.Go.Enabled; got != view.ModeOn {
+		t.Errorf("languages.go.enabled = %q, want %q", got, view.ModeOn)
 	}
-	if got := cfg.Languages.TypeScript.Enabled; got != config.ModeAuto {
-		t.Errorf("languages.typescript.enabled = %q, want %q", got, config.ModeAuto)
+	if got := cfg.Languages.TypeScript.Enabled; got != view.ModeAuto {
+		t.Errorf("languages.typescript.enabled = %q, want %q", got, view.ModeAuto)
 	}
-	if got := cfg.Analyzers.Clones.Enabled; got != config.ModeAuto {
-		t.Errorf("analyzers.clones.enabled = %q, want %q", got, config.ModeAuto)
+	if got := cfg.Analyzers.Clones.Enabled; got != view.ModeAuto {
+		t.Errorf("analyzers.clones.enabled = %q, want %q", got, view.ModeAuto)
 	}
 
 	// Verify module details.
@@ -365,7 +366,7 @@ func TestForExtract(t *testing.T) {
 
 	t.Run("typescript_mode_auto", func(t *testing.T) {
 		ec := cfg.ForExtract("typescript")
-		if ec.Mode != config.ModeAuto {
+		if ec.Mode != view.ModeAuto {
 			t.Errorf("ForExtract(typescript).Mode = %q, want auto", ec.Mode)
 		}
 	})
@@ -373,7 +374,7 @@ func TestForExtract(t *testing.T) {
 	t.Run("go_mode_on", func(t *testing.T) {
 		// testdata/valid.yaml sets languages.go.enabled: true → ModeOn
 		ec := cfg.ForExtract("go")
-		if ec.Mode != config.ModeOn {
+		if ec.Mode != view.ModeOn {
 			t.Errorf("ForExtract(go).Mode = %q, want on", ec.Mode)
 		}
 	})
@@ -396,7 +397,7 @@ func TestForExtract(t *testing.T) {
 	t.Run("rust_mode_default_auto", func(t *testing.T) {
 		// rust tool not in testdata/valid.yaml → defaults to auto
 		ec := cfg.ForExtract("rust")
-		if ec.Mode != config.ModeAuto {
+		if ec.Mode != view.ModeAuto {
 			t.Errorf("ForExtract(rust).Mode = %q, want auto", ec.Mode)
 		}
 	})
@@ -436,7 +437,7 @@ func TestForExtract(t *testing.T) {
 		gc := config.Config{
 			Version: 1,
 			Languages: config.LanguagesConfig{Go: config.GoLanguage{
-				Enabled: config.ModeAuto,
+				Enabled: view.ModeAuto,
 				Modules: config.GoModuleFilter{
 					Include: []string{globSvcAll},
 					Exclude: []string{"svc/legacy"},
@@ -512,11 +513,11 @@ func TestForExtract_SrcNotModuleDerived(t *testing.T) {
 
 func TestDefaultIncludesRust(t *testing.T) {
 	cfg := config.Default()
-	if got := cfg.Languages.Rust.Enabled; got != config.ModeAuto {
+	if got := cfg.Languages.Rust.Enabled; got != view.ModeAuto {
 		t.Errorf("Default rust mode = %q, want auto", got)
 	}
-	if got := cfg.ForClassify().DuplicatedKnowledgePolicy; got != config.DuplicatedKnowledgePolicyScore {
-		t.Errorf("Default duplicated knowledge policy = %q, want %q", got, config.DuplicatedKnowledgePolicyScore)
+	if got := cfg.ForClassify().DuplicatedKnowledgePolicy; got != view.DuplicatedKnowledgePolicyScore {
+		t.Errorf("Default duplicated knowledge policy = %q, want %q", got, view.DuplicatedKnowledgePolicyScore)
 	}
 }
 
@@ -708,11 +709,11 @@ func TestToolMode_UnmarshalYAML(t *testing.T) {
 		name    string
 		yaml    string
 		wantErr bool
-		want    config.ToolMode
+		want    view.ToolMode
 	}{
-		{"bool_true", "version: 1\nanalyzers:\n  clones:\n    enabled: true\n", false, config.ModeOn},
-		{"bool_false", "version: 1\nanalyzers:\n  clones:\n    enabled: false\n", false, config.ModeOff},
-		{"string_auto", "version: 1\nanalyzers:\n  clones:\n    enabled: auto\n", false, config.ModeAuto},
+		{"bool_true", "version: 1\nanalyzers:\n  clones:\n    enabled: true\n", false, view.ModeOn},
+		{"bool_false", "version: 1\nanalyzers:\n  clones:\n    enabled: false\n", false, view.ModeOff},
+		{"string_auto", "version: 1\nanalyzers:\n  clones:\n    enabled: auto\n", false, view.ModeAuto},
 		// on/off are no longer accepted — canonical vocabulary is true|false|auto.
 		{"bare_on_rejected", "version: 1\nanalyzers:\n  clones:\n    enabled: on\n", true, ""},
 		{"quoted_on_rejected", "version: 1\nanalyzers:\n  clones:\n    enabled: \"on\"\n", true, ""},
@@ -788,7 +789,7 @@ func TestLoad_Patterns(t *testing.T) {
 func TestForPatterns(t *testing.T) {
 	tests := []struct {
 		name    string
-		rules   []config.RuleDef
+		rules   []view.RuleDef
 		wantLen int
 		wantIDs []string
 	}{
@@ -799,7 +800,7 @@ func TestForPatterns(t *testing.T) {
 		},
 		{
 			name: "rules_without_patterns",
-			rules: []config.RuleDef{
+			rules: []view.RuleDef{
 				{ID: "r1", Type: "forbidden_dependency"},
 				{ID: "r2", Type: "public_api_only"},
 			},
@@ -807,11 +808,11 @@ func TestForPatterns(t *testing.T) {
 		},
 		{
 			name: "one_rule_with_patterns",
-			rules: []config.RuleDef{
+			rules: []view.RuleDef{
 				{
 					ID:   "r1",
 					Type: "forbidden_dependency",
-					Patterns: []config.PatternDef{
+					Patterns: []view.PatternDef{
 						{ID: "p1", Lang: "go", Rule: "unsafe.Pointer($X)"},
 						{ID: "p2", Lang: "go", Rule: "reflect.ValueOf($X)"},
 					},
@@ -822,17 +823,17 @@ func TestForPatterns(t *testing.T) {
 		},
 		{
 			name: "multiple_rules_with_patterns",
-			rules: []config.RuleDef{
+			rules: []view.RuleDef{
 				{
 					ID: "r1",
-					Patterns: []config.PatternDef{
+					Patterns: []view.PatternDef{
 						{ID: "p1", Lang: "go", Rule: "foo($X)"},
 					},
 				},
 				{ID: "r2"}, // no patterns
 				{
 					ID: "r3",
-					Patterns: []config.PatternDef{
+					Patterns: []view.PatternDef{
 						{ID: "p2", Lang: langTypeScript, Rule: "bar($X)"},
 						{ID: "p3", Lang: langTypeScript, Rule: "baz($X)"},
 					},
@@ -879,7 +880,7 @@ func loadInline(t *testing.T, body string) error {
 }
 
 func TestLoad_ExternalSystems(t *testing.T) {
-	t.Run("valid entry decodes and projects into ClassifyConfig", func(t *testing.T) {
+	t.Run("valid entry decodes and projects into view.ClassifyConfig", func(t *testing.T) {
 		p := filepath.Join(t.TempDir(), ".archfit.yaml")
 		body := "version: 1\nexternal_systems:\n  aws:\n    targets: [\"github.com/aws/aws-sdk-go-v2/**\"]\n    volatility: medium\n  payment-gateway:\n    targets: [\"node_modules/@stripe/**\", \"stripe\"]\n"
 		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
@@ -987,7 +988,7 @@ func TestLoad_NewToolsAndMetrics(t *testing.T) {
 	}
 
 	// analyzers.clones.enabled: true
-	if got := cfg.Analyzers.Clones.Enabled; got != config.ModeOn {
+	if got := cfg.Analyzers.Clones.Enabled; got != view.ModeOn {
 		t.Errorf("analyzers.clones.enabled = %q, want on", got)
 	}
 	if !cfg.ClonesEnabled() {
@@ -1598,22 +1599,22 @@ func TestForClassify_DuplicatedKnowledgePolicy(t *testing.T) {
 	tests := []struct {
 		name string
 		yaml string
-		want config.DuplicatedKnowledgePolicy
+		want view.DuplicatedKnowledgePolicy
 	}{
 		{
 			name: "omitted defaults to score",
 			yaml: yamlV1,
-			want: config.DuplicatedKnowledgePolicyScore,
+			want: view.DuplicatedKnowledgePolicyScore,
 		},
 		{
 			name: "score preserved",
 			yaml: "version: 1\ncoupling:\n  duplicated_knowledge: score\n",
-			want: config.DuplicatedKnowledgePolicyScore,
+			want: view.DuplicatedKnowledgePolicyScore,
 		},
 		{
 			name: "advisory preserved",
 			yaml: "version: 1\ncoupling:\n  duplicated_knowledge: advisory\n",
-			want: config.DuplicatedKnowledgePolicyAdvisory,
+			want: view.DuplicatedKnowledgePolicyAdvisory,
 		},
 	}
 

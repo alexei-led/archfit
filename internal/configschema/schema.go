@@ -25,7 +25,7 @@ const (
 // toolModeSchema is the union that replaces the inlined {type: string} for any
 // struct field named "enabled" that carries ToolMode. It mirrors what the YAML
 // config actually accepts: a native boolean (true/false) or the string "auto".
-// The legacy "on"/"off" spellings are rejected by config.ToolMode.UnmarshalYAML.
+// The legacy "on"/"off" spellings are rejected by view.ToolMode.UnmarshalYAML.
 var toolModeSchema = &jsonschema.Schema{
 	Description: "Enable state: true | false | \"auto\" (on/off are not accepted)",
 	OneOf: []*jsonschema.Schema{
@@ -78,6 +78,13 @@ func Generate(srcDir string) ([]byte, error) {
 	moduleDir := filepath.Join(srcDir, "..", "model", "module")
 	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/model", moduleDir); err != nil {
 		return nil, fmt.Errorf("configschema: AddGoComments(module): %w", err)
+	}
+	// Stage-contract types (RuleDef, WaiverDef, MetricEntry, …) live in
+	// internal/view; walk dir "../view" joined onto the config base resolves
+	// to internal/view.
+	viewDir := filepath.Join(srcDir, "..", "view")
+	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/config", viewDir); err != nil {
+		return nil, fmt.Errorf("configschema: AddGoComments(view): %w", err)
 	}
 
 	schema := r.Reflect(&config.Config{})

@@ -6,10 +6,10 @@ import (
 
 	"github.com/alexei-led/archfit/internal/baseline"
 	"github.com/alexei-led/archfit/internal/classify"
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // TestGroupBCAdvisories_StatusSplitsTheGroup verifies that Status is part of
@@ -23,7 +23,7 @@ func TestGroupBCAdvisories_StatusSplitsTheGroup(t *testing.T) {
 		"a": {Paths: []string{"pkg/x/**"}},
 		"b": {Paths: []string{"pkg/y/**"}},
 	}
-	cfg := config.ClassifyConfig{Modules: modules, ModuleMap: module.BuildMap(modules)}
+	cfg := view.ClassifyConfig{Modules: modules, ModuleMap: module.BuildMap(modules)}
 	edge := graph.Edge{
 		From: "file:pkg/x/f.go", To: "file:pkg/y/g.go",
 		Kind: graph.EdgeKindImports, Language: graph.LangGo,
@@ -32,7 +32,7 @@ func TestGroupBCAdvisories_StatusSplitsTheGroup(t *testing.T) {
 	g := graph.Build([]graph.Facts{{Edges: []graph.Edge{edge}, Language: graph.LangGo}})
 	idx := classify.Run(g, cfg)
 
-	fnds := collectAdvisories(g, idx, cfg, nil, RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: config.WaiverSet{}})
+	fnds := collectAdvisories(g, idx, cfg, nil, RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: view.WaiverSet{}})
 	var newFinding finding.Finding
 	for _, f := range fnds {
 		if f.RuleID == RuleIDBCImbalanced {

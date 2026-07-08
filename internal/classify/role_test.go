@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/classify"
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // roleModules returns two modules — "src" (the edge source, role applied by the
@@ -67,7 +67,7 @@ func TestRun_RoleSuppressesOutboundImbalance(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := config.ClassifyConfig{Modules: roleModules(tc.role)}
+			cfg := view.ClassifyConfig{Modules: roleModules(tc.role)}
 			cl, ok := classify.Run(makeGraph([]graph.Edge{edge}), cfg)[edgeKey(edge)]
 			if !ok {
 				t.Fatalf("edge not classified")
@@ -105,7 +105,7 @@ func TestRun_RoleDoesNotAffectInboundEdges(t *testing.T) {
 		From: "file:caller/x.go", To: "file:wire/internal/secret.go",
 		Kind: graph.EdgeKindImports, Language: "go",
 	}
-	cfg := config.ClassifyConfig{Modules: modules}
+	cfg := view.ClassifyConfig{Modules: modules}
 	cl := classify.Run(makeGraph([]graph.Edge{edge}), cfg)[edgeKey(edge)]
 	if cl.Severity != coupling.SeverityHigh {
 		t.Errorf("inbound edge Severity = %q, want %q — role must cap outbound only", cl.Severity, coupling.SeverityHigh)

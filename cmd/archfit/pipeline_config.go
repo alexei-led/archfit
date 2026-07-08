@@ -17,6 +17,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/rules"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // buildConfigWarnings assembles the advisory ConfigWarnings block: under-specified
@@ -180,7 +181,7 @@ func applyFlagOverrides(cfg *config.Config, severity string, lang []string) erro
 		if canonical == "" {
 			return fmt.Errorf("--lang: unknown analyzer %q; see %s", key, languagesDocsURL)
 		}
-		cfg.SetToolMode(canonical, config.ModeOn)
+		cfg.SetToolMode(canonical, view.ModeOn)
 	}
 	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/rules"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Node ID constants reused across multiple test cases.
@@ -102,8 +103,8 @@ func makeGraph(edges []graph.Edge) *graph.Graph {
 // ---------------------------------------------------------------------------
 
 func TestForbiddenDependency(t *testing.T) {
-	cfg := config.RuleConfig{
-		Rules: []config.RuleDef{
+	cfg := view.RuleConfig{
+		Rules: []view.RuleDef{
 			{ID: "no-a-to-b", Type: typeForbiddenDependency, From: globServicesA, To: globServicesB},
 		},
 	}
@@ -192,8 +193,8 @@ func TestForbiddenDependency(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPublicAPIOnly(t *testing.T) {
-	cfg := config.RuleConfig{
-		Rules: []config.RuleDef{
+	cfg := view.RuleConfig{
+		Rules: []view.RuleDef{
 			{ID: ruleIDNoInternalAccess, Type: typePublicAPIOnly},
 		},
 	}
@@ -287,7 +288,7 @@ func TestPublicAPIOnly_ModuleMap(t *testing.T) {
 			moduleA:      {Paths: []string{"services/a/**"}},
 			moduleB:      {Paths: []string{"services/b/**"}},
 		},
-		Rules: []config.RuleDef{
+		Rules: []view.RuleDef{
 			{ID: ruleIDNoInternalAccess, Type: typePublicAPIOnly},
 		},
 	}
@@ -368,7 +369,7 @@ func TestInternalAPIAccess_ModuleMap(t *testing.T) {
 			moduleA:  {Paths: []string{globServicesA}},
 			moduleB:  {Paths: []string{globServicesB}},
 		},
-		Rules: []config.RuleDef{
+		Rules: []view.RuleDef{
 			{ID: ruleIDNoInternalAccess, Type: typeInternalAPIAccess},
 		},
 	}
@@ -428,8 +429,8 @@ func TestInternalAPIAccess_ModuleMap(t *testing.T) {
 // (matchesInternal); Rust extractor: never) live in the extractors, not in
 // this rule or in this test.
 func TestPublicAPIOnly_PerLanguage(t *testing.T) {
-	cfg := config.RuleConfig{
-		Rules: []config.RuleDef{
+	cfg := view.RuleConfig{
+		Rules: []view.RuleDef{
 			{ID: ruleIDNoInternalAccess, Type: typePublicAPIOnly},
 		},
 	}
@@ -471,8 +472,8 @@ func TestPublicAPIOnly_PerLanguage(t *testing.T) {
 // the given gate string ("" = unset/default fail).
 func newCycleRule(t *testing.T, gate string) rules.Rule {
 	t.Helper()
-	cfg := config.RuleConfig{
-		Rules: []config.RuleDef{
+	cfg := view.RuleConfig{
+		Rules: []view.RuleDef{
 			{ID: ruleIDCycle, Type: typeCycle, Gate: gate},
 		},
 	}
@@ -583,7 +584,7 @@ func TestCrossModuleDependency(t *testing.T) {
 			moduleA: {Paths: []string{globServicesA}},
 			moduleB: {Paths: []string{globServicesB}},
 		},
-		Rules: []config.RuleDef{
+		Rules: []view.RuleDef{
 			{ID: ruleIDCrossModule, Type: typeNewCrossModuleDependency},
 		},
 	}
@@ -645,7 +646,7 @@ func TestForbiddenLayerDirection(t *testing.T) {
 			"app":    {Paths: []string{"services/app/**"}, Layer: layerApplication},
 			"infra":  {Paths: []string{"services/infra/**"}, Layer: layerInfrastructure},
 		},
-		Rules: []config.RuleDef{
+		Rules: []view.RuleDef{
 			{ID: "no-upward-deps", Type: "forbidden_layer_direction"},
 		},
 	}
@@ -746,8 +747,8 @@ func TestForbiddenLayerDirection(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNew_UnknownTypeError(t *testing.T) {
-	cfg := config.RuleConfig{
-		Rules: []config.RuleDef{
+	cfg := view.RuleConfig{
+		Rules: []view.RuleDef{
 			{ID: "unknown", Type: "cycle_check_future"},
 		},
 	}
@@ -771,8 +772,8 @@ func TestNew_ForbiddenDependencyRequiresFromTo(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := config.RuleConfig{
-				Rules: []config.RuleDef{
+			cfg := view.RuleConfig{
+				Rules: []view.RuleDef{
 					{ID: "fd", Type: "forbidden_dependency", From: tc.from, To: tc.to},
 				},
 			}
@@ -794,16 +795,16 @@ func TestNew_MalformedGlobError(t *testing.T) {
 	const badGlob = "internal/[" // unclosed character class: doublestar.ErrBadPattern
 	cases := []struct {
 		name string
-		def  config.RuleDef
+		def  view.RuleDef
 	}{
-		{"forbidden_dependency bad from", config.RuleDef{ID: "fd", Type: typeForbiddenDependency, From: badGlob, To: pathInfraGlob}},
-		{"forbidden_dependency bad to", config.RuleDef{ID: "fd", Type: typeForbiddenDependency, From: pathDomainGlob, To: badGlob}},
-		{"public_api_only bad from", config.RuleDef{ID: "pao", Type: "public_api_only", From: badGlob}},
-		{"internal_api_access bad to", config.RuleDef{ID: "iaa", Type: "internal_api_access", To: badGlob}},
+		{"forbidden_dependency bad from", view.RuleDef{ID: "fd", Type: typeForbiddenDependency, From: badGlob, To: pathInfraGlob}},
+		{"forbidden_dependency bad to", view.RuleDef{ID: "fd", Type: typeForbiddenDependency, From: pathDomainGlob, To: badGlob}},
+		{"public_api_only bad from", view.RuleDef{ID: "pao", Type: "public_api_only", From: badGlob}},
+		{"internal_api_access bad to", view.RuleDef{ID: "iaa", Type: "internal_api_access", To: badGlob}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{tc.def}})
+			_, err := rules.New(view.RuleConfig{Rules: []view.RuleDef{tc.def}})
 			if err == nil {
 				t.Fatal("New: got nil error, want error for malformed glob")
 			}
@@ -812,7 +813,7 @@ func TestNew_MalformedGlobError(t *testing.T) {
 }
 
 func TestNew_EmptyRules(t *testing.T) {
-	ruleSet, err := rules.New(config.RuleConfig{})
+	ruleSet, err := rules.New(view.RuleConfig{})
 	if err != nil {
 		t.Fatalf("New: unexpected error: %v", err)
 	}
@@ -830,8 +831,8 @@ func TestGateSemantics(t *testing.T) {
 	ev := rules.Evidence{}
 
 	t.Run("off_skips_finding", func(t *testing.T) {
-		cfg := config.RuleConfig{
-			Rules: []config.RuleDef{
+		cfg := view.RuleConfig{
+			Rules: []view.RuleDef{
 				{ID: ruleIDNoDep, Type: typeForbiddenDependency, From: globServicesA, To: globServicesB, Gate: "off"},
 			},
 		}
@@ -846,8 +847,8 @@ func TestGateSemantics(t *testing.T) {
 	})
 
 	t.Run("warn_produces_advisory", func(t *testing.T) {
-		cfg := config.RuleConfig{
-			Rules: []config.RuleDef{
+		cfg := view.RuleConfig{
+			Rules: []view.RuleDef{
 				{ID: ruleIDNoDep, Type: typeForbiddenDependency, From: globServicesA, To: globServicesB, Gate: gateWarn},
 			},
 		}
@@ -865,8 +866,8 @@ func TestGateSemantics(t *testing.T) {
 	})
 
 	t.Run("fail_produces_gate_finding", func(t *testing.T) {
-		cfg := config.RuleConfig{
-			Rules: []config.RuleDef{
+		cfg := view.RuleConfig{
+			Rules: []view.RuleDef{
 				{ID: ruleIDNoDep, Type: typeForbiddenDependency, From: globServicesA, To: globServicesB, Gate: "fail"},
 			},
 		}
@@ -884,8 +885,8 @@ func TestGateSemantics(t *testing.T) {
 	})
 
 	t.Run("unset_gate_produces_gate_finding", func(t *testing.T) {
-		cfg := config.RuleConfig{
-			Rules: []config.RuleDef{
+		cfg := view.RuleConfig{
+			Rules: []view.RuleDef{
 				{ID: ruleIDNoDep, Type: typeForbiddenDependency, From: globServicesA, To: globServicesB},
 			},
 		}
@@ -903,8 +904,8 @@ func TestGateSemantics(t *testing.T) {
 	})
 
 	t.Run("unknown_type_returns_error", func(t *testing.T) {
-		cfg := config.RuleConfig{
-			Rules: []config.RuleDef{
+		cfg := view.RuleConfig{
+			Rules: []view.RuleDef{
 				{ID: "x", Type: "nonexistent_type"},
 			},
 		}
@@ -924,14 +925,14 @@ func maxPtr(n int) *int { return &n }
 
 // makePublicAPIMaxConfig constructs a Config with two modules and a
 // public_api_max rule, then returns the RuleConfig view for rules.New.
-func makePublicAPIMaxConfig(ceiling int, gate string) config.RuleConfig {
+func makePublicAPIMaxConfig(ceiling int, gate string) view.RuleConfig {
 	return config.Config{
 		Version: 1,
 		Modules: map[string]module.ModuleDef{
 			layerDomain: {Paths: []string{pathDomainGlob}},
 			moduleInfra: {Paths: []string{pathInfraGlob}},
 		},
-		Rules: []config.RuleDef{
+		Rules: []view.RuleDef{
 			{ID: "api-max", Type: typePublicAPIMax, Gate: gate, Max: maxPtr(ceiling)},
 		},
 	}.ForRules()
@@ -1136,7 +1137,7 @@ func TestPublicAPIMax(t *testing.T) {
 
 func TestPublicAPIMax_InvalidConfig(t *testing.T) {
 	t.Run("nil_max_returns_error", func(t *testing.T) {
-		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+		_, err := rules.New(view.RuleConfig{Rules: []view.RuleDef{
 			{ID: "x", Type: typePublicAPIMax},
 		}})
 		if err == nil {
@@ -1145,7 +1146,7 @@ func TestPublicAPIMax_InvalidConfig(t *testing.T) {
 	})
 
 	t.Run("negative_max_returns_error", func(t *testing.T) {
-		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+		_, err := rules.New(view.RuleConfig{Rules: []view.RuleDef{
 			{ID: "x", Type: typePublicAPIMax, Max: maxPtr(-1)},
 		}})
 		if err == nil {
@@ -1154,7 +1155,7 @@ func TestPublicAPIMax_InvalidConfig(t *testing.T) {
 	})
 
 	t.Run("zero_max_is_valid", func(t *testing.T) {
-		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+		_, err := rules.New(view.RuleConfig{Rules: []view.RuleDef{
 			{ID: "x", Type: typePublicAPIMax, Max: maxPtr(0)},
 		}})
 		if err != nil {
@@ -1163,7 +1164,7 @@ func TestPublicAPIMax_InvalidConfig(t *testing.T) {
 	})
 
 	t.Run("valid_config_returns_no_error", func(t *testing.T) {
-		_, err := rules.New(config.RuleConfig{Rules: []config.RuleDef{
+		_, err := rules.New(view.RuleConfig{Rules: []view.RuleDef{
 			{ID: "x", Type: typePublicAPIMax, Max: maxPtr(10)},
 		}})
 		if err != nil {
@@ -1178,14 +1179,14 @@ func TestPublicAPIMax_InvalidConfig(t *testing.T) {
 
 // makePublicAPIChangeConfig constructs a RuleConfig with two modules and a
 // public_api_change rule with the given gate.
-func makePublicAPIChangeConfig(gate string) config.RuleConfig {
+func makePublicAPIChangeConfig(gate string) view.RuleConfig {
 	return config.Config{
 		Version: 1,
 		Modules: map[string]module.ModuleDef{
 			layerDomain: {Paths: []string{pathDomainGlob}},
 			moduleInfra: {Paths: []string{pathInfraGlob}},
 		},
-		Rules: []config.RuleDef{
+		Rules: []view.RuleDef{
 			{ID: "api-change", Type: typePublicAPIChange, Gate: gate},
 		},
 	}.ForRules()
@@ -1391,7 +1392,7 @@ func TestPublicAPITypeLeak(t *testing.T) {
 		Modules: map[string]module.ModuleDef{
 			moduleNameDom: {Paths: []string{"domain/**"}},
 		},
-		Rules: []config.RuleDef{
+		Rules: []view.RuleDef{
 			{ID: ruleID, Type: typePublicAPITypeLeak},
 		},
 	}.ForRules()

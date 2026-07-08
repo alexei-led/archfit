@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/extract/rust"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // rustCacheRunner fakes cargo + cargo-modules: --version calls return pinned
@@ -86,7 +86,7 @@ func TestFactCache_CargoMetadataAndModules(t *testing.T) {
 	root := writeRustFixture(t)
 	metadataCalls, modulesCalls := 0, 0
 	runner := rustCacheRunner(root, &metadataCalls, &modulesCalls)
-	ex := rust.New(runner, config.ExtractConfig{Mode: config.ModeAuto, ModuleGraph: true})
+	ex := rust.New(runner, view.ExtractConfig{Mode: view.ModeAuto, ModuleGraph: true})
 	ex.Cache = factcache.NewStore(t.TempDir())
 	ctx := context.Background()
 	s := scope.Scope{Root: root}

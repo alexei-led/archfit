@@ -13,10 +13,10 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // defaultThreshold is the staleness threshold used when cfg.Threshold is zero.
@@ -30,7 +30,7 @@ const defaultThreshold = 90 * 24 * time.Hour
 //   - "map/stale_review": a module's reviewed_at is set and older than threshold.
 //
 // Returns nil when cfg.Enabled is false.
-func Check(g *graph.Graph, cfg config.StalenessConfig, now time.Time) []finding.Finding {
+func Check(g *graph.Graph, cfg view.StalenessConfig, now time.Time) []finding.Finding {
 	if !cfg.Enabled {
 		return nil
 	}

@@ -82,6 +82,17 @@ modules:
     layer: support
     subdomain: supporting
     volatility: medium
+  # Stage-contract views: data-only projections each pipeline stage consumes
+  # instead of importing the volatile config decode/validate logic.
+  internal/view:
+    owner: alexei-led
+    paths:
+      - internal/view/**
+    public:
+      - internal/view
+    layer: model
+    subdomain: generic
+    volatility: low
   internal/configschema:
     owner: alexei-led
     paths:

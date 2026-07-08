@@ -17,10 +17,10 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/packages"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // goAnalyzer is the fact-cache subdirectory for per-member Go facts.
@@ -336,7 +336,7 @@ var goListHashExcludes = []string{"**/testdata/**"}
 func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDirs []string) []string {
 	env := e.goCacheEnv(ctx)
 	cfgHash, err := factcache.HashJSON(struct {
-		Cfg    config.ExtractConfig
+		Cfg    view.ExtractConfig
 		Root   string
 		GoWork string
 		Env    map[string]string

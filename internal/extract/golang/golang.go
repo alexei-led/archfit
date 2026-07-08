@@ -9,12 +9,12 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // BC integration-strength labels used for StrengthHint on Go edges.
@@ -54,7 +54,7 @@ var goStrengthRank = map[string]int{
 // It is in-process (no subprocess) and satisfies the engine.Extractor interface
 // structurally: Name() string and Extract(ctx, scope.Scope) (graph.Facts, diagnostic.Coverage, error).
 type GoExtractor struct {
-	cfg config.ExtractConfig
+	cfg view.ExtractConfig
 	// Runner probes the go-toolchain version for the fact-cache key; nil
 	// (tests) yields an empty version component, never an error.
 	Runner toolrun.Runner
@@ -66,7 +66,7 @@ type GoExtractor struct {
 }
 
 // New returns a GoExtractor configured with the given ExtractConfig.
-func New(cfg config.ExtractConfig) *GoExtractor {
+func New(cfg view.ExtractConfig) *GoExtractor {
 	return &GoExtractor{cfg: cfg}
 }
 
@@ -99,7 +99,7 @@ func (e *GoExtractor) Name() string {
 // external edges are excluded from scoring by distance, so their hints are
 // report-only.
 func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-	if e.cfg.Mode == config.ModeOff {
+	if e.cfg.Mode == view.ModeOff {
 		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: statusAbsent}, nil
 	}
 
@@ -134,7 +134,7 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		// go.mod or an unresolvable build constraint. This is a coverage gap, not a
 		// run-level failure (the "warn-loud, don't block" contract); only an
 		// explicitly required analyzer (ModeOn) hard-errors.
-		if e.cfg.Mode == config.ModeOn {
+		if e.cfg.Mode == view.ModeOn {
 			return graph.Facts{}, diagnostic.Coverage{}, err
 		}
 		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: "partial", Reason: err.Error()}, nil

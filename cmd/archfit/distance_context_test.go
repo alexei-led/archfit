@@ -7,6 +7,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -61,7 +62,7 @@ func TestBuildDistanceContext_NoOwnerSignal(t *testing.T) {
 func TestBuildDistanceContext_NoOwnerWithExternalEvidence(t *testing.T) {
 	cfg := config.Config{
 		Modules:         map[string]module.ModuleDef{"a": {Paths: []string{globA}}},
-		ExternalSystems: map[string]config.ExternalSystemDef{"stripe": {Targets: []string{"stripe.**"}}},
+		ExternalSystems: map[string]view.ExternalSystemDef{"stripe": {Targets: []string{"stripe.**"}}},
 	}
 
 	got := buildDistanceContext(diagnostic.New(), cfg, 0)

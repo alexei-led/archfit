@@ -24,6 +24,7 @@ import (
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Fixture root directory names, shared across every per-language table test
@@ -119,7 +120,7 @@ func TestConfigInit_PerLanguage(t *testing.T) {
 				t.Errorf("generated rule type not recognized by internal/rules: %v\n\nrendered:\n%s", err, rendered)
 			}
 			if tt.name == langRust {
-				if cfg.Languages.Rust.Enabled != config.ModeAuto {
+				if cfg.Languages.Rust.Enabled != view.ModeAuto {
 					t.Errorf("generated Rust mode = %q, want auto\n\nrendered:\n%s", cfg.Languages.Rust.Enabled, rendered)
 				}
 				if !cfg.CargoModulesEnabled() || !cfg.ScipEnabled() {
@@ -210,7 +211,7 @@ func TestPublicAPIOnly_Task1Fixtures(t *testing.T) {
 			cfg := config.Config{
 				Version: 1,
 				Modules: modules,
-				Rules: []config.RuleDef{
+				Rules: []view.RuleDef{
 					{ID: "no-internal-access", Type: "public_api_only"},
 				},
 			}
@@ -287,7 +288,7 @@ func TestForbiddenLayerDirection_Task1Fixtures(t *testing.T) {
 				Version: 1,
 				Layers:  discovered.Layers,
 				Modules: modules,
-				Rules: []config.RuleDef{
+				Rules: []view.RuleDef{
 					{ID: "no-back-edge", Type: "forbidden_layer_direction"},
 				},
 			}
@@ -343,7 +344,7 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) diagnostic.Diagnost
 	}
 	ms := metrics.New(cfg)
 
-	extractor := goextract.New(config.ExtractConfig{})
+	extractor := goextract.New(view.ExtractConfig{})
 	base := baseline.Baseline{SchemaVersion: baseline.SchemaVersion}
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	s := scope.Scope{Root: root, Mode: scope.ModeFull}
@@ -352,12 +353,12 @@ func runRenderedAnalyze(t *testing.T, root, rendered string) diagnostic.Diagnost
 		Mode:        engine.Mode{Full: true, Advisory: true},
 		Scope:       s,
 		Classify:    classifyCfg,
-		Staleness:   config.StalenessConfig{},
-		Waivers:     config.WaiverSet{},
+		Staleness:   view.StalenessConfig{},
+		Waivers:     view.WaiverSet{},
 		Extractors:  []ports.Extractor{extractor},
 		Patterns:    ports.NopPatternProvider{},
 		Resolver:    ports.NopSymbolResolver{},
-		PatternCfg:  config.PatternConfig{},
+		PatternCfg:  view.PatternConfig{},
 		Rules:       rs,
 		Metrics:     ms,
 		Accepted:    base,

@@ -5,11 +5,11 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/baseline"
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -135,8 +135,8 @@ func TestCollectAdvisories_ClonebackedSymmetricFinding_CitesRealLocation(t *test
 			CloneLocations: cloneCouplingLocs,
 		},
 	}
-	classifyCfg := config.ClassifyConfig{ModuleMap: testTwoCrateModuleMap()}
-	in := RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: config.WaiverSet{}}
+	classifyCfg := view.ClassifyConfig{ModuleMap: testTwoCrateModuleMap()}
+	in := RunInput{Now: time.Now(), Accepted: baseline.Baseline{}, Waivers: view.WaiverSet{}}
 
 	findings := collectAdvisories(g, couplingIdx, classifyCfg, nil, in)
 

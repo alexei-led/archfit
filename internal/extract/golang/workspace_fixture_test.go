@@ -26,10 +26,10 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/alexei-led/archfit/internal/config"
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // materializeWorkspaceFixture copies the committed fixture under
@@ -93,7 +93,7 @@ func materializeWorkspaceFixture(t *testing.T) string {
 func TestWorkspaceFixture_CoverageOK(t *testing.T) {
 	dir := materializeWorkspaceFixture(t)
 
-	ext := goextract.New(config.ExtractConfig{})
+	ext := goextract.New(view.ExtractConfig{})
 	_, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
@@ -112,7 +112,7 @@ func TestWorkspaceFixture_CoverageOK(t *testing.T) {
 func TestWorkspaceFixture_TwoGoModules(t *testing.T) {
 	dir := materializeWorkspaceFixture(t)
 
-	ext := goextract.New(config.ExtractConfig{})
+	ext := goextract.New(view.ExtractConfig{})
 	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
@@ -137,7 +137,7 @@ func TestWorkspaceFixture_TwoGoModules(t *testing.T) {
 func TestWorkspaceFixture_NodeIDsScanRootRelative(t *testing.T) {
 	dir := materializeWorkspaceFixture(t)
 
-	ext := goextract.New(config.ExtractConfig{})
+	ext := goextract.New(view.ExtractConfig{})
 	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
@@ -174,7 +174,7 @@ func TestWorkspaceFixture_NodeIDsScanRootRelative(t *testing.T) {
 func TestWorkspaceFixture_CrossModuleEdgeFirstPartyWithStrengthHint(t *testing.T) {
 	dir := materializeWorkspaceFixture(t)
 
-	ext := goextract.New(config.ExtractConfig{})
+	ext := goextract.New(view.ExtractConfig{})
 	facts, _, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
@@ -262,7 +262,7 @@ func TestWorkspaceFixture_Regression_SingleLoadAtRoot(t *testing.T) {
 	}
 
 	// Now run the new per-member Extract and verify it succeeds where old failed.
-	ext := goextract.New(config.ExtractConfig{})
+	ext := goextract.New(view.ExtractConfig{})
 	facts, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)

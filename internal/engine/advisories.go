@@ -11,13 +11,13 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/classify"
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/staleness"
 	"github.com/alexei-led/archfit/internal/status"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // kindAdvisory is the finding kind for non-gating advisory findings.
@@ -48,7 +48,7 @@ const edgeKindClone = "clone"
 // collectAdvisories runs stage 8: coupling advisories, staleness advisories,
 // stale label advisories, and the advisory status pass.
 // staleLabelFnds is the slice produced by stage 3 (applyPinnedLabels).
-func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg config.ClassifyConfig, staleLabelFnds []finding.Finding, in RunInput) []finding.Finding {
+func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg view.ClassifyConfig, staleLabelFnds []finding.Finding, in RunInput) []finding.Finding {
 	mm := classifyCfg.ModuleMap
 
 	var advisoryFindings []finding.Finding
@@ -557,7 +557,7 @@ func volatilityClause(v coupling.Volatility) string {
 // symmetric strength. Findings honor the same coupling.min_severity floor as
 // bc/imbalanced_coupling advisories; the pair-level ID is stable across runs so
 // baseline acceptance suppresses it like any other advisory.
-func duplicatedKnowledgeAdvisories(g *graph.Graph, classifyCfg config.ClassifyConfig) []finding.Finding {
+func duplicatedKnowledgeAdvisories(g *graph.Graph, classifyCfg view.ClassifyConfig) []finding.Finding {
 	var out []finding.Finding
 	for _, p := range classify.CloneOnlyPairs(g, classifyCfg) {
 		cl := p.Classification
@@ -568,7 +568,7 @@ func duplicatedKnowledgeAdvisories(g *graph.Graph, classifyCfg config.ClassifyCo
 			matchedStrength:   string(cl.Strength),
 			matchedDistance:   string(cl.Distance),
 			matchedVolatility: string(cl.Volatility),
-			"score_policy":    string(config.NormalizeDuplicatedKnowledgePolicy(classifyCfg.DuplicatedKnowledgePolicy)),
+			"score_policy":    string(view.NormalizeDuplicatedKnowledgePolicy(classifyCfg.DuplicatedKnowledgePolicy)),
 		}
 		if cl.DistanceBasis != coupling.DistanceBasisUnknown {
 			matched["distance_basis"] = string(cl.DistanceBasis)

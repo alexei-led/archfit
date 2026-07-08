@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -274,7 +274,7 @@ func TestClassifyDistance_SingleOwnerHierarchicalRepoUsesStructure(t *testing.T)
 	}
 	mi := buildModuleIndex(modules)
 	explicit := map[string]bool{modInternalClassify: true, modCmdArchfit: true}
-	degExplicit, degOwners := ownerDegeneracy(config.ClassifyConfig{Modules: modules, ExplicitOwners: explicit})
+	degExplicit, degOwners := ownerDegeneracy(view.ClassifyConfig{Modules: modules, ExplicitOwners: explicit})
 
 	got, gotBasis := classifyDistance(modInternalClassify+"/x.go", modCmdArchfit+"/main.go", graph.LangGo, mi, modules, explicit, degExplicit, degOwners)
 	if got != coupling.DistanceCrossModuleDiffOwner {

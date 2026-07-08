@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/fileclass"
@@ -12,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/syntax"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // applyPinnedLabels validates pinned labels and injects the approved ones into
@@ -24,7 +24,7 @@ import (
 // advisory per ignored stale label plus the count of approved labels with llm
 // provenance (used to lower coupling_balance confidence).
 // Deterministic — the gate never calls an LLM; labels are reviewed YAML.
-func applyPinnedLabels(g *graph.Graph, classifyCfg *config.ClassifyConfig, mode Mode, lbls []labels.Label) ([]finding.Finding, int) {
+func applyPinnedLabels(g *graph.Graph, classifyCfg *view.ClassifyConfig, mode Mode, lbls []labels.Label) ([]finding.Finding, int) {
 	var evidence map[string]string
 	if mode.Full || mode.Base == "" {
 		wanted := make(map[string]struct{}, len(lbls))

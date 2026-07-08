@@ -19,6 +19,7 @@ import (
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // goldenFixtureRoot returns the absolute path to testdata/golang, which contains
@@ -41,7 +42,7 @@ func goldenFixtureRoot(t *testing.T) string {
 // goldenConfig builds a ClassifyConfig, rules slice, and metrics slice that
 // match the testdata/golang fixture (two modules a and b, forbidden dependency
 // from a into b's internal package).
-func goldenConfig() (config.ClassifyConfig, []rules.Rule, []metrics.Metric) {
+func goldenConfig() (view.ClassifyConfig, []rules.Rule, []metrics.Metric) {
 	modules := map[string]module.ModuleDef{
 		"a": {
 			Paths:    []string{globModuleA},
@@ -58,7 +59,7 @@ func goldenConfig() (config.ClassifyConfig, []rules.Rule, []metrics.Metric) {
 	cfg := config.Config{
 		Version: 1,
 		Modules: modules,
-		Rules: []config.RuleDef{
+		Rules: []view.RuleDef{
 			{
 				ID:   "no_internal_access",
 				Type: "forbidden_dependency",
@@ -86,7 +87,7 @@ func TestGolden_DoubleRun(t *testing.T) {
 
 	classifyCfg, rs, ms := goldenConfig()
 
-	extractor := goextract.New(config.ExtractConfig{})
+	extractor := goextract.New(view.ExtractConfig{})
 	base := baseline.Baseline{SchemaVersion: baseline.SchemaVersion}
 	// Fixed timestamp — any wall-clock source would break determinism.
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -100,12 +101,12 @@ func TestGolden_DoubleRun(t *testing.T) {
 				Mode:        engine.Mode{Full: true},
 				Scope:       s,
 				Classify:    classifyCfg,
-				Staleness:   config.StalenessConfig{},
-				Waivers:     config.WaiverSet{},
+				Staleness:   view.StalenessConfig{},
+				Waivers:     view.WaiverSet{},
 				Extractors:  []ports.Extractor{extractor},
 				Patterns:    ports.NopPatternProvider{},
 				Resolver:    ports.NopSymbolResolver{},
-				PatternCfg:  config.PatternConfig{},
+				PatternCfg:  view.PatternConfig{},
 				Rules:       rs,
 				Metrics:     ms,
 				Accepted:    base,

@@ -6,13 +6,13 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/classify"
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/ports"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -646,7 +646,7 @@ func TestBuildClassifiedEdgeSummary_TailRiskIncludesCloneOnlyContribution(t *tes
 		},
 	}}
 
-	s := buildClassifiedEdgeSummaryWithCloneOnly(idx, cloneOnly, config.DuplicatedKnowledgePolicyScore)
+	s := buildClassifiedEdgeSummaryWithCloneOnly(idx, cloneOnly, view.DuplicatedKnowledgePolicyScore)
 
 	if s.TailRisk == nil {
 		t.Fatal("TailRisk is nil, want scored-edge tail summary")
@@ -679,7 +679,7 @@ func TestBuildClassifiedEdgeSummary_TailRiskIncludesCloneOnlyContribution(t *tes
 		t.Errorf("CloneOnlyWorstBalance = %d, want 3", s.TailRisk.CloneOnlyWorstBalance)
 	}
 
-	s = buildClassifiedEdgeSummaryWithCloneOnly(idx, cloneOnly, config.DuplicatedKnowledgePolicyAdvisory)
+	s = buildClassifiedEdgeSummaryWithCloneOnly(idx, cloneOnly, view.DuplicatedKnowledgePolicyAdvisory)
 	if s.TailRisk.CloneOnlyScored != 0 || s.TailRisk.CloneOnlyHighOrWorseEdges != 0 || s.TailRisk.CloneOnlyWorstBalance != 0 {
 		t.Errorf("advisory policy tail risk counted clone-only pair: %+v", s.TailRisk)
 	}
@@ -713,7 +713,7 @@ func TestBuildClassifiedEdgeSummary_DistanceBasisCompressionAndConnectedModules(
 		},
 	}
 
-	s := buildClassifiedEdgeSummaryForRun(idx, nil, config.DuplicatedKnowledgePolicyAdvisory, module.BuildMap(modules))
+	s := buildClassifiedEdgeSummaryForRun(idx, nil, view.DuplicatedKnowledgePolicyAdvisory, module.BuildMap(modules))
 
 	if s.ConnectedModules != 3 {
 		t.Errorf("ConnectedModules = %d, want 3", s.ConnectedModules)

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/classify"
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
@@ -13,6 +12,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/status"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // deltaReport builds the delta-bucket block for a run. It returns nil outside
@@ -701,10 +701,10 @@ func pathDir(p string) string {
 // (including same_module), separates cross-boundary scored vs abstained edges,
 // and computes the arithmetic mean book balance over scored edges.
 func buildClassifiedEdgeSummary(idx coupling.Index) *diagnostic.ClassifiedEdgeSummary {
-	return buildClassifiedEdgeSummaryWithCloneOnly(idx, nil, config.DuplicatedKnowledgePolicyAdvisory)
+	return buildClassifiedEdgeSummaryWithCloneOnly(idx, nil, view.DuplicatedKnowledgePolicyAdvisory)
 }
 
-func buildClassifiedEdgeSummaryForRun(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy config.DuplicatedKnowledgePolicy, mm module.Map) *diagnostic.ClassifiedEdgeSummary {
+func buildClassifiedEdgeSummaryForRun(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy view.DuplicatedKnowledgePolicy, mm module.Map) *diagnostic.ClassifiedEdgeSummary {
 	return buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx, cloneOnly, policy, mm)
 }
 
@@ -730,11 +730,11 @@ func buildClassifiedEdgeSummaryForRun(idx coupling.Index, cloneOnly []classify.C
 //
 // The summary uses string keys (not coupling package constants) so it stays
 // usable from diagnostic (stdlib-only) and score packages.
-func buildClassifiedEdgeSummaryWithCloneOnly(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy config.DuplicatedKnowledgePolicy) *diagnostic.ClassifiedEdgeSummary {
+func buildClassifiedEdgeSummaryWithCloneOnly(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy view.DuplicatedKnowledgePolicy) *diagnostic.ClassifiedEdgeSummary {
 	return buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx, cloneOnly, policy, module.Map{})
 }
 
-func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy config.DuplicatedKnowledgePolicy, mm module.Map) *diagnostic.ClassifiedEdgeSummary {
+func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy view.DuplicatedKnowledgePolicy, mm module.Map) *diagnostic.ClassifiedEdgeSummary {
 	s := &diagnostic.ClassifiedEdgeSummary{
 		ByStrength:          make(map[string]int),
 		ByDistance:          make(map[string]int),
@@ -754,8 +754,8 @@ func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, clone
 		spanAcc.addEdge(key, cl, mm)
 	}
 	if len(cloneOnly) > 0 {
-		switch config.NormalizeDuplicatedKnowledgePolicy(policy) {
-		case config.DuplicatedKnowledgePolicyScore:
+		switch view.NormalizeDuplicatedKnowledgePolicy(policy) {
+		case view.DuplicatedKnowledgePolicyScore:
 			for _, p := range cloneOnly {
 				s.CloneOnlyScored++
 				balanceSum += addClassificationToSummary(s, p.Classification)

@@ -22,6 +22,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/scope"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // UpdateCmd syncs .archfit.yaml with the current project structure.
@@ -204,7 +205,7 @@ func (c *UpdateCmd) withRustSyntheticSuggestions(
 	deps *appDeps,
 ) (initcfg.UpdateReport, error) {
 	extractCfg := cfg.ForExtract(config.LangRust)
-	if extractCfg.Mode == config.ModeOff || !extractCfg.ModuleGraph {
+	if extractCfg.Mode == view.ModeOff || !extractCfg.ModuleGraph {
 		return report, nil
 	}
 

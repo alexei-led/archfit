@@ -22,6 +22,7 @@ import (
 	"github.com/alexei-led/archfit/internal/rules"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/status"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // Mode controls how the engine run behaves.
@@ -39,12 +40,12 @@ type Mode struct {
 type RunInput struct {
 	Mode        Mode
 	Scope       scope.Scope
-	Classify    config.ClassifyConfig
-	Staleness   config.StalenessConfig
-	Waivers     config.WaiverSet
+	Classify    view.ClassifyConfig
+	Staleness   view.StalenessConfig
+	Waivers     view.WaiverSet
 	Extractors  []ports.Extractor
 	Patterns    ports.PatternProvider
-	PatternCfg  config.PatternConfig
+	PatternCfg  view.PatternConfig
 	Resolver    ports.SymbolResolver
 	Syntax      ports.SyntaxProvider // syntactic declaration/route provider; nil = Nop
 	SyntaxCfg   config.SyntaxConfig  // derived from ForSyntax(); Enabled gates the call
@@ -56,7 +57,7 @@ type RunInput struct {
 	// posture off|warn|fail plus max_new/min_delta thresholds); the caller
 	// passes cfg.Metrics. nil/missing entries mean the defaults: blocking
 	// gate, zero tolerated regression.
-	MetricGates map[string]config.MetricConfig
+	MetricGates map[string]view.MetricConfig
 	Labels      []labels.Label // pinned coupling labels; nil = none
 	Signals     signal.RunSignals
 	Now         time.Time
@@ -74,7 +75,7 @@ type RunInput struct {
 // AugmentClassifyConfig returns cfg with the same synthetic-module augmentation
 // and ModuleMap rebuild that Run applies before label freshness, classification,
 // advisories, and diagnostics.
-func AugmentClassifyConfig(g *graph.Graph, cfg config.ClassifyConfig) config.ClassifyConfig {
+func AugmentClassifyConfig(g *graph.Graph, cfg view.ClassifyConfig) view.ClassifyConfig {
 	// Register auto-discovered module-graph nodes (Rust "<crate>::<mod>") as modules so
 	// classify can resolve their distance/volatility; otherwise their edges are
 	// distance-unknown and coupling_balance/encapsulation never see them. No-op for
@@ -442,7 +443,7 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 func resolveEvidence(
 	g *graph.Graph,
 	couplingIdx coupling.Index,
-	classifyCfg config.ClassifyConfig,
+	classifyCfg view.ClassifyConfig,
 	taggedFindings []finding.Finding,
 ) evidenceResult {
 	// Build a path-pair → coupling.Classification lookup so we can join
@@ -506,7 +507,7 @@ func resolveEvidence(
 //
 // Coupling advisories are intentionally excluded from activeRuleAdvisories — they
 // must not flip the verdict.
-func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult, gates map[string]config.MetricConfig, activeRuleAdvisories int) diagnostic.Verdict {
+func computeVerdict(gateFindings []finding.Finding, ms []diagnostic.MetricResult, gates map[string]view.MetricConfig, activeRuleAdvisories int) diagnostic.Verdict {
 	for _, f := range gateFindings {
 		if f.Status == finding.StatusNew || f.Status == finding.StatusExpiredWaiver {
 			return diagnostic.VerdictFail

@@ -16,13 +16,13 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/toolrun"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 const (
@@ -39,7 +39,7 @@ const (
 // It satisfies the engine.Extractor interface structurally.
 type Extractor struct {
 	runner toolrun.Runner
-	cfg    config.ExtractConfig
+	cfg    view.ExtractConfig
 	// Cache is the extractor fact cache; nil disables caching (--no-cache).
 	Cache *factcache.Store
 }
@@ -52,7 +52,7 @@ var pyManifestNames = []string{
 }
 
 // New returns an Extractor configured with the given runner and config.
-func New(runner toolrun.Runner, cfg config.ExtractConfig) *Extractor {
+func New(runner toolrun.Runner, cfg view.ExtractConfig) *Extractor {
 	return &Extractor{runner: runner, cfg: cfg}
 }
 
@@ -70,13 +70,13 @@ func (e *Extractor) Name() string {
 // Extract returns empty Facts and an "absent" Coverage — never an error.
 // If mode is on and the tool is absent, Extract returns an error.
 func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
-	if e.cfg.Mode == config.ModeOff {
+	if e.cfg.Mode == view.ModeOff {
 		return graph.Facts{}, absentCoverage(), nil
 	}
 
 	// Applicability: requires pyproject.toml, setup.py, or cfg.PyPackage directory.
 	if !e.isApplicable(s.Root) {
-		if e.cfg.Mode == config.ModeOn {
+		if e.cfg.Mode == view.ModeOn {
 			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/py: no Python project marker found at %s", s.Root)
 		}
 		return graph.Facts{}, absentCoverage(), nil
@@ -85,7 +85,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	// Detect uv (preferred) or python3.12.
 	tool, version, found := e.detectTool(ctx)
 	if !found {
-		if e.cfg.Mode == config.ModeOn {
+		if e.cfg.Mode == view.ModeOn {
 			return graph.Facts{}, diagnostic.Coverage{}, errors.New("extract/py: uv or Python 3.12+ not found; install uv (https://docs.astral.sh/uv/) or Python 3.12+")
 		}
 		return graph.Facts{}, absentCoverage(), nil
@@ -168,7 +168,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		// A helper crash is a coverage gap, not a run-level failure (the "warn-loud,
 		// don't block" contract); only an explicitly required analyzer (ModeOn)
 		// hard-errors.
-		if e.cfg.Mode == config.ModeOn {
+		if e.cfg.Mode == view.ModeOn {
 			return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/py: %s", reason)
 		}
 		return graph.Facts{}, diagnostic.Coverage{Tool: toolGrimp, Version: version, Status: statusPartial, Reason: reason}, nil
@@ -206,7 +206,7 @@ func (e *Extractor) cachedRunner(s scope.Scope, tool, version string, pkgs, firs
 		return e.runner
 	}
 	cfgHash, err := factcache.HashJSON(struct {
-		Cfg               config.ExtractConfig
+		Cfg               view.ExtractConfig
 		Root              string
 		HelperHash        string
 		ResolverStateHash string

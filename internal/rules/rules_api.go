@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/model/module"
+	"github.com/alexei-led/archfit/internal/view"
 )
 
 // ---------------------------------------------------------------------------
@@ -21,7 +21,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // validatePublicAPIMaxDef validates a RuleDef for the public_api_max rule type.
-func validatePublicAPIMaxDef(def config.RuleDef) error {
+func validatePublicAPIMaxDef(def view.RuleDef) error {
 	if def.Max == nil {
 		return fmt.Errorf("rules: public_api_max %q requires max to be set", def.ID)
 	}
@@ -36,7 +36,7 @@ func validatePublicAPIMaxDef(def config.RuleDef) error {
 // ModuleMap file→module resolution) and emits one finding per violating module.
 // When ev.SyntaxFacts is empty (syntax off), the rule returns nil silently.
 type publicAPIMax struct {
-	def config.RuleDef
+	def view.RuleDef
 	mm  module.Map
 	max int
 }
@@ -133,7 +133,7 @@ func (r *publicAPIMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 // Default gate is "warn" (advisory drift signal), applied at construction time
 // in New via defaultGateForType.
 type publicAPIChange struct {
-	def config.RuleDef
+	def view.RuleDef
 	mm  module.Map
 }
 
@@ -271,7 +271,7 @@ func externalPackageSegments(g *graph.Graph) map[string]struct{} {
 //
 // When ev.SyntaxFacts is empty (syntax off), the rule returns nil silently.
 type publicAPITypeLeak struct {
-	def config.RuleDef
+	def view.RuleDef
 	mm  module.Map
 }
 
