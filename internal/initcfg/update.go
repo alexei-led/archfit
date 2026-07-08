@@ -29,9 +29,34 @@ type UpdateReport struct {
 	Removed                   []ExistingModule
 	PathDrift                 []PathDelta
 	Unclassified              []string
+	DeployUnitSuggestions     []DeployUnitSuggestion
+	DistanceConfigCandidates  []DistanceConfigCandidate
 	RuleSuggestions           []RuleSuggestion
 	ExternalSystemSuggestions []ExternalSystemSuggestion
 	StructuralInSync          bool
+}
+
+// DistanceConfigCandidate is one review-only config hint derived from runtime or
+// dynamic evidence. It is a display copy of diagnostic.DistanceConfigCandidate;
+// config update never applies it automatically.
+type DistanceConfigCandidate struct {
+	SourceBlock           string
+	Module                string
+	Target                string
+	IntegrationKind       string
+	Count                 int
+	EvidenceRefs          []string
+	SuggestedReviewAction string
+}
+
+// DeployUnitSuggestion is one deterministic deploy_unit proposal from checked-in
+// deploy-unit evidence (Go main packages, package manifests, Dockerfiles, or k8s
+// manifests). It is rendered as a human-reviewed config hint; update --apply does
+// not write it automatically because deploy topology is an architecture decision.
+type DeployUnitSuggestion struct {
+	Module string
+	Unit   string
+	Source string
 }
 
 // normalizePaths returns a sorted, deduplicated, non-empty slice copy for comparison.
@@ -155,6 +180,10 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef) UpdateReport {
 //     module paths with the discovered paths and writes a backup.
 //   - UNCLASSIFIED: modules missing classification; shows LLM suggestion from ann when
 //     present, otherwise suggests running with --llm.
+//   - DEPLOY UNIT HINTS: deterministic deploy_unit proposals from checked-in
+//     deploy evidence; review-only because runtime topology is an architecture decision.
+//   - DISTANCE CONFIG CANDIDATES: runtime/dynamic review hints for external_systems
+//     or deploy_unit; update/apply never writes them.
 //   - RULE SUGGESTIONS: review-only deterministic rule or coupling.gate proposals
 //     with rationale, basis, and evidence refs; update/apply never writes them.
 //   - EXTERNAL SYSTEM SUGGESTIONS: review-only external_systems proposals with
@@ -223,6 +252,20 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 		}
 	}
 
+	if len(r.DeployUnitSuggestions) > 0 {
+		fmt.Fprintf(&b, "DEPLOY UNIT HINTS (%d deterministic config proposal(s) — apply manually after review):\n", len(r.DeployUnitSuggestions))
+		for _, s := range r.DeployUnitSuggestions {
+			writeDeployUnitSuggestion(&b, s)
+		}
+	}
+
+	if len(r.DistanceConfigCandidates) > 0 {
+		fmt.Fprintf(&b, "DISTANCE CONFIG CANDIDATES (%d review-only config proposal(s) — apply manually after review):\n", len(r.DistanceConfigCandidates))
+		for _, c := range r.DistanceConfigCandidates {
+			writeDistanceConfigCandidate(&b, c)
+		}
+	}
+
 	if len(r.RuleSuggestions) > 0 {
 		fmt.Fprintf(&b, "RULE SUGGESTIONS (%d review-only config proposal(s) — apply manually after review):\n", len(r.RuleSuggestions))
 		for _, s := range r.RuleSuggestions {
@@ -285,6 +328,20 @@ func RenderAppliedLLMReview(r UpdateReport, ann map[string]ModuleAnnotation) str
 		}
 	}
 
+	if len(r.DeployUnitSuggestions) > 0 {
+		fmt.Fprintf(&b, "DEPLOY UNIT HINTS (%d deterministic config proposal(s) — not applied):\n", len(r.DeployUnitSuggestions))
+		for _, s := range r.DeployUnitSuggestions {
+			writeDeployUnitSuggestion(&b, s)
+		}
+	}
+
+	if len(r.DistanceConfigCandidates) > 0 {
+		fmt.Fprintf(&b, "DISTANCE CONFIG CANDIDATES (%d review-only config proposal(s) — not applied):\n", len(r.DistanceConfigCandidates))
+		for _, c := range r.DistanceConfigCandidates {
+			writeDistanceConfigCandidate(&b, c)
+		}
+	}
+
 	if len(r.RuleSuggestions) > 0 {
 		fmt.Fprintf(&b, "RULE SUGGESTIONS (%d review-only config proposal(s) — not applied):\n", len(r.RuleSuggestions))
 		for _, s := range r.RuleSuggestions {
@@ -339,6 +396,26 @@ func writeAnnotationDiff(b *strings.Builder, name string, a ModuleAnnotation) {
 	}
 	if a.Rationale != "" {
 		fmt.Fprintf(b, "    + rationale: %s\n", sanitizeComment(a.Rationale))
+	}
+}
+
+func writeDeployUnitSuggestion(b *strings.Builder, s DeployUnitSuggestion) {
+	fmt.Fprintf(b, "  %s:\n", sanitizeComment(yamlKey(s.Module)))
+	fmt.Fprintf(b, "    deploy_unit: %s\n", yamlScalar(s.Unit))
+	if s.Source != "" {
+		fmt.Fprintf(b, "    source: %s\n", sanitizeComment(s.Source))
+	}
+}
+
+func writeDistanceConfigCandidate(b *strings.Builder, c DistanceConfigCandidate) {
+	fmt.Fprintf(b, "  - module: %s\n", sanitizeComment(c.Module))
+	fmt.Fprintf(b, "    target: %s\n", sanitizeComment(c.Target))
+	fmt.Fprintf(b, "    integration_kind: %s\n", sanitizeComment(c.IntegrationKind))
+	fmt.Fprintf(b, "    source_block: %s\n", sanitizeComment(c.SourceBlock))
+	fmt.Fprintf(b, "    count: %d\n", c.Count)
+	fmt.Fprintf(b, "    suggested_review_action: %s\n", sanitizeComment(c.SuggestedReviewAction))
+	if len(c.EvidenceRefs) > 0 {
+		fmt.Fprintf(b, "    evidence_refs: %s\n", joinEvidenceRefs(c.EvidenceRefs))
 	}
 }
 

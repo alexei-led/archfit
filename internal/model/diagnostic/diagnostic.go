@@ -116,6 +116,22 @@ type Coverage struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+// SemanticStrengthOverlay records how often SCIP semantic strength refined
+// extractor edges. It is report-only evidence: gates and scores consume the
+// resulting edge strengths through classification, never these counters.
+type SemanticStrengthOverlay struct {
+	ByLanguage map[string]SemanticStrengthOverlayStats `json:"by_language,omitempty"`
+}
+
+// SemanticStrengthOverlayStats is the per-language SCIP overlay hit/miss summary.
+type SemanticStrengthOverlayStats struct {
+	CandidateEdges int            `json:"candidate_edges"`
+	Applied        int            `json:"applied"`
+	Missed         int            `json:"missed"`
+	Before         map[string]int `json:"before,omitempty"`
+	After          map[string]int `json:"after,omitempty"`
+}
+
 // AgentTask is the structured repair-task block (spec §13): one per ACTIVE gate
 // finding (status new/expired_waiver), derived deterministically from the
 // finding + rule configuration — no fabrication. It tells a coding agent what
@@ -139,6 +155,33 @@ type AgentTask struct {
 	// are present (analyzers.syntax.enabled: true); absent otherwise — no empty slice,
 	// no JSON key emitted (omitempty ensures byte-for-byte parity with prior runs).
 	Declarations []SyntaxFact `json:"declarations,omitempty"`
+}
+
+// AdvisoryTask is a report-only remediation prompt for grouped advisory
+// findings. Unlike AgentTask it never gates and never changes verdict status;
+// it just turns a deterministic rollup into a smaller human/agent work item.
+type AdvisoryTask struct {
+	// FindingID joins the task back to its grouped findings[] advisory.
+	FindingID string           `json:"finding_id"`
+	RuleID    string           `json:"rule_id"`
+	Status    finding.Status   `json:"status"`
+	Severity  finding.Severity `json:"severity"`
+	// GroupCount is the true number of advisory edges represented by the rollup.
+	GroupCount int `json:"group_count"`
+	// GroupMembers is the capped representative member ID list from matched_by.
+	GroupMembers []string `json:"group_members,omitempty"`
+	// Goal is a deterministic advisory objective, not a gate repair order.
+	Goal string `json:"goal"`
+	// CheapestMove carries the scorer's lowest-cost improvement hint when known.
+	CheapestMove string `json:"cheapest_move,omitempty"`
+	// ScoreValue carries the 1-10 Balanced-Coupling effort/risk score when known.
+	ScoreValue int `json:"score_value,omitempty"`
+	// TopFiles are representative repo-relative files from the rolled-up locations.
+	TopFiles []string `json:"top_files"`
+	// Constraints keep the advisory task inside report-only semantics.
+	Constraints []string `json:"constraints"`
+	// Validation are the commands that confirm the report stayed healthy.
+	Validation []string `json:"validation"`
 }
 
 // FileFact holds neutral per-module structural facts assembled from the symbol
@@ -197,6 +240,9 @@ type ConnascenceReport struct {
 	// TotalEvidence counts individual connascence facts. A single edge may carry
 	// multiple facts, e.g. name + type.
 	TotalEvidence int `json:"total_evidence"`
+	// StrengthInferredEdges counts classified edges whose strength was refined by
+	// deterministic static connascence evidence rather than a direct strength hint.
+	StrengthInferredEdges int `json:"strength_inferred_edges,omitempty"`
 	// ByKind counts evidence by Ch6 static category: name, type, meaning,
 	// algorithm, and position when deterministically measured.
 	ByKind map[string]int `json:"by_kind,omitempty"`
@@ -210,6 +256,40 @@ type ConnascenceReport struct {
 	// unmeasured categories, and review-only related signals. It is disclosure
 	// only and never feeds score, findings, baselines, or gates.
 	Roadmap []ConnascenceRoadmapItem `json:"roadmap,omitempty"`
+}
+
+// DynamicConnascenceSignals is a report-only bridge from deterministic static
+// sites (dynamic imports and runtime async integrations) to the Ch6 dynamic
+// connascence categories they may help humans inspect. The signals are not
+// measurements: they never feed coupling_balance, findings, baselines, or gates.
+type DynamicConnascenceSignals struct {
+	Signals          []DynamicConnascenceSignal `json:"signals"`
+	Unmeasured       []string                   `json:"unmeasured,omitempty"`
+	ReportOnlyReason string                     `json:"report_only_reason"`
+}
+
+// DynamicConnascenceSignal is one module/site rollup that points at a possible
+// dynamic connascence review area while explicitly marking it as unmeasured.
+type DynamicConnascenceSignal struct {
+	Kind               string                   `json:"kind"`
+	RelatedConnascence []string                 `json:"related_connascence"`
+	Measured           bool                     `json:"measured"`
+	ReportOnlyReason   string                   `json:"report_only_reason"`
+	Module             string                   `json:"module"`
+	Target             string                   `json:"target,omitempty"`
+	IntegrationKind    string                   `json:"integration_kind,omitempty"`
+	Count              int                      `json:"count"`
+	Sites              []DynamicConnascenceSite `json:"sites,omitempty"`
+}
+
+// DynamicConnascenceSite is a capped sample location behind a dynamic
+// connascence signal. Kind is the dynamic-import kind or runtime integration kind.
+type DynamicConnascenceSite struct {
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+	Kind     string `json:"kind"`
+	Language string `json:"language"`
+	Target   string `json:"target,omitempty"`
 }
 
 // RuntimeAsyncSite is one detected async integration pattern location.
@@ -333,6 +413,65 @@ type DeltaReport struct {
 	TouchedByDelta []string `json:"touched_by_delta,omitempty"`
 }
 
+// DistanceContext explains how distance evidence should be read for this run.
+// It is disclosure-only: the scorer consumes per-edge Distance and DistanceBasis,
+// never this rollup. The block keeps single-owner repositories honest by saying
+// "low socio-technical distance" instead of implying missing evidence.
+type DistanceContext struct {
+	OwnerModel                string         `json:"owner_model"`
+	DistanceBasis             map[string]int `json:"distance_basis,omitempty"`
+	DeployUnitDetectedModules int            `json:"deploy_unit_detected_modules,omitempty"`
+	DeclaredExternalSystems   int            `json:"declared_external_systems,omitempty"`
+	RuntimeAsyncRelations     int            `json:"runtime_async_relations,omitempty"`
+	RuntimeAsyncKinds         map[string]int `json:"runtime_async_kinds,omitempty"`
+	Interpretation            string         `json:"interpretation"`
+	RuntimeInterpretation     string         `json:"runtime_interpretation,omitempty"`
+}
+
+// DistanceConfigCandidate is a report-only hint that static external, runtime,
+// or dynamic evidence may justify reviewing distance config. It never feeds
+// classification, scoring, findings, baselines, or gates.
+type DistanceConfigCandidate struct {
+	SourceBlock           string                       `json:"source_block"`
+	Module                string                       `json:"module"`
+	Target                string                       `json:"target"`
+	IntegrationKind       string                       `json:"integration_kind"`
+	Count                 int                          `json:"count"`
+	EvidenceSites         []DistanceConfigEvidenceSite `json:"evidence_sites,omitempty"`
+	SuggestedReviewAction string                       `json:"suggested_review_action"`
+}
+
+// DistanceConfigEvidenceSite is a capped source location behind a
+// DistanceConfigCandidate.
+type DistanceConfigEvidenceSite struct {
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+	Kind     string `json:"kind"`
+	Language string `json:"language"`
+	Target   string `json:"target,omitempty"`
+}
+
+// VolatilityCorroboration reports source-control touch frequency for declared
+// modules. It is supporting evidence only: git history may reflect both domain
+// volatility and accidental design churn, so this block never affects scoring.
+type VolatilityCorroboration struct {
+	Source         string            `json:"source"`
+	Status         string            `json:"status"`
+	CommitWindow   int               `json:"commit_window,omitempty"`
+	FullHistory    bool              `json:"full_history,omitempty"`
+	CommitsScanned int               `json:"commits_scanned,omitempty"`
+	ModulesTouched int               `json:"modules_touched,omitempty"`
+	TopTouched     []VolatilityTouch `json:"top_touched,omitempty"`
+	Caveat         string            `json:"caveat,omitempty"`
+}
+
+// VolatilityTouch is one module's touch frequency sample from git history.
+type VolatilityTouch struct {
+	Module             string `json:"module"`
+	TouchCommits       int    `json:"touch_commits"`
+	DeclaredVolatility string `json:"declared_volatility,omitempty"`
+}
+
 // ClassifiedEdgeSummary holds aggregate distribution counts over the
 // coupling.Index produced by classify.Run plus score-bearing clone-only
 // duplicated-knowledge pairs when that policy is enabled. Stdlib-only (no
@@ -448,12 +587,20 @@ type CouplingTailRiskSummary struct {
 // coverage. It makes compressed Ch8 middle rungs visible in JSON/Markdown so a
 // D=4/D=7 result is not mistaken for full book precision.
 type DistanceCompressionSummary struct {
-	CompressedMiddleRungs bool                        `json:"compressed_middle_rungs"`
-	ImplementedRungs      []int                       `json:"implemented_rungs,omitempty"`
-	OmittedRungs          []int                       `json:"omitted_rungs,omitempty"`
-	OmittedRungReasons    []DistanceOmittedRungReason `json:"omitted_rung_reasons,omitempty"`
-	DeterministicSplits   []string                    `json:"deterministic_splits,omitempty"`
-	Rationale             string                      `json:"rationale,omitempty"`
+	CompressedMiddleRungs       bool                        `json:"compressed_middle_rungs"`
+	ImplementedRungs            []int                       `json:"implemented_rungs,omitempty"`
+	OmittedRungs                []int                       `json:"omitted_rungs,omitempty"`
+	OmittedRungReasons          []DistanceOmittedRungReason `json:"omitted_rung_reasons,omitempty"`
+	DeterministicSplits         []string                    `json:"deterministic_splits,omitempty"`
+	CodeStructureBoundaryCounts []DistanceCount             `json:"code_structure_boundary_counts,omitempty"`
+	CodeStructureAncestorDepths []DistanceCount             `json:"code_structure_ancestor_depths,omitempty"`
+	Rationale                   string                      `json:"rationale,omitempty"`
+}
+
+// DistanceCount is one deterministic distance-evidence histogram bucket.
+type DistanceCount struct {
+	Value int `json:"value"`
+	Count int `json:"count"`
 }
 
 // DistanceOmittedRungReason explains why a book distance rung remains compressed.
@@ -569,6 +716,10 @@ type Diagnostic struct {
 	// semantic/dynamic categories without a deterministic source are listed as
 	// unmeasured rather than guessed. Omitted only when classification did not run.
 	Connascence *ConnascenceReport `json:"connascence,omitempty"`
+	// DynamicConnascenceSignals maps dynamic/lazy imports and runtime async facts
+	// to possible Ch6 dynamic connascence categories for human review. Report-only;
+	// all entries are measured=false and never change score, findings, or verdicts.
+	DynamicConnascenceSignals *DynamicConnascenceSignals `json:"dynamic_connascence_signals,omitempty"`
 	// RuntimeAsync is the report-only async-bridge detection block.
 	// Evidence only — never consumed by classify, score, or gate logic; never
 	// annotates graph edges and never affects distance, score, or verdict.
@@ -585,13 +736,18 @@ type Diagnostic struct {
 	// Ceiling: cargo yanked and live-version EOL require external registry queries
 	// and are routed to the LLM path (archfit analyze --llm / enrich), not here.
 	DeprecatedDeps []DeprecatedDep `json:"deprecated_deps,omitempty"`
+	// SemanticStrengthOverlay reports SCIP semantic-strength overlay coverage by
+	// language. Report-only visibility for the refinement layer; never consumed by
+	// verdict, gates, score synthesis, or baseline deltas.
+	SemanticStrengthOverlay *SemanticStrengthOverlay `json:"semantic_strength_overlay,omitempty"`
 	// SyntaxFacts is the report-only syntactic declaration/route block extracted
 	// by ast-grep (design §3). Neutral, off-gate evidence — never consumed by
 	// verdict or gate logic. Omitted (omitempty) when analyzers.syntax is off or sg
 	// is absent, so absent sg never emits a null/empty block (no false green).
-	SyntaxFacts  []SyntaxFact `json:"syntax_facts,omitempty"`
-	AgentTasks   []AgentTask  `json:"agent_tasks"`
-	ToolCoverage []Coverage   `json:"tool_coverage"`
+	SyntaxFacts   []SyntaxFact   `json:"syntax_facts,omitempty"`
+	AgentTasks    []AgentTask    `json:"agent_tasks"`
+	AdvisoryTasks []AdvisoryTask `json:"advisory_tasks"`
+	ToolCoverage  []Coverage     `json:"tool_coverage"`
 	// CoverageGaps lists analyzers that did not run, the metrics their absence
 	// leaves unmeasured, and how to install them (warn-loud coverage reporting).
 	// Omitted when every required tool ran. Populated in cmd/, never the core ring.
@@ -616,6 +772,18 @@ type Diagnostic struct {
 	// filtering) so coupling_balance sees every edge, not just the noise-controlled
 	// advisory subset. Nil when classification did not run (backward compatible).
 	ClassifiedEdges *ClassifiedEdgeSummary `json:"classified_edges,omitempty"`
+	// DistanceContext is a human-readable rollup of the basis behind the distance
+	// dimension (owner model, basis counts, deploy/external evidence). Report-only.
+	DistanceContext *DistanceContext `json:"distance_context,omitempty"`
+	// DistanceConfigCandidates are review-only hints derived from static external,
+	// runtime, and dynamic evidence for possible external_systems or deploy_unit
+	// config entries. They never alter distance classification, scoring, or gate
+	// verdicts.
+	DistanceConfigCandidates []DistanceConfigCandidate `json:"distance_config_candidates,omitempty"`
+	// VolatilityCorroboration carries source-control touch frequency as book Ch9
+	// supporting evidence for declared volatility. Report-only: never consumed by
+	// scoring, findings, baselines, or gate verdicts.
+	VolatilityCorroboration *VolatilityCorroboration `json:"volatility_corroboration,omitempty"`
 	// LocalCoupling is the report-only per-module summary of scored same-module
 	// edges — the book Ch10 local-complexity quadrant. Same-module edges never
 	// enter coupling_balance's denominator (see LocalCouplingModule). Never
@@ -639,6 +807,7 @@ func New() Diagnostic {
 		FileFacts:      []FileFact{},
 		DynamicImports: []DynamicImport{},
 		AgentTasks:     []AgentTask{},
+		AdvisoryTasks:  []AdvisoryTask{},
 		ToolCoverage:   []Coverage{},
 	}
 }

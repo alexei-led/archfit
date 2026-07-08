@@ -20,7 +20,7 @@ complementary metrics. They split into three roles:
   changes the verdict.
 
 Separate JSON/Markdown report-only blocks, including `connascence`,
-`local_coupling`, `runtime_async`, and `classified_edges` summaries, explain the
+`dynamic_connascence_signals`, `distance_config_candidates`, `semantic_strength_overlay`, `volatility_corroboration`, `local_coupling`, `runtime_async`, and `classified_edges` summaries, explain the
 score inputs. They are evidence, not metrics, and never gate on their own.
 
 A metric's **absolute value** never fails the build — only a _regression_
@@ -154,14 +154,17 @@ inherited: M, cascade: K` (plus `undeclared: U` when nonzero; JSON:
   `classified_edges.volatility_provenance`) — so a repo whose volatility is
   uniform because synthetic submodules inherited it reads as
   uniform-by-inheritance, not as a measured fact. JSON also exposes
-  `classified_edges.connected_modules`, `classified_edges.by_distance_basis`,
-  `classified_edges.distance_compression`, and `classified_edges.tail_risk`;
-  Markdown renders the same in **Distance confidence**. These fields show which
-  deterministic distance signal selected each rung, which middle Ch8 rungs
-  remain compressed, and whether the mean hides a lower-tail hot spot. Tail risk
-  reports worst balance, lower-decile balance, high-or-worse share, critical and
-  distributed-monolith counts, plus clone-only subcounts when scored clone-only
-  duplicated knowledge contributes to the tail.
+  `distance_context`, `classified_edges.connected_modules`,
+  `classified_edges.by_distance_basis`, `classified_edges.distance_compression`,
+  and `classified_edges.tail_risk`; Markdown renders the same in **Distance
+  confidence**. `distance_context.owner_model` calls out `single_owner_degenerate`
+  repos explicitly: same-owner is a real low socio-technical distance signal, not
+  missing ownership. `distance_context.distance_basis` and
+  `classified_edges.by_distance_basis` show which deterministic signal selected
+  each rung, which middle Ch8 rungs remain compressed, and whether the mean hides
+  a lower-tail hot spot. Tail risk reports worst balance, lower-decile balance,
+  high-or-worse share, critical and distributed-monolith counts, plus clone-only
+  subcounts when scored clone-only duplicated knowledge contributes to the tail.
 
 ### `unbalanced_edge`
 
@@ -238,11 +241,12 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 
 - **Represents:** the fraction of applicable files the extractors actually
   processed — the trust signal for every other metric.
-- **Computed:** `extracted / applicable` across all tool-coverage records. Zero
-  applicable (extractors ran, nothing matched) → `1.0`. **No extractor ran at
-  all** (no coverage record) → `n/a`, not `1.0` — absence of evidence is never
-  scored as full coverage. This is the load-bearing distinction that stops an
-  unanalysed repo from reporting confident health.
+- **Computed:** `extracted / applicable` across contributing tool-coverage
+  records. Rows with `files_applicable: 0` are diagnostic-only auxiliary evidence
+  (for example `deploy-unit`) and do not contribute to either side of the ratio.
+  If no row contributes — no extractor ran, every extractor was absent, or only
+  auxiliary rows exist — coverage is `n/a`, not `1.0`; absence of evidence is
+  never scored as full coverage.
 - **Band:** always `info`. Confidence from the unresolved ratio (≤5% → high,
   ≤20% → medium, else low). Low coverage caps the band of every metric that
   depends on the missing evidence.
@@ -261,8 +265,9 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 ### `connascence`
 
 - **Represents:** deterministic, static Ch6 connascence evidence observed on
-  dependency edges. It is explanatory evidence for the strength classification,
-  not a scored metric.
+  dependency edges. It is disclosed as a report block, not a scored metric.
+  Some deterministic meaning/algorithm evidence may also refine an otherwise
+  unresolved or public-floor strength to `model` or `functional`.
 - **Computed:** extractors attach edge evidence only where the source fact is
   deterministic. Go `go/types` can report name, type, meaning (const/var/data),
   and algorithm (function/method/callable value). TypeScript dependency-cruiser
@@ -278,20 +283,93 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
   supplies deterministic argument/order evidence; `execution`, `timing`, runtime
   `value`, and `identity` are unmeasured dynamic categories.
 - **Unmeasured by design:** dynamic/lazy imports and runtime async bridges remain
-  separate report-only evidence blocks (`dynamic_imports`, `runtime_async_edges`).
-  They can guide a human review, but they never become connascence guesses and
-  never move into scoring without a deterministic source-module→runtime fact.
+  separate report-only evidence blocks (`dynamic_imports`, `runtime_async_edges`,
+  and `dynamic_connascence_signals`). They can guide a human review, but they
+  never become connascence guesses and never move into scoring without a
+  deterministic source-module→runtime fact.
+- **Report-only summary by design:** the `connascence` block itself never gates.
+  Deterministic connascence facts may refine strength classification before
+  scoring when no direct strength hint resolved the edge, and the block reports
+  how many edges used that fallback.
+
+### `dynamic_connascence_signals`
+
+- **Represents:** a report-only rollup that maps dynamic/lazy import sites and
+  runtime async module→target relations to the Ch6 dynamic connascence categories
+  they may help a human inspect, currently execution and timing.
+- **Computed:** assembled from JSON `dynamic_imports`, `runtime_async_edges`, and
+  `connascence.unmeasured`. Test files and `testdata/` fixtures are skipped so
+  fixture imports do not become architecture-review signals. Every signal has
+  `measured: false`, a `report_only_reason`, a source `kind`, related Ch6
+  categories, module/target context where available, count, and a capped site
+  sample.
+- **Unmeasured by design:** `connascence.unmeasured` still preserves execution,
+  timing, value, and identity unless a future deterministic runtime trace source
+  proves them. The block does not imply dynamic connascence is fully measured.
 - **Report-only by design:** never consumed by `coupling_balance`, findings,
-  baselines, or gate verdicts.
+  baselines, score deltas, or gate verdicts.
+
+### `distance_config_candidates`
+
+- **Represents:** review-only hints that static external/library edges, runtime,
+  or dynamic evidence may justify a config review for `external_systems` or
+  `deploy_unit` entries.
+- **Computed:** assembled from excluded static external edges
+  (`source_block: classified_external_edges`), `runtime_async_edges`,
+  `dynamic_imports`, and `dynamic_connascence_signals` after test files and
+  `testdata/` fixtures have been filtered out. Each candidate carries
+  `source_block`, `module`, `target`, `integration_kind`, `count`, capped
+  `evidence_sites`, and `suggested_review_action` (`external_systems` or
+  `deploy_unit`).
+- **Review-only by design:** candidates are not written into config by `analyze`
+  or `config update --apply`. They do not annotate graph edges, change distance,
+  enter `coupling_balance`, affect baselines, or change the gate verdict.
+
+### `volatility_corroboration`
+
+- **Represents:** source-control touch frequency used as the book's Ch9
+  supporting evidence for declared volatility judgments.
+- **Computed:** a git-history pass counts how many commits touched each declared
+  module in the analyzed tree. The bounded recent-history pass uses the most
+  recent 500 commits and falls back to full history only when that window yields
+  no module data. Output is ranked deterministically by commit count, then
+  module name.
+- **Output:** JSON `volatility_corroboration` reports `source`, `status`, the
+  recent-history `commit_window` when the bounded pass succeeded,
+  `full_history` when the fallback ran, `commits_scanned`, `modules_touched`, a
+  capped `top_touched` sample, and a caveat explaining the evidence boundary.
+- **Report-only by design:** git history corroborates volatility declarations;
+  it never sets volatility, never changes `coupling_balance`, findings,
+  baselines, score deltas, or gate verdicts.
+
+### `semantic_strength_overlay`
+
+- **Represents:** how often SCIP semantic strength actually refined a heuristic
+  extractor edge, per language. Makes SCIP under-application visible instead of
+  silent.
+- **Computed:** JSON `semantic_strength_overlay.by_language` keys each language
+  where SCIP may refine strength (`typescript`, `python`, `rust`) to a
+  `candidate_edges` / `applied` / `missed` count plus `before` and `after`
+  strength-bucket distributions. Go is excluded by design — its edge strength
+  comes from compiler-grade `go/types` info and SCIP never overrides it.
+- **Absent only when SCIP did not run or there were no candidate edges:** when
+  SCIP reports `status: ok` or `status: partial`, a language with candidate edges
+  appears even if SCIP produced zero matching strength entries. In that zero-hit
+  case `candidate_edges` is nonzero, `applied=0`, and `missed=candidate_edges`, so
+  under-application is visible. If SCIP is absent, disabled, or timed out, the
+  block stays omitted and the `scip` tool-coverage row explains why.
+- **Report-only by design:** never consumed by `coupling_balance`, findings,
+  baselines, score deltas, or gate verdicts.
 
 ### `runtime_async` and `runtime_async_edges`
 
 - **Represents:** deterministic async/message-bus/task integration sites. This is
   runtime/lifecycle coupling evidence for human review, not a scored distance
   adjustment.
-- **Computed:** the runtime detector scans Go, TypeScript, and Python for known
-  async libraries and high-signal async framework patterns. Missing async evidence
-  never implies synchronous coupling.
+- **Computed:** the runtime detector scans production Go, TypeScript, and Python
+  files for known async libraries and high-signal async framework patterns. Test
+  files and `testdata/` fixtures are skipped. Missing async evidence never
+  implies synchronous coupling.
 - **Output:** JSON `runtime_async` keeps the historical per-module rollup.
   JSON `runtime_async_edges` groups the same concrete sites by
   source module → runtime target (`library`, decorator, or async primitive), with
@@ -299,6 +377,9 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
   summary and points to JSON for the full list.
 - **Report-only by design:** neither block annotates graph edges, changes distance,
   enters `coupling_balance`, affects baselines, or changes the gate verdict.
+  The distance-confidence summary may restate that async bridges increase
+  perceived distance by reducing lifecycle coupling (book Ch8), but that
+  interpretation is explanatory only and does not change scoring.
 
 ### `local_coupling`
 
@@ -414,10 +495,11 @@ honest about what the numbers mean.
   and test density are better served by purpose-built linters (golangci-lint,
   clippy, flake8, eslint). archfit focuses on inter-module coupling structure, not
   intra-module code quality.
-- **Volatility comes from DDD subdomain classification, never git churn.** Git
-  churn is accidental volatility; essential volatility is determined by business
-  domain. Mixing them produces a metric that punishes active development, not
-  structural risk.
+- **Volatility comes from DDD subdomain classification, never git churn as a
+  score input.** Git churn is accidental volatility; essential volatility is
+  determined by business domain. `volatility_corroboration` keeps source-control
+  history as supporting evidence only, so active development does not silently
+  change score or gate verdicts.
 - **`cohesion_spread`, `shared_state_hub`.** Prototyped, then removed — they did
   not rank real problems better than the metrics that shipped.
 

@@ -27,8 +27,8 @@ const (
 // collectAdvisories may ever report on.
 func localCouplingFixture() (config.ClassifyConfig, *graph.Graph, coupling.Index) {
 	modules := map[string]config.ModuleDef{
-		"a": {Paths: []string{"services/a/**"}, Subdomain: lcSubdomainCore},
-		"b": {Paths: []string{"services/b/**"}, Subdomain: "supporting"},
+		"a": {Paths: []string{testServicesAGlob}, Subdomain: lcSubdomainCore},
+		"b": {Paths: []string{testServicesBGlob}, Subdomain: "supporting"},
 	}
 	cfg := config.ClassifyConfig{Modules: modules, ModuleMap: config.BuildModuleMap(modules)}
 

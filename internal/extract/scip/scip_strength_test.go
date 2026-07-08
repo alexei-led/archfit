@@ -89,7 +89,7 @@ func TestStrengths_AbsentReason(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root, runner := tc.setup(t)
 			a := New(runner, 0)
-			_, cov, err := a.Strengths(context.Background(), scope.Scope{Root: root})
+			m, cov, err := a.Strengths(context.Background(), scope.Scope{Root: root})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -101,6 +101,9 @@ func TestStrengths_AbsentReason(t *testing.T) {
 			}
 			if cov.Tool != toolName {
 				t.Errorf("tool = %q, want %q", cov.Tool, toolName)
+			}
+			if len(m) != 0 {
+				t.Errorf("strength map = %v, want empty when SCIP is absent", m)
 			}
 		})
 	}

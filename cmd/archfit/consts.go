@@ -25,16 +25,19 @@ const (
 
 // Volatility enum values used in classify validation and tests.
 const (
-	volatilityLow    = "low"
-	volatilityMedium = "medium"
-	volatilityHigh   = "high"
-	volatilityFrozen = "frozen"
+	volatilityLow        = "low"
+	volatilityMedium     = "medium"
+	volatilityHigh       = "high"
+	volatilityFrozen     = "frozen"
+	volatilityLegacy     = "legacy"
+	volatilityUndeclared = "undeclared"
 )
 
 // Optional-analyzer tool names shared by doctor and the coverage-gap table.
 const (
 	toolLoc           = "loc"             // always-on LOC walk; used in test assertions
 	toolAstGrepSyntax = "ast-grep/syntax" // syntax opt-in pass (distinct from the pattern pass "ast-grep")
+	toolDeployUnit    = "deploy-unit"
 	toolScip          = "scip"
 	toolJscpd         = "jscpd"
 )
@@ -56,6 +59,13 @@ const (
 	toolGrimp        = "grimp"
 	toolCargo        = "cargo"
 	toolCargoModules = "cargo-modules" // opt-in intra-crate module graph; mirrors config.ToolCargoModules
+)
+
+// Reported metric names shared across cmd coverage/output helpers.
+const (
+	metricCycle         = "cycle"
+	metricBlastRadius   = "blast_radius"
+	metricEncapsulation = "encapsulation"
 )
 
 // SCIP indexer binary names shared by the language registry (DoctorTools) and

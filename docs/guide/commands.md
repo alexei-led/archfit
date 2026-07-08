@@ -96,7 +96,9 @@ Exit `1` (policy) is deliberately distinct from exit `3` (tool/config error): a
 missing required tool is a _gate_ decision you opted into, not a crash.
 
 Balanced Coupling advisories are informational by default. Use them to prioritize
-architecture review and refactoring, not as automatic pass/fail rules. The
+architecture review and refactoring, not as automatic pass/fail rules. Grouped
+`bc/imbalanced_coupling` advisories also appear in `advisory_tasks[]`, a
+report-only rollup channel separate from gate-only `agent_tasks[]`. The
 synthesised `coupling_balance` score built from those advisories _can_ fail the
 build, but only through the opt-in `coupling.gate` block.
 
@@ -421,9 +423,17 @@ Mode matrix:
 | Command                       | Effect                                                                          |
 | ----------------------------- | ------------------------------------------------------------------------------- |
 | `config update`               | Drift report only; writes nothing.                                              |
-| `config update --apply`       | Structural drift written live (add/path/comment).                               |
+| `config update --apply`       | Structural drift written live (add/path/comment/Rust deep-analysis).            |
 | `config update --llm`         | Drift report plus review-only subdomain, volatility, layer, and role proposals. |
 | `config update --llm --apply` | Structural drift written live; LLM semantic proposals remain review-only.       |
+
+Every mode (plan or apply, with or without `--llm`) also reports **DEPLOY UNIT
+HINTS** — deterministic `deploy_unit` proposals for modules the deploy-unit
+detector mapped but the config leaves unset. It also reports **DISTANCE CONFIG
+CANDIDATES** from excluded static external edges, runtime async, and
+dynamic-import evidence; these are hints to review `external_systems` or
+`deploy_unit` config. Both sections are review-only; `--apply` never writes
+them.
 
 What "structural drift" means:
 
@@ -434,6 +444,12 @@ What "structural drift" means:
 - **Removed modules** — modules in the config with no discovered paths are
   commented out with a marker (e.g. `# archfit: removed module "foo" — verify
 before deleting`).
+- **Rust deep-analysis config** — for a project with a root `Cargo.toml`,
+  `--apply` also writes `languages.rust.enabled: auto`,
+  `analyzers.cargo_modules.enabled: true`, and `analyzers.scip.enabled: true` when
+  not already set (single-crate Rust degenerates to one node without them). The
+  edit is silent beyond the standard `.bak` backup; explicit
+  `languages.rust.enabled: false` opts out and is preserved.
 
 Guardrails:
 
@@ -443,6 +459,8 @@ Guardrails:
 - Existing field values are never overwritten.
 - LLM subdomain, volatility, layer, and role proposals are report-only. Review
   and copy accepted values into `.archfit.yaml` deliberately.
+- Deploy-unit hints and distance-config candidates are report-only — `--apply`
+  never writes `deploy_unit` or `external_systems` values from them.
 - Module keys are never auto-renamed.
 - If the config has not changed since it was read, `--apply` aborts rather than
   overwriting concurrent edits.

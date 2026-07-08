@@ -12,7 +12,21 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/toolrun"
+)
+
+const (
+	testUpdatePluginsModule = "plugins"
+	testUpdateDeployUnit    = "deploy_unit"
+	testUpdateModuleA       = "services/a"
+	testUpdateModuleAGlob   = "services/a/**"
+	testUpdateModuleAFile   = "file:services/a/impl.go"
+	testUpdateModuleAPath   = "services/a/impl.go"
+	testUpdateLayerAdapter  = "adapter"
+	testUpdateOwnerTeamA    = "team-a"
+	testUpdateWebModule     = "web"
+	rustEnabledAuto         = "rust:\n    enabled: auto"
 )
 
 // runUpdateCmd runs UpdateCmd.Run with a fake runner and returns stdout output and error.
@@ -69,6 +83,194 @@ func writeConfig(t *testing.T, dir, content string) string {
 	return path
 }
 
+func TestDistanceConfigCandidates_DynamicImportsBecomeReviewOnlyHints(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, testUpdatePluginsModule), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, testUpdatePluginsModule, "loader.py"), []byte("def load(name):\n    return __import__(name)\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		testUpdatePluginsModule: {Paths: []string{testUpdatePluginsModule + "/**"}},
+	}}
+
+	got := distanceConfigCandidates(context.Background(), dir, cfg, &appDeps{Runner: emptyRunner()})
+	if len(got) != 2 {
+		t.Fatalf("distanceConfigCandidates len = %d, want 2: %+v", len(got), got)
+	}
+	if got[0].SourceBlock != "dynamic_connascence_signals" || got[0].Module != testUpdatePluginsModule || got[0].SuggestedReviewAction != testUpdateDeployUnit {
+		t.Fatalf("distanceConfigCandidates[0] = %+v", got[0])
+	}
+	if got[1].SourceBlock != "dynamic_imports" || got[1].Module != testUpdatePluginsModule || got[1].SuggestedReviewAction != testUpdateDeployUnit {
+		t.Fatalf("distanceConfigCandidates[1] = %+v", got[1])
+	}
+	if len(got[1].EvidenceRefs) != 1 || got[1].EvidenceRefs[0] != "plugins/loader.py:2" {
+		t.Fatalf("distanceConfigCandidates evidence = %+v", got[1].EvidenceRefs)
+	}
+}
+
+func TestStaticExternalDistanceConfigCandidatesFromGraph_GoThirdPartyHint(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		testUpdateModuleA: {Paths: []string{testUpdateModuleAGlob}},
+	}}
+	g := graph.Build([]graph.Facts{{
+		Language:  graph.LangGo,
+		GoModules: []graph.GoModule{{Path: "example.com/project", RelDir: "."}},
+		Edges: []graph.Edge{
+			{From: testUpdateModuleAFile, To: "package:github.com/aws/aws-sdk-go-v2/service/s3", Kind: graph.EdgeKindImports, Language: graph.LangGo, Locations: []graph.Location{{File: testUpdateModuleAPath, Line: 7}}},
+			{From: testUpdateModuleAFile, To: "package:fmt", Kind: graph.EdgeKindImports, Language: graph.LangGo, Locations: []graph.Location{{File: testUpdateModuleAPath, Line: 8}}},
+		},
+	}})
+
+	raw := staticExternalDistanceConfigCandidatesFromGraph(g, cfg)
+	if len(raw) != 1 {
+		t.Fatalf("staticExternalDistanceConfigCandidatesFromGraph len = %d, want 1: %+v", len(raw), raw)
+	}
+	got := toInitcfgDistanceConfigCandidate(raw[0])
+	if got.SourceBlock != "classified_external_edges" || got.Module != testUpdateModuleA || got.Target != "github.com/aws/aws-sdk-go-v2/**" {
+		t.Fatalf("static external candidate = %+v", got)
+	}
+	if got.SuggestedReviewAction != "external_systems" || got.IntegrationKind != string(graph.EdgeKindImports) {
+		t.Fatalf("static external candidate action/kind = %+v", got)
+	}
+	if len(got.EvidenceRefs) != 1 || got.EvidenceRefs[0] != "services/a/impl.go:7" {
+		t.Fatalf("static external evidence refs = %+v", got.EvidenceRefs)
+	}
+}
+
+func TestCandidateConfigForUpdate_UsesDiscoveredModules(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		testUpdateModuleA: {
+			Paths:      []string{"old/a/**"},
+			Public:     []string{"old/public/**"},
+			Internal:   []string{"old/internal/**"},
+			Layer:      testUpdateLayerAdapter,
+			Owner:      testUpdateOwnerTeamA,
+			Subdomain:  subdomainCore,
+			Volatility: "high",
+			DeployUnit: "svc-a",
+		},
+	}}
+	discovered := initcfg.DiscoveredConfig{Modules: []initcfg.ModuleDef{
+		{Name: testUpdateModuleA, Paths: []string{testUpdateModuleAGlob}, Public: []string{"services/a/api/**"}, Internal: []string{"services/a/internal/**"}, Layer: layerCore},
+		{Name: testUpdateWebModule, Paths: []string{"web/**"}, Public: []string{"web/api/**"}, Internal: []string{"web/internal/**"}, Layer: testUpdateLayerAdapter},
+	}}
+
+	got := candidateConfigForUpdate(cfg, discovered)
+	mm := got.ModuleMapView()
+	if mod, ok := mm.ModuleForFile(testUpdateModuleAPath); !ok || mod != testUpdateModuleA {
+		t.Fatalf("ModuleForFile(services/a/impl.go) = (%q,%t), want (services/a,true)", mod, ok)
+	}
+	if mod, ok := mm.ModuleForFile(testUpdateWebModule + "/app.ts"); !ok || mod != testUpdateWebModule {
+		t.Fatalf("ModuleForFile(web/app.ts) = (%q,%t), want (web,true)", mod, ok)
+	}
+	if got.Modules[testUpdateModuleA].Owner != testUpdateOwnerTeamA || got.Modules[testUpdateModuleA].DeployUnit != "svc-a" {
+		t.Fatalf("existing metadata not preserved: %+v", got.Modules[testUpdateModuleA])
+	}
+	if len(got.Modules[testUpdateModuleA].Paths) != 1 || got.Modules[testUpdateModuleA].Paths[0] != testUpdateModuleAGlob {
+		t.Fatalf("services/a paths = %+v, want discovered paths", got.Modules[testUpdateModuleA].Paths)
+	}
+	if len(got.Modules[testUpdateModuleA].Public) != 1 || got.Modules[testUpdateModuleA].Public[0] != "old/public/**" {
+		t.Fatalf("services/a public = %+v, want existing public globs preserved", got.Modules[testUpdateModuleA].Public)
+	}
+	if len(got.Modules[testUpdateWebModule].Public) != 1 || got.Modules[testUpdateWebModule].Public[0] != "web/api/**" {
+		t.Fatalf("web public = %+v, want discovered public globs", got.Modules[testUpdateWebModule].Public)
+	}
+}
+
+func TestStaticExternalDistanceConfigCandidatesFromGraph_UsesDiscoveredModuleConfig(t *testing.T) {
+	t.Parallel()
+
+	g := graph.Build([]graph.Facts{{
+		Language:  graph.LangGo,
+		GoModules: []graph.GoModule{{Path: "example.com/project", RelDir: "."}},
+		Edges: []graph.Edge{
+			{From: testUpdateModuleAFile, To: "package:github.com/aws/aws-sdk-go-v2/service/s3", Kind: graph.EdgeKindImports, Language: graph.LangGo, Locations: []graph.Location{{File: testUpdateModuleAPath, Line: 7}}},
+		},
+	}})
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		testUpdateModuleA: {Paths: []string{"old/a/**"}},
+	}}
+	if raw := staticExternalDistanceConfigCandidatesFromGraph(g, cfg); len(raw) != 0 {
+		t.Fatalf("staticExternalDistanceConfigCandidatesFromGraph with stale cfg len = %d, want 0: %+v", len(raw), raw)
+	}
+	discovered := initcfg.DiscoveredConfig{Modules: []initcfg.ModuleDef{{
+		Name:  testUpdateModuleA,
+		Paths: []string{testUpdateModuleAGlob},
+	}}}
+
+	raw := staticExternalDistanceConfigCandidatesFromGraph(g, candidateConfigForUpdate(cfg, discovered))
+	if len(raw) != 1 {
+		t.Fatalf("staticExternalDistanceConfigCandidatesFromGraph len = %d, want 1: %+v", len(raw), raw)
+	}
+	if raw[0].Module != testUpdateModuleA || raw[0].Target != "github.com/aws/aws-sdk-go-v2/**" {
+		t.Fatalf("candidate = %+v", raw[0])
+	}
+}
+
+func TestDeployUnitSuggestions_DeterministicHintsOnlyForMissingConfig(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "cmd", testUpdateWebModule), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, name string) (toolrun.ToolInfo, bool) {
+			return toolrun.ToolInfo{}, name == "go"
+		},
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			return toolrun.Output{Stdout: []byte(filepath.Join(dir, "cmd", testUpdateWebModule) + "\n")}, nil
+		},
+	}
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		testUpdateWebModule: {Paths: []string{"cmd/web/**"}},
+		"api":               {Paths: []string{"cmd/api/**"}, DeployUnit: "api-service"},
+	}}
+
+	got := deployUnitSuggestions(context.Background(), dir, cfg, &appDeps{Runner: runner})
+	if len(got) != 1 {
+		t.Fatalf("deployUnitSuggestions len = %d, want 1: %+v", len(got), got)
+	}
+	if got[0].Module != testUpdateWebModule || got[0].Unit != testUpdateWebModule || got[0].Source != "cmd/web" {
+		t.Fatalf("deployUnitSuggestions[0] = %+v", got[0])
+	}
+}
+
+func TestDeployUnitSuggestions_UsesDiscoveredModuleMap(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "cmd", testUpdateWebModule), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	runner := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, name string) (toolrun.ToolInfo, bool) {
+			return toolrun.ToolInfo{}, name == "go"
+		},
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			return toolrun.Output{Stdout: []byte(filepath.Join(dir, "cmd", testUpdateWebModule) + "\n")}, nil
+		},
+	}
+	cfg := config.Config{}
+	discovered := initcfg.DiscoveredConfig{Modules: []initcfg.ModuleDef{{Name: testUpdateWebModule, Paths: []string{"cmd/web/**"}}}}
+
+	got := deployUnitSuggestions(context.Background(), dir, candidateConfigForUpdate(cfg, discovered), &appDeps{Runner: runner})
+	if len(got) != 1 {
+		t.Fatalf("deployUnitSuggestions len = %d, want 1: %+v", len(got), got)
+	}
+	if got[0].Module != testUpdateWebModule || got[0].Unit != testUpdateWebModule || got[0].Source != "cmd/web" {
+		t.Fatalf("deployUnitSuggestions[0] = %+v", got[0])
+	}
+}
+
 func TestClassifyTargetsForUpdate_IncludesSyntheticOverridePath(t *testing.T) {
 	t.Parallel()
 	const (
@@ -107,6 +309,197 @@ func TestCollectUpdateRepoEvidence_ReadmeAndDocsHeadings(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("evidence missing %q:\n%s", want, got)
 		}
+	}
+}
+
+func TestUpdateCmd_Apply_RustProjectEnablesDeepAnalyzers(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := writeConfig(t, dir, `version: 1
+languages:
+  rust:
+    enabled: true
+modules: {}
+rules:
+  - id: no-layer-violations
+    type: forbidden_layer_direction
+    gate: warn
+`)
+
+	cmd := &UpdateCmd{Config: cfgPath, Root: dir, Apply: true}
+	if _, err := runUpdateCmd(t, cmd, emptyRunner()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	gotBytes, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(gotBytes)
+	for _, want := range []string{
+		rustEnabledAuto,
+		"analyzers:\n  cargo_modules:\n    enabled: true\n  scip:\n    enabled: true",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("updated config missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestEnsureRustDeepAnalysisConfig_IgnoresCommentBoundaries(t *testing.T) {
+	cfg := config.Config{
+		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: config.ModeOn}},
+		Analyzers: config.AnalyzersConfig{
+			CargoModules: config.Analyzer{Enabled: config.ModeAuto},
+			Scip:         config.TimedAnalyzer{Enabled: config.ModeAuto},
+		},
+	}
+	src := []byte(`version: 1
+languages:
+  rust:
+  # note: keep this section
+    enabled: true
+analyzers:
+  cargo_modules:
+  # note: keep this section
+    enabled: auto
+  scip:
+    enabled: auto
+modules: {}
+rules:
+  - id: no-layer-violations
+    type: forbidden_layer_direction
+    gate: warn
+`)
+	got := string(ensureRustDeepAnalysisConfig(src, cfg))
+	for _, want := range []string{
+		"rust:\n  # note: keep this section\n    enabled: auto",
+		"cargo_modules:\n  # note: keep this section\n    enabled: true",
+		"scip:\n    enabled: true",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("updated config missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestEnsureRustDeepAnalysisConfig_PreservesExplicitAnalyzerOff(t *testing.T) {
+	cfg := config.Config{
+		Languages: config.LanguagesConfig{Rust: config.RustLanguage{Enabled: config.ModeOn}},
+		Analyzers: config.AnalyzersConfig{
+			CargoModules: config.Analyzer{Enabled: config.ModeOff},
+			Scip:         config.TimedAnalyzer{Enabled: config.ModeOff},
+		},
+	}
+	src := []byte(`version: 1
+languages:
+  rust:
+    enabled: true
+analyzers:
+  cargo_modules:
+    enabled: false
+  scip:
+    enabled: false
+modules: {}
+rules:
+  - id: no-layer-violations
+    type: forbidden_layer_direction
+    gate: warn
+`)
+	got := string(ensureRustDeepAnalysisConfig(src, cfg))
+	for _, want := range []string{
+		rustEnabledAuto,
+		"cargo_modules:\n    enabled: false",
+		"scip:\n    enabled: false",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("updated config missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestUpdateCmd_Apply_RustAnalyzerOptOutsPreserved(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `version: 1
+languages:
+  rust:
+    enabled: true
+modules: {}
+analyzers:
+  cargo_modules:
+    enabled: false
+  scip:
+    enabled: false
+rules:
+  - id: no-layer-violations
+    type: forbidden_layer_direction
+    gate: warn
+`
+	cfgPath := writeConfig(t, dir, cfg)
+
+	cmd := &UpdateCmd{Config: cfgPath, Root: dir, Apply: true}
+	out, err := runUpdateCmd(t, cmd, emptyRunner())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "wrote") {
+		t.Fatalf("expected write output, got:\n%s", out)
+	}
+	gotBytes, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(gotBytes)
+	for _, want := range []string{
+		rustEnabledAuto,
+		"cargo_modules:\n    enabled: false",
+		"scip:\n    enabled: false",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("updated config missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestUpdateCmd_Apply_RustExplicitOffKeepsDeepAnalyzersDisabled(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `version: 1
+languages:
+  rust:
+    enabled: false
+modules: {}
+rules:
+  - id: no-layer-violations
+    type: forbidden_layer_direction
+    gate: warn
+`
+	cfgPath := writeConfig(t, dir, cfg)
+
+	cmd := &UpdateCmd{Config: cfgPath, Root: dir, Apply: true}
+	out, err := runUpdateCmd(t, cmd, emptyRunner())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "structurally in sync") {
+		t.Fatalf("expected no-op output, got:\n%s", out)
+	}
+	gotBytes, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotBytes) != cfg {
+		t.Fatalf("explicit rust disabled config changed:\n%s", gotBytes)
 	}
 }
 

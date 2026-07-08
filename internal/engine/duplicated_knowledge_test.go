@@ -24,8 +24,8 @@ const (
 // its evidence, mirroring what buildClonePairSet produces from jscpd clusters.
 func dkClassifyCfg() config.ClassifyConfig {
 	modules := map[string]config.ModuleDef{
-		"a": {Paths: []string{"services/a/**"}},
-		"b": {Paths: []string{"services/b/**"}},
+		"a": {Paths: []string{testServicesAGlob}},
+		"b": {Paths: []string{testServicesBGlob}},
 	}
 	return config.ClassifyConfig{
 		Modules:               modules,

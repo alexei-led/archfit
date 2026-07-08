@@ -16,7 +16,7 @@ agent edits code
   → repeat
 ```
 
-## agent_tasks — the actionable channel
+## agent_tasks — the gate repair channel
 
 Every ACTIVE gate finding produces one structured repair task:
 
@@ -37,11 +37,11 @@ Every ACTIVE gate finding produces one structured repair task:
 
 Goals are deterministic templates per rule type; constraints join the rule's
 configured constraint text, allowed alternatives, and the target module's
-public globs; validation is the exact command that must pass. Advisory
-findings normally produce no tasks — they are signals, not orders. The one
-exception: a tripped [`coupling.gate`](configuration-reference.md#couplinggate)
-promotes the active `bc/imbalanced_coupling` advisories to gate kind, so the
-edges behind the failing score arrive in `agent_tasks[]` with file evidence
+public globs; validation is the exact command that must pass. `agent_tasks[]`
+is gate-only. Advisory findings stay out of this channel unless a tripped
+[`coupling.gate`](configuration-reference.md#couplinggate) promotes active
+`bc/imbalanced_coupling` advisories to gate kind; then the edges behind the
+failing score arrive in `agent_tasks[]` with file evidence
 (`bc/duplicated_knowledge` stays advisory — it never gates).
 
 **`files[]` existence guarantee.** Every entry is a repo-relative path that
@@ -69,6 +69,37 @@ For paths guaranteed to exist on disk, use `agent_tasks[].files[]`.
 Only `bc/imbalanced_coupling` findings are rolled up (cap 8 members per
 group); `bc/duplicated_knowledge` findings pass through individually and
 never carry a `group_count`.
+
+## advisory_tasks — the report-only rollup channel
+
+Grouped `bc/imbalanced_coupling` advisories (`group_count > 1`) also produce
+`advisory_tasks[]`. These are deterministic rollups for humans and agents to
+triage advisory noise without changing CI semantics. They are never consumed by
+verdict, gate status, baseline deltas, or `agent_tasks[]`.
+
+```json
+{
+  "finding_id": "8a4be7…",
+  "rule_id": "bc/imbalanced_coupling",
+  "status": "new",
+  "severity": "high",
+  "group_count": 12,
+  "group_members": ["8a4be7…", "9c12d0…"],
+  "goal": "Review 12 same-shape Balanced-Coupling advisory edges...",
+  "cheapest_move": "reduce_distance",
+  "score_value": 8,
+  "top_files": ["pkg/a/a.go", "pkg/b/b.go"],
+  "constraints": [
+    "report-only advisory; do not promote to a gate unless coupling.gate policy changes",
+    "keep agent_tasks[] reserved for active gate findings"
+  ],
+  "validation": ["archfit analyze --gate -c .archfit.yaml --full"]
+}
+```
+
+Use `advisory_tasks[]` for review/refactor planning only. If a run exits `1`,
+fix `agent_tasks[]` first; advisory tasks may be deferred unless your team has
+chosen to treat the score gate as a refactoring trigger.
 
 ## Optional LLM review
 

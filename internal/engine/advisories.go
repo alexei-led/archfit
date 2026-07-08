@@ -3,6 +3,7 @@ package engine
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"maps"
 	"slices"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/staleness"
@@ -20,6 +22,12 @@ import (
 
 // kindAdvisory is the finding kind for non-gating advisory findings.
 const kindAdvisory = "advisory"
+
+const (
+	matchedStrength   = "strength"
+	matchedDistance   = "distance"
+	matchedVolatility = "volatility"
+)
 
 // RuleIDBCImbalanced is the rule ID stamped on a Balanced-Coupling advisory
 // finding. Exported so the composition root (cmd) matches promotable findings
@@ -59,9 +67,9 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 		toModule, _ := mm.ModuleFor(toPath)
 		id := couplingAdvisoryID(fromPath, toPath, string(e.Kind))
 		matched := map[string]string{
-			"strength":   string(cl.Strength),
-			"distance":   string(cl.Distance),
-			"volatility": string(cl.Volatility),
+			matchedStrength:   string(cl.Strength),
+			matchedDistance:   string(cl.Distance),
+			matchedVolatility: string(cl.Volatility),
 		}
 		if cl.DistanceBasis != coupling.DistanceBasisUnknown {
 			matched["distance_basis"] = string(cl.DistanceBasis)
@@ -126,6 +134,141 @@ func collectAdvisories(g *graph.Graph, couplingIdx coupling.Index, classifyCfg c
 // keeps a 400-edge flood from bloating the output with one ID per edge.
 const bcAdvisoryRollupCap = 8
 
+const advisoryTaskFileCap = 8
+
+// BuildAdvisoryTasks converts grouped Balanced-Coupling advisories into a
+// deterministic report-only work queue. It only reads advisory findings that
+// already carry group_count > 1; single edges stay as findings only, and gate
+// findings stay in agent_tasks[].
+func BuildAdvisoryTasks(findings []finding.Finding, validation []string) []diagnostic.AdvisoryTask {
+	tasks := make([]diagnostic.AdvisoryTask, 0)
+	for _, f := range findings {
+		if f.Kind != finding.KindAdvisory || f.RuleID != RuleIDBCImbalanced {
+			continue
+		}
+		groupCount, err := strconv.Atoi(f.MatchedBy["group_count"])
+		if err != nil || groupCount <= 1 {
+			continue
+		}
+		tasks = append(tasks, diagnostic.AdvisoryTask{
+			FindingID:    f.ID,
+			RuleID:       f.RuleID,
+			Status:       f.Status,
+			Severity:     f.Severity,
+			GroupCount:   groupCount,
+			GroupMembers: splitGroupMembers(f.MatchedBy["group_members"]),
+			Goal:         advisoryTaskGoal(f, groupCount),
+			CheapestMove: f.MatchedBy["cheapest_move"],
+			ScoreValue:   parseScoreValue(f.MatchedBy["score_value"]),
+			TopFiles:     advisoryTaskFiles(f),
+			Constraints:  advisoryTaskConstraints(f),
+			Validation:   slices.Clone(validation),
+		})
+	}
+	return tasks
+}
+
+func advisoryTaskGoal(f finding.Finding, groupCount int) string {
+	from := f.Edge.From.Module
+	if from == "" {
+		from = f.Edge.From.Path
+	}
+	to := f.Edge.To.Module
+	if to == "" {
+		to = f.Edge.To.Path
+	}
+	if from == "" && to == "" {
+		return fmt.Sprintf("Review %d same-shape Balanced-Coupling advisory edges and reduce the coupling risk without changing gate policy.", groupCount)
+	}
+	return fmt.Sprintf("Review %d same-shape Balanced-Coupling advisory edges from %s to %s and reduce the coupling risk without changing gate policy.", groupCount, from, to)
+}
+
+func advisoryTaskConstraints(f finding.Finding) []string {
+	constraints := []string{
+		"report-only advisory; do not promote to a gate unless coupling.gate policy changes",
+		"keep agent_tasks[] reserved for active gate findings",
+	}
+	shape := advisoryTaskShape(f)
+	if shape != "" {
+		constraints = append(constraints, "preserve or improve coupling shape: "+shape)
+	}
+	if f.MatchedBy["cheapest_move"] != "" {
+		constraints = append(constraints, "prefer cheapest_move: "+f.MatchedBy["cheapest_move"])
+	}
+	if strings.TrimSpace(f.Constraint) != "" {
+		constraints = append(constraints, f.Constraint)
+	}
+	return constraints
+}
+
+func advisoryTaskShape(f finding.Finding) string {
+	parts := make([]string, 0, 3)
+	for _, key := range []string{matchedStrength, matchedDistance, matchedVolatility} {
+		if value := f.MatchedBy[key]; value != "" {
+			parts = append(parts, key+"="+value)
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+func advisoryTaskFiles(f finding.Finding) []string {
+	seen := map[string]struct{}{}
+	files := make([]string, 0, advisoryTaskFileCap)
+	add := func(file string) {
+		file = strings.TrimSpace(file)
+		if file == "" {
+			return
+		}
+		if _, ok := seen[file]; ok {
+			return
+		}
+		seen[file] = struct{}{}
+		files = append(files, file)
+	}
+	locFiles := make([]string, 0, len(f.Locations))
+	for _, loc := range f.Locations {
+		if loc.File != "" {
+			locFiles = append(locFiles, loc.File)
+		}
+	}
+	sort.Strings(locFiles)
+	for _, file := range locFiles {
+		add(file)
+	}
+	if len(files) == 0 {
+		add(f.Edge.From.Path)
+		add(f.Edge.To.Path)
+		sort.Strings(files)
+	}
+	if len(files) > advisoryTaskFileCap {
+		return files[:advisoryTaskFileCap]
+	}
+	return files
+}
+
+func splitGroupMembers(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func parseScoreValue(raw string) int {
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
 // groupBCAdvisories collapses bc/imbalanced_coupling advisories that share the same
 // shape — (fromModule, toModule, strength, distance, volatility, status) — into one
 // rollup finding carrying a count and representative member IDs. Non-BC advisories
@@ -154,9 +297,9 @@ func groupBCAdvisories(advisories []finding.Finding) []finding.Finding {
 		k := groupKey{
 			fromModule: f.Edge.From.Module,
 			toModule:   f.Edge.To.Module,
-			strength:   f.MatchedBy["strength"],
-			distance:   f.MatchedBy["distance"],
-			volatility: f.MatchedBy["volatility"],
+			strength:   f.MatchedBy[matchedStrength],
+			distance:   f.MatchedBy[matchedDistance],
+			volatility: f.MatchedBy[matchedVolatility],
 			status:     f.Status,
 		}
 		if _, ok := groups[k]; !ok {
@@ -247,7 +390,7 @@ func groupEdgePaths(members []finding.Finding, locs []graph.Location) (fromPath,
 // Rust crate edge's Cargo.toml:0 baseline is joined by the actual clone site
 // instead of standing alone as the only evidence. base is returned unchanged
 // (no allocation) when cloneLocations is empty — the common case.
-func withCloneLocations(base, cloneLocations []graph.Location) []graph.Location {
+func withCloneLocations(base []graph.Location, cloneLocations []coupling.Location) []graph.Location {
 	if len(cloneLocations) == 0 {
 		return base
 	}
@@ -261,11 +404,12 @@ func withCloneLocations(base, cloneLocations []graph.Location) []graph.Location 
 		locs = append(locs, l)
 	}
 	for _, l := range cloneLocations {
-		if _, ok := seen[l]; ok {
+		loc := graph.Location{File: l.File, Line: l.Line}
+		if _, ok := seen[loc]; ok {
 			continue
 		}
-		seen[l] = struct{}{}
-		locs = append(locs, l)
+		seen[loc] = struct{}{}
+		locs = append(locs, loc)
 	}
 	sort.Slice(locs, func(i, j int) bool {
 		if locs[i].File != locs[j].File {
@@ -301,9 +445,9 @@ func mergeLocations(members []finding.Finding) []graph.Location {
 // severityFor maps coupling classification to finding severity.
 // Intrusive coupling that crosses module boundaries → high; otherwise medium.
 func severityFor(strength, distance string) finding.Severity {
-	if strength == "intrusive" &&
-		distance != "same_module" &&
-		distance != "unknown" &&
+	if strength == string(coupling.StrengthIntrusive) &&
+		distance != string(coupling.DistanceSameModule) &&
+		distance != string(coupling.DistanceUnknown) &&
 		distance != "" {
 		return finding.SeverityHigh
 	}
@@ -316,7 +460,12 @@ func severityAtLeast(got coupling.Severity, threshold string) bool {
 	if threshold == "" {
 		return true
 	}
-	rank := map[string]int{"low": 1, "medium": 2, "high": 3, "critical": 4}
+	rank := map[string]int{
+		string(coupling.SeverityLow):      1,
+		string(coupling.SeverityMedium):   2,
+		string(coupling.SeverityHigh):     3,
+		string(coupling.SeverityCritical): 4,
+	}
 	return rank[string(got)] >= rank[threshold]
 }
 
@@ -416,10 +565,10 @@ func duplicatedKnowledgeAdvisories(g *graph.Graph, classifyCfg config.ClassifyCo
 			continue
 		}
 		matched := map[string]string{
-			"strength":     string(cl.Strength),
-			"distance":     string(cl.Distance),
-			"volatility":   string(cl.Volatility),
-			"score_policy": string(config.NormalizeDuplicatedKnowledgePolicy(classifyCfg.DuplicatedKnowledgePolicy)),
+			matchedStrength:   string(cl.Strength),
+			matchedDistance:   string(cl.Distance),
+			matchedVolatility: string(cl.Volatility),
+			"score_policy":    string(config.NormalizeDuplicatedKnowledgePolicy(classifyCfg.DuplicatedKnowledgePolicy)),
 		}
 		if cl.DistanceBasis != coupling.DistanceBasisUnknown {
 			matched["distance_basis"] = string(cl.DistanceBasis)

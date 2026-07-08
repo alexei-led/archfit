@@ -31,6 +31,38 @@ func writeAgentTasks(b *strings.Builder, tasks []diagnostic.AgentTask) {
 	}
 }
 
+// writeAdvisoryTasks prints report-only grouped advisory work items. These are
+// separate from agent_tasks[] so advisory noise never masquerades as a gate repair.
+func writeAdvisoryTasks(b *strings.Builder, tasks []diagnostic.AdvisoryTask) {
+	if len(tasks) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n## Advisory tasks (%d)\n\n", len(tasks))
+	b.WriteString("Report-only rollups from grouped advisories; these do not affect verdict or gate status.\n")
+	for _, task := range tasks {
+		fmt.Fprintf(b, "- **%s** [`%s`] %s\n", task.RuleID, task.FindingID[:min(8, len(task.FindingID))], task.Goal)
+		fmt.Fprintf(b, "  - severity: %s; status: %s; group_count: %d\n", task.Severity, task.Status, task.GroupCount)
+		if len(task.GroupMembers) > 0 {
+			fmt.Fprintf(b, "  - group members: %s\n", strings.Join(task.GroupMembers, ", "))
+		}
+		if task.CheapestMove != "" {
+			fmt.Fprintf(b, "  - cheapest move: %s\n", task.CheapestMove)
+		}
+		if task.ScoreValue > 0 {
+			fmt.Fprintf(b, "  - score: %d/10\n", task.ScoreValue)
+		}
+		if len(task.TopFiles) > 0 {
+			fmt.Fprintf(b, "  - top files: %s\n", strings.Join(task.TopFiles, ", "))
+		}
+		for _, c := range task.Constraints {
+			fmt.Fprintf(b, "  - constraint: %s\n", c)
+		}
+		for _, v := range task.Validation {
+			fmt.Fprintf(b, "  - validate: `%s`\n", v)
+		}
+	}
+}
+
 // writeDelta renders the delta-bucket section for a delta run: findings grouped
 // by how they relate to the baseline (new / severity changed / touched by this
 // change / pre-existing / resolved), so a reviewer can tell what the change

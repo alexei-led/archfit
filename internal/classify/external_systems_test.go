@@ -61,9 +61,9 @@ func TestRun_ExternalSystems(t *testing.T) {
 		},
 		{
 			name:    "python dotted module target",
-			systems: map[string]config.ExternalSystemDef{"boto": {Targets: []string{"boto3.**"}}},
+			systems: map[string]config.ExternalSystemDef{"boto": {Targets: []string{"{boto3,boto3.*}"}}},
 			edge: graph.Edge{
-				From: "file:services/a/impl.py", To: "package:boto3.session",
+				From: "file:services/a/impl.py", To: "external:boto3.session",
 				Kind: graph.EdgeKindImports, Language: "python", StrengthHint: "model",
 			},
 			wantVol:     coupling.VolatilityLow,

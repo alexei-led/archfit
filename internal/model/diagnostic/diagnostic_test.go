@@ -12,8 +12,9 @@ const gateWarn = "warn"
 
 // constants for repeated string literals flagged by goconst.
 const (
-	kindFunction = "function"
-	fileAGo      = "a.go"
+	kindFunction       = "function"
+	fileAGo            = "a.go"
+	languageTypeScript = "typescript"
 )
 
 func TestNew_ZeroValue(t *testing.T) {
@@ -35,6 +36,9 @@ func TestNew_ZeroValue(t *testing.T) {
 	}
 	if d.AgentTasks == nil {
 		t.Error("AgentTasks must be non-nil (empty slice, not nil)")
+	}
+	if d.AdvisoryTasks == nil {
+		t.Error("AdvisoryTasks must be non-nil (empty slice, not nil)")
 	}
 	if d.ToolCoverage == nil {
 		t.Error("ToolCoverage must be non-nil (empty slice, not nil)")
@@ -65,6 +69,7 @@ func TestDiagnostic_JSONFieldNames(t *testing.T) {
 		"metrics",
 		"findings",
 		"agent_tasks",
+		"advisory_tasks",
 		"tool_coverage",
 		"summary",
 	}
@@ -88,12 +93,14 @@ func TestAgentTasks_SerializesAsEmptyArray(t *testing.T) {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
 
-	raw, ok := m["agent_tasks"]
-	if !ok {
-		t.Fatal("agent_tasks field missing from JSON")
-	}
-	if string(raw) != "[]" {
-		t.Errorf("agent_tasks = %s; want []", raw)
+	for _, field := range []string{"agent_tasks", "advisory_tasks"} {
+		raw, ok := m[field]
+		if !ok {
+			t.Fatalf("%s field missing from JSON", field)
+		}
+		if string(raw) != "[]" {
+			t.Errorf("%s = %s; want []", field, raw)
+		}
 	}
 }
 
@@ -194,6 +201,35 @@ func TestSummary_JSONFieldNames(t *testing.T) {
 	for _, f := range []string{"gate_findings", "warnings", "waivers_used"} {
 		if _, ok := m[f]; !ok {
 			t.Errorf("Summary JSON field %q missing", f)
+		}
+	}
+}
+
+func TestSemanticStrengthOverlay_JSONFieldNames(t *testing.T) {
+	overlay := diagnostic.SemanticStrengthOverlay{
+		ByLanguage: map[string]diagnostic.SemanticStrengthOverlayStats{
+			languageTypeScript: {
+				CandidateEdges: 2,
+				Applied:        1,
+				Missed:         1,
+				Before:         map[string]int{"unknown": 2},
+				After:          map[string]int{"model": 1, "unknown": 1},
+			},
+		},
+	}
+	data, err := json.Marshal(overlay)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var raw map[string]map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	stats := raw["by_language"][languageTypeScript]
+	for _, field := range []string{"candidate_edges", "applied", "missed", "before", "after"} {
+		if _, ok := stats[field]; !ok {
+			t.Errorf("semantic overlay field %q missing", field)
 		}
 	}
 }

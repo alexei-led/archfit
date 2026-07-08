@@ -28,6 +28,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/syntax"
 )
 
 // Dynamic-import kind labels. These are coverage/evidence terms, not Balanced
@@ -74,11 +75,14 @@ func Detect(root string) []diagnostic.DynamicImportSite {
 			}
 			return nil
 		}
+		rel := relPath(root, path)
 		switch filepath.Ext(path) {
 		case ".py":
-			sites = append(sites, scanPython(root, path)...)
+			if dynamicImportEvidenceSourceFile(langPython, rel) {
+				sites = append(sites, scanPython(root, path)...)
+			}
 		default:
-			if tsSourceExt(filepath.Ext(path)) {
+			if tsSourceExt(filepath.Ext(path)) && dynamicImportEvidenceSourceFile(langTypeScript, rel) {
 				sites = append(sites, scanTS(root, path)...)
 			}
 		}
@@ -201,5 +205,18 @@ func relPath(root, path string) string {
 // skipDir reports whether a directory should be skipped during the walk.
 func skipDir(name string) bool {
 	return name != "." && (strings.HasPrefix(name, ".") ||
-		name == "node_modules" || name == "vendor" || name == "__pycache__")
+		name == "node_modules" || name == "vendor" || name == "__pycache__" || name == "testdata")
+}
+
+func dynamicImportEvidenceSourceFile(lang, path string) bool {
+	return !syntax.IsTestFile(lang, path) && !containsPathSegment(path, "testdata")
+}
+
+func containsPathSegment(path, seg string) bool {
+	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+		if part == seg {
+			return true
+		}
+	}
+	return false
 }

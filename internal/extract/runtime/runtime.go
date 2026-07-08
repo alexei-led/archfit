@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/syntax"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -217,11 +218,14 @@ func (d *detector) scanImports(_ context.Context, ext, lang string, libs map[str
 		if filepath.Ext(path) != ext {
 			return nil
 		}
+		rel := relPath(d.root, path)
+		if !runtimeEvidenceSourceFile(lang, rel) {
+			return nil
+		}
 		data, err := os.ReadFile(path) //nolint:gosec // path from Walk under repo root
 		if err != nil {
 			return nil
 		}
-		rel := relPath(d.root, path)
 		for i, rawLine := range strings.Split(string(data), "\n") {
 			line := strings.TrimSpace(rawLine)
 			if !isImportLine(line, lang) {
@@ -273,11 +277,14 @@ func (d *detector) scanLineMatches(_ context.Context, lang string, exts, needles
 		if !matched {
 			return nil
 		}
+		rel := relPath(d.root, path)
+		if !runtimeEvidenceSourceFile(lang, rel) {
+			return nil
+		}
 		data, err := os.ReadFile(path) //nolint:gosec // path from Walk under repo root
 		if err != nil {
 			return nil
 		}
-		rel := relPath(d.root, path)
 		for i, rawLine := range strings.Split(string(data), "\n") {
 			line := strings.TrimSpace(rawLine)
 			for _, needle := range needles {
@@ -393,5 +400,18 @@ func relPath(root, path string) string {
 // skipDir reports whether a directory should be skipped.
 func skipDir(name string) bool {
 	return name != "." && (strings.HasPrefix(name, ".") ||
-		name == "node_modules" || name == "vendor" || name == "__pycache__")
+		name == "node_modules" || name == "vendor" || name == "__pycache__" || name == "testdata")
+}
+
+func runtimeEvidenceSourceFile(lang, path string) bool {
+	return !syntax.IsTestFile(lang, path) && !containsPathSegment(path, "testdata")
+}
+
+func containsPathSegment(path, seg string) bool {
+	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+		if part == seg {
+			return true
+		}
+	}
+	return false
 }

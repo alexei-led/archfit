@@ -120,6 +120,10 @@ func TestCollectAdvisories_ClonebackedSymmetricFinding_CitesRealLocation(t *test
 		{File: testCrateALib, Line: 12},
 		{File: testCrateBLib, Line: 40},
 	}
+	cloneCouplingLocs := []coupling.Location{
+		{File: testCrateALib, Line: 12},
+		{File: testCrateBLib, Line: 40},
+	}
 	key := edge.From + "\x00" + edge.To + "\x00" + string(edge.Kind)
 	couplingIdx := coupling.Index{
 		key: coupling.Classification{
@@ -127,7 +131,7 @@ func TestCollectAdvisories_ClonebackedSymmetricFinding_CitesRealLocation(t *test
 			Distance:       coupling.DistanceCrossModuleSameOwner,
 			Volatility:     coupling.VolatilityMedium,
 			Severity:       coupling.SeverityMedium,
-			CloneLocations: cloneLocs,
+			CloneLocations: cloneCouplingLocs,
 		},
 	}
 	classifyCfg := config.ClassifyConfig{ModuleMap: testTwoCrateModuleMap()}

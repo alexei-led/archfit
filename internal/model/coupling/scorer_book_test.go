@@ -2,6 +2,71 @@ package coupling
 
 import "testing"
 
+// TestBookScorer_OrdinalsAndFormulaPinned locks the book ordinals and formula.
+func TestBookScorer_OrdinalsAndFormulaPinned(t *testing.T) {
+	if ScoreDefinition != "book balance score — balance = max(|S−D|, 10−V) + 1 (Khononov, _Balancing Coupling in Software Design_, Ch10); range 1 (distributed monolith) to 10 (frozen/contract); higher = better balanced" {
+		t.Fatalf("ScoreDefinition changed: %q", ScoreDefinition)
+	}
+
+	strengths := map[Strength]int{
+		StrengthContract:   1,
+		StrengthModel:      3,
+		StrengthFunctional: 8,
+		StrengthSymmetric:  9,
+		StrengthIntrusive:  10,
+	}
+	for strength, want := range strengths {
+		if got := bookStrengthOrdinal[strength]; got != want {
+			t.Errorf("strength ordinal %s = %d, want %d", strength, got, want)
+		}
+	}
+	if _, ok := bookStrengthOrdinal[StrengthUnknown]; ok {
+		t.Error("StrengthUnknown must not have a book ordinal; unknown strength abstains")
+	}
+
+	distances := map[Distance]int{
+		DistanceSameModule:           2,
+		DistanceCrossModuleSameOwner: 4,
+		DistanceCrossModuleDiffOwner: 7,
+		DistanceCrossDeployUnit:      9,
+		DistanceExternal:             10,
+	}
+	for distance, want := range distances {
+		if got := bookDistanceOrdinal[distance]; got != want {
+			t.Errorf("distance ordinal %s = %d, want %d", distance, got, want)
+		}
+	}
+	if _, ok := bookDistanceOrdinal[DistanceUnknown]; ok {
+		t.Error("DistanceUnknown must not have a book ordinal; unknown distance abstains")
+	}
+
+	volatilities := map[Volatility]int{
+		VolatilityFrozen:     1,
+		VolatilityLow:        3,
+		VolatilityMedium:     6,
+		VolatilityHigh:       10,
+		VolatilityUndeclared: 10,
+		VolatilityUnknown:    10,
+	}
+	for volatility, want := range volatilities {
+		if got := bookVolatilityOrdinal[volatility]; got != want {
+			t.Errorf("volatility ordinal %s = %d, want %d", volatility, got, want)
+		}
+	}
+
+	got := BookScorer{}.Score(Classification{
+		Strength:   StrengthFunctional,
+		Distance:   DistanceCrossDeployUnit,
+		Volatility: VolatilityHigh,
+	})
+	if got.Breakdown.StrengthVal != 8 || got.Breakdown.DistanceVal != 9 || got.Breakdown.VolatilityVal != 10 {
+		t.Fatalf("breakdown = %+v, want S=8 D=9 V=10", got.Breakdown)
+	}
+	if got.Breakdown.Modularity != 1 || got.Balance != 2 || got.Value != got.Balance {
+		t.Errorf("formula result = modularity %d balance %d value %d, want |8-9|=1 and max(1,0)+1=2", got.Breakdown.Modularity, got.Balance, got.Value)
+	}
+}
+
 // TestBookScorer_ScoreBand verifies the book balance→severity mapping.
 // Book: 1-2 critical · 3-4 high · 5-6 medium · 7-8 low · 9-10 none.
 func TestBookScorer_ScoreBand(t *testing.T) {

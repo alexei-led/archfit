@@ -10,10 +10,15 @@ import (
 
 	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/engine"
+	"github.com/alexei-led/archfit/internal/extract/deployunit"
+	"github.com/alexei-led/archfit/internal/extract/dynimports"
+	runtimedetect "github.com/alexei-led/archfit/internal/extract/runtime"
 	"github.com/alexei-led/archfit/internal/extract/rust"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 )
@@ -59,6 +64,9 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 
 	report := initcfg.DiffModules(existing, freshCfg.Modules)
+	candidateCfg := candidateConfigForUpdate(cfg, freshCfg)
+	report.DeployUnitSuggestions = deployUnitSuggestions(ctx, root, candidateCfg, deps)
+	report.DistanceConfigCandidates = distanceConfigCandidates(ctx, root, candidateCfg, deps)
 	if c.LLM {
 		var synthErr error
 		report, synthErr = c.withRustSyntheticSuggestions(ctx, cfg, root, report, deps)
@@ -81,7 +89,8 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		warnPartialClassify(deps.Stdout, warnTargets, ann)
 	}
 
-	hasEdits := hasActionableEdits(report)
+	rustConfigNeeded := needsRustDeepAnalysisConfig(cfg, freshCfg.HasRust)
+	hasEdits := hasActionableEdits(report) || rustConfigNeeded
 
 	if !c.Apply {
 		_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
@@ -89,7 +98,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 
 	if !hasEdits {
-		if c.LLM && ann != nil {
+		if (c.LLM && ann != nil) || hasReviewOnlySuggestions(report) {
 			_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
 			return nil
 		}
@@ -97,10 +106,16 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		return nil
 	}
 
-	edits := buildUpdateEdits(report)
-	edited, err := initcfg.ApplyEdits(originalBytes, edits)
-	if err != nil {
-		return fmt.Errorf("applying edits: %w", err)
+	edited := originalBytes
+	if hasActionableEdits(report) {
+		edits := buildUpdateEdits(report)
+		edited, err = initcfg.ApplyEdits(originalBytes, edits)
+		if err != nil {
+			return fmt.Errorf("applying edits: %w", err)
+		}
+	}
+	if rustConfigNeeded {
+		edited = ensureRustDeepAnalysisConfig(edited, cfg)
 	}
 	if err := safeWriteConfig(ctx, deps, c.Config, edited, originalBytes); err != nil {
 		return err
@@ -108,7 +123,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	if len(report.PathDrift) > 0 {
 		_, _ = fmt.Fprintln(deps.Stdout, "note: module paths replaced with discovered paths")
 	}
-	if c.LLM && ann != nil {
+	if (c.LLM && ann != nil) || hasReviewOnlySuggestions(report) {
 		if rendered := initcfg.RenderAppliedLLMReview(report, ann); rendered != "" {
 			_, _ = fmt.Fprint(deps.Stdout, rendered)
 		}
@@ -283,6 +298,173 @@ func classifyTargetsForUpdate(
 // written by config update --apply.
 func hasActionableEdits(report initcfg.UpdateReport) bool {
 	return len(report.Added) > 0 || len(report.Removed) > 0 || len(report.PathDrift) > 0
+}
+
+func hasReviewOnlySuggestions(report initcfg.UpdateReport) bool {
+	return len(report.Suggested) > 0 || len(report.DeployUnitSuggestions) > 0 || len(report.DistanceConfigCandidates) > 0 || len(report.RuleSuggestions) > 0 || len(report.ExternalSystemSuggestions) > 0
+}
+
+func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredConfig) config.Config {
+	if len(discovered.Modules) == 0 {
+		return cfg
+	}
+	out := cfg
+	out.Modules = make(map[string]config.ModuleDef, len(discovered.Modules))
+	for _, mod := range discovered.Modules {
+		def := config.ModuleDef{
+			Paths:    append([]string(nil), mod.Paths...),
+			Public:   append([]string(nil), mod.Public...),
+			Internal: append([]string(nil), mod.Internal...),
+			Layer:    mod.Layer,
+		}
+		if existing, ok := cfg.Modules[mod.Name]; ok {
+			def.Public = append([]string(nil), existing.Public...)
+			def.Internal = append([]string(nil), existing.Internal...)
+			def.Layer = existing.Layer
+			def.Subdomain = existing.Subdomain
+			def.Volatility = existing.Volatility
+			def.Owner = existing.Owner
+			def.DeployUnit = existing.DeployUnit
+			def.Role = existing.Role
+			def.ReviewedAt = existing.ReviewedAt
+			def.ReviewedBy = existing.ReviewedBy
+		}
+		out.Modules[mod.Name] = def
+	}
+	return out
+}
+
+func distanceConfigCandidates(ctx context.Context, root string, cfg config.Config, deps *appDeps) []initcfg.DistanceConfigCandidate {
+	mm := cfg.ModuleMapView()
+	dynamicImports := engine.BuildDynamicImports(dynimports.Detect(root), mm)
+	runtimeResult := runtimedetect.Detect(ctx, root, deps.Runner)
+	runtimeSites := make([]diagnostic.RuntimeAsyncSite, 0, len(runtimeResult.Signals))
+	for _, sig := range runtimeResult.Signals {
+		runtimeSites = append(runtimeSites, diagnostic.RuntimeAsyncSite{
+			File:            sig.File,
+			Line:            sig.Line,
+			Library:         sig.Library,
+			IntegrationKind: string(sig.IntegrationKind),
+			Language:        sig.Language,
+		})
+	}
+	runtimeEdges := engine.BuildRuntimeAsyncEdges(runtimeSites, runtimeResult.Confidence, mm)
+	dynamicSignals := engine.BuildDynamicConnascenceSignals(dynamicImports, runtimeEdges, nil)
+	candidates := append(
+		staticExternalDistanceConfigCandidates(ctx, root, cfg, deps),
+		engine.BuildDistanceConfigCandidates(dynamicImports, runtimeEdges, dynamicSignals)...,
+	)
+	out := make([]initcfg.DistanceConfigCandidate, 0, len(candidates))
+	for _, c := range candidates {
+		out = append(out, toInitcfgDistanceConfigCandidate(c))
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].SourceBlock != out[j].SourceBlock {
+			return out[i].SourceBlock < out[j].SourceBlock
+		}
+		if out[i].Module != out[j].Module {
+			return out[i].Module < out[j].Module
+		}
+		if out[i].Target != out[j].Target {
+			return out[i].Target < out[j].Target
+		}
+		return out[i].IntegrationKind < out[j].IntegrationKind
+	})
+	return out
+}
+
+func staticExternalDistanceConfigCandidates(ctx context.Context, root string, cfg config.Config, deps *appDeps) []diagnostic.DistanceConfigCandidate {
+	g := buildUpdateCandidateGraph(ctx, root, cfg, deps)
+	if g == nil {
+		return nil
+	}
+	return staticExternalDistanceConfigCandidatesFromGraph(g, cfg)
+}
+
+func staticExternalDistanceConfigCandidatesFromGraph(g *graph.Graph, cfg config.Config) []diagnostic.DistanceConfigCandidate {
+	classifyCfg := engine.AugmentClassifyConfig(g, cfg.ForClassify())
+	idx := classify.Run(g, classifyCfg)
+	return engine.BuildStaticExternalDistanceCandidates(g, idx, classifyCfg.ModuleMap)
+}
+
+func buildUpdateCandidateGraph(ctx context.Context, root string, cfg config.Config, deps *appDeps) *graph.Graph {
+	extractors := buildExtractors(deps.Runner, cfg, nil)
+	allFacts := make([]graph.Facts, 0, len(extractors))
+	for _, ex := range extractors {
+		facts, _, err := ex.Extract(ctx, scope.Scope{Root: root})
+		if err != nil {
+			continue
+		}
+		if len(facts.Nodes) == 0 && len(facts.Edges) == 0 {
+			continue
+		}
+		allFacts = append(allFacts, facts)
+	}
+	if len(allFacts) == 0 {
+		return nil
+	}
+	return graph.Build(allFacts)
+}
+
+func toInitcfgDistanceConfigCandidate(c diagnostic.DistanceConfigCandidate) initcfg.DistanceConfigCandidate {
+	return initcfg.DistanceConfigCandidate{
+		SourceBlock:           c.SourceBlock,
+		Module:                c.Module,
+		Target:                c.Target,
+		IntegrationKind:       c.IntegrationKind,
+		Count:                 c.Count,
+		EvidenceRefs:          distanceConfigEvidenceRefs(c.EvidenceSites),
+		SuggestedReviewAction: c.SuggestedReviewAction,
+	}
+}
+
+func distanceConfigEvidenceRefs(sites []diagnostic.DistanceConfigEvidenceSite) []string {
+	refs := make([]string, 0, len(sites))
+	for _, s := range sites {
+		if s.File == "" {
+			continue
+		}
+		ref := s.File
+		if s.Line > 0 {
+			ref = fmt.Sprintf("%s:%d", s.File, s.Line)
+		}
+		refs = append(refs, ref)
+	}
+	return refs
+}
+
+func deployUnitSuggestions(ctx context.Context, root string, cfg config.Config, deps *appDeps) []initcfg.DeployUnitSuggestion {
+	mm := cfg.ModuleMapView()
+	detected := deployunit.Detect(ctx, root, mm, deps.Runner)
+	if len(detected) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(detected))
+	for path := range detected {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	seen := make(map[string]struct{}, len(paths))
+	out := make([]initcfg.DeployUnitSuggestion, 0, len(paths))
+	for _, path := range paths {
+		mod, ok := mm.ModuleForFile(path)
+		if !ok {
+			if !mm.Has(path) {
+				continue
+			}
+			mod = path
+		}
+		if _, exists := seen[mod]; exists {
+			continue
+		}
+		def, ok := cfg.Modules[mod]
+		if !ok || def.DeployUnit != "" {
+			continue
+		}
+		seen[mod] = struct{}{}
+		out = append(out, initcfg.DeployUnitSuggestion{Module: mod, Unit: detected[path], Source: path})
+	}
+	return out
 }
 
 func ruleSuggestionsFromAnnotations(ann map[string]initcfg.ModuleAnnotation) []initcfg.RuleSuggestion {

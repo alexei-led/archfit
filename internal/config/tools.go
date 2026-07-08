@@ -299,8 +299,9 @@ func (m *ToolMode) UnmarshalYAML(unmarshal func(any) error) error {
 }
 
 // GateMode is the coverage-gate posture for one tool: how its absence affects the
-// exit code. Distinct from ToolMode (which controls whether a tool runs).
-//   - off  — report the coverage gap but never fail.
+// install prompt and exit code. Distinct from ToolMode (which controls whether a
+// tool runs).
+//   - off  — suppress the coverage gap entirely.
 //   - warn — (default, empty) report the gap, exit 0.
 //   - fail — a missing tool fails the build (opt-in hard gate).
 //

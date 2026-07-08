@@ -43,8 +43,8 @@ func updateEvidenceDiagnostics(report initcfg.UpdateReport) []initcfg.EvidenceDi
 	return []initcfg.EvidenceDiagnostic{{
 		Source: "update",
 		Summary: fmt.Sprintf(
-			"added=%d suggested=%d removed=%d path_drift=%d unclassified=%d structurally_in_sync=%t",
-			len(report.Added), len(report.Suggested), len(report.Removed), len(report.PathDrift), len(report.Unclassified), report.StructuralInSync,
+			"added=%d suggested=%d removed=%d path_drift=%d unclassified=%d distance_config_candidates=%d structurally_in_sync=%t",
+			len(report.Added), len(report.Suggested), len(report.Removed), len(report.PathDrift), len(report.Unclassified), len(report.DistanceConfigCandidates), report.StructuralInSync,
 		),
 	}}
 }

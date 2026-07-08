@@ -9,6 +9,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
+	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/status"
 )
@@ -48,12 +49,18 @@ func stripPrefix(id string) string {
 // hundreds of lazy imports from bloating the output.
 const dynamicImportSiteCap = 5
 
-// buildDynamicImports groups report-only dynamic/lazy import sites per module
+// BuildDynamicImports groups report-only dynamic/lazy import sites per module
 // (module-map key, or the file's directory when unmapped) into DynamicImport
 // rollups. Output is deterministic: modules sorted by name, sites already sorted
 // by the detector, the per-module sample capped at dynamicImportSiteCap. Returns
 // an empty (non-nil) slice when no sites were found. Never touches the graph,
 // metrics, or the verdict — this is evidence only.
+// It is exported so config update can show the same review-only distance hints
+// as analyze without running the full engine pipeline.
+func BuildDynamicImports(sites []diagnostic.DynamicImportSite, mm config.ModuleMap) []diagnostic.DynamicImport {
+	return buildDynamicImports(sites, mm)
+}
+
 func buildDynamicImports(sites []diagnostic.DynamicImportSite, mm config.ModuleMap) []diagnostic.DynamicImport {
 	byModule := make(map[string][]diagnostic.DynamicImportSite)
 	for _, s := range sites {
@@ -122,9 +129,14 @@ func buildRuntimeAsync(sites []diagnostic.RuntimeAsyncSite, confidence string, m
 	return out
 }
 
-// buildRuntimeAsyncEdges groups async-integration sites by source module,
+// BuildRuntimeAsyncEdges groups async-integration sites by source module,
 // runtime target, and integration kind. The result is relationship-level evidence
-// for future runtime-distance scoring, but remains report-only today.
+// for future runtime-distance scoring, but remains report-only today. It is
+// exported so config update can show the same review-only distance hints as analyze.
+func BuildRuntimeAsyncEdges(sites []diagnostic.RuntimeAsyncSite, confidence string, mm config.ModuleMap) []diagnostic.RuntimeAsyncEdge {
+	return buildRuntimeAsyncEdges(sites, confidence, mm)
+}
+
 func buildRuntimeAsyncEdges(sites []diagnostic.RuntimeAsyncSite, confidence string, mm config.ModuleMap) []diagnostic.RuntimeAsyncEdge {
 	type edgeKey struct {
 		fromModule string
@@ -175,6 +187,486 @@ func buildRuntimeAsyncEdges(sites []diagnostic.RuntimeAsyncSite, confidence stri
 		})
 	}
 	return out
+}
+
+const (
+	dynamicConnascenceKindRuntimeAsync  = "runtime_async"
+	dynamicConnascenceKindDynamicImport = "dynamic_import"
+	dynamicConnascenceReportOnlyReason  = "static site evidence only; deterministic runtime ordering/value/identity trace evidence is absent"
+)
+
+var dynamicConnascenceRelated = []string{
+	string(coupling.ConnascenceExecution),
+	string(coupling.ConnascenceTiming),
+}
+
+var dynamicConnascenceKindsToDiscloseWhenUnmeasured = []string{
+	string(coupling.ConnascenceExecution),
+	string(coupling.ConnascenceTiming),
+	string(coupling.ConnascenceValue),
+	string(coupling.ConnascenceIdentity),
+}
+
+func dynamicConnascenceUnmeasured(unmeasured []string) []string {
+	if len(unmeasured) == 0 {
+		return nil
+	}
+	present := make(map[string]struct{}, len(unmeasured))
+	for _, kind := range unmeasured {
+		present[kind] = struct{}{}
+	}
+	out := make([]string, 0, len(dynamicConnascenceKindsToDiscloseWhenUnmeasured))
+	for _, kind := range dynamicConnascenceKindsToDiscloseWhenUnmeasured {
+		if _, ok := present[kind]; ok {
+			out = append(out, kind)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// BuildDynamicConnascenceSignals maps dynamic/lazy imports and runtime async
+// edges to report-only dynamic connascence review signals. It is exported so
+// config update can derive the same distance-config candidate sources as analyze.
+func BuildDynamicConnascenceSignals(dyn []diagnostic.DynamicImport, runtimeEdges []diagnostic.RuntimeAsyncEdge, unmeasured []string) *diagnostic.DynamicConnascenceSignals {
+	return buildDynamicConnascenceSignals(dyn, runtimeEdges, unmeasured)
+}
+
+func buildDynamicConnascenceSignals(dyn []diagnostic.DynamicImport, runtimeEdges []diagnostic.RuntimeAsyncEdge, unmeasured []string) *diagnostic.DynamicConnascenceSignals {
+	if len(dyn) == 0 && len(runtimeEdges) == 0 {
+		return nil
+	}
+	out := &diagnostic.DynamicConnascenceSignals{
+		Signals:          make([]diagnostic.DynamicConnascenceSignal, 0, len(runtimeEdges)+len(dyn)),
+		Unmeasured:       dynamicConnascenceUnmeasured(unmeasured),
+		ReportOnlyReason: dynamicConnascenceReportOnlyReason,
+	}
+	for _, e := range runtimeEdges {
+		out.Signals = append(out.Signals, diagnostic.DynamicConnascenceSignal{
+			Kind:               dynamicConnascenceKindRuntimeAsync,
+			RelatedConnascence: append([]string(nil), dynamicConnascenceRelated...),
+			Measured:           false,
+			ReportOnlyReason:   dynamicConnascenceReportOnlyReason,
+			Module:             e.FromModule,
+			Target:             e.Target,
+			IntegrationKind:    e.IntegrationKind,
+			Count:              e.Count,
+			Sites:              runtimeAsyncDynamicConnascenceSites(e.Sites),
+		})
+	}
+	for _, d := range dyn {
+		out.Signals = append(out.Signals, diagnostic.DynamicConnascenceSignal{
+			Kind:               dynamicConnascenceKindDynamicImport,
+			RelatedConnascence: append([]string(nil), dynamicConnascenceRelated...),
+			Measured:           false,
+			ReportOnlyReason:   dynamicConnascenceReportOnlyReason,
+			Module:             d.Module,
+			Count:              d.Count,
+			Sites:              dynamicImportDynamicConnascenceSites(d.Sites),
+		})
+	}
+	return out
+}
+
+func runtimeAsyncDynamicConnascenceSites(sites []diagnostic.RuntimeAsyncSite) []diagnostic.DynamicConnascenceSite {
+	out := make([]diagnostic.DynamicConnascenceSite, 0, len(sites))
+	for _, s := range sites {
+		target := s.Library
+		if target == "" {
+			target = s.IntegrationKind
+		}
+		out = append(out, diagnostic.DynamicConnascenceSite{
+			File:     s.File,
+			Line:     s.Line,
+			Kind:     s.IntegrationKind,
+			Language: s.Language,
+			Target:   target,
+		})
+	}
+	return out
+}
+
+func dynamicImportDynamicConnascenceSites(sites []diagnostic.DynamicImportSite) []diagnostic.DynamicConnascenceSite {
+	out := make([]diagnostic.DynamicConnascenceSite, 0, len(sites))
+	for _, s := range sites {
+		out = append(out, diagnostic.DynamicConnascenceSite{
+			File:     s.File,
+			Line:     s.Line,
+			Kind:     s.Kind,
+			Language: s.Language,
+		})
+	}
+	return out
+}
+
+const (
+	distanceCandidateSourceStaticExternalEdges      = "classified_external_edges"
+	distanceCandidateSourceRuntimeAsyncEdges        = "runtime_async_edges"
+	distanceCandidateSourceDynamicImports           = "dynamic_imports"
+	distanceCandidateSourceDynamicConnascenceSignal = "dynamic_connascence_signals"
+	distanceCandidateActionExternalSystems          = "external_systems"
+	distanceCandidateActionDeployUnit               = "deploy_unit"
+)
+
+// BuildStaticExternalDistanceCandidates turns today’s disclosed-exclusion bucket
+// (classified DistanceUnknown external/library edges) into review-only
+// external_systems hints. The candidates deliberately do not alter distance,
+// scoring, findings, baselines, or gate verdicts: an external seam enters the
+// BC model only after a human declares it in config.
+func BuildStaticExternalDistanceCandidates(g *graph.Graph, idx coupling.Index, mm config.ModuleMap) []diagnostic.DistanceConfigCandidate {
+	return buildStaticExternalDistanceCandidates(g, idx, mm)
+}
+
+func buildStaticExternalDistanceCandidates(g *graph.Graph, idx coupling.Index, mm config.ModuleMap) []diagnostic.DistanceConfigCandidate {
+	if g == nil || len(idx) == 0 {
+		return nil
+	}
+	goModules := g.GoModules()
+	type candidateKey struct {
+		module string
+		target string
+		kind   string
+	}
+	type candidateGroup struct {
+		count int
+		sites []diagnostic.DistanceConfigEvidenceSite
+		seen  map[diagnostic.DistanceConfigEvidenceSite]struct{}
+	}
+	groups := make(map[candidateKey]*candidateGroup)
+	for _, e := range g.Edges() {
+		cl, ok := idx[indexKeyForEdge(e)]
+		if !ok || cl.Distance != coupling.DistanceUnknown {
+			continue
+		}
+		fromModule, ok := moduleForNodeID(e.From, mm)
+		if !ok || fromModule == "" {
+			continue
+		}
+		if toModule, ok := moduleForNodeID(e.To, mm); ok && toModule != "" {
+			continue
+		}
+		target, rawTarget, ok := normalizeStaticExternalTarget(e.To, e.Language, goModules)
+		if !ok || target == "" {
+			continue
+		}
+		k := candidateKey{module: fromModule, target: target, kind: string(e.Kind)}
+		grp := groups[k]
+		if grp == nil {
+			grp = &candidateGroup{seen: make(map[diagnostic.DistanceConfigEvidenceSite]struct{})}
+			groups[k] = grp
+		}
+		grp.count++
+		for _, loc := range e.Locations {
+			site := diagnostic.DistanceConfigEvidenceSite{
+				File:     loc.File,
+				Line:     loc.Line,
+				Kind:     string(e.Kind),
+				Language: e.Language,
+				Target:   rawTarget,
+			}
+			if _, exists := grp.seen[site]; exists {
+				continue
+			}
+			grp.seen[site] = struct{}{}
+			grp.sites = append(grp.sites, site)
+		}
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	keys := make([]candidateKey, 0, len(groups))
+	for k := range groups {
+		keys = append(keys, k)
+	}
+	sort.SliceStable(keys, func(i, j int) bool {
+		if keys[i].module != keys[j].module {
+			return keys[i].module < keys[j].module
+		}
+		if keys[i].target != keys[j].target {
+			return keys[i].target < keys[j].target
+		}
+		return keys[i].kind < keys[j].kind
+	})
+	out := make([]diagnostic.DistanceConfigCandidate, 0, len(keys))
+	for _, k := range keys {
+		grp := groups[k]
+		out = append(out, diagnostic.DistanceConfigCandidate{
+			SourceBlock:           distanceCandidateSourceStaticExternalEdges,
+			Module:                k.module,
+			Target:                k.target,
+			IntegrationKind:       k.kind,
+			Count:                 grp.count,
+			EvidenceSites:         grp.sites,
+			SuggestedReviewAction: distanceCandidateActionExternalSystems,
+		})
+	}
+	sortDistanceConfigCandidates(out)
+	return out
+}
+
+// BuildDistanceConfigCandidates turns report-only runtime/dynamic evidence into
+// report-only config review hints. The candidates deliberately do not feed
+// classify, score, findings, baselines, or gate verdicts.
+func BuildDistanceConfigCandidates(
+	dyn []diagnostic.DynamicImport,
+	runtimeEdges []diagnostic.RuntimeAsyncEdge,
+	dynamicSignals *diagnostic.DynamicConnascenceSignals,
+) []diagnostic.DistanceConfigCandidate {
+	out := make([]diagnostic.DistanceConfigCandidate, 0, len(runtimeEdges)+len(dyn))
+	for _, e := range runtimeEdges {
+		out = append(out, diagnostic.DistanceConfigCandidate{
+			SourceBlock:           distanceCandidateSourceRuntimeAsyncEdges,
+			Module:                e.FromModule,
+			Target:                e.Target,
+			IntegrationKind:       e.IntegrationKind,
+			Count:                 e.Count,
+			EvidenceSites:         runtimeAsyncDistanceSites(e.Sites),
+			SuggestedReviewAction: distanceCandidateActionExternalSystems,
+		})
+	}
+	for _, d := range dyn {
+		out = append(out, diagnostic.DistanceConfigCandidate{
+			SourceBlock:           distanceCandidateSourceDynamicImports,
+			Module:                d.Module,
+			Target:                d.Module,
+			IntegrationKind:       dominantDynamicImportKind(d.Sites),
+			Count:                 d.Count,
+			EvidenceSites:         dynamicImportDistanceSites(d.Sites),
+			SuggestedReviewAction: distanceCandidateActionDeployUnit,
+		})
+	}
+	if dynamicSignals != nil {
+		for _, s := range dynamicSignals.Signals {
+			action := distanceCandidateActionDeployUnit
+			target := s.Target
+			if target == "" {
+				target = s.Module
+			} else {
+				action = distanceCandidateActionExternalSystems
+			}
+			kind := s.IntegrationKind
+			if kind == "" {
+				kind = s.Kind
+			}
+			out = append(out, diagnostic.DistanceConfigCandidate{
+				SourceBlock:           distanceCandidateSourceDynamicConnascenceSignal,
+				Module:                s.Module,
+				Target:                target,
+				IntegrationKind:       kind,
+				Count:                 s.Count,
+				EvidenceSites:         dynamicConnascenceDistanceSites(s.Sites),
+				SuggestedReviewAction: action,
+			})
+		}
+	}
+	sortDistanceConfigCandidates(out)
+	return out
+}
+
+func sortDistanceConfigCandidates(out []diagnostic.DistanceConfigCandidate) {
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].SourceBlock != out[j].SourceBlock {
+			return out[i].SourceBlock < out[j].SourceBlock
+		}
+		if out[i].Module != out[j].Module {
+			return out[i].Module < out[j].Module
+		}
+		if out[i].Target != out[j].Target {
+			return out[i].Target < out[j].Target
+		}
+		return out[i].IntegrationKind < out[j].IntegrationKind
+	})
+}
+
+func indexKeyForEdge(e graph.Edge) string {
+	return e.From + "\x00" + e.To + "\x00" + string(e.Kind)
+}
+
+func moduleForNodeID(id string, mm config.ModuleMap) (string, bool) {
+	kind, path, ok := splitNodeID(id)
+	if !ok || path == "" {
+		return "", false
+	}
+	if mod, ok := mm.ModuleFor(path); ok {
+		return mod, true
+	}
+	if kind == string(graph.NodeKindFile) {
+		return mm.ModuleForFile(path)
+	}
+	if mm.Has(path) {
+		return path, true
+	}
+	return "", false
+}
+
+func splitNodeID(id string) (kind, path string, ok bool) {
+	kind, path, ok = strings.Cut(id, ":")
+	return kind, path, ok
+}
+
+func normalizeStaticExternalTarget(id, lang string, goModules []graph.GoModule) (target, raw string, ok bool) {
+	kind, path, ok := splitNodeID(id)
+	if !ok || path == "" {
+		return "", "", false
+	}
+	raw = path
+	switch kind {
+	case string(graph.NodeKindPackage):
+		if lang != graph.LangGo {
+			return "", raw, false
+		}
+		target, ok = normalizeGoExternalTarget(path, goModules)
+		return target, raw, ok
+	case string(graph.NodeKindExternal):
+		switch lang {
+		case graph.LangTypeScript:
+			target, ok = normalizeTypeScriptExternalTarget(path)
+			return target, raw, ok
+		case graph.LangPython:
+			target, ok = normalizePythonExternalTarget(path)
+			return target, raw, ok
+		case graph.LangRust:
+			return path, raw, true
+		default:
+			return "", raw, false
+		}
+	default:
+		return "", raw, false
+	}
+}
+
+func normalizeGoExternalTarget(importPath string, goModules []graph.GoModule) (string, bool) {
+	parts := strings.Split(importPath, "/")
+	if len(parts) == 0 || !strings.Contains(parts[0], ".") {
+		return "", false
+	}
+	for _, mod := range goModules {
+		if mod.Path != "" && (importPath == mod.Path || strings.HasPrefix(importPath, mod.Path+"/")) {
+			return "", false
+		}
+	}
+	rootLen := 3
+	if len(parts) < rootLen {
+		rootLen = len(parts)
+	}
+	root := strings.Join(parts[:rootLen], "/")
+	return root + "/**", true
+}
+
+func normalizeTypeScriptExternalTarget(target string) (string, bool) {
+	if !strings.HasPrefix(target, "node_modules/") {
+		return "", false
+	}
+	trimmed := strings.TrimPrefix(target, "node_modules/")
+	root, ok := npmPackageRoot(trimmed)
+	if !ok {
+		return "", false
+	}
+	return "node_modules/" + root + "/**", true
+}
+
+func normalizePythonExternalTarget(target string) (string, bool) {
+	if target == "" || strings.HasPrefix(target, ".") || strings.Contains(target, "..") {
+		return "", false
+	}
+	parts := strings.Split(target, ".")
+	for _, part := range parts {
+		if !pythonModuleSegment(part) {
+			return "", false
+		}
+	}
+	root := parts[0]
+	return "{" + root + "," + root + ".*}", true
+}
+
+func pythonModuleSegment(seg string) bool {
+	if seg == "" {
+		return false
+	}
+	for i, r := range seg {
+		switch {
+		case r == '_':
+			continue
+		case r >= 'a' && r <= 'z':
+			continue
+		case r >= 'A' && r <= 'Z':
+			continue
+		case i > 0 && r >= '0' && r <= '9':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func npmPackageRoot(target string) (string, bool) {
+	parts := strings.Split(target, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return "", false
+	}
+	if strings.HasPrefix(parts[0], "@") {
+		if len(parts) < 2 || parts[0] == "@" {
+			return "", false
+		}
+		return parts[0] + "/" + parts[1], true
+	}
+	return parts[0], true
+}
+
+func runtimeAsyncDistanceSites(sites []diagnostic.RuntimeAsyncSite) []diagnostic.DistanceConfigEvidenceSite {
+	out := make([]diagnostic.DistanceConfigEvidenceSite, 0, len(sites))
+	for _, s := range sites {
+		target := s.Library
+		if target == "" {
+			target = s.IntegrationKind
+		}
+		out = append(out, diagnostic.DistanceConfigEvidenceSite{
+			File:     s.File,
+			Line:     s.Line,
+			Kind:     s.IntegrationKind,
+			Language: s.Language,
+			Target:   target,
+		})
+	}
+	return out
+}
+
+func dynamicImportDistanceSites(sites []diagnostic.DynamicImportSite) []diagnostic.DistanceConfigEvidenceSite {
+	out := make([]diagnostic.DistanceConfigEvidenceSite, 0, len(sites))
+	for _, s := range sites {
+		out = append(out, diagnostic.DistanceConfigEvidenceSite{
+			File:     s.File,
+			Line:     s.Line,
+			Kind:     s.Kind,
+			Language: s.Language,
+		})
+	}
+	return out
+}
+
+func dynamicConnascenceDistanceSites(sites []diagnostic.DynamicConnascenceSite) []diagnostic.DistanceConfigEvidenceSite {
+	out := make([]diagnostic.DistanceConfigEvidenceSite, 0, len(sites))
+	for _, s := range sites {
+		out = append(out, diagnostic.DistanceConfigEvidenceSite(s))
+	}
+	return out
+}
+
+func dominantDynamicImportKind(sites []diagnostic.DynamicImportSite) string {
+	counts := make(map[string]int, len(sites))
+	for _, s := range sites {
+		counts[s.Kind]++
+	}
+	best, bestN := "dynamic_import", 0
+	for k, n := range counts {
+		if n > bestN || (n == bestN && k < best) {
+			best, bestN = k, n
+		}
+	}
+	return best
 }
 
 // dominantKind returns the most frequent IntegrationKind among sites.
@@ -252,11 +744,13 @@ func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, clone
 	}
 	connectedModules := make(map[string]struct{})
 	tailRisk := couplingTailRiskAccumulator{}
+	spanAcc := distanceCompressionAccumulator{}
 	balanceSum := 0
 	for key, cl := range idx {
 		balanceSum += addClassificationToSummary(s, cl)
 		tailRisk.add(cl, false)
 		addConnectedModules(connectedModules, key, cl, mm)
+		spanAcc.addEdge(key, cl, mm)
 	}
 	if len(cloneOnly) > 0 {
 		switch config.NormalizeDuplicatedKnowledgePolicy(policy) {
@@ -267,6 +761,7 @@ func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, clone
 				tailRisk.add(p.Classification, true)
 				addConnectedModuleName(connectedModules, p.FromModule)
 				addConnectedModuleName(connectedModules, p.ToModule)
+				spanAcc.addModules(p.FromModule, p.ToModule, p.Classification)
 			}
 		default:
 			s.CloneOnlyAdvisory += len(cloneOnly)
@@ -279,6 +774,7 @@ func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, clone
 		s.MeanBalance = float64(balanceSum) / float64(s.Scored)
 		s.TailRisk = tailRisk.summary(s.Scored)
 	}
+	spanAcc.apply(s.DistanceCompression)
 	return s
 }
 
@@ -355,6 +851,67 @@ func buildDistanceCompressionSummary() *diagnostic.DistanceCompressionSummary {
 		DeterministicSplits:   append([]string(nil), ev.DeterministicSplits...),
 		Rationale:             ev.Rationale,
 	}
+}
+
+type distanceCompressionAccumulator struct {
+	boundaryCounts map[int]int
+	ancestorCounts map[int]int
+}
+
+func (a *distanceCompressionAccumulator) addEdge(key string, cl coupling.Classification, mm config.ModuleMap) {
+	if cl.DistanceBasis != coupling.DistanceBasisStructure || cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown {
+		return
+	}
+	from, to, ok := indexKeyEndpoints(key)
+	if !ok {
+		return
+	}
+	fromMod, okFrom := mm.ModuleFor(stripPrefix(from))
+	toMod, okTo := mm.ModuleFor(stripPrefix(to))
+	if !okFrom || !okTo {
+		return
+	}
+	a.addModules(fromMod, toMod, cl)
+}
+
+func (a *distanceCompressionAccumulator) addModules(fromMod, toMod string, cl coupling.Classification) {
+	if cl.DistanceBasis != coupling.DistanceBasisStructure || cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown {
+		return
+	}
+	span := classify.HierarchySpan(fromMod, toMod)
+	if span.BoundaryCrossings <= 0 {
+		return
+	}
+	if a.boundaryCounts == nil {
+		a.boundaryCounts = make(map[int]int)
+		a.ancestorCounts = make(map[int]int)
+	}
+	a.boundaryCounts[span.BoundaryCrossings]++
+	a.ancestorCounts[span.SharedAncestor]++
+}
+
+func (a *distanceCompressionAccumulator) apply(dst *diagnostic.DistanceCompressionSummary) {
+	if dst == nil {
+		return
+	}
+	dst.CodeStructureBoundaryCounts = sortedDistanceCounts(a.boundaryCounts)
+	dst.CodeStructureAncestorDepths = sortedDistanceCounts(a.ancestorCounts)
+}
+
+func sortedDistanceCounts(in map[int]int) []diagnostic.DistanceCount {
+	if len(in) == 0 {
+		return nil
+	}
+	keys := make([]int, 0, len(in))
+	for k := range in {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	out := make([]diagnostic.DistanceCount, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, diagnostic.DistanceCount{Value: k, Count: in[k]})
+	}
+	return out
 }
 
 func copyDistanceOmittedRungReasons(in []classify.DistanceOmittedRungReason) []diagnostic.DistanceOmittedRungReason {
@@ -450,7 +1007,13 @@ func addClassificationToSummary(s *diagnostic.ClassifiedEdgeSummary, cl coupling
 	return 0
 }
 
-var connascenceKindsToDiscloseWhenUnmeasured = []string{"position", "execution", "timing", "value", "identity"}
+var connascenceKindsToDiscloseWhenUnmeasured = []string{
+	string(coupling.ConnascencePosition),
+	string(coupling.ConnascenceExecution),
+	string(coupling.ConnascenceTiming),
+	string(coupling.ConnascenceValue),
+	string(coupling.ConnascenceIdentity),
+}
 
 const (
 	connascenceStatusDeterministicStatic = "deterministic_static"
@@ -477,6 +1040,9 @@ func buildConnascenceReport(idx coupling.Index) *diagnostic.ConnascenceReport {
 			continue
 		}
 		r.EdgesWithEvidence++
+		if cl.StrengthFromConnascence {
+			r.StrengthInferredEdges++
+		}
 		for _, ev := range cl.Connascence {
 			r.TotalEvidence++
 			r.ByKind[string(ev.Kind)]++
@@ -534,7 +1100,12 @@ func connascenceRoadmap(byKind map[string]int) []diagnostic.ConnascenceRoadmapIt
 			UpgradeTrigger: "deterministic argument-order or tuple-position facts from an extractor",
 		},
 	)
-	for _, kind := range []string{"execution", "timing", "value", "identity"} {
+	for _, kind := range []string{
+		string(coupling.ConnascenceExecution),
+		string(coupling.ConnascenceTiming),
+		string(coupling.ConnascenceValue),
+		string(coupling.ConnascenceIdentity),
+	} {
 		items = append(items, diagnostic.ConnascenceRoadmapItem{
 			Kind:           kind,
 			CurrentStatus:  connascenceStatusUnmeasuredDynamic,

@@ -92,7 +92,7 @@ func CloneOnlyPairs(g *graph.Graph, c config.ClassifyConfig) []CloneOnlyPair {
 			Volatility:     worseVolatility(pairVolatility(effectiveVol, fromMod), pairVolatility(effectiveVol, toMod)),
 			Explicitness:   coupling.ExplicitnessImplicit,
 			DistanceBasis:  basis,
-			CloneLocations: locs,
+			CloneLocations: couplingLocations(locs),
 		}
 		cl.Score = scorer.Score(cl)
 		cl.Severity = cl.Score.Band

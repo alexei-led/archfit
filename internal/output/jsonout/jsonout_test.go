@@ -12,7 +12,18 @@ import (
 	"github.com/alexei-led/archfit/internal/score"
 )
 
-const connascenceExecutionTest = "execution"
+const (
+	connascenceExecutionTest        = "execution"
+	dynamicTargetRabbitMQ           = "rabbitmq"
+	semanticUnknownJSON             = "unknown"
+	distanceCandidateRuntimeEdges   = "runtime_async_edges"
+	distanceCandidateModuleApp      = "app"
+	distanceCandidateKindMessageQ   = "message_queue"
+	distanceCandidatePublisherFile  = "app/publisher.go"
+	distanceCandidateExternalAction = "external_systems"
+	jsonHigh                        = "high"
+	jsonLow                         = "low"
+)
 
 // TestJSONRenderer_AdvisoryScoreFields asserts the numeric BC score fields
 // (score_value + score_band) on an advisory's matched_by survive JSON encoding.
@@ -26,7 +37,7 @@ func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
 		MatchedBy: map[string]string{
 			"score":       "multiplicative",
 			"score_value": "7",
-			"score_band":  "high",
+			"score_band":  jsonHigh,
 		},
 	}}
 
@@ -43,8 +54,8 @@ func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
 	if mb["score_value"] != "7" {
 		t.Errorf("matched_by.score_value = %q, want %q", mb["score_value"], "7")
 	}
-	if mb["score_band"] != "high" {
-		t.Errorf("matched_by.score_band = %q, want %q", mb["score_band"], "high")
+	if mb["score_band"] != jsonHigh {
+		t.Errorf("matched_by.score_band = %q, want %q", mb["score_band"], jsonHigh)
 	}
 }
 
@@ -52,6 +63,41 @@ func TestJSONRenderer_AdvisoryScoreFields(t *testing.T) {
 // always present in JSON output and pins the current version literal —
 // consumers key on it to detect breaking metric changes, and a version bump
 // must be a deliberate, test-visible act.
+func TestJSONRenderer_AdvisoryTasks(t *testing.T) {
+	d := diagnostic.New()
+	d.AdvisoryTasks = []diagnostic.AdvisoryTask{{
+		FindingID:    "rollup-1",
+		RuleID:       "bc/imbalanced_coupling",
+		Status:       finding.StatusNew,
+		Severity:     finding.SeverityHigh,
+		GroupCount:   3,
+		GroupMembers: []string{"id1", "id2"},
+		Goal:         "Review grouped advisories.",
+		CheapestMove: "reduce_distance",
+		ScoreValue:   8,
+		TopFiles:     []string{"a.go", "b.go"},
+		Constraints:  []string{"report-only"},
+		Validation:   []string{"archfit analyze --gate --full"},
+	}}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var got diagnostic.Diagnostic
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("cannot unmarshal: %v", err)
+	}
+	if len(got.AdvisoryTasks) != 1 {
+		t.Fatalf("advisory_tasks = %d, want 1", len(got.AdvisoryTasks))
+	}
+	task := got.AdvisoryTasks[0]
+	if task.GroupCount != 3 || task.CheapestMove != "reduce_distance" || task.TopFiles[0] != "a.go" {
+		t.Fatalf("advisory task did not round-trip: %+v", task)
+	}
+}
+
 func TestJSONRenderer_ScoreVersion(t *testing.T) {
 	var buf bytes.Buffer
 	if err := jsonout.New().Render(diagnostic.New(), score.Scorecard{}, nil, &buf); err != nil {
@@ -76,6 +122,16 @@ func TestJSONRenderer_ScoreVersion(t *testing.T) {
 
 func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 	d := diagnostic.New()
+	d.DistanceContext = &diagnostic.DistanceContext{
+		OwnerModel:                "single_owner_degenerate",
+		DistanceBasis:             map[string]int{"code_structure": 2, "ownership": 1},
+		DeployUnitDetectedModules: 1,
+		DeclaredExternalSystems:   1,
+		RuntimeAsyncRelations:     2,
+		RuntimeAsyncKinds:         map[string]int{"message_queue": 1, "event_bus": 1},
+		Interpretation:            "same-owner is the lowest cross-module distance",
+		RuntimeInterpretation:     "async runtime bridges reduce lifecycle coupling and therefore increase perceived distance",
+	}
 	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
 		Scored:           3,
 		ConnectedModules: 2,
@@ -90,9 +146,11 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 			CloneOnlyWorstBalance: 4,
 		},
 		DistanceCompression: &diagnostic.DistanceCompressionSummary{
-			CompressedMiddleRungs: true,
-			ImplementedRungs:      []int{2, 4, 7, 9, 10},
-			OmittedRungs:          []int{3, 5, 6, 8},
+			CompressedMiddleRungs:       true,
+			ImplementedRungs:            []int{2, 4, 7, 9, 10},
+			OmittedRungs:                []int{3, 5, 6, 8},
+			CodeStructureBoundaryCounts: []diagnostic.DistanceCount{{Value: 2, Count: 3}, {Value: 5, Count: 1}},
+			CodeStructureAncestorDepths: []diagnostic.DistanceCount{{Value: 0, Count: 1}, {Value: 1, Count: 3}},
 			OmittedRungReasons: []diagnostic.DistanceOmittedRungReason{
 				{Rung: 8, Reason: "declared external_systems use D=10"},
 			},
@@ -109,6 +167,18 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("output is not valid JSON: %v", err)
 	}
+	if got.DistanceContext == nil {
+		t.Fatal("distance_context missing from JSON output")
+	}
+	if got.DistanceContext.OwnerModel != "single_owner_degenerate" {
+		t.Fatalf("distance_context.owner_model = %q", got.DistanceContext.OwnerModel)
+	}
+	if got.DistanceContext.DeployUnitDetectedModules != 1 || got.DistanceContext.DeclaredExternalSystems != 1 {
+		t.Fatalf("distance_context evidence counts = %+v", got.DistanceContext)
+	}
+	if got.DistanceContext.RuntimeAsyncRelations != 2 || got.DistanceContext.RuntimeAsyncKinds["message_queue"] != 1 {
+		t.Fatalf("distance_context runtime evidence = %+v", got.DistanceContext)
+	}
 	if got.ClassifiedEdges == nil {
 		t.Fatal("classified_edges missing from JSON output")
 	}
@@ -121,6 +191,12 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 	if got.ClassifiedEdges.DistanceCompression == nil || !got.ClassifiedEdges.DistanceCompression.CompressedMiddleRungs {
 		t.Fatalf("distance_compression = %+v, want compressed_middle_rungs=true", got.ClassifiedEdges.DistanceCompression)
 	}
+	if spans := got.ClassifiedEdges.DistanceCompression.CodeStructureBoundaryCounts; len(spans) != 2 || spans[0].Value != 2 || spans[1].Value != 5 {
+		t.Fatalf("boundary counts = %+v, want values 2 and 5", spans)
+	}
+	if depths := got.ClassifiedEdges.DistanceCompression.CodeStructureAncestorDepths; len(depths) != 2 || depths[0].Value != 0 || depths[1].Value != 1 {
+		t.Fatalf("ancestor depths = %+v, want values 0 and 1", depths)
+	}
 	if reasons := got.ClassifiedEdges.DistanceCompression.OmittedRungReasons; len(reasons) != 1 || reasons[0].Rung != 8 {
 		t.Fatalf("omitted_rung_reasons = %+v, want D=8 reason", reasons)
 	}
@@ -129,6 +205,102 @@ func TestJSONRenderer_ClassifiedEdgesDistanceTransparency(t *testing.T) {
 	}
 	if got.ClassifiedEdges.TailRisk.WorstBalance != 2 || got.ClassifiedEdges.TailRisk.HighOrWorseEdges != 1 {
 		t.Fatalf("tail_risk = %+v, want worst=2 high_or_worse=1", got.ClassifiedEdges.TailRisk)
+	}
+}
+
+func TestJSONRenderer_VolatilityCorroboration(t *testing.T) {
+	d := diagnostic.New()
+	d.VolatilityCorroboration = &diagnostic.VolatilityCorroboration{
+		Source:         "git_history",
+		Status:         "ok",
+		CommitWindow:   500,
+		CommitsScanned: 42,
+		ModulesTouched: 2,
+		TopTouched: []diagnostic.VolatilityTouch{
+			{Module: "cmd/archfit", TouchCommits: 12, DeclaredVolatility: jsonHigh},
+			{Module: "internal/output", TouchCommits: 5, DeclaredVolatility: jsonLow},
+		},
+		Caveat: "Supporting evidence only.",
+	}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var got diagnostic.Diagnostic
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if got.VolatilityCorroboration == nil {
+		t.Fatal("volatility_corroboration missing from JSON output")
+	}
+	if got.VolatilityCorroboration.Status != "ok" || got.VolatilityCorroboration.ModulesTouched != 2 {
+		t.Fatalf("volatility_corroboration = %+v", got.VolatilityCorroboration)
+	}
+	if len(got.VolatilityCorroboration.TopTouched) != 2 || got.VolatilityCorroboration.TopTouched[0].Module != "cmd/archfit" {
+		t.Fatalf("top_touched = %+v", got.VolatilityCorroboration.TopTouched)
+	}
+}
+
+func TestJSONRenderer_ConnascenceStrengthInferred(t *testing.T) {
+	d := diagnostic.New()
+	d.Connascence = &diagnostic.ConnascenceReport{
+		EdgesWithEvidence:     2,
+		AbstainedEdges:        1,
+		TotalEvidence:         3,
+		StrengthInferredEdges: 1,
+		ByKind: map[string]int{
+			string(coupling.ConnascenceAlgorithm): 1,
+			string(coupling.ConnascenceMeaning):   1,
+			string(coupling.ConnascenceName):      1,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var got diagnostic.Diagnostic
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if got.Connascence == nil || got.Connascence.StrengthInferredEdges != 1 {
+		t.Fatalf("connascence = %+v, want strength_inferred_edges=1", got.Connascence)
+	}
+}
+
+func TestJSONRenderer_SemanticStrengthOverlay(t *testing.T) {
+	d := diagnostic.New()
+	d.SemanticStrengthOverlay = &diagnostic.SemanticStrengthOverlay{
+		ByLanguage: map[string]diagnostic.SemanticStrengthOverlayStats{
+			"python": {CandidateEdges: 3, Applied: 2, Missed: 1, Before: map[string]int{semanticUnknownJSON: 3}, After: map[string]int{"intrusive": 2, semanticUnknownJSON: 1}},
+			"rust":   {CandidateEdges: 2, Applied: 0, Missed: 2, Before: map[string]int{semanticUnknownJSON: 2}, After: map[string]int{semanticUnknownJSON: 2}},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var raw struct {
+		SemanticStrengthOverlay diagnostic.SemanticStrengthOverlay `json:"semantic_strength_overlay"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	got := raw.SemanticStrengthOverlay.ByLanguage["python"]
+	if got.CandidateEdges != 3 || got.Applied != 2 || got.Missed != 1 {
+		t.Fatalf("Python overlay = %+v, want candidate/applied/missed 3/2/1", got)
+	}
+	if got.Before[semanticUnknownJSON] != 3 || got.After["intrusive"] != 2 {
+		t.Fatalf("Python overlay distributions = before %+v after %+v", got.Before, got.After)
+	}
+	gotRust := raw.SemanticStrengthOverlay.ByLanguage["rust"]
+	if gotRust.CandidateEdges != 2 || gotRust.Applied != 0 || gotRust.Missed != 2 {
+		t.Fatalf("Rust zero-hit overlay = %+v, want candidate/applied/missed 2/0/2", gotRust)
 	}
 }
 
@@ -143,7 +315,7 @@ func TestJSONRenderer_ConnascenceSummary(t *testing.T) {
 		Unmeasured:        []string{"position", connascenceExecutionTest},
 		Roadmap: []diagnostic.ConnascenceRoadmapItem{
 			{Kind: "name", CurrentStatus: "deterministic_static", Sources: []string{"go/types"}},
-			{Kind: connascenceExecutionTest, CurrentStatus: "unmeasured_dynamic", RelatedSignals: []string{"runtime_async_edges"}, UpgradeTrigger: "deterministic runtime ordering"},
+			{Kind: connascenceExecutionTest, CurrentStatus: "unmeasured_dynamic", RelatedSignals: []string{distanceCandidateRuntimeEdges}, UpgradeTrigger: "deterministic runtime ordering"},
 		},
 	}
 
@@ -169,6 +341,89 @@ func TestJSONRenderer_ConnascenceSummary(t *testing.T) {
 	}
 	if got := raw.Connascence.Roadmap[1]; got.Kind != connascenceExecutionTest || got.CurrentStatus != "unmeasured_dynamic" || len(got.RelatedSignals) != 1 {
 		t.Fatalf("dynamic roadmap entry = %+v, want execution/unmeasured_dynamic with related signal", got)
+	}
+}
+
+func TestJSONRenderer_DynamicConnascenceSignals(t *testing.T) {
+	d := diagnostic.New()
+	d.DynamicConnascenceSignals = &diagnostic.DynamicConnascenceSignals{
+		ReportOnlyReason: "runtime trace evidence is absent",
+		Unmeasured:       []string{connascenceExecutionTest, string(coupling.ConnascenceTiming)},
+		Signals: []diagnostic.DynamicConnascenceSignal{{
+			Kind:               "runtime_async",
+			RelatedConnascence: []string{connascenceExecutionTest, string(coupling.ConnascenceTiming)},
+			Measured:           false,
+			ReportOnlyReason:   "runtime trace evidence is absent",
+			Module:             distanceCandidateModuleApp,
+			Target:             dynamicTargetRabbitMQ,
+			IntegrationKind:    distanceCandidateKindMessageQ,
+			Count:              2,
+			Sites: []diagnostic.DynamicConnascenceSite{{
+				File: distanceCandidatePublisherFile, Line: 12, Kind: distanceCandidateKindMessageQ, Language: "go", Target: dynamicTargetRabbitMQ,
+			}},
+		}},
+	}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var raw struct {
+		Dynamic diagnostic.DynamicConnascenceSignals `json:"dynamic_connascence_signals"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if len(raw.Dynamic.Signals) != 1 {
+		t.Fatalf("dynamic connascence signals = %+v, want one", raw.Dynamic.Signals)
+	}
+	got := raw.Dynamic.Signals[0]
+	if got.Kind != "runtime_async" || got.Measured || got.Module != distanceCandidateModuleApp || got.Target != dynamicTargetRabbitMQ || got.Count != 2 {
+		t.Fatalf("dynamic connascence signal = %+v", got)
+	}
+	if len(got.RelatedConnascence) != 2 || got.RelatedConnascence[0] != connascenceExecutionTest {
+		t.Fatalf("related connascence = %+v", got.RelatedConnascence)
+	}
+	if len(raw.Dynamic.Unmeasured) != 2 || raw.Dynamic.Unmeasured[1] != string(coupling.ConnascenceTiming) {
+		t.Fatalf("unmeasured = %+v", raw.Dynamic.Unmeasured)
+	}
+}
+
+func TestJSONRenderer_DistanceConfigCandidates(t *testing.T) {
+	d := diagnostic.New()
+	d.DistanceConfigCandidates = []diagnostic.DistanceConfigCandidate{{
+		SourceBlock:           distanceCandidateRuntimeEdges,
+		Module:                distanceCandidateModuleApp,
+		Target:                dynamicTargetRabbitMQ,
+		IntegrationKind:       distanceCandidateKindMessageQ,
+		Count:                 2,
+		SuggestedReviewAction: distanceCandidateExternalAction,
+		EvidenceSites: []diagnostic.DistanceConfigEvidenceSite{{
+			File: distanceCandidatePublisherFile, Line: 12, Kind: distanceCandidateKindMessageQ, Language: "go", Target: dynamicTargetRabbitMQ,
+		}},
+	}}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var raw struct {
+		Candidates []diagnostic.DistanceConfigCandidate `json:"distance_config_candidates"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if len(raw.Candidates) != 1 {
+		t.Fatalf("distance config candidates = %+v, want one", raw.Candidates)
+	}
+	got := raw.Candidates[0]
+	if got.SourceBlock != distanceCandidateRuntimeEdges || got.Module != distanceCandidateModuleApp || got.Target != dynamicTargetRabbitMQ || got.SuggestedReviewAction != distanceCandidateExternalAction {
+		t.Fatalf("distance config candidate = %+v", got)
+	}
+	if len(got.EvidenceSites) != 1 || got.EvidenceSites[0].File != distanceCandidatePublisherFile {
+		t.Fatalf("distance config candidate sites = %+v", got.EvidenceSites)
 	}
 }
 

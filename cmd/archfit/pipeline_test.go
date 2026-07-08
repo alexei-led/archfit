@@ -20,6 +20,9 @@ func TestBuildCoverageGaps(t *testing.T) {
 	cfgFailGo := config.Config{Languages: config.LanguagesConfig{
 		Go: config.GoLanguage{Gate: config.GateFail},
 	}}
+	cfgOffGo := config.Config{Languages: config.LanguagesConfig{
+		Go: config.GoLanguage{Gate: config.GateOff},
+	}}
 	cfgWarn := config.Config{}
 
 	cases := []struct {
@@ -47,6 +50,12 @@ func TestBuildCoverageGaps(t *testing.T) {
 			name:      "present tool produces no gap",
 			cov:       []diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusOK}},
 			cfg:       cfgWarn,
+			wantTools: nil,
+		},
+		{
+			name:      "absent tool with configured off gate produces no gap",
+			cov:       []diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}},
+			cfg:       cfgOffGo,
 			wantTools: nil,
 		},
 		{
@@ -124,8 +133,14 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 	cfgRustGate := config.Config{Languages: config.LanguagesConfig{
 		Rust: config.RustLanguage{Gate: config.GateFail},
 	}}
+	cfgGoOff := config.Config{Languages: config.LanguagesConfig{
+		Go: config.GoLanguage{Gate: config.GateOff},
+	}}
 	cfgCargoModulesGate := config.Config{Analyzers: config.AnalyzersConfig{
 		CargoModules: config.Analyzer{Gate: config.GateFail},
+	}}
+	cfgCargoModulesOff := config.Config{Analyzers: config.AnalyzersConfig{
+		CargoModules: config.Analyzer{Gate: config.GateOff},
 	}}
 
 	allRustAbsent := []diagnostic.Coverage{
@@ -162,8 +177,18 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 		gaps := buildCoverageGaps(allRustAbsent, cfgDefault, mixedDir)
 		found := false
 		for _, g := range gaps {
-			if g.Tool == toolCargoModules {
-				found = true
+			if g.Tool != toolCargoModules {
+				continue
+			}
+			found = true
+			wantMetrics := []string{metricCycle, metricBlastRadius, metricEncapsulation}
+			if len(g.AffectedMetrics) != len(wantMetrics) {
+				t.Fatalf("cargo-modules affected metrics = %v, want %v", g.AffectedMetrics, wantMetrics)
+			}
+			for i, want := range wantMetrics {
+				if g.AffectedMetrics[i] != want {
+					t.Fatalf("cargo-modules affected metrics[%d] = %q, want %q (no nonexistent cohesion metric)", i, g.AffectedMetrics[i], want)
+				}
 			}
 		}
 		if !found {
@@ -200,6 +225,26 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 		}
 		if !found {
 			t.Error("explicit gate: expected cargo-modules gap even without Cargo.toml, got none")
+		}
+	})
+
+	t.Run("gate off suppresses cargo-modules gap", func(t *testing.T) {
+		t.Parallel()
+		gaps := buildCoverageGaps([]diagnostic.Coverage{{Tool: toolCargoModules, Status: diagnostic.StatusAbsent}}, cfgCargoModulesOff, mixedDir)
+		for _, g := range gaps {
+			if g.Tool == toolCargoModules {
+				t.Fatalf("gate off should suppress cargo-modules gap, got %+v", gaps)
+			}
+		}
+	})
+
+	t.Run("gate off suppresses go/packages gap", func(t *testing.T) {
+		t.Parallel()
+		gaps := buildCoverageGaps([]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}, cfgGoOff, goOnlyDir)
+		for _, g := range gaps {
+			if g.Tool == toolGoPackages {
+				t.Fatalf("gate off should suppress go/packages gap, got %+v", gaps)
+			}
 		}
 	})
 
@@ -651,11 +696,16 @@ func TestTSUnresolvedWarning(t *testing.T) {
 // the regression for P12: the skipped pass was silently absent from the output.
 func TestSkippedPassCoverageRows_ScipDisabled(t *testing.T) {
 	t.Parallel()
-	// StatusDisabled must not produce a gap (deliberate opt-out, not a missing tool).
-	cov := []diagnostic.Coverage{
-		{Tool: toolScip, Status: diagnostic.StatusDisabled, Reason: reasonScipDisabled},
+	cov := diagnostic.Coverage{Tool: toolScip, Status: diagnostic.StatusDisabled, Reason: reasonScipDisabled}
+	if cov.Tool != "scip" {
+		t.Fatalf("disabled SCIP coverage tool = %q, want scip", cov.Tool)
 	}
-	gaps := buildCoverageGaps(cov, config.Config{}, "")
+	if !strings.Contains(cov.Reason, "analyzers.scip.enabled") {
+		t.Fatalf("disabled SCIP reason = %q, want opt-in config path", cov.Reason)
+	}
+
+	// StatusDisabled must not produce a gap (deliberate opt-out, not a missing tool).
+	gaps := buildCoverageGaps([]diagnostic.Coverage{cov}, config.Config{}, "")
 	if len(gaps) != 0 {
 		t.Errorf("StatusDisabled scip must not produce a gap; got %+v", gaps)
 	}

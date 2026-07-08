@@ -89,9 +89,17 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 	writeConnascenceSummary(&b, d.Connascence)
 
+	writeDynamicConnascenceSignals(&b, d.DynamicConnascenceSignals)
+
+	writeSemanticStrengthOverlay(&b, d.SemanticStrengthOverlay)
+
 	writeDynamicImports(&b, d.DynamicImports)
 
 	writeRuntimeAsync(&b, d.RuntimeAsync, d.RuntimeAsyncEdges)
+
+	writeDistanceConfigCandidates(&b, d.DistanceConfigCandidates)
+
+	writeVolatilityCorroboration(&b, d.VolatilityCorroboration)
 
 	writeDeprecatedDeps(&b, d.DeprecatedDeps)
 
@@ -108,6 +116,8 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 	}
 
 	writeAgentTasks(&b, d.AgentTasks)
+
+	writeAdvisoryTasks(&b, d.AdvisoryTasks)
 
 	if len(advisories) > 0 {
 		writeBCAdvisories(&b, advisories)

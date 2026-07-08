@@ -116,16 +116,24 @@ func TestDiscoverRust_MalformedJSON_ReturnsError(t *testing.T) {
 }
 
 // TestRender_RustToolMode asserts the languages.rust stanza reflects HasRust. The
-// assertions bind the rust stanza to its mode (rust: → enabled: <bool>) so a
+// assertions bind the rust stanza to its mode (rust: → enabled: <mode>) so a
 // regression that flips the mode is caught — other languages emit false too, so
 // a bare `enabled: false` check would pass even with the rust stanza wrong.
 func TestRender_RustToolMode(t *testing.T) {
 	on := Render(DiscoveredConfig{HasRust: true}, nil, false)
-	if !strings.Contains(on, "rust:\n    enabled: true") {
-		t.Errorf("HasRust=true should emit languages.rust enabled true; got:\n%s", on)
+	if !strings.Contains(on, "rust:\n    enabled: auto") {
+		t.Errorf("HasRust=true should emit languages.rust enabled auto; got:\n%s", on)
+	}
+	for _, want := range []string{"analyzers:\n  cargo_modules:\n    enabled: true", "  scip:\n    enabled: true"} {
+		if !strings.Contains(on, want) {
+			t.Errorf("HasRust=true should emit Rust deep analyzer stanza %q; got:\n%s", want, on)
+		}
 	}
 	off := Render(DiscoveredConfig{HasRust: false}, nil, false)
 	if !strings.Contains(off, "rust:\n    enabled: false") {
 		t.Errorf("HasRust=false should emit languages.rust enabled false; got:\n%s", off)
+	}
+	if strings.Contains(off, "cargo_modules:\n    enabled: true") {
+		t.Errorf("HasRust=false should not force cargo_modules; got:\n%s", off)
 	}
 }

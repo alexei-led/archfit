@@ -1,7 +1,5 @@
 package coupling
 
-import "github.com/alexei-led/archfit/internal/model/graph"
-
 // Strength classifies how a dependency is expressed at the API boundary.
 type Strength string
 
@@ -73,19 +71,24 @@ func VolatilityResolved(v Volatility) bool {
 	return v == VolatilityFrozen || v == VolatilityLow || v == VolatilityMedium || v == VolatilityHigh
 }
 
-// ConnascenceKind names the static connascence category evidenced for a coupling
-// edge. These are report-only Ch6 labels and never feed scoring.
+// ConnascenceKind names a book Ch6 connascence category. Static evidence may
+// attach to coupling edges; dynamic categories are disclosed as unmeasured until
+// deterministic runtime-trace evidence exists. These labels never feed scoring.
 type ConnascenceKind string
 
-// Deterministic static connascence categories from Connascence of Name through
-// Connascence of Position. Not every category is currently measured; unsupported
-// kinds are disclosed as unmeasured in the diagnostic summary.
+// Connascence categories from Connascence of Name through Connascence of
+// Identity. Not every category is currently measured; unsupported kinds are
+// disclosed as unmeasured in the diagnostic summary.
 const (
 	ConnascenceName      ConnascenceKind = "name"
 	ConnascenceType      ConnascenceKind = "type"
 	ConnascenceMeaning   ConnascenceKind = "meaning"
 	ConnascenceAlgorithm ConnascenceKind = "algorithm"
 	ConnascencePosition  ConnascenceKind = "position"
+	ConnascenceExecution ConnascenceKind = "execution"
+	ConnascenceTiming    ConnascenceKind = "timing"
+	ConnascenceValue     ConnascenceKind = "value"
+	ConnascenceIdentity  ConnascenceKind = "identity"
 )
 
 // ConnascenceEvidence is one deterministic static connascence fact attached to
@@ -95,6 +98,12 @@ type ConnascenceEvidence struct {
 	Kind   ConnascenceKind `json:"kind"`
 	Source string          `json:"source"`
 	Detail string          `json:"detail,omitempty"`
+}
+
+// Location is a report-only file location attached to coupling evidence.
+type Location struct {
+	File string `json:"file"`
+	Line int    `json:"line,omitempty"`
 }
 
 // Explicitness classifies whether the coupling is via a declared contract.
@@ -148,7 +157,7 @@ type Classification struct {
 	// other source, including an extractor's Symmetric StrengthHint. Report-only
 	// — appended onto the finding's Locations downstream (engine/advisories.go),
 	// never fed into distance/volatility/scoring.
-	CloneLocations []graph.Location `json:"clone_locations,omitempty"`
+	CloneLocations []Location `json:"clone_locations,omitempty"`
 	// StrengthFromLLM records that Strength came from an approved
 	// llm-provenance label filling a cell every static source left unknown.
 	// Report-only — drives the classified_edges.labeled_llm disclosure count,
@@ -158,9 +167,14 @@ type Classification struct {
 	// confidence was not high. Report-only — score confidence consumes the applied
 	// edge count rather than raw approved-label rows.
 	StrengthFromNonHighLLM bool `json:"strength_from_non_high_llm,omitempty"`
+	// StrengthFromConnascence records that a deterministic static connascence fact
+	// (meaning/algorithm/position) refined an otherwise unresolved or public-floor
+	// strength to model or functional. Report-only disclosure of a deterministic
+	// fallback path; never affects distance, explicitness, or confidence bands.
+	StrengthFromConnascence bool `json:"strength_from_connascence,omitempty"`
 	// Connascence carries deterministic static connascence evidence for this edge.
-	// It is disclosed in JSON/Markdown and never affects strength, distance,
-	// volatility, explicitness, score, severity, or gate verdicts.
+	// The summary block is report-only; the evidence may also refine an otherwise
+	// unresolved/public-floor strength through StrengthFromConnascence.
 	Connascence []ConnascenceEvidence `json:"connascence,omitempty"`
 }
 

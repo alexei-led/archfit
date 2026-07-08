@@ -233,6 +233,21 @@ func TestArchImports(t *testing.T) {
 	})
 }
 
+func TestCouplingModelDoesNotImportGraph(t *testing.T) {
+	cfg := &packages.Config{Mode: packages.NeedImports, Dir: "."}
+	pkgs, err := packages.Load(cfg, modulePrefix+"internal/model/coupling")
+	if err != nil {
+		t.Fatalf("packages.Load: %v", err)
+	}
+	if len(pkgs) != 1 {
+		t.Fatalf("packages.Load returned %d packages, want 1", len(pkgs))
+	}
+	const graphPkg = modulePrefix + "internal/model/graph"
+	if _, imports := pkgs[0].Imports[graphPkg]; imports {
+		t.Fatalf("internal/model/coupling must not import %s; keep clone evidence on coupling's narrow Location DTO", graphPkg)
+	}
+}
+
 // isForbiddenForCore reports whether imp is forbidden for a core ring package.
 // Forbidden: os, os/exec, any YAML library, any adapter package.
 func isForbiddenForCore(imp string) bool {

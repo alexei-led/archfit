@@ -9,6 +9,8 @@ import (
 	"github.com/alexei-led/archfit/internal/model/signal"
 )
 
+const coverageToolGoPackages = "go/packages"
+
 func TestCoverage_Ratio(t *testing.T) {
 	// FilesSeen=8, FilesApplicable=10 → value 0.8
 	m := boundary.CoverageMetric{}
@@ -75,7 +77,7 @@ func TestCoverage_AllAbsent(t *testing.T) {
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
 		ToolCoverage: []diagnostic.Coverage{
-			{Tool: "go/packages", Status: diagnostic.StatusAbsent},
+			{Tool: coverageToolGoPackages, Status: diagnostic.StatusAbsent},
 			{Tool: "dependency-cruiser", Status: diagnostic.StatusAbsent},
 		},
 	})
@@ -93,7 +95,7 @@ func TestCoverage_AbsentRecordSkipped(t *testing.T) {
 	m := boundary.CoverageMetric{}
 	result := m.Calculate(signal.CommonInput{
 		ToolCoverage: []diagnostic.Coverage{
-			{Tool: "go/packages", FilesSeen: 8, FilesApplicable: 10, Status: diagnostic.StatusOK},
+			{Tool: coverageToolGoPackages, FilesSeen: 8, FilesApplicable: 10, Status: diagnostic.StatusOK},
 			{Tool: "grimp", Status: diagnostic.StatusAbsent},
 		},
 	})
@@ -123,6 +125,22 @@ func TestCoverage_AuxiliaryToolSkipped(t *testing.T) {
 	// dc+loc: 249/249 = 1.0
 	if !metricstest.ApproxEqual(result.Value, 1.0) {
 		t.Errorf("coverage ratio = %.4f, want 1.0 (dc+loc only)", result.Value)
+	}
+}
+
+func TestCoverage_DeployUnitAuxiliarySkipped(t *testing.T) {
+	m := boundary.CoverageMetric{}
+	result := m.Calculate(signal.CommonInput{
+		ToolCoverage: []diagnostic.Coverage{
+			{Tool: coverageToolGoPackages, FilesSeen: 10, FilesApplicable: 10, Status: diagnostic.StatusOK},
+			{Tool: "deploy-unit", FilesSeen: 1, FilesApplicable: 0, Status: diagnostic.StatusOK},
+		},
+	})
+	if result.Value > 1.0 {
+		t.Errorf("coverage ratio = %.4f, want <= 1.0 (deploy-unit row must not inflate numerator)", result.Value)
+	}
+	if !metricstest.ApproxEqual(result.Value, 1.0) {
+		t.Errorf("coverage ratio = %.4f, want 1.0 (go/packages only)", result.Value)
 	}
 }
 

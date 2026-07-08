@@ -14,6 +14,7 @@ import (
 // it, but does not fail the build; fail is the opt-in hard gate (tools.<x>.gate: fail
 // / --require-tools). Sourced from config.GateMode so the two never drift.
 const (
+	gateOff  = string(config.GateOff)
 	gateWarn = string(config.GateWarn)
 	gateFail = string(config.GateFail)
 )
@@ -40,7 +41,7 @@ func buildCoverageToolConfigKey() map[string]string {
 // primaryGraphMetrics are the metrics the dependency-graph extractors
 // (go/packages, dependency-cruiser, grimp) unlock; absent any of them, all of
 // these drop to n/a. Shared (read-only) across those per-language table entries.
-var primaryGraphMetrics = []string{"coverage", "coupling_balance", "encapsulation", "cycle", "blast_radius"}
+var primaryGraphMetrics = []string{"coverage", "coupling_balance", metricEncapsulation, metricCycle, metricBlastRadius}
 
 // affectedMetrics carries an absent analyzer's one-line install hint and the
 // metrics its absence leaves unmeasured.
@@ -59,7 +60,7 @@ var toolAffectedMetrics = buildToolAffectedMetrics()
 func buildToolAffectedMetrics() map[string]affectedMetrics {
 	m := map[string]affectedMetrics{
 		toolJscpd:        {"npm install -g jscpd", []string{"coupling_balance"}},
-		toolCargoModules: {"cargo install cargo-modules (analyzers.cargo_modules.enabled: true)", []string{"cycle", "blast_radius", "cohesion", "encapsulation"}},
+		toolCargoModules: {"cargo install cargo-modules (analyzers.cargo_modules.enabled: true)", []string{metricCycle, metricBlastRadius, metricEncapsulation}},
 	}
 	for _, lang := range languageRegistry {
 		m[lang.PrimaryTool] = affectedMetrics{lang.InstallHint, primaryGraphMetrics}
@@ -124,8 +125,8 @@ func projectMarkerPresent(root string, markers []string) bool {
 //
 // Gaps are also suppressed when the language's project marker is absent from root
 // (e.g. no Cargo.toml → Rust is not present → cargo gap is noise). An explicit
-// gate on that tool overrides the suppression — it is an intentional "require it"
-// even in repos that don't currently use that language.
+// gate on that tool overrides the suppression — except gate: off, which is a
+// deliberate opt-out and never produces an install prompt.
 func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string) []diagnostic.CoverageGap {
 	var gaps []diagnostic.CoverageGap
 	for _, c := range cov {
@@ -134,19 +135,22 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string
 		if c.Status != diagnostic.StatusAbsent {
 			continue
 		}
+		if configToolGate(cfg, c.Tool) == gateOff {
+			continue
+		}
 		// A disabled language's primary tool is not a gap the user needs to close —
 		// don't tell a Rust-only repo to install dependency-cruiser/grimp/go-packages.
-		// An explicit gate on that tool (tools.<lang>.gate) is an intentional
-		// "require it anyway" override and is preserved.
+		// Explicit warn/fail gates keep the gap even if the language is absent.
 		if lang, isPrimary := primaryToolLanguage[c.Tool]; isPrimary &&
 			cfg.ToolMode(lang) == config.ModeOff && cfg.ToolGate(lang) == "" {
 			continue
 		}
 		// Suppress the gap when the language's project marker is absent from the
 		// scan root — the language simply isn't present in this repo, so the missing
-		// tool is not actionable. An explicit gate overrides this (same carve-out as
-		// the disabled-language check above). cargo-modules (opt-in intra-crate tool,
-		// not a language primary) is also suppressed when no Cargo.toml is present.
+		// tool is not actionable. An explicit warn/fail gate overrides this (same
+		// carve-out as the disabled-language check above). cargo-modules (opt-in
+		// intra-crate tool, not a language primary) is also suppressed when no
+		// Cargo.toml is present.
 		if root != "" {
 			switch c.Tool {
 			case toolCargoModules:

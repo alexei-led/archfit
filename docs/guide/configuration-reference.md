@@ -273,6 +273,24 @@ analyzers:
     enabled: auto # Rust intra-crate module graph
 ```
 
+For Rust projects with a root `Cargo.toml`, `archfit config init` and
+`archfit config update --apply` emit explicit deep-analysis defaults:
+
+```yaml
+languages:
+  rust:
+    enabled: auto
+analyzers:
+  cargo_modules:
+    enabled: true
+  scip:
+    enabled: true
+```
+
+This avoids single-crate Rust runs collapsing to one crate-level node. It also
+adds cost: `cargo-modules` may compile crates, and SCIP requires `rust-analyzer`
+plus `uv`. Missing tools are reported as coverage gaps, not hard crashes.
+
 ### `analyzers.syntax`
 
 Runs the ast-grep adapter to extract declaration-level facts for Go, TypeScript,
@@ -315,7 +333,7 @@ analyzers:
     timeout: 5m
 ```
 
-- `scip` — runs a SCIP indexer (`scip-go`/`scip-python`/`scip-typescript`) plus
+- `scip` — runs a SCIP indexer (`scip-go`/`scip-python`/`scip-typescript`/`rust-analyzer scip`) plus
   `uv` to build the symbol graph. Upgrades edge strength for TypeScript/Python/Rust.
   For Go, SCIP is supplementary — Go type-info from `go/packages` is the primary
   strength source.
@@ -344,7 +362,9 @@ analyzers:
 ```
 
 Runs `cargo-modules` to emit `<crate>::<mod>` nodes and aggregated `uses` edges,
-providing intra-crate module depth for Rust repos.
+providing intra-crate module depth for Rust repos. Pair it with
+`analyzers.scip.enabled: true` for Rust so those module edges also receive
+symbol-level strength from `rust-analyzer scip`.
 
 ### `analyzers.<x>.gate` (coverage gate)
 
@@ -647,8 +667,10 @@ Balanced Coupling classification uses module metadata:
 Distance is a **composite** of three signals, not a single-winner precedence chain:
 
 1. **Code structure** — always-available baseline. Sibling or parent-child packages
-   (shared subtree) → `cross_module_same_owner`; different subtrees or unrelated
-   flat (single-segment) names → `cross_module_different_owner`.
+   (shared subtree) → `cross_module_same_owner`; different subtrees →
+   `cross_module_different_owner`. Two unrelated flat (single-segment) names have
+   no tree evidence of separate teams, so they stay at the honest floor:
+   `cross_module_same_owner`.
 2. **Ownership** — contributes only when ownership is informative. In repos where
    every module has the same owner (single-maintainer or one-team repos), ownership
    becomes **neutral** and does not collapse far-apart modules to "same owner = low
@@ -664,8 +686,8 @@ Composite resolution order (first applicable wins):
 3. ownership is informative (two or more distinct owners in the repo) →
    same owner → `cross_module_same_owner`; different (or one unknown) →
    `cross_module_different_owner`;
-4. otherwise → code structure decides (shared subtree → `cross_module_same_owner`;
-   different subtrees or unrelated flat names → `cross_module_different_owner`).
+4. otherwise → code structure decides (shared subtree or unrelated flat names →
+   `cross_module_same_owner`; different subtrees → `cross_module_different_owner`).
 
 A detected runtime async bridge is recorded as report-only evidence in the
 `runtime_async` JSON field per module and the `runtime_async_edges` field per
@@ -674,11 +696,16 @@ affect distance or score, and does not change the gate verdict.
 
 The `distance_basis` field on each advisory edge (`code_structure`, `ownership`,
 or `deploy_unit`) shows which signal drove the composite, so the result is
-auditable.
+auditable. Analyze output also includes `distance_context`, whose `owner_model`
+identifies `single_owner_degenerate`, `multi_owner`, or `no_owner_signal`; its
+`interpretation` explains when low same-owner distance is an intentional
+socio-technical signal rather than missing ownership.
 
 > **Small-OSS note:** a repo with one maintainer is not a flat distance space.
 > Code structure is the baseline and still distinguishes close vs far modules.
-> Ownership only contributes when there are genuinely distinct owners to compare.
+> Same-owner is the lowest cross-module distance; it is a low socio-technical
+> distance signal. Ownership only contributes when there are genuinely distinct
+> owners to compare.
 
 ## `external_systems`
 
@@ -710,8 +737,9 @@ Field reference:
 - `targets` (required, ≥1) — globs matched against the classified edge target,
   in the form the language extractor emits: a Go import path
   (`github.com/aws/aws-sdk-go-v2/**`), a TypeScript resolved package path
-  (`node_modules/@aws-sdk/**`) or unresolved bare specifier, a Python dotted
-  module (`boto3.**`), or a Rust crate name (`aws_sdk_s3`). The match is
+  (`node_modules/@aws-sdk/**`), a Python dotted module/root glob
+  (`{boto3,boto3.*}` to match both `boto3` and `boto3.session`), or a Rust
+  crate name (`aws_sdk_s3`). The match is
   language-independent.
 - `volatility` (optional) — `high | medium | low | frozen`. Defaults to `low`,
   per the book's generic-subdomain guidance: an external vendor system is a
@@ -1084,4 +1112,6 @@ External/library edges (`Distance == DistanceUnknown`, i.e. stdlib,
 third-party packages, undeclared imports) are excluded from
 `coupling_balance` entirely — they are not internal coupling seams. Their
 count is visible in `classified_edges.external` and the `coupling_balance`
-evidence string.
+evidence string. Review-only `distance_config_candidates` may also surface
+stable external targets from that excluded bucket so a human can decide whether
+an `external_systems` entry should promote a real seam into the scored model.
