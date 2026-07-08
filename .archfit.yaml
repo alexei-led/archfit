@@ -51,7 +51,7 @@ layers:
   - cmd # rank 5: composition root
 modules:
   # Shared kernel: one cohesive module of pure value types (graph, finding,
-  # coupling, diagnostic, fileclass, clone, pattern, signal, symbol).
+  # coupling, diagnostic, fileclass, clone, pattern, signal, symbol, module).
   # Frozen published contract: generic subdomain, low volatility, enforced by
   # the model compat gate. Intra-kernel imports are internal cohesion, not
   # cross-boundary coupling.
@@ -70,6 +70,7 @@ modules:
       - internal/model/pattern
       - internal/model/signal
       - internal/model/symbol
+      - internal/model/module
     layer: model
     subdomain: generic
     volatility: low

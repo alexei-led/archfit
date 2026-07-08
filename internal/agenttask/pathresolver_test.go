@@ -578,7 +578,7 @@ func TestFilesFor_ModuleKeyCollisionSkipped(t *testing.T) {
 
 // TestFilesFor_EscapingCandidatesDropped pins the scan-root boundary: a
 // candidate that escapes upward (a module Paths glob like "../outside/**"
-// feeding the ModuleRootDirs fallback) or is absolute must be dropped even
+// feeding the module.RootDirs fallback) or is absolute must be dropped even
 // when the target really exists on disk — files[] never points outside the
 // analyzed tree.
 func TestFilesFor_EscapingCandidatesDropped(t *testing.T) {

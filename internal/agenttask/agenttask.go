@@ -119,7 +119,7 @@ func (r PathResolver) exists(p string) bool {
 // directory). Disabled (knownFiles nil) trusts every non-empty, non-escaping
 // candidate, matching pre-resolver behavior. Candidates that escape the scan
 // root (absolute, or cleaning to a ".."-prefixed path — e.g. a module Paths
-// glob like "../outside/**" feeding the ModuleRootDirs fallback) are always
+// glob like "../outside/**" feeding the module.RootDirs fallback) are always
 // rejected, both here and on every derived probe in exists (escapesScanRoot):
 // files[] must never point outside the analyzed tree.
 func (r PathResolver) resolve(candidate string) (string, bool) {
