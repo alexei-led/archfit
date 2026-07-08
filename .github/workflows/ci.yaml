@@ -56,6 +56,8 @@ jobs:
         run: go test ./internal/ -run TestArchImports
       - name: CI gate — golden output
         run: go test ./internal/engine/ -run TestGolden
+      - name: Install jscpd (clone detection for coupling_balance)
+        run: npm install -g jscpd
       - name: CI gate — architecture drift
         run: make archfit
       - name: Upload coverage
