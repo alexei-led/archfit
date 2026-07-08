@@ -295,9 +295,11 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
   runtime async module→target relations to the Ch6 dynamic connascence categories
   they may help a human inspect, currently execution and timing.
 - **Computed:** assembled from JSON `dynamic_imports`, `runtime_async_edges`, and
-  `connascence.unmeasured`. Every signal has `measured: false`, a
-  `report_only_reason`, a source `kind`, related Ch6 categories, module/target
-  context where available, count, and a capped site sample.
+  `connascence.unmeasured`. Test files and `testdata/` fixtures are skipped so
+  fixture imports do not become architecture-review signals. Every signal has
+  `measured: false`, a `report_only_reason`, a source `kind`, related Ch6
+  categories, module/target context where available, count, and a capped site
+  sample.
 - **Unmeasured by design:** `connascence.unmeasured` still preserves execution,
   timing, value, and identity unless a future deterministic runtime trace source
   proves them. The block does not imply dynamic connascence is fully measured.
@@ -309,8 +311,9 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 - **Represents:** review-only hints that runtime or dynamic evidence may justify
   a config review for `external_systems` or `deploy_unit` entries.
 - **Computed:** assembled from `runtime_async_edges`, `dynamic_imports`, and
-  `dynamic_connascence_signals`. Each candidate carries `source_block`, `module`,
-  `target`, `integration_kind`, `count`, capped `evidence_sites`, and
+  `dynamic_connascence_signals` after test files and `testdata/` fixtures have
+  been filtered out. Each candidate carries `source_block`, `module`, `target`,
+  `integration_kind`, `count`, capped `evidence_sites`, and
   `suggested_review_action` (`external_systems` or `deploy_unit`).
 - **Review-only by design:** candidates are not written into config by `analyze`
   or `config update --apply`. They do not annotate graph edges, change distance,
@@ -340,9 +343,10 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
 - **Represents:** deterministic async/message-bus/task integration sites. This is
   runtime/lifecycle coupling evidence for human review, not a scored distance
   adjustment.
-- **Computed:** the runtime detector scans Go, TypeScript, and Python for known
-  async libraries and high-signal async framework patterns. Missing async evidence
-  never implies synchronous coupling.
+- **Computed:** the runtime detector scans production Go, TypeScript, and Python
+  files for known async libraries and high-signal async framework patterns. Test
+  files and `testdata/` fixtures are skipped. Missing async evidence never
+  implies synchronous coupling.
 - **Output:** JSON `runtime_async` keeps the historical per-module rollup.
   JSON `runtime_async_edges` groups the same concrete sites by
   source module → runtime target (`library`, decorator, or async primitive), with

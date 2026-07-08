@@ -270,9 +270,10 @@ strong-coupling chains. Clone-only pairs are excluded. archfit's own self-config
 has this enabled.
 
 **Runtime async is report-only:** `runtime_async` JSON field records async-bridge
-evidence per module. Never annotates graph edges, never affects distance or
-balance score, never gates. This is a deliberate design decision — do not wire
-async detection into distance.
+evidence per module. The runtime/dynamic evidence detectors skip test files and
+`testdata/` fixtures so examples do not become architecture-review signals. Never
+annotates graph edges, never affects distance or balance score, never gates. This
+is a deliberate design decision — do not wire async detection into distance.
 
 **SCIP semantic overlay is report-only** (`internal/engine/semantic_overlay.go`,
 `enrichEdges`). `semantic_strength_overlay.by_language` counts, per language,

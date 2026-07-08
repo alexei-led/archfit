@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/extract/runtime"
@@ -216,20 +215,36 @@ func main() { fmt.Println("hello") }
 	}
 }
 
-func TestDetect_SkipsNodeModules(t *testing.T) {
+func TestDetect_SkipsNonProductionFiles(t *testing.T) {
 	root := t.TempDir()
 	nmDir := filepath.Join(root, "node_modules", "kafkajs")
 	mustMkdir(t, nmDir)
 	mustWrite(t, filepath.Join(nmDir, "index.ts"),
 		`import { Kafka } from 'kafkajs';
 `)
+	for _, dir := range []string{"internal", "testdata", "src", "tests"} {
+		mustMkdir(t, filepath.Join(root, dir))
+	}
+	mustWrite(t, filepath.Join(root, "internal", "runtime_test.go"),
+		`package runtime_test
+
+const fixture = `+"`"+`import "github.com/IBM/sarama"`+"`"+`
+`)
+	mustWrite(t, filepath.Join(root, "testdata", "producer.go"),
+		`package testdata
+
+import "github.com/IBM/sarama"
+`)
+	mustWrite(t, filepath.Join(root, "src", "consumer.spec.ts"), kafkaJSImport)
+	mustWrite(t, filepath.Join(root, "tests", "tasks.py"), "from celery import Celery\n")
 
 	result := runtime.Detect(context.Background(), root, noopRunner())
 
-	for _, s := range result.Signals {
-		if strings.HasPrefix(s.File, "node_modules") {
-			t.Errorf("node_modules leaked: %v", s)
-		}
+	if len(result.Signals) != 0 {
+		t.Fatalf("expected no non-production runtime signals, got %v", result.Signals)
+	}
+	if result.Confidence != "low" {
+		t.Errorf("confidence = %q, want low", result.Confidence)
 	}
 }
 

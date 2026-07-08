@@ -117,11 +117,14 @@ func TestDetect_NoDynamicImports(t *testing.T) {
 	}
 }
 
-func TestDetect_SkipsVendorAndNodeModules(t *testing.T) {
+func TestDetect_SkipsNonProductionFiles(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "node_modules/dep/index.js", `const x = require("x");`)
 	writeFile(t, root, "vendor/lib.py", "def f():\n    import json\n")
 	writeFile(t, root, ".git/hooks/h.ts", `const y = require("y");`)
+	writeFile(t, root, "testdata/fixture.py", "def f():\n    import json\n")
+	writeFile(t, root, "pkg/service_test.py", "def f():\n    import json\n")
+	writeFile(t, root, "src/plugin.test.ts", `const x = require("./plugin");`)
 	writeFile(t, root, "app.py", "def f():\n    import json\n")
 
 	sites := dynimports.Detect(root)
