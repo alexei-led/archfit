@@ -497,6 +497,9 @@ func normalizeStaticExternalTarget(id, lang string, goModules []graph.GoModule) 
 		case graph.LangTypeScript:
 			target, ok = normalizeTypeScriptExternalTarget(path)
 			return target, raw, ok
+		case graph.LangPython:
+			target, ok = normalizePythonExternalTarget(path)
+			return target, raw, ok
 		case graph.LangRust:
 			return path, raw, true
 		default:
@@ -535,6 +538,41 @@ func normalizeTypeScriptExternalTarget(target string) (string, bool) {
 		return "", false
 	}
 	return "node_modules/" + root + "/**", true
+}
+
+func normalizePythonExternalTarget(target string) (string, bool) {
+	if target == "" || strings.HasPrefix(target, ".") || strings.Contains(target, "..") {
+		return "", false
+	}
+	parts := strings.Split(target, ".")
+	for _, part := range parts {
+		if !pythonModuleSegment(part) {
+			return "", false
+		}
+	}
+	root := parts[0]
+	return "{" + root + "," + root + ".*}", true
+}
+
+func pythonModuleSegment(seg string) bool {
+	if seg == "" {
+		return false
+	}
+	for i, r := range seg {
+		switch {
+		case r == '_':
+			continue
+		case r >= 'a' && r <= 'z':
+			continue
+		case r >= 'A' && r <= 'Z':
+			continue
+		case i > 0 && r >= '0' && r <= '9':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func npmPackageRoot(target string) (string, bool) {

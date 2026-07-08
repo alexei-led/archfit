@@ -16,17 +16,22 @@ import (
 )
 
 const (
-	fixtureJSON   = `{"edges":[{"importer":"myapp.a","imported":"myapp.b","line":5},{"importer":"myapp.a","imported":"myapp.b._internal.impl","line":6}],"unresolved":0}`
-	testPkgName   = "myapp"
-	testScopeMode = "full"
-	testRoot      = "../../../testdata/py"
+	fixtureJSON           = `{"edges":[{"importer":"myapp.a","imported":"myapp.b","line":5},{"importer":"myapp.a","imported":"myapp.b._internal.impl","line":6}],"unresolved":0}`
+	unresolvedFixtureJSON = `{"edges":[],"unresolved":2,"unresolved_imports":[{"importer":"myapp.a","imported":"httpx","line":3,"line_contents":"import httpx"},{"importer":"myapp.a","imported":"boto3.session","line":4,"line_contents":"from boto3.session import Session"}]}`
+	testPkgName           = "myapp"
+	testScopeMode         = "full"
+	testRoot              = "../../../testdata/py"
 
 	modMyappA        = "module:myapp.a"
 	modMyappB        = "module:myapp.b"
 	modMyappBPrivate = "module:myapp.b._internal.impl"
+	extHTTPX         = "external:httpx"
+	extBoto3Session  = "external:boto3.session"
 	modPub           = "module:pub"
 	hintIntrusive    = "intrusive"
 	sourceGrimp      = "grimp"
+	confidenceLow    = "low"
+	confidenceHigh   = "high"
 )
 
 func TestExtract_Parse(t *testing.T) {
@@ -116,10 +121,7 @@ func TestExtract_WithUnresolved(t *testing.T) {
 			return toolrun.ToolInfo{}, false
 		},
 		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
-			return toolrun.Output{
-				Stdout:   []byte(`{"edges":[],"unresolved":2}`),
-				ExitCode: 0,
-			}, nil
+			return toolrun.Output{Stdout: []byte(unresolvedFixtureJSON), ExitCode: 0}, nil
 		},
 	}
 
@@ -129,12 +131,39 @@ func TestExtract_WithUnresolved(t *testing.T) {
 	}
 	e := py.New(mock, cfg)
 
-	_, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
+	facts, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
 	if cov.Unresolved != 2 {
 		t.Errorf("cov.Unresolved = %d, want 2", cov.Unresolved)
+	}
+
+	type edgeKey struct{ from, to string }
+	byKey := make(map[edgeKey]graph.Edge)
+	for _, edge := range facts.Edges {
+		byKey[edgeKey{edge.From, edge.To}] = edge
+	}
+	for _, want := range []struct {
+		key  edgeKey
+		line int
+	}{
+		{key: edgeKey{modMyappA, extHTTPX}, line: 3},
+		{key: edgeKey{modMyappA, extBoto3Session}, line: 4},
+	} {
+		edge, ok := byKey[want.key]
+		if !ok {
+			t.Fatalf("edge %v not found in facts", want.key)
+		}
+		if edge.Kind != graph.EdgeKindImports {
+			t.Fatalf("edge %v: kind = %q, want %q", want.key, edge.Kind, graph.EdgeKindImports)
+		}
+		if edge.Confidence != confidenceLow {
+			t.Fatalf("edge %v: confidence = %q, want %q", want.key, edge.Confidence, confidenceLow)
+		}
+		if len(edge.Locations) != 1 || edge.Locations[0].File != "myapp/a" || edge.Locations[0].Line != want.line {
+			t.Fatalf("edge %v: locations = %+v, want myapp/a:%d", want.key, edge.Locations, want.line)
+		}
 	}
 }
 
@@ -334,6 +363,56 @@ func TestExtract_NonZeroExit(t *testing.T) {
 // TestExtract_MultiPackageArgs verifies that when multiple top-level Python packages
 // are discovered under ScanRoot, all names are passed to the grimp helper via
 // --packages pkg1 pkg2 … (grimp.build_graph is variadic).
+func TestFirstPartyPackages_IncludesDiscoveredAndConfiguredRoots(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	for _, dir := range []string{filepath.Join(root, "src", "prefect"), filepath.Join(root, "tests")} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "__init__.py"), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "pyproject.toml"), []byte("[project]"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotArgs []string
+	mock := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == "uv" {
+				return toolrun.ToolInfo{Name: "uv"}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, cmd toolrun.ToolCmd) (toolrun.Output, error) {
+			if slices.Contains(cmd.Args, "--version") {
+				return toolrun.Output{Stdout: []byte("uv 0.4.0"), ExitCode: 0}, nil
+			}
+			gotArgs = cmd.Args
+			return toolrun.Output{Stdout: []byte(`{"edges":[],"unresolved":0}`), ExitCode: 0}, nil
+		},
+	}
+
+	e := py.New(mock, config.ExtractConfig{PyPackage: "tests", Paths: []string{"prefect.blocks.**", "tests.**"}, Mode: config.ModeAuto})
+	if _, _, err := e.Extract(context.Background(), scope.Scope{Root: root, Mode: testScopeMode}); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	idx := slices.Index(gotArgs, "--first-party-packages")
+	if idx == -1 {
+		t.Fatalf("expected --first-party-packages in args %v", gotArgs)
+	}
+	firstParty := gotArgs[idx+1:]
+	for _, want := range []string{"prefect", "tests"} {
+		if !slices.Contains(firstParty, want) {
+			t.Fatalf("first-party package %q not found in args %v", want, gotArgs)
+		}
+	}
+}
+
 func TestExtract_MultiPackageArgs(t *testing.T) {
 	root := t.TempDir()
 

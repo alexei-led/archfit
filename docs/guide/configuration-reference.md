@@ -737,8 +737,9 @@ Field reference:
 - `targets` (required, ≥1) — globs matched against the classified edge target,
   in the form the language extractor emits: a Go import path
   (`github.com/aws/aws-sdk-go-v2/**`), a TypeScript resolved package path
-  (`node_modules/@aws-sdk/**`) or unresolved bare specifier, a Python dotted
-  module (`boto3.**`), or a Rust crate name (`aws_sdk_s3`). The match is
+  (`node_modules/@aws-sdk/**`), a Python dotted module/root glob
+  (`{boto3,boto3.*}` to match both `boto3` and `boto3.session`), or a Rust
+  crate name (`aws_sdk_s3`). The match is
   language-independent.
 - `volatility` (optional) — `high | medium | low | frozen`. Defaults to `low`,
   per the book's generic-subdomain guidance: an external vendor system is a

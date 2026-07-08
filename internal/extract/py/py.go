@@ -124,8 +124,15 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 	// grimp_helper --packages pkg1 pkg2 … accepts multiple top-level package names
 	// and calls grimp.build_graph(*packages). All packages must be importable from
 	// a single Python environment (see discoverPackages doc for the shared-venv
-	// constraint).
-	pkgsArgs := append([]string{"--packages"}, pkgs...)
+	// constraint). --first-party-packages may be broader than --packages when config
+	// pins analysis to one package (for example tests) while other discovered/configured
+	// package roots remain first-party and must not become external-system hints.
+	firstPartyPkgs := e.firstPartyPackages(s.Root, pkgs)
+	helperArgs := append([]string{"--packages"}, pkgs...)
+	if len(firstPartyPkgs) > 0 {
+		helperArgs = append(helperArgs, "--first-party-packages")
+		helperArgs = append(helperArgs, firstPartyPkgs...)
+	}
 	var cmd toolrun.ToolCmd
 	if tool == "uv" {
 		// --with grimp injects grimp into the project's venv for this run without
@@ -133,20 +140,20 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 		// the project's own packages (src-layout etc.) are importable.
 		cmd = toolrun.ToolCmd{
 			Name:    "uv",
-			Args:    append([]string{"run", "--with", "grimp", "--directory", s.Root, tmpName}, pkgsArgs...),
+			Args:    append([]string{"run", "--with", "grimp", "--directory", s.Root, tmpName}, helperArgs...),
 			WorkDir: s.Root,
 			Timeout: runTimeout,
 		}
 	} else {
 		cmd = toolrun.ToolCmd{
 			Name:    tool,
-			Args:    append([]string{tmpName, "--root", s.Root}, pkgsArgs...),
+			Args:    append([]string{tmpName, "--root", s.Root}, helperArgs...),
 			WorkDir: s.Root,
 			Timeout: runTimeout,
 		}
 	}
 
-	out, err := e.cachedRunner(s, tool, version, pkgs).Run(ctx, cmd)
+	out, err := e.cachedRunner(s, tool, version, pkgs, firstPartyPkgs).Run(ctx, cmd)
 	if err != nil {
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/py: run helper: %w", err)
 	}
@@ -186,7 +193,7 @@ func (e *Extractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, di
 // root, local virtualenv package metadata when present, and the content hash
 // of every .py + manifest file under s.Root. The python3.12 fallback is left
 // uncached because its global/site environment is outside repo key material.
-func (e *Extractor) cachedRunner(s scope.Scope, tool, version string, pkgs []string) toolrun.Runner {
+func (e *Extractor) cachedRunner(s scope.Scope, tool, version string, pkgs, firstPartyPkgs []string) toolrun.Runner {
 	if e.Cache == nil {
 		return e.runner
 	}
@@ -223,7 +230,7 @@ func (e *Extractor) cachedRunner(s scope.Scope, tool, version string, pkgs []str
 		Analyzer:  langPython,
 		Key:       factcache.Key(langPython, version, cfgHash, treeHash),
 		Cacheable: cacheableGrimp,
-		EntryArgs: append([]string{tool}, pkgs...),
+		EntryArgs: append(append(append([]string{tool, "--packages"}, pkgs...), "--first-party-packages"), firstPartyPkgs...),
 	}
 }
 
@@ -321,6 +328,65 @@ func discoverPackages(root string) []string {
 // packagesUnder returns the sorted names of immediate subdirectories of dir that
 // contain an __init__.py (i.e. importable Python packages). Returns nil if dir is
 // unreadable or absent.
+func (e *Extractor) firstPartyPackages(root string, pkgs []string) []string {
+	seen := make(map[string]struct{}, len(pkgs)+len(e.cfg.Paths))
+	for _, pkg := range pkgs {
+		addPythonPackageRoot(seen, pkg)
+	}
+	for _, pkg := range discoverPackages(root) {
+		addPythonPackageRoot(seen, pkg)
+	}
+	for _, pattern := range e.cfg.Paths {
+		if root, ok := pythonPackageRootFromPattern(pattern); ok {
+			seen[root] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for pkg := range seen {
+		out = append(out, pkg)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func addPythonPackageRoot(seen map[string]struct{}, pkg string) {
+	if pythonPackageRoot(pkg) {
+		seen[pkg] = struct{}{}
+	}
+}
+
+func pythonPackageRootFromPattern(pattern string) (string, bool) {
+	if strings.Contains(pattern, "/") {
+		return "", false
+	}
+	root, _, _ := strings.Cut(pattern, ".")
+	if !pythonPackageRoot(root) {
+		return "", false
+	}
+	return root, true
+}
+
+func pythonPackageRoot(pkg string) bool {
+	if pkg == "" {
+		return false
+	}
+	for i, r := range pkg {
+		switch {
+		case r == '_':
+			continue
+		case r >= 'a' && r <= 'z':
+			continue
+		case r >= 'A' && r <= 'Z':
+			continue
+		case i > 0 && r >= '0' && r <= '9':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func packagesUnder(dir string) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -384,9 +450,10 @@ func (e *Extractor) toolVersion(ctx context.Context, tool string, args []string)
 // ---------------------------------------------------------------------------
 
 type helperOutput struct {
-	Edges      []helperEdge `json:"edges"`
-	Unresolved int          `json:"unresolved"`
-	Error      string       `json:"error,omitempty"`
+	Edges             []helperEdge `json:"edges"`
+	Unresolved        int          `json:"unresolved"`
+	UnresolvedImports []helperEdge `json:"unresolved_imports,omitempty"`
+	Error             string       `json:"error,omitempty"`
 }
 
 type helperEdge struct {
@@ -462,6 +529,20 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 			Confidence:       "high",
 			StrengthHint:     strengthHint,
 			ConnascenceHints: connascenceHints,
+			Locations: []graph.Location{
+				{File: locFile, Line: he.Line},
+			},
+		})
+	}
+	for _, he := range h.UnresolvedImports {
+		emitNode(he.Importer)
+		locFile := strings.ReplaceAll(he.Importer, ".", "/")
+		edges = append(edges, graph.Edge{
+			From:       "module:" + he.Importer,
+			To:         "external:" + he.Imported,
+			Kind:       graph.EdgeKindImports,
+			Language:   langPython,
+			Confidence: "low",
 			Locations: []graph.Location{
 				{File: locFile, Line: he.Line},
 			},

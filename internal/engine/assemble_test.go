@@ -15,13 +15,15 @@ import (
 )
 
 const (
-	toolNameScipTest  = "scip"
-	testServicesAGlob = "services/a/**"
-	testServicesBGlob = "services/b/**"
-	testGoPathAImpl   = "services/a/impl.go"
-	testTSPathWebApp  = "web/app.ts"
-	testGoFileAImpl   = "file:" + testGoPathAImpl
-	testTSFileWebApp  = "file:" + testTSPathWebApp
+	toolNameScipTest      = "scip"
+	testServicesAGlob     = "services/a/**"
+	testServicesBGlob     = "services/b/**"
+	testGoPathAImpl       = "services/a/impl.go"
+	testTSPathWebApp      = "web/app.ts"
+	testPyExternalTarget  = "{boto3,boto3.*}"
+	testPyExternalPackage = "boto3"
+	testGoFileAImpl       = "file:" + testGoPathAImpl
+	testTSFileWebApp      = "file:" + testTSPathWebApp
 )
 
 // TestBCRiskClause_DistanceAware verifies the advisory text only names
@@ -306,6 +308,68 @@ func TestNormalizeTypeScriptExternalTarget(t *testing.T) {
 				t.Fatalf("normalizeTypeScriptExternalTarget(%q) = (%q,%t), want (%q,%t)", tc.target, got, ok, tc.want, tc.ok)
 			}
 		})
+	}
+}
+
+func TestNormalizePythonExternalTarget(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		target string
+		want   string
+		ok     bool
+	}{
+		{name: "root package", target: testPyExternalPackage, want: testPyExternalTarget, ok: true},
+		{name: "dotted module", target: "boto3.session", want: testPyExternalTarget, ok: true},
+		{name: "invalid relative", target: ".local", ok: false},
+		{name: "invalid double dot", target: "google..cloud", ok: false},
+		{name: "invalid dash", target: "google-cloud", ok: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := normalizePythonExternalTarget(tc.target)
+			if ok != tc.ok || got != tc.want {
+				t.Fatalf("normalizePythonExternalTarget(%q) = (%q,%t), want (%q,%t)", tc.target, got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}
+
+func TestBuildStaticExternalDistanceCandidates_PythonUnresolvedImports(t *testing.T) {
+	t.Parallel()
+
+	key := func(e graph.Edge) string { return e.From + "\x00" + e.To + "\x00" + string(e.Kind) }
+	pyRoot := graph.Edge{From: "module:fixture_py.a", To: "external:boto3", Kind: graph.EdgeKindImports, Language: graph.LangPython, Locations: []graph.Location{{File: "fixture_py/a", Line: 4}}}
+	pySubmodule := graph.Edge{From: "module:fixture_py.a", To: "external:boto3.session", Kind: graph.EdgeKindImports, Language: graph.LangPython, Locations: []graph.Location{{File: "fixture_py/a", Line: 7}}}
+	g := graph.Build([]graph.Facts{{Language: graph.LangPython, Edges: []graph.Edge{pyRoot, pySubmodule}}})
+	idx := coupling.Index{
+		key(pyRoot):      {Distance: coupling.DistanceUnknown},
+		key(pySubmodule): {Distance: coupling.DistanceUnknown},
+	}
+	mm := config.BuildModuleMap(map[string]config.ModuleDef{
+		"fixture_py": {Paths: []string{"fixture_py.**"}},
+	})
+
+	got := buildStaticExternalDistanceCandidates(g, idx, mm)
+	if len(got) != 1 {
+		t.Fatalf("buildStaticExternalDistanceCandidates len = %d, want 1: %+v", len(got), got)
+	}
+	if got[0].Module != "fixture_py" || got[0].Target != testPyExternalTarget || got[0].IntegrationKind != string(graph.EdgeKindImports) {
+		t.Fatalf("candidate = %+v", got[0])
+	}
+	if got[0].Count != 2 {
+		t.Fatalf("candidate count = %d, want 2", got[0].Count)
+	}
+	if len(got[0].EvidenceSites) != 2 {
+		t.Fatalf("candidate sites = %+v, want 2 evidence sites", got[0].EvidenceSites)
+	}
+	siteTargets := map[string]bool{}
+	for _, site := range got[0].EvidenceSites {
+		siteTargets[site.Target] = true
+	}
+	if !siteTargets["boto3"] || !siteTargets["boto3.session"] {
+		t.Fatalf("candidate site targets = %+v", got[0].EvidenceSites)
 	}
 }
 
