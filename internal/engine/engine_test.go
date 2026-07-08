@@ -1891,8 +1891,10 @@ func TestRun_DynamicImports_StaticGraphUnchanged(t *testing.T) {
 
 	withSites.DynamicImports = nil
 	withSites.DynamicConnascenceSignals = nil
+	withSites.DistanceConfigCandidates = nil
 	withoutSites.DynamicImports = nil
 	withoutSites.DynamicConnascenceSignals = nil
+	withoutSites.DistanceConfigCandidates = nil
 	a, err := json.Marshal(withSites)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -2216,9 +2218,11 @@ func TestRun_RuntimeAsync_StaticGraphUnchanged(t *testing.T) {
 	withSites.RuntimeAsync = nil
 	withSites.RuntimeAsyncEdges = nil
 	withSites.DynamicConnascenceSignals = nil
+	withSites.DistanceConfigCandidates = nil
 	withoutSites.RuntimeAsync = nil
 	withoutSites.RuntimeAsyncEdges = nil
 	withoutSites.DynamicConnascenceSignals = nil
+	withoutSites.DistanceConfigCandidates = nil
 	a, err := json.Marshal(withSites)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -2300,6 +2304,9 @@ func TestRun_ReportOnlyLocalAndRuntimeFactsDoNotChangeScoreOrVerdict(t *testing.
 	}
 	if withReportOnly.DynamicConnascenceSignals == nil || len(withReportOnly.DynamicConnascenceSignals.Signals) != 2 {
 		t.Fatalf("expected two dynamic connascence report-only signals, got %+v", withReportOnly.DynamicConnascenceSignals)
+	}
+	if len(withReportOnly.DistanceConfigCandidates) != 4 {
+		t.Fatalf("expected four distance config review candidates, got %+v", withReportOnly.DistanceConfigCandidates)
 	}
 	for _, s := range withReportOnly.DynamicConnascenceSignals.Signals {
 		if s.Measured {

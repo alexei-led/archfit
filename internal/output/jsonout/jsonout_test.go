@@ -13,9 +13,14 @@ import (
 )
 
 const (
-	connascenceExecutionTest = "execution"
-	dynamicTargetRabbitMQ    = "rabbitmq"
-	semanticUnknownJSON      = "unknown"
+	connascenceExecutionTest        = "execution"
+	dynamicTargetRabbitMQ           = "rabbitmq"
+	semanticUnknownJSON             = "unknown"
+	distanceCandidateRuntimeEdges   = "runtime_async_edges"
+	distanceCandidateModuleApp      = "app"
+	distanceCandidateKindMessageQ   = "message_queue"
+	distanceCandidatePublisherFile  = "app/publisher.go"
+	distanceCandidateExternalAction = "external_systems"
 )
 
 // TestJSONRenderer_AdvisoryScoreFields asserts the numeric BC score fields
@@ -231,7 +236,7 @@ func TestJSONRenderer_ConnascenceSummary(t *testing.T) {
 		Unmeasured:        []string{"position", connascenceExecutionTest},
 		Roadmap: []diagnostic.ConnascenceRoadmapItem{
 			{Kind: "name", CurrentStatus: "deterministic_static", Sources: []string{"go/types"}},
-			{Kind: connascenceExecutionTest, CurrentStatus: "unmeasured_dynamic", RelatedSignals: []string{"runtime_async_edges"}, UpgradeTrigger: "deterministic runtime ordering"},
+			{Kind: connascenceExecutionTest, CurrentStatus: "unmeasured_dynamic", RelatedSignals: []string{distanceCandidateRuntimeEdges}, UpgradeTrigger: "deterministic runtime ordering"},
 		},
 	}
 
@@ -270,12 +275,12 @@ func TestJSONRenderer_DynamicConnascenceSignals(t *testing.T) {
 			RelatedConnascence: []string{connascenceExecutionTest, string(coupling.ConnascenceTiming)},
 			Measured:           false,
 			ReportOnlyReason:   "runtime trace evidence is absent",
-			Module:             "app",
+			Module:             distanceCandidateModuleApp,
 			Target:             dynamicTargetRabbitMQ,
-			IntegrationKind:    "message_queue",
+			IntegrationKind:    distanceCandidateKindMessageQ,
 			Count:              2,
 			Sites: []diagnostic.DynamicConnascenceSite{{
-				File: "app/publisher.go", Line: 12, Kind: "message_queue", Language: "go", Target: dynamicTargetRabbitMQ,
+				File: distanceCandidatePublisherFile, Line: 12, Kind: distanceCandidateKindMessageQ, Language: "go", Target: dynamicTargetRabbitMQ,
 			}},
 		}},
 	}
@@ -295,7 +300,7 @@ func TestJSONRenderer_DynamicConnascenceSignals(t *testing.T) {
 		t.Fatalf("dynamic connascence signals = %+v, want one", raw.Dynamic.Signals)
 	}
 	got := raw.Dynamic.Signals[0]
-	if got.Kind != "runtime_async" || got.Measured || got.Module != "app" || got.Target != dynamicTargetRabbitMQ || got.Count != 2 {
+	if got.Kind != "runtime_async" || got.Measured || got.Module != distanceCandidateModuleApp || got.Target != dynamicTargetRabbitMQ || got.Count != 2 {
 		t.Fatalf("dynamic connascence signal = %+v", got)
 	}
 	if len(got.RelatedConnascence) != 2 || got.RelatedConnascence[0] != connascenceExecutionTest {
@@ -303,6 +308,43 @@ func TestJSONRenderer_DynamicConnascenceSignals(t *testing.T) {
 	}
 	if len(raw.Dynamic.Unmeasured) != 2 || raw.Dynamic.Unmeasured[1] != string(coupling.ConnascenceTiming) {
 		t.Fatalf("unmeasured = %+v", raw.Dynamic.Unmeasured)
+	}
+}
+
+func TestJSONRenderer_DistanceConfigCandidates(t *testing.T) {
+	d := diagnostic.New()
+	d.DistanceConfigCandidates = []diagnostic.DistanceConfigCandidate{{
+		SourceBlock:           distanceCandidateRuntimeEdges,
+		Module:                distanceCandidateModuleApp,
+		Target:                dynamicTargetRabbitMQ,
+		IntegrationKind:       distanceCandidateKindMessageQ,
+		Count:                 2,
+		SuggestedReviewAction: distanceCandidateExternalAction,
+		EvidenceSites: []diagnostic.DistanceConfigEvidenceSite{{
+			File: distanceCandidatePublisherFile, Line: 12, Kind: distanceCandidateKindMessageQ, Language: "go", Target: dynamicTargetRabbitMQ,
+		}},
+	}}
+
+	var buf bytes.Buffer
+	if err := jsonout.New().Render(d, score.Scorecard{}, nil, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var raw struct {
+		Candidates []diagnostic.DistanceConfigCandidate `json:"distance_config_candidates"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if len(raw.Candidates) != 1 {
+		t.Fatalf("distance config candidates = %+v, want one", raw.Candidates)
+	}
+	got := raw.Candidates[0]
+	if got.SourceBlock != distanceCandidateRuntimeEdges || got.Module != distanceCandidateModuleApp || got.Target != dynamicTargetRabbitMQ || got.SuggestedReviewAction != distanceCandidateExternalAction {
+		t.Fatalf("distance config candidate = %+v", got)
+	}
+	if len(got.EvidenceSites) != 1 || got.EvidenceSites[0].File != distanceCandidatePublisherFile {
+		t.Fatalf("distance config candidate sites = %+v", got.EvidenceSites)
 	}
 }
 

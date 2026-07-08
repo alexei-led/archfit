@@ -20,7 +20,7 @@ complementary metrics. They split into three roles:
   changes the verdict.
 
 Separate JSON/Markdown report-only blocks, including `connascence`,
-`dynamic_connascence_signals`, `semantic_strength_overlay`, `local_coupling`, `runtime_async`, and `classified_edges` summaries, explain the
+`dynamic_connascence_signals`, `distance_config_candidates`, `semantic_strength_overlay`, `local_coupling`, `runtime_async`, and `classified_edges` summaries, explain the
 score inputs. They are evidence, not metrics, and never gate on their own.
 
 A metric's **absolute value** never fails the build — only a _regression_
@@ -303,6 +303,18 @@ worsening delta gates like any other metric (fail unless downgraded per metric);
   proves them. The block does not imply dynamic connascence is fully measured.
 - **Report-only by design:** never consumed by `coupling_balance`, findings,
   baselines, score deltas, or gate verdicts.
+
+### `distance_config_candidates`
+
+- **Represents:** review-only hints that runtime or dynamic evidence may justify
+  a config review for `external_systems` or `deploy_unit` entries.
+- **Computed:** assembled from `runtime_async_edges`, `dynamic_imports`, and
+  `dynamic_connascence_signals`. Each candidate carries `source_block`, `module`,
+  `target`, `integration_kind`, `count`, capped `evidence_sites`, and
+  `suggested_review_action` (`external_systems` or `deploy_unit`).
+- **Review-only by design:** candidates are not written into config by `analyze`
+  or `config update --apply`. They do not annotate graph edges, change distance,
+  enter `coupling_balance`, affect baselines, or change the gate verdict.
 
 ### `semantic_strength_overlay`
 

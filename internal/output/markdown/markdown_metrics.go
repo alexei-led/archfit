@@ -506,6 +506,59 @@ func runtimeAsyncSites(sites []diagnostic.RuntimeAsyncSite) string {
 	return strings.Join(parts, ", ")
 }
 
+func writeDistanceConfigCandidates(b *strings.Builder, candidates []diagnostic.DistanceConfigCandidate) {
+	if len(candidates) == 0 {
+		return
+	}
+	total := 0
+	for _, c := range candidates {
+		total += c.Count
+	}
+	b.WriteString("\n## Distance config candidates (review-only)\n\n")
+	b.WriteString("Report-only. Runtime and dynamic evidence can suggest `external_systems` or `deploy_unit` review, but these candidates never change distance, score, or gate verdicts.\n\n")
+	fmt.Fprintf(b, "%d signal(s) across %d candidate(s):\n\n", total, len(candidates))
+
+	ranked := make([]diagnostic.DistanceConfigCandidate, len(candidates))
+	copy(ranked, candidates)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].Count != ranked[j].Count {
+			return ranked[i].Count > ranked[j].Count
+		}
+		if ranked[i].SourceBlock != ranked[j].SourceBlock {
+			return ranked[i].SourceBlock < ranked[j].SourceBlock
+		}
+		if ranked[i].Module != ranked[j].Module {
+			return ranked[i].Module < ranked[j].Module
+		}
+		if ranked[i].Target != ranked[j].Target {
+			return ranked[i].Target < ranked[j].Target
+		}
+		return ranked[i].IntegrationKind < ranked[j].IntegrationKind
+	})
+	for i, c := range ranked {
+		if i == runtimeAsyncTopN {
+			fmt.Fprintf(b, "- ... +%d more candidates (use `--format json`)\n", len(ranked)-runtimeAsyncTopN)
+			break
+		}
+		fmt.Fprintf(b, "- **%s** → `%s` [%s from %s; action=%s]: %d", c.Module, mdTableCell(c.Target), c.IntegrationKind, c.SourceBlock, c.SuggestedReviewAction, c.Count)
+		if len(c.EvidenceSites) > 0 {
+			fmt.Fprintf(b, " (e.g. %s)", distanceCandidateSites(c.EvidenceSites))
+		}
+		b.WriteByte('\n')
+	}
+}
+
+func distanceCandidateSites(sites []diagnostic.DistanceConfigEvidenceSite) string {
+	parts := make([]string, 0, runtimeAsyncSampleN)
+	for i, s := range sites {
+		if i == runtimeAsyncSampleN {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s:%d[%s]", s.File, s.Line, s.Kind))
+	}
+	return strings.Join(parts, ", ")
+}
+
 // writeDeprecatedDeps prints the report-only locally-declared deprecation/
 // mdTableCell escapes pipe characters and collapses newlines in a string so it
 // can be safely embedded in a Markdown table cell without corrupting the table.

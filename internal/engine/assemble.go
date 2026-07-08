@@ -48,12 +48,18 @@ func stripPrefix(id string) string {
 // hundreds of lazy imports from bloating the output.
 const dynamicImportSiteCap = 5
 
-// buildDynamicImports groups report-only dynamic/lazy import sites per module
+// BuildDynamicImports groups report-only dynamic/lazy import sites per module
 // (module-map key, or the file's directory when unmapped) into DynamicImport
 // rollups. Output is deterministic: modules sorted by name, sites already sorted
 // by the detector, the per-module sample capped at dynamicImportSiteCap. Returns
 // an empty (non-nil) slice when no sites were found. Never touches the graph,
 // metrics, or the verdict — this is evidence only.
+// It is exported so config update can show the same review-only distance hints
+// as analyze without running the full engine pipeline.
+func BuildDynamicImports(sites []diagnostic.DynamicImportSite, mm config.ModuleMap) []diagnostic.DynamicImport {
+	return buildDynamicImports(sites, mm)
+}
+
 func buildDynamicImports(sites []diagnostic.DynamicImportSite, mm config.ModuleMap) []diagnostic.DynamicImport {
 	byModule := make(map[string][]diagnostic.DynamicImportSite)
 	for _, s := range sites {
@@ -122,9 +128,14 @@ func buildRuntimeAsync(sites []diagnostic.RuntimeAsyncSite, confidence string, m
 	return out
 }
 
-// buildRuntimeAsyncEdges groups async-integration sites by source module,
+// BuildRuntimeAsyncEdges groups async-integration sites by source module,
 // runtime target, and integration kind. The result is relationship-level evidence
-// for future runtime-distance scoring, but remains report-only today.
+// for future runtime-distance scoring, but remains report-only today. It is
+// exported so config update can show the same review-only distance hints as analyze.
+func BuildRuntimeAsyncEdges(sites []diagnostic.RuntimeAsyncSite, confidence string, mm config.ModuleMap) []diagnostic.RuntimeAsyncEdge {
+	return buildRuntimeAsyncEdges(sites, confidence, mm)
+}
+
 func buildRuntimeAsyncEdges(sites []diagnostic.RuntimeAsyncSite, confidence string, mm config.ModuleMap) []diagnostic.RuntimeAsyncEdge {
 	type edgeKey struct {
 		fromModule string
@@ -186,6 +197,13 @@ const (
 var dynamicConnascenceRelated = []string{
 	string(coupling.ConnascenceExecution),
 	string(coupling.ConnascenceTiming),
+}
+
+// BuildDynamicConnascenceSignals maps dynamic/lazy imports and runtime async
+// edges to report-only dynamic connascence review signals. It is exported so
+// config update can derive the same distance-config candidate sources as analyze.
+func BuildDynamicConnascenceSignals(dyn []diagnostic.DynamicImport, runtimeEdges []diagnostic.RuntimeAsyncEdge, unmeasured []string) *diagnostic.DynamicConnascenceSignals {
+	return buildDynamicConnascenceSignals(dyn, runtimeEdges, unmeasured)
 }
 
 func buildDynamicConnascenceSignals(dyn []diagnostic.DynamicImport, runtimeEdges []diagnostic.RuntimeAsyncEdge, unmeasured []string) *diagnostic.DynamicConnascenceSignals {
@@ -253,6 +271,137 @@ func dynamicImportDynamicConnascenceSites(sites []diagnostic.DynamicImportSite) 
 		})
 	}
 	return out
+}
+
+const (
+	distanceCandidateSourceRuntimeAsyncEdges        = "runtime_async_edges"
+	distanceCandidateSourceDynamicImports           = "dynamic_imports"
+	distanceCandidateSourceDynamicConnascenceSignal = "dynamic_connascence_signals"
+	distanceCandidateActionExternalSystems          = "external_systems"
+	distanceCandidateActionDeployUnit               = "deploy_unit"
+)
+
+// BuildDistanceConfigCandidates turns report-only runtime/dynamic evidence into
+// report-only config review hints. The candidates deliberately do not feed
+// classify, score, findings, baselines, or gate verdicts.
+func BuildDistanceConfigCandidates(
+	dyn []diagnostic.DynamicImport,
+	runtimeEdges []diagnostic.RuntimeAsyncEdge,
+	dynamicSignals *diagnostic.DynamicConnascenceSignals,
+) []diagnostic.DistanceConfigCandidate {
+	out := make([]diagnostic.DistanceConfigCandidate, 0, len(runtimeEdges)+len(dyn))
+	for _, e := range runtimeEdges {
+		out = append(out, diagnostic.DistanceConfigCandidate{
+			SourceBlock:           distanceCandidateSourceRuntimeAsyncEdges,
+			Module:                e.FromModule,
+			Target:                e.Target,
+			IntegrationKind:       e.IntegrationKind,
+			Count:                 e.Count,
+			EvidenceSites:         runtimeAsyncDistanceSites(e.Sites),
+			SuggestedReviewAction: distanceCandidateActionExternalSystems,
+		})
+	}
+	for _, d := range dyn {
+		out = append(out, diagnostic.DistanceConfigCandidate{
+			SourceBlock:           distanceCandidateSourceDynamicImports,
+			Module:                d.Module,
+			Target:                d.Module,
+			IntegrationKind:       dominantDynamicImportKind(d.Sites),
+			Count:                 d.Count,
+			EvidenceSites:         dynamicImportDistanceSites(d.Sites),
+			SuggestedReviewAction: distanceCandidateActionDeployUnit,
+		})
+	}
+	if dynamicSignals != nil {
+		for _, s := range dynamicSignals.Signals {
+			action := distanceCandidateActionDeployUnit
+			target := s.Target
+			if target == "" {
+				target = s.Module
+			} else {
+				action = distanceCandidateActionExternalSystems
+			}
+			kind := s.IntegrationKind
+			if kind == "" {
+				kind = s.Kind
+			}
+			out = append(out, diagnostic.DistanceConfigCandidate{
+				SourceBlock:           distanceCandidateSourceDynamicConnascenceSignal,
+				Module:                s.Module,
+				Target:                target,
+				IntegrationKind:       kind,
+				Count:                 s.Count,
+				EvidenceSites:         dynamicConnascenceDistanceSites(s.Sites),
+				SuggestedReviewAction: action,
+			})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].SourceBlock != out[j].SourceBlock {
+			return out[i].SourceBlock < out[j].SourceBlock
+		}
+		if out[i].Module != out[j].Module {
+			return out[i].Module < out[j].Module
+		}
+		if out[i].Target != out[j].Target {
+			return out[i].Target < out[j].Target
+		}
+		return out[i].IntegrationKind < out[j].IntegrationKind
+	})
+	return out
+}
+
+func runtimeAsyncDistanceSites(sites []diagnostic.RuntimeAsyncSite) []diagnostic.DistanceConfigEvidenceSite {
+	out := make([]diagnostic.DistanceConfigEvidenceSite, 0, len(sites))
+	for _, s := range sites {
+		target := s.Library
+		if target == "" {
+			target = s.IntegrationKind
+		}
+		out = append(out, diagnostic.DistanceConfigEvidenceSite{
+			File:     s.File,
+			Line:     s.Line,
+			Kind:     s.IntegrationKind,
+			Language: s.Language,
+			Target:   target,
+		})
+	}
+	return out
+}
+
+func dynamicImportDistanceSites(sites []diagnostic.DynamicImportSite) []diagnostic.DistanceConfigEvidenceSite {
+	out := make([]diagnostic.DistanceConfigEvidenceSite, 0, len(sites))
+	for _, s := range sites {
+		out = append(out, diagnostic.DistanceConfigEvidenceSite{
+			File:     s.File,
+			Line:     s.Line,
+			Kind:     s.Kind,
+			Language: s.Language,
+		})
+	}
+	return out
+}
+
+func dynamicConnascenceDistanceSites(sites []diagnostic.DynamicConnascenceSite) []diagnostic.DistanceConfigEvidenceSite {
+	out := make([]diagnostic.DistanceConfigEvidenceSite, 0, len(sites))
+	for _, s := range sites {
+		out = append(out, diagnostic.DistanceConfigEvidenceSite(s))
+	}
+	return out
+}
+
+func dominantDynamicImportKind(sites []diagnostic.DynamicImportSite) string {
+	counts := make(map[string]int, len(sites))
+	for _, s := range sites {
+		counts[s.Kind]++
+	}
+	best, bestN := "dynamic_import", 0
+	for k, n := range counts {
+		if n > bestN || (n == bestN && k < best) {
+			best, bestN = k, n
+		}
+	}
+	return best
 }
 
 // dominantKind returns the most frequent IntegrationKind among sites.

@@ -317,6 +317,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 	classifiedEdges.LLMApproved = llmApprovedCount
 	connascenceReport := buildConnascenceReport(couplingIdx)
 	dynamicConnascenceSignals := buildDynamicConnascenceSignals(dynamicImports, runtimeAsyncEdges, connascenceReport.Unmeasured)
+	distanceConfigCandidates := BuildDistanceConfigCandidates(dynamicImports, runtimeAsyncEdges, dynamicConnascenceSignals)
 	// Volatility triage disclosure: count modules by volatility source (declared /
 	// inherited / cascade / undeclared) so coupling_balance can say whether a
 	// uniform-volatility repo is measured or uniform-by-inheritance. in.Classify
@@ -349,6 +350,7 @@ func Run(ctx context.Context, in RunInput) (diagnostic.Diagnostic, error) {
 		AdvisoryTasks:             []diagnostic.AdvisoryTask{},
 		ToolCoverage:              ex.coverages,
 		ClassifiedEdges:           classifiedEdges,
+		DistanceConfigCandidates:  distanceConfigCandidates,
 		LocalCoupling:             localCoupling,
 		Delta:                     delta,
 		Summary: diagnostic.Summary{

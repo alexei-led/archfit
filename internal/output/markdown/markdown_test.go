@@ -21,6 +21,7 @@ const (
 	secDistanceConf           = "Distance confidence"
 	secConnascence            = "Connascence evidence"
 	secDynamicConnascence     = "Dynamic connascence signals"
+	secDistanceConfig         = "Distance config candidates"
 	connascenceExecutionMd    = "execution"
 	connascenceTimingMd       = "timing"
 	dynamicReportOnlyReasonMd = "runtime trace evidence is absent"
@@ -443,6 +444,44 @@ func TestRenderer_Render_RuntimeAsyncAbsentWhenEmpty(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "Runtime async bridges") {
 		t.Errorf("runtime async section should be omitted when empty\nfull output:\n%s", buf.String())
+	}
+}
+
+func TestRenderer_Render_DistanceConfigCandidates(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	d.DistanceConfigCandidates = []diagnostic.DistanceConfigCandidate{{
+		SourceBlock:           "runtime_async_edges",
+		Module:                modAPI,
+		Target:                rabbitMQLib,
+		IntegrationKind:       kindMQ,
+		Count:                 2,
+		SuggestedReviewAction: "external_systems",
+		EvidenceSites: []diagnostic.DistanceConfigEvidenceSite{{
+			File: filePublisher, Line: 10, Kind: kindMQ, Language: "go", Target: rabbitMQLib,
+		}},
+	}}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"## " + secDistanceConfig,
+		"Report-only. Runtime and dynamic evidence can suggest `external_systems` or `deploy_unit` review",
+		"2 signal(s) across 1 candidate(s)",
+		"**" + modAPI + "** → `" + rabbitMQLib + "` [" + kindMQ + " from runtime_async_edges; action=external_systems]: 2",
+		filePublisher + ":10[" + kindMQ + "]",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "BC-UNBALANCED") {
+		t.Errorf("distance config candidates must not render as BC advisories\nfull output:\n%s", out)
 	}
 }
 

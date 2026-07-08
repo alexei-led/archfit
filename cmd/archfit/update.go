@@ -10,11 +10,15 @@ import (
 
 	"github.com/alexei-led/archfit/internal/classify"
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/extract/deployunit"
+	"github.com/alexei-led/archfit/internal/extract/dynimports"
+	runtimedetect "github.com/alexei-led/archfit/internal/extract/runtime"
 	"github.com/alexei-led/archfit/internal/extract/rust"
 	"github.com/alexei-led/archfit/internal/factcache"
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
 	"github.com/alexei-led/archfit/internal/scope"
 )
@@ -61,6 +65,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 
 	report := initcfg.DiffModules(existing, freshCfg.Modules)
 	report.DeployUnitSuggestions = deployUnitSuggestions(ctx, root, cfg, deps)
+	report.DistanceConfigCandidates = distanceConfigCandidates(ctx, root, cfg, deps)
 	if c.LLM {
 		var synthErr error
 		report, synthErr = c.withRustSyntheticSuggestions(ctx, cfg, root, report, deps)
@@ -295,7 +300,54 @@ func hasActionableEdits(report initcfg.UpdateReport) bool {
 }
 
 func hasReviewOnlySuggestions(report initcfg.UpdateReport) bool {
-	return len(report.Suggested) > 0 || len(report.DeployUnitSuggestions) > 0 || len(report.RuleSuggestions) > 0 || len(report.ExternalSystemSuggestions) > 0
+	return len(report.Suggested) > 0 || len(report.DeployUnitSuggestions) > 0 || len(report.DistanceConfigCandidates) > 0 || len(report.RuleSuggestions) > 0 || len(report.ExternalSystemSuggestions) > 0
+}
+
+func distanceConfigCandidates(ctx context.Context, root string, cfg config.Config, deps *appDeps) []initcfg.DistanceConfigCandidate {
+	mm := cfg.ModuleMapView()
+	dynamicImports := engine.BuildDynamicImports(dynimports.Detect(root), mm)
+	runtimeResult := runtimedetect.Detect(ctx, root, deps.Runner)
+	runtimeSites := make([]diagnostic.RuntimeAsyncSite, 0, len(runtimeResult.Signals))
+	for _, sig := range runtimeResult.Signals {
+		runtimeSites = append(runtimeSites, diagnostic.RuntimeAsyncSite{
+			File:            sig.File,
+			Line:            sig.Line,
+			Library:         sig.Library,
+			IntegrationKind: string(sig.IntegrationKind),
+			Language:        sig.Language,
+		})
+	}
+	runtimeEdges := engine.BuildRuntimeAsyncEdges(runtimeSites, runtimeResult.Confidence, mm)
+	dynamicSignals := engine.BuildDynamicConnascenceSignals(dynamicImports, runtimeEdges, nil)
+	candidates := engine.BuildDistanceConfigCandidates(dynamicImports, runtimeEdges, dynamicSignals)
+	out := make([]initcfg.DistanceConfigCandidate, 0, len(candidates))
+	for _, c := range candidates {
+		out = append(out, initcfg.DistanceConfigCandidate{
+			SourceBlock:           c.SourceBlock,
+			Module:                c.Module,
+			Target:                c.Target,
+			IntegrationKind:       c.IntegrationKind,
+			Count:                 c.Count,
+			EvidenceRefs:          distanceConfigEvidenceRefs(c.EvidenceSites),
+			SuggestedReviewAction: c.SuggestedReviewAction,
+		})
+	}
+	return out
+}
+
+func distanceConfigEvidenceRefs(sites []diagnostic.DistanceConfigEvidenceSite) []string {
+	refs := make([]string, 0, len(sites))
+	for _, s := range sites {
+		if s.File == "" {
+			continue
+		}
+		ref := s.File
+		if s.Line > 0 {
+			ref = fmt.Sprintf("%s:%d", s.File, s.Line)
+		}
+		refs = append(refs, ref)
+	}
+	return refs
 }
 
 func deployUnitSuggestions(ctx context.Context, root string, cfg config.Config, deps *appDeps) []initcfg.DeployUnitSuggestion {

@@ -97,6 +97,8 @@ func (r *Renderer) Render(d diagnostic.Diagnostic, w io.Writer) error {
 
 	writeRuntimeAsync(&b, d.RuntimeAsync, d.RuntimeAsyncEdges)
 
+	writeDistanceConfigCandidates(&b, d.DistanceConfigCandidates)
+
 	writeDeprecatedDeps(&b, d.DeprecatedDeps)
 
 	writeCoverageGaps(&b, d.CoverageGaps)

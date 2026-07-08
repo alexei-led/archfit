@@ -429,8 +429,10 @@ Mode matrix:
 
 Every mode (plan or apply, with or without `--llm`) also reports **DEPLOY UNIT
 HINTS** — deterministic `deploy_unit` proposals for modules the deploy-unit
-detector mapped but the config leaves unset. These are review-only; `--apply`
-never writes them.
+detector mapped but the config leaves unset. It also reports **DISTANCE CONFIG
+CANDIDATES** from runtime async and dynamic-import evidence; these are hints to
+review `external_systems` or `deploy_unit` config. Both sections are review-only;
+`--apply` never writes them.
 
 What "structural drift" means:
 
@@ -456,7 +458,8 @@ Guardrails:
 - Existing field values are never overwritten.
 - LLM subdomain, volatility, layer, and role proposals are report-only. Review
   and copy accepted values into `.archfit.yaml` deliberately.
-- Deploy-unit hints are report-only — `--apply` never writes `deploy_unit` values.
+- Deploy-unit hints and distance-config candidates are report-only — `--apply`
+  never writes `deploy_unit` or `external_systems` values from them.
 - Module keys are never auto-renamed.
 - If the config has not changed since it was read, `--apply` aborts rather than
   overwriting concurrent edits.

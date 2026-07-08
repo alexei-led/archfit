@@ -422,6 +422,29 @@ type DistanceContext struct {
 	Interpretation            string         `json:"interpretation"`
 }
 
+// DistanceConfigCandidate is a report-only hint that runtime or dynamic evidence
+// may justify reviewing distance config. It never feeds classification, scoring,
+// findings, baselines, or gates.
+type DistanceConfigCandidate struct {
+	SourceBlock           string                       `json:"source_block"`
+	Module                string                       `json:"module"`
+	Target                string                       `json:"target"`
+	IntegrationKind       string                       `json:"integration_kind"`
+	Count                 int                          `json:"count"`
+	EvidenceSites         []DistanceConfigEvidenceSite `json:"evidence_sites,omitempty"`
+	SuggestedReviewAction string                       `json:"suggested_review_action"`
+}
+
+// DistanceConfigEvidenceSite is a capped source location behind a
+// DistanceConfigCandidate.
+type DistanceConfigEvidenceSite struct {
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+	Kind     string `json:"kind"`
+	Language string `json:"language"`
+	Target   string `json:"target,omitempty"`
+}
+
 // ClassifiedEdgeSummary holds aggregate distribution counts over the
 // coupling.Index produced by classify.Run plus score-bearing clone-only
 // duplicated-knowledge pairs when that policy is enabled. Stdlib-only (no
@@ -717,6 +740,10 @@ type Diagnostic struct {
 	// DistanceContext is a human-readable rollup of the basis behind the distance
 	// dimension (owner model, basis counts, deploy/external evidence). Report-only.
 	DistanceContext *DistanceContext `json:"distance_context,omitempty"`
+	// DistanceConfigCandidates are review-only hints derived from runtime/dynamic
+	// evidence for possible external_systems or deploy_unit config entries. They
+	// never alter distance classification, scoring, or gate verdicts.
+	DistanceConfigCandidates []DistanceConfigCandidate `json:"distance_config_candidates,omitempty"`
 	// LocalCoupling is the report-only per-module summary of scored same-module
 	// edges — the book Ch10 local-complexity quadrant. Same-module edges never
 	// enter coupling_balance's denominator (see LocalCouplingModule). Never

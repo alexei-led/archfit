@@ -15,6 +15,11 @@ import (
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
+const (
+	testUpdatePluginsModule = "plugins"
+	testUpdateDeployUnit    = "deploy_unit"
+)
+
 // runUpdateCmd runs UpdateCmd.Run with a fake runner and returns stdout output and error.
 func runUpdateCmd(t *testing.T, cmd *UpdateCmd, runner toolrun.Runner) (string, error) {
 	t.Helper()
@@ -67,6 +72,35 @@ func writeConfig(t *testing.T, dir, content string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestDistanceConfigCandidates_DynamicImportsBecomeReviewOnlyHints(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, testUpdatePluginsModule), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, testUpdatePluginsModule, "loader.py"), []byte("def load(name):\n    return __import__(name)\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Modules: map[string]config.ModuleDef{
+		testUpdatePluginsModule: {Paths: []string{testUpdatePluginsModule + "/**"}},
+	}}
+
+	got := distanceConfigCandidates(context.Background(), dir, cfg, &appDeps{Runner: emptyRunner()})
+	if len(got) != 2 {
+		t.Fatalf("distanceConfigCandidates len = %d, want 2: %+v", len(got), got)
+	}
+	if got[0].SourceBlock != "dynamic_connascence_signals" || got[0].Module != testUpdatePluginsModule || got[0].SuggestedReviewAction != testUpdateDeployUnit {
+		t.Fatalf("distanceConfigCandidates[0] = %+v", got[0])
+	}
+	if got[1].SourceBlock != "dynamic_imports" || got[1].Module != testUpdatePluginsModule || got[1].SuggestedReviewAction != testUpdateDeployUnit {
+		t.Fatalf("distanceConfigCandidates[1] = %+v", got[1])
+	}
+	if len(got[1].EvidenceRefs) != 1 || got[1].EvidenceRefs[0] != "plugins/loader.py:2" {
+		t.Fatalf("distanceConfigCandidates evidence = %+v", got[1].EvidenceRefs)
+	}
 }
 
 func TestDeployUnitSuggestions_DeterministicHintsOnlyForMissingConfig(t *testing.T) {

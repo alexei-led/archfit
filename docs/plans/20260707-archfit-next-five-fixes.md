@@ -354,11 +354,11 @@ Metrics / evidence to consume:
 
 Task checklist:
 
-- [ ] Add the new report-only candidate block to the diagnostic model.
-- [ ] Populate candidates from runtime/dynamic evidence.
-- [ ] Render the candidates in JSON and Markdown.
-- [ ] Add review-only hints to `config update` output.
-- [ ] Keep scoring and gate verdicts unchanged.
+- [x] Add the new report-only candidate block to the diagnostic model.
+- [x] Populate candidates from runtime/dynamic evidence.
+- [x] Render the candidates in JSON and Markdown.
+- [x] Add review-only hints to `config update` output.
+- [x] Keep scoring and gate verdicts unchanged.
 
 Validation:
 

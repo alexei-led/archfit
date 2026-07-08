@@ -21,6 +21,8 @@ const (
 	testSvcPath    = "internal/svc/**"
 	testOldPath    = "old/**"
 	testNewPath    = "new/**"
+	testSyncLine   = "structurally in sync"
+	testBackend    = "backend"
 )
 
 // minimalConfigWrap wraps a modules: stanza in a valid .archfit.yaml for round-trip testing.
@@ -329,7 +331,7 @@ func TestRenderUpdateReport_Unclassified_WithAnn(t *testing.T) {
 func TestRenderUpdateReport_StructurallyInSync(t *testing.T) {
 	r := UpdateReport{StructuralInSync: true}
 	got := RenderUpdateReport(r, nil, nil)
-	if !strings.Contains(got, "structurally in sync") {
+	if !strings.Contains(got, testSyncLine) {
 		t.Errorf("expected 'structurally in sync', got:\n%s", got)
 	}
 }
@@ -352,7 +354,38 @@ func TestRenderUpdateReport_DeployUnitHints(t *testing.T) {
 		"web:",
 		"deploy_unit: web-service",
 		"source: cmd/web",
-		"structurally in sync",
+		testSyncLine,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestRenderUpdateReport_DistanceConfigCandidates(t *testing.T) {
+	r := UpdateReport{
+		StructuralInSync: true,
+		DistanceConfigCandidates: []DistanceConfigCandidate{{
+			SourceBlock:           "runtime_async_edges",
+			Module:                testBackend,
+			Target:                "github.com/rabbitmq/amqp091-go",
+			IntegrationKind:       "message_queue",
+			Count:                 2,
+			SuggestedReviewAction: "external_systems",
+			EvidenceRefs:          []string{"api/publisher.go:10"},
+		}},
+	}
+
+	got := RenderUpdateReport(r, nil, nil)
+	for _, want := range []string{
+		"DISTANCE CONFIG CANDIDATES (1 review-only config proposal(s) — apply manually after review)",
+		"module: " + testBackend,
+		"target: github.com/rabbitmq/amqp091-go",
+		"integration_kind: message_queue",
+		"source_block: runtime_async_edges",
+		"suggested_review_action: external_systems",
+		"evidence_refs: api/publisher.go:10",
+		testSyncLine,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output missing %q:\n%s", want, got)
