@@ -7,6 +7,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // This file hosts the shared clone-pair test fixtures (fileFromA / fileToB —
@@ -26,7 +27,7 @@ const (
 // modB: services/b/**) and no public/internal globs unless provided.
 func twoModuleConfig(publicGlobs []string, clonePairs map[string]struct{}) config.ClassifyConfig {
 	return config.ClassifyConfig{
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			modNameA: {Paths: []string{pathsA}},
 			modNameB: {Paths: []string{pathsB}, Public: publicGlobs},
 		},
@@ -107,7 +108,7 @@ func TestFlatNameEdgeScoresSameOwnerAfterP1Fix(t *testing.T) {
 	}
 
 	cfg := config.ClassifyConfig{
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			flatModA: {
 				Paths:     []string{flatModA + "/**"},
 				Subdomain: "core", // → high volatility

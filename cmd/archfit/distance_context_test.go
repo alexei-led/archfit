@@ -6,6 +6,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 const (
@@ -18,7 +19,7 @@ func TestBuildDistanceContext_SingleOwnerDegenerate(t *testing.T) {
 	d.ClassifiedEdges = &diagnostic.ClassifiedEdgeSummary{
 		ByDistanceBasis: map[string]int{"code_structure": 3, "deploy_unit": 1},
 	}
-	cfg := config.Config{Modules: map[string]config.ModuleDef{
+	cfg := config.Config{Modules: map[string]module.ModuleDef{
 		"a": {Paths: []string{globA}, Owner: "team"},
 		"b": {Paths: []string{globB}, Owner: "team"},
 	}}
@@ -39,7 +40,7 @@ func TestBuildDistanceContext_SingleOwnerDegenerate(t *testing.T) {
 }
 
 func TestBuildDistanceContext_NoOwnerSignal(t *testing.T) {
-	cfg := config.Config{Modules: map[string]config.ModuleDef{
+	cfg := config.Config{Modules: map[string]module.ModuleDef{
 		"a": {Paths: []string{globA}},
 		"b": {Paths: []string{globB}},
 	}}
@@ -59,7 +60,7 @@ func TestBuildDistanceContext_NoOwnerSignal(t *testing.T) {
 
 func TestBuildDistanceContext_NoOwnerWithExternalEvidence(t *testing.T) {
 	cfg := config.Config{
-		Modules:         map[string]config.ModuleDef{"a": {Paths: []string{globA}}},
+		Modules:         map[string]module.ModuleDef{"a": {Paths: []string{globA}}},
 		ExternalSystems: map[string]config.ExternalSystemDef{"stripe": {Targets: []string{"stripe.**"}}},
 	}
 
@@ -84,7 +85,7 @@ func TestBuildDistanceContext_RuntimeAsyncEvidence(t *testing.T) {
 		{FromModule: "c", Target: "celery", IntegrationKind: "async_task", Count: 1},
 		{FromModule: "a", Target: "kafka", IntegrationKind: "message_queue", Count: 1},
 	}
-	cfg := config.Config{Modules: map[string]config.ModuleDef{
+	cfg := config.Config{Modules: map[string]module.ModuleDef{
 		"a": {Paths: []string{globA}},
 		"b": {Paths: []string{globB}},
 	}}
@@ -106,7 +107,7 @@ func TestBuildDistanceContext_MultiOwner(t *testing.T) {
 		ownerTeamA = "team-a"
 		ownerTeamB = "team-b"
 	)
-	cfg := config.Config{Modules: map[string]config.ModuleDef{
+	cfg := config.Config{Modules: map[string]module.ModuleDef{
 		"a": {Paths: []string{globA}, Owner: ownerTeamA},
 		"b": {Paths: []string{globB}, Owner: ownerTeamB},
 	}}

@@ -14,6 +14,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 const (
@@ -59,7 +60,7 @@ func probeKey(to string) string {
 
 // cascadeModules is the module map used across TestVolatilityCascade cases.
 // subdomainCore/Supporting/Generic constants are declared in classify_test.go (same package).
-var cascadeModules = map[string]config.ModuleDef{
+var cascadeModules = map[string]module.ModuleDef{
 	"payment":       {Paths: []string{"payment/**"}, Subdomain: subdomainCore},             // high
 	"notifications": {Paths: []string{"notifications/**"}, Subdomain: subdomainSupporting}, // medium
 	"gateway":       {Paths: []string{"gateway/**"}, Subdomain: subdomainGeneric},          // low
@@ -230,7 +231,7 @@ func TestVolatilityCascade_UsesResolvedStrength(t *testing.T) {
 		{
 			name: "config internal glob",
 			cfg: config.ClassifyConfig{
-				Modules: map[string]config.ModuleDef{
+				Modules: map[string]module.ModuleDef{
 					"payment":       {Paths: []string{"payment/**"}, Internal: []string{"payment/internal/**"}, Subdomain: subdomainCore},
 					"notifications": {Paths: []string{"notifications/**"}, Subdomain: subdomainSupporting},
 				},
@@ -280,7 +281,7 @@ func TestVolatilityCascade_UsesResolvedStrength(t *testing.T) {
 // and A/B are supporting/low. B is raised by C, then A is raised by B's effective
 // volatility. This is the book Ch9 cascade shape; it used to stop at one hop.
 func TestVolatilityCascade_TransitiveFixpoint(t *testing.T) {
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		modNameA: {Paths: []string{"a/**"}, Subdomain: subdomainSupporting}, // low base (book Table 9.1)
 		modNameB: {Paths: []string{"b/**"}, Subdomain: subdomainSupporting}, // low base (book Table 9.1)
 		"modC":   {Paths: []string{"c/**"}, Subdomain: subdomainCore},       // high base

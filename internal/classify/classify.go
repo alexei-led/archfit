@@ -12,6 +12,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // subdomain constants are the accepted Khononov subdomain values used throughout
@@ -106,27 +107,27 @@ func pathFromID(id string) string {
 }
 
 // moduleIndex is a sorted list of module names for deterministic glob matching.
-// Path→module resolution delegates to the shared config.ModuleMap so there is a
+// Path→module resolution delegates to the shared module.Map so there is a
 // single most-specific-match implementation; names/modules remain for the
 // public/internal glob strength scan in classifyStrength.
 type moduleIndex struct {
 	names   []string
-	modules map[string]config.ModuleDef
-	mm      config.ModuleMap
+	modules map[string]module.ModuleDef
+	mm      module.Map
 }
 
 // buildModuleIndex builds a sorted module name index from the Modules map.
-func buildModuleIndex(modules map[string]config.ModuleDef) moduleIndex {
+func buildModuleIndex(modules map[string]module.ModuleDef) moduleIndex {
 	names := make([]string, 0, len(modules))
 	for n := range modules {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	return moduleIndex{names: names, modules: modules, mm: config.BuildModuleMap(modules)}
+	return moduleIndex{names: names, modules: modules, mm: module.BuildMap(modules)}
 }
 
 // moduleFor returns the most-specific module name whose Paths globs match path,
-// delegating to config.ModuleMap (single source of truth for resolution).
+// delegating to module.Map (single source of truth for resolution).
 // Returns ("", false) if no module matches.
 func (mi moduleIndex) moduleFor(path string) (string, bool) {
 	return mi.mm.ModuleFor(path)
@@ -142,7 +143,7 @@ func (mi moduleIndex) moduleFor(path string) (string, bool) {
 // configured modules are untouched. Existing config modules keep precedence — a
 // synthetic module is only added when nothing already covers the node. The input
 // map is not mutated; a copy is returned only if something is added.
-func AugmentModulesFromGraph(g *graph.Graph, modules map[string]config.ModuleDef) map[string]config.ModuleDef {
+func AugmentModulesFromGraph(g *graph.Graph, modules map[string]module.ModuleDef) map[string]module.ModuleDef {
 	if g == nil {
 		return modules
 	}
@@ -158,7 +159,7 @@ func AugmentModulesFromGraph(g *graph.Graph, modules map[string]config.ModuleDef
 			continue // already covered by a configured module
 		}
 		if !cloned {
-			out = make(map[string]config.ModuleDef, len(modules)+8)
+			out = make(map[string]module.ModuleDef, len(modules)+8)
 			maps.Copy(out, modules)
 			cloned = true
 		}
@@ -183,7 +184,7 @@ func AugmentModulesFromGraph(g *graph.Graph, modules map[string]config.ModuleDef
 // precedence — a synthetic module is only added when nothing already covers the
 // member's directory. The input map is not mutated; a copy is returned only if
 // something is added.
-func AugmentGoWorkspaceModules(g *graph.Graph, modules map[string]config.ModuleDef) map[string]config.ModuleDef {
+func AugmentGoWorkspaceModules(g *graph.Graph, modules map[string]module.ModuleDef) map[string]module.ModuleDef {
 	if g == nil {
 		return modules
 	}
@@ -204,7 +205,7 @@ func AugmentGoWorkspaceModules(g *graph.Graph, modules map[string]config.ModuleD
 			continue
 		}
 		if !cloned {
-			out = make(map[string]config.ModuleDef, len(modules)+len(goMods))
+			out = make(map[string]module.ModuleDef, len(modules)+len(goMods))
 			maps.Copy(out, modules)
 			cloned = true
 		}
@@ -239,7 +240,7 @@ func AugmentGoWorkspaceModules(g *graph.Graph, modules map[string]config.ModuleD
 // bare crate-name globs (tokio, yazi) bind on the first check and are no-ops.
 // Intra-crate "<crate>::<mod>" nodes are handled by AugmentModulesFromGraph.
 // The input map is not mutated; a copy is returned only if something is added.
-func AugmentCargoCrateNodes(g *graph.Graph, modules map[string]config.ModuleDef) map[string]config.ModuleDef {
+func AugmentCargoCrateNodes(g *graph.Graph, modules map[string]module.ModuleDef) map[string]module.ModuleDef {
 	if g == nil {
 		return modules
 	}
@@ -262,7 +263,7 @@ func AugmentCargoCrateNodes(g *graph.Graph, modules map[string]config.ModuleDef)
 	cloned := false
 	ensureClone := func() {
 		if !cloned {
-			out = make(map[string]config.ModuleDef, len(modules)+len(crateNodes))
+			out = make(map[string]module.ModuleDef, len(modules)+len(crateNodes))
 			maps.Copy(out, modules)
 			cloned = true
 		}
@@ -297,8 +298,8 @@ func AugmentCargoCrateNodes(g *graph.Graph, modules map[string]config.ModuleDef)
 // config module whose key is the longest "::"-prefix of path, or the zero
 // ModuleDef if none. Owner is not required: an ownerless parent can still donate
 // volatility, subdomain, layer, and deploy-unit metadata.
-func ancestorByKey(path string, modules map[string]config.ModuleDef) config.ModuleDef {
-	var best config.ModuleDef
+func ancestorByKey(path string, modules map[string]module.ModuleDef) module.ModuleDef {
+	var best module.ModuleDef
 	bestLen := 0
 	for name, def := range modules {
 		// A module is an ancestor when path starts with name+"::" or equals name.
@@ -322,8 +323,8 @@ func ancestorByKey(path string, modules map[string]config.ModuleDef) config.Modu
 // parent-directory module may still donate its attributes. Owner is not
 // required: an ownerless parent can still donate volatility, subdomain, layer,
 // and deploy-unit metadata.
-func ancestorByPath(relDir string, modules map[string]config.ModuleDef) config.ModuleDef {
-	var best config.ModuleDef
+func ancestorByPath(relDir string, modules map[string]module.ModuleDef) module.ModuleDef {
+	var best module.ModuleDef
 	bestLen := 0
 	for _, def := range modules {
 		for _, p := range def.Paths {
@@ -350,8 +351,8 @@ func ancestorByPath(relDir string, modules map[string]config.ModuleDef) config.M
 // module never silently drops Volatility/Subdomain/Layer/DeployUnit the way an
 // Owner-only copy would (undeclared Volatility scores the conservative worst
 // case, V=10 — the root cause of the tokio finding flood).
-func inheritAncestorAttrs(ancestor config.ModuleDef, paths []string) config.ModuleDef {
-	return config.ModuleDef{
+func inheritAncestorAttrs(ancestor module.ModuleDef, paths []string) module.ModuleDef {
+	return module.ModuleDef{
 		Paths:      paths,
 		Owner:      ancestor.Owner,
 		Volatility: ancestor.Volatility,
@@ -749,7 +750,7 @@ func strengthFromHint(hint string) coupling.Strength {
 //  4. Otherwise (degenerate or no ownership) fall back to code structure.
 //
 // The returned DistanceBasis records which signal drove the final distance value.
-func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map[string]config.ModuleDef, explicitOwners map[string]bool, degenerateExplicit, degenerateOwners bool) (coupling.Distance, coupling.DistanceBasis) {
+func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map[string]module.ModuleDef, explicitOwners map[string]bool, degenerateExplicit, degenerateOwners bool) (coupling.Distance, coupling.DistanceBasis) {
 	fromMod, fromOK := mi.moduleFor(fromPath)
 	toMod, toOK := mi.moduleFor(toPath)
 
@@ -770,7 +771,7 @@ func classifyDistance(fromPath, toPath, lang string, mi moduleIndex, modules map
 // distance from module names alone: clone evidence carries repo file paths,
 // which for Python never match the dotted node-ID globs the path resolution in
 // classifyDistance expects.
-func moduleDistance(fromMod, toMod, lang string, modules map[string]config.ModuleDef, explicitOwners map[string]bool, degenerateExplicit, degenerateOwners bool) (coupling.Distance, coupling.DistanceBasis) {
+func moduleDistance(fromMod, toMod, lang string, modules map[string]module.ModuleDef, explicitOwners map[string]bool, degenerateExplicit, degenerateOwners bool) (coupling.Distance, coupling.DistanceBasis) {
 	fromDef := modules[fromMod]
 	toDef := modules[toMod]
 
@@ -824,7 +825,7 @@ func moduleDistance(fromMod, toMod, lang string, modules map[string]config.Modul
 //   - otherwise → high/medium/low/frozen.
 //
 // No churn or git history is consulted here — volatility is config-declared only.
-func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config.ModuleDef) coupling.Volatility {
+func classifyVolatility(toPath string, mi moduleIndex, modules map[string]module.ModuleDef) coupling.Volatility {
 	toMod, ok := mi.moduleFor(toPath)
 	if !ok {
 		return coupling.VolatilityUnknown
@@ -864,7 +865,7 @@ func classifyVolatility(toPath string, mi moduleIndex, modules map[string]config
 //
 // This is used to trigger the contract-recommended advisory when a generic
 // target is reached via non-contract strength (BC's anti-corruption-layer guidance).
-func isGenericSubdomain(toPath string, mi moduleIndex, modules map[string]config.ModuleDef) bool {
+func isGenericSubdomain(toPath string, mi moduleIndex, modules map[string]module.ModuleDef) bool {
 	toMod, ok := mi.moduleFor(toPath)
 	if !ok {
 		return false
@@ -936,7 +937,7 @@ func computeEffectiveVolatility(g *graph.Graph, mi moduleIndex, c config.Classif
 // volatilityFromDef derives base volatility from a ModuleDef using the same
 // priority logic as classifyVolatility but without the path heuristic (the
 // module is already resolved; we want the config-declared level only).
-func volatilityFromDef(def config.ModuleDef) coupling.Volatility {
+func volatilityFromDef(def module.ModuleDef) coupling.Volatility {
 	switch strings.ToLower(def.Volatility) {
 	case volatilityHigh:
 		return coupling.VolatilityHigh
@@ -969,7 +970,7 @@ func isStrongStrength(str coupling.Strength) bool {
 // classifyVolatilityEffective derives effective volatility for the to-module
 // using the pre-computed effectiveVol map (post-cascade). Falls back to
 // classifyVolatility when the map is nil or the module is not found.
-func classifyVolatilityEffective(toPath string, mi moduleIndex, modules map[string]config.ModuleDef, effectiveVol map[string]coupling.Volatility) coupling.Volatility {
+func classifyVolatilityEffective(toPath string, mi moduleIndex, modules map[string]module.ModuleDef, effectiveVol map[string]coupling.Volatility) coupling.Volatility {
 	toMod, ok := mi.moduleFor(toPath)
 	if !ok {
 		return coupling.VolatilityUnknown

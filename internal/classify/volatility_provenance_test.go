@@ -7,6 +7,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // Crate/node id constants shared by the provenance and override fixtures
@@ -29,7 +30,7 @@ func TestComputeVolatilityProvenance(t *testing.T) {
 		// One declared crate module (volatility high) whose cargo-modules
 		// submodule nodes are NOT in config, plus one declared module with no
 		// volatility from any source.
-		declared := map[string]config.ModuleDef{
+		declared := map[string]module.ModuleDef{
 			crateName: {Paths: []string{crateName}, Owner: ownerTeamX, Volatility: extVolHigh},
 			"tools":   {Paths: []string{"tools/**"}, Owner: ownerTeamX}, // no volatility, no subdomain
 		}
@@ -54,7 +55,7 @@ func TestComputeVolatilityProvenance(t *testing.T) {
 	})
 
 	t.Run("cascade-raised module counted on top of its base source", func(t *testing.T) {
-		declared := map[string]config.ModuleDef{
+		declared := map[string]module.ModuleDef{
 			"caller": {Paths: []string{pathsA}, Owner: ownerTeamX, Volatility: cfgVolLow},
 			"core":   {Paths: []string{pathsB}, Owner: ownerTeamX, Volatility: extVolHigh},
 		}
@@ -91,10 +92,10 @@ func TestComputeVolatilityProvenance(t *testing.T) {
 		// ComputeVolatilityProvenance must test base==Undeclared BEFORE
 		// isDeclared, so this module lands in vp.Undeclared even though it is
 		// exactly the "not declared" shape that would otherwise fall to Inherited.
-		declared := map[string]config.ModuleDef{
+		declared := map[string]module.ModuleDef{
 			modNameA: {Paths: []string{pathsA}, Owner: ownerTeamX, Volatility: extVolHigh},
 		}
-		modules := map[string]config.ModuleDef{
+		modules := map[string]module.ModuleDef{
 			modNameA:    declared[modNameA],
 			"synthetic": {Paths: []string{"synthetic/**"}}, // not in declared, no volatility, no subdomain
 		}
@@ -109,7 +110,7 @@ func TestComputeVolatilityProvenance(t *testing.T) {
 	})
 
 	t.Run("cascade enabled with nil graph does not panic and raises no cascade count", func(t *testing.T) {
-		modules := map[string]config.ModuleDef{
+		modules := map[string]module.ModuleDef{
 			modNameA: {Paths: []string{pathsA}, Volatility: extVolHigh},
 		}
 		vp := classify.ComputeVolatilityProvenance(nil, nil, config.ClassifyConfig{
@@ -131,7 +132,7 @@ func TestComputeVolatilityProvenance(t *testing.T) {
 // (most-specific glob wins) and its volatility applies to edges targeting that
 // submodule, while sibling submodules keep the ancestor-inherited volatility.
 func TestSyntheticModuleVolatilityOverride_HerdrShape(t *testing.T) {
-	configMods := map[string]config.ModuleDef{
+	configMods := map[string]module.ModuleDef{
 		crateName:       {Paths: []string{crateName}, Owner: ownerTeamX, Volatility: extVolHigh},
 		"mycrate-state": {Paths: []string{crateSubKeyS}, Owner: ownerTeamX, Volatility: cfgVolLow},
 	}

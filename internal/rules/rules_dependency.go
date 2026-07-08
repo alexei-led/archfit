@@ -12,6 +12,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // ---------------------------------------------------------------------------
@@ -78,7 +79,7 @@ func (r *forbiddenDependency) Check(g *graph.Graph, _ Evidence) []finding.Findin
 // another module's internal surface is. When either endpoint isn't covered by
 // the module map, we can't rule out same-module, so callers must treat that
 // as "not same module" (module-blind fallback: the edge still fires).
-func sameModule(mm config.ModuleMap, fromPath, toPath string) bool {
+func sameModule(mm module.Map, fromPath, toPath string) bool {
 	fromModule, fromOK := mm.ModuleFor(fromPath)
 	toModule, toOK := mm.ModuleFor(toPath)
 	return fromOK && toOK && fromModule == toModule
@@ -90,7 +91,7 @@ func sameModule(mm config.ModuleMap, fromPath, toPath string) bool {
 
 type publicAPIOnly struct {
 	def config.RuleDef
-	mm  config.ModuleMap
+	mm  module.Map
 }
 
 func (r *publicAPIOnly) ID() string { return r.def.ID }
@@ -146,7 +147,7 @@ func (r *publicAPIOnly) Check(g *graph.Graph, _ Evidence) []finding.Finding {
 type forbiddenLayerDirection struct {
 	def    config.RuleDef
 	layers []string
-	mm     config.ModuleMap
+	mm     module.Map
 }
 
 func (r *forbiddenLayerDirection) ID() string { return r.def.ID }
@@ -206,7 +207,7 @@ func (r *forbiddenLayerDirection) Check(g *graph.Graph, _ Evidence) []finding.Fi
 // configure them independently with different IDs, severities, and exceptions.
 type internalAPIAccess struct {
 	def config.RuleDef
-	mm  config.ModuleMap
+	mm  module.Map
 }
 
 func (r *internalAPIAccess) ID() string { return r.def.ID }
@@ -266,7 +267,7 @@ func (r *internalAPIAccess) Check(g *graph.Graph, _ Evidence) []finding.Finding 
 // accept the current state.
 type newCrossModuleDependency struct {
 	def config.RuleDef
-	mm  config.ModuleMap
+	mm  module.Map
 }
 
 func (r *newCrossModuleDependency) ID() string { return r.def.ID }

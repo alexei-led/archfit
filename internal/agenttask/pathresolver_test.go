@@ -474,7 +474,7 @@ func TestFilesFor_OnDiskFallback(t *testing.T) {
 }
 
 // TestFilesFor_DottedModuleRootFallback pins the Python shape of the module
-// root fallback: config.ModuleRootDirs returns a dotted module-ID prefix
+// root fallback: module.RootDirs returns a dotted module-ID prefix
 // ("myapp.domain") for a dotted glob, and filesFor must route it through the
 // full resolver — the dotted-candidate probe — rather than a bare dir check
 // that a dotted string can never pass.

@@ -8,6 +8,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/rules"
 )
 
@@ -281,7 +282,7 @@ func TestPublicAPIOnly_ModuleMap(t *testing.T) {
 	const moduleDomain = "domain"
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			moduleDomain: {Paths: []string{"domain/**"}},
 			moduleA:      {Paths: []string{"services/a/**"}},
 			moduleB:      {Paths: []string{"services/b/**"}},
@@ -362,7 +363,7 @@ func TestPublicAPIOnly_ModuleMap(t *testing.T) {
 func TestInternalAPIAccess_ModuleMap(t *testing.T) {
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"domain": {Paths: []string{pathDomainGlob}},
 			moduleA:  {Paths: []string{globServicesA}},
 			moduleB:  {Paths: []string{globServicesB}},
@@ -578,7 +579,7 @@ func TestCycleRule(t *testing.T) {
 func TestCrossModuleDependency(t *testing.T) {
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			moduleA: {Paths: []string{globServicesA}},
 			moduleB: {Paths: []string{globServicesB}},
 		},
@@ -639,7 +640,7 @@ func TestForbiddenLayerDirection(t *testing.T) {
 	cfg := config.Config{
 		Version: 1,
 		Layers:  []string{layerDomain, layerApplication, layerInfrastructure},
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"domain": {Paths: []string{"services/domain/**"}, Layer: layerDomain},
 			"app":    {Paths: []string{"services/app/**"}, Layer: layerApplication},
 			"infra":  {Paths: []string{"services/infra/**"}, Layer: layerInfrastructure},
@@ -926,7 +927,7 @@ func maxPtr(n int) *int { return &n }
 func makePublicAPIMaxConfig(ceiling int, gate string) config.RuleConfig {
 	return config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			layerDomain: {Paths: []string{pathDomainGlob}},
 			moduleInfra: {Paths: []string{pathInfraGlob}},
 		},
@@ -1180,7 +1181,7 @@ func TestPublicAPIMax_InvalidConfig(t *testing.T) {
 func makePublicAPIChangeConfig(gate string) config.RuleConfig {
 	return config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			layerDomain: {Paths: []string{pathDomainGlob}},
 			moduleInfra: {Paths: []string{pathInfraGlob}},
 		},
@@ -1387,7 +1388,7 @@ func TestPublicAPITypeLeak(t *testing.T) {
 
 	rc := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			moduleNameDom: {Paths: []string{"domain/**"}},
 		},
 		Rules: []config.RuleDef{

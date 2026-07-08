@@ -19,6 +19,7 @@ import (
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // cmdAbstained is the `config enrich abstained` subcommand token.
@@ -28,10 +29,10 @@ const cmdAbstained = "abstained"
 // unknown-strength edges, the first carrying a location), plus edges that must
 // be excluded: known strength, same-module distance, external (unknown)
 // distance, and an approved pair.
-func abstainedFixture() (*graph.Graph, coupling.Index, config.ModuleMap) {
+func abstainedFixture() (*graph.Graph, coupling.Index, module.Map) {
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			modA: {Paths: []string{globPkgA}},
 			modB: {Paths: []string{globPkgB}},
 			"c":  {Paths: []string{"pkg/c/**"}},
@@ -167,7 +168,7 @@ func TestSelectAbstainedPairs_CapRespected(t *testing.T) {
 	t.Parallel()
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			modA: {Paths: []string{globPkgA}},
 			modB: {Paths: []string{globPkgB}},
 		},

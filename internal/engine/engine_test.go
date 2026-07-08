@@ -20,6 +20,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/model/pattern"
 	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/model/symbol"
@@ -68,7 +69,7 @@ const (
 // Different owners ensure the composite distance signal reaches cross_module_diff_owner
 // for advisory test cases that require a non-trivial distance.
 func cannedConfig() (config.ClassifyConfig, []rules.Rule) {
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"a": {
 			Paths:    []string{globModuleA},
 			Public:   []string{globModuleA},
@@ -1486,7 +1487,7 @@ func TestRun_NewCrossModuleDependency_BaselineSemantics(t *testing.T) {
 	const crossModRuleID = "review_new_deps"
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"a": {Paths: []string{globModuleA}},
 			"b": {Paths: []string{globModuleB}},
 		},
@@ -1580,7 +1581,7 @@ func TestRun_PinnedLabels(t *testing.T) {
 	// glob-undecided and the label decides.
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"a": {Paths: []string{globModuleA}},
 			"b": {Paths: []string{globModuleB}},
 		},
@@ -1695,7 +1696,7 @@ func TestRun_LLMLabels_FillDeterminismAndBucket(t *testing.T) {
 	// source abstains, so the llm label is the only strength source.
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"a": {Paths: []string{globModuleA}},
 			"b": {Paths: []string{globModuleB}},
 		},
@@ -2237,7 +2238,7 @@ func TestRun_RuntimeAsync_StaticGraphUnchanged(t *testing.T) {
 }
 
 func TestRun_ReportOnlyLocalRuntimeAndStaticExternalFactsDoNotChangeScoreOrVerdict(t *testing.T) {
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"a": {Paths: []string{"pkg/a/**"}, Owner: "team-a", Subdomain: subdomainCore},
 		"b": {Paths: []string{"pkg/b/**"}, Owner: "team-b", Subdomain: subdomainCore},
 	}
@@ -2439,7 +2440,7 @@ func bookExampleConfig(fromGlob, toGlob string, sameDeployUnit, sameOwner bool, 
 	// owner distance signal to fire for the src→dst edge. Without it, both modules
 	// sharing one owner triggers degenerateExplicit suppression and falls through to
 	// code-structure distance, which cannot produce cross_module_same_owner.
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"src": {
 			Paths:      []string{fromGlob},
 			Owner:      srcOwner,
@@ -2901,7 +2902,7 @@ func TestRun_WarnRule_ProducesVerdictWarn(t *testing.T) {
 
 	cfg := config.Config{
 		Version: 1,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"a": {Paths: []string{globModuleA}},
 			"b": {Paths: []string{globModuleB}},
 		},

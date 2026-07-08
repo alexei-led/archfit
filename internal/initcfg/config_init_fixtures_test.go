@@ -18,6 +18,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
@@ -202,9 +203,9 @@ func TestPublicAPIOnly_Task1Fixtures(t *testing.T) {
 				return
 			}
 
-			modules := make(map[string]config.ModuleDef, len(discovered.Modules))
+			modules := make(map[string]module.ModuleDef, len(discovered.Modules))
 			for _, m := range discovered.Modules {
-				modules[m.Name] = config.ModuleDef{Paths: m.Paths}
+				modules[m.Name] = module.ModuleDef{Paths: m.Paths}
 			}
 			cfg := config.Config{
 				Version: 1,
@@ -278,9 +279,9 @@ func TestForbiddenLayerDirection_Task1Fixtures(t *testing.T) {
 				return
 			}
 
-			modules := make(map[string]config.ModuleDef, len(discovered.Modules))
+			modules := make(map[string]module.ModuleDef, len(discovered.Modules))
 			for _, m := range discovered.Modules {
-				modules[m.Name] = config.ModuleDef{Paths: m.Paths, Layer: m.Layer}
+				modules[m.Name] = module.ModuleDef{Paths: m.Paths, Layer: m.Layer}
 			}
 			cfg := config.Config{
 				Version: 1,

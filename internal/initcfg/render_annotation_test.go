@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // Test-local constants to satisfy goconst across initcfg tests.
@@ -314,8 +315,8 @@ func TestRender_Role(t *testing.T) {
 	if strings.Contains(apply, "# role: "+role) {
 		t.Errorf("apply mode must not have commented role:\n%s", apply)
 	}
-	if got := roundTrip(t, apply).Modules[testClassify].Role; got != config.RoleCompositionRoot {
-		t.Errorf("apply mode round-trip role = %q, want %q", got, config.RoleCompositionRoot)
+	if got := roundTrip(t, apply).Modules[testClassify].Role; got != module.RoleCompositionRoot {
+		t.Errorf("apply mode round-trip role = %q, want %q", got, module.RoleCompositionRoot)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // ---------------------------------------------------------------------------
@@ -36,7 +37,7 @@ func validatePublicAPIMaxDef(def config.RuleDef) error {
 // When ev.SyntaxFacts is empty (syntax off), the rule returns nil silently.
 type publicAPIMax struct {
 	def config.RuleDef
-	mm  config.ModuleMap
+	mm  module.Map
 	max int
 }
 
@@ -133,7 +134,7 @@ func (r *publicAPIMax) Check(_ *graph.Graph, ev Evidence) []finding.Finding {
 // in New via defaultGateForType.
 type publicAPIChange struct {
 	def config.RuleDef
-	mm  config.ModuleMap
+	mm  module.Map
 }
 
 func (r *publicAPIChange) ID() string { return r.def.ID }
@@ -271,7 +272,7 @@ func externalPackageSegments(g *graph.Graph) map[string]struct{} {
 // When ev.SyntaxFacts is empty (syntax off), the rule returns nil silently.
 type publicAPITypeLeak struct {
 	def config.RuleDef
-	mm  config.ModuleMap
+	mm  module.Map
 }
 
 func (r *publicAPITypeLeak) ID() string { return r.def.ID }

@@ -14,6 +14,7 @@ import (
 	"github.com/alexei-led/archfit/internal/engine"
 	goextract "github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/metrics"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/ports"
 	"github.com/alexei-led/archfit/internal/rules"
@@ -41,7 +42,7 @@ func goldenFixtureRoot(t *testing.T) string {
 // match the testdata/golang fixture (two modules a and b, forbidden dependency
 // from a into b's internal package).
 func goldenConfig() (config.ClassifyConfig, []rules.Rule, []metrics.Metric) {
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"a": {
 			Paths:    []string{globModuleA},
 			Public:   []string{globModuleA},

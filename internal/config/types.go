@@ -5,6 +5,7 @@ import (
 
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // MetricEntry holds the settings for a single metric inside the metrics map.
@@ -169,9 +170,9 @@ type ExtractConfig struct {
 
 // ClassifyConfig is the view passed to the classify stage.
 type ClassifyConfig struct {
-	Modules               map[string]ModuleDef
+	Modules               map[string]module.ModuleDef
 	Layers                []string
-	ModuleMap             ModuleMap
+	ModuleMap             module.Map
 	BCAdvisoryMinSeverity string // minimum severity to emit BC coupling advisories
 	// ApprovedLabels pins integration strength per ordered module pair, keyed
 	// by from+"\x00"+to (labels.Key). Human-approved enrich output with
@@ -232,7 +233,7 @@ type ClassifyConfig struct {
 type RuleConfig struct {
 	Rules     []RuleDef
 	Layers    []string
-	ModuleMap ModuleMap
+	ModuleMap module.Map
 }
 
 // MetricConfig is the per-metric view returned by ForMetric.
@@ -285,5 +286,5 @@ type FileClassDef struct {
 type StalenessConfig struct {
 	Enabled   bool
 	Threshold time.Duration // zero value defaults to 90*24*time.Hour in Check
-	Modules   map[string]ModuleDef
+	Modules   map[string]module.ModuleDef
 }

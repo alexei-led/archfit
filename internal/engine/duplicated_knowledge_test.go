@@ -11,6 +11,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // Fixture constants for the duplicated-knowledge advisory tests.
@@ -23,13 +24,13 @@ const (
 // dkClassifyCfg returns a two-module config with a cross-module clone pair and
 // its evidence, mirroring what buildClonePairSet produces from jscpd clusters.
 func dkClassifyCfg() config.ClassifyConfig {
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"a": {Paths: []string{testServicesAGlob}},
 		"b": {Paths: []string{testServicesBGlob}},
 	}
 	return config.ClassifyConfig{
 		Modules:               modules,
-		ModuleMap:             config.BuildModuleMap(modules),
+		ModuleMap:             module.BuildMap(modules),
 		CrossModuleClonePairs: map[string]struct{}{dkPairKey: {}},
 		CloneEvidence: map[string][]graph.Location{
 			dkPairKey: {{File: dkFileA, Line: 10}, {File: dkFileB, Line: 20}},

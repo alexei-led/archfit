@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/syntax"
 )
 
@@ -138,7 +139,7 @@ func (c Config) ForClassify() ClassifyConfig {
 	return ClassifyConfig{
 		Modules:                   c.Modules,
 		Layers:                    c.Layers,
-		ModuleMap:                 buildModuleMap(c.Modules),
+		ModuleMap:                 module.BuildMap(c.Modules),
 		BCAdvisoryMinSeverity:     c.Coupling.MinSeverity,
 		ExplicitOwners:            c.explicitOwners,
 		VolatilityCascadeEnabled:  c.Coupling.VolatilityCascade,
@@ -152,7 +153,7 @@ func (c Config) ForRules() RuleConfig {
 	return RuleConfig{
 		Rules:     c.Rules,
 		Layers:    c.Layers,
-		ModuleMap: buildModuleMap(c.Modules),
+		ModuleMap: module.BuildMap(c.Modules),
 	}
 }
 
@@ -181,9 +182,9 @@ func (c Config) ForOutput() OutputConfig {
 	}
 }
 
-// ModuleMapView returns a ModuleMap built from this Config's Modules.
-func (c Config) ModuleMapView() ModuleMap {
-	return buildModuleMap(c.Modules)
+// ModuleMapView returns a module.Map built from this Config's Modules.
+func (c Config) ModuleMapView() module.Map {
+	return module.BuildMap(c.Modules)
 }
 
 // ForPatterns returns the PatternConfig view: all PatternDef values collected

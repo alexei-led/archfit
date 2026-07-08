@@ -9,6 +9,7 @@ package configschema
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	"github.com/invopop/jsonschema"
 
@@ -67,6 +68,16 @@ func Generate(srcDir string) ([]byte, error) {
 	// Pull doc-comments from the source so each property gets a description.
 	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/config", srcDir); err != nil {
 		return nil, fmt.Errorf("configschema: AddGoComments: %w", err)
+	}
+	// ModuleDef and friends live in the shared kernel (internal/model/module);
+	// load their doc-comments too so module properties keep descriptions.
+	// AddGoComments keys the map by Join(base, relativeWalkDir); with
+	// moduleDir == srcDir/../model/module the walk dir is "../model/module",
+	// so base must be the parent import path (internal/model) for the join to
+	// resolve to internal/model/module.
+	moduleDir := filepath.Join(srcDir, "..", "model", "module")
+	if err := r.AddGoComments("github.com/alexei-led/archfit/internal/model", moduleDir); err != nil {
+		return nil, fmt.Errorf("configschema: AddGoComments(module): %w", err)
 	}
 
 	schema := r.Reflect(&config.Config{})

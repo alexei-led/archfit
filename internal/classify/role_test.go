@@ -7,13 +7,14 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // roleModules returns two modules — "src" (the edge source, role applied by the
 // caller) and "dst" (a core/high-volatility target with an internal glob) — owned
 // by distinct teams so the base distance is cross_module_different_owner.
-func roleModules(srcRole config.ModuleRole) map[string]config.ModuleDef {
-	return map[string]config.ModuleDef{
+func roleModules(srcRole module.Role) map[string]module.ModuleDef {
+	return map[string]module.ModuleDef{
 		"src": {
 			Paths: []string{"src/**"},
 			Owner: ownerTeamX,
@@ -49,19 +50,19 @@ func TestRun_RoleSuppressesOutboundImbalance(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		role         config.ModuleRole
+		role         module.Role
 		wantSeverity coupling.Severity
 		wantDistance coupling.Distance
 	}{
 		// Capped to same_owner: S=10,D=4,V=10 → max(6,0)+1=7 → low (not none).
-		{"composition_root → distance capped, severity low", config.RoleCompositionRoot, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
-		{"generated → distance capped, severity low", config.RoleGenerated, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
-		{"test → distance capped, severity low", config.RoleTest, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
+		{"composition_root → distance capped, severity low", module.RoleCompositionRoot, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
+		{"generated → distance capped, severity low", module.RoleGenerated, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
+		{"test → distance capped, severity low", module.RoleTest, coupling.SeverityLow, coupling.DistanceCrossModuleSameOwner},
 		// Uncapped: S=10,D=7,V=10 → max(3,0)+1=4 → high.
-		{"adapter → still flagged", config.RoleAdapter, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
-		{"core → still flagged", config.RoleCore, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
-		{"shared_model → still flagged", config.RoleSharedModel, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
-		{"no role → still flagged", config.ModuleRole(""), coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
+		{"adapter → still flagged", module.RoleAdapter, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
+		{"core → still flagged", module.RoleCore, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
+		{"shared_model → still flagged", module.RoleSharedModel, coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
+		{"no role → still flagged", module.Role(""), coupling.SeverityHigh, coupling.DistanceCrossModuleDiffOwner},
 	}
 
 	for _, tc := range tests {
@@ -86,12 +87,12 @@ func TestRun_RoleSuppressesOutboundImbalance(t *testing.T) {
 // outbound edges only: an edge INTO a composition_root keeps its real distance,
 // so a genuine imbalance pointing at the wiring module is not hidden.
 func TestRun_RoleDoesNotAffectInboundEdges(t *testing.T) {
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"wire": {
 			Paths:     []string{"wire/**"},
 			Internal:  []string{"wire/internal/**"},
 			Owner:     ownerTeamX,
-			Role:      config.RoleCompositionRoot,
+			Role:      module.RoleCompositionRoot,
 			Subdomain: subdomainCore,
 		},
 		"caller": {

@@ -8,6 +8,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // modABKey is the sorted null-delimited key for the modA→modB pair used in label maps.
@@ -67,7 +68,7 @@ func TestSymmetricStrengthUpgrade(t *testing.T) {
 				// no StrengthHint — pinned label provides model
 			},
 			cfg: config.ClassifyConfig{
-				Modules: map[string]config.ModuleDef{
+				Modules: map[string]module.ModuleDef{
 					modNameA: {Paths: []string{pathsA}},
 					modNameB: {Paths: []string{pathsB}},
 				},
@@ -100,7 +101,7 @@ func TestSymmetricStrengthUpgrade(t *testing.T) {
 				// no StrengthHint — pinned label provides functional
 			},
 			cfg: config.ClassifyConfig{
-				Modules: map[string]config.ModuleDef{
+				Modules: map[string]module.ModuleDef{
 					modNameA: {Paths: []string{pathsA}},
 					modNameB: {Paths: []string{pathsB}},
 				},
@@ -150,7 +151,7 @@ func TestSymmetricDistributedMonolithDetected(t *testing.T) {
 	}
 
 	cfg := config.ClassifyConfig{
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"svc-a": {
 				Paths:      []string{"services/a/**"},
 				DeployUnit: "svc-a",
@@ -220,7 +221,7 @@ func TestSymmetricUpgradeCarriesCloneLocations(t *testing.T) {
 		{File: "crate_b/src/lib.rs", Line: 40},
 	}
 	cfg := config.ClassifyConfig{
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			modNameA: {Paths: []string{pathsA}},
 			modNameB: {Paths: []string{pathsB}},
 		},

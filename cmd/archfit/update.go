@@ -20,6 +20,7 @@ import (
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/scope"
 )
 
@@ -309,9 +310,9 @@ func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredCo
 		return cfg
 	}
 	out := cfg
-	out.Modules = make(map[string]config.ModuleDef, len(discovered.Modules))
+	out.Modules = make(map[string]module.ModuleDef, len(discovered.Modules))
 	for _, mod := range discovered.Modules {
-		def := config.ModuleDef{
+		def := module.ModuleDef{
 			Paths:    append([]string(nil), mod.Paths...),
 			Public:   append([]string(nil), mod.Public...),
 			Internal: append([]string(nil), mod.Internal...),
@@ -552,7 +553,7 @@ func collectUpdateRepoEvidence(root string) []string {
 }
 
 // configToExisting projects config.Modules into []initcfg.ExistingModule.
-func configToExisting(modules map[string]config.ModuleDef) []initcfg.ExistingModule {
+func configToExisting(modules map[string]module.ModuleDef) []initcfg.ExistingModule {
 	out := make([]initcfg.ExistingModule, 0, len(modules))
 	for name, def := range modules {
 		out = append(out, initcfg.ExistingModule{

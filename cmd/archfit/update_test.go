@@ -13,6 +13,7 @@ import (
 	"github.com/alexei-led/archfit/internal/initcfg"
 	"github.com/alexei-led/archfit/internal/llm"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -93,7 +94,7 @@ func TestDistanceConfigCandidates_DynamicImportsBecomeReviewOnlyHints(t *testing
 	if err := os.WriteFile(filepath.Join(dir, testUpdatePluginsModule, "loader.py"), []byte("def load(name):\n    return __import__(name)\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Config{Modules: map[string]config.ModuleDef{
+	cfg := config.Config{Modules: map[string]module.ModuleDef{
 		testUpdatePluginsModule: {Paths: []string{testUpdatePluginsModule + "/**"}},
 	}}
 
@@ -115,7 +116,7 @@ func TestDistanceConfigCandidates_DynamicImportsBecomeReviewOnlyHints(t *testing
 func TestStaticExternalDistanceConfigCandidatesFromGraph_GoThirdPartyHint(t *testing.T) {
 	t.Parallel()
 
-	cfg := config.Config{Modules: map[string]config.ModuleDef{
+	cfg := config.Config{Modules: map[string]module.ModuleDef{
 		testUpdateModuleA: {Paths: []string{testUpdateModuleAGlob}},
 	}}
 	g := graph.Build([]graph.Facts{{
@@ -146,7 +147,7 @@ func TestStaticExternalDistanceConfigCandidatesFromGraph_GoThirdPartyHint(t *tes
 func TestCandidateConfigForUpdate_UsesDiscoveredModules(t *testing.T) {
 	t.Parallel()
 
-	cfg := config.Config{Modules: map[string]config.ModuleDef{
+	cfg := config.Config{Modules: map[string]module.ModuleDef{
 		testUpdateModuleA: {
 			Paths:      []string{"old/a/**"},
 			Public:     []string{"old/public/**"},
@@ -195,7 +196,7 @@ func TestStaticExternalDistanceConfigCandidatesFromGraph_UsesDiscoveredModuleCon
 			{From: testUpdateModuleAFile, To: "package:github.com/aws/aws-sdk-go-v2/service/s3", Kind: graph.EdgeKindImports, Language: graph.LangGo, Locations: []graph.Location{{File: testUpdateModuleAPath, Line: 7}}},
 		},
 	}})
-	cfg := config.Config{Modules: map[string]config.ModuleDef{
+	cfg := config.Config{Modules: map[string]module.ModuleDef{
 		testUpdateModuleA: {Paths: []string{"old/a/**"}},
 	}}
 	if raw := staticExternalDistanceConfigCandidatesFromGraph(g, cfg); len(raw) != 0 {
@@ -230,7 +231,7 @@ func TestDeployUnitSuggestions_DeterministicHintsOnlyForMissingConfig(t *testing
 			return toolrun.Output{Stdout: []byte(filepath.Join(dir, "cmd", testUpdateWebModule) + "\n")}, nil
 		},
 	}
-	cfg := config.Config{Modules: map[string]config.ModuleDef{
+	cfg := config.Config{Modules: map[string]module.ModuleDef{
 		testUpdateWebModule: {Paths: []string{"cmd/web/**"}},
 		"api":               {Paths: []string{"cmd/api/**"}, DeployUnit: "api-service"},
 	}}
@@ -277,7 +278,7 @@ func TestClassifyTargetsForUpdate_IncludesSyntheticOverridePath(t *testing.T) {
 		syntheticModule = "mycrate-state"
 		syntheticPath   = "mycrate::state"
 	)
-	cfg := config.Config{Modules: map[string]config.ModuleDef{
+	cfg := config.Config{Modules: map[string]module.ModuleDef{
 		syntheticModule: {Paths: []string{syntheticPath}},
 	}}
 	report := initcfg.UpdateReport{Unclassified: []string{syntheticModule}}

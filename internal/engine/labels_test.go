@@ -9,6 +9,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/clone"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 const (
@@ -24,8 +25,8 @@ const (
 
 // testTwoCrateModuleMap returns a ModuleMap with two modules matching the
 // crate_a/crate_b path layout shared by the tests below.
-func testTwoCrateModuleMap() config.ModuleMap {
-	return config.BuildModuleMap(map[string]config.ModuleDef{
+func testTwoCrateModuleMap() module.Map {
+	return module.BuildMap(map[string]module.ModuleDef{
 		testCrateA: {Paths: []string{testCrateAGlob}},
 		testCrateB: {Paths: []string{testCrateBGlob}},
 	})

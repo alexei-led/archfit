@@ -10,6 +10,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/status"
 )
@@ -57,11 +58,11 @@ const dynamicImportSiteCap = 5
 // metrics, or the verdict — this is evidence only.
 // It is exported so config update can show the same review-only distance hints
 // as analyze without running the full engine pipeline.
-func BuildDynamicImports(sites []diagnostic.DynamicImportSite, mm config.ModuleMap) []diagnostic.DynamicImport {
+func BuildDynamicImports(sites []diagnostic.DynamicImportSite, mm module.Map) []diagnostic.DynamicImport {
 	return buildDynamicImports(sites, mm)
 }
 
-func buildDynamicImports(sites []diagnostic.DynamicImportSite, mm config.ModuleMap) []diagnostic.DynamicImport {
+func buildDynamicImports(sites []diagnostic.DynamicImportSite, mm module.Map) []diagnostic.DynamicImport {
 	byModule := make(map[string][]diagnostic.DynamicImportSite)
 	for _, s := range sites {
 		mod, ok := mm.ModuleForFile(s.File)
@@ -100,7 +101,7 @@ const runtimeAsyncSiteCap = 5
 // deterministic per-module rollup for the diagnostic.
 // Returns an empty (non-nil) slice when no sites were found.
 // Never touches the graph, metrics, or the verdict — this is evidence only.
-func buildRuntimeAsync(sites []diagnostic.RuntimeAsyncSite, confidence string, mm config.ModuleMap) []diagnostic.RuntimeAsyncModule {
+func buildRuntimeAsync(sites []diagnostic.RuntimeAsyncSite, confidence string, mm module.Map) []diagnostic.RuntimeAsyncModule {
 	byModule := make(map[string][]diagnostic.RuntimeAsyncSite)
 	for _, s := range sites {
 		mod, ok := mm.ModuleForFile(s.File)
@@ -133,11 +134,11 @@ func buildRuntimeAsync(sites []diagnostic.RuntimeAsyncSite, confidence string, m
 // runtime target, and integration kind. The result is relationship-level evidence
 // for future runtime-distance scoring, but remains report-only today. It is
 // exported so config update can show the same review-only distance hints as analyze.
-func BuildRuntimeAsyncEdges(sites []diagnostic.RuntimeAsyncSite, confidence string, mm config.ModuleMap) []diagnostic.RuntimeAsyncEdge {
+func BuildRuntimeAsyncEdges(sites []diagnostic.RuntimeAsyncSite, confidence string, mm module.Map) []diagnostic.RuntimeAsyncEdge {
 	return buildRuntimeAsyncEdges(sites, confidence, mm)
 }
 
-func buildRuntimeAsyncEdges(sites []diagnostic.RuntimeAsyncSite, confidence string, mm config.ModuleMap) []diagnostic.RuntimeAsyncEdge {
+func buildRuntimeAsyncEdges(sites []diagnostic.RuntimeAsyncSite, confidence string, mm module.Map) []diagnostic.RuntimeAsyncEdge {
 	type edgeKey struct {
 		fromModule string
 		target     string
@@ -315,11 +316,11 @@ const (
 // external_systems hints. The candidates deliberately do not alter distance,
 // scoring, findings, baselines, or gate verdicts: an external seam enters the
 // BC model only after a human declares it in config.
-func BuildStaticExternalDistanceCandidates(g *graph.Graph, idx coupling.Index, mm config.ModuleMap) []diagnostic.DistanceConfigCandidate {
+func BuildStaticExternalDistanceCandidates(g *graph.Graph, idx coupling.Index, mm module.Map) []diagnostic.DistanceConfigCandidate {
 	return buildStaticExternalDistanceCandidates(g, idx, mm)
 }
 
-func buildStaticExternalDistanceCandidates(g *graph.Graph, idx coupling.Index, mm config.ModuleMap) []diagnostic.DistanceConfigCandidate {
+func buildStaticExternalDistanceCandidates(g *graph.Graph, idx coupling.Index, mm module.Map) []diagnostic.DistanceConfigCandidate {
 	if g == nil || len(idx) == 0 {
 		return nil
 	}
@@ -484,7 +485,7 @@ func indexKeyForEdge(e graph.Edge) string {
 	return e.From + "\x00" + e.To + "\x00" + string(e.Kind)
 }
 
-func moduleForNodeID(id string, mm config.ModuleMap) (string, bool) {
+func moduleForNodeID(id string, mm module.Map) (string, bool) {
 	kind, path, ok := splitNodeID(id)
 	if !ok || path == "" {
 		return "", false
@@ -703,7 +704,7 @@ func buildClassifiedEdgeSummary(idx coupling.Index) *diagnostic.ClassifiedEdgeSu
 	return buildClassifiedEdgeSummaryWithCloneOnly(idx, nil, config.DuplicatedKnowledgePolicyAdvisory)
 }
 
-func buildClassifiedEdgeSummaryForRun(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy config.DuplicatedKnowledgePolicy, mm config.ModuleMap) *diagnostic.ClassifiedEdgeSummary {
+func buildClassifiedEdgeSummaryForRun(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy config.DuplicatedKnowledgePolicy, mm module.Map) *diagnostic.ClassifiedEdgeSummary {
 	return buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx, cloneOnly, policy, mm)
 }
 
@@ -730,10 +731,10 @@ func buildClassifiedEdgeSummaryForRun(idx coupling.Index, cloneOnly []classify.C
 // The summary uses string keys (not coupling package constants) so it stays
 // usable from diagnostic (stdlib-only) and score packages.
 func buildClassifiedEdgeSummaryWithCloneOnly(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy config.DuplicatedKnowledgePolicy) *diagnostic.ClassifiedEdgeSummary {
-	return buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx, cloneOnly, policy, config.ModuleMap{})
+	return buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx, cloneOnly, policy, module.Map{})
 }
 
-func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy config.DuplicatedKnowledgePolicy, mm config.ModuleMap) *diagnostic.ClassifiedEdgeSummary {
+func buildClassifiedEdgeSummaryWithCloneOnlyAndModules(idx coupling.Index, cloneOnly []classify.CloneOnlyPair, policy config.DuplicatedKnowledgePolicy, mm module.Map) *diagnostic.ClassifiedEdgeSummary {
 	s := &diagnostic.ClassifiedEdgeSummary{
 		ByStrength:          make(map[string]int),
 		ByDistance:          make(map[string]int),
@@ -858,7 +859,7 @@ type distanceCompressionAccumulator struct {
 	ancestorCounts map[int]int
 }
 
-func (a *distanceCompressionAccumulator) addEdge(key string, cl coupling.Classification, mm config.ModuleMap) {
+func (a *distanceCompressionAccumulator) addEdge(key string, cl coupling.Classification, mm module.Map) {
 	if cl.DistanceBasis != coupling.DistanceBasisStructure || cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown {
 		return
 	}
@@ -925,7 +926,7 @@ func copyDistanceOmittedRungReasons(in []classify.DistanceOmittedRungReason) []d
 	return out
 }
 
-func addConnectedModules(modules map[string]struct{}, key string, cl coupling.Classification, mm config.ModuleMap) {
+func addConnectedModules(modules map[string]struct{}, key string, cl coupling.Classification, mm module.Map) {
 	if cl.Distance == coupling.DistanceSameModule || cl.Distance == coupling.DistanceUnknown {
 		return
 	}

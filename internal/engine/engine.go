@@ -15,6 +15,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/model/signal"
 	"github.com/alexei-led/archfit/internal/model/symbol"
 	"github.com/alexei-led/archfit/internal/ports"
@@ -93,7 +94,7 @@ func AugmentClassifyConfig(g *graph.Graph, cfg config.ClassifyConfig) config.Cla
 	// consumers see auto-registered members. The Augment* calls above mutate
 	// cfg.Modules but NOT cfg.ModuleMap, which was built at config-view construction
 	// time.
-	cfg.ModuleMap = config.BuildModuleMap(cfg.Modules)
+	cfg.ModuleMap = module.BuildMap(cfg.Modules)
 	return cfg
 }
 

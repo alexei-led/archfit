@@ -7,6 +7,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 const (
@@ -170,8 +171,8 @@ func TestCodeStructureDistance(t *testing.T) {
 // code structure (DiffOwner).
 func TestClassifyDistance_Precedence(t *testing.T) {
 	fromPath, toPath := distModCore+"/x.go", distModAPI+"/y.go"
-	mods := func(fromOwner, toOwner, fromUnit, toUnit string) map[string]config.ModuleDef {
-		return map[string]config.ModuleDef{
+	mods := func(fromOwner, toOwner, fromUnit, toUnit string) map[string]module.ModuleDef {
+		return map[string]module.ModuleDef{
 			distModCore: {Paths: []string{distModCore + "/**"}, Owner: fromOwner, DeployUnit: fromUnit},
 			distModAPI:  {Paths: []string{distModAPI + "/**"}, Owner: toOwner, DeployUnit: toUnit},
 		}
@@ -180,7 +181,7 @@ func TestClassifyDistance_Precedence(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		modules   map[string]config.ModuleDef
+		modules   map[string]module.ModuleDef
 		explicit  map[string]bool
 		want      coupling.Distance
 		wantBasis coupling.DistanceBasis
@@ -267,7 +268,7 @@ func TestClassifyDistance_Precedence(t *testing.T) {
 }
 
 func TestClassifyDistance_SingleOwnerHierarchicalRepoUsesStructure(t *testing.T) {
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		modInternalClassify: {Paths: []string{modInternalClassify + "/**"}, Owner: distOwnerTeamX},
 		modCmdArchfit:       {Paths: []string{modCmdArchfit + "/**"}, Owner: distOwnerTeamX},
 	}
@@ -338,7 +339,7 @@ func TestDeployDistance(t *testing.T) {
 // maps are built once before the edge loop and passed in, not rebuilt per edge.
 func TestClassifyDistance_MultiOwnerPrecomputed(t *testing.T) {
 	// Two modules with two distinct explicit owners — non-degenerate.
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		distModCore: {Paths: []string{distModCore + "/**"}, Owner: distOwnerTeamX},
 		distModAPI:  {Paths: []string{distModAPI + "/**"}, Owner: distOwnerTeamY},
 	}
@@ -384,7 +385,7 @@ func TestClassifyDistance_MultiOwnerPrecomputed(t *testing.T) {
 
 	// Same-owner pair in the same config → degenerate (1 distinct owner) →
 	// falls through to code structure. Flat names → SameOwner floor (P1 fix).
-	modulesSame := map[string]config.ModuleDef{
+	modulesSame := map[string]module.ModuleDef{
 		distModCore: {Paths: []string{distModCore + "/**"}, Owner: distOwnerTeamX},
 		distModAPI:  {Paths: []string{distModAPI + "/**"}, Owner: distOwnerTeamX},
 	}

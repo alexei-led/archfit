@@ -8,6 +8,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // DistanceCompressionEvidence records the deterministic distance-ladder rungs
@@ -256,9 +257,9 @@ func isDegenerateOwnerMap(owners map[string]string) bool {
 // nature. Their outbound edges must not be scored as high-distance/unbalanced.
 // adapter/core/shared_model are ordinary sources — their edges are classified
 // normally so a real core→core imbalance still surfaces.
-func cohesiveRole(r config.ModuleRole) bool {
+func cohesiveRole(r module.Role) bool {
 	switch r {
-	case config.RoleCompositionRoot, config.RoleGenerated, config.RoleTest:
+	case module.RoleCompositionRoot, module.RoleGenerated, module.RoleTest:
 		return true
 	default:
 		return false

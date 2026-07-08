@@ -9,6 +9,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // Fixture constants shared by the local_coupling tests.
@@ -26,11 +27,11 @@ const (
 // cross-module edge into module "b" — the only edge coupling_balance or
 // collectAdvisories may ever report on.
 func localCouplingFixture() (config.ClassifyConfig, *graph.Graph, coupling.Index) {
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"a": {Paths: []string{testServicesAGlob}, Subdomain: lcSubdomainCore},
 		"b": {Paths: []string{testServicesBGlob}, Subdomain: "supporting"},
 	}
-	cfg := config.ClassifyConfig{Modules: modules, ModuleMap: config.BuildModuleMap(modules)}
+	cfg := config.ClassifyConfig{Modules: modules, ModuleMap: module.BuildMap(modules)}
 
 	edges := []graph.Edge{
 		// Ball of mud: model/same_module/high → balance 2, critical → offender,
@@ -127,7 +128,7 @@ func TestBuildLocalCoupling(t *testing.T) {
 // (grimp-style dotted node IDs), and Rust intra-crate "::" module edge
 // (cargo-modules-style package nodes).
 func TestBuildLocalCoupling_FourLanguages(t *testing.T) {
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"gomod":   {Paths: []string{"services/gomod/**"}, Subdomain: lcSubdomainCore},
 		"tsmod":   {Paths: []string{"src/ui/**"}, Subdomain: lcSubdomainCore},
 		"pymod":   {Paths: []string{"pkg.**"}, Subdomain: lcSubdomainCore},
@@ -156,7 +157,7 @@ func TestBuildLocalCoupling_FourLanguages(t *testing.T) {
 	}
 	g := graph.Build(facts)
 	idx := classify.Run(g, cfg)
-	mm := config.BuildModuleMap(modules)
+	mm := module.BuildMap(modules)
 
 	s := buildClassifiedEdgeSummary(idx)
 	if s.SameModule != 4 {
@@ -189,7 +190,7 @@ func TestBuildLocalCoupling_FourLanguages(t *testing.T) {
 // same-module Functional-strength edge — scored, but neither Contract nor
 // Model — does not.
 func TestBuildLocalCoupling_ContractCountsAsComplexity(t *testing.T) {
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"a": {Paths: []string{"pkg/q/**"}, Subdomain: lcSubdomainCore},
 	}
 	cfg := config.ClassifyConfig{Modules: modules}
@@ -207,7 +208,7 @@ func TestBuildLocalCoupling_ContractCountsAsComplexity(t *testing.T) {
 	}
 	g := graph.Build([]graph.Facts{{Edges: edges, Language: graph.LangGo}})
 	idx := classify.Run(g, cfg)
-	mm := config.BuildModuleMap(modules)
+	mm := module.BuildMap(modules)
 
 	lc := buildLocalCoupling(g, idx, mm)
 	if len(lc) != 1 {
@@ -227,7 +228,7 @@ func TestBuildLocalCoupling_ContractCountsAsComplexity(t *testing.T) {
 // keeps only the cap's worth of worst (lowest-balance) offenders, sorted by
 // balance then From then To.
 func TestBuildLocalCoupling_OffenderCap(t *testing.T) {
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"a": {Paths: []string{"pkg/w/**"}, Subdomain: lcSubdomainCore},
 	}
 	cfg := config.ClassifyConfig{Modules: modules}
@@ -243,7 +244,7 @@ func TestBuildLocalCoupling_OffenderCap(t *testing.T) {
 	}
 	g := graph.Build([]graph.Facts{{Edges: edges, Language: graph.LangGo}})
 	idx := classify.Run(g, cfg)
-	mm := config.BuildModuleMap(modules)
+	mm := module.BuildMap(modules)
 
 	lc := buildLocalCoupling(g, idx, mm)
 	if len(lc) != 1 {

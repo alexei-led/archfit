@@ -9,6 +9,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // TestGroupBCAdvisories_StatusSplitsTheGroup verifies that Status is part of
@@ -18,11 +19,11 @@ import (
 // a baseline-suppressed edge must never inflate a "new" rollup's count, and a
 // new edge must never hide inside an already-accepted baseline rollup.
 func TestGroupBCAdvisories_StatusSplitsTheGroup(t *testing.T) {
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"a": {Paths: []string{"pkg/x/**"}},
 		"b": {Paths: []string{"pkg/y/**"}},
 	}
-	cfg := config.ClassifyConfig{Modules: modules, ModuleMap: config.BuildModuleMap(modules)}
+	cfg := config.ClassifyConfig{Modules: modules, ModuleMap: module.BuildMap(modules)}
 	edge := graph.Edge{
 		From: "file:pkg/x/f.go", To: "file:pkg/y/g.go",
 		Kind: graph.EdgeKindImports, Language: graph.LangGo,

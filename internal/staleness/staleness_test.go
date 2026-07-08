@@ -7,6 +7,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/staleness"
 )
 
@@ -40,7 +41,7 @@ func TestCheck_DisabledReturnsNil(t *testing.T) {
 	})
 	cfg := config.StalenessConfig{
 		Enabled: false,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"foo": {Paths: []string{globBarAll}},
 		},
 	}
@@ -59,7 +60,7 @@ func TestCheck_UncoveredPath(t *testing.T) {
 	})
 	cfg := config.StalenessConfig{
 		Enabled: true,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			// Only claims internal/bar/**.
 			"bar": {Paths: []string{globBarAll}},
 		},
@@ -85,7 +86,7 @@ func TestCheck_DeadRule(t *testing.T) {
 	})
 	cfg := config.StalenessConfig{
 		Enabled: true,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"bar":   {Paths: []string{globBarAll}},
 			"ghost": {Paths: []string{globGhostAll}}, // matches nothing
 		},
@@ -115,7 +116,7 @@ func TestCheck_StaleReview_Triggers(t *testing.T) {
 	cfg := config.StalenessConfig{
 		Enabled:   true,
 		Threshold: 30 * 24 * time.Hour,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			modAuth: {
 				Paths:      []string{globAuthAll},
 				ReviewedAt: reviewedAt,
@@ -141,7 +142,7 @@ func TestCheck_StaleReview_DoesNotTrigger(t *testing.T) {
 	cfg := config.StalenessConfig{
 		Enabled:   true,
 		Threshold: 30 * 24 * time.Hour,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			modAuth: {
 				Paths:      []string{globAuthAll},
 				ReviewedAt: reviewedAt,
@@ -167,7 +168,7 @@ func TestCheck_StaleReview_ZeroReviewedAt_NoFinding(t *testing.T) {
 	cfg := config.StalenessConfig{
 		Enabled:   true,
 		Threshold: 30 * 24 * time.Hour,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			modAuth: {
 				Paths: []string{globAuthAll},
 				// ReviewedAt zero: never reviewed.
@@ -194,7 +195,7 @@ func TestCheck_DefaultThreshold(t *testing.T) {
 	cfg := config.StalenessConfig{
 		Enabled:   true,
 		Threshold: 0, // zero → defaultThreshold (90 days)
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"api": {
 				Paths:      []string{"pkg/api/**"},
 				ReviewedAt: reviewedAt,
@@ -218,7 +219,7 @@ func TestCheck_NonPackageNodesNotUncovered(t *testing.T) {
 	})
 	cfg := config.StalenessConfig{
 		Enabled: true,
-		Modules: map[string]config.ModuleDef{},
+		Modules: map[string]module.ModuleDef{},
 	}
 	findings := staleness.Check(g, cfg, time.Now())
 
@@ -241,7 +242,7 @@ func TestCheck_AllFindingsAreAdvisory(t *testing.T) {
 	cfg := config.StalenessConfig{
 		Enabled:   true,
 		Threshold: 30 * 24 * time.Hour,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			// covered: valid glob, old review → stale_review
 			"covered": {
 				Paths:      []string{"internal/covered/**"},
@@ -269,7 +270,7 @@ func TestCheck_EmptyGraph_NoUncovered(t *testing.T) {
 	g := buildGraph(nil)
 	cfg := config.StalenessConfig{
 		Enabled: true,
-		Modules: map[string]config.ModuleDef{
+		Modules: map[string]module.ModuleDef{
 			"foo": {Paths: []string{"internal/foo/**"}},
 		},
 	}

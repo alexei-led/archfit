@@ -7,6 +7,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // Fixture literals for the external_systems tests.
@@ -27,7 +28,7 @@ const (
 // the glob against the target form its extractor emits: a Go import path, a TS
 // resolved package path, a Python dotted module, and a Rust crate name.
 func TestRun_ExternalSystems(t *testing.T) {
-	modules := map[string]config.ModuleDef{
+	modules := map[string]module.ModuleDef{
 		"a": {Paths: []string{"services/a/**"}, Owner: ownerTeamX, Subdomain: subdomainCore},
 		"b": {Paths: []string{"services/b/**"}, Owner: ownerTeamY, Subdomain: subdomainSupporting},
 	}
@@ -213,8 +214,8 @@ func TestRun_ExternalSystems(t *testing.T) {
 		// Locks the documented ordering: the external match runs AFTER the
 		// cohesive-role distance cap — a composition root's edge to a declared
 		// vendor system is a real integration seam, not cohesive wiring.
-		rootModules := map[string]config.ModuleDef{
-			"a": {Paths: []string{pathsA}, Owner: ownerTeamX, Subdomain: subdomainCore, Role: config.RoleCompositionRoot},
+		rootModules := map[string]module.ModuleDef{
+			"a": {Paths: []string{pathsA}, Owner: ownerTeamX, Subdomain: subdomainCore, Role: module.RoleCompositionRoot},
 		}
 		edge := graph.Edge{
 			From: extFromGo, To: extToAwsS3,

@@ -7,6 +7,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	historygit "github.com/alexei-led/archfit/internal/history/git"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
@@ -47,7 +48,7 @@ func buildVolatilityCorroboration(ctx context.Context, gitRoot, subtreePrefix st
 	return out
 }
 
-func declaredVolatilityLabel(def config.ModuleDef) string {
+func declaredVolatilityLabel(def module.ModuleDef) string {
 	switch strings.ToLower(def.Volatility) {
 	case volatilityHigh:
 		return volatilityHigh

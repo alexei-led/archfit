@@ -7,17 +7,18 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/ownership"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
 
-// buildModuleMap is a test helper that constructs a config.ModuleMap from a
+// buildModuleMap is a test helper that constructs a module.Map from a
 // name→paths mapping using the exported ForClassify projection.
-func buildModuleMap(t *testing.T, mods map[string][]string) config.ModuleMap {
+func buildModuleMap(t *testing.T, mods map[string][]string) module.Map {
 	t.Helper()
-	modules := make(map[string]config.ModuleDef, len(mods))
+	modules := make(map[string]module.ModuleDef, len(mods))
 	for name, paths := range mods {
-		modules[name] = config.ModuleDef{Paths: paths}
+		modules[name] = module.ModuleDef{Paths: paths}
 	}
 	cfg := config.Config{
 		Version: 1,

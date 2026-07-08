@@ -10,6 +10,7 @@ import (
 	"github.com/alexei-led/archfit/internal/model/fileclass"
 	"github.com/alexei-led/archfit/internal/model/finding"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/syntax"
 )
 
@@ -65,7 +66,7 @@ func applyPinnedLabels(g *graph.Graph, classifyCfg *config.ClassifyConfig, mode 
 //
 // Exported because enrich (cmd) must stamp drafts with EXACTLY the hash the
 // engine will later verify — one computation, two callers.
-func PairEvidence(g *graph.Graph, mm config.ModuleMap, wanted map[string]struct{}) map[string]string {
+func PairEvidence(g *graph.Graph, mm module.Map, wanted map[string]struct{}) map[string]string {
 	if len(wanted) == 0 {
 		return nil
 	}
@@ -103,7 +104,7 @@ func PairEvidence(g *graph.Graph, mm config.ModuleMap, wanted map[string]struct{
 // must not trigger a StrengthSymmetric upgrade on production coupling edges (C4).
 // index is the FileClassIndex from the loc walk (nil is safe — falls back to
 // built-in filename heuristics: mock_*.go, _test.go, *.pb.go, etc.).
-func buildClonePairSet(clusters []clone.Cluster, mm config.ModuleMap, index map[string]fileclass.FileClass) (map[string]struct{}, map[string][]graph.Location) {
+func buildClonePairSet(clusters []clone.Cluster, mm module.Map, index map[string]fileclass.FileClass) (map[string]struct{}, map[string][]graph.Location) {
 	prodClusters := make([]clone.Cluster, 0, len(clusters))
 	cfg := syntax.FileClassConfig{} // empty: index already encodes user config patterns; fallback uses built-ins
 	for _, c := range clusters {

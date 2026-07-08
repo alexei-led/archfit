@@ -14,6 +14,8 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/goccy/go-yaml"
+
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // Config is the parsed and validated content of an archfit.yaml file.
@@ -29,14 +31,14 @@ import (
 //   - module_review  — staleness gating of the module declarations
 //   - file_class / outputs — classification overrides and output formats
 type Config struct {
-	Version   int                  `yaml:"version" jsonschema:"required"`
-	Exclude   []string             `yaml:"exclude"`
-	Languages LanguagesConfig      `yaml:"languages"`
-	Analyzers AnalyzersConfig      `yaml:"analyzers"`
-	AI        AIConfig             `yaml:"ai"`
-	Coupling  CouplingConfig       `yaml:"coupling"`
-	Layers    []string             `yaml:"layers"`
-	Modules   map[string]ModuleDef `yaml:"modules"`
+	Version   int                         `yaml:"version" jsonschema:"required"`
+	Exclude   []string                    `yaml:"exclude"`
+	Languages LanguagesConfig             `yaml:"languages"`
+	Analyzers AnalyzersConfig             `yaml:"analyzers"`
+	AI        AIConfig                    `yaml:"ai"`
+	Coupling  CouplingConfig              `yaml:"coupling"`
+	Layers    []string                    `yaml:"layers"`
+	Modules   map[string]module.ModuleDef `yaml:"modules"`
 	// ExternalSystems declares external integration seams (book Ch10 Example 1)
 	// whose edges enter coupling_balance scoring at declared_external (D=10).
 	ExternalSystems map[string]ExternalSystemDef `yaml:"external_systems,omitempty"`
@@ -209,7 +211,7 @@ func validate(cfg Config) error {
 	}
 	for _, name := range sortedKeys(cfg.Modules) {
 		if r := cfg.Modules[name].Role; r != "" {
-			if _, ok := moduleRoles[r]; !ok {
+			if !module.ValidRole(r) {
 				return fmt.Errorf("modules.%s.role %q is not one of: composition_root, adapter, core, shared_model, generated, test", name, r)
 			}
 		}

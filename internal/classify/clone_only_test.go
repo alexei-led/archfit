@@ -7,6 +7,7 @@ import (
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/coupling"
 	"github.com/alexei-led/archfit/internal/model/graph"
+	"github.com/alexei-led/archfit/internal/model/module"
 )
 
 // Clone evidence file constants for the modA/modB pair, plus config volatility
@@ -35,7 +36,7 @@ func cloneOnlyCfg(mutate func(*config.ClassifyConfig)) config.ClassifyConfig {
 }
 
 // setModule mutates one module def in place (map values are structs).
-func setModule(c *config.ClassifyConfig, name string, mutate func(*config.ModuleDef)) {
+func setModule(c *config.ClassifyConfig, name string, mutate func(*module.ModuleDef)) {
 	def := c.Modules[name]
 	mutate(&def)
 	c.Modules[name] = def
@@ -99,8 +100,8 @@ func TestCloneOnlyPairs(t *testing.T) {
 			name: "frozen pair still detected for score-policy rollup",
 			g:    emptyGraph,
 			cfg: cloneOnlyCfg(func(c *config.ClassifyConfig) {
-				setModule(c, modNameA, func(d *config.ModuleDef) { d.Volatility = cfgVolFrozen })
-				setModule(c, modNameB, func(d *config.ModuleDef) { d.Volatility = cfgVolFrozen })
+				setModule(c, modNameA, func(d *module.ModuleDef) { d.Volatility = cfgVolFrozen })
+				setModule(c, modNameB, func(d *module.ModuleDef) { d.Volatility = cfgVolFrozen })
 			}),
 			want: 1,
 		},
@@ -182,8 +183,8 @@ func TestCloneOnlyPairs_Classification(t *testing.T) {
 	t.Run("worst-of-pair volatility drives the score", func(t *testing.T) {
 		t.Parallel()
 		cfg := cloneOnlyCfg(func(c *config.ClassifyConfig) {
-			setModule(c, modNameA, func(d *config.ModuleDef) { d.Volatility = cfgVolLow })
-			setModule(c, modNameB, func(d *config.ModuleDef) { d.Volatility = extVolHigh })
+			setModule(c, modNameA, func(d *module.ModuleDef) { d.Volatility = cfgVolLow })
+			setModule(c, modNameB, func(d *module.ModuleDef) { d.Volatility = extVolHigh })
 		})
 		pairs := classify.CloneOnlyPairs(g, cfg)
 		if len(pairs) != 1 {
@@ -197,8 +198,8 @@ func TestCloneOnlyPairs_Classification(t *testing.T) {
 	t.Run("distinct explicit owners → diff-owner distance, high severity", func(t *testing.T) {
 		t.Parallel()
 		cfg := cloneOnlyCfg(func(c *config.ClassifyConfig) {
-			setModule(c, modNameA, func(d *config.ModuleDef) { d.Owner = "team-a" })
-			setModule(c, modNameB, func(d *config.ModuleDef) { d.Owner = "team-b" })
+			setModule(c, modNameA, func(d *module.ModuleDef) { d.Owner = "team-a" })
+			setModule(c, modNameB, func(d *module.ModuleDef) { d.Owner = "team-b" })
 			c.ExplicitOwners = map[string]bool{modNameA: true, modNameB: true}
 		})
 		pairs := classify.CloneOnlyPairs(g, cfg)
@@ -221,8 +222,8 @@ func TestCloneOnlyPairs_Classification(t *testing.T) {
 	t.Run("frozen pair stays score-bearing with no advisory severity", func(t *testing.T) {
 		t.Parallel()
 		cfg := cloneOnlyCfg(func(c *config.ClassifyConfig) {
-			setModule(c, modNameA, func(d *config.ModuleDef) { d.Volatility = cfgVolFrozen })
-			setModule(c, modNameB, func(d *config.ModuleDef) { d.Volatility = cfgVolFrozen })
+			setModule(c, modNameA, func(d *module.ModuleDef) { d.Volatility = cfgVolFrozen })
+			setModule(c, modNameB, func(d *module.ModuleDef) { d.Volatility = cfgVolFrozen })
 		})
 		pairs := classify.CloneOnlyPairs(g, cfg)
 		if len(pairs) != 1 {

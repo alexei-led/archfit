@@ -593,7 +593,7 @@ func TestModuleNameFromKey(t *testing.T) {
 
 // TestRender_RoundTripsThroughConfigLoad is the fitness guard for the implicit
 // YAML contract between initcfg and config: everything Render writes must
-// survive config.Load unchanged. When config.ModuleDef gains a field that
+// survive config.Load unchanged. When module.ModuleDef gains a field that
 // init should generate, this test is where the divergence surfaces.
 func TestRender_RoundTripsThroughConfigLoad(t *testing.T) {
 	rendered := Render(DiscoveredConfig{

@@ -43,7 +43,7 @@ type PathResolver struct {
 // knownFiles is every repo-relative file path seen by the LOC walk
 // (SizeSignals.FileClassIndex keys); crateRootDirs maps a Rust crate name to
 // its repo-relative directory (from graph.CrateRoot); moduleRootDirs maps a
-// config module name to its declared Paths root (config.ModuleRootDirs),
+// config module name to its declared Paths root (module.RootDirs),
 // the last-resort fallback when nothing else resolves. A nil knownFiles
 // disables resolution (see PathResolver).
 //
