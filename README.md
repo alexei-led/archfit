@@ -186,20 +186,19 @@ a Balanced-Coupling risk read, score movement, and agent repair tasks.
 
 The CLI was redesigned in v2.0. These commands and flags changed:
 
-| Old                             | New               | Notes                                    |
-| ------------------------------- | ----------------- | ---------------------------------------- |
-| `archfit analyze --gate`        | `archfit check`   | new CI gate command                      |
-| `archfit --gate`                | `archfit check`   |                                          |
-| `--full`                        | _(removed)_       | full scan is now the default             |
-| `--advisory`                    | _(removed)_       | advisories are shown by default          |
-| `--no-advisories`               | `--no-advisories` | new flag to suppress advisories          |
-| `--severity`                    | `--min-severity`  |                                          |
-| `--llm` on `analyze`            | `--ai-summary`    |                                          |
-| `--llm` on `config init/update` | `--ai-classify`   |                                          |
-| `--llm-provider`                | `--ai-provider`   |                                          |
-| `--llm-model`                   | `--ai-model`      |                                          |
-| `--no-cache`                    | `--refresh`       | now writes updated results to cache      |
-| `--no-config`                   | _(removed)_       | run `archfit config init --root .` first |
+| Old                             | New              | Notes                                                              |
+| ------------------------------- | ---------------- | ------------------------------------------------------------------ |
+| `archfit analyze --gate`        | `archfit check`  | new CI gate command                                                |
+| `archfit --gate`                | `archfit check`  |                                                                    |
+| `--full`                        | _(removed)_      | full scan is now the default                                       |
+| `--advisory`                    | _(removed)_      | advisories are shown by default; use `--no-advisories` to suppress |
+| `--severity`                    | `--min-severity` |                                                                    |
+| `--llm` on `analyze`            | `--ai-summary`   |                                                                    |
+| `--llm` on `config init/update` | `--ai-classify`  |                                                                    |
+| `--llm-provider`                | `--ai-provider`  |                                                                    |
+| `--llm-model`                   | `--ai-model`     |                                                                    |
+| `--no-cache`                    | `--refresh`      | now writes updated results to cache                                |
+| `--no-config`                   | _(removed)_      | run `archfit config init --root .` first                           |
 
 See [commands.md](docs/guide/commands.md) for the full reference.
 

@@ -15,8 +15,9 @@ const tsGlobSuffix = "/**"
 //
 // Discovery order (first match wins):
 //  1. npm/yarn/bun workspaces: read the "workspaces" field (array or {packages:…}
-//     shape) from package.json and expand each workspace glob pattern to real
-//     directories. Each matching directory becomes one module. This handles
+//     shape) from package.json. Each entry is treated as a literal directory or
+//     as a trailing-/* glob (e.g. "code/addons/*"); full filepath.Glob patterns
+//     are not supported. Each matched directory becomes one module. This handles
 //     monorepos like storybook (code/addons/*, code/lib/*, …).
 //  2. Flat src/ or lib/ layout: enumerate immediate subdirectories of src/ or
 //     lib/ if they exist. This handles single-package repos and simple monorepos.

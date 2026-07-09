@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -38,14 +37,16 @@ func TestRun_Analyze_ScorecardFullFlagParses(t *testing.T) {
 	}
 }
 
-func TestRun_Analyze_ScorecardNoConfigFlag(t *testing.T) {
+// TestRun_Analyze_NoConfigFlagRejected verifies that --no-config (removed in v2)
+// produces a parse error. Config is now required for analyze and check.
+func TestRun_Analyze_NoConfigFlagRejected(t *testing.T) {
 	t.Parallel()
-	dir := filepath.Dir(writeViolatingRepo(t))
-	var buf bytes.Buffer
-
-	// TODO: update to new flags
-	// code := Run([]string{cmdAnalyze, fmtScorecard, "--no-config", "--root", dir}, &buf)
-	_ = dir
-	_ = buf
-	t.Skip("TODO: update to new flags")
+	var out, errBuf bytes.Buffer
+	code := RunWithStderr([]string{cmdAnalyze, fmtScorecard, "--no-config"}, &out, &errBuf)
+	if code != 3 {
+		t.Fatalf("analyze --no-config: exit = %d, want 3 (parse error); stderr:\n%s", code, errBuf.String())
+	}
+	if !strings.Contains(errBuf.String(), "--no-config") {
+		t.Errorf("parse error should name the removed flag; stderr:\n%s", errBuf.String())
+	}
 }

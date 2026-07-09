@@ -140,9 +140,11 @@ func tsUnresolvedWarning(cov []diagnostic.Coverage) string {
 }
 
 // loadConfig loads the config file at path. When path equals the default
-// ".archfit.yaml" and the file is absent, it returns config.Default() so the
-// tool works without a config file. An explicit --config path that is missing
-// always returns an error.
+// ".archfit.yaml" and the file is absent, it returns config.Default() so that
+// commands which tolerate a missing config (doctor, explain) can still run.
+// Do NOT call this from analyze or check — use loadAnalysisConfig, which
+// requires the config to exist and returns a clear error when it does not.
+// An explicit non-default --config path that is missing always returns an error.
 func loadConfig(ctx context.Context, path string) (config.Config, error) {
 	cfg, err := config.Load(ctx, path)
 	if err != nil {

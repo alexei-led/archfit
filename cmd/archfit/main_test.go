@@ -365,14 +365,16 @@ func TestRun_Version(t *testing.T) {
 
 func TestRun_NoArgs(t *testing.T) {
 	t.Parallel()
-	var buf bytes.Buffer
-	// Bare invocation routes to analyze (default command). It runs report-only
-	// against the current directory: exits 0 (clean or report-only) or 1 (gate
-	// violation — but --gate is not set so always exits 0 on success). Exit 3
-	// (config/tool error) is the only bad outcome.
-	code := Run(nil, &buf)
-	if code == 3 {
-		t.Fatalf("bare invocation exited 3 (config/tool error); output:\n%s", buf.String())
+	var stdout, stderr bytes.Buffer
+	// Bare invocation routes to analyze (default command). With no .archfit.yaml
+	// in the test working directory (cmd/archfit/), config is now required and
+	// the command exits 3 with a helpful next-command hint.
+	code := RunWithStderr(nil, &stdout, &stderr)
+	if code != 3 {
+		t.Fatalf("bare invocation without config: exit = %d, want 3; stdout:\n%s", code, stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "config init") {
+		t.Errorf("bare invocation error should hint at config init; stderr:\n%s", stderr.String())
 	}
 }
 

@@ -262,14 +262,19 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	return verdictToError(diag.Verdict)
 }
 
-var errAnalysisConfigNotFound = errors.New("config not found")
-
+// loadAnalysisConfig loads the config for analyze/check. Config is always
+// required: unlike loadConfig, it does NOT fall back to config.Default() when
+// .archfit.yaml is absent. Call loadConfig directly only for commands that
+// tolerate a missing config (doctor, explain).
 func loadAnalysisConfig(ctx context.Context, path string) (config.Config, error) {
-	cfg, err := loadConfig(ctx, path)
+	cfg, err := config.Load(ctx, path)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) && filepath.Base(path) == defaultConfigPath {
-			return config.Config{}, errAnalysisConfigNotFound
+		if errors.Is(err, os.ErrNotExist) {
+			return config.Config{}, &exitError{code: 3, msg: fmt.Sprintf("error: config not found: %s\n\u2192 run: archfit config init --root .", path)}
 		}
+		return config.Config{}, err
+	}
+	if err := validateConfigRules(cfg); err != nil {
 		return config.Config{}, err
 	}
 	return cfg, nil
