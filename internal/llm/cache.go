@@ -18,6 +18,9 @@ import (
 type Cache struct {
 	inner Provider
 	dir   string
+
+	// RefreshMode bypasses cache reads but still writes the fresh response.
+	RefreshMode bool
 }
 
 // NewCache wraps inner with a file cache rooted at dir
@@ -34,13 +37,15 @@ func (c *Cache) Name() string { return c.inner.Name() }
 func (c *Cache) Complete(ctx context.Context, req Request) (Response, error) {
 	path := filepath.Join(c.dir, c.key(req)+".json")
 
-	if data, err := os.ReadFile(path); err == nil { //nolint:gosec // path is derived from a content hash under our cache dir
-		var resp Response
-		if json.Unmarshal(data, &resp) == nil && resp.Text != "" {
-			return resp, nil
+	if !c.RefreshMode {
+		if data, err := os.ReadFile(path); err == nil { //nolint:gosec // path is derived from a content hash under our cache dir
+			var resp Response
+			if json.Unmarshal(data, &resp) == nil && resp.Text != "" {
+				return resp, nil
+			}
+			// Corrupt or empty entry: drop it and refetch.
+			_ = os.Remove(path)
 		}
-		// Corrupt or empty entry: drop it and refetch.
-		_ = os.Remove(path)
 	}
 
 	resp, err := c.inner.Complete(ctx, req)

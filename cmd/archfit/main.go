@@ -48,7 +48,8 @@ const (
 // commands live under `config`; `doctor` both checks and (with --fix) installs
 // analyzer tools.
 type cli struct {
-	Analyze  AnalyzeCmd  `cmd:"" default:"withargs" group:"analysis" help:"Analyze architecture: decision, score, findings (default command)."`
+	Analyze  AnalyzeCmd  `cmd:"" default:"withargs" group:"analysis" help:"Analyze architecture locally: decision, score, findings (default command)."`
+	Check    CheckCmd    `cmd:"" group:"analysis" help:"Run the architecture gate. Exits non-zero on violations (1), warnings (2), or config/tool error (3). Use in CI."`
 	Baseline BaselineCmd `cmd:"" group:"analysis" help:"Accept current findings as the gate baseline."`
 	Explain  ExplainCmd  `cmd:"" group:"analysis" help:"Explain one finding by fingerprint prefix."`
 
@@ -59,32 +60,33 @@ type cli struct {
 }
 
 // ConfigCmd groups the config-authoring subcommands. init scaffolds a config (or,
-// with --llm, drafts a full LLM-classified config); update syncs the config with
-// the project structure; enrich drafts per-dimension LLM annotations for review.
+// with --ai-classify, drafts a full AI-classified config); update syncs the
+// config with the project structure; enrich drafts per-dimension AI
+// annotations for review.
 type ConfigCmd struct {
-	Init   InitCmd   `cmd:"" help:"Create a starter config (use --llm for an LLM-classified draft)."`
+	Init   InitCmd   `cmd:"" help:"Create a starter config (use --ai-classify for an AI-classified draft)."`
 	Update UpdateCmd `cmd:"" help:"Sync the config with current project structure."`
-	Enrich EnrichCmd `cmd:"" help:"Draft LLM annotations (labels/owner/volatility/subdomain) for review."`
+	Enrich EnrichCmd `cmd:"" help:"Draft AI annotations (labels/owner/volatility/subdomain) for review."`
 }
 
 func (cli) Help() string {
 	return `archfit keeps code changes aligned with the architecture you intended. It turns dependency facts into deterministic gates, scorecards, SARIF, and agent repair tasks so CI can catch architecture drift before review.
 
 First run:
-  archfit doctor                                   # check analyzers (doctor --fix installs them)
-  archfit config init --root .                      # scaffold .archfit.yaml (config init --llm to draft via LLM)
-  archfit --gate --config .archfit.yaml --full      # the gate
-  archfit baseline --config .archfit.yaml --full    # accept current findings as the baseline
+  archfit doctor                                    # check analyzers (doctor --fix installs them)
+  archfit config init --root .                      # scaffold .archfit.yaml (config init --ai-classify to draft via AI)
+  archfit check --config .archfit.yaml              # CI gate
+  archfit baseline --config .archfit.yaml           # accept current findings as the baseline
 
 CI / agent loop:
-  archfit --gate --config .archfit.yaml --base origin/main --format json
+  archfit check --config .archfit.yaml --base origin/main --format json
   # on exit 1, read agent_tasks[] and rerun the validation command
-  archfit --markdown --config .archfit.yaml > archfit-report.md
+  archfit analyze --markdown --config .archfit.yaml > archfit-report.md
 
-Off-gate LLM (review-only; never affects the gate):
-  archfit analyze --llm -c .archfit.yaml            # cited architect review after deterministic output
+Off-gate AI (review-only; never affects the gate):
+  archfit analyze --ai-summary -c .archfit.yaml     # cited architect review after deterministic output
   archfit config enrich owner                       # draft → review → config enrich owner --apply
-  archfit config init --llm -o draft.yaml           # full LLM-classified config draft for review
+  archfit config init --ai-classify -o draft.yaml   # full AI-classified config draft for review
 
 Docs:
   ` + docsURL + `
@@ -92,7 +94,7 @@ Docs:
   Agent feedback: ` + agentDocsURL + `
   Analyzer setup: ` + languagesDocsURL + `
 
-Optional LLM commands are review-only. They never decide whether the gate passes.`
+Optional AI commands are review-only. They never decide whether the gate passes.`
 }
 
 func commandGroups() []kong.Group {
@@ -105,7 +107,7 @@ func commandGroups() []kong.Group {
 		{
 			Key:         commandGroupSetup,
 			Title:       "Setup & config",
-			Description: "Create configs (config init), sync structure (config update), install analyzers (doctor --fix), and draft off-gate LLM annotations (config enrich).",
+			Description: "Create configs (config init), sync structure (config update), install analyzers (doctor --fix), and draft off-gate AI annotations (config enrich).",
 		},
 	}
 }
@@ -129,8 +131,8 @@ type appDeps struct {
 	Stderr io.Writer // nil → os.Stderr
 
 	// progress, when non-nil, is invoked at pipeline phase boundaries so a long
-	// analyze run reports progress to stderr. Set by AnalyzeCmd; nil (no-op) for
-	// every other command.
+	// analyze/check run reports progress to stderr. Set by AnalyzeCmd/CheckCmd;
+	// nil (no-op) for every other command.
 	progress func(stage string)
 
 	// warnLabel prefixes pipeline stderr warnings. Empty for normal runs; the
@@ -138,10 +140,14 @@ type appDeps struct {
 	// aren't misread as head-side regressions (both sides share one stderr).
 	warnLabel string
 
-	// noCache disables the extractor fact cache (fact-cache.md D2: one
-	// --no-cache flag bypasses ALL archfit caches, reads AND writes). Set by
-	// each pipeline command from its --no-cache flag before runPipeline.
-	noCache bool
+	// refresh bypasses cache reads but still records fresh extractor facts.
+	// Set by each pipeline command from its --refresh flag before runPipeline.
+	refresh bool
+
+	// scanRoot is the effective root the current analyze/check run scans. It is
+	// populated by runScan so post-pipeline warnings can re-check module globs
+	// against the same tree without changing emitHealthWarnings' public contract.
+	scanRoot string
 }
 
 // warn writes a labeled pipeline warning to stderr.

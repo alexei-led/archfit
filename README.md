@@ -59,8 +59,8 @@ TARGETS
   Main goal   keep blocking findings at 0
 ```
 
-Run it bare for a human-readable review; add `--gate` in CI for exit codes;
-add `--json` to pipe it anywhere. Progress streams to stderr, so `archfit --json | jq`
+Run `archfit analyze` for a human-readable review; use `archfit check` in CI for gate exit codes;
+add `--json` to pipe it anywhere. Progress streams to stderr, so `archfit check --json | jq`
 stays clean.
 
 ## Why
@@ -76,7 +76,7 @@ more tokens, and more retries.
 
 ```mermaid
 flowchart LR
-    A[Agent edits files] --> C["archfit analyze --gate"]
+    A[Agent edits files] --> C["archfit check"]
     C -->|clean| P([PR opened])
     C -->|violation + agent_tasks| R[Agent applies the repair order]
     R --> C
@@ -97,7 +97,7 @@ A failed gate isn't a vague log line — it's a repair order the agent can act o
     "public surface of \"b\": [pkg/b/api/**]"
   ],
   "files": ["pkg/a/a.go", "pkg/b/internal/impl.go"],
-  "validation": ["archfit analyze --gate -c .archfit.yaml --full"]
+  "validation": ["archfit check -c .archfit.yaml"]
 }
 ```
 
@@ -109,16 +109,11 @@ Goal, constraints, the files to touch, and the command that proves the fix.
 # install (or use the Docker image with all analyzers bundled: ghcr.io/alexei-led/archfit)
 go install github.com/alexei-led/archfit/cmd/archfit@latest
 
-archfit doctor                      # which analyzers are available
+archfit doctor                      # check which analyzers are available
 archfit config init --root .        # generate a starter .archfit.yaml
-archfit                             # human review: the decision report above
-archfit --gate --full               # CI gate: exit 0 clean / 1 violation / 2 warn / 3 error
-```
-
-Accept current known debt as a baseline so it doesn't mask new findings:
-
-```sh
-archfit baseline --full
+archfit analyze                     # human review: the decision report
+archfit baseline -c .archfit.yaml   # accept current findings as baseline
+archfit check -c .archfit.yaml      # CI gate: exit 0 clean / 1 violation / 2 warn / 3 error
 ```
 
 Starter configs for common project shapes live in [`examples/`](examples/README.md).
@@ -127,9 +122,9 @@ Full setup — Docker, CI, optional analyzers, platform packages — is in the
 
 ## What you get
 
-- **One command, many outputs.** `archfit analyze` → terminal report (default),
-  `--json`, `--sarif`, `--markdown`, or `--format scorecard`. `--gate` turns on
-  CI exit codes; without it the run is report-only.
+- **Two intent-based commands.** `archfit analyze` → report-only, always exits 0;
+  `archfit check` → CI gate, exits non-zero on violations.
+  Both support `--json`, `--sarif`, `--markdown`, or `--format scorecard`.
 - **A decision, not just a score** — `HEALTHY` / `ACCEPTABLE WITH WATCH ITEMS` /
   `NEEDS ATTENTION` / `FAIL`, with blocking-vs-advisory split, categorized
   recommendations, and evidence for why the score is low / what would improve it.
@@ -148,9 +143,9 @@ Full setup — Docker, CI, optional analyzers, platform packages — is in the
   with the install step, never a false green.
 - **Content-addressed fact cache** — warm runs skip unchanged extractor
   subprocesses (typically 3–5× faster gates), byte-identical to a cold run;
-  `--no-cache` forces a clean control run ([details](docs/guide/caching.md)).
-- **Off-gate LLM enrichment** (`analyze --llm`, `config enrich labels/abstained`,
-  `config init --llm`, `config update --llm`) that may only draft labels,
+  `--refresh` re-runs extractors and updates the cache ([details](docs/guide/caching.md)).
+- **Off-gate AI enrichment** (`analyze --ai-summary`, `config enrich labels/abstained`,
+  `config init --ai-classify`, `config update --ai-classify`) that may only draft labels,
   propose review material, explain, and prioritize collected evidence — it never
   decides the gate.
 - **Multi-language** — Go, TypeScript/JavaScript, Python, Rust
@@ -175,7 +170,7 @@ flowchart TB
         CL --> ME[metrics] --> SC[score] --> DE[decision]
     end
     core --> OUT["text · JSON · SARIF · Markdown<br/>agent_tasks · scorecard"]
-    OUT -. off-gate · advisory only .-> LLM["analyze --llm · config enrich · config init --llm"]
+    OUT -. off-gate · advisory only .-> LLM["analyze --ai-summary · config enrich · config init --ai-classify"]
     classDef side fill:#f3f0ff,stroke:#7048e8,color:#000;
     class LLM side;
     style core fill:#e7f5ff,stroke:#1971c2,color:#000;
@@ -187,10 +182,31 @@ boundary linters (dependency-cruiser, import-linter, ArchUnit): they supply
 facts for one ecosystem; archfit turns facts across languages into one verdict,
 a Balanced-Coupling risk read, score movement, and agent repair tasks.
 
+## Upgrading from v1.x
+
+The CLI was redesigned in v2.0. These commands and flags changed:
+
+| Old                             | New               | Notes                                    |
+| ------------------------------- | ----------------- | ---------------------------------------- |
+| `archfit analyze --gate`        | `archfit check`   | new CI gate command                      |
+| `archfit --gate`                | `archfit check`   |                                          |
+| `--full`                        | _(removed)_       | full scan is now the default             |
+| `--advisory`                    | _(removed)_       | advisories are shown by default          |
+| `--no-advisories`               | `--no-advisories` | new flag to suppress advisories          |
+| `--severity`                    | `--min-severity`  |                                          |
+| `--llm` on `analyze`            | `--ai-summary`    |                                          |
+| `--llm` on `config init/update` | `--ai-classify`   |                                          |
+| `--llm-provider`                | `--ai-provider`   |                                          |
+| `--llm-model`                   | `--ai-model`      |                                          |
+| `--no-cache`                    | `--refresh`       | now writes updated results to cache      |
+| `--no-config`                   | _(removed)_       | run `archfit config init --root .` first |
+
+See [commands.md](docs/guide/commands.md) for the full reference.
+
 ## Documentation
 
 - **[Guide](docs/guide/README.md)** — full documentation map and setup.
-- [Commands](docs/guide/commands.md) — `analyze` flags, formats, exit codes.
+- [Commands](docs/guide/commands.md) — every command, every flag, use cases, exit codes.
 - [Concepts](docs/guide/concepts.md) — Balanced Coupling, made executable.
 - [Metrics](docs/guide/metrics.md) — every dimension and how it's scored.
 - [CI](docs/guide/ci.md) · [Agent feedback](docs/guide/agent-feedback.md) ·

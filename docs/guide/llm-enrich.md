@@ -1,6 +1,6 @@
-# LLM enrichment (off-gate): semantic labels, draft config, analyze/explain --llm
+# LLM enrichment (off-gate): semantic labels, draft config, analyze/explain --ai-summary
 
-archfit's verdict is deterministic: `analyze` and `analyze --gate` never call a
+archfit's verdict is deterministic: `analyze` and `check` never call a
 model. LLM commands are opt-in, off-gate drafting tools. Their output affects
 the gate only after a human reviews it and commits either `.archfit-labels.yaml`
 or edited `.archfit.yaml` fields.
@@ -21,7 +21,7 @@ The label workflow is draft -> review -> pin -> commit:
 archfit config enrich labels --config .archfit.yaml
 archfit config enrich abstained --config .archfit.yaml
 $EDITOR .archfit-labels.yaml
-archfit analyze --gate --config .archfit.yaml --full
+archfit check --config .archfit.yaml
 ```
 
 `config enrich labels` drafts labels for cross-module pairs whose current
@@ -156,7 +156,7 @@ or snippets are the cited evidence. Each proposal also carries
 `basis: deterministic_fact` when it only restates tool/config evidence, or
 `basis: semantic_judgment` when the model is making an architectural judgment.
 Draft files and update reports keep that metadata for review, while default plan mode still
-leaves config unchanged. `analyze --llm` uses the same pack alongside
+leaves config unchanged. `analyze --ai-summary` uses the same pack alongside
 deterministic finding IDs and metric IDs so the review can cite exactly what it is
 interpreting.
 
@@ -173,17 +173,18 @@ First-run enrich cost scales with candidate count and evidence size:
 - `config enrich abstained` sends up to 10 module pairs per request, caps a run
   at 100 abstained edges, includes up to 3 source snippets per pair, and includes
   the shared evidence pack. It is more token-heavy than the summary label pass.
-- `config init --llm` and `config update --llm` scale mostly with module count
+- `config init --ai-classify` and `config update --ai-classify` scale mostly with module count
   and bounded README/docs/comment/API/config/diagnostic evidence. They may also
   propose review-only `external_systems` entries when evidence names a vendor seam.
 
 Responses are cached by provider, model, system prompt, and user prompt under
 `.archfit-cache/llm/`. Re-running the same command with the same evidence should
-reuse the cache; `--no-cache` bypasses reads and writes and may spend tokens
-again. The cache stores provider responses, not prompts, but a response can still
-quote repository text. Keep `.archfit-cache/` untracked unless those responses are
-safe to share. Provider prices change, so use the current provider price sheet for
-dollar estimates rather than hard-coding costs in CI policy.
+reuse the cache; `--refresh` bypasses cache reads, makes fresh calls, and writes
+fresh responses back to cache, so it may spend tokens again. The cache stores
+provider responses, not prompts, but a response can still quote repository text.
+Keep `.archfit-cache/` untracked unless those responses are safe to share.
+Provider prices change, so use the current provider price sheet for dollar
+estimates rather than hard-coding costs in CI policy.
 
 ## Determinism
 
@@ -193,11 +194,11 @@ proves at CI time that no internal package can even import the LLM layer.
 Enrich itself is replayable through the content-addressed response cache at
 `.archfit-cache/llm/` (ignored by git by default; commit it only when the cached
 responses contain no sensitive repository text and you want byte-identical enrich
-replay across machines). `--no-cache` forces fresh calls.
+replay across machines). `--refresh` forces fresh calls.
 
-## analyze --llm — cited architect review
+## analyze --ai-summary — cited architect review
 
-`archfit analyze --llm` keeps the deterministic `analyze` output first, then emits
+`archfit analyze --ai-summary` keeps the deterministic `analyze` output first, then emits
 an advisory architect review. Text and Markdown runs append the review to stdout;
 `json`, `sarif`, and `scorecard` runs write it to stderr so stdout remains
 parseable. The review schema requires each dimension, top risk, and subdomain
@@ -248,16 +249,16 @@ archfit config enrich owner --apply  # writes approved entries into modules.<nam
 - These never touch coupling strength (that is the `labels` subcommand) and never
   affect `analyze`.
 
-## config init --llm — full config draft or direct apply
+## config init --ai-classify — full config draft or direct apply
 
-`archfit config init --llm` drafts an entire `.archfit.yaml` in one shot: it discovers
+`archfit config init --ai-classify` drafts an entire `.archfit.yaml` in one shot: it discovers
 structure, classifies every module (subdomain, volatility, layer, and `role`),
 drafts an owner per module, and renders the whole config in plan mode — every
 suggested field commented.
 
 ```sh
-archfit config init --llm --root . -o .archfit-init-llm.yaml
-archfit config init --llm --root . -o -   # stream to stdout
+archfit config init --ai-classify --root . -o .archfit-init-llm.yaml
+archfit config init --ai-classify --root . -o -   # stream to stdout
 ```
 
 Direct it to a side file with `-o` to keep it review-only: review the draft,
@@ -266,9 +267,9 @@ review handoff and writes the LLM classifications live into the generated config
 so inspect and edit the file before using it as a gate. Same provider, cache, and
 key handling as the other LLM commands.
 
-## config update --llm — cited module and rule proposals
+## config update --ai-classify — cited module and rule proposals
 
-`archfit config update --llm` adds a semantic review section to the normal config
+`archfit config update --ai-classify` adds a semantic review section to the normal config
 drift report. It proposes per-module `subdomain: core|supporting|generic`, the
 derived volatility it would imply, layer suggestions, and optional architectural
 `role` values (`composition_root|adapter|core|shared_model|generated|test`),
@@ -288,11 +289,11 @@ Synthetic modules are valid proposal targets, so large Rust crate trees and Go
 workspace members can get differentiated role/volatility review instead of
 inheriting one uniform value forever.
 
-## explain --llm
+## explain --ai-summary
 
-`archfit explain <fingerprint> --llm` appends a Balanced Coupling narrative
+`archfit explain <fingerprint> --ai-summary` appends a Balanced Coupling narrative
 (why the finding matters, the risk, a repair sketch) after the deterministic
-explain output, using the same provider and cache. Without `--llm`, explain
+explain output, using the same provider and cache. Without `--ai-summary`, explain
 is fully offline.
 
 ## Scope guard
@@ -303,16 +304,16 @@ blocks remain report-only unless a deterministic extractor later supplies the
 missing fact. A narrative cannot create a connascence category, score input,
 baseline delta, or gate finding.
 
-`archfit config init --llm` suggests `subdomain`, `volatility`, `owner`, `layer`,
-and `role` for discovered modules; `archfit config update --llm` emits
+`archfit config init --ai-classify` suggests `subdomain`, `volatility`, `owner`, `layer`,
+and `role` for discovered modules; `archfit config update --ai-classify` emits
 review-only module and rule proposals; `config enrich` drafts coupling labels plus
 the `owner`, `volatility`, and `subdomain` subcommands. None of them gate. Without
 `--apply` the suggestions are commented, printed, or held in a draft file and
-require human review before they become live fields. `config init --llm --apply`
+require human review before they become live fields. `config init --ai-classify --apply`
 writes model suggestions live directly into the generated config; treat that file
 as unreviewed until a human checks it. Module-field `config enrich --apply` is
 different: it reads only `status: approved` entries from the draft files and pins
-those reviewed values into `.archfit.yaml`. For `config update --llm`, LLM
+those reviewed values into `.archfit.yaml`. For `config update --ai-classify`, LLM
 semantic and rule proposals remain review-only even when structural `--apply` is
 used. Existing field values are never overwritten. `analyze` is unaffected by
 these flags; it only reads the final config and approved labels.

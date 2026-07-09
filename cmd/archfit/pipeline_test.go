@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -313,9 +314,6 @@ func TestBuildConfigWarnings(t *testing.T) {
 	})
 }
 
-// TestEffectiveConfigHash verifies that --no-config never hashes the on-disk
-// config file: a run that ignored the file must report no hash, even when the
-// file exists, so the hash never reflects (or changes with) an ignored file.
 func TestEffectiveConfigHash(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -324,28 +322,20 @@ func TestEffectiveConfigHash(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	// noConfig=true: file present but ignored → empty hash.
-	if got := effectiveConfigHash(path, true); got != "" {
-		t.Errorf("effectiveConfigHash(existing, noConfig=true) = %q, want \"\"", got)
-	}
-
-	// noConfig=false: file present and read → non-empty hash.
-	withCfg := effectiveConfigHash(path, false)
+	withCfg := effectiveConfigHash(path)
 	if withCfg == "" {
-		t.Error("effectiveConfigHash(existing, noConfig=false) = \"\", want a hash")
+		t.Error("effectiveConfigHash(existing) = \"\", want a hash")
 	}
 
-	// noConfig=false but file absent → empty hash (never fails on missing config).
-	if got := effectiveConfigHash(filepath.Join(dir, "absent.yaml"), false); got != "" {
-		t.Errorf("effectiveConfigHash(absent, noConfig=false) = %q, want \"\"", got)
+	if got := effectiveConfigHash(filepath.Join(dir, "absent.yaml")); got != "" {
+		t.Errorf("effectiveConfigHash(absent) = %q, want \"\"", got)
 	}
 
-	// Mutating the ignored file must NOT change the no-config result (stays empty).
 	if err := os.WriteFile(path, []byte("version: 1\nmodules: {}\n"), 0o600); err != nil {
 		t.Fatalf("rewrite config: %v", err)
 	}
-	if got := effectiveConfigHash(path, true); got != "" {
-		t.Errorf("effectiveConfigHash after mutating ignored file = %q, want \"\"", got)
+	if mutated := effectiveConfigHash(path); mutated == withCfg {
+		t.Error("effectiveConfigHash did not change after config mutation")
 	}
 }
 
@@ -748,4 +738,105 @@ func TestSkippedPassCoverageRows_ReasonContent(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEmitHealthWarnings(t *testing.T) {
+	t.Parallel()
+
+	t.Run("coverage gap warns to stderr only", func(t *testing.T) {
+		t.Parallel()
+		cfgPath := writeWarningConfig(t, "version: 1\n")
+		var stdout, stderr bytes.Buffer
+		deps := &appDeps{Stdout: &stdout, Stderr: &stderr, scanRoot: filepath.Dir(cfgPath)}
+
+		emitHealthWarnings(deps, diagnostic.Diagnostic{
+			CoverageGaps: []diagnostic.CoverageGap{{Tool: toolGrimp}},
+		}, cfgPath, false)
+
+		if stdout.Len() != 0 {
+			t.Fatalf("stdout = %q, want empty", stdout.String())
+		}
+		if got := stderr.String(); !strings.Contains(got, "warning: analyzer coverage gap") || !strings.Contains(got, "archfit doctor --fix") {
+			t.Fatalf("stderr = %q, want doctor warning", got)
+		}
+	})
+
+	t.Run("zero scored and abstained warnings stack", func(t *testing.T) {
+		t.Parallel()
+		cfgPath := writeWarningConfig(t, "version: 1\n")
+		var stderr bytes.Buffer
+		deps := &appDeps{Stderr: &stderr, scanRoot: filepath.Dir(cfgPath)}
+
+		emitHealthWarnings(deps, diagnostic.Diagnostic{
+			ClassifiedEdges: &diagnostic.ClassifiedEdgeSummary{Total: 4, Scored: 0, Abstained: 4},
+		}, cfgPath, false)
+
+		got := stderr.String()
+		if !strings.Contains(got, "warning: 0 of 4 edges scored") {
+			t.Fatalf("stderr = %q, want zero-scored warning", got)
+		}
+		if !strings.Contains(got, "warning: all 4 cross-module edges have unknown strength") {
+			t.Fatalf("stderr = %q, want abstained warning", got)
+		}
+		if !strings.Contains(got, "archfit config enrich abstained -c "+cfgPath) {
+			t.Fatalf("stderr = %q, want enrich-abstained hint", got)
+		}
+	})
+
+	t.Run("python all-external warns when grimp succeeded", func(t *testing.T) {
+		t.Parallel()
+		cfgPath := writeWarningConfig(t, "version: 1\n")
+		var stderr bytes.Buffer
+		deps := &appDeps{Stderr: &stderr, scanRoot: filepath.Dir(cfgPath)}
+
+		emitHealthWarnings(deps, diagnostic.Diagnostic{
+			ToolCoverage:    []diagnostic.Coverage{{Tool: toolGrimp, Status: diagnostic.StatusOK}},
+			ClassifiedEdges: &diagnostic.ClassifiedEdgeSummary{Total: 5, SameModule: 2, External: 3},
+		}, cfgPath, false)
+
+		got := stderr.String()
+		if !strings.Contains(got, "warning: 0 of 5 edges scored") {
+			t.Fatalf("stderr = %q, want zero-scored warning", got)
+		}
+		if !strings.Contains(got, "warning: no internal edges found — module paths may not match source layout") {
+			t.Fatalf("stderr = %q, want python external warning", got)
+		}
+		if !strings.Contains(got, "archfit config update -c "+cfgPath) {
+			t.Fatalf("stderr = %q, want config-update hint", got)
+		}
+	})
+
+	t.Run("module glob mismatch warns", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, defaultConfigPath)
+		if err := os.WriteFile(cfgPath, []byte("version: 1\nmodules:\n  api:\n    paths:\n      - services/api/**/*.go\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var stderr bytes.Buffer
+		deps := &appDeps{Stderr: &stderr, scanRoot: dir}
+
+		emitHealthWarnings(deps, diagnostic.Diagnostic{}, cfgPath, false)
+
+		got := stderr.String()
+		if !strings.Contains(got, "warning: no source files matched declared module paths") {
+			t.Fatalf("stderr = %q, want module-mismatch warning", got)
+		}
+		if !strings.Contains(got, "archfit check --root . -c "+cfgPath) {
+			t.Fatalf("stderr = %q, want check hint", got)
+		}
+	})
+}
+
+func writeWarningConfig(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, defaultConfigPath)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

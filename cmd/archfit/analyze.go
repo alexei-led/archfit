@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"time"
@@ -22,30 +24,19 @@ import (
 	"github.com/alexei-led/archfit/internal/score"
 )
 
-// AnalyzeCmd is the single unified analysis command. It is also the default
-// command: bare `archfit`, `archfit --json`, `archfit --gate` all route here.
-//
-// Without --gate the command is report-only (exit 0 on success, exit 3 on
-// config/tool error). With --gate the exit codes match the old check command:
-// 0 = clean, 1 = architecture policy failed, 2 = warnings, 3 = config/tool error.
-//
-// With --base <ref> the command runs a scorecard delta (old diff) instead of a
-// single-run render.
-//
-// With --llm the command appends an off-gate LLM architect review section after
-// the normal render.
+// AnalyzeCmd is the local, report-only analysis command. It runs the same scan
+// pipeline as `archfit check` but always exits 0 on a successful run, even when
+// findings or warnings exist.
 type AnalyzeCmd struct {
-	Config string `short:"c" help:"Path to config file (optional; built-in defaults used if absent)." default:".archfit.yaml"`
+	Config string `short:"c" help:"Path to config file." default:".archfit.yaml"`
 	Root   string `help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
 	Base   string `help:"Git ref to compare against for scorecard delta (e.g. main, HEAD~1). When set, runs a before/after delta table instead of a single-run render."`
 
-	Gate bool `help:"CI exit behavior: 0=clean, 1=architecture violation, 2=warnings, 3=config/tool error. Without --gate the command is always report-only (exit 0 on success)."`
-	LLM  bool `help:"Append an off-gate LLM narrative review after the normal render. Requires ai configured in the config file."`
+	AISummary bool `name:"ai-summary" help:"Append an off-gate AI narrative review after the normal render. Requires ai configured in the config file."`
+	Refresh   bool `name:"refresh" help:"Re-run all extractors and refresh the cache. Use after installing or updating analyzer tools."`
 
-	NoCache bool `name:"no-cache" help:"Bypass archfit caches: extractor facts (and LLM responses with --llm)."`
-
-	// Format shorthand flags — mutually exclusive; error if more than one set.
-	// These map onto Format below.
+	// Format shorthand flags — mutually exclusive; also mutually exclusive with
+	// the repeatable --format flag.
 	JSON     bool `name:"json"     help:"Output format: JSON (shorthand for --format json)."`
 	Markdown bool `name:"markdown" help:"Output format: Markdown (shorthand for --format markdown)."`
 	Sarif    bool `name:"sarif"    help:"Output format: SARIF (shorthand for --format sarif)."`
@@ -54,41 +45,36 @@ type AnalyzeCmd struct {
 	// flag is set. Valid values: json, text, markdown, md, sarif, scorecard.
 	Format []string `name:"format" help:"Output format: json, text, markdown, md, sarif, scorecard. Repeatable." enum:"json,text,markdown,md,sarif,scorecard"`
 
-	Full     bool `help:"Scan all files instead of only files changed since --base." default:"true"`
-	Advisory bool `help:"Include informational Balanced-Coupling advisories in output." default:"true"`
-
-	Severity     string   `name:"severity"      help:"Minimum advisory severity to show: low, medium, high, critical." enum:"low,medium,high,critical," default:""`
-	Lang         []string `name:"lang"          help:"Analyzer name to force on. Repeatable. See analyzer setup docs for valid names."`
-	NoConfig     bool     `name:"no-config"     help:"Skip the config file and use built-in defaults. Combine with --root for an ad-hoc scoring run."`
-	RequireTools bool     `name:"require-tools" help:"Exit non-zero when any required analyzer tool is missing (opt-in hard gate)."`
+	NoAdvisories bool     `name:"no-advisories" help:"Hide informational Balanced-Coupling advisories from the output."`
+	MinSeverity  string   `name:"min-severity" help:"Minimum advisory severity to show: low, medium, high, critical." enum:"low,medium,high,critical," default:""`
+	Lang         []string `name:"lang" help:"Analyzer name to force on. Repeatable. See analyzer setup docs for valid names."`
+	RequireTools bool     `name:"require-tools" help:"Mark missing required analyzer tools as fail in the rendered verdict."`
 
 	// Progress controls live phase reporting on stderr; Quiet suppresses it.
 	Progress string `name:"progress" help:"Progress reporting on stderr: auto, plain, none." enum:"auto,plain,none," default:""`
-	Quiet    bool   `name:"quiet"    short:"q" help:"Suppress progress output."`
+	Quiet    bool   `name:"quiet" short:"q" help:"Suppress progress output."`
 
 	// providerOverride is a test seam — set directly on the struct to inject a
-	// fake LLM provider. nil in production.
+	// fake AI provider. nil in production.
 	providerOverride llm.Provider
 }
 
 func (*AnalyzeCmd) Help() string {
-	return `Analyze architecture: run the full pipeline, print a verdict, scorecard, and findings.
+	return `Analyze architecture locally: run the full pipeline, print a verdict, scorecard, and findings.
 
-Without --gate the command is report-only (always exit 0 on success). With --gate
-it becomes a CI merge gate: 0 clean, 1 architecture violation, 2 warnings, 3 error.
+This command is report-only: it always exits 0 on success. Use ` + "`archfit check`" + ` in CI when findings or warnings should fail the run.
 
 Common runs:
-  archfit                                         # report-only, text output
-  archfit --gate -c .archfit.yaml --full          # CI gate
-  archfit --markdown -c .archfit.yaml             # Markdown audit report
-  archfit --json -c .archfit.yaml | jq .          # machine-readable JSON
-  archfit --gate --format sarif > archfit.sarif   # SARIF for GitHub code scanning
-  archfit --format scorecard                      # banded scorecard only
-  archfit --base origin/main                      # scorecard delta vs base ref
-  archfit --llm -c .archfit.yaml                  # add LLM narrative section
+  archfit analyze                               # local text report
+  archfit analyze --markdown -c .archfit.yaml   # Markdown audit report
+  archfit analyze --json -c .archfit.yaml | jq .
+  archfit analyze --format sarif > archfit.sarif
+  archfit analyze --format scorecard            # banded scorecard only
+  archfit analyze --base origin/main            # scorecard delta vs base ref
+  archfit analyze --ai-summary -c .archfit.yaml # add AI narrative section
 
-AI agents should read agent_tasks[] from JSON on exit 1 (requires --gate), make the
-constrained repair, then rerun the validation command in that task.
+AI agents should read agent_tasks[] from JSON output, make the constrained
+repair, then rerun the validation command in that task.
 
 Docs:
   CI: ` + ciDocsURL + `
@@ -98,129 +84,158 @@ Docs:
 
 func (c *AnalyzeCmd) Run(deps *appDeps) error {
 	ctx := context.Background()
-
-	formats, err := c.resolveFormats()
-	if err != nil {
-		return err
-	}
-	return c.runScan(ctx, deps, formats)
+	return runScan(ctx, deps, scanRequest{
+		configPath:       c.Config,
+		root:             c.Root,
+		baseRef:          c.Base,
+		json:             c.JSON,
+		markdown:         c.Markdown,
+		sarif:            c.Sarif,
+		formats:          c.Format,
+		noAdvisories:     c.NoAdvisories,
+		minSeverity:      c.MinSeverity,
+		lang:             c.Lang,
+		requireTools:     c.RequireTools,
+		progress:         c.Progress,
+		quiet:            c.Quiet,
+		refresh:          c.Refresh,
+		aiSummary:        c.AISummary,
+		providerOverride: c.providerOverride,
+		reportOnly:       true,
+	})
 }
 
-// resolveFormats merges the shorthand flags (--json/--markdown/--sarif) with
-// the repeatable --format flag. Returns an error when multiple shorthands are set.
-// Falls back to ["text"] when nothing is specified.
-func (c *AnalyzeCmd) resolveFormats() ([]string, error) {
+type scanRequest struct {
+	configPath string
+	root       string
+	baseRef    string
+
+	json     bool
+	markdown bool
+	sarif    bool
+	formats  []string
+
+	noAdvisories bool
+	minSeverity  string
+	lang         []string
+	requireTools bool
+	progress     string
+	quiet        bool
+	refresh      bool
+	aiSummary    bool
+	reportOnly   bool
+
+	providerOverride llm.Provider
+}
+
+// resolveScanFormats merges the shorthand flags (--json/--markdown/--sarif)
+// with the repeatable --format flag. Returns an error when multiple
+// shorthands are set or shorthand and --format are mixed. Falls back to
+// ["text"] when nothing is specified.
+func resolveScanFormats(jsonFlag, markdownFlag, sarifFlag bool, formats []string) ([]string, error) {
 	shorthands := 0
-	if c.JSON {
+	if jsonFlag {
 		shorthands++
 	}
-	if c.Markdown {
+	if markdownFlag {
 		shorthands++
 	}
-	if c.Sarif {
+	if sarifFlag {
 		shorthands++
 	}
 	if shorthands > 1 {
 		return nil, &exitError{code: 3, msg: "error: --json, --markdown, and --sarif are mutually exclusive; use at most one"}
 	}
+	if shorthands > 0 && len(formats) > 0 {
+		return nil, &exitError{code: 3, msg: "error: --json/--markdown/--sarif and --format are mutually exclusive"}
+	}
 	switch {
-	case c.JSON:
+	case jsonFlag:
 		return []string{formatJSON}, nil
-	case c.Markdown:
+	case markdownFlag:
 		return []string{formatMarkdown}, nil
-	case c.Sarif:
+	case sarifFlag:
 		return []string{formatSarif}, nil
-	case len(c.Format) > 0:
-		return c.Format, nil
+	case len(formats) > 0:
+		return formats, nil
 	default:
 		return []string{formatText}, nil
 	}
 }
 
-// runScan runs the pipeline for HEAD, optionally scores a --base ref for a
-// before/after delta, and renders in each requested format. --base goes through
-// this same path (not a separate flow) so the output format, JSON schema, and
-// --gate / --require-tools / --advisory behavior are identical with or without it.
-func (c *AnalyzeCmd) runScan(ctx context.Context, deps *appDeps, formats []string) error {
-	rep := newProgressReporter(deps.stderr(), analyzePhaseTotal(c.LLM, c.Base != ""), c.Progress, c.Quiet, time.Now())
-	rep.banner("Archfit analyzing " + analyzeTarget(c.Config, c.Root))
-	deps.progress = rep.advance // runPipeline advances the discover/facts/graph phases
-	deps.noCache = c.NoCache    // one flag governs all caches (fact-cache.md D2)
+// runScan runs the shared analysis pipeline for both `archfit analyze` and
+// `archfit check`. reportOnly=true keeps the run local/reporting-only: exit 0 on
+// success. reportOnly=false applies CI gate exit codes: 0 clean, 1 violations,
+// 2 warnings, 3 config/tool error.
+func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
+	formats, err := resolveScanFormats(req.json, req.markdown, req.sarif, req.formats)
+	if err != nil {
+		return err
+	}
+
+	rep := newProgressReporter(deps.stderr(), analyzePhaseTotal(req.aiSummary, req.baseRef != ""), req.progress, req.quiet, time.Now())
+	rep.banner("Archfit analyzing " + analyzeTarget(req.configPath, req.root))
+	deps.progress = rep.advance
+	deps.refresh = req.refresh
 	defer rep.finish()
 
 	rep.advance("Loading config")
-	cfg, err := loadConfig(ctx, c.Config, c.NoConfig)
+	cfg, err := loadAnalysisConfig(ctx, req.configPath)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	if err := applyFlagOverrides(&cfg, c.Severity, c.Lang); err != nil {
+	if err := applyFlagOverrides(&cfg, req.minSeverity, req.lang); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	// Config-quality lint → stderr (advisory; never gates, never pollutes the
-	// stdout JSON/markdown contract that the determinism double-run diffs).
 	printConfigLint(deps.stderr(), cfg.Lint())
 
-	configDir := filepath.Dir(c.Config)
+	configDir := filepath.Dir(req.configPath)
+	deps.scanRoot = req.root
+	if deps.scanRoot == "" {
+		deps.scanRoot = configDir
+	}
+	defer func() { deps.scanRoot = "" }()
+
 	base, err := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	// The scorecard's coupling_balance dimension reads the Balanced-Coupling
-	// advisory edges; force advisory on when that format is requested so the BC
-	// edges reach the synthesis (advisory is additive — other formats are
-	// unaffected except for the extra advisory findings they already opt into).
-	advisory := c.Advisory
+	advisory := !req.noAdvisories
 	if slices.Contains(formats, formatScorecard) {
 		advisory = true
 	}
 
-	// --base passes the ref so the HEAD scan also computes the changed-file set
-	// for per-change metrics. Mode stays full, so the scorecard is a full scan
-	// and no finding-delta buckets are produced (deltaReport gates on delta mode);
-	// the before/after scorecard delta is computed separately by scoreBaseRef.
 	mode := engine.Mode{
-		Base:       c.Base,
-		Full:       c.Full || c.Base != "",
+		Base:       req.baseRef,
+		Full:       true,
 		Advisory:   advisory,
-		ReportOnly: !c.Gate,
+		ReportOnly: req.reportOnly,
 		Formats:    formats,
 	}
 
-	// runPipeline synthesises the scorecard and applies the coupling gate
-	// internally (before the verdict and agent_tasks freeze — V2 fix); the
-	// "Scoring architecture" phase is reported from inside the pipeline.
-	diag, sc, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, c.NoConfig, mode, base)
+	diag, sc, err := runPipeline(ctx, deps, cfg, req.configPath, req.root, mode, base)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
+	emitHealthWarnings(deps, diag, req.configPath, req.refresh)
 
-	// Echo coupling-gate trip reasons from analyze only: runPipeline is shared
-	// with baseline/enrich/explain/--base scoring, where an enforcement-sounding
-	// stderr line is noise (and --base would print it twice). The gate decision
-	// is pure, so re-evaluating here reproduces exactly what applyCouplingGate
-	// applied to the verdict inside the pipeline.
 	gateView := couplingGateView(cfg)
-	for _, r := range score.EvaluateCouplingGate(sc, gateView, base.CouplingScore()).Reasons {
-		_, _ = fmt.Fprintln(deps.stderr(), "coupling gate: "+r)
+	for _, reason := range score.EvaluateCouplingGate(sc, gateView, base.CouplingScore()).Reasons {
+		_, _ = fmt.Fprintln(deps.stderr(), "coupling gate: "+reason)
 	}
-	// A score snapshot from a different scorer version can't anchor max_drop
-	// (CouplingScore returns nil) — disclose the skip instead of gating silent.
 	if gateView.Enabled && gateView.MaxDrop != nil && base.ScoreVersionStale() {
 		_, _ = fmt.Fprintf(deps.stderr(),
 			"coupling gate: max_drop skipped — baseline score was recorded under scorer version %q, current is %q; run `archfit baseline` to re-anchor\n",
 			base.Score.ScoreVersion, coupling.ScoreVersion)
 	}
 
-	// Apply the opt-in hard gate before rendering so the output shows the
-	// effective gate per coverage gap.
-	hardGate := applyToolGate(&diag, c.RequireTools)
+	hardGate := applyToolGate(&diag, req.requireTools)
 
-	// --base: score the ref in a worktree and attach a before/after delta.
 	var baseSC *score.Scorecard
-	if c.Base != "" {
+	if req.baseRef != "" {
 		rep.advance("Comparing against base")
-		bsc, berr := scoreBaseRef(ctx, deps, c.Base, c.Config, configDir, c.Root, c.NoConfig, advisory)
+		bsc, berr := scoreBaseRef(ctx, deps, req.baseRef, req.configPath, configDir, req.root, advisory)
 		if berr != nil {
 			return berr
 		}
@@ -231,29 +246,33 @@ func (c *AnalyzeCmd) runScan(ctx context.Context, deps *appDeps, formats []strin
 		return err
 	}
 
-	// With --llm: append the off-gate LLM narrative after the deterministic output.
-	// The LLM is advisory and off-gate: a narration failure must never change the
-	// exit code or mask the gate verdict (a failing policy must still exit 1, not
-	// the LLM error's 3). The deterministic report is already rendered above; warn
-	// to stderr and fall through to the gate decision.
-	if c.LLM {
-		rep.advance("Asking LLM for interpretation")
-		if err := c.appendLLMNarrative(ctx, deps, cfg, diag, sc, formats); err != nil {
-			_, _ = fmt.Fprintf(deps.stderr(), "archfit: LLM narration unavailable (off-gate, ignored): %v\n", err)
+	if req.aiSummary {
+		rep.advance("Asking AI for interpretation")
+		if err := appendAISummary(ctx, deps, cfg, req.configPath, req.root, req.refresh, req.providerOverride, diag, sc, formats); err != nil {
+			_, _ = fmt.Fprintf(deps.stderr(), "archfit: AI narrative unavailable (off-gate, ignored): %v\n", err)
 		}
 	}
 
-	// Hard tool-gates (--require-tools or per-tool gate:fail in config) always
-	// exit 1 when tripped, regardless of --gate. They are explicit opt-in gates
-	// on tool presence, not suppressible by report-only mode.
+	if req.reportOnly {
+		return nil
+	}
 	if hardGate {
 		return &exitError{code: 1}
 	}
-	// Without --gate: always exit 0 on success (report-only mode).
-	if !c.Gate {
-		return nil
-	}
 	return verdictToError(diag.Verdict)
+}
+
+var errAnalysisConfigNotFound = errors.New("config not found")
+
+func loadAnalysisConfig(ctx context.Context, path string) (config.Config, error) {
+	cfg, err := loadConfig(ctx, path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) && filepath.Base(path) == defaultConfigPath {
+			return config.Config{}, errAnalysisConfigNotFound
+		}
+		return config.Config{}, err
+	}
+	return cfg, nil
 }
 
 // analyzeRender writes the diagnostic to deps.Stdout in each requested format.
@@ -270,7 +289,6 @@ func analyzeRender(deps *appDeps, diag diagnostic.Diagnostic, sc score.Scorecard
 		case formatText:
 			renderErr = console.RenderReport(decision.Build(diag, sc, base, hardGate), deps.Stdout)
 		case formatMD, formatMarkdown:
-			// Lead with the decision summary, then the detailed audit.
 			if rerr := markdown.RenderReport(decision.Build(diag, sc, base, hardGate), deps.Stdout); rerr != nil {
 				renderErr = rerr
 			} else {
@@ -288,19 +306,17 @@ func analyzeRender(deps *appDeps, diag diagnostic.Diagnostic, sc score.Scorecard
 	return nil
 }
 
-// appendLLMNarrative emits the off-gate LLM narrative after the deterministic
+// appendAISummary emits the off-gate AI narrative after the deterministic
 // report. Text/Markdown runs append to stdout; machine-only formats route the
 // review to stderr so stdout remains parseable JSON/SARIF/scorecard output.
-// runLLMReview owns the ai check and provider build (exit 3 when unconfigured);
-// we only thread the test-seam override.
-func (c *AnalyzeCmd) appendLLMNarrative(ctx context.Context, deps *appDeps, cfg config.Config, diag diagnostic.Diagnostic, sc score.Scorecard, formats []string) error {
+func appendAISummary(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, refresh bool, providerOverride llm.Provider, diag diagnostic.Diagnostic, sc score.Scorecard, formats []string) error {
 	reviewDeps := deps
 	if !llmReviewCanUseStdout(formats) {
 		copyDeps := *deps
 		copyDeps.Stdout = deps.stderr()
 		reviewDeps = &copyDeps
 	}
-	return runLLMReview(ctx, reviewDeps, cfg, c.Config, c.Root, c.NoCache, c.providerOverride, diag, sc)
+	return runLLMReview(ctx, reviewDeps, cfg, configPath, root, refresh, providerOverride, diag, sc)
 }
 
 func llmReviewCanUseStdout(formats []string) bool {
@@ -315,14 +331,14 @@ func llmReviewCanUseStdout(formats []string) bool {
 
 // analyzePhaseTotal returns the number of progress phases for this run. Base
 // phases: load config, discover project, collect facts, analyze dependencies,
-// score. --llm adds an interpretation phase.
-func analyzePhaseTotal(llm, base bool) int {
-	total := 5 // config, discover, facts, analyze, score
+// score. --ai-summary adds an interpretation phase.
+func analyzePhaseTotal(aiSummary, base bool) int {
+	total := 5
 	if base {
-		total++ // compare against base
+		total++
 	}
-	if llm {
-		total++ // LLM interpretation
+	if aiSummary {
+		total++
 	}
 	return total
 }

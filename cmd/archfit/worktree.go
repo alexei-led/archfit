@@ -72,7 +72,7 @@ func cleanGitEnv() []string {
 // with the full pipeline (advisory per the caller), and returns the base
 // Scorecard. The worktree is always removed. advisory mirrors the HEAD side so
 // the delta compares like with like.
-func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, configDir, root string, noConfig, advisory bool) (score.Scorecard, error) {
+func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, configDir, root string, advisory bool) (score.Scorecard, error) {
 	// A leading-dash ref would be parsed as a flag by rev-parse/worktree-add;
 	// `git worktree add --detach <dir> --force` silently checks out HEAD and the
 	// delta becomes HEAD-vs-HEAD. Reject rather than pass through.
@@ -132,7 +132,7 @@ func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, confi
 		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: map subtree into worktree: %v", err)}
 	}
 
-	sc, err := runScoreSide(ctx, deps, configPath, baseRoot, noConfig, advisory)
+	sc, err := runScoreSide(ctx, deps, configPath, baseRoot, advisory)
 	if err != nil {
 		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: score base (%s): %v", baseRef, err)}
 	}
@@ -142,8 +142,8 @@ func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, confi
 // runScoreSide loads config, runs the full pipeline on root, and returns the
 // synthesised Scorecard. advisory mirrors the caller's --advisory so the base
 // and HEAD sides are scored identically.
-func runScoreSide(ctx context.Context, deps *appDeps, configPath, root string, noConfig, advisory bool) (score.Scorecard, error) {
-	cfg, err := loadConfig(ctx, configPath, noConfig)
+func runScoreSide(ctx context.Context, deps *appDeps, configPath, root string, advisory bool) (score.Scorecard, error) {
+	cfg, err := loadConfig(ctx, configPath)
 	if err != nil {
 		return score.Scorecard{}, err
 	}
@@ -156,7 +156,7 @@ func runScoreSide(ctx context.Context, deps *appDeps, configPath, root string, n
 	quiet.progress = nil
 	quiet.warnLabel = "[base] "
 	mode := engine.Mode{Full: true, Advisory: advisory, ReportOnly: true}
-	_, sc, err := runPipeline(ctx, &quiet, cfg, configPath, root, noConfig, mode, baseline.Baseline{})
+	_, sc, err := runPipeline(ctx, &quiet, cfg, configPath, root, mode, baseline.Baseline{})
 	if err != nil {
 		return score.Scorecard{}, err
 	}
@@ -176,32 +176,29 @@ func runScoreSide(ctx context.Context, deps *appDeps, configPath, root string, n
 // (Wave 6 Task 4). A leftover checkout from a crashed run is removed and the
 // path reused. Concurrent runs for the same SHA take an inter-process lock
 // before removing/recreating the checkout, so one process cannot delete another
-// process's live base tree. `--no-cache`, an unresolvable ref, or any
-// cleanup/mkdir failure falls back to the historical random temp dir — correct,
-// just uncached.
+// process's live base tree. An unresolvable ref, or any cleanup/mkdir failure
+// falls back to the historical random temp dir — correct, just uncached.
 func baseWorktreeParent(ctx context.Context, deps *appDeps, gitRoot, baseRef, configDir string) (string, func(), error) {
 	releaseNoop := func() {}
-	if !deps.noCache {
-		sha, err := git.ResolveCommit(ctx, gitRoot, baseRef, deps.Runner)
-		// Absolutize against the process CWD — the same anchor loadConfig reads a
-		// relative --config from. The git subprocesses below run with WorkDir set
-		// to gitRoot, so a relative path here would silently split the checkout
-		// (git-created) from the directory the os calls manage (CWD-created).
-		parent, aerr := filepath.Abs(baseWorktreesDir(configDir))
-		if err == nil && aerr == nil {
-			dir := filepath.Join(parent, sha)
-			release, lerr := lockBaseWorktree(ctx, dir+".lock")
-			if lerr == nil {
-				removeWorktree(ctx, deps.Runner, gitRoot, filepath.Join(dir, "wt"))
-				if rerr := os.RemoveAll(dir); rerr == nil {
-					if merr := os.MkdirAll(dir, 0o750); merr == nil {
-						return dir, release, nil
-					}
+	sha, err := git.ResolveCommit(ctx, gitRoot, baseRef, deps.Runner)
+	// Absolutize against the process CWD — the same anchor loadConfig reads a
+	// relative --config from. The git subprocesses below run with WorkDir set
+	// to gitRoot, so a relative path here would silently split the checkout
+	// (git-created) from the directory the os calls manage (CWD-created).
+	parent, aerr := filepath.Abs(baseWorktreesDir(configDir))
+	if err == nil && aerr == nil {
+		dir := filepath.Join(parent, sha)
+		release, lerr := lockBaseWorktree(ctx, dir+".lock")
+		if lerr == nil {
+			removeWorktree(ctx, deps.Runner, gitRoot, filepath.Join(dir, "wt"))
+			if rerr := os.RemoveAll(dir); rerr == nil {
+				if merr := os.MkdirAll(dir, 0o750); merr == nil {
+					return dir, release, nil
 				}
-				release()
-			} else if errors.Is(lerr, context.Canceled) || errors.Is(lerr, context.DeadlineExceeded) {
-				return "", releaseNoop, lerr
 			}
+			release()
+		} else if errors.Is(lerr, context.Canceled) || errors.Is(lerr, context.DeadlineExceeded) {
+			return "", releaseNoop, lerr
 		}
 	}
 	dir, err := os.MkdirTemp("", "archfit-base-*")

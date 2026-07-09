@@ -108,13 +108,13 @@ func runLLMReviewForTest(t *testing.T, cfgPath string, provider llm.Provider) (s
 	var buf bytes.Buffer
 	deps := &appDeps{Runner: toolrun.New(), Stdout: &buf}
 
-	cfg, err := loadConfig(ctx, cfgPath, false)
+	cfg, err := loadConfig(ctx, cfgPath)
 	if err != nil {
 		return "", &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 	configDir := filepath.Dir(cfgPath)
 	base, _ := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
-	diag, sc, err := runPipeline(ctx, deps, cfg, cfgPath, "", false,
+	diag, sc, err := runPipeline(ctx, deps, cfg, cfgPath, "",
 		engine.Mode{Full: true, Advisory: true, ReportOnly: true}, base)
 	if err != nil {
 		return "", &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
@@ -135,8 +135,7 @@ func TestRun_Analyze_LLM_DeterministicFirst(t *testing.T) {
 	deps := &appDeps{Runner: toolrun.New(), Stdout: &buf}
 	cmd := AnalyzeCmd{
 		Config:           cfgPath,
-		Full:             true,
-		LLM:              true,
+		AISummary:        true,
 		Quiet:            true,
 		Format:           []string{formatText},
 		providerOverride: &fixedProvider{text: validReviewJSON, name: reviewProviderName},
@@ -177,16 +176,14 @@ func TestRun_Analyze_GateLLM_FailureDoesNotMaskVerdict(t *testing.T) {
 
 	var buf bytes.Buffer
 	deps := &appDeps{Runner: toolrun.New(), Stdout: &buf}
-	cmd := AnalyzeCmd{
-		Config:           cfgPath,
-		Full:             true,
-		Gate:             true,
-		LLM:              true,
-		Quiet:            true,
-		Format:           []string{formatText},
+	err := runScan(context.Background(), deps, scanRequest{
+		configPath:       cfgPath,
+		formats:          []string{formatText},
+		quiet:            true,
+		aiSummary:        true,
 		providerOverride: &failingProvider{name: reviewProviderName},
-	}
-	err := cmd.Run(deps)
+		reportOnly:       false,
+	})
 
 	var ee *exitError
 	if !errors.As(err, &ee) || ee.code != 1 {
@@ -212,8 +209,7 @@ func runAnalyzeJSONWithStderr(t *testing.T, cfgPath string, llmEnabled bool, pro
 	deps := &appDeps{Runner: toolrun.New(), Stdout: &buf, Stderr: &stderr}
 	cmd := AnalyzeCmd{
 		Config:           cfgPath,
-		Full:             true,
-		LLM:              llmEnabled,
+		AISummary:        llmEnabled,
 		Quiet:            true,
 		Format:           []string{formatJSON},
 		providerOverride: provider,
@@ -533,7 +529,7 @@ func TestLLMReview_Run_NoLLMConfig(t *testing.T) {
 	var buf bytes.Buffer
 	deps := &appDeps{Runner: toolrun.New(), Stdout: &buf}
 
-	cfg, loadErr := loadConfig(ctx, cfgPath, false)
+	cfg, loadErr := loadConfig(ctx, cfgPath)
 	if loadErr != nil {
 		t.Fatalf("loadConfig: %v", loadErr)
 	}

@@ -19,7 +19,7 @@ func TestLoadConfig_RejectsUnknownRuleType(t *testing.T) {
 	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := loadConfig(context.Background(), path, false)
+	_, err := loadConfig(context.Background(), path)
 	if err == nil || !strings.Contains(err.Error(), "unknown rule type") {
 		t.Fatalf("want unknown-rule-type error, got %v", err)
 	}

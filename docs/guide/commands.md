@@ -1,496 +1,798 @@
 # Commands
 
-Common commands:
+This page is the command and flag reference for `archfit`.
 
-```sh
-archfit doctor
-archfit config init --root . --output .archfit.yaml
-archfit config init --llm --root .
-archfit config update --config .archfit.yaml
-archfit config update --config .archfit.yaml --llm
-archfit config update --config .archfit.yaml --apply
-archfit config update --config .archfit.yaml --llm --apply  # structural apply only; LLM proposals stay review-only
-archfit                                                      # report-only, default text output
-archfit analyze --gate --config .archfit.yaml --full         # CI gate
-archfit analyze --gate --config .archfit.yaml --base main    # PR delta gate
-archfit analyze --gate --config .archfit.yaml --full --require-tools
-archfit analyze --gate --root ../repo --config .archfit.yaml --full
-archfit analyze --gate --config .archfit.yaml --json
-archfit analyze --format scorecard --config .archfit.yaml --full
-archfit analyze --markdown --config .archfit.yaml > archfit-report.md
-archfit analyze --llm --config .archfit.yaml
-archfit baseline --full --config .archfit.yaml
-archfit explain <finding-id-prefix> --config .archfit.yaml
-archfit config enrich labels --config .archfit.yaml
-archfit config enrich abstained --config .archfit.yaml
-archfit config enrich owner --config .archfit.yaml
-archfit config enrich volatility --config .archfit.yaml
-archfit config enrich subdomain --config .archfit.yaml
-archfit config enrich owner --config .archfit.yaml --apply --reviewed-by @you
-archfit config init --llm --root . -o .archfit-init-llm.yaml
-archfit config init --llm --apply --root .   # writes LLM judgments live; review before using as a gate
-archfit explain <finding-id-prefix> --llm
-archfit analyze --gate --sarif > archfit.sarif
-```
+Facts first:
 
-Use `analyze --gate` for CI gates. Use `analyze --markdown` for a human-readable
-audit report. Bare `archfit` (no subcommand) runs `analyze` in report-only mode.
+- Bare `archfit` is the same as `archfit analyze`.
+- `archfit analyze` is report-only. A successful run exits `0` even when it reports findings.
+- `archfit check` is the CI gate. It exits `1` on violations, `2` on warnings, and `3` on usage, config, or runtime errors.
+- Every command supports `-h, --help`.
+- `archfit` also supports `-v, --version`.
 
-## Command summary
+## Breaking changes
 
-- `archfit doctor` — check available local toolchain; a config that fails to
-  load is reported with the load error (a `forbidden_dependency` rule with no
-  `from:`/`to:` glob is such an error — it would be dead by construction).
-  `--fix` installs missing tools (`--dry-run` previews without installing).
-- `archfit config init` — generate a starter `.archfit.yaml`; `--llm` adds an
-  off-gate classification pass (subdomain, volatility, layer, role, and owner per
-  module). Default LLM plan mode comments suggestions; `--llm --apply` writes the
-  model judgments live, so review before using the file as a gate.
-- `archfit config update` — sync `.archfit.yaml` with the current project structure;
-  `--llm` adds review-only module and rule proposals to the drift report. Even with
-  `--apply`, only structural drift is written live; LLM proposals stay review-only.
-- `archfit analyze` — run architecture analysis (default command; also runs as
-  bare `archfit`). Without `--gate` it is report-only (always exits `0` on
-  success, `3` on config/tool error). With `--gate` it enforces rules and emits
-  CI exit codes. See `analyze` below.
-- `archfit baseline` — record accepted current findings.
-- `archfit explain <id>` — explain one finding by fingerprint prefix
-  (`--llm` appends an off-gate narrative; needs `ai:` configured).
-- `archfit config enrich` — draft LLM refinements for human review (off-gate).
-  Subcommands: `labels` (coupling-label drafts → `.archfit-labels.yaml`),
-  `abstained` (labels for unknown-strength cross-module edges with snippets),
-  `owner`, `volatility`, `subdomain` (module-field drafts → separate draft files);
-  `--apply` writes approved module-field entries into the config. See
-  [llm-enrich.md](llm-enrich.md).
+The CLI changed in the 2026-07 redesign. Update old scripts before upgrading.
 
-Output formats for `analyze`: `text` (default), `json`, `markdown`/`md`, `sarif`
-(SARIF 2.1.0 for CI code-scanning annotations), `scorecard` (the banded
-coupling_balance scorecard). Shorthands: `--json`, `--markdown`, `--sarif` (mutually
-exclusive). `--format` is repeatable for multiple outputs.
+### Command migration
 
-For wiring archfit into an AI coding agent's loop (`agent_tasks`, SARIF),
-see [agent-feedback.md](agent-feedback.md).
+| Old command              | New command       | What changed                                        |
+| ------------------------ | ----------------- | --------------------------------------------------- |
+| `archfit analyze --gate` | `archfit check`   | Gate mode moved from a flag to a dedicated command. |
+| `archfit --gate`         | `archfit check`   | Same behavior change as above.                      |
+| `archfit analyze`        | `archfit analyze` | Still the local report command.                     |
+| `archfit`                | `archfit analyze` | Bare `archfit` still runs local analysis.           |
 
-## Finding status
+### Flags
 
-Findings have a lifecycle status:
+| Old surface               | New surface                                                 | Status                                                                  |
+| ------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `--gate`                  | `archfit check`                                             | Removed.                                                                |
+| `--full`                  | remove it                                                   | Removed. Full scan is always on.                                        |
+| `--advisory`              | remove it, or use `--no-advisories` to hide advisories      | Removed and inverted.                                                   |
+| `--severity`              | `--min-severity`                                            | Renamed.                                                                |
+| `analyze --llm`           | `analyze --ai-summary`                                      | Renamed.                                                                |
+| `explain --llm`           | `explain --ai-summary`                                      | Renamed to match `analyze`.                                             |
+| `config init --llm`       | `config init --ai-classify`                                 | Renamed.                                                                |
+| `config update --llm`     | `config update --ai-classify`                               | Renamed.                                                                |
+| `--llm-provider`          | `--ai-provider`                                             | Renamed.                                                                |
+| `--llm-model`             | `--ai-model`                                                | Renamed.                                                                |
+| `--no-cache`              | `--refresh`                                                 | Renamed. New meaning: bypass cache reads and write fresh results back.  |
+| `--no-config`             | initialize config first with `archfit config init --root .` | Removed.                                                                |
+| `analyze --require-tools` | prefer `check --require-tools` in CI                        | Workflow moved. `analyze` still parses the flag, but stays report-only. |
 
-- `new` — active finding not present in the baseline;
-- `baseline` — accepted finding already recorded;
-- `fixed` — previously baselined finding that is no longer detected;
-- `waived` — active finding covered by an approved waiver;
-- `expired_waiver` — active finding whose waiver has expired.
+## Command chooser
+
+Use this when you know the job, not the command.
+
+| I want to...                                                        | Run this                                                                                                      |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| review architecture locally without failing my shell step           | `archfit analyze -c .archfit.yaml`                                                                            |
+| fail CI on blocking findings or warnings                            | `archfit check -c .archfit.yaml`                                                                              |
+| accept the current findings as the baseline                         | `archfit baseline -c .archfit.yaml`                                                                           |
+| understand one finding in detail                                    | `archfit explain <fingerprint-prefix> -c .archfit.yaml`                                                       |
+| verify analyzers are installed, or install what archfit can install | `archfit doctor` or `archfit doctor --fix`                                                                    |
+| create the first config file for a repo                             | `archfit config init --root .`                                                                                |
+| sync an existing config to the current repo structure               | `archfit config update -c .archfit.yaml`                                                                      |
+| draft AI labels or module metadata for review                       | `archfit config enrich <kind>` where `<kind>` is `labels`, `abstained`, `owner`, `volatility`, or `subdomain` |
 
 ## Exit codes
 
-- `0` — pass;
-- `1` — fail (active gate finding, a metric delta that worsens past its
-  `metrics.<name>` threshold with `gate` fail/unset, a tripped
-  [`coupling.gate`](configuration-reference.md#couplinggate), **or** a missing
-  required tool under `--require-tools` / `languages.<x>.gate: fail` /
-  `analyzers.<x>.gate: fail` — a policy violation);
-- `2` — warn;
-- `3` — usage, config, or runtime error.
+`archfit check` is the only command that uses all four exit codes.
 
-Exit `1` (policy) is deliberately distinct from exit `3` (tool/config error): a
-missing required tool is a _gate_ decision you opted into, not a crash.
+| Code | Meaning                                                                                 | Commands that produce it                                                                                                                                                            |
+| ---- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Success. For `analyze`, this still includes runs that report findings.                  | `archfit`, `archfit analyze`, `archfit check`, `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit config init`, `archfit config update`, `archfit config enrich ...` |
+| `1`  | Violations. Gate failed. Missing required tools under `--require-tools` also land here. | `archfit check`; `archfit analyze` never exits `1` on a successful run                                                                                                              |
+| `2`  | Warning verdict. No blocking violations, but warnings were promoted to the exit code.   | `archfit check`                                                                                                                                                                     |
+| `3`  | Usage, parse, config, or runtime error.                                                 | All commands                                                                                                                                                                        |
 
-Balanced Coupling advisories are informational by default. Use them to prioritize
-architecture review and refactoring, not as automatic pass/fail rules. Grouped
-`bc/imbalanced_coupling` advisories also appear in `advisory_tasks[]`, a
-report-only rollup channel separate from gate-only `agent_tasks[]`. The
-synthesised `coupling_balance` score built from those advisories _can_ fail the
-build, but only through the opt-in `coupling.gate` block.
+Notes:
 
-## Coverage gaps and required tools
+- `archfit analyze` always exits `0` after a successful analysis.
+- `archfit analyze --require-tools` only changes the rendered verdict. It does not change the exit code on success.
+- `archfit baseline`, `archfit explain`, `archfit doctor`, and the `config` commands are success-or-error commands: `0` or `3`.
 
-A missing analyzer drops dependent metrics to `n/a` (never a false green) and
-emits a machine-readable coverage gap in every output format. A disabled analyzer
-(`enabled: false`) is a deliberate opt-out — no gap is emitted.
+## Output formats
 
-Default posture is warn-loud, exit 0. To gate on a missing tool use `--require-tools`
-or `languages.<x>.gate: fail` / `analyzers.<x>.gate: fail`. For the full gap format,
-`n/a` semantics, and timeout behavior see
-[configuration reference → analyzers](configuration-reference.md#analyzersx-gate-coverage-gate).
+These formats apply to `archfit analyze` and `archfit check`.
 
-## analyze
+| Format            | Best for                                            | Notes                                                                                       |
+| ----------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `text`            | terminal use, local review, quick CI logs           | Default. Shows the decision, score, findings, and next actions in a human-first layout.     |
+| `json`            | automation, bots, custom dashboards, agent loops    | Machine-readable. Use this when a script needs `agent_tasks[]`, findings, or score deltas.  |
+| `markdown` / `md` | saved audit reports, PR attachments, docs artifacts | Good for reviewable reports such as `archfit-report.md`.                                    |
+| `sarif`           | GitHub code scanning and other SARIF consumers      | Best when you want annotations in a code-scanning UI.                                       |
+| `scorecard`       | trend review and before/after scoring               | Shows the banded `coupling_balance` scorecard only. Pair it with `--base` for a delta view. |
 
-`archfit analyze` is the single analysis command. It is also the **default
-command** — bare `archfit` (with no subcommand) runs it.
+Format rules:
+
+- Default output is `text`.
+- Shorthands are `--json`, `--markdown`, and `--sarif`.
+- Shorthands are mutually exclusive with each other.
+- Shorthands are also mutually exclusive with `--format`.
+- `--format` is repeatable.
+
+## `archfit` / `archfit analyze`
+
+Purpose:
+
+- Run the full analysis pipeline locally.
+- Print a decision, score, and findings.
+- Keep the run report-only.
+
+Use cases:
+
+- local architecture review before a PR;
+- generating Markdown, JSON, or SARIF artifacts;
+- comparing the current branch against a base ref without failing the shell step;
+- getting an AI summary after the deterministic report.
+
+Synopsis:
 
 ```sh
-# report-only: always exits 0 on success; decision band printed to terminal
+archfit [flags]
+archfit analyze [flags]
+```
+
+Behavior:
+
+- Bare `archfit` is the same as `archfit analyze`.
+- This command is report-only.
+- On success it exits `0`, even when the rendered verdict says fail or warn.
+- Use `archfit check` when you want exit codes to enforce a gate.
+
+Flags:
+
+| Flag              | Type        | Default                           | Effect                                                                                                        | Example                                                    |
+| ----------------- | ----------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `-c, --config`    | path        | `.archfit.yaml`                   | Config file to load.                                                                                          | `archfit analyze -c ./policy/.archfit.yaml`                |
+| `--root`          | path        | directory of `--config`           | Repo root to analyze. Use when the policy file lives outside the checked-out repo.                            | `archfit analyze --root ../repo -c ./policy/.archfit.yaml` |
+| `--base`          | git ref     | none                              | Compare the current run to a base ref and render a scorecard delta.                                           | `archfit analyze --base origin/main`                       |
+| `--ai-summary`    | bool        | `false`                           | Append an off-gate AI narrative review after the deterministic render. Requires `ai:` config.                 | `archfit analyze --ai-summary -c .archfit.yaml`            |
+| `--refresh`       | bool        | `false`                           | Re-run extractors, bypass cached reads, and refresh the cache with fresh results.                             | `archfit analyze --refresh -c .archfit.yaml`               |
+| `--json`          | bool        | `false`                           | Shorthand for `--format json`.                                                                                | `archfit analyze --json`                                   |
+| `--markdown`      | bool        | `false`                           | Shorthand for `--format markdown`.                                                                            | `archfit analyze --markdown > archfit-report.md`           |
+| `--sarif`         | bool        | `false`                           | Shorthand for `--format sarif`.                                                                               | `archfit analyze --sarif > archfit.sarif`                  |
+| `--format`        | enum list   | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown`, `md`, `sarif`, `scorecard`. Repeatable.               | `archfit analyze --format text --format json`              |
+| `--no-advisories` | bool        | `false`                           | Hide informational Balanced Coupling advisories from the output.                                              | `archfit analyze --no-advisories`                          |
+| `--min-severity`  | enum        | empty                             | Show only advisories at or above `low`, `medium`, `high`, or `critical`.                                      | `archfit analyze --min-severity high`                      |
+| `--lang`          | string list | none                              | Force named analyzers on. Repeatable. See the language setup docs for valid names.                            | `archfit analyze --lang go --lang ts`                      |
+| `--require-tools` | bool        | `false`                           | Mark missing required analyzer tools as fail in the rendered verdict. The command still exits `0` on success. | `archfit analyze --require-tools`                          |
+| `--progress`      | enum        | `auto`                            | Progress reporting on stderr: `auto`, `plain`, or `none`.                                                     | `archfit analyze --progress plain`                         |
+| `-q, --quiet`     | bool        | `false`                           | Suppress progress output.                                                                                     | `archfit analyze -q --json`                                |
+
+Examples:
+
+```sh
 archfit
-archfit analyze --config .archfit.yaml
-
-# CI gate: exits 0/1/2/3 per exit-code table below
-archfit analyze --gate --config .archfit.yaml --full
-
-# PR delta: compare to base branch
-archfit analyze --gate --config .archfit.yaml --base origin/main --json
-
-# Markdown audit report
-archfit analyze --markdown --config .archfit.yaml > archfit-report.md
-
-# Scorecard view
-archfit analyze --format scorecard --config .archfit.yaml
-
-# LLM holistic narrative appended (off-gate; needs ai: configured)
-archfit analyze --llm --config .archfit.yaml
-
-# SARIF for GitHub code-scanning
-archfit analyze --gate --sarif > archfit.sarif
+archfit analyze -c .archfit.yaml
+archfit analyze --markdown -c .archfit.yaml > archfit-report.md
+archfit analyze --json -c .archfit.yaml | jq .
+archfit analyze --format scorecard -c .archfit.yaml
+archfit analyze --base origin/main --format text -c .archfit.yaml
+archfit analyze --ai-summary -c .archfit.yaml
+archfit analyze --refresh --require-tools -c .archfit.yaml
 ```
 
-The default text output leads with a **Decision** block:
+## `archfit check`
 
-```
-ARCHFIT RESULT
+Purpose:
 
-Decision   HEALTHY
-Gate       PASS  ·  0 blocking
-Warnings   0 advisory
-Score      82 / 100  serviceable
+- Run the same pipeline as `analyze`.
+- Turn the result into CI-friendly exit codes.
+- Use in CI, pre-push hooks, and agent validation loops.
 
-RECOMMENDATIONS
+Use cases:
 
-  MUST FIX
-    none
-  SHOULD FIX
-    none
-  WATCH
-    ...
-```
+- blocking merges on architecture drift;
+- gating on missing analyzers with `--require-tools`;
+- emitting JSON or SARIF for bots and code-scanning systems;
+- comparing a branch to a base ref while still enforcing the gate.
 
-Live progress lines (`[1/5] extracting Go packages …`) print to **stderr** while
-analyzing. They are TTY-gated: suppressed when stdout is piped, under CI
-environments, or with `--quiet`. This keeps `archfit --json | jq` clean.
-
-### analyze flags
-
-- `-c` / `--config` — config file (default `.archfit.yaml`).
-- `--root` — analysis root (default: config directory).
-- `--base <ref>` — also score a git ref and show a before/after scorecard delta
-  in the text/markdown report. JSON also includes `score_delta`; SARIF stays the
-  normal HEAD diagnostic.
-- `--gate` — enable CI exit codes (0/1/2/3); without it the run is report-only
-  (always exits `0` on success, `3` on config or tool error).
-- `--json` — output JSON (shorthand for `--format json`).
-- `--markdown` — output Markdown audit report (shorthand for `--format markdown`).
-- `--sarif` — output SARIF 2.1.0 (shorthand for `--format sarif`).
-- `--format <fmt>` — repeatable: `text` (default), `json`, `markdown`/`md`,
-  `sarif`, `scorecard`. Shorthands and `--format` are mutually exclusive.
-- `--llm` — add an off-gate LLM advisory interpretation after the
-  deterministic output (needs `ai:` configured in `.archfit.yaml`). For `json`,
-  `sarif`, and `scorecard` formats the review is written to stderr so stdout
-  stays parseable.
-- `--full` — scan all files (default true).
-- `--advisory` — include Balanced Coupling advisories (default true).
-- `--no-cache` — bypass archfit caches: extractor facts (and LLM responses with
-  `--llm`). Reads and writes — a `--no-cache` run neither uses nor refreshes
-  entries. See [caching.md](caching.md).
-- `--severity`, `--lang`, `--no-config`, `--require-tools` — standard analyze flags.
-- `--progress auto|plain|none` — progress output mode (default `auto`).
-- `--quiet` / `-q` — suppress progress and non-essential output.
-
-## --root: analysis boundary
-
-`--root` (on `analyze` and `config enrich`) sets the **analysis
-boundary** — the directory tree that extractors walk, coverage counts against, and
-file-based metrics scope to. All tool calls (go/packages, dependency-cruiser,
-grimp, loc, clones, fitness) operate inside this tree.
-
-`--root` is decoupled from the git topmost directory. archfit resolves `git
-rev-parse --show-toplevel` separately (stored as the internal `GitRoot`); git
-history and changed-file diffs run there and are then re-based to the subtree.
-This lets a config in a CI repo point at a subdir of a monorepo:
+Synopsis:
 
 ```sh
-archfit analyze --gate --root ./server/shared --config ./policies/.archfit.yaml --full
+archfit check [flags]
 ```
-
-or let you analyze a monorepo subproject without touching any config:
-
-```sh
-archfit analyze --gate --root ~/workspace/omni/server/shared --full
-```
-
-When `--root` is absent, the scan root equals `GitRoot` (or the config directory
-for a non-git tree), so no existing invocations change.
-
-**File-count scoping:** `FilesSeen` in coverage and loc counts only files inside
-`--root`. Running `--root <subdir>` restricts those counts to the subtree; running
-at the repo root includes everything.
-
-**Baseline, labels, and config-hash** stay config-adjacent — only the scanned
-tree moves.
-
-**macOS APFS case-insensitive volumes:** `--root` paths whose case differs from
-the on-disk canonical form (e.g. `/Users/alice/workspace/myrepo` vs
-`/Users/alice/Workspace/MyRepo`) are resolved to the canonical path via
-`os.SameFile` (device+inode comparison), so subtree scoping works correctly on
-case-insensitive APFS. `filepath.EvalSymlinks` still handles symlinks; the
-`os.SameFile` pass handles case mismatches that `EvalSymlinks` cannot fix.
-
-## Scorecard view
-
-The banded **coupling_balance scorecard** is one of `analyze`'s output formats:
-
-```sh
-# whole-repo scorecard
-archfit analyze --format scorecard --config .archfit.yaml
-
-# with a base ref: shows a delta section
-archfit analyze --format scorecard --config .archfit.yaml --base main
-```
-
-The scorecard shows one scored dimension: `coupling_balance`. It carries a 0–100
-value, a band (critical / poor / mixed / serviceable / strong), a confidence, and
-evidence references. The overall is the coupling_balance value. This is not a
-composite of multiple dimensions — coupling_balance is the single architecture
-fitness measure. Structural rules (forbidden deps, layering, cycle-as-fail) and
-baseline-delta metrics (`cycle`, `encapsulation`, `coverage`, `unbalanced_edge`)
-are reported and gated separately.
-
-Output is deterministic — byte-identical across a double-run. The scorecard is
-report-only by default; the opt-in
-[`coupling.gate`](configuration-reference.md#couplinggate) block makes the
-synthesised score fail the run (exit 1) on a band floor or score drop.
-
-## LLM narrative (analyze --llm)
-
-`archfit analyze --llm` runs the full deterministic pipeline, synthesizes the
-scorecard, builds the shared repository evidence pack, and feeds those cited
-facts to the LLM for an architect review after the deterministic output. Text and
-Markdown runs append the review to stdout; `json`, `sarif`, and `scorecard` runs
-write it to stderr so machine stdout stays parseable. It is **off-gate**: the
-review is advisory only and never affects the gate verdict, findings, metrics, or
-scorecard (enforced by the LLM-off-gate invariant in `internal/arch_test.go`).
-
-```sh
-archfit analyze --llm --config .archfit.yaml
-archfit analyze --llm --no-cache --config .archfit.yaml
-```
-
-The model is constrained by a Balanced-Coupling-grounded system prompt and a
-strict JSON schema. Each dimension, risk, and suggestion carries `claim_type`
-(`deterministic_fact`, `semantic_interpretation`, `recommendation`, or
-`unknown`) plus citations via `finding_ids`, `metric_ids`, or `evidence_refs`.
-It may only:
-
-- narrate, prioritize, and contextualize findings **already present** in the
-  evidence;
-- classify volatility / subdomain for modules that appear in the evidence;
-- propose dimension bands for dimensions named in the evidence;
-- cite only supplied finding IDs, metric IDs, and repository evidence IDs.
-
-A post-verify pass enforces the rubric vocabulary and drops fabricated values
-(dropped counts logged to stderr):
-
-- **Overall band** — blanked (shown as "unrated") if outside the five-band rubric
-  (`critical` / `poor` / `mixed` / `serviceable` / `strong`).
-- **Dimension entries** — dropped if the dimension name is unknown **or** the band
-  is outside the rubric vocabulary.
-- **Subdomain suggestions** — dropped if the suggested subdomain is not in the
-  fixed DDD subdomain set (`core`, `supporting`, `generic`).
-- **Module/risk references** — dropped if the module name does not appear in the
-  deterministic evidence. Dynamic/lazy-import modules are valid evidence even when
-  they carry no static finding.
-- **Claim metadata** — dropped if `claim_type` is outside the fixed vocabulary or
-  if a recommendation lacks at least one supported `finding_id`, `metric_id`, or
-  `evidence_ref`.
-
-The model **cannot** invent gate violations, module names, band labels, finding
-IDs, metric IDs, or evidence refs.
-
-Dynamic/lazy imports (detected by TypeScript and Python extractors as
-`dynamic_imports`) are included in the review prompt as a hidden-coupling risk
-section so the narrative can flag coupling the static dependency graph misses.
-The same is true for `connascence.roadmap` and `runtime_async_edges`: the review
-may explain them or propose follow-up config/docs, but it cannot convert them into
-scored facts, gate findings, or baseline changes.
-
-**Layer intent:** when layers are declared, `forbidden_layer_direction` gates
-deterministically. When they are not, `archfit config enrich` can propose a layer
-structure; see [configuration-reference.md → layers](configuration-reference.md#layers).
-
-Requirements:
-
-- `ai:` configured (provider + model) and the provider's API key set.
-  Without it, `--llm` exits `3` with an actionable message and touches nothing.
-  See [LLM enrichment](llm-enrich.md) and `archfit doctor`.
-
-Flags (in addition to the standard `analyze` flags):
-
-- `--no-cache` — bypass archfit caches: extractor facts and the LLM response
-  cache at `.archfit-cache/llm/`. See [caching.md](caching.md).
-
-## archfit config init --llm (full draft or direct apply)
-
-`archfit config init --llm` is a one-shot LLM drafter for a whole `.archfit.yaml`. It
-discovers project structure, classifies every module (subdomain, volatility,
-layer, and `role`), drafts an owner per module from CODEOWNERS context, and
-renders the entire config in **plan mode** — every suggestion is a commented YAML
-line, nothing is applied.
-
-```sh
-archfit config init --llm --root . -o .archfit-init-llm.yaml
-archfit config init --llm --root . -o -   # stream the draft to stdout
-```
-
-Direct it to a side file with `-o` to keep it review-only: review the draft, then
-move approved fields into the live config deliberately. `--apply` skips that review
-step and writes the LLM classifications live into the generated config, so inspect
-and edit the file before using it as a gate. Needs `ai:` configured (provider +
-model) and the provider's API key — see [LLM enrichment](llm-enrich.md).
 
 Flags:
 
-- `--root` / `-r` — project root (default: `.`).
-- `--output` / `-o` — draft output file; `-` for stdout.
-- `--llm-provider`, `--llm-model`, `--no-cache` — provider/cache controls.
+| Flag              | Type      | Default                           | Effect                                                                                          | Example                                                  |
+| ----------------- | --------- | --------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `-c, --config`    | path      | `.archfit.yaml`                   | Config file to load.                                                                            | `archfit check -c .archfit.yaml`                         |
+| `--root`          | path      | directory of `--config`           | Repo root to analyze.                                                                           | `archfit check --root ../repo -c ./policy/.archfit.yaml` |
+| `--base`          | git ref   | none                              | Compare the current branch against a base ref and include a scorecard delta.                    | `archfit check --base origin/main`                       |
+| `--no-advisories` | bool      | `false`                           | Hide informational Balanced Coupling advisories from the output.                                | `archfit check --no-advisories`                          |
+| `--min-severity`  | enum      | empty                             | Show only advisories at or above `low`, `medium`, `high`, or `critical`.                        | `archfit check --min-severity high`                      |
+| `--refresh`       | bool      | `false`                           | Re-run extractors and refresh the cache. Use after installing or updating analyzer tools.       | `archfit check --refresh`                                |
+| `--require-tools` | bool      | `false`                           | Exit non-zero when any required analyzer tool is missing.                                       | `archfit check --require-tools`                          |
+| `--json`          | bool      | `false`                           | Shorthand for `--format json`.                                                                  | `archfit check --json`                                   |
+| `--markdown`      | bool      | `false`                           | Shorthand for `--format markdown`.                                                              | `archfit check --markdown > archfit-report.md`           |
+| `--sarif`         | bool      | `false`                           | Shorthand for `--format sarif`.                                                                 | `archfit check --sarif > archfit.sarif`                  |
+| `--format`        | enum list | `text` when no format flag is set | Output one or more formats: `json`, `text`, `markdown`, `md`, `sarif`, `scorecard`. Repeatable. | `archfit check --format text --format json`              |
+| `--progress`      | enum      | `auto`                            | Progress reporting on stderr: `auto`, `plain`, or `none`.                                       | `archfit check --progress plain`                         |
+| `-q, --quiet`     | bool      | `false`                           | Suppress progress output.                                                                       | `archfit check -q --json`                                |
 
-When `--llm` is used, `config init` reads `ai:` from the target output config
-when that file already exists; otherwise use `--llm-provider` and `--llm-model`.
-
-## archfit config init
-
-`archfit config init` discovers project structure and writes a starter `.archfit.yaml`.
-With `--llm` it adds an off-gate classification pass that suggests `subdomain`,
-`volatility`, `layer`, and a module-name improvement for each discovered module.
-
-The output path is resolved against `--root`, so `archfit config init --root <dir>` writes
-`<dir>/.archfit.yaml` (not the current directory). **By default `config init` will not
-overwrite an existing config** — if a valid `.archfit.yaml` is already present it
-leaves it untouched (architect-authored module mapping is not clobbered) and exits 0
-with a note. Pass `--force` to overwrite it; a timestamped backup is kept.
+Examples:
 
 ```sh
-# plan mode (default): suggestions are commented-inert in the output
-archfit config init --llm --root .
-
-# apply mode: LLM classifications written live into the file
-archfit config init --llm --apply --root .
-
-# stream to stdout (no file written) — useful for inspection
-archfit config init --llm -o -
+archfit check -c .archfit.yaml
+archfit check --json -c .archfit.yaml
+archfit check --base origin/main --sarif -c .archfit.yaml > archfit.sarif
+archfit check --require-tools -c .archfit.yaml
+archfit check --refresh --format scorecard -c .archfit.yaml
+archfit check --min-severity high -c .archfit.yaml
 ```
 
-Mode behaviour:
+## `archfit baseline`
 
-- `--llm` (plan): classification lines are emitted as YAML comments
-  (`# subdomain: core  # llm-suggested — review and uncomment`). Uncommenting
-  activates them; the file is safe to use as a gate without reviewing them.
-- `--llm --apply`: `subdomain`, `volatility`, `owner`, `role`, and `layer` are written
-  as live fields from the model response. `layer` is written only when the value
-  is in `layers:`; otherwise it stays a comment. Module keys are never renamed
-  automatically. Treat the output as unreviewed until a human checks the cited
-  rationale.
-- `--apply` without `--llm` is an error.
+Purpose:
+
+- Accept the current findings as the baseline.
+- Let future `check` runs block only new drift.
+
+Use cases:
+
+- first-time rollout;
+- re-anchoring after a deliberate cleanup wave;
+- baselining a delta run with `--base`.
+
+Synopsis:
+
+```sh
+archfit baseline [flags]
+```
+
+What it writes:
+
+- Saves the baseline beside the config as `.archfit-baseline.json`.
+- Keeps metrics and score snapshots so later runs can detect fixed findings and score movement.
 
 Flags:
 
-- `--llm-provider` — override provider (`anthropic`, `openai`, `ollama`).
-  Default: `anthropic`.
-- `--llm-model` — override model. Default: `claude-opus-4-8`.
-- `--no-cache` — bypass the LLM response cache at `.archfit-cache/llm/`.
+| Flag              | Type    | Default                 | Effect                                                                | Example                                                 |
+| ----------------- | ------- | ----------------------- | --------------------------------------------------------------------- | ------------------------------------------------------- |
+| `-c, --config`    | path    | `.archfit.yaml`         | Config file.                                                          | `archfit baseline -c .archfit.yaml`                     |
+| `-r, --root`      | path    | directory of `--config` | Repo root to analyze.                                                 | `archfit baseline -r ../repo -c ./policy/.archfit.yaml` |
+| `--no-advisories` | bool    | `false`                 | Exclude informational Balanced Coupling advisories from the baseline. | `archfit baseline --no-advisories`                      |
+| `--base`          | git ref | none                    | Compare against a base ref when baselining a delta run.               | `archfit baseline --base origin/main`                   |
+| `--refresh`       | bool    | `false`                 | Re-run extractors and refresh the cache.                              | `archfit baseline --refresh`                            |
 
-See [LLM enrichment](llm-enrich.md) for provider and API key setup. `archfit doctor`
-shows key and cache status.
-
-## archfit config update
-
-`archfit config update` keeps `.archfit.yaml` in sync as the codebase evolves. It re-runs
-discovery, compares the results to the existing config, and reports or applies the
-diff.
+Examples:
 
 ```sh
-# plan mode (default): prints a drift report, writes nothing
-archfit config update --config .archfit.yaml
-
-# apply mode: writes structural changes live
-archfit config update --config .archfit.yaml --apply
-
-# with LLM: adds review-only role/volatility proposals to the report
-archfit config update --config .archfit.yaml --llm
-
-# with LLM + apply: structural changes written live; LLM proposals stay review-only
-archfit config update --config .archfit.yaml --llm --apply
+archfit baseline -c .archfit.yaml
+archfit baseline --no-advisories -c .archfit.yaml
+archfit baseline --base origin/main -c .archfit.yaml
+archfit baseline --refresh -r . -c .archfit.yaml
 ```
 
-Mode matrix:
+## `archfit explain <fingerprint>`
 
-| Command                       | Effect                                                                          |
-| ----------------------------- | ------------------------------------------------------------------------------- |
-| `config update`               | Drift report only; writes nothing.                                              |
-| `config update --apply`       | Structural drift written live (add/path/comment/Rust deep-analysis).            |
-| `config update --llm`         | Drift report plus review-only subdomain, volatility, layer, and role proposals. |
-| `config update --llm --apply` | Structural drift written live; LLM semantic proposals remain review-only.       |
+Purpose:
 
-Every mode (plan or apply, with or without `--llm`) also reports **DEPLOY UNIT
-HINTS** — deterministic `deploy_unit` proposals for modules the deploy-unit
-detector mapped but the config leaves unset. It also reports **DISTANCE CONFIG
-CANDIDATES** from excluded static external edges, runtime async, and
-dynamic-import evidence; these are hints to review `external_systems` or
-`deploy_unit` config. Both sections are review-only; `--apply` never writes
-them.
+- Re-run the pipeline.
+- Find one finding by fingerprint prefix.
+- Print the rule, severity, edge, modules, locations, and constraint for that finding.
 
-What "structural drift" means:
+Use cases:
 
-- **Added modules** — modules discovered but absent from the config are added as
-  new stanzas.
-- **Path drift** — modules whose discovered paths differ from config paths get
-  their `paths:` block replaced with the discovered paths.
-- **Removed modules** — modules in the config with no discovered paths are
-  commented out with a marker (e.g. `# archfit: removed module "foo" — verify
-before deleting`).
-- **Rust deep-analysis config** — for a project with a root `Cargo.toml`,
-  `--apply` also writes `languages.rust.enabled: auto`,
-  `analyzers.cargo_modules.enabled: true`, and `analyzers.scip.enabled: true` when
-  not already set (single-crate Rust degenerates to one node without them). The
-  edit is silent beyond the standard `.bak` backup; explicit
-  `languages.rust.enabled: false` opts out and is preserved.
+- understanding a CI failure;
+- sharing a single finding in review;
+- appending an AI narrative to one finding instead of to the whole report.
 
-Guardrails:
+Synopsis:
 
-- Plan mode (`config update` without `--apply`) never writes `.archfit.yaml`.
-- `--apply` backs up the existing file before writing (`.archfit.yaml.bak` or
-  timestamped if a backup already exists).
-- Existing field values are never overwritten.
-- LLM subdomain, volatility, layer, and role proposals are report-only. Review
-  and copy accepted values into `.archfit.yaml` deliberately.
-- Deploy-unit hints and distance-config candidates are report-only — `--apply`
-  never writes `deploy_unit` or `external_systems` values from them.
-- Module keys are never auto-renamed.
-- If the config has not changed since it was read, `--apply` aborts rather than
-  overwriting concurrent edits.
+```sh
+archfit explain <fingerprint-prefix> [flags]
+```
+
+Tips:
+
+- Use the fingerprint prefix from `archfit check --json` or `archfit analyze --json`.
+- The prefix must match exactly one finding in the current pipeline output.
 
 Flags:
 
-- `--config` / `-c` — config file path (default: `.archfit.yaml`).
-- `--root` / `-r` — project root for discovery (default: directory of `--config`).
-- `--llm`, `--llm-provider`, `--llm-model`, `--no-cache` — same as `config init --llm`.
+| Flag           | Type | Default                 | Effect                                                                   | Example                                                         |
+| -------------- | ---- | ----------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `-c, --config` | path | `.archfit.yaml`         | Config file.                                                             | `archfit explain ab12cd34 -c .archfit.yaml`                     |
+| `-r, --root`   | path | directory of `--config` | Repo root to analyze.                                                    | `archfit explain ab12cd34 -r ../repo -c ./policy/.archfit.yaml` |
+| `--ai-summary` | bool | `false`                 | Append an off-gate AI narrative for this finding. Requires `ai:` config. | `archfit explain ab12cd34 --ai-summary -c .archfit.yaml`        |
+| `--refresh`    | bool | `false`                 | Re-run extractors and refresh the cache.                                 | `archfit explain ab12cd34 --refresh -c .archfit.yaml`           |
 
-## Scorecard delta (analyze --base)
-
-`archfit analyze --base <ref>` scores a git ref in addition to HEAD and shows a
-before/after scorecard delta. It checks `<ref>` out into a clean detached
-worktree, scores it with the same pipeline, and adds a **CHANGE VS BASE** section
-to the text report (a "Change vs base" block under `--markdown`). The HEAD side is
-a normal full analysis. JSON includes `score_delta`:
-`base_overall`, `head_overall`, `overall_delta`, and per-dimension
-`base`/`head`/`delta`; SARIF stays the standard HEAD diagnostic. `--gate` /
-`--require-tools` apply exactly as without `--base`. Base-side extractor facts are cached by commit SHA, so
-repeat runs against the same ref skip all base-side subprocess work — see
-[caching.md](caching.md).
+Examples:
 
 ```sh
-archfit analyze --base main                            # decision + before/after delta
-archfit analyze --gate --base origin/main              # gate HEAD and show the delta
-archfit analyze --base v1.0.0 --root ./services/api --markdown
+archfit explain 5fd7d1c9 -c .archfit.yaml
+archfit explain 5fd7d1c9 --ai-summary -c .archfit.yaml
+archfit explain 5fd7d1c9 --refresh -c .archfit.yaml
+archfit explain 5fd7d1c9 -r ../repo -c ./policy/.archfit.yaml
 ```
 
-**Both sides use the current `--config`** — this isolates code drift from config
-drift; the base ref may predate the config file. A non-git directory or an
-unknown ref exits `3`. Use it to answer "did this branch improve or regress the
-architecture scorecard?"
+## `archfit doctor`
+
+Purpose:
+
+- Check which analyzer tools are available.
+- Show install hints for missing tools.
+- Optionally install what archfit can install.
+
+Use cases:
+
+- setting up a new machine;
+- debugging analyzer coverage gaps;
+- previewing install commands with `--dry-run`.
+
+Synopsis:
+
+```sh
+archfit doctor [flags]
+```
+
+What it reports:
+
+- a tool status table;
+- off-gate AI provider status from `.archfit.yaml` when present;
+- `.archfit-cache/llm` entry count when AI is configured;
+- config-load errors for `.archfit.yaml` when the default config exists but is invalid.
+
+Flags:
+
+| Flag            | Type      | Default                              | Effect                                                                 | Example                                    |
+| --------------- | --------- | ------------------------------------ | ---------------------------------------------------------------------- | ------------------------------------------ |
+| `--fix`         | bool      | `false`                              | Install missing analyzer toolchains that archfit knows how to install. | `archfit doctor --fix`                     |
+| `--lang`        | enum list | all languages when used with `--fix` | Scope installs to `go`, `ts`, `py`, or `rust`. Repeatable.             | `archfit doctor --fix --lang ts --lang py` |
+| `-n, --dry-run` | bool      | `false`                              | With `--fix`, print install commands without running them.             | `archfit doctor --fix --dry-run`           |
+
+Examples:
+
+```sh
+archfit doctor
+archfit doctor --fix
+archfit doctor --fix --dry-run
+archfit doctor --fix --lang go --lang rust
+```
+
+## `archfit config init`
+
+Purpose:
+
+- Discover project structure.
+- Write a starter `.archfit.yaml`.
+- Optionally add an off-gate AI classification pass.
+
+Use cases:
+
+- first setup in a repo;
+- generating a draft to review before saving;
+- creating an AI-classified draft without touching the live config.
+
+Synopsis:
+
+```sh
+archfit config init [flags]
+```
+
+Notes:
+
+- Relative output paths resolve against `--root`.
+- Use `-o -` to write the rendered config to stdout.
+- Without `--force`, an existing valid config is left untouched.
+- `--apply` requires `--ai-classify`.
+
+Flags:
+
+| Flag            | Type        | Default           | Effect                                                                                    | Example                                                               |
+| --------------- | ----------- | ----------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `-r, --root`    | path        | `.`               | Project root directory to inspect.                                                        | `archfit config init -r .`                                            |
+| `-o, --output`  | path or `-` | `.archfit.yaml`   | Output file. Relative paths resolve against `--root`. Use `-` for stdout.                 | `archfit config init -r . -o draft.yaml`                              |
+| `--force`       | bool        | `false`           | Overwrite an existing config and keep a timestamped backup.                               | `archfit config init --force -r .`                                    |
+| `--ai-classify` | bool        | `false`           | Run an off-gate AI classification pass. Requires `ai:` config or provider override flags. | `archfit config init --ai-classify -r .`                              |
+| `--apply`       | bool        | `false`           | With `--ai-classify`, write AI classifications directly into the config.                  | `archfit config init --ai-classify --apply -r .`                      |
+| `--ai-provider` | enum        | `anthropic`       | Override AI provider: `anthropic`, `openai`, or `ollama`.                                 | `archfit config init --ai-classify --ai-provider openai -r .`         |
+| `--ai-model`    | string      | `claude-opus-4-8` | Override the AI model.                                                                    | `archfit config init --ai-classify --ai-model claude-sonnet-4-5 -r .` |
+| `--refresh`     | bool        | `false`           | Re-run AI calls and refresh the AI cache.                                                 | `archfit config init --ai-classify --refresh -r .`                    |
+
+Examples:
+
+```sh
+archfit config init --root .
+archfit config init --root . --output draft.yaml
+archfit config init --root . --output -
+archfit config init --ai-classify --root . --output draft.yaml
+archfit config init --ai-classify --apply --root .
+archfit config init --force --root .
+```
+
+## `archfit config update`
+
+Purpose:
+
+- Re-discover project structure.
+- Diff it against the existing config.
+- Print a drift report, or apply structural edits.
+
+Use cases:
+
+- after adding, removing, or moving modules;
+- after enabling more language analyzers;
+- reviewing AI proposals for new modules without changing the gate behavior.
+
+Synopsis:
+
+```sh
+archfit config update [flags]
+```
+
+Notes:
+
+- Without `--apply`, this command is report-only.
+- With `--apply`, only structural changes are written live.
+- AI semantic proposals remain review-only even when `--apply` is used.
+
+Flags:
+
+| Flag            | Type   | Default                 | Effect                                                                   | Example                                                                     |
+| --------------- | ------ | ----------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| `-c, --config`  | path   | `.archfit.yaml`         | Config file path.                                                        | `archfit config update -c .archfit.yaml`                                    |
+| `-r, --root`    | path   | directory of `--config` | Project root directory to scan.                                          | `archfit config update -r . -c .archfit.yaml`                               |
+| `--ai-classify` | bool   | `false`                 | Run AI classification for unclassified modules. Off-gate.                | `archfit config update --ai-classify -c .archfit.yaml`                      |
+| `--apply`       | bool   | `false`                 | Write structural changes live into `.archfit.yaml`. Backups are created. | `archfit config update --apply -c .archfit.yaml`                            |
+| `--refresh`     | bool   | `false`                 | Re-run AI calls and refresh the AI cache.                                | `archfit config update --ai-classify --refresh -c .archfit.yaml`            |
+| `--ai-provider` | string | `anthropic`             | Override the AI provider.                                                | `archfit config update --ai-classify --ai-provider ollama -c .archfit.yaml` |
+| `--ai-model`    | string | `claude-opus-4-8`       | Override the AI model.                                                   | `archfit config update --ai-classify --ai-model llama3.1 -c .archfit.yaml`  |
+
+Examples:
+
+```sh
+archfit config update -c .archfit.yaml
+archfit config update --apply -c .archfit.yaml
+archfit config update --ai-classify -c .archfit.yaml
+archfit config update --ai-classify --apply -c .archfit.yaml
+archfit config update --ai-classify --refresh -c .archfit.yaml
+```
+
+## `archfit config enrich ...`
+
+Purpose:
+
+- Draft off-gate AI annotations for review.
+- Keep the deterministic gate separate from AI judgment.
+- Write drafts into sidecar files, then pin approved values into `.archfit.yaml` where supported.
+
+Group synopsis:
+
+```sh
+archfit config enrich labels [flags]
+archfit config enrich abstained [flags]
+archfit config enrich owner [flags]
+archfit config enrich volatility [flags]
+archfit config enrich subdomain [flags]
+```
+
+Common behavior:
+
+- These commands are review workflows, not gate workflows.
+- `labels` and `abstained` write to `.archfit-labels.yaml`.
+- `owner` writes drafts to `.archfit-owners.yaml`.
+- `volatility` writes drafts to `.archfit-volatility.yaml`.
+- `subdomain` writes drafts to `.archfit-subdomains.yaml`.
+- `owner`, `volatility`, and `subdomain` can later pin approved entries into `.archfit.yaml` with `--apply`.
+
+### `archfit config enrich labels`
+
+Purpose:
+
+- Draft coupling-strength labels for cross-module edges.
+- Focus on pairs that look refinable from the deterministic evidence.
+
+Synopsis:
+
+```sh
+archfit config enrich labels [flags]
+```
+
+Flags:
+
+| Flag           | Type | Default                 | Effect                                   | Example                                                   |
+| -------------- | ---- | ----------------------- | ---------------------------------------- | --------------------------------------------------------- |
+| `-c, --config` | path | `.archfit.yaml`         | Config file.                             | `archfit config enrich labels -c .archfit.yaml`           |
+| `-r, --root`   | path | directory of `--config` | Repo root to analyze.                    | `archfit config enrich labels -r . -c .archfit.yaml`      |
+| `--refresh`    | bool | `false`                 | Re-run extractors and refresh the cache. | `archfit config enrich labels --refresh -c .archfit.yaml` |
+
+Examples:
+
+```sh
+archfit config enrich labels -c .archfit.yaml
+archfit config enrich labels -r . -c .archfit.yaml
+archfit config enrich labels --refresh -c .archfit.yaml
+```
+
+### `archfit config enrich abstained`
+
+Purpose:
+
+- Draft labels only for abstained cross-module edges.
+- Use code snippets when the deterministic scorer could not classify strength.
+
+Synopsis:
+
+```sh
+archfit config enrich abstained [flags]
+```
+
+Flags:
+
+| Flag           | Type | Default                 | Effect                                   | Example                                                      |
+| -------------- | ---- | ----------------------- | ---------------------------------------- | ------------------------------------------------------------ |
+| `-c, --config` | path | `.archfit.yaml`         | Config file.                             | `archfit config enrich abstained -c .archfit.yaml`           |
+| `-r, --root`   | path | directory of `--config` | Repo root to analyze.                    | `archfit config enrich abstained -r . -c .archfit.yaml`      |
+| `--refresh`    | bool | `false`                 | Re-run extractors and refresh the cache. | `archfit config enrich abstained --refresh -c .archfit.yaml` |
+
+Examples:
+
+```sh
+archfit config enrich abstained -c .archfit.yaml
+archfit config enrich abstained -r . -c .archfit.yaml
+archfit config enrich abstained --refresh -c .archfit.yaml
+```
+
+### `archfit config enrich owner`
+
+Purpose:
+
+- Draft a module owner per module.
+- Use CODEOWNERS context when available.
+
+Synopsis:
+
+```sh
+archfit config enrich owner [flags]
+```
+
+Flags:
+
+| Flag            | Type   | Default                 | Effect                                                           | Example                                                                      |
+| --------------- | ------ | ----------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `-c, --config`  | path   | `.archfit.yaml`         | Config file.                                                     | `archfit config enrich owner -c .archfit.yaml`                               |
+| `-r, --root`    | path   | directory of `--config` | Repo root to analyze.                                            | `archfit config enrich owner -r . -c .archfit.yaml`                          |
+| `--refresh`     | bool   | `false`                 | Re-run extractors and refresh the cache.                         | `archfit config enrich owner --refresh -c .archfit.yaml`                     |
+| `--apply`       | bool   | `false`                 | Read approved draft entries and write them into `.archfit.yaml`. | `archfit config enrich owner --apply -c .archfit.yaml`                       |
+| `--reviewed-by` | string | empty                   | Stamp the reviewer identity on applied entries.                  | `archfit config enrich owner --apply --reviewed-by @alexei -c .archfit.yaml` |
+
+Examples:
+
+```sh
+archfit config enrich owner -c .archfit.yaml
+archfit config enrich owner --refresh -c .archfit.yaml
+archfit config enrich owner --apply -c .archfit.yaml
+archfit config enrich owner --apply --reviewed-by @you -c .archfit.yaml
+```
+
+### `archfit config enrich volatility`
+
+Purpose:
+
+- Draft module volatility values.
+- Pin approved values into the config later.
+
+Synopsis:
+
+```sh
+archfit config enrich volatility [flags]
+```
+
+Flags:
+
+| Flag            | Type   | Default                 | Effect                                                           | Example                                                                           |
+| --------------- | ------ | ----------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `-c, --config`  | path   | `.archfit.yaml`         | Config file.                                                     | `archfit config enrich volatility -c .archfit.yaml`                               |
+| `-r, --root`    | path   | directory of `--config` | Repo root to analyze.                                            | `archfit config enrich volatility -r . -c .archfit.yaml`                          |
+| `--refresh`     | bool   | `false`                 | Re-run extractors and refresh the cache.                         | `archfit config enrich volatility --refresh -c .archfit.yaml`                     |
+| `--apply`       | bool   | `false`                 | Read approved draft entries and write them into `.archfit.yaml`. | `archfit config enrich volatility --apply -c .archfit.yaml`                       |
+| `--reviewed-by` | string | empty                   | Stamp the reviewer identity on applied entries.                  | `archfit config enrich volatility --apply --reviewed-by @alexei -c .archfit.yaml` |
+
+Examples:
+
+```sh
+archfit config enrich volatility -c .archfit.yaml
+archfit config enrich volatility --refresh -c .archfit.yaml
+archfit config enrich volatility --apply -c .archfit.yaml
+archfit config enrich volatility --apply --reviewed-by @you -c .archfit.yaml
+```
+
+### `archfit config enrich subdomain`
+
+Purpose:
+
+- Draft module subdomains.
+- Draft volatility alongside subdomain when the model provides it.
+- Pin approved values into the config later.
+
+Synopsis:
+
+```sh
+archfit config enrich subdomain [flags]
+```
+
+Flags:
+
+| Flag            | Type   | Default                 | Effect                                                           | Example                                                                          |
+| --------------- | ------ | ----------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `-c, --config`  | path   | `.archfit.yaml`         | Config file.                                                     | `archfit config enrich subdomain -c .archfit.yaml`                               |
+| `-r, --root`    | path   | directory of `--config` | Repo root to analyze.                                            | `archfit config enrich subdomain -r . -c .archfit.yaml`                          |
+| `--refresh`     | bool   | `false`                 | Re-run extractors and refresh the cache.                         | `archfit config enrich subdomain --refresh -c .archfit.yaml`                     |
+| `--apply`       | bool   | `false`                 | Read approved draft entries and write them into `.archfit.yaml`. | `archfit config enrich subdomain --apply -c .archfit.yaml`                       |
+| `--reviewed-by` | string | empty                   | Stamp the reviewer identity on applied entries.                  | `archfit config enrich subdomain --apply --reviewed-by @alexei -c .archfit.yaml` |
+
+Examples:
+
+```sh
+archfit config enrich subdomain -c .archfit.yaml
+archfit config enrich subdomain --refresh -c .archfit.yaml
+archfit config enrich subdomain --apply -c .archfit.yaml
+archfit config enrich subdomain --apply --reviewed-by @you -c .archfit.yaml
+```
+
+## Shared flags
+
+These flags repeat across multiple commands.
+
+### `-c, --config`
+
+Used by:
+
+- `archfit analyze`
+- `archfit check`
+- `archfit baseline`
+- `archfit explain`
+- `archfit config update`
+- `archfit config enrich ...`
+
+Rules:
+
+- Default path is `.archfit.yaml`.
+- `analyze` and `check` expect a real config file at that default path.
+- `baseline`, `explain`, and the `config` subcommands resolve sidecar files beside the config.
+
+Examples:
+
+```sh
+archfit check -c .archfit.yaml
+archfit explain ab12cd34 -c ./policy/.archfit.yaml
+archfit config update -c ./policy/.archfit.yaml
+```
+
+### `--root` / `-r, --root`
+
+Used by:
+
+- long form only: `archfit analyze`, `archfit check`
+- short and long form: `archfit baseline`, `archfit explain`, `archfit config init`, `archfit config update`, `archfit config enrich ...`
+
+Effect:
+
+- Sets the analysis boundary.
+- Lets a policy file live outside the repo being scanned.
+- Changes what files, edges, and coverage counts are inside scope.
+
+Examples:
+
+```sh
+archfit analyze --root ../repo -c ./policy/.archfit.yaml
+archfit check --root ./server/shared -c ./policies/.archfit.yaml
+archfit config enrich labels -r . -c .archfit.yaml
+```
+
+### `--base`
+
+Used by:
+
+- `archfit analyze`
+- `archfit check`
+- `archfit baseline`
+
+Effect:
+
+- Compares the current branch against a git ref such as `main` or `origin/main`.
+- On `analyze` and `check`, renders a scorecard delta.
+- On `baseline`, records a delta baseline.
+
+Examples:
+
+```sh
+archfit analyze --base origin/main -c .archfit.yaml
+archfit check --base main --json -c .archfit.yaml
+archfit baseline --base origin/main -c .archfit.yaml
+```
+
+### `--format` and format shorthands
+
+Used by:
+
+- `archfit analyze`
+- `archfit check`
+
+Choices:
+
+- `text`
+- `json`
+- `markdown`
+- `md`
+- `sarif`
+- `scorecard`
+
+Shorthands:
+
+- `--json`
+- `--markdown`
+- `--sarif`
+
+Rules:
+
+- Use one shorthand, or use `--format`.
+- Do not mix shorthands with `--format`.
+- Repeat `--format` when you need more than one output.
+
+Examples:
+
+```sh
+archfit analyze --json -c .archfit.yaml
+archfit check --markdown -c .archfit.yaml
+archfit analyze --format text --format json -c .archfit.yaml
+```
+
+### `--progress` and `-q, --quiet`
+
+Used by:
+
+- `archfit analyze`
+- `archfit check`
+
+Effect:
+
+- Progress always goes to stderr.
+- `--progress auto` shows live progress only on a TTY.
+- `--progress plain` prints log-safe lines.
+- `--progress none` disables progress.
+- `-q, --quiet` suppresses progress output.
+
+Examples:
+
+```sh
+archfit analyze --progress plain -c .archfit.yaml
+archfit check --progress none --json -c .archfit.yaml
+archfit check -q --json -c .archfit.yaml
+```
+
+## Warnings reference
+
+These are the five active stderr health warnings emitted by the pipeline.
+
+| Warning text                                                                    | Trigger condition                                                                                                        | Next command                                  |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------- |
+| `analyzer coverage gap — some edges may be unscored`                            | `diag.CoverageGaps` is not empty.                                                                                        | `archfit doctor --fix`                        |
+| `0 of N edges scored — coupling strength is unknown`                            | Classified edges exist, `Total > 0`, and `Scored == 0`.                                                                  | `archfit config update -c <config>`           |
+| `all N cross-module edges have unknown strength`                                | `Scored == 0`, `Abstained > 0`, and `External == 0`.                                                                     | `archfit config enrich abstained -c <config>` |
+| `no internal edges found — module paths may not match source layout`            | Python all-edges-external case: `grimp` coverage status is `ok`, `Scored == 0`, and every cross-module edge is external. | `archfit config update -c <config>`           |
+| `no source files matched declared module paths — check --root and module globs` | The config declares module paths, but no source file under the scan root maps to any module.                             | `archfit check --root . -c <config>`          |
+
+Notes:
+
+- Warnings are hints, not parser errors.
+- They are meant to stop false confidence after a technically successful run.
+- The command shown after `→ run:` is the recommended next step.
+
+## Migration table
+
+This repeats the redesign changes, but adds the exact error you see today.
+
+| Old surface                             | Use now                                                     | Error you see today                                    | Notes                                                                                                           |
+| --------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `archfit analyze --gate`                | `archfit check`                                             | `archfit: unknown flag --gate, did you mean "--base"?` | Gate mode is now a command, not a flag.                                                                         |
+| `archfit --gate`                        | `archfit check`                                             | `archfit: unknown flag --gate, did you mean "--base"?` | Same as above.                                                                                                  |
+| `--gate`                                | `archfit check`                                             | `archfit: unknown flag --gate, did you mean "--base"?` | Applies anywhere you try the old flag.                                                                          |
+| `--full`                                | remove it                                                   | `archfit: unknown flag --full`                         | Full scan is unconditional now.                                                                                 |
+| `--advisory`                            | remove it, or use `--no-advisories` to hide advisories      | `archfit: unknown flag --advisory`                     | Advisories are on by default now.                                                                               |
+| `--severity`                            | `--min-severity`                                            | `archfit: unknown flag --severity`                     | Threshold name changed.                                                                                         |
+| `analyze --llm`                         | `analyze --ai-summary`                                      | `archfit: unknown flag --llm`                          | Rename from `llm` to `ai-summary`.                                                                              |
+| `explain --llm`                         | `explain --ai-summary`                                      | `archfit: unknown flag --llm`                          | Same rename pattern as `analyze`.                                                                               |
+| `config init --llm`                     | `config init --ai-classify`                                 | `archfit: unknown flag --llm`                          | AI config drafting still exists. Only the flag name changed.                                                    |
+| `config update --llm`                   | `config update --ai-classify`                               | `archfit: unknown flag --llm`                          | Same rename as `config init`.                                                                                   |
+| `--llm-provider`                        | `--ai-provider`                                             | `archfit: unknown flag --llm-provider`                 | Provider override name changed.                                                                                 |
+| `--llm-model`                           | `--ai-model`                                                | `archfit: unknown flag --llm-model`                    | Model override name changed.                                                                                    |
+| `--no-cache`                            | `--refresh`                                                 | `archfit: unknown flag --no-cache`                     | `--refresh` re-runs and writes fresh cache entries back.                                                        |
+| `--no-config`                           | initialize config first with `archfit config init --root .` | `archfit: unknown flag --no-config`                    | The flag is gone.                                                                                               |
+| `check --ai-summary`                    | use `analyze --ai-summary` or `explain --ai-summary`        | `archfit: unknown flag --ai-summary`                   | AI summary is report-only, not a gate feature.                                                                  |
+| `analyze --require-tools` in CI scripts | `check --require-tools`                                     | no parser error                                        | `analyze` still accepts the flag, but a successful run still exits `0`. Use `check` when the exit code matters. |
+
+## Built-in help and version flags
+
+These are small, but they are still part of the surface.
+
+| Flag            | Where it works                             | Effect                                |
+| --------------- | ------------------------------------------ | ------------------------------------- |
+| `-h, --help`    | every command                              | Show context-sensitive help and exit. |
+| `-v, --version` | top-level command and command help surface | Print version and exit.               |

@@ -7,7 +7,7 @@ The config parser is strict. Unknown YAML fields are errors. Start with
 
 ```sh
 archfit config init --root . --output .archfit.yaml
-archfit analyze --config .archfit.yaml --full
+archfit analyze --config .archfit.yaml
 ```
 
 ## Top-level layout
@@ -17,7 +17,7 @@ version         — required; must be 1
 exclude         — path globs to skip during scanning
 languages       — per-language extractor settings (go/typescript/python/rust)
 analyzers       — opt-in deeper analysis backends (syntax/scip/clones/cargo_modules)
-ai              — off-gate LLM provider for enrich/explain/analyze --llm
+ai              — off-gate AI provider for enrich/explain/analyze --ai-summary
 coupling        — Balanced-Coupling advisory tuning + coupling_balance gate
 layers          — ordered architecture layers, inner to outer
 modules         — path ownership map
@@ -415,8 +415,8 @@ Zero or absent means the built-in package default (`scip`: 20 minutes, `clones`:
 
 ## `ai`
 
-Off-gate LLM provider configuration. Consumed only by `config init --llm`,
-`config update --llm`, `config enrich`, `analyze --llm`, and `explain --llm` — never
+Off-gate LLM provider configuration. Consumed only by `config init --ai-classify`,
+`config update --ai-classify`, `config enrich`, `analyze --ai-summary`, and `explain --ai-summary` — never
 by the deterministic gate.
 
 ```yaml
@@ -1031,7 +1031,7 @@ VS Code users can configure the schema in `.vscode/settings.json`:
 ## Draft and pin files
 
 LLM authoring commands are draft-first. They write proposals to review files,
-side files, or reports by default; `config init --llm --apply` is the direct-write
+side files, or reports by default; `config init --ai-classify --apply` is the direct-write
 exception and should be reviewed before the generated config is used as a gate.
 
 - `.archfit-labels.yaml` — pinned coupling-strength labels (`archfit config enrich labels`).
@@ -1040,11 +1040,11 @@ exception and should be reviewed before the generated config is used as a gate.
 - `.archfit-owners.yaml` — owner drafts (`archfit config enrich owner`).
 - `.archfit-volatility.yaml` — volatility drafts (`archfit config enrich volatility`).
 - `.archfit-subdomains.yaml` — subdomain drafts (`archfit config enrich subdomain`).
-- `.archfit-init-llm.yaml` — a full commented config draft (`archfit config init --llm -o <file>`).
+- `.archfit-init-llm.yaml` — a full commented config draft (`archfit config init --ai-classify -o <file>`).
 
 For module-field draft files, review each entry, set keepers to `status: approved`,
 then run `config enrich <field> --apply` to write approved values into
-`modules.<name>`. For a full `config init --llm` side file, copy approved fields
+`modules.<name>`. For a full `config init --ai-classify` side file, copy approved fields
 manually. Pinning never overwrites a live field.
 
 Module-field draft entries include review metadata:
@@ -1060,7 +1060,7 @@ Module-field draft entries include review metadata:
   status: draft
 ```
 
-`config update --llm` uses the same metadata in its report and can propose only
+`config update --ai-classify` uses the same metadata in its report and can propose only
 existing deterministic rule mechanisms (`forbidden_dependency`,
 `forbidden_role_dependency`, `public_api_max`, `public_api_change`, and
 `coupling.gate` tuning). These rule suggestions are review-only text; plan/default

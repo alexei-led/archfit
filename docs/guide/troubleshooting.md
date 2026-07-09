@@ -9,17 +9,32 @@ Common fixes:
 - Narrow module paths if generated config is noisy.
 - Prefer an expiring waiver over deleting a rule for intentional findings.
 - Check that optional analyzer tools are installed before enabling them.
-- Re-run `archfit baseline --full` only after reviewing accepted findings.
+- Re-run `archfit baseline` only after reviewing accepted findings.
 
 For platform setup, package-manager choices, exact tool versions, home pages, and
 PATH checks, see [Tooling reference](tooling.md).
 
-## LLM command fails, costs too much, or should not send repo text
+## My old command stopped working
 
-Provider-backed commands are optional and off-gate. If `config init --llm`,
-`config update --llm`, `config enrich ...`, `analyze --llm`, or `explain --llm`
-fails, rerun the deterministic command without `--llm`; `analyze --gate` and CI do
-not need a model.
+The CLI redesign removed the old compatibility flags. Current builds fail fast
+with parser errors like these:
+
+| Old flag / example       | Current error message                                  | New equivalent                                                               |
+| ------------------------ | ------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `archfit analyze --gate` | `archfit: unknown flag --gate, did you mean "--base"?` | `archfit check`                                                              |
+| `--full`                 | `archfit: unknown flag --full`                         | Remove it. Full scan is now the default.                                     |
+| `--advisory`             | `archfit: unknown flag --advisory`                     | Remove it. Advisories are on by default. Use `--no-advisories` to hide them. |
+| `--no-cache`             | `archfit: unknown flag --no-cache`                     | `--refresh`                                                                  |
+| `archfit analyze --llm`  | `archfit: unknown flag --llm`                          | `archfit analyze --ai-summary`                                               |
+| `--severity`             | `archfit: unknown flag --severity`                     | `--min-severity`                                                             |
+| `--no-config`            | `archfit: unknown flag --no-config`                    | Initialize config first: `archfit config init --root .`                      |
+
+## AI command fails, costs too much, or should not send repo text
+
+Provider-backed commands are optional and off-gate. If `config init --ai-classify`,
+`config update --ai-classify`, `config enrich ...`, `analyze --ai-summary`, or
+`explain --ai-summary` fails, rerun the deterministic command without the AI
+flag; `check` and CI do not need a model.
 
 Common checks:
 
@@ -28,13 +43,28 @@ Common checks:
 - Set keys through `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`; do not put keys in
   `.archfit.yaml`. A local `.env` is best-effort loaded only when the real env var
   is unset.
-- Use `--no-cache` only for a fresh-provider control run. It bypasses extractor
-  facts and LLM response reads/writes, so repeated runs can spend tokens again.
+- Use `--refresh` only for a fresh-provider control run. It bypasses cache reads
+  and writes fresh extractor facts and AI responses, so repeated runs can spend
+  tokens again.
 - Keep `.archfit-cache/llm/` out of git unless cached provider responses are safe
   to share. Responses can quote repository text.
 - Evidence packs skip obvious secret-like paths and cache/vendor directories, but
   they are not a secret scanner. Do not run provider-backed commands on docs,
   comments, or public APIs that contain secrets you would not send to the provider.
+
+## Understanding warnings
+
+These are the five active pipeline warnings from
+`cmd/archfit/pipeline_warnings.go`. The commands below match the warning text.
+Replace `.archfit.yaml` if your config lives elsewhere.
+
+| Warning                                                                         | What triggers it                                                                                                                                                        | Fix command                                        |
+| ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `analyzer coverage gap — some edges may be unscored`                            | `coverage_gaps[]` is non-empty. One or more analyzers did not run, timed out, or are missing.                                                                           | `archfit doctor --fix`                             |
+| `0 of N edges scored — coupling strength is unknown`                            | The run found classified edges, but none of them were scored. This usually means config/module metadata needs recalibration.                                            | `archfit config update -c .archfit.yaml`           |
+| `all N cross-module edges have unknown strength`                                | No edges were scored, some cross-module edges abstained, and none were classified as external. The graph is real, but archfit cannot classify edge strength yet.        | `archfit config enrich abstained -c .archfit.yaml` |
+| `no internal edges found — module paths may not match source layout`            | Python only. `grimp` ran successfully, but every cross-module edge resolved as external, usually because module `paths:` globs do not match dotted Python module IDs.   | `archfit config update -c .archfit.yaml`           |
+| `no source files matched declared module paths — check --root and module globs` | Your config declares module `paths:`, but none of the files under the active scan root matched any declared module. Wrong `--root` or stale globs are the usual causes. | `archfit check --root . -c .archfit.yaml`          |
 
 ## Installed but still reported missing
 
@@ -81,8 +111,8 @@ upstream install path from [Tooling reference](tooling.md) instead of mixing ran
 fallbacks.
 
 For CI, pin exact npm/cargo/go/uv tool versions in setup commands, then run
-`archfit doctor` for diagnostics and `archfit analyze --gate --require-tools`
-when missing analyzers should fail the build.
+`archfit doctor` for diagnostics and `archfit check --require-tools` when missing
+analyzers should fail the build.
 
 ## Metrics show `n/a` / a "Coverage gaps" section
 
@@ -98,7 +128,7 @@ gap. To make CI block on a missing tool instead, opt in with `--require-tools` o
 These now appear as a `## Config warnings` section (md) and `config_warnings[]`
 (json), not just stderr. Most clear once modules declare `owner`, `subdomain`, and
 `volatility` — draft them with `archfit config enrich owner`/`config enrich volatility` or
-`archfit config init --llm -o draft.yaml`, review, then apply. Filling them improves
+`archfit config init --ai-classify -o draft.yaml`, review, then apply. Filling them improves
 ownership/volatility distance inputs and can move `coupling_balance` out of `n/a`;
 `encapsulation` also needs explicit `public:` / `internal:` globs so edge kinds are
 measurable.
@@ -118,15 +148,47 @@ directories). Built-in excludes already skip `reports/`, `.archfit-cache/`,
 root is measured back into the scan and triggers a warning. Use `--root` to scan a
 repo from a config that lives elsewhere.
 
+## archfit analyze exits 0 even though I have violations
+
+That is expected. `archfit analyze` is report-only by design. It runs the same
+scan pipeline as `archfit check`, but a successful analysis still exits `0` even
+when the rendered verdict is FAIL.
+
+Use `archfit check` in CI, pre-push hooks, and agent repair loops. It is the gate
+command. Current exit codes are:
+
+- `0` — clean run
+- `1` — violations
+- `2` — warnings
+- `3` — config or tool error
+
+Use `archfit analyze` for local reports, markdown output, SARIF exports, scorecard
+deltas, and `archfit analyze --ai-summary` after the deterministic check when you
+want a narrative.
+
+## --refresh vs deleting the cache
+
+They are not the same.
+
+- `--refresh` keeps `.archfit-cache/` in place, skips cache reads, re-runs all
+  extractors, and writes fresh results back to the cache. Use it after installing
+  or upgrading analyzer tools, or when you want to refresh entries without wiping
+  the directory.
+- `rm -rf .archfit-cache` deletes every cached fact and AI response. The next run
+  is fully cold and repopulates the cache from empty.
+
+Start with `--refresh` when you want fresh analysis output. Delete the cache when
+you want a full reset or need to reclaim disk.
+
 ## Suspected stale cache
 
 Extractor facts are cached under `.archfit-cache/` keyed by file content, config
 slice, and tool version, so a stale result should be impossible by construction
 (see [caching.md](caching.md)). To rule the cache out anyway: re-run with
-`--no-cache` (a control run that neither reads nor writes cache entries) and
-compare; to reset, delete the directory — `rm -rf .archfit-cache` — and the next
+`--refresh` and compare; that bypasses cache reads and writes fresh entries. To
+reset everything, delete the directory — `rm -rf .archfit-cache` — and the next
 run rebuilds it.
 
 If a command fails with exit code `3`, check config syntax, unknown YAML fields,
 missing toolchain, and the exact error printed by `archfit`. Exit `1` is a gate
-result (a finding or an opted-in missing required tool), not an error.
+result, and exit `2` is a warning result, not a config or tool error.

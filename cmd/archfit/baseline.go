@@ -14,27 +14,26 @@ import (
 
 // BaselineCmd runs the engine and saves findings as the new baseline.
 type BaselineCmd struct {
-	Config   string `short:"c" help:"Config file." default:".archfit.yaml"`
-	Root     string `short:"r" help:"Repository root to analyze (default: directory of --config)." type:"path"`
-	Full     bool   `help:"Scan all files before saving the accepted baseline."`
-	Advisory bool   `help:"Include advisory findings in the baseline."`
-	Base     string `help:"Git ref to compare against when baselining a delta run."`
-	NoCache  bool   `name:"no-cache" help:"Bypass archfit caches (extractor facts)."`
+	Config       string `short:"c" help:"Config file." default:".archfit.yaml"`
+	Root         string `short:"r" help:"Repository root to analyze (default: directory of --config)." type:"path"`
+	NoAdvisories bool   `name:"no-advisories" help:"Exclude informational Balanced-Coupling advisories from the baseline."`
+	Base         string `help:"Git ref to compare against when baselining a delta run."`
+	Refresh      bool   `name:"refresh" help:"Re-run all extractors and refresh the cache. Use after installing or updating analyzer tools."`
 }
 
 func (*BaselineCmd) Help() string {
 	return `Use baseline after reviewing current findings so CI can block only new architecture drift.
 
 Typical calibration:
-  archfit --gate --config .archfit.yaml --full
-  archfit baseline --config .archfit.yaml --full
-  archfit --gate --config .archfit.yaml --base origin/main`
+  archfit check --config .archfit.yaml
+  archfit baseline --config .archfit.yaml
+  archfit check --config .archfit.yaml --base origin/main`
 }
 
 func (c *BaselineCmd) Run(deps *appDeps) error {
 	ctx := context.Background()
 
-	cfg, err := loadConfig(ctx, c.Config, false)
+	cfg, err := loadConfig(ctx, c.Config)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -45,12 +44,10 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
-	// Baseline runs the exact same pipeline as check (same change history,
-	// pattern provider, and SCIP resolver): snapshot values recorded from
-	// different inputs would surface as phantom deltas on the next check.
-	mode := engine.Mode{Full: c.Full, Advisory: c.Advisory, Base: c.Base}
-	deps.noCache = c.NoCache
-	diag, sc, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, mode, existingBase)
+	advisory := !c.NoAdvisories
+	mode := engine.Mode{Full: true, Advisory: advisory, Base: c.Base}
+	deps.refresh = c.Refresh
+	diag, sc, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, mode, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -58,19 +55,11 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	newBase := baseline.Baseline{}
 	for _, f := range diag.Findings {
 		if f.Status == finding.StatusFixed {
-			continue // fixed = no longer detected; don't carry into new baseline
+			continue
 		}
-		// The synthetic coupling-gate trip finding is per-run state, not a
-		// triageable edge: the engine never regenerates its fingerprint, so a
-		// persisted entry would orphan and surface as a phantom "fixed" finding.
 		if f.RuleID == ruleIDBCCouplingGate {
 			continue
 		}
-		// Persist the finding's native kind, not the per-run coupling-gate
-		// promotion: the engine regenerates BC findings as advisories every
-		// run, and status.Assign matches stored kind against the pass kind —
-		// a stored "gate" kind would orphan the entry (phantom "fixed" gate
-		// finding, no advisory-side resolution when the edge is fixed).
 		kind := f.Kind
 		if f.RuleID == engine.RuleIDBCImbalanced {
 			kind = finding.KindAdvisory
@@ -89,9 +78,6 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 			Version string  `json:"version"`
 		}{Value: m.Value, Version: m.Version}
 	}
-	// Persist the coupling_balance synthesis so coupling.gate.max_drop has an
-	// anchor on later runs. An unmeasured score (band n/a) stores nothing —
-	// it must never anchor a phantom drop.
 	if !sc.OverallBand.Unmeasured() {
 		newBase.Score = &baseline.ScoreSnapshot{
 			CouplingBalance: sc.Overall,

@@ -50,7 +50,7 @@ func TestByteIdentical_OneMemberWorkspace(t *testing.T) {
 }
 
 // runByteIdenticalTest materialises the fixture into a fresh temp git repo,
-// runs archfit analyze --gate --full --format json in-process, normalises volatile
+// runs archfit analyze --format json in-process, normalises volatile
 // fields (absolute paths), and diffs the result against baseline.json beside
 // the fixture.
 //
@@ -90,7 +90,7 @@ func runByteIdenticalTest(t *testing.T, fixtureRelPath string) {
 
 // TestByteIdentical_ColdWarmNoCache pins the Wave 6 fact-cache correctness
 // gate: on the SAME materialized tree, a second (warm, cache-populated) run
-// and a --no-cache run must produce output byte-identical to the first
+// and a --refresh run must produce output byte-identical to the first
 // (cold) run. Trivially green until the per-language cache wiring lands
 // (plan Task 3) — committed first so the contract is pinned before any
 // analyzer consults the cache.
@@ -100,13 +100,13 @@ func TestByteIdentical_ColdWarmNoCache(t *testing.T) {
 
 	cold := runAnalyzeNormalized(t, root)
 	warm := runAnalyzeNormalized(t, root)
-	noCache := runAnalyzeNormalized(t, root, "--no-cache")
+	noCache := runAnalyzeNormalized(t, root, "--refresh")
 
 	if !bytes.Equal(warm, cold) {
 		t.Errorf("warm run differs from cold run:\n%s", firstDiffLine(string(cold), string(warm)))
 	}
 	if !bytes.Equal(noCache, cold) {
-		t.Errorf("--no-cache run differs from cold run:\n%s", firstDiffLine(string(cold), string(noCache)))
+		t.Errorf("--refresh run differs from cold run:\n%s", firstDiffLine(string(cold), string(noCache)))
 	}
 }
 
@@ -147,7 +147,7 @@ func materializeFixtureRepo(t *testing.T, fixtureRelPath string) (absFixture, ro
 	return absFixture, root
 }
 
-// runAnalyzeNormalized runs archfit analyze --full --format json in-process
+// runAnalyzeNormalized runs archfit analyze --format json in-process
 // (plus extraArgs) against the materialized repo at root and returns the
 // normalized JSON output. Exit 0 = pass, 1 = gate violation; both are valid
 // analysis results. 2/3 indicate a config or runtime error.

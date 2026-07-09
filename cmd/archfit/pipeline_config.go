@@ -142,11 +142,8 @@ func tsUnresolvedWarning(cov []diagnostic.Coverage) string {
 // loadConfig loads the config file at path. When path equals the default
 // ".archfit.yaml" and the file is absent, it returns config.Default() so the
 // tool works without a config file. An explicit --config path that is missing
-// always returns an error. noConfig=true skips file loading entirely.
-func loadConfig(ctx context.Context, path string, noConfig bool) (config.Config, error) {
-	if noConfig {
-		return config.Default(), nil
-	}
+// always returns an error.
+func loadConfig(ctx context.Context, path string) (config.Config, error) {
 	cfg, err := config.Load(ctx, path)
 	if err != nil {
 		if path == defaultConfigPath && errors.Is(err, os.ErrNotExist) {
@@ -191,10 +188,7 @@ func applyFlagOverrides(cfg *config.Config, severity string, lang []string) erro
 // (built-in defaults were used). Hashing an ignored file would make the reported
 // hash misleading and non-reproducible — it would change when a file the run
 // never read changes.
-func effectiveConfigHash(path string, noConfig bool) string {
-	if noConfig {
-		return ""
-	}
+func effectiveConfigHash(path string) string {
 	return computeConfigHash(path)
 }
 

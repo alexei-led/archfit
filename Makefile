@@ -14,6 +14,11 @@ DATE      := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
 LDFLAGS   := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
+RAW_TEST_PKGS := $(filter-out test,$(MAKECMDGOALS))
+ifeq ($(firstword $(MAKECMDGOALS)),test)
+TEST_PKGS := $(if $(RAW_TEST_PKGS),$(foreach p,$(RAW_TEST_PKGS),$(if $(filter ./% /%,$(p)),$(p),./$(p))),./...)
+endif
+
 GOLANGCI_LINT_VERSION := v2.1.6
 MOQ_VERSION           := v0.4.0
 
@@ -35,11 +40,17 @@ build: ## compile the archfit binary
 	@mkdir -p $(BIN_DIR)
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) $(CMD)
 
-## test: run all tests with race detector and coverage
+## test: run tests with race detector and coverage
 .PHONY: test
-test: ## run all tests with race detector and coverage
-	go test -race -coverprofile=coverage.out ./...
+test: ## run tests with race detector and coverage
+	go test -race -coverprofile=coverage.out $(if $(TEST_PKGS),$(TEST_PKGS),./...)
 	python3 internal/extract/scip/scip_reader_test.py
+
+ifeq ($(firstword $(MAKECMDGOALS)),test)
+.PHONY: $(RAW_TEST_PKGS)
+$(RAW_TEST_PKGS):
+	@:
+endif
 
 ## test-fast: run tests with race detector, skipping slow subprocess integration tests (-short)
 .PHONY: test-fast
@@ -53,8 +64,8 @@ test-coverage: test ## open HTML coverage report
 
 ## archfit: run architecture drift gate on this repo
 .PHONY: archfit
-archfit: build ## run archfit analyze --gate --full against this repo's architecture policy
-	$(BIN_DIR)/$(BINARY) analyze --gate --config $(ARCHFIT_CONFIG) --full
+archfit: build ## run archfit check against this repo's architecture policy
+	$(BIN_DIR)/$(BINARY) check --config $(ARCHFIT_CONFIG)
 
 ## arch-lint: architecture drift linter — fails on any blocking architecture
 ## violation (forbidden dependency, layer inversion, god-struct ceiling). Alias

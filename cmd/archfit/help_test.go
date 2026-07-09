@@ -17,7 +17,7 @@ func TestRun_Help_TopLevel(t *testing.T) {
 	}
 	out := buf.String()
 
-	for _, want := range []string{cmdAnalyze, "archfit analyze --llm", cmdBaseline, cmdExplain, "doctor", cmdConfig} {
+	for _, want := range []string{cmdAnalyze, cmdCheck, "archfit analyze --ai-summary", cmdBaseline, cmdExplain, "doctor", cmdConfig} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--help missing %q:\n%s", want, out)
 		}

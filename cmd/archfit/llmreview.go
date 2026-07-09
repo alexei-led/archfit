@@ -59,7 +59,7 @@ func persistRawReview(cacheDir, text string) {
 // providerOverride is a test seam: pass a non-nil fake to skip the real provider
 // construction through AnalyzeCmd.providerOverride. Pass nil in production to
 // build the provider from cfg.LLM().
-func runLLMReview(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, noCache bool, providerOverride llm.Provider, diag diagnostic.Diagnostic, sc score.Scorecard) error {
+func runLLMReview(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, refresh bool, providerOverride llm.Provider, diag diagnostic.Diagnostic, sc score.Scorecard) error {
 	llmCfg, configured := cfg.LLM()
 	if !configured {
 		return &exitError{code: 3, msg: "error: --llm requires ai configured (provider + model); see docs/guide/llm-enrich.md"}
@@ -67,7 +67,7 @@ func runLLMReview(ctx context.Context, deps *appDeps, cfg config.Config, configP
 
 	configDir := filepath.Dir(configPath)
 	cacheDir := llmCacheDir(configDir)
-	provider, err := buildCachedProvider(providerOverride, llmCfg, cacheDir, noCache)
+	provider, err := buildCachedProvider(providerOverride, llmCfg, cacheDir, refresh)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
 	}

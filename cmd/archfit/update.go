@@ -27,13 +27,13 @@ import (
 
 // UpdateCmd syncs .archfit.yaml with the current project structure.
 type UpdateCmd struct {
-	Config      string `short:"c" help:"Config file path." default:".archfit.yaml"`
-	Root        string `short:"r" help:"Project root directory (default: directory of --config)."`
-	LLM         bool   `name:"llm"          help:"Run LLM classification for unclassified modules (off-gate)."`
-	Apply       bool   `name:"apply"        help:"Write structural changes live into .archfit.yaml (backup created; LLM semantic proposals remain review-only)."`
-	NoCache     bool   `name:"no-cache"     help:"Bypass the LLM response cache."`
-	LLMProvider string `name:"llm-provider" help:"LLM provider override."  default:"anthropic"`
-	LLMModel    string `name:"llm-model"    help:"LLM model override."     default:"claude-opus-4-8"`
+	Config     string `short:"c" help:"Config file path." default:".archfit.yaml"`
+	Root       string `short:"r" help:"Project root directory (default: directory of --config)."`
+	AIClassify bool   `name:"ai-classify" help:"Run AI classification for unclassified modules (off-gate)."`
+	Apply      bool   `name:"apply" help:"Write structural changes live into .archfit.yaml (backup created; AI semantic proposals remain review-only)."`
+	Refresh    bool   `name:"refresh" help:"Re-run the AI calls and refresh the cache."`
+	AIProvider string `name:"ai-provider" help:"AI provider override." default:"anthropic"`
+	AIModel    string `name:"ai-model" help:"AI model override." default:"claude-opus-4-8"`
 
 	// providerOverride is a test seam — set directly on the struct to inject a fake provider.
 	// It is never a CLI flag (no kong tag).
@@ -48,7 +48,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 
 	ctx := context.Background()
 
-	cfg, err := loadConfig(ctx, c.Config, false)
+	cfg, err := loadConfig(ctx, c.Config)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: loading config: %v", err)}
 	}
@@ -69,7 +69,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	candidateCfg := candidateConfigForUpdate(cfg, freshCfg)
 	report.DeployUnitSuggestions = deployUnitSuggestions(ctx, root, candidateCfg, deps)
 	report.DistanceConfigCandidates = distanceConfigCandidates(ctx, root, candidateCfg, deps)
-	if c.LLM {
+	if c.AIClassify {
 		var synthErr error
 		report, synthErr = c.withRustSyntheticSuggestions(ctx, cfg, root, report, deps)
 		if synthErr != nil {
@@ -82,11 +82,11 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	if err != nil {
 		return err
 	}
-	if c.LLM && ann != nil {
+	if c.AIClassify && ann != nil {
 		report.RuleSuggestions = ruleSuggestionsFromAnnotations(ann)
 		report.ExternalSystemSuggestions = externalSystemSuggestionsFromAnnotations(ann)
 	}
-	if c.LLM && ann != nil {
+	if c.AIClassify && ann != nil {
 		warnTargets := initcfg.BuildClassifyTargets(root, classifyTargetsForUpdate(cfg, report, addedNames))
 		warnPartialClassify(deps.Stdout, warnTargets, ann)
 	}
@@ -100,7 +100,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 
 	if !hasEdits {
-		if (c.LLM && ann != nil) || hasReviewOnlySuggestions(report) {
+		if (c.AIClassify && ann != nil) || hasReviewOnlySuggestions(report) {
 			_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
 			return nil
 		}
@@ -125,7 +125,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	if len(report.PathDrift) > 0 {
 		_, _ = fmt.Fprintln(deps.Stdout, "note: module paths replaced with discovered paths")
 	}
-	if (c.LLM && ann != nil) || hasReviewOnlySuggestions(report) {
+	if (c.AIClassify && ann != nil) || hasReviewOnlySuggestions(report) {
 		if rendered := initcfg.RenderAppliedLLMReview(report, ann); rendered != "" {
 			_, _ = fmt.Fprint(deps.Stdout, rendered)
 		}
@@ -149,7 +149,7 @@ func (c *UpdateCmd) resolveRoot() (string, error) {
 	return root, nil
 }
 
-// maybeClassify runs the LLM classification pass when --llm is set.
+// maybeClassify runs the AI classification pass when --ai-classify is set.
 func (c *UpdateCmd) maybeClassify(
 	ctx context.Context,
 	cfg config.Config,
@@ -157,11 +157,11 @@ func (c *UpdateCmd) maybeClassify(
 	report initcfg.UpdateReport,
 	addedNames map[string]struct{},
 ) (map[string]initcfg.ModuleAnnotation, error) {
-	if !c.LLM {
+	if !c.AIClassify {
 		return nil, nil
 	}
 
-	p, err := c.buildLLMProvider(cfg)
+	p, err := c.buildAIProvider(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -180,17 +180,17 @@ func (c *UpdateCmd) maybeClassify(
 	return ann, nil
 }
 
-// buildLLMProvider constructs the LLM provider, honouring the test seam and cache flag.
-func (c *UpdateCmd) buildLLMProvider(cfg config.Config) (llm.Provider, error) {
+// buildAIProvider constructs the AI provider, honouring the test seam and cache flag.
+func (c *UpdateCmd) buildAIProvider(cfg config.Config) (llm.Provider, error) {
 	var llmCfg config.LLMConfig
 	if lc, ok := cfg.LLM(); ok {
 		llmCfg = lc
 	}
-	llmCfg.Provider = c.LLMProvider
-	llmCfg.Model = c.LLMModel
+	llmCfg.Provider = c.AIProvider
+	llmCfg.Model = c.AIModel
 
 	cacheDir := llmCacheDir(filepath.Dir(c.Config))
-	p, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
+	p, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.Refresh)
 	if err != nil {
 		return nil, &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
 	}
@@ -209,10 +209,8 @@ func (c *UpdateCmd) withRustSyntheticSuggestions(
 		return report, nil
 	}
 
-	var facts *factcache.Store
-	if !c.NoCache {
-		facts = factcache.NewStore(factsCacheDir(filepath.Dir(c.Config)))
-	}
+	facts := factcache.NewStore(factsCacheDir(filepath.Dir(c.Config)))
+	facts.RefreshMode = c.Refresh
 	ex := rust.New(deps.Runner, extractCfg)
 	ex.Cache = facts
 	rustFacts, _, err := ex.Extract(ctx, scope.Scope{Root: root})

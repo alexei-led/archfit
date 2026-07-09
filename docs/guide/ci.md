@@ -1,106 +1,162 @@
 # CI
 
-Use `archfit analyze --gate` like a linter for architecture drift: run it after
-normal build/test setup, fail the job on new gate violations, and hand JSON
-`agent_tasks[]` back to coding agents when they need to repair the change.
+Use `archfit check` as the CI gate. It is the command that should decide
+whether a pipeline passes or fails.
 
-## Local Makefile loop
+## 1. The gate command
 
-Keep the local and CI command identical. A simple target is enough:
-
-```text
-.PHONY: archfit
-archfit: build
-<TAB>.bin/archfit analyze --gate --config .archfit.yaml --full
-```
-
-Then make the full local gate obvious:
+Run `archfit check` after checkout and tool setup:
 
 ```sh
-make test
-make archfit
+archfit check -c .archfit.yaml
 ```
 
-This repository dogfoods that target in `make all` and in GitHub Actions:
+Keep the config path explicit in CI, even when the file lives at the default
+path. That makes the job easier to read and copy.
+
+`archfit check` exits with CI-friendly status codes:
+
+| Exit code | Meaning                                                                                                           | Typical CI action                                |
+| --------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `0`       | Pass. No blocking findings.                                                                                       | Continue the job.                                |
+| `1`       | Policy failure. Blocking findings were found, or `--require-tools` turned a missing analyzer into a hard failure. | Fail the job.                                    |
+| `2`       | Warning verdict. No blocking findings, but the run is still non-green.                                            | Fail or mark unstable, depending on your policy. |
+| `3`       | Usage, config, or runtime/tool error.                                                                             | Treat as CI infrastructure or config failure.    |
+
+In short: `1` means the architecture policy rejected the change. `3` means the
+job itself is misconfigured or could not run correctly.
+
+## 2. GitHub Actions recipe
+
+Minimal gate step:
 
 ```yaml
-- name: CI gate — architecture drift
-  run: make archfit
+- name: Architecture check
+  run: archfit check -c .archfit.yaml
 ```
 
-## Pull-request gate
+Delta mode compares the current branch against a base ref. In GitHub Actions,
+make sure the base ref exists in the local checkout first:
 
-Run the gate in CI after checkout and analyzer setup:
+```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+
+- name: Architecture delta check
+  run: archfit check -c .archfit.yaml --base origin/main
+```
+
+Use the plain gate for branch protection. Use delta mode on pull requests when
+you want the check output to show before/after drift against `origin/main`.
+
+## 3. SARIF upload
+
+Use SARIF when you want GitHub code scanning annotations:
 
 ```sh
-archfit analyze --gate --config .archfit.yaml --full
+archfit check --sarif > archfit.sarif
 ```
 
-For pull requests, compare to the base branch when available:
+GitHub Actions example:
+
+```yaml
+- name: Generate Archfit SARIF
+  run: archfit check --sarif -c .archfit.yaml > archfit.sarif
+
+- name: Upload Archfit SARIF
+  if: always()
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: archfit.sarif
+```
+
+Keep `if: always()` on the upload step. That way GitHub still receives findings
+when `archfit check` exits `1` or `2`.
+
+## 4. JSON output for scripting
+
+Use JSON when another tool needs to read results:
 
 ```sh
-archfit analyze --gate --config .archfit.yaml --base origin/main --json
+archfit check --json -c .archfit.yaml | jq .
 ```
 
-On exit `1`, a coding agent should read `agent_tasks[]`, apply the constrained
-repair, and rerun the task's `validation` command. See
-[agent-feedback.md](agent-feedback.md).
+That is the right mode for CI wrappers, bots, and agent loops. The exit code
+still matters. Parse the JSON, but also check the process status.
 
-Store a Markdown report as an artifact when a full audit is useful:
+## 5. Strict tool presence
+
+By default, missing analyzers are surfaced as coverage gaps instead of hard job
+failures. If CI must fail when a required tool is missing, turn on the strict
+gate:
 
 ```sh
-archfit analyze --markdown --config .archfit.yaml > archfit-report.md
+archfit check --require-tools -c .archfit.yaml
 ```
 
-For GitHub code scanning (inline PR annotations), emit SARIF and upload:
+Use this when the runner image is supposed to have the full analyzer toolchain
+installed and any gap is a CI defect.
+
+## 6. Baseline workflow
+
+Commit `.archfit-baseline.json` to the repo. `archfit check` uses that file to
+separate accepted current debt from new drift.
+
+Normal CI flow:
+
+1. Run `archfit check -c .archfit.yaml` on every branch and pull request.
+2. Do not regenerate the baseline inside the same validation job.
+3. Update the baseline only when you intentionally accept the current result.
+4. Commit the new `.archfit-baseline.json` in its own reviewable change.
+
+Update flow:
 
 ```sh
-archfit analyze --gate --config .archfit.yaml --full --sarif > archfit.sarif
-# then upload with actions/upload-sarif
+archfit baseline -c .archfit.yaml
+archfit check -c .archfit.yaml
+git add .archfit-baseline.json
+git commit -m "Update archfit baseline"
 ```
 
-Calibrate locally before adding the gate to required CI. Keep early rules narrow
-and baseline accepted current findings before treating the analysis as a merge gate.
+If you automate this in CI, do it in a separate manual or scheduled workflow
+that opens a pull request with the baseline diff. Do not let a PR job silently
+rewrite its own gate input.
 
-## Fail on missing analyzers (coverage gate)
+## 7. Agent repair loop
 
-By default a missing analyzer is **warn-loud, exit 0**: the dependent metrics drop
-to `n/a` (never scored as healthy) and a coverage gap is surfaced in every format.
-A CI job that must guarantee full coverage can opt in to blocking:
+Use `archfit check --json` as the machine-readable gate in an automated repair
+loop:
 
-```sh
-# fail the build if any required analyzer tool is missing
-archfit analyze --gate --config .archfit.yaml --full --require-tools
+```text
+archfit check --json -c .archfit.yaml
+→ if exit 0, stop
+→ if exit 1, read agent_tasks[]
+→ repair the code
+→ run archfit check --json -c .archfit.yaml again
 ```
 
-`--require-tools` raises every coverage gap to `fail` and exits `1` (a policy
-violation, distinct from exit `3` tool errors). For per-tool control, set
-`analyzers.<x>.gate: fail` in config instead — see
-[configuration-reference.md](configuration-reference.md#analyzersx-coverage-gate).
-Install the missing tools (`archfit doctor` lists them) to close the gap rather
-than disabling the gate.
+Each `agent_tasks[]` item is the repair contract for one active gate finding.
+Read its goal, constraints, files, and validation command. Fix only that scope,
+then re-run the check.
 
-## Scan a repo from an external config
+## 8. Environment variables and `.env`
 
-When the policy config lives outside the analyzed repo (a central CI config), use
-`--root` to point archfit at the repo without planting the config inside it:
+`archfit check` itself does not need an Anthropic key. If your pipeline also
+runs Anthropic-backed agent or review steps, set `ANTHROPIC_API_KEY` as a real
+CI secret:
 
-```sh
-archfit analyze --gate --root "$GITHUB_WORKSPACE" --config /ci/policies/.archfit.yaml --full
+```yaml
+env:
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-Write any report artifacts **outside** the analyzed root — archfit warns when an
-output path resolves inside it, and the built-in excludes skip `reports/`,
-`.archfit-cache/`, and similar artifact directories to keep scans deterministic.
+At startup, archfit also best-effort loads `.env` files from:
 
-## Pin CI infrastructure
+- the current working directory;
+- paths referenced by `--root`;
+- the directory that contains `--config`.
 
-Keep CI reproducible:
-
-- use explicit runner labels such as `ubuntu-24.04`, not `ubuntu-latest`;
-- use `ubuntu-24.04-arm` for native arm64 jobs;
-- pin GitHub Actions to released versions, or preferably full SHAs with a version
-  comment;
-- pin installed tools in CI commands instead of relying on package-manager
-  defaults; use [Tooling reference](tooling.md) for current analyzer versions and
-  install sources.
+Existing environment variables always win over `.env` values. In hosted CI,
+prefer real job environment variables or secret stores over checked-in `.env`
+files.

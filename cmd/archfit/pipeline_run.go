@@ -85,7 +85,7 @@ func (g gitResolver) Changed(ctx context.Context, base, head string) ([]string, 
 // promoted findings are visible to agenttask.Build below and to every renderer
 // — then the agent_tasks repair block is attached from the active gate
 // findings (deterministic; spec §13).
-func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, noConfig bool, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, score.Scorecard, error) {
+func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, mode engine.Mode, base baseline.Baseline, extraMetrics ...metrics.Metric) (diagnostic.Diagnostic, score.Scorecard, error) {
 	configDir := filepath.Dir(configPath)
 	// scanDir anchors scope/git resolution. An explicit --root decouples the
 	// analyzed repo from where the config lives (external-CI use case); when it is
@@ -118,15 +118,12 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		return diagnostic.Diagnostic{}, score.Scorecard{}, err
 	}
 
-	// Extractor fact cache (fact-cache.md D1/D2): facts/ beside the LLM cache
-	// under the config dir. nil when --no-cache — that disables reads AND
-	// writes in every consumer (a bypassed run must not poison or refresh
-	// entries). The cache stores subprocess/loader FACTS keyed by content;
-	// classification and scoring below never consult it.
-	var facts *factcache.Store
-	if !deps.noCache {
-		facts = factcache.NewStore(factsCacheDir(configDir))
-	}
+	// Extractor fact cache (fact-cache.md D1/D2): facts/ beside the AI cache
+	// under the config dir. Refresh mode bypasses reads but still records fresh
+	// facts on success. The cache stores subprocess/loader FACTS keyed by
+	// content; classification and scoring below never consult it.
+	facts := factcache.NewStore(factsCacheDir(configDir))
+	facts.RefreshMode = deps.refresh
 
 	extractors := buildExtractors(deps.Runner, cfg, facts)
 
@@ -302,8 +299,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 		})
 	}
 
-	// Config hash for reproducibility — empty when --no-config ignored the file.
-	configHash := effectiveConfigHash(configPath, noConfig)
+	configHash := effectiveConfigHash(configPath)
 
 	patternCfg := cfg.ForPatterns()
 	patternProvider := astgrep.New(deps.Runner)
@@ -382,7 +378,7 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 			modulePublic[name] = def.Public
 		}
 	}
-	validate := validationCommand(configPath, root, noConfig, mode.Full)
+	validate := validationCommand(configPath, root)
 	// PathResolver lets agenttask.Build turn a bare config module key, a Rust
 	// "crate::mod" id, or a Python dotted module id into a path that actually
 	// exists on disk, using facts already gathered above — agenttask itself
@@ -441,18 +437,10 @@ func onDiskWithin(root string) func(string) bool {
 	}
 }
 
-func validationCommand(configPath, root string, noConfig, full bool) string {
-	args := []string{"archfit", "analyze", "--gate"}
-	if noConfig {
-		args = append(args, "--no-config")
-	} else {
-		args = append(args, "-c", configPath)
-	}
+func validationCommand(configPath, root string) string {
+	args := []string{"archfit", "check", "-c", configPath}
 	if root != "" {
 		args = append(args, "--root", root)
-	}
-	if full {
-		args = append(args, "--full")
 	}
 	for i := range args {
 		args[i] = shellQuoteArg(args[i])

@@ -8,13 +8,16 @@ is deterministic — same repo + same config = byte-identical output.
 
 ```text
 agent edits code
-  → archfit analyze --gate [--base main] --json
+  → archfit check [--base main] --json
   → exit 0?  done.
   → exit 1?  read agent_tasks[] — goal, constraints, files, validation
   → fix within the constraints
   → run the task's validation command
   → repeat
 ```
+
+Use `check` inside repair loops and CI validation. Use `analyze` to generate
+reports, diffs, or a post-check narrative with `archfit analyze --ai-summary`.
 
 ## agent_tasks — the gate repair channel
 
@@ -31,14 +34,15 @@ Every ACTIVE gate finding produces one structured repair task:
     "public surface of module \"b\": [pkg/b/api/**]"
   ],
   "files": ["pkg/a/a.go", "pkg/b/internal/impl.go"],
-  "validation": ["archfit analyze --gate -c .archfit.yaml --full"]
+  "validation": ["archfit check -c .archfit.yaml"]
 }
 ```
 
 Goals are deterministic templates per rule type; constraints join the rule's
 configured constraint text, allowed alternatives, and the target module's
-public globs; validation is the exact command that must pass. `agent_tasks[]`
-is gate-only. Advisory findings stay out of this channel unless a tripped
+public globs; validation is the exact `archfit check` command that must pass.
+`agent_tasks[]` is gate-only. Advisory findings stay out of this channel unless
+a tripped
 [`coupling.gate`](configuration-reference.md#couplinggate) promotes active
 `bc/imbalanced_coupling` advisories to gate kind; then the edges behind the
 failing score arrive in `agent_tasks[]` with file evidence
@@ -93,7 +97,7 @@ verdict, gate status, baseline deltas, or `agent_tasks[]`.
     "report-only advisory; do not promote to a gate unless coupling.gate policy changes",
     "keep agent_tasks[] reserved for active gate findings"
   ],
-  "validation": ["archfit analyze --gate -c .archfit.yaml --full"]
+  "validation": ["archfit check -c .archfit.yaml"]
 }
 ```
 
@@ -101,17 +105,18 @@ Use `advisory_tasks[]` for review/refactor planning only. If a run exits `1`,
 fix `agent_tasks[]` first; advisory tasks may be deferred unless your team has
 chosen to treat the score gate as a refactoring trigger.
 
-## Optional LLM review
+## Optional AI narrative
 
-`archfit analyze --llm` is not part of the repair channel. It appends a cited,
-advisory architect review after the deterministic output. Treat `claim_type:
-recommendation` entries as suggestions only, and check their `finding_ids`,
-`metric_ids`, and `evidence_refs` before acting. The LLM review never changes
-`verdict`, `findings`, `metrics`, `score`, or `agent_tasks[]`; agents should still
-use `agent_tasks[]` as the actionable source of truth.
+`archfit analyze --ai-summary` is not part of the repair channel. Run it after
+`archfit check` when you want a cited, advisory architect review after the
+deterministic output. Treat `claim_type: recommendation` entries as suggestions
+only, and check their `finding_ids`, `metric_ids`, and `evidence_refs` before
+acting. The AI review never changes `verdict`, `findings`, `metrics`, `score`,
+or `agent_tasks[]`; agents should still use `agent_tasks[]` as the actionable
+source of truth.
 
-LLM config drafts are also non-actionable until reviewed. An agent may surface
-`config update --llm` proposals or draft files from `config enrich owner`,
+AI config drafts are also non-actionable until reviewed. An agent may surface
+`config update --ai-classify` proposals or draft files from `config enrich owner`,
 `volatility`, and `subdomain`, but it must not pin them into `.archfit.yaml` or
 `.archfit-labels.yaml` without explicit human approval.
 

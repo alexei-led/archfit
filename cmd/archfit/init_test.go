@@ -63,10 +63,10 @@ func TestInitCmd_ApplyWithoutLLM_IsError(t *testing.T) {
 	t.Parallel()
 	root := minimalRoot(t)
 	cmd := &InitCmd{
-		Root:   root,
-		Output: filepath.Join(root, ".archfit.yaml"),
-		Apply:  true,
-		LLM:    false,
+		Root:       root,
+		Output:     filepath.Join(root, ".archfit.yaml"),
+		Apply:      true,
+		AIClassify: false,
 	}
 	_, err := runInitCmd(t, cmd)
 	if err == nil {
@@ -223,10 +223,10 @@ func TestInitCmd_LLM_CommentedSuggestions(t *testing.T) {
 	cmd := &InitCmd{
 		Root:             root,
 		Output:           outPath,
-		LLM:              true,
+		AIClassify:       true,
 		Apply:            false,
-		LLMProvider:      providerAnthropic,
-		LLMModel:         defaultLLMModel,
+		AIProvider:       providerAnthropic,
+		AIModel:          defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: testLayerDomain},
 	}
 	_, err := runInitCmdWithRunner(t, cmd, func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
@@ -260,10 +260,10 @@ func TestInitCmd_LLMApply_LiveFields(t *testing.T) {
 	cmd := &InitCmd{
 		Root:             root,
 		Output:           outPath,
-		LLM:              true,
+		AIClassify:       true,
 		Apply:            true,
-		LLMProvider:      providerAnthropic,
-		LLMModel:         defaultLLMModel,
+		AIProvider:       providerAnthropic,
+		AIModel:          defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: testLayerDomain},
 	}
 	_, err := runInitCmdWithRunner(t, cmd, func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
@@ -300,10 +300,10 @@ func TestInitCmd_LLMStdout_NoFileWritten(t *testing.T) {
 	cmd := &InitCmd{
 		Root:             root,
 		Output:           "-",
-		LLM:              true,
+		AIClassify:       true,
 		Apply:            false,
-		LLMProvider:      providerAnthropic,
-		LLMModel:         defaultLLMModel,
+		AIProvider:       providerAnthropic,
+		AIModel:          defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: testLayerDomain},
 	}
 	out, err := runInitCmd(t, cmd)
@@ -330,10 +330,10 @@ func TestInitCmd_InvalidExistingConfig_LLMRunsFromFlags(t *testing.T) {
 	cmd := &InitCmd{
 		Root:             root,
 		Output:           outPath,
-		LLM:              true,
+		AIClassify:       true,
 		Apply:            false,
-		LLMProvider:      providerAnthropic,
-		LLMModel:         defaultLLMModel,
+		AIProvider:       providerAnthropic,
+		AIModel:          defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: testLayerDomain},
 	}
 	// Should NOT error — tolerate broken existing config and run from flags.

@@ -20,14 +20,14 @@ type ExplainCmd struct {
 	Config      string `short:"c" default:".archfit.yaml"`
 	Root        string `short:"r" help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
 	Fingerprint string `arg:"" help:"Finding fingerprint prefix."`
-	LLM         bool   `name:"llm" help:"Append an LLM narrative (off-gate; needs ai configured)."`
-	NoCache     bool   `name:"no-cache" help:"Bypass archfit caches: extractor facts (and LLM responses with --llm)."`
+	AISummary   bool   `name:"ai-summary" help:"Append an AI narrative (off-gate; needs ai configured)."`
+	Refresh     bool   `name:"refresh" help:"Re-run all extractors and refresh the cache. Use after installing or updating analyzer tools."`
 }
 
 func (c *ExplainCmd) Run(deps *appDeps) error {
 	ctx := context.Background()
 
-	cfg, err := loadConfig(ctx, c.Config, false)
+	cfg, err := loadConfig(ctx, c.Config)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -40,8 +40,8 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 
 	// Same pipeline as check/scan: explain must resolve the finding from the
 	// same evidence (providers, change history) that produced it.
-	deps.noCache = c.NoCache
-	diag, _, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, engine.Mode{Full: true, Advisory: true}, existingBase)
+	deps.refresh = c.Refresh
+	diag, _, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, engine.Mode{Full: true, Advisory: true}, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -64,8 +64,8 @@ func (c *ExplainCmd) Run(deps *appDeps) error {
 			for _, alt := range f.Alternatives {
 				_, _ = fmt.Fprintf(deps.Stdout, "allowed:    %s\n", alt)
 			}
-			if c.LLM {
-				return explainNarrative(ctx, deps, cfg, c.Config, c.NoCache, f, diag)
+			if c.AISummary {
+				return explainNarrative(ctx, deps, cfg, c.Config, c.Refresh, f, diag)
 			}
 			return nil
 		}
@@ -85,7 +85,7 @@ Plain prose, no headings, no lists, no code fences.`
 // explainNarrative appends an off-gate LLM narrative for one finding. The
 // deterministic explain output above it is already printed; this only adds
 // judgment on top — failures here never affect any verdict.
-func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, noCache bool, f finding.Finding, diag diagnostic.Diagnostic) error {
+func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, configPath string, refresh bool, f finding.Finding, diag diagnostic.Diagnostic) error {
 	llmCfg, configured := cfg.LLM()
 	if !configured {
 		return &exitError{code: 3, msg: "error: --llm needs ai configured (provider + model); see docs/guide/llm-enrich.md"}
@@ -94,9 +94,9 @@ func explainNarrative(ctx context.Context, deps *appDeps, cfg config.Config, con
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (see `archfit doctor`)", err)}
 	}
-	if !noCache {
-		provider = llm.NewCache(provider, llmCacheDir(filepath.Dir(configPath)))
-	}
+	cache := llm.NewCache(provider, llmCacheDir(filepath.Dir(configPath)))
+	cache.RefreshMode = refresh
+	provider = cache
 
 	resp, err := provider.Complete(ctx, llm.Request{System: explainSystemPrompt, User: buildExplainPrompt(f, diag)})
 	if err != nil {

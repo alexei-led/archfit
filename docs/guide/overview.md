@@ -21,6 +21,16 @@ architecture review. It makes selected architecture rules executable and gives A
 agents constructive, measurable repair feedback before local shortcuts become
 system design.
 
+Typical first run:
+
+```sh
+archfit config init --root .
+archfit analyze --config .archfit.yaml
+archfit check --config .archfit.yaml
+```
+
+Use `analyze` for local review. Use `check` in CI and agent validation.
+
 It implements Vlad Khononov's Balanced Coupling model. For why architecture
 fitness matters in AI-assisted development, see
 [Why architecture fitness matters](why-architecture-fitness.md). For the theory
