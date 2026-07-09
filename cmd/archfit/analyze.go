@@ -218,7 +218,7 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	emitHealthWarnings(deps, diag, cfg, req.configPath)
+	emitHealthWarnings(deps, diag, cfg, deps.scanRoot, req.configPath)
 
 	gateView := couplingGateView(cfg)
 	for _, reason := range score.EvaluateCouplingGate(sc, gateView, base.CouplingScore()).Reasons {

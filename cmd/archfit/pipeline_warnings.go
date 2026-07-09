@@ -10,8 +10,8 @@ import (
 // emitHealthWarnings writes actionable hints to stderr when the pipeline
 // result looks suspicious. Each warning includes a next-command suggestion.
 // cfg must be the same config used for the analysis run (already loaded; no
-// second disk read). configPath is used only in the command hints.
-func emitHealthWarnings(deps *appDeps, diag diagnostic.Diagnostic, cfg config.Config, configPath string) {
+// second disk read). root and configPath are used only in the command hints.
+func emitHealthWarnings(deps *appDeps, diag diagnostic.Diagnostic, cfg config.Config, root, configPath string) {
 	if deps == nil {
 		return
 	}
@@ -35,7 +35,7 @@ func emitHealthWarnings(deps *appDeps, diag diagnostic.Diagnostic, cfg config.Co
 	// re-walking the source tree. Empty FileFacts with declared module paths
 	// means no source files matched any module glob.
 	if len(diag.FileFacts) == 0 && declaresModulePaths(cfg) {
-		deps.warn(fmt.Sprintf("no source files matched declared module paths — check --root and module globs\n  → run: archfit check --root . -c %q", configPath))
+		deps.warn(fmt.Sprintf("no source files matched declared module paths — check --root and module globs\n  → run: archfit check --root %q -c %q", root, configPath))
 	}
 }
 

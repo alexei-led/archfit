@@ -54,17 +54,26 @@ Common checks:
 
 ## Understanding warnings
 
-These are the five active pipeline warnings from
-`cmd/archfit/pipeline_warnings.go`. The commands below match the warning text.
-Replace `.archfit.yaml` if your config lives elsewhere.
+These are active pipeline warnings. Stderr prefixes each with `warning:`. The
+commands below match the warning text. Replace `.archfit.yaml` if your config
+lives elsewhere.
 
-| Warning                                                                         | What triggers it                                                                                                                                                        | Fix command                                        |
-| ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `analyzer coverage gap — some edges may be unscored`                            | `coverage_gaps[]` is non-empty. One or more analyzers did not run, timed out, or are missing.                                                                           | `archfit doctor --fix`                             |
-| `0 of N edges scored — coupling strength is unknown`                            | The run found classified edges, but none of them were scored. This usually means config/module metadata needs recalibration.                                            | `archfit config update -c .archfit.yaml`           |
-| `all N cross-module edges have unknown strength`                                | No edges were scored, some cross-module edges abstained, and none were classified as external. The graph is real, but archfit cannot classify edge strength yet.        | `archfit config enrich abstained -c .archfit.yaml` |
-| `no internal edges found — module paths may not match source layout`            | Python only. `grimp` ran successfully, but every cross-module edge resolved as external, usually because module `paths:` globs do not match dotted Python module IDs.   | `archfit config update -c .archfit.yaml`           |
-| `no source files matched declared module paths — check --root and module globs` | Your config declares module `paths:`, but none of the files under the active scan root matched any declared module. Wrong `--root` or stale globs are the usual causes. | `archfit check --root . -c .archfit.yaml`          |
+| Warning                                                                                                                           | What triggers it                                                                                                                                                                           | Fix command                                                                |
+| --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `analyzer coverage gap — some edges may be unscored`                                                                              | `coverage_gaps[]` is non-empty. One or more analyzers did not run, timed out, or are missing.                                                                                              | `archfit doctor --fix`                                                     |
+| `0 of N edges scored — coupling strength is unknown`                                                                              | The run found classified edges, but none of them were scored. This usually means config/module metadata needs recalibration.                                                               | `archfit config update -c .archfit.yaml`                                   |
+| `all N cross-module edges have unknown strength`                                                                                  | No edges were scored, some cross-module edges abstained, and none were classified as external. The graph is real, but archfit cannot classify edge strength yet.                           | `archfit config enrich abstained -c .archfit.yaml`                         |
+| `no internal edges found — module paths may not match source layout`                                                              | Python only. `grimp` ran successfully, but every cross-module edge resolved as external, usually because module `paths:` globs do not match dotted Python module IDs.                      | `archfit config update -c .archfit.yaml`                                   |
+| `no source files matched declared module paths — check --root and module globs`                                                   | Your config declares module `paths:`, but none of the files under the active scan root matched any declared module. Wrong `--root` or stale globs are the usual causes.                    | `archfit check --root "." -c .archfit.yaml`                                |
+| `warning: grimp: N imports unresolved — check languages.python.package and src layout`                                            | Python `grimp` ran with partial coverage. Common causes are the wrong `languages.python.package`, a `src/` layout not importable in the active environment, or deps missing from the venv. | Set `languages.python.package`, fix package import paths, or install deps. |
+| `warning: dependency-cruiser: N of M import specifiers unresolved (P%) — check tsconfig paths/baseUrl and installed dependencies` | TypeScript dependency-cruiser could not resolve import specifiers. Internal edges can fall into the external bucket when aliases or dependencies are missing.                              | Fix `tsconfig` `paths`/`baseUrl` and install `node_modules`.               |
+| `SCIP analysis timed out — increase analyzers.scip.timeout or reduce the scope`                                                   | SCIP indexing exceeded the analyzer watchdog. Large Python repos can need more than the default 20m watchdog.                                                                              | Set `analyzers.scip.timeout`, for example `30m`.                           |
+
+## Config update cannot edit module paths
+
+`archfit config update` can now replace flow-style module paths such as
+`paths: [pkg/**]`; it rewrites them as a block-style list. Flow-style
+`modules: {}` is still unsupported. Convert that section to block YAML first.
 
 ## Installed but still reported missing
 

@@ -678,6 +678,54 @@ func TestTSUnresolvedWarning(t *testing.T) {
 	}
 }
 
+func TestPyUnresolvedWarning(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		cov  []diagnostic.Coverage
+		want bool
+	}{
+		{
+			name: "grimp unresolved warns",
+			cov: []diagnostic.Coverage{
+				{Tool: toolGrimp, Status: diagnostic.StatusPartial, Unresolved: 228},
+			},
+			want: true,
+		},
+		{
+			name: "zero unresolved stays silent",
+			cov: []diagnostic.Coverage{
+				{Tool: toolGrimp, Status: diagnostic.StatusOK},
+			},
+			want: false,
+		},
+		{
+			name: "other tool unresolved is not this warning's concern",
+			cov: []diagnostic.Coverage{
+				{Tool: toolGoPackages, Status: diagnostic.StatusPartial, Unresolved: 2},
+			},
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := pyUnresolvedWarning(tc.cov)
+			if (got != "") != tc.want {
+				t.Errorf("pyUnresolvedWarning(%+v) = %q, want non-empty=%v", tc.cov, got, tc.want)
+			}
+			if tc.want {
+				if !strings.Contains(got, "228 imports unresolved") {
+					t.Errorf("pyUnresolvedWarning(%+v) = %q, want unresolved count", tc.cov, got)
+				}
+				if !strings.Contains(got, "check languages.python.package and src layout") {
+					t.Errorf("pyUnresolvedWarning(%+v) = %q, want Python hint", tc.cov, got)
+				}
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // CB1: skipped-pass coverage rows (P12 — syntax/scip opt-in honesty)
 // ---------------------------------------------------------------------------
@@ -752,7 +800,7 @@ func TestEmitHealthWarnings(t *testing.T) {
 
 		emitHealthWarnings(deps, diagnostic.Diagnostic{
 			CoverageGaps: []diagnostic.CoverageGap{{Tool: toolGrimp}},
-		}, config.Config{}, cfgPath)
+		}, config.Config{}, deps.scanRoot, cfgPath)
 
 		if stdout.Len() != 0 {
 			t.Fatalf("stdout = %q, want empty", stdout.String())
@@ -770,7 +818,7 @@ func TestEmitHealthWarnings(t *testing.T) {
 
 		emitHealthWarnings(deps, diagnostic.Diagnostic{
 			ClassifiedEdges: &diagnostic.ClassifiedEdgeSummary{Total: 4, Scored: 0, Abstained: 4},
-		}, config.Config{}, cfgPath)
+		}, config.Config{}, deps.scanRoot, cfgPath)
 
 		got := stderr.String()
 		if !strings.Contains(got, "warning: 0 of 4 edges scored") {
@@ -793,7 +841,7 @@ func TestEmitHealthWarnings(t *testing.T) {
 		emitHealthWarnings(deps, diagnostic.Diagnostic{
 			ToolCoverage:    []diagnostic.Coverage{{Tool: toolGrimp, Status: diagnostic.StatusOK}},
 			ClassifiedEdges: &diagnostic.ClassifiedEdgeSummary{Total: 5, SameModule: 2, External: 3},
-		}, config.Config{}, cfgPath)
+		}, config.Config{}, deps.scanRoot, cfgPath)
 
 		got := stderr.String()
 		if !strings.Contains(got, "warning: 0 of 5 edges scored") {
@@ -823,13 +871,13 @@ func TestEmitHealthWarnings(t *testing.T) {
 		var stderr bytes.Buffer
 		deps := &appDeps{Stderr: &stderr, scanRoot: dir}
 		// Empty FileFacts signals no files matched the declared module paths.
-		emitHealthWarnings(deps, diagnostic.Diagnostic{}, cfg, cfgPath)
+		emitHealthWarnings(deps, diagnostic.Diagnostic{}, cfg, deps.scanRoot, cfgPath)
 
 		got := stderr.String()
 		if !strings.Contains(got, "warning: no source files matched declared module paths") {
 			t.Fatalf("stderr = %q, want module-mismatch warning", got)
 		}
-		if !strings.Contains(got, fmt.Sprintf("archfit check --root . -c %q", cfgPath)) {
+		if !strings.Contains(got, fmt.Sprintf("archfit check --root %q -c %q", dir, cfgPath)) {
 			t.Fatalf("stderr = %q, want check hint", got)
 		}
 	})

@@ -139,6 +139,18 @@ func tsUnresolvedWarning(cov []diagnostic.Coverage) string {
 	return ""
 }
 
+// pyUnresolvedWarning returns a disclosure message when grimp reported
+// unresolved Python imports. Those imports are emitted as low-confidence
+// external edges, so partial coverage should not be stderr-silent.
+func pyUnresolvedWarning(cov []diagnostic.Coverage) string {
+	for _, c := range cov {
+		if c.Tool == toolGrimp && c.Unresolved > 0 {
+			return fmt.Sprintf("%s: %d imports unresolved — check languages.python.package and src layout", toolGrimp, c.Unresolved)
+		}
+	}
+	return ""
+}
+
 // loadConfig loads the config file at path. When path equals the default
 // ".archfit.yaml" and the file is absent, it returns config.Default() so that
 // commands which tolerate a missing config (doctor, explain) can still run.

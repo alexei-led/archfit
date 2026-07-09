@@ -340,10 +340,14 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, configPa
 	diag.DistanceContext = buildDistanceContext(diag, cfg, len(deployUnitsByModule))
 	diag.VolatilityCorroboration = buildVolatilityCorroboration(ctx, s.GitRoot, s.SubtreePrefix, cfg, deps.Runner)
 
-	// TS coverage honesty: a high unresolved-import-specifier count from
-	// dependency-cruiser must never be a silent gap — surface it on stderr the
-	// same way ownerDegradationWarning discloses degraded owner resolution.
+	// TS/Python coverage honesty: unresolved imports must never be a silent
+	// gap — surface them on stderr the same way ownerDegradationWarning
+	// discloses degraded owner resolution.
 	if w := tsUnresolvedWarning(diag.ToolCoverage); w != "" {
+		toolWarnings = append(toolWarnings, w)
+		deps.warn(w)
+	}
+	if w := pyUnresolvedWarning(diag.ToolCoverage); w != "" {
 		toolWarnings = append(toolWarnings, w)
 		deps.warn(w)
 	}
