@@ -1,11 +1,15 @@
 # archfit test corpus
 
-Repos used to dogfood and validate `archfit analyze` (full + delta + LLM) across all
-supported languages and ownership models. Cloned under `~/workspace/<name>`.
+Repos used to dogfood and validate `archfit analyze` / `archfit check` (report,
+delta, and AI summary) across all supported languages and ownership models.
+Cloned under `~/workspace/<name>`.
 
-Two groups: **local dogfood repos** (small, mostly single-owner — fast inner-loop checks)
-and **multi-author repos** (popular, multi-team — exercise socio-technical owner-distance,
-CODEOWNERS resolution, and coupling at scale).
+This file is the **human-readable corpus inventory**. The operational workflow
+now lives in `skills/archfit-eval/` and `scripts/eval/corpus_sweep.py`.
+
+Two groups: **local dogfood repos** (small, mostly single-owner — fast inner-loop
+checks) and **multi-author repos** (popular, multi-team — exercise socio-
+technical owner-distance, CODEOWNERS resolution, and coupling at scale).
 
 ## Local dogfood repos
 
@@ -45,20 +49,55 @@ Cloned HEAD + delta base (prev minor), as of 2026-06-30:
 
 Refine the exact prev-minor patch at delta-run time (`git -C <repo> tag --sort=-creatordate`).
 
-## Usage
+## Workflow rules
 
-Run each from the archfit dir so `.env` auto-loads the LLM key (see eval finding F3):
+- Run from the archfit repo root so `.env` auto-loads the AI key consistently.
+- Use temp configs outside the target repos.
+- If a repo already has `.archfit.yaml`, copy it and update the temp copy.
+- If `config update --apply` fails on the temp copy, keep going if `check` /
+  `analyze` still work, and record the failure as a config/UX finding.
+- Re-run at least one representative repo with the same temp config and compare
+  parsed JSON to check determinism.
+- Use AI summary on selected representative repos, not necessarily every repo.
 
+## Helper script
+
+For repeated sweeps, prefer:
+
+```sh
+python3 scripts/eval/corpus_sweep.py --help
 ```
-.bin/archfit analyze --full  --root <canonical-path> --config <cfg> --advisory --json
-.bin/archfit analyze --full  --root <canonical-path> --config <cfg> --advisory --llm --markdown
-.bin/archfit analyze --base <prev-minor> --full --root <canonical-path> --config <cfg> --advisory
+
+Example:
+
+```sh
+python3 scripts/eval/corpus_sweep.py \
+  --repos spotinfo,pumba,ccgram,herdr,storybook \
+  --ai-repos spotinfo,ccgram,herdr \
+  --repeat-repos spotinfo
 ```
 
-The multi-author repos need per-repo module configs (owner-less, so CODEOWNERS/git fills owners)
-and are heavier (SCIP on prometheus is slow). Use canonical-case `--root` paths on macOS (F4).
+The script:
+
+- uses `.bin/archfit` from the current branch
+- runs from the archfit repo root
+- writes temp configs and artifacts under `/tmp/archfit-corpus-eval/`
+- writes a summary JSON file at `/tmp/archfit-corpus-results.json` by default
+
+## Manual command pattern
+
+If you are not using the helper script, the minimum useful pattern per repo is:
+
+```sh
+.bin/archfit check --json -c <temp-config> --root <canonical-path>
+.bin/archfit analyze --json -c <temp-config> --root <canonical-path>
+.bin/archfit analyze --ai-summary --markdown -c <temp-config> --root <canonical-path>
+```
+
+The multi-author repos are heavier (SCIP on prometheus is slow). Use canonical-
+case `--root` paths on macOS.
 
 ## Related
 
-- Eval findings: `docs/archived/reports/eval-2026-06-30/00-FINDINGS.md`
-- Owner-detection probe across repos: `docs/archived/reports/eval-2026-06-30/owner-detection-probe.md`
+- `skills/archfit-eval/`
+- `docs/book-alignment-review-prompt.md`

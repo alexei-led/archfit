@@ -2,36 +2,46 @@
 
 Use this prompt from the archfit repo root.
 
-It is self-contained. Do not rely on old reports, old verdicts, or archived artifacts.
-Treat any prior review as stale unless you re-derive the claim from the book and the current code.
+**Canonical workflow now lives in `skills/archfit-eval/` and
+`scripts/eval/corpus_sweep.py`.**
+
+Use this file when you need a single prompt body for another agent or harness.
+Treat it as the **report contract plus evaluation rules**, not as the only place
+the workflow lives.
+
+Do not rely on old reports, old verdicts, or archived artifacts. Treat any prior
+review as stale unless you re-derive the claim from the book and the current
+code.
 
 ## Prompt
 
-You are an expert software architect auditing **archfit** against Vlad Khononov's
-**_Balancing Coupling in Software Design_**.
+You are an expert software architect auditing **archfit** against Vlad
+Khononov's **_Balancing Coupling in Software Design_**.
 
-Your job is to produce **one self-contained markdown review** of the current repo.
+Your job is to produce **one self-contained markdown review** of the current
+repo.
 
-Do **not** assume any previous `00-REVIEW.md`, archived report tree, or old analysis note is correct.
-Do **not** update or depend on old report files.
-Do **not** create a report directory.
-If you need scratch data, use temporary local files outside the repo or ephemeral command output.
+Do **not** assume any previous `00-REVIEW.md`, archived report tree, or old
+analysis note is correct. Do **not** update or depend on old report files. Do
+**not** create a report directory. If you need scratch data, use temporary local
+files outside the repo or ephemeral command output.
 
 ## Core question
 
 How complete is archfit as a practical tool for applying the book today?
 
-Answer by extracting the book's metrics, values, scales, formulas, and useful adjacent
-methods, then checking one by one whether current archfit:
+Answer by extracting the book's metrics, values, scales, formulas, and useful
+adjacent methods, then checking one by one whether current archfit:
 
 1. measures it deterministically from code facts,
-2. can infer or improve it through reviewable LLM-assisted configuration,
+2. can infer or improve it through reviewable AI-assisted configuration,
 3. abstains honestly when it cannot know,
-4. keeps the deterministic gate reproducible.
+4. keeps the deterministic gate reproducible,
+5. is usable across supported languages, real repos, docs, and CLI workflows.
 
 ## Ground truth
 
-Use the local book, not summaries or old reports:
+Use the local book, not summaries:
 
 - `.book/9780137353576.epub`
 
@@ -62,16 +72,45 @@ Start with:
 - `internal/extract/`
 - `internal/labels/`
 - `.archfit-labels.yaml` handling if present
-- LLM/config surfaces:
-  - `config init --llm`
-  - `config update --llm`
+- AI/config surfaces:
+  - `config init --ai-classify`
+  - `config update --ai-classify`
   - `config enrich labels`
   - `config enrich abstained`
   - `config enrich owner|subdomain|volatility`
-  - `analyze --llm`
-  - `explain`
+  - `analyze --ai-summary`
+  - `explain --ai-summary`
 
 Find exact implementation evidence as `file:line`.
+
+## Required procedure
+
+Run and record:
+
+```sh
+make build
+.bin/archfit doctor
+make test
+.bin/archfit analyze --json --config .archfit.yaml
+.bin/archfit check --config .archfit.yaml
+```
+
+If you evaluate corpus repos too:
+
+- run from the archfit repo root so `.env` loading is consistent,
+- use temp configs outside the target repos,
+- treat temp-config update failures as product findings,
+- repeat at least one representative repo run with the same temp config and
+  compare parsed JSON,
+- compare deterministic archfit output with semantic architecture review on a
+  few representative repos, but only score archfit down for misses it should
+  reasonably catch.
+
+Prefer the helper script when repeated corpus runs help:
+
+```sh
+python3 scripts/eval/corpus_sweep.py --help
+```
 
 ## Required analysis shape
 
@@ -96,8 +135,8 @@ For each row include:
 - type: core BC metric, adjacent useful metric, method, or semantic judgment
 - automation class:
   - deterministic/syntactic
-  - semantic/LLM
-  - mixed deterministic + LLM
+  - semantic/AI
+  - mixed deterministic + AI
   - not automatable / human-only
 - current archfit status:
   - implemented verbatim
@@ -141,53 +180,55 @@ reproducible, machine-readable evidence the current stack cannot provide.
 
 ### 5. Deterministic vs semantic split
 
-Separate facts that must stay deterministic from facts that need semantic judgment.
+Separate facts that must stay deterministic from facts that need semantic
+judgment.
 
 Any semantic result that affects scoring must become reviewable, pinned,
 deterministic input first.
 
-### 6. Gap list and next waves
+### 6. Corpus and UX findings
+
+For each evaluated repo or workflow, capture:
+
+- config outcome: copied / generated / updated / update-failed
+- `check` verdict and exit code
+- `analyze` verdict and score band
+- missing-tool or abstention signals
+- AI summary value or failure
+- CLI/docs/skill issues: flags, progress, errors, confusing output, stale docs
+- whether the repo is a good future regression target
+
+### 7. Gap list and next waves
 
 Each gap must include:
 
 - severity: P1/P2/P3
 - book reference
 - current archfit evidence
-- deterministic extraction plan, semantic/LLM plan, or both
+- deterministic extraction plan, semantic/AI plan, or both
 - expected output/config change
 - validation command or test shape
-
-## Required commands
-
-Run and record:
-
-```sh
-make build
-.bin/archfit doctor
-make test
-.bin/archfit analyze --full --json --config .archfit.yaml
-.bin/archfit analyze --gate --full --config .archfit.yaml
-```
-
-If time permits, run one representative repo per language from the existing corpus.
-Keep any extra findings inside the same final review.
-Do not create per-language report docs.
 
 ## Evidence rules
 
 - Cite code as `file:line`.
 - Cite the book by chapter/section.
-- If you claim a metric is non-contaminating, prove it from code or by a controlled run.
-- If a metric is missing, cite the searched code paths and why they do not implement it.
-- If a tool is absent on the machine, mark coverage as a local tool gap, not an archfit defect.
+- If you claim a metric is non-contaminating, prove it from code or by a
+  controlled run.
+- If a metric is missing, cite the searched code paths and why they do not
+  implement it.
+- If a tool is absent on the machine, mark coverage as a local tool gap, not an
+  archfit defect.
 - Distinguish book-core gaps from useful adjacent metrics.
+- Do not call a semantic-only issue an archfit miss unless current config and
+  deterministic modeling should already catch it.
 
 ## Output contract
 
 Return one self-contained markdown review in your final response.
 
-Do not depend on old report paths.
-Do not write under `docs/archived/reports/`.
+Do not depend on old report paths. Do not write under `docs/archived/reports/`.
 Do not create new analysis directories.
 
-End with a short validation section listing commands run, pass/fail status, and any unverified gaps.
+End with a short validation section listing commands run, pass/fail status, and
+any unverified gaps.
