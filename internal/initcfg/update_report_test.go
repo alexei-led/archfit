@@ -287,8 +287,8 @@ func TestRenderUpdateReport_Unclassified_NoAnn(t *testing.T) {
 	if !strings.Contains(got, testSvc) {
 		t.Errorf("missing module name:\n%s", got)
 	}
-	if !strings.Contains(got, "--llm") {
-		t.Errorf("missing '--llm' suggestion:\n%s", got)
+	if !strings.Contains(got, "--ai-classify") {
+		t.Errorf("missing '--ai-classify' suggestion:\n%s", got)
 	}
 	if !strings.Contains(got, "structurally in sync") {
 		t.Errorf("missing in-sync line:\n%s", got)
@@ -318,9 +318,9 @@ func TestRenderUpdateReport_Unclassified_WithAnn(t *testing.T) {
 	if !strings.Contains(got, layerCore) {
 		t.Errorf("missing llm layer in UNCLASSIFIED:\n%s", got)
 	}
-	// Should NOT suggest --llm when ann has the module.
-	if strings.Contains(got, "--llm") {
-		t.Errorf("unexpected '--llm' suggestion when ann present:\n%s", got)
+	// Should NOT suggest --ai-classify when ann has the module.
+	if strings.Contains(got, "--ai-classify") {
+		t.Errorf("unexpected '--ai-classify' suggestion when ann present:\n%s", got)
 	}
 }
 

@@ -392,7 +392,7 @@ func Render(cfg DiscoveredConfig, ann map[string]ModuleAnnotation, apply bool) s
 	b.WriteString("#   syntax: { enabled: true }       # ast-grep: roles, routes, exported surface\n")
 	b.WriteString("#   clones: { enabled: true }       # cross-module duplication\n")
 	b.WriteString("\n")
-	b.WriteString("# Off-gate LLM for `config init/update/enrich`, `analyze --llm`, and `explain --llm` (never used by the deterministic gate).\n")
+	b.WriteString("# Off-gate LLM for `config init/update/enrich`, `analyze --ai-summary`, and `explain --ai-summary` (never used by the deterministic gate).\n")
 	b.WriteString("# ai:\n")
 	b.WriteString("#   provider: anthropic   # anthropic | openai | ollama\n")
 	b.WriteString("#   model: claude-opus-4-8\n")

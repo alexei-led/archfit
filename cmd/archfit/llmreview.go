@@ -62,7 +62,7 @@ func persistRawReview(cacheDir, text string) {
 func runLLMReview(ctx context.Context, deps *appDeps, cfg config.Config, configPath, root string, refresh bool, providerOverride llm.Provider, diag diagnostic.Diagnostic, sc score.Scorecard) error {
 	llmCfg, configured := cfg.LLM()
 	if !configured {
-		return &exitError{code: 3, msg: "error: --llm requires ai configured (provider + model); see docs/guide/llm-enrich.md"}
+		return &exitError{code: 3, msg: "error: --ai-summary requires ai configured (provider + model); see docs/guide/llm-enrich.md"}
 	}
 
 	configDir := filepath.Dir(configPath)
