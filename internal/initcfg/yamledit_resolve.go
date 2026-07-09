@@ -167,14 +167,19 @@ func resolveUpdateModulePaths(ed UpdateModulePathsEdit, pf parsedFile) (*splice,
 	if pm == nil {
 		return nil, fmt.Errorf("yamledit: UpdateModulePaths: module %q not found", ed.Module)
 	}
-	if pm.pathsIsFlow {
-		return nil, fmt.Errorf("yamledit: UpdateModulePaths: module %q has flow-style paths: [...] which is not supported", ed.Module)
-	}
-
 	var b strings.Builder
 	b.WriteString("    paths:\n")
 	for _, p := range ed.Paths {
 		fmt.Fprintf(&b, "      - %q\n", p)
+	}
+
+	if pm.pathsIsFlow {
+		return &splice{
+			startLine:   pm.pathsFlowLine,
+			endLine:     pm.pathsFlowLine + 1,
+			replacement: []byte(b.String()),
+			editDesc:    fmt.Sprintf("UpdateModulePaths(%s)", ed.Module),
+		}, nil
 	}
 
 	if pm.pathsExists {
