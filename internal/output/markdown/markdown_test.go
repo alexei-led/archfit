@@ -2,6 +2,7 @@ package markdown_test
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -28,7 +29,8 @@ const (
 	langPythonMarkdownTest    = "python"
 
 	// Kept tool names.
-	toolJscpd = "jscpd"
+	toolJscpd  = "jscpd"
+	jscpdCrash = "jscpd: tool crashed mid-parse"
 
 	// Kept info-metric names.
 	metricCycle       = "cycle"
@@ -577,7 +579,7 @@ func TestRenderer_Render_ConfigWarnings(t *testing.T) {
 	d.Verdict = diagnostic.VerdictPass
 	d.ConfigWarnings = []string{
 		`module "internal/a" omits owner`,
-		"jscpd: tool crashed mid-parse",
+		jscpdCrash,
 	}
 
 	var buf bytes.Buffer
@@ -591,11 +593,42 @@ func TestRenderer_Render_ConfigWarnings(t *testing.T) {
 	}
 	for _, want := range []string{
 		`module "internal/a" omits owner`,
-		"jscpd: tool crashed mid-parse",
+		jscpdCrash,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)
 		}
+	}
+}
+
+func TestRenderer_Render_ConfigWarningsGroupsRepeatedModuleOmissions(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	for i := range 17 {
+		d.ConfigWarnings = append(d.ConfigWarnings, fmt.Sprintf(`module "mod-%02d" omits owner, subdomain/volatility`, i))
+	}
+	d.ConfigWarnings = append(d.ConfigWarnings, `module "single" omits owner`, jscpdCrash)
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"## Config warnings (19)",
+		`modules omitting owner, subdomain/volatility: "mod-00", "mod-01", "mod-02"`,
+		"…and 2 more modules",
+		`module "single" omits owner`,
+		jscpdCrash,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `"mod-15"`) || strings.Contains(out, `"mod-16"`) {
+		t.Errorf("grouped warning should hide modules after the sample cap\nfull output:\n%s", out)
 	}
 }
 
@@ -995,6 +1028,44 @@ func TestRenderer_Render_AdvisoryTasks(t *testing.T) {
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("advisory task output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestRenderer_Render_AdvisoryTasksCapsAtTop25(t *testing.T) {
+	r := markdown.New()
+	d := diagnostic.New()
+	d.Verdict = diagnostic.VerdictPass
+	for i := range 27 {
+		d.AdvisoryTasks = append(d.AdvisoryTasks, diagnostic.AdvisoryTask{
+			FindingID:  fmt.Sprintf("%016d", i),
+			RuleID:     fmt.Sprintf("rule-%02d", i),
+			Status:     finding.StatusNew,
+			Severity:   finding.SeverityHigh,
+			GroupCount: 1,
+			Goal:       fmt.Sprintf("Review advisory %02d.", i),
+		})
+	}
+
+	var buf bytes.Buffer
+	if err := r.Render(d, &buf); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{
+		"## Advisory tasks (27)",
+		"**rule-00**",
+		"**rule-24**",
+		"_…and 2 more advisory tasks (see --json for the full list)._",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("advisory task output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+	for _, hidden := range []string{"**rule-25**", "**rule-26**"} {
+		if strings.Contains(out, hidden) {
+			t.Errorf("advisory task output includes hidden task %q\nfull output:\n%s", hidden, out)
 		}
 	}
 }

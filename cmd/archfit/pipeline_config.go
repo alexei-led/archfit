@@ -145,6 +145,9 @@ func tsUnresolvedWarning(cov []diagnostic.Coverage) string {
 func pyUnresolvedWarning(cov []diagnostic.Coverage) string {
 	for _, c := range cov {
 		if c.Tool == toolGrimp && c.Unresolved > 0 {
+			if strings.Contains(c.Reason, "imports unresolved") {
+				return toolGrimp + ": " + c.Reason
+			}
 			return fmt.Sprintf("%s: %d imports unresolved — check languages.python.package and src layout", toolGrimp, c.Unresolved)
 		}
 	}

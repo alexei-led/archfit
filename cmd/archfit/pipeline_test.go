@@ -693,6 +693,13 @@ func TestPyUnresolvedWarning(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "grimp unresolved includes top roots from reason",
+			cov: []diagnostic.Coverage{
+				{Tool: toolGrimp, Status: diagnostic.StatusPartial, Unresolved: 228, Reason: "228 imports unresolved (top: prefect_aws 100, httpx 4) — check languages.python.package and src layout"},
+			},
+			want: true,
+		},
+		{
 			name: "zero unresolved stays silent",
 			cov: []diagnostic.Coverage{
 				{Tool: toolGrimp, Status: diagnostic.StatusOK},
@@ -717,6 +724,9 @@ func TestPyUnresolvedWarning(t *testing.T) {
 			if tc.want {
 				if !strings.Contains(got, "228 imports unresolved") {
 					t.Errorf("pyUnresolvedWarning(%+v) = %q, want unresolved count", tc.cov, got)
+				}
+				if strings.Contains(tc.name, "top roots") && !strings.Contains(got, "top: prefect_aws 100, httpx 4") {
+					t.Errorf("pyUnresolvedWarning(%+v) = %q, want top roots", tc.cov, got)
 				}
 				if !strings.Contains(got, "check languages.python.package and src layout") {
 					t.Errorf("pyUnresolvedWarning(%+v) = %q, want Python hint", tc.cov, got)
