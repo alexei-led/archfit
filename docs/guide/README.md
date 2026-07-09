@@ -2,7 +2,8 @@
 
 Short, task-focused docs for using `archfit`.
 
-Start with quick start if you want the first useful run. Use the other pages as
+Start with quick start if you want the first useful run. Use `archfit
+analyze` for local review and `archfit check` in CI. Use the other pages as
 small references while configuring a repo.
 
 ## Pages
@@ -25,12 +26,12 @@ small references while configuring a repo.
   violations.
 - [Commands](commands.md) — common commands, formats, and exit codes.
 - [Caching](caching.md) — the extractor fact cache: what invalidates it,
-  `--no-cache`, eviction, reset.
+  `--refresh`, eviction, reset.
 - [CI](ci.md) — basic CI and pull-request usage.
 - [Agent feedback loop](agent-feedback.md) — the AI-agent loop: `agent_tasks`,
   SARIF, `--base` delta mode.
 - [LLM enrichment](llm-enrich.md) — off-gate LLM enrichment: `enrich`, pinned
-  labels, `explain --llm`.
+  labels, `explain --ai-summary`.
 - [Troubleshooting](troubleshooting.md) — common setup and config issues.
 
 ## Related docs

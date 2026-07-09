@@ -453,7 +453,7 @@ func TestRun_Explain_LLMNarrative(t *testing.T) {
 
 	// Find the finding fingerprint.
 	var buf bytes.Buffer
-	Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+	Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
 	var diag struct {
 		Findings []struct {
 			ID string `json:"id"`
@@ -464,7 +464,7 @@ func TestRun_Explain_LLMNarrative(t *testing.T) {
 	}
 
 	buf.Reset()
-	code := Run([]string{cmdExplain, diag.Findings[0].ID[:8], "-c", cfgPath, "--llm", flagNoCache}, &buf)
+	code := Run([]string{cmdExplain, diag.Findings[0].ID[:8], "-c", cfgPath, "--ai-summary", flagRefresh}, &buf)
 	if code != 0 {
 		t.Fatalf("explain --llm exit = %d\n%s", code, buf.String())
 	}
@@ -486,7 +486,7 @@ func TestRun_Explain_LLMUnconfigured(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 	var buf bytes.Buffer
-	Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+	Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
 	var diag struct {
 		Findings []struct {
 			ID string `json:"id"`
@@ -496,7 +496,7 @@ func TestRun_Explain_LLMUnconfigured(t *testing.T) {
 		t.Fatal("no findings")
 	}
 	buf.Reset()
-	if code := Run([]string{cmdExplain, diag.Findings[0].ID[:8], "-c", cfgPath, "--llm"}, &buf); code != 3 {
+	if code := Run([]string{cmdExplain, diag.Findings[0].ID[:8], "-c", cfgPath, "--ai-summary"}, &buf); code != 3 {
 		t.Errorf("exit = %d, want 3 with setup hint", code)
 	}
 }

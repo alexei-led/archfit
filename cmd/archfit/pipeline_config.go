@@ -139,14 +139,28 @@ func tsUnresolvedWarning(cov []diagnostic.Coverage) string {
 	return ""
 }
 
-// loadConfig loads the config file at path. When path equals the default
-// ".archfit.yaml" and the file is absent, it returns config.Default() so the
-// tool works without a config file. An explicit --config path that is missing
-// always returns an error. noConfig=true skips file loading entirely.
-func loadConfig(ctx context.Context, path string, noConfig bool) (config.Config, error) {
-	if noConfig {
-		return config.Default(), nil
+// pyUnresolvedWarning returns a disclosure message when grimp reported
+// unresolved Python imports. Those imports are emitted as low-confidence
+// external edges, so partial coverage should not be stderr-silent.
+func pyUnresolvedWarning(cov []diagnostic.Coverage) string {
+	for _, c := range cov {
+		if c.Tool == toolGrimp && c.Unresolved > 0 {
+			if strings.Contains(c.Reason, "imports unresolved") {
+				return toolGrimp + ": " + c.Reason
+			}
+			return fmt.Sprintf("%s: %d imports unresolved — check languages.python.package and src layout", toolGrimp, c.Unresolved)
+		}
 	}
+	return ""
+}
+
+// loadConfig loads the config file at path. When path equals the default
+// ".archfit.yaml" and the file is absent, it returns config.Default() so that
+// commands which tolerate a missing config (doctor, explain) can still run.
+// Do NOT call this from analyze or check — use loadAnalysisConfig, which
+// requires the config to exist and returns a clear error when it does not.
+// An explicit non-default --config path that is missing always returns an error.
+func loadConfig(ctx context.Context, path string) (config.Config, error) {
 	cfg, err := config.Load(ctx, path)
 	if err != nil {
 		if path == defaultConfigPath && errors.Is(err, os.ErrNotExist) {
@@ -191,10 +205,7 @@ func applyFlagOverrides(cfg *config.Config, severity string, lang []string) erro
 // (built-in defaults were used). Hashing an ignored file would make the reported
 // hash misleading and non-reproducible — it would change when a file the run
 // never read changes.
-func effectiveConfigHash(path string, noConfig bool) string {
-	if noConfig {
-		return ""
-	}
+func effectiveConfigHash(path string) string {
 	return computeConfigHash(path)
 }
 

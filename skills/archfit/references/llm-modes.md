@@ -1,17 +1,22 @@
-# archfit LLM modes (off-gate)
+# archfit AI/LLM modes (off-gate)
 
-archfit's gate is deterministic — the deterministic gate (`analyze` without
-`--llm`) never calls a model. LLM features are opt-in and off-gate: `analyze
---llm`, `config init`/`config update` classification, `config enrich` labels
-and metadata, and `explain --llm`. The gate (`analyze --gate`) only reads the
-final config and approved labels.
+archfit's gate is deterministic — `archfit check` never calls a model. AI/LLM
+features are opt-in and off-gate: `analyze --ai-summary`, `explain
+--ai-summary`, `config init --ai-classify`, `config update --ai-classify`, and
+`config enrich` labels / abstained / owner / subdomain / volatility. The gate
+only reads the final config and approved labels.
+
+## Scope
+
+This file covers review-only AI authoring and narrative modes. It does not define
+or weaken deterministic gate behavior.
 
 ## Configuration
 
 ```yaml
 analyzers:
   scip:
-    enabled: true # enrich needs symbol-level strength hints
+    enabled: true # enrich benefits from symbol-level strength hints
 
 ai:
   provider: anthropic # anthropic | openai | ollama
@@ -20,65 +25,70 @@ ai:
 ```
 
 API keys come from env only — `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` — never
-from config. archfit also best-effort loads a local `.env` (cwd) at startup,
-setting a key only when it is currently unset (real env / CI secrets win); keep
-`.env` out of git. `archfit doctor` shows provider, key presence, and cache
-status. Responses are cached at `.archfit-cache/llm/`; `--no-cache` forces fresh
-calls.
+from config. archfit also best-effort loads a local `.env` from the current
+working directory at startup, setting a key only when it is currently unset
+(real env / CI secrets win). Keep `.env` out of git. Responses are cached at
+`.archfit-cache/llm/`; `--refresh` forces fresh extractor/AI work and updates the
+cache.
 
-## analyze --llm
+## analyze --ai-summary
 
-`archfit analyze --llm` is an off-gate LLM narrative over deterministic evidence.
-It appends a holistic LLM interpretation section after the deterministic output.
-It can prioritize and explain existing findings, but it does not create new gate
-facts and it does not change the gate verdict.
+If the AI config, provider, or key is missing, stop and report that setup is
+incomplete. Do not guess or fall back to a different model.
 
-- Requires `ai:` configured and the matching API key.
-- Use it for explanation and prioritization after a regular `analyze` run, not
-  instead of it.
-- If LLM config is missing, it exits `3`; that is a setup problem, not a gate
-  failure.
+`archfit analyze --ai-summary` is an off-gate narrative over deterministic
+evidence. It appends a cited, holistic AI interpretation section after the normal
+render. It can prioritize and explain existing findings, but it does not create
+new gate facts and it does not change the gate verdict.
 
-## config init / config update classification (subdomain, volatility, layer)
+- Requires `ai:` configured or provider/model overrides where supported, plus the
+  matching API key.
+- Use it after a normal deterministic `analyze` / `check` run, not instead of it.
+- If AI config or key setup is missing, it exits `3`; that is setup failure, not
+  a gate failure.
 
-`config init --llm` and `config update --llm` suggest `subdomain`, `volatility`,
-`layer`, and `role` for discovered modules, plus a module-name improvement. They
-never touch coupling strength — that is `config enrich`. (`role` declares a
-module's architectural role — `composition_root`, `adapter`, `core`,
-`shared_model`, `generated`, `test` — so a wiring/`cmd` package's fan-out reads
-as cohesion, not unbalanced coupling.)
+## config init / config update classification
+
+`config init --ai-classify` and `config update --ai-classify` suggest
+`subdomain`, `volatility`, `layer`, `role`, and module-name improvements for
+discovered modules. They never touch coupling strength — that is `config enrich`.
+`role` declares architectural role (`composition_root`, `adapter`, `core`,
+`shared_model`, `generated`, `test`) so wiring packages can be scored as
+intentional cohesion rather than unbalanced fan-out.
 
 Mode behavior:
 
 - `config init` — structural scaffold only.
-- `config init --llm` — suggestions emitted as commented-inert YAML
-  (`# subdomain: core  # llm-suggested — review and uncomment`); safe to gate on.
-- `config init --llm --apply` — `subdomain`/`volatility`/`layer` written live; a
-  name suggestion stays a comment.
-- `config update` — drift report, writes nothing.
-- `config update --apply` — structural drift written live (added / path-drifted /
-  removed modules).
-- `config update --llm` — drift report plus classification of unclassified modules.
-- `config update --llm --apply` — structural drift + classification written live.
-
-`config init --apply` requires `--llm`; `--apply` alone is valid only for
-`config update`.
+- `config init --ai-classify` — suggestions emitted as commented-inert YAML
+  (`# subdomain: core  # ai-suggested — review and uncomment`); safe to inspect.
+- `config init --ai-classify --apply` — writes AI classifications live into the
+  generated config. Review before using that config as a gate.
+- `config update` — structural drift report, writes nothing.
+- `config update --apply` — writes structural drift live (added/path-drifted /
+  removed modules) with backup.
+- `config update --ai-classify` — structural drift report plus cited semantic
+  proposals for unclassified modules.
+- `config update --ai-classify --apply` — applies structural drift only; semantic
+  AI proposals remain review-only.
 
 ## Apply guardrails
 
-- Plan mode (no `--apply`) never writes the config.
-- `--apply` completes the full LLM pass first, validates the result with
-  `config.Load`, backs up the existing file, and writes atomically (temp+rename).
-- Existing `subdomain`/`volatility`/`layer` values are never overwritten — only
-  absent fields are filled.
-- A live `layer` is written only when the value already appears in `layers:`;
-  otherwise it stays a comment.
+- Plan mode (no `--apply`) never writes the live config, except `config init`
+  defaulting to `.archfit.yaml` for the generated scaffold.
+- `config init --ai-classify --apply` is the direct-write path for AI
+  classifications; use a draft output (`-o .archfit-draft.yaml`) when reviewing.
+- `config update --apply` backs up the existing file and writes atomically.
+- Existing `subdomain`/`volatility`/`layer` values are not overwritten by update
+  proposals.
+- A live `layer` should only be written when the value already appears in
+  `layers:`; otherwise keep it as a comment/proposal.
 - Module keys are never auto-renamed.
 - `update --apply` aborts if the config changed since it was read, rather than
-  clobber concurrent edits.
+  clobbering concurrent edits.
 
-Workflow: run plan mode, review the drift report or commented suggestions, then
-re-run with `--apply`. Treat applied classifications as a reviewed starting point.
+Workflow: run plan/draft mode, review the drift report or commented suggestions,
+then copy approved fields deliberately or re-run the appropriate apply command.
+Treat applied classifications as a reviewed starting point, not as ground truth.
 
 ## What "structural drift" means (update)
 
@@ -89,66 +99,77 @@ re-run with `--apply`. Treat applied classifications as a reviewed starting poin
 
 ## enrich — labels and module metadata (draft → review → pin)
 
-`enrich` refines whether a cross-module edge is `functional` (invokes behavior),
-`model` (types cross the boundary), `contract` (published stable interface), or
-`intrusive` (reaches into internals). The deterministic heuristic blanket-labels
-most edges `functional`.
+`config enrich labels` refines whether a cross-module edge is `functional`
+(invokes behavior), `model` (types cross the boundary), `contract` (published
+stable interface), or `intrusive` (reaches into internals). The deterministic
+heuristic blanket-labels many edges as `functional` when deeper evidence is not
+available.
 
-1. `archfit config enrich labels` drafts into `.archfit-labels.yaml` (`status: draft` — inert).
-2. A human reviews each draft: flip `status: approved` to pin, delete to reject.
-   Never auto-approve drafts.
-3. `analyze --gate` consumes approved labels only and stays LLM-free.
+`config enrich abstained` targets cross-module edges whose strength is unknown
+and drafts labels from snippets. Use it when `coupling_balance` abstains because
+strength could not be determined.
 
-Labels file (`.archfit-labels.yaml`) notes:
+1. `archfit config enrich labels` drafts `.archfit-labels.yaml` entries
+   (`status: draft` — inert).
+2. `archfit config enrich abstained` drafts the same kind of label for
+   unknown-strength pairs.
+3. A human reviews each draft: flip keepers to `status: approved`, delete or
+   leave rejected entries inert.
+4. `archfit check` consumes approved labels only and stays AI-free.
+
+Labels file notes:
 
 - Only `status: approved` entries affect classification.
 - Precedence: config `public`/`internal` globs > approved labels > SCIP hint.
 - A label pins all edges of the ordered module pair (`from` → `to`).
-- `evidence_hash` fingerprints the pair's edges at enrich time; on full runs
-  `analyze --gate` recomputes it. A mismatch raises a `labels/stale` advisory and
-  the label is ignored until re-reviewed. Hand-authored labels may omit the hash.
-- A malformed labels file fails `analyze` loudly (exit 3) — it never silently
-  alters the gate.
+- `evidence_hash` fingerprints the pair's edges at enrich time; on full runs the
+  gate recomputes it. A mismatch raises a `labels/stale` advisory and the label
+  is ignored until re-reviewed. Hand-authored labels may omit the hash.
+- A malformed labels file fails loudly (exit 3); it never silently alters the
+  gate.
 
-## config enrich subdomain / owner / volatility (draft → review → apply)
+## config enrich subdomain / owner / volatility
 
 These modes draft module metadata the structural metrics depend on.
 
 - `config enrich subdomain` drafts `core` / `supporting` / `generic` into
   `.archfit-subdomains.yaml`.
-- `config enrich owner` reads `CODEOWNERS` plus module paths into `.archfit-owners.yaml`.
-- `config enrich volatility` infers low / medium / high into `.archfit-volatility.yaml`.
-- `--apply` writes only `status: approved` entries into `modules.<name>` and never
-  overwrites a live field.
+- `config enrich owner` reads `CODEOWNERS` plus module paths into
+  `.archfit-owners.yaml`.
+- `config enrich volatility` infers low / medium / high into
+  `.archfit-volatility.yaml`.
+- `--apply --reviewed-by <name>` writes only `status: approved` entries into
+  `modules.<name>` and never overwrites a live field.
 
-Filling these makes distance and encapsulation metrics more honest; without them,
-`encapsulation` and `coupling_balance` may stay partly `n/a`. Never auto-pin
-without review.
+Filling these makes distance, encapsulation, and coupling metrics more honest;
+without them, `encapsulation` and `coupling_balance` may stay partly `n/a`. Never
+auto-pin without review.
 
-## config init --llm — full config draft workflow
+## config init --ai-classify — full config draft workflow
 
 For a one-shot full-config draft (structure + subdomain/volatility/layer/role +
 owner), redirect output to a review file:
 
 ```sh
-archfit config init --llm --root . -o .archfit-draft.yaml
+archfit config init --ai-classify --root . -o .archfit-draft.yaml
 ```
 
 Without `--apply`, suggestions are written as commented-inert YAML — every field
-inert until you uncomment it. Review the draft, then either copy approved fields
-into the live config manually or re-run with `--apply` to write them live. Flags:
-`--root`/`-r`, `--output`/`-o` (`-` for stdout), `--llm-provider`, `--llm-model`,
-`--no-cache`.
+is inert until you uncomment it. Review the draft, then either copy approved
+fields into the live config manually or rerun with `--ai-classify --apply` to
+write them live. Flags: `--root`/`-r`, `--output`/`-o` (`-` for stdout),
+`--ai-provider`, `--ai-model`, `--refresh`.
 
-## explain --llm
+## explain --ai-summary
 
-`archfit explain <fingerprint> --llm` appends a Balanced Coupling narrative (why
-the finding matters, the risk, a repair sketch) after the deterministic explain
-output, using the same provider and cache. Without `--llm`, explain is offline.
+`archfit explain <fingerprint> --ai-summary` appends a Balanced Coupling
+narrative (why the finding matters, risk, repair sketch) after the deterministic
+explain output, using the same provider/cache. Without `--ai-summary`, explain is
+offline.
 
 ## Generated artifacts
 
-LLM modes can write repo-local drafts or cache:
+AI modes can write repo-local drafts or cache:
 
 - `.archfit-labels.yaml`
 - `.archfit-subdomains.yaml`

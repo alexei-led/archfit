@@ -539,10 +539,10 @@ analyzers:
 	cmd := &UpdateCmd{
 		Config:           cfgPath,
 		Root:             dir,
-		LLM:              true,
-		NoCache:          true,
-		LLMProvider:      providerAnthropic,
-		LLMModel:         defaultLLMModel,
+		AIClassify:       true,
+		Refresh:          true,
+		AIProvider:       providerAnthropic,
+		AIModel:          defaultLLMModel,
 		providerOverride: rustSyntheticProvider{},
 	}
 	out, err := runUpdateCmd(t, cmd, rustSyntheticRunner(dir))
@@ -729,10 +729,10 @@ rules:
 	cmd := &UpdateCmd{
 		Config:           cfgPath,
 		Root:             dir,
-		LLM:              true,
+		AIClassify:       true,
 		Apply:            true,
-		LLMProvider:      providerAnthropic,
-		LLMModel:         defaultLLMModel,
+		AIProvider:       providerAnthropic,
+		AIModel:          defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: layerCore},
 	}
 	out, err := runUpdateCmd(t, cmd, runner)
@@ -766,10 +766,10 @@ func TestUpdateCmd_LLMApply_NoSetFieldsForAddedModule(t *testing.T) {
 	cmd := &UpdateCmd{
 		Config:           cfgPath,
 		Root:             dir,
-		LLM:              true,
+		AIClassify:       true,
 		Apply:            true,
-		LLMProvider:      providerAnthropic,
-		LLMModel:         defaultLLMModel,
+		AIProvider:       providerAnthropic,
+		AIModel:          defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: layerCore},
 	}
 	_, err := runUpdateCmd(t, cmd, runner)
@@ -805,10 +805,10 @@ func TestUpdateCmd_LLMApply_SurfacesReviewOnlySuggestionsAfterStructuralEdit(t *
 	cmd := &UpdateCmd{
 		Config:           cfgPath,
 		Root:             dir,
-		LLM:              true,
+		AIClassify:       true,
 		Apply:            true,
-		LLMProvider:      providerAnthropic,
-		LLMModel:         defaultLLMModel,
+		AIProvider:       providerAnthropic,
+		AIModel:          defaultLLMModel,
 		providerOverride: &ruleSuggestionProvider{},
 	}
 	out, err := runUpdateCmd(t, cmd, matchingRunner("internal/mymod"))
@@ -857,10 +857,10 @@ rules:
 	cmd := &UpdateCmd{
 		Config:           cfgPath,
 		Root:             dir,
-		LLM:              true,
+		AIClassify:       true,
 		Apply:            true,
-		LLMProvider:      providerAnthropic,
-		LLMModel:         defaultLLMModel,
+		AIProvider:       providerAnthropic,
+		AIModel:          defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: layerCore},
 	}
 	_, err := runUpdateCmd(t, cmd, runner)
@@ -916,10 +916,10 @@ rules:
 	cmd := &UpdateCmd{
 		Config:           cfgPath,
 		Root:             dir,
-		LLM:              true,
+		AIClassify:       true,
 		Apply:            true,
-		LLMProvider:      providerAnthropic,
-		LLMModel:         defaultLLMModel,
+		AIProvider:       providerAnthropic,
+		AIModel:          defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: "adapter"},
 	}
 	out, err := runUpdateCmd(t, cmd, runner)
@@ -976,10 +976,10 @@ rules:
 	cmd := &UpdateCmd{
 		Config:           cfgPath,
 		Root:             dir,
-		LLM:              true,
+		AIClassify:       true,
 		Apply:            true,
-		LLMProvider:      providerAnthropic,
-		LLMModel:         defaultLLMModel,
+		AIProvider:       providerAnthropic,
+		AIModel:          defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: "infra"},
 	}
 	_, err = runUpdateCmd(t, cmd, runner)
@@ -1094,10 +1094,10 @@ rules:
 	cmd := &UpdateCmd{
 		Config:           cfgPath,
 		Root:             dir,
-		LLM:              true,
+		AIClassify:       true,
 		Apply:            false,
-		LLMProvider:      providerAnthropic,
-		LLMModel:         defaultLLMModel,
+		AIProvider:       providerAnthropic,
+		AIModel:          defaultLLMModel,
 		providerOverride: &flexFakeProvider{subdomain: subdomainCore, volatility: volatilityLow, layer: layerCore},
 	}
 	out, err := runUpdateCmd(t, cmd, runner)
@@ -1153,10 +1153,10 @@ rules:
 	cmd := &UpdateCmd{
 		Config:           cfgPath,
 		Root:             dir,
-		LLM:              true,
+		AIClassify:       true,
 		Apply:            false,
-		LLMProvider:      providerAnthropic,
-		LLMModel:         defaultLLMModel,
+		AIProvider:       providerAnthropic,
+		AIModel:          defaultLLMModel,
 		providerOverride: &ruleSuggestionProvider{},
 	}
 	out, err := runUpdateCmd(t, cmd, matchingRunner("internal/mymod"))
@@ -1272,10 +1272,10 @@ func TestUpdateCmd_LLM_WarnPartialClassify(t *testing.T) {
 	cmd := &UpdateCmd{
 		Config:           cfgPath,
 		Root:             dir,
-		LLM:              true,
+		AIClassify:       true,
 		Apply:            true,
-		LLMProvider:      providerAnthropic,
-		LLMModel:         defaultLLMModel,
+		AIProvider:       providerAnthropic,
+		AIModel:          defaultLLMModel,
 		providerOverride: &fakeOmitProvider{classifyName: "alpha"},
 	}
 	out, err := runUpdateCmd(t, cmd, runner)

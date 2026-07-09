@@ -22,7 +22,7 @@ if you decide its regressions are not enforceable.
 A **signal** is report-only. Metric absolute values, `blast_radius`, and Balanced
 Coupling advisories describe the shape of the architecture — coupling risk,
 blast radius, cycle count — but they never fail the build on their own. They are
-there to inform a human or an AI agent, and to feed `archfit analyze --llm`. One
+there to inform a human or an AI agent, and to feed `archfit analyze --ai-summary`. One
 signal is promotable: the synthesised `coupling_balance` score gates when a
 `coupling.gate` block is configured (archfit's own config has none, so the score
 stays report-only here).
@@ -47,8 +47,8 @@ From the project `.archfit.yaml` and the structural gates in `CLAUDE.md`:
   `go test ./internal/ -run TestArchImports`) — the decision core
   (`classify`, `rules`, `metrics`, `status`, `staleness`, `facts`, `scope`,
   `score`) must not import `os`, `os/exec`, a YAML library, or adapter packages;
-  LLM SDKs are reachable only from off-gate command code (`config init --llm`,
-  `config update --llm`, `config enrich`, `analyze --llm`, and `explain --llm`),
+  LLM SDKs are reachable only from off-gate command code (`config init --ai-classify`,
+  `config update --ai-classify`, `config enrich`, `analyze --ai-summary`, and `explain --ai-summary`),
   never the deterministic gate path.
 - **Forbidden dependencies and layer direction** declared as `rules` in the
   config (e.g. the historical engine→scope inversion guard, gated `warn`).
@@ -81,13 +81,13 @@ capabilities:
 Their absolute values do not fail the build. Baseline deltas can still gate for
 metrics such as `cycle` and `encapsulation`, and `coupling_balance` can gate when
 `coupling.gate` is configured. The signals show up in `archfit analyze --markdown`
-and the JSON bundle that `archfit analyze --llm` narrates.
+and the JSON bundle that `archfit analyze --ai-summary` narrates.
 
 ## See it yourself
 
 ```sh
-archfit analyze --gate --config .archfit.yaml --full     # gates only: the verdict
-archfit analyze --markdown --config .archfit.yaml --full # gates + signals, as Markdown
+archfit check --config .archfit.yaml                  # gates only: the verdict
+archfit analyze --markdown --config .archfit.yaml   # gates + signals, as Markdown
 ```
 
 The expected result on a clean checkout is **pass with signals** — no violations

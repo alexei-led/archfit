@@ -19,7 +19,7 @@ import (
 )
 
 // coupledModulesCfg declares two modules with different owners and no rules, so
-// any --gate FAIL on the fixture repo comes from the coupling gate alone.
+// Any FAIL from `archfit check` on the fixture repo comes from the coupling gate alone.
 const coupledModulesCfg = `version: 1
 modules:
   a:
@@ -42,8 +42,8 @@ func writeCoupledRepo(t *testing.T, cfgBody string) string {
 		markerGoMod: "module example.com/test\n\ngo 1.21\n",
 		filePkgAA: "package a\n\nimport \"example.com/test/pkg/b/internal/impl\"\n\n" +
 			"func UseSecret() string { return impl.Secret() }\n",
-		"pkg/b/internal/impl/impl.go": "package impl\n\nfunc Secret() string { return \"s\" }\n",
-		defaultConfigPath:             cfgBody,
+		filePkgBImpl:      implSource(),
+		defaultConfigPath: cfgBody,
 	}
 	for name, content := range files {
 		path := filepath.Join(dir, name)
@@ -84,9 +84,9 @@ func TestRun_Analyze_CouplingGate_MinBandTrips(t *testing.T) {
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
 
 	var buf, errBuf bytes.Buffer
-	code := RunWithStderr([]string{cmdAnalyze, fmtJSON, "-c", cfgPath, flagFull, flagGate}, &buf, &errBuf)
+	code := RunWithStderr([]string{cmdCheck, fmtJSON, "-c", cfgPath, flagRefresh}, &buf, &errBuf)
 	if code != 1 {
-		t.Fatalf("analyze --gate with tripped coupling gate: exit = %d, want 1\noutput:\n%s", code, buf.String())
+		t.Fatalf("check with tripped coupling gate: exit = %d, want 1\noutput:\n%s", code, buf.String())
 	}
 	// Trip reasons are an analyze-only stderr contract (see analyze.go): they
 	// must be disclosed on stderr and must not pollute the JSON on stdout.
@@ -128,7 +128,7 @@ func TestRun_Baseline_NoTripReasonOnStderr(t *testing.T) {
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
 
 	var buf, errBuf bytes.Buffer
-	code := RunWithStderr([]string{cmdBaseline, "-c", cfgPath, flagFull}, &buf, &errBuf)
+	code := RunWithStderr([]string{cmdBaseline, "-c", cfgPath, flagRefresh}, &buf, &errBuf)
 	if code != 0 {
 		t.Fatalf("baseline: exit = %d, want 0\nstderr:\n%s", code, errBuf.String())
 	}
@@ -145,9 +145,9 @@ func TestRun_Analyze_CouplingGate_OffByDefault(t *testing.T) {
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg)
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, fmtJSON, "-c", cfgPath, flagFull, flagGate}, &buf)
+	code := Run([]string{cmdCheck, fmtJSON, "-c", cfgPath, flagRefresh}, &buf)
 	if code != 0 {
-		t.Fatalf("analyze --gate without coupling.gate: exit = %d, want 0\noutput:\n%s", code, buf.String())
+		t.Fatalf("check without coupling.gate: exit = %d, want 0\noutput:\n%s", code, buf.String())
 	}
 	var diag diagnostic.Diagnostic
 	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
@@ -168,9 +168,9 @@ func TestRun_Analyze_CouplingGate_BandNANeverTrips(t *testing.T) {
 	cfgPath := writeNonGoRepo(t, "version: 1\ncoupling:\n  gate:\n    min_band: strong\n    max_drop: 0\n")
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, flagGate}, &buf)
+	code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh}, &buf)
 	if code != 0 {
-		t.Fatalf("analyze --gate on unmeasured (n/a) coupling: exit = %d, want 0\noutput:\n%s", code, buf.String())
+		t.Fatalf("check on unmeasured (n/a) coupling: exit = %d, want 0\noutput:\n%s", code, buf.String())
 	}
 }
 
@@ -227,9 +227,9 @@ func TestRun_Analyze_CouplingGate_MaxDrop(t *testing.T) {
 			}
 
 			var buf, errBuf bytes.Buffer
-			code := RunWithStderr([]string{cmdAnalyze, "-c", cfgPath, flagFull, flagGate}, &buf, &errBuf)
+			code := RunWithStderr([]string{cmdCheck, "-c", cfgPath, flagRefresh}, &buf, &errBuf)
 			if code != tc.wantCode {
-				t.Fatalf("analyze --gate: exit = %d, want %d\noutput:\n%s\nstderr:\n%s", code, tc.wantCode, buf.String(), errBuf.String())
+				t.Fatalf("check: exit = %d, want %d\noutput:\n%s\nstderr:\n%s", code, tc.wantCode, buf.String(), errBuf.String())
 			}
 			for _, frag := range tc.wantStderr {
 				if !strings.Contains(errBuf.String(), frag) {
@@ -253,7 +253,7 @@ func TestRun_Baseline_WritesScoreSnapshot(t *testing.T) {
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg)
 
 	var buf bytes.Buffer
-	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagFull}, &buf); code != 0 {
+	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagRefresh}, &buf); code != 0 {
 		t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
 	}
 
@@ -372,9 +372,9 @@ func TestRun_Analyze_CouplingGate_TripWithoutAdvisories(t *testing.T) {
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, fmtJSON, "-c", cfgPath, flagFull, flagGate, "--advisory=false"}, &buf)
+	code := Run([]string{cmdCheck, fmtJSON, "-c", cfgPath, flagRefresh, "--no-advisories"}, &buf)
 	if code != 1 {
-		t.Fatalf("analyze --gate --advisory=false with tripped coupling gate: exit = %d, want 1\noutput:\n%s", code, buf.String())
+		t.Fatalf("check --no-advisories with tripped coupling gate: exit = %d, want 1\noutput:\n%s", code, buf.String())
 	}
 
 	var diag diagnostic.Diagnostic
@@ -425,7 +425,7 @@ func TestRun_Baseline_KeepsNativeAdvisoryKind(t *testing.T) {
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
 
 	var buf bytes.Buffer
-	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagFull, "--advisory"}, &buf); code != 0 {
+	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagRefresh}, &buf); code != 0 {
 		t.Fatalf("baseline --advisory: exit = %d\noutput:\n%s", code, buf.String())
 	}
 	b, err := baseline.Load(context.Background(), filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath))
@@ -457,7 +457,7 @@ func TestRun_Baseline_SkipsSyntheticCouplingGateFinding(t *testing.T) {
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
 
 	var buf bytes.Buffer
-	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagFull}, &buf); code != 0 {
+	if code := Run([]string{cmdBaseline, "-c", cfgPath, flagRefresh}, &buf); code != 0 {
 		t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
 	}
 	b, err := baseline.Load(context.Background(), filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath))
@@ -494,7 +494,7 @@ func TestRun_Analyze_MetricGate_ExitCodes(t *testing.T) {
 			cfgPath := writeCoupledRepo(t, coupledModulesCfg+tc.cfgExtra)
 
 			var buf bytes.Buffer
-			if code := Run([]string{cmdBaseline, "-c", cfgPath, flagFull}, &buf); code != 0 {
+			if code := Run([]string{cmdBaseline, "-c", cfgPath, flagRefresh}, &buf); code != 0 {
 				t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
 			}
 			bPath := filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath)
@@ -515,8 +515,8 @@ func TestRun_Analyze_MetricGate_ExitCodes(t *testing.T) {
 			}
 
 			buf.Reset()
-			if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, flagGate}, &buf); code != tc.wantCode {
-				t.Fatalf("analyze --gate: exit = %d, want %d\noutput:\n%s", code, tc.wantCode, buf.String())
+			if code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh}, &buf); code != tc.wantCode {
+				t.Fatalf("check: exit = %d, want %d\noutput:\n%s", code, tc.wantCode, buf.String())
 			}
 		})
 	}
@@ -547,7 +547,7 @@ func TestRun_Analyze_MetricGate_ExitCodes_CountDirection(t *testing.T) {
 			cfgPath := writeCoupledRepo(t, coupledModulesCfg+tc.cfgExtra)
 
 			var buf bytes.Buffer
-			if code := Run([]string{cmdBaseline, "-c", cfgPath, flagFull}, &buf); code != 0 {
+			if code := Run([]string{cmdBaseline, "-c", cfgPath, flagRefresh}, &buf); code != 0 {
 				t.Fatalf("baseline: exit = %d\noutput:\n%s", code, buf.String())
 			}
 			bPath := filepath.Join(filepath.Dir(cfgPath), defaultBaselinePath)
@@ -568,8 +568,8 @@ func TestRun_Analyze_MetricGate_ExitCodes_CountDirection(t *testing.T) {
 			}
 
 			buf.Reset()
-			if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, flagGate}, &buf); code != tc.wantCode {
-				t.Fatalf("analyze --gate: exit = %d, want %d\noutput:\n%s", code, tc.wantCode, buf.String())
+			if code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh}, &buf); code != tc.wantCode {
+				t.Fatalf("check: exit = %d, want %d\noutput:\n%s", code, tc.wantCode, buf.String())
 			}
 		})
 	}

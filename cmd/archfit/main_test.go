@@ -57,22 +57,23 @@ func writeViolatingRepo(t *testing.T) string {
 `)
 }
 
-// TestRun_Analyze_GateVsReportOnly verifies the --gate contract:
-// the same violating repo exits 1 with --gate and 0 without it (report-only default).
+// TestRun_Analyze_GateVsReportOnly verifies the check-vs-analyze contract:
+// the same violating repo exits 1 under 'archfit check' (gate) and 0 under
+// 'archfit analyze' (report-only).
 func TestRun_Analyze_GateVsReportOnly(t *testing.T) {
 	t.Parallel()
 	cfgPath := writeViolatingRepo(t)
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, flagGate}, &buf)
+	code := Run([]string{cmdCheck, "-c", cfgPath}, &buf)
 	if code != 1 {
-		t.Fatalf("analyze --gate: exit = %d, want 1 (gate violation)\noutput:\n%s", code, buf.String())
+		t.Fatalf("check: exit = %d, want 1 (gate violation)\noutput:\n%s", code, buf.String())
 	}
 
 	buf.Reset()
-	code = Run([]string{cmdAnalyze, "-c", cfgPath, flagFull}, &buf)
+	code = Run([]string{cmdAnalyze, "-c", cfgPath}, &buf)
 	if code != 0 {
-		t.Fatalf("analyze without --gate: exit = %d, want 0 (report-only)\noutput:\n%s", code, buf.String())
+		t.Fatalf("analyze (report-only): exit = %d, want 0\noutput:\n%s", code, buf.String())
 	}
 	if !strings.Contains(strings.ToLower(buf.String()), "fail") {
 		t.Errorf("report-only must still render the fail verdict\noutput:\n%s", buf.String())
@@ -80,25 +81,30 @@ func TestRun_Analyze_GateVsReportOnly(t *testing.T) {
 }
 
 const (
-	flagFull          = "--full"
+	flagRefresh       = "--refresh"
 	flagRoot          = "--root"
-	flagNoCache       = "--no-cache"
+	flagJSON          = "--json"
 	goModStub         = "module example.com/test\n\ngo 1.21\n" // minimal go.mod shared by fixture repos
 	cmdAnalyze        = "analyze"
+	cmdCheck          = "check"
 	cmdBaseline       = "baseline"
 	cmdConfig         = "config" // config subcommand group (config init / config enrich …)
 	cmdEnrich         = "enrich" // config enrich subcommand (config enrich owner / subdomain / …)
 	cmdExplain        = "explain"
 	fmtJSON           = "--format=json"
 	flagVersion       = "--version"
-	flagGate          = "--gate"
-	filePkgAA         = "pkg/a/a.go"         // the gate-violating source file used across fixtures
+	filePkgAA         = "pkg/a/a.go" // the gate-violating source file used across fixtures
+	filePkgBImpl      = "pkg/b/internal/impl/impl.go"
 	ruleNoInternalAcc = "no_internal_access" // rule ID in the violating-repo fixture
 	explainConstraint = "constraint:"        // explain output field label
 	explainRule       = "rule:"              // explain output field label
 	explainEdge       = "edge:"              // explain output field label
 	goMainSrc         = "package main\n\nfunc main() {}\n"
 )
+
+func implSource() string {
+	return "package impl\n\nfunc " + "Secret() string { return \"s\" }\n"
+}
 
 // writeNonGoRepo creates a git repo with no analyzable source (README only) and
 // the given archfit config body, returning the config path.
@@ -147,7 +153,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		t.Parallel()
 		cfgPath := writeGapRepo(t, "")
 		var buf bytes.Buffer
-		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
 		if code != 0 {
 			t.Fatalf("default check: exit = %d, want 0\noutput:\n%s", code, buf.String())
 		}
@@ -169,7 +175,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		t.Parallel()
 		cfgPath := writeGapRepo(t, "")
 		var buf bytes.Buffer
-		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, "--require-tools", fmtJSON}, &buf)
+		code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh, "--require-tools", fmtJSON}, &buf)
 		if code != 1 {
 			t.Fatalf("check --require-tools: exit = %d, want 1\noutput:\n%s", code, buf.String())
 		}
@@ -194,7 +200,7 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		cfg := "version: 1\nlanguages:\n  go:\n    enabled: false\n    gate: fail\n"
 		cfgPath := writeNonGoRepo(t, cfg)
 		var buf bytes.Buffer
-		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+		code := Run([]string{cmdCheck, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
 		if code != 1 {
 			t.Fatalf("tools.go.gate: fail → exit = %d, want 1\noutput:\n%s", code, buf.String())
 		}
@@ -215,13 +221,13 @@ func TestRun_Check_RequireToolsHardGate(t *testing.T) {
 		}
 	})
 
-	t.Run("--require-tools is not suppressed in report-only mode", func(t *testing.T) {
+	t.Run("--require-tools stays report-only under analyze", func(t *testing.T) {
 		t.Parallel()
 		cfgPath := writeGapRepo(t, "")
 		var buf bytes.Buffer
-		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, "--require-tools"}, &buf)
-		if code != 1 {
-			t.Fatalf("analyze --require-tools: exit = %d, want 1 (hard gate)\noutput:\n%s", code, buf.String())
+		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, "--require-tools"}, &buf)
+		if code != 0 {
+			t.Fatalf("analyze --require-tools: exit = %d, want 0 (report-only)\noutput:\n%s", code, buf.String())
 		}
 	})
 }
@@ -242,7 +248,7 @@ func writeRepoWithExternalConfig(t *testing.T) (repoDir, cfgPath string) {
 		markerGoMod: goModStub,
 		filePkgAA: "package a\n\nimport \"example.com/test/pkg/b/internal/impl\"\n\n" +
 			"func UseSecret() string { return impl.Secret() }\n",
-		"pkg/b/internal/impl/impl.go": "package impl\n\nfunc Secret() string { return \"s\" }\n",
+		filePkgBImpl: implSource(),
 	}
 	for name, content := range srcFiles {
 		path := filepath.Join(repoDir, name)
@@ -294,7 +300,7 @@ func TestRun_Check_RootDecoupledFromConfig(t *testing.T) {
 	t.Run("--root scans the repo via an external config", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
-		code := Run([]string{cmdAnalyze, flagGate, flagRoot, repoDir, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+		code := Run([]string{cmdCheck, flagRoot, repoDir, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
 		if code != 1 {
 			t.Fatalf("analyze --gate --root: exit = %d, want 1 (forbidden-dependency gate)\noutput:\n%s", code, buf.String())
 		}
@@ -324,7 +330,7 @@ func TestRun_Check_RootDecoupledFromConfig(t *testing.T) {
 		// violations (the config dir has no source code). This confirms --root is
 		// required to scan the actual repo — without it, nothing is analysed.
 		var buf bytes.Buffer
-		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+		code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
 		if code != 0 {
 			t.Fatalf("check without --root on an external config: exit = %d, want 0 (empty config dir → pass)\noutput:\n%s", code, buf.String())
 		}
@@ -359,14 +365,16 @@ func TestRun_Version(t *testing.T) {
 
 func TestRun_NoArgs(t *testing.T) {
 	t.Parallel()
-	var buf bytes.Buffer
-	// Bare invocation routes to analyze (default command). It runs report-only
-	// against the current directory: exits 0 (clean or report-only) or 1 (gate
-	// violation — but --gate is not set so always exits 0 on success). Exit 3
-	// (config/tool error) is the only bad outcome.
-	code := Run(nil, &buf)
-	if code == 3 {
-		t.Fatalf("bare invocation exited 3 (config/tool error); output:\n%s", buf.String())
+	var stdout, stderr bytes.Buffer
+	// Bare invocation routes to analyze (default command). With no .archfit.yaml
+	// in the test working directory (cmd/archfit/), config is now required and
+	// the command exits 3 with a helpful next-command hint.
+	code := RunWithStderr(nil, &stdout, &stderr)
+	if code != 3 {
+		t.Fatalf("bare invocation without config: exit = %d, want 3; stdout:\n%s", code, stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "config init") {
+		t.Errorf("bare invocation error should hint at config init; stderr:\n%s", stderr.String())
 	}
 }
 
@@ -432,12 +440,12 @@ func TestRun_Help_ShowsCommands(t *testing.T) {
 func TestRun_CheckHelp_ShowsAgentLoop(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, flagHelp}, &buf)
+	code := Run([]string{cmdCheck, flagHelp}, &buf)
 	if code != 0 {
 		t.Fatalf("expected exit 0 for check --help, got %d", code)
 	}
 	out := buf.String()
-	for _, want := range []string{"merge gate", "agent_tasks[]", "--format sarif", agentDocsURL} {
+	for _, want := range []string{"Run the architecture gate", "archfit check", "--format sarif"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("check --help output missing %q; got:\n%s", want, out)
 		}
@@ -455,7 +463,7 @@ func TestRun_Explain_ResolvesViaFullPipeline(t *testing.T) {
 
 	// Get the finding fingerprint from a check run.
 	var buf bytes.Buffer
-	Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+	Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
 	var diag struct {
 		Findings []struct {
 			ID string `json:"id"`
@@ -489,7 +497,7 @@ func TestRun_Explain_HonorsRoot(t *testing.T) {
 
 	// Capture the finding ID from check --root so we have a valid fingerprint.
 	var checkBuf bytes.Buffer
-	code := Run([]string{cmdAnalyze, flagGate, flagRoot, repoDir, "-c", cfgPath, flagFull, fmtJSON}, &checkBuf)
+	code := Run([]string{cmdCheck, flagRoot, repoDir, "-c", cfgPath, flagRefresh, fmtJSON}, &checkBuf)
 	if code != 1 {
 		t.Fatalf("analyze --gate --root: exit = %d, want 1 (gate violation)\noutput:\n%s", code, checkBuf.String())
 	}
@@ -544,7 +552,7 @@ func TestRun_Explain_BackCompatNoRoot(t *testing.T) {
 	cfgPath := writeViolatingRepo(t)
 
 	var checkBuf bytes.Buffer
-	Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &checkBuf)
+	Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &checkBuf)
 	var checkDiag struct {
 		Findings []struct {
 			ID string `json:"id"`
@@ -577,7 +585,7 @@ func TestRun_Explain_SeverityMatchesCheck(t *testing.T) {
 
 	// Get the finding ID and severity from check.
 	var checkBuf bytes.Buffer
-	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &checkBuf); code == 3 {
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &checkBuf); code == 3 {
 		t.Fatalf("check exited 3 (config error)\noutput:\n%s", checkBuf.String())
 	}
 	var checkDiag struct {
@@ -613,7 +621,7 @@ func TestRun_Check_AgentTasksPopulated(t *testing.T) {
 	cfgPath := writeViolatingRepo(t)
 
 	var buf bytes.Buffer
-	Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+	Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
 
 	var diag struct {
 		AgentTasks []struct {
@@ -640,7 +648,7 @@ func TestRun_Check_AgentTasksPopulated(t *testing.T) {
 	if len(task.Files) == 0 {
 		t.Error("files is empty")
 	}
-	if len(task.Validation) != 1 || !strings.Contains(task.Validation[0], "archfit analyze --gate -c "+cfgPath) {
+	if len(task.Validation) != 1 || !strings.Contains(task.Validation[0], "archfit check -c "+cfgPath) {
 		t.Errorf("validation = %v, want exact re-check command", task.Validation)
 	}
 }
@@ -650,7 +658,7 @@ func TestRun_Check_AgentTaskValidationReplaysRootAndQuotesPaths(t *testing.T) {
 	repoDir, cfgPath := writeRepoWithExternalConfig(t)
 
 	var buf bytes.Buffer
-	Run([]string{cmdAnalyze, flagRoot, repoDir, "-c", cfgPath, flagFull, fmtJSON}, &buf)
+	Run([]string{cmdAnalyze, flagRoot, repoDir, "-c", cfgPath, flagRefresh, fmtJSON}, &buf)
 
 	var diag struct {
 		AgentTasks []struct {
@@ -680,10 +688,8 @@ func TestRun_Check_MissingBaselineFile(t *testing.T) {
 	cfgPath := writeViolatingRepo(t)
 
 	var stdout, stderr bytes.Buffer
-	cmd := AnalyzeCmd{
+	cmd := CheckCmd{
 		Config: cfgPath,
-		Full:   true,
-		Gate:   true,
 		Format: []string{formatJSON},
 	}
 	deps := &appDeps{Runner: toolrun.New(), Stdout: &stdout, Stderr: &stderr}
@@ -723,8 +729,8 @@ labels:
 	}
 
 	var run1, run2 bytes.Buffer
-	c1 := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &run1)
-	c2 := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &run2)
+	c1 := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &run1)
+	c2 := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &run2)
 	if c1 != 0 || c2 != 0 {
 		t.Fatalf("exits = %d/%d, want 0/0", c1, c2)
 	}
@@ -737,7 +743,7 @@ labels:
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf); code != 3 {
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf); code != 3 {
 		t.Errorf("malformed labels file: exit = %d, want 3", code)
 	}
 }
@@ -749,10 +755,8 @@ func TestRun_Check_NoBaselineWarningAbsent(t *testing.T) {
 	cfgPath := writeViolatingRepo(t)
 
 	var stdout, stderr bytes.Buffer
-	cmd := AnalyzeCmd{
+	cmd := CheckCmd{
 		Config: cfgPath,
-		Full:   true,
-		Gate:   true,
 		Format: []string{formatJSON},
 		// Base intentionally omitted.
 	}
@@ -777,7 +781,7 @@ func TestRun_Analyze_ScipDisabledCoverageRow(t *testing.T) {
 
 	var buf bytes.Buffer
 	// Report-only mode (exit 0) so we can parse the JSON regardless of gate verdict.
-	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf); code == 3 {
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf); code == 3 {
 		t.Fatalf("analyze exited 3 (config/pipeline error)\noutput:\n%s", buf.String())
 	}
 
@@ -832,7 +836,7 @@ modules:
 
 	var buf bytes.Buffer
 	cfgPath := filepath.Join(dir, defaultConfigPath)
-	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf); code == 3 {
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf); code == 3 {
 		t.Fatalf("analyze exited 3 (config/pipeline error)\noutput:\n%s", buf.String())
 	}
 
@@ -928,7 +932,7 @@ file_class:
 
 	cfgPath := filepath.Join(dir, defaultConfigPath)
 	var buf bytes.Buffer
-	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, &buf); code == 3 {
+	if code := Run([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, &buf); code == 3 {
 		t.Fatalf("check exited 3 (pipeline error)\noutput:\n%s", buf.String())
 	}
 

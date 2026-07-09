@@ -56,10 +56,10 @@ func TestInit_LLMDraft_OwnerCommentWritten(t *testing.T) {
 	cmd := &InitCmd{
 		Root:             root,
 		Output:           outPath,
-		LLM:              true,
+		AIClassify:       true,
 		Apply:            false,
-		LLMProvider:      providerAnthropic,
-		LLMModel:         defaultLLMModel,
+		AIProvider:       providerAnthropic,
+		AIModel:          defaultLLMModel,
 		providerOverride: autopilotProvider{},
 	}
 	_, err := runInitCmdWithRunner(t, cmd, func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {

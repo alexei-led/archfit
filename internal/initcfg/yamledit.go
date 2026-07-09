@@ -47,7 +47,7 @@ func (SetModuleFieldsEdit) editMarker() {}
 
 // UpdateModulePathsEdit replaces the paths: block of an existing module.
 // If the module exists but has no paths:, inserts block-style paths: as first key.
-// REJECTS inline flow-style paths: [...].
+// Inline flow-style paths: [...] are replaced with a block-style paths list.
 type UpdateModulePathsEdit struct {
 	Module string
 	Paths  []string
@@ -97,7 +97,8 @@ type parsedModule struct {
 	// paths block
 	pathsKeyLine   int             // 0 = absent
 	pathsEndLine   int             // 1-based exclusive end of paths block
-	pathsIsFlow    bool            // true = paths: [...] inline — reject
+	pathsFlowLine  int             // 1-based line of inline paths: [...]
+	pathsIsFlow    bool            // true = paths: [...] inline
 	pathsExists    bool            //
 	existingFields map[string]bool // field keys present in the module body
 }

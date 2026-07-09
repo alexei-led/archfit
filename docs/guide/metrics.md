@@ -50,8 +50,8 @@ downward (drop > `min_delta`). Per-metric `gate`/threshold knobs are documented
 in the [configuration reference](configuration-reference.md#metrics).
 
 Exit codes: `0` pass, `1` gate failed, `2` warnings/regressions, `3` tool/config
-error. Without `--gate`, `archfit analyze` is report-only and exits `0` on any
-verdict.
+error. `archfit analyze` is report-only and exits `0` on any verdict; use
+`archfit check` when findings or regressions should fail the run.
 
 ---
 
@@ -472,9 +472,9 @@ failure.
 | `bc/duplicated_knowledge` advisory                                                   | clone detector (`analyzers.clones.enabled: true`) |
 | public_api_max, public_api_change, public_api_type_leak (rules)                      | `sg` (ast-grep); `analyzers.syntax.enabled: true` |
 
-The `llm` tool is used only by `archfit config enrich`, `archfit explain --llm`,
-`archfit analyze --llm`, `archfit config init --llm`, and
-`archfit config update --llm`. It is **never** consumed by the deterministic gate path —
+The `llm` tool is used only by `archfit config enrich`, `archfit explain --ai-summary`,
+`archfit analyze --ai-summary`, `archfit config init --ai-classify`, and
+`archfit config update --ai-classify`. It is **never** consumed by the deterministic gate path —
 gate verdicts and metric values stay deterministic. See
 [LLM enrichment](llm-enrich.md).
 

@@ -35,11 +35,11 @@ const enrichBatchSize = 30
 
 // enrichFlags are the flags shared by every `config enrich` subcommand. Kong
 // flattens the embedded struct, so each subcommand gets identical -c/--config,
-// -r/--root, and --no-cache flags.
+// -r/--root, and --refresh flags.
 type enrichFlags struct {
 	Config  string `short:"c" name:"config" help:"Config file." default:".archfit.yaml"`
 	Root    string `short:"r" name:"root" type:"path" help:"Repository root to analyze (default: directory of --config). Decouples the scanned repo from where the config lives."`
-	NoCache bool   `name:"no-cache" help:"Bypass archfit caches (extractor facts and LLM responses)."`
+	Refresh bool   `name:"refresh" help:"Re-run all extractors and refresh the cache. Use after installing or updating analyzer tools."`
 
 	// providerOverride is a test seam — set directly on the struct to inject a fake provider.
 	providerOverride llm.Provider
@@ -123,7 +123,7 @@ func (m *captureMetric) Calculate(in signal.CollectedSignals) diagnostic.MetricR
 
 // runLabelEnrich is the original coupling-strength label draft workflow.
 func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
-	cfg, err := loadConfig(ctx, c.Config, false)
+	cfg, err := loadConfig(ctx, c.Config)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -137,7 +137,7 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 
 	configDir := filepath.Dir(c.Config)
 	cacheDir := llmCacheDir(configDir)
-	provider, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
+	provider, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.Refresh)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
 	}
@@ -154,8 +154,8 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	deps.noCache = c.NoCache
-	if _, _, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
+	deps.refresh = c.Refresh
+	if _, _, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 
@@ -203,7 +203,7 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 // runSubdomainDraft calls the LLM to classify unclassified modules and writes
 // draft entries into .archfit-subdomains.yaml for human review.
 func (c *enrichFlags) runSubdomainDraft(ctx context.Context, deps *appDeps) error {
-	cfg, err := loadConfig(ctx, c.Config, false)
+	cfg, err := loadConfig(ctx, c.Config)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -214,7 +214,7 @@ func (c *enrichFlags) runSubdomainDraft(ctx context.Context, deps *appDeps) erro
 
 	configDir := filepath.Dir(c.Config)
 	cacheDir := llmCacheDir(configDir)
-	provider, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
+	provider, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.Refresh)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
 	}
@@ -311,7 +311,7 @@ func (c *enrichFlags) runSubdomainPin(ctx context.Context, deps *appDeps, review
 		return &exitError{code: 3, msg: fmt.Sprintf("error: reading config: %v", err)}
 	}
 
-	cfg, err := loadConfig(ctx, c.Config, false)
+	cfg, err := loadConfig(ctx, c.Config)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -368,10 +368,11 @@ func buildProvider(c config.LLMConfig) (llm.Provider, error) {
 	}
 }
 
-// buildCachedProvider constructs a provider and, unless noCache is true, wraps
-// it in a disk-backed response cache rooted at cacheDir. The override seam
-// (used in tests) bypasses both provider construction and caching.
-func buildCachedProvider(override llm.Provider, cfg config.LLMConfig, cacheDir string, noCache bool) (llm.Provider, error) {
+// buildCachedProvider constructs a provider and wraps it in a disk-backed
+// response cache rooted at cacheDir. refresh bypasses cache reads but still
+// stores the fresh response. The override seam (used in tests) bypasses both
+// provider construction and caching.
+func buildCachedProvider(override llm.Provider, cfg config.LLMConfig, cacheDir string, refresh bool) (llm.Provider, error) {
 	if override != nil {
 		return override, nil
 	}
@@ -379,10 +380,9 @@ func buildCachedProvider(override llm.Provider, cfg config.LLMConfig, cacheDir s
 	if err != nil {
 		return nil, err
 	}
-	if !noCache {
-		p = llm.NewCache(p, cacheDir)
-	}
-	return p, nil
+	cache := llm.NewCache(p, cacheDir)
+	cache.RefreshMode = refresh
+	return cache, nil
 }
 
 // llmCacheDir returns the on-disk LLM response cache directory under baseDir.

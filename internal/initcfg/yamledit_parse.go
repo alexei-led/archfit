@@ -131,7 +131,8 @@ func (pf *parsedFile) parseModulesBlock(
 		}
 		modEndLine := pf.modulesEndLine
 		if i+1 < len(modulesMap.Values) {
-			modEndLine = modulesMap.Values[i+1].Key.GetToken().Position.Line
+			nextKeyLine := modulesMap.Values[i+1].Key.GetToken().Position.Line
+			modEndLine = moduleHeadStart(nextKeyLine, lines)
 		}
 		pm := parseModuleEntry(modSN.Value, modMV, modEndLine, lines)
 		pf.modules = append(pf.modules, pm)
@@ -139,12 +140,9 @@ func (pf *parsedFile) parseModulesBlock(
 	return nil
 }
 
-// parseModuleEntry builds a parsedModule from a single module mapping-value node.
-func parseModuleEntry(name string, modMV *ast.MappingValueNode, modEndLine int, lines [][]byte) parsedModule {
-	modKeyLine := modMV.Key.GetToken().Position.Line
-
-	// Walk backwards from keyLine to find head comments.
-	headStart := modKeyLine
+// moduleHeadStart walks backwards from keyLine to find adjacent head comments.
+func moduleHeadStart(keyLine int, lines [][]byte) int {
+	headStart := keyLine
 	for headStart > 1 {
 		candidate := headStart - 2 // convert to 0-based for the line ABOVE
 		if candidate < 0 || candidate >= len(lines) {
@@ -156,6 +154,13 @@ func parseModuleEntry(name string, modMV *ast.MappingValueNode, modEndLine int, 
 			break
 		}
 	}
+	return headStart
+}
+
+// parseModuleEntry builds a parsedModule from a single module mapping-value node.
+func parseModuleEntry(name string, modMV *ast.MappingValueNode, modEndLine int, lines [][]byte) parsedModule {
+	modKeyLine := modMV.Key.GetToken().Position.Line
+	headStart := moduleHeadStart(modKeyLine, lines)
 
 	pm := parsedModule{
 		name:           name,
@@ -195,6 +200,7 @@ func parseModuleEntry(name string, modMV *ast.MappingValueNode, modEndLine int, 
 			if _, isSeq := sv.(*ast.SequenceNode); isSeq {
 				if sv.GetToken().Position.Line == pathsKeyLine {
 					pm.pathsIsFlow = true
+					pm.pathsFlowLine = pathsKeyLine
 				}
 			}
 		}

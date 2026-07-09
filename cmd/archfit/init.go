@@ -18,14 +18,14 @@ import (
 
 // InitCmd discovers project structure and writes a starter archfit.yaml.
 type InitCmd struct {
-	Root        string `short:"r" help:"Project root directory." default:"."`
-	Output      string `short:"o" help:"Output file (relative paths resolve against --root; use '-' for stdout)." default:".archfit.yaml"`
-	Force       bool   `name:"force" help:"Overwrite an existing config (a timestamped backup is kept). Without it, init leaves an existing config untouched."`
-	LLM         bool   `name:"llm"          help:"Run LLM classification pass (off-gate; requires ai or --llm-provider)."`
-	Apply       bool   `name:"apply"        help:"Write LLM classifications live into .archfit.yaml (requires --llm; LLM judgment written directly — review before using as a gate)."`
-	LLMProvider string `name:"llm-provider" help:"LLM provider override (anthropic|openai|ollama)."  default:"anthropic"`
-	LLMModel    string `name:"llm-model"    help:"LLM model override."                                default:"claude-opus-4-8"`
-	NoCache     bool   `name:"no-cache"     help:"Bypass the LLM response cache."`
+	Root       string `short:"r" help:"Project root directory." default:"."`
+	Output     string `short:"o" help:"Output file (relative paths resolve against --root; use '-' for stdout)." default:".archfit.yaml"`
+	Force      bool   `name:"force" help:"Overwrite an existing config (a timestamped backup is kept). Without it, init leaves an existing config untouched."`
+	AIClassify bool   `name:"ai-classify" help:"Run AI classification pass (off-gate; requires ai or --ai-provider)."`
+	Apply      bool   `name:"apply" help:"Write AI classifications live into .archfit.yaml (requires --ai-classify; AI judgment written directly — review before using as a gate)."`
+	AIProvider string `name:"ai-provider" help:"AI provider override (anthropic|openai|ollama)." default:"anthropic"`
+	AIModel    string `name:"ai-model" help:"AI model override." default:"claude-opus-4-8"`
+	Refresh    bool   `name:"refresh" help:"Re-run the AI calls and refresh the cache."`
 
 	// providerOverride is a test seam — set directly on the struct to inject a fake provider.
 	// It is never a CLI flag (no kong tag).
@@ -33,8 +33,8 @@ type InitCmd struct {
 }
 
 func (c *InitCmd) Run(deps *appDeps) error {
-	if c.Apply && !c.LLM {
-		return &exitError{code: 3, msg: "error: --apply requires --llm"}
+	if c.Apply && !c.AIClassify {
+		return &exitError{code: 3, msg: "error: --apply requires --ai-classify"}
 	}
 
 	root := c.Root
@@ -58,7 +58,7 @@ func (c *InitCmd) Run(deps *appDeps) error {
 	}
 
 	var ann map[string]initcfg.ModuleAnnotation
-	if c.LLM {
+	if c.AIClassify {
 		// Best-effort read of an existing config — tolerate failure.
 		// Skip when writing to stdout: "-" is not a file path.
 		var llmCfg config.LLMConfig
@@ -71,11 +71,11 @@ func (c *InitCmd) Run(deps *appDeps) error {
 			}
 		}
 		// Flag values always override config values.
-		llmCfg.Provider = c.LLMProvider
-		llmCfg.Model = c.LLMModel
+		llmCfg.Provider = c.AIProvider
+		llmCfg.Model = c.AIModel
 
 		cacheDir := llmCacheDir(root)
-		p, buildErr := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
+		p, buildErr := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.Refresh)
 		if buildErr != nil {
 			return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", buildErr)}
 		}
@@ -123,7 +123,7 @@ func (c *InitCmd) Run(deps *appDeps) error {
 		// loadConfig (not bare config.Load) so a rule-type error makes this
 		// report "failed to load", not "valid". out is absolute here, so the
 		// defaultConfigPath missing-file fallback can never trigger.
-		if _, loadErr := loadConfig(ctx, out, false); loadErr == nil {
+		if _, loadErr := loadConfig(ctx, out); loadErr == nil {
 			_, _ = fmt.Fprintf(deps.Stdout, "%s already exists and is valid — leaving it unchanged.\n"+
 				"Re-run with --force to overwrite (a timestamped backup is kept).\n", out)
 		} else {

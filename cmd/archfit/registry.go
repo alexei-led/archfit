@@ -38,8 +38,9 @@ type LanguageDescriptor struct {
 	// (e.g. go.mod, package.json, Cargo.toml). Used by language discovery.
 	ProjectMarkers []string
 	// NewExtractor builds the language's ports.Extractor from the shared runner,
-	// the language's projected ExtractConfig view, and the fact-cache store
-	// (nil when --no-cache — extractors treat nil as cache-off).
+	// the language's projected ExtractConfig view, and the fact-cache store.
+	// Store.RefreshMode lets a caller force fresh extraction while still writing
+	// the refreshed fact back to disk.
 	NewExtractor func(toolrun.Runner, view.ExtractConfig, *factcache.Store) ports.Extractor
 	// PrimaryTool is the coverage name of the dependency-graph analyzer this
 	// language unlocks (as it appears in ToolCoverage, e.g. "go/packages").

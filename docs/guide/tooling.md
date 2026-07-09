@@ -153,7 +153,7 @@ one Rust toolchain, and one Python tool installer per shell profile.
 - Pin npm/cargo/go/uv tool versions in CI commands.
 - Prefer project-local `dependency-cruiser` so repository analysis is reproducible.
 - Run `archfit doctor` in CI as a diagnostic step, but use
-  `archfit analyze --gate --require-tools` or per-tool `gate: fail` (under
+  `archfit check --require-tools` or per-tool `gate: fail` (under
   `languages.<x>` or `analyzers.<x>`) when missing tools must fail the build.
 - The official Docker image bundles the archfit binary, Go SDK, Node, npm,
   dependency-cruiser, ast-grep, uv, and Python. It intentionally does not bundle

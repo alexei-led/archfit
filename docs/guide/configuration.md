@@ -6,15 +6,18 @@ Configuration lives in `.archfit.yaml`. Generate a starter file:
 archfit config init --root . --output .archfit.yaml
 ```
 
-Then review the generated modules, layers, and rules before using it as a gate.
-Start with narrow rules and baseline accepted current findings while calibrating.
-Keep `gate` values aligned with the intended CI policy.
+Then review the generated modules, layers, and rules before using `archfit
+check` in CI. Start with narrow rules and baseline accepted current findings
+while calibrating. Keep `gate` values aligned with the intended CI policy.
 
-LLM authoring commands are off-gate. `config init --llm` emits commented
-suggestions by default; `config init --llm --apply` writes those model judgments
+Use `archfit analyze --config .archfit.yaml` for local review and `archfit check
+--config .archfit.yaml` for CI validation.
+
+LLM authoring commands are off-gate. `config init --ai-classify` emits commented
+suggestions by default; `config init --ai-classify --apply` writes those model judgments
 live into the generated file, so review the result before using it as a gate.
-`config update --llm` prints cited module and rule proposals without changing
-`.archfit.yaml`; even `config update --llm --apply` only applies structural drift.
+`config update --ai-classify` prints cited module and rule proposals without changing
+`.archfit.yaml`; even `config update --ai-classify --apply` only applies structural drift.
 `config enrich owner`, `volatility`, and `subdomain` write separate draft files.
 Review the `rationale`, `evidence_refs`, and `basis` fields, change keepers to
 `status: approved`, then apply or copy them into the live config deliberately.

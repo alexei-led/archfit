@@ -26,13 +26,14 @@ import (
 )
 
 const (
-	toolGrimp     = "grimp"
-	langPython    = "python"
-	sourceGrimp   = "grimp"
-	statusOK      = "ok"
-	statusPartial = "partial"
-	statusAbsent  = "absent"
-	runTimeout    = 5 * time.Minute
+	toolGrimp                = "grimp"
+	langPython               = "python"
+	sourceGrimp              = "grimp"
+	statusOK                 = "ok"
+	statusPartial            = "partial"
+	statusAbsent             = "absent"
+	runTimeout               = 5 * time.Minute
+	unresolvedRootSummaryMax = 5
 )
 
 // Extractor is the Python import extractor using grimp via uv or python3.12.
@@ -551,8 +552,10 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 
 	filesSeen := len(seenNodes)
 	covStatus := statusOK
+	covReason := ""
 	if h.Unresolved > 0 {
 		covStatus = statusPartial
+		covReason = grimpUnresolvedReason(h.Unresolved, h.UnresolvedImports)
 	}
 	cov := diagnostic.Coverage{
 		Tool:            toolGrimp,
@@ -561,6 +564,7 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 		FilesApplicable: filesSeen,
 		Unresolved:      h.Unresolved,
 		Status:          covStatus,
+		Reason:          covReason,
 	}
 	facts := graph.Facts{
 		Nodes:      nodes,
@@ -569,6 +573,51 @@ func (e *Extractor) parseAndNormalize(data []byte, version string) (graph.Facts,
 		Unresolved: h.Unresolved,
 	}
 	return facts, cov, nil
+}
+
+func grimpUnresolvedReason(unresolved int, imports []helperEdge) string {
+	summary := unresolvedRootSummary(imports)
+	if summary == "" {
+		return fmt.Sprintf("%d imports unresolved — check languages.python.package and src layout", unresolved)
+	}
+	return fmt.Sprintf("%d imports unresolved (top: %s) — check languages.python.package and src layout", unresolved, summary)
+}
+
+func unresolvedRootSummary(imports []helperEdge) string {
+	counts := make(map[string]int)
+	for _, imp := range imports {
+		root := unresolvedImportRoot(imp.Imported)
+		if root == "" {
+			continue
+		}
+		counts[root]++
+	}
+	if len(counts) == 0 {
+		return ""
+	}
+	roots := make([]string, 0, len(counts))
+	for root := range counts {
+		roots = append(roots, root)
+	}
+	sort.Slice(roots, func(i, j int) bool {
+		if counts[roots[i]] != counts[roots[j]] {
+			return counts[roots[i]] > counts[roots[j]]
+		}
+		return roots[i] < roots[j]
+	})
+	if len(roots) > unresolvedRootSummaryMax {
+		roots = roots[:unresolvedRootSummaryMax]
+	}
+	parts := make([]string, 0, len(roots))
+	for _, root := range roots {
+		parts = append(parts, fmt.Sprintf("%s %d", root, counts[root]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func unresolvedImportRoot(imported string) string {
+	root, _, _ := strings.Cut(imported, ".")
+	return root
 }
 
 // isPrivatePythonModule reports whether a dotted module name targets a PEP 8

@@ -7,8 +7,8 @@
 //
 // The cache is best-effort by contract: a corrupted or unreadable entry is a
 // miss (logged at debug), a failed write never fails the run, and a nil
-// *Store disables reads AND writes (the --no-cache path — a bypassed run must
-// not poison or refresh entries).
+// *Store disables reads AND writes. Refresh mode is different: reads are
+// bypassed, but successful runs still write fresh entries.
 package factcache
 
 import (
@@ -43,6 +43,10 @@ type Store struct {
 	dir          string
 	maxBytes     int64
 	evictToBytes int64
+
+	// RefreshMode bypasses reads but still allows writes. Use it for
+	// `--refresh`: re-run the extractor, then replace the cached fact.
+	RefreshMode bool
 }
 
 // NewStore returns a Store rooted at dir (e.g. <configDir>/.archfit-cache/facts)
@@ -55,7 +59,7 @@ func NewStore(dir string) *Store {
 // unreadable file, nil store — is (nil, false); the caller re-derives. A hit
 // touches the entry mtime (best-effort) so LRU eviction spares it.
 func (s *Store) Get(analyzer, key string) ([]byte, bool) {
-	if s == nil {
+	if s == nil || s.RefreshMode {
 		return nil, false
 	}
 	path := s.entryPath(analyzer, key)

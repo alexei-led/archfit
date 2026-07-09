@@ -20,7 +20,7 @@ func TestEnvSearchDirs(t *testing.T) {
 		{"config dir space form", []string{cmdAnalyze, "--config", "/x/cfg.yaml"}, []string{"/x"}},
 		{"config short equals", []string{"-c=/x/y/cfg.yaml"}, []string{"/x/y"}},
 		{"both root and config", []string{flagRoot, repo, "-c", "/cfg/.archfit.yaml"}, []string{repo, "/cfg"}},
-		{"none", []string{cmdAnalyze, "--json"}, nil},
+		{"none", []string{cmdAnalyze, flagJSON}, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

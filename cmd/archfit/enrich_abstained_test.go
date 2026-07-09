@@ -464,7 +464,7 @@ func TestRun_EnrichAbstained_E2E(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdConfig, cmdEnrich, cmdAbstained, "-c", cfgPath, flagNoCache}, &buf)
+	code := Run([]string{cmdConfig, cmdEnrich, cmdAbstained, "-c", cfgPath, flagRefresh}, &buf)
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0\noutput:\n%s", code, buf.String())
 	}
@@ -508,7 +508,7 @@ func TestRun_EnrichAbstained_NothingToLabel(t *testing.T) {
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"ai:\n  provider: ollama\n  model: test-model\n  base_url: \"http://unused\"\n")
 
 	var buf bytes.Buffer
-	code := Run([]string{cmdConfig, cmdEnrich, cmdAbstained, "-c", cfgPath, flagNoCache}, &buf)
+	code := Run([]string{cmdConfig, cmdEnrich, cmdAbstained, "-c", cfgPath, flagRefresh}, &buf)
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0\noutput:\n%s", code, buf.String())
 	}

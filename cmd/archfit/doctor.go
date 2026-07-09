@@ -55,9 +55,9 @@ func (c *DoctorCmd) Run(deps *appDeps) error {
 		}
 	}
 
-	// Off-gate LLM setup (config init/update/enrich, analyze/explain --llm): provider config + key + cache.
-	_, _ = fmt.Fprintf(deps.Stdout, "\nLLM (off-gate; config init/update/enrich, analyze/explain --llm — never used by the gate):\n")
-	cfg, cfgErr := loadConfig(ctx, defaultConfigPath, false)
+	// Off-gate LLM setup (config init/update/enrich, analyze/explain --ai-summary): provider config + key + cache.
+	_, _ = fmt.Fprintf(deps.Stdout, "\nLLM (off-gate; config init/update/enrich, analyze/explain --ai-summary — never used by the gate):\n")
+	cfg, cfgErr := loadConfig(ctx, defaultConfigPath)
 	// cfgErr is non-nil only when the file exists but fails to load (an absent
 	// default config falls back to config.Default()) — surface it, or doctor
 	// misreports a broken config as "not configured" and skips config checks.

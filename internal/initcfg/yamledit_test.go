@@ -449,19 +449,21 @@ func TestApplyEdits_UpdateModulePaths_MissingModuleError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Test: Reject flow-style paths: [...]
+// Test: Update flow-style paths: [...] into a block list
 // ---------------------------------------------------------------------------
 
-func TestApplyEdits_RejectFlowPaths(t *testing.T) {
+func TestApplyEdits_UpdateModulePaths_FlowPaths_ReplacesWithBlock(t *testing.T) {
 	ed := UpdateModulePathsEdit{
 		Module: testClassify,
-		Paths:  []string{testClassifyPath},
+		Paths:  []string{testClassifyPath, "internal/classify/extra/**"},
 	}
-	_, err := ApplyEdits([]byte(flowPaths), []Edit{ed})
-	if err == nil {
-		t.Fatal("expected error for flow-style paths:, got nil")
-	}
-	assertContains(t, err.Error(), "flow-style")
+	out := mustApply(t, flowPaths, ed)
+
+	assertNotContains(t, out, `paths: ["internal/classify/**"]`)
+	assertContains(t, out, "    paths:\n      - \"internal/classify/**\"\n      - \"internal/classify/extra/**\"\n")
+	assertContains(t, out, "    layer: core")
+
+	mustRoundTrip(t, out)
 }
 
 // ---------------------------------------------------------------------------
@@ -507,6 +509,36 @@ func TestApplyEdits_CommentModule_IncludesHeadComment(t *testing.T) {
 	// rules and exceptions preserved.
 	assertContains(t, out, "no-forbidden-deps")
 	assertContains(t, out, "reason: legacy")
+
+	mustRoundTrip(t, out)
+}
+
+func TestApplyEdits_CommentModule_AdjacentHeadCommentsDoNotOverlap(t *testing.T) {
+	const src = `version: 1
+
+modules:
+  # app head
+  app_bootstrap:
+    paths:
+      - "app/**"
+  # terminal head
+  terminal_adapter:
+    paths:
+      - "terminal/**"
+`
+	edits := []Edit{
+		CommentModuleEdit{Module: "app_bootstrap", Note: "removed"},
+		CommentModuleEdit{Module: "terminal_adapter", Note: "removed"},
+	}
+	out := mustApply(t, src, edits...)
+
+	assertContains(t, out, `# archfit: removed module "app_bootstrap"`)
+	assertContains(t, out, `# archfit: removed module "terminal_adapter"`)
+	assertContains(t, out, "# # app head")
+	assertContains(t, out, "# app_bootstrap:")
+	assertContains(t, out, "# # terminal head")
+	assertContains(t, out, "# terminal_adapter:")
+	assertNotContains(t, out, "conflicting edits overlap")
 
 	mustRoundTrip(t, out)
 }

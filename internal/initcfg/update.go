@@ -179,7 +179,7 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef) UpdateReport {
 //   - PATH DRIFT: config vs discovered paths, with an explicit note that --apply replaces
 //     module paths with the discovered paths and writes a backup.
 //   - UNCLASSIFIED: modules missing classification; shows LLM suggestion from ann when
-//     present, otherwise suggests running with --llm.
+//     present, otherwise suggests running with --ai-classify.
 //   - DEPLOY UNIT HINTS: deterministic deploy_unit proposals from checked-in
 //     deploy evidence; review-only because runtime topology is an architecture decision.
 //   - DISTANCE CONFIG CANDIDATES: runtime/dynamic review hints for external_systems
@@ -248,7 +248,7 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 					continue
 				}
 			}
-			fmt.Fprintf(&b, "  - %s: run with --llm to get classification suggestions\n", name)
+			fmt.Fprintf(&b, "  - %s: run with --ai-classify to get classification suggestions\n", name)
 		}
 	}
 

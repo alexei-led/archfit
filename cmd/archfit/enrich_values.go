@@ -72,7 +72,7 @@ Use basis "deterministic_fact" only when the value directly restates determinist
 // runValueDraft drafts spec.field for every module that does not yet have it set,
 // writing the suggestions to spec.draftPath for human review.
 func (c *enrichFlags) runValueDraft(ctx context.Context, deps *appDeps, spec valueSpec) error {
-	cfg, err := loadConfig(ctx, c.Config, false)
+	cfg, err := loadConfig(ctx, c.Config)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -83,7 +83,7 @@ func (c *enrichFlags) runValueDraft(ctx context.Context, deps *appDeps, spec val
 
 	configDir := filepath.Dir(c.Config)
 	cacheDir := llmCacheDir(configDir)
-	provider, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.NoCache)
+	provider, err := buildCachedProvider(c.providerOverride, llmCfg, cacheDir, c.Refresh)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
 	}
@@ -160,7 +160,7 @@ func (c *enrichFlags) runValuePin(ctx context.Context, deps *appDeps, spec value
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: reading config: %v", err)}
 	}
-	cfg, err := loadConfig(ctx, c.Config, false)
+	cfg, err := loadConfig(ctx, c.Config)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}

@@ -1,0 +1,34 @@
+{
+  "subagents": {
+    "agentOverrides": {
+      "cc-thingz.engineer": {
+        "model": "openai-codex-personal/gpt-5.5",
+        "fallbackModels": [
+          "openai-codex-work/gpt-5.5",
+          "anthropic-personal/claude-opus-4-8",
+          "anthropic-work/claude-opus-4-8"
+        ],
+        "thinking": "high"
+      },
+      "cc-thingz.reviewer": {
+        "model": "anthropic-personal/claude-opus-4-8",
+        "fallbackModels": [
+          "anthropic-work/claude-opus-4-8",
+          "openai-codex-personal/gpt-5.5",
+          "openai-codex-work/gpt-5.5"
+        ],
+        "thinking": "high"
+      },
+      "cc-thingz.advisor": {
+        "model": "anthropic-personal/claude-opus-4-8",
+        "fallbackModels": [
+          "anthropic-work/claude-opus-4-8",
+          "openai-codex-personal/gpt-5.5",
+          "openai-codex-work/gpt-5.5"
+        ],
+        "thinking": "xhigh",
+        "completionGuard": false
+      }
+    }
+  }
+}

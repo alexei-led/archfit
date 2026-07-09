@@ -57,7 +57,7 @@ func (c *EnrichAbstainedCmd) Run(deps *appDeps) error {
 }
 
 func (c *EnrichAbstainedCmd) runAbstainedEnrich(ctx context.Context, deps *appDeps) error {
-	cfg, err := loadConfig(ctx, c.Config, false)
+	cfg, err := loadConfig(ctx, c.Config)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -67,7 +67,7 @@ func (c *EnrichAbstainedCmd) runAbstainedEnrich(ctx context.Context, deps *appDe
 	}
 
 	configDir := filepath.Dir(c.Config)
-	provider, err := buildCachedProvider(c.providerOverride, llmCfg, llmCacheDir(configDir), c.NoCache)
+	provider, err := buildCachedProvider(c.providerOverride, llmCfg, llmCacheDir(configDir), c.Refresh)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v (set the key and re-run; see `archfit doctor`)", err)}
 	}
@@ -84,8 +84,8 @@ func (c *EnrichAbstainedCmd) runAbstainedEnrich(ctx context.Context, deps *appDe
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
-	deps.noCache = c.NoCache
-	if _, _, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, false, engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
+	deps.refresh = c.Refresh
+	if _, _, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 

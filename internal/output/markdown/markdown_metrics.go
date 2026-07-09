@@ -643,7 +643,7 @@ func writeDeprecatedDeps(b *strings.Builder, deps []diagnostic.DeprecatedDep) {
 	}
 	b.WriteString("\n## Manifest deprecation markers (report-only)\n\n")
 	b.WriteString("Locally-declared deprecation/retraction markers found in checked-in manifest files.\n")
-	b.WriteString("Report-only evidence — never gates. Cargo yanked and live EOL require archfit analyze --llm / enrich.\n\n")
+	b.WriteString("Report-only evidence — never gates. Cargo yanked and live EOL require archfit analyze --ai-summary / enrich.\n\n")
 	fmt.Fprintf(b, "| file | kind | subject | note |\n")
 	fmt.Fprintf(b, "|------|------|---------|------|\n")
 	for _, d := range deps {
@@ -672,6 +672,8 @@ func writeCoverageGaps(b *strings.Builder, gaps []diagnostic.CoverageGap) {
 	}
 }
 
+const configWarningModuleSampleLimit = 15
+
 // writeConfigWarnings renders advisory config-quality warnings (under-specified
 // modules, swallowed optional-tool errors) so they reach the report and CI
 // instead of being stderr-only. Advisory — never gates. Omitted when empty.
@@ -681,9 +683,67 @@ func writeConfigWarnings(b *strings.Builder, warnings []string) {
 	}
 	fmt.Fprintf(b, "\n## Config warnings (%d)\n\n", len(warnings))
 	b.WriteString("Advisory — never gates. Under-specified modules degrade distance/volatility classification.\n\n")
-	for _, w := range warnings {
-		fmt.Fprintf(b, "- %s\n", w)
+	for _, group := range groupConfigWarnings(warnings) {
+		if len(group.modules) <= 1 {
+			fmt.Fprintf(b, "- %s\n", group.first)
+			continue
+		}
+		shown := min(len(group.modules), configWarningModuleSampleLimit)
+		fmt.Fprintf(b, "- modules omitting %s: %s", group.omits, quoteJoin(group.modules[:shown]))
+		if hidden := len(group.modules) - shown; hidden > 0 {
+			fmt.Fprintf(b, ", …and %d more modules", hidden)
+		}
+		b.WriteByte('\n')
 	}
+}
+
+type configWarningGroup struct {
+	first   string
+	omits   string
+	modules []string
+}
+
+func groupConfigWarnings(warnings []string) []configWarningGroup {
+	groups := make([]configWarningGroup, 0, len(warnings))
+	byKey := make(map[string]int)
+	for _, w := range warnings {
+		moduleName, omits, ok := parseModuleOmissionWarning(w)
+		if !ok {
+			groups = append(groups, configWarningGroup{first: w})
+			continue
+		}
+		key := "module omits " + omits
+		idx, ok := byKey[key]
+		if !ok {
+			byKey[key] = len(groups)
+			groups = append(groups, configWarningGroup{first: w, omits: omits})
+			idx = len(groups) - 1
+		}
+		groups[idx].modules = append(groups[idx].modules, moduleName)
+	}
+	return groups
+}
+
+func parseModuleOmissionWarning(w string) (moduleName, omits string, ok bool) {
+	const prefix = `module "`
+	const middle = `" omits `
+	if !strings.HasPrefix(w, prefix) {
+		return "", "", false
+	}
+	rest := strings.TrimPrefix(w, prefix)
+	moduleName, omits, found := strings.Cut(rest, middle)
+	if !found || moduleName == "" || omits == "" {
+		return "", "", false
+	}
+	return moduleName, omits, true
+}
+
+func quoteJoin(values []string) string {
+	quoted := make([]string, 0, len(values))
+	for _, v := range values {
+		quoted = append(quoted, fmt.Sprintf("%q", v))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // sampleSites renders up to dynamicImportSampleN sites as "file:line[kind]".

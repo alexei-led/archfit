@@ -13,7 +13,7 @@
       "goal": "Remove the forbidden dependency from pkg/a/a.go on pkg/b; depend on b's public API or move the shared code to an allowed location.",
       "rule_id": "no_direct_b_dependency",
       "validation": [
-        "archfit analyze --gate -c \u003cROOT\u003e/.archfit.yaml --full"
+        "archfit check -c \u003cROOT\u003e/.archfit.yaml"
       ]
     }
   ],

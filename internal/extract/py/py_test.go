@@ -138,6 +138,10 @@ func TestExtract_WithUnresolved(t *testing.T) {
 	if cov.Unresolved != 2 {
 		t.Errorf("cov.Unresolved = %d, want 2", cov.Unresolved)
 	}
+	wantReason := "2 imports unresolved (top: boto3 1, httpx 1) — check languages.python.package and src layout"
+	if cov.Reason != wantReason {
+		t.Errorf("cov.Reason = %q, want %q", cov.Reason, wantReason)
+	}
 
 	type edgeKey struct{ from, to string }
 	byKey := make(map[edgeKey]graph.Edge)
@@ -164,6 +168,44 @@ func TestExtract_WithUnresolved(t *testing.T) {
 		if len(edge.Locations) != 1 || edge.Locations[0].File != "myapp/a" || edge.Locations[0].Line != want.line {
 			t.Fatalf("edge %v: locations = %+v, want myapp/a:%d", want.key, edge.Locations, want.line)
 		}
+	}
+}
+
+func TestExtract_UnresolvedReasonSummarizesTopRoots(t *testing.T) {
+	fixture := `{"edges":[],"unresolved":8,"unresolved_imports":[` +
+		`{"importer":"myapp.a","imported":"zeta.one","line":1},` +
+		`{"importer":"myapp.a","imported":"alpha.one","line":2},` +
+		`{"importer":"myapp.a","imported":"zeta.two","line":3},` +
+		`{"importer":"myapp.a","imported":"beta.one","line":4},` +
+		`{"importer":"myapp.a","imported":"gamma.one","line":5},` +
+		`{"importer":"myapp.a","imported":"delta.one","line":6},` +
+		`{"importer":"myapp.a","imported":"epsilon.one","line":7},` +
+		`{"importer":"myapp.a","imported":"alpha.two","line":8}` +
+		`]}`
+	mock := &toolrun.RunnerMock{
+		DetectFunc: func(_ context.Context, tool string) (toolrun.ToolInfo, bool) {
+			if tool == "uv" {
+				return toolrun.ToolInfo{Name: "uv"}, true
+			}
+			return toolrun.ToolInfo{}, false
+		},
+		RunFunc: func(_ context.Context, _ toolrun.ToolCmd) (toolrun.Output, error) {
+			return toolrun.Output{Stdout: []byte(fixture), ExitCode: 0}, nil
+		},
+	}
+
+	e := py.New(mock, view.ExtractConfig{PyPackage: testPkgName, Mode: view.ModeAuto})
+	_, cov, err := e.Extract(context.Background(), scope.Scope{Root: testRoot, Mode: testScopeMode})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	want := "8 imports unresolved (top: alpha 2, zeta 2, beta 1, delta 1, epsilon 1) — check languages.python.package and src layout"
+	if cov.Reason != want {
+		t.Errorf("cov.Reason = %q, want %q", cov.Reason, want)
+	}
+	if strings.Contains(cov.Reason, "gamma") {
+		t.Errorf("cov.Reason includes root after top-5 cap: %q", cov.Reason)
 	}
 }
 

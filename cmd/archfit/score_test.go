@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -20,7 +19,7 @@ func TestRun_Analyze_ScorecardFullFlagParses(t *testing.T) {
 		name string
 		args []string
 	}{
-		{"with --full", []string{cmdAnalyze, fmtScorecard, "-c", cfgPath, flagFull}},
+		{"with --full", []string{cmdAnalyze, fmtScorecard, "-c", cfgPath, flagRefresh}},
 		{"without --full (implied)", []string{cmdAnalyze, fmtScorecard, "-c", cfgPath}},
 	}
 	for _, tc := range cases {
@@ -38,19 +37,16 @@ func TestRun_Analyze_ScorecardFullFlagParses(t *testing.T) {
 	}
 }
 
-// TestRun_Analyze_ScorecardNoConfigFlag verifies that `analyze --format scorecard --no-config`
-// parses and runs (rc 0). --no-config ignores the on-disk .archfit.yaml and scores
-// with built-in defaults; scorecard is report-only, so a violating repo still exits 0.
-func TestRun_Analyze_ScorecardNoConfigFlag(t *testing.T) {
+// TestRun_Analyze_NoConfigFlagRejected verifies that --no-config (removed in v2)
+// produces a parse error. Config is now required for analyze and check.
+func TestRun_Analyze_NoConfigFlagRejected(t *testing.T) {
 	t.Parallel()
-	dir := filepath.Dir(writeViolatingRepo(t))
-
-	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, fmtScorecard, "--no-config", "--root", dir}, &buf)
-	if code != 0 {
-		t.Fatalf("analyze --format scorecard --no-config exit = %d, want 0\noutput:\n%s", code, buf.String())
+	var out, errBuf bytes.Buffer
+	code := RunWithStderr([]string{cmdAnalyze, fmtScorecard, "--no-config"}, &out, &errBuf)
+	if code != 3 {
+		t.Fatalf("analyze --no-config: exit = %d, want 3 (parse error); stderr:\n%s", code, errBuf.String())
 	}
-	if !strings.Contains(buf.String(), "## Dimensions") {
-		t.Errorf("analyze --format scorecard --no-config did not render a scorecard\noutput:\n%s", buf.String())
+	if !strings.Contains(errBuf.String(), "--no-config") {
+		t.Errorf("parse error should name the removed flag; stderr:\n%s", errBuf.String())
 	}
 }

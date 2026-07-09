@@ -18,7 +18,7 @@ cache invalidation step.
 ```
 <config dir>/.archfit-cache/
   facts/<analyzer>/<key>.json   # extractor fact blobs (content-addressed)
-  llm/                          # LLM response cache (enrich/explain/analyze --llm)
+  llm/                          # AI response cache (enrich/explain/analyze --ai-summary)
 ```
 
 The directory sits next to `.archfit.yaml`. Add `.archfit-cache/` to `.gitignore`
@@ -55,13 +55,15 @@ members still cache. Config `exclude:` globs never shrink the key's input hash:
 the underlying tools analyze excluded files anyway, so their edits still
 invalidate.
 
-## `--no-cache`
+## `--refresh`
 
-`--no-cache` on `analyze`, `baseline`, `explain`, and `config enrich` bypasses the
-fact cache — reads **and** writes, so a `--no-cache` run is a true control run that
-neither uses nor refreshes entries. On the LLM commands the same flag also bypasses
-the LLM response cache. Correctness never depends on the flag: stale entries are
-prevented by the key, not by bypassing.
+`--refresh` on `analyze`, `baseline`, `explain`, and `config enrich` bypasses
+cache reads, re-runs extractors, and writes fresh results back to cache. On the
+AI commands the same flag also bypasses the AI response cache.
+
+`--refresh` re-runs extractors and writes fresh results to cache (unlike the old
+`--no-cache` which also disabled cache writes). Correctness never depends on the
+flag: stale entries are prevented by the key, not by bypassing.
 
 ## `--base` and the cache
 

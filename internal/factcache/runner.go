@@ -26,8 +26,9 @@ import (
 type Runner struct {
 	// Inner executes on a cache miss. Required.
 	Inner toolrun.Runner
-	// Store holds the fact blobs. nil disables the cache entirely — the
-	// --no-cache path: no reads, no writes.
+	// Store holds the fact blobs. nil disables the cache entirely: no reads,
+	// no writes. Set Store.RefreshMode to bypass reads while still recording
+	// fresh results on success (the --refresh path).
 	Store *Store
 	// Analyzer is the store subdirectory this runner writes under.
 	Analyzer string
@@ -107,6 +108,9 @@ func (r *Runner) Stream(ctx context.Context, cmd toolrun.ToolCmd, consume func(i
 // miss: logged at debug and removed so the next successful run heals it —
 // never a run failure.
 func (r *Runner) lookup(key string) (cacheEntry, bool) {
+	if r.Store == nil || r.Store.RefreshMode {
+		return cacheEntry{}, false
+	}
 	data, ok := r.Store.Get(r.Analyzer, key)
 	if !ok {
 		return cacheEntry{}, false

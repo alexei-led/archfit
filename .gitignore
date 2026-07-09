@@ -7,7 +7,8 @@
 !.env.example
 
 # Local agent and tool state
-.pi/
+.pi/*
+!.pi/settings.json
 .pi-subagents/
 .archfit-cache/
 .book/

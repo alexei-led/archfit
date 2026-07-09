@@ -19,6 +19,14 @@ Check the binary and available analyzers:
 archfit doctor
 ```
 
+First run on a repo:
+
+```sh
+archfit config init --root .
+archfit analyze --config .archfit.yaml
+archfit check --config .archfit.yaml
+```
+
 ## Analyzer summary
 
 - Git: `git` resolves changed files and refs for diff mode.
@@ -191,7 +199,7 @@ when you enable the matching key in `.archfit.yaml` (`analyzers.*` or
   Enable with `analyzers.clones.enabled: true`.
 
 When a tool is absent, the dependent metric reports `n/a` — the run never fails
-unless you opt in with `--require-tools` or `analyzers.<x>.gate: fail`.
+unless you opt in with `archfit check --require-tools` or `analyzers.<x>.gate: fail`.
 
 ## Docker
 
@@ -200,7 +208,7 @@ analysis tools on the host:
 
 ```sh
 docker run --rm -v "$(pwd):/repo" ghcr.io/alexei-led/archfit:v0.6.1 \
-  analyze --config /repo/.archfit.yaml --full
+  check --config /repo/.archfit.yaml
 ```
 
 The image bundles the `archfit` binary plus the full non-Rust analysis toolchain:

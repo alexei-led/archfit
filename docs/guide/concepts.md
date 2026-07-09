@@ -336,7 +336,7 @@ and makes only the legible parts executable. Three design rules follow from that
    produces a false failure.
 
 3. **LLM is off the gate.** Strength inference and explanations can use an LLM
-   (`archfit config enrich`, `archfit explain --llm`), but gate verdicts and metric
+   (`archfit config enrich`, `archfit explain --ai-summary`), but gate verdicts and metric
    values are computed by deterministic code only. The model finds candidates;
    humans pin labels; the gate stays reproducible. See
    [LLM enrichment](llm-enrich.md).

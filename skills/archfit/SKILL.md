@@ -20,8 +20,18 @@ metadata:
 Thin skill for `archfit` setup, configuration, review, and finding repair.
 Detailed behavior lives in `references/`, loaded on demand.
 
+## Grounding
+
+Use the built binary and its live help output as the source of truth. Ground
+claims in current tool output, not memory. If a reference disagrees with
+`archfit --help`, `archfit doctor`, or the current command output, trust the
+binary, note the stale reference, and update the docs. When command execution is
+unavailable, say so and lower confidence.
+
 **Do not use** for generic software-architecture advice unrelated to `archfit`,
-or to decide whether to adopt `archfit` — use web research for that.
+or to decide whether to adopt `archfit` — use web research for that. Do not use
+this skill to evaluate archfit itself against the book-alignment workflow or the
+test corpus — use `skills/archfit-eval/`.
 
 archfit measures **Balanced Coupling** (`coupling_balance` band, Khononov S×D×V
 formula) plus structural architecture rules (forbidden deps, layering, cycles,
@@ -35,6 +45,9 @@ struct density) are delegated to linters by design.
 
 - Stay in this skill for deterministic `archfit` setup, config review, CI wiring,
   finding interpretation, baseline/exception decisions, and constrained repair.
+- Use `skills/archfit-eval/` when the job is to evaluate archfit itself:
+  book-alignment coverage, corpus sweeps, semantic comparison, docs/UX, or skill
+  maintenance.
 - Use a deeper architecture-review skill when the job is broader than `archfit`
   output: module design, intended architecture, tradeoff judgment, or repo-wide
   structural assessment.
@@ -50,9 +63,9 @@ Read the one the task needs:
   statuses, exit codes, coverage gaps, and the `--require-tools` hard gate.
 - `references/languages.md` — Go, TypeScript/JavaScript, Python, and Rust tool
   setup, config shape, path semantics, and common coverage gaps.
-- `references/llm-modes.md` — `analyze --llm`, `config init`/`config update --llm`,
-  `config enrich` (labels, subdomain, owner, volatility), `.env`,
-  and `explain --llm`.
+- `references/llm-modes.md` — `analyze --ai-summary`, `config init` /
+  `config update --ai-classify`, `config enrich` (labels, abstained,
+  subdomain, owner, volatility), `.env`, and `explain --ai-summary`.
 - `references/agent-loop.md` — autonomous repair contract (`agent_tasks`, SARIF,
   `blast_radius`), and how coverage gaps read in the loop.
 
@@ -68,8 +81,9 @@ state that verification was skipped, and lower confidence.
 
 - Inspect existing config, baseline, CI, and package files before proposing edits.
 - Prefer non-failing commands first: `archfit --help`, `archfit doctor`, and
-  report-only `archfit analyze` (no `--gate` → always exit 0 on success; add
-  `--format scorecard` or `--markdown` for those views).
+  report-only `archfit analyze` (always exits 0 on success; add `--format
+scorecard` or `--markdown` for those views). Use `archfit check` only when
+  you want CI/agent-loop exit codes.
 - Prefer stdout or a temp path for reports and SARIF during review. Treat
   `.archfit-cache/`, `.archfit-*.yaml`, `archfit.sarif`, and Markdown reports as
   generated artifacts; do not leave them in the repo unless the task calls for it.
@@ -89,20 +103,21 @@ Install, configure, add CI, baseline, add an exception, or fix findings.
 5. Prefer code fixes over exceptions; use expiring exceptions only for
    intentional temporary drift.
 6. Baseline only accepted existing debt — never to make a new finding green.
-7. Validate: `archfit analyze --gate --config .archfit.yaml --full` (add `--json`
-   for agent loops, `--require-tools` only when missing-tool coverage should gate).
+7. Validate: `archfit check --config .archfit.yaml` (add `--json` for agent
+   loops, `--require-tools` only when missing-tool coverage should gate).
 
-`analyze --llm`, `config init`/`config update --llm`, `config enrich` (labels /
-`subdomain` / `owner` / `volatility`), and `explain --llm` are all off-gate and
-draft-first: detail and guardrails are in `references/llm-modes.md`. Never write
-LLM classifications (`--apply`) or approve drafts without reviewing them first.
-`config init --llm` without `--apply` is review-only (writes commented-inert
-suggestions; use `-o` to redirect to a draft file instead of `.archfit.yaml`).
+`analyze --ai-summary`, `config init` / `config update --ai-classify`, `config
+enrich` (labels / abstained / `subdomain` / `owner` / `volatility`), and
+`explain --ai-summary` are all off-gate and draft-first: detail and guardrails
+are in `references/llm-modes.md`. Never approve or apply AI classifications or
+drafts without reviewing them first. `config init --ai-classify` without
+`--apply` is review-only (writes commented-inert suggestions; use `-o` to
+redirect to a draft file instead of `.archfit.yaml`).
 
 ## Agent repair loop
 
-Fixing findings autonomously: run `archfit analyze --gate --json`; exit 0 means
-done. Each `agent_tasks[]` entry has `goal`, `constraints`, `files`, and a
+Fixing findings autonomously: run `archfit check --json`; exit 0 means done.
+Each `agent_tasks[]` entry has `goal`, `constraints`, `files`, and a
 `validation` command — fix within the constraints, touch only the listed files
 where possible, then re-run `validation` verbatim. Never "fix" `baseline` or
 `waived` findings unprompted. Full contract: `references/agent-loop.md`.
@@ -116,18 +131,21 @@ Read the gap's `affected_metrics` and `install_cmd`; close it by installing the
 tool (`archfit doctor` lists them) or filling the config, not by ignoring it.
 
 - Default is warn-loud (exit 0). To make CI block on a missing tool, promote with
-  `--require-tools` or per-tool `languages.<x>.gate: fail` / `analyzers.<x>.gate: fail`
-  (exits 1 — a policy decision, distinct from exit 3 errors).
+  `archfit check --require-tools` or per-tool `languages.<x>.gate: fail` /
+  `analyzers.<x>.gate: fail` (exits 1 — a policy decision, distinct from exit 3
+  errors).
 - Promote rules to `gate: fail` only when high-confidence (cycles,
   forbidden-dependency, layer-direction); keep noisy ones at `warn`.
 - Separate `tool missing`, `tool failed`, `tool disabled`, and `config
 under-specified`. They have different fixes.
 - If a gap cannot be closed now, say which metrics are unmeasured, lower
-  confidence, and avoid treating the run as clean just because it stayed exit 0.
+  confidence, and avoid treating the run as clean just because report-only
+  `analyze` stayed exit 0.
 - Under-specified-module warnings usually clear once modules declare `owner` /
   `subdomain` / `volatility`. Draft them with `config enrich subdomain` /
-  `config enrich owner` / `config enrich volatility` or `config init --llm`,
-  **review**, then `--apply` — never auto-apply.
+  `config enrich owner` / `config enrich volatility` or `config init
+--ai-classify`, **review**, then `--apply` or copy deliberately — never
+  auto-apply.
   Filling them also makes `encapsulation` measurable. A wiring/`cmd` package
   flagged for fan-out wants a `role:` (e.g. `composition_root`), not an exception.
 
