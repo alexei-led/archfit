@@ -267,6 +267,93 @@ func TestDiscoverTS_WithLibSubdirs(t *testing.T) {
 	}
 }
 
+func TestDiscoverTS_WorkspaceArrayForm(t *testing.T) {
+	root := t.TempDir()
+	pkg := `{"workspaces": ["packages/*", "apps/core"]}`
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(pkg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{"packages/router", "packages/ui", "apps/core"} {
+		if err := os.MkdirAll(filepath.Join(root, d), testDirPerm); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mods, err := DiscoverTS(root)
+	if err != nil {
+		t.Fatalf("DiscoverTS: %v", err)
+	}
+
+	names := make(map[string]bool, len(mods))
+	for _, m := range mods {
+		names[m.Name] = true
+	}
+	for _, want := range []string{"router", "ui", "core"} {
+		if !names[want] {
+			t.Errorf("expected module %q; got %v", want, mods)
+		}
+	}
+	// paths must use forward slashes
+	for _, m := range mods {
+		if strings.Contains(m.Paths[0], "\\") {
+			t.Errorf("path has backslash: %q", m.Paths[0])
+		}
+	}
+}
+
+func TestDiscoverTS_WorkspaceObjectForm(t *testing.T) {
+	root := t.TempDir()
+	pkg := `{"workspaces": {"packages": ["code/addons/*", "code/core"]}}`
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(pkg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{"code/addons/a11y", "code/addons/docs", "code/core"} {
+		if err := os.MkdirAll(filepath.Join(root, d), testDirPerm); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mods, err := DiscoverTS(root)
+	if err != nil {
+		t.Fatalf("DiscoverTS: %v", err)
+	}
+
+	names := make(map[string]bool, len(mods))
+	for _, m := range mods {
+		names[m.Name] = true
+	}
+	for _, want := range []string{"a11y", "docs", "core"} {
+		if !names[want] {
+			t.Errorf("expected module %q; got %v", want, mods)
+		}
+	}
+}
+
+func TestDiscoverTS_WorkspaceFallsBackToSrcWhenNoMatch(t *testing.T) {
+	root := t.TempDir()
+	// workspaces field present but the glob matches nothing
+	pkg := `{"workspaces": ["packages/*"]}`
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(pkg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Only a src/ subdir exists — should fall back
+	if err := os.MkdirAll(filepath.Join(root, "src/core"), testDirPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	mods, err := DiscoverTS(root)
+	if err != nil {
+		t.Fatalf("DiscoverTS: %v", err)
+	}
+	names := make(map[string]bool)
+	for _, m := range mods {
+		names[m.Name] = true
+	}
+	if !names[testTSCore] {
+		t.Errorf("expected fallback module %q from src/; got %v", testTSCore, mods)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // DiscoverPy
 // ---------------------------------------------------------------------------
