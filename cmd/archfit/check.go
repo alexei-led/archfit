@@ -9,10 +9,11 @@ type CheckCmd struct {
 	Root   string `help:"Repository root to analyze (default: directory of --config). Use this when a CI policy config lives outside the checked-out repo." type:"path"`
 	Base   string `help:"Git ref to compare against for scorecard delta (e.g. main, HEAD~1). When set, runs a before/after delta table instead of a single-run render."`
 
-	NoAdvisories bool   `name:"no-advisories" help:"Hide informational Balanced-Coupling advisories from the output."`
-	MinSeverity  string `name:"min-severity" help:"Minimum advisory severity to show: low, medium, high, critical." enum:"low,medium,high,critical," default:""`
-	Refresh      bool   `name:"refresh" help:"Re-run all extractors and refresh the cache. Use after installing or updating analyzer tools."`
-	RequireTools bool   `name:"require-tools" help:"Exit non-zero when any required analyzer tool is missing."`
+	NoAdvisories bool     `name:"no-advisories" help:"Hide informational Balanced-Coupling advisories from the output."`
+	MinSeverity  string   `name:"min-severity" help:"Minimum advisory severity to show: low, medium, high, critical." enum:"low,medium,high,critical," default:""`
+	Refresh      bool     `name:"refresh" help:"Re-run all extractors and refresh the cache. Use after installing or updating analyzer tools."`
+	RequireTools bool     `name:"require-tools" help:"Exit non-zero when any required analyzer tool is missing."`
+	Lang         []string `name:"lang" help:"Analyzer name to force on. Repeatable. See analyzer setup docs for valid names."`
 
 	JSON     bool     `name:"json" help:"Output format: JSON (shorthand for --format json)."`
 	Markdown bool     `name:"markdown" help:"Output format: Markdown (shorthand for --format markdown)."`
@@ -45,6 +46,7 @@ func (c *CheckCmd) Run(deps *appDeps) error {
 		formats:      c.Format,
 		noAdvisories: c.NoAdvisories,
 		minSeverity:  c.MinSeverity,
+		lang:         c.Lang,
 		requireTools: c.RequireTools,
 		progress:     c.Progress,
 		quiet:        c.Quiet,

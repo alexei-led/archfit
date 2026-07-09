@@ -155,7 +155,7 @@ func runAnalyzeNormalized(t *testing.T, root string, extraArgs ...string) []byte
 	t.Helper()
 
 	cfgPath := filepath.Join(root, ".archfit.yaml")
-	args := append([]string{cmdAnalyze, "-c", cfgPath, flagFull, fmtJSON}, extraArgs...)
+	args := append([]string{cmdAnalyze, "-c", cfgPath, flagRefresh, fmtJSON}, extraArgs...)
 	var buf bytes.Buffer
 	code := Run(args, &buf)
 	if code != 0 && code != 1 {

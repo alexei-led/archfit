@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -751,7 +752,7 @@ func TestEmitHealthWarnings(t *testing.T) {
 
 		emitHealthWarnings(deps, diagnostic.Diagnostic{
 			CoverageGaps: []diagnostic.CoverageGap{{Tool: toolGrimp}},
-		}, cfgPath, false)
+		}, config.Config{}, cfgPath)
 
 		if stdout.Len() != 0 {
 			t.Fatalf("stdout = %q, want empty", stdout.String())
@@ -769,7 +770,7 @@ func TestEmitHealthWarnings(t *testing.T) {
 
 		emitHealthWarnings(deps, diagnostic.Diagnostic{
 			ClassifiedEdges: &diagnostic.ClassifiedEdgeSummary{Total: 4, Scored: 0, Abstained: 4},
-		}, cfgPath, false)
+		}, config.Config{}, cfgPath)
 
 		got := stderr.String()
 		if !strings.Contains(got, "warning: 0 of 4 edges scored") {
@@ -778,7 +779,7 @@ func TestEmitHealthWarnings(t *testing.T) {
 		if !strings.Contains(got, "warning: all 4 cross-module edges have unknown strength") {
 			t.Fatalf("stderr = %q, want abstained warning", got)
 		}
-		if !strings.Contains(got, "archfit config enrich abstained -c "+cfgPath) {
+		if !strings.Contains(got, fmt.Sprintf("archfit config enrich abstained -c %q", cfgPath)) {
 			t.Fatalf("stderr = %q, want enrich-abstained hint", got)
 		}
 	})
@@ -792,7 +793,7 @@ func TestEmitHealthWarnings(t *testing.T) {
 		emitHealthWarnings(deps, diagnostic.Diagnostic{
 			ToolCoverage:    []diagnostic.Coverage{{Tool: toolGrimp, Status: diagnostic.StatusOK}},
 			ClassifiedEdges: &diagnostic.ClassifiedEdgeSummary{Total: 5, SameModule: 2, External: 3},
-		}, cfgPath, false)
+		}, config.Config{}, cfgPath)
 
 		got := stderr.String()
 		if !strings.Contains(got, "warning: 0 of 5 edges scored") {
@@ -801,7 +802,7 @@ func TestEmitHealthWarnings(t *testing.T) {
 		if !strings.Contains(got, "warning: no internal edges found — module paths may not match source layout") {
 			t.Fatalf("stderr = %q, want python external warning", got)
 		}
-		if !strings.Contains(got, "archfit config update -c "+cfgPath) {
+		if !strings.Contains(got, fmt.Sprintf("archfit config update -c %q", cfgPath)) {
 			t.Fatalf("stderr = %q, want config-update hint", got)
 		}
 	})
@@ -813,19 +814,22 @@ func TestEmitHealthWarnings(t *testing.T) {
 		if err := os.WriteFile(cfgPath, []byte("version: 1\nmodules:\n  api:\n    paths:\n      - services/api/**/*.go\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o600); err != nil {
+		// Load real config so declaresModulePaths returns true.
+		cfg, err := loadConfig(t.Context(), cfgPath)
+		if err != nil {
 			t.Fatal(err)
 		}
+
 		var stderr bytes.Buffer
 		deps := &appDeps{Stderr: &stderr, scanRoot: dir}
-
-		emitHealthWarnings(deps, diagnostic.Diagnostic{}, cfgPath, false)
+		// Empty FileFacts signals no files matched the declared module paths.
+		emitHealthWarnings(deps, diagnostic.Diagnostic{}, cfg, cfgPath)
 
 		got := stderr.String()
 		if !strings.Contains(got, "warning: no source files matched declared module paths") {
 			t.Fatalf("stderr = %q, want module-mismatch warning", got)
 		}
-		if !strings.Contains(got, "archfit check --root . -c "+cfgPath) {
+		if !strings.Contains(got, fmt.Sprintf("archfit check --root . -c %q", cfgPath)) {
 			t.Fatalf("stderr = %q, want check hint", got)
 		}
 	})

@@ -20,7 +20,7 @@ func TestRun_Analyze_ScorecardFullFlagParses(t *testing.T) {
 		name string
 		args []string
 	}{
-		{"with --full", []string{cmdAnalyze, fmtScorecard, "-c", cfgPath, flagFull}},
+		{"with --full", []string{cmdAnalyze, fmtScorecard, "-c", cfgPath, flagRefresh}},
 		{"without --full (implied)", []string{cmdAnalyze, fmtScorecard, "-c", cfgPath}},
 	}
 	for _, tc := range cases {
