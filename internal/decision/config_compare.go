@@ -314,7 +314,7 @@ func gradeTool(
 		// gap presence as "the config expected this analyzer" made the two paths
 		// grade the same row differently and paired it there in silence.
 		if _, ok := primary[tool]; ok {
-			curGapped, candGapped := hasCoverageGap(curGaps, tool), hasCoverageGap(candGaps, tool)
+			curGapped, candGapped := HasCoverageGap(curGaps, tool), HasCoverageGap(candGaps, tool)
 			if curGapped != candGapped {
 				return CoverageNotComparable, reasonAbsentAsymmetric, false
 			}
@@ -433,7 +433,11 @@ func primaryTools(a, b diagnostic.Diagnostic) map[string]struct{} {
 	return out
 }
 
-func hasCoverageGap(gaps []diagnostic.CoverageGap, tool string) bool {
+// HasCoverageGap reports whether the gap list carries an entry for tool.
+// Exported because `analyze --base` (cmd/archfit/git_finding_delta.go) reads gap
+// presence under the SAME rule this file applies, and a second copy of the loop
+// is a second place for that rule to drift.
+func HasCoverageGap(gaps []diagnostic.CoverageGap, tool string) bool {
 	for _, g := range gaps {
 		if g.Tool == tool {
 			return true

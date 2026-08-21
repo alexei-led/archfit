@@ -39,7 +39,7 @@ func discoveredEvidenceDiagnostics(cfg initcfg.DiscoveredConfig) []initcfg.Evide
 	}}
 }
 
-// updateEvidenceDiagnostics summarises the post-ResolveNameDrift report for the
+// updateEvidenceDiagnostics summarises the name-drift-resolved report for the
 // LLM classification pass. name_drift is included because without it a report
 // whose adds and removes were all resolved to naming differences reads as
 // "nothing changed, yet structurally_in_sync=false" — a self-contradictory input.

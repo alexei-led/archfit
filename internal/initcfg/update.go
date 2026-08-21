@@ -34,9 +34,9 @@ type NameDrift struct {
 	DiscoveredName string
 	Paths          []string
 	// Existing is the configured stanza the drift was built from. It is carried
-	// so ResolveNameDrift can run the per-module field checks over it: the
-	// stanza is real config with real settings, and DiffModules skipped it only
-	// because name-only matching had put it in Removed.
+	// so resolveNameDrift can run the per-module field checks over it: the
+	// stanza is real config with real settings, and the name pass skipped it
+	// only because name-only matching had put it in Removed.
 	Existing ExistingModule
 }
 
@@ -120,26 +120,31 @@ func pathSetsEqual(a, b []string) bool {
 	return true
 }
 
-// DiffModules computes the structural difference between the existing config modules
-// and freshly discovered modules. Output slices are sorted by Name for determinism.
+// DiffModules computes the difference between the existing config modules and
+// freshly discovered modules, ready to read. Output slices are sorted by Name
+// for determinism.
 //
-//   - Added: modules in fresh (by Name) not in existing.
-//   - Removed: modules in existing (by Name) not in fresh.
+//   - Added: modules in fresh not in existing, after name drift is resolved.
+//   - Removed: modules in existing not in fresh, after name drift is resolved.
+//   - NameDrift: Added/Removed pairs that own exactly the same paths, so the
+//     only difference is the key (see resolveNameDrift).
 //   - PathDrift: modules present in both whose paths differ as normalized sets.
 //     ConfigPaths and DiscoveredPaths preserve their original ordering.
-//   - StructuralInSync: true when Added, Removed, and PathDrift are all empty.
-//     ResolveNameDrift recomputes it over its reclassified buckets.
-//   - Unclassified: non-removed existing modules that cannot be classified —
-//     neither subdomain nor volatility is set (either one supplies volatility), or
-//     layer is missing while requireLayer says an active layer policy needs it.
-//     Modules in Removed are excluded from Unclassified.
+//   - StructuralInSync: true when Added, Removed, NameDrift, and PathDrift are
+//     all empty.
+//   - Unclassified: existing modules discovery still accounts for that cannot be
+//     classified — neither subdomain nor volatility is set (either one supplies
+//     volatility), or layer is missing while requireLayer says an active layer
+//     policy needs it. Modules in Removed are excluded from Unclassified.
 //   - Issues: the Unclassified reasons plus missing owner, one entry per gap,
 //     sorted by module then code. Modules with no paths classify nothing and are
 //     skipped, mirroring config.Config.Lint; Unclassified keeps them.
 //
-// Issues and Unclassified are PROVISIONAL here: they cover only the modules
-// discovery matched by name. ResolveNameDrift recomputes both once it knows
-// which Removed entries were merely renamed — call it before reading either.
+// The name-drift pass runs INSIDE this function rather than beside it: matching
+// is by name, so a stanza discovery merely renamed starts out in Removed, and
+// every module-level field check over it would otherwise be provisional until a
+// caller remembered to run a second pass. `issues: []` must mean "checked and
+// clean", never "not evaluated", and no call order can make it mean the latter.
 //
 // Narrowing Unclassified also narrows what `--ai-classify` targets, deliberately:
 // `layer:` is read only by the forbidden_layer_direction rule, so proposing one
@@ -148,6 +153,14 @@ func pathSetsEqual(a, b []string) bool {
 // requireLayer must be true only when a forbidden_layer_direction rule is active
 // (gate other than "off"); layer is optional for every other config.
 func DiffModules(existing []ExistingModule, fresh []ModuleDef, requireLayer bool) UpdateReport {
+	return resolveNameDrift(diffModulesByName(existing, fresh, requireLayer), requireLayer)
+}
+
+// diffModulesByName is the name-matching structural pass. Its Issues and
+// Unclassified are provisional — they skip everything it put in Removed — which
+// is why it is unexported and only DiffModules, after resolveNameDrift, is
+// reachable from outside the package.
+func diffModulesByName(existing []ExistingModule, fresh []ModuleDef, requireLayer bool) UpdateReport {
 	existingByName := make(map[string]ExistingModule, len(existing))
 	for _, e := range existing {
 		existingByName[e.Name] = e
@@ -216,7 +229,7 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef, requireLayer bool
 // discovery accounts for, returning the sorted Unclassified names and Issues.
 //
 // It is a function rather than an inline loop because the set it runs over is
-// only final AFTER ResolveNameDrift: DiffModules matches by name, so a stanza
+// only final AFTER resolveNameDrift: the name pass matches by name, so a stanza
 // discovery merely names differently starts out in Removed and would otherwise
 // never be checked. `issues: []` must mean "checked and clean", never "not
 // evaluated".
@@ -255,20 +268,27 @@ func checkModuleFields(mods []ExistingModule, requireLayer bool) (unclassified, 
 	}
 	sort.Strings(unclassified)
 	sort.Strings(pathless)
+	sortModuleIssues(issues)
+	return unclassified, pathless, issues
+}
+
+// sortModuleIssues applies the documented issue order: module, then code. Both
+// producers (the first pass and the name-drift merge) sort with it, so the two
+// cannot order the same list differently.
+func sortModuleIssues(issues []ModuleIssue) {
 	sort.SliceStable(issues, func(i, j int) bool {
 		if issues[i].Module != issues[j].Module {
 			return issues[i].Module < issues[j].Module
 		}
 		return issues[i].Code < issues[j].Code
 	})
-	return unclassified, pathless, issues
 }
 
-// ResolveNameDrift reclassifies every Added/Removed pair that owns exactly the
+// resolveNameDrift reclassifies every Added/Removed pair that owns exactly the
 // same paths as a NAMING difference rather than a structural change.
 //
-// DiffModules matches config modules to discovered modules by NAME, and the two
-// naming conventions do not have to agree: this repo configures
+// diffModulesByName matches config modules to discovered modules by NAME, and
+// the two naming conventions do not have to agree: this repo configures
 // `internal/agenttask` while discovery emits `agenttask` for the identical
 // `internal/agenttask/**` path set. Read as add + remove, that is 75 phantom
 // "changes" whose only honest resolution — rewriting every key — would discard
@@ -282,12 +302,12 @@ func checkModuleFields(mods []ExistingModule, requireLayer bool) (unclassified, 
 // The returned report keeps every other field; Added, Removed, NameDrift,
 // StructuralInSync, Issues, and Unclassified are recomputed.
 //
-// Issues and Unclassified have to be recomputed here because DiffModules skips
-// everything in Removed, and a name-drifted stanza sat there: on this repo's own
-// reference config that left 30 of 45 modules unevaluated while the document
-// still reported `issues: []`. requireLayer must be the same value DiffModules
-// was called with. Pure: no I/O, deterministic order.
-func ResolveNameDrift(r UpdateReport, requireLayer bool) UpdateReport {
+// Issues and Unclassified have to be recomputed here because diffModulesByName
+// skips everything in Removed, and a name-drifted stanza sat there: on this
+// repo's own reference config that left 30 of 45 modules unevaluated while the
+// document still reported `issues: []`. requireLayer must be the same value the
+// name pass was called with. Pure: no I/O, deterministic order.
+func resolveNameDrift(r UpdateReport, requireLayer bool) UpdateReport {
 	addedByPaths := uniquePathKeyIndex(len(r.Added), func(i int) []string { return r.Added[i].Paths })
 	removedByPaths := uniquePathKeyIndex(len(r.Removed), func(i int) []string { return r.Removed[i].Paths })
 
@@ -353,12 +373,7 @@ func mergeDriftFieldChecks(r UpdateReport, drift []NameDrift, requireLayer bool)
 	issues := append(append([]ModuleIssue{}, r.Issues...), driftIssues...)
 	sort.Strings(unclassified)
 	sort.Strings(pathless)
-	sort.SliceStable(issues, func(i, j int) bool {
-		if issues[i].Module != issues[j].Module {
-			return issues[i].Module < issues[j].Module
-		}
-		return issues[i].Code < issues[j].Code
-	})
+	sortModuleIssues(issues)
 	return unclassified, pathless, issues
 }
 
@@ -391,12 +406,18 @@ func uniquePathKeyIndex(n int, pathsAt func(int) []string) map[string]int {
 // configured modules discovery did not emit. Both would need a stanza rewritten
 // or deleted, which discards the settings it carries, so both stay human
 // decisions and the section text says so.
+//
+// Module keys go through sanitizeComment, the convention every other renderer in
+// this file follows for config- and discovery-supplied values (writeModuleStanza,
+// writeDeployUnitSuggestion, writeDistanceConfigCandidate, and the SETTINGS and
+// ISSUES sections). It is a no-op on a well-formed key.
 func writeUnappliedModuleSections(b *strings.Builder, r UpdateReport) {
 	if len(r.NameDrift) > 0 {
 		fmt.Fprintf(b, "NAME DRIFT (%d module(s) discovery names differently — same paths, review only):\n", len(r.NameDrift))
 		b.WriteString("  NOTE: `update --apply` does NOT rename these; rewriting the key would discard owner, subdomain, volatility, layer, and public settings.\n")
 		for _, d := range r.NameDrift {
-			fmt.Fprintf(b, "  - config %q, discovery %q: %s\n", d.ConfigName, d.DiscoveredName, joinPaths(d.Paths))
+			fmt.Fprintf(b, "  - config %q, discovery %q: %s\n",
+				sanitizeComment(d.ConfigName), sanitizeComment(d.DiscoveredName), joinPaths(d.Paths))
 		}
 	}
 
@@ -404,7 +425,7 @@ func writeUnappliedModuleSections(b *strings.Builder, r UpdateReport) {
 		fmt.Fprintf(b, "UNMATCHED (%d configured module(s) discovery did not emit — review only):\n", len(r.Removed))
 		b.WriteString("  NOTE: `update --apply` does NOT remove these; deleting a stanza discards its settings, so it stays a human decision.\n")
 		for _, e := range r.Removed {
-			fmt.Fprintf(b, "  - %s: not found in discovery — verify or remove by hand\n", e.Name)
+			fmt.Fprintf(b, "  - %s: not found in discovery — verify or remove by hand\n", sanitizeComment(e.Name))
 		}
 	}
 }

@@ -540,11 +540,11 @@ Report model:
 
 Coverage grades:
 
-| Grade                  | Condition                                                                                                                |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `comparable`           | Every compared analyzer ran on both sides.                                                                               |
-| `comparable_with_gaps` | The sides agree, but an analyzer was absent or disabled on both sides.                                                   |
-| `not_comparable`       | An analyzer's evidence differs between the sides, is partial or timed out, or its coverage row is missing or duplicated. |
+| Grade                  | Condition                                                                                                                                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `comparable`           | Every compared analyzer ran on both sides. A per-language analyzer absent on both sides with no coverage gap drops out of the comparison entirely — that language is simply not in the tree.                                  |
+| `comparable_with_gaps` | The sides agree, but at least one analyzer was absent, disabled, or left import specifiers unresolved on **both** sides. The blindness is shared, so the comparison rests on it — each such analyzer is listed with a reason. |
+| `not_comparable`       | An analyzer's evidence differs between the sides, did not finish (timed out, or partial from a run that did not complete), was absent on both sides but expected by only one, or its coverage row is missing or duplicated.   |
 
 A `not_comparable` grade is about evidence, not about the configs: it can appear
 on a run that reports no measurement differences at all. Read the grade first,
@@ -855,8 +855,16 @@ archfit check --base main --json -c .archfit.yaml \
 ```
 
 A task is called introduced only when every active analyzer covered both sides
-equivalently. Missing, partial, or one-sided analyzer evidence puts the task in
-`unknown_origin_finding_ids` and names the family in `comparison_reasons`. See
+equivalently. A missing or duplicated coverage row, a timeout, a partial from a
+run that did not complete, and any one-sided analyzer evidence all put the task
+in `unknown_origin_finding_ids` and name the family in `comparison_reasons`.
+
+Two **symmetric** degradations still pair, so the origin block stays usable in
+the environments where they are normal: a partial from unresolved import
+specifiers (the steady state for dependency-cruiser and grimp) and an analyzer
+that was unavailable on both sides (its tool is not installed). Both keep the
+status `comparable` and both always name themselves in `comparison_reasons`,
+with each side's magnitude — they are never paired silently. See
 [the agent feedback loop](agent-feedback.md#git_finding_delta--which-repair-tasks-this-change-introduced).
 
 ### `--format` and format shorthands

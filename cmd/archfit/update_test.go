@@ -575,7 +575,7 @@ analyzers:
 	if !bytes.Equal(before, after) {
 		t.Fatal("--llm synthetic suggestions must leave config unchanged")
 	}
-	if hasActionableEdits(initcfg.UpdateReport{Suggested: []initcfg.ModuleDef{{Name: "herdr-api"}}}) {
+	if initcfg.HasPendingEdits(initcfg.UpdateReport{Suggested: []initcfg.ModuleDef{{Name: "herdr-api"}}}) {
 		t.Fatal("review-only synthetic suggestions must not be actionable edits")
 	}
 }

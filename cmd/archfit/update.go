@@ -78,13 +78,11 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		return fmt.Errorf("discovering project structure: %w", err)
 	}
 
-	// ResolveNameDrift runs before anything reads Added/Removed/Issues: the review
-	// document, --ai-classify targets, and the apply edits must all see the same
-	// buckets, or the status names changes --apply would not make — and the
-	// per-module field checks are only final once name drift is resolved.
+	// DiffModules resolves name drift internally, so the review document,
+	// --ai-classify targets, and the apply edits all read the same buckets and no
+	// caller can read a provisional Issues/Unclassified list.
 	requireLayer := requiresLayerClassification(cfg)
-	report := initcfg.ResolveNameDrift(
-		initcfg.DiffModules(existing, freshCfg.Modules, requireLayer), requireLayer)
+	report := initcfg.DiffModules(existing, freshCfg.Modules, requireLayer)
 	candidateCfg := candidateConfigForUpdate(cfg, freshCfg)
 	report.DeployUnitSuggestions = deployUnitSuggestions(ctx, root, candidateCfg, deps)
 	report.DistanceConfigCandidates = distanceConfigCandidates(ctx, root, candidateCfg, deps)
@@ -115,8 +113,8 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	if needsRustDeepAnalysisConfig(cfg, freshCfg.HasRust) {
 		report.Settings = append(report.Settings, initcfg.RustDeepAnalysisSetting())
 	}
-	rustConfigNeeded := len(report.Settings) > 0
-	hasEdits := hasActionableEdits(report) || rustConfigNeeded
+	hasSettingEdits := len(report.Settings) > 0
+	hasEdits := initcfg.HasPendingEdits(report)
 
 	if !c.Apply {
 		review := initcfg.BuildConfigReview(report)
@@ -146,14 +144,14 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 
 	edited := originalBytes
-	if hasActionableEdits(report) {
+	if initcfg.HasModuleEdits(report) {
 		edits := buildUpdateEdits(report)
 		edited, err = initcfg.ApplyEdits(originalBytes, edits)
 		if err != nil {
 			return fmt.Errorf("applying edits: %w", err)
 		}
 	}
-	if rustConfigNeeded {
+	if hasSettingEdits {
 		edited = ensureRustDeepAnalysisConfig(edited, cfg)
 	}
 	if err := safeWriteConfig(ctx, deps, c.Config, edited, originalBytes); err != nil {
@@ -372,20 +370,6 @@ func classifyTargetsForUpdate(
 		} // name came from DiffModules over cfg.Modules, so absent is purely defensive
 	}
 	return targets
-}
-
-// hasActionableEdits returns true when --apply has a module edit to write.
-//
-// Removed is deliberately absent: commenting out a configured stanza discards
-// its owner, subdomain, volatility, layer, and public settings, and DiffModules
-// matches by name only, so a stanza discovery merely names differently would be
-// destroyed. NameDrift is excluded for the same reason. Both surface in the
-// report as review items instead. Keep in step with initcfg.hasPendingEdits.
-//
-// LLM role/volatility output is review-only: it is rendered as a diff but never
-// written by config update --apply.
-func hasActionableEdits(report initcfg.UpdateReport) bool {
-	return len(report.Added) > 0 || len(report.PathDrift) > 0
 }
 
 func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredConfig) config.Config {

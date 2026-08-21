@@ -264,7 +264,7 @@ func lockBaseWorktree(ctx context.Context, lockPath string) (func(), error) {
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o750); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600) //#nosec G304 -- internal cache lock path derived from config dir + resolved commit SHA
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600) //#nosec G304 -- internal cache lock path derived from gitRoot + resolved commit SHA
 	if err != nil {
 		return nil, err
 	}

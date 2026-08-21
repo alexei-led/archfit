@@ -386,8 +386,8 @@ func TestRenderReviewStatus(t *testing.T) {
 			want: "status: action_required — 1 module issue(s), 1 pending edit(s) (1 module(s) unchecked — see unchecked_modules)\n",
 		},
 		{
-			// Name drift alone leaves nothing unchecked: ResolveNameDrift rescues
-			// those stanzas and their fields are evaluated like any other.
+			// Name drift alone leaves nothing unchecked: the name-drift pass
+			// rescues those stanzas and their fields are evaluated like any other.
 			name: "name drift alone leaves nothing unchecked",
 			report: UpdateReport{
 				NameDrift: []NameDrift{{ConfigName: testGone, DiscoveredName: testSvc}},

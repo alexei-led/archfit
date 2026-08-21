@@ -77,10 +77,6 @@ const (
 	evidenceUnavailable
 )
 
-// coverageRowMissing is the raw-status placeholder used in a comparison reason
-// when a family has no coverage row at all on one side.
-const coverageRowMissing = "missing"
-
 // analyzerFamily is one finding-producing analyzer whose evidence must match on
 // both sides before an unmatched task can be called introduced. One family is
 // one ToolCoverage name: every analyzer reports under its own name, so a second
@@ -186,13 +182,14 @@ func buildGitFindingDelta(in gitDeltaInput) *diagnostic.GitFindingDelta {
 
 	introduced, preExisting, unknown := []string{}, []string{}, []string{}
 	for _, t := range in.Tasks {
+		_, inBase := base[t.FindingID]
 		switch {
 		// The synthetic coupling-gate task is per-run trip state with no stable
 		// base counterpart — decided before ID matching so it can never be
 		// mistaken for a repaired or introduced seam.
 		case t.RuleID == ruleIDBCCouplingGate:
 			unknown = append(unknown, t.FindingID)
-		case contains(base, t.FindingID):
+		case inBase:
 			preExisting = append(preExisting, t.FindingID)
 		case comparable:
 			introduced = append(introduced, t.FindingID)
@@ -219,11 +216,6 @@ func buildGitFindingDelta(in gitDeltaInput) *diagnostic.GitFindingDelta {
 		UnknownOriginFindingIDs: unknown,
 		ComparisonReasons:       reasons,
 	}
-}
-
-func contains(set map[string]struct{}, key string) bool {
-	_, ok := set[key]
-	return ok
 }
 
 // compareAnalyzerEvidence reports whether every active analyzer family covered
@@ -288,10 +280,12 @@ type familySummary struct {
 
 func (s familySummary) rows() int { return len(s.statuses) }
 
-// raw renders the side's coverage statuses for a comparison reason.
+// raw renders the side's coverage statuses for a comparison reason. The
+// no-row placeholder is decision.CoverageRowMissing, the same string
+// `config compare` renders for the same shape.
 func (s familySummary) raw() string {
 	if len(s.rawStatuses) == 0 {
-		return coverageRowMissing
+		return decision.CoverageRowMissing
 	}
 	return strings.Join(s.rawStatuses, "+")
 }
@@ -365,7 +359,7 @@ func normalizeCoverage(f analyzerFamily, c diagnostic.Coverage, gaps []diagnosti
 		// mostly not in the install-hint table at all — so the absence stays what
 		// the coverage row already said: the config activated this analyzer and it
 		// did not run here.
-		if f.primary && !hasGap(gaps, c.Tool) {
+		if f.primary && !decision.HasCoverageGap(gaps, c.Tool) {
 			return evidenceNotApplicable
 		}
 		return evidenceAbsent
@@ -457,13 +451,4 @@ func pairFamily(head, base familySummary) familyPairing {
 	default:
 		return familyUnpaired
 	}
-}
-
-func hasGap(gaps []diagnostic.CoverageGap, tool string) bool {
-	for _, g := range gaps {
-		if g.Tool == tool {
-			return true
-		}
-	}
-	return false
 }

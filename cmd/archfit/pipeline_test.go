@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/decision"
 	"github.com/alexei-led/archfit/internal/labels"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/model/module"
@@ -324,21 +325,11 @@ func testGoProjectMarkerGaps(t *testing.T) {
 			gaps := buildCoverageGaps(
 				[]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}},
 				config.Config{Exclude: tc.exclude}, root)
-			if gotGap := hasGapForTool(gaps, toolGoPackages); gotGap != tc.want {
+			if gotGap := decision.HasCoverageGap(gaps, toolGoPackages); gotGap != tc.want {
 				t.Errorf("go/packages gap = %v, want %v (gaps: %+v)", gotGap, tc.want, gaps)
 			}
 		})
 	}
-}
-
-// hasGapForTool reports whether the gap list carries an entry for tool.
-func hasGapForTool(gaps []diagnostic.CoverageGap, tool string) bool {
-	for _, g := range gaps {
-		if g.Tool == tool {
-			return true
-		}
-	}
-	return false
 }
 
 // TestBuildConfigWarnings verifies the config-warnings block: lint warnings and

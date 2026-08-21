@@ -138,6 +138,10 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   tree, so it pairs only with itself — symmetric absence is safe (neither side
   produced findings), asymmetric absence is not. A timeout, a missing row, and a
   duplicate row are all unavailable evidence.
+  Isolation: only base finding IDs, coverage rows/gaps, and the config hash
+  cross over — `runScoreSide` projects the base Diagnostic to `baseEvidence` at
+  the source, because base agent tasks carry paths and a validation command
+  rooted in a temp worktree that is deleted on return.
   `comparison_status: comparable` can still ship with non-empty
   `comparison_reasons`: the status reports task placement, the reasons report
   evidence.
@@ -189,10 +193,6 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   probes the tree (`goProjectPresent`, pruning dependency/build dirs). Without
   it, a real go/packages failure in a `services/api/go.mod` repo was
   indistinguishable from "no Go here" and could manufacture a false `introduced`.
-  Isolation: only base finding IDs, coverage rows/gaps, and the config
-  hash cross over — `runScoreSide` projects the base Diagnostic to `baseEvidence`
-  at the source, because base agent tasks carry paths and a validation command
-  rooted in a temp worktree that is deleted on return.
 - **One coverage name per analyzer.** `internal/extract/astgrep` drives one
   binary for two passes and they report under two names: `ast-grep` (patterns)
   and `ast-grep/syntax` (`syntaxToolName`). Both consumers that pair coverage
@@ -220,11 +220,13 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
 - **`config update` never destroys a configured module stanza.** `DiffModules`
   matches config keys to discovery keys by NAME, and the conventions need not
   agree — this repo configures `internal/agenttask` while discovery emits
-  `agenttask` over the identical path set. `initcfg.ResolveNameDrift` (run in
-  `cmd` immediately after `DiffModules`, before ANY consumer reads the buckets)
-  reclassifies each 1:1 add/remove pair with an equal normalized path set as
-  `NameDrift`. On top of that, `Removed` is review-only: `hasActionableEdits`,
-  `buildUpdateEdits`, and `initcfg.hasPendingEdits` all exclude it, so `--apply`
+  `agenttask` over the identical path set. `DiffModules` runs the name-drift
+  pass ITSELF (`resolveNameDrift`, unexported — there is no two-step call a
+  consumer can get wrong), reclassifying each 1:1 add/remove pair with an equal
+  normalized path set as `NameDrift`. On top of that, `Removed` is review-only:
+  `initcfg.HasModuleEdits` (module stanzas), `initcfg.HasPendingEdits`
+  (`HasModuleEdits` plus settings — the single source for "would `--apply` write
+  anything"), and `buildUpdateEdits` all exclude it, so `--apply`
   writes only added modules, path drift, and settings. Deleting or re-keying a
   stanza discards its `owner`/`subdomain`/`volatility`/`layer`/`public`, so both
   stay human decisions and the report says so (NAME DRIFT / UNMATCHED sections,

@@ -30,6 +30,7 @@ const (
 )
 
 const (
+	statusOK       = "ok"
 	statusAbsent   = "absent"
 	statusPartial  = "partial"
 	toolGoPackages = "go/packages"
@@ -260,7 +261,7 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	// meanings, so the reason names which one occurred.
 	unresolved := skipped + illTyped
 
-	status := "ok"
+	status := statusOK
 	switch {
 	case filesSeen == 0:
 		// No Go source files under the scan root: go/packages is not applicable

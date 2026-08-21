@@ -219,10 +219,11 @@ func TestDiffModules(t *testing.T) {
 	}
 }
 
-// TestResolveNameDrift pins the naming-difference pass: DiffModules matches by
-// NAME, so a config key and a discovery key over the same paths read as an
-// add + a remove. Left alone, that made `config update` report action_required
-// on this repo's own config and pointed --apply at commenting out 44 stanzas.
+// TestResolveNameDrift pins the naming-difference pass in isolation:
+// diffModulesByName matches by NAME, so a config key and a discovery key over
+// the same paths read as an add + a remove. Left alone, that made
+// `config update` report action_required on this repo's own config and pointed
+// --apply at commenting out 44 stanzas.
 func TestResolveNameDrift(t *testing.T) {
 	mod := func(name string, paths ...string) ModuleDef {
 		return ModuleDef{Name: name, Paths: paths}
@@ -322,7 +323,7 @@ func TestResolveNameDrift(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ResolveNameDrift(tc.in, false)
+			got := resolveNameDrift(tc.in, false)
 			if tc.wantUntouched {
 				if !reflect.DeepEqual(got, tc.in) {
 					t.Fatalf("report must be returned unchanged:\n  got  %#v\n  want %#v", got, tc.in)
@@ -351,11 +352,12 @@ func TestResolveNameDrift(t *testing.T) {
 		})
 	}
 
-	// DiffModules matches by NAME and skips everything it put in Removed, so a
+	// The name pass matches by NAME and skips everything it put in Removed, so a
 	// stanza discovery merely names differently was never field-checked: on this
 	// repo's own reference config that left 30 of 45 modules unevaluated while
 	// the document still reported `issues: []`. "Not evaluated" must never render
-	// as "clean".
+	// as "clean". DiffModules folds both passes, so this asserts the exported
+	// entry point — the shape a caller cannot get wrong.
 	t.Run("a name-drifted stanza is field-checked like any other", func(t *testing.T) {
 		existing := []ExistingModule{
 			{Name: "internal/api", Paths: []string{"internal/api/**"}},                 // no owner, no volatility input
@@ -369,7 +371,7 @@ func TestResolveNameDrift(t *testing.T) {
 			mod("kept", "kept/**"),
 		}
 		requireLayer := true
-		got := ResolveNameDrift(DiffModules(existing, fresh, requireLayer), requireLayer)
+		got := DiffModules(existing, fresh, requireLayer)
 
 		want := []string{
 			"internal/api|" + IssueMissingLayer,

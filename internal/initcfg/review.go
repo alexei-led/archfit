@@ -208,7 +208,7 @@ func RenderReviewStatus(rev ConfigReview) string {
 // edits, and Issues already carries the ones a human must decide, so they lift
 // the status to review_available without reaching action_required.
 func reviewStatus(r UpdateReport) string {
-	if len(r.Issues) > 0 || hasPendingEdits(r) {
+	if len(r.Issues) > 0 || HasPendingEdits(r) {
 		return ReviewStatusActionRequired
 	}
 	if HasReviewItems(r) {
@@ -233,11 +233,27 @@ func HasReviewItems(r UpdateReport) bool {
 		len(r.Issues) > 0 || len(r.Unclassified) > 0 || len(r.Pathless) > 0
 }
 
-// hasPendingEdits reports whether `config update --apply` would write anything.
-// Keep it in step with cmd's hasActionableEdits and buildUpdateEdits: a status
-// that names edits apply would not make is the defect this replaces.
-func hasPendingEdits(r UpdateReport) bool {
-	return len(r.Added) > 0 || len(r.PathDrift) > 0 || len(r.Settings) > 0
+// HasModuleEdits reports whether `config update --apply` has a MODULE stanza to
+// write — the subset ApplyEdits handles.
+//
+// Removed is deliberately absent: commenting out a configured stanza discards
+// its owner, subdomain, volatility, layer, and public settings, and modules are
+// matched by name only, so a stanza discovery merely names differently would be
+// destroyed. NameDrift is excluded for the same reason. Both surface in the
+// report as review items instead.
+//
+// LLM role/volatility output is review-only too: it is rendered as a diff but
+// never written by `config update --apply`.
+func HasModuleEdits(r UpdateReport) bool {
+	return len(r.Added) > 0 || len(r.PathDrift) > 0
+}
+
+// HasPendingEdits reports whether `config update --apply` would write anything
+// at all: a module stanza, or a non-module setting the line-based editor writes
+// separately. It is the single source for that question — a status that names
+// edits apply would not make is the defect this replaces.
+func HasPendingEdits(r UpdateReport) bool {
+	return HasModuleEdits(r) || len(r.Settings) > 0
 }
 
 // HasReviewSuggestions reports whether any review-only proposal exists. It
@@ -269,7 +285,8 @@ func moduleDefNames(defs []ModuleDef) []string {
 // evaluated into the disclosure list, each with the reason it was skipped:
 // discovery never emitted it, or the stanza declares no paths so checkModuleFields
 // skipped it before raising anything. Name-drifted modules are NOT here:
-// ResolveNameDrift rescues them and their fields are checked like any other stanza.
+// DiffModules' name-drift pass rescues them and their fields are checked like
+// any other stanza.
 //
 // The two sets are disjoint by construction — checkModuleFields runs only over
 // modules that are NOT in Removed — so no module can be listed twice.

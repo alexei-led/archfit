@@ -112,12 +112,31 @@ even though an analyzer failed to compare. Read `comparison_reasons` whenever it
 is non-empty — a later change that adds a task would then be `unknown`.
 
 **Conservative by construction.** A task is called `introduced` only when every
-active finding-producing analyzer covered both sides equivalently. A missing,
-partial, timed-out, or one-sided-disabled analyzer, or a config-hash mismatch,
-moves unmatched tasks to `unknown_origin_finding_ids` and names the family in
-`comparison_reasons` (`"scip: head ok, base absent"`). Missing evidence never
-manufactures a "new" task. The synthetic `bc/coupling_gate` task is per-run trip
-state with no stable counterpart, so it is always `unknown`.
+active finding-producing analyzer covered both sides equivalently. A missing or
+duplicated coverage row, a timed-out analyzer, a partial from a run that did not
+complete, one-sided evidence of any kind (absent, disabled, or unresolved on one
+side only), or a config-hash mismatch moves unmatched tasks to
+`unknown_origin_finding_ids` and names the family in `comparison_reasons`
+(`"scip: head ok, base absent"`). Missing evidence never manufactures a "new"
+task. The synthetic `bc/coupling_gate` task is per-run trip state with no stable
+counterpart, so it is always `unknown`.
+
+**Symmetric degradations pair, and say so.** Two shapes would otherwise make the
+block permanently inert on whole classes of repos and hosts, so they stay
+comparable instead:
+
+- Both sides `partial` from unresolved import specifiers — the normal steady
+  state for dependency-cruiser and grimp, so treating it as unusable disabled
+  the feature on every TypeScript and Python repo.
+- Both sides `absent` for an analyzer the config activated — typically its tool
+  is not installed on this host (archfit's own runtime image ships no Rust
+  toolchain and no SCIP indexer).
+
+The safety argument is symmetry: neither side ran what the other could hide
+behind. Neither is ever paired silently — both always emit a
+`comparison_reasons` entry, the unresolved case carrying each side's count, so
+`3 unresolved` and `5000/6000 unresolved` are distinguishable. An **asymmetric**
+absence or partial is still unavailable evidence.
 
 Matching uses stable finding IDs only: lifecycle labels (`new`, `waived`,
 `baseline`) and gate-vs-advisory promotion do not affect it, and a base entry
