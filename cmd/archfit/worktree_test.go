@@ -82,52 +82,100 @@ func makeDiffFixtureRepo(t *testing.T) (string, string) {
 	return dir, filepath.Join(dir, ".archfit.yaml")
 }
 
-// TestDiffCmd_EmitsDeltaTable verifies that diff between HEAD~1 and HEAD
-// produces a delta table and exits 0.
-func TestDiffCmd_EmitsDeltaTable(t *testing.T) {
+// TestDiffCmd_Formats covers every --base render: the text decision report, the
+// JSON diagnostic (schema parity plus the git-origin block and its path
+// isolation), and the Markdown report. One exported test with subtests —
+// cmd/archfit sits at its public_api_max ceiling.
+func TestDiffCmd_Formats(t *testing.T) {
 	t.Parallel()
+	t.Run("text emits the delta table", func(t *testing.T) {
+		t.Parallel()
+		_, cfgPath := makeDiffFixtureRepo(t)
 
-	_, cfgPath := makeDiffFixtureRepo(t)
+		var buf bytes.Buffer
+		code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath}, &buf)
+		out := buf.String()
 
-	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath}, &buf)
-	out := buf.String()
+		if code != 0 {
+			t.Fatalf("diff HEAD~1: exit=%d, want 0\noutput:\n%s", code, out)
+		}
+		if !strings.Contains(out, "ARCHFIT RESULT") {
+			t.Errorf("--base text should render the decision report: %s", out)
+		}
+		if !strings.Contains(out, "CHANGE VS BASE") {
+			t.Errorf("--base text missing the delta section: %s", out)
+		}
+		// Text output is unchanged by the git-origin block (JSON only).
+		if strings.Contains(out, "git_finding_delta") {
+			t.Errorf("--base text must not render the JSON-only origin block: %s", out)
+		}
+	})
 
-	if code != 0 {
-		t.Fatalf("diff HEAD~1: exit=%d, want 0\noutput:\n%s", code, out)
-	}
-	if !strings.Contains(out, "ARCHFIT RESULT") {
-		t.Errorf("--base text should render the decision report: %s", out)
-	}
-	if !strings.Contains(out, "CHANGE VS BASE") {
-		t.Errorf("--base text missing the delta section: %s", out)
-	}
-}
+	// --base --json emits the SAME diagnostic schema as a normal --json run — a
+	// consistent machine contract, not a separate delta schema (regression guard
+	// for the old asymmetric diffResult output) — plus git_finding_delta.
+	t.Run("json keeps the diagnostic schema and adds the origin block", func(t *testing.T) {
+		t.Parallel()
+		_, cfgPath := makeDiffFixtureRepo(t)
 
-// TestDiffCmd_JSONFormat verifies --base --json emits the SAME diagnostic schema
-// as a normal --json run — a consistent machine contract, not a separate delta
-// schema. (Regression guard for the old asymmetric diffResult output.)
-func TestDiffCmd_JSONFormat(t *testing.T) {
-	t.Parallel()
+		var buf bytes.Buffer
+		code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath, "--format=json"}, &buf)
+		if code != 0 {
+			t.Fatalf("--base --json: exit=%d\noutput:\n%s", code, buf.String())
+		}
 
-	_, cfgPath := makeDiffFixtureRepo(t)
+		var diag struct {
+			SchemaVersion   string `json:"schema_version"`
+			Verdict         string `json:"verdict"`
+			GitFindingDelta *struct {
+				BaseRef       string   `json:"base_ref"`
+				Introduced    []string `json:"introduced_finding_ids"`
+				PreExisting   []string `json:"pre_existing_finding_ids"`
+				UnknownOrigin []string `json:"unknown_origin_finding_ids"`
+				Reasons       []string `json:"comparison_reasons"`
+			} `json:"git_finding_delta"`
+		}
+		if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
+			t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+		}
+		if diag.SchemaVersion == "" || diag.Verdict == "" {
+			t.Errorf("--base --json must be the standard diagnostic schema (schema_version + verdict), got: %s", buf.String())
+		}
+		if diag.GitFindingDelta == nil {
+			t.Fatalf("--base --json must emit git_finding_delta: %s", buf.String())
+		}
+		if diag.GitFindingDelta.BaseRef != diffBaseRef {
+			t.Errorf("base_ref = %q, want %q", diag.GitFindingDelta.BaseRef, diffBaseRef)
+		}
+		if diag.GitFindingDelta.Introduced == nil || diag.GitFindingDelta.PreExisting == nil ||
+			diag.GitFindingDelta.UnknownOrigin == nil || diag.GitFindingDelta.Reasons == nil {
+			t.Errorf("git_finding_delta lists must be non-null arrays: %s", buf.String())
+		}
+		// The base side is scored inside a temp worktree that is already gone;
+		// none of its paths may reach head output.
+		if wt := baseWorktreesDir(filepath.Dir(cfgPath)); strings.Contains(buf.String(), wt) {
+			t.Errorf("head output leaked the base worktree path %q: %s", wt, buf.String())
+		}
+	})
 
-	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath, "--format=json"}, &buf)
-	if code != 0 {
-		t.Fatalf("--base --json: exit=%d\noutput:\n%s", code, buf.String())
-	}
+	// T1: --format=markdown produces a markdown report with expected headings.
+	t.Run("markdown emits the delta section", func(t *testing.T) {
+		t.Parallel()
+		_, cfgPath := makeDiffFixtureRepo(t)
 
-	var diag struct {
-		SchemaVersion string `json:"schema_version"`
-		Verdict       string `json:"verdict"`
-	}
-	if err := json.Unmarshal(buf.Bytes(), &diag); err != nil {
-		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
-	}
-	if diag.SchemaVersion == "" || diag.Verdict == "" {
-		t.Errorf("--base --json must be the standard diagnostic schema (schema_version + verdict), got: %s", buf.String())
-	}
+		var buf bytes.Buffer
+		code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath, "--format=markdown"}, &buf)
+		out := buf.String()
+		if code != 0 {
+			t.Fatalf("diff --format=markdown: exit=%d\noutput:\n%s", code, out)
+		}
+		if !strings.Contains(out, "# archfit — decision") {
+			t.Errorf("--base --markdown should lead with the decision summary: %s", out)
+		}
+		if !strings.Contains(out, "Change vs base") {
+			t.Errorf("--base --markdown should include the delta section: %s", out)
+		}
+	})
 }
 
 // TestDiffCmd_WorktreeCleanup verifies that the temporary worktree is removed
@@ -192,27 +240,6 @@ func TestDiffCmd_BadRef(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "worktree") {
 		t.Errorf("error message should mention 'worktree', got: %s", buf.String())
-	}
-}
-
-// TestDiffCmd_MarkdownFormat verifies T1: --format=markdown produces a
-// markdown table with expected headings.
-func TestDiffCmd_MarkdownFormat(t *testing.T) {
-	t.Parallel()
-
-	_, cfgPath := makeDiffFixtureRepo(t)
-
-	var buf bytes.Buffer
-	code := Run([]string{cmdAnalyze, flagBase, diffBaseRef, "-c", cfgPath, "--format=markdown"}, &buf)
-	out := buf.String()
-	if code != 0 {
-		t.Fatalf("diff --format=markdown: exit=%d\noutput:\n%s", code, out)
-	}
-	if !strings.Contains(out, "# archfit — decision") {
-		t.Errorf("--base --markdown should lead with the decision summary: %s", out)
-	}
-	if !strings.Contains(out, "Change vs base") {
-		t.Errorf("--base --markdown should include the delta section: %s", out)
 	}
 }
 

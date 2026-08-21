@@ -51,6 +51,12 @@ func runByteIdenticalTest(t *testing.T, fixtureRelPath string) {
 	absFixture, root := materializeFixtureRepo(t, fixtureRelPath)
 	got := runAnalyzeNormalized(t, root)
 
+	// A run without --base must not gain the git-origin block: the field is a
+	// pointer with omitempty precisely so normal output stays byte-identical.
+	if bytes.Contains(got, []byte(`"git_finding_delta"`)) {
+		t.Errorf("git_finding_delta must be omitted without --base:\n%s", got)
+	}
+
 	// Read or bootstrap the committed baseline.
 	baselinePath := filepath.Join(absFixture, "baseline.json")
 	want, readErr := os.ReadFile(baselinePath) //nolint:gosec // fixture path constructed from runtime.Caller

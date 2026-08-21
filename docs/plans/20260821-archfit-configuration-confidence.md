@@ -491,13 +491,13 @@ make build
 bash -o pipefail -c '.bin/archfit analyze --base HEAD~1 --json -c .archfit.yaml | jq -e ".git_finding_delta"'
 ```
 
-- [ ] Keep the base diagnostic and pass the effective head configuration to the base run.
-- [ ] Build the pure ID and analyzer-compatibility comparison.
-- [ ] Add the optional pointer field and inspect the intentional model-surface change.
-- [ ] Cover exact matches, fixed entries, lifecycle labels, promotions, synthetic tasks, and new-language applicability.
-- [ ] Cover every analyzer family, missing and duplicate rows, overrides, cleanup, and path isolation.
-- [ ] Test `check --base --json` with gate exit codes `0`, `1`, and `2`.
-- [ ] Keep output without `--base` stable, update the guides, and run all validation commands.
+- [x] Keep the base diagnostic and pass the effective head configuration to the base run.
+- [x] Build the pure ID and analyzer-compatibility comparison.
+- [x] Add the optional pointer field and inspect the intentional model-surface change.
+- [x] Cover exact matches, fixed entries, lifecycle labels, promotions, synthetic tasks, and new-language applicability.
+- [x] Cover every analyzer family, missing and duplicate rows, overrides, cleanup, and path isolation.
+- [x] Test `check --base --json` with gate exit codes `0`, `1`, and `2`.
+- [x] Keep output without `--base` stable, update the guides, and run all validation commands.
 
 ### Task 7: Define configuration comparison in the existing decision model
 

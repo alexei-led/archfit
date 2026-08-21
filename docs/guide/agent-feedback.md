@@ -74,6 +74,49 @@ Only `bc/imbalanced_coupling` findings are rolled up (cap 8 members per
 group); `bc/duplicated_knowledge` findings pass through individually and
 never carry a `group_count`.
 
+## git_finding_delta — which repair tasks this change introduced
+
+`--base <ref>` adds one report-only JSON block that sorts the CURRENT
+`agent_tasks[]` by git origin. It appears only with `--base`, only in `--json`
+output, and never changes the verdict or the exit code.
+
+```json
+{
+  "git_finding_delta": {
+    "base_ref": "main",
+    "comparison_status": "comparable",
+    "introduced_finding_ids": ["finding-a"],
+    "pre_existing_finding_ids": ["finding-b"],
+    "unknown_origin_finding_ids": [],
+    "comparison_reasons": []
+  }
+}
+```
+
+- `introduced_finding_ids` — no matching finding on the base ref. Your change
+  brought this task in; fix it before merging.
+- `pre_existing_finding_ids` — the same stable finding ID was also observed on
+  the base ref. Pre-existing debt, not a merge blocker.
+- `unknown_origin_finding_ids` — archfit could not place the task. Treat it as
+  possibly introduced.
+- `comparison_status` — `unknown` when any task has unknown origin, otherwise
+  `comparable`.
+
+All three lists are sorted, non-null arrays, and every current repair task lands
+in exactly one of them.
+
+**Conservative by construction.** A task is called `introduced` only when every
+active finding-producing analyzer covered both sides equivalently. A missing,
+partial, timed-out, or one-sided-disabled analyzer, or a config-hash mismatch,
+moves unmatched tasks to `unknown_origin_finding_ids` and names the family in
+`comparison_reasons` (`"scip: head ok, base absent"`). Missing evidence never
+manufactures a "new" task. The synthetic `bc/coupling_gate` task is per-run trip
+state with no stable counterpart, so it is always `unknown`.
+
+Matching uses stable finding IDs only: lifecycle labels (`new`, `waived`,
+`baseline`) and gate-vs-advisory promotion do not affect it, and a base entry
+reported as `fixed` never makes a current task pre-existing.
+
 ## advisory_tasks — the report-only rollup channel
 
 Grouped `bc/imbalanced_coupling` advisories (`group_count > 1`) also produce

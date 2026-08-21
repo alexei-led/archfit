@@ -413,6 +413,55 @@ type DeltaReport struct {
 	TouchedByDelta []string `json:"touched_by_delta,omitempty"`
 }
 
+// Git-origin comparison statuses for GitFindingDelta.ComparisonStatus.
+const (
+	// GitComparisonComparable means every current repair task was placed in a
+	// definite origin bucket (introduced or pre_existing).
+	GitComparisonComparable = "comparable"
+	// GitComparisonUnknown means at least one repair task could not be placed,
+	// so the delta must not be read as a complete list of new work.
+	GitComparisonUnknown = "unknown"
+)
+
+// GitFindingDelta records where each of the current run's repair tasks came
+// from relative to a git base ref (`--base`). It answers one question for a
+// coding agent: "which of these tasks did my change introduce?" — without
+// re-deriving anything from the base tree.
+//
+// It is report-only: the verdict, the exit code, and every non-JSON renderer
+// are unchanged by this block. The classification is deliberately conservative
+// — a task lands in IntroducedFindingIDs only when the base run's
+// finding-producing analyzers covered the same ground as the current run.
+// Missing, partial, or asymmetric analyzer evidence moves the task to
+// UnknownOriginFindingIDs instead of inventing a "new" task.
+//
+// Only finding IDs, coverage, and the config hash cross over from the base
+// sub-run. Base paths, locations, and validation commands never do: the base
+// side is scored inside a temporary worktree that is deleted before this block
+// is read.
+type GitFindingDelta struct {
+	// BaseRef is the git ref the current run was compared against.
+	BaseRef string `json:"base_ref"`
+	// ComparisonStatus is GitComparisonComparable when every task has a definite
+	// origin, GitComparisonUnknown when at least one does not.
+	ComparisonStatus string `json:"comparison_status"`
+	// IntroducedFindingIDs are current repair tasks with no matching base
+	// finding, established against comparable analyzer evidence on both sides.
+	IntroducedFindingIDs []string `json:"introduced_finding_ids"`
+	// PreExistingFindingIDs are current repair tasks whose finding ID was also
+	// observed on the base ref (lifecycle labels and gate/advisory promotion are
+	// ignored — only the stable ID matters).
+	PreExistingFindingIDs []string `json:"pre_existing_finding_ids"`
+	// UnknownOriginFindingIDs are current repair tasks whose origin could not be
+	// established: incomplete analyzer evidence, a config-hash mismatch, or a
+	// synthetic per-run task that has no stable base counterpart.
+	UnknownOriginFindingIDs []string `json:"unknown_origin_finding_ids"`
+	// ComparisonReasons names each analyzer family whose evidence was not
+	// comparable, one sorted entry per family. Empty when nothing blocked the
+	// comparison.
+	ComparisonReasons []string `json:"comparison_reasons"`
+}
+
 // DistanceContext explains how distance evidence should be read for this run.
 // It is disclosure-only: the scorer consumes per-edge Distance and DistanceBasis,
 // never this rollup. The block keeps single-owner repositories honest by saying
@@ -790,6 +839,11 @@ type Diagnostic struct {
 	// consumed by verdict or gate logic; omitted when no module has a
 	// same-module edge.
 	LocalCoupling []LocalCouplingModule `json:"local_coupling,omitempty"`
+	// GitFindingDelta classifies the current repair tasks by git origin
+	// (introduced / pre-existing / unknown) against `--base <ref>`. Nil
+	// (omitted) unless --base was set; report-only — never changes the verdict
+	// or the exit code.
+	GitFindingDelta *GitFindingDelta `json:"git_finding_delta,omitempty"`
 	// Delta groups findings by lifecycle bucket (new/existing/resolved/
 	// severity_changed/touched_by_delta) for a delta run. Nil (omitted) outside
 	// delta mode and when the run produced no findings to bucket.

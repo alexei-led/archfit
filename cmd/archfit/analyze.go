@@ -188,6 +188,17 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	}
 	printConfigLint(deps.stderr(), cfg.Lint())
 
+	// Snapshot the EFFECTIVE config for the --base sub-run before the head
+	// pipeline touches it. runPipeline's owner and deploy-unit backfill
+	// (FillMissingOwners / FillMissingDeployUnits) writes through the shared
+	// cfg.Modules map, so without an independent map the base side would inherit
+	// head-tree owners, skip its own resolution, and classify distance against
+	// evidence its own tree never produced.
+	baseCfg := cfg
+	if req.baseRef != "" {
+		baseCfg = withIndependentModules(cfg)
+	}
+
 	configDir := filepath.Dir(req.configPath)
 	deps.scanRoot = req.root
 	if deps.scanRoot == "" {
@@ -245,11 +256,21 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	var baseSC *score.Scorecard
 	if req.baseRef != "" {
 		rep.advance("Comparing against base")
-		bsc, berr := scoreBaseRef(ctx, deps, req.baseRef, rc, advisory)
+		bsc, bev, berr := scoreBaseRef(ctx, deps, req.baseRef, rc, baseCfg, advisory)
 		if berr != nil {
 			return berr
 		}
 		baseSC = &bsc
+		// Report-only: the origin block is attached after the verdict and the
+		// tool gate are final, so it can never change either.
+		diag.GitFindingDelta = buildGitFindingDelta(gitDeltaInput{
+			BaseRef:        req.baseRef,
+			Tasks:          diag.AgentTasks,
+			BaseFindingIDs: bev.FindingIDs,
+			Head:           analyzerEvidence{Coverage: diag.ToolCoverage, Gaps: diag.CoverageGaps, Hash: diag.ConfigHash},
+			Base:           analyzerEvidence{Coverage: bev.Coverage, Gaps: bev.CoverageGaps, Hash: bev.ConfigHash},
+			Families:       analyzerFamilies(cfg),
+		})
 	}
 
 	if err := analyzeRender(deps, diag, sc, baseSC, formats, hardGate); err != nil {

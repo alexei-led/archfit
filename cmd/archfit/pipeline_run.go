@@ -535,6 +535,11 @@ func shellQuoteArg(arg string) string {
 // Per-run trip state, never a triageable edge: `archfit baseline` skips it.
 const ruleIDBCCouplingGate = "bc/coupling_gate"
 
+// findingIDCouplingGate is the fixed finding ID of that synthetic summary
+// finding. It is per-run trip state, not a content fingerprint, so the git
+// origin delta always classifies its task as unknown.
+const findingIDCouplingGate = "coupling-gate"
+
 // couplingGateView projects the coupling.gate config block into the score
 // package's gate view. It lives here in the composition root — config sits
 // below score in the layer order, so unlike the other config views this
@@ -594,7 +599,7 @@ func applyCouplingGate(diag *diagnostic.Diagnostic, card score.Scorecard, gate s
 	diag.Summary.Warnings = max(0, diag.Summary.Warnings-promoted)
 	if promoted == 0 {
 		diag.Findings = append(diag.Findings, finding.Finding{
-			ID:       "coupling-gate",
+			ID:       findingIDCouplingGate,
 			Kind:     finding.KindGate,
 			RuleID:   ruleIDBCCouplingGate,
 			Status:   finding.StatusNew,

@@ -714,6 +714,10 @@ Effect:
 
 - Compares the current branch against a git ref such as `main` or `origin/main`.
 - Adds a base-vs-head delta to the normal output.
+- Adds `git_finding_delta` to `--json` output: which current repair tasks the
+  change introduced, which pre-date the base ref, and which could not be placed.
+- Never changes the verdict or the exit code. A base worktree or base pipeline
+  error exits `3` and prints no partial output.
 - Not accepted by `archfit baseline`, which always records the tree as checked out.
 
 Examples:
@@ -722,6 +726,18 @@ Examples:
 archfit analyze --base origin/main -c .archfit.yaml
 archfit check --base main --json -c .archfit.yaml
 ```
+
+Reading the origin block:
+
+```sh
+archfit check --base main --json -c .archfit.yaml \
+  | jq '.git_finding_delta.introduced_finding_ids'
+```
+
+A task is called introduced only when every active analyzer covered both sides
+equivalently. Missing, partial, or one-sided analyzer evidence puts the task in
+`unknown_origin_finding_ids` and names the family in `comparison_reasons`. See
+[the agent feedback loop](agent-feedback.md#git_finding_delta--which-repair-tasks-this-change-introduced).
 
 ### `--format` and format shorthands
 

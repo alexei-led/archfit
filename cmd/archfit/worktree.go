@@ -1,18 +1,23 @@
 // Package main — worktree helper for `analyze --base`.
 //
 // scoreBaseRef checks <base-ref> out into a clean detached git worktree, scores
-// it with the full pipeline, and returns the base Scorecard. analyze attaches
-// the resulting before/after delta as a section of the HEAD decision report, so
-// --base renders through the SAME pipeline and output format as a normal run
-// (consistent JSON schema; advisory output and required-tool enforcement are
-// honoured exactly as the caller set them).
+// it with the full pipeline, and returns the base Scorecard plus the narrow
+// baseEvidence the git-origin delta needs. analyze attaches the resulting
+// before/after delta as a section of the HEAD decision report, so --base renders
+// through the SAME pipeline and output format as a normal run (consistent JSON
+// schema; advisory output and required-tool enforcement are honoured exactly as
+// the caller set them).
 //
 // Invariants:
 //   - The user's working tree is never mutated.
 //   - Cleanup runs even on error paths (deferred).
 //   - Non-git directory or missing/bad ref → exit 3.
-//   - The base side uses the current --config (isolates code drift from config
-//     drift; the base ref may predate the config file).
+//   - The base side measures the caller's EFFECTIVE head config (--lang and
+//     --min-severity overrides included) and never reparses the file, so config
+//     drift can never masquerade as code drift.
+//   - The base Diagnostic never leaves this file: runScoreSide projects it to
+//     baseEvidence at the source. Its agent tasks carry a validation command and
+//     paths rooted in the temporary worktree, which is deleted on return.
 //   - All git subprocesses go through deps.Runner (toolrun) — no os/exec here.
 package main
 
@@ -20,6 +25,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,8 +33,11 @@ import (
 	"time"
 
 	"github.com/alexei-led/archfit/internal/baseline"
+	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/engine"
 	"github.com/alexei-led/archfit/internal/history/git"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
+	"github.com/alexei-led/archfit/internal/model/module"
 	"github.com/alexei-led/archfit/internal/score"
 	"github.com/alexei-led/archfit/internal/toolrun"
 )
@@ -69,18 +78,48 @@ func cleanGitEnv() []string {
 	return out
 }
 
+// baseEvidence is the ONLY data allowed to cross from the base sub-run into
+// head output: observed finding IDs, analyzer coverage, and the config hash.
+// Base task paths, locations, validation commands, and declarations are dropped
+// at the source — the base run is scored inside a temporary worktree that no
+// longer exists when the head report is read, so any path from it is a lie.
+type baseEvidence struct {
+	// FindingIDs are the base run's observed finding IDs, sorted, with fixed
+	// entries removed.
+	FindingIDs []string
+	// Coverage and CoverageGaps are the base run's analyzer coverage evidence.
+	Coverage     []diagnostic.Coverage
+	CoverageGaps []diagnostic.CoverageGap
+	// ConfigHash is the base run's effective config hash.
+	ConfigHash string
+}
+
+// withIndependentModules returns cfg with a private copy of its Modules map.
+// config.Config is passed by value but the map is shared, and runPipeline fills
+// missing owners and deploy units through it. The base sub-run must resolve both
+// from its OWN tree, so callers snapshot the effective config before the head
+// run mutates the shared map. Everything else in Config is read-only during a
+// run and is safe to share.
+func withIndependentModules(cfg config.Config) config.Config {
+	modules := make(map[string]module.ModuleDef, len(cfg.Modules))
+	maps.Copy(modules, cfg.Modules)
+	cfg.Modules = modules
+	return cfg
+}
+
 // scoreBaseRef checks baseRef out into a temporary detached worktree, scores it
 // with the full pipeline (advisory per the caller), and returns the base
-// Scorecard. The worktree is always removed. advisory mirrors the HEAD side so
-// the delta compares like with like. head is the HEAD run context: its config
-// source, bundle directory, and evaluation time carry over unchanged; only the
-// scan root is swapped for the base worktree.
-func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef string, head runContext, advisory bool) (score.Scorecard, error) {
+// Scorecard plus its baseEvidence. The worktree is always removed. advisory
+// mirrors the HEAD side so the delta compares like with like. head is the HEAD
+// run context: its config source, bundle directory, and evaluation time carry
+// over unchanged; only the scan root is swapped for the base worktree. cfg is
+// the caller's EFFECTIVE head config — the base side never reparses the file.
+func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef string, head runContext, cfg config.Config, advisory bool) (score.Scorecard, baseEvidence, error) {
 	// A leading-dash ref would be parsed as a flag by rev-parse/worktree-add;
 	// `git worktree add --detach <dir> --force` silently checks out HEAD and the
 	// delta becomes HEAD-vs-HEAD. Reject rather than pass through.
 	if strings.HasPrefix(baseRef, "-") {
-		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: invalid --base ref %q", baseRef)}
+		return score.Scorecard{}, baseEvidence{}, &exitError{code: 3, msg: fmt.Sprintf("error: invalid --base ref %q", baseRef)}
 	}
 	// Resolve the git root. Use --root when given (absolutized); otherwise the
 	// config bundle directory — both are inside the repo and yield the same gitRoot.
@@ -90,7 +129,7 @@ func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef string, head runCo
 	}
 	gitRoot, err := git.RepoRoot(ctx, gitAnchor, deps.Runner)
 	if err != nil {
-		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: --base requires a git repository: %v", err)}
+		return score.Scorecard{}, baseEvidence{}, &exitError{code: 3, msg: fmt.Sprintf("error: --base requires a git repository: %v", err)}
 	}
 
 	// HEAD-side analysis boundary: --root when given, else the whole repo.
@@ -111,7 +150,7 @@ func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef string, head runCo
 
 	tmpBase, releaseWorktreeParent, err := baseWorktreeParent(ctx, deps, gitRoot, baseRef, head.BundleDir)
 	if err != nil {
-		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: create temp dir: %v", err)}
+		return score.Scorecard{}, baseEvidence{}, &exitError{code: 3, msg: fmt.Sprintf("error: create temp dir: %v", err)}
 	}
 	wtDir := filepath.Join(tmpBase, "wt")
 	defer func() {
@@ -121,32 +160,33 @@ func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef string, head runCo
 	}()
 
 	if aerr := addWorktree(ctx, deps.Runner, gitRoot, wtDir, baseRef); aerr != nil {
-		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: cannot create worktree for ref %q: %v", baseRef, aerr)}
+		return score.Scorecard{}, baseEvidence{}, &exitError{code: 3, msg: fmt.Sprintf("error: cannot create worktree for ref %q: %v", baseRef, aerr)}
 	}
 	wtCanon, err := filepath.EvalSymlinks(wtDir)
 	if err != nil {
-		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: eval worktree symlinks: %v", err)}
+		return score.Scorecard{}, baseEvidence{}, &exitError{code: 3, msg: fmt.Sprintf("error: eval worktree symlinks: %v", err)}
 	}
 	baseRoot, err := subtreeInWorktree(gitRoot, headScanRoot, wtCanon)
 	if err != nil {
-		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: map subtree into worktree: %v", err)}
+		return score.Scorecard{}, baseEvidence{}, &exitError{code: 3, msg: fmt.Sprintf("error: map subtree into worktree: %v", err)}
 	}
 
-	sc, err := runScoreSide(ctx, deps, baseRunContext(head, baseRoot), advisory)
+	sc, ev, err := runScoreSide(ctx, deps, cfg, baseRunContext(head, baseRoot), advisory)
 	if err != nil {
-		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: score base (%s): %v", baseRef, err)}
+		return score.Scorecard{}, baseEvidence{}, &exitError{code: 3, msg: fmt.Sprintf("error: score base (%s): %v", baseRef, err)}
 	}
-	return sc, nil
+	return sc, ev, nil
 }
 
-// runScoreSide loads config, runs the full pipeline over rc, and returns the
-// synthesised Scorecard. advisory mirrors the caller's advisory setting
-// (`--no-advisories`) so the base and HEAD sides are scored identically.
-func runScoreSide(ctx context.Context, deps *appDeps, rc runContext, advisory bool) (score.Scorecard, error) {
-	cfg, err := loadConfig(ctx, rc.ConfigSource)
-	if err != nil {
-		return score.Scorecard{}, err
-	}
+// runScoreSide runs the full pipeline over rc with the caller's already-parsed
+// config and returns the synthesised Scorecard plus the base evidence. advisory
+// mirrors the caller's advisory setting (`--no-advisories`) so the base and HEAD
+// sides are scored identically.
+//
+// The Diagnostic is projected to baseEvidence here and never returned: that is
+// the structural guarantee that no base path, location, or validation command
+// reaches head output.
+func runScoreSide(ctx context.Context, deps *appDeps, cfg config.Config, rc runContext, advisory bool) (score.Scorecard, baseEvidence, error) {
 	// Silence phase progress for the base sub-scan: the head run already announced
 	// "Comparing against base", and re-emitting discover/facts/analyze through the
 	// same reporter overflows the head phase counter (e.g. [7/6], F6). Label its
@@ -156,11 +196,16 @@ func runScoreSide(ctx context.Context, deps *appDeps, rc runContext, advisory bo
 	quiet.progress = nil
 	quiet.warnLabel = "[base] "
 	mode := engine.Mode{Full: true, Advisory: advisory, ReportOnly: true}
-	_, sc, err := runPipeline(ctx, &quiet, cfg, rc, mode, baseline.Baseline{})
+	diag, sc, err := runPipeline(ctx, &quiet, cfg, rc, mode, baseline.Baseline{})
 	if err != nil {
-		return score.Scorecard{}, err
+		return score.Scorecard{}, baseEvidence{}, err
 	}
-	return sc, nil
+	return sc, baseEvidence{
+		FindingIDs:   baseFindingIDs(diag.Findings),
+		Coverage:     diag.ToolCoverage,
+		CoverageGaps: diag.CoverageGaps,
+		ConfigHash:   diag.ConfigHash,
+	}, nil
 }
 
 // baseWorktreeParent picks the parent directory for the base-side worktree

@@ -115,6 +115,32 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   pipeline, and emits a dimension-by-dimension delta table. Off-gate, report-only
   (exit 0 on success, exit 3 on git/config error). Both sides use the current
   `--config`. Formats: `text` (default), `json`, `markdown`.
+  The base sub-run receives the caller's EFFECTIVE head config (after `--lang` /
+  `--min-severity`) and never reparses the file. `analyze.go` hands it a copy
+  with an independent `Modules` map (`withIndependentModules`) — `config.Config`
+  is a value but its map is shared, and `runPipeline`'s owner/deploy-unit
+  backfill writes through it, so without the copy the base side would inherit
+  head-tree owners and skip its own resolution.
+- **`git_finding_delta`** (`cmd/archfit/git_finding_delta.go`) — report-only JSON
+  block emitted only with `--base`, classifying the CURRENT `agent_tasks[]` as
+  `introduced` / `pre_existing` / `unknown` origin. Pointer + `omitempty`, so a
+  run without `--base` stays byte-identical; never changes the verdict, the exit
+  code, or text/markdown/scorecard/SARIF output. Matching uses stable finding IDs
+  only (lifecycle labels and gate/advisory promotion ignored; base `status=fixed`
+  entries dropped). An unmatched task is `introduced` ONLY when every ACTIVE
+  finding-producing analyzer family compared equivalently — otherwise `unknown`,
+  never a fabricated new task. Families: the per-language primaries (a gapless
+  `absent` primary = language not present = not_applicable), plus opt-in
+  `scip`/`scip-symbols`/`jscpd`/`cargo-modules` and one combined `ast-grep`
+  family. **The ast-grep family spans BOTH `ast-grep` and `ast-grep/syntax`**
+  because the syntax pass emits its coverage row under the pattern pass's
+  `ast-grep` name at runtime — `ast-grep/syntax` only ever appears as the
+  disabled row the pipeline injects (latent naming bug in
+  `internal/extract/astgrep/syntax.go`; do not split the family until it is
+  fixed). Isolation: only base finding IDs, coverage rows/gaps, and the config
+  hash cross over — `runScoreSide` projects the base Diagnostic to `baseEvidence`
+  at the source, because base agent tasks carry paths and a validation command
+  rooted in a temp worktree that is deleted on return.
 - **Owner inheritance for auto-registered synthetic submodules**
   (`classify.AugmentModulesFromGraph`, `AugmentGoWorkspaceModules`): propagates
   `owner` from the nearest config-declared ancestor module to each synthetic module.
