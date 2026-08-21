@@ -20,7 +20,6 @@ package main
 
 import (
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 
@@ -35,9 +34,16 @@ type evidenceStatus int
 const (
 	// evidenceOK — the analyzer ran and reported coverage.
 	evidenceOK evidenceStatus = iota
-	// evidenceNotApplicable — a primary analyzer reported absent with no
-	// coverage gap, i.e. that language is simply not in this tree.
+	// evidenceNotApplicable — a PRIMARY analyzer reported absent with no
+	// coverage gap. Project markers decided that: the language is simply not in
+	// this tree, so that side genuinely had nothing to find. It pairs with ok.
 	evidenceNotApplicable
+	// evidenceAbsent — a NON-PRIMARY analyzer reported absent with no coverage
+	// gap. That is evidence about the TOOL (not installed, no indexer), not
+	// about the tree, so it says nothing about what the side would have found.
+	// It pairs only with itself: symmetric absence means neither side produced
+	// findings from this analyzer, which is safe; asymmetric absence is not.
+	evidenceAbsent
 	// evidenceDisabled — the analyzer is turned off in config.
 	evidenceDisabled
 	// evidenceUnavailable — absent with a gap, partial, or timed out: the
@@ -50,14 +56,13 @@ const (
 const coverageRowMissing = "missing"
 
 // analyzerFamily is one finding-producing analyzer whose evidence must match on
-// both sides before an unmatched task can be called introduced.
+// both sides before an unmatched task can be called introduced. One family is
+// one ToolCoverage name: every analyzer reports under its own name, so a second
+// row for the same name is a genuine anomaly, not a shape to accommodate.
 type analyzerFamily struct {
-	// name labels the family in comparison_reasons.
+	// name is the analyzer's ToolCoverage name; it also labels the family in
+	// comparison_reasons.
 	name string
-	// tools are the ToolCoverage names that belong to this family. The ast-grep
-	// family owns two names because the pattern pass and the syntax pass share
-	// one coverage name at runtime and differ only when syntax is disabled.
-	tools []string
 	// primary marks a per-language dependency-graph analyzer, the only kind
 	// whose gapless "absent" means "this language is not here".
 	primary bool
@@ -90,31 +95,32 @@ type gitDeltaInput struct {
 //
 // The per-language primary families are always listed: a language missing from
 // one tree shows up as absent-without-a-gap, which the pairing rules read as
-// not_applicable and ignore. That is what makes "a new language appeared in this
-// change" an unknown origin rather than a silent pass.
+// not_applicable — the one status that pairs with ok, because project markers
+// prove that side had nothing of that language to find.
 func analyzerFamilies(cfg config.Config) []analyzerFamily {
 	fams := make([]analyzerFamily, 0, len(languageRegistry)+5)
 	for _, lang := range languageRegistry {
-		fams = append(fams, analyzerFamily{name: lang.PrimaryTool, tools: []string{lang.PrimaryTool}, primary: true})
+		fams = append(fams, analyzerFamily{name: lang.PrimaryTool, primary: true})
 	}
-	// One ast-grep family, not two: the syntax pass emits coverage under the
-	// pattern pass's "ast-grep" name, and "ast-grep/syntax" appears only on the
-	// disabled row the pipeline injects. Comparing the two names together keeps
-	// both shapes decidable.
-	if len(cfg.ForPatterns()) > 0 || cfg.ForSyntax().Enabled {
-		fams = append(fams, analyzerFamily{name: toolAstGrep, tools: []string{toolAstGrep, toolAstGrepSyntax}})
+	// The pattern pass and the syntax pass are two analyzers with two coverage
+	// names and two independent activation switches, so they compare separately.
+	if len(cfg.ForPatterns()) > 0 {
+		fams = append(fams, analyzerFamily{name: toolAstGrep})
+	}
+	if cfg.ForSyntax().Enabled {
+		fams = append(fams, analyzerFamily{name: toolAstGrepSyntax})
 	}
 	if cfg.ScipEnabled() {
 		fams = append(fams,
-			analyzerFamily{name: toolScip, tools: []string{toolScip}},
-			analyzerFamily{name: toolScipSymbols, tools: []string{toolScipSymbols}},
+			analyzerFamily{name: toolScip},
+			analyzerFamily{name: toolScipSymbols},
 		)
 	}
 	if cfg.ClonesEnabled() {
-		fams = append(fams, analyzerFamily{name: toolJscpd, tools: []string{toolJscpd}})
+		fams = append(fams, analyzerFamily{name: toolJscpd})
 	}
 	if cfg.CargoModulesEnabled() {
-		fams = append(fams, analyzerFamily{name: toolCargoModules, tools: []string{toolCargoModules}})
+		fams = append(fams, analyzerFamily{name: toolCargoModules})
 	}
 	return fams
 }
@@ -221,16 +227,6 @@ type familySummary struct {
 
 func (s familySummary) rows() int { return len(s.statuses) }
 
-func (s familySummary) count(want evidenceStatus) int {
-	n := 0
-	for _, st := range s.statuses {
-		if st == want {
-			n++
-		}
-	}
-	return n
-}
-
 // raw renders the side's coverage statuses for a comparison reason.
 func (s familySummary) raw() string {
 	if len(s.rawStatuses) == 0 {
@@ -243,7 +239,7 @@ func (s familySummary) raw() string {
 func summariseFamily(f analyzerFamily, side analyzerEvidence) familySummary {
 	var out familySummary
 	for _, c := range side.Coverage {
-		if !slices.Contains(f.tools, c.Tool) {
+		if c.Tool != f.name {
 			continue
 		}
 		out.statuses = append(out.statuses, normalizeCoverage(f, c, side.Gaps))
@@ -261,41 +257,46 @@ func normalizeCoverage(f analyzerFamily, c diagnostic.Coverage, gaps []diagnosti
 	case diagnostic.StatusDisabled:
 		return evidenceDisabled
 	case diagnostic.StatusAbsent:
-		// A primary analyzer that is absent WITHOUT a coverage gap was
-		// suppressed because the language is not in this tree — nothing was
-		// lost. With a gap, an installable analyzer really did not run.
-		if f.primary && !hasGap(gaps, c.Tool) {
+		// With a coverage gap, an installable analyzer really did not run.
+		if hasGap(gaps, c.Tool) {
+			return evidenceUnavailable
+		}
+		// Gapless absence means two different things. For a primary analyzer the
+		// project markers decided it: the language is not in this tree, so that
+		// side had nothing to find. For anything else it only means the tool was
+		// not available, which is silent about the tree.
+		if f.primary {
 			return evidenceNotApplicable
 		}
-		return evidenceUnavailable
+		return evidenceAbsent
 	default:
 		// partial, timed out, and any future status: not comparable.
 		return evidenceUnavailable
 	}
 }
 
-// familyComparable applies the pairing rules. A row that is disabled on BOTH
-// sides is a deliberate opt-out rather than lost evidence, so it drops out of
-// the comparison; what remains must line up one-for-one. A family whose every
-// row drops out (all disabled, or all not-applicable) is simply inactive, which
-// counts as comparable.
+// familyComparable applies the pairing rules to one analyzer's row on each side.
+//
+// Equal statuses always pair: an analyzer disabled on both sides is a deliberate
+// opt-out, and one absent on both sides produced no findings on either side, so
+// neither can hide an origin. The only cross-status pair is ok against
+// not_applicable — that side genuinely has none of the language.
+//
+// A missing row, a duplicated row, and anything unavailable (absent with a gap,
+// partial, timed out) are all unavailable evidence.
 func familyComparable(head, base familySummary) bool {
-	if head.rows() == 0 || base.rows() == 0 {
-		return false // a missing coverage row is unavailable evidence
+	if head.rows() != 1 || base.rows() != 1 {
+		return false // a missing or duplicated coverage row is unavailable evidence
 	}
-	if head.count(evidenceUnavailable) > 0 || base.count(evidenceUnavailable) > 0 {
+	h, b := head.statuses[0], base.statuses[0]
+	if h == evidenceUnavailable || b == evidenceUnavailable {
 		return false
 	}
-	// The ast-grep family needs the symmetric-disabled carve-out: with syntax
-	// off it carries an ok pattern row beside a disabled ast-grep/syntax row.
-	hd, bd := head.count(evidenceDisabled), base.count(evidenceDisabled)
-	if hd != bd {
-		return false // asymmetric disabled state
+	if h == b {
+		return true
 	}
-	// The remaining rows are ok or not_applicable, which the pairing table
-	// treats as comparable in every combination. An extra or duplicate row on
-	// one side only is still unavailable evidence.
-	return head.rows()-hd == base.rows()-bd
+	return (h == evidenceOK && b == evidenceNotApplicable) ||
+		(h == evidenceNotApplicable && b == evidenceOK)
 }
 
 func hasGap(gaps []diagnostic.CoverageGap, tool string) bool {

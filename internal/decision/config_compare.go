@@ -216,6 +216,10 @@ const (
 	reasonUnknown     = "unrecognised coverage status"
 	reasonAbsentBoth  = "analyzer absent under both configurations"
 	reasonDisabled    = "analyzer disabled under both configurations"
+	// reasonAbsentAsymmetric covers equal absent rows where only one
+	// configuration reported a coverage gap: one side expected the analyzer to
+	// run and the other did not, so the blindness is not shared.
+	reasonAbsentAsymmetric = "analyzer absent, but only one configuration expected it to run"
 )
 
 // compareCoverage grades the union of analyzer names across both sides.
@@ -274,12 +278,18 @@ func gradeTool(
 	case diagnostic.StatusOK:
 		return CoverageComparable, "", false
 	case diagnostic.StatusAbsent:
-		// A per-language graph analyzer that is absent without a coverage gap on
-		// EITHER side was suppressed because that language is not in the tree —
-		// nothing was lost, so the analyzer drops out. The condition is joint: a
-		// gap on one side alone still leaves both sides equally blind here, which
-		// is a shared gap rather than an asymmetry.
-		if _, ok := primary[tool]; ok && !hasCoverageGap(curGaps, tool) && !hasCoverageGap(candGaps, tool) {
+		// A coverage gap is per-side evidence: it says this configuration
+		// EXPECTED the analyzer to run. One side gapped and the other not is an
+		// asymmetry — the two sides are not equally blind, so the absence is not
+		// shared and the comparison cannot rest on it.
+		curGapped, candGapped := hasCoverageGap(curGaps, tool), hasCoverageGap(candGaps, tool)
+		if curGapped != candGapped {
+			return CoverageNotComparable, reasonAbsentAsymmetric, false
+		}
+		// A per-language graph analyzer that is absent without a coverage gap was
+		// suppressed because that language is not in the tree — nothing was lost,
+		// so the analyzer drops out of the comparison entirely.
+		if _, ok := primary[tool]; ok && !curGapped {
 			return CoverageComparable, "", true
 		}
 		return CoverageComparableWithGaps, reasonAbsentBoth, false

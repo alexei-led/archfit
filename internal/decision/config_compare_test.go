@@ -392,9 +392,11 @@ func TestCompareCoverage_RowCount(t *testing.T) {
 	}
 }
 
-// TestCompareCoverage_PrimaryAbsent pins the joint gap condition: an equal
-// primary absent pair drops out ONLY when neither side declared a coverage gap.
-// A gap on either side alone is shared blindness, which is reported as a gap.
+// TestCompareCoverage_PrimaryAbsent pins the per-side gap condition, the same
+// rule the git-origin delta applies: a coverage gap says THIS configuration
+// expected the analyzer to run, so a gap on one side only is an asymmetry, not
+// shared blindness. An equal primary absent pair drops out only when neither
+// side gapped; an equal gap on both sides is shared blindness.
 func TestCompareCoverage_PrimaryAbsent(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -410,17 +412,17 @@ func TestCompareCoverage_PrimaryAbsent(t *testing.T) {
 			wantDetails: 0,
 		},
 		{
-			name:        "primary absent with a gap on the current side is a shared gap",
+			name:        "primary absent with a gap on the current side only is asymmetric",
 			tool:        primaryTool,
 			curGap:      true,
-			wantStatus:  decision.CoverageComparableWithGaps,
+			wantStatus:  decision.CoverageNotComparable,
 			wantDetails: 1,
 		},
 		{
-			name:        "primary absent with a gap on the candidate side is a shared gap",
+			name:        "primary absent with a gap on the candidate side only is asymmetric",
 			tool:        primaryTool,
 			candGap:     true,
-			wantStatus:  decision.CoverageComparableWithGaps,
+			wantStatus:  decision.CoverageNotComparable,
 			wantDetails: 1,
 		},
 		{
@@ -435,6 +437,13 @@ func TestCompareCoverage_PrimaryAbsent(t *testing.T) {
 			name:        "a non-primary absent pair never drops out",
 			tool:        gapTool,
 			wantStatus:  decision.CoverageComparableWithGaps,
+			wantDetails: 1,
+		},
+		{
+			name:        "a non-primary absent pair gapped on one side only is asymmetric",
+			tool:        gapTool,
+			candGap:     true,
+			wantStatus:  decision.CoverageNotComparable,
 			wantDetails: 1,
 		},
 	}
@@ -608,6 +617,15 @@ func TestCompareConfigs_MeasurementWarnings(t *testing.T) {
 			curScored: 0, curAbstained: 0,
 			candScored: 0, candAbstained: 0,
 			want: []string{},
+		},
+		{
+			// The guard is on the CURRENT denominator alone: a candidate that
+			// measured edges where the current config measured none has no share
+			// to have fallen from, only more abstention to report.
+			name:      "measurement appearing on the candidate side cannot fall",
+			curScored: 0, curAbstained: 0,
+			candScored: 5, candAbstained: 3,
+			want: []string{decision.WarnAbstainedEdgesRose},
 		},
 		{
 			name:      "external edges rose on their own channel",

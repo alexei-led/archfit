@@ -8,7 +8,7 @@ dependency-cruiser, ast-grep, grimp, `cargo metadata`, jscpd, SCIP.
 ## Commands (Makefile)
 
 - `make build` — static binary, `CGO_ENABLED=0` → `.bin/archfit`
-- `make test` — `go test -race -coverprofile=coverage.out ./...` + `python3 internal/extract/scip/scip_reader_test.py` (CI runs the Python step too)
+- `make test` — `go test -race -coverprofile=coverage.out ./...` + `python3 internal/extract/scip/scip_reader_test.py` + `bash scripts/tests/cli_exit_contract_test.sh` (CI runs both non-Go steps too)
 - `make lint` — `golangci-lint run -c .golangci.yaml ./...` (pinned v2.1.6)
 - `make fmt` — `gofmt -s` + `goimports -local github.com/alexei-led/archfit`
 - `make archfit` — dogfood architecture-drift gate: `.bin/archfit check --config .archfit.yaml`
@@ -129,18 +129,57 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   only (lifecycle labels and gate/advisory promotion ignored; base `status=fixed`
   entries dropped). An unmatched task is `introduced` ONLY when every ACTIVE
   finding-producing analyzer family compared equivalently — otherwise `unknown`,
-  never a fabricated new task. Families: the per-language primaries (a gapless
-  `absent` primary = language not present = not_applicable), plus opt-in
-  `scip`/`scip-symbols`/`jscpd`/`cargo-modules` and one combined `ast-grep`
-  family. **The ast-grep family spans BOTH `ast-grep` and `ast-grep/syntax`**
-  because the syntax pass emits its coverage row under the pattern pass's
-  `ast-grep` name at runtime — `ast-grep/syntax` only ever appears as the
-  disabled row the pipeline injects (latent naming bug in
-  `internal/extract/astgrep/syntax.go`; do not split the family until it is
-  fixed). Isolation: only base finding IDs, coverage rows/gaps, and the config
+  never a fabricated new task. One family = one `ToolCoverage` name: the
+  per-language primaries, the `ast-grep` pattern pass, the `ast-grep/syntax`
+  pass, and opt-in `scip`/`scip-symbols`/`jscpd`/`cargo-modules`. Pairing rules
+  (shared with `config compare`, see below): equal statuses always pair; the only
+  cross-status pair is `ok` against a gapless-`absent` PRIMARY, which means the
+  language is not in that tree. A gapless `absent` on a NON-primary analyzer is
+  evidence about the tool, not the tree, so it pairs only with itself —
+  symmetric absence is safe (neither side produced findings), asymmetric absence
+  is not. `absent` with a coverage gap, `partial`, timed out, a missing row, and
+  a duplicate row are all unavailable evidence. `comparison_status: comparable`
+  can still ship with non-empty `comparison_reasons`: the status reports task
+  placement, the reasons report evidence.
+  Isolation: only base finding IDs, coverage rows/gaps, and the config
   hash cross over — `runScoreSide` projects the base Diagnostic to `baseEvidence`
   at the source, because base agent tasks carry paths and a validation command
   rooted in a temp worktree that is deleted on return.
+- **One coverage name per analyzer.** `internal/extract/astgrep` drives one
+  binary for two passes and they report under two names: `ast-grep` (patterns)
+  and `ast-grep/syntax` (`syntaxToolName`). Both consumers that pair coverage
+  rows — `familyComparable` (git origin delta) and `decision.gradeTool` (config
+  compare) — read a repeated name as an unpairable duplicate and grade the pair
+  unavailable/`not_comparable`. Never give two analyzers one coverage name.
+- **`archfit config compare <candidate>`** (`cmd/archfit/config_compare.go`,
+  pure decision in `internal/decision.CompareConfigs`). Two full pipelines over
+  ONE source tree, report-only: exit 0 on success, exit 3 on an input or runtime
+  error; findings never move the exit code. Both sides use an EMPTY accepted
+  baseline (never reads `.archfit-baseline.json` — it records findings accepted
+  under the current config, so applying it would silence the candidate's
+  findings by the current config's history), share the CURRENT config's bundle
+  directory (pinned labels, fact cache) and one `EvaluatedAt`; only
+  `ConfigSource` differs, so a candidate file outside the repo cannot move the
+  analysis boundary. Config, baseline, labels, candidate, and policy files stay
+  byte-identical; normal fact-cache reads/writes are the only filesystem effect.
+  Finding buckets are `current_only`/`candidate_only`/`both` — never
+  introduced/resolved, because alternative configurations have no time order —
+  and no output ever says the candidate is better.
+- **`archfit config update --json`** emits `archfit.config-review.v1`. The
+  non-obvious part: `--json` with `--apply`, `--ai-classify`, or `--refresh` is
+  a usage error (exit 3) rejected BEFORE discovery, tool calls, cache access, or
+  any write. Schema in `docs/guide/commands.md`.
+- **`runContext`** (`cmd/archfit/pipeline_run.go`) replaces `runPipeline`'s
+  positional path arguments. Each field selects one thing, and a caller that
+  leaves one zero silently gets head-tree state on a base or candidate run:
+  `ConfigSource` → config hash + validation command; `BundleDir` → pinned labels
+  + fact-cache location; `ScanRoot` → scope + on-disk path resolution;
+  `EvaluatedAt` → the single instant waiver expiry and staleness age against
+  (zero samples `time.Now()` on read). Per-run values: normal analysis = current
+  path / current config dir / current tree / persisted baseline; git base =
+  same, with the base worktree as ScanRoot and an empty baseline; compare
+  current and compare candidate = the common tree, the current config dir, one
+  shared `EvaluatedAt`, empty baselines, and only `ConfigSource` differing.
 - **Owner inheritance for auto-registered synthetic submodules**
   (`classify.AugmentModulesFromGraph`, `AugmentGoWorkspaceModules`): propagates
   `owner` from the nearest config-declared ancestor module to each synthetic module.

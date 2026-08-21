@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -29,6 +30,7 @@ func TestConfigCompare(t *testing.T) {
 	t.Run("advisory_promotion", testCompareAdvisoryPromotion)
 	t.Run("protected_files", testCompareProtectedFiles)
 	t.Run("exit_codes", testCompareExitCodes)
+	t.Run("stderr_side_labels", testCompareStderrSideLabels)
 	t.Run("score_line", testCompareScoreLine)
 	t.Run("id_preview", testCompareIDPreview)
 }
@@ -159,10 +161,11 @@ func testCompareIdentity(t *testing.T) {
 	if !strings.Contains(stdout, "coverage evidence: ") {
 		t.Errorf("text report must carry a coverage-evidence grade:\n%s", stdout)
 	}
-	// The coverage grade must stay in its own section: this repo emits a duplicate
-	// ast-grep coverage row, so an identity run legitimately grades
-	// not_comparable while reporting no measurement differences. The two must not
-	// share a line, or they read as a contradiction.
+	// The coverage grade must stay in its own section: it qualifies everything
+	// below it, and an identity run can legitimately grade below `comparable`
+	// (an analyzer absent or disabled on both sides) while still reporting no
+	// measurement differences. The two must not share a line, or they read as a
+	// contradiction.
 	for _, line := range strings.Split(stdout, "\n") {
 		if strings.Contains(line, configCompareIdentityLine) && strings.Contains(line, "coverage") {
 			t.Errorf("coverage grade must not share the identity line: %q", line)
@@ -181,8 +184,8 @@ func testCompareIdentity(t *testing.T) {
 		t.Errorf("every list must be a non-null array: %+v", doc)
 	}
 	// Equal coverage gaps on both sides are shared blindness, not measurement
-	// loss: an identity run may grade comparable_with_gaps (or not_comparable on
-	// a duplicated row) and must still raise no warning.
+	// loss: an identity run may grade comparable_with_gaps and must still raise
+	// no warning.
 	if len(doc.Warnings) != 0 {
 		t.Errorf("identity run must raise no measurement-loss warning, got %v", doc.warningCodes())
 	}
@@ -193,7 +196,12 @@ func testCompareIdentity(t *testing.T) {
 	if doc.ScoreDelta == nil || *doc.ScoreDelta != 0 {
 		t.Errorf("score_delta = %v, want 0 for a measured identity run", doc.ScoreDelta)
 	}
-	// finding_count is the distinct observed population, i.e. the buckets.
+	// finding_count is the distinct observed population, i.e. the buckets. The
+	// fixture must actually produce shared findings, or an empty BothIDs would
+	// satisfy the two count checks below with nothing measured.
+	if len(doc.Findings.Both) == 0 {
+		t.Fatalf("fixture regression: an identity run must report shared findings: %+v", doc.Findings)
+	}
 	if want := len(doc.Findings.CurrentOnly) + len(doc.Findings.Both); doc.Current.FindingCount != want {
 		t.Errorf("current.finding_count = %d, want %d", doc.Current.FindingCount, want)
 	}
@@ -261,8 +269,10 @@ func testCompareMeasurementLoss(t *testing.T) {
 	if !strings.Contains(stdout, decision.WarnExternalEdgesRose) {
 		t.Errorf("text report must list the measurement-loss warning:\n%s", stdout)
 	}
-	if strings.Contains(strings.ToLower(stdout), "better than") {
-		t.Errorf("the report must never rank the configurations:\n%s", stdout)
+	// The no-ranking guardrail is the footer itself: it is the only line that
+	// tells a reader a higher candidate score is not a better configuration.
+	if !strings.Contains(stdout, configCompareFooter) {
+		t.Errorf("the report must carry the no-ranking footer:\n%s", stdout)
 	}
 }
 
@@ -315,6 +325,13 @@ func testCompareAdvisoryPromotion(t *testing.T) {
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg+"coupling:\n  gate:\n    min_band: strong\n")
 	candidatePath := writeCandidateCfg(t, coupledModulesCfg)
 
+	// The premise is load-bearing and invisible in the compare document, which
+	// carries no finding kinds: if the gate stopped tripping, this test would
+	// silently degrade into a duplicate of testCompareCandidateOutsideTree.
+	if code, _, stderr := runArchfit(t, cmdCheck, "-c", cfgPath); code != 1 {
+		t.Fatalf("fixture regression: the coupling gate must trip and promote the advisory: check exit = %d\nstderr:\n%s", code, stderr)
+	}
+
 	doc := runCompareJSON(t, cfgPath, candidatePath)
 	if len(doc.Findings.Both) == 0 {
 		t.Fatalf("fixture produced no shared findings: %+v", doc.Findings)
@@ -324,6 +341,46 @@ func testCompareAdvisoryPromotion(t *testing.T) {
 	}
 	if doc.ScoreDelta == nil || *doc.ScoreDelta != 0 {
 		t.Errorf("a gate knob must not move the measured score: score_delta = %v", doc.ScoreDelta)
+	}
+}
+
+// testCompareStderrSideLabels pins the file-header invariant: both sides run
+// the same pipeline over one stderr stream, so every degradation notice must
+// say which configuration produced it. The fixture puts the config bundle in a
+// subdirectory of --root, which makes both sides emit the output-inside-root
+// warning — one warning, twice, distinguishable only by its label.
+func testCompareStderrSideLabels(t *testing.T) {
+	t.Parallel()
+	repoCfg := writeCoupledRepo(t, coupledModulesCfg)
+	// The scope resolver canonicalises the scan root, so the test must hand it a
+	// canonical path too — on macOS t.TempDir() is a symlinked /var/folders path
+	// and the bundle would compute as outside the root.
+	repoDir, err := filepath.EvalSymlinks(filepath.Dir(repoCfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoCfg = filepath.Join(repoDir, defaultConfigPath)
+	bundleDir := filepath.Join(repoDir, "cfg")
+	if err := os.MkdirAll(bundleDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(bundleDir, defaultConfigPath)
+	if err := os.Rename(repoCfg, cfgPath); err != nil {
+		t.Fatal(err)
+	}
+	candidatePath := writeCandidateCfg(t, coupledModulesCfg)
+
+	code, _, stderr := runArchfit(t, cmdConfig, cmdCompare, candidatePath, "-c", cfgPath, "--root", repoDir)
+	if code != 0 {
+		t.Fatalf("config compare: exit = %d\nstderr:\n%s", code, stderr)
+	}
+	if !strings.Contains(stderr, "output written inside analyzed root") {
+		t.Fatalf("fixture regression: the bundle directory must sit inside --root\nstderr:\n%s", stderr)
+	}
+	for _, label := range []string{compareLabelCurrent, compareLabelCandidate} {
+		if !strings.Contains(stderr, "warning: "+label) {
+			t.Errorf("stderr carries no %q-labelled warning:\n%s", label, stderr)
+		}
 	}
 }
 
@@ -346,6 +403,14 @@ func testCompareProtectedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The candidate's own directory is checked by ENTRY, not just by file
+	// content: if the bundle directory were ever derived from the candidate
+	// path, a .archfit-cache or a baseline would appear beside it — and
+	// snapshotTree deliberately skips the cache, so only a directory listing
+	// catches that.
+	candidateDir := filepath.Dir(candidatePath)
+	beforeEntries := dirEntryNames(t, candidateDir)
+
 	before := snapshotTree(t, repoDir)
 	before[candidatePath] = readFileForCompare(t, candidatePath)
 
@@ -353,6 +418,9 @@ func testCompareProtectedFiles(t *testing.T) {
 		t.Fatalf("config compare: exit = %d\nstderr:\n%s", code, stderr)
 	}
 
+	if got := dirEntryNames(t, candidateDir); !slices.Equal(got, beforeEntries) {
+		t.Errorf("config compare wrote beside the candidate: %v, want %v", got, beforeEntries)
+	}
 	after := snapshotTree(t, repoDir)
 	after[candidatePath] = readFileForCompare(t, candidatePath)
 	for _, protected := range []string{cfgPath, baselinePath, labelsPath, candidatePath} {
@@ -373,6 +441,22 @@ func testCompareProtectedFiles(t *testing.T) {
 			t.Errorf("config compare created %s outside the fact cache", path)
 		}
 	}
+}
+
+// dirEntryNames lists dir's immediate entries, sorted. Unlike snapshotTree it
+// hides nothing, so a stray .archfit-cache is visible.
+func dirEntryNames(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	sort.Strings(names)
+	return names
 }
 
 // snapshotTree reads every file under dir except the git directory and the fact

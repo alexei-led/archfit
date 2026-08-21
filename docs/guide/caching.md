@@ -65,6 +65,12 @@ AI commands the same flag also bypasses the AI response cache.
 `--no-cache` which also disabled cache writes). Correctness never depends on the
 flag: stale entries are prevented by the key, not by bypassing.
 
+`config compare` runs two full pipelines and does normal cached reads and writes,
+but has no `--refresh` flag of its own. Both sides share the current config's
+bundle directory, so to force fresh facts for a comparison, refresh that cache
+first with `archfit analyze --refresh -c <current>`, or delete
+`.archfit-cache/facts`.
+
 ## `--base` and the cache
 
 `analyze --base <ref>` checks the base ref out at a deterministic per-commit path

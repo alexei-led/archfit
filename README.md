@@ -112,11 +112,13 @@ go install github.com/alexei-led/archfit/cmd/archfit@latest
 archfit doctor                      # check which analyzers are available
 archfit config init --root .        # generate a starter .archfit.yaml
 archfit config update --json        # review the config: drift, pending edits, open decisions
-archfit config compare cand.yaml    # measure this tree under a candidate config (report-only)
 archfit analyze                     # human review: the decision report
 archfit baseline -c .archfit.yaml   # accept current findings as baseline
 archfit check -c .archfit.yaml      # CI gate: exit 0 clean / 1 violation / 2 warn / 3 error
 ```
+
+Once a candidate config file exists, `archfit config compare cand.yaml` measures
+this same tree under both configurations and reports the difference (report-only).
 
 Starter configs for common project shapes live in [`examples/`](examples/README.md).
 Full setup — Docker, CI, optional analyzers, platform packages — is in the

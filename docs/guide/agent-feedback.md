@@ -105,6 +105,12 @@ output, and never changes the verdict or the exit code.
 All three lists are sorted, non-null arrays, and every current repair task lands
 in exactly one of them.
 
+`comparison_status` reports task placement, not evidence quality, so a run can
+report `comparable` alongside a non-empty `comparison_reasons`: with zero tasks
+to place, or with every task matched on the base ref, no task ends up unknown
+even though an analyzer failed to compare. Read `comparison_reasons` whenever it
+is non-empty — a later change that adds a task would then be `unknown`.
+
 **Conservative by construction.** A task is called `introduced` only when every
 active finding-producing analyzer covered both sides equivalently. A missing,
 partial, timed-out, or one-sided-disabled analyzer, or a config-hash mismatch,

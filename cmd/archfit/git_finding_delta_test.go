@@ -45,7 +45,7 @@ func agentTask(findingID, ruleID string) diagnostic.AgentTask {
 
 // goPrimaryFamily is the single-family fixture used by the origin table: the
 // pairing rules themselves are covered by testGitDeltaAnalyzerEvidence.
-var goPrimaryFamily = []analyzerFamily{{name: toolGoPackages, tools: []string{toolGoPackages}, primary: true}}
+var goPrimaryFamily = []analyzerFamily{{name: toolGoPackages, primary: true}}
 
 func testGitDeltaOrigin(t *testing.T) {
 	t.Parallel()
@@ -205,10 +205,11 @@ func assertNonNullJSONArrays(t *testing.T, d *diagnostic.GitFindingDelta) {
 
 func testGitDeltaAnalyzerEvidence(t *testing.T) {
 	t.Parallel()
-	goFam := analyzerFamily{name: toolGoPackages, tools: []string{toolGoPackages}, primary: true}
-	scipFam := analyzerFamily{name: toolScip, tools: []string{toolScip}}
-	astFam := analyzerFamily{name: toolAstGrep, tools: []string{toolAstGrep, toolAstGrepSyntax}}
+	goFam := analyzerFamily{name: toolGoPackages, primary: true}
+	scipFam := analyzerFamily{name: toolScip}
+	astFam := analyzerFamily{name: toolAstGrep}
 	goGap := []diagnostic.CoverageGap{{Tool: toolGoPackages}}
+	scipGap := []diagnostic.CoverageGap{{Tool: toolScip}}
 
 	tests := []struct {
 		name           string
@@ -227,12 +228,21 @@ func testGitDeltaAnalyzerEvidence(t *testing.T) {
 		{name: "missing row on one side is unavailable", fam: goFam, base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK)}, want: false},
 		{name: "missing row on both sides is unavailable", fam: goFam, want: false},
 		{name: "duplicate row on one side is unavailable", fam: goFam, head: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK), covRow(toolGoPackages, diagnostic.StatusOK)}, base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK)}, want: false},
-		{name: "matching duplicate rows are comparable", fam: astFam, head: []diagnostic.Coverage{covRow(toolAstGrep, diagnostic.StatusOK), covRow(toolAstGrep, diagnostic.StatusOK)}, base: []diagnostic.Coverage{covRow(toolAstGrep, diagnostic.StatusOK), covRow(toolAstGrep, diagnostic.StatusOK)}, want: true},
-		{name: "ast-grep family spans the pattern and syntax coverage names", fam: astFam, head: []diagnostic.Coverage{covRow(toolAstGrep, diagnostic.StatusOK), covRow(toolAstGrepSyntax, diagnostic.StatusDisabled)}, base: []diagnostic.Coverage{covRow(toolAstGrep, diagnostic.StatusOK), covRow(toolAstGrepSyntax, diagnostic.StatusDisabled)}, want: true},
-		{name: "a row disabled on one side only still fails a mixed family", fam: astFam, head: []diagnostic.Coverage{covRow(toolAstGrep, diagnostic.StatusOK), covRow(toolAstGrepSyntax, diagnostic.StatusDisabled)}, base: []diagnostic.Coverage{covRow(toolAstGrep, diagnostic.StatusOK), covRow(toolAstGrepSyntax, diagnostic.StatusOK)}, want: false},
+		// Every analyzer owns its own coverage name, so a repeated name is an
+		// anomaly on BOTH sides too — there is no way to know which duplicate
+		// pairs with which. Same rule as decision.gradeTool.
+		{name: "matching duplicate rows are still unavailable", fam: astFam, head: []diagnostic.Coverage{covRow(toolAstGrep, diagnostic.StatusOK), covRow(toolAstGrep, diagnostic.StatusOK)}, base: []diagnostic.Coverage{covRow(toolAstGrep, diagnostic.StatusOK), covRow(toolAstGrep, diagnostic.StatusOK)}, want: false},
+		{name: "the pattern pass ignores the syntax pass's own row", fam: astFam, head: []diagnostic.Coverage{covRow(toolAstGrep, diagnostic.StatusOK), covRow(toolAstGrepSyntax, diagnostic.StatusDisabled)}, base: []diagnostic.Coverage{covRow(toolAstGrep, diagnostic.StatusOK), covRow(toolAstGrepSyntax, diagnostic.StatusOK)}, want: true},
+		{name: "the syntax pass compares on its own row", fam: analyzerFamily{name: toolAstGrepSyntax}, head: []diagnostic.Coverage{covRow(toolAstGrep, diagnostic.StatusOK), covRow(toolAstGrepSyntax, diagnostic.StatusDisabled)}, base: []diagnostic.Coverage{covRow(toolAstGrep, diagnostic.StatusOK), covRow(toolAstGrepSyntax, diagnostic.StatusOK)}, want: false},
 		{name: "disabled on both sides is ignored", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusDisabled)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusDisabled)}, want: true},
 		{name: "disabled on one side only is unavailable", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusOK)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusDisabled)}, want: false},
-		{name: "non-primary absent is unavailable even without a gap", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusOK)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, want: false},
+		// A non-primary analyzer's gapless absence is evidence about the TOOL,
+		// not the tree: asymmetric absence could hide a base finding, symmetric
+		// absence means neither side produced one.
+		{name: "non-primary absent on one side only is unavailable", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusOK)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, want: false},
+		{name: "non-primary absent on both sides is comparable", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, want: true},
+		{name: "non-primary absent with a coverage gap is unavailable", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, headGap: scipGap, bsGap: scipGap, want: false},
+		{name: "non-primary absent never pairs with ok", fam: scipFam, head: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolScip, diagnostic.StatusOK)}, want: false},
 	}
 
 	for _, tc := range tests {
@@ -258,9 +268,9 @@ func testGitDeltaAnalyzerEvidence(t *testing.T) {
 	t.Run("reasons are sorted and one per family", func(t *testing.T) {
 		t.Parallel()
 		fams := []analyzerFamily{
-			{name: toolScip, tools: []string{toolScip}},
-			{name: toolGoPackages, tools: []string{toolGoPackages}, primary: true},
-			{name: toolJscpd, tools: []string{toolJscpd}},
+			{name: toolScip},
+			{name: toolGoPackages, primary: true},
+			{name: toolJscpd},
 		}
 		head := analyzerEvidence{Coverage: []diagnostic.Coverage{
 			covRow(toolScip, diagnostic.StatusOK),
@@ -303,12 +313,16 @@ func testGitDeltaActiveFamilies(t *testing.T) {
 		cfg  config.Config
 		want []string
 	}{
-		{name: "rule patterns activate ast-grep", cfg: config.Config{
+		{name: "rule patterns activate the ast-grep pattern pass only", cfg: config.Config{
 			Rules: []view.RuleDef{{ID: "r", Patterns: []view.PatternDef{{ID: "p", Lang: "go", Rule: "x"}}}},
 		}, want: []string{toolAstGrep}},
-		{name: "syntax activates ast-grep", cfg: config.Config{
+		{name: "syntax activates the ast-grep syntax pass only", cfg: config.Config{
 			Analyzers: config.AnalyzersConfig{Syntax: on},
-		}, want: []string{toolAstGrep}},
+		}, want: []string{toolAstGrepSyntax}},
+		{name: "patterns and syntax activate two independent families", cfg: config.Config{
+			Rules:     []view.RuleDef{{ID: "r", Patterns: []view.PatternDef{{ID: "p", Lang: "go", Rule: "x"}}}},
+			Analyzers: config.AnalyzersConfig{Syntax: on},
+		}, want: []string{toolAstGrep, toolAstGrepSyntax}},
 		{name: "scip activates both scip rows", cfg: config.Config{
 			Analyzers: config.AnalyzersConfig{Scip: timedOn},
 		}, want: []string{toolScip, toolScipSymbols}},
@@ -374,6 +388,43 @@ func testGitDeltaEffectiveConfig(t *testing.T) {
 		}
 	})
 
+	// The call site, not the helper: analyze.go must snapshot the module map
+	// BEFORE the head pipeline backfills owners into it. Replace
+	// `withIndependentModules(cfg)` with `cfg` there and the base run inherits
+	// the head tree's per-module owners, classifies the shared edge at
+	// cross_module_different_owner it never observed, and reports a critical
+	// finding that makes a genuinely pre-existing seam look pre-existing for the
+	// wrong reason — or, as here, hides that the seam is unchanged.
+	t.Run("head-tree owners do not reach the base measurement", func(t *testing.T) {
+		t.Parallel()
+		cfgPath := gitDeltaOwnerFixtureRepo(t)
+		code, stdout, stderr := runArchfit(t, cmdAnalyze, flagBase, diffBaseRef, "--json", "-c", cfgPath)
+		if code != 0 {
+			t.Fatalf("analyze --base: exit = %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+		}
+		var got gitDeltaJSON
+		if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+			t.Fatalf("invalid JSON: %v\n%s", err, stdout)
+		}
+		if got.GitFindingDelta == nil {
+			t.Fatalf("--base --json must emit git_finding_delta\n%s", stdout)
+		}
+		// The head tree splits ownership, so the shared edge crosses owners and
+		// scores critical. Without that split it is a same-owner sibling edge
+		// below coupling.min_severity, so the base side reports nothing.
+		if len(got.AgentTasks) != 1 {
+			t.Fatalf("fixture regression: the head owner split must produce exactly one task: %+v", got.AgentTasks)
+		}
+		d := got.GitFindingDelta
+		if len(d.ComparisonReasons) != 0 {
+			t.Fatalf("fixture regression: both sides compile, want no comparison_reasons, got %v", d.ComparisonReasons)
+		}
+		if !slices.Contains(d.Introduced, got.AgentTasks[0].FindingID) {
+			t.Errorf("the base run measured head-tree owners: introduced = %v, pre_existing = %v, unknown = %v",
+				d.Introduced, d.PreExisting, d.UnknownOrigin)
+		}
+	})
+
 	t.Run("analyzer overrides still reach the base run", func(t *testing.T) {
 		t.Parallel()
 		cfgPath := gitDeltaFixtureRepo(t, coupledModulesCfg)
@@ -424,6 +475,52 @@ func gitDeltaFixtureRepo(t *testing.T, cfgBody string) string {
 	return filepath.Join(dir, defaultConfigPath)
 }
 
+// gitDeltaOwnerFixtureRepo builds a two-commit Go repo whose CODE stays put and
+// whose OWNERSHIP moves: pkg/a → pkg/b exists in both commits, but the base
+// commit gives the whole tree one owner while the head commit splits it in two.
+// Neither module declares an owner, so each side must resolve its own from its
+// own CODEOWNERS — which is exactly what the head pipeline's owner backfill
+// would destroy if the base run shared its module map.
+func gitDeltaOwnerFixtureRepo(t *testing.T) string {
+	t.Helper()
+	// min_severity keeps the same-owner form of the edge below the advisory
+	// floor; the coupling gate promotes the surviving advisory to a gate task so
+	// it reaches agent_tasks[], which is what the origin delta classifies.
+	const ownerSplitCfg = `version: 1
+modules:
+  a:
+    paths: ["pkg/a/**"]
+  b:
+    paths: ["pkg/b/**"]
+coupling:
+  min_severity: high
+  gate:
+    min_band: strong
+`
+	dir := t.TempDir()
+	write := func(name, content string) {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(markerGoMod, "module example.com/test\n\ngo 1.21\n")
+	write("pkg/b/api/api.go", "package api\n\nfunc Secret() string { return \"s\" }\n")
+	write("pkg/a/a.go", "package a\n\nimport \"example.com/test/pkg/b/api\"\n\n"+
+		"func UseSecret() string { return api.Secret() }\n")
+	write(defaultConfigPath, ownerSplitCfg)
+	write(".github/CODEOWNERS", "* @team-one\n")
+	gitInitFixtureRepo(t, dir)
+	gitCommitAll(t, dir, "base: one owner for the whole tree")
+
+	write(".github/CODEOWNERS", "/pkg/a/ @team-a\n/pkg/b/ @team-b\n")
+	gitCommitAll(t, dir, "head: split ownership in two")
+	return filepath.Join(dir, defaultConfigPath)
+}
+
 // gitDeltaJSON is the minimal decoder for the block under test.
 type gitDeltaJSON struct {
 	GitFindingDelta *struct {
@@ -436,6 +533,7 @@ type gitDeltaJSON struct {
 	} `json:"git_finding_delta"`
 	AgentTasks []struct {
 		FindingID string `json:"finding_id"`
+		RuleID    string `json:"rule_id"`
 	} `json:"agent_tasks"`
 }
 
@@ -464,22 +562,42 @@ func testGitDeltaCheckBaseJSON(t *testing.T) {
 		// not carry. The head commit adds the only violating import, so a
 		// blocking rule must attribute its task to this change.
 		wantIntroduced int
-		wantCode       int
+		// wantUnknownGate requires the synthetic coupling-gate task and the
+		// resulting "unknown" comparison status.
+		wantUnknownGate bool
+		// extraArgs are appended to BOTH the --base run and the plain run, so
+		// the report-only assertion still compares like with like.
+		extraArgs []string
+		wantCode  int
 	}{
 		{name: "clean gate exits 0", cfgBody: coupledModulesCfg, wantCode: 0},
 		{name: "blocking rule exits 1", cfgBody: coupledModulesCfg + failRule, wantIntroduced: 1, wantCode: 1},
 		{name: "warning rule exits 2", cfgBody: coupledModulesCfg + warnRule, wantCode: 2},
+		// With advisories off there is no BC advisory to promote, so a tripped
+		// coupling gate emits the synthetic bc/coupling_gate task. That task is
+		// per-run trip state with no stable base counterpart, so it is placed as
+		// unknown before ID matching — the production path that reaches
+		// comparison_status "unknown".
+		{
+			name:            "a synthetic coupling-gate task is unknown origin",
+			cfgBody:         coupledModulesCfg + "coupling:\n  gate:\n    min_band: strong\n",
+			extraArgs:       []string{flagNoAdvisories},
+			wantUnknownGate: true,
+			wantCode:        1,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			cfgPath := gitDeltaFixtureRepo(t, tc.cfgBody)
-			code, stdout, stderr := runArchfit(t, cmdCheck, flagBase, diffBaseRef, "--json", "-c", cfgPath)
+			baseArgs := append([]string{cmdCheck, flagBase, diffBaseRef, "--json", "-c", cfgPath}, tc.extraArgs...)
+			code, stdout, stderr := runArchfit(t, baseArgs...)
 			if code != tc.wantCode {
 				t.Fatalf("check --base --json: exit = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, tc.wantCode, stdout, stderr)
 			}
 			// Report-only: the same run without --base reaches the same verdict.
-			if plain, _, _ := runArchfit(t, cmdCheck, "--json", "-c", cfgPath); plain != code {
+			plainArgs := append([]string{cmdCheck, "--json", "-c", cfgPath}, tc.extraArgs...)
+			if plain, _, _ := runArchfit(t, plainArgs...); plain != code {
 				t.Errorf("--base changed the exit code: %d with, %d without", code, plain)
 			}
 			var got gitDeltaJSON
@@ -501,6 +619,20 @@ func testGitDeltaCheckBaseJSON(t *testing.T) {
 			}
 			if len(d.Introduced) != tc.wantIntroduced {
 				t.Errorf("introduced_finding_ids = %v, want %d entr(y|ies)", d.Introduced, tc.wantIntroduced)
+			}
+			if tc.wantUnknownGate {
+				synthetic := ""
+				for _, task := range got.AgentTasks {
+					if task.RuleID == ruleIDBCCouplingGate {
+						synthetic = task.FindingID
+					}
+				}
+				if synthetic == "" {
+					t.Fatalf("fixture regression: the coupling gate did not trip, so no synthetic task exists: %s", stdout)
+				}
+				if !slices.Contains(d.UnknownOrigin, synthetic) {
+					t.Errorf("the synthetic coupling-gate task must land in unknown_origin_finding_ids: %+v", d)
+				}
 			}
 			// Every current repair task lands in exactly one origin bucket.
 			total := len(d.Introduced) + len(d.PreExisting) + len(d.UnknownOrigin)

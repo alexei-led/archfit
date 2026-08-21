@@ -65,8 +65,10 @@ func TestRun_Analyze_NoAdvisoriesWithScorecardAndJSON(t *testing.T) {
 	}
 
 	withDiag, withOverall := run(t)
+	// The fixture must actually produce advisories, or every assertion below
+	// holds over an empty set and the test silently stops testing.
 	if countAdvisoryFindings(withDiag)+len(withDiag.AdvisoryTasks) == 0 {
-		t.Skip("fixture produced no advisory findings; test is not meaningful")
+		t.Fatalf("fixture regression: the coupled repo produced no advisory findings or tasks: %+v", withDiag)
 	}
 
 	withoutDiag, withoutOverall := run(t, flagNoAdvisories)

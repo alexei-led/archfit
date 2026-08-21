@@ -1,5 +1,38 @@
 # Release notes
 
+## v2.1 configuration confidence
+
+Breaking changes:
+
+- `archfit baseline --base <ref>` removed. It never changed the saved baseline —
+  a baseline always records the tree as checked out. To compare against a ref,
+  use `archfit check --base <ref>` or `archfit analyze --base <ref>`. The removed
+  flag now returns `archfit: unknown flag --base` with exit `3`.
+
+New:
+
+- `archfit config compare <candidate>` measures one source tree under two
+  configurations and reports the difference. Report-only: exit `0` on success,
+  exit `3` on an input or runtime error, and findings never move the exit code.
+  Both sides use an empty accepted baseline, so the comparison is raw
+  measurement. A higher candidate score is never reported as better.
+- `archfit config update --json` emits one machine-readable review document
+  (`archfit.config-review.v1`) with status `action_required`, `review_available`,
+  or `no_known_issues`. `--json` with `--apply`, `--ai-classify`, or `--refresh`
+  is a usage error (exit `3`) rejected before any discovery or write.
+- `--base <ref> --json` adds a report-only `git_finding_delta` block that sorts
+  the current `agent_tasks[]` into `introduced`, `pre_existing`, and
+  `unknown_origin`. Missing analyzer evidence produces `unknown`, never a false
+  `introduced`.
+
+Baseline file:
+
+- `.archfit-baseline.json` records `rubric_version` alongside the scorer version
+  in its score snapshot, so `coupling.gate.max_drop` refuses to anchor against an
+  incompatible snapshot instead of comparing across rubrics. Existing baselines
+  without the field are read as rubric version `1`; the file changes on the next
+  `archfit baseline` run.
+
 ## v2.0 CLI redesign
 
 Breaking changes:

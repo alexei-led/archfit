@@ -83,7 +83,12 @@ run_check() {
 	local label="$1" out_file="$2" err_file="$3" workdir="$4"
 	shift 4
 	local rc=0
-	(cd "${workdir}" && "${ARCHFIT}" check "$@" >"${out_file}" 2>>"${err_file}") || rc=$?
+	# This call's stderr goes to its own file first, then is appended to the
+	# shared log. Reading the shared log on the error branch would re-print every
+	# earlier call's stderr for the same repo.
+	local this_err="${out_file}.stderr"
+	(cd "${workdir}" && "${ARCHFIT}" check "$@" >"${out_file}" 2>"${this_err}") || rc=$?
+	cat "${this_err}" >>"${err_file}"
 	case "${rc}" in
 	0)
 		echo "  ${label}: OK → ${out_file}"
@@ -97,10 +102,11 @@ run_check() {
 	*)
 		echo "  ${label}: exit ${rc} (parser, config, or tool error) — removing invalid output"
 		rm -f "${out_file}"
-		cat "${err_file}" >&2
+		cat "${this_err}" >&2
 		FAILED=1
 		;;
 	esac
+	rm -f "${this_err}"
 }
 
 if [[ ! -x "${ARCHFIT}" ]]; then

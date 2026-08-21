@@ -35,9 +35,9 @@ const (
 
 // Optional-analyzer tool names shared by doctor and the coverage-gap table.
 const (
-	toolLoc           = "loc"      // always-on LOC walk; used in test assertions
-	toolAstGrep       = "ast-grep" // pattern pass; the syntax pass reuses this coverage name at runtime
-	toolAstGrepSyntax = "ast-grep/syntax"
+	toolLoc           = "loc"             // always-on LOC walk; used in test assertions
+	toolAstGrep       = "ast-grep"        // pattern pass
+	toolAstGrepSyntax = "ast-grep/syntax" // syntax pass; its own row, so tool_coverage never duplicates a name
 	toolDeployUnit    = "deploy-unit"
 	toolScip          = "scip"
 	toolScipSymbols   = "scip-symbols" // SCIP symbol-graph coverage row (distinct from the strength row "scip")

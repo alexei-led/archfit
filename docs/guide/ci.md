@@ -50,6 +50,21 @@ make sure the base ref exists in the local checkout first:
 Use the plain gate for branch protection. Use delta mode on pull requests when
 you want the check output to show before/after drift against `origin/main`.
 
+Add `--json` to that step to get the per-task git origin as well:
+
+```yaml
+- name: Architecture delta check (machine-readable)
+  run: archfit check -c .archfit.yaml --base origin/main --json > archfit-delta.json
+```
+
+`git_finding_delta.introduced_finding_ids` lists the current repair tasks this
+pull request brought in; everything in `pre_existing_finding_ids` is older debt.
+When an analyzer's evidence differs between the two sides, its tasks move to
+`unknown_origin_finding_ids` instead — a missing analyzer never manufactures a
+"new" finding. The block is report-only: it changes neither the verdict nor the
+exit code. See
+[agent-feedback.md](agent-feedback.md#git_finding_delta--which-repair-tasks-this-change-introduced).
+
 ## 3. SARIF upload
 
 Use SARIF when you want GitHub code scanning annotations:

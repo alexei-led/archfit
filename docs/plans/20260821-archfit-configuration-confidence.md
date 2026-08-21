@@ -770,16 +770,28 @@ inspected. All pass.
 
 ### Known limitations recorded, not fixed
 
-Both are outside the Task 9 write scope, which only permits a bounded
-integration fix in a file listed by Tasks 1 through 8.
-
-- `config compare` on this repository grades coverage `not_comparable` because
-  `internal/extract/astgrep/syntax.go` labels the syntax pass `ast-grep` instead
-  of `ast-grep/syntax`, producing a duplicate coverage row. The duplicate-row
-  rule is behaving as specified. Fixing the extractor label would change
-  `tool_coverage` output, and that file is in no task's file list.
 - `analyze --base` in a worktree checkout reports
   `go/packages: head ok, base absent` because the parent repository's gitignored
   `go.work` names `use` paths outside the base scan root, so no Go member loads
   on the base side. The `comparison_reasons` list discloses this honestly. It is
   pre-existing and unrelated to this plan.
+
+### Post-review corrections
+
+Code review found that Task 6 and Task 7 implemented the same "pair two runs'
+coverage rows and decide comparability" rule with opposite results on identical
+input. The two paths now agree:
+
+- `internal/extract/astgrep/syntax.go` labels the syntax pass `ast-grep/syntax`
+  (`syntaxToolName`), so `tool_coverage` no longer carries two `ast-grep` rows.
+  The duplicate-row disagreement disappears at its source: both paths treat a
+  repeated coverage name as an unpairable duplicate, and the git-origin delta's
+  combined ast-grep family splits into two independent single-tool families.
+- The coverage-gap condition is per-side on both paths. A gap on one side only
+  is an asymmetry (`not_comparable` / unavailable), not shared blindness.
+- A gapless `absent` row on a NON-primary analyzer is no longer unconditionally
+  unavailable in the git-origin delta. It pairs with itself: symmetric absence
+  means neither side produced findings from that analyzer, so it cannot hide an
+  origin. It still never pairs with `ok`, which would call a head finding
+  introduced on a base side the analyzer never examined. Without this, enabling
+  `scip` with no indexer installed made every repair task unknown-origin.

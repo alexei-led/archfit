@@ -78,8 +78,11 @@ func TestSyntax_AbsentTool_ReturnsAbsentCoverageNoError(t *testing.T) {
 	if cov.Status != statusAbsentStr {
 		t.Errorf("cov.Status = %q, want %q", cov.Status, statusAbsentStr)
 	}
-	if cov.Tool != "ast-grep" {
-		t.Errorf("cov.Tool = %q, want %q", cov.Tool, "ast-grep")
+	// The syntax pass reports under its OWN coverage name. Sharing the pattern
+	// pass's name would put two rows under one tool and make every row-pairing
+	// consumer read an unpairable duplicate.
+	if cov.Tool != toolAstGrepSyntax {
+		t.Errorf("cov.Tool = %q, want %q", cov.Tool, toolAstGrepSyntax)
 	}
 }
 

@@ -69,7 +69,7 @@ func (c *CompareCmd) Run(deps *appDeps) error {
 	// unreadable or invalid candidate costs no analysis time.
 	curCfg, err := loadAnalysisConfig(ctx, c.Config)
 	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+		return configLoadError(err)
 	}
 	candCfg, err := loadCandidateConfig(ctx, c.Candidate)
 	if err != nil {
@@ -313,7 +313,34 @@ func configCompareDiffLines(current, candidate decision.ConfigCompareSide, res d
 	if ids := res.Findings.CandidateOnlyIDs; len(ids) > 0 {
 		lines = append(lines, fmt.Sprintf("findings only under the candidate config (%d): %s", len(ids), summariseIDs(ids)))
 	}
+	if line, changed := edgeCompareLine(current.Diag.ClassifiedEdges, candidate.Diag.ClassifiedEdges); changed {
+		lines = append(lines, line)
+	}
 	return lines
+}
+
+// edgeCompareLine renders the cross-boundary edge footprint when it moved. The
+// counts change without the rounded score or the finding IDs changing at all —
+// a candidate that scores the same edges differently, or measures more of the
+// tree, is still a changed measurement, and the identity line must not claim
+// otherwise.
+func edgeCompareLine(current, candidate *diagnostic.ClassifiedEdgeSummary) (string, bool) {
+	if current == nil && candidate == nil {
+		return "", false
+	}
+	cur, cand := edgeCountsText(current), edgeCountsText(candidate)
+	if cur == cand {
+		return "", false
+	}
+	return fmt.Sprintf("classified edges: %s → %s", cur, cand), true
+}
+
+func edgeCountsText(s *diagnostic.ClassifiedEdgeSummary) string {
+	if s == nil {
+		return scoreUnmeasured
+	}
+	return fmt.Sprintf("%d total / %d scored / %d abstained / %d external",
+		s.Total, s.Scored, s.Abstained, s.External)
 }
 
 // compareIDPreview caps how many finding IDs the text report spells out. A

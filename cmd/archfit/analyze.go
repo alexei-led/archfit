@@ -181,7 +181,7 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	rep.advance("Loading config")
 	cfg, err := loadAnalysisConfig(ctx, req.configPath)
 	if err != nil {
-		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
+		return configLoadError(err)
 	}
 	if err := applyFlagOverrides(&cfg, req.minSeverity, req.lang); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
@@ -309,6 +309,18 @@ func loadAnalysisConfig(ctx context.Context, path string) (config.Config, error)
 		return config.Config{}, err
 	}
 	return cfg, nil
+}
+
+// configLoadError normalises a config-load failure into an exit-3 error.
+// loadAnalysisConfig already returns an *exitError for the missing-config case,
+// and that message carries its own "error: " prefix plus a next-step hint —
+// wrapping it a second time prints the prefix twice.
+func configLoadError(err error) error {
+	var already *exitError
+	if errors.As(err, &already) {
+		return already
+	}
+	return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 }
 
 // analyzeRender writes the diagnostic to deps.Stdout in each requested format.
