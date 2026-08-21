@@ -83,7 +83,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	// caller can read a provisional Issues/Unclassified list.
 	requireLayer := requiresLayerClassification(cfg)
 	report := initcfg.DiffModules(existing, freshCfg.Modules, requireLayer)
-	candidateCfg := candidateConfigForUpdate(cfg, freshCfg)
+	candidateCfg := candidateConfigForUpdate(cfg, freshCfg, report.NameDrift)
 	report.DeployUnitSuggestions = deployUnitSuggestions(ctx, root, candidateCfg, deps)
 	report.DistanceConfigCandidates = distanceConfigCandidates(ctx, root, candidateCfg, deps)
 	if c.AIClassify {
@@ -132,9 +132,10 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		// too: printing "structurally in sync" over them would claim a clean config
 		// while the report has findings to show.
 		if (c.AIClassify && ann != nil) || initcfg.HasReviewItems(report) {
-			// Same status line the preview prints. It is also the only text-path
-			// disclosure of unchecked modules — RenderUpdateReport has no section for
-			// them, so without it a pathless-only report would print nothing at all.
+			// Same status line the preview prints: the one-line summary above the
+			// report. The unchecked modules it counts are also named in the report's
+			// own UNMATCHED and UNCHECKED sections, so neither disclosure is the
+			// only one.
 			_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderReviewStatus(initcfg.BuildConfigReview(report)))
 			_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
 			return nil
@@ -160,8 +161,12 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	if len(report.PathDrift) > 0 {
 		_, _ = fmt.Fprintln(deps.Stdout, "note: module paths replaced with discovered paths")
 	}
-	if (c.AIClassify && ann != nil) || initcfg.HasReviewSuggestions(report) {
-		if rendered := initcfg.RenderAppliedLLMReview(report, ann); rendered != "" {
+	// HasReviewItems, not HasReviewSuggestions: module gaps, naming differences,
+	// unmatched and pathless stanzas are review-only too, so gating on the
+	// suggestion families alone hid them on the ONE path that also writes. A run
+	// that had an edit to make reported less than the same run without --apply.
+	if (c.AIClassify && ann != nil) || initcfg.HasReviewItems(report) {
+		if rendered := initcfg.RenderAppliedReview(report, ann); rendered != "" {
 			_, _ = fmt.Fprint(deps.Stdout, rendered)
 		}
 	}
@@ -372,20 +377,46 @@ func classifyTargetsForUpdate(
 	return targets
 }
 
-func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredConfig) config.Config {
+// candidateConfigForUpdate projects the config as it stands AFTER `config update
+// --apply`: discovery's module set, with every preserved stanza's hand-authored
+// metadata carried across. The deploy-unit and distance suggestion builders read
+// this projection, so a stanza whose metadata goes missing here yields a
+// suggestion to set a field the real config already sets.
+//
+// drift is why the lookup cannot key on the discovered name alone. When
+// discovery re-emits `internal/foo` as `foo` over the SAME path set, --apply
+// writes nothing at all: the stanza keeps its name and every field it carries
+// (name drift is review-only precisely because rewriting it would discard them).
+// So a drifted module enters the candidate under its CONFIG name, which is also
+// the only name the metadata lookup can find. Resolving the name BEFORE the
+// lookup keeps one copy of the field list — a second branch is a second place to
+// forget a field.
+//
+// The config name cannot collide with another discovered module: it comes from
+// the report's Removed bucket, which by construction holds only names discovery
+// did not emit, and each drift pairing is unique.
+func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredConfig, drift []initcfg.NameDrift) config.Config {
 	if len(discovered.Modules) == 0 {
 		return cfg
+	}
+	configNameFor := make(map[string]string, len(drift))
+	for _, d := range drift {
+		configNameFor[d.DiscoveredName] = d.ConfigName
 	}
 	out := cfg
 	out.Modules = make(map[string]module.ModuleDef, len(discovered.Modules))
 	for _, mod := range discovered.Modules {
+		name := mod.Name
+		if configName, drifted := configNameFor[name]; drifted {
+			name = configName
+		}
 		def := module.ModuleDef{
 			Paths:    append([]string(nil), mod.Paths...),
 			Public:   append([]string(nil), mod.Public...),
 			Internal: append([]string(nil), mod.Internal...),
 			Layer:    mod.Layer,
 		}
-		if existing, ok := cfg.Modules[mod.Name]; ok {
+		if existing, ok := cfg.Modules[name]; ok {
 			def.Public = append([]string(nil), existing.Public...)
 			def.Internal = append([]string(nil), existing.Internal...)
 			def.Layer = existing.Layer
@@ -397,7 +428,7 @@ func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredCo
 			def.ReviewedAt = existing.ReviewedAt
 			def.ReviewedBy = existing.ReviewedBy
 		}
-		out.Modules[mod.Name] = def
+		out.Modules[name] = def
 	}
 	return out
 }

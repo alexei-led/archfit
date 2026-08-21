@@ -207,7 +207,9 @@ languages:
         - "**/testdata/**" # drop members matching these after include
 ```
 
-When the resulting member set is empty the Go extractor reports `absent`.
+When the resulting member set is empty the Go extractor reports `absent`. No
+coverage gap is raised for it: the gap probe applies the same include/exclude
+filter, so scoping the member set never reads as a missing Go toolchain.
 
 **Scale note:** a full `NeedTypesInfo` load of 100+ members takes 1–2 minutes
 wall-clock on a warm build cache. Use `languages.go.modules` to scope the load;
@@ -377,7 +379,12 @@ on the missing tool:
 When an analyzer is **disabled by config** (`enabled: false`), it is simply
 skipped — no coverage gap is emitted and no install prompt is shown.
 Disabled-by-config is distinct from absent: a tool you deliberately turned off
-should not appear as a gap to resolve.
+should not appear as a gap to resolve. A language switched off with
+`languages.<id>.enabled: false` reports `disabled` in `tool_coverage`, not
+`absent`, so "measurement switched off" is never read as "this language is not
+in the tree" by `config compare` or `analyze --base`. Pinning an explicit
+`gate:` on a disabled language opts back in: the row stays `absent` and still
+raises its gap.
 
 ```yaml
 languages:

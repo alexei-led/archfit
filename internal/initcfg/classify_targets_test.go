@@ -275,7 +275,7 @@ func TestResolveDir_SingleSegmentTopLevel(t *testing.T) {
 func TestResolveDir_NonexistentSingleSegment(t *testing.T) {
 	root := t.TempDir()
 	mods := []ModuleDef{
-		{Name: "ghost", Paths: []string{"ghost"}},
+		{Name: testGhostModule, Paths: []string{testGhostModule}},
 	}
 	targets := BuildClassifyTargets(root, mods)
 	ct := targets[0]

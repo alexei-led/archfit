@@ -181,7 +181,7 @@ func TestRender_PlanMode_RendersRuleSuggestionsAsComments(t *testing.T) {
 	}
 }
 
-func TestRenderAppliedLLMReview_PrefixesAnnotationMetadataWithPlus(t *testing.T) {
+func TestRenderAppliedReview_PrefixesAnnotationMetadataWithPlus(t *testing.T) {
 	r := UpdateReport{Unclassified: []string{testClassify}}
 	ann := map[string]ModuleAnnotation{
 		testClassify: {
@@ -192,7 +192,7 @@ func TestRenderAppliedLLMReview_PrefixesAnnotationMetadataWithPlus(t *testing.T)
 			Rationale:    "docs describe the classify boundary",
 		},
 	}
-	out := RenderAppliedLLMReview(r, ann)
+	out := RenderAppliedReview(r, ann)
 	for _, want := range []string{
 		"+ subdomain: " + layerCore,
 		"+ volatility: " + testAnnVolatility,
@@ -204,6 +204,40 @@ func TestRenderAppliedLLMReview_PrefixesAnnotationMetadataWithPlus(t *testing.T)
 			t.Fatalf("review output missing %q:\n%s", want, out)
 		}
 	}
+
+	// Everything --apply refuses to write is review-only, not just the semantic
+	// proposals. When apply DID write an edit, this appendix was the only output
+	// and it showed none of these, so a run with an edit disclosed less than the
+	// same run without --apply.
+	t.Run("renders every review-only module section", func(t *testing.T) {
+		full := UpdateReport{
+			Issues:       []ModuleIssue{newModuleIssue(IssueMissingOwner, "billing")},
+			Unclassified: []string{"shipping"},
+			Pathless:     []string{testPathlessModule},
+			Removed:      []ExistingModule{{Name: testGhostModule}},
+			NameDrift:    []NameDrift{{ConfigName: "internal/foo", DiscoveredName: "foo", Paths: []string{"internal/foo/**"}}},
+		}
+		got := RenderAppliedReview(full, nil)
+		for _, want := range []string{
+			"ISSUES", "billing", IssueMissingOwner,
+			testUnclassifiedSection, "shipping",
+			"UNCHECKED", testPathlessModule,
+			"UNMATCHED", testGhostModule,
+			"NAME DRIFT", "internal/foo",
+		} {
+			if !strings.Contains(got, want) {
+				t.Errorf("applied review missing %q:\n%s", want, got)
+			}
+		}
+	})
+
+	// The same sections stay in the preview: one helper, two renderers.
+	t.Run("preview renders the unchecked section too", func(t *testing.T) {
+		got := RenderUpdateReport(UpdateReport{Pathless: []string{testPathlessModule}}, nil, nil)
+		if !strings.Contains(got, "UNCHECKED") || !strings.Contains(got, testPathlessModule) {
+			t.Errorf("preview missing the unchecked section:\n%s", got)
+		}
+	})
 }
 
 func TestRender_PlanMode_RendersExternalSystemSuggestionsAsComments(t *testing.T) {

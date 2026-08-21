@@ -10,6 +10,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/alexei-led/archfit/internal/config"
+	"github.com/alexei-led/archfit/internal/extract/golang"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/scope"
 	"github.com/alexei-led/archfit/internal/view"
@@ -103,24 +104,32 @@ func buildPrimaryToolProjectMarkers() map[string][]string {
 }
 
 // primaryToolProjectProbe overrides the root-only marker check for analyzers
-// whose real discovery is not root-only. Only Go needs it: dependency-cruiser
-// requires package.json in the project root, grimp and cargo probe their own
-// root manifests, but go/packages discovers members by walking for nested
-// go.mod dirs (CLAUDE.md, "Go workspace loading"). Without the override a
-// services/api/go.mod repo answers "no Go here", which turns a real analyzer
-// failure into "language not present" — the one absent shape both --base and
-// `config compare` read as safely comparable.
-var primaryToolProjectProbe = map[string]func(root string, exclusions []string) bool{
+// whose real discovery is not root-only. Two languages need it:
+//
+//   - Go: go/packages discovers members by walking for nested go.mod dirs
+//     (CLAUDE.md, "Go workspace loading") and then applies the
+//     languages.go.modules include/exclude filter. Without the override a
+//     services/api/go.mod repo answers "no Go here".
+//   - Rust: languages.rust.manifest can point cargo at a sub-crate manifest with
+//     no root Cargo.toml at all, so the root-only check answers "no Rust here"
+//     for a project the extractor happily analyses.
+//
+// Getting either wrong turns a real analyzer failure into "language not
+// present" — the one absent shape both --base and `config compare` read as
+// safely comparable. dependency-cruiser (package.json) and grimp (pyproject and
+// friends) do resolve from a root manifest, so they keep the plain check.
+var primaryToolProjectProbe = map[string]func(root string, cfg config.Config, exclusions []string) bool{
 	toolGoPackages: goProjectPresent,
+	toolCargo:      rustProjectPresent,
 }
 
 // primaryProjectPresent reports whether the language behind a primary coverage
 // tool is present under root, using the analyzer's own discovery shape.
 // exclusions are the run's EFFECTIVE exclusion globs (defaults merged with
 // config) — the same set the extractors filter on.
-func primaryProjectPresent(tool, root string, markers, exclusions []string) bool {
+func primaryProjectPresent(tool, root string, cfg config.Config, markers, exclusions []string) bool {
 	if probe, ok := primaryToolProjectProbe[tool]; ok {
-		return probe(root, exclusions)
+		return probe(root, cfg, exclusions)
 	}
 	return projectMarkerPresent(root, markers)
 }
@@ -130,12 +139,42 @@ func primaryProjectPresent(tool, root string, markers, exclusions []string) bool
 // evidence: when it lists members inside root those members carry their own
 // go.mod (the walk finds them), and when it lists none, Go is not in this scan
 // root at all.
-func goProjectPresent(root string, exclusions []string) bool {
-	return markerInTree(root, markerGoMod, exclusions)
+//
+// The languages.go.modules include/exclude filter is applied through the
+// extractor's own golang.FilterMembers, not a re-implementation of it: the
+// extractor reports absent when the filter removes every member, so a probe
+// that ignored the filter would call that deliberate scoping a coverage gap.
+// FilterMembers short-circuits when neither list is configured, so the common
+// case costs nothing.
+func goProjectPresent(root string, cfg config.Config, exclusions []string) bool {
+	ec := cfg.ForExtract(config.LangGo)
+	return markerInTree(root, markerGoMod, exclusions, func(dir string) bool {
+		return len(golang.FilterMembers([]string{dir}, root, ec.GoModuleInclude, ec.GoModuleExclude)) == 1
+	})
+}
+
+// rustProjectPresent mirrors the Rust extractor's applicability marker
+// (internal/extract/rust, Extract): a configured languages.rust.manifest
+// resolved against root exactly like cargo's --manifest-path when set, else the
+// root Cargo.toml. Exclusions play no part — the extractor stats the manifest
+// directly, and a probe that filtered it would disagree with the run.
+func rustProjectPresent(root string, cfg config.Config, _ []string) bool {
+	manifest := cfg.ForExtract(config.LangRust).CargoManifest
+	if manifest == "" {
+		return projectMarkerPresent(root, []string{markerCargoToml})
+	}
+	if !filepath.IsAbs(manifest) {
+		manifest = filepath.Join(root, manifest)
+	}
+	_, err := os.Stat(manifest)
+	return err == nil
 }
 
 // markerInTree reports whether marker exists in root or any directory under it
-// that the run's exclusions do not remove. Stops at the first hit.
+// that the run's exclusions do not remove and accept approves. accept receives
+// the absolute directory holding the marker. Stops at the first ACCEPTED hit —
+// a rejected candidate must not end the walk, or a filtered member shadows an
+// analysed one deeper in the tree.
 //
 // The exclusion check is a CORRECTNESS filter, not a bound: a marker the
 // extractor excludes but this walk counts makes the analyzer's "absent" read as
@@ -145,7 +184,7 @@ func goProjectPresent(root string, exclusions []string) bool {
 // the extractors use, so a `go.mod` under `testdata/` or an excluded subtree
 // cannot be counted. Directory pruning is derived from the same globs and is
 // only a walk bound.
-func markerInTree(root, marker string, exclusions []string) bool {
+func markerInTree(root, marker string, exclusions []string, accept func(dir string) bool) bool {
 	prune := scope.ExcludedDirNames(exclusions)
 	found := false
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -163,6 +202,9 @@ func markerInTree(root, marker string, exclusions []string) bool {
 		}
 		rel, relErr := filepath.Rel(root, filepath.Join(path, marker))
 		if relErr != nil || matchesAnyGlob(exclusions, filepath.ToSlash(rel)) {
+			return nil
+		}
+		if !accept(path) {
 			return nil
 		}
 		found = true
@@ -215,11 +257,14 @@ func projectMarkerPresent(root string, markers []string) bool {
 // gate on that tool overrides the suppression — except gate: off, which is a
 // deliberate opt-out and never produces an install prompt.
 func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string) []diagnostic.CoverageGap {
-	// The EFFECTIVE exclusions, so the marker probe agrees with the extractors:
-	// a marker they never see must not become evidence the language is present.
-	// MergeExclusions is set-based and idempotent, so re-merging an already
-	// merged cfg.Exclude is a no-op.
-	exclusions := scope.MergeExclusions(cfg.Exclude)
+	// cfg.Exclude is ALREADY the run's effective exclusion set: runPipeline merges
+	// the defaults in once, at setup, before projecting any view, so the marker
+	// probe reads exactly what the extractors filtered on. Never re-merge here.
+	// scope.MergeExclusions is not idempotent — it CONSUMES `!` re-includes, so a
+	// second pass re-seeds the very defaults the user removed (pinned by
+	// scope.TestMergeExclusions). Re-merging made the probe skip trees the
+	// extractors analysed, suppressing real coverage gaps.
+	exclusions := cfg.Exclude
 	var gaps []diagnostic.CoverageGap
 	for _, c := range cov {
 		// Only truly absent tools produce a gap. Disabled-by-config tools are an
@@ -233,8 +278,11 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string
 		// A disabled language's primary tool is not a gap the user needs to close —
 		// don't tell a Rust-only repo to install dependency-cruiser/grimp/go-packages.
 		// Explicit warn/fail gates keep the gap even if the language is absent.
-		if lang, isPrimary := primaryToolLanguage[c.Tool]; isPrimary &&
-			cfg.ToolMode(lang) == view.ModeOff && cfg.ToolGate(lang) == "" {
+		// markDisabledPrimaries normally rewrites these rows to StatusDisabled
+		// before this loop sees them (so the status check above already skipped
+		// them); the check stays because this function must derive the right gaps
+		// from ANY coverage slice, marked or not.
+		if primaryDisabledByConfig(cfg, c.Tool) {
 			continue
 		}
 		// Suppress the gap when the language's project marker is absent from the
@@ -246,14 +294,17 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string
 		if root != "" {
 			switch c.Tool {
 			case toolCargoModules:
-				// cargo-modules is Rust-specific but not a primary tool; use Cargo.toml.
-				if configToolGate(cfg, c.Tool) == gateWarn && !projectMarkerPresent(root, []string{markerCargoToml}) {
+				// cargo-modules is Rust-specific but not a primary tool. It runs inside
+				// the Rust extractor and behind the SAME applicability marker, so it
+				// reads the marker through rustProjectPresent — a configured
+				// languages.rust.manifest points both at the sub-crate manifest.
+				if configToolGate(cfg, c.Tool) == gateWarn && !rustProjectPresent(root, cfg, exclusions) {
 					continue
 				}
 			default:
 				if markers, ok := primaryToolProjectMarkers[c.Tool]; ok {
 					lang := primaryToolLanguage[c.Tool]
-					if cfg.ToolGate(lang) == "" && !primaryProjectPresent(c.Tool, root, markers, exclusions) {
+					if cfg.ToolGate(lang) == "" && !primaryProjectPresent(c.Tool, root, cfg, markers, exclusions) {
 						continue
 					}
 				}
@@ -272,6 +323,54 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string
 	}
 	sort.Slice(gaps, func(i, j int) bool { return gaps[i].Tool < gaps[j].Tool })
 	return gaps
+}
+
+// primaryDisabledByConfig reports whether tool is a language primary analyzer
+// that the config switched OFF (languages.<id>.enabled: false) without also
+// pinning an explicit gate on it. The explicit-gate carve-out is what lets a
+// user say "I turned this off but still want to be told it did not run".
+//
+// Single source for that question: markDisabledPrimaries rewrites exactly these
+// rows, and buildCoverageGaps suppresses exactly these gaps. Two readings of one
+// predicate would let the row and the gap disagree.
+func primaryDisabledByConfig(cfg config.Config, tool string) bool {
+	lang, isPrimary := primaryToolLanguage[tool]
+	return isPrimary && cfg.ToolMode(lang) == view.ModeOff && cfg.ToolGate(lang) == ""
+}
+
+// markDisabledPrimaries rewrites the coverage row of every language primary
+// analyzer the config switched off into an explicit StatusDisabled row.
+//
+// The extractors report ModeOff as StatusAbsent, which is indistinguishable from
+// "this language is not in the tree". Both comparison paths read that shape —
+// primary + absent + no coverage gap — as "the language is not present here" and
+// drop the analyzer from the comparison entirely (decision.gradeTool,
+// normalizeCoverage). Two configs that BOTH disabled Go over a Go repo then
+// graded fully comparable while neither had looked at a line of it.
+//
+// After this pass, absent-without-a-gap has exactly ONE cause left — project
+// markers missing — which is what both consumers' rules already assume. A
+// disabled row lands on their existing StatusDisabled arm and reports as shared,
+// declared blindness.
+//
+// Deliberately narrow: rows with an explicit gate keep StatusAbsent so they
+// still raise a gap and still fail --require-tools. Non-primary analyzers are
+// untouched; their absence is never read as a statement about the tree.
+func markDisabledPrimaries(cov []diagnostic.Coverage, cfg config.Config) []diagnostic.Coverage {
+	for i, c := range cov {
+		if c.Status != diagnostic.StatusAbsent || !primaryDisabledByConfig(cfg, c.Tool) {
+			continue
+		}
+		cov[i].Status = diagnostic.StatusDisabled
+		cov[i].Reason = languageDisabledReason(primaryToolLanguage[c.Tool])
+	}
+	return cov
+}
+
+// languageDisabledReason is the reason text stamped on a disabled primary row,
+// naming the exact config key that switched it off.
+func languageDisabledReason(lang string) string {
+	return "language analysis disabled by config — set `languages." + lang + ".enabled: true` in .archfit.yaml to enable"
 }
 
 // configToolGate resolves the configured gate for the analyzer behind a coverage

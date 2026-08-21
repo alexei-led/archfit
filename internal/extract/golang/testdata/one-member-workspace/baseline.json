@@ -404,7 +404,8 @@
     {
       "files_applicable": 0,
       "files_seen": 0,
-      "status": "absent",
+      "reason": "language analysis disabled by config — set `languages.typescript.enabled: true` in .archfit.yaml to enable",
+      "status": "disabled",
       "tool": "dependency-cruiser",
       "unresolved": 0,
       "version": ""
@@ -412,7 +413,8 @@
     {
       "files_applicable": 0,
       "files_seen": 0,
-      "status": "absent",
+      "reason": "language analysis disabled by config — set `languages.python.enabled: true` in .archfit.yaml to enable",
+      "status": "disabled",
       "tool": "grimp",
       "unresolved": 0,
       "version": ""

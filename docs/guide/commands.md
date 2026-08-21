@@ -426,6 +426,10 @@ Notes:
   and report as the preview. A structure with no pending edits is not a clean
   config: module gaps, unclassifiable modules, and unchecked stanzas are still
   reported.
+- With `--apply`, a run that DOES write an edit reports the review-only half too:
+  the edit it made, then module gaps, unclassifiable modules, naming
+  differences, unmatched stanzas, and unchecked stanzas. Having an edit to apply
+  never hides what apply refuses to write.
 - The report lists every change `--apply` would write, including non-module
   settings such as the Rust deep-analysis defaults.
 
@@ -542,7 +546,7 @@ Coverage grades:
 
 | Grade                  | Condition                                                                                                                                                                                                                     |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `comparable`           | Every compared analyzer ran on both sides. A per-language analyzer absent on both sides with no coverage gap drops out of the comparison entirely — that language is simply not in the tree.                                  |
+| `comparable`           | Every compared analyzer ran on both sides. A per-language analyzer absent on both sides with no coverage gap drops out of the comparison entirely — that language is simply not in the tree. A language switched off in config reports `disabled`, not absent, so it never drops out this way.                                  |
 | `comparable_with_gaps` | The sides agree, but at least one analyzer was absent, disabled, or left import specifiers unresolved on **both** sides. The blindness is shared, so the comparison rests on it — each such analyzer is listed with a reason. |
 | `not_comparable`       | An analyzer's evidence differs between the sides, did not finish (timed out, or partial from a run that did not complete), was absent on both sides but expected by only one, or its coverage row is missing or duplicated.   |
 

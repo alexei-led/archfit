@@ -485,6 +485,10 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	// machine-readable CoverageGaps block (tool → unlocked metrics → install cmd)
 	// and surface config-quality lint plus any swallowed optional-tool errors in
 	// ConfigWarnings so they reach md/json/CI instead of being stderr-only.
+	// Disclose switched-off primaries as "disabled" BEFORE deriving gaps: an
+	// extractor reports ModeOff as "absent", which both comparison paths read as
+	// "this language is not in the tree" (see markDisabledPrimaries).
+	diag.ToolCoverage = markDisabledPrimaries(diag.ToolCoverage, cfg)
 	diag.CoverageGaps = buildCoverageGaps(diag.ToolCoverage, cfg, s.Root)
 	diag.ConfigWarnings = buildConfigWarnings(cfg, toolWarnings)
 

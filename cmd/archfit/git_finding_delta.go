@@ -353,7 +353,10 @@ func normalizeCoverage(f analyzerFamily, c diagnostic.Coverage, gaps []diagnosti
 		// The gapless carve-out belongs to PRIMARY families only. There a missing
 		// gap is a positive finding about the TREE: buildCoverageGaps suppressed
 		// it because the language's project markers are absent, so that side
-		// genuinely had nothing of that language to find.
+		// genuinely had nothing of that language to find. markDisabledPrimaries
+		// keeps that the only cause — a primary switched off in config arrives
+		// here as StatusDisabled, not absent, so "we did not look" can never
+		// render as "there is nothing here".
 		//
 		// For every other family a missing gap says nothing — those analyzers are
 		// mostly not in the install-hint table at all — so the absence stays what

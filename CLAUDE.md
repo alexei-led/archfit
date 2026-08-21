@@ -193,6 +193,27 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   probes the tree (`goProjectPresent`, pruning dependency/build dirs). Without
   it, a real go/packages failure in a `services/api/go.mod` repo was
   indistinguishable from "no Go here" and could manufacture a false `introduced`.
+  The probe must match what the analyzer ACTUALLY does, not a rough stand-in:
+  Go reuses the extractor's own `golang.FilterMembers`, so a
+  `languages.go.modules` include/exclude that empties the member set never reads
+  as a missing toolchain; Rust reads `languages.rust.manifest`
+  (`rustProjectPresent`, shared with the cargo-modules row), so a configured
+  sub-crate manifest is applicable with no root `Cargo.toml`. `buildCoverageGaps`
+  reads `cfg.Exclude` AS GIVEN — `runPipeline` merges it once at setup and
+  `scope.MergeExclusions` is NOT idempotent (it consumes `!` re-includes), so a
+  second merge re-seeds defaults the user removed and hides markers the
+  extractors saw.
+- **A switched-off language reports `disabled`, never `absent`**
+  (`markDisabledPrimaries`, `cmd/archfit/pipeline_coverage.go`, applied to
+  `diag.ToolCoverage` before `buildCoverageGaps`). Extractors encode `ModeOff` as
+  `StatusAbsent`, which both pairing paths read as "this language is not in the
+  tree" and drop from the comparison — so two configs that BOTH disabled Go over
+  a Go repo graded fully comparable while neither had looked. Rewriting the row
+  leaves gapless-`absent` with exactly ONE cause (markers missing), which is what
+  `decision.gradeTool` and `normalizeCoverage` already assume. Narrow on purpose:
+  a language with an explicit `gate:` keeps `absent` so its gap and
+  `--require-tools` still fire. `primaryDisabledByConfig` is the single predicate
+  behind both the rewrite and the gap suppression.
 - **One coverage name per analyzer.** `internal/extract/astgrep` drives one
   binary for two passes and they report under two names: `ast-grep` (patterns)
   and `ast-grep/syntax` (`syntaxToolName`). Both consumers that pair coverage
@@ -233,6 +254,21 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   `review_available` status). Before this, `config update --apply` on archfit's
   own config commented out all 44 modules and added 31 bare stanzas, and the
   status read `action_required` with 0 real issues.
+  Two consequences of that name-only matching:
+  (1) `candidateConfigForUpdate` (`cmd/archfit/update.go`) — the "config after
+  `--apply`" projection the deploy-unit and distance suggestion builders read —
+  resolves each discovered module through the drift pairs FIRST, so a drifted
+  module enters under its CONFIG name carrying the config's metadata. Keying on
+  the discovered name dropped `owner`/`deploy_unit`/`subdomain` and proposed
+  fields the config already sets, under a module name `.archfit.yaml` does not
+  contain. The config name cannot collide: it comes from `Removed`, which holds
+  only names discovery did not emit.
+  (2) `--apply` discloses the review-only half on BOTH branches. The write branch
+  gates on `initcfg.HasReviewItems` and prints `initcfg.RenderAppliedReview`,
+  which reuses `writeUnappliedModuleSections` + `writeModuleGapSections` — the
+  same helpers `RenderUpdateReport` uses. Gating on `HasReviewSuggestions` there
+  hid module gaps, name drift, unmatched and pathless stanzas exactly when apply
+  had an edit to make.
 - **`runContext`** (`cmd/archfit/pipeline_run.go`) replaces `runPipeline`'s
   positional path arguments. Each field selects one thing, and a caller that
   leaves one zero silently gets head-tree state on a base or candidate run:

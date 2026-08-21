@@ -306,6 +306,13 @@ func gradeTool(
 		// the comparison entirely. One side suppressed and the other gapped is
 		// then a real asymmetry — the two sides are not equally blind.
 		//
+		// That reading holds only because missing markers is the ONLY cause left:
+		// a primary the config switched off used to reach here as absent too, and
+		// two configs that both disabled a language over a repo that HAS it then
+		// graded fully comparable. The pipeline now stamps those rows
+		// StatusDisabled (cmd/archfit markDisabledPrimaries), so they land on the
+		// disabled arm below and report as shared blindness.
+		//
 		// For every other analyzer a gap is not evidence at all: it is only
 		// emitted for tools carrying an install hint, so scip, scip-symbols and
 		// ast-grep never raise one however loudly the config asked for them.

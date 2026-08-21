@@ -31,6 +31,7 @@ const (
 	testUpdateLayerAdapter  = "adapter"
 	testUpdateOwnerTeamA    = "team-a"
 	testUpdateWebModule     = "web"
+	testUpdateWebGlob       = "cmd/web/**"
 	rustEnabledAuto         = "rust:\n    enabled: auto"
 )
 
@@ -168,7 +169,7 @@ func TestCandidateConfigForUpdate_UsesDiscoveredModules(t *testing.T) {
 		{Name: testUpdateWebModule, Paths: []string{"web/**"}, Public: []string{"web/api/**"}, Internal: []string{"web/internal/**"}, Layer: testUpdateLayerAdapter},
 	}}
 
-	got := candidateConfigForUpdate(cfg, discovered)
+	got := candidateConfigForUpdate(cfg, discovered, nil)
 	mm := got.ModuleMapView()
 	if mod, ok := mm.ModuleForFile(testUpdateModuleAPath); !ok || mod != testUpdateModuleA {
 		t.Fatalf("ModuleForFile(services/a/impl.go) = (%q,%t), want (services/a,true)", mod, ok)
@@ -211,7 +212,7 @@ func TestStaticExternalDistanceConfigCandidatesFromGraph_UsesDiscoveredModuleCon
 		Paths: []string{testUpdateModuleAGlob},
 	}}}
 
-	raw := staticExternalDistanceConfigCandidatesFromGraph(g, candidateConfigForUpdate(cfg, discovered))
+	raw := staticExternalDistanceConfigCandidatesFromGraph(g, candidateConfigForUpdate(cfg, discovered, nil))
 	if len(raw) != 1 {
 		t.Fatalf("staticExternalDistanceConfigCandidatesFromGraph len = %d, want 1: %+v", len(raw), raw)
 	}
@@ -236,7 +237,7 @@ func TestDeployUnitSuggestions_DeterministicHintsOnlyForMissingConfig(t *testing
 		},
 	}
 	cfg := config.Config{Modules: map[string]module.ModuleDef{
-		testUpdateWebModule: {Paths: []string{"cmd/web/**"}},
+		testUpdateWebModule: {Paths: []string{testUpdateWebGlob}},
 		"api":               {Paths: []string{"cmd/api/**"}, DeployUnit: "api-service"},
 	}}
 
@@ -265,15 +266,38 @@ func TestDeployUnitSuggestions_UsesDiscoveredModuleMap(t *testing.T) {
 		},
 	}
 	cfg := config.Config{}
-	discovered := initcfg.DiscoveredConfig{Modules: []initcfg.ModuleDef{{Name: testUpdateWebModule, Paths: []string{"cmd/web/**"}}}}
+	discovered := initcfg.DiscoveredConfig{Modules: []initcfg.ModuleDef{{Name: testUpdateWebModule, Paths: []string{testUpdateWebGlob}}}}
 
-	got := deployUnitSuggestions(context.Background(), dir, candidateConfigForUpdate(cfg, discovered), &appDeps{Runner: runner})
+	got := deployUnitSuggestions(context.Background(), dir, candidateConfigForUpdate(cfg, discovered, nil), &appDeps{Runner: runner})
 	if len(got) != 1 {
 		t.Fatalf("deployUnitSuggestions len = %d, want 1: %+v", len(got), got)
 	}
 	if got[0].Module != testUpdateWebModule || got[0].Unit != testUpdateWebModule || got[0].Source != "cmd/web" {
 		t.Fatalf("deployUnitSuggestions[0] = %+v", got[0])
 	}
+
+	// A name-drifted stanza is preserved verbatim by --apply, so the candidate
+	// config must carry its metadata. Keying the copy on the DISCOVERED name lost
+	// it, and the builder then proposed a deploy_unit the config already sets —
+	// under a module name that does not exist in the config either.
+	t.Run("name-drifted module keeps its configured deploy unit", func(t *testing.T) {
+		const driftedName = "internal/" + testUpdateWebModule
+		driftedCfg := config.Config{Modules: map[string]module.ModuleDef{
+			driftedName: {Paths: []string{testUpdateWebGlob}, DeployUnit: "web-service"},
+		}}
+		drift := []initcfg.NameDrift{{
+			ConfigName:     driftedName,
+			DiscoveredName: testUpdateWebModule,
+			Paths:          []string{testUpdateWebGlob},
+		}}
+		candidate := candidateConfigForUpdate(driftedCfg, discovered, drift)
+		if _, ok := candidate.Modules[driftedName]; !ok {
+			t.Fatalf("candidate modules = %+v, want the module under its config name", candidate.Modules)
+		}
+		if suggestions := deployUnitSuggestions(context.Background(), dir, candidate, &appDeps{Runner: runner}); len(suggestions) != 0 {
+			t.Errorf("deployUnitSuggestions = %+v, want none — the config already sets deploy_unit", suggestions)
+		}
+	})
 }
 
 func TestClassifyTargetsForUpdate_IncludesSyntheticOverridePath(t *testing.T) {
@@ -352,6 +376,35 @@ rules:
 			t.Fatalf("updated config missing %q:\n%s", want, got)
 		}
 	}
+
+	// A run that WRITES must still report the review-only half. Gating that
+	// output on the suggestion families alone hid module gaps exactly when apply
+	// had an edit to make, so the same config reported less with --apply than
+	// without it.
+	t.Run("apply reports review-only module sections alongside the edit", func(t *testing.T) {
+		applyDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(applyDir, markerCargoToml), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		applyCfg := writeConfig(t, applyDir, `version: 1
+languages:
+  rust:
+    enabled: true
+modules:
+  ghost:
+    paths:
+      - nowhere/**
+`)
+		out, err := runUpdateCmd(t, &UpdateCmd{Config: applyCfg, Root: applyDir, Apply: true}, emptyRunner())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		for _, want := range []string{"wrote ", "UNMATCHED", "ghost"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("apply output missing %q:\n%s", want, out)
+			}
+		}
+	})
 }
 
 func TestEnsureRustDeepAnalysisConfig_IgnoresCommentBoundaries(t *testing.T) {

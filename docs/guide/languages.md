@@ -297,7 +297,10 @@ cover individual modules rather than entire crates. See [Optional analyzers](#op
 
 Optional config:
 
-- `languages.rust.manifest` — path to a non-root `Cargo.toml` (empty = auto, root manifest);
+- `languages.rust.manifest` — path to a non-root `Cargo.toml` (empty = auto, root manifest).
+  It is also the applicability marker: with it set, a project needs no root
+  `Cargo.toml` at all, and a missing `cargo` still reports a coverage gap rather
+  than "no Rust here";
 - `languages.rust.features` — cargo features to activate for the metadata run;
 - `languages.rust.include_dev_deps` — include dev-dependencies as crate edges.
 

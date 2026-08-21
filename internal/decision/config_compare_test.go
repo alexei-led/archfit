@@ -609,6 +609,25 @@ func TestCompareCoverage_PrimaryAbsent(t *testing.T) {
 			}
 		})
 	}
+
+	// The drop-out above belongs to ABSENT alone. A primary the config switched
+	// off reports "disabled" (the pipeline stamps it, so absent-without-a-gap has
+	// exactly one cause left: the project markers are missing). Two configs that
+	// both disabled a language over a repo that HAS it are equally blind by
+	// choice — that is shared, declared blindness, never full comparability.
+	t.Run("primary disabled on both sides never drops out", func(t *testing.T) {
+		rows := []diagnostic.Coverage{cov(primaryTool, diagnostic.StatusDisabled)}
+		got := decision.CompareConfigs(decision.ConfigCompareInput{
+			Current:   side(rows, nil),
+			Candidate: side(rows, nil),
+		}).Coverage
+		if got.Status != decision.CoverageComparableWithGaps {
+			t.Errorf("status = %q, want %q", got.Status, decision.CoverageComparableWithGaps)
+		}
+		if len(got.Details) != 1 {
+			t.Fatalf("details = %+v, want exactly one", got.Details)
+		}
+	})
 }
 
 // TestCompareCoverage_PrimaryToolsUnknown pins the conservative fallback: with

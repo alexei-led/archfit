@@ -24,6 +24,10 @@ const (
 	testNewPath    = "new/**"
 	testSyncLine   = "structurally in sync"
 	testBackend    = "backend"
+
+	testUnclassifiedSection = "UNCLASSIFIED"
+	testGhostModule         = "ghost"
+	testPathlessModule      = "empty-stanza"
 )
 
 // minimalConfigWrap wraps a modules: stanza in a valid .archfit.yaml for round-trip testing.
@@ -75,7 +79,7 @@ func TestRenderUpdateReport_Empty(t *testing.T) {
 	if !strings.Contains(got, "structurally in sync") {
 		t.Errorf("expected in-sync line, got:\n%s", got)
 	}
-	for _, sec := range []string{"ADDED", "UNMATCHED", testNameDrift, "PATH DRIFT", "UNCLASSIFIED"} {
+	for _, sec := range []string{"ADDED", "UNMATCHED", testNameDrift, "PATH DRIFT", testUnclassifiedSection} {
 		if strings.Contains(got, sec) {
 			t.Errorf("unexpected section %q in empty report:\n%s", sec, got)
 		}

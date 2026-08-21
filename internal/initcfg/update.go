@@ -401,11 +401,16 @@ func uniquePathKeyIndex(n int, pathsAt func(int) []string) map[string]int {
 	return index
 }
 
-// writeUnappliedModuleSections renders the two module sections `update --apply`
-// deliberately leaves alone: naming differences (same paths, different key) and
-// configured modules discovery did not emit. Both would need a stanza rewritten
-// or deleted, which discards the settings it carries, so both stay human
-// decisions and the section text says so.
+// writeUnappliedModuleSections renders the module sections `update --apply`
+// deliberately leaves alone: naming differences (same paths, different key),
+// configured modules discovery did not emit, and stanzas that declare no paths.
+// The first two would need a stanza rewritten or deleted, which discards the
+// settings it carries, so both stay human decisions and the section text says so.
+//
+// UNCHECKED is here rather than in the status line alone because the status line
+// is unusable after a write (it counts "pending" edits that were just applied),
+// and a pathless stanza appears in no other section: the per-module field checks
+// skip it before raising anything.
 //
 // Module keys go through sanitizeComment, the convention every other renderer in
 // this file follows for config- and discovery-supplied values (writeModuleStanza,
@@ -426,6 +431,42 @@ func writeUnappliedModuleSections(b *strings.Builder, r UpdateReport) {
 		b.WriteString("  NOTE: `update --apply` does NOT remove these; deleting a stanza discards its settings, so it stays a human decision.\n")
 		for _, e := range r.Removed {
 			fmt.Fprintf(b, "  - %s: not found in discovery — verify or remove by hand\n", sanitizeComment(e.Name))
+		}
+	}
+
+	if len(r.Pathless) > 0 {
+		fmt.Fprintf(b, "UNCHECKED (%d configured module(s) declaring no paths — review only):\n", len(r.Pathless))
+		b.WriteString("  NOTE: a stanza that selects no source is skipped by the per-module field checks, so it raises no ISSUES entry either way.\n")
+		for _, name := range r.Pathless {
+			fmt.Fprintf(b, "  - %s: declares no `paths:` — add one or remove the stanza\n", sanitizeComment(name))
+		}
+	}
+}
+
+// writeModuleGapSections renders the two per-module field-check results: gaps
+// needing a human decision, and modules archfit cannot classify. Neither is ever
+// written by `update --apply`, so both the preview and the post-write appendix
+// show them from this one place.
+func writeModuleGapSections(b *strings.Builder, r UpdateReport, ann map[string]ModuleAnnotation) {
+	if len(r.Issues) > 0 {
+		fmt.Fprintf(b, "ISSUES (%d module gap(s) needing a decision):\n", len(r.Issues))
+		for _, issue := range r.Issues {
+			fmt.Fprintf(b, "  - %s [%s]: %s → %s\n",
+				sanitizeComment(issue.Module), sanitizeComment(issue.Code),
+				sanitizeComment(issue.Reason), sanitizeComment(issue.NextAction))
+		}
+	}
+
+	if len(r.Unclassified) > 0 {
+		fmt.Fprintf(b, "UNCLASSIFIED (%d module(s) archfit cannot classify):\n", len(r.Unclassified))
+		for _, name := range r.Unclassified {
+			if ann != nil {
+				if a, ok := ann[name]; ok {
+					writeAnnotationDiff(b, name, a)
+					continue
+				}
+			}
+			fmt.Fprintf(b, "  - %s: run with --ai-classify to get classification suggestions\n", name)
 		}
 	}
 }
@@ -508,27 +549,7 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 		}
 	}
 
-	if len(r.Issues) > 0 {
-		fmt.Fprintf(&b, "ISSUES (%d module gap(s) needing a decision):\n", len(r.Issues))
-		for _, issue := range r.Issues {
-			fmt.Fprintf(&b, "  - %s [%s]: %s → %s\n",
-				sanitizeComment(issue.Module), sanitizeComment(issue.Code),
-				sanitizeComment(issue.Reason), sanitizeComment(issue.NextAction))
-		}
-	}
-
-	if len(r.Unclassified) > 0 {
-		fmt.Fprintf(&b, "UNCLASSIFIED (%d module(s) archfit cannot classify):\n", len(r.Unclassified))
-		for _, name := range r.Unclassified {
-			if ann != nil {
-				if a, ok := ann[name]; ok {
-					writeAnnotationDiff(&b, name, a)
-					continue
-				}
-			}
-			fmt.Fprintf(&b, "  - %s: run with --ai-classify to get classification suggestions\n", name)
-		}
-	}
+	writeModuleGapSections(&b, r, ann)
 
 	if len(r.DeployUnitSuggestions) > 0 {
 		fmt.Fprintf(&b, "DEPLOY UNIT HINTS (%d deterministic config proposal(s) — apply manually after review):\n", len(r.DeployUnitSuggestions))
@@ -565,12 +586,21 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 	return b.String()
 }
 
-// RenderAppliedLLMReview renders the review-only LLM appendix that still matters
-// after update --apply has written structural drift. Structural edits are already
-// in the file; this output preserves the semantic proposals that are deliberately
-// NOT auto-applied.
-func RenderAppliedLLMReview(r UpdateReport, ann map[string]ModuleAnnotation) string {
+// RenderAppliedReview renders everything `config update --apply` did NOT write,
+// after it has written the structural drift it does. Structural edits are
+// already in the file; what remains is the review-only half of the report.
+//
+// That half is not only the semantic proposals. Module gaps, naming differences,
+// unmatched stanzas, and pathless stanzas are review-only too, and a run that
+// wrote an edit used to print none of them — the same findings the run WITHOUT
+// --apply reports disappeared exactly when apply had something to do. Both
+// module halves come from the helpers RenderUpdateReport uses, so the two
+// renderings cannot drift.
+func RenderAppliedReview(r UpdateReport, ann map[string]ModuleAnnotation) string {
 	var b strings.Builder
+
+	writeUnappliedModuleSections(&b, r)
+	writeModuleGapSections(&b, r, ann)
 
 	if len(ann) > 0 {
 		seen := map[string]struct{}{}
