@@ -639,8 +639,8 @@ func TestUpdateCmd_PlanMode_FileUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(out, "REMOVED") {
-		t.Errorf("plan output should mention REMOVED; got: %q", out)
+	if !strings.Contains(out, "UNMATCHED") {
+		t.Errorf("plan output should mention UNMATCHED; got: %q", out)
 	}
 
 	after, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -652,12 +652,22 @@ func TestUpdateCmd_PlanMode_FileUnchanged(t *testing.T) {
 	}
 }
 
-// TestUpdateCmd_Apply_CommentsRemoved verifies --apply: comments a removed module
-// and preserves rules and comments.
-func TestUpdateCmd_Apply_CommentsRemoved(t *testing.T) {
+// TestUpdateCmd_Apply_KeepsUnmatchedModule verifies that --apply never deletes
+// or comments out a configured module discovery did not emit.
+//
+// DiffModules matches config keys to discovered keys by NAME, and the two
+// conventions need not agree (this repo configures `internal/agenttask` while
+// discovery emits `agenttask`). Commenting the stanza out on that evidence
+// discarded owner, subdomain, volatility, layer, and public on every module of
+// this repo's own config. Removal is now a reported human decision.
+func TestUpdateCmd_Apply_KeepsUnmatchedModule(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
 	cfgPath := writeConfig(t, dir, configWithRemovedModule)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	cmd := &UpdateCmd{
 		Config: cfgPath,
@@ -668,31 +678,28 @@ func TestUpdateCmd_Apply_CommentsRemoved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(out, "wrote") {
-		t.Errorf("apply output should mention 'wrote'; got: %q", out)
-	}
 
-	data, err := os.ReadFile(cfgPath) //nolint:gosec
+	after, err := os.ReadFile(cfgPath) //nolint:gosec
 	if err != nil {
 		t.Fatal(err)
 	}
-	content := string(data)
+	if !bytes.Equal(before, after) {
+		t.Errorf("--apply must leave an unmatched module untouched; file changed to:\n%s", after)
+	}
+	if strings.Contains(string(after), "archfit: removed module") {
+		t.Error("--apply must not comment out a configured module")
+	}
+	if _, statErr := os.Stat(cfgPath + ".bak"); statErr == nil {
+		t.Error("no backup should be written when there is nothing to apply")
+	}
 
-	// Removed module should be commented out.
-	if !strings.Contains(content, "archfit: removed module") {
-		t.Error("removed module should have archfit marker comment")
+	// The run must still report the unmatched module rather than claim the
+	// config is in sync.
+	if !strings.Contains(out, "UNMATCHED") {
+		t.Errorf("apply output must report the unmatched module; got: %q", out)
 	}
-	// Rules must be preserved.
-	if !strings.Contains(content, "no-bad-deps") {
-		t.Error("rules must be preserved after apply")
-	}
-	if !strings.Contains(content, "forbidden_dependency") {
-		t.Error("rules content should be preserved after apply")
-	}
-	// Backup must exist.
-	bakPath := cfgPath + ".bak"
-	if _, statErr := os.Stat(bakPath); statErr != nil {
-		t.Error("backup (.archfit.yaml.bak) should exist after apply")
+	if strings.Contains(out, "structurally in sync") {
+		t.Errorf("apply output must not claim in-sync with an unmatched module; got: %q", out)
 	}
 }
 
@@ -1018,7 +1025,8 @@ rules:
 }
 
 // TestUpdateCmd_BackupCreatedOnApply verifies a backup file is created on a
-// real structural apply.
+// real structural apply — here a newly discovered module, the one module edit
+// --apply still writes.
 func TestUpdateCmd_BackupCreatedOnApply(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
@@ -1029,7 +1037,7 @@ func TestUpdateCmd_BackupCreatedOnApply(t *testing.T) {
 		Root:   dir,
 		Apply:  true,
 	}
-	_, err := runUpdateCmd(t, cmd, emptyRunner())
+	_, err := runUpdateCmd(t, cmd, matchingRunner("internal/newmod"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1042,7 +1050,7 @@ func TestUpdateCmd_BackupCreatedOnApply(t *testing.T) {
 // TestUpdateCmd_Apply_Idempotent verifies that running --apply twice on the same
 // divergent fixture is a no-op on the second run: the file is byte-identical after
 // both runs, and no backup is created by the second run (because there are no
-// actionable edits left — AddModule and CommentModule are both no-ops on re-apply).
+// actionable edits left — AddModule is a no-op on re-apply).
 func TestUpdateCmd_Apply_Idempotent(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
@@ -1050,8 +1058,8 @@ func TestUpdateCmd_Apply_Idempotent(t *testing.T) {
 
 	cmd := &UpdateCmd{Config: cfgPath, Root: dir, Apply: true}
 
-	// First apply: structural changes (comment removed module).
-	if _, err := runUpdateCmd(t, cmd, emptyRunner()); err != nil {
+	// First apply: adds the newly discovered module stanza.
+	if _, err := runUpdateCmd(t, cmd, matchingRunner("internal/newmod")); err != nil {
 		t.Fatalf("first apply: unexpected error: %v", err)
 	}
 	afterFirst, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -1062,8 +1070,8 @@ func TestUpdateCmd_Apply_Idempotent(t *testing.T) {
 	// Remove the .bak so we can detect whether the second run creates a new one.
 	_ = os.Remove(cfgPath + ".bak")
 
-	// Second apply: no actionable edits — CommentModule and AddModule are no-ops.
-	if _, err = runUpdateCmd(t, cmd, emptyRunner()); err != nil {
+	// Second apply: no actionable edits — AddModule is a no-op on re-apply.
+	if _, err = runUpdateCmd(t, cmd, matchingRunner("internal/newmod")); err != nil {
 		t.Fatalf("second apply: unexpected error: %v", err)
 	}
 	afterSecond, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -1522,6 +1530,7 @@ func TestUpdateCmd_ConfigReview(t *testing.T) {
 		{"fully specified config reports no_known_issues without a health claim", runConfigReviewNoKnownIssues},
 		{"text report leads with the status line and lists issues", runConfigReviewTextStatus},
 		{"rust setting preview matches what apply writes", runConfigReviewRustSettingParity},
+		{"a naming difference is review-only, never a pending edit", runConfigReviewNameDrift},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1581,6 +1590,75 @@ func runConfigReviewJSONDocument(t *testing.T) {
 	}
 	if _, statErr := os.Stat(cfgPath + ".bak"); statErr == nil {
 		t.Error("--json must not create a backup")
+	}
+}
+
+// runConfigReviewNameDrift pins the end-to-end wiring of the naming-difference
+// pass. The config key is `internal/mymod` and discovery emits `mymod` over the
+// same paths — a name-only difference. It must land in name_drift, leave
+// added/removed empty, keep the status below action_required, and give --apply
+// nothing to write.
+func runConfigReviewNameDrift(t *testing.T) {
+	dir := minimalRoot(t)
+	cfgPath := writeConfig(t, dir, `version: 1
+layers:
+  - core
+  - adapter
+modules:
+  internal/mymod:
+    paths:
+      - "internal/mymod/**"
+    owner: team-a
+    subdomain: supporting
+    layer: adapter
+rules:
+  - id: no-bad-deps
+    type: forbidden_dependency
+    gate: warn
+    from: "internal/a/**"
+    to: "internal/b/**"
+`)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runUpdateCmd(t,
+		&UpdateCmd{Config: cfgPath, Root: dir, JSON: true},
+		matchingRunner("internal/mymod"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	review := decodeConfigReview(t, out)
+	if review.Status == initcfg.ReviewStatusActionRequired {
+		t.Errorf("a name-only difference must not read action_required; got %q", review.Status)
+	}
+	if len(review.Structure.AddedModules) != 0 || len(review.Structure.RemovedModules) != 0 {
+		t.Errorf("name drift must not appear as add/remove: added=%v removed=%v",
+			review.Structure.AddedModules, review.Structure.RemovedModules)
+	}
+	if len(review.Structure.NameDrift) != 1 {
+		t.Fatalf("name_drift: got %+v, want one entry", review.Structure.NameDrift)
+	}
+	drift := review.Structure.NameDrift[0]
+	if drift.ConfigModule != "internal/mymod" || drift.DiscoveredModule != "mymod" {
+		t.Errorf("name_drift entry = %+v, want config internal/mymod ↔ discovered mymod", drift)
+	}
+
+	// --apply must have nothing to write: rewriting the key would discard owner,
+	// subdomain, and layer.
+	if _, err = runUpdateCmd(t,
+		&UpdateCmd{Config: cfgPath, Root: dir, Apply: true},
+		matchingRunner("internal/mymod")); err != nil {
+		t.Fatalf("apply: unexpected error: %v", err)
+	}
+	after, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("--apply must not rewrite a name-only difference; file became:\n%s", after)
 	}
 }
 

@@ -20,6 +20,11 @@ New:
   (`archfit.config-review.v1`) with status `action_required`, `review_available`,
   or `no_known_issues`. `--json` with `--apply`, `--ai-classify`, or `--refresh`
   is a usage error (exit `3`) rejected before any discovery or write.
+- `config update --apply` no longer deletes, comments out, or re-keys a
+  configured module stanza. A configured module and a discovered module that own
+  the same paths under different names are reported as `name_drift`, and
+  configured modules discovery did not emit stay under `removed_modules`. Both
+  are review-only and neither raises the status to `action_required`.
 - `--base <ref> --json` adds a report-only `git_finding_delta` block that sorts
   the current `agent_tasks[]` into `introduced`, `pre_existing`, and
   `unknown_origin`. Missing analyzer evidence produces `unknown`, never a false

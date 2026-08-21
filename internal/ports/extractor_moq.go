@@ -22,6 +22,9 @@ var _ Extractor = &ExtractorMock{}
 //
 //		// make and configure a mocked Extractor
 //		mockedExtractor := &ExtractorMock{
+//			CoverageToolFunc: func() string {
+//				panic("mock out the CoverageTool method")
+//			},
 //			ExtractFunc: func(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 //				panic("mock out the Extract method")
 //			},
@@ -35,6 +38,9 @@ var _ Extractor = &ExtractorMock{}
 //
 //	}
 type ExtractorMock struct {
+	// CoverageToolFunc mocks the CoverageTool method.
+	CoverageToolFunc func() string
+
 	// ExtractFunc mocks the Extract method.
 	ExtractFunc func(ctx context.Context, s scope.Scope) (graph.Facts, diagnostic.Coverage, error)
 
@@ -43,6 +49,9 @@ type ExtractorMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// CoverageTool holds details about calls to the CoverageTool method.
+		CoverageTool []struct {
+		}
 		// Extract holds details about calls to the Extract method.
 		Extract []struct {
 			// Ctx is the ctx argument value.
@@ -54,8 +63,36 @@ type ExtractorMock struct {
 		Name []struct {
 		}
 	}
-	lockExtract sync.RWMutex
-	lockName    sync.RWMutex
+	lockCoverageTool sync.RWMutex
+	lockExtract      sync.RWMutex
+	lockName         sync.RWMutex
+}
+
+// CoverageTool calls CoverageToolFunc.
+func (mock *ExtractorMock) CoverageTool() string {
+	if mock.CoverageToolFunc == nil {
+		panic("ExtractorMock.CoverageToolFunc: method is nil but Extractor.CoverageTool was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockCoverageTool.Lock()
+	mock.calls.CoverageTool = append(mock.calls.CoverageTool, callInfo)
+	mock.lockCoverageTool.Unlock()
+	return mock.CoverageToolFunc()
+}
+
+// CoverageToolCalls gets all the calls that were made to CoverageTool.
+// Check the length with:
+//
+//	len(mockedExtractor.CoverageToolCalls())
+func (mock *ExtractorMock) CoverageToolCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockCoverageTool.RLock()
+	calls = mock.calls.CoverageTool
+	mock.lockCoverageTool.RUnlock()
+	return calls
 }
 
 // Extract calls ExtractFunc.

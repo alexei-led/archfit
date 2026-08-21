@@ -22,6 +22,13 @@ the `archfit.config-review.v1` document for scripts and agents. Its status line
 reads `action_required`, `review_available`, or `no_known_issues`; the last one
 means these checks found nothing, not that the config is complete.
 
+`--apply` writes added modules, path drift, and settings only. Two structure
+buckets stay review-only because resolving them would discard a stanza's
+`owner`, `subdomain`, `volatility`, `layer`, and `public` values: `name_drift`
+(a configured module and a discovered module own the same paths under different
+names) and `removed_modules` (configured modules discovery did not emit). Decide
+those by hand.
+
 Before adopting a config edit, measure it. `archfit config compare
 candidate.archfit.yaml -c .archfit.yaml` runs the full pipeline twice over the
 same source tree — once per config — and reports which findings each config

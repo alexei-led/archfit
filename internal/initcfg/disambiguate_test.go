@@ -12,6 +12,8 @@ const (
 	testAlpha   = "alpha"
 	testSvc     = "svc"
 	testSvcName = "internal_svc"
+	testSvcCfg  = "internal/svc"
+	testPathA   = "a/**"
 )
 
 // ---------------------------------------------------------------------------

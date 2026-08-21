@@ -78,7 +78,11 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		return fmt.Errorf("discovering project structure: %w", err)
 	}
 
-	report := initcfg.DiffModules(existing, freshCfg.Modules, requiresLayerClassification(cfg))
+	// ResolveNameDrift runs before anything reads Added/Removed: the review
+	// document, --ai-classify targets, and the apply edits must all see the same
+	// buckets, or the status names changes --apply would not make.
+	report := initcfg.ResolveNameDrift(
+		initcfg.DiffModules(existing, freshCfg.Modules, requiresLayerClassification(cfg)))
 	candidateCfg := candidateConfigForUpdate(cfg, freshCfg)
 	report.DeployUnitSuggestions = deployUnitSuggestions(ctx, root, candidateCfg, deps)
 	report.DistanceConfigCandidates = distanceConfigCandidates(ctx, root, candidateCfg, deps)
@@ -123,7 +127,10 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	}
 
 	if !hasEdits {
-		if (c.AIClassify && ann != nil) || initcfg.HasReviewSuggestions(report) {
+		// Review-only items (naming differences, configured modules discovery did
+		// not emit) count here too: printing "structurally in sync" over them
+		// would claim a clean config while the report has findings to show.
+		if (c.AIClassify && ann != nil) || initcfg.HasReviewItems(report) {
 			_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
 			return nil
 		}
@@ -360,11 +367,18 @@ func classifyTargetsForUpdate(
 	return targets
 }
 
-// hasActionableEdits returns true when there is at least one structural change.
+// hasActionableEdits returns true when --apply has a module edit to write.
+//
+// Removed is deliberately absent: commenting out a configured stanza discards
+// its owner, subdomain, volatility, layer, and public settings, and DiffModules
+// matches by name only, so a stanza discovery merely names differently would be
+// destroyed. NameDrift is excluded for the same reason. Both surface in the
+// report as review items instead. Keep in step with initcfg.hasPendingEdits.
+//
 // LLM role/volatility output is review-only: it is rendered as a diff but never
 // written by config update --apply.
 func hasActionableEdits(report initcfg.UpdateReport) bool {
-	return len(report.Added) > 0 || len(report.Removed) > 0 || len(report.PathDrift) > 0
+	return len(report.Added) > 0 || len(report.PathDrift) > 0
 }
 
 func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredConfig) config.Config {
@@ -591,7 +605,7 @@ func externalSystemSuggestionsFromAnnotations(ann map[string]initcfg.ModuleAnnot
 
 // buildUpdateEdits constructs the ordered Edit slice for an apply pass.
 func buildUpdateEdits(report initcfg.UpdateReport) []initcfg.Edit {
-	edits := make([]initcfg.Edit, 0, len(report.Added)+len(report.PathDrift)+len(report.Removed)+len(report.Unclassified))
+	edits := make([]initcfg.Edit, 0, len(report.Added)+len(report.PathDrift))
 
 	for _, def := range report.Added {
 		edits = append(edits, initcfg.AddModuleEdit{Def: def})
@@ -601,9 +615,8 @@ func buildUpdateEdits(report initcfg.UpdateReport) []initcfg.Edit {
 		edits = append(edits, initcfg.UpdateModulePathsEdit{Module: d.Name, Paths: d.DiscoveredPaths})
 	}
 
-	for _, e := range report.Removed {
-		edits = append(edits, initcfg.CommentModuleEdit{Module: e.Name, Note: "not found in discovery"})
-	}
+	// No edit is built for report.Removed: see hasActionableEdits. Removing a
+	// configured stanza stays a human decision, and the report says so.
 
 	return edits
 }

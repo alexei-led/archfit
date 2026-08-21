@@ -264,6 +264,59 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 			t.Error("empty root: expected cargo gap (no suppression), got none")
 		}
 	})
+
+	t.Run("go project markers", testGoProjectMarkerGaps)
+}
+
+// testGoProjectMarkerGaps pins Go's marker probe. go/packages discovers members
+// by walking for nested go.mod dirs, so a root-only marker check would call a
+// services/api/go.mod repo "no Go here" and suppress the gap — turning a real
+// analyzer failure into "language not present", the one absent shape that pairs
+// with ok in both `--base` and `config compare`.
+func testGoProjectMarkerGaps(t *testing.T) {
+	t.Parallel()
+	goMarkerTests := []struct {
+		name    string
+		goModAt string // repo-relative dir holding go.mod; "" = none
+		want    bool   // want a go/packages gap
+	}{
+		{name: "nested go.mod still produces a gap", goModAt: filepath.Join("services", "api"), want: true},
+		{name: "root go.mod produces a gap", goModAt: ".", want: true},
+		{name: "no go.mod anywhere suppresses the gap", goModAt: "", want: false},
+		// The walk prunes dependency and build directories so a vendored
+		// manifest cannot resurrect a language absent from the source tree.
+		{name: "go.mod under a pruned directory does not count", goModAt: filepath.Join("node_modules", "pkg"), want: false},
+	}
+	for _, tc := range goMarkerTests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			if tc.goModAt != "" {
+				dir := filepath.Join(root, tc.goModAt)
+				if err := os.MkdirAll(dir, 0o750); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, markerGoMod), []byte("module example\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			gaps := buildCoverageGaps(
+				[]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}, config.Config{}, root)
+			if gotGap := hasGapForTool(gaps, toolGoPackages); gotGap != tc.want {
+				t.Errorf("go/packages gap = %v, want %v (gaps: %+v)", gotGap, tc.want, gaps)
+			}
+		})
+	}
+}
+
+// hasGapForTool reports whether the gap list carries an entry for tool.
+func hasGapForTool(gaps []diagnostic.CoverageGap, tool string) bool {
+	for _, g := range gaps {
+		if g.Tool == tool {
+			return true
+		}
+	}
+	return false
 }
 
 // TestBuildConfigWarnings verifies the config-warnings block: lint warnings and

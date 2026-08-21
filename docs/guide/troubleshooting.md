@@ -90,6 +90,25 @@ checks cover structure drift, pending settings edits, `missing_owner`,
 layer assignments, and wrong `paths:` globs are outside their reach — use
 `archfit analyze -c .archfit.yaml` and its coverage warnings for those.
 
+## Config update lists modules under `name_drift` or `removed_modules`
+
+Module discovery derives its own key for each module (`agenttask` for
+`internal/agenttask/**`), and it does not have to match the key your config
+uses. When a configured module and a discovered module own exactly the same
+paths under different names, `config update` reports the pair under
+`name_drift`, not as an add plus a remove.
+
+Neither `name_drift` nor `removed_modules` is applied. Re-keying or deleting a
+stanza discards its `owner`, `subdomain`, `volatility`, `layer`, and `public`
+values, so both stay your decision. Neither raises the status to
+`action_required`; a report with only these reads `review_available`.
+
+Because the module-field checks run over stanzas discovery matched by name, a
+stanza listed under `name_drift` or `removed_modules` is not checked for
+`missing_owner`, `missing_volatility_input`, or `missing_layer`. Read a `0
+module issue(s)` line next to a long `name_drift` list as "not checked", not as
+"all clean".
+
 ## Config update cannot edit module paths
 
 `archfit config update` can now replace flow-style module paths such as
@@ -101,9 +120,14 @@ layer assignments, and wrong `paths:` globs are outside their reach — use
 These are two separate statements, and both can be true. `coverage evidence:`
 grades the analyzer evidence the two runs rest on; the differences section
 reports what the two configs actually measured. A duplicated or missing coverage
-row, a partial or timed-out analyzer, or an analyzer that ran on only one side
-grades the evidence `not_comparable` even when both runs produced identical
-findings and an identical score.
+row, a timed-out analyzer, an analyzer that failed to finish, or an analyzer that
+ran on only one side grades the evidence `not_comparable` even when both runs
+produced identical findings and an identical score.
+
+An analyzer that ran fully on both sides but left import specifiers unresolved
+(the normal dependency-cruiser and grimp state) grades `comparable_with_gaps`
+instead: the incompleteness is shared, so the comparison rests on it, and the
+detail line names the analyzer so the loss is visible.
 
 Read the coverage detail lines to see which analyzer caused it. A
 `not_comparable` grade means "trust this difference less", not "the comparison

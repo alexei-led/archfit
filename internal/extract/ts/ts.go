@@ -68,6 +68,11 @@ func (e *Extractor) Name() string {
 	return langTS
 }
 
+// CoverageTool returns the name this extractor stamps on its Coverage rows.
+func (e *Extractor) CoverageTool() string {
+	return coverageTool
+}
+
 // Extract detects dependency-cruiser, runs it against the project root,
 // parses the JSON output, and returns a graph.Facts + diagnostic.Coverage.
 //

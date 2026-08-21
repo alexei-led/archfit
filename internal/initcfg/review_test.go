@@ -184,7 +184,10 @@ func TestBuildConfigReview_StatusPriority(t *testing.T) {
 		{"empty report", UpdateReport{StructuralInSync: true}, ReviewStatusNoKnownIssues},
 		{"issue only", UpdateReport{Issues: []ModuleIssue{issue}}, ReviewStatusActionRequired},
 		{"added module", UpdateReport{Added: []ModuleDef{{Name: testSvc}}}, ReviewStatusActionRequired},
-		{"removed module", UpdateReport{Removed: []ExistingModule{{Name: testGone}}}, ReviewStatusActionRequired},
+		// Removed and NameDrift are review-only: --apply writes neither, so a
+		// status of action_required would name an edit apply refuses to make.
+		{"removed module", UpdateReport{Removed: []ExistingModule{{Name: testGone}}}, ReviewStatusReviewAvailable},
+		{"name drift", UpdateReport{NameDrift: []NameDrift{{ConfigName: testGone, DiscoveredName: testSvc}}}, ReviewStatusReviewAvailable},
 		{"path drift", UpdateReport{PathDrift: []PathDelta{{Name: testSvc}}}, ReviewStatusActionRequired},
 		{"settings only", UpdateReport{Settings: []SettingChange{RustDeepAnalysisSetting()}}, ReviewStatusActionRequired},
 		{"suggestion only", UpdateReport{DeployUnitSuggestions: []DeployUnitSuggestion{deploy}}, ReviewStatusReviewAvailable},
@@ -310,16 +313,28 @@ func TestRenderReviewStatus(t *testing.T) {
 		{
 			name:   "review available",
 			report: UpdateReport{DeployUnitSuggestions: []DeployUnitSuggestion{{Module: testReviewWebMod}}},
-			want:   "status: review_available — review suggestions only; no known module issues\n",
+			want:   "status: review_available — nothing to apply; review items only\n",
 		},
 		{
-			name: "action required counts issues and structure changes",
+			name: "action required counts issues and pending edits",
 			report: UpdateReport{
 				Issues:   []ModuleIssue{{Code: IssueMissingOwner, Module: testSvc}},
 				Added:    []ModuleDef{{Name: testReviewModA}},
 				Settings: []SettingChange{RustDeepAnalysisSetting()},
 			},
-			want: "status: action_required — 1 module issue(s), 2 structure change(s)\n",
+			want: "status: action_required — 1 module issue(s), 2 pending edit(s)\n",
+		},
+		{
+			// The count names only what --apply writes: review-only buckets are
+			// reported in their own sections, never as pending edits.
+			name: "pending-edit count excludes review-only buckets",
+			report: UpdateReport{
+				Issues:    []ModuleIssue{{Code: IssueMissingOwner, Module: testSvc}},
+				Added:     []ModuleDef{{Name: testReviewModA}},
+				Removed:   []ExistingModule{{Name: testGone}},
+				NameDrift: []NameDrift{{ConfigName: testGone, DiscoveredName: testSvc}},
+			},
+			want: "status: action_required — 1 module issue(s), 1 pending edit(s)\n",
 		},
 	}
 

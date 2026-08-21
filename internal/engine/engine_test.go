@@ -328,11 +328,15 @@ func TestRun_PerExtractorFailureIsolation(t *testing.T) {
 	ctx := context.Background()
 	facts := violationFacts()
 
-	const failedTool = "python"
+	// The failure row is filed under the extractor's COVERAGE name ("grimp"),
+	// not its language name ("python"): every coverage consumer pairs rows by
+	// the name a successful run would have used.
+	const failedLang, failedTool = "python", "grimp"
 	extractErr := errors.New("python extractor: ast-grep exited with status 1")
 
 	failingEx := &ports.ExtractorMock{
-		NameFunc: func() string { return failedTool },
+		NameFunc:         func() string { return failedLang },
+		CoverageToolFunc: func() string { return failedTool },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return graph.Facts{}, diagnostic.Coverage{}, extractErr
 		},
@@ -402,6 +406,22 @@ func TestRun_PerExtractorFailureIsolation(t *testing.T) {
 	} else if failedCov.Status == diagnostic.StatusOK {
 		t.Errorf("tool_coverage for %q reports status=ok, want a non-ok coverage gap", failedTool)
 	}
+
+	// The failure must not create a phantom row named after the language: a
+	// consumer looking for the "grimp" family would otherwise see zero rows and
+	// report the analyzer as missing rather than failed.
+	for i := range d.ToolCoverage {
+		if d.ToolCoverage[i].Tool == failedLang {
+			t.Errorf("tool_coverage carries a row named %q — a failed extractor must file under its coverage name %q", failedLang, failedTool)
+		}
+	}
+
+	// The failure row carries no Unresolved count: that field is the sole
+	// discriminator between "ran fully, N specifiers unresolved" and "did not
+	// finish", and a failed extractor is the second kind.
+	if failedCov != nil && failedCov.Unresolved != 0 {
+		t.Errorf("failed extractor coverage has Unresolved=%d, want 0", failedCov.Unresolved)
+	}
 }
 
 // TestRun_AllExtractorsFail_StillFatal guards the boundary of the
@@ -413,13 +433,15 @@ func TestRun_AllExtractorsFail_StillFatal(t *testing.T) {
 	ctx := context.Background()
 
 	failingA := &ports.ExtractorMock{
-		NameFunc: func() string { return "python" },
+		NameFunc:         func() string { return "python" },
+		CoverageToolFunc: func() string { return "grimp" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return graph.Facts{}, diagnostic.Coverage{}, errors.New("python extractor: ast-grep exited with status 1")
 		},
 	}
 	failingB := &ports.ExtractorMock{
-		NameFunc: func() string { return "go" },
+		NameFunc:         func() string { return "go" },
+		CoverageToolFunc: func() string { return "go/packages" },
 		ExtractFunc: func(_ context.Context, _ scope.Scope) (graph.Facts, diagnostic.Coverage, error) {
 			return graph.Facts{}, diagnostic.Coverage{}, errors.New("go extractor: go list exited with status 1")
 		},

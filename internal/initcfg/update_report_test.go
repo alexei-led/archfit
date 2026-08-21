@@ -19,6 +19,7 @@ const (
 	testSupporting = "supporting"
 	testMedium     = "medium"
 	testSvcPath    = "internal/svc/**"
+	testNameDrift  = "NAME DRIFT"
 	testOldPath    = "old/**"
 	testNewPath    = "new/**"
 	testSyncLine   = "structurally in sync"
@@ -74,7 +75,7 @@ func TestRenderUpdateReport_Empty(t *testing.T) {
 	if !strings.Contains(got, "structurally in sync") {
 		t.Errorf("expected in-sync line, got:\n%s", got)
 	}
-	for _, sec := range []string{"ADDED", "REMOVED", "PATH DRIFT", "UNCLASSIFIED"} {
+	for _, sec := range []string{"ADDED", "UNMATCHED", testNameDrift, "PATH DRIFT", "UNCLASSIFIED"} {
 		if strings.Contains(got, sec) {
 			t.Errorf("unexpected section %q in empty report:\n%s", sec, got)
 		}
@@ -216,17 +217,42 @@ func TestRenderUpdateReport_Removed(t *testing.T) {
 	}
 	got := RenderUpdateReport(r, nil, nil)
 
-	if !strings.Contains(got, "REMOVED") {
-		t.Errorf("missing REMOVED section:\n%s", got)
+	if !strings.Contains(got, "UNMATCHED") {
+		t.Errorf("missing UNMATCHED section:\n%s", got)
 	}
 	if !strings.Contains(got, "old") {
 		t.Errorf("missing module name 'old':\n%s", got)
 	}
-	if !strings.Contains(got, "verify or remove") {
-		t.Errorf("missing 'verify or remove' note:\n%s", got)
+	if !strings.Contains(got, "verify or remove by hand") {
+		t.Errorf("missing 'verify or remove by hand' note:\n%s", got)
+	}
+	// The section must state that --apply leaves the stanza alone; the previous
+	// wording implied apply would comment it out, which destroyed settings.
+	if !strings.Contains(got, "does NOT remove these") {
+		t.Errorf("UNMATCHED section must say --apply does not remove them:\n%s", got)
 	}
 	if strings.Contains(got, "structurally in sync") {
 		t.Errorf("unexpected in-sync line when Removed is non-empty:\n%s", got)
+	}
+}
+
+// TestRenderUpdateReport_NameDrift pins the review-only naming-difference
+// section: same paths, different key, never rewritten by --apply.
+func TestRenderUpdateReport_NameDrift(t *testing.T) {
+	r := UpdateReport{
+		NameDrift: []NameDrift{
+			{ConfigName: testSvcCfg, DiscoveredName: testSvc, Paths: []string{testSvcPath}},
+		},
+	}
+	got := RenderUpdateReport(r, nil, nil)
+
+	for _, want := range []string{testNameDrift, testSvcCfg, testSvc, testSvcPath, "does NOT rename these"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("NAME DRIFT section missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "structurally in sync") {
+		t.Errorf("unexpected in-sync line when NameDrift is non-empty:\n%s", got)
 	}
 }
 
@@ -430,12 +456,12 @@ func TestRenderUpdateReport_EmptySectionsOmitted(t *testing.T) {
 	}
 	got := RenderUpdateReport(r, nil, nil)
 
-	for _, sec := range []string{"ADDED", "PATH DRIFT", "UNCLASSIFIED", "structurally in sync"} {
+	for _, sec := range []string{"ADDED", testNameDrift, "PATH DRIFT", "UNCLASSIFIED", "structurally in sync"} {
 		if strings.Contains(got, sec) {
 			t.Errorf("empty section %q should be omitted:\n%s", sec, got)
 		}
 	}
-	if !strings.Contains(got, "REMOVED") {
-		t.Errorf("REMOVED section missing:\n%s", got)
+	if !strings.Contains(got, "UNMATCHED") {
+		t.Errorf("UNMATCHED section missing:\n%s", got)
 	}
 }

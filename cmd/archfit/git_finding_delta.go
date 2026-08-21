@@ -9,9 +9,11 @@
 //   - Only stable finding IDs are matched. Lifecycle labels (new/waived/…) and
 //     gate-vs-advisory promotion are ignored — the same seam keeps its ID.
 //   - An unmatched task is "introduced" only when every ACTIVE finding-producing
-//     analyzer family covered both sides equivalently. Missing, partial,
-//     timed-out, or asymmetric evidence yields "unknown", never a false
-//     "introduced".
+//     analyzer family covered both sides equivalently. Missing, timed-out, or
+//     asymmetric evidence yields "unknown", never a false "introduced". A
+//     symmetric "partial" from unresolved import specifiers is the normal
+//     dependency-cruiser/grimp state, so it pairs — and says so in
+//     comparison_reasons.
 //
 // Isolation: the only base-side inputs are finding IDs, coverage rows/gaps, and
 // the config hash (see baseEvidence in worktree.go). Base paths, locations, and
@@ -46,8 +48,16 @@ const (
 	evidenceAbsent
 	// evidenceDisabled — the analyzer is turned off in config.
 	evidenceDisabled
-	// evidenceUnavailable — absent with a gap, partial, or timed out: the
-	// analyzer could have produced findings and did not.
+	// evidencePartialUnresolved — the analyzer ran over the whole tree and left
+	// N import specifiers unresolved. That is the STEADY state for
+	// dependency-cruiser and grimp (one unresolvable specifier anywhere sets it),
+	// not a completion failure, so it must not read as "the analyzer did not
+	// run". It pairs only with itself: both sides ran, both are equally
+	// incomplete, and the degradation is disclosed in comparison_reasons.
+	evidencePartialUnresolved
+	// evidenceUnavailable — absent with a gap, timed out, or partial with no
+	// unresolved count: the analyzer could have produced findings and did not
+	// finish doing so.
 	evidenceUnavailable
 )
 
@@ -201,18 +211,24 @@ func contains(set map[string]struct{}, key string) bool {
 }
 
 // compareAnalyzerEvidence reports whether every active analyzer family covered
-// both sides equivalently, plus one reason per family that did not.
+// both sides equivalently, plus one reason per family that did not — or that
+// paired only in degraded form, which stays comparable but is still disclosed.
 func compareAnalyzerEvidence(fams []analyzerFamily, head, base analyzerEvidence) (bool, []string) {
 	ok := true
 	var reasons []string
 	for _, f := range fams {
 		h := summariseFamily(f, head)
 		b := summariseFamily(f, base)
-		if familyComparable(h, b) {
+		switch pairFamily(h, b) {
+		case familyPaired:
 			continue
+		case familyPairedDegraded:
+			reasons = append(reasons, fmt.Sprintf(
+				"%s: head %s, base %s — unresolved import specifiers on both sides", f.name, h.raw(), b.raw()))
+		case familyUnpaired:
+			ok = false
+			reasons = append(reasons, fmt.Sprintf("%s: head %s, base %s", f.name, h.raw(), b.raw()))
 		}
-		ok = false
-		reasons = append(reasons, fmt.Sprintf("%s: head %s, base %s", f.name, h.raw(), b.raw()))
 	}
 	return ok, reasons
 }
@@ -269,34 +285,74 @@ func normalizeCoverage(f analyzerFamily, c diagnostic.Coverage, gaps []diagnosti
 			return evidenceNotApplicable
 		}
 		return evidenceAbsent
+	case diagnostic.StatusPartial:
+		// Unresolved is the only structural discriminator between the two
+		// meanings of "partial". dependency-cruiser and grimp set it on a
+		// COMPLETED run that could not resolve every import specifier; every
+		// other partial producer (a failed extractor, a rejected ast-grep rule
+		// file, an empty SCIP index, a failed jscpd run) builds its Coverage
+		// without it. Keep that invariant when adding a partial producer.
+		if c.Unresolved > 0 {
+			return evidencePartialUnresolved
+		}
+		return evidenceUnavailable
 	default:
-		// partial, timed out, and any future status: not comparable.
+		// timed out and any future status: not comparable.
 		return evidenceUnavailable
 	}
 }
 
-// familyComparable applies the pairing rules to one analyzer's row on each side.
+// familyPairing is the outcome of pairing one analyzer family's two sides.
+type familyPairing int
+
+const (
+	// familyPaired — the two sides rest on equivalent evidence.
+	familyPaired familyPairing = iota
+	// familyPairedDegraded — the two sides pair, but both ran with unresolved
+	// import specifiers. Comparable, and disclosed in comparison_reasons.
+	familyPairedDegraded
+	// familyUnpaired — the evidence does not support attributing an origin.
+	familyUnpaired
+)
+
+// pairFamily applies the pairing rules to one analyzer's row on each side.
 //
 // Equal statuses always pair: an analyzer disabled on both sides is a deliberate
 // opt-out, and one absent on both sides produced no findings on either side, so
 // neither can hide an origin. The only cross-status pair is ok against
 // not_applicable — that side genuinely has none of the language.
 //
+// Symmetric partial-with-unresolved pairs as DEGRADED rather than failing: for
+// dependency-cruiser and grimp that status is the normal steady state, and
+// treating it as unusable made the whole origin delta inert on every TypeScript
+// and Python repo. Both sides ran the same analyzer over the same tree, so the
+// blindness is shared — the residual risk is that a base counterpart hid behind
+// an unresolved specifier, which the disclosed reason exists to surface.
+//
 // A missing row, a duplicated row, and anything unavailable (absent with a gap,
-// partial, timed out) are all unavailable evidence.
-func familyComparable(head, base familySummary) bool {
+// timed out, partial with no unresolved count) are all unavailable evidence.
+func pairFamily(head, base familySummary) familyPairing {
 	if head.rows() != 1 || base.rows() != 1 {
-		return false // a missing or duplicated coverage row is unavailable evidence
+		return familyUnpaired // a missing or duplicated coverage row is unavailable evidence
 	}
 	h, b := head.statuses[0], base.statuses[0]
+	if h == evidencePartialUnresolved || b == evidencePartialUnresolved {
+		if h == b {
+			return familyPairedDegraded
+		}
+		return familyUnpaired
+	}
 	if h == evidenceUnavailable || b == evidenceUnavailable {
-		return false
+		return familyUnpaired
 	}
 	if h == b {
-		return true
+		return familyPaired
 	}
-	return (h == evidenceOK && b == evidenceNotApplicable) ||
-		(h == evidenceNotApplicable && b == evidenceOK)
+	if (h == evidenceOK && b == evidenceNotApplicable) ||
+		(h == evidenceNotApplicable && b == evidenceOK) {
+		return familyPaired
+	}
+	return familyUnpaired
 }
 
 func hasGap(gaps []diagnostic.CoverageGap, tool string) bool {

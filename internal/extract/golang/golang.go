@@ -75,6 +75,11 @@ func (e *GoExtractor) Name() string {
 	return "go"
 }
 
+// CoverageTool returns the name this extractor stamps on its Coverage rows.
+func (e *GoExtractor) CoverageTool() string {
+	return toolGoPackages
+}
+
 // Extract loads all Go packages for every workspace member under s.Root,
 // emits nodes and edges for every import statement found in the AST, and
 // returns a Coverage record.

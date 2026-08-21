@@ -137,8 +137,8 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   gapless `absent` on a NON-primary analyzer is evidence about the tool, not the
   tree, so it pairs only with itself — symmetric absence is safe (neither side
   produced findings), asymmetric absence is not. `absent` with a coverage gap,
-  `partial`, timed out, a missing row, and a duplicate row are all unavailable
-  evidence. `comparison_status: comparable` can still ship with non-empty
+  timed out, a missing row, and a duplicate row are all unavailable evidence.
+  `comparison_status: comparable` can still ship with non-empty
   `comparison_reasons`: the status reports task placement, the reasons report
   evidence.
   **Shared with `config compare`'s `decision.gradeTool` (keep these three in
@@ -152,6 +152,34 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   config-caused); (b) symmetric `absent`-WITH-a-gap is `comparable_with_gaps`
   for `config compare` (shared blindness) but unavailable for `--base` (the
   stricter side; both err safe).
+- **`partial` means two different things and `Coverage.Unresolved` separates
+  them.** dependency-cruiser and grimp mark a COMPLETED run partial as soon as
+  one import specifier anywhere fails to resolve (`Unresolved > 0`) — the normal
+  steady state on any TS/Python repo, which `score.tsUnresolvedRatioCeiling`
+  already tolerates to 10%. Every other partial producer (a failed extractor in
+  `engine.extract`, a rejected ast-grep rule file, an empty SCIP index, a failed
+  jscpd run) builds its Coverage without that field, so `Unresolved == 0` means
+  "did not finish". Both pairing paths split on exactly that: a SYMMETRIC
+  unresolved-specifier partial pairs (`comparable_with_gaps` in
+  `decision.gradeTool`, `familyPairedDegraded` in `pairFamily`) and always
+  discloses a reason; everything else partial, plus timed-out, stays unavailable.
+  Treating all partial as unusable made both features permanently inert on
+  TypeScript and Python. Keep the invariant when adding a partial producer: set
+  `Unresolved` only for a run that completed.
+- **Extractor-failure coverage rows use `CoverageTool()`, not `Name()`**
+  (`ports.Extractor`, `engine.extract`). A failed `Extract` returns a zero
+  Coverage, so the engine stamps the row itself; filing it under the language
+  name ("go") instead of the coverage name ("go/packages") created a phantom
+  analyzer next to the real family and left the family with zero rows.
+- **Coverage-gap suppression follows the analyzer's REAL discovery**
+  (`primaryToolProjectProbe`, `cmd/archfit/pipeline_coverage.go`). A missing
+  project marker suppresses the gap, and a gapless `absent` primary row is the
+  one shape both pairing paths read as "language not present". Root-only marker
+  checks are correct for dependency-cruiser, grimp, and cargo (all resolve from a
+  root manifest) but wrong for Go, which walks for nested `go.mod` dirs — so Go
+  probes the tree (`goProjectPresent`, pruning dependency/build dirs). Without
+  it, a real go/packages failure in a `services/api/go.mod` repo was
+  indistinguishable from "no Go here" and could manufacture a false `introduced`.
   Isolation: only base finding IDs, coverage rows/gaps, and the config
   hash cross over — `runScoreSide` projects the base Diagnostic to `baseEvidence`
   at the source, because base agent tasks carry paths and a validation command
@@ -159,7 +187,7 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
 - **One coverage name per analyzer.** `internal/extract/astgrep` drives one
   binary for two passes and they report under two names: `ast-grep` (patterns)
   and `ast-grep/syntax` (`syntaxToolName`). Both consumers that pair coverage
-  rows — `familyComparable` (git origin delta) and `decision.gradeTool` (config
+  rows — `pairFamily` (git origin delta) and `decision.gradeTool` (config
   compare) — read a repeated name as an unpairable duplicate and grade the pair
   unavailable/`not_comparable`. Never give two analyzers one coverage name.
 - **`archfit config compare <candidate>`** (`cmd/archfit/config_compare.go`,
@@ -180,17 +208,31 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   non-obvious part: `--json` with `--apply`, `--ai-classify`, or `--refresh` is
   a usage error (exit 3) rejected BEFORE discovery, tool calls, cache access, or
   any write. Schema in `docs/guide/commands.md`.
+- **`config update` never destroys a configured module stanza.** `DiffModules`
+  matches config keys to discovery keys by NAME, and the conventions need not
+  agree — this repo configures `internal/agenttask` while discovery emits
+  `agenttask` over the identical path set. `initcfg.ResolveNameDrift` (run in
+  `cmd` immediately after `DiffModules`, before ANY consumer reads the buckets)
+  reclassifies each 1:1 add/remove pair with an equal normalized path set as
+  `NameDrift`. On top of that, `Removed` is review-only: `hasActionableEdits`,
+  `buildUpdateEdits`, and `initcfg.hasPendingEdits` all exclude it, so `--apply`
+  writes only added modules, path drift, and settings. Deleting or re-keying a
+  stanza discards its `owner`/`subdomain`/`volatility`/`layer`/`public`, so both
+  stay human decisions and the report says so (NAME DRIFT / UNMATCHED sections,
+  `review_available` status). Before this, `config update --apply` on archfit's
+  own config commented out all 44 modules and added 31 bare stanzas, and the
+  status read `action_required` with 0 real issues.
 - **`runContext`** (`cmd/archfit/pipeline_run.go`) replaces `runPipeline`'s
   positional path arguments. Each field selects one thing, and a caller that
   leaves one zero silently gets head-tree state on a base or candidate run:
   `ConfigSource` → config hash + validation command; `BundleDir` → pinned labels
-  - fact-cache location; `ScanRoot` → scope + on-disk path resolution;
-    `EvaluatedAt` → the single instant waiver expiry and staleness age against
-    (zero samples `time.Now()` on read). Per-run values: normal analysis = current
-    path / current config dir / current tree / persisted baseline; git base =
-    same, with the base worktree as ScanRoot and an empty baseline; compare
-    current and compare candidate = the common tree, the current config dir, one
-    shared `EvaluatedAt`, empty baselines, and only `ConfigSource` differing.
+  + fact-cache location; `ScanRoot` → scope + on-disk path resolution;
+  `EvaluatedAt` → the single instant waiver expiry and staleness age against
+  (zero samples `time.Now()` on read). Per-run values: normal analysis = current
+  path / current config dir / current tree / persisted baseline; git base =
+  same, with the base worktree as ScanRoot and an empty baseline; compare
+  current and compare candidate = the common tree, the current config dir, one
+  shared `EvaluatedAt`, empty baselines, and only `ConfigSource` differing.
 - **Owner inheritance for auto-registered synthetic submodules**
   (`classify.AugmentModulesFromGraph`, `AugmentGoWorkspaceModules`): propagates
   `owner` from the nearest config-declared ancestor module to each synthetic module.

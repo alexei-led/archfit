@@ -35,12 +35,14 @@ type CoverageComparability string
 const (
 	// CoverageComparable — every compared analyzer ran on both sides.
 	CoverageComparable CoverageComparability = "comparable"
-	// CoverageComparableWithGaps — the sides agree, but at least one analyzer
-	// was absent or disabled on BOTH sides, so the shared picture is incomplete.
+	// CoverageComparableWithGaps — the sides agree, but at least one analyzer was
+	// absent, disabled, or left import specifiers unresolved on BOTH sides, so
+	// the shared picture is incomplete.
 	CoverageComparableWithGaps CoverageComparability = "comparable_with_gaps"
 	// CoverageNotComparable — an analyzer's evidence differs between the sides,
-	// is partial or timed out, or has a missing/duplicate coverage row. Any
-	// difference in findings may be an artifact of the evidence, not the config.
+	// did not finish (timed out, or partial from a failed run), or has a
+	// missing/duplicate coverage row. Any difference in findings may be an
+	// artifact of the evidence, not the config.
 	CoverageNotComparable CoverageComparability = "not_comparable"
 )
 
@@ -211,11 +213,16 @@ func compareFindings(current, candidate []finding.Finding) ConfigCompareFindings
 // act on it without re-deriving the rule.
 const (
 	reasonRowCount    = "coverage row missing or duplicated"
-	reasonUnstable    = "partial or timed-out coverage cannot be compared"
+	reasonUnstable    = "incomplete or timed-out coverage cannot be compared"
 	reasonStatusMoved = "coverage status differs between the configurations"
 	reasonUnknown     = "unrecognised coverage status"
 	reasonAbsentBoth  = "analyzer absent under both configurations"
 	reasonDisabled    = "analyzer disabled under both configurations"
+	// reasonPartialBoth covers a symmetric partial that both sides earned by
+	// leaving import specifiers unresolved. The analyzer ran over the whole tree
+	// on both sides, so the incompleteness is shared and the comparison rests on
+	// it — with the loss stated.
+	reasonPartialBoth = "analyzer left import specifiers unresolved under both configurations"
 	// reasonAbsentAsymmetric covers equal absent rows where only one
 	// configuration reported a coverage gap: one side expected the analyzer to
 	// run and the other did not, so the blindness is not shared.
@@ -258,7 +265,7 @@ func compareCoverage(current, candidate diagnostic.Diagnostic) ConfigCompareCove
 // analyzer that drops out of the comparison entirely.
 func gradeTool(
 	tool string,
-	cur, cand []string,
+	cur, cand []diagnostic.Coverage,
 	primary map[string]struct{},
 	curGaps, candGaps []diagnostic.CoverageGap,
 ) (grade CoverageComparability, reason string, ignored bool) {
@@ -271,12 +278,17 @@ func gradeTool(
 	if unstableStatus(c) || unstableStatus(d) {
 		return CoverageNotComparable, reasonUnstable, false
 	}
-	if c != d {
+	if c.Status != d.Status {
 		return CoverageNotComparable, reasonStatusMoved, false
 	}
-	switch c {
+	switch c.Status {
 	case diagnostic.StatusOK:
 		return CoverageComparable, "", false
+	case diagnostic.StatusPartial:
+		// Both sides survived unstableStatus, so both ran fully and left import
+		// specifiers unresolved. Shared incompleteness over one tree — comparable,
+		// with the loss reported.
+		return CoverageComparableWithGaps, reasonPartialBoth, false
 	case diagnostic.StatusAbsent:
 		// A coverage gap is per-side evidence: it says this configuration
 		// EXPECTED the analyzer to run. One side gapped and the other not is an
@@ -302,27 +314,37 @@ func gradeTool(
 	}
 }
 
-// unstableStatus reports whether a coverage status means the analyzer could
-// have produced findings and did not finish doing so.
-func unstableStatus(s string) bool {
-	return s == diagnostic.StatusPartial || s == diagnostic.StatusTimedOut
+// unstableStatus reports whether a coverage row means the analyzer could have
+// produced findings and did not finish doing so.
+//
+// "partial" carries two meanings and Unresolved separates them: dependency-
+// cruiser and grimp set it on a COMPLETED run that could not resolve every
+// import specifier — the normal steady state — while every other partial
+// producer (a failed extractor, a rejected ast-grep rule file, an empty SCIP
+// index, a failed jscpd run) leaves Unresolved at zero. Keep that invariant when
+// adding a partial producer.
+func unstableStatus(c diagnostic.Coverage) bool {
+	if c.Status == diagnostic.StatusPartial {
+		return c.Unresolved == 0
+	}
+	return c.Status == diagnostic.StatusTimedOut
 }
 
-// rowsByTool groups coverage statuses by analyzer name, sorted within each tool
-// so a duplicate pair renders deterministically.
-func rowsByTool(rows []diagnostic.Coverage) map[string][]string {
-	out := make(map[string][]string, len(rows))
+// rowsByTool groups coverage rows by analyzer name, sorted by status within each
+// tool so a duplicate pair renders deterministically.
+func rowsByTool(rows []diagnostic.Coverage) map[string][]diagnostic.Coverage {
+	out := make(map[string][]diagnostic.Coverage, len(rows))
 	for _, c := range rows {
-		out[c.Tool] = append(out[c.Tool], c.Status)
+		out[c.Tool] = append(out[c.Tool], c)
 	}
 	for tool := range out {
-		sort.Strings(out[tool])
+		sort.SliceStable(out[tool], func(i, j int) bool { return out[tool][i].Status < out[tool][j].Status })
 	}
 	return out
 }
 
 // unionTools returns every analyzer name seen on either side, sorted.
-func unionTools(a, b map[string][]string) []string {
+func unionTools(a, b map[string][]diagnostic.Coverage) []string {
 	seen := make(map[string]struct{}, len(a)+len(b))
 	for tool := range a {
 		seen[tool] = struct{}{}
@@ -362,11 +384,15 @@ func hasCoverageGap(gaps []diagnostic.CoverageGap, tool string) bool {
 }
 
 // renderRows renders one side's coverage statuses for a detail entry.
-func renderRows(rows []string) string {
+func renderRows(rows []diagnostic.Coverage) string {
 	if len(rows) == 0 {
 		return CoverageRowMissing
 	}
-	return strings.Join(rows, "+")
+	statuses := make([]string, 0, len(rows))
+	for _, c := range rows {
+		statuses = append(statuses, c.Status)
+	}
+	return strings.Join(statuses, "+")
 }
 
 // coverageRank orders the grades so the aggregate can take the worst.

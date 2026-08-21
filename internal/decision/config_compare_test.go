@@ -248,8 +248,13 @@ func TestCompareConfigs_Findings(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestCompareCoverage_StatusPairs enumerates all 25 ordered pairs over the five
-// coverage statuses. The tool here is NOT primary, so the absent/absent carve-out
-// never applies and each pair reads its plain rule.
+// coverage statuses, then the three cases where "partial" means a completed run
+// with unresolved import specifiers. The tool here is NOT primary, so the
+// absent/absent carve-out never applies and each pair reads its plain rule.
+//
+// Every "partial" in the 25-pair table carries Unresolved == 0 — the shape a
+// failed extractor, a rejected ast-grep rule file, or an empty SCIP index
+// produces. Those never pair.
 func TestCompareCoverage_StatusPairs(t *testing.T) {
 	statuses := []string{
 		diagnostic.StatusOK,
@@ -323,12 +328,51 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 			})
 		}
 	}
+
+	// dependency-cruiser and grimp report "partial" whenever ONE import
+	// specifier anywhere in the tree is unresolvable — the normal steady state,
+	// not a completion failure. Grading it not_comparable pinned every
+	// TypeScript and Python comparison to not_comparable forever.
+	unresolved := func(n int) diagnostic.Coverage {
+		c := cov(gapTool, diagnostic.StatusPartial)
+		c.Unresolved = n
+		return c
+	}
+	partialPairs := []struct {
+		name               string
+		current, candidate diagnostic.Coverage
+		want               decision.CoverageComparability
+	}{
+		{"unresolved_both", unresolved(3), unresolved(7), decision.CoverageComparableWithGaps},
+		{"unresolved_current_only", unresolved(3), cov(gapTool, diagnostic.StatusPartial), decision.CoverageNotComparable},
+		{"unresolved_candidate_only", cov(gapTool, diagnostic.StatusPartial), unresolved(3), decision.CoverageNotComparable},
+		{"unresolved_vs_ok", unresolved(3), cov(gapTool, diagnostic.StatusOK), decision.CoverageNotComparable},
+		{"ok_vs_unresolved", cov(gapTool, diagnostic.StatusOK), unresolved(3), decision.CoverageNotComparable},
+	}
+	for _, tt := range partialPairs {
+		t.Run("partial_"+tt.name, func(t *testing.T) {
+			got := decision.CompareConfigs(decision.ConfigCompareInput{
+				Current:   side([]diagnostic.Coverage{tt.current}, nil),
+				Candidate: side([]diagnostic.Coverage{tt.candidate}, nil),
+			}).Coverage
+			if got.Status != tt.want {
+				t.Errorf("status = %q, want %q", got.Status, tt.want)
+			}
+			if len(got.Details) != 1 {
+				t.Fatalf("details = %+v, want exactly one — the loss must be disclosed", got.Details)
+			}
+			if got.Details[0].Reason == "" {
+				t.Errorf("detail has no reason: %+v", got.Details[0])
+			}
+		})
+	}
 }
 
 // TestCompareCoverage_RowCount pins the missing-row and duplicate-row rules,
-// including the duplicate-on-both-sides case: a real run of this repo emits two
-// "ast-grep" rows, and the rule grades that not_comparable rather than pairing
-// the duplicates by guesswork.
+// including the duplicate-on-both-sides case. Every analyzer now reports under
+// its own coverage name (the pattern pass is "ast-grep", the syntax pass
+// "ast-grep/syntax"), so a repeated name is a genuine anomaly — graded
+// not_comparable rather than pairing the duplicates by guesswork.
 func TestCompareCoverage_RowCount(t *testing.T) {
 	tests := []struct {
 		name               string

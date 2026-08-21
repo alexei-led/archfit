@@ -51,7 +51,7 @@ func TestDiffModules(t *testing.T) {
 			fresh:    []ModuleDef{mod("svc", "new/**")},
 			want: UpdateReport{
 				PathDrift: []PathDelta{
-					{Name: "svc", ConfigPaths: []string{"old/**"}, DiscoveredPaths: []string{"new/**"}},
+					{Name: testSvc, ConfigPaths: []string{"old/**"}, DiscoveredPaths: []string{"new/**"}},
 				},
 				StructuralInSync: false,
 			},
@@ -214,6 +214,122 @@ func TestDiffModules(t *testing.T) {
 			}
 			if got.StructuralInSync != tc.want.StructuralInSync {
 				t.Errorf("StructuralInSync: got %v, want %v", got.StructuralInSync, tc.want.StructuralInSync)
+			}
+		})
+	}
+}
+
+// TestResolveNameDrift pins the naming-difference pass: DiffModules matches by
+// NAME, so a config key and a discovery key over the same paths read as an
+// add + a remove. Left alone, that made `config update` report action_required
+// on this repo's own config and pointed --apply at commenting out 44 stanzas.
+func TestResolveNameDrift(t *testing.T) {
+	mod := func(name string, paths ...string) ModuleDef {
+		return ModuleDef{Name: name, Paths: paths}
+	}
+	ex := func(name string, paths ...string) ExistingModule {
+		return ExistingModule{Name: name, Paths: paths, HasOwner: true, HasSubdomain: true}
+	}
+
+	tests := []struct {
+		name          string
+		in            UpdateReport
+		wantAdded     []string
+		wantRemoved   []string
+		wantDrift     []NameDrift
+		wantInSync    bool
+		wantUntouched bool // the pass must return the report unchanged
+	}{
+		{
+			name: "same paths under a different name is drift, not add+remove",
+			in: UpdateReport{
+				Added:   []ModuleDef{mod("agenttask", "internal/agenttask/**")},
+				Removed: []ExistingModule{ex("internal/agenttask", "internal/agenttask/**")},
+			},
+			wantAdded:   []string{},
+			wantRemoved: []string{},
+			wantDrift: []NameDrift{
+				{ConfigName: "internal/agenttask", DiscoveredName: "agenttask", Paths: []string{"internal/agenttask/**"}},
+			},
+			// Naming differences are not "in sync": the report shows a NAME DRIFT
+			// section, and an in-sync line beside it would read as "nothing to see".
+			wantInSync: false,
+		},
+		{
+			name: "path sets that differ stay a real add and remove",
+			in: UpdateReport{
+				Added:   []ModuleDef{mod("scripts_eval", "scripts/eval/**")},
+				Removed: []ExistingModule{ex("scripts/eval/coverage", "scripts/eval/coverage/**")},
+			},
+			wantAdded:     []string{"scripts_eval"},
+			wantRemoved:   []string{"scripts/eval/coverage"},
+			wantDrift:     nil,
+			wantUntouched: true,
+		},
+		{
+			name: "path order and duplicates do not block pairing",
+			in: UpdateReport{
+				Added:   []ModuleDef{mod(testSvc, "b/**", testPathA, testPathA)},
+				Removed: []ExistingModule{ex(testSvcCfg, testPathA, "b/**")},
+			},
+			wantAdded:   []string{},
+			wantRemoved: []string{},
+			wantDrift: []NameDrift{
+				{ConfigName: testSvcCfg, DiscoveredName: testSvc, Paths: []string{testPathA, "b/**"}},
+			},
+			// Naming differences are not "in sync": the report shows a NAME DRIFT
+			// section, and an in-sync line beside it would read as "nothing to see".
+			wantInSync: false,
+		},
+		{
+			// Two modules claiming one path set cannot be paired 1:1. Guessing
+			// which stanza owns the key is the failure this pass prevents.
+			name: "ambiguous path set stays in its original bucket",
+			in: UpdateReport{
+				Added:   []ModuleDef{mod(testSvc, testPathA)},
+				Removed: []ExistingModule{ex("one", testPathA), ex("two", testPathA)},
+			},
+			wantAdded:     []string{"svc"},
+			wantRemoved:   []string{"one", "two"},
+			wantDrift:     nil,
+			wantUntouched: true,
+		},
+		{
+			name: "a pending path drift keeps the report out of sync",
+			in: UpdateReport{
+				Added:     []ModuleDef{mod(testSvc, testPathA)},
+				Removed:   []ExistingModule{ex(testSvcCfg, testPathA)},
+				PathDrift: []PathDelta{{Name: "other"}},
+			},
+			wantAdded:   []string{},
+			wantRemoved: []string{},
+			wantDrift: []NameDrift{
+				{ConfigName: testSvcCfg, DiscoveredName: testSvc, Paths: []string{testPathA}},
+			},
+			wantInSync: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ResolveNameDrift(tc.in)
+			if tc.wantUntouched {
+				if !reflect.DeepEqual(got, tc.in) {
+					t.Fatalf("report must be returned unchanged:\n  got  %#v\n  want %#v", got, tc.in)
+				}
+				return
+			}
+			if names := moduleDefNames(got.Added); !reflect.DeepEqual(names, tc.wantAdded) {
+				t.Errorf("Added: got %v, want %v", names, tc.wantAdded)
+			}
+			if names := existingModuleNames(got.Removed); !reflect.DeepEqual(names, tc.wantRemoved) {
+				t.Errorf("Removed: got %v, want %v", names, tc.wantRemoved)
+			}
+			if !reflect.DeepEqual(got.NameDrift, tc.wantDrift) {
+				t.Errorf("NameDrift:\n  got  %#v\n  want %#v", got.NameDrift, tc.wantDrift)
+			}
+			if got.StructuralInSync != tc.wantInSync {
+				t.Errorf("StructuralInSync: got %v, want %v", got.StructuralInSync, tc.wantInSync)
 			}
 		})
 	}

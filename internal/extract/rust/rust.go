@@ -65,6 +65,12 @@ func (e *Extractor) Name() string {
 	return langRust
 }
 
+// CoverageTool returns the name this extractor stamps on its primary Coverage
+// row. The opt-in module-graph row (cargo-modules) is reported separately.
+func (e *Extractor) CoverageTool() string {
+	return toolCargo
+}
+
 // Extract detects cargo, runs `cargo metadata` against the project root, parses
 // the JSON output, and returns a graph.Facts + diagnostic.Coverage.
 //

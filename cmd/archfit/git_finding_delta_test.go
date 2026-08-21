@@ -174,6 +174,35 @@ func testGitDeltaOrigin(t *testing.T) {
 			assertNonNullJSONArrays(t, got)
 		})
 	}
+
+	// The whole point of the partial split: on a TypeScript or Python repo the
+	// primary analyzer reports partial on both sides as its steady state. Before
+	// the split that pinned every unmatched task to unknown, which made the
+	// origin delta inert on those languages.
+	t.Run("symmetric unresolved partial still places an unmatched task", func(t *testing.T) {
+		t.Parallel()
+		unresolvedSide := func(n int) analyzerEvidence {
+			row := covRow(toolDepCruiser, diagnostic.StatusPartial)
+			row.Unresolved = n
+			return analyzerEvidence{Coverage: []diagnostic.Coverage{row}, Hash: hash}
+		}
+		got := buildGitFindingDelta(gitDeltaInput{
+			BaseRef:        gitDeltaRef,
+			Tasks:          []diagnostic.AgentTask{agentTask("f2", "arch/forbidden")},
+			BaseFindingIDs: []string{"f1"},
+			Head:           unresolvedSide(4),
+			Base:           unresolvedSide(6),
+			Families:       []analyzerFamily{{name: toolDepCruiser, primary: true}},
+		})
+		assertIDs(t, "introduced_finding_ids", got.IntroducedFindingIDs, []string{"f2"})
+		assertIDs(t, "unknown_origin_finding_ids", got.UnknownOriginFindingIDs, nil)
+		if got.ComparisonStatus != diagnostic.GitComparisonComparable {
+			t.Errorf("comparison_status = %q, want %q", got.ComparisonStatus, diagnostic.GitComparisonComparable)
+		}
+		if len(got.ComparisonReasons) != 1 {
+			t.Fatalf("comparison_reasons = %v, want the degradation disclosed", got.ComparisonReasons)
+		}
+	})
 }
 
 // assertIDs compares one ID list against its expectation and rejects a nil
@@ -206,10 +235,19 @@ func assertNonNullJSONArrays(t *testing.T, d *diagnostic.GitFindingDelta) {
 func testGitDeltaAnalyzerEvidence(t *testing.T) {
 	t.Parallel()
 	goFam := analyzerFamily{name: toolGoPackages, primary: true}
+	dcFam := analyzerFamily{name: toolDepCruiser, primary: true}
 	scipFam := analyzerFamily{name: toolScip}
 	astFam := analyzerFamily{name: toolAstGrep}
 	goGap := []diagnostic.CoverageGap{{Tool: toolGoPackages}}
 	scipGap := []diagnostic.CoverageGap{{Tool: toolScip}}
+
+	// unresolvedRow is the dependency-cruiser/grimp steady state: the analyzer
+	// walked the whole tree and could not resolve n import specifiers.
+	unresolvedRow := func(n int) diagnostic.Coverage {
+		c := covRow(toolDepCruiser, diagnostic.StatusPartial)
+		c.Unresolved = n
+		return c
+	}
 
 	tests := []struct {
 		name           string
@@ -217,13 +255,22 @@ func testGitDeltaAnalyzerEvidence(t *testing.T) {
 		head, base     []diagnostic.Coverage
 		headGap, bsGap []diagnostic.CoverageGap
 		want           bool
+		// degraded marks a pair that IS comparable but must still disclose one
+		// reason (symmetric unresolved-specifier partial).
+		degraded bool
 	}{
 		{name: "ok/ok", fam: goFam, head: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK)}, base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK)}, want: true},
 		{name: "ok/not_applicable", fam: goFam, head: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK)}, base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusAbsent)}, want: true},
 		{name: "not_applicable/ok", fam: goFam, head: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK)}, want: true},
 		{name: "not_applicable both sides is ignored", fam: goFam, head: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusAbsent)}, base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusAbsent)}, want: true},
 		{name: "primary absent with a coverage gap is unavailable", fam: goFam, head: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK)}, base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusAbsent)}, bsGap: goGap, want: false},
-		{name: "partial is unavailable", fam: goFam, head: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK)}, base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusPartial)}, want: false},
+		{name: "partial with no unresolved count is unavailable", fam: goFam, head: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK)}, base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusPartial)}, want: false},
+		// dependency-cruiser and grimp mark a COMPLETED run partial as soon as one
+		// import specifier anywhere fails to resolve. Symmetric, it is shared
+		// incompleteness over one tree: comparable, but always disclosed.
+		{name: "symmetric unresolved partial is comparable and disclosed", fam: dcFam, head: []diagnostic.Coverage{unresolvedRow(4)}, base: []diagnostic.Coverage{unresolvedRow(9)}, want: true, degraded: true},
+		{name: "unresolved partial never pairs with ok", fam: dcFam, head: []diagnostic.Coverage{unresolvedRow(4)}, base: []diagnostic.Coverage{covRow(toolDepCruiser, diagnostic.StatusOK)}, want: false},
+		{name: "unresolved partial never pairs with a failed partial", fam: dcFam, head: []diagnostic.Coverage{unresolvedRow(4)}, base: []diagnostic.Coverage{covRow(toolDepCruiser, diagnostic.StatusPartial)}, want: false},
 		{name: "timed out is unavailable", fam: goFam, head: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusTimedOut)}, base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK)}, want: false},
 		{name: "missing row on one side is unavailable", fam: goFam, base: []diagnostic.Coverage{covRow(toolGoPackages, diagnostic.StatusOK)}, want: false},
 		{name: "missing row on both sides is unavailable", fam: goFam, want: false},
@@ -254,12 +301,16 @@ func testGitDeltaAnalyzerEvidence(t *testing.T) {
 			if ok != tc.want {
 				t.Fatalf("comparable = %v, want %v (reasons: %v)", ok, tc.want, reasons)
 			}
-			switch {
-			case tc.want && len(reasons) != 0:
-				t.Errorf("comparable family must produce no reason, got %v", reasons)
-			case !tc.want && len(reasons) != 1:
-				t.Errorf("want exactly one reason per unavailable family, got %v", reasons)
-			case !tc.want && !strings.HasPrefix(reasons[0], tc.fam.name+": "):
+			// A family reports one reason when it is unpairable, and also when it
+			// pairs only in degraded form — the loss is disclosed either way.
+			wantReasons := 1
+			if tc.want && !tc.degraded {
+				wantReasons = 0
+			}
+			if len(reasons) != wantReasons {
+				t.Fatalf("reasons = %v, want %d", reasons, wantReasons)
+			}
+			if wantReasons == 1 && !strings.HasPrefix(reasons[0], tc.fam.name+": ") {
 				t.Errorf("reason %q must name the family %q", reasons[0], tc.fam.name)
 			}
 		})

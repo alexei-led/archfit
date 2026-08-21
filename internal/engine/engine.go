@@ -415,8 +415,13 @@ func extract(ctx context.Context, in RunInput) (extractResult, error) {
 			// pattern (internal/extract/scip/scip_strength.go) instead of
 			// aborting the whole run. Only the degenerate case where every
 			// extractor fails (nothing to preserve) is still fatal, below.
+			// CoverageTool(), not Name(): every coverage consumer (the gap table,
+			// `config compare`, the --base origin delta) keys off the row name the
+			// extractor's own successful runs use, so a failure row filed under the
+			// language name ("go") would be an unpairable phantom analyzer next to
+			// the real family ("go/packages").
 			coverages = append(coverages, diagnostic.Coverage{
-				Tool:   ex.Name(),
+				Tool:   ex.CoverageTool(),
 				Status: diagnostic.StatusPartial,
 				Reason: err.Error(),
 			})

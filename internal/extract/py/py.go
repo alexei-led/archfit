@@ -62,6 +62,11 @@ func (e *Extractor) Name() string {
 	return langPython
 }
 
+// CoverageTool returns the name this extractor stamps on its Coverage rows.
+func (e *Extractor) CoverageTool() string {
+	return toolGrimp
+}
+
 // Extract detects uv or python3.12+grimp, writes the embedded helper to a temp
 // file, runs it against the project root, parses the JSON output, and returns
 // graph.Facts + diagnostic.Coverage.

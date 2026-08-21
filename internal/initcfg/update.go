@@ -23,11 +23,24 @@ type PathDelta struct {
 	DiscoveredPaths []string
 }
 
+// NameDrift records a configured module that discovery re-emitted under a
+// different NAME while owning exactly the same paths. It is a naming difference,
+// not a structural change: the code did not move, only the key discovery would
+// choose for it. `update --apply` never resolves one, because rewriting the key
+// would discard the owner, subdomain, volatility, layer, and public settings the
+// configured stanza carries.
+type NameDrift struct {
+	ConfigName     string
+	DiscoveredName string
+	Paths          []string
+}
+
 // UpdateReport is the result of DiffModules.
 type UpdateReport struct {
 	Added                     []ModuleDef
 	Suggested                 []ModuleDef
 	Removed                   []ExistingModule
+	NameDrift                 []NameDrift
 	PathDrift                 []PathDelta
 	Unclassified              []string
 	Issues                    []ModuleIssue
@@ -104,6 +117,7 @@ func pathSetsEqual(a, b []string) bool {
 //   - PathDrift: modules present in both whose paths differ as normalized sets.
 //     ConfigPaths and DiscoveredPaths preserve their original ordering.
 //   - StructuralInSync: true when Added, Removed, and PathDrift are all empty.
+//     ResolveNameDrift recomputes it over its reclassified buckets.
 //   - Unclassified: non-removed existing modules that cannot be classified —
 //     neither subdomain nor volatility is set (either one supplies volatility), or
 //     layer is missing while requireLayer says an active layer policy needs it.
@@ -211,6 +225,116 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef, requireLayer bool
 	}
 }
 
+// ResolveNameDrift reclassifies every Added/Removed pair that owns exactly the
+// same paths as a NAMING difference rather than a structural change.
+//
+// DiffModules matches config modules to discovered modules by NAME, and the two
+// naming conventions do not have to agree: this repo configures
+// `internal/agenttask` while discovery emits `agenttask` for the identical
+// `internal/agenttask/**` path set. Read as add + remove, that is 75 phantom
+// "changes" whose only honest resolution — rewriting every key — would discard
+// the owner, subdomain, volatility, layer, and public settings on 44 stanzas.
+//
+// Pairing is by normalized path set and strictly 1:1. A path set claimed by more
+// than one added or removed module is ambiguous and stays in its original
+// bucket: guessing which stanza a key belongs to is exactly the failure mode
+// this pass exists to prevent.
+//
+// The returned report keeps every other field; Added, Removed, NameDrift, and
+// StructuralInSync are recomputed. Pure: no I/O, deterministic order.
+func ResolveNameDrift(r UpdateReport) UpdateReport {
+	addedByPaths := uniquePathKeyIndex(len(r.Added), func(i int) []string { return r.Added[i].Paths })
+	removedByPaths := uniquePathKeyIndex(len(r.Removed), func(i int) []string { return r.Removed[i].Paths })
+
+	paired := make(map[int]int, len(r.Added)) // added index → removed index
+	for key, ai := range addedByPaths {
+		if ri, ok := removedByPaths[key]; ok {
+			paired[ai] = ri
+		}
+	}
+	if len(paired) == 0 {
+		return r
+	}
+
+	pairedRemoved := make(map[int]struct{}, len(paired))
+	drift := make([]NameDrift, 0, len(paired))
+	added := make([]ModuleDef, 0, len(r.Added))
+	for i, def := range r.Added {
+		ri, ok := paired[i]
+		if !ok {
+			added = append(added, def)
+			continue
+		}
+		pairedRemoved[ri] = struct{}{}
+		drift = append(drift, NameDrift{
+			ConfigName:     r.Removed[ri].Name,
+			DiscoveredName: def.Name,
+			Paths:          normalizePaths(def.Paths),
+		})
+	}
+
+	removed := make([]ExistingModule, 0, len(r.Removed))
+	for i, e := range r.Removed {
+		if _, isPaired := pairedRemoved[i]; !isPaired {
+			removed = append(removed, e)
+		}
+	}
+
+	out := r
+	out.Added = added
+	out.Removed = removed
+	out.NameDrift = drift
+	out.StructuralInSync = len(added) == 0 && len(removed) == 0 && len(drift) == 0 && len(r.PathDrift) == 0
+	return out
+}
+
+// uniquePathKeyIndex maps each normalized path set to the single index that owns
+// it. A path set claimed by two or more entries is dropped: it cannot be paired
+// unambiguously.
+func uniquePathKeyIndex(n int, pathsAt func(int) []string) map[string]int {
+	index := make(map[string]int, n)
+	duplicate := make(map[string]struct{})
+	for i := range n {
+		paths := normalizePaths(pathsAt(i))
+		if len(paths) == 0 {
+			continue // a pathless stanza owns nothing to pair on
+		}
+		key := strings.Join(paths, "\x00")
+		if _, seen := index[key]; seen {
+			duplicate[key] = struct{}{}
+			continue
+		}
+		index[key] = i
+	}
+	for key := range duplicate {
+		delete(index, key)
+	}
+	return index
+}
+
+// writeUnappliedModuleSections renders the two module sections `update --apply`
+// deliberately leaves alone: naming differences (same paths, different key) and
+// configured modules discovery did not emit. Both would need a stanza rewritten
+// or deleted, which discards the settings it carries, so both stay human
+// decisions and the section text says so.
+func writeUnappliedModuleSections(b *strings.Builder, r UpdateReport) {
+	if len(r.NameDrift) > 0 {
+		fmt.Fprintf(b, "NAME DRIFT (%d module(s) discovery names differently — same paths, review only):\n", len(r.NameDrift))
+		b.WriteString("  NOTE: `update --apply` does NOT rename these; rewriting the key would discard owner, subdomain, volatility, layer, and public settings.\n")
+		for _, d := range r.NameDrift {
+			fmt.Fprintf(b, "  - config %q, discovery %q: %s\n", d.ConfigName, d.DiscoveredName, joinPaths(d.Paths))
+		}
+	}
+
+	if len(r.Removed) > 0 {
+		fmt.Fprintf(b, "UNMATCHED (%d configured module(s) discovery did not emit — review only):\n", len(r.Removed))
+		b.WriteString("  NOTE: `update --apply` does NOT remove these; deleting a stanza discards its settings, so it stays a human decision.\n")
+		for _, e := range r.Removed {
+			fmt.Fprintf(b, "  - %s: not found in discovery — verify or remove by hand\n", e.Name)
+		}
+	}
+}
+
 // RenderUpdateReport produces a human-readable plan-mode drift report.
 // Sections are omitted when their slice is empty.
 //
@@ -218,7 +342,9 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef, requireLayer bool
 //     visible to copy; out-of-set layers still render as comments per writeModuleStanza rules).
 //   - SUGGESTED: paste-ready review-only module override stanzas. These are not
 //     structural discovery results and `config update --apply` never writes them.
-//   - REMOVED: each removed module noted as "not found in discovery — verify or remove".
+//   - NAME DRIFT: config/discovery key pairs over one path set, review-only.
+//   - UNMATCHED: each configured module discovery did not emit, review-only —
+//     `--apply` never deletes a stanza.
 //   - PATH DRIFT: config vs discovered paths, with an explicit note that --apply replaces
 //     module paths with the discovered paths and writes a backup.
 //   - SETTINGS: non-module config settings `update --apply` would write, so the
@@ -268,12 +394,7 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 		}
 	}
 
-	if len(r.Removed) > 0 {
-		fmt.Fprintf(&b, "REMOVED (%d module(s) not found in discovery — verify or remove):\n", len(r.Removed))
-		for _, e := range r.Removed {
-			fmt.Fprintf(&b, "  - %s: not found in discovery — verify or remove\n", e.Name)
-		}
-	}
+	writeUnappliedModuleSections(&b, r)
 
 	if len(r.PathDrift) > 0 {
 		fmt.Fprintf(&b, "PATH DRIFT (%d module(s) — paths changed since last sync):\n", len(r.PathDrift))

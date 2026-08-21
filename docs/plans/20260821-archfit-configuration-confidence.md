@@ -747,7 +747,10 @@ inspected. All pass.
   config hashes, 39 findings on both sides, empty `current_only_ids` and
   `candidate_only_ids`, 39 `both_ids`, no warnings, and the exact identity label
   `No measurement differences detected.` All five JSON lists marshal as arrays.
-  Coverage grades `not_comparable`; see the known limitation below.
+  Coverage graded `not_comparable` at the time of this run because the two
+  duplicate `ast-grep` rows made the pair unpairable; after the
+  `ast-grep/syntax` rename it grades `comparable_with_gaps` (cargo-modules
+  absent on both sides).
 - `analyze --base HEAD~1 --json` and `check --base HEAD~1 --json` both emit
   `git_finding_delta` with `base_ref: HEAD~1`, `comparison_status: comparable`,
   and three sorted, unique `comparison_reasons`. All three ID lists render as
@@ -768,8 +771,66 @@ inspected. All pass.
   report-only run, so config, baseline, labels, candidate, and policy files
   stayed byte-identical.
 
+### Second-review corrections
+
+A second critical review found three MAJOR defects. All three are fixed.
+
+1. **`partial` was treated as unusable evidence on both pairing paths.**
+   dependency-cruiser and grimp mark a COMPLETED run `partial` as soon as one
+   import specifier fails to resolve, so the git-origin delta was permanently
+   all-`unknown` and `config compare` permanently `not_comparable` on every
+   TypeScript and Python repo. `Coverage.Unresolved` is the structural
+   discriminator: ts/py set it on a completed run; every other partial producer
+   (failed extractor, rejected ast-grep rule file, empty SCIP index, failed
+   jscpd) leaves it zero. A SYMMETRIC unresolved-specifier partial now pairs
+   (`comparable_with_gaps` / `familyPairedDegraded`) and always emits a
+   disclosure reason; every other partial and every timed-out row stays
+   unavailable. This DEVIATES from the Task 6 and Task 7 required-behavior lines
+   ("`partial` … unavailable evidence", "Any `partial` or `timed out` row
+   produces `not_comparable`"), which were written before the steady-state
+   meaning of `partial` was understood.
+2. **`projectMarkerPresent` checked only the scan-root directory**, so a repo
+   whose Go lives under `services/api/go.mod` answered "no Go here", the
+   coverage gap was suppressed, and a real analyzer failure became
+   `not_applicable` — the one absent shape that pairs with `ok`. Fixed in gap
+   derivation (`primaryToolProjectProbe`), not in either consumer. Go now probes
+   the tree; the other three primaries stay root-only because their analyzers
+   resolve from a root manifest. `coverage_gaps` on this repo is byte-identical
+   before and after (root `go.mod` short-circuits the walk).
+3. **`config update --apply` emptied the module map.** On this repo it commented
+   out all 44 configured modules and added 31 bare stanzas, because
+   `DiffModules` matches by NAME and the config/discovery conventions differ
+   (`internal/agenttask` vs `agenttask`). `initcfg.ResolveNameDrift` now
+   reclassifies 1:1 add/remove pairs with equal normalized path sets as
+   `NameDrift`, and `Removed` became review-only across `reviewStatus`,
+   `hasActionableEdits`, and `buildUpdateEdits`. Verified on a scratchpad copy:
+   `--apply` now writes one added stanza (7 lines) instead of rewriting 305.
+   `config update --json` on this repo reports 1 added, 14 unmatched, 30 name
+   drift, 0 issues.
+
+Two MINOR items are also fixed: extractor-failure coverage rows now use
+`ports.Extractor.CoverageTool()` instead of `Name()` (so a failed Go extractor
+files under `go/packages`, not a phantom `go`), and the `BundleDir` bullet at
+`CLAUDE.md:187` is un-corrupted.
+
+Residual, accepted: symmetric-partial pairing in the git delta can still produce
+a false `introduced` on a badly misconfigured TypeScript repo where most
+specifiers are unresolved on both sides. The alternative is a permanently inert
+feature; the disclosure reason covers it.
+
+`internal/testdata/model_surface.golden` did not move — none of these fixes
+touch `internal/model/*` or `internal/view`.
+
 ### Known limitations recorded, not fixed
 
+- `DiffModules` skips every `Removed` module from both `Unclassified` and
+  `Issues`, and `removedSet` is name-keyed. On this repo that means the 30
+  name-drift stanzas were never checked for `missing_owner`,
+  `missing_volatility_input`, or `missing_layer`, so `0 module issue(s)` means
+  "not checked" for them, not "clean". Fixing it needs either a wider
+  `NameDrift` (it carries no `HasOwner`/`HasSubdomain`) or a change to
+  `DiffModules`' bucketing — the redesign this plan rules out. Disclosed in
+  `docs/guide/troubleshooting.md` instead.
 - `analyze --base` in a worktree checkout reports
   `go/packages: head ok, base absent` because the parent repository's gitignored
   `go.work` names `use` paths outside the base scan root, so no Go member loads

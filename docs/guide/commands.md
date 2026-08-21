@@ -416,7 +416,8 @@ archfit config update [flags]
 Notes:
 
 - Without `--apply`, this command is report-only.
-- With `--apply`, only structural changes are written live.
+- With `--apply`, only added modules, path drift, and settings are written live.
+- `--apply` never deletes, comments out, or re-keys a configured module stanza.
 - AI semantic proposals remain review-only even when `--apply` is used.
 - The report leads with one status line: `action_required`, `review_available`,
   or `no_known_issues`. `no_known_issues` means these checks found nothing; it is
@@ -428,9 +429,25 @@ Review model:
 
 | Field                | Meaning                                                                               |
 | -------------------- | ------------------------------------------------------------------------------------- |
-| `structure`          | Modules to add or remove, path drift, and settings `--apply` would write.             |
+| `structure`          | Discovery differences: pending edits plus the review-only buckets below.              |
 | `issues`             | Per-module config gaps that need a decision, each with a reason and a next action.    |
 | `review_suggestions` | Deterministic deploy-unit and distance-config proposals. `--apply` never writes them. |
+
+`structure` fields:
+
+| Field             | Applied by `--apply`? | Meaning                                                                                                  |
+| ----------------- | --------------------- | -------------------------------------------------------------------------------------------------------- |
+| `added_modules`   | yes                   | Modules discovery found that the config does not declare.                                                |
+| `path_drift`      | yes                   | Declared modules whose configured paths differ from the discovered paths.                                |
+| `settings`        | yes                   | Non-module settings, such as the Rust deep-analysis defaults.                                            |
+| `name_drift`      | no                    | A configured module and a discovered module own the same paths under different names.                    |
+| `removed_modules` | no                    | Configured modules discovery did not emit.                                                               |
+
+`name_drift` and `removed_modules` are review-only. Resolving either means
+re-keying or deleting a stanza, which discards its `owner`, `subdomain`,
+`volatility`, `layer`, and `public` values, so both stay human decisions.
+Only pending edits raise the status to `action_required`; a report with review
+items alone reads `review_available`.
 
 Issue codes:
 

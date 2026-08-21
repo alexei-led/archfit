@@ -1,9 +1,11 @@
 package main
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/alexei-led/archfit/internal/config"
 	"github.com/alexei-led/archfit/internal/model/diagnostic"
@@ -97,10 +99,71 @@ func buildPrimaryToolProjectMarkers() map[string][]string {
 	return m
 }
 
+// primaryToolProjectProbe overrides the root-only marker check for analyzers
+// whose real discovery is not root-only. Only Go needs it: dependency-cruiser
+// requires package.json in the project root, grimp and cargo probe their own
+// root manifests, but go/packages discovers members by walking for nested
+// go.mod dirs (CLAUDE.md, "Go workspace loading"). Without the override a
+// services/api/go.mod repo answers "no Go here", which turns a real analyzer
+// failure into "language not present" — the one absent shape both --base and
+// `config compare` read as safely comparable.
+var primaryToolProjectProbe = map[string]func(root string) bool{
+	toolGoPackages: goProjectPresent,
+}
+
+// primaryProjectPresent reports whether the language behind a primary coverage
+// tool is present under root, using the analyzer's own discovery shape.
+func primaryProjectPresent(tool, root string, markers []string) bool {
+	if probe, ok := primaryToolProjectProbe[tool]; ok {
+		return probe(root)
+	}
+	return projectMarkerPresent(root, markers)
+}
+
+// goProjectPresent reports whether any go.mod exists at or under root. A go.work
+// above root is deliberately NOT evidence: when it lists members inside root
+// those members carry their own go.mod (the walk finds them), and when it lists
+// none, Go is not in this scan root at all.
+func goProjectPresent(root string) bool {
+	return markerInTree(root, markerGoMod)
+}
+
+// markerWalkPrune are directory names the marker walk never descends. Pruning
+// bounds the walk; it is not a correctness filter. A marker found in a fixture
+// directory only over-reports the language, which yields a coverage gap — the
+// conservative direction — never a false "language absent".
+var markerWalkPrune = map[string]struct{}{
+	"node_modules": {}, "vendor": {}, "target": {}, "dist": {}, "build": {},
+}
+
+// markerInTree reports whether marker exists in root or any non-pruned
+// directory under it. Stops at the first hit.
+func markerInTree(root, marker string) bool {
+	found := false
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return nil //nolint:nilerr // an unreadable entry is skipped, not fatal
+		}
+		if path != root {
+			name := d.Name()
+			if _, pruned := markerWalkPrune[name]; pruned || strings.HasPrefix(name, ".") {
+				return fs.SkipDir
+			}
+		}
+		if _, statErr := os.Stat(filepath.Join(path, marker)); statErr == nil {
+			found = true
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return found
+}
+
 // projectMarkerPresent reports whether any of the given project-marker filenames
-// exist in root. Checks only the root dir (not recursive) — markers like go.mod
-// and Cargo.toml are always at the repo root. Returns true when markers is empty
-// (no marker = cannot determine absence, so don't suppress).
+// exist in root. Checks only the root dir (not recursive) — the analyzers that
+// use it (dependency-cruiser, grimp, cargo) resolve their project from a root
+// manifest. Go goes through primaryToolProjectProbe instead. Returns true when
+// markers is empty (no marker = cannot determine absence, so don't suppress).
 func projectMarkerPresent(root string, markers []string) bool {
 	if len(markers) == 0 {
 		return true
@@ -162,7 +225,7 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string
 			default:
 				if markers, ok := primaryToolProjectMarkers[c.Tool]; ok {
 					lang := primaryToolLanguage[c.Tool]
-					if cfg.ToolGate(lang) == "" && !projectMarkerPresent(root, markers) {
+					if cfg.ToolGate(lang) == "" && !primaryProjectPresent(c.Tool, root, markers) {
 						continue
 					}
 				}

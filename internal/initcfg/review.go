@@ -84,12 +84,25 @@ type ConfigReview struct {
 	ReviewSuggestions ReviewSuggestions `json:"review_suggestions"`
 }
 
-// ReviewStructure holds the changes `config update --apply` would write.
+// ReviewStructure holds the structural difference between the config and
+// discovery. AddedModules, PathDrift, and Settings are the pending edits
+// `--apply` would write; RemovedModules and NameDrift are review-only, because
+// resolving either means rewriting or deleting a stanza and discarding the
+// owner, subdomain, volatility, layer, and public settings it carries.
 type ReviewStructure struct {
 	AddedModules   []string          `json:"added_modules"`
 	RemovedModules []string          `json:"removed_modules"`
+	NameDrift      []ReviewNameDrift `json:"name_drift"`
 	PathDrift      []ReviewPathDrift `json:"path_drift"`
 	Settings       []SettingChange   `json:"settings"`
+}
+
+// ReviewNameDrift is one configured module that discovery re-emitted under a
+// different name over exactly the same paths.
+type ReviewNameDrift struct {
+	ConfigModule     string   `json:"config_module"`
+	DiscoveredModule string   `json:"discovered_module"`
+	Paths            []string `json:"paths"`
 }
 
 // ReviewPathDrift is one module whose configured paths differ from discovery.
@@ -117,6 +130,7 @@ func BuildConfigReview(r UpdateReport) ConfigReview {
 		Structure: ReviewStructure{
 			AddedModules:   moduleDefNames(r.Added),
 			RemovedModules: existingModuleNames(r.Removed),
+			NameDrift:      reviewNameDrift(r.NameDrift),
 			PathDrift:      reviewPathDrift(r.PathDrift),
 			Settings:       append(make([]SettingChange, 0, len(r.Settings)), r.Settings...),
 		},
@@ -133,29 +147,49 @@ func BuildConfigReview(r UpdateReport) ConfigReview {
 func RenderReviewStatus(rev ConfigReview) string {
 	switch rev.Status {
 	case ReviewStatusActionRequired:
-		return fmt.Sprintf("status: %s — %d module issue(s), %d structure change(s)\n",
-			rev.Status, len(rev.Issues), structureChangeCount(rev.Structure))
+		return fmt.Sprintf("status: %s — %d module issue(s), %d pending edit(s)\n",
+			rev.Status, len(rev.Issues), pendingEditCount(rev.Structure))
 	case ReviewStatusReviewAvailable:
-		return fmt.Sprintf("status: %s — review suggestions only; no known module issues\n", rev.Status)
+		return fmt.Sprintf("status: %s — nothing to apply; review items only\n", rev.Status)
 	default:
 		return fmt.Sprintf("status: %s — nothing detected by these checks\n", rev.Status)
 	}
 }
 
-// reviewStatus applies the fixed status priority. A pending structural or
-// settings edit counts as an action because `--apply` still has to write it.
+// reviewStatus applies the fixed status priority.
+//
+// action_required means a human has to decide something OR `--apply` has a real
+// edit to write. It deliberately excludes the two review-only buckets:
+//
+//   - NameDrift is a naming artifact of DiffModules' name-only matching (config
+//     `internal/agenttask` vs discovered `agenttask` over one path set). Deriving
+//     action_required from it made this repo's own reference config permanently
+//     action_required while the recommended remedy destroyed it.
+//   - Removed is never applied — deleting a stanza discards its settings — so it
+//     is a review item, not a pending edit.
 func reviewStatus(r UpdateReport) string {
-	if len(r.Issues) > 0 || hasStructureChanges(r) {
+	if len(r.Issues) > 0 || hasPendingEdits(r) {
 		return ReviewStatusActionRequired
 	}
-	if HasReviewSuggestions(r) {
+	if HasReviewItems(r) {
 		return ReviewStatusReviewAvailable
 	}
 	return ReviewStatusNoKnownIssues
 }
 
-func hasStructureChanges(r UpdateReport) bool {
-	return len(r.Added) > 0 || len(r.Removed) > 0 || len(r.PathDrift) > 0 || len(r.Settings) > 0
+// HasReviewItems reports whether the report carries anything a human should
+// look at even though `--apply` has nothing to write: a review suggestion, a
+// naming difference, or a configured module discovery did not emit. Callers use
+// it to decide whether "nothing to apply" may be printed on its own.
+func HasReviewItems(r UpdateReport) bool {
+	return HasReviewSuggestions(r) || len(r.NameDrift) > 0 || len(r.Removed) > 0
+}
+
+// hasPendingEdits reports whether `config update --apply` would write anything.
+// Keep it in step with cmd's hasActionableEdits and buildUpdateEdits: a status
+// that names edits apply would not make is the defect this replaces.
+func hasPendingEdits(r UpdateReport) bool {
+	return len(r.Added) > 0 || len(r.PathDrift) > 0 || len(r.Settings) > 0
 }
 
 // HasReviewSuggestions reports whether any review-only proposal exists. It
@@ -169,8 +203,10 @@ func HasReviewSuggestions(r UpdateReport) bool {
 		len(r.ExternalSystemSuggestions) > 0
 }
 
-func structureChangeCount(s ReviewStructure) int {
-	return len(s.AddedModules) + len(s.RemovedModules) + len(s.PathDrift) + len(s.Settings)
+// pendingEditCount counts only what `--apply` would write, so the header can
+// never name a change apply refuses to make.
+func pendingEditCount(s ReviewStructure) int {
+	return len(s.AddedModules) + len(s.PathDrift) + len(s.Settings)
 }
 
 func moduleDefNames(defs []ModuleDef) []string {
@@ -185,6 +221,18 @@ func existingModuleNames(mods []ExistingModule) []string {
 	out := make([]string, 0, len(mods))
 	for _, m := range mods {
 		out = append(out, m.Name)
+	}
+	return out
+}
+
+func reviewNameDrift(drift []NameDrift) []ReviewNameDrift {
+	out := make([]ReviewNameDrift, 0, len(drift))
+	for _, d := range drift {
+		out = append(out, ReviewNameDrift{
+			ConfigModule:     d.ConfigName,
+			DiscoveredModule: d.DiscoveredName,
+			Paths:            append(make([]string, 0, len(d.Paths)), d.Paths...),
+		})
 	}
 	return out
 }

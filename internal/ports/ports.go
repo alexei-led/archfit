@@ -29,6 +29,12 @@ type Extractor interface {
 	// Name returns the language/tool name (e.g. "go", "typescript", "python").
 	Name() string
 
+	// CoverageTool returns the name this extractor stamps on its
+	// diagnostic.Coverage row (e.g. "go/packages", "dependency-cruiser"). It is
+	// NOT Name(): a failed Extract returns a zero Coverage, and the engine has to
+	// file that failure under the row name every coverage consumer keys off.
+	CoverageTool() string
+
 	// Extract runs the extractor for the given scope and returns raw graph facts,
 	// a coverage record, and any hard error. A missing toolchain must not return
 	// an error — it returns an empty Facts and a coverage record with status="unavailable".
