@@ -3,9 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -697,8 +700,9 @@ func TestUpdateCmd_Apply_CommentsRemoved(t *testing.T) {
 // structurally in-sync config writes only absent fields.
 //
 // Setup: go.mod + module "mymod" at internal/mymod matched by discovery.
-// Config has mymod with subdomain+volatility but no layer.
-// LLM suggests layer=core (in layers). Expected: only layer is added.
+// Config has mymod with subdomain+volatility but no layer, plus an active
+// forbidden_layer_direction rule — the rule is what makes the missing layer
+// classifiable. LLM suggests layer=core (in layers). Expected: only layer is added.
 func TestUpdateCmd_LLMApply_WritesOnlyAbsentFields(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
@@ -718,6 +722,9 @@ rules:
     gate: warn
     from: "internal/a/**"
     to: "internal/b/**"
+  - id: layer-direction
+    type: forbidden_layer_direction
+    gate: warn
 `
 	cfgPath := writeConfig(t, dir, cfg)
 	before, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -885,7 +892,9 @@ rules:
 
 // TestUpdateCmd_MissingLayerFilledWhenValid verifies that a module with
 // subdomain+volatility but no layer gets the layer written when the LLM
-// returns a value that is in the allowed set.
+// returns a value that is in the allowed set. The active
+// forbidden_layer_direction rule is a precondition: `layer:` is only classified
+// while a layer rule consumes it.
 func TestUpdateCmd_MissingLayerFilledWhenValid(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
@@ -905,6 +914,9 @@ rules:
     gate: warn
     from: "internal/a/**"
     to: "internal/b/**"
+  - id: layer-direction
+    type: forbidden_layer_direction
+    gate: warn
 `
 	cfgPath := writeConfig(t, dir, cfg)
 	before, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -945,6 +957,7 @@ func TestUpdateCmd_OutOfSetLayerWritesNothing(t *testing.T) {
 	t.Parallel()
 	dir := minimalRoot(t)
 	// mymod has subdomain+volatility but no layer; LLM will suggest "infra" NOT in layers.
+	// The forbidden_layer_direction rule is what makes the missing layer classifiable.
 	cfg := `version: 1
 layers:
   - core
@@ -961,6 +974,9 @@ rules:
     gate: warn
     from: "internal/a/**"
     to: "internal/b/**"
+  - id: layer-direction
+    type: forbidden_layer_direction
+    gate: warn
 `
 	cfgPath := writeConfig(t, dir, cfg)
 	before, err := os.ReadFile(cfgPath) //nolint:gosec
@@ -1383,3 +1399,317 @@ func rustSyntheticRunner(root string) *toolrun.RunnerMock {
 }
 
 var _ llm.Provider = rustSyntheticProvider{}
+
+// ---------------------------------------------------------------------------
+// config update review: status, JSON document, and flag conflicts
+// ---------------------------------------------------------------------------
+
+const testUpdateReviewConfig = `version: 1
+layers:
+  - core
+  - adapter
+modules:
+  mymod:
+    paths:
+      - "internal/mymod/**"
+rules:
+  - id: layer-direction
+    type: forbidden_layer_direction
+    gate: warn
+`
+
+const (
+	testUpdateReviewModule = "mymod"
+	testUpdateReviewPkg    = "internal/mymod"
+)
+
+// TestRequiresLayerClassification pins that `layer:` is load-bearing only while a
+// forbidden_layer_direction rule is live: unset and "warn" gates both keep it live.
+func TestRequiresLayerClassification(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		rules []view.RuleDef
+		want  bool
+	}{
+		{"no rules", nil, false},
+		{"other rule type", []view.RuleDef{{Type: "forbidden_dependency", Gate: gateFail}}, false},
+		{"layer rule gate unset", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection}}, true},
+		{"layer rule gate warn", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateWarn}}, true},
+		{"layer rule gate fail", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateFail}}, true},
+		{"layer rule gate off", []view.RuleDef{{Type: ruleTypeForbiddenLayerDirection, Gate: gateOff}}, false},
+		{
+			name: "one live layer rule among several",
+			rules: []view.RuleDef{
+				{Type: ruleTypeForbiddenLayerDirection, Gate: gateOff},
+				{Type: ruleTypeForbiddenLayerDirection, Gate: gateWarn},
+			},
+			want: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := requiresLayerClassification(config.Config{Rules: tc.rules}); got != tc.want {
+				t.Errorf("requiresLayerClassification: got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestUpdateCmd_JSON_RejectsConflictingFlagsBeforeSideEffects verifies the usage
+// error is exit 3 AND that nothing ran: no tool call, no config write.
+func TestUpdateCmd_JSON_RejectsConflictingFlagsBeforeSideEffects(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		mutate  func(*UpdateCmd)
+		wantSub string
+	}{
+		{"apply", func(c *UpdateCmd) { c.Apply = true }, "--apply"},
+		{"ai-classify", func(c *UpdateCmd) { c.AIClassify = true }, "--ai-classify"},
+		{"refresh", func(c *UpdateCmd) { c.Refresh = true }, "--refresh"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := minimalRoot(t)
+			cfgPath := writeConfig(t, dir, testUpdateReviewConfig)
+			before, err := os.ReadFile(cfgPath) //nolint:gosec
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			runner := matchingRunner(testUpdateReviewPkg)
+			cmd := &UpdateCmd{Config: cfgPath, Root: dir, JSON: true}
+			tc.mutate(cmd)
+
+			out, err := runUpdateCmd(t, cmd, runner)
+			var ee *exitError
+			if !errors.As(err, &ee) || ee.code != 3 {
+				t.Fatalf("want exitError{code:3}, got %v", err)
+			}
+			if !strings.Contains(ee.msg, tc.wantSub) {
+				t.Errorf("error must name %s: %q", tc.wantSub, ee.msg)
+			}
+			if out != "" {
+				t.Errorf("rejected invocation must emit no output:\n%s", out)
+			}
+			if n := len(runner.RunCalls()) + len(runner.DetectCalls()); n != 0 {
+				t.Errorf("discovery must not run before the conflict is rejected: %d tool call(s)", n)
+			}
+			after, err := os.ReadFile(cfgPath) //nolint:gosec
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Error("rejected invocation must leave the config byte-identical")
+			}
+		})
+	}
+}
+
+// TestUpdateCmd_ConfigReview covers the report-only review surface: the JSON
+// contract, the status line, the issue codes, and the settings preview/apply
+// parity for the Rust deep-analysis defaults.
+func TestUpdateCmd_ConfigReview(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		run  func(*testing.T)
+	}{
+		{"json emits the versioned document and writes nothing", runConfigReviewJSONDocument},
+		{"fully specified config reports no_known_issues without a health claim", runConfigReviewNoKnownIssues},
+		{"text report leads with the status line and lists issues", runConfigReviewTextStatus},
+		{"rust setting preview matches what apply writes", runConfigReviewRustSettingParity},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.run(t)
+		})
+	}
+}
+
+func runConfigReviewJSONDocument(t *testing.T) {
+	dir := minimalRoot(t)
+	cfgPath := writeConfig(t, dir, testUpdateReviewConfig)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runUpdateCmd(t,
+		&UpdateCmd{Config: cfgPath, Root: dir, JSON: true},
+		matchingRunner(testUpdateReviewPkg))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	review := decodeConfigReview(t, out)
+	if review.SchemaVersion != initcfg.ConfigReviewSchemaVersion {
+		t.Errorf("schema_version: got %q, want %q", review.SchemaVersion, initcfg.ConfigReviewSchemaVersion)
+	}
+	if review.Status != initcfg.ReviewStatusActionRequired {
+		t.Errorf("status: got %q, want %q", review.Status, initcfg.ReviewStatusActionRequired)
+	}
+	wantCodes := []string{
+		initcfg.IssueMissingLayer,
+		initcfg.IssueMissingOwner,
+		initcfg.IssueMissingVolatilityInput,
+	}
+	gotCodes := make([]string, 0, len(review.Issues))
+	for _, issue := range review.Issues {
+		if issue.Module != testUpdateReviewModule {
+			t.Errorf("unexpected issue module %q", issue.Module)
+		}
+		gotCodes = append(gotCodes, issue.Code)
+	}
+	if !reflect.DeepEqual(gotCodes, wantCodes) {
+		t.Errorf("issue codes: got %v, want %v", gotCodes, wantCodes)
+	}
+	if strings.Contains(out, "null") {
+		t.Errorf("JSON lists must be arrays, never null:\n%s", out)
+	}
+
+	after, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("--json is report-only and must leave the config byte-identical")
+	}
+	if _, statErr := os.Stat(cfgPath + ".bak"); statErr == nil {
+		t.Error("--json must not create a backup")
+	}
+}
+
+func runConfigReviewNoKnownIssues(t *testing.T) {
+	dir := minimalRoot(t)
+	cfgPath := writeConfig(t, dir, `version: 1
+layers:
+  - core
+  - adapter
+modules:
+  mymod:
+    paths:
+      - "internal/mymod/**"
+    owner: team-a
+    subdomain: supporting
+    layer: adapter
+rules:
+  - id: layer-direction
+    type: forbidden_layer_direction
+    gate: warn
+`)
+
+	out, err := runUpdateCmd(t,
+		&UpdateCmd{Config: cfgPath, Root: dir, JSON: true},
+		matchingRunner(testUpdateReviewPkg))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	review := decodeConfigReview(t, out)
+	if review.Status != initcfg.ReviewStatusNoKnownIssues {
+		t.Fatalf("status: got %q, want %q\n%s", review.Status, initcfg.ReviewStatusNoKnownIssues, out)
+	}
+	for _, banned := range []string{"healthy", "complete"} {
+		if strings.Contains(strings.ToLower(out), banned) {
+			t.Errorf("review must not claim %q:\n%s", banned, out)
+		}
+	}
+}
+
+func runConfigReviewTextStatus(t *testing.T) {
+	dir := minimalRoot(t)
+	cfgPath := writeConfig(t, dir, testUpdateReviewConfig)
+
+	out, err := runUpdateCmd(t,
+		&UpdateCmd{Config: cfgPath, Root: dir},
+		matchingRunner(testUpdateReviewPkg))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.HasPrefix(out, "status: "+initcfg.ReviewStatusActionRequired) {
+		t.Errorf("report must lead with the status line:\n%s", out)
+	}
+	for _, want := range []string{
+		initcfg.IssueMissingOwner,
+		initcfg.IssueMissingLayer,
+		initcfg.IssueMissingVolatilityInput,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("report missing issue code %q:\n%s", want, out)
+		}
+	}
+}
+
+func runConfigReviewRustSettingParity(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := writeConfig(t, dir, `version: 1
+languages:
+  rust:
+    enabled: true
+modules: {}
+rules:
+  - id: no-layer-violations
+    type: forbidden_layer_direction
+    gate: warn
+`)
+	before, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	textOut, err := runUpdateCmd(t, &UpdateCmd{Config: cfgPath, Root: dir}, emptyRunner())
+	if err != nil {
+		t.Fatalf("preview failed: %v", err)
+	}
+	if !strings.Contains(textOut, initcfg.SettingCodeRustDeepAnalysis) {
+		t.Errorf("preview must name the setting --apply would write:\n%s", textOut)
+	}
+
+	jsonOut, err := runUpdateCmd(t, &UpdateCmd{Config: cfgPath, Root: dir, JSON: true}, emptyRunner())
+	if err != nil {
+		t.Fatalf("json preview failed: %v", err)
+	}
+	review := decodeConfigReview(t, jsonOut)
+	if len(review.Structure.Settings) != 1 || review.Structure.Settings[0].Code != initcfg.SettingCodeRustDeepAnalysis {
+		t.Fatalf("settings: got %+v", review.Structure.Settings)
+	}
+	if review.Status != initcfg.ReviewStatusActionRequired {
+		t.Errorf("a pending settings edit is an action: got %q", review.Status)
+	}
+
+	mid, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, mid) {
+		t.Fatal("preview must not write the config")
+	}
+
+	if _, err = runUpdateCmd(t, &UpdateCmd{Config: cfgPath, Root: dir, Apply: true}, emptyRunner()); err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+	applied, err := os.ReadFile(cfgPath) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(applied), rustEnabledAuto) {
+		t.Errorf("apply must write the previewed setting:\n%s", applied)
+	}
+}
+
+// decodeConfigReview parses the `config update --json` document.
+func decodeConfigReview(t *testing.T, out string) initcfg.ConfigReview {
+	t.Helper()
+	var review initcfg.ConfigReview
+	if err := json.Unmarshal([]byte(out), &review); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	return review
+}

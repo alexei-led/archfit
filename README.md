@@ -111,6 +111,7 @@ go install github.com/alexei-led/archfit/cmd/archfit@latest
 
 archfit doctor                      # check which analyzers are available
 archfit config init --root .        # generate a starter .archfit.yaml
+archfit config update --json        # review the config: drift, pending edits, open decisions
 archfit analyze                     # human review: the decision report
 archfit baseline -c .archfit.yaml   # accept current findings as baseline
 archfit check -c .archfit.yaml      # CI gate: exit 0 clean / 1 violation / 2 warn / 3 error

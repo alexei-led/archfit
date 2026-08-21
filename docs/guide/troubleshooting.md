@@ -69,6 +69,27 @@ lives elsewhere.
 | `warning: dependency-cruiser: N of M import specifiers unresolved (P%) — check tsconfig paths/baseUrl and installed dependencies` | TypeScript dependency-cruiser could not resolve import specifiers. Internal edges can fall into the external bucket when aliases or dependencies are missing.                              | Fix `tsconfig` `paths`/`baseUrl` and install `node_modules`.               |
 | `SCIP analysis timed out — increase analyzers.scip.timeout or reduce the scope`                                                   | SCIP indexing exceeded the analyzer watchdog. Large Python repos can need more than the default 20m watchdog.                                                                              | Set `analyzers.scip.timeout`, for example `30m`.                           |
 
+## Config update rejects `--json`
+
+`--json` is report-only. Combining it with `--apply`, `--ai-classify`, or
+`--refresh` prints `error: --json cannot be combined with ...` and exits `3`
+before any discovery, analyzer call, or write. Run the JSON review first, then
+run the mutating command separately:
+
+```sh
+archfit config update --json -c .archfit.yaml
+archfit config update --apply -c .archfit.yaml
+```
+
+## Config update reports `no_known_issues` but the config still looks wrong
+
+`no_known_issues` means the discovery diff, the module-field checks, and the
+suggestion passes found nothing. It is not a completeness or health claim. The
+checks cover structure drift, pending settings edits, `missing_owner`,
+`missing_volatility_input`, and `missing_layer`. Wrong-but-present values, wrong
+layer assignments, and wrong `paths:` globs are outside their reach — use
+`archfit analyze -c .archfit.yaml` and its coverage warnings for those.
+
 ## Config update cannot edit module paths
 
 `archfit config update` can now replace flow-style module paths such as

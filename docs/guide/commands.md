@@ -54,6 +54,7 @@ Use this when you know the job, not the command.
 | verify analyzers are installed, or install what archfit can install | `archfit doctor` or `archfit doctor --fix`                                                                    |
 | create the first config file for a repo                             | `archfit config init --root .`                                                                                |
 | sync an existing config to the current repo structure               | `archfit config update -c .archfit.yaml`                                                                      |
+| read the config review from a script or an agent                    | `archfit config update --json -c .archfit.yaml`                                                               |
 | draft AI labels or module metadata for review                       | `archfit config enrich <kind>` where `<kind>` is `labels`, `abstained`, `owner`, `volatility`, or `subdomain` |
 
 ## Exit codes
@@ -396,12 +397,13 @@ Purpose:
 
 - Re-discover project structure.
 - Diff it against the existing config.
-- Print a drift report, or apply structural edits.
+- Print a drift report and a config review, or apply structural edits.
 
 Use cases:
 
 - after adding, removing, or moving modules;
 - after enabling more language analyzers;
+- checking which config fields still need a decision;
 - reviewing AI proposals for new modules without changing the gate behavior.
 
 Synopsis:
@@ -415,6 +417,35 @@ Notes:
 - Without `--apply`, this command is report-only.
 - With `--apply`, only structural changes are written live.
 - AI semantic proposals remain review-only even when `--apply` is used.
+- The report leads with one status line: `action_required`, `review_available`,
+  or `no_known_issues`. `no_known_issues` means these checks found nothing; it is
+  not a claim that the config is complete.
+- The report lists every change `--apply` would write, including non-module
+  settings such as the Rust deep-analysis defaults.
+
+Review model:
+
+| Field                | Meaning                                                                                       |
+| -------------------- | --------------------------------------------------------------------------------------------- |
+| `structure`          | Modules to add or remove, path drift, and settings `--apply` would write.                     |
+| `issues`             | Per-module config gaps that need a decision, each with a reason and a next action.            |
+| `review_suggestions` | Deterministic deploy-unit and distance-config proposals. `--apply` never writes them.         |
+
+Issue codes:
+
+| Code                       | Condition                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------- |
+| `missing_owner`            | The module has no `owner:`, so cross-module distance falls back to code structure. |
+| `missing_volatility_input` | The module has neither `subdomain:` nor `volatility:`. Either field closes it.   |
+| `missing_layer`            | The module has no `layer:` while a `forbidden_layer_direction` rule is not `off`. |
+
+JSON:
+
+- `--json` emits the review as `archfit.config-review.v1`.
+- Every list is a JSON array, never `null`.
+- Issues sort by module, then by code. All other lists keep their report order.
+- `--json` is report-only and cannot be combined with `--apply`, `--ai-classify`,
+  or `--refresh`. Those combinations exit `3` before any discovery or write.
 
 Flags:
 
@@ -424,6 +455,7 @@ Flags:
 | `-r, --root`    | path   | directory of `--config` | Project root directory to scan.                                          | `archfit config update -r . -c .archfit.yaml`                               |
 | `--ai-classify` | bool   | `false`                 | Run AI classification for unclassified modules. Off-gate.                | `archfit config update --ai-classify -c .archfit.yaml`                      |
 | `--apply`       | bool   | `false`                 | Write structural changes live into `.archfit.yaml`. Backups are created. | `archfit config update --apply -c .archfit.yaml`                            |
+| `--json`        | bool   | `false`                 | Emit the review as JSON. Report-only.                                    | `archfit config update --json -c .archfit.yaml`                             |
 | `--refresh`     | bool   | `false`                 | Re-run AI calls and refresh the AI cache.                                | `archfit config update --ai-classify --refresh -c .archfit.yaml`            |
 | `--ai-provider` | string | `anthropic`             | Override the AI provider.                                                | `archfit config update --ai-classify --ai-provider ollama -c .archfit.yaml` |
 | `--ai-model`    | string | `claude-opus-4-8`       | Override the AI model.                                                   | `archfit config update --ai-classify --ai-model llama3.1 -c .archfit.yaml`  |
@@ -432,6 +464,7 @@ Examples:
 
 ```sh
 archfit config update -c .archfit.yaml
+archfit config update --json -c .archfit.yaml
 archfit config update --apply -c .archfit.yaml
 archfit config update --ai-classify -c .archfit.yaml
 archfit config update --ai-classify --apply -c .archfit.yaml

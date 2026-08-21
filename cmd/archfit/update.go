@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,12 +27,17 @@ import (
 	"github.com/alexei-led/archfit/internal/view"
 )
 
+// ruleTypeForbiddenLayerDirection is the rule type whose presence makes a
+// module's `layer:` field load-bearing.
+const ruleTypeForbiddenLayerDirection = "forbidden_layer_direction"
+
 // UpdateCmd syncs .archfit.yaml with the current project structure.
 type UpdateCmd struct {
 	Config     string `short:"c" help:"Config file path." default:".archfit.yaml"`
 	Root       string `short:"r" help:"Project root directory (default: directory of --config)."`
 	AIClassify bool   `name:"ai-classify" help:"Run AI classification for unclassified modules (off-gate)."`
 	Apply      bool   `name:"apply" help:"Write structural changes live into .archfit.yaml (backup created; AI semantic proposals remain review-only)."`
+	JSON       bool   `name:"json" help:"Emit the review as a JSON document (report-only; not combinable with --apply, --ai-classify, or --refresh)."`
 	Refresh    bool   `name:"refresh" help:"Re-run the AI calls and refresh the cache."`
 	AIProvider string `name:"ai-provider" help:"AI provider override." default:"anthropic"`
 	AIModel    string `name:"ai-model" help:"AI model override." default:"claude-opus-4-8"`
@@ -41,6 +48,12 @@ type UpdateCmd struct {
 }
 
 func (c *UpdateCmd) Run(deps *appDeps) error {
+	// Flag conflicts are rejected before discovery, tool runs, cache access, or
+	// any write, so an invalid invocation has no side effects.
+	if err := c.validateFlags(); err != nil {
+		return err
+	}
+
 	root, err := c.resolveRoot()
 	if err != nil {
 		return err
@@ -65,7 +78,7 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		return fmt.Errorf("discovering project structure: %w", err)
 	}
 
-	report := initcfg.DiffModules(existing, freshCfg.Modules)
+	report := initcfg.DiffModules(existing, freshCfg.Modules, requiresLayerClassification(cfg))
 	candidateCfg := candidateConfigForUpdate(cfg, freshCfg)
 	report.DeployUnitSuggestions = deployUnitSuggestions(ctx, root, candidateCfg, deps)
 	report.DistanceConfigCandidates = distanceConfigCandidates(ctx, root, candidateCfg, deps)
@@ -91,16 +104,26 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 		warnPartialClassify(deps.Stdout, warnTargets, ann)
 	}
 
-	rustConfigNeeded := needsRustDeepAnalysisConfig(cfg, freshCfg.HasRust)
+	// Settings is the single source for the Rust deep-analysis edit: the preview,
+	// the JSON document, and the apply pass all read it, so they cannot drift.
+	if needsRustDeepAnalysisConfig(cfg, freshCfg.HasRust) {
+		report.Settings = append(report.Settings, initcfg.RustDeepAnalysisSetting())
+	}
+	rustConfigNeeded := len(report.Settings) > 0
 	hasEdits := hasActionableEdits(report) || rustConfigNeeded
 
 	if !c.Apply {
+		review := initcfg.BuildConfigReview(report)
+		if c.JSON {
+			return writeConfigReviewJSON(deps.Stdout, review)
+		}
+		_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderReviewStatus(review))
 		_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
 		return nil
 	}
 
 	if !hasEdits {
-		if (c.AIClassify && ann != nil) || hasReviewOnlySuggestions(report) {
+		if (c.AIClassify && ann != nil) || initcfg.HasReviewSuggestions(report) {
 			_, _ = fmt.Fprint(deps.Stdout, initcfg.RenderUpdateReport(report, ann, cfg.Layers))
 			return nil
 		}
@@ -125,10 +148,54 @@ func (c *UpdateCmd) Run(deps *appDeps) error {
 	if len(report.PathDrift) > 0 {
 		_, _ = fmt.Fprintln(deps.Stdout, "note: module paths replaced with discovered paths")
 	}
-	if (c.AIClassify && ann != nil) || hasReviewOnlySuggestions(report) {
+	if (c.AIClassify && ann != nil) || initcfg.HasReviewSuggestions(report) {
 		if rendered := initcfg.RenderAppliedLLMReview(report, ann); rendered != "" {
 			_, _ = fmt.Fprint(deps.Stdout, rendered)
 		}
+	}
+	return nil
+}
+
+// validateFlags rejects --json combined with a mode that mutates state or calls
+// out to an AI provider. Report-only JSON must stay side-effect free.
+func (c *UpdateCmd) validateFlags() error {
+	if !c.JSON {
+		return nil
+	}
+	conflicts := make([]string, 0, 3)
+	if c.Apply {
+		conflicts = append(conflicts, "--apply")
+	}
+	if c.AIClassify {
+		conflicts = append(conflicts, "--ai-classify")
+	}
+	if c.Refresh {
+		conflicts = append(conflicts, "--refresh")
+	}
+	if len(conflicts) == 0 {
+		return nil
+	}
+	return &exitError{code: 3, msg: "error: --json cannot be combined with " + strings.Join(conflicts, ", ")}
+}
+
+// requiresLayerClassification reports whether a module without `layer:` blocks an
+// active layer policy. A forbidden_layer_direction rule is live unless its gate
+// is "off" — unset and "warn" both still check layers.
+func requiresLayerClassification(cfg config.Config) bool {
+	for _, r := range cfg.Rules {
+		if r.Type == ruleTypeForbiddenLayerDirection && r.Gate != gateOff {
+			return true
+		}
+	}
+	return false
+}
+
+// writeConfigReviewJSON emits the versioned review document.
+func writeConfigReviewJSON(w io.Writer, review initcfg.ConfigReview) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(review); err != nil {
+		return &exitError{code: 3, msg: fmt.Sprintf("error: encoding config review: %v", err)}
 	}
 	return nil
 }
@@ -298,10 +365,6 @@ func classifyTargetsForUpdate(
 // written by config update --apply.
 func hasActionableEdits(report initcfg.UpdateReport) bool {
 	return len(report.Added) > 0 || len(report.Removed) > 0 || len(report.PathDrift) > 0
-}
-
-func hasReviewOnlySuggestions(report initcfg.UpdateReport) bool {
-	return len(report.Suggested) > 0 || len(report.DeployUnitSuggestions) > 0 || len(report.DistanceConfigCandidates) > 0 || len(report.RuleSuggestions) > 0 || len(report.ExternalSystemSuggestions) > 0
 }
 
 func candidateConfigForUpdate(cfg config.Config, discovered initcfg.DiscoveredConfig) config.Config {
@@ -561,6 +624,7 @@ func configToExisting(modules map[string]module.ModuleDef) []initcfg.ExistingMod
 			HasSubdomain:  def.Subdomain != "",
 			HasVolatility: def.Volatility != "",
 			HasLayer:      def.Layer != "",
+			HasOwner:      def.Owner != "",
 		})
 	}
 	return out

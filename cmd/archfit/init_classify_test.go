@@ -362,9 +362,9 @@ func TestRuleSuggestionShape_MatchesRuleSchema(t *testing.T) {
 	maxAPI := 20
 	allowed := map[string]struct{}{testEvidenceRef: {}}
 	entries := []ruleSuggestionResponse{
-		{ID: "track-api", Type: ruleTypePublicAPIChange, Gate: "warn", Rationale: testEvidenceRationale, EvidenceRefs: []string{testEvidenceRef}, Basis: initcfg.DraftBasisSemanticJudgment},
+		{ID: "track-api", Type: ruleTypePublicAPIChange, Gate: gateWarn, Rationale: testEvidenceRationale, EvidenceRefs: []string{testEvidenceRef}, Basis: initcfg.DraftBasisSemanticJudgment},
 		{ID: "api-max", Type: ruleTypePublicAPIMax, Gate: "warn", Max: &maxAPI, Rationale: testEvidenceRationale, EvidenceRefs: []string{testEvidenceRef}, Basis: initcfg.DraftBasisSemanticJudgment},
-		{ID: "coupling-floor", Type: ruleTypeCouplingGate, Gate: "fail", MinBand: "serviceable", Rationale: testEvidenceRationale, EvidenceRefs: []string{testEvidenceRef}, Basis: initcfg.DraftBasisSemanticJudgment},
+		{ID: "coupling-floor", Type: ruleTypeCouplingGate, Gate: gateFail, MinBand: "serviceable", Rationale: testEvidenceRationale, EvidenceRefs: []string{testEvidenceRef}, Basis: initcfg.DraftBasisSemanticJudgment},
 	}
 
 	got, err := parseRuleSuggestionResponses(testMod0, entries, true, allowed)

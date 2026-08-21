@@ -327,13 +327,13 @@ make build
 bash -o pipefail -c '.bin/archfit config update --json -c .archfit.yaml | jq -e .'
 ```
 
-- [ ] Fix module classification and active-layer-policy logic.
-- [ ] Move the hidden Rust setting into the typed preview model.
-- [ ] Build one deterministic review model from discovery, lint, and suggestion data.
-- [ ] Render the short text status and the versioned JSON document.
-- [ ] Reject incompatible JSON flags before side effects.
-- [ ] Add status, order, issue, Rust-preview, apply-parity, and no-write tests.
-- [ ] Update the guides and run the narrow and full validation commands.
+- [x] Fix module classification and active-layer-policy logic.
+- [x] Move the hidden Rust setting into the typed preview model.
+- [x] Build one deterministic review model from discovery, lint, and suggestion data.
+- [x] Render the short text status and the versioned JSON document.
+- [x] Reject incompatible JSON flags before side effects.
+- [x] Add status, order, issue, Rust-preview, apply-parity, and no-write tests.
+- [x] Update the guides and run the narrow and full validation commands.
 
 ### Task 5: Give the pipeline one explicit run context
 

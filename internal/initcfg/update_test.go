@@ -16,14 +16,16 @@ func TestDiffModules(t *testing.T) {
 			HasSubdomain:  sub,
 			HasVolatility: vol,
 			HasLayer:      layer,
+			HasOwner:      true,
 		}
 	}
 
 	tests := []struct {
-		name     string
-		existing []ExistingModule
-		fresh    []ModuleDef
-		want     UpdateReport
+		name         string
+		existing     []ExistingModule
+		fresh        []ModuleDef
+		requireLayer bool
+		want         UpdateReport
 	}{
 		{
 			name:     "added only",
@@ -74,8 +76,8 @@ func TestDiffModules(t *testing.T) {
 			name: "mixed: add + remove + drift + unclassified",
 			existing: []ExistingModule{
 				ex("gw", true, true, true, "gw/**"),
-				ex("core", false, true, true, "core/**"), // missing subdomain → unclassified
-				ex("old", true, true, true, "old/**"),    // removed
+				ex("core", false, false, true, "core/**"), // no subdomain AND no volatility → unclassified
+				ex("old", true, true, true, "old/**"),     // removed
 			},
 			fresh: []ModuleDef{
 				mod("gw", "gw/v2/**"),  // drift
@@ -105,13 +107,44 @@ func TestDiffModules(t *testing.T) {
 			},
 		},
 		{
-			name: "subdomain+volatility present but no layer → still Unclassified",
+			name: "missing layer with active layer policy → Unclassified",
 			existing: []ExistingModule{
 				ex("svc", true, true, false, "svc/**"), // HasLayer=false
 			},
-			fresh: []ModuleDef{mod("svc", "svc/**")},
+			fresh:        []ModuleDef{mod("svc", "svc/**")},
+			requireLayer: true,
 			want: UpdateReport{
 				Unclassified:     []string{"svc"},
+				StructuralInSync: true,
+			},
+		},
+		{
+			name: "missing layer without active layer policy → NOT Unclassified",
+			existing: []ExistingModule{
+				ex("svc", true, true, false, "svc/**"),
+			},
+			fresh: []ModuleDef{mod("svc", "svc/**")},
+			want: UpdateReport{
+				StructuralInSync: true,
+			},
+		},
+		{
+			name: "volatility alone satisfies classification (subdomain absent)",
+			existing: []ExistingModule{
+				ex("svc", false, true, true, "svc/**"),
+			},
+			fresh: []ModuleDef{mod("svc", "svc/**")},
+			want: UpdateReport{
+				StructuralInSync: true,
+			},
+		},
+		{
+			name: "subdomain alone satisfies classification (volatility absent)",
+			existing: []ExistingModule{
+				ex("svc", true, false, true, "svc/**"),
+			},
+			fresh: []ModuleDef{mod("svc", "svc/**")},
+			want: UpdateReport{
 				StructuralInSync: true,
 			},
 		},
@@ -166,7 +199,7 @@ func TestDiffModules(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := DiffModules(tc.existing, tc.fresh)
+			got := DiffModules(tc.existing, tc.fresh, tc.requireLayer)
 			if !reflect.DeepEqual(got.Added, tc.want.Added) {
 				t.Errorf("Added:\n  got  %#v\n  want %#v", got.Added, tc.want.Added)
 			}

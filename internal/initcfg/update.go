@@ -13,6 +13,7 @@ type ExistingModule struct {
 	HasSubdomain  bool
 	HasVolatility bool
 	HasLayer      bool
+	HasOwner      bool
 }
 
 // PathDelta records a module present in both config and discovery whose paths differ.
@@ -29,6 +30,8 @@ type UpdateReport struct {
 	Removed                   []ExistingModule
 	PathDrift                 []PathDelta
 	Unclassified              []string
+	Issues                    []ModuleIssue
+	Settings                  []SettingChange
 	DeployUnitSuggestions     []DeployUnitSuggestion
 	DistanceConfigCandidates  []DistanceConfigCandidate
 	RuleSuggestions           []RuleSuggestion
@@ -101,9 +104,21 @@ func pathSetsEqual(a, b []string) bool {
 //   - PathDrift: modules present in both whose paths differ as normalized sets.
 //     ConfigPaths and DiscoveredPaths preserve their original ordering.
 //   - StructuralInSync: true when Added, Removed, and PathDrift are all empty.
-//   - Unclassified: non-removed existing modules missing any of subdomain/volatility/layer.
+//   - Unclassified: non-removed existing modules that cannot be classified —
+//     neither subdomain nor volatility is set (either one supplies volatility), or
+//     layer is missing while requireLayer says an active layer policy needs it.
 //     Modules in Removed are excluded from Unclassified.
-func DiffModules(existing []ExistingModule, fresh []ModuleDef) UpdateReport {
+//   - Issues: the Unclassified reasons plus missing owner, one entry per gap,
+//     sorted by module then code. Modules with no paths classify nothing and are
+//     skipped, mirroring config.Config.Lint; Unclassified keeps them.
+//
+// Narrowing Unclassified also narrows what `--ai-classify` targets, deliberately:
+// `layer:` is read only by the forbidden_layer_direction rule, so proposing one
+// for a config without that rule adds a field nothing consumes.
+//
+// requireLayer must be true only when a forbidden_layer_direction rule is active
+// (gate other than "off"); layer is optional for every other config.
+func DiffModules(existing []ExistingModule, fresh []ModuleDef, requireLayer bool) UpdateReport {
 	existingByName := make(map[string]ExistingModule, len(existing))
 	for _, e := range existing {
 		existingByName[e.Name] = e
@@ -149,21 +164,49 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef) UpdateReport {
 	sort.Slice(drift, func(i, j int) bool { return drift[i].Name < drift[j].Name })
 
 	var unclassified []string
+	var issues []ModuleIssue
 	for _, e := range existing {
 		if _, isRemoved := removedSet[e.Name]; isRemoved {
 			continue
 		}
-		if !e.HasSubdomain || !e.HasVolatility || !e.HasLayer {
+		missingVolatilityInput := !e.HasSubdomain && !e.HasVolatility
+		missingLayer := requireLayer && !e.HasLayer
+		if missingVolatilityInput || missingLayer {
 			unclassified = append(unclassified, e.Name)
+		}
+		if len(normalizePaths(e.Paths)) == 0 {
+			// A pathless entry classifies nothing, so it raises no issue — this
+			// mirrors config.Config.Lint. Unclassified deliberately does NOT skip
+			// it: a pathless module still needs classification input before it
+			// can do any work, and the AI pass targets that list.
+			continue
+		}
+		// Owner and subdomain/volatility are also checked by config.Config.Lint for
+		// the analyze pipeline; here they are scoped to modules discovery still sees.
+		if missingLayer {
+			issues = append(issues, newModuleIssue(IssueMissingLayer, e.Name))
+		}
+		if !e.HasOwner {
+			issues = append(issues, newModuleIssue(IssueMissingOwner, e.Name))
+		}
+		if missingVolatilityInput {
+			issues = append(issues, newModuleIssue(IssueMissingVolatilityInput, e.Name))
 		}
 	}
 	sort.Strings(unclassified)
+	sort.SliceStable(issues, func(i, j int) bool {
+		if issues[i].Module != issues[j].Module {
+			return issues[i].Module < issues[j].Module
+		}
+		return issues[i].Code < issues[j].Code
+	})
 
 	return UpdateReport{
 		Added:            added,
 		Removed:          removed,
 		PathDrift:        drift,
 		Unclassified:     unclassified,
+		Issues:           issues,
 		StructuralInSync: len(added) == 0 && len(removed) == 0 && len(drift) == 0,
 	}
 }
@@ -178,6 +221,9 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef) UpdateReport {
 //   - REMOVED: each removed module noted as "not found in discovery — verify or remove".
 //   - PATH DRIFT: config vs discovered paths, with an explicit note that --apply replaces
 //     module paths with the discovered paths and writes a backup.
+//   - SETTINGS: non-module config settings `update --apply` would write, so the
+//     preview shows every edit apply makes.
+//   - ISSUES: per-module config gaps with their reason and next action.
 //   - UNCLASSIFIED: modules missing classification; shows LLM suggestion from ann when
 //     present, otherwise suggests running with --ai-classify.
 //   - DEPLOY UNIT HINTS: deterministic deploy_unit proposals from checked-in
@@ -239,8 +285,24 @@ func RenderUpdateReport(r UpdateReport, ann map[string]ModuleAnnotation, allowed
 		}
 	}
 
+	if len(r.Settings) > 0 {
+		fmt.Fprintf(&b, "SETTINGS (%d config setting(s) `update --apply` would write):\n", len(r.Settings))
+		for _, s := range r.Settings {
+			fmt.Fprintf(&b, "  - %s: %s\n", sanitizeComment(s.Code), sanitizeComment(s.Reason))
+		}
+	}
+
+	if len(r.Issues) > 0 {
+		fmt.Fprintf(&b, "ISSUES (%d module gap(s) needing a decision):\n", len(r.Issues))
+		for _, issue := range r.Issues {
+			fmt.Fprintf(&b, "  - %s [%s]: %s → %s\n",
+				sanitizeComment(issue.Module), sanitizeComment(issue.Code),
+				sanitizeComment(issue.Reason), sanitizeComment(issue.NextAction))
+		}
+	}
+
 	if len(r.Unclassified) > 0 {
-		fmt.Fprintf(&b, "UNCLASSIFIED (%d module(s) missing subdomain/volatility/layer):\n", len(r.Unclassified))
+		fmt.Fprintf(&b, "UNCLASSIFIED (%d module(s) archfit cannot classify):\n", len(r.Unclassified))
 		for _, name := range r.Unclassified {
 			if ann != nil {
 				if a, ok := ann[name]; ok {
