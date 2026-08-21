@@ -288,9 +288,12 @@ func summariseFamily(f analyzerFamily, side analyzerEvidence) familySummary {
 }
 
 // rawCoverageStatus renders one coverage row for a comparison reason: the status
-// alone, plus the unresolved magnitude when the row has one to report.
+// alone, plus the unresolved magnitude when it MEANS unresolved import
+// specifiers. The same predicate gates it as gates the pairing, so a go/packages
+// partial — where Unresolved counts skipped packages — never renders a number
+// that reads as a specifier count.
 func rawCoverageStatus(c diagnostic.Coverage) string {
-	if c.Status != diagnostic.StatusPartial || c.Unresolved <= 0 {
+	if !decision.PartialFromUnresolvedSpecifiers(c) {
 		return c.Status
 	}
 	return fmt.Sprintf("%s (%s)", c.Status, decision.UnresolvedMagnitude(c))
