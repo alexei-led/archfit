@@ -479,10 +479,12 @@ func TestRun_Baseline_SkipsSyntheticCouplingGateFinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, a := range b.Accepted {
-		if a.RuleID == ruleIDBCCouplingGate {
-			t.Errorf("baseline persisted the synthetic coupling-gate finding: %+v", a)
-		}
+	// The trip finding is the ONLY finding this run produces with advisories off,
+	// so the baseline must come back empty. Asserting the length (not just
+	// scanning for the rule ID) keeps the check from passing on an empty set.
+	if len(b.Accepted) != 0 {
+		t.Errorf("baseline persisted %d findings, want 0 (the %s trip finding is the only candidate and must be skipped): %+v",
+			len(b.Accepted), ruleIDBCCouplingGate, b.Accepted)
 	}
 }
 
