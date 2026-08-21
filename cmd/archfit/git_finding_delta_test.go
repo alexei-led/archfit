@@ -147,6 +147,15 @@ func testGitDeltaCrossPathAgreement(t *testing.T) {
 		c.Unresolved = unresolved
 		return c
 	}
+	// go/packages splits Unresolved by what the incompleteness cost: packages
+	// missing from the graph (a finding can hide behind them) versus packages
+	// that merely failed to type-check (every import is still there).
+	goPartial := func(missing, precision int) diagnostic.Coverage {
+		c := partial(toolGoPackages, missing+precision)
+		c.UnresolvedInputsMissing = missing
+		c.UnresolvedPrecisionOnly = precision
+		return c
+	}
 	gapFor := func(tool string) []diagnostic.CoverageGap { return []diagnostic.CoverageGap{{Tool: tool}} }
 	goFamily := analyzerFamily{name: toolGoPackages, primary: true}
 	rows := func(cs ...diagnostic.Coverage) []diagnostic.Coverage { return cs }
@@ -209,6 +218,15 @@ func testGitDeltaCrossPathAgreement(t *testing.T) {
 		// go/packages counts SKIPPED PACKAGES in Unresolved, so its partial is a
 		// run that did not finish — both paths must refuse it.
 		{name: "go/packages skipped-package partial both sides", fam: goFamily, head: rows(partial(toolGoPackages, 3)), base: rows(partial(toolGoPackages, 3)), want: notCompare},
+		// A partial earned only by packages that did not TYPE-CHECK is the other
+		// half of that counter: every import reached both graphs, so neither side
+		// can hide a finding from the other and both paths pair it, degraded. One
+		// such package anywhere used to make --base inert on an ordinary Go repo.
+		{name: "go/packages degraded-precision partial both sides", fam: goFamily, head: rows(goPartial(0, 1)), base: rows(goPartial(0, 12)), want: withGaps},
+		// The precision that degraded is what strength-derived findings rest on,
+		// so the shape pairs with itself and nothing else.
+		{name: "go/packages degraded-precision partial against ok", fam: goFamily, head: rows(goPartial(0, 1)), base: rows(covRow(toolGoPackages, diagnostic.StatusOK)), want: notCompare},
+		{name: "go/packages degraded-precision against a missing-input partial", fam: goFamily, head: rows(goPartial(0, 1)), base: rows(goPartial(2, 1)), want: notCompare},
 		{
 			name: "ok against a gapless-absent primary", fam: goFamily,
 			head: rows(covRow(toolGoPackages, diagnostic.StatusOK)),

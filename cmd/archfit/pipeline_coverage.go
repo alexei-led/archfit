@@ -173,17 +173,25 @@ func rustProjectPresent(root string, cfg config.Config) bool {
 //
 // Gaps are also suppressed when the language's project marker is absent from root
 // (e.g. no Cargo.toml → Rust is not present → cargo gap is noise). An explicit
-// gate on that tool overrides the suppression — except gate: off, which is a
-// deliberate opt-out and never produces an install prompt.
+// warn/fail gate on that tool overrides the suppression; gate: off does not,
+// because a deliberate opt-out over a language that is not even here needs no
+// install prompt.
+//
+// gate: off does NOT suppress the gap over a language that IS here. That skip
+// used to run before the presence check, and the silence it produced was read
+// downstream as a fact about the TREE: both comparison paths take a PRIMARY
+// analyzer that is absent with no gap as "this language is not present", so a
+// gated-off analyzer over a repo full of that language dropped out of the
+// comparison entirely, unmeasured and unmentioned. The gap is the only channel
+// that carries the difference, so it has to be emitted; applyToolGate is where
+// gate: off keeps its meaning, by refusing to escalate even under
+// --require-tools.
 func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string) []diagnostic.CoverageGap {
 	var gaps []diagnostic.CoverageGap
 	for _, c := range cov {
 		// Only truly absent tools produce a gap. Disabled-by-config tools are an
 		// intentional opt-out; partial coverage is informational (not actionable).
 		if c.Status != diagnostic.StatusAbsent {
-			continue
-		}
-		if configToolGate(cfg, c.Tool) == gateOff {
 			continue
 		}
 		// A disabled language's primary tool is not a gap the user needs to close —
@@ -198,22 +206,26 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string
 		}
 		// Suppress the gap when the language's project is absent from the scan root
 		// — the language simply isn't present in this repo, so the missing tool is
-		// not actionable. An explicit warn/fail gate overrides this (same carve-out
-		// as the disabled-language check above). cargo-modules (opt-in intra-crate
-		// tool, not a language primary) is also suppressed when Rust is absent.
-		if root != "" {
+		// not actionable. Only an explicit warn/fail gate overrides this: a demand
+		// to be told about a tool is a demand about a tool, whereas gate: off asks
+		// for silence and gets it here, where silence claims nothing. An
+		// unprobeable root (root == "") answers "present" and discloses, the same
+		// abstain-toward-disclosure choice primaryLanguagePresent makes.
+		// cargo-modules (opt-in intra-crate tool, not a language primary) is
+		// suppressed on the same marker as Rust itself.
+		if root != "" && !toolGateDemands(cfg, c.Tool) {
 			switch c.Tool {
 			case toolCargoModules:
 				// cargo-modules is Rust-specific but not a primary tool. It runs inside
 				// the Rust extractor and behind the SAME applicability marker, so it
 				// reads the marker through rustProjectPresent — a configured
 				// languages.rust.manifest points both at the sub-crate manifest.
-				if configToolGate(cfg, c.Tool) == gateWarn && !rustProjectPresent(root, cfg) {
+				if !rustProjectPresent(root, cfg) {
 					continue
 				}
 			default:
-				if lang, isPrimary := primaryToolLanguage[c.Tool]; isPrimary {
-					if cfg.ToolGate(lang) == "" && !primaryProjectPresent(c.Tool, root, cfg) {
+				if _, isPrimary := primaryToolLanguage[c.Tool]; isPrimary {
+					if !primaryProjectPresent(c.Tool, root, cfg) {
 						continue
 					}
 				}
@@ -232,6 +244,25 @@ func buildCoverageGaps(cov []diagnostic.Coverage, cfg config.Config, root string
 	}
 	sort.Slice(gaps, func(i, j int) bool { return gaps[i].Tool < gaps[j].Tool })
 	return gaps
+}
+
+// toolGateDemands reports whether the config explicitly asked to be told about
+// this tool — an explicit warn or fail gate. An unset gate defaults to warn but
+// demands nothing; gate: off demands the opposite. Only a demand overrides the
+// marker suppression, so an explicit gate cannot be answered with silence and an
+// opt-out cannot be answered with an install prompt for a language that is not
+// in the tree.
+func toolGateDemands(cfg config.Config, tool string) bool {
+	key, ok := coverageToolConfigKey[tool]
+	if !ok {
+		return false
+	}
+	switch string(cfg.ToolGate(key)) {
+	case gateWarn, gateFail:
+		return true
+	default:
+		return false
+	}
 }
 
 // primaryDisabledByConfig reports whether tool is a language primary analyzer
@@ -330,6 +361,14 @@ func configToolGate(cfg config.Config, tool string) string {
 func applyToolGate(diag *diagnostic.Diagnostic, requireTools bool) bool {
 	failed := false
 	for i := range diag.CoverageGaps {
+		// gate: off is the user's explicit statement that this analyzer must not
+		// fail the build, and --require-tools does not overrule it. The gap is
+		// still reported: it exists so the run discloses which analyzer went
+		// unmeasured over a language the tree actually contains, which is a
+		// different question from whether that failure gates.
+		if diag.CoverageGaps[i].Gate == gateOff {
+			continue
+		}
 		if requireTools {
 			diag.CoverageGaps[i].Gate = gateFail
 		}

@@ -66,14 +66,21 @@ type UpdateReport struct {
 // DistanceConfigCandidate is one review-only config hint derived from runtime or
 // dynamic evidence. It is a display copy of diagnostic.DistanceConfigCandidate;
 // config update never applies it automatically.
+//
+// The json tags are not decoration: this struct is serialized inside the
+// archfit.config-review.v1 document, whose every other key is snake_case, and
+// analyze --json already prints the same logical object under these names. The
+// one deliberate divergence from diagnostic.DistanceConfigCandidate is
+// evidence_refs — flattened "file:line" strings here, structured evidence_sites
+// there — so the key names the shape it actually carries.
 type DistanceConfigCandidate struct {
-	SourceBlock           string
-	Module                string
-	Target                string
-	IntegrationKind       string
-	Count                 int
-	EvidenceRefs          []string
-	SuggestedReviewAction string
+	SourceBlock           string   `json:"source_block"`
+	Module                string   `json:"module"`
+	Target                string   `json:"target"`
+	IntegrationKind       string   `json:"integration_kind"`
+	Count                 int      `json:"count"`
+	EvidenceRefs          []string `json:"evidence_refs"`
+	SuggestedReviewAction string   `json:"suggested_review_action"`
 }
 
 // DeployUnitSuggestion is one deterministic deploy_unit proposal from checked-in
@@ -81,9 +88,9 @@ type DistanceConfigCandidate struct {
 // manifests). It is rendered as a human-reviewed config hint; update --apply does
 // not write it automatically because deploy topology is an architecture decision.
 type DeployUnitSuggestion struct {
-	Module string
-	Unit   string
-	Source string
+	Module string `json:"module"`
+	Unit   string `json:"unit"`
+	Source string `json:"source"`
 }
 
 // normalizePaths returns a sorted, deduplicated, non-empty slice copy for comparison.

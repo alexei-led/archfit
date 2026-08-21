@@ -11,12 +11,13 @@
 //   - An unmatched task is "introduced" only when every ACTIVE finding-producing
 //     analyzer family covered both sides equivalently. Missing, timed-out, or
 //     asymmetric evidence yields "unknown", never a false "introduced".
-//   - Two SYMMETRIC degradations still pair, because neither side could have
+//   - SYMMETRIC degradations still pair, because neither side could have
 //     produced a finding the other hid: a "partial" from unresolved import
-//     specifiers (the normal dependency-cruiser/grimp state) and an analyzer
-//     that was unavailable on both sides. Both stay comparable and both always
-//     name themselves in comparison_reasons — pairing them silently would trade
-//     one half of the defect for the other.
+//     specifiers (the normal dependency-cruiser/grimp state), a "partial" whose
+//     inputs are all present with only edge precision degraded (go/packages when
+//     a package does not type-check), and an analyzer unavailable on both sides.
+//     All stay comparable and all always name themselves in comparison_reasons —
+//     pairing them silently would trade one half of the defect for the other.
 //
 // Isolation: the only base-side inputs are finding IDs, coverage rows/gaps, and
 // the config hash (see baseEvidence in worktree.go). Base paths, locations, and
@@ -69,6 +70,16 @@ const (
 	// incomplete, and the degradation is disclosed in comparison_reasons with
 	// each side's magnitude.
 	evidencePartialUnresolved
+	// evidencePartialDegraded — the analyzer covered every input (nothing is
+	// missing from the graph) and lost only per-edge precision: go/packages when
+	// some packages did not type-check, so their imports are all present and only
+	// the go/types strength hints are gone. Like the unresolved case it pairs ONLY
+	// with itself, and for a sharper reason: the precision it lost is exactly what
+	// strength-derived findings rest on, so a degraded base can miss a
+	// bc/imbalanced_coupling seam that an ok head reports. Symmetry is the whole
+	// safety argument — pairing degraded against ok would manufacture a false
+	// "introduced".
+	evidencePartialDegraded
 	// evidenceUnavailable — timed out, or partial from a run that did not finish
 	// (see decision.PartialFromUnresolvedSpecifiers): the analyzer could have
 	// produced findings and did not finish doing so, and unlike an uninstalled
@@ -233,6 +244,10 @@ func compareAnalyzerEvidence(fams []analyzerFamily, head, base analyzerEvidence)
 		case familyPairedDegradedUnresolved:
 			reasons = append(reasons, fmt.Sprintf(
 				"%s: head %s, base %s — unresolved import specifiers on both sides", f.name, h.raw(), b.raw()))
+		case familyPairedDegradedPrecision:
+			reasons = append(reasons, fmt.Sprintf(
+				"%s: head %s, base %s — every input covered on both sides, edge precision degraded",
+				f.name, h.raw(), b.raw()))
 		case familyPairedDegradedAbsent:
 			reasons = append(reasons, fmt.Sprintf(
 				"%s: head %s, base %s — analyzer unavailable on both sides; neither run could report its findings",
@@ -311,7 +326,12 @@ func (s familySummary) meaning() string {
 		return "disabled in config"
 	case evidencePartialUnresolved:
 		return "ran whole tree, unresolved import specifiers"
+	case evidencePartialDegraded:
+		return "covered every input, degraded edge precision"
 	default: // evidenceUnavailable
+		// Covers timeouts and every partial that left inputs OUT of the graph.
+		// Both mean the analyzer could have reported findings over this tree and
+		// did not get through it.
 		return "run did not finish"
 	}
 }
@@ -331,15 +351,19 @@ func summariseFamily(f analyzerFamily, side analyzerEvidence) familySummary {
 }
 
 // rawCoverageStatus renders one coverage row for a comparison reason: the status
-// alone, plus the unresolved magnitude when it MEANS unresolved import
-// specifiers. The same predicate gates it as gates the pairing, so a go/packages
-// partial — where Unresolved counts packages whose load did not complete — never
-// renders a number that reads as a specifier count.
+// alone, plus the magnitude of whichever degradation earned it. The same
+// predicates gate the number as gate the pairing, and each labels its own
+// condition, so a go/packages partial never renders a count that reads as
+// unresolved import specifiers.
 func rawCoverageStatus(c diagnostic.Coverage) string {
-	if !decision.PartialFromUnresolvedSpecifiers(c) {
+	switch {
+	case decision.PartialFromUnresolvedSpecifiers(c):
+		return fmt.Sprintf("%s (%s)", c.Status, decision.UnresolvedMagnitude(c))
+	case decision.PartialFromDegradedPrecision(c):
+		return fmt.Sprintf("%s (%s)", c.Status, decision.DegradedMagnitude(c))
+	default:
 		return c.Status
 	}
-	return fmt.Sprintf("%s (%s)", c.Status, decision.UnresolvedMagnitude(c))
 }
 
 // normalizeCoverage maps one coverage row to its comparability status.
@@ -353,10 +377,12 @@ func normalizeCoverage(f analyzerFamily, c diagnostic.Coverage, gaps []diagnosti
 		// The gapless carve-out belongs to PRIMARY families only. There a missing
 		// gap is a positive finding about the TREE: buildCoverageGaps suppressed
 		// it because the language's project markers are absent, so that side
-		// genuinely had nothing of that language to find. markDisabledPrimaries
-		// keeps that the only cause — a primary switched off in config arrives
-		// here as StatusDisabled, not absent, so "we did not look" can never
-		// render as "there is nothing here".
+		// genuinely had nothing of that language to find. Two pipeline rules keep
+		// that the only cause, and both exist so "we did not look" can never render
+		// as "there is nothing here": a primary switched off in config arrives here
+		// as StatusDisabled rather than absent (markDisabledPrimaries), and a
+		// primary with gate: off over a language that IS present keeps its gap
+		// (buildCoverageGaps suppresses on the marker, not on the gate).
 		//
 		// For every other family a missing gap says nothing — those analyzers are
 		// mostly not in the install-hint table at all — so the absence stays what
@@ -367,12 +393,17 @@ func normalizeCoverage(f analyzerFamily, c diagnostic.Coverage, gaps []diagnosti
 		}
 		return evidenceAbsent
 	case diagnostic.StatusPartial:
-		// Shared with `config compare` so the two paths cannot grade one row
-		// differently. Note that Unresolved > 0 is NOT the discriminator on its
-		// own: go/packages also sets it, counting packages whose load did not
-		// complete (skipped, or not type-checked).
-		if decision.PartialFromUnresolvedSpecifiers(c) {
+		// Both predicates are shared with `config compare` so the two paths cannot
+		// grade one row differently. Note that Unresolved > 0 is NOT the
+		// discriminator on its own: go/packages also sets it, counting packages
+		// whose load did not complete — and the two ways it can fail decide
+		// differently, which is why the second predicate reads the typed counters
+		// that split them rather than the row's prose reason.
+		switch {
+		case decision.PartialFromUnresolvedSpecifiers(c):
 			return evidencePartialUnresolved
+		case decision.PartialFromDegradedPrecision(c):
+			return evidencePartialDegraded
 		}
 		return evidenceUnavailable
 	default:
@@ -390,6 +421,10 @@ const (
 	// familyPairedDegradedUnresolved — the two sides pair, but both ran with
 	// unresolved import specifiers. Comparable, and disclosed with magnitudes.
 	familyPairedDegradedUnresolved
+	// familyPairedDegradedPrecision — the two sides pair, but both ran with their
+	// inputs complete and their per-edge precision degraded. Comparable, and
+	// disclosed with each side's count.
+	familyPairedDegradedPrecision
 	// familyPairedDegradedAbsent — the two sides pair, but the analyzer was
 	// unavailable on both. Comparable, and disclosed in comparison_reasons.
 	familyPairedDegradedAbsent
@@ -404,8 +439,8 @@ const (
 // neither can hide an origin. The only cross-status pair is ok against
 // not_applicable — that side genuinely has none of the language.
 //
-// Two shapes pair as DEGRADED rather than failing, both because SYMMETRY is the
-// safety argument (neither side ran what the other could hide behind) and both
+// Three shapes pair as DEGRADED rather than failing, all because SYMMETRY is the
+// safety argument (neither side ran what the other could hide behind) and all
 // disclosed in comparison_reasons, never silently:
 //
 //   - Symmetric partial-with-unresolved-specifiers. For dependency-cruiser and
@@ -413,6 +448,11 @@ const (
 //     the whole origin delta inert on every TypeScript and Python repo. The
 //     residual risk — a base counterpart hidden behind an unresolved specifier —
 //     is bounded only by the magnitudes the reason carries.
+//   - Symmetric partial-with-complete-inputs. go/packages reports partial when
+//     any package fails to type-check, and one such package anywhere made the
+//     delta inert on an ordinary Go repo — the project's own primary language.
+//     Nothing is missing from either graph there; only strength precision is,
+//     which is why the shape pairs with itself and with nothing else.
 //   - Symmetric absent: an analyzer the config activated that did not run on
 //     either side, typically because its tool is not installed on this host.
 //     Treating it as unusable made the delta inert for a whole class of
@@ -433,10 +473,18 @@ func pairFamily(head, base familySummary) familyPairing {
 		return familyUnpaired // a missing or duplicated coverage row is unavailable evidence
 	}
 	h, b := head.statuses[0], base.statuses[0]
+	// Every degraded shape is tested BEFORE the generic h == b arm below, so a
+	// degraded side can only ever pair with the same degradation — never with ok
+	// through the equality shortcut, and never with another kind of degradation.
 	switch {
 	case h == evidencePartialUnresolved || b == evidencePartialUnresolved:
 		if h == b {
 			return familyPairedDegradedUnresolved
+		}
+		return familyUnpaired
+	case h == evidencePartialDegraded || b == evidencePartialDegraded:
+		if h == b {
+			return familyPairedDegradedPrecision
 		}
 		return familyUnpaired
 	case h == evidenceAbsent || b == evidenceAbsent:

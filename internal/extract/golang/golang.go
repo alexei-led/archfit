@@ -244,9 +244,12 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	)
 	// Both conditions leave the load incomplete over the tree, so both count
 	// toward Unresolved and both keep the row partial. They are NOT the same
-	// failure, and every consumer that reads this row — the coverage metric, the
-	// `--base` origin delta, `config compare` — used to see one number for two
-	// meanings, so the reason names which one occurred.
+	// failure, and the consumers that pair two runs' coverage rows (`config
+	// compare`, the `--base` origin delta) decide differently on each: an
+	// ill-typed-only load saw every package, so two of them rest on the same
+	// inputs, while a skipped package can hide a whole subtree's edges. Both the
+	// prose reason (for humans) and the two typed Coverage counters (for those
+	// consumers) carry the split — a reason string is not a machine contract.
 	unresolved := skipped + illTyped
 
 	status := statusOK
@@ -270,11 +273,13 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		GoModules:  goModules,
 	}
 	cov := diagnostic.Coverage{
-		Tool:            toolGoPackages,
-		FilesSeen:       filesSeen,
-		FilesApplicable: filesSeen,
-		Unresolved:      unresolved,
-		Status:          status,
+		Tool:                    toolGoPackages,
+		FilesSeen:               filesSeen,
+		FilesApplicable:         filesSeen,
+		Unresolved:              unresolved,
+		UnresolvedInputsMissing: skipped,
+		UnresolvedPrecisionOnly: illTyped,
+		Status:                  status,
 	}
 	if status == statusPartial {
 		cov.Reason = goPartialReason(skipped, illTyped)
@@ -283,9 +288,9 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 }
 
 // goPartialReason states which incomplete-load condition earned the partial row.
-// Consumers (the --base origin delta, `config compare`) read only the count, and
-// one count for two conditions reads as whichever the reader assumes; the two
-// need different fixes, so the row has to say which occurred.
+// This is the human half of the split; the machine half is the two typed
+// Coverage counters set beside it. The two conditions need different fixes, so
+// the row has to say which occurred rather than leaving the reader to assume.
 func goPartialReason(skipped, illTyped int) string {
 	switch {
 	case illTyped == 0:

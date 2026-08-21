@@ -59,10 +59,16 @@ func TestBuildCoverageGaps(t *testing.T) {
 			wantTools: nil,
 		},
 		{
-			name:      "absent tool with configured off gate produces no gap",
+			// gate: off no longer suppresses on its own. It suppresses only where
+			// the language's marker is absent, and an unprobeable root (root == ""
+			// here) answers "present" — the same abstain-toward-disclosure rule the
+			// "empty root disables suppression" case below pins. The gap keeps
+			// Gate: off, which applyToolGate never escalates.
+			name:      "absent tool with configured off gate is disclosed, gated off",
 			cov:       []diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}},
 			cfg:       cfgOffGo,
-			wantTools: nil,
+			wantTools: []string{toolGoPackages},
+			wantGate:  gateOff,
 		},
 		{
 			name:      "unknown tool produces no gap",
@@ -139,14 +145,8 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 	cfgRustGate := config.Config{Languages: config.LanguagesConfig{
 		Rust: config.RustLanguage{Gate: config.GateFail},
 	}}
-	cfgGoOff := config.Config{Languages: config.LanguagesConfig{
-		Go: config.GoLanguage{Gate: config.GateOff},
-	}}
 	cfgCargoModulesGate := config.Config{Analyzers: config.AnalyzersConfig{
 		CargoModules: config.Analyzer{Gate: config.GateFail},
-	}}
-	cfgCargoModulesOff := config.Config{Analyzers: config.AnalyzersConfig{
-		CargoModules: config.Analyzer{Gate: config.GateOff},
 	}}
 
 	allRustAbsent := []diagnostic.Coverage{
@@ -234,25 +234,7 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 		}
 	})
 
-	t.Run("gate off suppresses cargo-modules gap", func(t *testing.T) {
-		t.Parallel()
-		gaps := buildCoverageGaps([]diagnostic.Coverage{{Tool: toolCargoModules, Status: diagnostic.StatusAbsent}}, cfgCargoModulesOff, mixedDir)
-		for _, g := range gaps {
-			if g.Tool == toolCargoModules {
-				t.Fatalf("gate off should suppress cargo-modules gap, got %+v", gaps)
-			}
-		}
-	})
-
-	t.Run("gate off suppresses go/packages gap", func(t *testing.T) {
-		t.Parallel()
-		gaps := buildCoverageGaps([]diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}, cfgGoOff, goOnlyDir)
-		for _, g := range gaps {
-			if g.Tool == toolGoPackages {
-				t.Fatalf("gate off should suppress go/packages gap, got %+v", gaps)
-			}
-		}
-	})
+	t.Run("gate off discloses over a present language", testGateOffGapDisclosure)
 
 	t.Run("empty root disables suppression (backward compat)", func(t *testing.T) {
 		t.Parallel()
@@ -275,6 +257,64 @@ func TestBuildCoverageGaps_ProjectMarkerSuppression(t *testing.T) {
 	t.Run("python markers", testPyProjectMarkerGaps)
 	t.Run("rust manifest markers", testRustManifestMarkerGaps)
 	t.Run("disabled primaries", testMarkDisabledPrimaries)
+}
+
+// testGateOffGapDisclosure pins that `gate: off` suppresses a coverage gap only
+// where the language is ABSENT, and that the disclosed gap still never gates.
+//
+// It replaces two subtests that pinned unconditional suppression. That silence
+// was read downstream as a fact about the TREE: `config compare` and
+// `analyze --base` both take a primary analyzer that is absent WITHOUT a gap as
+// "this language is not present here", so a gated-off analyzer over a repo full
+// of that language dropped out of both comparisons unmeasured and unmentioned.
+// Suppression now keys on the language marker; `gate: off` keeps its meaning in
+// applyToolGate, which refuses to escalate it even under --require-tools.
+func testGateOffGapDisclosure(t *testing.T) {
+	t.Parallel()
+	goOnlyDir := t.TempDir()
+	writeFileAt(t, goOnlyDir, markerGoMod, "module example\n")
+	rustDir := t.TempDir()
+	writeFileAt(t, rustDir, markerCargoToml, "[package]\nname = \"x\"\n")
+
+	cfgGoOff := config.Config{Languages: config.LanguagesConfig{
+		Go: config.GoLanguage{Gate: config.GateOff},
+	}}
+	cfgCargoModulesOff := config.Config{Analyzers: config.AnalyzersConfig{
+		CargoModules: config.Analyzer{Gate: config.GateOff},
+	}}
+	goAbsent := []diagnostic.Coverage{{Tool: toolGoPackages, Status: diagnostic.StatusAbsent}}
+	cargoModulesAbsent := []diagnostic.Coverage{{Tool: toolCargoModules, Status: diagnostic.StatusAbsent}}
+
+	t.Run("language present keeps the gap", func(t *testing.T) {
+		t.Parallel()
+		if !decision.HasCoverageGap(buildCoverageGaps(goAbsent, cfgGoOff, goOnlyDir), toolGoPackages) {
+			t.Error("gate off over a go.mod repo must still disclose the go/packages gap")
+		}
+		if !decision.HasCoverageGap(buildCoverageGaps(cargoModulesAbsent, cfgCargoModulesOff, rustDir), toolCargoModules) {
+			t.Error("gate off over a Cargo.toml repo must still disclose the cargo-modules gap")
+		}
+	})
+
+	t.Run("language absent suppresses the gap", func(t *testing.T) {
+		t.Parallel()
+		if decision.HasCoverageGap(buildCoverageGaps(cargoModulesAbsent, cfgCargoModulesOff, goOnlyDir), toolCargoModules) {
+			t.Error("no Cargo.toml: an opt-out needs no install prompt")
+		}
+	})
+
+	t.Run("disclosed gap never gates, even under --require-tools", func(t *testing.T) {
+		t.Parallel()
+		diag := diagnostic.Diagnostic{CoverageGaps: buildCoverageGaps(goAbsent, cfgGoOff, goOnlyDir)}
+		if applyToolGate(&diag, true) {
+			t.Error("--require-tools must not escalate a gate: off gap")
+		}
+		if diag.Verdict == diagnostic.VerdictFail {
+			t.Errorf("verdict = %q, want it untouched by a gate: off gap", diag.Verdict)
+		}
+		if diag.CoverageGaps[0].Gate != gateOff {
+			t.Errorf("gap gate = %q, want %q", diag.CoverageGaps[0].Gate, gateOff)
+		}
+	})
 }
 
 // writeFileAt writes content into root/rel, creating parent directories.

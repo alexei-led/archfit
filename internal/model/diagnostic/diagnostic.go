@@ -107,8 +107,21 @@ type Coverage struct {
 	// examined — the denominator that makes Unresolved a ratio. Only
 	// specifier-granular extractors (dependency-cruiser) set it; 0 means
 	// "not tracked", never "no specifiers".
-	SpecifiersSeen int    `json:"specifiers_seen,omitempty"`
-	Status         string `json:"status"`
+	SpecifiersSeen int `json:"specifiers_seen,omitempty"`
+	// UnresolvedInputsMissing and UnresolvedPrecisionOnly split Unresolved by what
+	// the incompleteness COST, for the extractors that can tell the two apart
+	// (only go/packages does today; 0 means "not tracked", never "none" — exactly
+	// the SpecifiersSeen convention). One counter for both meanings is unreadable
+	// by a consumer: a comparison can rest on a run whose inputs were all present,
+	// and cannot rest on one that never saw part of the tree.
+	//
+	//   - UnresolvedInputsMissing — inputs that never entered the graph. Edges they
+	//     would have carried are absent, so a finding can hide behind them.
+	//   - UnresolvedPrecisionOnly — inputs that are all present, with only per-edge
+	//     precision degraded (go/types strength unavailable for those packages).
+	UnresolvedInputsMissing int    `json:"unresolved_inputs_missing,omitempty"`
+	UnresolvedPrecisionOnly int    `json:"unresolved_precision_only,omitempty"`
+	Status                  string `json:"status"`
 	// Reason explains why a headline metric is absent or partial — a missing
 	// tool, an opt-in-off setting, or an uninstalled dependency — and how to
 	// enable it (the actionable next step). Empty when status is ok. A static,

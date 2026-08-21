@@ -539,7 +539,7 @@ Report model:
 | Section                 | Meaning                                                                                                                                                        |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `coverage evidence`     | Whether the two runs rest on comparable analyzer evidence. Graded, and reported separately from the differences.                                               |
-| measurement differences | Only what changed: the overall score, the one-sided finding IDs, and the classified-edge counts. Nothing changed prints `No measurement differences detected.` |
+| measurement differences | Only what changed: the overall score, the one-sided finding IDs, the classified-edge counts, and the classification mix (strength, distance, distance basis, volatility, severity, and volatility provenance). Nothing changed prints `No change in score, findings, edge counts, or classification mix.` — a claim about those measurements, not a claim that the two configs are equivalent. |
 | measurement loss        | Warnings raised when the candidate measured less of the same tree.                                                                                             |
 
 Coverage grades:
@@ -553,6 +553,12 @@ Coverage grades:
 A `not_comparable` grade is about evidence, not about the configs: it can appear
 on a run that reports no measurement differences at all. Read the grade first,
 then the differences.
+
+An `owner:` or `deploy_unit:` edit typically moves edges between distance rungs
+without moving the score: with `balance = max(|S−D|, 10−V)` the `10−V` term
+dominates for every low-volatility target. That shift shows up as a
+classification-mix line; `--json` carries the full histograms on both sides under
+`current.classified_edges` and `candidate.classified_edges`.
 
 Measurement-loss warnings:
 

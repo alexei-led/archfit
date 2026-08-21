@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/alexei-led/archfit/internal/decision"
+	"github.com/alexei-led/archfit/internal/model/diagnostic"
 	"github.com/alexei-led/archfit/internal/score"
 )
 
@@ -33,6 +34,87 @@ func TestConfigCompare(t *testing.T) {
 	t.Run("stderr_side_labels", testCompareStderrSideLabels)
 	t.Run("score_line", testCompareScoreLine)
 	t.Run("id_preview", testCompareIDPreview)
+	t.Run("classification_mix", testCompareClassificationMix)
+}
+
+// testCompareClassificationMix pins that a classification shift is reported.
+//
+// It is the shape `config compare` exists to evaluate and the one it used to
+// call identical: an `owner:` or `deploy_unit:` edit moves edges between
+// distance rungs without changing how many were scored, and with
+// balance = max(|S−D|, 10−V) the 10−V term dominates for every low-volatility
+// target, so neither the four edge counters nor the rounded score moves.
+func testCompareClassificationMix(t *testing.T) {
+	t.Parallel()
+	summary := func(mutate func(*diagnostic.ClassifiedEdgeSummary)) *diagnostic.ClassifiedEdgeSummary {
+		s := &diagnostic.ClassifiedEdgeSummary{
+			Total: 1, Scored: 1,
+			ByStrength:      map[string]int{enrichFunctional: 1},
+			ByDistance:      map[string]int{"cross_module_different_owner": 1},
+			ByDistanceBasis: map[string]int{"ownership": 1},
+			ByVolatility:    map[string]int{volatilityLow: 1},
+			VolatilityProvenance: &diagnostic.VolatilityProvenance{
+				Declared: 2, Undeclared: 0,
+			},
+		}
+		mutate(s)
+		return s
+	}
+	unchanged := func(*diagnostic.ClassifiedEdgeSummary) {}
+
+	tests := []struct {
+		name       string
+		mutate     func(*diagnostic.ClassifiedEdgeSummary)
+		wantSubstr string
+	}{
+		{name: "identical mix reports nothing", mutate: unchanged},
+		{
+			name: "owner edit moves the distance rung",
+			mutate: func(s *diagnostic.ClassifiedEdgeSummary) {
+				s.ByDistance = map[string]int{"cross_module_same_owner": 1}
+			},
+			wantSubstr: "distance mix: cross_module_different_owner 1 → 0, cross_module_same_owner 0 → 1",
+		},
+		{
+			name: "volatility provenance moves",
+			mutate: func(s *diagnostic.ClassifiedEdgeSummary) {
+				s.VolatilityProvenance = &diagnostic.VolatilityProvenance{Declared: 1, Undeclared: 1}
+			},
+			wantSubstr: "volatility provenance (modules): declared 2 → 1, undeclared 0 → 1",
+		},
+		{
+			name: "strength mix moves",
+			mutate: func(s *diagnostic.ClassifiedEdgeSummary) {
+				s.ByStrength = map[string]int{"contract": 1}
+			},
+			wantSubstr: "strength mix: contract 0 → 1, functional 1 → 0",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			lines := classificationMixLines(summary(unchanged), summary(tc.mutate))
+			if tc.wantSubstr == "" {
+				if len(lines) != 0 {
+					t.Fatalf("an unchanged mix must render no line, got %v", lines)
+				}
+				return
+			}
+			if len(lines) == 0 {
+				t.Fatal("a moved classification mix must render a line")
+			}
+			if !slices.Contains(lines, tc.wantSubstr) {
+				t.Errorf("lines %v do not carry %q", lines, tc.wantSubstr)
+			}
+		})
+	}
+
+	t.Run("nil summaries report nothing", func(t *testing.T) {
+		t.Parallel()
+		if lines := classificationMixLines(nil, nil); len(lines) != 0 {
+			t.Errorf("two unclassified sides must render no line, got %v", lines)
+		}
+	})
 }
 
 // testCompareIDPreview pins the text-report cap: short lists print in full, long

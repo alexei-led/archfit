@@ -656,7 +656,9 @@ Earlier tasks own all edits. This task only verifies the final command and repor
 ```sh
 bash -c 'if out=$(rg -n "analyze --gate|analyze .*--full|analyze --score|config init --llm|config update --llm|analyze --llm|explain --llm" examples CLAUDE.md docs/guide/concepts.md docs/design/bc-measurement-v4.md docs/design/fact-cache.md cmd/archfit/llmreview.go cmd/archfit/llmreview_test.go cmd/archfit/main_test.go cmd/archfit/root_test.go cmd/archfit/score_test.go cmd/archfit/worktree.go cmd/archfit/pipeline_run.go cmd/archfit/enrich.go cmd/archfit/enrich_test.go cmd/archfit/autopilot_test.go internal/model/diagnostic/diagnostic.go internal/extract/manifest/manifest.go internal/agenttask/agenttask_test.go internal/engine/advisory_tasks_test.go internal/output/jsonout/jsonout_test.go internal/output/markdown/markdown_test.go); then printf "%s\n" "$out"; exit 1; else rc=$?; test "$rc" -eq 1; fi'
 bash -c 'if out=$(rg -n -- "--gate|--advisory|--require-tools" cmd/archfit/worktree.go); then printf "%s\n" "$out"; exit 1; else rc=$?; test "$rc" -eq 1; fi'
-bash -c 'if out=$(rg -n "baseline --base" README.md docs/guide cmd/archfit/main.go cmd/archfit/baseline.go); then printf "%s\n" "$out"; exit 1; else rc=$?; test "$rc" -eq 1; fi'
+# docs/guide/release-notes.md is excluded on purpose: Task 2 requires a release
+# note announcing the removal, and that note has to name the removed form.
+bash -c 'if out=$(rg -n -g "!docs/guide/release-notes.md" "baseline --base" README.md docs/guide cmd/archfit/main.go cmd/archfit/baseline.go); then printf "%s\n" "$out"; exit 1; else rc=$?; test "$rc" -eq 1; fi'
 make fmt && make test && make lint
 make build
 make archfit
@@ -733,6 +735,13 @@ inspected. All pass.
   the listed active surfaces, no gate or advisory flags in
   `cmd/archfit/worktree.go`, no `baseline --base` in the README, guides, or the
   baseline command.
+
+  Correction (final review): the third guard as first written did NOT pass. It
+  matched `docs/guide/release-notes.md:7`, which announces the removal and must
+  name the removed form to do so — required content under Task 2, not a leftover.
+  The guard, not the note, was wrong: it scanned `docs/guide` wholesale and so
+  swept in the historical record. It now excludes that one file
+  (`rg -g '!docs/guide/release-notes.md'`) and exits `1` with no matches.
 - `make fmt` produces no diff. `make test` exits `0` (Go race suite plus
   `internal/extract/scip/scip_reader_test.py`), with no `FAIL` line;
   `cmd/archfit` at 84.7% and `internal` (arch ring plus model surface) both ok.
@@ -826,6 +835,28 @@ touch `internal/model/*` or `internal/view`.
 
 ### Known limitations recorded, not fixed
 
+- **`yamledit`'s `paths:` rewrite deletes hand-authored comments.** Rewriting a
+  module's `paths:` list splices to the NEXT KEY's start
+  (`internal/initcfg/yamledit_parse.go:192-206`,
+  `yamledit_resolve.go:165-201`), so any comment a human wrote between the last
+  path and the following field — or a trailing comment block at end of file — is
+  removed with the old list. Reproduced in the final review. Pre-existing on
+  `main`, in files this branch does not touch; recorded here so it is not read
+  as a regression from `config update --apply`.
+- **A multi-line flow `paths: [ … ]` makes `--apply` unable to write.** The same
+  editor produces unparseable YAML for that layout, `safeWriteConfig` rejects the
+  result (correctly — it validates before renaming), and `--apply` exits `3`
+  having written nothing, taking any unrelated pending module edits with it and
+  not self-healing on retry. Also pre-existing and also reproduced. The write
+  path is fail-closed, so nothing is corrupted; the cost is that the command
+  cannot be used at all on such a config until the list is reformatted.
+
+  Branch-attributable reach, not a new defect: swapping the Rust applicability
+  probe to `rustProjectPresent` (`cmd/archfit/update.go`) is a strict superset of
+  the old root-`Cargo.toml` stat, so it newly routes repos whose manifest is
+  declared under `languages.rust.manifest` into `ensureRustDeepAnalysisConfig`,
+  and therefore into this editor. The failure stays fail-closed there too.
+
 - ~~`DiffModules` skips every `Removed` module from both `Unclassified` and
   `Issues`~~ FIXED in the third review. The cost claim ("needs a redesign this
   plan rules out") was wrong: `NameDrift` carries its source `ExistingModule` —
@@ -855,7 +886,24 @@ touch `internal/model/*` or `internal/view`.
 
 - The base-side worktree parent moved from the config directory to `gitRoot`
   (fourth review), so the checkout always sits inside the analyzed repo and
-  inherits its gitignored resolution inputs (`node_modules`, generated code).
+  inherits the gitignored resolution inputs that a tool resolves by walking UP
+  from the file it is reading — `node_modules` is the case that matters.
+
+  Correction (final review): this does NOT extend to generated code, and the
+  earlier claim that it did was wrong. Go resolves inside the checkout's own
+  module, so a gitignored generated package (protoc, sqlc, wire, mockgen) is
+  simply absent from the tracked-files-only base checkout. The packages that
+  import it fail to load, the base row reports
+  `partial (N package(s) failed to load; their imports are missing from the
+  graph)`, and — correctly — that row pairs with nothing: those imports are
+  missing from the base graph, so a base finding could be hiding behind them.
+  The consequence for such a repo is a permanently empty
+  `introduced_finding_ids`, with the cause named in `comparison_reasons` every
+  time. Disclosed as a ceiling in `docs/guide/ci.md` and
+  `docs/guide/agent-feedback.md`. Making the checkout inherit untracked-but-
+  ignored directories would be a design change to what "the base ref's code"
+  means, not a fix, and is deliberately not attempted here.
+
   Ceiling: this writes `.archfit-cache/worktrees/` into the analyzed repo even
   for a user who deliberately keeps all archfit state outside it. On a read-only
   checkout the `os.MkdirTemp` fallback still fires, and there the inherited-input

@@ -65,6 +65,18 @@ When an analyzer's evidence differs between the two sides, its tasks move to
 exit code. See
 [agent-feedback.md](agent-feedback.md#git_finding_delta--which-repair-tasks-this-change-introduced).
 
+**Known ceiling — gitignored generated code.** The base side is a checkout of
+tracked files only, so a generated package that is gitignored (protoc, sqlc,
+wire, or mockgen output) is not in it. Go resolves imports inside the checkout's
+own module, so the packages importing it fail to load there, the base
+`go/packages` row reports `partial`, and every task lands in
+`unknown_origin_finding_ids` — `introduced_finding_ids` stays empty on every run.
+`comparison_reasons` names the cause each time, so this is disclosed rather than
+silent. If your build generates gitignored Go code, either commit the generated
+package or read `pre_existing_finding_ids` and the plain gate instead. Tools that
+resolve by walking UP from the file (`node_modules` for TypeScript) are
+unaffected: the checkout sits inside the analyzed repo and finds them.
+
 ## 3. SARIF upload
 
 Use SARIF when you want GitHub code scanning annotations:

@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -254,9 +255,16 @@ func writeConfigCompareJSON(w io.Writer, doc configCompareDoc) error {
 // Text report
 // ---------------------------------------------------------------------------
 
-// configCompareIdentityLine is the exact line emitted when the two
-// configurations produced the same measurement.
-const configCompareIdentityLine = "No measurement differences detected."
+// configCompareIdentityLine is the exact line emitted when every measurement
+// configCompareDiffLines compares came out the same.
+//
+// It names those measurements rather than claiming identity in general. The
+// broad claim was false: the differences section reads the overall score, the
+// one-sided finding IDs, the four edge counters and the classification mix, and
+// nothing else in the two diagnostics. A future measurement added without a diff
+// line would silently widen a claim written as "no differences"; it cannot widen
+// this one.
+const configCompareIdentityLine = "No change in score, findings, edge counts, or classification mix."
 
 // configCompareFooter states the one thing a reader must not conclude from a
 // score that moved.
@@ -316,7 +324,99 @@ func configCompareDiffLines(current, candidate decision.ConfigCompareSide, res d
 	if line, changed := edgeCompareLine(current.Diag.ClassifiedEdges, candidate.Diag.ClassifiedEdges); changed {
 		lines = append(lines, line)
 	}
+	return append(lines, classificationMixLines(current.Diag.ClassifiedEdges, candidate.Diag.ClassifiedEdges)...)
+}
+
+// classificationMixLines renders every cross-boundary classification histogram
+// that moved.
+//
+// Nothing above can see these. An `owner:` or `deploy_unit:` edit moves edges
+// between distance rungs without changing how many were scored, so the four edge
+// counters hold; and with balance = max(|S−D|, 10−V) the 10−V term dominates for
+// every low-volatility target, so the rounded score holds too. A proposed module
+// split — the first use case this command documents — is exactly that shape, and
+// it used to render as an identity result.
+//
+// The list is the complete set of classification histograms the diagnostic
+// carries, so the identity line's claim covers the whole mix rather than a
+// chosen subset of it.
+func classificationMixLines(current, candidate *diagnostic.ClassifiedEdgeSummary) []string {
+	mixes := []struct {
+		label string
+		pick  func(*diagnostic.ClassifiedEdgeSummary) map[string]int
+	}{
+		{"strength mix", func(s *diagnostic.ClassifiedEdgeSummary) map[string]int { return s.ByStrength }},
+		{"distance mix", func(s *diagnostic.ClassifiedEdgeSummary) map[string]int { return s.ByDistance }},
+		{"distance basis mix", func(s *diagnostic.ClassifiedEdgeSummary) map[string]int { return s.ByDistanceBasis }},
+		{"volatility mix", func(s *diagnostic.ClassifiedEdgeSummary) map[string]int { return s.ByVolatility }},
+		{"severity mix", func(s *diagnostic.ClassifiedEdgeSummary) map[string]int { return s.BySeverity }},
+		{"volatility provenance (modules)", volatilityProvenanceCounts},
+	}
+	var lines []string
+	for _, m := range mixes {
+		if line, changed := histogramCompareLine(m.label, pickHistogram(current, m.pick), pickHistogram(candidate, m.pick)); changed {
+			lines = append(lines, line)
+		}
+	}
 	return lines
+}
+
+// pickHistogram reads one histogram from a side, treating a side that never
+// classified anything as an empty one.
+func pickHistogram(
+	s *diagnostic.ClassifiedEdgeSummary,
+	pick func(*diagnostic.ClassifiedEdgeSummary) map[string]int,
+) map[string]int {
+	if s == nil {
+		return nil
+	}
+	return pick(s)
+}
+
+// volatilityProvenanceCounts flattens the provenance struct to the same
+// bucket-count shape as the other histograms. These count MODULES, not edges —
+// hence the label.
+func volatilityProvenanceCounts(s *diagnostic.ClassifiedEdgeSummary) map[string]int {
+	p := s.VolatilityProvenance
+	if p == nil {
+		return nil
+	}
+	return map[string]int{
+		"declared":   p.Declared,
+		"inherited":  p.Inherited,
+		"cascade":    p.Cascade,
+		"undeclared": p.Undeclared,
+	}
+}
+
+// histogramCompareLine renders only the buckets that moved, sorted by bucket so
+// a double-run stays byte-identical. A bucket present on one side and absent on
+// the other reads as 0 there, which is what an absent key means.
+func histogramCompareLine(label string, cur, cand map[string]int) (string, bool) {
+	keys := make([]string, 0, len(cur)+len(cand))
+	seen := make(map[string]struct{}, len(cur)+len(cand))
+	for _, m := range []map[string]int{cur, cand} {
+		for k := range m {
+			if _, ok := seen[k]; ok {
+				continue
+			}
+			seen[k] = struct{}{}
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+
+	moved := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if cur[k] == cand[k] {
+			continue
+		}
+		moved = append(moved, fmt.Sprintf("%s %d → %d", k, cur[k], cand[k]))
+	}
+	if len(moved) == 0 {
+		return "", false
+	}
+	return fmt.Sprintf("%s: %s", label, strings.Join(moved, ", ")), true
 }
 
 // edgeCompareLine renders the cross-boundary edge footprint when it moved. The

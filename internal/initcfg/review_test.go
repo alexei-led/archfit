@@ -289,6 +289,50 @@ func TestBuildConfigReview_EmptyListsMarshalAsArrays(t *testing.T) {
 	}
 }
 
+// TestBuildConfigReview_SuggestionKeysAreSnakeCase pins that the two suggestion
+// arrays serialize under the same snake_case keys as the rest of
+// archfit.config-review.v1 — and the same ones analyze --json prints for the
+// same logical object. They shipped untagged, so Go field names leaked into a
+// versioned document ("SourceBlock", "IntegrationKind"), which only a breaking
+// schema change could correct later.
+func TestBuildConfigReview_SuggestionKeysAreSnakeCase(t *testing.T) {
+	rev := BuildConfigReview(UpdateReport{
+		DeployUnitSuggestions: []DeployUnitSuggestion{
+			{Module: testReviewModA, Unit: testReviewDeploy, Source: testNewPath},
+		},
+		DistanceConfigCandidates: []DistanceConfigCandidate{{
+			SourceBlock:           "classified_external_edges",
+			Module:                testReviewModA,
+			Target:                "example.com/dep/**",
+			IntegrationKind:       "imports",
+			Count:                 1,
+			EvidenceRefs:          []string{"a.go:1"},
+			SuggestedReviewAction: "external_systems",
+		}},
+	})
+	data, err := json.Marshal(rev)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, key := range []string{
+		`"module":`, `"unit":`, `"source":`,
+		`"source_block":`, `"target":`, `"integration_kind":`,
+		`"count":`, `"evidence_refs":`, `"suggested_review_action":`,
+	} {
+		if !strings.Contains(string(data), key) {
+			t.Errorf("missing snake_case key %s:\n%s", key, data)
+		}
+	}
+	for _, leaked := range []string{
+		`"Module"`, `"Unit"`, `"Source"`, `"SourceBlock"`, `"Target"`,
+		`"IntegrationKind"`, `"Count"`, `"EvidenceRefs"`, `"SuggestedReviewAction"`,
+	} {
+		if strings.Contains(string(data), leaked) {
+			t.Errorf("Go field name %s leaked into the versioned document:\n%s", leaked, data)
+		}
+	}
+}
+
 // TestBuildConfigReview_PureProjection pins that BuildConfigReview copies the
 // orders DiffModules and the suggestion builders establish instead of re-sorting.
 func TestBuildConfigReview_PureProjection(t *testing.T) {

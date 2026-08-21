@@ -115,6 +115,54 @@ func TestExtract_MemberLoadFailure(t *testing.T) {
 	})
 }
 
+// TestExtract_IllTypedPackage pins the fact every consumer of a go/packages
+// partial rests on: a package that fails to TYPE-CHECK still contributes its
+// nodes and import edges, so the graph is complete and only the go/types
+// strength hints are lost. The two Coverage counters have to say that — a single
+// Unresolved number meant `config compare` and `analyze --base` read one
+// type error anywhere as "this run did not see part of the tree" and refused to
+// compare, which made both features inert on an ordinary Go repo.
+func TestExtract_IllTypedPackage(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatalf("mkdir %s: %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	write("go.mod", "module example.com/illtyped\n\ngo 1.21\n")
+	write("pkg/b/b.go", "package b\n\n// Broken does not compile: a string is not an int.\nvar Broken int = \"not an int\"\n")
+	write("pkg/a/a.go", "package a\n\nimport \"example.com/illtyped/pkg/b\"\n\nvar Use = b.Broken\n")
+
+	ext := goextract.New(view.ExtractConfig{})
+	facts, cov, err := ext.Extract(context.Background(), scope.Scope{Root: dir, Mode: scope.ModeFull})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if cov.Status != statusPartial {
+		t.Fatalf("Status = %q, want %q", cov.Status, statusPartial)
+	}
+	if cov.UnresolvedInputsMissing != 0 {
+		t.Errorf("UnresolvedInputsMissing = %d, want 0 — nothing failed to LOAD here", cov.UnresolvedInputsMissing)
+	}
+	if cov.UnresolvedPrecisionOnly == 0 {
+		t.Error("UnresolvedPrecisionOnly = 0, want > 0 — the type-check failure must be counted as precision loss")
+	}
+	if cov.Unresolved != cov.UnresolvedInputsMissing+cov.UnresolvedPrecisionOnly {
+		t.Errorf("counters do not account for Unresolved=%d (missing %d + precision %d)",
+			cov.Unresolved, cov.UnresolvedInputsMissing, cov.UnresolvedPrecisionOnly)
+	}
+	// The load stayed complete: the import edge is in the graph despite the
+	// type error. That is what makes two such runs comparable.
+	if !hasEdge(facts.Edges, "pkg/a/a.go", pkgB, graph.EdgeKindImports) {
+		t.Errorf("ill-typed package must still contribute its import edge; edges: %v", facts.Edges)
+	}
+}
+
 func TestExtract_SimpleImport(t *testing.T) {
 	root := testdataRoot(t)
 	ext := goextract.New(view.ExtractConfig{})

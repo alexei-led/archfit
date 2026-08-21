@@ -225,6 +225,12 @@ const (
 	// the pairing rule is magnitude-blind, so the reason has to carry the numbers
 	// or nothing in the output distinguishes 3 unresolved from 5000.
 	reasonPartialBoth = "analyzer left import specifiers unresolved under both configurations"
+	// reasonDegradedBoth covers a symmetric partial both sides earned with their
+	// INPUT SET complete — every unit the analyzer was asked to cover entered the
+	// graph, and only per-edge precision degraded (go/packages type-checking part
+	// of the tree). No edge is missing on either side, so the finding sets are
+	// comparable; the precision loss is stated with each side's count.
+	reasonDegradedBoth = "analyzer covered every input under both configurations, with degraded edge precision"
 	// reasonAbsentAsymmetric covers equal absent rows where only one
 	// configuration reported a coverage gap: one side expected the analyzer to
 	// run and the other did not, so the blindness is not shared.
@@ -236,6 +242,14 @@ const (
 func partialBothReason(cur, cand diagnostic.Coverage) string {
 	return fmt.Sprintf("%s (current %s, candidate %s)",
 		reasonPartialBoth, UnresolvedMagnitude(cur), UnresolvedMagnitude(cand))
+}
+
+// degradedBothReason states the shared complete-inputs/degraded-precision
+// partial with each side's count, for the same reason partialBothReason carries
+// its numbers: the pairing rule is magnitude-blind.
+func degradedBothReason(cur, cand diagnostic.Coverage) string {
+	return fmt.Sprintf("%s (current %s, candidate %s)",
+		reasonDegradedBoth, DegradedMagnitude(cur), DegradedMagnitude(cand))
 }
 
 // compareCoverage grades the union of analyzer names across both sides.
@@ -294,9 +308,18 @@ func gradeTool(
 	case diagnostic.StatusOK:
 		return CoverageComparable, "", false
 	case diagnostic.StatusPartial:
-		// Both sides survived unstableStatus, so both ran fully and left import
-		// specifiers unresolved. Shared incompleteness over one tree — comparable,
+		// Both sides survived unstableStatus, so both are one of the two partials
+		// that nothing can hide behind: a completed run with unresolved import
+		// specifiers, or a run whose inputs were all present with only per-edge
+		// precision degraded. Shared incompleteness over one tree — comparable,
 		// with the loss reported, magnitudes included.
+		//
+		// One analyzer produces only one of the two shapes (the specifier form is
+		// dependency-cruiser's and grimp's, the precision form is go/packages'), so
+		// the two sides of a tool cannot disagree about which reason applies.
+		if PartialFromDegradedPrecision(c) && PartialFromDegradedPrecision(d) {
+			return CoverageComparableWithGaps, degradedBothReason(c, d), false
+		}
 		return CoverageComparableWithGaps, partialBothReason(c, d), false
 	case diagnostic.StatusAbsent:
 		// Gap presence discriminates for PRIMARY analyzers only, and it is read
@@ -306,12 +329,17 @@ func gradeTool(
 		// the comparison entirely. One side suppressed and the other gapped is
 		// then a real asymmetry — the two sides are not equally blind.
 		//
-		// That reading holds only because missing markers is the ONLY cause left:
-		// a primary the config switched off used to reach here as absent too, and
-		// two configs that both disabled a language over a repo that HAS it then
-		// graded fully comparable. The pipeline now stamps those rows
-		// StatusDisabled (cmd/archfit markDisabledPrimaries), so they land on the
-		// disabled arm below and report as shared blindness.
+		// That reading holds only because missing markers is the ONLY cause left,
+		// and two config-driven causes had to be closed for it to be. A primary the
+		// config switched off used to reach here as absent, so two configs that
+		// both disabled a language over a repo that HAS it graded fully comparable;
+		// the pipeline now stamps those rows StatusDisabled (cmd/archfit
+		// markDisabledPrimaries) and they land on the disabled arm below. A primary
+		// with gate: off used to reach here gapless for the same reason, silently
+		// dropping an analyzer that never ran over a language the tree contains;
+		// buildCoverageGaps now suppresses on the language marker rather than on
+		// the gate, so an opt-out over a PRESENT language keeps its gap and reports
+		// as shared blindness too.
 		//
 		// For every other analyzer a gap is not evidence at all: it is only
 		// emitted for tools carrying an install hint, so scip, scip-symbols and
@@ -358,11 +386,11 @@ const (
 // packages skipped outright (their imports are missing from the graph) plus
 // packages that did not type-check (imports present, go/types strength missing).
 // Neither is "a completed run that could not resolve some specifiers", so
-// go/packages must never grade as comparable on that basis. The row's Reason
-// says which condition occurred; the counter alone cannot, which is why this
-// predicate keys on the tool and not on the number. Every remaining partial
-// producer (a rejected ast-grep rule file, an empty SCIP index, a failed jscpd
-// run) leaves Unresolved at zero and is unstable by that check alone.
+// go/packages must never grade as comparable on THIS basis; the type-check half
+// pairs under PartialFromDegradedPrecision instead, which reads the typed
+// counters that split those two meanings. Every remaining partial producer (a
+// rejected ast-grep rule file, an empty SCIP index, a failed jscpd run) leaves
+// every one of those counters at zero and is unstable by both checks.
 //
 // `analyze --base` reads this same function (cmd/archfit/git_finding_delta.go)
 // so the two comparison paths cannot grade one coverage row differently.
@@ -373,12 +401,35 @@ func PartialFromUnresolvedSpecifiers(c diagnostic.Coverage) bool {
 	return c.Tool == toolDepCruiser || c.Tool == toolGrimp
 }
 
+// PartialFromDegradedPrecision reports whether a "partial" row came from a run
+// whose INPUT SET was complete — every unit the analyzer was asked to cover
+// entered the graph — leaving only per-edge precision degraded. go/packages
+// earns it when some packages did not type-check: their imports are all in the
+// graph, only the go/types strength hints are missing.
+//
+// It matters because the pairing rules rest on what one side could HIDE from the
+// other. Nothing hides behind complete inputs, so two such rows pair the way two
+// unresolved-specifier rows do. A row with even one missing input pairs with
+// nothing — hence the positive UnresolvedPrecisionOnly requirement rather than
+// "not missing": an extractor that does not track the split reports 0/0, and
+// abstaining there is what keeps a future partial from grading itself
+// comparable by omission.
+//
+// `analyze --base` reads this same function (cmd/archfit/git_finding_delta.go),
+// for the same reason PartialFromUnresolvedSpecifiers is shared.
+func PartialFromDegradedPrecision(c diagnostic.Coverage) bool {
+	if c.Status != diagnostic.StatusPartial {
+		return false
+	}
+	return c.UnresolvedInputsMissing == 0 && c.UnresolvedPrecisionOnly > 0
+}
+
 // unstableStatus reports whether a coverage row means the analyzer could have
 // produced findings and did not finish doing so. Every partial that is not a
 // completed unresolved-specifier run counts, plus every timeout.
 func unstableStatus(c diagnostic.Coverage) bool {
 	if c.Status == diagnostic.StatusPartial {
-		return !PartialFromUnresolvedSpecifiers(c)
+		return !PartialFromUnresolvedSpecifiers(c) && !PartialFromDegradedPrecision(c)
 	}
 	return c.Status == diagnostic.StatusTimedOut
 }
@@ -394,6 +445,14 @@ func UnresolvedMagnitude(c diagnostic.Coverage) string {
 		return fmt.Sprintf("%d/%d unresolved", c.Unresolved, c.SpecifiersSeen)
 	}
 	return fmt.Sprintf("%d unresolved", c.Unresolved)
+}
+
+// DegradedMagnitude renders how much of a complete-inputs run lost precision.
+// Separate from UnresolvedMagnitude because "unresolved" names the other
+// condition — the one where inputs are MISSING — and one word for both is what
+// this split exists to undo.
+func DegradedMagnitude(c diagnostic.Coverage) string {
+	return fmt.Sprintf("%d degraded", c.UnresolvedPrecisionOnly)
 }
 
 // rowsByTool groups coverage rows by analyzer name, sorted by status within each

@@ -392,6 +392,15 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 		c.Unresolved = n
 		return c
 	}
+	// go/packages splits its Unresolved count by what the incompleteness COST.
+	// Inputs missing from the graph can hide a finding; precision-only loss
+	// cannot, because every import is still there.
+	goPartial := func(missing, precision int) diagnostic.Coverage {
+		c := unresolved(toolGoPackagesName, missing+precision)
+		c.UnresolvedInputsMissing = missing
+		c.UnresolvedPrecisionOnly = precision
+		return c
+	}
 	// Adapter-sourced, not re-typed: see toolDepCruiserName above.
 	specifierTool, grimpTool, goTool := toolDepCruiserName, toolGrimpName, toolGoPackagesName
 	partialPairs := []struct {
@@ -410,6 +419,18 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 		// comparable, however equal the two counts look.
 		{"go_packages_skipped_both", unresolved(goTool, 3), unresolved(goTool, 3), decision.CoverageNotComparable},
 		{"go_packages_skipped_vs_ok", unresolved(goTool, 3), cov(goTool, diagnostic.StatusOK), decision.CoverageNotComparable},
+		// A partial earned ONLY by packages that failed to type-check is a
+		// different fact: every import is in the graph on both sides, so neither
+		// side can hide a finding from the other, and the pair compares with the
+		// precision loss disclosed. Before this split, one such package anywhere
+		// made `config compare` and `analyze --base` inert on an ordinary Go repo.
+		{"go_packages_degraded_both", goPartial(0, 1), goPartial(0, 9), decision.CoverageComparableWithGaps},
+		// Symmetry is the whole safety argument: the precision that degraded is
+		// what strength-derived findings rest on, so degraded never pairs with ok.
+		{"go_packages_degraded_vs_ok", goPartial(0, 1), cov(goTool, diagnostic.StatusOK), decision.CoverageNotComparable},
+		// One missing input is enough to disqualify the row, on either side.
+		{"go_packages_degraded_vs_missing", goPartial(0, 1), goPartial(3, 1), decision.CoverageNotComparable},
+		{"go_packages_missing_and_degraded_both", goPartial(2, 1), goPartial(2, 1), decision.CoverageNotComparable},
 		// Neither does any other partial producer that happens to set a count.
 		{"unknown_tool_unresolved_both", unresolved(gapTool, 3), unresolved(gapTool, 3), decision.CoverageNotComparable},
 	}
@@ -454,6 +475,104 @@ func TestCompareCoverage_StatusPairs(t *testing.T) {
 			t.Errorf("Current/Candidate must stay raw statuses, got %q/%q", d.Current, d.Candidate)
 		}
 	})
+
+	// The degraded pair carries its own counts under its own word: "unresolved"
+	// names the condition where inputs are MISSING, which is what this shape is
+	// not, and one word for both is what the split exists to undo.
+	t.Run("degraded_reason_carries_counts_and_names_its_condition", func(t *testing.T) {
+		got := decision.CompareConfigs(decision.ConfigCompareInput{
+			Current:   side([]diagnostic.Coverage{goPartial(0, 2)}, nil),
+			Candidate: side([]diagnostic.Coverage{goPartial(0, 41)}, nil),
+		}).Coverage
+		if len(got.Details) != 1 {
+			t.Fatalf("details = %+v, want exactly one", got.Details)
+		}
+		d := got.Details[0]
+		if !strings.Contains(d.Reason, "2 degraded") || !strings.Contains(d.Reason, "41 degraded") {
+			t.Errorf("reason must name both magnitudes, got %q", d.Reason)
+		}
+		if strings.Contains(d.Reason, "unresolved") {
+			t.Errorf("reason must not describe complete inputs as unresolved: %q", d.Reason)
+		}
+	})
+}
+
+// TestGradeTool_ReasonPerShape pins WHICH explanation each coverage shape earns.
+// The reason strings are published output — stdout in `config compare` and
+// coverage.details[].reason in archfit.config-compare.v1 — and the suite only
+// ever asserted that one was non-empty, so two of them could swap and ship the
+// wrong explanation with a green run.
+func TestGradeTool_ReasonPerShape(t *testing.T) {
+	// primaryTool is what `side` declares primary, so the absent-arm gap rules
+	// apply to it; the specifier and precision shapes belong to the analyzers
+	// that actually produce them.
+	row := func(status string) diagnostic.Coverage {
+		return diagnostic.Coverage{Tool: primaryTool, Status: status}
+	}
+	unresolvedRow := func(n int) diagnostic.Coverage {
+		c := diagnostic.Coverage{Tool: toolDepCruiserName, Status: diagnostic.StatusPartial}
+		c.Unresolved = n
+		return c
+	}
+	degradedRow := func(n int) diagnostic.Coverage {
+		c := row(diagnostic.StatusPartial)
+		c.Unresolved = n
+		c.UnresolvedPrecisionOnly = n
+		return c
+	}
+	gap := []diagnostic.CoverageGap{{Tool: primaryTool}}
+
+	cases := []struct {
+		name               string
+		current, candidate []diagnostic.Coverage
+		curGaps, candGaps  []diagnostic.CoverageGap
+		want               string
+	}{
+		{"missing row", nil, []diagnostic.Coverage{row(diagnostic.StatusOK)}, nil, nil,
+			"coverage row missing or duplicated"},
+		{"duplicate rows",
+			[]diagnostic.Coverage{row(diagnostic.StatusOK), row(diagnostic.StatusOK)},
+			[]diagnostic.Coverage{row(diagnostic.StatusOK)}, nil, nil,
+			"coverage row missing or duplicated"},
+		{"timed out", []diagnostic.Coverage{row(diagnostic.StatusTimedOut)},
+			[]diagnostic.Coverage{row(diagnostic.StatusTimedOut)}, nil, nil,
+			"incomplete or timed-out coverage cannot be compared"},
+		{"status moved", []diagnostic.Coverage{row(diagnostic.StatusOK)},
+			[]diagnostic.Coverage{row(diagnostic.StatusAbsent)}, nil, gap,
+			"coverage status differs between the configurations"},
+		{"unknown status", []diagnostic.Coverage{row("teapot")},
+			[]diagnostic.Coverage{row("teapot")}, nil, nil,
+			"unrecognised coverage status"},
+		{"absent both, both gapped", []diagnostic.Coverage{row(diagnostic.StatusAbsent)},
+			[]diagnostic.Coverage{row(diagnostic.StatusAbsent)}, gap, gap,
+			"analyzer absent under both configurations"},
+		{"absent both, one gapped", []diagnostic.Coverage{row(diagnostic.StatusAbsent)},
+			[]diagnostic.Coverage{row(diagnostic.StatusAbsent)}, gap, nil,
+			"analyzer absent, but only one configuration expected it to run"},
+		{"disabled both", []diagnostic.Coverage{row(diagnostic.StatusDisabled)},
+			[]diagnostic.Coverage{row(diagnostic.StatusDisabled)}, nil, nil,
+			"analyzer disabled under both configurations"},
+		{"unresolved specifiers both", []diagnostic.Coverage{unresolvedRow(2)},
+			[]diagnostic.Coverage{unresolvedRow(3)}, nil, nil,
+			"analyzer left import specifiers unresolved under both configurations"},
+		{"degraded precision both", []diagnostic.Coverage{degradedRow(2)},
+			[]diagnostic.Coverage{degradedRow(3)}, nil, nil,
+			"analyzer covered every input under both configurations, with degraded edge precision"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := decision.CompareConfigs(decision.ConfigCompareInput{
+				Current:   side(tc.current, tc.curGaps),
+				Candidate: side(tc.candidate, tc.candGaps),
+			}).Coverage
+			if len(got.Details) != 1 {
+				t.Fatalf("details = %+v, want exactly one", got.Details)
+			}
+			if !strings.HasPrefix(got.Details[0].Reason, tc.want) {
+				t.Errorf("reason = %q, want it to start with %q", got.Details[0].Reason, tc.want)
+			}
+		})
+	}
 }
 
 // TestCompareCoverage_RowCount pins the missing-row and duplicate-row rules,
