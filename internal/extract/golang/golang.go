@@ -31,6 +31,7 @@ const (
 
 const (
 	statusAbsent   = "absent"
+	statusPartial  = "partial"
 	toolGoPackages = "go/packages"
 	sourceGoTypes  = "go/types"
 )
@@ -109,10 +110,11 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 	}
 
 	// Discover workspace members (go.work → per-member dirs, or single go.mod).
-	memberDirs, err := DiscoverMembers(s.Root, e.cfg.Exclusions)
+	members, err := DiscoverMembers(s.Root, e.cfg.Exclusions)
 	if err != nil {
 		return graph.Facts{}, diagnostic.Coverage{}, fmt.Errorf("extract/golang: discover members: %w", err)
 	}
+	memberDirs := members.Dirs
 
 	// Apply tools.go.modules include/exclude globs (user-facing member scoping).
 	// This is a deliberate post-discovery filter: DiscoverMembers handles scope
@@ -133,7 +135,7 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 
 	// Load per-member facts — from the fact cache where the member's input
 	// tree is unchanged, via packages.Load otherwise (loadMemberFacts).
-	mfs, err := e.loadMemberFacts(ctx, s.Root, memberDirs)
+	mfs, err := e.loadMemberFacts(ctx, s.Root, memberDirs, members.GoWorkOff)
 	if err != nil {
 		// go/packages.Load failed for at least one workspace member — e.g. a broken
 		// go.mod or an unresolvable build constraint. This is a coverage gap, not a
@@ -142,7 +144,7 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		if e.cfg.Mode == view.ModeOn {
 			return graph.Facts{}, diagnostic.Coverage{}, err
 		}
-		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: "partial", Reason: err.Error()}, nil
+		return graph.Facts{}, diagnostic.Coverage{Tool: toolGoPackages, Status: statusPartial, Reason: err.Error()}, nil
 	}
 
 	// Build the module map from the per-member facts (derived from pkg.Module —
@@ -248,9 +250,15 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		}
 	}
 
-	nodes, edges, filesSeen, unresolved := e.collectNodesEdges(
+	nodes, edges, filesSeen, skipped, illTyped := e.collectNodesEdges(
 		allPkgs, stripImportPath, strengthHints, connascenceHints,
 	)
+	// Both conditions leave the load incomplete over the tree, so both count
+	// toward Unresolved and both keep the row partial. They are NOT the same
+	// failure, and every consumer that reads this row — the coverage metric, the
+	// `--base` origin delta, `config compare` — used to see one number for two
+	// meanings, so the reason names which one occurred.
+	unresolved := skipped + illTyped
 
 	status := "ok"
 	switch {
@@ -262,7 +270,7 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		// which must not be mistaken for partial coverage.
 		status = statusAbsent
 	case unresolved > 0:
-		status = "partial"
+		status = statusPartial
 	}
 
 	facts := graph.Facts{
@@ -279,21 +287,47 @@ func (e *GoExtractor) Extract(ctx context.Context, s scope.Scope) (graph.Facts, 
 		Unresolved:      unresolved,
 		Status:          status,
 	}
+	if status == statusPartial {
+		cov.Reason = goPartialReason(skipped, illTyped)
+	}
 	return facts, cov, nil
+}
+
+// goPartialReason states which incomplete-load condition earned the partial row.
+// Consumers (the --base origin delta, `config compare`) read only the count, and
+// one count for two conditions reads as whichever the reader assumes; the two
+// need different fixes, so the row has to say which occurred.
+func goPartialReason(skipped, illTyped int) string {
+	switch {
+	case illTyped == 0:
+		return fmt.Sprintf("%d package(s) failed to load; their imports are missing from the graph", skipped)
+	case skipped == 0:
+		return fmt.Sprintf("%d package(s) did not type-check; imports are complete, go/types strength is not", illTyped)
+	default:
+		return fmt.Sprintf("%d package(s) failed to load (imports missing) and %d did not type-check (strength degraded)",
+			skipped, illTyped)
+	}
 }
 
 // collectNodesEdges iterates the merged per-member package facts and emits
 // graph nodes and edges. Extracted from Extract to keep Extract's cyclomatic
 // complexity below the gate.
 //
-// Synthetic-error packages (Module==nil && Errors non-empty at derive time)
-// increment unresolved and are skipped — unresolvable patterns, never fatal.
+// Two DIFFERENT incomplete-load conditions are counted separately, because one
+// number for both is what let a doc claim Unresolved means only the first:
+//
+//   - skipped — synthetic-error packages (Module==nil && Errors non-empty at
+//     derive time). Their facts are dropped entirely: no node, no import edges.
+//   - illTyped — the package's facts ARE emitted (nodes and every import edge),
+//     but type checking did not complete, so the go/types-derived StrengthHints
+//     this extractor exists to provide are missing or wrong for it. IllTyped
+//     propagates from any dependency, so one bad package can mark a swath.
 func (e *GoExtractor) collectNodesEdges(
 	pkgs []packageFacts,
 	stripImportPath func(string) string,
 	strengthHints map[string]string,
 	connascenceHints map[string][]graph.ConnascenceHint,
-) (nodes []graph.Node, edges []graph.Edge, filesSeen, unresolved int) {
+) (nodes []graph.Node, edges []graph.Edge, filesSeen, skipped, illTyped int) {
 	// seenNodes deduplicates package/file nodes within this extractor.
 	seenNodes := make(map[string]struct{})
 	emitNode := func(n graph.Node) {
@@ -305,11 +339,11 @@ func (e *GoExtractor) collectNodesEdges(
 	}
 	for _, p := range pkgs {
 		if p.Synthetic {
-			unresolved++
+			skipped++
 			continue
 		}
 		if p.IllTyped {
-			unresolved++
+			illTyped++
 		}
 
 		pkgPath := stripImportPath(p.PkgPath)

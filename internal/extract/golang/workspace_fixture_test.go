@@ -163,6 +163,64 @@ func TestWorkspaceFixture_NodeIDsScanRootRelative(t *testing.T) {
 	}
 }
 
+// TestWorkspaceFixture_OutOfScopeGoWork is the end-to-end regression for the
+// shape that made `analyze --base` inert on every Go repo following `go help
+// work`'s advice not to commit go.work.
+//
+// `--base` checks the base ref out as TRACKED FILES ONLY into a directory inside
+// the repo. A gitignored go.work is therefore missing from the checkout while
+// the repo's own one still governs it from above — and its `use` dirs never name
+// the checkout. Discovery already handled this (it falls back to the checkout's
+// own go.mod), but the toolchain did not: `go list ./...` answered "directory
+// prefix . does not contain modules listed in go.work", packages.Load returned a
+// single synthetic package, filesSeen hit 0, and go/packages reported ABSENT on
+// the base side against ok on head — so every repair task was filed
+// unknown-origin, including findings that provably pre-dated the base ref.
+//
+// Asserted through Extract, not through DiscoverMembers: the decision was
+// already correct before the fix, and only the loader's behaviour proves it is
+// now honoured.
+func TestWorkspaceFixture_OutOfScopeGoWork(t *testing.T) {
+	dir := materializeWorkspaceFixture(t)
+
+	// A module the outer go.work (use ./a, ./b) does not name, nested below it —
+	// the base-worktree layout.
+	checkout := filepath.Join(dir, ".archfit-cache", "worktrees", "deadbeef", "wt")
+	if err := os.MkdirAll(filepath.Join(checkout, "api"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	copyFixtureFile(t, filepath.Join(dir, "b", "go.mod"), filepath.Join(checkout, "go.mod"))
+	copyFixtureFile(t, filepath.Join(dir, "b", "api", "api.go"), filepath.Join(checkout, "api", "api.go"))
+
+	ext := goextract.New(view.ExtractConfig{})
+	facts, cov, err := ext.Extract(context.Background(), scope.Scope{Root: checkout, Mode: scope.ModeFull})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if cov.Status != "ok" {
+		t.Fatalf("cov.Status = %q (unresolved %d, reason %q), want %q — the out-of-scope go.work is still governing the load",
+			cov.Status, cov.Unresolved, cov.Reason, "ok")
+	}
+	if cov.FilesSeen == 0 {
+		t.Error("FilesSeen = 0: the checkout's own module was not loaded")
+	}
+	if len(facts.Nodes) == 0 {
+		t.Error("no nodes emitted for a readable module")
+	}
+}
+
+// copyFixtureFile copies one materialized fixture file.
+func copyFixtureFile(t *testing.T, src, dst string) {
+	t.Helper()
+	data, err := os.ReadFile(src) //nolint:gosec // src is a path this test just materialized
+	if err != nil {
+		t.Fatalf("read %s: %v", src, err)
+	}
+	if err := os.WriteFile(dst, data, 0o600); err != nil { //nolint:gosec // dst is built from t.TempDir(), not user input
+		t.Fatalf("write %s: %v", dst, err)
+	}
+}
+
 // TestWorkspaceFixture_CrossModuleEdgeFirstPartyWithStrengthHint is the keystone
 // assertion: the cross-module import (a/consumer → b/api) must be classified as
 // first-party AND carry a StrengthHint.

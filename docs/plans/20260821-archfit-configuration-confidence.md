@@ -832,11 +832,26 @@ touch `internal/model/*` or `internal/view`.
   one struct field — and `ResolveNameDrift` re-runs the field checks. Only
   unpaired removals stay unchecked, and they are now disclosed by name in
   `unchecked_modules`.
-- `analyze --base` in a worktree checkout reports
-  `go/packages: head ok, base absent` because the parent repository's gitignored
-  `go.work` names `use` paths outside the base scan root, so no Go member loads
-  on the base side. The `comparison_reasons` list discloses this honestly. It is
-  pre-existing and unrelated to this plan.
+- ~~`analyze --base` in a worktree checkout reports
+  `go/packages: head ok, base absent` … It is pre-existing and unrelated to this
+  plan.~~ FIXED in the fourth review, and the framing was wrong twice over.
+
+  The root cause predates the branch, but a NEW feature being 100% inert on the
+  project's own repository is a property of that feature, not an inherited
+  defect — and "discloses this honestly" understated the damage: the base side
+  going absent made EVERY task `unknown_origin`, which the guide tells agents to
+  treat as possibly introduced. A finding that provably pre-dated the base ref
+  was reported as maybe-yours. Reach was every Go repo following `go help work`'s
+  recommendation not to commit `go.work`.
+
+  `DiscoverMembers` already decided correctly (it falls back past an
+  in-scope-empty `go.work`); the decision simply never reached the toolchain. It
+  now rides `Members.GoWorkOff` into `packages.Config.Env` AND into the scip
+  indexer subprocess — `scip-go` was a second victim of the same cause, not a
+  separate defect: in a base-worktree-shaped directory it indexed 1 package
+  (182-byte, empty index → `scip: partial`) versus 154 packages with `GOWORK=off`.
+  Fixing only the in-process loader would have satisfied a `go/packages`-only
+  check while `scip` and `scip-symbols` kept the feature inert.
 
 ### Post-review corrections
 

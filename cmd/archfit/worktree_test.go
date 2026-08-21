@@ -152,9 +152,12 @@ func TestDiffCmd_Formats(t *testing.T) {
 			t.Errorf("git_finding_delta lists must be non-null arrays: %s", buf.String())
 		}
 		// The base side is scored inside a temp worktree that is already gone;
-		// none of its paths may reach head output.
-		if wt := baseWorktreesDir(filepath.Dir(cfgPath)); strings.Contains(buf.String(), wt) {
-			t.Errorf("head output leaked the base worktree path %q: %s", wt, buf.String())
+		// none of its paths may reach head output. Asserted on the path SEGMENT,
+		// not on a parent the test recomputes: the parent moved from the config
+		// dir to the git root once already, and a recomputed absolute path stops
+		// matching (silently passing) the moment the code picks a different one.
+		if strings.Contains(buf.String(), baseWorktreeSegment) {
+			t.Errorf("head output leaked a base-worktree path (%q): %s", baseWorktreeSegment, buf.String())
 		}
 	})
 
@@ -351,6 +354,14 @@ func TestDiffCmd_ConfigInSubdir(t *testing.T) {
 	}
 }
 
+// baseWorktreeSegment is the path segment every base-side checkout lives under,
+// wherever the parent is rooted. Base-worktree isolation is asserted against
+// this rather than a recomputed absolute parent: the previous assertions rebuilt
+// the parent from the CONFIG dir, so moving the parent to the git root would
+// have left them comparing against a path the code no longer produces — passing
+// while checking nothing.
+var baseWorktreeSegment = filepath.Join(".archfit-cache", "worktrees")
+
 func TestBaseWorktreeParent_LocksDeterministicDir(t *testing.T) {
 	sha := strings.Repeat("a", 40)
 	runner := &toolrun.RunnerMock{
@@ -364,7 +375,7 @@ func TestBaseWorktreeParent_LocksDeterministicDir(t *testing.T) {
 	deps := &appDeps{Runner: runner}
 	dir := t.TempDir()
 
-	first, releaseFirst, err := baseWorktreeParent(context.Background(), deps, dir, diffBaseRef, dir)
+	first, releaseFirst, err := baseWorktreeParent(context.Background(), deps, dir, diffBaseRef)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +394,7 @@ func TestBaseWorktreeParent_LocksDeterministicDir(t *testing.T) {
 	var releaseSecond func()
 	var secondErr error
 	go func() {
-		second, releaseSecond, secondErr = baseWorktreeParent(context.Background(), deps, dir, diffBaseRef, dir)
+		second, releaseSecond, secondErr = baseWorktreeParent(context.Background(), deps, dir, diffBaseRef)
 		close(done)
 	}()
 

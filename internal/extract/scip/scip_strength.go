@@ -244,6 +244,7 @@ func (a *Adapter) runSCIPPipelineUncached(ctx context.Context, root string) (ro 
 		Name:    indexer,
 		Args:    indexArgs(indexer, pkg, root, indexPath),
 		WorkDir: root,
+		Env:     a.indexerEnv(),
 		Timeout: innerTimeout(indexTimeout),
 	})
 	if err != nil || idxOut.ExitCode != 0 {
@@ -328,7 +329,9 @@ var scipLangInputs = map[string]struct {
 // cache is off or key material cannot be derived (never an error). Key
 // inputs: indexer name+version probe, the reader/proto sources (editing
 // scip_reader.py must invalidate), the package/lang the reader filtered on,
-// the scan root, and the content hash of the detected language's source tree.
+// the scan root, the GOWORK decision (it changes what the indexer can see and
+// is derived from a go.work OUTSIDE the hashed tree), and the content hash of
+// the detected language's source tree.
 func (a *Adapter) cacheKey(ctx context.Context, root, indexer, pkg, lang string) string {
 	if a.Cache == nil {
 		return ""
@@ -341,7 +344,8 @@ func (a *Adapter) cacheKey(ctx context.Context, root, indexer, pkg, lang string)
 	protoSum := sha256.Sum256(scipProtoSrc)
 	cfgHash, err := factcache.HashJSON(struct {
 		Root, Pkg, Lang, Reader, Proto string
-	}{root, pkg, lang, hex.EncodeToString(readerSum[:]), hex.EncodeToString(protoSum[:])})
+		GoWorkOff                      bool
+	}{root, pkg, lang, hex.EncodeToString(readerSum[:]), hex.EncodeToString(protoSum[:]), a.GoWorkOff})
 	if err != nil {
 		return ""
 	}
@@ -529,6 +533,24 @@ func (a *Adapter) cargoWorkspaceMembers(ctx context.Context, root string) ([]str
 		names = append(names, p.Name)
 	}
 	return names, nil
+}
+
+// goWorkOffEnv makes a Go-toolchain process ignore the go.work it would find by
+// walking up. Spelled out here rather than imported from internal/extract/golang
+// so one adapter does not depend on another for a toolchain constant; the
+// DECISION to set it is still made once, in golang.DiscoverMembers, and reaches
+// this adapter through Adapter.GoWorkOff.
+const goWorkOffEnv = "GOWORK=off"
+
+// indexerEnv returns the environment overrides for the indexer subprocess, or
+// nil for the inherited environment. GOWORK is set unconditionally rather than
+// only for scip-go: the flag is true only when a go.work is actually in play,
+// and the variable is inert for every other indexer.
+func (a *Adapter) indexerEnv() []string {
+	if !a.GoWorkOff {
+		return nil
+	}
+	return []string{goWorkOffEnv}
 }
 
 // indexArgs returns the per-indexer command arguments to write an index to out.

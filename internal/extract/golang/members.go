@@ -12,43 +12,75 @@ import (
 	"golang.org/x/mod/modfile"
 )
 
-// DiscoverMembers returns the absolute paths of Go module members in scope.
+// Members is the outcome of Go member discovery: the module dirs to load, plus
+// the one toolchain fact the dirs alone cannot carry.
+type Members struct {
+	// Dirs are the absolute, sorted member directories to load.
+	Dirs []string
+	// GoWorkOff reports that discovery LOCATED a go.work governing scanRoot that
+	// names no member inside it, and deliberately fell back to scanRoot's own
+	// module(s).
+	//
+	// The Go toolchain does not know that decision was made. It walks up from the
+	// member dir, finds the same go.work, and refuses to load a package the
+	// workspace does not `use` ("directory prefix . does not contain modules
+	// listed in go.work"). Every Go-toolchain subprocess in the run — the
+	// in-process packages.Load AND out-of-process indexers like scip-go — must
+	// therefore run with GOWORK=off, or discovery's decision is silently reversed
+	// and the analyzer reports absent/empty over a tree it can read perfectly.
+	//
+	// This is not a corner case: `go help work` recommends not committing
+	// go.work, so a repo's go.work is typically gitignored. `analyze --base`
+	// checks the base ref out as TRACKED FILES ONLY inside the repo, so the
+	// gitignored go.work is missing from the checkout and the repo's own one
+	// applies to it — which made the origin delta inert on any such Go repo,
+	// archfit's own included.
+	GoWorkOff bool
+}
+
+// DiscoverMembers returns the Go module members in scope.
 //
 // Discovery order:
 //  1. Locate go.work: check scanRoot/go.work, then walk up parent directories.
 //  2. Parse use dirs; keep members under scanRoot that are not exclusion-matched.
 //  3. Fallback (no go.work or 0 in-scope members): return [scanRoot] if it has go.mod.
 //  4. Fallback: walk scanRoot for go.mod dirs (exclusion-filtered).
-//  5. If still empty, return nil — caller should report absent.
+//  5. If still empty, return nil Dirs — caller should report absent.
 //
 // Returned paths are absolute and sorted for determinism.
 // Exclusion globs are matched against each member's path relative to scanRoot
 // using doublestar semantics. The scanRoot member itself (use ".") is never
 // excluded — globs like **/testdata/** target sub-trees, not the root.
 //
-// Task 6 consumes the absolute paths directly as packages.Load Dir values.
-func DiscoverMembers(scanRoot string, exclusions []string) ([]string, error) {
+// Callers consume the absolute paths directly as packages.Load Dir values, and
+// must honour Members.GoWorkOff on every Go-toolchain subprocess they run.
+func DiscoverMembers(scanRoot string, exclusions []string) (Members, error) {
 	// Phase 1: locate and parse go.work.
 	members, goWorkFound, err := membersFromGoWork(scanRoot, exclusions)
 	if err != nil {
-		return nil, err
+		return Members{}, err
 	}
 	if goWorkFound && len(members) > 0 {
-		return members, nil
+		return Members{Dirs: members}, nil
 	}
+
+	// Reaching here with a go.work located means the workspace governs scanRoot
+	// but claims nothing in it. Discovery ignores the workspace from here on, so
+	// the toolchain must be told to as well (see Members.GoWorkOff).
+	goWorkOff := goWorkFound
 
 	// Phase 2: single go.mod at scanRoot (covers the common single-module case
 	// and the go.work-with-0-in-scope-members fallback).
 	if hasGoMod(scanRoot) {
-		return []string{scanRoot}, nil
+		return Members{Dirs: []string{scanRoot}, GoWorkOff: goWorkOff}, nil
 	}
 
 	// Phase 3: walk scanRoot for any go.mod dirs (exclusion-filtered).
 	members, err = walkGoMods(scanRoot, exclusions)
 	if err != nil {
-		return nil, err
+		return Members{}, err
 	}
-	return members, nil // may be nil → caller reports absent
+	return Members{Dirs: members, GoWorkOff: goWorkOff}, nil // Dirs may be nil → caller reports absent
 }
 
 // membersFromGoWork locates a go.work file (at scanRoot or in a parent), parses

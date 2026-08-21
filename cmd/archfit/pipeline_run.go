@@ -336,6 +336,12 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	if cfg.ScipEnabled() {
 		scipAdapter := scip.New(deps.Runner, cfg.ToolTimeout(config.ToolScip))
 		scipAdapter.Cache = facts
+		// scip-go is a Go-toolchain process, so it must honour the same go.work
+		// decision the in-process Go loader makes — otherwise it walks up to an
+		// out-of-scope go.work, indexes one synthetic package, and writes an empty
+		// index. Asking discovery is a handful of stats; deriving it separately
+		// here would be a second implementation of the same decision.
+		scipAdapter.GoWorkOff = goWorkOff(s.Root, cfg)
 		resolver = scipAdapter
 	} else {
 		change.ExtraCoverage = append(change.ExtraCoverage, diagnostic.Coverage{

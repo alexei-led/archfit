@@ -76,12 +76,15 @@ type importFacts struct {
 // concurrently, one goroutine per member bounded by GOMAXPROCS, writing
 // mfs[i] by index so merge order is deterministic regardless of goroutine
 // completion order.
-func (e *GoExtractor) loadMemberFacts(ctx context.Context, root string, memberDirs []string) ([]memberFacts, error) {
+//
+// goWorkOff comes from DiscoverMembers: when set, an out-of-scope go.work
+// governs these dirs and the loader must ignore it (see Members.GoWorkOff).
+func (e *GoExtractor) loadMemberFacts(ctx context.Context, root string, memberDirs []string, goWorkOff bool) ([]memberFacts, error) {
 	mfs := make([]memberFacts, len(memberDirs))
 	cached := make([]bool, len(memberDirs))
 	var keys []string
 	if e.Cache != nil {
-		keys = e.memberKeys(ctx, root, memberDirs)
+		keys = e.memberKeys(ctx, root, memberDirs, goWorkOff)
 	}
 	for i := 0; keys != nil && i < len(memberDirs); i++ {
 		if keys[i] == "" {
@@ -115,6 +118,7 @@ func (e *GoExtractor) loadMemberFacts(ctx context.Context, root string, memberDi
 				Dir:        dir,
 				Context:    egCtx,
 				BuildFlags: e.cfg.BuildFlags,
+				Env:        loaderEnv(goWorkOff),
 			}
 			pkgs, loadErr := e.loadPackages(cfg, "./...")
 			if loadErr != nil {
@@ -137,6 +141,22 @@ func (e *GoExtractor) loadMemberFacts(ctx context.Context, root string, memberDi
 		return nil, err
 	}
 	return mfs, nil
+}
+
+// goWorkOffEnv is the environment assignment that makes a Go-toolchain process
+// ignore the go.work it would otherwise find by walking up. The out-of-process
+// Go indexer (scip-go) applies the same assignment from the same decision — see
+// Members.GoWorkOff.
+const goWorkOffEnv = "GOWORK=off"
+
+// loaderEnv returns the packages.Config environment. nil (the default,
+// os.Environ()) unless discovery decided an out-of-scope go.work must be
+// ignored — see Members.GoWorkOff.
+func loaderEnv(goWorkOff bool) []string {
+	if !goWorkOff {
+		return nil
+	}
+	return append(os.Environ(), goWorkOffEnv)
 }
 
 // loadPackages is the packages.Load seam (see loadFunc).
@@ -333,14 +353,18 @@ var goListHashExcludes = []string{"**/testdata/**"}
 // dependencies' source, so their edits must invalidate its facts too.
 // Members nobody depends on invalidate alone ("edit one member file → only
 // that member re-loads").
-func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDirs []string) []string {
+func (e *GoExtractor) memberKeys(ctx context.Context, scanRoot string, memberDirs []string, goWorkOff bool) []string {
 	env := e.goCacheEnv(ctx)
+	// GoWorkOff rides the key explicitly: it changes what the loader sees, and it
+	// is derived from a go.work whose CONTENT the process env cannot report (the
+	// probe reads the ambient one either way).
 	cfgHash, err := factcache.HashJSON(struct {
-		Cfg    view.ExtractConfig
-		Root   string
-		GoWork string
-		Env    map[string]string
-	}{e.cfg, scanRoot, hashGoWork(scanRoot, env), env})
+		Cfg       view.ExtractConfig
+		Root      string
+		GoWork    string
+		GoWorkOff bool
+		Env       map[string]string
+	}{e.cfg, scanRoot, hashGoWork(scanRoot, env), goWorkOff, env})
 	if err != nil {
 		return nil
 	}

@@ -126,6 +126,19 @@ var languageRegistry = []LanguageDescriptor{
 	},
 }
 
+// goWorkOff reports whether the Go toolchain must be told to ignore the go.work
+// governing scanRoot, by asking the SAME discovery the Go extractor runs. It is
+// a whole-run fact, not a Go-extractor detail: any Go-toolchain subprocess the
+// run starts (today scip-go) sees the same workspace and must reach the same
+// conclusion, or two analyzers report contradictory coverage over one tree.
+//
+// False whenever discovery is unavailable or errors — never disable a workspace
+// on a guess.
+func goWorkOff(scanRoot string, cfg config.Config) bool {
+	m, err := golang.DiscoverMembers(scanRoot, cfg.ForExtract(config.LangGo).Exclusions)
+	return err == nil && m.GoWorkOff
+}
+
 // buildExtractors instantiates the per-language extractors in registry order,
 // each fed its projected ExtractConfig view. The slice order is the graph-merge
 // order the engine golden test pins — registry order is go → ts → py.

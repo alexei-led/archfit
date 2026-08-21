@@ -168,6 +168,49 @@ func TestDiffModules_IssuesSortedByModuleThenCode(t *testing.T) {
 	}
 }
 
+// TestBuildConfigReview_PathlessStanzaIsDisclosed pins the hole
+// unchecked_modules was added to close, one shape narrower than the original:
+// a stanza that declares NO paths is skipped by checkModuleFields before any
+// issue is raised, so its missing owner shows up in no issue and in no
+// unclassified list. Reported nowhere, `issues: []` reads as "every module is
+// clean" over a stanza nothing evaluated.
+func TestBuildConfigReview_PathlessStanzaIsDisclosed(t *testing.T) {
+	// Pathless, and carrying subdomain so it is not even Unclassified — the
+	// combination that used to vanish entirely.
+	existing := []ExistingModule{
+		{Name: testReviewModA, HasSubdomain: true},
+		{Name: testReviewModZ, Paths: []string{testReviewPathZ}, HasOwner: true, HasSubdomain: true},
+	}
+	fresh := []ModuleDef{
+		{Name: testReviewModA},
+		{Name: testReviewModZ, Paths: []string{testReviewPathZ}},
+	}
+
+	rev := BuildConfigReview(DiffModules(existing, fresh, false))
+	if len(rev.Issues) != 0 {
+		t.Fatalf("fixture regression: this shape must raise no issue, got %+v", rev.Issues)
+	}
+	var found *ReviewUncheckedModule
+	for i, u := range rev.UncheckedModules {
+		if u.Module == testReviewModA {
+			found = &rev.UncheckedModules[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("the pathless stanza %q is absent from unchecked_modules (%+v) while issues is empty",
+			testReviewModA, rev.UncheckedModules)
+	}
+	if found.Reason != reasonUncheckedPathless {
+		t.Errorf("reason = %q, want %q", found.Reason, reasonUncheckedPathless)
+	}
+	// The module discovery DID account for must not be reported unchecked.
+	for _, u := range rev.UncheckedModules {
+		if u.Module == testReviewModZ {
+			t.Errorf("a fully checked module must not appear in unchecked_modules: %+v", u)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Status priority
 // ---------------------------------------------------------------------------
@@ -337,7 +380,10 @@ func TestRenderReviewStatus(t *testing.T) {
 			// The unchecked-module clause is not decoration: Removed stanzas are
 			// never field-checked, so the issue count is a partial audit and the
 			// line has to say so.
-			want: "status: action_required — 1 module issue(s), 1 pending edit(s) (1 module(s) unchecked — discovery did not emit them)\n",
+			// CHANGED: unchecked covers two reasons now (unmatched by discovery, and
+			// pathless stanzas the field checks skip), so the one-line status points
+			// at the list instead of asserting one of them for all.
+			want: "status: action_required — 1 module issue(s), 1 pending edit(s) (1 module(s) unchecked — see unchecked_modules)\n",
 		},
 		{
 			// Name drift alone leaves nothing unchecked: ResolveNameDrift rescues

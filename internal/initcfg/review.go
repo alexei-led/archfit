@@ -101,6 +101,12 @@ type ReviewUncheckedModule struct {
 // its fields describe anything that still exists.
 const reasonUncheckedUnmatched = "discovery did not emit this module; its fields were not evaluated"
 
+// reasonUncheckedPathless is why a pathless stanza goes unevaluated: it selects
+// no source, so the per-module field checks skip it before raising anything —
+// which means its missing owner or classification input appears in no issue and
+// in no unclassified list.
+const reasonUncheckedPathless = "module declares no paths; its fields were not evaluated"
+
 // ReviewStructure holds the structural difference between the config and
 // discovery. AddedModules, PathDrift, and Settings are the pending edits
 // `--apply` would write; RemovedModules and NameDrift are review-only, because
@@ -152,7 +158,7 @@ func BuildConfigReview(r UpdateReport) ConfigReview {
 			Settings:       append(make([]SettingChange, 0, len(r.Settings)), r.Settings...),
 		},
 		Issues:           append(make([]ModuleIssue, 0, len(r.Issues)), r.Issues...),
-		UncheckedModules: uncheckedModules(r.Removed),
+		UncheckedModules: uncheckedModules(r.Removed, r.Pathless),
 		ReviewSuggestions: ReviewSuggestions{
 			DeployUnits:    append(make([]DeployUnitSuggestion, 0, len(r.DeployUnitSuggestions)), r.DeployUnitSuggestions...),
 			DistanceConfig: append(make([]DistanceConfigCandidate, 0, len(r.DistanceConfigCandidates)), r.DistanceConfigCandidates...),
@@ -166,7 +172,9 @@ func BuildConfigReview(r UpdateReport) ConfigReview {
 func RenderReviewStatus(rev ConfigReview) string {
 	unchecked := ""
 	if n := len(rev.UncheckedModules); n > 0 {
-		unchecked = fmt.Sprintf(" (%d module(s) unchecked — discovery did not emit them)", n)
+		// Reason-neutral: unchecked now covers unmatched AND pathless stanzas, and
+		// naming only one of them would misreport the other.
+		unchecked = fmt.Sprintf(" (%d module(s) unchecked — see unchecked_modules)", n)
 	}
 	switch rev.Status {
 	case ReviewStatusActionRequired:
@@ -240,13 +248,21 @@ func moduleDefNames(defs []ModuleDef) []string {
 	return out
 }
 
-// uncheckedModules projects the configured modules discovery did not emit into
-// the disclosure list. Name-drifted modules are NOT here: ResolveNameDrift
-// rescues them and their fields are checked like any other stanza.
-func uncheckedModules(mods []ExistingModule) []ReviewUncheckedModule {
-	out := make([]ReviewUncheckedModule, 0, len(mods))
+// uncheckedModules projects every configured module whose fields were not
+// evaluated into the disclosure list, each with the reason it was skipped:
+// discovery never emitted it, or the stanza declares no paths so checkModuleFields
+// skipped it before raising anything. Name-drifted modules are NOT here:
+// ResolveNameDrift rescues them and their fields are checked like any other stanza.
+//
+// The two sets are disjoint by construction — checkModuleFields runs only over
+// modules that are NOT in Removed — so no module can be listed twice.
+func uncheckedModules(mods []ExistingModule, pathless []string) []ReviewUncheckedModule {
+	out := make([]ReviewUncheckedModule, 0, len(mods)+len(pathless))
 	for _, m := range mods {
 		out = append(out, ReviewUncheckedModule{Module: m.Name, Reason: reasonUncheckedUnmatched})
+	}
+	for _, name := range pathless {
+		out = append(out, ReviewUncheckedModule{Module: name, Reason: reasonUncheckedPathless})
 	}
 	return out
 }

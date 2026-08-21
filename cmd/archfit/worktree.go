@@ -148,7 +148,7 @@ func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef string, head runCo
 	// path does this via scope.snapScanRoot/os.SameFile; the delta path must too (F4).
 	headScanRoot = snapToGitRoot(gitRoot, headScanRoot)
 
-	tmpBase, releaseWorktreeParent, err := baseWorktreeParent(ctx, deps, gitRoot, baseRef, head.BundleDir)
+	tmpBase, releaseWorktreeParent, err := baseWorktreeParent(ctx, deps, gitRoot, baseRef)
 	if err != nil {
 		return score.Scorecard{}, baseEvidence{}, &exitError{code: 3, msg: fmt.Sprintf("error: create temp dir: %v", err)}
 	}
@@ -213,7 +213,7 @@ func runScoreSide(ctx context.Context, deps *appDeps, cfg config.Config, rc runC
 // The returned release function must be called after cleanup.
 //
 // With the fact cache on, the path is a deterministic function of the resolved
-// base commit SHA: `<configDir>/.archfit-cache/worktrees/<sha>`. The base tree
+// base commit SHA: `<gitRoot>/.archfit-cache/worktrees/<sha>`. The base tree
 // is immutable, and the per-checkout fact-cache keys fold the scan-root path in
 // (cached subprocess output embeds absolute paths — see rust.cachedRunner /
 // golang.memberKeys), so a repeat `--base <same-ref>` run reuses the same
@@ -223,14 +223,22 @@ func runScoreSide(ctx context.Context, deps *appDeps, cfg config.Config, rc runC
 // before removing/recreating the checkout, so one process cannot delete another
 // process's live base tree. An unresolvable ref, or any cleanup/mkdir failure
 // falls back to the historical random temp dir — correct, just uncached.
-func baseWorktreeParent(ctx context.Context, deps *appDeps, gitRoot, baseRef, configDir string) (string, func(), error) {
+//
+// The parent is derived from gitRoot, NOT from the config directory. A git
+// worktree holds TRACKED files only, so every gitignored input an analyzer
+// resolves through — node_modules, vendored or generated code — must come from
+// the surrounding repo, which only works while the checkout sits inside it.
+// Deriving from the config directory put the checkout outside the repo whenever
+// the policy config lived elsewhere — exactly the CI layout `--root` advertises
+// — and dependency-cruiser then reported the base side partial-unresolved
+// against an ok head, filing genuinely introduced violations as unknown-origin.
+func baseWorktreeParent(ctx context.Context, deps *appDeps, gitRoot, baseRef string) (string, func(), error) {
 	releaseNoop := func() {}
 	sha, err := git.ResolveCommit(ctx, gitRoot, baseRef, deps.Runner)
-	// Absolutize against the process CWD — the same anchor loadConfig reads a
-	// relative --config from. The git subprocesses below run with WorkDir set
-	// to gitRoot, so a relative path here would silently split the checkout
-	// (git-created) from the directory the os calls manage (CWD-created).
-	parent, aerr := filepath.Abs(baseWorktreesDir(configDir))
+	// gitRoot is already absolute (git rev-parse --show-toplevel); absolutize
+	// anyway so the git subprocesses below (WorkDir: gitRoot) and the os calls
+	// that create/remove the directory can never disagree about the path.
+	parent, aerr := filepath.Abs(baseWorktreesDir(gitRoot))
 	if err == nil && aerr == nil {
 		dir := filepath.Join(parent, sha)
 		release, lerr := lockBaseWorktree(ctx, dir+".lock")

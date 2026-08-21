@@ -525,11 +525,19 @@ func TestCompareCoverage_PrimaryAbsent(t *testing.T) {
 			wantStatus:  decision.CoverageComparableWithGaps,
 			wantDetails: 1,
 		},
+		// CHANGED from wantStatus: not_comparable. Gap presence is only evidence
+		// for a PRIMARY analyzer, where its ABSENCE proves the language is not in
+		// the tree. A CoverageGap is emitted solely for tools carrying an install
+		// hint, so most non-primary analyzers (scip, scip-symbols, ast-grep) can
+		// never raise one however loudly the config asked for them; reading a
+		// missing gap as "this configuration did not expect the analyzer" made a
+		// presentation table stand in for evidence. Both sides are plainly absent
+		// and equally blind, which is comparable-with-the-loss-reported.
 		{
-			name:        "a non-primary absent pair gapped on one side only is asymmetric",
+			name:        "a non-primary absent pair gapped on one side only is still a shared gap",
 			tool:        gapTool,
 			candGap:     true,
-			wantStatus:  decision.CoverageNotComparable,
+			wantStatus:  decision.CoverageComparableWithGaps,
 			wantDetails: 1,
 		},
 	}

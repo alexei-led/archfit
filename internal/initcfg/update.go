@@ -42,12 +42,18 @@ type NameDrift struct {
 
 // UpdateReport is the result of DiffModules.
 type UpdateReport struct {
-	Added                     []ModuleDef
-	Suggested                 []ModuleDef
-	Removed                   []ExistingModule
-	NameDrift                 []NameDrift
-	PathDrift                 []PathDelta
-	Unclassified              []string
+	Added        []ModuleDef
+	Suggested    []ModuleDef
+	Removed      []ExistingModule
+	NameDrift    []NameDrift
+	PathDrift    []PathDelta
+	Unclassified []string
+	// Pathless names the configured modules whose field checks were SKIPPED
+	// because the stanza declares no paths. They raise no issue by design (a
+	// pathless stanza classifies nothing), which is exactly why they have to be
+	// reported: otherwise `issues: []` reads as "every module is clean" over a
+	// stanza nothing evaluated.
+	Pathless                  []string
 	Issues                    []ModuleIssue
 	Settings                  []SettingChange
 	DeployUnitSuggestions     []DeployUnitSuggestion
@@ -193,13 +199,14 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef, requireLayer bool
 		}
 		checked = append(checked, e)
 	}
-	unclassified, issues := checkModuleFields(checked, requireLayer)
+	unclassified, pathless, issues := checkModuleFields(checked, requireLayer)
 
 	return UpdateReport{
 		Added:            added,
 		Removed:          removed,
 		PathDrift:        drift,
 		Unclassified:     unclassified,
+		Pathless:         pathless,
 		Issues:           issues,
 		StructuralInSync: len(added) == 0 && len(removed) == 0 && len(drift) == 0,
 	}
@@ -213,7 +220,7 @@ func DiffModules(existing []ExistingModule, fresh []ModuleDef, requireLayer bool
 // discovery merely names differently starts out in Removed and would otherwise
 // never be checked. `issues: []` must mean "checked and clean", never "not
 // evaluated".
-func checkModuleFields(mods []ExistingModule, requireLayer bool) (unclassified []string, issues []ModuleIssue) {
+func checkModuleFields(mods []ExistingModule, requireLayer bool) (unclassified, pathless []string, issues []ModuleIssue) {
 	for _, e := range mods {
 		missingVolatilityInput := !e.HasSubdomain && !e.HasVolatility
 		missingLayer := requireLayer && !e.HasLayer
@@ -225,6 +232,13 @@ func checkModuleFields(mods []ExistingModule, requireLayer bool) (unclassified [
 			// mirrors config.Config.Lint. Unclassified deliberately does NOT skip
 			// it: a pathless module still needs classification input before it
 			// can do any work, and the AI pass targets that list.
+			//
+			// But skipping it silently is what `unchecked_modules` exists to
+			// prevent: a pathless stanza carrying `subdomain:` and no `owner:`
+			// raises no issue, lands in no unclassified list, and would leave
+			// `issues: []` reading as "every module is clean". Report it as
+			// unchecked with its own reason.
+			pathless = append(pathless, e.Name)
 			continue
 		}
 		// Owner and subdomain/volatility are also checked by config.Config.Lint for
@@ -240,13 +254,14 @@ func checkModuleFields(mods []ExistingModule, requireLayer bool) (unclassified [
 		}
 	}
 	sort.Strings(unclassified)
+	sort.Strings(pathless)
 	sort.SliceStable(issues, func(i, j int) bool {
 		if issues[i].Module != issues[j].Module {
 			return issues[i].Module < issues[j].Module
 		}
 		return issues[i].Code < issues[j].Code
 	})
-	return unclassified, issues
+	return unclassified, pathless, issues
 }
 
 // ResolveNameDrift reclassifies every Added/Removed pair that owns exactly the
@@ -316,33 +331,35 @@ func ResolveNameDrift(r UpdateReport, requireLayer bool) UpdateReport {
 	out.Removed = removed
 	out.NameDrift = drift
 	out.StructuralInSync = len(added) == 0 && len(removed) == 0 && len(drift) == 0 && len(r.PathDrift) == 0
-	out.Unclassified, out.Issues = mergeDriftFieldChecks(r, drift, requireLayer)
+	out.Unclassified, out.Pathless, out.Issues = mergeDriftFieldChecks(r, drift, requireLayer)
 	return out
 }
 
 // mergeDriftFieldChecks re-runs the per-module field checks over the stanzas
 // name-drift just rescued from Removed and merges them into the report's
-// existing results, keeping both lists sorted and duplicate-free.
-func mergeDriftFieldChecks(r UpdateReport, drift []NameDrift, requireLayer bool) ([]string, []ModuleIssue) {
+// existing results, keeping every list sorted and duplicate-free.
+func mergeDriftFieldChecks(r UpdateReport, drift []NameDrift, requireLayer bool) ([]string, []string, []ModuleIssue) {
 	mods := make([]ExistingModule, 0, len(drift))
 	for _, d := range drift {
 		mods = append(mods, d.Existing)
 	}
-	driftUnclassified, driftIssues := checkModuleFields(mods, requireLayer)
-	if len(driftUnclassified) == 0 && len(driftIssues) == 0 {
-		return r.Unclassified, r.Issues
+	driftUnclassified, driftPathless, driftIssues := checkModuleFields(mods, requireLayer)
+	if len(driftUnclassified) == 0 && len(driftPathless) == 0 && len(driftIssues) == 0 {
+		return r.Unclassified, r.Pathless, r.Issues
 	}
 
 	unclassified := append(append([]string{}, r.Unclassified...), driftUnclassified...)
+	pathless := append(append([]string{}, r.Pathless...), driftPathless...)
 	issues := append(append([]ModuleIssue{}, r.Issues...), driftIssues...)
 	sort.Strings(unclassified)
+	sort.Strings(pathless)
 	sort.SliceStable(issues, func(i, j int) bool {
 		if issues[i].Module != issues[j].Module {
 			return issues[i].Module < issues[j].Module
 		}
 		return issues[i].Code < issues[j].Code
 	})
-	return unclassified, issues
+	return unclassified, pathless, issues
 }
 
 // uniquePathKeyIndex maps each normalized path set to the single index that owns

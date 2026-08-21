@@ -299,19 +299,28 @@ func gradeTool(
 		// with the loss reported, magnitudes included.
 		return CoverageComparableWithGaps, partialBothReason(c, d), false
 	case diagnostic.StatusAbsent:
-		// A coverage gap is per-side evidence: it says this configuration
-		// EXPECTED the analyzer to run. One side gapped and the other not is an
-		// asymmetry — the two sides are not equally blind, so the absence is not
-		// shared and the comparison cannot rest on it.
-		curGapped, candGapped := hasCoverageGap(curGaps, tool), hasCoverageGap(candGaps, tool)
-		if curGapped != candGapped {
-			return CoverageNotComparable, reasonAbsentAsymmetric, false
-		}
-		// A per-language graph analyzer that is absent without a coverage gap was
-		// suppressed because that language is not in the tree — nothing was lost,
-		// so the analyzer drops out of the comparison entirely.
-		if _, ok := primary[tool]; ok && !curGapped {
-			return CoverageComparable, "", true
+		// Gap presence discriminates for PRIMARY analyzers only, and it is read
+		// there as a statement about the TREE: a per-language graph analyzer
+		// absent WITHOUT a gap was suppressed because that language's project
+		// markers are missing, so nothing was lost and the analyzer drops out of
+		// the comparison entirely. One side suppressed and the other gapped is
+		// then a real asymmetry — the two sides are not equally blind.
+		//
+		// For every other analyzer a gap is not evidence at all: it is only
+		// emitted for tools carrying an install hint, so scip, scip-symbols and
+		// ast-grep never raise one however loudly the config asked for them.
+		// Their absence is shared blindness, reported as such. `analyze --base`
+		// (cmd/archfit/git_finding_delta.go) applies the identical split — reading
+		// gap presence as "the config expected this analyzer" made the two paths
+		// grade the same row differently and paired it there in silence.
+		if _, ok := primary[tool]; ok {
+			curGapped, candGapped := hasCoverageGap(curGaps, tool), hasCoverageGap(candGaps, tool)
+			if curGapped != candGapped {
+				return CoverageNotComparable, reasonAbsentAsymmetric, false
+			}
+			if !curGapped {
+				return CoverageComparable, "", true
+			}
 		}
 		return CoverageComparableWithGaps, reasonAbsentBoth, false
 	case diagnostic.StatusDisabled:
@@ -338,11 +347,15 @@ const (
 // grimp, which one unresolvable specifier anywhere is enough to trigger.
 //
 // The tool name is the discriminator, not Unresolved > 0: go/packages sets
-// Unresolved too, but there it counts whole packages it SKIPPED because they
-// failed to load, which is exactly "the analyzer could have produced findings
-// and did not finish" and must never grade as comparable. Every remaining
-// partial producer (a rejected ast-grep rule file, an empty SCIP index, a failed
-// jscpd run) leaves Unresolved at zero and is unstable by that check alone.
+// Unresolved too, but there it counts PACKAGES whose load did not complete —
+// packages skipped outright (their imports are missing from the graph) plus
+// packages that did not type-check (imports present, go/types strength missing).
+// Neither is "a completed run that could not resolve some specifiers", so
+// go/packages must never grade as comparable on that basis. The row's Reason
+// says which condition occurred; the counter alone cannot, which is why this
+// predicate keys on the tool and not on the number. Every remaining partial
+// producer (a rejected ast-grep rule file, an empty SCIP index, a failed jscpd
+// run) leaves Unresolved at zero and is unstable by that check alone.
 //
 // `analyze --base` reads this same function (cmd/archfit/git_finding_delta.go)
 // so the two comparison paths cannot grade one coverage row differently.
