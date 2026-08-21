@@ -668,12 +668,12 @@ git diff --check
 git status --short
 ```
 
-- [ ] Verify command help, report labels, examples, and guides.
-- [ ] Verify every new JSON field, list, status, reason, and unknown state.
-- [ ] Verify that no out-of-scope command, state file, or action channel exists.
-- [ ] Run every final validation command and inspect its output.
-- [ ] Inspect `git status --short`; intentional plan and implementation paths may appear.
-- [ ] Record intentional model-surface and golden changes in the `Implementation Results` section.
+- [x] Verify command help, report labels, examples, and guides.
+- [x] Verify every new JSON field, list, status, reason, and unknown state.
+- [x] Verify that no out-of-scope command, state file, or action channel exists.
+- [x] Run every final validation command and inspect its output.
+- [x] Inspect `git status --short`; intentional plan and implementation paths may appear.
+- [x] Record intentional model-surface and golden changes in the `Implementation Results` section.
 
 ## Acceptance Criteria
 
@@ -699,8 +699,87 @@ ralphex docs/plans/20260821-archfit-configuration-confidence.md
 
 ## Implementation Results
 
-Complete this section in Task 9 before the final Ralphex completion marker.
+### Model-surface changes
 
-- Model-surface changes: pending
-- Golden-output changes: pending
-- Final validation: pending
+`internal/testdata/model_surface.golden` changed in three hunks (5 net lines),
+all from Task 6:
+
+- `internal/model/diagnostic.Diagnostic` gains
+  `GitFindingDelta *diagnostic.GitFindingDelta "json:\"git_finding_delta,omitempty\""`,
+  placed before the existing `Delta` field.
+- New type `internal/model/diagnostic.GitFindingDelta` with the fields
+  `BaseRef`, `ComparisonStatus`, `IntroducedFindingIDs`, `PreExistingFindingIDs`,
+  `UnknownOriginFindingIDs`, and `ComparisonReasons`.
+- New constants `internal/model/diagnostic.GitComparisonComparable` and
+  `internal/model/diagnostic.GitComparisonUnknown`.
+
+The golden was regenerated once with `ARCHFIT_UPDATE_SURFACE=1` and the diff was
+inspected. No other kernel or `internal/view` surface changed on the branch.
+
+### Golden-output changes
+
+None. No `internal/engine` golden file changed. `make test` passes, which runs
+`TestGolden` in `internal/engine`, so the rendered output is unchanged.
+`internal/testdata/model_surface.golden` is the only golden file the branch
+touches. `internal/engine/advisory_tasks_test.go` changed by two lines, but it
+is a test file, not a golden.
+
+### Final validation
+
+Every command in the Task 9 final-validation block ran and its output was
+inspected. All pass.
+
+- The three `rg` guard checks exit `0` with no matches: no removed CLI forms in
+  the listed active surfaces, no gate or advisory flags in
+  `cmd/archfit/worktree.go`, no `baseline --base` in the README, guides, or the
+  baseline command.
+- `make fmt` produces no diff. `make test` exits `0` (Go race suite plus
+  `internal/extract/scip/scip_reader_test.py`), with no `FAIL` line;
+  `cmd/archfit` at 84.7% and `internal` (arch ring plus model surface) both ok.
+  `make lint` reports `0 issues`. `make build` succeeds.
+- `make archfit` exits `0`: `PASS · 0 blocking`, 39 advisory warnings, score
+  `71 / 100 serviceable`. The baseline was not regenerated.
+- `config update --json -c .archfit.yaml` returns `archfit.config-review.v1`,
+  status `action_required` (0 module issues, 75 structure changes: 31 added, 44
+  removed), and all seven structure, issue, and suggestion lists marshal as JSON
+  arrays, never `null`. The text form prints the short status line first.
+- `config compare .archfit.yaml -c .archfit.yaml` exits `0`, reports identical
+  config hashes, 39 findings on both sides, empty `current_only_ids` and
+  `candidate_only_ids`, 39 `both_ids`, no warnings, and the exact identity label
+  `No measurement differences detected.` All five JSON lists marshal as arrays.
+  Coverage grades `not_comparable`; see the known limitation below.
+- `analyze --base HEAD~1 --json` and `check --base HEAD~1 --json` both emit
+  `git_finding_delta` with `base_ref: HEAD~1`, `comparison_status: comparable`,
+  and three sorted, unique `comparison_reasons`. All three ID lists render as
+  non-null empty arrays because the head run has zero `agent_tasks[]`.
+  `check --base` still exits `0`, so the block changes neither the verdict nor
+  the exit code. `analyze --json` without `--base` omits the block entirely.
+- `archfit baseline --base main` prints `archfit: unknown flag --base` and exits
+  `3`. Both `analyze --help` and `check --help` describe `--base` as adding a
+  base-vs-head delta to normal output.
+- `--no-advisories` drops findings from `39` to `0` and advisory tasks from `13`
+  to `0` in JSON while the scorecard still reports `71/100` with
+  `Rubric version: 1`, so removing advisories does not change the score.
+- The command set is exactly `analyze`, `check`, `baseline`, `explain`,
+  `doctor`, and the `config` group (`init`, `update`, `compare`, `enrich *`).
+  A repository grep finds no `config health`, `config suggest`,
+  `architecture_actions`, `--agent-tasks`, or `architecture_hash`.
+- `git diff --check` and `git status --short` are both clean after every
+  report-only run, so config, baseline, labels, candidate, and policy files
+  stayed byte-identical.
+
+### Known limitations recorded, not fixed
+
+Both are outside the Task 9 write scope, which only permits a bounded
+integration fix in a file listed by Tasks 1 through 8.
+
+- `config compare` on this repository grades coverage `not_comparable` because
+  `internal/extract/astgrep/syntax.go` labels the syntax pass `ast-grep` instead
+  of `ast-grep/syntax`, producing a duplicate coverage row. The duplicate-row
+  rule is behaving as specified. Fixing the extractor label would change
+  `tool_coverage` output, and that file is in no task's file list.
+- `analyze --base` in a worktree checkout reports
+  `go/packages: head ok, base absent` because the parent repository's gitignored
+  `go.work` names `use` paths outside the base scan root, so no Go member loads
+  on the base side. The `comparison_reasons` list discloses this honestly. It is
+  pre-existing and unrelated to this plan.
