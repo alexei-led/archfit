@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -29,6 +30,28 @@ func TestConfigCompare(t *testing.T) {
 	t.Run("protected_files", testCompareProtectedFiles)
 	t.Run("exit_codes", testCompareExitCodes)
 	t.Run("score_line", testCompareScoreLine)
+	t.Run("id_preview", testCompareIDPreview)
+}
+
+// testCompareIDPreview pins the text-report cap: short lists print in full, long
+// ones are truncated with a pointer to the complete JSON list.
+func testCompareIDPreview(t *testing.T) {
+	t.Parallel()
+	ids := make([]string, 0, compareIDPreview+3)
+	for i := 0; i < cap(ids); i++ {
+		ids = append(ids, fmt.Sprintf("id%02d", i))
+	}
+	full := summariseIDs(ids[:compareIDPreview])
+	if strings.Contains(full, "more") || !strings.Contains(full, ids[compareIDPreview-1]) {
+		t.Errorf("a list at the cap must print in full, got %q", full)
+	}
+	capped := summariseIDs(ids)
+	if !strings.Contains(capped, "3 more") {
+		t.Errorf("a list over the cap must name the remainder, got %q", capped)
+	}
+	if strings.Contains(capped, ids[compareIDPreview]) {
+		t.Errorf("a capped list must not print the truncated ids, got %q", capped)
+	}
 }
 
 const cmdCompare = "compare"
@@ -157,6 +180,12 @@ func testCompareIdentity(t *testing.T) {
 		doc.Findings.Both == nil || doc.Warnings == nil || doc.Coverage.Details == nil {
 		t.Errorf("every list must be a non-null array: %+v", doc)
 	}
+	// Equal coverage gaps on both sides are shared blindness, not measurement
+	// loss: an identity run may grade comparable_with_gaps (or not_comparable on
+	// a duplicated row) and must still raise no warning.
+	if len(doc.Warnings) != 0 {
+		t.Errorf("identity run must raise no measurement-loss warning, got %v", doc.warningCodes())
+	}
 	if doc.Current.ConfigHash == "" || doc.Current.ConfigHash != doc.Candidate.ConfigHash {
 		t.Errorf("same config file must hash identically on both sides: %q vs %q",
 			doc.Current.ConfigHash, doc.Candidate.ConfigHash)
@@ -251,7 +280,12 @@ func testCompareBaselineIsolation(t *testing.T) {
 `
 	cfgPath := writeCoupledRepo(t, coupledModulesCfg+failRule)
 
-	_, before, _ := runArchfit(t, cmdConfig, cmdCompare, cfgPath, flagJSON, "-c", cfgPath)
+	// Both compare runs must genuinely succeed: two failed runs would both print
+	// nothing and make the equality check below pass vacuously.
+	code, before, stderr := runArchfit(t, cmdConfig, cmdCompare, cfgPath, flagJSON, "-c", cfgPath)
+	if code != 0 || strings.TrimSpace(before) == "" {
+		t.Fatalf("config compare before baselining: exit = %d, output %q\nstderr:\n%s", code, before, stderr)
+	}
 
 	if code, _, stderr := runArchfit(t, cmdCheck, "-c", cfgPath); code != 1 {
 		t.Fatalf("fixture must fail the gate before baselining: exit = %d\nstderr:\n%s", code, stderr)
@@ -264,7 +298,10 @@ func testCompareBaselineIsolation(t *testing.T) {
 		t.Fatalf("baseline did not accept the finding: check exit = %d\nstderr:\n%s", code, stderr)
 	}
 
-	_, after, _ := runArchfit(t, cmdConfig, cmdCompare, cfgPath, flagJSON, "-c", cfgPath)
+	afterCode, after, afterErr := runArchfit(t, cmdConfig, cmdCompare, cfgPath, flagJSON, "-c", cfgPath)
+	if afterCode != 0 {
+		t.Fatalf("config compare after baselining: exit = %d\nstderr:\n%s", afterCode, afterErr)
+	}
 	if after != before {
 		t.Errorf("the accepted baseline changed the comparison document\nbefore:\n%s\nafter:\n%s", before, after)
 	}

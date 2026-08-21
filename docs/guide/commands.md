@@ -62,12 +62,12 @@ Use this when you know the job, not the command.
 
 `archfit check` is the only command that uses all four exit codes.
 
-| Code | Meaning                                                                                 | Commands that produce it                                                                                                                                                            |
-| ---- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Code | Meaning                                                                                 | Commands that produce it                                                                                                                                                                                      |
+| ---- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `0`  | Success. For `analyze`, this still includes runs that report findings.                  | `archfit`, `archfit analyze`, `archfit check`, `archfit baseline`, `archfit explain`, `archfit doctor`, `archfit config init`, `archfit config update`, `archfit config compare`, `archfit config enrich ...` |
-| `1`  | Violations. Gate failed. Missing required tools under `--require-tools` also land here. | `archfit check`; `archfit analyze` never exits `1` on a successful run                                                                                                              |
-| `2`  | Warning verdict. No blocking violations, but warnings were promoted to the exit code.   | `archfit check`                                                                                                                                                                     |
-| `3`  | Usage, parse, config, or runtime error.                                                 | All commands                                                                                                                                                                        |
+| `1`  | Violations. Gate failed. Missing required tools under `--require-tools` also land here. | `archfit check`; `archfit analyze` never exits `1` on a successful run                                                                                                                                        |
+| `2`  | Warning verdict. No blocking violations, but warnings were promoted to the exit code.   | `archfit check`                                                                                                                                                                                               |
+| `3`  | Usage, parse, config, or runtime error.                                                 | All commands                                                                                                                                                                                                  |
 
 Notes:
 
@@ -426,19 +426,19 @@ Notes:
 
 Review model:
 
-| Field                | Meaning                                                                                       |
-| -------------------- | --------------------------------------------------------------------------------------------- |
-| `structure`          | Modules to add or remove, path drift, and settings `--apply` would write.                     |
-| `issues`             | Per-module config gaps that need a decision, each with a reason and a next action.            |
-| `review_suggestions` | Deterministic deploy-unit and distance-config proposals. `--apply` never writes them.         |
+| Field                | Meaning                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------- |
+| `structure`          | Modules to add or remove, path drift, and settings `--apply` would write.             |
+| `issues`             | Per-module config gaps that need a decision, each with a reason and a next action.    |
+| `review_suggestions` | Deterministic deploy-unit and distance-config proposals. `--apply` never writes them. |
 
 Issue codes:
 
-| Code                       | Condition                                                                       |
-| -------------------------- | ------------------------------------------------------------------------------- |
+| Code                       | Condition                                                                          |
+| -------------------------- | ---------------------------------------------------------------------------------- |
 | `missing_owner`            | The module has no `owner:`, so cross-module distance falls back to code structure. |
-| `missing_volatility_input` | The module has neither `subdomain:` nor `volatility:`. Either field closes it.   |
-| `missing_layer`            | The module has no `layer:` while a `forbidden_layer_direction` rule is not `off`. |
+| `missing_volatility_input` | The module has neither `subdomain:` nor `volatility:`. Either field closes it.     |
+| `missing_layer`            | The module has no `layer:` while a `forbidden_layer_direction` rule is not `off`.  |
 
 JSON:
 
@@ -508,18 +508,18 @@ Notes:
 
 Report model:
 
-| Section              | Meaning                                                                                        |
-| -------------------- | ------------------------------------------------------------------------------------------------ |
-| `coverage evidence`  | Whether the two runs rest on comparable analyzer evidence. Graded, and reported separately from the differences. |
+| Section                 | Meaning                                                                                                                           |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `coverage evidence`     | Whether the two runs rest on comparable analyzer evidence. Graded, and reported separately from the differences.                  |
 | measurement differences | Only what changed: the overall score and the one-sided finding IDs. Nothing changed prints `No measurement differences detected.` |
-| measurement loss     | Warnings raised when the candidate measured less of the same tree.                             |
+| measurement loss        | Warnings raised when the candidate measured less of the same tree.                                                                |
 
 Coverage grades:
 
-| Grade                  | Condition                                                                                       |
-| ---------------------- | ------------------------------------------------------------------------------------------------- |
-| `comparable`           | Every compared analyzer ran on both sides.                                                       |
-| `comparable_with_gaps` | The sides agree, but an analyzer was absent or disabled on both sides.                            |
+| Grade                  | Condition                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `comparable`           | Every compared analyzer ran on both sides.                                                                               |
+| `comparable_with_gaps` | The sides agree, but an analyzer was absent or disabled on both sides.                                                   |
 | `not_comparable`       | An analyzer's evidence differs between the sides, is partial or timed out, or its coverage row is missing or duplicated. |
 
 A `not_comparable` grade is about evidence, not about the configs: it can appear
@@ -528,10 +528,10 @@ then the differences.
 
 Measurement-loss warnings:
 
-| Code                   | Condition                                                                     |
-| ---------------------- | ------------------------------------------------------------------------------- |
-| `scored_fraction_fell` | The candidate placed a smaller share of cross-boundary edges on a concrete balance. |
-| `abstained_edges_rose` | The candidate abstained on more cross-boundary edges.                          |
+| Code                   | Condition                                                                                                |
+| ---------------------- | -------------------------------------------------------------------------------------------------------- |
+| `scored_fraction_fell` | The candidate placed a smaller share of cross-boundary edges on a concrete balance.                      |
+| `abstained_edges_rose` | The candidate abstained on more cross-boundary edges.                                                    |
 | `external_edges_rose`  | The candidate pushed more edges outside the declared module set, excluding them from `coupling_balance`. |
 
 JSON:
@@ -549,12 +549,12 @@ JSON:
 
 Flags:
 
-| Flag           | Type | Default                 | Effect                                             | Example                                                                |
-| -------------- | ---- | ----------------------- | -------------------------------------------------- | ------------------------------------------------------------------------ |
-| `<candidate>`  | path | required                | Candidate config file to measure against the current one. | `archfit config compare candidate.archfit.yaml`                    |
-| `-c, --config` | path | `.archfit.yaml`         | Current config file path.                          | `archfit config compare cand.yaml -c .archfit.yaml`                     |
-| `--root`       | path | directory of `--config` | Repository root to analyze.                        | `archfit config compare cand.yaml --root . -c ci/.archfit.yaml`         |
-| `--json`       | bool | `false`                 | Emit the comparison as JSON. Report-only.          | `archfit config compare cand.yaml --json -c .archfit.yaml`              |
+| Flag           | Type | Default                 | Effect                                                    | Example                                                         |
+| -------------- | ---- | ----------------------- | --------------------------------------------------------- | --------------------------------------------------------------- |
+| `<candidate>`  | path | required                | Candidate config file to measure against the current one. | `archfit config compare candidate.archfit.yaml`                 |
+| `-c, --config` | path | `.archfit.yaml`         | Current config file path.                                 | `archfit config compare cand.yaml -c .archfit.yaml`             |
+| `--root`       | path | directory of `--config` | Repository root to analyze.                               | `archfit config compare cand.yaml --root . -c ci/.archfit.yaml` |
+| `--json`       | bool | `false`                 | Emit the comparison as JSON. Report-only.                 | `archfit config compare cand.yaml --json -c .archfit.yaml`      |
 
 Examples:
 
@@ -759,6 +759,7 @@ Used by:
 - `archfit baseline`
 - `archfit explain`
 - `archfit config update`
+- `archfit config compare`
 - `archfit config enrich ...`
 
 Rules:
@@ -766,6 +767,8 @@ Rules:
 - Default path is `.archfit.yaml`.
 - `analyze` and `check` expect a real config file at that default path.
 - `baseline`, `explain`, and the `config` subcommands resolve sidecar files beside the config.
+- For `config compare`, `-c` is the CURRENT config. The candidate is the positional
+  argument, and sidecar files still resolve beside the current config.
 
 Examples:
 
@@ -779,7 +782,7 @@ archfit config update -c ./policy/.archfit.yaml
 
 Used by:
 
-- long form only: `archfit analyze`, `archfit check`
+- long form only: `archfit analyze`, `archfit check`, `archfit config compare`
 - short and long form: `archfit baseline`, `archfit explain`, `archfit config init`, `archfit config update`, `archfit config enrich ...`
 
 Effect:

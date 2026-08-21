@@ -308,12 +308,25 @@ func configCompareDiffLines(current, candidate decision.ConfigCompareSide, res d
 		lines = append(lines, line)
 	}
 	if ids := res.Findings.CurrentOnlyIDs; len(ids) > 0 {
-		lines = append(lines, fmt.Sprintf("findings only under the current config (%d): %s", len(ids), strings.Join(ids, ", ")))
+		lines = append(lines, fmt.Sprintf("findings only under the current config (%d): %s", len(ids), summariseIDs(ids)))
 	}
 	if ids := res.Findings.CandidateOnlyIDs; len(ids) > 0 {
-		lines = append(lines, fmt.Sprintf("findings only under the candidate config (%d): %s", len(ids), strings.Join(ids, ", ")))
+		lines = append(lines, fmt.Sprintf("findings only under the candidate config (%d): %s", len(ids), summariseIDs(ids)))
 	}
 	return lines
+}
+
+// compareIDPreview caps how many finding IDs the text report spells out. A
+// config change can move dozens of findings at once, and a 30-fingerprint line
+// is unreadable; the count is already on the line and --json carries them all.
+const compareIDPreview = 5
+
+func summariseIDs(ids []string) string {
+	if len(ids) <= compareIDPreview {
+		return strings.Join(ids, ", ")
+	}
+	return fmt.Sprintf("%s, … %d more (see --json)",
+		strings.Join(ids[:compareIDPreview], ", "), len(ids)-compareIDPreview)
 }
 
 // scoreCompareLine renders the overall-score row and reports whether it is a
