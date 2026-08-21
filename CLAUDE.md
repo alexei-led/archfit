@@ -203,17 +203,25 @@ cl.Score.Band` after the scorer runs. `BalanceResult` is deleted — it was the
   `scope.MergeExclusions` is NOT idempotent (it consumes `!` re-includes), so a
   second merge re-seeds defaults the user removed and hides markers the
   extractors saw.
-- **A switched-off language reports `disabled`, never `absent`**
-  (`markDisabledPrimaries`, `cmd/archfit/pipeline_coverage.go`, applied to
-  `diag.ToolCoverage` before `buildCoverageGaps`). Extractors encode `ModeOff` as
-  `StatusAbsent`, which both pairing paths read as "this language is not in the
-  tree" and drop from the comparison — so two configs that BOTH disabled Go over
-  a Go repo graded fully comparable while neither had looked. Rewriting the row
-  leaves gapless-`absent` with exactly ONE cause (markers missing), which is what
-  `decision.gradeTool` and `normalizeCoverage` already assume. Narrow on purpose:
-  a language with an explicit `gate:` keeps `absent` so its gap and
-  `--require-tools` still fire. `primaryDisabledByConfig` is the single predicate
-  behind both the rewrite and the gap suppression.
+- **A language switched off over a language that IS PRESENT reports `disabled`,
+  never `absent`** (`markDisabledPrimaries`, `cmd/archfit/pipeline_coverage.go`,
+  applied to `diag.ToolCoverage` before `buildCoverageGaps`). Extractors encode
+  `ModeOff` as `StatusAbsent`, which both pairing paths read as "this language is
+  not in the tree" and drop from the comparison — so two configs that BOTH
+  disabled Go over a Go repo graded fully comparable while neither had looked.
+  Rewriting the row leaves gapless-`absent` with exactly ONE cause (markers
+  missing), which is what `decision.gradeTool` and `normalizeCoverage` already
+  assume. Two conditions are load-bearing, both narrowing:
+  `primaryDisabledByConfig` (mode off AND no explicit `gate:` — a pinned gate
+  keeps `absent` so its gap and `--require-tools` still fire; it is also the
+  single predicate behind the gap suppression), and `primaryLanguagePresent`,
+  which runs the SAME probe `buildCoverageGaps` suppresses on. Without the
+  presence probe the rewrite is the mirror image of the bug: a repo with no
+  TypeScript is told TypeScript analysis is switched off, and
+  `python: {enabled: false}` on a Go-only repo grades `not_comparable` against a
+  config that merely left python unset. An empty root cannot be probed and
+  answers "present" — disclose the opt-out rather than hide it, matching
+  `buildCoverageGaps`' empty-root behaviour.
 - **One coverage name per analyzer.** `internal/extract/astgrep` drives one
   binary for two passes and they report under two names: `ast-grep` (patterns)
   and `ast-grep/syntax` (`syntaxToolName`). Both consumers that pair coverage

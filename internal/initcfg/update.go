@@ -602,9 +602,13 @@ func RenderAppliedReview(r UpdateReport, ann map[string]ModuleAnnotation) string
 	writeUnappliedModuleSections(&b, r)
 	writeModuleGapSections(&b, r, ann)
 
+	// Added and Suggested only. Unclassified is deliberately NOT collected here:
+	// writeModuleGapSections above already renders its annotation diff, and
+	// collecting it too printed every unclassified module's proposal twice, under
+	// two headers. (It was correct before this function rendered UNCLASSIFIED.)
 	if len(ann) > 0 {
 		seen := map[string]struct{}{}
-		names := make([]string, 0, len(r.Added)+len(r.Suggested)+len(r.Unclassified))
+		names := make([]string, 0, len(r.Added)+len(r.Suggested))
 		collect := func(name string) {
 			if _, done := seen[name]; done {
 				return
@@ -624,9 +628,6 @@ func RenderAppliedReview(r UpdateReport, ann map[string]ModuleAnnotation) string
 		}
 		for _, m := range r.Suggested {
 			collect(m.Name)
-		}
-		for _, name := range r.Unclassified {
-			collect(name)
 		}
 		if len(names) > 0 {
 			fmt.Fprintf(&b, "LLM MODULE SUGGESTIONS (%d review-only classification proposal(s) — not applied):\n", len(names))
@@ -707,8 +708,16 @@ func writeAnnotationDiff(b *strings.Builder, name string, a ModuleAnnotation) {
 	}
 }
 
+// writeDeployUnitSuggestion renders one paste-ready `deploy_unit:` stanza. The
+// module name prints AS IT IS KEYED IN THE CONFIG — deploy-unit suggestions are
+// only ever emitted for a module the config already declares, so mangling `/`
+// into `_` (yamlKey) produced a header for a module `.archfit.yaml` does not
+// contain, and pasting it created a second stanza instead of editing the first.
+// `/` needs no quoting in a YAML key; this repo's own config keys are
+// `internal/model:` and friends. The sibling distance-candidate renderer below
+// already prints module names unmangled.
 func writeDeployUnitSuggestion(b *strings.Builder, s DeployUnitSuggestion) {
-	fmt.Fprintf(b, "  %s:\n", sanitizeComment(yamlKey(s.Module)))
+	fmt.Fprintf(b, "  %s:\n", sanitizeComment(s.Module))
 	fmt.Fprintf(b, "    deploy_unit: %s\n", yamlScalar(s.Unit))
 	if s.Source != "" {
 		fmt.Fprintf(b, "    source: %s\n", sanitizeComment(s.Source))

@@ -339,7 +339,8 @@ func primaryDisabledByConfig(cfg config.Config, tool string) bool {
 }
 
 // markDisabledPrimaries rewrites the coverage row of every language primary
-// analyzer the config switched off into an explicit StatusDisabled row.
+// analyzer the config switched off OVER A LANGUAGE THAT IS PRESENT into an
+// explicit StatusDisabled row.
 //
 // The extractors report ModeOff as StatusAbsent, which is indistinguishable from
 // "this language is not in the tree". Both comparison paths read that shape —
@@ -353,18 +354,42 @@ func primaryDisabledByConfig(cfg config.Config, tool string) bool {
 // disabled row lands on their existing StatusDisabled arm and reports as shared,
 // declared blindness.
 //
+// The presence probe is load-bearing in BOTH directions. Without it the rewrite
+// is the mirror image of the bug it fixes: a repo with no TypeScript would be
+// told "TypeScript analysis is switched off", and `python: {enabled: false}` on a
+// Go-only repo would grade not_comparable against a config that merely left
+// python unset — two configurations that measured the tree identically. It is
+// the same probe buildCoverageGaps suppresses on, so the row and the gap cannot
+// disagree.
+//
 // Deliberately narrow: rows with an explicit gate keep StatusAbsent so they
 // still raise a gap and still fail --require-tools. Non-primary analyzers are
 // untouched; their absence is never read as a statement about the tree.
-func markDisabledPrimaries(cov []diagnostic.Coverage, cfg config.Config) []diagnostic.Coverage {
+func markDisabledPrimaries(cov []diagnostic.Coverage, cfg config.Config, root string) []diagnostic.Coverage {
 	for i, c := range cov {
 		if c.Status != diagnostic.StatusAbsent || !primaryDisabledByConfig(cfg, c.Tool) {
+			continue
+		}
+		if !primaryLanguagePresent(cfg, c.Tool, root) {
 			continue
 		}
 		cov[i].Status = diagnostic.StatusDisabled
 		cov[i].Reason = languageDisabledReason(primaryToolLanguage[c.Tool])
 	}
 	return cov
+}
+
+// primaryLanguagePresent reports whether the language behind a primary coverage
+// tool has a project in root, using the analyzer's own discovery shape.
+//
+// An empty root cannot be probed. It answers "present", which discloses the
+// opt-out rather than hiding it — the same abstain-toward-disclosure choice
+// buildCoverageGaps makes when it skips marker suppression for an empty root.
+func primaryLanguagePresent(cfg config.Config, tool, root string) bool {
+	if root == "" {
+		return true
+	}
+	return primaryProjectPresent(tool, root, cfg, primaryToolProjectMarkers[tool], cfg.Exclude)
 }
 
 // languageDisabledReason is the reason text stamped on a disabled primary row,

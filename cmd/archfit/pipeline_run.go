@@ -487,8 +487,9 @@ func runPipeline(ctx context.Context, deps *appDeps, cfg config.Config, rc runCo
 	// ConfigWarnings so they reach md/json/CI instead of being stderr-only.
 	// Disclose switched-off primaries as "disabled" BEFORE deriving gaps: an
 	// extractor reports ModeOff as "absent", which both comparison paths read as
-	// "this language is not in the tree" (see markDisabledPrimaries).
-	diag.ToolCoverage = markDisabledPrimaries(diag.ToolCoverage, cfg)
+	// "this language is not in the tree" (see markDisabledPrimaries). s.Root is
+	// the presence probe's boundary — a language that is not here stays absent.
+	diag.ToolCoverage = markDisabledPrimaries(diag.ToolCoverage, cfg, s.Root)
 	diag.CoverageGaps = buildCoverageGaps(diag.ToolCoverage, cfg, s.Root)
 	diag.ConfigWarnings = buildConfigWarnings(cfg, toolWarnings)
 

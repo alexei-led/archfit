@@ -200,8 +200,12 @@ func TestRenderAppliedReview_PrefixesAnnotationMetadataWithPlus(t *testing.T) {
 		"+ evidence_refs: " + testEvidenceREADME,
 		"+ rationale: docs describe the classify boundary",
 	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("review output missing %q:\n%s", want, out)
+		// Counted, not merely present: this renderer now writes UNCLASSIFIED
+		// itself, so also collecting r.Unclassified into the LLM block printed
+		// every proposal twice under two headers — and a Contains assertion
+		// cannot see that.
+		if n := strings.Count(out, want); n != 1 {
+			t.Fatalf("review output has %d copies of %q, want exactly 1:\n%s", n, want, out)
 		}
 	}
 

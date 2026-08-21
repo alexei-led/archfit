@@ -405,10 +405,23 @@ func testMarkDisabledPrimaries(t *testing.T) {
 	offGated := config.Config{Languages: config.LanguagesConfig{
 		TypeScript: config.TypeScriptLanguage{Enabled: view.ModeOff, Gate: config.GateFail},
 	}}
+	// A repo that HAS TypeScript: package.json is dependency-cruiser's marker.
+	tsDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tsDir, "package.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A repo that does not: only go.mod.
+	goOnly := t.TempDir()
+	if err := os.WriteFile(filepath.Join(goOnly, markerGoMod), []byte("module example\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	absent := func() []diagnostic.Coverage {
+		return []diagnostic.Coverage{{Tool: toolDepCruiser, Status: diagnostic.StatusAbsent}}
+	}
 
 	t.Run("disabled language primary becomes a disabled row", func(t *testing.T) {
 		t.Parallel()
-		cov := markDisabledPrimaries([]diagnostic.Coverage{{Tool: toolDepCruiser, Status: diagnostic.StatusAbsent}}, off)
+		cov := markDisabledPrimaries(absent(), off, tsDir)
 		if cov[0].Status != diagnostic.StatusDisabled {
 			t.Fatalf("status = %q, want %q", cov[0].Status, diagnostic.StatusDisabled)
 		}
@@ -417,9 +430,24 @@ func testMarkDisabledPrimaries(t *testing.T) {
 		}
 	})
 
+	// The mirror of the bug being fixed: "nothing here" must not render as "we
+	// did not look". A repo with no TypeScript must not be told TypeScript
+	// analysis is switched off, and `enabled: false` on a language that is not
+	// there must not grade not_comparable against a config that left it unset.
+	t.Run("a language that is not in the tree stays absent", func(t *testing.T) {
+		t.Parallel()
+		cov := markDisabledPrimaries(absent(), off, goOnly)
+		if cov[0].Status != diagnostic.StatusAbsent {
+			t.Fatalf("status = %q, want %q (no package.json — nothing was switched off)", cov[0].Status, diagnostic.StatusAbsent)
+		}
+		if cov[0].Reason != "" {
+			t.Errorf("reason = %q, want none", cov[0].Reason)
+		}
+	})
+
 	t.Run("explicit gate keeps the row absent so the gap survives", func(t *testing.T) {
 		t.Parallel()
-		cov := markDisabledPrimaries([]diagnostic.Coverage{{Tool: toolDepCruiser, Status: diagnostic.StatusAbsent}}, offGated)
+		cov := markDisabledPrimaries(absent(), offGated, tsDir)
 		if cov[0].Status != diagnostic.StatusAbsent {
 			t.Fatalf("status = %q, want %q (an explicit gate opts back into the gap)", cov[0].Status, diagnostic.StatusAbsent)
 		}
@@ -434,7 +462,7 @@ func testMarkDisabledPrimaries(t *testing.T) {
 			{Tool: toolJscpd, Status: diagnostic.StatusAbsent},
 			{Tool: toolDepCruiser, Status: diagnostic.StatusOK},
 		}
-		cov := markDisabledPrimaries(in, off)
+		cov := markDisabledPrimaries(in, off, tsDir)
 		if cov[0].Status != diagnostic.StatusAbsent || cov[1].Status != diagnostic.StatusOK {
 			t.Errorf("rewrote rows it must not touch: %+v", cov)
 		}
@@ -442,9 +470,19 @@ func testMarkDisabledPrimaries(t *testing.T) {
 
 	t.Run("a disabled row raises no install gap", func(t *testing.T) {
 		t.Parallel()
-		cov := markDisabledPrimaries([]diagnostic.Coverage{{Tool: toolDepCruiser, Status: diagnostic.StatusAbsent}}, off)
+		cov := markDisabledPrimaries(absent(), off, tsDir)
 		if gaps := buildCoverageGaps(cov, off, ""); len(gaps) != 0 {
 			t.Errorf("disabled language must not prompt an install: %+v", gaps)
+		}
+	})
+
+	// An unprobeable root discloses the opt-out rather than hiding it — the same
+	// choice buildCoverageGaps makes when it skips marker suppression for "".
+	t.Run("an empty root discloses the opt-out", func(t *testing.T) {
+		t.Parallel()
+		cov := markDisabledPrimaries(absent(), off, "")
+		if cov[0].Status != diagnostic.StatusDisabled {
+			t.Errorf("status = %q, want %q", cov[0].Status, diagnostic.StatusDisabled)
 		}
 	})
 }

@@ -390,6 +390,19 @@ func TestRenderUpdateReport_DeployUnitHints(t *testing.T) {
 			t.Fatalf("output missing %q:\n%s", want, got)
 		}
 	}
+
+	// The stanza header must be the key the config actually uses. Rewriting `/`
+	// to `_` named a module .archfit.yaml does not contain, so pasting the
+	// suggestion added a second stanza instead of editing the first.
+	t.Run("a slashed module key prints unmangled", func(t *testing.T) {
+		slashed := UpdateReport{DeployUnitSuggestions: []DeployUnitSuggestion{
+			{Module: "internal/initcfg", Unit: "pyfixture"},
+		}}
+		out := RenderUpdateReport(slashed, nil, nil)
+		if !strings.Contains(out, "  internal/initcfg:\n") {
+			t.Errorf("deploy-unit stanza header mangled:\n%s", out)
+		}
+	})
 }
 
 func TestRenderUpdateReport_DistanceConfigCandidates(t *testing.T) {
