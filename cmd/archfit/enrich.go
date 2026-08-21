@@ -155,7 +155,7 @@ func (c *enrichFlags) runLabelEnrich(ctx context.Context, deps *appDeps) error {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 	deps.refresh = c.Refresh
-	if _, _, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
+	if _, _, err := runPipeline(ctx, deps, cfg, newRunContext(c.Config, c.Root), engine.Mode{Full: true}, base, &captureMetric{in: &captured}); err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
 

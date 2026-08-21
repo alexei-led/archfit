@@ -49,7 +49,7 @@ func (c *BaselineCmd) Run(deps *appDeps) error {
 	advisory := !c.NoAdvisories
 	mode := engine.Mode{Full: true, Advisory: advisory}
 	deps.refresh = c.Refresh
-	diag, sc, err := runPipeline(ctx, deps, cfg, c.Config, c.Root, mode, existingBase)
+	diag, sc, err := runPipeline(ctx, deps, cfg, newRunContext(c.Config, c.Root), mode, existingBase)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}

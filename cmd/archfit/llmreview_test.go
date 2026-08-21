@@ -114,7 +114,7 @@ func runLLMReviewForTest(t *testing.T, cfgPath string, provider llm.Provider) (s
 	}
 	configDir := filepath.Dir(cfgPath)
 	base, _ := baseline.Load(ctx, filepath.Join(configDir, defaultBaselinePath))
-	diag, sc, err := runPipeline(ctx, deps, cfg, cfgPath, "",
+	diag, sc, err := runPipeline(ctx, deps, cfg, newRunContext(cfgPath, ""),
 		engine.Mode{Full: true, Advisory: true, ReportOnly: true}, base)
 	if err != nil {
 		return "", &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}

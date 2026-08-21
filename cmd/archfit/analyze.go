@@ -214,7 +214,15 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 		Formats:    formats,
 	}
 
-	diag, sc, err := runPipeline(ctx, deps, cfg, req.configPath, req.root, mode, base)
+	// One run context for the whole comparison: the head run and the --base
+	// sub-run share the config source, the config bundle directory, and one
+	// sampled evaluation instant. Only the scan root differs (the base side
+	// swaps in its worktree), so a finding never ages differently between the
+	// two sides just because the second pipeline started later.
+	rc := newRunContext(req.configPath, req.root)
+	rc.EvaluatedAt = time.Now()
+
+	diag, sc, err := runPipeline(ctx, deps, cfg, rc, mode, base)
 	if err != nil {
 		return &exitError{code: 3, msg: fmt.Sprintf("error: %v", err)}
 	}
@@ -237,7 +245,7 @@ func runScan(ctx context.Context, deps *appDeps, req scanRequest) error {
 	var baseSC *score.Scorecard
 	if req.baseRef != "" {
 		rep.advance("Comparing against base")
-		bsc, berr := scoreBaseRef(ctx, deps, req.baseRef, req.configPath, configDir, req.root, advisory)
+		bsc, berr := scoreBaseRef(ctx, deps, req.baseRef, rc, advisory)
 		if berr != nil {
 			return berr
 		}

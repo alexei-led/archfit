@@ -383,13 +383,13 @@ go test ./cmd/archfit
 go test ./cmd/archfit -run 'TestByteIdentical_(SingleModule|OneMemberWorkspace|ColdWarmNoCache)' -count=1
 ```
 
-- [ ] Add the typed run context and remove positional path arguments.
-- [ ] Route hash, validation, labels, cache, scope, and path resolution through the correct field.
-- [ ] Keep accepted baseline loading in callers.
-- [ ] Update all callers and remove the old call shape.
-- [ ] Add value-table tests for current callers and a shared-time Git test.
-- [ ] Keep normalized JSON fixtures stable and remove stale `Task 9` comments.
-- [ ] Run renderer, gate, narrow, and full validation checks.
+- [x] Add the typed run context and remove positional path arguments.
+- [x] Route hash, validation, labels, cache, scope, and path resolution through the correct field.
+- [x] Keep accepted baseline loading in callers.
+- [x] Update all callers and remove the old call shape.
+- [x] Add value-table tests for current callers and a shared-time Git test.
+- [x] Keep normalized JSON fixtures stable and remove stale `Task 9` comments.
+- [x] Run renderer, gate, narrow, and full validation checks.
 
 ### Task 6: Show the Git origin of current repair tasks
 

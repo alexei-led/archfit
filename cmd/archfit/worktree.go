@@ -72,8 +72,10 @@ func cleanGitEnv() []string {
 // scoreBaseRef checks baseRef out into a temporary detached worktree, scores it
 // with the full pipeline (advisory per the caller), and returns the base
 // Scorecard. The worktree is always removed. advisory mirrors the HEAD side so
-// the delta compares like with like.
-func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, configDir, root string, advisory bool) (score.Scorecard, error) {
+// the delta compares like with like. head is the HEAD run context: its config
+// source, bundle directory, and evaluation time carry over unchanged; only the
+// scan root is swapped for the base worktree.
+func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef string, head runContext, advisory bool) (score.Scorecard, error) {
 	// A leading-dash ref would be parsed as a flag by rev-parse/worktree-add;
 	// `git worktree add --detach <dir> --force` silently checks out HEAD and the
 	// delta becomes HEAD-vs-HEAD. Reject rather than pass through.
@@ -81,11 +83,8 @@ func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, confi
 		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: invalid --base ref %q", baseRef)}
 	}
 	// Resolve the git root. Use --root when given (absolutized); otherwise the
-	// config directory — both are inside the repo and yield the same gitRoot.
-	gitAnchor := root
-	if gitAnchor == "" {
-		gitAnchor = configDir
-	}
+	// config bundle directory — both are inside the repo and yield the same gitRoot.
+	gitAnchor := head.scanDir()
 	if abs, aerr := filepath.Abs(gitAnchor); aerr == nil {
 		gitAnchor = abs
 	}
@@ -95,7 +94,7 @@ func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, confi
 	}
 
 	// HEAD-side analysis boundary: --root when given, else the whole repo.
-	headScanRoot := root
+	headScanRoot := head.ScanRoot
 	if headScanRoot == "" {
 		headScanRoot = gitRoot
 	} else if abs, aerr := filepath.Abs(headScanRoot); aerr == nil {
@@ -110,7 +109,7 @@ func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, confi
 	// path does this via scope.snapScanRoot/os.SameFile; the delta path must too (F4).
 	headScanRoot = snapToGitRoot(gitRoot, headScanRoot)
 
-	tmpBase, releaseWorktreeParent, err := baseWorktreeParent(ctx, deps, gitRoot, baseRef, filepath.Dir(configPath))
+	tmpBase, releaseWorktreeParent, err := baseWorktreeParent(ctx, deps, gitRoot, baseRef, head.BundleDir)
 	if err != nil {
 		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: create temp dir: %v", err)}
 	}
@@ -133,18 +132,18 @@ func scoreBaseRef(ctx context.Context, deps *appDeps, baseRef, configPath, confi
 		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: map subtree into worktree: %v", err)}
 	}
 
-	sc, err := runScoreSide(ctx, deps, configPath, baseRoot, advisory)
+	sc, err := runScoreSide(ctx, deps, baseRunContext(head, baseRoot), advisory)
 	if err != nil {
 		return score.Scorecard{}, &exitError{code: 3, msg: fmt.Sprintf("error: score base (%s): %v", baseRef, err)}
 	}
 	return sc, nil
 }
 
-// runScoreSide loads config, runs the full pipeline on root, and returns the
+// runScoreSide loads config, runs the full pipeline over rc, and returns the
 // synthesised Scorecard. advisory mirrors the caller's advisory setting
 // (`--no-advisories`) so the base and HEAD sides are scored identically.
-func runScoreSide(ctx context.Context, deps *appDeps, configPath, root string, advisory bool) (score.Scorecard, error) {
-	cfg, err := loadConfig(ctx, configPath)
+func runScoreSide(ctx context.Context, deps *appDeps, rc runContext, advisory bool) (score.Scorecard, error) {
+	cfg, err := loadConfig(ctx, rc.ConfigSource)
 	if err != nil {
 		return score.Scorecard{}, err
 	}
@@ -157,7 +156,7 @@ func runScoreSide(ctx context.Context, deps *appDeps, configPath, root string, a
 	quiet.progress = nil
 	quiet.warnLabel = "[base] "
 	mode := engine.Mode{Full: true, Advisory: advisory, ReportOnly: true}
-	_, sc, err := runPipeline(ctx, &quiet, cfg, configPath, root, mode, baseline.Baseline{})
+	_, sc, err := runPipeline(ctx, &quiet, cfg, rc, mode, baseline.Baseline{})
 	if err != nil {
 		return score.Scorecard{}, err
 	}
